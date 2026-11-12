@@ -484,6 +484,29 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
+     * 2.0.0 [RVM-42] 총괄 HQ-100 (조건 7·13): after '다른 유형 작품 보기' the row starts with '다른 유형도 ✕' (picked; one tap back to my kind
+     * of work's), a card for another kind says whose ('일근용 작품'), and so do the work and its 넣기 창.
+     */
+    @Test fun anotherKindsWorkSaysSoAndTheWayBackIsInSight() {
+        val on: Screen.() -> Unit = {
+            otherKindSearch()(this)
+            tapText("다른 유형 작품 보기", exact = true)
+            settle()
+            check(appears("일근용 작품", exact = true)) { "다른 유형 작품 카드에 어느 유형 것인지가 없어요" }
+            check(appears("다른 유형도", exact = true)) { "다른 유형도를 끄는 칩이 첫눈에 안 보여요" }
+        }
+        shoot("rvm_80_market_other_kind_on_folded_dark_200", DARK, 2f, on)
+        shoot("rvm_82_market_other_kind_on_folded", FOLDED, on)
+        shoot("rvm_83_market_other_kind_off_again_folded", FOLDED) {
+            on(this)
+            tapText("다른 유형도", exact = true)
+            settle()
+            check(appears("내 유형에는 없어요")) { "다른 유형도를 끄면 내 유형 찾기로 돌아가야 해요" }
+        }
+        shoot("rvm_81_put_other_kind_folded", FOLDED, detail("딥워크 데스크", put = true, sees = "일근용 작품이에요 · 교대에 맞는 조각만 들어가요"))
+    }
+
+    /**
      * 2.0.0 [RVM-41] PC-152 (조건 8·11): with 탭별 작품 picked the row slides to its 탭, the other 구간 out of sight; the 구간 picked,
      * tapped again, slides it back so 테마 is one tap (before: ▾ or a swipe to the left).
      */
@@ -734,9 +757,32 @@ class RvmScreenshotTest : ScreenshotBase() {
         }
     }
 
+    /**
+     * 2.0.0 [RVM-43] MKT-07 (검토 높음): 입어 보기 on a phone 640~850dp tall left '고를 모양' with no line and pushed the buttons under the
+     * edge. Now the example and the list scroll as one whenever the list would have less than its room, so both are always in reach.
+     */
+    private fun tryOn(title: String): Screen.() -> Unit = {
+        detail(title)()
+        tapText("예시로 보기", exact = true)
+        settle()
+        check(appears("입어 보기", exact = true)) { "입어 보기가 열리지 않았어요" }
+        check(scrolledTo("고를 모양", exact = false)) { "'고를 모양'에 닿지 못해요" }
+        check(shownTimes("고를 모양") == 1)
+        check(appears("이 테마 입기", exact = true) || appears("넣기", exact = false)) { "아래 단추가 화면 밖이에요" }
+        check(appears("닫기", exact = true)) { "닫기가 보이지 않아요" }
+    }
+    @Test fun tryOnShortPhone() = shoot("rvm_84_tryon_h700", SHORT, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnPhone() = shoot("rvm_85_tryon_phone", PHONE, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnUnfolded() = shoot("rvm_86_tryon_unfolded", UNFOLDED, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnUnfoldedDark() = shoot("rvm_87_tryon_unfolded_dark", UNFOLDED_DARK, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnFolded() = shoot("rvm_88_tryon_folded", FOLDED, tryOn("야간 회복 스테이션"))
+    @Test fun tryOnFoldedBig() = shoot("rvm_89_tryon_folded_200", FOLDED, 2f, tryOn("야간 회복 스테이션"))
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"
+        /** MKT-07 A phone 700dp tall (the 640~850 the 입어 보기 list lost). */
+        const val SHORT = "w360dp-h700dp-port-450dpi"
         /** The release build's public files (gradle.properties `bamnat.remoteBaseUrl`). */
         const val PAGES = "https://ywjmoney.github.io/-/"
     }

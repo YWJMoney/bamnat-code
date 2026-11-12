@@ -59,4 +59,18 @@ class LookImagesTest {
         assertNotNull(id)
         assertTrue(LookImages.has(app, id))
     }
+
+    /** 2.0.0 [RVM-49] 검토 RCP-12: a picture my look kept while a theme is worn (옷장) is not tidied away after 8 days; one nothing holds is. */
+    @Test fun aPictureTheWardrobeKeepsIsNotTidied() = runBlocking {
+        val kept = LookImages.import(app, photo(800, 600), Slot.BG)!!
+        val loose = LookImages.import(app, photo(600, 800), Slot.BG)!!
+        assertTrue(kept != loose)
+        val old = System.currentTimeMillis() - 9L * 24 * 60 * 60 * 1000
+        LookImages.file(app, kept).setLastModified(old); LookImages.file(app, loose).setLastModified(old)
+        app.getSharedPreferences("theme_wardrobe", android.content.Context.MODE_PRIVATE).edit()
+            .putString("mine", org.json.JSONObject().put("photoLook", PhotoLook(bg = kept).encode()).toString()).commit()
+        LookImages.tidy(app, emptySet())
+        assertTrue("입기 전 내 사진은 남아요", LookImages.has(app, kept))
+        assertTrue("아무도 붙들지 않은 사진은 정리돼요", !LookImages.has(app, loose))
+    }
 }

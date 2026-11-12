@@ -738,9 +738,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val logicSaid = if (done) wearLogic(s.draft.logic) else null
         // F-94: once on, the draft is the phone's look: 바꾼 곳 counts from here (the settings may still be being written, so the draft
         // itself is the new start, not a read of them).
+        // 2.0.0 [RVM-48] 검토 STU-03: 입히기 emptied the 50 steps (지난 단계), so nothing made before it could be gone back to; they stay.
         _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" + logicSaid.orEmpty() else "입히지 못했어요. 다시 해 주세요",
-            canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, past = if (done) emptyList() else _state.value.past,
-            future = emptyList(), wornNow = done)
+            canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, wornNow = done)
         if (done) refresh(both = true)
     }
 
@@ -785,7 +785,11 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         else " · " + listOfNotNull(l.rules.size.takeIf { it > 0 }?.let { "규칙 ${it}개" }, l.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" }).joinToString("·") + "가 켜졌어요"
     }
 
-    /** 입히기 바로 뒤의 되돌리기: the look from just before, back on the phone and in the draft. */
+    /**
+     * 입히기 바로 뒤의 되돌리기: the look from just before, back on the phone.
+     * 2.0.0 [RVM-48] 검토 STU-03 (조건 10): it put the phone's old look in the draft too, so what was being made was gone with no 다시 하기.
+     * Now only the phone goes back; the draft stays as made (바꾼 곳 count from the phone again), so it can be changed a little and worn.
+     */
     fun undoWear() {
         val before = beforeWear ?: return
         beforeLogic?.let { l -> c.settingsRepository.update { it.copy(logic = l) } }
@@ -794,7 +798,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         beforeWear = null
         com.bamnat.app.data.LookUndo.clear(c.appContext)
         val now = c.settingsRepository.current
-        _state.value = _state.value.copy(draft = now, base = now, said = "입히기 전 모양으로 돌렸어요", canUndoWear = false, wornNow = false, keptWear = false)
+        val s = _state.value
+        _state.value = s.copy(draft = s.draft.copy(logic = now.logic), base = now, said = "내 앱은 입히기 전 모양으로 돌렸어요. 만들던 모양은 그대로예요",
+            canUndoWear = false, wornNow = false, keptWear = false)
         refresh(both = true)
     }
 
