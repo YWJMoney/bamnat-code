@@ -469,7 +469,7 @@ fun EntryDialog(
                         }
                     }
                     if (installments > 1) {
-                        OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) },
+                        OutlinedTextField(value = rateText, onValueChange = { v -> rateText = com.bamnat.core.text.Numbers.cleanRate(v) },
                             label = { Text("할부 수수료 (연 %)") }, placeholder = { Text("무이자면 비워 두세요") }, singleLine = true,
                             visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                         val fees = remember(amount, installments, rateText) {
@@ -755,4 +755,5 @@ internal object EntryDraft {
 private fun tagsOf(e: MoneyEntry?): String = e?.tags.orEmpty().joinToString(" ") { "#$it" }
 
 /** [LEDX-17] The 연 수수료율 of [e] as the field shows it ("" for none). */
-private fun rateOf(e: MoneyEntry?): String = e?.installmentRate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()
+// 2.0.0 [RVK-33] (검토 MONEY-17) A point whatever the phone's language: '4,5' read back as nothing and the 수수료 became 0%.
+private fun rateOf(e: MoneyEntry?): String = e?.installmentRate?.takeIf { it > 0 }?.let { com.bamnat.core.text.Numbers.plain(it, 2) }.orEmpty()

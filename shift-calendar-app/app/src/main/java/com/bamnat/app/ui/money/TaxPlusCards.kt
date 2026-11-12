@@ -282,7 +282,7 @@ internal fun CardMatchLines(calendarId: String, book: MoneyBook, today: LocalDat
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${Fmt.shortDate(m.date)} 매출 ${Fmt.won(m.card)} → 입금 ${Fmt.won(m.paid)}", style = MaterialTheme.typography.bodyMedium)
-                Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
+                Muted("수수료 ${Fmt.won(m.fee)}" + (if (feeBp > 0) " (설정 ${"%.2f".format(java.util.Locale.ROOT, feeBp / 100.0).trimEnd('0').trimEnd('.')}%면 ${Fmt.won(m.card - m.expected)})" else "") +
                     " · " + m.deposits.joinToString(", ") { "${Fmt.shortDate(it.date)} ${it.merchant}" })
                 if (m.overFee >= TaxPlus.OVER_FEE_NOTE) Text("설정한 수수료보다 ${Fmt.won(m.overFee)} 더 빠졌어요. 카드사 가맹점 앱에서 수수료율이나 보류를 확인해 보세요.",
                     style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)

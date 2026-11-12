@@ -265,8 +265,10 @@ fun LedgerListPane(
                 if (shown.isEmpty()) {
                     item(key = "empty") {
                         when {
+                            // 2.0.0 [RVK-35] (PC-126) One '돈 적기': the floating one, always there (this one stood beside it). Named as it
+                            // shows: with big letters it is only its +.
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                "‘돈 적기’를 누르거나 위 ⋮ > 자동 기록을 켜면 여기에 쌓여요.", action = "돈 적기", onAction = onAdd,
+                                (if (com.bamnat.app.ui.components.bigLetters()) "아래 + 단추" else "아래 ‘돈 적기’") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
                                 kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
@@ -405,9 +407,11 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
     }
 }
 
+// 2.0.0 [RVK-35] (PC-126) On the folded phone '전체' was cut at the right edge of a row that slid: the five wrap now, all seen.
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PeriodChips(view: LedgerView, month: YearMonth, onView: (LedgerView) -> Unit, cycle: com.bamnat.core.money.PayCycle.Range? = null) {
-    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         LedgerPeriod.entries.forEach { p ->
             val label = when (p) {
                 LedgerPeriod.MONTH -> cycle?.label ?: Fmt.monthShort(month)

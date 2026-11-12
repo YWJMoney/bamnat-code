@@ -67,5 +67,5 @@ object LedgerAsk {
         }
     }
 
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }

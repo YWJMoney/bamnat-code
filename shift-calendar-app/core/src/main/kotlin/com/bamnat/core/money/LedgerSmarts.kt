@@ -295,8 +295,8 @@ object LedgerSmarts {
         val rate = own ?: ROUGH_WON[cur] ?: return null
         val won = (amount * rate).roundToLong()
         val charge = (won * fee.coerceIn(0.0, MAX_ABROAD_FEE)).roundToLong()
-        val how = if (own != null) "내 환율 ${"%,.2f".format(own)}원" else "대략 환율"
-        return Abroad(won + charge, charge, "임시 원화 · $currency ${"%,.2f".format(amount)} · $how · 수수료 약 ${won(charge)} 포함. 카드 청구서 금액으로 고쳐 주세요")
+        val how = if (own != null) "내 환율 ${"%,.2f".format(java.util.Locale.ROOT, own)}원" else "대략 환율"
+        return Abroad(won + charge, charge, "임시 원화 · $currency ${"%,.2f".format(java.util.Locale.ROOT, amount)} · $how · 수수료 약 ${won(charge)} 포함. 카드 청구서 금액으로 고쳐 주세요")
     }
 
     /** [LEDX-18] No Korean card charges 5% for using it abroad; more is a slip. */
@@ -317,8 +317,9 @@ object LedgerSmarts {
 
     /** [LEDX-18] The currency and amount of a line written down at a rough rate ("임시 원화 · USD 12.30 · …"), or null. */
     fun abroadOf(e: MoneyEntry): Pair<String, Double>? {
-        val m = Regex("임시 원화 · ([A-Z]{3}) ([\\d,]+(?:\\.\\d+)?)").find(e.note) ?: return null
-        return m.groupValues[1] to (m.groupValues[2].replace(",", "").toDoubleOrNull() ?: return null)
+        // 2.0.0 [RVK-33] (검토 MONEY-55) A note written on a phone in another language says '12,30' or '1.234,56'.
+        val m = Regex("임시 원화 · ([A-Z]{3}) (\\d[\\d.,]*\\d|\\d)").find(e.note) ?: return null
+        return m.groupValues[1] to (com.bamnat.core.text.Numbers.readWritten(m.groupValues[2]) ?: return null)
     }
 
     /**
@@ -326,7 +327,7 @@ object LedgerSmarts {
      * "USD 12.30 · 청구서 금액", so it no longer asks to be fixed.
      */
     fun settledAbroad(note: String): String =
-        note.replace(Regex("임시 원화 · ([A-Z]{3} [\\d,]+(?:\\.\\d+)?) · [^·]*· 수수료 약 [\\d,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요"), "$1 · 청구서 금액")
+        note.replace(Regex("임시 원화 · ([A-Z]{3} \\d[\\d.,]*\\d?) · [^·]*· 수수료 약 [\\d.,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요"), "$1 · 청구서 금액")
 
     /**
      * [LEDX-08] 원화 결제(DCC): a payment abroad charged in won costs 3~8% more than in the local money. Said when a text
@@ -447,5 +448,5 @@ object LedgerSmarts {
             .map { it.id }.toSet()
     }
 
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }

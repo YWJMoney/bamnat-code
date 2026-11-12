@@ -15,7 +15,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -556,7 +555,7 @@ private fun MeterRow(label: String, value: String, fraction: Float, color: Color
 }
 
 /** Tabs, chips, the search field and a person picked from the breakdown, over the list. */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun Controls(
     show: Show, onShow: (Show) -> Unit, owedCount: Int, doneCount: Int,
@@ -576,7 +575,8 @@ private fun Controls(
             )
         }
         if (show == Show.OWED && owedCount > 0) {
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 2.0.0 [RVK-35] (PC-126과 같은 구조) The filters wrap instead of sliding off the folded phone's edge.
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // A chip with nothing behind it is left out, unless it is the one picked.
                 OwedFilter.entries.filter { it == OwedFilter.ALL || it == filter || (counts[it] ?: 0) > 0 }.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { onFilter(f) },

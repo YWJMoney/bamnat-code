@@ -930,7 +930,8 @@ fun MoneyScreen(
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
             // and the title gives its room to the month: the 가계부 tab below already says where this is.
-            val roomy = LocalDensity.current.fontScale < 1.3f
+            // 2.0.0 [RVK-35] (PC-126) And on the folded phone (under 400dp): with ‹ 달 ›, 찾기, ⋮ and 나, '장부' was squeezed to small letters.
+            val roomy = LocalDensity.current.fontScale < 1.3f && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= ROOMY_HEAD_DP
             Row(Modifier.padding(top = 12.dp).then(com.bamnat.app.ui.theme.PhotoGround.head()).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
                     FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
@@ -957,9 +958,10 @@ fun MoneyScreen(
                         if (settings.hideAmounts) "금액 보이기" else "금액 가리기")
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
+                // 2.0.0 [RVK-35] (PC-126) 찾기 stood in the menu's Box, drawn on the same spot as ⋮, so '위 ⋮ › 자동 기록' had no ⋮ to see.
+                com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
                 Box {
-                    com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
-                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "가계부 탭 메뉴") }
+                    IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "${com.bamnat.core.work.moneyTab(style)} 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
@@ -1326,3 +1328,6 @@ internal fun MoneyEditSheet(
         onDismiss = onDismiss,
     )
 }
+
+/** 2.0.0 [RVK-35] Below this width the 가계부 head keeps ‹ 달 ›, 찾기, ⋮ and 나; its name and the eye (in ⋮ too) wait. */
+private const val ROOMY_HEAD_DP = 400

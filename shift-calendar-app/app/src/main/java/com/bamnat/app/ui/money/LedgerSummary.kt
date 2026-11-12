@@ -715,7 +715,7 @@ fun AccountEditor(
     var remind by rememberSaveable { mutableStateOf(initial?.remind ?: true) }
     // 1.38 [LEDH-25] 대출: 남은 원금은 양수로 받아 음수 잔액으로 둬요. [LEDH-27] 카드 실적 구간·뺄 분류.
     var owedText by rememberSaveable { mutableStateOf(amountDigits(if (initial?.isLoan == true) -initial.opening else 0)) }
-    var rateText by rememberSaveable { mutableStateOf(initial?.rate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()) }
+    var rateText by rememberSaveable { mutableStateOf(initial?.rate?.takeIf { it > 0 }?.let { com.bamnat.core.text.Numbers.plain(it, 2) }.orEmpty()) }
     var monthlyText by rememberSaveable { mutableStateOf(amountDigits(initial?.monthlyPay ?: 0)) }
     var tiersText by rememberSaveable { mutableStateOf(initial?.perfTiers.orEmpty().joinToString(", ") { if (it % 10_000 == 0L) "${it / 10_000}만" else "$it" }) }
     var skipText by rememberSaveable { mutableStateOf(initial?.perfSkip.orEmpty().joinToString(",")) }
@@ -755,7 +755,7 @@ fun AccountEditor(
                 if (loan) {
                     // 1.38 PC 1차: 자판 '다음'으로 원금 → 이자율 → 매달 갚는 돈, 고른 칸은 자판 위로 올라와요.
                     AmountField(if (initial == null) "남은 원금" else "남은 원금 (적기 시작할 때)", owedText, { owedText = it }, Modifier.aboveKeyboard())
-                    OutlinedTextField(value = rateText, onValueChange = { v -> rateText = v.filter { it.isDigit() || it == '.' }.take(5) }, singleLine = true,
+                    OutlinedTextField(value = rateText, onValueChange = { v -> rateText = com.bamnat.core.text.Numbers.cleanRate(v) }, singleLine = true,
                         label = { Text("연 이자율 % (모르면 비워 둬요)") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next), modifier = Modifier.fillMaxWidth().aboveKeyboard())
                     AmountField("매달 갚는 돈", monthlyText, { monthlyText = it }, Modifier.aboveKeyboard(), imeAction = ImeAction.Done)

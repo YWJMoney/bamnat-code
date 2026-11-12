@@ -265,7 +265,7 @@ object MoneyAlerts {
     ): List<Alert> =
         all(jobs, costs, entries, at.toLocalDate(), receivables, accounts, styles).filter { it.at == at }.sortedBy { it.key }
 
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }
 
 /** [WORK-05] Amounts written in a day's memo (+50,000, 수입 5만원, 지출 3만 5천원) offered as ledger lines. */
