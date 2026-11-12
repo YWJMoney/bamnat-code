@@ -313,7 +313,9 @@ fun StatTile(
                     caption,
                     style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                     // [VIS-05] Three lines at a big font: a half-width tile on a 320dp phone cut a caption's last line.
-                    maxLines = if (big) 3 else 1,
+                    // 2.0.0 [RVP-11] (조건 4·12) The caption no longer shrinks to 9sp to stay on one line ('22~06시에 걸침 · 대근 2번
+                    // 포함' on a 393dp phone): from 10sp down it takes a second line.
+                    maxLines = if (big) 3 else 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = if (big) 11.sp else 10.sp, maxFontSize = 11.sp),
                 )
             }

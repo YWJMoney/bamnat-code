@@ -200,7 +200,7 @@ class DesignRulesTest {
 
     companion object {
         /** 2.0.0 첫 PR(갈래 P)에서 센 값. */
-        const val PADDING_CEILING = 473
+        const val PADDING_CEILING = 471
         const val TOAST_CEILING = 46
         const val COLOUR_CEILING = 74
 

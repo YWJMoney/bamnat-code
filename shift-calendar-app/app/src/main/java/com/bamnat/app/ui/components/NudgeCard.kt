@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
@@ -37,7 +39,8 @@ import com.bamnat.app.ui.theme.color
  * 2.0.0 [RVP-01] (검토 UIX-01·UIX-02, 보고서 5장 '안내 카드는 한 모양', 사용자 11-12 카드 '추천대로 전체 적용') What a tip, a reminder or a
  * warning looks like everywhere: one quiet ground for all of them, the meaning only in the colour of the icon on the left
  * ([tone]: [Tone.Plain] 안내, [Tone.Caution] 주의, [Tone.Good] 끝남; [Tone.Danger] only when it cannot be undone), one line of words
- * (a second line of [detail] at most), one text button that goes where it says and one X. It is 56dp high on one line, so the
+ * (a second line of [detail] at most; the words are never cut, and with big letters the button goes under them), one text button
+ * that goes where it says and one X. It is 56dp high on one line, so the
  * calendar keeps the top of the screen. It never fills its button: the page's one filled button stays the page's own thing
  * to do (보고서 5장 '화면마다 채운 단추 하나').
  *
@@ -66,22 +69,43 @@ fun NudgeCard(
     val ground = MaterialTheme.colorScheme.surfaceContainerLow
     val box = modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }
     val body: @Composable () -> Unit = {
-        Row(
-            Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (kani != null && LocalShowKani.current) Kani(kani, night = isDarkSurface(), size = 36.dp)
-            else Icon(mark, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f).padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        // 총괄 #445 검토 (조건 12): with big letters or on a narrow screen the button and the X left the words a sliver, and a line
+        // like '잠금 화면에 알람 화면이 안 떠요' ended in '…'. The words are never cut now; there, the button goes under them.
+        BoxWithConstraints {
+            val stacked = action != null && (LocalDensity.current.fontScale >= STACK_FONT_SCALE || maxWidth < STACK_WIDTH)
+            val lead: @Composable () -> Unit = {
+                if (kani != null && LocalShowKani.current) Kani(kani, night = isDarkSurface(), size = 36.dp)
+                else Icon(mark, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
             }
-            if (action != null) TextButton(onClick = onAction) { Text(action, maxLines = 1) }
-            if (onClose != null) IconButton(onClick = onClose) {
-                Icon(Icons.Filled.Close, closeLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            val words: @Composable (Modifier) -> Unit = { m ->
+                Column(m.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (stacked) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            val close: @Composable () -> Unit = {
+                if (onClose != null) IconButton(onClick = onClose) {
+                    Icon(Icons.Filled.Close, closeLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (!stacked) Row(
+                Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                lead()
+                Spacer(Modifier.width(10.dp))
+                words(Modifier.weight(1f))
+                if (action != null) TextButton(onClick = onAction) { Text(action, maxLines = 1) }
+                close()
+            } else Column(Modifier.padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp, bottom = 4.dp)) {
+                Row(Modifier.heightIn(min = NudgeHeight), verticalAlignment = Alignment.CenterVertically) {
+                    lead()
+                    Spacer(Modifier.width(10.dp))
+                    words(Modifier.weight(1f))
+                    close()
+                }
+                TextButton(onClick = onAction, modifier = Modifier.align(Alignment.End).padding(end = 8.dp)) { Text(action!!) }
             }
         }
     }
@@ -91,6 +115,10 @@ fun NudgeCard(
 
 /** [RVP-01] The one-line nudge's height (검토 UIX-01 '높이 56dp 띠 하나'). */
 val NudgeHeight = 56.dp
+
+/** From these on, a [NudgeCard]'s button goes under its words (글자 130% and up, or narrower than a folded phone's cover screen). */
+private const val STACK_FONT_SCALE = 1.3f
+private val STACK_WIDTH = 320.dp
 
 /** [RVP-13] (검토 UIX-15) The tone that matches the old warning colours, for screens moving to [NudgeCard]. */
 fun toneOf(warning: Boolean, danger: Boolean = false): Tone = when {

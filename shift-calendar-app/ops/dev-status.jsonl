@@ -92,7 +92,7 @@
 {"track": "RVG-12", "title": "가게 설정 찾기가 가게 말로", "status": "check", "size": "fix", "route": "app", "check": "가게 설정 찾기 '영업시간'·'정기휴무' → '영업일·정기휴무'·'영업시간', '급여 대장' → 매출·영업 › 급여 대장이 열림"}
 {"track": "RVG-13", "title": "위젯 이름·글이 유형에 맞게", "status": "check", "size": "fix", "route": "app", "check": "위젯 고르기 이름 확인, 가게 '다음 영업', 투자 '7일 안에 일정이 없어요', 조 없는 달력의 오늘 모든 조 '교대 근무표에서 써요'"}
 {"track": "RVG-14", "title": "어두운 모드·글자 크기가 바뀌어도 열린 입력 창 그대로", "status": "check", "size": "fix", "route": "app", "check": "가계부 돈 적기 창에 금액 적는 중 빠른 설정에서 어두운 모드 켜기 → 창과 적던 금액 그대로, 상태줄 색만 바뀜"}
-{"track": "RVP-01", "title": "안내·주의 카드 한 모양(안내 띠)", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR. 디자인 시험 쪽에서 안내 띠 56dp 한 줄, 아이콘 색으로만 뜻, 글자 단추 하나와 X"}
+{"track": "RVP-01", "title": "안내·주의 카드 한 모양(안내 띠)", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR. 디자인 시험 쪽에서 안내 띠 56dp 한 줄, 아이콘 색으로만 뜻, 글자 단추 하나와 X. 글이 '…'로 잘리지 않고, 글자 130% 이상이나 좁은 폭(320dp 밑)에서는 단추가 글 아래 줄로(사진 시험 2708·2709·2710)"}
 {"track": "RVP-02", "title": "고르지 않은 탭은 회색", "status": "check", "size": "polish", "route": "app", "check": "마을·메모·급여·투자 위 탭 줄: 고른 탭만 파랑, 나머지 회색"}
 {"track": "RVP-03", "title": "인터넷 없음 한 줄과 세 문구", "status": "check", "size": "polish", "route": "app", "check": "부품만: 비행기 모드에서 화면별 문구 확인은 다음 PR"}
 {"track": "RVP-04", "title": "불러오는 동안 뼈대 줄", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR"}

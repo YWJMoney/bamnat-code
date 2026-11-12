@@ -147,6 +147,41 @@ class DesignScreenshotTest : ScreenshotBase() {
         settle()
     }
 
+    /**
+     * 2.0.0 [RVP-01] (총괄 #445 검토, 조건 12) The nudge card at the folded phone's width with the letters at 200%: a long line, its
+     * button and its X. The words are never cut ('…'); with big letters the button goes under them. Light and dark.
+     */
+    @Composable private fun Nudges() {
+        com.bamnat.app.ui.components.NudgeCard("잠금 화면에 알람 화면이 안 떠요. 알람이 울려도 모를 수 있어요", tone = Tone.Caution,
+            action = "켜러 가기", onClose = {})
+        com.bamnat.app.ui.components.NudgeCard("이번 달 근무표가 아직 비어 있어요", detail = "근무표 사진을 찍으면 한 번에 채워요",
+            action = "사진으로 채우기", onClose = {})
+        com.bamnat.app.ui.components.NudgeCard("백업했어요", tone = Tone.Good, onClose = {})
+    }
+
+    @Test fun nudgeCardsBigTextFolded() = shoot("2708_design_nudge_200", FOLDED, 2f) {
+        content { Page { Nudges() } }
+        settle()
+        check(appears("켜러 가기", exact = true)) { "the button went" }
+        val m = app.resources.displayMetrics
+        val cuts = LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels)
+        check(cuts.isEmpty()) { "words cut at 200%: $cuts" }
+    }
+
+    @Test fun nudgeCardsBigTextFoldedDark() = shoot("2709_design_nudge_200_dark", FOLDED, 2f) {
+        content { Page(dark = true) { Nudges() } }
+        settle()
+        val m = app.resources.displayMetrics
+        check(LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels).isEmpty()) { "words cut at 200% (dark)" }
+    }
+
+    @Test fun nudgeCardsFolded() = shoot("2710_design_nudge_100", FOLDED) {
+        content { Page { Nudges() } }
+        settle()
+        val m = app.resources.displayMetrics
+        check(LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels).isEmpty()) { "words cut at 100%" }
+    }
+
     @Test fun kaniSizesNight() = shoot("2707_design_kani_sizes_night", FOLDED) {
         content {
             com.bamnat.app.ui.theme.BamnatTheme(themeMode = ThemeMode.DARK, night = true) {

@@ -470,7 +470,8 @@ internal fun proNote(live: Boolean): String =
 @Composable
 internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
     val names = androidx.compose.runtime.remember { com.bamnat.app.ui.settings.colorNames(PersonalCalendar.COLORS) }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+    FlowRow {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
             Box(
