@@ -394,7 +394,7 @@ test("[ADMX-05] n goes to the next waiting question", () => {
 test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, and the screens come from src/admin/views", async () => {
   const css = await adminFile("/admin/app.css").text();
   assert.ok(!css.includes("@media (max-width:599.98px){.tiles{display:none}}"));
-  assert.match(css, /\.tiles\.core\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.tiles\.core\{--cols:2;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(9rem,/, "휴대폰은 숫자 두 칸, 글자가 커지면 한 칸으로");
   const app = await adminFile("/admin/app.js").text();
   for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
 });

@@ -78,13 +78,15 @@
 // when it expires.
 
 import { SERVER_VERSION } from "./version.js";
+// 2.0.0 [RVD-28] SD-08: 근무 종류 한 규칙표, written by core ShiftRulesExportTest (the company server reads the same file).
+import { SHIFT_RULES } from "./shift-rules.js";
 
 export const LIMITS = {
   // 1.37 [SHR-31][SHR-32] Room for a 테마 (32 KB) and 근무 설정 (24 KB) next to a company setup (24 KB) and the days.
   bodyBytes: 128 * 1024,
   days: 200,
-  types: 24,
-  text: 20,
+  // [RVD-28] SD-08 How many kinds of day, from core ShiftRules (a name and a 근무 글자 too: nameOf, shortOf).
+  types: SHIFT_RULES.types,
   title: 30,
   // 연차, 반차 … up to "0.75일 무급 휴가".
   leave: 12,
@@ -261,6 +263,9 @@ const PLAIN_LEAVE = ["연차", "반차", "반반차", "0.75일 연차", "휴가"
 
 export function plainLeave(label) {
   if (PLAIN_LEAVE.includes(label)) return label;
+  // 2.0.0 [RVD-20] HQ-13 An hour's leave of half a day or more ('무급 반차 4.5시간', 설계 4-4절) keeps its hours, without its kind.
+  const hourly = /반차 (\d{1,2}(?:\.\d)?시간)$/.exec(label);
+  if (hourly) return `반차 ${hourly[1]}`;
   if (label.includes("반반")) return "반반차";
   if (label.includes("반")) return "반차";
   if (label.startsWith("0.75")) return "0.75일 휴가";
@@ -1200,7 +1205,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
       : cap > 0 ? `<span class="leave${taken >= cap ? " full" : ""}">${taken >= cap ? "마감 " : ""}${taken}/${cap}</span>` : taken ? `<span class="leave">${taken}명</span>` : "";
     const chip = my ? `<span class="chip" style="background:${ASK_KINDS[my.k]?.[1] ? "#d14343" : "#3b5bdb"}">${esc(label(my))}</span>` : "";
     const cls = `cell${d === day ? " picked" : ""}${d === today ? " today" : ""}`;
-    cells.push(`<a class="${cls}" href="/a/${key}?d=${d}#pick"><span class="num ${dow === 0 || rules.holidays.includes(d) ? "sun" : dow === 6 ? "sat" : ""}">${n}</span>${chip}${room}</a>`);
+    cells.push(`<a class="${cls}" href="/a/${key}?d=${d}#pick"><span class="num ${dow === 0 || rules.holidays.includes(d) ? "sun" : dow === 6 ? "sat" : ""}">${n}<span class="dow"> ${WEEKDAYS[dow]}</span></span>${chip}${room}</a>`);
   }
   const heads = ["일", "월", "화", "수", "목", "금", "토"].map((w, i) => `<div class="wd ${i === 0 ? "sun" : i === 6 ? "sat" : ""}">${w}</div>`).join("");
   const capLine = [rules.weekdayCap ? `평일 하루 ${rules.weekdayCap}명` : "", rules.weekendCap ? `주말·공휴일 하루 ${rules.weekendCap}명` : ""].filter(Boolean).join(", ");
@@ -1231,7 +1236,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   const note = open ? `<form method="post" action="/a/${key}/note" class="note"><input name="note" maxlength="${LIMITS.askNote}" value="${esc(mine.note ?? "")}" placeholder="예: NN 뒤 off 원해요"><button>남기기</button></form>
 <p class="muted small">건강·가족 사정 같은 이유는 적지 말아 주세요. 필요하면 리더에게 직접 말해 주세요.</p>` : mine.note ? `<p>${esc(mine.note)}</p>` : "";
   const body = `<h1>${esc(record.team)} ${mo}월 근무 신청</h1><p class="muted">${esc(me)}님 · ${open ? "신청 받는 중" : "마감"}</p>
-<p class="rule">${esc(rule)}</p>${saidHtml}<div class="grid">${heads}${cells.join("")}</div>${panel}
+<p class="rule">${esc(rule)}</p>${saidHtml}${monthList(widestWord(mine.wishes.map(label)))}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
   return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key), "밤낮", "request"), status);
@@ -2025,13 +2030,24 @@ export function validate(body) {
   if (!Array.isArray(body.types) || body.types.length > LIMITS.types) return { error: "types" };
   const types = [];
   for (const t of body.types) {
-    const name = cleanText(t?.name, LIMITS.text);
-    const short = cleanText(t?.short, 4);
+    // 2.0.0 [RVD-28] SD-08 (core ShiftRules, 근무 종류 한 규칙표): a name of 20 letters, cut to them when longer, never the link's end.
+    const name = nameOf(t?.name);
+    // 2.0.0 [RVD-26] SN-16: 근무 글자 as the app and a 작품 keep it, two letters (👩‍⚕️ is one) up to 16 code units ([shortOf]). [RVD-28] One whose
+    // first letter alone is longer (a long joined emoji) takes the name's first letter, as the app does for an empty one.
+    const short = shortOf(t?.short) ?? (typeof t?.short === "string" && t.short.trim() && name ? shortOf(letters(name)[0]) : null);
     if (!Number.isInteger(t?.id) || !name || !short || !isColor(t?.color)) return { error: "type" };
     if (t.time != null && !isTimeRange(t.time)) return { error: "type_time" };
-    // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it.
-    if (t.icon != null && !(typeof t.icon === "string" && /^[a-z0-9]{1,16}$/.test(t.icon))) return { error: "type_icon" };
-    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null });
+    // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it. 2.0.0 [RVD-22] or an emoji ('e:🌙').
+    // [RVD-28] SD-08 One the rule does not know is dropped and the link made (총괄 11-12 '버리기, 거절 아님'): the badge shows the 글자.
+    // 2.0.0 [RVD-20] HQ-13 하루 두 구간 (설계 4-4절): where the shift stops between its two parts ('15:00-17:00'), inside `time` with 30
+    // minutes or more each side, as the app's WorkTime.gapFits. A receiver before 2.0.0 reads `time` alone, first start to last end.
+    if (t.gap != null && !(t.time != null && t.off !== true && isTimeRange(t.gap) && gapFits(t.time, t.gap))) return { error: "type_gap" };
+    // 2.0.0 [RVD-23] PC-94: the shift's 휴게 (ShiftType.breakMinutes, minutes) and, when known, when it starts, so the receiver does not count it
+    // as work. 0 is '휴게 없음' and differs from no field (an app before 2.0.0, not known). Older receivers ignore both.
+    // 총괄 11-12 (PC-92의 교훈): a rest that is not the app's is dropped, never the link; the receiver then asks for the 휴게 itself.
+    const rest = restOf(t);
+    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: iconOk(t.icon) ? t.icon : null, ...(t.gap != null ? { gap: t.gap } : {}),
+      ...rest });
   }
   const ids = new Set(types.map((t) => t.id));
   if (!Array.isArray(body.days) || body.days.length > LIMITS.days) return { error: "days" };
@@ -2049,6 +2065,16 @@ export function validate(body) {
     if (leave === null && d.leave != null) return { error: "day_leave" };
     if (leave && !shows.includes("leaveKinds")) leave = plainLeave(leave);
     const day = { date: d.date, type: d.type ?? null, second: d.second ?? null, leave };
+    // 2.0.0 [RVD-20] HQ-13 An hour's leave (설계 4-4절): its minutes, and where in the day: from a minute of the day (외출) or off the start,
+    // else off the end. Below half a day "leave" is empty, so a receiver before 2.0.0 sees a worked day, never a day off.
+    if (d.leaveMinutes != null) {
+      if (!(Number.isInteger(d.leaveMinutes) && d.leaveMinutes > 0 && d.leaveMinutes < DAY_MINUTES)) return { error: "day_leave" };
+      if (d.leaveAt != null && !(Number.isInteger(d.leaveAt) && d.leaveAt >= 0 && d.leaveAt < DAY_MINUTES)) return { error: "day_leave" };
+      if (d.leaveStart != null && (typeof d.leaveStart !== "boolean" || (d.leaveStart && d.leaveAt != null))) return { error: "day_leave" };
+      day.leaveMinutes = d.leaveMinutes;
+      if (d.leaveAt != null) day.leaveAt = d.leaveAt;
+      if (d.leaveStart === true) day.leaveStart = true;
+    } else if (d.leaveAt != null || d.leaveStart != null) return { error: "day_leave" };
     // [SHR-04] The sharer's app says whether the day has no work at all as far as the link shows, for 같이 쉬는 날.
     if (typeof d.rest === "boolean") day.rest = d.rest;
     if (shows.includes("memos") && d.memo != null) {
@@ -2079,7 +2105,7 @@ export function validate(body) {
       }
       if (jobs.length) day.jobs = jobs;
     }
-    if (day.type == null && day.second == null && !day.leave && !day.memo && !day.extras && !day.jobs) return { error: "day" };
+    if (day.type == null && day.second == null && !day.leave && !day.leaveMinutes && !day.memo && !day.extras && !day.jobs) return { error: "day" };
     days.push(day);
   }
   days.sort((a, b) => a.date.localeCompare(b.date));
@@ -2212,6 +2238,123 @@ const isColor = (c) => typeof c === "string" && /^#[0-9A-Fa-f]{6}$/.test(c);
 const isMonth = (m) => typeof m === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
 const isDate = (d) => typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d + "T00:00:00Z"));
 const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/.test(t);
+/**
+ * 2.0.0 [RVD-22] PC-92: one emoji as the app's 이모지 아이콘 sends it since 1.34 (ShiftIcon.emojiKey, "e:" + the emoji from the picker,
+ * Emoji 15.0). One picture, a keycap (#️⃣), a flag (🇰🇷, 🏴 with tags) or those joined by ZWJ, with the skin tone and VS16 forms; the
+ * longest the picker gives is 10 code points (🧑🏻‍❤️‍💋‍🧑🏼), so 12 at most. Letters, controls, '<', quotes and spaces are refused. The page and
+ * the calendar feed never print it; it goes back to the receiving app in the JSON only (an app before 1.34 draws no icon for it).
+ */
+/**
+ * 2.0.0 [RVD-26] SN-16 (스튜디오 제작 오류 조사): the letters of [s] as a person counts them, core RecipeText.graphemes cut apart (company-worker
+ * letters.js counts the same way; test/rvd26-short.test.mjs holds the two together): an emoji joined by ZWJ, with its VS16·skin tone·tags or
+ * a keycap is one, and so is a flag's pair.
+ */
+export function letters(s) {
+  const out = [];
+  let lead = "";
+  const cps = [...s];
+  let flagHalf = false;
+  // [RVD-28] SD-08 core ShiftRules.letters: marks with no letter before them go with the next (so the count is graphemes' always).
+  const join = (x) => { if (out.length) out[out.length - 1] += x; else lead += x; };
+  const push = (x) => { out.push(lead + x); lead = ""; };
+  for (let i = 0; i < cps.length; i++) {
+    const cp = cps[i].codePointAt(0);
+    if (cp === 0x200d) {
+      join(cps[i] + (cps[i + 1] ?? ""));
+      i++;
+    } else if ((cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0x1f3fb && cp <= 0x1f3ff) || (cp >= 0xe0020 && cp <= 0xe007f) || /[\p{Mn}\p{Me}]/u.test(cps[i])) {
+      join(cps[i]);
+    } else if (cp >= 0x1f1e6 && cp <= 0x1f1ff) {
+      if (flagHalf) join(cps[i]); else push(cps[i]);
+      flagHalf = !flagHalf;
+      continue;
+    } else push(cps[i]);
+    flagHalf = false;
+  }
+  return out;
+}
+
+/** [RVD-28] SD-08 core ShiftRules.cut: [s] when it has at most [max] letters in [units] code units, else as many of its first letters as fit. */
+export function cutLetters(s, max, units) {
+  const all = letters(s);
+  if (s.length <= units && all.length <= max) return s;
+  let out = "";
+  for (const l of all.slice(0, max)) {
+    if ((out + l).length > units) break;
+    out += l;
+  }
+  return out;
+}
+
+/**
+ * [RVD-26] SN-16 근무 글자: what 4 code units took before goes as it is; longer is its first two letters up to 16 code units (an app before
+ * 2.0.0 cut it at 4, half an emoji). More is cut, not refused: a 근무 글자 never stops the link (총괄 11-12, PC-92의 교훈). Null when empty.
+ * [RVD-28] SD-08 The numbers are core ShiftRules' (shift-rules.js).
+ */
+export function shortOf(v) {
+  const { letters: max, units, before } = SHIFT_RULES.label;
+  const s = cleanText(v, 200);
+  if (!s) return null;
+  if (s.length <= before.link) return s;
+  return cutLetters(s, max, units) || null;
+}
+
+/**
+ * [RVD-28] SD-08 A kind of day's name (core ShiftRules): what 20 code units took before (an app before 2.0.0 cut it so), or 20 letters up to
+ * 80 code units (a 작품's 근무 꾸미기 counts letters); longer is cut to its first letters that fit, never refused. Null when empty.
+ */
+export function nameOf(v) {
+  const { letters: max, units, before } = SHIFT_RULES.name;
+  const s = cleanText(v, 2000);
+  if (!s) return null;
+  if (s.length <= before.link) return s;
+  return cutLetters(s, max, units) || null;
+}
+
+// [RVD-28] SD-08 The pattern and the numbers are core ShiftRules' (shift-rules.js); the company server checks a 근무 그림 with the same.
+const ICON_KEY = new RegExp(SHIFT_RULES.icon.key);
+const EMOJI_ICON = new RegExp(SHIFT_RULES.icon.emoji, "u");
+export const iconOk = (icon) => typeof icon === "string" &&
+  (ICON_KEY.test(icon) || ([...icon].length - SHIFT_RULES.icon.prefix.length <= SHIFT_RULES.icon.emojiCodePoints && EMOJI_ICON.test(icon)));
+const DAY_MINUTES = 24 * 60;
+const minuteOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
+/** 2.0.0 [RVD-20] HQ-13 "HH:mm-HH:mm" as minutes of the day, the end past midnight when it is not after the start (a whole day when equal). */
+function rangeMinutes(range) {
+  const [from, to] = range.split("-").map(minuteOf);
+  return { from, length: (to - from + DAY_MINUTES) % DAY_MINUTES || DAY_MINUTES };
+}
+/** 2.0.0 [RVD-20] HQ-13 The app's WorkTime.gapFits: a gap of 30 minutes or more inside the shift, with a part of 30 minutes or more each side. */
+function gapFits(time, gap) {
+  const shift = rangeMinutes(time);
+  const between = rangeMinutes(gap);
+  const first = (between.from - shift.from + DAY_MINUTES) % DAY_MINUTES;
+  const { min, part } = SHIFT_RULES.gap;
+  return between.length >= min && between.length < DAY_MINUTES && first >= part && first + between.length + part <= shift.length;
+}
+/**
+ * 2.0.0 [RVD-23] PC-94 (갈래 G와 맞춤, 11-12): `rest` whole minutes 0~720, shorter than the shift (with its gap, if any); `restStart` 'HH:MM' when the
+ * app knows it, starting inside the shift with the whole rest inside it. Kept only on a shift with times that is not a day off. What does not fit
+ * is dropped, not refused (총괄 11-12): a phone with a 휴게 longer than the shift still makes its link, and the receiver, seeing no rest, asks for
+ * it. A wrong restStart drops only itself; restStart is dropped with a rest of 0. Returns the fields to keep ({} for none).
+ */
+function restOf(t) {
+  if (t.rest == null || t.time == null || t.off === true) return {};
+  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > SHIFT_RULES.rest.max) return {};
+  const shift = rangeMinutes(t.time);
+  if (t.rest + (t.gap != null ? rangeMinutes(t.gap).length : 0) >= shift.length) return {};
+  if (t.restStart == null || t.rest === 0) return { rest: t.rest };
+  if (typeof t.restStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(t.restStart)) return { rest: t.rest };
+  const from = (minuteOf(t.restStart) - shift.from + DAY_MINUTES) % DAY_MINUTES;
+  return from + t.rest <= shift.length ? { rest: t.rest, restStart: t.restStart } : { rest: t.rest };
+}
+/** 2.0.0 [RVD-20] HQ-13 A shift's times as the page and a calendar app show them: two parts when it stops between them. */
+function parts(t) {
+  if (!t.time) return [null];
+  if (!t.gap) return [t.time];
+  const [start, end] = t.time.split("-");
+  const [gapStart, gapEnd] = t.gap.split("-");
+  return [`${start}-${gapStart}`, `${gapEnd}-${end}`];
+}
 
 // ---- storage ----
 
@@ -2545,21 +2688,24 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
       const s = entry?.second != null ? types.get(entry.second) : null;
       const dow = (first.getUTCDay() + d - 1) % 7;
       cells.push(
-        `<div class="cell${date === today ? " today" : ""}"><span class="num${dow === 0 ? " sun" : dow === 6 ? " sat" : ""}">${d}</span>` +
+        `<div class="cell${date === today ? " today" : ""}"><span class="num${dow === 0 ? " sun" : dow === 6 ? " sat" : ""}">${d}<span class="dow"> ${WEEKDAYS[dow]}</span></span>` +
           (t ? `<span class="chip" style="background:${t.color}">${esc(t.short)}</span>` : "") +
           (s ? `<span class="chip" style="background:${s.color}">${esc(s.short)}</span>` : "") +
-          (entry?.leave ? `<span class="leave">${esc(entry.leave)}</span>` : "") +
+          (entry?.leave ? `<span class="leave">${esc(entry.leave)}</span>`
+            : entry?.leaveMinutes ? `<span class="leave">휴가 ${esc(leaveLength(entry.leaveMinutes))}</span>` : "") +
           (entry?.jobs ?? []).map((j) => `<span class="extra job">${esc(j.name)}${j.time ? ` ${esc(j.time.slice(0, 5))}` : ""}</span>`).join("") +
           (entry?.extras ?? []).map((e) => `<span class="extra">${esc(e.name)}${e.minutes ? ` ${esc(hours(e.minutes))}` : ""}</span>`).join("") +
           (entry?.memo ? `<span class="memo">${esc(entry.memo)}</span>` : "") +
           `</div>`,
       );
     }
-    return `<section><h2>${y}년 ${m}월</h2><div class="grid">${WEEKDAYS.map((w, i) => `<div class="wd${i === 0 ? " sun" : i === 6 ? " sat" : ""}">${w}</div>`).join("")}${cells.join("")}</div></section>`;
+    return `<section class="cal"><h2>${y}년 ${m}월</h2><div class="grid">${WEEKDAYS.map((w, i) => `<div class="wd${i === 0 ? " sun" : i === 6 ? " sat" : ""}">${w}</div>`).join("")}${cells.join("")}</div></section>`;
   });
   const used = new Set(schedule.days.flatMap((d) => [d.type, d.second]).filter((x) => x != null));
   const legend = schedule.types.filter((t) => used.has(t.id)).map((t) =>
-    `<li><span class="chip" style="background:${t.color}">${esc(t.short)}</span>${esc(t.name)}${t.time && !t.off ? ` <span class="muted">${esc(t.time.replace("-", "~"))}</span>` : ""}</li>`,
+    // 2.0.0 [RVD-20] HQ-13 The name never breaks; a shift in two parts says both, each part whole ("11:00~15:00 · 17:00~22:00").
+    `<li><span class="chip" style="background:${t.color}">${esc(t.short)}</span><span class="nm">${esc(t.name)}</span>${t.time && !t.off
+      ? `<span class="muted">${parts(t).map((p) => `<span class="nm">${esc(p.replace("-", "~"))}</span>`).join(" · ")}</span>` : ""}</li>`,
   ).join("");
   const until = new Date(Date.parse(expiresAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
   const title = schedule.title ? `${schedule.title}의 근무표` : "근무표";
@@ -2599,8 +2745,8 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
-    `${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. ${until}까지 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
+    `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
   "근무표", kind);
 }
 
@@ -2678,9 +2824,12 @@ export function renderIcs(schedule, id, updatedAt) {
     const memo = day.memo || null;
     for (const [slot, typeId] of [["s", day.type], ["t", day.second]]) {
       const t = typeId == null ? null : types.get(typeId);
-      if (t && !t.off) event(`${day.date}-${slot}`, t.name, day.date, t.time, slot === "s" ? memo : null);
+      // 2.0.0 [RVD-20] HQ-13 A shift in two parts is two events; the first keeps the date's UID, so a calendar app updates it in place.
+      // A second part that starts before the shift's start on the clock starts after midnight (20:00~00:00 · 01:00~05:00).
+      if (t && !t.off) parts(t).forEach((time, i) => event(`${day.date}-${slot}${i ? "2" : ""}`, t.name,
+        i && minuteOf(time) < minuteOf(t.time) ? nextDay(day.date) : day.date, time, slot === "s" && !i ? memo : null));
     }
-    if (day.leave) event(`${day.date}-l`, day.leave, day.date, null, null);
+    if (day.leave || day.leaveMinutes) event(`${day.date}-l`, day.leave || `휴가 ${leaveLength(day.leaveMinutes)}`, day.date, null, null);
     (day.extras ?? []).forEach((e, i) => { if (e.time) event(`${day.date}-x${i}`, e.name, day.date, e.time, null); });
     (day.jobs ?? []).forEach((j, i) => event(`${day.date}-j${i}`, j.name, day.date, j.time, null));
   }
@@ -2718,6 +2867,22 @@ function hours(minutes) {
   return h && m ? `${h}시간 ${m}분` : h ? `${h}시간` : `${m}분`;
 }
 
+/**
+ * 2.0.0 [RVD-20] HQ-13 The month as a list of days once its cells are narrower than what must sit in them on one line: the
+ * widest word of a chip ([widest] letters, '오프', '주간'), at the page's own letter size. One letter switches below 20em (large
+ * text on a folded phone), two below 25em (a folded phone at 100%), and so on, so a chip never stands letter by letter.
+ */
+function monthList(widest) {
+  const em = Math.max(20, Math.ceil(6.1 * Math.min(widest, 8) + 12.5));
+  return `<style>@container (max-width:${em}em){.cal .grid{grid-template-columns:1fr;gap:6px}.cal .wd,.cal .blank{display:none}` +
+    ".cal .cell{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:44px;gap:4px 10px;padding:8px 12px}.cal .num{min-width:3.6em;font-size:1em}" +
+    ".cal .dow{display:inline}.cal .leave,.cal .extra,.cal .memo{text-align:left}}</style>";
+}
+const widestWord = (texts) => Math.max(1, ...texts.flatMap((t) => String(t).split(/\s+/)).map((w) => [...w].length));
+
+/** 2.0.0 [RVD-20] HQ-13 An hour's leave as the app's link words say it ("2시간", "1.5시간"; "30분", "1시간 15분" off the half hours). */
+const leaveLength = (m) => (m > 60 && m % 30 === 0 ? `${m / 60}시간` : hours(m));
+
 function page(title, body, short = "밤낮", og = null) {
   // 1.39 [IOS-05] The name and icon an iPhone uses for a page added to its home screen. [SPREAD-09] og: the messenger preview.
   return `<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -2732,12 +2897,13 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .cell.blank{background:transparent;border:none}.cell.today{border:2px solid var(--today)}
 .num{font-size:12px;color:var(--muted)}.sun{color:var(--sun)}.sat{color:var(--sat)}
 .chip{display:inline-block;min-width:24px;padding:1px 6px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;text-align:center;text-shadow:0 0 2px rgba(0,0,0,.35)}
-.leave{font-size:11px;color:var(--muted)}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
+.leave{font-size:11px;color:var(--muted);text-align:center;word-break:keep-all;overflow-wrap:anywhere}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
+.dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
-.legend li{display:flex;align-items:center;gap:6px}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px}.empty{margin-top:40px}
+.legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
 .buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.buttons .other{opacity:.45;min-height:64px;font-size:18px}.buttons .picked{outline:4px solid var(--today);outline-offset:2px}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
@@ -2746,7 +2912,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .wide{overflow-x:auto;margin:0 -16px;padding:0 16px}.ward{border-collapse:collapse;font-size:12px}.ward th,.ward td{border:1px solid var(--line);padding:2px;text-align:center;min-width:26px}.ward .who{position:sticky;left:0;background:var(--bg);text-align:left;white-space:nowrap;padding:2px 6px;z-index:1}.ward .chip{min-width:20px;padding:0 3px;font-size:11px}
 .sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
-.note{display:flex;gap:8px}.note input{flex:1;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
+.note{display:flex;flex-wrap:wrap;gap:8px}.note input{flex:1 1 10em;min-width:0;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
 .spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}

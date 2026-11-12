@@ -58,6 +58,8 @@ class FirstSetup(
          * screen does not come up for the moment of the save. 1.37 PC 270fc15e: it did, and took the screen the user was on with it.
          */
         quiet: Boolean = false,
+        /** [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has keep their alarms, color and sound by name. */
+        keep: Boolean = false,
     ): SetupDraft = lock.withLock {
         // [RVG-16] A setup filled from a 근무표 link saves the kind of work its summary was told.
         val style = requireNotNull(draft.savedStyle) { "A setup without a kind of work" }
@@ -66,12 +68,12 @@ class FirstSetup(
             drafts.save(marked)
             drafts.flush()
         }
-        val saved = schedule.applySetup(marked, today())
+        val saved = schedule.applySetup(marked, today(), keep = keep)
         keepCompany(company(), marked, used)
         settings.update {
             it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT,
                 longPress = firstHold(it, style),
-                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장 휴무일 근무 지정.
+                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장·휴무일 근무 지정.
                 extraKinds = if (style == WorkStyle.DAY) it.extraKinds.forDayWork() else it.extraKinds)
         }
         drafts.clear()

@@ -50,7 +50,7 @@ object AskScheduler {
     val MOMENTS: Map<Moment, FactKey> = mapOf(
         Moment.AFTER_NIGHT to FactKey.NIGHT_OT,
         Moment.PAYDAY to FactKey.BASE_PAY,
-        Moment.HOURLY_15H to FactKey.HOLIDAY_PAY,
+        // [RVH-39] 검토 WORK-20 15시간을 채운 알바에게 '쉬는 날 일하면 받는 방식'을 묻지 않아요: 시급의 주휴수당과 상관없는 값이에요.
         Moment.PAST_END_TIME to FactKey.OVERTIME_CAP,
     )
 

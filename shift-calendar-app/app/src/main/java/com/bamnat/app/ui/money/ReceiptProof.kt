@@ -79,6 +79,30 @@ object ReceiptFiles {
         file(context, name)?.delete()
     }
 
+    /** 2.0.0 [RVK-11] A photo picked but not saved, changed or taken off stays this long, for 되돌리기 and a sheet still open. */
+    private const val SWEEP_AFTER_MILLIS = 2 * 24 * 60 * 60 * 1000L
+
+    /**
+     * 2.0.0 [RVK-11] (검토 MONEY-05·I06aa-08) Deletes the receipt photos that none of [used] names — every calendar's lines and
+     * the lines kept in 최근 지운 기록 — once they are two days old, so a receipt the user took off or deleted (카드 번호 일부·가게·
+     * 시간) does not stay on the phone and in its backups. How many went.
+     */
+    fun sweep(context: Context, used: Set<String>, now: Long = com.bamnat.core.time.Today.millis()): Int = sweep(dir(context), used, now)
+
+    internal fun sweep(dir: File, used: Set<String>, now: Long): Int {
+        var n = 0
+        for (f in dir.listFiles().orEmpty()) {
+            if (!f.isFile || f.name in used) continue
+            if (now - f.lastModified() < SWEEP_AFTER_MILLIS) continue
+            if (f.delete()) n++
+        }
+        return n
+    }
+
+    /** [RVK-11] The receipt names the lines of one database hold. */
+    fun usedBy(db: androidx.sqlite.db.SupportSQLiteDatabase): Set<String> =
+        db.query("SELECT receipt FROM money_entries WHERE receipt != ''").use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+
     /** A small picture of the receipt for the editor. */
     suspend fun thumbnail(context: Context, name: String, side: Int = 240): ImageBitmap? = withContext(Dispatchers.IO) {
         val f = file(context, name)?.takeIf { it.exists() } ?: return@withContext null

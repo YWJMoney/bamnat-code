@@ -63,9 +63,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -388,11 +385,8 @@ private fun TableArea(
 ) {
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
-                TeamsView.entries.forEachIndexed { i, v ->
-                    SegmentedButton(selected = view == v, onClick = { onView(v) }, shape = SegmentedButtonDefaults.itemShape(i, TeamsView.entries.size)) { Text(v.label) }
-                }
-            }
+            com.bamnat.app.ui.components.ChoiceRow(TeamsView.entries.map { it.label }, selected = view.ordinal, onSelect = { onView(TeamsView.entries[it]) },
+                modifier = Modifier.weight(1f))
         }
         val days = when (view) {
             TeamsView.WEEK -> (0L until 14L).map { today.plusDays(it) }

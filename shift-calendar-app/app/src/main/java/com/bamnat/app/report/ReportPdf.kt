@@ -32,20 +32,23 @@ object ReportPdf {
     /** Writes [doc] as a PDF to [out]; the number of pages. */
     fun write(doc: ReportDoc, out: OutputStream): Int {
         val pdf = PdfDocument()
+        var page: PdfDocument.Page? = null
         try {
-            var page: PdfDocument.Page? = null
             var number = 0
             val pages = draw(doc, object : Pages {
                 override fun begin(width: Int, height: Int): Canvas {
                     page = pdf.startPage(PdfDocument.PageInfo.Builder(width, height, ++number).create())
                     return page!!.canvas
                 }
-                override fun end() { pdf.finishPage(page) }
+                override fun end() { pdf.finishPage(page); page = null }
             })
             pdf.writeTo(out)
             return pages
         } finally {
-            pdf.close()
+            // 2.0.0 [RVP-69] (검토 REST-11) A drawing that failed mid-page leaves the page open, and close() then threw "page not finished",
+            // hiding the real reason; the page is ended first and close() never throws over it.
+            page?.let { p -> runCatching { pdf.finishPage(p) } }
+            runCatching { pdf.close() }
         }
     }
 

@@ -19,9 +19,6 @@ import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -88,16 +85,9 @@ fun MemoSharingDialog(
                             Text(cal.name, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                         }
                         val options = listOf(-1 to "따로") + (0 until groupCount).map { it to if (groupCount == 1) "함께" else "묶음 ${it + 1}" }
-                        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                            options.forEachIndexed { i, (value, label) ->
-                                SegmentedButton(
-                                    selected = pick == value,
-                                    onClick = { picks = picks + (cal.id to value) },
-                                    shape = SegmentedButtonDefaults.itemShape(i, options.size),
-                                    label = { Text(label, maxLines = 1) },
-                                )
-                            }
-                        }
+                        // [RVH-46] Words never cut at a large font.
+                        com.bamnat.app.ui.components.ChoiceRow(options.map { it.second }, selected = options.indexOfFirst { it.first == pick },
+                            onSelect = { picks = picks + (cal.id to options[it].first) })
                     }
                 }
                 Text(

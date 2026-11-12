@@ -37,7 +37,10 @@ object ShareContent {
             val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
             val sleep = if (options.sleepNow && calendar == PersonalCalendar.MAIN) sleepNow(c) else null
             val plan = if (options.sleepPlan && calendar == PersonalCalendar.MAIN) sleepPlan(c, snapshot) else emptyList()
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan)
+            // 2.0.0 [RVH-45] The 1일 기준 an hour's leave is told against, for an older receiver (설계 4-4절).
+            val leaveDay = runCatching { c.calendars.pay(calendar).profile.value?.rules?.leave?.dayMinutes }.getOrNull()
+                ?: com.bamnat.core.model.Leave.DAY_MINUTES
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan, leaveDay)
         }
 
     /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
@@ -98,6 +101,11 @@ object ShareContent {
         val r = com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(name))
         ShareKit.lookText(r)
     }.getOrNull()
+
+    /** 2.0.0 [RVG-29] 검토 SN-14: the look on the phone is a theme too big for a link (it would go without it, saying nothing). */
+    suspend fun lookTooBig(c: AppContainer): Boolean = runCatching {
+        ShareKit.lookTooBig(com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(c.wardrobe.wornTitle() ?: "테마")))
+    }.getOrDefault(false)
 
     /**
      * 1.37 [SHR-32] The calendar's 근무 설정 as a recipe ([ShareKit.KINDS]): 근무 이름·글자·색, the alarms before each kind of shift and,

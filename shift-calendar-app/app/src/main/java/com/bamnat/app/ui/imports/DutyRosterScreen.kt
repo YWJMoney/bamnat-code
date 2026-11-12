@@ -284,7 +284,7 @@ class DutyRosterViewModel(
     private fun keepDraft(u: Ui) {
         if (!u.unsaved) drafts.clear(calendarId)
         else drafts.write(calendarId, com.bamnat.app.data.RosterDraftStore.Draft(u.month, u.rows, u.picked, u.edits, u.answers, u.cursor,
-            u.from, u.named, u.chosen, u.withOutside, java.time.Instant.now(), u.keepMine))
+            u.from, u.named, u.chosen, u.withOutside, com.bamnat.core.time.Today.instant(), u.keepMine))
     }
 
     /** 2.0.0 [RVL-20] 처음부터: the month brought back is thrown away. */
@@ -744,7 +744,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
     val types by vm.types.collectAsStateWithLifecycle()
     val snap by vm.snapshot.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val context = LocalContext.current
     // 2.0.0 [RVL-20] (검토 U07b-15) The paste window and the day being fixed stay open when the phone turns or the fold opens.
     var pasting by rememberSaveable { mutableStateOf(false) }
@@ -784,7 +784,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = {
             if (types.isNotEmpty() && !wide) Keypad(ui, types, snap, vm)
         },
@@ -1042,7 +1042,9 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, leave: Boolea
                         FilterChip(selected = false, onClick = { onAnswer(DutyCell.Shift(t.id)) }, label = { Text(t.name) },
                             leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) })
                     }
-                    if (leave) FilterChip(selected = false, onClick = { onAnswer(DutyCell.Leave()) }, label = { Text("연차") })
+                    // 2.0.0 [RVL-21] 사진 검토: 'V' asked as 연차 first showed a second '연차' here, the same answer twice (조건 4).
+                    // [RVL-40] And only where there is leave.
+                    if (leave && guess?.second != DutyCell.Leave()) FilterChip(selected = false, onClick = { onAnswer(DutyCell.Leave()) }, label = { Text("연차") })
                     FilterChip(selected = false, onClick = onNewKind, label = { Text("새 근무로 만들기") })
                 }
             }

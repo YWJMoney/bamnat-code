@@ -120,5 +120,8 @@ class TradeAlertCorpusTest {
         assertTrue(!w.writtenAlready(p, listOf(t(9 * 60 + 12, date = day.minusDays(1))), zone))
         assertTrue(!w.writtenAlready(p, listOf(t(10 * 60 + 30)), zone))
         assertTrue(!w.writtenAlready(p, listOf(t(null)), zone))
+        // 2.0.0 [RVK-14] (MONEY-62): a trade written from 키움's own earlier notification is another fill at the same price.
+        assertTrue(!w.writtenAlready(p, listOf(t(9 * 60 + 12).copy(tags = listOf("알림:키움"))), zone))
+        assertTrue(w.writtenAlready(p, listOf(t(9 * 60 + 12).copy(tags = listOf("알림:카카오톡"))), zone))
     }
 }

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import com.bamnat.app.ui.theme.color
 import androidx.compose.material3.Badge
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -65,6 +66,19 @@ internal class SettingsFocus(val row: String)
 
 /** [UX-04] The row of the open group to scroll to and light up, if any. */
 internal val LocalSettingsFocus = compositionLocalOf<SettingsFocus?> { null }
+
+/**
+ * 2.0.0 [RVH-41] 검토 T30-76~100 (뿌리 고침 5번): the kind of work of the page on screen. Every row ([SwitchRow], [NavRow], [ChoiceRow],
+ * [LimitRow]) shows its words in that kind's ([said]); the row keeps its shared name as its key, so 설정 찾기 still lands on it.
+ */
+internal val LocalSettingsStyle = compositionLocalOf<com.bamnat.core.work.WorkStyle?> { null }
+
+/** [text] in the words of the page's kind of work ([com.bamnat.core.work.TypeWords.say]); 교대 reads it as written. */
+@Composable
+internal fun said(text: String): String {
+    val style = LocalSettingsStyle.current
+    return remember(style, text) { com.bamnat.core.work.TypeWords.say(style, text) }
+}
 
 /**
  * [UX-04] Marks the row named [row]: when settings was opened for it, the group scrolls it into view
@@ -131,16 +145,17 @@ internal fun SwitchRow(
         ) {
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
+                    Text(said(title), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
                         color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
                     if (pro) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp), locked = proLocked)
                 }
                 subtitle?.let {
                     // 2.0.0 [RVP-08] (검토 U13-10 '스위치마다 2~4줄 설명') A long line is said in full the first time, then as its
-                    // first sentence with ⓘ for the rest.
-                    if (com.bamnat.app.ui.components.firstSentence(it) == it.trim()) {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else com.bamnat.app.ui.components.Explain("switch:$title", it, iconOnly = false)
+                    // first sentence with ⓘ for the rest. [RVH-41] In the kind of work's own words ([said]).
+                    val line = said(it)
+                    if (com.bamnat.app.ui.components.firstSentence(line) == line.trim()) {
+                        Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else com.bamnat.app.ui.components.Explain("switch:$title", line, iconOnly = false)
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -150,27 +165,41 @@ internal fun SwitchRow(
     }
 }
 
-/** A line under a setting that says it will not work as set, with one button that fixes it. */
+/**
+ * A line under a setting that says it will not work as set, with one button that fixes it.
+ * 2.0.0 [RVL-09] 총괄 사진 검토 HQ-35 (글자 200%·어두운 설정에서 줄이 여러 줄이 되면 느낌표가 마지막 줄 옆에 붙었어요): the words are the
+ * common [com.bamnat.app.ui.components.ToneLine] (갈래 J [RVJ-19]): the mark sits on their first line and grows with the letters, and
+ * the meaning is in its colour only, 주의 (a setting that will not work as set is to be fixed, not a danger: 조건 6), the words
+ * quiet so the sixteen settings that can carry a line do not stand in red together.
+ */
 @Composable
 internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?,
     /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small in place of the mark. */
     picture: com.bamnat.app.ui.components.PermissionResult? = null) {
+    val caution = com.bamnat.app.ui.theme.Tone.Caution
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (picture != null) com.bamnat.app.ui.components.PermissionPicture(picture, accent = MaterialTheme.colorScheme.error,
-            ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
-        else Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
+        if (picture != null) {
+            com.bamnat.app.ui.components.PermissionPicture(picture, accent = caution.color(),
+                ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
+            Spacer(Modifier.width(6.dp))
+        }
+        val words: @Composable () -> Unit = {
+            if (picture == null) com.bamnat.app.ui.components.ToneLine(text, tone = caution)
+            else Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         // 2.0.0 [RVL-09] 사진 검토 (글자 200%의 앱 잠금 쉼 줄이 '잠금 설정' 옆에서 한 줄에 몇 글자씩 다섯 줄로 섰어요, 조건 12): the button goes
         // under the words once they would be narrower than [WARNING_MIN_WORDS], in every setting that has this line.
-        if (onFix != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = WARNING_MIN_WORDS,
-            start = { Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) },
-            end = { TextButton(onClick = onFix) { Text(fixLabel) } })
-        else Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        if (onFix != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f),
+            minStart = if (picture == null) WARNING_MIN_WORDS + WARNING_MARK else WARNING_MIN_WORDS, start = words, end = { TextButton(onClick = onFix) { Text(fixLabel) } })
+        else Box(Modifier.weight(1f)) { words() }
     }
 }
 
 /** The narrowest the warning's words are kept beside its button; narrower, the button goes under them. */
 private val WARNING_MIN_WORDS = 168.dp
+
+/** The warning mark and its gap, which go with the words (HQ-35, [com.bamnat.app.ui.components.ToneLine]). */
+private val WARNING_MARK = (16 + 6).dp
 
 /** A row that opens a screen or does one thing. */
 @Composable
@@ -185,8 +214,8 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Text(said(title), style = MaterialTheme.typography.bodyLarge)
+            subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         Spacer(Modifier.width(8.dp))
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
@@ -198,8 +227,8 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
 @Composable
 internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        Text(said(title), style = MaterialTheme.typography.bodyLarge)
+        subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             for ((value, label) in options) {
                 FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(label) })
@@ -230,8 +259,8 @@ internal fun PermissionRow(ok: Boolean, title: String, fixLabel: String, onFix: 
 @Composable
 internal fun LimitRow(title: String, subtitle: String, hours: Int, min: Int = 1, max: Int = 168, onChange: (Int) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
-        Text(title, style = MaterialTheme.typography.bodyLarge)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(said(title), style = MaterialTheme.typography.bodyLarge)
+        Text(said(subtitle), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         MinutesStepper(
             minutes = hours * 60,
             onChange = { m -> onChange((m / 60).coerceIn(min, max)) },

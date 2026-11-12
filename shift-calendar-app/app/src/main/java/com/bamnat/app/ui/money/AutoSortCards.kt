@@ -242,9 +242,9 @@ fun OtherPlacesCard(groups: List<OtherPlaces.Group>, categories: List<String>, o
         Text("가게를 눌러 분류를 고르면 그곳 기록이 모두 옮겨지고 다음부터 그 분류로 적어요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         groups.take(5).forEach { g ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open = if (open == g.place) null else g.place },
-                verticalAlignment = Alignment.CenterVertically) {
-                Text(g.place, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 2.0.0 [RVK-23]·HQ-30 name and amount, the name never cut at large text.
+            NameAndAmount({ Text(g.place, style = MaterialTheme.typography.bodyMedium) },
+                Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open = if (open == g.place) null else g.place }) {
                 Text("${g.entries.size}건 · ${Fmt.won(g.total)}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

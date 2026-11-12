@@ -97,7 +97,7 @@ fun CompanyRulesEditor(
     month: YearMonth,
     onClose: () -> Unit,
     onOpenKinds: () -> Unit,
-    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    /** [PAYX-51] 연장·휴무일 근무 지정 opened at '교육', its 시수 in view. */
     onOpenSchooling: () -> Unit = onOpenKinds,
     /** Opened for one value (설정 찾기 '월급날', the 근무시간 chip): scrolled to it and lit for a moment. */
     focus: PayFocus? = null,
@@ -487,7 +487,7 @@ fun CompanyRulesEditor(
             }
 
             // [EXTRA-04] How each kind is paid lives with its times on one screen; here is what it says.
-            FoldSection(title = "연장 휴무일 근무 지정") {
+            FoldSection(title = "연장·휴무일 근무 지정") {
                 kinds.visible(rules.extra.keys + rules.extraByShift.keys).forEach { k ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
                         ExtraKindMark(k, size = 22.dp, asIs = true)

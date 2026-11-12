@@ -105,7 +105,9 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     /** PC 02d6dabf: the pay screen's 도구, where the report is made (this card sits on 근무·급여 itself). */
     onOpenReport: (() -> Unit)? = null,
     /** 1.39 [PAYX-60] Each month's hours over its 급여 기간, like its pay. */
-    period: com.bamnat.core.pay.PayPeriod? = null) {
+    period: com.bamnat.core.pay.PayPeriod? = null,
+    /** 2.0.0 [RVJ-23] 검토 T05b-07·U05b-11: the screen's one week limit (52, 64 under 탄력제, the user's own under 5인 미만), not a fixed 52. */
+    weekLimit: Int = 52) {
     val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}:${period?.endDay}", snap, month.year, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
@@ -123,7 +125,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     ProLock(Feature.WORK_COMPARE, gate) {
         // PC 02d6dabf: named as the tab it sits on (알바 '출근·시급').
         SectionCard(title = "${y.year}년 ${settingsNow.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
-            yearBars(y, now)?.let { (bars, line) -> com.bamnat.app.ui.components.BarChart(bars, line, height = 96.dp) }
+            yearBars(y, now, weekLimit)?.let { (bars, line) -> com.bamnat.app.ui.components.BarChart(bars, line, height = 96.dp) }
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
@@ -152,15 +154,16 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
 }
 
 /**
- * 1.39 [FLOW-17] 그래프 규칙 한 벌 on 근무 통계: the year's months as one chart (one colour, the busiest month in 주의 only when it
- * goes past 52 hours a week on average, the months so far averaged on one dashed line, a tap says the month). Months still ahead
- * are counted from the roster and say "예상". Null when the year has nothing yet.
+ * 1.39 [FLOW-17] 그래프 규칙 한 벌 on 근무 통계: the year's months as one chart (one colour, a month in 주의 only when it goes past
+ * the week limit on average, the months so far averaged on one dashed line, a tap says the month). Months still ahead are counted
+ * from the roster and say "예상". Null when the year has nothing yet. 2.0.0 [RVJ-23] 검토 T05b-07: [weekLimit] is the screen's
+ * (it was 52 for everyone, so a 탄력제 64시간 workplace's ordinary months stood in 주의).
  */
-internal fun yearBars(y: MonthCompare.Year, now: YearMonth): Pair<List<com.bamnat.app.ui.components.ChartBar>, com.bamnat.app.ui.components.Baseline?>? {
+internal fun yearBars(y: MonthCompare.Year, now: YearMonth, weekLimit: Int = 52): Pair<List<com.bamnat.app.ui.components.ChartBar>, com.bamnat.app.ui.components.Baseline?>? {
     if (y.months.all { it.worked == 0 }) return null
     val bars = y.months.map { s ->
         val weeks = s.month.lengthOfMonth() / 7.0
-        val over = s.worked > 52 * 60 * weeks
+        val over = s.worked > weekLimit * 60 * weeks
         com.bamnat.app.ui.components.ChartBar(
             label = "${s.month.monthValue}월" + if (s.month.isAfter(now)) " 예상" else "",
             value = s.worked / 60.0,

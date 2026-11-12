@@ -122,7 +122,7 @@ private fun WorkPage(
     val words = work.workStyle.words()
     // [SETUP-12] A first setup left for later goes on from here too; nothing shows when none is waiting.
     com.bamnat.app.ui.setup.SetupResumeCard()
-    CalendarPick()
+    CalendarBand(SettingsPage.WORK.titleFor(work.workStyle).removePrefix("내 "))
     SectionCard(title = null) {
         // [WORK-01] Changing the kind of work keeps every record; it only changes what screens show.
         NavRow("일하는 방식", work.workStyle?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onOpenWorkStyle)
@@ -161,14 +161,14 @@ private fun WorkPage(
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("연장 휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+            NavRow("연장·휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
         // [J133-71] 1.33: 회사 찾기 is said only for work that has a company.
         NavRow(SETUP_AGAIN_ROW, when {
             work.workStyle?.usesCompany != false -> "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요"
-            work.workStyle?.usesPayEngine == true -> "근무 시간·요일·알람·급여까지 첫 설정 질문을 다시 받아요"
+            work.workStyle?.usesPayEngine == true -> "근무 시간과 요일, 알람, 급여까지 첫 설정 질문을 다시 받아요"
             else -> "일하는 방식부터 첫 설정 질문을 다시 받아요"
         }) {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SETUP_AGAIN)
@@ -205,7 +205,8 @@ private fun RuleCardsSection(cards: List<com.bamnat.core.guide.RuleCards.Card>, 
     var all by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val shown = if (all) cards else cards.take(RULES_FOLDED)
     SectionCard(title = RULE_CARDS_ROW, modifier = Modifier.focusMark(RULE_CARDS_ROW)) {
-        Text("$noun·알람${if (pays) "·수당" else ""}이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
+        // 2.0.0 [RVH-41] 검토 T30-97: an investor's rules are its alarms'.
+        Text("${if (style == WorkStyle.INVEST) "" else "$noun·"}알람${if (pays) "·수당" else ""}이 언제 어떻게 바뀌는지 한 줄씩 모았어요. 고치기를 누르면 그 규칙이 있는 화면이 열려요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         var group: com.bamnat.core.guide.RuleCards.Group? = null
@@ -266,17 +267,27 @@ private fun WorkTools(style: com.bamnat.core.work.WorkStyle?) {
 /**
  * [CALS-02] Which calendar the rows below set up, once there is more than one: the one on the calendar
  * tab, switched here too, so a calendar made later is set up from here like the first one.
+ *
+ * 2.0.0 [RVO-03] (U11a-01·SET-05, 더할 것 '달력 띠'): the pages that belong to a calendar (내 근무, 알람, 급여) say which one at the top,
+ * "알바 달력의 알람", with the chips to switch. The pages that belong to the phone (알림과 잠, 화면과 글자, 데이터, 개인정보) go by 내 달력
+ * and show no band. [noun] is what the page sets up.
  */
 @Composable
-private fun CalendarPick() {
+private fun CalendarBand(noun: String) {
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val list by c.calendars.calendars.collectAsStateWithLifecycle()
+    val active by c.calendars.active.collectAsStateWithLifecycle()
     if (list.size < 2) return
+    val name = list.firstOrNull { it.id == active }?.name ?: return
     Column(Modifier.padding(horizontal = 4.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("설정할 달력", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(calendarBandLine(name, noun), style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.semantics { heading() })
         com.bamnat.app.ui.calendar.CalendarScopeChips(c)
     }
 }
+
+/** [RVO-03] "알바 달력의 알람": the calendar's own name, then what the page sets up. */
+internal fun calendarBandLine(name: String, noun: String): String = "${name}의 $noun"
 
 /** "주간 07:00–19:00 · 야간 19:00–07:00 외 2개". */
 internal fun shiftsLine(types: List<ShiftType>, folded: Set<Long> = emptySet(), noun: String = "근무"): String {
@@ -302,6 +313,11 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             onConfirm = { confirmOff = false; vm.setAlarmsEnabled(false) },
         )
     }
+    // 2.0.0 [RVO-03] (U11a-01·SET-05·PC-14) The alarms of each kind of day belong to a calendar: which one is said at the top, with
+    // the chips to switch, and those rows read in that calendar's words. The next alarm, sound and ringing are the phone's.
+    val work by vm.workSettings.collectAsStateWithLifecycle()
+    val calStyle = work.workStyle
+    CalendarBand("알람")
     // [EASE-17][EASE-21] 1.38: the next alarm, 이번만 끄기 and whether it will ring, before anything else.
     AlarmTrustCard(settings, onOpenDiagnostics)
     SectionCard(title = null) {
@@ -313,12 +329,12 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
     }
     // 1.38 PC 11차 식당 둘러보기 (영업일을 저장해도 야간 알람이 남음): kinds put away ('안 쓰는 종류') ring nowhere to be set.
     val foldedKinds = com.bamnat.app.ui.shifts.foldedHere()
-    val quiet = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(settings.workStyle)
+    val quiet = com.bamnat.app.ui.shifts.TypeFoldAsk.quietStyle(calStyle)
     SectionCard(title = if (quiet) "시작 전 알람" else "근무별 알람") {
         val ringing = snapshot?.shiftTypes.orEmpty().filter { it.alarmEnabled && !it.isOff && it.start != null && it.id !in foldedKinds }
         if (ringing.isEmpty()) {
-            Note(if (quiet) "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(settings.workStyle)} 없어요." else "근무 전 알람이 켜진 근무가 없어요.")
-            if (quiet) NavRow(if (settings.workStyle == WorkStyle.INVEST) "알람 켜기" else "${settings.workStyle.words().types}에서 알람 켜기", "몇 분 전에 울릴지 정해요", onOpenShiftTypes)
+            Note(if (quiet) "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(calStyle)} 없어요." else "근무 전 알람이 켜진 근무가 없어요.")
+            if (quiet) NavRow(if (calStyle == WorkStyle.INVEST) "알람 켜기" else "${calStyle.words().types}에서 알람 켜기", "몇 분 전에 울릴지 정해요", onOpenShiftTypes)
             else NavRow("근무 종류에서 알람 켜기", "근무마다 몇 분 전에 울릴지 정해요", onOpenShiftTypes)
         }
         for ((i, t) in ringing.withIndex()) {
@@ -341,7 +357,7 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         var moving by rememberSaveable { mutableStateOf(false) }
         if (ringing.isNotEmpty()) HorizontalDivider()
         // 1.38 PC 12.5: the row reads in this kind of work's words (모든 영업 알람 …); 설정 찾기 lands here by the old name.
-        Column(Modifier.focusMark(MOVE_ALL_ALARMS_ROW)) { NavRow(MOVE_ALL_ALARMS_ROW.replace("근무", com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)), if (ringing.isEmpty()) "알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(settings.workStyle)} 생기면 쓸 수 있어요" else "예: 모든 ${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 10분 일찍") {
+        Column(Modifier.focusMark(MOVE_ALL_ALARMS_ROW)) { NavRow(MOVE_ALL_ALARMS_ROW.replace("근무", com.bamnat.app.ui.shifts.alarmNoun(calStyle)), if (ringing.isEmpty()) "알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(calStyle)} 생기면 쓸 수 있어요" else "예: 모든 ${com.bamnat.app.ui.shifts.alarmNoun(calStyle)} 알람을 10분 일찍") {
             if (ringing.isNotEmpty()) moving = true
         } }
         if (moving) MoveAllAlarmsDialog(ringing, onDismiss = { moving = false }) { minutes ->
@@ -356,8 +372,9 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             onPicked = { s -> vm.update { it.copy(defaultAlarmSound = s) } },
             modifier = Modifier.focusMark("알람음"),
         )
-        // [UX-04] Said as a way there, not only as a sentence.
-        NavRow("근무마다 다른 소리", "근무 종류에서 근무마다 알람음을 따로 정해요", onOpenShiftTypes)
+        // [UX-04] Said as a way there, not only as a sentence. 2.0.0 [RVH-41] 검토 T30-85: an investor's alarms have no kinds of day.
+        if (settings.workStyle != WorkStyle.INVEST)
+            NavRow("근무마다 다른 소리", "${settings.workStyle.words().types}에서 따로 정해요", onOpenShiftTypes)
         // 2.0.0 [RVG-06] 검토 ALM-06: 무음 with 진동 off read as an alarm that makes nothing; it always vibrates then, and says so.
         SwitchRow("진동", when {
             settings.defaultAlarmSound == AppSettings.SILENT_SOUND -> "무음 알람음이라 이 스위치와 상관없이 진동으로 울려요"
@@ -388,7 +405,8 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
     }
     // [ALRM-03] 스마트 알람 제안: on by default, all on the phone; the hidden ones can come back.
     SectionCard(title = null) {
-        SwitchRow("알람 제안", "알람을 끈 때와 잠 기록을 보고, 근무별로 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요",
+        SwitchRow("알람 제안", if (settings.workStyle == WorkStyle.INVEST) "알람을 끈 때와 잠 기록을 보고, 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요"
+            else "알람을 끈 때와 잠 기록을 보고, 근무별로 알람을 옮기자고 가끔 물어봐요. 기록은 이 폰에만 있어요",
             settings.alarmSuggest) { v -> vm.update { it.copy(alarmSuggest = v) } }
         val hidden = remember(settings.alarmSuggestMemory) {
             com.bamnat.core.alarm.AlarmSuggest.Memory.decode(settings.alarmSuggestMemory).never.size
@@ -430,17 +448,23 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         ChoiceRow("목표 수면 시간", null, listOf(360, 390, 420, 450, 480, 540).map { it to sleepHours(it) }, settings.sleepTargetMinutes) { m ->
             vm.update { it.copy(sleepTargetMinutes = m) }
         }
-        ChoiceRow("퇴근 후 잠들기까지", "집에 와서 씻는 시간까지예요. 퇴근 뒤 잘 시간을 이만큼 늦춰 잡아요",
+        // 2.0.0 [RVH-41] 검토 T30-76: an investor has no end of work to count from.
+        if (settings.workStyle != WorkStyle.INVEST) ChoiceRow("퇴근 후 잠들기까지", "집에 와서 씻는 시간까지예요. 퇴근 뒤 잘 시간을 이만큼 늦춰 잡아요",
             listOf(0, 30, 60, 90, 120).map { it to if (it == 0) "바로" else if (it < 60) "${it}분" else sleepHours(it) }, settings.commuteMinutes) { m ->
             vm.update { it.copy(commuteMinutes = m) }
         }
         HealthSleepRow(vm, settings.healthSleep)
         // [SLP-16] Where the taps go, and what they say about the user's own sleep.
-        NavRow("수면 기록 보기", "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
+        NavRow("수면 기록 보기", if (settings.workStyle == WorkStyle.INVEST) "평균, 내 기록에서 보이는 것, 기록 고치기·추가" else "근무별 평균, 내 기록에서 보이는 것, 기록 고치기·추가") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.SLEEP)
         }
-        Note("야간 뒤에는 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.")
+        // 2.0.0 [RVH-41] 검토 T30-77: 야간 is a shift worker's; others hear of a late night.
+        Note((if (settings.workStyle == null || settings.workStyle == WorkStyle.SHIFT) "야간 뒤에는" else "늦게 잔 날에도") +
+            " 목표가 짧아도 6시간 이상 이어서 자도록 제안해요. 진단이나 치료가 아닌 일정에 맞춘 참고 정보예요.")
     }
+    // 2.0.0 [RVH-41] 검토 T30-78·80·82·92: the checks of a 근무표 (휴식 점검, 근무시간 경고) work on a calendar of shifts only
+    // (CalendarScreen's restSigns and week marks), so 현장·가게·투자 do not see them; 전공의 is a 교대 hospital's.
+    if (com.bamnat.core.work.CalendarFocus.of(settings.workStyle) != com.bamnat.core.work.CalendarFocus.SHIFTS) return
     // [SLP-01][MKT-07][MKT-11]
     SectionCard(title = "휴식 점검") {
         SwitchRow("휴식 점검", "근무 사이 휴식이 짧거나 야간이 이어지면 달력에 알려 줘요. 병원·회사 기준에 맞출 수 있어요", settings.restCheck) { v ->
@@ -459,7 +483,18 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
             }
         }
     }
-    SectionCard(title = "근무시간 경고") {
+    // 2.0.0 [RVH-41] 검토 T30-80·82: 주 52시간·3개월 평균·전공의 연속 근무는 회사 근무의 한도라 알바에게는 보이지 않아요(이번 주 시간은 달력 위 줄).
+    if (settings.workStyle != WorkStyle.HOURLY) SectionCard(title = "근무시간 경고") {
+        // 2.0.0 [RVJ-23] 검토 U04-07: the law's limit and the user's own warning are two things, said apart. Only a wage calendar has
+        // the law's (근무·급여 [weekLimitFor]); 현장·가게·투자 read the first sentence alone, and each kind its own tab's name (TypeWords:
+        // 알바 '출근·시급', no '52시간').
+        val style = settings.workStyle
+        val law = when {
+            style?.usesPayEngine == false -> ""
+            style == com.bamnat.core.work.WorkStyle.HOURLY -> " 법 한도(근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
+            else -> " 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
+        }
+        Text("건강을 위해 내가 정하는 경고예요.$law", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
@@ -468,10 +503,11 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         LimitRow(STRETCH_ROW, "근무와 추가 근무 사이가 1시간이 안 되면 이어서 세요. 0이면 보지 않아요", settings.stretchLimitHours, min = 0, max = 48) { h ->
             vm.update { it.copy(stretchLimitHours = h) }
         }
-        // 1.32 [WTYP-12] (조사 3장 의료) 미리 정한 값: 일반, 전공의.
+        // 1.32 [WTYP-12] (조사 3장 의료) 미리 정한 값: 일반, 전공의. 2.0.0 [RVH-41] 전공의 to 교대 only.
+        val presets = com.bamnat.core.hours.Stretches.Preset.entries.filter { it.label != "전공의" || settings.workStyle == null || settings.workStyle == WorkStyle.SHIFT }
         Text("미리 정한 값", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            com.bamnat.core.hours.Stretches.Preset.entries.forEach { p ->
+            presets.forEach { p ->
                 com.bamnat.app.ui.components.FilterChip(
                     selected = p.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours),
                     onClick = { vm.update { it.copy(weeklyLimitHours = p.weekly, averageLimitHours = p.average, stretchLimitHours = p.stretch) } },
@@ -479,7 +515,7 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
                 )
             }
         }
-        com.bamnat.core.hours.Stretches.Preset.entries.firstOrNull { it.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours) }?.let {
+        presets.firstOrNull { it.matches(settings.weeklyLimitHours, settings.averageLimitHours, settings.stretchLimitHours) }?.let {
             Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -597,7 +633,9 @@ private fun NoticesPage(
         }
         // 1.37 [LEDH-09] 퇴근 시각 하루 마감 (가계부): 근무 끝 30분 뒤, 쉬는 날은 저녁 9시.
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST && settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS)
-            SwitchRow(DAY_CLOSE_ROW, "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 야간이면 다음 날 아침 퇴근 뒤예요",
+            // 2.0.0 [RVH-41] 검토 T30-76: 야간 is a 교대 word; the same rule said for every kind (자정을 넘겨 끝나면).
+            SwitchRow(DAY_CLOSE_ROW,
+                "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 자정을 넘겨 끝나면 다음 날 아침이에요",
                 settings.dayCloseNotice, warning = warning(settings.dayCloseNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
                 turnOn(com.bamnat.core.formula.NoticeOverlap.BuiltIn.DAY_CLOSE, on) { it.copy(dayCloseNotice = on) }
             }
@@ -615,7 +653,8 @@ private fun NoticesPage(
         }
         // [ALRM-16] 1.31 N3
         // 1.38 PC 12.1: on by default, so 'or on' kept it on a shop's page; work without a 근무표 gets no card at all (AfterAlarmCard).
-        if (planned) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간(52시간까지 남은 시간), 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
+        // 2.0.0 [RVH-41] 검토 T30-82: 52시간 is not a part-timer's (the card says the week's hours alone for them).
+        if (planned) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간${if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "" else "(52시간까지 남은 시간)"}, 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(afterAlarmCard = on) }
         }
@@ -650,7 +689,8 @@ private fun NoticesPage(
     // [COMM-10] The plaza's news once a day; [SRV-10] since 1.23 밤낮 소식 with answers, notices and received schedules.
     SectionCard(title = "소식") {
         // PC cc96826f 사용성 제안: 네 줄 설명 끝에 묻히던 문의 답 이야기는 아래 '문의 답 알림' 줄에만.
-        SwitchRow("밤낮 소식", "받은 근무표·광장·마을 장터에 새 소식이 있으면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
+        // 2.0.0 [RVH-41] 검토 T30-78: what is received is a 근무표 only where there is one.
+        SwitchRow("밤낮 소식", "받은 ${if (planned) "근무표" else "달력"}·광장·마을 장터에 새 소식이 있으면 하루 한 번 묶어서 소리 없이 알려 줘요", settings.plazaNews,
             warning = warning(settings.plazaNews, Notifications.PLAZA_CHANNEL_ID), onFix = fix(Notifications.PLAZA_CHANNEL_ID)) { on ->
             set(on) { it.copy(plazaNews = on) }
         }
@@ -670,7 +710,14 @@ private fun NoticesPage(
         } else Note("문의 답도 이제 바로 알리지 않아요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요")
     }
     SectionCard(title = "자는 동안") {
-        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈·연차 알림은 깨고 30분 뒤에 보내요. 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요. ${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람과 일감 알림은 그대로 와요",
+        // 2.0.0 [RVH-41] 검토 T30-83: 연차 where there is a company; the time of work in the kind's words.
+        val during = when (settings.workStyle) {
+            com.bamnat.core.work.WorkStyle.INVEST -> ""
+            com.bamnat.core.work.WorkStyle.BUSINESS -> " 밤낮·마을 소식은 영업 중에 생겨도 마감하고 30분 뒤에 와요."
+            com.bamnat.core.work.WorkStyle.FIELD -> " 밤낮·마을 소식은 일하는 중에 생겨도 일이 끝나고 30분 뒤에 와요."
+            else -> " 밤낮·마을 소식은 근무 중에 생겨도 근무 끝나고 30분 뒤에 와요."
+        }
+        SwitchRow("자는 동안 미루기", "자는 동안 생긴 돈${if (leave) "·연차" else ""} 알림은 깨고 30분 뒤에 보내요.$during ${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람과 일감 알림은 그대로 와요",
             settings.quietWhileAsleep) { on -> vm.update { it.copy(quietWhileAsleep = on) } }
     }
 }
@@ -678,8 +725,8 @@ private fun NoticesPage(
 @Composable
 private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: SettingsFiles, onOpenPay: () -> Unit, company: (@Composable ColumnScope.() -> Unit)?) {
     val profile by vm.hasPayProfile.collectAsStateWithLifecycle()
-    // [CALS-02] Each calendar has its own pay setup.
-    CalendarPick()
+    // [CALS-02] Each calendar has its own pay setup. [RVO-03] Said at the top, in the calendar's words.
+    CalendarBand(SettingsPage.PAY.titleFor(vm.workSettings.collectAsStateWithLifecycle().value.workStyle))
     // [J133-71] 1.33: the pay page in the words of the calendar's kind of work; 회사 rows only where there is a company.
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     val style = vm.workSettings.collectAsStateWithLifecycle().value.workStyle
@@ -866,7 +913,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
-        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
+        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요(잠금 화면에서는 안 보여요). 홈 화면을 남이 볼 수 있으면 끄세요"
             else "위젯에는 근무만 보여요", settings.widgetMemo) { on ->
             vm.update { it.copy(widgetMemo = on) }
             widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }
@@ -994,8 +1041,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         val cleared by vm.recentlyCleared.collectAsStateWithLifecycle()
         var showCleared by remember { mutableStateOf(false) }
         HorizontalDivider()
-        NavRow("최근 지운 기록", if (cleared.isEmpty()) "근무 형태를 바꾸거나 기록·달력을 지우면 7일 동안 여기서 되돌릴 수 있어요"
-            else "${cleared.size}개 · 7일 안에 되돌릴 수 있어요") { showCleared = true }
+        // 2.0.0 [RVK-10]: 가계부 lines removed stay here 30 days.
+        NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
+            else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
     }
     SectionCard(title = "다른 캘린더 앱과") {
@@ -1128,7 +1176,8 @@ private fun PrivacyPage(
     val pkg = Uri.parse("package:${context.packageName}")
     var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
-        NavRow("개인정보 처리방침", "무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        // 2.0.0 [RVO-08] 처리방침 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
+        NavRow("개인정보 처리방침", "${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
         HorizontalDivider()
         // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
         var forgetting by remember { mutableStateOf(false) }
@@ -1251,7 +1300,8 @@ private fun AboutPage() {
     val context = LocalContext.current
     SectionCard(title = "앱 정보") {
         // [MON-05] What paying for 프로 agrees to.
-        NavRow("이용약관", "프로 구독·체험·해지·환불") {
+        // 2.0.0 [RVO-08] 약관 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
+        NavRow("이용약관", "${com.bamnat.core.ops.PolicyConsent.TERMS_VERSION} · 프로 구독·체험·해지·환불") {
             com.bamnat.app.ui.components.PolicyPage.open(context, com.bamnat.app.ui.pro.TERMS_URL, "이용약관")
         }
         HorizontalDivider()

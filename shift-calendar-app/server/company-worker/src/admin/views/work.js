@@ -3,7 +3,7 @@
 // (String(fn)) like the other screen groups and called with what the app shares (A); it may use no name from outside itself.
 //   스튜디오 요구: 묶음 카드(같은 요구 N명, 예시 글), 장터에 올리기·정식으로 만들기·판에 나옴·하지 않기·합치기·제목 고치기·되돌리기.
 export function workViews(A) {
-  const { S, esc, can, href, seg, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, ago } = A;
+  const { S, esc, can, href, seg, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, ago, danger } = A;
 
   // ---- 스튜디오 요구·기본 도구 후보·손잡이 지도 ----
 
@@ -17,7 +17,8 @@ export function workViews(A) {
       ${n.note ? `<p class="hint">${esc(n.note)}</p>` : ""}
       <ul class="samples">${n.samples.map((x) => `<li><span class="meta">${x.src === "req" ? "요청 판" : "스튜디오"}</span> ${esc(x.text)}</li>`).join("")}</ul>
       ${edit ? `<div class="actions start">
-        ${n.state === "open" ? `<button class="btn small" data-act="need" data-id="${n.id}" data-key="market">장터에 올리기</button>` : ""}
+        ${n.state === "open" ? `<button class="btn small" data-act="need" data-id="${n.id}" data-key="market">장터에 올리기</button>`
+          : n.state === "market" ? `<button class="btn small ghost" data-act="need" data-id="${n.id}" data-key="unmarket">장터에서 내리기</button>` : ""}
         ${live ? `<button class="btn small" data-act="need-note" data-id="${n.id}" data-key="build">정식으로 만들기</button>
           <button class="btn small primary" data-act="need-version" data-id="${n.id}">판에 나옴</button>
           <button class="btn small danger" data-act="need-note" data-id="${n.id}" data-key="decline">하지 않기</button>` : `<button class="btn small" data-act="need" data-id="${n.id}" data-key="reopen">되돌리기</button>`}
@@ -69,8 +70,8 @@ export function workViews(A) {
     return `${tabs}${intro}<ul class="rows needs">${d.items.map((n) => needCard(n, edit, d.items.filter((o) => o.id !== n.id))).join("")}</ul>`;
   }
 
-  async function needAct(id, body, done) {
-    const r = await act(() => api(`/growth/needs/${id}`, "POST", body), done);
+  async function needAct(id, body, done, undo) {
+    const r = await act(() => api(`/growth/needs/${id}`, "POST", body), done, undo);
     load();
     return r;
   }
@@ -87,7 +88,14 @@ export function workViews(A) {
         toast("복사하지 못했어요. 글을 길게 눌러 복사해요");
       }
     },
-    need: ({ id, key }) => needAct(id, { action: key }, key === "market" ? "장터 요청 판에 올렸어요" : "되돌렸어요"),
+    // 2.0.0 [RVA-04] 검토 ADM-05: 장터에 올리기는 모든 사용자 요청 판에 보이니 한 번 묻고, 15초 안에 내릴 수 있어요. 내리는 단추도 있어요.
+    need: ({ id, key }) => {
+      if (key !== "market") return needAct(id, { action: key }, key === "unmarket" ? "장터 요청 판에서 내렸어요" : "되돌렸어요");
+      const n = (S.data.growth?.items ?? []).find((x) => x.id === id);
+      danger({ title: "장터 요청 판에 올릴까요?", text: "모든 유형의 앱 장터 요청 판에 '여러 분이 부탁했어요'로 보여요. 나중에 내릴 수 있어요.",
+        rows: [["무엇을", n?.title ?? ""], ["부탁한 분", n ? `${n.askers}명` : ""]], label: "올리기", tone: "primary",
+        run: () => needAct(id, { action: "market" }, "장터 요청 판에 올렸어요", () => needAct(id, { action: "unmarket" }, "내렸어요")) });
+    },
     "need-note": ({ id, key }) => openDialog(`<form data-form="need-note" data-id="${id}" data-key="${key}"><h2>${key === "decline" ? "하지 않기로 할까요?" : "정식으로 만들까요?"}</h2>
       <p>${key === "decline" ? "부탁한 분 모두에게 이 이유가 답으로 가요." : "개발계획 순번이나 갈래를 적어 두면 누가 보든 이어 가요."}</p>
       <label for="need-n">${key === "decline" ? "이유 (꼭)" : "메모"}</label><textarea id="need-n" name="note" maxlength="300"${key === "decline" ? " required" : ""}></textarea>

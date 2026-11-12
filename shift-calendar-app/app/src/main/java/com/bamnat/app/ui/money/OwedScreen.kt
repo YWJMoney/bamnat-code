@@ -74,9 +74,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -291,7 +288,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     // [NAV-04] 1.25 Z 후속: back closes the search (and its words) first, as the close button does.
     androidx.activity.compose.BackHandler(enabled = searching) { searching = false; query = "" }
     var person by rememberSaveable { mutableStateOf<String?>(null) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(vm) {
         vm.messages.collect { m ->
             val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
@@ -341,7 +338,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] The shared rule (icon alone with big letters too).
             com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
@@ -568,13 +565,8 @@ private fun Controls(
     person: String?, onClearPerson: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            Show.entries.forEachIndexed { i, s ->
-                SegmentedButton(selected = show == s, onClick = { onShow(s) }, shape = SegmentedButtonDefaults.itemShape(i, Show.entries.size)) {
-                    Text("${s.label} ${if (s == Show.OWED) owedCount else doneCount}")
-                }
-            }
-        }
+        com.bamnat.app.ui.components.ChoiceRow(Show.entries.map { s -> "${s.label} ${if (s == Show.OWED) owedCount else doneCount}" }, selected = show.ordinal,
+            onSelect = { onShow(Show.entries[it]) })
         AnimatedVisibility(searching, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
             OutlinedTextField(
                 value = query, onValueChange = { onQuery(it.take(30)) }, singleLine = true,
@@ -1015,9 +1007,14 @@ private fun ReceivableDialog(
     val minAmount = initial?.received ?: 0
     val valid = amount.toAmount() > 0 && amount.toAmount() >= minAmount && (who.isNotBlank() || title.isNotBlank()) &&
         (dueDate == null || !dueDate.isBefore(start))
+    // 2.0.0 [RVK-07] (검토 MONEY-09): a tap outside or 뒤로 asks before what was typed goes, as 일감·돈 적기 do.
+    val unsaved = who != initial?.who.orEmpty() || title != initial?.title.orEmpty() || amount != amountDigits(initial?.amount ?: 0) ||
+        kind != (initial?.kind ?: kindDefault) || income != (initial?.countAsIncome ?: kindDefault.incomeByDefault) ||
+        date != (initial?.date ?: today).toString() || due != initial?.due?.toString() || note != initial?.note.orEmpty()
 
-    AlertDialog(
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = unsaved,
         title = { Text(if (initial == null) "받을 돈 적기" else "받을 돈 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1080,7 +1077,7 @@ private fun ReceivableDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = valid, onClick = {
+            Button(enabled = valid, onClick = {
                 onSave((initial ?: Receivable(who = "", amount = 0, date = start)).copy(
                     who = who.trim(), title = title.trim(), amount = amount.toAmount(), date = start, due = dueDate,
                     kind = kind, note = note.trim(), countAsIncome = income,

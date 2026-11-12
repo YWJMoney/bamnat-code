@@ -208,7 +208,8 @@ internal fun FieldModeSetting(calendar: com.bamnat.app.data.PersonalCalendar) {
     val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
     val mode = calendar.field?.mode ?: FieldMode.PER_JOB
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("일 세는 방법", style = MaterialTheme.typography.titleSmall)
+        // 2.0.0 [RVP-65] (검토 REST-20) One name everywhere (기능 찾기·도움말·레시피): 세는 방식.
+        Text("세는 방식", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FieldMode.entries.forEach { m ->
                 FilterChip(selected = mode == m, onClick = { calendars.updateField(calendar.id) { it.copy(mode = m) } }, label = { Text(m.label) })
