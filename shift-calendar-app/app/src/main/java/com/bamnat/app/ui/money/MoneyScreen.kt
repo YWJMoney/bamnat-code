@@ -656,6 +656,8 @@ fun MoneyScreen(
     var pickingChallenge by rememberSaveable { mutableStateOf(false) }
     var addingFixed by rememberSaveable { mutableStateOf(false) }
     var budgeting by rememberSaveable { mutableStateOf(false) }
+    /** 2.0.0 [RVK-43] (검토 U06a-27) The category 통계's '예산 정하기' opened the editor on. */
+    var budgetFocus by rememberSaveable { mutableStateOf<String?>(null) }
     var addingAccount by rememberSaveable { mutableStateOf<AccountType?>(null) }
     var addingAnyAccount by rememberSaveable { mutableStateOf(false) }
     var editingCategories by rememberSaveable { mutableStateOf(false) }
@@ -1051,7 +1053,8 @@ fun MoneyScreen(
                 MoneyViewModel.Page.REPORT -> Box(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }) {
                     LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
                         onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
-                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
+                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories,
+                        onBudget = { c -> budgetFocus = c; budgeting = true })
                 }
             } }
         }
@@ -1112,7 +1115,8 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false },
+    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false; budgetFocus = null },
+        onDismiss = { budgeting = false; budgetFocus = null }, focus = budgetFocus,
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
         onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } },
@@ -1274,7 +1278,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
  * month's sum first, then what waits for a look, then the month's lines; [right] is the unfolded right side.
  */
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
-    HERO("hero", "이번 달 합계", "수입·지출·남은 돈과 예산", movable = false),
+    HERO("hero", "이번 달 합계", "들어온 돈·나간 돈·남은 돈과 예산", movable = false),
     // 1.37 [LEDH-15] 정리함 하나로: the four below in one card, one count, when it is on.
     INBOX("inbox", "정리함", "새로 들어온 기록·확인할 것·분류 제안·반복 지출을 한곳에", movable = false, right = true),
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),

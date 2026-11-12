@@ -92,6 +92,29 @@ class TodayFlowTest {
     }
 
     @Test
+    fun `deep in a night of work the card offers a 20 minute nap that only vibrates`() {
+        // 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) Two hours into the night until an hour before its end.
+        assertEquals(Action.SHIFT_NAP, flow(at(4, 1)).action)
+        assertEquals(Action.SHIFT_NAP, flow(at(3, 21)).action)
+        assertNull(flow(at(3, 20, 59)).action)
+        assertNull(flow(at(4, 6, 1)).action)
+        // The card changes when the offer comes.
+        assertEquals(at(3, 21), flow(at(3, 19, 30)).changesAt)
+        // A day's work is no place for it, nor a shop's night.
+        assertNull(flow(at(2, 12)).action)
+        assertNull(TodayFlow.of(at(4, 1), resolver(), true, talk = TodayFlow.WorkTalk.SHOP).action)
+        // On: when it vibrates, and 일어났어요 to end it first.
+        val on = TodayFlow.of(at(4, 1), resolver(), true, shiftNapUntil = at(4, 1, 20))
+        assertEquals(State.ON_SHIFT, on.state)
+        assertEquals("쪽잠 중 · 01:20에 진동", on.headline)
+        assertEquals("진동만 울려요 · 옆 사람은 깨지 않아요", on.detail)
+        assertEquals(Action.SHIFT_NAP_END, on.action)
+        assertEquals(at(4, 1, 20), on.changesAt)
+        // Past its time it is over.
+        assertEquals(Action.SHIFT_NAP, TodayFlow.of(at(4, 1, 21), resolver(), true, shiftNapUntil = at(4, 1, 20)).action)
+    }
+
+    @Test
     fun `right after the night it is time to sleep`() {
         val card = flow(at(4, 7, 20))
         assertEquals(State.AFTER_SHIFT, card.state)

@@ -88,6 +88,11 @@ class CalendarKindsTest {
         vm.assign(day, ShiftOverride.Off)
         settle()
         assertEquals(listOf(day), vm.restAlarms.value?.days?.map { it.date })
+        // 2.0.0 [RVIB-11] (PC-75) The ask says the day was work before: '11월 9일(원래 주간 07:00)'.
+        val was = vm.restAlarms.value?.was?.get(day)
+        val type = runBlocking { c.scheduleRepository.shiftTypes.first().first { it.id == dayShiftId() } }
+        assertEquals(type.name, was?.name)
+        assertEquals(type.start, was?.start)
         vm.closeRestAlarms()
     }
 

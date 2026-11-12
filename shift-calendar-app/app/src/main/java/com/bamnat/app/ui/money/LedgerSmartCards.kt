@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.money.BudgetStatus
@@ -79,7 +80,8 @@ internal fun SubscriptionsCard(entries: List<MoneyEntry>, today: LocalDate, look
                 // 1.37 PC 7차: '써요'를 누른 구독은 단추가 사라지고 줄만 남아 헷갈렸어요. 쓰기로 한 것을 말해요.
                 val notes = listOfNotNull("${s.months}달째", s.raised?.let { "${Fmt.won(it)} 올랐어요" }, "계속 써요".takeIf { !s.stale && s.months >= 3 })
                 Text(notes.joinToString(" · "), style = MaterialTheme.typography.bodySmall,
-                    color = if (s.raised != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVK-43] (검토 MONEY-24, 조건 6) A price that went up is worth a look, not a danger: the caution ink.
+                    color = if (s.raised != null) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
                 if (s.stale) Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("아직 쓰나요?", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onStillUsing(s.place) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("써요") }

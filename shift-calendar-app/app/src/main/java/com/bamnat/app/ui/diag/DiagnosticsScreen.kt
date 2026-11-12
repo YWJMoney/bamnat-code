@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -81,6 +82,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.color
 
 /** How an [AlarmCheck] is put right. */
 sealed interface Fix {
@@ -449,9 +451,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
                 Text(
-                    "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 단추로 내용을 복사해 문의에 붙여 주세요. " +
-                        "기록은 이 휴대폰에만 있고 메모와 금액은 담지 않아요.",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -460,10 +462,6 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             week?.takeIf { it.planned > 0 }?.let { w ->
                 item { AlarmWeekCard(w, events.orEmpty()) }
             }
-            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
-            item { ServerCheckCard() }
-            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
-            item { SpeedCheckCard() }
             item {
                 SectionCard(title = "점검") {
                     val bad = checks.count { it.ok == false }
@@ -503,8 +501,20 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                     if (testAt == null) Text("‘화면 끄고 3분 기다리기’를 누른 뒤 전원 버튼으로 화면을 끄고 기다려 보세요. 울리지 않으면 위 점검의 빨간 줄을 고쳐 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVI-92] (검토 I03b-04, 발굴 3-3) What the last test showed, checked by the app: no need to have watched the clock.
+                    if (testAt == null) remember(events) { events?.let { EventBook.lastTest(it, Today.millis()) } }?.let { r ->
+                        val (line, ok) = testResult(r)
+                        Text(line, style = MaterialTheme.typography.bodyMedium,
+                            color = if (ok) MaterialTheme.colorScheme.primary else com.bamnat.app.ui.theme.Tone.Caution.color())
+                    }
                 }
             }
+            // 2.0.0 [RVI-86] (디자인 품질 1) The alarm's own cards first (this week, 점검, 시험 알람); the servers and the plaza's speed,
+            // which a person looking at a late alarm does not look for first, come after them.
+            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
+            item { ServerCheckCard() }
+            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
+            item { SpeedCheckCard() }
             if (BuildConfig.DEBUG) item {
                 // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터). 디버그 빌드에만.
                 val gate by vm.gate.collectAsStateWithLifecycle()
@@ -619,9 +629,21 @@ internal fun applyAlarmFix(container: AppContainer, context: Context, fix: Fix, 
     }
 }
 
+/** 2.0.0 [RVI-92] The last test alarm in words, and whether it went as a shift alarm should. */
+internal fun testResult(r: EventBook.Rang): Pair<String, Boolean> {
+    val at = DiagnosticsViewModel.stamp(r.at)
+    return when {
+        r.missed -> "지난 시험($at)이 울리지 않았어요 · 위 점검의 빨간 줄을 고쳐 주세요" to false
+        r.lateSeconds == null -> "지난 시험($at)은 알람 화면 없이 알림으로만 울렸어요 · 위 점검을 봐 주세요" to false
+        r.late -> "지난 시험($at)이 ${(r.lateSeconds ?: 0L) / 60}분 늦게 울렸어요 · 배터리 설정을 봐 주세요" to false
+        else -> "지난 시험($at)은 제때 울렸어요" to true
+    }
+}
+
 /** [ALRM-01] I21 지난 7일 알람 성적표, with what to do about an alarm that may have been missed. */
 @Composable
 internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagEvent>) {
+    val maxRows = 7
     SectionCard(title = "지난 7일 알람") {
         Text(
             "울릴 알람 ${w.planned}개 중 ${w.rang}개가 울렸어요." +
@@ -629,12 +651,29 @@ internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagE
             style = MaterialTheme.typography.bodyMedium,
             color = if (w.allRang && w.late == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
-        for (t in w.missed.take(3)) {
+        // 2.0.0 [RVI-86] (검토 I03a-06) Each alarm of the week by its day: 제때, N분 늦게 or 기록 없음, in words beside the colour
+        // (디자인 품질 6·14: one red word a missed alarm, the reason once below, not a red paragraph each).
+        val rows = remember(events) { EventBook.weekRows(events, Today.millis()) }
+        for (r in rows.take(maxRows)) Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(DiagnosticsViewModel.stamp(r.at), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(r.said, style = MaterialTheme.typography.bodyMedium, color = when {
+                r.missed -> MaterialTheme.colorScheme.error
+                r.late -> com.bamnat.app.ui.theme.Tone.Caution.color()
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            })
+        }
+        if (rows.size > maxRows) Text("그 전 ${rows.size - maxRows}개는 보고서에 있어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVI-91] (검토 I03c-02) The silent daytime rehearsals of the week, in one line.
+        remember(events) { EventBook.rehearsalLine(EventBook.rehearsals(events, Today.millis())) }?.let { line ->
+            Text(line, style = MaterialTheme.typography.bodySmall,
+                color = if ("제때" in line) MaterialTheme.colorScheme.onSurfaceVariant else com.bamnat.app.ui.theme.Tone.Caution.color())
+        }
+        w.missed.maxOrNull()?.let { t ->
             // [ALRM-01] I22: the daily alive line tells a phone that was off from an app that was stopped.
             val why = if (EventBook.aliveBefore(events, t)) "앱이 멈춰 있었던 것 같아요. 배터리 설정을 봐 주세요."
                 else "휴대폰이 꺼져 있었거나 오래 쓰지 않았던 것 같아요."
-            Text("${DiagnosticsViewModel.stamp(t)} 알람이 울렸는지 기록이 없어요. $why",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text("기록 없는 알람: $why", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (w.missed.isNotEmpty()) OutlinedButton(onClick = {
             InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))

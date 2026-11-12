@@ -188,9 +188,14 @@ class LinkOwnerTest {
             compose.onNodeWithText("근무 이름과 시간, 날짜를 그대로 넣었어요.").assertDoesNotExist()
             // 디자인 품질 조건 9·14 (총괄 #456): a 48dp button, read out by its own words.
             compose.onNodeWithText("가족·동료 근무표였어요").pressable("가족·동료 근무표였어요")
+            // P #492 CI (once, a full run; not seen again in full runs here or on the integration branch): the press came back without the
+            // name. The press's answer is waited for (a busy CI may take a frame more), and a miss says where the draft stood: replaced
+            // (another writer) or untouched (the press never reached the button).
+            fun where() = c.setupDrafts.draft.value.let { d -> if (d == null) "draft gone" else "draft at ${d.step}, link '${d.linkTitle}'" }
+            assertEquals("before the press: ${where()}", "민지", c.setupDrafts.draft.value?.linkTitle)
             compose.onNodeWithText("가족·동료 근무표였어요").assertIsEnabled().performClick()
-            compose.waitForIdle()
-            assertEquals("민지", said)
+            runCatching { compose.waitUntil(5_000) { said != null } }
+            assertEquals("after the press: ${where()}", "민지", said)
             assertNull(c.setupDrafts.draft.value)
         }
     }

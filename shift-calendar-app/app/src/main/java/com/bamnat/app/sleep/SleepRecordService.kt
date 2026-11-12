@@ -230,7 +230,9 @@ class SleepRecordService : Service(), SensorEventListener {
             val s = c.settingsRepository.settings.value
             val resolver = c.scheduleRepository.snapshot.first().resolver
             val now = start
-            val alarm = if (s.alarmsEnabled) com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt else null
+            // 2.0.0 [RVIB-17] (PC-129) Ends by the alarm the phone has set (not one turned off with 이번만 끄기).
+            val alarm = if (!s.alarmsEnabled) null else c.alarmScheduler.upcoming.value?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }
+                ?.takeIf { it.isAfter(now) } ?: com.bamnat.core.alarm.AlarmPlanner.nextAlarm(resolver, now)?.triggerAt
             nextAlarm = alarm
             val plan = com.bamnat.core.sleep.SleepSchedule.of(resolver, now.toLocalDate().minusDays(1), now.toLocalDate().plusDays(1),
                 s.alarmsEnabled, s.sleepTargetMinutes)

@@ -85,10 +85,19 @@ object WatchSync {
         // 알람 뒤 오늘 카드 already hides it, and the watch says 영업·일정 where it said 근무.
         val payEngine = settings.workStyle?.usesPayEngine != false
         val noun = com.bamnat.app.widget.countdownWord(settings.workStyle)
+        // 2.0.0 [RVI-94] (G5-M3) 잠 타일: whether the wrist may write the sleep log, and the sleep now open.
+        val asleepSince = runCatching { c.sleepRepository.recent(days = 2).first().firstOrNull { it.end == null && !it.imported }?.start }.getOrNull()
+        // 2.0.0 [RVI-95] (TASK-35) 오늘 할 일 타일: 내 달력's to-dos as the 할 일 위젯 lists them.
+        val taskRows = runCatching {
+            val memos = c.memoRepository.memosFor(PersonalCalendar.MAIN).first()
+            com.bamnat.core.memo.TaskList.of(memos, today, c.memoRepository.shiftLookup(memos, PersonalCalendar.MAIN).first())
+        }.getOrDefault(emptyList())
         fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent, moneyCategories = moneyCategories, sleepLine = sleepLine,
             weekStart = settings.weekStart.value, weekMinutes = if (payEngine) week.totalMinutes else -1, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
             clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF,
-            hourly = settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY, noun = noun, recentAmounts = recentAmounts)
+            hourly = settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY, noun = noun, recentAmounts = recentAmounts,
+            sleepOn = settings.sleepTips, asleepSince = asleepSince.takeIf { settings.sleepTips },
+            tasks = com.bamnat.core.work.WatchTask.of(taskRows, nowTime), taskHead = com.bamnat.core.memo.TaskList.headline(taskRows, nowTime))
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
         val now = Today.millis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock
@@ -100,6 +109,18 @@ object WatchSync {
             lastAt = now
         }
     }
+
+    /** 2.0.0 [RVI-98] A watch is connected now (asked for a moment at most, kept 10 minutes); false without Play services. */
+    suspend fun paired(context: Context): Boolean {
+        val now = Today.millis()
+        pairedAt?.takeIf { now - it.first < 10 * 60_000L }?.let { return it.second }
+        val on = kotlinx.coroutines.withTimeoutOrNull(800L) {
+            runCatching { await(Wearable.getNodeClient(context).connectedNodes) }.getOrNull().orEmpty().isNotEmpty()
+        } ?: false
+        pairedAt = now to on
+        return on
+    }
+    @Volatile private var pairedAt: Pair<Long, Boolean>? = null
 
     /** A Play services task's result, or null when it failed (no Play services, no Wear OS app). */
     private suspend fun <T> await(task: Task<T>): T? = suspendCancellableCoroutine { cont ->
@@ -134,6 +155,22 @@ class WatchRequestService : WearableListenerService() {
             WatchDays.RING_SNOOZE_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = true)
             // 1.38 [LEDH-14] 워치로 돈 적기.
             WatchDays.MONEY_PATH -> c.appScope.launch { WatchMoneyIn.write(applicationContext, String(event.data)) }
+            // 2.0.0 [RVI-94] 잠들었어요·깼어요 from the wrist, then the days back so the tile says it.
+            WatchDays.SLEEP_PATH -> c.appScope.launch {
+                runCatching { WatchSleepIn.write(applicationContext, String(event.data)) }
+                WatchSync.push(applicationContext, force = true)
+            }
+            // 2.0.0 [RVI-95] A to-do finished on the wrist, as the 할 일 위젯's circle finishes it.
+            WatchDays.TASK_PATH -> c.appScope.launch {
+                com.bamnat.core.work.WatchTask.readDone(String(event.data))?.let { (id, day, done) ->
+                    runCatching {
+                        val memo = c.memoRepository.get(id)?.takeUnless { it.inTrash }
+                        if (memo != null && memo.isDoneOn(day) != done) c.memoRepository.save(memo.withDone(done, day, Today.millis()))
+                    }
+                }
+                runCatching { com.bamnat.app.widget.TaskWidget.redraw(applicationContext) }
+                WatchSync.push(applicationContext, force = true)
+            }
             // [WEAR-03] An 알바's 출근·퇴근 from the watch, written as the home widget's button writes it (I 리뷰 N7 d).
             WatchDays.CLOCK_PATH -> c.appScope.launch {
                 val snap = c.scheduleRepository.snapshot.first()
@@ -152,6 +189,28 @@ class WatchRequestService : WearableListenerService() {
 
     companion object {
         const val SYNC_PATH = "/bamnat/sync"
+    }
+}
+
+/**
+ * 2.0.0 [RVI-94] (검토 I03b-04, G5-M3) 잠들었어요·깼어요 from the wrist, the phone's side: the same sleep log as the phone's button, at
+ * the time pressed, once even when the message came twice. Only while 오늘의 흐름 keeps the log (the tile sends nothing otherwise).
+ */
+object WatchSleepIn {
+    private const val PREFS = "bamnat_watch_sleep"
+    private const val K_SEEN = "seen"
+
+    suspend fun write(context: Context, text: String) {
+        val press = com.bamnat.core.work.WatchSleep.decode(text) ?: return
+        val c = context.appContainer
+        if (!c.settingsRepository.current.sleepTips) return
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val seen = prefs.getString(K_SEEN, "").orEmpty().split(',').filter { it.isNotBlank() }
+        if (press.id in seen) return
+        prefs.edit().putString(K_SEEN, (seen + press.id).takeLast(20).joinToString(",")).apply()
+        if (press.asleep) c.sleepRepository.fellAsleep(press.atMillis) else c.sleepRepository.wokeUp(press.atMillis)
+        c.telemetry.event("watch_sleep", if (press.asleep) "asleep" else "awake")
+        runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(context) }
     }
 }
 

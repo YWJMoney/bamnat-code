@@ -37,6 +37,11 @@ object NoticeLinks {
         SHARE,
         /** [UX-03] The calendar with the sheet that takes a received link open. */
         RECEIVE,
+        /**
+         * 2.0.0 [RVG-34] 내 달력 with the calendar chip's list (달력 이름 ▾) open, from the 알림함's '팀 근무표' line: on a phone the 팀 리더's
+         * link waits there, not beside the chip.
+         */
+        CALENDARS,
         /** [SHFT-06] 듀티표 사진으로 넣기, for the calendar on screen. */
         DUTY_ROSTER,
         /** [SHFT-07] 연간 건강 지표. */

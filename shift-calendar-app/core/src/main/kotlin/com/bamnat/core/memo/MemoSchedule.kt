@@ -1,5 +1,6 @@
 package com.bamnat.core.memo
 
+import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -40,6 +41,31 @@ data class WorkAnchor(val from: From, val minutes: Int) {
         From.WAKE -> "야간 끝나고 일어나면"
     }
 
+    /**
+     * [label] in the words of [style] (디자인 품질 13): 가게 '영업 시작 1시간 전'·'마감 30분 뒤', 투자 '장 시작'·'장 마감', 현장 '일 끝나고
+     * 30분 뒤'. 교대·일근·알바 and a calendar from before kinds of work read [label].
+     */
+    fun label(style: WorkStyle?): String {
+        val w = Words.of(style) ?: return label
+        return when (from) {
+            From.START -> if (minutes == 0) "${w.start}할 때" else if (minutes < 0) "${w.start} ${span(-minutes)} 전" else "${w.start} ${span(minutes)} 뒤"
+            From.END -> if (minutes == 0) w.atEnd else if (minutes > 0) "${w.afterEnd} ${span(minutes)} 뒤" else "${w.beforeEnd} ${span(-minutes)} 전"
+            From.WAKE -> w.wake
+        }
+    }
+
+    /** The words of a kind of work that does not 출근·퇴근 as a shift does; null keeps [label]'s. */
+    private class Words(val start: String, val atEnd: String, val afterEnd: String, val beforeEnd: String, val wake: String) {
+        companion object {
+            fun of(style: WorkStyle?): Words? = when (style) {
+                WorkStyle.BUSINESS -> Words("영업 시작", "마감할 때", "마감", "마감", "늦은 마감 뒤 일어나면")
+                WorkStyle.INVEST -> Words("장 시작", "장 마감할 때", "장 마감", "장 마감", "밤 장 끝나고 일어나면")
+                WorkStyle.FIELD -> Words("출근", "일 끝날 때", "일 끝나고", "일 끝나기", "밤일 끝나고 일어나면")
+                else -> null
+            }
+        }
+    }
+
     /** Whether a day with [hours] (start to end; an end at or before the start is the next morning's) has a time for it. */
     fun fits(hours: Pair<LocalTime, LocalTime>?): Boolean = hours != null && (from != From.WAKE || !hours.second.isAfter(hours.first))
 
@@ -56,6 +82,22 @@ data class WorkAnchor(val from: From, val minutes: Int) {
         /** The choices offered, in order: 출근 2시간·1시간·30분 전, 출근할 때, 퇴근할 때, 퇴근 30분·1시간 뒤. */
         val CHOICES = listOf(WorkAnchor(From.START, -120), WorkAnchor(From.START, -60), WorkAnchor(From.START, -30), WorkAnchor(From.START, 0),
             WorkAnchor(From.END, 0), WorkAnchor(From.END, 30), WorkAnchor(From.END, 60))
+
+        /** The window's line over the choices, in [style]'s words: '근무에 붙여 매번', 가게 '영업 시간에 붙여 매번', 투자 '장 시간에 붙여 매번'. */
+        fun heading(style: WorkStyle?): String = when (style) {
+            WorkStyle.BUSINESS -> "영업 시간에 붙여 매번"
+            WorkStyle.INVEST -> "장 시간에 붙여 매번"
+            WorkStyle.FIELD -> "일정에 붙여 매번"
+            else -> "근무에 붙여 매번"
+        }
+
+        /** The line under a picked one: it follows the work, in [style]'s words. */
+        fun follows(style: WorkStyle?): String = when (style) {
+            WorkStyle.BUSINESS -> "영업 시간이 바뀌면 저절로 맞춰요"
+            WorkStyle.INVEST -> "장 시간이 바뀌면 저절로 맞춰요"
+            WorkStyle.FIELD -> "일정이 바뀌면 저절로 맞춰요"
+            else -> "근무가 바뀌면 저절로 맞춰요"
+        }
 
         fun parse(code: String?): WorkAnchor? {
             if (code.isNullOrEmpty()) return null
@@ -86,7 +128,7 @@ object MemoTime {
         val key: String get() = "w:$phrase"
 
         /** Whether [asked] (the stored answer) answers this one: by its words, or by its time as answers were kept before 2.0.0. */
-        fun answeredBy(asked: String?): Boolean = asked == key || asked == at.toString()
+        fun answeredBy(asked: String?): Boolean = asked?.lines()?.any { it == key || it == at.toString() } == true
     }
 
     private const val MARKS = "오전|오후|아침|낮|저녁|밤|새벽"
@@ -152,6 +194,11 @@ object MemoTime {
         val repeat: MemoRepeat.Kind = MemoRepeat.Kind.NONE,
         /** PC 7차: the time had no 오전·오후 ("8시"), so [at] is a guess the window lets the user flip ([Half]). */
         val unmarked: Boolean = false,
+        /**
+         * 2.0.0 [RVI-76] (검토 U07a-03) The words named the day ("내일", "11/20", "금요일"): a line written in a calendar day's window
+         * without one goes on that day, not on the next such time from now.
+         */
+        val written: Boolean = false,
     )
 
     /** PC 7차: 오전 or 오후, for a time written without one. */
@@ -213,7 +260,7 @@ object MemoTime {
         val skip = if (kind == MemoRepeat.Kind.WEEKDAYS) { d: LocalDate -> generateSequence(d) { it.plusDays(1) }.first(MemoRepeat::isWeekday) } else { d: LocalDate -> d }
         val day = (written?.first ?: at?.toLocalDate())?.let(skip)
         val moved = at?.let { a -> day?.let { a.plusDays(java.time.temporal.ChronoUnit.DAYS.between(a.toLocalDate(), it)) } ?: a }
-        return Line(title, rest, day, moved, read, kind, unmarked)
+        return Line(title, rest, day, moved, read, kind, unmarked, written = written != null)
     }
 
     /** [bareHour]: the hour as written when it had no 오전·오후 and is 1~11 (2.0.0 [RVI-23]), else null. */
@@ -321,6 +368,7 @@ object MemoSchedules {
     /** [memo]'s next schedule strictly after [after]: its own, or for a repeating one the next day it comes back on. */
     fun nextOf(memo: Memo, after: LocalDateTime, shifts: MemoRepeat.ShiftOf? = null): LocalDateTime? {
         val r = memo.reminder ?: return null
+        r.work?.let { return workNext(memo, r, it, after, shifts) }
         if (!repeats(memo)) return r.at.takeIf { it.isAfter(after) && !finished(memo) }
         val time = r.at.toLocalTime().withSecond(0).withNano(0)
         // A day early: a night's 01:00 rings on the calendar day after its night (2.0.0 [RVI-20]).
@@ -329,6 +377,28 @@ object MemoSchedules {
             if (MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day)) {
                 val at = ringsAt(memo, day, time, shifts)
                 if (at.isAfter(after)) return at
+            }
+            day = day.plusDays(1)
+        }
+        return null
+    }
+
+    /**
+     * 2.0.0 [RVIB-04] A memo told by the work: each of its days' work read for the time. Without the schedule read, the time it was
+     * saved for.
+     */
+    private fun workNext(memo: Memo, r: MemoReminder, a: WorkAnchor, after: LocalDateTime, shifts: MemoRepeat.ShiftOf?): LocalDateTime? {
+        if (shifts == null || !repeats(memo)) {
+            if (finished(memo)) return null
+            val day = memo.date ?: r.at.toLocalDate()
+            return (shifts?.let { a.on(day, it.hours(day)) } ?: r.at).takeIf { it.isAfter(after) }
+        }
+        // Two days early: 출근 2시간 전 of a work starting after midnight, or a night's 퇴근 뒤, is told the calendar day after or before.
+        var day = maxOf(after.toLocalDate().minusDays(2), memo.date ?: r.at.toLocalDate())
+        repeat(LOOK_DAYS) {
+            if (MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day)) {
+                val at = a.on(day, shifts.hours(day))
+                if (at != null && at.isAfter(after)) return at
             }
             day = day.plusDays(1)
         }
@@ -399,6 +469,18 @@ object MemoSchedules {
     /** The day [memo] is due for at [minute] by its own schedule, or null. */
     private fun dayAt(memo: Memo, minute: LocalDateTime, shifts: MemoRepeat.ShiftOf?): LocalDate? {
         val r = memo.reminder ?: return null
+        // 2.0.0 [RVIB-04] Told by the work: the day whose work puts it at [minute] (from the day before to two days back, or the next).
+        r.work?.let { a ->
+            if (shifts == null || !repeats(memo)) {
+                val day = memo.date ?: r.at.toLocalDate()
+                val at = shifts?.let { a.on(day, it.hours(day)) } ?: r.at.withSecond(0).withNano(0)
+                return day.takeIf { at == minute }
+            }
+            val start = memo.date ?: r.at.toLocalDate()
+            return (-1..2).map { minute.toLocalDate().minusDays(it.toLong()) }.firstOrNull { day ->
+                !day.isBefore(start) && MemoRepeat.occursOn(memo, day, shifts) && !memo.isDoneOn(day) && a.on(day, shifts.hours(day)) == minute
+            }
+        }
         val own = r.at.withSecond(0).withNano(0)
         if (!repeats(memo)) return own.toLocalDate().takeIf { own == minute }
         if (own.toLocalTime() != minute.toLocalTime()) return null

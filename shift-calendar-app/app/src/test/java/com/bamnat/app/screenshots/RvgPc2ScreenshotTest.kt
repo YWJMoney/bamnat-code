@@ -312,6 +312,38 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         assertTrue(appears("팀 근무표 · ", exact = false))
     }
 
+    /**
+     * [RVG-34] With no 팀 face in a phone's head, the 알림함 (not the month) says once where the link is; its line opens the chip's list.
+     */
+    private fun memberInbox(open: Boolean): Screen.() -> Unit = {
+        memberHead(face = false, words = false).invoke(this)
+        val inbox = com.bamnat.app.inbox.Inbox.get(c.appContext)
+        assertEquals("one line, on this phone once", 1, inbox.rows.value.count { it.kind == com.bamnat.app.ui.calendar.TeamLinkNote.KIND })
+        assertTrue(gone(com.bamnat.app.ui.calendar.TeamLinkNote.LINE, exact = false))
+        tapText("알림 ", prefix = true, scrolls = 0)
+        settle()
+        assertTrue(appears(com.bamnat.app.ui.calendar.TeamLinkNote.LINE, exact = false))
+        if (open) {
+            tapText(com.bamnat.app.ui.calendar.TeamLinkNote.LINE, exact = false, scrolls = 0)
+            settle()
+            assertTrue(appears("어느 달력을 볼까요?", exact = true))
+            assertTrue(appears("팀 근무표 · ", exact = false))
+        }
+    }
+    @Test fun memberInboxFoldLight() = shoot("rvg34_member_inbox_fold_light_100", FOLDED, memberInbox(open = false))
+    @Test fun memberInboxFoldDarkHuge() = shoot("rvg34_member_inbox_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberInbox(open = false))
+    @Test fun memberInboxOpenLight() = shoot("rvg34_member_inbox_open_light_100", UNFOLDED, memberInbox(open = false))
+    @Test fun memberInboxTapFoldDarkHuge() = shoot("rvg34_member_inbox_tap_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, memberInbox(open = true))
+
+    /** [RVG-34] Said once: cleared from the 알림함, the line does not come back on the next visit to the calendar. */
+    @Test fun memberInboxOnce() = shoot("rvg34_member_inbox_once_fold_light_100", FOLDED) {
+        memberHead(face = false, words = false).invoke(this)
+        val inbox = com.bamnat.app.inbox.Inbox.get(c.appContext)
+        inbox.clearAll()
+        com.bamnat.app.ui.calendar.TeamLinkNote.once(c.appContext, teamId)
+        assertEquals(0, inbox.rows.value.count { it.kind == com.bamnat.app.ui.calendar.TeamLinkNote.KIND })
+    }
+
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"

@@ -296,7 +296,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         var ask by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
         OutlinedButton(onClick = {
             if (!next.allowed) { ask = next; return@OutlinedButton }
-            editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(ym.atDay(1)).minimumHourlyWage)
+            // 2.0.0 [RVJ-48] 검토 PC-117: the first 시급 and the 최저임금 warning go by the same year (wageOn).
+            editing = StaffMember(UUID.randomUUID().toString(), "", base = RateTable.on(wageOn(ym)).minimumHourlyWage)
         }, enabled = !isClosed) { Text("직원 더하기") }
         // 1.39 [SPREAD-07] After the first staff member is in: one card, once, to tell another 사장님.
         val hasStaff = staff.isNotEmpty()
@@ -311,7 +312,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                 when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
                     is com.bamnat.app.imports.ManageImport.Got.Read -> {
                         reading = null
-                        importing = Triple(com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1), legalBreaks = place?.legalBreaks ?: true),
+                        importing = Triple(com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, wageOn(ym), legalBreaks = place?.legalBreaks ?: true),
                             got.fromPhoto, got.value.unread)
                     }
                     is com.bamnat.app.imports.ManageImport.Got.Failed -> {
@@ -377,7 +378,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         }
     }
     editing?.let { s ->
-        StaffDialog(s, place, onDismiss = { editing = null }, onSave = { n ->
+        StaffDialog(s, place, wageOn(ym), onDismiss = { editing = null }, onSave = { n ->
             place?.let { p -> scope.launch { store.saveStaff(n, p.id) } }; editing = null
         }, onRemove = { place?.let { scope.launch { store.deleteStaff(s.id) } }; editing = null }, onRehire = { day ->
             // 1.38 다시 입사: a new 재직 기간 as its own line, so the old one's 임금대장·퇴직 정산 stay as they were.
@@ -595,7 +596,7 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, plac
 /** [BOSS-02] 직원 정보: name, 시급·월급·일급, 입사일·업무 (임금대장 칸), 주휴·4대보험 and the usual week. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> Unit, onSave: (StaffMember) -> Unit, onRemove: () -> Unit, onRehire: (LocalDate) -> Unit = {}) {
+private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDate, onDismiss: () -> Unit, onSave: (StaffMember) -> Unit, onRemove: () -> Unit, onRehire: (LocalDate) -> Unit = {}) {
     var s by remember { mutableStateOf(start) }
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     var hirePick by remember { mutableStateOf(false) }
@@ -605,7 +606,10 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     var removeAsk by remember { mutableStateOf(false) }
     // 휴직: (index, true = 시작) being picked; index == leaves.size is a new one.
     var leavePick by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
-    val minimum = RateTable.on(Today.date()).minimumHourlyWage
+    // 2.0.0 [RVJ-48] 검토 PC-117: on 2027-01-02 the 대장 opens on 12월; the 시급 was filled with 2026's 10,320원 and the warning used
+    // 2027's 10,700원. One day for both, said with its year.
+    val minimum = RateTable.on(wageDay).minimumHourlyWage
+    val minYear = "${wageDay.year}년 최저임금"
     // 1.38 PC 8차: 뒤로·닫기 asks before what was typed is thrown away.
     var quitAsk by remember { mutableStateOf(false) }
     val close = { if (s != start) quitAsk = true else onDismiss() }
@@ -621,7 +625,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             }
         }
         AmountField(when (s.form) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }, amountDigits(s.base), { s = s.copy(base = it.toAmount()) })
-        if (s.form == WageForm.HOUR && s.base in 1 until minimum) ToneLine("최저임금 ${Fmt.won(minimum)}보다 적어요")
+        if (s.form == WageForm.HOUR && s.base in 1 until minimum) ToneLine("$minYear ${Fmt.won(minimum)}보다 적어요")
         oddWage(s.form, s.base, minimum)?.let { ToneLine(it) }
         OutlinedTextField(s.job, { s = s.copy(job = it.take(20)) }, label = { Text("하는 일 (예: 홀, 주방)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -694,7 +698,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                     " 더 줘서 평소 한 달 약 ${Fmt.won(sp.onTop)}이에요.")
                 true -> {
                     Hint("월급 = 기본급 ${Fmt.won(sp.base)} + 고정 연장근로수당 ${Fmt.won(sp.fixed)}. 연장근로가 이보다 많은 달은 차액을 더 줘요(근로시간을 셀 수 있으면 법정수당보다 적게 줄 수 없어요).")
-                    if (sp.base / sp.hours < minimum) ToneLine("기본급으로 셈한 시급 ${Fmt.won(sp.base / sp.hours)}이 최저임금 ${Fmt.won(minimum)}보다 적어요")
+                    if (sp.base / sp.hours < minimum) ToneLine("기본급으로 셈한 시급 ${Fmt.won(sp.base / sp.hours)}이 $minYear ${Fmt.won(minimum)}보다 적어요")
                 }
             }
         }
@@ -717,7 +721,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 }
                 val avg = com.bamnat.core.boss.PayrollLedger.ordinaryHourly(place ?: Workplace("", ""), s)
                 Hint("가산수당·주휴수당은 한 주 평균 시급(통상시급) ${Fmt.won(avg)}으로 계산하고, 요일마다 일한 시간은 그 요일 시급으로 줘요(근로기준법 시행령 제6조).")
-                if (s.dayRates.values.any { it in 1 until minimum }) ToneLine("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요")
+                if (s.dayRates.values.any { it in 1 until minimum }) ToneLine("$minYear ${Fmt.won(minimum)}보다 적은 요일이 있어요")
             }
         }
         // 2.0.0 [RVJ-10] 검토 PAYC-08·U04-10: 식대·교통비 같은 고정 수당, each with its 세금 없는 돈(비과세) switch (식대 starts on).
@@ -744,6 +748,16 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 (if (s.birth?.let { java.time.Period.between(it, Today.date()).years }?.let { it >= 60 } == true) "만 60세 이상이라" else "만 18세 미만이라") +
                 " 뺐어요(본인이 원하면 가입). 실제로 들지 않은 보험은 풀어 주세요.")
         else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) ToneLine("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.")
+        // 2.0.0 [RVJ-45] 검토 PC-108: a short week leaves the chips off by law with nothing said; it says why, as the line above does for
+        // 15시간 이상. 고용보험법 시행령 제3조(2023.6.27): 제1항 월 60시간·주 15시간 미만은 적용 제외, 제2항 3개월 이상 계속 근로와
+        // 일용근로자는 적용. 국민연금법 시행령 제2조 제4호(월 60시간 미만 단시간근로자 제외), 국민건강보험법 시행령 제9조 제1호(같은 선, 원문 확인 2026-11-12)
+        // ([InsuranceRules.of]가 같은 선으로 셈해요).
+        val shortWeek = s.form != WageForm.MONTH && s.weekly.values.sumOf { it.paidMinutes(breaks) } in 1 until com.bamnat.core.boss.InsuranceRules.WEEK_MINUTES
+        if (shortWeek && !s.insurance.any) when (s.insurance.tax) {
+            com.bamnat.core.boss.StaffTax.BIZ -> Unit
+            com.bamnat.core.boss.StaffTax.DAILY -> Hint("일용직은 한 주 15시간이 안 돼도 고용보험은 첫날부터 들어요. 실제로 든 보험을 골라 주세요.")
+            else -> Hint("한 주 15시간(월 60시간)이 안 돼 국민연금·건강보험은 가입 대상이 아니에요. 고용보험은 3개월 이상 이어서 일하면 들어요.")
+        }
         // 2.0.0 [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요.
         FilterChip(selected = s.insurance.foreign, onClick = { s = s.copy(insurance = s.insurance.copy(foreign = !s.insurance.foreign)) }, label = { Text("외국인 직원") })
         if (s.insurance.foreign) Hint("건강보험·산재는 같고, 국민연금은 나라에 따라, 고용보험은 체류자격에 따라 달라요. 4대사회보험 정보연계센터에서 확인해 주세요.")
@@ -1110,6 +1124,12 @@ private fun ClockCard(staff: List<StaffMember>, punches: List<com.bamnat.core.bo
  * 1.38 PC 8차 (시급 1,200,010,320원이 경고 없이 대장에 49,479,528,856원으로): a wage far beyond any real one is told at once.
  * 시급·일급은 최저임금의 10배·100배(약 10만·100만 원), 월급은 3천만 원을 넘으면 물어요. 막지는 않아요(입력은 사장님 몫).
  */
+/**
+ * 2.0.0 [RVJ-48] 검토 PC-117: the day whose 최저임금 a staff member's 시급 is set and checked by. A wage typed now is paid from now on,
+ * so a past month on screen (12월 on 2027-01-02) does not pull it back to last year's value; a month ahead goes by that month.
+ */
+internal fun wageOn(month: YearMonth): LocalDate = Today.date().let { t -> if (month.atDay(1).isAfter(t)) month.atDay(1) else t }
+
 internal fun oddWage(form: WageForm, amount: Long, minimum: Long): String? {
     val limit = when (form) { WageForm.HOUR -> minimum * 10; WageForm.DAY -> minimum * 100; WageForm.MONTH -> 30_000_000L }
     if (amount <= limit) return null

@@ -123,7 +123,9 @@ object PlanVsActual {
             for (n in schedule.naps) add(Planned(n.before.date, Kind.NAP, n.from, n.to))
         }.filter { !it.date.isBefore(from) && !it.date.isAfter(to) }.sortedBy { it.from }
 
-        val closed = log.filter { it.end != null && it.end.isAfter(it.start) }.sortedBy { it.start }
+        // 2.0.0 [RVIB-14] (PC-124) 잠들었어요 then 깼어요 at once left a 0분 sleep that read '계획보다 7시간 적게': under
+        // [TodayFlow.MIN_LOGGED_MINUTES] a log is a mistaken tap, not counted here as in the sleep page's averages.
+        val closed = log.filter { it.end != null && (it.minutes ?: 0) >= TodayFlow.MIN_LOGGED_MINUTES }.sortedBy { it.start }
         val used = HashSet<SleepEntry>()
         return planned.map { p ->
             val lo = p.from.minusMinutes(MATCH_SLACK_MINUTES)

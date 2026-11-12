@@ -90,7 +90,9 @@ internal fun TeamsContent(data: WidgetData) {
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)))
             return@Column
         }
-        for (t in teams) {
+        // 2.0.0 [RVIB-03] Up to 8 조 (TeamRoster.MAX_TEAMS) in a column of their own: beside the head and the cover line they made 12 and
+        // Glance drew 10, so 7조·8조 lost '들어올 수 있는 조'.
+        Column(GlanceModifier.fillMaxWidth()) { for (t in teams) {
             Row(GlanceModifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     t.name + if (t.mine) " (내 조)" else "",
@@ -105,15 +107,16 @@ internal fun TeamsContent(data: WidgetData) {
                 Spacer(GlanceModifier.width(3.dp))
                 ShiftSquare(t.tomorrow, 18)
             }
-        }
+        } }
         // [WIDG-05] I 리뷰 N6(b): on a working day, who could take my shift, as 대근 찾기 says.
         data.coverTeams?.let { names ->
-            Spacer(GlanceModifier.height(4.dp))
-            Text(
-                if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
-                maxLines = 1,
-            )
+            Gapped(4.dp) {
+                Text(
+                    if (names.isEmpty()) "오늘 내 근무에 들어올 수 있는 조가 없어요" else "들어올 수 있는 조: ${names.joinToString(", ")}",
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }

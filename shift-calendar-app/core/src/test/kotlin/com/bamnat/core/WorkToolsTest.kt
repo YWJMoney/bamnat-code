@@ -241,4 +241,34 @@ class WorkToolsTest {
         assertEquals(450, StaffShift(LocalTime.of(22, 0), LocalTime.of(6, 0)).paidMinutes(true))
         assertEquals(60 * 8, StaffShift(LocalTime.of(22, 0), LocalTime.of(7, 0)).paidMinutes(true))
     }
+
+    /**
+     * 2.0.0 [RVJ-54]: under 15 hours a week (월 60시간) the shop counts the employer's 고용보험 alone, as the 급여 대장 and the web
+     * calculator do (국민연금법 시행령 제2조 제4호, 국민건강보험법 시행령 제9조 제1호, 고용보험법 시행령 제3조 제2항 제1호).
+     */
+    @Test
+    fun aShortWeekCountsTheEmploymentShareOnly() {
+        val four = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))
+        val s = Staff("b", "민지", 10_000, holidayPay = true, insured = true,
+            shifts = listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY).associateWith { four })
+        val nov = YearMonth.of(2026, 11)
+        val line = LaborCost.month(StaffRoster(listOf(s), legalBreaks = false), nov).lines.single()
+        assertTrue(LaborCost.shortWeek(s, false))
+        // 2026-11: 월 5번, 화·수 4번씩 = 13일 × 4시간, 주휴 없음.
+        assertEquals(520_000, line.base)
+        assertEquals(0, line.holidayPay)
+        assertEquals("고용보험 1.15%만", 5_980, line.insurance)
+        assertEquals(LaborCost.employerEmployment(line.pay, nov.atDay(1)), line.insurance)
+        // Not insured: nothing, short week or not.
+        assertEquals(0, LaborCost.line(s.copy(insured = false), nov, false).insurance)
+        // 15 hours exactly is in all four.
+        val fifteen = s.copy(shifts = s.shifts + (DayOfWeek.THURSDAY to StaffShift(LocalTime.of(9, 0), LocalTime.of(12, 0))))
+        assertFalse(LaborCost.shortWeek(fifteen, false))
+        val full = LaborCost.line(fifteen, nov, false)
+        assertEquals(LaborCost.employerInsurance(full.pay, nov.atDay(1)), full.insurance)
+        // The legal break counts too: four 4-hour shifts are 16 hours on the clock but 14 paid with breaks.
+        val sixteen = s.copy(shifts = s.shifts + (DayOfWeek.THURSDAY to four))
+        assertFalse(LaborCost.shortWeek(sixteen, false))
+        assertTrue(LaborCost.shortWeek(sixteen, true))
+    }
 }
