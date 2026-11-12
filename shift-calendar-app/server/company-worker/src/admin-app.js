@@ -3452,11 +3452,11 @@ function adminApp(L, BUILD, M) {
     const limit = S.recipeLimit ?? 40;
     const shown = found.slice(0, limit);
     // ⋯ 안의 단추: 주된 것(상태마다 하나) 말고 나머지.
-    // 2.0.0 [RVQ-26] 검토 SVC-52: '다시 올라온 것'은 주된 단추가 '괜찮아요', ⋯ 맨 위에 다시 돌려주기·가리기.
+    // 2.0.0 [RVQ-26] 검토 SVC-52: '다시 올라온 것'은 볼 일 둘(괜찮아요·다시 돌려주기)이 줄에 보이고, ⋯ 맨 위에 가리기.
     const again = tab === "again";
     const rowMore = (r) => {
       const items = [
-        again ? `<button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button><button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>` : "",
+        again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>` : "",
         r.state === "pending" && !again ? `<button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : "",
         r.official ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`,
         r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : "",
@@ -3466,7 +3466,7 @@ function adminApp(L, BUILD, M) {
       ].filter(Boolean).join("");
       return moreMenu(r.title, items);
     };
-    const mainAct = (r) => again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button>`
+    const mainAct = (r) => again ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button><button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>`
       : r.state === "pending" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>`
       : r.state === "waiting" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
         : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>`
