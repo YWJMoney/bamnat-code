@@ -8,6 +8,7 @@ import com.bamnat.core.pay.PayPeriod
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.StaffRoster
 import com.bamnat.core.work.StaffShift
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertFalse
@@ -159,6 +160,38 @@ class RvjPc117ScreenshotTest : ScreenshotBase() {
         tapText("25일", exact = true)
         repeat(2) { settle() }
         assertTrue(scrolledTo("10월 급여는 10월 25일에 들어와요. 일이 끝나기 전에 미리 받는 날이에요."))
+    }
+
+    // ── [RVJ-53] PC-130: a team made today opens on this month ──
+    private fun newTeam(nextStarted: Boolean): Screen.() -> Unit = {
+        runBlocking {
+            val c = app.container
+            c.settingsRepository.update { it.copy(workStyle = com.bamnat.core.work.WorkStyle.SHIFT, setupLater = false) }
+            val shifts = c.scheduleRepository.shiftTypes.first().map(com.bamnat.core.team.TeamTimes::of)
+            c.phaseThree.saveTeam(com.bamnat.core.team.Team("t1", "7병동", "민지", shifts, 1L))
+            val members = listOf("민지", "준호").mapIndexed { i, n -> com.bamnat.core.team.TeamMember("m$i", "t1", n, sort = i) }
+            c.phaseThree.saveMembers(members)
+            if (nextStarted) {
+                val next = YearMonth.from(Today.date()).plusMonths(1)
+                val day = next.atDay(1)
+                c.phaseThree.saveBoard("t1", com.bamnat.core.team.TeamBoard(next, members,
+                    mapOf(("m0" to day) to com.bamnat.core.team.TeamCell("m0", day, shifts.first().id))))
+            }
+        }
+        content { com.bamnat.app.ui.team.LeaderTeamScreen("main", onBack = {}) }
+        settle()
+        tapText("열기", exact = true)
+        repeat(2) { settle() }
+    }
+
+    @Test fun aNewTeamOpensOnThisMonth() = shoot("rvj_137_new_team_this_month_folded", FOLDED) {
+        newTeam(nextStarted = false).invoke(this)
+        assertTrue(appears(com.bamnat.app.ui.Fmt.month(YearMonth.from(Today.date())), exact = true))
+    }
+
+    @Test fun aTeamPlanningAheadOpensOnNextMonth() = shoot("rvj_138_team_next_started_folded", FOLDED) {
+        newTeam(nextStarted = true).invoke(this)
+        assertTrue(appears(com.bamnat.app.ui.Fmt.month(YearMonth.from(Today.date()).plusMonths(1)), exact = true))
     }
 
     private companion object {

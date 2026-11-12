@@ -538,3 +538,4 @@
 {"track": "RVJ-50", "title": "가게 카드의 인건비 칸 빨간 바탕 없애기", "status": "check", "size": "polish", "route": "app", "check": "(PC) 팀·가게 관리 › 가게 카드 '닫기 전'과 '5인 이상인지' 줄"}
 {"track": "RVJ-51", "title": "금액 없는 수당을 넣은 뒤 글", "status": "check", "size": "polish", "route": "app", "check": "(PC) 급여 › 내 급여 값 › 수당 추가 › 금액 없이 매달 › 추가 뒤 글"}
 {"track": "RVJ-52", "title": "말일 마감에 월급날 10일은 다음 달 10일로", "status": "check", "size": "polish", "route": "app", "check": "(PC) 회사 규칙 › 정산 기간과 월급날 › 10일 / 25일"}
+{"track": "RVJ-53", "title": "새로 만든 팀 근무표가 다음 달로 열리던 것", "status": "check", "size": "fix", "route": "app", "check": "(PC) 새 폰, 팀 만들기 › 열기 › 이번 달 / 다음 달을 칠한 뒤 다시 열기"}
