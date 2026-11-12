@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 2.0.0 [RVI-90] 워치 예비 알람: a minute after the phone's alarm, on time in the night (the phone app holds the same). -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- 1.39.1 [WEAR-07]: the watch shows no ads and reads no advertising ID; the line only matches the Play 광고 ID 선언 of the
          phone + watch release (1.39.0 had to be sent '권한 없이 출시' because the watch bundle lacked it). -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
@@ -41,6 +43,34 @@
             android:name=".ShiftTileService"
             android:exported="true"
             android:label="@string/tile_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview" />
+        </service>
+
+        <!-- 2.0.0 [RVI-94] 잠들었어요·깼어요 타일. -->
+        <service
+            android:name=".SleepTileService"
+            android:exported="true"
+            android:label="@string/sleep_tile_label"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview" />
+        </service>
+
+        <!-- 2.0.0 [RVI-95] 오늘 할 일 타일. -->
+        <service
+            android:name=".TaskTileService"
+            android:exported="true"
+            android:label="@string/task_tile_label"
             android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
             <intent-filter>
                 <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
@@ -132,6 +162,11 @@
 
         <receiver
             android:name=".RingActionReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVI-90] The watch's own alarm a minute after the phone's. -->
+        <receiver
+            android:name=".BackupRingReceiver"
             android:exported="false" />
 
         <activity

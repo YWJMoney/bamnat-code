@@ -133,8 +133,9 @@ object SleepAutoWatch {
      * After new pieces: trusted sleeps go in by themselves (with a quiet line saying so), otherwise the newest is asked about
      * on a quiet notice. The sleep screen asks the same in a card, so nothing is lost if the notice is swiped away.
      */
-    suspend fun review(context: Context) {
-        if (!active(context)) return
+    suspend fun review(context: Context, phone: Boolean = false) {
+        // 2.0.0 [RVI-96] A night the charger saw ([SleepNoTap]) needs no activity permission.
+        if (!active(context) && !(phone && SleepNoTap.on(context))) return
         val c = context.appContainer
         val logged = c.sleepRepository.recent(days = 3).first() + c.healthSleep.sleeps.value
         val offer = candidates(context, logged)
