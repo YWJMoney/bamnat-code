@@ -429,8 +429,9 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
     val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
     if (types.isEmpty()) return
     val fullLeave = day.leave?.isFullDay == true
-    ChipRow(modifier, start = 12.dp, end = endSpace) {
-        for (t in types) item(key = "shift-${t.id}") {
+    // 2.0.0 [RVH-71] 검토 HQ-87: two lines before "+n", and the 쉬는 날 chip (the most common change) never in it.
+    ChipRow(modifier, start = 12.dp, end = endSpace, lines = 2) {
+        for (t in types) item(key = "shift-${t.id}", pin = t.isOff) {
             val on = !fullLeave && day.shiftType?.id == t.id
             FilterChip(
                 selected = on,
@@ -441,7 +442,7 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
                 modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
             )
         }
-        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off") {
+        if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off", pin = true) {
             FilterChip(
                 selected = !day.isWorkDay && day.shiftType == null && !fullLeave,
                 onClick = { if (day.isWorkDay || day.shiftType != null) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Off, snapshot) },
@@ -770,7 +771,35 @@ internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, w
 /** [RVH-49] What a [ChipRow] holds: one chip per [item], in order (the same calls as the sideways row it replaced). */
 internal class ChipScope {
     internal val items = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
-    fun item(key: Any? = null, content: @Composable () -> Unit) { items += key to content }
+    /** 2.0.0 [RVH-71] Chips that never go into "+n" (the day's 쉬는 날: 검토 HQ-87). */
+    internal val pinned = mutableSetOf<Int>()
+    fun item(key: Any? = null, pin: Boolean = false, content: @Composable () -> Unit) {
+        if (pin) pinned += items.size
+        items += key to content
+    }
+}
+
+/**
+ * 2.0.0 [RVH-71] Where the chips of widths [w] go on up to [lines] lines of [room] (gap [gap]), each line filled in order, with a
+ * [more]-wide button after the last chip when it is not 0; null when they do not fit. The line each chip goes on, in order.
+ */
+internal fun chipLines(w: List<Int>, room: Int, gap: Int, lines: Int, more: Int = 0): List<Int>? {
+    var line = 0
+    var x = 0
+    val at = ArrayList<Int>(w.size)
+    for (width in w + listOfNotNull(more.takeIf { it > 0 })) {
+        val need = if (x == 0) width else x + gap + width
+        if (need <= room || x == 0) {
+            if (x == 0 && width > room && line > 0) return null
+            x = need
+        } else {
+            line++
+            x = width
+        }
+        if (line >= lines || x > room) return null
+        at += line
+    }
+    return at.take(w.size)
 }
 
 /**
@@ -778,10 +807,13 @@ internal class ChipScope {
  * row no longer scrolls sideways under a fade. It shows as many whole chips as fit, never a chip cut in two, then "+2 ›" for the
  * rest; a tap on it opens every chip wrapped on as many lines as they need, and '접기' puts them back in one line (사용자 11-04
  * '좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에'). Taps to reach a chip out of sight stay one, as the scroll to the end was.
+ * 2.0.0 [RVH-71] [lines]: how many lines the chips may take before "+n"; a chip given with `pin` is never put in it.
  */
 @Composable
-internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: ChipScope.() -> Unit) {
-    val chips = ChipScope().apply(content).items
+internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: Int = 1, content: ChipScope.() -> Unit) {
+    val scope = ChipScope().apply(content)
+    val chips = scope.items
+    val pinned = scope.pinned
     var open by rememberSaveable { mutableStateOf(false) }
     // A slot made for a chip of the day before (more chips) can be drawn once more before it goes: it then draws nothing.
     val chip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { c() } } }
@@ -812,27 +844,47 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content:
         }
         val widths = sizes.map { p -> if (p.isEmpty()) 0 else p.sumOf { it.width } + gap * (p.size - 1) }
         val shown = widths.indices.filter { widths[it] > 0 }
-        fun span(n: Int) = shown.take(n).sumOf { widths[it] } + gap * (n - 1).coerceAtLeast(0)
-        var count = shown.size
+        // 2.0.0 [RVH-71] 검토 HQ-87 (접은 폭 200%에서 '휴무'가 '+2' 안): the chips take up to [lines] lines before any folds into
+        // "+n", and a pinned chip (the 쉬는 날) stays out of it, in its own place among the ones shown.
+        var place: List<Int> = shown
+        var at: List<Int>? = chipLines(shown.map { widths[it] }, room, gap, lines)
         var more: androidx.compose.ui.layout.Placeable? = null
-        if (span(count) > room) {
+        if (at == null) {
+            val hiddenMost = shown.size
             // The button's width as it will be: 10dp + "+n" + 18dp arrow + 4dp ([MoreButton]), and 4dp before it.
-            val reserve = measurer.measure("+${shown.size}", moreStyle, maxLines = 1, softWrap = false).size.width + 36.dp.roundToPx()
-            count = 0
-            while (count < shown.size && span(count + 1) <= room - reserve) count++
-            val hidden = shown.size - count
+            val reserve = measurer.measure("+$hiddenMost", moreStyle, maxLines = 1, softWrap = false).size.width + 32.dp.roundToPx()
+            val free = shown.filter { it !in pinned }
+            val keep = shown.filter { it in pinned }.takeIf { k -> chipLines(k.map { widths[it] }, room, gap, lines, reserve) != null }.orEmpty()
+            var k = 0
+            fun pick(n: Int) = shown.filter { it in keep || it in free.take(n) }
+            while (k < free.size && chipLines(pick(k + 1).map { widths[it] }, room, gap, lines, reserve) != null) k++
+            place = pick(k)
+            at = chipLines(place.map { widths[it] }, room, gap, lines, reserve) ?: place.map { 0 }
+            val hidden = shown.size - place.size
             more = subcompose("more") { MoreButton("+$hidden", "${hidden}개 더 보기") { open = true } }.first().measure(Constraints())
         }
-        val real = shown.take(count).associateWith { i -> subcompose("chip#$i") { chip(i) }.map { it.measure(loose) } }
-        val placed = real.values.flatten()
-        val height = maxOf(placed.maxOfOrNull { it.height } ?: 0, more?.height ?: 0)
+        val real = place.associateWith { i -> subcompose("chip#$i") { chip(i) }.map { it.measure(loose) } }
+        val rows = (at.maxOrNull() ?: 0) + 1
+        val rowHeight = IntArray(rows)
+        place.forEachIndexed { n, i -> rowHeight[at[n]] = maxOf(rowHeight[at[n]], real.getValue(i).maxOfOrNull { it.height } ?: 0) }
+        more?.let { m -> rowHeight[rows - 1] = maxOf(rowHeight[rows - 1], m.height) }
+        val top = IntArray(rows).also { t -> for (r in 1 until rows) t[r] = t[r - 1] + rowHeight[r - 1] + gap }
+        val height = top[rows - 1] + rowHeight[rows - 1]
         layout(constraints.maxWidth, height) {
             var x = s
-            for (i in shown.take(count)) for (p in real.getValue(i)) {
-                p.placeRelative(x, (height - p.height) / 2)
-                x += p.width + gap
+            var row = 0
+            place.forEachIndexed { n, i ->
+                if (at[n] != row) { row = at[n]; x = s }
+                for (p in real.getValue(i)) {
+                    p.placeRelative(x, top[row] + (rowHeight[row] - p.height) / 2)
+                    x += p.width + gap
+                }
             }
-            more?.let { it.placeRelative(if (count == 0) s else x - gap + 4.dp.roundToPx(), (height - it.height) / 2) }
+            more?.let {
+                val last = rows - 1
+                val after = if (place.isEmpty() || row != last) s else x - gap + 4.dp.roundToPx()
+                it.placeRelative(after, top[last] + (rowHeight[last] - it.height) / 2)
+            }
         }
     }
 }

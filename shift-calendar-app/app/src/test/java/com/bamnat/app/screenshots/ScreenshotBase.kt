@@ -652,6 +652,21 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /**
+         * 2.0.0 [RVH-70] Scrolls the screen's vertical scroll to its end through its semantics, not a finger: for screens where a
+         * swipe would paint (한 달 근무 넣기 with a key held paints the days a finger crosses).
+         */
+        fun scrollToEnd() {
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false)
+                    .filter { it.config.contains(SemanticsActions.ScrollBy) && it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange) }
+                    .maxByOrNull { it.boundsInWindow.height }
+                    ?.let { it.config[SemanticsActions.ScrollBy].action?.invoke(0f, 100_000f) }
+            }
+            settle()
+        }
+
         /** 2.0.0 [RVP-62] Holds a finger on what shows [text] for [frames] frames of 16ms (a held −/＋), then lifts it. */
         fun holdText(text: String, frames: Int, exact: Boolean = true) = touch(reach(text, exact, false, 0, 0.5f).boundsInWindow.center, hold = frames)
 
