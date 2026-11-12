@@ -181,5 +181,6 @@ async function contestAdmin(d, request, env, path, now) {
   // 1.36 [GRW-09] 새로 고른 작품의 주인께 프로 한 달 (작품·달마다 한 번이라 되돌렸다가 다시 골라도 두 번 가지 않아요).
   const before = new Set(JSON.parse(was?.picks ?? "[]"));
   const rewarded = await rewardContestPicks(env, codes.filter((x) => !before.has(x)), m, now);
-  return d.json({ month: m, style: body.style, picks: codes, rewarded: rewarded.filter((r) => r.given).length });
+  // 2.0.0 [RVD-13] 보상은 드릴 보상에 들어가 확인 뒤 나가요: rewarded counts the ones put there.
+  return d.json({ month: m, style: body.style, picks: codes, rewarded: rewarded.filter((r) => r.given || r.owed).length });
 }

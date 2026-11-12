@@ -250,6 +250,9 @@ details.card .steps{margin-top:.6rem}
 .item .row-main{flex:1 1 14rem}
 .item .actions{margin:0 0 0 auto}
 .memo{font-style:italic}
+.row-main small.judge{color:var(--fg)}
+.row-main small.judge.warn{color:var(--warn)}
+.item label.row{display:flex;gap:.6rem;align-items:flex-start;flex:1;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 .75rem}
 .chip{display:inline-flex;align-items:center;gap:.15rem;padding:.25rem .25rem .25rem .75rem;border-radius:999px;background:var(--soft);font-size:.88rem;font-weight:700}
 .chip button{width:1.9rem;height:1.9rem;border:0;border-radius:50%;background:none;cursor:pointer;font-size:1.1rem;line-height:1;color:var(--muted)}

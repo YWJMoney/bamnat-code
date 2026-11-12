@@ -10,6 +10,9 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
+    cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
+    state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",
     // R131 1.31 [ADMX-16] 두 번째 확인
     code_needed: "인증 앱의 6자리 코드를 넣어 주세요",
     do: "할 수 없는 요청이에요. 새로 고친 뒤 다시 해 주세요",
