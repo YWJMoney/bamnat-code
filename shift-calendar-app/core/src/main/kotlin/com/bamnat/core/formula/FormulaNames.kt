@@ -234,6 +234,23 @@ object FormulaText {
     fun render(src: String, scope: FormulaScope): String = parse(src).getOrNull()?.let { render(it, scope) } ?: src
 
     /**
+     * 2.0.0 [RVM-39] PC-148 (조건 4·13): what a rule or 단추 will say, before it runs, with each {수식} place as ○ ('이달 야간 ○번째 · 물
+     * ○잔', '○시간 잤어요'), never the formula's own letters ({값("물 잔")}). Text that is not formulas as a whole (too many, or a brace
+     * left open) has each brace pair as ○ all the same.
+     */
+    fun blanks(src: String): String {
+        if ('{' !in src) return src
+        val parts = parse(src).getOrNull() ?: return src.replace(Regex("\\{[^{}]*\\}"), BLANK)
+        return parts.joinToString("") { p -> if (p is Part.Plain) p.text else BLANK }
+    }
+
+    /** [RVM-39] What a [blanks] place reads as. */
+    const val BLANK = "○"
+
+    /** [RVM-39] What a rule did, its {수식} worked out in [scope]; text that is not formulas as a whole reads as [blanks]. */
+    fun said(src: String, scope: FormulaScope): String = parse(src).getOrNull()?.let { render(it, scope) } ?: blanks(src)
+
+    /**
      * 사용자 2026-11-01 "메모장 및 모든 곳에서": a memo template's words with {수식} worked out for the day it is used. Text with no '{',
      * or braces that are not a formula (a plain "{메모}"), stays exactly as written; the rest is kept whole (no 300-letter cut).
      */

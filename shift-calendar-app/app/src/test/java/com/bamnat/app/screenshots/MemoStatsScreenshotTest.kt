@@ -170,7 +170,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
     @Test fun e485UnfoldedMemos() = shoot("485_unfolded_memos_one_button", UNFOLDED) { tab(2, wide = true) }
     @Test fun e486FoldedMemosFilters() = shoot("486_folded_memos_filters_open", FOLDED) {
         tab(2, wide = false)
-        tapText("필터 펼치기", exact = true, scrolls = 0)
+        memoFilters()
     }
     @Test fun e488PhoneMemosHugeText() = shoot("488_phone_memos_huge_text", PHONE, 1.5f) { tab(2, wide = false) }
 
