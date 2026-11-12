@@ -184,6 +184,8 @@ class CalendarBook(
      * company connection stays), false when it is gone for good (the company it joined is let go).
      */
     private val onDelete: (id: String, kept: Boolean) -> Unit = { _, _ -> },
+    /** 2.0.0 [RVL-76] Told when an added calendar's database is opened (날짜별 되돌리기 starts keeping its moments). */
+    private val onOpen: (id: String, db: AppDatabase) -> Unit = { _, _ -> },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
 
@@ -231,7 +233,7 @@ class CalendarBook(
      */
     private fun opened(id: String): Opened {
         check(id != PersonalCalendar.MAIN && get(id) != null) { "Not an added calendar: $id" }
-        return open.getOrPut(id) { storage.open(id).let { db -> Opened(db, repositoryOf(db)) } }
+        return open.getOrPut(id) { storage.open(id).let { db -> runCatching { onOpen(id, db) }; Opened(db, repositoryOf(db)) } }
     }
 
     /** The schedule of calendar [id]; the main one for an id that is not (or no longer) there. */

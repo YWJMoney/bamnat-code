@@ -87,9 +87,11 @@ class AppContainer(context: Context) {
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
+        onOpen = { id, db -> timeMachine.watch(id, db) },
         onDelete = { id, kept ->
             if (!kept) {
                 companyGone(id)
+                timeMachine.forget(id)
                 // [R200-01] Its own 끄기 미션 and 근무 그림 go with it (a new calendar never gets its id again).
                 settingsRepository.update { s ->
                     val look = com.bamnat.core.recipe.PhotoLook.decode(s.photoLook)
@@ -293,6 +295,12 @@ class AppContainer(context: Context) {
         com.bamnat.app.data.RecordsTrash(java.io.File(appContext.noBackupFilesDir, "records_trash"), calendars, database, settingsRepository,
             filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
+    }
+    /** 2.0.0 [RVL-76] (검토 I12b-02) 날짜별 되돌리기: each calendar's days and 가계부 lines as they settled after each change, for 7 days. */
+    val timeMachine by lazy {
+        com.bamnat.app.data.TimeMachine(java.io.File(appContext.noBackupFilesDir, "time_machine"), appScope, opener = { id ->
+            if (id == com.bamnat.app.data.PersonalCalendar.MAIN) database else calendars.get(id)?.takeIf { it.ready }?.let { calendars.database(id) }
+        })
     }
     /** 2.0.0 [RVL-02] True after this start put back a restore the app was closed in the middle of (said once above the calendar). */
     val restoreStopped = kotlinx.coroutines.flow.MutableStateFlow(false)
@@ -986,6 +994,8 @@ class AppContainer(context: Context) {
             }
             // 2.0.0 [RVI-37] (검토 ALM-02·PC-07, 도약 7) The clean-ups run beside the alarm and widget job below, not before it:
             // a shift changed in the first seconds after the app opened waited for them to reach the home screen.
+            // 2.0.0 [RVL-76] The main calendar's moments from now on (an added one is watched when it is opened).
+            runCatching { timeMachine.watch(com.bamnat.app.data.PersonalCalendar.MAIN, database) }
             launch {
                 memoRepository.purgeOldTrash()
                 // [MPH-03] 1.38 메모 사진 no memo (nor the trash) points at any more go, a day after they were put in.

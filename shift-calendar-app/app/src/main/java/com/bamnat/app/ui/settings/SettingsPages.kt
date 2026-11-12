@@ -1087,6 +1087,16 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
             else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
+        // 2.0.0 [RVL-76] (검토 I12b-02) 날짜별 되돌리기: a calendar's 근무 or 가계부 as it was at a moment of the last week.
+        HorizontalDivider()
+        var goingBack by rememberSaveable { mutableStateOf(false) }
+        NavRow(TIME_MACHINE_ROW, "실수로 바꾼 근무·가계부를 ${com.bamnat.app.data.TimeMachine.KEEP_DAYS}일 안의 그때 모습으로 돌려요") { goingBack = true }
+        if (goingBack) {
+            val list by vm.calendars.collectAsStateWithLifecycle()
+            val active by vm.activeCalendar.collectAsStateWithLifecycle()
+            TimeMachineDialog(c.timeMachine, list, active,
+                onDone = { text, before -> goingBack = false; vm.timeMachineDone(text, before) }, onDismiss = { goingBack = false })
+        }
         // 2.0.0 [RVL-70][RVL-71] (검토 U12-09·T12-07) 데이터 점검 where the records and backups are, for every kind of work (not only inside
         // 알람 점검), with what the weekly check last did said on the row. In this card, not one of its own: a card titled as its one row
         // said the name twice.
@@ -1666,6 +1676,8 @@ internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
+/** 2.0.0 [RVL-76] 설정 › 데이터의 날짜별 되돌리기 줄. */
+internal const val TIME_MACHINE_ROW = "날짜별 되돌리기"
 
 /**
  * [BAK-01] 1.25 Z (U8): the steps, what travels, and what stays on this phone and why (결정 Z-D3).
