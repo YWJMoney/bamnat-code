@@ -293,6 +293,7 @@
 {"track": "RVM-27", "title": "작품 넣기 창 맨 위에 조심 줄(알람 약하게·가계부·메모에 적기·누르면 눌리는 꾸밈)", "status": "check", "size": "polish", "route": "app", "test": "PutBriefTest", "check": "딥워크 데스크 넣기 창 → 맨 위에 주의 표시와 '누르면 가계부에 적는 단추 1개', 큰 시계 기상은 '알람을 약하게 하는 설정은 빼고 넣어요 · 울림 10분 → 5분'이 맨 위, 모양만 바꾸는 작품은 조심 줄 없음"}
 {"track": "RVM-28", "title": "내 작품 반응(좋아요·후기·의견·아이디어·받아 쓴 분·심사 결과)을 알림함으로", "status": "doing", "size": "feature", "route": "app"}
 {"track": "RVM-29", "title": "근무 글자(겹친 이모지)가 링크·공유에서 반쪽으로 깨지지 않게", "status": "doing", "size": "fix", "route": "app"}
+{"track": "RVM-30", "title": "사진이 많은 작품도 하루 한도에 막히지 않고 이어서 올라가게", "status": "doing", "size": "fix", "route": "app"}
 {"track": "PC-33", "title": "점만 보이는 칸 디자인은 넣기 창에서 말하고 '칸에 근무 글자 남기기' 스위치", "status": "check", "size": "fix", "route": "app", "test": "CellLettersTest", "check": "야간 회복 스테이션 '이 테마 입기' → '칸의 근무 글자 대신 색 점만 보여요', 스위치 '칸에 근무 글자 남기기' 켜고 넣으면 칸에 주·야·휴 글자, 야간 칸 '11h' 밝음"}
 {"track": "PC-62", "title": "작품 색에서 고른 탭 이름·달력 머리·오늘 숫자가 보이게", "status": "check", "size": "fix", "route": "app", "check": "딥워크 데스크 입기 → 아래 막대 고른 탭 이름 흰 글자, 야간 회복 → 머리 둘레 검은 네모 없음, 오늘 숫자가 동그라미 위에서 읽힘"}
 {"track": "RVD-21", "title": "보상 1년 12개월 상한은 처리방침 3.13 게시 30일 뒤부터만", "status": "check", "size": "fix", "route": "server", "test": "[RVD-21] before 3.13's 30-day date nothing is refused or held back by the 1년 12달; from that KST day it is", "check": "관리자 앱 › 기능 관리 › 일정에 3.13이 없을 때 보상 › 드릴 보상 줄이 '12개월 상한은 처리방침 3.13 시행일부터', 3.13 게시일을 넣으면 그날 + 30일, 그날부터 상한"}
