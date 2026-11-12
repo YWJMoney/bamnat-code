@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -44,7 +43,7 @@ import java.time.LocalDate
  * G 1.32 [WTYP-02] 604 플랫폼(배달·운전)형's day chips: each platform written today ("배민 23건"), then the platforms used in
  * the last 60 days, then 추가. A tap opens the day's 건수·금액·운행 시간·유류비 for that platform, big buttons first (장갑 낀 손).
  */
-internal fun LazyListScope.platformChips(date: LocalDate, book: MoneyBook, rules: FieldRules, onSave: (Job) -> Unit, onDelete: (Job) -> Unit,
+internal fun ChipScope.platformChips(date: LocalDate, book: MoneyBook, rules: FieldRules, onSave: (Job) -> Unit, onDelete: (Job) -> Unit,
                                          onCut: (String, PlatformWork.Cut) -> Unit = { _, _ -> }) {
     val today = book.jobs.filter { it.date == date && PlatformWork.isPlatform(it) }
     val used = book.jobs.filter { PlatformWork.isPlatform(it) && !it.date.isBefore(date.minusDays(60)) }.groupBy { it.client }

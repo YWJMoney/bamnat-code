@@ -403,7 +403,9 @@ internal object SettingsIndex {
         // 1.25 Z
         row(D, MOVE_ROW, "새 휴대폰", "기기 변경", "옮기기", "모든 설정", "폰 바꿈", "이전", "복원"), // [BAK-01]
         // ---- 1.25 묶음 X [PLAZA-06] ----
-        row(W, SETUP_AGAIN_ROW, "첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "회사 찾기", "초기 설정", "처음부터"),
+        // 2.0.0 [RVH-53] HQ-27: '회사 찾기' finds it only where the work has a company (the row says so only there, [J133-71]).
+        row(W, SETUP_AGAIN_ROW, *(listOf("첫 설정", "처음 설정", "다시 받기", "건너뛴 설정", "놓친 설정", "초기 설정", "처음부터") +
+            listOfNotNull("회사 찾기".takeIf { company })).toTypedArray()),
         // [EASE-27] 1.38 내 규칙 한눈에.
         row(W, RULE_CARDS_ROW, "규칙", "내 규칙", "조건", "공휴일 규칙", "알람 조건", "수당 조건", "문장"),
         // ---- 1.26 묶음 AD [NAV-07] ----
