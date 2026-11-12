@@ -213,6 +213,39 @@ class RvibScreenshotTest : ScreenshotBase() {
         org.junit.Assert.assertFalse(shows(com.bamnat.app.ui.Fmt.dayTitle(com.bamnat.core.time.Today.date()), exact = true))
     }
 
+    /** [RVIB-21] Today's 주간 as a day of two parts, 11:00~15:00 · 17:00~21:00, with no 반차 on it; 15:40, in the stop between. */
+    private fun twoPartsAtTheStop() = runBlocking {
+        // The clock first, so what the calendar works out on the change below is read at 15:40.
+        com.bamnat.core.time.Today.fix(SHOT_TIME.withHour(15).withMinute(40))
+        val repo = c.scheduleRepository
+        val t = repo.shiftTypes.first().first { it.name == "주간" }
+        repo.saveShiftType(t.copy(start = java.time.LocalTime.of(11, 0), end = java.time.LocalTime.of(21, 0),
+            gapStart = java.time.LocalTime.of(15, 0), gapMinutes = 120))
+        repo.setLeave(today, null)
+        c.settingsRepository.update { it.copy(sleepTips = true, calendarOnly = false, viewAsked = true, todayShiftNotice = true) }
+    }
+
+    // [RVIB-21] (결정 19) 비는 시간: 오늘의 흐름이 '근무 중' 대신 '비는 시간 · 17:00 다시 시작', 낮잠만.
+    @Test fun twoPartFlow() = try {
+        eight("two_part_flow") { wide ->
+            twoPartsAtTheStop()
+            // The card reads the minute when it is made: away to 메모 and back, as a person coming back at 15:40.
+            tab(2, wide)
+            tab(0, wide)
+            settle()
+            org.junit.Assert.assertTrue(appears("비는 시간 · 17:00 다시 시작"))
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
+    // [RVIB-21] 설정 › 알림과 잠: 잠금 화면 미리 보기가 두 구간을 한 줄로, '둘째 구간 시작 알림' 줄(두 구간 근무 종류가 있을 때만).
+    @Test fun twoPartSettings() = try {
+        eight("two_part_settings") { wide ->
+            twoPartsAtTheStop()
+            settingsPage("알림과 잠", wide)
+            reveal("둘째 구간 시작 알림", exact = true, across = if (wide) 0.75f else 0.5f)
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
     // [RVIB-16] (PC-125) 가게: 아래 막대에 없는 '잠'이 '나'에.
     @Test fun meSleep() = eight("me_sleep") { _ ->
         runBlocking { c.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS) } }
