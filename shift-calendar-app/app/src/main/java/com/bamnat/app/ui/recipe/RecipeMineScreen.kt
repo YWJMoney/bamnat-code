@@ -147,9 +147,9 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                 // 2.0.0 [RVQ-26] 검토 SVC-23: the past 판 the server keeps (only the maker opens them) can go for good. One text
                                 // button on each card (조건 2): 지우기 (rare, and for good) and 지난 판 지우기 are under the card's 더 보기; how
                                 // many past 판 there are is said on the card's numbers line, so the menu is not the only place that tells.
+                                // [RVM-34] HQ-72: within two lines at 200% ('♥ 12 · 34명' there), read aloud in words.
                                 val past = m.past[item.code] ?: 0
-                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users} · 코드 ${item.code}" + (if (past > 0) " · 지난 판 ${past}개" else ""),
-                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                MarketNumbersText(item, long = true, tail = "코드 ${item.code}" + (if (past > 0) " · 지난 판 ${past}개" else ""), keepTail = true)
                                 RemixCount(item.code)
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }

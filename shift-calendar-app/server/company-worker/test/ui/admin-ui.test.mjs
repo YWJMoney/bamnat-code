@@ -2991,7 +2991,9 @@ test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기
   assert.match(css, /\.actions\.start details\.row-more>\.menu\{left:0;right:auto\}/);
   assert.match(css, /@media \(max-width:599\.98px\)\{\s*\.queue-bar\{position:fixed;top:auto/);
   assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
-  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:grid/);
+  // [HQ-88] 840~1023은 두 칸을 나란히(격자 대신 감기는 줄: 글자 200%면 칸 폭이 모자라 위아래로).
+  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.cols>:first-child\{flex:1\.6 1 18rem\}/);
 });
 
 test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤 상자 안, 숨긴 이름표도 그 상자를 기준으로", async (t) => {
@@ -3173,4 +3175,13 @@ test("[RVQ-44] 장터 › 요청: 스튜디오 요구의 완성은 운영자가 
   await u.settle(40);
   assert.deepEqual({ ...env.DB.db.prepare("SELECT state, checked FROM recipe_requests WHERE id = 'qAAAAAAAAAAAA'").get() }, { state: "done", checked: 1 });
   assert.deepEqual(u.errors, []);
+
+// 2.0.0 [HQ-88] 조건 12: 제목 + 알약 여럿인 머리와 두 칸 화면이 글자 200%의 840·1440에서 한 자씩 서지 않아요.
+test("[HQ-88] 큰 글자: 머리의 제목은 16rem을 지키고 알약 묶음은 함께 감기며, 두 칸은 칸 폭이 모자라면 위아래로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.card-head>:is\(h2,h3\)\{flex:1 1 16rem;min-width:0/);
+  assert.match(css, /\.head-pills\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /@media \(min-width:1024px\)\{\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
+  assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
 });

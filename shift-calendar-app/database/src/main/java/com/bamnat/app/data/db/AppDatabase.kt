@@ -57,10 +57,15 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun payrollDao(): PayrollDao
 
     companion object {
-        /** [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used. */
-        fun create(context: Context, name: String = "bamnat.db"): AppDatabase =
+        /**
+         * [MCAL-01] Each added calendar is a database of its own with the same tables; only its schedule ones are used.
+         * 2.0.0 [RVH-54] [openHelper]: how an added calendar's database reaches its file (CalendarFileDoor in the app), so a removed
+         * calendar's file is never opened again; null for the main database.
+         */
+        fun create(context: Context, name: String = "bamnat.db", openHelper: androidx.sqlite.db.SupportSQLiteOpenHelper.Factory? = null): AppDatabase =
             Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, name)
                 .addMigrations(*MIGRATIONS)
+                .apply { if (openHelper != null) openHelperFactory(openHelper) }
                 .build()
 
         /**

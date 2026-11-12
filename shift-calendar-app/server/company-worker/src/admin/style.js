@@ -175,12 +175,22 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 /* [ADMUX-05] One step per level: screen title 1.2, card 1.06, item .98, text .94. */
 .card>h2,.card-head h2{font-size:1.06rem;font-weight:800}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .6rem}
+/* 2.0.0 [HQ-88] 검토 조건 12: 제목 + 알약 여럿인 머리는 840·글자 200%에서 제목이 한 글자 폭 기둥으로 서고 알약이 잘렸어요. 제목은 16rem(글자가
+   크면 함께 커져요)을 지키고, 그만큼이 없으면 알약이 아래 줄로 감겨요. 알약도 줄 폭을 넘지 않게 감겨요. */
+.card-head{flex-wrap:wrap;row-gap:.35rem}
+.card-head:has(>:is(h2,h3)){justify-content:flex-start}
+.card-head>:is(h2,h3){flex:1 1 16rem;min-width:0;overflow-wrap:anywhere}
+.card-head>.pill{max-width:100%;white-space:normal}
+/* 알약 여럿은 한 묶음으로 함께 옆에 있거나 함께 아래로 가요(하나만 아래로 떨어지지 않게). */
+.head-pills{display:flex;flex-wrap:wrap;gap:.35rem;max-width:100%}.head-pills>.pill{max-width:100%;white-space:normal}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 /* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
 @media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
-@media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
+/* 2.0.0 [HQ-88] 검토 조건 12: 두 칸(본문 · 옆 칸)은 칸이 줄 수 있는 폭(본문 18rem, 옆 16rem, 글자가 크면 함께 커져요)이 안 되면 위아래로 놓여요.
+   격자(1.6fr · 1fr)일 때 글자 200%의 840·1440에서 본문 칸이 29px로 줄어 한 자씩 섰어요(개발사항 한 건). */
+@media (min-width:1024px){.cols{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start}.cols>*{min-width:0;flex:1 1 16rem}.cols>:first-child{flex:1.6 1 18rem}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
 .head>:first-child{flex:1;min-width:0}
 .dept{font-weight:500;color:var(--muted);font-size:.94rem}
@@ -659,7 +669,8 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .more-tiles>summary{cursor:pointer;font-weight:800;font-size:.9rem;color:var(--muted);padding:.4rem .25rem;list-style:none}
 .more-tiles .tiles{margin:.5rem 0}
 .home-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 1rem;align-items:start}
-@media (min-width:1024px){.home-grid{grid-template-columns:minmax(0,1.75fr) minmax(0,1fr)}}
+/* [HQ-88] 오늘의 옆 칸(최근 기록)도 16rem이 안 되면 아래로(글자 200%의 1440에서 기록 글이 한 줄 88px로 섰어요). */
+@media (min-width:1024px){.home-grid{display:flex;flex-wrap:wrap}.home-grid>*{min-width:0;flex:1 1 16rem}.home-grid>.home-main{flex:1.75 1 20rem}}
 .home-main,.home-side{min-width:0}
 /* 주의 필요 */
 .alerts{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
@@ -974,7 +985,8 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how-steps p{margin:.15rem 0 0;font-size:.86rem;color:var(--muted)}
 .step-no{flex:none;display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:.85rem}
 .flow-cols{display:grid;gap:.75rem}
-@media (min-width:1024px){.flow-cols{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start}}
+/* [HQ-88] 넓은 화면도 칸이 22rem보다 좁으면 한 칸으로(글자 200%의 1440에서 자동 순환 카드 안 줄이 62px로 섰어요), 두 칸까지만. */
+@media (min-width:1024px){.flow-cols{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr));align-items:start}}
 .week-chart{margin:0}
 .week-chart svg{display:block;width:100%;height:auto}
 .week-chart text{font-size:10px;fill:var(--faint)}
@@ -1164,12 +1176,12 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 /* 2.0.0 [RVA-30] 검토 U24-02·T24-16·T24-17: 840에서 목록 칸이 170px라 제목이 "문제 신고 · …"만 보이고 사람 정보가 답 칸 아래로
    한참 내려갔어요. 840~1023은 목록을 접고 '‹ 이전 1/12 다음 ›'만(twoPane() 1024부터), 그 폭으로 답 칸과 사람 정보를 나란히 둬요. */
 @media (min-width:840px) and (max-width:1023.98px){
-  .cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(16rem,1fr);gap:.85rem;align-items:start}.cols>*{min-width:0}
+  .cols{display:flex;flex-wrap:wrap;gap:.85rem;align-items:flex-start}.cols>*{min-width:0;flex:1 1 16rem}.cols>:first-child{flex:1.6 1 18rem}
   .cols>aside{position:sticky;top:calc(var(--top-h,4.25rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.25rem) - 1.25rem);overflow:auto}
 }
 /* 데스크톱: 세 칸(메뉴 · 목록 · 열린 것), 넓으면 사람 패널이 오른쪽에 붙어 있어요. */
 @media (min-width:1440px){
-  .split .cols{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr)}
+  .split .cols>:first-child{flex:1.7 1 18rem}.split .cols>:last-child{flex:1 1 19rem}
   .cols>aside{position:sticky;top:calc(var(--top-h,4.75rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.75rem) - 1.25rem);overflow:auto}
 }
 

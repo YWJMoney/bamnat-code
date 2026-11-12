@@ -18,7 +18,7 @@ export function workViews(A) {
     // 2.0.0 [RVQ-29] 검토 SVC-17: 서로 다른 네트워크 수, 다듬지 않은 제목·거름에 걸린 제목.
     const flag = n.problem ? `<span class="pill bad">제목에 ${esc(PROBLEM_WORDS[n.problem] ?? "올릴 수 없는 말")}</span>`
       : n.state === "ready" && !n.titled ? '<span class="pill warn">제목을 다듬어 올려요</span>' : "";
-    return `<li class="item"><div class="card-head"><h3>${esc(n.title)}</h3><span class="pill ${st}">${esc(n.stateName)}</span>${flag}</div>
+    return `<li class="item"><div class="card-head"><h3>${esc(n.title)}</h3><span class="head-pills"><span class="pill ${st}">${esc(n.stateName)}</span>${flag}</span></div>
       <p class="meta"><b>${n.askers}명</b>이 부탁 (${n.asks}건${n.nets != null && n.nets < n.askers ? ` · 서로 다른 네트워크 ${n.nets}곳` : ""})${n.area ? ` · ${esc(n.area)}${n.tool ? ` › ${esc(n.tool)}` : ""}` : ""}${n.style ? ` · ${esc(({ SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자", ALL: "모든 유형" })[n.style] ?? n.style)}` : ""} · ${esc(ago(n.at))}에 처음${n.code ? ` · 풀어 준 작품 ${esc(n.code)}` : ""}${n.version ? ` · ${esc(n.version)} 판` : ""}</p>
       ${n.note ? `<p class="hint">${esc(n.note)}</p>` : ""}
       <ul class="samples">${n.samples.map((x) => `<li><span class="meta">${x.src === "req" ? "요청 판" : "스튜디오"}</span> ${esc(x.text)}</li>`).join("")}</ul>

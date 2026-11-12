@@ -34,6 +34,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -622,7 +623,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
-                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
+                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 // [TOWN-04] 1.37 (후보 3, PC 확인: 확인 스위치가 '올리기'와 떨어져 있어 찾기 어려워요): the check is in the bar itself, right above
                 // 올리기, so it is in sight with the button whatever the page shows.
                 if (s.step == 5 && s.scope != "private") Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -975,7 +976,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(when (l.level) { RecipeLint.Level.OK -> "✓"; RecipeLint.Level.WARN -> "!"; RecipeLint.Level.ERROR -> "✕" },
-                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.colorScheme.tertiary; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
+                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.bamnat.caution; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
                 modifier = Modifier.width(24.dp))
             Text(l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (l.fix != null) TextButton(onClick = { vm.fix(l) }) { Text("고치기") }
@@ -989,7 +990,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     }
     fontLines.forEach { t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("!", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(24.dp))
+            Text("!", color = MaterialTheme.bamnat.caution, modifier = Modifier.width(24.dp))
             Text(t, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         }
     }
@@ -1044,7 +1045,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
     val advice = lines.count { it.level == RecipeLint.Level.WARN }
     if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
+        color = MaterialTheme.bamnat.caution, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     // PC aacb5ce8: 올리기 단추 is in the bottom bar alone (같은 뜻 두 줄이 겹치던 것); here what holds it and what got refused.
     // [BLU-07] PC 7차 (나만 보기로 저장을 눌러도 아무 표시가 없음, 거절 뒤 단추가 없음): the refusal and what gets past it, right here.
     s.error?.let { e ->
