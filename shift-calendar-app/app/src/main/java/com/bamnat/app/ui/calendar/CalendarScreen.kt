@@ -423,12 +423,25 @@ fun CalendarScreen(
     // [OPS-20] Ask for a store review once, shortly after the first pattern was saved.
     // [DAILY-17] And once more after the first pay month is closed, a month or more after the first.
     val reviewMoment = InAppReview.due(settings, today)
-    LaunchedEffect(reviewMoment) {
-        if (reviewMoment != null) {
-            delay(1500)
-            // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
-            val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
-            if (!InAppReview.calm(com.bamnat.core.time.Today.millis(), crashAt)) return@LaunchedEffect
+    // 2.0.0 [RVH-61] 검토 PC-131: not on the first run of a new version, nor while the 처리방침 card asks; and it takes its turn after
+    // the opening windows (업데이트 소식 first, one per visit). The moment stays due for the next opening of 내 달력.
+    // The version is noted on the first opening of 내 달력 whether or not a moment is due; looked at again on each visit.
+    val visit by com.bamnat.app.HomeRequests.count.collectAsStateWithLifecycle()
+    remember { InAppReview.firstRunNow(context, visit = visit) }
+    val reviewHeld = remember(reviewMoment != null, visit) {
+        reviewMoment != null && InAppReview.held(InAppReview.firstRunNow(context, visit = visit), context.appContainer.policyAsks())
+    }
+    var reviewCalm by remember(reviewMoment) { mutableStateOf(false) }
+    LaunchedEffect(reviewMoment, reviewHeld) {
+        reviewCalm = false
+        if (reviewMoment == null || reviewHeld) return@LaunchedEffect
+        delay(1500)
+        // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
+        val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
+        reviewCalm = InAppReview.calm(com.bamnat.core.time.Today.millis(), crashAt)
+    }
+    if (reviewMoment != null && !reviewHeld && reviewCalm && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.REVIEW)) {
+        LaunchedEffect(reviewMoment) {
             context.findActivity()?.let { InAppReview.ask(it) }
             vm.markReviewAsked(reviewMoment)
         }
@@ -2395,6 +2408,10 @@ internal fun CalendarHeader(
             val label = when (slot.id) {
                 CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
                 CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
+                // 2.0.0 [RVH-60] 검토 PC-127 (가게 도구 창에 '동료 근무표 받기'): the T01-11 words here too, and 근무 주기 as that work's page
+                // calls it (가게 '영업일·정기휴무', 투자 '투자 알람', 현장 '되풀이되는 일정'), also under 더 보기.
+                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style)
+                CalendarToolSlots.PATTERN -> "${style.words().pattern} 설정"
                 else -> slot.label
             }
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {

@@ -81,6 +81,7 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.LeaveMark
 import com.bamnat.app.ui.components.ShiftBadge
+import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.alarm.AlarmPlanner
@@ -123,7 +124,7 @@ internal fun whenText(alarm: PlannedAlarm, date: LocalDate): String =
 
 /** [DAY-01] One fact about the day in the header: 알람 끔, 직접 바꿈, 메모 2 … */
 private data class DayToken(val text: String, val tone: Tone, val said: String? = null, val struck: Boolean = false) {
-    enum class Tone { PLAIN, ACCENT, WARNING, ERROR }
+    enum class Tone { PLAIN, ACCENT, ERROR }
 }
 
 /** "주간 · 09:00 – 18:00 · 8시간", "야간 · 연차 (11시간)", "쉬는 날". */
@@ -177,6 +178,8 @@ fun DayHeader(
     compact: Boolean = onOpen != null,
     /** The first memo's token ("메모 · 도시락"); off while the day's story line (FLOW-08) shows the memos already. */
     memoToken: Boolean = true,
+    /** [CAL-01] The week of this day over the hour limit; said in the head's one 주의 line with the day's rest signs ([RVH-59]). */
+    weekNote: String? = null,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -266,7 +269,7 @@ fun DayHeader(
             },
             label = "day-body",
         ) { d ->
-            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken)
+            DayFacts(d, today, snapshot, vm, settings, Modifier.padding(horizontal = 12.dp), memoToken, weekNote)
         }
         // Under the calendar the folded FAB sits over the row's end, so the last chip can scroll out from under it.
         if (!chipsFirst && headChips) ShiftChips(day, snapshot, vm, settings, Modifier.padding(top = 6.dp), endSpace = 12.dp)
@@ -279,7 +282,7 @@ fun DayHeader(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true) {
+private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, modifier: Modifier, memoToken: Boolean = true, weekNote: String? = null) {
     val cal = LocalCalendarColors.current
     val focus = CalendarFocus.of(settings.workStyle)
     val book by vm.moneyBook.collectAsStateWithLifecycle()
@@ -359,6 +362,10 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
                 for (t in tokens) Token(t)
             }
         }
+        // 2.0.0 [RVH-59] 검토 PC-63 (대근을 넣은 날짜 창 한 화면에 빨강 칩 '야간 뒤 휴식 부족', 빨강 '이 주 66시간', 큰 빨강 상자 '휴식 점검'):
+        // what is for reference is said once, here, in one 주의 line (the mark orange, the words quiet). The 몸 group keeps the detail
+        // without colour; red stays for what cannot be undone.
+        dayCaution(day, snapshot, vm, settings, weekNote)?.let { ToneLine(it, tone = com.bamnat.app.ui.theme.Tone.Caution) }
     }
 }
 
@@ -503,9 +510,6 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
     val memos by vm.datedMemos.collectAsStateWithLifecycle()
     val dayMemos = remember(memos, day.date) { memos.filter { it.date == day.date } }
     val alarms = remember(snapshot, day.date) { plannedAlarms(snapshot, day) }
-    val rest = remember(snapshot, day.date, settings.rules) {
-        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
-    }
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     return buildList {
         // [CAL-13] An added calendar kept from ringing says so on each of its days.
@@ -517,7 +521,8 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
             val off = day.alarmSkipped || !settings.alarmsEnabled
             add(if (off) DayToken(text, DayToken.Tone.ERROR, said = "$text 꺼짐", struck = true) else DayToken(text, DayToken.Tone.PLAIN))
         }
-        if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.WARNING))
+        // [RVH-59] Quiet: the 추가 근무 group's card says it in 주의 (조건 6, one place).
+        if (day.extras.any { it.entry.needsReview }) add(DayToken("추가 근무 확인 필요", DayToken.Tone.PLAIN))
         // [EASE-12] A changed shift has its own line ("원래 → 새 근무"); the token stays for changed times.
         // [READ-37] 1.38 PC: on a calendar without an order (매달 근무표) every day is put in by hand or from a photo, so
         // "직접 바꿈" said nothing on each of them; only a day's own times are worth a word there.
@@ -529,19 +534,28 @@ private fun dayTokens(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calendar
             val more = if (dayMemos.size > 1) " 외 ${dayMemos.size - 1}" else ""
             add(DayToken(if (shown.isEmpty()) "메모 ${dayMemos.size}" else "메모 · $shown$more", DayToken.Tone.PLAIN))
         }
-        rest.firstOrNull()?.let { add(DayToken(it.kind.label, DayToken.Tone.WARNING)) }
-        // [CAL-01] A week over the limit is said in its own line under the header, with the limit.
+        // [CAL-01][RVH-59] The day's rest signs and a week over the limit are said in the head's one 주의 line ([dayCaution]).
     }
+}
+
+/**
+ * 2.0.0 [RVH-59] 검토 PC-63: the day's rest signs ("야간 뒤 휴식 부족") and its week over the limit ("이 주 66시간 · 52시간 넘음") in one
+ * line, or null when there are none.
+ */
+@Composable
+private fun dayCaution(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarViewModel, settings: AppSettings, weekNote: String?): String? {
+    val rest = remember(snapshot, day.date, settings.rules, settings.restCheck) {
+        if (settings.restCheck) vm.restIssuesOn(snapshot, day.date, settings.rules) else emptyList()
+    }
+    return (rest.map { it.kind.label }.distinct() + listOfNotNull(weekNote)).joinToString(" · ").ifEmpty { null }
 }
 
 @Composable
 private fun Token(t: DayToken) {
-    val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val (bg, fg) = when (t.tone) {
         DayToken.Tone.PLAIN -> scheme.surfaceContainerHigh to scheme.onSurfaceVariant
         DayToken.Tone.ACCENT -> scheme.tertiaryContainer to scheme.onTertiaryContainer
-        DayToken.Tone.WARNING -> cal.warningContainer to cal.warning
         DayToken.Tone.ERROR -> scheme.errorContainer to scheme.onErrorContainer
     }
     Text(
@@ -867,21 +881,9 @@ fun DayPreview(
         modifier = modifier.fillMaxWidth(),
     ) {
         Column {
-            DayHeader(day, today, snapshot, vm, onDateChange, onMemo,
-                Modifier.padding(top = 4.dp, bottom = if (weekNote != null) 4.dp else 10.dp), onOpen = onOpen)
-            weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) }
+            DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(top = 4.dp, bottom = 10.dp), onOpen = onOpen,
+                weekNote = weekNote)
         }
-    }
-}
-
-/** [CAL-01] "이 주 73시간 30분 · 64시간 넘음": the line that goes with the bar beside an over-limit week. */
-@Composable
-internal fun WeekNoteLine(text: String, modifier: Modifier = Modifier) {
-    val warning = LocalCalendarColors.current.warning
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Icon(Icons.Filled.WarningAmber, null, tint = warning, modifier = Modifier.size(16.dp))
-        Spacer(Modifier.width(6.dp))
-        Text(text, style = MaterialTheme.typography.bodySmall.merge(NumberStyle), color = warning)
     }
 }
 

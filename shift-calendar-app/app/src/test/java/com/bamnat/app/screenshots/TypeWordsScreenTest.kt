@@ -47,6 +47,8 @@ class TypeWordsScreenTest : ScreenshotBase() {
         "설정 › ${SettingsPage.WORK.titleFor(style)}" to { open(Place.SETTINGS_WORK) },
         "설정 › ${SettingsPage.ALARM.titleFor(style)}" to { open(Place.SETTINGS_ALARM) },
         "설정 › ${SettingsPage.NOTICES.titleFor(style)}" to { open(Place.SETTINGS_NOTICES) },
+        // 2.0.0 [RVH-60] PC-127: the calendar's 도구 sheet ('동료 근무표 받기' in a shop's), with what waits under 더 보기.
+        "달력 › 도구" to { tab(0, wide = false); tapText("도구"); settle() },
     ) + listOfNotNull(
         // 2.0.0 [RVH-53] HQ-27: 근무 주기 (출근 요일·일정 순서) of the kinds that have one.
         ("근무 주기" to pattern).takeIf { style in setOf(WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD) },

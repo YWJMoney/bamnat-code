@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.ui.layout.onSizeChanged
 import com.bamnat.app.data.rules
+import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.components.labelWidth
 import com.bamnat.app.ui.components.TimeRange
 import com.bamnat.app.ui.components.TimeRangeDialog
@@ -120,6 +122,7 @@ import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.components.memoBackground
 import com.bamnat.app.ui.money.DayMoneySections
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.alarm.PlannedAlarm
@@ -208,10 +211,15 @@ fun DayPanel(
     // [BIGTXT-01] 1.39 With a big font on a short screen the day's head alone filled the sheet and its last chips were squeezed: the head
     // then scrolls with the groups, as one page; otherwise it stays put above them.
     val conf = androidx.compose.ui.platform.LocalConfiguration.current
-    val oneScroll = scrollGroups && conf.fontScale >= 1.5f && conf.screenHeightDp < 760
+    // 2.0.0 [RVH-62] (조건 1·12, H 5묶음 사진에서 찾음): the folded Fold is tall (905dp), so at 200% the head stayed put and took four
+    // fifths of the sheet, the groups a strip under it that no swipe on the head could move. A head that takes more than [HEAD_SHARE]
+    // of the screen now scrolls with the groups too, on any screen; once so, it stays so for this screen and text size.
+    var headTall by remember(conf.fontScale, conf.screenHeightDp, conf.screenWidthDp) { mutableStateOf(false) }
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val oneScroll = scrollGroups && (conf.fontScale >= 1.5f && conf.screenHeightDp < 760 || headTall)
     val head: @Composable () -> Unit = {
-        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp)
-        weekNote?.let { WeekNoteLine(it, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) }
+        DayHeader(day, today, snapshot, vm, onDateChange, onMemo, Modifier.padding(bottom = 8.dp), compact = compact, memoToken = !storyUp,
+            weekNote = weekNote)
         // [RUL-03] 1.36 단추 on the day screen (스튜디오·받은 테마).
         com.bamnat.app.logic.LogicButtons(com.bamnat.core.formula.ButtonPlace.DAY, date, Modifier.padding(bottom = 4.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
@@ -224,7 +232,9 @@ fun DayPanel(
         head()
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding)) { body() }
     } else Column(modifier) {
-        head()
+        Column(Modifier.onSizeChanged { size ->
+            if (scrollGroups && !headTall && with(density) { size.height.toDp() } > (conf.screenHeightDp * HEAD_SHARE).dp) headTall = true
+        }) { head() }
         Column(
             (if (scrollGroups) Modifier.weight(1f, fill = false).imePadding().verticalScroll(rememberScrollState()) else Modifier)
                 .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = bottomPadding),
@@ -387,7 +397,8 @@ private fun DayGroups(
                                 day.extras.size == 1 && ExtraText.namesHours(day.extras[0]) -> names[0]
                                 else -> names.joinToString(" · ") + " · ${HoursFormat.korean(day.extraMinutes)}"
                             },
-                            summaryColor = if (review) cal.warning else if (names.isNotEmpty()) cal.holidayWork else null,
+                            // [RVH-58] 주의 colour, not red (조건 6): the moved pieces only need a look.
+                            summaryColor = if (review) com.bamnat.app.ui.theme.Tone.Caution.color() else if (names.isNotEmpty()) cal.holidayWork else null,
                             open = groups.isOpen(key, day.hasExtraWork), onToggle = { groups.toggle(key, day.hasExtraWork) },
                         ) {
                             ExtrasContent(day, snapshot, vm, insight, showAmounts = profile != null, onOpenExtraKinds = onOpenExtraKinds)
@@ -524,7 +535,6 @@ private fun DayGroups(
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
-                            summaryColor = if (rest.isNotEmpty()) cal.warning else null,
                             open = bodyOpen, onToggle = { groups.toggle(key, rest.isNotEmpty()) },
                             trailing = sleepButton,
                         ) {
@@ -732,7 +742,11 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
                 .distinctBy { it.kind to it.date }
         }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
-    rest?.let { issues -> WeekNoteLine(issues.joinToString(" · ") { i -> (if (i.date == day.date) "" else "다음 날 ") + "${i.kind.label}: ${i.text}" }, Modifier.padding(top = 6.dp)) }
+    // 2.0.0 [RVH-59] 검토 PC-63: the day's own signs are the head's 주의 line already; here only what putting this in does to the next
+    // day, as a note (ⓘ), so the window has one orange mark.
+    rest?.filter { it.date != day.date }?.takeIf { it.isNotEmpty() }?.let { issues ->
+        ToneLine(issues.joinToString(" · ") { i -> "다음 날 ${i.kind.label}: ${i.text}" }, Modifier.padding(top = 6.dp), tone = com.bamnat.app.ui.theme.Tone.Plain)
+    }
     // [DAILY-02] Whose shift the 대근 covers, kept as the day's memo.
     day.coveredShift?.let { DayNoteField(day.date, "${it.name} ${if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"}", vm) }
     if (day.source == DaySource.OVERRIDE) {
@@ -1314,22 +1328,18 @@ private fun RecordContent(day: ResolvedDay, changes: List<com.bamnat.app.data.Da
     }
 }
 
-/** [SLP-01][MKT-07] Rest-gap signs for one day. Reference only: 근무표는 회사가 정해요. */
+/**
+ * [SLP-01][MKT-07] Rest-gap signs for one day. Reference only: 근무표는 회사가 정해요. 2.0.0 [RVH-59] 검토 PC-63: the detail of the head's
+ * 주의 line, in the page's own colours (it was a big red box, the third red thing on the window).
+ */
 @Composable
 private fun RestWarning(issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
-    Surface(
-        color = MaterialTheme.colorScheme.errorContainer,
-        contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        shape = MaterialTheme.shapes.medium,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("휴식 점검", style = MaterialTheme.typography.titleSmall)
-            for (issue in issues) {
-                Text("${issue.kind.label}: ${issue.text}", style = MaterialTheme.typography.bodyMedium)
-            }
-            Text("참고용이에요. 몸 상태를 먼저 살피세요.", style = MaterialTheme.typography.bodySmall)
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("휴식 점검", style = MaterialTheme.typography.titleSmall)
+        for (issue in issues) {
+            Text("${issue.kind.label}: ${issue.text}", style = MaterialTheme.typography.bodyMedium)
         }
+        Text("참고용이에요. 몸 상태를 먼저 살피세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -1359,6 +1369,9 @@ private fun ChangeHistory(changes: List<com.bamnat.app.data.DayChange>) {
 }
 
 private const val HISTORY_ROWS = 3
+
+/** [RVH-62] The share of the screen the day's head may take and still stay put above the groups. */
+private const val HEAD_SHARE = 0.45f
 
 /** [STAB-01] How long the day must stay put before its pay is worked out. */
 private const val INSIGHT_SETTLE_MILLIS = 120L

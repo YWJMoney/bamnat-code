@@ -49,9 +49,15 @@ class ExampleCalendarGuardTest {
         waitFor("the first shifts") { runBlocking { c.scheduleRepository.shiftTypes.first().isNotEmpty() } }
     }
 
+    /**
+     * 2.0.0 [RVH-63] (총괄, 통합 b6ea1f9d3 전체에서 한 번 떨어짐: 65줄 'SHIFT 급여'): the app's start work ends with [ExampleCalendar.sweep],
+     * which takes away an example nobody is looking around in. Made bare ([ExampleCalendar.make]), an example could be swept between
+     * its making and the checks, and [CalendarBook.pay] then gave 내 달력's empty pay. The examples here are made the way the app makes
+     * them, by 우선 둘러볼게요 ([ExampleCalendar.browse]), so the sweep keeps them as it does on a phone.
+     */
     @Test fun `every kind of work makes a full example in no-backup storage, alarms off`() = runBlocking {
         WorkStyle.entries.forEach { style ->
-            val cal = c.example.make(style)
+            val cal = c.example.browse(style)
             assertTrue(cal.isExample)
             assertFalse(cal.alarms)
             assertEquals(PersonalCalendar.EXAMPLE, c.calendars.active.value)
@@ -70,7 +76,8 @@ class ExampleCalendarGuardTest {
     }
 
     @Test fun `a backup file holds nothing of the example`() = runBlocking {
-        c.example.make(WorkStyle.SHIFT)
+        c.example.browse(WorkStyle.SHIFT)
+        assertNotNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         // A memo of the user's own, on 내 달력, and one shared between the two.
         c.memoRepository.save(Memo(title = "내 메모", body = "진짜"))
         c.memoRepository.save(Memo(title = "같이", body = "둘 다", calendars = setOf(PersonalCalendar.MAIN, PersonalCalendar.EXAMPLE)))
@@ -88,7 +95,8 @@ class ExampleCalendarGuardTest {
     }
 
     @Test fun `removing takes everything, and its memos never go to 내 달력`() = runBlocking {
-        c.example.make(WorkStyle.HOURLY)
+        c.example.browse(WorkStyle.HOURLY)
+        assertNotNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         c.example.remove()
         assertNull(c.calendars.get(PersonalCalendar.EXAMPLE))
         assertEquals(PersonalCalendar.MAIN, c.calendars.active.value)

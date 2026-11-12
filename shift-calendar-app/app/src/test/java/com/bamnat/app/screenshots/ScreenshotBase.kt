@@ -507,8 +507,8 @@ abstract class ScreenshotBase {
         }
 
         /** [DAY-02] Opens a day group when it is closed; a group with something to say may already be open. */
-        fun openGroup(title: String) {
-            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = 0.5f)
+        fun openGroup(title: String, across: Float = 0.5f) {
+            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = across)
             if (node.config.getOrNull(SemanticsActions.OnClick)?.label == "펼치기") touch(node.boundsInWindow.center)
         }
 

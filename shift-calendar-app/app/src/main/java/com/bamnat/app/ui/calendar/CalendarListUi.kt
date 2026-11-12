@@ -388,12 +388,13 @@ fun CalendarSwitcherSheet(
                 AddRow("모든 달력 합쳐 보기", onCombined, MineShape, detail = "달력마다 색 막대로 한 달력에 보고, 겹치는 시간을 알려 줘요")
             }
             // 2.0.0 [RVH-20] 검토 T01-11: a shop, a field worker or an investor has no 동료 근무표; said in their words.
-            val employee = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle?.usesPayEngine != false
+            val workStyle = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
+            val employee = workStyle?.usesPayEngine != false
             AddRow("새 달력 만들기", onAddCalendar, MineShape, rows.newCalendarBadge(),
                 detail = if (employee) "알바·부업 근무를 따로 적고 따로 공유해요" else "다른 일·부업·가족 일정을 따로 적고 따로 공유해요")
             // [UX-03] Said the way people think of it: a coworker's schedule, and what it is for.
             onAddReceived?.let {
-                AddRow(if (employee) "동료 근무표 받기" else "다른 사람 달력 받기", it, CircleShape,
+                AddRow(com.bamnat.core.work.receiveTitle(workStyle), it, CircleShape,
                     detail = "받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요")
             }
             Text(
