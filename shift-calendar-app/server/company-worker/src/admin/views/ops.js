@@ -5,7 +5,7 @@
 //   오류 묶음 #/errors [ADM3-13] · 서버 상태 판 [ADM3-04·05·19] · 사람 옆 패널 [ADM3-11] · 개발사항 이야기 [ADM3-34]
 // 화면마다 [loads]가 읽을 길을, [has]가 다 왔는지를 앱에 알려요(앱의 load()·hasData()가 이것을 써요).
 export function opsViews(A) {
-  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl, askText, danger } = A;
 
   const won = (n) => `${Math.round(n ?? 0).toLocaleString("ko-KR")}원`;
   const when = (ms) => (ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
@@ -246,7 +246,7 @@ export function opsViews(A) {
     const t = d.table;
     const band = (kind) => t[kind].map((b, i) => `<tr><th scope="row">${b.cap}명</th>${["monthly", "yearly", "pass"].map((f) => `<td><input name="${kind}.${i}.${f}" type="number" min="0" max="1000000" value="${b[f]}" aria-label="${kind} ${b.cap}명 ${f}"><input type="hidden" name="${kind}.${i}.cap" value="${b.cap}"></td>`).join("")}</tr>`).join("");
     const prices = S.me?.owner ? `<details class="card" data-key="price-table"${S.opened.get("price-table") ?? d.missingPrice ? " open" : ""}><summary><b>가격표</b><span class="meta">Play Console 가격을 그대로</span></summary>
-      <form data-form="price-table"><div class="tiles">${[["bamnat_pro.monthly", "프로 월", t.bamnat_pro.monthly], ["bamnat_pro.yearly", "프로 연", t.bamnat_pro.yearly], ["bamnat_pro_pass_1y.pass", "프로 1년 이용권", t.bamnat_pro_pass_1y.pass], ["fee", "수수료 %", t.fee]]
+      <form data-form="price-table" data-guard="가격표"><div class="tiles">${[["bamnat_pro.monthly", "프로 월", t.bamnat_pro.monthly], ["bamnat_pro.yearly", "프로 연", t.bamnat_pro.yearly], ["bamnat_pro_pass_1y.pass", "프로 1년 이용권", t.bamnat_pro_pass_1y.pass], ["fee", "수수료 %", t.fee]]
         .map(([n, l, v]) => `<label class="fieldset">${esc(l)}<input name="${n}" type="number" min="0" max="1000000" value="${v}"></label>`).join("")}</div>
       ${["team", "staff"].map((k) => `<h3>${k === "team" ? "팀 요금제" : "직원 요금제"}</h3><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">인원</th><th scope="col">월</th><th scope="col">연</th><th scope="col">1년 이용권</th></tr></thead><tbody>${band(k)}</tbody></table></div>`).join("")}
       <div class="actions"><button class="btn primary" type="submit">저장</button></div></form></details>` : "";
@@ -532,9 +532,11 @@ export function opsViews(A) {
       else if (what === "undo") body.done = false;
       else if (what === "skip") body.skip = true;
       else {
-        const note = window.prompt("메모(기록에 남아요)", run.steps.find((s) => s.key === key)?.note ?? "");
-        if (note === null) return;
-        body = { step: key, note };
+        // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 앱의 여러 줄 창.
+        return askText({ title: "메모", text: "출시 기록에 남아요.", label: "메모", value: run.steps.find((s) => s.key === key)?.note ?? "", multiline: true, maxlength: 500 },
+          async (note) => {
+            if (await act(() => api(`/release/${run.version}`, "POST", { step: key, note }), "적었어요")) reload("launch", "launchOne");
+          });
       }
       if (await act(() => api(`/release/${run.version}`, "POST", body), what === "done" ? "했어요" : what === "skip" ? "건너뛰었어요" : what === "undo" ? "되돌렸어요" : "적었어요")) reload("launch", "launchOne");
     },
@@ -542,9 +544,12 @@ export function opsViews(A) {
     "money-days": ({ key }) => { S.moneyDays = Number(key); reload("money", "changes"); },
     "errors-show": ({ key }) => { S.errorsShow = key; reload("errors"); },
     "error-state": async ({ id, key }) => {
-      const note = key === "fixed" ? window.prompt("무엇을 고쳤나요? (선택)", "") : "";
-      if (note === null) return;
-      if (await act(() => api(`/watch/errors/${id}`, "POST", { status: key, note }), key === "fixed" ? "고쳤어요로 바꿨어요" : "바꿨어요")) reload("errors");
+      const save = async (note) => {
+        if (await act(() => api(`/watch/errors/${id}`, "POST", { status: key, note }), key === "fixed" ? "고쳤어요로 바꿨어요" : "바꿨어요")) reload("errors");
+      };
+      // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 앱의 창.
+      if (key === "fixed") return askText({ title: "고쳤어요로 바꾸기", label: "무엇을 고쳤나요? (선택)", submit: "고쳤어요", maxlength: 300 }, save);
+      return save("");
     },
   };
 
@@ -604,7 +609,17 @@ export function opsViews(A) {
       const bands = (kind) => (S.data.money?.table?.[kind] ?? []).map((_, i) => ({ cap: n(`${kind}.${i}.cap`), monthly: n(`${kind}.${i}.monthly`), yearly: n(`${kind}.${i}.yearly`), pass: n(`${kind}.${i}.pass`) }));
       const body = { bamnat_pro: { monthly: n("bamnat_pro.monthly"), yearly: n("bamnat_pro.yearly") }, bamnat_pro_pass_1y: { pass: n("bamnat_pro_pass_1y.pass") },
         team: bands("team"), staff: bands("staff"), fee: n("fee") };
-      if (await act(() => api("/money/prices", "POST", body), "가격표를 저장했어요")) reload("money");
+      // 2.0.0 [RVA-04] 검토 ADM-05: 요금표 저장도 무엇이 얼마에서 얼마로 바뀌는지 한 번 보여 주고 물어요(Play로 보내기처럼).
+      const t = S.data.money?.table ?? {};
+      const won = (v) => `${Number(v ?? 0).toLocaleString("ko-KR")}`;
+      const changed = [["프로 월", t.bamnat_pro?.monthly, body.bamnat_pro.monthly], ["프로 연", t.bamnat_pro?.yearly, body.bamnat_pro.yearly],
+        ["프로 1년 이용권", t.bamnat_pro_pass_1y?.pass, body.bamnat_pro_pass_1y.pass], ["수수료 %", t.fee, body.fee],
+        ...["team", "staff"].flatMap((k) => (t[k] ?? []).flatMap((b, i) => ["monthly", "yearly", "pass"].map((f) => [`${k === "team" ? "팀" : "직원"} ${b.cap}명 ${{ monthly: "월", yearly: "연", pass: "이용권" }[f]}`, b[f], body[k][i]?.[f]])))]
+        .filter(([, a, b]) => Number(a ?? 0) !== Number(b ?? 0));
+      if (!changed.length) return toast("바뀐 값이 없어요");
+      A.danger({ title: "가격표를 저장할까요?", text: "앱의 가격 안내와 매출 계산이 이 값을 따라요. Play Console 가격과 같은지 한 번 더 봐 주세요.",
+        rows: changed.slice(0, 8).map(([k, a, b]) => [k, `${won(a)} → ${won(b)}`]).concat(changed.length > 8 ? [["그 밖", `${changed.length - 8}칸`]] : []),
+        label: "저장", tone: "primary", run: async () => { if (await act(() => api("/money/prices", "POST", body), "가격표를 저장했어요")) reload("money"); } });
     },
   };
 
