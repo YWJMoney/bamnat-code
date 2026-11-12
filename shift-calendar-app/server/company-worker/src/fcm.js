@@ -1,5 +1,5 @@
 import { all, deviceHash, deviceId, json, overLimit, readJson, run } from "./index.js";
-import { HOUR } from "./units.js";
+import { DAY, HOUR } from "./units.js";
 
 // ---- 1.36 [PUSH-01] 문의 답 바로 알리기 (사용자 2026-11-01 "계획해서 개발 진행해줘", 계획/1.36-문의답-바로알림.md) ----
 //
@@ -134,4 +134,16 @@ export async function fcmTellDevices(env, devices, kind, now = Date.now(), ok = 
 /** For tests: forget the cached access token. */
 export function fcmForget() {
   fcmCached = null;
+}
+
+/**
+ * 2.0.0 [RVQ-16] 검토 SRV-09: 앱이 소식·문의 답을 물을 때 이 설치의 알림 토큰과 같은 근무 알림에 '아직 쓰는 중'을 30일에 한 번 적어요.
+ * 정기 정리가 180일 동안 적히지 않은 것(앱을 지운 휴대폰)을 지워요. 30일 안에 적은 것은 고치지 않아 보통은 쓰는 줄이 0이에요.
+ */
+export async function stillHere(env, dev, now) {
+  if (!dev) return;
+  await env.DB.batch([
+    env.DB.prepare("UPDATE push_phones SET at = ? WHERE device = ? AND at < ?").bind(now, dev, now - 30 * DAY),
+    env.DB.prepare("UPDATE plaza_watch SET at = ? WHERE device = ? AND at < ?").bind(now, dev, now - 30 * DAY),
+  ]);
 }

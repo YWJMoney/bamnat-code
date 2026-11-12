@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,6 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.pay.Hint
 import com.bamnat.app.ui.pay.Label
 import com.bamnat.app.ui.pay.MoneyField
@@ -177,6 +180,14 @@ private fun CellCard(
                 }
                 Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = colors.onSurfaceVariant)
                 IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, "‘${cell.name}’ 빼기") }
+            }
+            // 2.0.0 [RVL-17] (검토 SCAN-30) A sentence that would change the pay type or cut it by half or more: said, and left off.
+            cell.caution?.let { said ->
+                Row(Modifier.padding(start = 12.dp, end = 16.dp, bottom = 8.dp).semantics(mergeDescendants = true) {},
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Outlined.WarningAmber, null, tint = Tone.Caution.color(), modifier = Modifier.size(16.dp))
+                    Text(said, style = MaterialTheme.typography.bodySmall, color = colors.onSurface)
+                }
             }
             if (unsure) Text(
                 "확실하지 않아요. 맞는지 봐 주세요." + if (cell.source.isNotBlank()) " 사진에서 “${cell.source}”로 읽었어요." else "",

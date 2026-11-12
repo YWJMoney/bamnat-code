@@ -87,23 +87,31 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         }.getOrNull()
     }
     val missing = theirs.filter { pairs[it.id] == null && days.values.any { d -> d == it.id } }
+    // 2.0.0 [RVG-33] 검토 HQ-55 (조건 4): what happens after 넣기 is one line with ⓘ (the common [Explain]); the rest of the old
+    // paragraph (the pay note, how a later change comes) is behind ⓘ, and '이 근무표가 바뀌면' just below says it in full anyway.
+    val afterNote = onceNote(cal?.fromLeader == true) + " " + if (pay != null) "예상 급여는 야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고)."
+        else "급여 설정을 하면 이 근무표로 이번 달 월급이 얼마인지도 바로 보여요."
+    val followLine = @Composable {
+        com.bamnat.app.ui.components.Explain("adopt:after", afterNote, summary = "바뀌면 다시 받아요", iconOnly = false)
+    }
     SectionCard(title = "내 달력에 넣기") {
         if (undo != null && (changes.isEmpty() || all.isEmpty())) {
             Text("${undo!!.days}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
-            Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            followLine()
             // [RVG-31] 검토 PC-95: back to before '넣기' only (the days and the link's answers), so the days can be put in again.
             TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.back() } }) { Text("되돌리기") }
             return@SectionCard
         }
-        Text("${month.monthValue}월 받은 근무 중 내 달력과 다른 날 ${changes.size}일", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-        Text(changes.keys.take(8).joinToString(", ") { d -> "${d.dayOfMonth}일 ${mine.typesById[(changes[d] as ShiftOverride.Shift).shiftTypeId]?.label ?: ""}" } +
-            if (changes.size > 8) " 외 ${changes.size - 8}일" else "", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("${month.monthValue}월 내 달력과 다른 날 ${changes.size}일", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+        // [RVG-33] The days are on the calendar just above; here one line of them, cut where it ends.
+        Text(changes.keys.joinToString(", ") { d -> "${d.dayOfMonth}일 ${mine.typesById[(changes[d] as ShiftOverride.Shift).shiftTypeId]?.label ?: ""}" },
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         pay?.let { (now, after) ->
             val diff = after - now
-            Text("내 급여 설정으로 ${month.monthValue}월 예상 ${Fmt.won(after)}" + if (diff != 0L) " (지금보다 ${if (diff > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(diff))})" else "",
+            Text("${month.monthValue}월 예상 ${Fmt.won(after)}" + if (diff != 0L) " (지금보다 ${if (diff > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(diff))})" else "",
                 style = MaterialTheme.typography.bodyMedium)
-            Text("야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고).", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } ?: Text("급여 설정을 하면 이 근무표로 이번 달 월급이 얼마인지도 바로 보여요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (hand.isNotEmpty()) {
             val handDays = hand.sorted().joinToString(", ") { "${it.dayOfMonth}일" }
             Text(if (withHand) "직접 바꾼 날($handDays)도 함께 넣어요." else "직접 바꾼 날은 빼고 넣어요: $handDays",
@@ -112,7 +120,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         }
         if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
             style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
-        Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        followLine()
         val putIn = {
             val todo = changes
             app.launch { undo = com.bamnat.app.share.PutIn.apply(c, id, todo) }

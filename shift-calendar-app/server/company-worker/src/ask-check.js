@@ -51,7 +51,7 @@ const AC_MONEY = new RegExp([
   "refund", "charged?\\b", "payment", "\\bpaid\\b", "billing", "subscription",
 ].join("|"));
 const AC_LAW = new RegExp([
-  "불법\\s*촬영", "몰카", "명예\\s*훼손", "고소", "고발", "경찰\\s*(에|서|한테)?\\s*(신고|부르|연락|출동)", "경찰서", "변호사", "소송", "소비자\\s*(원|보호|센터)", "공정\\s*위",
+  "불법\\s*촬영", "몰카", "명예\\s*훼손", "고소", "고발", "경찰\\s*(에|서|한테|을|를)?\\s*(신고|부르|부를|불러|연락|출동)", "경찰서", "변호사", "소송", "소비자\\s*(원|보호|센터)", "공정\\s*위",
   "법적\\s*(대응|조치|책임)", "성희롱", "성추행", "협박", "스토킹", "자해", "자살", "죽고\\s*싶", "(청소년|미성년자?)\\S*\\s*.{0,12}(성|협박|피해|신고|유해|만남|사진)",
   "\\bsue\\b", "lawsuit", "lawyer", "police",
 ].join("|"));
@@ -73,11 +73,12 @@ const AC_SECURITY = new RegExp([
   "db\\s*(주소|구조|접속|내용)", "\\bsql\\b", "디컴파일", "리버스\\s*엔지", "백도어", "난독화", "(서버|ssl|tls|서명)\\s*인증서", "서명\\s*키",
 ].join("|"));
 // 묻는 꼴일 때만: '직원이에요'(자기소개)·'직원이 쓴'·'기계가 고장'·'AI가 잘못 읽어요'는 그냥 문의예요.
-const AC_ASKING = "(세요|신가요|십니까|인가요|인가|인지|입니까|이야|야\\s*\\?|냐|맞나|맞아|맞죠|맞나요|이죠|죠|임|이지|이니|이에요\\s*\\?|예요\\s*\\?|에요\\s*\\?|이세요)";
+// 2.0.0 [RVR-16] (검토 TEST-11) 예문 장부를 늘리다 찾은 틈: '경찰 부를 거예요', '자동 답장이에요?', '기계가 답하는 건가요', 'claude 맞지?'.
+const AC_ASKING = "(세요|신가요|십니까|인가요|인가|인지|입니까|이야|야\\s*\\?|냐|맞나|맞아|맞죠|맞지\\s*\\?|맞나요|이죠|죠|임|이지|이니|이에요\\s*\\?|예요\\s*\\?|에요\\s*\\?|이세요)";
 const AC_HUMAN = new RegExp([
   `(사람|상담원|상담사|직원|운영자)\\s*(이|인)?\\s*${AC_ASKING}`, "(실제|진짜)?\\s*사람이\\s*(답|쓰|쓴|적|하는|보는)",
-  `(ai|에이\\s*아이|인공\\s*지능|챗\\s*봇|gpt|llm|클로드|claude|로봇|기계|봇)\\s*(이|가)?\\s*${AC_ASKING}`, "(ai|에이\\s*아이|인공\\s*지능|챗\\s*봇|gpt|llm|클로드|claude|로봇|봇)\\s*(가|이|로)\\s*(답|쓴|쓰|적)",
-  "자동\\s*(답|응답)\\s*(이|인|이에|이야|이세|맞|인가|이죠)", "자동\\s*응답", "are\\s+you\\s+(a\\s+)?(human|bot|robot|ai|real|person)", "(human|real\\s+person)\\s+or\\s+(a\\s+)?(bot|ai)", "chat\\s*gpt",
+  `(ai|에이\\s*아이|인공\\s*지능|챗\\s*봇|gpt|llm|클로드|claude|로봇|기계|봇)\\s*(이|가)?\\s*${AC_ASKING}`, "(ai|에이\\s*아이|인공\\s*지능|챗\\s*봇|gpt|llm|클로드|claude|로봇|기계|봇)\\s*(가|이|로)\\s*(답|쓴|쓰|적)",
+  "자동\\s*(답|응답|답장|답변)\\s*(이|인|이에|이야|이세|맞|인가|이죠)", "자동\\s*응답", "are\\s+you\\s+(a\\s+)?(human|bot|robot|ai|real|person)", "(human|real\\s+person)\\s+or\\s+(a\\s+)?(bot|ai)", "chat\\s*gpt",
 ].join("|"));
 // 빈칸을 다 지운 글에 견주는 낱말: 띄어 쓰거나 기호를 끼워도 뜻이 하나뿐인 말만(다른 낱말에 섞여 우연히 생기지 않는 것).
 const AC_TIGHT = {
@@ -108,11 +109,19 @@ function acForeign(spaced) {
   return hangul / [...letters].length < 0.2;
 }
 
+// 2.0.0 [RVR-16] (검토 T60-04) 근로기준법의 '보상 휴가'(제57조)·보상 시간을 묻는 글에서는 '보상'이 돈 요구가 아니에요:
+// "보상 휴가는 어디에 적나요? 보상을 받았는데…". 그 글에서는 '보상'만 빼고 견줘요(환불·결제 같은 다른 돈 말은 그대로 잡아요).
+const AC_LABOR_COMP = /보상\s*(휴가|휴무|시간|근무|휴일)/;
+
 /** 문의 글이 사람이 먼저 봐야 하는지: { key, name } 또는 null. */
 export function askOwnerOf(text) {
   const raw = String(text ?? "");
   const { spaced, tight } = plainAsk(raw);
-  for (const [key, name, re] of AC_RULES) if (re.test(spaced) || AC_TIGHT[key]?.test(tight)) return { key, name };
+  const labor = AC_LABOR_COMP.test(spaced);
+  for (const [key, name, re] of AC_RULES) {
+    const s = key === "money" && labor ? spaced.replace(/보상/g, " ") : spaced;
+    if (re.test(s) || AC_TIGHT[key]?.test(tight)) return { key, name };
+  }
   // 낱말 사이에 다른 글자(폭 없는 글자·전각)가 아닌 다른 문자(일본어 등)만 있으면 spaced가 비어요.
   if (acForeign(spaced) || (!spaced && raw.replace(/\s+/g, "").length >= 4)) return { key: "foreign", name: "한국어가 아닌 문의" };
   return null;
