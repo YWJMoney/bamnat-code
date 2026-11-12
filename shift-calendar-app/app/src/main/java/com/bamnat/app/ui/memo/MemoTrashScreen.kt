@@ -133,7 +133,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
                     memo.date?.let { Text(Fmt.dayTitle(it), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (memo.body.isNotBlank()) Text(memo.body, style = MaterialTheme.typography.bodyMedium)
                     memo.checklist.forEach { item ->
-                        Text((if (item.checked) "☑ " else "☐ ") + item.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(com.bamnat.core.memo.ChecklistEdit.shared(item), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (memo.body.isBlank() && memo.checklist.isEmpty()) Text("(내용 없음)", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -24,7 +24,7 @@ class ProblemWordsTest {
         assertEquals(companyProblem("not_found"), companyProblem("http_404"))
         assertEquals(companyProblem("too_large"), companyProblem("http_413"))
         assertEquals("내가 올린 것에는 할 수 없어요", companyProblem("own"))
-        assertTrue(companyProblem("taken").contains("별명"))
+        assertTrue(companyProblem("taken").contains("마을 이름"))
         listOf("http_400", "http_418", "a_word_from_2_1", "kind", "room").forEach { word ->
             assertTrue(word, companyProblem(word).contains("업데이트"))
         }

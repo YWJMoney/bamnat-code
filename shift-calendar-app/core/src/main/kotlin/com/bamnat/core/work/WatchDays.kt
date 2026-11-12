@@ -21,9 +21,18 @@ data class WatchDay(
     /** [WEAR-03] The shift's icon key ([com.bamnat.core.model.ShiftIcon]), for the watch face's small image. */
     val icon: String? = null,
 ) {
-    /** "주간 09:00–18:00", "휴무", "연차". */
+    /**
+     * 2.0.0 [RVIB-09] (총괄 SN-18) An emoji 근무 그림 ("e:🌙", 1.34, 장터 작품 100개가 써요): the watch knows only the drawn icons, so it
+     * is drawn as a letter in front of the name instead; null for a drawn icon or none.
+     */
+    val emoji: String? get() = com.bamnat.core.model.ShiftIcon.emoji(icon)
+
+    /** "🌙 야간", or the name alone. */
+    val shown: String get() = emoji?.let { "$it $name" } ?: name
+
+    /** "주간 09:00–18:00", "휴무", "연차" (2.0.0 [RVIB-09] "🌙 야간 22:00–07:00" with an emoji 근무 그림). */
     val line: String
-        get() = if (start != null && end != null && !off) "$name ${hm(start)}–${hm(end)}" else name
+        get() = if (start != null && end != null && !off) "$shown ${hm(start)}–${hm(end)}" else shown
 
     /** "09:00–18:00", or empty on a day off. */
     val times: String get() = if (start != null && end != null && !off) "${hm(start)}–${hm(end)}" else ""
@@ -66,6 +75,14 @@ data class WatchPayload(
     val noun: String = "근무",
     /** 2.0.0 [RVI-10] (검토 U03-10) The amounts most written lately on the phone's 가계부, for one-tap chips on 돈 적기. */
     val recentAmounts: List<Long> = emptyList(),
+    /** 2.0.0 [RVI-94] (검토 I03b-04, G5-M3) 잠 타일: the phone keeps a sleep log (오늘의 흐름 on), so the wrist may write to it. */
+    val sleepOn: Boolean = false,
+    /** 2.0.0 [RVI-94] Asleep since then (잠들었어요 on the phone or the wrist), or null when awake. */
+    val asleepSince: LocalDateTime? = null,
+    /** 2.0.0 [RVI-95] (검토 I03b-04·I07ab-04, TASK-35) 오늘 할 일 타일: the phone's 할 일 위젯 list, at most [WatchTask.MAX]. */
+    val tasks: List<WatchTask> = emptyList(),
+    /** 2.0.0 [RVI-95] The list's head as the widget says it ("오늘 할 일 3개 · 1개 늦음"). */
+    val taskHead: String = "",
 ) {
     enum class Clock { NONE, IN, OUT }
 }
@@ -155,7 +172,9 @@ object WatchDays {
             p.weekStart.toString(), p.weekMinutes.toString(), p.weekLimitMinutes.toString(), p.clock.name, if (p.alarmToday) "1" else "0",
             if (p.ringOnWatch) "1" else "0", p.moneyCategories.joinToString(",") { clean(it).replace(",", " ") }, clean(p.sleepLine),
             // 2.0.0 [RVI-08][RVI-09][RVI-10] Fields 14 on; an older watch ignores them.
-            if (p.hourly) "1" else "0", clean(p.noun), p.recentAmounts.joinToString(","))
+            if (p.hourly) "1" else "0", clean(p.noun), p.recentAmounts.joinToString(","),
+            // 2.0.0 [RVI-94][RVI-95] Fields 17 on.
+            if (p.sleepOn) "1" else "0", p.asleepSince?.toString().orEmpty(), WatchTask.encode(p.tasks), clean(p.taskHead))
             .joinToString("\t")
         return (listOf(head) + p.days.map { d ->
             listOf(d.date.toString(), clean(d.name), clean(d.label), d.colorArgb.toString(), d.start?.let(::hm).orEmpty(),
@@ -190,7 +209,11 @@ object WatchDays {
             hourly = head.getOrNull(14) == "1",
             noun = head.getOrNull(15)?.takeIf { it.isNotBlank() } ?: "근무",
             recentAmounts = head.getOrNull(16)?.split(',')?.mapNotNull { it.trim().toLongOrNull()?.takeIf { a -> a in 1..WatchMoney.MAX_AMOUNT } }
-                ?.take(WatchMoney.MAX_AMOUNTS).orEmpty())
+                ?.take(WatchMoney.MAX_AMOUNTS).orEmpty(),
+            sleepOn = head.getOrNull(17) == "1",
+            asleepSince = head.getOrNull(18)?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDateTime.parse(it) }.getOrNull() },
+            tasks = WatchTask.decode(head.getOrNull(19).orEmpty()),
+            taskHead = head.getOrNull(20).orEmpty())
     }
 
     /*
@@ -305,6 +328,10 @@ object WatchDays {
     const val RING_SNOOZE_PATH = "/bamnat/sync/ring-snooze"
     /** 1.38 [LEDH-14] 워치로 돈 적기: one line of spending from the watch ([WatchMoney.encode]). */
     const val MONEY_PATH = "/bamnat/sync/money"
+    /** 2.0.0 [RVI-94] 잠들었어요·깼어요 from the wrist ([WatchSleep.encode]). */
+    const val SLEEP_PATH = "/bamnat/sync/sleep"
+    /** 2.0.0 [RVI-95] A to-do finished (or back to do) on the wrist ([WatchTask.doneMessage]). */
+    const val TASK_PATH = "/bamnat/sync/task"
 
     private val WEEKDAYS = listOf("월", "화", "수", "목", "금", "토", "일")
 
@@ -356,5 +383,85 @@ object WatchMoney {
         val at = f[3].toLongOrNull() ?: return null
         val id = f[0].takeIf { it.isNotBlank() } ?: return null
         return Line(id, amount, f[2].trim().ifBlank { "기타" }, at)
+    }
+}
+
+/**
+ * 2.0.0 [RVI-94] (검토 I03b-04, 대기열 G5-M3) 워치에서 잠들었어요·깼어요: the wrist writes the same sleep log as the phone's button, without
+ * picking the phone up in the dark. [atMillis] is when it was pressed on the wrist (a message a little late still says the right
+ * time); [id] lets the phone write a press it got twice only once.
+ */
+object WatchSleep {
+    data class Press(val asleep: Boolean, val atMillis: Long, val id: String)
+
+    fun encode(p: Press): String = listOf(if (p.asleep) "asleep" else "awake", p.atMillis.toString(), p.id.filter { it.isLetterOrDigit() || it == '-' }.take(40))
+        .joinToString("\t")
+
+    fun decode(text: String): Press? {
+        val f = text.split('\t')
+        if (f.size < 3) return null
+        val asleep = when (f[0]) { "asleep" -> true; "awake" -> false; else -> return null }
+        val at = f[1].toLongOrNull()?.takeIf { it > 0 } ?: return null
+        return Press(asleep, at, f[2].takeIf { it.isNotBlank() } ?: return null)
+    }
+
+    /**
+     * What the 잠 tile says: asleep since when (the wrist's own press until the phone answers), and the one button. [pressed] is the
+     * wrist's last press not yet in a copy from the phone ([pressedAt] when).
+     */
+    fun asleepNow(p: WatchPayload, pressed: Boolean?, pressedAt: LocalDateTime?): LocalDateTime? = when (pressed) {
+        true -> pressedAt
+        false -> null
+        null -> p.asleepSince
+    }
+}
+
+/**
+ * 2.0.0 [RVI-95] (검토 I03b-04·I07ab-04, 대기열 TASK-35) 워치 '오늘 할 일' 타일: the rows the phone's 할 일 위젯 shows ([com.bamnat.core.memo.TaskList]),
+ * worked out on the phone and sent with the days; a tap on the wrist finishes one on its day, as the widget's circle does.
+ */
+data class WatchTask(val id: Long, val text: String, val day: LocalDate?, val done: Boolean, val late: Boolean) {
+    companion object {
+        /** Rows sent: the tile shows the first few open ones and how many more. */
+        const val MAX = 8
+        private const val ROW = '\u001E'
+        private const val FIELD = '\u001F'
+
+        fun encode(tasks: List<WatchTask>): String = tasks.take(MAX).joinToString(ROW.toString()) { t ->
+            listOf(t.id.toString(), t.day?.toString().orEmpty(), if (t.done) "1" else "0", if (t.late) "1" else "0",
+                t.text.replace('\t', ' ').replace('\n', ' ').replace(ROW, ' ').replace(FIELD, ' ')).joinToString(FIELD.toString())
+        }
+
+        fun decode(text: String): List<WatchTask> = if (text.isEmpty()) emptyList() else text.split(ROW).mapNotNull { r ->
+            val f = r.split(FIELD)
+            if (f.size < 5) return@mapNotNull null
+            val id = f[0].toLongOrNull() ?: return@mapNotNull null
+            WatchTask(id, f[4], f[1].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }, f[2] == "1", f[3] == "1")
+        }.take(MAX)
+
+        /** The phone's rows for the watch: [rows] as the widget orders them (late, today, pinned, then finished). */
+        fun of(rows: List<com.bamnat.core.memo.TaskList.Row>, now: LocalDateTime): List<WatchTask> = rows.take(MAX).map { r ->
+            WatchTask(r.memo.id, r.text, r.day, r.done, com.bamnat.core.memo.TaskList.overdue(r, now))
+        }
+
+        /** "id\tday\t1": finished (1) or back to do (0) on its day. */
+        fun doneMessage(t: WatchTask, done: Boolean): String = listOf(t.id.toString(), t.day?.toString().orEmpty(), if (done) "1" else "0").joinToString("\t")
+
+        fun readDone(text: String): Triple<Long, LocalDate?, Boolean>? {
+            val f = text.split('\t')
+            if (f.size < 3) return null
+            val id = f[0].toLongOrNull() ?: return null
+            val day = f[1].takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+            return Triple(id, day, f[2] == "1")
+        }
+
+        /**
+         * What the tile shows: the open rows first ([shown] of them) with [pressed] (ids finished on the wrist, not yet in a copy
+         * from the phone) taken out, and how many more are open.
+         */
+        fun tile(tasks: List<WatchTask>, pressed: Set<Long>, shown: Int = 3): Pair<List<WatchTask>, Int> {
+            val open = tasks.filter { !it.done && it.id !in pressed }
+            return open.take(shown) to (open.size - shown).coerceAtLeast(0)
+        }
     }
 }

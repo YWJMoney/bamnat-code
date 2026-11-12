@@ -353,7 +353,8 @@ fun PublicApplySheet(
     val needsToday = !weekly && codes.isNotEmpty() && pick == null && !upOnly
     val ready = (codes.any { it in PublicCycle.WORK } || cycle.roster) && (!needsToday || today != null)
 
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    // 2.0.0 [RVN-18] 검토 COMP-22-3: kept up while it is putting the cycle in (before, a drag hid it and it still held the screen).
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
         // [J133-61] 1.33 (중간 빌드 확인): the button stays at the bottom of the sheet; the order list scrolls above it, so '이 순서로
         // 설정 이어가기' is never below the fold.
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -714,7 +715,8 @@ internal fun UploadCycleDialog(initial: String, onDismiss: () -> Unit, onNext: (
         title = { Text("우리 회사 근무표 올리기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("근무 순서와 시간만 넣어요. 이름·급여는 보내지 않고, 다른 분이 써도 되는지는 달력에 넣은 뒤 한 번 물어요.",
+                // 2.0.0 [RVN-18] COMP-22-2 both ways on (올리기만, 내 달력에도) ask before anything goes, so it says that.
+                Text("근무 순서와 시간만 넣어요. 이름·급여는 보내지 않고, 다른 분이 써도 되는지는 보내기 전에 한 번 물어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 androidx.compose.material3.OutlinedTextField(name, { name = it.take(40) }, label = { Text("회사·기관 이름") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth())

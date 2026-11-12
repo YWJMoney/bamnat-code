@@ -1,5 +1,7 @@
 package com.bamnat.core.plaza
 
+import com.bamnat.core.text.Josa
+
 /**
  * 1.39 [CARE-03][CARE-10] 마을 돌봄의 앱 쪽 말: 마을을 열 때 한 번 보여 주는 부드러운 안내, 쉬는 중 한 줄, 해명하기, 소식 한 줄.
  * 서버 `GET /api/community/standing`이 주는 것을 읽어요(설계 docs/plans/1.39-마을-돌봄-경고-제한-설계.md).
@@ -87,7 +89,7 @@ object CommunityCare {
         when (w.reason) {
             "auto_first" -> append("${what ?: "쓴 글"} 하나가 운영자 확인 뒤 가려졌어요. 처음이라 안내만 드려요. 마을은 여러 분이 함께 보는 곳이라 조금만 더 부드럽게 부탁드려요.")
             "auto_again" -> append("운영자가 확인해 가린 글이 한 번 더 생겼어요. 같은 일이 또 있으면 며칠 동안 글쓰기를 쉬어 가게 돼요.")
-            else -> append("${what?.let { "$it 가운데 " } ?: ""}‘${reasonText(w.reason)}’로 신고된 것을 운영자가 직접 확인했어요. 지금은 아무것도 막지 않았어요. 앞으로 함께 편한 마을이 되도록 부탁드려요.")
+            else -> append("${what?.let { "$it 가운데 " } ?: ""}‘${reasonText(w.reason)}’${Josa.fit(reasonText(w.reason), "로")} 신고된 것을 운영자가 직접 확인했어요. 지금은 아무것도 막지 않았어요. 앞으로 함께 편한 마을이 되도록 부탁드려요.")
         }
         w.note?.let { append("\n\n운영자 한 줄: $it") }
         if (badgeRest && w.reason != "auto_first") append("\n\n$BADGE_REST_WARN")
@@ -105,7 +107,8 @@ object CommunityCare {
     /** 쉬는 중 자세히(한 줄을 누르면): 무엇·왜·무엇이 되고 안 되는지·해명. */
     fun holdBody(h: CareNote, answerHours: Int = ANSWER_HOURS, zone: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")): String = buildString {
         val what = aboutText(h.about)
-        append("${what?.let { "$it 가운데 " } ?: ""}‘${reasonText(h.reason)}’을 운영자가 확인해 ${h.days ?: ""}일 동안 ${scopeText(h.scope)}를 쉬어 가요")
+        // 2.0.0 [RVN-18] 검토 COMP-58: 조사는 까닭에 맞춰(‘성적인 내용’을, ‘사실과 다른 정보’를), 날 수를 모르면 "일 동안" 대신 "당분간".
+        append("${what?.let { "$it 가운데 " } ?: ""}‘${reasonText(h.reason)}’${Josa.fit(reasonText(h.reason), "을")} 운영자가 확인해 ${h.days?.let { "${it}일 동안" } ?: "당분간"} ${scopeText(h.scope)}를 쉬어 가요")
         h.untilMillis?.let { append("(${day(it, zone)}까지, 지나면 저절로 풀려요)") }
         append(".\n\n")
         append(if (h.scope == "community") "글·댓글·좋아요·투표·작품 올리기를 쉬어요." else "글·댓글·의견을 쉬어요. 좋아요와 테마 쓰기는 그대로예요.")
@@ -120,10 +123,13 @@ object CommunityCare {
         })
     }
 
-    /** 서버가 쓰기를 막았을 때(error "muted", until 있음). [until]이 없으면 옛 말 그대로. */
+    /**
+     * 서버가 쓰기를 막았을 때(error "muted"). 2.0.0 [RVN-18] 검토 COMP-19: 광장·토론·규칙 광장·문의가 저마다 다르게 말하던 네 가지를 이
+     * 한 줄로: 왜(운영 원칙), 언제까지(알면), 어디서 까닭을 보고 해명하는지.
+     */
     fun mutedText(untilMillis: Long?, zone: java.time.ZoneId = java.time.ZoneId.of("Asia/Seoul")): String =
-        if (untilMillis == null) "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
-        else "${day(untilMillis, zone)}까지 마을 글쓰기를 쉬어 가요. 마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요"
+        "운영 원칙을 지키지 않은 글이 있어 ${untilMillis?.let { day(it, zone) + "까지" } ?: "지금은"} 마을 글쓰기를 쉬어 가요. " +
+            "마을 › 맨 위 한 줄에서 까닭을 보고 해명할 수 있어요"
 
     /** 조사 ⑧: 같은 글을 10분 안에 다시 쓰려 할 때. */
     const val REPEAT = "방금 같은 글을 썼어요. 같은 글은 10분 뒤에 다시 쓸 수 있어요"

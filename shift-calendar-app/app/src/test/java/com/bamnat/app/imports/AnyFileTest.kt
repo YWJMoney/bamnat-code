@@ -86,7 +86,9 @@ class AnyFileTest {
 
     /** [READ-34] 1.38: a payslip PDF (an ERP's, drawn line by line) read from its own letters, every line and total, nothing asked. */
     @Test fun aPayslipPdfIsReadFromItsLetters() = runBlocking {
-        val scan = com.bamnat.app.pay.PayslipScanner.scanPdf(context, uri("slip-s04-drawn.pdf"))
+        val read = com.bamnat.app.pay.PayslipScanner.scanPdf(context, uri("slip-s04-drawn.pdf")) as com.bamnat.app.pay.PayslipScanner.PdfRead.Slips
+        // 2.0.0 [RVL-44] One payslip on its pages: one to go on with, not a list to pick from.
+        val scan = read.scans.single()
         val r = scan.slip.read
         assertEquals(YearMonth.of(2026, 10), r.month)
         assertEquals(15, r.lines.size)

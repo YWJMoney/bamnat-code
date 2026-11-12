@@ -100,11 +100,14 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    val line: StateFlow<NightLine.Line?> = combine(container.scheduleRepository.live, settings, minutes) { snapshot, s, now ->
+    val line: StateFlow<NightLine.Line?> = combine(container.scheduleRepository.live, settings, minutes, container.alarmScheduler.upcoming) { snapshot, s, now, set ->
         runCatching {
             val today = now.toLocalDate()
             val work = SleepSchedule.of(snapshot.resolver, today, today.plusDays(6), alarmsOn = false).work.firstOrNull { it.from.isAfter(now) }
-            val alarm = if (s.alarmsEnabled) AlarmPlanner.nextAlarm(snapshot.resolver, now)?.triggerAt else null
+            // 2.0.0 [RVIB-17] (PC-129, PC-36) The alarm the phone has set (이번만 끄기 and another calendar's alarms counted), as
+            // 설정 › 알람 says it; the day's own plan only while nothing is set yet.
+            val alarm = if (!s.alarmsEnabled) null else set?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }?.takeIf { it.isAfter(now) }
+                ?: AlarmPlanner.nextAlarm(snapshot.resolver, now)?.triggerAt
             NightLine.of(now, work, alarm, s.alarmsEnabled, shifts = s.workStyle?.usesPayEngine != false)
         }.getOrNull()
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
@@ -124,14 +127,17 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
 
     fun wokeUp(done: () -> Unit) {
         container.appScope.launch {
-            val slept = container.sleepRepository.wokeUp()
+            // 2.0.0 [RVIB-14] (PC-124) Within minutes it is not kept, said in the line below.
+            val woke = container.sleepRepository.wokeUpByHand()
+            val slept = woke?.sleep
             kotlinx.coroutines.withContext(Dispatchers.Main) {
                 // 1.39.1 [P391-02] 9차 PC(사무직, 1분 잠): '깼어요' opened the sleep log with nothing new to see. Under an hour there is no 아침 한 장,
                 // so say what happened to it.
                 val m = slept?.end?.let { java.time.Duration.between(slept.start, it).toMinutes() }
-                // 2.0.0 [RVI-71] The words the calendar and the sleep page say too.
-                if (m != null && m < com.bamnat.core.sleep.SleepMorning.MIN_MINUTES) android.widget.Toast.makeText(container.appContext,
-                    com.bamnat.core.sleep.SleepInsights.wokeLine(m), android.widget.Toast.LENGTH_LONG).show()
+                // 2.0.0 [RVI-71] The words the calendar and the sleep page say too. [RVIB-14] On the app's line (not a toast), with
+                // 되돌리기 as there, shown on the sleep page that opens next.
+                if (woke != null && m != null && m < com.bamnat.core.sleep.SleepMorning.MIN_MINUTES) com.bamnat.app.ui.components.AppSnack.show(
+                    com.bamnat.core.sleep.SleepInsights.wokeLine(m), undo = { container.sleepRepository.undoWoke(woke) })
                 done()
             }
         }
@@ -152,6 +158,8 @@ fun NightScreen(
     val line by vm.line.collectAsStateWithLifecycle()
     val recording by com.bamnat.app.sleep.SleepRecordService.recording.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    // 2.0.0 [RVIB-15] (PC-123) No pale band under the dark screen.
+    com.bamnat.app.ui.components.DarkSystemBars.Hold()
     // The window dimmed while this screen is up, and back on leaving (the bar icons follow NightSurface).
     DisposableEffect(Unit) {
         val activity = context.findActivity()

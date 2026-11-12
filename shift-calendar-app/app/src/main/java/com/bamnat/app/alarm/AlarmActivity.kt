@@ -122,7 +122,12 @@ class AlarmActivity : ComponentActivity() {
             )
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        enableEdgeToEdge()
+        // 2.0.0 [RVIB-15] (PC-123) The ringing screen is always dark: on a light phone the default bars put a pale band under it.
+        // Dark bars with no scrim of their own; a light 알람 화면 look still turns the icons dark ([com.bamnat.app.ui.theme.ScreenSkin] bars).
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
         val buttons = BootAlarms.ringSettings(this).buttons
         // [ALRM-04] 증명 사진's fingerprints; none before the first unlock after a restart, and then it is sums.

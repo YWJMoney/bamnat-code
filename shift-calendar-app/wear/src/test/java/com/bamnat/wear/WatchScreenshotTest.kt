@@ -187,6 +187,13 @@ class WatchScreenshotTest {
         }
     }
 
+    // 2.0.0 [RVIB-09] (총괄 SN-18) An emoji 근무 그림 ("e:🌙", 장터 작품 100개가 써요) shows as a letter in front of the name: "🌙 야간".
+    @Test fun shiftEmoji() {
+        val now = day.atTime(5, 20); at(now)
+        val p = shift(now).let { s -> s.copy(days = s.days.mapIndexed { i, w -> when (i) { 0 -> w.copy(icon = "e:☀️"); 1 -> w.copy(icon = "e:🌙"); else -> w } }) }
+        shoot("shift_emoji", p)
+    }
+
     @Test fun shop() {
         val now = day.minusDays(1).atTime(22, 40); at(now)
         shoot("shop", ownWork("영업", d(day.minusDays(1), "영업", "영", 0xFFE67E22, "10:00", "22:00"), d(day, "영업", "영", 0xFFE67E22, "10:00", "22:00"),

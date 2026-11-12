@@ -21,6 +21,12 @@ object DiagEvents {
     /** [REL-13] The one-minute test alarm from 알람 점검 was set, and when it rang (with its delay). */
     const val ALARM_TEST_SET = "alarm_test_set"
     const val ALARM_TEST_FIRED = "alarm_test_fired"
+    /**
+     * 2.0.0 [RVI-91] (검토 I03c-02) 낮 예행 알람: once a day a silent alarm in the daytime, set the way a shift alarm is, to see
+     * whether this phone delivers alarms on time. Set (its time) and came (its time and how late), never anything else.
+     */
+    const val ALARM_REHEARSAL_SET = "alarm_rehearsal_set"
+    const val ALARM_REHEARSAL = "alarm_rehearsal"
     const val SNOOZE_FIRED = "snooze_fired"
     const val SYSTEM_EVENT = "system_event"
     const val BACKUP_EXPORT = "backup_export"
@@ -123,6 +129,94 @@ object EventBook {
             averageLateSeconds = late.mapNotNull { it.second }.takeIf { it.isNotEmpty() }?.average()?.toLong() ?: 0L,
             missed = missed,
         )
+    }
+
+    /**
+     * 2.0.0 [RVI-86] (검토 I03a-06, 대기열 G4G9 발굴 3-2) Each alarm of the week up to [nowMillis], newest first: when it was to ring,
+     * how late it came ([Rang.lateSeconds], null when it rang another way: the fallback or skipped as too late) and whether there is
+     * no record of it at all ([Rang.missed]). The card listed only the totals; a late one or a missed one is now seen by its day.
+     */
+    fun weekRows(events: List<DiagEvent>, nowMillis: Long): List<Rang> {
+        val from = nowMillis - 7 * 24 * 60 * 60_000L
+        val fired = events.filter { it.name == DiagEvents.ALARM_FIRED }
+            .mapNotNull { e -> triggerOf(e.detail)?.takeIf { it in from..nowMillis }?.let { Rang(it, lateSeconds(e.detail) ?: 0L, false) } }
+            .distinctBy { it.at }
+        val other = events.filter { it.name == DiagEvents.ALARM_FALLBACK || it.name == DiagEvents.ALARM_LATE_SKIPPED }
+            .mapNotNull { triggerOf(it.detail)?.takeIf { t -> t in from..nowMillis } }.toSet() - fired.map { it.at }.toSet()
+        val missed = possiblyMissed(events, nowMillis).filter { it >= from }
+        return (fired + other.map { Rang(it, null, false) } + missed.map { Rang(it, null, true) }).distinctBy { it.at }.sortedByDescending { it.at }
+    }
+
+    /**
+     * 2.0.0 [RVI-91] (검토 I03c-02) The silent daytime rehearsals of the week up to [nowMillis], newest first: each one set, how late it
+     * came, or [Rang.missed] when it never came within [graceMillis] (the phone or the app was stopped).
+     */
+    fun rehearsals(events: List<DiagEvent>, nowMillis: Long, graceMillis: Long = 15 * 60_000L): List<Rang> {
+        val from = nowMillis - 7 * 24 * 60 * 60_000L
+        val came = events.filter { it.name == DiagEvents.ALARM_REHEARSAL }
+            .mapNotNull { e -> triggerOf(e.detail)?.let { it to (lateSeconds(e.detail) ?: 0L) } }.toMap()
+        return events.filter { it.name == DiagEvents.ALARM_REHEARSAL_SET }.mapNotNull { triggerOf(it.detail) }.distinct()
+            .filter { it in from..nowMillis && (it in came || it + graceMillis < nowMillis) }
+            .map { t -> came[t]?.let { Rang(t, it, false) } ?: Rang(t, null, true) }
+            .sortedByDescending { it.at }
+    }
+
+    /**
+     * 2.0.0 [RVI-91] What the rehearsals say, for 알람 점검 and the notice: null with none yet. "낮 예행 7번 모두 제때",
+     * "낮 예행 7번 중 2번 늦게 · 가장 늦게 4분", "낮 예행 1번이 오지 않았어요".
+     */
+    fun rehearsalLine(rows: List<Rang>): String? {
+        if (rows.isEmpty()) return null
+        val missed = rows.count { it.missed }
+        val late = rows.filter { it.late }
+        return when {
+            missed > 0 -> "낮 예행 ${missed}번이 오지 않았어요"
+            late.isEmpty() -> "낮 예행 ${rows.size}번 모두 제때"
+            else -> "낮 예행 ${rows.size}번 중 ${late.size}번 늦게 · 가장 늦게 ${late.maxOf { it.lateSeconds ?: 0L } / 60}분"
+        }
+    }
+
+    /**
+     * 2.0.0 [RVI-92] (검토 I03b-04, 대기열 발굴 3-3) What the last 1분 뒤 시험 알람 showed, once it was due: came on time, came late,
+     * rang only as the plain notice (the ringing screen could not start), or never came. Null before one was set or while it is ahead.
+     */
+    fun lastTest(events: List<DiagEvent>, nowMillis: Long, graceMillis: Long = 3 * 60_000L): Rang? {
+        val set = events.lastOrNull { it.name == DiagEvents.ALARM_TEST_SET }?.let { triggerOf(it.detail) } ?: return null
+        val fired = events.lastOrNull { it.name == DiagEvents.ALARM_TEST_FIRED && triggerOf(it.detail) == set }
+        if (fired == null) return if (set + graceMillis < nowMillis) Rang(set, null, true) else null
+        val fallback = events.any { it.name == DiagEvents.ALARM_FALLBACK && triggerOf(it.detail) == set }
+        return Rang(set, if (fallback) null else lateSeconds(fired.detail) ?: 0L, false)
+    }
+
+    /**
+     * 2.0.0 [RVI-91] (검토 I03c-02) The week in one line for the top of 설정 › 알람: "지난 7일 알람 21번 모두 제때", "지난 7일 알람
+     * 5번 중 1번 늦게", "지난 7일 알람 1번 기록 없음", with the daytime rehearsals after a dot. Null with neither yet.
+     */
+    fun trustLine(events: List<DiagEvent>, nowMillis: Long): String? {
+        val rows = weekRows(events, nowMillis)
+        val alarms = if (rows.isEmpty()) null else {
+            val missed = rows.count { it.missed }
+            val late = rows.count { it.late }
+            when {
+                missed > 0 -> "지난 7일 알람 ${rows.size}번 중 ${missed}번 기록 없음"
+                late > 0 -> "지난 7일 알람 ${rows.size}번 중 ${late}번 늦게"
+                else -> "지난 7일 알람 ${rows.size}번 모두 제때"
+            }
+        }
+        val rehearsal = rehearsalLine(rehearsals(events, nowMillis))
+        return listOfNotNull(alarms, rehearsal).joinToString(" · ").ifEmpty { null }
+    }
+
+    /** [RVI-86] One alarm of [weekRows]. */
+    data class Rang(val at: Long, val lateSeconds: Long?, val missed: Boolean) {
+        /** "제때", "3분 늦게", "울림" (another way), "기록 없음". */
+        val said: String get() = when {
+            missed -> "기록 없음"
+            lateSeconds == null -> "울림"
+            lateSeconds < 60 -> "제때"
+            else -> "${lateSeconds / 60}분 늦게"
+        }
+        val late: Boolean get() = (lateSeconds ?: 0) >= 60
     }
 
     /** The "late_s=" a delivered alarm carries, in seconds. */

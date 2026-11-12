@@ -47,5 +47,40 @@ object ShiftClash {
         return sleep
     }
 
+    /**
+     * 2.0.0 [RVI-79] (검토 U07a-10·T07a-05) The first time from [at] that runs into neither a 근무 nor the sleep after a night, rounded
+     * up to the half hour ([at] itself when it is free): where the schedule dialog starts. It started at the next round hour or 09:00,
+     * which on a 교대 calendar was often in the middle of a 야간 or the sleep after it; now it is after the shift (퇴근 뒤) or when
+     * that sleep ends.
+     */
+    fun free(at: LocalDateTime, days: List<ShiftMemoTime.Day>): LocalDateTime {
+        var t = at
+        repeat(FREE_TRIES) {
+            val until = busyUntil(t, days) ?: return t
+            t = until.plusMinutes(((30 - until.minute % 30) % 30).toLong()).withSecond(0).withNano(0)
+        }
+        return t
+    }
+
+    private const val FREE_TRIES = 4
+
+    /** When what [at] runs into on [days] ends: the shift's end, or the end of the sleep after a night; null when [at] is free. */
+    private fun busyUntil(at: LocalDateTime, days: List<ShiftMemoTime.Day>): LocalDateTime? {
+        var sleep: LocalDateTime? = null
+        for (d in days) {
+            val start = d.start ?: continue
+            val end = d.end ?: continue
+            if (!d.work || d.name.isBlank()) continue
+            val from = d.date.atTime(start)
+            val to = if (end.isAfter(start)) d.date.atTime(end) else d.date.plusDays(1).atTime(end)
+            if (!at.isBefore(from) && at.isBefore(to)) return to
+            if (sleptUntil(start, end) != null && !at.isBefore(to) && at.isBefore(to.plusHours(SLEEP_HOURS))) {
+                val woke = to.plusHours(SLEEP_HOURS)
+                if (sleep == null || woke.isAfter(sleep)) sleep = woke
+            }
+        }
+        return sleep
+    }
+
     private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
 }

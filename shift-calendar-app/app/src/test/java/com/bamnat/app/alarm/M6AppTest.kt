@@ -11,6 +11,7 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.sleep.HealthSleep
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -31,7 +32,7 @@ class M6AppTest {
     private val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), alarmEnabled = true)
     private val start = LocalDate.of(2026, 11, 2)
     private val snapshot = ScheduleSnapshot(listOf(day), WorkPattern.Rotation(start, listOf(1L)), emptyList())
-    private fun millis(t: LocalDateTime) = t.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    private fun millis(t: LocalDateTime) = t.atZone(Today.zone()).toInstant().toEpochMilli()
     private val six = start.atTime(6, 0)
 
     private fun scheduler() = AlarmScheduler(context, context.appContainer.telemetry) { BootAlarms.RingSettings(snoozeMinutes = 9) }
@@ -71,8 +72,8 @@ class M6AppTest {
     }
 
     @Test fun anAlarmWhileStillLockedRingsFromTheIntent() {
-        val now = System.currentTimeMillis()
-        val ring = RingRequest("주간", LocalDate.now(), LocalTime.of(7, 0), 60, null, now - 30_000)
+        val now = Today.millis()
+        val ring = RingRequest("주간", Today.date(), LocalTime.of(7, 0), 60, null, now - 30_000)
         shadowOf(context.getSystemService(UserManager::class.java)).setUserUnlocked(false)
         AlarmReceiver().onReceive(context, ring.putInto(Intent(context, AlarmReceiver::class.java).setAction(AlarmReceiver.ACTION_SHIFT_ALARM)))
         val started = shadowOf(context).nextStartedService

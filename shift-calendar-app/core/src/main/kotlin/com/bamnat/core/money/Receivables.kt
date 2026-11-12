@@ -102,6 +102,9 @@ sealed interface Owed {
         override val due: LocalDate? get() = job.due
         override fun status(today: LocalDate) = when {
             job.due != null && today.isAfter(job.due) -> ReceivableStatus.OVERDUE
+            // 2.0.0 [RVK-43] (검토 U06b-15) A job's 입금 약속일 is near as a written one's is: '곧 받을 날' from three days before, so the
+            // '3일 안에 받을 날' tile and its filter count a job's balance too.
+            job.due != null && !today.isBefore(job.due.minusDays(Receivable.DUE_SOON_DAYS)) -> ReceivableStatus.DUE_SOON
             job.received > 0 -> ReceivableStatus.PARTLY
             else -> ReceivableStatus.OPEN
         }

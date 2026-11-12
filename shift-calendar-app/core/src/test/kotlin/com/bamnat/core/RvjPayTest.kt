@@ -184,4 +184,53 @@ class RvjPayTest {
         assertTrue(second.extraUntimed)
         assertNotNull(days)
     }
+
+    // ── [RVJ-47] PC-111 ──
+    @Test fun workProofSaysADayOffWorkedAsItWasPutIn() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val sat = LocalDate.of(2026, 11, 7)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), listOf(
+            // 휴무일 특근 09~15, 휴게 30분.
+            DayEntry(sat, extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, start = t(9), end = t(15), breakMinutes = 30))),
+            // 시각 없이 2시간만 적은 잔업.
+            DayEntry(mon, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))),
+        ))
+        val days = WorkProof.days(mon, sat, r::resolve)
+        val worked = days.single { it.date == sat }
+        assertEquals("휴무일 특근의 시작·끝은 넣은 대로", t(9) to t(15), worked.start to worked.end)
+        assertEquals(30, worked.breakMinutes)
+        assertEquals(330, worked.extraMinutes)
+        // 근무가 있는 날은 근무 시각 그대로.
+        assertEquals(t(9) to t(18), days.single { it.date == mon }.let { it.start to it.end })
+        val text = WorkProof.doc("제조·생산 교대", mon, sat, days, sat).text()
+        assertTrue("직업은 직업 칸에: $text", text.contains("직업") && text.contains("제조·생산 교대"))
+        assertTrue("이름 칸에 직업이 들어가지 않아요", !Regex("이름[^\\n]*제조").containsMatchIn(text))
+        assertTrue("시각이 없는 줄은 말로", text.contains("2시간 (시각 안 적음)") && !text.contains("시각 없음"))
+    }
+
+    /** [RVJ-52] PC-120: 말일 마감에 월급날 10일은 다음 달 10일; 25일(당월 지급이 흔한 날)은 그대로, 손으로 끈 '다음 달'은 안 켜요. */
+    @Test fun anEarlyPayDayIsTheNextMonths() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val ten = PayPeriod().withPayDay(10)
+        assertTrue(ten.payNextMonth)
+        assertEquals(LocalDate.of(2026, 12, 10), ten.payDate(nov))
+        assertEquals("25일은 그달에 주는 곳이 많아 그대로", false, PayPeriod().withPayDay(25).payNextMonth)
+        assertTrue("20일 마감 · 10일 지급", PayPeriod(endDay = 20).withPayDay(10).payNextMonth)
+        assertEquals("20일 마감 · 25일은 마감 뒤라 그달", false, PayPeriod(endDay = 20).withPayDay(25).payNextMonth)
+        // 손으로 '이번 달'로 돌린 뒤 10일 → 11일로 옮겨도 다시 켜지 않아요.
+        assertEquals(false, ten.copy(payNextMonth = false).withPayDay(11).payNextMonth)
+        // 25일에서 21일로 내려와 이른 날이 되면 그때 켜요.
+        assertTrue(PayPeriod(payDay = 25).withPayDay(21).payNextMonth)
+    }
+
+    /** [RVJ-47] PC-111 같은 틀: the 연간 교대 리포트 put the 직업 under '이름' too; the 현장 일한 날 증빙 has a 이름 칸 to write in. */
+    @Test fun theOtherReportsOnTheSameFrameNameTheJob() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), emptyList())
+        val months = com.bamnat.core.report.YearShiftReport.months(2026, LocalDate.of(2026, 11, 30), r::resolve) { null }
+        val year = com.bamnat.core.report.YearShiftReport.doc(2026, "제조·생산 교대", months, mon).text()
+        assertTrue(year, year.contains("직업: 제조·생산 교대") && !Regex("이름[^\\n]*제조").containsMatchIn(year))
+        val field = com.bamnat.core.report.FieldDaysProof.doc("", mon, mon, emptyList(), mon).text()
+        assertTrue(field, field.contains("이름: "))
+    }
 }

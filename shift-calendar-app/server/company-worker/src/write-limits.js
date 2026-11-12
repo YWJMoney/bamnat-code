@@ -100,6 +100,8 @@ export async function addStrike(d, env, dev, kind, ref, now, rules = null, by = 
   if (!dev) return null;
   rules ??= await writeRules(d, env, now);
   const waits = Boolean(rules.care || rules.confirmedOnly) && by !== "operator";
+  // 2.0.0 [RVQ-27] 검토 SVC-58: one waiting strike for one thing; hidden again before the operator looked does not add another.
+  if (waits && (await d.one(env, "SELECT 1 AS x FROM write_strikes WHERE device = ? AND kind = ? AND ref = ? AND confirmed = 0", dev, kind, String(ref).slice(0, 80)))) return null;
   await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at, hidden_by, confirmed) VALUES (?, ?, ?, ?, ?, ?)",
     dev, kind, String(ref).slice(0, 80), now, by, waits ? 0 : 1);
   if (waits) return null;

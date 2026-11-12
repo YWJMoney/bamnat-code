@@ -75,7 +75,8 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
         // makes the window; the first use on the main thread waits for it (lazy is synchronized).
         // C 1.32 [STAB-04] Counted before anything that could stop it; a phone still locked is not counted.
         if (!BootAlarms.isLocked(this)) com.bamnat.app.diag.StartGuard.begin(this)
-        if (!BootAlarms.isLocked(this)) building = Thread({ container }, "bamnat-container").apply { start() }
+        // 2.0.0 [RVL-45] (검토 SCAN-23) Pictures for reading left behind by an app closed meanwhile go, off the main thread.
+        if (!BootAlarms.isLocked(this)) building = Thread({ container; runCatching { com.bamnat.app.imports.ScanCache.sweep(this) } }, "bamnat-container").apply { start() }
         StartupTrace.mark(StartupTrace.Step.APP)
     }
 

@@ -797,7 +797,8 @@ private fun SheetHeader(o: Owed, today: LocalDate, sub: String) {
 private fun LeftFigure(left: Long, got: Long, of: Long) {
     val cal = LocalCalendarColors.current
     Column {
-        Text("남은 돈", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-43] (검토 MONEY-25) '남은 돈' is 가계부's 들어온 돈 − 나간 돈; here it is what is still to come in.
+        Text("아직 받을 돈", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Fmt.won(rolling(left)), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle), fontWeight = FontWeight.Bold,
             color = if (left == 0L) cal.income else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
@@ -850,7 +851,7 @@ private fun ReceivableSheet(
                         Text("돈이 들어왔나요?", style = MaterialTheme.typography.titleSmall)
                         AmountField("받은 금액", amount, { amount = it }, imeAction = ImeAction.Done)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = amount.toAmount() == r.left, onClick = { amount = amountDigits(r.left) }, label = { Text("남은 돈 전부") })
+                            FilterChip(selected = amount.toAmount() == r.left, onClick = { amount = amountDigits(r.left) }, label = { Text("남은 금액 전부") })
                             if (r.left >= 20_000) FilterChip(selected = amount.toAmount() == r.left / 2, onClick = { amount = amountDigits(r.left / 2) },
                                 label = { Text("절반") })
                             FilterChip(selected = date == today.toString(), onClick = { date = today.toString() }, label = { Text("오늘") })

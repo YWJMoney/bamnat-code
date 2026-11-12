@@ -65,7 +65,7 @@ class RviScreenshotTest : ScreenshotBase() {
 
     // [RVI-31][RVI-52] 알림 시각 창: 스크롤, '알림 빼기'.
     @Test fun memoScheduleWindow() = eight("memo_schedule") { wide ->
-        tab(2, wide); openCheckup(wide); tapFirst("알림 넣기, ", "알람 맞추기", "일정으로 넣기")
+        tab(2, wide); openCheckup(wide); tapFirst("알림 넣기, ", "알람 맞추기", "일정으로 넣기", "알림 넣기")
     }
 
     // [RVI-48] 카드 ⋮ 48dp, [RVI-49] 다음 차례 줄.

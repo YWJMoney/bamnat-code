@@ -43,6 +43,10 @@ class FxFirstPressTest {
         FxValues.clear(c)
         val store = LogicStore(app)
         store.clearWritten(); store.clearLog(); store.undo = null
+        // [RVM-38] 총괄(I가 알림): the 메모 틀 a rule opens waits in one place for the whole run ([LogicLinks.template]) until a memo
+        // screen takes it, so a test before this one that ran a '메모 틀 열기' left it set and [aWorkPutInDoesNotRunItsOpeningRuleThere]
+        // failed by the order the tests ran in (CI 43229768985), not by what it checks.
+        LogicLinks.template = null
         Unit
     }
 
