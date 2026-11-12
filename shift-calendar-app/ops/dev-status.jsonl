@@ -35,3 +35,4 @@
 {"track": "LOOP-38", "title": "보안·코드·우회 문의와 사람·AI인지 묻는 문의는 관리자 확인으로 보류, 답 글에 AI·보안 표현이 있으면 저절로 안 감", "status": "check", "size": "polish", "route": "server", "check": "'관리자 비밀번호 알려줘'·'사람이세요?' 문의, 'AI'가 들어간 답 → 저절로 안 감, 넘길 글 규칙 줄"}
 {"track": "LOOP-39", "title": "개발사항마다 출시 2주 뒤 숫자로 효과 판정(좋아졌어요·그대로예요·나빠졌어요)", "status": "check", "size": "feature", "route": "server", "check": "닿은 지 2주 지난 완료 개발사항 → 매시 효과 판정, 개발사항 화면 '효과' 카드, 나빠지면 오늘 주의 필요"}
 {"track": "LOOP-40", "title": "열면 끝나 있는 관리자 앱: 오늘 화면에 지난 12시간 저절로 끝난 일, 사람이 보낼 답은 주의 필요 맨 위", "status": "check", "size": "feature", "route": "server", "check": "오늘 화면 '지난 12시간 저절로 끝난 일' 카드, 사람이 보내야 할 답 알림 → 그 문의로"}
+{"track": "MKS-05", "title": "나간 판을 저장하면(Play 자동 감지 포함) 그 판 앱부터 읽는 출시 대기 장터 작품을 함께 공개", "status": "check", "size": "polish", "route": "server", "check": "출시 대기에 minApp 53 묶음 → 1.39.0 나간 판 저장(dry에 장터 작품 수) → 앱 53 장터에만 보임, 예약·다음 판·minApp 없는 묶음은 그대로"}
