@@ -3555,3 +3555,25 @@ test("[RVA-61] 좁은 막대(380·200%)에서 판 알약은 점, 제목은 한 �
   assert.match(css, /\.feed\{container:feed\/inline-size\}/);
   assert.match(css, /@container feed \(width < 22rem\)\{\.feed li\{grid-template-columns:1fr/);
 });
+
+test("[RVA-59] 자동 순환의 '다가오는 날짜': 남은 날 순서, 2주 안은 펴 두고 그 뒤는 접힌 줄, 빈틈은 주의 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const d = (await u.api("GET", "/api/admin/loop")).dates;
+  await u.go("#/loop");
+  await u.settle(30);
+  const card = u.$("#main #loop-dates");
+  if (!d.upcoming.length && !d.gaps.length) {
+    assert.equal(card, null, "걸린 날이 없으면 카드도 없어요");
+    return;
+  }
+  assert.match(u.text("#main #loop-dates > summary"), /다가오는 날짜/);
+  const near = d.upcoming.filter((x) => x.left <= 14);
+  assert.equal(card.querySelectorAll(":scope > ul.dates-rows > li").length, near.length);
+  if (near[0]) assert.match(card.querySelector(":scope > ul.dates-rows > li b").textContent, new RegExp(near[0].what.slice(0, 8).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const later = d.upcoming.length - near.length;
+  if (later) assert.match(u.text("#main #loop-dates .dl-later > summary"), new RegExp(`그 뒤 ${later}개`));
+  assert.equal(card.querySelectorAll(":scope > .note.warn").length, d.gaps.length);
+  assert.deepEqual(u.errors, []);
+});

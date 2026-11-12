@@ -1005,6 +1005,10 @@ details.card.loop-fold[open]>summary{margin-bottom:.6rem}
 .dev-rows .dev-st.ask{color:var(--warn)}
 .tier-rows .row-main small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .tier-rows details[open] .row-main small{display:block}
+.dates-rows .item{padding:.55rem .85rem}
+.dates-rows .dl-soon{font-weight:700;color:var(--fg)}
+.dates-rows .dl-before{color:var(--muted)}
+.dl-later{margin-top:.5rem}
 /* 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄은 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나, 줄의 칸은 굵은 보통 글자('넘음'·'넘김'은 글로) */
 .pill.late{background:transparent;border-color:transparent;color:var(--fg);font-weight:800;padding-inline:0}
 .seg .n.warm{color:var(--warn)}

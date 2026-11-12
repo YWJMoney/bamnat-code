@@ -238,10 +238,37 @@ export function loopViews(A) {
       <p class="hint">문의 → 개발 → 출시 → 답을 서버가 보고, 묶인 문의에 스스로 답해요.</p></section>`;
   }
 
+  /**
+   * 2.0.0 [RVA-59] 다가오는 날짜: 처리방침 시행·출시 열차·연말 결산·새해 요율처럼 날짜가 걸린 약속(저장소 ops/dates.json)을 남은 날 순서로.
+   * 빈틈(그해 요율·공휴일 표가 곧 끝남)은 맨 위 주의 한 줄. 2주 안의 날만 펴 두고 그 뒤는 접혀요.
+   */
+  const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+  const dayName = (ymd) => {
+    const t = new Date(`${ymd}T00:00:00Z`);
+    return `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일(${WEEK[t.getUTCDay()]})${t.getUTCFullYear() !== new Date().getFullYear() ? ` ${t.getUTCFullYear()}` : ""}`;
+  };
+  const leftText = (n) => (n === 0 ? "오늘" : n === 1 ? "내일" : `${n}일 남음`);
+  function datesCard(d) {
+    const x = d.dates;
+    if (!x || (!x.upcoming?.length && !x.gaps?.length)) return "";
+    const next = x.upcoming[0];
+    const meta = [x.gaps.length ? `빈틈 ${x.gaps.length}` : "", next ? `다음 ${dayName(next.date)} ${leftText(next.left)}` : ""].filter(Boolean).join(" · ");
+    const row = (r) => `<li class="item"><span class="row-main"><b class="wrap">${esc(r.what)}</b>
+        <small><span class="${r.left <= 2 ? "dl-soon" : ""}">${esc(dayName(r.date))} · ${esc(leftText(r.left))}</span>${r.area ? ` · ${esc(r.area)}` : ""}</small>
+        ${r.before ? `<small class="dl-before">${esc(r.before)}</small>` : ""}</span></li>`;
+    const near = x.upcoming.filter((r) => r.left <= 14);
+    const later = x.upcoming.filter((r) => r.left > 14);
+    const gaps = x.gaps.map((g) => `<p class="note warn"><b>${esc(dayName(g.from))}부터 ${esc(g.what)}</b> (${esc(leftText(Math.max(0, g.left)))}). ${esc(g.before)}</p>`).join("");
+    return fold("dates", "다가오는 날짜", meta, `${gaps}
+      ${near.length ? `<ul class="rows dates-rows">${near.map(row).join("")}</ul>` : '<p class="hint">2주 안에 걸린 날은 없어요.</p>'}
+      ${later.length ? `<details class="dl-later"><summary>그 뒤 ${later.length}개</summary><ul class="rows dates-rows">${later.map(row).join("")}</ul></details>` : ""}
+      <p class="hint">날짜는 저장소의 날짜 약속 장부에서 와요. 날을 옮기려면 그 장부가 가리키는 코드 줄을 고쳐요.</p>`, x.gaps.length || (next && next.left <= 2) ? "warn" : "");
+  }
+
   function loopView() {
     const d = S.data.loopState;
     if (!d) return skeleton(3);
-    return `${nowCard(d)}<div class="flow-cols loop-folds">${checkCard()}${playCard(d)}${liveCard(d)}${queueCard()}${syncCard(d)}${scoreCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
+    return `${nowCard(d)}<div class="flow-cols loop-folds">${checkCard()}${datesCard(d)}${playCard(d)}${liveCard(d)}${queueCard()}${syncCard(d)}${scoreCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
   }
 
   // ---- 오늘 › 결정함 ----
