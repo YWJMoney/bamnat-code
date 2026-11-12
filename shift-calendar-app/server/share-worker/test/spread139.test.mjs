@@ -210,9 +210,15 @@ test("every receive page has a preview that names the kind of page and nothing o
   readsForget();
   const env = { SHARES: kv() };
   // Everything private these links carry: names, team and workplace, shifts and times, the request's words.
-  const secret = ["민지", "주간", "주", "07:00", "6병동", "다른병동", "박마바", "가나다", "김하나", "나이트", "근로계약서 갑", "가", "나", "다"];
+  const secret = ["민지", "주간", "주", "07:00", "6병동", "다른병동", "박마바", "가나다", "김하나", "나이트", "근로계약서 갑", "가", "나", "다",
+    "준호", "욕실", "매출"];
   const made = {};
   made.family = `/s/${(await (await call(env, "/api/share", json(sample))).json()).id}`;
+  // 2.0.0 [RVD-30] HQ-64 A shop that sent its 매출 and a freelancer that sent jobs: the preview names the 영업일·일정, still no one.
+  made.familySales = `/s/${(await (await call(env, "/api/share", json({ ...sample, v: 2, title: "가나다식당", shows: ["pay"], payKind: "sales",
+    pay: [{ month: "2026-11", amount: 18450000, label: "매출" }] }))).json()).id}`;
+  made.familyJobs = `/s/${(await (await call(env, "/api/share", json({ ...sample, v: 2, title: "준호", shows: ["jobs"],
+    days: [{ date: "2026-11-03", jobs: [{ name: "욕실 시공", time: "09:00-17:00" }] }] }))).json()).id}`;
   const team = { ...sample, title: "민지", days: [{ date: "2026-11-01", type: 1, memo: "바뀜: 휴→주" }] };
   made.team = `/s/${(await (await call(env, "/api/share", json({ ...team, v: 2, shows: ["memos"] }))).json()).id}`;
   made.clock = `/c/${(await (await call(env, "/api/clock", json({ name: "박마바", place: "가나다카페" }))).json()).id}`;
