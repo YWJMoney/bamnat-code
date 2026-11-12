@@ -560,6 +560,8 @@ class PayCalculator(
                 if (times == 0) continue
                 itemCounts[item.id] = (itemCounts[item.id] ?: 0) + times
                 val v = item.amount.on(day.date).value
+                // 2.0.0 [RVJ-18] 검토 PC-02: an amount still 확인 필요 (금액 모름) is not in the 합계 ([MissingItem]), so not in the day either.
+                if (Unknowns.item(item.id) in profile.estimatedFields) continue
                 if (v > 0) parts += DayPart(LineKind.ALLOWANCE, item.name, v * times, if (times > 1) "${item.cadence.label} × $times" else item.cadence.label)
             }
             // [PAYS-06] The user's own rules, on the minutes each one names.

@@ -73,6 +73,10 @@ class NtcScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, code, com.bamnat.app.data.PersonalCalendar.MAIN)
         content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = {}) }
         settle()
+        // 2.0.0 (#444 CI shots-b): 내 달력 미리 보기 runs off the main thread after the work is read; a tap on 넣기 made while it was
+        // still running did not open the 넣기 창 (2 of 3 runs). Every test here turns the lock-screen 오늘 근무 on first, so the
+        // preview is done once the overlap it finds is in the state.
+        check(waitFor { vm.state.value.pieces.any { it.overlaps.isNotEmpty() } }) { "내 달력 미리 보기가 끝나지 않았어요" }
     }
 
     private fun lockOn(on: Boolean = true) = c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, todayShiftNotice = on, logic = "") }
