@@ -175,7 +175,15 @@ class ProStore(context: Context) {
     fun removeWorkPass(order: String) { if (order in current.workPasses) edit { it.copy(workPasses = it.workPasses - order) } }
 
     /** [MON-08] For the backup: the recovery code and what was already shown, never the purchase. */
-    fun toBackup(): JSONObject = JSONObject().put("code", current.code ?: JSONObject.NULL).put("thanksSeen", current.thanksSeen)
+    /**
+     * 2.0.0 [RVL-03] (검토 DATA-04) [withCode] false for a backup saved without a password: the recovery code moves the passes, so it goes
+     * only in a sealed file. A restore without it keeps this phone's own code ([fromBackup]).
+     */
+    fun toBackup(withCode: Boolean = true): JSONObject =
+        JSONObject().put("code", current.code?.takeIf { withCode } ?: JSONObject.NULL).put("thanksSeen", current.thanksSeen)
+
+    /** 2.0.0 [RVL-13] Whether there is a recovery code a plain backup would leave out (said in the save dialog). */
+    val hasCode: Boolean get() = !current.code.isNullOrBlank()
 
     /** A backup's code moves its passes here at the next sync, unless it is this phone's own. */
     fun fromBackup(o: JSONObject) {
