@@ -695,8 +695,8 @@ fun AccountEditor(
                     // 2.0.0 [RVK-18] (검토 U06a-09): when the count is off, the real balance in once, not the opening worked out backwards.
                     val counted = remember(book, initial) { initial?.let { com.bamnat.core.money.MoneyAccounts.balances(book.accounts, book.entries)[it.id] } }
                     if (initial != null && onAdjust != null && counted != null) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            Text("지금 잔액 ${Fmt.won(counted)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        // 총괄 #457 리뷰 (조건 12): at 글자 200% the balance keeps a line of its own and the button goes under it.
+                        WordsWithActions({ Text("지금 잔액 ${Fmt.won(counted)}", style = MaterialTheme.typography.bodyMedium) }) {
                             TextButton(onClick = { adjusting = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("실제 잔액으로 맞추기") }
                         }
                         if (adjusting) BalanceAdjustDialog(initial, counted, onDone = { actual -> adjusting = false; onAdjust(initial, actual) },

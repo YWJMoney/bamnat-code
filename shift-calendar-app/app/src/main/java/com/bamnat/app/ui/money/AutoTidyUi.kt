@@ -81,10 +81,11 @@ private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: 
                         Text(item.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val at = AlarmScheduler.millisToLocal(item.at)
                         val left = item.daysLeft(now)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        // 총괄 #457 리뷰 (조건 12): when the day and the two buttons do not fit on one line, the buttons go under it.
+                        WordsWithActions({
                             Text("${Fmt.monthDay(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · ${left}일 남음",
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f))
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }) {
                             TextButton(onClick = { scope.launch { box.forget(item.id) } }) { Text("맞아요") }
                             TextButton(onClick = {
                                 scope.launch {

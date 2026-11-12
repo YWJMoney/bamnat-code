@@ -25,6 +25,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -109,9 +116,10 @@ fun AmountField(
 }
 
 /**
- * 2.0.0 [RVK-15] (검토 U06a-01): an amount box that counts. While it has focus a row of + − × ÷ = sits under it (the phone's
- * number pad has none); "36000÷3" shows "= 12,000원" under the box, and the amount is the result from the first sign on, so
- * 저장 never takes a half-typed sum. '=' or leaving the box puts the result in. Without a sign it is [AmountField].
+ * 2.0.0 [RVK-15] (검토 U06a-01): an amount box that counts. The calculator at its end opens a row of + − × ÷ = under it (the
+ * phone's number pad has none); "36000÷3" shows "= 12,000원" under the box, and the amount is the result from the first sign on,
+ * so 저장 never takes a half-typed sum. '=' or leaving the box puts the result in. Without a sum the row stays shut (총괄 #457
+ * 리뷰, 조건 1·8: the sheet's usual look is no taller than before), and the box is [AmountField] with one more icon.
  */
 @Composable
 fun CalcAmountField(
@@ -130,6 +138,8 @@ fun CalcAmountField(
         else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
     val sum = calc.hasOp(shown.text)
     var focused by remember { mutableStateOf(false) }
+    // The + − × ÷ = row: opened by the calculator icon, or by a sign typed on a keyboard that has one.
+    var calcOpen by rememberSaveable { mutableStateOf(false) }
     fun put(text: String, keepCursor: androidx.compose.ui.text.input.TextFieldValue? = null) {
         val cleaned = calc.clean(text)
         val kept = if (calc.hasOp(cleaned)) cleaned else amountInput(cleaned)
@@ -146,6 +156,12 @@ fun CalcAmountField(
             label = { Text(label) },
             textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
             suffix = { Text("원") },
+            trailingIcon = {
+                IconButton(onClick = { if (calcOpen || sum) { settle(); calcOpen = false } else calcOpen = true }) {
+                    Icon(Icons.Outlined.Calculate, if (calcOpen || sum) "계산 줄 닫기" else "계산하기",
+                        tint = if (calcOpen || sum) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
             singleLine = true,
             visualTransformation = GroupedSum,
             supportingText = if (sum) {
@@ -162,7 +178,7 @@ fun CalcAmountField(
                 focused = f.isFocused
             },
         )
-        if (focused || sum) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (calcOpen || sum) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val keys = listOf(calc.PLUS to "더하기", calc.MINUS to "빼기", calc.TIMES to "곱하기", calc.DIVIDE to "나누기")
             keys.forEach { (op, said) ->
                 androidx.compose.material3.OutlinedButton(
@@ -174,11 +190,42 @@ fun CalcAmountField(
                 ) { Text(op.toString(), style = MaterialTheme.typography.titleLarge) }
             }
             androidx.compose.material3.OutlinedButton(
-                onClick = { settle() },
+                onClick = { settle(); calcOpen = false },
                 enabled = sum,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "계산 끝내기" },
             ) { Text("=", style = MaterialTheme.typography.titleLarge) }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVK-13][RVK-16][RVK-18] (총괄 #457 리뷰, 조건 12) Words with their text buttons: side by side when both fit on one line,
+ * else the words take the whole width and the buttons go under them on the right, so the words never stand in a thin column
+ * beside the buttons (글자 200%, the folded phone) and an amount is not cut in two.
+ */
+@Composable
+internal fun WordsWithActions(words: @Composable () -> Unit, modifier: Modifier = Modifier, actions: @Composable RowScope.() -> Unit) {
+    Layout(
+        contents = listOf(words, { Row(verticalAlignment = Alignment.CenterVertically, content = actions) }),
+        modifier = modifier.fillMaxWidth(),
+    ) { (said, buttons), c ->
+        val width = c.maxWidth
+        val b = buttons.first().measure(Constraints(maxWidth = width))
+        val oneLine = said.first().maxIntrinsicWidth(Constraints.Infinity) + b.width <= width
+        if (oneLine) {
+            val w = said.first().measure(Constraints(maxWidth = width - b.width))
+            val h = maxOf(w.height, b.height)
+            layout(width, h) {
+                w.place(0, (h - w.height) / 2)
+                b.place(width - b.width, (h - b.height) / 2)
+            }
+        } else {
+            val w = said.first().measure(Constraints(maxWidth = width))
+            layout(width, w.height + b.height) {
+                w.place(0, 0)
+                b.place(width - b.width, w.height)
+            }
         }
     }
 }

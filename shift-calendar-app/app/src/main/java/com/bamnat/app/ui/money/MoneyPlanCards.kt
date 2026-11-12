@@ -330,14 +330,14 @@ private fun CaptureQuietLine() {
     } else if (health.quiet(Today.millis())) {
         val cut = health.cutAt?.let { c -> health.connectedAt?.let { c > it } ?: true } == true
         // The sentence takes the whole width and the button sits under it, so at 글자 200% it does not stand in a thin column.
-        Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        WordsWithActions({
             Text(
                 if (cut) "휴대폰이 알림 읽기를 멈췄어요. 다시 연결하면 그사이 온 알림도 읽어요"
                 else "${com.bamnat.app.data.CaptureHealth.QUIET_DAYS}일 동안 읽은 결제 알림이 없어요. 결제했는데 안 적혔다면 다시 연결해 보세요",
                 style = MaterialTheme.typography.bodySmall, color = muted,
             )
-            TextButton(onClick = { CaptureService.reconnect(context); reconnected = true },
-                modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) {
+        }, Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = { CaptureService.reconnect(context); reconnected = true }, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text("다시 연결")
             }
         }

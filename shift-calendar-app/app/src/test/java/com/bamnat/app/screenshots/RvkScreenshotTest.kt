@@ -20,6 +20,12 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class RvkScreenshotTest : ScreenshotBase() {
+    /** 돈 적기 as it opens: the calculator is one icon in the amount box, so the sheet is no taller than before (총괄 #457 리뷰). */
+    private fun entryPlain(): Screen.() -> Unit = {
+        content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
+        settle()
+    }
+
     /** [RVK-15] 돈 적기 with "36000÷3" in the amount: + − × ÷ = under it and "= 12,000원". */
     private fun entryCalc(): Screen.() -> Unit = {
         content { com.bamnat.app.ui.money.EntryDialog(today, null, onSave = {}, onDismiss = {}) }
@@ -69,7 +75,12 @@ class RvkScreenshotTest : ScreenshotBase() {
         }
         settle()
         val vm = com.bamnat.app.ui.invest.InvestViewModel(c, com.bamnat.app.data.PersonalCalendar.MAIN)
-        content { com.bamnat.app.ui.invest.InvestScreen(vm, wide = false, snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() }) }
+        // In the app the tab sits in the Scaffold's surface, which gives the title its colour; without it a dark shot draws it black.
+        content {
+            androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.background) {
+                com.bamnat.app.ui.invest.InvestScreen(vm, wide = false, snackbar = androidx.compose.runtime.remember { androidx.compose.material3.SnackbarHostState() })
+            }
+        }
         settle()
         reveal("알림으로 찾은 거래", exact = false)
     }
@@ -124,6 +135,8 @@ class RvkScreenshotTest : ScreenshotBase() {
         reveal("경비 (재료비·인건비 등)", exact = true)
     }
 
+    @Test fun entryPlainLight() = shoot("rvk_00_entry_folded", FOLDED, entryPlain())
+    @Test fun entryPlainDarkBig() = shoot("rvk_00b_entry_folded_dark_200", DARK, 2f, entryPlain())
     @Test fun entryLight() = shoot("rvk_01_entry_calc_folded", FOLDED, entryCalc())
     @Test fun entryDarkBig() = shoot("rvk_02_entry_calc_folded_dark_200", DARK, 2f, entryCalc())
     @Test fun entryWide() = shoot("rvk_03_entry_calc_unfolded", UNFOLDED, entryCalc())
