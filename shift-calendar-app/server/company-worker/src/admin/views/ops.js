@@ -208,7 +208,7 @@ export function opsViews(A) {
       : !x.ok ? '<span class="pill bad">문제 있음</span>' : d.drillLate ? '<span class="pill warn">늦음</span>' : '<span class="pill ok">되살릴 수 있음</span>';
     const drillBody = !x ? `<p class="hint">${d.ready ? `백업이 끝난 날이 생기면 ${d.drillEveryDays}일마다 매시 작업이 스스로 해요.` : "R2 백업이 생기면 할 수 있어요."}</p>`
       : `<p>${x.doneAt ? `마지막 연습 <b>${esc(dayOf(x.doneAt))}</b>` : "읽는 중"} · 표 ${x.tables}개 · ${Number(x.rowsTotal ?? 0).toLocaleString("ko-KR")}줄</p>
-        <p class="meta">${esc(x.day)} 백업을 다시 읽음 · 잠근 칸 ${x.checked}개를 지금 열쇠로 열어 봄</p>
+        <p class="meta">${esc(x.day)} 백업을 다시 읽음 · ${x.checked ? `잠근 칸 ${x.checked}개를 지금 열쇠로 열어 봄` : "잠근 칸은 아직 없어요"}</p>
         ${x.problems?.length ? `<ul class="mini">${x.problems.map((r) => `<li><b>${esc(r.table)}</b> ${esc(r.problem)}</li>`).join("")}</ul>` : ""}
         ${x.shrunk?.length ? `<p class="meta">백업보다 크게 줄어든 표: ${x.shrunk.map((r) => `${esc(r.table)} ${r.want}→${r.db}`).join(", ")} (지운 것이 맞는지 살펴보세요)</p>` : ""}
         ${x.rows?.length ? `<details class="data-table" data-key="drill-rows"${S.opened.get("drill-rows") ? " open" : ""}><summary>표마다 줄 수(백업 · 오늘 DB)</summary>

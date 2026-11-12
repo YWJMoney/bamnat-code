@@ -2484,7 +2484,7 @@ test("[RVQ-16] 검토 U21-08: 백업 shows what it seals, and 지금 연습하�
   const after = [...u.$$("#main section.card")].find((c) => /되살리기 연습/.test(c.querySelector("h2")?.textContent ?? ""));
   assert.match(after.textContent, /되살릴 수 있음/);
   assert.match(after.textContent, /마지막 연습 .* · 표 \d+개 · [\d,]+줄/);
-  assert.match(after.textContent, /백업을 다시 읽음 · 잠근 칸 \d+개를 지금 열쇠로 열어 봄/);
+  assert.match(after.textContent, /백업을 다시 읽음 · (잠근 칸 \d+개를 지금 열쇠로 열어 봄|잠근 칸은 아직 없어요)/);
   // 표가 아니라 줄바꿈 되는 목록(좁은 폭·큰 글자에서 머리글이 세로로 서지 않게).
   const row = [...after.querySelectorAll(".drill-rows li")].find((li) => li.querySelector("b")?.textContent === "settings");
   assert.match(row.querySelector("span").textContent, /^백업 \d+ · 오늘 \d+$/, "백업 · 오늘 DB(목록과 다를 때만 목록)");
