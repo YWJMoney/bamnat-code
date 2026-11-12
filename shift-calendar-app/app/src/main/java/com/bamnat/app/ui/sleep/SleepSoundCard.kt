@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.Button
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -52,10 +51,13 @@ internal fun SleepSoundCard(savedMix: String, savedMinutes: Int, onSave: (NoiseM
     val names = mix.levels.filterValues { it > 0f }.keys.sortedBy { it.ordinal }.joinToString(" + ") { it.label }.ifBlank { "소리 없음" }
     SectionCard(title = "잠드는 소리") {
         Text("$names · ${NoiseTimer.label(minutes)}", style = MaterialTheme.typography.bodyMedium)
-        Text("휴대폰이 바로 만들어 내는 소리라 파일이 없고, 미디어 소리 크기를 따라요(알람 크기와 따로).",
+        // 2.0.0 [RVI-69] (디자인 품질 4) One line.
+        Text("미디어 소리 크기를 따라요(알람 크기와 따로)",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (playing == null) Button(onClick = { NoiseService.start(context, mix, minutes) }, enabled = mix.levels.values.any { it > 0f }) { Text("켜기") }
+            // 2.0.0 [RVI-69] (PC 통합 1차 PC-58, 디자인 품질 2) On the night screen and the sleep page '켜기' was filled beside the filled
+            // '깼어요'/'잠들었어요': the sleep is the one thing to do there, so the sound's button has an outline.
+            if (playing == null) OutlinedButton(onClick = { NoiseService.start(context, mix, minutes) }, enabled = mix.levels.values.any { it > 0f }) { Text("켜기") }
             else OutlinedButton(onClick = { NoiseService.stop(context) }) { Text("끄기") }
             TextButton(onClick = { open = !open }) { Text(if (open) "섞기 접기" else "섞기·타이머") }
         }

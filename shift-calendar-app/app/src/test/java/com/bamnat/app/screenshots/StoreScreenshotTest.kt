@@ -276,13 +276,13 @@ class StoreScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
     }
 
-    /** 13 수면, further down. */
+    /** 13 수면, its 패턴 (2.0.0 [RVI-58]: the folded screen is in three parts, 오늘 · 패턴 · 기록). */
     @Test fun sleep2Lower() = shoot("store_13b_sleep_lower", STORE) {
         sleep7()
         val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = false, onBack = {}) }
         settle()
-        scrollUp(700); scrollUp(700)
+        tapText("패턴", exact = true, scrolls = 0)
     }
 
     /** 14 가계부 */

@@ -7,6 +7,9 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -111,7 +114,11 @@ object Ring {
     private fun vibrate(context: Context, on: Boolean) {
         val v = (if (Build.VERSION.SDK_INT >= 31) context.getSystemService(VibratorManager::class.java)?.defaultVibrator
             else @Suppress("DEPRECATION") context.getSystemService(Vibrator::class.java)) ?: return
-        if (on) v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 1)) else v.cancel()
+        // 2.0.0 [RVI-12] (검토 ALM-22) Marked as an alarm, so the watch's 취침·방해 금지 and the app in the back do not drop it.
+        val effect = VibrationEffect.createWaveform(longArrayOf(0, 700, 500), 1)
+        if (!on) v.cancel()
+        else if (Build.VERSION.SDK_INT >= 33) v.vibrate(effect, android.os.VibrationAttributes.createForUsage(android.os.VibrationAttributes.USAGE_ALARM))
+        else @Suppress("DEPRECATION") v.vibrate(effect, android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_ALARM).build())
     }
 }
 
@@ -154,12 +161,18 @@ class RingActivity : ComponentActivity() {
 
 }
 
+/**
+ * 2.0.0 [RVI-11] (검토 ALM-10·U03-11) 다시 울림 big and first; 끄기 smaller and only by holding it, so a half-asleep tap on the
+ * wrist snoozes rather than turns the phone's alarm off. A plain tap on 끄기 says to hold it.
+ */
 @Composable
 private fun RingScreen(what: String, onOff: () -> Unit, onSnooze: () -> Unit) {
+    var hint by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     Column(Modifier.fillMaxSize().padding(horizontal = 18.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
         horizontalAlignment = Alignment.CenterHorizontally) {
         Text(what, fontSize = 16.sp, textAlign = TextAlign.Center, maxLines = 2)
-        Button(onClick = onOff, modifier = Modifier.fillMaxWidth(), label = { Text("끄기") })
-        Button(onClick = onSnooze, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.filledTonalButtonColors(), label = { Text("다시 울림") })
+        Button(onClick = onSnooze, modifier = Modifier.fillMaxWidth().height(64.dp), label = { Text("다시 울림", fontSize = 18.sp) })
+        Button(onClick = { hint = true }, onLongClick = onOff, onLongClickLabel = "끄기", modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.filledTonalButtonColors(), label = { Text(if (hint) "길게 눌러 끄기" else "끄기 (길게)", fontSize = 13.sp) })
     }
 }

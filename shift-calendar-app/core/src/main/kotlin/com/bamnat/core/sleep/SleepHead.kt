@@ -2,7 +2,7 @@ package com.bamnat.core.sleep
 
 /**
  * 1.39 [FLOW-09] 수면 화면 머리 (흐름·디자인 계획 3-5): one number, the last 7 days' average, and one line under it against the
- * target ("목표보다 34분 부족 · 7일 중 5일 적음"). Replaces the three same-size tiles. No score (밤낮 원칙 "점수 없음").
+ * target ("목표보다 34분 부족 · 7일 중 5일 기록"). Replaces the three same-size tiles. No score (밤낮 원칙 "점수 없음").
  */
 object SleepHead {
     /** [tone] is the meaning colour's name ("good", "caution" or null), as in DayStory. */
@@ -25,6 +25,7 @@ object SleepHead {
             diff < EVEN_MINUTES -> "good"
             else -> null
         }
-        return Head(SleepInsights.hours(avg), "$vs · ${SleepDebt.WINDOW_DAYS}일 중 ${week.days}일 적음", tone)
+        // 2.0.0 [RVI-40] (검토 ALM-25) '기록': '적음' read as '부족'.
+        return Head(SleepInsights.hours(avg), "$vs · ${SleepDebt.WINDOW_DAYS}일 중 ${week.days}일 기록", tone)
     }
 }

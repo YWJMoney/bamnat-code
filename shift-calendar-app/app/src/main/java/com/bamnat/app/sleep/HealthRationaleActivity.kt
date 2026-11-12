@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.theme.BamnatTheme
 
 /**
- * [SLP-08] What the app does with Health Connect sleep. Health Connect opens this from its
+ * [SLP-08] What the app does with Health Connect sleep. 2.0.0 [RVI-14] Reading and, since 1.38, writing (each only when turned on). Health Connect opens this from its
  * permission screen ("개인정보처리방침"), and refuses to ask for permission without it.
  */
 class HealthRationaleActivity : ComponentActivity() {
@@ -30,7 +30,7 @@ class HealthRationaleActivity : ComponentActivity() {
             BamnatTheme {
                 Surface(Modifier.fillMaxSize()) {
                     Column(Modifier.safeDrawingPadding().verticalScroll(rememberScrollState()).padding(24.dp)) {
-                        Text("수면 기록 읽기", style = MaterialTheme.typography.headlineSmall)
+                        Text("헬스 커넥트 수면 읽기·쓰기", style = MaterialTheme.typography.headlineSmall)
                         Spacer(Modifier.height(16.dp))
                         for (line in LINES) {
                             Text(line, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(bottom = 12.dp))
@@ -47,9 +47,10 @@ class HealthRationaleActivity : ComponentActivity() {
         val LINES = listOf(
             "밤낮은 헬스 커넥트에서 최근 30일 수면 시간(잠든 시각과 깬 시각)만 읽어요.",
             "읽은 수면은 날짜 화면의 '최근 7일 수면'과 목표보다 부족한 시간, 수면 기록 화면의 근무별 평균과 안내를 계산하는 데만 써요.",
-            "헬스 커넥트에 아무것도 쓰지 않고, 따로 저장하거나 백업 파일에 넣지 않으며, 휴대폰 밖으로 보내지 않아요.",
-            "직접 누른 수면 기록과 겹치면 직접 기록을 써요.",
-            "설정 > 알림과 잠에서 끄거나 헬스 커넥트 앱에서 허용을 거두면 바로 읽지 않아요.",
+            // 2.0.0 [RVI-14] (검토 ALM-12) What it does since 1.38: reading and writing are each on only when turned on.
+            "읽은 수면은 따로 저장하거나 백업 파일에 넣지 않으며, 휴대폰 밖으로 보내지 않아요. 직접 누른 수면 기록과 겹치면 직접 기록을 써요.",
+            "‘헬스 커넥트에 수면 쓰기’를 따로 켰을 때만, 밤낮에 적은 잠(잠든 시각과 깬 시각)을 헬스 커넥트에 넣어 다른 건강 앱에서도 보게 해요. 밤낮에서 지운 잠은 헬스 커넥트에서도 지워요.",
+            "설정 > 알림과 잠에서 읽기·쓰기를 각각 끄거나 헬스 커넥트 앱에서 허용을 거두면 바로 멈춰요.",
         )
     }
 }
