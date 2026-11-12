@@ -1,12 +1,13 @@
 // [COMM-04][ADMIN-01] The worker on a plain Node server with SQLite, for the app's round-trip test and
 // to try the developer app at http://localhost:8788/admin/ before deploying:
-//   ADMIN_PASSWORD=<10+ letters> [SHARE_BASE_URL=http://127.0.0.1:8790] npm run local -- 8788 [--seed] [--market] [--db local.sqlite]
+//   ADMIN_PASSWORD=<10+ letters> [SHARE_BASE_URL=http://127.0.0.1:8790] npm run local -- 8788 [--seed] [--market] [--db local.sqlite] [--backup local-backup]
 // --seed fills it with made-up coworkers' reports, so every screen has something on it.
 // --market (1.39) puts the real 장터's works in too (seedMarket, below).
 import http from "node:http";
 import worker from "../src/index.js";
 import { d1 } from "./d1.mjs";
 import { report, setup } from "./helpers.mjs";
+import { localR2 } from "./local-r2.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,9 @@ if (process.env.INTEGRITY_MODE) env.INTEGRITY_MODE = process.env.INTEGRITY_MODE;
 // 1.39 PC 6차 (G7 F절): the share server's address, so 서버 상태 asks its /api/health (set SHARE_BASE_URL=http://127.0.0.1:8790).
 if (process.env.SHARE_BASE_URL) env.SHARE_BASE_URL = process.env.SHARE_BASE_URL;
 if (process.env.SHARE_ADMIN_TOKEN) env.SHARE_ADMIN_TOKEN = process.env.SHARE_ADMIN_TOKEN; // the share server started with the same value
+// 2.0.0 [RVQ-16] the daily backup's R2: in memory, or with --backup <folder> as files there, so 관리 › 백업 and 되살리기 연습 work
+// on the PC and `node tools/backup-open.mjs <folder>/d1/<day>` (BAMNAT_BACKUP_SECRET=local) turns a day back into SQL.
+env.BACKUP = localR2(args.includes("--backup") ? args[args.indexOf("--backup") + 1] : null);
 if (!env.ADMIN_PASSWORD) console.log("ADMIN_PASSWORD is not set: the developer app shows what is missing.");
 
 const send = (path, body, ip, method = "POST") => worker.fetch(new Request(`http://localhost:${port}${path}`, {

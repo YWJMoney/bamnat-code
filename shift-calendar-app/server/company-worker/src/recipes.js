@@ -918,8 +918,11 @@ export async function turnSafeOut(text, hash, app) {
   return { body: out, hash: await sha256hex(out) };
 }
 
-/** What someone else's phone at [app] reads of a stored [text]: no company pay part ([sharedPayOut]), a safe 달 넘김 ([turnSafeOut]). */
-async function servedOut(text, hash, app) {
+/**
+ * What someone else's phone at [app] reads of a stored [text]: no company pay part ([sharedPayOut]), a safe 달 넘김 ([turnSafeOut]).
+ * 2.0.0 [RVR-21] Exported for the 판 호환 시험 (tools/served-works.mjs), which reads every 장터 작품 as each old app would.
+ */
+export async function servedOut(text, hash, app) {
   const shared = await sharedPayOut(text, hash);
   return turnSafeOut(shared.body, shared.hash, app);
 }
@@ -1464,12 +1467,45 @@ export { PARTS_SINCE };
 /** [RVD-24] A fill's kind as parts-since.js names it: pt.<무늬>·tx.<질감>·sh.<셰이더>, else its first word. */
 const fillKind = (f) => (/^(pt|tx|sh)\./.test(f) ? f.split(".").slice(0, 2).join(".") : f.split(".")[0]);
 
+/** [RVD-29] A 부품 줄's order names its children by their last word: the children's whole ids, under [parent] ("page" under app is memo.page, "card" app.card·memo.card). */
+const PART_CHILD_IDS = {};
+for (const id of PART_IDS) {
+  const p = partParent(id);
+  if (p) ((PART_CHILD_IDS[p] ??= {})[id.slice(id.lastIndexOf(".") + 1)] ??= []).push(id);
+}
+
+/**
+ * 2.0.0 [RVD-29] When partsMinApp's reading changes without the table changing, the hourly job still measures again ([recheckMinApp]
+ * signs the table with this). 2: 조각 종류(pieces), 필드(fields), 고른 값(picks), 부품 줄 order의 자식.
+ */
+export const MIN_APP_READING = 2;
+
 /** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
 export function partsMinApp(recipe) {
   let need = 0;
   const since = (map, name) => {
-    const v = typeof name === "string" && Object.hasOwn(map, name) ? map[name] : 0;
+    const v = map && typeof name === "string" && Object.hasOwn(map, name) ? map[name] : 0;
     if (v > need) need = v;
+  };
+  // 2.0.0 [RVD-29] S RVS-04: core writes three more maps. An older app leaves out a 조각 종류 it does not know (the rest opens), but drops a
+  // field it does not know and writes the work again, so its hash no longer matches and the whole work fails (RCP-07); a 고른 값 it does not
+  // know refuses the whole work. pieces: kind; fields: <kind>.<field>[.<항목 필드>…]; picks: <that path>=<value>.
+  const { pieces: kinds, fields, picks } = PARTS_SINCE;
+  const fieldsOf = (v, path) => {
+    if (Array.isArray(v)) {
+      for (const x of v) {
+        if (typeof x === "string") since(picks, `${path}=${x}`);
+        else fieldsOf(x, path);
+      }
+      return;
+    }
+    if (!v || typeof v !== "object") return;
+    for (const [k, x] of Object.entries(v)) {
+      const at = `${path}.${k}`;
+      since(fields, at);
+      if (typeof x === "string") since(picks, `${at}=${x}`);
+      else fieldsOf(x, at);
+    }
   };
   // [RVD-24] The pieces of a looks·screens string ("all~fl:pt.dots…|ft:jua/memo~…") and of a motion ("tn:slide|td:pulse").
   const pieces = (s) => s.split(/[|/]/).map((x) => x.slice(x.indexOf("~") + 1));
@@ -1492,12 +1528,26 @@ export function partsMinApp(recipe) {
     Object.values(v).forEach(walk);
   };
   for (const p of Array.isArray(recipe?.pieces) ? recipe.pieces : []) {
+    if (typeof p?.kind === "string") {
+      since(kinds, p.kind);
+      const { kind, ...rest } = p;
+      fieldsOf(rest, kind);
+    }
     // Part ids and states only on 부품 줄, a day only on 꾸밈 항목 (a 버튼 named "night" is not the 밤 화면).
     if (p?.kind === "parts" && Array.isArray(p.parts)) {
       for (const l of p.parts) {
         if (typeof l?.id !== "string") continue;
         since(PARTS_SINCE.ids, l.id);
         if (typeof l.on === "string" && PART_IDS.includes(l.id)) since(PARTS_SINCE.states, l.on);
+        // [RVD-29] order names children an older app may not know ("date,clock" under night is night.date, night.clock). An older app only
+        // asks whether the name is one of its children's last words (core Blueprint.linesProblem), so of several children with that last word
+        // (card under app: app.card, memo.card) the oldest one answers.
+        if (typeof l.order === "string") {
+          for (const c of l.order.split(",")) {
+            const kids = PART_CHILD_IDS[l.id]?.[c];
+            if (kids) need = Math.max(need, Math.min(...kids.map((id) => (Object.hasOwn(PARTS_SINCE.ids, id) ? PARTS_SINCE.ids[id] : 0))));
+          }
+        }
       }
     }
     if (p?.kind === "decor" && Array.isArray(p.items)) {
@@ -2432,7 +2482,7 @@ export function minAppOf(text) {
  * 바꾼 작품마다 작품 기록(recipe_actions)에 '판 호환표'로 남아요. Returns how many it raised.
  */
 export async function recheckMinApp(d, env, now, limit = 200, pages = 5) {
-  const sig = (await sha256hex(JSON.stringify([PARTS_SINCE, FX_SINCE_APP]))).slice(0, 16);
+  const sig = (await sha256hex(JSON.stringify([PARTS_SINCE, FX_SINCE_APP, MIN_APP_READING]))).slice(0, 16);
   let raised = 0;
   for (let page = 0; page < pages; page++) {
     const n = await recheckPage(d, env, now, sig, limit);

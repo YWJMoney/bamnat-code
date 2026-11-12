@@ -42,9 +42,9 @@ class ReadingStopTest {
     private val nov = YearMonth.of(2026, 11)
 
     private fun idleUntil(what: String, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 30_000
+        val end = System.currentTimeMillis() + 30_000  // real clock: a timeout for waiting, not a date
         while (!done()) {
-            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }  // real clock: a timeout for waiting, not a date
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }

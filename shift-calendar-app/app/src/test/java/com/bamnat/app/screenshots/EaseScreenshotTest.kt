@@ -92,7 +92,9 @@ class EaseScreenshotTest : ScreenshotBase() {
         assertFalse(2 in vm.ui.value.cells)
         settle()
         assertTrue(appears("» 건너뛰기"))
-        assertTrue(appears("✕ 지우기"))
+        // 2.0.0 [RVL-34] (HQ-61 ④) ✕ is in the keypad's '더 보기' (a popup the screen reader finds by this name), beside 이 순서 반복 and
+        // 지난달과 같게; vm.erase() above is what its ✕ does.
+        assertTrue(appears(com.bamnat.app.ui.imports.KEYPAD_MORE, exact = true))
     })
 
     // ---- EASE-26: 잔업 ± chips in the opened 추가 근무 piece (the day under the calendar has them in its head) ----

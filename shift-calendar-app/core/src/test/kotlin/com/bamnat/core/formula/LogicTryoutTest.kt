@@ -69,12 +69,14 @@ class LogicTryoutTest {
         assertEquals(listOf("‘물 잔’ 값이 0 → 1이 돼요"), one.said)
         t = one.after
         val two = LogicTryout.press(l, cup, t, mon, book, at)
-        assertEquals("2/2잔", two.after.show(l.values[0], mon))
+        // [RVM-05] At the goal it reads as reached ('2잔 채움'), past it the count follows ('2잔 채움 · 3잔').
+        assertEquals("2잔 채움", two.after.show(l.values[0], mon))
         assertEquals(1f, two.after.toward(l.values[0]))
         assertTrue(two.said.toString(), two.said.any { it.contains("‘다 마셨어요’") })
         assertTrue(two.said.any { it.contains("오늘 물 다 마셨어요") })
         val three = LogicTryout.press(l, cup, two.after, mon, book, at)
         assertFalse("목표는 처음 닿을 때만", three.said.any { it.contains("‘다 마셨어요’") })
+        assertEquals("2잔 채움 · 3잔", three.after.show(l.values[0], mon))
     }
 
     @Test fun aValueConditionReadsTheTriedNumber() {

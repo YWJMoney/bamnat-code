@@ -103,11 +103,11 @@ import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 // 2.0.0 [RVD-25] SN-17 회사 설정 파일 검사(장터 서버도 같은 함수로).
 import { Refuse, refuse, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, given, object, list, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, cleanSetup, usesNewer, period, kindRef, rules, extraRule, tiers, premium, item } from "./company-setup.js";
-import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
+import { FCM_SCHEMA, fcmRoute, stillHere } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
-import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
+import { DESK_COLUMNS, DESK_SCHEMA, DESK_SEED, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
 import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
@@ -116,6 +116,8 @@ import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, 
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
 import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
+import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
+import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -395,7 +397,11 @@ export async function prune(env, now) {
     // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
+    // 2.0.0 [RVQ-16] 검토 SRV-09: 보관 장부가 정한 기한(알림 토큰·같은 근무 알림·기기 확인·광장 알림 보낸 때·사진 신고·꾸미기 부탁 연결·운영 기록).
+    ...retentionPrune(stmt, env, now),
   ]);
+  // 2.0.0 [RVQ-16] 검토 SRV-15: 아직 잠그지 않은 2단계 키를 서버 비밀값으로 잠가요(한 번, 그 뒤로는 0줄).
+  await sealLegacyTotp(env).catch(() => {});
 }
 
 /**
@@ -405,7 +411,8 @@ export async function prune(env, now) {
 export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    // 2.0.0 [RVQ-16] 보내려고 잠깐 둔 답도 문의와 함께(문의가 없으면 보낼 곳도 없어요).
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -1020,6 +1027,8 @@ const COLUMNS = [
   "ALTER TABLE admin_sessions ADD COLUMN via TEXT NOT NULL DEFAULT ''",
   // 2.0.0 [RVQ-06] 검토 U21-03: 패스키마다 마지막으로 쓴 기기 이름.
   "ALTER TABLE admin_passkeys ADD COLUMN last_ua TEXT NOT NULL DEFAULT ''",
+  // 2.0.0 [RVQ-17] 검토 U21-07·I21b-02: 데이터 요청을 대신 한 증빙(JSON 배열: 지운 표·줄 수, 남은 것, 내보낸 표·줄 수).
+  "ALTER TABLE data_requests ADD COLUMN proof TEXT",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -1175,6 +1184,8 @@ async function schemaUp(env, made) {
   // with the columns below, where a column already there is skipped.
   const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
   await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
+  // 2.0.0 [RVR-13] (검토 TEST-06) 처음 한 번 적는 시각들은 SQLite 'now'가 아니라 Date.now()로 묶어요.
+  await batch(env, DESK_SEED(Date.now()).map(([sql, ...params]) => env.DB.prepare(sql).bind(...params)));
   // 1.39 [ADM3-43] 배포 직후 첫 요청이 15초 넘게 걸렸어요(실서버 점검 11-08): ALTER 100여 개를 하나씩 보내서요. 이제 있는 칸을
   // 한 번에 읽고 없는 칸만 더해요. 읽지 못하는 DB면 예전처럼 다 보내고 '이미 있음'은 넘겨요.
   for (const sql of await missingColumns(env, [...SCHEMA.filter(alter), ...COLUMNS])) {
@@ -3734,7 +3745,7 @@ async function takeBack(request, env, id) {
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE reports SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
-    return json({ kept: true, text: "채택된 규칙은 모두가 쓰는 규칙이라 남아요. 보낸 분과의 연결만 지웠어요." });
+    return json({ kept: true, text: "채택된 설정은 같은 회사 분들이 쓰고 있어 남아요. 나와의 연결과 받기로 한 보상만 지웠어요." });
   }
   await batch(env, [stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
@@ -3744,10 +3755,27 @@ async function takeBack(request, env, id) {
 async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
-  const dev = await deviceHash(device);
+  const r = await forgetDevice(env, await deviceHash(device));
+  return json({ reports: r.reports, votes: r.votes, posts: r.posts, inquiries: r.inquiries,
+    // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
+    ...(r.inquiriesKept ? { inquiriesKept: r.inquiriesKept } : {}),
+    ...(r.adoptedKept ? { adoptedKept: r.adoptedKept } : {}), ...(r.ratesKept ? { ratesKept: r.ratesKept } : {}),
+    ...(r.recipes ? { recipes: r.recipes } : {}), ...(r.profile ? { profile: r.profile } : {}), ...(r.follows ? { follows: r.follows } : {}),
+    ...(r.sets ? { sets: r.sets } : {}) });
+}
+
+/**
+ * 2.0.0 [RVQ-16] 검토 SRV-09·U21-07·I21b-02: 설치 해시 [dev]의 모든 것(모두 지우기와 관리자의 데이터 요청 대행이 같은 일). 맨 끝에 보관 장부의
+ * 쓸기(forgetSweep)가 장부에 delete로 적힌 모든 표에서 남은 줄을 지워요. [keepInquiry]는 요청을 받은 문의 하나를 남겨 결과를 그 문의로 알릴
+ * 수 있게 해요(대행만). [count]면 지우기 전과 뒤에 표마다 이 해시가 든 줄을 세어 증빙으로 돌려줘요.
+ */
+export async function forgetDevice(env, dev, { keepInquiry = null, count = false } = {}) {
+  const before = count ? await deviceRows(env, dev) : null;
+  const askWhere = keepInquiry ? ["device = ? AND id <> ?", dev, keepInquiry] : ["device = ?", dev];
   // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
   const gone = `gone${randomId(12)}`;
-  await batch(env, [
+  // 2.0.0 [RVN-09] U10b-04 the adopted rules and 시세 that stay are counted, so the phone's receipt says what is left as well as what went.
+  const [, adoptedRules, , , , , , , , , , adoptedRates] = await batch(env, [
     stmt(env, `UPDATE posts SET device = ?2 WHERE device = ?1 AND report_id IN (SELECT id FROM reports WHERE device = ?1 AND status = 'adopted')`, dev, gone),
     stmt(env, "UPDATE reports SET device = ? WHERE device = ? AND status = 'adopted'", gone, dev),
     // [PLZ-01] Their votes on posts come off the posts' counts.
@@ -3765,8 +3793,16 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
     stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM device_seen WHERE device = ?", dev),
+    // 2.0.0 [RVN-09] COMP-42 Its push token, what 광장 it watched and when it was last told, and its 오늘 출근 taps: nothing left
+    // that can reach this phone or says what it follows (the app takes its own copies back at the same time).
+    stmt(env, "DELETE FROM push_phones WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_watch WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_pushed WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_checkin WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , kept, , , , , , asked] = await batch(env, [
+  // 2.0.0 [RVQ-16] 문의 문장 수가 바뀌어도(보내려고 둔 답을 더함) 센 줄을 제자리에서 읽게, 문의 문장의 처음·끝을 따로 기억해요.
+  const asks = forgetInquiries(env, ...askWhere);
+  const results = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -3778,7 +3814,7 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
     // [ADMIN-11][ADMIN-12] Their questions, with what admins attached to them. 1.36 [INQ-07] A 결제·환불
     // record is cut from this phone instead and stays with the developer for its three years.
-    ...forgetInquiries(env, "device = ?", dev),
+    ...asks,
     // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
@@ -3800,6 +3836,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM write_limits WHERE device = ? AND until <= ?", dev, Date.now()),
     stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
   ]);
+  const [, reports, votes, , posts] = results;
+  const kept = results[7];
+  const asked = results[7 + asks.length - 1];
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
@@ -3810,10 +3849,31 @@ async function forgetMine(request, env) {
   await batch(env, forgetCommunity(recipeDeps, env, dev));
   // 1.36 the fonts it shared and its font reports.
   await batch(env, forgetFonts(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
-    // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
-    ...(kept.meta.changes ? { inquiriesKept: kept.meta.changes } : {}),
-    ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
+  // 2.0.0 [RVQ-16] 검토 SRV-09: 장부에 delete로 적힌 표에서 남은 것(알림 토큰·같은 근무 알림·기기 확인·광장 출석·사진 신고·꾸미기 부탁 연결 등).
+  // 요청 문의를 남길 때는 그 문의의 '나도 그래요'·신고는 문의 쪽 일이라 그대로 두고, 문의 표는 cut이라 쓸지 않아요.
+  const sweep = forgetSweep(stmt, env, dev);
+  const swept = await batch(env, sweep.map((x) => x.s));
+  const sweptRows = Object.fromEntries(sweep.map((x, i) => [x.table, swept[i].meta.changes]).filter(([, n]) => n > 0));
+  // 2.0.0 [RVN-09] U10b-04 the adopted rules and 시세 that stay are counted too (adoptedKept·ratesKept).
+  const out = { reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
+    inquiriesKept: kept.meta.changes, adoptedKept: adoptedRules.meta.changes, ratesKept: adoptedRates.meta.changes, recipes, profile, follows, sets, swept: sweptRows };
+  if (count) {
+    const after = await deviceRows(env, dev);
+    out.proof = { gone: Object.fromEntries(Object.entries(before).map(([t, n]) => [t, n - (after[t] ?? 0)]).filter(([, n]) => n > 0)),
+      left: Object.fromEntries(Object.entries(after).filter(([, n]) => n > 0)) };
+  }
+  return out;
+}
+
+/** 2.0.0 [RVQ-16] 보관 장부에서 설치 해시 열이 있는 표마다 [dev]가 든 줄 수(0은 빼요). */
+export async function deviceRows(env, dev) {
+  const tables = RETENTION.filter((r) => deviceColumns(r).length);
+  const rows = await batch(env, tables.map((r) => {
+    const cols = deviceColumns(r);
+    return stmt(env, `SELECT COUNT(*) AS n FROM ${r.table} WHERE ${cols.map(([c, a]) => (a === "contains" ? `instr(${c}, ?) > 0` : `${c} = ?`)).join(" OR ")}`,
+      ...cols.map(() => dev));
+  }));
+  return Object.fromEntries(tables.map((r, i) => [r.table, Number(rows[i].results?.[0]?.n ?? 0)]).filter(([, n]) => n > 0));
 }
 
 async function vote(request, env) {
@@ -3886,6 +3946,9 @@ export const FLAGS = {
   false: "일부러 틀린 정보",
   // AI 1.27 [PLAZA-33] 투자 이야기: a 종목 추천 or 리딩 (결정 AI-D8).
   advice: "종목 추천·리딩",
+  // 2.0.0 [RVN-06] COMP-10 마을 돌봄이 바로 쉬기로 다루는 두 가지(CARE_SEVERE)를 그 이름으로 신고해요(전에는 '욕설'로 섞였어요).
+  sexual: "성적인 내용",
+  illegal: "불법·위험한 내용",
 };
 
 /** Why the developer hid a post, as its writer's app shows it. */
@@ -4022,6 +4085,10 @@ async function talkData(request, env, companyId, grp, known = null) {
   const beforeRaw = new URL(request.url).searchParams.get("before");
   const beforeAt = style && beforeRaw ? Date.parse(beforeRaw) : NaN;
   const before = Number.isFinite(beforeAt) ? beforeAt : null;
+  // 2.0.0 [RVN-06] COMP-01 ?post=<id>: one top post of a kind of work's plaza with its answers, so a post read with ?before= (지난 글)
+  // opens in the sheet like the first page's (신고·안 보기·답 달기 on it). Read the same way, so blocked and hidden writers stay out.
+  const postRaw = new URL(request.url).searchParams.get("post");
+  const thread = style && before === null && typeof postRaw === "string" && /^p[A-Za-z0-9]{8,30}$/.test(postRaw) ? postRaw : null;
   // 1.39 [PAYP-01] A proposal's pay lines to no one (members too); a 보완 요청's lines are where it differs, without values.
   const lines = (change, kind) => (kind === "fix" ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
   const now = Date.now();
@@ -4032,6 +4099,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     room && style && before !== null
       ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? AND parent IS NULL AND created_at < ?
           ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}) ORDER BY created_at, r`, c.id, grp, before)
+      : thread
+      ? all(env, `SELECT *, rowid AS r FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id = ?3 OR parent = ?3) ORDER BY created_at, rowid`, c.id, grp, thread)
       : room
       ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
           ORDER BY created_at, r`, c.id, grp)
@@ -4064,7 +4133,7 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
   const people = style && (await peopleOn(env, now));
-  const pulse = people && before === null ? await peoplePulse(one, env, c.id, now, grp) : null;
+  const pulse = people && before === null && !thread ? await peoplePulse(one, env, c.id, now, grp) : null;
   // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
   const checkin = pulse ? await plazaCheckins(env, c.id, me, now) : null;
   if (checkin) pulse.checkin = checkin;
@@ -4202,8 +4271,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
     ...(hiddenByYou ? { hiddenByYou } : {}), ...(topic ? { topic } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}),
     // 1.39 [PLZC-03][PLZC-12] Whether older posts are left to read (a full page, or the newest read reached its cap), and the head line.
-    ...(style && (before !== null ? pageTops >= PEOPLE_LIMITS.page : rows.length >= ROOM_LIMITS.shown) ? { more: true } : {}),
-    ...(before !== null ? { older: true } : {}),
+    ...(style && !thread && (before !== null ? pageTops >= PEOPLE_LIMITS.page : rows.length >= ROOM_LIMITS.shown) ? { more: true } : {}),
+    ...(before !== null ? { older: true } : {}), ...(thread ? { thread } : {}),
     ...(pulse ? { pulse } : {}) } };
 }
 
@@ -5419,7 +5488,14 @@ async function login(request, env, now) {
   const second = await one(env, "SELECT secret, used_step FROM admin_totp WHERE admin = ? AND on_at IS NOT NULL", who);
   if (second && !(who === OWNER.id && env.ADMIN_2FA_RESET === "1")) {
     if (body.code === undefined || body.code === "") return json({ error: "code_needed" }, 401);
-    const step = await totpCheck(second.secret, String(body.code), now, second.used_step);
+    // 2.0.0 [RVQ-16] 검토 SRV-15: 키는 서버 비밀값으로 잠가 둬요. 비밀값을 옛 값 없이 바꿔 열 수 없으면 들이지 않고(닫힌 채), 최고 관리자는
+    // ADMIN_2FA_RESET, 다른 관리자는 최고 관리자가 2단계를 풀어 다시 켜요.
+    const secret = await totpOf(env, second.secret);
+    if (!secret) {
+      await audit(env, now, "login_failed", "code_sealed");
+      return json({ error: "code_reset" }, 401);
+    }
+    const step = await totpCheck(secret, String(body.code), now, second.used_step);
     if (step === null) {
       // 비밀번호는 맞았고 코드가 틀림: 위에서 올린 횟수가 그대로 남고, 2.0.0 [RVQ-05] 검토 SRV-08 (다)부터 전체 실패에도 들어가요.
       await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
@@ -5510,19 +5586,28 @@ async function secondView(env, actor) {
 async function secondChange(request, env, actor, now) {
   const body = await readJson(request, 1024);
   if (body.do === "start") {
-    const secret = totpSecret();
+    // 2.0.0 [RVQ-16] 검토 SRV-15: D1에는 잠근 값만(백업에도 잠근 채로 가요). 앱에 보여 줄 때만 열어요.
     await run(env, `INSERT INTO admin_totp (admin, secret, on_at, used_step, created_at) VALUES (?, ?, NULL, -1, ?)
       ON CONFLICT (admin) DO UPDATE SET secret = excluded.secret, on_at = NULL, used_step = -1, created_at = excluded.created_at
-      WHERE admin_totp.on_at IS NULL`, actor.id, secret, now);
+      WHERE admin_totp.on_at IS NULL`, actor.id, await totpSealed(env, totpSecret()), now);
     const row = await one(env, "SELECT secret, on_at FROM admin_totp WHERE admin = ?", actor.id);
     if (row.on_at) return json({ error: "second_on" }, 409);
-    return json({ secret: row.secret, uri: totpUri(row.secret, actor.owner ? "최고 관리자" : actor.email) });
+    const secret = await totpOf(env, row.secret);
+    if (!secret) return json({ error: "code_reset" }, 409);
+    return json({ secret, uri: totpUri(secret, actor.owner ? "최고 관리자" : actor.email) });
   }
   if (body.do !== "confirm" && body.do !== "off") refuse("do", "do");
   const row = await one(env, "SELECT secret, on_at, used_step FROM admin_totp WHERE admin = ?", actor.id);
   if (!row || (body.do === "confirm") === Boolean(row.on_at)) return json({ error: body.do === "confirm" ? "second_not_started" : "second_off" }, 409);
-  const step = await totpCheck(row.secret, String(body.code ?? ""), now, row.used_step);
-  if (step === null) return json({ error: "code_wrong", field: "code" }, 400);
+  const secret = await totpOf(env, row.secret);
+  // 열 수 없는 키(서버 비밀값이 바뀜)는 끄기만 코드 없이 돼요: 이미 쓸 수 없는 2단계라 지우는 것이 안전해요. 켜기는 다시 시작해요.
+  if (!secret && body.do === "off") {
+    await run(env, "DELETE FROM admin_totp WHERE admin = ?", actor.id);
+    await audit(env, now, "second_off", actor.id, "열 수 없는 키");
+    return json(await secondView(env, actor));
+  }
+  const step = secret ? await totpCheck(secret, String(body.code ?? ""), now, row.used_step) : null;
+  if (step === null) return json({ error: secret ? "code_wrong" : "code_reset", field: "code" }, 400);
   if (body.do === "confirm") await run(env, "UPDATE admin_totp SET on_at = ?, used_step = ? WHERE admin = ?", now, step, actor.id);
   else await run(env, "DELETE FROM admin_totp WHERE admin = ?", actor.id);
   await audit(env, now, body.do === "confirm" ? "second_on" : "second_off", actor.id);
@@ -6332,7 +6417,8 @@ const BADGE_SQL = {
   // 7일 안의 출시 멈춤 권장, (최고 관리자만) 요금을 정할 새 기능. decideBox와 같은 조건.
   decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
       AND d.status IN ('todo', 'doing') WHERE h.action = 'fixed_no'`],
-  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > (CAST(strftime('%s', 'now') AS INTEGER) - 7 * 86400) * 1000"],
+  // 2.0.0 [RVR-13] (검토 TEST-06) 7일은 SQLite 'now'가 아니라 Date.now()로(시험 시계와 같은 시계).
+  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > ?", (now) => now - 7 * 86400 * 1000],
   // [LOOP-35] loop.js ASK_TIER_SQL과 같은 기준: 기존 기능 고침·다듬기와 서버로만 닿는 운영용은 묻지 않아요.
   decideTiers: ["owner", `SELECT COUNT(*) AS n FROM dev_items d WHERE d.deleted_at IS NULL AND (d.basis = 'new' OR (d.basis = '' AND d.size = 'feature' AND d.route != 'server'))
       AND d.status != 'rejected' AND d.tier IN ('', 'later')`],
@@ -6368,7 +6454,10 @@ async function badges(env, actor, now) {
   const epoch = badgeEpoch;
   // AM 1.28 [FLAG-22] billingLive is the billing flag by the server's view; the flag store rides in the same trip.
   const q = Object.fromEntries(Object.entries(FLAG_STORE_SQL).map(([k, sql]) => [k, [sql]]));
-  for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
+  // 2.0.0 [RVR-13] [area, sql, ...묶을 값]: 함수인 값은 지금 시각으로 불러요.
+  for (const [k, [area, sql, ...binds]] of Object.entries(BADGE_SQL)) {
+    if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql, ...binds.map((b) => (typeof b === "function" ? b(now) : b))];
+  }
   if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
   // 1.39 [LOOP-19][LOOP-20] 결정함 숫자의 급함·최고 관리자 확인 문의: 같은 batch로 읽고 말로 가려 세요.
   if (actor.owner || can(actor, "inquiries")) q.openAsks = [WAITING_SQL];
@@ -8017,6 +8106,8 @@ const newsSince = (url, now) => {
 async function digest(request, env, url) {
   const dev = await installOf(request);
   const now = Date.now();
+  // 2.0.0 [RVQ-16] 하루 한 번 묻는 이 길이 '아직 쓰는 중'(알림 토큰·같은 근무 알림의 정리 기한).
+  await stillHere(env, dev, now).catch(() => {});
   const since = newsSince(url, now);
   const [plaza, answers, ops] = await Promise.all([
     paused(env, "PLAZA_NEWS").then((off) => (off ? null : newsItems(env, dev, since, now))),

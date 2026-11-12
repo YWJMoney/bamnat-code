@@ -7,7 +7,7 @@ import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
-import { fcmTell } from "./fcm.js";
+import { fcmTell, stillHere } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
 import { LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
@@ -169,6 +169,8 @@ export async function inquiries(request, env, path) {
     // 1.39 [LOOP-15] 앱이 자기 판(x-app "1.39.0 (53)")을 보내면: 이 폰이 이미 고친 판이면 묶인 문의에 바로 안내해요(단계적 출시 중에도).
     const app = request.headers.get("x-app");
     if (app) await phoneArrived(env, dev, app, Date.now()).catch(() => 0);
+    // 2.0.0 [RVQ-16] 문의 답을 묻는 휴대폰은 아직 쓰는 중(알림 토큰의 정리 기한).
+    await stillHere(env, dev, Date.now()).catch(() => {});
     const rows = await all(env, `SELECT i.*, (SELECT COUNT(*) FROM inquiry_photos p WHERE p.inquiry_id = i.id) AS photos
       FROM inquiries i WHERE i.device = ? ORDER BY i.updated_at DESC LIMIT 50`, dev);
     const out = [];

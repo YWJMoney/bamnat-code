@@ -43,9 +43,9 @@ class RvlScanScreenshotTest : ScreenshotBase() {
     private val nov = YearMonth.of(2026, 11)
 
     private fun Screen.waitFor(what: String, done: () -> Boolean) {
-        val until = System.currentTimeMillis() + 20_000
+        val until = System.currentTimeMillis() + 20_000  // real clock: a timeout for waiting, not a date
         while (!done()) {
-            check(System.currentTimeMillis() < until) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < until) { "Timed out waiting for $what" }  // real clock: a timeout for waiting, not a date
             Thread.sleep(20)
             settle()
         }
@@ -204,9 +204,13 @@ class RvlScanScreenshotTest : ScreenshotBase() {
     @Test fun leaveFoldLight() = shoot("rvl30_leave_fold_light_100", FOLDED, leave())
     @Test fun leaveFoldDarkHuge() = shoot("rvl30_leave_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, leave())
     @Test fun leaveOpenLight() = shoot("rvl30_leave_open_light_100", UNFOLDED, leave())
-    /** Reading failed: said as that, with no greyed "가져올 새 일정이 없어요" under it saying otherwise. */
+    /**
+     * Reading failed: said as that, with no greyed "가져올 새 일정이 없어요" under it saying otherwise. #476 사진 검토(HQ-61): on screen without
+     * scrolling (right under the card on top, before the settings), with its own 다시 읽기.
+     */
     private fun failed(): Screen.() -> Unit = calendar(null) {
-        reveal("캘린더를 읽지 못했어요")
+        assertTrue(appears("캘린더를 읽지 못했어요"))
+        assertTrue(appears("다시 읽기", exact = true))
         assertTrue(gone("가져올 새 일정이 없어요"))
     }
 
