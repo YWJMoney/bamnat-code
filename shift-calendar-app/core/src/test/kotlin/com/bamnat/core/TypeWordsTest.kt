@@ -102,8 +102,8 @@ class TypeWordsTest {
     private fun stylesOf(styles: Set<WorkStyle>) = if (styles.isEmpty()) WorkStyle.entries else styles.sortedBy { it.ordinal }
 
     private companion object {
-        /** Ways that start outside the app's screens: a widget, the watch, the alarm screen, every screen's top bar. */
-        val SURFACES = listOf("홈 화면", "워치", "알람이 울릴", "각 화면", "아래 탭", "파일 앱", "잠금 화면", "할 일")
+        /** Ways that start outside the app's screens: a widget, the watch, the alarm screen, every screen's top bar, the notification shade. */
+        val SURFACES = listOf("홈 화면", "워치", "알람이 울릴", "각 화면", "아래 탭", "파일 앱", "잠금 화면", "할 일", "알림창")
 
         /** 2.0.0 처음 잰 것(검토 T30-102와 영역 30 (4)): 고치면 지워요. 2묶음에서 유형별 글로 줄여요. */
         const val KNOWN = """

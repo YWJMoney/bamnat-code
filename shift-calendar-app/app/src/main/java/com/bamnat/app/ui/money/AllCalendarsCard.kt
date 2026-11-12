@@ -80,14 +80,14 @@ fun AllCalendarsCard(month: YearMonth) {
     }
 }
 
-/** [COMN-02][COMN-03] 총수입 · 총지출 · 순저축 side by side. */
+/** [COMN-02][COMN-03] 들어온 돈 · 나간 돈 · 남은 돈 side by side (2.0.0 [RVK-43] 검토 MONEY-25: was 총수입 · 총지출 · 순저축). */
 @Composable
 internal fun AllCalendarsFigures(all: AllCalendarsMonth) {
     val cal = LocalCalendarColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Figure("총수입", all.income, cal.income, Modifier.weight(1f))
-        Figure("총지출", all.spent, cal.expense, Modifier.weight(1f))
-        Figure("순저축", all.balance, if (all.balance < 0) cal.expense else MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
+        Figure("들어온 돈", all.income, cal.income, Modifier.weight(1f))
+        Figure("나간 돈", all.spent, cal.expense, Modifier.weight(1f))
+        Figure("남은 돈", all.balance, if (all.balance < 0) cal.expense else MaterialTheme.colorScheme.onSurface, Modifier.weight(1f))
     }
 }
 

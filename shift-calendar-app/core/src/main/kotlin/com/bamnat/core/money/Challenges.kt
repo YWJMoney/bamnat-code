@@ -9,6 +9,12 @@ import java.time.temporal.ChronoUnit
  * 가계부가 망가져요). 모두 휴대폰 안에서 셈하고, 마을 '참가 수'는 마을 방향을 정한 뒤 따로 붙여요.
  */
 object Challenges {
+    /**
+     * 2.0.0 [RVK-43] (검토 U06a-28) Two to try next once [done] is over (the 야간 one only with a roster, [night]): a finished card said
+     * only '닫기'.
+     */
+    fun next(done: Kind, night: Boolean): List<Kind> = Kind.entries.filter { it != done && (night || it != Kind.NIGHT_LUNCHBOX) }.take(2)
+
     enum class Kind(val label: String, val days: Int, val what: String) {
         NO_SPEND("무지출 날 도전", 7, "7일 동안 반복 지출 말고는 안 쓴 날마다 도장"),
         LESS_DELIVERY("배달 줄이기 주간", 7, "7일 동안 배달에 안 쓴 날마다 도장"),
@@ -43,7 +49,9 @@ object Challenges {
      */
     fun status(run: Run, entries: List<MoneyEntry>, moves: List<EnvelopeMove>, today: LocalDate, isNight: (LocalDate) -> Boolean = { false }): Status {
         val days = (0 until run.kind.days).map { run.start.plusDays(it.toLong()) }
-        val spend = entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 }.groupBy { it.date }
+        // 2.0.0 [RVK-43] (검토 T06b-08) A 야간's 02:00 편의점 is that night's, not the next day's.
+        val spend = entries.filter { it.kind == MoneyKind.EXPENSE && it.amount > 0 }
+            .groupBy { if (run.kind == Kind.NIGHT_LUNCHBOX) NightSpill.dayOf(it, isNight) else it.date }
         val putIn = moves.filter { it.amount > 0 }.map { it.date }.toSet()
         val stamps = days.map { d ->
             if (d.isAfter(today)) return@map Stamp.LATER

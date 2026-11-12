@@ -24,6 +24,12 @@ object DayWhatIf {
         data object Off : Change { override val label get() = "쉬는 날로 바꾸면" }
     }
 
+    /**
+     * 2.0.0 [RVK-43] (검토 T06a-09) The section's question for [changes]: a day off asks '이날 일하면?' (대근 chips), a working day
+     * '이날 쉬면?' (연차·쉬는 날).
+     */
+    fun question(changes: List<Change>): String = if (changes.any { it is Change.Cover }) "이날 일하면?" else "이날 쉬면?"
+
     data class Answer(val change: Change, val gross: Long, val net: Long?) {
         /** "+132,000원 (세후 약 +118,000원)" is said by the screen; this is whether anything moves. */
         val same: Boolean get() = gross == 0L

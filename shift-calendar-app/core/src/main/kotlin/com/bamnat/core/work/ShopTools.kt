@@ -107,7 +107,8 @@ data class StaffRoster(
  * the month, 주휴 for each week whose 주휴일 (Sunday) falls in the month at weekly hours ÷ 40 × 8 from 15
  * hours ([HourlyWeek]), and, for staff enrolled in 4대보험, the employer's share for 2026 (국민연금 4.75%,
  * 건강보험 3.595%, 장기요양 = 건강보험료 × 13.14%, 고용보험 0.9% + 고용안정·직업능력개발 0.25% for under 150
- * people). 산재보험 depends on the trade and is left out; night and holiday premiums too.
+ * people). 산재보험 depends on the trade and is left out; night and holiday premiums too. Staff under 15 hours a week pay
+ * 고용보험 only ([shortWeek], [RVJ-54]).
  */
 object LaborCost {
     const val PENSION = 0.0475
@@ -141,9 +142,26 @@ object LaborCost {
         val cut = com.bamnat.core.pay.WonCut
         val health = cut.cut10(pay, sh?.health ?: HEALTH)
         val pension = sh?.let { cut.cut10((pay / 1_000 * 1_000).coerceIn(it.baseMin, it.baseMax), it.pension) } ?: cut.cut10(pay, PENSION)
-        val employment = sh?.let { cut.exact(it.employment).add(cut.exact(STABILITY)).toDouble() } ?: EMPLOYMENT
-        return pension + health + cut.cut10(health, sh?.careRatio ?: com.bamnat.core.pay.WonCut.Ratio.of(CARE_OF_HEALTH)) + cut.cut10(pay, employment)
+        return pension + health + cut.cut10(health, sh?.careRatio ?: com.bamnat.core.pay.WonCut.Ratio.of(CARE_OF_HEALTH)) + employerEmployment(pay, on)
     }
+
+    /** [RVJ-54] The employer's 고용보험 alone (실업급여 + 고용안정·직업능력개발), the last part of [employerInsurance]. */
+    fun employerEmployment(pay: Long, on: java.time.LocalDate? = null): Long {
+        val sh = on?.let { com.bamnat.core.pay.TakeHome.sharesOn(it) }
+        val cut = com.bamnat.core.pay.WonCut
+        return cut.cut10(pay, sh?.let { cut.exact(it.employment).add(cut.exact(STABILITY)).toDouble() } ?: EMPLOYMENT)
+    }
+
+    /**
+     * 2.0.0 [RVJ-54] 공개 웹 계산기와 맞추다 찾은 것: 한 주 15시간(월 60시간)이 안 되는 직원은 국민연금(국민연금법 시행령 제2조
+     * 제4호, 시행 2025.7.1 대통령령 제35602호)과 건강보험·장기요양(국민건강보험법 시행령 제9조 제1호, 시행 2026.10.1 대통령령
+     * 제36675호) 가입 대상이 아니에요. 국민연금공단 안내도 '월 60시간(주 15시간)'으로 써요. 고용보험은 3개월 이상 이어 일하면
+     * 들어요(고용보험법 시행령 제3조 제2항 제1호): a shop's staff list is people who stay, so the roster keeps that share. The same
+     * line as the 급여 대장 ([com.bamnat.core.boss.InsuranceRules]) and the web calculator.
+     */
+    const val SHORT_WEEK_MINUTES = 15 * 60
+
+    fun shortWeek(s: Staff, breaks: Boolean): Boolean = s.weeklyMinutes(breaks) in 1 until SHORT_WEEK_MINUTES
 
     /** 고용안정·직업능력개발사업 보험료율, 상시근로자 150명 미만 (사업주만 냄). */
     const val STABILITY = 0.0025
@@ -165,7 +183,11 @@ object LaborCost {
         val week = HourlyWeek(month.atDay(1), s.weeklyMinutes(breaks), 0)
         val sundays = days.count { it.dayOfWeek == DayOfWeek.SUNDAY }
         val holiday = if (s.holidayPay) (week.holidayPayMinutes / 60.0 * s.hourlyWage * sundays).roundToLong() else 0
-        val insurance = if (s.insured) employerInsurance(base + holiday, month.atDay(1)) else 0
+        val insurance = when {
+            !s.insured -> 0
+            shortWeek(s, breaks) -> employerEmployment(base + holiday, month.atDay(1)) // [RVJ-54]
+            else -> employerInsurance(base + holiday, month.atDay(1))
+        }
         return Line(s, minutes, base, holiday, insurance)
     }
 

@@ -34,9 +34,22 @@ object MerchantNames {
 
     @Volatile private var extra: Map<String, String> = emptyMap()
 
+    // 2.0.0 [RVK-43] (검토 MONEY-61) Made once, with the long legal names the start of a name is tried against, and the last names
+    // shown: a list row's title made four patterns and a fresh list of every name each time it was drawn.
+    private val CORP = Regex("\\(주\\)|㈜|주식회사|\\(유\\)|유한회사")
+    private val SPACES = Regex("\\s+")
+    private val BRANCH = Regex("(점|지점|본점|직영점)$")
+    private val NOT_A_SHOP = Regex("^(결제|머니|포인트|충전|송금)")
+    private val LONG_BUILT_IN: List<Map.Entry<String, String>> = BUILT_IN.entries.filter { it.key.length >= 4 }
+    @Volatile private var longNames: List<Map.Entry<String, String>> = LONG_BUILT_IN
+    private const val SHOWN_KEEP = 512
+    private val shown = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>?) = size > SHOWN_KEEP
+    }
+
     /** The name as compared: no 결제대행 prefix, no (주), no spaces, lower case ([PaymentParser.placeKey] without the branch cut). */
     fun key(name: String): String =
-        name.trim().replace(Regex("\\(주\\)|㈜|주식회사|\\(유\\)|유한회사"), " ").replace(Regex("\\s+"), "").lowercase()
+        name.trim().replace(CORP, " ").replace(SPACES, "").lowercase()
 
     /**
      * [LEDX-12] The shop people know, keeping a branch word ("비지에프리테일 역삼점" → "CU 역삼점"); [merchant] itself when
@@ -44,10 +57,17 @@ object MerchantNames {
      */
     fun display(merchant: String): String {
         if (merchant.isBlank()) return merchant
-        val words = merchant.trim().split(Regex("\\s+"))
-        val branch = words.lastOrNull()?.takeIf { words.size >= 2 && Regex("(점|지점|본점|직영점)$").containsMatchIn(it) }
+        synchronized(shown) { shown[merchant] }?.let { return it }
+        val out = displayOf(merchant)
+        synchronized(shown) { shown[merchant] = out }
+        return out
+    }
+
+    private fun displayOf(merchant: String): String {
+        val words = merchant.trim().split(SPACES)
+        val branch = words.lastOrNull()?.takeIf { words.size >= 2 && BRANCH.containsMatchIn(it) }
         val k = key(if (branch != null) words.dropLast(1).joinToString(" ") else merchant)
-        val shop = extra[k] ?: BUILT_IN[k] ?: (extra.entries + BUILT_IN.entries).firstOrNull { (legal, _) -> legal.length >= 4 && k.startsWith(legal) }?.value
+        val shop = extra[k] ?: BUILT_IN[k] ?: longNames.firstOrNull { (legal, _) -> k.startsWith(legal) }?.value
             ?: return merchant
         return if (branch != null) "$shop $branch" else shop
     }
@@ -63,7 +83,7 @@ object MerchantNames {
         val s = merchant.trim()
         ROUTE_FIRST.find(s)?.let { m ->
             val shop = m.groupValues[2].trim()
-            if (shop.length >= 2 && !Regex("^(결제|머니|포인트|충전|송금)").containsMatchIn(shop)) return canon(m.groupValues[1]) to shop
+            if (shop.length >= 2 && !NOT_A_SHOP.containsMatchIn(shop)) return canon(m.groupValues[1]) to shop
         }
         ROUTE_LAST.find(s)?.let { m -> return canon(m.groupValues[2]) to m.groupValues[1].trim() }
         return null to s
@@ -97,7 +117,7 @@ object MerchantNames {
     fun clean(raw: String): String {
         var s = raw.trim()
         repeat(2) { s = s.replace(NOISE_TAIL, "").trim() }
-        val words = s.split(Regex("\\s+")).toMutableList()
+        val words = s.split(SPACES).toMutableList()
         while (words.size >= 2 && words.first() in NOISE_WORDS) words.removeAt(0)
         while (words.size >= 2 && words.last() in NOISE_WORDS) words.removeAt(words.lastIndex)
         val out = words.joinToString(" ").trim()
@@ -109,8 +129,10 @@ object MerchantNames {
      * shop. Read strictly; a bad file changes nothing.
      */
     fun use(f: RemoteFile?) {
-        if (f == null) { extra = emptyMap(); return }
-        extra = read(f)
+        val names = if (f == null) emptyMap() else read(f)
+        extra = names
+        longNames = names.entries.filter { it.key.length >= 4 } + LONG_BUILT_IN
+        synchronized(shown) { shown.clear() }
     }
 
     fun read(f: RemoteFile): Map<String, String> {

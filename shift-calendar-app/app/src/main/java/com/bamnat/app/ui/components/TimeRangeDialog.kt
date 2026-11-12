@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
@@ -186,7 +184,8 @@ fun TimeRangeDialog(
                         }
                     }
                     // Room under the chips, so with large text the row is not half cut against the buttons (PC 7934283c).
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 2.0.0 [RVIB-18] (총괄 HQ-85, 7항) The chips wrap onto the next line, all in sight, instead of a row that slides sideways.
+                    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
                         if (part == TimeRangePart.END) {
                             // [TIME-03] The end tab offers ends that fit the start (PC 1a8e88f6: a 야간's end tab offered its
                             // own 19:00 start): the usual lengths, then the other times, never the start itself.
