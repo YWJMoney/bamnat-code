@@ -41,8 +41,10 @@ class ReviewHShotsTest : ScreenshotBase() {
     }
 
     // 2.0.0 [RVO-02] (HQ-01) 편 폭·큰 글자에서 설정 왼쪽 목록이 폭의 절반까지 넓어져, 가운데를 밀면 목록이 움직여요: 오른쪽 쪽을 밀어요.
+    // #452 CI(shots-b, 편 폭 밝은 200%): 손으로 민 거리가 CI에서 달라 '빠른 메뉴' 아래에서 더 내려가지 않았어요(여기서는 통과). 설정 찾기에서
+    // 고른 것처럼 그 줄을 가리켜 열면 앱이 줄을 화면에 들여와요(UX-04 focusMark): 밀기 없이 같은 화면이에요.
     @Test fun shopDayOrder() = all("1_shop_day_order", WorkStyle.BUSINESS) {
-        open(FeatureRoute(Place.SETTINGS_CALENDAR))
+        open(FeatureRoute(Place.SETTINGS_CALENDAR, "하루 화면 순서"))
         tapText("하루 화면 순서", exact = true, across = PAGE_SIDE)
     }
 
