@@ -1682,7 +1682,23 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         ))
     }
 
-    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
+    /** 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기 as the server says it. */
+    var roomMoney = false
+    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3, roomMoney = roomMoney)
+
+    /** 2.0.0 [RVN-17] COMP-12 This calendar held by another company: the look before choosing and the join say so. */
+    var held: com.bamnat.app.company.Membership? = null
+    /** 2.0.0 [RVN-17] COMP-12 Why '잘못 골랐어요' fails (null: it frees the calendar). */
+    var undoFails: String? = null
+    override suspend fun joinCheck(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(false, company)
+    override suspend fun join(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(true, company)
+    override suspend fun undoJoin(device: String, cal: String): Boolean {
+        undoFails?.let { throw com.bamnat.app.company.CompanyException(it) }
+        held = null
+        return true
+    }
 
     /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
     val reports = mutableListOf<Pair<String, org.json.JSONObject>>()
