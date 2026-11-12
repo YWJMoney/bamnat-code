@@ -22,6 +22,8 @@ enum class FlowKind(val label: String, val incoming: Boolean) {
     CARD_BILL("카드값", false),
     /** 1.38 [LEDH-25] A loan's monthly payment, from the account it is paid from. */
     LOAN("대출 갚기", false),
+    /** 2.0.0 [RVK-46] (검토 I06ab-03) 줄 돈 the user promised to pay on a day. */
+    PAYABLE("줄 돈", false),
 }
 
 /** One known movement of money on [date]; [amount] is positive coming in and negative going out. */
@@ -197,6 +199,11 @@ object MoneyAhead {
             val due = r.due!!
             if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, r.left, FlowKind.OWED, r.name)
         }
+        // 2.0.0 [RVK-46] (검토 I06ab-03) 줄 돈 with a promised day leaves on that day, as 받을 돈 comes in on its own.
+        val toPay = book.payables.filter { it.left > 0 && it.due != null }.mapNotNull { r ->
+            val due = r.due!!
+            if (due.isBefore(today) || due.isAfter(until)) null else MoneyFlow(due, -r.left, FlowKind.PAYABLE, r.name)
+        }
         // 1.38 [LEDH-25] Each loan's monthly payment on its day, while something is owed, unless a repeating line already pays it.
         val balances = MoneyAccounts.balances(book.accounts, book.entries)
         val loans = book.accounts.filter { it.isLoan && !it.hidden && it.monthlyPay > 0 && it.payDay != null }.flatMap { loan ->
@@ -214,7 +221,7 @@ object MoneyAhead {
             }
             out
         }
-        val all = (payFlows + fixed + jobs + owed + loans + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
+        val all = (payFlows + fixed + jobs + owed + toPay + loans + extra.filter { !it.date.isBefore(today) && !it.date.isAfter(until) })
             .sortedWith(compareBy<MoneyFlow>({ it.date }, { it.amount < 0 }))
         return all to (replacePay && book.fixed.any(::isPayLine))
     }

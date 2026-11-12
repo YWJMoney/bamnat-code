@@ -25,6 +25,7 @@ import com.bamnat.app.ui.monthSwipe
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.Visibility
@@ -348,6 +349,11 @@ class MoneyViewModel(
             // 2.0.0 [RVK-41] (검토 MONEY-53) Counted as the budget screen counts it: by 급여일 주기 when it is on, with 예산 넘김.
             val crossed = before?.let { Budgets.crossedBy(entry, it.budgets, it.entries, Today.date(), budgetCycle(entry.date), budgetRolling()) }.orEmpty()
             if (crossed.isNotEmpty()) _undo.tryEmit(UndoMessage(overText(crossed), undo = null))
+            // 2.0.0 [RVK-49] (PC-172) A new line outside the month on show says where it went, with the way there.
+            val landed = YearMonth.from(settled.date)
+            if (old == null && landed != shownMonth.value) {
+                _undo.tryEmit(UndoMessage("${com.bamnat.app.ui.Fmt.monthDay(settled.date)}에 적었어요", actionLabel = "그 달 보기") { showMonth(landed) })
+            }
         }
     }
 
@@ -426,7 +432,7 @@ class MoneyViewModel(
     override fun deleteJob(job: Job) {
         container.appScope.launch {
             money.delete(job)
-            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.restore(job) })
         }
     }
     val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
@@ -575,10 +581,16 @@ class MoneyViewModel(
         }
     }
 
-    fun saveBudgets(values: Map<String, Long>) {
+    /**
+     * [LEDG-06] Every month's budgets, and 2.0.0 [RVK-46] (검토 I06aa-05) [month]'s own ones (-1 takes a category of that month back to
+     * every month's).
+     */
+    fun saveBudgets(values: Map<String, Long>, own: Map<String, Long>? = null, month: YearMonth? = null) {
         container.appScope.launch {
             values.forEach { (c, v) -> money.setBudget(c, v) }
-            _undo.tryEmit(UndoMessage("예산을 저장했어요", undo = null))
+            if (month != null) own?.forEach { (c, v) -> money.setBudget(c, v, month) }
+            val monthOnly = month != null && own?.values?.any { it >= 0 } == true
+            _undo.tryEmit(UndoMessage(if (monthOnly) "예산을 저장했어요 · ${month!!.monthValue}월은 따로" else "예산을 저장했어요", undo = null))
         }
     }
 
@@ -881,7 +893,7 @@ fun MoneyScreen(
             onLedgerNet = vm::setLedgerTakeHome) } },
         // [RECV-02] Money owed: receivables and unpaid jobs together, the whole list one tap away.
         MoneyPart.OWED to {
-            OwedCard(owed, today, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
+            OwedCard(owed, today, toPay = book.payables.filter { it.left > 0 }, style = style, onOpenAll = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED) }) { o ->
                 when (o) {
                     is com.bamnat.core.money.Owed.FromJob -> editingJob = o.job
                     is com.bamnat.core.money.Owed.Written -> com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.OWED)
@@ -959,13 +971,18 @@ fun MoneyScreen(
 
     // 1.37 [LEDH-07] 근무 시간 환산 for the lines and the 돈 적기 sheet of this tab.
     val workTime = remember(style, settings.workTimeFrom, book, today, aheadPay) { WorkTimeSay.of(style, settings.workTimeFrom, book, today, aheadPay?.hourly) }
-    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime) {
+    // 2.0.0 [RVK-46] This calendar's own category looks (the app gives the main calendar's).
+    val looks = remember(book.categories) { com.bamnat.core.money.CategoryLook.byName(book.categories) }
+    androidx.compose.runtime.CompositionLocalProvider(LocalWorkTime provides workTime, LocalCategoryLooks provides looks) {
     Box(Modifier.fillMaxSize().nestedScroll(fabScroll)) {
         Column(Modifier.fillMaxSize()) {
             // At very large text the tab has no room for the 프로 mark (the cards inside still carry it),
             // and the title gives its room to the month: the 가계부 tab below already says where this is.
             // 2.0.0 [RVK-35] (PC-126) And on the folded phone (under 400dp): with ‹ 달 ›, 찾기, ⋮ and 나, '장부' was squeezed to small letters.
             val roomy = LocalDensity.current.fontScale < 1.3f && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= ROOMY_HEAD_DP
+            // 2.0.0 [RVK-48] (PC-161) On the most common phone (411dp, 글자 100%) ‹ 달 ›, 눈, 찾기, ⋮ and 나 left the title no room ('가계부'
+            // showed as a sliver). 찾기 waits in ⋮ unless the title still has its room beside it (without a title, folded or large text, it stays).
+            val searchInRow = !roomy || moneyHeadRoom(com.bamnat.core.work.moneyTab(style), month, me = com.bamnat.app.ui.LocalMe.current.let { it.show && !it.inRail })
             Row(Modifier.padding(top = 12.dp).then(com.bamnat.app.ui.theme.PhotoGround.head()).padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 if (roomy) {
                     FitText(com.bamnat.core.work.moneyTab(style), MaterialTheme.typography.headlineSmall, MaterialTheme.colorScheme.onSurface, Modifier.weight(1f).semantics { heading() })
@@ -993,10 +1010,12 @@ fun MoneyScreen(
                 }
                 // [LEDG-16] What is set once and changed rarely, always in the same place.
                 // 2.0.0 [RVK-35] (PC-126) 찾기 stood in the menu's Box, drawn on the same spot as ⋮, so '위 ⋮ › 자동 기록' had no ⋮ to see.
-                com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
+                if (searchInRow) com.bamnat.app.ui.settings.GlobalSearchButton() // U 1.32 [UX132-04]
                 Box {
                     IconButton(onClick = { menuOpen = true }) { Icon(Icons.Filled.MoreVert, "${com.bamnat.core.work.moneyTab(style)} 메뉴") }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        if (!searchInRow) DropdownMenuItem(text = { Text("기능·설정 찾기") }, leadingIcon = { Icon(androidx.compose.material.icons.Icons.Filled.Search, null) },
+                            onClick = { menuOpen = false; com.bamnat.app.ui.settings.SettingsLinks.search() })
                         DropdownMenuItem(text = { Text("자동 기록") }, onClick = { menuOpen = false; autoRecording = true })
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
                         // 1.38 [LEDH-31]
@@ -1077,11 +1096,14 @@ fun MoneyScreen(
 
     // 1.39 [FLOW-30] 근무 기준 하루: a coffee bought at 02:10 in last night's shift is put on that night's day, as is the small hours of
     // a day with no work before 하루 시작 시각 (기본 04:00). The date row on the sheet still changes it.
-    val addDate = if (YearMonth.from(today) == month) {
+    // 2.0.0 [RVK-49] (PC-172) Always today, whatever month the tab shows: a staff phone whose calendar opened on next month's roster
+    // saved a coffee as '12월 31일' (the shown month's last day) without a word. The date row on the sheet still picks another day
+    // (a missed line of a month gone by), and a line that lands outside the shown month says where it went ([MoneyViewModel.saveEntry]).
+    val addDate = run {
         val at = com.bamnat.core.time.Today.dateTime()
         snapshot?.let { s -> com.bamnat.core.design.DayBoundary.dayOf(at, s.resolver::resolve, com.bamnat.core.design.DayBoundary.startAt(settings.dayStartMinutes)) }
             ?.takeIf { at.toLocalDate() == today } ?: today
-    } else month.atEndOfMonth()
+    }
     adding?.let { k ->
         // A new round for 저장하고 하나 더, so the sheet starts empty again, on the day and account of the line just saved.
         key(addRound) {
@@ -1119,7 +1141,9 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false; budgetFocus = null },
+    val budgetMonth = cycle?.let { Budgets.monthOf(it.from, it.to) } ?: month
+    if (budgeting) BudgetEditor(book, month, onSave = { v, own -> vm.saveBudgets(v, own, budgetMonth); budgeting = false; budgetFocus = null },
+        budgetMonth = budgetMonth,
         onDismiss = { budgeting = false; budgetFocus = null }, focus = budgetFocus,
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
@@ -1234,18 +1258,36 @@ private fun Line(label: String, value: String, muted: Boolean = false, strong: B
     }
 }
 
+/** 2.0.0 [RVK-47] (PC-169) What 받을 돈 is, in the words of the user's kind of work. */
+internal fun owedHint(style: WorkStyle?): String = when (style) {
+    WorkStyle.BUSINESS -> "외상 매출, 거래처 미수금처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    WorkStyle.FIELD -> "일감 잔금, 밀린 일당처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+    else -> "빌려준 돈, 대신 내 준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요."
+}
+
 /** [WORK-02][RECV-02] Work done but not fully paid, and money written down as owed; the real worry of field work and shops. */
 @Composable
-private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit, onOpen: (com.bamnat.core.money.Owed) -> Unit) {
+private fun OwedCard(
+    owed: List<com.bamnat.core.money.Owed>, today: LocalDate, onOpenAll: () -> Unit,
+    toPay: List<com.bamnat.core.money.Receivable> = emptyList(), style: WorkStyle? = null, onOpen: (com.bamnat.core.money.Owed) -> Unit,
+) {
     val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
     val overdue = owed.filter { it.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE }
     SectionCard(
         title = if (owed.isEmpty()) "받을 돈 (미수금)" else "받을 돈 ${Fmt.won(owed.sumOf { it.left })}",
         trailing = { TextButton(onClick = onOpenAll) { Text(if (owed.isEmpty()) "적기" else "모두 보기") } },
     ) {
+        // 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈 under it in one quiet line, never in the 받을 돈 sum; the list is one tap away.
+        val payLine: @Composable () -> Unit = {
+            if (toPay.isNotEmpty()) Text("줄 돈 ${toPay.size}건 · ${Fmt.won(toPay.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onOpenAll).padding(vertical = 8.dp))
+        }
         if (owed.isEmpty()) {
-            Text("외상, 밀린 일당, 빌려준 돈처럼 아직 못 받은 돈을 적어 두면 약속일에 알려 줘요.",
+            // 2.0.0 [RVK-47] (PC-169) In each kind of work's own words: a shop's 외상 매출, a field's 일감 잔금, everyone else's 빌려준 돈.
+            Text(owedHint(style),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            payLine()
             return@SectionCard
         }
         if (overdue.isNotEmpty()) {
@@ -1274,6 +1316,8 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         if (owed.size > 4) {
             Text("그 밖에 ${owed.size - 4}건", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        if (toPay.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 4.dp))
+        payLine()
     }
 }
 
@@ -1372,3 +1416,25 @@ internal fun MoneyEditSheet(
 
 /** 2.0.0 [RVK-35] Below this width the 가계부 head keeps ‹ 달 ›, 찾기, ⋮ and 나; its name and the eye (in ⋮ too) wait. */
 private const val ROOMY_HEAD_DP = 400
+
+/**
+ * 2.0.0 [RVK-48] (PC-161) Whether the money tab's head has room for 찾기 as well as its title: the width left after the padding,
+ * ‹ ›, 눈, ⋮, 나 (when it is in the row) and the month, against the title at its own size. Measured, so it holds for every width
+ * and 글자 크기 (411dp at 100% has no room; the unfolded phone has).
+ */
+@Composable
+private fun moneyHeadRoom(title: String, month: java.time.YearMonth, me: Boolean): Boolean {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = LocalDensity.current
+    val monthStyle = MaterialTheme.typography.titleMedium
+    val titleStyle = MaterialTheme.typography.headlineSmall
+    val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp
+    return remember(title, month, me, width, density, monthStyle, titleStyle) {
+        with(density) {
+            val monthW = measurer.measure(Fmt.month(month), monthStyle, maxLines = 1).size.width.toDp() + 8.dp
+            val titleW = measurer.measure(title, titleStyle, maxLines = 1).size.width.toDp()
+            val icons = 48.dp * (5 + if (me) 1 else 0)
+            width - 20.dp - icons - monthW >= titleW
+        }
+    }
+}

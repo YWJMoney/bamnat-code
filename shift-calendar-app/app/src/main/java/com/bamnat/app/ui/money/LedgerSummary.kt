@@ -1,6 +1,12 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -81,6 +87,7 @@ import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLevel
 import com.bamnat.core.money.BudgetLine
 import com.bamnat.core.money.BudgetStatus
+import com.bamnat.core.money.Budgets
 import com.bamnat.core.money.CardCycle
 import com.bamnat.core.money.CategoryEdit
 import com.bamnat.core.money.MoneyAccount
@@ -306,10 +313,10 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
         Spacer(Modifier.height(6.dp))
         LedgerTrack(b.fraction, color, marker = elapsed, height = if (whole) 10.dp else 8.dp)
         Spacer(Modifier.height(4.dp))
-        // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over is 주의 and said as the app says 주의 ([ToneLine]); red is kept for a budget
-        // already gone over. Near it is said in plain words beside the bar's caution colour.
+        // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over is 주의 and said as the app says 주의 ([ToneLine]). [RVK-47] (검토 HQ-101) Gone over
+        // is 주의 too, in the caution colour without a second ⚠: the card's one line above already says which went over.
         when {
-            b.level == BudgetLevel.OVER -> ToneLine(status, tone = Tone.Danger, style = MaterialTheme.typography.labelMedium)
+            b.level == BudgetLevel.OVER -> Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.bamnat.caution)
             b.headedOver -> ToneLine(status, tone = Tone.Caution, style = MaterialTheme.typography.labelMedium)
             else -> Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -324,7 +331,7 @@ private fun BudgetMiniRow(b: BudgetLine) {
         // 2.0.0 [RVK-23]·HQ-30
         NameAndAmount({ Text(b.category, style = MaterialTheme.typography.bodySmall) }) {
             Text(if (b.left >= 0) "${Fmt.won(b.left)} 남음" else "${Fmt.won(-b.left)} 넘음", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
-                color = if (b.level == BudgetLevel.OVER) MaterialTheme.bamnat.danger else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if (b.level == BudgetLevel.OVER) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LedgerTrack(b.fraction, color, marker = null, height = 6.dp)
     }
@@ -336,7 +343,8 @@ private fun BudgetMiniRow(b: BudgetLine) {
  */
 @Composable
 internal fun budgetColor(level: BudgetLevel) = when (level) {
-    BudgetLevel.OVER -> MaterialTheme.bamnat.danger
+    // [RVK-47] (검토 HQ-101) Over a budget is 주의: no red in the ledger but for what cannot be saved.
+    BudgetLevel.OVER -> MaterialTheme.bamnat.caution
     BudgetLevel.NEAR -> MaterialTheme.bamnat.caution
     BudgetLevel.OK -> MaterialTheme.colorScheme.primary
 }
@@ -350,7 +358,7 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
         // [RVK-30] Gone over is 위험 and said in the app's one line for it.
         if (status.over.isNotEmpty()) {
-            ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp), tone = Tone.Danger)
+            ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp), tone = Tone.Caution)
         }
         status.categories.forEach { b -> BudgetLineView(b, status.elapsed.takeIf { current }, onClick = onEdit) }
     }
@@ -360,10 +368,12 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
  * [LEDG-06] The month's budget and each category's. Every category shows what went there last
  * month, and one tap fills the empty ones with the last three months' average.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BudgetEditor(
-    book: MoneyBook, month: YearMonth, onSave: (Map<String, Long>) -> Unit, onDismiss: () -> Unit,
+    book: MoneyBook, month: YearMonth,
+    /** Every month's budgets, and 2.0.0 [RVK-46] (검토 I06aa-05) [budgetMonth]'s own (-1: that month as every month) or null. */
+    onSave: (Map<String, Long>, Map<String, Long>?) -> Unit, onDismiss: () -> Unit,
     /** 1.37 [LEDH-06] 월급날 기준 on or off; null when no pay day is set, so the choice is not offered. */
     byPayCycle: Boolean? = null, onPayCycle: (Boolean) -> Unit = {},
     /** 1.37 PC 4차: a 월급 user with no pay day yet is told where the switch comes from. */
@@ -372,12 +382,16 @@ fun BudgetEditor(
     rolling: Set<String> = emptySet(), onRolling: (Set<String>) -> Unit = {}, canRoll: Boolean = true,
     /** 2.0.0 [RVK-43] (검토 U06a-27) The category to start on ('카페' from 통계's 많이 쓴 곳): its field takes the focus. */
     focus: String? = null,
+    /** 2.0.0 [RVK-46] The month '이 달만' sets: the one shown, or the one most of a 급여일 주기's days are in. */
+    budgetMonth: YearMonth = month,
 ) {
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val focusAt = remember { androidx.compose.ui.focus.FocusRequester() }
-    val values = remember {
-        mutableStateMapOf<String, String>().apply { book.budgets.forEach { put(it.category, amountDigits(it.amount)) } }
-    }
+    val everyMonth = remember { mutableStateMapOf<String, String>().apply { Budgets.everyMonth(book.budgets).forEach { put(it.category, amountDigits(it.amount)) } } }
+    // 2.0.0 [RVK-46] (검토 I06aa-05) 명절·휴가 달처럼 이 달만 다른 예산: what holds this month, to change for this month only.
+    val thisMonth = remember { mutableStateMapOf<String, String>().apply { Budgets.forMonth(book.budgets, budgetMonth).forEach { put(it.category, amountDigits(it.amount)) } } }
+    var onlyThisMonth by rememberSaveable { mutableStateOf(book.budgets.any { it.month == budgetMonth }) }
+    val values = if (onlyThisMonth) thisMonth else everyMonth
     val lastMonth = remember(book, month) { book.month(month.minusMonths(1)).expenseByCategory.associate { it.category to it.amount } }
     val average = remember(book, month) {
         val months = (1..3).map { book.month(month.minusMonths(it.toLong())) }
@@ -387,15 +401,25 @@ fun BudgetEditor(
     val sum = categories.sumOf { values[it]?.toAmount() ?: 0 }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
     // 1.37 PC 4차: 뒤로 가기로 적은 예산이 말없이 사라졌어요. 바뀐 게 있으면 먼저 물어요.
-    val initial = remember { values.toMap() }
-    val unsaved = values.filterValues { it.isNotEmpty() } != initial.filterValues { it.isNotEmpty() }
+    val initialEvery = remember { everyMonth.toMap() }
+    val initialThis = remember { thisMonth.toMap() }
+    val unsaved = everyMonth.filterValues { it.isNotEmpty() } != initialEvery.filterValues { it.isNotEmpty() } ||
+        thisMonth.filterValues { it.isNotEmpty() } != initialThis.filterValues { it.isNotEmpty() }
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = unsaved, closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
             SheetTitle("예산 정하기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("매달 같은 예산으로 계산해요. 비워 두면 예산이 없어요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.ChoiceRow(listOf("매달", "${budgetMonth.monthValue}월만"), selected = if (onlyThisMonth) 1 else 0,
+                    onSelect = { onlyThisMonth = it == 1 })
+                Text(if (onlyThisMonth) "${budgetMonth.monthValue}월에만 쓰는 예산이에요. 다른 달은 매달 예산 그대로예요." else "매달 같은 예산으로 계산해요. 비워 두면 예산이 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (onlyThisMonth) {
+                    val last = remember(book, budgetMonth) { Budgets.forMonth(book.budgets, budgetMonth.minusMonths(1)) }
+                    if (last.isNotEmpty()) TextButton(onClick = {
+                        thisMonth.clear(); last.forEach { thisMonth[it.category] = amountDigits(it.amount) }
+                    }) { Text("지난달 그대로") }
+                }
                 AmountField("한 달 전체 예산", values[MoneyBudget.TOTAL].orEmpty(), { values[MoneyBudget.TOTAL] = it })
                 // 1.37 [LEDH-06] 급여일 주기: the budget runs from pay day to the day before the next. 2.0.0 [RVK-20]: and so do 요약·내역·통계.
                 byPayCycle?.let { on ->
@@ -415,8 +439,9 @@ fun BudgetEditor(
                     Text("전체를 비우면 분류별 예산의 합 ${Fmt.won(sum)}이 한 달 예산이 돼요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("분류별 예산", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
+                // 2.0.0 [RVK-46] At large letters the button goes under the title (a Row stood '분류별 예산' up one letter a line).
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, itemVerticalAlignment = Alignment.CenterVertically) {
+                    Text("분류별 예산", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
                     if (average.isNotEmpty()) {
                         TextButton(onClick = {
                             // Rounded up to 1만원: a budget is a round number people remember.
@@ -461,7 +486,15 @@ fun BudgetEditor(
             }
             HorizontalDivider()
             com.bamnat.app.ui.components.SaveButton(
-                onClick = { onSave((listOf(MoneyBudget.TOTAL) + categories + book.budgets.map { it.category }).distinct().associateWith { values[it]?.toAmount() ?: 0 }) },
+                onClick = {
+                    val names = (listOf(MoneyBudget.TOTAL) + categories + book.budgets.map { it.category }).distinct()
+                    // The every-month ones as typed; with '이 달만', also this month's where it differs from them.
+                    onSave(names.associateWith { everyMonth[it]?.toAmount() ?: 0 },
+                        if (onlyThisMonth || book.budgets.any { it.month == budgetMonth }) names.associateWith { c ->
+                            val own = thisMonth[c]?.toAmount() ?: 0
+                            if (!onlyThisMonth || own == (everyMonth[c]?.toAmount() ?: 0)) -1L else own
+                        } else null)
+                },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text("저장") }
         }
@@ -910,13 +943,17 @@ private fun dayOfMonth(day: Int): String = if (day >= 31) "말일" else "${day}�
 /** 2.0.0 [RVK-42] (검토 MONEY-15) What the editor saves for one kind: its rows in order and the names changed (from → to). */
 data class CategoryChange(val kind: MoneyKind, val edits: List<CategoryEdit>, val renames: List<Pair<String, String>>)
 
-/** One category in the editor: its name now, the name it had, and whether it is hidden. */
-private data class EditRow(val name: String, val was: String?, val hidden: Boolean) {
+/** One category in the editor: its name now, the name it had, whether it is hidden, and (2.0.0 [RVK-46]) the icon and color picked. */
+private data class EditRow(val name: String, val was: String?, val hidden: Boolean, val icon: String = "", val color: Int = 0) {
     companion object {
-        /** Kept as three strings a row (name, the name it had or "", 숨김 "1"). */
+        /** Kept as five strings a row (name, the name it had or "", 숨김 "1", icon key, color place). */
         val Rows = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<EditRow>, String>(
-            save = { l -> l.flatMap { listOf(it.name, it.was.orEmpty(), if (it.hidden) "1" else "") } },
-            restore = { v -> mutableStateListOf<EditRow>().apply { v.chunked(3).forEach { (n, w, h) -> add(EditRow(n, w.ifEmpty { null }, h == "1")) } } },
+            save = { l -> l.flatMap { listOf(it.name, it.was.orEmpty(), if (it.hidden) "1" else "", it.icon, it.color.toString()) } },
+            restore = { v ->
+                mutableStateListOf<EditRow>().apply {
+                    v.chunked(5).forEach { (n, w, h, i, c) -> add(EditRow(n, w.ifEmpty { null }, h == "1", i, c.toIntOrNull() ?: 0)) }
+                }
+            },
         )
     }
 }
@@ -940,7 +977,10 @@ fun CategoryEditor(
         val mine = book.categories.filter { it.kind == k }.sortedBy { it.position }
         val shown = book.categoriesOf(k).filter { it != MoneyCategories.OTHER }
         val hidden = mine.filter { it.hidden }.map { it.name }
-        return shown.map { EditRow(it, it, false) } + hidden.map { EditRow(it, it, true) }
+        val look = mine.associateBy { it.name }
+        fun row(name: String, hidden: Boolean) = EditRow(name, name, hidden,
+            look[name]?.icon?.let(com.bamnat.core.money.CategoryLook::icon).orEmpty(), look[name]?.color?.let(com.bamnat.core.money.CategoryLook::color) ?: 0)
+        return shown.map { row(it, false) } + hidden.map { row(it, true) }
     }
     // 2.0.0 [RVK-42] (검토 MONEY-15·U06a-15) Each kind keeps its own changes: 지출 이름 셋을 고치고 수입 탭을 봐도 지출 쪽 고침이 남고, 저장은
     // 바뀐 종류 모두예요 (before, a tab change made the rows again and the save kept only the kind on show).
@@ -953,6 +993,7 @@ fun CategoryEditor(
     val rows = rowsBy.getValue(kind)
     val changed = MoneyKind.entries.filter { k -> rowsBy.getValue(k).toList() != starts.getValue(k) }
     var renaming by rememberSaveable { mutableStateOf<Int?>(null) }
+    var looking by rememberSaveable { mutableStateOf<Int?>(null) }
     var adding by rememberSaveable { mutableStateOf("") }
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = changed.isNotEmpty() || adding.isNotBlank(), closeButton = false) {
@@ -976,8 +1017,12 @@ fun CategoryEditor(
                         },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CategoryAvatar(r.name, size = 32.dp)
-                        Spacer(Modifier.width(10.dp))
+                        // 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The badge opens the icon and color for this category.
+                        Box(Modifier.size(48.dp).clip(CircleShape).clickable(onClickLabel = "아이콘·색 고르기") { looking = i }
+                            .semantics { contentDescription = "${r.name} 아이콘·색 바꾸기" }, contentAlignment = Alignment.Center) {
+                            CategoryAvatar(r.name, r.icon, r.color, size = 32.dp)
+                        }
+                        Spacer(Modifier.width(2.dp))
                         Text(r.name + if (r.hidden) " (숨김)" else "", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f),
                             color = if (r.hidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1013,12 +1058,19 @@ fun CategoryEditor(
                     // Every kind changed; with none, the kind on show as before.
                     onSave(changed.ifEmpty { listOf(kind) }.map { k ->
                         val list = rowsBy.getValue(k)
-                        CategoryChange(k, list.mapIndexed { i, r -> CategoryEdit(k, r.name, i, r.hidden) },
+                        CategoryChange(k, list.mapIndexed { i, r -> CategoryEdit(k, r.name, i, r.hidden, r.icon, r.color) },
                             list.mapNotNull { r -> r.was?.takeIf { it != r.name }?.let { it to r.name } })
                     })
                 },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text(changed.ifEmpty { listOf(kind) }.joinToString("·") { it.label } + " 분류 저장") }
+        }
+    }
+    looking?.let { i ->
+        val r = rows.getOrNull(i) ?: return@let
+        CategoryLookDialog(r.name, r.icon, r.color, onDismiss = { looking = null }) { icon, color ->
+            rows[i] = r.copy(icon = icon, color = color)
+            looking = null
         }
     }
     renaming?.let { i ->
@@ -1060,3 +1112,71 @@ fun CategoryEditor(
         )
     }
 }
+
+/**
+ * 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) A category's own icon and color: a grid of pictures and a row of the ledger's colors, with a
+ * preview, '원래대로' back to the usual look. Nothing is kept until 분류 저장.
+ */
+@Composable
+private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss: () -> Unit, onPick: (String, Int) -> Unit) {
+    var pickedIcon by rememberSaveable(name) { mutableStateOf(icon) }
+    var pickedColor by rememberSaveable(name) { mutableStateOf(color) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CategoryAvatar(name, pickedIcon, pickedColor, size = 40.dp)
+                Spacer(Modifier.width(12.dp))
+                Text(name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("아이콘", style = MaterialTheme.typography.labelLarge)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    com.bamnat.core.money.CategoryLook.ICONS.forEach { key ->
+                        val on = pickedIcon == key
+                        val tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        Box(Modifier.size(48.dp).clip(CircleShape)
+                            .background(if (on) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                            .selectable(selected = on, role = androidx.compose.ui.semantics.Role.RadioButton) { pickedIcon = if (on) "" else key }
+                            .semantics { contentDescription = LOOK_NAMES[key] ?: key },
+                            contentAlignment = Alignment.Center) {
+                            Icon(lookIcon(key) ?: usualCategoryIcon(name), null, tint = tint, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                }
+                Text("색", style = MaterialTheme.typography.labelLarge)
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    (1..com.bamnat.core.money.CategoryLook.COLORS).forEach { place ->
+                        val on = pickedColor == place
+                        val c = lookColor(place)
+                        Box(Modifier.size(48.dp).selectable(selected = on, role = androidx.compose.ui.semantics.Role.RadioButton) { pickedColor = if (on) 0 else place }
+                            .semantics { contentDescription = "색 ${place}번" + if (on) ", 고름" else "" }, contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(32.dp).clip(CircleShape).background(c)
+                                .then(if (on) Modifier.border(3.dp, MaterialTheme.colorScheme.onSurface, CircleShape) else Modifier))
+                        }
+                    }
+                }
+                Text("고른 것은 기록·예산·통계에서 함께 보여요. 분류 저장을 눌러야 남아요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        confirmButton = { TextButton(onClick = { onPick(pickedIcon, pickedColor) }) { Text("고르기") } },
+        dismissButton = {
+            Row {
+                if (pickedIcon.isNotEmpty() || pickedColor != 0) TextButton(onClick = { pickedIcon = ""; pickedColor = 0 }) { Text("원래대로") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        },
+    )
+}
+
+/** What each picture is called when read out. */
+private val LOOK_NAMES = mapOf(
+    "food" to "밥", "cafe" to "커피", "store" to "가게", "delivery" to "배달", "cart" to "장바구니", "bus" to "버스", "car" to "자동차",
+    "fuel" to "주유", "hospital" to "병원", "phone" to "휴대폰", "bill" to "영수증", "subscribe" to "구독", "home" to "집", "gift" to "선물",
+    "school" to "학교", "game" to "게임", "clean" to "청소", "clothes" to "옷", "insurance" to "보험", "pet" to "반려동물", "child" to "아이",
+    "fitness" to "운동", "travel" to "여행", "music" to "음악", "beauty" to "미용", "drink" to "술", "laptop" to "노트북", "tools" to "공구",
+    "work" to "일", "savings" to "저금통", "money" to "돈", "heart" to "하트",
+)

@@ -31,4 +31,18 @@ class MoneyCautionRedTest {
         assertEquals("주의 뜻의 빨강: ${found.filter { it.third == null }}", emptyList<Triple<String, Int, String?>>(), found.filter { it.third == null })
         assertEquals("남은 빨강은 저장을 막는 세 줄", inputErrors.toSet(), found.mapNotNull { it.third }.toSet())
     }
+
+    /**
+     * 2.0.0 [RVK-47] (검토 HQ-101) 예산을 넘은 것도 주의예요: 가계부 화면에는 위험 빨강(bamnat.danger, Tone.Danger)이 없어요. '쓰는 속도'의 '더
+     * 썼어요'는 나간 돈 막대 색(expense)이 아니라 주의색이에요.
+     */
+    @Test fun goingOverABudgetIsCautionNotDanger() {
+        val danger = Regex("""bamnat\.danger\b|Tone\.Danger\b""")
+        val found = money.walkTopDown().filter { it.extension == "kt" }.flatMap { f ->
+            f.readLines().mapIndexedNotNull { i, line -> if (danger.containsMatchIn(line)) "${f.name}:${i + 1}" else null }
+        }.toList()
+        assertEquals("가계부의 위험 빨강", emptyList<String>(), found)
+        val pace = File(money, "LedgerReports.kt").readText()
+        assertEquals("쓰는 속도의 '더 썼어요'는 주의색", false, Regex("""diff > 0\) cal\.expense""").containsMatchIn(pace))
+    }
 }

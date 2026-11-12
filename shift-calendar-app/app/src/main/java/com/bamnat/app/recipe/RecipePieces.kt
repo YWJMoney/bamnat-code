@@ -150,7 +150,7 @@ class RecipePieces(private val c: AppContainer) {
             val money = c.scopeOf(cal).money
             val cats = money.categories.first()
             val style = c.scopeOf(cal).settings.first().workStyle
-            val budgets = money.allBudgets().filter { !it.isTotal && it.amount > 0 }.take(12).map { mapOf("category" to it.category.take(20), "amount" to it.amount) }
+            val budgets = money.allBudgets().filter { it.month == null && !it.isTotal && it.amount > 0 }.take(12).map { mapOf("category" to it.category.take(20), "amount" to it.amount) }
             val envelopes = money.envelopes.first().first.filter { !it.closed && it.kind == com.bamnat.core.money.EnvelopeKind.GOAL }.take(6).map { e ->
                 mapOf("name" to e.name.take(20), "target" to e.target.takeIf { it > 0 }, "share" to e.sharePercent.takeIf { it > 0 }?.toLong(), "emoji" to e.emoji.ifEmpty { null })
             }
@@ -494,7 +494,7 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.LEDGER -> {
             val money = c.scopeOf(cal).money
             val style = c.scopeOf(cal).settings.first().workStyle ?: com.bamnat.core.work.WorkStyle.SHIFT
-            val had = money.allBudgets().associate { it.category to it.amount }
+            val had = money.allBudgets().filter { it.month == null }.associate { it.category to it.amount }
             val budgets = items(values, "budgets").mapNotNull { b ->
                 val name = (b["category"] as? String)?.let(MoneyCategories::clean)?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
                 val amount = (b["amount"] as? Number)?.toLong() ?: return@mapNotNull null
@@ -760,7 +760,7 @@ class RecipePieces(private val c: AppContainer) {
                     for (i in 0 until more.length()) all.put(more.getString(i))
                     added.put("EXPENSE", all); out.put("categories", added)
                 }
-                val had = money.allBudgets().associate { it.category to it.amount }
+                val had = money.allBudgets().filter { it.month == null }.associate { it.category to it.amount }
                 val set = JSONArray()
                 budgets.forEach { (name, amount) ->
                     val before = had[name] ?: 0L
@@ -1014,7 +1014,7 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.LEDGER -> {
                 val money = c.scopeOf(cal).money
                 // A budget the user changed after is theirs; an envelope money went into stays.
-                val now = money.allBudgets().associate { it.category to it.amount }
+                val now = money.allBudgets().filter { it.month == null }.associate { it.category to it.amount }
                 before.optJSONArray("budgets")?.objects()?.forEach { o ->
                     val name = o.getString("category")
                     if ((now[name] ?: 0L) == o.getLong("after")) money.setBudget(name, o.getLong("before"))

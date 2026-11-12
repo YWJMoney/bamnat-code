@@ -268,7 +268,8 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         else -> "${r.earlier} 같은 날과 똑같이 썼어요"
     }
     SectionCard(title = "쓰는 속도", trailing = { ProPill() }) {
-        Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) cal.expense else MaterialTheme.colorScheme.onSurface)
+        // 2.0.0 [RVK-47] (검토 HQ-101, 조건 6) Spending faster than last month is 주의, not the 나간 돈 bars' colour.
+        Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
         PaceChart(r.cumulative, r.previousCumulative, r.length, budget, "$line. ${r.thisOne} ${Fmt.won(r.spent)}, ${r.earlier} ${Fmt.won(r.previousSpent)}")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {

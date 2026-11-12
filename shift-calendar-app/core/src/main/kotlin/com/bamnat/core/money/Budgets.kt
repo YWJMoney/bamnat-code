@@ -3,12 +3,22 @@ package com.bamnat.core.money
 import java.time.LocalDate
 import java.time.YearMonth
 
-/** [LEDG-06] A monthly budget: for the whole month ([TOTAL]) or one spending category. Repeats every month. */
-data class MoneyBudget(val category: String, val amount: Long) {
+/**
+ * [LEDG-06] A monthly budget: for the whole month ([TOTAL]) or one spending category. Repeats every month. 2.0.0 [RVK-46] (검토 I06aa-05)
+ * With a [month], it is that month's only ('이 달만': 명절·휴가 달) and stands in for the every-month one of the same category; 0 then
+ * means no budget that month.
+ */
+data class MoneyBudget(val category: String, val amount: Long, val month: YearMonth? = null) {
     val isTotal: Boolean get() = category == TOTAL
 
     companion object {
         const val TOTAL = ""
+
+        /** yyyyMM as kept; 0 for every month. */
+        fun code(month: YearMonth?): Int = month?.let { it.year * 100 + it.monthValue } ?: 0
+
+        fun monthOf(code: Int): YearMonth? =
+            if (code <= 0) null else runCatching { YearMonth.of(code / 100, code % 100) }.getOrNull()
     }
 }
 
@@ -64,6 +74,25 @@ object Budgets {
     /** A budget 80% used is close to its end. */
     const val NEAR_AT = 0.8f
 
+    /**
+     * 2.0.0 [RVK-46] (검토 I06aa-05) The budgets that hold in [month]: each category's '이 달만' one where there is one, else its every-month
+     * one. A month's 0 says no budget for that category this month.
+     */
+    fun forMonth(budgets: List<MoneyBudget>, month: YearMonth): List<MoneyBudget> {
+        val own = budgets.filter { it.month == month }.associateBy { it.category }
+        return budgets.filter { it.month == null && it.category !in own } + own.values
+    }
+
+    /** Every-month budgets only: what the budget editor shows as '매달'. */
+    fun everyMonth(budgets: List<MoneyBudget>): List<MoneyBudget> = budgets.filter { it.month == null }
+
+    /**
+     * 2.0.0 [RVK-46] The month a stretch of days belongs to for its budgets: the one holding its middle day, so a 급여일 주기 of 10/25~11/24
+     * uses November's and a calendar month its own.
+     */
+    fun monthOf(from: LocalDate, to: LocalDate): YearMonth =
+        YearMonth.from(from.plusDays(java.time.temporal.ChronoUnit.DAYS.between(from, to).coerceAtLeast(0) / 2))
+
     /** One line this big is a lump (자재비, 가전, 병원비): it counts in what is spent, not in the daily pace. */
     const val LUMP = 100_000L
 
@@ -92,7 +121,8 @@ object Budgets {
             .forEach { e -> e.shares().forEach { (c, a) -> spent.merge(c, a, Long::plus) } }
         // Nothing written that stretch: nothing to carry (the app was not in use yet).
         if (entries.none { !it.date.isBefore(prevFrom) && !it.date.isAfter(prevTo) }) return emptyMap()
-        return budgets.filter { !it.isTotal && it.amount > 0 && it.category in rolling }.associate { b ->
+        // 2.0.0 [RVK-46] What that stretch had to spend: its own month's budgets.
+        return forMonth(budgets, monthOf(prevFrom, prevTo)).filter { !it.isTotal && it.amount > 0 && it.category in rolling }.associate { b ->
             b.category to (b.amount - (spent[b.category] ?: 0)).coerceIn(-b.amount, b.amount)
         }.filterValues { it != 0L }
     }
@@ -104,6 +134,8 @@ object Budgets {
     fun statusIn(budgets: List<MoneyBudget>, entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, today: LocalDate, fixedLeft: Long = 0,
                  carry: Map<String, Long> = emptyMap()): BudgetStatus {
         val month = YearMonth.from(to)
+        // 2.0.0 [RVK-46] (검토 I06aa-05) The stretch's own month's budgets ('이 달만' over '매달').
+        @Suppress("NAME_SHADOWING") val budgets = forMonth(budgets, monthOf(from, to))
         val spent = entries.filter { it.kind == MoneyKind.EXPENSE && !it.date.isBefore(from) && !it.date.isAfter(to) }
         val byCategory = HashMap<String, Long>()
         val everyday = HashMap<String, Long>()

@@ -27,6 +27,16 @@ import androidx.compose.material.icons.automirrored.outlined.Label
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.AccountBalance
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.LocalGasStation
+import androidx.compose.material.icons.outlined.FitnessCenter
+import androidx.compose.material.icons.outlined.Flight
+import androidx.compose.material.icons.outlined.MusicNote
+import androidx.compose.material.icons.outlined.Spa
+import androidx.compose.material.icons.outlined.LocalBar
+import androidx.compose.material.icons.outlined.Laptop
+import androidx.compose.material.icons.outlined.Build
+import androidx.compose.material.icons.outlined.FavoriteBorder
+
 import androidx.compose.material.icons.outlined.CardGiftcard
 import androidx.compose.material.icons.outlined.Checkroom
 import androidx.compose.material.icons.outlined.ChildCare
@@ -103,8 +113,55 @@ import com.bamnat.core.money.Reports
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
 
-/** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
-fun categoryIcon(name: String): ImageVector = when (name) {
+/**
+ * 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) The icon and color the user gave each category (분류 고치기), by name. The app provides the main
+ * calendar's; the money tab its own calendar's.
+ */
+val LocalCategoryLooks = androidx.compose.runtime.staticCompositionLocalOf<Map<String, com.bamnat.core.money.CategoryEdit>> { emptyMap() }
+
+/** 2.0.0 [RVK-46] The picture for each [com.bamnat.core.money.CategoryLook.ICONS] key. */
+fun lookIcon(key: String): ImageVector? = when (key) {
+    "food" -> Icons.Outlined.Restaurant
+    "cafe" -> Icons.Outlined.LocalCafe
+    "store" -> Icons.Outlined.Storefront
+    "delivery" -> Icons.Outlined.DeliveryDining
+    "cart" -> Icons.Outlined.ShoppingCart
+    "bus" -> Icons.Outlined.DirectionsBus
+    "car" -> Icons.Outlined.DirectionsCar
+    "fuel" -> Icons.Outlined.LocalGasStation
+    "hospital" -> Icons.Outlined.LocalHospital
+    "phone" -> Icons.Outlined.PhoneAndroid
+    "bill" -> Icons.Outlined.Receipt
+    "subscribe" -> Icons.Outlined.Subscriptions
+    "home" -> Icons.Outlined.Home
+    "gift" -> Icons.Outlined.CardGiftcard
+    "school" -> Icons.Outlined.School
+    "game" -> Icons.Outlined.SportsEsports
+    "clean" -> Icons.Outlined.CleaningServices
+    "clothes" -> Icons.Outlined.Checkroom
+    "insurance" -> Icons.Outlined.HealthAndSafety
+    "pet" -> Icons.Outlined.Pets
+    "child" -> Icons.Outlined.ChildCare
+    "fitness" -> Icons.Outlined.FitnessCenter
+    "travel" -> Icons.Outlined.Flight
+    "music" -> Icons.Outlined.MusicNote
+    "beauty" -> Icons.Outlined.Spa
+    "drink" -> Icons.Outlined.LocalBar
+    "laptop" -> Icons.Outlined.Laptop
+    "tools" -> Icons.Outlined.Build
+    "work" -> Icons.Outlined.WorkOutline
+    "savings" -> Icons.Outlined.Savings
+    "money" -> Icons.Outlined.Payments
+    "heart" -> Icons.Outlined.FavoriteBorder
+    else -> null
+}
+
+/** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. 2.0.0 [RVK-46] Or the one the user picked. */
+@Composable
+@ReadOnlyComposable
+fun categoryIcon(name: String): ImageVector = LocalCategoryLooks.current[name]?.let { lookIcon(it.icon) } ?: usualCategoryIcon(name)
+
+fun usualCategoryIcon(name: String): ImageVector = when (name) {
     "식비" -> Icons.Outlined.Restaurant
     "카페" -> Icons.Outlined.LocalCafe
     "편의점" -> Icons.Outlined.Storefront
@@ -158,7 +215,13 @@ private val CATEGORY_ORDER = (MoneyCategories.expense - MoneyCategories.INTEREST
 
 @Composable
 @ReadOnlyComposable
-fun categoryColor(name: String): Color = if (name == Reports.JOB_COSTS) LedgerColors.at(5) else LedgerColors.of(name, CATEGORY_ORDER)
+fun categoryColor(name: String): Color = LocalCategoryLooks.current[name]?.color?.let(com.bamnat.core.money.CategoryLook::color)?.takeIf { it > 0 }?.let { lookColor(it) }
+    ?: usualCategoryColor(name)
+
+/** 2.0.0 [RVK-46] A picked palette place (1 on) in the current theme. */
+@Composable
+@ReadOnlyComposable
+fun lookColor(place: Int): Color = LedgerColors.at(place - 1)
 
 @Composable
 @ReadOnlyComposable
@@ -193,6 +256,18 @@ fun IconAvatar(icon: ImageVector, tint: Color, size: Dp = 40.dp, modifier: Modif
 
 @Composable
 fun CategoryAvatar(category: String, size: Dp = 40.dp) = IconAvatar(categoryIcon(category), categoryColor(category), size)
+
+/** 2.0.0 [RVK-46] A category's badge with a look being picked (분류 고치기), before it is saved. */
+@Composable
+fun CategoryAvatar(category: String, icon: String, color: Int, size: Dp, modifier: Modifier = Modifier) = IconAvatar(
+    lookIcon(icon) ?: usualCategoryIcon(category),
+    com.bamnat.core.money.CategoryLook.color(color).takeIf { it > 0 }?.let { lookColor(it) } ?: usualCategoryColor(category),
+    size, modifier,
+)
+
+@Composable
+@ReadOnlyComposable
+fun usualCategoryColor(name: String): Color = if (name == Reports.JOB_COSTS) LedgerColors.at(5) else LedgerColors.of(name, CATEGORY_ORDER)
 
 /** [TIER-05][LEDG-15] "프로" beside a pro feature; [TIER-06] since 1.25 the app's one [com.bamnat.app.ui.components.ProBadge]. */
 @Composable
