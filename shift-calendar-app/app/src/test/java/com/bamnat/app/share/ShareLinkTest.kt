@@ -59,6 +59,24 @@ class ShareLinkTest {
         File("build/share-payload.json").writeText(p.toString())
     }
 
+    /**
+     * 2.0.0 [RVM-29] SN-16: a 근무 글자 of joined emoji goes whole (take(4) sent half of 👩‍⚕️), a longer one is cut at a letter as
+     * core ShiftRules says, and an empty one falls back to the name's first letter, a flag whole.
+     */
+    @Test fun shiftLettersAreCutAtALetter() {
+        val nurse = ShiftType(1, "간호 👩‍⚕️ 근무", "👩‍⚕️", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0))
+        val long = ShiftType(2, "DAY1", "DAY1", 0xFF5E35B1, LocalTime.of(19, 0), LocalTime.of(7, 0))
+        val flag = ShiftType(3, "🇰🇷 휴무", "", 0xFF9E9E9E, null, null, isOff = true)
+        val p = ShareLinkPayload.build(ScheduleSnapshot(listOf(nurse, long, flag), WorkPattern.Rotation(start, listOf(1L, 2L, 3L)), emptyList()), start, "", 30)
+        val types = p.getJSONArray("types").let { a -> (0 until a.length()).associate { a.getJSONObject(it).getInt("id") to a.getJSONObject(it) } }
+        assertEquals("👩‍⚕️", types.getValue(1).getString("short"))
+        assertEquals("간호 👩‍⚕️ 근무", types.getValue(1).getString("name"))
+        assertEquals("DA", types.getValue(2).getString("short"))
+        assertEquals("🇰🇷", types.getValue(3).getString("short"))
+        // Every 근무 글자 sent is one the 2.0.0 share server takes whole (no half surrogate left).
+        types.values.forEach { assertTrue(com.bamnat.core.model.ShiftRules.labelFits(it.getString("short"))) }
+    }
+
     /** [SHR-04] Days with no work at all say so, for the receiver's 같이 쉬는 날; the day off with a 대근 does not. */
     /** 1.37 [SHR-31][SHR-32] 묶음 E: the 테마 and 근무 설정 go only when ticked, come back as recipes, and a pay part never does. */
     @Test fun lookAndKit() {

@@ -79,7 +79,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun export(kind: PieceKind, cal: String, from: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, Any?>? = when (kind) {
         PieceKind.SHIFT_LOOK -> types(cal).takeIf { it.isNotEmpty() }?.take(12)?.let { list ->
             mapOf("items" to list.map { t ->
-                mapOf("name" to t.name.take(20), "role" to role(t).key, "label" to t.label.ifEmpty { t.name.take(1) },
+                // 2.0.0 [RVM-29] SN-16: name and 근무 글자 cut at a letter by ShiftRules (the piece's own check), never half an emoji.
+                mapOf("name" to com.bamnat.core.model.ShiftRules.fitName(t.name), "role" to role(t).key,
+                    "label" to com.bamnat.core.model.ShiftRules.fitLabel(t.label).ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS) },
                     "color" to (t.colorArgb or 0xFF000000L), "emoji" to ShiftIcon.emoji(t.icon))
             })
         }
