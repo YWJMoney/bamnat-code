@@ -271,7 +271,7 @@ class SleepRecordService : Service(), SensorEventListener {
         p.edit().putLong(K_LAST_START, startedAt).putLong(K_LAST_END, Today.millis())
             .putInt(K_LAST_BATTERY, used).putString(K_LAST_LINE, summary.line()).putBoolean(K_LAST_CUT, cut)
             .remove(K_RUNNING).remove(K_CUT).apply()
-        c.sleepRepository.dropOldClips(KEEP_DAYS) { name -> File(File(filesDir, CLIP_DIR), name).delete() }
+        c.sleepRepository.sweepClips(File(filesDir, CLIP_DIR), KEEP_DAYS)
     }
 
     override fun onSensorChanged(event: SensorEvent) {

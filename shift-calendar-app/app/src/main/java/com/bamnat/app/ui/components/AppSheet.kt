@@ -61,6 +61,8 @@ fun AppSheet(
         kotlinx.coroutines.delay(800)
         if (!sheetState.isVisible && sheetState.targetValue == androidx.compose.material3.SheetValue.Hidden) runCatching { sheetState.show() }
     }
+    // 1.39.1 [R391-10] Opened while 앱 잠금 holds, the cover comes back over it.
+    StaysUnderTheLock()
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
         // [J133-49] 1.33 (중간 빌드 확인: 끝까지 펼친 시트의 X가 상태줄 밑에 그려져 눌리지 않았어요): a sheet stops under the status

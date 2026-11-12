@@ -356,7 +356,10 @@ class DutyRosterViewModel(
     private fun read(how: suspend (DutyCodes) -> RosterResult) {
         _ui.update { it.copy(reading = true, error = null, applied = null, step = null) }
         viewModelScope.launch {
-            val r = how(codes())
+            // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
+            val r = try { how(codes()) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
+                RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.why(e).text)
+            }
             // [READ-05] The table's own order, top to bottom, to choose from.
             val rows = r.rows.sortedBy { it.line }
             // [READ-06] The line picked on last month's roster, found again by its name or 조.

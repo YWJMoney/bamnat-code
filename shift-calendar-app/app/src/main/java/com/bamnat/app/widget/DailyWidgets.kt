@@ -58,9 +58,11 @@ import com.bamnat.core.time.Today
  */
 
 class TeamsWidget : GlanceAppWidget() {
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
-        provideContent { WidgetLookTheme { WidgetBox { TeamsContent(data) } } }
+        val first = WidgetData.load(context)
+        provideContent { val data = widgetData(context, first); WidgetLookTheme { WidgetBox { TeamsContent(data) } } }
     }
 }
 
@@ -202,10 +204,12 @@ internal val WIDGET_BUTTON_HEIGHT = 40.dp
 class CountdownWidget : GlanceAppWidget() {
     // [J133-32] 순번 712: at 2×1 the lines are one each, not cut in the middle.
     override val sizeMode: androidx.glance.appwidget.SizeMode = androidx.glance.appwidget.SizeMode.Exact
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
+        val first = WidgetData.load(context)
         provideContent {
+            val data = widgetData(context, first)
             WidgetLookTheme {
                 Box(
                     GlanceModifier.fillMaxSize().background(widgetBg()).cornerRadius(widgetCorner()).padding(12.dp)

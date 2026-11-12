@@ -119,12 +119,19 @@ object RosterReader {
     }
 
     /** [READ-32] A scanned PDF: each page read as a photo, the lines of all pages together (a name on two pages once). */
-    private suspend fun pages(context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit): RosterResult {
+    internal suspend fun pages(context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit): RosterResult {
         val scans = mutableListOf<RosterScanner.Scan>()
         try {
             for ((i, page) in pages.withIndex()) {
                 scans += RosterScanner.scanPicture(context, page, codes) { n, m -> progress(i * 10 + n, pages.size * 10) }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 1.39.1 [R391-13] (검토 SCAN-01) A scanned PDF whose reading failed (글자 인식 준비물 not there yet, Play 서비스 old or
+            // offline) closed the app: it says why, as a photo does.
+            return RosterResult(emptyList(), null, RosterFrom.FILE, (e as? com.bamnat.app.pay.OcrModel.NotReady)?.message
+                ?: (com.bamnat.app.pay.OcrModel.why(e).text + " (오류: ${com.bamnat.app.pay.OcrModel.detail(e)})"))
         } finally {
             pages.forEach { if (!it.isRecycled) it.recycle() }
         }

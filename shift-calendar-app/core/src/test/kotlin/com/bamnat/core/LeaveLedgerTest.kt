@@ -50,6 +50,18 @@ class LeaveLedgerTest {
         assertTrue(s.lots.none { it.lot.kind == LotKind.ANNUAL && it.lot.yearStart == LocalDate.of(2026, 3, 2) })
     }
 
+    // 1.39.1 [R391-08] 검토 WORK-01: 입사일 기준 (lots on 3월 2일) and a grant left on the dialog's 1월 1일 counted 15 + 15.
+    @Test
+    fun `a grant dated the first of January replaces the app's lot of that year`() {
+        val grant = LedgerEntry(1, EntryKind.GRANT, LocalDate.of(2026, 1, 1), 15.0, LocalDate.of(2026, 12, 31), yearStart = LocalDate.of(2026, 1, 1))
+        val s = LeaveLedger.build(today, auto, listOf(grant), emptyList())
+        assertTrue(s.lots.none { it.lot.kind == LotKind.ANNUAL && it.lot.yearStart?.year == 2026 })
+        val without = LeaveLedger.build(today, auto, emptyList(), emptyList())
+        val app2026 = without.lots.filter { it.lot.kind == LotKind.ANNUAL && it.lot.yearStart?.year == 2026 }.sumOf { it.lot.days }
+        assertTrue("the app counted a 2026 lot to replace", app2026 > 0)
+        assertEquals(without.available - app2026 + 15.0, s.available, 1e-9)
+    }
+
     @Test
     fun `planned days count after today and lots lapsing today are still usable`() {
         val carry = LedgerEntry(2, EntryKind.CARRY, LocalDate.of(2026, 1, 1), 3.0, expires = today)

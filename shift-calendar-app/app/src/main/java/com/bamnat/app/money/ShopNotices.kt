@@ -67,7 +67,19 @@ object ShopNotices {
         val book = money.book.first()
         val rules = c.calendars.get(id)?.shopMoney ?: ShopMoney()
         val matched = CardSettlement.match(amount, parsed?.date ?: date, CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
-        if (matched.isEmpty()) return null
+        // 1.39.1 [R391-09] (검토 MONEY-41) A card company's deposit that fits no day (카드사마다 따로, 날짜도 조금씩 달라요) is not
+        // 수입: those sales are already in the day's 카드 매출, so as 부수입 they counted twice in 들어온 돈·세금 봉투. It goes in as
+        // 이체 into the account (when one is known by its last digits), for the user to check and tick the day's 입금 확인.
+        if (matched.isEmpty()) return once(c, key) {
+            val day = parsed?.date ?: date
+            money.save(com.bamnat.core.money.MoneyEntry(
+                date = day, kind = com.bamnat.core.money.MoneyKind.TRANSFER, amount = amount, category = ShopCapture.CARD_DEPOSIT,
+                note = "맞는 매출 날을 못 찾았어요 · 카드 매출 입금 확인에서 맞는 날을 눌러 주세요",
+                source = com.bamnat.core.money.MoneySource.NOTIFICATION, merchant = parsed?.merchant.orEmpty(),
+                time = parsed?.time ?: arrived.toLocalTime().withSecond(0).withNano(0), reviewed = false,
+                toAccountId = parsed?.last4?.let { com.bamnat.core.money.MoneyAccounts.match(it, money.allAccounts()) },
+            ))
+        }
         return once(c, key) {
             for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         }

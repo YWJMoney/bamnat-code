@@ -16,6 +16,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +33,16 @@ fun LockCover(onUnlock: () -> Unit) {
     // Back leaves the app; it never moves the screens under the cover.
     val activity = LocalContext.current.findActivity()
     BackHandler { activity?.moveTaskToBack(true) }
+    // 1.39.1 [R391-10] (검토 UIX-41) A window over every 창 and 시트 left open (급여 대장, 돈 적기), made again on top when one opens
+    // while locked; drawn in the activity, the cover was under them.
+    val opened by com.bamnat.app.AppLock.opened.collectAsState()
+    key(opened) {
+        com.bamnat.app.ui.components.LockWindow(onBack = { activity?.moveTaskToBack(true) }) { CoverBody(onUnlock) }
+    }
+}
+
+@Composable
+private fun CoverBody(onUnlock: () -> Unit) {
     Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
         Column(
             Modifier.fillMaxSize().padding(32.dp),

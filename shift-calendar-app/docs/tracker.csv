@@ -2431,3 +2431,16 @@ RVD-09,"검토 2026-11-12 SVC-89: 광장 글 표(posts)에 parent·answer 색인
 RVD-10,"검토 2026-11-12 SVC-65: 개발 결과 붙여 넣기를 두 번 하면 문의 답이 두 번 감",1.40,진행 중,,"inbox.js applyResult already_applied, inboxAnswer 같은 답"
 RVD-11,"검토 2026-11-12 SVC-01: 나간 판 저장이 중간에 끊기면 남은 출시 안내·공지가 다시 가지 않음",1.40,진행 중,,"desk.js shipNow pending·resumeShip, loop.js shipTick"
 RVD-12,"검토 2026-11-12 WEB-01~04·06: 공개 웹 계산기 숫자(연봉 칩 12배, 퇴직금 윤년·3개월 일수, 연차 달 끝 입사, 주 40시간 월급 쪽마다 다름)",1.40,진행 중,,"tools/site/public_pages.py 실수령액 칩·퇴직금 addM·연차 addM·주휴 tot, 공개 저장소 PR"
+R391-01,"1.39.1 검토 UIX-49: 알람 시각 창 '시작 기준' 탭에서 시·분 바퀴를 둘 다 돌리면 바퀴와 다른 값이 저장됨 → 바퀴가 늘 새 onValue를 부름",1.39.1,진행 중,,"TimeWheel Wheel rememberUpdatedState, ZScreenshotTest"
+R391-02,"1.39.1 검토 ALM-01: 통화 중 붙잡기 상한(3분·30분)이 끝나자마자 다시 걸려 알람이 1.5초만 울림 → 상한을 쓰면 통화 모드가 평상시로 돌아올 때까지 다시 붙잡지 않음",1.39.1,진행 중,,AlarmService callActive
+R391-03,"1.39.1 검토 ALM-02: 오늘·주·달·모든 조·다음 근무 위젯이 45초 안의 두 번째 변경을 그리지 않음 → 가계부 위젯처럼 도장으로 다시 읽기",1.39.1,진행 중,,"Widgets, DailyWidgets, WidgetRefresher"
+R391-04,"1.39.1 검토 ALM-03: 7일 뒤 지운다던 수면 소리 클립이 측정을 그만두거나 저장 전에 끊기면 남음 → 앱 시작 때 하루 한 번 파일 나이로 쓸어 내기, 수면 기록을 지우면 클립도",1.39.1,진행 중,,"SleepRecordService, SleepRepository"
+R391-05,"1.39.1 검토 SET-01: 설정 › 알람의 '첫 알람' 칩·'모든 알람 옮기기'가 보고 있는 달력이 아니라 내 달력의 근무를 고침 → 보고 있는 달력의 저장소로",1.39.1,진행 중,,"SettingsScreen moveAllAlarms, setFirstAlarm"
+R391-06,"1.39.1 검토 MEMO-01: 끝낸 할 일(반복 없는 것)도 제시각에 알림·알람이 울림 → 끝낸 메모는 다음 알림 없음",1.39.1,진행 중,,"core MemoSchedule nextOf, isAt"
+R391-07,"1.39.1 검토 PAYU-47: 회사 규칙 › '우리 회사 항목' 칸에서 수당 금액을 고치면 그 수당의 지난 달 값이 0원 → 보는 달부터만 바꾸고 앞 값·조건은 지킴",1.39.1,진행 중,,"core RuleText RuleChange.Item"
+R391-08,"1.39.1 검토 WORK-01: 입사일 기준에서 '받은 연차'(1월 1일)를 넣으면 앱이 센 연차가 안 빠지고 두 번 세짐 → 그 날짜가 든 발생 기간의 앱 몫을 뺌",1.39.1,진행 중,,core LeaveLedger
+R391-09,"1.39.1 검토 MONEY-41: 가게 달력에서 카드사 정산 입금을 못 맞추면 부수입으로 적혀 카드 매출이 두 번 잡힘 → 수입으로 적지 않음",1.39.1,진행 중,,"ShopNotices, CardSettlement"
+R391-10,"1.39.1 검토 UIX-41: 앱 잠금 덮개가 창·시트(급여 대장 등 도구 화면) 아래에 깔림 → 잠긴 동안 창·시트를 그리지 않음",1.39.1,진행 중,,"LockCover, AppSheet, AppDialogs, ToolScreen"
+R391-11,"1.39.1 검토 PRO-08: 구독 갱신 시각이 지난 뒤 앱을 열지 않으면 프로가 꺼진 것으로 봄(알람 미션이 빠짐) → 자동 갱신 구독은 여유 3일",1.39.1,진행 중,,"core ProAccess, AppContainer syncPro"
+R391-12,"1.39.1 검토 PRO-03: 연 요금제 체험인데 동의 창이 '월 요금'으로 묻는 길 → 서버 basePlan을 받고 체험은 연 요금으로, 금액을 모르면 묻지 않음",1.39.1,진행 중,,"Billing take, TrialConsentPrompt"
+R391-13,"1.39.1 검토 SCAN-01: 스캔한 PDF를 근무표로 고르면 글자 인식 실패 때 앱이 꺼짐 → 오류 글로 돌려줌",1.39.1,진행 중,,"RosterReader pages, DutyRosterViewModel, SetupViewModel"

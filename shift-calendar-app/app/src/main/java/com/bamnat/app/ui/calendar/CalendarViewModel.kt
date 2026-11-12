@@ -551,7 +551,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
         }
     }
-    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
+    // 1.39.1 [R391-04] The night's sounds and clips go with it.
+    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.deleteWithSounds(id, container.sleepClipDeleter) } }
 
     /** Rest-gap signs that fall on [date]. */
     fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): List<RestCheck.Issue> {

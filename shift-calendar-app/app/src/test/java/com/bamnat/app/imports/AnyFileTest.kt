@@ -102,4 +102,22 @@ class AnyFileTest {
         // A roster PDF is still a roster.
         assertNull(RosterReader.file(context, uri("p01-pdf.pdf"), codes, near).error)
     }
+
+    // 1.39.1 [R391-13] 검토 SCAN-01: a scanned PDF's page whose reading failed (글자 인식 준비물 not there, Play 서비스 old) closed
+    // the app; it says why instead.
+    @Test fun aScannedPageThatFailsToReadSaysWhy() = kotlinx.coroutines.runBlocking {
+        try {
+            com.bamnat.app.imports.RosterScanner.fakePicture = { throw com.bamnat.app.pay.OcrModel.NotReady() }
+            val page = android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888)
+            val r = com.bamnat.app.ui.imports.RosterReader.pages(context, listOf(page), codes, near) { _, _ -> }
+            org.junit.Assert.assertTrue(r.rows.isEmpty())
+            org.junit.Assert.assertEquals(com.bamnat.app.pay.OcrModel.NotReady().message, r.error)
+            org.junit.Assert.assertTrue("the page is let go", page.isRecycled)
+            com.bamnat.app.imports.RosterScanner.fakePicture = { throw IllegalStateException("Play 서비스") }
+            val other = com.bamnat.app.ui.imports.RosterReader.pages(context, listOf(android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888)), codes, near) { _, _ -> }
+            org.junit.Assert.assertTrue(other.error.orEmpty().isNotBlank())
+        } finally {
+            com.bamnat.app.imports.RosterScanner.fakePicture = null
+        }
+    }
 }

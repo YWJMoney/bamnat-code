@@ -211,7 +211,8 @@ object MemoSchedules {
         memos: List<Memo>, after: LocalDateTime,
         shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
     ): LocalDateTime? {
-        val live = memos.filter { !it.inTrash }
+        // 1.39.1 [R391-06] (검토 MEMO-01) A finished one-off memo rings no more, nor does its 미룬 time.
+        val live = memos.filter { !it.inTrash && !finished(it) }
         val own = live.mapNotNull { nextOf(it, after, shiftsOf(it)) }
         val ids = live.mapTo(HashSet()) { it.id }
         val put = extra.filter { (id, at) -> id in ids && at.isAfter(after) }.values
@@ -221,7 +222,7 @@ object MemoSchedules {
     /** [memo]'s next schedule strictly after [after]: its own, or for a repeating one the next day it comes back on. */
     fun nextOf(memo: Memo, after: LocalDateTime, shifts: MemoRepeat.ShiftOf? = null): LocalDateTime? {
         val r = memo.reminder ?: return null
-        if (!repeats(memo)) return r.at.takeIf { it.isAfter(after) }
+        if (!repeats(memo)) return r.at.takeIf { it.isAfter(after) && !finished(memo) }
         val time = r.at.toLocalTime().withSecond(0).withNano(0)
         var day = maxOf(after.toLocalDate(), r.at.toLocalDate())
         repeat(LOOK_DAYS) {
@@ -240,10 +241,13 @@ object MemoSchedules {
         shiftsOf: (Memo) -> MemoRepeat.ShiftOf? = { null }, extra: Map<Long, LocalDateTime> = emptyMap(),
     ): List<Memo> {
         val minute = at.withSecond(0).withNano(0)
-        return memos.filter { !it.inTrash && (isAt(it, minute, shiftsOf(it)) || extra[it.id]?.withSecond(0)?.withNano(0) == minute) }
+        return memos.filter { !it.inTrash && !finished(it) && (isAt(it, minute, shiftsOf(it)) || extra[it.id]?.withSecond(0)?.withNano(0) == minute) }
     }
 
     private fun repeats(memo: Memo) = memo.date != null && MemoRepeat.kindOf(memo.repeat) != MemoRepeat.Kind.NONE
+
+    /** 1.39.1 [R391-06] A one-off memo marked 끝냄 (a repeating one is finished day by day, see [Memo.isDoneOn]). */
+    private fun finished(memo: Memo) = !repeats(memo) && memo.doneAtMillis != null
 
     private fun isAt(memo: Memo, minute: LocalDateTime, shifts: MemoRepeat.ShiftOf?): Boolean {
         val r = memo.reminder ?: return false
