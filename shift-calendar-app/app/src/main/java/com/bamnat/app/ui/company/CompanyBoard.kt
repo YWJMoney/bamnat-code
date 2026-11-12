@@ -33,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.MoreVert
@@ -565,17 +567,27 @@ fun TalkSheet(holder: TalkHolder) {
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)
                         .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
+                // 2.0.0 [RVN-06] HQ-38 (총괄 사진 검토, 디자인 조건 1·12): at 130% and up the kinds stacked under '쓸 글' and the box took a
+                // third of a folded screen; there the kinds fold into one chip beside '쓸 글', the box keeps to two lines and its hint to one.
+                val big = com.bamnat.app.ui.components.bigLetters()
                 if (replyTo == null) {
-                    // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
-                    // the row of 거르기 chips above the posts.
-                    Text("쓸 글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp))
                     // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
                     // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
                     val kinds = if (o.room) ROOM_KIND_LABELS else listOf("talk" to "의견", "question" to "질문", "proposal" to "고치자는 제안")
-                    // [RVH-46] '고치자는 제안' no longer cut at a large font.
-                    com.bamnat.app.ui.components.ChoiceRow(kinds.map { it.second }, selected = kinds.indexOfFirst { it.first == kind }, onSelect = { kind = kinds[it].first; error = null },
-                        modifier = Modifier.padding(top = 2.dp), check = false)
+                    if (big) {
+                        TalkKindChip(kinds, kind, hints = buildMap {
+                            put("question", "투표를 넣을 수 있어요")
+                            if (styleRoom) put("show", "내 작품을 붙여 보여 줘요")
+                        }, modifier = Modifier.padding(top = 4.dp)) { kind = it; error = null }
+                    } else {
+                        // PC 확인 f39bcfbe: what kind of post to write, as buttons joined in one bar under "쓸 글", so it does not look like
+                        // the row of 거르기 chips above the posts.
+                        Text("쓸 글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp))
+                        // [RVH-46] '고치자는 제안' no longer cut at a large font.
+                        com.bamnat.app.ui.components.ChoiceRow(kinds.map { it.second }, selected = kinds.indexOfFirst { it.first == kind }, onSelect = { kind = kinds[it].first; error = null },
+                            modifier = Modifier.padding(top = 2.dp), check = false)
+                    }
                 } else {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                         Text("${replyTo?.let { it.nick ?: "참여자 ${it.who}" }}에게 답글", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
@@ -586,7 +598,8 @@ fun TalkSheet(holder: TalkHolder) {
                     PollEditor(pollDraft, onChange = { pollDraft = it; error = null })
                 }
                 // PC 확인 5c21f3bb (9번 '투표·첨부 단추가 없어요'): they come with a kind of post, so say which.
-                if (o.room && replyTo == null && kind != "question" && kind != "show") {
+                // At big letters the kinds' menu says it beside each kind (HQ-38).
+                if (o.room && replyTo == null && kind != "question" && kind != "show" && !big) {
                     Text(if (styleRoom) "투표는 ‘질문’에서, 내 작품 붙이기는 ‘자랑’에서 넣어요" else "투표는 ‘질문’에서 넣어요",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
                 }
@@ -644,7 +657,16 @@ fun TalkSheet(holder: TalkHolder) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.take(500); error = null },
-                        placeholder = { Text(when {
+                        placeholder = { if (big) Text(when {
+                            // HQ-38: one line at big letters (the chip above already says which kind).
+                            replyTo != null -> "답글을 적어요"
+                            kind == "question" -> "질문을 적어요"
+                            kind == "tip" -> "팁을 적어요"
+                            kind == "show" -> "자랑을 적어요"
+                            kind == "proposal" -> "왜 바꿀지 적어요"
+                            o.room -> "이야기를 적어요"
+                            else -> "의견을 적어요"
+                        }, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) else Text(when {
                             replyTo != null -> "답글을 적어 주세요"
                             kind == "question" -> "궁금한 점을 적어 주세요"
                             kind == "tip" -> "해 보니 좋았던 방법을 나눠 주세요"
@@ -653,7 +675,8 @@ fun TalkSheet(holder: TalkHolder) {
                             // PC 확인 V16: a room opened from 찾기·내 글 has no hint of its own; it is never about a rule.
                             else -> o.hint?.takeIf { it.isNotBlank() } ?: if (o.room) "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" else "이 규칙에 대해 적어 주세요"
                         }) },
-                        maxLines = 4,
+                        // The box scrolls inside itself past these lines; two at big letters keep it and the bar within a quarter (HQ-38).
+                        maxLines = if (big) 2 else 4,
                         shape = MaterialTheme.shapes.large,
                         modifier = Modifier.weight(1f).onFocusChanged { f -> if (f.isFocused && !rulesAsked) rulesAsked = true },
                     )
@@ -740,6 +763,39 @@ private fun ProposalRedoSheet(holder: TalkHolder, company: String, setup: String
         },
         onDismiss = onDismiss,
     )
+}
+
+/**
+ * 2.0.0 [RVN-06] HQ-38 What kind of post, at big letters: '쓸 글' and one chip with the kind ('의견 ▾') that opens the kinds, each with
+ * what it carries (투표, 내 작품), instead of a bar of two or three rows.
+ */
+@Composable
+private fun TalkKindChip(kinds: List<Pair<String, String>>, kind: String, hints: Map<String, String>, modifier: Modifier = Modifier, onPick: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val label = kinds.firstOrNull { it.first == kind }?.second ?: kinds.first().second
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        Text("쓸 글", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(8.dp))
+        Box {
+            com.bamnat.app.ui.components.FilterChip(selected = false, onClick = { open = true }, label = { Text(label, maxLines = 1) },
+                trailingIcon = { Icon(Icons.Filled.ArrowDropDown, null) },
+                modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "쓸 글: $label. 눌러서 바꾸기" })
+            com.bamnat.app.ui.components.DropdownMenu(open, onDismissRequest = { open = false }) {
+                kinds.forEach { (k, l) ->
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(l)
+                                hints[k]?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
+                        },
+                        leadingIcon = { if (k == kind) Icon(Icons.Filled.Check, "고른 것") else Spacer(Modifier.size(24.dp)) },
+                        onClick = { open = false; onPick(k) },
+                    )
+                }
+            }
+        }
+    }
 }
 
 /**
