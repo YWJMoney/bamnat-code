@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.imports
 
+import com.bamnat.app.ui.theme.color
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -297,8 +298,9 @@ private fun Cell(
         is DutyCell.Leave -> "휴가"
         is DutyCell.Unknown -> "‘${cell.raw}’ 모르는 글자"
     }
-    // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own.
-    val warn = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning
+    // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own. [RVL-36] Its caution, not the
+    // calendar's warning: that one is the Sunday red, and a yellow cell drawn red said danger (조건 6).
+    val warn = com.bamnat.app.ui.theme.Tone.Caution.color()
     // The whole day's width presses; the cell drawn in it keeps its size (8dp each side).
     Box(
         modifier.width(pitch).heightIn(min = 56.dp)
