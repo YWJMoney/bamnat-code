@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -821,7 +822,19 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     var kind by remember { mutableStateOf("question") }
     var replyTo by remember { mutableStateOf<RecipePost?>(null) }
     var disliking by remember { mutableStateOf<RecipePost?>(null) }
-    Text("이야기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+    // 2.0.0 [RVM-36] 검토 HQ-52: opened from the 알림함's '내 작품 ‘…’ · 질문: …' row, the page goes to 이야기 once its 글 are in (the
+    // heading at the top: a rect taller than the screen is brought to its start).
+    val toTalk = remember(vm.code) { RecipeLinks.takeTalkFocus(vm.code) }
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val loaded = s.talk != null
+    LaunchedEffect(toTalk, loaded) {
+        if (toTalk && loaded) {
+            kotlinx.coroutines.delay(TALK_SETTLE_MS)
+            runCatching { bring.bringIntoView(androidx.compose.ui.geometry.Rect(0f, 0f, 1f, 100_000f)) }
+        }
+    }
+    Text("이야기", style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.bringIntoViewRequester(bring).semantics { heading() })
     val talk = s.talk
     if (talk == null) { Text("불러오는 중이에요", style = MaterialTheme.typography.bodySmall); return }
     if (talk.posts.isEmpty()) Text("아직 이야기가 없어요. 써 본 후기나 궁금한 점을 남겨 주세요", style = MaterialTheme.typography.bodySmall,
@@ -868,6 +881,9 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     }
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }
 }
+
+/** [RVM-36] How long the page settles (its 글 laid out) before it goes to 이야기. */
+private const val TALK_SETTLE_MS = 200L
 
 /** [RVF-03] 광장 글 신고와 같은 이유(server FLAGS). */
 internal val TALK_FLAG_REASONS = linkedMapOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보")

@@ -321,11 +321,11 @@ test("[PRF-08][PRF-09][PRF-10] 팔로잉 피드, 작품 통계, 이달의 제작
   assert.equal(stats.items[0].days.length, 28);
   assert.equal(stats.week, stats.items[0].days.slice(-7).reduce((x, y) => x + y, 0));
   assert.equal(stats.week > 0, true);
-  const month = (await call("GET", "/api/recipes/makers/month?style=SHIFT")).data;
-  assert.deepEqual(month.items.map((x) => [x.maker, x.bio]), [[m1, "교대 꾸미기"]]);
-  // The operator's pick comes first.
-  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m2] }, admin);
-  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked]), [[m2, true], [m1, false]]);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: 이달의 제작자 are the operator's picks; the most put-on makers are candidates in the admin app only.
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items, []);
+  assert.deepEqual((await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data.candidates.SHIFT.map((x) => [x.maker, x.users]), [[m1, 3]]);
+  await call("POST", "/api/admin/recipes/makers/month", { style: "SHIFT", makers: [m1, m2] }, admin);
+  assert.deepEqual((await call("GET", "/api/recipes/makers/month?style=SHIFT")).data.items.map((x) => [x.maker, x.picked, x.bio ?? null]), [[m1, true, "교대 꾸미기"], [m2, true, null]]);
 });
 
 test("[PRF-11] 프로필 링크의 공개 페이지: 이름·소개·대표 작품, 앱으로 열기; 숨긴 프로필은 없어요; 글은 그대로 찍지 않아요", async (t) => {

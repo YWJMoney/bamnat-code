@@ -4,6 +4,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -43,14 +44,14 @@ class ShareSyncTest {
             sent += payload
             val days = payload.optInt("ttlDays", 0)
             return state.copy(title = payload.optString("title"),
-                expiresAt = if (days > 0) Instant.now().plus(Duration.ofDays(days.toLong())) else state.expiresAt,
+                expiresAt = if (days > 0) Today.instant().plus(Duration.ofDays(days.toLong())) else state.expiresAt,
                 ttlDays = if (days > 0) days else state.ttlDays)
         }
         override suspend fun delete(state: ShareLinkState) = Unit
         override suspend fun read(id: String) = error("not used")
     }
 
-    private fun link(ttl: Int = 30, from: YearMonth? = YearMonth.now(), expires: Instant = Instant.now().plus(Duration.ofDays(20))) =
+    private fun link(ttl: Int = 30, from: YearMonth? = Today.month(), expires: Instant = Today.instant().plus(Duration.ofDays(20))) =
         ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://share.example/s/Ab3dEfGh5JkLmNoPqRsTuv", "token", expires, "민지", ttl, from)
 
     @Before fun setUp() {
@@ -60,7 +61,7 @@ class ShareSyncTest {
         runBlocking {
             c.scheduleRepository.ensureDefaults()
             val day = c.scheduleRepository.shiftTypes.first().first { !it.isOff }.id
-            c.scheduleRepository.setOverride(LocalDate.now().plusDays(1), ShiftOverride.Shift(day))
+            c.scheduleRepository.setOverride(Today.date().plusDays(1), ShiftOverride.Shift(day))
         }
     }
 
@@ -78,13 +79,13 @@ class ShareSyncTest {
         assertEquals(1, api.sent.size)
 
         val night = c.scheduleRepository.shiftTypes.first().last { !it.isOff }.id
-        c.scheduleRepository.setOverride(LocalDate.now().plusDays(2), ShiftOverride.Shift(night))
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(night))
         assertEquals(ShareSync.Result.Sent, sync.sync())
         assertEquals(2, api.sent.size)
 
         // Turned off, the link waits for the sharer.
         c.shareLinks.auto = false
-        c.scheduleRepository.setOverride(LocalDate.now().plusDays(3), ShiftOverride.Off)
+        c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Off)
         assertEquals(ShareSync.Result.Same, sync.sync())
         assertEquals(2, api.sent.size)
     }
@@ -95,7 +96,7 @@ class ShareSyncTest {
         val repo = c.calendars.repository(id)
         repo.ensureDefaults()
         val day = repo.shiftTypes.first().first { !it.isOff }.id
-        repo.setOverride(LocalDate.now().plusDays(5), ShiftOverride.Shift(day))
+        repo.setOverride(Today.date().plusDays(5), ShiftOverride.Shift(day))
         val links = c.shareLinksOf(id)
         links.saveOptions(ShareOptions(pay = true))
         c.calendars.pay(id).save(com.bamnat.app.ui.pay.PayViewModel(c, id).sampleProfile(), keepUndo = false)
@@ -106,7 +107,7 @@ class ShareSyncTest {
         assertEquals(ShareSync.Result.Sent, sync.sync(id))
         val sent = api.sent.single()
         val dates = (0 until sent.getJSONArray("days").length()).map { sent.getJSONArray("days").getJSONObject(it).getString("date") }
-        assertEquals(listOf(LocalDate.now().plusDays(5).toString()), dates)
+        assertEquals(listOf(Today.date().plusDays(5).toString()), dates)
         // Its own pay estimate goes with it; the main calendar has none set up.
         assertTrue(sent.getJSONArray("pay").length() > 0)
         assertNull(c.payStore.profile.value)
@@ -124,7 +125,7 @@ class ShareSyncTest {
         assertEquals(ShareSync.Result.Sent, ShareSync(c).extend())
         assertEquals(90, api.sent.single().getInt("ttlDays"))
         val after = c.shareLinks.link.value!!
-        assertTrue(after.expiresAt.isAfter(Instant.now().plus(Duration.ofDays(89))))
+        assertTrue(after.expiresAt.isAfter(Today.instant().plus(Duration.ofDays(89))))
         assertNull("the next period gets its own notice", c.shareLinks.noticedFor)
     }
 

@@ -1,0 +1,99 @@
+{
+  "about": "2.0.0 [RVR-38] 검토 I60c-01: 날짜가 걸린 약속을 한 장부로. 날짜는 여기 적지 않고 코드·자료의 그 줄(from)에서 읽어요(코드가 정본, 두 곳을 맞출 일이 없어요). 날짜 없이 정한 일(사람이 정한 날)만 date를 적어요. python3 tools/dates_ledger.py check|list|json|shifts. 줄마다 what(그날 무엇이 바뀌나), before(그 전에 할 일), area(앱·서버·웹·사람).",
+  "dates": [
+    {
+      "id": "policy-launch-held",
+      "what": "처리방침 3.2~3.8이 약속한 가장 늦은 시행일: 동의 카드에 답하지 않은 옛 테스터 폰도 출시 전 기능이 켜져요",
+      "area": "앱",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val HELD_UNTIL: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "관리자 앱 › 기능 관리 › 일정 › 처리방침 일정이 이 날보다 늦지 않은지 봐요."
+    },
+    {
+      "id": "policy-3.11-held",
+      "what": "처리방침 3.11(근무표 링크 테마·팀·가게 링크 등) 동의하지 않은 옛 폰도 시행",
+      "area": "앱",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val SHARE_LOOK_HELD_UNTIL: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "이날 켜지는 기능의 서버 고침은 그 전에 배포해요(1-000 '12-07·12-09')."
+    },
+    {
+      "id": "policy-3.12-held",
+      "what": "처리방침 3.12(광장 근무 태그·보완 요청 등) 동의하지 않은 옛 폰도 시행",
+      "area": "앱·서버",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val SHARE_PEOPLE_HELD_UNTIL: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "3.12 동의 카드(POLC-01)가 2.0.0에 들어갔는지, 이날 켜지는 서버 고침이 배포됐는지 봐요."
+    },
+    {
+      "id": "care-from",
+      "what": "마을 돌봄(경고·쉬기)이 모든 이용자에게 켜져요(처리방침 9항·광장 운영 규칙 약속)",
+      "area": "앱·서버",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/flags/FlagCatalog.kt", "re": "val CARE_FROM: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "관리자 앱 마을 돌봄 화면과 신고 처리 흐름을 실서버에서 한 번 둘러봐요."
+    },
+    {
+      "id": "policy-3.13-posted",
+      "what": "처리방침 3.13·이용약관 1.4 게시일(앱 공지와 페이지로 알림)",
+      "area": "사람·웹",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)"},
+      "before": "날을 옮기면 python3 tools/legal_dates.py <게시일>로 코드·페이지를 함께 고쳐요."
+    },
+    {
+      "id": "policy-3.13-p7",
+      "what": "처리방침 3.13 7일 줄 시행(체험 3일 전 알림, 생체 인증 설명, 장터 카드 글꼴 등)",
+      "area": "앱·서버",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "plus_days": 7},
+      "before": "장터 카드 글꼴(갈래 M)이 이날 전에는 받지 않는지 봐요."
+    },
+    {
+      "id": "policy-3.13-p30",
+      "what": "처리방침 3.13 30일 줄·이용약관 1.4 시행(보상 확인 뒤 지급·12개월 상한, 사용 통계 4가지)",
+      "area": "앱·서버·사람",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/ops/PolicyConsent.kt", "re": "val REVISION_POSTED: LocalDate = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "plus_days": 30},
+      "before": "관리자 앱 › 처리방침 일정의 3.13 시행일이 이 날과 같은지 봐요."
+    },
+    {
+      "id": "train-start",
+      "what": "정기 출시 열차 첫 출발(그 뒤 7일마다, 관리자 앱 › 자동 순환 › 정기 출시에서 바꿈)",
+      "area": "사람·서버",
+      "from": {"file": "server/company-worker/src/loop.js", "re": "loop_train\", \\{ start: \"(\\d{4}-\\d{2}-\\d{2})\""},
+      "before": "출발 2일 전 '출시 준비 시작' 예약이 그 판의 PC 확인·남은 일을 모아요."
+    },
+    {
+      "id": "year-end-review",
+      "what": "연말 결산(한 해 돌아보기·새해 준비)",
+      "area": "사람",
+      "date": "2026-12-20",
+      "source": "CLAUDE.md 1-000 '12-20 연말 결산'",
+      "before": "새해 값(최저임금·요율·공휴일)이 앱·웹·서버에 다 들어갔는지 아래 줄로 봐요."
+    },
+    {
+      "id": "rates-next-year",
+      "what": "새해 요율이 앱에서 바뀌어요(최저시급·국민연금·건강·장기요양, 웹 계산기와 길잡이 글의 '올해' 숫자도)",
+      "area": "앱·웹",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/pay/Rates.kt", "re": "effectiveFrom = LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "pick": "last"},
+      "before": "이날이 지나면 그다음 해 요율이 비어요: 다음 해 최저임금 고시(8월 5일까지)와 요율 결정이 나오면 Rates.kt와 remote/v1/rates.json에 넣어요.",
+      "next": {"plus_years": 1, "what": "그해 요율 줄이 아직 없어요(앞 해 요율로 셈해요)", "warn_days": 120}
+    },
+    {
+      "id": "pension-base-next",
+      "what": "국민연금 기준소득월액 상·하한이 7월에 바뀌어요",
+      "area": "앱",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/pay/Rates.kt", "re": "PensionBase\\(LocalDate\\.of\\((\\d{4}), (\\d{1,2}), (\\d{1,2})\\)", "pick": "last", "plus_years": 1},
+      "before": "국민연금공단 고시(보통 3월)가 나오면 Rates.kt builtInBases와 rates.json pensionBases에 다음 줄을 넣어요."
+    },
+    {
+      "id": "holidays-end",
+      "what": "앱에 든 공휴일 표의 마지막 날(그 뒤 해는 규칙으로 셈해 임시공휴일·선거일이 빠질 수 있어요)",
+      "area": "앱·웹",
+      "from": {"file": "core/src/main/kotlin/com/bamnat/core/holiday/KoreanHolidays.kt", "re": "builtInYears: IntRange = \\d{4}\\.\\.(\\d{4})", "md": "12-31"},
+      "before": "다음 해 월력요항(한국천문연구원, 보통 6월)이 나오면 remote/v1/holidays.json에 그해를 더해요(웹 공휴일 쪽도 같은 자료).",
+      "next": {"what": "앱에 든 공휴일 표가 끝나요(그 해는 규칙으로만 셈해 임시공휴일·선거일이 빠질 수 있어요)", "warn_days": 180}
+    },
+    {
+      "id": "crypto-tax",
+      "what": "가상자산 과세 시행 예정(투자 유형 세금 셈, 확인 필요)",
+      "area": "앱",
+      "from": {"file": "../remote/v1/taxes.json", "re": "\"cryptoFromYear\": ?(\\d{4})", "md": "01-01"},
+      "before": "시행이 또 미뤄지면(법 개정) taxes.json의 cryptoFromYear를 옮겨요."
+    }
+  ]
+}

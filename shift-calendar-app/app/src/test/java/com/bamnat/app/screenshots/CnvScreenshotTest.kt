@@ -22,10 +22,10 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("카드 배치", exact = true)
         tapText("255h", exact = true)
         // [EASE-01] 1.38: 요약 starts under the month, so its bar offers to take it up.
-        assertTrue("the card's bar", appears("달력 위로 올리기", exact = true))
+        assertTrue("the card's bar", appears("달력 위로", exact = true))
         tapText("고르기 끝", exact = true)
         assertTrue("let go", appears("화면: 달력 ▾", exact = true))
-        assertTrue(gone("달력 위로 올리기", exact = true))
+        assertTrue(gone("달력 위로", exact = true))
     } }
 
     /** PC 확인 1.37 A1: 요약을 달력 아래로 보냈다 올리면 하루 카드가 말없이 숨겨졌어요. */
@@ -35,8 +35,8 @@ class CnvScreenshotTest : ScreenshotBase() {
         val chips = listOf("＋ 카드 넣기") + (1..5).map { "＋ 카드 넣기 $it" }
         val before = chips.firstOrNull { shows(it, exact = true) }
         tapText("255h", exact = true)
-        tapText("달력 위로 올리기", exact = true)
-        tapText("달력 아래로 보내기", exact = true)
+        tapText("달력 위로", exact = true)
+        tapText("달력 아래로", exact = true)
         tapText("고르기 끝", exact = true)
         assertTrue("화면: 달력 ▾ again", appears("화면: 달력 ▾", exact = true))
         org.junit.Assert.assertEquals("no card hidden by the move", before, chips.firstOrNull { shows(it, exact = true) })

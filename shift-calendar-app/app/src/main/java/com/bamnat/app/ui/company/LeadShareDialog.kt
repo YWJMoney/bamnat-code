@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -29,6 +30,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.LeadShare
 import com.bamnat.app.company.LeadShare.Step
 
@@ -46,12 +48,16 @@ fun LeadShareHost(c: AppContainer, onOpen: (String) -> Unit) {
 @Composable
 fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
     val company = step.pick.company
+    // 2.0.0 [RVN-18] 검토 T10a-04: an 알바's coworkers are at the same 가게.
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val place = remember(step.pick.cal) { com.bamnat.app.ui.pay.workplaceWord(c.calendars.styleOf(step.pick.cal, c.settingsRepository.current.workStyle)) }
     var site by rememberSaveable(step.pick) { mutableStateOf("") }
     val open = { id: String? -> lead.close(); id?.let(onOpen) }
     AlertDialog(
         // [SETUP-16] 1.37 PC 122d18a0·b98f9d1e (뒤로 닫으면 무엇을 고른 건지 몰라요; 알림은 바로 뜨는 급여 시트에 가려요): the question is
         // answered with one of its two buttons ('내 달력에만 쓸게요' is the visible way out); back and a tap outside leave it open.
-        onDismissRequest = { if (step !is Step.Ask && step !is Step.Working) lead.close() },
+        // 2.0.0 [RVN-18] COMP-22-4 while sending, back lets it go on behind (뒤에서 계속하기) rather than holding the user.
+        onDismissRequest = { if (step is Step.Working) lead.later() else if (step !is Step.Ask) lead.close() },
         title = {
             Text(
                 when (step) {
@@ -75,7 +81,7 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요.",
                             style = MaterialTheme.typography.bodyMedium)
                         // 2.0.0 [RVN-11] COMP-44 What the yes goes on doing, in the words it is given for: the cycle only.
-                        Text("앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 계산 방식은 그때마다 따로 물어요. 설정 › 개인정보·앱 정보에서 바꿀 수 있어요.",
+                        Text("앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 계산 방식은 그때마다 따로 물어요. ${settingsWay("plaza.autoShare", c.settingsRepository.current.workStyle)}에서 바꿀 수 있어요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is Step.Working -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -83,7 +89,7 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         Text("‘$company’ 광장에 보내고 있어요")
                     }
                     is Step.Made -> {
-                        Text(if (step.pick.firstGiven) "같은 회사 분이 회사 찾기에서 ‘${step.name}’을 찾으면 지금 바로 맨 위에서 쓸 수 있어요. 맞아요가 쌓이면 더 믿을 수 있게 돼요."
+                        Text(if (step.pick.firstGiven) "같은 $place 분이 회사 찾기에서 ‘${step.name}’을 찾으면 지금 바로 맨 위에서 쓸 수 있어요. 맞아요가 쌓이면 더 믿을 수 있게 돼요."
                             else "회사 찾기에서 ‘${step.name}’을 찾는 분께 바로 맨 위에 보여요. 맞아요가 쌓이면 더 믿을 수 있게 돼요.",
                             style = MaterialTheme.typography.bodyLarge)
                         if (step.pick.firstGiven) PublicLaterLine()
@@ -125,7 +131,7 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
             when (step) {
                 // 1.38 통합 8차: a table put up from '우리 회사 근무표 올리기' may not be in the user's calendar at all.
                 is Step.Ask -> TextButton(onClick = lead::no) { Text(if (step.pick.firstGiven) "올리지 않을게요" else "내 달력에만 쓸게요") }
-                is Step.Working -> Unit
+                is Step.Working -> TextButton(onClick = lead::later) { Text("뒤에서 계속하기") }
                 is Step.NeedSite -> TextButton(onClick = lead::close) { Text("나누지 않을래요") }
                 else -> TextButton(onClick = lead::close) { Text("닫기") }
             }

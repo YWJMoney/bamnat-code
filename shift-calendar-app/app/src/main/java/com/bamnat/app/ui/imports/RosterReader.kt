@@ -26,6 +26,8 @@ data class RosterResult(
     val advice: String? = null,
     /** 2.0.0 [RVL-32] (검토 U07b-01) A reading that failed: the one thing its cause asks for (와이파이, 저장 공간, Play 서비스, 다시). */
     val fix: com.bamnat.app.pay.OcrModel.Fix? = null,
+    /** 2.0.0 [RVL-41] (검토 U07b-10) A locked PDF: its password is asked where the file was picked ([PdfPasswordDialog]). */
+    val locked: com.bamnat.app.imports.PdfLock? = null,
 )
 
 object RosterReader {
@@ -93,19 +95,50 @@ object RosterReader {
      */
     suspend fun file(
         context: Context, uri: Uri, codes: DutyCodes, near: LocalDate,
+        /** 2.0.0 [RVL-41] The password typed for a locked PDF, for this reading only. */
+        password: CharArray? = null,
         preparing: (Int?) -> Unit = {},
         progress: (Int, Int) -> Unit = { _, _ -> },
     ): RosterResult {
-        val opened = runCatching { com.bamnat.app.imports.AnyFile.open(context, uri) }
+        val opened = runCatching { com.bamnat.app.imports.AnyFile.open(context, uri, password) }
         opened.exceptionOrNull()?.let { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
             return RosterResult(emptyList(), null, RosterFrom.FILE, (e as? Sheets.SheetException)?.message ?: FILE_FAILED)
         }
         return when (val o = opened.getOrThrow()) {
             is com.bamnat.app.imports.AnyFile.Opened.Picture -> photo(context, o.uri, codes, near, preparing, progress)
-            is com.bamnat.app.imports.AnyFile.Opened.Pages -> pages(context, o.pages, codes, near, preparing, progress)
-            is com.bamnat.app.imports.AnyFile.Opened.Table -> table(o.sheets, codes, near, o.fromPdf)
+            is com.bamnat.app.imports.AnyFile.Opened.Pages -> pdfPages(context, o.pdf, codes, near, preparing, progress)
+            is com.bamnat.app.imports.AnyFile.Opened.Table -> {
+                val read = table(o.sheets, codes, near, o.fromPdf)
+                // 2.0.0 [RVL-42] (검토 SCAN-15) A PDF whose text held no roster (a table drawn as lines and letters placed one by
+                // one, a font read wrongly) is drawn and read as pictures before it says it found nothing.
+                if (read.rows.isEmpty() && read.error != PAYSLIP_HERE && o.pdf != null) {
+                    val photo = pdfPages(context, o.pdf, codes, near, preparing, progress)
+                    if (photo.rows.isNotEmpty()) return photo
+                }
+                read.copy(advice = read.advice ?: o.cut.takeIf { read.rows.isNotEmpty() })
+            }
+            is com.bamnat.app.imports.AnyFile.Opened.Locked -> RosterResult(emptyList(), null, RosterFrom.FILE,
+                if (o.lock == com.bamnat.app.imports.PdfLock.WRONG) PASSWORD_WRONG else LOCKED, locked = o.lock)
         }
+    }
+
+    const val LOCKED = "암호가 걸린 PDF예요. 암호를 넣으면 이 휴대폰 안에서 열어요."
+    const val PASSWORD_WRONG = "암호가 맞지 않아요. 다시 넣어 주세요."
+
+    /** 2.0.0 [RVL-43] (검토 SCAN-18·U07b-09) A scanned PDF drawn and read a page at a time; more pages than are read are said. */
+    private suspend fun pdfPages(
+        context: Context, pdf: com.bamnat.app.imports.AnyFile.Pdf, codes: DutyCodes, near: LocalDate,
+        preparing: (Int?) -> Unit, progress: (Int, Int) -> Unit,
+    ): RosterResult {
+        val source = try {
+            com.bamnat.app.imports.AnyFile.pages(context, pdf)
+        } catch (e: Sheets.SheetException) {
+            return RosterResult(emptyList(), null, RosterFrom.FILE, e.message ?: FILE_FAILED)
+        }
+        val cut = com.bamnat.app.imports.AnyFile.cutLine(source.total, source.count)
+        val r = pages(context, source, codes, near, preparing, progress)
+        return if (cut != null && r.rows.isNotEmpty()) r.copy(advice = listOfNotNull(r.advice, cut).joinToString(" ")) else r
     }
 
     /** [READ-30] Sheets read as a roster: the sheet that holds it, the month most of its days are in. */
@@ -133,13 +166,24 @@ object RosterReader {
     internal suspend fun pages(
         context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate,
         preparing: (Int?) -> Unit = {}, progress: (Int, Int) -> Unit,
+    ): RosterResult = pages(context, com.bamnat.app.imports.AnyFile.Drawn(pages), codes, near, preparing, progress)
+
+    /** 2.0.0 [RVL-43] (검토 SCAN-18) Each page drawn, read and let go before the next is drawn. */
+    internal suspend fun pages(
+        context: Context, source: com.bamnat.app.imports.AnyFile.PageSource, codes: DutyCodes, near: LocalDate,
+        preparing: (Int?) -> Unit = {}, progress: (Int, Int) -> Unit,
     ): RosterResult {
         val scans = mutableListOf<RosterScanner.Scan>()
         try {
-            for ((i, page) in pages.withIndex()) {
+            for (i in 0 until source.count) {
                 // 2.0.0 [RVL-32] (검토 U07b-01) Page by page: "3번 중 2번째" is the page being read.
-                progress(i + 1, pages.size)
-                scans += RosterScanner.scanPicture(context, page, codes, preparing)
+                progress(i + 1, source.count)
+                val page = source.page(i)
+                try {
+                    scans += RosterScanner.scanPicture(context, page, codes, preparing)
+                } finally {
+                    page.recycle()
+                }
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
@@ -147,8 +191,10 @@ object RosterReader {
             // 1.39.1 [R391-13] (검토 SCAN-01) A scanned PDF whose reading failed (글자 인식 준비물 not there yet, Play 서비스 old or
             // offline) closed the app: it says why, as a photo does.
             return RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.said(context, e), fix = com.bamnat.app.pay.OcrModel.fix(e))
+        } catch (e: OutOfMemoryError) {
+            return RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.said(context, e))
         } finally {
-            pages.forEach { if (!it.isRecycled) it.recycle() }
+            source.close()
         }
         val words = scans.flatMap { it.words }
         val month = DutyRoster.monthIn(words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)

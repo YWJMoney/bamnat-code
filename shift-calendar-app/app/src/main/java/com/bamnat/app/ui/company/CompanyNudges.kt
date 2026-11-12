@@ -78,7 +78,7 @@ private enum class Wrong(val label: String, val why: String, val place: FixPlace
 /** [EXTRA-06][COMM-04] What the developer gets with a way the app cannot set yet; the privacy policy says the same. */
 internal const val ASK_NOTICE =
     "앱 안 문의로 개발자에게만 가고, 모두의 문의에는 올라가지 않아요. 회사 이름과 적은 내용, 앱·기기 정보가 가요. " +
-        "기본급·이름·연락처는 적지 마세요. 답은 설정 > 도움말과 문의 > 내 문의에서 볼 수 있어요."
+        "기본급·이름·연락처는 적지 마세요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요."
 
 /**
  * [COMM-02][COMM-03] The cards around a company setup, on the pay screen and in settings: the
@@ -219,7 +219,7 @@ private fun VoteCard(a: AppliedSetup, onRight: () -> Unit, onWrong: () -> Unit, 
             Text("같은 회사 분들이 알려 준 설정이에요. 첫 명세서와 맞춰 보고 알려 주시면 더 정확해져요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilledTonalButton(onClick = onRight) { Text("맞았어요 👍") }
+                FilledTonalButton(onClick = onRight) { Text("맞아요 👍") }
                 OutlinedButton(onClick = onWrong) { Text("달라요") }
                 Spacer(Modifier.weight(1f))
                 TextButton(onClick = onLater) { Text("나중에") }
@@ -420,7 +420,7 @@ fun AskDeveloperDialog(
         title = { Text(if (sent) "보냈어요! 💌" else "회사 방식 알려 주기") },
         text = {
             if (sent) {
-                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 > 도움말과 문의 > 내 문의에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
+                Text("개발자가 직접 읽고 답을 드려요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("회사 계산 방식을 골라 담고, 담기지 않는 것만 말로 적어 주세요. 개발자가 직접 읽고 앱에 넣을 수 있는지 답을 드려요.",
@@ -486,10 +486,10 @@ fun ColumnScope.CompanySettingsRows(
                 Text("지금 쓰는 회사 설정", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(a.company + " · " + a.dept.ifEmpty { "회사 전체" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    if (a.adopted) StatusChip("대표 판${a.version?.let { " v$it" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
+                    if (a.adopted) StatusChip("대표 판${a.version?.let { " · ${it}판" } ?: ""}", Tone.GOOD) else StatusChip("확인 중", Tone.WAIT)
                 }
                 when (a.vote) {
-                    true -> Text("‘맞았어요’라고 알려 주셨어요. 고마워요!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    true -> Text("‘맞아요’라고 알려 주셨어요. 고마워요!", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     false -> Text("‘달라요’라고 알려 주셨어요. 고친 설정을 나눠 주시면 바로잡혀요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                     null -> Unit
@@ -515,7 +515,7 @@ fun ColumnScope.CompanySettingsRows(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun busySheetState(busy: Boolean): SheetState {
+internal fun busySheetState(busy: Boolean): SheetState {
     val sending by rememberUpdatedState(busy)
     return rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden || !sending })
 }

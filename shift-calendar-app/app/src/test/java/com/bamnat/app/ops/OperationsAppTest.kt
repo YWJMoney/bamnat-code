@@ -15,6 +15,7 @@ import com.bamnat.core.ops.ServerSwitch
 import com.bamnat.core.plaza.HideList
 import com.bamnat.core.stats.UsageBook
 import com.bamnat.core.stats.UsageEvent
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.json.JSONException
 import org.json.JSONObject
@@ -78,7 +79,7 @@ class OperationsAppTest {
         // written, and the preview came back empty (NPE, full run only): wait for it first.
         context.appContainer
         val zone = ZoneId.of("Asia/Seoul")
-        val today = LocalDate.now(zone).toEpochDay()
+        val today = Today.date(zone).toEpochDay()
         val prefs = context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
         prefs.edit().putString("book", UsageBook().record(UsageEvent.OPEN, today - 1).record(UsageEvent.SHARE_MADE, today - 1).encode()).commit()
         val sent = mutableListOf<JSONObject>()

@@ -57,4 +57,15 @@ class RosterPhotoPlaceTest {
         assertSame(twins[1], mineOf(twins, "최유리", 1))
         assertSame(twins[2], mineOf(twins, "", 2))
     }
+
+    /** 2.0.0 [RVL-35] (검토 HQ-80) A wide roster opens as tall as the window (to 6×); a photo that already fills it stays at 1×. */
+    @Test fun aWideRosterOpensAsTallAsTheWindow() {
+        val box = androidx.compose.ui.unit.IntSize(1000, 1400)
+        // 30 days across: 3000 × 300 is 100 px tall at the box's width, so 6× (not 14×).
+        assertEquals(6f, com.bamnat.app.ui.imports.startZoom(box, 3000, 300), 0.001f)
+        // 2000 × 700 is 350 px tall: 4×.
+        assertEquals(4f, com.bamnat.app.ui.imports.startZoom(box, 2000, 700), 0.001f)
+        assertEquals("a tall photo", 1f, com.bamnat.app.ui.imports.startZoom(box, 1000, 2000), 0.001f)
+        assertEquals("not laid out yet", 1f, com.bamnat.app.ui.imports.startZoom(androidx.compose.ui.unit.IntSize.Zero, 3000, 300), 0.001f)
+    }
 }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -79,11 +80,30 @@ fun FieldToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today:
  * [FLD-13] 일용직 세금: what the month's 일당 owe as 일용근로소득 — paid together (one 정산) and paid day by
  * day — apart from 3.3% 사업소득, with how it is worked out.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun DailyTaxCard(book: MoneyBook, month: YearMonth) {
     val m = remember(book, month) { DailyWorkerTax.month(month, book.jobs) }
-    if (m.days == 0) return
-    SectionCard(title = "일용직 세금 (${month.monthValue}월)") {
+    // 2.0.0 [PC-134] 기능 찾기 › 바로 가기 comes down to this card (it opened the top of the tab only), and when there is nothing to
+    // work out it says why in one line instead of not being there: 건별·플랫폼 일 has no 일당, so no 일용직 세금. A calendar that has
+    // never had a 공수 job keeps the tab as it was unless it came here on purpose.
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    com.bamnat.app.ui.guide.FocusedTool("dailyTax", "field.dailyTax") { asked = true }
+    androidx.compose.runtime.LaunchedEffect(asked) {
+        if (asked) { kotlinx.coroutines.delay(BRING_SETTLE_MS); runCatching { bring.bringIntoView() } }
+    }
+    val everDayRate = remember(book.jobs) { book.jobs.any { it.units != null && !it.cancelled } }
+    if (m.days == 0 && !asked && !everDayRate) return
+    val at = Modifier.bringIntoViewRequester(bring)
+    if (m.days == 0) {
+        SectionCard(title = "일용직 세금 (${month.monthValue}월)", modifier = at) {
+            Hint(if (everDayRate) "이번 달은 공수(일당)로 적은 일감이 없어 뗄 일용직 세금이 없어요."
+                else "일당(공수)으로 적은 날이 있으면 여기에 세금이 보여요. 일당으로 받으면 달력 고치기 › 세는 방식에서 바꿔요.")
+        }
+        return
+    }
+    SectionCard(title = "일용직 세금 (${month.monthValue}월)", modifier = at) {
         ValueLine("일당 ${m.days}일", Fmt.won(m.wages))
         ValueLine("한 번에 받을 때", if (m.together.total > 0) "${Fmt.won(m.together.total)} 떼요" else "안 떼요", strong = true)
         if (m.together.total > 0) Hint("소득세 ${Fmt.won(m.together.income)} + 지방소득세 ${Fmt.won(m.together.local)}")
@@ -313,3 +333,6 @@ fun TradeWageLink(onPick: (Long) -> Unit) {
     TextButton(onClick = { open = true }) { Text("공종별 평균 일당 보기 (${TradeWages.SOURCE_SHORT})") }
     if (open) TradeWageDialog(onDismiss = { open = false }) { onPick(it); open = false }
 }
+
+/** 2.0.0 [PC-134] How long the tab gets to lay out before 바로 가기 brings a card into view. */
+private const val BRING_SETTLE_MS = 300L

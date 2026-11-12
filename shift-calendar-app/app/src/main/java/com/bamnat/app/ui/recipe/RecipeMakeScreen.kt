@@ -300,7 +300,7 @@ class RecipeMakeViewModel(
 
     /** A draft or a remade recipe read as far as it goes: a piece that does not pass alone is left out. */
     @Suppress("UNCHECKED_CAST")
-    private fun lenient(body: String): Recipe? = runCatching { RecipeCodec.read(body) }.getOrNull() ?: runCatching {
+    private fun lenient(body: String): Recipe? = runCatching { RecipeCodec.readDraft(body) }.getOrNull() ?: runCatching {
         val m = com.bamnat.core.remote.Json.parse(body) as Map<String, Any?>
         val pieces = (m["pieces"] as? List<Any?>).orEmpty().mapNotNull { p ->
             runCatching {

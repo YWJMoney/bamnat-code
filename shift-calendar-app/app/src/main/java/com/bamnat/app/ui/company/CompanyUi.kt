@@ -61,7 +61,7 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "too_large" -> "설정이 너무 커서 보낼 수 없어요"
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
     // A 1.32 [FIX132-02] A vote on a version no longer open (1.31 said "인터넷에 연결되지 않았어요" for these).
-    "superseded" -> "이 설정은 새 버전으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
+    "superseded" -> "이 설정은 새 판으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
     "withdrawn" -> "올린 분이 이 설정을 내렸어요. 더 이상 알려 줄 수 없어요"
     "held" -> "이 설정은 아직 확인 중이라 알려 줄 수 없어요. 확인이 끝나면 다시 물어볼게요"
     // [SRV-04] A feature the developer paused for a while from the developer app.
@@ -75,7 +75,7 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     // 1.39 [PAYP-03][PAYP-05] A version with no pay part, 보완 요청 before 처리방침 3.12.
     "no_pay" -> "이 판에는 급여 방식이 없어요"
     "closed" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
-    "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 마을에서 쉬어 가요. 마을 맨 위에서 까닭을 볼 수 있어요"
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(null)
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     // 2.0.0 [RVN-13] 검토 COMP-52: what the server said, told as what to do. A busy server waits; a word the user can fix, or an app
@@ -84,7 +84,7 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "bad_response" -> "받은 답을 읽지 못했어요. 와이파이 로그인 화면이 떠 있다면 로그인한 뒤 다시 해 주세요"
     "own" -> "내가 올린 것에는 할 수 없어요"
     "not_yours", "forbidden" -> "이 휴대폰에서 올린 것만 바꿀 수 있어요"
-    "taken" -> "다른 분이 쓰고 있는 별명이에요. 다른 별명을 적어 주세요"
+    "taken" -> "다른 분이 쓰고 있는 마을 이름이에요. 다른 이름을 적어 주세요"
     "not_yet" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
     else -> when {
         code.startsWith("http_5") -> com.bamnat.app.ui.components.NetWords.BUSY.removeSuffix(".")
@@ -232,6 +232,6 @@ fun ReportStatus.detail(): String = when {
     status == "replaced" -> "같은 곳에 나중에 보낸 설정으로 바뀌었어요."
     reasonCode == "shape" && status == "pending" -> reason ?: "근무 모양이 이 부서 대표 판과 달라요. 개발자가 확인한 뒤 보여요."
     review -> "같은 회사 분들이 충분히 모였어요. 개발자가 확인하면 채택돼요."
-    persons <= 1 -> "같은 회사 분이 같은 설정을 보내거나 ‘맞았어요’를 누르면 점수가 쌓여요."
+    persons <= 1 -> "같은 회사 분이 같은 설정을 보내거나 ‘맞아요’를 누르면 점수가 쌓여요."
     else -> "같은 회사 ${persons}명이 모였어요. ${(threshold - points).coerceAtLeast(1)}점만 더 모이면 채택돼요."
 }

@@ -69,7 +69,7 @@ internal object MarketDisk {
                 val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
                 bmp.compress(format, QUALITY, out)
             }
-            tmp.renameTo(if (standIn) standInFile(context, key) else File(dir, name(key) + ".webp"))
+            (if (standIn) standInFile(context, key) else File(dir, name(key) + ".webp")).let { f -> tmp.renameTo(f); f.stamp() }
             if (!standIn) standInFile(context, key).delete()
             tidyNow(context)
         }
@@ -90,6 +90,7 @@ internal object MarketDisk {
                 val tmp = File(dir, f.name + ".tmp")
                 tmp.writeText(org.json.JSONObject().put("hash", hash).put("body", body).toString())
                 tmp.renameTo(f)
+                f.stamp()
                 tidyNow(context)
             }
         }
@@ -116,10 +117,16 @@ internal object MarketDisk {
             val dir = listDir(context).apply { mkdirs() }
             val tmp = File(dir, name(key) + ".tmp")
             tmp.writeText(raw)
-            tmp.renameTo(File(dir, name(key) + ".json"))
+            File(dir, name(key) + ".json").let { f -> tmp.renameTo(f); f.stamp() }
             tidyNow(context)
         }
     }
+
+    /**
+     * 2.0.0 [RVR-24] The file's time is written from Today too: its age is read with Today ([MAX_DAYS]), so a time-travel test run
+     * (only Today moves, 검토 I60b-01) sees one clock. On a phone it is the same moment the file was written.
+     */
+    private fun File.stamp() { setLastModified(com.bamnat.core.time.Today.millis()) }
 
     /** Every 20th write: old app versions' pictures, files past [MAX_DAYS], then the oldest past [MAX_BYTES]. */
     private fun tidyNow(context: Context) {

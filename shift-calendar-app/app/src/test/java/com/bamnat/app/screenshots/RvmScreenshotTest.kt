@@ -66,7 +66,12 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun work(title: String) = works.first { it.title == title }
 
     /** The 1.39 장터 as the server lists and shows it, nothing found for words no work has. */
-    private inner class Market(private val makers: List<com.bamnat.app.recipe.MakerFaceItem> = emptyList()) : RecipeApi {
+    private inner class Market(
+        private val makers: List<com.bamnat.app.recipe.MakerFaceItem> = emptyList(),
+        /** [RVM-36] What 내 프로필's inbox answers (once), and the 글 under every work. */
+        private var reactions: com.bamnat.app.recipe.ProfileInbox? = null,
+        private val posts: List<com.bamnat.app.recipe.RecipePost> = emptyList(),
+    ) : RecipeApi {
         private val codes = works.indices.associateBy { "MKT" + (10000 + it) }
         fun code(title: String) = codes.entries.first { works[it.value].title == title }.key
         private fun item(i: Int): RecipeItem = works[i].let { r ->
@@ -89,7 +94,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         override suspend fun applied(code: String, kept: Boolean) {}
         override suspend fun flag(device: String, code: String, reason: String) {}
         override suspend fun mine(device: String) = MyRecipes(0, 3, emptyList())
-        override suspend fun talk(device: String?, code: String) = RecipeTalk(emptyList(), null)
+        override suspend fun talk(device: String?, code: String) = RecipeTalk(posts, null)
+        override suspend fun inbox(device: String, since: Instant?) = reactions.also { reactions = null }
         override suspend fun talkPost(device: String, code: String, body: String, kind: String, parent: String?, usingDays: Int?) = "p1"
         override suspend fun talkVote(device: String, post: String, value: Int?, reason: String?, opinion: String?) = Votes(0, 0, value)
         override suspend fun monthMakers(style: WorkStyle?) = makers
@@ -267,6 +273,47 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
+     * 2.0.0 [RVM-37] 총괄 HQ-83 (조건 4·12): at 200% the 추천 mark beside the name cut '야간 회복 스테이션' to '야간 회복 …' (rvm_28·61).
+     * At large text 추천 goes over the picture's corner (above 프로) in the grid, and under the name in a list row, so the name has its
+     * width; at 100% it stays beside the name.
+     */
+    @Test fun theNameKeepsItsWidthAtLargeText() {
+        fun Screen.titles(): List<Pair<String, Boolean>> = nodes(merged = false).mapNotNull { n ->
+            val action = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action ?: return@mapNotNull null
+            val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            if (action(out) != true) return@mapNotNull null
+            out.firstOrNull { it.layoutInput.text.text == "야간 회복 스테이션" }?.let { it.layoutInput.text.text to it.isLineEllipsized(it.lineCount - 1) }
+        }
+        for ((name, qualifiers) in listOf("rvm_69_market_name_folded_200" to FOLDED, "rvm_70_market_name_folded_dark_200" to DARK)) {
+            shoot(name, qualifiers, 2f) {
+                market()(this)
+                val t = titles()
+                check(t.isNotEmpty()) { "이름이 안 보여요" }
+                check(t.none { it.second }) { "200%에서 이름이 잘려요: $t" }
+                check(appears("추천", exact = true)) { "추천 표시는 남아요" }
+            }
+        }
+        shoot("rvm_71_market_list_row_folded_200", FOLDED, 2f) {
+            val market = Market().also { c.recipeApi = it }
+            style(WorkStyle.SHIFT)
+            val item = runBlocking { market.list(WorkStyle.SHIFT, "", "야간 회복", 0, null).items.first() }
+            content { Surface { Column(Modifier.padding(16.dp)) { com.bamnat.app.ui.recipe.RecipeRow(item, onClick = {}) } } }
+            settle()
+            check(titles().none { it.second }) { "목록 줄에서도 이름이 잘려요: ${titles()}" }
+            check(appears("추천", exact = true))
+        }
+        shoot("rvm_72_market_name_folded", FOLDED) {
+            market()(this)
+            // At 100% 추천 stays beside the name, on its line.
+            fun text(n: androidx.compose.ui.semantics.SemanticsNode) = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString()
+            val all = nodes(merged = false)
+            val title = all.first { text(it) == "야간 회복 스테이션" }.boundsInWindow
+            check(all.any { n -> text(n) == "추천" && n.boundsInWindow.left >= title.right - 1f &&
+                kotlin.math.abs(n.boundsInWindow.center.y - title.center.y) < title.height }) { "100%에서는 이름 옆" }
+        }
+    }
+
+    /**
      * 2.0.0 [RVM-35] 총괄 HQ-66 (갈래 H PC-88과 같은 구조): 크게 넘겨 보기에서 빠르게 세 번 밀면 세 작품을 넘겨요. 페이저 그대로는 넘기는 중에
      * 민 것을 손가락 밑 작품부터 세어, 이미 가고 있는 작품에 다시 내려앉았어요. 달력과 같은 [com.bamnat.app.ui.calendar.queuedTurns]를 써요.
      * 되돌아 두 번이면 두 작품 앞으로, 멈춘 뒤 한 번은 한 작품, '다음 ▶'을 빠르게 두 번 누르면 두 작품이에요.
@@ -301,6 +348,85 @@ class RvmScreenshotTest : ScreenshotBase() {
         compose.mainClock.autoAdvance = true
         settle(); settle()
         org.junit.Assert.assertEquals("'다음 ▶' 빠르게 두 번이면 두 작품", 4, at)
+    }
+
+    /**
+     * 2.0.0 [RVM-36] 총괄 HQ-52 (사용자 11-12 20:40 KST '자신이 만든 제작물 … 댓글 및 좋아요 … 모든 알림이 알림함으로'): what people did
+     * with my works, in the 알림함 under 사람들 반응, one row a work in P's shape; the review's decision under 안내. Light·dark × 100%·200% ×
+     * 접은·편 폭. The rows come in the way the app puts them, from 내 프로필's inbox when the app comes to the front.
+     */
+    @Test fun myWorksReactionsAreInTheInbox() {
+        val looks = listOf(
+            Triple("rvm_64_inbox_reactions_folded", FOLDED, 1f), Triple("rvm_65_inbox_reactions_folded_dark_200", DARK, 2f),
+            Triple("rvm_66_inbox_reactions_unfolded_200", UNFOLDED, 2f), Triple("rvm_67_inbox_reactions_unfolded_dark", UNFOLDED_DARK, 1f),
+        )
+        for ((name, q, scale) in looks) shoot(name, q, scale) {
+            val now = com.bamnat.core.time.Today.millis()
+            fun ago(min: Long) = Instant.ofEpochMilli(now - min * 60_000)
+            Market(reactions = com.bamnat.app.recipe.ProfileInbox("m1", 2, emptyList(), emptyList(), listOf(Triple("NIGHT2345", "야간 회복 스테이션 짧은판", "야간 회복 스테이션")),
+                emptyList(), emptyList(), at = Instant.ofEpochMilli(now),
+                likes = listOf(com.bamnat.app.recipe.ProfileInbox.Reaction("like", "NIGHT1234", "야간 회복 스테이션", 5, ago(12)),
+                    com.bamnat.app.recipe.ProfileInbox.Reaction("like", "DEEP1234", "딥워크 데스크", 2, ago(90))),
+                talk = listOf(com.bamnat.app.recipe.ProfileInbox.Reaction("question", "NIGHT1234", "야간 회복 스테이션", 1, ago(4), post = "p1",
+                    body = "야간 근무 날에도 알람이 같이 바뀌나요? 궁금해서 여쭤봐요"),
+                    com.bamnat.app.recipe.ProfileInbox.Reaction("review", "STAR1234", "별빛 수첩", 1, ago(40), post = "p2",
+                        body = "주말 근무 표시가 한눈에 보여서 좋아요")),
+                uses = listOf(com.bamnat.app.recipe.ProfileInbox.Reaction("use", "NIGHT1234", "야간 회복 스테이션", 3, ago(60), total = 214)),
+                decided = listOf(com.bamnat.app.recipe.ProfileInbox.Reaction("decided", "SPRING234", "봄 산책", 1, ago(30), state = "returned",
+                    note = "표지 사진의 글자를 지워 주세요")),
+            )).also { c.recipeApi = it }
+            style(WorkStyle.SHIFT)
+            settle()
+            // Each look starts as a phone that has seen none of it (one app for the four looks).
+            com.bamnat.app.inbox.Inbox.get(app).clearAll()
+            app.getSharedPreferences(com.bamnat.app.recipe.RecipeRepository.PREFS, 0).edit()
+                .remove("react_since").remove("react_tally").remove("react_totals").remove("react_told").remove("react_followers").commit()
+            // A phone that has put a work up: what came since goes in when the app comes to the front.
+            c.recipes.hasProfile(true)
+            val put = runBlocking { c.recipes.reactions(now + com.bamnat.app.recipe.RecipeRepository.REACT_EVERY_MS + 1) }
+            settle()
+            val rows = com.bamnat.app.inbox.Inbox.get(app).rows.value
+            check(rows.size == 6) { "알림함 줄 여섯: put=$put ${rows.map { it.key + "=" + it.line }}" }
+            settle()
+            tapText("알림 ", prefix = true, scrolls = 0)
+            settle()
+            check(appears("사람들 반응", exact = true)) { "알림함이 열려요" }
+            check(rows.any { it.line == "질문 1개 · 좋아요 5개 · 새로 넣은 분 3명" }) { "한 작품이 한 줄: ${rows.map { it.line }}" }
+            check(appears("내 작품 ‘야간 회복 스테이션’")) { "사람들 반응에 내 작품 줄" }
+            check(scrolledTo("돌려 드렸어요: 표지 사진의 글자를 지워 주세요")) { "심사 결과는 안내에" }
+            // Back to the top of the 알림함 for the picture (사람들 반응 first).
+            scrolledTo("사람들 반응")
+        }
+    }
+
+    /** [RVM-36] HQ-52 '그 작품의 그 자리로': the row that says a 질문 came opens the work with 이야기 at the top. */
+    @Test fun aTalkRowOpensTheWorkAtItsTalk() = shoot("rvm_68_detail_at_talk_folded", FOLDED) {
+        val market = Market(posts = listOf(com.bamnat.app.recipe.RecipePost("p1", 2, "새벽별", "야간 근무 날에도 알람이 같이 바뀌나요? 궁금해서 여쭤봐요",
+            Instant.parse("2026-11-12T11:56:00Z"), "question", null, mine = false, maker = false, usingDays = 3, likes = 0, dislikes = 0)))
+        c.recipeApi = market
+        style(WorkStyle.SHIFT)
+        val code = market.code("야간 회복 스테이션")
+        val (opened, talk) = com.bamnat.app.recipe.MakerReactions.opened(code + com.bamnat.app.recipe.MakerReactions.TALK)!!
+        check(talk)
+        com.bamnat.app.recipe.RecipeLinks.talkFocus = opened
+        RecipeDetailViewModel.talkOpen = { true }
+        try {
+            val vm = RecipeDetailViewModel(c, opened, PersonalCalendar.MAIN)
+            content { RecipeDetailScreen(vm, onBack = {}, onRemake = {}) }
+            settle(); settle()
+            atTalk()
+        } finally {
+            RecipeDetailViewModel.talkOpen = null
+        }
+    }
+
+    private fun Screen.atTalk() {
+        val head = nodes().first { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Heading) != null &&
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString() == "이야기" }
+        val height = app.resources.displayMetrics.heightPixels.toFloat()
+        // At the top, or as high as the page goes (이야기 is its last part).
+        check(head.boundsInWindow.top in 0f..height * 0.5f) { "이야기가 화면에: ${head.boundsInWindow.top} / $height" }
+        check(appears("야간 근무 날에도 알람이 같이 바뀌나요?")) { "그 질문이 보여요" }
     }
 
     private val cardWords = setOf("테마 보기", "작품 보기", "도구 보기")

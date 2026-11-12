@@ -34,6 +34,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -845,15 +846,23 @@ internal fun LabeledSlider(
     fun nudge(by: Int) { moved = true; v = ((Math.round(v / step) + by) * step).toFloat().coerceIn(range) }
     Column {
         // [BLU-06] 1.36 −/+ for a value hard to hit with a finger on the slider (PC 1차 사용성 제안 '둥글기 −/+').
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // [RVP-62] (검토 U14-06) The range in small letters after the value ("0~16"), so the end is no surprise.
-            Text(androidx.compose.ui.text.buildAnnotatedString {
-                // 총괄 #464 사진 검토: '진하기 · 처음대로'는 지금 몇인지 몰라요 → the number stays, the note after it.
-                append(if (showUnset && "지금" in unset!!) "$label · $unset" else if (showUnset) "$label ${v.toInt()}$unit · $unset" else "$label ${v.toInt()}$unit")
-                withStyle(androidx.compose.ui.text.SpanStyle(fontSize = MaterialTheme.typography.labelSmall.fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant)) {
-                    append("  ${range.start.toInt()}~${range.endInclusive.toInt()}")
-                }
-            }, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        // 2.0.0 [RVS-16] (총괄 #495, 조건 12) The name and number have their own line when big text leaves them too little beside −/+.
+        com.bamnat.app.ui.components.NameLine(
+            name = {
+                // [RVP-62] (검토 U14-06) The range in small letters after the value ("0~16"), so the end is no surprise.
+                Text(androidx.compose.ui.text.buildAnnotatedString {
+                    // 총괄 #464 사진 검토: '진하기 · 처음대로'는 지금 몇인지 몰라요 → the number stays, the note after it.
+                    append(if (showUnset && "지금" in unset!!) "$label · $unset" else if (showUnset) "$label ${v.toInt()}$unit · $unset" else "$label ${v.toInt()}$unit")
+                    withStyle(androidx.compose.ui.text.SpanStyle(fontSize = MaterialTheme.typography.labelSmall.fontSize, color = MaterialTheme.colorScheme.onSurfaceVariant)) {
+                        append("  ${range.start.toInt()}~${range.endInclusive.toInt()}")
+                    }
+                }, style = MaterialTheme.typography.bodyMedium)
+            },
+            widest = {
+                if (onReset != null) TextButton(onClick = {}) { Text("처음대로") }
+                androidx.compose.foundation.layout.Spacer(Modifier.size(96.dp, 48.dp))
+            },
+        ) {
             if (onReset != null && !showUnset) TextButton(onClick = onReset) { Text("처음대로") }
             StepButton("−", "$label ${step}씩 줄이기", v > range.start, { nudge(-1) }) { onDone(v) }
             StepButton("+", "$label ${step}씩 늘리기", v < range.endInclusive, { nudge(1) }) { onDone(v) }
@@ -940,9 +949,17 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
     fun pick(c: Long?) { c?.let(memory.used); onPick(c) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // PC 확인 1.37 A10 (색을 처음 고르면 머리줄에 ‘☆ 내 색에’가 생겨 색 줄이 밀림): the line keeps one height, with or without its buttons.
-        Row(Modifier.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVS-16] (총괄 #495, 조건 12) With big text on a narrow phone the name has its own line (it stood as '바 / 탕 / 색'), laid out
+        // for the buttons a chosen colour brings so the first pick moves nothing.
+        com.bamnat.app.ui.components.NameLine(
             // PC 확인 1.36 (색·배경의 바탕색 줄에 이름표가 안 보임): the colour's name as a heading, like 배경 사진 above the rows.
-            Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+            name = { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) },
+            widest = {
+                Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium)
+                if (memory.pin != null) TextButton(onClick = {}) { Text("☆ 내 색에") }
+                if (allowNone) TextButton(onClick = {}) { Text("처음대로") }
+            },
+        ) {
             Text(value?.let { colorName(it) } ?: "처음대로", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             // [STU-40] ★ keeps this colour in 내 색 (or lets it go).
             if (value != null && memory.pin != null) TextButton(onClick = { memory.pin.invoke(value) }) {
@@ -968,11 +985,24 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         // [CNV-13] 펼쳐 보기: the colours all at once (kept open for every 색 고르기 once opened), or the two rows that slide.
         val (allOut, setAllOut) = com.bamnat.app.ui.components.rememberFold("color.swatches")
         // PC 제안 1.36: on a new phone, where the colours used will gather.
+        // 2.0.0 [RVS-16] (총괄 #495, 조건 4·12: 두 줄 설명이 큰 글자에서 잘렸어요) One short line and ⓘ; the whole sentence under it on a tap.
+        val hint = recent.isEmpty() && memory.pin != null
+        var why by rememberSaveable(label) { mutableStateOf(false) }
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(if (recent.isEmpty() && memory.pin != null) "쓴 색과 ★ 내 색은 줄 맨 앞에 모여요" else "", style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                if (hint) {
+                    Text("쓴 색이 앞에 모여요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    androidx.compose.material3.IconButton(onClick = { why = !why }) {
+                        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Outlined.Info, if (why) "설명 접기" else "설명 보기",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
             com.bamnat.app.ui.components.FoldButton(if (allOut) "접기 ▴" else "모두 펼치기 ▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
         }
+        if (hint && why) Text("고른 색과 ★ 내 색에 넣은 색은 다음부터 이 줄 맨 앞에 모여요. ★는 색을 고른 뒤 위 ‘☆ 내 색에’로 넣어요",
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
         if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {
             Box(

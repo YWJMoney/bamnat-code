@@ -116,11 +116,14 @@ class MKVScreenshotTest : ScreenshotBase() {
 
     @Test fun themesShowTheirCalendar() = market(RecipeClient.SCOPE_THEME, "1375_mkv_themes")
     @Test fun tabsShowTheirPage() = market(RecipeClient.SCOPE_TAB, "1376_mkv_tabs")
-    /** PC 확인 7b219467 MED-1: a work from a newer app (a kind of piece this app does not know) is still drawn with what it knows. */
+    /**
+     * PC 확인 7b219467 MED-1: a work from a newer app (a kind of piece this app does not know) is still drawn with what it knows
+     * (2.0.0 [RVS-05]: the market's pictures read it with RecipeCodec.readSoft, which took the place of MarketShots.known).
+     */
     @Test fun aNewerWorkIsDrawnWithThePiecesThisAppKnows() {
         val body = org.json.JSONObject(RecipeCodec.write(Market().recipes.first { r -> r.pieces.any { it.kind == PieceKind.SCREEN_LOOK } }))
         body.getJSONArray("pieces").put(org.json.JSONObject().put("kind", "ledgerFromTheFuture").put("costs", org.json.JSONArray().put("식비")))
-        val r = com.bamnat.app.ui.recipe.MarketShots.known(body.toString())
+        val r = RecipeCodec.readSoft(body.toString()).recipe
         assertTrue("아는 조각만으로 그려요", r != null && r.pieces.isNotEmpty() && r.pieces.none { it.kind.key == "ledgerFromTheFuture" })
     }
 
