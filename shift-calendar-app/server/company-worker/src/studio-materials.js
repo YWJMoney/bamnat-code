@@ -80,7 +80,8 @@ export async function materialAdmin(d, request, env, path, url, now) {
     const body = await d.readJson(request, 6 * 1024 * 1024);
     const items = Array.isArray(body?.items) ? body.items : null;
     if (!items || items.length === 0 || items.length > MATERIAL_LIMITS.batch) return d.json({ error: "items" }, 400);
-    const done = [];
+    // 2.0.0 [RVN-15] 검토 SVC-99: 모두 검사한 뒤 한 번에 넣어요(중간에 틀린 줄이 있으면 앞 줄만 들어가 묶음이 반쪽이 되던 것).
+    const rows = [];
     for (const [i, it] of items.entries()) {
       const kind = MATERIAL_KINDS.includes(it?.kind) ? it.kind : null;
       const pack = smText(it?.pack, MATERIAL_LIMITS.pack);
@@ -98,14 +99,16 @@ export async function materialAdmin(d, request, env, path, url, now) {
       const minApp = Number.isInteger(it.minApp) && it.minApp > 0 ? it.minApp : null;
       const ord = Number.isInteger(it.ord) ? it.ord : 0;
       // 같은 그림을 다시 넣으면 이름·묶음·순서만 바뀌고 공개 상태는 그대로예요.
-      await d.run(env, `INSERT INTO studio_materials (id, kind, pack, name, ord, thumb, w, h, light, free, state, min_app, at)
+      rows.push({ pack, stmt: d.stmt(env, `INSERT INTO studio_materials (id, kind, pack, name, ord, thumb, w, h, light, free, state, min_app, at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?, ?)
         ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, pack = excluded.pack, name = excluded.name, ord = excluded.ord,
           thumb = excluded.thumb, light = excluded.light, free = excluded.free, min_app = excluded.min_app`,
-        img.id, kind, pack, name, ord, thumb, img.w, img.h, light, it.free === false ? 0 : 1, minApp, now);
-      done.push(img.id);
+        img.id, kind, pack, name, ord, thumb, img.w, img.h, light, it.free === false ? 0 : 1, minApp, now), id: img.id });
     }
-    return d.json({ ids: done }, 201);
+    await d.batch(env, rows.map((r) => r.stmt));
+    const packs = [...new Set(rows.map((r) => r.pack))];
+    await d.audit?.(env, now, "material_add", packs.join(", ").slice(0, 80), `${rows.length}개 · 출시 대기`);
+    return d.json({ ids: rows.map((r) => r.id) }, 201);
   }
   // 1.38 [STM-10] 무료·광고 나누기: 묶음마다 all(모두 무료)·none(모두 광고·프로)·third(앞쪽 3분의 1만 무료, 나머지 광고·프로).
   if (path === "/recipes/materials/free" && method === "POST") {
@@ -118,6 +121,7 @@ export async function materialAdmin(d, request, env, path, url, now) {
     if (rows.length) {
       await d.batch(env, rows.map((r, i) => d.stmt(env, "UPDATE studio_materials SET free = ? WHERE id = ?", i < cut ? 1 : 0, r.id)));
     }
+    await d.audit?.(env, now, "material_free", pack.trim(), `무료 ${cut} · 광고·프로 ${rows.length - cut}`);
     return d.json({ pack: pack.trim(), free: cut, paid: rows.length - cut });
   }
   if (path === "/recipes/materials/state" && method === "POST") {
@@ -125,12 +129,23 @@ export async function materialAdmin(d, request, env, path, url, now) {
     const state = MATERIAL_STATES.includes(body?.state) ? body.state : null;
     if (!state) return d.json({ error: "state" }, 400);
     let res;
-    if (body.all === true) res = await d.run(env, "UPDATE studio_materials SET state = ?", state);
-    else if (smText(body.pack, MATERIAL_LIMITS.pack)) res = await d.run(env, "UPDATE studio_materials SET state = ? WHERE pack = ?", state, body.pack.trim());
-    else if (Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 300 && body.ids.every((x) => SM_ID.test(x))) {
+    let which = "";
+    // 2.0.0 [RVN-15] 검토 SVC-99: '모두'는 출시 대기 → 공개만이에요(숨긴 것까지 되살리거나 모두 숨기던 것). 숨기기는 묶음·번호로.
+    if (body.all === true) {
+      if (state !== "ok") return d.json({ error: "which" }, 400);
+      res = await d.run(env, "UPDATE studio_materials SET state = 'ok' WHERE state = 'waiting'");
+      which = "출시 대기 모두";
+    }
+    else if (smText(body.pack, MATERIAL_LIMITS.pack)) {
+      res = await d.run(env, "UPDATE studio_materials SET state = ? WHERE pack = ?", state, body.pack.trim());
+      which = body.pack.trim();
+    } else if (Array.isArray(body.ids) && body.ids.length > 0 && body.ids.length <= 300 && body.ids.every((x) => SM_ID.test(x))) {
       res = await d.run(env, `UPDATE studio_materials SET state = ? WHERE id IN (${body.ids.map(() => "?").join(",")})`, state, ...body.ids);
+      which = `재료 ${body.ids.length}개`;
     } else return d.json({ error: "which" }, 400);
-    return d.json({ state, changed: res?.meta?.changes ?? null });
+    const changed = res?.meta?.changes ?? null;
+    await d.audit?.(env, now, "material_state", which.slice(0, 80), `${{ waiting: "출시 대기", ok: "공개", hidden: "숨김" }[state]}${changed === null ? "" : ` · ${changed}개`}`);
+    return d.json({ state, changed });
   }
   return null;
 }
