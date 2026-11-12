@@ -22,6 +22,8 @@ import java.net.URL
 import java.net.URLDecoder
 import java.time.Clock
 import java.time.Duration
+import java.time.LocalDate
+import java.time.ZoneOffset
 import java.util.concurrent.TimeUnit
 
 /**
@@ -53,7 +55,13 @@ class InviteAppTest {
         // The developer app's 설정 › 친구 초대, applied by the server and read by the app before anything is sent.
         setRules(url, """{"friends":2,"days":7}""")
         inviter.refresh()
-        // 2.0.0 [RVD-15] The server says the year's cap: 12 months of rewards, all kinds together.
+        // 2.0.0 [RVD-21] Until 처리방침 3.13 is in the calendar the year's cap is not in force (약관 1.3·처리방침 3.12 promise none),
+        // and the server says so: 0, which the card words as '상한 없음'.
+        assertEquals(InviteTerms(need = 2, days = 7, months = 1, capMonths = 0), inviter.store.current.rules)
+        // The owner saves 3.13 in 기능 관리 › 일정 as posted a month and a half back, so its 30-day date has passed.
+        // [RVD-15] Now the server says the year's cap: 12 months of rewards, all kinds together.
+        setPolicy(url, "3.13", posted = LocalDate.now(ZoneOffset.UTC).minusDays(45).toString())
+        inviter.refresh()
         assertEquals(InviteTerms(need = 2, days = 7, months = 1, capMonths = 12), inviter.store.current.rules)
         val made = inviter.makeLink()
         val code = made.code!!
@@ -130,6 +138,15 @@ class InviteAppTest {
         val saved = post("$url/api/admin/settings/invite", body, signIn(url))
         assertEquals(200, saved.responseCode)
         saved.disconnect()
+    }
+
+    /**
+     * The owner's 기능 관리 › 일정 › 처리방침 일정 on the local server: [version] posted and in force on [posted]. 2.0.0 [RVQ-15]: a date inside
+     * the 30일 알림 기간 is asked once more, so the test answers as the owner does on that second question (confirm).
+     */
+    private fun setPolicy(url: String, version: String, posted: String) {
+        val body = """{"version":"$version","posted":"$posted","effective":"$posted","heldUntil":null,"unfavourable":true,"confirm":true,"why":"시험: 처리방침 $version 일정"}"""
+        post("$url/api/admin/policy", body, signIn(url)).disconnect()
     }
 
     private fun post(url: String, body: String, cookie: String?): HttpURLConnection {

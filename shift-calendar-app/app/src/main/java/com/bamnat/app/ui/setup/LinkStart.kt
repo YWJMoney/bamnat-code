@@ -65,6 +65,15 @@ object LinkStart {
         received.open(null)
     }
 
+    /** A setup started from a link sent without a name keeps this as its link's name ([SetupDraft.linkTitle] is never blank then). */
+    const val NO_NAME = "받은"
+
+    /**
+     * 2.0.0 [RVG-32] 검토 PC-93 (조건 4·16): a link's 근무표 in a sentence: ‘민지’ 근무표, or 받은 근무표 for one sent without a name
+     * (before, ‘받은’ 근무표 and 이름 없음님).
+     */
+    fun roster(title: String?): String = title?.trim()?.takeIf { it.isNotEmpty() && it != NO_NAME }?.let { "‘$it’ 근무표" } ?: "받은 근무표"
+
     fun draft(schedule: SharedSchedule, from: LocalDate): SetupDraft? {
         val types = schedule.types.map { it.asShiftType() }.distinctBy { it.id }
         if (types.none { !it.isOff }) return null
@@ -84,7 +93,7 @@ object LinkStart {
             }.toMap()
         val base = SetupDraft(
             style = WorkStyle.SHIFT, rosterMonthly = true, types = types, painted = painted,
-            timesConfirmed = true, linkTitle = schedule.title.ifBlank { "받은" }.take(40),
+            timesConfirmed = true, linkTitle = schedule.title.ifBlank { NO_NAME }.take(40),
         )
         val timed = types.filter { !it.isOff }.all { it.hasTimes } && base.timeProblems().isEmpty()
         return base.copy(step = if (timed) SetupStep.SUMMARY else SetupStep.TIMES, timesConfirmed = timed)

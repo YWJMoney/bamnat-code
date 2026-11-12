@@ -42,8 +42,16 @@ object TradeCapture {
         val repo = c.invest(calendarId)
         val pending = TradeAlerts.of(alert, app, postedAt)
         // [INVA-06] Written already (a capture put it in first, or the same notification came again): not twice.
-        if (TradeAlerts.writtenAlready(pending, repo.now().trades)) return true
-        if (!repo.addAlert(pending)) return true
+        // 2.0.0 [RVK-13] (검토 MONEY-62): and not without a word — kept in '자동으로 정리한 것' to put back as a fill of its own.
+        if (TradeAlerts.writtenAlready(pending, repo.now().trades)) {
+            leftOut(c, calendarId, pending, "이미 적은 체결과 같은 종목·수량·값이라 한 번만 적었어요")
+            return true
+        }
+        val toldTwice = repo.waitingAlready(pending)
+        if (!repo.addAlert(pending)) {
+            if (toldTwice) leftOut(c, calendarId, pending, "같은 체결이 다른 알림으로 한 번 더 와서 한 번만 받았어요")
+            return true
+        }
         // [INV-40] A price that does not agree with the notification's own amount waits for a look.
         if (repo.alertAutoNow() && pending.price > 0 && pending.checked != false) {
             repo.confirmAlert(pending)
@@ -52,6 +60,17 @@ object TradeCapture {
             notice(c, calendarId, "${pending.title} ${pending.side.label} 체결을 찾았어요", pending, "투자 달력에서 확인하면 적어요")
         }
         return true
+    }
+
+    /** [RVK-13] The way back '자동으로 정리한 것' uses for a fill left out. */
+    const val KIND_FILL = "invest.fill"
+
+    private suspend fun leftOut(c: AppContainer, calendarId: String, p: TradeAlerts.Pending, why: String) {
+        runCatching {
+            c.autoTidy.add(com.bamnat.app.data.AutoTidy.AREA_INVEST, calendarId,
+                "${p.title} ${p.side.label} ${Portfolio.quantityText(p.quantity)}${p.market.unit}" + (if (p.price > 0) " × ${Portfolio.quantityText(p.price)}" else ""),
+                why, KIND_FILL, org.json.JSONObject().put("fill", TradeAlerts.encode(listOf(p))).toString())
+        }
     }
 
     private fun notice(c: AppContainer, calendarId: String, title: String, p: TradeAlerts.Pending, hint: String) {

@@ -85,9 +85,11 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Items(
                 "items", 12, min = 1,
                 fields = listOf(
-                    Field.Text("name", 20, min = 1),
+                    // 2.0.0 [RVD-28] SD-08: a name and a 근무 글자 by the 근무 종류 한 규칙표 (ShiftRules), as the servers read them.
+                    Field.Text("name", com.bamnat.core.model.ShiftRules.NAME_LETTERS, min = 1),
                     Field.Pick("role", ShiftRole.KEYS),
-                    Field.Text("label", 2, min = 1, check = { if (RecipeText.graphemes(it) > 2) "label" else null }),
+                    Field.Text("label", com.bamnat.core.model.ShiftRules.LABEL_LETTERS, min = 1,
+                        check = { if (RecipeText.graphemes(it) > com.bamnat.core.model.ShiftRules.LABEL_LETTERS) "label" else null }),
                     Field.Color("color"),
                     Field.Emoji("emoji"),
                 ),
@@ -618,6 +620,26 @@ data class CalendarView(
 
     /** The lines under the mark in this view's order: the ones it names first, then the rest in the app's own order. */
     val lines: List<String> get() = (order.orEmpty().filter { it in LINES } + LINES).distinct()
+
+    /**
+     * 2.0.0 [RVP-61] (검토 REST-02) This view with look [i] taken out, as the editor says: the days that took it take look 1, and every
+     * other day keeps its own look. The pattern's numbers past [i] and [todayLook] move down by one; '몇 칸마다' takes no more than the
+     * looks left. Before, only the look went, so the days of look 3 became look 2 and 수요일's look 3 fell back to look 1.
+     */
+    fun withoutLook(i: Int): CalendarView {
+        if (i !in looks.indices) return this
+        val left = looks.filterIndexed { n, _ -> n != i }
+        fun moved(n: Int) = when { n == i -> 0; n > i -> n - 1; else -> n }
+        val p = when (pattern.mode) {
+            CellPattern.WEEK -> pattern.copy(week = pattern.week.map(::moved))
+            CellPattern.SHIFT -> pattern.copy(shift = pattern.shift.mapValues { moved(it.value) })
+            CellPattern.CYCLE -> if (left.size >= 2) pattern.copy(n = pattern.n.coerceAtMost(left.size).coerceAtLeast(2)) else CellPattern()
+            else -> pattern
+        }
+        val today = todayLook?.let { if (it == i) null else moved(it) }
+        return copy(looks = if (left.size <= 1 && left.firstOrNull()?.isDefault != false) emptyList() else left,
+            pattern = if (left.size <= 1) CellPattern() else p, todayLook = today?.takeIf { left.size > 1 })
+    }
 
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         size?.let { "size=$it" }, badge?.let { "badge=$it" }, date?.let { "date=$it" }, text?.let { "text=$it" }, grid?.let { "grid=$it" },

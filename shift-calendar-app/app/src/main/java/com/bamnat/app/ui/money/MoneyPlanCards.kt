@@ -114,6 +114,8 @@ fun NewRecordsCard(
     /** E 1.32 [LEDX-05] The two categories the phone learned are likeliest for a line it could not place. */
     guesses: (MoneyEntry) -> List<com.bamnat.core.money.LedgerSmarts.Learner.Guess> = { emptyList() },
     onPick: (MoneyEntry, String) -> Unit = { _, _ -> },
+    /** 2.0.0 [RVK-13] The calendar whose '자동으로 정리한 것' shows under the new lines. */
+    calendarId: String? = null,
 ) {
     if (unseen.isEmpty() && kept.isEmpty()) return
     var clearing by remember { mutableStateOf(false) }
@@ -182,6 +184,8 @@ fun NewRecordsCard(
             Text("눌러서 금액을 적으면 기록이 되고 알림 글은 지워져요. 30일이 지나면 저절로 지워져요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
+        // 2.0.0 [RVK-13] 뿌리 7: what was taken for a copy or joined, a tap away from what was written.
+        AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_MONEY, calendarId)
     }
 }
 
@@ -222,12 +226,15 @@ fun AutoRecordDialog(onPaste: () -> Unit, onDismiss: () -> Unit, onRules: (() ->
                 ConfirmFirstControl()
                 // [CALS-04] Which calendar the notifications go to, once there is more than one.
                 CaptureCalendarControls()
+                // 2.0.0 [RVK-22]·HQ-24 (총괄 #457 리뷰, 조건 2): 결제 문자 붙여넣기 above is the one thing to do here; the three ways to tune
+                // it are rows, as in 설정, not four bordered buttons of the same weight one under another.
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 // [LEDG-21][LEDG-22] How it sorts and what it leaves out.
-                if (onRules != null) OutlinedButton(onClick = onRules, modifier = Modifier.fillMaxWidth()) { Text("자동 분류 규칙") }
-                if (onFilter != null) OutlinedButton(onClick = onFilter, modifier = Modifier.fillMaxWidth()) { Text("알림 거르기") }
+                if (onRules != null) com.bamnat.app.ui.settings.NavRow("자동 분류 규칙", "가게를 다른 분류로 옮기면 여기 생겨요", onRules)
+                if (onFilter != null) com.bamnat.app.ui.settings.NavRow("알림 거르기", "읽을 앱과 적지 않을 알림", onFilter)
                 // 1.32 [LEDX-15][LEDX-18] 내 이름, 해외 수수료, 내 환율.
                 var tuning by remember { mutableStateOf(false) }
-                OutlinedButton(onClick = { tuning = true }, modifier = Modifier.fillMaxWidth()) { Text("더 정확하게 적기") }
+                com.bamnat.app.ui.settings.NavRow("더 정확하게 적기", "내 이름 · 해외 수수료 · 내 환율") { tuning = true }
                 if (tuning) CaptureTuneDialog(onDismiss = { tuning = false })
                 Text("가계부 탭 위 ⋮ > 자동 기록에서 언제든 켜고 꺼요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
@@ -300,6 +307,57 @@ private fun CaptureCalendarControls() {
     }
 }
 
+/** 2.0.0 [RVK-16] (검토 MONEY-13·U06a-17): "마지막으로 읽음 오늘 14:02 · 이번 달 23건" under 결제 알림으로 적기. */
+@Composable
+private fun CaptureReadLine() {
+    val health by LocalContext.current.appContainer.captureHealth.state.collectAsStateWithLifecycle()
+    Text(
+        (health.lastRead?.let { "마지막으로 읽음 ${whenRead(it)}" } ?: "아직 읽은 결제 알림이 없어요") + " · 이번 달 ${health.writtenIn(Today.millis())}건",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+/**
+ * 2.0.0 [RVK-16]: after three days without a payment notification, or when the phone cut the reader, one line with 다시 연결
+ * (the phone binds it anew, and what came meanwhile is read once it is back).
+ */
+@Composable
+private fun CaptureQuietLine() {
+    val context = LocalContext.current
+    val health by context.appContainer.captureHealth.state.collectAsStateWithLifecycle()
+    var reconnected by rememberSaveable { mutableStateOf(false) }
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    if (reconnected) {
+        Text("다시 연결했어요. 다음 결제 알림부터 읽어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+    } else if (health.quiet(Today.millis())) {
+        val cut = health.cutAt?.let { c -> health.connectedAt?.let { c > it } ?: true } == true
+        // The sentence takes the whole width and the button sits under it, so at 글자 200% it does not stand in a thin column.
+        WordsWithActions({
+            Text(
+                if (cut) "휴대폰이 알림 읽기를 멈췄어요. 다시 연결하면 그사이 온 알림도 읽어요"
+                else "${com.bamnat.app.data.CaptureHealth.QUIET_DAYS}일 동안 읽은 결제 알림이 없어요. 결제했는데 안 적혔다면 다시 연결해 보세요",
+                style = MaterialTheme.typography.bodySmall, color = muted,
+            )
+        }, Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = { CaptureService.reconnect(context); reconnected = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text("다시 연결")
+            }
+        }
+    }
+}
+
+/** "오늘 14:02", "어제 21:30", "11월 9일 08:15". */
+private fun whenRead(millis: Long): String {
+    val at = LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(millis), Today.zone())
+    val day = when (at.toLocalDate()) {
+        Today.date() -> "오늘"
+        Today.date().minusDays(1) -> "어제"
+        else -> Fmt.monthDay(at.toLocalDate())
+    }
+    return "$day ${Fmt.time(at.toLocalTime())}"
+}
+
 @Composable
 private fun AutoRecordControls(onPaste: () -> Unit, explainFirst: Boolean = false) {
     val context = LocalContext.current
@@ -325,6 +383,8 @@ private fun AutoRecordControls(onPaste: () -> Unit, explainFirst: Boolean = fals
                     },
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                // 2.0.0 [RVK-16] (검토 MONEY-13·U06a-17): not only on, but reading.
+                if (on && access) CaptureReadLine()
             }
             Switch(checked = on && access, onCheckedChange = { want ->
                 if (want) explaining = true else { CaptureService.setOn(context, false); on = false }
@@ -333,11 +393,15 @@ private fun AutoRecordControls(onPaste: () -> Unit, explainFirst: Boolean = fals
         if (on && !access) {
             TextButton(onClick = { openAccess(context) }) { Text("알림 접근 허용하러 가기") }
         }
+        if (on && access) CaptureQuietLine()
         OutlinedButton(onClick = onPaste, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
             Icon(Icons.Filled.ContentPaste, null)
             Spacer(Modifier.width(6.dp))
             Text("결제 문자 붙여넣기")
         }
+        // 2.0.0 [RVK-13] 뿌리 7: where what the app left out on its own can be seen and put back, even with nothing new.
+        val calendarId by context.appContainer.calendars.active.collectAsStateWithLifecycle()
+        AutoTidyLine(com.bamnat.app.data.AutoTidy.AREA_MONEY, calendarId)
     }
     if (explaining) {
         AlertDialog(
@@ -440,8 +504,10 @@ fun PasteDialog(
     }
     val skipped = remember(rows) { mutableStateListOf<Int>().apply { rows.forEachIndexed { i, r -> if (r.duplicate) add(i) } } }
     val chosen = rows.withIndex().filter { (i, r) -> r.entry != null && i !in skipped }.map { it.value.entry!! }
-    AlertDialog(
+    // 2.0.0 [RVK-07] (검토 MONEY-09): many texts pasted and ticked are not lost to one tap outside; it asks first.
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = text.isNotBlank(),
         title = { Text(if (firstFill) "지난 결제 문자로 한 번에 채우기" else "결제 문자 붙여넣기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -477,7 +543,7 @@ fun PasteDialog(
             }
         },
         confirmButton = {
-            TextButton(enabled = chosen.isNotEmpty(), onClick = { onSave(chosen) }) {
+            Button(enabled = chosen.isNotEmpty(), onClick = { onSave(chosen) }) {
                 Text(if (chosen.isEmpty()) "적기" else "${chosen.size}건 적기")
             }
         },
@@ -625,29 +691,23 @@ fun FixedCostDialog(
                 Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    val kinds = listOf(MoneyKind.EXPENSE to "나갈 돈", MoneyKind.INCOME to "들어올 돈", MoneyKind.TRANSFER to "카드값·이체")
-                    kinds.forEachIndexed { i, (k, label) ->
-                        SegmentedButton(selected = kind == k, onClick = {
-                            kind = k
-                            val list = ledger.categoriesOf(k)
-                            if (category !in list) category = when (k) {
-                                MoneyKind.TRANSFER -> UpcomingPayments.CARD_BILL
-                                MoneyKind.INCOME -> MoneyCategories.SALARY
-                                MoneyKind.EXPENSE -> "주거"
-                            }.takeIf { it in list } ?: list.first()
-                        }, shape = SegmentedButtonDefaults.itemShape(i, kinds.size)) { Text(label, maxLines = 1) }
-                    }
-                }
+                val kinds = listOf(MoneyKind.EXPENSE to "나갈 돈", MoneyKind.INCOME to "들어올 돈", MoneyKind.TRANSFER to "카드값·이체")
+                // [RVH-46] Words never cut at a large font.
+                com.bamnat.app.ui.components.ChoiceRow(kinds.map { it.second }, selected = kinds.indexOfFirst { it.first == kind }, onSelect = { i ->
+                    val k = kinds[i].first
+                    kind = k
+                    val list = ledger.categoriesOf(k)
+                    if (category !in list) category = when (k) {
+                        MoneyKind.TRANSFER -> UpcomingPayments.CARD_BILL
+                        MoneyKind.INCOME -> MoneyCategories.SALARY
+                        MoneyKind.EXPENSE -> "주거"
+                    }.takeIf { it in list } ?: list.first()
+                })
                 OutlinedTextField(value = name, onValueChange = { name = it.take(30) }, singleLine = true,
                     label = { Text(when (kind) { MoneyKind.INCOME -> "이름 (예: 월급, 용돈)"; MoneyKind.TRANSFER -> "이름 (예: 신한카드, 적금)"; else -> "이름 (예: 월세, 보험)" }) },
                     modifier = Modifier.fillMaxWidth())
                 AmountField("금액", digits, { digits = it })
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    Repeat.entries.forEachIndexed { i, r ->
-                        SegmentedButton(selected = repeat == r, onClick = { repeat = r }, shape = SegmentedButtonDefaults.itemShape(i, Repeat.entries.size)) { Text(r.label) }
-                    }
-                }
+                com.bamnat.app.ui.components.ChoiceRow(Repeat.entries.map { it.label }, selected = repeat.ordinal, onSelect = { repeat = Repeat.entries[it] })
                 when (repeat) {
                     // One row of seven, so the week reads as a week on the narrowest screen.
                     Repeat.WEEK -> SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {

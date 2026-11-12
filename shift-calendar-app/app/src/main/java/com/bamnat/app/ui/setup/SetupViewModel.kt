@@ -86,6 +86,47 @@ class SetupViewModel(
         if (d.step !in d.steps) store.save(d.copy(step = d.steps.firstOrNull { !d.canLeave(it) } ?: SetupStep.SUMMARY))
     }
 
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has now. A shift of the same name keeps its alarms, color and
+     * sound when saved, and the summary says which times change. Empty for a first setup and a calendar being added.
+     */
+    val kept: StateFlow<List<ShiftType>> =
+        if (again) c.scheduleRepository.shiftTypes.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList()) else MutableStateFlow(emptyList<ShiftType>()).asStateFlow()
+
+    /** The shifts as they will be saved: the draft's, with what [kept] keeps ( 검토 WORK-04); the summary's month and alarm say these. */
+    fun typesToSave(d: SetupDraft): List<ShiftType> = if (again) d.typesToSave(kept.value, today) else d.typesToSave()
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31: the order periods the calendar has before this setup is saved, so the summary's month is filled as saving
+     * fills it ([previewSnapshot]). A calendar being added has none yet, and its database is not opened for them: #451 CI
+     * (PersonalCalendarsTest) caught the read, still running, making the file again after 그만두기 had deleted it.
+     */
+    val periods: StateFlow<List<com.bamnat.core.model.WorkPattern>> =
+        if (calendarId != null) MutableStateFlow(emptyList<com.bamnat.core.model.WorkPattern>()).asStateFlow()
+        else c.scheduleRepository.patterns.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 11/1~11/11이 비었는데 저장한 달력은 1일부터 차 있어서 '오늘부터만
+     * 채워지나?'로 읽혔어요): the month as [com.bamnat.app.data.ScheduleRepository.applySetup] will save it. A first setup's order
+     * fills the past too (two years back); a calendar being added starts today; a setup again keeps the days before today as they
+     * were and its new order from today. Null when nothing would be on the calendar.
+     */
+    fun previewSnapshot(d: SetupDraft, before: List<com.bamnat.core.model.WorkPattern> = periods.value): ScheduleSnapshot? {
+        val kept = kept.value
+        // The ids saving gives: a shift of the same name the calendar has keeps its id, a new one takes one after them.
+        val next = (kept.maxOfOrNull { it.id } ?: 0L) + 1
+        val ids = d.types.withIndex().associate { (i, t) -> t.id to (kept.firstOrNull { k -> k.name.trim() == t.name.trim() }?.id ?: (next + i)) }
+        val saved = if (kept.isEmpty()) d else d.remap(ids)
+        val types = typesToSave(saved).let { mine -> mine + kept.filter { k -> mine.none { it.id == k.id } } }
+        val order = saved.pattern(today)
+        val patterns = when {
+            order == null -> before
+            before.isEmpty() -> listOf(if (calendarId == null) com.bamnat.core.schedule.PatternTimeline.first(order, today) else order)
+            else -> com.bamnat.core.schedule.PatternTimeline.changeFrom(before, order, today)
+        }
+        return ScheduleSnapshot(types, patterns, saved.paintedEntries()).takeIf { !it.isEmpty }
+    }
+
     /** The week as the calendar shows it, for the month previews. */
     val weekStart: DayOfWeek get() = c.settingsRepository.current.weekStart
 
@@ -247,6 +288,33 @@ class SetupViewModel(
     fun workAs(style: WorkStyle) = update { d ->
         if (d.linkTitle.isBlank() || style !in LINK_WORK) d else d.copy(workAs = style.takeIf { it != d.style })
     }
+
+    /**
+     * [RVG-19] 2.0.0 검토 HQ-09 (조건 10): '가족·동료 근무표였어요' on a link's summary, for '내 근무표예요' pressed by mistake (← only
+     * went to earlier questions). Nothing is in the calendar yet: the link stays beside as theirs (only seen, never put in), the setup
+     * goes, and the first screen says where the link went and asks the user's own work. The link's name for that line; null when this
+     * is not a setup started from a link.
+     */
+    fun notMine(): String? {
+        val d = current
+        if (d.linkTitle.isBlank() || calendarId != null || again) return null
+        c.received.mine()?.let { cal ->
+            c.received.notMine(cal.id)
+            com.bamnat.app.share.RosterFollower.close(c, cal.id)
+            com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
+        }
+        c.telemetry.event("setup_link", "not_mine_summary")
+        store.clear()
+        return d.linkTitle
+    }
+
+    /**
+     * 2.0.0 [RVG-28] 검토 PC-94: the link this setup started from did not say its breaks (an app or share server before 2.0.0), so the
+     * 근무 came in with none and is an hour longer than the sender's. The summary says so while no break is set here.
+     */
+    fun linkRestUnknown(d: SetupDraft = current): Boolean =
+        d.linkTitle.isNotBlank() && d.workTypes.all { it.breakMinutes == 0 } &&
+            c.received.mine()?.schedule?.types?.any { it.restUnknown } == true
 
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
@@ -987,13 +1055,13 @@ class SetupViewModel(
     /** The first alarm the saved setup will ring, for the summary. */
     fun firstAlarm(d: SetupDraft): PlannedAlarm? {
         val at = now()
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(at.toLocalDate()), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(at.toLocalDate()), d.paintedEntries())
         return AlarmPlanner.nextAlarm(snapshot.resolver, at)
     }
 
     /** 1.39 [FLOW-03] What the saved setup puts on the calendar from today, said in one line; null when no day works. */
     internal fun fillLine(d: SetupDraft): com.bamnat.core.setup.FillMoment.Line? {
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(today), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(today), d.paintedEntries())
         if (snapshot.isEmpty) return null
         return com.bamnat.core.setup.FillMoment.of(snapshot.resolver.resolveRange(today, today.plusDays(70)), today, firstAlarm(d)?.triggerAt)
     }
@@ -1007,7 +1075,7 @@ class SetupViewModel(
         _saving.value = true
         // The setup screen goes away as soon as the kind of work is saved, so the save outlives it.
         c.appScope.launch {
-            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
+            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d, keep = again) }
                 .onSuccess {
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
                     if (calendarId == null && !again) c.setupTaps.finish(d.savedStyle)

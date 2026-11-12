@@ -53,4 +53,21 @@ class BuiltInThemesTest {
         val fixed = line.fix!!(bad)
         assertEquals(RecipeLint.Level.OK, RecipeLint.check(fixed).first { it.code == "contrast" }.level)
     }
+
+    /**
+     * 2.0.0 [RVP-63] (검토 REST-04·T14-01·T14-02·I14a-02) A look that hides the day's mark only ever falls on 쉬는 날: a weekend shift,
+     * sale or job keeps its mark in every 추천 테마 and 전문 달력 of every kind of work.
+     */
+    @Test fun noThemeHidesAWorkingDaysMark() {
+        for (r in BuiltInThemes.all) {
+            val view = r.pieces.first { it.kind == PieceKind.CAL_VIEW }.values
+            val looks = CellLook.decodeAll(view["looks"] as String)
+            val pattern = CellPattern.decode(view["pattern"] as String)
+            looks.forEachIndexed { i, l ->
+                if (l.mark != "none") return@forEachIndexed
+                val onlyOff = pattern.mode == CellPattern.SHIFT && pattern.shift.filterValues { it == i }.keys == setOf("off")
+                assertTrue("${r.title}: 모양 ${i + 1}이 근무 표시를 숨기는데 쉬는 날만이 아니에요(${view["pattern"]})", onlyOff)
+            }
+        }
+    }
 }

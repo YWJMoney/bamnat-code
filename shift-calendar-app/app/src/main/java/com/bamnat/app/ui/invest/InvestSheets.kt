@@ -27,9 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -278,15 +275,12 @@ internal fun TradeSheet(
                 IconButton(onClick = { onCopy(start) }) { Icon(Icons.Outlined.ContentCopy, "오늘 날짜로 복사") }
                 IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
             }
+            // 2.0.0 [RVK-24] (총괄 #472 리뷰, 조건 9·14) A found trade opened from its line can be let go here too, as the ledger's
+            // waiting line opens to a sheet with 지우기: the swipe to the left is a shortcut, not the only way (되돌리기 as on the line).
+            if (start == null) d.alertAt?.let { at -> TextButton(onClick = { vm.dropAlertAt(at); onDismiss() }) { Text("넘기기") } }
         },
     ) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            Side.entries.forEachIndexed { i, s ->
-                SegmentedButton(selected = side == s, onClick = { side = s }, shape = SegmentedButtonDefaults.itemShape(i, Side.entries.size)) {
-                    Text(s.label)
-                }
-            }
-        }
+        com.bamnat.app.ui.components.ChoiceRow(Side.entries.map { it.label }, selected = side.ordinal, onSelect = { side = Side.entries[it] })
         AccountPicker(accounts, accountId) { id ->
             accountId = id
             if (key.isEmpty()) book.account(id)?.type?.market?.let { market = it }

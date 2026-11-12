@@ -5,7 +5,7 @@
 //   오류 묶음 #/errors [ADM3-13] · 서버 상태 판 [ADM3-04·05·19] · 사람 옆 패널 [ADM3-11] · 개발사항 이야기 [ADM3-34]
 // 화면마다 [loads]가 읽을 길을, [has]가 다 왔는지를 앱에 알려요(앱의 load()·hasData()가 이것을 써요).
 export function opsViews(A) {
-  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl, askText, danger } = A;
 
   const won = (n) => `${Math.round(n ?? 0).toLocaleString("ko-KR")}원`;
   const when = (ms) => (ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
@@ -61,11 +61,18 @@ export function opsViews(A) {
     const d = S.data.incident;
     if (!d) return skeleton(3);
     const o = d.open;
-    const sig = d.signals.length ? `<ul class="alert-list">${d.signals.map((s) => `<li class="bad"><span><b>${esc(s.text)}</b></span></li>`).join("")}</ul>`
-      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`;
+    // 2.0.0 [RVN-01] 신호마다 확실·의심, 표본, 평소 값, 다시 묻지 않기(U22c-01, I22ca-01). 글에 이미 있는 값은 둘째 줄에 되풀이하지 않고,
+    // 점 색은 확실만 빨강·의심은 주황·잠잠하거나 다시 묻지 않는 신호는 회색(디자인 조건 6).
+    const SAMPLE = { errors: (n) => `요청 ${n}번`, rate: (n) => `요청 ${n}번` };
+    const sigLine = (s) => `<li class="${s.off || s.muted ? "quiet" : s.sure ? "bad" : ""}"><span><b>${esc(s.text)}</b><small>${esc([s.sure ? "확실 · 밤에도 바로 알려요" : "의심 · 아침에 알려요",
+      s.n && SAMPLE[s.key] ? SAMPLE[s.key](s.n) : "", s.was && !s.text.includes(s.was) ? s.was : "", s.off ? "지금은 잠잠해요" : "", s.muted ? "다시 묻지 않기로 한 신호" : ""].filter(Boolean).join(" · "))}</small></span></li>`;
+    const MUTE_NAMES = { errors: "서버 오류", rate: "서버 오류 비율", bugs: "문제 신고", jobs: "정기 작업 실패", stale: "5분 작업 멈춤", crash: "비정상 종료", anr: "ANR" };
+    const muteLine = (d.mutes ?? []).length ? `<p class="hint">다시 묻지 않는 신호: ${esc(d.mutes.map((m) => `${MUTE_NAMES[m.key] ?? m.key}(${m.until ? `${when(m.until)}까지` : "한 번 꺼질 때까지"})`).join(", "))}</p>` : "";
+    const sig = (d.signals.length ? `<ul class="alert-list">${d.signals.map(sigLine).join("")}</ul>`
+      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`) + muteLine;
     const top = o ? `<section class="card incident-open"><div class="card-head"><h2>사고 진행 중</h2><span class="pill bad">${esc(agoMs(o.openedAt))}부터</span></div>
         <p class="hint">${o.auto ? "서버가 신호를 보고 열었어요." : `${esc(o.by)}님이 직접 열었어요.${o.note ? ` ${esc(o.note)}` : ""}`} 사람이 무엇을 했는지 적어야 닫혀요.</p>
-        ${o.signals.length ? `<h3>열 때 본 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}</li>`).join("")}</ul>` : ""}
+        ${o.signals.length ? `<h3>이 사고의 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}${s.off ? " · 지금은 잠잠해요" : ""}</li>`).join("")}</ul>` : ""}
         <div class="actions start"><button class="btn primary" type="button" data-act="incident-close" data-id="${esc(o.id)}">고쳤어요 · 닫기</button></div></section>`
       : `<section class="card">${head("사고 없음", "급증·실패가 보이면 서버가 열고 바로 알려요")}
         <div class="actions start"><button class="btn" type="button" data-act="incident-open">직접 열기</button></div></section>`;
@@ -75,7 +82,7 @@ export function opsViews(A) {
       ? `<ul class="rows">${d.marks.slice().reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>`
       : '<p class="hint">바꾼 것이 없어요. 바깥(Play·Cloudflare) 문제일 수 있어요.</p>'}</section>`;
     const notice = `<section class="card">${head("공지 초안")}<textarea id="incident-notice" rows="3" aria-label="공지 초안">${esc(d.notice)}</textarea>
-      <div class="actions start"><button class="btn small" type="button" data-act="copy-text" data-target="incident-notice">복사</button><a class="btn small primary" href="${href("notices")}">앱 공지로 가기</a></div></section>`;
+      <div class="actions start"><button class="btn small" type="button" data-act="copy-text" data-target="incident-notice">복사</button><a class="btn small" href="${href("notices")}">앱 공지로 가기</a></div></section>`;
     const bugs = `<section class="card">${head("그동안 들어온 문제 신고", `${d.bugs.length}건`)}${d.bugs.length
       ? `<ul class="rows">${d.bugs.map((b) => `<li><a class="row" href="${L.routeHash("inquiries", b.id, {})}"><span class="row-main"><b>${esc(b.first || "(글 없음)")}</b><small>${esc(when(b.at))}${b.app ? ` · ${esc(b.app)}` : ""}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
         <p class="hint">같은 문제면 운영 장부에서 여러 줄을 골라 개발사항 하나로 묶어요.</p><div class="actions start"><a class="btn small" href="${L.routeHash("desk", null, { view: "open", group: "bug" })}">장부에서 묶기</a></div>`
@@ -239,7 +246,7 @@ export function opsViews(A) {
     const t = d.table;
     const band = (kind) => t[kind].map((b, i) => `<tr><th scope="row">${b.cap}명</th>${["monthly", "yearly", "pass"].map((f) => `<td><input name="${kind}.${i}.${f}" type="number" min="0" max="1000000" value="${b[f]}" aria-label="${kind} ${b.cap}명 ${f}"><input type="hidden" name="${kind}.${i}.cap" value="${b.cap}"></td>`).join("")}</tr>`).join("");
     const prices = S.me?.owner ? `<details class="card" data-key="price-table"${S.opened.get("price-table") ?? d.missingPrice ? " open" : ""}><summary><b>가격표</b><span class="meta">Play Console 가격을 그대로</span></summary>
-      <form data-form="price-table"><div class="tiles">${[["bamnat_pro.monthly", "프로 월", t.bamnat_pro.monthly], ["bamnat_pro.yearly", "프로 연", t.bamnat_pro.yearly], ["bamnat_pro_pass_1y.pass", "프로 1년 이용권", t.bamnat_pro_pass_1y.pass], ["fee", "수수료 %", t.fee]]
+      <form data-form="price-table" data-guard="가격표"><div class="tiles">${[["bamnat_pro.monthly", "프로 월", t.bamnat_pro.monthly], ["bamnat_pro.yearly", "프로 연", t.bamnat_pro.yearly], ["bamnat_pro_pass_1y.pass", "프로 1년 이용권", t.bamnat_pro_pass_1y.pass], ["fee", "수수료 %", t.fee]]
         .map(([n, l, v]) => `<label class="fieldset">${esc(l)}<input name="${n}" type="number" min="0" max="1000000" value="${v}"></label>`).join("")}</div>
       ${["team", "staff"].map((k) => `<h3>${k === "team" ? "팀 요금제" : "직원 요금제"}</h3><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">인원</th><th scope="col">월</th><th scope="col">연</th><th scope="col">1년 이용권</th></tr></thead><tbody>${band(k)}</tbody></table></div>`).join("")}
       <div class="actions"><button class="btn primary" type="submit">저장</button></div></form></details>` : "";
@@ -267,8 +274,14 @@ export function opsViews(A) {
         ${g.status !== "fixed" ? `<button class="btn small primary" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="fixed">고쳤어요</button>` : `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="new">다시 열기</button>`}</div></details></li>`;
     }).join("")}</ul>` : empty(d.loose ? "묶인 오류가 없어요" : "오류가 없어요", "서버가 500을 내면 주소·이유로 묶여 여기 쌓여요.");
     // 1.39 [ADM3-43] 판 건강의 '서버 오류'와 이 화면이 다르게 보이지 않게: 날마다 센 오류 가운데 묶음에 없는 것.
-    const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요. 오류 묶음을 만들기 전(1.38 전 서버)이거나, 배포 직후 묶음 표가 준비되기 전에 난 것이라 주소·이유를 몰라요. 앞으로 나는 오류는 여기에 묶여요.</p>` : "";
-    return `${tabs}${loose}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${list}</section>`;
+    // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 세 갈래로, 그리고 세 숫자가 무엇을 세는지 한 줄씩.
+    const sp = d.split ?? { before: d.loose, failed: 0, jobs: 0 };
+    const parts = [sp.before ? `묶기 전 ${sp.before}번(1.38 전 서버이거나 배포 직후 묶음 표가 준비되기 전)` : "",
+      sp.failed ? `묶기 실패 ${sp.failed}번(오류를 적다가 또 실패)` : ""].filter(Boolean);
+    const loose = d.loose ? `<p class="note warn" data-loose-errors>지난 14일 서버 오류 ${d.loose}번은 묶음에 없어요: ${parts.join(" · ")}. 주소·이유를 몰라요.</p>` : "";
+    const jobs = sp.jobs ? `<p class="note" data-job-errors>정기 작업 실패 ${sp.jobs}번은 요청 오류가 아니라 여기 없어요. 관리 › 서버 상태의 정기 작업에서 단계마다 봐요.</p>` : "";
+    const what = `<p class="hint" data-error-kinds>세는 것: 날마다 서버 오류 = 요청 하나가 500으로 끝난 수 · 묶음 = 그 가운데 주소·이유로 묶인 것 · 응답 속도의 오류 = 모든 5xx(쉬는 기능 503, Play·공유 서버 502·504 포함)</p>`;
+    return `${tabs}${loose}${jobs}${chart}<section class="card">${head("묶음", "고친 뒤 다시 나면 '다시 남'으로 올라와요")}${what}${list}</section>`;
   }
 
   // ---- [ADM3-04][ADM3-05][ADM3-19] 서버 상태 판(관리 › 서버 상태 위) ----
@@ -387,8 +400,8 @@ export function opsViews(A) {
     const d = S.data.passkeys;
     const on = passkeyOk();
     return `<section class="card"><div class="card-head"><h2>패스키(지문·얼굴)</h2>${d?.items.length ? `<span class="pill ok">${d.items.length}개</span>` : ""}</div>
-      <p class="hint">비밀번호 대신 이 휴대폰의 지문이나 얼굴로 들어와요. 기기에 남는 열쇠와 지문 두 가지라 두 번째 확인 코드를 묻지 않아요. 비밀번호 로그인도 그대로 돼요.</p>
-      ${d?.items.length ? `<ul class="rows">${d.items.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.name)}</b><small>${esc(dayOf(k.createdAt))} 만듦${k.lastAt ? ` · 마지막 ${esc(agoMs(k.lastAt))}` : " · 아직 안 씀"}</small></span>
+      <p class="hint">비밀번호 대신 이 휴대폰의 지문이나 얼굴로 들어와요. 기기에 남는 열쇠와 지문 두 가지라 두 번째 확인 코드를 묻지 않아요. 만들거나 지우면 알림이 와요.</p>
+      ${d?.items.length ? `<ul class="rows side-wrap">${d.items.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.name)}</b><small>${esc(dayOf(k.createdAt))} 만듦${k.lastAt ? ` · 마지막 ${esc(agoMs(k.lastAt))}${k.lastDevice ? ` · ${esc(k.lastDevice)}` : ""}` : " · 아직 안 씀"}</small></span>
         <button class="btn small danger" type="button" data-act="passkey-delete" data-id="${esc(k.id)}">지우기</button></div></li>`).join("")}</ul>` : ""}
       ${on ? `<div class="actions start"><button class="btn primary small" type="button" data-act="passkey-add"${d && d.items.length >= d.max ? " disabled" : ""}>이 기기 패스키 만들기</button></div>`
         : '<p class="meta">이 브라우저는 패스키를 쓸 수 없어요. 휴대폰의 Chrome·삼성 인터넷에서 관리자 앱을 열어 주세요.</p>'}</section>`;
@@ -441,6 +454,29 @@ export function opsViews(A) {
     load({ quiet: true });
   };
 
+  /** 패스키 만들기: 서버 도전값 → 이 기기의 지문·얼굴 → 공개 키 보내기. [body]는 등록 시작에 보낼 것(다시 확인한 비밀번호). */
+  async function passkeyCreate(body) {
+    const o = await act(() => api("/me/passkeys/start", "POST", body));
+    if (!o) return false;
+    toast("휴대폰 화면의 지문·얼굴 확인을 해 주세요");
+    let cred;
+    try {
+      cred = await navigator.credentials.create({ publicKey: { challenge: b64.dec(o.challenge), rp: { id: o.rpId, name: "밤낮 관리자" },
+        user: { id: b64.dec(o.user.id), name: o.user.name, displayName: o.user.displayName }, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+        authenticatorSelection: { userVerification: "required", residentKey: "required" }, attestation: "none", timeout: 60000,
+        excludeCredentials: o.exclude.map((id) => ({ type: "public-key", id: b64.dec(id) })) } });
+    } catch (e) {
+      toast(e?.name === "InvalidStateError" ? "이 기기에는 이미 패스키가 있어요" : e?.name === "NotAllowedError" ? "확인을 취소했거나 시간이 지났어요. 다시 눌러 주세요"
+        : "이 기기에서는 패스키를 만들 수 없어요");
+      return;
+    }
+    if (!cred) return;
+    const name = /Android/.test(navigator.userAgent) ? "안드로이드 휴대폰" : /iPhone|iPad/.test(navigator.userAgent) ? "아이폰" : "이 컴퓨터";
+    if (await act(() => api("/me/passkeys", "POST", { name, clientDataJSON: b64.enc(cred.response.clientDataJSON), attestationObject: b64.enc(cred.response.attestationObject) }),
+      "패스키를 만들었어요. 다음부터 지문으로 들어와요")) reload("passkeys");
+    return true;
+  }
+
   const actions = {
     "passkey-add": async () => {
       // 1.38 [ADM3-36] PC 13차 (눌러도 말이 없어요): a device with no fingerprint or face unlock is told so at once, and every
@@ -451,34 +487,27 @@ export function opsViews(A) {
           <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`);
         return;
       }
-      const o = await act(() => api("/me/passkeys/start", "POST", {}));
-      if (!o) return;
-      toast("휴대폰 화면의 지문·얼굴 확인을 해 주세요");
-      let cred;
-      try {
-        cred = await navigator.credentials.create({ publicKey: { challenge: b64.dec(o.challenge), rp: { id: o.rpId, name: "밤낮 관리자" },
-          user: { id: b64.dec(o.user.id), name: o.user.name, displayName: o.user.displayName }, pubKeyCredParams: [{ type: "public-key", alg: -7 }],
-          authenticatorSelection: { userVerification: "required", residentKey: "required" }, attestation: "none", timeout: 60000,
-          excludeCredentials: o.exclude.map((id) => ({ type: "public-key", id: b64.dec(id) })) } });
-      } catch (e) {
-        toast(e?.name === "InvalidStateError" ? "이 기기에는 이미 패스키가 있어요" : e?.name === "NotAllowedError" ? "확인을 취소했거나 시간이 지났어요. 다시 눌러 주세요"
-          : "이 기기에서는 패스키를 만들 수 없어요");
+      // 2.0.0 [RVQ-06] 검토 SRV-06: 로그인한 지 10분이 지났으면 비밀번호를 한 번 더(열린 채 둔 화면에서 남이 더하지 못하게).
+      if (S.data.passkeys?.needPassword) {
+        openDialog(`<form data-form="passkey-reauth"><h2>비밀번호를 한 번 더 넣어 주세요</h2><p class="hint">패스키를 더하기 전에 본인인지 확인해요. 로그인한 지 10분 안이면 묻지 않아요.</p>
+          <div class="fieldset"><label for="pk-pw">${S.me?.owner ? "최고 관리자 비밀번호" : "내 비밀번호"}</label><input id="pk-pw" name="password" type="password" autocomplete="current-password" required></div>
+          <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">확인하고 만들기</button></div></form>`);
         return;
       }
-      if (!cred) return;
-      const name = /Android/.test(navigator.userAgent) ? "안드로이드 휴대폰" : /iPhone|iPad/.test(navigator.userAgent) ? "아이폰" : "이 컴퓨터";
-      if (await act(() => api("/me/passkeys", "POST", { name, clientDataJSON: b64.enc(cred.response.clientDataJSON), attestationObject: b64.enc(cred.response.attestationObject) }),
-        "패스키를 만들었어요. 다음부터 지문으로 들어와요")) reload("passkeys");
+      await passkeyCreate({});
     },
     "passkey-delete": ({ id }) => confirmBox("이 패스키를 지울까요?", "이 기기로 지문 로그인을 못 해요. 휴대폰의 패스키 목록에서도 지워 주세요.", "지우기", async () => {
       if (await act(() => api(`/me/passkeys/${id}/delete`, "POST", {}), "지웠어요")) reload("passkeys");
     }),
     "incident-open": () => openDialog(`<form data-form="incident-open"><h2>사고를 직접 열까요?</h2><p>신호가 기준을 넘지 않았지만 문제가 커 보일 때 열어요. 다른 관리자에게도 맨 위 빨간 띠가 보여요.</p>
-      <div class="fieldset"><label for="io-note">무엇이 보이는지</label><textarea id="io-note" name="note" maxlength="300" required></textarea></div>
+      <div class="fieldset"><label for="io-note">무엇이 보이는지</label><textarea id="io-note" name="note" maxlength="300" required data-keep="incident-open-note"></textarea></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">열기</button></div></form>`),
     "incident-close": ({ id }) => openDialog(`<form data-form="incident-close" data-id="${esc(id)}"><h2>무엇을 했나요?</h2><p>한 줄이면 돼요. 다음에 같은 일이 생기면 이 기록을 먼저 봐요.</p>
-      <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">닫기</button></div></form>`),
+      <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required data-keep="incident-note-${esc(id)}" placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
+      <div class="fieldset"><label for="ic-days">지금 있는 신호를 다시 묻지 않기</label><select id="ic-days" name="days">
+        <option value="0" selected>신호가 꺼질 때까지</option><option value="1">하루</option><option value="3">3일</option><option value="7">7일</option><option value="14">14일</option></select>
+        <small class="hint">닫을 때보다 1.3배 나빠지면 언제든 다시 열려요. Play 비정상 종료·ANR은 28일 평균이라 몇 주 남을 수 있어요.</small></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">사고 닫기</button></div></form>`),
     "copy-text": async ({ target }) => {
       const el = document.getElementById(target);
       try {
@@ -522,9 +551,11 @@ export function opsViews(A) {
       else if (what === "undo") body.done = false;
       else if (what === "skip") body.skip = true;
       else {
-        const note = window.prompt("메모(기록에 남아요)", run.steps.find((s) => s.key === key)?.note ?? "");
-        if (note === null) return;
-        body = { step: key, note };
+        // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 앱의 여러 줄 창.
+        return askText({ title: "메모", text: "출시 기록에 남아요.", label: "메모", value: run.steps.find((s) => s.key === key)?.note ?? "", multiline: true, maxlength: 500 },
+          async (note) => {
+            if (await act(() => api(`/release/${run.version}`, "POST", { step: key, note }), "적었어요")) reload("launch", "launchOne");
+          });
       }
       if (await act(() => api(`/release/${run.version}`, "POST", body), what === "done" ? "했어요" : what === "skip" ? "건너뛰었어요" : what === "undo" ? "되돌렸어요" : "적었어요")) reload("launch", "launchOne");
     },
@@ -532,20 +563,30 @@ export function opsViews(A) {
     "money-days": ({ key }) => { S.moneyDays = Number(key); reload("money", "changes"); },
     "errors-show": ({ key }) => { S.errorsShow = key; reload("errors"); },
     "error-state": async ({ id, key }) => {
-      const note = key === "fixed" ? window.prompt("무엇을 고쳤나요? (선택)", "") : "";
-      if (note === null) return;
-      if (await act(() => api(`/watch/errors/${id}`, "POST", { status: key, note }), key === "fixed" ? "고쳤어요로 바꿨어요" : "바꿨어요")) reload("errors");
+      const save = async (note) => {
+        if (await act(() => api(`/watch/errors/${id}`, "POST", { status: key, note }), key === "fixed" ? "고쳤어요로 바꿨어요" : "바꿨어요")) reload("errors");
+      };
+      // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 앱의 창.
+      if (key === "fixed") return askText({ title: "고쳤어요로 바꾸기", label: "무엇을 고쳤나요? (선택)", submit: "고쳤어요", maxlength: 300 }, save);
+      return save("");
     },
   };
 
   const forms = {
+    // 2.0.0 [RVQ-06] 비밀번호를 다시 확인하고 패스키 만들기(틀리면 그 자리에서 다시).
+    "passkey-reauth": async (form) => {
+      const password = new FormData(form).get("password");
+      dialog.close();
+      await passkeyCreate({ password });
+    },
     "incident-open": async (form) => {
       dialog.close();
       if (await act(() => api("/incident", "POST", { note: new FormData(form).get("note") }), "사고를 열었어요")) reload("incident");
     },
     "incident-close": async (form) => {
       dialog.close();
-      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: new FormData(form).get("note") }), "사고를 닫았어요")) {
+      const f = new FormData(form);
+      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: f.get("note"), days: Number(f.get("days") ?? 0) }), "사고를 닫았어요")) {
         if (S.overview) S.overview.incidentOpen = 0;
         reload("incident");
       }
@@ -593,7 +634,17 @@ export function opsViews(A) {
       const bands = (kind) => (S.data.money?.table?.[kind] ?? []).map((_, i) => ({ cap: n(`${kind}.${i}.cap`), monthly: n(`${kind}.${i}.monthly`), yearly: n(`${kind}.${i}.yearly`), pass: n(`${kind}.${i}.pass`) }));
       const body = { bamnat_pro: { monthly: n("bamnat_pro.monthly"), yearly: n("bamnat_pro.yearly") }, bamnat_pro_pass_1y: { pass: n("bamnat_pro_pass_1y.pass") },
         team: bands("team"), staff: bands("staff"), fee: n("fee") };
-      if (await act(() => api("/money/prices", "POST", body), "가격표를 저장했어요")) reload("money");
+      // 2.0.0 [RVA-04] 검토 ADM-05: 요금표 저장도 무엇이 얼마에서 얼마로 바뀌는지 한 번 보여 주고 물어요(Play로 보내기처럼).
+      const t = S.data.money?.table ?? {};
+      const won = (v) => `${Number(v ?? 0).toLocaleString("ko-KR")}`;
+      const changed = [["프로 월", t.bamnat_pro?.monthly, body.bamnat_pro.monthly], ["프로 연", t.bamnat_pro?.yearly, body.bamnat_pro.yearly],
+        ["프로 1년 이용권", t.bamnat_pro_pass_1y?.pass, body.bamnat_pro_pass_1y.pass], ["수수료 %", t.fee, body.fee],
+        ...["team", "staff"].flatMap((k) => (t[k] ?? []).flatMap((b, i) => ["monthly", "yearly", "pass"].map((f) => [`${k === "team" ? "팀" : "직원"} ${b.cap}명 ${{ monthly: "월", yearly: "연", pass: "이용권" }[f]}`, b[f], body[k][i]?.[f]])))]
+        .filter(([, a, b]) => Number(a ?? 0) !== Number(b ?? 0));
+      if (!changed.length) return toast("바뀐 값이 없어요");
+      A.danger({ title: "가격표를 저장할까요?", text: "앱의 가격 안내와 매출 계산이 이 값을 따라요. Play Console 가격과 같은지 한 번 더 봐 주세요.",
+        rows: changed.slice(0, 8).map(([k, a, b]) => [k, `${won(a)} → ${won(b)}`]).concat(changed.length > 8 ? [["그 밖", `${changed.length - 8}칸`]] : []),
+        label: "저장", tone: "primary", run: async () => { if (await act(() => api("/money/prices", "POST", body), "가격표를 저장했어요")) reload("money"); } });
     },
   };
 

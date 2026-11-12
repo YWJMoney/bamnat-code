@@ -263,9 +263,16 @@ class InvestAppTest {
         val alert = com.bamnat.core.invest.TradeAlertParser.parse("[체결통보] 매수 삼성전자(005930) 10주 체결 단가 71,500원", "com.truefriend.neosmarta")!!
         val p = com.bamnat.core.invest.TradeAlerts.of(alert, "한국투자", 1_000_000L)
         assertTrue(repo.addAlert(p))
-        assertFalse(repo.addAlert(p.copy(at = 1_060_000L)))
-        assertEquals(1, repo.pendingAlerts.first().size)
-        val t = repo.confirmAlert(p)
+        // 2.0.0 [RVK-14] (MONEY-62): the very same notification again, or the same fill told by another app, is one line.
+        assertFalse(repo.addAlert(p))
+        assertFalse(repo.addAlert(p.copy(app = "한국투자 알림톡", at = 1_030_000L)))
+        // The same app's next notification a minute later is another fill of the order (50주 + 50주), put with it.
+        assertTrue(repo.addAlert(p.copy(at = 1_060_000L)))
+        val waiting = repo.pendingAlerts.first().single()
+        assertEquals(20.0, waiting.quantity, 0.0)
+        assertEquals(2, waiting.parts)
+        val t = repo.confirmAlert(waiting)
+        assertEquals(20.0, t.quantity, 0.0)
         assertEquals(listOf("알림:한국투자"), t.tags)
         assertTrue(t.fee > 0)
         assertEquals(t.id, repo.now().trades.single().id)

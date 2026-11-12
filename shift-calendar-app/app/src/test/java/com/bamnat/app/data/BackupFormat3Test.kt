@@ -116,6 +116,19 @@ class BackupFormat3Test {
         refs.clear()
     }
 
+    /**
+     * 2.0.0 [RVP-73] (검토 REST-15) 내 글꼴 (2~20MB each) stay out of Android's cloud backup: past its 25MB the schedule database does not
+     * go up either. A phone-to-phone transfer still takes them.
+     */
+    @Test fun myFontsStayOutOfTheCloudBackup() {
+        val cloud = File("src/main/res/xml/data_extraction_rules.xml").readText().substringAfter("<cloud-backup>").substringBefore("</cloud-backup>")
+        val transfer = File("src/main/res/xml/data_extraction_rules.xml").readText().substringAfter("<device-transfer>").substringBefore("</device-transfer>")
+        val old = File("src/main/res/xml/backup_rules.xml").readText()
+        assertTrue("cloud", cloud.contains("""<exclude domain="file" path="fonts/" />"""))
+        assertTrue("Android 11 and below", old.contains("""<exclude domain="file" path="fonts/" />"""))
+        assertFalse("a new phone still gets them", transfer.contains("fonts/"))
+    }
+
     @Test fun aChangedFileIsTurnedAway() {
         val bytes = file(manager())
         // One byte of the photo (stored as it is) changed: its sum no longer matches.
@@ -156,6 +169,79 @@ class BackupFormat3Test {
         assertEquals(1, b.summarize(json).photos)
         b.restore(json)
         assertTrue(File(receipts, "r1.jpg").isFile)
+    }
+
+    /**
+     * 2.0.0 [RVH-33] 검토 WORK-19 A kind of day's hours before a change '오늘부터만' go in the backup and come back, so last month's hours
+     * stay after a restore; a kind with none says nothing of it (a backup read by an older app finds no new key).
+     */
+    @Test fun theHoursBeforeAChangeGoAndComeBack() = runBlocking {
+        val repo = ScheduleRepository(db)
+        val night = repo.shiftTypes.first().first { it.hasTimes }
+        val changed = night.withTimesFrom(night.copy(end = night.end!!.plusHours(1)), day)
+        repo.saveShiftType(changed)
+        val b = manager()
+        val json = b.read(file(b).inputStream())
+        assertEquals(1, Regex("\"timeHistory\"").findAll(json).count())
+        db.shiftTypeDao().getAll().forEach { db.shiftTypeDao().update(it.copy(timeHistory = "")) }
+        b.restore(json)
+        val back = repo.shiftTypes.first().first { it.name == night.name }
+        assertEquals(night.end, back.on(day.minusDays(1)).end)
+        assertEquals(night.end!!.plusHours(1), back.on(day).end)
+    }
+
+    /**
+     * 2.0.0 [RVH-44][RVH-45] 결정 19번 (설계 4-4절): a kind of day of two parts and an hour's leave go in the backup and come back. An app
+     * before 2.0.0 reads "break"·"breakStart" only, so they hold the break and the gap together from the gap's start (the same minutes
+     * worked), and "leave" keeps the nearest part of a day, never a whole one.
+     */
+    @Test fun twoPartsAndAnHoursLeaveGoAndComeBack() = runBlocking {
+        val repo = ScheduleRepository(db)
+        val first = repo.shiftTypes.first().first { it.hasTimes }
+        val shop = first.copy(start = java.time.LocalTime.of(11, 0), end = java.time.LocalTime.of(22, 0), breakMinutes = 30,
+            breakStart = java.time.LocalTime.of(12, 0), gapStart = java.time.LocalTime.of(15, 0), gapMinutes = 120, gapAlarm = true)
+        repo.saveShiftType(shop)
+        val hours = com.bamnat.core.model.Leave.hours(com.bamnat.core.model.LeaveKind.ANNUAL, 120, fromStart = true)
+        repo.updateDay(day) { it.copy(leave = hours, customGapStart = java.time.LocalTime.of(16, 0), customGapMinutes = 60) }
+        val b = manager()
+        val json = b.read(file(b).inputStream())
+        val o = JSONObject(json)
+        val t = o.getJSONArray("shiftTypes").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.first { it.optInt("gap") > 0 }
+        assertEquals("옛 앱: 휴게 + 구간 사이", 150, t.getInt("break"))
+        assertEquals("옛 앱: 구간 사이 시작부터", 15 * 60, t.getInt("breakStart"))
+        assertEquals(30, t.getInt("rest")); assertEquals(12 * 60, t.getInt("restStart"))
+        assertEquals(15 * 60, t.getInt("gapStart")); assertEquals(120, t.getInt("gap")); assertTrue(t.getBoolean("gapAlarm"))
+        val d = o.getJSONArray("days").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.first { it.has("leaveMinutes") }
+        assertEquals(120, d.getInt("leaveMinutes"))
+        assertEquals("옛 앱: 반반차(오전), 하루가 아님", com.bamnat.core.model.Leave(quarters = 1, fromStart = true),
+            com.bamnat.core.model.Leave.fromCode(d.getInt("leave")))
+        // A kind of one part says nothing new (an older app's backup reads exactly as before).
+        o.getJSONArray("shiftTypes").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.filter { it.optInt("gap") == 0 }
+            .forEach { assertFalse(it.has("rest") || it.has("gapStart") || it.has("gapAlarm")) }
+
+        repo.saveShiftType(first)
+        repo.updateDay(day) { com.bamnat.core.model.DayEntry(day) }
+        b.restore(json)
+        assertEquals(shop.copy(timeHistory = emptyList()), repo.shiftTypes.first().first { it.id == shop.id }.copy(timeHistory = emptyList()))
+        val back = repo.entryNow(day)!!
+        assertEquals(hours, back.leave)
+        assertEquals(java.time.LocalTime.of(16, 0), back.customGapStart)
+        assertEquals(60, back.customGapMinutes)
+    }
+
+    /** 2.0.0 [RVH-44] A backup from before 2.0.0: its "break" is the break, never guessed to be a gap. */
+    @Test fun anOldBackupsBreakStaysABreak() = runBlocking {
+        val repo = ScheduleRepository(db)
+        val b = manager()
+        val o = JSONObject(b.read(file(b).inputStream()))
+        val types = o.getJSONArray("shiftTypes")
+        val t = (0 until types.length()).map { types.getJSONObject(it) }.first { it.has("start") && !it.optBoolean("off") }
+        t.put("break", 120).put("breakStart", 15 * 60)
+        b.restore(o.toString())
+        val back = repo.shiftTypes.first().first { it.id == t.getLong("id") }
+        assertEquals(120, back.breakMinutes)
+        assertEquals(java.time.LocalTime.of(15, 0), back.breakStart)
+        assertFalse(back.hasGap)
     }
 
     @Test fun aFileOfFormat2StillOpens() = runBlocking {

@@ -23,9 +23,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,8 +71,9 @@ interface MoneyActions {
 /** [WORK-02] The day's booked jobs, with what is still owed. */
 @Composable
 fun JobsSection(date: LocalDate, jobs: List<Job>, actions: MoneyActions) {
-    var editing by remember { mutableStateOf<Job?>(null) }
-    var adding by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-03] (MONEY-01): open sheets come back after a rebuilt screen or an app the phone closed.
+    var editing by rememberOpenLine<Job>({ it.id }) { id -> jobs.firstOrNull { it.id == id } }
+    var adding by rememberSaveable { mutableStateOf(false) }
     SectionCard(
         title = "일감",
         trailing = { com.bamnat.app.ui.components.AddButton("일감 추가", onClick = { adding = true }) },
@@ -126,7 +129,8 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
 /** [WORK-03] The shop's day: sales, costs and what is left. */
 @Composable
 fun SalesSection(date: LocalDate, sales: DailySales?, actions: MoneyActions) {
-    var editing by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-05] (PC-04, MONEY-12): 오늘 마감 stays open through a rebuilt screen, with what was typed in it.
+    var editing by rememberSaveable { mutableStateOf(false) }
     SectionCard(
         title = "매출",
         trailing = { TextButton(onClick = { editing = true }) { Text(if (sales == null) "매출 적기" else "고치기") } },
@@ -172,11 +176,12 @@ fun DayLedgerSection(
     /** 1.37 [LEDH-30] What is often spent on this kind of shift, and the shift's name. */
     habits: Pair<String, List<MoneyEntry>>? = null,
 ) {
-    var adding by remember { mutableStateOf<MoneyKind?>(null) }
+    // 2.0.0 [RVK-03] (MONEY-01): open sheets come back after a rebuilt screen or an app the phone closed.
+    var adding by rememberSaveable { mutableStateOf<MoneyKind?>(null) }
     var fromMemo by remember { mutableStateOf<MoneyEntry?>(null) }
     val memoAmounts = remember(memoText, entries) { MemoAmounts.pending(memoText, entries) }
-    var addingJob by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<MoneyEntry?>(null) }
+    var addingJob by rememberSaveable { mutableStateOf(false) }
+    var editing by rememberOpenLine<MoneyEntry>({ it.id }) { id -> entries.firstOrNull { it.id == id } }
     SectionCard(title = "가계부") {
         entries.forEach { e -> EntryRow(e) { editing = e } }
         // [WORK-05] "+50,000" or "수입 5만원" in the day's memo is offered as a line; nothing is added until saved.
@@ -241,15 +246,14 @@ fun DayLedgerSection(
  */
 @Composable
 fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)
-        else CategoryAvatar(e.category, size = 36.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    // 2.0.0 [RVK-21]·HQ-23 (총괄 #457 리뷰): at large text a long shop name and its date line were cut to '…' beside the amount.
+    // There they wrap to two lines and, like every 'name … amount' row (NameAndAmount), the amount goes under them when both do
+    // not fit on one line, so the name has the row's whole width; at 100% the row is as before.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+    val lines = if (big) 2 else 1
+    val words: @Composable () -> Unit = {
+        Column {
+            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = lines, overflow = TextOverflow.Ellipsis)
             val source = when (e.source) {
                 MoneySource.NOTIFICATION -> "알림에서"
                 MoneySource.PASTE -> "문자에서"
@@ -267,11 +271,26 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
                     e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = lines, overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(8.dp))
+    }
+    val amount: @Composable () -> Unit = {
         Text(signedWon(e), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e))
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)
+        else CategoryAvatar(e.category, size = 36.dp)
+        Spacer(Modifier.width(12.dp))
+        if (big) NameAndAmount(words, Modifier.weight(1f)) { amount() }
+        else {
+            Box(Modifier.weight(1f)) { words() }
+            Spacer(Modifier.width(8.dp))
+            amount()
+        }
     }
 }
 

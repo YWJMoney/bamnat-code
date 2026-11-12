@@ -20,6 +20,10 @@ import { FORMULA, formulaProblem, formulaTextProblem, fxCallKeys, fxReadsLink } 
 import { DECOR_ANCHORS, DECOR_ICONS, DECOR_LINES, DECOR_MAX, DECOR_SHAPES, decorFont, decorOn, decorPhoto, decorTap } from "./decor.js";
 import { cellExtra, screenExtra, fillProblem, fontId, photoAdjust, photoFrame, motionProblem } from "./materials.js";
 import { waitingPhotos } from "./photo-guard.js";
+import { PARTS_SINCE } from "./parts-since.js";
+import { cleanSetup } from "./company-setup.js";
+import { ZWJ, graphemes } from "./letters.js";
+import { SHIFT_RULES } from "./shift-rules.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -117,10 +121,12 @@ const payLooks = (s) => {
   return null;
 };
 
+// 2.0.0 [RVD-25] SN-17: a 회사 근무 주기 작품 is checked as the company server checks the same file (근무 종류 24개, 이름 40자, 쉬는 시간
+// 720분, 이름 겹침 …), so what the 장터 takes can still be shared and linked after it is put in. Before, only its format was looked at.
 const companyCheck = (text) => {
   try {
-    const v = JSON.parse(text);
-    return v && typeof v === "object" && !Array.isArray(v) && v.format === "bamnat-company" ? null : "setup";
+    cleanSetup(JSON.parse(text));
+    return null;
   } catch {
     return "setup";
   }
@@ -227,8 +233,10 @@ const LOGIC_ACT_MORE = [TS("then", 2, 12), N("after", 1, 720, { optional: true }
 const LOGIC_ACT = [P("do", LOGIC_VERBS), T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
   N("by", -1_000_000, 1_000_000, { decimals: 2, optional: true }), ...LOGIC_ACT_MORE];
 export const RECIPE_PIECES = {
-  shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
-    T("label", 2, { min: 1, check: (s) => (graphemes(s) > 2 ? "label" : null) }), C("color"), E("emoji")], { min: 1 })] },
+  // 2.0.0 [RVD-28] SD-08: a name and a 근무 글자 in letters, from the 근무 종류 한 규칙표 (core ShiftRules → shift-rules.js), as core PieceCatalog.
+  shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", SHIFT_RULES.name.letters, { min: 1 }), P("role", ROLES),
+    T("label", SHIFT_RULES.label.letters, { min: 1, check: (s) => (graphemes(s) > SHIFT_RULES.label.letters ? "label" : null) }), C("color"), E("emoji")],
+    { min: 1 })] },
   calTheme: { styles: STYLES, fields: [C("today", { optional: true }), C("sat", { optional: true }), C("sun", { optional: true }),
     C("holiday", { optional: true }), P("cell", ["fill", "tint", "dot"], { optional: true })] },
   alarms: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("byRole", 6, [P("role", ROLES), NS("before", 4, 0, 720, { optional: false })]),
@@ -349,7 +357,6 @@ const PIECE_KEYS = Object.keys(RECIPE_PIECES);
 
 // ---- words (core RecipeText) ----
 
-const ZWJ = 0x200d;
 const VS16 = 0xfe0f;
 const HIDDEN = /[\p{Cc}\p{Cf}\p{Co}\p{Cn}\p{Cs}]/u;
 const SO = /\p{So}/u;
@@ -385,28 +392,8 @@ export function cleanText(s, lines = false, maxLines = 20) {
   return t.trim();
 }
 
-const MARK = /[\p{Mn}\p{Me}]/u;
-
-/** core RecipeText.graphemes: what a person counts as one letter. */
-export function graphemes(s) {
-  const cps = [...s].map((c) => c.codePointAt(0));
-  let n = 0;
-  let flagHalf = false;
-  for (let i = 0; i < cps.length; i++) {
-    const cp = cps[i];
-    if (cp === ZWJ) {
-      i++;
-    } else if ((cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0x1f3fb && cp <= 0x1f3ff) || (cp >= 0xe0020 && cp <= 0xe007f) || MARK.test(String.fromCodePoint(cp))) {
-      // adds nothing
-    } else if (cp >= 0x1f1e6 && cp <= 0x1f1ff) {
-      if (!flagHalf) n++;
-      flagHalf = !flagHalf;
-      continue;
-    } else n++;
-    flagHalf = false;
-  }
-  return n;
-}
+// core RecipeText.graphemes is letters.js (2.0.0 [RVD-26]: the company server counts 근무 글자 with it too).
+export { graphemes };
 
 const PROBLEMS = [
   ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
@@ -1470,26 +1457,54 @@ const SORTS = ["good", "hot", "new", "official", "data", "showcase"];
 /**
  * 1.39 [TASK-07] Parts and states an older app cannot read (its RecipeCodec refuses the whole recipe on a name it does not know), each
  * with the first versionCode that reads it. A maker's recipe that uses one is listed only to apps that new ([partsMinApp] → min_app).
+ * 2.0.0 [RVD-24] SN-07 The table is its own file (parts-since.js), which core will write; 1.38·1.39's memo.page*·night.* were missing.
  */
-export const PARTS_SINCE = {
-  ids: { "widget.task": 53, "widget.task.check": 53, "widget.task.add": 53 },
-  // 1.39 [LINK-01] 근무 입력 상태 (연차·잔업·특근·대근·직접 바꾼 날): parts lines and 꾸밈 층 items alike.
-  states: { late: 53, done: 53, leave: 53, extra: 53, cover: 53, edited: 53 },
-};
-const DECOR_SINCE = { leave: 53, extra: 53, cover: 53, edited: 53 };
+export { PARTS_SINCE };
+
+/** [RVD-24] A fill's kind as parts-since.js names it: pt.<무늬>·tx.<질감>·sh.<셰이더>, else its first word. */
+const fillKind = (f) => (/^(pt|tx|sh)\./.test(f) ? f.split(".").slice(0, 2).join(".") : f.split(".")[0]);
 
 /** 1.39 [TASK-07] The versionCode a recipe's parts lines need ([PARTS_SINCE]), or null when any app reads them. */
 export function partsMinApp(recipe) {
   let need = 0;
+  const since = (map, name) => {
+    const v = typeof name === "string" && Object.hasOwn(map, name) ? map[name] : 0;
+    if (v > need) need = v;
+  };
+  // [RVD-24] The pieces of a looks·screens string ("all~fl:pt.dots…|ft:jua/memo~…") and of a motion ("tn:slide|td:pulse").
+  const pieces = (s) => s.split(/[|/]/).map((x) => x.slice(x.indexOf("~") + 1));
+  // Fonts, motions and fills by the field that holds them, wherever it is.
   const walk = (v) => {
     if (Array.isArray(v)) { v.forEach(walk); return; }
     if (!v || typeof v !== "object") return;
-    if (typeof v.id === "string" && PARTS_SINCE.ids[v.id]) need = Math.max(need, PARTS_SINCE.ids[v.id]);
-    if (typeof v.on === "string" && PARTS_SINCE.states[v.on] && typeof v.id === "string" && PART_IDS.includes(v.id)) need = Math.max(need, PARTS_SINCE.states[v.on]);
-    if (typeof v.on === "string" && DECOR_SINCE[v.on] && typeof v.at === "string") need = Math.max(need, DECOR_SINCE[v.on]);
+    for (const [k, x] of Object.entries(v)) {
+      if (typeof x !== "string" || !x) continue;
+      if (k === "font") since(PARTS_SINCE.fonts, x);
+      else if (k === "motion") pieces(x).forEach((m) => since(PARTS_SINCE.motions, m));
+      else if (k === "paint" || k === "linePaint") since(PARTS_SINCE.fills, fillKind(x));
+      else if (k === "looks" || k === "screens") {
+        for (const p of pieces(x)) {
+          if (p.startsWith("ff:") || p.startsWith("ft:")) since(PARTS_SINCE.fonts, p.slice(3));
+          else if (p.startsWith("fl:")) since(PARTS_SINCE.fills, fillKind(p.slice(3)));
+        }
+      }
+    }
     Object.values(v).forEach(walk);
   };
-  walk(recipe);
+  for (const p of Array.isArray(recipe?.pieces) ? recipe.pieces : []) {
+    // Part ids and states only on 부품 줄, a day only on 꾸밈 항목 (a 버튼 named "night" is not the 밤 화면).
+    if (p?.kind === "parts" && Array.isArray(p.parts)) {
+      for (const l of p.parts) {
+        if (typeof l?.id !== "string") continue;
+        since(PARTS_SINCE.ids, l.id);
+        if (typeof l.on === "string" && PART_IDS.includes(l.id)) since(PARTS_SINCE.states, l.on);
+      }
+    }
+    if (p?.kind === "decor" && Array.isArray(p.items)) {
+      for (const it of p.items) if (typeof it?.on === "string" && typeof it.at === "string") since(PARTS_SINCE.decor, it.on);
+    }
+    walk(p);
+  }
   return need || null;
 }
 
@@ -1736,7 +1751,7 @@ async function publish(d, env, request) {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`, code, dev, r.title, skel, r.summary ?? "", r.styles.join(","), JSON.stringify(r.cover), scope,
     state, r.parent ?? null, clean.hash, clean.text, now, now, await makerId(dev),
     // 1.39 [FX-01] An app before 1.39 cannot read a 기능 장치, so it never lists the work; parts keep their own minApp (TASK-07).
-    Math.max(partsMinApp(r) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null),
+    minAppOf(clean.text)),
     d.stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", dev, await makerId(dev), now),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, 1, ?, ?, ?)", code, clean.hash, clean.text, now),
   ]);
@@ -1790,7 +1805,7 @@ async function newVersion(d, env, request, code) {
   await d.batch(env, [
     d.stmt(env, `UPDATE recipes SET title = ?, title_skel = ?, summary = ?, styles = ?, cover = ?, scope = ?, state = ?, version = ?, hash = ?, body = ?,
       updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
-    state, v, clean.hash, clean.text, now, Math.max(partsMinApp(rec) ?? 0, fxPartsOf(clean.text).length ? FX_SINCE_APP : 0) || null, code),
+    state, v, clean.hash, clean.text, now, minAppOf(clean.text), code),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
   ]);
   return d.json({ code, version: v, hash: clean.hash, state, scope });
@@ -2401,8 +2416,57 @@ export async function releaseWaiting(d, env, now, where, args, actor) {
 }
 
 /** Hidden recipes go 90 days after they were hidden (처리방침 3.8), from the hourly job. 1.36 [MKS-01] and 예약된 출시 대기 comes up. */
+/**
+ * 2.0.0 [RVD-24] SN-07 What an app needs to read a recipe: its parts ([partsMinApp]) and its 기능 장치 (FX_SINCE_APP).
+ * [text] is the recipe as stored (recipes.body).
+ */
+export function minAppOf(text) {
+  let rec = null;
+  try { rec = JSON.parse(text); } catch { return null; }
+  return Math.max(partsMinApp(rec) ?? 0, fxPartsOf(text).length ? FX_SINCE_APP : 0) || null;
+}
+
+/**
+ * 2.0.0 [RVD-24] SN-07 판 호환표(parts-since.js)나 FX_SINCE_APP이 바뀌면, 이미 올라간 작품을 [limit]개씩 다시 재요(매시 정리, 다 보면 표가
+ * 다시 바뀔 때까지 멈춤, 한 번에 [pages]쪽). min_app은 올리기만 해요: 출시 묶음이 정한 값이나 새 판이 올린 값은 그대로 두고, 표가 더 새 앱을 말할 때만 올려요.
+ * 바꾼 작품마다 작품 기록(recipe_actions)에 '판 호환표'로 남아요. Returns how many it raised.
+ */
+export async function recheckMinApp(d, env, now, limit = 200, pages = 5) {
+  const sig = (await sha256hex(JSON.stringify([PARTS_SINCE, FX_SINCE_APP]))).slice(0, 16);
+  let raised = 0;
+  for (let page = 0; page < pages; page++) {
+    const n = await recheckPage(d, env, now, sig, limit);
+    if (n === null) break;
+    raised += n;
+  }
+  return raised;
+}
+
+/** [RVD-24] One page of [recheckMinApp]: how many it raised, or null when the table's works are all measured. */
+async function recheckPage(d, env, now, sig, limit) {
+  const done = await d.one(env, "SELECT value FROM settings WHERE key = 'recipe_min_app_sig'");
+  if (done?.value === sig) return null;
+  const at = await d.one(env, "SELECT value FROM settings WHERE key = 'recipe_min_app_at'");
+  const after = at?.value?.startsWith(`${sig}:`) ? at.value.slice(sig.length + 1) : "";
+  const rows = await d.all(env, "SELECT code, body, min_app FROM recipes WHERE state != 'deleted' AND code > ? ORDER BY code LIMIT ?", after, limit);
+  const raise = rows.map((r) => ({ code: r.code, from: r.min_app ?? null, to: minAppOf(r.body) ?? 0 })).filter((r) => r.to > (r.from ?? 0));
+  const stmts = raise.flatMap((r) => [
+    d.stmt(env, "UPDATE recipes SET min_app = ? WHERE code = ? AND COALESCE(min_app, 0) < ?", r.to, r.code, r.to),
+    d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'min_app', ?, '자동 정리', ?)", r.code,
+      `판 호환표: 앱 ${r.from ?? "모두"} → ${r.to}부터 보여요`, now),
+  ]);
+  stmts.push(rows.length < limit
+    ? d.stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('recipe_min_app_sig', ?)", sig)
+    : d.stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('recipe_min_app_at', ?)", `${sig}:${rows.at(-1).code}`));
+  // D1 takes a limited number of statements in one request (hide-titles above sends 90 at a time).
+  for (let i = 0; i < stmts.length; i += 90) await d.batch(env, stmts.slice(i, i + 90));
+  return raise.length;
+}
+
 export async function pruneRecipes(d, env, now) {
   await releaseWaiting(d, env, now, "state = 'waiting' AND release_at IS NOT NULL AND release_at <= ?", [now], "예약");
+  // 2.0.0 [RVD-24] SN-07 판 호환표가 바뀌면 이미 올라간 작품의 min_app도 다시 봐요.
+  await recheckMinApp(d, env, now);
   // 1.39 판 정리로 내린 운영자 작품('retired')은 넣은 분이 계속 열어서 지우지 않아요(사용자 작품이 아니라 처리방침 3.8의 가린 것이 아니에요).
   const old = await d.all(env, `SELECT code FROM recipes WHERE state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}' AND hidden_at < ? LIMIT 50`, now - 90 * DAY);
   if (old.length) await d.batch(env, old.flatMap((r) => dropRecipe(d, env, r.code)));

@@ -34,7 +34,7 @@ class RosterDraftStore(private val dir: File) {
         val keepMine: Boolean = false,
     )
 
-    fun read(calendarId: String, now: Instant = Instant.now()): Draft? = runCatching {
+    fun read(calendarId: String, now: Instant = com.bamnat.core.time.Today.instant()): Draft? = runCatching {
         val f = fileOf(calendarId).takeIf { it.exists() } ?: return null
         decode(JSONObject(f.readText())).takeIf { it.at.isAfter(now.minusSeconds(KEEP_DAYS * 86_400)) }
     }.getOrNull()

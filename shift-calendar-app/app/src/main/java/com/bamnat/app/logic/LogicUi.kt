@@ -71,7 +71,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
 
 /** The line after a button or rule acted, with 되돌리기 when it wrote data (메모·체크·가계부). */
 @Composable
-fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
+fun LogicMessageHost(c: AppContainer) {
     androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
         LogicRunner.onScreen = true
         onStopOrDispose { LogicRunner.onScreen = false }
@@ -85,11 +85,10 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
             val resting = com.bamnat.app.diag.StartGuard.safe.value
             val canUndo = !resting && LogicStore(c.appContext).undo != null
             val action = when { resting -> "평소대로"; canUndo -> "되돌리기"; else -> null }
-            // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게.
-            val r = snackbar.showSnackbar(m, actionLabel = action, duration = if (action != null) SnackbarDuration.Long else SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) when {
+            // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게. 2.0.0 [RVP-23] On the app's one line, 되돌리기 first.
+            if (com.bamnat.app.ui.components.AppSnack.ask(m, action)) when {
                 resting -> c.wakeAfterSafe()
-                canUndo -> snackbar.showSnackbar(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")
+                canUndo -> com.bamnat.app.ui.components.AppSnack.show(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")
             }
         }
     }

@@ -246,6 +246,31 @@ object MoneyCategories {
     /** [LEDG-14] A name the user may give a category: trimmed, short, and nothing a CSV or list would trip over. */
     fun clean(name: String): String = name.replace(Regex("[\\t\\n\\r,#]"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_NAME)
 
+    /**
+     * 2.0.0 [RVK-08] (검토 MONEY-03·T06a-10): categories the sums find by their name — 급여 (받은 급여가 예상 대신 들어감),
+     * 카드값·내 계좌 (이체의 '어디로', 카드값 맞추기, 앞으로의 돈), 이자·금융·대출 상환 (빚 갚기), 기타. Renamed, 급여 would be
+     * counted twice and 카드값 would stop filling itself, so they keep their names; hiding one is still fine.
+     */
+    val FIXED_NAMES: Set<String> = setOf(SALARY, "카드값", "내 계좌", INTEREST, "대출 상환", OTHER)
+
+    /** False for a category the sums read by name ([FIXED_NAMES]). */
+    fun renamable(name: String): Boolean = name !in FIXED_NAMES
+
+    /**
+     * 2.0.0 [RVK-09] (검토 MONEY-02): renames given as (이름 → 새 이름) all meant at once, put in an order that never lands
+     * one category on another: each goes through a name nobody uses first, so 식비→외식 with 장보기→식비, or a swap, keeps
+     * the two apart. Returns (from, to) steps to run in order; the fixed names (from or to) and empty or unchanged ones are left out.
+     */
+    fun renameSteps(renames: List<Pair<String, String>>): List<Pair<String, String>> {
+        val wanted = renames.mapNotNull { (from, to) ->
+            val name = clean(to)
+            if (name.isEmpty() || name == from || !renamable(from) || !renamable(name)) null else from to name
+        }.distinctBy { it.first }
+        if (wanted.isEmpty()) return emptyList()
+        val temp = wanted.mapIndexed { i, (from, _) -> from to "\u0001rename$i" }
+        return temp + wanted.mapIndexed { i, (_, to) -> temp[i].second to to }
+    }
+
     const val SALARY = "급여"
     const val OTHER = "기타"
     const val MAX_NAME = 12
@@ -285,7 +310,15 @@ data class MonthMoney(
     val otherIncome: Long,
     val expenses: Long,
     val expenseByCategory: List<CategoryTotal>,
+    /** 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) Counted over a pay cycle (급여일 주기) instead of the calendar month; null for the month. */
+    val range: PayCycle.Range? = null,
 ) {
+    /** The first and last day counted: the cycle's, or the month's. */
+    val from: LocalDate get() = range?.from ?: month.atDay(1)
+    val to: LocalDate get() = range?.to ?: month.atEndOfMonth()
+    /** "11월" or "10/25~11/24", for a title. */
+    val label: String get() = range?.label ?: "${month.monthValue}월"
+
     /**
      * [TAX-01] One of the two, never both. [J133-02] 1.33 (보고서 A10): the salary written down wins once it came in (it is
      * the money in the account); before that the estimate stands in, as [payExpected] (들어올 돈).
@@ -322,8 +355,18 @@ object MoneyCalculator {
         payEstimate: Long? = null,
         /** 1.37 PC 6차: counted on this day, a job is earned once done or past ([Job.isDone]), as the calendar's 번 돈. */
         today: LocalDate? = null,
-    ): MonthMoney {
-        val inMonth = { d: LocalDate -> YearMonth.from(d) == month }
+    ): MonthMoney = counted(month, null, entries, jobs, sales, payEstimate, today)
+
+    /**
+     * 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18) The same sums over a pay cycle, from a pay day to the day before the next, shown as
+     * [month]'s. The pay that starts the cycle is in it as written down; no estimate (the next pay starts the next cycle).
+     */
+    fun cycle(month: YearMonth, range: PayCycle.Range, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+              today: LocalDate? = null): MonthMoney = counted(month, range, entries, jobs, sales, null, today)
+
+    private fun counted(month: YearMonth, range: PayCycle.Range?, entries: List<MoneyEntry>, jobs: List<Job>, sales: List<DailySales>,
+                        payEstimate: Long?, today: LocalDate?): MonthMoney {
+        val inMonth = { d: LocalDate -> if (range != null) range.contains(d) else YearMonth.from(d) == month }
         val e = entries.filter { inMonth(it.date) }
         val all = jobs.filter { inMonth(it.date) }
         val j = if (today == null) all else all.filter { it.cancelled || it.isDone(today) }
@@ -356,6 +399,7 @@ object MoneyCalculator {
             expenseByCategory = shares.groupBy { it.first }
                 .map { (c, list) -> CategoryTotal(c, list.sumOf { it.second }, list.size) }
                 .sortedWith(compareByDescending<CategoryTotal> { it.amount }.thenBy { it.category }),
+            range = range,
         )
     }
 
@@ -432,6 +476,8 @@ data class MoneyBook(
     }
 
     fun month(month: YearMonth, payEstimate: Long? = null, today: LocalDate? = null) = MoneyCalculator.month(month, entries, jobs, sales, payEstimate, today)
+    /** 2.0.0 [RVK-20] [month] counted over the pay cycle [range]. */
+    fun cycle(month: YearMonth, range: PayCycle.Range, today: LocalDate? = null) = MoneyCalculator.cycle(month, range, entries, jobs, sales, today)
     fun days(month: YearMonth) = MoneyCalculator.days(month, entries, jobs, sales)
     /** [RECV-02] Everything still owed, written down or left on a job. */
     fun owed(today: LocalDate) = Receivables.owed(receivables, jobs, today)

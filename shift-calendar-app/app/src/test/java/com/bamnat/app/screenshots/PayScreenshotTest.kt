@@ -154,9 +154,9 @@ class PayScreenshotTest : ScreenshotBase() {
     }
     @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
         settingsPage("내 근무")
-        tapText("연장 휴무일 근무 지정", exact = true)
+        tapText("연장·휴무일 근무 지정", exact = true)
     }
-    // ---- [EXTRA-07][EXTRA-08] 연장 휴무일 근무 지정 ----
+    // ---- [EXTRA-07][EXTRA-08] 연장·휴무일 근무 지정 ----
     @Test fun foldedKindPremiums() = shoot("108_folded_kind_premiums", FOLDED) {
         kindsScreen().invoke(this)
         tapText("대근", exact = true)
@@ -399,7 +399,7 @@ class PayScreenshotTest : ScreenshotBase() {
         // 1.27 AJ's two cards under the total too.
         openPayGuides()
         reveal("계산 방식 찾기", exact = true)
-        reveal("상담용 묶음 (급여·근무시간·연차)", exact = true)
+        reveal("다른 리포트", exact = true)
         reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }

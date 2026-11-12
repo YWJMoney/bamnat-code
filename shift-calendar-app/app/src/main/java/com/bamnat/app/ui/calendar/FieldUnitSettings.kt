@@ -175,8 +175,8 @@ internal fun EndTimeDialog(date: LocalDate, rules: FieldRules, onDismiss: () -> 
                     Text("→ ${DayRate.label(units)}", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
                 }
                 Text(DayRate.rulesLine(list), style = MaterialTheme.typography.bodyMedium)
-                Text(if (rules.unitRules.isEmpty()) "처음이라 예시 규칙이에요. 저장하면 이 규칙을 써요. 달력 고치기 › 일 세는 방법에서 바꿔요."
-                    else "규칙은 달력 고치기 › 일 세는 방법에서 바꿔요.",
+                Text(if (rules.unitRules.isEmpty()) "처음이라 예시 규칙이에요. 저장하면 이 규칙을 써요. 달력 고치기 › 세는 방식에서 바꿔요."
+                    else "규칙은 달력 고치기 › 세는 방식에서 바꿔요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },

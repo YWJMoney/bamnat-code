@@ -25,11 +25,22 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Calculate
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.heightIn
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -102,6 +113,159 @@ fun AmountField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * 2.0.0 [RVK-15] (검토 U06a-01): an amount box that counts. The calculator at its end opens a row of + − × ÷ = under it (the
+ * phone's number pad has none); "36000÷3" shows "= 12,000원" under the box, and the amount is the result from the first sign on,
+ * so 저장 never takes a half-typed sum. '=' or leaving the box puts the result in. Without a sum the row stays shut (총괄 #457
+ * 리뷰, 조건 1·8: the sheet's usual look is no taller than before), and the box is [AmountField] with one more icon.
+ */
+@Composable
+fun CalcAmountField(
+    label: String,
+    digits: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    textStyle: androidx.compose.ui.text.TextStyle? = null,
+) {
+    val calc = com.bamnat.core.money.AmountCalc
+    fun valueOf(t: String): String = if (calc.hasOp(t)) calc.eval(t)?.let(::amountDigits).orEmpty() else t
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))) }
+    // What this box last said the amount is: other digits from outside (a chip, +1만) start the box again from them.
+    var sent by remember { mutableStateOf(digits) }
+    val shown = if (digits == sent) field
+        else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
+    val sum = calc.hasOp(shown.text)
+    var focused by remember { mutableStateOf(false) }
+    // The + − × ÷ = row: opened by the calculator icon, or by a sign typed on a keyboard that has one.
+    var calcOpen by rememberSaveable { mutableStateOf(false) }
+    fun put(text: String, keepCursor: androidx.compose.ui.text.input.TextFieldValue? = null) {
+        val cleaned = calc.clean(text)
+        val kept = if (calc.hasOp(cleaned)) cleaned else amountInput(cleaned)
+        field = if (keepCursor != null && keepCursor.text == kept) keepCursor
+            else androidx.compose.ui.text.input.TextFieldValue(kept, androidx.compose.ui.text.TextRange(kept.length))
+        sent = valueOf(kept)
+        onChange(sent)
+    }
+    fun settle() { if (calc.hasOp(shown.text)) put(valueOf(shown.text)) }
+    Column(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = shown,
+            onValueChange = { v -> put(v.text, v) },
+            label = { Text(label) },
+            textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
+            suffix = { Text("원") },
+            trailingIcon = {
+                IconButton(onClick = { if (calcOpen || sum) { settle(); calcOpen = false } else calcOpen = true }) {
+                    Icon(Icons.Outlined.Calculate, if (calcOpen || sum) "계산 줄 닫기" else "계산하기",
+                        tint = if (calcOpen || sum) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            singleLine = true,
+            visualTransformation = GroupedSum,
+            supportingText = if (sum) {
+                {
+                    val result = calc.eval(shown.text)
+                    Text(if (result != null) "= ${Fmt.won(result)}" else "계산한 값이 0원보다 커야 적을 수 있어요",
+                        color = if (result != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { settle(); defaultKeyboardAction(ImeAction.Next) }),
+            modifier = modifier.fillMaxWidth().onFocusChanged { f ->
+                if (focused && !f.isFocused) settle()
+                focused = f.isFocused
+            },
+        )
+        if (calcOpen || sum) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val keys = listOf(calc.PLUS to "더하기", calc.MINUS to "빼기", calc.TIMES to "곱하기", calc.DIVIDE to "나누기")
+            keys.forEach { (op, said) ->
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { if (shown.text.isNotEmpty()) put(shown.text + op) },
+                    enabled = shown.text.isNotEmpty(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        .semantics { contentDescription = said },
+                ) { Text(op.toString(), style = MaterialTheme.typography.titleLarge) }
+            }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { settle(); calcOpen = false },
+                enabled = sum,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "계산 끝내기" },
+            ) { Text("=", style = MaterialTheme.typography.titleLarge) }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVK-13][RVK-16][RVK-18] (총괄 #457 리뷰, 조건 12) Words with their text buttons: side by side when both fit on one line,
+ * else the words take the whole width and the buttons go under them on the right, so the words never stand in a thin column
+ * beside the buttons (글자 200%, the folded phone) and an amount is not cut in two.
+ */
+@Composable
+internal fun WordsWithActions(words: @Composable () -> Unit, modifier: Modifier = Modifier, actions: @Composable RowScope.() -> Unit) {
+    Layout(
+        contents = listOf(words, { Row(verticalAlignment = Alignment.CenterVertically, content = actions) }),
+        modifier = modifier.fillMaxWidth(),
+    ) { (said, buttons), c ->
+        val width = c.maxWidth
+        val b = buttons.first().measure(Constraints(maxWidth = width))
+        val oneLine = said.first().maxIntrinsicWidth(Constraints.Infinity) + b.width <= width
+        if (oneLine) {
+            val w = said.first().measure(Constraints(maxWidth = width - b.width))
+            // A row asked to be at least 48dp tall (a row you press) keeps the two in its middle.
+            val h = maxOf(w.height, b.height, c.minHeight)
+            layout(width, h) {
+                w.place(0, (h - w.height) / 2)
+                b.place(width - b.width, (h - b.height) / 2)
+            }
+        } else {
+            val w = said.first().measure(Constraints(maxWidth = width))
+            layout(width, w.height + b.height) {
+                w.place(0, 0)
+                b.place(width - b.width, w.height)
+            }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVK-23]·HQ-30 (총괄 #457 리뷰) A name and its amount: on one line while both fit; at large text the name keeps whole lines
+ * and the amount goes under it on the right, so a name is never cut down to its date ('10/14 신한카드 카드값' → '10/14').
+ * Every 'name … amount' row of the ledger uses it (앞으로의 돈, 구독, 예산, 카드 실적, 봉투, 기타로 남은 곳).
+ */
+@Composable
+internal fun NameAndAmount(name: @Composable () -> Unit, modifier: Modifier = Modifier, amount: @Composable RowScope.() -> Unit) =
+    WordsWithActions(name, modifier) { androidx.compose.foundation.layout.Spacer(Modifier.padding(start = 8.dp)); amount() }
+
+/** [RVK-15] Each number of a sum in 1,000 groups as it is typed ("36,000÷3"); a plain amount as [GroupedNumber]. */
+private object GroupedSum : VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): androidx.compose.ui.text.input.TransformedText {
+        val s = text.text
+        if (!com.bamnat.core.money.AmountCalc.hasOp(s)) return ThousandsTransformation.filter(text)
+        fun digit(k: Int) = s[k] in '0'..'9'
+        val runStart = IntArray(s.length)
+        val runEnd = IntArray(s.length)
+        for (k in s.indices) runStart[k] = if (digit(k) && k > 0 && digit(k - 1)) runStart[k - 1] else k
+        for (k in s.indices.reversed()) runEnd[k] = if (digit(k) && k < s.lastIndex && digit(k + 1)) runEnd[k + 1] else k + 1
+        val out = StringBuilder(s.length + s.length / 3)
+        val toShown = IntArray(s.length + 1)
+        val toTyped = ArrayList<Int>(s.length + 8)
+        for (k in s.indices) {
+            toShown[k] = out.length
+            if (digit(k) && k > runStart[k] && (runEnd[k] - k) % 3 == 0) { out.append(','); toTyped.add(k) }
+            out.append(s[k]); toTyped.add(k)
+        }
+        toShown[s.length] = out.length
+        toTyped.add(s.length)
+        val mapping = object : androidx.compose.ui.text.input.OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int = toShown[offset.coerceIn(0, s.length)]
+            override fun transformedToOriginal(offset: Int): Int = toTyped[offset.coerceIn(0, toTyped.lastIndex)]
+        }
+        return androidx.compose.ui.text.input.TransformedText(androidx.compose.ui.text.AnnotatedString(out.toString()), mapping)
+    }
 }
 
 /** What an amount field keeps of what was typed: digits without leading zeros, a lone 0 only when [allowZero]. */

@@ -320,13 +320,9 @@ private fun PickDialog(
     // W9: one big way first (the payslip's photo); the rules' photo, 칸 and pasting under '다른 방법'.
     var others by remember { mutableStateOf(false) }
     val othersOpen = others || typing || second.isNotBlank()
-    if (askDrop) AlertDialog(
-        onDismissRequest = { askDrop = false },
-        title = { Text("적은 내용을 버릴까요?") },
-        text = { Text("읽은 명세서와 붙여 넣은 글이 사라져요.") },
-        confirmButton = { TextButton(onClick = { askDrop = false; onDismiss() }) { Text("버리기") } },
-        dismissButton = { TextButton(onClick = { askDrop = false }) { Text("계속 쓰기") } },
-    )
+    // 뿌리 고침 3: the app's one 버릴까요 (계속 적기 / 버리기), in this sheet's words.
+    if (askDrop) com.bamnat.app.ui.components.DiscardAsk(onKeep = { askDrop = false }, onDiscard = { askDrop = false; onDismiss() },
+        what = "읽은 명세서와 붙여 넣은 글이 사라져요.")
     AlertDialog(
         onDismissRequest = leave,
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),

@@ -356,8 +356,18 @@ export async function growthAdmin(request, env, url, path, now) {
     let told = 0;
     switch (body.action) {
       case "market":
-        if (n.request_id || !["open"].includes(n.state)) return json({ error: "state" }, 409);
-        await toMarket(env, n, now);
+        if (!["open"].includes(n.state)) return json({ error: "state" }, 409);
+        // 2.0.0 [RVA-04] 검토 ADM-05: 내렸던 요구는 가려 둔 요청 판 줄을 다시 보여요(새 줄을 또 만들지 않아요).
+        if (n.request_id) {
+          await batch(env, [stmt(env, "UPDATE recipe_requests SET hidden = 0 WHERE id = ? AND device = 'operator'", n.request_id),
+            stmt(env, "UPDATE studio_needs SET state = 'market', updated_at = ? WHERE id = ?", now, n.id)]);
+        } else await toMarket(env, n, now);
+        break;
+      case "unmarket":
+        // 2.0.0 [RVA-04] 검토 ADM-05: '장터에 올리기'를 내려요. 요청 판 줄은 가리고 요구는 열린 채로(줄을 남겨 두어 매시간 저절로 다시 올라가지 않아요).
+        if (n.state !== "market" || !n.request_id) return json({ error: "state" }, 409);
+        await batch(env, [stmt(env, "UPDATE recipe_requests SET hidden = 1 WHERE id = ? AND device = 'operator'", n.request_id),
+          stmt(env, "UPDATE studio_needs SET state = 'open', updated_at = ? WHERE id = ?", now, n.id)]);
         break;
       case "build":
         await run(env, "UPDATE studio_needs SET state = 'building', note = ?, updated_at = ? WHERE id = ?", note, now, n.id);
@@ -375,7 +385,8 @@ export async function growthAdmin(request, env, url, path, now) {
         told = await tellAskers(env, { ...n, note }, "declined", now);
         break;
       case "reopen":
-        await run(env, "UPDATE studio_needs SET state = CASE WHEN request_id IS NULL THEN 'open' ELSE 'market' END, updated_at = ? WHERE id = ?", now, n.id);
+        await run(env, `UPDATE studio_needs SET state = CASE WHEN request_id IS NULL OR (SELECT hidden FROM recipe_requests WHERE id = request_id) = 1 THEN 'open' ELSE 'market' END,
+          updated_at = ? WHERE id = ?`, now, n.id);
         break;
       case "title": {
         const t = typeof body.title === "string" ? [...body.title.trim()].slice(0, 60).join("") : "";
