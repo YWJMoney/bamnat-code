@@ -186,6 +186,53 @@ internal fun ConditionChips(dark: Boolean, big: Boolean, cvd: Boolean, onDark: (
     if (canSeeAsCvd) FilterChip(selected = cvd, onClick = { onCvd(!cvd) }, label = { Text("색약 눈") })
 }
 
+// ---- 2.0.0 [RVS-18] 작품 크기·호환 ----
+
+/**
+ * 2.0.0 [RVS-18] 검토 SI-04 (스튜디오 조사 6-1, SD-03 ④·SD-04 ①): the bar's first line ("스튜디오 · 크기 23% · 1.39.0부터") and a chip on the studio's top line, so a maker
+ * sees while making what 올리기 would only say after: how full the work is ([com.bamnat.core.recipe.WorkSize]) and the oldest app that
+ * opens it, as the server will list it ([com.bamnat.core.recipe.RecipeNeeds], the same table, `MinAppAgreesTest`). A tap says who does not
+ * see it and which parts ask for the newer app. Worked out off the main thread (STU-28).
+ */
+@Composable
+internal fun rememberWorkFit(vm: StudioViewModel, s: StudioViewModel.State): Pair<com.bamnat.core.recipe.WorkSize.Of, com.bamnat.core.recipe.RecipeNeeds.Need>? {
+    val fit by androidx.compose.runtime.produceState<Pair<com.bamnat.core.recipe.WorkSize.Of, com.bamnat.core.recipe.RecipeNeeds.Need>?>(null, s.pieces, s.extras) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { runCatching { vm.size(s) to vm.needs(s) }.getOrNull() }
+    }
+    return fit
+}
+
+/** The chip; [onOpen] shows [WorkFitDialog], kept outside the folding row so a fold does not take the open dialog with it. */
+@Composable
+internal fun WorkFitChip(fit: Pair<com.bamnat.core.recipe.WorkSize.Of, com.bamnat.core.recipe.RecipeNeeds.Need>?, onOpen: () -> Unit) {
+    val (z, need) = fit ?: return
+    val words = "크기 ${z.percent}% · ${need.chip}"
+    androidx.compose.material3.AssistChip(onClick = onOpen, label = { Text(words) },
+        modifier = Modifier.semantics { contentDescription = "작품 크기·호환, $words" })
+}
+
+@Composable
+internal fun WorkFitDialog(fit: Pair<com.bamnat.core.recipe.WorkSize.Of, com.bamnat.core.recipe.RecipeNeeds.Need>?, onClose: () -> Unit) {
+    val (z, need) = fit ?: return
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = { androidx.compose.material3.TextButton(onClick = onClose) { Text("닫기") } },
+        title = { Text("작품 크기·호환") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(z.line + when {
+                    z.over -> "\n" + z.overLine.orEmpty()
+                    z.near -> " · 장터에 올릴 수 있는 만큼에 가까워요"
+                    else -> " · 넉넉해요"
+                }, style = MaterialTheme.typography.bodyMedium)
+                Text(need.line, style = MaterialTheme.typography.bodyMedium)
+                if (!need.everyApp) Text("옛 판 폰에서도 보이게 하려면 그 부분을 빼 주세요. ${com.bamnat.core.recipe.RecipeNeeds.nameOf(need.app)} 이상 폰에서는 그대로 보여요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+    )
+}
+
 // ---- [STU-39] 영역 잠그기 ----
 
 /** [STU-39] 잠그기 chips: a locked tab keeps its look when 한 색·섞기·모든 화면에·조각 얹기 change the rest. */

@@ -206,4 +206,25 @@ class S3ScreenshotTest : ScreenshotBase() {
         // Drawn smaller to fit, but 673 × 560: wider than tall (a folded phone's example is 340 × 560).
         assertTrue("편 화면 예시가 가로로 넓어요: ${ex.size}", ex.size.width > ex.size.height)
     }
+
+    /** RVS-18 (SI-04): the studio's top line has one chip with 작품 크기 and the oldest app that opens it; a tap says it in words. */
+    @Test fun theTopChipSaysSizeAndWhichApp() = fourLooks("rvs18_fit_chip") {
+        tapText("도구")
+        tapText("카드 배치", exact = true)
+        settle()
+        runCatching { tapText("화면 줄 모두 펼쳐 보기", exact = true, scrolls = 0) }
+        settle()
+        // A start from the app's own look is small and opens everywhere: nothing beside 스튜디오, the chip says it.
+        if (shows(" · 크기 ") || shows(" · 1.")) return@fourLooks "the bar speaks while all is well"
+        if (!appears("크기 ", ms = 5_000)) return@fourLooks "no 작품 크기 chip"
+        tapText("크기 ", prefix = true)
+        settle()
+        when {
+            !appears("작품 크기·호환", exact = true) -> "no dialog"
+            // A start from the app's own look uses nothing newer than 1.36.0.
+            !appears("1.36.0부터 모든 폰에서 열려요", exact = true) -> "no 호환 line"
+            !appears("조각 ") -> "no 크기 line"
+            else -> null
+        }
+    }
 }

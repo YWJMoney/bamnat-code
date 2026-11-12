@@ -600,6 +600,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // 1.36 U3: saved or sent since the last change, it leaves without asking.
     androidx.activity.compose.BackHandler(enabled = s.changed && !s.kept) { leaving = true }
 
+    // 2.0.0 [RVS-18] 검토 SI-04: 작품 크기·호환, said on the bar's first line (스튜디오 · 크기 3% · 모든 판) and in the chip.
+    val fit = rememberWorkFit(vm, s)
+    var fitOpen by rememberSaveable { mutableStateOf(false) }
+    if (fitOpen) WorkFitDialog(fit) { fitOpen = false }
     // [STU-40] 내 색 모음 lives in the settings (kept across studios and in the backup).
     val pinned by vm.myColors.collectAsStateWithLifecycle()
     CompositionLocalProvider(LocalColorMemory provides ColorMemory(s.recent, vm::usedColor, pinned, vm::pinColor)) {
@@ -624,7 +628,26 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                     title = {
                         var menu by remember { mutableStateOf(false) }
                         Column(Modifier.clickable(onClickLabel = "시작할 모양 바꾸기") { menu = true }) {
-                            Text("스튜디오", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("스튜디오", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                // 2.0.0 [RVS-18] SI-04: what a maker should know before 올리기, in a few words beside 스튜디오: the oldest app that
+                                // opens the work when that is not every app, and 크기 when it nears the limit. Nothing while all is well (조건 4);
+                                // the chip on the top line says it always.
+                                // Where the bar is too narrow for all of it (글자 200%, 접은 폭) it stays off rather than cut; the chip has it.
+                                val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+                                val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                                var fitRoom by remember(width, scale) { mutableStateOf(true) }
+                                val fitWords = fit?.let { (z, need) ->
+                                    listOfNotNull(need.chip.takeIf { !need.everyApp }, "크기 ${z.percent}%".takeIf { z.near || z.over })
+                                        .takeIf { it.isNotEmpty() }?.joinToString(" · ")
+                                }
+                                fitWords?.takeIf { fitRoom }?.let { words ->
+                                    Text(" · $words", style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, softWrap = false,
+                                        onTextLayout = { if (it.hasVisualOverflow) fitRoom = false },
+                                        modifier = Modifier.weight(1f, fill = false))
+                                }
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false))
@@ -801,6 +824,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             }
                         }
                         FilterChip(selected = detail, onClick = { if (!area.detailOnly) detail = !detail }, label = { Text("자세히") })
+                        // 2.0.0 [RVS-18] 검토 SI-04: 작품 크기·호환 in one chip, while the work is made.
+                        WorkFitChip(fit) { fitOpen = true }
                         // PC 확인 L2·L4: the locked screens; a tap shows that screen and says where to unlock it.
                         vm.locked.forEach { tab ->
                             androidx.compose.material3.AssistChip(onClick = { pick(Area.of(tab)); detail = true

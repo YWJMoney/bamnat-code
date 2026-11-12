@@ -903,6 +903,9 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      */
     fun size(s: State = _state.value): com.bamnat.core.recipe.WorkSize.Of = com.bamnat.core.recipe.WorkSize.of(sendable(s))
 
+    /** 2.0.0 [RVS-18] 검토 SI-04: the oldest app that opens this work, as the server will list it ([com.bamnat.core.recipe.RecipeNeeds]). */
+    fun needs(s: State = _state.value): com.bamnat.core.recipe.RecipeNeeds.Need = com.bamnat.core.recipe.RecipeNeeds.of(sendable(s))
+
     /** The pieces to take out first when [size] is over ([com.bamnat.core.recipe.WorkSize.takeOut]). */
     fun takeOut(s: State = _state.value): List<PieceKind> = com.bamnat.core.recipe.WorkSize.takeOut(sendable(s))
 
