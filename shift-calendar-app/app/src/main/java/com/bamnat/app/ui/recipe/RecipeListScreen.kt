@@ -227,7 +227,6 @@ internal fun entryLine(style: WorkStyle?): String = when (style) {
     null -> "다른 분이 꾸민 근무 색·알람·메모 틀·규칙을 미리 보고, 고른 것만 내 달력에 넣어요"
 } + ". 7일 안에 되돌릴 수 있어요"
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun RecipeListScreen(
     vm: RecipeListViewModel,
@@ -241,6 +240,14 @@ fun RecipeListScreen(
     /** [VIL-17] 테마 넘겨 보며 고르기 (마을's 장터), a chip at the head of 테마's 분위기. */
     onSwipe: (() -> Unit)? = null,
 ) {
+    // 2.0.0 [RVM-21] MKT-32 Seeing the 장터 never brings a whole font from Google Fonts (each card draws in its card fonts).
+    MarketFontsOf(emptySet<String>()) { RecipeListPage(vm, onBack, onOpen, onMake, onMine, title, askCode, onSwipe) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@Composable
+private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpen: (String) -> Unit, onMake: () -> Unit, onMine: () -> Unit,
+                           title: String, askCode: Boolean, onSwipe: (() -> Unit)?) {
     val state by vm.state.collectAsStateWithLifecycle()
     var codeAsk by remember { mutableStateOf(askCode) }
     // 1.39 [MKF-01] 크게 넘겨 보기: the card's picture opens it at that work; [MKF-03] 작게 보기 (3열, 펼침 4열), kept on this phone.

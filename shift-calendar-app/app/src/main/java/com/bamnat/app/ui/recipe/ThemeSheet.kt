@@ -154,6 +154,12 @@ fun WornNow(onFix: (() -> Unit)?) {
 fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
                /** [TRY-05] Opened again after trying it on the real app: the parts ticked and the tab shown then. */
                again: LiveTryOn.Reopen? = null, onDismiss: () -> Unit) {
+    // 2.0.0 [RVM-21] MKT-32 입어 보기 draws the theme's open fonts as card fonts; the whole font comes with 입기.
+    MarketFontsOf(r) { ThemeSheetBody(r, code, style, ver, again, onDismiss) }
+}
+
+@Composable
+private fun ThemeSheetBody(r: Recipe, code: String, style: WorkStyle?, ver: Int, again: LiveTryOn.Reopen?, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var note by remember { mutableStateOf<String?>(null) }

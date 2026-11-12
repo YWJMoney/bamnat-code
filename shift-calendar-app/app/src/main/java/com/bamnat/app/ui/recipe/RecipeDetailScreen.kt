@@ -84,7 +84,6 @@ import com.bamnat.core.recipe.RecipeResolve
 import com.bamnat.core.recipe.RecipeText
 import androidx.compose.ui.semantics.Role
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit,
     /** [RCX-01][RCX-05][RCX-11] 1.35: another recipe (계보, 묶음) and a maker's page. */
@@ -95,6 +94,15 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     onTakeInto: (String, String) -> Unit = { _, _ -> },
     /** PC 제안 1.36: opened from the studio's 보관함 › 장터에서 찾기 — 담기 says so and goes back to it. */
     onToStudio: (() -> Unit)? = null) {
+    // 2.0.0 [RVM-21] MKT-32 The work's open fonts as card fonts from our public files, never the whole font from Google Fonts until it is put in.
+    val r = vm.state.collectAsStateWithLifecycle().value.recipe
+    MarketFontsOf(r) { RecipeDetailPage(vm, onBack, onRemake, onOpen, onMaker, onNewVersion, onTakeInto, onToStudio) }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit, onOpen: (String) -> Unit,
+    onMaker: (String) -> Unit, onNewVersion: (String) -> Unit, onTakeInto: (String, String) -> Unit, onToStudio: (() -> Unit)?) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }

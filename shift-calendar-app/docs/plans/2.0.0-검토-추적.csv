@@ -317,7 +317,7 @@ SCAN-32,발견,07b 근무표·명세서 인식,낮음,버그,"규칙 글의 '설
 SCAN-33,발견,07b 근무표·명세서 인식,낮음,성능,명세서 표 읽기가 숫자 하나를 볼 때마다 정규식을 새로 만들어요,,"`core/.../pay/SlipTable.kt:161-183`(`SlipNumber.parse` 안 `Regex(...)` 5개), `269`(낱말마다), `585`(`nameLike`), `7…",L,,할 일,
 MKT-07,발견,08a 장터·레시피 화면,높음,버그(배치),입어 보기 화면: 키가 작은 폰(세로 640~850dp)에서 '고를 모양' 목록이 0줄이 되고 아래 단추가 잘려요,,`ui/recipe/TryOn.kt:346-347`(`oneScroll = fontScale > 1.15f \,M,,할 일,
 MKT-08,발견,08a 장터·레시피 화면,높음,개인정보 / 디자인,작품 '이야기'에 올린 글은 지울 수도 신고할 수도 없어요,,"`ui/recipe/RecipeDetailScreen.kt:804-821`(`PostRow`: 좋아요·안좋아요·답글뿐), `recipe/RecipeClient.kt:314-316`(talk·tal…",F,RVF-03,코드 고침(확인 전),
-MKT-32,발견,08a 장터·레시피 화면,높음,개인정보,"장터를 보기만 해도 Google Fonts로 요청이 나가는데, 처리방침은 ""글꼴을 고르지 않으면 이 요청은 생기지 않습니다""라고 적혀 있어요",,"`MarketFonts.kt:74-99` (`ready`·`load` → `ui/theme/OpenFonts.kt:69-76` `subset`), 부르는 곳 `MarketShot.kt:307, 3…",M,,할 일,
+MKT-32,발견,08a 장터·레시피 화면,높음,개인정보,"장터를 보기만 해도 Google Fonts로 요청이 나가는데, 처리방침은 ""글꼴을 고르지 않으면 이 요청은 생기지 않습니다""라고 적혀 있어요",,"`MarketFonts.kt:74-99` (`ready`·`load` → `ui/theme/OpenFonts.kt:69-76` `subset`), 부르는 곳 `MarketShot.kt:307, 3…",M,RVM-21,코드 고침(확인 전),"사용자 카드 11-12 '우리 쪽에서 글꼴 내주기'. 공개 PR YWJMoney/-#27(총괄 합침), 처리방침은 갈래 O 3.13"
 MKT-01,발견,08a 장터·레시피 화면,중간,버그,'더 보기'로 이어 붙일 때 같은 작품을 걸러 내지 않아 목록·넘겨 보기가 죽을 수 있어요,,"`ui/recipe/RecipeViewModels.kt:152`(`_state.value.items + got`), `ui/recipe/RecipeListScreen.kt:574`(`key = r…",M,,할 일,
 MKT-02,발견,08a 장터·레시피 화면,중간,디자인,'더 보기'가 실패하면 알림이 목록 맨 위(화면 밖)에만 나와요,,"`ui/recipe/RecipeListScreen.kt:507-515`(오류 줄이 작품 줄들보다 앞), `:582-583`(맨 아래는 '더 보기' 단추만), `RecipeViewModels.kt:…",M,,할 일,
 MKT-03,발견,08a 장터·레시피 화면,중간,디자인(스크롤),탭별 작품·도구 구간에서 칩 머리가 붙는 순간 높이가 크게 줄어 목록이 튀어요,,"`ui/recipe/RecipeListScreen.kt:275`(`pinned`), `:418-445`(붙으면 한 줄, 안 붙으면 `ChipRows` 두 벌을 줄 감싸 펼침)",M,,할 일,

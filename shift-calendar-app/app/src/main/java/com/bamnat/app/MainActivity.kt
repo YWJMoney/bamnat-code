@@ -156,6 +156,18 @@ class MainActivity : ComponentActivity() {
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
+        // 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 'Google 요청은 글꼴을 고를 때만'): a theme tried on the real app draws its open fonts as card
+        // fonts from our public files (or the phone's closest), never the whole font from Google Fonts; that comes with 입기.
+        val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+        val trialFonts = androidx.compose.runtime.remember(trial) {
+            trial?.takeIf { it.showing && it.hasLook }?.let { t -> com.bamnat.app.ui.recipe.MarketFonts.ids(t.look.values.joinToString("|")) }
+        }
+        val trialCards = trialFonts?.let { ids ->
+            androidx.compose.runtime.produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), ids) {
+                value = com.bamnat.app.ui.recipe.MarketFonts.ready(applicationContext, ids)
+            }.value
+        }
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalCardFonts provides trialCards) {
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
@@ -220,6 +232,7 @@ class MainActivity : ComponentActivity() {
                 val locked by AppLock.locked.collectAsStateWithLifecycle()
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
             }
+        }
         }
     }
 

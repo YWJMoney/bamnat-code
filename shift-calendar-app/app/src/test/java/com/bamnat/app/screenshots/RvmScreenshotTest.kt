@@ -171,7 +171,111 @@ class RvmScreenshotTest : ScreenshotBase() {
         }
     }
 
+    /** 2.0.0 [RVM-21] MKT-32 Every font address the 장터 asks for while [body] runs, card fonts on [base] (blank: a PC build without public files). */
+    private class Asked {
+        val urls: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+        val google get() = urls.filter { "fonts.googleapis.com" in it || "fonts.gstatic.com" in it }
+        val ours get() = urls.filter { it.startsWith(PAGES + "remote/card-fonts/") }
+    }
+
+    private fun counting(base: String, body: (Asked) -> Unit) {
+        val asked = Asked()
+        val open0 = com.bamnat.app.ui.theme.OpenFonts.open
+        val get0 = com.bamnat.app.ui.recipe.MarketFonts.get
+        val base0 = com.bamnat.app.ui.recipe.MarketFonts.base
+        com.bamnat.app.ui.theme.OpenFonts.open = { asked.urls += it; throw java.io.IOException("시험: 인터넷 없음") }
+        com.bamnat.app.ui.recipe.MarketFonts.get = { asked.urls += it; null }
+        com.bamnat.app.ui.recipe.MarketFonts.base = base
+        com.bamnat.app.ui.recipe.MarketFonts.forget()
+        try {
+            body(asked)
+        } finally {
+            com.bamnat.app.ui.theme.OpenFonts.open = open0
+            com.bamnat.app.ui.recipe.MarketFonts.get = get0
+            com.bamnat.app.ui.recipe.MarketFonts.base = base0
+            com.bamnat.app.ui.recipe.MarketFonts.forget()
+            com.bamnat.app.ui.theme.AppFonts.loads.clear()
+        }
+    }
+
+    /** 장터 목록 as it opens (테마 cards drawn in their card fonts). */
+    private fun market(): Screen.() -> Unit = {
+        Market().also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        settle()
+    }
+
+    /**
+     * MKT-32 (사용자 2026-11-12 카드 '우리 쪽에서 글꼴 내주기': 장터 모습은 그대로, Google 요청은 글꼴을 고를 때만): 장터 목록, 작품 열기와
+     * 예시로 보기(입어 보기) never ask Google Fonts; the card fonts come from our public files.
+     */
+    @Test fun theMarketAsksGoogleNothing() = counting(PAGES) { asked ->
+        shoot("rvm_21_fonts_market", FOLDED, market())
+        shoot("rvm_22_fonts_try_on", FOLDED) {
+            detail("야간 회복 스테이션")(this)
+            tapText("예시로 보기", exact = true)
+            settle()
+        }
+        org.junit.Assert.assertEquals(asked.google.toString(), 0, asked.google.size)
+        org.junit.Assert.assertTrue(asked.urls.toString(), asked.ours.isNotEmpty())
+        // Only the fonts this app was built with, each at its place for these letters.
+        org.junit.Assert.assertTrue(asked.urls.toString(), asked.urls.all { it.startsWith(PAGES + "remote/card-fonts/" + com.bamnat.app.ui.recipe.CardFontPins.VERSION + "/") })
+    }
+
+    /** MKT-32 내 앱에 입혀 보기 (the real app wearing the theme in memory): its fonts as card fonts too, the whole font only with 입기. */
+    @Test fun tryingOnTheRealAppAsksGoogleNothing() = counting(PAGES) { asked ->
+        style(WorkStyle.SHIFT)
+        val r = work("야간 회복 스테이션")
+        val all = com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet()
+        org.junit.Assert.assertTrue(runBlocking {
+            com.bamnat.app.ui.recipe.LiveTryOn.start(c, r, own = false, picked = all, tab = com.bamnat.core.layout.TabOrder.CALENDAR,
+                from = com.bamnat.app.ui.recipe.LiveTryOn.From.Detail("MKT10000"))
+        })
+        try {
+            shoot("rvm_23_fonts_live_try", FOLDED) { settle(); settle() }
+        } finally {
+            com.bamnat.app.ui.recipe.LiveTryOn.drop(c)
+        }
+        org.junit.Assert.assertEquals(asked.google.toString(), 0, asked.google.size)
+        org.junit.Assert.assertTrue(asked.urls.toString(), asked.ours.isNotEmpty())
+    }
+
+    /** MKT-32 Picking a font still brings it whole from Google Fonts (what the policy says); a PC build (no public files) asks nothing. */
+    @Test fun pickingAFontAsksGoogleAndAPcBuildAsksNothing() {
+        counting(PAGES) { asked ->
+            runBlocking { com.bamnat.app.ui.theme.AppFonts.fetch(app, "jua") }
+            org.junit.Assert.assertTrue(asked.urls.toString(), asked.google.isNotEmpty())
+        }
+        counting("") { asked ->
+            val got = runBlocking { com.bamnat.app.ui.recipe.MarketFonts.ready(app, setOf("jua", "orbit", "notosanskr")) }
+            org.junit.Assert.assertTrue(got.keys.toString(), got.isEmpty())
+            org.junit.Assert.assertEquals(asked.urls.toString(), 0, asked.urls.size)
+        }
+    }
+
+    /** MKT-32 A card font is used only when its bytes are the ones made for this app: a changed file on the public site is never opened. */
+    @Test fun aCardFontIsUsedOnlyWhenItIsTheOneMade() = counting(PAGES) { asked ->
+        val font = File("src/test/resources/font-files/sold-test.ttf").readBytes()
+        val sha = java.security.MessageDigest.getInstance("SHA-256").digest(font).joinToString("") { "%02x".format(it) }
+        val pins0 = com.bamnat.app.ui.recipe.MarketFonts.pins
+        com.bamnat.app.ui.recipe.MarketFonts.get = { asked.urls += it; font }
+        try {
+            com.bamnat.app.ui.recipe.MarketFonts.pins = mapOf("jua-r" to "0".repeat(64))
+            org.junit.Assert.assertTrue(runBlocking { com.bamnat.app.ui.recipe.MarketFonts.ready(app, setOf("jua")) }.isEmpty())
+            com.bamnat.app.ui.recipe.MarketFonts.forget()
+            com.bamnat.app.ui.recipe.MarketFonts.pins = mapOf("jua-r" to sha)
+            org.junit.Assert.assertEquals(setOf("jua"), runBlocking { com.bamnat.app.ui.recipe.MarketFonts.ready(app, setOf("jua")) }.keys)
+            org.junit.Assert.assertEquals(listOf(PAGES + "remote/card-fonts/" + com.bamnat.app.ui.recipe.CardFontPins.VERSION + "/jua-r.ttf"), asked.urls.distinct().take(1))
+        } finally {
+            com.bamnat.app.ui.recipe.MarketFonts.pins = pins0
+        }
+    }
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
+        /** The release build's public files (gradle.properties `bamnat.remoteBaseUrl`). */
+        const val PAGES = "https://ywjmoney.github.io/-/"
     }
 }

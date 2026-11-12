@@ -1271,7 +1271,8 @@ fun SetScreen(vm: SetViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, on
                 Text("지금 내 화면에 테마와 탭을 모두 얹으면 이렇게 보여요. 아직 바뀐 건 없어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.worn?.let { r ->
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) }
+                    // 2.0.0 [RVM-21] MKT-32 Card fonts from our public files, not the whole fonts from Google Fonts.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MarketFontsOf(r) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) } }
                 } ?: Text("모습을 그리는 중이에요", style = MaterialTheme.typography.bodySmall)
                 Text("차례로 넣기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("테마를 먼저 입고, 탭은 그 위에 얹어요. 하나씩 열어 입어 보고 넣으면 여기 ✓가 붙어요. 넣은 것은 7일 안에 되돌릴 수 있어요",
