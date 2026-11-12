@@ -226,11 +226,13 @@ export function glanceViews(A) {
     const open = list.filter((s) => !s.cleared && s.state !== "dismiss");
     const better = list.filter((s) => s.cleared);
     const devOk = can("dev", "edit");
+    // 2.0.0 [RVN-15] 디자인 품질 조건 2: 채운 '개발사항으로'는 맨 위 신호 하나만, 나머지는 테두리 단추.
+    const first = open.find((s) => s.state !== "dev");
     const row = (s) => {
       const [label, tone] = SIGNAL_STATE[s.state] ?? SIGNAL_STATE.new;
       const btns = s.state === "dev"
         ? `<a class="btn small" href="${href("dev", s.devId)}">개발사항 보기</a>`
-        : `${devOk ? `<button class="btn small primary" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
+        : `${devOk ? `<button class="btn small${s === first ? " primary" : ""}" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
            ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
            <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
       return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
