@@ -25,7 +25,7 @@ object RecipeLinks {
     fun app(code: String) = "bamnat://r/$code"
 
     /** What 링크 보내기 sends: the title, the link and the code to type in. */
-    fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
+    fun shareText(title: String, code: String) = "‘$title’ 작품 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
 
     /**
      * [PRF-11] 1.36 프로필 링크: the company server's small public page of a maker (`/m/<id>`, which opens the app with
