@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import com.bamnat.app.ui.theme.color
 import androidx.compose.material3.Badge
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -164,27 +165,41 @@ internal fun SwitchRow(
     }
 }
 
-/** A line under a setting that says it will not work as set, with one button that fixes it. */
+/**
+ * A line under a setting that says it will not work as set, with one button that fixes it.
+ * 2.0.0 [RVL-09] 총괄 사진 검토 HQ-35 (글자 200%·어두운 설정에서 줄이 여러 줄이 되면 느낌표가 마지막 줄 옆에 붙었어요): the words are the
+ * common [com.bamnat.app.ui.components.ToneLine] (갈래 J [RVJ-19]): the mark sits on their first line and grows with the letters, and
+ * the meaning is in its colour only, 주의 (a setting that will not work as set is to be fixed, not a danger: 조건 6), the words
+ * quiet so the sixteen settings that can carry a line do not stand in red together.
+ */
 @Composable
 internal fun WarningLine(text: String, fixLabel: String, onFix: (() -> Unit)?,
     /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small in place of the mark. */
     picture: com.bamnat.app.ui.components.PermissionResult? = null) {
+    val caution = com.bamnat.app.ui.theme.Tone.Caution
     Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        if (picture != null) com.bamnat.app.ui.components.PermissionPicture(picture, accent = MaterialTheme.colorScheme.error,
-            ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
-        else Icon(Icons.Filled.ErrorOutline, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
+        if (picture != null) {
+            com.bamnat.app.ui.components.PermissionPicture(picture, accent = caution.color(),
+                ink = MaterialTheme.colorScheme.inverseSurface, height = 40.dp)
+            Spacer(Modifier.width(6.dp))
+        }
+        val words: @Composable () -> Unit = {
+            if (picture == null) com.bamnat.app.ui.components.ToneLine(text, tone = caution)
+            else Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         // 2.0.0 [RVL-09] 사진 검토 (글자 200%의 앱 잠금 쉼 줄이 '잠금 설정' 옆에서 한 줄에 몇 글자씩 다섯 줄로 섰어요, 조건 12): the button goes
         // under the words once they would be narrower than [WARNING_MIN_WORDS], in every setting that has this line.
-        if (onFix != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = WARNING_MIN_WORDS,
-            start = { Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) },
-            end = { TextButton(onClick = onFix) { Text(fixLabel) } })
-        else Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        if (onFix != null) com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f),
+            minStart = if (picture == null) WARNING_MIN_WORDS + WARNING_MARK else WARNING_MIN_WORDS, start = words, end = { TextButton(onClick = onFix) { Text(fixLabel) } })
+        else Box(Modifier.weight(1f)) { words() }
     }
 }
 
 /** The narrowest the warning's words are kept beside its button; narrower, the button goes under them. */
 private val WARNING_MIN_WORDS = 168.dp
+
+/** The warning mark and its gap, which go with the words (HQ-35, [com.bamnat.app.ui.components.ToneLine]). */
+private val WARNING_MARK = (16 + 6).dp
 
 /** A row that opens a screen or does one thing. */
 @Composable

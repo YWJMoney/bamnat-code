@@ -562,8 +562,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
     val shift = if (finishOnly) 1 else 0
     Scaffold(topBar = {
-        TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") +
-            " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}") },
+        TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "작품 만들기") +
+            " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             // PC 확인 Z8 (올리기 위 ←는 한 단계 뒤로라 나가는 길이 1/4의 '스튜디오로'뿐): a way out on every step.
             actions = { if (finishOnly) androidx.compose.material3.TextButton(onClick = onBack) { Text("스튜디오로") } })
@@ -769,10 +769,10 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     var codes by remember { mutableStateOf(bundled.joinToString(" ")) }
     // 1.35 실사용 점검 F-36: what is picked is what the field holds, so one chip stays picked until a second makes the piece.
     val picked = remember(codes) { bundleCodes(codes) }
-    Text("레시피 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
+    Text("작품 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
     // [RCX-11] Tap the ones I have rather than typing codes.
     if (s.bundleChoices.isNotEmpty()) {
-        Text("넣어 둔 레시피와 내가 올린 레시피에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("넣어 둔 작품과 내가 올린 작품에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             s.bundleChoices.forEach { (k, title) ->
                 FilterChip(k in picked, {
@@ -783,11 +783,11 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         }
     }
     OutlinedTextField(codes, { t -> codes = t; vm.bundle(bundleCodes(t)) },
-        label = { Text("다른 레시피 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        label = { Text("다른 작품 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
     Text(when {
         bundled.size >= 2 -> "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요"
         picked.size == 1 -> "하나 더 고르면 묶음이 돼요 (2~8개)"
-        else -> "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기"
+        else -> "예: 근무 색 작품과 알람 작품을 한 번에 나누기"
     },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
@@ -834,7 +834,7 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                 if (i.kind == com.bamnat.core.recipe.InputKind.MONEY) {
                     var asking by remember { mutableStateOf(false) }
                     TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요") }
-                    if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 레시피에 그대로 둘까요?") },
+                    if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 작품에 그대로 둘까요?") },
                         // bc7e2d43 PC 확인 LOW-3: said for any amount (가계부 예산·봉투 목표 too), and how to give it when the field is empty.
                         text = { Text("받는 분 모두에게 같은 금액(회사 공통 정액 같은 것)일 때만 두세요. 내 시급·일당·예산처럼 나만의 금액이면 칸으로 두는 게 안전해요" +
                             (if (i.default !is Long) "\n\n그대로 두려면 위 칸에 금액을 먼저 넣어 주세요" else "")) },
@@ -1059,13 +1059,13 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
     // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
     var kept by rememberSaveable { mutableStateOf(false) }
-    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요" }
+    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 작품에서 되돌릴 수 있어요" }
         ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
-        ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 레시피에서 이어서 만들어요" else null
+        ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 작품에서 이어서 만들어요" else null
     if (done != null) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요",
+    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 마을 › 공방 › 내 것 › 받은 작품에서 되돌릴 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
@@ -1095,9 +1095,9 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, onStud
                 // 나만 보기 has no one to send a link to.
                 if (sent.scope != "private") OutlinedButton(onClick = {
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, RecipeLinks.shareText(title, sent.code))
-                    runCatching { context.startActivity(Intent.createChooser(send, "레시피 링크 보내기")) }
+                    runCatching { context.startActivity(Intent.createChooser(send, "작품 링크 보내기")) }
                 }) { Text("링크 보내기") }
-                Button(onClick = { onOpen(sent.code) }) { Text("레시피 보기") }
+                Button(onClick = { onOpen(sent.code) }) { Text("작품 보기") }
             }
             // PC 확인 보안 7차 (끝 화면에 '스튜디오로'가 없어요): from the studio, back to it to go on making.
             onStudio?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오로") } }

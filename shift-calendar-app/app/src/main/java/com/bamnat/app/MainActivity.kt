@@ -95,6 +95,7 @@ class MainActivity : ComponentActivity() {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
             NoticeLinks.read(this, intent)
+            com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -160,6 +161,18 @@ class MainActivity : ComponentActivity() {
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
+        // 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 'Google 요청은 글꼴을 고를 때만'): a theme tried on the real app draws its open fonts as card
+        // fonts from our public files (or the phone's closest), never the whole font from Google Fonts; that comes with 입기.
+        val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+        val trialFonts = androidx.compose.runtime.remember(trial) {
+            trial?.takeIf { it.showing && it.hasLook }?.let { t -> com.bamnat.app.ui.recipe.MarketFonts.ids(t.look.values.joinToString("|")) }
+        }
+        val trialCards = trialFonts?.let { ids ->
+            androidx.compose.runtime.produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), ids) {
+                value = com.bamnat.app.ui.recipe.MarketFonts.ready(applicationContext, ids)
+            }.value
+        }
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalCardFonts provides trialCards) {
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
@@ -228,6 +241,7 @@ class MainActivity : ComponentActivity() {
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
             }
         }
+        }
     }
 
     // Every ActivityResult launcher (file pickers, permission requests) goes through here.
@@ -247,6 +261,7 @@ class MainActivity : ComponentActivity() {
         if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
         if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
+        com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */

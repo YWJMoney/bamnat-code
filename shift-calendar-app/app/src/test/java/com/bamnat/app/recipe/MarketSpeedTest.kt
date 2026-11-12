@@ -78,4 +78,23 @@ class MarketSpeedTest {
         assertFalse(MarketDisk.complete(app, body))
         assertTrue(MarketDisk.complete(app, """{"pieces":[{"kind":"parts","parts":[{"id":"app","font":"sans"}]}]}"""))
     }
+
+    /**
+     * 2.0.0 [RVM-21] MKT-32 A card whose open fonts are not here (offline, or the 장터 drawing in the phone's fonts) is still kept, as a stand-in
+     * the card shows at once and draws again once they come; a picture it names that is not here yet keeps it from being kept.
+     */
+    @org.robolectric.annotation.GraphicsMode(org.robolectric.annotation.GraphicsMode.Mode.NATIVE)
+    @Test fun aCardWithoutItsFontsIsKeptAsAStandIn() = kotlinx.coroutines.runBlocking {
+        assertEquals(MarketDisk.Kept.STAND_IN, MarketDisk.kept(app, """{"pieces":[{"kind":"parts","parts":[{"id":"app","font":"jua"}]}]}"""))
+        assertEquals(MarketDisk.Kept.FULL, MarketDisk.kept(app, """{"pieces":[{"kind":"parts","parts":[{"id":"app","font":"sans"}]}]}"""))
+        assertNull(MarketDisk.kept(app, """{"pieces":[{"kind":"photoLook","icons":[{"image":"0123456789abcdef","role":"day"}]}]}"""))
+        val picture = androidx.compose.ui.graphics.ImageBitmap(4, 4)
+        MarketDisk.keepShot(app, "card", picture, standIn = true)
+        assertNull(MarketDisk.shot(app, "card"))
+        assertNotNull(MarketDisk.standIn(app, "card"))
+        // Drawn again in its own fonts: the real picture takes the stand-in's place.
+        MarketDisk.keepShot(app, "card", picture)
+        assertNotNull(MarketDisk.shot(app, "card"))
+        assertNull(MarketDisk.standIn(app, "card"))
+    }
 }

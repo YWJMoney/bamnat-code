@@ -1,0 +1,463 @@
+{
+ "cover": {
+  "a": 4294491088,
+  "b": 4294964637,
+  "dir": 2,
+  "emoji": "🐷"
+ },
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). '알바비 모으기'을 바탕으로 조각 16개를 꽉 채웠어요. 장터에 내지 않아요.",
+ "format": "bamnat-recipe",
+ "inputs": [
+  {
+   "default": 10320,
+   "hint": "내 시급으로 바꿔요",
+   "id": "i1",
+   "kind": "money",
+   "label": "시급",
+   "min": 0
+  }
+ ],
+ "pieces": [
+  {
+   "kind": "screenLook",
+   "pay": "HOURLY~tt:xl|pl:FFFFFFFF|mn:FFF06292|rw:roomy|dy:1",
+   "screens": "all~bg:FFFFF7FA|cd:FFFFFFFF|ik:FF5D3A4A|ac:FFF06292|ft:jua"
+  },
+  {
+   "badge": "small",
+   "date": "center",
+   "grid": "none",
+   "kind": "calView",
+   "looks": "mk:fill|ba:85|cr:16|dp:mc|ds:l|dw:b|pd:2/bg:FFFFFFFF|cr:16|dp:mc|ds:l|mk:dot|pd:2",
+   "memo": 2,
+   "pattern": "shift:off=1",
+   "size": "tall",
+   "text": "normal",
+   "today": 2
+  },
+  {
+   "cell": "tint",
+   "holiday": 4293212469,
+   "kind": "calTheme",
+   "sat": 4280191205,
+   "sun": 4293212469,
+   "today": 4293943954
+  },
+  {
+   "items": [
+    {
+     "color": 4294217649,
+     "emoji": "🌅",
+     "label": "오",
+     "name": "오픈",
+     "role": "day"
+    },
+    {
+     "color": 4294954112,
+     "emoji": "🌇",
+     "label": "마",
+     "name": "마감",
+     "role": "eve"
+    },
+    {
+     "color": 4287985101,
+     "emoji": "🌙",
+     "label": "야",
+     "name": "야간",
+     "role": "night"
+    },
+    {
+     "color": 4291356361,
+     "emoji": "🛌",
+     "label": "휴",
+     "name": "휴무",
+     "role": "off"
+    }
+   ],
+   "kind": "shiftLook"
+  },
+  {
+   "bg": 4294965242,
+   "bold": true,
+   "border": "thin",
+   "card": "own",
+   "cardColor": 4294967295,
+   "corner": 22,
+   "date": true,
+   "kind": "memoLook",
+   "layout": "grid2",
+   "lines": 4,
+   "title": "m"
+  },
+  {
+   "amount": "l",
+   "dayHead": "band",
+   "expense": 4291176488,
+   "income": 4281236786,
+   "kind": "moneyLook",
+   "mark": "emoji",
+   "rows": "roomy"
+  },
+  {
+   "alpha": 92,
+   "bg": 4294967295,
+   "corner": 22,
+   "ink": 4284299850,
+   "kind": "widget",
+   "memo": true,
+   "text": "m",
+   "theme": "light"
+  },
+  {
+   "cal": "month",
+   "kind": "tabView",
+   "memo": "list",
+   "money": "list"
+  },
+  {
+   "accent": 4293943954,
+   "kind": "appFeel",
+   "motion": "tn:fade|td:glow|sp:n",
+   "theme": "light"
+  },
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "fill": {
+      "token": "바탕"
+     },
+     "id": "app.bar",
+     "shadow": 0
+    },
+    {
+     "font": "jua",
+     "id": "app.bar.title",
+     "ink": {
+      "token": "글자"
+     },
+     "weight": 700
+    },
+    {
+     "fill": {
+      "token": "카드"
+     },
+     "id": "app.tabs",
+     "r": 0,
+     "shadow": 2
+    },
+    {
+     "id": "app.tab",
+     "ink": {
+      "token": "포인트"
+     },
+     "on": "sel",
+     "weight": 700
+    },
+    {
+     "fill": {
+      "token": "카드"
+     },
+     "id": "app.card",
+     "line": "none",
+     "r": 22,
+     "shadow": 1
+    },
+    {
+     "fill": {
+      "token": "포인트"
+     },
+     "id": "app.button",
+     "ink": 4294967295,
+     "r": 24,
+     "weight": 700
+    },
+    {
+     "id": "app.chip",
+     "line": "solid",
+     "lineC": {
+      "token": "선"
+     },
+     "lineW": 1,
+     "r": 20
+    },
+    {
+     "fill": {
+      "token": "카드"
+     },
+     "id": "cal.head",
+     "out": 6,
+     "pad": 10,
+     "r": 22
+    },
+    {
+     "font": "jua",
+     "id": "cal.head.title",
+     "ink": 4284299850,
+     "size": 22,
+     "weight": 800
+    },
+    {
+     "id": "cal.week.day",
+     "ink": 4293212469,
+     "on": "sun"
+    },
+    {
+     "id": "cal.week.day",
+     "ink": 4280191205,
+     "on": "sat"
+    },
+    {
+     "id": "cal.cell",
+     "r": 16
+    },
+    {
+     "id": "cal.cell",
+     "line": "solid",
+     "lineC": {
+      "token": "포인트"
+     },
+     "lineW": 2,
+     "motion": "glow",
+     "on": "today"
+    },
+    {
+     "id": "cal.cell.date",
+     "weight": 600
+    },
+    {
+     "alpha": 45,
+     "id": "cal.cell",
+     "on": "dim"
+    },
+    {
+     "fill": {
+      "token": "카드"
+     },
+     "id": "memo.card",
+     "r": 22,
+     "shadow": 1
+    },
+    {
+     "id": "memo.card.title",
+     "weight": 700
+    },
+    {
+     "fill": {
+      "token": "카드"
+     },
+     "id": "money.day",
+     "padX": 10,
+     "r": 10
+    },
+    {
+     "id": "money.amount",
+     "ink": 4291176488,
+     "on": "out",
+     "weight": 700
+    },
+    {
+     "id": "money.amount",
+     "ink": 4281236786,
+     "on": "in",
+     "weight": 700
+    },
+    {
+     "fill": {
+      "token": "포인트"
+     },
+     "id": "pay.total",
+     "ink": 4294967295,
+     "r": 22
+    },
+    {
+     "fill": 4294967295,
+     "font": "jua",
+     "id": "widget",
+     "r": 22
+    },
+    {
+     "fill": 4293943954,
+     "id": "widget.cell",
+     "ink": 4294967295,
+     "on": "today"
+    },
+    {
+     "id": "cal.cell",
+     "motion": "shimmer",
+     "paint": "rg.50.40.90.FFFFD54F,00FFFFFF",
+     "when": "수입 > 0"
+    },
+    {
+     "id": "cal.cell.date",
+     "ink": 4281236786,
+     "weight": 800,
+     "when": "지난날 그리고 지출 = 0"
+    }
+   ]
+  },
+  {
+   "items": [
+    {
+     "at": "cal.head",
+     "font": "jua",
+     "h": 28,
+     "ink": 4293943954,
+     "size": 12,
+     "text": "모으는 중",
+     "w": 110,
+     "weight": 700,
+     "x": 840,
+     "y": 500
+    },
+    {
+     "at": "cal.cell",
+     "emoji": "🪙",
+     "h": 13,
+     "on": "d25",
+     "w": 13,
+     "x": 820,
+     "y": 200
+    }
+   ],
+   "kind": "decor"
+  },
+  {
+   "kind": "logic",
+   "rules": [
+    {
+     "arg": "들어온 돈 {원(수입)}. 이달 들어온 돈 {원(이달수입)}",
+     "do": "notify",
+     "name": "돈 들어온 날 알림",
+     "on": "money",
+     "when": "수입 > 0"
+    },
+    {
+     "arg": "이번 주 {이번주근무시간}시간 일했어요. 주휴수당 조건(15시간)을 넘겼어요",
+     "do": "notify",
+     "name": "주 15시간 넘김",
+     "on": "end",
+     "when": "이번주근무시간 >= 15"
+    },
+    {
+     "arg": "{근무} {근무시작}~{근무끝} · {근무시간}시간",
+     "do": "memoLine",
+     "min": 5,
+     "name": "근무 끝 한 줄 기록",
+     "on": "end"
+    }
+   ]
+  },
+  {
+   "items": [
+    {
+     "check": [
+      "유니폼·명찰",
+      "근무 시작 기록",
+      "오늘 할 일 듣기"
+     ],
+     "emoji": "🧢",
+     "title": "출근 체크"
+    },
+    {
+     "body": "{근무} {근무시작}~{근무끝} · 이번 주 {이번주근무시간}시간",
+     "check": [
+      "시재",
+      "정리·청소",
+      "다음 근무자 전달"
+     ],
+     "emoji": "🔦",
+     "title": "마감 인수"
+    },
+    {
+     "asks": [
+      {
+       "label": "기분",
+       "type": "star"
+      }
+     ],
+     "body": "{날짜} {요일} · {근무}\n기분:\n고마운 것:",
+     "emoji": "🌙",
+     "title": "하루 일기"
+    }
+   ],
+   "kind": "memoTpl"
+  },
+  {
+   "byRole": [
+    {
+     "before": [
+      60,
+      30
+     ],
+     "role": "day"
+    },
+    {
+     "before": [
+      60
+     ],
+     "role": "eve"
+    },
+    {
+     "before": [
+      90,
+      40
+     ],
+     "role": "night"
+    }
+   ],
+   "kind": "alarms",
+   "snooze": 5
+  },
+  {
+   "breakPay": "UNPAID",
+   "five": true,
+   "kind": "hourly",
+   "legalBreaks": true,
+   "night": 50,
+   "rounding": "AT_END",
+   "tax": "NONE",
+   "wage": {
+    "input": "i1"
+   },
+   "weeklyPay": true
+  },
+  {
+   "kind": "cards",
+   "money": "hero,budget,pace,income"
+  }
+ ],
+ "styles": [
+  "HOURLY"
+ ],
+ "summary": "조각 16개(모양 12 + 기능 4)",
+ "title": "시험 E9 16조각",
+ "tokens": [
+  {
+   "dark": 4279374354,
+   "light": 4294965242,
+   "name": "바탕"
+  },
+  {
+   "dark": 4280163870,
+   "light": 4294967295,
+   "name": "카드"
+  },
+  {
+   "dark": 4293717228,
+   "light": 4284299850,
+   "name": "글자"
+  },
+  {
+   "dark": 4293943954,
+   "light": 4293943954,
+   "name": "포인트"
+  },
+  {
+   "dark": 4282006074,
+   "light": 4294498275,
+   "name": "선"
+  }
+ ],
+ "v": 1
+}

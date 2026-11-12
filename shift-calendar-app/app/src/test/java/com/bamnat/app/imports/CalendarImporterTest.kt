@@ -65,4 +65,20 @@ class CalendarImporterTest {
         assertTrue(memos.memos.first().none { !it.inTrash })
         assertTrue(importer.propose(listOf(calendar), setOf(1), from, to).all { it.skip == null })
     }
+
+    /** 2.0.0 [RVL-18] (검토 SCAN-13, 조건 10) 되돌리기 takes back only what it brought: a day and a memo changed since stay as they are now. */
+    @Test fun anUndoLeavesAloneWhatWasChangedSince() = runBlocking {
+        schedule.ensureDefaults()
+        val day = schedule.snapshot.first().shiftTypes.first { it.name == "주간" }
+        val from = LocalDate.of(2026, 11, 1)
+        val to = LocalDate.of(2026, 11, 30)
+        val done = importer.apply(importer.propose(listOf(calendar), setOf(1), from, to).filter { it.skip == null })
+        schedule.setOverride(LocalDate.of(2026, 11, 3), ShiftOverride.Shift(day.id))
+        val memo = memos.memos.first().single()
+        memos.save(memo.copy(body = memo.body + " · 보험증 챙기기"))
+        assertEquals(2, importer.undo(done))
+        assertEquals(ShiftOverride.Shift(day.id), schedule.snapshot.first().entries.single { it.date == LocalDate.of(2026, 11, 3) }.override)
+        assertTrue(memos.memos.first().single().body.endsWith("보험증 챙기기"))
+        assertTrue("고친 날·메모의 일정은 다시 가져오라고 하지 않아요", importer.propose(listOf(calendar), setOf(1), from, to).all { it.skip != null })
+    }
 }

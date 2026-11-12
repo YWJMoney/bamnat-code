@@ -75,7 +75,12 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         internal val sentAt: Long = 0,
         /** [CALI-02] The calendar it went from. */
         val cal: String = com.bamnat.app.data.PersonalCalendar.MAIN,
+        /** 2.0.0 [RVN-10] COMP-46 The file as it was when it went or was queued: a queued one taken back becomes the base. */
+        internal val now: String? = null,
     )
+
+    /** 2.0.0 [RVN-10] COMP-46 What 되돌리기 did: a queued change left the queue, a sent one came off the 광장, or it waits for a connection. */
+    enum class Undone { DROPPED, TAKEN, WAITING }
 
     private val _ask get() = hub.ask
     val ask: StateFlow<Ask?> = hub.ask.asStateFlow()
@@ -143,6 +148,11 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
             _ask.value = Ask(name, months, changed?.lines.orEmpty(), changed?.more ?: 0, now, cal)
             return@withLock
         }
+        // 2.0.0 [RVN-11] COMP-44 A yes for the cycle only: a change of the pay way alone is asked as without 저절로 나누기.
+        if (!store.autoPay.value && ChangeAsk.of(store.autoBase?.let(::cycleOnly), cycleOnly(now)) == ChangeAsk.Result.Same) {
+            _ask.value = Ask(name, 0, changed?.lines.orEmpty(), changed?.more ?: 0, now, cal)
+            return@withLock
+        }
         // 저절로 나누기: marked, sent now when its day has come, else waiting for it; one line either way.
         val base = store.autoBase
         val sentAt = store.autoSentAt
@@ -150,7 +160,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         val id = if (Today.millis() - sentAt >= DAY) runCatching { send(force = false) }.getOrNull() else null
         if (id == null && store.autoDirty) schedule()
         _shared.value = Shared(name, ChangeAsk.line(change) ?: "근무 순서·계산 방식", queued = id == null,
-            report = id?.let { lastReport }, base = base, sentAt = sentAt, cal = cal)
+            report = id?.let { lastReport }, base = base, sentAt = sentAt, cal = cal, now = now)
     }
 
     /**
@@ -161,13 +171,15 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         val a = _ask.value
         if (a != null && a.cal != cal) return owner(a.cal).approve(always)
         _ask.value = null
-        if (always) store.setAutoShare(true)
+        // 2.0.0 [RVN-11] COMP-44 The ask names 근무 순서·계산 방식: its 'always' is a yes for the pay way too.
+        if (always) { store.setAutoShare(true); store.setAutoPay(true) }
         store.autoDirty = true
         c.telemetry.event("plaza_auto", if (always) "yes_always" else "yes")
         c.appScope.launch {
             val base = store.autoBase
             val sentAt = store.autoSentAt
-            val id = runCatching { send(force = true) }.getOrNull()
+            // The lines asked about went with the yes, the pay way's too.
+            val id = runCatching { send(force = true, pay = true) }.getOrNull()
             if (a == null || a.first) (id ?: store.applied.value?.companyId)?.let { _opened.value = it }
             else if (id != null) _shared.value = Shared(a.company, a.line.orEmpty(), queued = false, report = lastReport, base = base, sentAt = sentAt, cal = cal)
             if (store.autoDirty && store.autoShare.value == true) schedule()
@@ -206,24 +218,46 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
     /**
      * 되돌리기 on the one line: a change waiting for its day leaves the queue; one already sent is taken back on the server, and
      * the base and the day's count are as they were, so the next change is held against what the plaza still has.
+     * 2.0.0 [RVN-10] COMP-46 It says what happened, so the line never says 거뒀어요 when nothing came off: a queued change taken back
+     * is the base from then on (the same values saved again are not asked or queued again), and a sent one the server could not be
+     * reached for waits in [CompanyStore.takeBackLater] and goes once online ([OutboxJob]); the line says so with 다시 하기.
      */
-    fun undo() {
-        val s = _shared.value ?: return
+    suspend fun undo(): Undone {
+        val s = _shared.value ?: return Undone.DROPPED
         if (s.cal != cal) return owner(s.cal).undo()
         _shared.value = null
         c.telemetry.event("plaza_auto", "undo")
         if (s.queued) {
             store.autoDirty = false
-            return
+            s.now?.let { store.autoBase = it }
+            return Undone.DROPPED
         }
-        c.appScope.launch {
-            val id = s.report ?: return@launch
-            runCatching { c.companyApi.takeBack(store.device, id) }.onSuccess {
-                store.removeSent(id)
-                store.autoBase = s.base
-                store.autoSentAt = s.sentAt
-            }
+        val id = s.report ?: return Undone.TAKEN
+        // What the plaza will have once it is off: the next change is held against that, either way.
+        store.autoBase = s.base
+        store.autoSentAt = s.sentAt
+        return if (takeBack(id)) Undone.TAKEN else {
+            store.takeBackLater(id, waiting = true)
+            OutboxJob.schedule(c.appContext)
+            c.telemetry.event("plaza_auto", "undo_waiting")
+            Undone.WAITING
         }
+    }
+
+    /** One report off the 광장 (gone already counts); false when the server could not be reached. */
+    private suspend fun takeBack(id: String): Boolean {
+        val ok = runCatching { c.companyApi.takeBack(store.device, id) }.isSuccess
+        if (ok) {
+            store.removeSent(id)
+            store.takeBackLater(id, waiting = false)
+        }
+        return ok
+    }
+
+    /** COMP-46 The take-backs waiting for a connection, now (다시 하기, or [OutboxJob]); true when none is left. */
+    suspend fun takeBackWaiting(): Boolean {
+        for (id in store.takeBackLater) if (!takeBack(id)) return false
+        return true
     }
 
     /**
@@ -232,6 +266,8 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
      */
     fun set(mode: Boolean?) {
         store.setAutoShare(mode)
+        // 2.0.0 [RVN-11] COMP-44 설정's switch says 근무 순서와 계산 방식: on there is a yes for both.
+        if (mode == true) store.setAutoPay(true)
         if (mode == true) c.companyScopes().forEach { s ->
             s.store.autoDirty = true
             s.autoShare.schedule()
@@ -248,6 +284,9 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
 
     /** Whether something of this calendar waits to be shared, for 서버 연결 점검's count. */
     val waiting: Boolean get() = store.autoShare.value == true && store.autoDirty
+
+    /** COMP-46 Whether a 되돌리기 of this calendar waits for a connection, for 서버 연결 점검's count. */
+    val takingBack: Boolean get() = store.takeBackLater.isNotEmpty()
 
     /** [CALI-02] Each calendar's change waits for its own day, in a job of its own. */
     private fun schedule() {
@@ -276,13 +315,18 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
     /** The report [send] made last, for 되돌리기. */
     private var lastReport: String? = null
 
-    /** One report of the setup as it is now, marked auto. The company's id comes back; null when there was nothing to send. */
-    private suspend fun send(force: Boolean): String? {
+    /**
+     * One report of the setup as it is now, marked auto. The company's id comes back; null when there was nothing to send.
+     * 2.0.0 [RVN-11] COMP-44 Without a yes for the pay way ([pay] false) it goes without it, and the pay way the 광장 had stays the
+     * base, so a change of it is asked next.
+     */
+    private suspend fun send(force: Boolean, pay: Boolean = store.autoPay.value): String? {
         if (!force && !waiting) return null
         if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.COMPANY_REPORT)) throw CompanyException("paused")
         val store = store
         val (name, dept) = company() ?: run { store.autoDirty = false; return null }
-        val setup = scope.share.exportForServer()
+        val baseBefore = store.autoBase
+        val setup = scope.share.exportForServer().let { if (pay) it else org.json.JSONObject(it.toString()).apply { remove("pay") } }
         val status = try {
             c.companyApi.report(store.device, name, dept, setup, scope.serverCal, auto = true)
         } catch (e: CompanyException) {
@@ -292,13 +336,23 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         }
         store.autoDirty = false
         store.autoSentAt = Today.millis()
-        store.autoBase = setup.toString()
+        store.autoBase = if (pay) setup.toString() else withPayOf(setup.toString(), baseBefore)
         lastReport = status.id.takeIf { !status.again }
         if (!status.again) store.addSent(SentReport(status.id, status.company, status.dept, ask = false, at = Today.instant()))
         status.member?.takeIf { it.joined }?.let { store.setMember(status.companyId, status.company) }
         c.telemetry.event("plaza_auto", if (status.again) "again" else "sent")
         return status.companyId
     }
+
+    /** COMP-44 The plaza file without its pay way, to hold a cycle-only yes against. */
+    private fun cycleOnly(file: String): String = runCatching { org.json.JSONObject(file).apply { remove("pay") }.toString() }.getOrDefault(file)
+
+    /** COMP-44 [file]'s cycle with [from]'s pay way (none when [from] had none). */
+    private fun withPayOf(file: String, from: String?): String = runCatching {
+        val o = org.json.JSONObject(file).apply { remove("pay") }
+        from?.let { org.json.JSONObject(it).optJSONObject("pay") }?.let { o.put("pay", it) }
+        o.toString()
+    }.getOrDefault(file)
 
     companion object {
         /**
