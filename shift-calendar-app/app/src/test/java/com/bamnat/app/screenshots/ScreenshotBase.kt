@@ -383,6 +383,13 @@ abstract class ScreenshotBase {
 
         private fun lookInTabsAndFolds(text: String, exact: Boolean, prefix: Boolean, scrolls: Int, across: Float): SemanticsNode? {
             val tabs = listOf("결과", "내 급여 값", "회사 규칙", "도구")
+            // 2.0.0 [RVJ-18] The tabs are the top of the pay page, and the 결과 tab is longer now (the 마감 question, the 날짜별 합 line):
+            // from far down it, [reach]'s way back up stopped short of them and no tab was tried (phonePublicGradeHugeText at 150%).
+            // On the pay screen, go on up to the tabs as a person would.
+            if (find("급여 계산", exact = true, prefix = false) != null) {
+                var back = 0
+                while (find(tabs[3], exact = true, prefix = false) == null && back++ < scrolls * 3) scrollDown(350, across)
+            }
             if (find(tabs[1], exact = true, prefix = false) != null && find(tabs[3], exact = true, prefix = false) != null) {
                 for (tab in tabs) {
                     val at = find(tab, exact = true, prefix = false) ?: continue
