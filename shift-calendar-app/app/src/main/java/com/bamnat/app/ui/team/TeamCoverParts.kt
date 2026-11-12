@@ -43,6 +43,8 @@ import com.bamnat.core.time.Today
 internal fun CoverDialog(
     team: Team, gap: TeamCover.Gap, absent: TeamMember?, list: List<TeamCover.Candidate>, busy: Boolean,
     onDismiss: () -> Unit, onPut: (TeamMember) -> Unit, onAsk: (List<TeamMember>) -> Unit,
+    /** 2.0.0 [RVJ-31] false for a 5인 미만 사업장: 주 52시간 is not read there, so it is not said. */
+    weekLimit: Boolean = true,
 ) {
     val shift = team.shifts.firstOrNull { it.id == gap.shiftId }
     var picked by remember(list) { mutableStateOf(list.filter { it.ok }.take(3).map { it.member.id }.toSet()) }
@@ -50,7 +52,7 @@ internal fun CoverDialog(
     AlertDialog(onDismissRequest = onDismiss, title = { Text("결원 메우기") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("${Fmt.dayTitle(gap.date)} ${shift?.name ?: ""}, ${absent?.name ?: "?"}님 대신 들어갈 사람", style = MaterialTheme.typography.bodyMedium)
-            Text("규칙(설정 › 근무표 점검 기준)·지난달 끝 근무·주 52시간·신청한 날을 다 보고, 이번 달 덜 일한 사람을 앞에 뒀어요.",
+            Text("규칙(설정 › 근무표 점검 기준)·지난달 끝 근무·${if (weekLimit) "주 52시간·" else ""}신청한 날을 다 보고, 이번 달 덜 일한 사람을 앞에 뒀어요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (list.isEmpty()) Text("이날 쉬는 사람이 없어요.", style = MaterialTheme.typography.bodyMedium)
             val shown = if (showAll) list else list.take(8)
