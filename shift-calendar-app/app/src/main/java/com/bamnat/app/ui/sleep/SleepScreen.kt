@@ -659,21 +659,30 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
-                    style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                // 1.39 [FLOW-29] 조건은 미리 (PC 실사용 11-06: 짧은 잠이 왜 안 남는지 끝에서야 알았음): said before sleeping.
-                Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요. ${com.bamnat.core.sleep.SleepMorning.MIN_MINUTES / 60}시간 넘게 자야 아침 기분을 물어요"
-                    else "일어났으면 ‘깼어요’를 눌러요",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-            Spacer(Modifier.width(8.dp))
-            if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요") }
-            else Column(horizontalAlignment = Alignment.End) {
-                Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요") }
-                // 1.39 [FLOW-13] Back to the dark night screen (clock, tomorrow's work and alarm, sounds).
-                TextButton(onClick = onNight, modifier = Modifier.heightIn(min = 48.dp)) { Text("밤 화면") }
-            }
+            // 2.0.0 [RVI-58] PC 사진(통합 머리, 글자 200%): beside '잠들었어요' the words stood a word a line; narrower than 180dp, the
+            // button goes under them.
+            com.bamnat.app.ui.components.SideOrBelow(
+                Modifier.weight(1f),
+                minStart = 180.dp,
+                start = {
+                    Column {
+                        Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
+                            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        // 1.39 [FLOW-29] 조건은 미리 (PC 실사용 11-06: 짧은 잠이 왜 안 남는지 끝에서야 알았음): said before sleeping.
+                        Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요. ${com.bamnat.core.sleep.SleepMorning.MIN_MINUTES / 60}시간 넘게 자야 아침 기분을 물어요"
+                            else "일어났으면 ‘깼어요’를 눌러요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                },
+                end = {
+                    if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요", maxLines = 1) }
+                    else Column(horizontalAlignment = Alignment.End) {
+                        Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요", maxLines = 1) }
+                        // 1.39 [FLOW-13] Back to the dark night screen (clock, tomorrow's work and alarm, sounds).
+                        TextButton(onClick = onNight, modifier = Modifier.heightIn(min = 48.dp)) { Text("밤 화면", maxLines = 1) }
+                    }
+                },
+            )
         }
     }
 }

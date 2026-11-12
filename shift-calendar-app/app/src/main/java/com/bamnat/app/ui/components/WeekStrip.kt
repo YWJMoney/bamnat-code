@@ -55,9 +55,14 @@ fun WeekStrip(
     val widest = remember(numberStyle, density) { measurer.measure("30", numberStyle, maxLines = 1, softWrap = false).size.width }
     BoxWithConstraints(modifier.fillMaxWidth()) {
     val cell = maxWidth / days.size.coerceAtLeast(1)
-    val circle = minOf(36.dp, cell)
+    // 2.0.0 [RVI-64] PC 사진(통합 머리, 편 폭 200%): '10111213' ran together and the picked '14' stood out of its circle. A gap
+    // between days, and the number's size from the circle itself (two digits are about 1.2 of the size wide), whatever the text
+    // measurer reads for the letter size.
+    val circle = minOf(36.dp, cell - 4.dp).coerceAtLeast(20.dp)
     val room = with(density) { (circle - 6.dp).toPx() }
-    val shown = if (widest <= room || widest == 0) numberStyle else numberStyle.copy(fontSize = numberStyle.fontSize * (room / widest))
+    val fits = with(density) { (room / 1.2f).toSp() }
+    val scaled = if (widest <= room || widest == 0) numberStyle else numberStyle.copy(fontSize = numberStyle.fontSize * (room / widest))
+    val shown = if (scaled.fontSize.isSp && scaled.fontSize.value > fits.value) scaled.copy(fontSize = fits) else scaled
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
         days.forEach { d ->
             val picked = d == selected

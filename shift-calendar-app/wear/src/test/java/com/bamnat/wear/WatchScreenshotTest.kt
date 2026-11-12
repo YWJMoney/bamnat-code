@@ -12,6 +12,9 @@ import androidx.compose.runtime.Recomposer
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -124,8 +127,17 @@ class WatchScreenshotTest {
         }
     }
 
+    /**
+     * The round list scrolls to [text] with an animation, which needs the clock to run: with it held ([shoot]), waitForIdle waited
+     * for the scroll for ever.
+     */
     private fun showButton(text: String) {
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
+        compose.mainClock.autoAdvance = true
+        try {
+            compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(text))
+        } finally {
+            compose.mainClock.autoAdvance = false
+        }
         settle()
     }
 
@@ -134,7 +146,10 @@ class WatchScreenshotTest {
         settle()
     }
 
-    private fun appears(text: String) = compose.onAllNodes(hasText(text, substring = true)).fetchSemanticsNodes().isNotEmpty()
+    // The today list's lines keep their words whole with word joiners ([whole]); they are read without them.
+    private fun appears(text: String) = compose.onAllNodes(SemanticsMatcher("text has $text") { n ->
+        n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text.replace("\u2060", "").contains(text) }
+    }).fetchSemanticsNodes().isNotEmpty()
 
     @Test fun shiftToday() {
         val now = day.atTime(5, 20); at(now)

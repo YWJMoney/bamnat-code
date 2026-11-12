@@ -71,6 +71,7 @@ class RviMoreScreenshotTest : ScreenshotBase() {
     // [RVI-58] 접은 폭은 '오늘·패턴·기록' 세 부분, [RVI-60] 깨우는 구간은 재지 않을 때 한 줄.
     @Test fun sleepToday() = eight("sleep_today") { wide -> sleepScreen(wide) }
     @Test fun sleepPattern() = eight("sleep_pattern") { wide -> sleepScreen(wide); if (!wide) tapText("패턴", exact = true, scrolls = 0) }
+    @Test fun sleepHistory() = eight("sleep_history") { wide -> sleepScreen(wide); if (!wide) tapText("기록", exact = true, scrolls = 0) }
 
     // [RVI-59] 재는 중: '늦어도 07:30에 멈춰요'와 '측정 끝', [RVI-69] 잠드는 소리 '켜기'는 테두리. 채운 단추는 '깼어요' 하나.
     @Test fun nightScreen() = try {
