@@ -503,10 +503,27 @@ const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, 
   // 1.34 [RCP-29] the 나눔 판's lists and recipes.
   /^\/api\/recipes$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}(\/talk)?$/,
   // 2.0.0 [RVQ-10] 검토 SRV-12 (가)(나): 설치 ID 없이 두 표를 훑는 마을 찾기와, workers.dev 주소에서는 엣지 캐시가 없는 공개 회사 목록.
-  /^\/api\/village\/search$/, /^\/api\/public\/firms$/];
+  /^\/api\/village\/search$/, /^\/api\/public\/firms$/,
+  // 2.0.0 [RVQ-27] 검토 SVC-63: 창작자 프로필(질의 15개 안팎)·그 웹 페이지·계보·이달의 제작자·고른 것·모음·요청 판·글꼴 이름도 같은 몫으로.
+  /^\/api\/recipes\/makers\/([0-9a-f]{12}|operator)$/, /^\/m\/[^/]+$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}\/lineage$/, /^\/api\/recipes\/makers\/month$/,
+  /^\/api\/recipes\/picks$/, /^\/api\/recipes\/sets\/s[0-9a-f]{12}$/, /^\/api\/recipes\/requests$/, /^\/api\/recipes\/fonts\/u[0-9a-f]{16}(\/look)?$/];
+
+/**
+ * 2.0.0 [RVQ-27] 검토 SVC-63: 장터 카드의 사진과 나눈 글꼴 파일. 한 쪽에 사진이 수십 장이라 위 몫과 따로, 더 넉넉히 세요(병원 와이파이 하나에
+ * 100명이 한 쪽씩 열어도 막히지 않게). 가장자리 사본이 있는 것도 세어, 주소 하나를 되풀이해 불러 D1을 태우는 일은 이 몫에서 멈춰요.
+ */
+const ASSET_READS = [/^\/api\/recipes\/images\/[0-9a-f]{16}$/, /^\/api\/recipes\/fonts\/u[0-9a-f]{16}\/file$/];
+const ASSET_PER_HOUR = 20000;
+/** How long the edge keeps a picture or a font file that is ok (a hidden one leaves the edge within this). */
+const ASSET_EDGE_SECONDS = 300;
 
 async function publicAllowed(request, env, path) {
-  if (request.method !== "GET" || !PUBLIC_READS.some((r) => r.test(path))) return true;
+  if (request.method !== "GET") return true;
+  if (ASSET_READS.some((r) => r.test(path))) {
+    const now = Date.now();
+    return (await sharedCount(env, `asset|${(await network(request, env, now)).now}`, HOUR, now, 50)) <= ASSET_PER_HOUR;
+  }
+  if (!PUBLIC_READS.some((r) => r.test(path))) return true;
   const now = Date.now();
   // 2.0.0 [RVQ-10] 검토 SRV-12 (마): Worker 사본마다 따로 세던 것을 여럿이 함께(50번에 한 번 D1에 더해요).
   return (await sharedCount(env, `pub|${(await network(request, env, now)).now}`, HOUR, now, 50)) <= PUBLIC_PER_HOUR;
@@ -667,6 +684,12 @@ async function routeOnce(request, env, url, ctx) {
     // 1.38 [STM-01] 밤낮 재료(운영자 색 아이콘·배경).
     const mats = await materialRoute(recipeDeps, request, env, path, url);
     if (mats) return mats;
+    // 2.0.0 [RVQ-27] 검토 SVC-63: a picture or font file asked with no phone named is the same for everyone once it is ok: kept at the
+    // edge a few minutes (an owner's own waiting one names the phone and is never kept).
+    if (method === "GET" && !request.headers.get("x-device") && ASSET_READS.some((r) => r.test(path))) {
+      return edgeCached(request, ctx, ASSET_EDGE_SECONDS, async () => (await communityRoute(recipeDeps, request, env, path, url))
+        ?? (await fontRoute(recipeDeps, request, env, path)) ?? json({ error: "not_found" }, 404));
+    }
     const more = await communityRoute(recipeDeps, request, env, path, url);
     if (more) return more;
     // 1.36 [MAT-06] 내 글꼴 나누기.
@@ -5375,9 +5398,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
     if (g) return g;
   }
   if (path === "/recipes" || path.startsWith("/recipes/")) {
-    const more = await communityAdmin(recipeDeps, request, env, path, url, now);
+    const more = await communityAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (more) return more;
-    const font = await fontAdmin(recipeDeps, request, env, path, url, now);
+    const font = await fontAdmin(recipeDeps, request, env, path, url, now, actorName(env));
     if (font) return font;
     const mats = await materialAdmin(recipeDeps, request, env, path, url, now);
     if (mats) return mats;

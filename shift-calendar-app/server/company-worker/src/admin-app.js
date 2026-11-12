@@ -3250,7 +3250,7 @@ function adminApp(L, BUILD, M) {
 
   // [RCP-39] 1.34 나눔 판.
   // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
+  const RECIPE_TABS = [["flagged", "신고됨"], ["again", "돌려준 뒤 다시 올라온 것"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
     ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
   const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
   const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
@@ -3279,7 +3279,14 @@ function adminApp(L, BUILD, M) {
   }
   const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림",
     // 1.36 [MKS-01]
-    waiting: "출시 대기에 넣음", release: "출시 대기에서 공개", schedule: "공개 예약" };
+    waiting: "출시 대기에 넣음", release: "출시 대기에서 공개", schedule: "공개 예약",
+    // 2.0.0 [RVQ-26] 검토 SVC-52·SVC-23
+    again: "돌려준 뒤 새 판", past: "지난 판 지움",
+    // 2.0.0 [RVQ-27] 검토 SVC-61: 작품 말고 사진·요청·모음·프로필·글꼴·고른 것에 한 조치도 같은 기록에.
+    "image-ok": "보이게 함", "image-hide": "가림", "request-hide": "가림", "request-show": "다시 보임", "set-hide": "가림", "set-show": "다시 보임",
+    "bio-hide": "소개 가림", "bio-show": "소개 다시 보임", close: "프로필 닫음", open: "프로필 다시 엶", clear: "신고 비움", helper: "도우미 배지", "helper-off": "도우미 배지 뺌",
+    "font-ok": "나누기 허락", "font-hide": "내림", picks: "이번 주 고름", month: "이달의 제작자 고름" };
+  const RECIPE_TARGETS = { recipe: "작품", image: "사진", request: "요청", set: "모음", maker: "프로필", font: "글꼴", pick: "고른 것", month: "이달의 제작자" };
 
   /** What a recipe holds, in words: its pieces and the 받는 사람이 정할 칸 (never run, only read). */
   function recipeParts(body) {
@@ -3322,6 +3329,8 @@ function adminApp(L, BUILD, M) {
       one: `작품 ${S.recipeCode ?? ""} 하나만 보고 있어요. 가리기·지우기도 여기서 바로 할 수 있어요.`,
       // 1.36 [MKS-01]
       waiting: "앱 업데이트와 함께 장터에 나올 운영자 작품이에요. 아직 아무에게도 안 보여요. 묶음마다 ‘지금 공개’하거나 공개할 때를 예약해요. ‘이 판부터’를 적은 작품은 공개한 뒤에도 그 판 이상 앱에만 보여서, 업데이트한 분부터 바로 보고 옛 앱에는 안 보여요.",
+      // 2.0.0 [RVQ-26] 검토 SVC-52
+      again: "돌려준 작품을 만든 분이 내용을 고쳐 새 판으로 다시 올린 것이에요. 이미 장터에 보여요. 괜찮으면 '괜찮아요', 아직이면 다시 돌려주거나 가려요. 공개 범위만 바꾼 것은 돌려준 채로 남아 여기 오지 않아요.",
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
     const sec = S.recipeSection ?? "all";
@@ -3339,11 +3348,14 @@ function adminApp(L, BUILD, M) {
         <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
         ${edit ? `<span class="row-side">${r.state === "pending" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
+          ${tab === "again" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button>
+          <button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>` : ""}
           ${r.state === "waiting" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
             : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
           ${r.official ? `<button class="btn small ghost" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
           ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
+          ${r.version > 1 ? `<button class="btn small ghost" data-act="recipe-past" data-id="${r.code}" data-key="${r.version}">지난 판 지우기</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
       : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
     const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
@@ -3357,7 +3369,7 @@ function adminApp(L, BUILD, M) {
       ${recipeHoldFields(tab === "waiting")}
       <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>` : "";
     const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
-      `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
+      `<li><div class="row"><span class="row-main"><b>${a.target && a.target !== "recipe" ? `${esc(RECIPE_TARGETS[a.target] ?? a.target)} ` : ""}${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor || "자동")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
       : `<button class="btn" data-act="recipe-log">처리 기록 보기</button>`;
     // 1.36 [GRW-12] 작품 하나를 연 곳(사진 검토·고친 판)으로 돌아가기.
     const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
@@ -3510,13 +3522,16 @@ function adminApp(L, BUILD, M) {
   /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
   function recipeMakersView(d, edit) {
     if (!d.items.length) return empty("신고된 프로필이 없어요", "앱의 프로필 › ⋮ › 신고하기로 들어온 것이 여기 와요.");
+    // 2.0.0 [RVQ-27] 검토 SVC-24: 운영자가 가린 소개를 고치면 여기서 확인한 뒤에 보여요(맨 위).
     const why = { impersonate: "사칭", bio: "나쁜 소개", spam: "광고·도배", other: "그 밖의 것" };
     return `<p class="hint">소개만 문제면 소개를 가리고, 사칭이면 프로필을 닫아요. 닫힌 프로필은 다른 분이 볼 수도 팔로우할 수도 없고, 작품은 장터에 남아요(작품은 레시피 탭에서 따로 가려요). 문제없으면 신고를 비워요.</p>
       <ul class="rows">${d.items.map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.face ?? "🙂")} ${esc(m.nick ?? "이름 없음")}</b>
-        <small>${esc(m.maker)} · 신고 ${m.flags}건 · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")} · ${esc(ago(m.at))}</small>
-        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
+        <small>${esc(m.maker)} · ${m.flags ? `신고 ${m.flags}건${m.settled ? `(가릴 때 쓴 ${m.settled}건 포함)` : ""} · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")}` : "신고 없음"} · ${esc(ago(m.at))}</small>
+        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioChecking ? ' <span class="pill warn">고친 소개 확인 대기</span>' : m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
         ${edit ? `<span class="row-side">
-          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>
+          ${m.bioChecking ? `<button class="btn small primary" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="bio-show">고친 소개 보이기</button>
+          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="bio-hide">가린 채 두기</button>`
+            : `<button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>`}
           <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
           <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="clear">신고 비우기</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
@@ -3524,11 +3539,14 @@ function adminApp(L, BUILD, M) {
   /** [PRF-10] 1.36 이달의 제작자: up to three maker ids for each kind of work; with none, the most put-on makers of the month show. */
   function recipeMonthView(d, edit) {
     const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
-    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보여요. 비워 두면 이달에 가장 많이 넣은 작품의 만든 분이 저절로 보여요. 프로필 id(12자)는 레시피 탭의 ‘도우미 배지’ 옆이나 앱의 프로필 링크 끝에 있어요.</p>
+    // 2.0.0 [RVQ-27] 검토 SVC-59: 🏅와 마을 맨 위 '이달의 제작자'는 여기서 고른 분만. 쓰는 분 수로 센 분은 후보로만 보여요(가짜 설치로 살 수 없게).
+    const cand = (k) => d.candidates?.[k] ?? [];
+    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보이고 🏅 표식이 붙어요. 고른 분이 없으면 아무도 보이지 않아요. 이달에 쓰는 분이 많은 만든 분이 후보로 보여요. 프로필을 열어 본 뒤 ‘후보 그대로 고르기’로 한 번에 골라요.</p>
       <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
-        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음 (저절로)"}</small>
+        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음"}</small>
+        ${cand(k).length ? `<small data-candidates>후보: ${cand(k).map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ")}</small>` : ""}
         ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /**
@@ -6420,9 +6438,10 @@ function adminApp(L, BUILD, M) {
       danger({ title: "이 사진을 가릴까요?", text: "이 사진을 쓴 작품에서 사진이 빠지고, 올린 분의 신고 누적 1번으로 세요. 다시 보이게 해도 그 1번은 남아요.", label: "가리기", run: go });
     },
     "recipe-maker": async ({ id, key }) => {
-      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
+      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요. 만든 분 알림에도 가요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
       // 1.36 PC 사용성 P13: 닫기는 확인을 받고, 닫기·가리기는 8초 되돌리기 (같은 자리 단추를 두 번 눌러 도로 닫히던 것).
-      const back = { close: "open", "bio-hide": "bio-show" }[key];
+      const was = (S.data.recipes?.items ?? []).find((m) => m.maker === id);
+      const back = was?.bioChecking ? null : { close: "open", "bio-hide": "bio-show" }[key];
       const go = async () => {
         await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said,
           back ? async () => { await act(() => api(`/recipes/makers/${id}/${back}`, "POST", {}), "되돌렸어요"); load(); } : undefined);
@@ -6430,6 +6449,14 @@ function adminApp(L, BUILD, M) {
       };
       if (key === "close") confirmBox("이 프로필을 닫을까요?", "다른 분은 이 프로필을 볼 수도 팔로우할 수도 없게 돼요. 작품은 장터에 남고, 본인에게는 닫혔다고 보여요. 신고 누적 1번으로 세요.", "닫기", go);
       else await go();
+    },
+    // 2.0.0 [RVQ-27] 검토 SVC-59: 후보 셋을 그대로 이달의 제작자로.
+    "recipe-month-take": async ({ key }) => {
+      const makers = (S.data.recipes?.candidates?.[key] ?? []).map((c) => c.maker);
+      if (!makers.length) return;
+      await act(() => api("/recipes/makers/month", "POST", { style: key, makers }), `${makers.length}명 골랐어요`,
+        async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });
+      load();
     },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
@@ -6453,7 +6480,7 @@ function adminApp(L, BUILD, M) {
       const back = { hide: () => run("show"), official: () => run("official", { on: false }), unofficial: () => run("official", { on: true }) }[key];
       const go = async () => {
         await act(() => (key === "unofficial" ? run("official", { on: false }) : run(key)),
-          { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요", unofficial: "공식 표시를 뺐어요" }[key] ?? "했어요",
+          { approve: (S.recipeTab ?? "") === "again" ? "봤어요. 목록에서 뺐어요" : "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요", unofficial: "공식 표시를 뺐어요" }[key] ?? "했어요",
           back ? async () => { await act(back, "되돌렸어요"); load(); } : undefined);
         load();
       };
@@ -6469,6 +6496,11 @@ function adminApp(L, BUILD, M) {
         async () => { await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key !== "on" }), "되돌렸어요"); load(); });
       load();
     },
+    // 2.0.0 [RVQ-26] 검토 SVC-23: 지금 판만 남기고 지난 판을 서버에서 지워요(만든 분 말고는 2.0.0부터 아무도 열 수 없어요).
+    "recipe-past": ({ id, key }) => confirmBox("지난 판을 지울까요?", `지금 보이는 ${Number(key) || ""}판만 남기고 그 전 판의 본문을 서버에서 지워요. 되돌릴 수 없어요. 이미 넣은 분들의 휴대폰은 그대로예요.`, "지난 판 지우기", async () => {
+      await act(() => api(`/recipes/${id}/past`, "POST", {}), (r) => `지난 판 ${r?.dropped ?? 0}개를 지웠어요`);
+      load();
+    }),
     "recipe-delete": ({ id }) => confirmBox("이 레시피를 지울까요?", "모든 판과 이야기가 지워지고 되돌릴 수 없어요. 이미 넣은 분들의 달력은 그대로예요.", "지우기", async () => {
       await act(() => api(`/recipes/${id}/delete`, "POST", {}), "지웠어요");
       load();
@@ -6771,7 +6803,7 @@ function adminApp(L, BUILD, M) {
     // [PRF-10]
     "recipe-month": async (form) => {
       const makers = String(new FormData(form).get("makers") ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
-      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 저절로 보여요");
+      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 이 유형은 이달의 제작자가 안 보여요");
       load();
     },
     // 1.36 [MKS-01] 출시 대기 묶음: 지금 공개, 예약, 예약 풀기.
