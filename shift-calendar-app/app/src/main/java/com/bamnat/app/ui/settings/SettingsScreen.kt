@@ -221,7 +221,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
         container.appScope.launch {
             val ok = container.recordsTrash.restore(entry.id)
-            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 7일이 지났거나 파일을 읽지 못했어요")
+            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 보관 기간이 지났거나 파일을 읽지 못했어요")
         }
     }
     /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
