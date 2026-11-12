@@ -175,12 +175,22 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 /* [ADMUX-05] One step per level: screen title 1.2, card 1.06, item .98, text .94. */
 .card>h2,.card-head h2{font-size:1.06rem;font-weight:800}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;margin:0 0 .6rem}
+/* 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 제목 + 알약 여럿인 머리는 840·글자 200%에서 제목이 한 글자 폭 기둥으로 서고 알약이 잘렸어요. 제목은 16rem(글자가
+   크면 함께 커져요)을 지키고, 그만큼이 없으면 알약이 아래 줄로 감겨요. 알약도 줄 폭을 넘지 않게 감겨요. */
+.card-head{flex-wrap:wrap;row-gap:.35rem}
+.card-head:has(>:is(h2,h3)){justify-content:flex-start}
+.card-head>:is(h2,h3){flex:1 1 16rem;min-width:0;overflow-wrap:anywhere}
+.card-head>.pill{max-width:100%;white-space:normal}
+/* 알약 여럿은 한 묶음으로 함께 옆에 있거나 함께 아래로 가요(하나만 아래로 떨어지지 않게). */
+.head-pills{display:flex;flex-wrap:wrap;gap:.35rem;max-width:100%}.head-pills>.pill{max-width:100%;white-space:normal}
 .card h3{font-size:.98rem}
 .grid{display:grid;grid-template-columns:minmax(0,1fr);gap:.75rem}
 .grid>h3.span{grid-column:1 / -1;margin:.75rem 0 0;display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 /* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
 @media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
-@media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
+/* 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 두 칸(본문 · 옆 칸)은 칸이 줄 수 있는 폭(본문 18rem, 옆 16rem, 글자가 크면 함께 커져요)이 안 되면 위아래로 놓여요.
+   격자(1.6fr · 1fr)일 때 글자 200%의 840·1440에서 본문 칸이 29px로 줄어 한 자씩 섰어요(개발사항 한 건). */
+@media (min-width:1024px){.cols{display:flex;flex-wrap:wrap;gap:1rem;align-items:flex-start}.cols>*{min-width:0;flex:1 1 16rem}.cols>:first-child{flex:1.6 1 18rem}}
 .head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
 .head>:first-child{flex:1;min-width:0}
 .dept{font-weight:500;color:var(--muted);font-size:.94rem}
@@ -303,6 +313,9 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 .feed li:first-child{border-top:0}
 .feed .when{grid-row:span 2;color:var(--muted);font-size:.75rem;min-width:3.4rem;padding-top:.1rem}
 .feed .who{color:var(--muted);font-size:.78rem}
+/* 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 칸이 좁으면 시각을 글 위로(시각 칸이 폭을 먹어 글이 네댓 글자씩 줄바꿈되던 것). */
+.feed{container:feed/inline-size}
+@container feed (width < 22rem){.feed li{grid-template-columns:1fr;gap:.1rem}.feed .when{grid-row:auto;min-width:0;padding-top:0}}
 .day-head{margin:1rem .25rem .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
 
 /* ---- conversation ---- */
@@ -433,6 +446,8 @@ dialog h2{font-size:1.15rem;margin-bottom:.35rem}
 dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
 dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
 background:var(--raised);border-top:1px solid var(--line)}
+/* 2.0.0 [RVQ-29] 아래에 붙은 단추 줄이 창 맨 아래를 덮어요: 틀린 칸으로 굴릴 때(초점·이유) 그 칸과 이유가 단추 줄 위에 오게. */
+dialog{scroll-padding-bottom:calc(5.5rem + env(safe-area-inset-bottom))}
 @media (max-width:599.98px){dialog{margin:auto 0 0;width:100vw;max-width:100vw;border-radius:var(--r-lg) var(--r-lg) 0 0;padding-bottom:env(safe-area-inset-bottom)}
 @keyframes pop{from{transform:translateY(100%)}to{transform:none}}
 /* AT 1.29: a wide box (복사, 개발사항에 추가) is a whole-width sheet on a phone too; dialog.wide's 94vw left a gap at the side. */
@@ -657,7 +672,8 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .more-tiles>summary{cursor:pointer;font-weight:800;font-size:.9rem;color:var(--muted);padding:.4rem .25rem;list-style:none}
 .more-tiles .tiles{margin:.5rem 0}
 .home-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:0 1rem;align-items:start}
-@media (min-width:1024px){.home-grid{grid-template-columns:minmax(0,1.75fr) minmax(0,1fr)}}
+/* [RVQ-47] 검토 HQ-88: 오늘의 옆 칸(최근 기록)도 16rem이 안 되면 아래로(글자 200%의 1440에서 기록 글이 한 줄 88px로 섰어요). */
+@media (min-width:1024px){.home-grid{display:flex;flex-wrap:wrap}.home-grid>*{min-width:0;flex:1 1 16rem}.home-grid>.home-main{flex:1.75 1 20rem}}
 .home-main,.home-side{min-width:0}
 /* 주의 필요 */
 .alerts{border-color:color-mix(in srgb,var(--bad) 35%,var(--line))}
@@ -877,7 +893,7 @@ h1,h2,h3{letter-spacing:-.018em}
 .btn.primary{box-shadow:0 1px 0 rgba(255,255,255,.18) inset,0 1px 2px rgba(15,23,42,.18)}
 @media (hover:hover){.btn:not(.primary):not(.ghost):not(.danger):hover{border-color:color-mix(in srgb,var(--fg) 22%,var(--line))}}
 .pill{font-weight:650;font-size:.76rem;padding:.16rem .55rem;border:1px solid color-mix(in srgb,currentColor 14%,transparent)}
-.pill:not(.ok):not(.warn):not(.bad):not(.info):not(.gold){border-color:var(--line)}
+.pill:not(.ok):not(.warn):not(.bad):not(.info):not(.gold):not(.late){border-color:var(--line)}
 .tile{border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .tile .k{font-weight:650;letter-spacing:0}
 .tile .v{font-weight:750;letter-spacing:-.03em}
@@ -915,6 +931,115 @@ dialog{border-radius:var(--r-lg)}
 .flow-head h2{font-size:1.3rem;font-weight:750}
 .flow-head .meta{max-width:38rem}
 .flow-state{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem}
+/* 2.0.0 [RVA-40] 검토 U23-02: 문의 옆 '이 휴대폰' 패널은 꼭 볼 것만 굵게, 나머지는 '자세히' 한 줄 */
+.person-alerts{list-style:none;margin:.2rem 0 .4rem;padding:0;display:grid;gap:.3rem}
+.person-alerts li{padding:.15rem 0 .15rem .6rem;border-left:3px solid var(--warn);font-size:.95rem;line-height:1.35}
+.person-alerts li.bad{border-left-color:var(--bad)}
+.person-calm{margin:.2rem 0 .3rem;color:var(--muted);font-size:.9rem}
+details.person-more{margin:.5rem 0 0;border-top:1px solid var(--line)}
+.billing-why{margin:.15rem 0 .35rem;font-size:.92rem;line-height:1.45}
+/* 2.0.0 [RVA-43] 검토 ADMX-22: 볼 숫자가 없는 기능은 접힌 한 줄 */
+/* 2.0.0 [RVA-45] 검토 U24-14: 내 계정 세 묶음(접힌 줄은 카드 한 줄 모양, 펴면 그 아래 카드들) */
+.acct-groups{display:grid;gap:.5rem;margin:.75rem 0}
+details.acct-group[open]>summary{margin-bottom:.6rem}
+.acct-group .lf-t b{font-size:.98rem}
+.acct-body{margin:0 0 .5rem}
+/* 2.0.0 [RVA-44] 검토 U24-13: 관리자 초대·권한 창의 영역별 권한은 접힌 한 줄 */
+.perm-sum{margin:.45rem 0 0;font-size:.9rem;font-weight:600}
+details.perm-areas{margin:.6rem 0 .25rem;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+details.perm-areas>summary,details.acct-group>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;padding:.45rem 0;list-style:none;cursor:pointer}
+details.perm-areas>summary::-webkit-details-marker,details.acct-group>summary::-webkit-details-marker{display:none}
+details.perm-areas>summary::after,details.acct-group>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.perm-areas[open]>summary::after,details.acct-group[open]>summary::after{transform:rotate(-135deg)}
+.perm-areas .lf-t,.acct-group .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.perm-areas .lf-t small,.acct-group .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.perm-areas .perm-table{margin:.25rem 0 .5rem}
+/* 2.0.0 [RVA-40][RVA-43][RVA-44][RVA-45] 새 접힌 줄은 기본 details·summary(파란 굵은 글, 위 선)를 쓰지 않아요 */
+details.acct-group,details.card.fx-blank{border-top:0;padding-top:0}
+details.acct-group{margin:0}
+details.acct-group>summary,details.person-more>summary,details.perm-areas>summary,details.card.fx-blank>summary{color:var(--fg);font-size:inherit;font-weight:inherit}
+details.acct-group>summary{padding:.6rem 1.1rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-height:3.25rem}
+details.card.fx-blank{margin:.75rem 0 0}
+details.card.fx-blank>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;list-style:none;cursor:pointer}
+details.card.fx-blank>summary::-webkit-details-marker{display:none}
+details.card.fx-blank>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.card.fx-blank[open]>summary::after{transform:rotate(-135deg)}
+.fx-blank .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.fx-blank .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.fx-names{list-style:none;margin:.6rem 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(14rem,100%),1fr));gap:.15rem 1rem}
+.fx-names li{min-width:0;border-top:1px solid var(--line)}
+.fx-names a,.fx-names span{display:flex;flex-direction:column;justify-content:center;min-height:2.75rem;padding:.35rem 0;color:var(--fg);text-decoration:none;overflow-wrap:anywhere}
+.fx-names b{font-weight:600}
+.fx-names small{color:var(--muted);font-size:min(.78rem,16px)}
+details.person-more>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;padding:.5rem 0 .2rem;cursor:pointer;list-style:none}
+details.person-more>summary::-webkit-details-marker{display:none}
+details.person-more>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.person-more[open]>summary::after{transform:rotate(-135deg)}
+.person-more .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.person-more .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+/* 2.0.0 [RVA-38] 검토 U23-04: 자동 순환 맨 위 한 줄 상태와 다음 한 걸음, 그 아래 접힌 줄 */
+.loop-now{margin:.25rem 0 .75rem}
+.loop-now .loop-state{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .9rem;font-size:1.05rem;font-weight:600;margin:0}
+.loop-now .loop-state b{font-weight:750}
+.loop-now>.meta{margin:.35rem 0 0}
+.loop-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem .9rem;margin:.7rem 0 0;padding:.65rem .75rem;border-radius:var(--r-sm);background:var(--accent-soft)}
+.loop-next p{margin:0;flex:1 1 16rem;min-width:0}
+.loop-next p b{margin-right:.35rem}
+.loop-now .calm{margin:.6rem 0 0}
+.loop-now .hint{margin:.6rem 0 0}
+.loop-folds{gap:.5rem}
+details.card.loop-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem}
+details.card.loop-fold>summary::after{flex:none;margin:0 .2rem}
+.loop-fold .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.loop-fold .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.loop-fold .lf-t small.warn{color:var(--warn);font-weight:700}
+.loop-next .btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
+details.card.loop-fold[open]>summary{margin-bottom:.6rem}
+.check-seen.just b{color:var(--ok)}
+.row-main .changed{color:var(--fg);font-weight:600}
+.dev-rows .row-main b{white-space:normal;overflow:hidden;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.dev-rows .dev-st{font-weight:600;color:var(--fg)}
+.dev-rows .dev-st.todo{color:var(--accent)}
+.dev-rows .dev-st.done{color:var(--ok)}
+.dev-rows .dev-st.rejected{color:var(--muted)}
+.dev-rows .dev-st.ask{color:var(--warn)}
+.tier-rows .row-main small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.tier-rows details[open] .row-main small{display:block}
+/* 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄은 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나, 줄의 칸은 굵은 보통 글자('넘음'·'넘김'은 글로) */
+.pill.late{background:transparent;border-color:transparent;color:var(--fg);font-weight:800;padding-inline:0}
+.seg .n.warm{color:var(--warn)}
+.mh{display:grid;gap:.75rem}
+.mh-head p{margin:0}
+.mh-form{display:grid;gap:.5rem;margin-top:.5rem}
+.mh-form .hint{margin:0}
+.mh-sum{display:flex;flex-wrap:wrap;align-items:baseline;gap:.25rem .75rem;font-size:1.05rem}
+.mh-rows>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
+.mh-rows>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}
+.sig-steps{display:flex;flex-wrap:wrap;gap:.25rem .5rem;margin:.5rem 0 0;padding:0;list-style:none;font-size:.82rem}
+.sig-steps li{display:inline-flex;align-items:baseline;gap:.25rem;color:var(--muted)}
+.sig-steps li+li::before{content:"›";color:var(--muted);margin-inline-end:.25rem}
+.sig-steps li.done{color:var(--fg)}
+.sig-steps li.done>span{font-weight:600}
+.sig-steps li.todo>span{opacity:.75}
+.sig-steps li.ok>span{color:var(--ok)}
+.sig-steps li.warn>span{color:var(--warn)}
+.sig-steps small{color:var(--muted)}
+.sig-flow{list-style:none;margin:0;padding:0;display:grid;gap:.75rem}
+.sig-flow>li>a{color:var(--fg);text-decoration:none}
+.due-late{color:var(--fg);font-weight:800}
+.rows.ledger>li.lg-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .6rem;padding:.5rem .85rem;background:var(--soft)}
+.rows.ledger>li.lg-group small{font-size:min(.8rem,16px);color:var(--muted)}
+.rows.ledger>li.lg-group.rest b{font-size:min(.8rem,16px);font-weight:700;color:var(--muted)}
+/* 2.0.0 [RVA-49] 검토 U23-05: 노트북(1280px~)은 목록 옆 칸에 상세, 줄은 제자리. 표는 칸 너비에 맞춰 덜 중요한 칸부터 접어요(.lg-table 컨테이너) */
+.lg-split.on{display:grid;grid-template-columns:minmax(0,1fr) minmax(20rem,27rem);gap:1rem;align-items:start}
+.lg-side{position:sticky;top:calc(var(--top-h,4.75rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.75rem) - 1.25rem);overflow:auto;background:var(--surface);
+border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
+.lg-side-head{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.6rem .6rem .6rem .95rem;border-bottom:1px solid var(--line)}
+.lg-side-head>span{min-width:0;font-weight:700;overflow-wrap:anywhere}
+.lg-side-head b{font-variant-numeric:tabular-nums;color:var(--muted);margin-right:.35rem}
+.lg-side .lg-detail{border-top:0;padding-top:.6rem}
+.rows.ledger>li.lg-line>.lg-row{cursor:pointer}
+.rows.ledger>li.lg-line.on>.lg-row{background:var(--hover);box-shadow:inset 3px 0 0 var(--accent)}
 .next-bar{display:flex;align-items:center;gap:.7rem;padding:.7rem .75rem .7rem 1rem;margin:0 0 .9rem;border-radius:var(--r);background:var(--accent-soft);
 border:1px solid color-mix(in srgb,var(--accent) 22%,transparent)}
 .next-bar>svg{flex:none;width:1.1rem;height:1.1rem;color:var(--accent)}
@@ -972,7 +1097,8 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how-steps p{margin:.15rem 0 0;font-size:.86rem;color:var(--muted)}
 .step-no{flex:none;display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:.85rem}
 .flow-cols{display:grid;gap:.75rem}
-@media (min-width:1024px){.flow-cols{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);align-items:start}}
+/* [RVQ-47] 검토 HQ-88: 넓은 화면도 칸이 22rem보다 좁으면 한 칸으로(글자 200%의 1440에서 자동 순환 카드 안 줄이 62px로 섰어요), 두 칸까지만. */
+@media (min-width:1024px){.flow-cols{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr));align-items:start}}
 .week-chart{margin:0}
 .week-chart svg{display:block;width:100%;height:auto}
 .week-chart text{font-size:10px;fill:var(--faint)}
@@ -1036,7 +1162,6 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .lg-pick{grid-area:no;display:flex;align-items:center}
 .lg-table.picking .lg-row{grid-template-columns:auto auto minmax(0,1fr) auto;grid-template-areas:"pk no sum due" "pk st st who"}
 .lg-table.picking .lg-row .lg-pick{grid-area:pk}
-.lg-line.late .lg-row{box-shadow:inset 3px 0 0 var(--bad)}
 .lg-line.shut .lg-row .c-sum>b{color:var(--muted);font-weight:600}
 .lg-line details[open]>.lg-row{background:var(--hover)}
 .lg-detail{padding:.25rem .85rem .9rem;display:grid;gap:.5rem;border-top:1px dashed var(--line)}
@@ -1155,18 +1280,19 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 }
 /* 편 화면(폴드 안쪽 가로 ~720–1023px): 흐름 칸 둘, 숫자 넷. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
 @media (min-width:720px) and (max-width:1023.98px){
-  .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
+  /* 2.0.0 [RVQ-28] 글자 200%에서는 두 칸이 너무 좁아 카드 안 줄이 한 자씩 섰어요(자동 순환 › 연결 점검): 칸이 22rem보다 좁으면 한 칸으로. */
+  .flow-cols{grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));align-items:start}
   .tiles.core{--cols:4}
 }
 /* 2.0.0 [RVA-30] 검토 U24-02·T24-16·T24-17: 840에서 목록 칸이 170px라 제목이 "문제 신고 · …"만 보이고 사람 정보가 답 칸 아래로
    한참 내려갔어요. 840~1023은 목록을 접고 '‹ 이전 1/12 다음 ›'만(twoPane() 1024부터), 그 폭으로 답 칸과 사람 정보를 나란히 둬요. */
 @media (min-width:840px) and (max-width:1023.98px){
-  .cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(16rem,1fr);gap:.85rem;align-items:start}.cols>*{min-width:0}
+  .cols{display:flex;flex-wrap:wrap;gap:.85rem;align-items:flex-start}.cols>*{min-width:0;flex:1 1 16rem}.cols>:first-child{flex:1.6 1 18rem}
   .cols>aside{position:sticky;top:calc(var(--top-h,4.25rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.25rem) - 1.25rem);overflow:auto}
 }
 /* 데스크톱: 세 칸(메뉴 · 목록 · 열린 것), 넓으면 사람 패널이 오른쪽에 붙어 있어요. */
 @media (min-width:1440px){
-  .split .cols{grid-template-columns:minmax(0,1.7fr) minmax(19rem,1fr)}
+  .split .cols>:first-child{flex:1.7 1 18rem}.split .cols>:last-child{flex:1 1 19rem}
   .cols>aside{position:sticky;top:calc(var(--top-h,4.75rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.75rem) - 1.25rem);overflow:auto}
 }
 
@@ -1407,6 +1533,51 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 .claude-draft{margin:.5rem 0;padding:.6rem .75rem;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--line)}
 .claude-draft p{margin:.15rem 0}.claude-draft .why{font-size:.88rem}.claude-draft .meta a{color:var(--accent)}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
+/* 2.0.0 [RVA-36] 검토 U23-01·I23c-01·ADM-12(도약 41번): 오늘은 '내가 할 것' 셋 + 저절로 끝난 일만 펴고, 나머지는 접힌 줄 하나씩.
+   셋마다 [내일 볼게요] 단추(44px), 휴대폰은 줄을 밀어도 돼요(왼쪽 미루기·오른쪽 열기). */
+.today-three li{display:flex;align-items:center;gap:.3rem;position:relative;touch-action:pan-y}
+/* 도약 43번: 좁은 폭에서도 제목은 두 줄까지(8~10자에서 잘리던 것). */
+.today-three .t b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}
+.today-three li>a{flex:1;min-width:0;position:relative;z-index:1}
+.today-three .pick-later{color:var(--muted);border-radius:var(--r)}
+.today-three .pick-later svg{width:1.15rem;height:1.15rem;color:inherit}
+@media (hover:hover){.today-three .pick-later:hover{background:var(--soft);color:var(--fg)}}
+.today-three li.swiping>a{transform:translateX(var(--dx,0));transition:none}
+.today-three li[data-dir]::after{position:absolute;top:50%;transform:translateY(-50%);z-index:0;font-size:.8rem;font-weight:800;color:var(--muted)}
+.today-three li[data-dir=later]::after{content:"내일 볼게요";right:3.6rem}.today-three li[data-dir=open]::after{content:"열기";left:.9rem;color:var(--accent)}
+.today-go{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .9rem;margin:.8rem 0 0}.today-go .today-rest{margin:0}
+.today-go .btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
+/* 380·글자 200%(오늘 큰 카드 폭이 약 18rem): 셋의 제목이 0칸으로 접히던 것. 좁으면 번호·꺾쇠를 줄이고 맥박 점은 제목 줄 위로,
+   [내일 볼게요]는 48px까지. 숫자 › 한눈에의 큰 신호도 같은 틀이라 함께예요(같은 구조는 함께). */
+.gl-hero{container-type:inline-size;container-name:hero}
+.today-three .pick-later{width:min(2.75rem,48px);height:min(2.75rem,48px)}
+@container hero (width < 24rem){
+  .gl-hero-top{flex-direction:column;gap:.4rem}
+  .gl-pulse{width:min(2.6rem,40px);height:min(2.6rem,40px)}
+  .today-three a{gap:.45rem;padding:.55rem .6rem}
+  .today-three a>svg,.today-three .n{display:none}
+  .today-three{margin-inline:-.45rem}.today-three li{gap:.15rem}
+}
+.home-more{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem;margin:.25rem 0 .75rem}
+details.card.home-fold{margin:0;padding:0}
+.home-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:3.25rem;padding:.6rem 1.1rem;list-style:none}
+.home-fold>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+.home-fold[open]>summary::after{transform:rotate(-135deg)}
+.home-fold .hf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.home-fold .hf-t b{font-size:.98rem}
+.home-fold .hf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-fold .hf-t .late{color:var(--bad);font-weight:800}
+.home-fold .hf-body{padding:0 1.1rem 1rem;min-width:0}
+.home-fold .hf-body>.card{border:0;box-shadow:none;background:none;padding:0;margin:.25rem 0 1rem;border-radius:0}
+.home-fold .hf-body>.card.alerts{border-bottom:1px solid var(--line);padding-bottom:.75rem}
+.hf-h{font-size:.9rem;margin:.9rem 0 .35rem}
+.home-foot,.home-views{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .5rem}.home-views{margin:0}
+.home-foot a,.home-views a{display:inline-flex;align-items:center;gap:.4rem;min-height:2.75rem;padding:0 .85rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem;font-weight:700}
+.home-foot svg{flex:none;width:1rem;height:1rem;color:var(--info)}
+/* 2.0.0 [RVA-37] 검토 I24c-01: 읽지 못해 빼 둔 줄. 안내 카드 한 모양(바탕 하나, 왼쪽 띠 색으로 뜻): 주의예요(장부는 돌아요). */
+.card.stuck{border-left:4px solid var(--warn)}
+.stuck-list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}
@@ -1591,6 +1762,13 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
   .dl-pill.live{background:var(--accent-soft);color:var(--accent)}
   .dl-pill.warn{background:var(--warn-bg);color:var(--warn)}
   .dl-pill.bad{background:var(--bad-bg);color:var(--bad)}
+}
+/* 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 막대가 좁으면(약 22글자 아래) 판 알약은 점 하나(이름은 읽어 주는 이름과 title에, '판 다름'·'서버 닿지 않음'은 글 그대로),
+   제목은 한 줄 말줄임(본문 첫 줄에 같은 제목이 다시 나와요). 전에는 '로컬 2.0.0'에 밀려 제목이 두세 글자씩 두 줄로 섰어요. */
+@container bar (width < 22rem){
+  .dl-pill:not(.warn,.bad){width:min(.7rem,12px);height:min(.7rem,12px);padding:0;font-size:0;line-height:0;background:var(--muted)}
+  .dl-pill.live{background:var(--accent)}
+  .bar h1 .t{-webkit-line-clamp:1}
 }
 @media (pointer:coarse){
   .waiting a,.alert-list a,.stage-strip a{min-height:2.75rem}

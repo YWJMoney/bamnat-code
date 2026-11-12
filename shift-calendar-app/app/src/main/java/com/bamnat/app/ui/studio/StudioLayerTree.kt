@@ -70,7 +70,8 @@ internal data class TreeRow(val depth: Int, val label: String, val sub: String?,
  * [LAY-09] 층 나무 (누락 점검 N6, 고급 보기): every layer of the open 곳 at once — its parts as the 부품 설계도 nests them (● for one that has
  * a look of its own) and, under each place, the 꾸밈 층 items back to front. A row opens its part in 부품 or its item in 꾸밈 층's 고치기.
  */
-internal fun treeRows(partIds: List<String>, parts: Blueprint, decor: Decor, places: List<String>): List<TreeRow> = buildList {
+internal fun treeRows(partIds: List<String>, parts: Blueprint, decor: Decor, places: List<String>,
+    style: com.bamnat.core.work.WorkStyle? = null): List<TreeRow> = buildList {
     if (partIds.isNotEmpty()) {
         add(TreeRow(0, "부품", null, heading = true))
         val touched = parts.lines.mapNotNull { it["id"] as? String }.toSet()
@@ -80,7 +81,7 @@ internal fun treeRows(partIds: List<String>, parts: Blueprint, decor: Decor, pla
             while (up != null && up in partIds) { d++; up = BlueprintParts.parentOf(up) }
             val states = parts.lines.filter { it["id"] == p }.mapNotNull { it["on"] as? String }
             add(TreeRow(d, (if (p in touched) "● " else "") + (BlueprintParts.LABELS[p] ?: p),
-                states.takeIf { it.isNotEmpty() }?.joinToString(" · ") { STATE_WORDS[it] ?: it }, part = p))
+                states.takeIf { it.isNotEmpty() }?.joinToString(" · ") { stateWord(p, it, style) }, part = p))
         }
     }
     if (places.isNotEmpty()) {

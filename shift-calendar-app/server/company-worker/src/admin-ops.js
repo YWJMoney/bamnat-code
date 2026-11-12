@@ -1,5 +1,7 @@
-import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, readJson, stmt } from "./index.js";
-import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
+import { DEV, actorName, devEvent } from "./inquiries.js";
+import { signalsOfDev } from "./observe.js";
+import { ROW_WHERE, SCREEN_ERROR, WATCH_SCHEMA, errorState, healthBoard, jobRow, recordScreenError, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
@@ -34,6 +36,8 @@ export function opsArea(path) {
   if (path.startsWith("/watch/") || path === "/money" || path.startsWith("/money/") || path === "/data-requests" || path.startsWith("/data-requests/")
     || path === "/backup" || path.startsWith("/backup/") || path === "/incident" || path.startsWith("/incident/") || path === "/security") return "owner";
   if (path === "/person") return "inquiries";
+  // 2.0.0 [RVA-52] 관리자 앱 화면 오류 알리기: 로그인한 누구나(화면 이름·빌드·오류 첫 줄뿐).
+  if (path === "/screen-error") return null;
   if (path === "/release" || path.startsWith("/release/")) return "ops";
   if (path === "/health/versions" || path === "/changes") return "metrics";
   if (path === "/reviews" || path.startsWith("/reviews/")) return "inquiries";
@@ -71,7 +75,8 @@ export const OPS_BADGE_SQL = {
  */
 export const OPS_ALERT_SQL = (now) => ({
   ops_jobs: ["SELECT step, ok_at, fail_at, error FROM job_runs"],
-  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ?", now - DAY],
+  // 2.0.0 [RVA-37] 읽지 못한 줄(row/…)은 오늘 맨 위 '읽지 못한 N줄' 카드가 따로 보여요(같은 일을 두 번 세지 않게).
+  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ? AND route NOT LIKE 'row/%'", now - DAY],
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
@@ -114,7 +119,7 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     out.push({ key: `incident:${inc.id}`, kind: "incident", tone: "bad", title: "사고가 열려 있어요", meta: first, to: "#/incident" });
   }
   if (got.ops_requests?.[0]?.n) out.push({ key: `requests:${got.ops_requests[0].n}`, kind: "incident", tone: "bad", title: `데이터 요청 ${got.ops_requests[0].n}건 기한 임박·넘김`, meta: "개인정보·환불·법 신고", to: "#/requests" });
-  if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: setup.missing.join(" · "), to: "#/server" });
+  if (setup.missing.length) out.push({ key: `setup:${setup.missing.join(",")}`, kind: "incident", tone: "bad", title: `꼭 필요한 설정 ${setup.missing.length}개 빠짐`, meta: `${setup.names.join(" · ")} · 넣는 곳은 관리 › 서버 상태`, to: "#/server" });
   const bad = (got.ops_jobs ?? []).map((r) => jobRow(r, now, env)).filter((j) => j.state === "fail" || j.state === "stale");
   if (bad.length) out.push({ key: `jobs:${bad.map((j) => j.step).join(",")}`, kind: "incident", tone: "bad", title: `정기 작업 ${bad.length}개 ${bad.some((j) => j.state === "fail") ? "실패" : "멈춤"}`, meta: bad.map((j) => j.name).join(" · "), to: "#/server" });
   if (got.ops_errors?.[0]?.n) out.push({ key: `errors:${got.ops_errors[0].n}`, kind: "spike", tone: "warn", title: `새 오류 ${got.ops_errors[0].n}가지`, meta: "하루 안에 난 서버 오류 묶음", to: "#/errors" });
@@ -242,6 +247,12 @@ export async function story(env, id) {
     ev.push({ at: h.at, kind: h.action, text: `${what} · ${h.actor}` });
   }
   if (ship) ev.push({ at: ship.at, kind: "ship", text: `${ship.target} 판이 나감` });
+  // 2.0.0 [RVA-54] 검토 I23c-03: 이 개발사항을 만든 개선 신호의 걸음(뜬 날·숫자가 돌아온 날·그대로라 다시 대기열에 온 날)도 한 줄에.
+  for (const s of await signalsOfDev(env, id).catch(() => [])) {
+    if (s.first) ev.push({ at: s.first, kind: "signal", text: `개선 신호가 뜸 · ${String(s.title).slice(0, 60)}` });
+    if (s.cleared) ev.push({ at: s.cleared, kind: "back", text: `숫자가 돌아옴 · ${s.value ?? "—"}${s.unit ?? ""} → ${s.after ?? "—"}${s.unit ?? ""}` });
+    if (s.stuck && s.prevDev === id) ev.push({ at: s.stuck, kind: "stuck", text: "닿고 2주가 지나도 숫자가 그대로라 신호가 다시 대기열에" });
+  }
   ev.sort((a, b) => a.at - b.at);
   return { id: item.id, title: item.title, status: item.status, releasedIn: item.released_in, events: ev,
     days: ev.length ? Math.round(((ev.at(-1).at - ev[0].at) / DAY) * 10) / 10 : 0 };
@@ -271,6 +282,16 @@ export async function morningExtra(env, now = Date.now()) {
 export async function opsRoute(request, env, url, path, method, now, vitals) {
   const actor = env.actor;
   if (path === "/watch/health" && method === "GET") return json(await healthBoard(env, now));
+  // 2.0.0 [RVA-52] 검토 I24c-02: 관리자 앱이 화면 오류·빈 화면을 알려요. 한 관리자가 한 시간에 30번까지(그 뒤는 조용히 버려요).
+  if (path === "/screen-error" && method === "POST") {
+    const body = await readJson(request, 2048);
+    const hour = Math.floor(now / HOUR);
+    const n = await one(env, `INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1 RETURNING count`,
+      `screenerr|${actor?.id ?? "?"}|${hour}`, (hour + 2) * HOUR).catch(() => null);
+    if ((n?.count ?? 1) > SCREEN_ERROR.perHour) return json({ ok: false, limited: true }, 202);
+    await recordScreenError(env, { screen: body?.screen, where: body?.where, kind: body?.kind, message: body?.message }, now, body?.build);
+    return json({ ok: true }, 202);
+  }
   if (path === "/watch/speed" && method === "GET") return json(await speedState(env, now, Math.min(168, Number(url.searchParams.get("hours")) || 24)));
   if (path === "/watch/errors" && method === "GET") return json(await errorState(env, now, { status: url.searchParams.get("status") ?? "open" }));
   let m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})$/);
@@ -279,6 +300,31 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     if (!(await setErrorState(env, m[1], body?.status, body?.note, now))) return json({ error: "not_found" }, 404);
     await audit(env, now, "error_state", m[1], `${body?.status ?? ""} ${String(body?.note ?? "").slice(0, 80)}`);
     return json({ ok: true });
+  }
+  // 2.0.0 [RVA-37] 검토 I24c-01: 오늘의 '읽지 못한 줄' 카드에서 [개발사항으로] 한 번에. 묶음은 '보는 중'이 되고 메모에 개발사항 번호가 남아요.
+  m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})\/dev$/);
+  if (m && method === "POST") {
+    const g = await one(env, "SELECT * FROM error_groups WHERE sig = ?", m[1]);
+    if (!g) return json({ error: "not_found" }, 404);
+    const done = /^개발사항 (d[A-Za-z0-9]{15})/.exec(g.note ?? "");
+    if (done) return json({ error: "already", dev: done[1] }, 409);
+    const [, where = "", key = ""] = String(g.route).startsWith("row/") ? String(g.route).split("/") : [];
+    const place = where ? `읽지 못한 줄(${ROW_WHERE[where] ?? where})` : `서버 오류 ${g.route}`;
+    const title = `${place}: ${g.message}`.slice(0, DEV.title);
+    const text = [`오류 묶음 ${g.sig} · ${g.total}번 · 처음 ${new Date(g.first_at).toISOString().slice(0, 16)}Z`, key ? `원인 줄 ${key}` : "", g.message, g.sample ?? ""]
+      .filter(Boolean).join("\n").slice(0, DEV.body);
+    const id = `d${randomId(15)}`;
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
+      devEvent(env, id, now, "create", { title, from: "오류 묶음" }),
+      // 같은 줄을 다른 곳(장부·정리함)에서 읽다 난 묶음도 같은 개발사항으로.
+      key ? stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ? OR (route LIKE 'row/%' AND route LIKE ?)",
+        `개발사항 ${id}`, now, g.sig, `%/${key}`)
+        : stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ?", `개발사항 ${id}`, now, g.sig),
+    ]);
+    await audit(env, now, "error_dev", title.slice(0, 80), id);
+    return json({ ok: true, dev: id }, 201);
   }
   if (path === "/money" && method === "GET") return json(await moneyBoard(env, now, url.searchParams.get("days")));
   if (path === "/money/prices" && method === "POST") return savePriceTable(request, env, now);

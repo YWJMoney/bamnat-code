@@ -43,11 +43,15 @@ object SharedPayWords {
     const val TITLE = "다른 사람이 공유한 급여체계를 사용하고 있어요!"
     const val ASK = "다르다면 의견을 제시해 보거나 직접 만드시겠어요?"
     const val HIDDEN = "계산 방식은 공유한 분의 것이라 볼 수도 고칠 수도 없어요. 기본급과 내 수당 금액은 내 명세서대로 넣어요."
+    /** 2.0.0 [RVN-18] 검토 T10a-03·COMP-19: [HIDDEN] with the user's own base: 시급·일당 workers read 시급·일당, not 기본급. */
+    fun hidden(type: com.bamnat.core.pay.WageType): String = HIDDEN.replace("기본급과", type.baseWord() + com.bamnat.core.text.Josa.gwawa(type.baseWord()))
     /** 1.39 발굴 3-2: the payslip check over a shared way. */
     const val CHECK_TITLE = "명세서와 맞는지 확인"
     const val CHECK_HINT = "명세서 숫자만 넣으면 맞는지 알려 드려요. 계산 방식은 보이지 않아요."
     /** [PAYP-04] Where only the 기본급 is asked over a shared way. */
     const val BASE_ONLY = "계산 방식은 공유한 분의 것 그대로예요. 기본급만 내 명세서대로 넣으면 예상 급여가 맞아요."
+    /** T10a-03 [BASE_ONLY] with the user's own base. */
+    fun baseOnly(type: com.bamnat.core.pay.WageType): String = BASE_ONLY.replace("기본급만", "${type.baseWord()}만")
     /** [PAYP-04] The 금액 창 after '이 급여 방식 쓰기': what comes with the way, grouped, never its numbers. */
     const val WAY_TITLE = "공유한 분의 계산 방식"
     const val WAY_TEXT = "통상시급 기준 시간, 연장·야간 가산, 회사가 정한 수당과 상여는 공유한 분의 방식대로 들어가요. 계산식은 보이지 않아요. 넣은 뒤 내 명세서와 다르면 급여 화면의 ‘의견 보내기’로 알려 주세요."
@@ -85,12 +89,14 @@ fun SharedPayLockSheet(
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(SharedPayWords.TITLE, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text("${SharedPayWords.from(way)}이에요. ${SharedPayWords.HIDDEN}", style = MaterialTheme.typography.bodyMedium,
+            Text("${SharedPayWords.from(way)}이에요. ${SharedPayWords.hidden(profile.wageType)}", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(SharedPayWords.ASK, style = MaterialTheme.typography.bodyLarge)
             val known = BaseAsk.known(profile, month)
             Button(onClick = { base = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                Text(if (known == null) "기본급 넣기" else "기본급 고치기 (지금 ${com.bamnat.app.ui.pay.won(known)})")
+                // T10a-03 시급·일당 workers are asked their 시급·일당 (the field itself already said so).
+                val name = profile.wageType.baseWord()
+                Text(if (known == null) "$name 넣기" else "$name 고치기 (지금 ${com.bamnat.app.ui.pay.won(known)})")
             }
             if (vm.server) OutlinedButton(onClick = { fix = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("의견 보내기") }
             OutlinedButton(onClick = { leave = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 만들기") }
@@ -269,4 +275,11 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
             TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(if (said == null) "닫기" else "확인") }
         }
     }
+}
+
+/** 2.0.0 [RVN-18] 검토 T10a-03: what a 기본급 is called for this way of being paid (월급 기본급, 시급, 일당). */
+internal fun com.bamnat.core.pay.WageType.baseWord(): String = when (this) {
+    com.bamnat.core.pay.WageType.MONTHLY -> "기본급"
+    com.bamnat.core.pay.WageType.HOURLY -> "시급"
+    com.bamnat.core.pay.WageType.DAILY -> "일당"
 }

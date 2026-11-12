@@ -86,6 +86,49 @@ class LServerAlarmTest {
         assertNull(EventBook.lateSeconds("at=1"))
         assertTrue(EventBook.aliveBefore(listOf(DiagEvent(t3 - 3600_000, DiagEvents.ALIVE)), t3))
         assertFalse(EventBook.aliveBefore(listOf(DiagEvent(t3 - 2 * day, DiagEvents.ALIVE)), t3))
+        // 2.0.0 [RVI-86] (검토 I03a-06) The same week by its days, newest first: which one was late and which has no record.
+        val rows = EventBook.weekRows(events, now)
+        assertEquals(listOf(t3, t2, t1), rows.map { it.at })
+        assertEquals(listOf("기록 없음", "2분 늦게", "제때"), rows.map { it.said })
+        assertEquals(listOf(false, true, false), rows.map { it.late })
+        // The fallback rang it another way: no lateness to say.
+        val t4 = now - 4 * day
+        val fallback = events + DiagEvent(t4, DiagEvents.ALARM_FALLBACK, EventBook.triggerDetail(t4))
+        assertEquals("울림", EventBook.weekRows(fallback, now).first { it.at == t4 }.said)
+        assertEquals("지난 7일 알람 3번 중 1번 기록 없음", EventBook.trustLine(events, now))
+    }
+
+    @Test fun theDaytimeRehearsalsAndTheTestAlarmAreTimed() {
+        // 2.0.0 [RVI-91] (검토 I03c-02) Set, came on time, came four minutes late, never came.
+        val day = 24 * 60 * 60_000L
+        val now = 10 * day
+        val (r1, r2, r3) = listOf(now - 3 * day, now - 2 * day, now - day)
+        val events = listOf(
+            DiagEvent(r1 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r1)),
+            DiagEvent(r1 + 3000, DiagEvents.ALARM_REHEARSAL, EventBook.triggerDetail(r1, "late_s=3")),
+            DiagEvent(r2 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r2)),
+            DiagEvent(r2 + 240_000, DiagEvents.ALARM_REHEARSAL, EventBook.triggerDetail(r2, "late_s=240")),
+        )
+        val rows = EventBook.rehearsals(events, now)
+        assertEquals(listOf("4분 늦게", "제때"), rows.map { it.said })
+        assertEquals("낮 예행 2번 중 1번 늦게 · 가장 늦게 4분", EventBook.rehearsalLine(rows))
+        val missed = events + DiagEvent(r3 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r3))
+        assertEquals("낮 예행 1번이 오지 않았어요", EventBook.rehearsalLine(EventBook.rehearsals(missed, now)))
+        // One still ahead is not counted.
+        val ahead = events + DiagEvent(now, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(now + 3600_000))
+        assertEquals(2, EventBook.rehearsals(ahead, now).size)
+        assertEquals("낮 예행 2번 중 1번 늦게 · 가장 늦게 4분", EventBook.trustLine(events, now))
+        assertNull(EventBook.rehearsalLine(emptyList()))
+
+        // 2.0.0 [RVI-92] (검토 I03b-04) The 1분 뒤 시험 알람 checked by the app.
+        val t = now - 600_000
+        val set = listOf(DiagEvent(t - 60_000, DiagEvents.ALARM_TEST_SET, EventBook.triggerDetail(t)))
+        assertNull(EventBook.lastTest(set, t + 60_000)) // still within its grace
+        assertTrue(EventBook.lastTest(set, now)!!.missed)
+        val came = set + DiagEvent(t + 2000, DiagEvents.ALARM_TEST_FIRED, EventBook.triggerDetail(t, "late_s=2"))
+        assertEquals("제때", EventBook.lastTest(came, now)!!.said)
+        val plain = came + DiagEvent(t + 2500, DiagEvents.ALARM_FALLBACK, EventBook.triggerDetail(t))
+        assertNull(EventBook.lastTest(plain, now)!!.lateSeconds)
     }
 
     @Test fun inquiryTopicsTakeTheMostMatchedWords() {

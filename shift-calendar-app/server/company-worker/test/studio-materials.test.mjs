@@ -91,7 +91,8 @@ test("[E11] 실서버용 재료 파일: 25개씩 나뉘고, 관리자 앱이 알
   assert.deepEqual(out.map((f) => [f.kind, f.part, f.of, f.items.length]), [[FILE_KIND, 1, 3, 25], [FILE_KIND, 2, 3, 25], [FILE_KIND, 3, 3, 10]]);
   assert.deepEqual(out.flatMap((f) => f.items).map((x) => x.name), items.map((x) => x.name));
   // The admin app's upload form reads exactly this marker, and sends 25 at a time (the server's batch).
-  const app = readFileSync(new URL("../src/admin-app.js", import.meta.url), "utf8");
+  // 2.0.0 [RVA-57] 재료 올리기 양식은 장터 묶음(src/admin/views/market.js)에, 보내기는 앱에 있어요.
+  const app = readFileSync(new URL("../src/admin-app.js", import.meta.url), "utf8") + readFileSync(new URL("../src/admin/views/market.js", import.meta.url), "utf8");
   assert.ok(app.includes(`doc?.kind !== "${FILE_KIND}"`) && app.includes('data-form="material-upload"'));
   const { MATERIAL_LIMITS } = await import("../src/studio-materials.js");
   assert.ok(app.includes(`i += ${MATERIAL_LIMITS.batch}`));

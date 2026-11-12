@@ -8,9 +8,10 @@
 export function ledgerViews(A) {
   const { S, esc, can, href, seg, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, ago, moment, syncUrl, handoffCard, inboxLink, listHead } = A;
 
-  const STAGE_TONE = { intake: "info", sorted: "info", answered: "ok", devwait: "warn", handed: "warn", doing: "warn", built: "warn", notify: "bad", shipped: "ok",
+  // 2.0.0 [RVA-46] 검토 HQ-69(조건 6): 빨강은 위험(급함·기한 넘김 머리)만. 답이 남은 출시·최고 관리자 차례·확인 필요·다시 열림은 주의(주황)예요.
+  const STAGE_TONE = { intake: "info", sorted: "info", answered: "ok", devwait: "warn", handed: "warn", doing: "warn", built: "warn", notify: "warn", shipped: "ok",
     waiting: "", rejected: "", closed: "" };
-  const TURN_TONE = { claude: "info", owner: "bad", admin: "", asker: "", ship: "warn" };
+  const TURN_TONE = { claude: "info", owner: "warn", admin: "", asker: "", ship: "warn" };
   const PILE_DO = { fixed: "답 보내기", known: "묶고 답하기", again: "다시 접수하고 답하기", declined: "답 보내기", answered: "이 답 보내기", faq: "이 답 보내기", new: "개발사항으로 넘기기" };
   const WHO = { claude: "Claude", person: "", auto: "자동", asker: "" };
 
@@ -21,9 +22,10 @@ export function ledgerViews(A) {
     if (!r.due) return '<span class="meta">—</span>';
     const left = Math.round((Date.parse(r.due) - Date.parse(S.data.ledger.now)) / 60000);
     const abs = Math.abs(left);
-    if (abs < 1) return `<span class="pill ${r.late ? "bad" : "warn"}">${r.late ? "방금 넘음" : "곧"}</span>`;
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄의 칸은 빨강 대신 굵은 보통 글자('넘음'은 글로 남아요). 빨강은 '기한 넘김 N' 머리 하나만.
+    if (abs < 1) return `<span class="pill ${r.late ? "late" : "warn"}">${r.late ? "방금 넘음" : "곧"}</span>`;
     const text = abs < 60 ? `${abs}분` : abs < 48 * 60 ? `${Math.round(abs / 60)}시간` : `${Math.round(abs / 1440)}일`;
-    return `<span class="pill ${r.late ? "bad" : left < 6 * 60 ? "warn" : ""}">${r.late ? `${text} 넘음` : `${text} 남음`}</span>`;
+    return `<span class="pill ${r.late ? "late" : left < 6 * 60 ? "warn" : ""}">${r.late ? `${text} 넘음` : `${text} 남음`}</span>`;
   }
 
   function whoCell(r) {
@@ -36,7 +38,7 @@ export function ledgerViews(A) {
     const a = r.answer;
     if (!a) return '<span class="meta">—</span>';
     if (a.key === "sent") return `<span class="pill ok" title="${esc(a.text)}">보냄${a.byKind === "claude" ? " · Claude" : a.byKind === "auto" ? " · 자동" : ""}</span>`;
-    if (a.key === "owner") return `<span class="pill bad" title="${esc(a.why)}">확인 필요</span>`;
+    if (a.key === "owner") return `<span class="pill warn" title="${esc(a.why)}">확인 필요</span>`;
     return `<span class="pill">${esc(a.name)}</span>`;
   }
 
@@ -46,12 +48,19 @@ export function ledgerViews(A) {
     return `<small title="${esc(r.overlap.map((x) => `${x.title} (${x.why})`).join("\n"))}">≈ ${esc(o.title)} <b>${Math.round(o.score * 100)}%</b>${r.overlap.length > 1 ? ` 외 ${r.overlap.length - 1}` : ""}</small>`;
   }
 
-  function bundleCell(r) {
+  function bundleCell(r, plain = false) {
     const b = r.bundle;
     if (!b) return '<span class="meta">—</span>';
     if (r.type === "dev") return `<small>문의 ${b.asks}건</small>`;
-    return `<a href="${href("dev", b.id)}" title="${esc(b.title)}"><small>${esc(b.id.slice(0, 7))} · ${b.asks}건</small></a>`;
+    const text = `<small>${esc(b.id.slice(0, 7))} · ${b.asks}건</small>`;
+    return plain ? `<span title="${esc(b.title)}">${text}</span>` : `<a href="${href("dev", b.id)}" title="${esc(b.title)}">${text}</a>`;
   }
+
+  /**
+   * 2.0.0 [RVA-49] 검토 U23-05: 노트북(1280px 이상)에서는 줄을 누르면 오른쪽 칸에 상세가 열려요. 목록은 제자리에 있고(줄이 밀려 내려가지 않아요),
+   * 칸이 좁아지면 표가 덜 중요한 칸(겹침·묶음·답·기록)부터 접어요(.lg-table 컨테이너 너비).
+   */
+  const sidePane = () => typeof matchMedia === "function" && matchMedia("(min-width:1280px)").matches;
 
   function moveCell(r) {
     const m = r.lastMove;
@@ -59,38 +68,68 @@ export function ledgerViews(A) {
     return `<small title="${esc(moment(m.at))}">${m.byKind === "claude" ? '<span class="who-claude">Claude</span>' : esc(m.by || WHO[m.byKind] || "")} · ${esc(m.what)} · ${esc(ago(m.at))}</small>`;
   }
 
-  /** 한 줄(데스크톱 칸 · 휴대폰 카드가 같은 마크업, CSS가 나눠 보여요). */
+  /**
+   * 2.0.0 [RVA-37] 검토 I24b-02: 화면에서도 한 줄을 그리다 오류가 나면 그 줄만 '그리지 못한 줄'로 두고 장부 전체는 그려요(그 오류는 A.screenError로 알려요).
+   */
+  function safeLine(r) {
+    try {
+      return line(r);
+    } catch (e) {
+      A.screenError?.(e, "ledger-line");
+      return `<li class="lg-line"><p class="note warn">${esc(r?.no ?? "")} 이 줄은 그리지 못했어요. 나머지는 그대로예요.</p></li>`;
+    }
+  }
+
+  /**
+   * 한 줄(데스크톱 칸 · 휴대폰 카드가 같은 마크업, CSS가 나눠 보여요).
+   * 2.0.0 [RVA-48] 검토 ADM-23: 펼친 줄만 상세를 그려요(닫힌 줄은 빈 칸, 펼치는 순간 ledgerFill이 채워요).
+   * 검토 ADM-29: 머리 줄은 눈으로만 보는 칸 이름이라, 줄의 칸마다 읽어 주는 이름(sr)을 붙여 '단계 접수 · 담당 관리자 · 기한 6일 넘음'으로 읽혀요.
+   */
   function line(r) {
     const picking = S.ledgerPick;
-    const flags = [r.reopened > 0 && r.state === "new" ? `<span class="pill bad">다시 열림${r.reopened > 1 ? ` ${r.reopened}` : ""}</span>` : "",
+    const flags = [r.reopened > 0 && r.state === "new" ? `<span class="pill warn">다시 열림${r.reopened > 1 ? ` ${r.reopened}` : ""}</span>` : "",
       r.urgent && !r.closed ? '<span class="pill bad">급함</span>' : "", r.skipped?.back ? '<span class="pill warn">빼 둔 뒤 돌아옴</span>' : "",
       r.state === "seeing" || r.state === "waiting" ? `<span class="pill">${esc(r.stateName)}${r.stateReasonName ? ` · ${esc(r.stateReasonName)}` : ""}</span>` : "",
-      r.state === "done" ? `<span class="pill">끝 · ${esc(r.stateReasonName)}</span>` : ""].join("");
+      r.state === "done" ? `<span class="pill">끝 · ${esc(r.stateReasonName)}</span>` : "",
+      // 2.0.0 [RVA-37] 검토 I24b-02: 서버가 읽지 못해 빼 둔 줄(장부는 계속 돌아요).
+      r.unreadable ? '<span class="pill warn">읽지 못함</span>' : ""].join("");
     const title = r.summary || r.title || "(내용 없음)";
     const pick = picking ? `<label class="lg-pick"><input type="checkbox" data-act="ledger-pick" data-key="${esc(r.key)}"${picking.has(r.key) ? " checked" : ""}><span class="sr">고르기</span></label>` : "";
-    return `<li class="lg-line${r.late ? " late" : ""}${r.closed ? " shut" : ""}" data-key="${esc(r.key)}"><details data-key="lg-${esc(r.key)}"${S.opened.get(`lg-${r.key}`) ? " open" : ""}>
-      <summary class="row lg-row">${pick}
-        <span class="c-no"><b>${esc(r.no ?? "")}</b></span>
-        <span class="c-in"><small>${esc(shortDay(r.at))}</small> <span class="kind">${esc(r.kindName)}</span></span>
+    const side = sidePane();
+    const on = side && S.deskOpen === r.key;
+    const cells = `${pick}
+        <span class="c-no"><span class="sr">번호 </span><b>${esc(r.no ?? "")}</b></span>
+        <span class="c-in"><span class="sr">들어온 날·종류 </span><small>${esc(shortDay(r.at))}</small> <span class="kind">${esc(r.kindName)}</span></span>
         <span class="c-sum"><b>${esc(title)}</b>${flags}<small class="sub">${[r.path ? `[${esc(r.path)}]` : "", r.app ? `앱 ${esc(r.app)}` : "", r.releasedIn && r.type === "dev" ? `${esc(r.releasedIn)}에 고침` : "",
           r.same ? `나도 그래요 ${r.same}` : "", r.n2 ? `${r.n2}${r.type === "studio_need" ? "명" : "건"}` : "", r.meta ? esc(r.meta) : ""].filter(Boolean).join(" · ")}</small></span>
-        <span class="c-ov">${overlapCell(r)}</span>
-        <span class="c-bu">${bundleCell(r)}</span>
-        <span class="c-st"><span class="pill ${STAGE_TONE[r.stage] ?? ""}">${esc(r.stageName)}</span></span>
-        <span class="c-an">${answerCell(r)}</span>
-        <span class="c-who">${whoCell(r)}</span>
-        <span class="c-due">${dueCell(r)}</span>
-        <span class="c-log">${moveCell(r)}</span>
+        <span class="c-ov"><span class="sr">겹침 </span>${overlapCell(r)}</span>
+        <span class="c-bu"><span class="sr">묶음 </span>${bundleCell(r, side)}</span>
+        <span class="c-st"><span class="sr">단계 </span><span class="pill ${STAGE_TONE[r.stage] ?? ""}">${esc(r.stageName)}</span></span>
+        <span class="c-an"><span class="sr">답 </span>${answerCell(r)}</span>
+        <span class="c-who"><span class="sr">담당 </span>${whoCell(r)}</span>
+        <span class="c-due"><span class="sr">기한 </span>${dueCell(r)}</span>
+        <span class="c-log"><span class="sr">기록 </span>${moveCell(r)}</span>`;
+    const cls = `lg-line${r.late ? " late" : ""}${r.closed ? " shut" : ""}${on ? " on" : ""}`;
+    if (side) {
+      return `<li class="${cls}" data-key="${esc(r.key)}"><div class="row lg-row" role="button" tabindex="0" data-act="ledger-open" data-enter="ledger-open" data-key="${esc(r.key)}"
+        aria-expanded="${on}" aria-controls="lg-side">${cells}</div></li>`;
+    }
+    return `<li class="${cls}" data-key="${esc(r.key)}"><details data-key="lg-${esc(r.key)}"${S.opened.get(`lg-${r.key}`) ? " open" : ""}>
+      <summary class="row lg-row">${cells}
       </summary>
-      <div class="lg-detail">${detail(r)}</div></details></li>`;
+      <div class="lg-detail">${S.opened.get(`lg-${r.key}`) ? detail(r) : ""}</div></details></li>`;
   }
 
   /** 펼친 줄: 원문, 겹침 후보, 묶음, 답, 정리함의 처리, 상태·요약·기록. */
   function detail(r) {
     const editAsk = can("inquiries", "edit");
     const parts = [];
+    if (r.unreadable) {
+      parts.push(`<p class="note warn">이 줄은 읽다가 오류가 나서 빼 두었어요. 나머지 줄은 그대로 돌아요.${S.me.owner ? ` <a href="${href("errors")}">오류 묶음에서 보기</a>` : ""}</p>
+        <p class="meta">오류 원문: <code class="mono">${esc(r.unreadable)}</code></p>`);
+    }
     if (r.text) parts.push(`<blockquote class="lg-text">${esc(r.text)}</blockquote>`);
-    const meta = [r.kindName, r.topicName, r.path ? `화면 [${r.path}]` : "", r.app ? `앱 ${r.app}` : "", r.model, `${moment(r.at)}에 들어옴`, r.handedIn ? `넘김 묶음 ${r.handedIn}` : "",
+    const meta = [r.kindName, r.stars ? `별 ${r.stars}개` : "", r.topicName, r.path ? `화면 [${r.path}]` : "", r.app ? `앱 ${r.app}` : "", r.model, `${moment(r.at)}에 들어옴`, r.handedIn ? `넘김 묶음 ${r.handedIn}` : "",
       r.skipped ? `정리함에서 뺌 ${moment(r.skipped.at)}${r.skipped.back ? " · 7일이 지나 다시 왔어요" : " · 7일 뒤 아직 답이 없으면 다시 와요"}` : ""].filter(Boolean);
     parts.push(`<p class="meta">${meta.map(esc).join(" · ")}</p>`);
     if (r.summary) parts.push(`<p class="meta">요약: ${esc(r.summary)}${r.summaryBy ? ` (${esc(r.summaryBy)})` : ""} · 원문 첫 문장: ${esc(r.title)}</p>`);
@@ -102,8 +141,12 @@ export function ledgerViews(A) {
     if (r.bundle && r.type === "inquiry") {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
-    if (r.answer?.key === "owner") parts.push(`<p class="note bad">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
-    if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
+    if (r.answer?.key === "owner") parts.push(`<p class="note warn">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
+    // 2.0.0 [RVA-50] 스토어 리뷰: 초안은 여기서 보이고, Play로 보내기는 최고 관리자가 스토어 리뷰 화면에서 해요.
+    if (r.answer?.key === "draft") {
+      parts.push(`<p class="lg-block"><b>답 초안</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
+        <p class="meta">${S.me?.owner ? "스토어 리뷰 화면에서 고쳐 Play로 보내요." : "Play로 보내기는 최고 관리자가 해요."}</p>`);
+    } else if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
     // 정리함의 처리 [DESK-03]: 서버가 미리 쓴 답을 고쳐 보내거나, 개발사항에 묶거나, 새 개발사항으로 넘기거나, 빼 두기.
     if (r.sort && editAsk && !r.closed) {
       const k = r.sort.pile;
@@ -151,6 +194,38 @@ export function ledgerViews(A) {
           <span class="track" aria-hidden="true"></span><span>${esc(label)}</span></label>`).join("")}</div></div></details>`;
   }
 
+  /** [RVA-49] U23-05: 오른쪽 칸. 고른 줄이 없으면 한 줄 안내. */
+  function sideHtml() {
+    const r = S.deskOpen ? rowOf(S.deskOpen) : null;
+    if (!r) return "";
+    return `<aside class="lg-side" id="lg-side" aria-label="고른 줄 ${esc(r.no ?? "")}"><div class="lg-side-head"><span><b>${esc(r.no ?? "")}</b> ${esc(r.summary || r.title || "")}</span>
+      <button class="btn ghost" type="button" data-act="ledger-close">닫기</button></div>
+      <div class="lg-detail">${detail(r)}</div></aside>`;
+  }
+
+  /** 오른쪽 칸과 줄 표시만 바꿔요(목록 전체를 다시 그리지 않아요). 칸이 생기거나 없어질 때는 한 번 다시 그려요. */
+  function paintSide() {
+    const aside = document.getElementById("lg-side");
+    if (!aside || !S.deskOpen) return render({ keepScroll: true });
+    aside.outerHTML = sideHtml();
+    for (const li of document.querySelectorAll("#main .rows.ledger > li.lg-line")) {
+      const on = li.dataset.key === S.deskOpen;
+      li.classList.toggle("on", on);
+      li.querySelector(":scope > .lg-row")?.setAttribute("aria-expanded", String(on));
+    }
+  }
+
+  /** 고른 줄 막대(고르기 하나로는 이것만 다시 그려요, [RVA-48] ADM-23). */
+  function bulkBar(d) {
+    const picking = S.ledgerPick;
+    return picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 줄"><b>${picking.size}개 골랐어요</b>
+        <button class="btn small ghost" data-act="ledger-pick-all">${picking.size && picking.size === d.items.length ? "모두 풀기" : "모두 고르기"}</button>
+        <button class="btn small" data-act="ledger-bulk" data-state="seeing"${picking.size ? "" : " disabled"}>보는 중</button>
+        <button class="btn small" data-act="ledger-wait"${picking.size ? "" : " disabled"}>기다림</button>
+        <button class="btn small primary" data-act="ledger-done"${picking.size ? "" : " disabled"}>끝내기</button>
+        <button class="btn small" data-act="ledger-sort-many"${sortable(picking).length ? "" : " disabled"} title="정리함이 미리 써 둔(또는 고친) 답을 고른 줄마다 보내요">적힌 답 보내기 ${sortable(picking).length || ""}</button></div>` : "";
+  }
+
   function ledgerView(strip = "") {
     const d = S.data.ledger;
     if (!d) return `<div class="tiles core">${'<div class="tile skeleton"></div>'.repeat(5)}</div>${skeleton(3)}`;
@@ -158,10 +233,11 @@ export function ledgerViews(A) {
     const view = S.deskView || "today";
     // 2.0.0 [RVA-24] 검토 HQ-03·ADM-08·U23-05·T24-07(조건 1): 보기 카드 다섯 장과 같은 숫자의 구간 줄이 겹쳐 있었어요. 구간 줄 하나(옆으로 밀림,
     // 기한 넘음·최고 관리자 확인 숫자는 빨강)와 찾기·CSV·고르기 한 줄만 위에, 종류·판은 '거르기' 안, 보기 설명·단축키·흐름 줄·Claude 도구는 목록 아래.
-    const HOT = { owner: true, late: true };
+    // [RVA-46] HQ-69: 빨간 숫자는 '기한 넘음' 하나, 최고 관리자 확인은 주황.
+    const HOT = { owner: "warm", late: "hot" };
     const views = `<div class="segmented" role="group" aria-label="보기">${Object.entries(d.names.views).map(([k, label]) => {
       const n = ["all", "closed"].includes(k) ? 0 : c[k];
-      return `<button class="seg" data-act="ledger-view" data-key="${k}" aria-pressed="${view === k}">${esc(label)}${n ? `<span class="n${HOT[k] ? " hot" : ""}">${n}</span>` : ""}</button>`;
+      return `<button class="seg" data-act="ledger-view" data-key="${k}" aria-pressed="${view === k}">${esc(label)}${n ? `<span class="n${HOT[k] ? ` ${HOT[k]}` : ""}">${n}</span>` : ""}</button>`;
     }).join("")}</div>`;
     const gr = S.deskGroup || "";
     const groups = `<div class="chips" role="group" aria-label="종류">${[["", "모든 종류"], ...Object.entries(d.names.groups)].map(([k, label]) =>
@@ -173,19 +249,22 @@ export function ledgerViews(A) {
           : `<button class="btn icon-wide" type="button" data-act="ledger-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}<span class="lbl">여러 개 고르기</span></button>`}`;
     const top = listHead(views, toolHtml, { scroll: true, open: Boolean(S.ledgerPick), busy: Boolean(S.deskQuery), filters: groups, active: [gr, S.deskV].filter(Boolean).length });
     const picking = S.ledgerPick;
-    const bulk = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 줄"><b>${picking.size}개 골랐어요</b>
-        <button class="btn small ghost" data-act="ledger-pick-all">${picking.size && picking.size === d.items.length ? "모두 풀기" : "모두 고르기"}</button>
-        <button class="btn small" data-act="ledger-bulk" data-state="seeing"${picking.size ? "" : " disabled"}>보는 중</button>
-        <button class="btn small" data-act="ledger-wait"${picking.size ? "" : " disabled"}>기다림</button>
-        <button class="btn small primary" data-act="ledger-done"${picking.size ? "" : " disabled"}>끝내기</button>
-        <button class="btn small" data-act="ledger-sort-many"${sortable(picking).length ? "" : " disabled"} title="정리함이 미리 써 둔(또는 고친) 답을 고른 줄마다 보내요">적힌 답 보내기 ${sortable(picking).length || ""}</button></div>` : "";
+    const bulk = bulkBar(d);
     const hint = `<p class="hint lg-hint list-note">${esc({ today: "기한이 오늘인 것, 넘은 것, 다시 열린 것, 하루 안에 들어온 것, 최고 관리자가 정할 것이에요.", claude: "Claude가 가져갈 줄이에요. 프로젝트 채팅에 \"처리해\"라고 하면 Claude가 운영 열쇠로 이 목록을 읽어 처리해요.",
       owner: "Claude가 혼자 보내지 않는 것이에요(환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관, 회사 방식). 답을 정해 주세요.", dev: "개발사항으로 묶여 만드는 중인 줄이에요.",
       ship: "고쳐 두었고 Play에 나가기를 기다려요. 올린 뒤 흐름에서 나간 판을 저장하면 묶인 문의에 한꺼번에 안내가 가요.", late: "기한(답 목표·검토 기한·기다림 7일)을 넘긴 줄이에요.",
       open: "끝나지 않은 모든 줄이에요.", closed: `끝낸 줄(최근 ${d.days}일)이에요. 끝낸 뒤 새 움직임이 생기거나, 처리되지 않고 7일 남아 있으면 다시 열려요.`, all: `모든 줄(닫힌 것은 최근 ${d.days}일)이에요.` }[view] ?? "")}
       <span class="meta">j/k 이동 · Enter 펼치기 · s 보는 중 · w 기다림 · e 끝내기 · h 기록</span></p>`;
-    const list = d.items.length ? `<div class="lg-table${picking ? " picking" : ""}">${head()}<ul class="rows ledger">${d.items.map(line).join("")}</ul></div>
-        ${d.more ? `<p class="meta">${d.total}줄 중 ${d.items.length}줄을 보여요. 찾기나 종류로 좁혀 보세요.</p>` : ""}`
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6): 넘긴 줄(서버가 맨 위로 모아요)은 줄마다 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나 아래로, 그다음 줄은 '그 밖에 N줄'.
+    // '기한 넘음' 보기는 모두 넘긴 줄이라 머리를 두지 않아요(위 보기 칸의 숫자가 같은 말이에요).
+    const lateN = view === "late" ? 0 : d.lateTotal ?? d.items.filter((r) => r.late).length;
+    const lines = d.items.map((r, i) => `${lateN && i === 0 && r.late ? `<li class="lg-group"><span class="pill bad">기한 넘김 ${lateN}</span><small>답 목표·검토 기한·기다림 7일을 넘긴 줄이에요</small></li>` : ""}${
+      lateN && i > 0 && !r.late && d.items[i - 1].late ? `<li class="lg-group rest"><b>그 밖에 ${(d.total ?? d.items.length) - lateN}줄</b></li>` : ""}${safeLine(r)}`).join("");
+    const side = sidePane();
+    if (side && S.deskOpen && !rowOf(S.deskOpen)) S.deskOpen = null;
+    // 오른쪽 칸은 줄을 열었을 때만(빈 칸이 목록을 좁히지 않게). 열린 줄은 제자리에 있고 표만 좁아져요.
+    const list = d.items.length ? `<div class="lg-split${side && S.deskOpen ? " on" : ""}"><div class="lg-table${picking ? " picking" : ""}">${head()}<ul class="rows ledger">${lines}</ul></div>${side && S.deskOpen ? sideHtml() : ""}</div>
+        ${d.more ? `<div class="more"><button class="btn" data-act="ledger-more">더 보기 <span class="meta">${d.items.length}/${d.total}</span></button></div>` : ""}`
       : empty(view === "closed" ? "끝낸 줄이 없어요" : S.deskQuery ? "찾는 줄이 없어요" : "이 보기에는 할 일이 없어요",
         view === "today" ? "새로 들어오면 여기 와요. 열린 것 모두는 위 '열린 것 모두'에서 봐요." : "");
     return `<div class="ledger-view">${top}${bulk}${list}${hint}${strip}${tools(d)}</div>`;
@@ -255,12 +334,35 @@ export function ledgerViews(A) {
 
   async function sortApply(actions, done) {
     const r = await act(() => api("/inquiries/sort/apply", "POST", { actions }), (x) => [x.replied && `답 ${x.replied}건`, x.linked && `묶음 ${x.linked}건`,
-      x.created?.length && `개발사항 ${x.created.length}개`, x.reopened && `다시 접수 ${x.reopened}개`, x.skipped && `빼 둠 ${x.skipped}건`].filter(Boolean).join(" · ") || done);
+      x.created?.length && `개발사항 ${x.created.length}개`, x.reopened && `다시 접수 ${x.reopened}개`, x.skipped && `빼 둠 ${x.skipped}건`,
+      // [RVA-51] 보내는 문에 걸린 답은 같은 말로.
+      x.held && `‘사람이 보내야 해요’로 멈춘 답 ${x.held}건(문의에서 읽고 보내요)`].filter(Boolean).join(" · ") || done);
     if (r) { S.data.handoff = null; load(); }
+  }
+
+  /**
+   * 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 장부는 PAGE줄씩 이어 받아요. 다시 읽을 때는 이미 받은 만큼(S.deskShown) 한 번에.
+   * 보기·종류·판·찾기를 바꾸면 처음 PAGE줄부터예요.
+   */
+  const PAGE = 50;
+  function ledgerPath(page = 0) {
+    const limit = page ? PAGE : Math.min(300, Math.max(PAGE, S.deskShown ?? PAGE));
+    const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}),
+      limit: String(limit), ...(page ? { page: String(page) } : {}) });
+    return `/ledger?${p}`;
+  }
+
+  /** [RVA-48] ADM-23: 펼친 줄(details)의 빈 상세 칸을 그 자리에서 채워요. */
+  function ledgerFill(el) {
+    const key = el?.dataset?.key?.startsWith("lg-") ? el.dataset.key.slice(3) : "";
+    const r = key && rowOf(key);
+    const box = r && el.open ? el.querySelector(":scope > .lg-detail") : null;
+    if (box && !box.childElementCount && !box.textContent.trim()) box.innerHTML = detail(r);
   }
 
   function refilter() {
     S.ledgerPick = null;
+    S.deskShown = PAGE;
     syncUrl();
     render({ keepScroll: true });
     load();
@@ -270,10 +372,39 @@ export function ledgerViews(A) {
     "ledger-view": ({ key }) => { S.deskView = key; refilter(); },
     "ledger-group": ({ key }) => { S.deskGroup = key; refilter(); },
     "ledger-pick-mode": () => { S.ledgerPick = S.ledgerPick ? null : new Set(); render({ keepScroll: true }); },
-    "ledger-pick": ({ key }) => {
+    // [RVA-48] ADM-23: 하나를 고르면 그 줄과 고른 줄 막대만 다시 그려요(장부 전체를 다시 그리지 않아요).
+    "ledger-pick": ({ key }, el) => {
       if (!S.ledgerPick) return;
       if (S.ledgerPick.has(key)) S.ledgerPick.delete(key);
       else S.ledgerPick.add(key);
+      const li = el?.closest?.("li.lg-line");
+      const bar = document.querySelector("#main .bulkbar");
+      const r = rowOf(key);
+      if (!li || !bar || !r) return render({ keepScroll: true });
+      li.outerHTML = safeLine(r);
+      bar.outerHTML = bulkBar(S.data.ledger);
+      document.querySelector(`#main .rows.ledger > li.lg-line[data-key="${key}"] input[data-act="ledger-pick"]`)?.focus();
+    },
+    // [RVA-49] U23-05: 노트북에서 줄을 누르면 오른쪽 칸에(같은 줄을 다시 누르면 닫혀요).
+    "ledger-open": ({ key }) => {
+      S.deskOpen = S.deskOpen === key ? null : key;
+      paintSide();
+    },
+    "ledger-close": () => {
+      const key = S.deskOpen;
+      S.deskOpen = null;
+      paintSide();
+      document.querySelector(`#main .rows.ledger > li.lg-line[data-key="${key}"] > .lg-row`)?.focus();
+    },
+    "ledger-more": async () => {
+      const d = S.data.ledger;
+      if (!d?.more) return;
+      const page = Math.ceil(d.items.length / PAGE);
+      const n = await act(() => api(ledgerPath(page)));
+      if (!n || S.data.ledger !== d) return;
+      const have = new Set(d.items.map((r) => r.key));
+      S.data.ledger = { ...n, items: [...d.items, ...n.items.filter((r) => !have.has(r.key))] };
+      S.deskShown = S.data.ledger.items.length;
       render({ keepScroll: true });
     },
     "ledger-pick-all": () => {
@@ -371,8 +502,8 @@ export function ledgerViews(A) {
 
   /** j/k로 고른 줄(없으면 첫 줄)의 key. */
   function cursorKey() {
-    const rows = [...document.querySelectorAll("#main .rows.ledger > li")];
-    const focused = document.activeElement?.closest?.(".rows.ledger > li");
+    const rows = [...document.querySelectorAll("#main .rows.ledger > li.lg-line")];
+    const focused = document.activeElement?.closest?.(".rows.ledger > li.lg-line");
     return (focused ?? rows[S.cursor] ?? rows[0])?.dataset?.key ?? null;
   }
 
@@ -387,5 +518,5 @@ export function ledgerViews(A) {
     return true;
   }
 
-  return { ledgerView, ledgerKey, actions, forms };
+  return { ledgerView, ledgerKey, ledgerPath, ledgerFill, actions, forms };
 }

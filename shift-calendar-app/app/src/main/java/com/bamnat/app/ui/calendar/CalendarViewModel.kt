@@ -508,7 +508,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [SLP-14] 오늘의 흐름 at [now]. */
-    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime): TodayFlow.Card =
+    fun todayFlow(snapshot: ScheduleSnapshot, settings: AppSettings, log: List<SleepEntry>, now: LocalDateTime, shiftNapUntil: Long? = null): TodayFlow.Card =
         // [CAL-13] An added calendar kept from ringing shows no alarm in the day's flow.
         TodayFlow.of(now, snapshot.resolver, settings.alarmsEnabled && calendarAlarmsOn.value, log, settings.sleepTargetMinutes, settings.commuteMinutes,
             settings.restCheck, settings.strictRest, rules = rulesFor(snapshot, now.toLocalDate(), settings.rules),
@@ -516,7 +516,27 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             afterNightMinutes = com.bamnat.core.sleep.SleepInsights.afterNightAverage(log, snapshot.resolver, now.toLocalDate()),
             since = container.recordsTrash.styleChangedOn(activeCalendar.value.id),
             // 1.39 G6 발굴 [FLOW-32]: 가게 '영업 중·마감까지', 현장 '일하는 중' (the card shows for them once added to the calendar).
-            talk = TodayFlow.WorkTalk.of(settings.workStyle))
+            talk = TodayFlow.WorkTalk.of(settings.workStyle),
+            // 2.0.0 [RVI-93] 쪽잠 20분 on: when it vibrates.
+            shiftNapUntil = shiftNapUntil?.let(com.bamnat.app.alarm.AlarmScheduler::millisToLocal))
+
+    /**
+     * 2.0.0 [RVI-93] (검토 I03b-04, G5-M2) 쪽잠 20분: a wake that only vibrates, said back with a way to take it back. Not written in
+     * the sleep log: a 휴게's few minutes are no night's sleep, and the averages stay the user's own sleeps.
+     */
+    fun shiftNap() {
+        val ctx = container.appContext
+        val at = com.bamnat.app.alarm.ShiftNap.start(ctx)
+        _messages.tryEmit(UndoMessage("쪽잠 ${TodayFlow.SHIFT_NAP_MINUTES}분 · ${Fmt.time(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(at).toLocalTime())}에 진동으로 깨워요") {
+            com.bamnat.app.alarm.ShiftNap.cancel(ctx)
+        })
+    }
+
+    /** 2.0.0 [RVI-93] 일어났어요 before the 쪽잠's vibration. */
+    fun endShiftNap() {
+        com.bamnat.app.alarm.ShiftNap.cancel(container.appContext)
+        _messages.tryEmit(UndoMessage("쪽잠을 끝냈어요"))
+    }
 
     /** [SLP-14] The two numbers the sleep times rest on, changed from the card's ⓘ. */
     fun setSleepNumbers(targetMinutes: Int, commuteMinutes: Int) {
@@ -591,10 +611,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
-            val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
+            // 2.0.0 [RVIB-14] (PC-124) Within minutes (a 낮잠 stopped at once too) it is not kept; 되돌리기 opens it again.
+            val woke = container.sleepRepository.wokeUpByHand(millis) ?: return@launch
             // 2.0.0 [RVI-71] One wording with the sleep page and the night screen; a short sleep says why it has no 아침 한 장.
-            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((sleep.minutes ?: 0).toLong())
-            _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
+            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((woke.sleep.minutes ?: 0).toLong())
+            _messages.emit(UndoMessage(text) { container.sleepRepository.undoWoke(woke) })
         }
     }
     // 1.39.1 [R391-04] The night's sounds and clips go with it.
@@ -819,8 +840,15 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     fun dismissCover() { _coverAsk.value = null }
 
-    /** [ALRM-20] Days just made a day off or leave whose alarms set by hand would still ring. */
-    data class RestAlarmAsk(val days: List<com.bamnat.core.alarm.AlarmPlanner.RestDay>, val schedule: com.bamnat.app.data.ScheduleRepository)
+    /**
+     * [ALRM-20] Days just made a day off or leave whose alarms set by hand would still ring. 2.0.0 [RVIB-11] (PC-75) [was]: what
+     * each of them was before, for the ones that were work ('11월 14일(원래 야간 19:00)').
+     */
+    data class RestAlarmAsk(
+        val days: List<com.bamnat.core.alarm.AlarmPlanner.RestDay>,
+        val schedule: com.bamnat.app.data.ScheduleRepository,
+        val was: Map<LocalDate, com.bamnat.core.memo.ShiftMemoTime.Day> = emptyMap(),
+    )
 
     private val _restAlarms = MutableStateFlow<RestAlarmAsk?>(null)
     val restAlarms: StateFlow<RestAlarmAsk?> = _restAlarms.asStateFlow()
@@ -851,7 +879,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         // 1.35 [J135-10] (사용자 '물어보고 끄기'): asked for every such day, also when only the shift's own alarms stopped, so
         // nobody misses a wake-up they still wanted. Closing the ask changes nothing more.
         // [J135-13] The change's message says nothing of alarms while the ask is open: the answer says it.
-        if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule)
+        if (days.isNotEmpty()) _restAlarms.value = RestAlarmAsk(days, schedule, days.mapNotNull { d ->
+            com.bamnat.core.memo.ShiftMemoTime.of(before.resolver.resolve(d.date))?.takeIf { it.work }?.let { d.date to it }
+        }.toMap())
         // [ALRM-29] The other way: a day that became a working day or got a 대근 rings its shift's alarms; one turned off
         // while it was a day off is turned on again, and the message says what will ring (or that it moved).
         return workDayAlarms(dates.mapNotNull { com.bamnat.core.alarm.AlarmPlanner.workDay(before.resolver, after.resolver, it) })
@@ -1121,8 +1151,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             if (!announce) return@launch
             val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
                 ?: if (override == ShiftOverride.Off) "쉬는 날" else null
+            val follow = followLine(date, alarmSaid = alarms.isNotEmpty()) // 2.0.0 [RVIB-10]
             _messages.emit(
-                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 ${snap.backDone}" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms) {
+                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 ${snap.backDone}" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms + follow) {
                     schedule.restoreDay(date, before)
                 },
             )
@@ -1143,6 +1174,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val name = type?.name ?: if (override == ShiftOverride.None) snapshot.backWord else "쉬는 날" // [RVH-05] 검토 CAL-13
             val restore: suspend () -> Unit = { schedule.restoreDay(date, before) }
             val cover = type?.takeIf { isRosterRestDay(day, it) }?.let { coverKind(snapshot, it) }
+            // 2.0.0 [RVIB-10] (검토 I03c-04) What followed the change, in its own line (not on the 대근 question, which is long already).
+            val follow = if (cover != null) "" else followLine(date, alarmSaid = alarms.isNotEmpty())
             _messages.emit(
                 when {
                     // [EASE-11] 1.38: the day changed at once (no window); the bar asks whether it was a 대근, and the day's own
@@ -1154,12 +1187,29 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
-                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 ${snapshot.backDone}$alarms", undo = restore)
-                    else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요$alarms", undo = restore)
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 ${snapshot.backDone}$alarms$follow", undo = restore)
+                    else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요$alarms$follow", undo = restore)
                 },
             )
         }
     }
+
+    /**
+     * 2.0.0 [RVIB-10] (검토 I03c-04) After today's or tomorrow's work changed: " · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요",
+     * read from the calendar once it holds the change ([com.bamnat.core.sleep.ShiftFollow]).
+     */
+    private suspend fun followLine(date: LocalDate, alarmSaid: Boolean): String = runCatching {
+        val now = Today.dateTime()
+        if (date.isBefore(now.toLocalDate()) || date.isAfter(now.toLocalDate().plusDays(1))) return@runCatching ""
+        val want = schedule.entryNow(date)
+        val snap = kotlinx.coroutines.withTimeoutOrNull(3_000) { container.calendars.activeSnapshot.first { it.resolver.entryOn(date) == want } }
+            ?: return@runCatching ""
+        val s = settings.value
+        val onWatch = activeCalendar.value.id == (s.watchCalendar.takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        com.bamnat.core.sleep.ShiftFollow.line(date, now, snap.resolver, s.alarmsEnabled && calendarAlarmsOn.value, alarmSaid,
+            watch = onWatch && com.bamnat.app.watch.WatchSync.paired(container.appContext), sleep = s.sleepTips,
+            targetMinutes = s.sleepTargetMinutes, commuteMinutes = s.commuteMinutes)
+    }.getOrDefault("")
 
     /** [EASE-11] What a shift on a day off is called here: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
     internal fun coverWord(): String = ExtraText.coverWord(container.settingsRepository.current.workStyle)
@@ -1650,14 +1700,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun addQuickMemo(date: LocalDate, text: String) = gate(WriteKind.MEMO) {
         viewModelScope.launch {
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
-            val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
+            val active = container.calendars.active.value
+            // 2.0.0 [RVI-76] (검토 U07a-03·11) Read as the 할 일 위젯's window and the memo tab's line read it (quickMemo): the day and
+            // time leave the title ("오후 3시 치과" → '치과' at 15:00), "매일"·"평일마다" repeat, "다음 야간 때" goes by the 근무표; a line
+            // that names no day stays on the day it was written on. It was the whole line as the memo's words.
+            val shifts = runCatching { com.bamnat.app.memo.shiftDaysAhead(container, active) }.getOrDefault(emptyList())
+            val read = com.bamnat.app.memo.quickMemo(text.trim(), com.bamnat.app.memo.QuickDay.READ, ring = true, Today.dateTime(), base = date, shifts = shifts)
+                ?: return@launch
+            val memo = memoRepo.save(read.copy(calendars = setOf(active), pinned = false))
             // [SCHED-01] A quick line that names a time gets its notice. 2.0.0 [RVI-41] (검토 PC-10: the day's story showed 15:00 but
             // nothing told the user; the offer took two more taps through the editor) It is put at once, a notice only (no ring),
-            // with 되돌리기, and answered so the editor does not ask about it again.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime(), Today.zone()) ?: return@launch
-            val put = memoRepo.save(memo.copy(reminder = com.bamnat.core.memo.MemoReminder(found.at, ring = false, notify = true), reminderAsked = found.key))
-            _messages.tryEmit(UndoMessage("${quickWhen(found.at)}에 알려 드릴게요", actionLabel = "되돌리기") {
-                viewModelScope.launch { memoRepo.get(put.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
+            // with 되돌리기.
+            val at = memo.reminder?.at ?: return@launch
+            _messages.tryEmit(UndoMessage("${quickWhen(at)}에 알려 드릴게요", actionLabel = "되돌리기") {
+                viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
             })
         }
     }

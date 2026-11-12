@@ -34,8 +34,9 @@ class SleepRepository(
      * changes nothing) [SLP-14]; one open for more than 16 hours, a missed "깼어요", is closed where
      * it stands: too long to count, but kept rather than deleted.
      */
-    suspend fun fellAsleep(): Asleep {
-        val now = clock()
+    suspend fun fellAsleep(atMillis: Long? = null): Asleep {
+        // 2.0.0 [RVI-94] [atMillis]: pressed on the wrist a little before the message came (never ahead, at most an hour back).
+        val now = (atMillis ?: clock()).coerceIn(clock() - PRESS_BACK_MILLIS, clock())
         dao.open()?.let { open ->
             if (now - open.startMillis <= STALE_MILLIS) return Asleep(open.toModel(), started = false)
             dao.finish(open.id, now)
@@ -58,6 +59,24 @@ class SleepRepository(
         dao.finish(open.id, end)
         return SleepEntry(open.id, local(open.startMillis), local(end))
     }
+
+    /**
+     * 2.0.0 [RVIB-14] (PC-124) 깼어요 pressed by hand (the sleep page, the calendar, the night screen; a 낮잠 too): a sleep that
+     * ends within [com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES] was a tap, not a sleep, and is not kept (it read
+     * '계획보다 7시간 적게'). [undoWoke] puts back what the tap changed: the sleep open again either way.
+     */
+    suspend fun wokeUpByHand(atMillis: Long? = null): Woke? {
+        val sleep = wokeUp(atMillis) ?: return null
+        val short = (sleep.minutes ?: 0) < com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES
+        if (short) dao.delete(sleep.id)
+        return Woke(sleep, dropped = short)
+    }
+
+    /** The sleep [wokeUpByHand] ended; [dropped] when it was too short to keep. */
+    data class Woke(val sleep: SleepEntry, val dropped: Boolean)
+
+    /** Takes back a [wokeUpByHand]: the sleep is open again (a dropped one is put back open). */
+    suspend fun undoWoke(w: Woke) { if (w.dropped) restore(w.sleep.copy(end = null)) else reopen(w.sleep.id) }
 
     /** The sleep still going on, if any (1.39 [SLEEP-06]: 자는 동안 소리 stops when it closes). */
     suspend fun openNow(): SleepEntry? = dao.open()?.toModel()
@@ -196,6 +215,8 @@ class SleepRepository(
     companion object {
         private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         private const val STALE_MILLIS = SleepDebt.MAX_SLEEP_MINUTES * 60 * 1000L
+        /** 2.0.0 [RVI-94] A press from the wrist is believed this far back. */
+        private const val PRESS_BACK_MILLIS = 60 * 60 * 1000L
         /** 2.0.0 [RVI-15] How long a night's sounds stay (the sleep screen's longest look back). */
         const val EVENT_KEEP_DAYS = 120L
     }

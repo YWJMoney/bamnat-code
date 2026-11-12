@@ -38,4 +38,11 @@ class DayWhatIfTest {
         assertTrue(DayWhatIf.answer(hourly(), wed, DayWhatIf.Change.Off, r::resolve, off::resolve).gross < 0)
         assertEquals(12, DayWhatIf.envelopeShare(60_000, 500_000))
     }
+
+    /** 2.0.0 [RVK-43] (검토 T06a-09) A working day's chips are 연차·쉬는 날, so the question is '이날 쉬면?'. */
+    @Test fun theQuestionFollowsTheDay() {
+        val r = resolver()
+        assertEquals("이날 일하면?", DayWhatIf.question(DayWhatIf.changes(r.resolve(sat), Fixtures.all)))
+        assertEquals("이날 쉬면?", DayWhatIf.question(DayWhatIf.changes(r.resolve(wed), Fixtures.all)))
+    }
 }

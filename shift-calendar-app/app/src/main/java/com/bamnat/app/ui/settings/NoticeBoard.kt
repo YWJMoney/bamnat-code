@@ -112,6 +112,11 @@ object NoticeBoard {
         Own("weekHoursNudge", { com.bamnat.core.pay.WeekHoursNudge.ROW },
             { "이번 주 근무가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄로 알려 줘요. 주휴수당은 한 주 15시간부터예요(근로기준법 제18조 제3항)" },
             { it.weekHoursNudge }, { s, on -> s.copy(weekHoursNudge = on) }, { it == WorkStyle.HOURLY }),
+        // 2.0.0 [RVIB-05] (검토 I07ac-02) 메모·할 일: 근무 중 알림 모으기 for work with hours, 지난 할 일 for a calendar with days off (not 투자).
+        Own("memoHoldAtWork", { MEMO_HOLD_ROW }, { "울리지 않는 메모 알림은 근무가 끝날 때 한 장으로 모아 와요 · 울리는 알람은 제때 울려요" },
+            { it.memoHoldAtWork }, { s, on -> s.copy(memoHoldAtWork = on) }, ::planned, Notifications.MEMO_CHANNEL_ID),
+        Own("memoRestCard", { MEMO_REST_ROW }, { "못 끝낸 할 일을 다음 쉬는 날 아침에 소리 없이 한 장으로 보여 줘요" },
+            { it.memoRestCard }, { s, on -> s.copy(memoRestCard = on) }, not(WorkStyle.INVEST), Notifications.MEMO_CHANNEL_ID),
         // 2.0.0 [RVH-41] 검토 T30-78: what is received is a 근무표 only where there is one.
         Own("plazaNews", { "밤낮 소식" }, { "받은 ${if (planned(it)) "근무표" else "달력"}·광장·마을 장터에 새 소식이 있으면 하루 한 번 묶어서 소리 없이 알려 줘요" },
             { it.plazaNews }, { s, on -> s.copy(plazaNews = on) }, { true }, Notifications.PLAZA_CHANNEL_ID),
@@ -238,7 +243,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
         }
         onRules.forEach { r ->
             val h = overlapOf(r)
-            SwitchRow("규칙 ‘${r.name}’", r.say() + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
+            SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()) + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
                 warning = h?.let { if (it.builtIn == NoticeOverlap.BuiltIn.TODAY) null else "같은 때 같은 것을 알려요. 하나를 끄면 깔끔해요" }) {
                 NoticeBoard.setRule(c, r, it); tick++
             }
@@ -246,7 +251,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
         Text("더 켤 수 있는 알림", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
         if (offOwn.isEmpty() && offRules.isEmpty()) Text("모두 켜 두었어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         offOwn.forEach { o -> OwnRow(o, false) }
-        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", r.say(), false) { NoticeBoard.setRule(c, r, it); tick++ } }
+        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()), false) { NoticeBoard.setRule(c, r, it); tick++ } }
         Text("새 알림 규칙은 마을 › 장터 › 도구 › 자동 규칙에서 더 고를 수 있어요. 규칙은 스튜디오 › 규칙·단추에서 고치거나 지워요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }

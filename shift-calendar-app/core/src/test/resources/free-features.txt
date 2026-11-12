@@ -281,6 +281,24 @@ view.dayDial
 day.start
 sleep.diary
 pay.close
+# 2.0.0 갈래 I 2묶음 (memo.holdAtWork는 예전 계획에서 프로 후보였어요: 총괄·사용자 답을 받은 뒤 합쳐요)
+memo.lineStar
+memo.workAnchor
+memo.holdAtWork
+memo.restCard
+memo.oldTasks
+memo.missedCard
+memo.moneyRepeat
+memo.voice
+alarm.peek
+alarm.weekLog
+alarm.rehearsal
+alarm.shiftNap
+watch.backupRing
+watch.sleepTile
+watch.taskTile
+sleep.noTap
+shift.progress
 invest.holdingShot
 invest.quantity
 invest.story

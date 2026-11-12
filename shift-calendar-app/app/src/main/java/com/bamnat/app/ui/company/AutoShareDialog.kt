@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -71,7 +72,11 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
             }
         } else c.autoShare.sharedDone()
     }
-    ask?.let { AutoShareDialog(it, onYes = c.autoShare::approve, onNo = c.autoShare::decline, onNever = c.autoShare::never) }
+    // 2.0.0 [RVN-18] 검토 T10a-04: an 알바's workplace is a 가게 here too (the card said 가게, this question 회사).
+    ask?.let { a ->
+        val place = com.bamnat.app.ui.pay.workplaceWord(c.calendars.styleOf(a.cal, c.settingsRepository.current.workStyle))
+        AutoShareDialog(a, onYes = c.autoShare::approve, onNo = c.autoShare::decline, onNever = c.autoShare::never, place = place)
+    }
 }
 
 /**
@@ -86,16 +91,16 @@ internal fun sharedLine(s: AutoShare.Shared): String = when {
 }
 
 @Composable
-fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Unit, onNever: () -> Unit = onNo) {
+fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Unit, onNever: () -> Unit = onNo, place: String = "회사") {
     var always by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onNo,
-        title = { Text(if (ask.first) "회사 광장에 나눌까요?" else "바뀐 내용을 회사 광장에 나눌까요?") },
+        title = { Text(if (ask.first) "$place 광장에 나눌까요?" else "바뀐 내용을 $place 광장에 나눌까요?") },
         text = {
             // At 200% text the words scroll inside the dialog rather than push its buttons away.
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (ask.first) {
-                    Text("같은 회사 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", style = MaterialTheme.typography.bodyLarge)
+                    Text("같은 $place 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", style = MaterialTheme.typography.bodyLarge)
                     Text("${ask.company} 광장에 나눠요.", style = MaterialTheme.typography.bodyMedium)
                 } else {
                     Text("${ask.company} 광장에 이렇게 고쳐 올려요.", style = MaterialTheme.typography.bodyMedium)
@@ -109,8 +114,9 @@ fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Un
                 }
                 Text("금액, 이름, 연락처, 입사일, 명세서와 사진은 보내지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVN-18] 검토 COMP-22-5: the whole line is the box to press, at least 48dp high (before, about 40dp).
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = Role.Checkbox) { always = !always }.padding(vertical = 2.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Checkbox) { always = !always }.padding(vertical = 2.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = always, onCheckedChange = null)

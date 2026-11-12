@@ -82,11 +82,12 @@ test("[PC-28] list and 작품 열기: before 2.0.0 or no app= reads 밀기, 2.0.
   // 새 판 확인 tells the stored 판 as before (no new 판 is told of: a phone wearing it keeps it).
   const v = (await call("GET", `/api/recipes/versions?codes=${fade.code}`)).data.versions[fade.code];
   assert.deepEqual([v.version, v.hash], [1, fade.hash]);
-  // An older 판 asked by number is served safe too.
+  // An older 판 asked by number is served safe too. 2.0.0 [RVQ-26] 검토 SVC-23: someone else asking for a past 판 gets the one up now
+  // (only its maker opens a past one), served safe all the same.
   const v2 = await call("POST", "/api/admin/recipes", { recipe: { ...recipe("스르륵 넘기는 달력", "tn:fade|td:pulse|sp:n"), summary: "둘째 판" }, hold: false, replace: true }, admin);
   assert.equal(v2.data.version, 2);
-  assert.equal(motionOf((await open(fade.code, "?v=1")).body), "tn:slide|td:glow|sp:n");
-  assert.equal(motionOf((await open(fade.code, `?v=1&app=${TURN_SAFE_APP}`)).body), "tn:fade|td:glow|sp:n");
+  assert.equal(motionOf((await open(fade.code, "?v=1")).body), "tn:slide|td:pulse|sp:n");
+  assert.equal(motionOf((await open(fade.code, `?v=1&app=${TURN_SAFE_APP}`)).body), "tn:fade|td:pulse|sp:n");
 });
 
 test("[PC-28] the maker's own reads as made on any app, so a 새 판 made from it keeps its 움직임; someone else's is served safe", async (t) => {

@@ -148,7 +148,10 @@ class QuickWindowsTest {
         }
     }
 
-    /** 1.39 [TASK-44] PC 6차: the 일정 창 offers '반복: 안 함·매일·평일·쉬는 날', and the one picked comes back before the save. */
+    /**
+     * 1.39 [TASK-44] PC 6차: the 일정 창 offers a repeat, and the one picked comes back before the save. 2.0.0 [RVI-73] (검토 U07a-07)
+     * It opens the one repeat window, the editor's too: 매일·평일·쉬는 날 and 요일마다·격주·며칠마다 in one list.
+     */
     @Test fun theScheduleWindowOffersARepeat() {
         val picked = mutableListOf<Any>()
         window({
@@ -159,13 +162,19 @@ class QuickWindowsTest {
             )
         }) {
             compose.onNodeWithText("반복").assertExists()
-            compose.onNodeWithText("평일").assertExists()
-            compose.onNodeWithText("쉬는 날").assertExists()
             // 9:24 today is gone: a schedule that does not repeat cannot be saved, a daily one can (it rings tomorrow).
             compose.onNodeWithText("저장", substring = true).assertIsNotEnabled()
+            compose.onNodeWithText("안 함").performClick()
+            compose.onNodeWithText("평일").assertExists()
+            compose.onNodeWithText("쉬는 날").assertExists()
+            compose.onNodeWithText("격주").assertExists()
+            compose.onNodeWithText("며칠마다").assertExists()
             compose.onNodeWithText("매일").performClick()
+            compose.onNodeWithText("다음:", substring = true).assertExists()
+            compose.onNodeWithText("정하기").performClick()
+            compose.onNodeWithText("매일", substring = true).assertExists()
             compose.onNodeWithText("저장", substring = true).performClick()
-            assertEquals(com.bamnat.core.memo.MemoRepeat.Kind.DAY, picked.first())
+            assertEquals(com.bamnat.core.memo.MemoRepeat.code(com.bamnat.core.memo.MemoRepeat.Kind.DAY, java.time.LocalDate.of(2026, 11, 9)), picked.first())
             assertEquals(LocalDateTime.of(2026, 11, 9, 9, 24), (picked[1] as com.bamnat.core.memo.MemoReminder).at)
         }
     }

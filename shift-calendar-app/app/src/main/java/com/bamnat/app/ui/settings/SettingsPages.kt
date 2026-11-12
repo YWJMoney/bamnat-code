@@ -482,6 +482,20 @@ private fun SleepGroup(vm: SettingsViewModel, settings: AppSettings, refresh: In
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
         if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
             com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }
+            // 2.0.0 [RVI-96] (검토 I03c-01) The same morning question for a night the charger saw, with no permission.
+            SwitchRow(com.bamnat.app.sleep.SleepNoTap.ROW, "잘 시간 무렵 충전기에 꽂아 두면, 알람을 끈 아침에 ‘이 잠 맞나요?’ 한 번 물어요 · 휴대폰 밖으로 나가지 않아요",
+                settings.sleepNoTap) { on ->
+                vm.update { it.copy(sleepNoTap = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
+        }
+        // 2.0.0 [RVI-89] (검토 I03b-02) Only where the night's sounds can be measured (the flag open).
+        if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }) {
+            SwitchRow(com.bamnat.app.sleep.SleepRecordOffer.ROW, "잘 시간 무렵 충전기에 꽂으면 ‘오늘 밤 소리 잴까요?’를 소리 없이 물어요 · 재 본 적 있는 휴대폰만",
+                settings.recordOffer) { on ->
+                vm.update { it.copy(recordOffer = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
         }
         // 1.38 [SLEEP-12] 자는 동안 방해 금지.
         val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }
@@ -1589,6 +1603,9 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
+internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
+internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
 internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
 internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 

@@ -39,6 +39,11 @@ object NoticeLinks {
         SHARE,
         /** [UX-03] The calendar with the sheet that takes a received link open. */
         RECEIVE,
+        /**
+         * 2.0.0 [RVG-34] 내 달력 with the calendar chip's list (달력 이름 ▾) open, from the 알림함's '팀 근무표' line: on a phone the 팀 리더's
+         * link waits there, not beside the chip.
+         */
+        CALENDARS,
         /** [SHFT-06] 듀티표 사진으로 넣기, for the calendar on screen. */
         DUTY_ROSTER,
         /** [SHFT-07] 연간 건강 지표. */
@@ -206,6 +211,12 @@ object NoticeLinks {
 
     /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
     const val ON_SCREEN = "on_screen"
+
+    /**
+     * 2.0.0 [RVIB-19] (PC-150) A [payload] for TODAY from an alarm ('끄고 오늘 보기', the card after an alarm): where 오늘의 흐름 is not on the
+     * page (달력만 크게 보기), today's own day opens. Other ways to today (도움말 '달력 열기', 받은 근무표 알림) keep the calendar as it is.
+     */
+    const val TODAY_DAY = "today_day"
 
     /** 2.0.0 [RVL-08] An intent's value against this phone's, compared in constant time. */
     internal fun follows(carried: String?, own: String): Boolean =

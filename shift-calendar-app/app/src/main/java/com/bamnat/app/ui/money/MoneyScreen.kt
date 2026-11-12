@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.animation.AnimatedVisibility
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -656,6 +657,8 @@ fun MoneyScreen(
     var pickingChallenge by rememberSaveable { mutableStateOf(false) }
     var addingFixed by rememberSaveable { mutableStateOf(false) }
     var budgeting by rememberSaveable { mutableStateOf(false) }
+    /** 2.0.0 [RVK-43] (검토 U06a-27) The category 통계's '예산 정하기' opened the editor on. */
+    var budgetFocus by rememberSaveable { mutableStateOf<String?>(null) }
     var addingAccount by rememberSaveable { mutableStateOf<AccountType?>(null) }
     var addingAnyAccount by rememberSaveable { mutableStateOf(false) }
     var editingCategories by rememberSaveable { mutableStateOf(false) }
@@ -1051,7 +1054,8 @@ fun MoneyScreen(
                 MoneyViewModel.Page.REPORT -> Box(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }) {
                     LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,
                         onCategory = vm::showCategory, onOpen = { editing = it }, onPlace = vm::showPlace, month = month,
-                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories)
+                        snapshot = snapshot, onMessage = vm::message, budgetLines = budget.categories,
+                        onBudget = { c -> budgetFocus = c; budgeting = true })
                 }
             } }
         }
@@ -1061,7 +1065,10 @@ fun MoneyScreen(
         val barUp = com.bamnat.app.ui.components.AppSnack.current != null || snackbar?.currentSnackbarData != null
         var fabBack by remember { mutableStateOf(true) }
         LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
-        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
+        // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the cards fill the width, so the button (already its icon alone) covered the
+        // ends of amounts ('838,282원 / 1,600,000원'): it steps aside while the page scrolls down and comes back on the way up.
+        val bigLetters = com.bamnat.app.ui.components.bigLetters()
+        AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack && (fabExpanded || !bigLetters), enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
             // 2.0.0 [RVP-06] The shared floating-button rule (icon alone with big letters: 검토 UIX-19 '글자 200%의 가계부').
             com.bamnat.app.ui.components.AddFab("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, open = fabExpanded)
@@ -1112,7 +1119,8 @@ fun MoneyScreen(
         JobDialog(j.date, j, onSave = { vm.saveJob(it); editingJob = null },
             onDelete = { vm.deleteJob(it); editingJob = null }, onDismiss = { editingJob = null })
     }
-    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false }, onDismiss = { budgeting = false },
+    if (budgeting) BudgetEditor(book, month, onSave = { vm.saveBudgets(it); budgeting = false; budgetFocus = null },
+        onDismiss = { budgeting = false; budgetFocus = null }, focus = budgetFocus,
         byPayCycle = settings.moneyByPayCycle.takeIf { profile?.period?.payDay != null && style?.usesPayEngine != false },
         payDayHint = profile?.period?.payDay == null && style?.usesPayEngine != false,
         onPayCycle = { on -> vm.updateSettings { it.copy(moneyByPayCycle = on) } },
@@ -1242,7 +1250,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         }
         if (overdue.isNotEmpty()) {
             Text("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
-                color = cal.warning, modifier = Modifier.padding(bottom = 4.dp))
+                color = MaterialTheme.bamnat.caution, modifier = Modifier.padding(bottom = 4.dp))
         }
         owed.take(4).forEachIndexed { i, o ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -1259,7 +1267,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(Fmt.won(o.left), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
-                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) cal.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -1274,7 +1282,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
  * month's sum first, then what waits for a look, then the month's lines; [right] is the unfolded right side.
  */
 internal enum class MoneyPart(val id: String, val label: String, val what: String, val movable: Boolean = true, val right: Boolean = false) {
-    HERO("hero", "이번 달 합계", "수입·지출·남은 돈과 예산", movable = false),
+    HERO("hero", "이번 달 합계", "들어온 돈·나간 돈·남은 돈과 예산", movable = false),
     // 1.37 [LEDH-15] 정리함 하나로: the four below in one card, one count, when it is on.
     INBOX("inbox", "정리함", "새로 들어온 기록·확인할 것·분류 제안·반복 지출을 한곳에", movable = false, right = true),
     NEW("new", "새로 들어온 기록", "자동 기록·확인할 기록이 있을 때만", movable = false, right = true),

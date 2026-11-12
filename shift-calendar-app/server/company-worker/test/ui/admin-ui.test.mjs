@@ -16,6 +16,24 @@ const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
 const BODY = HTML.slice(HTML.indexOf("<body>") + 6, HTML.indexOf("</body>"));
 
+/**
+ * 2.0.0 [RVA-57] 화면 묶음 파일(v/<묶음>.<해시>.js): happy-dom은 파일을 받지 않으니, 앱이 붙이는 <script src>를 그 창의 fetch(워커)로 받아
+ * 실행하고 load를 알려요. 진짜 브라우저처럼 그 화면을 열 때 받아요.
+ */
+function loadScripts(window) {
+  const head = window.document.head;
+  const append = head.appendChild.bind(head);
+  head.appendChild = (node) => {
+    if (node.tagName !== "SCRIPT" || !node.src) return append(node);
+    window.fetch(node.src).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      window.eval(await r.text());
+      node.onload?.(new window.Event("load"));
+    }).catch(() => node.onerror?.(new window.Event("error")));
+    return node;
+  };
+}
+
 const open = [];
 test.after(async () => {
   for (const w of open) await w.happyDOM.close();
@@ -47,6 +65,7 @@ async function tab(env, { hash = "", storage = null, cookie = null, width = 1280
   if (storage) for (const [k, v] of Object.entries(storage)) window.localStorage.setItem(k, v);
   window.structuredClone ??= structuredClone;
   window.document.body.innerHTML = BODY;
+  loadScripts(window);
   window.eval(APP_JS);
   const t = {
     window, document: window.document, jar, errors, broken,
@@ -351,6 +370,14 @@ test("[ADMUX-04] the palette offers what was opened last, and home the saved vie
 // ---- 1.25 묶음 AA: 받은함, 여러 판, 지표 기간, 광장 일괄 (끝에서 끝: 화면의 단추 → 서버가 가진 것) ----
 
 /** Remote files and Play are not reachable from a test; the page must still draw. */
+/** 2.0.0 [RVA-48] 검토 ADM-23: 장부 줄은 펼칠 때 상세를 그려요. 시험도 사람처럼 줄을 펼친 뒤 그 안의 단추를 눌러요. */
+function openLines(t, sel = "#main .rows.ledger > li.lg-line > details:not([open])") {
+  for (const d of t.$$(sel)) {
+    d.open = true;
+    d.dispatchEvent(new t.window.Event("toggle"));
+  }
+}
+
 function offline(t) {
   const real = globalThis.fetch;
   globalThis.fetch = async () => new Response("", { status: 404 });
@@ -378,7 +405,7 @@ test("[ADMUX-17][ADMUX-33] 할 일 (받은함 on 오늘) lists what waits, 맡�
   const mine = (await u.api("GET", "/api/admin/inquiries?who=mine")).inquiries;
   assert.equal(mine.length, 1, "the server now holds the question as mine");
   const before = u.$$("#main .rows.inbox li").length;
-  await u.click('#main [data-act="inbox-snooze"]');
+  await u.click('#main .rows.inbox [data-act="inbox-snooze"]');
   assert.equal(u.$$("#main .rows.inbox li").length, before - 1);
   assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
   await u.click("#toast [data-undo]");
@@ -1495,7 +1522,7 @@ test("[ADMX-01][ADMX-11] 오늘: the four numbers with their week, 주의 필요
   assert.ok(u.$("#main .tiles.core .spark"), "a week's line under a number");
   assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 says something either way");
   // The other numbers fold away; the activity never shows a code.
-  assert.ok(u.$('#main details.more-tiles[data-key="home:tiles"] .tiles a.tile'));
+  assert.ok(u.$('#main details.home-fold[data-key="home:tiles"] .tiles a.tile'));
   assert.ok(!/\b[a-z]+_[a-z_]+\b/.test(u.text("#main .feed")), "no activity codes");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
@@ -1683,7 +1710,8 @@ test("[ADMX-15] back to the tab while typing an answer: the menu numbers come ag
 
 test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a line opens in place with its answer, 넘길 글 is copied, 끝내기 asks why, 기록 undoes", async () => {
   const { call, env } = await world();
-  const t = await signedIn(env);
+  // 2.0.0 [RVA-49] 1280px부터는 줄이 오른쪽 칸에 열려요. 이 시험은 그 자리에서 펼치는 폭(1024)으로 봐요.
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/sort");
   assert.equal(t.window.location.hash, "#/desk?view=claude&group=ask", "정리함 lives in 운영 장부 now");
   assert.ok(t.$$("#main .rows.ledger > li").length >= 1, "the waiting questions are lines");
@@ -1691,6 +1719,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   assert.ok(t.$("#main .lg-head"), "a head row for the columns");
   assert.ok(t.$("#sort-tools .handoff-card"), "Claude에게 넘기기 is there");
   // A line's answer can be changed before it goes; what goes is what the box says.
+  openLines(t);
   const reply = t.$('#main [data-act="ledger-reply"]');
   const key = reply.dataset.key;
   const id = key.split(":")[1];
@@ -1701,6 +1730,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   const asked = (await call("GET", `/api/admin/inquiries/${id}`, undefined, await signIn(call))).data;
   assert.equal(asked.messages.at(-1).text, "확인했어요. 고마워요.");
   // 넘기기: a 개발사항 made from a line shows up to copy; copying marks it handed.
+  openLines(t);
   await t.click('#main [data-act="ledger-sort"]');
   await t.idle();
   let copied = null;
@@ -1715,7 +1745,8 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.idle();
   assert.match(t.text("#main .rows.ledger"), /Claude에게 넘김/);
   // 끝내기 asks why; with a reason the line goes to 닫힘, and 기록 can undo it.
-  const first = t.$("#main .rows.ledger > li").dataset.key;
+  const first = t.$("#main .rows.ledger > li.lg-line").dataset.key;
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-done"]`);
   assert.match(t.text("dialog"), /끝낸 이유를 꼭/);
   t.$('dialog input[name="reason"][value="duplicate"]').checked = true;
@@ -1725,6 +1756,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.click('[data-act="ledger-view"][data-key="closed"]');
   await t.idle();
   assert.match(t.text(`#main li[data-key="${first}"]`), /끝 · 중복/);
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-log"]`);
   await t.idle();
   assert.match(t.text("dialog"), /마지막 바꿈/);
@@ -1744,8 +1776,9 @@ test("[EASE-31] 운영 장부: a question a saved answer fits has '마을 Q&A로
   const list = (await call("POST", "/api/admin/templates", { label: "백업 옮기기", text: "설정 › 백업에서 파일로 내보낸 뒤 새 폰에서 가져오기를 눌러요", topic: "backup" }, owner)).data;
   const tpl = (list.templates ?? list).find((x) => x.label === "백업 옮기기");
   await call("POST", "/api/inquiries", { v: 1, device: device(21), kind: "question", text: "새 폰으로 옮기려면 백업을 어떻게 가져오기 하나요", info: { app: "1.37.0 (51)" } }, from(21));
-  const t = await signedIn(env);
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/desk?view=claude&group=ask");
+  openLines(t);
   const up = t.$('#main [data-act="template-edit"]');
   assert.ok(up, "the line of a question a saved answer fits offers 마을 Q&A로 올리기");
   assert.match(up.textContent, /마을 Q&A로 올리기/);
@@ -2239,6 +2272,35 @@ test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback v
 });
 
 // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 정기 작업이 잰 공유 서버 KV 오늘 쓰기·읽기가 요금제 줄에 하루 몫의 %로, 80%를 넘으면 주의 색으로.
+test("[RVQ-26] SVC-52 장터 › 다시 올라온 것: 줄에 볼 일 둘(괜찮아요·다시 돌려주기), 가리기와 나머지는 ⋯ 안", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const body = (summary) => ({ format: "bamnat-recipe", v: 1, title: "봄꽃 교대 달력", summary, styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] });
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe: body("주간은 분홍"), scope: "public" }, from(1))).data.code;
+  const u = await asOwner(env, t);
+  await u.api("POST", `/api/admin/recipes/${code}/return`, { note: "연락처를 빼 주세요" });
+  t.mock.timers.tick(60e3);
+  await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: body("연락처를 뺐어요. 주간은 분홍") }, from(1));
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="again"]');
+  await u.idle();
+  const side = u.$("#main .recipe-rows .row-side");
+  assert.ok(side, "다시 올라온 작품 한 줄");
+  const shown = [...side.children].filter((e) => e.matches("button")).map((b) => b.textContent.trim());
+  assert.deepEqual(shown, ["괜찮아요", "다시 돌려주기"]);
+  // [RVA-35] 조건 2: 줄마다 채운 단추가 서면 목록 전체가 채운 단추 줄이 돼요. 줄 안 단추는 테두리예요.
+  assert.equal(u.window.document.querySelectorAll("#main .recipe-rows .btn.primary").length, 0, "줄 안 단추는 테두리");
+  const menu = [...side.querySelectorAll(".row-more .menu button")].map((b) => b.textContent.trim());
+  assert.equal(menu[0], "가리기");
+  assert.ok(menu.includes("지난 판 지우기") && menu.includes("지우기"), menu.join(","));
+  side.querySelector('[data-key="approve"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT state FROM recipes WHERE code = ?").get(code).state, "visible");
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVQ-24] 서버 상태 shows the share server's KV writes and reads for today against the plan's day", async () => {
   const s = await world();
   const t = await signedIn(s.env);
@@ -2740,11 +2802,12 @@ test("[RVR-20] 공모 다시 고르기: 저장 전 확인 창이 새로 생기�
   assert.deepEqual(u.broken, []);
 });
 
-test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 보기, 이름으로 찾기", async (t) => {
+test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 50개씩 이어 받기, 이름으로 찾기", async (t) => {
   offline(t);
   const s = server({ plaza: true });
   const look = { kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] };
-  for (let i = 1; i <= 42; i++) {
+  // 2.0.0 [RVA-48] 도약 42: 40개씩 그리던 것을 서버에서 50개씩 받아요.
+  for (let i = 1; i <= 55; i++) {
     const recipe = { format: "bamnat-recipe", v: 1, title: `세트 ${String(i).padStart(2, "0")}`, summary: "야간이 잘 보여요", styles: ["SHIFT"],
       cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙" }, pieces: [look] };
     const made = await s.call("POST", "/api/recipes", { device: device(100 + i), recipe, scope: "public" }, from(100 + i));
@@ -2762,8 +2825,8 @@ test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 �
       await u.idle();
     }
   }
-  assert.equal(rows().length, 40, "40 at a time");
-  assert.match(u.text('#main [data-act="recipe-more"]'), /40\/42/);
+  assert.equal(rows().length, 50, "50 at a time");
+  assert.match(u.text('#main [data-act="recipe-more"]'), /50\/55/);
   for (const li of rows().slice(0, 3)) {
     assert.ok(li.querySelector("details.row-more>summary[aria-label]"), "⋯ for the rest");
     assert.ok(li.querySelector("details.row-more .menu .btn.danger"), "지우기 sits in the menu");
@@ -2776,7 +2839,8 @@ test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 �
   assert.match(css, /details\.row-more>\.menu\{[^}]*transform:translateX\(var\(--menu-dx,0\)\)/);
   assert.match(await adminFile("/admin/app.js").text(), /setProperty\("--menu-dx"/);
   await u.click('#main [data-act="recipe-more"]');
-  assert.equal(rows().length, 42);
+  await u.settle();
+  assert.equal(rows().length, 55);
   assert.ok(!u.$('#main [data-act="recipe-more"]'), "all shown");
   await u.type("#search", "세트 07");
   await new Promise((r) => setTimeout(r, 300));
@@ -2887,7 +2951,9 @@ test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기
   assert.match(css, /\.actions\.start details\.row-more>\.menu\{left:0;right:auto\}/);
   assert.match(css, /@media \(max-width:599\.98px\)\{\s*\.queue-bar\{position:fixed;top:auto/);
   assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
-  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:grid/);
+  // [RVQ-47] 검토 HQ-88: 840~1023은 두 칸을 나란히(격자 대신 감기는 줄: 글자 200%면 칸 폭이 모자라 위아래로).
+  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.cols>:first-child\{flex:1\.6 1 18rem\}/);
 });
 
 test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤 상자 안, 숨긴 이름표도 그 상자를 기준으로", async (t) => {
@@ -2998,4 +3064,494 @@ test("[RVA-35] 의미색(조건 6): 메뉴 숫자와 기다리는 일 칸은 파
   for (const a of waiting) assert.ok(!a.classList.contains("bad"), a.textContent);
   assert.ok(!u.$("#main .alerts .card-head .pill.bad"), "the 주의 필요 count is a plain pill");
   assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-36] 오늘은 한 손 화면: 내가 할 것 셋(옆에 내일 볼게요) + 저절로 끝난 일만 펴고, 나머지는 접힌 줄, 채운 단추는 '차례로 답하기' 하나", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const picks = u.$$("#main .today-three li");
+  assert.ok(picks.length >= 1 && picks.length <= 3, "three at most");
+  for (const li of picks) {
+    const later = li.querySelector('button.pick-later[data-act="inbox-snooze"]');
+    assert.ok(later, "each of the three can be put off");
+    assert.match(later.getAttribute("aria-label"), /^내일 볼게요: /);
+    assert.equal(later.dataset.key, li.dataset.swipe);
+  }
+  // Everything else is one folded line each, closed at first.
+  const folds = u.$$("#main details.home-fold").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(folds, [["home:todo", false], ["home:tiles", false], ["home:recent", false]]);
+  assert.match(u.text('#main details[data-key="home:todo"] > summary'), /할 일 모두/);
+  assert.match(u.text('#main details[data-key="home:tiles"] > summary'), /답 대기 \d+ · 검토 대기 \d+/);
+  // One filled button you can see: 차례로 답하기 (the queue), not the one in the to-do list any more.
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.deepEqual(seen.map((b) => b.dataset.act), ["queue-start"]);
+  assert.match(seen[0].textContent, /^문의 \d+건 차례로 답하기$/);
+  // 남은 N개 보기 opens the folded list.
+  await u.click('#main [data-act="home-fold"][data-key="home:todo"]');
+  assert.ok(u.$('#main details[data-key="home:todo"]').open);
+  assert.ok(u.$("#main details[data-key=\"home:todo\"] .rows.inbox li"), "the full list is inside");
+  // Putting the first one off brings the next one up; 되돌리기 brings it back.
+  const first = u.$("#main .today-three li").dataset.swipe;
+  await u.click("#main .today-three li .pick-later");
+  assert.match(u.text("#toast"), /내일 아침까지/);
+  assert.notEqual(u.$("#main .today-three li").dataset.swipe, first);
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$("#main .today-three li").dataset.swipe, first);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.today-three li\{[^}]*touch-action:pan-y/, "a sideways push does not fight the page scroll");
+  assert.match(css, /\.today-three \.t b\{[^}]*-webkit-line-clamp:2/, "titles show two lines on a phone (도약 43)");
+});
+
+test("[RVA-37] 오늘: 서버가 읽지 못해 빼 둔 줄을 원인·[그 줄 열기]·[개발사항으로] 한 장으로", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const id = DB.db.prepare("SELECT id FROM inquiries ORDER BY created_at LIMIT 1").get().id;
+  DB.db.prepare("UPDATE inquiries SET info = ? WHERE id = ?").run("{broken", id);
+  await u.go("#/desk");
+  const stub = u.$$("#main .lg-line").find((li) => /읽지 못한 문의/.test(li.textContent));
+  assert.ok(stub, "the ledger draws, with that one line marked");
+  assert.match(stub.textContent, /읽지 못함/);
+  await u.go("#/home");
+  const card = u.$("#main .card.stuck");
+  assert.ok(card, "오늘 says what was left out");
+  assert.match(card.textContent, /운영 장부·정리함의 문의 한 줄/, "one line per line left out, however many places read it");
+  assert.equal(card.querySelectorAll(".stuck-list > li").length, 1);
+  assert.equal(card.querySelector("a.btn").getAttribute("href"), `#/inquiries/${id}`);
+  await u.click('#main .card.stuck [data-act="stuck-dev"]');
+  assert.match(u.text("#toast"), /개발사항으로 넘겼어요/);
+  const devs = (await u.api("GET", "/api/admin/dev?status=all")).items;
+  assert.ok(devs.some((d) => /^읽지 못한 줄\(/.test(d.title)), "the 개발사항 is made");
+  assert.ok(u.$('#main .card.stuck a[href^="#/dev/"]'), "the card now points at the 개발사항");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음 출시·내가 할 것)와 다음 한 걸음 하나, 카드 열 장은 접힌 줄, 개발자 말 없음", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-now .loop-state"), /(저절로 도는 중|일부만 저절로)\s*다음 출시 \d{1,2}\. \d{1,2}\. \(.\)\s*내가 할 것 \d+/);
+  const folds = u.$$("#main details.loop-fold");
+  assert.ok(folds.length >= 8, "the other cards are folded lines");
+  assert.ok(folds.every((d) => !d.open), "closed at first");
+  for (const d of folds) assert.ok(d.querySelector(":scope > summary .lf-t b"), "each line says what it is");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1, "one filled button at most: the next step");
+  if (u.$("#main .loop-next")) assert.equal(u.$$("#main .loop-next .btn.primary").length, 1);
+  assert.doesNotMatch(u.text("#main"), /PLAY_SERVICE_ACCOUNT|VAPID|versionCode|\(409\)|G10 \d장|ops\/dev-status|main에 합쳐지면/);
+  // An urgent question comes first (the world has '알람 소리가 안 나요'): the step goes to 결정함.
+  const d = await u.api("GET", "/api/admin/loop");
+  if (d.urgentWaiting) assert.equal(u.$("#main .loop-next .btn.primary").getAttribute("href"), "#/decide");
+  // With it closed, the local server's missing Play key is the step, and it opens the 연결 점검 line in place.
+  for (const q of (await u.api("GET", "/api/admin/inquiries")).inquiries) await u.api("POST", `/api/admin/inquiries/${q.id}/status`, { status: "closed" });
+  await u.go("#/home");
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-next"), /빠진 설정 \d+개: Play 출시 읽기/);
+  await u.click('#main .loop-next [data-act="loop-open"][data-key="loop-check"]');
+  assert.ok(u.$("#loop-check").open, "연결 점검 opened where it is");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  // Something changes on the server after the page was read: 스스로 출시 안내 is turned off.
+  await u.api("POST", "/api/admin/loop/switches", { autoShip: false });
+  await u.click('#loop-check [data-act="loop-check"]');
+  await u.settle(20);
+  assert.ok(u.$("#loop-check").open, "stays open to show what it saw");
+  assert.match(u.text("#main .check-seen"), /방금 다시 봤어요 · .+ · 바뀐 줄 1개/);
+  assert.match(u.text("#loop-check"), /스스로 출시 안내[\s\S]*방금 됨 → 확인/);
+  assert.match(u.text("#toast"), /다시 봤어요 · 확인할 것 \d+개 · 바뀐 줄 1개/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-40] 문의 상세 '이 휴대폰': 꼭 볼 것(결제·환불 문의 N번)만 굵게, 숫자·결제·이전 문의는 '자세히' 한 줄", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000011", kind: "other", text: "환불해 주세요", info: { app: "2.0.0 (54)" } }, from(11));
+  const u = await asOwner(env, t);
+  const list = (await u.api("GET", "/api/admin/inquiries?status=all")).inquiries;
+  const id = list.find((q) => /알람 소리/.test(JSON.stringify(q))).id;
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const panel = u.$("#main aside.person");
+  assert.ok(panel, "the phone panel");
+  assert.match(u.text("#main .person-alerts"), /결제·환불 문의 1번/);
+  const more = panel.querySelector("details.person-more");
+  assert.ok(more && !more.open, "the rest is one folded line");
+  assert.match(more.querySelector("summary").textContent, /자세히[\s\S]*문의 2 · 제보 \d+[\s\S]*이전 문의 1건/);
+  assert.ok(more.querySelector("dl.lines"), "the numbers are inside");
+  assert.ok(more.querySelector('a.row[href^="#/inquiries/"]'), "the other question is inside");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-41] 문의 상세 › 결제·환불 기록: 걸린 말('영수증')을 보여 주고 '아니에요 · 기록에서 빼기', 기록에 그 말", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000021", kind: "question", text: "영수증 어디서 봐요?", info: { app: "2.0.0 (54)" } }, from(21))).data.id;
+  const u = await asOwner(env, t);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  assert.match(u.text("#main .billing-why"), /‘영수증’라는 말 때문에 저절로 잡혔어요/);
+  await u.click('#main [data-act="inquiry-billing"][data-miss="1"]');
+  assert.match(u.text("dialog"), /잘못 잡은 말 ‘영수증’도 기록해/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.ok(!u.$("#main .billing-why"), "out of the record");
+  assert.match(u.text("#main .billing-card"), /아니에요\. 마지막 글부터 180일/);
+  assert.match(u.text("#main .timeline"), /자동 판정이 틀렸다고 적었어요\(‘영수증’\)/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-42] 숫자 › 한눈에: 개선 신호는 '긴 흐름' 신호라고 말하고, 위에 바로 볼 것이 있으면 그 칩으로 이어 줘요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  assert.match(u.text("#main .ob-signals .hint"), /며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요\(위 정상도는 지금 이 순간의 숫자\)/);
+  const empty = u.$("#main .ob-signals .empty-line");
+  if (empty) {
+    assert.match(empty.textContent, /^긴 흐름에서는 찾은 문제가 없어요\./);
+    const hero = u.$("#main .gl-hero");
+    if (!hero.classList.contains("ok") && u.$$("#main .gl-signals li").length) assert.match(empty.textContent, /위 '.+' \d+개는 지금 숫자라 위 칩에서 바로 열어요/);
+  }
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-43] 숫자 › 기능별 효과: 볼 숫자가 없는 기능은 같은 문장을 되풀이하지 않고 접힌 한 줄, 설명은 펴는 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/effects");
+  await u.settle(30);
+  assert.doesNotMatch(u.text("#main"), /서버가 아직 켜짐·꺼짐을 보지 않았어요|켜진 휴대폰 수 모름/);
+  const blank = u.$('#main details.fx-blank[data-key="fx-blank"]');
+  assert.ok(blank && !blank.open, "one folded line");
+  const n = Number(blank.querySelector("summary b").textContent.match(/(\d+)개/)[1]);
+  assert.equal(blank.querySelectorAll(".fx-names li").length, n, "every such flag is in it, by name");
+  assert.ok(u.$('#main details.tip[data-key="fx-how"]'), "the long explanation folds");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-44] 관리자 초대: '빠르게 고르기'만 먼저, 영역별 권한은 접힌 한 줄, 고른 결과는 한 줄로", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/admins");
+  await u.settle(20);
+  await u.click('#main [data-act="invite"]');
+  const areas = u.$("dialog details.perm-areas");
+  assert.ok(areas && !areas.open, "the 15 areas are folded");
+  assert.match(u.text("dialog #perm-sum"), /^검토 담당 그대로 · 고치기 \d+ · 보기 \d+ · 없음 \d+$/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "reviewer");
+  await u.click('dialog [data-act="preset"][data-key="support"]');
+  assert.match(u.text("dialog #perm-sum"), /^문의 담당 그대로/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "support");
+  // One area changed by hand: the line says so and no role chip stays pressed.
+  await u.click('dialog [data-act="level"][data-area="audit"][data-level="view"]');
+  assert.match(u.text("dialog #perm-sum"), /^직접 고름 · /);
+  assert.equal(u.$$('dialog [data-act="preset"][aria-pressed="true"]').length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-45] 내 계정: 이름·권한·로그아웃만 펴고, '로그인·보안' / '이 기기' / '가족·휴대폰' 세 묶음은 상태 한 줄과 함께 접혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  await u.settle(30);
+  const groups = u.$$("#main details.acct-group").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(groups, [["acct-security", false], ["acct-device", false], ["acct-phones", false]]);
+  assert.match(u.text('#main details[data-key="acct-security"] > summary'), /로그인·보안[\s\S]*(패스키 \d+개|패스키 없음)/);
+  assert.match(u.text('#main details[data-key="acct-device"] > summary'), /이 기기[\s\S]*알림 (켜짐|꺼짐)/);
+  assert.ok(u.$('#main .acct-top [data-act="logout"]'), "로그아웃 stays one tap away");
+  assert.ok(u.$('#main details[data-key="acct-security"] [data-act="logout-all"]'), "모든 기기에서 로그아웃 is in 로그인·보안");
+  assert.ok(u.$('#main details[data-key="acct-device"] .prefs'), "이 기기 settings are in 이 기기");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-46] 운영 장부·결정함·문의 목록: 기한 넘긴 줄은 '기한 넘김 N' 머리 하나만 빨강, 줄의 칸은 굵은 보통 글자 '넘음'", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-69(조건 6·14): 줄마다 빨간 띠 + 빨간 칩이 한 화면에 열 번 나오던 것을 머리 하나로, '넘음'은 글로 남아요.
+  assert.doesNotMatch(css, /\.lg-line\.late \.lg-row\{box-shadow/);
+  assert.match(css, /\.pill\.late\{background:transparent;border-color:transparent;color:var\(--fg\);font-weight:800/);
+  const t0 = Date.parse("2026-11-12T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { env } = await world();
+  t.mock.timers.setTime(t0 + 10 * 864e5);
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const list = u.$("#main .rows.ledger");
+  const lines = [...list.querySelectorAll(":scope > li.lg-line")];
+  const late = lines.filter((li) => li.classList.contains("late"));
+  assert.ok(late.length >= 2, "several lines are late");
+  const heads = [...list.querySelectorAll(":scope > li.lg-group")];
+  assert.match(heads[0].textContent, new RegExp(`기한 넘김 ${late.length}`));
+  assert.ok(heads[0].querySelector(".pill.bad"), "the one red mark");
+  assert.equal(list.firstElementChild, heads[0], "the head comes first");
+  for (const li of late) {
+    assert.match(li.querySelector(".c-due").textContent, /넘음/, "'넘음' stays as words");
+    assert.ok(li.querySelector(".c-due .pill.late"), "plain bold, not red");
+  }
+  const reds = [...list.querySelectorAll(".pill.bad")].filter((p) => p.textContent.trim() !== "급함");
+  assert.equal(reds.length, 1, "besides 급함 (danger), red only on the head");
+  if (lines.length > late.length) assert.match(heads[1].textContent, new RegExp(`그 밖에 ${lines.length - late.length}줄`));
+  // '기한 넘음' 보기는 모두 넘긴 줄이라 머리가 없어요.
+  await u.click('#main [data-act="ledger-view"][data-key="late"]');
+  await u.settle(30);
+  assert.equal(u.$$("#main .rows.ledger > li.lg-group").length, 0);
+  assert.equal(u.$$("#main .seg .n.hot").length, 1, "one red number in the bar: 기한 넘음");
+  // 사람과 글 › 문의: 목표를 넘긴 줄도 굵은 보통 글자.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  const sla = u.$$("#main .rows .row-side .pill.late");
+  assert.ok(sla.length >= 1 && sla.every((p) => /넘김$/.test(p.textContent)));
+  assert.equal(u.$$("#main .rows .pill.bad").filter((p) => p.textContent.trim() !== "급함").length, 0);
+  // 결정함: 급함은 머리 칩 하나, 줄마다 되풀이하지 않아요.
+  await u.go("#/decide");
+  await u.settle(30);
+  assert.ok(u.$$("#main .pill.bad").length <= 1, u.$$("#main .pill.bad").map((p) => p.textContent).join(","));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-48] 운영 장부: 50줄씩 이어 받기, 펼친 줄만 상세, 고르기는 그 줄만 다시 그리기, 칸마다 읽어 주는 이름", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (let n = 30; n < 92; n++) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "question", text: `달력 색은 어디서 바꿔요 ${n}`, info: { app: "2.0.0 (54)" } }, from(n));
+  }
+  // 그 자리에서 펼치는 폭(1024)
+  const u = await signedIn(env, { width: 1024 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  const lines = () => u.$$("#main .rows.ledger > li.lg-line");
+  assert.equal(lines().length, 50, "50 lines first");
+  assert.match(u.text('#main [data-act="ledger-more"]'), /더 보기 50\/\d+/);
+  // ADM-23: 닫힌 줄은 상세를 그리지 않아요. 펼치면 그 자리에서 채워요.
+  assert.equal(u.$$("#main .rows.ledger .lg-detail").filter((x) => x.childElementCount).length, 0, "no detail drawn for closed lines");
+  const d0 = lines()[3].querySelector("details");
+  d0.open = true;
+  d0.dispatchEvent(new u.window.Event("toggle"));
+  assert.ok(d0.querySelector(".lg-detail [data-act=\"ledger-set\"], .lg-detail [data-act=\"ledger-done\"]"), "opened: its detail is there");
+  // ADM-29: 칸마다 읽어 주는 이름.
+  const li = lines()[0];
+  for (const [cell, name] of [["c-st", "단계"], ["c-who", "담당"], ["c-due", "기한"]]) assert.equal(li.querySelector(`.${cell} > .sr`).textContent.trim(), name);
+  // ADM-23: 고르기 하나는 그 줄과 고른 줄 막대만 다시 그려요(다른 줄은 같은 노드 그대로).
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  const keep = lines()[10];
+  await u.click(`#main li.lg-line[data-key="${lines()[2].dataset.key}"] input[data-act="ledger-pick"]`);
+  assert.match(u.text("#main .bulkbar"), /1개 골랐어요/);
+  assert.ok(keep.isConnected, "the other lines were not drawn again");
+  assert.ok(lines()[2].querySelector('input[data-act="ledger-pick"]').checked);
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  // 더 보기: 다음 50줄을 이어 붙여요(겹치는 줄 없이).
+  await u.click('#main [data-act="ledger-more"]');
+  await u.settle(30);
+  const keys = lines().map((x) => x.dataset.key);
+  assert.ok(keys.length > 50);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(!u.$('#main [data-act="ledger-more"]'), "all here");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-49] 운영 장부(노트북 1280~): 줄을 누르면 오른쪽 칸에 상세, 목록은 제자리, 닫기·같은 줄 다시 누르기로 닫혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env, { width: 1440 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  assert.ok(!u.$("#lg-side"), "no empty side pane");
+  assert.equal(u.$$("#main .rows.ledger details").length, 0, "lines are buttons, not folds");
+  const row = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[1];
+  const key = row.dataset.key;
+  assert.equal(row.getAttribute("role"), "button");
+  await u.click(row);
+  await u.settle(10);
+  assert.ok(u.$("#main .lg-split.on #lg-side"), "the side pane opened");
+  assert.match(u.text("#lg-side .lg-side-head"), /K-\d{4}/);
+  assert.ok(u.$("#lg-side .lg-detail [data-act]"), "its buttons are there");
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "true");
+  assert.equal(u.$$("#main .rows.ledger > li.lg-line.on").length, 1);
+  // 다른 줄: 칸만 바뀌어요.
+  const other = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[2];
+  await u.click(other);
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "false");
+  assert.match(u.text("#lg-side .lg-side-head"), new RegExp(u.$(`#main li.lg-line[data-key="${other.dataset.key}"] .c-no b`).textContent));
+  await u.click('#lg-side [data-act="ledger-close"]');
+  await u.settle(10);
+  assert.ok(!u.$("#lg-side"), "closed");
+  // 늦게 오는 답(흐름 띠 등)은 한 틀에 한 번만 다시 그려요(ADM-24): load 안의 다시 그리기는 마지막 하나뿐.
+  const js = await adminFile("/admin/app.js").text();
+  const load = js.slice(js.indexOf("async function load({ quiet = false } = {}) {"), js.indexOf("function renderSoon()"));
+  assert.equal(load.match(/render\(\{ keepScroll: true \}\)/g)?.length, 1, "only the final render; the late ones use renderSoon");
+  assert.ok((load.match(/renderSoon\(\)/g)?.length ?? 0) >= 5);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-50] 운영 장부: 스토어 리뷰 줄은 별 수와 답 초안을 보여 주고, 스토어 리뷰 화면에서 문의와 함께 보기로 이어져요", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-review-0001', 2, '위젯이 안 바뀌어요', '2.0.0', 'ko', ?1, '', NULL, '', '불편을 드려 죄송해요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/desk?view=open&group=ask");
+  await u.settle(30);
+  const line = u.$('#main li.lg-line[data-key="store_review:gp:ui-review-0001"]');
+  assert.ok(line, "the review is a ledger line");
+  assert.match(line.textContent, /별 2개 · 위젯이 안 바뀌어요/);
+  await u.click(line.querySelector(".lg-row"));
+  await u.settle(10);
+  assert.match(u.text("#main"), /답 초안/);
+  assert.match(u.text("#main"), /스토어 리뷰 화면에서 고쳐 Play로 보내요/);
+  await u.go("#/reviews");
+  await u.settle(30);
+  assert.ok(u.$('#main a[href="#/desk?view=open&group=ask"]'), "운영 장부에서 문의와 함께 보기");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-52] 화면 자체가 시험: 관리자 앱이 알린 화면 오류는 오류 묶음에 '화면 오류 · 관리자 앱 <화면>'으로, 그리다 넘어진 화면은 '다시 그리기' 카드", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const count = async () => (await DB.prepare("SELECT COUNT(*) AS n FROM error_groups WHERE route LIKE 'screen/%'").first()).n;
+  const before = await count();
+  await u.api("POST", "/api/admin/screen-error", { screen: "glance", where: "paint", kind: "error", message: "TypeError: x is undefined" });
+  assert.equal(await count(), before + 1);
+  const js = await adminFile("/admin/app.js").text();
+  assert.match(js, /이 화면을 그리다 오류가 났어요/);
+  assert.match(js, /"screen-again": \(\) => load\(\)/);
+  await u.go("#/errors");
+  await u.settle(30);
+  assert.match(u.text("#main"), /화면 오류 · 관리자 앱 glance/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-56] 장터 › 장터 건강: 깨진 작품은 빨간 머리 하나 아래 줄로, 달라진 작품은 접힌 목록, 운영 장부 줄에서 #/recipes?tab=health로 바로 와요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /아직 장터 건강 결과가 없어요/);
+  assert.ok(u.$('#main form[data-form="market-health"] input[type="file"]'), "결과 올리기");
+  await u.api("POST", "/api/admin/recipes/health", { format: "bamnat-market-health", v: 1, build: "7f3a91c4", at: new Date().toISOString(), works: 516, listed: 498, opened: 497,
+    broken: [{ key: "market-139#7", title: "책장 넘기기 달력", kind: "old", why: "unknown motion", app: 52 }], changed: [{ key: "market-139#2", title: "봄 테마", d: 9.1 }], unchanged: [] });
+  await u.go("#/desk?view=open&group=report");
+  await u.settle(30);
+  assert.match(u.text('#main li.lg-line[data-key="market_broken:market-139.7"]'), /책장 넘기기 달력 · 옛 앱에서 안 열림/);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "health");
+  assert.match(u.text("#main .mh-head"), /작품 516개를 넣어 봤어요/);
+  assert.equal(u.$$("#main .mh .pill.bad").length, 1, "빨강은 머리 하나");
+  assert.match(u.text("#main .mh-rows"), /깨진 작품 1.*책장 넘기기 달력.*옛 앱에서 안 열림.*market-139#7 · 옛 앱 52/);
+  assert.match(u.text('#main details[data-key="mh-달라진 작품"] summary'), /달라진 작품 1/);
+  // 다른 보기를 고르면 주소도 따라가요.
+  await u.click('#main [data-act="recipe-tab"][data-key="visible"]');
+  await u.settle(20);
+  assert.match(u.window.location.hash, /tab=visible/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-57] 묶음 나누기: 화면 묶음은 그 화면을 열 때 받고, 받지 못하면 '서버에 닿지 않아요'와 다시 불러오기, 다시 누르면 열려요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const asked = [];
+  let block = true;
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const path = new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname;
+    if (path.startsWith("/admin/v/")) {
+      asked.push(path.split("/").pop().split(".")[0]);
+      if (block && path.startsWith("/admin/v/flags.")) return new u.window.Response("", { status: 503 });
+    }
+    return real(input, init);
+  };
+  await u.go("#/flags");
+  await u.settle(30);
+  assert.ok(asked.includes("flags"), "기능 관리를 열 때 그 묶음을 받아요");
+  assert.match(u.text("#main .empty.failed"), /서버에 닿지 않아요/);
+  block = false;
+  await u.click('#main [data-act="refresh"]');
+  await u.settle(30);
+  assert.ok(!u.$("#main .empty.failed"), "다시 불러오면 열려요");
+  assert.ok(u.$("#main [data-act]"), "기능 관리 화면");
+  // 마을 장터는 장터 묶음과 기본 도구 후보(work) 묶음을 함께 기다려요.
+  await u.go("#/recipes?tab=tools");
+  await u.settle(30);
+  assert.ok(asked.includes("market"));
+  assert.ok(!u.$("#main .empty.failed"));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-58] 개발사항이 저장소 계획 줄뿐이면 '지금'은 빈 화면과 할 일 단추 하나, 줄은 오른쪽 알약 없이 한 줄 모양, 요금 판단은 Claude 제안별 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const add = env.DB.db.prepare(`INSERT INTO dev_items (id, title, body, status, track, size, route, tier_ask, tier_why, created_by, created_by_name, created_at, updated_at)
+    VALUES (?, ?, '저장소 줄', 'doing', ?, ?, 'app', ?, ?, 'sync', '저장소', ?, ?)`);
+  const at = Date.now();
+  for (let i = 0; i < 8; i++) add.run(`d${String(i).padStart(15, "0")}`, `계획 ${i}`, `RVI-${i + 1}`, "fix", "", "", at - i, at - i);
+  const u = await asOwner(env, t);
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /지금 손댈 개발사항은 없어요.*할 일 8개는 Claude가 개발하며/);
+  await u.click('#main .empty [data-act="dev-status"][data-key="open"]');
+  await u.settle(30);
+  assert.match(u.window.location.hash, /status=open/);
+  const rows = u.window.document.querySelectorAll("#main .dev-rows > li");
+  assert.equal(rows.length, 8);
+  assert.equal(rows[0].querySelectorAll(".pill").length, 0, "저장소 계획 줄에는 오른쪽 알약이 없어요");
+  assert.match(rows[0].querySelector("small").textContent, /^개발중 · 고침 · .*RVI-1/);
+  assert.ok(!/저장소|요금/.test(rows[0].querySelector("small").textContent), "만든 이 '저장소'와 '요금 무료(기존과 같음)'은 줄에서 빼요");
+  // 요금 정할 새 기능 둘: Claude 제안별로 묶어 한 줄씩, 누르면 단추가 펼쳐져요.
+  add.run("dnewfeature00001", "새 기능 하나", "RVK-1", "feature", "free", "투자 장부는 무료라서", at, at);
+  add.run("dnewfeature00002", "새 기능 둘", "RVK-2", "feature", "", "", at, at);
+  await u.go("#/tiers");
+  await u.settle(30);
+  const heads = [...u.window.document.querySelectorAll("#main h2.section")].map((h) => h.textContent.replace(/\s+/g, " ").trim());
+  assert.deepEqual(heads, ["Claude 제안 무료1", "제안 없음1"]);
+  assert.match(u.text("#main .tier-rows summary"), /새 기능 하나.*RVK-1 · 투자 장부는 무료라서/);
+  assert.ok(u.$('#main [data-act="loop-tier-copy"]'), "논의용으로 한 번에 복사");
+  assert.ok(u.$('#main .tier-rows [data-act="loop-tier"][data-tier="free"]'), "정하는 단추는 줄 안(펼치면 보여요)");
+  // 지금 칸에도 이 둘이 와요.
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.equal(u.window.document.querySelectorAll("#main .dev-rows > li").length, 2);
+  assert.match(u.text("#main .dev-rows"), /요금 정할 것/);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 제목 + 알약 여럿인 머리와 두 칸 화면이 글자 200%의 840·1440에서 한 자씩 서지 않아요.
+test("[RVQ-47] 검토 HQ-88 큰 글자: 머리의 제목은 16rem을 지키고 알약 묶음은 함께 감기며, 두 칸은 칸 폭이 모자라면 위아래로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.card-head>:is\(h2,h3\)\{flex:1 1 16rem;min-width:0/);
+  assert.match(css, /\.head-pills\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /@media \(min-width:1024px\)\{\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
+  assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
+});
+
+// 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 좁은 막대는 판 알약을 점으로, 제목은 한 줄. 최근 활동은 좁으면 시각을 글 위로.
+test("[RVA-61] 좁은 막대(380·200%)에서 판 알약은 점, 제목은 한 줄 말줄임, 최근 활동 시각은 글 위로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /@container bar \(width < 22rem\)\{\s*\.dl-pill:not\(\.warn,\.bad\)\{[^}]*font-size:0/);
+  assert.match(css, /@container bar \(width < 22rem\)\{[^@]*\.bar h1 \.t\{-webkit-line-clamp:1\}/);
+  assert.match(css, /\.feed\{container:feed\/inline-size\}/);
+  assert.match(css, /@container feed \(width < 22rem\)\{\.feed li\{grid-template-columns:1fr/);
 });

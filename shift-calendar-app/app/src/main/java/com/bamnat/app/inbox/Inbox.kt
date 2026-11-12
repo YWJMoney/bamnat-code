@@ -103,7 +103,7 @@ class Inbox private constructor(context: Context) {
 
     /** '다시 보지 않기': rows of [kind] go and do not come again; [label] is how 기능 켜고 끄기 names it to turn back on. */
     fun mute(kind: String, label: String = kind) {
-        mutedPrefs.edit { putString(K_LABEL + kind, label) }
+        mutedPrefs.edit { putString(K_LABEL + kind, KIND_NAMES[kind] ?: label) }
         setMuted(_muted.value + kind)
         edit { list -> list.filter { it.kind != kind } }
     }
@@ -180,6 +180,14 @@ class Inbox private constructor(context: Context) {
         private const val K_KINDS = "kinds"
         private const val K_SUGGEST_OFF = "suggest_off"
         private const val K_LABEL = "label:"
+        /**
+         * [RVM-36] HQ-52 How 기능 켜고 끄기 names a kind whose rows each say something different (a row's title names one work, but
+         * '다시 보지 않기' turns off the kind for every work).
+         */
+        val KIND_NAMES = mapOf(
+            "market.reaction" to "내 작품에 온 반응",
+            "market.decided" to "내 작품 심사 결과",
+        )
         const val MAX_ROWS = 60
         const val KEEP_DAYS = 30L
         private const val DAY_MS = 24L * 60 * 60 * 1000

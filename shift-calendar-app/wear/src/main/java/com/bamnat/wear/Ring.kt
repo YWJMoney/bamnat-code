@@ -58,7 +58,16 @@ object Ring {
     /** What rings now ("근무 알람 · 주간"), or null once it stopped. The open [RingActivity] closes on null. */
     val ringing = MutableStateFlow<String?>(null)
 
-    fun start(context: Context, what: String) {
+    /** 2.0.0 [RVI-90] What a ring the watch started by itself ([BackupRing]) says first. */
+    const val BACKUP_PREFIX = "휴대폰 알람이 오지 않았어요 · "
+
+    /** 2.0.0 [RVI-90] The ring on now was started by the watch ([BackupRing]), not by the phone. */
+    @Volatile private var backup = false
+
+    fun start(context: Context, what: String, backup: Boolean = false) {
+        this.backup = backup
+        // 2.0.0 [RVI-90] The phone's ring came: the watch's own alarm for it stays quiet.
+        if (!backup) BackupRing.phoneRang(context)
         ringing.value = what.ifBlank { "근무 알람" }
         // The vibration is the alarm on the wrist, with or without the screen: it goes until 끄기, the phone's stop, or [LONGEST_MS].
         vibrate(context, true)
@@ -98,6 +107,8 @@ object Ring {
 
     /** 끄기 or 다시 울림: quiet at once, then the button goes to the phone (outliving the screen, which closes now). */
     fun answer(context: Context, path: String) {
+        // 2.0.0 [RVI-90] The phone may be gone: the watch's own ring comes again by itself.
+        if (backup && path == WatchDays.RING_SNOOZE_PATH) BackupRing.snooze(context)
         stop(context)
         scope.launch { WatchStore.send(context.applicationContext, path, "") }
     }

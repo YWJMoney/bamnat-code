@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -87,7 +88,8 @@ private fun LayerGroup(title: String, gap: Dp, open: Boolean, onToggle: (() -> U
 @Composable
 private fun LayerHeading(title: String, count: Int?, open: Boolean, onToggle: (() -> Unit)?) {
     val m = if (onToggle == null) Modifier else Modifier.clickable(role = Role.Button, onClickLabel = if (open) "접기" else "펼치기") { onToggle() }
-    Row(m.fillMaxWidth().padding(top = 4.dp, bottom = 0.dp, start = 4.dp).then(if (onToggle != null) Modifier.padding(vertical = 8.dp) else Modifier),
+    // 2.0.0 [RVK-43] (검토 MONEY-24, 조건 9) A heading that folds is a 48dp target.
+    Row(m.fillMaxWidth().padding(top = 4.dp, bottom = 0.dp, start = 4.dp).then(if (onToggle != null) Modifier.heightIn(min = 48.dp) else Modifier),
         verticalAlignment = Alignment.CenterVertically) {
         Text(title + (count?.let { " $it" } ?: ""), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary)
@@ -203,6 +205,17 @@ internal fun ChallengeCard(
             }
         }
         Text(com.bamnat.core.money.Challenges.words(s), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
+        // 2.0.0 [RVK-43] (검토 U06a-28) Done, two to try next, each a 48dp row; 닫기 stays the card's one button.
+        if (s.done) {
+            Text("다음 도전", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            com.bamnat.core.money.Challenges.next(run.kind, isNight != null).forEach { k ->
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "시작하기") { onStart(k) }
+                    .padding(vertical = 6.dp)) {
+                    Text(k.label, style = MaterialTheme.typography.bodyLarge)
+                    Text(k.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         androidx.compose.material3.TextButton(onClick = onStop) { Text(if (s.done) "닫기" else "그만두기") }
     }
 }

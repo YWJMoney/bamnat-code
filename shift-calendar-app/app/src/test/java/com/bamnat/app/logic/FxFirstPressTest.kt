@@ -43,6 +43,10 @@ class FxFirstPressTest {
         FxValues.clear(c)
         val store = LogicStore(app)
         store.clearWritten(); store.clearLog(); store.undo = null
+        // [RVM-38] 총괄(I가 알림): the 메모 틀 a rule opens waits in one place for the whole run ([LogicLinks.template]) until a memo
+        // screen takes it, so a test before this one that ran a '메모 틀 열기' left it set and [aWorkPutInDoesNotRunItsOpeningRuleThere]
+        // failed by the order the tests ran in (CI 43229768985), not by what it checks.
+        LogicLinks.template = null
         Unit
     }
 
@@ -137,6 +141,16 @@ class FxFirstPressTest {
         assertEquals("그날 메모에 ‘#우천 비로 쉼 · 이달 1.5공수’ 더하기", LogicRunner.sayNow(rain, LogicRunner.facts(c), today))
         // With nothing to work it out from (a launcher's label), the place is left out, never a made-up number.
         assertEquals("그날 메모에 ‘#우천 비로 쉼 · 이달 공수’ 더하기", LogicRunner.sayNow(rain, null, today))
+    }
+
+    @Test fun whatARuleDidHasItsNumberNotItsFormula() = runBlocking {
+        // 2.0.0 [RVM-39] PC-148: '실행 기록' and '규칙이 쓴 것' said '‘커피 {값("커피")}잔째예요’ 알림을 했어요'.
+        val cup = coffee.copy(more = listOf(LogicAct(LogicVerb.NOTIFY, "커피 {값(\"커피\")}잔째예요")))
+        use(cup)
+        FxOutside.press(c, cup.id)
+        val said = LogicStore(app).log().filter { it.who == cup.label }.map { it.what }
+        assertTrue(said.toString(), said.any { "잔째예요" in it })
+        assertTrue(said.toString(), said.none { "{" in it || "값(" in it })
     }
 
     @Test fun aWorkPutInDoesNotRunItsOpeningRuleThere() = runBlocking {

@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.company
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.outlined.Info
@@ -62,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -70,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
 import com.bamnat.app.company.Activity
+import com.bamnat.app.company.ActivityReport
 import com.bamnat.app.company.Plaza
 import com.bamnat.app.company.PlazaJob
 import com.bamnat.app.company.Rate
@@ -128,7 +131,8 @@ fun PlazaFilterBar(
     onChange: (CompanyBoardViewModel.Filter) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2.0.0 [RVN-18] 검토 U10a-04: each chip row on one line, all of it with 펼치기.
+        com.bamnat.app.ui.components.FoldRow("plaza.jobs", what = "직종 칩") {
             FilterChip(selected = filter.job.isEmpty(), onClick = { onChange(filter.copy(job = "")) }, label = { Text("모든 광장") })
             rememberJobs().forEach { (key, name) ->
                 val n = plazas.firstOrNull { it.key == key }?.let { it.adopted + it.voting } ?: 0
@@ -136,8 +140,7 @@ fun PlazaFilterBar(
                     label = { Text(if (n > 0) "$name $n" else name) })
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        com.bamnat.app.ui.components.FoldRow("plaza.order", what = "지역·순서 칩") {
             var open by remember { mutableStateOf(false) }
             Box {
                 FilterChip(selected = filter.region.isNotEmpty(), onClick = { open = true }, label = { Text(if (filter.region.isEmpty()) "전국" else Plaza.region(filter.region)) })
@@ -249,7 +252,7 @@ fun HistorySheet(state: HistoryState?, onClose: () -> Unit, onCompare: ((RuleVer
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("바뀐 기록", style = MaterialTheme.typography.titleLarge)
-            Text("${h.title} · 채택된 버전은 지워지지 않고 여기에 남아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("${h.title} · 채택된 판은 지워지지 않고 여기에 남아요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             when {
                 h.error != null -> Text(h.error)
                 h.versions == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
@@ -270,11 +273,11 @@ private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
     SoftCard(highlighted = v.state == "active") {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("v${v.version}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text("${v.version}판", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 when (v.state) {
                     "active" -> StatusChip("쓰는 중", Tone.GOOD)
                     "withdrawn" -> StatusChip("내려감", Tone.BAD)
-                    else -> StatusChip("이전 버전", Tone.QUIET)
+                    else -> StatusChip("이전 판", Tone.QUIET)
                 }
             }
             Text(
@@ -303,7 +306,7 @@ private fun VersionRow(v: RuleVersion, onCompare: (() -> Unit)? = null) {
 /** [PLZ-08] 내 활동: the name I am shown by, and what I sent, proposed and earned. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivitySheet(holder: ActivityHolder) {
+fun ActivitySheet(holder: ActivityHolder, onOpen: ((ActivityReport) -> Unit)? = null) {
     val open by holder.open.collectAsStateWithLifecycle()
     val o = open ?: return
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = holder::close, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -316,15 +319,22 @@ fun ActivitySheet(holder: ActivityHolder) {
             when {
                 o.error != null -> Text(o.error)
                 a == null -> CircularProgressIndicator(Modifier.padding(24.dp).align(Alignment.CenterHorizontally))
-                else -> ActivityBody(a, holder, o.calendarName, o.elsewhere)
+                else -> ActivityBody(a, holder, o.calendarName, o.elsewhere, onOpen)
             }
         }
     }
 }
 
 @Composable
-private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: String? = null, elsewhere: List<Pair<String, Int>> = emptyList()) {
-    var nick by rememberSaveable { mutableStateOf(a.nick.orEmpty()) }
+private fun ActivityBody(
+    a: Activity,
+    holder: ActivityHolder,
+    calendarName: String? = null,
+    elsewhere: List<Pair<String, Int>> = emptyList(),
+    onOpen: ((ActivityReport) -> Unit)? = null,
+) {
+    // 2.0.0 [RVN-18] 검토 COMP-22-9: the name typed stays through a turn of the phone, and follows a name saved elsewhere.
+    var nick by rememberSaveable(a.nick) { mutableStateOf(a.nick.orEmpty()) }
     var msg by remember { mutableStateOf<String?>(null) }
     Text("마을 이름", style = MaterialTheme.typography.titleSmall)
     // 1.36 [V3] 마을 이름 하나.
@@ -334,7 +344,7 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
         OutlinedTextField(value = nick, onValueChange = { nick = it.take(12); msg = null }, singleLine = true, placeholder = { Text("예: 야간요정") },
             modifier = Modifier.weight(1f))
         Spacer(Modifier.width(8.dp))
-        Button(onClick = { holder.setNick(nick) { e -> msg = e ?: if (nick.isBlank()) "별명을 지웠어요" else "별명을 정했어요" } }) { Text("저장") }
+        Button(onClick = { holder.setNick(nick) { e -> msg = e ?: if (nick.isBlank()) "마을 이름을 지웠어요" else "마을 이름을 정했어요" } }) { Text("저장") }
     }
     msg?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
     // [TOWN-02] PC 확인 41e73582 (내 활동에 내 글이 없어요): the posts I wrote in the plazas and their answers, one tap away.
@@ -347,13 +357,23 @@ private fun ActivityBody(a: Activity, holder: ActivityHolder, calendarName: Stri
     Text((calendarName?.let { "‘$it’에서 " } ?: "") + "보낸 규칙 ${a.reports.size}", style = MaterialTheme.typography.titleSmall)
     if (a.reports.isEmpty()) Text("아직 없어요", style = MaterialTheme.typography.bodySmall)
     a.reports.forEach { r ->
-        Text("${r.company} · ${r.dept.ifEmpty { "회사 전체" }} — " + when (r.status) {
-            "adopted" -> "채택${r.version?.let { " v$it" } ?: ""}, 쓰는 사람 ${r.uses}명"
-            "pending" -> "투표 중 (맞아요 ${r.persons}명${if (r.bad > 0) " · 달라요 ${r.bad}명" else ""})"
+        val line = "${r.company} · ${r.dept.ifEmpty { "회사 전체" }} — " + when (r.status) {
+            "adopted" -> "채택${com.bamnat.core.plaza.PlazaWords.editionAfter(r.version)}, 쓰는 사람 ${r.uses}명"
+            "pending" -> "투표 중 (${com.bamnat.core.plaza.PlazaWords.AGREE} ${r.persons}명${if (r.bad > 0) " · ${com.bamnat.core.plaza.PlazaWords.DISAGREE} ${r.bad}명" else ""})"
             "rejected" -> "반려"
             "withdrawn" -> "내려감"
             else -> r.status
-        }, style = MaterialTheme.typography.bodyMedium)
+        }
+        // 2.0.0 [RVN-18] 검토 U10a-16: a rule I sent opens that company at that rule set (반려·내려감: the company's page).
+        if (onOpen == null) Text(line, style = MaterialTheme.typography.bodyMedium)
+        else Row(
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small)
+                .clickable(role = Role.Button, onClickLabel = "${r.company} 열기") { onOpen(r) },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
     elsewhere.forEach { (name, n) ->
         Text("‘$name’에서 보낸 규칙 ${n}개는 그 달력의 광장에서 보여요", style = MaterialTheme.typography.bodySmall,
@@ -418,19 +438,19 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
             ) {
                 item {
                     // 1.36 PC 재검토 (골라진 '알바·시급' 칩이 화면 밖이라 안 보여요): the row opens scrolled to the chosen chip.
+                    // 2.0.0 [RVN-18] 검토 U10a-04: one line with 펼치기; folded, the line is slid to the chosen chip.
                     val jobs = rememberJobs()
-                    val row = androidx.compose.foundation.lazy.rememberLazyListState()
-                    LaunchedEffect(Unit) { jobs.indexOfFirst { it.first == filter.job }.takeIf { it > 0 }?.let { row.scrollToItem((it - 1).coerceAtLeast(0)) } }
-                    androidx.compose.foundation.lazy.LazyRow(state = row, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(jobs.size) { i ->
-                            val (key, name) = jobs[i]
-                            FilterChip(selected = filter.job == key, onClick = { vm.setFilter(filter.copy(job = key)) }, label = { Text(name) })
+                    val chosen = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+                    LaunchedEffect(Unit) { if (jobs.indexOfFirst { it.first == filter.job } > 0) chosen.bringIntoView() }
+                    com.bamnat.app.ui.components.FoldRow("rates.jobs", what = "직종 칩") {
+                        jobs.forEach { (key, name) ->
+                            FilterChip(selected = filter.job == key, onClick = { vm.setFilter(filter.copy(job = key)) }, label = { Text(name) },
+                                modifier = if (filter.job == key) Modifier.bringIntoViewRequester(chosen) else Modifier)
                         }
                     }
                 }
                 item {
-                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    com.bamnat.app.ui.components.FoldRow("rates.order", what = "지역·단위 칩") {
                         var open by remember { mutableStateOf(false) }
                         Box {
                             FilterChip(selected = filter.region.isNotEmpty(), onClick = { open = true }, label = { Text(if (filter.region.isEmpty()) "전국" else Plaza.region(filter.region)) })

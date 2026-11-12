@@ -161,9 +161,9 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
                 TextButton(onClick = onRemove, modifier = Modifier.semantics { contentDescription = "이 조건 빼기" }) { Text("빼기") }
             }
             if (c.op.needsValue) {
-                val choices = CHOICES[c.name]
+                val choices = choicesFor(c.name, LocalContext.current.appContainer.settingsRepository.current.workStyle, c.value)
                 if (choices != null) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    choices.forEach { v -> FilterChip(selected = c.value == v, onClick = { onChange(c.copy(value = v)) }, label = { Text(v) }) }
+                    choices.forEach { (v, w) -> FilterChip(selected = c.value == v, onClick = { onChange(c.copy(value = v)) }, label = { Text(w) }) }
                 } else OutlinedTextField(
                     c.value, { onChange(c.copy(value = it)) }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text(if (type == FormulaName.Type.NUM) "숫자" else "글") },
@@ -182,9 +182,12 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
 @Composable
 private fun QuickConds(value: String, onChange: (String) -> Unit) {
     val fx = LocalFxLogic.current
-    val picks = remember(fx.values) {
-        listOf("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"", "주말" to FormulaName.WEEKEND.ko, "쉬는 날" to FormulaName.OFF.ko,
-            "일하는 날" to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
+    // 2.0.0 [RVS-10] 검토 STU-27: '야간인 날' only where there are nights; a day off and a working day in the work's own words.
+    val style = LocalContext.current.appContainer.settingsRepository.current.workStyle
+    val picks = remember(fx.values, style) {
+        listOfNotNull(("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"").takeIf { "night" in com.bamnat.core.work.TypeWords.roles(style) },
+            "주말" to FormulaName.WEEKEND.ko, (com.bamnat.core.work.TypeWords.roleWord(style, "off") ?: "쉬는 날") to FormulaName.OFF.ko,
+            (com.bamnat.core.work.TypeWords.roleWord(style, "day") ?: "일하는 날") to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
             fx.values.filter { it.goal != null && it.kind == com.bamnat.core.formula.ValueKind.NUM }.flatMap { v ->
                 val g = com.bamnat.core.formula.Formula.numText(v.goal!!)
                 listOf("${v.name} 목표 못 채움 ✦" to "값(\"${v.name}\") < $g", "${v.name} 3번 연속 ✦" to "연속(\"${v.name}\") >= 3")
@@ -195,6 +198,18 @@ private fun QuickConds(value: String, onChange: (String) -> Unit) {
             AssistChip(onClick = { onChange(if (value.isBlank()) f else if (f in value) value else "$value 그리고 $f") }, label = { Text(label) })
         }
     }
+}
+
+/**
+ * 2.0.0 [RVS-10] 검토 STU-27: [CHOICES] as (값, 칩 글) for [style]: 근무종류 offers only the kinds of 근무 of that work, said in its words
+ * (가게는 '영업일' 칩이 "주간"을 넣어요, 값은 수식의 말 그대로), and keeps [keep] (a work made elsewhere) so it can still be seen.
+ */
+internal fun choicesFor(name: String, style: com.bamnat.core.work.WorkStyle?, keep: String? = null): List<Pair<String, String>>? {
+    val all = CHOICES[name] ?: return null
+    if (name != FormulaName.ROLE.ko) return all.map { it to it }
+    val roles = com.bamnat.core.work.TypeWords.roles(style)
+    return com.bamnat.core.formula.DayFactsBook.ROLE_WORDS.filter { (k, v) -> k in roles || v == keep }
+        .map { (k, v) -> v to (com.bamnat.core.work.TypeWords.roleWord(style, k) ?: v) }
 }
 
 /** Values a name usually takes, as chips (no typing). */
@@ -441,7 +456,7 @@ private fun StepsEditor(title: String, hint: String, steps: List<LogicAct>, max:
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}. ${a.say()}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Text("${i + 1}. ${com.bamnat.core.formula.FormulaText.blanks(a.say())}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onChange(steps.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.semantics { contentDescription = "이 동작 빼기" }) { Text("빼기") }
                 }
                 ActEditor(a, { n -> onChange(steps.toMutableList().also { it[i] = n }) }, scope, title = null)
@@ -490,10 +505,14 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = r.role == null, onClick = { r = followWords(r, r.copy(role = null)) }, label = { Text("모든 근무") })
-                            LogicRule.ROLE_WORDS.filterKeys { it != "off" }.forEach { (k, w) ->
-                                FilterChip(selected = r.role == k, onClick = { r = followWords(r, r.copy(role = k)) }, label = { Text(w) })
-                            }
+                            // 2.0.0 [RVS-10] 검토 STU-27: only the kinds of 근무 of this work (가게·투자·현장은 '모든 근무' 하나), in its words.
+                            FilterChip(selected = r.role == null, onClick = { r = followWords(r, r.copy(role = null)) },
+                                label = { Text(com.bamnat.core.work.TypeWords.say(style, "모든 근무")) })
+                            LogicRule.ROLE_WORDS.filterKeys { it != "off" && (it in com.bamnat.core.work.TypeWords.roles(style) || it == r.role) }
+                                .takeIf { it.size > 1 || r.role != null }?.forEach { (k, w) ->
+                                    FilterChip(selected = r.role == k, onClick = { r = followWords(r, r.copy(role = k)) },
+                                        label = { Text(com.bamnat.core.work.TypeWords.roleWord(style, k) ?: w) })
+                                }
                         }
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             // PC D7 (사용성 중): 근무 끝은 '끝날 때'부터, 시작은 '시작할 때'를 바로 앞에.
@@ -556,7 +575,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 StepsEditor("그리고 이어서", "한 번에 여러 일을 해요(예: 알림 + 값 +1 + 메모 한 줄)", r.more, MAX_MORE, { r = r.copy(more = it) }, scope)
                 if (r.cond.isNotEmpty()) StepsEditor("조건이 아니면", "조건이 맞지 않는 날에 할 일(비우면 아무것도 안 해요)", r.otherwise, MAX_ELSE, { r = r.copy(otherwise = it) }, scope)
                 // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로. 1.37 PC 4차: 요약이 위에서 늘면 아래 칸이 밀려 맨 아래로 옮겼어요.
-                Text(ruleDone(r).say(), style = MaterialTheme.typography.bodyMedium,
+                Text(com.bamnat.core.formula.FormulaText.blanks(ruleDone(r).say()), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
@@ -645,7 +664,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     ConditionEditor(b.cond, { b = b.copy(cond = it) }, scope, empty = "조건을 넣어요")
                     StepsEditor("조건이 아니면", "조건이 맞지 않을 때 할 일(비우면 아무것도 안 해요)", b.otherwise, MAX_ELSE, { b = b.copy(otherwise = it) }, scope)
                 }
-                Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                Text(com.bamnat.core.formula.FormulaText.blanks(b.say()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -944,7 +963,7 @@ fun LogicEditor(
             AlertDialog(onDismissRequest = { askOn = null },
                 title = { Text("받은 규칙을 켤까요?") },
                 // [RVM-23] STU-23: every step and its condition (not the first step alone), and the 쓰기 line only when a step writes.
-                text = { Text("‘${r.name}’: ${r.say()}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
+                text = { Text("‘${r.name}’: ${com.bamnat.core.formula.FormulaText.blanks(r.say())}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
                 confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c); saidOn(r) }) { Text("켜기") } },
                 dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
         }

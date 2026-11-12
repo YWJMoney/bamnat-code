@@ -752,6 +752,9 @@ class SetupViewModel(
                 c.telemetry.event("roster_read", "${r.from.name.lowercase()} ms=$ms ways=${r.scan?.ways ?: 0} words=${r.scan?.words?.size ?: 0} " +
                     "rows=${r.rows.size} problem=${r.scan?.read?.problem?.name?.lowercase() ?: "-"}${if (r.error != null && r.rows.isEmpty()) " fail" else ""}")
             }
+            // 2.0.0 [RVL-41] A locked PDF: its password window, and what was read before stays as it was.
+            _rosterLocked.value = r.locked
+            if (r.locked != null) return@launch
             val rows = r.rows.sortedBy { it.line }
             // A photo that read nothing keeps its picture, for 사진 위에서 누르기.
             _roster.value = r.copy(rows = rows, scan = r.scan ?: _roster.value?.scan.takeIf { r.from == com.bamnat.core.journal.RosterFrom.PHOTO })
@@ -774,8 +777,26 @@ class SetupViewModel(
     /** 2.0.0 [RVL-34] A roster photo taken with the camera here is read on the phone and not kept after the setup. */
     override fun onCleared() {
         runCatching { com.bamnat.app.ui.imports.rosterShot(c.appContext).delete() }
+        rosterPassword?.second?.fill('\u0000')
         super.onCleared()
     }
+
+    /** 2.0.0 [RVL-41] (검토 U07b-10) The roster file picked is a locked PDF: its password is asked on the setup page. */
+    private val _rosterLocked = MutableStateFlow<com.bamnat.app.imports.PdfLock?>(null)
+    val rosterLocked: StateFlow<com.bamnat.app.imports.PdfLock?> = _rosterLocked.asStateFlow()
+    /** The password typed for it: held while the setup is open (다시 읽기), never saved. */
+    private var rosterPassword: Pair<Uri, CharArray>? = null
+    private var rosterLockedUri: Uri? = null
+
+    /** 2.0.0 [RVL-41] '열기': the same file read again with the password. */
+    fun unlockRoster(typed: CharArray) {
+        val uri = rosterLockedUri ?: return
+        rosterPassword?.second?.fill('\u0000')
+        rosterPassword = uri to typed
+        readRosterFile(c.appContext, uri)
+    }
+
+    fun cancelRosterUnlock() { _rosterLocked.value = null }
 
     /** 2.0.0 [RVL-32] How long the reading model took to come down in this reading, given back to its time limit. */
     @Volatile private var rosterModelMs = 0L
@@ -855,7 +876,9 @@ class SetupViewModel(
 
     fun readRosterFile(context: Context, uri: Uri) {
         rosterAgain = { readRosterFile(c.appContext, uri) }
-        readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today, preparing = ::rosterPreparing, progress = ::rosterStepped) }
+        rosterLockedUri = uri
+        val password = rosterPassword?.takeIf { it.first == uri }?.second
+        readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today, password = password, preparing = ::rosterPreparing, progress = ::rosterStepped) }
     }
 
     fun readRosterText(text: String) = readRoster { com.bamnat.app.ui.imports.RosterReader.text(text, it, today) }

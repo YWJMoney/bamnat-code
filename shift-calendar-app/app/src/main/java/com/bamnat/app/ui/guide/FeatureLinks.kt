@@ -107,6 +107,8 @@ val TOOL_KEYS = setOf(
     "tax",
     // [PAYX-48] 월급날 비교 on the stats tab: the card comes into view and asks the amount (WorkTypeCards).
     "pay.gap",
+    // 2.0.0 [RVK-44] (PC-134) 일용직 세금 on the 일감·수입 tab: 바로 가기 brings the card into view (FieldTools).
+    "dailyTax",
     // [TIER-07] 1.25 묶음 Y: 가계부 탭의 월간 보고서(MoneyScreen), 프로 기능 모아보기에서 열어요.
     "report",
 )
