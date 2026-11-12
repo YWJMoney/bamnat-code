@@ -48,6 +48,25 @@ object StaffContract {
         fun waiting(now: Long): Boolean = !signed && linkId != null && (expiresAt == null || now < expiresAt)
     }
 
+    /**
+     * 2.0.0 [RVJ-24] 검토 BOSS-53 '종이로 받았어요': the contract as it reads now, marked signed on paper on [on] (the day the boss
+     * says the paper came back; it was always today, so last week's paper contract carried the wrong day). [now] is when it was
+     * marked. Today's keeps the time of the press, another day is that day's noon in [zone].
+     */
+    fun onPaper(c: Contract, now: Long, on: LocalDate, zone: java.time.ZoneId): Sent {
+        val today = java.time.Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
+        val signed = if (!on.isBefore(today)) now else on.atTime(12, 0).atZone(zone).toInstant().toEpochMilli()
+        return Sent(title(c), c.items, now, signedAt = signed, paper = true)
+    }
+
+    /**
+     * 2.0.0 [RVJ-24] 검토 BOSS-53 '되돌릴 수 없어요': the paper mark taken back. The signed contract it replaced (if any) is the
+     * contract again and the rest of the 지난 계약서 stay; a contract signed on the link is the staff member's own word and is never
+     * taken back here.
+     */
+    fun withoutPaper(cur: Sent?): Sent? =
+        if (cur == null || !cur.signed || !cur.paper) cur else cur.past.lastOrNull()?.copy(past = cur.past.dropLast(1))
+
     /** 계약서 없음 on the ledger: a staff member still working with no signed contract. */
     fun lacking(s: StaffMember, on: LocalDate): Boolean = s.contract?.signed != true && s.employedOn(on)
 

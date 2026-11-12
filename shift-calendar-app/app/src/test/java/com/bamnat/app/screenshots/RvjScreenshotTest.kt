@@ -69,6 +69,9 @@ class RvjScreenshotTest : ScreenshotBase() {
         settle()
         tapText("종이로 받았어요", exact = true)
         settle()
+        // [RVJ-24] 검토 BOSS-53: it asks the day the paper came back before it marks anything.
+        tapText("받았어요", exact = true)
+        settle()
         tapText("직원에게 한 부 줬어요", exact = true)
         settle()
         org.junit.Assert.assertTrue("준 날이 보여야 해요", scrolledTo("에 줬어요 · 계약서 PDF에 남아요"))
