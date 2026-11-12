@@ -723,7 +723,8 @@ private fun ReportLink(vm: ReceivedViewModel, id: String, word: String = "근무
     // 2.0.0 [RVG-35] 검토 HQ-64: in the link's word (이 영업일 신고하기).
     TextButton(onClick = { open = true }) { Text("이 $word 신고하기") }
     if (!open) return
-    var reason by remember { mutableStateOf(com.bamnat.app.share.ShareReport.PERSONAL) }
+    // 2.0.0 [RVN-13] HQ-39 (같은 신고 창): nothing picked first, so 신고하기 never goes with a reason the user did not read.
+    var reason by remember { mutableStateOf<com.bamnat.app.share.ShareReport?>(null) }
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { open = false },
         title = { Text("이 $word${Fmt.obj(word)} 신고할까요?") },
@@ -738,7 +739,9 @@ private fun ReportLink(vm: ReceivedViewModel, id: String, word: String = "근무
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { open = false; vm.report(id, reason) { said = it } }) { Text("신고하기") } },
+        confirmButton = {
+            TextButton(onClick = { reason?.let { r -> open = false; vm.report(id, r) { said = it } } }, enabled = reason != null) { Text("신고하기") }
+        },
         dismissButton = { TextButton(onClick = { open = false }) { Text("취소") } },
     )
 }
