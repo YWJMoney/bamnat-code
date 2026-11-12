@@ -69,6 +69,8 @@ fun TrialConsentPrompt(c: AppContainer) {
             ?: c.remoteConfig.current.workPlans.bands(kind).firstOrNull { it.cap == cap }?.let { "연 %,d원".format(it.yearly) }
     }) ?: return
     val text = trialConsentText(day, price)
+    // 2.0.0 [RVP-22] One opening window at a time, the law first (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.TRIAL_CONSENT)) return
     val answer: (String) -> Unit = { a ->
         val now = Today.instant()
         // [SRV-07] Queued first, then sent: without a connection it goes at the next sync instead of being lost.
@@ -115,6 +117,8 @@ fun LaunchThanks(c: AppContainer) {
     val zone = Today.zone()
     val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchedAt, config.thanksMonths, zone) ?: return
     if (!Today.instant().isBefore(until)) return
+    // 2.0.0 [RVP-22] Last of the opening windows (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS)) return
     AlertDialog(
         onDismissRequest = { c.proStore.thanksSeen() },
         title = { Text("고마워요") },

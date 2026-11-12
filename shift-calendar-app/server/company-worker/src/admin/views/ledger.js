@@ -325,7 +325,9 @@ export function ledgerViews(A) {
       // 지금 보기 그대로 서버에서 모든 줄을 CSV로(엑셀에서 한글이 깨지지 않게 BOM 포함).
       const p = new URLSearchParams({ view: S.deskView || "today", ...(S.deskGroup ? { group: S.deskGroup } : {}), ...(S.deskV ? { v: S.deskV } : {}), ...(S.deskQuery ? { q: S.deskQuery } : {}) });
       try {
-        const res = await fetch(`/api/admin/ledger.csv?${p}`, { headers: { "x-admin": "1" }, credentials: "same-origin" });
+        // 2.0.0 [RVA-01] 검토 ADM-20: 기기에 남기지 않고(no-store, 서비스 워커도 남기지 않음), 로그인이 끝났으면 다시 로그인한 뒤 이어서 받아요.
+        const res = await fetch(`/api/admin/ledger.csv?${p}`, { headers: { "x-admin": "1" }, credentials: "same-origin", cache: "no-store" });
+        if (res.status === 401) return A.reloginThen(() => actions["ledger-csv"]());
         if (!res.ok) throw new Error("server");
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement("a");

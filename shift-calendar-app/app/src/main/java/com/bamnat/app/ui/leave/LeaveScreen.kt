@@ -184,7 +184,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val hire by vm.hire.collectAsStateWithLifecycle()
     val counted = LeaveSources.withHire(profile, hire)
     val context = LocalContext.current
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val ui = rememberCoroutineScope()
     var adding by remember { mutableStateOf<EntryKind?>(null) }
     var opened by remember { mutableStateOf<LedgerEntry?>(null) }
@@ -203,7 +203,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { NowCard(s, counted, snapshot) }
@@ -242,8 +242,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             }
             if (s != null && s.lines.isNotEmpty()) item {
                 LinesCard(s, allLines, onAll = { allLines = true },
-                    onExport = { ui.launch { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } },
-                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } },
+                    onExport = { ui.launch { com.bamnat.app.report.ReportShare.orTell { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } } }, // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } } },
                 ) { id -> ui.launch { opened = vm.entry(id) } }
             }
             item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }

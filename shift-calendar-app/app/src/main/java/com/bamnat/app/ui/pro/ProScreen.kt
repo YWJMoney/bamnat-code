@@ -588,8 +588,19 @@ private fun open(context: Context, url: String) {
     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
+/**
+ * 2.0.0 [RVL-11] (검토 DATA-26) The recovery code moves the passes: marked sensitive, so Android 13+ does not show it in the copy preview
+ * at the bottom of the screen (someone looking at the screen too).
+ */
 private fun copy(context: Context, text: String) {
-    runCatching { context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("복구 코드", text)) }
+    runCatching {
+        val clip = ClipData.newPlainText("복구 코드", text).apply {
+            description.extras = android.os.PersistableBundle().apply {
+                putBoolean(if (android.os.Build.VERSION.SDK_INT >= 33) android.content.ClipDescription.EXTRA_IS_SENSITIVE else "android.content.extra.IS_SENSITIVE", true)
+            }
+        }
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+    }
 }
 
 /** [INPUT-04] A recovery code as the server makes it: 16 letters and digits, a dash every four (company-worker passCode). */

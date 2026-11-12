@@ -116,6 +116,19 @@ class BackupFormat3Test {
         refs.clear()
     }
 
+    /**
+     * 2.0.0 [RVP-73] (검토 REST-15) 내 글꼴 (2~20MB each) stay out of Android's cloud backup: past its 25MB the schedule database does not
+     * go up either. A phone-to-phone transfer still takes them.
+     */
+    @Test fun myFontsStayOutOfTheCloudBackup() {
+        val cloud = File("src/main/res/xml/data_extraction_rules.xml").readText().substringAfter("<cloud-backup>").substringBefore("</cloud-backup>")
+        val transfer = File("src/main/res/xml/data_extraction_rules.xml").readText().substringAfter("<device-transfer>").substringBefore("</device-transfer>")
+        val old = File("src/main/res/xml/backup_rules.xml").readText()
+        assertTrue("cloud", cloud.contains("""<exclude domain="file" path="fonts/" />"""))
+        assertTrue("Android 11 and below", old.contains("""<exclude domain="file" path="fonts/" />"""))
+        assertFalse("a new phone still gets them", transfer.contains("fonts/"))
+    }
+
     @Test fun aChangedFileIsTurnedAway() {
         val bytes = file(manager())
         // One byte of the photo (stored as it is) changed: its sum no longer matches.

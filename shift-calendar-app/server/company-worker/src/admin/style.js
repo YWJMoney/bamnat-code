@@ -206,9 +206,10 @@ summary::-webkit-details-marker{display:none}
 summary::after{content:" ▾"}
 details[open]>summary::after{content:" ▴"}
 .lines{margin:.4rem 0 0;display:grid;gap:.4rem}
-.lines div{display:grid;grid-template-columns:minmax(5.5rem,30%) 1fr;gap:.6rem;font-size:.88rem}
-.lines dt{color:var(--muted)}
-.lines dd{margin:0}
+/* 2.0.0 [RVA-04] 조건 12: 좁은 폭·큰 글자에서는 이름 줄 아래로 값이 내려가요(값이 한 글자씩 세로로 서지 않게). */
+.lines div{display:flex;flex-wrap:wrap;column-gap:.6rem;row-gap:.1rem;font-size:.88rem}
+.lines dt{color:var(--muted);flex:1 1 5.5rem}
+.lines dd{margin:0;flex:999 1 11rem;min-width:0}
 .diff{margin:.75rem 0 0;padding:.6rem .75rem;border-radius:var(--r-sm);background:var(--soft)}
 .diff-title{margin:0 0 .4rem;font-size:.8rem;font-weight:800;color:var(--muted)}
 .diff ul{margin:0;padding:0;list-style:none;display:grid;gap:.25rem}
@@ -381,13 +382,16 @@ padding:.75rem;box-shadow:var(--shadow)}
 
 /* ---- sign-in, invite and install pages ---- */
 .gate{max-width:28rem;margin:0 auto;padding:calc(2.5rem + env(safe-area-inset-top)) 1rem 2rem}
+/* 2.0.0 [RVA-14] 검토 T24-12: 로그인과 패스키 단추 사이를 띄워요 */
+.gate form .btn.wide+.btn.wide{margin-top:.6rem}
 .brand{text-align:center;margin-bottom:1.5rem}
 .brand img{border-radius:1.35rem;box-shadow:var(--shadow)}
 .brand h1{font-size:1.5rem;margin:.85rem 0 .25rem}
 .brand p{margin:0;color:var(--muted)}
 .error{min-height:1.4em;margin:.5rem 0;color:var(--bad);font-size:.88rem;font-weight:600}
 .alt{text-align:center;margin:1rem 0 0;font-size:.88rem;color:var(--muted)}
-.toast{position:fixed;left:50%;bottom:calc(5.25rem + env(safe-area-inset-bottom));transform:translate(-50%,1rem);max-width:min(92vw,32rem);padding:.75rem 1.1rem;
+/* 2.0.0 [RVA-16] 조건 12: 알림은 글 길이만큼 넓어져요(left:50%에 갇혀 큰 글자에서 좁은 기둥이 되지 않게). */
+.toast{position:fixed;left:50%;bottom:calc(5.25rem + env(safe-area-inset-bottom));transform:translate(-50%,1rem);width:max-content;max-width:min(92vw,32rem);padding:.75rem 1.1rem;
 border-radius:var(--r);background:var(--fg);color:var(--bg);font-size:.88rem;font-weight:700;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;
 z-index:60;text-align:center;box-shadow:var(--shadow-lg)}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -396,7 +400,21 @@ dialog.wide{width:min(94vw,40rem)}
 dialog::backdrop{background:rgba(8,10,20,.55);backdrop-filter:blur(2px)}
 dialog[open]{animation:pop .18s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(.6rem) scale(.98)}to{opacity:1;transform:none}}
-dialog form,dialog .box{padding:1.35rem 1.25rem 1.1rem}
+dialog form,dialog .box,dialog .key-once{padding:1.35rem 1.25rem 1.1rem}
+/* 2.0.0 [RVA-04] 확인 창의 누구에게·무엇을·며칠·보일 글, [RVA-02] 입력 창의 미리 보기, [RVA-08] 닫기 전 경고 */
+.confirm-rows{margin:.1rem 0 .4rem;padding:.7rem .8rem;border-radius:var(--r-sm);background:var(--soft)}
+.confirm-rows dd{font-weight:700;white-space:pre-wrap;overflow-wrap:anywhere}
+/* 2.0.0 [RVA-02] 조건 창 안에서 펴는 한 줄 칸(앱 판 번호): 칸과 단추가 한 줄, 좁으면 단추가 아래로. */
+.inline-ask{margin-top:.6rem}
+.inline-ask .row-input{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem}
+.inline-ask .row-input input{flex:1 1 8rem;min-width:0}
+.ask-preview{margin:0 0 .25rem;padding:.75rem;border-radius:var(--r-sm);background:var(--soft);max-height:16rem;overflow:auto}
+.ask-preview .thread{margin:0}
+dialog .secret-warn{margin:.75rem 0 0}
+dialog .error:empty{display:none}
+/* 2.0.0 [RVA-05] 틀린 칸: 빨간 테와 그 아래 이유 한 줄 */
+[aria-invalid=true]{border-color:var(--bad)!important;box-shadow:0 0 0 1px var(--bad)}
+.field-error{display:block;margin:.3rem 0 0;color:var(--bad);font-size:.84rem;font-weight:700}
 dialog h2{font-size:1.15rem;margin-bottom:.35rem}
 dialog p{margin:0 0 .75rem;color:var(--muted);font-size:.88rem}
 dialog .actions:last-child{position:sticky;bottom:0;margin:1rem -1.25rem -1.1rem;padding:.75rem 1.25rem calc(.9rem + env(safe-area-inset-bottom));
@@ -476,9 +494,15 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .banner .btn{min-height:2.25rem}
 .failed{text-align:center;padding:2.5rem 1rem;color:var(--muted)}
 .failed h2{color:var(--fg);font-size:1.06rem;margin:.5rem 0 .25rem}
+/* 2.0.0 [RVA-10] 검토 ADMX-19: 실패 화면 그림은 빈 화면보다 작고 차분하게 */
+.empty.failed svg{width:2.25rem;height:2.25rem;color:var(--muted)}
+.empty .actions.mid{justify-content:center;margin-top:1rem}.empty .actions.mid .btn{margin-top:0}
 .toast .undo{margin-left:.75rem;border:0;border-radius:var(--r);padding:.45rem .9rem;background:var(--accent-soft);color:var(--fg);font-size:.95rem;font-weight:900;cursor:pointer;pointer-events:auto;min-height:2.75rem}
 .toast.has-undo{font-size:.95rem;padding:.6rem .8rem .6rem 1.1rem;display:flex;align-items:center;gap:.25rem}
 .toast.show.has-undo{pointer-events:auto}
+.toast.has-undo.mini{left:auto;right:max(1rem,env(safe-area-inset-right));transform:none;padding:.3rem;box-shadow:var(--shadow-lg)}
+.toast.has-undo.mini>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.toast.has-undo.mini .undo{margin-left:0}
 /* Two panes: on a wide screen the list stays beside the open item. */
 @media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}
 .split>.pane-list{position:sticky;top:4.75rem;max-height:calc(100vh - 6rem);max-height:calc(100dvh - 6rem);overflow:auto;border-radius:var(--r-lg)}

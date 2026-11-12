@@ -298,14 +298,14 @@ private fun RosterPhotoFirst(vm: SetupViewModel) {
     androidx.compose.material3.ElevatedCard(
         onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
         modifier = Modifier.fillMaxWidth(),
-        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        colors = androidx.compose.material3.CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                Text("근무표 사진으로 한 번에", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("근무표 사진으로 한 번에", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text("이번 달 근무표 사진 한 장이면 달력이 다 차요. 틀린 칸만 눌러 고쳐요. 사진은 휴대폰 안에서만 읽어요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

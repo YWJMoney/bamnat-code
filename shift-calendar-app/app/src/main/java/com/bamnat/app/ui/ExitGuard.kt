@@ -22,7 +22,10 @@ class ExitGuard {
             return true
         }
         armedAt = now
-        Toast.makeText(context, MESSAGE, Toast.LENGTH_SHORT).show()
+        // 2.0.0 [RVP-23] (검토 U13-22) On the app's own line, in the app's 글자 크기 and look, for as long as the second back counts.
+        // The very first screen has no line yet: a toast there.
+        if (com.bamnat.app.ui.components.AppSnack.hasHost) com.bamnat.app.ui.components.AppSnack.show(MESSAGE, tag = MESSAGE, millis = WINDOW_MILLIS)
+        else Toast.makeText(context, MESSAGE, Toast.LENGTH_SHORT).show()
         return false
     }
 
