@@ -246,6 +246,31 @@ object MoneyCategories {
     /** [LEDG-14] A name the user may give a category: trimmed, short, and nothing a CSV or list would trip over. */
     fun clean(name: String): String = name.replace(Regex("[\\t\\n\\r,#]"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_NAME)
 
+    /**
+     * 2.0.0 [RVK-08] (검토 MONEY-03·T06a-10): categories the sums find by their name — 급여 (받은 급여가 예상 대신 들어감),
+     * 카드값·내 계좌 (이체의 '어디로', 카드값 맞추기, 앞으로의 돈), 이자·금융·대출 상환 (빚 갚기), 기타. Renamed, 급여 would be
+     * counted twice and 카드값 would stop filling itself, so they keep their names; hiding one is still fine.
+     */
+    val FIXED_NAMES: Set<String> = setOf(SALARY, "카드값", "내 계좌", INTEREST, "대출 상환", OTHER)
+
+    /** False for a category the sums read by name ([FIXED_NAMES]). */
+    fun renamable(name: String): Boolean = name !in FIXED_NAMES
+
+    /**
+     * 2.0.0 [RVK-09] (검토 MONEY-02): renames given as (이름 → 새 이름) all meant at once, put in an order that never lands
+     * one category on another: each goes through a name nobody uses first, so 식비→외식 with 장보기→식비, or a swap, keeps
+     * the two apart. Returns (from, to) steps to run in order; the fixed names (from or to) and empty or unchanged ones are left out.
+     */
+    fun renameSteps(renames: List<Pair<String, String>>): List<Pair<String, String>> {
+        val wanted = renames.mapNotNull { (from, to) ->
+            val name = clean(to)
+            if (name.isEmpty() || name == from || !renamable(from) || !renamable(name)) null else from to name
+        }.distinctBy { it.first }
+        if (wanted.isEmpty()) return emptyList()
+        val temp = wanted.mapIndexed { i, (from, _) -> from to "\u0001rename$i" }
+        return temp + wanted.mapIndexed { i, (_, to) -> temp[i].second to to }
+    }
+
     const val SALARY = "급여"
     const val OTHER = "기타"
     const val MAX_NAME = 12

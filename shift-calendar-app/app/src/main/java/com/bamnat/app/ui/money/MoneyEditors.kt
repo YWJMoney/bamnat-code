@@ -30,6 +30,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.focus.onFocusEvent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.foundation.layout.heightIn
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -102,6 +106,109 @@ fun AmountField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = imeAction),
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * 2.0.0 [RVK-15] (검토 U06a-01): an amount box that counts. While it has focus a row of + − × ÷ = sits under it (the phone's
+ * number pad has none); "36000÷3" shows "= 12,000원" under the box, and the amount is the result from the first sign on, so
+ * 저장 never takes a half-typed sum. '=' or leaving the box puts the result in. Without a sign it is [AmountField].
+ */
+@Composable
+fun CalcAmountField(
+    label: String,
+    digits: String,
+    onChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    textStyle: androidx.compose.ui.text.TextStyle? = null,
+) {
+    val calc = com.bamnat.core.money.AmountCalc
+    fun valueOf(t: String): String = if (calc.hasOp(t)) calc.eval(t)?.let(::amountDigits).orEmpty() else t
+    var field by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))) }
+    // What this box last said the amount is: other digits from outside (a chip, +1만) start the box again from them.
+    var sent by remember { mutableStateOf(digits) }
+    val shown = if (digits == sent) field
+        else androidx.compose.ui.text.input.TextFieldValue(digits, androidx.compose.ui.text.TextRange(digits.length))
+    val sum = calc.hasOp(shown.text)
+    var focused by remember { mutableStateOf(false) }
+    fun put(text: String, keepCursor: androidx.compose.ui.text.input.TextFieldValue? = null) {
+        val cleaned = calc.clean(text)
+        val kept = if (calc.hasOp(cleaned)) cleaned else amountInput(cleaned)
+        field = if (keepCursor != null && keepCursor.text == kept) keepCursor
+            else androidx.compose.ui.text.input.TextFieldValue(kept, androidx.compose.ui.text.TextRange(kept.length))
+        sent = valueOf(kept)
+        onChange(sent)
+    }
+    fun settle() { if (calc.hasOp(shown.text)) put(valueOf(shown.text)) }
+    Column(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = shown,
+            onValueChange = { v -> put(v.text, v) },
+            label = { Text(label) },
+            textStyle = textStyle ?: androidx.compose.material3.LocalTextStyle.current,
+            suffix = { Text("원") },
+            singleLine = true,
+            visualTransformation = GroupedSum,
+            supportingText = if (sum) {
+                {
+                    val result = calc.eval(shown.text)
+                    Text(if (result != null) "= ${Fmt.won(result)}" else "계산한 값이 0원보다 커야 적을 수 있어요",
+                        color = if (result != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else null,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onNext = { settle(); defaultKeyboardAction(ImeAction.Next) }),
+            modifier = modifier.fillMaxWidth().onFocusChanged { f ->
+                if (focused && !f.isFocused) settle()
+                focused = f.isFocused
+            },
+        )
+        if (focused || sum) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val keys = listOf(calc.PLUS to "더하기", calc.MINUS to "빼기", calc.TIMES to "곱하기", calc.DIVIDE to "나누기")
+            keys.forEach { (op, said) ->
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { if (shown.text.isNotEmpty()) put(shown.text + op) },
+                    enabled = shown.text.isNotEmpty(),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                        .semantics { contentDescription = said },
+                ) { Text(op.toString(), style = MaterialTheme.typography.titleLarge) }
+            }
+            androidx.compose.material3.OutlinedButton(
+                onClick = { settle() },
+                enabled = sum,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).semantics { contentDescription = "계산 끝내기" },
+            ) { Text("=", style = MaterialTheme.typography.titleLarge) }
+        }
+    }
+}
+
+/** [RVK-15] Each number of a sum in 1,000 groups as it is typed ("36,000÷3"); a plain amount as [GroupedNumber]. */
+private object GroupedSum : VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): androidx.compose.ui.text.input.TransformedText {
+        val s = text.text
+        if (!com.bamnat.core.money.AmountCalc.hasOp(s)) return ThousandsTransformation.filter(text)
+        fun digit(k: Int) = s[k] in '0'..'9'
+        val runStart = IntArray(s.length)
+        val runEnd = IntArray(s.length)
+        for (k in s.indices) runStart[k] = if (digit(k) && k > 0 && digit(k - 1)) runStart[k - 1] else k
+        for (k in s.indices.reversed()) runEnd[k] = if (digit(k) && k < s.lastIndex && digit(k + 1)) runEnd[k + 1] else k + 1
+        val out = StringBuilder(s.length + s.length / 3)
+        val toShown = IntArray(s.length + 1)
+        val toTyped = ArrayList<Int>(s.length + 8)
+        for (k in s.indices) {
+            toShown[k] = out.length
+            if (digit(k) && k > runStart[k] && (runEnd[k] - k) % 3 == 0) { out.append(','); toTyped.add(k) }
+            out.append(s[k]); toTyped.add(k)
+        }
+        toShown[s.length] = out.length
+        toTyped.add(s.length)
+        val mapping = object : androidx.compose.ui.text.input.OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int = toShown[offset.coerceIn(0, s.length)]
+            override fun transformedToOriginal(offset: Int): Int = toTyped[offset.coerceIn(0, toTyped.lastIndex)]
+        }
+        return androidx.compose.ui.text.input.TransformedText(androidx.compose.ui.text.AnnotatedString(out.toString()), mapping)
+    }
 }
 
 /** What an amount field keeps of what was typed: digits without leading zeros, a lone 0 only when [allowZero]. */
