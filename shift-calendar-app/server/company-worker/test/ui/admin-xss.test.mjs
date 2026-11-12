@@ -17,6 +17,24 @@ const AFTER = Date.parse("2026-11-30T03:00:00Z");
 
 const BAD = `<img src=x onerror="globalThis.__xss=1"><script>globalThis.__xss=2</script>"'><svg onload=globalThis.__xss=3><a href="javascript:globalThis.__xss=4">링크</a>`;
 
+/**
+ * 2.0.0 [RVA-57] 화면 묶음 파일(v/<묶음>.<해시>.js): happy-dom은 파일을 받지 않으니, 앱이 붙이는 <script src>를 그 창의 fetch(워커)로 받아
+ * 실행하고 load를 알려요. 진짜 브라우저처럼 그 화면을 열 때 받아요.
+ */
+function loadScripts(window) {
+  const head = window.document.head;
+  const append = head.appendChild.bind(head);
+  head.appendChild = (node) => {
+    if (node.tagName !== "SCRIPT" || !node.src) return append(node);
+    window.fetch(node.src).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      window.eval(await r.text());
+      node.onload?.(new window.Event("load"));
+    }).catch(() => node.onerror?.(new window.Event("error")));
+    return node;
+  };
+}
+
 const open = [];
 test.after(async () => {
   for (const w of open) await w.happyDOM.close();
@@ -43,6 +61,7 @@ async function tab(env) {
   };
   window.structuredClone ??= structuredClone;
   window.document.body.innerHTML = BODY;
+  loadScripts(window);
   window.eval(APP_JS);
   const settle = async (n = 12) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 5)); };
   const idle = async () => {
