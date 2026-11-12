@@ -92,7 +92,7 @@ export function adminLib() {
     label: "이름을 1~20자로 적어 주세요",
     level: "공지 종류를 골라 주세요",
     locked: "여러 번 틀려서 잠시 잠겼어요. 한 시간 뒤 다시 해 주세요",
-    login: "로그인이 끝났어요. 다시 로그인해 주세요",
+    login: "로그인 시간이 지났어요. 다시 로그인해 주세요",
     mail_failed: "메일을 보내지 못했어요. 잠시 뒤 다시 해 주세요",
     merge: "합칠 수 없는 회사예요",
     month: "달을 다시 골라 주세요",
@@ -156,6 +156,9 @@ export function adminLib() {
     rewardCapDays: "상한을 세는 기간은 30~365일 사이로 정해 주세요",
     rewardCapMonths: "한 사람 상한은 1~24개월 사이로 정해 주세요",
     rewardMonths: "보상 개월은 0~24 사이로 정해 주세요",
+    // 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기, COMP-12 잘못 고른 회사 풀기.
+    roomMoney: "방 글에 금액 받기는 켜기나 끄기로만 정해요",
+    undo_used: "잘못 고른 회사 풀기는 한 해에 한 번이에요",
     // 1.39 [LOOP] 자동 순환·보상 규칙.
     askMonths: "요청 반영 보상은 0~24개월 사이로 정해 주세요",
     tier: "무료·프로를 먼저 정해 주세요. 숫자 › 요금 판단에서 정한 뒤에 켤 수 있어요",
@@ -703,16 +706,16 @@ export function adminLib() {
     return plain[key] ?? null;
   }
 
-  /** The list of keys for the ? screen, as [keys, what]. */
+  /** The list of keys for the ? screen, as [keys, what]. 2.0.0 [RVA-27] 검토 U23-12: 허브 수와 이름은 HUBS에서 읽어요. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["1~5", "허브: 오늘·사람과 글·출시·숫자·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["Esc · Backspace", "뒤로"], [`1~${HUBS.length}`, `허브: ${HUBS.map((h) => h.label).join("·")}`], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "운영 장부·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
     ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
-    ["s · w · e · h (할 일함)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
+    ["s · w · e · h (운영 장부)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -1125,7 +1128,7 @@ export function adminLib() {
     const words = left.map((x) => x.label).join(", ");
     if (flag.default) return { ...base, on: true, state: "on", source: "default", reason: `기본으로 켜져 있어요(남은 조건: ${words})` };
     const tail = left.every((x) => x.c.type === "manual") ? " 확인하면 바로 켜져요." : left.every((x) => x.c.type === "date") ? " 그날 저절로 켜져요." : "";
-    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. ${words}이(가) 남았어요.${tail}` };
+    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. 남은 조건: ${words}.${tail}` };
   }
 
   /** Whole days from [now] to the KST start of [day] ("15일 남음"), or null. */

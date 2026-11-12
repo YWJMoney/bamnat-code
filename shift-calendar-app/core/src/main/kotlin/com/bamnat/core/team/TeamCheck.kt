@@ -2,6 +2,7 @@ package com.bamnat.core.team
 
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.DutyCheck
+import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.RestRules
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -21,14 +22,41 @@ object TeamCheck {
     /** 주 52시간: 40 + 12 (근로기준법 제50·53조). */
     const val WEEK_LIMIT_MINUTES = 52 * 60
 
-    fun TeamShift.asType(): ShiftType = ShiftType(id = id, name = name, label = label, colorArgb = colorArgb, start = start, end = end, isOff = isOff)
+    fun TeamShift.asType(): ShiftType = ShiftType(id = id, name = name, label = label, colorArgb = colorArgb, start = start, end = end,
+        breakMinutes = breakOf(this), isOff = isOff)
 
-    /** Minutes a kind of day takes, start to end (over midnight too); 0 for an off day or one without times. */
-    fun minutesOf(s: TeamShift): Int {
+    /** Minutes a kind of day takes on the clock, start to end (over midnight too); 0 for an off day or one without times. */
+    fun spanOf(s: TeamShift): Int {
         if (s.isOff || s.start == null || s.end == null) return 0
         val m = (s.end.toSecondOfDay() - s.start.toSecondOfDay()) / 60
         return if (m <= 0) m + 24 * 60 else m
     }
+
+    /**
+     * 2.0.0 [RVJ-29] (검토 T05-04·PAYU-03) The 휴게 inside a kind of day: the team's own ([TeamShift.breakMinutes]), else what the
+     * law asks for that long a day (근로기준법 제54조, [LegalBreak.minutesFor]), the way the 급여 대장 counts the same shop.
+     */
+    fun breakOf(s: TeamShift): Int = spanOf(s).let { span -> (s.breakMinutes ?: LegalBreak.minutesFor(span)).coerceIn(0, span) }
+
+    /**
+     * Minutes worked in a kind of day: start to end less the 휴게, which is not 근로시간 (제50조 제1항 "휴게시간을 제외하고"). A team
+     * on 09~18 six days is 48 hours, not 54 ([RVJ-29]: the 52시간 sign and the auto-fill read this).
+     */
+    fun minutesOf(s: TeamShift): Int = spanOf(s) - breakOf(s)
+
+    /**
+     * [RVJ-29] What a week past the limit is told with: "휴게 빼고 55시간, 52시간을 넘어요" ("휴게 빼고" only when some was taken
+     * off). To the minute ("52시간 30분"): a 30분 휴게 makes half hours common, and "52시간, 52시간을 넘어요" would read wrong.
+     */
+    fun overWords(week: List<TeamShift>): String =
+        (if (week.any { breakOf(it) > 0 }) "휴게 빼고 " else "") + "${com.bamnat.core.hours.HoursFormat.korean(week.sumOf(::minutesOf))}, 52시간을 넘어요"
+
+    /**
+     * 2.0.0 [RVJ-30] (검토 PAYU-08) The cell of [date] wherever it is drawn: this month's [board], else last month's or next month's.
+     * A week that lies over two months is one week to the law, so its hours are read from both.
+     */
+    fun cellAt(board: TeamBoard, prev: TeamBoard?, next: TeamBoard?, memberId: String, date: LocalDate): TeamCell? =
+        board.cell(memberId, date) ?: prev?.cell(memberId, date) ?: next?.cell(memberId, date)
 
     /** 1.38 병동 신청표 (사용자 2026-11-06): how many days of last month are read with this one, like the paper's "NN off" margin. */
     const val CARRY_DAYS = 7
@@ -59,7 +87,7 @@ object TeamCheck {
         }
     }
 
-    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null): List<Sign> {
+    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null, next: TeamBoard? = null): List<Sign> {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val out = ArrayList<Sign>()
@@ -67,12 +95,13 @@ object TeamCheck {
         for (m in active) {
             val days = board.days.map { d -> d to board.cell(m.id, d)?.shiftId?.let(asTypes::get) }
             withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w -> out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}") }
-            // 주 52시간, Monday weeks that start in the month.
-            board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
+            // 주 52시간, each Monday week with a day in the month. [RVJ-30] The days of that week in last month and next month count
+            // too; [RVJ-31] a 5인 미만 사업장 is not told ([RestRules.weekLimit]).
+            if (rules.weekLimit) board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
                 val week = (0..6).map { mon.plusDays(it.toLong()) }
-                val minutes = week.sumOf { d -> board.cell(m.id, d)?.shiftId?.let(types::get)?.let(::minutesOf) ?: 0 }
-                if (minutes > WEEK_LIMIT_MINUTES) out += Sign(Kind.WEEK_HOURS, week.last().coerceAtMost(board.days.last()), m.id,
-                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${minutes / 60}시간, 52시간을 넘어요(근로기준법 제53조)")
+                val worked = week.mapNotNull { d -> cellAt(board, prev, next, m.id, d)?.shiftId?.let(types::get) }
+                if (worked.sumOf(::minutesOf) > WEEK_LIMIT_MINUTES) out += Sign(Kind.WEEK_HOURS, week.last().coerceAtMost(board.days.last()), m.id,
+                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked)}(근로기준법 제53조)")
             }
         }
         board.short(team.need).forEach { (d, missing) ->
@@ -138,8 +167,9 @@ object TeamCheck {
      * [TEAM-18] 교환 요청 검사 (순번 493, 출시 후 할 일 C2·C7): what trading [date] between [a] and [b] would break, as new signs only
      * (signs already there before the trade are left out), so the leader sees "이 맞바꾸기는 준호 N→D 11시간 미만" before saying yes.
      */
-    fun swapCheck(team: Team, board: TeamBoard, a: String, b: String, date: LocalDate, rules: RestRules = RestRules()): List<Sign> {
-        val before = check(team, board, rules).map { it.kind to it.text }.toSet()
-        return check(team, board.swap(a, b, date), rules).filter { (it.kind to it.text) !in before }
+    fun swapCheck(team: Team, board: TeamBoard, a: String, b: String, date: LocalDate, rules: RestRules = RestRules(),
+                  prev: TeamBoard? = null, next: TeamBoard? = null): List<Sign> {
+        val before = check(team, board, rules, prev, next).map { it.kind to it.text }.toSet()
+        return check(team, board.swap(a, b, date), rules, prev, next).filter { (it.kind to it.text) !in before }
     }
 }

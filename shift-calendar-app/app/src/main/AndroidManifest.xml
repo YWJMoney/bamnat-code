@@ -232,6 +232,10 @@
         <receiver
             android:name=".memo.MemoDoneReceiver"
             android:exported="false" />
+        <!-- 2.0.0 [RVI-26] The memo notice swiped away: what it showed does not come back. -->
+        <receiver
+            android:name=".memo.MemoNoticeClearedReceiver"
+            android:exported="false" />
 
         <!-- [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 알람 and 바로 기록 from its notice. -->
         <receiver
@@ -489,6 +493,11 @@
                     android:scheme="wear" />
             </intent-filter>
         </service>
+
+        <!-- 2.0.0 [RVI-11] 되돌리기 on '워치에서 오늘 알람을 껐어요'. -->
+        <receiver
+            android:name=".watch.WatchAlarmUndoReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".alarm.SystemEventReceiver"

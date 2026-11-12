@@ -202,6 +202,20 @@ class SettingsSearchTest {
         assertEquals(HelpFaq.topics().size, HelpFaq.topics().map { it.id }.toSet().size)
     }
 
+    /** 2.0.0 [RVO-13] 통합 2차 PC-116: the invite answer says the server's numbers, as the card does; none before they were read. */
+    @Test fun theInviteAnswerSaysTheServersRules() {
+        fun answer(t: com.bamnat.core.tier.InviteTerms?) = HelpFaq.topics(invite = t).single { it.id == "invite" }.answer
+        val test = answer(com.bamnat.core.tier.InviteTerms(need = 1, days = 1, months = 1, capMonths = 0))
+        assertTrue(test, test.contains("친구 1명이 각자 1일 이상 쓸 때마다 프로 1개월"))
+        assertFalse("상한은 서버가 셀 때만", test.contains("12개월까지"))
+        val capped = answer(com.bamnat.core.tier.InviteTerms(need = 5, days = 7, months = 1, capMonths = 12))
+        assertTrue(capped, capped.contains("친구 5명이 각자 7일 이상") && capped.contains("1년에 모두 합쳐 12개월까지"))
+        val unknown = answer(null)
+        assertFalse(unknown, Regex("""친구 \d+명""").containsMatchIn(unknown))
+        assertTrue(unknown, unknown.contains("지금 규칙 그대로"))
+        listOf(test, capped, unknown, answer(com.bamnat.core.tier.InviteTerms(50, 60, 12, 120))).forEach { assertTrue(it, it.length <= 220) }
+    }
+
     @Test fun boardMatchesFindOthersQuestions() {
         fun item(id: String, text: String) = PublicInquiry(id, InquiryKind.BUG, "open", text, 0, 0, false, false, "alarm", "알람", Instant.EPOCH)
         val items = listOf(item("1", "야간 알람이 5분 늦게 울려요"), item("2", "달력 색을 바꾸고 싶어요"))

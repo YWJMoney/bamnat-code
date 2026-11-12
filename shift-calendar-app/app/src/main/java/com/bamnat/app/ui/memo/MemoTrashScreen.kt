@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.memo
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -50,6 +52,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
     val trash by vm.trash.collectAsStateWithLifecycle()
     var confirmEmpty by remember { mutableStateOf(false) }
     var confirmForever by remember { mutableStateOf<Memo?>(null) }
+    var reading by remember { mutableStateOf<Memo?>(null) }
     val list = trash.orEmpty()
 
     Scaffold(
@@ -103,6 +106,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
                     daysLeft = daysLeft(memo, now()),
                     onRestore = { vm.restore(memo) },
                     onDeleteForever = { confirmForever = memo },
+                    onOpen = { reading = memo },
                 )
             }
         }
@@ -117,6 +121,25 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
                 TextButton(onClick = { confirmEmpty = false; vm.emptyTrash() }) { Text("비우기") }
             },
             dismissButton = { TextButton(onClick = { confirmEmpty = false }) { Text("취소") } },
+        )
+    }
+    // 2.0.0 [RVI-72] (검토 U07a-13) A memo in the trash could not be read before choosing: a tap shows it, read only, with 되살리기.
+    reading?.let { memo ->
+        AlertDialog(
+            onDismissRequest = { reading = null },
+            title = { Text(memo.title.ifBlank { "(제목 없음)" }, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    memo.date?.let { Text(Fmt.dayTitle(it), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    if (memo.body.isNotBlank()) Text(memo.body, style = MaterialTheme.typography.bodyMedium)
+                    memo.checklist.forEach { item ->
+                        Text((if (item.checked) "☑ " else "☐ ") + item.text, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (memo.body.isBlank() && memo.checklist.isEmpty()) Text("(내용 없음)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { TextButton(onClick = { reading = null; vm.restore(memo) }) { Text("되살리기") } },
+            dismissButton = { TextButton(onClick = { reading = null }) { Text("닫기") } },
         )
     }
     confirmForever?.let { memo ->
@@ -140,8 +163,8 @@ private fun daysLeft(memo: Memo, now: Long): Int {
 }
 
 @Composable
-private fun TrashRow(memo: Memo, daysLeft: Int, onRestore: () -> Unit, onDeleteForever: () -> Unit) {
-    Surface(shape = MaterialTheme.shapes.large, color = memoBackground(memo.colorIndex), modifier = Modifier.fillMaxWidth()) {
+private fun TrashRow(memo: Memo, daysLeft: Int, onRestore: () -> Unit, onDeleteForever: () -> Unit, onOpen: () -> Unit) {
+    Surface(onClick = onOpen, shape = MaterialTheme.shapes.large, color = memoBackground(memo.colorIndex), modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 14.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(memo.title.ifBlank { memo.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.titleSmall,

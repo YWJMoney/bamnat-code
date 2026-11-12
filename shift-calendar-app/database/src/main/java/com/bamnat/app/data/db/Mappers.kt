@@ -207,7 +207,7 @@ fun MemoEntity.toModel() = Memo(
     createdAtMillis = createdAt,
     updatedAtMillis = updatedAt,
     deletedAtMillis = deletedAt,
-    reminder = memoReminder(remindAt, remindRing, remindNotify),
+    reminder = memoReminder(remindAt, remindRing, remindNotify, remindWork),
     reminderAsked = remindAsked,
     calendars = com.bamnat.core.memo.MemoCalendars.decode(calendars),
     repeat = repeat,
@@ -216,11 +216,14 @@ fun MemoEntity.toModel() = Memo(
     doneDays = com.bamnat.core.memo.MemoRepeat.decodeSkips(doneDays),
 )
 
-/** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
-fun memoReminder(at: String?, ring: Boolean, notify: Boolean): MemoReminder? {
+/**
+ * [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. 2.0.0 [RVIB-04] (DB 35) [work]: told by
+ * the work; an unreadable one is told by its saved time, as a schedule of before.
+ */
+fun memoReminder(at: String?, ring: Boolean, notify: Boolean, work: String? = null): MemoReminder? {
     if (at == null || !(ring || notify)) return null
     val time = runCatching { LocalDateTime.parse(at) }.getOrNull() ?: return null
-    return MemoReminder(time, ring, notify)
+    return MemoReminder(time, ring, notify, com.bamnat.core.memo.WorkAnchor.parse(work))
 }
 
 fun Memo.toEntity() = MemoEntity(
@@ -244,4 +247,5 @@ fun Memo.toEntity() = MemoEntity(
     skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(skips),
     doneAt = doneAtMillis,
     doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(doneDays),
+    remindWork = reminder?.work?.code,
 )
