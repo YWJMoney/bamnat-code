@@ -220,7 +220,9 @@ class PlazaNewsJob : JobService() {
 
 
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */
-        data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>)
+        data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>,
+            /** 2.0.0 [RVN-14] HQ-51 What others did to what this phone put out, for the 알림함 (empty from a server before 2.0.0). */
+            val reactions: List<com.bamnat.core.plaza.Reaction> = emptyList())
 
         /**
          * [SRV-10] One ask for the day. Only a phone that took part in the plaza or sent a question asks;
@@ -241,12 +243,24 @@ class PlazaNewsJob : JobService() {
             // The 설정 tab's badge is right the next time the app opens.
             if (answers > 0) runCatching { c.inquiryStore.update(c.inquiryApi.mine(c.companyStore.device)) }
             return Digest(
-                plaza = if (plazaOn) o.optJSONArray("plaza").objects().map(::item) else emptyList(),
+                plaza = if (plazaOn) o.optJSONArray("plaza").rows(::item) else emptyList(),
                 // [J133-24] Answers the reply job already said at once are not said again.
                 answers = if (c.inquiryStore.asked && c.inquiryStore.unread.value > InquiryReplyJob.said(c.appContext)) answers else 0,
                 notices = o.optJSONArray("notices").objects().map { it.optString("title") }.filter { it.isNotBlank() },
+                reactions = o.optJSONArray("reactions").rows(::reaction),
             )
         }
+
+        /** 2.0.0 [RVN-14] HQ-51 One line of `reactions`; a line it cannot read is left out (COMP-49). */
+        internal fun reaction(o: JSONObject) = com.bamnat.core.plaza.Reaction(
+            kind = o.getString("kind"), target = o.getString("target"), title = o.optString("title"), count = o.optInt("count"),
+            atMillis = Instant.parse(o.getString("at")).toEpochMilli(), room = o.optStringOrNull("room"),
+            postKind = o.optStringOrNull("postKind"), up = o.optInt("up"), down = o.optInt("down"), theme = o.optStringOrNull("theme"),
+        )
+
+        /** 2.0.0 [RVN-14] HQ-51 The 알림함's rows of [d]'s reactions, the kinds turned off in 설정 › 알림 left out. */
+        fun reactionRows(c: AppContainer, d: Digest): List<com.bamnat.core.plaza.Reactions.Row> =
+            com.bamnat.core.plaza.Reactions.rows(d.reactions, com.bamnat.core.plaza.Reactions.decodeOff(c.settingsRepository.current.reactionsOff))
 
         internal fun item(i: JSONObject) = PlazaNewsItem(
             kind = i.optString("kind"), company = i.optJSONObject("company")?.optString("name"), dept = i.optStringOrNull("dept"),

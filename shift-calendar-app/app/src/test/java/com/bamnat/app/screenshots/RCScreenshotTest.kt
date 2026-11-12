@@ -125,7 +125,8 @@ class RCScreenshotTest : ScreenshotBase() {
         model.query("없는이름가나"); model.load()
         settle()
         assertTrue(appears("‘없는이름가나’에 맞는 작품이", exact = false))
-        assertTrue(appears("탭별 작품에서 찾기", exact = true))
+        // 1.39.1 [P391-01]: the search already looked in all three 구간 (none had it), so the empty screen offers to make one.
+        assertTrue(appears("다른 낱말로 찾거나, 없으면 직접 만들어 볼 수 있어요", exact = true))
     }
 
     @Test fun theListOfAKindOfWork() = shoot("1340_rcp_list_shift", PHONE) {
@@ -284,10 +285,13 @@ class RCScreenshotTest : ScreenshotBase() {
         tapText("넣기", exact = true)
         settle()
         assertTrue(appears("넣었어요", exact = false))
-        // 1.39 [MKD-43] The page's own 되돌리기 (사다리 넣기 칸 옆) may show too: the line's is the one at the bottom of the screen.
+        // 1.39 [MKD-43] The page's own 되돌리기 may show too (2.0.0 [RVM-08]: in the 넣기 bar on the bottom edge, which asks first):
+        // the line's is the one beside its words.
+        val line = compose.onAllNodesWithText("7일 안에 되돌릴 수 있어요", substring = true).fetchSemanticsNodes().maxBy { it.boundsInWindow.top }
         val undos = compose.onAllNodesWithText("되돌리기", substring = false)
-        val lowest = undos.fetchSemanticsNodes().withIndex().maxBy { it.value.boundsInWindow.top }.index
-        undos[lowest].performClick()
+        val beside = undos.fetchSemanticsNodes().withIndex()
+            .minBy { kotlin.math.abs(it.value.boundsInWindow.center.y - line.boundsInWindow.center.y) }.index
+        undos[beside].performClick()
         settle()
         settle()
         assertTrue("되돌린 뒤: ${vm.state.value.appliedAt} ${vm.state.value.message}", vm.state.value.appliedAt == null)

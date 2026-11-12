@@ -230,6 +230,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     /** [INV-11] Settings as key and text, so a key this version does not know is simply kept aside. */
     object SettingsCodec {
         const val LAST_ACCOUNT = "lastAccount"
+        /** 2.0.0 [RVK-31] An older app keeps this key aside and gives it back in a backup. */
+        const val ETF_KINDS = "etfKinds"
 
         fun encode(s: InvestSettings): Map<String, String> = mapOf(
             "goalAmount" to (s.goalAmount?.toString() ?: ""),
@@ -248,6 +250,8 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
             // [INV-38] 기본 수수료, kept so every trade uses it.
             "buyFee" to s.buyFeeRate.toString(),
             "sellFee" to s.sellFeeRate.toString(),
+            // 2.0.0 [RVK-31] (검토 MONEY-66) Each 국내 ETF's kind, one per line: key, tab, 1 (taxed) or 0 (국내주식형).
+            ETF_KINDS to s.etfTaxed.entries.joinToString("\n") { (k, v) -> k.replace('\n', ' ').replace('\t', ' ') + "\t" + (if (v) "1" else "0") },
         )
 
         fun decode(m: Map<String, String>): InvestSettings {
@@ -266,6 +270,10 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
                 lastAccountId = m[LAST_ACCOUNT]?.toLongOrNull(),
                 buyFeeRate = m["buyFee"]?.toDoubleOrNull()?.takeIf { it in 0.0..5.0 } ?: d.buyFeeRate,
                 sellFeeRate = m["sellFee"]?.toDoubleOrNull()?.takeIf { it in 0.0..5.0 } ?: d.sellFeeRate,
+                etfTaxed = m[ETF_KINDS].orEmpty().split('\n').mapNotNull { l ->
+                    val (k, v) = l.split('\t').takeIf { it.size == 2 && it[0].isNotBlank() && it[1] in setOf("0", "1") } ?: return@mapNotNull null
+                    k to (v == "1")
+                }.toMap(),
             )
         }
     }
