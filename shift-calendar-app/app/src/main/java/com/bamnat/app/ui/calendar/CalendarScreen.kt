@@ -958,6 +958,13 @@ fun CalendarScreen(
         received.view(null)
         if (received.enabled) adding = ""
     }
+    // 2.0.0 [RVG-34] The 알림함's '팀 근무표' line: 내 달력 with the list the calendar's name ▾ opens, where the 팀 리더's link is.
+    LaunchedEffect(noticeTarget) {
+        if (noticeTarget != NoticeLinks.Target.CALENDARS) return@LaunchedEffect
+        NoticeLinks.consume(NoticeLinks.Target.CALENDARS)
+        received.view(null)
+        switching = true
+    }
     // [CAL-01] The picked day's week over the hour limit, said in one line under the calendar.
     val weekNote = remember(calculator, selected, limits, settings.stretchLimitHours, settings.workStyle, snap) {
         val week = calculator.week(selected).takeIf { it.overLimit }?.let {
@@ -2400,6 +2407,12 @@ internal fun CalendarHeader(
     val titleText = if (stepDown) workTitle.copy(fontSize = baseTitle.fontSize) else workTitle
     val quickRoom = room.quick
     val quickShown = quickRoom.shown
+    // 2.0.0 [RVG-34] 검토 PC-132 with 갈래 P 3/3: where the head has no room for the 팀 리더's link beside the chip (a phone: it is the
+    // first line of the chip's list), the 알림함 says once where it is.
+    (teamRow as? CalendarRow.Got)?.takeIf { room.team == 0 }?.let { t ->
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        LaunchedEffect(t.cal.id) { TeamLinkNote.once(ctx, t.cal.id) }
+    }
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
         // [RVH-42] Where a tap presses the work's buttons (the phone's own calendar), they are the row's buttons below, not drawn over it.
