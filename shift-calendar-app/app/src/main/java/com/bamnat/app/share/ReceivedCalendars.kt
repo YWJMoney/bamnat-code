@@ -79,7 +79,15 @@ data class SharedSchedule(
     val sleepNow: SleepNow? = null,
     /** 1.39 G5-N4 The sender's planned sleeps, when they ticked 계획한 잠 시간. */
     val sleepPlan: List<SleepPlanWindow> = emptyList(),
+    /**
+     * 2.0.0 [RVG-38] What the sender's app calls the link ([com.bamnat.core.work.LINK_WORDS]), sent only from 처리방침 3.14; null for a link
+     * without it or with any other value, which is named as before ([com.bamnat.core.work.linkWord]).
+     */
+    val saidWord: String? = null,
 ) {
+    /** 2.0.0 [RVG-35][RVG-38] This link's one name: 매출 → 영업일, 일감 → 일정, else what the sender's app said, else 근무표. */
+    val word: String get() = com.bamnat.core.work.linkWord(shows, payKind, saidWord)
+
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
 
@@ -138,7 +146,9 @@ data class SharedSchedule(
                 ShareAudience.of(o.str("audience")), setup,
                 // 1.37 [SHR-31][SHR-32] Read as any recipe: what the codec refuses, or a kit's pay, is left out.
                 com.bamnat.core.recipe.ShareKit.readLook(o.str("look")), com.bamnat.core.recipe.ShareKit.readKit(o.str("kit")),
-                SleepNow.of(o.optJSONObject("sleepNow")), SleepPlanWindow.list(o.optJSONArray("sleepPlan")))
+                SleepNow.of(o.optJSONObject("sleepNow")), SleepPlanWindow.list(o.optJSONArray("sleepPlan")),
+                // 2.0.0 [RVG-38] Only one of the four words; anything else is left out, as the share server does.
+                o.str("word")?.takeIf { it in com.bamnat.core.work.LINK_WORDS })
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =
@@ -202,7 +212,7 @@ data class ReceivedCalendar(
 
     /** [RVH-20] What the link holds, as far as it says: 매출 sent → 영업일, 일감 → 일정, else 근무표. */
     /** 2.0.0 [RVG-35] 검토 HQ-64: the one rule the sender's hint and the web page use too ([com.bamnat.core.work.linkWord]). */
-    val word: String get() = schedule?.let { s -> com.bamnat.core.work.linkWord(s.shows, s.payKind) } ?: "근무표"
+    val word: String get() = schedule?.word ?: "근무표"
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
     /** [RVG-32] 검토 PC-93: a link without a name shows 받 (as in 받은 표), not a question mark. */

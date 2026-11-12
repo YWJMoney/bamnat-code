@@ -44,6 +44,10 @@ object FlagCatalog {
     const val SHARE_SETUP = "share.setup"
     /** 1.37 [SHR-31][SHR-32] 묶음 E: a 근무표 링크 also carries the sharer's 테마 and 근무 설정 (no amounts), once 처리방침 3.11 names them. */
     const val SHARE_LOOK = "share.look"
+    /** 2.0.0 [RVG-38] HQ-64 B안: a 근무표 링크 says what it is in the sender's word (근무표·영업일·일정·달력), once 처리방침 3.14 names it. */
+    const val SHARE_WORD = "share.word"
+    /** 2.0.0 [RVG-38] The 처리방침 판 that would name the link's word (총괄 11-13: 3.14 범위 카드, 답이 '넣지 않기'면 보내는 쪽을 걷어 내요). */
+    const val SHARE_WORD_POLICY = "3.14"
     /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
@@ -298,6 +302,21 @@ object FlagCatalog {
     )
     /** The 처리방침 version that names a link's 테마·근무 설정. */
     const val SHARE_LOOK_POLICY = PolicyConsent.SHARE_LOOK_VERSION
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (D RVD-32 #514, 총괄 11-13): a 근무표 링크 carries one more word, what the sender's own app calls
+     * it ([com.bamnat.core.work.scheduleWord]: 근무표·영업일·일정·달력), so a shop that sends its days only is 영업일 and an investor's 달력
+     * on the web page and in the receiving app. It is a new field the share server keeps, so it waits for 처리방침 3.14, which is not
+     * in the server calendar yet: the row stays off until the admin app gives 3.14 its day. Reading a link's word needs no flag.
+     */
+    val SHARE_WORD_FLAG = Flag(
+        SHARE_WORD, "링크에 보낸 사람 유형 낱말 담기",
+        what = "근무표 링크에 보낸 사람 앱이 부르는 이름 하나(근무표·영업일·일정·달력 가운데 하나)를 함께 담아요. 받는 웹 페이지와 받는 앱이 날짜만 보낸 가게 링크도 ‘영업일’, 투자 달력은 ‘달력’으로 불러요. 다른 정보는 담지 않아요.",
+        whyOff = "공유 서버에 새로 남는 칸이라 처리방침 3.14의 시행일부터 서버 시각으로 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣기 전에는 꺼져 있고 링크에 담지 않아요(받은 링크의 낱말을 읽는 것은 그 전에도 해요).",
+        basis = Basis(policy = SHARE_WORD_POLICY, requirement = "RVG-38", note = "2.0.0 검토 HQ-64 B안, 공유 서버 RVD-32"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
 
     /**
      * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
@@ -571,7 +590,7 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
         STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG) +
         SWITCHES
