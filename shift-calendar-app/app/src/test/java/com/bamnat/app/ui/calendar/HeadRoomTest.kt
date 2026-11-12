@@ -63,4 +63,26 @@ class HeadRoomTest {
         assertEquals("폰에서는 달력 칩의 목록에", 0, phone.faces)
         assertFalse(phone.together)
     }
+
+    /** 총괄 HQ-59: a 360dp phone keeps the month at its size at 100% and 200% (no step down, the year goes). */
+    @Test fun a360PhoneKeepsTheMonthAtItsSize() {
+        for (fs in listOf(1f, 2f)) HeadRoom.of(360f, fs, 16f, bell = true, nameChars = 3).let { r ->
+            assertFalse("$fs: 달은 줄이지 않아요", r.stepDown)
+            assertTrue(r.shortTitle)
+        }
+    }
+
+    /** Someone else's calendar on screen: going back to one's own stays one tap (the old bar's '내 달력으로'), folded last. */
+    @Test fun someoneElsesCalendarKeepsTheWayBackHome() {
+        val folded = HeadRoom.of(369f, 1f, 16f, bell = true, others = 1, share = false, nameChars = 6, home = true)
+        assertTrue("접은 폭 100%에서 내 달력으로 한 번", folded.home)
+        assertEquals(0, folded.faces)
+        val unfolded = HeadRoom.of(707f, 1f, 24f, bell = true, others = 1, share = false, nameChars = 6, home = true)
+        assertTrue(unfolded.home || unfolded.faces > 0)
+        assertFalse("내 달력은 따로 비켜 두지 않아요", HeadRoom.of(369f, 1f, 16f, bell = true, others = 1).home)
+        // At twice the text on a folded phone only the month, 오늘, the bell, 도구 and 나 fit: the way back waits in the chip's list.
+        val big = HeadRoom.of(369f, 2f, 16f, bell = true, others = 1, share = false, nameChars = 6, home = true)
+        assertFalse(big.arrows)
+        assertFalse("HQ-22: 달은 그대로", big.stepDown)
+    }
 }

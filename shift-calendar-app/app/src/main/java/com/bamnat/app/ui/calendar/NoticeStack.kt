@@ -105,7 +105,7 @@ internal fun NoticeStack(
         delay(SETTLE_MS)
         state.settled = true
     }
-    // [HQ-50] What the user said no to for good, and every 권유 while 권유 끄기 is on, is not even composed.
+    // HQ-50: What the user said no to for good, and every 권유 while 권유 끄기 is on, is not even composed.
     val allowed = notices.filter { n -> n.urgent || (n.kind !in muted && !(n.section == InboxSection.SUGGEST && suggestOff)) }
     // Which notices said something the last time they were measured, in order; the band is the first urgent one the user did not put away.
     val present = allowed.filter { (state.heights[it.key] ?: 0) > 0 }
@@ -113,11 +113,11 @@ internal fun NoticeStack(
     val urgent = waiting.filter { it.urgent }
     val band: Notice? = when {
         open <= 0 -> null
-        // [PC-81] Once settled, a closed place stays closed: what comes later is in the bell.
+        // PC-81: Once settled, a closed place stays closed: what comes later is in the bell.
         state.settled && !state.slotOpen -> null
         else -> urgent.firstOrNull { it.key == state.bandKey } ?: urgent.firstOrNull()
     }
-    // [HQ-50] 권유 one at a time: the first of the calendar's, else the one another feature put.
+    // HQ-50: 권유 one at a time: the first of the calendar's, else the one another feature put.
     val suggestion = waiting.firstOrNull { it.section == InboxSection.SUGGEST }
     val rows = waiting.filter { it.section != InboxSection.SUGGEST || it === suggestion }
     val postedRows = posted.filter { it.kind !in muted && !(it.section == InboxSection.SUGGEST && (suggestOff || suggestion != null)) }
@@ -404,7 +404,7 @@ internal class NoticeStackState(sheet: Boolean = false, snoozed: Set<String> = e
         internal set
     internal var present: List<String> by mutableStateOf(emptyList())
     internal var bandKey: String? by mutableStateOf(null)
-    /** [PC-81] Whether the band's place is open; fixed once [settled]. */
+    /** PC-81: Whether the band's place is open; fixed once [settled]. */
     internal var slotOpen by mutableStateOf(false)
     internal var settled by mutableStateOf(false)
     internal var snoozed: Set<String> by mutableStateOf(snoozed)
@@ -446,7 +446,7 @@ internal object HeadBell {
 /** [CAL-50] True inside a notice measured for the band and the bell, not seen whole (the sheet shows it whole). */
 internal val LocalNoticeFolded = compositionLocalOf { false }
 
-/** [PC-81] How long the calendar has to settle which band it shows, from opening. */
+/** PC-81: How long the calendar has to settle which band it shows, from opening. */
 internal const val SETTLE_MS = 700L
 
 /** [RVP-43] Notices put away with their X, until the end of the day (kept on the phone only). */

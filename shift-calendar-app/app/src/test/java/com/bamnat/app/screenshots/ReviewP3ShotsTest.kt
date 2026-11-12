@@ -1,7 +1,11 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.inbox.Inbox
@@ -85,6 +89,21 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         }
     } ?: 0
 
+    /**
+     * Where the month's 1일 칸 starts, as a share of the screen: only a cell inside the screen counts (총괄 HQ-56: a test that found the
+     * cell of a month drawn beside the screen passed whatever the screen showed).
+     */
+    private fun Screen.visibleStart(): Float {
+        val first = Fmt.dayTitle(today.withDayOfMonth(1))
+        val m = app.resources.displayMetrics
+        val cell = nodes().filter { n ->
+            val b = n.boundsInWindow
+            b.height > 1f && b.left >= 0f && b.right <= m.widthPixels + 1f && b.top >= 0f && b.bottom <= m.heightPixels + 1f &&
+                n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
+        }.minByOrNull { it.boundsInWindow.top } ?: return 1f
+        return cell.boundsInWindow.top / m.heightPixels
+    }
+
     private fun Screen.firstDayTop(): Float {
         val first = Fmt.dayTitle(today.withDayOfMonth(1))
         return nodes().first { n ->
@@ -93,6 +112,41 @@ class ReviewP3ShotsTest : ScreenshotBase() {
     }
 
     @Test fun head() = all("01_head", WorkStyle.SHIFT) { reactions(); settle() }
+
+    /**
+     * 총괄 HQ-49 숫자(합친 코드에서 1일 칸: 접은 폭 100% 35%, 200% 42%, 편 폭 100% 39%, 200% 52%): the same day as [head] (the alarm
+     * band up, people's reactions in the bell), measured on the 1일 칸 that is on screen ([visibleStart]) in all four looks. 100% is
+     * held to 조건 1's 25%; 200% to what it is now, going down only.
+     */
+    @Test fun startsHighInEveryLook() {
+        val found = mutableListOf<String>()
+        for ((look, q, scale) in looks) {
+            var at = 1f
+            shoot("rvp3_00_start_$look", q, scale, style(WorkStyle.SHIFT) { reactions(); settle(); at = visibleStart() })
+            val percent = Math.round(at * 100)
+            found += "$look $percent%"
+            val ceiling = if (scale > 1f) BIG_CEILING else CalendarStartScreenshotTest.GOAL
+            assertTrue("$look: 달력 1일 칸이 화면 위 $percent%에서 시작해요(천장 $ceiling%) · $found", percent <= ceiling)
+        }
+        java.io.File("build/reports/design-rules.txt").apply { parentFile?.mkdirs() }.let { f ->
+            val old = if (f.exists()) f.readLines().filterNot { it.startsWith("달력 시작 높이 네 모습:") } else emptyList()
+            f.writeText((old + "달력 시작 높이 네 모습: ${found.joinToString(", ")}").sorted().joinToString("\n") + "\n")
+        }
+    }
+
+    /**
+     * 총괄 HQ-59 (갈래 R: 360dp 폭에서 달력 머리의 '2026년 10월'이 보조 글씨만큼 작아요): on a 360dp phone at 100% and 200%, plain and
+     * with a work's big month and its 바로 단추 on, the month says this year's month whole without the year (the rest folds into
+     * icons and 도구), so it never has to shrink to fit.
+     */
+    @Test fun aNarrowPhoneKeepsTheMonthWhole() {
+        for ((look, scale) in listOf("100" to 1f, "200" to 2f)) for (worn in listOf(false, true)) {
+            shoot("rvp3_09_narrow_360_${look}_${if (worn) "worn" else "plain"}", PHONE, scale, style(WorkStyle.SHIFT) {
+                if (worn) wearWork() else { reactions(); settle() }
+                assertTrue("$look: 올해 달은 해 없이 '${today.monthValue}월' 그대로", appears("${today.monthValue}월", exact = true))
+            })
+        }
+    }
 
     @Test fun dayFirstScreen() = all("02_day", WorkStyle.DAY) {}
 
@@ -144,4 +198,32 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         assertEquals("1일 칸이 그 자리에 있어요(PC-81)", top, firstDayTop(), 0.5f)
         assertEquals("늦게 온 '입힌 모양'은 종으로 가요", bell + 1, bellCount())
     })
+
+    /** HQ-50: 설정 › 기능 켜고 끄기 › 안내, beside 안 써 본 기능: 권유 끄기, and a kind turned off with its way back. Light and dark 200%. */
+    @Test fun inboxSwitches() {
+        for ((name, dark, scale) in listOf(Triple("a_folded_light_100", false, 1f), Triple("b_folded_dark_200", true, 2f))) {
+            shoot("rvp3_08_inbox_switches_$name", FOLDED, scale) {
+                Inbox.get(app).mute("suggest.companyRule", "회사 규칙으로 올리기")
+                content {
+                    ShotTheme(themeMode = if (dark) com.bamnat.app.data.ThemeMode.DARK else com.bamnat.app.data.ThemeMode.LIGHT) {
+                        androidx.compose.foundation.layout.Column(
+                            androidx.compose.ui.Modifier.fillMaxSize().background(androidx.compose.material3.MaterialTheme.colorScheme.surface)
+                                .padding(16.dp),
+                        ) { com.bamnat.app.ui.guide.InboxSwitches() }
+                    }
+                }
+                settle()
+                check(appears("알림함 권유 받기", exact = true)) { "no switch" }
+                check(appears("회사 규칙으로 올리기", exact = true) && appears("다시 보기", exact = true)) { "the kind turned off has no way back" }
+            }
+        }
+    }
+
+    private companion object {
+        /**
+         * Letters at 200%: what the four looks measure now, going down only (P 3/3: 접은 폭 29%, 편 폭 32%, with the alarm band up in
+         * two lines; before, 42% and 52%).
+         */
+        const val BIG_CEILING = 32
+    }
 }

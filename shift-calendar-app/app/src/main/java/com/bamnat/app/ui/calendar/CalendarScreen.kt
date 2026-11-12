@@ -1128,6 +1128,8 @@ fun CalendarScreen(
                 onTogether = togetherAt,
                 togetherShop = togetherStyle == com.bamnat.core.work.WorkStyle.BUSINESS,
                 togetherField = togetherStyle == com.bamnat.core.work.WorkStyle.FIELD,
+                home = if (viewingReceived == null) null
+                    else calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null),
             ),
             bell = notices,
         ) }
@@ -1344,7 +1346,7 @@ fun CalendarScreen(
             }
             shareLeftOut.forEach { (k, words) ->
                 // [RVP-43] HQ-49: something to know, not to do now, so a row of the 알림함's 안내 (총괄 11-12).
-                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "링크에 빼고 보낸 것", line = words,
+                if (words != null && paint == null && viewingReceived == null) add(Notice("shareLeftOut:$k", "근무표 링크 안내", line = words,
                     tone = com.bamnat.app.ui.theme.Tone.Caution, button = false, onClose = { c31.shareLinksOf(k).setDropped(null) }) {
                     com.bamnat.app.ui.components.NudgeCard(words, tone = com.bamnat.app.ui.theme.Tone.Caution,
                         onClose = { c31.shareLinksOf(k).setDropped(null) }, closeLabel = "링크 안내 닫기",
@@ -1380,9 +1382,12 @@ fun CalendarScreen(
                 })
             }
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
-            // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
+            // AG 1.27 [INVITE-10]: it was first, never folded in "알림 n개 더 보기" (리뷰 2026-10-25), until 2.0.0; it shows only
             // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.
-            if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대", line = "친구 초대로 오셨나요?") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
+            // 2.0.0 [RVP-43] HQ-49: a row of the 알림함's 안내; the row says where it stands, so one already told is not asked again there.
+            val arrival = context.appContainer.invites.store.state.collectAsStateWithLifecycle().value
+            val arrivalAsks = arrival.found != null && !arrival.offerClosed && arrival.reportedCode == null && !arrival.agreed
+            if (paint == null && viewingReceived == null) add(Notice("inviteArrival", "친구 초대", line = if (arrivalAsks) "친구 초대로 오셨나요?" else "초대한 분께 알렸어요") { com.bamnat.app.ui.pro.InviteArrivalNotice() })
             // AG 1.27 [INVITE-12] After the app stopped by itself: one ask to say what happened, once a note.
             if (paint == null && viewingReceived == null) add(Notice("crashAsk", "불편한 점 알려 주기", line = "앱이 멈추거나 닫혔던 적이 있어요. 알려 주실래요?") { com.bamnat.app.ui.grow.CrashAskNotice() })
             // [GUIDE-20] 1.31 P2: in the first week, the 시작 단계 card in place of the question card.
@@ -1529,7 +1534,12 @@ fun CalendarScreen(
             val inviteRules = context.appContainer.invites.store.state.collectAsStateWithLifecycle().value.rules
             if (paint == null && viewingReceived == null) add(Notice("inviteNudge", "친구를 초대하면 무료로 써요", line = inviteRules.words(),
                 section = com.bamnat.app.inbox.InboxSection.SUGGEST, kind = "invite.friend", action = "보기",
-                onAction = { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PRO)) }) { com.bamnat.app.ui.pro.InviteNudgeNotice() })
+                // Seen once it is tapped; its X rests it two weeks, as the card's 닫기 did (a 권유 is not back the next day).
+                onAction = {
+                    context.appContainer.grow.inviteShown(Today.date())
+                    com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PRO))
+                },
+                onClose = { context.appContainer.grow.inviteClosed(Today.date()) }) { com.bamnat.app.ui.pro.InviteNudgeNotice() })
             // 1.32 [PROX-02] A money day's one 하루 무료 권유 (급여일 사흘, 근무표 넣은 날, 신고 달).
             if (paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("proMoment", "프로 제안", line = "프로 기능을 써 볼 수 있는 날이에요", section = com.bamnat.app.inbox.InboxSection.SUGGEST) {
                 val payday = payProfile?.period?.let { p ->
@@ -2358,6 +2368,7 @@ private fun CalendarHeader(
     fun roomFor(sp: Float) = HeadRoom.of(
         maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null && !HeadBell.atMe, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
+        home = chip?.home != null,
     ).let { if (chip == null) it.copy(name = false) else it }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
@@ -2380,6 +2391,7 @@ private fun CalendarHeader(
         chip?.let { c ->
             CalendarChip(c.current, name = room.name, onOpen = c.onOpenSwitcher)
             if (room.faces > 0) CalendarFaces(c.rows.filter { it.key != c.current.key }, room.faces, c.onPick)
+            else if (room.home) c.home?.let { HomeFace(it, c.onPick) }
             if (room.together && c.onTogether != null) TogetherChip(c.onTogether, shop = c.togetherShop, field = c.togetherField, words = true)
         }
         if (room.arrows && navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }

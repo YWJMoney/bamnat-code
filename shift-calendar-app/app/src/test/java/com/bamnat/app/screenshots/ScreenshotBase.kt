@@ -493,6 +493,40 @@ abstract class ScreenshotBase {
             touch(at ?: error("화면에서 ‘$label’ 동작을 찾지 못했어요"))
         }
 
+        /**
+         * 2.0.0 [RVP-43] 검토 HQ-49: Opens the calendar's notice whose row says [label] whole, the way a person does now that only what
+         * has to be seen stands over the month: the bell beside 공유 ("알림 N개"), then the notice's row in the 알림함, which opens it
+         * in place. One already open (its band was tapped, which opens the sheet on it) stays open.
+         */
+        fun openNotice(label: String) {
+            // The sheet's own 전체 지움 says it is open already.
+            if (!shows("전체 지움", exact = true)) tapText("알림 ", prefix = true, scrolls = 0)
+            val row = reach(label, exact = true, prefix = false, scrolls = 6, across = 0.5f)
+            val folded = row.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.endsWith("눌러서 펼치기") }
+            if (folded) touch(row.boundsInWindow.center)
+        }
+
+        /**
+         * 2.0.0 [RVP-45] 검토 U13-01: 이전 달·다음 달 (or 주) by its arrow where the one-row head has room for it, else the way TalkBack
+         * offers it on the month once the arrows have folded away (a person swipes the month there).
+         */
+        fun stepMonth(label: String) {
+            if (shows(label, exact = true)) {
+                tapText(label, exact = true, scrolls = 0)
+                return
+            }
+            var done = false
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val act = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).firstNotNullOfOrNull { n ->
+                    n.config.getOrNull(SemanticsActions.CustomActions)?.firstOrNull { it.label == label }
+                }
+                done = act?.action?.invoke() == true
+            }
+            check(done) { "‘$label’ 동작이 없어요" }
+            settle()
+        }
+
         /** Scrolls until [text] shows near the top of the screen, without tapping it. */
         /** 1.36 PC C6: the pay result's guide cards (빠진 값, 회사 급여 방식, 명세서와 맞춰 보기) are folded under '더 정확하게 하기'. */
         fun openPayGuides() {

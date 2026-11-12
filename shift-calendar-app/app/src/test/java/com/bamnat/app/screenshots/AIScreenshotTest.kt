@@ -158,7 +158,8 @@ class AIScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         runBlocking { com.bamnat.app.company.PublicCycleFiles.apply(c, gsCaltex, "DDOONNOO", 0) }
         settle()
-        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) tapText("근무주기 다음 단계")
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함, opened in place there.
+        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) openNotice("근무주기 다음 단계")
         reveal("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)
         // One ask: the card's own, and no second one from 저절로 나누기 on top.
         assertNull(c.autoShare.ask.value)

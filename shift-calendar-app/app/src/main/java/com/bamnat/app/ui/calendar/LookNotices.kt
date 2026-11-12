@@ -42,7 +42,7 @@ internal fun rememberLookUndo(): LookUndoNote? {
     val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
     val kept = remember(settings, tick) { LookUndo.read(c.appContext) }
     if (safe || kept == null) return null
-    // Shown while the look on is the one put on (not changed back another way); [PC-81] and from the moment it was kept, while the
+    // Shown while the look on is the one put on (not changed back another way); PC-81: and from the moment it was kept, while the
     // studio's look is still going on, so the band has its place as the calendar opens.
     val fresh = Today.millis() - kept.second in 0 until LOOK_FRESH_MS
     if (!fresh && c.recipes.pieces.lookSnapshot() == kept.first) return null
@@ -100,5 +100,5 @@ internal object ShiftLookShut {
     var mode: String? by mutableStateOf(null)
 }
 
-/** [PC-81] How long after the studio kept the look before it the undo is said even while the new look is still going on. */
+/** PC-81: How long after the studio kept the look before it the undo is said even while the new look is still going on. */
 internal const val LOOK_FRESH_MS = 30_000L

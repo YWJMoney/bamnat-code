@@ -28,13 +28,14 @@ class CalendarStartScreenshotTest : ScreenshotBase() {
     private fun Screen.calendarStart(): Float {
         val first = Fmt.dayTitle(today.withDayOfMonth(1))
         fun look(): Float? {
-            val all = nodes()
-            val height = all.maxOfOrNull { it.boundsInWindow.bottom } ?: return null
-            val cell = all.firstOrNull { n ->
+            // Only the 1일 칸 inside the screen (총괄 HQ-56: a month drawn beside the screen made such a test pass whatever showed).
+            val m = app.resources.displayMetrics
+            val cell = nodes().filter { n ->
                 val b = n.boundsInWindow
-                b.height > 1f && n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
-            } ?: return null
-            return cell.boundsInWindow.top / height
+                b.height > 1f && b.left >= 0f && b.right <= m.widthPixels + 1f && b.top >= 0f && b.bottom <= m.heightPixels + 1f &&
+                    n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
+            }.minByOrNull { it.boundsInWindow.top } ?: return null
+            return cell.boundsInWindow.top / m.heightPixels
         }
         look()?.let { return it }
         // A kind of work whose first tab is not the calendar: open 달력 from the bar.

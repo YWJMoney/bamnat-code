@@ -140,7 +140,8 @@ internal fun HeadQuickRound(q: HeadQuick, onPress: (String) -> Unit, modifier: M
  * and text size: the calendar chip, ‹ 11월 ▾ ›, the work's 바로 단추, 오늘, 공유, the bell (알림함), 도구 and 나. What does not fit is never
  * cut or squeezed: it turns into its icon or waits in 도구 / the calendar chip's list, in this order: the other calendars' faces and
  * 같이 보기 (in the chip's list), 공유's word, the calendar's name (the chip keeps its face, read by name), the month's year, 공유 (in
- * 도구), 오늘's word, 도구's word, the arrows (the month swipes, and TalkBack has 이전 달·다음 달 on the month).
+ * 도구), 오늘's word, 도구's word, the arrows (the month swipes, and TalkBack has 이전 달·다음 달 on the month), and last the face that goes
+ * back to the user's own calendar from someone else's.
  *
  * Widths are worked out from the text size the way [HeadQuickRoom] does (H's 3묶음), and the work's 바로 단추 take what is left, so
  * there is one place that decides the row.
@@ -163,6 +164,11 @@ internal data class HeadRoom(
     val quick: HeadQuickRoom,
     /** Even with everything folded the row is too narrow for the month at its size: it steps down one size (조건 12). */
     val stepDown: Boolean = false,
+    /**
+     * Someone else's calendar is on screen and the way back to the user's own is a face beside the chip, one tap (the old bar's
+     * '내 달력으로'); the last thing to fold, as going back is what that screen is left for.
+     */
+    val home: Boolean = false,
 ) {
     companion object {
         const val WORDS = 2
@@ -174,23 +180,26 @@ internal data class HeadRoom(
 
         /**
          * The row for a head [widthDp] wide at [fontScale] (capped at 2) whose month is [titleSp] big: [quick] 바로 단추, the bell
-         * when [bell], 나 when [me], [others] other calendars, 같이 보기 when [together], 공유 when [share], and [nameChars] letters
-         * in the calendar's name.
+         * when [bell], 나 when [me], [others] other calendars, 같이 보기 when [together], 공유 when [share], [nameChars] letters
+         * in the calendar's name, and the way back to the user's own calendar when [home] (someone else's is on screen).
          */
         fun of(
             widthDp: Float, fontScale: Float, titleSp: Float, quick: Int = 0, bell: Boolean = false, me: Boolean = true,
-            others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3,
+            others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3, home: Boolean = false,
         ): HeadRoom {
             val fs = fontScale.coerceAtMost(2f)
             val wide = widthDp >= 600f
             var r = HeadRoom(
                 name = wide, faces = if (wide) minOf(others, 2) else 0, together = wide && together && others == 0,
                 share = if (share) WORDS else 0, todayWords = true, toolsWords = true, shortTitle = false, arrows = true, quick = HeadQuickRoom.NONE,
+                home = home,
             )
             fun need(x: HeadRoom, sp: Float = titleSp): Float {
                 var w = PAD
                 w += 52f + (if (x.name) 6f + 14f * fs * nameChars else 0f) // the chip: face, name, ▾
                 w += x.faces * (42f + 48f * fs)
+                // Among the faces on a wide screen; its own round face where they fold.
+                if (x.home && x.faces == 0) w += BUTTON
                 if (x.together) w += 44f + 56f * fs
                 if (x.arrows) w += 2 * BUTTON
                 w += sp * fs * (if (x.shortTitle) 2.15f else 4.65f) + 32f // the month and ▾
@@ -204,7 +213,7 @@ internal data class HeadRoom(
             val steps: List<(HeadRoom) -> HeadRoom> = listOf(
                 { it.copy(faces = 0) }, { it.copy(together = false) }, { it.copy(share = minOf(it.share, ICON)) }, { it.copy(name = false) },
                 { it.copy(shortTitle = true) }, { it.copy(share = 0) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
-                { it.copy(arrows = false) },
+                { it.copy(arrows = false) }, { it.copy(home = false) },
             )
             // [RVH-42] PC-29: the work's own buttons with their words are worth more than the other calendars' faces, 같이 보기, 공유's
             // word and the calendar's name; when one fits with its words once those are folded, the row stops there.
