@@ -1169,7 +1169,7 @@ internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, Stri
     com.bamnat.core.work.WorkStyle.FIELD -> "현장 광장" to "지역·직종 일당 시세 · 일정·단가 협상 팁"
     com.bamnat.core.work.WorkStyle.BUSINESS -> "가게 광장" to "영업·매출 팁 나누기"
     com.bamnat.core.work.WorkStyle.INVEST -> "투자 이야기" to "기록하는 방법·공부한 것 나누기"
-    else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
+    else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞아요·달라요 · 토론"
 }
 
 /** [MON-04] The 프로 row's words: while 결제 is not open, with 프로, and without it. */

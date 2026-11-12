@@ -65,15 +65,22 @@ import com.bamnat.core.time.Today
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -> Unit) {
-    var wageType by rememberSaveable { mutableStateOf(WageType.MONTHLY) }
+    var wageType by rememberSaveable { mutableStateOf(vm.startWage) }
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var rough by rememberSaveable { mutableStateOf(false) }
     var dailyHours by rememberSaveable { mutableStateOf(8) }
     // [PAYF-06] 통상시급 기준 시간, only when the user knows it.
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
     // A year back, so the months already worked come to an amount too [PAYS-01]; a known 입사일 in that year starts there [COMM-13].
-    var since by remember { mutableStateOf(com.bamnat.core.pay.PaySince.start(Today.month(), vm.hireDate)) }
-    val amounts = remember { mutableStateMapOf<String, Long>() }
+    // 2.0.0 [RVN-18] 검토 COMP-22-10: the start month and the allowance amounts typed stay when the app comes back from behind
+    // (before, only the 기본급 did).
+    var since by rememberSaveable(stateSaver = androidx.compose.runtime.saveable.Saver<YearMonth, String>(save = { it.toString() }, restore = { YearMonth.parse(it) })) {
+        mutableStateOf(com.bamnat.core.pay.PaySince.start(Today.month(), vm.hireDate))
+    }
+    val amounts = rememberSaveable(saver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateMap<String, Long>, Any>(
+        save = { m -> m.flatMap { listOf(it.key, it.value) } },
+        restore = { l -> mutableStateMapOf<String, Long>().apply { l.chunked(2).forEach { (k, v) -> put(k as String, v as Long) } } },
+    )) { mutableStateMapOf<String, Long>() }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val summary = vm.summary
@@ -110,7 +117,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                 // [SHR-20][695] 1.33: a setup that came in a coworker's 근무표 링크 says so.
                 val from = remember { vm.app.pendingSetupFrom.also { vm.app.pendingSetupFrom = null } }
                 if (from != null) Note("동료가 보낸 설정 · $from 님 · ${vm.company.ifEmpty { "회사" }}")
-                if (vm.edited) Note("말씀하신 다른 점을 넣은 방식으로 계산해요. " + (sendNote ?: "같은 회사 분들께도 제안으로 올렸어요. 맞아요가 모이면 다음 버전이 돼요."))
+                if (vm.edited) Note("말씀하신 다른 점을 넣은 방식으로 계산해요. " + (sendNote ?: "같은 회사 분들께도 제안으로 올렸어요. 맞아요가 모이면 다음 판이 돼요."))
                 Text(
                     "${vm.company.ifEmpty { "같은 회사" }} 분들이 맞춘 계산 방식이 들어 있어요. 사람마다 다른 금액만 넣으면 끝나요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,

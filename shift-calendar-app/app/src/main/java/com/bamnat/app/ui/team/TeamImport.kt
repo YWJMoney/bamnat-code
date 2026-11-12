@@ -91,7 +91,10 @@ private const val SKIP = "-skip"
 @Composable
 fun TeamImportDialog(
     grid: RosterGrid, fromPhoto: Boolean, members: List<TeamMember>, shifts: List<TeamShift>,
-    onDismiss: () -> Unit, onApply: (TeamImportChoice) -> Unit,
+    onDismiss: () -> Unit,
+    /** 2.0.0 [RVL-43] (검토 U07b-09) "PDF가 9쪽이라 앞 6쪽만 읽었어요" when the file had more pages than were read. */
+    note: String? = null,
+    onApply: (TeamImportChoice) -> Unit,
 ) {
     val rows = remember(grid) { TeamGridImport.rows(grid) }
     val counts = remember(rows) { TeamGridImport.codeCounts(rows) }
@@ -130,6 +133,7 @@ fun TeamImportDialog(
                     style = MaterialTheme.typography.bodyMedium)
                 if (fromPhoto) Text("사진에서 읽은 표예요. 넣은 뒤 노란 테두리 칸만 원본과 맞춰 보면 돼요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 
                 Text("① 이름 맞추기", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 rows.forEachIndexed { i, r ->

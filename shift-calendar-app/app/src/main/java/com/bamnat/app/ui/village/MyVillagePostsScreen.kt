@@ -109,7 +109,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                 when (tab) {
                     0 -> {
                         if (keptList.isEmpty()) item {
-                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋯ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
+                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋮ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
                         }
                         items(keptList, key = { it.id }) { s ->
                             PostCard(s.roomName, label(s.kind), s.body, ago(s.at), extra = null) {

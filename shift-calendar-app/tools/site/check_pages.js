@@ -1,7 +1,10 @@
 // 공개 사이트 쪽 점검과 화면 사진 (2.0.0 갈래 R).
 // 쓰는 법: node check_pages.js <만든 사이트 폴더> [사진 폴더] [--shots 경로,경로] [--all] [--widths 380,840,1440] [--print 경로,경로]
 //  - sitemap.xml의 모든 쪽을 폭마다(기본 380·840·1440) 밝은·어두운 모드로 열어 가로 넘침, 콘솔 오류, 바깥 요청(모두 막고 셈),
-//    숫자 가운데 줄바꿈(다이얼·큰 숫자), 접힌 메뉴의 초점 받는 링크를 봐요. 문제가 하나라도 있으면 끝 코드 1.
+//    숫자 가운데 줄바꿈(다이얼·큰 숫자), 접힌 메뉴의 초점 받는 링크, 머리 띠 아래 주인공이 화면 위 25% 안에서 시작하는지(조건 1)를 봐요. 문제가 하나라도 있으면 끝 코드 1.
+//  - 2.0.0 [RVR-41] HQ-96: 쪽이 가리키는 그림·파일이 없거나(늦게 불러오는 그림도 주소로 봐요) 불러왔는데 깨진 그림(naturalWidth 0)도 문제예요.
+//  - HQ-97: '380@200'(폭 380을 글자 200%로, 화면 190 × 2배)에서는 단추 글이 세 줄 넘게, 금액이 쉼표에서 줄바꿈, 글 상자가 너무 좁아
+//    네댓 글자씩 꺾이는 것을 봐요. 기본 폭에 들어 있어요.
 //  - 사진 폴더를 주면 --shots 쪽(없으면 대표 쪽)을 쪽 전체 사진으로 남겨요(--all이면 모든 쪽). --print 쪽은 A4 PDF도 남겨요.
 // 서버로 보내는 것은 없고, 바깥 요청은 모두 막아요.
 const http = require('http');
@@ -13,7 +16,8 @@ const args = process.argv.slice(2);
 const ROOT = path.resolve(args[0] || '../-');
 const OUT = args[1] && !args[1].startsWith('--') ? path.resolve(args[1]) : null;
 const opt = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const WIDTHS = opt('--widths', '380,840,1440').split(',').map(Number);
+// '380@200' = 폭 380에서 글자 200%: 화면 190px을 2배로 그려요(브라우저 확대와 같아요).
+const WIDTHS = opt('--widths', '380,840,1440,380@200').split(',').map((x) => { const [w, z] = x.split('@').map(Number); return { w, zoom: (z || 100) / 100 }; });
 const ALL = args.includes('--all');
 const REPRESENT = ['', 'calc/', 'calc/salary/', 'calc/alba/', 'calc/daily/', 'calc/juhyu/', 'calc/allowance/', 'calc/leave/', 'calc/severance/',
   'shift/', 'shift/print/', 'shift/print/3j2k/', 'form/', 'form/duty/', 'holiday/', 'holiday/2027/', 'r/?c=ABCD2345', 'r/'];
@@ -52,8 +56,11 @@ function pagesFromSitemap() {
   let opened = 0;
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   for (const scheme of ['light', 'dark']) {
-    for (const w of WIDTHS) {
-      const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, colorScheme: scheme, deviceScaleFactor: 1, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+    for (const { w: width, zoom } of WIDTHS) {
+      const w = Math.round(width / zoom);
+      const big = zoom > 1;
+      // 2.0.0 [RVR-36] 조건 1을 재는 화면: 380×840, 그보다 넓으면 ×900(docs/디자인-품질-조건.md '조건 1 재는 법').
+      const ctx = await browser.newContext({ viewport: { width: w, height: Math.round((width <= 400 ? 840 : 900) / zoom) }, colorScheme: scheme, deviceScaleFactor: zoom, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
       await ctx.route('**/*', (r) => {
         const u = r.request().url();
         if (u.startsWith(base)) return r.continue();
@@ -64,8 +71,15 @@ function pagesFromSitemap() {
         const errs = [];
         page.on('console', (m) => { if (m.type() === 'error' && !/net::ERR_FAILED|Failed to load resource/.test(m.text())) errs.push(m.text()); });
         page.on('pageerror', (e) => errs.push(String(e)));
+        const missing = new Set();
+        page.on('response', (r) => { if (r.url().startsWith(base) && r.status() >= 400) missing.add(r.url().slice(base.length - 1)); });
         await page.goto(base + p, { waitUntil: 'load' });
         await page.waitForTimeout(350);
+        // [RVR-41] HQ-96: 늦게 불러오는 그림(loading=lazy)도 지금 불러와 깨졌는지 봐요(쪽 전체 사진에서 빈 틀로 남지 않게).
+        await page.evaluate(() => Promise.all([...document.images].map((i) => {
+          if (i.loading === 'lazy') i.loading = 'eager';
+          return i.complete ? 0 : new Promise((ok) => { i.addEventListener('load', ok, { once: true }); i.addEventListener('error', ok, { once: true }); setTimeout(ok, 3000); });
+        })));
         opened++;
         // 첫 화면 다이얼은 화면에 들어와야 그려져요: 주간·야간·쉬는 날을 차례로 눌러 가운데 글을 봐요.
         const dialSplit = [];
@@ -84,8 +98,14 @@ function pagesFromSitemap() {
           }
           await page.evaluate(() => window.scrollTo(0, 0));
         }
-        const r = await page.evaluate(() => {
-          const out = { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, split: [], menuFocus: 0 };
+        const r = await page.evaluate((p) => {
+          const out = { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, split: [], menuFocus: 0, first: null };
+          // 2.0.0 [RVR-36] 조건 1: 머리 띠가 있는 쪽은 주인공(길잡이 글은 첫 줄 답, 나머지는 본문 첫 덩어리)이 화면 위 25% 안에서 시작해요.
+          if (document.querySelector('.page-hero') && window.scrollY === 0) {
+            const el = /^guide\/[^/]+\/$/.test(p) ? document.querySelector('.page-hero .lead')
+              : [...document.querySelectorAll('main > *')].find((e) => e.getBoundingClientRect().height > 0 && getComputedStyle(e).display !== 'none');
+            if (el) out.first = Math.round(el.getBoundingClientRect().top / innerHeight * 100);
+          }
           // 숫자 가운데에서 줄이 바뀐 큰 글자(예: "19:0 / 0")
           document.querySelectorAll('.big, .dial .center strong, .hero h1').forEach((el) => {
             const t = el.textContent.trim();
@@ -104,16 +124,49 @@ function pagesFromSitemap() {
               else if (cs.visibility !== 'hidden' && !a.closest('[inert]') && a.tabIndex >= 0 && a.closest('.menu > div').getBoundingClientRect().height < 2) out.menuFocus++;
             });
           }
+          // [RVR-41] HQ-96: 그림 주소(늦게 불러오는 것과 srcset도)와 불러왔는데 깨진 그림.
+          out.refs = [...document.querySelectorAll('img, source')].flatMap((el) => [el.getAttribute('src'), ...(el.getAttribute('srcset') || '').split(',').map((x) => x.trim().split(/\s+/)[0])])
+            .filter(Boolean).map((u) => new URL(u, location.href).href);
+          out.broken = [...document.images].filter((i) => i.getAttribute('src') && i.naturalWidth === 0).map((i) => i.getAttribute('src'));
           return out;
-        });
-        const tag = `${p || '/'} ${w} ${scheme}`;
+        }, p);
+        // [RVR-41] HQ-97: 글자 200%에서 꺾임.
+        const wrap = big ? await page.evaluate(() => {
+          const lines = (el) => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].filter((x) => x.width > 1).map((x) => Math.round(x.top))).size; };
+          const out = [];
+          document.querySelectorAll('.btn').forEach((b) => { if (b.offsetParent && b.textContent.trim() && lines(b) > 2) out.push(`단추 ${lines(b)}줄 "${b.textContent.trim()}"`); });
+          // 금액(1,234원·1,234만)이 쉼표나 숫자 가운데에서 꺾임
+          const walk = document.createTreeWalker(document.querySelector('main') || document.body, NodeFilter.SHOW_TEXT);
+          for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+            if (!n.parentElement || !n.parentElement.offsetParent) continue;
+            for (const m of n.data.matchAll(/\d{1,3}(?:,\d{3})+(?:원|만)?/g)) {
+              const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
+              if (new Set([...r.getClientRects()].filter((x) => x.width > 1).map((x) => Math.round(x.top))).size > 1) out.push(`금액 꺾임 "${m[0]}"`);
+            }
+          }
+          // 글 상자가 너무 좁아 네댓 글자씩 꺾임(본문 글 기준 한 줄에 6글자 아래)
+          document.querySelectorAll('main p, main li, main dd').forEach((el) => {
+            const t = el.textContent.trim();
+            if (!el.offsetParent || t.length < 24) return;
+            const fs = parseFloat(getComputedStyle(el).fontSize) || 16;
+            if (el.clientWidth / fs < 6) out.push(`좁은 글 상자 ${Math.round(el.clientWidth)}px "${t.slice(0, 16)}…"`);
+          });
+          return [...new Set(out)];
+        }) : [];
+        const tag = `${p || '/'} ${width}${big ? '@' + zoom * 100 : ''} ${scheme}`;
+        const gone = [...new Set(r.refs)].filter((u) => u.startsWith(base)).map((u) => decodeURIComponent(new URL(u).pathname))
+          .filter((f) => { const fp = path.join(ROOT, f.endsWith('/') ? f + 'index.html' : f); return !fs.existsSync(fp); });
+        if (gone.length || missing.size) problems.push(`${tag}: 없는 파일 ${JSON.stringify([...new Set([...gone, ...missing])].slice(0, 4))}`);
+        if (r.broken.length) problems.push(`${tag}: 깨진 그림 ${JSON.stringify(r.broken.slice(0, 3))}`);
+        if (wrap.length) problems.push(`${tag}: 글자 200% 꺾임 ${JSON.stringify(wrap.slice(0, 4))}`);
+        if (!big && r.first !== null && r.first > 25) problems.push(`${tag}: 주인공이 화면 ${r.first}%에서 시작(조건 1, 25% 안)`);
         if (r.overflow > 0) problems.push(`${tag}: 가로 넘침 ${r.overflow}px`);
         if (r.split.length) problems.push(`${tag}: 숫자 가운데 줄바꿈 ${JSON.stringify(r.split)}`);
         if (dialSplit.length) problems.push(`${tag}: 다이얼 가운데 글이 너무 여러 줄 ${JSON.stringify([...new Set(dialSplit)])}`);
         if (r.menuFocus) problems.push(`${tag}: 접힌 메뉴 링크 ${r.menuFocus}개가 초점을 받음`);
         if (errs.length) problems.push(`${tag}: 콘솔 오류 ${JSON.stringify(errs.slice(0, 3))}`);
         if (OUT && shotSet.has(p)) {
-          const name = (p.replace(/[/?=]+/g, '_').replace(/_$/, '') || 'home') + `-${w}-${scheme}.png`;
+          const name = (p.replace(/[/?=]+/g, '_').replace(/_$/, '') || 'home') + `-${width}${big ? '-' + zoom * 100 : ''}-${scheme}.png`;
           await page.evaluate(() => { document.querySelectorAll('.reveal').forEach((e) => e.classList.add('in')); });
           await page.waitForTimeout(150);
           await page.screenshot({ path: path.join(OUT, name), fullPage: true });
@@ -131,7 +184,7 @@ function pagesFromSitemap() {
   await browser.close();
   server.close();
   const ext = Object.keys(external);
-  console.log(`열어 본 횟수 ${opened} (쪽 ${pages.length} × 폭 ${WIDTHS.length} × 밝은·어두운)`);
+  console.log(`열어 본 횟수 ${opened} (쪽 ${pages.length} × 폭 ${WIDTHS.map((x) => x.zoom > 1 ? `${x.w}(글자 ${x.zoom * 100}%)` : x.w).join('·')} × 밝은·어두운)`);
   console.log(`바깥 요청(모두 막음): ${ext.length ? ext.join(', ') : '없음'}`);
   if (problems.length) { console.log(`문제 ${problems.length}개`); problems.forEach((x) => console.log(' - ' + x)); process.exit(1); }
   console.log('문제 없음');

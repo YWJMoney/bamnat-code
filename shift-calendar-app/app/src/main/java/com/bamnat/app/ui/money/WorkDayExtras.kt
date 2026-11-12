@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Column
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -75,7 +76,7 @@ fun SalesDayExtras(sales: DailySales) {
         }
         credits.forEach { r ->
             Text("외상 ${r.who.ifBlank { "이름 없음" }} ${Fmt.won(r.amount)}" + if (r.left == 0L) " · 받음" else "",
-                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) Tone.Caution.color() else muted)
+                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) MaterialTheme.bamnat.caution else muted)
         }
     }
 }

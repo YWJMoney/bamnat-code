@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import com.bamnat.app.appContainer
+import com.bamnat.app.ui.theme.bamnat
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -94,6 +95,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -303,6 +305,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val doneShown = remember(done, query) { done.filter { query.isBlank() || "${it.who} ${it.name} ${it.note}".contains(query.trim(), ignoreCase = true) } }
     val listState = rememberLazyListState()
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 } }
+    // 2.0.0 [RVK-44] (검토 HQ-75) With big letters the rows fill the width and the button covered the ends of amounts: it steps aside
+    // while the list scrolls down and comes back on the way up (or at the top).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val bigLetters = com.bamnat.app.ui.components.bigLetters()
 
     val actions = RowActions(
         open = { o -> when (o) { is Owed.Written -> openId = o.r.id; is Owed.FromJob -> openJobId = o.job.id } },
@@ -312,6 +318,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     val pickFilter = { f: OwedFilter -> show = Show.OWED; filter = if (filter == f) OwedFilter.ALL else f }
 
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
                 title = { Text("받을 돈") },
@@ -339,7 +346,10 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] The shared rule (icon alone with big letters too).
-            com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+            AnimatedVisibility(!bigLetters || fab.open || atTop, enter = fadeIn() + androidx.compose.animation.scaleIn(),
+                exit = fadeOut() + androidx.compose.animation.scaleOut()) {
+                com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
+            }
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
@@ -464,8 +474,7 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
             modifier = Modifier.semantics { contentDescription = "아직 못 받은 돈 ${Fmt.won(s.total)}" })
         Text(if (s.count == 0) "받을 돈이 없어요" else "${s.count}건" + if (s.overdueCount > 0) " · 약속일 지난 것 ${s.overdueCount}건" else "",
             style = MaterialTheme.typography.bodyMedium,
-            // 2.0.0 [RVP-13] (HQ-54 ③) The red is the 약속일 지남 tile right under it; the line stays quiet.
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+            color = if (s.overdueCount > 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
         // How much of this month's money has come back against what is still out.
         val whole = s.receivedThisMonth + s.total
         if (whole > 0) {
@@ -482,13 +491,18 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
         // Nothing owed and nothing back yet: three 0원 tiles would only be noise.
         if (s.count == 0 && s.receivedThisMonth == 0L) return@SectionCard
         Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("약속일 지남", Fmt.won(s.overdue), Modifier.weight(1f).selectedRing(filter == OwedFilter.OVERDUE),
-                caption = "${s.overdueCount}건 · 눌러서 보기", tone = if (s.overdue > 0) Tone.Danger else Tone.Plain, onClick = { onFilter(OwedFilter.OVERDUE) })
-            StatTile("3일 안에 받을 날", Fmt.won(s.dueSoon), Modifier.weight(1f).selectedRing(filter == OwedFilter.DUE_SOON),
-                caption = "눌러서 보기", onClick = { onFilter(OwedFilter.DUE_SOON) })
-            StatTile("이번 달 받은 돈", Fmt.won(s.receivedThisMonth), Modifier.weight(1f), caption = "끝난 것 보기", onClick = onShowDone)
-        }
+        // 2.0.0 [RVK-45] (조건 12) Three tiles side by side split '1,650,000원' into '1,650 / ,000' at 200% on a folded phone:
+        // with big letters they stand one under another, each its full width.
+        val stacked = com.bamnat.app.ui.components.bigLetters()
+        val tiles: List<@Composable (Modifier) -> Unit> = listOf(
+            { m -> StatTile("약속일 지남", Fmt.won(s.overdue), m.selectedRing(filter == OwedFilter.OVERDUE),
+                caption = "${s.overdueCount}건 · 눌러서 보기", caution = s.overdue > 0, onClick = { onFilter(OwedFilter.OVERDUE) }) },
+            { m -> StatTile("3일 안에 받을 날", Fmt.won(s.dueSoon), m.selectedRing(filter == OwedFilter.DUE_SOON),
+                caption = "눌러서 보기", onClick = { onFilter(OwedFilter.DUE_SOON) }) },
+            { m -> StatTile("이번 달 받은 돈", Fmt.won(s.receivedThisMonth), m, caption = "끝난 것 보기", onClick = onShowDone) },
+        )
+        if (stacked) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { tiles.forEach { it(Modifier.fillMaxWidth()) } }
+        else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { tiles.forEach { it(Modifier.weight(1f)) } }
     }
 }
 
@@ -516,7 +530,7 @@ private fun Breakdown(s: OwedSummary, person: String?, startOpen: Boolean, onPer
         AnimatedVisibility(open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { Column {
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         val ageMax = (s.aging.maxOrNull() ?: 1).coerceAtLeast(1)
-        val warn = Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) older money is to mind; the red is the 약속일 지남 tile
+        val warn = MaterialTheme.bamnat.caution
         s.aging.forEachIndexed { i, v ->
             MeterRow(Receivables.AGING_LABELS[i], Fmt.won(v), v.toFloat() / ageMax, if (i >= 2) warn else MaterialTheme.colorScheme.tertiary)
         }
@@ -646,7 +660,7 @@ private fun StatusChip(status: ReceivableStatus) {
 private fun statusColors(status: ReceivableStatus): Pair<Color, Color> {
     val cal = LocalCalendarColors.current
     return when (status) {
-        ReceivableStatus.OVERDUE -> Tone.Danger.container() to Tone.Danger.color()
+        ReceivableStatus.OVERDUE -> MaterialTheme.bamnat.caution.copy(alpha = 0.16f) to MaterialTheme.bamnat.caution
         ReceivableStatus.DUE_SOON -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
         ReceivableStatus.PAID -> cal.income.copy(alpha = 0.16f) to cal.income
         ReceivableStatus.PARTLY -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
@@ -740,8 +754,8 @@ private fun OwedCard(o: Owed, today: LocalDate, modifier: Modifier = Modifier, o
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        // 2.0.0 [RVP-13] (HQ-54 ③) The status chip says 약속일 지남 in red; the card's edge stays quiet, so a list of them is not a wall of red.
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, if (status == ReceivableStatus.OVERDUE) MaterialTheme.bamnat.caution.copy(alpha = 0.45f)
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.heightIn(min = 72.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -976,7 +990,7 @@ private fun PartLine(label: String, amount: Long, paid: Boolean) {
         Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
         Spacer(Modifier.width(8.dp))
         Text(if (paid) "받음" else "안 받음", style = MaterialTheme.typography.labelMedium,
-            color = if (paid) cal.income else Tone.Caution.color())
+            color = if (paid) cal.income else MaterialTheme.bamnat.caution)
     }
 }
 

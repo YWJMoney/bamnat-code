@@ -28,6 +28,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -71,7 +72,12 @@ internal fun ScanButtons(
      */
     onEmpty: ((android.graphics.Bitmap?) -> Unit)? = null,
     /** [READ-41] What the PDF button says: a 체결 캡처 is no 명세서 (PC 10차). */
-    pdfLabel: String = "PDF로 받은 명세서 고르기",
+    pdfLabel: String = PDF_PAYSLIP,
+    /**
+     * 2.0.0 [RVL-44] The payslip's own buttons (명세서로 맞춰 보기): a PDF of several payslips waits here for the next one when the
+     * screen opens again ([PdfSlips]).
+     */
+    keepSlips: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -92,7 +98,35 @@ internal fun ScanButtons(
     var job by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // 2.0.0 [RVL-32] (검토 U07b-01) The one fix the failure's cause asks for (와이파이·저장 공간·Play 서비스).
     var fix by remember { mutableStateOf<com.bamnat.app.pay.OcrModel.Fix?>(null) }
-    DisposableEffect(Unit) { onDispose { if (last?.second == true || current?.second == true) PayslipScanner.clear(context) } }
+    // 2.0.0 [RVL-41] (검토 U07b-10·I07bb-01) A locked PDF: its password asked here and held in memory while this screen is open,
+    // for reading the file and drawing the payslip picked; never saved, wiped as the screen goes.
+    var pdfLock by remember { mutableStateOf<Pair<Uri, com.bamnat.app.imports.PdfLock>?>(null) }
+    val pdfPassword = remember { arrayOfNulls<CharArray>(1) }
+    // 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A PDF of several payslips: which to look at ([again]: one picked a little while ago).
+    var several by remember { mutableStateOf(if (keepSlips) PdfSlips.get() else null) }
+    var again by remember { mutableStateOf(several != null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            if (last?.second == true || current?.second == true) PayslipScanner.clear(context)
+            pdfPassword[0]?.fill('\u0000')
+            pdfPassword[0] = null
+        }
+    }
+
+    /** What was read goes on: to [onScan] or [onText], with what to say about the photo (or the PDF's pages left out, [note]). */
+    fun deliver(scan: PayslipScanner.Scan, scanned: Boolean, pdf: Boolean, note: String? = null) {
+        lastTurn = scan.turn
+        val quality = scan.quality
+        val retake = quality?.takeIf { it.retake }?.line
+        straighten = !pdf && !scanned && scannerReady && quality != null && (quality.retake || quality.issues.any { it in STRAIGHTEN })
+        // W7: which step failed, said plainly: here no letters at all (the amounts are looked for after).
+        if (scan.text.isBlank() && pdf) error = "PDF에서 글자를 찾지 못했어요. PDF를 화면에 띄워 캡처한 뒤 ‘사진 고르기’로 넣어 주세요."
+        else if (scan.text.isBlank()) error = "사진에서 글자를 하나도 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
+        else {
+            advice = listOfNotNull(note, retake ?: quality?.issues?.firstOrNull { straighten && it in STRAIGHTEN }?.text).joinToString(" ").ifBlank { null }
+            if (onScan != null) onScan(scan) else onText(scan.text)
+        }
+    }
 
     fun read(uri: Uri, taken: Boolean, scanned: Boolean, turn: Int = 0, pdf: Boolean = false) {
         reading = true
@@ -104,22 +138,39 @@ internal fun ScanButtons(
         preparing = null
         // [READ-34] A PDF is read again from the same button, not turned or shown as a photo.
         current = Triple(uri, taken, scanned).takeIf { !pdf }
+        // Another file: the list kept from the last one goes (a file of one payslip has none).
+        if (pdf) { several = null; again = false; if (keepSlips && pdfLock == null) PdfSlips.forget() }
         job = scope.launch {
             try {
-                val scan = if (pdf) PayslipScanner.scanPdf(context, uri) { n, m -> step = n to m }
-                    else PayslipScanner.scan(context, uri, scanned = scanned, turn = turn,
+                if (pdf) {
+                    // 2.0.0 [RVL-41] Locked: the password is asked (or asked again) and the file read once more with it.
+                    when (val r = PayslipScanner.scanPdf(context, uri, pdfPassword[0]) { n, m -> step = n to m }) {
+                        is PayslipScanner.PdfRead.Locked -> pdfLock = uri to r.lock
+                        is PayslipScanner.PdfRead.Slips -> {
+                            pdfLock = null
+                            last = null
+                            val locked = pdfPassword[0] != null
+                            when {
+                                r.scans.isEmpty() -> error = "PDF에서 글자를 찾지 못했어요. PDF를 화면에 띄워 캡처한 뒤 ‘사진 고르기’로 넣어 주세요."
+                                // [RVL-44] Several payslips: picked one at a time below.
+                                r.scans.size > 1 -> {
+                                    several = if (keepSlips) PdfSlips.put(r, locked) else PdfSlips.Held(0, r, emptySet(), 0)
+                                    advice = r.cut
+                                }
+                                else -> {
+                                    // One payslip, its picture drawn: the password has done its work.
+                                    pdfPassword[0]?.fill('\u0000')
+                                    pdfPassword[0] = null
+                                    deliver(r.scans.single(), scanned = false, pdf = true, note = r.cut)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    val scan = PayslipScanner.scan(context, uri, scanned = scanned, turn = turn,
                         preparing = { p -> preparing = p ?: -1 }) { n, m -> preparing = null; step = n to m }
-                last = Triple(uri, taken, scanned).takeIf { !pdf }
-                lastTurn = scan.turn
-                val quality = scan.quality
-                val retake = quality?.takeIf { it.retake }?.line
-                straighten = !scanned && scannerReady && quality != null && (quality.retake || quality.issues.any { it in STRAIGHTEN })
-                // W7: which step failed, said plainly: here no letters at all (the amounts are looked for after).
-                if (scan.text.isBlank() && pdf) error = "PDF에서 글자를 찾지 못했어요. 암호가 걸렸거나 그림만 든 PDF면 화면을 캡처해 ‘사진 고르기’로 넣어 주세요."
-                else if (scan.text.isBlank()) error = "사진에서 글자를 하나도 찾지 못했어요. 밝은 곳에서 명세서가 화면에 꽉 차게 다시 찍어 주세요." + (retake?.let { " $it" } ?: "")
-                else {
-                    advice = retake ?: quality?.issues?.firstOrNull { straighten && it in STRAIGHTEN }?.text
-                    if (onScan != null) onScan(scan) else onText(scan.text)
+                    last = Triple(uri, taken, scanned)
+                    deliver(scan, scanned, pdf = false)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -137,6 +188,29 @@ internal fun ScanButtons(
                 if (taken && last?.first != uri && current?.first != uri) PayslipScanner.clear(context)
                 reading = false
                 preparing = null
+            }
+        }
+    }
+
+    /** 2.0.0 [RVL-44] Payslip [i] of the file: its picture drawn (a PDF with its text), then on as any other reading. */
+    fun pick(held: PdfSlips.Held, i: Int) {
+        reading = true
+        error = null
+        step = null
+        job = scope.launch {
+            try {
+                val scan = PayslipScanner.shown(context, held.read, i)
+                if (keepSlips) PdfSlips.looked(held.id, i)
+                several = held.looked(i)
+                deliver(scan, scanned = false, pdf = true, note = held.read.cut)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                error = com.bamnat.app.pay.OcrModel.said(context, e)
+            } catch (e: OutOfMemoryError) {
+                error = com.bamnat.app.pay.OcrModel.said(context, e)
+            } finally {
+                reading = false
             }
         }
     }
@@ -172,8 +246,17 @@ internal fun ScanButtons(
 
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) read(uri, taken = false, scanned = false) }
     // [READ-34] 1.38: a payslip the company gave as PDF (ERP·급여 프로그램·노무 사이트), read from its own letters.
-    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) read(uri, taken = false, scanned = false, pdf = true) }
-    var shot by remember { mutableStateOf<Uri?>(null) }
+    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            // A new file: a password typed for the last one is not tried on it.
+            pdfPassword[0]?.fill('\u0000')
+            pdfPassword[0] = null
+            read(uri, taken = false, scanned = false, pdf = true)
+        }
+    }
+    // 2.0.0 [RVL-45] (검토 SCAN-23) Where the camera saves its picture survives the app being closed behind the camera (a phone
+    // short of memory does): 1.39 forgot it, so the photo just taken was not read and stayed in the cache.
+    var shot by rememberSaveable { mutableStateOf<Uri?>(null) }
     val take = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val uri = shot
         if (ok && uri != null) read(uri, taken = true, scanned = false) else PayslipScanner.clear(context)
@@ -181,7 +264,14 @@ internal fun ScanButtons(
     // [READ-15] Edges found, straightened and shadows taken out by Google's scanner on the phone.
     val scan = rememberScanner(onImage = { read(it, taken = false, scanned = true) }, onError = { error = it; scannerReady = false })
 
+    @Composable
+    fun chooser() = several?.takeIf { it.read.scans.size > 1 }?.let { h ->
+        PdfSlipsChooser(h, again = again, enabled = !reading, onPick = { i -> pick(h, i) }, onForget = { PdfSlips.forget(); several = null; again = false })
+    }
+
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // [RVL-44] The next payslip of the file picked a little while ago is the likeliest thing to do here: it comes first.
+        if (again) chooser()
         ScanButtonRow(
             scanner = scannerReady, enabled = !reading,
             onScanner = scan,
@@ -198,6 +288,23 @@ internal fun ScanButtons(
         )
         if (onScan != null) TextButton(onClick = { pickPdf.launch(arrayOf("application/pdf")) }, enabled = !reading, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(pdfLabel)
+        }
+        if (!again) chooser()
+        pdfLock?.let { (uri, lock) ->
+            com.bamnat.app.ui.imports.PdfPasswordDialog(
+                lock, working = reading, payslip = pdfLabel == PDF_PAYSLIP,
+                onOpen = { typed ->
+                    pdfPassword[0]?.fill('\u0000')
+                    pdfPassword[0] = typed
+                    read(uri, taken = false, scanned = false, pdf = true)
+                },
+                onDismiss = {
+                    job?.cancel()
+                    pdfLock = null
+                    pdfPassword[0]?.fill('\u0000')
+                    pdfPassword[0] = null
+                },
+            )
         }
         // 2.0.0 [RVL-32] (검토 SCAN-04·U07b-01·I07ba-01) The same reading line as 한 달 근무 넣기: what is going on, how far, and a
         // way out. [PAYIN-04] Waiting for the model need not hold the user: the photo goes to the lines to fill while it comes.
@@ -236,6 +343,8 @@ internal fun ScanButtons(
         }
     }
 }
+
+private const val PDF_PAYSLIP = "PDF로 받은 명세서 고르기"
 
 /** [PHOTO-20] What a photo's look says the scanner would put right: slanted, taken from one side, small letters. */
 private val STRAIGHTEN = setOf(PhotoQuality.Issue.TILTED, PhotoQuality.Issue.KEYSTONE, PhotoQuality.Issue.SMALL)

@@ -364,7 +364,7 @@ private fun SummaryCard(vm: InvestViewModel, state: InvestState, open: (InvestSh
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("원금", InvestFmt.short(s.principal, hide), Modifier.weight(1f), caption = "입금 − 출금",
                 onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) })
-            StatTile("현금", InvestFmt.short(s.cash, hide), Modifier.weight(1f), warning = s.cashShort)
+            StatTile("현금", InvestFmt.short(s.cash, hide), Modifier.weight(1f), caution = s.cashShort)
             // 2.0.0 [RVK-25] (검토 MONEY-69·I06ba-02) How old the oldest price is, by the number (before, '현재가 기준' however old);
             // after a week the caption says so in the caution colour (not red, 조건 6), and the tile opens 현재가 적기.
             val oldest = state.result.held.mapNotNull { it.quote?.date }.minOrNull()

@@ -43,6 +43,8 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class TurnQueueTest {
+    // HQ-93: no line, window turn or open count left by an earlier test in this JVM (and none left for the next).
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     private val november = YearMonth.of(2026, 11)

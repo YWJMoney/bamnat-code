@@ -41,7 +41,7 @@ object VillageName {
      * 1.38 PC 9차 LOW (새로 깐 폰은 예전 마을 이름을 되찾을 길이 없어요): a name is this phone's, so on a new phone the old one reads as taken;
      * the words say how to free it, everywhere a name can be refused.
      */
-    const val TAKEN = "다른 분이 쓰는 이름이에요. 예전 폰에서 쓰던 이름이면 그 폰의 마을 › 프로필 고치기에서 이름을 지운 뒤 여기서 다시 넣어 주세요. 예전 폰이 없으면 이름 끝에 숫자나 글자를 더해 주세요"
+    const val TAKEN = "다른 분이 쓰는 이름이에요. 예전 폰에서 쓰던 이름이면 그 폰의 마을 › 내 프로필 › 프로필 고치기에서 이름을 지운 뒤 여기서 다시 넣어 주세요. 예전 폰이 없으면 이름 끝에 숫자나 글자를 더해 주세요"
 
     private const val PREFS = "village_ui"
     private const val K_SKIP = "name_skip"

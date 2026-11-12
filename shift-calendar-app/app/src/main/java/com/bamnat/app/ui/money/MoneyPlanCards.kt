@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import android.content.ActivityNotFoundException
+import com.bamnat.app.ui.theme.bamnat
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
@@ -564,10 +565,11 @@ fun PasteDialog(
                             val e = r.entry
                             if (e != null) {
                                 EntryRow(e, showDate = true) { if (i in skipped) skipped.remove(i) else skipped.add(i) }
-                                if (r.duplicate) com.bamnat.app.ui.components.ToneLine("이미 적힌 결제 같아요", style = MaterialTheme.typography.labelSmall)
+                                if (r.duplicate) Text("이미 적힌 결제 같아요", style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.bamnat.caution)
                             } else {
                                 Text(r.chunk.replace('\n', ' '), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(r.reason.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                Text(r.reason.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.bamnat.caution)
                             }
                         }
                     }
@@ -637,7 +639,7 @@ fun UpcomingCard(
                         listOfNotNull(if (u.daysLeft == 0) "오늘" else "D-${u.daysLeft}", Fmt.shortDate(u.date),
                             if (c.auto) "저절로 적어요" else null).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (u.daysLeft <= 1 && !income) Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (u.daysLeft <= 1 && !income) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {

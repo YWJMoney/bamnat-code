@@ -196,6 +196,8 @@ class DutyRosterViewModel(
         val keepMine: Boolean = false,
         /** 2.0.0 [RVL-39] (검토 U07b-16) What 지난달과 같게 put in last, while it can still be put in another way. */
         val copied: Copied? = null,
+        /** 2.0.0 [RVL-41] (검토 U07b-10) The file picked is a locked PDF: its password is asked here ([PdfPasswordDialog]). */
+        val locked: com.bamnat.app.imports.PdfLock? = null,
     ) {
         /**
          * 2.0.0 [RVL-39] 지난달과 같게: the [way] used, the user's cells from before it (to put last month in another way over
@@ -420,8 +422,23 @@ class DutyRosterViewModel(
 
     // 2.0.0 [RVL-32] (검토 SCAN-04) A scanned PDF says how far it got and the reading model coming down, as a photo does.
     fun readFile(uri: Uri) = read(Ui.Source.File(uri)) { c ->
-        RosterReader.file(container.appContext, uri, c, _ui.value.month.atDay(1), preparing = ::preparing, progress = ::stepped)
+        RosterReader.file(container.appContext, uri, c, _ui.value.month.atDay(1), password = password?.takeIf { it.first == uri }?.second,
+            preparing = ::preparing, progress = ::stepped)
     }
+
+    /** 2.0.0 [RVL-41] The password typed for the locked PDF being read: held while this screen is open (다시 읽기), never saved. */
+    private var password: Pair<Uri, CharArray>? = null
+
+    /** 2.0.0 [RVL-41] (검토 U07b-10·I07bb-01) '열기' in the password window: the same file read again with it. */
+    fun unlock(typed: CharArray) {
+        val s = _ui.value.source as? Ui.Source.File ?: return
+        password?.second?.fill('\u0000')
+        password = s.uri to typed
+        readFile(s.uri)
+    }
+
+    /** The password window closed with 취소: the file is left as it is, the ways in are there again. */
+    fun cancelUnlock() = _ui.update { it.copy(locked = null) }
 
     private fun preparing(p: Int?) = _ui.update { it.copy(preparing = p ?: -1) }
 
@@ -460,8 +477,10 @@ class DutyRosterViewModel(
     private var reading: kotlinx.coroutines.Job? = null
 
     override fun onCleared() {
-        // 2.0.0 [RVL-34] A photo taken here is not kept once the screen is gone.
+        // 2.0.0 [RVL-34] A photo taken here is not kept once the screen is gone. [RVL-41] Nor a PDF's password.
         runCatching { rosterShot(container.appContext).delete() }
+        password?.second?.fill('\u0000')
+        password = null
         super.onCleared()
     }
 
@@ -497,7 +516,9 @@ class DutyRosterViewModel(
                     rows = rows.takeIf { rs -> rs.isNotEmpty() } ?: it.rows,
                     picked = if (rows.isEmpty()) it.picked else mine ?: 0,
                     chosen = if (rows.isEmpty()) it.chosen else rows.size == 1 || mine != null,
-                    edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error, from = r.from, advice = r.advice,
+                    // 2.0.0 [RVL-41] A locked PDF asks for its password in its window, not on the failure card.
+                    edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error.takeIf { r.locked == null }, from = r.from, advice = r.advice,
+                    locked = r.locked,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
                     month = r.month ?: it.month, named = r.month, cursor = 1, history = emptyList(),
                     movedFrom = if (r.month != null && r.month != it.month) it.month else null,
@@ -839,6 +860,8 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 },
             )
             ui.advice?.let { a -> Text(a, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+            // 2.0.0 [RVL-41] (검토 U07b-10) A locked PDF opened here, with its password.
+            ui.locked?.let { lock -> PdfPasswordDialog(lock, working = ui.reading, payslip = false, onOpen = vm::unlock, onDismiss = vm::cancelUnlock) }
             // [READ-04][READ-05] A photo that read, but not what the user sees: tap it, or see what was read.
             if (failed == null && !ui.reading) ui.scan?.let { scan ->
                 // 2.0.0 [RVL-33] Under each other at big letters instead of scrolling sideways (조건 11·12).
@@ -953,10 +976,11 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     if (over.isNotEmpty()) {
         val days = over.sorted().let { ds -> if (ds.all { YearMonth.from(it) == ui.month }) ds.joinToString("·") { "${it.dayOfMonth}" } + "일" else RosterReader.span(ds.toSet()) }
         // The app's one notice card (조건 3): caution while they would be written over, a plain note once they are kept.
+        // 2.0.0 [RVL-38] (검토 HQ-79) Two short lines at 200% too (it was six and the month showed one week): the days only, outlined below.
         com.bamnat.app.ui.components.NudgeCard(
-            if (ui.keepMine) "이미 넣어 둔 연차·바꾼 근무 ${over.size}일은 그대로 둬요" else "이미 넣어 둔 연차·바꾼 근무 ${over.size}일을 근무표대로 바꿔요",
+            if (ui.keepMine) "넣어 둔 ${over.size}일은 그대로 둬요" else "넣어 둔 ${over.size}일이 바뀌어요",
             tone = if (ui.keepMine) com.bamnat.app.ui.theme.Tone.Plain else com.bamnat.app.ui.theme.Tone.Caution,
-            detail = if (ui.keepMine) "$days 빼고 넣어요" else "$days · 달력에 테두리로 보여요",
+            detail = if (ui.keepMine) "$days 빼고 넣어요" else "$days (연차·바꾼 근무)",
             action = if (ui.keepMine) "근무표대로 바꾸기" else "그 날은 그대로 두기",
             onAction = { onKeepMine(!ui.keepMine) },
         )
@@ -967,7 +991,7 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     if (ui.row != null && spill.isNotEmpty()) {
         // 2.0.0 [RVL-38] The same notice card as the one above (조건 3, 같은 구조는 함께).
         com.bamnat.app.ui.components.NudgeCard(
-            if (ui.withOutside) "근무표에 있는 ${RosterReader.span(spill)}도 함께 넣어요" else "${RosterReader.span(spill)}은 넣지 않아요",
+            if (ui.withOutside) "${RosterReader.span(spill)}도 넣어요" else "${RosterReader.span(spill)}은 빼요",
             action = if (ui.withOutside) "빼기" else "같이 넣기",
             onAction = { onOutside(!ui.withOutside) },
         )

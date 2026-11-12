@@ -253,7 +253,7 @@ private fun DayFirstCard(
             { m ->
                 StatTile("연차", "${LeaveBook.days(used)} 씀", m,
                     caption = left?.let { "남은 ${LeaveBook.days(it)}" } ?: "입사일을 넣으면 남은 날이 보여요",
-                    warning = (left ?: 0.0) < 0)
+                    caution = (left ?: 0.0) < 0)
             },
             { m ->
                 StatTile("예상 실수령", takeHome?.let { Fmt.won(it.net) } ?: "-", m,

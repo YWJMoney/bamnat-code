@@ -215,7 +215,7 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
         if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
-                caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", warning = !g.confirmed && members > 0 && g.painted > 0)
+                caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", caution = !g.confirmed && members > 0 && g.painted > 0)
             StatTile("${now.plusMonths(1).monthValue}월", if (g.nextConfirmed) "확정 ${nm?.version ?: 0}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.nextEmpty > 0) "빈칸 ${g.nextEmpty}" else "다 채움")
         }

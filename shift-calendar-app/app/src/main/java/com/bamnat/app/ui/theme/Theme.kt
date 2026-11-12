@@ -17,6 +17,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -365,7 +366,11 @@ fun BamnatTheme(
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
                 shapes = shapes,
             ) {
-                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
+                // 2.0.0 [RVS-06] 그릴 때 지키는 바닥선: every part as this screen draws it (letters that read, a tab bar that is seen), the
+                // look's own values kept as set ([com.bamnat.core.recipe.PartFloor]).
+                val screenArgb = MaterialTheme.colorScheme.background.toArgb().toLong() and 0xFFFFFFFFL
+                val shown = androidx.compose.runtime.remember(parts, screenArgb) { parts.floored(screenArgb) }
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides shown,
                     com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, LocalPill provides pillFor(corners, shapes), content = content)
             }
         }

@@ -138,6 +138,10 @@ def main() -> None:
         CONSENT.write_text(POSTED_LINE.sub(lambda m: f"{m.group(1)}{posted.year}, {posted.month}, {posted.day}{m.group(5)}", text, count=1), encoding="utf-8")
         for page in PAGES:
             page.write_text(retag(page.read_text(encoding="utf-8"), days(posted)), encoding="utf-8")
+        # 2.0.0 [RVR-38] 날짜 장부의 서버 사본(dates-built.js)도 같은 게시일로(3.13 게시·7일·30일 줄).
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import dates_ledger
+        dates_ledger.write_built()
     when = days(posted_in_code())
     bad = problems(when)
     if bad:

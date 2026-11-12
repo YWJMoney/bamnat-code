@@ -347,8 +347,8 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
             val l = raw.received()
             // [RVM-23] STU-23: a step after the first that writes (more·otherwise) is marked too, not the first step alone.
-            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + b.say()) } +
-                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + r.say() + if (w) " (꺼진 채로 들어와요)" else "") } +
+            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + com.bamnat.core.formula.FormulaText.blanks(b.say())) } +
+                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + com.bamnat.core.formula.FormulaText.blanks(r.say()) + if (w) " (꺼진 채로 들어와요)" else "") } +
                 // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
@@ -582,6 +582,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
                       /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // 2.0.0 [RVS-12] A 부품 piece this app cannot read is said by 넣기 ([RecipeRepository.lastMissed]), not taken for 'nothing changed'.
+        if (kind == PieceKind.PARTS) (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.takeIf { it.isNotEmpty() }
+            ?.let { com.bamnat.core.recipe.Blueprint.clean(it) }
         // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
         if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
         // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
@@ -1051,7 +1054,14 @@ class RecipePieces(private val c: AppContainer) {
                                       cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
-                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
+                // 2.0.0 [RVS-09] 검토 SN-12(3): 탭 순서 is one's own (the first tab is where the app opens). A work always carries one, so its
+                // usual order said nothing and put a phone's own order back to the usual; now only an order the maker changed is put on,
+                // and the phone's own first tab stays first.
+                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.layout.TabOrder.of(it) }
+                    ?.takeIf { it != com.bamnat.core.layout.TabOrder.DEFAULT }?.let { theirs ->
+                        val home = com.bamnat.core.layout.TabOrder.home(cur.tabOrder)
+                        "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(com.bamnat.core.layout.TabOrder.move(theirs, home, 0)).joinToString(",")
+                    },
                 (values["calendar"] as? String)?.let { "calendarLayout" to it },
             ).toMap()
             PieceKind.CARDS -> listOfNotNull(

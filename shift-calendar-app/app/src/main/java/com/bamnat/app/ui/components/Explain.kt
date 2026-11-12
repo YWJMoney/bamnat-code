@@ -47,6 +47,11 @@ fun Explain(
     summary: String? = null,
     /** False keeps the one line for good (a switch's line says what it does); true lets it go down to ⓘ alone. */
     iconOnly: Boolean = true,
+    /**
+     * 2.0.0 [RVG-36] 검토 HQ-74 (조건 4): false starts at the one line + ⓘ, for an explanation that said in full would make a card
+     * read like a page at 글자 200% and that is not needed to use it (받은 달력 넣기 카드's 'what happens after 넣기').
+     */
+    firstInFull: Boolean = true,
 ) {
     val context = LocalContext.current
     val preview = LocalInspectionMode.current
@@ -58,7 +63,7 @@ fun Explain(
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
     val style = MaterialTheme.typography.bodySmall
     when {
-        seen == 0 || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize())
+        seen == 0 && firstInFull || open || short == text -> Text(text, style = style, color = ink, modifier = modifier.animateContentSize())
         else -> Row(
             modifier.fillMaxWidth().semantics(mergeDescendants = true) {
                 stateDescription = "접힘"
@@ -67,7 +72,7 @@ fun Explain(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            if (seen == 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            if (seen <= 1 || !iconOnly) Text(short, style = style, color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f, fill = false))
             IconButton(onClick = { open = true }) {
                 Icon(Icons.Outlined.Info, contentDescription = "설명 보기", tint = ink, modifier = Modifier.size(20.dp))

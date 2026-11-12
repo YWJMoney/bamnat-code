@@ -307,12 +307,17 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
         var importing by remember { mutableStateOf<Triple<List<com.bamnat.core.boss.StaffImport.Line>, Boolean, List<String>>?>(null) }
-        fun readList(uri: android.net.Uri) {
+        // 2.0.0 [RVL-41] (검토 U07b-10) A locked list PDF asks for its password here and is read again with it.
+        var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
+        fun readList(uri: android.net.Uri, password: CharArray? = null) {
             scope.launch {
                 reading = "명단을 읽고 있어요…"
-                when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
+                val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date(), password)
+                if (got !is com.bamnat.app.imports.ManageImport.Got.Locked) unlock?.done()
+                when (got) {
                     is com.bamnat.app.imports.ManageImport.Got.Read -> {
-                        reading = null
+                        // 2.0.0 [RVL-43] A file of more pages than were read says so.
+                        reading = got.note
                         importing = Triple(com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, wageOn(ym), legalBreaks = place?.legalBreaks ?: true),
                             got.fromPhoto, got.value.unread)
                     }
@@ -320,9 +325,11 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                         reading = got.why
                         context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
                     }
+                    is com.bamnat.app.imports.ManageImport.Got.Locked -> { reading = null; unlock?.ask(uri, got.lock) }
                 }
             }
         }
+        unlock = com.bamnat.app.ui.imports.rememberPdfUnlock { uri, pw -> readList(uri, pw) }
         val pickList = com.bamnat.app.ui.team.rememberAnyFilePicker { uri -> readList(uri) }
         // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 is read here at once, as one picked with the button.
         val sharedList by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()

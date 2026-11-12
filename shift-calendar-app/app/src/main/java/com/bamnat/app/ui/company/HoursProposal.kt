@@ -86,7 +86,9 @@ fun CompanyHoursLine(way: CompanyWayText?, hours: Int, choices: List<Int> = com.
 @Composable
 fun HoursProposalSheet(way: CompanyWayText, hours: Int, from: String = "명세서", onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
-    val scope = rememberCoroutineScope()
+    // 2.0.0 [RVN-18] 검토 COMP-22-7: the proposal goes on when the sheet is closed while it is sending (before, closing cut the request,
+    // which may have reached the server, so sending again made two).
+    val scope = remember { kotlinx.coroutines.CoroutineScope(c.appScope.coroutineContext + kotlinx.coroutines.Dispatchers.Main) }
     // [FIN130-08] The calendar on screen's: a proposal that carries a setup carries this calendar's.
     val calendar = LocalCompanyCalendar.current
     val holder = remember(calendar) { TalkHolder(c, scope, calendar) }

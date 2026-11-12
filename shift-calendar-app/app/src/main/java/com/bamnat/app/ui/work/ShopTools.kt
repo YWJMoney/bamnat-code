@@ -264,7 +264,7 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
             StatTile("인건비", Fmt.won(cost.total), Modifier.weight(1f), caption = "${roster.staff.size}명 · ${cost.minutes / 60}시간")
             val ratio = cost.ratio(sales)
             StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                warning = (ratio ?: 0) >= 35)
+                caution = (ratio ?: 0) >= 35)
         }
         Column(Modifier.padding(top = 8.dp)) {
             cost.lines.forEach { l ->
@@ -297,7 +297,7 @@ private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, m
                 StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
                 val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
                 StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
-                    warning = (ratio ?: 0) >= 35)
+                    caution = (ratio ?: 0) >= 35)
             }
             Column(Modifier.padding(top = 8.dp)) {
                 ledger.lines.forEach { l -> ValueLine(l.staff.name.ifBlank { "이름 없음" }, Fmt.won(l.employerTotal)) }

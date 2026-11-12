@@ -710,7 +710,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
         // 1.37 PC (달력 요약과 같이): 번 돈은 끝난 일감만, 아직 할 일감은 '할 일'로 따로.
         { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = listOfNotNull(m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" },
             m.jobAhead.takeIf { it > 0 }?.let { "할 일 ${wonBrief(it)}" }).joinToString(" · ").ifEmpty { null }) },
-        { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
+        { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, caution = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
     )
     TileGrid(tiles, columns)
@@ -761,7 +761,7 @@ private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, firstD
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
         { md -> StatTile("경비", Fmt.won(m.salesCosts), md) },
-        { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
+        { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, caution = m.salesNet < 0) },
         { md -> StatTile("영업일 평균", Fmt.won(shop.perOpenDay), md,
             caption = shop.best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
         // [J133-77] 휴무 up to today; a month with no 영업일 set and nothing sold yet says how to set them instead.

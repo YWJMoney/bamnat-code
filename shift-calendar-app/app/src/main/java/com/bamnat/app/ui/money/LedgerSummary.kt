@@ -103,9 +103,10 @@ import com.bamnat.app.ui.theme.color
  */
 /**
  * 2.0.0 [RVK-43] (검토 MONEY-25) 가계부의 낱말: 들어온 돈 · 나간 돈 · 남은 돈(= 들어온 돈 − 나간 돈). 요약 맨 위 카드만 '남은 돈'이
- * 통장으로 본 '오늘 쓸 돈'과 헷갈려(1.37 PC) 셈을 그대로 이름으로 써요.
+ * 통장으로 본 '오늘 쓸 돈'과 헷갈려(1.37 PC) 셈을 그대로 이름으로 써요. 2.0.0 [RVK-44] (검토 HQ-75) '들어온 돈'·'나간 돈'은 줄이
+ * 바뀌어도 한 덩이로(붙은 빈칸): 글자 200%에서 '10월 들어온 / 돈 − 나간 돈'으로 낱말 가운데가 끊겼어요.
  */
-internal const val IN_LESS_OUT = "들어온 돈 − 나간 돈"
+internal const val IN_LESS_OUT = "들어온\u00A0돈 − 나간\u00A0돈"
 
 @Composable
 fun HeroCard(

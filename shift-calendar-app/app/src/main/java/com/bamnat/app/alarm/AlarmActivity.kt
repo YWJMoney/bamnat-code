@@ -210,7 +210,7 @@ class AlarmActivity : ComponentActivity() {
     private fun dismissAndOpenToday() {
         val open = {
             AlarmService.dismiss(this)
-            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY)) }
+            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY, payload = com.bamnat.app.NoticeLinks.TODAY_DAY)) }
             Unit
         }
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
