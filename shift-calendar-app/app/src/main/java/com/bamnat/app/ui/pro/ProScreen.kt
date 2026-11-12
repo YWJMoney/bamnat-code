@@ -484,7 +484,9 @@ private fun PassesCard(c: AppContainer, pro: ProState, zone: ZoneId, onMessage: 
     SectionCard(title = "보상 이용권") {
         // 2.0.0 [RVD-13]~[RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 드리고, 보상 이용권은 1년에 모두 합쳐 12개월까지.
         // [RVD-16] 디자인 품질 조건 4(총괄 11-12): 첫 줄은 이 한 줄. 받는 때 목록은 갈래 P의 설명 ⓘ 부품이 오면 그 안으로 옮겨요(부품 대기).
-        Text("운영팀이 확인한 뒤 드려요. 1년에 모두 합쳐 ${REWARD_CAP_MONTHS}개월까지예요.", style = MaterialTheme.typography.bodyMedium)
+        // [RVO-13] HQ-58 (총괄 11-12): the 1년 12개월 only while the server counts it (처리방침 3.13 30일 줄, RVD-21), not before 12-12.
+        val rules = com.bamnat.app.ui.settings.rememberInviteTerms()
+        Text(passesHead(rules, java.time.LocalDate.now(zone)), style = MaterialTheme.typography.bodyMedium)
         Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
@@ -587,6 +589,16 @@ internal suspend fun runServer(onMessage: (String) -> Unit, block: suspend () ->
 
 /** 2.0.0 [RVD-15] 보상 이용권은 한 사람이 1년에 모두 합쳐 이만큼까지예요(company-worker REWARD_CAP). */
 const val REWARD_CAP_MONTHS = 12
+
+/**
+ * 2.0.0 [RVO-13] HQ-58: the first line of 보상 이용권. '1년에 모두 합쳐 12개월까지' only when the server's rules say a cap ([InviteTerms.capMonths]
+ * > 0, company-worker inviteRules) and 처리방침 3.13's 30-day date ([PolicyConsent.REVISION_EFFECTIVE_30]) has come: before it the server
+ * counts no year cap (RVD-21), and a cap only for 친구 초대 is not one for all rewards. Rules never read say no cap.
+ */
+internal fun passesHead(rules: com.bamnat.core.tier.InviteTerms?, today: java.time.LocalDate): String =
+    if ((rules?.capMonths ?: 0) > 0 && !today.isBefore(com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE_30))
+        "운영팀이 확인한 뒤 드려요. 1년에 모두 합쳐 ${REWARD_CAP_MONTHS}개월까지예요."
+    else "운영팀이 확인한 뒤 드려요."
 
 /** [MON-08][INVITE-05] Why a reward pass was given, as the server names it. */
 fun passWhy(why: String): String = when (why) {

@@ -69,4 +69,16 @@ class ProOneSheetTest {
         assertTrue(shareCodeText("ABCD2345").contains("ABCD-2345"))
         assertTrue(com.bamnat.core.tier.InviteRules.shareText("x", "ABCD2345").contains(CODE_INBOX_TITLE))
     }
+
+    /** [RVO-13] HQ-58: the 1년 12개월 line only while the server counts it, from 처리방침 3.13's 30-day date (12-12). */
+    @Test fun thePassesCapLineWaitsForTheServersCap() {
+        val d = com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE_30
+        val noCap = com.bamnat.core.tier.InviteTerms(need = 5, days = 7, months = 1, capMonths = 0)
+        val cap = noCap.copy(capMonths = 12)
+        val plain = "운영팀이 확인한 뒤 드려요."
+        assertEquals(plain, passesHead(null, d))
+        assertEquals("the live server today: capMonths 0", plain, passesHead(noCap, d.plusDays(10)))
+        assertEquals("a cap only for 친구 초대 before 12-12 is not one for all rewards", plain, passesHead(noCap.copy(capMonths = 6), d.minusDays(1)))
+        assertEquals("운영팀이 확인한 뒤 드려요. 1년에 모두 합쳐 12개월까지예요.", passesHead(cap, d))
+    }
 }
