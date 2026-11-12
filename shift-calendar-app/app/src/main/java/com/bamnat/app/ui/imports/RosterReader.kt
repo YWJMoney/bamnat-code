@@ -80,7 +80,7 @@ object RosterReader {
 
     /** [READ-05] Why a photo gave nothing, and what to do next. */
     fun problem(p: RosterPhotoRead.Problem?): String = when (p) {
-        RosterPhotoRead.Problem.NO_TEXT -> "사진에서 글자를 찾지 못했어요. 표가 화면 가득, 밝은 곳에서 찍힌 사진을 골라 주세요."
+        RosterPhotoRead.Problem.NO_TEXT -> "사진에서 글자를 못 찾았어요. 표가 화면 가득, 밝은 곳에서 찍힌 사진을 골라 주세요."
         // 2.0.0 [RVL-33] (검토 SCAN-20·U07b-14) By the name of the button right under it.
         RosterPhotoRead.Problem.NO_DAYS -> "날짜 줄(1 2 3 …)을 찾지 못했어요. 아래 ‘$TAP_PHOTO’로 날짜 줄과 내 줄을 눌러 주면 그 줄을 읽어요."
         RosterPhotoRead.Problem.NO_DUTIES -> "날짜는 찾았는데 근무 줄을 찾지 못했어요. 아래 ‘$TAP_PHOTO’로 내 줄을 눌러 주세요."

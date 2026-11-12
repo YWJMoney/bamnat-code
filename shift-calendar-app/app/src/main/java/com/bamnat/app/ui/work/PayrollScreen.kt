@@ -252,7 +252,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         }
         calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
         // 1.38 [P3-X-08] 다가올 신고·지급
-        if (staff.isNotEmpty()) FilingsCard(place, staff, work)
+        if (staff.isNotEmpty()) FilingsCard(place, staff, work, onEditStaff = { editing = it }, onPayDay = { settings = true })
         val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
         // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
         // PC 10차: keyed on who is waiting (the first frame's list is empty, so a key on the place alone read nobody).
@@ -304,7 +304,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         if (hasStaff) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.BOSS)
         // 1.38 가져오기: a staff list in any file or photo (엑셀·CSV·PDF·사진), checked on one page before anyone is added.
         var reading by remember { mutableStateOf<String?>(null) }
-        var importing by remember { mutableStateOf<Pair<List<com.bamnat.core.boss.StaffImport.Line>, Boolean>?>(null) }
+        var importing by remember { mutableStateOf<Triple<List<com.bamnat.core.boss.StaffImport.Line>, Boolean, List<String>>?>(null) }
         // 2.0.0 [RVL-41] (검토 U07b-10) A locked list PDF asks for its password here and is read again with it.
         var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
         fun readList(uri: android.net.Uri, password: CharArray? = null) {
@@ -316,7 +316,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                     is com.bamnat.app.imports.ManageImport.Got.Read -> {
                         // 2.0.0 [RVL-43] A file of more pages than were read says so.
                         reading = got.note
-                        importing = com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1), legalBreaks = place?.legalBreaks ?: true) to got.fromPhoto
+                        importing = Triple(com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1), legalBreaks = place?.legalBreaks ?: true),
+                            got.fromPhoto, got.value.unread)
                     }
                     is com.bamnat.app.imports.ManageImport.Got.Failed -> {
                         reading = got.why
@@ -335,16 +336,22 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             else if (sharedList != null) reading = "이 달은 닫혀 있어요. 열린 달로 옮기면 받은 명단을 바로 읽어요."
         }
         OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
+        // 2.0.0 [RVJ-40] 검토 PC-102: the columns read, before the file is picked, and a file that has them all.
+        if (!isClosed) ToneLine("읽는 칸: ${com.bamnat.core.imports.StaffSheets.READS} · 예시 파일 받기", tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = {
+            scope.launch {
+                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, "\uFEFF" + com.bamnat.core.imports.StaffSheets.EXAMPLE_CSV, "직원-명단-예시.csv", "직원 명단 예시") }
+            }
+        })
         reading?.let { Hint(it) }
-        importing?.let { (lines, photo) ->
+        importing?.let { (lines, photo, unread) ->
             // How many more fit now: the free 3, or the band held.
             val room = (1..200).takeWhile { gate.staff(counted + it).allowed }.size
-            StaffImportDialog(lines, photo, room, onDismiss = { importing = null }) { add, over ->
+            StaffImportDialog(lines, photo, room, unread, onDismiss = { importing = null }) { add, over ->
                 importing = null
                 scope.launch {
                     add.forEach { store.saveStaff(it.member, place.id) }
                     context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key)
-                    reading = "${add.size}명을 더했어요." + if (add.any { it.check.isNotEmpty() }) " 노란 ‘확인’이 있던 사람은 이름을 눌러 한 번 봐 주세요." else ""
+                    reading = "${add.size}명을 더했어요." + if (add.any { it.check.isNotEmpty() }) " ‘확인’이 있던 사람은 이름을 눌러 한 번 봐 주세요." else ""
                     if (over) ask = gate.staff(counted + add.size + 1)
                 }
             }
@@ -676,6 +683,26 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 TextButton(onClick = { picking = d to false }) { Text(Fmt.time(sh.end)) }
                 Text(com.bamnat.core.hours.HoursFormat.korean(sh.paidMinutes(place?.legalBreaks ?: true)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        // 2.0.0 [RVJ-42] 검토 PC-104: a 월급 past 40시간 a week is asked once whether the 월급 holds those hours, so the 대장, 계약서 and
+        // 명세서 say the same ([com.bamnat.core.boss.MonthlyOvertime]). Two chips, no filled button (조건 2); until one is picked, '더 줘요'.
+        val at = place ?: Workplace("", "")
+        com.bamnat.core.boss.MonthlyOvertime.of(at, s)?.let { sp ->
+            Text("한 주 ${sp.weekMinutes / 60}시간이에요 · 40시간을 넘는 ${sp.overHours}시간은", style = MaterialTheme.typography.labelLarge)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = s.overtimeInPay == false, onClick = { s = s.copy(overtimeInPay = false) }, label = { Text("월급 말고 더 줘요") })
+                FilterChip(selected = s.overtimeInPay == true, onClick = { s = s.copy(overtimeInPay = true) }, label = { Text("월급에 들어 있어요") })
+            }
+            val five = at.fivePlus != false
+            when (s.overtimeInPay) {
+                null -> ToneLine("고르기 전에는 ‘더 줘요’로 셈해요 · 계약서·명세서도 고른 대로 적어요", tone = com.bamnat.app.ui.theme.Tone.Plain)
+                false -> Hint("월급은 한 주 40시간(월 ${sp.hours}시간) 몫이에요. 넘는 시간은 통상시급" + (if (five) "의 150%로" else "으로") +
+                    " 더 줘서 평소 한 달 약 ${Fmt.won(sp.onTop)}이에요.")
+                true -> {
+                    Hint("월급 = 기본급 ${Fmt.won(sp.base)} + 고정 연장근로수당 ${Fmt.won(sp.fixed)}. 연장근로가 이보다 많은 달은 차액을 더 줘요(근로시간을 셀 수 있으면 법정수당보다 적게 줄 수 없어요).")
+                    if (sp.base / sp.hours < minimum) ToneLine("기본급으로 셈한 시급 ${Fmt.won(sp.base / sp.hours)}이 최저임금 ${Fmt.won(minimum)}보다 적어요")
+                }
             }
         }
         // 1.38 요일별 시급 (P3-B-12): "주말은 11,000원" — each weekday its own, 가산·주휴는 그 주 평균(통상시급)으로.

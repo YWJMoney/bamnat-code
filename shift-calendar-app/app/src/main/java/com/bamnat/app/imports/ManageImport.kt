@@ -105,8 +105,9 @@ object ManageImport {
 
     /** A staff list (이름·시급·근무 요일·시간 …). 연락처·주민번호·계좌 columns are never read ([com.bamnat.core.imports.StaffSheets]). */
     suspend fun staff(context: Context, uri: Uri, near: LocalDate, password: CharArray? = null): Got<StaffSheet> = open(context, uri, password) { o ->
+        // 2.0.0 [RVJ-40] 검토 PC-102: a photo goes the same way as a file (the same columns read, the same unread ones said).
         suspend fun pictures() = scans(context, o, DutyCodes(emptyList())).mapNotNull { StaffSheet.read(WordTable.rows(it.words), near) }
-            .flatMap { it.rows }.takeIf { it.isNotEmpty() }?.let { Got.Read(StaffSheet(it), true) }
+            .takeIf { it.isNotEmpty() }?.let { l -> Got.Read(StaffSheet(l.flatMap { it.rows }, l.flatMap { it.unread }.distinct()), true) }
         when (o) {
             // 2.0.0 [RVL-42] A PDF whose text held no list is drawn and read as pictures first.
             is AnyFile.Opened.Table -> StaffSheet.read(o.sheets, near)?.let { Got.Read(it, false) } ?: o.pdf?.let { pictures() }

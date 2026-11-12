@@ -206,7 +206,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }.getOrNull())
     val flowFolded: StateFlow<Boolean?> = _flowFolded.asStateFlow()
 
+    /**
+     * 2.0.0 [RVI-68] (PC 통합 1차 N18·PC-49) '끄고 오늘 보기' and the other today links opened the calendar with 오늘의 흐름 still folded
+     * to its one line: they open it for this visit, and the fold kept on this phone stays as it was for the next.
+     */
+    private val _flowOpenNow = MutableStateFlow(false)
+    val flowOpenNow: StateFlow<Boolean> = _flowOpenNow.asStateFlow()
+
+    fun openFlowNow() {
+        _flowOpenNow.value = true
+    }
+
     fun setFlowFolded(folded: Boolean) {
+        _flowOpenNow.value = false
         _flowFolded.value = folded
         viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
     }
@@ -320,7 +332,10 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     val memoDates: StateFlow<Set<LocalDate>> =
         // [NOTE-01] Only the memos that show on the calendar on screen.
-        container.calendars.active.flatMapLatest { memoRepo.datesWithMemos(it) }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+        // 2.0.0 [RVI-53] (검토 MEMO-19) Around the month on screen, not four years, and not again at each save of a memo's words.
+        container.calendars.active.flatMapLatest { cal ->
+            memoRepo.datesWithMemos(cal, container.shownMonth.month.map { com.bamnat.app.data.MemoRepository.shownWindow(it) })
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
     val upcomingAlarm: StateFlow<UpcomingAlarm?> = container.alarmScheduler.upcoming
 
     /** [SETUP-01] A first setup left for later, to go on from the calendar. */
@@ -531,19 +546,31 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun napNow(until: java.time.LocalDateTime) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val schedule = this@CalendarViewModel.schedule
+            val calendar = container.calendars.active.value
             val asleep = container.sleepRepository.fellAsleep()
             val date = until.toLocalDate()
             val ringing = container.settingsRepository.current.alarmsEnabled
-            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date,
-                com.bamnat.core.alarm.AlarmPlanner.alarmsOn(schedule.snapshot.first().resolver, date).map { it.triggerAt }, until)
+            val resolver = schedule.snapshot.first().resolver
+            val dayAlarms = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(resolver, date).map { it.triggerAt }
+            val merged = if (!ringing) null else com.bamnat.core.sleep.NapAlarm.merge(date, dayAlarms, until)
             val before = merged?.let { schedule.setDayAlarms(date, it) }
+            // 2.0.0 [RVI-17] (검토 ALM-08) Kept so it rings as 낮잠 알람 and an early 깼어요 takes it back out.
+            if (merged != null) com.bamnat.app.sleep.NapWake.save(container.appContext, date,
+                until.atZone(Today.zone()).toInstant().toEpochMilli(), hadOwn = resolver.resolve(date).entry?.customAlarms != null, calendar, merged)
             val at = Fmt.time(until.toLocalTime())
+            // 2.0.0 [RVI-40] (검토 ALM-25) An alarm already near the wake is the one that wakes: said so, not "○시에 깨워요".
+            val near = if (ringing && merged == null) com.bamnat.core.sleep.NapAlarm.near(dayAlarms, until) else null
             _messages.emit(UndoMessage(
-                if (!ringing) "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
-                else "낮잠 자는 중이에요 · ${at}에 깨워요",
+                when {
+                    !ringing -> "낮잠 자는 중이에요 · 근무 알람이 꺼져 있어서 ${at}에 깨우지 않아요"
+                    near != null -> "낮잠 자는 중이에요 · ${Fmt.time(near.toLocalTime())}쯤 울리는 알람이 있어 그걸로 깨워요"
+                    else -> "낮잠 자는 중이에요 · ${at}에 깨워요"
+                },
             ) {
+                if (merged != null) com.bamnat.app.sleep.NapWake.clear(container.appContext) // first, so the undo puts the day back itself
                 if (asleep.started) container.sleepRepository.delete(asleep.entry.id)
-                before?.let { schedule.restoreDay(date, it) }
+                // 2.0.0 [RVI-17] A day with nothing saved before (null) is put back too: the wake stayed after 되돌리기.
+                if (merged != null) schedule.restoreDay(date, before)
             })
         }
     }
@@ -565,9 +592,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.appScope.launch {
             val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
             val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
-            val minutes = sleep.minutes ?: 0
-            val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
-            else "${HoursFormat.korean(minutes.toInt())} 잤어요"
+            // 2.0.0 [RVI-71] One wording with the sleep page and the night screen; a short sleep says why it has no 아침 한 장.
+            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((sleep.minutes ?: 0).toLong())
             _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
         }
     }
@@ -842,7 +868,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [J135-10] The alarms a day had that stopped with its shift (not the ones set by hand), as that day's own alarms. */
     private fun stoppedAlarms(ask: RestAlarmAsk): Map<LocalDate, List<DayAlarm>> = ask.days.associate { d ->
         d.date to d.was.filter { w -> d.left.none { it.triggerAt == w.triggerAt } }
-            .map { a -> DayAlarm(a.triggerAt.toLocalTime(), dayBefore = a.triggerAt.toLocalDate() < d.date) }.distinct()
+            .mapNotNull { a -> DayAlarm.ringingAt(d.date, a.triggerAt) }.distinct() // 2.0.0 [RVI-17] 다음날 ones stay 다음날
     }.filterValues { it.isNotEmpty() }
 
     /** [J135-10] The ask closed without an answer: nothing more changes (the shift's own alarms stay off, alarms set by hand on). */
@@ -1606,6 +1632,17 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.skipDay(it, day) } }
     }
 
+    /** 2.0.0 [RVI-41] "오늘 오후 3:00", "11월 14일 오전 9:00": when a quick memo's notice comes. */
+    private fun quickWhen(at: java.time.LocalDateTime): String {
+        val today = Today.date()
+        val day = when (at.toLocalDate()) {
+            today -> "오늘"
+            today.plusDays(1) -> "내일"
+            else -> com.bamnat.app.ui.Fmt.dayTitle(at.toLocalDate())
+        }
+        return "$day ${com.bamnat.app.ui.Fmt.time(at.toLocalTime())}"
+    }
+
     private val _openMemo = MutableSharedFlow<Long>(extraBufferCapacity = 1)
     /** [SCHED-01] A memo to open in the editor, from the snackbar's 일정으로 넣기. */
     val openMemo: SharedFlow<Long> = _openMemo.asSharedFlow()
@@ -1614,10 +1651,13 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         viewModelScope.launch {
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
             val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
-            // [SCHED-01] A quick line that names a time is asked about, like a memo written in the editor.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime()) ?: return@launch
-            _messages.tryEmit(UndoMessage("‘${found.phrase}’, 일정으로 넣을까요?", actionLabel = "일정으로 넣기") {
-                _openMemo.tryEmit(memo.id)
+            // [SCHED-01] A quick line that names a time gets its notice. 2.0.0 [RVI-41] (검토 PC-10: the day's story showed 15:00 but
+            // nothing told the user; the offer took two more taps through the editor) It is put at once, a notice only (no ring),
+            // with 되돌리기, and answered so the editor does not ask about it again.
+            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime(), Today.zone()) ?: return@launch
+            val put = memoRepo.save(memo.copy(reminder = com.bamnat.core.memo.MemoReminder(found.at, ring = false, notify = true), reminderAsked = found.key))
+            _messages.tryEmit(UndoMessage("${quickWhen(found.at)}에 알려 드릴게요", actionLabel = "되돌리기") {
+                viewModelScope.launch { memoRepo.get(put.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
             })
         }
     }
@@ -1641,9 +1681,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             // [LEDG-18] When the category changed, offer the other lines from this place instead.
             val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
-                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 바꿀까요?", actionLabel = "바꾸기") {
                     same.forEach { money.save(com.bamnat.core.money.Ledger.recategorize(it, saved.category)) }
-                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’(으)로 옮겼어요") { money.saveAll(same) })
+                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 옮겼어요") { money.saveAll(same) })
                 })
                 return@launch
             }

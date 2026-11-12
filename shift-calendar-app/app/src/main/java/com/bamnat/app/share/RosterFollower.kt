@@ -134,6 +134,7 @@ object RosterFollower {
         val from = Today.date().withDayOfMonth(1)
         val plan = RosterFollow.plan(theirDays(old), theirDays(new), pairs, mine.shiftTypes, mine.resolver::resolve, from)
         if (plan.isEmpty) return
+        runCatching { listKept(c, after, plan, mine.shiftTypes) }
         val prefixes = plan.lines.map { it.substringBefore(' ') }.toSet()
         if (plan.apply.isEmpty()) {
             // 2.0.0 [RVH-01] 검토 CAL-05: a change with only kept days (the member had changed them by hand) does not wipe the note
@@ -198,6 +199,55 @@ object RosterFollower {
         if (c.received.calendars.value.any { !it.gone && followed(it) }) RosterFollowJob.schedule(context) else RosterFollowJob.cancel(context)
     }
 
+    /** 2.0.0 [RVH-57] The way back of a kept day in [com.bamnat.app.data.AutoTidy]: the link's day put into my calendar. */
+    const val KIND_KEPT = "calendar.roster_kept"
+
+    /** [RVH-57] Where '자동으로 정리한 것' lists them: the calendar's received links. */
+    const val TIDY_AREA = "calendar"
+
+    /**
+     * 2.0.0 [RVH-57] 뿌리 7 '조용히 버려지는 것 없애기' (갈래 K '자동으로 정리한 것', 검토 CAL-05): a day the link changed that I had changed
+     * by hand stays as I made it. It was only named in the note over the calendar, gone once closed; now each such day is kept 30 days
+     * under '자동으로 정리한 것' with why, and one tap puts the link's day in. A day kept again on a later change is listed once.
+     */
+    internal suspend fun listKept(c: AppContainer, cal: ReceivedCalendar, plan: RosterFollow.Plan, types: List<com.bamnat.core.model.ShiftType>) {
+        if (plan.keptTo.isEmpty()) return
+        val tidy = c.autoTidy
+        val byId = types.associateBy { it.id }
+        for ((d, to) in plan.keptTo) {
+            tidy.items.value.filter { it.kind == KIND_KEPT && keptKey(it.payload) == cal.id to d.toString() }.forEach { tidy.forget(it.id) }
+            val what = when (to) {
+                is ShiftOverride.Shift -> byId[to.shiftTypeId]?.let { t -> t.name.ifBlank { t.label } } ?: "근무"
+                else -> "쉬는 날"
+            }
+            tidy.add(
+                area = TIDY_AREA,
+                calendarId = com.bamnat.app.data.PersonalCalendar.MAIN,
+                // What the link says, not what my day is: '12월 4일 · 근무표는 데이'.
+                title = "${d.monthValue}월 ${d.dayOfMonth}일 · 근무표는 $what",
+                why = "${cal.name} 근무표에서 바뀐 날이지만, 직접 바꾼 날이라 내 달력은 그대로 뒀어요",
+                kind = KIND_KEPT,
+                payload = org.json.JSONObject().put("link", cal.id).put("date", d.toString()).put("to", code(to)).toString(),
+            )
+        }
+    }
+
+    /** [RVH-57] A kept day of link [link], for its own row. */
+    fun keptOf(item: com.bamnat.app.data.AutoTidy.Item, link: String): Boolean = item.kind == KIND_KEPT && keptKey(item.payload)?.first == link
+
+    private fun keptKey(payload: String): Pair<String, String>? =
+        runCatching { org.json.JSONObject(payload).let { it.getString("link") to it.getString("date") } }.getOrNull()
+
+    /** [RVH-57] '되살리기' on a kept day: the link's day goes into my calendar, as '내 달력에 넣기' would have put it. */
+    suspend fun putBackKept(c: AppContainer, payload: String): Boolean {
+        val o = runCatching { org.json.JSONObject(payload) }.getOrNull() ?: return false
+        val date = runCatching { LocalDate.parse(o.getString("date")) }.getOrNull() ?: return false
+        val to = override(o.optString("to"))
+        if (to == ShiftOverride.None) return false
+        c.scheduleRepository.updateDays(listOf(date)) { e -> e.copy(override = to) }
+        return true
+    }
+
     internal fun code(o: ShiftOverride): String = when (o) {
         ShiftOverride.None -> "n"
         ShiftOverride.Off -> "o"
@@ -238,10 +288,12 @@ object RosterFollower {
         // PC a483ca15: the same words twice and '12/2은'; the days are named after a colon, with no 은/는 to get wrong.
         val keptDays = note.kept.joinToString(", ") { "${it.monthValue}/${it.dayOfMonth}" }
         val kept = if (note.kept.isEmpty()) "" else " · 직접 바꿔서 그대로 둔 날: $keptDays"
+        // [RVG-35] 이/가 by the link's word (‘민지’ 영업일이 바뀌었어요).
+        val who = cal.roster + com.bamnat.app.ui.Fmt.iga(cal.roster)
         return when (note.kind) {
-            FollowNote.DONE -> "${cal.roster}가 바뀌어 내 달력에 넣었어요" to "$days$kept. 근무 알람도 바뀐 근무대로 울려요."
-            FollowNote.ASK -> if (note.lines.isEmpty()) "${cal.roster}가 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요: $keptDays"
-            else "${cal.roster}가 바뀌었어요 · 내 달력에 넣을까요?" to "$days$kept. 넣으면 근무 알람도 따라가요."
+            FollowNote.DONE -> "$who 바뀌어 내 달력에 넣었어요" to "$days$kept. 근무 알람도 바뀐 근무대로 울려요."
+            FollowNote.ASK -> if (note.lines.isEmpty()) "$who 바뀌었어요" to "직접 바꾼 날이라 그대로 뒀어요: $keptDays"
+            else "$who 바뀌었어요 · 내 달력에 넣을까요?" to "$days$kept. 넣으면 근무 알람도 따라가요."
             else -> "${cal.roster} 링크가 끊겼어요" to "내 달력은 그대로예요. 새 링크를 받으면 다시 이어서 받아요."
         }
     }

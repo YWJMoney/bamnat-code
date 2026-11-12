@@ -207,11 +207,11 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                     if (ended) Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("✦ 하루 써 보기를 마쳤어요" + (did?.let { " · 그동안 한 일: $it" } ?: "") +
                             (if ((s.appliedAt ?: s.laidAt) != null) ". 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요" else ""),
-                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.weight(1f))
+                            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                         TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) }) { Text("프로 보기") }
                     } else if (fxParts.isNotEmpty() && (s.appliedAt ?: s.laidAt) != null && !fxOn)
                         Text("✦ 쉬는 중 · 무료인 것은 그대로 돌고, ✦ 장치는 프로에서 다시 켜져요", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.tertiary)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // [RVM-07] PC-53: the count is phones that ever put it in (once each), so it stays after 되돌리기 and says so.
                     Text(listOfNotNull("넣어 본 분 ${doc.item.users + s.usersPlus}명", doc.item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }, RecipeDescribe.styles(r).takeIf { it.isNotBlank() })
                         .joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -543,7 +543,7 @@ private fun PutDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), the 알람 line's switch '알람도 넣기', and the full list folded.
                 val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
-                PutBrief(putBrief(s, fxOn), onLetters = vm::letters) { vm.toggle(PieceKind.ALARMS, it) }
+                PutBrief(putBrief(s, fxOn), onLetters = vm::letters, onWeaker = vm::alarmWeaker) { vm.toggle(PieceKind.ALARMS, it) }
                 // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
                 s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
                     com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }

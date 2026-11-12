@@ -51,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -827,7 +828,9 @@ private fun SettingsHub(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
     val pick: (SettingEntry) -> Unit = { keyboard?.hide(); onFound(it) }
-    Column(modifier.nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // 2.0.0 [RVO-09] (PC-82 '수면 기록' 바로 가기가 안 열림): the app draws under the keyboard (edge to edge), so the found features at the
+    // foot of the results stayed under it and a tap on their 바로 가기 went to the keyboard. The list ends above the keyboard.
+    Column(modifier.imePadding().nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
         val work by vm.workSettings.collectAsStateWithLifecycle()
@@ -893,7 +896,7 @@ private fun SettingsHub(
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
             val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 초대 코드 넣기", false) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 받은 코드 넣기", false) {
                 SettingsLinks.go(SettingsGo.PRO)
             }
         }
@@ -993,7 +996,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val answers = remember(query, share, hiddenKinds, screenStyle) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
+    val inviteTerms = rememberInviteTerms()
+    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms) { HelpFaq.search(query, HelpFaq.topics(share, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
@@ -1165,10 +1169,12 @@ internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, Stri
     else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
 }
 
-/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+/** [MON-04] The 프로 row's words: while 결제 is not open, with 프로, and without it. */
 internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
-    !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
-    gate.access.pro -> gate.access.reason.words
+    // 2.0.0 [RVO-12] (HQ-46) 3.1 보류 중인 휴대폰은 그 끝나는 날을, 나머지(개발용 빌드·결제를 잠시 끈 때)는 '출시' 말 없이. [J133-43] 순번 723
+    !gate.live && gate.access.reason == com.bamnat.core.tier.ProReason.HELD -> gate.access.say(com.bamnat.core.time.Today.zone())
+    !gate.live -> "지금은 모든 기능 무료 · 결제가 열리면 앱에서 알려 드려요"
+    gate.access.pro -> gate.access.say(com.bamnat.core.time.Today.zone())
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
 
@@ -1204,6 +1210,22 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
                 }
             }
             .padding(top = 16.dp, bottom = 24.dp),
+    )
+}
+
+/**
+ * 2.0.0 [RVI-65] (디자인 품질 12) A line of the alarm card with its button. Beside each other while the line keeps room to read;
+ * at 200% or in the narrow list pane of an unfolded phone the button goes under it (the line stood a word per row beside it).
+ */
+@Composable
+private fun LineWithButton(text: String, label: String, onClick: () -> Unit, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
+    // The shared part, as the card's head (갈래 O RVO-02): side by side while the words keep room, else the button goes under them.
+    com.bamnat.app.ui.components.SideOrBelow(
+        modifier = Modifier.fillMaxWidth().padding(start = 36.dp),
+        minStart = 160.dp,
+        belowAlign = Alignment.Start,
+        start = { Text(text, style = MaterialTheme.typography.bodyMedium, color = color) },
+        end = { TextButton(onClick = onClick) { Text(label, maxLines = 1) } },
     )
 }
 
@@ -1285,20 +1307,34 @@ private fun AlarmReadyCard(
                 }
             })
             snoozeAt?.let { at ->
-                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
-                    Text("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", style = MaterialTheme.typography.bodyMedium)
-                }, end = { TextButton(onClick = vm::cancelSnooze) { Text("지금 끄기") } })
+                LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
             }
-            for (fix in fixes) {
-                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
-                    Text(fix.text, style = MaterialTheme.typography.bodyMedium)
-                }, end = { TextButton(onClick = fix.onFix) { Text(fix.label) } })
+            // 2.0.0 [RVI-38] (디자인 품질 2: 글자 단추는 2개까지) The most serious one with its button; the rest are counted, all in 알람 점검.
+            fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
+            if (fixes.size > 1) {
+                LineWithButton("고칠 것이 ${fixes.size - 1}가지 더 있어요", "모두 보기", { onOpenDiagnostics(false) },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
 private class AlarmFix(val text: String, val label: String, val onFix: () -> Unit)
+
+/** 2.0.0 [RVI-38] The checks that fail, as 설정 › 알람 counts them ('고칠 것 N가지'); 알람 사용 is the card's own headline. */
+internal fun alarmReadyProblems(checks: List<com.bamnat.app.ui.diag.AlarmCheck>): List<com.bamnat.app.ui.diag.AlarmCheck> =
+    checks.filter { it.ok == false && it.title != "알람 사용" }
+
+/** The check's first sentence, so the card stays one line a problem; the rest is in 설정 › 알람. */
+internal fun alarmFixLine(check: com.bamnat.app.ui.diag.AlarmCheck): String =
+    check.why.substringBefore(". ").removeSuffix(".").trim()
+
+/** A short button: the check's own when it is short, 고치기 otherwise. */
+internal fun alarmFixButton(check: com.bamnat.app.ui.diag.AlarmCheck): String = when {
+    check.title == "알림 허용" -> "허용"
+    check.fixLabel.length <= 6 -> check.fixLabel
+    else -> "고치기"
+}
 
 /** What keeps the alarm from working, most serious first. Nothing while every alarm is off on purpose. */
 private fun alarmFixes(
@@ -1310,27 +1346,15 @@ private fun alarmFixes(
     onOpenDiagnostics: (Boolean) -> Unit,
 ): List<AlarmFix> {
     if (!settings.alarmsEnabled) return emptyList()
-    val pkg = Uri.parse("package:${context.packageName}")
-    val canPost = Notifications.canPost(context)
+    // 2.0.0 [RVI-38] (검토 PC-16: 첫 화면 '알람 준비 완료'와 설정 › 알람 '고칠 것 1가지'가 함께 떴어요) The same checks as 설정 › 알람 and
+    // 알람 점검 ([alarmChecks]), so the two never disagree; each with its one-word button.
+    val container = context.appContainer
+    val checks = runCatching { com.bamnat.app.ui.diag.alarmChecks(container, context) }.getOrDefault(emptyList())
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
-        else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
-            add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
-        }
-        if (canPost && !Notifications.canUseFullScreen(context) && Build.VERSION.SDK_INT >= 34) {
-            add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
-            })
-        }
-        if (!vm.canScheduleExact() && Build.VERSION.SDK_INT >= 31) {
-            add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
-            })
-        }
-        if (Build.VERSION.SDK_INT >= 28 && context.getSystemService(ActivityManager::class.java)?.isBackgroundRestricted == true) {
-            add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기") {
-                SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
-            })
+        for (check in alarmReadyProblems(checks)) {
+            val onFix: () -> Unit = if (check.title == "알림 허용") askNotifications
+                else { { com.bamnat.app.ui.diag.applyAlarmFix(container, context, check.fix, "settings") } }
+            add(AlarmFix(alarmFixLine(check), alarmFixButton(check), onFix))
         }
         if (missed > 0) add(AlarmFix("지난 7일에 울리지 않았을 수 있는 알람이 ${missed}번 있어요", "보기") { onOpenDiagnostics(false) })
     }

@@ -199,6 +199,21 @@ internal fun HourlyClockButton(out: Boolean, yesterday: Boolean) {
 internal val WIDGET_BUTTON_HEIGHT = 40.dp
 
 /**
+ * 2.0.0 [RVI-07] (검토 ALM-19) Every small button a widget has (+1건, 오늘 1공, 지금 퇴근): 40dp to the finger like 출근·퇴근, its word
+ * following 위젯 글자 크기. They were about 28dp with a fixed 13sp.
+ */
+@Composable
+internal fun WidgetPillButton(label: String, action: androidx.glance.action.Action) {
+    Box(
+        GlanceModifier.height(WIDGET_BUTTON_HEIGHT).background(GlanceTheme.colors.primaryContainer).cornerRadius(20.dp)
+            .padding(horizontal = 14.dp).clickable(action),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, style = TextStyle(color = GlanceTheme.colors.onPrimaryContainer, fontSize = wsp(14), fontWeight = FontWeight.Medium), maxLines = 1)
+    }
+}
+
+/**
  * [WIDG-05] I 리뷰 N6(a): "다음 근무까지" on its own small widget. Glance has no ticking clock, so [WidgetRefresher]
  * redraws it every 15 minutes while one is placed, and at each start and end. Also offered on the lock screen
  * where the phone allows widgets there.

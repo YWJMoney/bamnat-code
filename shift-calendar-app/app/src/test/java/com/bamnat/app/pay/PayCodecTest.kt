@@ -350,4 +350,22 @@ class PayCodecTest {
         assertEquals(false, oldBack.hasDays)
         assertNull(oldBack.takeHome)
     }
+
+    /**
+     * 2.0.0 [RVK-38] (검토 MONEY-79) '쉬는 날이면' comes back from a save and a backup (both are [PayCodec.encode]); a save from
+     * before 2.0.0 has no key and reads as 앞당겨 (most payrolls), and an older app reading a new save skips the key it does not know.
+     */
+    @Test fun payDayOffComesBackAndOldSavesPayTheDayBefore() {
+        val p = PayProfile(
+            occupation = Occupation.CUSTOM, wageType = WageType.MONTHLY, base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_800_000))),
+            period = com.bamnat.core.pay.PayPeriod(payDay = 25, payDayOff = com.bamnat.core.pay.PayDayOff.AFTER),
+        )
+        val json = PayCodec.encode(p)
+        assertEquals(com.bamnat.core.pay.PayDayOff.AFTER, PayCodec.decode(JSONObject(json.toString())).period.payDayOff)
+        assertEquals(25, PayCodec.decode(JSONObject(json.toString())).period.payDay)
+        val old = JSONObject(json.toString()).also { it.getJSONObject("period").remove("payDayOff") }
+        assertEquals(com.bamnat.core.pay.PayDayOff.BEFORE, PayCodec.decode(old).period.payDayOff)
+        val odd = JSONObject(json.toString()).also { it.getJSONObject("period").put("payDayOff", "LATER") }
+        assertEquals(com.bamnat.core.pay.PayDayOff.BEFORE, PayCodec.decode(odd).period.payDayOff)
+    }
 }

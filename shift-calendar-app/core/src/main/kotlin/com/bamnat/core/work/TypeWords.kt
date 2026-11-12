@@ -16,15 +16,18 @@ package com.bamnat.core.work
 object TypeWords {
     private val NIGHT = listOf("연속 야간", "야간 뒤", "야간이면", "한 달 야간", "야간 전")
     private val ROTA = listOf("교대", "전공의", "근무 주기", "조 변경", "모든 조", "주주휴휴")
-    private val EMPLOYEE = listOf("연차", "대근", "주휴", "퇴근", "근무·급여", "근무 알람", "근무마다", "근무별", "회사 사정", "근무표")
+    // 2.0.0 [RVH-53] HQ-27: 회사 찾기 is for work that has a company (an 알바 that joined one keeps it: see the screen test).
+    private val EMPLOYEE = listOf("연차", "대근", "주휴", "퇴근", "근무·급여", "근무 알람", "근무마다", "근무별", "회사 사정", "근무표", "회사 찾기", "회사 이름으로")
 
     /** What must not show for [style]; nothing for 교대 (and a calendar from before kinds of work, which is 교대). */
     fun forbidden(style: WorkStyle?): List<String> = when (style) {
         null, WorkStyle.SHIFT -> emptyList()
         WorkStyle.DAY -> ROTA + NIGHT
-        WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여")
+        // [RVH-50] HQ-18: 잔업·특근 are a factory's and an office's words; an 알바 says 추가 근무 and 쉬는 날 출근.
+        WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여", "잔업", "특근")
         WorkStyle.FIELD -> ROTA + NIGHT + EMPLOYEE
-        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날")
+        // [RVJ-44] 검토 PC-106: a shop's 사장님 has no '회사 규칙' (the 급여 대장 said '회사 규칙에 넣지 않은 … 가산').
+        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날", "회사 규칙")
         WorkStyle.INVEST -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "근무", "명세서", "급여", "회사")
     }
 
@@ -37,6 +40,8 @@ object TypeWords {
             "직원 급여", "가게 급여", "급여 대장", "직원 근무표", "직원 연차", "직원 출근", "알바 출근", "매달 쉬는 날",
             // 2.0.0 [RVH-41] A boss's staff pay and the staff's schedule (직원 인건비 › 근무표 짜기).
             "주휴수당", "주휴·연장·야간", "근무표 짜기",
+            // [RVJ-44] The 직원 급여's 야간 가산 (근로기준법 제56조 제3항) is the 사장님's to pay, as 직원 연차 is; the 광장's name stays.
+            "회사 규칙 광장", "야간·휴일 가산", "야간 가산",
         )
         WorkStyle.INVEST -> listOf("회사 규칙 광장", "회사 정보")
         else -> emptyList()
@@ -68,7 +73,10 @@ object TypeWords {
             WorkStyle.FIELD -> { swap("근무마다", "일정마다"); swap("근무별", "일정별"); swap("퇴근 뒤", "일 끝난 뒤"); swap("퇴근 후", "일 끝난 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "일 끝") }
             WorkStyle.BUSINESS -> { swap("근무마다", "영업일마다"); swap("근무별", "날별"); swap("퇴근 뒤", "마감 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "마감"); swap("쉬는 날", w.offDay) }
             WorkStyle.INVEST -> { swap("근무마다", "날마다"); swap("근무별", "날별"); swap("퇴근 뒤", "장 마감 뒤"); swap("퇴근", "장 마감"); swap("근무", w.workDay) }
-            WorkStyle.HOURLY -> swap("대근", "대타")
+            WorkStyle.HOURLY -> {
+                swap("잔업·특근·대근", "추가 근무·대타"); swap("잔업·특근", "추가 근무"); swap("잔업", "추가 근무"); swap("특근", "쉬는 날 출근")
+                swap("대근", "대타")
+            }
             else -> {}
         }
         keep.forEachIndexed { i, a -> out = out.replace("\u0000$i\u0000", a) }
