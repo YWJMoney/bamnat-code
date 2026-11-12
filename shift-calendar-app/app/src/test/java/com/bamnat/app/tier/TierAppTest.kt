@@ -216,12 +216,14 @@ class TierAppTest {
         assertEquals(ProReason.NONE, gate(LaunchConfig(billingLive = true), edit = { dayPass(today.minusDays(1)) }).access.reason)
     }
 
-    @Test fun thePreviewCountsBeforeTheLaunchOrInDebugOnly() {
-        // S 1.32 [SECX-01] Before the launch only an admin phone the developer app approved counts it; a user's does not.
+    @Test fun thePreviewCountsInDebugBuildsOnly() {
+        // S 1.32 [SECX-01] A user's phone ignores a stored preview. 2.0.0 [RVO-01] (총괄 11-12) an approved admin phone in a release build
+        // too, before the launch as after it: no server row or admin link changes a release build's tier.
         assertFalse("사용자 휴대폰은 저장된 미리 보기를 무시해요", gate(LaunchConfig(billingLive = false), preview = Tier.FREE).preview)
         val admin = Passes(until = null, waitingMonths = 0, items = emptyList(), deferred = 0,
             admin = AdminState("approved", "관리자"), hasCode = false, checkedAt = now)
-        val before = gate(LaunchConfig(billingLive = false), edit = { setPasses(admin) }, preview = Tier.FREE)
+        assertFalse("출시 빌드의 관리자 휴대폰도", gate(LaunchConfig(billingLive = false), edit = { setPasses(admin) }, preview = Tier.FREE).preview)
+        val before = gate(LaunchConfig(billingLive = false), debug = true, preview = Tier.FREE)
         assertTrue(before.preview)
         assertTrue(before.locked(Feature.MONEY_STATS))
         assertEquals(ProReason.PREVIEW, before.access.reason)

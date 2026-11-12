@@ -126,9 +126,31 @@ object NoticeLinks {
     /** [INV-08] What [target] opens on, when a notice says: an investor alarm's id for [Target.INVEST_TRADE]. */
     val payload: StateFlow<String?> = _payload.asStateFlow()
 
+    private const val KEY_EXTRA = "com.bamnat.app.extra.KEY"
+
+    /**
+     * 2.0.0 [RVL-08] (검토 DATA-03) A value only this app knows (made once on this phone, kept in no-backup storage): each notice, widget
+     * and tile carries it, and [read] follows only an intent that does. [MainActivity] is the launcher, so any app on the phone can
+     * start it with extras of its own; without this one, another app could open the pay or money screen, or start 밤 소리 측정 (the
+     * microphone) through the bedtime notice's 측정 시작, with nobody pressing anything.
+     */
+    @Volatile private var key: String? = null
+
+    internal fun key(context: Context): String = key ?: synchronized(this) {
+        key ?: run {
+            val f = java.io.File(context.applicationContext.noBackupFilesDir, "notice_key")
+            val kept = runCatching { f.readText().trim() }.getOrNull()?.takeIf { it.matches(KEY_FORM) }
+            kept ?: java.security.SecureRandom().let { r -> ByteArray(16).also(r::nextBytes) }.joinToString("") { "%02x".format(it) }
+                .also { made -> runCatching { f.parentFile?.mkdirs(); f.writeText(made) } }
+        }.also { key = it }
+    }
+
+    private val KEY_FORM = Regex("[0-9a-f]{32}")
+
     /** Opens the app on [target], or brings it forward there; the screen underneath is not stacked again. */
     fun intent(context: Context, target: Target, calendar: String? = null, payload: String? = null): Intent = Intent(context, MainActivity::class.java)
         .putExtra(EXTRA, target.name)
+        .putExtra(KEY_EXTRA, key(context))
         .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         .apply {
             if (payload != null) {
@@ -143,9 +165,18 @@ object NoticeLinks {
         }
 
     /** Reads a target off an intent; true when there was one. */
-    fun read(intent: Intent?): Boolean {
+    fun read(context: Context, intent: Intent?): Boolean {
         // Reopened from Recents, Android hands back the intent the app was first opened with: it was followed then.
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return false
+        // 2.0.0 [RVL-08] An intent that does not carry this app's own value was not made by it: the app opens as from its icon.
+        val own = runCatching { intent.getStringExtra(KEY_EXTRA) }.getOrNull()
+        intent.removeExtra(KEY_EXTRA)
+        if (!follows(own, key(context))) {
+            intent.removeExtra(EXTRA)
+            intent.removeExtra(CALENDAR_EXTRA)
+            intent.removeExtra(PAYLOAD_EXTRA)
+            return false
+        }
         val target = intent.getStringExtra(EXTRA)?.let { n -> Target.entries.firstOrNull { it.name == n } } ?: return false
         intent.removeExtra(EXTRA)
         _calendar.value = intent.getStringExtra(CALENDAR_EXTRA)
@@ -168,6 +199,10 @@ object NoticeLinks {
 
     /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
     const val ON_SCREEN = "on_screen"
+
+    /** 2.0.0 [RVL-08] An intent's value against this phone's, compared in constant time. */
+    internal fun follows(carried: String?, own: String): Boolean =
+        carried != null && java.security.MessageDigest.isEqual(carried.toByteArray(), own.toByteArray())
 
     /**
      * Done with [target]. 2.0.0 [RVP-26] (검토 UIX-48) Its [payload] and [calendar] go with it: they stayed, and the next screen to read

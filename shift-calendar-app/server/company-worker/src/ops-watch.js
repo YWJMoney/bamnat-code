@@ -24,6 +24,8 @@ export const WATCH = {
   sample: 900,
   /** 한 시간 동안 메모리에 모을 주소 수(그 밖은 '기타'). */
   routes: 120,
+  /** 2.0.0 [RVQ-03] 판마다 센 요청(카나리 비교)은 이틀만. */
+  keepVerDays: 2,
 };
 
 export const WATCH_SCHEMA = [
@@ -39,6 +41,10 @@ export const WATCH_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS req_stats (hour TEXT NOT NULL, route TEXT NOT NULL, n INTEGER NOT NULL, err INTEGER NOT NULL, ms_sum INTEGER NOT NULL,
     ms_max INTEGER NOT NULL, b0 INTEGER NOT NULL DEFAULT 0, b1 INTEGER NOT NULL DEFAULT 0, b2 INTEGER NOT NULL DEFAULT 0, b3 INTEGER NOT NULL DEFAULT 0,
     b4 INTEGER NOT NULL DEFAULT 0, b5 INTEGER NOT NULL DEFAULT 0, b6 INTEGER NOT NULL DEFAULT 0, b7 INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (hour, route))`,
+  // 2.0.0 [RVQ-03] 검토 I21c-02: 판(Cloudflare 배포 번호 앞 8자)·분마다 요청·5xx·걸린 시간. 카나리 동안 새 판과 앞 판을 견줘요.
+  // req_stats에 칸을 더하면 판이 둘일 때 같은 시간·주소가 두 줄이 되어 숫자 화면이 겹쳐 세서, 따로 둬요. 휴대폰·사람 값은 없어요.
+  `CREATE TABLE IF NOT EXISTS ver_stats (minute TEXT NOT NULL, ver TEXT NOT NULL, n INTEGER NOT NULL, err INTEGER NOT NULL, ms_sum INTEGER NOT NULL,
+    PRIMARY KEY (minute, ver))`,
 ];
 
 const kst = (ms) => new Date(ms + 9 * HOUR).toISOString();
@@ -78,7 +84,7 @@ function bufferOf(env) {
   if (!key) return null;
   let b = buffers.get(key);
   if (!b) {
-    b = { rows: new Map(), at: Date.now() };
+    b = { rows: new Map(), vers: new Map(), at: Date.now() };
     buffers.set(key, b);
   }
   return b;
@@ -102,15 +108,36 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
   b.rows.set(k, r);
+  // 2.0.0 [RVQ-03] 판마다(배포 도구의 health·카나리 읽기는 빼요: 새 판에 직접 보내는 확인이 새 판 숫자를 좋게 보이게 하지 않게).
+  const ver = String(env.CF_VERSION_METADATA?.id ?? "").slice(0, 8);
+  if (ver && !String(path).startsWith("/api/admin/health")) {
+    const vk = `${verMinute(now)}|${ver}`;
+    const v = b.vers.get(vk) ?? { minute: verMinute(now), ver, n: 0, err: 0, sum: 0 };
+    v.n += 1;
+    if (status >= 500) v.err += 1;
+    v.sum += t;
+    b.vers.set(vk, v);
+  }
 }
+
+/** 2.0.0 [RVQ-03] UTC 분('2026-11-12T09:41'). */
+export const verMinute = (ms) => new Date(ms).toISOString().slice(0, 16);
 
 /** 모은 것을 더해요: 1분이 지났거나 [force](정기 작업). */
 export async function flushWatch(env, now = Date.now(), force = false) {
   const b = bufferOf(env);
-  if (!b || !b.rows.size || (!force && now - b.at < WATCH.flushMs)) return 0;
+  if (!b || (!b.rows.size && !b.vers.size) || (!force && now - b.at < WATCH.flushMs)) return 0;
   const rows = [...b.rows.values()];
+  const vers = [...b.vers.values()];
   b.rows = new Map();
+  b.vers = new Map();
   b.at = now;
+  if (vers.length) {
+    const vsql = `INSERT INTO ver_stats (minute, ver, n, err, ms_sum) VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT (minute, ver) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5`;
+    await env.DB.batch(vers.map((v) => env.DB.prepare(vsql).bind(v.minute, v.ver, v.n, v.err, v.sum)));
+  }
+  if (!rows.length) return 0;
   const sql = `INSERT INTO req_stats (hour, route, n, err, ms_sum, ms_max, b0, b1, b2, b3, b4, b5, b6, b7) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
     ON CONFLICT (hour, route) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5, ms_max = MAX(ms_max, ?6), b0 = b0 + ?7, b1 = b1 + ?8,
     b2 = b2 + ?9, b3 = b3 + ?10, b4 = b4 + ?11, b5 = b5 + ?12, b6 = b6 + ?13, b7 = b7 + ?14`;
@@ -131,6 +158,16 @@ const sigOf = (route, line) => {
   for (const c of `${route}|${line}`) h = ((h * 33) ^ c.charCodeAt(0)) >>> 0;
   return h.toString(36);
 };
+
+/**
+ * 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶기 실패(errfail)와 정기 작업 실패(joberr)를 날마다 세요(30일). 오류 묶음 화면이 '묶이지 않은 오류'를
+ * 묶기 전·묶기 실패·정기 작업 세 갈래로 나눠 보여요. 세기도 실패하면 조용히 넘어가요(요청·작업은 그대로).
+ */
+export async function countFailure(env, kind, now = Date.now()) {
+  if (!env?.DB) return;
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1`)
+    .bind(`${kind}|${watchDay(now)}`, now + 30 * DAY).run().catch(() => {});
+}
 
 /** 500 하나를 묶음에 더해요. [app]은 앱이 보낸 판(있으면). */
 export async function recordError(env, path, e, now = Date.now(), app = "") {
@@ -162,6 +199,7 @@ export async function runJob(env, step, fn, now = Date.now()) {
     return v;
   } catch (e) {
     console.error(`job ${step}: ${e?.stack ?? e}`);
+    await countFailure(env, "joberr", now);
     await run(env, `INSERT INTO job_runs (step, fail_at, error, ms, runs, fails, last_at, ver) VALUES (?1, ?2, ?3, ?4, 1, 1, ?2, ?5)
       ON CONFLICT (step) DO UPDATE SET fail_at = ?2, error = ?3, ms = ?4, runs = runs + 1, fails = fails + 1, last_at = ?2, ver = ?5`,
     step, now, errorLine(e), Date.now() - t0, SERVER_VERSION).catch(() => {});
@@ -182,7 +220,22 @@ export async function pruneWatch(env, now = Date.now()) {
     env.DB.prepare("DELETE FROM req_stats WHERE hour < ?").bind(watchHour(now - WATCH.keepStatsDays * DAY)),
     env.DB.prepare("DELETE FROM error_days WHERE day < ?").bind(watchDay(now - WATCH.keepErrorDays * DAY)),
     env.DB.prepare("DELETE FROM error_groups WHERE last_at < ?").bind(now - WATCH.keepErrorDays * DAY),
+    env.DB.prepare("DELETE FROM ver_stats WHERE minute < ?").bind(verMinute(now - WATCH.keepVerDays * DAY)),
   ]);
+}
+
+/**
+ * 2.0.0 [RVQ-03] 검토 I21c-02: 카나리 비교. [ids]는 배포 도구가 아는 두 판의 배포 번호 앞 8자(새 판·앞 판). 지난 [minutes]분 동안
+ * 판마다 {n, err, ms}. 번호를 모르면 아무것도 받지 못해요(공개 길이라 다른 판·전체 숫자는 내보내지 않아요).
+ */
+export async function canaryStats(env, ids, minutes, now = Date.now()) {
+  const want = ids.filter((x) => /^[0-9a-f]{8}$/.test(x ?? ""));
+  if (!env?.DB || !want.length) return {};
+  await flushWatch(env, now, true).catch(() => {});
+  const from = verMinute(now - Math.min(30, Math.max(1, minutes || 10)) * 60 * 1000);
+  const rows = await all(env, `SELECT ver, SUM(n) AS n, SUM(err) AS err, SUM(ms_sum) AS ms FROM ver_stats WHERE minute >= ? AND ver IN (${want.map(() => "?").join(", ")}) GROUP BY ver`,
+    from, ...want);
+  return Object.fromEntries(rows.map((r) => [r.ver, { n: Number(r.n), err: Number(r.err), ms: Number(r.ms) }]));
 }
 
 // ---- 관리자 앱에 보이는 것 ----
@@ -193,6 +246,10 @@ export const JOB_NAMES = {
   flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
   play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
+  // 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업도 단계마다.
+  held5: "보류 끝난 답 보내기(5분)", ship5: "출시 안내 보내기(5분)", surge: "광장 글 급증 살피기(5분)",
+  // 1.39 [OBS2-01] 이름이 없어 서버 상태에 'observe'로 보였어요.
+  observe: "Play 보고서·개선 신호 합치기",
   five: "5분 작업(보류 끝난 답·자동 출시 안내)", // 2.0.0 [RVN-02]
 };
 
@@ -262,8 +319,12 @@ export async function errorState(env, now = Date.now(), { status = "open" } = {}
   const counted = new Map((await all(env, "SELECT key, count FROM counters WHERE key >= ? AND key LIKE 'errors|%'", `errors|${from}`).catch(() => []))
     .map((r) => [String(r.key).slice(7), r.count]));
   const loose = list.reduce((n, day, i) => n + Math.max(0, (counted.get(day) ?? 0) - daily[i]), 0);
+  // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 묶기 실패와 그 밖(묶기 전·표 준비 전)으로, 정기 작업 실패는 따로.
+  const sum = async (kind) => (await all(env, "SELECT COALESCE(SUM(count), 0) AS n FROM counters WHERE key >= ? AND key LIKE ?", `${kind}|${from}`, `${kind}|%`)
+    .catch(() => [{ n: 0 }]))[0]?.n ?? 0;
+  const [failed, jobs] = [Math.min(loose, Number(await sum("errfail"))), Number(await sum("joberr"))];
   return {
-    days: list, daily, loose,
+    days: list, daily, loose, split: { before: loose - failed, failed, jobs },
     groups: groups.map((g) => ({ sig: g.sig, route: g.route, message: g.message, sample: g.sample, app: g.app, firstAt: g.first_at, lastAt: g.last_at,
       total: g.total, status: g.status, note: g.note, fresh: now - g.first_at < DAY, trend: list.map((day) => per.get(g.sig)?.get(day) ?? 0) })),
     counts: Object.fromEntries((await all(env, "SELECT status, COUNT(*) AS n FROM error_groups GROUP BY status")).map((r) => [r.status, r.n])),
