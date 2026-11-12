@@ -217,7 +217,8 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun market(): Screen.() -> Unit = {
         Market().also { c.recipeApi = it }
         style(WorkStyle.SHIFT)
-        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        val model = RecipeListViewModel(c)
+        content { RecipeListScreen(model, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
         settle()
     }

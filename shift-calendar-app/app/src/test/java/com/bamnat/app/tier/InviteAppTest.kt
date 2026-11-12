@@ -140,7 +140,7 @@ class InviteAppTest {
         third.sync()
         assertEquals("waiting", third.report(third.offer()!!, "referrer").status)
         moveServerClock(url, days = 7)
-        Today.use(Clock.offset(Clock.systemUTC(), Duration.ofDays(14)))
+        Today.use(Clock.offset(Clock.systemUTC(), Duration.ofDays(14))) // real clock: the local server's test clock runs on from the real one, so the phone moves with it
         third.sync()
         assertEquals("credited", third.store.current.answer?.status)
         counts = inviter.refresh()!!
