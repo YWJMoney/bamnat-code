@@ -125,16 +125,18 @@ internal fun FeelChoices(feels: List<RecipePieces.Feel>, on: Map<String, Boolean
         Text("앱 느낌 · 켠 것만 바뀌어요", style = MaterialTheme.typography.labelLarge, modifier = Modifier.semantics { heading() })
         first.forEach { FeelRow(it, on[it.key] == true, onTurn) }
         if (mine.isNotEmpty()) {
-            val names = mine.take(2).joinToString("·") { it.what } + if (mine.size > 2) " 등" else ""
+            // The names on their own small line, so the line's point ('그대로 둬요') reads first at any text size.
+            val names = mine.take(3).joinToString(" · ") { it.what } + if (mine.size > 3) " 등" else ""
             val turned = mine.count { on[it.key] == true }
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Button) { open = !open },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (turned > 0) "내 설정 ${mine.size}개 중 ${turned}개를 바꿔요" else "내 설정 ${mine.size}개($names)는 그대로 둬요",
-                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
-                )
+                Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
+                    Text(if (turned > 0) "내 설정 ${mine.size}개 중 ${turned}개를 바꿔요" else "내 설정 ${mine.size}개는 그대로 둬요",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text(names, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 androidx.compose.material3.Icon(
                     if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
                     contentDescription = if (open) "접기" else "펼치기", tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -145,6 +147,7 @@ internal fun FeelChoices(feels: List<RecipePieces.Feel>, on: Map<String, Boolean
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FeelRow(f: RecipePieces.Feel, on: Boolean, onTurn: (String, Boolean) -> Unit) {
     Row(
@@ -155,10 +158,14 @@ private fun FeelRow(f: RecipePieces.Feel, on: Boolean, onTurn: (String, Boolean)
     ) {
         Column(Modifier.weight(1f).padding(vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(f.what, style = MaterialTheme.typography.bodyMedium)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Cell(f.now, f.nowColor, false, Modifier.weight(1f, fill = false))
+            // Big text on a narrow phone: '지금 → 넣으면' wraps between whole values instead of standing '휴대폰 / 따라' (조건 12).
+            androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
+                Cell(f.now, f.nowColor, false, Modifier)
                 Text("→", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Cell(f.then, f.thenColor, on, Modifier.weight(1f, fill = false))
+                Cell(f.then, f.thenColor, on, Modifier)
             }
             f.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
