@@ -281,3 +281,6 @@ view.dayDial
 day.start
 sleep.diary
 pay.close
+invest.holdingShot
+invest.quantity
+invest.story
