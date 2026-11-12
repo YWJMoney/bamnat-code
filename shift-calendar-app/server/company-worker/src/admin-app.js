@@ -3458,7 +3458,7 @@ function adminApp(L, BUILD, M) {
       // 2.0.0 [RVQ-26] 검토 SVC-52
       again: "돌려준 작품을 만든 분이 내용을 고쳐 새 판으로 다시 올린 것이에요. 이미 장터에 보여요. 괜찮으면 '괜찮아요', 아직이면 다시 돌려주거나 가려요. 공개 범위만 바꾼 것은 돌려준 채로 남아 여기 오지 않아요.",
       // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02·T22b-01
-      votes: "한 네트워크에서 한 시간에 한 작품 30표(모든 작품 합쳐 300표)를 넘어 어디에도 세지 않고 기다리는 좋아요·안좋아요예요. 묶음은 그 시간의 같은 네트워크예요(누구인지는 몰라요). 병원·공장 와이파이처럼 여럿이 함께 누른 것 같으면 '세기', 한 사람이 설치를 바꿔 누른 것 같으면 '버리기'. 하루가 지나면 3일 넘게 쓴 설치의 표는 저절로 세고, 30일이 지나면 버려요.",
+      votes: "한 네트워크에서 한 시간에 한 작품 30표(모든 작품 합쳐 300표)를 넘어 어디에도 세지 않고 기다리는 좋아요·안좋아요예요. 묶음은 그 시간의 같은 네트워크예요(누구인지는 몰라요, 번호는 작품마다 따로 매겨요). 병원·공장 와이파이처럼 여럿이 함께 누른 것 같으면 '세기', 한 사람이 설치를 바꿔 누른 것 같으면 '버리기'. 하루가 지나면 3일 넘게 쓴 설치의 표는 저절로 세고, 30일이 지나면 버려요.",
       showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
     }[tab];
     const q = (S.recipeQuery ?? "").trim().toLowerCase();
@@ -3472,7 +3472,7 @@ function adminApp(L, BUILD, M) {
     const votes = tab === "votes";
     const rowMore = (r) => {
       const items = [
-        votes ? `<button class="btn small danger" data-act="recipe-held" data-id="${r.code}" data-key="drop">보류된 표 모두 버리기</button>` : "",
+        votes && r.heldVotes?.length > 1 ? `<button class="btn small danger" data-act="recipe-held" data-id="${r.code}" data-key="drop">보류된 표 모두 버리기</button>` : "",
         again ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>` : "",
         r.state === "pending" && !again ? `<button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : "",
         r.official ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`,
@@ -3483,7 +3483,8 @@ function adminApp(L, BUILD, M) {
       ].filter(Boolean).join("");
       return moreMenu(r.title, items);
     };
-    const mainAct = (r) => votes ? `<button class="btn small" data-act="recipe-held" data-id="${r.code}" data-key="release">모두 세기</button>`
+    // [RVQ-39] 조건 2: 묶음이 하나면 그 줄의 세기·버리기가 곧 전부라 '모두 세기'를 따로 두지 않아요.
+    const mainAct = (r) => votes ? (r.heldVotes?.length > 1 ? `<button class="btn small" data-act="recipe-held" data-id="${r.code}" data-key="release">모두 세기 (${r.heldVotes.length}묶음)</button>` : "")
       : again ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="approve">괜찮아요</button><button class="btn small" data-act="recipe-return" data-id="${r.code}">다시 돌려주기</button>`
       : r.state === "pending" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>`
       : r.state === "waiting" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
@@ -3759,7 +3760,9 @@ function adminApp(L, BUILD, M) {
     const side = (q) => {
       const check = q.state === "check" && q.operator ? `<button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="check-ok">맞아요</button>
         <button class="btn small ghost" data-act="recipe-request" data-id="${q.id}" data-key="check-no">아니에요</button>` : "";
-      return `${check}<button class="btn small${check ? " ghost" : ""}" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button>`;
+      const hide = `<button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button>`;
+      // 조건 2: 맞아요·아니에요가 있으면 가리기는 ⋯ 안으로.
+      return check ? `${check}${moreMenu(q.body.slice(0, 30), hide)}` : hide;
     };
     const checking = d.items.filter((q) => q.state === "check" && q.operator).length;
     return `${checking ? `<p class="list-note">스튜디오 요구로 올라온 요청 ${checking}개가 완성 확인을 기다려요. 작품이 그 요구를 풀었는지 보고 '맞아요'를 눌러요.</p>` : ""}
