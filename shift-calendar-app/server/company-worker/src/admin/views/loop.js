@@ -5,7 +5,7 @@
 //   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
 //   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만), 요금 기준(새 기능만 묻기)·고르기 칸 [LOOP-10][LOOP-11][LOOP-35]
 export function loopViews(A) {
-  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl, copy } = A;
 
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
@@ -298,7 +298,7 @@ export function loopViews(A) {
 
   // [LOOP-35] 사용자 11-09 '설명이 너무 부족해, 기존 기능의 오류나 개선은 무료, 새 기능만 묻기, 필터링': 기준 설명·고르기 칸·항목마다 왜 묻는지.
   const VIEW_HINTS = {
-    ask: "무료·프로를 정해야 하는 새 기능이에요. 정하기 전에는 이 기능의 스위치를 켤 수 없어요.",
+    ask: "무료·프로를 정할 새 기능을 Claude 제안별로 모았어요. 누르면 숫자와 단추가 펼쳐져요. 정하기 전에는 스위치를 켤 수 없어요.",
     decided: "무료·프로를 이미 정한 새 기능이에요. 다시 정할 수 있어요(무료로 연 것은 잠그지 않아요).",
     existing: "이미 있는 기능을 고치거나 다듬는 일이라 묻지 않아요. 그 기능의 요금 그대로(무료면 무료) 가요.",
     internal: "관리자 앱·운영·통계처럼 서버로만 닿는 일이라 앱 사용자에게 요금이 없어요.",
@@ -319,28 +319,45 @@ export function loopViews(A) {
     const view = d.view ?? "ask";
     const chips = `<div class="chips" role="group" aria-label="요금 기준으로 고르기">${Object.entries(d.views ?? {}).map(([k, name]) =>
       `<button type="button" class="chip pick" data-act="loop-tier-view" data-key="${k}" aria-pressed="${view === k}">${esc(name)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
-    const top = `<p class="hint">새 기능만 무료·프로를 물어요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료) 가요. ${esc(VIEW_HINTS[view] ?? "")}</p>${chips}${basisCriteria()}`;
-    if (!d.items.length) return top + empty(view === "ask" ? "지금 정할 새 기능이 없어요" : "이 칸에 해당하는 개발사항이 없어요", view === "ask" ? "새 기능이 생기면 여기에 모여요. 기존 기능 고침·다듬기는 여기 오지 않아요." : "");
-    const card = (x) => {
+    // 2.0.0 [RVA-58] 조건 1: 목록이 위에서 시작하게 설명은 고른 칸 한 줄만(묻고 묻지 않는 기준은 '기준'을 펴서).
+    const top = `${chips}<p class="hint">${esc(VIEW_HINTS[view] ?? "")}</p>`;
+    if (!d.items.length) return top + basisCriteria() + empty(view === "ask" ? "지금 정할 새 기능이 없어요" : "이 칸에 해당하는 개발사항이 없어요", view === "ask" ? "새 기능이 생기면 여기에 모여요. 기존 기능 고침·다듬기는 여기 오지 않아요." : "");
+    // 2.0.0 [RVA-58] 정할 새 기능이 한 번에 열네 개쯤 와요(LOOP-41): 한 장씩 큰 카드(380 폭에서 한 장 650px)는 견주기 어려워서,
+    // Claude 제안별로 묶은 한 줄(제목 + 제안과 까닭 한 줄)로 보고, 누르면 그 자리에서 숫자·단추가 펼쳐져요. 요금은 사용자와 논의한 뒤
+    // 최고 관리자가 하나씩 정해요(한꺼번에 정하는 단추는 두지 않아요). 논의용으로 제안과 까닭을 한 번에 복사해요.
+    const body = (x) => {
       const asked = x.basis.key === "new";
-      const pill = `<span class="pill ${x.effective.decided ? (x.tier === "later" ? "warn" : "ok") : BASIS_TONES[x.basis.key] ?? ""}">${esc(x.effective.name)}</span>`;
-      const meta = [x.first ? "1순위(직접 넣음)" : "", x.statusName, x.track, x.sizeName ? `크기 ${x.sizeName}` : "크기 없음", x.routeName ? `전달 ${x.routeName}` : ""].filter(Boolean).join(" · ");
+      const meta = [x.statusName, x.sizeName ? `크기 ${x.sizeName}` : "크기 없음", x.routeName ? `전달 ${x.routeName}` : ""].filter(Boolean).join(" · ");
       const basisLine = `<p class="note${asked ? " warn" : ""}"><b>${esc(x.basis.name)}${x.basis.auto ? " (자동)" : ""}</b> — ${esc(x.basis.why)}</p>`;
       const pick = owner() && asked ? `<div class="actions start">${Object.entries(d.tiers).map(([k, name]) => `<button class="btn small${x.tier === k ? " primary" : ""}" type="button" data-act="loop-tier" data-id="${esc(x.id)}" data-tier="${k}"
           title="${esc(d.tierHelp?.[k] ?? "")}">${esc(name)}${x.ask === k ? " · Claude 제안" : ""}</button>`).join("")}</div>
         <p class="hint">${esc(d.tierHelp?.[x.tier || x.ask || "later"] ?? "")}</p>` : "";
-      return `<section class="card">${head(x.title, meta, pill)}
+      return `<div class="rv-body"><p class="meta">${esc(meta)}</p>
         ${x.preview ? `<p class="dev-body">${esc(x.preview)}</p>` : ""}
         ${basisLine}
         ${x.onBeforeTier ? '<p class="note warn">요금을 정하기 전에 스위치가 켜져 있어요(날짜 조건 등). 먼저 정해 주세요.</p>' : ""}
-        ${asked && x.ask ? `<p><b>Claude 제안</b> ${esc(x.askName)}${x.why ? ` — ${esc(x.why)}` : ""}</p>` : ""}
         ${x.tierBy ? `<p class="meta">${esc(x.tierBy)} · ${esc(when(x.tierAt))}${x.tierNote ? ` · ${esc(x.tierNote)}` : ""}</p>` : ""}
         ${x.observe ? `<details><summary>정하는 데 쓸 숫자(요청·쓰는 수·스위치 앞뒤)</summary>${obsLines(x.observe)}</details>` : ""}
         ${pick}
-        <div class="actions start">${owner() ? `<button class="btn small ghost" type="button" data-act="loop-basis" data-id="${esc(x.id)}">기준 바꾸기</button>` : ""}<a class="btn small ghost" href="${href("dev", x.id)}">개발사항 열기</a></div>
-      </section>`;
+        <div class="actions start">${owner() ? `<button class="btn small ghost" type="button" data-act="loop-basis" data-id="${esc(x.id)}">기준 바꾸기</button>` : ""}<a class="btn small ghost" href="${href("dev", x.id)}">개발사항 열기</a></div></div>`;
     };
-    return top + d.items.map(card).join("");
+    const line = (x) => {
+      const key = `tier:${x.id}`;
+      const pill = `<span class="pill ${x.effective.decided ? (x.tier === "later" ? "warn" : "ok") : BASIS_TONES[x.basis.key] ?? ""}">${esc(x.effective.name)}</span>`;
+      const gist = x.basis.key === "new" && !x.effective.decided ? (x.why ? x.why : x.ask ? "" : "Claude 제안이 아직 없어요") : x.basis.why;
+      const small = [x.first ? "1순위" : "", x.track, x.onBeforeTier ? "스위치가 먼저 켜짐" : ""].filter(Boolean).map(esc).join(" · ");
+      return `<li><details data-key="${esc(key)}"${S.opened.get(key) ? " open" : ""}>
+        <summary class="row"><span class="row-main"><b>${esc(x.title)}</b><small>${small}${small && gist ? " · " : ""}${gist ? `<span class="gist">${esc(gist)}</span>` : ""}</small></span>
+          ${view !== "ask" || x.tier === "later" ? `<span class="row-side inline">${pill}</span>` : ""}</summary>${body(x)}</details></li>`;
+    };
+    // 정할 것은 Claude 제안별로(제안 없음은 맨 끝), 나머지 칸은 한 묶음.
+    const ORDER = [...Object.keys(d.tiers ?? {}), ""];
+    const groups = view === "ask"
+      ? ORDER.map((k) => [k, d.items.filter((x) => (x.ask ?? "") === k)]).filter(([, xs]) => xs.length)
+      : [["*", d.items]];
+    const title = (k, n) => k === "*" ? "" : `<h2 class="section">${k ? `Claude 제안 ${esc(d.tiers[k] ?? k)}` : "제안 없음"}<span class="count">${n}</span></h2>`;
+    const copyBtn = view === "ask" && d.items.length > 1 ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-tier-copy">${icon(P.copy)}논의용으로 복사 (${d.items.length}개)</button></div>` : "";
+    return top + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
   }
 
   // ---- 길·다 왔는지·단추 ----
@@ -411,6 +428,14 @@ export function loopViews(A) {
         <p class="hint">${tier === "later" ? "그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있지만, 무료로 연 것을 다시 잠그지는 않아요."}</p>
         <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    // 2.0.0 [RVA-58] 요금은 사용자와 논의한 뒤 정해요: 정할 새 기능과 Claude 제안·까닭을 한 번에 글로 복사해요.
+    "loop-tier-copy": () => {
+      const d = S.data.loopTiers;
+      if (!d) return;
+      const text = [`요금 정할 새 기능 ${d.items.length}개 (Claude 제안과 까닭)`, ...d.items.map((x, i) =>
+        `${i + 1}. ${x.title}${x.track ? ` [${x.track}]` : ""}\n   제안: ${x.askName ?? "없음"}${x.why ? ` — ${x.why}` : ""}`)].join("\n");
+      copy(text, `${d.items.length}개를 복사했어요`);
     },
     "loop-tier-view": ({ key }) => {
       S.tierView = key;

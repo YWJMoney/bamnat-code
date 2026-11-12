@@ -530,7 +530,9 @@ export async function devQueue(env, limit = 60) {
       (SELECT COUNT(DISTINCT json_extract(i.info, '$.app')) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND json_valid(i.info)) AS versions,
       (SELECT COUNT(*) FROM dev_history h WHERE h.item_id = d.id AND h.action = 'fixed_no') AS again,
       (SELECT GROUP_CONCAT(m.text, ' ') FROM dev_links l JOIN inquiry_messages m ON m.inquiry_id = l.inquiry_id AND m.sender = 'user' WHERE l.item_id = d.id) AS words
-    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') LIMIT 400`).catch(() => []);
+    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+    ORDER BY d.origin = 'admin' DESC, asks DESC, d.created_at LIMIT 1000`).catch(() => []);
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 순서 없이 400개로 자르면 1순위나 문의가 걸린 것이 빠질 수 있었어요: 그것부터 읽어요.
   // 급함 말(알람·앱 실행·데이터·결제)과 수면 긴급 넷(사용자 11-07 승인)은 문의 쪽(inquiries.js)과 같은 것을 써요.
   return rows.map((d) => {
     const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
@@ -781,10 +783,11 @@ const tierView = (b, t) => (b.key === "new" ? (t.decided ? "decided" : "ask") : 
  * 끝난 지 오래된 것(완료 뒤 60일)은 빼요.
  */
 export async function tierBoard(env, now, params = new URLSearchParams()) {
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 300개로 자르면 정할 새 기능이 빠졌어요(로컬 583줄에서 22개 중 7개만): 정할 것을 먼저, 2000개까지.
   const view = Object.hasOwn(TIER_VIEWS, params.get("view") ?? "") ? params.get("view") : "ask";
   const rows = await all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
     WHERE d.deleted_at IS NULL AND d.status != 'rejected' AND (d.status != 'done' OR d.updated_at > ?)
-    ORDER BY d.origin = 'admin' DESC, (d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 300`, now - 60 * DAY).catch(() => []);
+    ORDER BY d.origin = 'admin' DESC, (${ASK_TIER_SQL} AND d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 2000`, now - 60 * DAY).catch(() => []);
   const store = await flagStore(env).catch(() => null);
   const counts = Object.fromEntries(Object.keys(TIER_VIEWS).map((k) => [k, 0]));
   const out = [];

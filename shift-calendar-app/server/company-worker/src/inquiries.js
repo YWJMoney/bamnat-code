@@ -10,7 +10,7 @@ import { needFromInquiry } from "./growth.js";
 import { fcmTell, stillHere } from "./fcm.js";
 import { kstDay } from "./usage.js";
 import { bugFixed, ideaAdopted } from "./money.js";
-import { LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
+import { ASK_TIER_SQL, LOOP, WAITING_SQL, basisOf, effectOf, styleList, tierEffective, fixedAnswer, fixedAsk, heldLog, instantOk, phoneArrived } from "./loop.js";
 // ---- questions from the app [ADMIN-02] ----
 //
 // 설정 > 문의하기 sends here instead of opening a mail app, and the developer answers in /admin; the
@@ -1533,25 +1533,28 @@ export async function devReply(env, row, body, now) {
 
 /** The list: one status, open (접수 and 개발중), all, deleted ones, mine, or words in the title or body. */
 export async function devList(env, params) {
-  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
+  const status = Object.hasOwn(DEV.statuses, params.get("status") ?? "") || ["now", "open", "all", "deleted"].includes(params.get("status")) ? params.get("status") : "all";
   const q = String(params.get("q") ?? "").trim().slice(0, 40);
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
   const mine = params.get("who") === "mine" ? env.actor.id : "";
-  const [rows, countRows] = (await batch(env, [
+  const [rows, countRows, nowRows] = (await batch(env, [
     // Only links to questions still kept count.
     stmt(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS links,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.status = 'open') AS waiting,
         (SELECT COUNT(*) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND i.kind = 'idea') AS ideas
       FROM dev_items d
       WHERE ((?1 = 'deleted' AND d.deleted_at IS NOT NULL) OR (?1 != 'deleted' AND d.deleted_at IS NULL
-          AND (?1 = 'all' OR d.status = ?1 OR (?1 = 'open' AND d.status IN ('todo', 'doing')))))
+          AND (?1 = 'all' OR d.status = ?1 OR ((?1 = 'open' OR ?5 = 1) AND d.status IN ('todo', 'doing')))))
+        AND (?5 = 0 OR ${devNowSql()})
         AND (?2 = '' OR d.title LIKE ?3 ESCAPE '\\' OR d.body LIKE ?3 ESCAPE '\\')
         AND (?4 = '' OR d.assignee = ?4)
-      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine),
+      ORDER BY d.updated_at DESC LIMIT ${DEV.list}`, status, q, like, mine, status === "now" ? 1 : 0),
     stmt(env, `SELECT CASE WHEN deleted_at IS NULL THEN status ELSE 'deleted' END AS s, COUNT(*) AS n FROM dev_items GROUP BY s`),
+    stmt(env, `SELECT COUNT(*) AS n FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') AND ${devNowSql()}`),
   ])).map((r) => r.results);
   const counts = { todo: 0, doing: 0, done: 0, rejected: 0, deleted: 0 };
   for (const r of countRows) if (Object.hasOwn(counts, r.s)) counts[r.s] = r.n;
+  counts.now = nowRows[0]?.n ?? 0;
   counts.open = counts.todo + counts.doing;
   counts.all = counts.open + counts.done + counts.rejected;
   // Still to do: most asked for first. Finished: newest first.
@@ -1568,11 +1571,38 @@ export async function devList(env, params) {
   const kinds = Object.fromEntries(Object.keys(LOOP.basis).map((k) => [k, 0]));
   for (const r of rows) kinds[basisOf(r).key]++;
   const kind = Object.hasOwn(LOOP.basis, params.get("kind") ?? "") ? params.get("kind") : "";
-  const shown = rows.filter((r) => (!from || devSource(r) === from) && (!kind || basisOf(r).key === kind));
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 추적 번호 앞머리(RVI·RVH… 갈래)로도 세고 골라 봐요. 적은 앞머리는 '그 밖'.
+  const tracks = devTracks(rows);
+  const track = String(params.get("track") ?? "").slice(0, 12);
+  const inTrack = (r) => !track || (track === "etc" ? Boolean(trackOf(r)) && !Object.hasOwn(tracks, trackOf(r)) : trackOf(r) === track);
+  const shown = rows.filter((r) => (!from || devSource(r) === from) && (!kind || basisOf(r).key === kind) && inTrack(r));
   // [ADMIN-16] A page at a time, after sorting all of the view.
   const { items, next } = paged(shown, page(params));
   return { counts, statuses: DEV.statuses, sources, sourceNames: DEV_SOURCES, kinds, kindNames: LOOP.basis, firsts: rows.filter((r) => first(r) === 0).length,
-    items: items.map(devItem), next, total: shown.length };
+    tracks, items: items.map(devItem), next, total: shown.length };
+}
+
+/**
+ * 2.0.0 [RVA-58] '지금 볼 것': 끝나지 않은 것 가운데 사람이 손댈 것만. 1순위(직접 넣음), 문의·개선 요청이 걸린 것,
+ * 숫자 신호, 요금을 정할 새 기능. 저장소 계획 줄(Claude가 개발 중)은 할 일에 그대로 있어요.
+ */
+// loop.js와 서로 불러서(순환) 처음 읽을 때 ASK_TIER_SQL이 아직 없을 수 있어요: 부를 때 만들어요.
+export const devNowSql = () => `(d.origin = 'admin' OR d.body LIKE '관측 신호%' OR EXISTS (SELECT 1 FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id)
+  OR (${ASK_TIER_SQL} AND d.tier IN ('', 'later')))`;
+/** 추적 번호의 앞머리(RVI-03 → RVI). 없으면 ''. */
+export const trackOf = (r) => (/^([A-Z][A-Z0-9]{1,7})-/.exec(String(r.track ?? "")) ?? [])[1] ?? "";
+/** 앞머리마다 몇 개인지(5개 이상만 따로, 나머지는 etc), 많은 순. */
+export function devTracks(rows) {
+  const n = {};
+  for (const r of rows) {
+    const k = trackOf(r);
+    if (k) n[k] = (n[k] ?? 0) + 1;
+  }
+  const out = {};
+  let etc = 0;
+  for (const [k, v] of Object.entries(n).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))) if (v >= 5) out[k] = v; else etc += v;
+  if (etc) out.etc = etc;
+  return out;
 }
 
 /** 1.39 [LOOP-34] 개발사항이 어디서 왔는지. 관리자가 무엇을 왜 개발하는지 한눈에 보게(사용자 11-09). */

@@ -469,7 +469,7 @@ function adminApp(L, BUILD, M) {
     reviewFilter: "all", inquiryStatus: "open", inquiryTopic: "", rewardTab: "owed", query: "", postFilter: "flagged", rateFilter: "review",
     // [ADMIN-12] Whose questions: everyone's, mine, nobody's. [ADMIN-10] The 개발사항 list's filter, words and picked items.
     deskView: "today", deskGroup: "", deskV: "", deskQuery: "", ledgerPick: null,
-    inquiryWho: "", devStatus: "open", devQuery: "", devWho: "", devFrom: "", devKind: "", tierView: "ask", devPick: null, templates: null,
+    inquiryWho: "", devStatus: "now", devQuery: "", devWho: "", devFrom: "", devKind: "", devTrack: "", tierView: "ask", devPick: null, templates: null,
     // [ADMIN-16] 문의 찾기·정렬, 여러 개 고르기. [ADMIN-17] 활동 기록 거르기. 토론·보상 찾기.
     inquiryQuery: "", inquirySort: "default", inquiryPick: null, postQuery: "", rewardQuery: "",
     audit: { actor: "", kind: "", from: "", to: "" },
@@ -530,7 +530,7 @@ function adminApp(L, BUILD, M) {
   const BIND = {
     inquiries: { status: "inquiryStatus", who: "inquiryWho", topic: "inquiryTopic", q: "inquiryQuery", sort: "inquirySort",
       kind: "inquiryKind", copied: "inquiryCopied", sender: "inquirySender" /* AT 1.29 [ADMCP-02] */, billing: "inquiryBilling" /* 1.36 [INQ-07] */ },
-    dev: { status: "devStatus", who: "devWho", q: "devQuery", from: "devFrom", kind: "devKind" },
+    dev: { status: "devStatus", who: "devWho", q: "devQuery", from: "devFrom", kind: "devKind", track: "devTrack" },
     // 1.39 [LOOP-35] 숫자 › 요금 판단의 고르기 칸(정할 것·정한 새 기능·기존 기능·운영용·분류 전).
     tiers: { view: "tierView" },
     review: { show: "reviewFilter" },
@@ -1125,7 +1125,7 @@ function adminApp(L, BUILD, M) {
 
   async function loadDev(n, more = false) {
     const after = more && S.data.devList?.next ? `&after=${S.data.devList.next}` : "";
-    const d = await api(`/dev?status=${encodeURIComponent(S.devStatus)}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${encodeURIComponent(S.devWho)}` : ""}${S.devFrom ? `&from=${encodeURIComponent(S.devFrom)}` : ""}${S.devKind ? `&kind=${encodeURIComponent(S.devKind)}` : ""}${after}`);
+    const d = await api(`/dev?status=${encodeURIComponent(S.devStatus)}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${encodeURIComponent(S.devWho)}` : ""}${S.devFrom ? `&from=${encodeURIComponent(S.devFrom)}` : ""}${S.devKind ? `&kind=${encodeURIComponent(S.devKind)}` : ""}${S.devTrack ? `&track=${encodeURIComponent(S.devTrack)}` : ""}${after}`);
     if (n !== undefined && !seq.current("load", n)) return;
     S.data.devList = more ? { ...d, items: [...S.data.devList.items, ...d.items] } : d;
   }
@@ -2477,8 +2477,9 @@ function adminApp(L, BUILD, M) {
     const picking = Boolean(S.devPick) && can("devStatus", "edit");
     // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 구간은 할 일·완료·전체 셋(할 일 = 접수 + 개발중), 찾기·새 개발사항·고르기·CSV는 그 옆(좁으면 단추 뒤),
     // 다른 상태(접수·개발중·반려·지움)와 출처·종류·맡은 사람은 '거르기' 안. 칸마다 뜻과 이 목록 설명은 목록 아래.
+    // 2.0.0 [RVA-58] 저장소 계획 줄이 500개를 넘어(LOOP-41) 처음은 '지금 볼 것'(1순위·문의가 걸린 것·숫자 신호·요금 정할 것)만.
     const statusSeg = `<div class="segmented" role="group" aria-label="개발사항 상태">
-        ${seg("dev-status", "open", S.devStatus, "할 일", counts.open)}${seg("dev-status", "done", S.devStatus, "완료", counts.done)}${seg("dev-status", "all", S.devStatus, "전체", counts.all)}</div>`;
+        ${seg("dev-status", "now", S.devStatus, "지금", counts.now)}${seg("dev-status", "open", S.devStatus, "할 일", counts.open)}${seg("dev-status", "done", S.devStatus, "완료", counts.done)}${seg("dev-status", "all", S.devStatus, "전체", counts.all)}</div>`;
     const tools = `<input id="search" type="search" placeholder="제목이나 내용으로 찾기" value="${esc(S.devQuery)}" autocomplete="off" enterkeyhint="search" aria-label="개발사항 찾기">
         ${edit && !picking ? `<button class="btn primary icon-wide" data-act="dev-new" aria-label="새 개발사항" title="새 개발사항">${icon(P.plus)}<span class="lbl">새 개발사항</span></button>` : ""}
         ${can("devStatus", "edit") ? (picking ? '<button class="btn" data-act="dev-pick" aria-pressed="true">선택 마침</button>'
@@ -2493,13 +2494,17 @@ function adminApp(L, BUILD, M) {
       <div class="chips" role="group" aria-label="요금 기준">${[["", "종류 모두", null], ...Object.entries(DEV_KINDS).map(([k, v]) => [k, v, d?.kinds?.[k] ?? 0])]
         .filter(([key, , n]) => key === "" || n || S.devKind === key).map(([key, label, n]) =>
         `<button type="button" class="chip pick" data-act="dev-kind" data-key="${key}" aria-pressed="${S.devKind === key}" title="${esc(DEV_KIND_HELP[key] ?? "")}">${esc(label)}${n ? ` ${n}` : ""}</button>`).join("")}</div>
+      ${Object.keys(d?.tracks ?? {}).length > 1 || S.devTrack ? `<div class="chips" role="group" aria-label="추적 번호(갈래)">${[["", "갈래 모두", null], ...Object.entries(d?.tracks ?? {})]
+        .map(([key, n]) => [key, key === "etc" ? "그 밖" : key, n]).map(([key, label, n]) =>
+        `<button type="button" class="chip pick" data-act="dev-track" data-key="${esc(key)}" aria-pressed="${S.devTrack === key}">${esc(label)}${n ? ` ${n}` : ""}</button>`).join("")}</div>` : ""}
       <div class="chips" role="group" aria-label="맡은 사람">${[["", "모두"], ["mine", "내가 맡은 것"]].map(([key, label]) =>
         `<button type="button" class="chip pick" data-act="dev-who" data-key="${key}" aria-pressed="${S.devWho === key}">${label}</button>`).join("")}</div>`;
-    const active = [MORE.some(([k]) => k === S.devStatus) ? 1 : "", S.devFrom, S.devKind, S.devWho].filter(Boolean).length;
+    const active = [MORE.some(([k]) => k === S.devStatus) ? 1 : "", S.devFrom, S.devKind, S.devTrack, S.devWho].filter(Boolean).length;
     const head = listHead(statusSeg, tools, { open: picking, busy: Boolean(S.devQuery), filters, active });
     const foot = `<div class="list-foot">${devGuide()}
       <details class="tip" data-key="dev-how"><summary>1순위가 맨 위 · 그다음 개발중, 문의 많은 순${d?.firsts ? ` · 지금 1순위 ${d.firsts}개` : ""}</summary>
-        <p class="hint">무엇을 개발할지 모이는 곳이에요. 문의·개선 요청에서 "개발사항에 추가"로 올리거나, 숫자 신호·저장소 개발 계획·Claude가 올리거나, 여기서 바로 만들어요. <b>최고 관리자가 여기서 직접 만든 것은 1순위</b>라 끝날 때까지 맨 위에 있고 Claude도 먼저 개발해요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p></details></div>`;
+        <p class="hint"><b>지금</b>은 사람이 손댈 것만 모아요: 1순위, 문의·개선 요청이 걸린 것, 숫자 신호, 요금을 정할 새 기능. 저장소 개발 계획 줄은 Claude가 개발하며 상태를 올려서 <b>할 일</b>에 있어요(갈래로 골라 봐요).
+        무엇을 개발할지 모이는 곳이에요. 문의·개선 요청에서 "개발사항에 추가"로 올리거나, 숫자 신호·저장소 개발 계획·Claude가 올리거나, 여기서 바로 만들어요. <b>최고 관리자가 여기서 직접 만든 것은 1순위</b>라 끝날 때까지 맨 위에 있고 Claude도 먼저 개발해요. 고친 것은 모두 항목마다 기록에 남아요.${can("devStatus", "edit") ? " 여러 개 고르기로 한 번에 복사하거나 처리해요." : " 처리(개발중·완료·반려)는 최고 관리자나 처리 권한이 있는 관리자가 해요."}</p></details></div>`;
     return head + `<div id="dev-list">${devRows()}</div>${foot}`;
   }
 
@@ -2508,26 +2513,35 @@ function adminApp(L, BUILD, M) {
     if (!d) return skeleton();
     const picking = Boolean(S.devPick) && can("devStatus", "edit");
     if (!d.items.length) {
+      // 2.0.0 [RVA-58] '지금' 칸이 비면 할 일 쪽으로 한 단추(빈 화면 부품: 한 줄 + 단추 하나).
+      if (S.devStatus === "now" && !S.devQuery && !S.devFrom && !S.devKind && !S.devTrack && !S.devWho) {
+        return empty("지금 손댈 개발사항은 없어요", d.counts?.open ? `할 일 ${d.counts.open}개는 Claude가 개발하며 상태를 올리고 있어요.` : "문의를 열고 개발사항에 추가를 누르면 여기에 모여요.",
+          d.counts?.open ? `<button class="btn" data-act="dev-status" data-key="open">할 일 ${d.counts.open}개 보기</button>` : "");
+      }
       return empty(S.devQuery ? "찾는 개발사항이 없어요" : S.devStatus === "deleted" ? "지운 항목이 없어요" : "개발사항이 없어요",
         S.devQuery ? "" : "문의를 열고 개발사항에 추가를 누르면 여기에 모여요.");
     }
+    // 2.0.0 [RVA-58] 380 폭에서 한 줄 모양: 오른쪽 알약은 1순위 하나만, 상태·출처는 작은 줄 맨 앞 낱말로(저장소 계획은 출처를 쓰지 않아요),
+    // 요금은 정할 것·정한 새 기능만, 만든 이는 사람·Claude일 때만. 개발중 580개가 모두 주황이면 주의색이 뜻을 잃어요(조건 6).
     const row = (x) => {
-      const inner = `<span class="row-main"><b>${esc(x.title)}</b>
-          <small>${[x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
-            // 1.39 [LOOP-35] 요금은 작은 줄에(알약이 많으면 제목이 잘려서): 새 기능인데 아직 안 정한 것만 눈에 띄게.
-            x.pay && x.basis?.key !== "unknown" ? (x.basis?.key === "new" && !x.pay.decided ? "요금 정할 것" : x.basis?.key === "internal" ? "운영용(요금 없음)" : `요금 ${esc(x.pay.name)}`) : "",
-            x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", x.effect?.key ? `효과 ${esc(x.effect.name)}` : "", `${esc(x.createdBy.name)} · ${esc(ago(x.updatedAt))}`,
-            x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ")}</small>
-          ${x.preview ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
-        ${x.first && !x.deletedAt && (x.status === "todo" || x.status === "doing") ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>'
-          : x.source ? `<span class="pill ${DEV_SOURCE_TONES[x.source] ?? ""}">${esc(DEV_SOURCES[x.source] ?? x.source)}</span>` : ""}
-        <span class="pill ${DEV_TONES[x.status]}">${x.deletedAt ? "지움" : DEV_NAMES[x.status]}</span>`;
+      const open = x.status === "todo" || x.status === "doing";
+      const state = x.deletedAt ? "지움" : DEV_NAMES[x.status];
+      const meta = [`<span class="dev-st ${x.deletedAt ? "" : x.status}">${state}</span>`,
+        x.source && x.source !== "repo" && !(x.first && open) ? esc(DEV_SOURCES[x.source] ?? x.source) : "",
+        x.links ? `문의 ${x.links}건${x.waiting ? ` (답 대기 ${x.waiting})` : ""}` : "", [DEV_SIZES[x.size], DEV_ROUTES[x.route]].filter(Boolean).join(" · "),
+        x.basis?.key === "new" ? (x.pay?.decided ? `요금 ${esc(x.pay.name)}` : '<span class="dev-st ask">요금 정할 것</span>') : "",
+        x.track ? esc(x.track) : "", x.releasedIn ? `${esc(x.releasedIn)}에 반영` : "", x.effect?.key ? `효과 ${esc(x.effect.name)}` : "",
+        x.createdBy.name && x.source !== "repo" ? esc(x.createdBy.name) : "", esc(ago(x.updatedAt)),
+        x.assignee ? (x.assignee.id === S.me.id ? "내가 맡음" : `맡음 ${esc(x.assignee.name)}`) : ""].filter(Boolean).join(" · ");
+      const inner = `<span class="row-main"><b>${esc(x.title)}</b><small>${meta}</small>
+          ${x.preview && x.source !== "repo" ? `<span class="preview">${esc(x.preview)}</span>` : ""}</span>
+        ${x.first && !x.deletedAt && open ? '<span class="pill bad" title="관리자가 직접 넣은 것: 가장 먼저 개발해요">1순위</span>' : ""}`;
       return picking ? `<li><label class="row${S.devPick.has(x.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick="${x.id}"${S.devPick.has(x.id) ? " checked" : ""}>${inner}</label></li>`
         : `<li><a class="row" href="${href("dev", x.id)}">${inner}${icon(P.chevron)}</a></li>`;
     };
     const n = picking ? S.devPick.size : 0;
     const status = can("devStatus", "edit");
-    return `<ul class="rows">${d.items.map(row).join("")}</ul>${moreButton(d.next, "dev-more", d.total, d.items.length)}
+    return `<ul class="rows dev-rows">${d.items.map(row).join("")}</ul>${moreButton(d.next, "dev-more", d.total, d.items.length)}
       ${picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 항목"><b>${n}개 골랐어요</b>
         <button class="btn small ghost" data-act="dev-pick-all">${n === d.items.length ? "모두 풀기" : "모두 고르기"}</button>
         <button class="btn small" data-act="dev-copy"${n ? "" : " disabled"}>${icon(P.copy)}복사</button>
@@ -5411,6 +5425,10 @@ function adminApp(L, BUILD, M) {
     },
     "dev-kind": ({ key }) => {
       S.devKind = key;
+      refilter("devList");
+    },
+    "dev-track": ({ key }) => {
+      S.devTrack = key;
       refilter("devList");
     },
     "dev-new": () => openDevNew(),

@@ -263,7 +263,7 @@ export function adminLib() {
   /** The filters each screen keeps in the address, with what they are when left out. */
   const FILTERS = {
     inquiries: { status: "open", who: "", topic: "", q: "", sort: "default", kind: "", copied: "", sender: "" /* AT 1.29 [ADMCP-02] */ },
-    dev: { status: "open", who: "", q: "", from: "" },
+    dev: { status: "now", who: "", q: "", from: "", kind: "", track: "" },
     review: { show: "all" },
     community: { show: "flagged", q: "" },
     rewards: { status: "owed", q: "" },

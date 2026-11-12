@@ -3468,3 +3468,40 @@ test("[RVA-57] 묶음 나누기: 화면 묶음은 그 화면을 열 때 받고, 
   assert.ok(!u.$("#main .empty.failed"));
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-58] 개발사항이 저장소 계획 줄뿐이면 '지금'은 빈 화면과 할 일 단추 하나, 줄은 오른쪽 알약 없이 한 줄 모양, 요금 판단은 Claude 제안별 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const add = env.DB.db.prepare(`INSERT INTO dev_items (id, title, body, status, track, size, route, tier_ask, tier_why, created_by, created_by_name, created_at, updated_at)
+    VALUES (?, ?, '저장소 줄', 'doing', ?, ?, 'app', ?, ?, 'sync', '저장소', ?, ?)`);
+  const at = Date.now();
+  for (let i = 0; i < 8; i++) add.run(`d${String(i).padStart(15, "0")}`, `계획 ${i}`, `RVI-${i + 1}`, "fix", "", "", at - i, at - i);
+  const u = await asOwner(env, t);
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /지금 손댈 개발사항은 없어요.*할 일 8개는 Claude가 개발하며/);
+  await u.click('#main .empty [data-act="dev-status"][data-key="open"]');
+  await u.settle(30);
+  assert.match(u.window.location.hash, /status=open/);
+  const rows = u.window.document.querySelectorAll("#main .dev-rows > li");
+  assert.equal(rows.length, 8);
+  assert.equal(rows[0].querySelectorAll(".pill").length, 0, "저장소 계획 줄에는 오른쪽 알약이 없어요");
+  assert.match(rows[0].querySelector("small").textContent, /^개발중 · 고침 · .*RVI-1/);
+  assert.ok(!/저장소|요금/.test(rows[0].querySelector("small").textContent), "만든 이 '저장소'와 '요금 무료(기존과 같음)'은 줄에서 빼요");
+  // 요금 정할 새 기능 둘: Claude 제안별로 묶어 한 줄씩, 누르면 단추가 펼쳐져요.
+  add.run("dnewfeature00001", "새 기능 하나", "RVK-1", "feature", "free", "투자 장부는 무료라서", at, at);
+  add.run("dnewfeature00002", "새 기능 둘", "RVK-2", "feature", "", "", at, at);
+  await u.go("#/tiers");
+  await u.settle(30);
+  const heads = [...u.window.document.querySelectorAll("#main h2.section")].map((h) => h.textContent.replace(/\s+/g, " ").trim());
+  assert.deepEqual(heads, ["Claude 제안 무료1", "제안 없음1"]);
+  assert.match(u.text("#main .tier-rows summary"), /새 기능 하나.*RVK-1 · 투자 장부는 무료라서/);
+  assert.ok(u.$('#main [data-act="loop-tier-copy"]'), "논의용으로 한 번에 복사");
+  assert.ok(u.$('#main .tier-rows [data-act="loop-tier"][data-tier="free"]'), "정하는 단추는 줄 안(펼치면 보여요)");
+  // 지금 칸에도 이 둘이 와요.
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.equal(u.window.document.querySelectorAll("#main .dev-rows > li").length, 2);
+  assert.match(u.text("#main .dev-rows"), /요금 정할 것/);
+  assert.deepEqual(u.errors, []);
+});

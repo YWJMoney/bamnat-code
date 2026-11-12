@@ -308,3 +308,44 @@ test("[RVA-57] 묶음 나누기: 첫 묶음은 압축해 150KB 아래, 화면 �
   }
   assert.deepEqual(all.filter((k, i) => all.indexOf(k) !== i), []);
 });
+
+test("[RVA-58] 개발사항 580줄: 처음은 지금 볼 것(1순위·문의·숫자 신호·요금 정할 것)만, 갈래로 골라 보고, 요금 판단은 300줄 뒤의 새 기능도 빠뜨리지 않아요", async (t) => {
+  const { call, DB } = server({ t });
+  const owner = await signIn(call);
+  const add = DB.db.prepare(`INSERT INTO dev_items (id, title, body, status, track, size, route, origin, created_by, created_by_name, created_at, updated_at)
+    VALUES (?, ?, ?, 'doing', ?, ?, ?, ?, 'sync', '저장소', ?, ?)`);
+  // 저장소 계획 580줄(고침·다듬기, 갈래 RVI·RVH와 적은 앞머리 몇 개). 새 기능 둘은 가장 오래된 쪽에 있어 최근 300줄 밖이에요.
+  for (let i = 0; i < 580; i++) {
+    const track = i < 300 ? `RVI-${i + 1}` : i < 570 ? `RVH-${i}` : `OLD${i % 3}-${i}`;
+    add.run(`d${String(i).padStart(15, "0")}`, `계획 ${i}`, "저장소 줄", track, i % 2 ? "fix" : "polish", "app", "", TEST_NOW - (600 - i) * 60_000, TEST_NOW - (600 - i) * 60_000);
+  }
+  add.run("dnewfeature00001", "새 기능 하나", "", "RVK-1", "feature", "app", "", TEST_NOW - 900 * 60_000, TEST_NOW - 900 * 60_000);
+  add.run("dnewfeature00002", "운영용 새 기능", "", "RVK-2", "feature", "server", "", TEST_NOW - 901 * 60_000, TEST_NOW - 901 * 60_000);
+  add.run("dsignal000000001", "삭제가 늘었어요", "관측 신호: 삭제 급증", "", "fix", "app", "", TEST_NOW - 902 * 60_000, TEST_NOW - 902 * 60_000);
+  const mine = await call("POST", "/api/admin/dev", { title: "직접 넣은 것", body: "내가 넣었어요" }, owner);
+  assert.equal(mine.status, 201, mine.text);
+
+  const now = (await call("GET", "/api/admin/dev?status=now", undefined, owner)).data;
+  assert.equal(now.counts.now, 3);
+  assert.equal(now.counts.open, 584);
+  assert.deepEqual(now.items.map((x) => x.title), ["직접 넣은 것", "새 기능 하나", "삭제가 늘었어요"]);
+  assert.equal(now.next, null);
+  // 갈래(추적 번호 앞머리): 5개 이상만 따로, 적은 것은 '그 밖'.
+  const open = (await call("GET", "/api/admin/dev?status=open", undefined, owner)).data;
+  assert.equal(open.tracks.RVI, 300);
+  assert.equal(open.tracks.RVH, 270);
+  assert.equal(open.tracks.etc, 12);
+  assert.equal(open.items.length, 50);
+  const rvh = (await call("GET", "/api/admin/dev?status=open&track=RVH", undefined, owner)).data;
+  assert.equal(rvh.total, 270);
+  assert.ok(rvh.items.every((x) => x.track.startsWith("RVH-")));
+  const etc = (await call("GET", "/api/admin/dev?status=open&track=etc", undefined, owner)).data;
+  assert.equal(etc.total, 12);
+  // 요금 판단: 정할 것은 새 기능 하나(운영용 새 기능은 묻지 않아요), 모두는 584줄을 다 셈.
+  const tiers = (await call("GET", "/api/admin/loop/tiers?view=ask", undefined, owner)).data;
+  assert.deepEqual(tiers.items.map((x) => x.id), ["dnewfeature00001"]);
+  assert.equal(tiers.counts.all, 584);
+  // Claude가 가져갈 순서도 1순위가 맨 앞이에요(400줄에서 자르지 않아요).
+  const queue = (await call("GET", "/api/admin/loop/queue", undefined, owner)).data;
+  assert.equal(queue.items[0].title, "직접 넣은 것");
+});
