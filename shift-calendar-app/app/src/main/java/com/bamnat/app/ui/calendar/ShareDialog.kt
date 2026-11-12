@@ -235,8 +235,9 @@ fun ShareDialog(
                 OutlinedTextField(value = title, onValueChange = ::typed, singleLine = true,
                     label = { Text("내 이름 (선택)") }, placeholder = { Text("예: 민지") },
                     // 2.0.0 [RVG-33] 검토 HQ-55: left empty, the link shows as '받은 근무표' ([RVG-32]), not as the example name's.
-                    supportingText = { Text(title.trim().let { n -> if (n.isEmpty()) "적지 않으면 받는 분 화면에 ‘받은 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요"
-                        else "받는 분 화면에 ‘${n}의 ${com.bamnat.core.work.scheduleWord(style)}’로 보여요" }) },
+                    // The receiving app calls a nameless link '받은 근무표' whatever the sender's 유형 ([LinkStart.roster]); 로/으로 by the word (일정으로).
+                    supportingText = { Text(title.trim().let { n -> if (n.isEmpty()) "적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요"
+                        else "받는 분 화면에 ‘${n}의 ${com.bamnat.core.work.scheduleWord(style).let { it + "’" + com.bamnat.app.ui.Fmt.ro(it) }} 보여요" }) },
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { quickKeyboard?.hide() }))

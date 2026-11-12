@@ -221,6 +221,27 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         assertTrue(gone("‘민지의", exact = false))
     }
 
+    /** HQ-55 for 현장: the receiving app still says '받은 근무표' for a nameless link; a named one takes 으로 after 일정. */
+    @Test fun blankNameFieldFoldDarkHuge() = shoot("rvg33_share_blank_name_field_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
+        c.settingsRepository.update { it.copy(workStyle = com.bamnat.core.work.WorkStyle.FIELD) }
+        c.shareLinks.clear()
+        c.shareLinks.typedName = null
+        sheet(Refusing())
+        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요", exact = false))
+        typeInto("내 이름 (선택)", "민지")
+        assertTrue(appears("받는 분 화면에 ‘민지의 일정’으로 보여요", exact = false))
+    }
+
+    /** The picture's title for 투자: '달력' takes 으로. */
+    @Test fun blankPictureNameInvestFoldLight() = shoot("rvg33_picture_blank_name_invest_fold_light_100", FOLDED) {
+        val snap = runBlocking { c.scheduleRepository.snapshot.first() }
+        content { com.bamnat.app.ui.calendar.ImageShareSheet(snap, Today.month(), java.time.DayOfWeek.SUNDAY, emptyList(), {}, {},
+            style = com.bamnat.core.work.WorkStyle.INVEST) }
+        settle()
+        reveal("제목에 넣을 이름 (선택)", exact = true)
+        assertTrue(appears("월 달력’으로 보여요", exact = false))
+    }
+
     /**
      * HQ-55 (조건 4): the received link's '내 달력에 넣기' card on a later visit: the days in one line, what happens after 넣기 in one
      * line with ⓘ ([com.bamnat.app.ui.components.Explain]); before, it filled a 200% folded screen like a page.

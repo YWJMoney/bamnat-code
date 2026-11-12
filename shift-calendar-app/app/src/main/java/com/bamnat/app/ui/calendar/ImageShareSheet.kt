@@ -134,8 +134,8 @@ fun ImageShareSheet(
             OutlinedTextField(value = name, onValueChange = { if (it.length <= 12) name = it }, singleLine = true,
                 label = { Text("제목에 넣을 이름 (선택)") }, placeholder = { Text("예: 민지") },
                 // 2.0.0 [RVG-33] 검토 HQ-55 (같은 구조): the picture's title is what [MonthImage] draws, the example name never.
-                supportingText = { Text(name.trim().let { n -> if (n.isEmpty()) "적지 않으면 ‘${month.year}년 ${month.monthValue}월 $word’로 보여요"
-                    else "‘${n}의 ${month.year}년 ${month.monthValue}월 $word’로 보여요" }) },
+                supportingText = { Text(name.trim().let { n -> if (n.isEmpty()) "적지 않으면 ‘${month.year}년 ${month.monthValue}월 $word’${com.bamnat.app.ui.Fmt.ro(word)} 보여요"
+                    else "‘${n}의 ${month.year}년 ${month.monthValue}월 $word’${com.bamnat.app.ui.Fmt.ro(word)} 보여요" }) },
                 modifier = Modifier.fillMaxWidth())
             // PC 5차(6db1056b): the share window did not come. Closing the sheet at the tap took this sheet's scope with it
             // and cancelled the drawing before the window could open; the sheet now closes once the window is asked for.
