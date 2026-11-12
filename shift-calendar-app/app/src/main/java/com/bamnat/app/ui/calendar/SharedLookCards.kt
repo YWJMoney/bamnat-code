@@ -127,8 +127,9 @@ private fun KitDialog(
     var switchStyle by remember(theirs) { mutableStateOf(theirs != null) }
     val lines by produceState<Map<PieceKind, String>>(emptyMap(), kit) {
         value = kit.pieces.associate { p ->
+            // 2.0.0 [RVM-22] RCP-05: what would make my alarm weaker is said and stays out (설정 › 알람에서 바꿔요).
             p.kind to (runCatching { c.recipes.pieces.preview(p.kind, p.values, PersonalCalendar.MAIN) }.getOrNull()
-                ?.joinToString(" · ") { it.text }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
+                ?.joinToString(" · ") { it.text + if (it.weak) "(넣지 않아요)" else "" }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
         }
     }
     fun put() {
@@ -141,10 +142,12 @@ private fun KitDialog(
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
             // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
+            // 2.0.0 [RVM-22] RCP-05 Their 알람 묶음 never makes my alarm weaker (진동 끔·짧게 울림·작게 시작 stay mine).
+            val strong = com.bamnat.core.recipe.AlarmStrength.keepStrong(kit.keepMyCellContent(), c.recipes.pieces.alarmNow())
             // 2.0.0 [RVS-15] 검토 SN-04 (팀 리더가 나눠 준 모양이 팀원의 글자 크기·누르기까지 바꿔요): its 앱 동작 only as 꾸밈 (강조색·움직임);
             // 밝기 and the receiver's own settings stay theirs.
             val motionOff = com.bamnat.core.recipe.Motion.decode(c.settingsRepository.current.motion).off
-            val kitLooks = kit.keepMyCellContent().let { k -> k.copy(pieces = k.pieces.mapNotNull { p ->
+            val kitLooks = strong.let { k -> k.copy(pieces = k.pieces.mapNotNull { p ->
                 if (p.kind != PieceKind.APP_FEEL) p else com.bamnat.core.recipe.AppFeel.lookOnly(p.values, motionOff).takeIf { it.isNotEmpty() }?.let { p.copy(values = it) }
             }) }
             // A 앱 동작 with nothing left to put (only the receiver's own settings) is not picked.

@@ -63,6 +63,13 @@ object RecentFill {
 
     fun heard() { _said.value = null }
 
+    /** Nothing put in, closed or said (tests: it is kept in memory, so one shot's fill was the next class's band). */
+    internal fun reset() {
+        _entry.value = null
+        _closed.value = null
+        _said.value = null
+    }
+
     /** 2.0.0 [RVL-18] What an undo says: all of it, or what it left alone and why. */
     fun undone(kept: Int): String = if (kept > 0) "되돌렸어요. 그 뒤에 고친 ${kept}일은 그대로 두었어요" else "방금 넣은 것을 되돌렸어요"
 }

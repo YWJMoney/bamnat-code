@@ -67,7 +67,16 @@ data class AdminLink(val approved: Boolean, val checkedAt: Instant)
 
 /** Why this phone has 프로 now. */
 enum class ProReason(val words: String) {
-    NOT_LAUNCHED("정식 출시 전이라 모든 기능이 무료예요"),
+    /**
+     * 결제가 열리지 않은 휴대폰: 개발용 빌드·로컬 시험 서버(모든 기능을 연 채로 시험, 사용자 2026-11-12 20:32 KST), 관리자가 결제를 잠시 끈 때.
+     * 2.0.0 [RVO-12] (HQ-46) 정식 출시(11-12) 뒤라 '정식 출시 전'이라고 하지 않아요.
+     */
+    ALL_OPEN("지금은 모든 기능이 무료로 열려 있어요"),
+    /**
+     * 2.0.0 [RVO-12] (HQ-46) 처리방침 3.1 보류(9항): 10-27 전에 깔고 3.1에 동의하지 않은 휴대폰은 보류가 끝나는 날까지 모두 무료예요.
+     * 날짜는 [Access.until](보류가 끝나는 날 0시)로 [say]가 붙여요.
+     */
+    HELD("처리방침 3.1 동의 전이라 모든 기능이 무료예요"),
     TRIAL("1개월 무료 체험 중이에요"),
     SUBSCRIPTION("프로를 구독 중이에요"),
     GRACE("결제가 안 됐어요. Play에서 결제 수단을 확인해 주세요"),
@@ -107,9 +116,21 @@ data class ProSources(
     val yearPassUntil: Instant? = null,
     /** 1.38 Phase 3 요금: the end of a live 팀·직원 요금제 (subscription or 1년 이용권), which includes 프로. */
     val workUntil: Instant? = null,
+    /** 2.0.0 [RVO-12] (HQ-46) 결제 is off here only because 처리방침 3.1's hold keeps this phone back, until the start of this day. */
+    val heldUntil: Instant? = null,
 )
 
-data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null)
+data class Access(val pro: Boolean, val reason: ProReason, val until: Instant? = null) {
+    /**
+     * 2.0.0 [RVO-12] The sentence a screen shows for this access: [ProReason.words], and for [ProReason.HELD] the last free day
+     * ('처리방침 3.1 동의 전이라 11월 23일까지 모든 기능이 무료예요').
+     */
+    fun say(zone: ZoneId): String {
+        if (reason != ProReason.HELD || until == null) return reason.words
+        val last = until.atZone(zone).toLocalDate().minusDays(1)
+        return "처리방침 3.1 동의 전이라 ${last.monthValue}월 ${last.dayOfMonth}일까지 모든 기능이 무료예요"
+    }
+}
 
 /**
  * [MON-02] The one answer to "does this phone have 프로": a Play subscription (trial and grace
@@ -121,7 +142,7 @@ object ProAccess {
     val ADMIN_CHECK: Duration = Duration.ofDays(7)
 
     fun resolve(s: ProSources, now: Instant, zone: ZoneId): Access {
-        if (!s.billingLive) return Access(true, ProReason.NOT_LAUNCHED)
+        if (!s.billingLive) return if (s.heldUntil != null) Access(true, ProReason.HELD, s.heldUntil) else Access(true, ProReason.ALL_OPEN)
         s.subscription?.takeIf { it.entitled(now) }?.let { sub ->
             val reason = when {
                 sub.state == PlaySub.State.GRACE -> ProReason.GRACE

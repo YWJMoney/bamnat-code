@@ -69,7 +69,8 @@ class NScreenshotTest : ScreenshotBase() {
     private fun asking(then: Screen.() -> Unit = {}): Screen.() -> Unit = clean {
         c.asks.clear(PersonalCalendar.MAIN)
         // The question card comes from a flow read off the main thread: wait for it on a slow CI machine.
-        // 1.38 통합 9차: over the calendar it is one line ending in '… ›'.
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함 ('질문 1개'), opened in place there.
+        openNotice("질문 1개")
         repeat(100) { if (!shows(" ›")) { Thread.sleep(20); settle() } }
         then()
     }
@@ -164,7 +165,7 @@ class NScreenshotTest : ScreenshotBase() {
     @Test fun journalList() = shoot("701_n_journal", FOLDED, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
     @Test fun journalBig() = shoot("702_n_journal_200", FOLDED, 2f, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
     @Test fun journalDark() = shoot("703_n_journal_dark", FOLDED_NIGHT, journal { com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.JOURNAL)); settle(); reveal("백업 저장", exact = true) })
-    @Test fun journalHome() = shoot("704_n_journal_home", FOLDED, journal { settle(); reveal("오늘 밤낮이 한 일", exact = false) })
+    @Test fun journalHome() = shoot("704_n_journal_home", FOLDED, journal { settle(); openNotice("밤낮이 한 일"); reveal("오늘 밤낮이 한 일", exact = false) })
     @Test fun featureWaits() = shoot("705_n_feature_waits", FOLDED, clean {
         tab(SETTINGS_TAB, wide = false)
         tapText("기능 켜고 끄기", exact = true)

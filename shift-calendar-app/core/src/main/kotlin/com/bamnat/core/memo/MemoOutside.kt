@@ -1,22 +1,49 @@
 package com.bamnat.core.memo
 
 /**
- * 1.39 [TASK-39] What a memo's notice or the 할 일 위젯 changes while the memo is open in the editor: its schedule time (10분 뒤,
- * 다른 때…) and whether it is finished (끝내기, the widget's circle). The editor keeps what it last read ([base]); when the stored memo
- * has one of these changed since and the editor has not changed it itself, the stored one is kept, so a letter typed afterwards does
- * not put 9:35 back over the 9:45 the notice moved it to (PC 6차, 11-08). What the editor changed itself wins.
+ * 1.39 [TASK-39] What changes a memo while it is open in the editor: its notice or the 할 일 위젯 (시각, 끝내기), and since 2.0.0
+ * [RVI-32] (검토 MEMO-12) the list beside it on an open fold (고정, 색, a 표·보드 칸, 휴지통). The editor keeps what it last read
+ * ([base]); a field the stored memo has changed since and the editor has not changed itself takes the stored value, so a letter
+ * typed afterwards does not put the old 고정·색·칸 back. What the editor changed itself wins, field by field; a checklist is
+ * taken item by item while its items line up.
  */
 object MemoOutside {
     /** [edited] with the outside changes in [stored] (made since [base]) that the editor left alone. */
     fun keep(edited: Memo, base: Memo, stored: Memo): Memo {
-        var m = edited
-        if (stored.reminder != base.reminder && edited.reminder == base.reminder) m = m.copy(reminder = stored.reminder)
-        if (stored.doneAtMillis != base.doneAtMillis && edited.doneAtMillis == base.doneAtMillis) m = m.copy(doneAtMillis = stored.doneAtMillis)
-        if (stored.doneDays != base.doneDays && edited.doneDays == base.doneDays) m = m.copy(doneDays = stored.doneDays)
-        return m
+        fun <T> pick(get: (Memo) -> T): T {
+            val mine = get(edited)
+            return if (mine == get(base) && get(stored) != get(base)) get(stored) else mine
+        }
+        return edited.copy(
+            date = pick { it.date },
+            title = pick { it.title },
+            body = pick { it.body },
+            checklist = checklist(edited.checklist, base.checklist, stored.checklist),
+            isChecklist = pick { it.isChecklist },
+            colorIndex = pick { it.colorIndex },
+            pinned = pick { it.pinned },
+            deletedAtMillis = pick { it.deletedAtMillis },
+            reminder = pick { it.reminder },
+            reminderAsked = pick { it.reminderAsked },
+            calendars = pick { it.calendars },
+            repeat = pick { it.repeat },
+            skips = pick { it.skips },
+            doneAtMillis = pick { it.doneAtMillis },
+            doneDays = pick { it.doneDays },
+        )
     }
 
-    /** [base] once [stored]'s outside fields have been seen, so they are not taken again over a later edit. */
-    fun seen(base: Memo, stored: Memo): Memo =
-        base.copy(reminder = stored.reminder, doneAtMillis = stored.doneAtMillis, doneDays = stored.doneDays)
+    /** The checklist item by item when all three line up (the same number of items), else as one field. */
+    private fun checklist(edited: List<ChecklistItem>, base: List<ChecklistItem>, stored: List<ChecklistItem>): List<ChecklistItem> {
+        if (edited == base) return stored
+        if (stored == base) return edited
+        if (edited.size != base.size || stored.size != base.size) return edited
+        return edited.indices.map { i -> if (edited[i] == base[i]) stored[i] else edited[i] }
+    }
+
+    /** [base] once [stored] has been seen, so its changes are not taken again over a later edit. */
+    fun seen(base: Memo, stored: Memo): Memo = stored
+
+    /** [RVI-32] The memo went to the trash from outside (the list beside the editor): the editor closes and does not bring it back. */
+    fun trashedOutside(base: Memo, stored: Memo): Boolean = base.deletedAtMillis == null && stored.deletedAtMillis != null
 }

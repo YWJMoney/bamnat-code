@@ -69,6 +69,19 @@ import java.time.YearMonth
 import com.bamnat.core.time.Today
 
 /**
+ * 2.0.0 [RVI-09] A line of words in the today list keeps off the round edge: it wraps inside the list's own margin instead of
+ * running to the rim, where a round screen cuts it (작은 워치·큰 글자).
+ */
+private val Round = Modifier.padding(horizontal = 8.dp)
+
+/**
+ * 2.0.0 [RVI-09] The same line, broken only between words: Hangul may otherwise break inside one ('52시' over '간') on a small
+ * watch with big letters. A word joiner (U+2060, not seen nor read aloud) sits between the letters of each word.
+ */
+internal fun whole(s: String): String = s.replace(WITHIN_WORD, "\u2060")
+private val WITHIN_WORD = Regex("(?<=\\S)(?=\\S)")
+
+/**
  * [SHFT-08][REL-09] The watch app: 오늘 (today's shift, tomorrow's and the next alarm), 앞으로 7일 (today and six days on as a
  * list) and 월 보기 (a month at a glance, swiping to the next month). Swipe left and right between them.
  * It shows the watch's last copy of the phone's days with when they came, and asks the phone for fresh ones.
@@ -120,7 +133,7 @@ private fun Empty(refreshing: Boolean, noPhone: Boolean, onRefresh: () -> Unit) 
         Spacer(Modifier.height(6.dp))
         // [J133-38] 순번 718 (1.32 실사용 테스트: 휴대폰이 없는데도 '휴대폰에서 다시 받기'만 있었어요).
         Text(if (noPhone && !refreshing) "휴대폰과 연결되어 있지 않아요. 휴대폰의 Wear OS 앱에서 이 시계가 연결됐는지 확인해 주세요."
-            else "휴대폰의 밤낮을 한 번 열면 근무가 여기로 와요.", textAlign = TextAlign.Center, fontSize = 13.sp, color = Color(0xFFD6DAE3))
+            else "휴대폰의 밤낮을 한 번 열면 근무가 여기로 와요.", textAlign = TextAlign.Center, fontSize = 13.sp, color = WearTone.Body)
         Spacer(Modifier.height(8.dp))
         RefreshChip(refreshing, onRefresh)
     }
@@ -157,40 +170,72 @@ private fun rememberMinute(): LocalDateTime {
     return now
 }
 
+/** Internal for the watch screen shots (WatchScreenshotTest). */
 @Composable
-private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
+internal fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Unit, onMoney: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val now = rememberMinute()
     val today = now.toLocalDate()
     val d = WatchDays.on(p.days, today)
     val list = rememberScalingLazyListState()
+    // 2.0.0 [RVI-11] (검토 ALM-10·23) 오늘 알람 끄기 takes two taps and says what came of it; 출근·퇴근 says so too.
+    var said by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(armed) { if (armed) { delay(5_000L); armed = false } }
+    val clock = WatchDays.clockNow(p, now)
+    var clockSaid by remember { mutableStateOf<String?>(null) }
     ScalingLazyColumn(Modifier.fillMaxSize(), state = list, horizontalAlignment = Alignment.CenterHorizontally) {
         // [WEAR-04] 1.31: which calendar this is, now that the phone can send another one than 내 달력.
-        item { Text("${p.calendar.ifBlank { "오늘" }} · ${WatchText.date(today)}", fontSize = 12.sp, color = Color(0xFF9AA3B5), maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        item { Text("${p.calendar.ifBlank { "오늘" }} · ${WatchText.date(today)}", fontSize = 12.sp, color = WearTone.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis) }
         item {
-            if (d == null) Text(WatchText.NOT_SENT, fontSize = 16.sp)
+            if (d == null) Text(WatchText.notSent(p), fontSize = 16.sp)
             else Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(d.name, fontSize = 26.sp, fontWeight = FontWeight.Bold, color = color(d), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (d.times.isNotEmpty()) Text(d.times, fontSize = 16.sp)
             }
         }
-        WatchDays.on(p.days, today.plusDays(1))?.let { t -> item { Text("내일 ${t.line}", fontSize = 13.sp, color = Color(0xFFD6DAE3)) } }
-        WatchText.alarm(p, now)?.let { a -> item { Text(a, fontSize = 12.sp, color = Color(0xFFFFC266), textAlign = TextAlign.Center) } }
-        // [WEAR-03] This week against 주 52시간.
-        WatchDays.weekText(p)?.let { w -> item { Text(w, fontSize = 12.sp, color = Color(0xFFD6DAE3)) } }
+        WatchDays.on(p.days, today.plusDays(1))?.let { t -> item { Text(whole("내일 ${t.line}"), Round, fontSize = 13.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
+        WatchText.alarm(p, now)?.let { a -> item { Text(whole(a), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
+        // 1.38 [SLEEP-14] 2.0.0 [RVI-08] 오늘 잘 시간 while it is still the night or day it was worked out for.
+        WatchDays.sleepLineNow(p, now).takeIf { it.isNotBlank() }?.let { s -> item { Text(whole(s), Round, fontSize = 12.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
+        // [WEAR-03] This week against 주 52시간. 2.0.0 [RVI-08] Not last week's on a Monday.
+        WatchDays.weekText(p, today)?.let { w -> item { Text(whole(w), Round, fontSize = 12.sp, color = WearTone.Body, textAlign = TextAlign.Center) } }
         // [WEAR-03] 오늘 알람 끄기 without taking the phone out, and an 알바's 출근·퇴근 (I 리뷰 N7 c·d).
-        if (p.alarmToday) item {
-            Button(onClick = { scope.launch { WatchStore.send(context, WatchDays.ALARM_OFF_PATH, now.toLocalDate().toString()) } },
-                colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
-                label = { Text("오늘 알람 끄기", fontSize = 13.sp) })
+        // 2.0.0 [RVI-11] (검토 ALM-10·23) Two taps and what came of it, with 되돌리기; [RVI-08] whether today has one is the watch's own reading.
+        said?.let { (line, undo) ->
+            item { Text(whole(line), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) }
+            if (undo) item {
+                CompactButton(onClick = { scope.launch { WatchStore.send(context, WatchDays.ALARM_ON_PATH, today.toString()); said = null } },
+                    label = { Text("되돌리기", fontSize = 12.sp) })
+            }
         }
-        if (p.clock != WatchPayload.Clock.NONE) item {
-            val out = p.clock == WatchPayload.Clock.OUT
-            Button(onClick = { scope.launch { WatchStore.send(context, WatchDays.CLOCK_PATH, if (out) "out" else "in") } },
-                colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth(),
+        if (said == null && WatchDays.alarmTodayNow(p, now)) item {
+            Button(onClick = {
+                if (!armed) armed = true else {
+                    armed = false
+                    said = "끄는 중…" to false
+                    scope.launch {
+                        val ok = runCatching { WatchStore.send(context, WatchDays.ALARM_OFF_PATH, today.toString()) }.getOrDefault(false)
+                        said = if (ok) "오늘 알람을 껐어요" to true else "휴대폰과 연결되어 있지 않아 못 껐어요" to false
+                    }
+                }
+            }, colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
+                label = { Text(if (armed) "한 번 더 누르면 꺼요" else "오늘 알람 끄기", fontSize = 13.sp) })
+        }
+        // 2.0.0 [RVI-08] (검토 ALM-09·T03-06) A new working day's 출근 even before the phone sends again.
+        if (clock != WatchPayload.Clock.NONE) item {
+            val out = clock == WatchPayload.Clock.OUT
+            Button(onClick = {
+                scope.launch {
+                    // 2.0.0 [RVI-11] (검토 ALM-23) Said either way, as 돈 적기 does.
+                    val ok = runCatching { WatchStore.send(context, WatchDays.CLOCK_PATH, if (out) "out" else "in") }.getOrDefault(false)
+                    clockSaid = if (ok) (if (out) "퇴근을 적었어요" else "출근을 적었어요") else "휴대폰과 연결되어 있지 않아 못 보냈어요"
+                }
+            }, colors = ButtonDefaults.buttonColors(), modifier = Modifier.fillMaxWidth(),
                 label = { Text(if (out) "퇴근 적기" else "출근 적기", fontSize = 13.sp) })
         }
+        clockSaid?.let { s -> item { Text(whole(s), Round, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
         // 1.38 [LEDH-14] 워치로 돈 적기.
         item {
             Button(onClick = onMoney, colors = ButtonDefaults.filledTonalButtonColors(), modifier = Modifier.fillMaxWidth(),
@@ -203,9 +248,9 @@ private fun TodayPage(p: WatchPayload, refreshing: Boolean, onRefresh: () -> Uni
             if (!asked || !notificationsOn(context)) Button(onClick = { ask.launch(Manifest.permission.POST_NOTIFICATIONS) }, colors = ButtonDefaults.filledTonalButtonColors(),
                 modifier = Modifier.fillMaxWidth(), label = { Text("워치 알람 알림 허용", fontSize = 13.sp) })
         }
-        item { Text(WatchText.synced(p, now), fontSize = 11.sp, color = Color(0xFF9AA3B5), textAlign = TextAlign.Center) }
+        item { Text(whole(WatchText.synced(p, now)), Round, fontSize = 11.sp, color = WearTone.Muted, textAlign = TextAlign.Center) }
         item { RefreshChip(refreshing, onRefresh) }
-        item { Text("옆으로 넘기면 앞으로 7일 · 월 보기", fontSize = 10.sp, color = Color(0xFF6E7687)) }
+        item { Text("옆으로 넘기면 앞으로 7일 · 월 보기", fontSize = 10.sp, color = WearTone.Hint) }
     }
 }
 
@@ -251,7 +296,7 @@ private fun MonthPage(p: WatchPayload) {
         item {
             Row(Modifier.padding(horizontal = 14.dp)) {
                 WatchDays.weekHead(p.weekStart).forEach {
-                    Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 10.sp, color = Color(0xFF9AA3B5))
+                    Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 10.sp, color = WearTone.Muted)
                 }
             }
         }
@@ -266,7 +311,7 @@ private fun MonthPage(p: WatchPayload) {
                                 d.off -> Color(0xFF333A46)
                                 else -> Color(d.colorArgb.toInt())
                             }
-                            Text("${date.dayOfMonth}", fontSize = 10.sp, color = if (date == today) Color.White else Color(0xFF9AA3B5),
+                            Text("${date.dayOfMonth}", fontSize = 10.sp, color = if (date == today) Color.White else WearTone.Muted,
                                 fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
                             Box(Modifier.fillMaxWidth().height(15.dp).clip(RoundedCornerShape(3.dp))
                                 .background(badge), contentAlignment = Alignment.Center) {
@@ -277,7 +322,7 @@ private fun MonthPage(p: WatchPayload) {
                 }
             }
         }
-        item { Text("받은 기간 밖의 날은 비어 있어요", fontSize = 10.sp, color = Color(0xFF6E7687)) }
+        item { Text("받은 기간 밖의 날은 비어 있어요", fontSize = 10.sp, color = WearTone.Hint) }
     }
 }
 
@@ -303,7 +348,7 @@ private fun MoneyPage(p: WatchPayload, onDone: () -> Unit) {
             .focusRequester(focus).focusable(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        item { Text("돈 적기 · 오늘", fontSize = 12.sp, color = Color(0xFF9AA3B5)) }
+        item { Text("돈 적기 · 오늘", fontSize = 12.sp, color = WearTone.Muted) }
         item { Text(String.format(java.util.Locale.KOREA, "%,d원", amount), fontSize = 24.sp, fontWeight = FontWeight.Bold) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -314,7 +359,15 @@ private fun MoneyPage(p: WatchPayload, onDone: () -> Unit) {
                 }
             }
         }
-        note?.let { n -> item { Text(n, fontSize = 12.sp, color = Color(0xFFFFC266), textAlign = TextAlign.Center) } }
+        // 2.0.0 [RVI-10] (검토 U03-10) One tap to an amount: the ones written most lately on the phone, else 5천·1만·2만.
+        item {
+            val chips = p.recentAmounts.ifEmpty { com.bamnat.core.work.WatchMoney.CHIPS }
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                chips.forEach { a -> CompactButton(onClick = { amount = a }, colors = ButtonDefaults.filledTonalButtonColors(),
+                    label = { Text(com.bamnat.core.work.WatchMoney.short(a), fontSize = 11.sp, maxLines = 1) }) }
+            }
+        }
+        note?.let { n -> item { Text(n, fontSize = 12.sp, color = WearTone.Caution, textAlign = TextAlign.Center) } }
         items(categories) { cat ->
             Button(
                 onClick = {
@@ -328,7 +381,7 @@ private fun MoneyPage(p: WatchPayload, onDone: () -> Unit) {
                 label = { Text(cat, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             )
         }
-        item { Text("금액을 맞춘 뒤 분류를 누르면 휴대폰 가계부에 적혀요", fontSize = 10.sp, color = Color(0xFF6E7687), textAlign = TextAlign.Center) }
+        item { Text("금액을 맞춘 뒤 분류를 누르면 휴대폰 가계부에 적혀요", fontSize = 10.sp, color = WearTone.Hint, textAlign = TextAlign.Center) }
         item { CompactButton(onClick = onDone, label = { Text("닫기", fontSize = 11.sp) }) }
     }
 }

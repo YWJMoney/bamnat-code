@@ -123,6 +123,27 @@ class LinkOwnerTest {
         }
     }
 
+    /** 2.0.0 [RVG-35] 검토 HQ-64: a shop's link arrives as its 영업일, as the web page that opened the app called it. */
+    @Test fun aShopsLinkArrivesInItsWord() {
+        window({
+            FirstStyleScreen(onPick = {}, onSkip = {}, linkWaiting = true, linkTitle = "민지", linkWord = "영업일",
+                onLinkStart = {}, onLinkTheirs = {})
+        }) {
+            compose.onNodeWithText("‘민지’ 영업일이 도착했어요").assertExists()
+            compose.onNodeWithText("누구 영업일인지 알려 주세요.").assertExists()
+            compose.onNodeWithText("‘민지’ 근무표", substring = true).assertDoesNotExist()
+        }
+    }
+
+    /** [RVG-35] Kept as someone else's, a field worker's link says 일정 with 은 and 으로. */
+    @Test fun aFieldLinkKeptSaysItsWord() {
+        window({ FirstStyleScreen(onPick = {}, onSkip = {}, theirsKept = "민지", theirsWord = "일정") }) {
+            compose.onNodeWithText("‘민지’ 일정은 받은 달력에 넣었어요").assertExists()
+            compose.onNodeWithContentDescription("자세한 설명 보기").performClick()
+            compose.onNodeWithText("‘민지’ 일정으로 바꿔 봐요", substring = true).assertExists()
+        }
+    }
+
     @Test fun theirsKeptSaysWhereItWent() {
         var closed = false
         window({ FirstStyleScreen(onPick = {}, onSkip = {}, theirsKept = "민지", onTheirsClose = { closed = true }) }) {

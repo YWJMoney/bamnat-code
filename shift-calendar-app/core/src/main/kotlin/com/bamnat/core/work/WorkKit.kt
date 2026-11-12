@@ -319,6 +319,17 @@ fun scheduleWord(style: WorkStyle?): String = when (style) {
     else -> "근무표"
 }
 
+/**
+ * 2.0.0 [RVG-35] 검토 HQ-64 (조건 13): what a 근무표 link is called, from what it already carries (no new field goes to the server):
+ * 매출 → 영업일, 일감(목록이나 금액) → 일정, else 근무표. The sender's hint, the receiving app's cards and list, and the web page
+ * (share-worker) use this one rule, so the same link has one name everywhere. [shows] is the link's `shows`, [payKind] its `payKind`.
+ */
+fun linkWord(shows: Collection<String>, payKind: MoneyShare?): String = when {
+    "pay" in shows && payKind == MoneyShare.SALES -> "영업일"
+    "jobs" in shows || "pay" in shows && payKind == MoneyShare.JOBS -> "일정"
+    else -> "근무표"
+}
+
 /** [J133-79] [scheduleWord] with 로/으로 ("근무표로", "일정으로"). */
 fun scheduleWordRo(style: WorkStyle?): String = scheduleWord(style) + if (style == WorkStyle.FIELD) "으로" else "로"
 

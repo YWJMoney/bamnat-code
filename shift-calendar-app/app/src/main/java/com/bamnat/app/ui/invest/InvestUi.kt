@@ -157,15 +157,14 @@ internal fun NameCodeFields(name: String, onName: (String) -> Unit, symbol: Stri
     }
 }
 
-internal fun cleanDecimal(v: String): String {
-    val sb = StringBuilder()
-    var dot = false
-    for (ch in v.replace(',', '.')) {
-        if (ch.isDigit()) sb.append(ch)
-        else if (ch == '.' && !dot) { dot = true; sb.append(if (sb.isEmpty()) "0." else ".") }
-    }
-    return sb.toString().take(18)
-}
+/**
+ * 2.0.0 [RVK-33] (검토 MONEY-70) What a number field keeps: a comma is a thousands mark ('72,500' stays 72500, it was 72.5),
+ * and the decimal only on a phone whose language writes it so ([com.bamnat.core.text.Numbers.cleanDecimal]).
+ */
+internal fun cleanDecimal(v: String): String = com.bamnat.core.text.Numbers.cleanDecimal(v, commaIsDecimal = phoneWritesDecimalComma())
+
+/** [RVK-33] True on a phone in German, Vietnamese, French and the like, whose number keypad's decimal key is a comma. */
+internal fun phoneWritesDecimalComma(): Boolean = java.text.DecimalFormatSymbols.getInstance().decimalSeparator == ','
 
 internal fun String.toDecimal(): Double? = toDoubleOrNull()?.takeIf { it.isFinite() }
 
@@ -196,7 +195,7 @@ fun InvestDatePicker(initial: LocalDate, onPick: (LocalDate) -> Unit, onDismiss:
 }
 
 /** "09:05" for minutes after midnight; "" without. */
-internal fun minuteText(m: Int?): String = m?.let { "%02d:%02d".format(it / 60, it % 60) } ?: ""
+internal fun minuteText(m: Int?): String = m?.let { "%02d:%02d".format(java.util.Locale.ROOT, it / 60, it % 60) } ?: ""
 
 /** "0905", "9:05" or "905" typed → minutes; null when it is not a time. */
 internal fun parseMinute(s: String): Int? {

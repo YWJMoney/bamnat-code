@@ -63,7 +63,7 @@ import com.bamnat.app.ui.theme.bamnat
 internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
     val realized = state.result.realizations.firstOrNull { it.tradeId == t.id }
-    val unit = if (t.market == Market.CRYPTO) "개" else "주"
+    val unit = t.market.unit
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -178,13 +178,13 @@ internal fun HoldingsTab(state: InvestState, open: (InvestSheet) -> Unit) {
 private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (InvestSheet) -> Unit) {
     val hide = state.hide
     var expanded by rememberSaveable(h.key) { mutableStateOf(false) }
-    val unit = if (h.market == Market.CRYPTO) "개" else "주"
+    val unit = h.market.unit
     val fx = state.settings.usdKrw
     SectionCard(title = null) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(h.title, style = MaterialTheme.typography.titleSmall)
-                Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.average(h.averagePrice, h.market)} · 비중 ${"%.0f".format(weight * 100)}%",
+                Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.average(h.averagePrice, h.market)} · 비중 ${"%.0f".format(java.util.Locale.ROOT, weight * 100)}%",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // 2.0.0 [RVK-25] (검토 MONEY-69) A price from an earlier day says so on the folded card, in the caution colour after a week.
                 h.quote?.date?.takeIf { it.isBefore(state.today) }?.let { d ->
@@ -215,8 +215,11 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 AssistChip(onClick = { open(InvestSheet.TradeEdit(TradeDraft(h.symbol, h.name, h.market, Side.BUY, price = h.quote?.price))) }, label = { Text("더 사기") })
                 AssistChip(onClick = { open(InvestSheet.TradeEdit(TradeDraft(h.symbol, h.name, h.market, Side.SELL, h.quantity, h.quote?.price))) }, label = { Text("팔기") })
-                AssistChip(onClick = { open(InvestSheet.CashEdit(CashKind.DIVIDEND)) }, label = { Text("배당") })
-                AssistChip(onClick = { open(InvestSheet.AlarmEdit(AlarmKind.TARGET)) }, label = { Text("목표가 알람") })
+                // 2.0.0 [RVK-34] (검토 U06b-03) Opened with this 종목 filled in (they opened empty).
+                AssistChip(onClick = { open(InvestSheet.CashEdit(CashKind.DIVIDEND, symbol = h.symbol.ifBlank { h.name }, accountId = h.accountId ?: state.account)) },
+                    label = { Text("배당") })
+                AssistChip(onClick = { open(InvestSheet.AlarmEdit(AlarmKind.TARGET, holding = TradeDraft(h.symbol, h.name, h.market, Side.BUY,
+                    accountId = h.accountId ?: state.account))) }, label = { Text("목표가 알람") })
                 AssistChip(onClick = { open(InvestSheet.QuantityEdit(TradeDraft(h.symbol, h.name, h.market, Side.SPLIT, accountId = h.accountId ?: state.account))) },
                     label = { Text("수량 바뀜") })
                 AssistChip(onClick = { open(InvestSheet.Story(h.key, state.account)) }, label = { Text("기록 한 장") })

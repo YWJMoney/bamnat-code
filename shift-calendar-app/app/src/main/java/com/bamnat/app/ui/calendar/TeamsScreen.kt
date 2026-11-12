@@ -1,5 +1,9 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import androidx.compose.ui.semantics.selected
@@ -311,11 +315,42 @@ private fun TodayTeams(roster: TeamRoster, rotation: WorkPattern.Rotation, snap:
         Text("오늘 ${Fmt.dayTitle(today)}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
         val ordered = listOf(roster.mine) + roster.teams.filterNot { it.mine }
         // [J133-50] Every team in sight: the cards share the width (1.32 scrolled sideways and cut the last team off).
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            ordered.forEach { team ->
-                val type = roster.shiftOn(rotation, team, today)?.let { snap.typesById[it] }?.takeIf { !it.isOff }
-                val next = roster.shiftOn(rotation, team, today.plusDays(1))?.let { snap.typesById[it] }?.takeIf { !it.isOff }
-                TeamCard(team, type, next, Modifier.weight(1f))
+        // 2.0.0 [RVH-49] 총괄 사진 검토 (모든 조 200%: '쉬는…'·'08:0…'): when a card's words do not fit its share, the cards go two
+        // to a row (then one), so no team's shift or hours are cut. The hours may take two lines ('20:00 –' · '08:00 (다음날)') before
+        // the cards give up a row, so at large text the four cards stay two rows and the table is not pushed far down (조건 1).
+        val days = ordered.map { team ->
+            Triple(team, roster.shiftOn(rotation, team, today)?.let { snap.typesById[it] }?.takeIf { !it.isOff },
+                roster.shiftOn(rotation, team, today.plusDays(1))?.let { snap.typesById[it] }?.takeIf { !it.isOff })
+        }
+        val measurer = rememberTextMeasurer()
+        val small = MaterialTheme.typography.labelSmall
+        val body = MaterialTheme.typography.bodySmall
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val density = LocalDensity.current
+            val roomPx = with(density) { maxWidth.roundToPx() }
+            val gapPx = with(density) { 6.dp.roundToPx() }
+            // A card's widest line, and its own padding (6dp a side).
+            val needPx = remember(days, small, body, density) {
+                days.maxOf { (_, type, _) ->
+                    fun w(text: String, style: androidx.compose.ui.text.TextStyle) = measurer.measure(text, style, maxLines = 1, softWrap = false).size.width
+                    maxOf(w(type?.name ?: "쉬는 날", body), type?.takeIf { it.hasTimes }?.let {
+                        val hours = Fmt.timeRange(it.start!!, it.end!!)
+                        val (from, to) = hours.split(" – ", limit = 2).let { p -> p.first() + " –" to p.getOrElse(1) { "" } }
+                        minOf(w(hours, small), maxOf(w(from, small), w(to, small)))
+                    } ?: 0)
+                } + with(density) { 12.dp.roundToPx() }
+            }
+            val fit = (ordered.size downTo 1).firstOrNull { n -> (roomPx - gapPx * (n - 1)) / n >= needPx } ?: 1
+            // Rows of even length: four teams where three fit go two and two, not three and one.
+            val rows = (ordered.size + fit - 1) / fit
+            val perRow = (ordered.size + rows - 1) / rows
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                days.chunked(perRow).forEach { row ->
+                    Row(Modifier.fillMaxWidth().height(IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        row.forEach { (team, type, next) -> TeamCard(team, type, next, Modifier.weight(1f).fillMaxHeight()) }
+                        repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
             }
         }
         if (guessed) {
@@ -354,8 +389,8 @@ private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?, 
             ShiftBadge(type, text = if (type == null) "휴" else null, outlined = type == null, size = 36.dp)
             Text(type?.name ?: "쉬는 날", style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             type?.takeIf { it.hasTimes }?.let { t ->
-                Text(Fmt.timeRange(t.start!!, t.end!!), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(Fmt.timeRange(t.start!!, t.end!!), style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text("내일 ${next?.name ?: "휴"}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -437,7 +472,8 @@ private fun TeamTable(
                 roster.teams.forEach { t ->
                     Text(t.name + if (t.mine) " ★" else "", style = MaterialTheme.typography.labelMedium, fontWeight = if (t.mine) FontWeight.Bold else FontWeight.Normal,
                         color = if (t.mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                        textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(column))
+                        // [RVH-49] HQ-17: at large text the name and ★ go on two lines instead of 'A조 …'.
+                        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(column))
                 }
             }
             HorizontalDivider()

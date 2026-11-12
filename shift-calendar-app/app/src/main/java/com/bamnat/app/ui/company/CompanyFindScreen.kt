@@ -384,10 +384,19 @@ fun CompanyDetailScreen(
     // [PAYF-03] 1.29 AP: whether the pay way goes in with the cycle, asked once before the order (null: not asked, or no pay way).
     var withPay by remember { mutableStateOf(true) }
     var askingPay by remember { mutableStateOf<SharedSetup?>(null) }
+    // 2.0.0 [RVN-17] COMP-12 What 이 설정 쓰기 was doing when the calendar turned out to be held, to go on with after '잘못 골랐어요'.
+    val wait by vm.wait.collectAsStateWithLifecycle()
+    val freeing by vm.freeing.collectAsStateWithLifecycle()
+    var started by remember { mutableStateOf<Pair<CompanyPage, SharedSetup>?>(null) }
+    // COMP-12 The calendar is held by another company: asked before any order is picked (근무주기만 넣기 or '잘못 골랐어요').
+    var held by remember { mutableStateOf<MemberWait?>(null) }
+    var lastUse by remember { mutableStateOf<Triple<CompanyPage, SharedSetup, Int?>?>(null) }
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; confirming = null; onApplied(r, p.name) },
-            failed = { applying = false; choosing = null; confirming = null; error = it })
+        lastUse = Triple(p, s, step)
+        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; confirming = null; lastUse = null; onApplied(r, p.name) },
+            // COMP-12 A held calendar is said by the wait card (with 잘못 골랐어요), not as a red band.
+            failed = { applying = false; choosing = null; confirming = null; if (vm.wait.value == null) error = it })
     }
     fun order(p: CompanyPage, s: SharedSetup) {
         scope.launch {
@@ -401,10 +410,26 @@ fun CompanyDetailScreen(
             }
         }
     }
-    fun start(p: CompanyPage, s: SharedSetup) {
-        if (onPick != null) return onPick(p, s)
+    fun startNow(p: CompanyPage, s: SharedSetup) {
         // [PAYF-03] 사용자 2026-10-27: 'n명이 쓰고 있어요'를 눌러 적용할 때 급여까지 같이 넣을지 한 번 묻기.
         if (s.hasPay) askingPay = s else { withPay = false; order(p, s) }
+    }
+    fun start(p: CompanyPage, s: SharedSetup) {
+        if (onPick != null) return onPick(p, s)
+        error = null
+        started = p to s
+        lastUse = null
+        // 2.0.0 [RVN-17] COMP-12 A calendar held by another company hears it now, before an order is picked.
+        vm.beforeUse(p, go = { startNow(p, s) }, held = { held = it })
+    }
+    fun freeAndGoOn() = vm.undoJoin { lastUse?.let { (p, s, step) -> use(p, s, step) } ?: started?.let { (p, s) -> startNow(p, s) } }
+    held?.let { w ->
+        val (p, s) = started ?: return@let
+        HeldDialog(w, p.name,
+            // I10ab-02 The order alone: no pay question (the pay stays the held company's), and no joining.
+            onCycleOnly = { held = null; withPay = false; order(p, s) },
+            onUndo = { held = null; vm.freeHeld(w); freeAndGoOn() },
+            onDismiss = { held = null })
     }
     askingPay?.let { s ->
         val p = page
@@ -460,7 +485,9 @@ fun CompanyDetailScreen(
                     // [PLAZA-08] Not a member: shift times and their order only; the pay way shows after joining.
                     if (!p.member && p.setups.any { it.payHidden }) {
                         Text(if (p.limited) "오늘은 많이 봐서 근무 시각·순서만 보여요. 내일 다시 보여요."
-                            else "급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여돼요.",
+                            // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds, before the choice.
+                            else "급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요. 쓰면 이 회사 광장에 참여되고, " +
+                                "이 달력은 ${p.joinWaitDays}일 동안 ‘${p.name}’${com.bamnat.core.text.Josa.fit(p.name, "으로")} 정해져요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     // [PLAZA-05] The rule set this phone used is no longer the department's 대표 판 (결정 D74): say so once, with
@@ -541,7 +568,7 @@ fun CompanyDetailScreen(
                     Spacer(Modifier.height(24.dp))
                 }
             }
-            notice?.takeIf { error == null }?.let { msg ->
+            notice?.takeIf { error == null && wait == null }?.let { msg ->
                 Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding()) {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -549,6 +576,11 @@ fun CompanyDetailScreen(
                         TextButton(onClick = { notice = null }) { Text("닫기") }
                     }
                 }
+            }
+            // 2.0.0 [RVN-17] COMP-12 The calendar is held by another company: which, until when, and '잘못 골랐어요'.
+            wait?.takeIf { error == null }?.let { w ->
+                MemberWaitCard(w, company = page?.name.orEmpty(), busy = freeing, onUndo = ::freeAndGoOn, onClose = vm::closeWait,
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp).navigationBarsPadding())
             }
             error?.let { msg ->
                 Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium,

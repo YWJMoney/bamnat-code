@@ -166,8 +166,10 @@ export const LIMITS = {
 /** Until changed in the developer app. */
 // [COMM-07] adoptAgree: the share of 맞았어요 among everyone who voted that a rule set needs to be adopted on its own.
 // [PLAZA-10] firstMonths: the pass for a company's or department's first setup with its pay; at most firstCapYear a year.
+// 2.0.0 [RVN-17] 검토 COMP-14 roomMoney: 회사 방·유형별 방의 글에 금액을 받을지(1) 막을지(0). 보고서 11장 결정 11의 추천(받기)은 운영 규칙
+// 4항('금액은 임금표에만')을 고쳐 게시하는 날 관리자 앱 › 광장 › 채택 규칙 › 광장 방 글의 금액 한 값으로 켜요. 앱도 이 값을 따라요(/api/terms).
 const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90,
-  firstMonths: 1, firstCapYear: 3, askMonths: 3 };
+  firstMonths: 1, firstCapYear: 3, askMonths: 3, roomMoney: 0 };
 
 // SETUP_VERSION (the newest company settings file this server reads) is in company-setup.js (2.0.0 [RVD-25]).
 
@@ -571,6 +573,7 @@ async function routeOnce(request, env, url, ctx) {
   // SP1 1.30 끝
   // [PLAZA-07][PLAZA-09] 회사 참여 and the company's room.
   if (path === "/api/members") return members(request, env);
+  if (path === "/api/members/undo") return memberUndo(request, env);
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/room$/);
   if (m && method === "GET") return room(request, env, m[1]);
   if (path === "/api/reports" && method === "POST") return report(request, env);
@@ -1297,10 +1300,20 @@ export async function metered(env, name, fn) {
 /** 2.0.0 [RVQ-12] 관리 › 서버 상태의 요금제 줄: 요금제, 오늘 D1 쓰기와 하루 몫, 정기 작업 호출의 질의 수와 상한. */
 export async function budgetState(env, now) {
   const plan = cfPlan(env);
-  const [meter, jobs] = await Promise.all([
+  const [meter, jobs, shareKv] = await Promise.all([
     one(env, "SELECT count FROM counters WHERE key = ?", `meter|${meterDay(now)}`).catch(() => null),
     one(env, "SELECT value FROM settings WHERE key = 'job_queries'").catch(() => null),
+    one(env, "SELECT value FROM settings WHERE key = 'share_kv'").catch(() => null),
   ]);
+  // 2.0.0 [RVQ-24] 공유 서버 KV 오늘(정기 작업이 남긴 것, 오늘 것만). 공유 서버를 묶지 않았으면 없음.
+  let kvDay = null;
+  try {
+    const k = JSON.parse(shareKv?.value ?? "null");
+    // 공유 서버의 날은 한국 날짜예요.
+    if (k && k.day === new Date(now + 9 * HOUR).toISOString().slice(0, 10)) kvDay = k;
+  } catch {
+    kvDay = null;
+  }
   let queries = {};
   try {
     queries = JSON.parse(jobs?.value ?? "{}");
@@ -1315,7 +1328,8 @@ export async function budgetState(env, now) {
     d1: { used: d1Used, day: plan.d1WritesDay, share: plan.d1WritesDay ? d1Used / plan.d1WritesDay : 0 },
     queries: { top, limit: plan.queriesPerCall, share: top / plan.queriesPerCall,
       jobs: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { n: q.n, top: q.top ?? q.n, at: iso(q.at) }])) },
-    kv: { day: plan.kvWritesDay },
+    kv: { day: plan.kvWritesDay, readsDay: plan.kvReadsDay, ...(kvDay ? { writes: kvDay.writes, reads: kvDay.reads, at: iso(kvDay.at),
+      share: Math.max(plan.kvWritesDay ? kvDay.writes / plan.kvWritesDay : 0, plan.kvReadsDay ? kvDay.reads / plan.kvReadsDay : 0) } : {}) },
   };
 }
 
@@ -1330,7 +1344,7 @@ export async function flushMeter(env, now, force = false) {
     ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
 }
 
-const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months', 'old_pay_cut', 'shipped_version'";
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months', 'old_pay_cut', 'shipped_version', 'room_money'";
 
 async function settings(env) {
   return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
@@ -1358,7 +1372,9 @@ function readSettings(rows) {
     firstMonths: read("first_months", DEFAULTS.firstMonths), firstCapYear: read("first_cap_year", DEFAULTS.firstCapYear),
     // 1.39 [LOOP-14] 세분화(사용자 2026-11-07): 회사 방식 요청에 '앱에 넣을게요'로 답할 때의 보상. 1.38까지는 채택 보상(rewardMonths)을 같이 썼어요.
     // 따로 적은 적이 없으면 채택 보상과 같은 값으로 시작해요.
-    askMonths: read("ask_months", read("reward_months", DEFAULTS.askMonths)) };
+    askMonths: read("ask_months", read("reward_months", DEFAULTS.askMonths)),
+    // 2.0.0 [RVN-17] COMP-14
+    roomMoney: read("room_money", DEFAULTS.roomMoney) };
 }
 
 // SP1 1.30 [SPD-03] The server's own salt, read once per Worker: before 1.30 every public read without RATE_SALT wrote it again
@@ -1562,6 +1578,19 @@ const PERSONAL = [
 /** Why a text cannot be shared: it holds an email, a phone number or an amount of money. */
 export function personal(text) {
   for (const [code, re] of PERSONAL) if (re.test(text)) return code;
+  return null;
+}
+
+/**
+ * 2.0.0 [RVN-17] 검토 COMP-14: a room's post (회사 방·유형별 방) with amounts taken, only a way to reach someone held back. The phone number
+ * is a real one's shape (휴대폰 010·011…, 지역 02·031…, +82), not any run of digits, so '3억 = 300000000원' is not a phone number.
+ */
+const CONTACT = [
+  ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
+  ["phone", /(?<!\d)(\+?82[\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\s.-]?\d{3,4}[\s.-]?\d{4}(?!\d)/],
+];
+export function contact(text) {
+  for (const [code, re] of CONTACT) if (re.test(text)) return code;
   return null;
 }
 
@@ -1844,9 +1873,10 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths, adoptAgree, firstMonths } = await settings(env);
+  const { adoptPoints, rewardMonths, adoptAgree, firstMonths, roomMoney } = await settings(env);
   // [PLAZA-10] firstMonths: what a company's first setup with its pay earns, said on the app's 나누기 card.
-  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths };
+  // 2.0.0 [RVN-17] COMP-14 roomMoney: whether a room's post may hold an amount, so the app checks as the server does (1.39 apps never read it).
+  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths, roomMoney: roomMoney === 1 };
 }
 
 /**
@@ -2097,7 +2127,7 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   // next): the pay screen offers it, as the way in use is not followed by itself (1-4). Only that the same phone sent both.
   const newer = Object.fromEntries((vf?.used ?? []).map((g) => [g, vf.next.get(g)]).filter(([g, n]) => n && n !== g && ids.has(n) && !vf.used.includes(n)));
   const body = { id: c.id, name: c.name, kind: c.kind ?? "company", job: c.job ?? "", region: c.region ?? "", aliases: aliasRows.map((a) => a.name),
-    setups, member: who.member, ...(Object.keys(newer).length ? { newer } : {}), ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays } };
+    setups, member: who.member, ...(Object.keys(newer).length ? { newer } : {}), ...(who.limited ? { limited: true } : {}), join: { perPhone: MEMBER.perPhone, waitDays: MEMBER.waitDays, ...(MEMBER.undoOnce ? { undo: true } : {}) } };
   // SP1 1.30 [SPD-05] The room (as /room answers it) and the room's talk (as /setups/room/posts does), keys an older app never reads.
   if (extra) {
     const [roomR, talkR] = await extra;
@@ -2265,7 +2295,18 @@ function readFix(raw) {
 // per calendar, another only 30 days later, two per phone, and a phone reading too much gets the shifts only for the
 // day. Everyone else, and apps before 1.26, still get shift times and their order, with "급여 방식 있음 · 확인 n명".
 
-const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerDay: 10, joinsPerNetworkDay: 300, stablePhones: 3, stableDays: 30 };
+/**
+ * 2.0.0 [RVN-17] 검토 COMP-12·U10a-12 (보고서 11장 결정 10, 총괄 11-12 '추천대로, 값 하나로 되돌릴 수 있게'): [undoOnce] 한 값으로
+ * '잘못 골랐어요'를 열고 닫아요. 열리면 한 휴대폰이 [undoDays]에 한 번, 30일을 기다리지 않고 그 달력의 회사를 풀어요.
+ */
+export const MEMBER = { perPhone: 2, waitDays: 30, readsPerDay: 120, joinsPerDay: 10, joinsPerNetworkDay: 300, stablePhones: 3, stableDays: 30,
+  undoOnce: true, undoDays: 365 };
+const undoKey = (dev) => `member_undo|${dev}`;
+/** Whether [dev] may still undo a company it picked by mistake (the switch on, not used in the last [MEMBER.undoDays]). */
+async function undoOpen(env, dev, now) {
+  if (!MEMBER.undoOnce) return false;
+  return !(await one(env, "SELECT 1 AS used FROM counters WHERE key = ? AND expires > ? AND count >= 1", undoKey(dev), now));
+}
 const CAL = /^[A-Za-z0-9_-]{1,24}$/;
 /** What a calendar is called here: the app's own id for it, or "app" from an app that does not say. */
 const calOf = (v) => (typeof v === "string" && CAL.test(v) ? v : "app");
@@ -2333,20 +2374,47 @@ async function stableOf(env, companyId, deptNorm, grp, now) {
  * [PLAZA-07] Joins [companyId] for one calendar of the phone [dev]. A calendar keeps its company 30 days before another;
  * a phone is in two at most. What came of it, as the app shows it: joined, or why not and until when.
  */
-async function joinCompany(env, dev, companyId, cal, now) {
+async function joinCompany(env, dev, companyId, cal, now, dry = false) {
   const rows = await all(env, "SELECT cal, company_id, since, left FROM members WHERE device = ?", dev);
   const here = rows.find((r) => r.cal === cal);
   const same = rows.find((r) => r.company_id === companyId && r.left === 0);
   if (same) return { joined: true, company: companyId, since: iso(same.since), changeAfter: iso(same.since + MEMBER.waitDays * DAY) };
   if (here && here.company_id !== companyId && now - here.since < MEMBER.waitDays * DAY) {
-    return { joined: false, error: "member_wait", until: iso(here.since + MEMBER.waitDays * DAY) };
+    // 2.0.0 [RVN-17] COMP-12 Which company holds the calendar and whether '잘못 골랐어요' can free it, so the app says both at once.
+    const held = await one(env, "SELECT name FROM companies WHERE id = ?", here.company_id);
+    return { joined: false, error: "member_wait", until: iso(here.since + MEMBER.waitDays * DAY),
+      held: { id: here.company_id, name: held?.name ?? "" }, ...((await undoOpen(env, dev, now)) ? { undo: true } : {}) };
   }
   const others = new Set(rows.filter((r) => r.left === 0 && r.cal !== cal).map((r) => r.company_id));
   if (others.size >= MEMBER.perPhone) return { joined: false, error: "member_limit", limit: MEMBER.perPhone };
+  // 2.0.0 [RVN-17] COMP-12 A look before choosing: it would join, nothing written.
+  if (dry) return { joined: false, free: true, company: companyId };
   const since = here && here.company_id === companyId ? here.since : now;
   await run(env, `INSERT INTO members (device, cal, company_id, since, left) VALUES (?, ?, ?, ?, 0)
     ON CONFLICT (device, cal) DO UPDATE SET company_id = excluded.company_id, since = excluded.since, left = 0`, dev, cal, companyId, since);
   return { joined: true, company: companyId, since: iso(since), changeAfter: iso(since + MEMBER.waitDays * DAY) };
+}
+
+/**
+ * POST /api/members/undo {device, cal} — 2.0.0 [RVN-17] 검토 COMP-12·U10a-12 '잘못 골랐어요': the calendar [cal] leaves the company it
+ * holds and may take another at once, once in [MEMBER.undoDays] for a phone ([MEMBER.undoOnce] off: 403 closed). A calendar whose 30 days
+ * are over is free already and costs nothing. Nothing new is kept: the once is a counter, as every limit here.
+ */
+async function memberUndo(request, env) {
+  if (request.method !== "POST") return json({ error: "not_found" }, 404);
+  const body = await readJson(request, 1024);
+  const device = deviceId(body.device);
+  if (!device) refuse("device", "device");
+  const cal = calOf(body.cal);
+  const now = Date.now();
+  const dev = await deviceHash(device);
+  if (!MEMBER.undoOnce) return json({ error: "closed" }, 403);
+  const row = await one(env, "SELECT company_id, since FROM members WHERE device = ? AND cal = ? AND left = 0", dev, cal);
+  if (!row || now - row.since >= MEMBER.waitDays * DAY) return json({ undone: false, free: true });
+  const used = await limitCheck(env, undoKey(dev), 1, MEMBER.undoDays * DAY, now);
+  if (!used.ok) return json({ error: "undo_used", until: iso(row.since + MEMBER.waitDays * DAY), again: iso(used.expires) }, 409);
+  await run(env, "UPDATE members SET left = 1, since = ? WHERE device = ? AND cal = ?", now - MEMBER.waitDays * DAY, dev, cal);
+  return json({ undone: true, company: row.company_id });
 }
 
 /** [PLAZA-07] GET (header X-Device) the companies joined; POST {device, company, cal} joins; DELETE {device, company} leaves. */
@@ -2371,6 +2439,13 @@ async function members(request, env) {
     // The 30 days stay: leaving and joining another company at once would get round them.
     await run(env, "UPDATE members SET left = 1 WHERE device = ? AND company_id = ?", dev, c.id);
     return json({ joined: false, company: c.id });
+  }
+  // 2.0.0 [RVN-17] 검토 COMP-12 (보고서 재현: 순서를 다 고른 뒤에야 빨간 띠): {"dry": true} asks before the user picks anything whether
+  // this calendar could take the company, and if not which company holds it and whether '잘못 골랐어요' can free it. Nothing is written
+  // and no join is counted.
+  if (body.dry === true) {
+    const d = await joinCompany(env, dev, c.id, calOf(body.cal), now, true);
+    return json(d, d.error ? 409 : 200);
   }
   const net = await network(request, env, now);
   const limitHit = await overLimit(env, now, [["device", `join|${dev}`, MEMBER.joinsPerDay, DAY], ...(await networkCheck(env, dev, net, "join", MEMBER.joinsPerNetworkDay, now))]);
@@ -2556,7 +2631,9 @@ async function roomPost(request, env, body, ctx) {
   if (!place) return json({ error: "not_found" }, 404);
   const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
   if (text.length < 2) refuse("body", "body");
-  const why = personal(text);
+  // 2.0.0 [RVN-17] COMP-14 With roomMoney on, a room's post may say an amount; a way to reach someone never.
+  const money = (await settings(env)).roomMoney === 1;
+  const why = money ? contact(text) : personal(text);
   if (why) refuse(why, "body");
   if (place.id === "style-invest" && INVEST_ADVICE.test(text)) refuse("invest_advice", "body");
   const now = Date.now();
@@ -2584,7 +2661,7 @@ async function roomPost(request, env, body, ctx) {
   // 1.36 [VIL-08] 마을 V8: a room's post is 이야기, 질문, 팁 or 자랑; a reply is a plain one.
   const kind = given(body.kind) && !parent ? oneOf(body.kind, ROOM_KINDS, "kind") : "talk";
   // 1.36 [VIL-10] 마을 V10: a question may carry 2~4 choices to vote on.
-  const poll = given(body.poll) && kind === "question" ? pollOf(body.poll) : null;
+  const poll = given(body.poll) && kind === "question" ? pollOf(body.poll, money) : null;
   // 1.36 [VIL-16] 마을 V16: a 자랑 on a kind of work's plaza may carry one of the writer's own public recipes, shown as a card to try on.
   let attach = null;
   if (given(body.attach) && kind === "show" && place.style) {
@@ -2797,10 +2874,11 @@ async function villageRows(env, q) {
 
 /** 1.36 [VIL-10] A poll's choices: 2 to 4 different lines of 1~30 letters, nothing personal in them. */
 export const POLL = { min: 2, max: 4, length: 30 };
-function pollOf(given) {
+function pollOf(given, money = false) {
   if (!Array.isArray(given) || given.length < POLL.min || given.length > POLL.max) refuse("poll", "poll");
   const options = given.map((o) => (typeof o === "string" ? o.replace(/\s+/g, " ").trim() : ""));
-  if (options.some((o) => !o || o.length > POLL.length || personal(o)) || new Set(options).size !== options.length) refuse("poll", "poll");
+  // 2.0.0 [RVN-17] COMP-14 A room's poll as its post: '200만원 아래' is a choice once amounts are taken.
+  if (options.some((o) => !o || o.length > POLL.length || (money ? contact(o) : personal(o))) || new Set(options).size !== options.length) refuse("poll", "poll");
   return options;
 }
 
@@ -7236,7 +7314,9 @@ async function saveSettings(request, env, now) {
     reward_cap_months: pick("rewardCapMonths", 1, 24), reward_cap_days: pick("rewardCapDays", 30, 365),
     first_months: pick("firstMonths", 0, 12), first_cap_year: pick("firstCapYear", 0, 12),
     // 1.39 [LOOP-14] 따로 보낸 때만 적어요: 그 전까지는 채택 보상을 따라가요(1.38까지와 같음).
-    ...(body.askMonths !== undefined ? { ask_months: pick("askMonths", 0, 24) } : {}) };
+    ...(body.askMonths !== undefined ? { ask_months: pick("askMonths", 0, 24) } : {}),
+    // 2.0.0 [RVN-17] COMP-14 광장 방 글의 금액: 따로 보낸 때만(그 전 관리자 앱은 그대로 둬요).
+    ...(body.roomMoney !== undefined ? { room_money: pick("roomMoney", 0, 1) } : {}) };
   await batch(env, [
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('adopt_points', ?)", String(body.adoptPoints)),
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('reward_months', ?)", String(body.rewardMonths)),
@@ -7248,7 +7328,7 @@ async function saveSettings(request, env, now) {
     await settle(env, g.company_id, g.grp, now);
   }
   for (const t of await all(env, "SELECT id FROM rates WHERE status = 'pending' ORDER BY created_at DESC LIMIT 200")) await settleRate(env, t.id, now);
-  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}% · ${extra.adopt_persons}명/${extra.amend_persons}명 · 자동 ${extra.auto_reward ? "켬" : "끔"} ${extra.reward_cap_months}개월/${extra.reward_cap_days}일`);
+  await audit(env, now, "settings", "", `${body.adoptPoints}/${body.rewardMonths}/${agree}% · ${extra.adopt_persons}명/${extra.amend_persons}명 · 자동 ${extra.auto_reward ? "켬" : "끔"} ${extra.reward_cap_months}개월/${extra.reward_cap_days}일${extra.room_money === undefined ? "" : ` · 방 글 금액 ${extra.room_money ? "받음" : "막음"}`}`);
   return json(await settings(env));
 }
 
@@ -8357,10 +8437,14 @@ export async function autoRest(env, now) {
   const d1Budget = plan.d1WritesDay;
   const kvBudget = plan.kvWritesDay;
   let kv = 0;
+  let kvReads = 0;
   if (shareAdmin(env)) {
     try {
       const st = await shareCall(env, "GET", "/api/admin/stats?days=1");
       kv = Number(st?.days?.[0]?.writes ?? 0) || 0;
+      kvReads = Number(st?.days?.[0]?.reads ?? 0) || 0;
+      // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 공유 서버의 오늘 KV 쓰기·읽기를 남겨 서버 상태·오늘 화면이 매번 묻지 않고 보여요.
+      await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_kv', ?)", JSON.stringify({ day: st?.days?.[0]?.day ?? day, writes: kv, reads: kvReads, at: now }));
     } catch {
       kv = 0;
     }
@@ -8380,7 +8464,7 @@ export async function autoRest(env, now) {
   const back = [];
   // A new day below the line: what the job rested goes back on.
   for (const r of mine.filter((r) => r.day !== day)) {
-    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
+    if ((r.key === AUTO_REST.kv ? kv < kvBudget * AUTO_REST.share && kvReads < plan.kvReadsDay * AUTO_REST.share : used < d1Budget * AUTO_REST.share)) back.push(r);
   }
   if (back.length) {
     off = off.filter((k) => !back.some((r) => r.key === k));
@@ -8399,8 +8483,10 @@ export async function autoRest(env, now) {
       changed = true;
     }
   }
-  if (kv >= kvBudget * AUTO_REST.share && !off.includes(AUTO_REST.kv)) {
-    await turnOff(AUTO_REST.kv, `KV ${kv}/${kvBudget}`);
+  // 2.0.0 [RVQ-24] I22b-03: 읽기도 봐요(새 링크를 쉬면 그 링크를 여는 읽기도 줄어요).
+  const kvRead = plan.kvReadsDay ? kvReads / plan.kvReadsDay : 0;
+  if ((kv >= kvBudget * AUTO_REST.share || kvRead >= AUTO_REST.share) && !off.includes(AUTO_REST.kv)) {
+    await turnOff(AUTO_REST.kv, kv >= kvBudget * AUTO_REST.share ? `KV ${kv}/${kvBudget}` : `KV 읽기 ${kvReads}/${plan.kvReadsDay}`);
     changed = true;
   }
   if (!changed) return { used, kv, rested: mine.map((r) => r.key) };
@@ -8476,7 +8562,10 @@ export async function plazaSurge(env, now) {
 function shareAdmin(env) {
   const base = typeof env.SHARE_BASE_URL === "string" ? env.SHARE_BASE_URL.trim().replace(/\/+$/, "") : "";
   const token = typeof env.SHARE_ADMIN_TOKEN === "string" ? env.SHARE_ADMIN_TOKEN.trim() : "";
-  return /^https:\/\/[A-Za-z0-9.-]+$/.test(base) && token.length >= 20 ? { base, token } : null;
+  // 2.0.0 [RVQ-24] The PC's two local servers (npm run local, http://127.0.0.1:8790) too, so 서버 상태's 공유 KV line and the
+  // share switch can be checked there. Only the loopback address: a Worker cannot reach it, and the token never leaves the PC.
+  const ok = /^https:\/\/[A-Za-z0-9.-]+$/.test(base) || /^http:\/\/(127\.0\.0\.1|localhost)(:\d{2,5})?$/.test(base);
+  return ok && token.length >= 20 ? { base, token } : null;
 }
 
 /** [SRV-08] Five seconds at most: a share server that hangs does not hold the developer app's request. */

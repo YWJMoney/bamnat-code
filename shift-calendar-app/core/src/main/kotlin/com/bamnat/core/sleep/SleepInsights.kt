@@ -250,6 +250,16 @@ object SleepInsights {
 
     fun clock(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
 
+    /**
+     * 2.0.0 [RVI-71] (검토 U03-05) What '깼어요' says, the same on the calendar, the sleep page and the night screen: a sleep under
+     * an hour said '0시간 잤어요' or nothing, and kept no 아침 한 장 without a word why.
+     */
+    fun wokeLine(minutes: Long): String = when {
+        minutes > SleepDebt.MAX_SLEEP_MINUTES -> "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
+        minutes < SleepMorning.MIN_MINUTES -> "${minutes.coerceAtLeast(1)}분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요"
+        else -> "${hours(minutes)} 잤어요"
+    }
+
     fun hours(m: Long): String = when {
         m < 60 -> "${m}분"
         m % 60 == 0L -> "${m / 60}시간"

@@ -1,5 +1,12 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.layout.SubcomposeLayout
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.key
 import com.bamnat.core.schedule.QuickOrder
 import com.bamnat.app.data.rules
 import com.bamnat.app.appContainer
@@ -94,16 +101,9 @@ import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.semantics.contentDescription
-import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 /** The day's alarms as they ring with its switch on, so a day turned off still shows what it would ring. */
@@ -449,8 +449,11 @@ private const val MAX_JOB_LINES = 3
 @Composable
 private fun DayJobLine(job: com.bamnat.core.money.Job, date: LocalDate) {
     val cal = LocalCalendarColors.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        JobBadge(count = 1, owed = job.unpaid > 0)
+    // 2.0.0 [RVH-56] 검토 HQ-36 (L이 찾은 같은 구조, 조건 12): the badge sits on the job's first line, not in the middle of the block
+    // once the amount goes under it at a big font (설정 WarningLine HQ-35 the same way). The box is the first line's height.
+    val firstLine = with(androidx.compose.ui.platform.LocalDensity.current) { MaterialTheme.typography.bodyLarge.lineHeight.toDp() }
+    Row(verticalAlignment = Alignment.Top) {
+        Box(Modifier.heightIn(min = firstLine), contentAlignment = Alignment.Center) { JobBadge(count = 1, owed = job.unpaid > 0) }
         Spacer(Modifier.width(8.dp))
         // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'09:0/0') the amount goes under the job when both do not fit.
         com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 168.dp, start = {
@@ -750,61 +753,91 @@ internal fun Modifier.fadingEdges(back: () -> Boolean, forward: () -> Boolean, w
         )
     }
 
+/** [RVH-49] What a [ChipRow] holds: one chip per [item], in order (the same calls as the sideways row it replaced). */
+internal class ChipScope {
+    internal val items = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
+    fun item(key: Any? = null, content: @Composable () -> Unit) { items += key to content }
+}
+
 /**
- * [CAL-18] Chips in one line that scrolls sideways. While some are out of sight to the right, the
- * end fades and a "+2 ›" button says how many; a tap on it brings them in.
+ * [CAL-18] Chips in one line. 2.0.0 [RVH-49] 총괄 사진 검토 HQ-16 (편 폭 날짜 창에서 '야간'·'오후 대근' 칩이 글자 가운데서 잘림): the
+ * row no longer scrolls sideways under a fade. It shows as many whole chips as fit, never a chip cut in two, then "+2 ›" for the
+ * rest; a tap on it opens every chip wrapped on as many lines as they need, and '접기' puts them back in one line (사용자 11-04
+ * '좌우로 스크롤해야 보이는 줄은 펼쳐서 한눈에'). Taps to reach a chip out of sight stay one, as the scroll to the end was.
  */
 @Composable
-internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: LazyListScope.() -> Unit) {
-    val state = rememberLazyListState()
-    val scope = rememberCoroutineScope()
-    // A chip that ends under the button or past the edge counts as out of sight; none once at the end.
-    val more by remember(state) {
-        derivedStateOf {
-            if (!state.canScrollForward) 0 else {
-                val info = state.layoutInfo
-                val edge = info.viewportEndOffset
-                val lastShown = info.visibleItemsInfo.lastOrNull { it.offset + it.size <= edge }?.index
-                    ?: ((info.visibleItemsInfo.firstOrNull()?.index ?: 0) - 1)
-                info.totalItemsCount - 1 - lastShown
-            }
-        }
-    }
-    // [CAL-51] 상-4: the button sits beside the row instead of over its last chip ("오후 대근" under "+7 ›").
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        LazyRow(
-            state = state,
-            // [J133-67] A narrower fade: a chip's words at the edge were too faint to read.
-            modifier = Modifier.weight(1f).fadingEdges(back = { state.canScrollBackward }, forward = { state.canScrollForward }, width = 16.dp),
-            contentPadding = PaddingValues(start = start, end = if (more > 0) 8.dp else end),
+internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, content: ChipScope.() -> Unit) {
+    val chips = ChipScope().apply(content).items
+    var open by rememberSaveable { mutableStateOf(false) }
+    // A slot made for a chip of the day before (more chips) can be drawn once more before it goes: it then draws nothing.
+    val chip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { c() } } }
+    if (open) {
+        FlowRow(
+            modifier.fillMaxWidth().padding(start = start, end = maxOf(end, 4.dp)),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = content,
-        )
-        if (more > 0) {
-            MoreButton(more, Modifier.padding(start = 4.dp, end = maxOf(end, 4.dp))) {
-                // [J133-67] 1.33 (중간 빌드 확인: '+6'이 조금만 넘겨 또 눌러야 했어요): one tap brings the rest in, to the row's end.
-                scope.launch { state.animateScrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0)) }
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+        ) {
+            chips.indices.forEach { chip(it) }
+            MoreButton("접기", "칩 접기", Icons.Filled.KeyboardArrowUp) { open = false }
+        }
+        return
+    }
+    val measurer = rememberTextMeasurer()
+    val moreStyle = MaterialTheme.typography.labelLarge.merge(NumberStyle)
+    SubcomposeLayout(modifier.fillMaxWidth()) { constraints ->
+        val gap = 8.dp.roundToPx()
+        val s = start.roundToPx()
+        val room = (constraints.maxWidth - s - end.roundToPx()).coerceAtLeast(0)
+        val loose = Constraints(maxWidth = room, maxHeight = constraints.maxHeight)
+        // An item may say nothing (a chip shown only on some days): it takes no place.
+        // Measured in copies that are not there for TalkBack or touch (#451 a11y: chips measured but left out of the row were
+        // still read and counted, with no place on screen); only the chips placed below are composed for real.
+        val sizes = chips.indices.map { i ->
+            subcompose("size#$i") { androidx.compose.foundation.layout.Box(Modifier.clearAndSetSemantics { }) { chip(i) } }.map { it.measure(loose) }
+        }
+        val widths = sizes.map { p -> if (p.isEmpty()) 0 else p.sumOf { it.width } + gap * (p.size - 1) }
+        val shown = widths.indices.filter { widths[it] > 0 }
+        fun span(n: Int) = shown.take(n).sumOf { widths[it] } + gap * (n - 1).coerceAtLeast(0)
+        var count = shown.size
+        var more: androidx.compose.ui.layout.Placeable? = null
+        if (span(count) > room) {
+            // The button's width as it will be: 10dp + "+n" + 18dp arrow + 4dp ([MoreButton]), and 4dp before it.
+            val reserve = measurer.measure("+${shown.size}", moreStyle, maxLines = 1, softWrap = false).size.width + 36.dp.roundToPx()
+            count = 0
+            while (count < shown.size && span(count + 1) <= room - reserve) count++
+            val hidden = shown.size - count
+            more = subcompose("more") { MoreButton("+$hidden", "${hidden}개 더 보기") { open = true } }.first().measure(Constraints())
+        }
+        val real = shown.take(count).associateWith { i -> subcompose("chip#$i") { chip(i) }.map { it.measure(loose) } }
+        val placed = real.values.flatten()
+        val height = maxOf(placed.maxOfOrNull { it.height } ?: 0, more?.height ?: 0)
+        layout(constraints.maxWidth, height) {
+            var x = s
+            for (i in shown.take(count)) for (p in real.getValue(i)) {
+                p.placeRelative(x, (height - p.height) / 2)
+                x += p.width + gap
             }
+            more?.let { it.placeRelative(if (count == 0) s else x - gap + 4.dp.roundToPx(), (height - it.height) / 2) }
         }
     }
 }
 
-/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that scrolls to them. */
+/** [CAL-18] "+2 ›": how many chips are out of sight, as a button that opens them; [RVH-49] '접기' in the same shape closes them. */
 @Composable
-private fun MoreButton(count: Int, modifier: Modifier = Modifier, onClick: () -> Unit) {
+private fun MoreButton(text: String, said: String, icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+    modifier: Modifier = Modifier, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         shadowElevation = 2.dp,
-        modifier = modifier,
+        modifier = modifier.semantics(mergeDescendants = true) { contentDescription = said },
     ) {
         Row(Modifier.heightIn(min = 32.dp).padding(start = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            ChipText("+$count", MaterialTheme.typography.labelLarge.merge(NumberStyle),
-                Modifier.semantics { contentDescription = "${count}개 더 보기" })
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
+            ChipText(text, MaterialTheme.typography.labelLarge.merge(NumberStyle))
+            Icon(icon, null, Modifier.size(18.dp))
         }
     }
 }

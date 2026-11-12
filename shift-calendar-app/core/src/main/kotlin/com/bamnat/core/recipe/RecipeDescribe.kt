@@ -48,6 +48,10 @@ object RecipeDescribe {
             listOfNotNull(
                 "알람 ${n}개 더하기".takeIf { n > 0 },
                 (p.values["snooze"] as? Long)?.let { "다시 울림 ${it}분" },
+                // 2.0.0 [RVM-22] RCP-05: 울림 길이·진동·점점 크게 are said too (진동이 켜진 채·처음부터 큰 소리는 보통이라 말하지 않아요).
+                (p.values["ring"] as? Number)?.let { "울림 ${it.toLong()}분" },
+                (p.values["vibrate"] as? Boolean)?.takeIf { !it }?.let { "진동 끔" },
+                (p.values["gradual"] as? Boolean)?.takeIf { it }?.let { "점점 크게" },
                 (p.values["mission"] as? String)?.let { MISSIONS[it] },
             ).joinToString(" · ").ifEmpty { "알람 설정" }
         }

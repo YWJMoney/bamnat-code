@@ -43,7 +43,13 @@ import java.time.LocalTime
 class RecipePieces(private val c: AppContainer) {
 
     /** One line of what a piece changes; [skipped] lines say what it could not use here. */
-    data class Change(val text: String, val skipped: Boolean = false)
+    /** [weak] 2.0.0 [RVM-22] RCP-05: it makes the alarm weaker than the phone's now (someone else's work asks before it goes in). */
+    data class Change(val text: String, val skipped: Boolean = false, val weak: Boolean = false)
+
+    /** 2.0.0 [RVM-22] RCP-05 The phone's alarm now, to tell what a received 알람 묶음 would make weaker. */
+    fun alarmNow(): com.bamnat.core.recipe.AlarmStrength.Now = c.settingsRepository.current.let {
+        com.bamnat.core.recipe.AlarmStrength.Now(it.ringMinutes, it.vibrate, it.gradualVolume)
+    }
 
     // ---- 1.39 [NTC-03] 겹치는 알림: 넣기 전에 '기존 설정을 바꿀까요?' ----
 
@@ -73,7 +79,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun export(kind: PieceKind, cal: String, from: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, Any?>? = when (kind) {
         PieceKind.SHIFT_LOOK -> types(cal).takeIf { it.isNotEmpty() }?.take(12)?.let { list ->
             mapOf("items" to list.map { t ->
-                mapOf("name" to t.name.take(20), "role" to role(t).key, "label" to t.label.ifEmpty { t.name.take(1) },
+                // 2.0.0 [RVM-29] SN-16: name and 근무 글자 cut at a letter by ShiftRules (the piece's own check), never half an emoji.
+                mapOf("name" to com.bamnat.core.model.ShiftRules.fitName(t.name), "role" to role(t).key,
+                    "label" to com.bamnat.core.model.ShiftRules.fitLabel(t.label).ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS) },
                     "color" to (t.colorArgb or 0xFF000000L), "emoji" to ShiftIcon.emoji(t.icon))
             })
         }
@@ -259,9 +267,17 @@ class RecipePieces(private val c: AppContainer) {
                     .takeIf { it.isNotEmpty() }?.let { list -> Change(list.joinToString(", ") { (t, a) -> "${t.name} ${a.joinToString("·") { "${it}분 전" }} 알람 더하기" }) }
             }
             val mission = (values["mission"] as? String)?.takeIf { it != "none" }
+            // 2.0.0 [RVM-22] RCP-05 (진동·점점 크게도 바꾸는데 요약 줄에 없었어요): every alarm setting the piece changes, as 지금 → 바뀐 값;
+            // one it leaves as it is says nothing.
+            val cur = c.settingsRepository.current
+            val weak = com.bamnat.core.recipe.AlarmStrength.weaker(values, alarmNow()).map { it.key }.toSet()
             lines + listOfNotNull(
-                values["snooze"]?.let { Change("다시 울림 ${(it as Number).toInt()}분") },
-                values["ring"]?.let { Change("울림 길이 ${(it as Number).toInt()}분") },
+                (values["snooze"] as? Number)?.toInt()?.takeIf { it != cur.snoozeMinutes }?.let { Change("다시 울림 ${cur.snoozeMinutes}분 → ${it}분") },
+                (values["ring"] as? Number)?.toInt()?.takeIf { it != cur.ringMinutes }?.let { Change("울림 길이 ${cur.ringMinutes}분 → ${it}분", weak = "ring" in weak) },
+                (values["gradual"] as? Boolean)?.takeIf { it != cur.gradualVolume }?.let {
+                    Change(if (it) "알람이 작게 시작해 점점 커져요" else "알람이 처음부터 큰 소리로 울려요(점점 크게 끔)", weak = "gradual" in weak)
+                },
+                (values["vibrate"] as? Boolean)?.takeIf { it != cur.vibrate }?.let { Change(if (it) "알람에 진동도 울려요" else "알람 진동을 꺼요", weak = "vibrate" in weak) },
                 mission?.let { Change("끄기 미션: ${AlarmMission.of(it).label}") },
                 (values["mission"] == "none").takeIf { it }?.let { Change("미션은 지금 것을 그대로 둬요", skipped = true) },
             )
@@ -330,8 +346,9 @@ class RecipePieces(private val c: AppContainer) {
         // [RUL-04] 켜기 전 한 줄 요약 (사용성 제안): each button and rule as it will act; one that writes data says so first.
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
             val l = raw.received()
-            (l.buttons.map { Change((if (it.act.verb.writes) "⚠ " else "") + it.say()) } +
-                l.rules.map { Change((if (it.act.verb.writes) "⚠ " else "") + "규칙 ‘${it.name}’: " + it.say() + if (it.act.verb.writes) " (꺼진 채로 들어와요)" else "") } +
+            // [RVM-23] STU-23: a step after the first that writes (more·otherwise) is marked too, not the first step alone.
+            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + b.say()) } +
+                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + r.say() + if (w) " (꺼진 채로 들어와요)" else "") } +
                 // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },

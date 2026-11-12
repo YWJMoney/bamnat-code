@@ -101,8 +101,21 @@ interface CalendarStorage {
     fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
     class Files(private val context: android.content.Context) : CalendarStorage {
-        override fun open(id: String): AppDatabase = AppDatabase.create(context, pathOf(context, id))
+        /** 2.0.0 [RVH-54] The doors of the databases opened for each calendar; [delete] shuts them all before its file goes. */
+        private val doors = java.util.concurrent.ConcurrentHashMap<String, MutableList<CalendarFileDoor>>()
+
+        override fun open(id: String): AppDatabase {
+            val door = CalendarFileDoor(afterClose = {
+                // A read under way at the delete may have reached the file once more; it goes now, unless the calendar is back.
+                if (doors[id].isNullOrEmpty()) context.deleteDatabase(pathOf(context, id))
+            })
+            doors.compute(id) { _, list -> (list ?: java.util.concurrent.CopyOnWriteArrayList()).apply { add(door) } }
+            return AppDatabase.create(context, pathOf(context, id), door)
+        }
+
         override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
+            // 2.0.0 [RVH-54] Shut first: nothing that still holds this calendar opens its file again, before or after it goes.
+            doors.remove(id)?.forEach { it.shut() }
             db?.close()
             context.deleteDatabase(pathOf(context, id))
             // [MCAL-06] Its pay setup and closed months go with it.
@@ -193,7 +206,14 @@ class CalendarBook(
     private val open = HashMap<String, Opened>()
     private val pays = HashMap<String, com.bamnat.app.pay.PayStore>()
 
-    private fun opened(id: String): Opened = open.getOrPut(id) { storage.open(id).let { db -> Opened(db, repositoryOf(db)) } }
+    /**
+     * 2.0.0 [RVH-54] The one place an added calendar's database is opened: only for a calendar that is here (listed or being set up).
+     * One that went is never opened again by its id; what still holds its old database is kept off the file by [CalendarFileDoor].
+     */
+    private fun opened(id: String): Opened {
+        check(id != PersonalCalendar.MAIN && get(id) != null) { "Not an added calendar: $id" }
+        return open.getOrPut(id) { storage.open(id).let { db -> Opened(db, repositoryOf(db)) } }
+    }
 
     /** The schedule of calendar [id]; the main one for an id that is not (or no longer) there. */
     @Synchronized
@@ -229,7 +249,11 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
+        val style = m.currentStyle()
+        // 2.0.0 [RVK-40] (검토 MONEY-50) A shop's 간이과세 picks its 부가세 deadlines.
+        val vat = if (style != com.bamnat.core.work.WorkStyle.BUSINESS) emptySet()
+            else setOf(if (cal.shopMoney?.simpleTax == true) com.bamnat.core.money.TaxDeadlines.Vat.SIMPLE else com.bamnat.core.money.TaxDeadlines.Vat.GENERAL)
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = style, vat = vat)
             .holdUnconfirmed(m.holdFrom())
     })
 

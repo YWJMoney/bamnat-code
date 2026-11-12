@@ -67,6 +67,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // 2.0.0 [RVI-11] The watch screen shots (WatchScreenshotTest): Robolectric draws TodayPage on a round watch.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.all {
+            it.maxHeapSize = "2g"
+            (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
+            it.outputs.dir(layout.buildDirectory.dir("screenshots"))
+        }
+    }
 }
 
 kotlin {
@@ -90,4 +100,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.17.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.15.1")
+    testImplementation("androidx.test.ext:junit:1.2.1")
+    testImplementation(platform("androidx.compose:compose-bom:2025.06.01"))
+    testImplementation("androidx.compose.ui:ui-test-junit4")
 }

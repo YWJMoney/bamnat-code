@@ -99,7 +99,7 @@ enum class Feature(val minTier: Tier, private val ownLabel: String? = null) {
 data class Gate(
     val live: Boolean = false,
     val tier: Tier = Tier.PRO,
-    val access: Access = Access(true, ProReason.NOT_LAUNCHED),
+    val access: Access = Access(true, ProReason.ALL_OPEN),
     /** Pro features the server opened to everyone. */
     val free: Set<Feature> = emptySet(),
     /** A tester's preview, not the real state. */
@@ -278,7 +278,9 @@ class FeatureGate(
             return Gate(live = true, tier = previewTier, access = Access(on, ProReason.PREVIEW), free = free, preview = true, holds = all, plans = config.workPlans)
         }
         val now = clock()
-        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live, now), now, zone())
+        // 2.0.0 [RVO-12] (HQ-46) Off only for 처리방침 3.1's hold: the screens say so, with its last day.
+        val held = rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.takeIf { !it.on }?.heldUntil?.atStartOfDay(com.bamnat.core.flags.KST)?.toInstant()
+        val access = ProAccess.resolve(s.sources(config, installedAt(), zone(), live, now, held), now, zone())
         val admin = s.passes?.admin?.takeIf { it.approved && java.time.Duration.between(s.passes.checkedAt, now) < ProAccess.ADMIN_CHECK } != null
         val holds = if (admin) everyBand() else com.bamnat.core.tier.WorkPlanKind.entries.mapNotNull { k -> s.hold(k, now, config.workPlans)?.let { k to it } }.toMap()
         return Gate(live = live, tier = if (access.pro) Tier.PRO else Tier.FREE, access = access, free = free, holds = holds, plans = config.workPlans)

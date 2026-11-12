@@ -175,7 +175,7 @@ fun InvestMonthBar(vm: InvestViewModel, month: YearMonth, onOpen: () -> Unit, mo
     val s = state.result.summary
     val figures = listOf(
         Triple("${month.monthValue}월 손익", InvestFmt.signedShort(stats.pnl, hide), pnlColor(stats.pnl)),
-        Triple("승률", stats.winRate?.let { "${"%.0f".format(it * 100)}%" } ?: "–", MaterialTheme.colorScheme.onSurface),
+        Triple("승률", stats.winRate?.let { "${"%.0f".format(java.util.Locale.ROOT, it * 100)}%" } ?: "–", MaterialTheme.colorScheme.onSurface),
         Triple("총 수익률", InvestFmt.percent(s.simpleReturn), rateColor(s.simpleReturn)),
     )
     val notes = listOf("매매 ${stats.trades}건", "매도 ${stats.sells}번", "원금 ${InvestFmt.short(s.principal, hide)}")

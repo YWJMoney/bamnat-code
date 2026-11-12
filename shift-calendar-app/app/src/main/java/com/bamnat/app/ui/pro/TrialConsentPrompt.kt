@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pro
 
+import com.bamnat.app.tier.launchAt
+import com.bamnat.app.tier.thanks
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +117,8 @@ fun LaunchThanks(c: AppContainer) {
     val rows by c.flags.byKey.collectAsStateWithLifecycle()
     if (rows[com.bamnat.core.flags.FlagCatalog.BILLING]?.on != true || pro.thanksSeen) return
     val zone = Today.zone()
-    val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchedAt, config.thanksMonths, zone) ?: return
+    // 2.0.0 [RVO-12] A release build knows the 출시 moment and months before the server answers.
+    val until = com.bamnat.core.tier.ProAccess.thanksUntil(c.installedAt, config.launchAt(), config.thanks(), zone) ?: return
     if (!Today.instant().isBefore(until)) return
     // 2.0.0 [RVP-22] Last of the opening windows (OpenAsk).
     if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS)) return

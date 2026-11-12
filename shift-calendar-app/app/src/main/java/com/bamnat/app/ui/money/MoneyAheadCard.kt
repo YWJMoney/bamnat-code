@@ -145,7 +145,7 @@ internal fun AheadCard(
             }
             self?.let { p ->
                 Muted("내 월급" + (if (style == WorkStyle.FIELD) "(경비 뺀 뒤)" else "") + ": 매달 ${Fmt.won(p.salary)}씩 나에게 주면 지난 ${p.months}달 중 ${p.covered}달은 그만큼 벌었어요" +
-                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(it).removeSuffix(".0")}달 버텨요(지난 ${p.months}달 한 달 평균 지출 ${Fmt.won(p.spend)} 기준)" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
+                    (p.lastFor?.let { " · 지금 통장으로 ${"%.1f".format(java.util.Locale.ROOT, it).removeSuffix(".0")}달 버텨요(지난 ${p.months}달 한 달 평균 지출 ${Fmt.won(p.spend)} 기준)" } ?: "") + ". 더 번 달의 남는 돈은 모으기 봉투로 옮겨 두면 덜 번 달을 메워요.")
             }
         }
         rhythm?.let { p ->

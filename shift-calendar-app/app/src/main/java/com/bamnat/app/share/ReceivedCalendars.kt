@@ -196,18 +196,13 @@ data class ReceivedCalendar(
     val name: String get() = title.trim().ifEmpty { "받은 표" }
 
     /** [RVG-32] This calendar's 근무표 in a sentence: ‘민지’ 근무표, or 받은 근무표 (not ‘받은 표’ 근무표 or 이름 없음님). */
-    val roster: String get() = com.bamnat.app.ui.setup.LinkStart.roster(title)
+    val roster: String get() = com.bamnat.app.ui.setup.LinkStart.roster(title, word)
     /** 민지의 근무표, as the shared page says. [RVH-20] 검토 TYPE-16: a shop's link is 민지의 영업일, a field worker's 민지의 일정. */
     val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "받은 $word" // [RVG-32] was 이름 없는 근무표
 
     /** [RVH-20] What the link holds, as far as it says: 매출 sent → 영업일, 일감 → 일정, else 근무표. */
-    val word: String get() = schedule?.let { s ->
-        when {
-            "pay" in s.shows && s.payKind == com.bamnat.core.work.MoneyShare.SALES -> "영업일"
-            "jobs" in s.shows || "pay" in s.shows && s.payKind == com.bamnat.core.work.MoneyShare.JOBS -> "일정"
-            else -> null
-        }
-    } ?: "근무표"
+    /** 2.0.0 [RVG-35] 검토 HQ-64: the one rule the sender's hint and the web page use too ([com.bamnat.core.work.linkWord]). */
+    val word: String get() = schedule?.let { s -> com.bamnat.core.work.linkWord(s.shows, s.payKind) } ?: "근무표"
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
     /** [RVG-32] 검토 PC-93: a link without a name shows 받 (as in 받은 표), not a question mark. */

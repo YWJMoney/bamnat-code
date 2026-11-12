@@ -125,6 +125,70 @@ class FlagEvalTest {
         assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p, confirmed).on)
     }
 
+    // ---- 2.0.0 [RVO-12] 검토 HQ-46: a release build knows the 정식 출시 happened ----
+
+    private fun released(p: PhoneFacts) = p.copy(knownDay = Released.DAY, knownChecks = Released.CHECKS)
+
+    @Test fun aReleaseBuildWithNoServerAnswerHasBillingOnButADebugBuildKeepsEverythingOpen() {
+        // A phone installed after 3.1 was posted that never reached the server (first start offline, AL-D6: the phone's date).
+        val p = phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 11, 13), agreed = emptySet())
+        val debug = FlagEval.state(FlagCatalog.BILLING_FLAG, p)
+        assertFalse("debug builds and tests: every feature open, as before", debug.on)
+        assertNull(debug.heldUntil)
+        val release = FlagEval.state(FlagCatalog.BILLING_FLAG, released(p))
+        assertTrue(release.reason, release.on)
+        assertTrue(release.checks.joinToString { "${it.label} ${it.detail}" }, release.checks.any { it.detail?.contains("출시한 앱이 알아요") == true })
+        assertTrue("ads too (the consent form may still ask)", FlagEval.state(FlagCatalog.ADS_FLAG, released(p)).on)
+    }
+
+    @Test fun whatTheServerSaysStillWinsOnAReleaseBuild() {
+        val p = released(phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 11, 13)))
+        assertFalse("its force off", FlagEval.state(FlagCatalog.BILLING_FLAG, p, FlagOverride(force = Force.OFF)).on)
+        assertFalse("its own checks: one not confirmed stays unconfirmed",
+            FlagEval.state(FlagCatalog.BILLING_FLAG, p, FlagOverride(confirmed = mapOf("play.production" to null))).on)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p, confirmed).on)
+    }
+
+    @Test fun aReleaseBuildNeverReadsADayBeforeTheLaunchForALegalRow() {
+        // The phone's clock set back to October, never online: 3.1's day has come all the same.
+        val p = released(phone(kst(2026, 10, 1), installed = LocalDate.of(2026, 9, 1), agreed = setOf("3.1")))
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, p).on)
+        // No server clock at all (a server with flags but no time): dates up to 11-12 are past, a later one is not known.
+        val noClock = p.copy(serverNow = null)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock, confirmed).on)
+        val later = Flag("test.later", "뒤", "w", "o", Basis(), listOf(Condition.Date(from = LocalDate.of(2026, 12, 12))), default = false, risk = Risk.LEGAL)
+        assertEquals(Check.Status.UNKNOWN, FlagEval.state(later, noClock).checks.single().status)
+    }
+
+    @Test fun theThreePointOneHoldStaysOnAReleaseBuildAndSaysUntilWhen() {
+        // 9항: installed before 10-27, no yes: free until 11-24 (its last free day is 11-23).
+        val tester = released(phone(kst(2026, 11, 13), installed = LocalDate.of(2026, 10, 21), agreed = emptySet()))
+        val held = FlagEval.state(FlagCatalog.BILLING_FLAG, tester)
+        assertFalse(held.on)
+        assertEquals(LocalDate.of(2026, 11, 24), held.heldUntil)
+        assertEquals(LocalDate.of(2026, 11, 24), FlagEval.state(FlagCatalog.BILLING_FLAG, tester, confirmed).heldUntil)
+        assertTrue("on the held-until day", FlagEval.state(FlagCatalog.BILLING_FLAG, tester.copy(now = kst(2026, 11, 24, 0, 1), serverNow = kst(2026, 11, 24, 0, 1))).on)
+        assertTrue("a yes ends it", FlagEval.state(FlagCatalog.BILLING_FLAG, tester.copy(agreed = setOf("3.1"))).on)
+        // No server clock: the hold might still apply, so it stays (never charged early); one surely over is over.
+        val noClock = tester.copy(serverNow = null)
+        assertFalse(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock, confirmed).on)
+        assertTrue(FlagEval.state(FlagCatalog.BILLING_FLAG, noClock.copy(installed = LocalDate.of(2026, 11, 2)), confirmed).on)
+        // A force off says nothing of the hold.
+        assertNull(FlagEval.state(FlagCatalog.BILLING_FLAG, tester, FlagOverride(force = Force.OFF)).heldUntil)
+    }
+
+    @Test fun holdOverWithoutTheDay() {
+        val cal = PolicyCalendar.SEED
+        val nov12 = LocalDate.of(2026, 11, 12)
+        assertEquals(false, cal.over("3.1", LocalDate.of(2026, 10, 1), emptySet(), nov12))
+        assertEquals(true, cal.over("3.1", LocalDate.of(2026, 10, 1), setOf("3.1"), nov12))
+        assertEquals(true, cal.over("3.1", LocalDate.of(2026, 10, 27), emptySet(), nov12))
+        assertEquals(true, cal.over("3.1", null, emptySet(), LocalDate.of(2026, 11, 24)))
+        assertEquals(false, cal.over("3.1", null, emptySet(), nov12))
+        assertNull(cal.over("9.9", null, emptySet(), nov12))
+        assertEquals(LocalDate.of(2026, 11, 12), Released.DAY)
+    }
+
     @Test fun aTesterWithoutTheYesIsHeldUntilTheOldDayEvenWhenForcedOn() {
         val tester = LocalDate.of(2026, 10, 21)
         val p = phone(kst(2026, 11, 12), agreed = emptySet(), installed = tester)
@@ -250,7 +314,10 @@ class FlagEvalTest {
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
-            if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any { it is Condition.Date && it.policy != null })
+            // 2.0.0 총괄 11-12 (나): after launch a 7-day line has no day of its own in the server calendar (its 3.13 is the 30-day line), so
+            // such a row rests on PolicyConsent.REVISION_EFFECTIVE, which tools/legal_dates.py moves with the posting day.
+            if (f.risk == Risk.LEGAL) assertTrue("${f.key}: a LEGAL row rests on a policy date", f.conditions.any {
+                it is Condition.Date && (it.policy != null || it.from == PolicyConsent.REVISION_EFFECTIVE) })
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }
         WorkStyle.entries.forEach { assertTrue(FlagCatalog.of(FlagCatalog.typeKey(it))!!.default) }
@@ -273,17 +340,27 @@ class FlagEvalTest {
     }
 
     /**
-     * 2.0.0 [RVM-21] MKT-32 (총괄 11-12): the 장터 card fonts come from our public files only from 처리방침 3.13's 7-day effective day; before
-     * it, and while 3.13 is not in the calendar at all, the phone asks nothing (the cards draw in its own fonts).
+     * 2.0.0 [RVM-21] MKT-32 (총괄 11-12): the 장터 card fonts come from our public files only from 처리방침 3.13's 7-day line
+     * ([com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE], 11-19), by the server's clock; before it, and while the server's time is
+     * not known, the phone asks nothing (the cards draw in its own fonts). 총괄 (나): the server calendar's 3.13 날짜 is the 30-day line
+     * (12-12), which the row does not read, and there is no 3.13 hold (no consent card).
      */
     @Test fun cardFontsWaitForTheSevenDayLineOf313() {
         val fonts = FlagCatalog.of(FlagCatalog.CARD_FONTS)!!
-        assertEquals("3.13", FlagCatalog.CARD_FONT_POLICY)
-        assertFalse("3.13 일정이 없으면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 12, 31)), calendar = PolicyCalendar.SEED.merged(emptyList())).on)
-        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.13", LocalDate.of(2026, 11, 12), LocalDate.of(2026, 11, 19))))
-        assertFalse(FlagEval.state(fonts, phone(kst(2026, 11, 18, 23, 59)), calendar = cal).on)
-        assertTrue(FlagEval.state(fonts, phone(kst(2026, 11, 19, 0, 1)), calendar = cal).on)
-        assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 11, 20), server = null), calendar = cal).on)
+        val day = com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE
+        assertEquals(com.bamnat.core.ops.PolicyConsent.REVISION_POSTED.plusDays(7), day)
+        assertEquals(listOf<Condition>(Condition.Date(from = day)), fonts.conditions)
+        assertEquals(Risk.LEGAL, fonts.risk)
+        // The server's 3.13 as the admin app holds it: posted 11-12, effective 12-12 (the 30-day line). The row does not wait for it.
+        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.13", com.bamnat.core.ops.PolicyConsent.REVISION_POSTED,
+            com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE_30)))
+        val eve = day.minusDays(1)
+        assertFalse(FlagEval.state(fonts, phone(kst(eve.year, eve.monthValue, eve.dayOfMonth, 23, 59)), calendar = cal).on)
+        assertTrue(FlagEval.state(fonts, phone(kst(day.year, day.monthValue, day.dayOfMonth, 0, 1)), calendar = cal).on)
+        assertTrue("서버 일정에 3.13이 없어도 그날부터", FlagEval.state(fonts, phone(kst(day.year, day.monthValue, day.dayOfMonth, 0, 1)),
+            calendar = PolicyCalendar.SEED.merged(emptyList())).on)
+        assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 12, 31), server = null), calendar = cal).on)
+        assertTrue(fonts.whyOff, fonts.whyOff.contains("${day.monthValue}월 ${day.dayOfMonth}일"))
     }
 
     @Test fun unknownKeysAreIgnoredAndFreeRowsAreReadByName() {

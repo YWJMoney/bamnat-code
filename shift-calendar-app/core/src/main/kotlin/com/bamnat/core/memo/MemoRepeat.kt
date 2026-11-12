@@ -34,7 +34,15 @@ object MemoRepeat {
     fun interface ShiftOf {
         fun on(date: LocalDate): Long?
         fun rest(date: LocalDate): Boolean = false
+        /**
+         * 2.0.0 [RVI-20] (검토 MEMO-10) The work's start and end on [date], for a 근무마다 time after midnight: '야간마다 01:00' is the
+         * night's 01:00, the next calendar day. Null where not known.
+         */
+        fun hours(date: LocalDate): Pair<java.time.LocalTime, java.time.LocalTime>? = null
     }
+
+    /** 월~금. */
+    fun isWeekday(date: LocalDate): Boolean = date.dayOfWeek != DayOfWeek.SATURDAY && date.dayOfWeek != DayOfWeek.SUNDAY
 
     /** 1.39 [TASK-44] A repeat read from the calendar's schedule (근무마다, 쉬는 날마다): without it, its own date only. */
     fun followsSchedule(repeat: String): Boolean = kindOf(repeat).let { it == Kind.SHIFT || it == Kind.REST }
@@ -104,11 +112,12 @@ object MemoRepeat {
         if (kindOf(memo.repeat) == Kind.SHIFT && shifts != null) return !date.isBefore(start) && shifts.on(date) == n.toLongOrNull()
         // 1.39 [TASK-44] 쉬는 날마다 likewise: on each day off from its date on, its own date too only when that is one.
         if (kindOf(memo.repeat) == Kind.REST && shifts != null) return !date.isBefore(start) && shifts.rest(date)
-        if (date == start) return true
+        // 2.0.0 [RVI-21] (검토 MEMO-15) 평일 begun on a weekend is not on that weekend: its own date counts only on a 평일.
+        if (date == start) return kindOf(memo.repeat) != Kind.WEEKDAYS || isWeekday(date)
         if (date.isBefore(start)) return false
         return when (kindOf(memo.repeat)) {
             Kind.NONE, Kind.SHIFT, Kind.REST -> false
-            Kind.WEEKDAYS -> date.dayOfWeek != DayOfWeek.SATURDAY && date.dayOfWeek != DayOfWeek.SUNDAY
+            Kind.WEEKDAYS -> isWeekday(date)
             Kind.WEEK -> date.dayOfWeek == DayOfWeek.of(n.toInt())
             Kind.MONTH -> date.dayOfMonth == minOf(n.toInt(), date.lengthOfMonth())
             Kind.YEAR -> {

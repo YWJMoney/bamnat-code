@@ -34,6 +34,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -479,6 +480,9 @@ class RecipeMakeViewModel(
                 }
                 note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
+            } catch (e: PictureLimit) {
+                // 2.0.0 [RVM-30] SN-15: how far the pictures got, and that 다시 올리기 goes on from there (the draft stays as it is).
+                _state.value = _state.value.copy(sending = false, error = e.say(), errorCode = "photos_today")
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
             } catch (e: Exception) {
@@ -503,16 +507,49 @@ class RecipeMakeViewModel(
 }
 
 
-/** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
+/**
+ * 2.0.0 [RVM-30] SN-15 (스튜디오 제작 오류 조사): the day's pictures ran out while a work's pictures went up. [sent] of [total] went up and
+ * stay on the server, which does not count the same picture from this phone again (D #471 RVD-27), so 다시 올리기 goes on from the
+ * rest; [limit] is the day's number when the server said it, [retryAfter] its seconds. Before 2.0.0 the words said 'N시간 뒤에 다시'
+ * and a work of 13 pictures or more never went up.
+ */
+class PictureLimit(val sent: Int, val total: Int, val limit: Int?, val retryAfter: Int?) : java.io.IOException("photos_today") {
+    /** What the person reads: how far it got, and that doing it [again] ('올리면', '저장하면') goes on from there. */
+    fun say(again: String = "올리면"): String {
+        val w = com.bamnat.app.company.RateLimits.wait(retryAfter ?: 86_400)
+        return (limit?.let { "오늘 올릴 수 있는 사진 ${it}장을 다 썼어요" } ?: "오늘 올릴 수 있는 사진을 다 썼어요") +
+            ". 사진 ${total}장 중 ${sent}장은 올라갔고, ${w}에 다시 $again 남은 사진부터 이어서 올라가요"
+    }
+}
+
+/**
+ * [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id.
+ * 2.0.0 [RVM-30] SN-15: the day's limit met on the way is a [PictureLimit] that says how many of how many went.
+ */
 internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
     if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK || it.kind == PieceKind.DECOR }) return r
-    val sent = mutableMapOf<String, String>()
-    suspend fun server(id: Any?): Any? {
-        val local = id as? String ?: return id
-        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
-        return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
+    val mine = mutableSetOf<String>()
+    pictures(r) { id ->
+        (id as? String)?.takeIf { com.bamnat.app.recipe.LookImages.has(c.appContext, it) && !com.bamnat.app.recipe.StudioMaterials.isMaterial(c.appContext, it) }
+            ?.let(mine::add)
+        id
     }
-    return r.copy(pieces = r.pieces.map { p ->
+    val sent = mutableMapOf<String, String>()
+    return pictures(r) { id ->
+        val local = id as? String ?: return@pictures id
+        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return@pictures local
+        sent[local] ?: try {
+            com.bamnat.app.recipe.LookImages.upload(c, local).also { sent[local] = it }
+        } catch (e: com.bamnat.app.company.CompanyException) {
+            if (e.code != "rate_limited") throw e
+            throw PictureLimit(sent.keys.count { it in mine }, mine.size, e.limit, e.retryAfter)
+        }
+    }
+}
+
+/** Each picture [r] names, in turn, as [server] gives it back. */
+private suspend fun pictures(r: com.bamnat.core.recipe.Recipe, server: suspend (Any?) -> Any?): com.bamnat.core.recipe.Recipe =
+    r.copy(pieces = r.pieces.map { p ->
         // [FREE-05] 화면 색·배경's pictures, each screen's in turn.
         if (p.kind == PieceKind.SCREEN_LOOK) (p.values["screens"] as? String)?.let { line ->
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
@@ -532,7 +569,6 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
             p.copy(values = v)
         }
     })
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -587,7 +623,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
-                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
+                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 // [TOWN-04] 1.37 (후보 3, PC 확인: 확인 스위치가 '올리기'와 떨어져 있어 찾기 어려워요): the check is in the bar itself, right above
                 // 올리기, so it is in sight with the button whatever the page shows.
                 if (s.step == 5 && s.scope != "private") Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -940,7 +976,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(when (l.level) { RecipeLint.Level.OK -> "✓"; RecipeLint.Level.WARN -> "!"; RecipeLint.Level.ERROR -> "✕" },
-                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.colorScheme.tertiary; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
+                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.bamnat.caution; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
                 modifier = Modifier.width(24.dp))
             Text(l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (l.fix != null) TextButton(onClick = { vm.fix(l) }) { Text("고치기") }
@@ -954,7 +990,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     }
     fontLines.forEach { t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("!", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(24.dp))
+            Text("!", color = MaterialTheme.bamnat.caution, modifier = Modifier.width(24.dp))
             Text(t, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         }
     }
@@ -1009,7 +1045,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
     val advice = lines.count { it.level == RecipeLint.Level.WARN }
     if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
+        color = MaterialTheme.bamnat.caution, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     // PC aacb5ce8: 올리기 단추 is in the bottom bar alone (같은 뜻 두 줄이 겹치던 것); here what holds it and what got refused.
     // [BLU-07] PC 7차 (나만 보기로 저장을 눌러도 아무 표시가 없음, 거절 뒤 단추가 없음): the refusal and what gets past it, right here.
     s.error?.let { e ->

@@ -45,3 +45,53 @@ export const decorPhoto = (s) => (s === "" || DECOR_PHOTO_RE.test(s) ? null : "p
 // [LAY-11] 1.36 꾸밈 단추: a 규칙 단추 id (갈래 D logic buttons).
 const DECOR_TAP_RE = /^[a-z0-9]{1,12}$/;
 export const decorTap = (s) => (s === "" || DECOR_TAP_RE.test(s) ? null : "tap");
+
+// 2.0.0 [RVM-23] RCP-17·STU-19 (보이지 않는 꾸밈 단추, 칸 전체를 덮는 꾸밈 단추가 날짜 누르기를 가로챔): core DecorTapRule, the same numbers
+// and rule. A decoration takes a tap only when one can see it (not hidden, drawn at least `seen` % strong), it is not a whole-screen
+// picture, it is button-sized (at most maxW × maxH dp), and at most perPlace are on one part. A work with one that may not is refused
+// with "decor_tap" (the app's 올리기 점검 says so first and 고치기 leaves it a picture), so 1.36~1.39 phones never get one.
+export const DECOR_TAP = { seen: 40, maxW: 160, maxH: 64, perPlace: 3 };
+export const DECOR_STROKES = ["ring", "frame", "line_h", "line_v", "line_d", "dash_h", "zigzag", "squiggle", "check", "underline", "circle_mark", "snow"];
+
+const alphaOf = (c) => (c === undefined || c === null ? 1 : ((Number(c) >>> 24) & 0xff) / 255);
+
+function decorKind(i) {
+  if (typeof i.text === "string" && i.text !== "") return "text";
+  if (typeof i.emoji === "string") return "emoji";
+  if (typeof i.icon === "string") return "icon";
+  if (typeof i.shape === "string") return "shape";
+  return "photo";
+}
+
+/** core DecorTapRule.seen: the item as drawn can be seen. */
+export function decorSeen(i) {
+  if (i.hide === true) return false;
+  const a = (i.alpha ?? 100) / 100;
+  const enough = DECOR_TAP.seen / 100;
+  if (a < enough) return false;
+  const fill = alphaOf(i.fill) * (i.fillA ?? 100) / 100 * a;
+  const line = i.line !== undefined && i.line !== null && i.line !== "none" && (i.lineW ?? 0) >= 1 && alphaOf(i.lineC) * a >= enough;
+  switch (decorKind(i)) {
+    case "shape":
+      if (DECOR_STROKES.includes(i.shape)) return (i.lineC !== undefined && i.lineC !== null ? alphaOf(i.lineC) * a : fill) >= enough;
+      return fill >= enough || line;
+    case "icon": return alphaOf(i.ink ?? i.fill) * a >= enough;
+    case "text": return alphaOf(i.ink) * a >= enough || ((i.fill !== undefined && i.fill !== null) && fill >= enough) || line;
+    default: return true;
+  }
+}
+
+/** The index of the first item whose tap presses nothing (core DecorTapRule.taps), or -1. */
+export function decorTapProblem(items) {
+  const n = new Map();
+  for (let k = 0; k < items.length; k++) {
+    const i = items[k];
+    if (!i || i.tap === undefined || i.tap === null || i.tap === "") continue;
+    const ok = i.full !== true && (i.w ?? 24) <= DECOR_TAP.maxW && (i.h ?? 24) <= DECOR_TAP.maxH && decorSeen(i);
+    if (!ok) return k;
+    const c = (n.get(i.at) ?? 0) + 1;
+    n.set(i.at, c);
+    if (c > DECOR_TAP.perPlace) return k;
+  }
+  return -1;
+}

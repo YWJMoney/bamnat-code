@@ -128,10 +128,11 @@ private fun BandCard(
                 if (o.trial) Text(trialHead(com.bamnat.core.time.Today.date(), "연 ${o.price}"), style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary)
                 Button(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (o.trial) "1개월 무료로 시작 (연 ${o.price})" else "연 ${o.price}로 구독")
+                    // 2.0.0 [RVO-07] (검토 PRO-13 "연 39,000원로") 조사를 금액에 맞게.
+                    Text(if (o.trial) "1개월 무료로 시작 (연 ${o.price})" else "연 ${o.price}${com.bamnat.app.ui.Fmt.ro(o.price)} 구독")
                 }
             }
-            monthly?.let { o -> OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("월 ${o.price}로 구독") } }
+            monthly?.let { o -> OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("월 ${o.price}${com.bamnat.app.ui.Fmt.ro(o.price)} 구독") } }
             // No double payment: the pass is for someone not subscribed to this kind.
             if (!passBlocked) pass?.let { o ->
                 OutlinedButton(onClick = { onBuy(o) }, modifier = Modifier.fillMaxWidth()) { Text("1년 이용권 ${o.price} · 자동 결제 없음") }

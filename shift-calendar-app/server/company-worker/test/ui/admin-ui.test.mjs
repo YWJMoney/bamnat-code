@@ -2238,6 +2238,30 @@ test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback v
   assert.deepEqual(t.errors, []);
 });
 
+// 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 정기 작업이 잰 공유 서버 KV 오늘 쓰기·읽기가 요금제 줄에 하루 몫의 %로, 80%를 넘으면 주의 색으로.
+test("[RVQ-24] 서버 상태 shows the share server's KV writes and reads for today against the plan's day", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const put = (v) => s.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('share_kv', ?)").run(JSON.stringify(v));
+  put({ day: "2020-01-01", writes: 30000, reads: 1, at: Date.now() });
+  await t.go("#/server");
+  await t.settle(30);
+  assert.doesNotMatch(t.text("#main [data-budget] + ul"), /공유 서버 KV/, "어제 것은 오늘 줄이 아니에요");
+  put({ day, writes: 1200, reads: 290000, at: Date.now() - 4 * 60e3 });
+  await t.go("#/today");
+  await t.settle(30);
+  await t.go("#/server");
+  await t.settle(30);
+  const line = t.$$("#main [data-budget] + ul li").find((li) => /공유 서버 KV/.test(li.textContent));
+  assert.ok(line, "공유 KV 줄");
+  assert.match(line.textContent, /공유 서버 KV 읽기 하루 몫의 8\d%\(290,000번\), 쓰기 \d%\(1,200번\)/, "몫을 더 쓴 읽기(약 33만의 87%)가 앞에");
+  assert.match(line.textContent, /분 전 기준/);
+  assert.equal(line.className, "todo", "80%를 넘으면 주의 색");
+  assert.match(t.text("#main [data-budget] ~ .hint"), /공유 KV는 새 링크부터/);
+  assert.deepEqual(t.errors, []);
+});
+
 // ---- 2.0.0 갈래 Q2 (검토 영역 23·24): 믿음·안전 ----
 
 test("[RVA-10] a question that is gone says so, with 목록으로, not '서버가 답하지 않아요'", async () => {
