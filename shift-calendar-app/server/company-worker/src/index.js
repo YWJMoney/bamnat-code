@@ -1402,6 +1402,34 @@ function date(v, field) {
   return ok ? v : refuse("setup", field);
 }
 
+/** 2.0.0 [RVD-20] HQ-08 하루 두 구간 (결정 19번, 설계 4-4절, 갈래 H #451): the keys a shift type carries the gap and the break apart in. */
+const TWO_PART_KEYS = ["gapStart", "gap", "rest", "restStart"];
+/** [RVD-20] HQ-08 As the app's WorkTime: each part at least 30 minutes, the gap at least 30. */
+const MIN_PART = 30;
+const minutesOf = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+const clock = (m) => `${String(Math.floor((m % (24 * 60)) / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const DAY_MIN = 24 * 60;
+
+/**
+ * 2.0.0 [RVD-20] HQ-08 A shift worked in two parts (11:00~15:00 and 17:00~21:00): the file stays v4, so an app before 2.0.0 reads "start"~"end"
+ * with "break" (the break and the gap together, from "breakStart" = the gap's start) as one part, and a 2.0.0 app reads "gapStart"·"gap"
+ * (the gap) and "rest"·"restStart" (the break alone) apart. Kept only when they agree with what the older app reads; anything else is
+ * refused, as money-bearing fields are (a bug in the app shows up instead of two apps working out different hours from one file).
+ */
+function twoParts(t, type) {
+  const gapStart = time(t.gapStart, "shiftTypes");
+  const gap = int(t.gap, MIN_PART, DAY_MIN - 2 * MIN_PART, "shiftTypes");
+  const rest = int(t.rest ?? 0, 0, 720, "shiftTypes");
+  const restStart = given(t.restStart) ? time(t.restStart, "shiftTypes") : null;
+  if (type.off || type.start === null || type.end === null) refuse("setup", "shiftTypes");
+  // Minutes from the first start, a shift past midnight read as the app reads it (WorkTime.offset·spanMinutes).
+  const span = (minutesOf(type.end) - minutesOf(type.start) + DAY_MIN) % DAY_MIN || DAY_MIN;
+  const first = (minutesOf(gapStart) - minutesOf(type.start) + DAY_MIN) % DAY_MIN;
+  if (first < MIN_PART || first + gap + MIN_PART > span) refuse("setup", "shiftTypes");
+  if (type.break !== rest + gap || type.breakStart !== gapStart) refuse("setup", "shiftTypes");
+  return { gapStart, gap, rest, restStart };
+}
+
 /**
  * [COMM-02] A company settings file (CompanyShare in the app) cut down to the fields the app reads,
  * each one checked. Anything carrying money is refused rather than dropped, so a bug in the app shows
@@ -1418,17 +1446,20 @@ export function cleanSetup(raw, texts = []) {
   if (int(raw.v, 1, 99, "v") > SETUP_VERSION) refuse("setup_version", "v");
   const shiftTypes = list(raw.shiftTypes, 24, "shiftTypes").map((t) => {
     object(t, "shiftTypes");
-    return {
+    const two = TWO_PART_KEYS.some((k) => given(t[k]));
+    const type = {
       name: say("shiftTypes", str(t.name, 40, "shiftTypes", { empty: false })),
       label: say("shiftTypes", str(t.label ?? "", 8, "shiftTypes")),
       color: int(t.color ?? 4284246976, 0, 4294967295, "shiftTypes"),
       start: given(t.start) ? time(t.start, "shiftTypes") : null,
       end: given(t.end) ? time(t.end, "shiftTypes") : null,
-      break: int(t.break ?? 0, 0, 720, "shiftTypes"),
+      // 2.0.0 [RVD-20] HQ-08 With a gap, "break" is the break and the gap together (what an app before 2.0.0 reads), so it may pass 12 hours.
+      break: int(t.break ?? 0, 0, two ? 720 + 24 * 60 : 720, "shiftTypes"),
       breakStart: given(t.breakStart) ? time(t.breakStart, "shiftTypes") : null,
       off: bool(t.off ?? false, "shiftTypes"),
       icon: given(t.icon) ? str(t.icon, 32, "shiftTypes") : null,
     };
+    return two ? { ...type, ...twoParts(t, type) } : type;
   });
   const names = new Set(shiftTypes.map((t) => t.name));
   if (shiftTypes.length === 0 || names.size !== shiftTypes.length) refuse("setup", "shiftTypes");
@@ -1741,7 +1772,9 @@ const topicName = (job, region) => `${JOBS[job]} 공통${region ? ` (${REGIONS[r
  * rotation their team is on.
  */
 function canonical(setup) {
-  const sigs = new Map(setup.shiftTypes.map((t) => [t.name, t.off ? "off" : `${t.start ?? ""}-${t.end ?? ""}/${t.break}@${t.breakStart ?? ""}`]));
+  // 2.0.0 [RVD-20] HQ-08 A day in two parts says its gap and its own break, so two setups that only add up to the same "break" stay apart.
+  const sigs = new Map(setup.shiftTypes.map((t) => [t.name, t.off ? "off" : `${t.start ?? ""}-${t.end ?? ""}/${t.break}@${t.breakStart ?? ""}` +
+    (t.gap ? `~${t.gapStart}+${t.gap}/${t.rest}@${t.restStart ?? ""}` : "")]));
   const sig = (name) => (name === null ? "-" : sigs.get(name) ?? "?");
   const kinds = kindLines(setup).map((k) => ({
     id: k.id,
@@ -1842,7 +1875,9 @@ export function describe(setup) {
   const add = (label, text) => {
     if (text) lines.push([label, text]);
   };
+  // 2.0.0 [RVD-20] HQ-08 A day in two parts as its two times ("점심 11:00~15:00, 17:00~21:00"), the break alone after them.
   add("근무", setup.shiftTypes.map((t) => (t.off ? `${t.name}(쉬는 날)`
+    : t.gap ? `${t.name} ${t.start}~${t.gapStart}, ${clock(minutesOf(t.gapStart) + t.gap)}~${t.end}${t.rest ? ` 휴게 ${t.rest}분` : ""}`
     : `${t.name} ${t.start ?? "?"}~${t.end ?? "?"}${t.break ? ` 휴게 ${t.break}분` : ""}`)).join(" · "));
   if (setup.rotation) add(`순서 ${setup.rotation.steps.length}일`, setup.rotation.steps.map((s) => s ?? "빈 날").join(" "));
   // [PLAZA-01] The same words as the app's SetupFacts.

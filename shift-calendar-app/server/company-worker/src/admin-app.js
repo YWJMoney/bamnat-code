@@ -1349,7 +1349,9 @@ function adminApp(L, BUILD, M) {
 
   const empty = (title, text, action = "") => `<div class="empty">${icon(P.moon)}<h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}${action}</div>`;
   const skeleton = (n = 2) => Array.from({ length: n }, () => '<div class="card skeleton"></div>').join("");
-  const lines = (list) => `<dl class="lines">${list.map(([label, text]) => `<div><dt>${esc(label)}</dt><dd>${esc(text)}</dd></div>`).join("")}</dl>`;
+  /** 2.0.0 [RVD-20] HQ-08: a shift's time range never breaks, and the comma between two parts stays with the first (사진 D/HQ-13 06). */
+  const times = (text) => esc(text).replace(/\d{1,2}:\d{2}~\d{1,2}:\d{2},?/g, (m) => `<span class="nw">${m}</span>`);
+  const lines = (list) => `<dl class="lines">${list.map(([label, text]) => `<div><dt>${esc(label)}</dt><dd>${times(text)}</dd></div>`).join("")}</dl>`;
   const seg = (act, key, current, label, n) =>
     `<button class="seg" data-act="${act}" data-key="${key}" aria-pressed="${current === key}">${esc(label)}${n ? `<span class="n">${n}</span>` : ""}</button>`;
   /** [ADMIN-16] 더 보기 under a paged list. */
@@ -6632,7 +6634,7 @@ function adminApp(L, BUILD, M) {
    * back its screens, and its own buttons and forms, which join ACTIONS and FORMS.
    */
   const A = {
-    S, L, esc, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
+    S, L, esc, times, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];

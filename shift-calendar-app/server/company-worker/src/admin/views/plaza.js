@@ -7,7 +7,7 @@
 //   [ADMX-06] 회사 is a table the server sorts; on a phone each row is a small card.
 //   [ADMX-09] 검토 rejects many at once (one reason, undo for all) and 회사 hides or shows many at once.
 export function plazaViews(A) {
-  const { S, L, esc, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter } = A;
+  const { S, L, esc, times, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter } = A;
   const name = (c, dept) => `${esc(c.name)}${dept ? ` <span class="dept">${esc(dept)}</span>` : ""}`;
 
   // ---- 판 차이 [ADMX-02] ----
@@ -100,12 +100,12 @@ export function plazaViews(A) {
     return `<li class="${picked ? "picked" : ""}"><details data-key="${key}" data-review="group"${S.opened.get(key) ? " open" : ""}>
       <summary class="row">${picking ? `<input type="checkbox" class="check" data-act="review-pick" data-key="${esc(groupKey(g))}" aria-label="${esc(g.company.name)} 고르기"${picked ? " checked" : ""}>` : ""}
         <span class="row-main"><b>${name(g.company, g.dept)}${twin ? ` <span class="ver">${twin.label}</span>` : ""}</b>
-          <small>${gist ? `<span class="gist">${esc(gist)}</span> · ` : ""}${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 ${verified}` : ""} · ${day(g.reports[0].at)}</small></span>
+          <small>${gist ? `<span class="gist">${times(gist)}</span> · ` : ""}${g.persons}명 · 제보 ${g.reports.length}건${verified ? ` · 명세서 ${verified}` : ""} · ${day(g.reports[0].at)}</small></span>
         <span class="row-side inline">${kind}${g.draft ? `<span class="pill info" title="Claude 추천">Claude ${esc(L.DRAFT_WORDS[g.draft.pick] ?? "")}</span>` : ""}
           <span class="score mini" title="채택 점수"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}</b></span>
           ${g.bad ? `<span class="pill bad">달라요 ${g.bad}</span>` : ""}
-          ${editable ? `<button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}"${g.draft?.reason ? ` data-reason="${esc(g.draft.reason)}"` : ""}>거절</button>
-          <button class="btn small primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button>` : ""}</span></summary>
+          ${editable ? `<span class="row-acts"><button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}"${g.draft?.reason ? ` data-reason="${esc(g.draft.reason)}"` : ""}>거절</button>
+          <button class="btn small primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button></span>` : ""}</span></summary>
       <div class="rv-body">
         ${L.draftNote(g.draft, g.draft?.reason ? S.overview?.reasons?.[g.draft.reason] ?? "" : "")}
         ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
