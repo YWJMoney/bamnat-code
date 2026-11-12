@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.studio
 
+import com.bamnat.core.recipe.widgetDraws
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -1539,7 +1540,9 @@ private fun WidgetTool(w: WidgetLook, onChange: (WidgetLook) -> Unit) {
 @Composable
 internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    val whole = if (bp.touches("widget")) bp.style("widget") else com.bamnat.core.recipe.PartStyle.NONE
+    // 2.0.0 [RVS-19] SN-09: each 위젯 part as the launcher draws it (core WidgetDraws, the widget's own reduction): no 선·그림자·움직임,
+    // a 무늬 as its one colour, the launcher's fonts only. The 부품 도구 says what is left out.
+    val whole = if (bp.touches("widget")) bp.style("widget").widgetDraws() else com.bamnat.core.recipe.PartStyle.NONE
     val bg = whole.fill?.let { it or 0xFF000000L } ?: w.bg
     val dark = bg?.let { com.bamnat.core.recipe.Palette.luminance(it) < 0.18 }
         ?: when (w.theme) { "dark" -> true; "light" -> false; else -> androidx.compose.foundation.isSystemInDarkTheme() }
@@ -1555,14 +1558,14 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
     fun holiday(d: java.time.LocalDate) = com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
     @Composable
     fun Head(text: String) {
-        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
+        val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) })).widgetDraws()
         if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
             MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
             Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), MaterialTheme.shapes.extraSmall)))
     }
     @Composable
     fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
-        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false))
+        val cell = bp.style("widget.cell", com.bamnat.app.ui.parts.dayStates(null, d.dayOfWeek, holiday(d), inMonth, d == day0, false)).widgetDraws()
         if (cell.hide == true) { Box(modifier); return }
         val base = (if (big) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium)
         com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),

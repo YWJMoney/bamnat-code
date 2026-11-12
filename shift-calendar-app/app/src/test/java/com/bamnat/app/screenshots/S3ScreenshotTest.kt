@@ -1,5 +1,6 @@
 package com.bamnat.app.screenshots
 
+import com.bamnat.core.recipe.widgetDraws
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -224,6 +225,32 @@ class S3ScreenshotTest : ScreenshotBase() {
             // A start from the app's own look uses nothing newer than 1.36.0.
             !appears("1.36.0부터 모든 폰에서 열려요", exact = true) -> "no 호환 line"
             !appears("조각 ") -> "no 크기 line"
+            else -> null
+        }
+    }
+
+    /** A widget made rich in the studio: a shader plate with a line, a today cell with a shadow, its own font and a pulse. */
+    private val richWidget = com.bamnat.core.recipe.Blueprint(com.bamnat.core.recipe.Blueprint.clean(listOf(
+        mapOf("id" to "widget", "paint" to "sh.aurora.FF1A237E,FF00897B.3", "line" to "solid", "lineW" to 3L, "lineC" to 0xFFFFC107L, "r" to 18L),
+        mapOf("id" to "widget.head", "ink" to 0xFFFFC107L, "font" to "jua", "shadow" to 4L),
+        mapOf("id" to "widget.cell", "on" to "today", "fill" to 0xFF2E7D32L, "r" to 10L, "pad" to 4L, "shadow" to 8L, "motion" to "glow", "line" to "dash"),
+    )))
+
+    /** RVS-19 (SN-09): the studio's widget example draws what the home screen draws: one colour for the shader, no line, shadow or pulse. */
+    @Test fun theWidgetExampleIsTheHomeScreensWidget() = fourLooks("sn09_widget_example") {
+        content {
+            androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides richWidget) {
+                androidx.compose.foundation.layout.Column {
+                    com.bamnat.app.ui.studio.WidgetSample(com.bamnat.core.recipe.WidgetLook())
+                }
+            }
+        }
+        settle()
+        val w = richWidget.style("widget").widgetDraws()
+        when {
+            w.paint != null || w.line != null -> "the widget plate keeps what a launcher does not draw"
+            w.fill == null -> "the shader lost its colour"
+            richWidget.style("widget.cell", setOf("today")).widgetDraws().motion != null -> "the pulse is still there"
             else -> null
         }
     }

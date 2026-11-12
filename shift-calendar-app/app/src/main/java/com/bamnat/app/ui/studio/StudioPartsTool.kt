@@ -244,6 +244,12 @@ internal fun PartsTool(
         if (f in fixes) com.bamnat.app.ui.components.ToneLine(f.say + if (keep != null) " · 누르면 그 색으로 저장해요" else "",
             tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = keep)
     }
+    // 2.0.0 [RVS-19] SN-09: a 위젯 part says what the home screen leaves out (the example already draws it so), one quiet line.
+    if (id == "widget" || id.startsWith("widget.")) {
+        val leaves = remember(bp, id, on) { com.bamnat.core.recipe.WidgetDraws.leaves(bp.style(id, onStates)) }
+        if (leaves.isNotEmpty()) com.bamnat.app.ui.components.ToneLine("홈 화면 위젯에서는 그리지 않아요: " + leaves.joinToString(" · ") +
+            " · 예시도 위젯처럼 보여요", tone = com.bamnat.app.ui.theme.Tone.Plain)
+    }
     // PC 확인 46b9004b 사용성 제안: the 막대 keep one 진하기 for "근무 색 그대로" and one for "한 가지 색으로", so going back and forth
     // brings each one back instead of starting again from 100%.
     var otherA by remember(id, on) { mutableStateOf<Long?>(null) }
