@@ -229,8 +229,9 @@ class AGScreenshotTest : ScreenshotBase() {
         reveal("‘명세서 대조’ · 프로 기능이에요")
         assertTrue(appears("광고 보고 급여 7일 열기", exact = true))
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
-        assertTrue(appears("친구 5명이 각자 7일 이상 쓰면"))
+        // 2.0.0 [RVO-13] (HQ-48) the same name and one-line promise as on 프로.
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
+        assertTrue(appears("친구 5명이 7일 쓰면 프로 1개월"))
         assertTrue(app.container.featureGate.state.value.preview)
         noCuts("sheet")
     }
@@ -264,8 +265,8 @@ class AGScreenshotTest : ScreenshotBase() {
             com.bamnat.app.ui.pro.ProOfferHost(app.container)
         }
         settle()
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
-        tapText("친구 초대로 프로 이용권 받기", exact = true)
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
+        tapText(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
         reveal("‘근무·급여 비교’ · 프로 기능이에요")
         assertTrue(appears("미리 보기에서는 광고가 나오지 않아요"))
     }
@@ -309,7 +310,7 @@ class AGScreenshotTest : ScreenshotBase() {
         lockedPay().invoke(this)
         openPayGuides()
         tapText("금액 비교하기", scrolls = 30)
-        reveal("친구 초대로 프로 이용권 받기", exact = true)
+        reveal(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)
         noCuts("sheet_200")
     }
 
