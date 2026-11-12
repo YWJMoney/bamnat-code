@@ -2162,7 +2162,6 @@ export function readReason(body) {
   return { reason: body.reason, opinion: t };
 }
 
-/** POST /api/recipes/:code/vote — 좋아요 (1), 안좋아요 (-1, with its reason) or taking it back (null). */
 /**
  * 2.0.0 [RVQ-40] 검토 SVC-62·I22bc-02 '한 사람 한 번': one network's voices on one target a day ([kind]: tlike 이야기 좋아요, rqlike 요청
  * 좋아요). The network is the hour-salted hash the counter keeps for a day (처리방침 2시간: nothing is written on the row). A 429 past it.
@@ -2172,6 +2171,7 @@ export async function oneVoice(d, env, request, kind, ref, now) {
   return d.overLimit(env, now, [["network", `${kind}|${ref}|${net.day}`, RECIPE_LIMITS.likesPerTargetNetworkDay, DAY]]);
 }
 
+/** POST /api/recipes/:code/vote — 좋아요 (1), 안좋아요 (-1, with its reason) or taking it back (null). */
 async function recipeVote(d, env, request, code) {
   const body = await d.readJson(request, 2048);
   const dev = await readDevice(d, request, body);

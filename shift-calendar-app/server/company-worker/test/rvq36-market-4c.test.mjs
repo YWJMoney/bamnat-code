@@ -6,7 +6,7 @@ import worker from "../src/index.js";
 import { IX_READING } from "../src/recipes.js";
 import { fontCredit, fontIdOf } from "../src/recipe-fonts.js";
 import { fakeFont } from "./font-fixture.mjs";
-import { device, from, neighbour, server, signIn } from "./helpers.mjs";
+import { device, from, neighbour, server, setup, signIn } from "./helpers.mjs";
 
 /** After 처리방침 3.8 (나눔 판 쓰기) is in force: 2026-11-30 12:00 KST. */
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
@@ -249,4 +249,37 @@ test("[RVQ-46] SVC-64·I22bc-02 글꼴: 받는 분께 만든 곳·라이선스 �
   await call("DELETE", "/api/mine", undefined, { "x-device": device(2) });
   assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM recipe_fonts").first()).n, 0);
   assert.equal((await env.DB.prepare("SELECT COUNT(*) AS n FROM recipe_font_owners").first()).n, 0);
+});
+
+test("[RVQ-40] SVC-62·I22bc-02 요청 좋아요는 한 네트워크가 하루 10번까지(설치만 바꿔 늘지 않음), 다른 네트워크는 그대로", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const q = (await call("POST", "/api/recipes/requests", { device: device(1), style: "SHIFT", body: "간호사 3교대 알람 세트" }, from(1))).data.id;
+  const like = (n, ip) => call("POST", `/api/recipes/requests/${q}/like`, { device: device(n), on: true }, from(ip));
+  let last;
+  for (let n = 100; n < 110; n++) last = await like(n, 7);
+  assert.equal(last.data.likes, 10);
+  const over = await like(110, 7);
+  assert.equal(over.status, 429);
+  assert.equal((await like(111, 8)).data.likes, 11, "다른 네트워크");
+  // 다음 날에는 다시 세요.
+  t.mock.timers.tick(DAY);
+  assert.equal((await like(112, 7)).data.likes, 12);
+});
+
+test("[RVQ-41] SVC-72·T22b-06 작품의 회사 설정 조각은 광장과 같은 검사: 앱이 읽는 칸만, 회사 이름은 비우고, 걸리는 이름은 400", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call } = server({ plaza: true });
+  const file = { ...setup(), company: "레시피정밀", memo: "총무과 내선 1234" };
+  const piece = (f) => recipe({ title: "4조 2교대 주기", pieces: [{ kind: "company", setup: JSON.stringify(f) }] });
+  const ok = await call("POST", "/api/recipes", { device: device(1), recipe: piece(file), scope: "public" }, from(1));
+  assert.equal(ok.status, 201, ok.text);
+  const kept = JSON.parse(JSON.parse((await call("GET", `/api/recipes/${ok.data.code}`)).data.body).pieces[0].setup);
+  assert.deepEqual(kept.rotation, file.rotation);
+  assert.ok(!kept.company, "회사 이름은 비워요");
+  assert.equal(kept.memo, undefined, "앱이 읽지 않는 칸은 빠져요");
+  assert.equal(kept.pay, undefined);
+  const bad = { ...file, shiftTypes: [{ ...file.shiftTypes[0], name: "open.kakao.com/o/abc" }, ...file.shiftTypes.slice(1)] };
+  const no = await call("POST", "/api/recipes", { device: device(2), recipe: piece(bad), scope: "public" }, from(2));
+  assert.equal(no.status, 400, no.text);
 });
