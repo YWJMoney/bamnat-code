@@ -107,6 +107,21 @@ class PayStoreTroubleTest {
         assertEquals(3_300_000L, base(PayStore(context, dir).profile.value))
     }
 
+    /** 저장하지 못했어요 has no X: it goes by itself with the next change that reaches the storage, not only with 다시 저장 (#460 사진 검토). */
+    @Test fun theNextSaveThatGoesThroughTakesTheLineAway() = runBlocking {
+        val store = PayStore(context, dir)
+        store.save(pay(3_000_000L))
+        dir.deleteRecursively()
+        dir.writeText("x")
+        store.save(pay(3_300_000L))
+        assertEquals(Trouble.NOT_SAVED, store.trouble.value)
+
+        dir.delete()
+        store.update { pay(3_400_000L) }
+        assertEquals("다음 저장이 되면 바로 사라져요", Trouble.NONE, store.trouble.value)
+        assertEquals(3_400_000L, base(PayStore(context, dir).profile.value))
+    }
+
     /** One entry of the timeline whose date cannot be read does not take the whole setup with it (PAYC-21). */
     @Test fun oneUnreadableEntryIsLeftOut() {
         val o = PayCodec.encode(PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(

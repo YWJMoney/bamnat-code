@@ -410,11 +410,15 @@ fun PayScreen(
 /**
  * 2.0.0 [RVJ-25] 검토 PAYU-11·PAYC-21 (급여 설정 파일이 깨지면 말없이 '설정 없음', 저장 실패도 말이 없음). One line over the pay screen, the
  * shared 안내 카드: 되살렸어요 (the last change may be missing, with 고친 기록 when there is one), 읽지 못했어요 (set it up again or bring a
- * backup back), 저장하지 못했어요 (다시 저장; it stays until a save goes through, so it has no X). The second line is short on
- * purpose: beside a button the card shows two lines of it and cuts the rest.
+ * backup back: 파일 불러오기 opens 설정 › 데이터 at that row, #460 사진 검토, 조건 3·8), 저장하지 못했어요 (다시 저장; it stays until a
+ * save goes through, so it has no X). The second line is short on purpose: beside a button the card shows two lines of it and
+ * cuts the rest.
  */
 @Composable
-internal fun PayTroubleBand(trouble: com.bamnat.app.pay.PayStore.Trouble, onHistory: (() -> Unit)?, onSeen: () -> Unit, onRetry: () -> Unit) {
+internal fun PayTroubleBand(
+    trouble: com.bamnat.app.pay.PayStore.Trouble, onHistory: (() -> Unit)?, onSeen: () -> Unit, onRetry: () -> Unit,
+    onImport: () -> Unit = { com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, TROUBLE_IMPORT) },
+) {
     val at = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
     val caution = com.bamnat.app.ui.theme.Tone.Caution
     when (trouble) {
@@ -425,14 +429,16 @@ internal fun PayTroubleBand(trouble: com.bamnat.app.pay.PayStore.Trouble, onHist
             if (onHistory != null) com.bamnat.app.ui.components.NudgeCard(TROUBLE_RESTORED, at, tone = caution,
                 detail = "파일을 못 읽었어요. 마지막에 고친 값을 봐 주세요.", action = "고친 기록", onAction = onHistory, onClose = onSeen)
             else com.bamnat.app.ui.components.NudgeCard("$TROUBLE_RESTORED. 마지막에 고친 값을 봐 주세요.", at, tone = caution, onClose = onSeen)
-        com.bamnat.app.pay.PayStore.Trouble.LOST -> com.bamnat.app.ui.components.NudgeCard(
-            "$TROUBLE_LOST. 백업 파일이 있으면 설정 › 데이터 › 파일 불러오기로 되돌려요.", at, tone = caution, onClose = onSeen)
+        com.bamnat.app.pay.PayStore.Trouble.LOST -> com.bamnat.app.ui.components.NudgeCard(TROUBLE_LOST, at, tone = caution,
+            detail = "백업 파일이 있으면 불러와서 되돌려요.", action = TROUBLE_IMPORT, onAction = onImport, onClose = onSeen)
         com.bamnat.app.pay.PayStore.Trouble.NOT_SAVED -> com.bamnat.app.ui.components.NudgeCard(TROUBLE_NOT_SAVED, at, tone = caution,
             detail = "폰 저장 공간을 비우고, 앱을 닫기 전에 다시 눌러 주세요.",
             action = "다시 저장", onAction = onRetry)
     }
 }
 
+/** The row of 설정 › 데이터 that reads a backup file, and the word on the button that goes there. */
+internal const val TROUBLE_IMPORT = "파일 불러오기"
 internal const val TROUBLE_RESTORED = "급여 설정을 바로 앞 저장으로 되살렸어요"
 internal const val TROUBLE_LOST = "급여 설정을 읽지 못했어요"
 internal const val TROUBLE_NOT_SAVED = "급여 설정을 저장하지 못했어요"

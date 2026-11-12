@@ -1,5 +1,7 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.time.Today
@@ -191,10 +193,51 @@ class RvjPolishScreenshotTest : ScreenshotBase() {
         assertTrue(scrolledTo(com.bamnat.app.ui.pay.TROUBLE_LOST, exact = false, scrolls = 0))
         assertTrue(scrolledTo(com.bamnat.app.ui.pay.TROUBLE_NOT_SAVED, exact = true, scrolls = 0))
         assertTrue("저장될 때까지 남는 줄에는 '다시 저장'", scrolledTo("다시 저장", exact = true, scrolls = 0))
+        assertTrue("읽지 못한 줄에는 그 자리로 가는 단추", scrolledTo(com.bamnat.app.ui.pay.TROUBLE_IMPORT, exact = true, scrolls = 0))
     }
 
     @Test fun payTroubleLight() = shoot("rvj_57_pay_trouble_folded", FOLDED, payTrouble())
     @Test fun payTroubleDarkBig() = shoot("rvj_58_pay_trouble_folded_dark_200", DARK, 2f, payTrouble())
+
+    /**
+     * #460 사진 검토: '저장하지 못했어요'는 X가 없어요. 저장이 안 되는 동안은 남고, 저장되면 바로 사라져요. '읽지 못했어요'의
+     * '파일 불러오기'는 설정 › 데이터의 그 줄로 가요.
+     */
+    @Test fun payTroubleGoesWhenSaved() = shoot("rvj_59_pay_trouble_saved_folded", FOLDED) {
+        val context: android.content.Context = androidx.test.core.app.ApplicationProvider.getApplicationContext()
+        val dir = java.io.File(context.filesDir, "pay-trouble-shot").apply { deleteRecursively() }
+        fun pay(won: Long) = com.bamnat.core.pay.PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.MONTHLY,
+            com.bamnat.core.pay.ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(java.time.LocalDate.of(2026, 1, 1), won))))
+        val store = com.bamnat.app.pay.PayStore(context, dir)
+        runBlocking {
+            store.save(pay(3_000_000L))
+            // The folder is gone and a file stands where it was: nothing can be written into it.
+            dir.deleteRecursively(); dir.writeText("x")
+            store.save(pay(3_300_000L))
+        }
+        com.bamnat.app.ui.settings.SettingsLinks.target.value?.let(com.bamnat.app.ui.settings.SettingsLinks::consume)
+        content {
+            val trouble by store.trouble.collectAsState()
+            androidx.compose.foundation.layout.Column {
+                com.bamnat.app.ui.pay.PayTroubleBand(trouble, onHistory = null, onSeen = store::troubleSeen, onRetry = { runBlocking { store.retrySave() } })
+                com.bamnat.app.ui.pay.PayTroubleBand(com.bamnat.app.pay.PayStore.Trouble.LOST, onHistory = null, onSeen = {}, onRetry = {})
+            }
+        }
+        settle()
+        assertTrue(shows(com.bamnat.app.ui.pay.TROUBLE_NOT_SAVED, exact = true))
+        tapText("다시 저장", exact = true, scrolls = 0)
+        settle()
+        assertTrue("저장이 안 되는 동안은 남아요", shows(com.bamnat.app.ui.pay.TROUBLE_NOT_SAVED, exact = true))
+        dir.delete()
+        tapText("다시 저장", exact = true, scrolls = 0)
+        assertTrue("저장되면 바로 사라져요", gone(com.bamnat.app.ui.pay.TROUBLE_NOT_SAVED, exact = true))
+        assertTrue("다시 저장 단추도 함께", gone("다시 저장", exact = true))
+        tapText(com.bamnat.app.ui.pay.TROUBLE_IMPORT, exact = true, scrolls = 0)
+        val there = com.bamnat.app.ui.settings.SettingsLink.Page(com.bamnat.app.ui.settings.SettingsPage.DATA, "파일 불러오기")
+        org.junit.Assert.assertEquals("설정 › 데이터 › 파일 불러오기 줄로", there, com.bamnat.app.ui.settings.SettingsLinks.target.value)
+        com.bamnat.app.ui.settings.SettingsLinks.consume(there)
+        dir.deleteRecursively()
+    }
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
