@@ -513,6 +513,15 @@ class CompanyDetailViewModel(
                 }
                 null
             } catch (e: CompanyException) {
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    // 2.0.0 [RVN-16] 검토 U10b-03: no connection: the vote waits on the phone and goes by itself; one line says so.
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.vote(page.id, setup.id, ok, why = why))
+                    _votes.value = _votes.value + (setup.id to ok)
+                    if (scope.store.applied.value?.setup == setup.id) scope.store.voted(ok)
+                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.app.company.SmallSends.waitsLine(ok))
+                    done(null)
+                    return@launch
+                }
                 companyProblem(e)
             }
             done(error)
@@ -634,6 +643,9 @@ object TalkSheets {
     val pending = kotlinx.coroutines.flow.MutableStateFlow<com.bamnat.app.NoticeLinks.FixTalk?>(null)
 }
 
+/** 2.0.0 [RVN-16] 검토 U10a-07: the line said when a writer is hidden (with 되돌리기 beside it). */
+internal fun hiddenLine(p: com.bamnat.app.company.TalkPost) = "${p.nick ?: "참여자 ${p.who}"}님 글을 안 보기로 했어요 · 마을 › 팔로잉 › 차단에서도 다시 볼 수 있어요"
+
 class TalkHolder(
     private val c: AppContainer,
     private val scope: kotlinx.coroutines.CoroutineScope,
@@ -746,13 +758,25 @@ class TalkHolder(
             "다음 버전으로 채택돼요. 다니는 회사일 때만 눌러 주세요."
     }
 
-    /** [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. */
-    fun hide(p: com.bamnat.app.company.TalkPost) {
+    /**
+     * [COMM-09] 이 사람 글 안 보기: the writer's posts in every talk go, on this phone only. 2.0.0 [RVN-16] 검토 U10a-07: the line under
+     * says so with 되돌리기 (8 seconds), which shows the writer again, unless [quiet] (a caller that says it itself).
+     */
+    fun hide(p: com.bamnat.app.company.TalkPost, quiet: Boolean = false) {
         val mark = p.author ?: return
         c.settingsRepository.update { s ->
             s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).hide(mark, p.nick ?: "참여자 ${p.who}", Today.millis()).encode())
         }
         c.telemetry.event("plaza_hide")
+        changed = true
+        reload()
+        if (!quiet) com.bamnat.app.ui.PutOnNotice.say(hiddenLine(p)) { unhide(mark); true }
+    }
+
+    /** 2.0.0 [RVN-16] U10a-07 되돌리기 of [hide]: the writer shows again in every talk. */
+    fun unhide(mark: String) {
+        c.settingsRepository.update { s -> s.copy(plazaHidden = com.bamnat.core.plaza.HideList.decode(s.plazaHidden).show(mark).encode()) }
+        c.telemetry.event("plaza_hide", "undone")
         changed = true
         reload()
     }
@@ -1821,12 +1845,18 @@ class CompanyNudgeViewModel(
                 null
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (e: CompanyException) {
-                // A version that is gone will not take a vote later either: the card stops asking about it.
-                if (e.code in GONE) store.voted(ok)
-                companyProblem(e)
             } catch (e: Exception) {
-                companyProblem("server")
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    // 2.0.0 [RVN-16] 검토 U10b-03: no connection: 맞아요·달라요 waits on the phone and goes once online, said in one line.
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.vote(a.companyId, a.setup, ok, verified, why))
+                    store.voted(ok)
+                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.app.company.SmallSends.waitsLine(ok))
+                    null
+                } else if (e is CompanyException) {
+                    // A version that is gone will not take a vote later either: the card stops asking about it.
+                    if (e.code in GONE) store.voted(ok)
+                    companyProblem(e)
+                } else companyProblem("server")
             }
             done(problem)
         }

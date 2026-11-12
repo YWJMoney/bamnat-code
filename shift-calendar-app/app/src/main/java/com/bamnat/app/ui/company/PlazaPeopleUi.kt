@@ -331,9 +331,10 @@ internal fun PlazaFeed(
         vm.talk.flag(p.id, reason) { e -> com.bamnat.app.ui.PutOnNotice.say(e ?: FLAGGED) }
     }
     HideWriterDialog(hiding, onDismiss = { hiding = null }) { p ->
-        vm.talk.hide(p)
+        vm.talk.hide(p, quiet = true)
         vm.load()
-        com.bamnat.app.ui.PutOnNotice.say("${p.nick ?: "참여자 ${p.who}"}님 글을 안 보기로 했어요 · 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요")
+        // 2.0.0 [RVN-16] 검토 U10a-07: 되돌리기 right away (before, only 마을 › 팔로잉 › 차단 brought the writer back).
+        com.bamnat.app.ui.PutOnNotice.say(hiddenLine(p)) { p.author?.let { vm.talk.unhide(it) }; vm.load(); true }
     }
     deleting?.let { p ->
         com.bamnat.app.ui.components.ConfirmDialog(title = "이 글을 지울까요?", message = "지운 글은 되돌릴 수 없어요.", confirmLabel = "지우기",
