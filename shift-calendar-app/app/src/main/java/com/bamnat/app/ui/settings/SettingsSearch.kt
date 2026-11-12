@@ -400,8 +400,9 @@ internal object SettingsIndex {
         row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]
         row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "메모 사진", "백업 크기"), // [BACK-01]
         row(D, "파일 불러오기", "복원", "백업 불러오기", "되돌리기"),
-        row(D, com.bamnat.app.ui.diag.DATA_CHECK_TITLE, "점검", "진단", "데이터 확인", "기록이 이상해요", "파일 깨짐", "온전한지", "백업 확인", "서버 연결"), // 2.0.0 [RVL-70]
-        row(D, com.bamnat.app.ui.diag.DATA_SELF_CHECK_ROW, "자동 점검", "스스로 점검", "매주 점검", row = com.bamnat.app.ui.diag.DATA_CHECK_TITLE), // 2.0.0 [RVL-71]
+        // 2.0.0 [RVL-70][RVL-71] One row in its place (a row is found once): the weekly check's switch is on the screen it opens.
+        row(D, com.bamnat.app.ui.diag.DATA_CHECK_TITLE, "점검", "진단", "데이터 확인", "기록이 이상해요", "파일 깨짐", "온전한지", "백업 확인", "서버 연결",
+            com.bamnat.app.ui.diag.DATA_SELF_CHECK_ROW, "자동 점검", "스스로 점검", "매주 점검"),
         row(D, "최근 지운 기록", "휴지통", "되돌리기", "지운 달력", "실수로 지움", "복구"), // [UNDO-01]
         screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정"),
         row(D, "다른 앱에서 옮기기", "갈아타기", "다른 앱", "옮기기", "근무 앱 캡처", "화면 캡처", "스크린샷", "앱 바꾸기"), // [GROW-05]
