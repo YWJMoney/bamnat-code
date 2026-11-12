@@ -60,7 +60,7 @@ color:var(--muted);font-size:.8rem;font-weight:700;cursor:pointer;text-decoratio
 .tab svg{width:1.45rem;height:1.45rem;padding:.25rem min(1.1rem,3vw);box-sizing:content-box;border-radius:999px;transition:background .2s,color .2s}
 .tab[aria-current=page]{color:var(--fg)}
 .tab[aria-current=page] svg{background:var(--accent-soft);color:var(--accent)}
-.badge{min-width:1.25rem;height:1.25rem;padding:0 .4rem;border-radius:.65rem;background:var(--bad);color:#fff;font-size:.7rem;font-weight:800;
+.badge{min-width:1.25rem;height:1.25rem;padding:0 .4rem;border-radius:.65rem;background:var(--accent);color:var(--on-accent);font-size:.7rem;font-weight:800;
 line-height:1.25rem;text-align:center;font-style:normal}
 .tab .badge{position:absolute;top:.1rem;left:calc(50% + .55rem)}
 .badge:empty{display:none}
@@ -289,8 +289,8 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
    queue of what to answer first shows on both. */
 .stats{display:flex;flex-wrap:wrap;gap:.4rem 1.25rem;margin:0 .25rem 1rem;font-size:.86rem;color:var(--muted)}
 .stats b{color:var(--fg);font-size:1rem;margin-left:.3rem}
-.tile.hot{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
-.tile.hot .v{color:var(--bad)}
+.tile.bad{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+.tile.bad .v{color:var(--bad)}
 .todo{list-style:none;margin:0;padding:0;display:grid;gap:.15rem}
 .todo a{display:flex;align-items:center;gap:.65rem;padding:.6rem .5rem;border-radius:var(--r-sm);text-decoration:none;color:inherit;font-weight:700;font-size:.94rem}
 @media (hover:hover){.todo a:hover{background:var(--hover)}}
@@ -547,7 +547,7 @@ del{background:var(--bad-bg);color:var(--bad);border-radius:3px}
 .queue-list .q-main a{color:inherit;text-decoration:none}@media (hover:hover){.queue-list .q-main a:hover{text-decoration:underline}}
 .queue-list .q-main small{color:var(--muted);font-size:.8rem}
 .delta{font-size:.8rem;font-weight:800;margin-left:.35rem}
-.delta.up{color:var(--bad)}.delta.down{color:var(--ok)}
+.delta.up{color:var(--warn)}.delta.down{color:var(--ok)}
 .people{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:.4rem}
 .people li{padding:.3rem .7rem;border-radius:99px;background:var(--soft);font-size:.86rem;font-weight:700}
 /* The timeline of a question. */
@@ -646,12 +646,12 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .tile.kpi.rising{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
 .tile.skeleton{min-height:6.5rem;background:var(--soft);border-color:transparent}
 .delta{font-size:.75rem;font-weight:800;letter-spacing:0}
-.delta.up{color:var(--bad)}.delta.down{color:var(--ok)}
+.delta.up{color:var(--warn)}.delta.down{color:var(--ok)}
 .chg{font-weight:800}.chg.bad{color:var(--bad)}.chg.ok{color:var(--ok)}
 .spark{display:block;width:100%;height:1.6rem;margin-top:.2rem}
 .spark polyline{fill:none;stroke:var(--accent);stroke-width:1.6;vector-effect:non-scaling-stroke}
 .spark circle{fill:var(--accent);stroke:none}
-.tile.hot .spark polyline{stroke:var(--bad)}.tile.hot .spark circle{fill:var(--bad)}
+.tile.bad .spark polyline{stroke:var(--bad)}.tile.bad .spark circle{fill:var(--bad)}
 @media (max-width:599.98px){.tiles:not(.core){display:grid}.tile.kpi .v{font-size:1.45rem}.tile.kpi .d{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}}
 .more-tiles{margin:0 0 .75rem}
 .more-tiles>summary{cursor:pointer;font-weight:800;font-size:.9rem;color:var(--muted);padding:.4rem .25rem;list-style:none}
@@ -882,8 +882,11 @@ h1,h2,h3{letter-spacing:-.018em}
 .tile .k{font-weight:650;letter-spacing:0}
 .tile .v{font-weight:750;letter-spacing:-.03em}
 .tile.hot{border-color:var(--line)}
-.tile.hot .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--bad)}
+/* 2.0.0 [RVA-35] 조건 6: 기다리는 일이 있는 칸(hot)은 파란 점과 보통 색 숫자, 빨강은 정말 급한 칸(bad: 오늘 답 목표 넘김)에만,
+   주황은 주의(warn: 아쉬워요, 어제보다 늚 ▲)에만. 숫자 칸 넷이 모두 빨갛던 것을 줄였어요. */
+.tile.hot .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--accent)}
 .tile.warn .k::before{content:"";flex:none;width:.45rem;height:.45rem;border-radius:50%;background:var(--warn)}
+.tile.bad .k::before{background:var(--bad)}
 .tile.kpi[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
 .rows{border-radius:var(--r-lg)}
 @media (hover:hover){a.row:hover,button.row:hover,label.row:hover{background:var(--hover)}}
@@ -1543,7 +1546,8 @@ a.chip.pick{color:var(--fg);text-decoration:none}
 :root{--on-bad:#fff;--gold-ink:#7A5A22}
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--on-bad:#2B0D0A;--gold-ink:#D2B47A}}
 :root[data-theme="dark"]{--on-bad:#2B0D0A;--gold-ink:#D2B47A}
-.badge{color:var(--on-bad)}
+/* 2.0.0 [RVA-35] 검토 HQ-65(조건 6): 메뉴·탭의 숫자는 기다리는 일의 수라 위험(빨강)이 아니에요. 파랑 바탕에 그 위 글자색. */
+.badge{color:var(--on-accent)}
 .pill.gold,.stars{color:var(--gold-ink)}
 @media (forced-colors:active){:focus-visible{outline:2px solid Highlight}.badge{border:1px solid CanvasText}}
 [hidden]{display:none!important}

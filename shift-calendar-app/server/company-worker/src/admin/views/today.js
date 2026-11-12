@@ -34,7 +34,7 @@ export function todayViews(A) {
     const line = (a) => `<li class="${a.tone === "bad" ? "bad" : "warn"}"><a href="${esc(a.to)}"><b>${esc(a.title)}</b>${a.meta ? `<small>${esc(a.meta)}</small>` : ""}</a>${icon(P.chevron)}</li>`;
     const top = list.filter((a) => !shown.has(`a:${a.key}`));
     const above = list.filter((a) => shown.has(`a:${a.key}`));
-    return `<section class="card alerts" aria-labelledby="alerts-h"><div class="card-head"><h2 id="alerts-h">주의 필요</h2><span class="pill bad">${list.length}</span></div>
+    return `<section class="card alerts" aria-labelledby="alerts-h"><div class="card-head"><h2 id="alerts-h">주의 필요</h2><span class="pill">${list.length}</span></div>
       ${top.length ? `<ul class="alert-list">${top.map(line).join("")}</ul>` : ""}${aboveFold(above.length, `<ul class="alert-list">${above.map(line).join("")}</ul>`, "home:above-alerts")}</section>`;
   }
 
@@ -128,11 +128,12 @@ export function todayViews(A) {
     }
     // The rest, folded on a phone and open on a wide screen.
     const rest = [];
-    const tile = (k, v, d, to, hot) => rest.push(`<a class="tile${hot && v ? " hot" : ""}" href="${to}"><span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(d)}</span></a>`);
+    // hot: true(기다리는 일) | "warn"(주의) | "bad"(정말 급함, 빨강).
+    const tile = (k, v, d, to, hot) => rest.push(`<a class="tile${hot && v ? ` hot${hot === true ? "" : ` ${hot}`}` : ""}" href="${to}"><span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(d)}</span></a>`);
     if (can("inquiries")) {
       tile("오늘 새 문의", o.inquiriesToday, `어제 ${o.inquiriesYesterday ?? 0}건`, inq({ status: "open", sort: "newest" }), false);
-      tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), true);
-      tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
+      tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), "bad");
+      tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), "warn");
     }
     if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", L.routeHash("dev", null, { status: "todo" }), can("devStatus", "edit"));
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", L.routeHash("community", null, { show: "flagged" }), true);

@@ -2949,3 +2949,29 @@ test("[RVA-34] 채운 단추는 화면에 하나(조건 2): 줄·카드·고르�
   if (pay) assert.equal(pay.querySelectorAll('[aria-pressed="true"]').length, 1);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-35] 의미색(조건 6): 메뉴 숫자와 기다리는 일 칸은 파랑, 빨강은 오늘 답 목표를 넘긴 칸과 '바로 볼 것'에만", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // 메뉴·탭 숫자는 기다리는 일의 수라 파랑 바탕(그 위 글자색).
+  assert.match(css, /\.badge\{[^}]*background:var\(--accent\);color:var\(--on-accent\)/);
+  assert.match(css, /\.badge\{color:var\(--on-accent\)\}/);
+  // 기다리는 일 칸(hot)은 파란 점·보통 숫자, 빨강은 bad 칸에만, 어제보다 늚(▲)은 주황.
+  assert.match(css, /\.tile\.hot \.k::before\{[^}]*background:var\(--accent\)\}/);
+  assert.doesNotMatch(css, /\.tile\.hot \.v\{color:var\(--bad\)\}/);
+  assert.doesNotMatch(css, /\.tile\.hot \.spark polyline\{stroke:var\(--bad\)\}/);
+  assert.match(css, /\.tile\.bad \.v\{color:var\(--bad\)\}/);
+  assert.doesNotMatch(css, /\.delta\.up\{color:var\(--bad\)\}/);
+  // 시험 자료(KST 12시): 문제 신고 문의의 답 목표(8시간)가 오늘 안에 끝나 '오늘 목표 넘김' 1 → 그 칸만 빨강.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-12T03:00:00Z") });
+  const { env } = await world();
+  const u = await signedIn(env);
+  const late = u.$$("#main a.tile").find((a) => /오늘 목표 넘김/.test(a.textContent));
+  assert.ok(late.classList.contains("bad"), "an answer due today: red");
+  assert.deepEqual(u.$$("#main a.tile.bad"), [late], "only that tile is red");
+  // 답 대기·검토 대기처럼 기다리는 일이 있는 칸은 hot(파란 점)이지 빨강이 아니에요.
+  const waiting = u.$$("#main a.tile.kpi.hot");
+  assert.ok(waiting.length >= 2);
+  for (const a of waiting) assert.ok(!a.classList.contains("bad"), a.textContent);
+  assert.ok(!u.$("#main .alerts .card-head .pill.bad"), "the 주의 필요 count is a plain pill");
+  assert.deepEqual(u.errors, []);
+});
