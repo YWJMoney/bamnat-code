@@ -120,3 +120,4 @@
 {"track": "RVH-25", "title": "기능 찾기 '어디'를 그 유형 탭 이름으로, 광장 바로 가기 바로잡기", "status": "check", "size": "fix", "route": "app", "check": "알바 기능 찾기 '어디: 출근·시급 › …', 광장 기능 바로 가기 → 마을 › 광장"}
 {"track": "RVH-26", "title": "시작 단계 말을 가게·현장 말로", "status": "check", "size": "polish", "route": "app", "check": "가게·현장 새로 깔기 → 시작 카드 '영업일 넣기'·'일정 넣기'"}
 {"track": "RVH-27", "title": "알바 달력 요약의 '근무·급여 열기'를 '출근·시급 열기'로", "status": "check", "size": "polish", "route": "app", "check": "알바 달력 달 요약·이번 주 시간 줄: TalkBack '출근·시급 열기'"}
+{"track": "PC-28", "title": "달 넘김 효과나 움직임 끄기를 써도 달력에서 누른 날짜가 그대로 열림", "status": "check", "size": "fix", "route": "app", "test": "MonthTurnTapTest", "check": "달 넘김 스르륵·책장 넘기기·움직이지 않기 작품, 움직임 끄기, 휴대폰 애니메이션 삭제에서 11월 12일을 누르고 길게 눌러 근무 넣기 → 11월 12일에 열리고 저장, 달 넘김 모양은 그대로"}
