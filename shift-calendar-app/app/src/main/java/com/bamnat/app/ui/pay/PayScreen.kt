@@ -175,7 +175,7 @@ fun PayScreen(
     vm: PayViewModel,
     onBack: () -> Unit,
     onOpenExtraKinds: () -> Unit = {},
-    /** [PAYX-51] 연장 휴무일 근무 지정 opened at '교육', its 시수 in view. */
+    /** [PAYX-51] 연장·휴무일 근무 지정 opened at '교육', its 시수 in view. */
     onOpenSchooling: () -> Unit = onOpenExtraKinds,
     /** [LEAVE-06] The 연차 screen of this calendar. */
     onOpenLeave: () -> Unit = {},

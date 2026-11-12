@@ -33,13 +33,47 @@ object TypeWords {
      * ('근무 유형'), a choice of kinds that names them all, and a shop owner's or a boss's staff pay. Matched before [forbidden].
      */
     fun allowed(style: WorkStyle?): List<String> = ALL_KINDS + when (style) {
-        WorkStyle.BUSINESS -> listOf("직원 급여", "가게 급여", "급여 대장", "직원 근무표", "직원 연차", "직원 출근", "알바 출근", "매달 쉬는 날")
+        WorkStyle.BUSINESS -> listOf(
+            "직원 급여", "가게 급여", "급여 대장", "직원 근무표", "직원 연차", "직원 출근", "알바 출근", "매달 쉬는 날",
+            // 2.0.0 [RVH-41] A boss's staff pay and the staff's schedule (직원 인건비 › 근무표 짜기).
+            "주휴수당", "주휴·연장·야간", "근무표 짜기",
+        )
         WorkStyle.INVEST -> listOf("회사 규칙 광장", "회사 정보")
         else -> emptyList()
     }
 
     /** Names of the kinds of work and of the app, right everywhere (a picker lists every kind). */
     private val ALL_KINDS = listOf("근무 유형", "교대·일근", "교대 광장", "일근 광장")
+
+    /**
+     * 2.0.0 [RVH-41] 검토 T30-102 [text] written for 교대, said in [style]'s words where a word of another kind would show: the shared
+     * phrases (탭 이름 '근무·급여', '근무표', '근무 알람', '근무마다', '근무 주기', 가게의 '쉬는 날', 알바의 '대근') become the kind's own.
+     * Only a word [forbidden] for the kind is touched, so a text already right stays as it is. What a swap cannot say well is written
+     * for the kind where the text lives (FeatureRegistry `said`), never left to this.
+     */
+    fun say(style: WorkStyle?, text: String): String {
+        val bad = forbidden(style)
+        if (bad.isEmpty() || text.isBlank()) return text
+        val w = style.words()
+        // A phrase right for the kind ('직원 근무표', '주휴수당') is kept as it is while the words around it change.
+        val keep = allowed(style).sortedByDescending { it.length }.filter { it in text }
+        var out = text
+        keep.forEachIndexed { i, a -> out = out.replace(a, "\u0000$i\u0000") }
+        fun swap(from: String, to: String) { if (bad.any { it in from } && from in out) out = out.replace(from, to) }
+        swap("근무·급여", w.tab)
+        swap("근무표", scheduleWord(style))
+        swap("근무 알람", "알람")
+        swap("근무 주기", w.pattern)
+        when (style) {
+            WorkStyle.FIELD -> { swap("근무마다", "일정마다"); swap("근무별", "일정별"); swap("퇴근 뒤", "일 끝난 뒤"); swap("퇴근 후", "일 끝난 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "일 끝") }
+            WorkStyle.BUSINESS -> { swap("근무마다", "영업일마다"); swap("근무별", "날별"); swap("퇴근 뒤", "마감 뒤"); swap("퇴근길", "돌아가는 길"); swap("퇴근", "마감"); swap("쉬는 날", w.offDay) }
+            WorkStyle.INVEST -> { swap("근무마다", "날마다"); swap("근무별", "날별"); swap("퇴근 뒤", "장 마감 뒤"); swap("퇴근", "장 마감"); swap("근무", w.workDay) }
+            WorkStyle.HOURLY -> swap("대근", "대타")
+            else -> {}
+        }
+        keep.forEachIndexed { i, a -> out = out.replace("\u0000$i\u0000", a) }
+        return out
+    }
 
     /**
      * The forbidden words of [style] in [text], in the order of [forbidden], each once; [own] are the user's own names
