@@ -620,13 +620,18 @@ class RecipePieces(private val c: AppContainer) {
                 val repo = c.scopeOf(cal).schedule
                 val mine = types(cal).filter { !it.isOff }
                 val changed = JSONArray()
+                // 2.0.0 [RVM-50] 검토 RCP-04: what each shift had before and what this work wants, so 되돌리기 leaves an alarm another work
+                // also wants and keeps the alarm on when alarms of mine are left.
+                val also = JSONArray()
                 for (r in items(values, "byRole")) {
                     val role = ShiftRole.of(r["role"] as? String)
                     for (t in mine.filter { role(it) == role }) {
-                        val add = nums(r["before"]).filter { m -> t.alarms.none { it.offsetMinutes == m } }
-                        if (add.isEmpty() && t.alarmEnabled) continue
+                        val want = nums(r["before"])
+                        val add = want.filter { m -> t.alarms.none { it.offsetMinutes == m } }
+                        if (add.isEmpty() && t.alarmEnabled) { if (want.isNotEmpty()) also.put(JSONObject().put("id", t.id).put("wanted", JSONArray(want))); continue }
                         repo.saveShiftType(t.copy(alarms = t.alarms + add.map { AlarmSpec(it) }, alarmEnabled = true))
-                        changed.put(JSONObject().put("id", t.id).put("added", JSONArray(add)).put("wasOn", t.alarmEnabled))
+                        changed.put(JSONObject().put("id", t.id).put("added", JSONArray(add)).put("wasOn", t.alarmEnabled)
+                            .put("had", JSONArray(t.alarms.map { it.offsetMinutes })).put("wanted", JSONArray(want)))
                     }
                 }
                 val s = c.settingsRepository.current
@@ -642,8 +647,9 @@ class RecipePieces(private val c: AppContainer) {
                     mission?.let { v -> sets.put("mission", JSONArray().put(cur.alarmMission).put(v)); n = n.copy(alarmMission = v) }
                     n
                 }
-                if (s == c.settingsRepository.current && changed.length() == 0) null
-                else JSONObject().put("types", changed).put("settings", sets)
+                // [RVM-50] Nothing to change but alarms it also wants: kept as a record of that, so another work's 되돌리기 leaves them.
+                if (s == c.settingsRepository.current && changed.length() == 0 && also.length() == 0) null
+                else JSONObject().put("types", changed).put("settings", sets).apply { if (also.length() > 0) put("also", also) }
             }
             PieceKind.MEMO_TEMPLATES -> {
                 val ids = JSONArray()
@@ -900,6 +906,12 @@ class RecipePieces(private val c: AppContainer) {
      */
     @Volatile var kept: Int = 0
 
+    /** 2.0.0 [RVM-50] RCP-04: the shifts whose alarms the last [restore]s switched off, for 되돌리기 to say. */
+    val alarmsOff: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
+
+    /** 2.0.0 [RVM-50] The record being taken back, so another work's alarms are told apart from its own. */
+    @Volatile var undoing: Long? = null
+
     /** Puts back what [apply] replaced; a value the user changed since is left as they made it. */
     suspend fun restore(kind: PieceKind, before: JSONObject, cal: String) {
         when (kind) {
@@ -924,11 +936,23 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.ALARMS -> {
                 val repo = c.scopeOf(cal).schedule
                 val mine = types(cal).associateBy { it.id }
+                // 2.0.0 [RVM-50] 검토 RCP-04: an alarm another work on this phone also wants stays, and a shift whose alarms were off before
+                // is switched off again only when none is left but those it had (an alarm I added since keeps it on). One switched off is said.
+                val others = c.recipes.alarmsWanted(except = undoing)
                 before.optJSONArray("types")?.objects()?.forEach { o ->
                     val t = mine[o.getLong("id")] ?: return@forEach
-                    val added = o.optJSONArray("added")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty().toSet()
-                    repo.saveShiftType(t.copy(alarms = t.alarms.filter { it.offsetMinutes !in added },
-                        alarmEnabled = if (o.optBoolean("wasOn")) t.alarmEnabled else false))
+                    fun ints(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getInt(it) } }
+                    val keep = others[t.id].orEmpty()
+                    val added = ints("added").orEmpty().toSet() - keep
+                    val left = t.alarms.filter { it.offsetMinutes !in added }
+                    val had = ints("had")?.toSet()
+                    val on = when {
+                        o.optBoolean("wasOn") -> t.alarmEnabled
+                        had == null -> keep.isNotEmpty() && t.alarmEnabled
+                        else -> t.alarmEnabled && left.any { it.offsetMinutes !in had }
+                    }
+                    if (t.alarmEnabled && !on) alarmsOff += t.name
+                    repo.saveShiftType(t.copy(alarms = left, alarmEnabled = on))
                 }
                 val sets = before.optJSONObject("settings") ?: JSONObject()
                 c.settingsRepository.update { s ->
