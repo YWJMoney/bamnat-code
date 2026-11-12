@@ -18,6 +18,8 @@ object PdfText {
     const val SCALE = 4.0
     private const val MAX_PAGES = 20
     private const val MAX_STREAM = 16 * 1024 * 1024
+    /** 2.0.0 [RVL-28] (검토 SCAN-17) Object streams read in one file at most. */
+    private const val MAX_OBJECT_STREAMS = 400
 
     class PdfException(message: String) : Exception(message)
 
@@ -182,10 +184,12 @@ object PdfText {
                     objects[num] = PStream(d, bytes.copyOfRange(st, end))
                 } else objects[num] = v
             }
-            // Objects packed in object streams (PDF 1.5).
+            // Objects packed in object streams (PDF 1.5). 2.0.0 [RVL-28] (검토 SCAN-17) As many as a real file has, no more.
+            var streams = 0
             for (o in objects.values.toList()) {
                 val st = o as? PStream ?: continue
                 if ((st.dict["Type"] as? Name)?.v != "ObjStm") continue
+                if (++streams > MAX_OBJECT_STREAMS) break
                 val data = String(decode(st) ?: continue, Charsets.ISO_8859_1)
                 val n = (st.dict["N"] as? Double)?.toInt() ?: continue
                 val first = (st.dict["First"] as? Double)?.toInt() ?: continue

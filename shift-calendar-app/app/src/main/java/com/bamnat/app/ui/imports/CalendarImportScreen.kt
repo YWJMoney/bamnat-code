@@ -103,8 +103,11 @@ enum class ImportRange(val label: String, val back: Long, val ahead: Long) {
     fun to(today: LocalDate): LocalDate = if (this == MONTHS_2) today.plusMonths(1).let { it.withDayOfMonth(it.lengthOfMonth()) } else today.plusDays(ahead)
 }
 
-class CalendarImportViewModel(private val container: AppContainer) : ViewModel() {
-    private val importer: CalendarImporter = container.calendarImporter
+class CalendarImportViewModel(
+    private val container: AppContainer,
+    /** The phone's calendars; a test's own for the screen's pictures. */
+    private val importer: CalendarImporter = container.calendarImporter,
+) : ViewModel() {
 
     data class Ui(
         val allowed: Boolean = false,
@@ -118,9 +121,11 @@ class CalendarImportViewModel(private val container: AppContainer) : ViewModel()
         val left: Set<String> = emptySet(),
         val autoCheck: Boolean = false,
         val done: CalendarImporter.Done? = null,
+        /** 2.0.0 [RVL-30] (검토 SCAN-26·U07b-13) Reading failed: said as that, never as "일정이 없어요". */
+        val failed: Boolean = false,
     ) {
         /** What the button brings in: not skipped and not left out. */
-        val todo: List<CalendarImport.Proposal> get() = proposals.orEmpty().filter { it.skip == null && it.event.key !in left }
+        val todo: List<CalendarImport.Proposal> get() = proposals.orEmpty().filter { it.skip == null && it.key !in left }
     }
 
     private val _ui = MutableStateFlow(Ui())
@@ -150,20 +155,23 @@ class CalendarImportViewModel(private val container: AppContainer) : ViewModel()
         _ui.update { it.copy(loading = true, done = null) }
         viewModelScope.launch {
             val today = Today.date()
-            val list = runCatching { importer.propose(u.calendars, u.chosen, u.range.from(today), u.range.to(today)) }.getOrDefault(emptyList())
+            val read = runCatching { importer.propose(u.calendars, u.chosen, u.range.from(today), u.range.to(today)) }
+            read.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
             importer.chosen = u.chosen
-            _ui.update { it.copy(loading = false, proposals = list, left = emptySet()) }
+            _ui.update { it.copy(loading = false, proposals = read.getOrNull() ?: emptyList(), left = emptySet(), failed = read.isFailure,
+                allowed = if (read.isFailure) importer.allowed() else it.allowed) }
         }
     }
 
     /** The user's own call for one event: another shift, a day off, a memo, or leave it out. */
     fun change(p: CalendarImport.Proposal, kind: As?, shiftTypeId: Long?) = _ui.update { u ->
-        val key = p.event.key
+        val key = p.key
         if (kind == null) return@update u.copy(left = u.left + key)
         u.copy(
             left = u.left - key,
             proposals = u.proposals?.map {
-                if (it.event.key == key) it.copy(kind = kind, shiftTypeId = shiftTypeId, reason = "직접 골랐어요", skip = null) else it
+                if (it.key == key) it.copy(kind = kind, shiftTypeId = shiftTypeId, reason = "직접 골랐어요", skip = null,
+                    leave = if (kind == As.LEAVE) it.leave ?: com.bamnat.core.model.Leave() else null) else it
             },
         )
     }
@@ -181,11 +189,22 @@ class CalendarImportViewModel(private val container: AppContainer) : ViewModel()
             val done = importer.apply(todo)
             val keys = done.keys.toSet()
             _ui.update { u ->
-                u.copy(done = done, proposals = u.proposals?.map { if (it.event.key in keys) it.copy(skip = CalendarImport.Skip.IMPORTED) else it })
+                u.copy(done = done, proposals = u.proposals?.map { if (it.key in keys) it.copy(skip = CalendarImport.Skip.IMPORTED) else it })
             }
-            _messages.emit(UndoMessage("근무 ${done.shifts}일, 메모 ${done.memos}개를 가져왔어요") {
-                importer.undo(done)
+            val text = listOfNotNull("근무 ${done.shifts}일".takeIf { done.shifts > 0 }, "메모 ${done.memos}개".takeIf { done.memos > 0 })
+                .joinToString(", ").ifEmpty { "일정" } + "을 가져왔어요"
+            val undo: suspend () -> Int = {
+                val kept = importer.undo(done)
                 _ui.update { u -> u.copy(done = null, proposals = null) }
+                kept
+            }
+            // 2.0.0 [RVL-18] (검토 SCAN-13·U07b-11·I07ba-04) 되돌리기 over the calendar too for 10분, as 한 달 근무 넣기.
+            com.bamnat.app.ui.RecentFill.recordKeeping(text, com.bamnat.app.data.PersonalCalendar.MAIN, container.appScope, undo)
+            val recent = com.bamnat.app.ui.RecentFill.entry.value
+            _messages.emit(UndoMessage(text) {
+                com.bamnat.app.ui.RecentFill.clear(recent)
+                val kept = undo()
+                if (kept > 0) _messages.emit(UndoMessage(com.bamnat.app.ui.RecentFill.undone(kept)))
             })
         }
     }
@@ -235,7 +254,7 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
                     Text(if (todo.isEmpty()) "가져올 새 일정이 없어요"
                     else listOfNotNull(
                         c.shifts.takeIf { it > 0 }?.let { "근무 ${it}일" }, c.offs.takeIf { it > 0 }?.let { "쉬는 날 ${it}일" },
-                        c.memos.takeIf { it > 0 }?.let { "메모 ${it}개" },
+                        c.leaves.takeIf { it > 0 }?.let { "휴가 ${it}일" }, c.memos.takeIf { it > 0 }?.let { "메모 ${it}개" },
                     ).joinToString(" · ") + " 가져오기")
                 }
             }
@@ -244,9 +263,10 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
-                SectionCard(title = "삼성 캘린더 일정을 밤낮으로") {
-                    Text("휴대폰 캘린더(삼성 캘린더, Google 캘린더 등)의 일정을 읽어서, 근무 이름이나 근무 시간과 맞는 일정은 그날 근무로, " +
-                        "나머지는 그날 메모로 옮겨요. 캘린더는 읽기만 하고 고치지 않아요. 읽은 일정은 이 휴대폰 밖으로 나가지 않아요.",
+                // 2.0.0 [RVL-30] (검토 SCAN-26·U07b-13·T07b-08) Any phone's calendar, not only Samsung's.
+                SectionCard(title = "휴대폰 캘린더 일정을 밤낮으로") {
+                    Text("삼성·Google 캘린더 일정에서 근무 이름이나 시간과 맞는 것은 근무로, 연차·휴가는 휴가로, 나머지는 메모로 옮겨요. " +
+                        "캘린더는 읽기만 하고, 읽은 일정은 이 휴대폰 밖으로 나가지 않아요.",
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (!ui.allowed) {
                         Spacer(Modifier.height(10.dp))
@@ -302,14 +322,19 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
             if (ui.loading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             ui.proposals?.let { list ->
                 if (list.isEmpty()) item {
-                    Text("이 기간에 일정이 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // The 다시 읽기 button is just above: the card says what happened and what helps, without a second one.
+                    if (ui.failed) com.bamnat.app.ui.components.NudgeCard(
+                        "캘린더를 읽지 못했어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                        detail = "잠시 뒤 ‘다시 읽기’를 눌러 주세요. 계속되면 캘린더 앱에서 동기화를 켜 주세요",
+                    )
+                    else Text("이 기간에 일정이 없어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 } else {
                     item {
                         Text("눌러서 근무·메모를 바꾸거나 빼요. 같은 일정은 두 번 가져오지 않아요.", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    items(list, key = { it.event.key }) { p ->
-                        ProposalRow(p, left = p.event.key in ui.left, type = p.shiftTypeId?.let(byId::get)) { changing = p }
+                    items(list, key = { it.key }) { p ->
+                        ProposalRow(p, left = p.key in ui.left, type = p.shiftTypeId?.let(byId::get)) { changing = p }
                     }
                 }
             }
@@ -348,6 +373,12 @@ private fun ProposalRow(p: CalendarImport.Proposal, left: Boolean, type: ShiftTy
                     Text("메모", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 }
                 p.kind == As.OFF && type == null -> Text("쉬는 날", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                // 2.0.0 [RVL-30] 연차·반차 as leave, with the leave mark the calendar shows.
+                p.kind == As.LEAVE -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    com.bamnat.app.ui.components.LeaveMark(p.leave ?: com.bamnat.core.model.Leave(), size = 18.dp)
+                    Spacer(Modifier.width(4.dp))
+                    Text((p.leave ?: com.bamnat.core.model.Leave()).label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                }
                 else -> Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Filled.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -375,6 +406,9 @@ private fun ChangeDialog(p: CalendarImport.Proposal, types: List<ShiftType>, onD
                     }
                 }
                 HorizontalDivider()
+                // 2.0.0 [RVL-30] 연차 is one of the choices too.
+                FilterChip(selected = p.kind == As.LEAVE, onClick = { onPick(As.LEAVE, null) }, label = { Text("연차·휴가로") },
+                    leadingIcon = { com.bamnat.app.ui.components.LeaveMark(p.leave ?: com.bamnat.core.model.Leave(), size = 18.dp) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { onPick(As.MEMO, null) }, modifier = Modifier.weight(1f)) { Text("메모로") }
                     OutlinedButton(onClick = { onPick(null, null) }, modifier = Modifier.weight(1f)) { Text("빼기") }
