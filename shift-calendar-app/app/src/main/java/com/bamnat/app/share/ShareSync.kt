@@ -96,6 +96,7 @@ class ShareSync(
     suspend fun sync(key: String = PersonalCalendar.MAIN): Result = lock.withLock {
         val store = c.shareLinksOf(key)
         store.expire()
+        sayEnded(store)
         val link = store.link.value ?: return@withLock Result.Same
         if (!store.auto) return@withLock Result.Same
         // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
@@ -229,7 +230,8 @@ class ShareSync(
             Result.Sent
         } catch (e: ShareLinkException) {
             when {
-                e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
+                // 2.0.0 [RVL-78] (검토 I12c-02) Not forgotten without a word: the share sheet and the 알림함 say it ended.
+                e.message == "not_found" || e.message == "forbidden" -> { store.ended(clock()); sayEnded(store); Result.Gone }
                 // [RVG-27] Turned down for something that cannot be left out: not tried again by itself (it would be turned down
                 // again); the share card says so, and the second time running above the calendar too (검토 S7-3).
                 ShareLinkPayload.refused(e) -> {
@@ -243,6 +245,14 @@ class ShareSync(
         } catch (e: IOException) {
             store.sendResult(null)
             Result.Offline
+        }
+    }
+
+    /** 2.0.0 [RVL-78] A link that stopped by itself goes in the 알림함 once. */
+    private fun sayEnded(store: ShareLinkStore) {
+        val at = store.endedToSay() ?: return
+        runCatching {
+            ShareExpiryReminder.postEnded(c.appContext, store.key, at, c.calendars.get(store.calendarId)?.name)
         }
     }
 

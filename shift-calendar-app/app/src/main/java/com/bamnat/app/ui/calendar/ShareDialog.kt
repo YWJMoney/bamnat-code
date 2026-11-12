@@ -209,6 +209,8 @@ fun ShareDialog(
         store.saveOptions(chosen()); saved = chosen()
         store.save(made.copy(from = linkMonth), ShareLinkPayload.fingerprint(sent))
         store.sendResult(Today.instant())
+        // 2.0.0 [RVL-78] The new link mends what the 알림함 row said.
+        com.bamnat.app.inbox.Inbox.get(container.appContext).remove("share.ended:${store.key}")
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
     // nothing to show until something is ticked; say so instead of letting the server refuse it.
@@ -260,6 +262,8 @@ fun ShareDialog(
                     Text("${month.monthValue}월 사진으로 보내기")
                 }
                 val quickPaused = container.flags.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
+                // 2.0.0 [RVL-78] The sheet opens here for most people: the last link that stopped by itself is said above its '링크로 보내기' too.
+                if (link == null) EndedLine(store)
                 OutlinedButton(enabled = !busy && !quickPaused, onClick = {
                     options = quickSends
                     run {
@@ -510,6 +514,8 @@ fun ShareDialog(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             if (current == null) {
+                // 2.0.0 [RVL-78] (검토 I12c-02) The last link stopped by itself: said once here, above the one press that mends it.
+                EndedLine(store)
                 Button(enabled = !busy && !empty && !createPaused, onClick = {
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
@@ -849,4 +855,14 @@ private fun send(context: Context, s: ShareLinkState, style: com.bamnat.core.wor
     val text = (if (s.title.isNotBlank()) "${s.title}의 $word" else word) + "\n${s.url}"
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
     context.startActivity(Intent.createChooser(send, "$word 링크 보내기"))
+}
+
+/** 2.0.0 [RVL-78] (검토 I12c-02) When the last link stopped by itself, said once above the one press that mends it; nothing otherwise. */
+@Composable
+private fun EndedLine(store: com.bamnat.app.share.ShareLinkStore) {
+    val ended by store.endedAt.collectAsState()
+    ended?.let { at ->
+        Text("지난 링크는 ${Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())}에 끝났어요. 새 링크를 보내면 받은 분들이 다시 볼 수 있어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
 }

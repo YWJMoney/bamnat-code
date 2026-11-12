@@ -66,7 +66,7 @@ class RvlTimeSheetScreenshotTest : ScreenshotBase() {
     private fun picked(): Screen.() -> Unit = pasted(WorkStyle.HOURLY, sheet) { vm ->
         vm.pick(vm.ui.value.rows!!.indexOfFirst { it.label == "김알바" })
         settle()
-        assertTrue(appears("‘김알바’ 줄을 읽었어요"))
+        assertTrue(appears("‘김알바’ 줄 · "))
         assertTrue(vm.ui.value.missing.isEmpty() && vm.ui.value.doubtful.isEmpty())
     }
 
@@ -103,7 +103,7 @@ class RvlTimeSheetScreenshotTest : ScreenshotBase() {
 
     /** A 공수표 pasted on a 현장 calendar: the line's days with their 공수. */
     private fun units(): Screen.() -> Unit = pasted(WorkStyle.FIELD, "11월 공수\n성명 1 2 3 4 5 6 7 8\n홍길동 1 1 0.5 - 1.5 1 - 1") { _ ->
-        assertTrue(appears("‘홍길동’ 줄을 읽었어요"))
+        assertTrue(appears("‘홍길동’ 줄 · "))
     }
 
     @Test fun unitsFoldLight() = shoot("rvl72_units_fold_light_100", FOLDED, units())

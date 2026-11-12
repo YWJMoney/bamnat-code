@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
 import com.bamnat.app.IncomingRoster
+import com.bamnat.app.pay.named
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.rules
 import com.bamnat.app.ui.Fmt
@@ -706,7 +707,9 @@ class DutyRosterViewModel(
             val text = (if (changed < inMonth && inMonth >= DutyRoster.MIN_DAYS) "${Fmt.month(u.month)}에서 바뀐 ${changed}일을 고쳤어요"
                 else "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요") +
                 (if (outside.isNotEmpty()) " · ${RosterReader.span(outside.keys)}도" else "") +
-                if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else ""
+                (if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else "") +
+                // 2.0.0 [RVL-79] (검토 I07bc-01) What it changed beyond the days: the alarms that follow them, and the month's pay.
+                after(u.month, now, changed > 0)
             val undo: suspend () -> Int = {
                 val kept = repo.undoFill(fill).size + undoUnits(jobs)
                 // A memo the user wrote on since stays too.
@@ -752,6 +755,31 @@ class DutyRosterViewModel(
             if (before == null) money.delete(written) else money.save(before)
         }
         return kept
+    }
+
+    /**
+     * 2.0.0 [RVL-79] (검토 I07bc-01) ' · 알람도 맞췄어요 · 예상 급여 +48,000원': the alarms follow the new days by themselves (said when they
+     * are on and a day changed), and the month's pay as the pay screen counts it, before and after (with a pay setup, for work that has
+     * pay); empty when neither applies.
+     */
+    private suspend fun after(month: YearMonth, before: ScheduleSnapshot, changed: Boolean): String {
+        if (!changed) return ""
+        val alarms = container.settingsRepository.current.alarmsEnabled &&
+            (container.calendars.get(calendarId)?.alarms ?: true)
+        val style = container.calendars.styleOf(calendarId, container.settingsRepository.current.workStyle)
+        val profile = container.calendars.pay(calendarId).profile.value?.takeIf { style?.usesPayEngine != false }
+        val pay = profile?.let { p ->
+            runCatching {
+                val calc = com.bamnat.core.pay.PayCalculator()
+                val nowSnap = schedule.snapshot.first()
+                fun total(s: ScheduleSnapshot) = calc.calculate(p.named(s.kinds), month, s.resolver::resolve, checks = false).total
+                total(nowSnap) - total(before)
+            }.getOrNull()
+        }
+        return listOfNotNull(
+            "알람도 맞췄어요".takeIf { alarms },
+            pay?.takeIf { it != 0L }?.let { "예상 급여 ${if (it > 0) "+" else "−"}${Fmt.won(kotlin.math.abs(it))}" },
+        ).joinToString("") { " · $it" }
     }
 
     /** [READ-30] Leave days of [all] that are rest days on the calendar now, with the shift each is put on. */
@@ -816,6 +844,22 @@ class DutyRosterViewModel(
         }
 
         /** 2.0.0 [RVL-38] How many days '넣기' writes: all, or all but the kept ones. */
+        /**
+         * 2.0.0 [RVL-79] (검토 I07bc-01) '‘김민지’ 줄 · 12월 31일 · 노란 칸 2개 · 지금 달력과 다른 날 3일': the month read at a glance, so a
+         * roster shared from a messenger goes in with the one button under it (the line is the one picked last month, READ-06).
+         */
+        fun summary(u: Ui, snap: ScheduleSnapshot?): String {
+            val r = u.row ?: return ""
+            val doubt = u.doubtful.size
+            val differ = snap?.takeIf { u.writable.isNotEmpty() }?.let { changes(u, it).size }
+            return listOfNotNull(
+                "‘${r.label.ifBlank { "${u.picked + 1}번째" }}’ 줄",
+                "${u.month.monthValue}월 ${u.writable.size}일",
+                "노란 칸 ${doubt}개".takeIf { doubt > 0 },
+                differ?.takeIf { it in 1 until u.writable.size }?.let { "지금 달력과 다른 날 ${it}일" },
+            ).joinToString(" · ")
+        }
+
         fun writes(u: Ui, snap: ScheduleSnapshot?): Int {
             val month = u.writable.size
             if (!u.keepMine || snap == null) return month
@@ -989,8 +1033,10 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 // 2.0.0 [RVL-37] (검토 U07b-05) Whose line went in, always: a roster of one line said nothing and filled the month. Several
                 // lines: '다른 줄 고르기' asks '어느 줄(조)이 내 것인가요?' again (the chips that scrolled sideways are gone).
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("‘${r.label.ifBlank { "${ui.picked + 1}번째" }}’ 줄을 읽었어요",
-                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    // 2.0.0 [RVL-79] (검토 I07bc-01 '다음 달 근무표 왔어요' 두 번 누르기) The month read, in one line at the top: whose line,
+                    // how many days, how many still yellow, how many it changes on the calendar; the button below puts it in.
+                    val summary = remember(ui, snap) { DutyRosterViewModel.summary(ui, snap) }
+                    Text(summary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     if (rows.size > 1) TextButton(onClick = vm::chooseAgain, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 줄 고르기") }
                 }
             }

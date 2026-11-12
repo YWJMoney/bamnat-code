@@ -92,7 +92,7 @@ class RvlPhotoScreenshotTest : ScreenshotBase() {
     // ---- RVL-36 / RVL-37: the yellow cells one by one, and whose line went in ----
     private fun yellow(): Screen.() -> Unit = read { vm ->
         assertEquals(setOf(3, 9), vm.ui.value.doubtful)
-        assertTrue(appears("‘김민지’ 줄을 읽었어요"))
+        assertTrue(appears("‘김민지’ 줄 · "))
         assertTrue(appears("다른 줄 고르기", exact = true))
         reveal("노란 2칸 확인하기")
     }

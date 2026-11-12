@@ -613,8 +613,10 @@ class ShareLinkStore(
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
             .apply { if (sent != null) putString("sent", sent) }
+            .remove("ended_at")
             .apply()
         _link.value = s
+        _endedAt.value = null
     }
 
     /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
@@ -631,8 +633,9 @@ class ShareLinkStore(
     fun clear() {
         prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from").remove("refused").remove("dropped")
             .remove("refused_code").remove("refused_times").remove("refused_why").remove("refused_print").remove("left_parts").remove("left_at").remove("left_version").remove("left_said")
-            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").apply()
+            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").remove("ended_at").apply()
         _link.value = null
+        _endedAt.value = null
         _unsent.value = false
         _refused.value = false
         _refusedWhy.value = null
@@ -647,8 +650,41 @@ class ShareLinkStore(
 
     /** [SHR-02] Drops a link that ran out while the app stayed open. */
     fun expire() {
-        if (_link.value?.expiresAt?.isAfter(clock()) == false) _link.value = null
+        if (_link.value?.expiresAt?.isAfter(clock()) == false) {
+            _link.value = null
+            _endedAt.value = endedFromPrefs()
+        }
     }
+
+    private val _endedAt = MutableStateFlow(if (_link.value == null) endedFromPrefs() else null)
+    /**
+     * 2.0.0 [RVL-78] (검토 I12c-02) When the last link stopped by itself: the server no longer had it ([ended]) or its end date passed.
+     * The share sheet says so above '링크로 보내기' (the one press that mends it), and the 알림함 has a row, so the sharer knows the
+     * people who had it stopped getting changes; null with a link, after a new one, or after the sharer cut it ([clear]).
+     */
+    val endedAt: StateFlow<Instant?> = _endedAt.asStateFlow()
+
+    private fun endedFromPrefs(): Instant? =
+        prefs.getString("ended_at", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?: prefs.getString("expires", null)?.takeIf { prefs.contains("id") }?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                ?.takeIf { !it.isAfter(clock()) }
+
+    /** 2.0.0 [RVL-78] The server no longer has the link (it ran out or was taken down there): forgotten, and said once. */
+    fun ended(at: Instant) {
+        if (retired) return
+        clear()
+        prefs.edit().putString("ended_at", at.toString()).apply()
+        _endedAt.value = at
+    }
+
+    /** 2.0.0 [RVL-78] When the link ended, the first time this is asked for that end (the 알림함 row is put once); else null. */
+    fun endedToSay(): Instant? {
+        val at = _endedAt.value ?: return null
+        if (prefs.getString("ended_said", null) == at.toString()) return null
+        prefs.edit().putString("ended_said", at.toString()).apply()
+        return at
+    }
+
 
     /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
     val sent: String? get() = prefs.getString("sent", null)

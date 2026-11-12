@@ -601,7 +601,7 @@ fun ReceivedCalendarView(
     if (schedule == null) {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             identityBar()
-            GoneCard(cal, onRemove = { vm.remove(cal.id) }, onMine = { vm.view(null) }, modifier = Modifier.padding(16.dp))
+            GoneCard(cal, today, onRemove = { vm.remove(cal.id) }, onMine = { vm.view(null) }, modifier = Modifier.padding(16.dp))
         }
         return
     }
@@ -687,6 +687,9 @@ fun ReceivedCalendarView(
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 2.0.0 [RVL-78] (검토 I12c-02) The link about to stop says so, with the message to the sender one press away (first: after
+            // it stops nothing more comes).
+            HealthCard(cal, today)
             // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this was looked through. Under the month (the month comes
             // first), one card with 확인했어요 until pressed for the version here now, then one quiet line; a changed link asks again.
             if (cal.watch) OkCard(vm, cal)
@@ -704,7 +707,8 @@ fun ReceivedCalendarView(
             if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal, onSay)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
-            Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
+            // 2.0.0 [RVL-78] When the sender last changed it, beside until when it stays.
+            Text(com.bamnat.app.share.LinkHealth.line(cal, today),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
             // 1.38 갈래6 (공유 남은 일: 받은 달력에서 테마 다시 입어 보기): the 테마·근무 설정 a link brought were offered only once,
@@ -860,8 +864,47 @@ private fun Freshness(cal: ReceivedCalendar, loading: Boolean, offline: Boolean,
     }
 }
 
+/** 2.0.0 [RVL-78] Opens the share sheet with [text] for the sender (nothing goes without the user picking where). */
+private fun askSender(context: android.content.Context, text: String) {
+    val ask = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    runCatching { context.startActivity(android.content.Intent.createChooser(ask, "보낸 분께 부탁하기")) }
+}
+
+/**
+ * 2.0.0 [RVL-78] (검토 I12c-02, 조건 3) The one card for a link about to stop (it ends soon, or its days run out with nothing after): the
+ * common card, its button opening the message to the sender, and an X that keeps it closed until the trouble changes (a new end date,
+ * a new last day).
+ */
 @Composable
-private fun GoneCard(cal: ReceivedCalendar, onRemove: () -> Unit, onMine: () -> Unit, modifier: Modifier = Modifier) {
+private fun HealthCard(cal: ReceivedCalendar, today: LocalDate) {
+    val health = remember(cal.expiresAt, cal.raw, today) { com.bamnat.app.share.LinkHealth.of(cal, Today.instant(), today) }
+    val ask = health.ask ?: return
+    if (health.kind == com.bamnat.app.share.LinkHealth.Kind.GONE) return // the gone card says it
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences(HEALTH_PREFS, android.content.Context.MODE_PRIVATE) }
+    val key = "${cal.id}:${health.stamp}"
+    var closed by remember(key) { mutableStateOf(prefs.getBoolean(key, false)) }
+    if (closed) return
+    com.bamnat.app.ui.components.NudgeCard(
+        text = health.line.orEmpty(),
+        tone = com.bamnat.app.ui.theme.Tone.Caution,
+        action = health.action,
+        onAction = { askSender(context, ask) },
+        onClose = { closed = true; prefs.edit().putBoolean(key, true).apply() },
+    )
+}
+
+/** 2.0.0 [RVL-78] Which link-health cards were closed, on this phone only (a received link is not the user's to back up, SHR-02). */
+internal const val HEALTH_PREFS = "received_health"
+
+@Composable
+private fun GoneCard(cal: ReceivedCalendar, today: LocalDate, onRemove: () -> Unit, onMine: () -> Unit, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 2.0.0 [RVL-78] (검토 I12c-02) A link the sender cut or that ran out: asking for a new one is the thing to do, one press away.
+    val ask = remember(cal) { com.bamnat.app.share.LinkHealth.of(cal, Today.instant(), today).ask }
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
@@ -872,8 +915,12 @@ private fun GoneCard(cal: ReceivedCalendar, onRemove: () -> Unit, onMine: () -> 
                 "보낸 분이 링크를 끊었거나 기간이 지나 ${cal.fullName}${Fmt.obj(cal.fullName)} 이 휴대폰에서도 지웠어요. 다시 보려면 새 링크를 받아 넣어 주세요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             )
-            Button(onClick = onMine, modifier = Modifier.fillMaxWidth()) { Text("내 달력으로") }
-            TextButton(onClick = onRemove) { Text("목록에서 빼기") }
+            // One filled button: '새 링크 부탁하기' when there is someone to ask, else '내 달력으로' (조건 2).
+            Button(onClick = { if (ask != null) askSender(context, ask) else onMine() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (ask != null) "새 링크 부탁하기" else "내 달력으로")
+            }
+            if (ask != null) TextButton(onClick = onMine, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력으로") }
+            TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) { Text("목록에서 빼기") }
         }
     }
 }
