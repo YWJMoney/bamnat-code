@@ -685,7 +685,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                         if (push > com.bamnat.core.recipe.PartFloor.ABOVE_DP) com.bamnat.app.ui.components.ToneLine(
                             "달력 머리·요일 줄이 첫 줄을 ${push}dp 내려요 · 달력이 먼저 보이게 ${com.bamnat.core.recipe.PartFloor.ABOVE_DP}dp까지만 줄여 그려요",
-                            style = MaterialTheme.typography.labelMedium, onClick = { selectPart("cal.head"); openPanel(PanelMode.PART) })
+                            style = MaterialTheme.typography.labelMedium, tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { selectPart("cal.head"); openPanel(PanelMode.PART) })
                         Row(Modifier.fillMaxWidth().clickable(enabled = diff > 0 || s.extras.isNotEmpty(), onClickLabel = "바꾼 곳 보기") { changes = true },
                             verticalAlignment = Alignment.CenterVertically) {
                             Text(when {

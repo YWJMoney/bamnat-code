@@ -49,4 +49,23 @@ class PartsFormulaPutInTest {
         assertTrue(c.settingsRepository.current.parts, "\"fx\"" in c.settingsRepository.current.parts)
         assertEquals(emptyList<PieceKind>(), c.recipes.lastMissed)
     }
+
+    /**
+     * 총괄 HQ-57 ②: a phone that put one on in 1.36~1.39 has the record without 부품. After the update nothing changes by itself; the work
+     * is offered (밤낮 소식 once, 받은 작품 until put on), and put on when asked, with 7일 되돌리기.
+     */
+    @Test fun aWorkPutOnBeforeWithoutItsPartsIsOfferedAndPutOnWhenAsked() = runBlocking {
+        val r = market("market-136").first { it.title == "아침저녁 다른 오늘 칸" }
+        val dao = c.database.recipeDao()
+        dao.insertApplied(com.bamnat.app.data.db.AppliedRecipeEntity(code = "FXPARTS2", version = 1, hash = RecipeCodec.hash(r), title = r.title,
+            calendarId = PersonalCalendar.MAIN, body = RecipeCodec.write(r), inputs = "{}", pieces = "calTheme", before = "{}",
+            appliedAt = com.bamnat.core.time.Today.millis() - 86_400_000L, undoneAt = null, replacedAt = null, keptSent = false))
+        val before = c.settingsRepository.current.parts
+        val offered = c.recipes.missedParts()
+        assertEquals(listOf(r.title), offered.map { it.title })
+        assertEquals("저절로 바뀌지 않아요", before, c.settingsRepository.current.parts)
+        assertTrue("넣은 기록", c.recipes.putMissedParts(offered.single()) != null)
+        assertTrue(c.settingsRepository.current.parts, "\"fx\"" in c.settingsRepository.current.parts)
+        assertEquals("넣은 뒤에는 묻지 않아요", emptyList<String>(), c.recipes.missedParts().map { it.title })
+    }
 }

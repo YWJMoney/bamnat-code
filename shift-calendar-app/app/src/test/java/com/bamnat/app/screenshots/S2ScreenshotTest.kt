@@ -80,6 +80,8 @@ class S2ScreenshotTest : ScreenshotBase() {
     /** RVS-10: a 가게 sees its own days in 어떤 때 (영업일·휴무), not 주간·야간·연차. */
     @Test fun aShopSeesItsOwnDays() {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS) }
+        // 어떤 때 opened (all its chips in view), as a maker who taps 펼치기 sees it.
+        com.bamnat.app.ui.components.setFoldOpen(app, "studio.states", true)
         fourLooks("rvs10_shop_states") {
             content {
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -88,7 +90,7 @@ class S2ScreenshotTest : ScreenshotBase() {
             }
             settle()
             when {
-                !appears("영업일", exact = true) -> "'영업일'이 없어요"
+                !scrolledTo("영업일", exact = true) -> "'영업일'이 없어요"
                 shows("야간", exact = true) || shows("연차", exact = true) -> "가게에 '야간'·'연차'가 보여요"
                 else -> null
             }
@@ -97,7 +99,7 @@ class S2ScreenshotTest : ScreenshotBase() {
 
     /** RVS-08: a cell that moves and is sized says so in 움직임·크기·자리, each line with what it is now. */
     @Test fun thePartsToolShowsMotionAndSize() {
-        val parts = Blueprint(listOf(mapOf("id" to "cal.cell", "motion" to "glow", "w" to 40L, "h" to 40L, "place" to "center"))).encode()
+        val parts = Blueprint(listOf(mapOf("id" to "cal.cell", "motion" to "glow", "w" to 40L, "h" to 40L, "place" to "mc"))).encode()
         fourLooks("rvs08_parts_motion") {
             content {
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -107,7 +109,11 @@ class S2ScreenshotTest : ScreenshotBase() {
             settle()
             tapText("움직임·크기·자리", prefix = true)
             settle()
-            if (!appears("움직임", exact = true)) "'움직임' 묶음이 없어요" else null
+            when {
+                !scrolledTo("움직임", exact = true) -> "'움직임' 묶음이 없어요"
+                !scrolledTo("너비 40dp") -> "지금 걸린 너비·높이가 한 줄로 안 보여요"
+                else -> null
+            }
         }
     }
 }

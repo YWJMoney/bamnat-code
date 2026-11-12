@@ -187,6 +187,28 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
 
+    /**
+     * 2.0.0 [RVS-12] 총괄 HQ-57 ②: works put on in 1.36~1.39 whose 부품 꾸미기 has a formula (`{"fx"}`) went on without it (넣기 could
+     * not read its own formula back and let the piece go without a word, 장터 144개). Nothing is put back by itself, so no one's calendar
+     * changes on its own after the update: each such work still in use, on a calendar whose 부품 no later work holds, is offered once in
+     * 밤낮 소식 and stays offered in 공방 › 내 것 › 받은 작품 ([putMissedParts]).
+     */
+    suspend fun missedParts(): List<AppliedRecipeEntity> {
+        val all = dao.applied().filter { it.undoneAt == null && it.replacedAt == null }
+        return all.filter { e ->
+            "parts" !in e.pieces.split(',') && all.none { o -> o.calendarId == e.calendarId && o.appliedAt > e.appliedAt && "parts" in o.pieces.split(',') } &&
+                runCatching { RecipeCodec.readSoft(e.body).recipe }.getOrNull()?.pieces?.firstOrNull { it.kind == PieceKind.PARTS }
+                    ?.let { p -> (p.values["parts"] as? List<*>).orEmpty().any { l -> (l as? Map<*, *>)?.values?.any { it is com.bamnat.core.recipe.Ref.Formula } == true } } == true
+        }.groupBy { it.calendarId }.map { (_, list) -> list.maxBy { it.appliedAt } }
+    }
+
+    /** [missedParts]: [e]'s 부품 꾸미기 put on now, with the answers it was put on with; 7일 되돌리기 as any 넣기. */
+    suspend fun putMissedParts(e: AppliedRecipeEntity): Long? {
+        val r = RecipeCodec.readSoft(e.body).recipe
+        val answers = runCatching { JSONObject(e.inputs).let { j -> j.keys().asSequence().associateWith { j.opt(it).takeIf { v -> v != JSONObject.NULL } } } }.getOrDefault(emptyMap())
+        return apply(r, e.code, e.version, e.calendarId, listOf(Pick(PieceKind.PARTS, RecipePieces.Mode.REPLACE)), answers)
+    }
+
     /** [RCX-02] Codes with a newer version than the one put on, asked with the codes only (no device). */
     suspend fun newer(): Map<String, Int> {
         val mine = inUse().filter { subscribed(it.code) }
@@ -263,6 +285,11 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         if (newer.isNotEmpty()) {
             val titles = inUse().filter { it.code in newer }.map { it.title }
             lines += "‘${titles.first()}’" + (if (titles.size > 1) " 외 ${titles.size - 1}개" else "") + "에 새 판이 나왔어요"
+        }
+        // 2.0.0 [RVS-12] HQ-57 ②: a work whose 부품 꾸미기 did not go on before, offered once.
+        missedParts().filter { !prefs.getBoolean("$K_PARTS_SAID${it.id}", false) }.takeIf { it.isNotEmpty() }?.let { list ->
+            lines += "‘${list.first().title}’" + (if (list.size > 1) " 외 ${list.size - 1}개" else "") + "에 빠져 있던 부품 꾸미기를 이제 넣을 수 있어요 (마을 › 공방 › 내 것 › 받은 작품)"
+            prefs.edit().apply { list.forEach { putBoolean("$K_PARTS_SAID${it.id}", true) } }.apply()
         }
         // [RCX-24] 되돌리기 in 소식 too: once, on the last day it can still be taken back.
         val now = Today.millis()
@@ -374,6 +401,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_NEWS_NEW = "news_new"
         private const val K_NEWS_FOLLOW = "news_follow"
         private const val K_UNDO_SAID = "undo_said_"
+        private const val K_PARTS_SAID = "parts_missed_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
         /** [TOWN-14] The works and 수정판 소식 already said (so the two days asked again say nothing twice). */

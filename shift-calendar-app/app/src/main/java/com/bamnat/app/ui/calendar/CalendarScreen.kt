@@ -2273,6 +2273,8 @@ internal fun CalendarHeader(
     // 2.0.0 [RVS-14] A work's 달력 머리 with room at its sides (E9: 6 + 10) leaves the month less of the line: it drops the year and 오늘 is
     // an icon, as on a narrow phone, so the month itself is never squeezed out.
     val headTight = (headPart.out ?: 0) + (headPart.padH ?: 0) >= 8
+    // Under 340dp (a small phone, the studio's example) the work's side room gives way first, so ‹ 10월 › keeps its line.
+    val headBox = if (small) headPart.copy(out = headPart.out?.coerceAtMost(2), padX = headPart.padH?.coerceAtMost(2), padY = headPart.padV) else headPart
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
@@ -2283,7 +2285,7 @@ internal fun CalendarHeader(
             else com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp + (headPart.out ?: 0).dp, side = 4.dp + (headPart.out ?: 0).dp,
                 bottom = (headPart.out ?: 0).dp, shape = com.bamnat.app.ui.parts.PartMods.shapeOf(headPart, MaterialTheme.shapes.medium))
         ).partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
-            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
+            .then(with(com.bamnat.app.ui.parts.PartMods) { box(headBox, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
