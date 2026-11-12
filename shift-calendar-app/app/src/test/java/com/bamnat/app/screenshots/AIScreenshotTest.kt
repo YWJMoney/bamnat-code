@@ -53,8 +53,6 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 import java.net.ServerSocket
-import java.time.Instant
-import java.time.YearMonth
 import java.util.concurrent.TimeUnit
 
 /**
@@ -78,7 +76,7 @@ class AIScreenshotTest : ScreenshotBase() {
     private inner class Rooms(private val base: FakeCompanyApi) : CompanyApi by base {
         val posts = mutableMapOf<String, MutableList<TalkPost>>()
         var others: List<RoomVersion> = emptyList()
-        private val now = Instant.now()
+        private val now = Today.instant()
 
         fun seed(room: String, vararg lines: Pair<Int, String>) {
             posts[room] = lines.mapIndexed { i, (who, body) ->
@@ -98,7 +96,7 @@ class AIScreenshotTest : ScreenshotBase() {
             change: List<com.bamnat.app.company.ChangeLine>, proposal: org.json.JSONObject?): String {
             if (setup != StylePlaza.ROOM) return base.post(device, company, setup, body, parent, kind, change, proposal)
             val list = posts.getOrPut(company) { mutableListOf() }
-            list += TalkPost("$company-${list.size}", 1, null, false, body, Instant.now(), true, parent = parent, kind = kind)
+            list += TalkPost("$company-${list.size}", 1, null, false, body, Today.instant(), true, parent = parent, kind = kind)
             return list.last().id
         }
 
@@ -144,7 +142,7 @@ class AIScreenshotTest : ScreenshotBase() {
     }
     @Test fun aMatchedMonthOpensTheTick() = shoot("1121_ai_tick_on", PHONE_393) {
         companyOn()
-        ownPay(PayslipCheck(YearMonth.now().minusMonths(1), 2_800_000, 2_801_000, 0))
+        ownPay(PayslipCheck(Today.month().minusMonths(1), 2_800_000, 2_801_000, 0))
         val vm = CompanyReportViewModel(c)
         content { CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}, onMatch = {}) }
         settle()
