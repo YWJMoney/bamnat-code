@@ -542,6 +542,19 @@ class AppContainer(context: Context) {
             info.lastUpdateTime.takeIf { it > 0 && it - info.firstInstallTime > 60_000 }?.let(java.time.Instant::ofEpochMilli)
         }.getOrNull()
     }
+    /**
+     * 2.0.0 [RVH-64] PC-72: what the month turn of 1.36.1~1.39.0 may have put on another day, on 내 달력 and every added calendar
+     * (an example is not the user's). The grid's week starts as the calendar's settings say.
+     */
+    val turnSlip: com.bamnat.app.data.TurnSlipCheck by lazy {
+        com.bamnat.app.data.TurnSlipCheck(
+            calendars = { listOf(PersonalCalendar.MAIN) + calendars.added().map { it.id } },
+            schedule = { calendars.repository(it) },
+            money = { calendars.money(it) },
+            memos = memoRepository,
+            weekStart = { settingsRepository.current.weekStart },
+        )
+    }
     /** [MON-02] What the company server says once a day: [FLAG-06] the dark-merge overrides, notices, 처리방침 dates. */
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
@@ -687,10 +700,14 @@ class AppContainer(context: Context) {
     var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
     var referrerSource: com.bamnat.app.tier.ReferrerSource = com.bamnat.app.tier.PlayReferrer
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
+    /** 2.0.0 [RVH-68] Play's referrer, read once for 친구 초대 and 웹에서 이어 받기 alike. */
+    val installReferrer by lazy { com.bamnat.app.tier.ReferrerOnce(appContext) { referrerSource } }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { installReferrer })
     }
+    /** 2.0.0 [RVH-68] 검토 I50c-01·I50c-03 (RVR-31): what bamnat.app's Play link carried, for the first setup. */
+    val webStart by lazy { com.bamnat.app.data.WebStart(appContext, installReferrer) }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
     /** 1.32 [PROX-02] The money-day 체험 권유, this phone only. */

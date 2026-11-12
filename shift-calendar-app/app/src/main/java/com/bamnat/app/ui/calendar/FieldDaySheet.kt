@@ -122,9 +122,20 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
     // 저장 or 취소 does (뒤로 가기 too).
     val start = remember { Triple(units, amountDigits(existingRate ?: inForce), existing?.client ?: rules.lastClient) }
     val written = picked != start.first || rate != start.second || client != start.third || typed.isNotEmpty() || fromHere
+    val save = {
+        // [RVH-23] 검토 CAL-28: without the tick, this day only.
+        val base = rules.afterDayRate(date, rate.toAmount(), fromHere)
+        val r = base.copy(lastClient = client.trim())
+        val job = DayRate.job(date, u!!, rate.toAmount(), r.lastClient, existing).let { if (existing != null) it.copy(client = client.trim()) else it }
+        if (fromHere) onReprice(DayRate.repriceFrom(date, rate.toAmount(), jobs).filter { it.id != existing?.id })
+        onSave(job, r)
+    }
+    // 2.0.0 [RVH-69] 검토 PC-135 (자판이 '저장'을 가려요): the 창 sits above the keyboard and its fields scroll ([AlertDialog] fields);
+    // the keyboard's 다음 goes 공수 → 일당 → 업체, and its 완료 on 업체 saves as 저장 does.
     AlertDialog(
         onDismissRequest = onDismiss,
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = !written),
+        fields = true,
         title = { Text("${Fmt.dayTitle(date)} 공수") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -134,7 +145,8 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
                 )
                 androidx.compose.material3.OutlinedTextField(typed, { t -> typed = t.take(6); DayRate.parse(t)?.let { picked = it } },
                     label = { Text("직접 (0.125처럼 소수 셋째 자리까지)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
+                    visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal, imeAction = androidx.compose.ui.text.input.ImeAction.Next))
                 AmountField("일당 (1공)", rate, { rate = it })
                 val changed = rate.toAmount() > 0 && inForce > 0 && rate.toAmount() != inForce
                 if (changed) {
@@ -152,7 +164,7 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
                 com.bamnat.app.ui.work.dailyTaxLine(rate.toAmount())?.let {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                ClientField(client, { client = it.take(30) }, label = "업체")
+                ClientField(client, { client = it.take(30) }, label = "업체", onDone = { if (u != null) save() })
                 if (u != null && rate.toAmount() > 0) {
                     Text("${DayRate.label(u)} × ${Fmt.won(rate.toAmount())} = ${Fmt.won(DayRate.amount(rate.toAmount(), u))}",
                         style = MaterialTheme.typography.titleSmall)
@@ -160,14 +172,7 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
             }
         },
         confirmButton = {
-            TextButton(enabled = u != null, onClick = {
-                // [RVH-23] 검토 CAL-28: without the tick, this day only.
-                val base = rules.afterDayRate(date, rate.toAmount(), fromHere)
-                val r = base.copy(lastClient = client.trim())
-                val job = DayRate.job(date, u!!, rate.toAmount(), r.lastClient, existing).let { if (existing != null) it.copy(client = client.trim()) else it }
-                if (fromHere) onReprice(DayRate.repriceFrom(date, rate.toAmount(), jobs).filter { it.id != existing?.id })
-                onSave(job, r)
-            }) { Text("저장") }
+            TextButton(enabled = u != null, onClick = save) { Text("저장") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )

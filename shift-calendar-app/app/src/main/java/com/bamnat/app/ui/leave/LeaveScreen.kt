@@ -476,6 +476,7 @@ private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntr
     var note by rememberSaveable { mutableStateOf("") }
     val value = days.toNumber()
     AlertDialog(
+        fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
         onDismissRequest = onDismiss,
         title = { Text(kind.label) },
         text = {
@@ -546,6 +547,7 @@ private fun PromotionCard(s: LeaveSummary, records: List<LeavePromotion.Record>,
         var date by remember { mutableStateOf(s.today) }
         var note by rememberSaveable { mutableStateOf("") }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { step = null },
             title = { Text(st.label.substringBefore(" (")) },
             text = {

@@ -293,7 +293,7 @@ class ScheduleResolver(
             hasCustomTimes = customTimes,
             leave = leave,
             leaveMinutes = leaveMinutes,
-            extras = entry?.extras?.takeIf { it.isNotEmpty() }?.let { placeExtras(date, it, shiftFrom, shiftTo) }.orEmpty(),
+            extras = emptyList(),
             plannedStart = start,
             plannedEnd = end,
             plannedBreakMinutes = breakMinutes,
@@ -301,7 +301,11 @@ class ScheduleResolver(
             gapTo = gapFrom?.plusMinutes(gapLength.toLong()),
             leaveFrom = cut?.holeFrom?.let { base!!.plusMinutes(it.toLong()) },
             leaveTo = cut?.holeTo?.let { base!!.plusMinutes(it.toLong()) },
-        )
+        ).let { day ->
+            // 2.0.0 [RVH-58] Placed once the day's parts are known: work in the gap between two parts is work (설계 2-3절).
+            val list = entry?.extras?.takeIf { it.isNotEmpty() } ?: return@let day
+            day.copy(extras = placeExtras(date, list, shiftFrom, shiftTo, day.segments))
+        }
     }
 
     /**
@@ -310,7 +314,10 @@ class ScheduleResolver(
      * one after another when there are several; an old record of hours only follows the shift too,
      * or has no place on a day without one.
      */
-    private fun placeExtras(date: LocalDate, list: List<ExtraEntry>, shiftFrom: LocalDateTime?, shiftTo: LocalDateTime?): List<ResolvedExtra> {
+    private fun placeExtras(
+        date: LocalDate, list: List<ExtraEntry>, shiftFrom: LocalDateTime?, shiftTo: LocalDateTime?,
+        parts: List<ClosedRange<LocalDateTime>> = listOfNotNull(shiftFrom?.let { f -> shiftTo?.let { f..it } }),
+    ): List<ResolvedExtra> {
         var after = shiftTo
         var before = shiftFrom
         return list.map { e ->
@@ -323,7 +330,8 @@ class ScheduleResolver(
                 val span = Duration.between(from, to).toMinutes().toInt()
                 val brk = (if (e.hasTimes) e.breakMinutes else asCovered!!.breakMinutes).coerceIn(0, span)
                 val brkStart = if (e.hasTimes) e.breakStart else asCovered!!.breakStart
-                withinShift(ResolvedExtra(e, kind, from, to, brk, brkStart.takeIf { brk > 0 }, span - brk, covered), shiftFrom, shiftTo)
+                val x = ResolvedExtra(e, kind, from, to, brk, brkStart.takeIf { brk > 0 }, span - brk, covered)
+                if (parts.size > 1) withinParts(x, parts) else withinShift(x, shiftFrom, shiftTo)
             } else {
                 val minutes = e.minutes.coerceIn(0, WorkTime.MINUTES_PER_DAY).toLong()
                 var from: LocalDateTime? = null
@@ -373,6 +381,28 @@ class ScheduleResolver(
                     insideShiftMinutes = (x.minutes - paid).coerceAtLeast(0))
             }
         }
+    }
+
+    /**
+     * 2.0.0 [RVH-58] [withinShift] for a day of two parts (가게 브레이크 타임 11~15·17~21, 외출로 나뉜 날): only the time in the parts is
+     * the shift's. A piece in the gap (대타 15~17) is all extra work; one that meets a single part is placed against that part as on a
+     * day of one part (20~23 counts 21~23); one across the gap keeps its times as typed and counts the minutes outside the parts, the
+     * break by its share.
+     */
+    private fun withinParts(x: ResolvedExtra, parts: List<ClosedRange<LocalDateTime>>): ResolvedExtra {
+        val from = x.from ?: return x
+        val to = x.to ?: return x
+        val met = parts.filter { from.isBefore(it.endInclusive) && to.isAfter(it.start) }
+        if (met.isEmpty()) return x
+        if (met.size == 1) return withinShift(x, met[0].start, met[0].endInclusive)
+        val inParts = met.sumOf { p -> Duration.between(maxOf(from, p.start), minOf(to, p.endInclusive)).toMinutes().toInt() }
+        val span = Duration.between(from, to).toMinutes().toInt()
+        val outside = (span - inParts).coerceAtLeast(0)
+        if (outside == 0) return x.copy(breakMinutes = 0, breakStart = null, minutes = 0, insideShiftMinutes = x.minutes)
+        val brk = if (span > 0) Math.round(x.breakMinutes * outside / span.toDouble()).toInt() else 0
+        val paid = (outside - brk).coerceAtLeast(0)
+        return x.copy(breakMinutes = brk, breakStart = x.breakStart.takeIf { brk > 0 }, minutes = paid,
+            insideShiftMinutes = (x.minutes - paid).coerceAtLeast(0))
     }
 
     fun resolveRange(from: LocalDate, toInclusive: LocalDate): List<ResolvedDay> {

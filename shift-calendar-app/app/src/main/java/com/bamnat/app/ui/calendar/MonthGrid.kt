@@ -123,6 +123,28 @@ import com.bamnat.core.time.Today
 
 const val GRID_ROWS = 6
 
+/**
+ * 2.0.0 [RVH-67] 검토 CAL-01: how many day cells were drawn, counted only while a test asks ([MonthGridRedrawTest]): picking a day or
+ * the month turning must draw again the cells that changed, not all 42. Off, it costs one read of a field per cell.
+ */
+internal object CellDraws {
+    @JvmField @Volatile var counting = false
+    @JvmField @Volatile var count = 0
+}
+
+/**
+ * 2.0.0 [RVH-67] 검토 CAL-02: the width each day gets on its row, measured once by its grid for all 42 ([MonthGrid]); Unspecified
+ * outside a grid, where a cell measures for itself. A cell measuring on its own put a layout of its own (a 상자 that composes while it
+ * is laid out) in every cell, and the month's first frame paid for 42 of them.
+ */
+internal val LocalCellSlot = androidx.compose.runtime.staticCompositionLocalOf { Dp.Unspecified }
+
+/** 2.0.0 [RVH-67] A box that knows how wide it is: [known] when the grid measured it, else measured here. */
+@Composable
+private fun SizedBox(known: Dp, modifier: Modifier, content: @Composable androidx.compose.foundation.layout.BoxScope.(maxWidth: Dp) -> Unit) {
+    if (known.value.isNaN()) BoxWithConstraints(modifier) { content(maxWidth) } else Box(modifier) { content(known) }
+}
+
 /** [CAL-01] Room left of each week for the bar that marks a week over the hour limit. */
 val WEEK_BAR_SPACE = 5.dp
 
@@ -302,6 +324,9 @@ fun MonthGrid(
     val cal = LocalCalendarColors.current
     val haptics = LocalHapticFeedback.current
     val firstCell = remember(month, weekStart) { month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart)) }
+    // 2.0.0 [RVH-67] 검토 CAL-01: the grid's days made once a month. A day made again on each pass is a new object, so each cell's
+    // tap (which holds its day) looked new and all 41 cells drew again on every pick; the same day objects let a cell skip.
+    val dates = remember(firstCell) { List(GRID_ROWS * 7) { firstCell.plusDays(it.toLong()) } }
     val cells = remember(money, month, firstCell) {
         MonthMoneyCells.of(money, listOf(month), firstCell, firstCell.plusDays(GRID_ROWS * 7L - 1))
     }
@@ -360,10 +385,13 @@ fun MonthGrid(
         }
     }
     // [CAL-33] How many days the finger holds, said while it paints, not only after it lifts (I 리뷰 I4).
-    Box(modifier.fillMaxWidth()) {
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+    // 2.0.0 [RVH-67] 검토 CAL-02: one measure for the month: a day's width on its row, less the board's insets, the week bar and the gaps.
+    val slot = (maxWidth - (((grid.out ?: 0) + (grid.padH ?: 0)) * 2).dp - WEEK_BAR_SPACE - gap * 6) / 7
+    androidx.compose.runtime.CompositionLocalProvider(LocalCellSlot provides slot) {
     Column(Modifier.fillMaxWidth().partBox(grid).then(painting), verticalArrangement = Arrangement.spacedBy(gap)) {
         for (row in 0 until GRID_ROWS) {
-            val rowStart = firstCell.plusWeeks(row.toLong())
+            val rowStart = dates[row * 7]
             // [WEEK-01] The Monday-to-Sunday week that holds most of the row: on a grid from Sunday, the row's Monday on.
             val week = remember(calculator, rowStart) { calculator.week(rowStart.plusDays(3)) }
             // PC 02d6dabf (일요일 시작 달력에서 일요일 ✓가 다음 주 표시로 읽힘): the 주휴 week that has most of its days in this row (the
@@ -392,7 +420,7 @@ fun MonthGrid(
                 horizontalArrangement = Arrangement.spacedBy(gap),
             ) {
                 for (col in 0 until 7) {
-                    val date = rowStart.plusDays(col.toLong())
+                    val date = dates[row * 7 + col]
                     val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
                     val inMonth = date.year == month.year && date.month == month.month
                     DayCell(
@@ -452,6 +480,7 @@ fun MonthGrid(
             }
         }
     }
+    }
     val count by remember { derivedStateOf { dragged.size } }
     if (count > 1) {
         Surface(
@@ -502,9 +531,11 @@ fun WeekStrip(
         MonthMoneyCells.of(money, listOf(YearMonth.from(monday), YearMonth.from(monday.plusDays(6))), monday, monday.plusDays(6))
     }
     val cardDue = rememberCardDue(money)
+    // [RVH-67] CAL-01 as in [MonthGrid]: the week's days made once, so a pick draws the two days it changes.
+    val dates = remember(monday) { List(7) { monday.plusDays(it.toLong()) } }
     Row(modifier.fillMaxWidth().height(cellHeight).padding(start = WEEK_BAR_SPACE)) {
         for (col in 0 until 7) {
-            val date = monday.plusDays(col.toLong())
+            val date = dates[col]
             val day = remember(snapshot, date) { snapshot.resolver.resolve(date) }
             DayCell(
                 day = day,
@@ -591,6 +622,7 @@ private fun DayCell(
     /** [CELL-01] 1.39 The day's memo titles when the cells list their jobs and memos; null for the plain cell. */
     memoList: List<CellMemo>? = null,
 ) {
+    if (CellDraws.counting) CellDraws.count++
     // 1.39 [WTYP-30] PC 6차: 일근 says 야근 in the long-press menu and for TalkBack too.
     val extraStyle = ExtraText.styleHere()
     val cal = LocalCalendarColors.current
@@ -634,6 +666,9 @@ private fun DayCell(
     val cellPart = if (blueprint.isEmpty) com.bamnat.core.recipe.PartStyle.NONE else remember(blueprint, partStates, factScope) { blueprint.style("cal.cell", partStates, factScope) }
     val cellParts = if (blueprint.isEmpty) null else remember(blueprint, partStates, factScope) { com.bamnat.app.ui.parts.CellParts.of(blueprint, partStates, factScope) }
     val partShape = cellPart.shape(shape)
+    // 2.0.0 [RVH-67] 검토 CAL-02: the width inside the cell from the grid's one measure, less what the cell keeps around itself
+    // (its edge, its part's 바깥 간격); Unspecified in a week strip, where the boxes below measure for themselves.
+    val inside = LocalCellSlot.current - cellEdgePad(view, cellLook) * 2 - ((cellPart.out ?: 0) * 2).dp
     // [RCP-09] 1.34 달력 테마: the user's colours for 토·일·공휴일 and today, and how strong the wash is.
     val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
     val numberRaw = when {
@@ -874,7 +909,7 @@ private fun DayCell(
             // The day's own shift as a small badge without its icon, so it fits beside the date in a 48dp cell; the rest as before.
             val plainShift = type != null && fullLeave == null && covered == null && badgeKind == null && !jobFirst &&
                 !(hourly != null && hourlyRange != null) && !(invest != null && invest.trades(date) > 0 && type.isOff)
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            SizedBox(inside, Modifier.fillMaxSize()) { maxWidth ->
             // [CELL-03] 1.39 (320dp·큰 글자에서 날짜 옆 '야'가 잘림): the shift's badge sits beside the date only where both fit; else on
             // its own line at the plain cell's size.
             val beside = maxWidth >= 50.dp && density.fontScale < 1.3f
@@ -929,7 +964,8 @@ private fun DayCell(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            BoxWithConstraints(Modifier.fillMaxWidth().height(20.dp)) {
+            // Inside the column's 2dp at either side.
+            SizedBox(inside - 4.dp, Modifier.fillMaxWidth().height(20.dp)) { maxWidth ->
                 val dots = maxWidth < DOT_CELL_WIDTH || density.fontScale >= 1.5f
                 Box(
                     Modifier
@@ -1488,11 +1524,15 @@ internal fun Modifier.dayLine(c: Color?): Modifier = if (c == null) this else dr
 }
 
 /** [FREE-01] A cell's room and edge by its look (가늘게, 굵게, 점선) or 달력 모양's 칸마다 선. */
+/** The room [cellEdge] keeps around a cell, on each side. */
+internal fun cellEdgePad(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?): Dp =
+    if (view.grid == "line" || look?.border != null) 0.5.dp else 1.5.dp
+
 internal fun Modifier.cellEdge(view: com.bamnat.core.recipe.CalendarView, look: com.bamnat.core.recipe.CellLook?, shape: androidx.compose.ui.graphics.Shape, outline: Color): Modifier {
     // [MAT-02] 1.36 테두리 두께(0.5~4dp)·진하기.
     val edge = (look?.borderColor?.let { Color((it or 0xFF000000L).toInt()) } ?: outline).let { c -> look?.borderAlpha?.let { c.copy(alpha = c.alpha * it / 100f) } ?: c }
     val width = look?.borderWidth?.let { (it / 10f).dp }
-    return padding(if (view.grid == "line" || look?.border != null) 0.5.dp else 1.5.dp).then(
+    return padding(cellEdgePad(view, look)).then(
         when (look?.border) {
             "thin" -> Modifier.border(width ?: 0.8.dp, edge, shape)
             "thick" -> Modifier.border(width ?: 2.dp, edge, shape)

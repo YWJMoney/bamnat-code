@@ -64,6 +64,46 @@ object InAppReview {
     fun lastCrash(context: Context): Long =
         com.bamnat.app.diag.CrashLog.notes(context).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
 
+    /**
+     * 2.0.0 [RVH-61] 검토 PC-131 (1.39.0 폰에 덮어 깔고 처음 열자 달력보다 먼저 Play 별점 창): a due moment is not asked while the app
+     * has something of its own to say first. It waits, still due, for the next opening of 내 달력:
+     * - the first run of a new version ([firstRunOfVersion]: 업데이트 소식, PC-72 확인 come then), until the next visit;
+     * - while the 처리방침 card asks on the calendar ([policyCard]) or the 다른 날에 들어갔을 수 있는 근무 card is up ([slipCard]).
+     * The opening windows' turn ([com.bamnat.core.guide.OpenAsk.REVIEW], last) keeps it behind any of them in the same visit.
+     */
+    fun held(firstRunOfVersion: Boolean, policyCard: Boolean, slipCard: Boolean = false): Boolean = firstRunOfVersion || policyCard || slipCard
+
+    /** [RVH-61] The version last run on this phone is not [code]: this run is the first of [code] (a fresh install too). */
+    fun firstRunOfVersion(lastCode: Int, code: Int): Boolean = lastCode != code
+
+    @Volatile private var runChecked = false
+    /** The visit ([com.bamnat.app.HomeRequests.count]) in which this process found a new version's first run; -1 for none. */
+    @Volatile private var firstVisit = -1
+
+    /**
+     * [RVH-61] True through the visit in which this process first ran a new version on the phone ([visit]: opening the app again
+     * after 30 minutes or on a new day is the next one). The version is noted at once, so a later process is not held.
+     */
+    fun firstRunNow(context: Context, code: Int = com.bamnat.app.BuildConfig.VERSION_CODE, visit: Int = com.bamnat.app.HomeRequests.count.value): Boolean {
+        if (!runChecked) synchronized(this) {
+            if (!runChecked) {
+                val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val last = prefs.getInt(K_RUN_CODE, 0)
+                if (firstRunOfVersion(last, code)) {
+                    firstVisit = visit
+                    prefs.edit().putInt(K_RUN_CODE, code).apply()
+                }
+                runChecked = true
+            }
+        }
+        return firstVisit >= 0 && visit == firstVisit
+    }
+
+    internal fun resetForTest() { runChecked = false; firstVisit = -1; hushedUntil = 0L }
+
+    private const val PREFS = "in_app_review"
+    private const val K_RUN_CODE = "run_code"
+
     fun Context.findActivity(): Activity? {
         var c: Context? = this
         while (c is ContextWrapper) {

@@ -311,6 +311,12 @@ fun shareTitle(style: WorkStyle?): String = when (style) {
     else -> "근무표 공유"
 }
 
+/**
+ * 2.0.0 [RVH-60] 검토 PC-127·T01-11: taking someone's link, in the work's words. A shop, a field worker or an investor has no 동료 and
+ * no 근무표 to take, so it is someone's calendar (달력 바꾸기 창, 달력 › 도구, 설정 찾기 say it the same).
+ */
+fun receiveTitle(style: WorkStyle?): String = if (style?.usesPayEngine == false) "다른 사람 달력 받기" else "동료 근무표 받기"
+
 /** [J133-79] What a shared calendar holds, in the work's word: 근무표, a field worker's 일정, a shop's 영업일. */
 fun scheduleWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정"

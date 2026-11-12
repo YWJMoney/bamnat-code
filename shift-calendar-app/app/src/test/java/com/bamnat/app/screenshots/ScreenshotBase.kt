@@ -622,8 +622,8 @@ abstract class ScreenshotBase {
         }
 
         /** [DAY-02] Opens a day group when it is closed; a group with something to say may already be open. */
-        fun openGroup(title: String) {
-            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = 0.5f)
+        fun openGroup(title: String, across: Float = 0.5f) {
+            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = across)
             if (node.config.getOrNull(SemanticsActions.OnClick)?.label == "펼치기") touch(node.boundsInWindow.center)
         }
 
@@ -636,6 +636,18 @@ abstract class ScreenshotBase {
                     .firstOrNull { n -> n.config.contains(SemanticsActions.SetText) && n.words().any { it == label } }
                     ?: error("‘$label’ 입력칸을 찾지 못했어요")
                 field.config[SemanticsActions.SetText].action?.invoke(androidx.compose.ui.text.AnnotatedString(text))
+            }
+            settle()
+        }
+
+        /** 2.0.0 [RVH-69] Presses the keyboard's action key (완료·다음) in the field labelled [label]. */
+        fun imeAction(label: String) {
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val field = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .firstOrNull { n -> n.config.contains(SemanticsActions.OnImeAction) && n.words().any { it == label } }
+                    ?: error("‘$label’ 입력칸을 찾지 못했어요")
+                field.config[SemanticsActions.OnImeAction].action?.invoke()
             }
             settle()
         }

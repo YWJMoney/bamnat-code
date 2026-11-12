@@ -805,11 +805,13 @@ private fun ReceivedMonthGrid(
     val firstDay = month.atDay(1)
     val start = firstDay.minusDays(((firstDay.dayOfWeek.value - weekStart.value + 7) % 7).toLong())
     val shifts = remember(schedule) { schedule.usesShifts() }
+    // 2.0.0 [RVH-67] 검토 CAL-01, as the own calendar's grid: the days made once a month, so a pick draws the two days it changes.
+    val dates = remember(start) { List(GRID_ROWS * 7) { start.plusDays(it.toLong()) } }
     Column(Modifier.fillMaxWidth()) {
         for (row in 0 until GRID_ROWS) {
             Row(Modifier.fillMaxWidth().height(cellHeight)) {
                 for (col in 0 until 7) {
-                    val date = start.plusDays((row * 7 + col).toLong())
+                    val date = dates[row * 7 + col]
                     ReceivedDayCell(
                         date = date,
                         day = schedule.days[date],

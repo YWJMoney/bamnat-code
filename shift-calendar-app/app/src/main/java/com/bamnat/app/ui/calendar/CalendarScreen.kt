@@ -17,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.material.icons.outlined.Apps
+import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material3.AssistChip
 import androidx.compose.ui.semantics.heading
@@ -426,12 +427,32 @@ fun CalendarScreen(
     // [OPS-20] Ask for a store review once, shortly after the first pattern was saved.
     // [DAILY-17] And once more after the first pay month is closed, a month or more after the first.
     val reviewMoment = InAppReview.due(settings, today)
-    LaunchedEffect(reviewMoment) {
-        if (reviewMoment != null) {
-            delay(1500)
-            // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
-            val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
-            if (!InAppReview.calm(com.bamnat.core.time.Today.millis(), crashAt)) return@LaunchedEffect
+    // 2.0.0 [RVH-61] 검토 PC-131: not on the first run of a new version, nor while the 처리방침 card asks; and it takes its turn after
+    // the opening windows (업데이트 소식 first, one per visit). The moment stays due for the next opening of 내 달력.
+    // The version is noted on the first opening of 내 달력 whether or not a moment is due; looked at again on each visit.
+    val visit by com.bamnat.app.HomeRequests.count.collectAsStateWithLifecycle()
+    remember { InAppReview.firstRunNow(context, visit = visit) }
+    // 2.0.0 [RVH-64] 검토 PC-72: the card '지난 판에서 누른 날과 다른 날에…' over the calendar, on a phone whose month turn could have
+    // put a day a month on before 2.0.0 (스르륵·책장·움직이지 않기, 움직임 끄기, the phone's animations off). Not folded by X yet.
+    val slipAsk by TurnSlipAsk.ask.collectAsStateWithLifecycle()
+    val slipRisky = com.bamnat.app.ui.theme.LocalMotionOff.current ||
+        com.bamnat.app.ui.theme.LocalMotion.current.turn in TurnSlipAsk.RISKY_TURNS
+    val slipCard = slipAsk?.takeIf { !it.folded && slipRisky }
+    val reviewHeld = remember(reviewMoment != null, visit, slipCard != null) {
+        reviewMoment != null && InAppReview.held(InAppReview.firstRunNow(context, visit = visit), context.appContainer.policyAsks(),
+            slipCard = slipCard != null)
+    }
+    var reviewCalm by remember(reviewMoment) { mutableStateOf(false) }
+    LaunchedEffect(reviewMoment, reviewHeld) {
+        reviewCalm = false
+        if (reviewMoment == null || reviewHeld) return@LaunchedEffect
+        delay(1500)
+        // 1.39 [SPREAD-06] Not right after an ad, a payment window or an app-stop: the moment waits for the next opening.
+        val crashAt = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { InAppReview.lastCrash(context) }.getOrDefault(0L) }
+        reviewCalm = InAppReview.calm(com.bamnat.core.time.Today.millis(), crashAt)
+    }
+    if (reviewMoment != null && !reviewHeld && reviewCalm && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.REVIEW)) {
+        LaunchedEffect(reviewMoment) {
             context.findActivity()?.let { InAppReview.ask(it) }
             vm.markReviewAsked(reviewMoment)
         }
@@ -524,7 +545,11 @@ fun CalendarScreen(
 
     val baseMonth = BASE_MONTH
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
-    val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
+    // 2.0.0 [RVH-67] 검토 PC-25·CAL-03 (달 넘기기 느린 프레임 18%): the month everything under the head counts (the month's sums, pay,
+    // rest checks, the cards, the cells' height) is the one a turn settles on. Read from the page passing halfway, all of it was worked
+    // out again in the middle of the turn, on the frames the turn draws. The head's month follows the turn as before, read in its own
+    // scope ([header]), so a turn redraws the head only.
+    val visibleMonth = pageToMonth(baseMonth, pagerState.settledPage)
     // 2.0.0 [RVP-75] (검토 REST-18) 기능 찾기 › 이번 달 전부 넣기 opens the keypad for the month on screen, as the tool's own button does
     // (before, it opened today's sheet).
     com.bamnat.app.ui.guide.FocusedTool("typeMonth", "shift.dutyTyping") {
@@ -735,6 +760,8 @@ fun CalendarScreen(
     var explainingSwap by remember { mutableStateOf(false) }
 
     var showMonthPicker by remember { mutableStateOf(false) }
+    // 2.0.0 [RVH-65] 검토 PC-73 달력 도구 › 최근 바꾼 기록.
+    var recentChangesOpen by rememberSaveable { mutableStateOf(false) }
     var showShare by remember { mutableStateOf(false) }
     // 1.38 [EASE-28] The month about to go out as a picture: the sheet shows it and what rides on it first.
     var imageMonth by remember { mutableStateOf<YearMonth?>(null) }
@@ -1090,11 +1117,14 @@ fun CalendarScreen(
             if (decorTap == null || viewingReceived != null) emptyList()
             else HeadQuick.of(decorLayer) { id -> runCatching { com.bamnat.app.logic.LogicRunner.logic(context.appContainer).button(id) }.getOrNull() }
         }
-        val header: @Composable (Modifier) -> Unit = { headerPlace -> CalendarHeader(
+        val header: @Composable (Modifier) -> Unit = { headerPlace ->
+            // [RVH-67] The month as it turns, read here: only the head is drawn again while the month turns.
+            val headMonth = if (weekOnly && !wide) YearMonth.from(selected) else pageToMonth(baseMonth, pagerState.currentPage)
+            CalendarHeader(
             modifier = headerPlace,
             quick = headQuick,
             onQuick = { id -> decorTap?.invoke(id, null) },
-            month = if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth,
+            month = headMonth,
             // [CAL-03] With one week on screen, ‹ › go a week back or on.
             onPrev = { if (weekOnly) onDateChange(selected.minusWeeks(1)) else slideToMonth(headingMonth().minusMonths(1)) },
             onNext = { if (weekOnly) onDateChange(selected.plusWeeks(1)) else slideToMonth(headingMonth().plusMonths(1)) },
@@ -1103,8 +1133,9 @@ fun CalendarScreen(
                 slideToMonth(Today.month())
             },
             // [285] Already on today: the button stays where it is, greyed, so the bar does not jump.
-            atToday = selected == Today.date() && (if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth) == Today.month(),
+            atToday = selected == Today.date() && headMonth == Today.month(),
             onPickMonth = { showMonthPicker = true },
+            onRecentChanges = if (viewingReceived == null) ({ recentChangesOpen = true }) else null,
             byWeek = weekOnly,
             onShare = shareCalendar,
             onOpenPattern = onOpenPattern,
@@ -1359,6 +1390,16 @@ fun CalendarScreen(
                 add(Notice("appLockResting", "앱 잠금 쉼", line = "휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
                     urgent = true) { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
             }
+            // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): one line, the 주의 mark, 확인 and X; a day whose alarm will not ring may be among
+            // them, so it stands with what the user trusts the app with. X folds it: the update notice's line stays.
+            if (paint == null && viewingReceived == null) slipCard?.let { a ->
+                add(Notice("turnSlip", "지난 판 확인") {
+                    com.bamnat.app.ui.components.NudgeCard("지난 판에서 누른 날과 다른 날에 들어갔을 수 있어요 · ${a.rows.size}개",
+                        tone = com.bamnat.app.ui.theme.Tone.Caution, action = "확인", onAction = { TurnSlipAsk.show() },
+                        onClose = { TurnSlipAsk.fold(context) }, closeLabel = "지난 판 확인 접기",
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+                })
+            }
             shareLeftOut.forEach { (k, words) ->
                 // [RVP-43] HQ-49: a part left out is something to know, not to do now, so a row of the 알림함's 안내 (총괄 11-12).
                 // [RVG-27] S7-3: but a change turned down twice running has not reached the link at all, and the people reading it see
@@ -1393,7 +1434,7 @@ fun CalendarScreen(
             // opening window a visit; the others wait in the 알림함 as a row each, to open now with a tap (or 다시 시작 for a downloaded
             // update), else they come on a later visit.
             if (paint == null) com.bamnat.app.ui.components.AskTurn.waiting.forEach { ask ->
-                val (label, line, act) = waitingWords(ask)
+                val (label, line, act) = waitingWords(ask) ?: return@forEach
                 val go: () -> Unit = if (ask == com.bamnat.core.guide.OpenAsk.UPDATE_READY) ({ com.bamnat.app.review.InAppUpdate.restart() })
                     else ({ com.bamnat.app.ui.components.AskTurn.request(ask) })
                 add(Notice("openAsk:${ask.name}", label, line = line, action = act, onAction = go, kind = "calendar.openAsk") {
@@ -2240,6 +2281,17 @@ fun CalendarScreen(
         )
     }
 
+    if (recentChangesOpen) RecentChangesSheet(
+        calendarId = activeCalendar.id, style = settings.workStyle,
+        onOpenDay = { d ->
+            recentChangesOpen = false
+            vm.select(d)
+            goToMonth(YearMonth.from(d))
+            if (!wide) sheetOpen = true
+        },
+        onDismiss = { recentChangesOpen = false },
+    )
+
     if (showMonthPicker) {
         MonthPickerDialog(
             initial = visibleMonth,
@@ -2352,6 +2404,8 @@ internal fun CalendarHeader(
     onPushToday: () -> Unit = {},
     /** 2.0.0 [RVH-42] 검토 PC-29·30: the work's 바로 단추 on the head, as buttons of the head's row. */
     quick: List<HeadQuick> = emptyList(),
+    /** 2.0.0 [RVH-65] 검토 PC-73 최근 바꾼 기록; null while a received calendar is shown. */
+    onRecentChanges: (() -> Unit)? = null,
     onQuick: (String) -> Unit = {},
     /**
      * 2.0.0 [RVP-45] 검토 U13-01 (달력 머리 두 줄): whose calendar is on screen, at the row's start ([CalendarChip]); null keeps the head
@@ -2529,6 +2583,10 @@ internal fun CalendarHeader(
             val label = when (slot.id) {
                 CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
                 CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
+                // 2.0.0 [RVH-60] 검토 PC-127 (가게 도구 창에 '동료 근무표 받기'): the T01-11 words here too, and 근무 주기 as that work's page
+                // calls it (가게 '영업일·정기휴무', 투자 '투자 알람', 현장 '되풀이되는 일정'), also under 더 보기.
+                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style)
+                CalendarToolSlots.PATTERN -> "${style.words().pattern} 설정"
                 else -> slot.label
             }
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
@@ -2562,6 +2620,8 @@ internal fun CalendarHeader(
                     add(at, CalendarTool(if (only) "카드도 함께 보기" else "달력만 보기", Icons.Outlined.Apps, onClick = {
                         context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only, viewAsked = true) }
                     }))
+                    // 2.0.0 [RVH-65] 검토 PC-73: the days changed by hand, across months, in one place (before, a day at a time).
+                    onRecentChanges?.let { add(at, CalendarTool("최근 바꾼 기록", Icons.Outlined.History, onClick = it)) }
                     recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
                     // [RVH-42] The work's 바로 단추 the head had no room for.
                     quick.drop(quickShown).forEach { q ->
@@ -2579,6 +2639,9 @@ internal fun CalendarHeader(
     }
     }
 }
+
+/** [RVH-65] A tool tile's width for each step of 글자 크기 over 130%: at 200% a tile is 200dp or more. */
+private val TOOL_TILE_PER_SCALE = 100.dp
 
 /** 2.0.0 [RVP-45] 검토 HQ-22: the head's month is never drawn smaller than this, whatever the work's title or the room (조건 12). */
 private const val MONTH_TITLE_MIN_SP = 14f
@@ -2646,10 +2709,14 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
         Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val perRow = if (maxWidth >= 480.dp) 4 else 3
+            // 2.0.0 [RVH-65] 조건 12: with big letters a name was cut at two lines ('동료 근무표', '최근 바꾼', '오늘부터 하루' on a
+            // folded phone at 200%). Fewer tiles to a row then, each as tall as its row's longest name, never a name cut.
+            val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+            val usual = if (maxWidth >= 480.dp) 4 else 3
+            val perRow = if (scale <= 1.3f) usual else minOf(usual, (maxWidth / (TOOL_TILE_PER_SCALE * scale)).toInt().coerceAtLeast(2))
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 tools.filter { !it.away }.chunked(perRow).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { tool ->
                             val click = tool.onClick
                             Surface(
@@ -2657,7 +2724,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).heightIn(min = 84.dp)
+                                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 84.dp)
                                     .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
@@ -2666,7 +2733,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
-                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
                                     if (click == null && tool.note != null) {
                                         Text(tool.note, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
@@ -3485,7 +3552,7 @@ private val FIRST_DAY_WAITS = setOf(
 private const val START_NOTICE = "startCard"
 
 /** [RVP-43] U13b-02: how the 알림함 names an opening window that waits its turn: title, line, what a tap does. */
-private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, String, String> = when (ask) {
+private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, String, String>? = when (ask) {
     com.bamnat.core.guide.OpenAsk.NEW_CONSENT -> Triple("새 기능 동의", "새로 생긴 기능을 쓰려면 동의가 필요해요", "보기")
     com.bamnat.core.guide.OpenAsk.TRIAL_CONSENT -> Triple("체험 끝", "체험이 곧 끝나요. 계속 쓸지 골라 주세요", "고르기")
     com.bamnat.core.guide.OpenAsk.WHATS_NEW -> Triple("새로 생긴 것", "업데이트로 새로 생긴 것이 있어요", "보기")
@@ -3494,4 +3561,6 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     com.bamnat.core.guide.OpenAsk.THEME_UPDATE -> Triple("테마 새 판", "입은 테마에 새 판이 나왔어요", "보기")
     com.bamnat.core.guide.OpenAsk.TEXT_SIZE -> Triple("글자 크기", "읽기 편한 글자 크기를 골라 보세요", "고르기")
     com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS -> Triple("고마워요", "정식 출시 전부터 함께해 주셔서 고마워요", "보기")
+    // 2.0.0 [RVH-61] The Play 별점 창 is never a row to tap (Play asks apps not to prompt for it): it just waits for a later visit.
+    com.bamnat.core.guide.OpenAsk.REVIEW -> null
 }
