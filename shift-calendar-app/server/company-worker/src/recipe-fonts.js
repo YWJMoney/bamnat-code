@@ -242,7 +242,16 @@ async function rfPost(d, env, request) {
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
   if (!FONT_LICENSES.includes(body.license)) return d.json({ error: "license", field: "license" }, 400);
-  const bytes = typeof body.ttf === "string" ? rfBytes(body.ttf) : null;
+  // 2.0.0 [RVQ-27] 검토 SVC-63: the phone's, network's and whole day's 몫 and Play Integrity before the 8 MB is unpacked, checked and
+  // hashed (it was all done first, so a flood cost the CPU however it ended).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  const net = await d.network(request, env, now);
+  const hit = await d.overLimit(env, now, [["device", `rfont|${dev}`, FONT_LIMITS.perDay, DAY],
+    ["network", `rfontnet|${net.day}`, FONT_LIMITS.perNetworkDay, DAY], ["network", `rfontall|${Math.floor(now / DAY)}`, FONT_LIMITS.allDay, DAY]]);
+  if (hit) return hit;
+  if (typeof body.ttf !== "string") return d.json({ error: "font", field: "ttf" }, 400);
+  if (body.ttf.length > Math.ceil(FONT_LIMITS.bytes * 4 / 3) + 8) return d.json({ error: "too_big", field: "ttf" }, 413);
+  const bytes = rfBytes(body.ttf);
   if (!bytes || !looksLikeFont(bytes)) return d.json({ error: "font", field: "ttf" }, 400);
   if (bytes.length > FONT_LIMITS.bytes) return d.json({ error: "too_big", field: "ttf" }, 413);
   // 1.36 [SEC-10] H3: a file that only begins like a font never reaches another phone's font engine.
@@ -254,12 +263,7 @@ async function rfPost(d, env, request) {
   // 1.36 [SEC-10] M7: a font its own words say a foundry sells is not shared, whatever the sender chose.
   const info = fontInfo(bytes);
   if (fontSold(info)) return d.json({ error: "sold", field: "license" }, 400);
-  // 1.36 Play Integrity (공통 보안 PR): a font others will get comes from the app from Play, when the server asks for it.
-  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
-  const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `rfont|${dev}`, FONT_LIMITS.perDay, DAY],
-    ["network", `rfontnet|${net.day}`, FONT_LIMITS.perNetworkDay, DAY], ["network", `rfontall|${Math.floor(now / DAY)}`, FONT_LIMITS.allDay, DAY]]);
-  if (hit) return hit;
+  // 1.36 Play Integrity (공통 보안 PR): a font others will get comes from the app from Play, when the server asks for it (above, 2.0.0).
   // 1.36 [SEC-10] H3·M7·M8: others get it after the operator looked, always. The words of its name table are the sender's to
   // write, so they only help the operator (beside the font already shared that draws the same, fontAdmin).
   const state = "pending";
@@ -348,7 +352,7 @@ export async function fontRoute(d, request, env, path) {
 }
 
 /** 운영자: 나눈 글꼴 (신고로 내려간 것 먼저), 다시 올리기·내리기. */
-export async function fontAdmin(d, request, env, path, url, now) {
+export async function fontAdmin(d, request, env, path, url, now, actor = "") {
   const method = request.method;
   if (path === "/recipes/fonts" && method === "GET") {
     const state = ["pending", "reported", "hidden", "ok"].includes(url.searchParams.get("state")) ? url.searchParams.get("state") : "pending";
@@ -369,9 +373,15 @@ export async function fontAdmin(d, request, env, path, url, now) {
   const m = path.match(/^\/recipes\/fonts\/(u[0-9a-f]{16})\/(ok|hide)$/);
   if (m && method === "POST") {
     const state = m[2] === "ok" ? "ok" : "hidden";
+    let note = "";
+    try { const b = await d.readJson(request, 2048); note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : ""; } catch { /* no body */ }
+    const was = await d.one(env, "SELECT state, reports FROM recipe_fonts WHERE id = ?", m[1]);
     await d.batch(env, [
       d.stmt(env, "UPDATE recipe_fonts SET state = ?, decided_at = ?, reports = CASE WHEN ? = 'ok' THEN 0 ELSE reports END WHERE id = ?", state, now, state, m[1]),
       ...(state === "ok" ? [d.stmt(env, "DELETE FROM recipe_font_reports WHERE id = ?", m[1])] : []),
+      // 2.0.0 [RVQ-27] 검토 SVC-61: in the 운영 조치 기록 with who and why.
+      d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at, target) VALUES (?, ?, ?, ?, ?, 'font')", m[1], state === "ok" ? "font-ok" : "font-hide",
+        (note || (was ? `${was.state}${was.reports ? ` · 신고 ${was.reports}` : ""}` : "")).slice(0, 200), actor, now),
     ]);
     return d.json({ id: m[1], state });
   }

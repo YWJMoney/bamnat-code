@@ -2272,6 +2272,35 @@ test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback v
 });
 
 // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 정기 작업이 잰 공유 서버 KV 오늘 쓰기·읽기가 요금제 줄에 하루 몫의 %로, 80%를 넘으면 주의 색으로.
+test("[RVQ-26] SVC-52 장터 › 다시 올라온 것: 줄에 볼 일 둘(괜찮아요·다시 돌려주기), 가리기와 나머지는 ⋯ 안", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const body = (summary) => ({ format: "bamnat-recipe", v: 1, title: "봄꽃 교대 달력", summary, styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] });
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe: body("주간은 분홍"), scope: "public" }, from(1))).data.code;
+  const u = await asOwner(env, t);
+  await u.api("POST", `/api/admin/recipes/${code}/return`, { note: "연락처를 빼 주세요" });
+  t.mock.timers.tick(60e3);
+  await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: body("연락처를 뺐어요. 주간은 분홍") }, from(1));
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="again"]');
+  await u.idle();
+  const side = u.$("#main .recipe-rows .row-side");
+  assert.ok(side, "다시 올라온 작품 한 줄");
+  const shown = [...side.children].filter((e) => e.matches("button")).map((b) => b.textContent.trim());
+  assert.deepEqual(shown, ["괜찮아요", "다시 돌려주기"]);
+  // [RVA-35] 조건 2: 줄마다 채운 단추가 서면 목록 전체가 채운 단추 줄이 돼요. 줄 안 단추는 테두리예요.
+  assert.equal(u.window.document.querySelectorAll("#main .recipe-rows .btn.primary").length, 0, "줄 안 단추는 테두리");
+  const menu = [...side.querySelectorAll(".row-more .menu button")].map((b) => b.textContent.trim());
+  assert.equal(menu[0], "가리기");
+  assert.ok(menu.includes("지난 판 지우기") && menu.includes("지우기"), menu.join(","));
+  side.querySelector('[data-key="approve"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT state FROM recipes WHERE code = ?").get(code).state, "visible");
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVQ-24] 서버 상태 shows the share server's KV writes and reads for today against the plan's day", async () => {
   const s = await world();
   const t = await signedIn(s.env);
@@ -2922,7 +2951,9 @@ test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기
   assert.match(css, /\.actions\.start details\.row-more>\.menu\{left:0;right:auto\}/);
   assert.match(css, /@media \(max-width:599\.98px\)\{\s*\.queue-bar\{position:fixed;top:auto/);
   assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
-  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:grid/);
+  // [RVQ-47] 검토 HQ-88: 840~1023은 두 칸을 나란히(격자 대신 감기는 줄: 글자 200%면 칸 폭이 모자라 위아래로).
+  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.cols>:first-child\{flex:1\.6 1 18rem\}/);
 });
 
 test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤 상자 안, 숨긴 이름표도 그 상자를 기준으로", async (t) => {
@@ -3504,4 +3535,14 @@ test("[RVA-58] 개발사항이 저장소 계획 줄뿐이면 '지금'은 빈 화
   assert.equal(u.window.document.querySelectorAll("#main .dev-rows > li").length, 2);
   assert.match(u.text("#main .dev-rows"), /요금 정할 것/);
   assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 제목 + 알약 여럿인 머리와 두 칸 화면이 글자 200%의 840·1440에서 한 자씩 서지 않아요.
+test("[RVQ-47] 검토 HQ-88 큰 글자: 머리의 제목은 16rem을 지키고 알약 묶음은 함께 감기며, 두 칸은 칸 폭이 모자라면 위아래로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.card-head>:is\(h2,h3\)\{flex:1 1 16rem;min-width:0/);
+  assert.match(css, /\.head-pills\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /@media \(min-width:1024px\)\{\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
+  assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
 });

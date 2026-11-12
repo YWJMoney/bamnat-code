@@ -1,11 +1,11 @@
-import { all, audit, batch, can, deviceHash, deviceId, iso, json, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
+import { all, audit, batch, can, deviceHash, deviceId, iso, json, network, networkCheck, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
 import { pushReady } from "./push.js";
 import { DAY, HOUR } from "./units.js";
 import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } from "./money.js";
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
 import { compareVersions, inboxAnswer, titleFrom, version } from "./inbox.js";
 import { askOwner } from "./ledger.js";
-import { DESK, isOut, markTold, resumeShip, shipNow, shippedVersion, shipText } from "./desk.js";
+import { DESK, broadcastRisk, isOut, markTold, resumeShip, shipNow, shippedVersion, shipText } from "./desk.js";
 import { versionHealth } from "./release-desk.js";
 import { flagStore, serverEval } from "./flags.js";
 import { kstDay } from "./usage.js";
@@ -50,6 +50,8 @@ export const LOOP = {
   knownTitle: 60,
   /** 한 폰이 하루에 누를 수 있는 '나도 겪어요'. */
   knownPerDay: 10,
+  /** 2.0.0 [RVQ-31] 검토 SVC-27: 한 네트워크가 하루에 누를 수 있는 '나도 겪어요'(가족·회사 와이파이를 생각해 폰 셋쯤). */
+  knownPerNetworkDay: 30,
   /** 믿을수록 더 맡기기: 한 종류에서 연속으로 손대지 않고 나간 Claude 답이 이만큼이면 '바로 보내기'를 제안해요. */
   streak: 20,
   /** 요금: 사람(최고 관리자)만 정해요. later = 더 논의. */
@@ -91,6 +93,9 @@ export const LOOP_SCHEMA = [
 ];
 
 export const LOOP_COLUMNS = [
+  // 2.0.0 [RVQ-31] 검토 SVC-27: '나도 겪어요'로 묶인 줄의 무리(무작위 이름). 그 개발사항에 그날 처음 누른 네트워크만 새 무리, 같은 네트워크의 다음 것은
+  // 'x'(세지 않음). 네트워크 해시는 줄에 남기지 않고 하루짜리 한도 칸으로만 봐요. 문의로 묶인 줄은 ''(문의 하나가 한 표).
+  "ALTER TABLE dev_links ADD COLUMN cluster TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN track TEXT NOT NULL DEFAULT ''",
   // PC 1.39 G10 확인 제안: 알려진 문제가 보일 근무 유형(빈칸 = 모두). 앱 WorkStyle 이름을 쉼표로.
   "ALTER TABLE dev_items ADD COLUMN styles TEXT NOT NULL DEFAULT ''",
@@ -305,7 +310,8 @@ export async function shipTick(env, now = Date.now(), answer) {
   if (!(await loopSwitches(env)).autoShip) return [];
   const rows = await all(env, "SELECT * FROM loop_ships WHERE status = 'waiting' AND until <= ?", now).catch(() => []);
   const out = [];
-  for (const r of rows) out.push(await sendShip(env, r.version, now, answer ?? autoReply, "자동"));
+  // 2.0.0 [RVQ-28] 열쇠로 요청한 판은 그 이름(예: 'Claude 요청')으로 남아요.
+  for (const r of rows) out.push(await sendShip(env, r.version, now, answer ?? autoReply, r.by || "자동"));
   return out;
 }
 
@@ -432,6 +438,13 @@ export async function fixedAnswer(request, env, row, now) {
 
 // ---- [LOOP-17] 알려진 문제판 ----
 
+/**
+ * 2.0.0 [RVQ-31] 검토 SVC-27: 개발사항에 묶인 목소리 수(SQL, 개발사항 별칭 d). 문의는 하나가 한 표, '나도 겪어요'는 서로 다른 네트워크마다 한 표
+ * (설치 번호만 바꿔 누른 것은 늘지 않아요). 알려진 문제판에 보일지와 개발 대기열 점수가 이것으로 정해져요.
+ */
+export const VOICES_SQL = `((SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id AND l.cluster = '')
+  + (SELECT COUNT(DISTINCT l.cluster) FROM dev_links l WHERE l.item_id = d.id AND l.cluster NOT IN ('', 'x')))`;
+
 const knownCache = new WeakMap();
 
 /** 앱 문의 화면 위 '지금 알려진 문제': 공개 제목이 있는 개발사항 중 여럿이 겪는 것, 고친 뒤 14일까지. */
@@ -440,7 +453,7 @@ export async function knownList(env, dev, now) {
   if (!base || base.until <= now) {
     const shipped = await shippedVersion(env);
     const rows = await all(env, `SELECT d.id, d.public_title, d.status, d.released_in, d.live_at, d.known, d.updated_at, d.styles,
-        (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
+        ${VOICES_SQL} AS asks,
         (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same
       FROM dev_items d WHERE d.deleted_at IS NULL AND d.public_title != '' AND d.known >= 0 AND d.status IN ('todo', 'doing', 'done')
       ORDER BY d.updated_at DESC LIMIT 200`).catch(() => []);
@@ -471,8 +484,13 @@ export async function knownMe(request, env, dev, id, now) {
   if (body.on === false) {
     if (had) await batch(env, forgetInquiries(env, "id = ?", had.id));
   } else if (!had) {
-    const hit = await overLimit(env, now, [["device", `known|${dev}`, LOOP.knownPerDay, DAY]]);
+    // 2.0.0 [RVQ-31] 검토 SVC-27: 폰 하루 한도에 네트워크 하루 한도와 새 설치 한도를 더해요.
+    const net = await network(request, env, now);
+    const hit = await overLimit(env, now, [["device", `known|${dev}`, LOOP.knownPerDay, DAY], ["network", `knownnet|${net.day}`, LOOP.knownPerNetworkDay, DAY],
+      ...(await networkCheck(env, dev, net, "known", LOOP.knownPerNetworkDay, now))]);
     if (hit) return hit;
+    // 같은 네트워크는 그날 그 개발사항에 한 표: 처음이면 새 무리, 아니면 'x'. 누른 분은 다른 분과 똑같이 고친 판 안내를 받아요.
+    const cluster = (await overLimit(env, now, [["network", `knownvote|${id}|${net.day}`, 1, DAY]])) ? "x" : `c${crypto.getRandomValues(new Uint8Array(8)).reduce((s, b) => s + b.toString(16).padStart(2, "0"), "")}`;
     const app = typeof body.app === "string" && /^[0-9. ()]{1,24}$/.test(body.app) ? body.app : undefined;
     const qid = crypto.getRandomValues(new Uint8Array(22)).reduce((s, b) => s + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[b % 62], "");
     const fixed = d.status === "done" && (d.live_at || d.released_in);
@@ -484,7 +502,7 @@ export async function knownMe(request, env, dev, id, now) {
         qid, dev, JSON.stringify(app ? { app } : {}), now, now),
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", qid, `[알려진 문제] ${d.public_title}`, now),
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, '자동 정리', ?)", qid, reply, now + 1),
-      stmt(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, '알려진 문제판', ?)", id, qid, now),
+      stmt(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at, cluster) VALUES (?, ?, '알려진 문제판', ?, ?)", id, qid, now, cluster),
       devEvent(loopActor(env, "알려진 문제판"), id, now, "me_too", { inquiry: qid }),
     ]);
     if (fixed) await markTold(env, id, [qid], now);
@@ -517,7 +535,7 @@ export async function updatePolicy(env) {
 
 // ---- [LOOP-08] 영향도 점수 ----
 
-/** 개발사항 하나의 점수: 묶인 문의 3, 나도 겪어요·같아요 1, 급함 5, 걸린 판 1, 고친 뒤 다시 생김 6. */
+/** 개발사항 하나의 점수: 묶인 문의 3, 나도 겪어요·같아요 1, 급함 5, 걸린 판 1, 고친 뒤 다시 생김 6. [RVQ-31] asks는 목소리 수(VOICES_SQL)예요. */
 export function impact(d) {
   return (d.asks ?? 0) * 3 + (d.same ?? 0) + (d.urgent ?? 0) * 5 + (d.versions ?? 0) + (d.again ?? 0) * 6;
 }
@@ -525,7 +543,7 @@ export function impact(d) {
 /** Claude가 한 바퀴에 가져갈 순서: 끝나지 않은 개발사항을 점수 순으로. */
 export async function devQueue(env, limit = 60) {
   const rows = await all(env, `SELECT d.id, d.title, d.status, d.track, d.size, d.route, d.tier, d.basis, d.origin, d.handed_at, d.created_at, d.updated_at,
-      (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
+      ${VOICES_SQL} AS asks, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS linked,
       (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same,
       (SELECT COUNT(DISTINCT json_extract(i.info, '$.app')) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND json_valid(i.info)) AS versions,
       (SELECT COUNT(*) FROM dev_history h WHERE h.item_id = d.id AND h.action = 'fixed_no') AS again,
@@ -537,7 +555,7 @@ export async function devQueue(env, limit = 60) {
   return rows.map((d) => {
     const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
     const x = { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status], track: d.track, size: d.size, route: d.route, tier: d.tier,
-      handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at),
+      handed: Boolean(d.handed_at), asks: d.asks, linked: d.linked, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at),
       first: d.origin === "admin", basis: basisOf(d).key };
     return { ...x, score: impact(x) };
   // [LOOP-36] 사용자가 직접 넣은 것이 늘 먼저(점수와 상관없이), 그 안에서는 점수 순.
@@ -570,9 +588,9 @@ export async function syncDev(request, env, now, answer) {
     }
   }
   const summary = { made: results.filter((r) => r.made).length, changed: results.filter((r) => r.changed).length, told: results.reduce((n, r) => n + (r.told ?? 0), 0),
-    errors: results.filter((r) => r.error).length };
+    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length };
   await run(env, "INSERT INTO loop_syncs (at, sha, version, pr, n, result) VALUES (?, ?, ?, ?, ?, ?)", now, sha, ver ?? "", pr, items.length, JSON.stringify(summary));
-  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}`);
+  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}`);
   const live = await liveTick(env, now, answer);
   return json({ ...summary, live: live.live, results });
 }
@@ -632,8 +650,13 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   if (status === "rejected") upd.reason = x.reason || "저장소에서 반려";
   const route = row.route;
   if (status === "done" && ["app", "hotfix", ""].includes(route) && ver && ver !== row.released_in) upd.releasedIn = ver;
-  if (x.news !== undefined) upd.news = x.news || null;
-  if (x.shipReply !== undefined) upd.shipReply = x.shipReply || null;
+  // 2.0.0 [RVQ-28] 검토 SVC-10: 글 검사에 걸린 공지 한 줄·출시 답은 그 칸만 빼고(상태·판은 그대로 반영) 결과에 적어요.
+  const held = [];
+  for (const k of ["news", "shipReply"]) {
+    if (x[k] === undefined) continue;
+    if (x[k] && broadcastRisk(x[k])) held.push(k);
+    else upd[k] = x[k] || null;
+  }
   let changed = made || fields.length > 0;
   if (Object.keys(upd).length) {
     const r = await devUpdate(env, row, upd, now);
@@ -649,7 +672,7 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
       told = await tellLater(env, row, route, now, answer);
     }
   }
-  return { id: row.id, track: row.track, made, changed, told };
+  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}) };
 }
 
 /** 출시 전 답(DESK.later를 담아 판이 나갈 때 다시 알림): 기다리는 문의에만, 다음 정기 출발일과 함께. */
@@ -1005,7 +1028,7 @@ export async function instantOk(env, pile, kind, text) {
   if (!pile) return false;
   const sw = await loopSwitches(env);
   if (!sw.instant.includes(pile)) return false;
-  if (kind === "company" || BILLING_RECORD.test(String(text ?? ""))) return false;
+  if (kind === "company" || kind === "billing" || BILLING_RECORD.test(String(text ?? ""))) return false;
   return true;
 }
 

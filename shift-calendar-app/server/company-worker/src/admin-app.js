@@ -344,9 +344,9 @@ function adminApp(L, BUILD, M) {
     rejected: "보내 주신 의견을 꼼꼼히 살펴봤어요. 아쉽지만 지금은 넣기 어려워요. 같은 의견이 더 모이면 다시 볼게요.",
     doing: "말씀해 주신 내용을 지금 만들고 있어요. 업데이트되면 다시 알려 드릴게요.",
   };
-  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
+  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기", studio: "스튜디오 부탁", billing: "결제·환불" };
   // [J133-40] 순번 720: the kind as the sender picked it in the app (InquiryKind), said beside the admin's name for it.
-  const APP_KIND_NAMES = { question: "궁금해요", bug: "앱이 이상해요", idea: "건의·제안", company: "회사 방식 알려 주기", other: "그 밖의 이야기" };
+  const APP_KIND_NAMES = { question: "궁금해요", bug: "앱이 이상해요", idea: "건의·제안", company: "회사 방식 알려 주기", other: "그 밖의 이야기", studio: "원하는 꾸미기 부탁", billing: "결제·환불" };
   // [J133-40] "접수됨으로", "답변 완료로": 로 after a vowel or ㄹ, 으로 after another final consonant; (으)로 for anything else.
   const roSuffix = (w) => {
     const c = String(w ?? "").trim().slice(-1).charCodeAt(0);
@@ -736,7 +736,12 @@ function adminApp(L, BUILD, M) {
     const form = S.submitting?.isConnected ? S.submitting : dialog.open ? dialog.querySelector("form") : null;
     const field = e.data?.field;
     const box = field && form ? form.querySelector(`[name="${CSS.escape(field)}"]`) : null;
-    if (box) fieldError(box, text, false);
+    // 2.0.0 [RVQ-29] 좁은 폭·큰 글자에서는 창이 길어 그 칸과 이유가 아래로 가려졌어요: 칸과 그 아래 이유가 함께 보이게 굴려요(초점은 그대로).
+    if (box) {
+      fieldError(box, text, false);
+      box.scrollIntoView?.({ block: "nearest" });
+      document.getElementById(`${box.id || box.name}-error`)?.scrollIntoView?.({ block: "nearest" });
+    }
     if (!e.quiet) toast(text);
   }
 
@@ -5860,9 +5865,10 @@ function adminApp(L, BUILD, M) {
       danger({ title: "이 사진을 가릴까요?", text: "이 사진을 쓴 작품에서 사진이 빠지고, 올린 분의 신고 누적 1번으로 세요. 다시 보이게 해도 그 1번은 남아요.", label: "가리기", run: go });
     },
     "recipe-maker": async ({ id, key }) => {
-      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
+      const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요. 만든 분 알림에도 가요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
       // 1.36 PC 사용성 P13: 닫기는 확인을 받고, 닫기·가리기는 8초 되돌리기 (같은 자리 단추를 두 번 눌러 도로 닫히던 것).
-      const back = { close: "open", "bio-hide": "bio-show" }[key];
+      const was = (S.data.recipes?.items ?? []).find((m) => m.maker === id);
+      const back = was?.bioChecking ? null : { close: "open", "bio-hide": "bio-show" }[key];
       const go = async () => {
         await act(() => api(`/recipes/makers/${id}/${key}`, "POST", {}), said,
           back ? async () => { await act(() => api(`/recipes/makers/${id}/${back}`, "POST", {}), "되돌렸어요"); load(); } : undefined);
@@ -5870,6 +5876,14 @@ function adminApp(L, BUILD, M) {
       };
       if (key === "close") confirmBox("이 프로필을 닫을까요?", "다른 분은 이 프로필을 볼 수도 팔로우할 수도 없게 돼요. 작품은 장터에 남고, 본인에게는 닫혔다고 보여요. 신고 누적 1번으로 세요.", "닫기", go);
       else await go();
+    },
+    // 2.0.0 [RVQ-27] 검토 SVC-59: 후보 셋을 그대로 이달의 제작자로.
+    "recipe-month-take": async ({ key }) => {
+      const makers = (S.data.recipes?.candidates?.[key] ?? []).map((c) => c.maker);
+      if (!makers.length) return;
+      await act(() => api("/recipes/makers/month", "POST", { style: key, makers }), `${makers.length}명 골랐어요`,
+        async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });
+      load();
     },
     "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
@@ -5893,7 +5907,7 @@ function adminApp(L, BUILD, M) {
       const back = { hide: () => run("show"), official: () => run("official", { on: false }), unofficial: () => run("official", { on: true }) }[key];
       const go = async () => {
         await act(() => (key === "unofficial" ? run("official", { on: false }) : run(key)),
-          { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요", unofficial: "공식 표시를 뺐어요" }[key] ?? "했어요",
+          { approve: (S.recipeTab ?? "") === "again" ? "봤어요. 목록에서 뺐어요" : "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요", unofficial: "공식 표시를 뺐어요" }[key] ?? "했어요",
           back ? async () => { await act(back, "되돌렸어요"); load(); } : undefined);
         load();
       };
@@ -5909,6 +5923,11 @@ function adminApp(L, BUILD, M) {
         async () => { await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key !== "on" }), "되돌렸어요"); load(); });
       load();
     },
+    // 2.0.0 [RVQ-26] 검토 SVC-23: 지금 판만 남기고 지난 판을 서버에서 지워요(만든 분 말고는 2.0.0부터 아무도 열 수 없어요).
+    "recipe-past": ({ id, key }) => confirmBox("지난 판을 지울까요?", `지금 보이는 ${Number(key) || ""}판만 남기고 그 전 판의 본문을 서버에서 지워요. 되돌릴 수 없어요. 이미 넣은 분들의 휴대폰은 그대로예요.`, "지난 판 지우기", async () => {
+      await act(() => api(`/recipes/${id}/past`, "POST", {}), (r) => `지난 판 ${r?.dropped ?? 0}개를 지웠어요`);
+      load();
+    }),
     "recipe-delete": ({ id }) => confirmBox("이 레시피를 지울까요?", "모든 판과 이야기가 지워지고 되돌릴 수 없어요. 이미 넣은 분들의 달력은 그대로예요.", "지우기", async () => {
       await act(() => api(`/recipes/${id}/delete`, "POST", {}), "지웠어요");
       load();
@@ -6211,7 +6230,7 @@ function adminApp(L, BUILD, M) {
     // [PRF-10]
     "recipe-month": async (form) => {
       const makers = String(new FormData(form).get("makers") ?? "").toLowerCase().split(/[\s,]+/).filter(Boolean);
-      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 저절로 보여요");
+      await act(() => api("/recipes/makers/month", "POST", { style: form.dataset.key, makers }), makers.length ? `${makers.length}명 골랐어요` : "비웠어요. 이 유형은 이달의 제작자가 안 보여요");
       load();
     },
     // 1.36 [MKS-01] 출시 대기 묶음: 지금 공개, 예약, 예약 풀기.

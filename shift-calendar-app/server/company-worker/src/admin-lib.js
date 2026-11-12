@@ -10,6 +10,13 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // 2.0.0 [RVQ-28] 검토 SVC-10: 판이 나갈 때 사람 확인 없이 나가는 글(공지 한 줄·출시 답), 열쇠로 저장하려던 판.
+    // 2.0.0 [RVQ-29] 검토 SVC-17: 스튜디오 요구를 장터 요청 판에 올리는 제목(요청 판 글과 같은 거름).
+    link: "링크·주소는 적을 수 없어요",
+    chat: "단톡방·오픈 채팅 안내는 적을 수 없어요",
+    title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
+    notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
+    version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
     // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
     cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
     state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",
@@ -1392,7 +1399,7 @@ export function adminLib() {
     pro_share_claim: "프로 나눔 받음", link_guess: "친구 초대 링크 추측 막음", old_pay_cut: "옛 결제 정리", release_start: "출시 점검표 시작",
     release_step: "출시 점검표 단계", review_reply: "스토어 리뷰에 답함", review_draft: "스토어 리뷰 답 초안",
     material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김",
-    sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
+    sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", ops_key_ship: "운영 열쇠로 나간 판 저장(10분 보류)", need_ready: "꾸미기 부탁 올리기 전 확인에 옴", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
     // 2.0.0 갈래 Q1 #478의 보관 장부(keep.js): 백업 되살려 보기와 개인정보 요청 처리.
     backup_drill: "백업 되살려 보기(저절로)", backup_drill_run: "백업 되살려 보기 지금 함", data_request_run: "개인정보 요청 처리함",
   };

@@ -64,7 +64,7 @@ export const VIEWS = { today: "오늘 할 것", claude: "Claude 차례", owner: 
   open: "열린 것 모두", closed: "닫힘", all: "모두" };
 
 /** 줄의 종류(할 일함 종류에 장부만의 이름을 얹어요). 문의는 kind로 더 나눠요. */
-const LINE_KINDS = { bug: "문제", question: "질문", idea: "제안", company: "회사 방식", other: "기타", studio: "스튜디오 요구" };
+const LINE_KINDS = { bug: "문제", question: "질문", idea: "제안", company: "회사 방식", other: "기타", studio: "스튜디오 요구", billing: "결제·환불" };
 export const LEDGER_TYPES = { ...WORK_TYPES, store_review: "스토어 리뷰", market_broken: "깨진 작품" };
 /** 2.0.0 [RVA-50] 검토 U23-14·I23b-03: 스토어 리뷰도 '문의·요구' 묶음의 한 줄이에요. */
 const LEDGER_GROUPS = { ...WORK_GROUPS, ask: [...WORK_GROUPS.ask, "store_review"], report: [...WORK_GROUPS.report, "market_broken"] };
@@ -80,6 +80,8 @@ export function replyRisk(text) {
 /** 문의 하나가 최고 관리자 확인이 필요한지: { key, name } 또는 null. 회사 방식은 회사 이름이 나와서 늘 물어요. */
 export function askOwner(kind, text) {
   if (kind === "company") return { key: "company", name: "회사 방식 공개" };
+  // 2.0.0 [RVQ-30] 앱의 '결제·환불'로 보낸 문의는 글과 상관없이 사람이 먼저 봐요.
+  if (kind === "billing") return { key: "money", name: "환불·결제·보상" };
   return askOwnerOf(text);
 }
 

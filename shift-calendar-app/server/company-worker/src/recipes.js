@@ -1720,6 +1720,11 @@ async function recipeList(d, env, url) {
  */
 export const RETIRED = "retired";
 const openable = (r) => r.state === "visible" || (r.state === "hidden" && r.hidden_reason === RETIRED);
+/**
+ * 2.0.0 [RVQ-26] 검토 SVC-51: whether [dev] may open [r] at all, as `show` decides: its maker always (but a deleted one), anyone else
+ * one that is up (or retired) and not 나만 보기. Votes, reports and talk ask the same, so a 나만 보기 work's code alone opens nothing.
+ */
+const canOpen = (r, dev) => Boolean(r && r.state !== "deleted" && (r.owner === dev || (openable(r) && r.scope !== "private")));
 
 /** GET /api/recipes/:code — the recipe for anyone with its code (link-only too), its own for the maker whatever its state. */
 async function show(d, env, request, code, url) {
@@ -1729,7 +1734,9 @@ async function show(d, env, request, code, url) {
   if (!r || r.state === "deleted" || (!mine && (!openable(r) || r.scope === "private"))) return d.json({ error: "not_found" }, 404);
   const ver = Number(url.searchParams.get("v"));
   let version = { version: r.version, hash: r.hash, body: r.body };
-  if (Number.isInteger(ver) && ver > 0 && ver !== r.version) {
+  // 2.0.0 [RVQ-26] 검토 SVC-23: a past 판 opens for its maker only. Anyone else asking ?v= for one gets the 판 up now (an app asks only for
+  // the newest, and keeps the 판 it put in on the phone for 3-way 반영 and 이전 판으로), so what the maker fixed stays fixed.
+  if (mine && Number.isInteger(ver) && ver > 0 && ver !== r.version) {
     const old = await d.one(env, "SELECT version, hash, body FROM recipe_versions WHERE code = ? AND version = ?", code, ver);
     if (old) version = old;
   }
@@ -1761,6 +1768,45 @@ function readScope(v) {
   return ["public", "link", "private"].includes(v) ? v : "public";
 }
 
+/**
+ * 2.0.0 [RVQ-26] 검토 SVC-51: another maker's work with a name that looks the same — only one others can find (public, up or waiting),
+ * or the operator's whatever its scope. A 나만 보기·링크로만 work is never compared (a plain name was blocked for no reason the maker could
+ * see, and a name could be held in private), and only a work open to everyone gives its code back (a link-only one's leaked).
+ */
+async function sameName(d, env, skel, dev, code = "") {
+  return d.one(env, `SELECT code, scope, state FROM recipes WHERE title_skel = ? AND owner != ? AND code != ? AND state IN ('visible', 'pending', 'waiting')
+    AND (scope = 'public' OR owner = 'operator') LIMIT 1`, skel, dev, code);
+}
+
+const nameLike = (d, same) => d.json({ error: "name_like", field: "title", ...(same.scope === "public" && same.state === "visible" ? { code: same.code } : {}) }, 409);
+
+/**
+ * 2.0.0 [RVQ-26] 검토 SVC-15: what a work others can see passes, the same for a first 판 (publish) and a 새 판 (newVersion), so a plain
+ * name put up and then changed to a popular work's, a maker who may not write, or one past their network's day cannot go round it by
+ * 새 판: 말 못 하기, 신고 누적 쓰기 제한, 네트워크 하루 몫, Play Integrity, 기능 작품의 프로, 비슷한 이름. [code] is the work's own on a 새 판
+ * (its own name is never 'like' itself). A 나만 보기 판 is the maker's alone: only 말 못 하기 on a first 판, as before. Returns a Response
+ * to send back, or null.
+ */
+async function sharedGate(d, env, request, dev, clean, scope, now, code = null) {
+  const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
+  if (muted && (scope !== "private" || !code)) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
+  if (scope === "private" && code) return null;
+  const net = await d.network(request, env, now);
+  const hit = (await writeLimitHit(d, env, dev, "recipe", now))
+    ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
+  if (hit) return hit;
+  // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
+  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  // 1.39 [FX-17] A 기능 작품 others can see needs its maker's 프로 (the app asks first; this is the same line on the server).
+  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
+  // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
+  if (scope === "public") {
+    const same = await sameName(d, env, nameSkeleton(clean.recipe.title), dev, code ?? "");
+    if (same) return nameLike(d, same);
+  }
+  return null;
+}
+
 /** POST /api/recipes — a new recipe (RCP-29); its first public ones wait for the operator (D108). */
 async function publish(d, env, request) {
   if (await d.paused(env, "PLAZA_WRITE")) return d.json({ error: "paused" }, 503);
@@ -1769,8 +1815,6 @@ async function publish(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
-  const muted = await d.one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", dev, now);
-  if (muted) return d.json({ error: "muted", until: new Date(muted.until).toISOString() }, 403);
   let clean;
   try {
     clean = await cleanRecipe(body.recipe);
@@ -1779,22 +1823,13 @@ async function publish(d, env, request) {
     throw e;
   }
   const trust = await recipeTrust(d, env, dev, now);
-  const net = await d.network(request, env, now);
-  const hit = (await writeLimitHit(d, env, dev, "recipe", now))
-    ?? (await d.overLimit(env, now, await d.networkCheck(env, dev, net, "recipe", RECIPE_LIMITS.perNetworkDay, now)));
-  if (hit) return hit;
   const scope = readScope(body.scope);
   // 1.39 [PAYP-08] What others can read carries no company pay part.
   if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
-  // 1.36 [SEC-11] Play Integrity before a write others see; a 나만 보기 recipe is the maker's own (off until INTEGRITY_MODE is set).
-  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
-  // 1.39 [FX-17] A 기능 작품 others can see needs its maker's 프로 (the app asks first; this is the same line on the server).
-  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
+  const gate = await sharedGate(d, env, request, dev, clean, scope, now);
+  if (gate) return gate;
   const r = clean.recipe;
   const skel = nameSkeleton(r.title);
-  // 사칭 (S4): someone else's recipe with a name that looks the same is refused; the maker's own may share it.
-  const same = await d.one(env, "SELECT code FROM recipes WHERE title_skel = ? AND owner != ? AND state IN ('visible', 'pending') LIMIT 1", skel, dev);
-  if (same && scope === "public") return d.json({ error: "name_like", field: "title", code: same.code }, 409);
   if (r.parent && !(await d.one(env, `SELECT 1 AS ok FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, r.parent))) {
     return d.json({ error: "parent", field: "parent" }, 400);
   }
@@ -1840,21 +1875,26 @@ async function newVersion(d, env, request, code) {
   const scope = body.scope === undefined ? r.scope : readScope(body.scope);
   // 1.39 [PAYP-08]
   if (scope !== "private") Object.assign(clean, await sharedOnly(clean));
-  // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
-  if (scope === "public") { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
-  // 1.39 [FX-17]
-  if (scope !== "private" && d.hasPro && fxPartsOf(clean.text).length && !(await d.hasPro(env, dev, now))) return d.json({ error: "fx_pro", field: "recipe" }, 403);
-  const trust = await recipeTrust(d, env, dev, now);
-  // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden.
-  const state = r.state === "hidden" ? "hidden" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
-  if (clean.hash === r.hash) {
-    if (scope === r.scope) return d.json({ error: "same", field: "recipe" }, 409);
-    // [BLU-07] PC 8차 (올린 판을 나만 보기로 바꿀 길이 없음): the same 판 put somewhere else — no new version, the code and its talk stay.
-    await d.run(env, "UPDATE recipes SET scope = ?, state = ?, updated_at = ? WHERE code = ?", scope, state, now, code);
-    return d.json({ code, version: r.version, hash: r.hash, state, scope });
-  }
+  const same = clean.hash === r.hash;
+  if (same && scope === r.scope) return d.json({ error: "same", field: "recipe" }, 409);
+  // 2.0.0 [RVQ-26] 검토 SVC-15: the checks a first 판 passes (말 못 하기·쓰기 제한·네트워크 몫·Integrity·프로·비슷한 이름).
+  const gate = await sharedGate(d, env, request, dev, clean, scope, now, code);
+  if (gate) return gate;
+  // SVC-52: a scope change counts in the day's 새 판 too (it was free, before the limit).
   const hit = await d.overLimit(env, now, [["device", `recipev|${dev}`, 10, DAY]]);
   if (hit) return hit;
+  const trust = await recipeTrust(d, env, dev, now);
+  // [RCX-28] Up at once like a first 판; one the operator or 신고 hid stays hidden. 2.0.0 [RVQ-26] 검토 SVC-52: one the operator 돌려준
+  // (returned) or still has (pending, waiting) keeps its state when only where it is shown changes; a returned one comes back up only
+  // with a 판 whose content changed, and then waits in the admin app's '돌려준 뒤 다시 올라온 것' for a look.
+  const held = r.state === "hidden" || (same && ["returned", "pending", "waiting"].includes(r.state));
+  const state = held ? r.state : r.state === "waiting" ? "waiting" : scope === "public" && trust.approved < RECIPE_LIMITS.reviewFirst ? "pending" : "visible";
+  if (same) {
+    // [BLU-07] PC 8차 (올린 판을 나만 보기로 바꿀 길이 없음): the same 판 put somewhere else — no new version, the code and its talk stay.
+    // SVC-52: and it does not come up as new (updated_at is left), so turning a work private and public again cannot lift it in 새로.
+    await d.run(env, "UPDATE recipes SET scope = ?, state = ? WHERE code = ?", scope, state, code);
+    return d.json({ code, version: r.version, hash: r.hash, state, scope });
+  }
   const v = r.version + 1;
   const rec = clean.recipe;
   await d.batch(env, [
@@ -1862,8 +1902,20 @@ async function newVersion(d, env, request, code) {
       updated_at = ?, note = '', min_app = MAX(COALESCE(min_app, 0), COALESCE(?, 0)) WHERE code = ?`, rec.title, nameSkeleton(rec.title), rec.summary ?? "", rec.styles.join(","), JSON.stringify(rec.cover), scope,
     state, v, clean.hash, clean.text, now, minAppOf(clean.text), code),
     d.stmt(env, "INSERT INTO recipe_versions (code, version, hash, body, created_at) VALUES (?, ?, ?, ?, ?)", code, v, clean.hash, clean.text, now),
+    ...(r.state === "returned" ? [d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'again', ?, '', ?)", code, `새 판 ${v}`, now)] : []),
   ]);
   return d.json({ code, version: v, hash: clean.hash, state, scope });
+}
+
+/**
+ * DELETE /api/recipes/:code/versions — 2.0.0 [RVQ-26] 검토 SVC-23 지난 판 지우기: the maker's past 판 go from the server (only the one up now
+ * stays). Nobody else could open them since 2.0.0; this is for a maker who wants what they fixed gone for good.
+ */
+async function dropPastVersions(d, env, request, code) {
+  const [r, err] = await owned(d, env, request, code, null);
+  if (err) return err;
+  const res = await d.run(env, "DELETE FROM recipe_versions WHERE code = ? AND version < ?", code, r.version);
+  return d.json({ code, version: r.version, dropped: res?.meta?.changes ?? 0 });
 }
 
 /** DELETE /api/recipes/:code — gone from the plaza at once with its votes, counts and talk (처리방침 3.8: 지우면 삭제). */
@@ -1908,7 +1960,7 @@ async function recipeVote(d, env, request, code) {
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.vote", now))) return d.json({ error: "not_yet", field: "recipe.vote" }, 403);
   const r = await d.one(env, "SELECT code, owner, state, scope FROM recipes WHERE code = ?", code);
-  if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
+  if (!r || r.state !== "visible" || !canOpen(r, dev)) return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   let reason = null;
   if (body.value === -1) {
@@ -1957,8 +2009,10 @@ async function applied(d, env, request, code) {
   const now = Date.now();
   const net = await d.network(request, env, now);
   if (!(await d.allow(env, `rapplied|${net.day}`, RECIPE_LIMITS.appliedPerNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
-  const r = await d.one(env, `SELECT code FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
+  const r = await d.one(env, `SELECT code, scope FROM recipes WHERE code = ? AND (state = 'visible' OR (state = 'hidden' AND hidden_reason = '${RETIRED}'))`, code);
   if (!r) return d.json({ error: "not_found" }, 404);
+  // 2.0.0 [RVQ-26] SVC-51: a 나만 보기 work is its maker's alone; its 쓰는 분 are not counted (they would come with it if it went public).
+  if (r.scope === "private") return d.json({ ok: true, counted: false });
   const col = body.kind === "applied" ? "applied" : "kept7";
   // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
   // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
@@ -1984,8 +2038,8 @@ async function recipeFlag(d, env, request, code) {
   if (hit) return hit;
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
-  const r = await d.one(env, "SELECT code, owner, state, flags, body, cover FROM recipes WHERE code = ?", code);
-  if (!r || r.state !== "visible") return d.json({ error: "not_found" }, 404);
+  const r = await d.one(env, "SELECT code, owner, state, scope, flags, body, cover FROM recipes WHERE code = ?", code);
+  if (!r || r.state !== "visible" || !canOpen(r, dev)) return d.json({ error: "not_found" }, 404);
   if (r.owner === dev) return d.json({ error: "own" }, 400);
   const res = await d.run(env, "INSERT OR IGNORE INTO recipe_flags (code, device, reason, at) VALUES (?, ?, ?, ?)", code, dev, reason, now);
   if (!res?.meta?.changes) return d.json({ flagged: true, already: true });
@@ -2022,13 +2076,17 @@ async function mine(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   const rows = await d.all(env, "SELECT * FROM recipes WHERE owner = ? AND state != 'deleted' ORDER BY updated_at DESC LIMIT 100", dev);
+  // 2.0.0 [RVQ-26] 검토 SVC-23: 서버에 남은 지난 판 수(앱의 '지난 판 지우기'는 있을 때만).
+  const past = new Map((await d.all(env, `SELECT v.code, COUNT(*) AS n FROM recipe_versions v JOIN recipes r ON r.code = v.code
+    WHERE r.owner = ? AND r.state != 'deleted' AND v.version < r.version GROUP BY v.code`, dev)).map((x) => [x.code, x.n]));
   const trust = await recipeTrust(d, env, dev, now);
   const lim = await writeLeft(d, env, dev, "recipe", now);
   return d.json({ trust: trust.level, leftToday: lim.limit ? lim.limit.left : null, ...lim, reviewLeft: Math.max(0, RECIPE_LIMITS.reviewFirst - trust.approved),
     items: await Promise.all(rows.map(async (r) => {
       // 1.36 [GRW-08] PC 6ec395bf: 목록 카드에도 '사진 확인 중'·'사진이 신고로 잠시 가려졌어요'.
       const p = await waitingPhotos(env, r.body, r.cover);
-      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null };
+      return { ...listItem(r, now), state: r.state, scope: r.scope, note: r.note || null, hash: r.hash, photos: p.held ? "held" : p.pending ? "pending" : null,
+        past: past.get(r.code) ?? 0 };
     })) });
 }
 
@@ -2040,7 +2098,7 @@ const talkGrp = (code) => code;
 async function recipeTalk(d, env, request, code) {
   const dev = await readDevice(d, request, null);
   const r = await d.one(env, "SELECT code, owner, state, scope, hidden_reason FROM recipes WHERE code = ?", code);
-  if (!r || (!openable(r) && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
+  if (!canOpen(r, dev)) return d.json({ error: "not_found" }, 404);
   const now = Date.now();
   const [rows, nicks, myVotes, muted] = await Promise.all([
     d.all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 300", RECIPE_TABLE, talkGrp(code)),
@@ -2094,8 +2152,8 @@ async function talkPost(d, env, request, code) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.talk", now))) return d.json({ error: "not_yet", field: "recipe.talk" }, 403);
-  const r = await d.one(env, "SELECT code, owner, state, styles FROM recipes WHERE code = ?", code);
-  if (!r || (r.state !== "visible" && r.owner !== dev)) return d.json({ error: "not_found" }, 404);
+  const r = await d.one(env, "SELECT code, owner, state, scope, styles, hidden_reason FROM recipes WHERE code = ?", code);
+  if (!r || (r.state !== "visible" && r.owner !== dev) || !canOpen(r, dev)) return d.json({ error: "not_found" }, 404);
   if (typeof body.body !== "string") return d.json({ error: "body", field: "body" }, 400);
   const t = cleanText(body.body, true, 20);
   if (graphemes(t) < 2 || graphemes(t) > RECIPE_LIMITS.talk) return d.json({ error: "body", field: "body" }, 400);
@@ -2135,6 +2193,8 @@ async function talkVote(d, env, request, postId) {
   if (!(await d.legalOpen(env, "recipe.vote", now))) return d.json({ error: "not_yet", field: "recipe.vote" }, 403);
   const p = await d.one(env, "SELECT * FROM posts WHERE id = ? AND company_id = ?", postId, RECIPE_TABLE);
   if (!p || p.status !== "shown") return d.json({ error: "not_found" }, 404);
+  // 2.0.0 [RVQ-26] SVC-51: talk on a work this phone cannot open is not there for it either.
+  if (!canOpen(await d.one(env, "SELECT owner, state, scope, hidden_reason FROM recipes WHERE code = ?", p.grp), dev)) return d.json({ error: "not_found" }, 404);
   if (p.device === dev) return d.json({ error: "own" }, 400);
   let reason = null;
   if (body.value === -1) {
@@ -2187,6 +2247,7 @@ export async function recipeRoute(d, request, env, path, url, ctx) {
   if (!sub && method === "GET") return show(d, env, request, code, url);
   if (!sub && method === "DELETE") return remove(d, env, request, code);
   if (sub === "/versions" && method === "POST") return newVersion(d, env, request, code);
+  if (sub === "/versions" && method === "DELETE") return dropPastVersions(d, env, request, code);
   if (sub === "/vote" && method === "POST") return recipeVote(d, env, request, code);
   if (sub === "/applied" && method === "POST") return applied(d, env, request, code);
   if (sub === "/flag" && method === "POST") return recipeFlag(d, env, request, code);
@@ -2213,7 +2274,9 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     // 1.36 [SEC-16] M10: 신고된 also lists a recipe whose reports all went to the operator only (none counted toward hiding it).
     const where = { queue: "state = 'pending'", flagged: "(flags > 0 OR EXISTS (SELECT 1 FROM recipe_flags f WHERE f.code = recipes.code)) AND state != 'deleted'",
       hidden: `state = 'hidden' AND COALESCE(hidden_reason, '') != '${RETIRED}'`, retired: `state = 'hidden' AND hidden_reason = '${RETIRED}'`, visible: "state = 'visible'", official: "official = 1", showcase: "showcase = 1",
-      one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'" }[tab]
+      one: "code = ? AND state != 'deleted'", waiting: "state = 'waiting'",
+      // 2.0.0 [RVQ-26] 검토 SVC-52: returned, then up again with a changed 판, and nothing the operator did since.
+      again: `state != 'deleted' AND (SELECT a.action FROM recipe_actions a WHERE a.code = recipes.code ORDER BY a.id DESC LIMIT 1) = 'again'` }[tab]
       ?? "state = 'pending'";
     // 1.36 클라우드 관리자 앱 확인 (출시 작품 267개 중 200개만 보이고 구간 수가 틀려요): 출시 대기 lists the whole batch.
     const all = await d.all(env, `SELECT * FROM recipes WHERE ${where} ORDER BY ${tab === "queue" ? "updated_at ASC" : "updated_at DESC"} LIMIT ${tab === "waiting" || tab === "retired" ? 1200 : 200}`, ...(tab === "one" ? [code] : []));
@@ -2389,6 +2452,21 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     }
     const n = body.dry === true ? 0 : rows.length;
     return d.json({ [hiding ? "hidden" : "shown"]: n, found: rows.length, missing, items: rows.slice(0, 1200).map((r) => ({ code: r.code, title: r.title })) });
+  }
+  // 2.0.0 [RVQ-26] 검토 SVC-23: the operator takes a past 판 (or all of them) off the server; the one up now stays.
+  const past = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/past$/);
+  if (past && method === "POST") {
+    const body = await d.readJson(request, 512);
+    const r = await d.one(env, "SELECT version FROM recipes WHERE code = ?", past[1]);
+    if (!r) return d.json({ error: "not_found" }, 404);
+    const one = body.version === undefined ? null : Number(body.version);
+    if (one !== null && !(Number.isInteger(one) && one > 0 && one < r.version)) return d.json({ error: "version", field: "version" }, 400);
+    const note = typeof body.note === "string" ? body.note.trim().slice(0, 200) : "";
+    const res = await d.run(env, one === null ? "DELETE FROM recipe_versions WHERE code = ? AND version < ?" : "DELETE FROM recipe_versions WHERE code = ? AND version = ?",
+      past[1], one ?? r.version);
+    const n = res?.meta?.changes ?? 0;
+    await d.batch(env, [act(past[1], "past", [one === null ? `지난 판 ${n}개` : `${one}판`, note].filter(Boolean).join(" · "))]);
+    return d.json({ code: past[1], dropped: n });
   }
   const m = path.match(/^\/recipes\/([2-9A-HJ-NP-Z]{8})\/(approve|return|hide|show|delete|official|showcase)$/);
   if (m && method === "POST") {
