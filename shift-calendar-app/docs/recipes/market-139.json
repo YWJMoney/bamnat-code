@@ -577,6 +577,12 @@
        "emoji": "🌙",
        "id": "sleept",
        "label": "잠들어요",
+       "more": [
+        {
+         "arg": "sleep",
+         "do": "screen"
+        }
+       ],
        "where": "tile"
       }
      ],
@@ -5154,6 +5160,12 @@
        "emoji": "🌘",
        "id": "sleept",
        "label": "잠들어요",
+       "more": [
+        {
+         "arg": "sleep",
+         "do": "screen"
+        }
+       ],
        "where": "tile"
       }
      ],

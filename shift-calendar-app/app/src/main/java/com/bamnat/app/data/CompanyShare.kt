@@ -403,7 +403,81 @@ class CompanyShare(
         return Applied(added, cycle, rules, pendingPay)
     }
 
-    data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
+    data class Applied(
+        val addedTypes: Int,
+        val cycleDays: Int?,
+        val rules: Boolean,
+        val pendingPay: Boolean,
+        /** 2.0.0 [RVN-08] COMP-11 Puts the calendar back as it was, when this went over an order it had; says whether it could. */
+        val undo: (suspend () -> Boolean)? = null,
+    )
+
+    /**
+     * 2.0.0 [RVN-08] COMP-11 What [apply] would change, said before it goes in: a kind of day the calendar has whose times differ
+     * ("주간 07:00~15:00 → 06:00~14:00"), the kinds it would add, and the order from today (its days, or 요일 고정).
+     */
+    data class Preview(val changed: List<String>, val added: List<String>, val cycle: Int?, val weekly: Boolean) {
+        val nothing: Boolean get() = changed.isEmpty() && added.isEmpty() && cycle == null && !weekly
+    }
+
+    suspend fun preview(text: String): Preview {
+        val root = parse(text)
+        check(root)
+        val existing = schedule.snapshot.first().shiftTypes
+        val changed = mutableListOf<String>()
+        val added = mutableListOf<String>()
+        for (o in root.optJSONArray("shiftTypes").objects()) {
+            val incoming = type(o)
+            val mine = existing.firstOrNull { it.name == incoming.name }
+            if (mine == null) added += "${incoming.name} ${timesOf(incoming)}"
+            else if (mine.start != incoming.start || mine.end != incoming.end || mine.breakMinutes != incoming.breakMinutes || mine.isOff != incoming.isOff) {
+                changed += "${incoming.name} ${timesOf(mine)} → ${timesOf(incoming)}"
+            }
+        }
+        val cycle = root.optJSONObject("rotation")?.optJSONArray("steps")?.length()?.takeIf { it > 0 }
+        val weekly = cycle == null && weeklyOf(root).isNotEmpty()
+        return Preview(changed, added, cycle, weekly)
+    }
+
+    private fun timesOf(t: ShiftType): String = when {
+        t.isOff -> "쉬는 날"
+        t.start == null || t.end == null -> "시간 없음"
+        else -> "${t.start}~${t.end}" + (if (t.breakMinutes > 0) " (휴게 ${t.breakMinutes}분)" else "")
+    }
+
+    /** COMP-11 The calendar as it was before [apply], to put back with [undo]. */
+    class Before internal constructor(
+        internal val types: List<ShiftType>,
+        internal val patterns: List<WorkPattern>,
+        internal val kinds: ExtraKinds,
+    ) {
+        /** The calendar had an order of its own, so putting a setup in replaces something. */
+        val hadOrder: Boolean get() = patterns.isNotEmpty()
+    }
+
+    suspend fun before(): Before = schedule.snapshot.first().let { Before(it.shiftTypes, it.patterns, settings.current.extraKinds) }
+
+    /**
+     * COMP-11 되돌리기 after 이 설정 쓰기: the order periods as they were, each kind of day back to its own times (its alarms and colours
+     * were never changed), the kinds [apply] added gone when no day was put on them since, and the kinds of extra work as they were.
+     * The pay is not touched here: a pay way waits for its 기본급 on the pay screen ([com.bamnat.app.company.PendingWay]).
+     */
+    suspend fun undo(b: Before) {
+        schedule.restorePatterns(b.patterns)
+        val now = schedule.snapshot.first().shiftTypes
+        for (t in now) {
+            val was = b.types.firstOrNull { it.id == t.id }
+            if (was != null) {
+                if (was.start != t.start || was.end != t.end || was.breakMinutes != t.breakMinutes || was.breakStart != t.breakStart || was.isOff != t.isOff) {
+                    schedule.saveShiftType(t.copy(start = was.start, end = was.end, breakMinutes = was.breakMinutes, breakStart = was.breakStart, isOff = was.isOff))
+                }
+            } else {
+                val use = schedule.shiftTypeUse(t.id)
+                if (use.days == 0 && !use.inPattern) schedule.deleteShiftType(t.id)
+            }
+        }
+        if (settings.current.extraKinds != b.kinds) settings.update { it.copy(extraKinds = b.kinds) }
+    }
 
     /**
      * [PLAZA-09] 이 값 쓰기 (결정 D79): the one item [key] of [theirs] in place of the user's own, everything else as it was

@@ -578,7 +578,13 @@
        "emoji": "🌙",
        "where": "tile",
        "do": "valStamp",
-       "arg": "잠"
+       "arg": "잠",
+       "more": [
+        {
+         "do": "screen",
+         "arg": "sleep"
+        }
+       ]
       }
      ],
      "rules": [
@@ -5132,7 +5138,13 @@
        "emoji": "🌘",
        "where": "tile",
        "do": "valStamp",
-       "arg": "잠"
+       "arg": "잠",
+       "more": [
+        {
+         "do": "screen",
+         "arg": "sleep"
+        }
+       ]
       }
      ],
      "rules": [

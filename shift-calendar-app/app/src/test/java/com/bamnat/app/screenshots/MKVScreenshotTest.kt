@@ -235,7 +235,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue(appears("1/2잔", exact = true))
         tapText("✨ 💧 물 한 잔", exact = true)
         settle()
-        assertTrue(appears("2/2잔", exact = true))
+        assertTrue("[RVM-05] 목표에 닿으면 '2잔 채움'", appears("2잔 채움", exact = true))
         assertTrue("목표에 닿으면 규칙이 따라 돌아요", appears("그러면 ‘다 마셨어요’ 규칙이 돌아요", exact = false))
         tapText("처음으로", exact = true)
         settle()
@@ -295,7 +295,8 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(model.state.value.kind == RecipeClient.toolKind("", null, fx = true))
         assertTrue("프로 기능 작품만", model.state.value.items.isNotEmpty() && model.state.value.items.all { it.fx.isNotEmpty() })
-        assertTrue("무엇이 들었는지 한 줄", appears("✦ 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
+        // [RVM-12] 쓰는 사람 말: 값 칸·단추 위젯 → '홈 화면 단추 · 숫자 세기'.
+        assertTrue("무엇이 들었는지 한 줄", appears("✦ 홈 화면 단추 · 숫자 세기", exact = true))
         // 다른 칩을 고르면 '✦ 프로 기능'은 풀려요.
         tapText("🧱 부품", exact = true)
         settle()
@@ -317,7 +318,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         }
         settle()
         assertTrue(appears("프로 기능이 든 작품", exact = true))
-        assertTrue(appears("✦ 들어 있는 것: 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
+        assertTrue(appears("✦ 들어 있는 것: 홈 화면 단추 · 숫자 세기", exact = true)) // [RVM-12]
         assertTrue("무료 작품은 무료라고", appears("무료 · 모두 무료로 넣고 쓸 수 있어요", exact = true))
         assertTrue(appears("프로 보기", exact = true))
         tapText("하루 써 보기", exact = true)

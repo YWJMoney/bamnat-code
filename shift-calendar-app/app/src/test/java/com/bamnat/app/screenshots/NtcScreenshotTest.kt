@@ -76,7 +76,13 @@ class NtcScreenshotTest : ScreenshotBase() {
         // 2.0.0 (#444 CI shots-b): 내 달력 미리 보기 runs off the main thread after the work is read; a tap on 넣기 made while it was
         // still running did not open the 넣기 창 (2 of 3 runs). Every test here turns the lock-screen 오늘 근무 on first, so the
         // preview is done once the overlap it finds is in the state.
-        check(waitFor { vm.state.value.pieces.any { it.overlaps.isNotEmpty() } }) { "내 달력 미리 보기가 끝나지 않았어요" }
+        check(waitFor { vm.state.value.pieces.any { it.overlaps.isNotEmpty() } }) {
+            val s = vm.state.value
+            "내 달력 미리 보기가 끝나지 않았어요: recipe=${s.recipe?.title} error=${s.error} message=${s.message} " +
+                "pieces=${s.pieces.map { "${it.kind}:on=${it.on},fits=${it.fits},lines=${it.lines.size},overlaps=${it.overlaps.size}" }} " +
+                "today=${c.settingsRepository.current.todayShiftNotice} logic=${c.settingsRepository.current.logic.length} " +
+                "now=${c.recipes.pieces.overlaps(summaryWork.pieces.single().values).size}"
+        }
     }
 
     private fun lockOn(on: Boolean = true) = c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, todayShiftNotice = on, logic = "") }
@@ -117,7 +123,7 @@ class NtcScreenshotTest : ScreenshotBase() {
         tapText("규칙 1개 넣기", exact = true)
         settle()
         assertTrue(scrolledTo("알림 한눈에", exact = true))
-        tapText("펼치기", exact = true)
+        tapText("알림 한눈에 펼치기", exact = true)
         settle()
         assertTrue(scrolledTo("켜 둔 알림", exact = true))
         assertTrue(scrolledTo("더 켤 수 있는 알림", exact = true))
@@ -136,6 +142,8 @@ class NtcScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(waitFor { Logic.decode(c.settingsRepository.current.logic).rules.any { it.name == "오늘 요약" } })
         assertTrue("잠금 화면 오늘 근무는 켜진 채", c.settingsRepository.current.todayShiftNotice)
+        // [RVM-19] PC-48: a 앱을 열면 rule waits for the first opening after the day it went in; this stands for that opening.
+        com.bamnat.app.logic.LogicStore(app).lastOpen = null
         LogicRunner.onOpen(c)
         assertTrue(waitFor { TodayShiftNotice.folded(app) != null })
         val ours = shown.filter { it.packageName == app.packageName }
@@ -172,10 +180,10 @@ class NtcScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(waitFor { !c.settingsRepository.current.todayShiftNotice })
         assertTrue(waitFor { shown.none { it.id == TodayShiftNotice.ID } })
+        // [RVM-08] With 넣기 on the bottom bar, the snackbar's 되돌리기 (one tap) comes first; the bar's asks once more.
         tapText("되돌리기", exact = true)
         settle()
-        tapText("되돌리기", exact = true)
-        settle()
+        if (shows("넣기 전으로 되돌릴까요?", exact = true)) { tapText("되돌리기", exact = true); settle() }
         assertTrue(waitFor { c.settingsRepository.current.todayShiftNotice })
         assertTrue(waitFor { Logic.decode(c.settingsRepository.current.logic).rules.none { it.name == "오늘 요약" } })
     }
@@ -203,7 +211,7 @@ class NtcScreenshotTest : ScreenshotBase() {
         settingsPage("알림과 잠")
         settle()
         assertTrue(appears("겹침 1", exact = false))
-        tapText("펼치기", exact = true)
+        tapText("알림 한눈에 펼치기", exact = true)
         settle()
         assertTrue(appears("‘오늘 요약’ 규칙과 겹쳐 하나로 합쳐 보여요", exact = false))
     }
