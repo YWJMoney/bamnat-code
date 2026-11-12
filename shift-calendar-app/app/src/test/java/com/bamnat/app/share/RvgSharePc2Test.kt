@@ -43,13 +43,19 @@ class RvgSharePc2Test {
         override val enabled = true
         val got = mutableListOf<JSONObject>()
         var down: Exception? = null
+        /** Every call, the turned-down ones too. */
+        var calls = 0
+        /** A server that will not take a break (as one before RVD-23 might read it), after the 그림 check. */
+        var refusesRest = false
         private fun check(p: JSONObject) {
+            calls++
             down?.let { throw it }
             val types = p.optJSONArray("types") ?: return
             for (i in 0 until types.length()) {
                 val icon = types.getJSONObject(i).optString("icon", "")
                 if (oldRules && icon.isNotEmpty() && !Regex("^[a-z0-9]{1,16}$").matches(icon)) throw ShareLinkException("type_icon")
             }
+            for (i in 0 until types.length()) if (refusesRest && types.getJSONObject(i).has("rest")) throw ShareLinkException("type_rest")
         }
         override suspend fun create(payload: JSONObject): ShareLinkState {
             check(payload); got += payload
@@ -79,6 +85,7 @@ class RvgSharePc2Test {
     }
 
     @After fun tearDown() {
+        com.bamnat.core.time.Today.reset()
         c.shareLinks.clear()
         c.shareLinks.typedName = null
     }
@@ -114,11 +121,97 @@ class RvgSharePc2Test {
         c.shareLinks.setDropped(null)
         assertNull(c.shareLinks.dropped.value)
 
-        // The 2.0.0 share server (RVD-22, 46d91ace) takes the 그림: the next change carries it, nothing said.
+        // The 2.0.0 share server (RVD-22, 46d91ace) takes the 그림. The same day the 그림 is still left out at once (one call, not
+        // turned down again, nothing said again); a day on the whole is tried again and the next change carries it, nothing said.
         server.oldRules = false
         c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Shift(dayType().id))
+        val before = server.calls
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        assertEquals(before + 1, server.calls)
+        assertTrue(server.got.last().icons().none { it.startsWith("e:") })
+        Today.use(java.time.Clock.offset(Today.clock, Duration.ofDays(1).plusMinutes(1)))
+        c.scheduleRepository.setOverride(Today.date().plusDays(4), ShiftOverride.Shift(dayType().id))
         assertEquals(ShareSync.Result.Sent, sync.sync())
         assertEquals(listOf("e:☀️"), server.got.last().icons().filter { it.startsWith("e:") })
+        assertNull(c.shareLinks.dropped.value)
+        assertTrue("the server took everything: nothing is left out any more", c.shareLinks.leaveOut().isEmpty())
+    }
+
+    /**
+     * 갈래 R 의견 1: two parts the server turns down (an emoji 그림 on an old server and a break it will not read) both go without, one at
+     * a time, and the 근무 still arrives; the sender gets one line for both, not two cards.
+     */
+    @Test fun twoPartsTurnedDownBothGoWithoutAndAreSaidInOneLine() = runBlocking {
+        c.shareLinks.save(link())
+        server.refusesRest = true
+        c.scheduleRepository.saveShiftType(dayType().copy(icon = ShiftIcon.emojiKey("☀️"), breakMinutes = 60))
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(dayType().id))
+        val sync = ShareSync(c)
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        assertEquals("whole, without the 그림, without the break too", 3, server.calls)
+        val went = server.got.single()
+        assertTrue(went.icons().none { it.startsWith("e:") })
+        assertTrue((0 until went.getJSONArray("types").length()).none { went.getJSONArray("types").getJSONObject(it).has("rest") })
+        assertEquals("근무 그림 ☀️·휴게 시간은 링크에 못 실어 빼고 보냈어요.", c.shareLinks.dropped.value)
+        assertEquals(setOf("type_icon", "type_rest"), c.shareLinks.leaveOut())
+        assertFalse(c.shareLinks.unsent.value)
+    }
+
+    /**
+     * 갈래 R 의견 2: once a part was turned down, every later change goes without it in one call; the line closed by the sender does not
+     * come back for each change. A sheet that made the link said it there, so it is not said again above the calendar.
+     */
+    @Test fun aPartTurnedDownGoesWithoutAtOnceAfterwardsAndIsNotSaidAgain() = runBlocking {
+        c.shareLinks.save(link())
+        c.scheduleRepository.saveShiftType(dayType().copy(icon = ShiftIcon.emojiKey("☀️")))
+        val sync = ShareSync(c)
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        assertEquals(2, server.calls)
+        c.shareLinks.setDropped(null)
+        for (day in 3..5) {
+            c.scheduleRepository.setOverride(Today.date().plusDays(day.toLong()), ShiftOverride.Shift(dayType().id))
+            val before = server.calls
+            assertEquals(ShareSync.Result.Sent, sync.sync())
+            assertEquals("one call for the change", before + 1, server.calls)
+            assertNull("closed stays closed", c.shareLinks.dropped.value)
+        }
+        // A link made again from the sheet: said in the sheet, not above the calendar as well.
+        c.shareLinks.clear()
+        val (_, words) = server.createLeaving(JSONObject("""{"v":2,"title":"민지","types":[{"id":1,"name":"주간","icon":"e:☀️"}],"days":[]}"""), c.shareLinks)
+        assertEquals("근무 그림 ☀️는 링크에 못 실어 빼고 보냈어요.", words)
+        c.shareLinks.save(link())
+        c.scheduleRepository.setOverride(Today.date().plusDays(6), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        assertNull(c.shareLinks.dropped.value)
+    }
+
+    /**
+     * 검토 S7-3 (갈래 R 의견 3): the automatic update turned down for something it cannot leave out is said once above the calendar the
+     * second time running, for someone who never opens the share sheet; not the first time, and not again the third.
+     */
+    @Test fun theSameRefusalTwiceRunningIsSaidOnceAboveTheCalendar() = runBlocking {
+        c.shareLinks.save(link())
+        val sync = ShareSync(c)
+        server.down = ShareLinkException("title")
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertNull("once may be a passing thing", c.shareLinks.dropped.value)
+        c.scheduleRepository.setOverride(Today.date().plusDays(2), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertEquals(ShareLinkPayload.REFUSED_AGAIN, c.shareLinks.dropped.value)
+        c.shareLinks.setDropped(null)
+        c.scheduleRepository.setOverride(Today.date().plusDays(3), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertNull("said once", c.shareLinks.dropped.value)
+        // Sent at last: the count starts again.
+        server.down = null
+        assertEquals(ShareSync.Result.Sent, sync.sync())
+        server.down = ShareLinkException("title")
+        c.scheduleRepository.setOverride(Today.date().plusDays(4), ShiftOverride.Shift(dayType().id))
+        assertEquals(ShareSync.Result.Refused, sync.sync())
+        assertNull(c.shareLinks.dropped.value)
+        // By hand (the sheet's 다시 보내기) it is said in the sheet, not counted.
+        assertEquals(ShareSync.Result.Refused, sync.resend(c.shareLinks.key))
         assertNull(c.shareLinks.dropped.value)
     }
 
