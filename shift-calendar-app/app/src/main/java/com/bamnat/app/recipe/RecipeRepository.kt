@@ -128,9 +128,21 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             return null
         }
         // A later recipe on the same pieces takes the earlier one's place: it is no longer the one 되돌리기 offers.
+        // [RVF-06] 개발 전 검토 RCP-01: piece by piece. A piece that adds (메모 틀·알람·규칙·가계부·투자) takes nobody's place; one that
+        // replaces takes that piece only, the earlier work keeping its other pieces (되돌리기, 받는 칸 답, 새 판 알림). Only when nothing of it is
+        // left — or it is the same work put on again — is the earlier record 'replaced' as a whole.
         val now = Today.millis()
-        dao.applied().filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal && it.pieces.split(',').any { k -> k in done } }
-            .forEach { dao.upsertApplied(it.copy(replacedAt = now)) }
+        val takes = done.filter { k -> PieceKind.of(k) !in ADDS }.toSet()
+        dao.applied().filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal }.forEach { e ->
+            val had = e.pieces.split(',')
+            val same = code.isNotEmpty() && e.code == code
+            if (same && had.any { it in done }) { dao.upsertApplied(e.copy(replacedAt = now)); return@forEach }
+            if (had.none { it in takes }) return@forEach
+            val left = had.filter { it !in takes }
+            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now))
+            else dao.upsertApplied(e.copy(pieces = left.joinToString(","),
+                before = runCatching { JSONObject(e.before).also { b -> takes.forEach { b.remove(it) } }.toString() }.getOrDefault(e.before)))
+        }
         val id = dao.insertApplied(AppliedRecipeEntity(
             code = code, version = version, hash = RecipeCodec.hash(r), title = r.title, calendarId = cal, body = RecipeCodec.write(r),
             inputs = JSONObject(filled.mapValues { (_, v) -> v }).toString(), pieces = done.joinToString(","), before = before.toString(),
@@ -366,6 +378,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_KEPT_COUNTED = "counted_kept"
         private const val K_HAS_PROFILE = "has_profile"
         private const val K_PROFILE_CLEARED = "profile_cleared"
+        /** [RVF-06] Pieces that add to what is there (RecipePieces: 알람은 더하기만, 메모 틀·분류는 더하기, 규칙·단추는 내 것 뒤에). */
+        val ADDS: Set<PieceKind> = setOf(PieceKind.LOGIC, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.LEDGER, PieceKind.INVEST)
         const val UNDO_DAYS = 7L
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000

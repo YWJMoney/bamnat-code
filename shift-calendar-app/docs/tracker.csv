@@ -2453,3 +2453,9 @@ DISC-03,"안 써 본 기능 안내: '써 봄'이 안 적히는 기능 길 보강
 DISC-04,안 써 본 기능 안내: 기능 켜고 끄기 guide.discover와 '지금까지 알려 드린 것' 목록,1.40,진행 중,,같은 문서 3-7
 DISC-05,안 써 본 기능 안내: 알림 기능을 권할 때 겹침 길(NTC-03)과 같은 말이면 후보에서 뺌,1.40,진행 중,,같은 문서 3-5
 DISC-06,"안 써 본 기능 안내: 합계 4가지 사용 통계(disc_*)·처리방침 3.13 한 줄·효과 판정과 개선 신호(사용자 결정 2026-11-11: 합계 4가지만, 기능 이름 없이)",1.40,진행 중,,같은 문서 3-8
+RVF-01,"검토 REST-01: 칸 모양 목록 저장 왕복에서 '처음대로'(빈) 모양이 빠져 '주말 강조'가 모든 날에 들어가고 '+ 모양 더하기'가 안 됨 → 빈 모양도 자리를 지킴",2.0.0,진행 중,,"core recipe/FreeLook.kt decodeAll; CellLooksRoundTripTest"
+RVF-02,"검토 COMP-41: 문의 답을 한 번 읽으면 그 뒤 답(출시 안내 포함)에 알림이 안 옴 → 읽으면 '알린 수'를 내림",2.0.0,진행 중,,"company/InquiryReplyJob.kt sayNow·lowerSaid, InquiryStore.update; InquiryAnswerNoticeTest"
+RVF-03,"검토 MKT-08: 작품 '이야기' 내 글 지우기·남의 글 신고가 없음 → 광장 글과 같은 서버 길로 지우기·신고, 지운 글의 답글은 남김",2.0.0,진행 중,,"ui/recipe/RecipeDetailScreen.kt PostRow·talkTops, RecipeDetailViewModel.deletePost·flagPost; TalkPostDeleteFlagTest"
+RVF-04,"검토 STU-01: 장터에 올린 내 테마를 입은 채 이어서 하기·고쳐 만들기로 연 초안이 그 테마의 다음 판으로 올라가거나 저장으로 덮어씀 → 지금 모양에서 시작한 초안만 다음 판",2.0.0,진행 중,,"ui/studio/StudioViewModel.kt fromPhone·ownStart·mixedStart; StudioOwnWorkTest"
+RVF-05,"검토 STU-25: 스튜디오 저장의 '장터에 올린 판도 바꾸기'가 장터 작품의 소개·설명·표지·맞는 유형·기능 조각을 기본값으로 덮어씀 → 장터 판을 읽어 모양 조각만 바꿔 보냄(못 읽으면 보내지 않음)",2.0.0,진행 중,,"ui/studio/StudioViewModel.kt sendNext·lookOnto; StudioOwnWorkTest"
+RVF-06,"검토 RCP-01: 뒤 작품이 조각 하나만 겹쳐도 앞 작품의 되돌리기·받는 칸 답·새 판 알림이 통째로 사라짐 → 더하기 조각은 자리를 안 빼앗고, 바꾸는 조각은 그 조각만 넘겨받음",2.0.0,진행 중,,"recipe/RecipeRepository.kt apply ADDS; LaterRecipeKeepsEarlierTest"

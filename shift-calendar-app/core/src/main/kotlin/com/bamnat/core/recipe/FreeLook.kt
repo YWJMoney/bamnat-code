@@ -80,8 +80,11 @@ data class CellLook(
             )
         }
 
-        /** Several looks, "/" between them, at most [MAX]. */
-        fun decodeAll(s: String?): List<CellLook> = s.orEmpty().split('/').filter { it.isNotEmpty() }.take(MAX).map(::decode)
+        /**
+         * Several looks, "/" between them, at most [MAX]. [RVF-01] An empty one between the slashes is a look left as the app's own
+         * ('처음대로') and keeps its place, so the pattern's numbers still point where they did; only no words at all is no looks.
+         */
+        fun decodeAll(s: String?): List<CellLook> = if (s.isNullOrEmpty()) emptyList() else s.split('/').take(MAX).map(::decode)
 
         fun encodeAll(looks: List<CellLook>): String = looks.take(MAX).joinToString("/") { it.encode() }
 

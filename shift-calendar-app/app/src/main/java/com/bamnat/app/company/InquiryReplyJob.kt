@@ -74,6 +74,26 @@ class InquiryReplyJob : JobService() {
         /** The answers already said in a notice, so the daily news does not say them again. */
         fun said(context: Context): Int = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt(K_SAID, 0)
 
+        /**
+         * [RVF-02] Whether [unread] holds an answer not said yet, and from now on [unread] is what was said. The count said only
+         * goes down when answers are read ([lowerSaid]), so an answer written after the last one was read is said again.
+         */
+        internal fun sayNow(context: Context, unread: Int): Boolean {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val said = prefs.getInt(K_SAID, 0)
+            if (unread != said) prefs.edit().putInt(K_SAID, unread).apply()
+            return unread > said
+        }
+
+        /**
+         * [RVF-02] 개발 전 검토 COMP-41: answers the user has read are no longer counted as said, so the next one (the release's
+         * '고쳐서 나갔어요' too) brings its notice. Before this, one read answer kept every later one quiet.
+         */
+        fun lowerSaid(context: Context, unread: Int) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            if (prefs.getInt(K_SAID, 0) > unread) prefs.edit().putInt(K_SAID, unread).apply()
+        }
+
         /** [fromPush]: 1.36 [PUSH-01] the server said an answer was just written. */
         suspend fun check(c: AppContainer, fromPush: Boolean = false) {
             if (!c.settingsRepository.current.plazaNews || !c.inquiryApi.enabled || !c.inquiryStore.asked) {
@@ -85,10 +105,7 @@ class InquiryReplyJob : JobService() {
             val list = c.inquiryApi.mine(c.companyStore.device)
             c.inquiryStore.update(list)
             val unread = c.inquiryStore.unread.value
-            val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val said = prefs.getInt(K_SAID, 0)
-            if (unread > said) post(c, unread)
-            if (unread != said) prefs.edit().putInt(K_SAID, unread).apply()
+            if (sayNow(c.appContext, unread)) post(c, unread)
             if (list.none { it.waiting }) cancel(c.appContext)
             // A question sent in the last day is looked at every 15 minutes; an older one every 3 hours.
             else schedule(c.appContext, soon = list.any { it.waiting && java.time.Duration.between(it.updatedAt, com.bamnat.core.time.Today.instant()).toMillis() < SOON_FOR })

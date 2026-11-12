@@ -586,9 +586,15 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * worn now. 저장 keeps its name and 장터 link; 올리기 sends its next 판 instead of a new code.
      */
     val ownStart: ThemeLease.Wear?
-        get() = myTheme ?: (_state.value.origin as? Origin.Mine)?.let {
+        get() = myTheme ?: fromPhone()?.let {
             c.wardrobe.lease.value.worn?.takeIf { it.own }?.let { w -> c.wardrobe.lease.value.history.firstOrNull { h -> h.key == w.key } ?: w }
         }
+
+    /**
+     * [RVF-04] 개발 전 검토 STU-01: 지금 휴대폰 모양에서 그대로 시작했을 때만 'Mine'이에요. 고쳐 만들기·만들던 레시피·이어서 하기
+     * ([startRecipe], 늘 [State.meta]를 채움)로 연 초안은 입고 있는 내 테마의 다음 판이 아니라, 올리기·저장이 장터의 내 작품을 덮어쓰지 않아요.
+     */
+    private fun fromPhone(): Origin.Mine? = (_state.value.origin as? Origin.Mine)?.takeIf { _state.value.meta == null }
 
     /** The theme whose days and ad 입히기 follows: someone else's started from, or the first of others' parts laid on. */
     /**
@@ -597,7 +603,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      */
     private fun mixedStart(): ThemeLease.Wear? = when (val o = _state.value.origin) {
         is Origin.Theme -> o.wear.takeIf { it.own && it.mixedFrom.isNotBlank() }
-        is Origin.Mine -> c.wardrobe.lease.value.worn?.takeIf { it.own && it.mixedFrom.isNotBlank() }
+        is Origin.Mine -> fromPhone()?.let { c.wardrobe.lease.value.worn?.takeIf { it.own && it.mixedFrom.isNotBlank() } }
         else -> null
     }
 
@@ -778,8 +784,14 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** [THM-04] The next 판 of mine in 장터, its pictures left out when it went without them; a check that fails leaves 장터 as it was. */
     private suspend fun sendNext(w: ThemeLease.Wear, name: String) {
         // F-102: the next 판 keeps the title it has in 장터 (the 내 테마 name is the maker's own label).
-        val title = runCatching { c.recipeApi.show(w.shared, c.companyStore.device).item.title }.getOrNull() ?: name
-        val r0 = recipe(title).copy(styles = setOf(style ?: WorkStyle.SHIFT))
+        // [RVF-05] 개발 전 검토 STU-25: and everything else it has there too (소개·설명·표지·맞는 유형·받는 칸·기능 조각); only its looks
+        // become the draft's. Not read (offline), nothing goes, so 장터 never gets the studio's defaults.
+        val live = runCatching { c.recipeApi.show(w.shared, c.companyStore.device).recipe() }.getOrNull()
+        if (live == null) {
+            _state.value = _state.value.copy(said = "저장했어요. 장터 판은 인터넷에 연결되면 다시 저장해 주세요")
+            return
+        }
+        val r0 = lookOnto(live, _state.value.pieces)
         val r = if (w.bare) LookParts.withoutPhotos(r0) else r0
         if (!RecipeLint.ready(RecipeLint.check(r))) {
             _state.value = _state.value.copy(said = "저장했어요. 장터 판은 고칠 곳이 있어 그대로예요. 공방 › 내 레시피에서 확인해 주세요")
@@ -969,6 +981,10 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     }
 
     companion object {
+        /** [RVF-05] [live] (the work as it is in 장터) with its looks swapped for [looks]; its words, cover, kinds of work, inputs and 기능 kept. */
+        internal fun lookOnto(live: Recipe, looks: List<Piece>): Recipe = live.copy(
+            pieces = (live.pieces.filter { it.kind !in BuiltInThemes.LOOK_KINDS } + looks.filter { it.kind in BuiltInThemes.LOOK_KINDS }).sortedBy { it.kind.ordinal })
+
         const val START_MINE = "mine"
         const val START_PLAIN = "plain"
         /** "theme:<key>": a theme kept in 테마 ([ThemeLease.Wear.key]). */
