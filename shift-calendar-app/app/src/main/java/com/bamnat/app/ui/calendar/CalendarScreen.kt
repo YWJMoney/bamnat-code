@@ -97,6 +97,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.outlined.CalendarViewMonth
 import androidx.compose.material.icons.outlined.Groups
 import androidx.compose.material.icons.outlined.Dashboard
+import androidx.compose.material.icons.outlined.TouchApp
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.foundation.layout.BoxScope
@@ -1065,8 +1066,18 @@ fun CalendarScreen(
         val linkMade = remember(activeCalendar.id, showShare) {
             shareLinks && context.appContainer.hasShareLink(activeCalendar.id)
         }
+        // 2.0.0 [RVH-42] 검토 PC-29·30: the work's 바로 단추 on the head, as buttons of its row (the phone's own calendar only; a
+        // received calendar on screen has none, the buttons write the user's own day).
+        val decorLayer = com.bamnat.app.ui.decor.LocalDecor.current
+        val decorTap = com.bamnat.app.ui.decor.LocalDecorTap.current
+        val headQuick = remember(decorLayer, settings.logic, decorTap, viewingReceived) {
+            if (decorTap == null || viewingReceived != null) emptyList()
+            else HeadQuick.of(decorLayer) { id -> runCatching { com.bamnat.app.logic.LogicRunner.logic(context.appContainer).button(id) }.getOrNull() }
+        }
         val header: @Composable (Modifier) -> Unit = { headerPlace -> CalendarHeader(
             modifier = headerPlace,
+            quick = headQuick,
+            onQuick = { id -> decorTap?.invoke(id, null) },
             month = if (weekOnly && !wide) YearMonth.from(selected) else visibleMonth,
             // [CAL-03] With one week on screen, ‹ › go a week back or on.
             onPrev = { if (weekOnly) onDateChange(selected.minusWeeks(1)) else slideToMonth(headingMonth().minusMonths(1)) },
@@ -1910,6 +1921,7 @@ fun CalendarScreen(
                 startMonth = visibleMonth,
                 identityBar = identityBar,
                 rules = settings.rules,
+                onSay = vm::say,
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
@@ -2208,6 +2220,9 @@ private fun CalendarHeader(
     toolFit: ToolFit = ToolFit(),
     /** [EASE-25] 오늘부터 하루 밀기: the push-and-realign window on today. */
     onPushToday: () -> Unit = {},
+    /** 2.0.0 [RVH-42] 검토 PC-29·30: the work's 바로 단추 on the head, as buttons of the head's row. */
+    quick: List<HeadQuick> = emptyList(),
+    onQuick: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // [QA-01] A cover screen (~344dp) cannot fit four icons, the month and 오늘: pattern and the new
@@ -2221,6 +2236,14 @@ private fun CalendarHeader(
     // [NAV2-02] Large text on a phone: the 나 button keeps its place, so 오늘 is an icon and the month is short.
     val crowded = !roomy && LocalDensity.current.fontScale >= 1.3f && com.bamnat.app.ui.LocalMe.current.show && !com.bamnat.app.ui.LocalMe.current.inRail
     val wideTitle = maxWidth >= 600.dp
+    // 2.0.0 [RVH-42] 검토 PC-29 (통합 1차 PC: '물 +1잔'이 '도구'·'나' 위에 그려지고 그 누름을 가져갔어요): the work's 바로 단추 stand in
+    // the row. As many with their words as fit beside the month, 오늘, 도구 and 나 (the pattern and new-calendar icons, which are in 도구
+    // too, give their place); none fits, one round button with its emoji, and the month drops the year and 오늘 is an icon (a narrow phone
+    // or large text: 도구 too). The rest are in 도구. The head stays one line (조건 1).
+    val quickRoom = HeadQuickRoom.of(quick.size, maxWidth.value, LocalDensity.current.fontScale, narrow)
+    val quickRound = quickRoom.round
+    val quickTight = quickRoom.tight
+    val quickShown = quickRoom.shown
     var menu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 꾸미기: 달력 머리, 달 이름, 이동 단추, 오늘 단추.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
@@ -2232,7 +2255,9 @@ private fun CalendarHeader(
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
-        Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp)).decor(com.bamnat.core.recipe.Decor.HEAD).padding(start = 4.dp, end = 4.dp, top = 8.dp)
+        // [RVH-42] Where a tap presses the work's buttons (the phone's own calendar), they are the row's buttons below, not drawn over it.
+        Modifier.fillMaxWidth().then(com.bamnat.app.ui.theme.PhotoGround.head(top = 8.dp))
+            .decor(com.bamnat.core.recipe.Decor.HEAD, taps = com.bamnat.app.ui.decor.LocalDecorTap.current == null).padding(start = 4.dp, end = 4.dp, top = 8.dp)
             .then(with(com.bamnat.app.ui.parts.PartMods) { box(headPart, MaterialTheme.shapes.medium) }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2262,15 +2287,18 @@ private fun CalendarHeader(
                 val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded, yearInk = yearInk), titleText,
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded || quickRound, yearInk = yearInk), titleText,
                     (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, if (byWeek) "다음 주" else "다음 달", tint = navTint) }
         }
+        // [RVH-42] The work's 바로 단추, before 오늘.
+        if (quickRound) HeadQuickRound(quick.first(), onQuick)
+        else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
-        else if (small || crowded) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else if (small || crowded || quickRound) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
         // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
         // keeps most of the ink (still lighter than when it can be pressed).
         else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
@@ -2281,7 +2309,7 @@ private fun CalendarHeader(
                     disabledContentColor = MaterialTheme.colorScheme.onSurface)) {
             Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
         }
-        if (roomy) {
+        if (roomy && quick.isEmpty()) {
             // 2.0.0 [RVG-08] 검토 TYPE-05: the icon only where a repeating week is the calendar's own (FitTable 'pattern': 교대·일근, and a
             // shop's 영업일·알바's 출근 요일 in their words); 투자·현장 opened the 교대 주기 screen from here.
             val patternWords = when (style) {
@@ -2295,7 +2323,7 @@ private fun CalendarHeader(
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
         // [A11Y-03] On a small phone (320dp) or at the largest text sizes the word squeezed the month to a few
         // pixels; there a round icon button takes its place, and TalkBack still reads its name.
-        if (small || narrow && LocalDensity.current.fontScale >= 1.5f) {
+        if (small || narrow && LocalDensity.current.fontScale >= 1.5f || quickTight) {
             androidx.compose.material3.FilledTonalIconButton(onClick = { menu = true }) {
                 Icon(Icons.Outlined.Apps, "도구", Modifier.size(20.dp))
             }
@@ -2358,6 +2386,10 @@ private fun CalendarHeader(
                         context.appContainer.settingsRepository.update { it.copy(calendarOnly = !only, viewAsked = true) }
                     }))
                     recent?.let { r -> add(at, CalendarTool("방금 넣은 것 되돌리기 (${r.text})", Icons.AutoMirrored.Filled.Undo, onClick = { com.bamnat.app.ui.RecentFill.undo(r) })) }
+                    // [RVH-42] The work's 바로 단추 the head had no room for.
+                    quick.drop(quickShown).forEach { q ->
+                        add(at, CalendarTool(listOf(q.emoji, q.text).filter { it.isNotBlank() }.joinToString(" "), Icons.Outlined.TouchApp, onClick = { onQuick(q.id) }))
+                    }
                     // [PLAZA-06] U25-나: the first setup again, a way out of the calendar, so last in that row and nothing moves
                     // (the main calendar only; an added one has its own 고치기).
                     if (onEditCalendar == null) add(CalendarTool("처음 설정 다시 받기", Icons.Filled.EventRepeat, away = true,
@@ -2376,7 +2408,7 @@ private val HEADER_ICONS_WIDTH = 480.dp
 
 /** [CAL-52] 중-4: "2026년 10월" with the year smaller, so the month is what reads first and the line fits a phone. */
 @Composable
-private fun monthTitle(month: YearMonth, short: Boolean = false, yearInk: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
+internal fun monthTitle(month: YearMonth, short: Boolean = false, yearInk: androidx.compose.ui.graphics.Color? = null): androidx.compose.ui.text.AnnotatedString = androidx.compose.ui.text.buildAnnotatedString {
     pushStyle(androidx.compose.ui.text.SpanStyle(fontSize = 0.72.em, color = yearInk ?: MaterialTheme.colorScheme.onSurfaceVariant))
     if (!short || month.year != Today.date().year) append(if (short) "${month.year % 100}년 " else "${month.year}년 ")
     pop()

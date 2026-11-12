@@ -172,20 +172,8 @@ enum class SettingsPage(
  * [J133-77] 1.33 (유형별 점검: 가게·현장 달력에서도 설정이 '급여와 연차'·'근무 3가지'로 나와요): a group's name in the words of the
  * calendar on screen. 교대·일근 keep the names they always had.
  */
-internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = when (this) {
-    SettingsPage.WORK -> when (style) {
-        com.bamnat.core.work.WorkStyle.FIELD -> "내 일정"
-        com.bamnat.core.work.WorkStyle.BUSINESS -> "내 가게"
-        com.bamnat.core.work.WorkStyle.INVEST -> "내 투자"
-        else -> title
-    }
-    SettingsPage.PAY -> when (style) {
-        com.bamnat.core.work.WorkStyle.HOURLY -> "시급과 주휴수당"
-        com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST -> style.words().income
-        else -> title
-    }
-    else -> title
-}
+// 2.0.0 [RVH-41] One list with 기능 찾기's ways (core FeatureRegistry.settingsPage), so a way read there is this page's name.
+internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = com.bamnat.core.guide.FeatureRegistry.settingsPage(title, style)
 
 /** A result to show once; [undo] offers to take an import back. */
 data class SettingsMessage(val text: String, val undo: Boolean = false)
@@ -221,7 +209,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
         container.appScope.launch {
             val ok = container.recordsTrash.restore(entry.id)
-            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 7일이 지났거나 파일을 읽지 못했어요")
+            _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 보관 기간이 지났거나 파일을 읽지 못했어요")
         }
     }
     /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
@@ -774,7 +762,8 @@ private val HUB_MAX_WIDTH = 360.dp
 @Composable
 private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Composable ColumnScope.() -> Unit) {
     // [J133-77] The group's name in the words of the calendar on screen.
-    val title = page.titleFor(com.bamnat.app.ui.flags.rememberScreenStyle())
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val title = page.titleFor(style)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(com.bamnat.app.ui.theme.LocalSpacing.current.card),
@@ -786,7 +775,8 @@ private fun PageColumn(page: SettingsPage, onBack: (() -> Unit)?, content: @Comp
             }
             Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
         }
-        content()
+        // 2.0.0 [RVH-41] Its rows in the same words ([said]).
+        androidx.compose.runtime.CompositionLocalProvider(LocalSettingsStyle provides style) { content() }
         // [UX-05] Every group ends with where to ask, with the group named so the answers start there.
         TextButton(
             onClick = { InquiryLinks.ask(InquiryStart(about = "설정 > ${page.title}", help = true)) },
@@ -988,7 +978,7 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(e.title, style = MaterialTheme.typography.bodyLarge)
+                Text(com.bamnat.core.work.TypeWords.say(screenStyle, e.title), style = MaterialTheme.typography.bodyLarge)
                 Text(settingsPath(whereFor(e.where, screenStyle)), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

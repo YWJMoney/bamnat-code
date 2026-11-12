@@ -187,7 +187,7 @@ private fun ChecklistCard(
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "이 안내 닫기", tint = scheme.onSurfaceVariant) }
             }
-            if (open) items.forEach { item -> ChecklistRow(item, onTry) } else ChecklistRow(next, onTry)
+            if (open) items.forEach { item -> ChecklistRow(item, style, onTry) } else ChecklistRow(next, style, onTry)
             Row(Modifier.fillMaxWidth().padding(end = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                 if (open) Text("끄려면 설정 › 기능 켜고 끄기", style = MaterialTheme.typography.labelSmall, color = scheme.outline, modifier = Modifier.weight(1f))
                 else Spacer(Modifier.weight(1f))
@@ -199,8 +199,10 @@ private fun ChecklistCard(
 }
 
 @Composable
-private fun ChecklistRow(item: GuideChecklist.Item, onTry: (AppFeature) -> Unit) {
+private fun ChecklistRow(item: GuideChecklist.Item, style: WorkStyle?, onTry: (AppFeature) -> Unit) {
     val scheme = MaterialTheme.colorScheme
+    // 2.0.0 [RVH-41] 검토 T30-102: in this calendar's own words.
+    val said = remember(item.feature, style) { com.bamnat.core.guide.FeatureRegistry.said(item.feature, style) }
     Row(
         Modifier.fillMaxWidth().heightIn(min = 52.dp)
             .clickable(role = Role.Button, onClickLabel = "해 보기") { onTry(item.feature) }
@@ -214,9 +216,9 @@ private fun ChecklistRow(item: GuideChecklist.Item, onTry: (AppFeature) -> Unit)
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(item.feature.name, style = MaterialTheme.typography.bodyLarge,
+            Text(said.name, style = MaterialTheme.typography.bodyLarge,
                 color = if (item.done) scheme.onSurfaceVariant else scheme.onSurface)
-            Text(item.feature.what, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 2)
+            Text(said.what, style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant, maxLines = 2)
         }
         Spacer(Modifier.width(8.dp))
         Text(if (item.done) "다시 보기" else "해 보기", style = MaterialTheme.typography.labelLarge,

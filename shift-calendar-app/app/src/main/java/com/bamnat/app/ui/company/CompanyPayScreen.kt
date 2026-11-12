@@ -30,9 +30,6 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -148,12 +145,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                 if (more) {
                 Text("급여 형태", style = MaterialTheme.typography.titleSmall)
                 val wages = listOf(WageType.MONTHLY to "월급", WageType.HOURLY to "시급", WageType.DAILY to "일당")
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    wages.forEachIndexed { i, (type, label) ->
-                        SegmentedButton(selected = wageType == type, onClick = { wageType = type },
-                            shape = SegmentedButtonDefaults.itemShape(index = i, count = wages.size)) { Text(label) }
-                    }
-                }
+                com.bamnat.app.ui.components.ChoiceRow(wages.map { it.second }, selected = wages.indexOfFirst { it.first == wageType }, onSelect = { wageType = wages[it].first })
                 FilterChip(selected = rough, onClick = { rough = !rough }, label = { Text("대략이에요") })
                 if (wageType == WageType.DAILY) {
                     // [PAYS-03] 일당 ÷ 하루 소정근로시간 is the hourly rate premiums are paid on.

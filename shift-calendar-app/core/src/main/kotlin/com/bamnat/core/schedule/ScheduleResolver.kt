@@ -161,11 +161,12 @@ class ScheduleResolver(
         val (type, source) = when (val o = entry?.override ?: ShiftOverride.None) {
             ShiftOverride.Off -> null to DaySource.OVERRIDE
             // An override pointing at a deleted type falls back to "nothing scheduled".
-            is ShiftOverride.Shift -> typesById[o.shiftTypeId] to DaySource.OVERRIDE
+            // [RVH-33] 검토 WORK-19 A kind of day whose times changed '오늘부터만' keeps the old ones on the days before.
+            is ShiftOverride.Shift -> typesById[o.shiftTypeId]?.on(date) to DaySource.OVERRIDE
             ShiftOverride.None -> {
                 val pattern = patternOn(date)
                 val id = pattern?.shiftTypeIdOn(date)
-                val t = id?.let { typesById[it] }
+                val t = id?.let { typesById[it]?.on(date) }
                 t to if (pattern != null) DaySource.PATTERN else DaySource.NONE
             }
         }
@@ -253,7 +254,7 @@ class ScheduleResolver(
         var before = shiftFrom
         return list.map { e ->
             val kind = kinds.of(e.kindId)
-            val covered = e.coveredShiftId?.let { typesById[it] }
+            val covered = e.coveredShiftId?.let { typesById[it]?.on(date) }
             val asCovered = covered?.takeIf { !e.hasTimes && it.hasTimes }
             if (e.hasTimes || asCovered != null) {
                 val from = date.atTime(e.start ?: asCovered!!.start!!)
