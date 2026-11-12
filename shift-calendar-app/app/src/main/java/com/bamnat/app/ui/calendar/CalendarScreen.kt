@@ -1330,10 +1330,14 @@ fun CalendarScreen(
             // 2.0.0 [RVL-02][RVL-06][RVL-09] (검토 DATA-08·U12-03·DATA-11·U12-08): a restore put back whole, a phone the data came to by
             // Android's own backup, 앱 잠금 resting for want of the phone's lock. What the user trusts the app with comes right after the
             // 리더's change, so it is the open one; each draws nothing (and is not counted) when it has nothing to say.
+            // [RVP-43] HQ-49: they keep what the user trusts the app with (기록, 알람이 다시 걸렸는지, 잠금), so each may be the band; its
+            // '보기' opens the card whole in the 알림함.
             if (paint == null && viewingReceived == null) {
-                add(Notice("restoreStopped", "불러오기 멈춤") { com.bamnat.app.ui.settings.RestoreStoppedNotice() })
-                add(Notice("phoneMoved", "옮겨 온 것 확인") { com.bamnat.app.ui.settings.PhoneMovedNotice() })
-                add(Notice("appLockResting", "앱 잠금 쉼") { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
+                add(Notice("restoreStopped", "불러오기 멈춤", line = "불러오기가 멈춰 전 기록으로 돌려놓았어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    urgent = true) { com.bamnat.app.ui.settings.RestoreStoppedNotice() })
+                add(Notice("phoneMoved", "옮겨 온 것 확인", line = "새 휴대폰으로 옮겨 왔어요", urgent = true) { com.bamnat.app.ui.settings.PhoneMovedNotice() })
+                add(Notice("appLockResting", "앱 잠금 쉼", line = "휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    urgent = true) { com.bamnat.app.ui.settings.AppLockRestingNotice(settings.appLock) })
             }
             // 빌드 e382585e (돈 줄이 '알림 3개 더 보기' 안에 접혀요): first, so it is the one open.
             // 1.36 실사용 S16 (현장: 입금 약속일이 지난 받을 돈이 달력 어디에도 안 보여요): the money promised and not paid, on the first
@@ -1352,6 +1356,17 @@ fun CalendarScreen(
             // [FLAG-16] 1.28 AL: once 처리방침 3.2 is in force, one ask for 사용 통계's two extra items.
             if (paint == null && viewingReceived == null && com.bamnat.app.ui.flags.statsMoreAsks(LocalContext.current.appContainer))
                 add(Notice("statsMore", "사용 통계", line = "사용 통계로 보내는 내용이 늘어요. 괜찮으신가요?", urgent = true) { com.bamnat.app.ui.flags.StatsMoreNotice() })
+            // 2.0.0 [RVP-43] 검토 U13b-02·U13b-08 (업데이트한 날 창을 2~4번 닫아야 달력, '새 버전을 받았어요'가 적는 중에도 위에 뜸): one
+            // opening window a visit; the others wait in the 알림함 as a row each, to open now with a tap (or 다시 시작 for a downloaded
+            // update), else they come on a later visit.
+            if (paint == null) com.bamnat.app.ui.components.AskTurn.waiting.forEach { ask ->
+                val (label, line, act) = waitingWords(ask)
+                val go: () -> Unit = if (ask == com.bamnat.core.guide.OpenAsk.UPDATE_READY) ({ com.bamnat.app.review.InAppUpdate.restart() })
+                    else ({ com.bamnat.app.ui.components.AskTurn.request(ask) })
+                add(Notice("openAsk:${ask.name}", label, line = line, action = act, onAction = go, kind = "calendar.openAsk") {
+                    com.bamnat.app.ui.components.NudgeCard(line, Modifier.padding(horizontal = 16.dp, vertical = 4.dp), action = act, onAction = go)
+                })
+            }
             // [INVITE-03] AE 1.26: an invite code from Play's install referrer, told to the server only on 알리기.
             // AG 1.27 [INVITE-10]: first, so it is never folded in "알림 n개 더 보기" (리뷰 2026-10-25); it shows only
             // for a phone that did not answer at the end of the first setup, and after the report the friend's own invite.
@@ -3394,3 +3409,15 @@ private val FIRST_DAY_WAITS = setOf(
 
 /** 2.0.0 [RVP-45] The empty calendar's first step, the band while it is up (the 빠른 입력 button waits). */
 private const val START_NOTICE = "startCard"
+
+/** [RVP-43] U13b-02: how the 알림함 names an opening window that waits its turn: title, line, what a tap does. */
+private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, String, String> = when (ask) {
+    com.bamnat.core.guide.OpenAsk.NEW_CONSENT -> Triple("새 기능 동의", "새로 생긴 기능을 쓰려면 동의가 필요해요", "보기")
+    com.bamnat.core.guide.OpenAsk.TRIAL_CONSENT -> Triple("체험 끝", "체험이 곧 끝나요. 계속 쓸지 골라 주세요", "고르기")
+    com.bamnat.core.guide.OpenAsk.WHATS_NEW -> Triple("새로 생긴 것", "업데이트로 새로 생긴 것이 있어요", "보기")
+    com.bamnat.core.guide.OpenAsk.THEME_EXPIRY -> Triple("테마 기간 끝", "입은 테마의 기간이 끝났어요", "보기")
+    com.bamnat.core.guide.OpenAsk.UPDATE_READY -> Triple("새 버전", "새 버전을 받았어요. 다시 시작하면 바로 열려요", "다시 시작")
+    com.bamnat.core.guide.OpenAsk.THEME_UPDATE -> Triple("테마 새 판", "입은 테마에 새 판이 나왔어요", "보기")
+    com.bamnat.core.guide.OpenAsk.TEXT_SIZE -> Triple("글자 크기", "읽기 편한 글자 크기를 골라 보세요", "고르기")
+    com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS -> Triple("고마워요", "정식 출시 전부터 함께해 주셔서 고마워요", "보기")
+}

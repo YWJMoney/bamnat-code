@@ -669,6 +669,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 com.bamnat.app.ui.hub.HubLinks.open(com.bamnat.app.ui.hub.HubSection.SHARE)
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
+            NoticeLinks.Target.RECIPE -> {
+                // Only a work's code (letters and numbers), whatever the intent carried.
+                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
+                if (code != null) nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // 1.39 발굴: '보완 요청이 n개 왔어요' opens that version's talk, over 마을 › 내 글 (back leaves both).
             NoticeLinks.Target.FIX_TALK -> {
@@ -883,10 +889,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             if (solved != null) {
                 // 2.0.0 [RVP-23] (검토 UIX-44·U13b-10) It stayed until pressed and held every line behind it, and was marked told before
-                // it showed: now 8 s with 보러 가기 in the queue, marked told once it is on screen.
-                if (com.bamnat.app.ui.components.AppSnack.ask("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요", "보러 가기", withDismissAction = true,
-                        onShown = { prefs.edit().putStringSet("told", told + solved.first).apply() }))
-                    nav.navigate(Routes.recipe(solved.second))
+                // it showed. [RVP-43] U13b-10·HQ-49: someone answered the user's ask, so it is a row of the 알림함's 사람들 반응 (the
+                // bell's number says it on every tab's 나 too); a tap opens the work. Told once it is in (or its kind is turned off).
+                com.bamnat.app.inbox.Inbox.post(container.appContext, com.bamnat.app.inbox.InboxRow(
+                    key = "studio.solved:${solved.first}", kind = "studio.solved", section = com.bamnat.app.inbox.InboxSection.PEOPLE,
+                    title = "부탁하신 꾸미기가 풀렸어요", line = "다른 분이 만들어 장터에 올렸어요",
+                    target = NoticeLinks.Target.RECIPE, payload = solved.second,
+                ))
+                prefs.edit().putStringSet("told", told + solved.first).apply()
             }
         }
     }
