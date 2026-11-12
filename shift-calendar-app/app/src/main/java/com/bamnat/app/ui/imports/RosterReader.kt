@@ -54,9 +54,10 @@ object RosterReader {
         }
         val s = scan.getOrNull()
         val list = s?.words.orEmpty()
-        val rows = s?.read?.rows.orEmpty()
         // [ROST-04] "10월 근무표" over the table, as it reads from the photo.
         val month = DutyRoster.monthIn(list.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
+        // 2.0.0 [RVL-24] (검토 SCAN-10) A 4주 듀티's days of the month before, as dates, beside the file's (함께 넣기·빼기).
+        val rows = s?.read?.rows.orEmpty().map { it.placed(month ?: YearMonth.from(near)) }
         // [READ-14] A photo too dark, blurred or small to read well says so, with what to do, even when it read something.
         val retake = s?.quality?.takeIf { it.retake }?.line
         return RosterResult(rows, month, RosterFrom.PHOTO, error ?: problem(s?.read?.problem).takeIf { rows.isEmpty() }?.let { p -> retake?.let { "$p $it" } ?: p }, s,
@@ -65,8 +66,8 @@ object RosterReader {
 
     /** [READ-04] The photo read again along the lines the user tapped: the row of dates (if any) and their own line. */
     fun tapped(scan: RosterScanner.Scan, codes: DutyCodes, hint: RosterHint, near: LocalDate): RosterResult {
-        val rows = DutyRoster.read(scan.words, codes, hint)
         val month = DutyRoster.monthIn(scan.words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
+        val rows = DutyRoster.read(scan.words, codes, hint).map { it.placed(month ?: YearMonth.from(near)) }
         return RosterResult(rows, month, RosterFrom.PHOTO, TAPPED_NOTHING.takeIf { rows.isEmpty() }, scan)
     }
 
@@ -137,7 +138,8 @@ object RosterReader {
         }
         val words = scans.flatMap { it.words }
         val month = DutyRoster.monthIn(words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
-        val rows = scans.flatMap { it.read.rows }.distinctBy { DutyCodes.norm(it.label).ifEmpty { it.hashCode().toString() } }
+        // 2.0.0 [RVL-16] (검토 SCAN-08) A name on two pages (1~15일, 16~31일) is one line with both halves, not the first page's half.
+        val rows = DutyRoster.joinPages(scans.flatMap { it.read.rows }).map { it.placed(month ?: YearMonth.from(near)) }
         // [READ-32] 1.38 PC: a scan read thinly says what reads every cell instead.
         val days = (month ?: YearMonth.from(near)).lengthOfMonth()
         val thin = rows.isNotEmpty() && rows.maxOf { it.cells.size } < days * 0.8
@@ -145,7 +147,7 @@ object RosterReader {
             advice = if (thin) "스캔한 PDF라 다 읽지 못했어요. 원래 엑셀 파일이나 엑셀에서 'PDF로 저장'한 파일을 주시면 모든 칸을 정확히 읽어요." else null)
     }
 
-    private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·사진 파일을 골라 주세요."
+    private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·한글(.hwpx)·워드(.docx)·사진 파일을 골라 주세요."
 
     fun text(text: String, codes: DutyCodes, near: LocalDate): RosterResult {
         val rows = DutyRoster.readText(text, codes)

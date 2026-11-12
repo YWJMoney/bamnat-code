@@ -104,9 +104,9 @@ class TaxForecastTest {
         // (일당 − 15만) × 6% × 45%, 1,000원 미만은 안 떼요, 지방소득세 10%.
         assertEquals(0, TaxLearner.dailyWithheld(150_000))
         assertEquals(0, TaxLearner.dailyWithheld(180_000))
-        // 2.0.0 [RVJ-11] 검토 PAYC-10: the same as 현장 › 일용직 세금 (DailyWorkerTax), 지방소득세 a tenth to the won.
-        assertEquals(1_080 + 108, TaxLearner.dailyWithheld(190_000))
-        assertEquals(1_350 + 135, TaxLearner.dailyWithheld(200_000))
+        // 2.0.0 [RVJ-11] 검토 PAYC-10: the same as 현장 › 일용직 세금 (DailyWorkerTax). [RVJ-37] 10원 미만 끝수는 버려요 (지방소득세 108 → 100).
+        assertEquals(1_080 + 100, TaxLearner.dailyWithheld(190_000))
+        assertEquals(1_350 + 130, TaxLearner.dailyWithheld(200_000))
     }
 
     @Test fun yearSoFarSplitsTaxAndInsurance() {
