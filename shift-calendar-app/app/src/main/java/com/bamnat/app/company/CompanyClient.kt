@@ -130,7 +130,16 @@ data class Membership(
      * and 이 급여 방식 쓰기 go on without asking for it again; null from a server before 1.30 (then read it as before).
      */
     val page: CompanyPage? = null,
-)
+    /** 2.0.0 [RVN-17] COMP-12 With member_wait: '잘못 골랐어요' can free the calendar now ([held] is the company holding it). */
+    val undo: Boolean = false,
+    val held: String? = null,
+) {
+    companion object {
+        /** A join the server refused with [e] (member_wait, member_limit), with what it said about the wait. */
+        fun refused(company: String, e: CompanyException) =
+            Membership(false, company, e.code, until = e.untilMillis?.let(Instant::ofEpochMilli), undo = e.undo, held = e.held)
+    }
+}
 
 /**
  * [SPD-13] 1.30 묶음 AP1 (사용자 2026-10-27 "조회하는 로딩이 너무 느리다"): a company's page with, for a phone that joined it, its
@@ -201,11 +210,16 @@ data class CompanyPage(
      * the older one's id: the pay screen offers it, as the way in use does not follow by itself.
      */
     val newer: Map<String, String> = emptyMap(),
+    /** 2.0.0 [RVN-17] COMP-12 The server lets a calendar that picked this company by mistake be freed once (page `join.undo`). */
+    val joinUndo: Boolean = false,
+    /** 2.0.0 [RVN-17] COMP-12 How many days a join holds the calendar (the page's join.waitDays; 30 from a server before 2.0.0). */
+    val joinWaitDays: Int = 30,
 )
 
 /** What a setup needs to be adopted and what adoption earns, said before anyone sends [COMM-03]. */
 /** [PLAZA-10] [firstMonths]: the pass a company's first setup with its pay earns (새 정보). */
-data class CompanyTerms(val threshold: Int, val rewardMonths: Int, val agree: Int = 75, val firstMonths: Int = 0)
+/** 2.0.0 [RVN-17] COMP-14 [roomMoney]: a room's post (회사 방·유형별 방) may hold an amount; contacts never (the server's one value). */
+data class CompanyTerms(val threshold: Int, val rewardMonths: Int, val agree: Int = 75, val firstMonths: Int = 0, val roomMoney: Boolean = false)
 
 /** [COMM-07] One company's rule set on 회사 규칙 광장: still being voted on, or adopted for anyone to use. */
 data class BoardItem(
@@ -570,6 +584,9 @@ class CompanyException(
     val why: String? = null,
     /** 1.39 [CARE-02] With "muted": when 쉬기 ends (ISO), so the app can say the day. */
     val until: String? = null,
+    /** 2.0.0 [RVN-17] COMP-12 With "member_wait": whether '잘못 골랐어요' can free the calendar now, and the company holding it. */
+    val undo: Boolean = false,
+    val held: String? = null,
 ) : IOException(code) {
     /** [until] as epoch millis, or null. */
     val untilMillis: Long? get() = until?.let { runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull() }
@@ -627,6 +644,16 @@ interface CompanyApi {
      */
     suspend fun joinWithPage(device: String, company: String, cal: String): Pair<Membership, CompanyPage?> = join(device, company, cal) to null
     suspend fun leave(device: String, company: String) = Unit
+    /**
+     * 2.0.0 [RVN-17] 검토 COMP-12 '잘못 골랐어요': frees the calendar [cal] from the company it holds, once a year (undo_used after; closed
+     * when the server turned the way off). True when the calendar is free.
+     */
+    suspend fun undoJoin(device: String, cal: String): Boolean = true
+    /**
+     * 2.0.0 [RVN-17] COMP-12 A look before the user picks an order: whether the calendar [cal] could take [company] (error null) or why
+     * not (member_wait with the company holding it, member_limit). Nothing is joined. A fake or an older server says it could.
+     */
+    suspend fun joinCheck(device: String, company: String, cal: String): Membership = Membership(false, company)
     /** [PLAZA-09] The room of a company this phone joined; null when it has not joined (or an older server). */
     suspend fun room(device: String, company: String): RoomPage? = null
     suspend fun status(id: String): ReportStatus?
@@ -908,8 +935,9 @@ class CompanyClient(
             // [SPD-16] 1.30 AP1: the page comes with the join (SP1 [SPD-08]; in the body, so the request keeps its X-Request-Id).
             membership(request("POST", "/api/members", JSONObject().put("device", device).put("company", company).put("cal", cal).put("with", "page")), company)
         } catch (e: CompanyException) {
-            // A 409 carries the reason as its error word; the details are not needed to say it.
-            if (e.code == "member_wait" || e.code == "member_limit") Membership(false, company, e.code) else throw e
+            // A 409 carries the reason as its error word; 2.0.0 [RVN-17] COMP-12 with which company holds the calendar, until when, and
+            // whether '잘못 골랐어요' can free it.
+            if (e.code == "member_wait" || e.code == "member_limit") Membership.refused(company, e) else throw e
         }
     }
 
@@ -920,8 +948,22 @@ class CompanyClient(
             val o = request("POST", "/api/members", JSONObject().put("device", device).put("company", company).put("cal", cal).put("with", "page"))
             membership(o, company) to o.optJSONObject("page")?.takeIf { it.has("id") && !it.has("mergedInto") }?.let { runCatching { companyPage(it) }.getOrNull() }
         } catch (e: CompanyException) {
-            if (e.code == "member_wait" || e.code == "member_limit") Membership(false, company, e.code) to null else throw e
+            if (e.code == "member_wait" || e.code == "member_limit") Membership.refused(company, e) to null else throw e
         }
+    }
+
+    override suspend fun joinCheck(device: String, company: String, cal: String): Membership = serverCall {
+        try {
+            request("POST", "/api/members", JSONObject().put("device", device).put("company", company).put("cal", cal).put("dry", true))
+            Membership(false, company)
+        } catch (e: CompanyException) {
+            if (e.code == "member_wait" || e.code == "member_limit") Membership.refused(company, e) else throw e
+        }
+    }
+
+    override suspend fun undoJoin(device: String, cal: String): Boolean = serverCall {
+        val o = request("POST", "/api/members/undo", JSONObject().put("device", device).put("cal", cal))
+        o.optBoolean("undone") || o.optBoolean("free")
     }
 
     override suspend fun leave(device: String, company: String) = serverCall {
@@ -1421,6 +1463,8 @@ internal fun companyPage(o: JSONObject): CompanyPage = CompanyPage(
     member = o.optBoolean("member"),
     limited = o.optBoolean("limited"),
     newer = o.optJSONObject("newer")?.let { n -> n.keys().asSequence().associateWith { n.optString(it) }.filterValues { it.isNotEmpty() } }.orEmpty(),
+    joinUndo = o.optJSONObject("join")?.optBoolean("undo") == true,
+    joinWaitDays = o.optJSONObject("join")?.optInt("waitDays", 30)?.takeIf { it > 0 } ?: 30,
 )
 
 /** [PLAZA-09] A member's room (`/room`, or the `room` of a [CompanyBundle]). */
@@ -1520,7 +1564,7 @@ internal fun talkOf(o: JSONObject): Talk = Talk(
 )
 
 internal fun termsOf(o: JSONObject) =
-    CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75), o.optInt("firstMonths", 0))
+    CompanyTerms(o.optInt("threshold", 3), o.optInt("rewardMonths", 0), o.optInt("agree", 75), o.optInt("firstMonths", 0), o.optBoolean("roomMoney"))
 
 internal fun plazaJobs(o: JSONObject): List<PlazaJob> = o.optJSONArray("jobs").rows {
     PlazaJob(it.getString("key"), it.optString("name"), it.optInt("adopted"), it.optInt("voting"), it.optInt("rates"))
@@ -1698,7 +1742,8 @@ private fun exchangeOnce(
             val err = runCatching { JSONObject(text) }.getOrNull()
             val retry = err?.optInt("retryAfter")?.takeIf { it > 0 } ?: conn.getHeaderField("Retry-After")?.trim()?.toIntOrNull()
             throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
-                retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"))
+                retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"), undo = err?.optBoolean("undo") == true,
+                held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() })
         }
         result = NetTimings.Result.OK
         return Answer(code, if (text.isBlank()) JSONObject() else JSONObject(text), conn.getHeaderField("ETag"))
@@ -1761,6 +1806,19 @@ object CompanyText {
 
     /** Why [text] cannot be shared: email, phone or amount; null when it can. */
     fun personal(text: String): String? = personal.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+
+    // 2.0.0 [RVN-17] 검토 COMP-14: the server's CONTACT. A real phone number's shape (010·02·031… then 3~4 and 4 digits, not inside a longer
+    // run), so "연봉 300000000원" is not taken for one.
+    private val contacts = listOf(
+        "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
+        "phone" to Regex("(?<!\\d)(\\+?82[\\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}(?!\\d)"),
+    )
+
+    /** 2.0.0 [RVN-17] COMP-14 Why a room's post cannot go once 방 글에 금액 받기 is on: only a way to reach someone (email, phone). */
+    fun contact(text: String): String? = contacts.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+
+    /** 2.0.0 [RVN-17] COMP-14 The check for a post: in a room with [roomMoney] on, contacts only; anywhere else, [personal]. */
+    fun post(text: String, room: Boolean, roomMoney: Boolean): String? = if (room && roomMoney) contact(text) else personal(text)
 
     /** What to tell the user about a refused text or field. */
     fun problem(code: String): String = when (code) {

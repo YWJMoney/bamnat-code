@@ -3781,6 +3781,9 @@ function adminApp(L, BUILD, M) {
         ${stepper("rewardCapMonths", "한 사람 상한", s.rewardCapMonths ?? 3, "개월", edit)}
         ${stepper("rewardCapDays", "상한을 세는 기간", s.rewardCapDays ?? 90, "일", edit)}
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
+        <h3>광장 방 글</h3>
+        <label class="switch"><input type="checkbox" data-change="room-money"${s.roomMoney ? " checked" : ""}${edit ? "" : " disabled"}><span class="track" aria-hidden="true"></span><span>방 글에 금액 받기</span></label>
+        <p class="hint">켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처는 그대로 막아요). 운영 규칙 4항을 고쳐 게시한 날 켜요.</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>`;
   }
@@ -7494,6 +7497,11 @@ function adminApp(L, BUILD, M) {
     },
     "auto-reward": (t) => {
       S.draft = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? {}), autoReward: t.checked ? 1 : 0 };
+      render({ keepScroll: true });
+    },
+    // 2.0.0 [RVN-17] 검토 COMP-14: 광장 방 글의 금액 한 값.
+    "room-money": (t) => {
+      S.draft = { adoptAgree: 75, ...(S.draft ?? S.overview?.settings ?? {}), roomMoney: t.checked ? 1 : 0 };
       render({ keepScroll: true });
     },
     "pref-theme": (t) => {

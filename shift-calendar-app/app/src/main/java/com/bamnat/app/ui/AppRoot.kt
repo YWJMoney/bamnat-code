@@ -2024,7 +2024,10 @@ private fun AppNavHost(
                     scope.launch {
                         val hasPattern = company.schedule.patterns.first().isNotEmpty()
                         val pay = company.pay.profile.value != null
-                        val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
+                        // 2.0.0 [RVN-17] 검토 I10ab-02 The order alone, on a calendar held by another company: said as what it was.
+                        val done = applied.heldBy?.let { h ->
+                            "‘$name’ 근무 순서를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
+                        } ?: ("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                         // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
                         applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }
                         when {
@@ -2045,7 +2048,7 @@ private fun AppNavHost(
                                 // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
-                                if (container.companyApi.enabled && company.store.member.value != null) {
+                                if (container.companyApi.enabled && company.store.member.value != null && applied.heldBy == null) {
                                     container.pendingPlazaNote = if (applied.undo != null) "이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                         else "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                     nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true }
