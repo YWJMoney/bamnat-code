@@ -13,6 +13,7 @@ import com.bamnat.core.model.WorkPattern
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -86,6 +87,17 @@ class ShiftsViewModel(
 
     /** The kinds put away in this calendar now (not offered as a new schedule's day). */
     fun foldedNow(): Set<Long> = container.foldedTypes.of(calendarId)
+
+    /**
+     * [RVH-33] 검토 WORK-19 The past days worked as kind [typeId] on its own hours: what '지난 날도' would change. Counted from where
+     * the calendar starts (its first order or day written), at most two years back.
+     */
+    suspend fun pastDaysOf(typeId: Long): Int = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val snap = repo.snapshot.first()
+        val today = Today.date()
+        val since = listOfNotNull(snap.patterns.minOfOrNull { it.startDate }, snap.entries.minOfOrNull { it.date }).minOrNull() ?: return@withContext 0
+        com.bamnat.core.schedule.SinceChoice.pastDays(snap.resolver, typeId, today, since)
+    }
 
     fun save(type: ShiftType) {
         // [SETUP-16] 1.37 PC b98f9d1e (묻기로 두고 주간 끝을 18:30으로 고쳐도 '회사 광장에 나눌까요?'가 없음): a kind's time is part of what

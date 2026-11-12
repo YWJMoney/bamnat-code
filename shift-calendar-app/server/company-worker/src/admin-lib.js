@@ -99,6 +99,8 @@ export function adminLib() {
     // 1.39 [CARE-05] 마을 돌봄.
     ambiguous: "그 표시로 여러 사람이 찾아져요. 글 번호나 더 긴 표시로 찾아 주세요",
     warn_first: "먼저 경고를 보내 주세요. 불법·성적인 내용·개인 정보 노출만 바로 쉬게 할 수 있어요",
+    // 2.0.0 [RVA-03] 1분이 지나 되돌리기 대신 거두기·풀기로
+    late: "되돌릴 시간이 지났어요. 그 줄의 거두기·풀기로 해 주세요",
     off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
     name: "이름을 1~30자로 적어 주세요",
     nick: "별명을 다시 확인해 주세요",
@@ -111,6 +113,9 @@ export function adminLib() {
     note: "메모가 너무 길어요. 1000자까지예요",
     off: "꺼 둔 기능이에요",
     offline: "인터넷에 연결되지 않았어요",
+    // 2.0.0 [RVA-10] 검토 U24-15·조건 7: 연결 없음·서버 바쁨·시간 넘김을 나눠 말해요.
+    unreachable: "서버에 닿지 않아요(인터넷은 연결돼 있어요). 잠시 뒤 다시 해 주세요",
+    timeout: "서버가 답하는 데 시간이 너무 걸려요. 잠시 뒤 다시 해 주세요",
     ok: "값을 다시 골라 주세요",
     own: "내 항목에는 할 수 없어요",
     not_yours: "내가 쓴 질문에만 고를 수 있어요",
@@ -1343,7 +1348,7 @@ export function adminLib() {
     alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
     inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
@@ -1487,7 +1492,20 @@ export function adminLib() {
       .map(cell).join(",");
   }
 
+  /**
+   * 2.0.0 [RVD-21] 이분의 1년 보상 in words: "이분의 1년 보상 3/12개월", or before the 1년 12개월 is in force (처리방침 3.13 게시 + 30일)
+   * "이분의 1년 보상 3개월 · 12개월 상한은 12월 12일부터".
+   */
+  function rewardYearWords(y) {
+    return y.cap != null ? `이분의 1년 보상 ${y.used}/${y.cap}개월` : `이분의 1년 보상 ${y.used}개월 · 12개월 상한은 ${capFromWords(y.from)}`;
+  }
+  /** 2.0.0 [RVD-21] From when the 1년 12개월 counts: "12월 12일부터", or "처리방침 3.13 시행일부터" while 3.13 is not in the calendar. */
+  function capFromWords(from) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(from ?? "") ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일부터` : "처리방침 3.13 시행일부터";
+  }
+
   return {
+    rewardYearWords, capFromWords,
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,

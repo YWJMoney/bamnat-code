@@ -46,9 +46,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -93,7 +90,6 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
-import com.bamnat.core.money.PaymentParser
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -142,6 +138,8 @@ fun EntryDialog(
     /** [LEDG-13] Saves and opens a fresh line, for a pile of receipts. */
     onSaveAndNext: ((MoneyEntry) -> Unit)? = null,
     onEditCategories: (() -> Unit)? = null,
+    /** 2.0.0 [RVK-04] (U06a-02, MONEY-27): 저장하고 하나 더 starts on the account of the line just saved. */
+    startAccount: Long? = null,
 ) {
     val ledger = rememberLedger(book)
     val entries = ledger.entries
@@ -150,7 +148,10 @@ fun EntryDialog(
     val haptics = LocalHapticFeedback.current
     // 1.38 PC 621c55f4 LOW (돈 적기 시트를 아래로 쓸면 쓰던 금액이 사라져요): a new line closed without 저장 is kept for a while on
     // this phone's memory, and the next 돈 적기 starts from it with a way to clear it, whichever way the sheet was closed.
-    val draft = remember { if (initial == null) EntryDraft.take(date) else null }
+    // 2.0.0 [RVK-04] (MONEY-27): the draft is this calendar's, and keeps every field (a day changed to yesterday, the card picked).
+    val context = LocalContext.current
+    val calendarId = remember { runCatching { context.appContainer.calendars.active.value }.getOrDefault("") }
+    val draft = remember { if (initial == null) EntryDraft.take(date, calendarId) else null }
     var kind by rememberSaveable { mutableStateOf(draft?.kind ?: initial?.kind ?: defaultKind) }
     val categories = remember(ledger, kind) { ledger.categoriesOf(kind) }
     // A cancellation is stored negative (or, from a kept foreign text, still 0 and marked "결제 취소").
@@ -161,10 +162,13 @@ fun EntryDialog(
     }
     var categoryTouched by rememberSaveable { mutableStateOf(initial != null || draft != null) }
     var place by rememberSaveable { mutableStateOf(draft?.place ?: initial?.merchant?.ifBlank { initial.note }.orEmpty()) }
-    var day by rememberSaveable { mutableStateOf((initial?.date ?: date).toString()) }
-    var account by rememberSaveable { mutableStateOf(initial?.accountId ?: if (isNew) MoneyAccounts.lastUsed(entries, kind, ledger.accounts) else null) }
-    var toAccount by rememberSaveable { mutableStateOf(initial?.toAccountId) }
-    var accountTouched by rememberSaveable { mutableStateOf(!isNew) }
+    var day by rememberSaveable { mutableStateOf((draft?.day ?: initial?.date ?: date).toString()) }
+    val givenAccount = draft?.account ?: startAccount?.takeIf { id -> ledger.accounts.any { it.id == id } }
+    var account by rememberSaveable {
+        mutableStateOf(initial?.accountId ?: givenAccount ?: if (isNew) MoneyAccounts.lastUsed(entries, kind, ledger.accounts) else null)
+    }
+    var toAccount by rememberSaveable { mutableStateOf(draft?.toAccount ?: initial?.toAccountId) }
+    var accountTouched by rememberSaveable { mutableStateOf(!isNew || givenAccount != null) }
     // [LEDG-13] Opened from a day, the book may arrive after the sheet: the defaults follow it once, unless already chosen.
     LaunchedEffect(entries.isEmpty(), ledger.accounts.isEmpty()) {
         if (initial != null) return@LaunchedEffect
@@ -175,22 +179,23 @@ fun EntryDialog(
     var fromDraft by rememberSaveable { mutableStateOf(draft != null) }
     // 1.38 (1.37 PC LOW '쓸면 적던 것이 사라져요'): the 한 줄로 적기 text counts as typed too, so a swipe asks first.
     var line by rememberSaveable { mutableStateOf("") }
-    var tagsText by rememberSaveable { mutableStateOf(initial?.tags.orEmpty().joinToString(" ") { "#$it" }) }
-    var partsText by rememberSaveable { mutableStateOf(encodeParts(initial?.parts.orEmpty())) }
-    var installments by rememberSaveable { mutableIntStateOf(initial?.installments ?: 1) }
+    var tagsText by rememberSaveable { mutableStateOf(draft?.tags ?: tagsOf(initial)) }
+    var partsText by rememberSaveable { mutableStateOf(draft?.parts ?: encodeParts(initial?.parts.orEmpty())) }
+    var installments by rememberSaveable { mutableIntStateOf(draft?.installments ?: initial?.installments ?: 1) }
     // 1.32 [LEDX-17] 유이자 할부: the card's 연 수수료율, so each 회차's 수수료 joins the bill.
-    var rateText by rememberSaveable { mutableStateOf(initial?.installmentRate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()) }
+    var rateText by rememberSaveable { mutableStateOf(draft?.rate ?: rateOf(initial)) }
     // 1.32 [LEDX-16] A refund the app could not tie to its payment: the user picks it here.
     var pickingRefund by remember { mutableStateOf(false) }
     // [FLD-08] 증빙 and a receipt photo, for field and shop costs.
-    var proof by rememberSaveable { mutableStateOf(initial?.proof.orEmpty()) }
-    var receipt by rememberSaveable { mutableStateOf(initial?.receipt.orEmpty()) }
+    var proof by rememberSaveable { mutableStateOf(draft?.proof ?: initial?.proof.orEmpty()) }
+    var receipt by rememberSaveable { mutableStateOf(draft?.receipt ?: initial?.receipt.orEmpty()) }
     // [LEDG-25] The time a receipt said, for a new line filled from it.
     var readTime by rememberSaveable { mutableStateOf<String?>(null) }
     var scanNote by rememberSaveable { mutableStateOf<String?>(null) }
     val proofs = ledger.style == com.bamnat.core.work.WorkStyle.FIELD || ledger.style == com.bamnat.core.work.WorkStyle.BUSINESS
     var more by rememberSaveable {
-        mutableStateOf(initial != null && (initial.memo.isNotBlank() || initial.tags.isNotEmpty() || initial.parts.isNotEmpty()))
+        mutableStateOf((initial != null && (initial.memo.isNotBlank() || initial.tags.isNotEmpty() || initial.parts.isNotEmpty())) ||
+            (draft != null && (draft.memo.isNotBlank() || draft.tags.isNotBlank() || draft.parts.isNotBlank())))
     }
     var pickingDate by remember { mutableStateOf(false) }
     var placeFocused by remember { mutableStateOf(false) }
@@ -224,13 +229,19 @@ fun EntryDialog(
 
     // 1.37 PC 확인 6a4efc92 (높음): 시트 안에서 위로 가려고 아래로 끌면 시트가 닫히고 금액·날짜·카드가 말없이 사라졌어요. 적은 것이
     // 있으면 끌기·뒤로·바깥 누르기는 먼저 물어요 (FormSheet와 같은 방식). 제목 줄의 닫기는 그대로 바로 닫아요.
+    // 2.0.0 [RVK-04] (MONEY-27): a change to tags, parts, 할부, 수수료율, 어디로, 증빙 or the receipt counts too, so it is not dropped unasked.
     val typed = if (initial == null) amount > 0 || place.isNotBlank() || memo.isNotBlank() || tagsText.isNotBlank() || line.isNotBlank() ||
         partsText.isNotBlank() || receipt.isNotBlank()
     else amount != abs(initial.amount) || kind != initial.kind || category != initial.category || day != initial.date.toString() ||
-        account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim()
+        account != initial.accountId || place.trim() != initial.merchant.ifBlank { initial.note }.trim() || memo.trim() != initial.memo.trim() ||
+        Ledger.parseTags(tagsText) != initial.tags || partsText != encodeParts(initial.parts) || installments != initial.installments ||
+        rateText != rateOf(initial) || toAccount != initial.toAccountId || proof != initial.proof || receipt != initial.receipt
     // Kept whenever the sheet goes without 저장 (a swipe, 뒤로, ✕ or 버리기): 저장 clears it.
     val close = {
-        if (initial == null && amount > 0) EntryDraft.keep(EntryDraft.Saved(onDay, kind, digits, category, place, memo))
+        if (initial == null && (amount > 0 || place.isNotBlank() || memo.isNotBlank())) EntryDraft.keep(
+            EntryDraft.Saved(calendarId, date, onDay, kind, digits, category, place, memo, account.takeIf { accountTouched }, toAccount,
+                tagsText, partsText, installments, rateText, proof, receipt),
+        )
         onDismiss()
     }
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = close, unsaved = typed, closeButton = false) {
@@ -249,7 +260,7 @@ fun EntryDialog(
                     if (askDelete) com.bamnat.app.ui.components.AlertDialog(
                         onDismissRequest = { askDelete = false },
                         title = { Text("이 기록을 지울까요?") },
-                        text = { Text("‘${initial!!.title}’ ${Fmt.won(initial.amount)}. 지운 뒤 잠깐 나오는 ‘되돌리기’로 살릴 수 있어요.") },
+                        text = { Text("‘${initial!!.title}’ ${Fmt.won(initial.amount)}. 지운 뒤 나오는 ‘되돌리기’나, 30일 동안 가계부 메뉴 › 최근 지운 기록에서 살릴 수 있어요.") },
                         confirmButton = { TextButton(onClick = { askDelete = false; onDelete(initial!!) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
                         dismissButton = { TextButton(onClick = { askDelete = false }) { Text("취소") } },
                     )
@@ -264,23 +275,21 @@ fun EntryDialog(
                 if (fromDraft) Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("닫기 전에 적던 내용이에요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f))
-                    TextButton(onClick = { digits = ""; place = ""; memo = ""; fromDraft = false }) { Text("지우고 새로") }
+                    TextButton(onClick = {
+                        digits = ""; place = ""; memo = ""; tagsText = ""; partsText = ""; installments = 1; rateText = ""; proof = ""; receipt = ""
+                        day = date.toString(); toAccount = null; accountTouched = false
+                        account = MoneyAccounts.lastUsed(entries, kind, ledger.accounts); fromDraft = false
+                    }) { Text("지우고 새로") }
                 }
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    MoneyKind.entries.forEachIndexed { i, k ->
-                        SegmentedButton(
-                            selected = kind == k,
-                            onClick = {
-                                if (kind == k) return@SegmentedButton
-                                kind = k
-                                val list = ledger.categoriesOf(k)
-                                if (category !in list) category = (if (isNew) Ledger.lastCategory(entries, k)?.takeIf { it in list } else null) ?: list.first()
-                                if (isNew) account = MoneyAccounts.lastUsed(entries, k, ledger.accounts) ?: account
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size),
-                        ) { Text(k.label) }
+                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { it.label }, selected = kind.ordinal, onSelect = { i ->
+                    val k = MoneyKind.entries[i]
+                    if (kind != k) {
+                        kind = k
+                        val list = ledger.categoriesOf(k)
+                        if (category !in list) category = (if (isNew) Ledger.lastCategory(entries, k)?.takeIf { it in list } else null) ?: list.first()
+                        if (isNew) account = MoneyAccounts.lastUsed(entries, k, ledger.accounts) ?: account
                     }
-                }
+                })
                 // [LEDG-25] A new spending line can be filled from a receipt photo, read on the phone.
                 if (isNew && kind == MoneyKind.EXPENSE) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -313,12 +322,21 @@ fun EntryDialog(
                                 if (category !in list) category = Ledger.lastCategory(entries, kind)?.takeIf { it in list } ?: list.first()
                             }
                             d.amount?.let { digits = amountDigits(it) }
-                            d.category?.takeIf { it in ledger.categoriesOf(kind) }?.let { category = it; categoryTouched = true }
+                            // 2.0.0 [RVK-01] (PC-01, 9차 PC '버스·택시·약국·통신비가 카페로'): the line's own words choose the category
+                            // (a category named in it, the user's rule, then what the words mean), not the last one used. A line it
+                            // cannot place goes to '기타' rather than keep someone else's category, unless the user picked one.
+                            val list = ledger.categoriesOf(kind)
+                            val chosen = d.category?.takeIf { it in list }
+                                ?: com.bamnat.core.money.QuickLine.categoryFor(d.place, kind, list, rules)
+                                ?: MoneyCategories.OTHER.takeIf { !categoryTouched && it in list }
+                            chosen?.let { category = it; categoryTouched = true }
                             if (d.place.isNotBlank()) place = d.place
                             day = com.bamnat.core.time.Today.date().minusDays(d.daysAgo.toLong()).toString()
                             com.bamnat.core.money.QuickLine.account(d, ledger.accounts, entries)?.let { account = it; accountTouched = true }
-                            // PC 확인 (조사 '점심로·1일 전로'): what was filled is listed, then said, with no particle glued to it.
+                            // PC 확인 (조사 '점심로·1일 전로'): what was filled is listed, then said, with no particle glued to it. The category
+                            // is listed too, so a wrong guess shows before 저장.
                             lineNote = "채웠어요: " + listOfNotNull(d.amount?.let { Fmt.won(it) }, d.place.takeIf { it.isNotBlank() },
+                                "분류 $category",
                                 if (d.daysAgo == 1) "어제" else if (d.daysAgo > 1) "${d.daysAgo}일 전" else null).joinToString(" · ") + ". 아래에서 고칠 수 있어요"
                             line = ""
                         }
@@ -333,7 +351,8 @@ fun EntryDialog(
                         lineNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
-                AmountField(
+                // 2.0.0 [RVK-15] (검토 U06a-01): + − × ÷ under the box while it is typed in ("36000÷3" → 12,000).
+                CalcAmountField(
                     if (cancel) "돌려받은 금액" else "금액", digits, { digits = it }, Modifier.focusRequester(amountFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                 )
@@ -357,9 +376,9 @@ fun EntryDialog(
                     onValueChange = { v ->
                         place = v.take(40)
                         // A place seen before (or a known brand) fills its category until the user picks one.
-                        if (!categoryTouched && kind == MoneyKind.EXPENSE) {
-                            val guess = PaymentParser.guessCategory(place.trim(), rules)
-                            if (guess != MoneyCategories.OTHER && guess in categories) category = guess
+                        // 2.0.0 [RVK-01]: the same reading as 한 줄로 적기, so '버스' typed here is 교통 too (and 들어온 돈 '월급' is 급여).
+                        if (!categoryTouched && kind != MoneyKind.TRANSFER) {
+                            com.bamnat.core.money.QuickLine.categoryFor(place.trim(), kind, categories, rules)?.let { category = it }
                         }
                     },
                     singleLine = true,
@@ -706,7 +725,15 @@ fun CategoryPicker(value: String, options: List<String>, modifier: Modifier = Mo
  * [KEEP_MINUTES], taken once by the next 돈 적기 on the same day.
  */
 internal object EntryDraft {
-    data class Saved(val day: LocalDate, val kind: MoneyKind, val digits: String, val category: String, val place: String, val memo: String)
+    /**
+     * 2.0.0 [RVK-04] (MONEY-27): every field, the calendar it was written in and the day the sheet was [opened] on (the line's own
+     * [day] may have been moved to yesterday), so another calendar never gets it and a moved day comes back as it was.
+     */
+    data class Saved(
+        val calendar: String, val opened: LocalDate, val day: LocalDate, val kind: MoneyKind, val digits: String, val category: String,
+        val place: String, val memo: String, val account: Long? = null, val toAccount: Long? = null, val tags: String = "",
+        val parts: String = "", val installments: Int = 1, val rate: String = "", val proof: String = "", val receipt: String = "",
+    )
 
     private const val KEEP_MINUTES = 30L
     private var saved: Saved? = null
@@ -716,9 +743,16 @@ internal object EntryDraft {
 
     fun clear() { saved = null }
 
-    fun take(day: LocalDate): Saved? {
+    fun take(opened: LocalDate, calendar: String): Saved? {
         val d = saved ?: return null
+        if (d.calendar != calendar) return null
         saved = null
-        return d.takeIf { it.day == day && com.bamnat.core.time.Today.millis() - at < KEEP_MINUTES * 60_000 }
+        return d.takeIf { it.opened == opened && com.bamnat.core.time.Today.millis() - at < KEEP_MINUTES * 60_000 }
     }
 }
+
+/** The tags of [e] as the tag field shows them. */
+private fun tagsOf(e: MoneyEntry?): String = e?.tags.orEmpty().joinToString(" ") { "#$it" }
+
+/** [LEDX-17] The 연 수수료율 of [e] as the field shows it ("" for none). */
+private fun rateOf(e: MoneyEntry?): String = e?.installmentRate?.takeIf { it > 0 }?.let { "%.2f".format(it).trimEnd('0').trimEnd('.') }.orEmpty()

@@ -457,7 +457,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(vm) {
         vm.refreshHealth()
         vm.messages.collect { m ->
@@ -486,7 +486,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             com.bamnat.app.ui.components.AddFab("기록 추가", onClick = { adding = true }, open = fab.open)
         },

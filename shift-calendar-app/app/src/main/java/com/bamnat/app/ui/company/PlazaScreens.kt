@@ -46,9 +46,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -578,11 +575,8 @@ private fun AddRateDialog(filter: RatesViewModel.Filter, onDismiss: () -> Unit, 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${Plaza.job(filter.job)} · ${Plaza.region(filter.region)}", style = MaterialTheme.typography.labelLarge)
                 OutlinedTextField(trade, { trade = it.take(20); error = null }, label = { Text("직종") }, placeholder = { Text("예: 형틀목수, 편의점") }, singleLine = true)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    Plaza.RATE_UNITS.entries.forEachIndexed { i, (k, u) ->
-                        SegmentedButton(selected = unit == k, onClick = { unit = k }, shape = SegmentedButtonDefaults.itemShape(i, Plaza.RATE_UNITS.size)) { Text(u.name) }
-                    }
-                }
+                val units = Plaza.RATE_UNITS.entries.toList()
+                com.bamnat.app.ui.components.ChoiceRow(units.map { it.value.name }, selected = units.indexOfFirst { it.key == unit }, onSelect = { unit = units[it].key })
                 OutlinedTextField(amount, { amount = it.filter(Char::isDigit).take(9); error = null }, label = { Text("${Plaza.unit(unit)} (원)") },
                     singleLine = true, visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     supportingText = { amount.toLongOrNull()?.let { Text(won(it)) } })

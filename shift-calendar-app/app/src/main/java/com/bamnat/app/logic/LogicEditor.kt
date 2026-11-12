@@ -472,7 +472,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     // 1.37 PC 4차: 뒤로 가기로 만들던 규칙이 말없이 사라졌어요. 바꾼 게 있으면 먼저 물어요.
     val first = remember { r }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (r != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -586,7 +586,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
     // 1.37 PC 4차: 규칙 창과 같은 구조라 같이 (뒤로 가기 전에 묻기, 요약은 맨 아래).
     val first = remember { b }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (b != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "단추 만들기" else "단추 고치기") },
@@ -653,16 +653,6 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
-
-/** 1.37 PC 4차: 만들던 규칙·단추를 뒤로 가기로 닫을 때 한 번 물어요. */
-@Composable
-private fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit) = AlertDialog(
-    onDismissRequest = onKeep,
-    title = { Text("적은 내용을 버릴까요?") },
-    text = { Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-    confirmButton = { TextButton(onClick = onDiscard) { Text("버리기") } },
-    dismissButton = { TextButton(onClick = onKeep) { Text("계속 적기") } },
-)
 
 /** Which half of the editor a studio tool shows. */
 enum class LogicShow { ALL, RULES, BUTTONS }
@@ -880,7 +870,15 @@ fun LogicEditor(
 
         if (show != LogicShow.BUTTONS) {
         Text("규칙", style = MaterialTheme.typography.titleSmall)
-        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: 야간 근무 1시간 전에 알림, 날짜를 누르면 그날 메모 틀 열기",
+        // 2.0.0 [RVH-41] 검토 T30-84: the example in the kind's words (an investor has no 근무 to go by).
+        val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: " + when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST -> ""
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 시작 1시간 전에 알림, "
+                com.bamnat.core.work.WorkStyle.FIELD -> "일정 시작 1시간 전에 알림, "
+                null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 근무 1시간 전에 알림, "
+                else -> "근무 1시간 전에 알림, "
+            } + "날짜를 누르면 그날 메모 틀 열기",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }

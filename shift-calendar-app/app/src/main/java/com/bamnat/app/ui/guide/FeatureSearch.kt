@@ -103,6 +103,8 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { resumed++ }
     val style = c.calendars.styleOf(active, settings.workStyle)
     val fits = feature.fits(style)
+    // 2.0.0 [RVH-41] 검토 T30-102: in this calendar's own words (another kind's feature in its own kind's).
+    val said = remember(feature, style, fits) { FeatureRegistry.said(feature, if (fits) style else feature.styles.minByOrNull { it.ordinal }) }
     val on = remember(guide, settings, calendars, active, commute, resumed, feature.id) { FeatureSwitches.isOn(c, feature, active) }
     val scheme = MaterialTheme.colorScheme
     Surface(shape = MaterialTheme.shapes.large, color = scheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
@@ -110,16 +112,16 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.Explore, null, tint = scheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(feature.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(said.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 // [TIER-06] A pro feature says so in the search too.
                 if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) {
                     val gate by c.featureGate.state.collectAsStateWithLifecycle()
                     com.bamnat.app.ui.components.ProBadge(locked = com.bamnat.app.ui.pro.proFeatureOf(feature.id)?.let(gate::locked) == true)
                 }
             }
-            Text(feature.what, style = MaterialTheme.typography.bodyMedium)
+            Text(said.what, style = MaterialTheme.typography.bodyMedium)
             // 2.0.0 [RVH-25] 검토 WORK-12·REST-17: the way in this calendar's own tab names.
-            Text("어디: ${FeatureRegistry.whereFor(feature, style)}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            Text("어디: ${said.where}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
             val note = when {
                 !fits -> "${feature.styles.joinToString("·") { it.label }} 달력에서 쓰는 기능이에요. 달력 이름을 눌러 그 달력으로 바꾸거나 새로 만들어요."
                 feature.canTurnOff && !on && feature.off == Off.ELSEWHERE -> "지금 꺼져 있어요. 켜면 바로 써요."
@@ -131,8 +133,11 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
                 if (fits && feature.canTurnOff && !on) {
                     FilledTonalButton(onClick = { FeatureSwitches.set(c, feature, active, true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("켜기") }
                 }
+                // [RVP-75] (검토 T14-06) A feature with no screen to open (the ringing alarm's 모두 끄기) shows where it is only.
                 if (fits) {
-                    OutlinedButton(onClick = { FeatureLinks.open(feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("바로 가기") }
+                    if (feature.route.place != Place.NOWHERE) {
+                        OutlinedButton(onClick = { FeatureLinks.open(feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("바로 가기") }
+                    }
                 } else {
                     OutlinedButton(onClick = { FeatureLinks.open(FeatureRoute(Place.CALENDARS)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("달력 목록") }
                 }

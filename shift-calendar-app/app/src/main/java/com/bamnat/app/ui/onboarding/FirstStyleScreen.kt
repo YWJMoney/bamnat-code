@@ -17,13 +17,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.paneTitle
@@ -75,15 +80,16 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
             ) {
                 // [SETUP-17] 1.37 PC 270fc15e: the very first screen had no way to put it off; the file start sat at the bottom.
                 // [RVG-15] 디자인 품질 조건 12: at 200% text a label goes to the next line whole ('나중에 / 할게요' before).
-                if (onLater != null) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onSkip, modifier = Modifier.heightIn(min = 48.dp)) { Text("파일로 시작") }
-                    TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에 할게요") }
-                }
-                // [FIT-03] U23: the user's own words first, the kinds of work under them.
-                // U 1.32 [UX132-05] 글자 크기 first, so everything after is read at the size chosen (설정 › 화면과 글자에서 다시).
-                if (textStep != null) {
-                    Text("글자 크기", style = MaterialTheme.typography.titleSmall)
-                    com.bamnat.app.ui.settings.TextSizePicker(textStep, onTextStep)
+                // U 1.32 [UX132-05] 글자 크기 first, so everything after is read at the size chosen (설정 › 화면과 글자에서 다시). 2.0.0 [RVH-43]
+                // 검토 PC-56 (통합 1차 PC: 칩 다섯 개가 두 줄을 차지해 물음이 화면 31%에서 시작): the '가' button at the top's start opens them.
+                if (onLater != null || textStep != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (textStep != null) TextSizeButton(textStep, onTextStep)
+                    androidx.compose.foundation.layout.FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
+                        if (onLater != null) {
+                            TextButton(onClick = onSkip, modifier = Modifier.heightIn(min = 48.dp)) { Text("파일로 시작") }
+                            TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에 할게요") }
+                        }
+                    }
                 }
                 // [RVG-15] 검토 TYPE-04 (사용자 결정 2026-11-12 '두 단추로 묻기'): whose 근무표 it is, asked before anything is filled,
                 // so a 가족·친구's 근무 never becomes the user's own calendar. One filled button ([linkLean]), one line, details under ⓘ.
@@ -112,7 +118,14 @@ fun FirstStyleScreen(onPick: (FirstStyle) -> Unit, onSkip: () -> Unit, textStep:
                     mood = com.bamnat.app.ui.components.KaniMood.Done, live = true,
                     onClose = onTheirsClose, closeLabel = "받은 달력 안내 닫기",
                 )
-                StepHeader(FIRST_QUESTION, "적거나 고른 일에 맞는 기능만 켜고, 다음 질문도 그 일에 맞춰 물어요. 적은 말은 이 휴대폰에만 있어요.")
+                // [RVH-43] 검토 PC-56 (캐릭터·인사 없이 바로 설문, 조건 16): 칸이 and one line of hello before the question, where no card
+                // with 칸이 is over it already. At large text (조건 1·12: at 200% the hello took four lines and the question began at 37%)
+                // the question comes first and a shorter hello under it.
+                val hello = !linkWaiting && theirsKept == null && !theirsLater && com.bamnat.app.ui.components.LocalShowKani.current
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+                if (hello && !big) KaniHello(HELLO)
+                StepHeader(FIRST_QUESTION, "적은 말은 이 휴대폰에만 있어요.")
+                if (hello && big) KaniHello(HELLO_SHORT)
                 // [FLAG-12][FLAG-13] A hidden kind of work is not offered here (the owner's phone shows it marked).
                 val shown = com.bamnat.app.ui.flags.typeChoices()
                 JobAsk(onPick = { style, roster -> onPick(FirstStyle(style, roster)) }, shown = shown)
@@ -137,8 +150,9 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
                      onClose: (() -> Unit)?, closeLabel: String, actions: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
     val openState = androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val open = openState.value
-    val on = MaterialTheme.colorScheme.onPrimaryContainer
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+    // 2.0.0 [RVP-01] (통합 HQ-06) The quiet ground of every card, the dark mode's bright blue left to what is picked or filled.
+    val on = MaterialTheme.colorScheme.onSurface
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = if (actions != null) 16.dp else if (line == null && !open) 4.dp else 8.dp)) {
             val info: @Composable () -> Unit = {
                 androidx.compose.material3.IconButton(onClick = { openState.value = !open }) {
@@ -174,9 +188,49 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
 private fun LinkOwnerButton(text: String, lead: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Modifier.fillMaxWidth().heightIn(min = 48.dp)
     if (lead) androidx.compose.material3.Button(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
-    else androidx.compose.material3.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m,
-        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f))) { Text(text) }
+    else androidx.compose.material3.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
+}
+
+/** 2.0.0 [RVH-43] 검토 PC-56: 칸이's hello over the first question, what the answer does in one line. */
+const val HELLO = "반가워요, 저는 칸이예요. 하는 일에 맞춰 달력과 질문을 준비할게요."
+/** [RVH-43] The hello at large text, under the question. */
+const val HELLO_SHORT = "반가워요, 저는 칸이예요. 하는 일에 맞춰 준비할게요."
+
+/** [RVH-43] 칸이 and its hello on the first screen. */
+@Composable
+private fun KaniHello(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.Kani(com.bamnat.app.ui.components.KaniMood.Basic, night = com.bamnat.app.ui.components.isDarkSurface(),
+            size = 48.dp, modifier = Modifier.padding(end = 12.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+    }
+}
+
+/**
+ * 2.0.0 [RVH-43] 검토 PC-56: the first screen's 글자 크기, a '가' button at the top's start (TalkBack: '글자 크기, 지금 보통'). The sizes
+ * open in a sheet, each shown at its own size, and a pick is the app's size at once, the sheet staying open to try another.
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun TextSizeButton(step: Int, onStep: (Int) -> Unit) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    val now = com.bamnat.app.ui.theme.TextSize.LABELS.getOrNull(step) ?: ""
+    // [RVH-43] 총괄 #451 사진 검토: a bare '가' read as a letter, not a button. Outlined, a small and a large 가 side by side, as a font
+    // size control looks; 48dp to press (the outline itself 40dp, Material's).
+    androidx.compose.material3.OutlinedIconButton(onClick = { open = true },
+        modifier = Modifier.minimumInteractiveComponentSize().semantics { contentDescription = "글자 크기, 지금 $now" }) {
+        Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.clearAndSetSemantics {}) {
+            Text("가", style = MaterialTheme.typography.labelSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+            Text("가", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+        }
+    }
+    if (open) com.bamnat.app.ui.components.AppSheet(onDismissRequest = { open = false }) {
+        Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text("글자 크기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            com.bamnat.app.ui.settings.TextSizePicker(step, onStep)
+            Text("설정 › 화면과 글자에서 언제든 바꿔요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
 }
 
 /** [FIT-03] The first screen's question (1.25: was "무슨 일 하세요?"). */

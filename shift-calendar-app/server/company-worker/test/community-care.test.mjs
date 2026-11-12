@@ -269,3 +269,35 @@ test("[CARE] 제작자 표식 쉼(careQuietMany): 쉬는 중·풀지 않은 경�
   on = false;
   assert.deepEqual([...await careQuietMany(d, env, all, NOW)], ["limited"]);
 });
+
+test("[RVA-03] 되돌리기: a warning or a hold taken back within a minute is gone with its news, later it says late", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server({ plaza: true });
+  const h = await signIn(call);
+  await careOnNow(call, h);
+  const { say, standing } = await talk(call);
+  const id = (await say(2, "광고 글이에요 둘")).data.id;
+  const news = () => DB.db.prepare("SELECT COUNT(*) AS n FROM plaza_results WHERE kind = 'care'").get().n;
+  const before = news();
+  const w = (await call("POST", "/api/admin/care/warn", { post: id, reason: "spam" }, h)).data;
+  assert.equal(news(), before + 1);
+  // Taken back at once: no record, no 밤낮 소식, nothing for the phone to show.
+  const u = await call("POST", `/api/admin/care/${w.id}/lift`, { undo: true }, h);
+  assert.deepEqual([u.status, u.data.undone], [200, true]);
+  assert.equal(news(), before);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM care_notes WHERE id = ?").get(w.id).n, 0);
+  assert.equal((await standing(2)).data.warning, undefined);
+  // A hold taken back the same way leaves no '풀렸어요' either.
+  await call("POST", "/api/admin/care/warn", { post: id, reason: "spam" }, h);
+  const hold = (await call("POST", "/api/admin/care/hold", { post: id, reason: "spam", scope: "community", days: 3 }, h)).data;
+  const n = news();
+  assert.equal((await call("POST", `/api/admin/care/${hold.id}/lift`, { undo: true }, h)).status, 200);
+  assert.equal(news(), n - 1);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM muted WHERE reason = 'care'").get().n, 0);
+  // After a minute it is 풀기 (with its news), not 되돌리기.
+  const again = (await call("POST", "/api/admin/care/hold", { post: id, reason: "spam", scope: "opinion", days: 3 }, h)).data;
+  t.mock.timers.setTime(NOW + 2 * 60 * 1000);
+  const late = await call("POST", `/api/admin/care/${again.id}/lift`, { undo: true }, h);
+  assert.deepEqual([late.status, late.data.error], [409, "late"]);
+  assert.equal((await call("POST", `/api/admin/care/${again.id}/lift`, {}, h)).status, 200);
+});

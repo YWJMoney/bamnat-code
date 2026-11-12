@@ -150,6 +150,23 @@ export async function fixedAmountsOpen(env, now = Date.now()) {
   return Boolean(p?.effective) && kstDay(now) >= p.effective;
 }
 
+/**
+ * 2.0.0 [RVD-21] 보상 '확인 뒤 지급·1년 12개월 상한'은 처리방침 3.13·약관 1.4의 30일 줄이에요(처리방침 9항·약관 제3조, 3.13 문장표
+ * 1~3줄): 3.13을 게시한 날 + 30일(한국 날짜)부터, 일정의 3.13 시행일이 더 늦으면 그날부터. 관리자 앱 › 기능 관리 › 일정 ›
+ * 처리방침 일정에 3.13이 없으면 아직 아니에요(null). 그 전에는 1.3·3.12대로 상한이 없어요.
+ */
+export const REWARD_CAP_POLICY = "3.13";
+export async function rewardCapFrom(env) {
+  return rewardCapFromPolicy((await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value);
+}
+/** The same from settings' policy_overrides as read ([raw]), for a screen that reads it in its own trip. */
+export function rewardCapFromPolicy(raw) {
+  const p = mergePolicy(raw).find((x) => x.version === REWARD_CAP_POLICY);
+  if (!p?.posted) return null;
+  const notice = new Date(Date.parse(`${p.posted}T00:00:00Z`) + 30 * DAY).toISOString().slice(0, 10);
+  return p.effective && p.effective > notice ? p.effective : notice;
+}
+
 /** 1.39 [PAYP-05] Whether 보완 요청 is open: plaza.fix_request on by the server's view (off until 처리방침's next version). */
 export async function fixRequestsOpen(env, now = Date.now()) {
   return serverEval(await flagStore(env), "plaza.fix_request", now).on;

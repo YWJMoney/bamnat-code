@@ -61,24 +61,26 @@ class SetupFlowTest {
     }
 
     /** 2교대 with 주주휴휴야야휴휴, today the second night. */
-    private fun twoShiftToSummary(vm: SetupViewModel) {
+    private fun twoShiftToSummary(vm: SetupViewModel, draftOf: () -> SetupDraft = { draft }, beforeConfirm: () -> Unit = {}) {
+        fun draft() = draftOf()
         vm.pickStyle(WorkStyle.SHIFT)
-        assertEquals(SetupStep.COMPANY, draft.step)
+        assertEquals(SetupStep.COMPANY, draft().step)
         vm.next()
-        assertEquals(SetupStep.BUNDLE, draft.step)
+        assertEquals(SetupStep.BUNDLE, draft().step)
         vm.pickBundle(ShiftBundles.TWO)
-        assertEquals(SetupStep.TIMES, draft.step)
+        assertEquals(SetupStep.TIMES, draft().step)
         // [EASE-07] The order is on the times' screen, the most usual one already picked.
-        assertTrue(draft.rotation.isNotEmpty())
-        vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
+        assertTrue(draft().rotation.isNotEmpty())
+        vm.pickPreset(vm.presets(draft()).first { it.codes == "DDOONNOO" })
+        beforeConfirm()
         vm.confirmTimes()
-        assertEquals(SetupStep.TODAY, draft.step)
-        val night = draft.types.first { it.name == "야간" }.id
-        val follow = TodayQuestion.followUp(draft.rotation, night, draft::isOff) as FollowUp.RunDay
+        assertEquals(SetupStep.TODAY, draft().step)
+        val night = draft().types.first { it.name == "야간" }.id
+        val follow = TodayQuestion.followUp(draft().rotation, night, draft()::isOff) as FollowUp.RunDay
         vm.answerToday(today, follow.steps[1])
         vm.confirmToday()
         // [EASE-07] The alarm is a card on the summary, not a step of its own.
-        assertEquals(SetupStep.SUMMARY, draft.step)
+        assertEquals(SetupStep.SUMMARY, draft().step)
     }
 
     @Test fun nothingReachesTheCalendarUntilTheLastStepSavesItAll() = runBlocking {
@@ -110,6 +112,76 @@ class SetupFlowTest {
         assertEquals(listOf(60), day.alarms.map { it.offsetMinutes })
         // "예상 급여도 계산할까요?" is offered once.
         assertEquals(WorkStyle.SHIFT, c.firstSetup.saved.value?.style)
+    }
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 1일~어제가 비었는데 저장한 달력은 1일부터 차 있었어요): the
+     * summary's month is the month saving makes, day by day.
+     */
+    @Test fun theSummarysMonthIsTheSavedMonthFromTheFirst() = runBlocking {
+        val vm = vm()
+        twoShiftToSummary(vm)
+        val preview = vm.previewSnapshot(draft)!!.resolver
+        val month = java.time.YearMonth.from(today)
+        assertTrue(preview.resolve(month.atDay(1)).shiftType != null)
+        vm.save()
+        waitFor("the save") { c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val saved = c.scheduleRepository.snapshot.first().resolver
+        (1..month.lengthOfMonth()).map(month::atDay).forEach { day ->
+            assertEquals(day.toString(), saved.resolve(day).shiftType?.name, preview.resolve(day).shiftType?.name)
+        }
+    }
+
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기 over the calendar's shifts: the 주간 the user gave two alarms and a color of their own
+     * keeps them, its new time is said on the summary before saving and saved. Before 2.0.0 it came back with one alarm, quietly.
+     */
+    @Test fun setupAgainKeepsTheAlarmsAndColorsAndSaysTheNewTimes() = runBlocking {
+        val first = vm()
+        twoShiftToSummary(first)
+        first.save()
+        waitFor("the first save") { c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val mine = c.scheduleRepository.shiftTypes.first().first { it.name == "주간" }
+        val own = mine.copy(colorArgb = 0xFF123456, alarmEnabled = true, alarms = listOf(com.bamnat.core.model.AlarmSpec(60), com.bamnat.core.model.AlarmSpec(30)))
+        c.scheduleRepository.saveShiftType(own)
+        c.firstSetup.consumeSaved()
+
+        val again = SetupViewModel(c, now = { now }, again = true)
+        waitFor("the calendar's shifts") { again.kept.value.any { it.name == "주간" && it.alarms.size == 2 } }
+        twoShiftToSummary(again, { c.againSetupDrafts.draft.value!! }) {
+            val day = c.againSetupDrafts.draft.value!!.types.first { it.name == "주간" }
+            again.saveType(day.copy(start = day.start!!.plusHours(1), end = day.end!!.plusHours(1)))
+        }
+        val d = c.againSetupDrafts.draft.value!!
+        // The summary says the 주간 moves an hour, and that its alarms stay.
+        val changes = d.timeChanges(again.kept.value)
+        assertEquals(listOf("주간"), changes.map { it.second.name })
+        assertEquals(mine.start!!.plusHours(1), changes.single().second.start)
+        assertTrue(d.keptWork(again.kept.value).any { it.name == "주간" })
+        // The month on the summary is drawn in the user's own color.
+        assertEquals(0xFF123456, again.typesToSave(d).first { it.name == "주간" }.colorArgb)
+        // [RVH-43] 검토 PC-31: and it is the month saving makes, the days before today as they were.
+        waitFor("the calendar's order") { again.periods.value.isNotEmpty() }
+        val preview = again.previewSnapshot(d)!!.resolver
+
+        again.save()
+        waitFor("the save again") { c.againSetupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val month = java.time.YearMonth.from(today)
+        val after = c.scheduleRepository.snapshot.first().resolver
+        (1..month.lengthOfMonth()).map(month::atDay).forEach { day ->
+            assertEquals(day.toString(), after.resolve(day).shiftType?.name, preview.resolve(day).shiftType?.name)
+        }
+        // The days before keep the hours they had, on the summary as on the calendar (the save counts the new hours from the
+        // phone's own today, the summary from this test's, so only the past is compared by the hour).
+        val past = month.atDay(1).datesUntil(today.minusDays(1)).toList().first { after.resolve(it).shiftType?.name == "주간" }
+        assertEquals(mine.start, preview.resolve(past).start)
+        assertEquals(after.resolve(past).start, preview.resolve(past).start)
+        val saved = c.scheduleRepository.shiftTypes.first().filter { it.name == "주간" }
+        assertEquals(1, saved.size)
+        assertEquals(listOf(60, 30), saved.single().alarms.map { it.offsetMinutes })
+        assertTrue(saved.single().alarmEnabled)
+        assertEquals(0xFF123456, saved.single().colorArgb)
+        assertEquals(mine.start!!.plusHours(1), saved.single().start)
     }
 
     @Test fun aDraftLeftForLaterComesBackAsItWas() {
@@ -572,6 +644,87 @@ class SetupFlowTest {
         vm.save()
         waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
         assertEquals(next, c.shownMonth.month.value)
+    }
+
+    /** 민지's 근무표 (가족 link): 데이 today and the day after, a day off between, 나이트 on the fourth. */
+    private val familyId = "Fm1jNg2hKo3pLq4rMs5tNu"
+    private fun familyShare() = com.bamnat.app.share.ReceivedShare(
+        JSONObject("""{"v":2,"title":"민지","audience":"family",
+            "types":[{"id":1,"name":"데이","short":"D","color":"#2196F3","time":"07:00-15:00"},{"id":2,"name":"나이트","short":"N","color":"#673AB7","time":"22:00-07:00"}],
+            "days":[{"date":"$today","type":1},{"date":"${today.plusDays(1)}","type":1},{"date":"${today.plusDays(2)}"},{"date":"${today.plusDays(3)}","type":2}]}"""),
+        java.time.Instant.now().plus(java.time.Duration.ofDays(60)), java.time.Instant.now(), "e1",
+    )
+
+    /** '내 근무표예요' on the first screen, as AppRoot does it: the setup filled from the link, the link kept as the user's own. */
+    private fun startAsMine(): SetupViewModel {
+        // The link is kept on the setup's day (its month is where the link's days start).
+        com.bamnat.core.time.Today.fix(now.atZone(java.time.ZoneId.systemDefault()))
+        val share = familyShare()
+        c.setupDrafts.save(LinkStart.draft(com.bamnat.app.share.SharedSchedule.parse(share.schedule), today)!!)
+        LinkStart.keepMine(c.received, familyId, share)
+        return vm()
+    }
+
+    /**
+     * [RVG-19] 검토 HQ-09 (조건 10): '내 근무표예요' pressed for 민지's link by mistake. Before, the summary had no way back to the question
+     * (← only went to earlier questions) and the link stayed the user's own, followed. '가족·동료 근무표였어요' keeps it beside as theirs
+     * (only seen, never put into my days), lets the setup go, and the first screen says where it went.
+     */
+    @Test fun aWrongMineGoesBackFromTheSummaryAsTheirs() = runBlocking {
+        val vm = startAsMine()
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        assertTrue(c.received.get(familyId)!!.mine)
+        assertEquals("민지", vm.notMine())
+        assertNull("the setup goes: the first screen asks the user's own work again", c.setupDrafts.draft.value)
+        val cal = c.received.get(familyId)!!
+        assertFalse(cal.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.OFF, com.bamnat.app.share.RosterFollower.mode(cal))
+        assertFalse(c.settingsRepository.current.setupDone)
+        val snap = c.scheduleRepository.snapshot.first()
+        assertTrue("nothing of 민지's is in my days", (0L..3L).all { snap.resolver.resolve(today.plusDays(it)).entry == null })
+    }
+
+    @org.junit.After fun letTheLinkGo() {
+        c.received.remove(familyId)
+        com.bamnat.core.time.Today.reset()
+    }
+
+    /**
+     * [RVG-20] 검토 HQ-09 (조건 10): found after the setup. Before, '넣지 않기' was the only way, and the days the link had put in stayed.
+     * '내 근무표가 아니에요' says how many days come out first, takes out only the link's (a day the user changed by hand stays), keeps
+     * the link beside as theirs, and 되돌리기 puts both back.
+     */
+    @Test fun notMineAfterTheSetupTakesOutOnlyTheLinksDays() = runBlocking {
+        val vm = startAsMine()
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        val before = c.scheduleRepository.snapshot.first()
+        val day = before.resolver.resolve(today).shiftType!!.id
+        assertEquals("나이트", before.resolver.resolve(today.plusDays(3)).shiftType?.name)
+        // The user changes the day after by hand (나이트 instead of 데이).
+        val night = before.resolver.resolve(today.plusDays(3)).shiftType!!.id
+        c.scheduleRepository.setOverride(today.plusDays(1), com.bamnat.core.model.ShiftOverride.Shift(night))
+
+        val plan = com.bamnat.app.share.NotMine.plan(c, familyId)!!
+        assertEquals("데이, 쉬는 날, 나이트: three days are the link's", listOf(today, today.plusDays(2), today.plusDays(3)), plan.theirs)
+        assertEquals(listOf(today.plusDays(1)), plan.kept)
+        val undo = com.bamnat.app.share.NotMine.apply(c, familyId, plan)
+
+        val cal = c.received.get(familyId)!!
+        assertFalse(cal.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.OFF, com.bamnat.app.share.RosterFollower.mode(cal))
+        val after = c.scheduleRepository.snapshot.first()
+        assertNull("민지's 데이 is out of my days", after.resolver.resolve(today).shiftType)
+        assertNull(after.resolver.resolve(today.plusDays(3)).shiftType)
+        assertEquals("the day changed by hand stays", night, after.resolver.resolve(today.plusDays(1)).shiftType?.id)
+
+        undo()
+        val back = c.scheduleRepository.snapshot.first()
+        assertEquals(day, back.resolver.resolve(today).shiftType?.id)
+        assertEquals(night, back.resolver.resolve(today.plusDays(3)).shiftType?.id)
+        assertEquals(night, back.resolver.resolve(today.plusDays(1)).shiftType?.id)
+        assertTrue(c.received.get(familyId)!!.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.AUTO, com.bamnat.app.share.RosterFollower.mode(c.received.get(familyId)!!))
     }
 
     @Test fun aLinkWithoutTimesAsksTheTimesOnly() {

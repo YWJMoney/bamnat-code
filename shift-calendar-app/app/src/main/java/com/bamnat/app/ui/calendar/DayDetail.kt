@@ -1141,15 +1141,18 @@ private fun MemoContent(date: LocalDate, memos: List<Memo>, vm: CalendarViewMode
     // [CAL-43] I 리뷰 N2: a line like "내일 야간 대근 7시" is offered as a change to the calendar, asked first.
     val snapshot by vm.snapshot.collectAsStateWithLifecycle()
     val today = rememberToday()
-    val proposal = remember(text, snapshot, date, today) {
-        snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds) }
+    // 2.0.0 [RVH-41] 검토 TYPE-14: an investor's days are not stamped, and a field worker's or a shop's 휴가 is a day off, not 연차.
+    val workStyle = vm.settings.collectAsStateWithLifecycle().value.workStyle
+    val proposal = remember(text, snapshot, date, today, workStyle) {
+        if (workStyle == com.bamnat.core.work.WorkStyle.INVEST) null
+        else snapshot?.let { s -> com.bamnat.core.schedule.QuickText.parse(text, today, date, s.shiftTypes, s.kinds, leave = workStyle?.usesPayEngine != false) }
     }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().focusRequester(focus),
         // [J133-77] 1.33 (유형별 점검: 가게 날짜 화면에 '인수인계, 내일 야간 대근'): an example of the calendar's own work.
-        placeholder = { Text(quickMemoExample(vm.settings.collectAsStateWithLifecycle().value.workStyle)) },
+        placeholder = { Text(quickMemoExample(workStyle)) },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { submit() }),

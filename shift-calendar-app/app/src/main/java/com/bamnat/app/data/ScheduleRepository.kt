@@ -380,8 +380,10 @@ class ScheduleRepository(
          * the day it was made, so nothing before it counts as worked there.
          */
         backfill: Boolean = true,
+        /** [RVH-28] 검토 WORK-04 처음 설정 다시 받기: shifts of the same name keep their alarms, color and sound ([SetupDraft.typesToSave]). */
+        keep: Boolean = false,
     ): SetupDraft = db.withTransaction {
-        val saved = draft.remap(putSetupTypes(draft))
+        val saved = draft.remap(putSetupTypes(draft, if (keep) today else null))
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
@@ -408,10 +410,11 @@ class ScheduleRepository(
     }
 
     /** [applySetup]'s shifts part, inside its transaction: the draft's ids to the saved ones. */
-    private suspend fun putSetupTypes(draft: SetupDraft): Map<Long, Long> {
+    private suspend fun putSetupTypes(draft: SetupDraft, keepFrom: LocalDate? = null): Map<Long, Long> {
         val existing = shiftTypeDao.getAll().map { it.toModel() }
         val ids = LinkedHashMap<Long, Long>()
-        for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
+        // [RVH-28] 검토 WORK-04 검토 WORK-19 처음 설정 다시 받기 keeps what the user made of a shift, and its new hours count from today.
+        for (t in (if (keepFrom != null) draft.typesToSave(existing, keepFrom) else draft.typesToSave()).sortedBy { it.sortOrder }) {
             val mine = existing.firstOrNull { it.name == t.name.trim() }
             val icon = t.icon ?: mine?.icon ?: ShiftIcon.suggest(t)?.key
             ids[t.id] = saveShiftType(t.copy(id = mine?.id ?: 0, icon = icon, alarmSoundUri = mine?.alarmSoundUri))

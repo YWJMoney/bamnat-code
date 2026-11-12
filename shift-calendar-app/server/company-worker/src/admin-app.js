@@ -359,28 +359,38 @@ function adminApp(L, BUILD, M) {
 
   // ---- [ADMUX-01] drafts: what was typed survives a repaint, a reload and a lost sign-in ----
 
-  const DRAFT = "bamnat-admin-draft:";
+  // 2.0.0 [RVA-01] 검토 ADM-02 ④: 초안 열쇠에 관리자를 넣어, 같은 기기에 다른 관리자가 들어와도 남의 초안이 보이지 않아요. 7일 지난 초안은 버려요.
+  const DRAFT = "bamnat-admin-draft2:";
+  const DRAFT_OLD = "bamnat-admin-draft:";
+  const DRAFT_DAYS = 7;
   /** Boxes whose words are kept per screen; anything else is only kept across a repaint. */
   const KEEP = ["reply", "inq-note", "dev-note"];
-  const draftKey = (id) => `${DRAFT}${S.route.name}/${S.route.id ?? ""}:${id}`;
+  const draftKey = (id, route = S.route) => `${DRAFT}${S.me?.id ?? "?"}:${route.name}/${route.id ?? ""}:${id}`;
   function readDraft(id) {
     try {
-      return localStorage.getItem(draftKey(id)) ?? "";
+      const raw = localStorage.getItem(draftKey(id));
+      if (!raw) return "";
+      const v = JSON.parse(raw);
+      if (!v || typeof v.t !== "string" || Date.now() - Number(v.at) > DRAFT_DAYS * 864e5) {
+        localStorage.removeItem(draftKey(id));
+        return "";
+      }
+      return v.t;
     } catch {
       return "";
     }
   }
-  function writeDraft(id, value) {
+  function writeDraft(id, value, route = S.route) {
     try {
-      if (value) localStorage.setItem(draftKey(id), value);
-      else localStorage.removeItem(draftKey(id));
+      if (value) localStorage.setItem(draftKey(id, route), JSON.stringify({ t: value, at: Date.now() }));
+      else localStorage.removeItem(draftKey(id, route));
     } catch {
       // Not kept; the box still has it.
     }
   }
-  function clearDrafts() {
+  function clearDrafts(oldOnly = false) {
     try {
-      for (const k of Object.keys(localStorage)) if (k.startsWith(DRAFT)) localStorage.removeItem(k);
+      for (const k of Object.keys(localStorage)) if (k.startsWith(DRAFT_OLD) || (!oldOnly && k.startsWith(DRAFT))) localStorage.removeItem(k);
     } catch {
       // Nothing kept.
     }
@@ -442,6 +452,10 @@ function adminApp(L, BUILD, M) {
   let toastTimer = 0;
   let searchTimer = 0;
   let pendingConfirm = null;
+  // 2.0.0 [RVA-02] askText(앱의 입력 창)가 '저장'을 받으면 부를 것.
+  let pendingAsk = null;
+  // [RVA-07] 창을 닫으며 history.back()으로 칸을 거둔 뒤 오는 popstate 한 번은 넘겨요.
+  let dialogBack = false;
   let gKey = "";
   let gTimer = 0;
   let typingSent = 0;
@@ -508,13 +522,14 @@ function adminApp(L, BUILD, M) {
   // ---- 1.39 [ADM3-52] 열면 바로(사용자 11-09 '관리자 앱 로딩이 너무 느려, 로딩 속도 혁신') ----
   // 서비스 워커가 GET마다 남겨 둔 마지막 답(bamnat-admin-api)으로 먼저 그리고, 그 사이 새 답을 받아 바꿔 그려요.
   // 로그아웃하면 지워지고(forget), 7일보다 오래된 답은 쓰지 않아요. 고치기(POST)는 늘 서버로 가요.
-  const PEEK_MAX = 7 * 24 * 3600e3;
+  // 2.0.0 [RVA-01] 검토 ADM-02: 7일 → 24시간, 서비스 워커가 남긴 시각(x-admin-kept)으로 재요(허용 목록 밖의 답은 남지도 않아요).
+  const PEEK_MAX = 24 * 3600e3;
   async function peek(path) {
     try {
       if (!("caches" in window)) return null;
       const hit = await (await caches.open("bamnat-admin-api")).match(new URL(`/api/admin${path}`, location.origin).href);
       if (!hit) return null;
-      const at = Date.parse(hit.headers.get("date") ?? "");
+      const at = Number(hit.headers.get("x-admin-kept")) || 0;
       if (!at || Date.now() - at > PEEK_MAX) return null;
       return await hit.json();
     } catch {
@@ -547,13 +562,16 @@ function adminApp(L, BUILD, M) {
         res = await fetch(`/api/admin${path}`, {
           method,
           credentials: "same-origin",
-          signal,
+          // 2.0.0 [RVA-10] 조건 7(시간 넘김): 읽기는 20초를 넘기면 그만 기다리고 말로 알려요.
+          signal: signal ?? (method === "GET" && AbortSignal.timeout ? AbortSignal.timeout(20000) : undefined),
           headers: method === "GET" ? (cached ? { "if-none-match": cached.etag } : {}) : { "content-type": "application/json", "x-admin": "1" },
           body: method === "GET" ? undefined : JSON.stringify(body || {}),
         });
       } catch (e) {
+        if (e?.name === "TimeoutError") throw Object.assign(new Error("timeout"), { data: {} });
         if (e?.name === "AbortError") throw Object.assign(new Error("aborted"), { quiet: true, data: {} });
-        throw Object.assign(new Error("offline"), { data: {} });
+        // 2.0.0 [RVA-10] 검토 U24-15: 인터넷은 되는데 서버만 닿지 않는 때를 나눠요.
+        throw Object.assign(new Error(navigator.onLine === false ? "offline" : "unreachable"), { data: {} });
       }
       if (res.status === 304 && cached) return structuredClone(cached.data);
       if (method === "GET") {
@@ -612,13 +630,18 @@ function adminApp(L, BUILD, M) {
    * [ADMUX-01] A short note at the bottom; with [undo], a button that takes the last step back.
    * 1.36 P19 ('되돌리기가 8초뿐이고 작아요'): 15 seconds, held while the pointer or focus is on the note, and a bigger button.
    */
+  let toastFold = 0;
   function toast(text, undo) {
     toastBox.innerHTML = `<span>${esc(text)}</span>${undo ? '<button class="undo" type="button" data-undo="1">되돌리기</button>' : ""}`;
     toastBox.classList.add("show");
     toastBox.classList.toggle("has-undo", Boolean(undo));
+    toastBox.classList.remove("mini");
     S.undo = undo ?? null;
     clearTimeout(toastTimer);
+    clearTimeout(toastFold);
     toastLeft = undo ? 15000 : 3000;
+    // 2.0.0 [RVA-16] 검토 ADMX-13: 되돌리기 알림은 4초 뒤 오른쪽의 작은 [되돌리기] 하나로 접혀, 15초 동안 그 밑 단추를 가리지 않아요.
+    if (undo) toastFold = setTimeout(() => { if (toastBox.classList.contains("has-undo") && !toastBox.matches(":hover, :focus-within")) toastBox.classList.add("mini"); }, 4000);
     toastRun();
   }
   let toastLeft = 0;
@@ -627,7 +650,7 @@ function adminApp(L, BUILD, M) {
     clearTimeout(toastTimer);
     toastStarted = Date.now();
     toastTimer = setTimeout(() => {
-      toastBox.classList.remove("show", "has-undo");
+      toastBox.classList.remove("show", "has-undo", "mini");
       S.undo = null;
     }, toastLeft);
   }
@@ -642,7 +665,32 @@ function adminApp(L, BUILD, M) {
   toastBox.addEventListener("focusout", () => { if (toastBox.classList.contains("has-undo")) toastRun(); });
 
   function fail(e) {
-    if (!e.quiet) toast(e.message === "server" || !ERRORS[e.message] ? L.errorText(e.message) : ERRORS[e.message]);
+    const text = e.message === "server" || !ERRORS[e.message] ? L.errorText(e.message) : ERRORS[e.message];
+    // 2.0.0 [RVA-05] 검토 U24-10·ADMX-20: 서버가 어느 칸인지(field) 알려 주면 그 칸에 빨간 테와 이유를 붙여요(알림 한 줄만으로는 어느 칸인지 몰랐어요).
+    const form = S.submitting?.isConnected ? S.submitting : dialog.open ? dialog.querySelector("form") : null;
+    const field = e.data?.field;
+    const box = field && form ? form.querySelector(`[name="${CSS.escape(field)}"]`) : null;
+    if (box) fieldError(box, text, false);
+    if (!e.quiet) toast(text);
+  }
+
+  /** 2.0.0 [RVA-05] 칸 하나가 틀렸을 때: 빨간 테(aria-invalid)와 칸 바로 아래 이유 한 줄, 그 칸으로 초점. 고쳐 적으면 지워져요. */
+  function fieldError(box, text, focus = true) {
+    box.setAttribute("aria-invalid", "true");
+    const id = `${box.id || box.name}-error`;
+    let line = document.getElementById(id);
+    if (!line) {
+      line = document.createElement("span");
+      line.id = id;
+      line.className = "field-error";
+      line.setAttribute("role", "alert");
+      // 칸과 단추가 한 줄인 곳(.row-input)은 그 줄 아래에 적어요.
+      (box.closest(".row-input") ?? box).insertAdjacentElement("afterend", line);
+    }
+    line.textContent = text;
+    box.setAttribute("aria-describedby", [box.getAttribute("aria-describedby"), id].filter((x, i, a) => x && a.indexOf(x) === i).join(" "));
+    if (focus) box.focus();
+    return null;
   }
 
   // ---- routes ----
@@ -654,6 +702,11 @@ function adminApp(L, BUILD, M) {
   function readRoute() {
     const route = L.redirect(L.parseRoute(location.hash));
     const known = [...Object.keys(L.TABS), "settings", "more"];
+    // 2.0.0 [RVA-12] PC-23: 권한이 없는 화면은 말없이 오늘로 가지 않고, 왜 왔는지 한 줄로 알려요.
+    if (L.TABS[route.name] && !tabOk(route.name) && S.me) {
+      setTimeout(() => toast(`${L.TABS[route.name].label} 화면은 볼 권한이 없어 오늘로 왔어요. 최고 관리자에게 부탁해 주세요`), 0);
+      return { name: "home", id: null, params: {} };
+    }
     if (!known.includes(route.name) || (L.TABS[route.name] && !tabOk(route.name))) return { name: "home", id: null, params: {} };
     return route;
   }
@@ -736,6 +789,8 @@ function adminApp(L, BUILD, M) {
       S.overview = { ...(S.overview ?? {}), ...b };
       if (!("flagAlerts" in b)) S.overview.flagAlerts = [];
       S.me = b.me;
+      // 2.0.0 [RVA-01] 검토 T23-04: 권한이 바뀌면(거둬지면) 전에 남긴 화면을 지워요. 새로 받는 답만 다시 남아요.
+      if (JSON.stringify([S.me?.perms, S.me?.owner]) !== JSON.stringify(JSON.parse(before).slice(0, 2))) forgetKept();
       S.newBuild = Boolean(b.build && b.build !== BUILD);
       autoReload(b.build);
       if (S.phase !== "app") return;
@@ -835,16 +890,16 @@ function adminApp(L, BUILD, M) {
       if (!S.basics && ["review", "community", "adopt", "sla", "versions"].includes(name)) jobs.push(loadBasics());
       if (name === "review") jobs.push(api("/queue").then(keep((d) => { S.data.queue = d; })));
       if (name === "inquiries" && (!id || twoPane())) jobs.push(loadInquiries(n));
-      if (name === "inquiries" && id) jobs.push(api(`/inquiries/${id}`).then(keep((d) => { S.data.inquiry = d; })));
+      if (name === "inquiries" && id) jobs.push(api(`/inquiries/${encodeURIComponent(id)}`).then(keep((d) => { S.data.inquiry = d; })));
       if (name === "dev" && !id) jobs.push(loadDev(n));
       // 1.35 [INBOX-01][INBOX-05] 정리함 and what is ready to go to Claude.
-      if (name === "dev" && id) jobs.push(api(`/dev/${id}`).then(keep((d) => { S.data.dev = d; })));
+      if (name === "dev" && id) jobs.push(api(`/dev/${encodeURIComponent(id)}`).then(keep((d) => { S.data.dev = d; })));
       // [ADMUX-30] 문의 › 자주 쓰는 답, a screen of its own now.
       if (name === "templates") jobs.push(loadTemplates({ strict: true }));
       if (name === "companies" && !id) jobs.push(api(companiesPath()).then(keep((d) => { S.data.list = d; })));
       // 1.39 [ADM3-45] 이름이 비슷한 회사 짝(합칠까요?): 목록을 기다리게 하지 않아요.
       if (name === "companies" && !id && can("companies", "edit")) api("/companies/similar").then(keep((d) => { S.data.similar = d; if (S.route.name === "companies" && !S.route.id) render({ keepScroll: true }); })).catch(() => {});
-      if (name === "companies" && id) jobs.push(api(`/companies/${id}`).then(keep((d) => { S.data.company = d; })));
+      if (name === "companies" && id) jobs.push(api(`/companies/${encodeURIComponent(id)}`).then(keep((d) => { S.data.company = d; })));
       if (name === "community") {
         // An id is one talk: company.setup, opened from the review screen.
         const [company, setup] = (id ?? "").split(".");
@@ -853,7 +908,7 @@ function adminApp(L, BUILD, M) {
         if (!id && S.postFilter === "limits") {
           jobs.push(api("/write-limits").then(keep((d) => { S.data.limits = d; })), api("/care").then(keep((d) => { S.data.care = d; })));
           if (S.careQuery) {
-            jobs.push(api(`/care/person?${S.careQuery.by}=${encodeURIComponent(S.careQuery.q)}`)
+            jobs.push(api(`/care/person?${new URLSearchParams({ [S.careQuery.by]: S.careQuery.q })}`)
               .then(keep((d) => { S.data.carePerson = d; }), (e) => { S.data.carePerson = { error: e?.data?.error ?? "not_found" }; }));
           }
         }
@@ -862,11 +917,11 @@ function adminApp(L, BUILD, M) {
           jobs.push(api("/village/topics").then(keep((d) => { S.data.village = d; })), api("/village/contests").then(keep((d) => { S.data.contests = d; })),
             api("/plaza/picks").then(keep((d) => { S.data.picks = d; })), api("/plaza/effect").then(keep((d) => { S.data.plazaEffect = d; })));
         }
-        else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${S.rateFilter}${q}`).then(keep((d) => { S.data.rates = d; })));
-        else jobs.push(api(id ? `/posts?company=${company}&setup=${setup}` : `/posts?status=${S.postFilter}${q}`).then(keep((d) => { S.data.posts = d; })));
+        else if (!id && S.postFilter === "rates") jobs.push(api(`/rates?status=${encodeURIComponent(S.rateFilter)}${q}`).then(keep((d) => { S.data.rates = d; })));
+        else jobs.push(api(id ? `/posts?${new URLSearchParams({ company, setup })}` : `/posts?status=${encodeURIComponent(S.postFilter)}${q}`).then(keep((d) => { S.data.posts = d; })));
       }
       if (name === "rewards" && can("rewards")) {
-        jobs.push(api(`/rewards?status=${S.rewardTab}${rewardKindQuery()}${S.rewardQuery ? `&q=${encodeURIComponent(S.rewardQuery)}` : ""}`).then(keep((d) => { S.data.rewards = d; })));
+        jobs.push(api(`/rewards?status=${encodeURIComponent(S.rewardTab)}${rewardKindQuery()}${S.rewardQuery ? `&q=${encodeURIComponent(S.rewardQuery)}` : ""}`).then(keep((d) => { S.data.rewards = d; })));
       }
       // [INVITE-08][ADMUX-32] 친구 초대 rules, moved from 설정 to 관리 › 보상.
       if (name === "rewards" && can("settings")) jobs.push(api("/settings/invite").then(keep((d) => { S.data.inviteSettings = d; })));
@@ -876,14 +931,14 @@ function adminApp(L, BUILD, M) {
       if (name === "notices") jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
       // 1.40 [PAYP-19] 옛 앱 급여 끊기, under 앱 공지 (its notice goes to apps up to 1.38 by itself).
       if (name === "notices") jobs.push(api("/old-pay").then(keep((d) => { S.data.oldPay = d; })).catch(() => {}));
-      if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
+      if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${encodeURIComponent(S.opsMonth)}` : ""}`).then(keep((d) => { S.data.ops = d; })));
       if (name === "metrics" || name === "gates") {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
         jobs.push(api(`/metrics?${name === "gates" ? "days=28" : range}`).then(keep((d) => { S.data[name === "gates" ? "gates" : "metrics"] = d; })));
         // [ADMUX-15] The remote files are read from the site by the server; a slow site does not hold the screen.
         api("/remote").then(keep((d) => { S.data.remote = d; if (S.route.name === "metrics" || S.route.name === "gates") render({ keepScroll: true }); })).catch(() => {});
       }
-      if (name === "versions") jobs.push(api(`/versions?show=${S.versionShow}`).then(keep((d) => { S.data.versions = d; })));
+      if (name === "versions") jobs.push(api(`/versions?show=${encodeURIComponent(S.versionShow)}`).then(keep((d) => { S.data.versions = d; })));
       if (name === "shares") jobs.push(api("/shares").then(keep((d) => { S.data.shares = d; })));
       // [RCP-39] 1.34 나눔 판: the list of one tab and the month's numbers.
       if (name === "recipes") {
@@ -953,7 +1008,9 @@ function adminApp(L, BUILD, M) {
       if (seq.current("load", n)) {
         // [ADMUX-01] Nothing came for the screen: it says so with a button to try again, not a skeleton forever.
         S.failed = failed ? key : "";
-        if (failed && !quiet) fail(failed.reason);
+        S.failedWhy = failed ? failWhy(failed.reason) : "";
+        // 2.0.0 [RVA-10] 지워졌거나 없는 것은 화면이 '목록으로'와 함께 말하니, 같은 말을 알림으로 한 번 더 띄워 단추를 가리지 않아요.
+        if (failed && !quiet && S.failedWhy !== "gone") fail(failed.reason);
       }
     } catch (e) {
       if (!quiet) fail(e);
@@ -969,12 +1026,12 @@ function adminApp(L, BUILD, M) {
   async function loadInquiries(n, more = false) {
     try {
       // [INQ-04] 놓친 문의 is its own filter beside who holds it.
-      const who = S.inquiryWho === "late" ? "&late=1" : S.inquiryWho ? `&who=${S.inquiryWho}` : "";
+      const who = S.inquiryWho === "late" ? "&late=1" : S.inquiryWho ? `&who=${encodeURIComponent(S.inquiryWho)}` : "";
       const q = S.inquiryQuery ? `&q=${encodeURIComponent(S.inquiryQuery)}` : "";
       const after = more && S.data.inquiries?.next ? `&after=${S.data.inquiries.next}` : "";
       // AT 1.29 [ADMCP-02][ADMCP-06] 문제 신고만, 복사 전만, one phone's questions.
-      const more2 = `${S.inquiryKind ? `&kind=${S.inquiryKind}` : ""}${S.inquiryCopied ? `&copied=${S.inquiryCopied}` : ""}${S.inquirySender ? `&sender=${S.inquirySender}` : ""}${S.inquiryBilling ? "&billing=1" : ""}`;
-      const d = await api(`/inquiries?status=${S.inquiryStatus}${S.inquiryTopic ? `&topic=${S.inquiryTopic}` : ""}${who}${q}${more2}&sort=${S.inquirySort}${after}`);
+      const more2 = `${S.inquiryKind ? `&kind=${encodeURIComponent(S.inquiryKind)}` : ""}${S.inquiryCopied ? `&copied=${encodeURIComponent(S.inquiryCopied)}` : ""}${S.inquirySender ? `&sender=${encodeURIComponent(S.inquirySender)}` : ""}${S.inquiryBilling ? "&billing=1" : ""}`;
+      const d = await api(`/inquiries?status=${encodeURIComponent(S.inquiryStatus)}${S.inquiryTopic ? `&topic=${encodeURIComponent(S.inquiryTopic)}` : ""}${who}${q}${more2}&sort=${encodeURIComponent(S.inquirySort)}${after}`);
       if (n !== undefined && !seq.current("load", n)) return;
       S.data.inquiries = more ? { ...d, inquiries: [...S.data.inquiries.inquiries, ...d.inquiries] } : d;
       S.data.inquiriesMissing = false;
@@ -987,7 +1044,7 @@ function adminApp(L, BUILD, M) {
 
   async function loadDev(n, more = false) {
     const after = more && S.data.devList?.next ? `&after=${S.data.devList.next}` : "";
-    const d = await api(`/dev?status=${S.devStatus}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${S.devWho}` : ""}${S.devFrom ? `&from=${S.devFrom}` : ""}${S.devKind ? `&kind=${S.devKind}` : ""}${after}`);
+    const d = await api(`/dev?status=${encodeURIComponent(S.devStatus)}&q=${encodeURIComponent(S.devQuery)}${S.devWho ? `&who=${encodeURIComponent(S.devWho)}` : ""}${S.devFrom ? `&from=${encodeURIComponent(S.devFrom)}` : ""}${S.devKind ? `&kind=${encodeURIComponent(S.devKind)}` : ""}${after}`);
     if (n !== undefined && !seq.current("load", n)) return;
     S.data.devList = more ? { ...d, items: [...S.data.devList.items, ...d.items] } : d;
   }
@@ -1156,6 +1213,10 @@ function adminApp(L, BUILD, M) {
     const shut = new Set([...main.querySelectorAll("details:not([open])")].map(keyOf));
     const focus = document.activeElement && main.contains(document.activeElement) ? document.activeElement : null;
     const at = focus?.id ? { id: focus.id, start: focus.selectionStart ?? null, end: focus.selectionEnd ?? null } : null;
+    // 2.0.0 [RVA-13] 검토 ADM-19: 적다 만 글은 같은 화면에서만 되살려요(여러 화면이 id="search"를 같이 써서 다른 화면 칸으로 따라갔어요).
+    const here = routeKey();
+    if (main.dataset.route !== here) typed.clear();
+    main.dataset.route = here;
     // AN 1.28 [ADMUX-31] '지금 기다리는 것' above a hub's first tab.
     main.innerHTML = waitingStrip() + view();
     rememberOpened();
@@ -1327,11 +1388,37 @@ function adminApp(L, BUILD, M) {
   function view() {
     const { name, id } = S.route;
     // [ADMUX-01] The data did not come: say so, with a way to try again, instead of a skeleton for ever.
-    if (S.failed === routeKey() && !hasData()) {
-      return `<div class="failed" role="alert">${icon(P.refresh)}<h2>불러오지 못했어요</h2><p>${S.online ? "서버가 잠시 답하지 않아요." : "인터넷 연결을 확인해 주세요."}</p>
-        <button class="btn primary" data-act="refresh">다시 불러오기</button></div>`;
-    }
+    if (S.failed === routeKey() && !hasData()) return failedView(name, id);
     return VIEWS[name]?.(id) ?? "";
+  }
+
+  /** 2.0.0 [RVA-10] 검토 ADMX-11·I24a-03: 실패가 무엇 때문인지. */
+  function failWhy(e) {
+    if (e?.status === 404 || e?.message === "not_found") return "gone";
+    if (e?.status === 403 || e?.message === "no_permission") return "denied";
+    if (["offline", "unreachable", "timeout"].includes(e?.message)) return S.online === false ? "offline" : e.message;
+    return "busy";
+  }
+
+  /**
+   * 2.0.0 [RVA-10] 검토 ADMX-11·I24a-03·U24-15·ADMX-19, 조건 7: 실패 화면 세 갈래. 지워졌거나 없는 것(404)은 '목록으로', 서버 오류는 '다시 불러오기'와
+   * 오류 묶음, 연결 문제는 인터넷이 끊겼는지·서버만 닿지 않는지·시간이 넘었는지를 나눠 말해요. 모양은 빈 화면 부품과 같고 그림은 작게.
+   */
+  function failedView(name, id) {
+    const why = S.online === false ? "offline" : S.failedWhy || "busy";
+    const GONE = { inquiries: "지워졌거나 없는 문의예요", dev: "지워졌거나 없는 개발사항이에요", companies: "합쳐졌거나 없는 회사예요", flags: "없는 기능이에요",
+      launch: "없는 출시 기록이에요" };
+    const list = `<a class="btn primary" href="${href(name)}">목록으로</a>`;
+    const again = '<button class="btn primary" data-act="refresh">다시 불러오기</button>';
+    const [title, text, action] = {
+      gone: [id && GONE[name] ? GONE[name] : "찾는 것이 없어요", "주소가 바뀌었거나 지워졌을 수 있어요.", id ? list : again],
+      denied: ["이 화면을 볼 권한이 없어요", "최고 관리자에게 권한을 부탁해 주세요.", `<a class="btn primary" href="${href("home")}">오늘로</a>`],
+      offline: ["인터넷에 연결되지 않았어요", "연결되면 다시 불러와 주세요.", again],
+      unreachable: ["서버에 닿지 않아요", "인터넷은 연결돼 있어요. 서버가 잠시 멈췄을 수 있어요.", again],
+      timeout: ["서버가 답하는 데 시간이 너무 걸려요", "잠시 뒤 다시 불러와 주세요.", again],
+      busy: ["서버에서 오류가 났어요", "잠시 뒤 다시 불러와 주세요.", `${again}${tabOk("errors") ? ` <a class="btn ghost" href="${href("errors")}">오류 묶음 보기</a>` : ""}`],
+    }[why];
+    return `<div class="empty failed" role="alert">${icon(why === "gone" ? P.help : P.refresh)}<h2>${esc(title)}</h2><p>${esc(text)}</p><div class="actions mid">${action}</div></div>`;
   }
 
   /** Whether the current screen has anything to show yet. */
@@ -1521,12 +1608,19 @@ function adminApp(L, BUILD, M) {
   const careKind = (x) => (x.kind === "warn" ? (x.by === "auto" ? "안내(저절로)" : "경고") : `${x.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일`);
   const careNextText = (n) => (n?.kind === "warn" ? "부드러운 경고" : n ? `${n.kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${n.days}일` : "");
 
+  /** 2.0.0 [RVA-03] 검토 ADMX-12: 'post:p…' 같은 안쪽 표기 대신 어디서 생긴 일인지 말로. */
+  const CARE_REF = { post: "광장 글", recipe: "장터 작품", inquiry: "문의", mark: "휴대폰 표시" };
+  function careRef(ref) {
+    const [k, id] = String(ref ?? "").split(":");
+    return CARE_REF[k] ? (k === "recipe" && id ? `${CARE_REF[k]} ${id}` : CARE_REF[k]) : "";
+  }
+
   function careLine(x, edit) {
     const state = x.liftedAt ? '<span class="pill">거둠</span>' : x.active ? '<span class="pill warn">지금</span>'
       : x.kind === "warn" ? `<span class="pill${x.seen ? " ok" : ""}">${x.seen ? "읽음" : "안 읽음"}</span>` : '<span class="pill">끝남</span>';
     const can = edit && !x.liftedAt && (x.active || x.kind === "warn");
     return `<li><div class="row"><span class="row-main"><b>${esc(careKind(x))} · ${esc(x.reasonText)}</b>
-      <small>사용자 ${esc(x.who)} · ${esc(day(x.at))}${x.until ? `부터 ${esc(day(x.until))}까지` : ""}${x.by === "auto" ? " · 서버가 저절로" : ""}${x.ref ? ` · ${esc(x.ref)}` : ""}</small>
+      <small>사용자 ${esc(x.who)} · ${esc(day(x.at))}${x.until ? `부터 ${esc(day(x.until))}까지` : ""}${x.by === "auto" ? " · 서버가 저절로" : ""}${careRef(x.ref) ? ` · ${esc(careRef(x.ref))}` : ""}</small>
       ${x.note ? `<small>앱에 보이는 한 줄: ${esc(x.note)}</small>` : ""}</span>
       <span class="row-side">${state}${can ? ` <button class="btn small ghost" data-act="care-lift" data-id="${esc(x.id)}" data-key="${x.kind}">${x.kind === "warn" ? "거두기" : "풀기"}</button>` : ""}</span></div></li>`;
   }
@@ -1538,14 +1632,15 @@ function adminApp(L, BUILD, M) {
     const severe = c.rules.severe;
     const pick = p.next?.days ?? 3;
     const form = edit && c.on ? `<form data-form="care-act"><h4>다음 할 일 (추천: ${esc(careNextText(p.next))})</h4>
-      <label class="field stack"><span>이유</span><select name="reason" required><option value="">골라 주세요</option>${reasons.map(([k, v]) =>
+      <label class="field stack"><span>이유</span><select name="reason" aria-describedby="care-error"><option value="">골라 주세요</option>${reasons.map(([k, v]) =>
         `<option value="${k}">${esc(v)}${severe.includes(k) ? " (바로 쉬기 가능)" : ""}</option>`).join("")}</select></label>
       <label class="field stack"><span>앱에 보일 한 줄</span><input name="note" maxlength="200" placeholder="고르면 좋아요. 이름·연락처는 쓰지 않아요"></label>
       <label class="field stack"><span>쉬는 기간</span><select name="days">${c.rules.days.map((n) => `<option value="${n}"${n === pick ? " selected" : ""}>${n}일</option>`).join("")}</select></label>
       <p class="hint">쉬기는 ${c.rules.warnWithinDays}일 안에 경고가 먼저 간 사람에게만 걸려요(개인 정보·성적인 내용·불법 정보는 바로). 읽기·테마 입기·문의(해명)는 쉬는 동안에도 돼요.</p>
-      <div class="actions"><button class="btn${p.next?.kind === "warn" ? " primary" : ""}" type="submit" data-kind="warn">경고 보내기</button>
-        <button class="btn${p.next?.kind === "opinion" ? " primary" : ""}" type="submit" data-kind="opinion">의견 쉬기</button>
-        <button class="btn danger" type="submit" data-kind="community">마을 쉬기</button></div></form>`
+      <p class="error" role="alert" id="care-error"></p>
+      <div class="actions"><button class="btn${p.next?.kind === "warn" ? " primary" : ""}" type="button" data-act="care-do" data-kind="warn">경고 보내기</button>
+        <button class="btn${p.next?.kind === "opinion" ? " primary" : ""}" type="button" data-act="care-do" data-kind="opinion">의견 쉬기</button>
+        <button class="btn danger" type="button" data-act="care-do" data-kind="community">마을 쉬기</button></div></form>`
       : edit ? '<p class="hint">마을 돌봄이 켜지면 여기서 경고·쉬기를 걸 수 있어요.</p>' : "";
     return `<article class="card"><div class="head"><h3>사용자 ${esc(p.who)}</h3>${now ? `<span class="pill warn">${esc(careKind(now))} 중</span>` : ""}</div>
       <p class="meta">글 ${p.posts} · 가려진 글 ${p.hiddenPosts} · 180일 안 가려짐 ${p.strikes}${p.limit ? ` · 신고 누적 제한 ${p.limit.step}단계(${esc(day(p.limit.until))}까지)` : ""}</p>
@@ -2419,7 +2514,7 @@ function adminApp(L, BUILD, M) {
 
   /** 2.0.0 [RVD-16] The 드릴 보상 kind chip, as the list's query. */
   function rewardKindQuery() {
-    return S.rewardTab === "owed" && S.rewardKind ? `&kind=${S.rewardKind}` : "";
+    return S.rewardTab === "owed" && S.rewardKind ? `&kind=${encodeURIComponent(S.rewardKind)}` : "";
   }
 
   const REWARD_KIND_NAMES = { invite: "친구 초대", maker: "만든 작품", rule: "회사 방식 채택", ask: "앱에 없는 방식", rate: "임금표", first: "새 정보" };
@@ -2447,7 +2542,7 @@ function adminApp(L, BUILD, M) {
       if (f.bursts) tags.push(`같은 코드 몰림 ${f.bursts}번(30일)`);
     }
     if (w.year) {
-      facts.push(`이분의 1년 보상 ${w.year.used}/${w.year.cap}개월`);
+      facts.push(L.rewardYearWords(w.year));
       if (w.capped) tags.push(w.year.left ? `상한 · ${w.year.left}개월 남음` : "상한");
     }
     const line = facts.length ? `<small class="judge">${esc(facts.join(" · "))}</small>` : "";
@@ -2511,9 +2606,13 @@ function adminApp(L, BUILD, M) {
     // 2.0.0 [RVD-16] 조건 1(총괄 11-12 2차): 목록 첫 줄이 화면 위 25% 안. 고르기 막대는 목록 뒤(아래에 붙음), 한 줄 설명과 Claude 줄은 목록 아래.
     const body = !ready ? skeleton() : !r.rewards.length ? empty(owedTab ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `<ul class="rows">${r.rewards.map(row).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}${bar}`;
+    // 2.0.0 [RVD-21] 접힌 한 줄도 1년 12개월이 언제부터인지 따라요(처리방침 3.13 게시 + 30일). 첫 쪽의 친구 초대 규칙, 없으면 설정, 없으면 줄의 값.
+    const capRule = r?.invites?.rules ?? S.data.inviteSettings;
+    const year = capRule ? { cap: capRule.yearCap, from: capRule.yearCapFrom } : r?.rewards?.find((w) => w.year)?.year;
+    const yearOn = !year || year.cap != null;
     const foot = `<div class="list-foot">${ready && owedTab && edit ? L.draftEmpty(r.rewards) : ""}
-      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · 한 분에 1년 12개월까지</summary>
-        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 상한을 넘는 만큼은 지급하지 않아요.</p></details></div>`;
+      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · ${yearOn ? "한 분에 1년 12개월까지" : `1년 12개월 상한은 ${L.capFromWords(year.from)}`}</summary>
+        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. ${yearOn ? "상한을 넘는 만큼은 지급하지 않아요." : `모든 보상 합쳐 한 분에 1년 12개월까지는 ${L.capFromWords(year.from)} 세요. 그 전에는 친구 초대 설정의 상한만 봐요.`}</p></details></div>`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
     // 2.0.0 [RVD-16] 조건 1·4(총괄 11-12): 친구 초대 숫자도 목록 아래 그 카드로 옮겨요. 규칙 문장은 한 곳에만.
     const rules = inviteCard(can("rewards") ? r?.invites : null, can("settings"), can("settings", "edit"));
@@ -2555,7 +2654,10 @@ function adminApp(L, BUILD, M) {
   function inviteRuleWords(r) {
     return `친구 ${r.friends}명이 각자 ${r.days}일 이상 쓰면 프로 ${r.months}개월, ${r.friends}명 더 채울 때마다 또 ${r.months}개월 · ` +
       // 2.0.0 [RVD-15] 초대만의 상한이 없어도 모든 보상을 합쳐 1년 12개월까지예요.
-      `${r.capMonths && r.capMonths < 12 ? `1년에 ${r.capMonths}개월까지` : "1년에 12개월까지(모든 보상 합쳐)"}. 같은 친구·같은 휴대폰은 한 번, 자기 초대는 안 세요. 지급은 보상 목록에서 확인한 뒤예요.`;
+      // [RVD-21] 1년 12개월(모든 보상 합쳐)은 처리방침 3.13 게시 + 30일부터예요. 그 전에는 초대만의 상한(없으면 '상한 없음')만.
+      `${r.capMonths && r.capMonths < 12 ? `1년에 ${r.capMonths}개월까지` : r.yearCap ? "1년에 12개월까지(모든 보상 합쳐)"
+        : `${r.capMonths ? `1년에 ${r.capMonths}개월까지` : "상한 없음"} · 모든 보상 합쳐 1년 12개월은 ${L.capFromWords(r.yearCapFrom)}`}. ` +
+      "같은 친구·같은 휴대폰은 한 번, 자기 초대는 안 세요. 지급은 보상 목록에서 확인한 뒤예요.";
   }
 
   /** AG 1.27 [INVITE-10] 몰림: friends of one code from one network within an hour, let in but worth a look. */
@@ -2754,10 +2856,11 @@ function adminApp(L, BUILD, M) {
     const mailto = `mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent("[밤낮 관리자] 관리자 초대")}&body=${encodeURIComponent(text)}`;
     S.inviteText = text;
     S.inviteLink = r.link;
-    openDialog(`<div class="box"><h2>초대 링크가 생겼어요</h2>
+    // 2.0.0 [RVA-08] 검토 ADMX-14·I24b-04: 한 번만 보이는 링크라 복사·메일·공유 전에 닫으면 한 번 물어요.
+    openDialog(`<div class="box" data-secret="link"><h2>초대 링크가 생겼어요</h2>
       <p>${esc(r.email)}로 보내 주세요. 링크는 지금 한 번만 보여요. 잃어버리면 새 링크를 만들면 돼요.</p>
       <div class="fieldset"><label for="inv-link">초대 링크</label><input id="inv-link" type="url" readonly value="${esc(r.link)}"></div>
-      <div class="actions start"><a class="btn primary" href="${esc(mailto)}">${icon(P.mail)}메일로 보내기</a>
+      <div class="actions start"><a class="btn primary" href="${esc(mailto)}" data-act="mail-invite">${icon(P.mail)}메일로 보내기</a>
         <button class="btn" data-act="copy-invite">${icon(P.copy)}복사</button>
         ${navigator.share ? `<button class="btn" data-act="share-invite">${icon(P.share)}공유</button>` : ""}</div>
       <p class="note info">메일 앱으로 보내야 그 메일함을 가진 분만 링크를 받아요. 메신저로 보내면 메일 확인이 되지 않아요${r.mail ? " (이 서버는 가입할 때 메일로 확인 코드도 보내요)" : ""}.</p>
@@ -3024,7 +3127,7 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : ""}
           ${r.state === "waiting" ? `<button class="btn small primary" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
             : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`}
-          ${r.official ? "" : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
+          ${r.official ? `<button class="btn small ghost" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`}
           ${r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : ""}
           ${r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : ""}
           <button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button></span>` : ""}</div></li>`).join("")}</ul>`
@@ -3564,7 +3667,9 @@ function adminApp(L, BUILD, M) {
           <p class="hint">쓰는 동안 저절로 이어지고 7일 동안 안 쓰면 끝나요(길어도 30일). ${m.owner ? "Cloudflare에서 ADMIN_PASSWORD를 바꾸면" : "비밀번호를 바꾸면"} 그 전의 로그인은 모두 끊겨요.</p></details>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
-        ${m.owner ? lockLine() : ""}</section>
+        ${m.owner ? lockLine() : ""}
+        <p class="hint">이 기기는 연결이 끊겨도 보이게 목록과 숫자만 24시간까지 남겨요(문의 글·사람·돈은 남기지 않아요). 다른 사람과 함께 쓰는 기기면 지워 주세요.</p>
+        <div class="actions start"><button class="btn" data-act="forget-device">이 기기에 남은 화면 지우기</button></div></section>
       ${pushCard()}
       ${prefsCard()}
       <section class="card"><h2>앱으로 설치</h2>
@@ -3715,6 +3820,9 @@ function adminApp(L, BUILD, M) {
     // 2.0.0 [RVN-02] (총괄 11-12, 디자인 조건 10) A box marked data-keep keeps what was typed when the box is closed by 취소, a tap
     // outside or Esc, and has it again when the same box opens; it goes once the form went through (act).
     for (const el of dialog.querySelectorAll("[data-keep]")) if (!el.value) el.value = readDraft(el.dataset.keep);
+    // [RVA-08] 한 번만 보이는 값의 '복사했어요'·'한 번 물었어요'는 창마다 새로.
+    delete dialog.dataset.copied;
+    delete dialog.dataset.warned;
     if (!dialog.open) {
       dialog.showModal();
       // [ADMUX-10] The phone's back closes the box first: it gets a step of its own in the history, same address.
@@ -3733,10 +3841,76 @@ function adminApp(L, BUILD, M) {
     return `참여한 분 ${n(k.members ?? c?.members)}명, 쓰는 사람 ${n(k.uses)}명, ${talk}도 제보·규칙과 함께 옮겨져요. 되돌릴 수 없고, 예전 이름으로도 찾아져요.`;
   }
 
-  function confirmBox(title, text, label, then, tone = "danger") {
+  function confirmBox(title, text, label, then, tone = "danger", rows = []) {
     pendingConfirm = then;
-    openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2><p>${esc(text)}</p>
+    const shown = rows.filter(([, v]) => v !== undefined && v !== null && v !== "");
+    openDialog(`<form data-form="confirm"><h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}
+      ${shown.length ? `<dl class="lines confirm-rows">${shown.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join("")}</dl>` : ""}
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${tone}" type="submit">${esc(label)}</button></div></form>`);
+  }
+
+  /**
+   * 2.0.0 [RVA-04] 검토 ADM-05·ADMX-09·I23a-01·I24a-02: 사람에게 닿는 일·돈이 걸린 일·공개는 모두 이 틀로 물어요. 누구에게·무엇을·며칠·앱에 보일 글을
+   * 한 장에 보여 주고(rows), 누르면 run. 목록에서 사라지거나 되돌릴 수 있는 일은 run 안에서 toast(…, 되돌리기)로 15초 되돌리기를 줘요.
+   * 활동 기록은 서버가 남겨요.
+   */
+  function danger({ title, text = "", rows = [], label, tone = "danger", run }) {
+    confirmBox(title, text, label, run, tone, rows);
+  }
+
+  /**
+   * 2.0.0 [RVA-02] 검토 ADM-13·ADMX-16·I23a-03: 브라우저 기본 입력 창(window.prompt) 대신 앱의 창이에요. 여러 줄이면 줄바꿈이 그대로 가고,
+   * preview(글)를 주면 그 아래에 보낸 분 화면처럼 미리 보여요. then(글)은 '저장'을 눌렀을 때만 불려요.
+   */
+  function askText({ title, text = "", label, value = "", multiline = false, required = false, submit = "저장", hint = "", inputmode = "", maxlength = 2000, preview = null }, then) {
+    pendingAsk = { then, preview, required };
+    const attrs = `id="ask-text" name="text" maxlength="${maxlength}"${required ? " required" : ""}${inputmode ? ` inputmode="${inputmode}"` : ""}`;
+    openDialog(`<form data-form="ask-text"><h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}
+      <div class="fieldset"><label for="ask-text">${esc(label)}</label>
+        ${multiline ? `<textarea ${attrs} rows="7">${esc(value)}</textarea>` : `<input ${attrs} value="${esc(value)}" autocomplete="off">`}
+        ${hint ? `<span class="help">${esc(hint)}</span>` : ""}<p class="error" role="alert" id="ask-error"></p></div>
+      ${preview ? `<p class="label">보낸 분 앱에서 보이는 모습</p><div class="ask-preview" id="ask-preview" aria-live="polite">${preview(value)}</div>` : ""}
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">${esc(submit)}</button></div></form>`,
+      preview ? "wide" : "");
+  }
+
+  /** 2.0.0 [RVA-02] 검토 ADMX-16: 복사가 안 되는 브라우저에서 window.prompt로 보여 주던 글을, 고를 수 있는 여러 줄 칸과 [복사]로. */
+  function showCopy(title, text, value) {
+    openDialog(`<div class="box"><h2>${esc(title)}</h2>${text ? `<p>${esc(text)}</p>` : ""}
+      <label for="copy-once" class="sr">복사할 글</label><textarea id="copy-once" class="mono" rows="4" readonly>${esc(value)}</textarea>
+      <div class="actions"><button class="btn" type="button" data-act="close">닫기</button><button class="btn primary" type="button" data-act="copy-once">복사</button></div></div>`);
+    const box = document.getElementById("copy-once");
+    box?.focus();
+    box?.select();
+  }
+
+  /**
+   * 2.0.0 [RVA-08] 검토 ADM-17·ADMX-14·I24b-04: 한 번만 보이는 값(운영·동기화 열쇠, 초대 링크, 연결·가족 코드)이 담긴 창은 data-secret을 달아요.
+   * 복사(코드는 '넣었어요') 전에 닫기·Esc·바깥 누르기·뒤로를 누르면 한 번 묻고 닫지 않아요. 두 번째에는 닫혀요. 닫히면 창의 글을 지워요.
+   */
+  function secretGuard() {
+    if (!dialog.open || dialog.dataset.warned) return false;
+    const secret = dialog.querySelector("[data-secret]");
+    // 2.0.0 [RVA-15] 조건 10(적던 것은 사라지지 않아요): 창의 칸에 글을 적었으면 닫기·Esc·바깥·뒤로 전에 한 번 물어요.
+    const typed = !secret && dialog.querySelector("form[data-dirty]");
+    if ((!secret || dialog.dataset.copied) && !typed) return false;
+    dialog.dataset.warned = "1";
+    const box = secret ?? typed;
+    const warn = box.querySelector(".secret-warn") ?? box.insertBefore(document.createElement("p"), box.querySelector(".actions"));
+    warn.className = "note warn secret-warn";
+    warn.setAttribute("role", "alert");
+    warn.textContent = typed ? "적은 글이 있어요. 닫으면 사라져요. 그래도 닫으려면 한 번 더 눌러요."
+      : secret.dataset.secret === "code" ? "닫으면 이 코드를 다시 볼 수 없어요. 앱에 넣었으면 한 번 더 눌러 닫아요."
+        : "아직 복사하지 않았어요. 닫으면 다시 볼 수 없어요. 그래도 닫으려면 한 번 더 눌러요.";
+    return true;
+  }
+
+  /**
+   * 2.0.0 [RVA-15] 검토 ADMX-20: 저장하지 않은 설정(채택 설정·답 기한·친구 초대 규칙, data-guard 폼에 적은 값)이 있으면 화면을 떠나기 전에 물어요.
+   */
+  function unsavedHere(route = S.route) {
+    return Boolean((S.draft && route.name === "adopt") || (S.slaDraft && route.name === "sla") || (S.inviteDraft && route.name === "rewards")
+      || document.querySelector("#main form[data-guard][data-dirty]"));
   }
 
   function openReject(company, setup, pick = "") {
@@ -3770,12 +3944,12 @@ function adminApp(L, BUILD, M) {
     // [MON-08] 회사 방식 채택 3개월, 제안 1개월, 큰 개선 6개월~1년 (수익화 확정 4장 7).
     // 2.0.0 [RVD-15] 이분의 1년 12개월에서 남은 만큼까지만 고를 수 있어요; 친구 초대·만든 작품은 정해진 개월이 맨 앞에.
     const w = (S.data.rewards?.rewards ?? []).find((x) => x.id === id);
-    const left = w?.year ? w.year.left : 12;
+    const left = w?.year?.left ?? 12;
     const own = w && ["invite", "maker"].includes(w.kind) ? [[Number(months), w.kind === "invite" ? "친구 초대 규칙" : "만든 작품 보상"]] : [];
     const choices = [...own, ...[[1, "제안 채택"], [3, "회사 방식 채택"], [6, "큰 개선"], [12, "아주 큰 개선"]].filter(([n]) => !own.some(([m]) => m === n))]
       .filter(([n]) => n <= left);
     if (!choices.length) return toast("이분은 1년에 받을 수 있는 보상 12개월을 다 받았어요");
-    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` 이분의 1년 보상은 ${w.year.used}/${w.year.cap}개월이에요.` : ""}</p>
+    openDialog(`<form data-form="paid" data-id="${id}"><h2>프로 이용권 드리기</h2><p>보낸 분 휴대폰에 이용권이 생겨요. 이미 받은 이용권 뒤에 이어져요.${w?.year ? ` ${L.rewardYearWords(w.year)}이에요.` : ""}</p>
       <p class="label">기간</p><div class="chips" role="radiogroup" aria-label="기간">${choices.map(([n, why]) => `<label class="chip pick"><input type="radio" name="months" value="${n}"${Number(months) === n ? " checked" : ""}> ${n}개월 · ${why}</label>`).join("")}</div>
       <label for="memo">메모 (선택)</label><input id="memo" name="memo" maxlength="200" placeholder="예: 근태 방식 제보 채택">
       <p class="help">보낸 분의 이름이나 연락처는 적지 마세요.</p>
@@ -3787,7 +3961,7 @@ function adminApp(L, BUILD, M) {
     if (S.relogin) return;
     S.relogin = true;
     const owner = S.me?.owner;
-    reloginBox.innerHTML = (`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인이 끝났어요. 적던 글과 화면은 그대로 있어요.</p>
+    reloginBox.innerHTML = (`<form data-form="relogin"><h2>다시 로그인해 주세요</h2><p>로그인 시간이 지났어요. 적던 글과 화면은 그대로 있어요.</p>
       ${owner ? "" : `<div class="fieldset"><label for="re-email">메일</label><input id="re-email" name="email" type="email" autocomplete="username" value="${esc(S.me?.email ?? "")}" required></div>`}
       <div class="fieldset"><label for="re-pw">${owner ? "최고 관리자 비밀번호" : "비밀번호"}</label>${pwInput("re-pw", "password", "current-password")}</div>
       <div class="fieldset"><label for="re-code">인증 앱 코드(두 번째 확인을 켰을 때만)</label><input id="re-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"></div>
@@ -3795,6 +3969,12 @@ function adminApp(L, BUILD, M) {
       <div class="actions"><button class="btn" type="button" data-act="relogin-out">로그인 화면으로</button><button class="btn primary" type="submit">로그인</button></div></form>`);
     if (!reloginBox.open) reloginBox.showModal();
     reloginBox.querySelector("input:not([type=hidden])")?.focus();
+  }
+
+  /** 2.0.0 [RVA-01] 검토 ADM-20: api()를 거치지 않는 받기(CSV)도 로그인이 끝났으면 다시 로그인 창을 띄우고, 로그인하면 이어서 해요. */
+  function reloginThen(go) {
+    reloginWaiters.push({ go, stop: () => {} });
+    openRelogin();
   }
 
   function reloginDone(ok) {
@@ -3919,8 +4099,8 @@ function adminApp(L, BUILD, M) {
     }
   }
 
-  async function setRule(id, withdrawn) {
-    const c = await act(() => api(`/rules/${id}`, "POST", { withdrawn }), withdrawn ? "규칙을 내렸어요. 회사 찾기에서 바로 빠져요" : "규칙을 다시 올렸어요");
+  async function setRule(id, withdrawn, undo) {
+    const c = await act(() => api(`/rules/${id}`, "POST", { withdrawn }), withdrawn ? "규칙을 내렸어요. 회사 찾기에서 바로 빠져요" : "규칙을 다시 올렸어요", undo);
     if (c && S.route.name === "companies") S.data.company = c;
     load();
   }
@@ -4084,6 +4264,7 @@ function adminApp(L, BUILD, M) {
   async function copy(text, done = "복사했어요") {
     try {
       await navigator.clipboard.writeText(text);
+      if (dialog.open) dialog.dataset.copied = "1";
       toast(done);
     } catch {
       document.getElementById("inv-link")?.select();
@@ -4534,7 +4715,11 @@ function adminApp(L, BUILD, M) {
         <span class="help">예: date >= 2026-11-12 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
       <div class="rollout-pick"><p class="label">단계 출시 (1.38 [ADM3-17])</p><p class="hint">휴대폰 몇 %에 먼저 켤지 누르면 조건에 한 줄로 들어가요(같은 휴대폰은 늘 같은 쪽). 문제 신고가 늘면 숫자 › 판 건강과 사고 화면이 먼저 알려 줘요.</p>
         <div class="chips" role="group" aria-label="단계 출시 비율">${[1, 10, 25, 50, 100].map((n) => `<button type="button" class="chip pick" data-act="flag-rollout" data-key="${n}">${n === 100 ? "모두(비율 빼기)" : `${n}%`}</button>`).join("")}
-        <button type="button" class="chip pick" data-act="flag-minapp">이 앱 판 이상만</button></div></div>
+        <button type="button" class="chip pick" data-act="flag-minapp" aria-expanded="false" aria-controls="flag-minapp-row">이 앱 판 이상만</button></div>
+        <div class="fieldset inline-ask" id="flag-minapp-row" hidden><label for="flag-minapp-n">이 앱 판부터 켜기 · 앱 판 번호(versionCode)</label>
+          <div class="row-input"><input id="flag-minapp-n" inputmode="numeric" maxlength="6" autocomplete="off" data-enter="flag-minapp-put">
+          <button type="button" class="btn small" data-act="flag-minapp-put">조건에 넣기</button></div>
+          <span class="help">${r.versionCode ? `지금 나간 판은 ${esc(r.versionCode)}이에요.` : "예: 54"} 넣으면 'app >= 번호' 한 줄이 조건에 들어가요.</span></div></div>
       <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
       <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
       <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}
@@ -4696,7 +4881,9 @@ function adminApp(L, BUILD, M) {
       } catch (e) {
         S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
           : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
-          : e.name === "NotAllowedError" || e.name === "AbortError" ? "" : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
+          // 2.0.0 [RVA-14] 검토 ADM-27·U23-13: 창을 닫은 때와 이 기기에 패스키가 없는 때는 브라우저가 같은 오류라, 말없이 지나가지 않고 한 줄로 알려요.
+          : e.name === "NotAllowedError" || e.name === "AbortError" ? "패스키 창이 닫혔어요. 이 기기에 패스키가 없으면 비밀번호로 들어와 주세요."
+          : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
         render();
       }
     },
@@ -4709,15 +4896,28 @@ function adminApp(L, BUILD, M) {
       box.value = lines.join("\n");
       flagInput(box);
     },
-    "flag-minapp": () => {
+    // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 조건 창 안의 한 줄 칸. 새 창을 띄우면 적던 조건·이유가 사라지니(조건 10) 같은 창에서 펴요.
+    "flag-minapp": (_, el) => {
+      const row = document.getElementById("flag-minapp-row");
+      if (!row) return;
+      row.hidden = !row.hidden;
+      el?.setAttribute("aria-expanded", String(!row.hidden));
+      if (!row.hidden) document.getElementById("flag-minapp-n")?.focus();
+    },
+    "flag-minapp-put": () => {
       const box = document.getElementById("flag-cond");
-      const n = window.prompt("이 앱 판 번호(versionCode)부터 켜요. 예: 52", "");
-      if (!box || n === null) return;
-      if (!/^\d{1,6}$/.test(n.trim())) return toast("숫자만 적어 주세요");
+      const input = document.getElementById("flag-minapp-n");
+      if (!box || !input) return;
+      const n = input.value.trim();
+      if (!/^\d{1,6}$/.test(n)) return fieldError(input, "숫자만 적어 주세요(예: 54)");
       const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:app|앱)\s*>=\s*\d+/i.test(l));
-      lines.push(`app >= ${n.trim()}`);
+      lines.push(`app >= ${n}`);
       box.value = lines.join("\n");
       flagInput(box);
+      input.value = "";
+      document.getElementById("flag-minapp-row").hidden = true;
+      document.querySelector('[data-act="flag-minapp"]')?.setAttribute("aria-expanded", "false");
+      box.focus();
     },
     "flag-range": ({ key }) => openFlagRange(key),
     "flag-check": ({ name, done }) => {
@@ -4848,13 +5048,17 @@ function adminApp(L, BUILD, M) {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     }),
-    "held-edit": async ({ id }) => {
+    // 2.0.0 [RVA-02] 검토 ADM-13·U23-06: 한 줄 기본 입력 창이 줄바꿈을 지워 버리던 것을, 여러 줄 칸과 보낸 분 앱 말풍선 미리 보기로.
+    "held-edit": ({ id }) => {
       const h = (S.data.inquiry?.held ?? []).find((x) => String(x.id) === String(id));
       if (!h) return;
-      const text = window.prompt("보낼 답을 고쳐요 (보내는 때는 그대로예요)", h.text);
-      if (text === null || !text.trim() || text.trim() === h.text) return;
-      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { text }), "고쳤어요");
-      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+      const inquiry = S.route.id;
+      askText({ title: "보낼 답 고치기", text: "보내는 때는 그대로예요.", label: "답", value: h.text, multiline: true, required: true, maxlength: 2000,
+        preview: (v) => `<div class="thread"><div class="bubble admin">${esc(v || " ")}</div></div>` }, async (text) => {
+        if (text.trim() === h.text.trim()) return;
+        const q = await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { text }), "고쳤어요");
+        if (q && S.route.id === inquiry) { S.data.inquiry = q; render({ keepScroll: true }); }
+      });
     },
     // The hash is the app's route, so a pile is reached by scrolling to it, not by its address.
     // 1.35 [ADMHE-01] A phone's list toolbar: search and 큐 모드 in one line, the rest behind 정렬·더.
@@ -4898,7 +5102,15 @@ function adminApp(L, BUILD, M) {
       loadServers(true);
       return load();
     },
-    close: () => dialog.close(),
+    close: () => { if (!secretGuard()) dialog.close(); },
+    // [RVA-02] showCopy의 [복사].
+    "copy-once": async () => {
+      const box = document.getElementById("copy-once");
+      if (await toClipboard(box?.value ?? "", box)) {
+        dialog.dataset.copied = "1";
+        toast("복사했어요");
+      } else toast("칸을 길게 눌러 복사해 주세요");
+    },
     shortcuts: () => openShortcuts(),
     reload: () => freshReload(),
     palette: () => openPalette(),
@@ -5049,7 +5261,7 @@ function adminApp(L, BUILD, M) {
     "dev-more": () => act(() => loadDev(undefined, true)).then(() => render({ keepScroll: true })),
     "rewards-more": async () => {
       const r = S.data.rewards;
-      const next = await act(() => api(`/rewards?status=${S.rewardTab}${rewardKindQuery()}${S.rewardQuery ? `&q=${encodeURIComponent(S.rewardQuery)}` : ""}&after=${r.next}`));
+      const next = await act(() => api(`/rewards?status=${encodeURIComponent(S.rewardTab)}${rewardKindQuery()}${S.rewardQuery ? `&q=${encodeURIComponent(S.rewardQuery)}` : ""}&after=${r.next}`));
       if (next) S.data.rewards = { ...next, rewards: [...r.rewards, ...next.rewards] };
       render({ keepScroll: true });
     },
@@ -5158,8 +5370,10 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     // [ADMUX-01] 채택 puts a rule in front of every user, so it is asked once.
-    adopt: ({ company, setup }) => confirmBox("이 제보를 채택할까요?", "바로 회사 찾기에 나오고 같은 회사를 쓰는 분들 앱에 들어가요. 나중에 규칙을 내릴 수는 있어요.", "채택",
-      () => act(() => api(`/groups/${company}/${setup}/adopt`, "POST"), "채택했어요. 이제 회사 찾기에 나와요").then(() => load()), "primary"),
+    // 2.0.0 [RVA-04] 검토 U24-09: 채택에도 15초 되돌리기(만든 규칙을 바로 내려요).
+    adopt: ({ company, setup }) => confirmBox("이 제보를 채택할까요?", "바로 회사 찾기에 나오고 같은 회사를 쓰는 분들 앱에 들어가요. 15초 안에는 되돌릴 수 있고, 그 뒤에도 규칙을 내릴 수 있어요.", "채택",
+      () => act(() => api(`/groups/${company}/${setup}/adopt`, "POST"), "채택했어요. 이제 회사 찾기에 나와요",
+        (r) => (r?.rule ? setRule(r.rule, true) : null)).then(() => load()), "primary"),
     reject: ({ company, setup, reason }) => openReject(company, setup, reason),
     answer: ({ id }) => openAnswer(id),
     "new-company": () => openNewCompany(),
@@ -5169,7 +5383,8 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     "withdraw-rule": ({ id }) => confirmBox("이 규칙을 내릴까요?", "회사 찾기에서 바로 빠져요. 나중에 다시 올릴 수 있어요.", "내리기", () => setRule(id, true)),
-    "restore-rule": ({ id }) => setRule(id, false),
+    // 2.0.0 [RVA-04] 검토 ADM-05: 다시 올리기에도 15초 되돌리기.
+    "restore-rule": ({ id }) => setRule(id, false, () => setRule(id, true)),
     "merge-into": ({ id, name }) => confirmBox(`${S.data.company.name}을 ${name}에 합칠까요?`, mergeWords(S.data.company), "합치기", async () => {
       const c = await api(`/companies/${S.route.id}/merge`, "POST", { into: id });
       S.data.company = c;
@@ -5204,6 +5419,50 @@ function adminApp(L, BUILD, M) {
       S.data.carePerson = null;
       render({ keepScroll: true });
     },
+    /**
+     * 2.0.0 [RVA-03] 검토 ADM-04·ADMX-12·U23-03: 경고·쉬기는 누구에게·무엇을·며칠·앱에 보일 글을 한 장으로 확인한 뒤 가고, 15초 안에는 되돌릴 수 있어요
+     * (서버가 기록과 소식을 없던 일로). 같은 이유로 최근에 간 경고가 있으면 한 번 더 세어진다고 먼저 알려요.
+     */
+    "care-do": ({ kind }, el) => {
+      const form = el.closest("form");
+      const p = S.data.carePerson;
+      const c = S.data.care;
+      if (!form || !p || !c || !S.careQuery) return;
+      const reason = form.elements.reason.value;
+      const err = document.getElementById("care-error");
+      if (!reason) {
+        if (err) err.textContent = "이유를 골라 주세요";
+        form.elements.reason.focus();
+        return;
+      }
+      if (err) err.textContent = "";
+      const note = form.elements.note.value.trim();
+      const days = Number(form.elements.days.value);
+      const what = kind === "warn" ? "경고" : `${kind === "opinion" ? "의견 쉬기" : "마을 쉬기"}`;
+      const within = Date.now() - (c.rules.warnWithinDays ?? 30) * 864e5;
+      const again = kind === "warn" && p.notes.find((x) => x.kind === "warn" && x.by !== "auto" && !x.liftedAt && x.reason === reason && Date.parse(x.at) > within);
+      const target = { [S.careQuery.by]: S.careQuery.q };
+      const done = () => { S.data.care = null; S.data.carePerson = null; load(); };
+      danger({
+        title: again ? "같은 이유로 경고를 이미 보냈어요" : kind === "warn" ? "이 경고를 보낼까요?" : `${what} ${days}일을 걸까요?`,
+        text: again ? `${day(again.at)}에 같은 이유로 보냈어요. 한 번 더 보내면 경고 2회로 세어 다음 추천이 쉬기로 올라가요.`
+          : kind === "warn" ? "받은 분 앱이 마을을 열 때 한 번 보여요. 15초 안에는 되돌릴 수 있어요." : "받은 분 앱의 밤낮 소식에 바로 가요. 15초 안에는 되돌릴 수 있어요.",
+        rows: [["누구에게", `사용자 ${p.who}`], ["무엇을", `${what} · ${c.rules.reasons[reason] ?? reason}`], ...(kind === "warn" ? [] : [["며칠", `${days}일`]]),
+          ["앱에 보일 글", note || "(이유만 보여요)"]],
+        label: again ? "그래도 보내기" : kind === "warn" ? "경고 보내기" : `${what} 걸기`,
+        tone: kind === "community" || again ? "danger" : "primary",
+        run: async () => {
+          const r = kind === "warn"
+            ? await act(() => api("/care/warn", "POST", { ...target, reason, note: note || undefined }), "경고를 보냈어요",
+              (x) => act(() => api(`/care/${x.id}/lift`, "POST", { undo: true }), "되돌렸어요. 받은 분께 가지 않아요").then(done))
+            : await act(() => api("/care/hold", "POST", { ...target, reason, note: note || undefined, scope: kind, days }), (x) => `${what} ${x.days}일을 걸었어요`,
+              (x) => act(() => api(`/care/${x.id}/lift`, "POST", { undo: true }), "되돌렸어요. 받은 분께 가지 않아요").then(done));
+          if (!r) return;
+          form.reset();
+          done();
+        },
+      });
+    },
     "care-lift": ({ id, key }) => confirmBox(key === "warn" ? "이 경고를 거둘까요?" : "지금 풀까요?",
       key === "warn" ? "거둔 경고는 다음 단계를 셀 때 빠져요." : "바로 다시 쓸 수 있고, 앱의 밤낮 소식에 ‘풀렸어요’가 가요. 기록은 남아 다음 단계를 셀 때 써요.",
       key === "warn" ? "거두기" : "풀기", async () => {
@@ -5212,7 +5471,16 @@ function adminApp(L, BUILD, M) {
         S.data.carePerson = null;
         load();
       }, "primary"),
-    "appeal-decide": async ({ id, key }) => {
+    // 2.0.0 [RVA-04] 검토 ADM-05: 해명 판정은 받은 분의 경고·쉬기·가린 글을 바꾸니 한 번 물어요.
+    "appeal-decide": ({ id, key }) => {
+      const post = S.data.inquiry?.appeal?.about?.kind === "post";
+      danger({ title: key === "accepted" ? (post ? "받아들이고 글을 다시 보일까요?" : "받아들이고 풀까요?") : "그대로 둘까요?",
+        text: key === "accepted" ? (post ? "가린 글이 다시 보이고 이 일로 생긴 기록이 지워져요." : "경고·쉬기가 바로 풀리고 이번 건은 앞으로 세지 않아요.")
+          : "지금 상태 그대로예요. 판정은 기록에 남아요.",
+        rows: [["누구에게", "해명을 보낸 분"], ["다음", "답 칸에 보낼 답 초안이 들어가요"]],
+        label: key === "accepted" ? "받아들이기" : "그대로 두기", tone: "primary", run: () => ACTIONS["appeal-run"]({ id, key }) });
+    },
+    "appeal-run": async ({ id, key }) => {
       const done = await act(() => api(`/care/appeal/${id}`, "POST", { result: key }), key === "accepted" ? "풀었어요. 답을 보내 주세요" : "그대로 두기로 했어요. 답을 보내 주세요");
       if (!done) return;
       const post = S.data.inquiry?.appeal?.about?.kind === "post";
@@ -5259,10 +5527,19 @@ function adminApp(L, BUILD, M) {
       S.data.contests = null;
       load();
     },
-    "contest-pick": async ({ id }) => {
+    // 2.0.0 [RVA-04] 검토 ADM-05: 공모 뽑기는 보상이 따르니 한 번 묻고(되돌리기는 그대로).
+    "contest-pick": ({ id }) => {
       const [month, style] = id.split("|");
       const codes = [...document.querySelectorAll(`input[data-pick="${id}"]:checked`)].map((el) => el.value);
       if (codes.length > 3) return toast("3개까지 골라 주세요");
+      const x = S.data.contests?.items.find((c) => c.month === month && c.style === style);
+      const names = codes.map((c) => x?.entries.find((e) => e.code === c)?.title ?? c);
+      danger({ title: codes.length ? "이달의 테마로 고를까요?" : "고른 것을 비울까요?",
+        text: codes.length ? "앱 공방에 '지난 달 이달의 테마'로 보이고, 작품 주인의 프로 한 달 보상이 '드릴 보상'에 생겨요(확인 뒤 지급)." : "앱 공방에서 빠져요.",
+        rows: [["유형", STYLE_NAMES[style] ?? style], ["고른 작품", names.join(", ")]], label: codes.length ? "고르기" : "비우기", tone: "primary",
+        run: () => ACTIONS["contest-run"]({ id, month, style, codes }) });
+    },
+    "contest-run": async ({ month, style, codes }) => {
       // PC 확인 V30: said plainly, with 되돌리기 to the picks before.
       const before = S.data.contests?.items.find((x) => x.month === month && x.style === style)?.picks ?? [];
       await act(() => api("/village/contests/pick", "POST", { month, style, codes }),
@@ -5297,12 +5574,27 @@ function adminApp(L, BUILD, M) {
       S.rateFilter = key;
       refilter("rates");
     },
+    // 2.0.0 [RVA-04] 검토 ADM-05: 임금표 판정에 15초 되돌리기(앞 상태로).
     "rate-set": async ({ id, key }) => {
-      await act(() => api(`/rates/${id}`, "POST", { status: key }), key === "adopted" ? "채택했어요" : key === "hidden" ? "가렸어요" : "투표로 되돌렸어요");
+      const before = (S.data.rates?.rates ?? []).find((x) => String(x.id) === String(id))?.status;
+      await act(() => api(`/rates/${id}`, "POST", { status: key }), key === "adopted" ? "채택했어요" : key === "hidden" ? "가렸어요" : "투표로 되돌렸어요",
+        before && before !== key ? async () => { await act(() => api(`/rates/${id}`, "POST", { status: before }), "되돌렸어요"); S.data.rates = null; load(); } : undefined);
       S.data.rates = null;
       load();
     },
-    "post-show": ({ id }) => moderate(id, { action: "show" }, "다시 보이게 했어요. 신고로는 더 가려지지 않아요"),
+    // 2.0.0 [RVA-04] 검토 ADMX-09: '다시 보이기'는 15초 되돌리기(같은 이유로 다시 가려요). '문제없음'은 신고를 비우고 그 뒤로 신고로는
+    // 가려지지 않아 되돌릴 수 없으니 한 번 물어요.
+    "post-show": ({ id }) => {
+      const p = (S.data.posts?.posts ?? []).find((x) => x.id === id);
+      if (p?.status === "hidden") {
+        const reason = p.hidden?.code;
+        return moderate(id, { action: "show" }, "다시 보이게 했어요. 신고로는 더 가려지지 않아요",
+          reason && reason !== "flags" ? () => moderate(id, { action: "hide", reason }, "되돌렸어요. 다시 가렸어요") : undefined);
+      }
+      danger({ title: "문제없는 글로 둘까요?", text: "신고가 모두 비워지고, 그 뒤로는 신고로 저절로 가려지지 않아요. 되돌릴 수 없어요.", label: "문제없음", tone: "primary",
+        rows: p ? [["신고", p.reasons.map((r) => `${r.text} ${r.n}`).join(", ") || `${p.flags}건`]] : [],
+        run: () => moderate(id, { action: "show" }, "문제없음으로 두었어요") });
+    },
     "post-hide": ({ id }) => openHidePost(id, false),
     "post-mute": ({ id }) => openHidePost(id, true),
     "post-delete": ({ id }) => confirmBox("이 글을 지울까요?", "지운 글은 되돌릴 수 없어요. 글쓴이 앱에서도 사라져요.", "지우기", () => moderate(id, { action: "delete" }, "지웠어요")),
@@ -5547,9 +5839,15 @@ function adminApp(L, BUILD, M) {
       load();
     }),
     "copy-invite": () => copy(S.inviteLink),
+    // [RVA-08] 메일 앱을 열었으면 보낸 것으로 봐요(링크는 그대로 열려요).
+    "mail-invite": (_, el) => {
+      dialog.dataset.copied = "1";
+      location.href = el.getAttribute("href");
+    },
     "share-invite": async () => {
       try {
         await navigator.share({ title: "밤낮 관리자 초대", text: S.inviteText });
+        dialog.dataset.copied = "1";
       } catch {
         // Closed without sharing.
       }
@@ -5762,7 +6060,15 @@ function adminApp(L, BUILD, M) {
       S.ratePick = S.ratePick.size === items.length ? new Set() : new Set(items.map((x) => x.id));
       render({ keepScroll: true });
     },
-    "rate-bulk": async ({ key }) => {
+    // 2.0.0 [RVA-04] 검토 ADM-05: 한꺼번에는 몇 개에 무엇을 하는지 한 번 물어요.
+    "rate-bulk": ({ key }) => {
+      const ids = [...(S.ratePick ?? [])];
+      if (!ids.length) return;
+      const what = { adopted: "채택", hidden: "가리기", pending: "투표로 되돌리기" }[key] ?? key;
+      danger({ title: `고른 임금표 ${ids.length}개를 ${what === "가리기" ? "가릴까요" : `${what}할까요`}?`, text: key === "adopted" ? "모두 앱의 임금표에 바로 보여요." : "",
+        rows: [["무엇을", what], ["몇 개", `${ids.length}개`]], label: what, tone: key === "hidden" ? "danger" : "primary", run: () => ACTIONS["rate-bulk-run"]({ key }) });
+    },
+    "rate-bulk-run": async ({ key }) => {
       const ids = [...(S.ratePick ?? [])];
       if (!ids.length) return;
       const r = await act(() => api("/rates/bulk", "POST", { ids, action: key }),
@@ -5799,10 +6105,15 @@ function adminApp(L, BUILD, M) {
     // [RCX-15][RCX-04][RCX-07] 1.35
     "recipe-font": async ({ id, key }) => { await act(() => api(`/recipes/fonts/${id}/${key}`, "POST", {}), key === "ok" ? (S.fontState ?? "pending") === "pending" ? "나눴어요" : "다시 올렸어요" : "내렸어요"); load(); },
     "font-state": ({ key }) => { S.fontState = key; S.data.recipes = null; load(); },
-    "recipe-image": async ({ id, key }) => {
-      await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요");
-      if (S.recipePhoto?.id === id) S.recipePhoto = { ...S.recipePhoto, done: key };
-      load();
+    "recipe-image": ({ id, key }) => {
+      const go = async () => {
+        await act(() => api(`/recipes/images/${id}/${key}`, "POST", {}), key === "ok" ? "보이게 했어요" : "가렸어요");
+        if (S.recipePhoto?.id === id) S.recipePhoto = { ...S.recipePhoto, done: key };
+        load();
+      };
+      // 2.0.0 [RVA-04] 검토 ADM-05: 사진 가리기는 올린 분의 신고 누적 1번으로 세니 한 번 물어요.
+      if (key !== "hide") return go();
+      danger({ title: "이 사진을 가릴까요?", text: "이 사진을 쓴 작품에서 사진이 빠지고, 올린 분의 신고 누적 1번으로 세요. 다시 보이게 해도 그 1번은 남아요.", label: "가리기", run: go });
     },
     "recipe-maker": async ({ id, key }) => {
       const said = { "bio-hide": "소개를 가렸어요", "bio-show": "소개가 다시 보여요", close: "프로필을 닫았어요", open: "프로필을 다시 열었어요", clear: "신고를 비웠어요" }[key];
@@ -5822,17 +6133,36 @@ function adminApp(L, BUILD, M) {
       load();
     }),
     // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
-    "material-state": async ({ id, key }) => {
-      await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`);
-      load();
+    // 2.0.0 [RVA-04] 검토 ADM-05: 공개는 모든 사용자 스튜디오에 가니 한 번 묻고, 공개·숨기기 모두 15초 되돌리기.
+    "material-state": ({ id, key }) => {
+      const go = async () => {
+        await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`,
+          async () => { await act(() => api("/recipes/materials/state", "POST", { state: key === "ok" ? "hidden" : "ok", pack: id }), "되돌렸어요"); load(); });
+        load();
+      };
+      if (key !== "ok") return go();
+      danger({ title: `‘${id}’ 묶음을 공개할까요?`, text: "모든 사용자의 스튜디오 재료에 바로 보여요. 15초 안에는 되돌릴 수 있어요.", label: "공개", tone: "primary", run: go });
     },
+    // 2.0.0 [RVA-04] 검토 ADM-05·ADMX-09: 가리기는 쓰기 제한 1번으로 세니 한 번 묻고 15초 되돌리기, 공식 표시는 15초 되돌리기와 '공식 빼기'.
     "recipe-do": async ({ id, key }) => {
-      await act(() => api(`/recipes/${id}/${key}`, "POST", {}), { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요" }[key] ?? "했어요");
-      load();
+      const run = (k, body = {}) => api(`/recipes/${id}/${k}`, "POST", body);
+      const back = { hide: () => run("show"), official: () => run("official", { on: false }), unofficial: () => run("official", { on: true }) }[key];
+      const go = async () => {
+        await act(() => (key === "unofficial" ? run("official", { on: false }) : run(key)),
+          { approve: "광장에 올렸어요", hide: "가렸어요", show: "다시 보이게 했어요", official: "공식으로 표시했어요", unofficial: "공식 표시를 뺐어요" }[key] ?? "했어요",
+          back ? async () => { await act(back, "되돌렸어요"); load(); } : undefined);
+        load();
+      };
+      if (key !== "hide") return go();
+      const r = (S.data.recipes?.items ?? []).find((x) => x.code === id);
+      danger({ title: "이 작품을 가릴까요?", text: "장터에서 바로 빠지고, 만든 분 앱에 가려졌다고 보여요. 만든 분의 신고 누적 1번으로 세요. 15초 안에는 되돌릴 수 있어요.",
+        rows: [["작품", r ? `${r.title} · ${id}` : id]], label: "가리기", run: go });
     },
     // [RCX-32] 보여주기에 넣기·빼기.
     "recipe-showcase": async ({ id, key }) => {
-      await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key === "on" }), key === "on" ? "보여주기에 넣었어요" : "보여주기에서 뺐어요");
+      // 2.0.0 [RVA-04] 검토 ADMX-09: 15초 되돌리기.
+      await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key === "on" }), key === "on" ? "보여주기에 넣었어요" : "보여주기에서 뺐어요",
+        async () => { await act(() => api(`/recipes/${id}/showcase`, "POST", { on: key !== "on" }), "되돌렸어요"); load(); });
       load();
     },
     "recipe-delete": ({ id }) => confirmBox("이 레시피를 지울까요?", "모든 판과 이야기가 지워지고 되돌릴 수 없어요. 이미 넣은 분들의 달력은 그대로예요.", "지우기", async () => {
@@ -5900,6 +6230,11 @@ function adminApp(L, BUILD, M) {
         render();
       }
     }),
+    // 2.0.0 [RVA-01] 검토 I23b-02: 이 기기에 남은 서버 답을 지금 지워요(다른 기기는 '모든 기기에서 로그아웃' 뒤 처음 열 때 지워져요).
+    "forget-device": async () => {
+      await forgetKept();
+      toast("이 기기에 남은 화면을 지웠어요");
+    },
     "logout-all": () => confirmBox("모든 기기에서 로그아웃할까요?", "이 기기를 포함해 이 계정으로 로그인한 모든 기기가 다시 로그인해야 해요.", "로그아웃", async () => {
       await api("/me/logout-all", "POST");
       signedOut(true);
@@ -5925,6 +6260,17 @@ function adminApp(L, BUILD, M) {
    * Back to the sign-in screen. [forget]: signed out on purpose, so what this device kept of the
    * admin's work (the service worker's copies of answers, unsent drafts) goes too.
    */
+  /** 2.0.0 [RVA-01] 이 기기에 남은 서버 답(열면 바로·연결 끊김 때 보는 것)을 지워요. 서비스 워커가 없어도 지워요. */
+  async function forgetKept() {
+    navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
+    try {
+      if ("caches" in window) await caches.delete("bamnat-admin-api");
+    } catch {
+      // Nothing kept.
+    }
+    etags.clear();
+  }
+
   function signedOut(forget = false) {
     S.phase = "login";
     S.me = null;
@@ -5941,7 +6287,7 @@ function adminApp(L, BUILD, M) {
     clearInterval(pollTimer);
     if (forget) {
       clearDrafts();
-      navigator.serviceWorker?.controller?.postMessage({ type: "forget" });
+      forgetKept();
     }
     history.replaceState(null, "", "/admin/");
     render();
@@ -6015,6 +6361,19 @@ function adminApp(L, BUILD, M) {
         if (box) box.textContent = e.message === "wrong" ? "메일이나 비밀번호가 달라요." : ERRORS[e.message] ?? "로그인하지 못했어요.";
         if (e.message === "code_needed") document.getElementById("re-code")?.focus();
       }
+    },
+    // [RVA-02] askText의 '저장'.
+    "ask-text": async (form) => {
+      const ask = pendingAsk;
+      const text = String(new FormData(form).get("text") ?? "");
+      if (ask?.required && !text.trim()) {
+        const err = document.getElementById("ask-error");
+        if (err) err.textContent = "칸을 채워 주세요";
+        return;
+      }
+      pendingAsk = null;
+      dialog.close();
+      await ask?.then?.(text);
     },
     confirm: async () => {
       const then = pendingConfirm;
@@ -6213,19 +6572,8 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
       load();
     },
-    "care-act": async (form, submitter) => {
-      const data = new FormData(form);
-      const kind = submitter?.dataset.kind ?? "warn";
-      const body = { [S.careQuery.by]: S.careQuery.q, reason: data.get("reason"), note: String(data.get("note") ?? "").trim() || undefined };
-      const r = kind === "warn"
-        ? await act(() => api("/care/warn", "POST", body), "경고를 보냈어요. 앱이 마을을 열 때 한 번 보여요")
-        : await act(() => api("/care/hold", "POST", { ...body, scope: kind, days: Number(data.get("days")) }),
-          (x) => `${kind === "opinion" ? "의견 쉬기" : "마을 쉬기"} ${x.days}일을 걸었어요`);
-      if (!r) return;
-      S.data.care = null;
-      S.data.carePerson = null;
-      load();
-    },
+    // 2.0.0 [RVA-03] 검토 ADM-04: 글 칸에서 Enter를 쳐도 아무것도 보내지 않아요. 보내기는 아래 단추(care-do)와 확인 창으로만.
+    "care-act": () => {},
     "hide-post": (form) => {
       const mute = form.dataset.mute === "1";
       const id = form.dataset.id;
@@ -6250,6 +6598,22 @@ function adminApp(L, BUILD, M) {
         title: data.get("title"), body: data.get("body"), level: data.get("level"),
         from: at(data.get("from")), until: at(data.get("until"), 864e5), minApp: num(data.get("minApp")), maxApp: num(data.get("maxApp")),
       };
+      // 2.0.0 [RVA-05] 검토 U24-10·ADMX-20: 틀린 칸은 그 칸에 빨간 테와 이유로.
+      if (String(data.get("until")) < String(data.get("from"))) return fieldError(form.elements.until, "마지막 날이 시작보다 앞이에요");
+      if (Date.parse(body.until) - Date.parse(body.from) > 91 * 864e5) return fieldError(form.elements.until, "90일 안으로 골라 주세요");
+      if (body.minApp !== null && body.maxApp !== null && body.maxApp < body.minApp) return fieldError(form.elements.maxApp, "'부터' 번호보다 작아요");
+      // 2.0.0 [RVA-04] 검토 ADMX-20: 새 공지는 앱을 쓰는 모두에게 가니, 같은 창 안에서 한 번 더 물어요(적은 글이 사라지지 않게 창을 바꾸지 않아요).
+      if (!form.dataset.id && !form.dataset.sure) {
+        form.dataset.sure = "1";
+        const who = body.minApp || body.maxApp ? `앱 번호 ${body.minApp ?? "처음"}~${body.maxApp ?? "끝"}을 쓰는 분` : "앱을 쓰는 모든 분";
+        const box = form.querySelector(".sure") ?? form.querySelector(".actions").insertAdjacentElement("beforebegin", document.createElement("p"));
+        box.className = "note warn sure";
+        box.setAttribute("role", "alert");
+        box.textContent = `${who}께 ${data.get("from")}부터 ${data.get("until")}까지 보여요. 위 모양 그대로 올릴까요?`;
+        const submit = form.querySelector("[type=submit]");
+        if (submit) submit.textContent = "이대로 올리기";
+        return;
+      }
       const n = await act(() => api("/notices", "POST", body), form.dataset.id ? "공지를 고쳤어요" : "공지를 올렸어요. 앱은 하루 안에 받아요");
       if (!n) return;
       S.data.notices = n;
@@ -6281,8 +6645,11 @@ function adminApp(L, BUILD, M) {
       const close = submitter?.dataset.close === "1";
       const template = Number(form.elements.template?.value) || undefined;
       const id = S.route.id;
+      // 2.0.0 [RVA-06] 검토 ADM-03: 보내기 시작할 때의 화면(초안 열쇠)을 잡아 두고, 보내는 동안에는 30초 새로 고침이 다시 그리지 않아요.
+      const route = { ...S.route };
       // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
       const alike = form.elements.alike?.checked ? queueAhead(id) : [];
+      S.sending = (S.sending ?? 0) + 1;
       const q = await act(async () => {
         const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
         const sent = [];
@@ -6290,8 +6657,12 @@ function adminApp(L, BUILD, M) {
         if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
         return { first, sent: sent.length, missed: alike.length - sent.length };
       }, (r) => `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`)
-        .then((r) => r?.first);
+        .then((r) => r?.first).finally(() => { S.sending--; });
       if (!q) return;
+      // [RVA-06] 보낸 글은 화면이 그사이 새로 그려졌어도 초안·답 칸에서 지워요(다시 열어도 보낸 글이 초안으로 뜨지 않게).
+      writeDraft("reply", "", route);
+      const box = document.getElementById("reply");
+      if (box && S.route.name === "inquiries" && S.route.id === id) box.value = "";
       typingSent = 0;
       S.data.inquiry = q;
       // [ADMUX-04] 큐 모드 goes on to the next question; 닫으면 다음 문의 does the same after 답하고 닫기.
@@ -6550,7 +6921,7 @@ function adminApp(L, BUILD, M) {
     if (e.target.closest("[data-undo]")) {
       const undo = S.undo;
       S.undo = null;
-      toastBox.classList.remove("show", "has-undo");
+      toastBox.classList.remove("show", "has-undo", "mini");
       if (undo) Promise.resolve(undo()).catch(fail);
       return;
     }
@@ -6710,9 +7081,10 @@ function adminApp(L, BUILD, M) {
 
   /** [ADMIN-16] Words typed in a list's search box: the list comes again a quarter second after the last key. */
   const SEARCH = {
-    dev: () => ["devQuery", "devList", () => loadDev()],
-    companies: () => ["query", "list", async () => { S.data.list = await api(companiesPath()); }],
-    inquiries: () => ["inquiryQuery", "inquiries", () => loadInquiries()],
+    // 2.0.0 [RVA-13] 검토 ADM-18: 찾기마다 순번(n)을 받아 늦게 온 옛 답이 새 답을 덮지 않아요.
+    dev: () => ["devQuery", "devList", (n) => loadDev(n)],
+    companies: () => ["query", "list", async (n) => { const d = await api(companiesPath()); if (seq.current("load", n)) S.data.list = d; }],
+    inquiries: () => ["inquiryQuery", "inquiries", (n) => loadInquiries(n)],
     community: () => ["postQuery", S.postFilter === "rates" ? "rates" : "posts", () => load({ quiet: true })],
     rewards: () => ["rewardQuery", "rewards", () => load({ quiet: true })],
     // AM 1.28 [ADMUX-21] 기능 관리 finds in the list it has.
@@ -6727,7 +7099,7 @@ function adminApp(L, BUILD, M) {
    */
   const A = {
     S, L, esc, times, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
-    confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
+    confirmBox, danger, askText, showCopy, fieldError, mergeWords, syncUrl, refilter, go, reloginThen, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
   // [RVD-04] A name two groups give would hide the first one's (ADMX-02: V.changes became loop's switch table); say so at once.
@@ -6782,7 +7154,27 @@ function adminApp(L, BUILD, M) {
       const m = document.getElementById(t.dataset.strength);
       if (m) m.value = L.strength(t.value);
     }
+    // [RVA-05] 빨간 테를 단 칸을 고쳐 적으면 테와 이유를 지워요.
+    if (t.getAttribute?.("aria-invalid") === "true") {
+      t.removeAttribute("aria-invalid");
+      document.getElementById(`${t.id || t.name}-error`)?.remove();
+    }
+    // [RVA-15] 창의 폼, data-guard 폼에 적으면 표시해 두고 닫기·떠나기 전에 물어요(찾기 칸은 빼요).
+    // [RVN-02] data-keep 칸은 닫아도 남으니(다시 열면 그대로) 묻지 않아요.
+    const typedForm = t.type !== "search" && t.id !== "search" && !t.dataset?.keep ? t.closest?.("dialog form, #main form[data-guard]") : null;
+    if (typedForm) typedForm.dataset.dirty = "1";
+    // [RVA-02] askText의 미리 보기.
+    if (t.id === "ask-text" && pendingAsk?.preview) {
+      const box = document.getElementById("ask-preview");
+      if (box) box.innerHTML = pendingAsk.preview(t.value);
+    }
     const nf = t.closest?.('form[data-form="notice"]');
+    if (nf?.dataset.sure) {
+      delete nf.dataset.sure;
+      nf.querySelector(".sure")?.remove();
+      const submit = nf.querySelector("[type=submit]");
+      if (submit) submit.textContent = "올리기";
+    }
     if (nf) {
       const v = (name) => nf.elements[name]?.value ?? "";
       const box = document.getElementById("nt-preview");
@@ -6836,8 +7228,9 @@ function adminApp(L, BUILD, M) {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(async () => {
       syncUrl();
-      await act(fetchIt);
-      render({ keepScroll: true });
+      const n = seq.next("load");
+      await act(() => fetchIt(n));
+      if (seq.current("load", n)) render({ keepScroll: true });
     }, 250);
   });
 
@@ -7042,6 +7435,11 @@ function adminApp(L, BUILD, M) {
 
   document.addEventListener("keydown", (e) => {
     if (S.phase !== "app") return;
+    // 2.0.0 [RVA-02] 창 안의 한 줄 칸(data-enter)은 Enter가 바깥 양식을 보내지 않고 그 칸의 단추를 눌러요.
+    if (e.key === "Enter" && e.target?.dataset?.enter && ACTIONS[e.target.dataset.enter]) {
+      e.preventDefault();
+      return ACTIONS[e.target.dataset.enter](e.target.dataset, e.target);
+    }
     // The palette's own keys.
     if (S.palette && dialog.open) {
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -7072,14 +7470,27 @@ function adminApp(L, BUILD, M) {
     if (a) onKey(a, e);
   });
   dialog.addEventListener("click", (e) => {
-    // A tap outside the box closes it.
-    if (e.target === dialog) dialog.close();
+    // A tap outside the box closes it ([RVA-08] a value shown once asks first).
+    if (e.target === dialog && !secretGuard()) dialog.close();
   });
+  // [RVA-08] Esc on a value shown once asks first too.
+  dialog.addEventListener("cancel", (e) => {
+    if (secretGuard()) e.preventDefault();
+  });
+  // [RVA-08] 손으로 골라 복사(Ctrl+C·길게 눌러 복사)해도 복사한 것으로 봐요.
+  dialog.addEventListener("copy", () => { if (dialog.querySelector("[data-secret]")) dialog.dataset.copied = "1"; });
   dialog.addEventListener("close", () => {
-    // [ADMUX-10] Closed another way: its history step becomes a plain one, so back is not spent on nothing later.
-    if (history.state?.dialog) history.replaceState(null, "", location.href);
+    // 2.0.0 [RVA-07] 검토 ADM-10·U23-10: 단추·바깥 누르기로 닫았으면 창이 넣은 기록 칸을 뒤로 한 칸 거둬요(전에는 '보통 칸'으로 남아 뒤로 가기가 헛돌았어요).
+    // 뒤로 가기로 닫힌 때는 칸이 이미 빠졌어요(history.state가 dialog가 아님).
+    if (history.state?.dialog) {
+      dialogBack = true;
+      history.back();
+    }
     S.palette = null;
     S.linkMode = "";
+    pendingAsk = null;
+    // [RVA-08] 검토 ADM-17: 닫힌 창의 글(한 번만 보이는 열쇠 등)을 화면 안에 남기지 않아요. 곧바로 다른 창이 열렸으면 그대로 둬요.
+    if (!dialog.open) dialog.innerHTML = "";
   });
   reloginBox.addEventListener("close", () => {
     if (S.relogin) {
@@ -7090,7 +7501,16 @@ function adminApp(L, BUILD, M) {
     }
   });
   window.addEventListener("popstate", () => {
-    if (dialog.open && !S.relogin && !history.state?.dialog) dialog.close();
+    // [RVA-07] 창을 단추로 닫아 거둔 칸이면 아무것도 하지 않아요.
+    if (dialogBack) {
+      dialogBack = false;
+      return;
+    }
+    if (dialog.open && !S.relogin && !history.state?.dialog) {
+      // [RVA-08] 한 번만 보이는 값이면 한 번 묻고 칸을 다시 넣어요.
+      if (secretGuard()) history.pushState({ dialog: true }, "", location.href);
+      else dialog.close();
+    }
   });
   window.addEventListener("hashchange", () => {
     if (S.phase !== "app") return;
@@ -7098,8 +7518,17 @@ function adminApp(L, BUILD, M) {
     const next = readRoute();
     const moved = before.name !== next.name || before.id !== next.id;
     // [ADMUX-01] Settings changed and not saved: asked before they are dropped.
-    if (moved && ((S.draft && before.name === "adopt") || (S.slaDraft && before.name === "sla")) && !confirm("저장하지 않은 설정이 있어요. 버리고 나갈까요?")) {
+    // 2.0.0 [RVA-02][RVA-15] 검토 ADM-13·ADMX-20: 브라우저 기본 확인 창 대신 앱의 창, 친구 초대 규칙·숫자 칸 폼도 같이 봐요.
+    if (moved && unsavedHere(before)) {
+      const target = location.href;
       history.replaceState(null, "", `/admin/${href(before.name, before.id)}`);
+      confirmBox("저장하지 않은 설정이 있어요", "나가면 바꾼 값이 사라져요.", "버리고 나가기", () => {
+        S.draft = null;
+        S.slaDraft = null;
+        S.inviteDraft = null;
+        document.querySelectorAll("#main form[data-dirty]").forEach((f) => delete f.dataset.dirty);
+        location.href = target;
+      }, "primary");
       return;
     }
     if (moved && before.name === "inquiries" && before.id) pingTyping(false);
@@ -7114,6 +7543,7 @@ function adminApp(L, BUILD, M) {
     if (moved) {
       S.draft = null;
       S.slaDraft = null;
+      S.inviteDraft = null;
       S.cursor = -1;
       if (next.name !== "inquiries") S.inquiryPick = null;
       // 큐 모드 ends once the admin goes somewhere else than a question of the queue.
@@ -7142,7 +7572,7 @@ function adminApp(L, BUILD, M) {
   });
   window.addEventListener("beforeunload", (e) => {
     // Typed answers are kept in the browser; only settings would be lost.
-    if (S.draft || S.slaDraft || S.uploading) {
+    if (S.draft || S.slaDraft || S.inviteDraft || S.uploading || document.querySelector("#main form[data-guard][data-dirty], dialog[open] form[data-dirty]")) {
       e.preventDefault();
       e.returnValue = "";
     }
@@ -7161,7 +7591,8 @@ function adminApp(L, BUILD, M) {
   }
 
   async function poll() {
-    if (document.visibilityState !== "visible" || S.phase !== "app" || !S.online || dialog.open) return;
+    // [RVA-06] 답을 보내는 동안에는 다시 그리지 않아요(폼이 새로 바뀌면 보낸 뒤 비우기를 건너뛰었어요).
+    if (document.visibilityState !== "visible" || S.phase !== "app" || !S.online || dialog.open || S.sending) return;
     const before = S.overview?.inquiries ?? 0;
     const was = countsKey();
     await refreshBadges(true);
@@ -7222,6 +7653,8 @@ function adminApp(L, BUILD, M) {
 
   (async () => {
     applyPrefs();
+    // [RVA-01] 관리자 이름 없이 남은 옛 초안(1.39까지)은 지워요.
+    clearDrafts(true);
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin/" }).catch(() => {});
     const path = location.pathname;
     if (path === "/admin/join") {
@@ -7249,7 +7682,24 @@ function adminApp(L, BUILD, M) {
       // 1.39 [ADM3-52] 전에 들어온 적이 있으면 /session·/badges를 기다리지 않고 남은 답으로 바로 열어요. 로그인이 끝났으면
       // 첫 새 답이 401이라 그 화면 위에 다시 로그인 창이 떠요(쓰던 화면은 그대로).
       const kept = await peek("/badges");
-      if (kept?.me) return await enter(kept);
+      if (kept?.me) {
+        // 2.0.0 [RVA-01] 검토 ADM-02 ①: 남은 답으로 먼저 그리되 /session을 함께 물어, 로그인이 끝났으면(모든 기기 로그아웃·관리자 삭제)
+        // 남은 화면을 바로 가리고 지워요. 다른 관리자로 로그인돼 있으면 남은 것을 지우고 새로 열어요. 연결이 없으면 24시간까지 남은 것을 보여요.
+        const check = fetch("/api/admin/session", { credentials: "same-origin", cache: "no-store" }).then((r) => r.json()).catch(() => null);
+        await enter(kept);
+        const now = await check;
+        if (now && !now.signedIn) {
+          await forgetKept();
+          return signedOut(false);
+        }
+        if (now?.who && now.who !== kept.me.id) {
+          await forgetKept();
+          S.data = {};
+          etags.clear();
+          return await enter();
+        }
+        return;
+      }
       // [ADMUX-11] Asked first, so a signed-out start shows the login without a 401 in the console.
       if (!(await api("/session")).signedIn) throw new Error("login");
       await enter();
@@ -7272,13 +7722,29 @@ function adminApp(L, BUILD, M) {
 function adminWorker(version) {
   const CACHE = `bamnat-admin-${version}`;
   const API = "bamnat-admin-api";
+  // 2.0.0 [RVA-01] 검토 ADM-02·T23-04·I23a-04: 휴대폰에 남기는 답은 화면 틀·메뉴 숫자·목록뿐이에요(허용 목록). 문의 하나의 글, 사람 패널,
+  // 결제·돈, 데이터 요청, 활동 기록, 내보내기, 찾기 말, 관리자·열쇠·가족·로그인 잠금은 남기지 않아요. 남긴 답은 24시간까지, 120개까지예요.
+  const KEEP_MS = 24 * 3600e3;
+  const KEEP_MAX = 120;
+  const KEEP = ["badges", "basics", "today", "ledger", "flow", "inquiries", "dev", "story", "queue", "companies", "posts", "rates", "village", "plaza",
+    "templates", "flags", "types", "notices", "ops", "metrics", "remote", "versions", "recipes", "growth", "servers", "server", "watch", "release", "changes",
+    "glance", "observe", "loop", "cockpit", "incident", "reviews", "effects", "checks", "backup", "old-pay", "settings", "shares"];
+  const keepable = (url) => {
+    const parts = url.pathname.slice("/api/admin/".length).split("/");
+    if (!KEEP.includes(parts[0]) || /export|\.csv$/.test(url.pathname)) return false;
+    for (const k of ["q", "sender", "billing"]) if (url.searchParams.get(k)) return false;
+    if (parts[0] === "inquiries" && parts.length > 1) return false;
+    if (parts[0] === "ledger" && (parts.length > 1 || url.searchParams.get("view") === "claude")) return false;
+    return true;
+  };
   const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest", "/admin/install"];
   self.addEventListener("install", (event) => {
     event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
   });
   self.addEventListener("activate", (event) => {
+    // [RVA-01] A new build also drops what the last one kept (an older one kept more than the list above).
     event.waitUntil(caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE && k !== API).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()));
   });
   self.addEventListener("fetch", (event) => {
@@ -7288,17 +7754,26 @@ function adminWorker(version) {
       // Sign-in state, photos and the setup check are never kept.
       if (/^\/api\/admin\/(health|join|inquiries\/[^/]+\/photos)/.test(url.pathname)) return;
       const key = new Request(url.href);
+      const keep = keepable(url);
       event.respondWith(fetch(event.request).then(async (res) => {
-        if (res.status === 200) {
+        if (res.status === 200 && keep) {
           const copy = res.clone();
-          event.waitUntil(caches.open(API).then((c) => c.put(key, copy)));
+          event.waitUntil((async () => {
+            const headers = new Headers(copy.headers);
+            headers.set("x-admin-kept", String(Date.now()));
+            const c = await caches.open(API);
+            await c.put(key, new Response(await copy.blob(), { status: 200, headers }));
+            const keys = await c.keys();
+            for (const k of keys.slice(0, Math.max(0, keys.length - KEEP_MAX))) await c.delete(k);
+          })());
         } else if (res.status === 401) {
           event.waitUntil(caches.delete(API));
         }
         return res;
       }, async () => {
-        const hit = await caches.open(API).then((c) => c.match(key));
-        if (!hit) throw new TypeError("offline");
+        const hit = keep ? await caches.open(API).then((c) => c.match(key)) : null;
+        const at = Number(hit?.headers.get("x-admin-kept")) || 0;
+        if (!hit || Date.now() - at > KEEP_MS) throw new TypeError("offline");
         const headers = new Headers(hit.headers);
         headers.set("x-admin-cache", "1");
         headers.delete("etag");

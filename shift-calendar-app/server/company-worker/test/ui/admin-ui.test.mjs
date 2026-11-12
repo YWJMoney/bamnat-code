@@ -9,6 +9,7 @@ import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
 import { SERVER_VERSION } from "../../src/version.js";
 import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { adminLib } from "../../src/admin-lib.js";
 
 const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
@@ -26,6 +27,8 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
   open.push(window);
   const jar = { cookie };
   const errors = [];
+  // 2.0.0 [RVA-11] 검토 I24b-01: 서버가 5xx로 답한 요청도 모아 둬요(연기 시험이 0인지 봐요).
+  const broken = [];
   window.addEventListener("error", (e) => errors.push(e.error ?? e.message));
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, ORIGIN);
@@ -34,6 +37,7 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
     headers.set("cf-connecting-ip", "203.0.113.9");
     if (init.method && init.method !== "GET") headers.set("origin", ORIGIN);
     const res = await worker.fetch(new Request(url, { method: init.method ?? "GET", headers, body: init.body }), env);
+    if (res.status >= 500) broken.push(`${init.method ?? "GET"} ${url.pathname} ${res.status}`);
     const set = res.headers.get("set-cookie");
     if (set) jar.cookie = /Max-Age=0/.test(set) ? null : set.split(";")[0];
     const body = res.status === 304 ? null : await res.text();
@@ -44,7 +48,7 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
   window.document.body.innerHTML = BODY;
   window.eval(APP_JS);
   const t = {
-    window, document: window.document, jar, errors,
+    window, document: window.document, jar, errors, broken,
     $: (s) => window.document.querySelector(s),
     $$: (s) => [...window.document.querySelectorAll(s)],
     text: (s) => window.document.querySelector(s)?.textContent.replace(/\s+/g, " ").trim() ?? "",
@@ -118,12 +122,8 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   const { env } = await world();
   const t = await signedIn(env);
   // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
-  for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
-    "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more",
-    // 1.38 [ADM3] 새 화면들.
-    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth",
-    // 1.39 [LOOP] 자동 순환·결정함·요금 판단.
-    "loop", "decide", "tiers"]) {
+  // 2.0.0 [RVA-11] 검토 ADM-09·I24b-01: 손으로 적은 목록 대신 모든 화면(L.TABS)을 돌고, 서버 5xx도 0이어야 해요(연기 시험).
+  for (const s of [...Object.keys(adminLib().TABS), "inbox", "ops", "settings", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -131,6 +131,7 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
     assert.equal(t.$$("#main [style]").length, 0, `${s}: no style attribute (CSP)`);
   }
   assert.deepEqual(t.errors, []);
+  assert.deepEqual(t.broken, [], "no screen asked something the server answered with 5xx");
 });
 
 test("[ADMUX-02] filters live in the address and come back from it", async () => {
@@ -162,7 +163,8 @@ test("[ADMUX-01] a typed answer survives a repaint, a reload and a lost sign-in"
   await t.type("#reply", "확인하고 있어요");
   await t.click('[data-act="refresh"]');
   assert.equal(t.$("#reply").value, "확인하고 있어요", "kept across a repaint");
-  const store = Object.fromEntries(Object.entries(t.window.localStorage).filter(([k]) => k.startsWith("bamnat-admin-draft:")));
+  // 2.0.0 [RVA-06] 초안은 관리자·화면마다 따로, 7일까지(열쇠 bamnat-admin-draft2:<관리자>:<화면>:<칸>).
+  const store = Object.fromEntries(Object.entries(t.window.localStorage).filter(([k]) => k.startsWith("bamnat-admin-draft2:")));
   const again = await tab(env, { hash: t.window.location.hash, storage: store, cookie: t.jar.cookie });
   assert.equal(again.$("#reply").value, "확인하고 있어요", "kept across a reload");
   // Signed out under way: a box over the screen, and the answer is still there after.
@@ -178,7 +180,7 @@ test("[ADMUX-01] a typed answer survives a repaint, a reload and a lost sign-in"
   again.$('form[data-form="reply"]').requestSubmit(again.$('form[data-form="reply"] .btn.primary'));
   await again.settle(30);
   assert.equal(again.$("#reply")?.value ?? "", "");
-  assert.ok(!Object.keys(again.window.localStorage).some((k) => k.startsWith("bamnat-admin-draft:")));
+  assert.ok(!Object.keys(again.window.localStorage).some((k) => k.startsWith("bamnat-admin-draft2:")));
 });
 
 test("[ADMIN-16] picked questions are taken at once, and a 닫기 can be taken back", async () => {
@@ -633,7 +635,11 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
   assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
+  // 2.0.0 [RVD-21] 처리방침 3.13이 일정에 없으면 모든 보상 합친 1년 12개월은 아직이에요(약관 1.3·처리방침 3.12는 상한 없음).
+  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  // [RVD-21] 접힌 한 줄도 같아요: 3.13 전에는 '한 분에 1년 12개월까지'라고 하지 않아요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 1년 12개월 상한은 처리방침 3.13 시행일부터");
+  assert.match(t.text('#main details[data-key="reward-how"] .hint'), /그 전에는 친구 초대 설정의 상한만 봐요/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
   assert.match(main, /최근 30일 몰림 1번/);
   assert.deepEqual(t.errors, []);
@@ -646,7 +652,7 @@ test("[INVITE-08] 관리 › 보상 › 친구 초대 (1.27 설정): the develop
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
   assert.match(card().textContent, /초대만의 1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
@@ -2109,6 +2115,8 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   const { env, DB } = await world();
   const put = (id, rule, device, months, status = "owed", paidAt = null, report = id) => DB.db.prepare(`INSERT INTO rewards (id, report_id, rule_id, device, months,
     status, memo, created_at, paid_at, deferred) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0)`).run(id, report, rule, device, months, status, Date.now(), paidAt);
+  // [RVD-21] 1년 12개월은 처리방침 3.13 게시 + 30일부터: 일정에 3.13을 한 달 반 전 게시로 넣어 상한이 걸린 때를 봐요.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)").run(JSON.stringify({ "3.13": { posted: "2026-10-01", effective: "2026-10-01", heldUntil: null } }));
   put("wPAIDaaaaaaaaaaaaaaaaaa", "rule-x", "full", 12, "paid", Date.now());
   put("iOVERaaaaaaaaaaaaaaaaa", "invite", "full", 1);
   put("iFREEaaaaaaaaaaaaaaaaa", "invite", "free", 1);
@@ -2133,6 +2141,8 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   assert.equal(t.document.querySelectorAll("#main ul.rows .btn.primary").length, 0);
   assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
   assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
+  // [RVD-21] 3.13 + 30일이 지났으니 접힌 한 줄은 상한을 말해요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 한 분에 1년 12개월까지");
   assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
   // 조건 1(총괄 11-12 2차): 구간·찾기·종류·고르기·CSV는 목록 머리 한 줄, 그 바로 밑이 드릴 보상 목록. 한 줄 설명·Claude 줄은 목록 아래.
   const order = [...t.$("#main").children].map((e) => e.matches(".list-head") ? "head" : e.matches("ul.rows") ? "rows" : e.matches(".list-foot") ? "foot" : e.matches("section.card") ? "card" : "?");
@@ -2210,4 +2220,225 @@ test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback v
   assert.equal(t.$$("#main .deploy-line").length, 0, "머리띠의 배포 줄(#deploy-line)과 같은 이름을 쓰지 않아요");
   assert.match(t.text("#main [data-budget]"), /요금제/);
   assert.deepEqual(t.errors, []);
+});
+
+// ---- 2.0.0 갈래 Q2 (검토 영역 23·24): 믿음·안전 ----
+
+test("[RVA-10] a question that is gone says so, with 목록으로, not '서버가 답하지 않아요'", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/inquiries/zzzzzzzzzzzzzzzzzzzzzz");
+  assert.match(t.text("#main .failed"), /지워졌거나 없는 문의예요/);
+  assert.equal(t.$("#main .failed a.btn.primary")?.getAttribute("href"), "#/inquiries");
+  assert.doesNotMatch(t.text("#main"), /서버가 잠시 답하지 않아요/);
+});
+
+test("[RVA-08][RVA-07] a key shown once asks before it closes, is wiped after, and the box's history step goes with it", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/keys");
+  await t.click('[data-act="key-make"]');
+  assert.equal(t.window.history.state?.dialog, true, "the box has a step of its own");
+  t.$('form[data-form="key-make"]').requestSubmit();
+  await t.settle(30);
+  assert.ok(t.$("dialog [data-secret] #key-once"), "the key is shown once");
+  // 닫기 before copying: asked once, still open.
+  await t.click('dialog [data-act="close"]');
+  assert.equal(t.$("dialog").open, true);
+  assert.match(t.text("dialog .secret-warn"), /아직 복사하지 않았어요/);
+  // The second time it closes, the key is gone from the page, and back is not spent on an empty step.
+  await t.click('dialog [data-act="close"]');
+  await t.settle(10);
+  assert.equal(t.$("dialog").open, false);
+  assert.equal(t.$("dialog").innerHTML, "");
+  assert.ok(!t.window.history.state?.dialog, "the box's step was taken back");
+});
+
+test("[RVA-05] 인앱 업데이트 기준: an empty box keeps the value, and a change is asked with what it reaches", async () => {
+  const { env, call } = await world();
+  const t = await signedIn(env);
+  await t.go("#/loop");
+  const form = t.$('form[data-form="loop-switches"]');
+  assert.ok(form, "the switches form");
+  assert.match(t.text('form[data-form="loop-switches"]'), /판 번호는 앱 설정/);
+  await t.type("#ls-urgent", "");
+  await t.type("#ls-flex", "40");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.match(t.text("dialog"), /인앱 업데이트 기준을 바꿀까요/);
+  assert.match(t.text("dialog .confirm-rows"), /0 → 40/);
+  assert.doesNotMatch(t.text("dialog .confirm-rows"), /긴급/, "the empty one is not changed");
+  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(call);
+  const sw = (await call("GET", "/api/admin/loop", undefined, owner)).data.switches;
+  assert.deepEqual([sw.urgentMin, sw.flexibleMin], [0, 40]);
+  // Letters in a box: said at the box, nothing sent.
+  await t.go("#/loop");
+  t.$("#ls-flex").setAttribute("type", "text");
+  await t.type("#ls-flex", "4o");
+  t.$('form[data-form="loop-switches"]').requestSubmit();
+  await t.settle(10);
+  assert.equal(t.$("#ls-flex").getAttribute("aria-invalid"), "true");
+  assert.match(t.text("#ls-flex-error"), /숫자/);
+});
+
+test("[RVA-02] no browser prompt or confirm is left: the app's own boxes ask instead", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  let asked = 0;
+  t.window.prompt = () => { asked++; return null; };
+  t.window.confirm = () => { asked++; return false; };
+  // A setting changed and not saved: the app asks in its own box, and the address stays.
+  await t.go("#/sla");
+  const step = t.$('[data-act="sla-step"]');
+  assert.ok(step, "a step button on 답 목표");
+  await t.click(step);
+  t.window.location.hash = "#/home";
+  await t.settle(20);
+  assert.match(t.text("dialog"), /저장하지 않은 설정이 있어요/);
+  assert.match(t.window.location.hash, /#\/sla/);
+  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  await t.settle(30);
+  assert.match(t.window.location.hash, /#\/home/);
+  // 기능 조건 창의 '이 앱 판 이상만': 새 창 대신 같은 창 안에서 펴요. 적던 조건·이유는 그대로예요.
+  await t.go("#/flags/billing");
+  await t.click('[data-act="flag-cond"]');
+  t.$("#fc-why").value = "적던 이유";
+  await t.click('[data-act="flag-minapp"]');
+  assert.equal(t.$("#flag-minapp-row").hidden, false);
+  await t.type("#flag-minapp-n", "5o");
+  await t.click('[data-act="flag-minapp-put"]');
+  assert.equal(t.$("#flag-minapp-n").getAttribute("aria-invalid"), "true");
+  await t.type("#flag-minapp-n", "54");
+  await t.click('[data-act="flag-minapp-put"]');
+  assert.match(t.$("#flag-cond").value, /app >= 54/);
+  assert.ok(t.$('dialog form[data-form="flag-cond"]'), "still the conditions box");
+  assert.equal(t.$("#fc-why").value, "적던 이유");
+  assert.equal(asked, 0);
+  // The app file itself has none left.
+  assert.doesNotMatch(APP_JS, /window\.prompt\(|[^.\w]confirm\("/);
+});
+
+test("[RVA-01] the kept answers on the phone: only lists and numbers, not a question, money or an export, and not past a day", async () => {
+  const SW = await adminFile("/admin/sw.js").text();
+  const handlers = {};
+  const store = new Map();
+  const cache = {
+    put: async (req, res) => { store.set(req.url, res); },
+    match: async (req) => store.get(req.url) ?? null,
+    keys: async () => [...store.keys()].map((u) => new Request(u)),
+    delete: async (req) => store.delete(req.url ?? req),
+  };
+  const self = { location: { origin: ORIGIN }, addEventListener: (k, f) => { handlers[k] = f; }, clients: { claim: async () => {} }, skipWaiting: async () => {} };
+  const caches = { open: async () => cache, keys: async () => [], delete: async () => true, match: async () => null };
+  let online = true;
+  const fetch = async () => {
+    if (!online) throw new TypeError("offline");
+    return new Response("{\"ok\":1}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  new Function("self", "caches", "fetch", SW)(self, caches, fetch);
+  const ask = async (path) => {
+    let answer = null;
+    const waits = [];
+    handlers.fetch({ request: new Request(`${ORIGIN}${path}`), respondWith: (p) => { answer = p; }, waitUntil: (p) => waits.push(p) });
+    const res = answer ? await answer.catch(() => null) : null;
+    await Promise.all(waits);
+    return res;
+  };
+  for (const p of ["/api/admin/badges", "/api/admin/inquiries?status=open", "/api/admin/inquiries/abcdefghijklmnopqrstuv", "/api/admin/money",
+    "/api/admin/ledger/export.csv", "/api/admin/inquiries?status=open&q=%EC%95%8C%EB%9E%8C", "/api/admin/audit", "/api/admin/admins"]) await ask(p);
+  const kept = [...store.keys()].map((u) => new URL(u).pathname + new URL(u).search);
+  assert.deepEqual(kept.sort(), ["/api/admin/badges", "/api/admin/inquiries?status=open"]);
+  // Offline: the kept list answers, marked as the phone's copy; a day later it does not.
+  online = false;
+  const res = await ask("/api/admin/badges");
+  assert.equal(res?.headers.get("x-admin-cache"), "1");
+  const old = store.get(`${ORIGIN}/api/admin/badges`);
+  const headers = new Headers(old.headers);
+  headers.set("x-admin-kept", String(Date.now() - 25 * 3600e3));
+  store.set(`${ORIGIN}/api/admin/badges`, new Response("{}", { status: 200, headers }));
+  assert.equal(await ask("/api/admin/badges"), null, "older than a day is not shown");
+  assert.equal(await ask("/api/admin/money"), null, "never kept, never shown offline");
+});
+
+test("[RVA-03] 경고·쉬기: Enter in the line sends nothing, a warning asks with who·what·words first, and 되돌리기 takes it back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-10T03:00:00Z") });
+  const { env, call } = await world({ plaza: true });
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험", confirm: true }, owner);
+  const a = await call("POST", "/api/reports", report(2, { company: "마을화학" }), from(2));
+  const post = (await call("POST", "/api/posts", { device: device(3), company: a.data.company.id, setup: a.data.setup, body: "광고 글이에요 셋" }, from(3))).data.id;
+  const u = await signedIn(env);
+  await u.go("#/community?show=limits");
+  const find = u.$('form[data-form="care-find"]');
+  find.elements.q.value = post;
+  find.requestSubmit();
+  await u.settle(40);
+  await u.idle();
+  const form = u.$('form[data-form="care-act"]');
+  assert.ok(form, "the person and what to do next");
+  assert.equal(form.querySelectorAll("[type=submit]").length, 0, "no submit button: Enter cannot send a warning");
+  form.elements.reason.value = "spam";
+  form.elements.note.value = "광고는 쉬어 가요";
+  form.requestSubmit();
+  await u.settle(20);
+  const notes = () => call("GET", "/api/admin/care", undefined, owner).then((r) => r.data.warnings.length);
+  assert.equal(await notes(), 0, "Enter sent nothing");
+  await u.click('[data-act="care-do"][data-kind="warn"]');
+  assert.match(u.text("dialog h2"), /이 경고를 보낼까요/);
+  assert.match(u.text("dialog .confirm-rows"), /누구에게.*무엇을.*광고·도배.*앱에 보일 글.*광고는 쉬어 가요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(await notes(), 1);
+  assert.ok(u.$(".toast [data-undo]"), "15초 되돌리기");
+  await u.click(".toast [data-undo]");
+  await u.settle(40);
+  assert.equal(await notes(), 0, "taken back: nothing went to the phone");
+  // The same reason again within the days asks plainly that it counts twice.
+  await call("POST", "/api/admin/care/warn", { post, reason: "spam" }, owner);
+  await u.go("#/home");
+  await u.go("#/community?show=limits");
+  await u.settle(40);
+  await u.idle();
+  const again = u.$('form[data-form="care-act"]');
+  again.elements.reason.value = "spam";
+  await u.click('[data-act="care-do"][data-kind="warn"]');
+  assert.match(u.text("dialog h2"), /같은 이유로 경고를 이미 보냈어요/);
+  assert.doesNotMatch(u.text("#main"), /post:/, "no inner names on the screen");
+});
+
+test("[RVA-11] 연기 시험: odd words in questions and a company with two versions leave every screen and every detail open", async () => {
+  const { env, call } = await world();
+  const owner = await signIn(call);
+  // 검토 ADMX-23: words that are names on every object, emoji, control characters, a long line.
+  const odd = ["constructor", "toString __proto__ valueOf", "급여 화면에서 \"is not a constructor\" 오류", "😀🌙 야간 근무 🙏", "줄\u0000바꿈\u0007소리‮거꾸로", "가".repeat(1900)];
+  for (const [i, text] of odd.entries()) {
+    await call("POST", "/api/inquiries", { v: 1, device: device(40 + i), kind: i % 2 ? "bug" : "idea", text, info: { app: "1.39.0 (53)" } }, from(40 + i));
+  }
+  // 검토 ADMX-03: '더해지는'의 '해지' 같은 평범한 말은 결제·환불 기록으로 잡히지 않아요.
+  await call("POST", "/api/inquiries", { v: 1, device: device(49), kind: "idea", text: "근무가 더해지는 날을 한눈에 보고 싶어요", info: { app: "1.39.0 (53)" } }, from(49));
+  await call("POST", "/api/admin/dev", { title: "급여 화면에서 \"is not a constructor\" 오류", body: "constructor" }, owner);
+  // 검토 ADMX-02(T24-21): one company with two versions from two departments.
+  const first = await call("POST", "/api/reports", report(5, { company: "두판정밀", dept: "1공장" }), from(5));
+  const other = { ...setup(), shiftTypes: setup().shiftTypes.map((s) => (s.name === "주간" ? { ...s, start: "08:00", end: "20:00" } : s)) };
+  const second = await call("POST", "/api/reports", report(6, { company: "두판정밀", dept: "2공장", setup: other }), from(6));
+  const company = first.data.company.id;
+  for (const r of [first, second]) assert.equal((await call("POST", `/api/admin/groups/${company}/${r.data.setup}/adopt`, {}, owner)).status, 200);
+  const t = await signedIn(env);
+  const inquiry = (await call("GET", "/api/admin/inquiries?status=open", undefined, owner)).data.items?.[0]?.id;
+  const dev = (await call("GET", "/api/admin/dev?status=all", undefined, owner)).data.items?.[0]?.id;
+  const screens = [...Object.keys(adminLib().TABS), `companies/${company}`, ...(inquiry ? [`inquiries/${inquiry}`] : []), ...(dev ? [`dev/${dev}`] : [])];
+  for (const s of screens) {
+    await t.go(`#/${s}`);
+    assert.ok(!t.$("#main .failed"), `${s} loaded`);
+    assert.ok(t.text("#main").length > 10, `${s} shows something`);
+  }
+  const billing = (await call("GET", "/api/admin/inquiries?status=open&billing=1", undefined, owner)).data;
+  assert.ok(!JSON.stringify(billing).includes("더해지는"), "an ordinary word is not a billing question");
+  await t.go(`#/companies/${company}`);
+  assert.match(t.text("#main"), /1공장/);
+  assert.match(t.text("#main"), /2공장/);
+  assert.deepEqual(t.errors, []);
+  assert.deepEqual(t.broken, []);
 });

@@ -130,6 +130,17 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
         true
     }
 
+    /** 2.0.0 [RVK-14] True when [p] is a fill waiting already, told another way (it is then not added again). */
+    suspend fun waitingAlready(p: TradeAlerts.Pending): Boolean = pendingNow().any { it.sameFill(p) }
+
+    /** 2.0.0 [RVK-13] A fill the app left out, put back from '자동으로 정리한 것': it waits as a line of its own. */
+    suspend fun addAlertAnyway(p: TradeAlerts.Pending): Boolean = db.withTransaction {
+        val list = pendingNow()
+        val at = generateSequence(p.at) { it + 1 }.first { a -> list.none { it.at == a } }
+        dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode((list + p.copy(at = at)).sortedBy { it.at }.takeLast(TradeAlerts.MAX))))
+        true
+    }
+
     suspend fun dropAlert(at: Long) = db.withTransaction {
         dao.upsertSetting(InvestSettingEntity(TradeAlerts.KEY, TradeAlerts.encode(pendingNow().filter { it.at != at })))
     }
@@ -175,8 +186,11 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     suspend fun applyCapture(lines: List<TradeAlerts.Pending>, fixes: List<Trade>): CaptureApplied {
         val book = now()
         val alertsBefore = pendingNow()
-        val account = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false } ?: ensureAccount()
+        val last = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false }
+        val fallback = last ?: book.accounts.firstOrNull { !it.hidden }?.id ?: ensureAccount()
         val written = lines.map { p ->
+            // 2.0.0 [RVK-17] (검토 MONEY-63): each row into the account its 증권사 names, else the last one.
+            val account = TradeAlerts.accountFor(p, book.accounts, last) ?: fallback
             val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account), book.settings)
             val t = p.toTrade(account, book.settings.usdKrw).copy(fee = costs.fee, tax = costs.tax)
             t.copy(id = saveTrade(t))
@@ -197,9 +211,11 @@ class InvestRepository(private val db: AppDatabase, private val clock: () -> Lon
     private suspend fun pendingNow() = TradeAlerts.decode(dao.allSettings().firstOrNull { it.key == TradeAlerts.KEY }?.value)
 
     /** [INV-32] A waiting alert written as a trade into the last used open account, fees suggested, and taken off the list. */
-    suspend fun confirmAlert(p: TradeAlerts.Pending): Trade {
+    suspend fun confirmAlert(p: TradeAlerts.Pending, into: Long? = null): Trade {
         val book = now()
-        val account = book.settings.lastAccountId?.takeIf { book.account(it)?.hidden == false } ?: ensureAccount()
+        // 2.0.0 [RVK-17] (검토 U06b-02·MONEY-63): the account picked on the line, else the one the app's 증권사 names, else the last.
+        val account = into?.takeIf { book.account(it)?.hidden == false }
+            ?: TradeAlerts.accountFor(p, book.accounts, book.settings.lastAccountId) ?: ensureAccount()
         val costs = com.bamnat.core.invest.InvestFees.suggest(p.market, p.side, p.quantity, p.price, book.account(account), book.settings)
         val t = p.toTrade(account, book.settings.usdKrw).copy(fee = costs.fee, tax = costs.tax)
         val id = saveTrade(t)

@@ -61,8 +61,13 @@ object TradeAlerts {
             accountId = accountId, date = day(zone), tags = listOf(tag), alertAt = at,
         )
 
+        /**
+         * 2.0.0 [RVK-14] (검토 MONEY-62): the same fill told by two ways (the app's push and its 알림톡), or the very same
+         * notification again. The same app's other notification at the same price and quantity is another fill (50주 + 50주 of one
+         * order, or a second buy at the same price), put with it by [add] as the order's parts; exact reposts never get here.
+         */
         fun sameFill(o: Pending) = side == o.side && symbol == o.symbol && name == o.name && quantity == o.quantity &&
-            price == o.price && kotlin.math.abs(at - o.at) <= SAME_WITHIN_MILLIS
+            price == o.price && kotlin.math.abs(at - o.at) <= SAME_WITHIN_MILLIS && (app != o.app || at == o.at)
 
         /** [INV-40] The same holding and side, close in time: one order's notifications. */
         fun sameOrder(o: Pending) = side == o.side && market == o.market && symbol == o.symbol && name == o.name &&
@@ -116,6 +121,8 @@ object TradeAlerts {
      */
     fun writtenAlready(p: Pending, trades: List<Trade>, zone: ZoneId = Today.zone()): Boolean = trades.any { t ->
         val m = t.minute ?: return@any false
+        // 2.0.0 [RVK-14] (MONEY-62): a trade written from this same app's earlier notification is another fill, not this one.
+        if (sourceOf(t) == p.app.take(20)) return@any false
         t.side == p.side && t.date == p.day(zone) && kotlin.math.abs(t.quantity - p.quantity) < 1e-9 &&
             kotlin.math.abs(m - p.minute(zone)) <= FillMatcher.MINUTES && sameHolding(t, p) &&
             (p.price <= 0 || kotlin.math.abs(t.price - p.price) * t.quantity <= FillMath.tolerance(t.quantity * t.price, t.quantity))
@@ -163,6 +170,31 @@ object TradeAlerts {
     }
 
     /** The app a saved trade came from, read back from its tag; null when typed by hand. */
+    /**
+     * 2.0.0 [RVK-17] (검토 U06b-02·MONEY-63): the account a waiting fill goes to — the shown account whose 증권사 the notifying app
+     * names (키움 → '키움' 계좌), else the one last written to, else the first shown one. Null when there is no shown account yet.
+     */
+    fun accountFor(p: Pending, accounts: List<InvestAccount>, last: Long?): Long? {
+        val shown = accounts.filter { !it.hidden }
+        if (shown.isEmpty()) return null
+        val app = brokerKey(p.app)
+        val byBroker = if (app.length < 2) emptyList() else shown.filter { a ->
+            val b = brokerKey(a.broker.ifBlank { a.name })
+            b.length >= 2 && (app.contains(b) || b.contains(app))
+        }
+        return byBroker.singleOrNull()?.id
+            ?: byBroker.firstOrNull { it.id == last }?.id
+            ?: shown.firstOrNull { it.id == last }?.id
+            ?: shown.first().id
+    }
+
+    /** "키움증권" and "키움 증권 영웅문" both as "키움…": spaces and the words every broker shares left out. */
+    private fun brokerKey(s: String): String =
+        s.replace(Regex("\\s+"), "").replace("증권", "").replace("투자", "").replace("거래소", "").lowercase()
+
+    /** 2.0.0 [RVK-17] A waiting fill that can be written as it is: its price is known and agrees with the amount. */
+    fun sure(p: Pending): Boolean = p.price > 0 && p.checked != false
+
     fun sourceOf(t: Trade): String? = t.tags.firstOrNull { it.startsWith(TAG_PREFIX) }?.removePrefix(TAG_PREFIX)
 
     /** A short word for the kind of holding, shown as a badge on each trade: 코인, 주식, ETF, 해외주식. */

@@ -143,6 +143,28 @@ data class CellPattern(val mode: String = ONE, val n: Int = 2, val week: List<In
         return if (i in 0 until count) i else 0
     }
 
+    /**
+     * 2.0.0 [RVP-68] (검토 U14-02) What a 바로 시작하기 put in, in one line under it: "모양 2개 · 요일별(토·일)".
+     */
+    fun summary(count: Int): String = if (count <= 1) "모양 1개 · 모든 칸" else "모양 ${count}개 · " + when (mode) {
+        CYCLE -> "${n}칸씩 번갈아"
+        WEEK -> users(count, 1..5).let { if (it.isEmpty()) "요일별" else "요일별(${it.joinToString("·")})" }
+        SHIFT -> users(count, 1..5).let { if (it.isEmpty()) "근무별" else "근무별(${it.joinToString("·")})" }
+        else -> "모든 칸 모양 1"
+    }
+
+    /**
+     * 2.0.0 [RVP-61] (검토 U14-03) The days or kinds of day that use look [i], in words ("토·일", "야간"), so 지우기 can say which cells
+     * become 모양 1; empty when none or when the pattern is not by day.
+     */
+    fun usersOf(i: Int): List<String> = users(Int.MAX_VALUE, i..i)
+
+    private fun users(count: Int, looks: IntRange): List<String> = when (mode) {
+        WEEK -> week.withIndex().filter { (_, v) -> v in looks && v < count }.map { "월화수목금토일"[it.index].toString() }
+        SHIFT -> ShiftRole.entries.filter { r -> shift[r.key]?.let { it in looks && it < count } == true }.map { it.label }
+        else -> emptyList()
+    }
+
     companion object {
         const val ONE = "one"
         const val CYCLE = "cycle"

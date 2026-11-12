@@ -25,8 +25,8 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 
-/** What every widget draws, read once per update. */
-class WidgetData(
+/** What every widget draws, read once per update. 2.0.0 [RVP-74]: a data class, so a lock screen's copy drops the memo lines ([forPlace]). */
+data class WidgetData(
     val today: LocalDate,
     val weekStart: DayOfWeek,
     val resolver: ScheduleResolver,
