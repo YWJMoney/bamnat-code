@@ -589,6 +589,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
         // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
         com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
+        // 2.0.0 [RVM-21] 장터 카드 글꼴은 처리방침 3.13 시행일부터 공개 자료에서(그 전에는 휴대폰 글꼴).
+        com.bamnat.app.ui.recipe.MarketFonts.allowed = { flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }

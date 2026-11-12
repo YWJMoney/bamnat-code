@@ -82,6 +82,9 @@ import com.bamnat.core.formula.Parsed
 import com.bamnat.core.formula.RuleTrigger
 import com.bamnat.core.formula.pro
 import java.time.LocalDate
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
 
 /**
  * [RUL-06] 1.36 886 수식·규칙 편집기 (사용자 2026-11-01 "다중 조건식도 가능하게, 다만 사용자가 편하게"): one condition in two views that
@@ -1224,11 +1227,20 @@ private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Bool
                 Text(text, style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 more?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                action?.let { (w, go) -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(w) } }
+                // [RVM-20] 총괄 #462 (줄마다 '고치기' 글자 단추가 줄지어 8개, 조건 2): the line's one more thing is a small chip, not a 글자 단추.
+                action?.let { (w, go) ->
+                    androidx.compose.material3.AssistChip(onClick = go, label = { Text(w) }, modifier = Modifier.padding(top = 2.dp))
+                }
             }
             if (on != null && onSwitch != null) Switch(on, onSwitch, Modifier.semantics { contentDescription = if (on) "규칙 켜짐" else "규칙 꺼짐" })
-            onEdit?.let { TextButton(onClick = it) { Text("고치기") } }
-            onRemove?.let { TextButton(onClick = it) { Text("빼기") } }
+            // The whole line opens it (the card's click, 'onClickLabel 고치기'); the arrow only says so.
+            if (onEdit != null) androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
+            onRemove?.let {
+                androidx.compose.material3.IconButton(onClick = it) {
+                    androidx.compose.material3.Icon(Icons.Outlined.Delete, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

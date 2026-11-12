@@ -83,6 +83,8 @@ import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.recipe.RecipeResolve
 import com.bamnat.core.recipe.RecipeText
 import androidx.compose.ui.semantics.Role
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 
 @Composable
 fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: (String) -> Unit,
@@ -500,8 +502,42 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
         settling = true
         try { LiveTryOn.settle(ctx.appContainer, snack = false); vm.preview()?.join() } finally { settling = false }
     }
-    if (confirming && !settling) AlertDialog(
-        onDismissRequest = { confirming = false },
+    // [RVM-13] 총괄 #462: the 넣기 창 is its own 창 with its one filled '넣기' (the 상세's own filled button stays under it).
+    if (confirming && !settling) PutDialog(s, vm, adGate, adNote,
+        onClose = { confirming = false },
+        onPut = { confirming = false; tryOn = false; vm.apply { } },
+        onNoAd = { reason -> confirming = false; tryOn = false; vm.noAdCounted(reason); vm.apply { } },
+        onAdNote = { adNote = it })
+    if (undoing) AlertDialog(
+        onDismissRequest = { undoing = false },
+        title = { Text("넣기 전으로 되돌릴까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
+                // PC 확인 보안 6차 (목록이 없어요): always, one line a put-on, a tab laid on the theme as well.
+                if (s.undoable.size >= 2) Text("이 작품을 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
+                s.undoable.forEach { (at, what) ->
+                    Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " " + what,
+                        style = MaterialTheme.typography.bodySmall)
+                }
+                Text("이 작품이 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
+            }
+        },
+        confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
+        dismissButton = { TextButton(onClick = { undoing = false }) { Text("닫기") } },
+    )
+    if (flagging) ChoiceDialog("신고하기", RecipeLinks.FLAG_REASONS, onPick = { vm.flag(it); flagging = false }, onDismiss = { flagging = false })
+    if (disliking) DislikeDialog(onSend = { reason, opinion -> vm.vote(-1, reason, opinion); disliking = false }, onDismiss = { disliking = false })
+}
+
+/** [RVM-13] PC-59·60·34 · 총괄 #462 The 넣기 창: short lines first, '바뀌는 것 모두 보기' as a row, '넣기' its one filled button and '닫기'. */
+@Composable
+private fun PutDialog(
+    s: RecipeDetailViewModel.State, vm: RecipeDetailViewModel, adGate: Boolean, adNote: String?,
+    onClose: () -> Unit, onPut: () -> Unit, onNoAd: (String) -> Unit, onAdNote: (String) -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onClose,
         title = { Text("이렇게 바뀌어요") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -513,7 +549,16 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                     com.bamnat.app.ui.settings.OverlapAsk(p.overlaps, p.mode) { vm.mode(p.kind, it) }
                 }
                 var more by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
-                TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (more) "바뀌는 것 접기" else "바뀌는 것 모두 보기") }
+                // [RVM-13] 총괄 #462 (채운 단추 없이 글자 단추가 넷): '바뀌는 것 모두 보기' is a row that opens the list (chevron), so the 창 has
+                // '넣기' filled and '닫기' as its only 글자 단추.
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Button) { more = !more },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(if (more) "바뀌는 것 접기" else "바뀌는 것 모두 보기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Icon(if (more) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 // PC 확인 보안 9차 (단추는 '고른 모양 2개'인데 창은 '달력 모양' 한 줄): the looks ticked in 입어 보기 are listed part by part,
                 // as many as the button said, instead of the whole look piece they come from (which also told changes not ticked).
                 val parts = s.lookParts?.mapNotNull { com.bamnat.core.recipe.LookParts.byId(it) }?.sortedBy { com.bamnat.core.recipe.LookParts.ALL.indexOf(it) }
@@ -555,7 +600,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                     laysOn && restToo -> "모양은 지금 테마 위에 얹어요(마을 › 테마에서 빼기). 나머지는 7일 안에 마을 › 테마(내 서랍)의 받은 것에서 되돌려요"
                     laysOn -> "지금 테마 위에 얹어요. 마을 › 테마에서 언제든 뺄 수 있어요"
                     else -> "7일 안에는 마을 › 테마(내 서랍)의 받은 것에서 되돌릴 수 있어요"
-                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) // 총괄 #462: 안내는 보조 색 (링크 파랑 아님)
                 adNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 // 1.39 [NTC-04] 알림을 보내는 규칙이 들어오면: 지금 켜 둔 알림과 더 켤 수 있는 알림 (줄이거나 더하기).
                 val notifies = s.recipe?.pieces?.firstOrNull { it.kind == PieceKind.LOGIC }?.let { lp ->
@@ -569,34 +614,14 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
             // [FREE-10] 적용할 때만 광고 (사용자 2026-10-30 15:53): the looks of someone else's theme, past the first free ones.
             if (adGate) com.bamnat.app.ads.ThemeAdButton(
                 "광고 보고 넣기", "모양(테마)은 광고를 끝까지 보면 30일 동안 써요. 알람·규칙 같은 기능은 기간 없이 계속 써요",
-                onReward = { confirming = false; tryOn = false; vm.apply { } },
-                onQuit = { adNote = "광고를 끝까지 봐야 넣을 수 있어요" },
-                onOffline = { adNote = "인터넷에 연결되면 다시 해 주세요" },
-                onNoAd = { reason -> confirming = false; tryOn = false; vm.noAdCounted(reason); vm.apply { } },
-            ) else TextButton(onClick = { confirming = false; tryOn = false; vm.apply { } }) { Text("넣기") }
+                onReward = onPut,
+                onQuit = { onAdNote("광고를 끝까지 봐야 넣을 수 있어요") },
+                onOffline = { onAdNote("인터넷에 연결되면 다시 해 주세요") },
+                onNoAd = onNoAd,
+            ) else androidx.compose.material3.Button(onClick = onPut, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
         },
-        dismissButton = { TextButton(onClick = { confirming = false }) { Text("닫기") } },
+        dismissButton = { TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") } },
     )
-    if (undoing) AlertDialog(
-        onDismissRequest = { undoing = false },
-        title = { Text("넣기 전으로 되돌릴까요?") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                // PC 확인 7525ccff (두 번 넣은 것 중 무엇이 돌아가는지 몰라요): each put-on it takes back, when and what.
-                // PC 확인 보안 6차 (목록이 없어요): always, one line a put-on, a tab laid on the theme as well.
-                if (s.undoable.size >= 2) Text("이 작품을 ${s.undoable.size}번 넣었어요. 모두 넣기 전으로 돌아가요", style = MaterialTheme.typography.bodyMedium)
-                s.undoable.forEach { (at, what) ->
-                    Text("· " + java.text.SimpleDateFormat("M월 d일 HH:mm", java.util.Locale.KOREA).format(java.util.Date(at)) + " " + what,
-                        style = MaterialTheme.typography.bodySmall)
-                }
-                Text("이 작품이 바꾼 설정만 돌아가요. 그 사이 적은 근무·메모·가계부 기록과, 내가 따로 고친 칸은 그대로예요")
-            }
-        },
-        confirmButton = { TextButton(onClick = { undoing = false; vm.undo() }) { Text("되돌리기") } },
-        dismissButton = { TextButton(onClick = { undoing = false }) { Text("닫기") } },
-    )
-    if (flagging) ChoiceDialog("신고하기", RecipeLinks.FLAG_REASONS, onPick = { vm.flag(it); flagging = false }, onDismiss = { flagging = false })
-    if (disliking) DislikeDialog(onSend = { reason, opinion -> vm.vote(-1, reason, opinion); disliking = false }, onDismiss = { disliking = false })
 }
 
 @Composable

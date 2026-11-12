@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.MoreVert
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedCard
@@ -298,8 +299,23 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 actions = {
                     // [R136-13] In 마을 these live in 공방 (내 것 한곳, 코드로 받기 하나); a 장터 opened on its own keeps them.
                     if (onBack != null) {
-                        TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
-                        TextButton(onClick = onMine) { Text("내 작품") }
+                        // [RVM-21] 총괄 #462 (장터 글자 200%: 위 막대 제목이 '…'만 남음): with big letters (or a very narrow phone) the two go
+                        // under one '더 보기', so the title keeps its room; at the usual size they stay one tap each.
+                        val tight = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f ||
+                            androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+                        if (tight) {
+                            var menu by remember { mutableStateOf(false) }
+                            Box {
+                                IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기: 코드로 받기, 내 작품") }
+                                androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("코드로 받기") }, onClick = { menu = false; codeAsk = true })
+                                    androidx.compose.material3.DropdownMenuItem(text = { Text("내 작품") }, onClick = { menu = false; onMine() })
+                                }
+                            }
+                        } else {
+                            TextButton(onClick = { codeAsk = true }) { Text("코드로 받기") }
+                            TextButton(onClick = onMine) { Text("내 작품") }
+                        }
                     }
                 },
             )
@@ -644,9 +660,9 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
                 // 1.39 [MKD-01] 프로 표는 그림 위 모서리에 (이름 자리를 뺏지 않게).
                 if (item.fx.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { FxBadge(locked = fxLocked) }
             }
-            // PC 확인 e50bb622: 추천 by the name, not over the picture's own title.
+            // PC 확인 e50bb622: 추천 by the name, not over the picture's own title. 총괄 #462 (글자 200%에서 이름이 '야간 …'): two lines.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
                 if (item.showcase) Badge("추천")
             }
             sectionLine(item, style, long = false)?.let {

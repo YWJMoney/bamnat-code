@@ -139,6 +139,17 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun rulesLight() = shoot("rvm_12_rules_folded", FOLDED, rules())
     @Test fun rulesDark() = shoot("rvm_13_rules_folded_dark", DARK, rules())
     @Test fun rulesBig() = shoot("rvm_14_rules_folded_200", FOLDED, 2f, rules())
+    // 총괄 #462 검토(조건 2·12): 넣기 창은 채운 '넣기' 하나, 규칙 줄은 줄 전체를 누르고 오른쪽 화살표, 장터 위 막대는 200%에서 더 보기.
+    @Test fun putBig() = shoot("rvm_24_put_folded_200", FOLDED, 2f, detail("야간 회복 스테이션", put = true))
+    @Test fun putDark() = shoot("rvm_25_put_folded_dark", DARK, detail("야간 회복 스테이션", put = true))
+    @Test fun rulesWide() = shoot("rvm_26_rules_unfolded", UNFOLDED, rules())
+    @Test fun rulesDarkBig() = shoot("rvm_27_rules_folded_dark_200", DARK, 2f, rules())
+    @Test fun marketTopBar() = counting(PAGES) {
+        shoot("rvm_28_market_folded_200", FOLDED, 2f, market())
+        shoot("rvm_29_market_folded_dark_200", DARK, 2f, market())
+        shoot("rvm_30_market_unfolded", UNFOLDED, market())
+        shoot("rvm_31_market_folded_dark", DARK, market())
+    }
     @Test fun nightDark() = shoot("rvm_15_night_recovery_folded_dark", DARK, wear("야간 회복 스테이션"))
     @Test fun nightBig() = shoot("rvm_16_night_recovery_folded_200", FOLDED, 2f, wear("야간 회복 스테이션"))
     @Test fun nightWide() = shoot("rvm_17_night_recovery_unfolded", UNFOLDED, wear("야간 회복 스테이션"))
@@ -178,14 +189,17 @@ class RvmScreenshotTest : ScreenshotBase() {
         val ours get() = urls.filter { it.startsWith(PAGES + "remote/card-fonts/") }
     }
 
-    private fun counting(base: String, body: (Asked) -> Unit) {
+    /** Counts where the fonts are asked for; [after313] stands for 처리방침 3.13's effective day having come (the `market.cardfonts` row on). */
+    private fun counting(base: String, after313: Boolean = true, body: (Asked) -> Unit) {
         val asked = Asked()
         val open0 = com.bamnat.app.ui.theme.OpenFonts.open
         val get0 = com.bamnat.app.ui.recipe.MarketFonts.get
         val base0 = com.bamnat.app.ui.recipe.MarketFonts.base
+        val allowed0 = com.bamnat.app.ui.recipe.MarketFonts.allowed
         com.bamnat.app.ui.theme.OpenFonts.open = { asked.urls += it; throw java.io.IOException("시험: 인터넷 없음") }
         com.bamnat.app.ui.recipe.MarketFonts.get = { asked.urls += it; null }
         com.bamnat.app.ui.recipe.MarketFonts.base = base
+        if (after313) com.bamnat.app.ui.recipe.MarketFonts.allowed = { true }
         com.bamnat.app.ui.recipe.MarketFonts.forget()
         try {
             body(asked)
@@ -193,6 +207,7 @@ class RvmScreenshotTest : ScreenshotBase() {
             com.bamnat.app.ui.theme.OpenFonts.open = open0
             com.bamnat.app.ui.recipe.MarketFonts.get = get0
             com.bamnat.app.ui.recipe.MarketFonts.base = base0
+            com.bamnat.app.ui.recipe.MarketFonts.allowed = allowed0
             com.bamnat.app.ui.recipe.MarketFonts.forget()
             com.bamnat.app.ui.theme.AppFonts.loads.clear()
         }
@@ -253,6 +268,18 @@ class RvmScreenshotTest : ScreenshotBase() {
             org.junit.Assert.assertTrue(got.keys.toString(), got.isEmpty())
             org.junit.Assert.assertEquals(asked.urls.toString(), 0, asked.urls.size)
         }
+    }
+
+    /**
+     * MKT-32 (총괄 11-12): before 처리방침 3.13's 7-day effective day the phone asks our public files nothing — the app's own wiring, with
+     * no 3.13 date from the server, keeps `market.cardfonts` off — and the cards draw in the phone's fonts; Google is not asked either.
+     */
+    @Test fun beforeThe313DayTheMarketAsksNothing() = counting(PAGES, after313 = false) { asked ->
+        org.junit.Assert.assertFalse(c.flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS))
+        shoot("rvm_32_fonts_market_before_313", FOLDED, market())
+        val got = runBlocking { com.bamnat.app.ui.recipe.MarketFonts.ready(app, setOf("jua", "orbit")) }
+        org.junit.Assert.assertTrue(got.keys.toString(), got.isEmpty())
+        org.junit.Assert.assertEquals(asked.urls.toString(), 0, asked.urls.size)
     }
 
     /** MKT-32 A card font is used only when its bytes are the ones made for this app: a changed file on the public site is never opened. */

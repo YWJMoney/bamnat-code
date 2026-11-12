@@ -113,7 +113,7 @@ class NtcScreenshotTest : ScreenshotBase() {
         tapText("규칙 1개 넣기", exact = true)
         settle()
         assertTrue(scrolledTo("알림 한눈에", exact = true))
-        tapText("펼치기", exact = true)
+        tapText("알림 한눈에 펼치기", exact = true)
         settle()
         assertTrue(scrolledTo("켜 둔 알림", exact = true))
         assertTrue(scrolledTo("더 켤 수 있는 알림", exact = true))
@@ -132,6 +132,8 @@ class NtcScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(waitFor { Logic.decode(c.settingsRepository.current.logic).rules.any { it.name == "오늘 요약" } })
         assertTrue("잠금 화면 오늘 근무는 켜진 채", c.settingsRepository.current.todayShiftNotice)
+        // [RVM-19] PC-48: a 앱을 열면 rule waits for the first opening after the day it went in; this stands for that opening.
+        com.bamnat.app.logic.LogicStore(app).lastOpen = null
         LogicRunner.onOpen(c)
         assertTrue(waitFor { TodayShiftNotice.folded(app) != null })
         val ours = shown.filter { it.packageName == app.packageName }
@@ -168,10 +170,10 @@ class NtcScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(waitFor { !c.settingsRepository.current.todayShiftNotice })
         assertTrue(waitFor { shown.none { it.id == TodayShiftNotice.ID } })
+        // [RVM-08] With 넣기 on the bottom bar, the snackbar's 되돌리기 (one tap) comes first; the bar's asks once more.
         tapText("되돌리기", exact = true)
         settle()
-        tapText("되돌리기", exact = true)
-        settle()
+        if (shows("넣기 전으로 되돌릴까요?", exact = true)) { tapText("되돌리기", exact = true); settle() }
         assertTrue(waitFor { c.settingsRepository.current.todayShiftNotice })
         assertTrue(waitFor { Logic.decode(c.settingsRepository.current.logic).rules.none { it.name == "오늘 요약" } })
     }
@@ -199,7 +201,7 @@ class NtcScreenshotTest : ScreenshotBase() {
         settingsPage("알림과 잠")
         settle()
         assertTrue(appears("겹침 1", exact = false))
-        tapText("펼치기", exact = true)
+        tapText("알림 한눈에 펼치기", exact = true)
         settle()
         assertTrue(appears("‘오늘 요약’ 규칙과 겹쳐 하나로 합쳐 보여요", exact = false))
     }

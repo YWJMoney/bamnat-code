@@ -36,6 +36,9 @@ import com.bamnat.core.formula.LogicRule
 import com.bamnat.core.formula.LogicVerb
 import com.bamnat.core.formula.NoticeOverlap
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 
 /**
  * 1.39 [NTC-04] 알림 한눈에 (사용자 2026-11-08 "줄이거나 추가를 할 수 있게 가지고 있거나 넣을 수 있는 것들 리스트들도 보여 줬으면"):
@@ -119,7 +122,11 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
                     style = MaterialTheme.typography.bodySmall,
                     color = if (overlaps.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            // [RVM-13] 총괄 #462 (넣기 창에 글자 단추가 넷: '펼치기'도 단추처럼 읽혀요): the whole row opens it; a chevron says which way.
+            androidx.compose.material3.Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "알림 한눈에 접기" else "알림 한눈에 펼치기", tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         if (!open) return@Column
         Text("켜 둔 알림", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))

@@ -74,6 +74,11 @@ internal object MarketFonts {
     @androidx.annotation.VisibleForTesting internal var base: String = com.bamnat.app.BuildConfig.REMOTE_BASE_URL
     /** The bytes at an address (a plain GET, at most [MAX_BYTES]), or null. Swapped in tests to count where the 장터 asks. */
     @androidx.annotation.VisibleForTesting internal var get: (String) -> ByteArray? = ::download
+    /**
+     * 2.0.0 [RVM-21] Whether the phone may ask our public files now: [com.bamnat.core.flags.FlagCatalog.CARD_FONTS], on from 처리방침
+     * 3.13's effective day ([com.bamnat.app.AppContainer] sets it). Off, nothing is asked and the cards draw in the phone's fonts.
+     */
+    @Volatile internal var allowed: () -> Boolean = { false }
     /** The sha256 of every card font this app takes, by "<id>-r"·"<id>-b". */
     @androidx.annotation.VisibleForTesting internal var pins: Map<String, String> = CardFontPins.SHA
     private const val MAX_BYTES = 1_000_000
@@ -84,6 +89,7 @@ internal object MarketFonts {
 
     /** Card font [id] from our public files when it is the one made for this app ([pins]), else null. */
     private fun fetch(id: String, bold: Boolean): ByteArray? {
+        if (!allowed()) return null
         val sha = pins["$id-${if (bold) "b" else "r"}"] ?: return null
         val url = address(id, bold) ?: return null
         val bytes = get(url) ?: return null
