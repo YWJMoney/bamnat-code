@@ -191,7 +191,8 @@ class MainActivity : ComponentActivity() {
                 val ground = androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow).of(com.bamnat.core.recipe.ScreenLooks.ALL).ground }
                     ?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.MaterialTheme.colorScheme.background
                 com.bamnat.app.ui.theme.WearTransition(screensNow, ground, motion) {
-                    androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
+                    // 2.0.0 [RVP-21] No key on 오전/오후 any more: Fmt.clock12 is state, so only the times redraw.
+                    AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
                 }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.

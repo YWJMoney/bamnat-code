@@ -89,6 +89,7 @@ import com.bamnat.core.money.MonthMoney
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [LEDG-01][LEDG-06] The month at a glance: what is left, money in and out, and with a budget,
@@ -135,7 +136,8 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {
             Text("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.",
-                style = MaterialTheme.typography.bodySmall, color = cal.warning, modifier = Modifier.padding(top = 8.dp))
+                // 2.0.0 [RVP-13] (조건 6 '빨강은 위험만') An explanation, not a warning: grey like the line above.
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         val total = status.total
@@ -202,7 +204,7 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
     }
     val name = if (whole) "이번 달 예산" else b.category
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 6.dp)
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp)
             .semantics(mergeDescendants = true) { contentDescription = "$name ${Fmt.won(b.budget)} 중 ${Fmt.won(b.spent)} 씀, $status" },
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -433,7 +435,7 @@ fun AccountsCard(book: MoneyBook, today: LocalDate, onAdd: (AccountType?) -> Uni
                 else -> Fmt.won(balances[a.id] ?: a.opening) to (if (a.last4.isNotBlank()) "끝 ${a.last4}" else a.type.label)
             }
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(10.dp)).clickable { onEdit(a) }.padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onEdit(a) }.padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconAvatar(accountIcon(a.type), accountColor(a), size = 36.dp)
@@ -661,7 +663,7 @@ fun AccountEditor(
                 }
                 if (kind == AccountType.CREDIT) {
                     DayStepper("결제일", payDay) { payDay = it }
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { ownClose = !ownClose }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { ownClose = !ownClose }, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("쓴 기간 직접 정하기", style = MaterialTheme.typography.bodyLarge)
                             Text(if (!ownClose) "보통은 지난달 1일부터 말일까지 쓴 돈이 나가요" else "카드사 앱에서 '이용 기간'을 확인해 마지막 날을 넣어요",
@@ -698,7 +700,7 @@ fun AccountEditor(
                     }
                 }
                 if (kind == AccountType.CREDIT) {
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { remind = !remind }, verticalAlignment = Alignment.CenterVertically) {
                         Text("카드값 3일 전·당일 아침 알림", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                         Switch(checked = remind, onCheckedChange = { remind = it })
                     }
@@ -791,7 +793,7 @@ fun CategoryEditor(
     // 1.37 PC 확인 6a4efc92: 제목 줄에 닫기가 있어 손잡이 X는 빼요 (X가 두 개였어요).
     com.bamnat.app.ui.components.GuardedSheet(onDismissRequest = onDismiss, unsaved = rows.toList() != start || adding.isNotBlank(), closeButton = false) {
         Column(Modifier.fillMaxWidth().imePadding()) {
-            SheetTitle("분류 편집", onDismiss)
+            SheetTitle("분류 고치기", onDismiss)
             Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {

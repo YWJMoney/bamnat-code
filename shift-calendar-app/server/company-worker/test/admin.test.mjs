@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, setup, report, from, device, signIn, ORIGIN, PASSWORD, adminHome } from "./helpers.mjs";
+import { SERVER_VERSION } from "../src/version.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 
@@ -99,14 +100,14 @@ test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" }, version: SERVER_VERSION });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" }, version: SERVER_VERSION });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 

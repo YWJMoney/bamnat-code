@@ -102,7 +102,7 @@ internal fun treeRows(partIds: List<String>, parts: Blueprint, decor: Decor, pla
 @Composable
 internal fun LayerTree(rows: List<TreeRow>, onPart: (String) -> Unit, onDecor: (Int) -> Unit) {
     var open by rememberSaveable { mutableStateOf(true) }
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
                 Text("층 나무", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })

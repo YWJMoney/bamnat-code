@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.core.recipe.PieceKind
+import androidx.compose.ui.semantics.Role
 
 /**
  * [RCP-38] 설정 › 나눔 판: turn it off (every way in goes, with where to turn it back on), the recipes put on this phone with
@@ -97,7 +98,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 if (applied.none { !com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }) Muted("아직 넣은 레시피가 없어요")
                 // 1.37 PC d12d4cf1: a look mixed and put on in the studio (‘조합 · …’) is mine, in 내 서랍, not a recipe received.
                 applied.filterNot { com.bamnat.app.recipe.ThemeWardrobe.isMix(it.title) }.take(30).forEach { e ->
-                    Card(Modifier.fillMaxWidth().clickable(enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
+                    Card(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = e.code.isNotEmpty()) { onOpen(e.code) }) {
                         Column(Modifier.padding(12.dp)) {
                             Text(e.title, style = MaterialTheme.typography.titleSmall)
                             Text(e.pieces.split(',').mapNotNull { PieceKind.of(it)?.label }.joinToString(" · ") + " · " +
@@ -133,7 +134,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                     Muted("하루에 ${if (m.trust >= 1) 4 else 2}개까지 올릴 수 있어요$review")
                     if (m.items.isEmpty()) Muted("아직 올린 레시피가 없어요")
                     m.items.forEach { (item, st) ->
-                        Card(Modifier.fillMaxWidth().clickable { onOpen(item.code) }) {
+                        Card(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(item.code) }) {
                             Column(Modifier.padding(12.dp)) {
                                 Text(item.title, style = MaterialTheme.typography.titleSmall)
                                 Text(stateLabel(st.first, st.second), style = MaterialTheme.typography.bodySmall)
@@ -160,7 +161,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                 if (drafts.isEmpty()) Muted("만들던 레시피가 없어요")
                 drafts.forEach { d ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f).clickable { onDraft(d.id) }.padding(vertical = 8.dp)) {
+                        Column(Modifier.weight(1f).clickable(role = Role.Button) { onDraft(d.id) }.padding(vertical = 8.dp)) {
                             Text(runCatching { org.json.JSONObject(d.body).optString("title") }.getOrNull()?.ifEmpty { null } ?: "이름 없는 레시피",
                                 style = MaterialTheme.typography.bodyLarge)
                             Muted(if (d.step <= 1) "만들던 중 · 이어서 하면 멈춘 곳부터" else "올리기 ${d.step - 1}/4단계에서 멈춤")

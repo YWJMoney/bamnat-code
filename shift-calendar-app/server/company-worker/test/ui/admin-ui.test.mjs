@@ -632,7 +632,7 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
   assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음/);
+  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
   assert.match(main, /최근 30일 몰림 1번/);
   assert.deepEqual(t.errors, []);
@@ -645,8 +645,8 @@ test("[INVITE-08] 관리 › 보상 › 친구 초대 (1.27 설정): the develop
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음/);
-  assert.match(card().textContent, /1년 상한\s+−\s+없음/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
+  assert.match(card().textContent, /초대만의 1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
     await t.settle();
@@ -2099,5 +2099,62 @@ test("[RVD-06] an inquiry opened from the list reads its phone panel once, also 
   assert.equal(reads, 1);
   assert.ok(t.$("aside.person h2"), t.text("aside.person"));
   assert.doesNotMatch(t.text("aside.person"), /불러오지 못했어요/);
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVD-16] 사용자 결정 2026-11-12 '확인 뒤 지급 + 1년 상한': 친구 초대·만든 작품 보상도 드릴 보상에 쌓여요. 종류로 좁히고, 판단할 것과
+// 이분의 1년 12개월을 줄마다 보고, 상한 넘은 것을 골라 한 번에 취소해요.
+test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and picking several at once", async () => {
+  const { env, DB } = await world();
+  const put = (id, rule, device, months, status = "owed", paidAt = null, report = id) => DB.db.prepare(`INSERT INTO rewards (id, report_id, rule_id, device, months,
+    status, memo, created_at, paid_at, deferred) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0)`).run(id, report, rule, device, months, status, Date.now(), paidAt);
+  put("wPAIDaaaaaaaaaaaaaaaaaa", "rule-x", "full", 12, "paid", Date.now());
+  put("iOVERaaaaaaaaaaaaaaaaa", "invite", "full", 1);
+  put("iFREEaaaaaaaaaaaaaaaaa", "invite", "free", 1);
+  put("mWORKaaaaaaaaaaaaaaaaa", "maker", "free", 1, "owed", null, "maker:tool:ABCD2345");
+  const t = await signedIn(env);
+  await t.go("#/rewards");
+  await t.settle(30);
+  const main = () => t.$("#main").textContent;
+  assert.match(main(), /친구 초대 2/);
+  assert.match(main(), /만든 작품 1/);
+  assert.match(main(), /이분의 1년 보상 12\/12개월/);
+  // 디자인 품질(총괄 11-12): 제목·'프로 1개월 · 날짜 · 종류'·근거 한 줄, '만든 작품'은 한 번만, 살펴볼 것은 주의 칩.
+  const work = [...t.document.querySelectorAll("#main ul.rows > li")].find((li) => li.textContent.includes("ABCD2345"));
+  assert.match(work.querySelector("b").textContent, /만든 작품 · ABCD2345/);
+  assert.match(work.textContent, /프로 1개월 · .+ · 모두의 도구/);
+  assert.match(work.textContent, /쓰는 분 0 · 7일 유지 0%/);
+  assert.equal(work.textContent.split("만든 작품").length - 1, 1, "만든 작품 once in a row");
+  assert.ok([...work.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "장터에 안 보여요"));
+  const over = t.$('#main ul.rows > li [data-id="iOVERaaaaaaaaaaaaaaaaa"]').closest("li");
+  assert.ok([...over.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "상한"));
+  // 조건 2: 줄 안에는 채운 단추가 없고, 설명은 한 줄 + 펼치기, 규칙 문장은 아래 친구 초대 카드에 한 번만.
+  assert.equal(t.document.querySelectorAll("#main ul.rows .btn.primary").length, 0);
+  assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
+  assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
+  assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
+  // 조건 1(총괄 11-12 2차): 구간·찾기·종류·고르기·CSV는 목록 머리 한 줄, 그 바로 밑이 드릴 보상 목록. 한 줄 설명·Claude 줄은 목록 아래.
+  const order = [...t.$("#main").children].map((e) => e.matches(".list-head") ? "head" : e.matches("ul.rows") ? "rows" : e.matches(".list-foot") ? "foot" : e.matches("section.card") ? "card" : "?");
+  assert.deepEqual(order.slice(0, 4), ["head", "rows", "foot", "card"], order.join(","));
+  assert.ok(t.$("#main .list-head > .segmented") && t.$("#main .list-head #search") && t.$("#main .list-head #reward-kind"), "one head line");
+  assert.equal(t.$('#main .list-head [data-act="csv"]').getAttribute("aria-label"), "CSV로 받기");
+  assert.equal(t.$('#main .list-head [data-act="reward-pick"]').getAttribute("aria-label"), "여러 개 고르기");
+  assert.ok(t.$("#main .list-foot .claude-draft-empty") && t.$("#main .list-foot details.tip"));
+  // Play Integrity is off here (INTEGRITY_MODE), so '0명 확인' is not a warning, just said off.
+  assert.match(main(), /친구 0명 · Play 확인 꺼짐/);
+  assert.ok(!t.$('[data-act="reward"][data-status="paid"][data-id="iOVERaaaaaaaaaaaaaaaaa"]'), "no 지급하기 past the cap");
+  const kind = t.$("#reward-kind");
+  kind.value = "invite";
+  kind.dispatchEvent(new t.window.Event("change", { bubbles: true }));
+  await t.settle(30);
+  assert.ok(t.$("#main .list-more.busy"), "the head says a filter is on");
+  assert.equal(t.document.querySelectorAll("#main ul.rows > li").length, 2);
+  await t.click('[data-act="reward-pick"]');
+  await t.click('[data-act="reward-pick-cap"]');
+  assert.match(t.text(".bulkbar"), /1개 골랐어요/);
+  await t.click('[data-act="reward-bulk"][data-key="void"]');
+  await t.settle(30);
+  assert.deepEqual(DB.db.prepare("SELECT id, status FROM rewards WHERE rule_id = 'invite' ORDER BY id").all().map((r) => [r.id, r.status]),
+    [["iFREEaaaaaaaaaaaaaaaaa", "owed"], ["iOVERaaaaaaaaaaaaaaaaa", "void"]]);
   assert.deepEqual(t.errors, []);
 });

@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.money
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -49,6 +51,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
+import androidx.compose.ui.semantics.Role
 
 /** [TAB-06] 1.36 가계부 판 칩: 목록 · 달력 · 분류 보드 · 표. The period and filters above stay as they are. */
 @Composable
@@ -79,7 +82,7 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
     // [TAB-07] 부품 money.cal · money.cal.cell (오늘, 고른 날).
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val today = com.bamnat.core.time.Today.date()
-    Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), RoundedCornerShape(10.dp))), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), MaterialTheme.shapes.small)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (within != null) {
             // 기간을 '전체'로 골라도 달력은 한 달씩: 그 기간 안의 달을 여기서 넘겨요.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -106,10 +109,10 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
                 val on = date == picked
                 Column(
                     Modifier.weight(1f).heightIn(min = 54.dp)
-                        .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
-                        .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                        .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
-                        .clickable(enabled = inMonth) { onPick(date) }
+                        .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                        .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                        .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                        .clickable(role = Role.Button, enabled = inMonth) { onPick(date) }
                         .clearAndSetSemantics {
                             contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
                             selected = on
@@ -137,8 +140,8 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
     val colPart = bp.style("money.board.col")
     Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.board"), RoundedCornerShape(0.dp))).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         for (col in columns) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp)))) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, MaterialTheme.shapes.medium))) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(col.category, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
                     if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
@@ -147,7 +150,7 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
                     for (e in col.entries.take(MAX_BOARD_LINES)) {
                         val (amount, color) = signedText(e)
-                        Row(Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(e) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(LedgerBoard.what(e).ifBlank { e.category }, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(Fmt.monthDay(e.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -172,16 +175,16 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
     // [TAB-07] 부품 money.table · money.table.row. PC 확인 b81b643f: the date wrapped to two lines with the right side empty, so the
     // date is short ("11/12", one line) and 내용 takes the room that is left.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), RoundedCornerShape(10.dp)))) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), MaterialTheme.shapes.small))) {
     val fixed = 64.dp + 84.dp + 104.dp
     val widths = mapOf("date" to 64.dp, "category" to 84.dp, "what" to maxOf(120.dp, maxWidth - fixed), "amount" to 104.dp)
     val total = widths.values.fold(0.dp) { a, b -> a + b }
     val sideways = rememberScrollState()
     Column(Modifier.fillMaxWidth().horizontalScroll(sideways)) {
-        Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))) {
+        Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize))) {
             for ((key, label) in LedgerBoard.TABLE_COLUMNS) {
                 val on = sort.first == key
-                Row(Modifier.width(widths[key]!!).clickable { onSort(key to (if (on) !sort.second else key == "date" || key == "amount")) }.padding(8.dp)
+                Row(Modifier.width(widths[key]!!).clickable(role = Role.Button) { onSort(key to (if (on) !sort.second else key == "date" || key == "amount")) }.padding(8.dp)
                     .semantics { contentDescription = "$label 열, 눌러 정렬"; selected = on }, verticalAlignment = Alignment.CenterVertically) {
                     Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     if (on) Icon(if (sort.second) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward, null, Modifier.size(14.dp))
@@ -190,7 +193,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
         }
         for (e in rows.take(MAX_TABLE_ROWS)) {
             val (amount, color) = signedText(e)
-            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable(role = Role.Button) { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
                     modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp).semantics { contentDescription = Fmt.monthDay(e.date) })
                 Text(e.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["category"]!!).padding(horizontal = 8.dp))

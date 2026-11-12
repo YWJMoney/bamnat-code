@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.ButtonDefaults
@@ -1160,7 +1162,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
     val pay = range.base
     val checks = range.effects.size
     Column(Modifier.fillMaxWidth().animateContentSize()) {
-        Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${pay.month.monthValue}월 예상 (세전)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(rangeText(range.low, range.high), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
@@ -1194,7 +1196,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
 
 @Composable
 private fun PreviewBar(range: PayRange?, busy: Boolean, draft: PayProfile) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             if (range == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1283,7 +1285,7 @@ internal fun FlexPicker(
 
 @Composable
 private fun RuleToggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

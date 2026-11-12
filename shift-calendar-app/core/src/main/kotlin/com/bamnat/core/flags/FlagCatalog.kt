@@ -4,6 +4,7 @@ import com.bamnat.core.leave.HourlyLeave
 import com.bamnat.core.ops.PolicyConsent
 import com.bamnat.core.ops.ServerSwitch
 import com.bamnat.core.work.WorkStyle
+import java.time.LocalDate
 
 /**
  * [FLAG-05] The book: every dark-merged row the app knows, in the order the developer app and 진단 list them. The
@@ -67,6 +68,11 @@ object FlagCatalog {
     const val PLAZA_FIX_REQUEST = "plaza.fix_request"
     /** 1.39 [CARE-01~06] 마을 돌봄(부드러운 경고 → 의견 쉬기·마을 쉬기, 확인한 것만 세는 단계), once 처리방침's next version names it. */
     const val COMMUNITY_CARE = "community.care"
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-02 (사용자 결정 2026-11-12): '운영자가 확인한 것만 센다'만 처리방침 3.12 시행일(11-09)부터, 경고·쉬기는
+     * [COMMUNITY_CARE]대로 12-09부터. 서버만 봐요(신고로 가려진 것은 운영자가 가린 채 둘 때 세요).
+     */
+    const val COMMUNITY_CONFIRMED = "community.confirmed"
     /** 1.39 [PLZC-01~16] 광장을 사람 먼저로: 이야기 흐름 첫 화면, 근무 태그(준 블라인드), 나도요, 렌즈 칩, once 처리방침 3.12 names the tag. */
     const val PLAZA_PEOPLE = "plaza.people"
     /** 1.39 G5-N4 가족 링크에 계획한 잠 시간(켜기 선택), once 처리방침 3.12 names it. */
@@ -141,6 +147,11 @@ object FlagCatalog {
     const val FIX_REQUEST_POLICY = "3.12"
     /** 1.39 [CARE-01] The 처리방침 version 1.39 ships with (공유 급여 보완 요청과 한 판); its dates come from the 관리자 앱 일정. */
     const val CARE_POLICY = FIX_REQUEST_POLICY
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-03: 처리방침 9항과 광장 운영 규칙 머리말이 약속한 마을 쉬기 날(모든 이용자 2026-12-09). 실서버 덮어쓰기 한 줄이
+     * 아니라 코드 조건으로 지켜요(덮어쓰기를 지우거나 기본값으로 되돌려도 그 전에는 켜지지 않아요).
+     */
+    val CARE_FROM: LocalDate = LocalDate.of(2026, 12, 9)
     /** 1.39 [PLZC-10] 광장 근무 태그: the same 3.12 (1.39 총괄 11-07). */
     const val PEOPLE_POLICY = FIX_REQUEST_POLICY
 
@@ -495,10 +506,24 @@ object FlagCatalog {
     val COMMUNITY_CARE_FLAG = Flag(
         COMMUNITY_CARE, "마을 돌봄(경고·쉬기)",
         what = "마을에서 운영 원칙에 어긋난 글은 운영자가 확인한 것만 세고, 60일 안 1번은 안내, 2번은 경고, 3번부터 며칠 쓰는 횟수가 줄어요. 운영자는 경고를 먼저 보낸 뒤 1~30일 의견 쉬기·마을 쉬기를 걸 수 있어요. 앱은 마을을 열 때 안내를 한 번 보여 주고, 쉬는 동안 마을 맨 위에 한 줄로 알려요.",
-        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적고 그 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번)이 그대로예요.",
-        basis = Basis(policy = "3.12 1-4항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07)"),
-        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Policy(CARE_POLICY)),
+        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적었고, 처리방침 9항대로 모든 이용자에게 2026년 12월 9일부터예요. 그 날짜는 코드에 있어 덮어쓰기를 지워도 그 전에는 켜지지 않아요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번, 운영자가 확인한 것만)이 그대로예요.",
+        basis = Basis(policy = "3.12 1-4항·9항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07), 2.0.0 RVD-18 12-09 코드로 (사용자 2026-11-12)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Date(from = CARE_FROM), Condition.Policy(CARE_POLICY)),
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-02 (사용자 결정 2026-11-12 03:50Z): 처리방침 3.12 1-4항 "앱 1.39.0부터(처리방침 3.12 시행일부터)는 운영자가 확인해
+     * 가린 것만 셉니다"를 그 시행일부터 지켜요. 신고로 먼저 가려진 것은 '확인 대기'로 두고, 운영자가 가린 채 두면 그때 세요. 이용자에게 유리한
+     * 쪽이라 미리 알릴 기간이 없어요. 경고·쉬기와 60일 3번 규칙은 [COMMUNITY_CARE_FLAG](12-09)를 따라요.
+     */
+    val COMMUNITY_CONFIRMED_FLAG = Flag(
+        COMMUNITY_CONFIRMED, "신고는 운영자가 확인한 것만 세기",
+        what = "마을에서 신고로 먼저 가려진 글·작품은 쓰기 제한 횟수에 바로 세지 않고, 운영자가 보고 가린 채 두었을 때만 세요. 운영자가 직접 가린 것은 그대로 세요.",
+        whyOff = "처리방침 3.12(1-4항)가 그 시행일부터 이렇게 센다고 적어 그날 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고로 가려진 것도 바로 셌어요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "RVD-18", note = "2.0.0 검토 LEGAL-02 (사용자 결정 2026-11-12)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
     /**
@@ -526,7 +551,7 @@ object FlagCatalog {
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
         STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG) +
         SWITCHES
 

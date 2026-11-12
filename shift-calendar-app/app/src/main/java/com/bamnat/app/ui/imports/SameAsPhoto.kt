@@ -212,11 +212,12 @@ private fun Cell(day: Int, cell: DutyCell?, doubt: Boolean, byId: Map<Long, Shif
         is DutyCell.Leave -> "휴가"
         is DutyCell.Unknown -> "‘${cell.raw}’ 모르는 글자"
     }
-    val warn = Warn
+    // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own.
+    val warn = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning
     Column(
         modifier.width(32.dp)
-            .then(if (doubt) Modifier.background(warn.copy(alpha = 0.35f), RoundedCornerShape(6.dp)) else Modifier)
-            .then(if (tappable) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
+            .then(if (doubt) Modifier.background(warn.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
+            .then(if (tappable) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.extraSmall)
                 .clickable(role = Role.Button, onClickLabel = "${day}일 고치기") { onFix(day) } else Modifier)
             .semantics { contentDescription = "${day}일 $name" + if (doubt) ", 확인 필요" else "" }
             .padding(vertical = 2.dp),
@@ -229,5 +230,3 @@ private fun Cell(day: Int, cell: DutyCell?, doubt: Boolean, byId: Map<Long, Shif
     }
 }
 
-/** The yellow of a cell to look at, as on the month. */
-private val Warn = androidx.compose.ui.graphics.Color(0xFFFFC107)

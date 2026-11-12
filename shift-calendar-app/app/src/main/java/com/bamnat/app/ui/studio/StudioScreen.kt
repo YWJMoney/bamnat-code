@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.studio
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import com.bamnat.app.ui.decor.nextPinned
 import com.bamnat.app.ui.decor.decor
 import androidx.compose.animation.animateContentSize
@@ -143,6 +145,7 @@ import com.bamnat.app.ui.calendar.withPartShown
 import com.bamnat.core.recipe.BlueprintParts
 import androidx.compose.foundation.layout.BoxWithConstraints
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /** [STU-11] The parts of the app the studio changes, each with the example tab it shows and the tools it has. */
 private enum class Area(val label: String, val target: FreeTarget?, val tab: String) {
@@ -228,7 +231,7 @@ private enum class Area(val label: String, val target: FreeTarget?, val tab: Str
 
 private enum class Tool(val label: String) {
     CELL("칸 디자인"), PATTERN("패턴"), VIEW("칸 높이·줄"), DAYS("오늘·주말 색"), PHOTO("그림"), COLORS("색·배경"), CARDS("카드 배치"),
-    MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 탭"), CORNERS("모서리"), WIDGET("위젯 모양"),
+    MEMO_LOOK("메모장 모양"), MONEY_LOOK("가계부 모양"), PAY_LOOK("급여 모양"), TABS("아래 메뉴"), CORNERS("모서리"), WIDGET("위젯 모양"),
     BOX("보관함"), FEATURE("켜고 고치기"), SEED("한 색"), SHIFT("근무에 따라"),
     /** [BLU-06] 1.36 부품 하나하나 꾸미기. */
     PARTS("부품"),
@@ -827,8 +830,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             else ScaledPhone(shown, vm.style, area.tab, { pick(Area.of(it)) }, 1f, onPick = { picked("colors") })
                         } else {
                             val sl = if (comparing) remember(s.base.screenLooks) { ScreenLooks.decode(s.base.screenLooks) } else looks
-                            Box(Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface)
-                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())) {
+                            Box(Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surface)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium).verticalScroll(rememberScrollState())) {
                                 CompositionLocalProvider(
                                     LocalScreenLooks provides sl,
                                     com.bamnat.app.ui.calendar.LocalCalendarView provides view,
@@ -915,7 +918,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 // PC 확인 1.37 A10 (첫 색을 고르는 순간 띠가 사라져 예시가 커지고 다음 누름이 엉뚱한 색으로): the band goes when a part or a 판 is picked,
                 // before the first change, so nothing moves between picks.
                 resumable?.takeIf { !resumeShut && vm.startArea == null && it.updatedAt != shutAt && s.past.isEmpty() && s.draftId == 0L && sel == null && !panel }?.let { r ->
-                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp),
+                    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
                         Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(draftName(r.body).let { n -> "만들던 ‘$n’${com.bamnat.app.ui.Fmt.iga("$n’")} 남아 있어요" } + " · ${ago(r.updatedAt)}",
@@ -928,7 +931,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 }
                 }
                 // [CNV-04] 더 보기 판 (PC 확인 1.37 A1: 크게 열면 캔버스가 줄었어요): over the canvas, which keeps its size; the picked part is moved into the part left in view.
-                if (panel) Surface(tonalElevation = 2.dp, shadowElevation = 6.dp, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                if (panel) Surface(tonalElevation = 2.dp, shadowElevation = 6.dp, shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
                     modifier = Modifier.fillMaxWidth().height(panelH).align(Alignment.BottomCenter)) {
                     Column(Modifier.fillMaxSize()) {
                         val t = if (tool in area.tools) tool else area.tools.first()
@@ -1176,7 +1179,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     (tabs + listOfNotNull(featuresOnly.takeIf { s.extras.isNotEmpty() }) + listOf<String?>(null)).forEach { v ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { choice = v }, verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { choice = v }, verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = choice == v, onClick = { choice = v })
                             Column {
                                 Text(when (v) { null -> "테마 전체"; featuresOnly -> "기능만 (" + s.extras.keys.sortedBy { it.ordinal }.joinToString(", ") { it.label } + ")"
@@ -1469,7 +1472,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
         val head = bp.style("widget.head", setOfNotNull("holiday".takeIf { holiday(day0) }))
         if (head.hide != true) com.bamnat.app.ui.parts.PartText(text, face.over(head),
             MaterialTheme.typography.labelMedium.copy(color = ink.copy(alpha = 0.8f), fontSize = (12 * scale).sp),
-            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(6.dp))))
+            Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.head")).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), MaterialTheme.shapes.extraSmall)))
     }
     @Composable
     fun Cell(text: String, d: java.time.LocalDate, inMonth: Boolean, big: Boolean, size: Int, modifier: Modifier, center: Boolean = false) {
@@ -1479,7 +1482,7 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
         com.bamnat.app.ui.parts.PartText(text, face.over(cell.copy(size = cell.size?.let { if (big) it * 1.3 else it })),
             base.copy(color = if (big || d == day0) ink else ink.copy(alpha = if (inMonth) 0.75f else 0.4f), fontSize = (size * scale).sp,
                 textAlign = if (center) androidx.compose.ui.text.style.TextAlign.Center else androidx.compose.ui.text.style.TextAlign.Unspecified),
-            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), RoundedCornerShape(6.dp))))
+            modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.cell")).then(com.bamnat.app.ui.parts.PartMods.box(cell.copy(ink = null), MaterialTheme.shapes.extraSmall)))
     }
     Column(Modifier.fillMaxWidth()) {
         com.bamnat.app.ui.components.FoldRow("studio.widgetkind", Modifier.padding(horizontal = 12.dp, vertical = 4.dp), what = "위젯 종류") {
@@ -1539,8 +1542,8 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val plus = bp.style("widget.task.add")
                             if (plus.hide != true) com.bamnat.app.ui.parts.PartText("＋", face.over(plus),
                                 MaterialTheme.typography.titleMedium.copy(color = MaterialTheme.colorScheme.onPrimaryContainer, fontSize = (16 * scale).sp),
-                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(RoundedCornerShape(16.dp))
-                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), RoundedCornerShape(16.dp)))
+                                Modifier.then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.add")).clip(MaterialTheme.shapes.large)
+                                    .background(MaterialTheme.colorScheme.primaryContainer).then(com.bamnat.app.ui.parts.PartMods.box(plus.copy(ink = null), MaterialTheme.shapes.large))
                                     .padding(horizontal = 12.dp, vertical = 2.dp))
                         }
                         TASK_SAMPLE.forEach { (words, late, done) ->
@@ -1548,14 +1551,14 @@ internal fun WidgetSample(w: WidgetLook, style: WorkStyle? = null) {
                             val line = bp.style("widget.task", states)
                             if (line.hide == true) return@forEach
                             val check = bp.style("widget.task.check", states - "today")
-                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), RoundedCornerShape(6.dp))),
+                            Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("widget.task")).then(com.bamnat.app.ui.parts.PartMods.box(line.copy(ink = null), MaterialTheme.shapes.extraSmall)),
                                 verticalAlignment = Alignment.CenterVertically) {
                                 // The same picture the home widget draws (a launcher draws the "○" letter as a dot), in the part's colour and size.
                                 val circle = com.bamnat.app.ui.parts.PartMods.text(face.over(check), MaterialTheme.typography.titleMedium.copy(
                                     color = when { done -> MaterialTheme.colorScheme.primary; late -> MaterialTheme.colorScheme.error
                                         else -> ink.copy(alpha = 0.7f) }, fontSize = (18 * scale).sp))
                                 Box(Modifier.padding(horizontal = 8.dp).then(com.bamnat.app.ui.parts.partSpotModifier("widget.task.check"))
-                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), RoundedCornerShape(18.dp)))) {
+                                    .then(com.bamnat.app.ui.parts.PartMods.box(check.copy(ink = null), MaterialTheme.shapes.large))) {
                                     androidx.compose.material3.Icon(
                                         androidx.compose.ui.res.painterResource(if (done) com.bamnat.app.R.drawable.ic_task_done else com.bamnat.app.R.drawable.ic_task_open),
                                         contentDescription = null, tint = circle.color,

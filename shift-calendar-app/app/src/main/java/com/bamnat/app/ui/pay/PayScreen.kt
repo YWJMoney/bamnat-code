@@ -14,6 +14,7 @@ import android.os.Build
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -645,7 +646,7 @@ private fun PayResult(
         if (takeHome == null && gate.locked(Feature.TAX_FORECAST) && shown.total > 0) {
             // 1.36 PC B3: locked, the 세후 line stays in its place, dimmed with a lock, and opens the offer.
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()
-                .clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) }.padding(vertical = 4.dp)) {
+                .clickable(role = Role.Button) { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) }.padding(vertical = 4.dp)) {
                 Text("🔒 통장에 들어올 돈(세후 예상) · 눌러서 열기", style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
                 com.bamnat.app.ui.money.ProPill(locked = true)
@@ -757,8 +758,8 @@ private fun PayResult(
             year.forEach { (m, total) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${m.year % 100}.${m.monthValue}", style = MaterialTheme.typography.labelMedium, modifier = Modifier.labelWidth(44.dp))
-                    Box(Modifier.weight(1f).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
-                        Box(Modifier.fillMaxWidth(total.toFloat() / max).height(10.dp).clip(RoundedCornerShape(5.dp)).background(MaterialTheme.colorScheme.primary))
+                    Box(Modifier.weight(1f).height(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                        Box(Modifier.fillMaxWidth(total.toFloat() / max).height(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
                     }
                     Text(if (unlocked) won(total) else "●●●만원", style = MaterialTheme.typography.labelMedium,
                         modifier = Modifier.widthIn(min = 92.dp).padding(start = 8.dp))
@@ -1215,7 +1216,7 @@ internal fun EstimatedChip(text: String = "추정 포함", onClick: (() -> Unit)
         text,
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onTertiaryContainer,
-        modifier = tap.clip(RoundedCornerShape(8.dp))
+        modifier = tap.clip(MaterialTheme.shapes.small)
             .then(if (onClick == null) Modifier else Modifier.clickable(onClickLabel = "무엇을 넣으면 확정되는지 보기", role = Role.Button, onClick = onClick))
             .background(MaterialTheme.colorScheme.tertiaryContainer).padding(horizontal = 8.dp, vertical = 2.dp),
     )
@@ -1267,7 +1268,7 @@ private fun TimeBar(step: Int) {
     val ot = kindColor(LineKind.OVERTIME)
     val parts = listOf(8f to night, 1f to (if (step >= 0) ot else base))
     Column {
-        Row(Modifier.fillMaxWidth().height(18.dp).clip(RoundedCornerShape(9.dp))) {
+        Row(Modifier.fillMaxWidth().height(18.dp).clip(CircleShape)) {
             parts.forEach { (w, c) -> Box(Modifier.weight(w).fillMaxSize().background(c)) }
         }
         Row(Modifier.fillMaxWidth()) {
@@ -1301,7 +1302,7 @@ private fun LineRow(line: PayLine, unlocked: Boolean, onEstimate: () -> Unit = {
     val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
     Row(
         Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
-            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(pad = null, padX = null, padY = null), shape)).clip(shape).clickable(enabled = unlocked, onClick = onClick)
+            .then(com.bamnat.app.ui.parts.PartMods.box(part.copy(pad = null, padX = null, padY = null), shape)).clip(shape).clickable(role = Role.Button, enabled = unlocked, onClick = onClick)
             .padding(horizontal = (part.padH ?: 0).dp, vertical = part.padV?.dp ?: when (look.rows) { "compact" -> 4.dp; "roomy" -> 12.dp; else -> 8.dp }),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1384,7 +1385,7 @@ private fun ValueRow(
                     Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     Switch(checked = ordinary, onCheckedChange = onOrdinary, enabled = enabled)
                 } else Spacer(Modifier.weight(1f))
-                if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
+                if (onRemove != null) TextButton(onClick = onRemove, enabled = enabled) { Text("지우기") }
             }
         }
         if (taxFree != null && onTaxFree != null) {
@@ -1431,7 +1432,7 @@ private fun BonusRow(
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("통상임금에 포함", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
             Switch(checked = item.ordinary, onCheckedChange = onOrdinary, enabled = enabled)
-            TextButton(onClick = onRemove, enabled = enabled) { Text("삭제") }
+            TextButton(onClick = onRemove, enabled = enabled) { Text("지우기") }
         }
     }
 }
@@ -1496,7 +1497,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean, keptDays: Boolean? = 
             val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(part, MaterialTheme.shapes.small)
             val ink = part.ink?.let { Color(it.toInt()) }
             Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(part.copy(ink = null, pad = null, padX = null, padY = null), shape))
-                .clip(shape).clickable(enabled = unlocked) { open = if (open == d.date) null else d.date }
+                .clip(shape).clickable(role = Role.Button, enabled = unlocked) { open = if (open == d.date) null else d.date }
                 .padding(horizontal = (part.padH ?: 0).dp, vertical = (part.padV ?: 6).dp)) {
                 val dateText: @Composable (Modifier) -> Unit = { m ->
                     Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
@@ -1885,7 +1886,7 @@ private fun rememberCompanyWayTextIf(read: Boolean): com.bamnat.app.ui.company.C
 private fun GuideFold(guides: @Composable () -> Unit) {
     var open by rememberSaveable { mutableStateOf(false) }
     androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 24.dp),
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(horizontal = 16.dp, vertical = 12.dp).heightIn(min = 24.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("더 정확하게 하기", style = MaterialTheme.typography.titleSmall)

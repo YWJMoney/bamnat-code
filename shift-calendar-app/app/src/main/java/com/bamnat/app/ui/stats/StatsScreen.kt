@@ -547,7 +547,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val hours = week.totalMinutes / 60.0
-    Column(Modifier.clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
+    Column(Modifier.heightIn(min = 48.dp).clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",
@@ -707,7 +707,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     if (clients.isNotEmpty()) {
         SectionCard(title = "거래처별") {
             clients.take(8).forEach { c ->
-                Row(Modifier.fillMaxWidth().clickable(onClickLabel = "거래내역서 보내기") { statement = c.client }.padding(vertical = 4.dp),
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "거래내역서 보내기") { statement = c.client }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.client, style = MaterialTheme.typography.bodyLarge, maxLines = 1)

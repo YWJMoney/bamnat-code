@@ -246,6 +246,7 @@ class FlagEvalTest {
                 // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
                 else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
                 else if (f.key == FlagCatalog.STATS_DISC) "1.40.0" /* 1.40 DISC-06, 처리방침 3.13 */
+                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED) "2.0.0" /* 2.0.0 RVD-18 */
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
@@ -253,6 +254,22 @@ class FlagEvalTest {
         }
         ServerSwitch.entries.forEach { assertEquals(it, FlagCatalog.switchOf(FlagCatalog.switchKey(it))) }
         WorkStyle.entries.forEach { assertTrue(FlagCatalog.of(FlagCatalog.typeKey(it))!!.default) }
+    }
+
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-02·03 (사용자 결정 2026-11-12): 3.12가 11-09에 시행돼도 마을 쉬기(community.care)는 코드로 12-09부터, '확인한 것만
+     * 세기'(community.confirmed)는 11-09부터. 서버가 보는 것처럼(동의와 상관없이) 봐요.
+     */
+    @Test fun careWaitsForDecemberNinthInCodeWhileConfirmedCountingStartsWithThePolicy() {
+        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.12", LocalDate.of(2026, 11, 9), LocalDate.of(2026, 11, 9), LocalDate.of(2026, 12, 9))))
+        val care = FlagCatalog.of(FlagCatalog.COMMUNITY_CARE)!!
+        val counted = FlagCatalog.of(FlagCatalog.COMMUNITY_CONFIRMED)!!
+        val agreed = setOf("3.12")
+        assertFalse(FlagEval.state(care, phone(kst(2026, 12, 8, 23, 59), agreed = agreed), calendar = cal).on)
+        assertTrue(FlagEval.state(care, phone(kst(2026, 12, 9, 0, 1), agreed = agreed), calendar = cal).on)
+        assertFalse(FlagEval.state(counted, phone(kst(2026, 11, 8), agreed = agreed), calendar = cal).on)
+        assertTrue(FlagEval.state(counted, phone(kst(2026, 11, 10), agreed = agreed), calendar = cal).on)
+        assertEquals(LocalDate.of(2026, 12, 9), FlagCatalog.CARE_FROM)
     }
 
     @Test fun unknownKeysAreIgnoredAndFreeRowsAreReadByName() {

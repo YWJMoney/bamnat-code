@@ -53,7 +53,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -109,6 +109,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 // ---- [PRF-01]..[PRF-12] 1.36 창작자 프로필 (사용자 2026-10-31 "인스타처럼 내가 만든 테마를 멋지게, 팔로워·최근 알림, 팔로우한 분 프로필에서 공개된 것") ----
 
@@ -450,7 +451,7 @@ fun MakerScreen(
                                     ". 기간이 지나면 저절로 풀려요") to null)
                             }
                         }
-                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
+                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (lines.size > 1) Text("지금 내 프로필 상태", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             lines.forEach { (line, fix) ->
@@ -474,7 +475,7 @@ fun MakerScreen(
                         }
                         s.inbox?.let { InboxCard(it, s.unseen, onOpen, onPeople = { onPeople("followers") }, onSeen = vm::seen) }
                         // 1.36 PC: my profile before the first work: what it is for and the next step, not three empty tabs.
-                        if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                             .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("아직 작품이 없어요", style = MaterialTheme.typography.titleSmall)
                             Text("스튜디오에서 만든 테마나 탭별 작품을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
@@ -560,7 +561,7 @@ fun MakerScreen(
             text = {
                 Column {
                     PROFILE_FLAG_WORDS.forEach { (k, v) ->
-                        Row(Modifier.fillMaxWidth().clickable { why = k }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { why = k }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(why == k, { why = k }); Text(v)
                         }
                     }
@@ -580,7 +581,7 @@ fun MakerScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("소개·얼굴·대표 작품·표지 그림과 모음 ${page.sets.size}개가 지워져요. 팔로워는 그대로예요." +
                         (page.nick?.let { " 이름 ‘$it’${com.bamnat.app.ui.Fmt.eun("‘$it’")} 광장·이야기에도 쓰여서 남아요." } ?: ""))
-                    if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(works, { works = it })
                         Text("올린 작품 ${page.recipes.size}개도 장터에서 내리기")
                     }
@@ -643,7 +644,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             p.styleTag?.let { st ->
                 Spacer(Modifier.width(8.dp))
                 Text(RecipeDescribe.short(st), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
             }
         }
         // 1.36 [V20] 보이는 믿음 단계: everyone sees the step; the maker alone sees the next one and a 쓰기 제한.
@@ -691,7 +692,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
 
 @Composable
 private fun Count(n: Int, label: String, onClick: (() -> Unit)? = null) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).then(if (onClick != null) Modifier.clickable(onClickLabel = "$label 보기", onClick = onClick) else Modifier)
+    Column(Modifier.clip(MaterialTheme.shapes.small).then(if (onClick != null) Modifier.clickable(onClickLabel = "$label 보기", onClick = onClick) else Modifier)
         .padding(horizontal = 4.dp, vertical = 4.dp).semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(compact(n), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -761,7 +762,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
             if (lines.isEmpty()) Text("지난 7일 동안 소식이 없어요. 새 팔로워·질문·고친 판이 오면 여기 떠요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (fresh || open) lines.take(8).forEach { (text, go) ->
                 Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).then(if (go != null) Modifier.clickable(onClick = go) else Modifier)
+                    modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).then(if (go != null) Modifier.clickable(role = Role.Button, onClick = go) else Modifier)
                         .heightIn(min = 40.dp).padding(vertical = 6.dp))
             } else Text("지난 소식 · " + lines.first().first, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -824,7 +825,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                 Text("테마 하나 + 탭별 작품 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
                 works.forEach { r ->
                     val on = r.code in picked
-                    Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(on, { picked = if (on) picked - r.code else picked + r.code })
                         Column(Modifier.weight(1f)) {
@@ -922,7 +923,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                 if (p.recipes.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 고를 수 있어요", style = MaterialTheme.typography.bodySmall)
                 p.recipes.forEach { r ->
                     val on = r.code in pins
-                    Row(Modifier.fillMaxWidth().clickable(enabled = on || pins.size < pinMax) { pins = if (on) pins - r.code else pins + r.code }.heightIn(min = 44.dp),
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = on || pins.size < pinMax) { pins = if (on) pins - r.code else pins + r.code }.heightIn(min = 44.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(on, { pins = if (on) pins - r.code else pins + r.code }, enabled = on || pins.size < pinMax)
                         Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1120,7 +1121,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
 
 @Composable
 private fun PersonRow(m: MakerFaceItem, onClick: () -> Unit, actions: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "프로필 보기", onClick = onClick).heightIn(min = 56.dp).padding(vertical = 4.dp),
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "프로필 보기", onClick = onClick).heightIn(min = 56.dp).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         MakerRing(m.face, m.color, m.nick, m.fresh, 40.dp)
         Spacer(Modifier.width(10.dp))
@@ -1199,7 +1200,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             s.me?.let { m -> StripFace(m.copy(nick = m.nick), "내 프로필", m.fresh) { onMaker(m.maker) } }
             (s.following.ifEmpty { s.month }).forEach { m -> StripFace(m, m.nick ?: "이름 없는 분", m.fresh) { onMaker(m.maker) } }
-            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
+            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(MaterialTheme.shapes.medium).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
                 // PC 확인 5c21f3bb: '🔍 찾아보기' opened the 팔로잉 새 작품 (empty with no one followed), not a search.
                 onClick = if (s.following.isEmpty()) onFind ?: onAll else onAll),
                 horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1213,7 +1214,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
 
 @Composable
 private fun StripFace(m: MakerFaceItem, label: String, fresh: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "$label 프로필", onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(72.dp).clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "$label 프로필", onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         MakerRing(m.face, m.color, m.nick, fresh, 56.dp)
         Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }

@@ -74,6 +74,7 @@ import com.bamnat.core.setup.SetupDraft
 import com.bamnat.core.setup.SetupSource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 // ---- 1. how the user works ----
 
@@ -168,7 +169,7 @@ internal fun styleTitle(d: SetupDraft): String =
 @Composable
 private fun FileCard(title: String, text: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Filled.FileOpen, null, tint = MaterialTheme.colorScheme.primary)
@@ -443,7 +444,7 @@ internal fun TimesStep(vm: SetupViewModel, d: SetupDraft) {
             else -> "일하는 요일과 시간이 맞나요?"
         },
         when {
-            d.style == WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 삭제’로 지워요."
+            d.style == WorkStyle.HOURLY -> "시각을 누르면 바로 고쳐요. 안 하는 시간대는 연필(이름·색 고치기)을 누르고 맨 아래 ‘이 근무 종류 지우기’를 눌러요."
             withOrder -> "회사 근무표와 다르면 순서를 바꾸거나 시각을 눌러 바로 고쳐요."
             else -> "회사 근무표와 다르면 시각을 눌러 바로 고쳐요."
         },

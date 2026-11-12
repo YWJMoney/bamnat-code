@@ -61,6 +61,8 @@ class GestureAlternativesTest {
         // [MKC-02][MKC-03] 1.39 도구 전후 해 보기: 그림·단추 화면을 누르고 있으면 넣기 전.
         "ToolTryout.kt" to "누르고 있으면 넣기 전 모습 → 위의 ‘지금·반반·넣으면’ 칩(부품), ‘지금·넣으면’ 칩(단추), 비교 선은 TryOn의 접근성 동작",
         "PartSpot.kt" to "미리 보기 위 부품 누르기 → 부품 도구의 부품 칩(묶음 제목 아래 모든 부품)과 상태 칩, 고정 줄의 상태 고르기",
+        // [RVP-59] 2.0.0 말랑 칸이: 누르면 말랑하게 눌렸다 돌아와요. 하는 일이 없는 꾸밈이라 대안이 따로 필요 없어요.
+        "Kani.kt" to "칸이 누르기(말랑하게 눌리는 움직임뿐, 하는 일 없음) → 할 일은 옆의 단추, 칸이는 '칸이, 기분'으로 읽어 줘요",
     )
 
     private val gesture = Regex("""\.pointerInput\(|detect(Tap|Drag|HorizontalDrag|VerticalDrag|Transform)Gestures""")

@@ -48,6 +48,9 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
     override fun onCreate() {
         StartupTrace.begin()
         super.onCreate()
+        // 2.0.0 [RVP-28] (검토 UIX-51) Numbers are written as Korean writes them whatever the phone's language: "%02d" on a phone in
+        // Nepali or Arabic gave its own digits, and "%.1f억" on a German phone "1,5억". Every String.format reads this category.
+        keepKoreanNumbers()
         // 1.36 [SEC-10] The font look's isolated process starts nothing of the app's (it may not read the app's files).
         if (com.bamnat.app.recipe.FontProbe.inProbe()) return
         CrashLog.install(this)
@@ -127,6 +130,14 @@ class BamnatApp : Application(), androidx.work.Configuration.Provider {
 
     private fun containerStarted() = (this::class.java.getDeclaredField("container\$delegate")
         .apply { isAccessible = true }.get(this) as Lazy<*>).isInitialized()
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // [RVP-28] A language change sets every locale category again.
+        keepKoreanNumbers()
+    }
+
+    private fun keepKoreanNumbers() = java.util.Locale.setDefault(java.util.Locale.Category.FORMAT, java.util.Locale.KOREA)
 }
 
 private const val APP_STATE = "app_state"

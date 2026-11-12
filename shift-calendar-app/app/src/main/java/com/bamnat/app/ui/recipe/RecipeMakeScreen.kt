@@ -696,7 +696,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         var miniOpen by rememberSaveable { mutableStateOf(wide) }
         if (s.step == 1 && s.sent == null && !mockShown) {
             if (miniOpen) Column(Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
-                MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, RoundedCornerShape(14.dp)))
+                MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, MaterialTheme.shapes.medium))
                 androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
             } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }

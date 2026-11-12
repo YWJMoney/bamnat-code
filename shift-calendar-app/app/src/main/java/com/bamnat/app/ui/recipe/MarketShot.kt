@@ -472,13 +472,13 @@ private fun HomeWithWidget(r: Recipe, style: WorkStyle?) {
             corner = (v["corner"] as? Number)?.toInt()?.coerceIn(0, 28) ?: base.corner,
             text = (v["text"] as? String)?.takeIf { it in com.bamnat.core.recipe.WidgetLook.TEXTS } ?: base.text)
     }
-    Column(Modifier.fillMaxWidth().height(520.dp).clip(RoundedCornerShape(20.dp))
+    Column(Modifier.fillMaxWidth().height(520.dp).clip(MaterialTheme.shapes.large)
         .background(Brush.linearGradient(listOf(Color(0xFF5C6BC0), Color(0xFF26A69A)))).padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Text("09:41", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Light)
         com.bamnat.app.ui.studio.WidgetSample(w, style)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            repeat(4) { Box(Modifier.size(40.dp).clip(RoundedCornerShape(12.dp)).background(Color.White.copy(alpha = 0.35f))) }
+            repeat(4) { Box(Modifier.size(40.dp).clip(MaterialTheme.shapes.medium).background(Color.White.copy(alpha = 0.35f))) }
         }
     }
 }

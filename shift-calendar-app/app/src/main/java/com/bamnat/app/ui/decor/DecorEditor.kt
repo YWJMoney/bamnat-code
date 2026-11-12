@@ -373,7 +373,7 @@ private fun Stage(items: List<DecorItem>, place: String, picked: Set<Int>, advan
         val k = with(density) { minOf(maxWidth.toPx() / part.width, maxH.toPx() / part.height) }
         val w = with(density) { (part.width * k).toDp() }
         val h = with(density) { (part.height * k).toDp() }
-        Canvas(Modifier.size(w, h).clip(RoundedCornerShape(8.dp)).background(ground).border(1.dp, line, RoundedCornerShape(8.dp))
+        Canvas(Modifier.size(w, h).clip(MaterialTheme.shapes.small).background(ground).border(1.dp, line, MaterialTheme.shapes.small)
             .semantics {
                 contentDescription = "꾸미기 판: ${Decor.anchorLabel(place)}. 꾸밈 ${items.count { it.at == place && !it.hide }}개"
                 stateDescription = if (picked.isEmpty()) "고른 꾸밈 없음" else "고른 꾸밈 ${picked.size}개"
@@ -584,7 +584,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
         val accent = MaterialTheme.colorScheme.primary
         when (kind) {
             DecorKind.SHAPE -> GlyphGrid(DecorGlyphs.search(DecorGlyphs.SHAPE_LIST, q)) { g ->
-                Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.SHAPE, g.id) }
+                Box(Modifier.size(52.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.SHAPE, g.id) }
                     .semantics { contentDescription = g.label }, contentAlignment = Alignment.Center) {
                     Canvas(Modifier.size(30.dp)) {
                         val p = DecorShapes.path(g.id, size.width, size.height)
@@ -598,7 +598,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                     Text("선 아이콘 (색을 골라 써요)", style = MaterialTheme.typography.titleSmall) }
                 OutlinedTextField(q, { q = it.take(20) }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("선 아이콘 찾기 (예: 별, 하트, 달)") })
                 GlyphGrid(DecorGlyphs.search(DecorGlyphs.ICON_LIST, q)) { g ->
-                    Box(Modifier.size(52.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
+                    Box(Modifier.size(52.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "${g.label} 넣기") { onAdd(DecorKind.ICON, g.id) },
                         contentAlignment = Alignment.Center) {
                         DecorIcons.of(g.id)?.let { Icon(it, g.label.substringBefore(' '), tint = ink, modifier = Modifier.size(28.dp)) }
                     }
@@ -609,7 +609,7 @@ private fun Library(place: String, onAdd: (DecorKind, String) -> Unit, onPhoto: 
                 if (list.isEmpty()) Text("찾는 이모지가 없어요", style = MaterialTheme.typography.bodySmall)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     list.forEach { e ->
-                        Box(Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "$e 넣기") { onAdd(DecorKind.EMOJI, e) },
+                        Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "$e 넣기") { onAdd(DecorKind.EMOJI, e) },
                             contentAlignment = Alignment.Center) { Text(e, fontSize = 24.sp) }
                     }
                 }
@@ -892,7 +892,7 @@ private fun Layers(items: List<DecorItem>, places: List<String>, picked: Set<Int
 private fun LayerRow(item: DecorItem, picked: Boolean, onPick: (Boolean) -> Unit, set: ((DecorItem) -> DecorItem) -> Unit,
                      canUp: Boolean, canDown: Boolean, onMove: (Boolean) -> Unit, onEdit: () -> Unit = {}) {
     // PC 확인 1.36 (레이어 줄 글자가 좁아 숨기기 단추가 눌려요): 숨기기·잠그기 on the row; 앞으로·뒤로·고치기 under the picked one.
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
         .background(if (picked) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)) {
     Row(Modifier.fillMaxWidth()
         .clickable(onClickLabel = "고르기") { onPick(false) }.padding(start = 16.dp),

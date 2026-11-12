@@ -43,6 +43,8 @@ data class InviteView(
     val capReached: Boolean,
     val used: String?,
     val checkedAt: Instant,
+    /** 2.0.0 [RVD-14] Months from friends an admin has yet to look at: they come in after that. */
+    val pending: Int = 0,
 )
 
 /**
@@ -100,6 +102,7 @@ class InviteClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) :
             code = o.optStringOrNull("code"), link = o.optStringOrNull("link"), terms = readTerms(o), progress = o.optInt("progress"),
             waiting = o.optInt("waiting"), friends = o.optInt("friends"), given = o.optInt("given"), capReached = o.optBoolean("capReached"),
             used = o.optStringOrNull("used"), checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: at,
+            pending = o.optInt("pending"),
         )
 
         fun readAnswer(o: JSONObject): InviteAnswer =
@@ -217,6 +220,7 @@ class InviteStore(context: Context, suffix: String = "") {
                 InviteClient.writeTerms(v.terms).put("code", v.code ?: JSONObject.NULL).put("link", v.link ?: JSONObject.NULL)
                     .put("progress", v.progress).put("waiting", v.waiting).put("friends", v.friends).put("given", v.given)
                     .put("capReached", v.capReached).put("used", v.used ?: JSONObject.NULL).put("checkedAt", v.checkedAt.toString())
+                    .put("pending", v.pending)
             } ?: JSONObject.NULL)
             .put("terms", s.terms?.let { InviteClient.writeTerms(it) } ?: JSONObject.NULL)
             .put("referrerRead", s.referrerRead).put("found", s.found ?: JSONObject.NULL).put("offerClosed", s.offerClosed)

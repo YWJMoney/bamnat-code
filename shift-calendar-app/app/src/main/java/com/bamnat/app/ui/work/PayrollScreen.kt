@@ -56,6 +56,7 @@ import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.StaffAllowance
@@ -157,7 +158,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             else -> "${ym.monthValue}월에 일한 몫이에요."
         })
         SectionCard(title = place.name, trailing = { TextButton(onClick = { settings = true }) { Text("사업장 설정") } }) {
-            ledger.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (place.fivePlus == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant) }
+            ledger.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = if (place.fivePlus == null) com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */ else MaterialTheme.colorScheme.onSurfaceVariant) }
             // PC 1차 제안: not answered yet → ask right here in one tap, not behind 사업장 설정. The safe side (가산 넣기) stays until then.
             if (place.fivePlus == null) {
                 Text("사장님 빼고 일하는 사람(가족 아닌 직원·알바 모두)이 평소 몇 명인가요? 지금 대장엔 ${staff.size}명이 있어요.",
@@ -200,7 +201,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                 law?.takeIf { it.under.isNotEmpty() }?.let { n ->
                     Text("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
                         (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
-                        style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning,
+                        style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */,
                         modifier = Modifier.clickable(role = Role.Button) { editing = n.under.first().first }.padding(vertical = 4.dp))
                 }
                 if (open) {
@@ -397,7 +398,9 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
     var slip by remember { mutableStateOf(false) }
     var why by remember { mutableStateOf<String?>(null) }
     var day by remember { mutableStateOf<LocalDate?>(null) }
-    val warn = LocalCalendarColors.current.warning
+    // 2.0.0 [RVP-13] (검토 UIX-15 '급여 대장 한 화면에 빨강 4~5번') A person's row says what is not done yet in the 주의 colour;
+    // red is kept for 지급일이 지났어요 alone.
+    val warn = com.bamnat.app.ui.theme.Tone.Caution.color()
     SectionCard(title = l.staff.name.ifBlank { "이름 없음" }, trailing = { TextButton(onClick = onEdit, enabled = !closed) { Text("직원 정보") } }) {
         Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
@@ -612,7 +615,7 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
             }
         }
         AmountField(when (s.form) { WageForm.HOUR -> "시급"; WageForm.MONTH -> "월급"; WageForm.DAY -> "일급" }, amountDigits(s.base), { s = s.copy(base = it.toAmount()) })
-        if (s.form == WageForm.HOUR && s.base in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        if (s.form == WageForm.HOUR && s.base in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color() /* [RVP-13] */)
         oddWage(s.form, s.base, minimum)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
         OutlinedTextField(s.job, { s = s.copy(job = it.take(20)) }, label = { Text("하는 일 (예: 홀, 주방)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(verticalAlignment = Alignment.CenterVertically) {

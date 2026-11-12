@@ -57,6 +57,7 @@ import com.bamnat.core.pay.Rounding
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** A won amount typed as digits; shows the grouped value underneath so long numbers stay readable. */
 @Composable
@@ -296,7 +297,7 @@ fun EditValueDialog(
                 ScopeKind.entries.filter { it != ScopeKind.DATE || byDay }.forEach { k ->
                     val locked = k == ScopeKind.RANGE && !rangeOpen
                     val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
-                    Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
                         // 2.0.0 [RVJ-08] 품질 조건 4 (#444 사진 08: 200%에서 고르기 글이 줄마다 세 줄): 고르는 말 한 줄 + 작은 설명 한 줄.
                         val (say, more) = when (k) {
@@ -570,7 +571,7 @@ fun AddBonusDialog(
                             label = { Text("${m}월") })
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
                         Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요. " +

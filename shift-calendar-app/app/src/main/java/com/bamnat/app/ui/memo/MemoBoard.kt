@@ -65,6 +65,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.focus.focusRequester
 import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.ui.semantics.Role
 
 /**
  * [MPH-07] 1.38 자유 판 (사용자 2026-11-05 "파워포인트나 한글처럼 자유자재의 메모"): a board inside the memo where photos, text boxes and
@@ -110,11 +111,11 @@ internal fun MemoBoardBlock(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(100f / live.ratio)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(MaterialTheme.shapes.medium)
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .border(
                     if (chosen) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    RoundedCornerShape(12.dp),
+                    MaterialTheme.shapes.medium,
                 )
                 .clipToBounds()
                 .pointerInput(chosen) { detectTapGestures { if (!chosen) onChoose() else picked = null } }
@@ -140,7 +141,7 @@ internal fun MemoBoardBlock(
         }
         MemoToolPanel(chosen) { Column {
             // (PC 확인 4a5c3828) Five rows of tools and the keyboard hid the board: the tools are in three tabs, a row or two each.
-            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(12.dp),
+            Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                 Column(Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                     val p = picked?.let { i -> item(i)?.let { i to it } }
@@ -273,7 +274,7 @@ private fun BoardPiece(
                 val px = with(density) { w.toPx() }.toInt()
                 val ratio by produceState<Float?>(null, item.text) { value = MemoPhotoFiles.ratio(context, item.text) }
                 val img by produceState<ImageBitmap?>(null, item.text, px / 200) { value = MemoPhotoFiles.load(context, item.text, px) }
-                Box(Modifier.width(w).aspectRatio(ratio ?: (4f / 3f)).clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+                Box(Modifier.width(w).aspectRatio(ratio ?: (4f / 3f)).clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.surfaceVariant)) {
                     img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
                 }
             }
@@ -284,7 +285,7 @@ private fun BoardPiece(
                 style = textStyle.copy(fontSize = item.size.sp, color = item.ink?.let { Color(it.toInt()) } ?: MaterialTheme.colorScheme.onSurface),
                 modifier = Modifier
                     .width(w)
-                    .then(item.fill?.let { Modifier.background(Color(it.toInt()), RoundedCornerShape(6.dp)) } ?: Modifier)
+                    .then(item.fill?.let { Modifier.background(Color(it.toInt()), MaterialTheme.shapes.extraSmall) } ?: Modifier)
                     .padding(6.dp),
             )
         }
@@ -350,7 +351,7 @@ private fun StickerDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
         text = {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 STICKERS.forEach { e ->
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)).clickable { onPick(e) }, contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(44.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onPick(e) }, contentAlignment = Alignment.Center) {
                         Text(e, fontSize = 26.sp)
                     }
                 }

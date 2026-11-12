@@ -177,7 +177,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
 @Composable
 private fun PlaceRow(slot: Slot, id: String?, help: String, onPick: () -> Unit, onClear: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        val shape = RoundedCornerShape(10.dp)
+        val shape = MaterialTheme.shapes.small
         val box = Modifier.width(if (slot == Slot.BG) 40.dp else 72.dp).aspectRatio(slot.w.toFloat() / slot.h).clip(shape)
         val picture = rememberLookPicture(id)
         if (picture != null) Image(picture.first, contentDescription = "${slot.label} 사진", contentScale = ContentScale.Crop, modifier = box)
@@ -220,7 +220,7 @@ private fun FrameDialog(uri: Uri, slot: Slot, onDismiss: () -> Unit, onDone: (Re
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("한 손가락으로 옮기고, 두 손가락으로 크게 해요. 네모 안이 그대로 쓰여요", style = MaterialTheme.typography.bodySmall)
-                val frameShape = if (slot == Slot.ICON) CircleShape else RoundedCornerShape(12.dp)
+                val frameShape = if (slot == Slot.ICON) CircleShape else MaterialTheme.shapes.medium
                 Box(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp).aspectRatio(slot.w.toFloat() / slot.h, matchHeightConstraintsFirst = slot.h > slot.w)
                         .clip(frameShape).clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerHighest)

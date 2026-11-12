@@ -49,6 +49,7 @@ import com.bamnat.core.money.MemoAmounts
 import com.bamnat.core.money.MoneySource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /** What the day sections may change; the calendar's view model implements it. */
 interface MoneyActions {
@@ -94,7 +95,7 @@ fun JobsSection(date: LocalDate, jobs: List<Job>, actions: MoneyActions) {
 fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
     val cal = LocalCalendarColors.current
     // [BIGTXT-01] 1.39 (사용자 사진: 큰 글자에서 '페…'·'디…'만 보임) the amount goes under the job's name when both do not fit.
-    com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 4.dp), minStart = 120.dp, start = {
+    com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 4.dp), minStart = 120.dp, start = {
         Column {
             Text(job.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val time = job.start?.let { s -> Fmt.time(s) + (job.end?.let { "–" + Fmt.time(it) } ?: "") }
@@ -159,7 +160,7 @@ fun Figure(label: String, value: String, modifier: Modifier = Modifier, strong: 
             value,
             style = style.copy(color = MaterialTheme.colorScheme.onSurface, fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal),
             maxLines = 1,
-            autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize),
+            autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
         )
     }
 }
@@ -241,7 +242,7 @@ fun DayLedgerSection(
 @Composable
 fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(10.dp)).clickable(onClick = onClick).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)

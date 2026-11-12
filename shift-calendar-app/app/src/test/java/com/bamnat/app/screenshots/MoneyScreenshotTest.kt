@@ -168,7 +168,7 @@ class MoneyScreenshotTest : ScreenshotBase() {
     })
     @Test fun foldedLedgerCategories() = shoot("246_folded_ledger_categories", FOLDED, ledgerPage(null) {
         tapText("돈 적기", exact = true, scrolls = 0)
-        tapText("분류 편집", exact = true)
+        tapText("분류 고치기", exact = true)
     })
     @Test fun phoneLedgerSummaryHugeText() = shoot("247_phone_ledger_summary_huge_text", PHONE, fontScale = 2f, ledgerPage(null))
     @Test fun phoneLedgerListHugeText() = shoot("248_phone_ledger_list_huge_text", PHONE, fontScale = 2f, ledgerPage("내역"))

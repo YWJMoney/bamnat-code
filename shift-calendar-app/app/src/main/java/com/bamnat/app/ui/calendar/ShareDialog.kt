@@ -330,7 +330,7 @@ fun ShareDialog(
             if (made != null) {
                 // [SHR-12] Closing soon is said in the accent colour, with the way to keep it open below.
                 val soon = ShareExpiryReminder.closingSoon(made)
-                Surface(shape = RoundedCornerShape(12.dp),
+                Surface(shape = MaterialTheme.shapes.medium,
                     color = if (soon) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHighest) {
                     Text("만든 링크: ${made.url}\n" + (if (keeps && auto) "프로를 쓰는 동안 계속 열려요."
                         else "${expiryText(made)}까지 열려요." + if (soon) " 곧 닫혀요. 아래 ‘기간 늘리기’로 더 열어 둘 수 있어요." else ""),
@@ -346,7 +346,7 @@ fun ShareDialog(
             }
 
             Text("보여 줄 것", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-            Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+            Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     // [J133-87] 1.33 빌드 6: a shop's first row is its 영업일, a field worker's its 일정 days, in their words.
                     PartRow(if (employee) "근무" else if (field) "일한 날" else com.bamnat.core.work.scheduleWord(style),
@@ -556,7 +556,7 @@ fun ShareDialog(
 @Composable
 private fun AudienceRows(picked: com.bamnat.app.share.ShareAudience?, companyWork: Boolean, setupOpen: Boolean,
                          style: com.bamnat.core.work.WorkStyle?, onPick: (com.bamnat.app.share.ShareAudience) -> Unit) {
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.padding(vertical = 4.dp).selectableGroup()) {
             com.bamnat.app.share.ShareAudience.entries.forEach { a ->
                 Row(
@@ -588,7 +588,7 @@ private suspend fun sendSetupFile(context: Context, c: com.bamnat.app.AppContain
 internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, onSend: () -> Unit) {
     if (unsent) {
         Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+            shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 TextButton(enabled = !busy, onClick = onSend, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 보내기") }
@@ -646,7 +646,7 @@ private fun FeedRow(on: Boolean, open: Boolean, busy: Boolean, url: String?, onC
             androidx.compose.material3.Switch(checked = on, onCheckedChange = null, enabled = !busy)
         }
         if (url != null) {
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
                 Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(url, style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { onCopy(url) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("구독 주소 복사") }

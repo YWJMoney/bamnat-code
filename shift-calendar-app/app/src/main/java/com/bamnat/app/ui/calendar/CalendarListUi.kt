@@ -35,6 +35,7 @@ import androidx.compose.material.icons.outlined.PersonRemove
 import androidx.compose.material.icons.outlined.SwapVert
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
@@ -246,7 +247,7 @@ fun CalendarIdentityBar(
                         Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                     }
                 } else Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) } /* [RVP-10] 48dp */
                         .semantics { contentDescription = "$name 보기" },
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }
@@ -469,11 +470,12 @@ internal fun proNote(live: Boolean): String =
 @Composable
 internal fun ColorRow(selected: Long, onPick: (Long) -> Unit) {
     val names = androidx.compose.runtime.remember { com.bamnat.app.ui.settings.colorNames(PersonalCalendar.COLORS) }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+    FlowRow {
         PersonalCalendar.COLORS.forEachIndexed { i, c ->
             val on = c == selected
             Box(
-                Modifier.size(40.dp).clip(MineShape).background(c.asColor())
+                Modifier.minimumInteractiveComponentSize().size(40.dp).clip(MineShape).background(c.asColor())
                     .clickable(role = Role.RadioButton) { onPick(c) }
                     .semantics { this.selected = on; contentDescription = names[i] },
                 contentAlignment = Alignment.Center,

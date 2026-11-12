@@ -76,7 +76,7 @@ internal fun ToolTryout(r: Recipe, style: WorkStyle?, modifier: Modifier = Modif
     val looks = remember(r) { r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS } }
     if (logic.isEmpty && looks.isEmpty()) return
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainer)
+    Column(modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).background(MaterialTheme.colorScheme.surfaceContainer)
         .padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("전후 해 보기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
         Text(lease.worn?.title?.let { "지금 입은 ‘$it’ 위에 이것만 더해요. 다른 화면과 기록은 그대로예요" }
@@ -179,8 +179,8 @@ private fun ButtonTryout(logic: Logic, mine: List<LogicButton>, date: LocalDate,
         val mineHere = mine.filter { it.place == place }
         val gotHere = got.filter { it.place == place }
         // 예시 화면: where the buttons sit. 누르고 있으면 지금.
-        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(14.dp))
+        Surface(shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium)
             .pointerInput(Unit) { detectTapGestures(onLongPress = { held = true }, onPress = { tryAwaitRelease(); held = false }) }) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("${placeWords(place)} · ${date.monthValue}월 ${date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge,
@@ -224,7 +224,7 @@ private fun ButtonTryout(logic: Logic, mine: List<LogicButton>, date: LocalDate,
  */
 @Composable
 private fun ValuesTried(logic: Logic, tried: LogicTryout.Tried, date: LocalDate, onReset: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp)
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp)
         .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✦ 값 칸 (해 보기)", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
@@ -261,7 +261,7 @@ private fun RuleTryout(got: List<LogicRule>, mine: List<LogicRule>, date: LocalD
     Text("자동 규칙 · 상황 만들어 보기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
     got.forEachIndexed { i, r ->
         var made by remember(r, date) { mutableStateOf(false) }
-        Surface(shape = RoundedCornerShape(14.dp), tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+        Surface(shape = MaterialTheme.shapes.medium, tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(r.name, style = MaterialTheme.typography.titleSmall)
                 Text(sample(r.say(), facts.scope(date)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -281,7 +281,7 @@ private fun RuleTryout(got: List<LogicRule>, mine: List<LogicRule>, date: LocalD
                     val t = LogicTryout.rule(r, date, facts)
                     // 지금: what my own rules on the same 상황 do that day.
                     val now = mine.filter { it.on == r.on }.map { it to LogicTryout.rule(it, date, facts) }.filter { it.second.runs }
-                    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp),
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh).padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text("지금", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(if (now.isEmpty()) "이때 아무 일도 없어요" else now.joinToString("\n") { (m, x) -> "‘${m.name}’: ${x.result}" },

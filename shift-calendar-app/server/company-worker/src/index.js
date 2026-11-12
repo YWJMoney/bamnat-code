@@ -83,12 +83,12 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { hasPro, INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
+import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
-import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
+import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
@@ -337,6 +337,8 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
     // 1.39 [CARE-04] 끝난 의견 쉬기는 소식 한 번, 끝난 지 180일 지난 경고·쉬기 기록은 지움.
     ...carePrune(recipeDeps, env, now),
+    // 2.0.0 [RVD-15] 복구 코드로 옮긴 이용권을 1년 상한으로 세려고 예전 설치에 남긴 기록('moved')은 드린 날부터 1년이 지나면 지워요.
+    stmt(env, "DELETE FROM rewards WHERE status = 'moved' AND paid_at < ?", now - REWARD_CAP.days * DAY),
     stmt(env, "DELETE FROM plaza_results WHERE at < ?", now - 30 * DAY),
     // [PLAZA-07] A company left is forgotten once its 30 days are over.
     stmt(env, "DELETE FROM members WHERE left = 1 AND since < ?", now - MEMBER.waitDays * DAY),
@@ -3723,6 +3725,8 @@ async function payEach(env, owed, { rewardCapMonths, rewardCapDays }, now) {
     const got = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status = 'paid' AND paid_at > ? AND rule_id != 'invite'",
       w.device, now - rewardCapDays * DAY);
     if (got.m + w.months > rewardCapMonths) continue;
+    // 2.0.0 [RVD-15] and the person's 1년 12달 of all rewards together.
+    if ((await rewardYear(env, w.device, now)).left < w.months) continue;
     let deferred = null;
     try {
       deferred = await deferFor(env, w.device, w.months, now);
@@ -4923,7 +4927,8 @@ const cookie = (value, maxAge) => `${COOKIE}=${value}; Path=/; Secure; HttpOnly;
  */
 function health(env) {
   const why = { password: secretIssue(env, "ADMIN_PASSWORD", 10), salt: secretIssue(env, "RATE_SALT", 1) };
-  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
+  // 2.0.0 [PC-32] 도는 코드의 판 이름(공유 서버 /api/health처럼). 배포 도구가 지금 판·새 판을 이 값으로 봐요. 판 이름 말고는 더 내보내지 않아요.
+  return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why, version: SERVER_VERSION };
 }
 
 /**
@@ -5193,7 +5198,9 @@ async function signedRoute(request, env, url, path, method, now, session) {
   }
   if (path === "/dev" || path.startsWith("/dev/")) return devRoute(request, env, url, path, now);
   if (path === "/rewards" && method === "GET") return json(await rewards(env, url.searchParams.get("status"), url.searchParams));
-  m = path.match(/^\/rewards\/(w[A-Za-z0-9]{22})$/);
+  // 2.0.0 [RVD-13][RVD-14] 만든 작품(m…)·친구 초대(i…) 보상도 여기서 지급해요; [RVD-16] 여럿을 한 번에.
+  if (path === "/rewards/bulk" && method === "POST") return bulkRewards(request, env, now);
+  m = path.match(/^\/rewards\/([wmi][A-Za-z0-9]{20,24})$/);
   if (m && method === "POST") return setReward(request, env, m[1], now);
   if (path === "/settings" && method === "POST") return saveSettings(request, env, now);
   // [ADMUX-06] 답 목표 (SLA) per kind of question.
@@ -6826,38 +6833,84 @@ async function setRule(request, env, id, now) {
   return companyInfo(env, r.company_id);
 }
 
+/** 2.0.0 [RVD-16] What a reward is for, from its rule: the 드릴 보상 chips and filter. */
+const REWARD_KIND_SQL = `CASE w.rule_id WHEN 'invite' THEN 'invite' WHEN 'maker' THEN 'maker' WHEN 'rate' THEN 'rate' WHEN '' THEN 'ask'
+  WHEN 'first' THEN 'first' ELSE 'rule' END`;
+export const REWARD_KINDS = ["rule", "ask", "rate", "first", "invite", "maker"];
+
 async function rewards(env, status, params = new URLSearchParams()) {
   const wanted = ["owed", "paid", "void"].includes(status) ? status : "owed";
+  const kind = REWARD_KINDS.includes(params.get("kind")) ? params.get("kind") : "";
   const pg = page(params);
+  const now = Date.now();
   // [ADMIN-16] A company's name finds its rewards; a rate's reward has no company and is left out then.
   const like = companyLike(params.get("q"));
   const rows = await all(env, `
-    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, w.deferred, p.dept, c.id AS company_id, c.name AS company, u.version
-      , t.trade, t.unit, t.region, t.job
+    SELECT w.id, w.months, w.status, w.memo, w.created_at, w.paid_at, w.rule_id, w.deferred, w.device, w.report_id, p.dept, c.id AS company_id, c.name AS company, u.version
+      , t.trade, t.unit, t.region, t.job, ${REWARD_KIND_SQL} AS kind
     FROM rewards w LEFT JOIN reports p ON p.id = w.report_id LEFT JOIN companies c ON c.id = p.company_id LEFT JOIN rules u ON u.id = w.rule_id
       LEFT JOIN rates t ON t.id = w.report_id
-    WHERE w.status = ?1 AND (?2 = '' OR c.norm LIKE ?2 ESCAPE '\\') ORDER BY w.created_at DESC LIMIT ?3 OFFSET ?4`, wanted, like, pg.limit + 1, pg.after);
+    WHERE w.status = ?1 AND (?2 = '' OR c.norm LIKE ?2 ESCAPE '\\') AND (?5 = '' OR ${REWARD_KIND_SQL} = ?5)
+    ORDER BY w.created_at DESC LIMIT ?3 OFFSET ?4`, wanted, like, pg.limit + 1, pg.after, kind);
   // [INVITE-06] How invites went, beside the rewards they gave, in the same trip as the counts.
-  const [counts, invites] = await rewardCounts(env, !params.get("after"), Date.now());
+  const [counts, invites, owedKinds] = await rewardCounts(env, !params.get("after"), now);
   const { items, next } = sqlPage(rows, pg);
   // 1.39 [ADM3-49] 드릴 보상의 Claude 지급 초안.
   const drafts = wanted === "owed" ? await draftsFor(env, items.map((w) => rewardDraftKey(w.id))) : new Map();
+  // 2.0.0 [RVD-13]~[RVD-16] 드릴 보상: how much of the person's 1년 12달 is used, and what to judge a 만든 작품·친구 초대 by.
+  const owedOnly = wanted === "owed";
+  const years = new Map();
+  if (owedOnly) for (const d of new Set(items.map((w) => w.device))) years.set(d, await rewardYear(env, d, now));
+  const extra = owedOnly ? await rewardSignals(env, items, now) : new Map();
+  const kinds = owedOnly ? owedKinds : undefined;
   return {
     invites,
     status: wanted,
     next,
+    ...(kinds ? { kinds } : {}),
     counts: Object.fromEntries(counts.map((x) => [x.status, x.n])),
-    rewards: items.map((w) => ({
-      id: w.id, months: w.months, status: w.status, memo: w.memo,
-      // [PLZ-14] A rate's reward names the rate instead of a company.
-      company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` }
-        : w.rule_id === "invite" ? { id: "", name: "친구 초대" } : { id: w.company_id, name: w.company ?? "" },
-      invite: w.rule_id === "invite",
-      dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
-      version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
-      ...(drafts.get(rewardDraftKey(w.id)) ? { draft: drafts.get(rewardDraftKey(w.id)) } : {}),
-    })),
+    rewards: items.map((w) => {
+      const year = years.get(w.device);
+      return {
+        id: w.id, months: w.months, status: w.status, memo: w.memo, kind: w.kind,
+        // [PLZ-14] A rate's reward names the rate instead of a company.
+        company: w.trade ? { id: "", name: `임금표 · ${JOBS[w.job] ?? ""} ${REGIONS[w.region] ?? "전국"}` }
+          : w.rule_id === "invite" ? { id: "", name: "친구 초대" } : w.rule_id === "maker" ? { id: "", name: "만든 작품" } : { id: w.company_id, name: w.company ?? "" },
+        invite: w.rule_id === "invite",
+        dept: w.trade ? `${w.trade} ${RATE_UNITS[w.unit]?.name ?? ""}` : w.dept, rate: Boolean(w.trade),
+        version: w.version, ask: w.rule_id === "", createdAt: iso(w.created_at), paidAt: w.paid_at ? iso(w.paid_at) : null, deferred: Boolean(w.deferred),
+        ...(year ? { year, capped: year.used + w.months > year.cap } : {}),
+        ...(extra.get(w.id) ?? {}),
+        ...(drafts.get(rewardDraftKey(w.id)) ? { draft: drafts.get(rewardDraftKey(w.id)) } : {}),
+      };
+    }),
   };
+}
+
+/**
+ * 2.0.0 [RVD-13][RVD-14] 검토 SVC-05·06: what an admin judges an owed reward by, as its own fields. A 만든 작품: the work, its
+ * '쓰는 분' and 7일 유지(%), reports. A 친구 초대 group: friends, how many proved Play's app on a real phone (Play Integrity, kept a week),
+ * how many typed the code instead of coming by the link, and the code's 몰림 notes of the last 30 days. The install ids and phone marks
+ * are what the apps sent (SVC-06), so these are the only things the server can add.
+ */
+async function rewardSignals(env, items, now) {
+  const out = new Map();
+  for (const w of items) {
+    if (w.rule_id === "maker") {
+      const [, mk, ...ref] = String(w.report_id).split(":");
+      const code = ref.at(-1) ?? "";
+      const r = await one(env, "SELECT code, title, applied, kept7, flags, state FROM recipes WHERE code = ?", code);
+      out.set(w.id, { makerKind: mk, work: r ? { code: r.code, title: r.title, users: r.applied, kept: r.applied ? Math.round((100 * r.kept7) / r.applied) : 0,
+        flags: r.flags, shown: r.state === "visible" } : { code, title: "", users: 0, kept: 0, flags: 0, shown: false } });
+    } else if (w.rule_id === "invite") {
+      const f = await one(env, `SELECT COUNT(*) AS n, COALESCE(SUM(u.source = 'typed'), 0) AS typed, COALESCE(SUM(g.ok = 1 AND g.at > ?2), 0) AS proven, MIN(u.code) AS code
+        FROM invite_uses u LEFT JOIN integrity g ON g.device = u.invitee WHERE u.batch = ?1`, w.id, now - 7 * DAY);
+      const burst = f.code ? await one(env, "SELECT COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND target = ? AND at > ?", f.code, now - 30 * DAY) : null;
+      // [checked] false: Play Integrity is off (INTEGRITY_MODE), so no phone could have proven itself and [proven] says nothing.
+      out.set(w.id, { friends: { n: f.n, proven: f.proven, checked: integrityMode(env) !== "off", typed: f.typed, bursts: burst?.n ?? 0 } });
+    }
+  }
+  return out;
 }
 
 async function setReward(request, env, id, now) {
@@ -6867,25 +6920,61 @@ async function setReward(request, env, id, now) {
   // [MON-08] How long, chosen when it is given: 회사 방식 3, 제안 1, 큰 개선 6~12 (수익화 확정 4장 7).
   if (given(body.months) && (!Number.isInteger(body.months) || body.months < 1 || body.months > MONEY.passMonths)) refuse("months", "months");
   const r = await one(env, "SELECT * FROM rewards WHERE id = ?", id);
-  if (!r) return json({ error: "not_found" }, 404);
-  const months = body.status === "paid" && given(body.months) ? body.months : r.months;
-  // Someone already paying gets the months as a later renewal from Play; anyone else a pass.
+  if (!r || r.status === "moved") return json({ error: "not_found" }, 404);
+  const out = await applyReward(env, r, body.status, body.status === "paid" && given(body.months) ? body.months : r.months, memo, now);
+  return out.error ? json(out, 409) : json({ ok: true, ...out });
+}
+
+/**
+ * Sets one reward to [status], as an admin's 지급하기·취소·대기로 되돌리기: someone already paying gets the months as a later
+ * renewal from Play, anyone else a pass. 2.0.0 [RVD-15] Paying past the person's 1년 12달 is refused with what is left
+ * ({ error: "cap", left, used }), so the admin can give that much or cancel it.
+ */
+async function applyReward(env, r, status, months, memo, now) {
+  if (status === "paid" && r.status !== "paid") {
+    const year = await rewardYear(env, r.device, now);
+    if (months > year.left) return { error: "cap", field: "months", left: year.left, used: year.used, cap: year.cap };
+  }
   let deferred = null;
-  if (body.status === "paid" && r.status !== "paid") {
+  if (status === "paid" && r.status !== "paid") {
     try {
       deferred = await deferFor(env, r.device, months, now);
     } catch (e) {
-      console.error(`defer ${id}: ${e?.code ?? e}`);
+      console.error(`defer ${r.id}: ${e?.code ?? e}`);
     }
   }
   const note = deferred ? `Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})${memo ? ` · ${memo}` : ""}` : memo;
-  const paidAt = body.status === "paid" ? (r.status === "paid" ? r.paid_at : now) : null;
-  const wasDeferred = body.status === "paid" ? (deferred ? 1 : r.status === "paid" ? r.deferred : 0) : 0;
-  await run(env, "UPDATE rewards SET status = ?, months = ?, memo = COALESCE(?, memo), paid_at = ?, deferred = ? WHERE id = ?",
-    body.status, months, note, paidAt, wasDeferred, id);
-  await audit(env, now, `reward_${body.status}`, id, `${months}개월${deferred ? " 미룸" : ""}${memo ? ` ${memo}` : ""}`);
-  if (r.status === "owed" && body.status !== "owed") await settleDraft(env, rewardDraftKey(id), body.status, now);
-  return json({ ok: true, months, deferred: Boolean(deferred) });
+  const paidAt = status === "paid" ? (r.status === "paid" ? r.paid_at : now) : null;
+  const wasDeferred = status === "paid" ? (deferred ? 1 : r.status === "paid" ? r.deferred : 0) : 0;
+  // [RVD-16] Only from the state the admin saw: two taps (or a tap and a 여럿 고르기) do not pay twice.
+  const done = await run(env, "UPDATE rewards SET status = ?, months = ?, memo = COALESCE(?, memo), paid_at = ?, deferred = ? WHERE id = ? AND status = ?",
+    status, months, note, paidAt, wasDeferred, r.id, r.status);
+  if (!done.meta.changes) return { error: "state" };
+  await audit(env, now, `reward_${status}`, r.id, `${months}개월${deferred ? " 미룸" : ""}${memo ? ` ${memo}` : ""}`);
+  if (r.status === "owed" && status !== "owed") await settleDraft(env, rewardDraftKey(r.id), status, now);
+  return { months, deferred: Boolean(deferred) };
+}
+
+/** 2.0.0 [RVD-16] 드릴 보상이 많을 때: up to 50 picked rewards paid (each its own months) or cancelled; what was skipped and why. */
+async function bulkRewards(request, env, now) {
+  const body = await readJson(request, 4096);
+  if (!["paid", "void"].includes(body.status)) refuse("status", "status");
+  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 50) refuse("ids", "ids");
+  const ids = [...new Set(body.ids.filter((x) => typeof x === "string" && /^[wmi][A-Za-z0-9]{20,24}$/.test(x)))];
+  if (!ids.length) refuse("ids", "ids");
+  let done = 0;
+  const skipped = [];
+  for (const id of ids) {
+    const r = await one(env, "SELECT * FROM rewards WHERE id = ?", id);
+    if (!r || r.status !== "owed") {
+      skipped.push({ id, why: "state" });
+      continue;
+    }
+    const out = await applyReward(env, r, body.status, r.months, null, now);
+    if (out.error) skipped.push({ id, why: out.error, ...(out.error === "cap" ? { left: out.left } : {}) });
+    else done++;
+  }
+  return json({ done, skipped });
 }
 
 async function saveSettings(request, env, now) {

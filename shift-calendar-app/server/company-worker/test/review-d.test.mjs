@@ -171,7 +171,16 @@ test("[RVD-08] deep health reads the tables and the app's daily path, and is 503
   assert.equal(broken.status, 503);
   assert.equal(broken.data.config === true && broken.data.schema === true, false);
   // The plain one stays as it was (the setup screen reads it).
-  assert.deepEqual(Object.keys((await call("GET", "/api/admin/health")).data).sort(), ["database", "password", "salt", "why"]);
+  assert.deepEqual(Object.keys((await call("GET", "/api/admin/health")).data).sort(), ["database", "password", "salt", "version", "why"]);
+});
+
+// ---- [PC-32] 회사 서버가 도는 판을 알려 줘요(배포 도구가 이 값으로 지금 판·새 판을 봐요) ----
+
+test("[PC-32] health says the running code's version, plain and deep, and nothing more", async () => {
+  const { call } = server();
+  assert.equal((await call("GET", "/api/admin/health")).data.version, SERVER_VERSION);
+  assert.equal((await call("GET", "/api/admin/health?deep=1")).data.version, SERVER_VERSION);
+  assert.match(SERVER_VERSION, /^\d+\.\d+\.\d+$/);
 });
 
 // ---- [RVD-09] 검토 SVC-89: 광장 답글·뽑힌 답 찾기가 글 표 전체를 훑음 ----
@@ -194,6 +203,7 @@ test("[RVD-09] replies and chosen answers are found through an index, not by rea
 
 import { shipNow, resumeShip, shippedVersion } from "../src/desk.js";
 import { inboxAnswer } from "../src/inbox.js";
+import { SERVER_VERSION } from "../src/version.js";
 
 test("[RVD-11] one answer failing does not stop the others, the notice and the record; the version stays 'sending' and the next tick sends the rest once", async () => {
   const { call, env } = server();
