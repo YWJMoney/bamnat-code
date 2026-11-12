@@ -73,6 +73,27 @@ object AppLock {
      */
     fun resting(context: Context, on: Boolean): Boolean = on && !available(context)
 
+    /**
+     * 2.0.0 [RVL-09] 총괄 검토 #458 (조건 3, 카드에 X가 없었어요): the resting card is shown over the calendar until closed. Closed, it
+     * stays said as one line by the switch in 설정 › 개인정보 › 앱 잠금, and comes back only when the state changes again (the phone gets
+     * its lock back, or 앱 잠금 is turned off, and then rests once more). Kept on this phone only, apart from the settings a backup carries.
+     */
+    fun restingCardShown(context: Context, on: Boolean): Boolean {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (!resting(context, on)) {
+            if (prefs.getBoolean(K_RESTING_CLOSED, false)) prefs.edit().remove(K_RESTING_CLOSED).apply()
+            return false
+        }
+        return !prefs.getBoolean(K_RESTING_CLOSED, false)
+    }
+
+    fun closeRestingCard(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(K_RESTING_CLOSED, true).apply()
+    }
+
+    private const val PREFS = "app_lock"
+    private const val K_RESTING_CLOSED = "resting_card_closed"
+
     fun onStop(changingConfigurations: Boolean) {
         if (!changingConfigurations) stoppedAt = SystemClock.elapsedRealtime()
     }

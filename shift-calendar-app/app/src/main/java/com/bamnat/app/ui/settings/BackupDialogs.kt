@@ -3,6 +3,7 @@ package com.bamnat.app.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -81,8 +82,10 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
             }
         },
+        // 총괄 검토 #458 (조건 2, 같은 무게의 글자 단추 셋이 줄지어 있었어요): the one filled button is the safer save; 취소 and
+        // 암호 없이 stay text buttons.
         confirmButton = {
-            TextButton(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
+            com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
         },
         dismissButton = {
             Row {
@@ -147,7 +150,9 @@ fun UnlockBackupDialog(locked: LockedBackup, onUnlock: (CharArray) -> Unit, onDi
 
 @Composable
 private fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null) {
+    // 총괄 검토 #458 (rvl13 200%: 칸이 글 폭보다 좁았어요): as wide as the window's words, in every window that asks for a password.
     OutlinedTextField(
+        modifier = Modifier.fillMaxWidth(),
         value = value,
         onValueChange = { onChange(it.take(64)) },
         label = { Text(label) },

@@ -1,26 +1,38 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.PhoneAndroid
+import androidx.compose.material.icons.outlined.RadioButtonUnchecked
 import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -30,8 +42,9 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.PhoneMove
 import com.bamnat.app.share.ShareLinkException
-import com.bamnat.app.ui.components.AlertDialog
+import com.bamnat.app.ui.components.AppSheet
 import com.bamnat.app.ui.components.NudgeCard
+import com.bamnat.app.ui.components.ScrollMoreColumn
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
@@ -114,7 +127,15 @@ fun PhoneMovedNotice(modifier: Modifier = Modifier) {
         onClose = { c.phoneMove.close() },
         onClick = { open = true },
     )
-    if (open) MovedDialog(m, allowed.first, allowed.second, ringing, onDismiss = { open = false })
+    if (open) MovedSheet(m, allowed.first, allowed.second, ringing, said = said, busy = busy, onRelink = {
+        if (!busy) {
+            busy = true
+            scope.launch {
+                said = relinkMoved(c)
+                busy = false
+            }
+        }
+    }, onDismiss = { open = false })
 }
 
 internal enum class MovedTodo { RELINK, ALLOW, NONE }
@@ -149,28 +170,74 @@ internal fun movedLine(m: PhoneMove.Moved, notify: Boolean, exact: Boolean, ring
 /** Characters two lines of a card's second line hold on a folded phone (369dp) at 100%. */
 private const val LINE_FITS = 28
 
-/** Every line of what came, what to do again and what stays behind, for a tap on the card. */
+/**
+ * Every line of what came, what to do again and what stays behind, for a tap on the card.
+ * 2.0.0 총괄 검토 #458: a sheet (with big letters it is taller than a window could hold, 조건 12), its inside scrolling with
+ * '아래 더 있음' while there is more. Each thing to do again is a row that goes straight to its place (다시 잇기 right here, 알림·정확한
+ * 알람 to 알람 점검, 수면 기록·잠 자동으로 잡기 to their switch, 방해 금지 접근 to the phone's page); done ones are ticked, read again on the
+ * way back. The sleep rows are only for a phone whose settings came with them on (쓰던 분만).
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun MovedDialog(m: PhoneMove.Moved, notify: Boolean, exact: Boolean, ringing: Boolean, onDismiss: () -> Unit) {
-    val style = LocalContext.current.appContainer.settingsRepository.current.workStyle
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("옮겨 온 것 확인") },
-        text = {
-            // Scrolls inside: with big letters the three groups are taller than the window (조건 12).
-            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+private fun MovedSheet(
+    m: PhoneMove.Moved, notify: Boolean, exact: Boolean, ringing: Boolean,
+    said: String?, busy: Boolean, onRelink: () -> Unit, onDismiss: () -> Unit,
+) {
+    val context = LocalContext.current
+    val c = context.appContainer
+    val s = c.settingsRepository.current
+    val style = s.workStyle
+    val autoOn = s.sleepAuto && remember { runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false) }
+    var dndOk by remember { mutableStateOf(true) }
+    var autoOk by remember { mutableStateOf(true) }
+    var healthOk by remember { mutableStateOf(true) }
+    var back by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        dndOk = com.bamnat.app.sleep.SleepDnd.permitted(context)
+        autoOk = com.bamnat.app.sleep.SleepAutoWatch.permitted(context)
+        back++
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(back, s.healthSleep) {
+        if (s.healthSleep) healthOk = runCatching { c.healthSleep.granted() }.getOrDefault(false)
+    }
+    // A place in the app: the sheet goes first, so what opens is not under it.
+    fun go(open: () -> Unit) {
+        onDismiss()
+        open()
+    }
+    // Open all the way, so the '아래 더 있음' line at its foot is on screen whenever there is more (half open, it was below the edge).
+    AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Text("옮겨 온 것 확인", style = MaterialTheme.typography.titleLarge,
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp))
+        ScrollMoreColumn(Modifier.weight(1f, fill = false).padding(start = 24.dp, end = 24.dp, bottom = 16.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Section("그대로 왔어요", listOfNotNull(
                     movedRecords(style),
                     "설정: ${movedSettings(style)}",
                     "알람: 이 휴대폰에 다시 걸었어요".takeIf { ringing },
                     "내가 만든 공유 링크 ${m.links}개".takeIf { m.links > 0 },
                 ))
-                Section("한 번 더 해 주세요", listOfNotNull(
-                    "받은 근무표 ${m.waiting.size}개 다시 잇기 (${m.waiting.joinToString(", ") { it.title.ifBlank { "이름 없음" } }})".takeIf { m.waiting.isNotEmpty() },
-                    "알림 허용".takeIf { !notify },
-                    "정확한 알람 허용".takeIf { !exact },
-                    "헬스 커넥트·잠 자동으로 잡기·방해 금지 허용(쓰던 분만)",
-                ))
+                Column {
+                    Text("한 번 더 해 주세요", style = MaterialTheme.typography.titleSmall)
+                    if (m.waiting.isNotEmpty()) {
+                        AgainRow(
+                            if (busy) "잇는 중…" else "받은 근무표 ${m.waiting.size}개 다시 잇기",
+                            said ?: m.waiting.joinToString(", ") { it.title.ifBlank { "이름 없음" } },
+                            done = false, onClick = onRelink.takeIf { !busy },
+                        )
+                    } else if (said != null) AgainRow("받은 근무표 다시 잇기", said, done = true)
+                    AgainRow(if (notify) "알림 허용됨" else "알림 허용", null, done = notify,
+                        onClick = { go { NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK) } })
+                    if (ringing) AgainRow(if (exact) "정확한 알람 허용됨" else "정확한 알람 허용", null, done = exact,
+                        onClick = { go { NoticeLinks.open(NoticeLinks.Target.ALARM_CHECK) } })
+                    if (s.healthSleep) AgainRow("워치·휴대폰 수면 기록(헬스 커넥트) 허용", null, done = healthOk,
+                        onClick = { go { SettingsLinks.open(SettingsPage.NOTICES, "워치·휴대폰 수면 기록 함께 보기") } })
+                    if (autoOn) AgainRow("잠 자동으로 잡기(활동 인식) 허용", null, done = autoOk,
+                        onClick = { go { SettingsLinks.open(SettingsPage.NOTICES, com.bamnat.app.ui.sleep.SLEEP_AUTO_ROW) } })
+                    if (s.sleepDnd) AgainRow("자는 동안 방해 금지 접근 허용", null, done = dndOk,
+                        onClick = { runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) } })
+                }
                 Section("옛 휴대폰에만 있어요", listOfNotNull(
                     "밤 소리 클립",
                     "공유 링크를 고치는 열쇠와 프로 복구 코드: 화면 잠금이 없던 휴대폰의 구글 백업에는 들어가지 않아요. 옛 휴대폰에서 암호를 건 백업 파일로 옮겨 주세요".takeIf { !m.keys },
@@ -178,9 +245,36 @@ private fun MovedDialog(m: PhoneMove.Moved, notify: Boolean, exact: Boolean, rin
                     "영수증·메모 사진: 구글 백업에는 빠져요(휴대폰 옮기기와 ‘사진도 백업’ 파일에는 들어가요)",
                 ))
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("확인") } },
-    )
+        }
+    }
+}
+
+/** One thing to do again: a row that goes there (48dp, 조건 9), or ticked once done. */
+@Composable
+private fun AgainRow(title: String, detail: String?, done: Boolean, onClick: (() -> Unit)? = null) {
+    val tappable = !done && onClick != null
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 48.dp)
+            .then(if (tappable) Modifier.clickable(role = Role.Button, onClick = onClick!!) else Modifier)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (done) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = if (done) "끝냄" else "할 일",
+            tint = if (done) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.outline,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge,
+                color = if (done) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+            detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        if (tappable) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+    }
 }
 
 /** 조건 13: what came, in the words of the user's kind of work (a 가게 has no 조 or 근무 약어). */
@@ -245,16 +339,17 @@ internal suspend fun relinkMoved(c: AppContainer): String {
 /**
  * 2.0.0 [RVL-09] (검토 DATA-11·U12-08) 앱 잠금 is on, but the phone's own lock was taken off: the app opens as it is. Said over the
  * calendar, with the way to the phone's lock settings (the switch stays as the user left it, and locks again once there is a lock).
+ * 총괄 검토 #458 (조건 3): it has an X like every card; closed, it stays as one line by the switch in 설정 › 개인정보 ([AppLock.restingCardShown]).
  */
 @Composable
 fun AppLockRestingNotice(on: Boolean, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    var resting by rememberSaveable { mutableStateOf(false) }
+    var shown by rememberSaveable { mutableStateOf(false) }
     LifecycleResumeEffect(on) {
-        resting = AppLock.resting(context, on)
+        shown = AppLock.restingCardShown(context, on)
         onPauseOrDispose { }
     }
-    if (!resting) return
+    if (!shown) return
     NudgeCard(
         "휴대폰 잠금이 없어 앱 잠금이 쉬고 있어요",
         modifier.padding(horizontal = 16.dp, vertical = 4.dp),
@@ -262,8 +357,21 @@ fun AppLockRestingNotice(on: Boolean, modifier: Modifier = Modifier) {
         icon = Icons.Outlined.Lock,
         detail = "휴대폰에 잠금을 걸면 다시 잠겨요",
         action = "잠금 설정 열기",
-        onAction = {
-            runCatching { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)) }
+        onAction = { openPhoneLockSettings(context) },
+        onClose = {
+            AppLock.closeRestingCard(context)
+            shown = false
         },
     )
 }
+
+/** The phone's own screen-lock settings (PIN·패턴·지문), from the resting card and the line in 설정 › 개인정보. */
+internal fun openPhoneLockSettings(context: android.content.Context) {
+    runCatching {
+        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
+/** 2.0.0 [RVL-09] The one line by the 앱 잠금 switch while it rests (shown whether or not the card over the calendar was closed). */
+internal const val APP_LOCK_RESTING_LINE = "휴대폰 잠금이 없어 쉬고 있어요. 잠금을 걸면 다시 잠겨요"
