@@ -220,14 +220,16 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: 
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // 2.0.0 [RVH-41] 검토 T30-102: in this calendar's own words.
+        val said = remember(feature, style) { FeatureRegistry.said(feature, style) }
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(feature.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false).semantics { heading() })
+                Text(said.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false).semantics { heading() })
                 // [TIER-06]
                 if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp))
             }
-            Text(feature.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("어디: ${FeatureRegistry.whereFor(feature, style)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text(said.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("어디: ${said.where}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = on, onCheckedChange = null)

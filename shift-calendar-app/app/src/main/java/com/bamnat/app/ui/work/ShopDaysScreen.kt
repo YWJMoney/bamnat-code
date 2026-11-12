@@ -78,6 +78,15 @@ object ShopKeeper {
 
     fun openType(types: List<ShiftType>): ShiftType? = types.firstOrNull { !it.isOff && it.name == OPEN_NAME }
 
+    /** Whether the break of [rules] falls inside a day from [start] to [end] (a short day may end before it). */
+    internal fun fits(rules: ShopRules, start: LocalTime?, end: LocalTime?): Boolean {
+        val b = rules.breakStart ?: return false
+        if (start == null || end == null) return false
+        val span = com.bamnat.core.model.WorkTime.spanMinutes(start, end)
+        val from = com.bamnat.core.model.WorkTime.spanMinutes(start, b).let { if (it == com.bamnat.core.model.WorkTime.MINUTES_PER_DAY) 0 else it }
+        return from + rules.breakMinutes <= span
+    }
+
     /** One change to shop days at a time, so a save and the catch-up on opening the app do not undo each other. */
     private val lock = Mutex()
 
@@ -85,21 +94,42 @@ object ShopKeeper {
     suspend fun apply(c: AppContainer, id: String, rules: ShopRules, today: LocalDate = Today.date()) = lock.withLock {
         val schedule = c.calendars.repository(id)
         val types = schedule.shiftTypes.first()
+        val before = c.calendars.get(id)?.shop
         val open = openType(types)
-        val openId = schedule.saveShiftType(
-            (open ?: ShiftType(0, OPEN_NAME, "영", 0xFF27AE60, null, null, sortOrder = -2, icon = "store"))
-                .copy(start = rules.open, end = rules.close, breakMinutes = open?.breakMinutes ?: 0),
-        )
-        if (types.none { it.name == SHORT_NAME }) {
-            val shortEnd = rules.open.plusHours(maxOf(1L, java.time.Duration.between(rules.open, rules.close).toHours() / 2))
-            schedule.saveShiftType(ShiftType(0, SHORT_NAME, "단", 0xFFE0A100, rules.open, shortEnd, sortOrder = -1, icon = "store"))
+        // [RVH-36] 검토 TYPE-23 브레이크 타임 goes onto the day kinds (hours and pay leave it out); a break set by hand on 영업
+        // stays until the shop days set or take one away.
+        val keepBreak = rules.breakEnd == null && before?.breakEnd == null
+        fun ShiftType.withBreak(): ShiftType = when {
+            keepBreak -> this
+            rules.breakEnd != null && fits(rules, start, end) -> copy(breakMinutes = rules.breakMinutes, breakStart = rules.breakStart)
+            else -> copy(breakMinutes = 0, breakStart = null)
         }
-        val weekly = WorkPattern.Weekly(today, DayOfWeek.entries.associateWith { d -> if (d in rules.closedWeekdays) null else openId })
+        // [RVH-33] The days already lived keep the hours they had (영업 hours of last month stay last month's).
+        fun ShiftType.changedTo(next: ShiftType): ShiftType = if (this.id == 0L) next else withTimesFrom(next, today)
+        val openId = schedule.saveShiftType(
+            open?.let { it.changedTo(it.copy(start = rules.open, end = rules.close).withBreak()) }
+                ?: ShiftType(0, OPEN_NAME, "영", 0xFF27AE60, rules.open, rules.close, sortOrder = -2, icon = "store").withBreak(),
+        )
+        // [RVH-36] 검토 WORK-23 단축영업 with the hours the shop days set, counting past midnight; a kind made by hand keeps its hours
+        // until the shop days name some.
+        val short = types.firstOrNull { !it.isOff && it.name == SHORT_NAME }
+        val (shortStart, shortEnd) = rules.shortHours
+        val shortId = when {
+            short == null -> schedule.saveShiftType(ShiftType(0, SHORT_NAME, "단", 0xFFE0A100, shortStart, shortEnd, sortOrder = -1, icon = "store").withBreak())
+            rules.shortOpen != null || rules.shortWeekdays.isNotEmpty() -> schedule.saveShiftType(short.changedTo(short.copy(start = shortStart, end = shortEnd).withBreak()))
+            else -> short.id
+        }
+        val weekly = WorkPattern.Weekly(today, DayOfWeek.entries.associateWith { d ->
+            when (d) {
+                in rules.closedWeekdays -> null
+                in rules.shortWeekdays -> shortId
+                else -> openId
+            }
+        })
         // From today on only: the weeks already lived keep the days they had, and their sales stats with them.
         if (schedule.patterns.first().isEmpty()) schedule.setFirstPattern(weekly, today) else schedule.changePatternFrom(weekly, today)
         // The monthly days off and holidays a weekly order cannot hold go onto the days themselves; the
         // ones the old rules put there and the new ones do not are opened again.
-        val before = c.calendars.get(id)?.shop
         val to = today.plusDays(ShopDays.AHEAD_DAYS)
         val now = ShopDays.extraClosed(rules, today, to, KoreanHolidays::isHoliday).toSet()
         val was = before?.let { ShopDays.extraClosed(it, today, to, KoreanHolidays::isHoliday) }.orEmpty().toSet()
@@ -169,6 +199,23 @@ class ShopDaysViewModel(private val c: AppContainer, val calendarId: String) : V
 
     fun edit(transform: (ShopRules) -> ShopRules) { _rules.value = transform(_rules.value) }
 
+    init {
+        // [RVH-36] Shop days saved before 2.0.0 hold no short hours or break: show the ones the day kinds already have.
+        viewModelScope.launch {
+            val types = c.calendars.repository(calendarId).shiftTypes.first()
+            val short = types.firstOrNull { !it.isOff && it.name == ShopKeeper.SHORT_NAME }
+            val open = ShopKeeper.openType(types)
+            fun ShopRules.known(): ShopRules {
+                var r = this
+                if (r.shortOpen == null && short?.start != null && short.end != null) r = r.copy(shortOpen = short.start, shortClose = short.end)
+                if (r.breakStart == null && open?.breakStart != null && open.breakMinutes > 0) r = r.copy(breakStart = open.breakStart, breakMinutes = open.breakMinutes)
+                return r
+            }
+            kept = kept.known()
+            _rules.value = _rules.value.known()
+        }
+    }
+
     fun save(onDone: (String) -> Unit) {
         if (_busy.value) return
         _busy.value = true
@@ -188,7 +235,7 @@ class ShopDaysViewModel(private val c: AppContainer, val calendarId: String) : V
 fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) -> Unit) {
     val rules by vm.rules.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
-    var picking by remember { mutableStateOf<Boolean?>(null) }
+    var picking by remember { mutableStateOf<Pick?>(null) }
     // 1.37 PC 4차: 요일을 누르고 저장 없이 뒤로 가면 말없이 사라져, 첫 설정 뒤 정기휴무가 '없음'이었어요. 나가기 전에 물어요.
     var leaving by remember { mutableStateOf(false) }
     val leave = { if (vm.changed(rules) && !busy) leaving = true else onBack() }
@@ -220,27 +267,60 @@ fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) 
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("영업시간", style = MaterialTheme.typography.titleMedium)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { picking = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                                Text("문 여는 시간 ${Fmt.time(rules.open)}")
-                            }
-                            OutlinedButton(onClick = { picking = false }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                                Text("닫는 시간 ${Fmt.time(rules.close)}")
-                            }
-                        }
+                        HoursButtons(rules.open, rules.close, "문 여는 시간", "닫는 시간", { picking = Pick.OPEN }, { picking = Pick.CLOSE })
+                        // [RVH-36] 검토 WORK-23 자정을 넘겨 닫는 가게: say it, so 02:00 does not read as two in the afternoon's mistake.
+                        if (com.bamnat.core.model.WorkTime.isOvernight(rules.open, rules.close)) Hint("자정을 넘겨 다음 날 ${Fmt.time(rules.close)}에 닫아요")
+                        HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                        // [RVH-36] 검토 TYPE-23 브레이크 타임 한 줄.
+                        val breakEnd = rules.breakEnd
+                        SwitchLine(
+                            "브레이크 타임",
+                            if (breakEnd != null) "${Fmt.time(rules.breakStart!!)}~${Fmt.time(breakEnd)}에는 손님을 받지 않아요. 일한 시간에서 빼요"
+                            else "점심 장사 뒤처럼 문을 잠깐 닫는 때가 있으면 켜요",
+                            breakEnd != null,
+                        ) { on -> vm.edit { it.copy(breakStart = if (on) LocalTime.of(15, 0) else null, breakMinutes = if (on) 120 else 0) } }
+                        if (breakEnd != null) HoursButtons(rules.breakStart!!, breakEnd, "쉬기 시작", "다시 열기", { picking = Pick.BREAK_START }, { picking = Pick.BREAK_END })
                     }
                 }
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("매주 쉬는 요일 (정기휴무)", style = MaterialTheme.typography.titleMedium)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DayOfWeek.entries.forEach { d ->
-                                val on = d in rules.closedWeekdays
-                                FilterChip(
-                                    selected = on,
-                                    onClick = { vm.edit { r -> r.copy(closedWeekdays = if (on) r.closedWeekdays - d else r.closedWeekdays + d) } },
-                                    label = { Text(NthWeekday.DAY_NAMES[d.ordinal].take(1)) },
-                                )
+                        // [RVH-36] 검토 TYPE-23 검토 I02b-03 요일 줄마다 영업·단축·격주 휴무·휴무: a Saturday that closes early, a Sunday off every other week.
+                        Text("요일마다", style = MaterialTheme.typography.titleMedium)
+                        val today = Today.date()
+                        DayOfWeek.entries.forEach { d ->
+                            val now = rules.dayOf(d)
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(NthWeekday.DAY_NAMES[d.ordinal].take(1), style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(32.dp))
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+                                    com.bamnat.core.work.ShopDay.entries.forEach { kind ->
+                                        FilterChip(
+                                            selected = now == kind,
+                                            onClick = { vm.edit { it.withDay(d, kind, today) } },
+                                            label = { Text(kind.label) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (rules.shortWeekdays.isNotEmpty()) {
+                            val (shortStart, shortEnd) = rules.shortHours
+                            Text("단축영업 시간", style = MaterialTheme.typography.titleSmall)
+                            HoursButtons(shortStart, shortEnd, "여는 시간", "닫는 시간", { picking = Pick.SHORT_OPEN }, { picking = Pick.SHORT_CLOSE })
+                        }
+                        val from = rules.everyOtherFrom
+                        if (rules.everyOther.isNotEmpty() && from != null) {
+                            val thisWeek = today.with(DayOfWeek.MONDAY)
+                            val closedNow = Math.floorMod(java.time.temporal.ChronoUnit.WEEKS.between(from.with(DayOfWeek.MONDAY), thisWeek), 2L) == 0L
+                            val first = rules.everyOther.min()
+                            Text("격주 휴무는 언제 쉬어요?", style = MaterialTheme.typography.titleSmall)
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                listOf(true to thisWeek, false to thisWeek.plusWeeks(1)).forEach { (isThis, week) ->
+                                    FilterChip(
+                                        selected = closedNow == isThis,
+                                        onClick = { vm.edit { it.copy(everyOtherFrom = week) } },
+                                        label = { Text((if (isThis) "이번 주" else "다음 주") + " ${Fmt.monthDay(week.with(first))}부터") },
+                                    )
+                                }
                             }
                         }
                         HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -272,18 +352,77 @@ fun ShopDaysScreen(vm: ShopDaysViewModel, onBack: () -> Unit, onSaved: (String) 
             }
         }
     }
-    picking?.let { opening ->
+    picking?.let { pick ->
+        val (shortStart, shortEnd) = rules.shortHours
         com.bamnat.app.ui.components.TimePickerDialog(
-            title = if (opening) "문 여는 시간" else "닫는 시간",
-            initial = if (opening) rules.open else rules.close,
+            title = pick.title,
+            initial = when (pick) {
+                Pick.OPEN -> rules.open
+                Pick.CLOSE -> rules.close
+                Pick.SHORT_OPEN -> shortStart
+                Pick.SHORT_CLOSE -> shortEnd
+                Pick.BREAK_START -> rules.breakStart ?: LocalTime.of(15, 0)
+                Pick.BREAK_END -> rules.breakEnd ?: LocalTime.of(17, 0)
+            },
             onDismiss = { picking = null },
-            presets = listOf(LocalTime.of(7, 0), LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(11, 0), LocalTime.of(17, 0), LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(0, 0)),
+            presets = when (pick) {
+                Pick.BREAK_START, Pick.BREAK_END -> listOf(LocalTime.of(14, 0), LocalTime.of(14, 30), LocalTime.of(15, 0), LocalTime.of(16, 0), LocalTime.of(16, 30), LocalTime.of(17, 0))
+                else -> listOf(LocalTime.of(7, 0), LocalTime.of(9, 0), LocalTime.of(10, 0), LocalTime.of(11, 0), LocalTime.of(17, 0), LocalTime.of(21, 0), LocalTime.of(22, 0), LocalTime.of(0, 0))
+            },
             onConfirm = { t: LocalTime ->
-                vm.edit { if (opening) it.copy(open = t) else it.copy(close = t) }
+                vm.edit { r ->
+                    when (pick) {
+                        Pick.OPEN -> r.copy(open = t)
+                        Pick.CLOSE -> r.copy(close = t)
+                        Pick.SHORT_OPEN -> r.copy(shortOpen = t, shortClose = shortEnd)
+                        Pick.SHORT_CLOSE -> r.copy(shortOpen = shortStart, shortClose = t)
+                        // The break keeps its length when it starts later; its end sets the length (at least 10 minutes).
+                        Pick.BREAK_START -> r.copy(breakStart = t)
+                        Pick.BREAK_END -> r.copy(breakMinutes = com.bamnat.core.model.WorkTime.spanMinutes(r.breakStart ?: t, t).takeIf { it < com.bamnat.core.model.WorkTime.MINUTES_PER_DAY }?.coerceAtLeast(10) ?: r.breakMinutes)
+                    }
+                }
                 picking = null
             },
         )
     }
+}
+
+/** Which time the picker sets. */
+private enum class Pick(val title: String) {
+    OPEN("문 여는 시간"), CLOSE("닫는 시간"), SHORT_OPEN("단축영업 여는 시간"), SHORT_CLOSE("단축영업 닫는 시간"),
+    BREAK_START("브레이크 타임 시작"), BREAK_END("브레이크 타임 끝"),
+}
+
+/**
+ * Two time buttons side by side at half the width each, or one above the other when either does not fit in half (글자 200%·접은
+ * 폭), so a time never breaks over two lines.
+ */
+@Composable
+private fun HoursButtons(start: LocalTime, end: LocalTime, startLabel: String, endLabel: String, onStart: () -> Unit, onEnd: () -> Unit) {
+    androidx.compose.ui.layout.Layout(
+        content = {
+            OutlinedButton(onClick = onStart, modifier = Modifier.heightIn(min = 48.dp)) { Text("$startLabel ${Fmt.time(start)}") }
+            OutlinedButton(onClick = onEnd, modifier = Modifier.heightIn(min = 48.dp)) { Text("$endLabel ${Fmt.time(end)}") }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) { ms, c ->
+        val gap = 8.dp.roundToPx()
+        val w = c.maxWidth
+        val half = (w - gap) / 2
+        if (ms.all { it.maxIntrinsicWidth(androidx.compose.ui.unit.Constraints.Infinity) <= half }) {
+            val ps = ms.map { it.measure(androidx.compose.ui.unit.Constraints.fixedWidth(half)) }
+            val h = ps.maxOf { it.height }
+            layout(w, h) { ps.forEachIndexed { i, p -> p.place(i * (half + gap), (h - p.height) / 2) } }
+        } else {
+            val ps = ms.map { it.measure(androidx.compose.ui.unit.Constraints.fixedWidth(w)) }
+            layout(w, ps.sumOf { it.height } + gap) { ps[0].place(0, 0); ps[1].place(0, ps[0].height + gap) }
+        }
+    }
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @OptIn(ExperimentalLayoutApi::class)

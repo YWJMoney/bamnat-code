@@ -61,24 +61,26 @@ class SetupFlowTest {
     }
 
     /** 2교대 with 주주휴휴야야휴휴, today the second night. */
-    private fun twoShiftToSummary(vm: SetupViewModel) {
+    private fun twoShiftToSummary(vm: SetupViewModel, draftOf: () -> SetupDraft = { draft }, beforeConfirm: () -> Unit = {}) {
+        fun draft() = draftOf()
         vm.pickStyle(WorkStyle.SHIFT)
-        assertEquals(SetupStep.COMPANY, draft.step)
+        assertEquals(SetupStep.COMPANY, draft().step)
         vm.next()
-        assertEquals(SetupStep.BUNDLE, draft.step)
+        assertEquals(SetupStep.BUNDLE, draft().step)
         vm.pickBundle(ShiftBundles.TWO)
-        assertEquals(SetupStep.TIMES, draft.step)
+        assertEquals(SetupStep.TIMES, draft().step)
         // [EASE-07] The order is on the times' screen, the most usual one already picked.
-        assertTrue(draft.rotation.isNotEmpty())
-        vm.pickPreset(vm.presets(draft).first { it.codes == "DDOONNOO" })
+        assertTrue(draft().rotation.isNotEmpty())
+        vm.pickPreset(vm.presets(draft()).first { it.codes == "DDOONNOO" })
+        beforeConfirm()
         vm.confirmTimes()
-        assertEquals(SetupStep.TODAY, draft.step)
-        val night = draft.types.first { it.name == "야간" }.id
-        val follow = TodayQuestion.followUp(draft.rotation, night, draft::isOff) as FollowUp.RunDay
+        assertEquals(SetupStep.TODAY, draft().step)
+        val night = draft().types.first { it.name == "야간" }.id
+        val follow = TodayQuestion.followUp(draft().rotation, night, draft()::isOff) as FollowUp.RunDay
         vm.answerToday(today, follow.steps[1])
         vm.confirmToday()
         // [EASE-07] The alarm is a card on the summary, not a step of its own.
-        assertEquals(SetupStep.SUMMARY, draft.step)
+        assertEquals(SetupStep.SUMMARY, draft().step)
     }
 
     @Test fun nothingReachesTheCalendarUntilTheLastStepSavesItAll() = runBlocking {
@@ -110,6 +112,45 @@ class SetupFlowTest {
         assertEquals(listOf(60), day.alarms.map { it.offsetMinutes })
         // "예상 급여도 계산할까요?" is offered once.
         assertEquals(WorkStyle.SHIFT, c.firstSetup.saved.value?.style)
+    }
+
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기 over the calendar's shifts: the 주간 the user gave two alarms and a color of their own
+     * keeps them, its new time is said on the summary before saving and saved. Before 2.0.0 it came back with one alarm, quietly.
+     */
+    @Test fun setupAgainKeepsTheAlarmsAndColorsAndSaysTheNewTimes() = runBlocking {
+        val first = vm()
+        twoShiftToSummary(first)
+        first.save()
+        waitFor("the first save") { c.setupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val mine = c.scheduleRepository.shiftTypes.first().first { it.name == "주간" }
+        val own = mine.copy(colorArgb = 0xFF123456, alarmEnabled = true, alarms = listOf(com.bamnat.core.model.AlarmSpec(60), com.bamnat.core.model.AlarmSpec(30)))
+        c.scheduleRepository.saveShiftType(own)
+        c.firstSetup.consumeSaved()
+
+        val again = SetupViewModel(c, now = { now }, again = true)
+        waitFor("the calendar's shifts") { again.kept.value.any { it.name == "주간" && it.alarms.size == 2 } }
+        twoShiftToSummary(again, { c.againSetupDrafts.draft.value!! }) {
+            val day = c.againSetupDrafts.draft.value!!.types.first { it.name == "주간" }
+            again.saveType(day.copy(start = day.start!!.plusHours(1), end = day.end!!.plusHours(1)))
+        }
+        val d = c.againSetupDrafts.draft.value!!
+        // The summary says the 주간 moves an hour, and that its alarms stay.
+        val changes = d.timeChanges(again.kept.value)
+        assertEquals(listOf("주간"), changes.map { it.second.name })
+        assertEquals(mine.start!!.plusHours(1), changes.single().second.start)
+        assertTrue(d.keptWork(again.kept.value).any { it.name == "주간" })
+        // The month on the summary is drawn in the user's own color.
+        assertEquals(0xFF123456, again.typesToSave(d).first { it.name == "주간" }.colorArgb)
+
+        again.save()
+        waitFor("the save again") { c.againSetupDrafts.draft.value == null && c.firstSetup.saved.value != null }
+        val saved = c.scheduleRepository.shiftTypes.first().filter { it.name == "주간" }
+        assertEquals(1, saved.size)
+        assertEquals(listOf(60, 30), saved.single().alarms.map { it.offsetMinutes })
+        assertTrue(saved.single().alarmEnabled)
+        assertEquals(0xFF123456, saved.single().colorArgb)
+        assertEquals(mine.start!!.plusHours(1), saved.single().start)
     }
 
     @Test fun aDraftLeftForLaterComesBackAsItWas() {

@@ -205,8 +205,10 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // 1.38 PC 12.1: filled from a 근무표 link, the names are what is left to check.
     // 1.39 [FLOW-04] The check is the calendar itself: this month as it will be saved, a day tapped goes back to where it is set, and
     // the answers in words fold into one line under it (opened, each has its '고치기').
-    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff) {
-        ScheduleSnapshot(d.typesToSave(), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
+    // [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has keep their colors and alarms, so the month shows them.
+    val kept by vm.kept.collectAsStateWithLifecycle()
+    val preview = remember(d.types, d.rotation, d.anchor, d.weekly, d.painted, d.leaves, d.holidaysOff, kept) {
+        ScheduleSnapshot(vm.typesToSave(d), d.pattern(vm.today), d.paintedEntries()).takeIf { !it.isEmpty }
     }
     if (d.linkTitle.isNotBlank()) {
         // [RVG-15] 검토 TYPE-04: said plainly that this is the user's own 근무표 (the first screen asked whose it is).
@@ -238,6 +240,14 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     if (d.linkTitle.isNotBlank()) LinkWorkAs(vm, d)
     if (d.linkTitle.isNotBlank()) SummaryCard("근무 이름", d.types.filter { !it.isOff }.joinToString(", ") { if (it.label != it.name) "${it.name}(${it.label})" else it.name },
         onFix = { vm.fix(SetupStep.TIMES) })
+    // 검토 WORK-04 Before 2.0.0 a time the calendar had was changed with no word: what changes is said before saving, never folded.
+    val changes = remember(d.types, kept) { d.timeChanges(kept) }
+    if (changes.isNotEmpty()) SummaryCard(
+        "바뀌는 시간",
+        changes.joinToString("\n") { (before, after) -> "${after.name} ${changeHours(before)} → ${changeHours(after)}" } +
+            "\n오늘부터 이 시간이에요. 지난 날은 그대로예요",
+        onFix = { vm.fix(SetupStep.TIMES) },
+    )
     var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(preview == null) }
     if (!open) {
         SummaryFold(foldLine(d, preview != null)) { open = true }
@@ -279,7 +289,10 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
     // of 주휴수당 is said plainly when the week's hours make or miss it, and when the break alone decides it. 1.39: never folded away.
     weeklyHolidayNote(d)?.let { SummaryCard("주휴수당", it, onFix = { vm.fix(SetupStep.TIMES) }) }
     // [EASE-07] 1.38: the alarm is chosen here (already 출근 1시간 전), not on a screen of its own.
-    val first = remember(d) { vm.firstAlarm(d) }
+    val first = remember(d, kept) { vm.firstAlarm(d) }
+    // 검토 WORK-04 The shifts the calendar has keep the alarms set for them; the choice here is for the new ones.
+    val keptWork = remember(d.types, kept) { d.keptWork(kept) }
+    val allKept = keptWork.isNotEmpty() && keptWork.size == d.workTypes.size
     Surface(
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -287,13 +300,16 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft) {
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            AlarmPart(vm, d, compact = true)
+            Text(if (allKept) "근무 알람" else "근무 알람 · 출근 몇 분 전에 깨울까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!allKept) AlarmPart(vm, d, compact = true)
+            if (keptWork.isNotEmpty()) Text(keptAlarmLine(keptWork, kept, allKept), style = MaterialTheme.typography.bodyMedium)
             Text(
                 buildString {
-                    append(alarmLine(d))
+                    if (!allKept) append(alarmLine(d))
+                    else if (first == null) append("울릴 알람이 없어요")
                     first?.let { a ->
-                        append(" · 첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
+                        if (isNotEmpty()) append(" · ")
+                        append("첫 알람 ${relativeDay(a.triggerAt.toLocalDate(), vm.today)} ${Fmt.time(a.triggerAt.toLocalTime())}")
                         if (a.shiftName.isNotEmpty()) append(" ${a.shiftName}")
                     }
                 },
@@ -418,6 +434,23 @@ private fun weekLine(d: SetupDraft): String {
     val one = days.map { it.second.id }.distinct().size == 1
     return if (one) days.joinToString("·") { Fmt.dayOfWeekShort(it.first) } + " " + days.first().second.name
     else days.joinToString(" · ") { "${Fmt.dayOfWeekShort(it.first)} ${it.second.name}" }
+}
+
+/** 검토 WORK-04 "07:00~16:00", "07:00~16:00 · 쉬는 시간 1시간", "쉬는 날": a shift's times as the summary compares them. */
+private fun changeHours(t: ShiftType): String =
+    hoursOf(t) + if (t.hasTimes && t.breakMinutes > 0) " · 쉬는 시간 ${HoursFormat.korean(t.breakMinutes)}" else ""
+
+/**
+ * 검토 WORK-04 The alarms the shifts the calendar has keep: "알람·색은 지금 쓰는 그대로예요: 주간 1시간 전·30분 전 · 야간 안 씀" when every
+ * shift is one of them, "주간·야간은 지금 쓰는 알람·색 그대로예요" when the choice above is for new ones.
+ */
+private fun keptAlarmLine(work: List<ShiftType>, kept: List<ShiftType>, all: Boolean): String {
+    if (!all) return work.joinToString("·") { it.name } + Fmt.eun(work.last().name) + " 지금 쓰는 알람·색 그대로예요"
+    val byName = kept.associateBy { it.name.trim() }
+    return "알람·색은 지금 쓰는 그대로예요: " + work.joinToString(" · ") { t ->
+        val alarms = byName[t.name.trim()]?.copy(start = t.start, end = t.end)?.activeAlarms.orEmpty()
+        "${t.name} " + if (alarms.isEmpty()) "안 씀" else alarms.joinToString("·") { Fmt.offset(it.offsetMinutes) }
+    }
 }
 
 private fun alarmLine(d: SetupDraft): String {

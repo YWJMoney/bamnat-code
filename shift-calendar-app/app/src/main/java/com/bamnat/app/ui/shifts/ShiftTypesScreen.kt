@@ -19,6 +19,7 @@ import android.widget.Toast
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.material3.OutlinedButton
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -129,7 +130,8 @@ fun ShiftTypesScreen(
     onOpenSchooling: (() -> Unit)? = null,
 ) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<ShiftType?>(null) }
+    // [RVH-30] 검토 WORK-08 The shift being edited outlives the screen being made again (the app put away and brought back).
+    var editing by rememberSaveable(stateSaver = EditingSaver) { mutableStateOf<ShiftType?>(null) }
     // [DAILY-08] Opened for one shift type: its editor first, once.
     var editOpened by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(types, editId) {
@@ -279,8 +281,11 @@ fun ShiftTypesScreen(
     }
 
     editing?.let { type ->
+        // 검토 WORK-19 How many past days this kind is worked, for "오늘부터만 / 지난 날도".
+        val pastDays by produceState(0, type.id) { value = if (type.id == 0L) 0 else vm.pastDaysOf(type.id) }
         ShiftTypeEditorDialog(
             initial = type,
+            pastDays = pastDays,
             showPremium = vm.isShiftCalendar,
             noun = dayKindNoun(vm.workStyle),
             onOpenSchooling = onOpenSchooling?.let { go -> { editing = null; go() } },
@@ -590,9 +595,20 @@ fun ShiftTypeEditorDialog(
     noun: String = "근무",
     /** [PAYX-51] The 교육 시수 note's button; null leaves only the note. */
     onOpenSchooling: (() -> Unit)? = null,
+    /**
+     * [RVH-33] 검토 WORK-19 The past days worked as [initial] (on its own times): when the hours change and there are some, the editor
+     * asks "오늘부터만 / 지난 날도" under the hours, 오늘부터만 already picked. 0 asks nothing (a new kind, the first setup).
+     */
+    pastDays: Int = 0,
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
+    // 검토 WORK-19 From when the new hours count; kept like the rest of what is typed.
+    var since by rememberSaveable(initial) { mutableStateOf(com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) }
+    val today = com.bamnat.app.ui.calendar.rememberToday()
+    val asksSince = com.bamnat.core.schedule.SinceChoice.asks(initial, draft, pastDays)
+    /** What is saved: the hours from today only, or on every day, as picked. */
+    fun saved(): ShiftType = if (asksSince) com.bamnat.core.schedule.SinceChoice.apply(initial, draft, since, today) else draft
     // [DAYW-11] Start, end and break in one window (J's shared dialog).
     var pickTimes by rememberSaveable { mutableStateOf(false) }
     // [TIME-03] Which button opened the time window, so '종료' opens on the end time.
@@ -610,7 +626,7 @@ fun ShiftTypeEditorDialog(
     // Leaving with changes keeps them: alarms added or times picked are never lost to a back press.
     val close: () -> Unit = {
         if (draft != initial && draft.name.isNotBlank()) {
-            onSave(draft)
+            onSave(saved())
             Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show()
         } else {
             onDismiss()
@@ -627,7 +643,7 @@ fun ShiftTypeEditorDialog(
                         title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 고치기") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
-                            TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
+                            TextButton(onClick = { onSave(saved()) }, enabled = draft.name.isNotBlank()) { Text("저장") }
                         },
                     )
                 },
@@ -770,6 +786,23 @@ fun ShiftTypeEditorDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // [RVH-33] 검토 WORK-19·U02-06 Hours changed on a kind already worked: from when they count, said where they are
+                            // set. Before 2.0.0 every past day took the new hours, and last month's hours, stats and pay moved with no word.
+                            if (asksSince) {
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                                Text("바뀐 시간은 언제부터예요?", style = MaterialTheme.typography.bodyLarge)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    for (w in com.bamnat.core.schedule.SinceChoice.Way.entries) {
+                                        FilterChip(selected = since == w, onClick = { since = w }, label = { Text(w.label) })
+                                    }
+                                }
+                                Text(
+                                    if (since == com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) "지난 날 ${pastDays}일은 ${hoursText(initial)} 그대로예요"
+                                    else com.bamnat.core.schedule.SinceChoice.line(pastDays, "근무시간·통계·예상 급여"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
 
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
@@ -1036,13 +1069,23 @@ private fun shiftSpan(t: ShiftType): String {
 }
 
 /** [CAL-30] Keeps an unsaved [ShiftType] across a fold: the fields as text, the alarms in [AlarmCodec]'s form. */
-private val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
+/** 검토 WORK-08 The shift being edited, or none: kept with [ShiftTypeSaver]. */
+internal val EditingSaver: Saver<ShiftType?, Any> = Saver(
+    save = { t -> t?.let { with(ShiftTypeSaver) { save(it) } } },
+    restore = { ShiftTypeSaver.restore(it) },
+)
+
+internal val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
     save = { t ->
         listOf(
             t.id.toString(), t.name, t.label, t.colorArgb.toString(), t.start?.toString().orEmpty(), t.end?.toString().orEmpty(),
             t.breakMinutes.toString(), t.breakStart?.toString().orEmpty(), t.isOff.toString(), t.alarmEnabled.toString(),
             com.bamnat.core.alarm.AlarmCodec.encodeSpecs(t.alarms), t.alarmSoundUri.orEmpty(), t.sortOrder.toString(),
             t.icon.orEmpty(), t.premiumPercent.toString(),
+            // 검토 WORK-08 유급 휴게 (PAYX-32) was left out: a window made again lost it.
+            t.breakPaid?.toString().orEmpty(),
+            // 검토 WORK-19 The hours it had before: a window made again must not let them go on saving.
+            com.bamnat.core.model.TimeVersion.encode(t.timeHistory),
         )
     },
     restore = { v ->
@@ -1052,6 +1095,12 @@ private val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
             breakMinutes = v[6].toInt(), breakStart = time(7), isOff = v[8].toBoolean(), alarmEnabled = v[9].toBoolean(),
             alarms = com.bamnat.core.alarm.AlarmCodec.decodeSpecs(v[10]) ?: emptyList(), alarmSoundUri = v[11].ifEmpty { null },
             sortOrder = v[12].toInt(), icon = v[13].ifEmpty { null }, premiumPercent = v[14].toInt(),
+            breakPaid = v.getOrNull(15)?.takeIf { it.isNotEmpty() }?.toBoolean(),
+            timeHistory = com.bamnat.core.model.TimeVersion.decode(v.getOrNull(16)),
         )
     },
 )
+
+/** 검토 WORK-19 "07:00~19:00": a kind of day's hours as the editor says them. */
+private fun hoursText(t: ShiftType): String =
+    if (!t.hasTimes) "시간 없이" else "${Fmt.time(t.start!!)}~${Fmt.time(t.end!!)}"

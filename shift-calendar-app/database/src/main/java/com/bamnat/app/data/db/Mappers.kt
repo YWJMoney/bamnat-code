@@ -36,6 +36,7 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     breakStart = if (isOff) null else breakStartMinute?.toLocalTime(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
     breakPaid = breakPaid,
+    timeHistory = if (isOff) emptyList() else com.bamnat.core.model.TimeVersion.decode(timeHistory),
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -57,6 +58,7 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     breakStartMinute = breakStart?.toMinuteOfDay(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
     breakPaid = breakPaid,
+    timeHistory = com.bamnat.core.model.TimeVersion.encode(timeHistory),
 )
 
 fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }

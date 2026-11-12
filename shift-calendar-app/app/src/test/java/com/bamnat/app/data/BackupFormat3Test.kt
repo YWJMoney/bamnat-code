@@ -158,6 +158,25 @@ class BackupFormat3Test {
         assertTrue(File(receipts, "r1.jpg").isFile)
     }
 
+    /**
+     * 2.0.0 [RVH-33] 검토 WORK-19 A kind of day's hours before a change '오늘부터만' go in the backup and come back, so last month's hours
+     * stay after a restore; a kind with none says nothing of it (a backup read by an older app finds no new key).
+     */
+    @Test fun theHoursBeforeAChangeGoAndComeBack() = runBlocking {
+        val repo = ScheduleRepository(db)
+        val night = repo.shiftTypes.first().first { it.hasTimes }
+        val changed = night.withTimesFrom(night.copy(end = night.end!!.plusHours(1)), day)
+        repo.saveShiftType(changed)
+        val b = manager()
+        val json = b.read(file(b).inputStream())
+        assertEquals(1, Regex("\"timeHistory\"").findAll(json).count())
+        db.shiftTypeDao().getAll().forEach { db.shiftTypeDao().update(it.copy(timeHistory = "")) }
+        b.restore(json)
+        val back = repo.shiftTypes.first().first { it.name == night.name }
+        assertEquals(night.end, back.on(day.minusDays(1)).end)
+        assertEquals(night.end!!.plusHours(1), back.on(day).end)
+    }
+
     @Test fun aFileOfFormat2StillOpens() = runBlocking {
         val b = manager()
         val old = JSONObject(b.export()).put("photos", JSONObject().put("receipts", JSONObject().put("r1.jpg", Base64.getEncoder().encodeToString(byteArrayOf(7, 7)))))

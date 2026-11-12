@@ -182,6 +182,9 @@ internal object SettingsIndex {
     private val WAGE_ROWS = setOf("휴식 점검", "근무표 점검 기준", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "퇴근 시각 알림", "연속 근무 경고",
         "급여 입금 비교", com.bamnat.app.ui.pay.AUTO_CLOSE_TITLE, "연차 사용 촉진 알림", "근무마다 다른 소리", "알람 뒤 오늘 카드")
 
+    /** 2.0.0 [RVH-41] Rows a part-timer's pages do not have. */
+    private val HOURLY_HIDDEN = setOf("연차 사용 촉진 알림", "한 주 근무 경고", "최근 3개월 한 주 평균 경고", "연속 근무 경고")
+
     /**
      * [J133-77] 1.33 (유형별 점검: 알바가 '회사'를 찾으면 근태 엑셀이, 가게가 찾으면 연차·급여가 나와요): what the calendar's kind of
      * work has. No kind chosen keeps everything.
@@ -189,7 +192,9 @@ internal object SettingsIndex {
     internal fun fits(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?, flowAdded: Boolean = false): Boolean {
         // 1.39 [PAYX-62] 주 15시간 경계 알림은 알바에만 있어요.
         if (style != null && style != com.bamnat.core.work.WorkStyle.HOURLY && e.title == com.bamnat.core.pay.WeekHoursNudge.ROW) return false
-        if (style == null || style.usesPayEngine) return !(style == com.bamnat.core.work.WorkStyle.HOURLY && e.title == "연차 사용 촉진 알림")
+        // 2.0.0 [RVH-41] 검토 T30-80·82: 알바 has no 근무시간 경고 card (주 52시간·3개월 평균·연속 근무).
+        if (style == com.bamnat.core.work.WorkStyle.HOURLY && e.title in HOURLY_HIDDEN) return false
+        if (style == null || style.usesPayEngine) return true
         val place = e.place
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.

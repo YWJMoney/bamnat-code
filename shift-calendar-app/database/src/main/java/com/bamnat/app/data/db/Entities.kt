@@ -30,6 +30,8 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "0") val premiumPercent: Int = 0,
     /** Version 20 [PAYX-32]: 1 paid break, 0 unpaid, null as the company's rule. */
     @ColumnInfo(defaultValue = "NULL") val breakPaid: Boolean? = null,
+    /** Version 34 (2.0.0 [RVH-33] 검토 WORK-19): the times it had before, see [com.bamnat.core.model.TimeVersion.encode]; empty for none. */
+    @ColumnInfo(defaultValue = "") val timeHistory: String = "",
 )
 
 /**

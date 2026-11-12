@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.selection.toggleable
@@ -52,29 +53,49 @@ fun WeekByType(types: List<ShiftType>, weekly: List<Long?>, onSet: (Int, Long?) 
                     val i = day.ordinal
                     val on = weekly.getOrNull(i) == t.id
                     val other = weekly.getOrNull(i)?.takeIf { it != t.id }?.let { byId[it] }?.takeIf { !it.isOff }
-                    Box(
-                        Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
-                            .then(if (other != null) Modifier.border(2.dp, other.colorArgb.asColor().copy(alpha = 0.6f), CircleShape) else Modifier)
-                            .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
-                            .semantics {
-                                contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
-                                    on -> "일해요"
-                                    other != null -> "아니고 ${other.name}"
-                                    else -> "쉼"
-                                }
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(Fmt.dayOfWeekShort(day), style = MaterialTheme.typography.titleSmall,
-                            color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    DayToggle(day, on, color, other, Modifier.weight(1f), size = 44.dp,
+                        said = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
+                            on -> "일해요"
+                            other != null -> "아니고 ${other.name}"
+                            else -> "쉼"
+                        },
+                    ) { onSet(i, if (it) t.id else null) }
                 }
             }
         }
         Text("한 요일에는 한 가지만 넣어요. 다른 줄에서 누르면 그 근무로 바뀌어요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/**
+ * [RVH-31] 검토 WORK-10 One day of the week to tap on or off: the circle drawn [size] (44dp, 40dp where the rows are many) and the
+ * place to tap at least 48dp tall and a seventh of the row wide. Before 2.0.0 the tap was the circle only, 40~44dp. [other] is
+ * the kind of work that has the day now, ringed in its color.
+ */
+@Composable
+fun DayToggle(
+    day: DayOfWeek, on: Boolean, color: androidx.compose.ui.graphics.Color, other: ShiftType?, modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 44.dp, said: String, style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.titleSmall,
+    onChange: (Boolean) -> Unit,
+) {
+    Box(
+        modifier
+            .heightIn(min = 48.dp)
+            .clip(CircleShape)
+            .toggleable(value = on, role = Role.Checkbox, onValueChange = onChange)
+            .semantics { contentDescription = said },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier
+                .size(size)
+                .clip(CircleShape)
+                .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
+                .then(if (other != null) Modifier.border(2.dp, other.colorArgb.asColor().copy(alpha = 0.6f), CircleShape) else Modifier),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(Fmt.dayOfWeekShort(day), style = style, color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }

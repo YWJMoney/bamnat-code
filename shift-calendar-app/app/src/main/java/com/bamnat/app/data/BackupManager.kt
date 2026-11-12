@@ -92,7 +92,9 @@ class BackupManager(
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
                     .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
                     // [PAYX-32] Version 20; only when set.
-                    .putOpt("breakPaid", t.breakPaid),
+                    .putOpt("breakPaid", t.breakPaid)
+                    // 2.0.0 [RVH-33] 검토 WORK-19 Version 34: the times before a change '오늘부터만'; only when there are some.
+                    .putOpt("timeHistory", t.timeHistory.takeIf { it.isNotEmpty() }),
             )
         }
         into.put("shiftTypes", types)
@@ -681,6 +683,8 @@ class BackupManager(
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
                 breakPaid = if (o.has("breakPaid") && !o.isNull("breakPaid")) o.optBoolean("breakPaid") else null,
+                // 검토 WORK-19 A backup from before 2.0.0 has none: every day takes the times above, as it did.
+                timeHistory = o.optString("timeHistory", ""),
             )
         }
         val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }

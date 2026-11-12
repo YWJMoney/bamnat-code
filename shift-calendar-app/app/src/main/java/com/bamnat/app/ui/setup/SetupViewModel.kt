@@ -85,6 +85,16 @@ class SetupViewModel(
         if (d.step !in d.steps) store.save(d.copy(step = d.steps.firstOrNull { !d.canLeave(it) } ?: SetupStep.SUMMARY))
     }
 
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has now. A shift of the same name keeps its alarms, color and
+     * sound when saved, and the summary says which times change. Empty for a first setup and a calendar being added.
+     */
+    val kept: StateFlow<List<ShiftType>> =
+        if (again) c.scheduleRepository.shiftTypes.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList()) else MutableStateFlow(emptyList<ShiftType>()).asStateFlow()
+
+    /** The shifts as they will be saved: the draft's, with what [kept] keeps ( 검토 WORK-04); the summary's month and alarm say these. */
+    fun typesToSave(d: SetupDraft): List<ShiftType> = if (again) d.typesToSave(kept.value, today) else d.typesToSave()
+
     /** The week as the calendar shows it, for the month previews. */
     val weekStart: DayOfWeek get() = c.settingsRepository.current.weekStart
 
@@ -884,13 +894,13 @@ class SetupViewModel(
     /** The first alarm the saved setup will ring, for the summary. */
     fun firstAlarm(d: SetupDraft): PlannedAlarm? {
         val at = now()
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(at.toLocalDate()), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(at.toLocalDate()), d.paintedEntries())
         return AlarmPlanner.nextAlarm(snapshot.resolver, at)
     }
 
     /** 1.39 [FLOW-03] What the saved setup puts on the calendar from today, said in one line; null when no day works. */
     internal fun fillLine(d: SetupDraft): com.bamnat.core.setup.FillMoment.Line? {
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(today), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(today), d.paintedEntries())
         if (snapshot.isEmpty) return null
         return com.bamnat.core.setup.FillMoment.of(snapshot.resolver.resolveRange(today, today.plusDays(70)), today, firstAlarm(d)?.triggerAt)
     }
@@ -904,7 +914,7 @@ class SetupViewModel(
         _saving.value = true
         // The setup screen goes away as soon as the kind of work is saved, so the save outlives it.
         c.appScope.launch {
-            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
+            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d, keep = again) }
                 .onSuccess {
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
                     if (calendarId == null && !again) c.setupTaps.finish(d.savedStyle)

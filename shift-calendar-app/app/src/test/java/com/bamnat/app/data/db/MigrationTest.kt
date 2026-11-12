@@ -231,6 +231,44 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 2.0.0 (DB 34) [RVH-33] 검토 WORK-19 Kinds of day from 1.38 (32) and 1.39 (33) arrive with no hours before: every day keeps the
+     * hours it had, and a change '오늘부터만' saved after is kept.
+     */
+    @Test
+    fun versions32And33ShiftTypesArriveWithNoHoursBefore() = runBlocking {
+        for (version in listOf(32, 33)) {
+            val name = "migration-$version-34.db"
+            context.deleteDatabase(name)
+            val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+            val sql = createTables(file, version)
+            sql.execSQL(
+                "INSERT INTO shift_types (id, name, label, colorArgb, startMinute, endMinute, breakMinutes, isOff, alarmEnabled, " +
+                    "alarmOffsetMinutes, alarmSoundUri, sortOrder, alarmOffsets, icon, breakStartMinute, premiumPercent, breakPaid) " +
+                    "VALUES (1, '야간', '야', 0, 1320, 420, 60, 0, 1, 90, NULL, 0, '90,60', NULL, 120, 30, 1)",
+            )
+            sql.version = version
+            sql.close()
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+            try {
+                val night = db.shiftTypeDao().getAll().single().toModel()
+                assertTrue("$version: 옛 시간 없음", night.timeHistory.isEmpty())
+                assertEquals(java.time.LocalTime.of(7, 0), night.end)
+                assertEquals(30, night.premiumPercent)
+                val today = java.time.LocalDate.of(2026, 11, 12)
+                val changed = night.withTimesFrom(night.copy(end = java.time.LocalTime.of(8, 0)), today)
+                db.shiftTypeDao().update(changed.toEntity())
+                val back = db.shiftTypeDao().getAll().single().toModel()
+                assertEquals(java.time.LocalTime.of(8, 0), back.end)
+                assertEquals(java.time.LocalTime.of(7, 0), back.on(today.minusDays(1)).end)
+            } finally {
+                db.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
     /** [RECV-01][IMPORT-01] Version 13 data stays as it was; the new tables arrive empty. */
     @Test
     fun version13KeepsEverythingAndAddsOwed() = runBlocking {

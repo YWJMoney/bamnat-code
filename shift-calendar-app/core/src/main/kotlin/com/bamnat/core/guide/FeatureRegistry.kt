@@ -109,6 +109,8 @@ object FeatureRegistry {
     private val INVEST = WorkStyle.INVEST
     private val PAID = setOf(SHIFT, DAY, HOURLY)
     private val ALL = emptySet<WorkStyle>()
+    /** 2.0.0 [RVH-41] Everyone with a workplace or a shop: an investor has no company, shift or 근무표 to go by. */
+    private val WORKERS = setOf(SHIFT, DAY, HOURLY, FIELD, SHOP)
 
     /** The tab that holds hours and money for [style], as the bottom bar names it. */
     private fun tab(style: WorkStyle) = style.words().tab
@@ -382,7 +384,7 @@ object FeatureRegistry {
             setOf(FIELD, SHOP), "${tab(FIELD)} › ○년 종합소득세 참고", at(Place.STATS), "종합소득세", "5월", "3.3%", "경비", "신고", "세금", off = Off.CALENDAR),
         f("shop.vat", "SHOP-04", "부가세 예상", "반기 매출과 경비로 대략의 부가세를 보고 신고 달에 알려 줘요",
             setOf(SHOP), "${tab(SHOP)} › 부가세 예상", at(Place.STATS), "부가세", "세금", "신고", "1월", "7월", off = Off.CALENDAR),
-        f("shop.staff", "SHOP-11", "직원 인건비", "직원·시급·주휴·4대보험으로 근무표를 짜고 월 인건비와 인건비율을 봐요",
+        f("shop.staff", "SHOP-11", "직원 인건비", "직원마다 시급·주휴수당·4대보험을 넣어 직원 근무표를 짜고 월 인건비와 인건비율을 봐요",
             setOf(SHOP), "${tab(SHOP)} › 직원 인건비 › 근무표 짜기", at(Place.STATS, "staff"), "직원", "인건비", "알바생", "근무표 짜기",
             off = Off.CALENDAR),
         f("shop.weather", "SHOP-10", "날씨별 매출", "하루 마감에 날씨를 고르면 비 오는 날과 맑은 날 평균 매출을 견줘요",
@@ -542,9 +544,9 @@ object FeatureRegistry {
             setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 급여와 연차 › 광장 시세와 내 단가 견주기", at(Place.SETTINGS_PAY, "광장 시세와 내 단가 견주기"), "시세", "일당", "시급", "비교"),
         // 1.23 묶음 I: the calendar, day sheet, patterns, widgets and watch.
         f("calendar.quickText", "CAL-43", "메모 한 줄로 넣기", "날짜 시트 메모에 ‘내일 야간 대근 7시’, ‘다음주 월화 연차’처럼 적으면 근무·추가 근무·연차로 넣을지 물어요",
-            ALL, "$DAY_SHEET › 빠른 메모", at(Place.CALENDAR), "빠른 입력", "말로 입력", "메모로 넣기", "자연어", "한 줄 입력"),
+            WORKERS, "$DAY_SHEET › 빠른 메모", at(Place.CALENDAR), "빠른 입력", "말로 입력", "메모로 넣기", "자연어", "한 줄 입력"),
         f("calendar.monthRecap", "CAL-46", "한 달 마감 카드", "달이 끝나면 그달 일한 날·시간·야간과 지난달과의 차이를 한 장으로 보여 주고 달력 사진으로 보내요",
-            ALL, "달력 맨 위 카드 (달이 바뀐 뒤)", at(Place.CALENDAR), "월말", "한 달 정리", "마감", "달력 사진", "지난달 비교"),
+            PAID, "달력 맨 위 카드 (달이 바뀐 뒤)", at(Place.CALENDAR), "월말", "한 달 정리", "마감", "달력 사진", "지난달 비교"),
         f("data.openFile", "CAL-47", "받은 파일 바로 열기", "카톡·파일 앱에서 받은 백업이나 회사 근무표 파일을 누르면 밤낮이 열려 읽어요",
             ALL, "파일 앱·메신저 › 파일 누르기 › 밤낮으로 열기", at(Place.SETTINGS_DATA, "파일 불러오기"), "파일 열기", "카톡 파일", "백업 열기", "공유 받기",
             under = "data.backup"),
@@ -609,7 +611,7 @@ object FeatureRegistry {
             "급여 설정", "역산", "사진으로 회사 방식 맞추기", "명세서로 회사 방식 맞추기", "규칙만", under = "pay.calc"),
         // ---- 1.25 묶음 X (계획/1.25-X-개발계획.md 386·390) ----
         f("plaza.diff", "PLAZA-02", "다른 점 말하기", "같은 회사 설정이 우리와 조금 다르면 그 회사 값이 채워진 창에서 다른 곳만 골라 바꿔요. 바꾼 칸은 제안으로 올라가고, 급여 단계에서 고치면 내 급여도 고친 대로 계산해요",
-            ALL, "설정 › 회사 규칙 광장 › 회사 카드 › 우리는 달라요", at(Place.BOARD), "다른 점", "달라요", "제안", "대표 판", "비교", "되돌리기", "초성", "회사 설정"),
+            WORKERS, "설정 › 회사 규칙 광장 › 회사 카드 › 우리는 달라요", at(Place.BOARD), "다른 점", "달라요", "제안", "대표 판", "비교", "되돌리기", "초성", "회사 설정"),
         f("setup.again", "PLAZA-06", "처음 설정 다시 받기", "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요. 저장해야 오늘부터 바뀌고, 그만두면 그대로예요",
             ALL, "설정 › 내 근무 › 처음 설정 다시 받기", at(Place.SETTINGS_WORK, "처음 설정 다시 받기"), "첫 설정", "처음 설정", "다시", "건너뛴", "회사 찾기"),
         // 1.25 묶음 Y: 프로 기능 모아보기 and the pro features that had no line here (계획/1.25-Y-개발계획.md 393).
@@ -643,7 +645,7 @@ object FeatureRegistry {
             // 2.0.0 [RVG-11] 검토 WORK-21 (PC 9차: 알바·현장의 찾기 '광장'이 급여 계산 설정을 열었어요): 회사 광장 is 교대·일근's.
             setOf(WorkStyle.SHIFT, WorkStyle.DAY), "설정 › 회사 규칙 광장 › 회사 카드 › 우리 회사 광장", at(Place.BOARD), "회사 광장", "참여", "이 값 쓰기", "바꾼 사람", "안정", "제보 1", "급여 방식 있음"),
         f("plaza.autoShare", "PLAZA-07", "회사 광장에 저절로 나누기", "한 번 허락하면 근무 순서·계산 방식을 바꿀 때마다 하루 한 번 회사 광장에 고쳐 올려요. 금액·이름·연락처는 보내지 않아요",
-            ALL, "설정 › 개인정보·앱 정보 › 회사 광장에 저절로 나누기", at(Place.SETTINGS_PRIVACY, "회사 광장에 저절로 나누기"), "저절로 나누기", "자동 공유", "회사 광장", "공유 끄기"),
+            WORKERS, "설정 › 개인정보·앱 정보 › 회사 광장에 저절로 나누기", at(Place.SETTINGS_PRIVACY, "회사 광장에 저절로 나누기"), "저절로 나누기", "자동 공유", "회사 광장", "공유 끄기"),
         // AF 1.26 끝
         // AK 1.27 시작 (계획/1.27-AK-개발계획.md 450·451)
         // [INVA-02] 1.29 AR: 바로 넣기가 처음부터 켜짐, 바꾸는 곳은 ⋮의 '넣기 전에 묻기'.
@@ -653,13 +655,13 @@ object FeatureRegistry {
         f("memo.search", "MEMO-03", "메모 빠른 검색", "글자·초성(ㅇㄱ)·날짜(10월 19일)·그날 근무(야간)·#태그 앞부분으로 찾고, ‘야간 날’ 칩으로 그 근무 날 메모만 봐요",
             ALL, "메모 › 검색 칸", at(Place.MEMOS), "메모 검색", "초성", "날짜로 찾기", "근무로 찾기", "야간 메모", "태그"),
         f("memo.shiftRemind", "MEMO-05", "근무 기준 메모 알림", "‘다음 야간 때’처럼 쓰면 다음 그 근무 출근 1시간 전(쉬는 날은 아침)에 알려 드릴지 묻고, 알람 창의 ‘근무에 맞춰’로도 골라요",
-            ALL, "메모 › 메모 쓰기 › 알람 맞추기 › 근무에 맞춰", at(Place.MEMOS), "다음 야간", "출근 전 알림", "쉬는 날 알림", "근무 알림"),
+            WORKERS, "메모 › 메모 쓰기 › 알람 맞추기 › 근무에 맞춰", at(Place.MEMOS), "다음 야간", "출근 전 알림", "쉬는 날 알림", "근무 알림"),
         f("memo.lastShift", "MEMO-06", "지난 같은 근무 메모", "날짜 메모를 쓰면서 같은 근무였던 지난 날의 메모(인수인계)를 바로 봐요",
-            ALL, "메모 › 날짜 메모 쓰기 › 지난 야간 메모 보기", at(Place.MEMOS), "인수인계", "지난 메모", "이어 보기", "같은 근무"),
+            WORKERS, "메모 › 날짜 메모 쓰기 › 지난 야간 메모 보기", at(Place.MEMOS), "인수인계", "지난 메모", "이어 보기", "같은 근무"),
         // AK 1.27 끝
         // AI 1.27 시작 (계획/1.27-AI-개발계획.md 441~445)
         f("plaza.info", "PLAZA-32", "회사 정보 광장", "회사 설정을 쓰거나 보내면 광장이 ‘우리 회사 정보 광장’으로 바뀌어요. 같은 회사 분들끼리만 참여자 번호로 자유롭게 이야기하고, 근무·급여 정보와 고친 점을 함께 봐요",
-            ALL, "마을 › 광장 › ‘회사’ 정보 광장", at(Place.PLAZA), "정보 광장", "회사 광장", "자유 토의", "회사 게시판", "동료", "익명", "고친 점"),
+            WORKERS, "마을 › 광장 › ‘회사’ 정보 광장", at(Place.PLAZA), "정보 광장", "회사 광장", "자유 토의", "회사 게시판", "동료", "익명", "고친 점"),
         f("plaza.styles", "PLAZA-33", "일 유형별 광장", "현장은 지역·직종 일당 시세와 현장 이야기, 가게는 영업·매출 팁, 알바는 지역 시급과 알바 이야기, 투자는 종목 추천 없는 투자 이야기를 나눠요",
             setOf(FIELD, SHOP, HOURLY, INVEST), "마을 › 광장", at(Place.PLAZA), "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "단가", "일당", "매출 팁"),
         // AI 1.27 끝
@@ -790,7 +792,7 @@ object FeatureRegistry {
             setOf(SHIFT, DAY, HOURLY), "달력 › 날짜 › 돈 › 이날 일하면?", at(Place.CALENDAR), "대근하면", "시뮬레이터", "연차 쓰면", "만약에", "더 일하면", off = Off.CALENDAR),
         f("money.quickAdd", "LEDH-14", "오늘 쓸 돈 위젯·돈 적기 타일", "홈 화면 위젯에 오늘 쓸 수 있는 돈과 오늘 쓴 돈이 보이고, 누르면 바로 돈 적기가 열려요. 휴대폰 빠른 설정 편집에서 '돈 적기' 타일을 길게 눌러 끌어 놓으면 어느 화면에서든 한 번에 적어요. 워치 앱의 '돈 적기'로 금액과 분류만 눌러 적을 수도 있어요",
             setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "홈 화면 › 위젯 › 밤낮 오늘 쓸 돈 / 빠른 설정 › 편집 › 돈 적기를 길게 눌러 끌어 놓기", at(Place.FEATURES), "위젯", "타일", "빠른 설정", "돈 적기", "오늘 쓸 돈", "빨리 적기", "워치", "갤럭시 워치"),
-        f("money.hide", "LEDH-22", "금액 가리기", "가계부 위 눈 단추(또는 ⋮ › 금액 가리기)를 누르면 앱과 위젯의 금액이 모두 점으로 가려져요. 버스·회사에서 열 때 좋아요",
+        f("money.hide", "LEDH-22", "금액 가리기", "가계부 위 눈 단추(또는 ⋮ › 금액 가리기)를 누르면 앱과 위젯의 금액이 모두 점으로 가려져요. 버스나 사람 많은 곳에서 열 때 좋아요",
             ALL, "가계부 › 눈 단추", at(Place.MONEY), "금액 숨기기", "금액 가리기", "잔액 숨김", "남이 볼 때", "프라이버시"),
         f("money.payCycle", "LEDH-06", "월급날 기준 예산", "예산과 하루 쓸 돈을 1일~말일 대신 월급날부터 다음 월급날 전날까지로 셈해요",
             setOf(SHIFT, DAY, HOURLY), "가계부 › 요약 › 예산 › 고치기 › 월급날 기준으로 보기", at(Place.MONEY), "급여일 주기", "월급날 기준", "25일부터", "예산 기간", off = Off.ELSEWHERE),
@@ -980,7 +982,28 @@ object FeatureRegistry {
             in MONEY_NAMES -> com.bamnat.core.work.moneyTab(style)
             else -> first
         }
-        return home + rest
+        if (first != "설정") return home + rest
+        val page = rest.removePrefix(" › ").substringBefore(" › ")
+        return home + rest.replaceFirst(page, settingsPage(page, style))
+    }
+
+    /**
+     * 2.0.0 [RVH-41] A settings page as [style] sees it named ('내 근무' is a shop's '내 가게', '급여와 연차' a field worker's '일감과
+     * 받을 돈'): the app's `SettingsPage.titleFor` asks this, so a way read in 기능 찾기 is the page's own name.
+     */
+    fun settingsPage(title: String, style: WorkStyle?): String = when (title) {
+        "내 근무" -> when (style) {
+            FIELD -> "내 일정"
+            SHOP -> "내 가게"
+            INVEST -> "내 투자"
+            else -> title
+        }
+        "급여와 연차" -> when (style) {
+            HOURLY -> "시급과 주휴수당"
+            FIELD, SHOP, INVEST -> style.words().income
+            else -> title
+        }
+        else -> title
     }
 
     /**
@@ -1000,4 +1023,157 @@ object FeatureRegistry {
 
     /** The tab that holds 광장, 장터 and 공방 (the app's `HUB_NAME`). */
     const val HUB = "마을"
+
+    /**
+     * 2.0.0 [RVH-41] 검토 T30-102 검토 TYPE-14·TYPE-27 [feature] as [style] reads it: its name, what it does, its way and its tip in that
+     * kind's words ([com.bamnat.core.work.TypeWords.say]), and for the texts a swap cannot say well, the kind's own text from [SAID].
+     * Every screen that lists features (기능 찾기, 기능 켜고 끄기, 안내 카드) shows this; `TypeWordsTest` holds every kind to 0 words of another.
+     */
+    fun said(feature: AppFeature, style: WorkStyle?): AppFeature {
+        val say = { t: String -> com.bamnat.core.work.TypeWords.say(style, t) }
+        val own = SAID[feature.id]?.invoke(style ?: WorkStyle.SHIFT)
+        return feature.copy(
+            name = say(own?.name ?: feature.name),
+            what = say(own?.what ?: feature.what),
+            where = say(own?.where ?: whereFor(feature, style)),
+            tip = (own?.tip ?: feature.tip)?.let(say),
+        )
+    }
+
+    /** What [said] cannot get by swapping words: the kind's own name, text, way or tip (null keeps the shared one). */
+    private class Said(val name: String? = null, val what: String? = null, val where: String? = null, val tip: String? = null)
+
+    /** Not paid by the hour or the month: a field worker, a shop, an investor. */
+    private fun WorkStyle.ownMoney() = !usesPayEngine
+
+    /**
+     * 2.0.0 [RVH-41] 검토 T30-102·TYPE-14·TYPE-27: each kind's own text where the shared one speaks of another kind's work (보고서 영역 30
+     * (4)). Only what the feature really does for that kind; a feature that does nothing for a kind leaves it in its `styles` instead.
+     */
+    private val SAID: Map<String, (WorkStyle) -> Said?> = mapOf(
+        "app.pro" to { s -> if (s.ownMoney()) Said(what = "광고 없이 쓰고, 휴대폰 캘린더 쓰기·매일 자동 백업·끄기 미션·돈 통계·달력 여러 개를 열어요. 1개월 무료로 써 볼 수 있어요") else null },
+        "calendar.jumpMonth" to { s ->
+            if (s.ownMoney()) Said(
+                what = "${s.words().tab}·${com.bamnat.core.work.moneyTab(s)} 화면 위의 ‘○년 ○월’을 누르면 연·월을 골라 바로 가요. 화살표로 한 달씩 넘기지 않아도 돼요",
+                where = "${s.words().tab} › 맨 위 ○년 ○월 누르기 (${com.bamnat.core.work.moneyTab(s)}도 같아요)",
+            ) else null
+        },
+        "calendar.quickText" to { s ->
+            when (s) {
+                FIELD -> Said(what = "날짜 시트 메모에 ‘내일 (일정 이름)’, ‘다음주 월화 쉼’처럼 적으면 그날 일정·빈 날로 넣을지 물어요")
+                SHOP -> Said(what = "날짜 시트 메모에 ‘다음주 월화 휴무’, ‘3일 단축영업’처럼 적으면 영업·휴무로 넣을지 물어요")
+                else -> null
+            }
+        },
+        "data.openFile" to { s -> if (s.ownMoney()) Said(what = "카톡·파일 앱에서 받은 밤낮 백업 파일을 누르면 밤낮이 열려 읽어요") else null },
+        "day.bridges" to { s ->
+            when (s) {
+                DAY -> Said(what = "연차 하루이틀로 길게 쉬는 날을 12개월 안에서 찾아 줘요")
+                HOURLY -> Said(what = "근무표의 쉬는 날과 연차 하루이틀로 길게 쉬는 날을 12개월 안에서 찾아 줘요")
+                else -> null
+            }
+        },
+        "day.start" to { s ->
+            when (s) {
+                SHOP -> Said(what = "자정을 넘겨 닫는 날 새벽에 적은 매출·돈·메모·잠은 그 영업일에 붙어요. 영업이 없는 날은 이 시각 전까지 어제로 쳐요")
+                INVEST -> Said(what = "이 시각 전 새벽에 적은 돈·메모·잠은 어제로 쳐요. 밤늦게까지 장을 볼 때 하루가 둘로 나뉘지 않아요")
+                else -> null
+            }
+        },
+        "day.story" to { s ->
+            when (s) {
+                SHOP -> Said(what = "날짜를 열면 맨 위에 영업·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 자정을 넘겨 닫는 날은 어제 문 연 때부터 한 줄로 보여요")
+                INVEST -> Said(what = "날짜를 열면 맨 위에 잠·돈·메모가 시간 순서로 한 줄에 이어져요")
+                else -> null
+            }
+        },
+        "guide.tips" to { s -> if (s.ownMoney()) Said(what = "첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요") else null },
+        "hours.stretch" to { s ->
+            if (s == DAY) Said(name = "연속 근무 경고", what = "당직 뒤 바로 이어진 근무까지 한 번에 센 시간이 정한 시간을 넘으면 알려 줘요") else null
+        },
+        "look.free" to { s ->
+            when (s) {
+                INVEST -> Said(what = "달력 칸 하나를 꾸며 모든 칸에 쓰고, 2~6칸 반복·요일별 패턴, 메모장·가계부 모양, 화면마다 색과 배경을 위의 미리보기로 보며 바꿔요. 기록은 그대로예요")
+                FIELD, SHOP -> Said(what = "달력 칸 하나를 꾸며 모든 칸에 쓰고, 2~6칸 반복·요일별·${if (s == SHOP) "영업·휴무" else "일정"}별 패턴, 메모장·장부 모양, 화면마다 색과 배경을 위의 미리보기로 보며 바꿔요. 기록은 그대로예요")
+                else -> null
+            }
+        },
+        "memo.lastShift" to { s ->
+            when (s) {
+                FIELD -> Said(name = "지난 같은 일정 메모", what = "날짜 메모를 쓰면서 같은 일정이었던 지난 날의 메모를 바로 봐요", where = "메모 › 날짜 메모 쓰기 › 지난 (일정 이름) 메모 보기")
+                SHOP -> Said(name = "지난 같은 영업일 메모", what = "날짜 메모를 쓰면서 같은 영업(영업·단축영업)이었던 지난 날의 메모를 바로 봐요", where = "메모 › 날짜 메모 쓰기 › 지난 영업 메모 보기")
+                DAY, HOURLY -> Said(where = "메모 › 날짜 메모 쓰기 › 지난 (근무 이름) 메모 보기")
+                else -> null
+            }
+        },
+        "memo.repeat" to { s ->
+            when (s) {
+                FIELD -> Said(what = "매일, 매주 화요일, 매달 25일, 매년 음력 8월 15일, 일정 종류마다처럼 돌아오는 메모를 적어요. 일정마다 메모는 일정이 바뀌면 따라가요")
+                SHOP -> Said(what = "매일, 매주 화요일, 매달 25일, 매년 음력 8월 15일, 영업일마다처럼 돌아오는 메모를 적어요. 영업일마다 메모는 영업일이 바뀌면 따라가요")
+                INVEST -> Said(what = "매일, 매주 화요일, 매달 25일, 매년 음력 8월 15일처럼 돌아오는 메모를 적어요")
+                else -> null
+            }
+        },
+        "memo.search" to { s ->
+            when (s) {
+                SHOP -> Said(what = "글자·초성(ㅇㄱ)·날짜(10월 19일)·그날 영업(단축영업)·#태그 앞부분으로 찾고, 칩으로 그런 날 메모만 봐요")
+                INVEST -> Said(what = "글자·초성(ㅇㄱ)·날짜(10월 19일)·#태그 앞부분으로 찾아요")
+                else -> null
+            }
+        },
+        "memo.shiftRemind" to { s ->
+            when (s) {
+                FIELD -> Said(name = "일정 기준 메모 알림", what = "‘다음 (일정 이름) 때’처럼 쓰면 다음 그 일정 시작 1시간 전(빈 날은 아침)에 알려 드릴지 묻고, 알람 창의 ‘근무에 맞춰’로도 골라요")
+                SHOP -> Said(name = "영업일 기준 메모 알림", what = "‘다음 영업 때’처럼 쓰면 다음 영업일 문 열기 1시간 전(휴무는 아침)에 알려 드릴지 묻고, 알람 창의 ‘근무에 맞춰’로도 골라요")
+                else -> null
+            }
+        },
+        "money.challenge" to { s ->
+            if (s == SHOP || s == INVEST) Said(what = "무지출 날·배달 줄이기 주간·봉투 채우기 30일 중 하나를 고르면 하루마다 도장과 연속 기록을 보여 줘요. 보상은 없고 휴대폰 안에서만 세요") else null
+        },
+        "money.dayClose" to { s ->
+            when (s) {
+                DAY, HOURLY -> Said(what = "근무가 끝나고 30분 뒤(자정을 넘겨 끝나면 다음 날 아침, 쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요")
+                FIELD -> Said(what = "일이 끝나고 30분 뒤(자정을 넘겨 끝나면 다음 날 아침, 빈 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요")
+                else -> null
+            }
+        },
+        "money.owed" to { s ->
+            when (s) {
+                FIELD -> Said(what = "빌려준 돈, 외상, 못 받은 일당·대금을 적고 받으면 표시해요")
+                SHOP -> Said(what = "빌려준 돈, 외상 매출, 못 받은 대금을 적고 받으면 표시해요")
+                INVEST -> Said(what = "빌려준 돈, 외상을 적고 받으면 표시해요")
+                else -> null
+            }
+        },
+        "nav.tabOrder" to { s ->
+            if (s.ownMoney()) Said(what = "아래 칸 5개에 자주 쓰는 화면(잠·메모·${com.bamnat.core.work.moneyTab(s)} 등)을 두고, 한 칸에 여러 화면을 묶으면 누를 때 목록이 떠요. 길게 눌러 끌면 순서가 바뀌고, 맨 앞 탭이 첫 화면이에요") else null
+        },
+        "pay.holidayWork" to { s ->
+            if (s == DAY || s == HOURLY) Said(what = "빨간날(공휴일)에 일하면 법대로·특근처럼(근무 종류마다 1회 금액)·대체휴일 중 회사 방식대로 계산하고, 빨간날 휴가는 근무일로만 셈해요") else null
+        },
+        "pay.workProof" to { s -> if (s == HOURLY) Said(what = "고른 기간의 날짜별 근무·휴게·실제 시각을 PDF 한 장으로 만들어요(프로)") else null },
+        "privacy.lock" to { s -> if (s.ownMoney()) Said(what = "열 때 지문·얼굴·PIN을 물어 돈·메모를 지켜요. 알람은 그대로 울려요") else null },
+        "profile.summary" to { s ->
+            if (s.ownMoney()) Said(what = "일하는 방식·알람·세금·잠 정보를 한 화면에서 보고, 누른 자리에서 바로 고쳐요. 고치면 쓰는 기능에 바로 적용돼요") else null
+        },
+        "recipe.browse" to { s ->
+            if (s == INVEST) Said(what = "다른 분이 꾸민 달력 색·알람·메모 틀을 내 달력에서 미리 보고, 고른 것만 넣어요. 넣은 지 7일 안에는 그대로 되돌려요") else null
+        },
+        "setup.again" to { s ->
+            if (s.ownMoney()) Said(what = "근무 유형부터 첫 설정 질문을 다시 받아요. 저장해야 오늘부터 바뀌고, 그만두면 그대로예요") else null
+        },
+        "shift.callout" to { s ->
+            if (s == DAY) Said(what = "쉬는 날 불려 나가면 날짜를 누르고 ‘비상소집’ 한 번으로 시작·끝 시간을 추가 근무로 넣어요. 경찰·소방·해양경찰·교정 직군에 보이고, 다른 직군은 추가 근무 종류에 ‘비상소집’을 만들면 보여요") else null
+        },
+        "widget.lines" to { s ->
+            when (s) {
+                DAY -> Said(what = "오늘 위젯에 남은 연차·야근(공무원은 이번 달 시간외/57시간)을 한 줄 더 보여 줘요")
+                HOURLY -> Said(what = "오늘 위젯에 이번 주 일한 시간·주휴를 한 줄 더 보여 줘요")
+                FIELD -> Said(what = "오늘 위젯에 이번 주 공수(배달은 오늘·이번 주 건수)를 한 줄 더 보여 줘요")
+                SHOP -> Said(what = "오늘 위젯에 이번 달 영업·휴무 일수를 한 줄 더 보여 줘요")
+                else -> null
+            }
+        },
+    )
 }
