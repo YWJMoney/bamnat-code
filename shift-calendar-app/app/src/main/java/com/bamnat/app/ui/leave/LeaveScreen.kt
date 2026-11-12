@@ -206,7 +206,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { NowCard(s, counted) }
+            item { NowCard(s, counted, snapshot) }
             item { RulesCard(counted, hasPay = profile != null, onEditRules, vm) }
             item {
                 // [LEAVE-03] On by default (S10); turned off here or in 설정 › 알림과 잠.
@@ -267,7 +267,11 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
 }
 
 @Composable
-private fun NowCard(s: LeaveSummary?, profile: PayProfile?) {
+private fun NowCard(s: LeaveSummary?, profile: PayProfile?, snapshot: ScheduleSnapshot? = null) {
+    // [RVH-38] 검토 WORK-02 An hourly job's last four weeks: under 15 hours a week there is no 연차, 15~40 counts days of weekly ÷ 5 hours.
+    val weekly = remember(profile, snapshot) {
+        snapshot?.let { snap -> LeaveSources.partTimeHours(profile, Today.date(), snap.copy(legalBreaks = profile?.legalBreaks == true).resolver::resolve) }
+    }
     SectionCard(title = "지금 쓸 수 있는 연차") {
         if (s == null) return@SectionCard
         Text(LeaveAccrual.days(s.available), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle),
@@ -277,7 +281,7 @@ private fun NowCard(s: LeaveSummary?, profile: PayProfile?) {
         ValueLine("지금까지 생긴 연차 / 쓴 연차", "${LeaveAccrual.days(s.arisen)} / ${LeaveAccrual.days(s.used)}")
         if (s.comp != 0.0 || s.lots.any { it.lot.pool == LeavePool.COMP }) ValueLine("보상휴가", LeaveAccrual.days(s.comp))
         if (s.available < 0) Hint("생긴 것보다 많이 썼어요(미리 쓴 연차). 다음에 생기는 연차에서 먼저 빠져요.")
-        LeaveSources.noAuto(profile)?.let { Hint(it) }
+        (LeaveSources.noAuto(profile, weekly) ?: LeaveSources.partTimeNote(weekly))?.let { Hint(it) }
     }
 }
 

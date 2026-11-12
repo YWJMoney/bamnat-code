@@ -132,6 +132,9 @@ class PersonalCalendarsTest {
         assertTrue(vm.done.value)
         assertNull(c.calendars.get(id))
         assertNull(c.calendarSetupDrafts.draft.value)
+        // 2.0.0 [RVH-43] Nothing still running opens its database again after it went (#451 CI: the summary's month had a read of it
+        // in flight, and the file came back now and then). The background work is given time to show itself before looking.
+        repeat(10) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(30) }
         assertFalse(app.getDatabasePath(CalendarStorage.fileName(id)).exists())
 
         // Without an answer kept, one left over is cleared on the next start.

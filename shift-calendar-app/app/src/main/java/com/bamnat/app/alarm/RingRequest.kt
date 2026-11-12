@@ -33,7 +33,11 @@ data class RingRequest(
     val nap: Boolean = false,
 ) {
     /** "주간 근무 알람", "알람" for a hand-set alarm on a day without work, or a memo schedule's words. */
-    val title: String get() = if (recheck) "일어났나요?" else label ?: if (nap) "낮잠 알람" else if (shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(shiftName)
+    val title: String get() = title(null)
+
+    /** 2.0.0 [RVH-41] 검토 T30-99: [title] in [style]'s words — a field worker's, a shop's or an investor's "오후 알람". [RVI-17] 낮잠 is its own. */
+    fun title(style: com.bamnat.core.work.WorkStyle?): String =
+        if (recheck) "일어났나요?" else label ?: if (nap) "낮잠 알람" else if (shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(shiftName, style)
 
     fun putInto(intent: Intent): Intent = intent
         .putExtra(X_NAME, shiftName)

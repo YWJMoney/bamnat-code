@@ -9,6 +9,7 @@ import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.HourlyWeek
 import com.bamnat.core.work.NthWeekday
+import com.bamnat.core.work.ShopDay
 import com.bamnat.core.work.ShopDays
 import com.bamnat.core.work.ShopRules
 import com.bamnat.core.work.WorkStats
@@ -60,6 +61,39 @@ class WorkKitTest {
         )
         assertEquals("매주 일요일 · 매달 둘째·넷째 월요일 · 공휴일 휴무", ShopDays.describe(rules))
         assertEquals("정기휴무 없음", ShopDays.describe(ShopRules()))
+    }
+
+    /** [RVH-36] 검토 WORK-23·TYPE-23 검토 I02b-03 Short days past midnight, every weekday's own kind, and Sundays off every other week. */
+    @Test
+    fun shopWeekdaysShortHoursAndEveryOtherWeek() {
+        // 17:00~02:00 is nine hours: the short day is half of it, not the one hour a negative span gave.
+        assertEquals(java.time.LocalTime.of(17, 0) to java.time.LocalTime.of(21, 30), ShopRules(open = java.time.LocalTime.of(17, 0), close = java.time.LocalTime.of(2, 0)).shortHours)
+        // Open all day and night (00:00~00:00): twelve hours.
+        assertEquals(java.time.LocalTime.of(12, 0), ShopRules(open = java.time.LocalTime.MIDNIGHT, close = java.time.LocalTime.MIDNIGHT).shortHours.second)
+        assertEquals(java.time.LocalTime.of(10, 0) to java.time.LocalTime.of(16, 0), ShopRules().shortHours)
+        assertEquals(java.time.LocalTime.of(15, 0), ShopRules(shortClose = java.time.LocalTime.of(15, 0)).shortHours.second)
+
+        val today = LocalDate.of(2026, 11, 18) // a Wednesday
+        var rules = ShopRules().withDay(DayOfWeek.SATURDAY, ShopDay.SHORT, today).withDay(DayOfWeek.SUNDAY, ShopDay.EVERY_OTHER, today)
+        assertEquals(ShopDay.SHORT, rules.dayOf(DayOfWeek.SATURDAY))
+        assertEquals(ShopDay.EVERY_OTHER, rules.dayOf(DayOfWeek.SUNDAY))
+        assertEquals(ShopDay.OPEN, rules.dayOf(DayOfWeek.MONDAY))
+        assertEquals(today, rules.everyOtherFrom)
+        val sunday = LocalDate.of(2026, 11, 22)
+        assertTrue(rules.everyOtherClosed(sunday))
+        assertFalse(rules.everyOtherClosed(sunday.plusWeeks(1)))
+        assertTrue(rules.everyOtherClosed(sunday.plusWeeks(2)))
+        assertTrue(rules.everyOtherClosed(sunday.minusWeeks(2)))
+        assertFalse(rules.everyOtherClosed(sunday.minusDays(1)))
+        assertEquals(listOf(sunday, sunday.plusWeeks(2)), ShopDays.extraClosed(rules, today, sunday.plusWeeks(3).minusDays(1)) { false })
+        assertEquals("격주 일요일 휴무", ShopDays.describe(rules))
+        // A day has one kind: closing Saturday takes it out of the short days, and the last day off every other week forgets the week.
+        rules = rules.withDay(DayOfWeek.SATURDAY, ShopDay.CLOSED, today).withDay(DayOfWeek.SUNDAY, ShopDay.OPEN, today)
+        assertEquals(setOf(DayOfWeek.SATURDAY), rules.closedWeekdays)
+        assertTrue(rules.shortWeekdays.isEmpty())
+        assertEquals(null, rules.everyOtherFrom)
+        assertEquals(java.time.LocalTime.of(17, 0), ShopRules(breakStart = java.time.LocalTime.of(15, 0), breakMinutes = 120).breakEnd)
+        assertEquals(null, ShopRules(breakStart = java.time.LocalTime.of(15, 0)).breakEnd)
     }
 
     /** [TYPE-04] An open day that passed with nothing sold is closed after all, judged once. */

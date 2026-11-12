@@ -104,8 +104,8 @@ class AlarmService : Service() {
             .setOngoing(true)
             .setSilent(true)
             .setOnlyAlertOnce(true)
-            .setContentTitle(ring.title)
-            .setContentText(describe(ring))
+            .setContentTitle(ring.title(BootAlarms.ringSettings(this).style))
+            .setContentText(describe(ring, BootAlarms.ringSettings(this).style))
             .setContentIntent(full.contentIntent)
             .setDeleteIntent(full.deleteIntent)
             .setColorized(true)
@@ -290,7 +290,7 @@ class AlarmService : Service() {
                 handler.postDelayed(later, WATCH_FIRST_MILLIS)
             }
             appContainer.appScope.launch {
-                val reached = com.bamnat.app.watch.WatchRing.ring(applicationContext, describe(ring))
+                val reached = com.bamnat.app.watch.WatchRing.ring(applicationContext, describe(ring, BootAlarms.ringSettings(applicationContext).style))
                 // No watch took it: the phone rings now, without waiting the minute.
                 if (!reached && watchFirst) handler.post { if (phoneLater === later) { handler.removeCallbacks(later); later.run() } }
             }
@@ -456,7 +456,7 @@ class AlarmService : Service() {
             // so it never popped up) its own group, alerting as itself, says it is still ringing.
             val again = NotificationCompat.Builder(this, buildNotification(ring))
                 .setGroup(AGAIN_GROUP).setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_ALL).setSortKey("0")
-                .setContentText("아직 울리고 있어요 · " + describe(ring))
+                .setContentText("아직 울리고 있어요 · " + describe(ring, BootAlarms.ringSettings(this).style))
                 .build()
             nm.notify(Notifications.ALARM_AGAIN_ID, again)
         }
@@ -499,8 +499,8 @@ class AlarmService : Service() {
         if (inCallNow) builder.setOnlyAlertOnce(true).setSilent(true)
         else builder.setFullScreenIntent(fullScreen, true)
         return builder
-            .setContentTitle(ring.title)
-            .setContentText(if (inCallNow) CallHold.line(callHold.holding) else describe(ring))
+            .setContentTitle(ring.title(BootAlarms.ringSettings(this).style))
+            .setContentText(if (inCallNow) CallHold.line(callHold.holding) else describe(ring, BootAlarms.ringSettings(this).style))
             .setContentIntent(fullScreen)
             // [ALRM-22] A ringing alarm stands out at the top of whatever is on screen.
             .setColorized(true)
@@ -843,11 +843,11 @@ class AlarmService : Service() {
 
         private val timeFormat = DateTimeFormatter.ofPattern("HH:mm")
 
-        fun describe(ring: RingRequest): String {
+        fun describe(ring: RingRequest, style: com.bamnat.core.work.WorkStyle? = null): String {
             val start = ring.shiftStart.format(timeFormat)
             val work = ring.shiftName.isNotBlank()
-            // [RVG-09] '10:00 영업 시작' on a shop's day.
-            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName)
+            // [RVG-09] '10:00 영업 시작' on a shop's day. 2.0.0 [RVH-41] 검토 T30-75: by the kind of work too ('10:00 일정 시작').
+            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName, style)
             return when {
                 // [SCHED-01] A memo's schedule: when it is.
                 // [PROV-07] 일어났나요? had no answer.
@@ -865,15 +865,15 @@ class AlarmService : Service() {
                 ring.custom -> "이 날 알람"
                 // [EASE-18] One after the start says so (다음날 낮잠).
                 // PC 267560dd: "19:00 근무 시작" read as tonight on a nap alarm the next day; it says the shift began yesterday.
-                ring.offsetMinutes < 0 -> startedLine(ring, start) + " · ${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람"
+                ring.offsetMinutes < 0 -> startedLine(ring, start, style) + " · ${com.bamnat.app.ui.Fmt.offset(ring.offsetMinutes)} 알람"
                 else -> "$start $noun 시작 · ${ring.offsetMinutes}분 전 알람"
             }
         }
 
         /** "어제 19:00에 시작한 근무" when the alarm comes on a later day than the shift began, else "19:00 근무 시작". */
-        internal fun startedLine(ring: RingRequest, start: String): String {
+        internal fun startedLine(ring: RingRequest, start: String, style: com.bamnat.core.work.WorkStyle? = null): String {
             val ringDay = AlarmScheduler.millisToLocal(ring.triggerAtMillis).toLocalDate()
-            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName)
+            val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName, style)
             return when (java.time.temporal.ChronoUnit.DAYS.between(ring.shiftDate, ringDay)) {
                 0L -> "$start $noun 시작"
                 1L -> "어제 ${start}에 시작한 $noun"

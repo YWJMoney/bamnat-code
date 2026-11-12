@@ -306,6 +306,8 @@ object ShareLinkPayload {
         sleepNow: SleepNow? = null,
         /** 1.39 G5-N4 The planned sleeps not over yet (epoch millis); sent only with [ShareOptions.sleepPlan]. */
         sleepPlan: List<SleepPlanWindow> = emptyList(),
+        /** 2.0.0 [RVH-45] The 1일 기준 (LeavePolicy.dayMinutes) an hour's leave is told against for a receiver before 2.0.0. */
+        leaveDayMinutes: Int = Leave.DAY_MINUTES,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -327,7 +329,17 @@ object ShareLinkPayload {
                 if (type != null) put("type", type.id)
                 second?.let { put("second", it.id) }
                 // The kind of leave (유급·무급 휴가) is private unless ticked; family only needs to know how much of the day is off.
-                day.leave?.let { put("leave", leaveLabel(it, options.leaveKinds)) }
+                // 2.0.0 [RVH-45] An hour's leave (설계 4-4절, 총괄 1-2): "leave" is what a receiver before 2.0.0 reads, so it says '반차' with
+                // the hours from half a day up and nothing below (that receiver reads a leave without '반' as a whole day off); the
+                // minutes and where in the day go in keys of their own.
+                day.leave?.let { l ->
+                    if (!l.hourly) put("leave", leaveLabel(l, options.leaveKinds))
+                    else {
+                        l.linkText(options.leaveKinds, leaveDayMinutes)?.let { put("leave", it.take(LEAVE_CHARS)) }
+                        put("leaveMinutes", l.minutes)
+                        if (l.at != null) put("leaveAt", l.atMinute) else if (l.fromStart) put("leaveStart", true)
+                    }
+                }
                 // [SHR-04] No work at all as far as the link shows, for the receiver's 같이 쉬는 날: extra work
                 // the sharer did not tick stays out of it too, only a 대근 counts.
                 // [SHR-11] A booked job is work too, when the sharer shows jobs.
@@ -360,6 +372,8 @@ object ShareLinkPayload {
                 put("short", t.label.take(4).ifEmpty { t.name.take(1) })
                 put("color", "#%06X".format(t.colorArgb and 0xFFFFFF))
                 if (t.start != null && t.end != null && !t.isOff) put("time", "${t.start}-${t.end}")
+                // 2.0.0 [RVH-44] 하루 두 구간: "time" stays the first start to the last end (what a receiver before 2.0.0 reads), the gap apart.
+                if (t.hasGap) put("gap", "${t.gapStart}-${t.gapStart!!.plusMinutes(t.gapMinutes.toLong())}")
                 if (t.isOff) put("off", true)
                 t.icon?.let { put("icon", it) }
             })

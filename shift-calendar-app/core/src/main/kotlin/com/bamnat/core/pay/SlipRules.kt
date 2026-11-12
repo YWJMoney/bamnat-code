@@ -265,7 +265,7 @@ object SlipRules {
         if (hours == now) return emptyList()
         val rate = if (m == 1.0) "" else " ${PayCalculator.pct(m)}"
         return listOf("명세서의 $names ${won(amount)}을 이달 ${kind.name} ${PayCalculator.hours(minutes)}으로 나누면, ${kind.name}은 통상임금 ÷ ${hours}시간${rate}으로 계산한 것 같아요" +
-            " (지금 ${now}시간). 맞으면 급여 › 회사 규칙 › 연장 휴무일 근무 지정 › ${kind.name} › 급여와 가산에서 시수를 ${hours}시간으로 골라 주세요")
+            " (지금 ${now}시간). 맞으면 급여 › 회사 규칙 › 연장·휴무일 근무 지정 › ${kind.name} › 급여와 가산에서 시수를 ${hours}시간으로 골라 주세요")
     }
 
     /**

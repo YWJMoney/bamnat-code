@@ -98,25 +98,8 @@ class TypeWordsScreenTest : ScreenshotBase() {
             listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)
 
     private companion object {
-        /** 2.0.0 처음 잰 것: 고치면 지워요. */
+        /** 2.0.0 처음 잰 17줄은 모두 고쳤어요([RVH-41]). 새로 새는 말은 여기에 넣지 말고 그 유형의 말로 고쳐요. */
         const val KNOWN = """
-        T30-80|설정 › NOTICES|전공의|DAY,HOURLY,FIELD,BUSINESS,INVEST
-        T30-80|설정 › NOTICES|연속 근무|BUSINESS,INVEST
-        T30-80|설정 › NOTICES|근무|INVEST
-        T30-82|설정 › NOTICES|52시간|HOURLY
-        T30-76|설정 › NOTICES|퇴근|FIELD,BUSINESS,INVEST
-        T30-78|설정 › NOTICES|근무표|FIELD,BUSINESS,INVEST
-        T30-78|설정 › NOTICES|회사|INVEST
-        T30-83|설정 › NOTICES|연차|FIELD,BUSINESS,INVEST
-        T30-92|설정 › NOTICES|근무별|FIELD,BUSINESS,INVEST
-        T30-100|설정 › NOTICES|쉬는 날|BUSINESS
-        T30-100|설정|쉬는 날|BUSINESS
-        T30-100|달력|쉬는 날|BUSINESS
-        T30-85|설정 › ALARM|근무마다|FIELD,BUSINESS,INVEST
-        T30-85|설정 › ALARM|근무별|FIELD,BUSINESS,INVEST
-        T30-99|설정 › ALARM|근무 알람|FIELD,BUSINESS,INVEST
-        T30-84|설정 › ALARM|근무|INVEST
-        T30-97|설정 › WORK|근무|INVEST
         """
     }
 }
