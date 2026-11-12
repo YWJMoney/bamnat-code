@@ -175,6 +175,23 @@ class ReviewOShotsTest : ScreenshotBase() {
         open(FeatureRoute(Place.SETTINGS_PRIVACY, com.bamnat.app.ui.settings.FORGET_ALL_ROW))
     }
 
+    // RVO-17 (검토 SET-11·U11a-07·I11aa-05): 백업 암호 창, 짧은 암호에 '짧아요' 한 줄, 보기 단추, 단추는 세로, '암호 없이 저장'은 작은 줄.
+    @Test fun backupPassword() = all("13_backup_password") {
+        content { com.bamnat.app.ui.settings.ExportPasswordDialog(onDismiss = {}, onExport = {}) }
+        typeInto("암호 (8자 이상 권해요)", "night5")
+    }
+
+    // RVO-17 (검토 SET-11·U11a-09): 파일 불러오기의 최근 백업, 지워진 파일은 흐리게 '지워졌거나 옮겨졌어요'와 '목록에서 빼기'.
+    @Test fun recentBackupsGone() = all("14_recent_backups_gone") {
+        val at = java.time.LocalDateTime.of(2026, 11, 10, 21, 5)
+        content {
+            com.bamnat.app.ui.settings.RecentBackupsDialog(listOf(
+                com.bamnat.app.ui.settings.BackupPlace.Recent(android.net.Uri.parse("content://com.example.gone/1"), "밤낮-백업-2026-11-10.bamnat", at),
+                com.bamnat.app.ui.settings.BackupPlace.Recent(android.net.Uri.parse("content://com.example.gone/2"), "밤낮-백업-2026-11-03.bamnat", at.minusDays(7)),
+            ), onPick = {}, onOther = {}, onDismiss = {})
+        }
+    }
+
     // HQ-46: 배포판, 11-13, 서버 답 전, 10-27 전에 깔고 3.1에 동의하지 않은 폰(바탕은 '정식 출시 전이라 모든 기능이 무료예요').
     @Test fun heldPhone() = all("10_pro_held") {
         com.bamnat.core.time.Today.fix(java.time.ZonedDateTime.of(2026, 11, 13, 10, 30, 0, 0, java.time.ZoneId.of("Asia/Seoul")))

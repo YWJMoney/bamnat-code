@@ -213,20 +213,22 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
  * row: the bin and the words in the danger colour (the one red on the page, 조건 6), what it did last under it.
  */
 @Composable
-internal fun DangerRow(title: String, subtitle: String?, onClick: () -> Unit) {
+internal fun DangerRow(title: String, subtitle: String?, enabled: Boolean = true, onClick: () -> Unit) {
+    // Nothing to delete (no links left): quiet, and not pressed.
+    val ink = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
     Row(
         Modifier
             .focusMark(title)
             .fillMaxWidth()
             .heightIn(min = ROW_MIN_HEIGHT)
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error)
+        Icon(Icons.Outlined.Delete, null, tint = ink)
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(said(title), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+            Text(said(title), style = MaterialTheme.typography.bodyLarge, color = ink)
             subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }

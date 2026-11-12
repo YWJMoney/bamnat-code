@@ -49,6 +49,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.BuildConfig
@@ -871,7 +875,8 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             settings.dayDial) { on -> vm.update { it.copy(dayDial = on) } }
         // 1.39 [FLOW-30] 근무 기준 하루: where a small-hours note, spending or sleep belongs on a day with no work around it.
         ChoiceRow("하루 시작 시각", "야간 근무 중 새벽에 적은 돈·메모·잠은 그 야간 날에 붙어요. 근무가 없는 날은 이 시각 전까지 어제로 쳐요",
-            listOf(0, 180, 240, 300, 360).map { it to if (it == 0) "자정" else "%02d:00".format(it / 60) }, settings.dayStartMinutes) { m ->
+            // 2.0.0 [RVO-17] 검토 SET-12: as 오전/오후로 보기 says ('오전 3:00' or '03:00'), as every time in the app.
+            listOf(0, 180, 240, 300, 360).map { it to if (it == 0) "자정" else Fmt.time(java.time.LocalTime.of(it / 60, 0)) }, settings.dayStartMinutes) { m ->
             vm.update { it.copy(dayStartMinutes = m) }
         }
         // [NAV-07] 1.26 AD: which tab the app opens on and the tabs' order, without the long press.
@@ -1090,7 +1095,35 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         HorizontalDivider()
         // [SET-02] 듀티표 넣기 and 근태 엑셀 가져오기 are in 내 근무 only (its tools for the kind of work).
         // [REL-04]
-        NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)", files.exportIcs)
+        // 2.0.0 [RVO-17] 검토 SET-11: with more than one calendar, which one's work goes (one tap each); with one, straight on.
+        val book = LocalContext.current.appContainer.calendars
+        val calendars by book.calendars.collectAsStateWithLifecycle()
+        val mine = remember(calendars) { calendars.filter { it.isMain || it in book.added() } }
+        var choosing by remember { mutableStateOf(false) }
+        NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)") {
+            if (mine.size > 1) choosing = true else files.exportIcs()
+        }
+        if (choosing) AlertDialog(
+            onDismissRequest = { choosing = false },
+            title = { Text("어느 달력의 근무를 내보낼까요?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    for (cal in mine) {
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                                .clickable(role = Role.Button) { choosing = false; vm.icsCalendar = cal.id; files.exportIcs() },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(Modifier.size(12.dp).clip(androidx.compose.foundation.shape.CircleShape).background(androidx.compose.ui.graphics.Color(cal.color)))
+                            Spacer(Modifier.width(12.dp))
+                            Text(cal.name, style = MaterialTheme.typography.bodyLarge, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { choosing = false }) { Text("취소") } },
+        )
         HorizontalDivider()
         // [FEAT-07] The same, kept up to date by itself (프로).
         PhoneCalendarRows(vm)
@@ -1117,9 +1150,11 @@ private fun ShareLinkRows() {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.GROUP)
         }
         HorizontalDivider()
-        NavRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
-            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요") {
-            if (keys.isNotEmpty() && !busy) asking = true
+        // 2.0.0 [RVO-16] 검토 I11aa-04 '위험한 일 묶음': the same red row with a bin as 보낸 정보 모두 지우기. It stays here, where 처리방침
+        // 6항 says it is (설정 › 데이터 › ‘모든 링크 끊기’, LegalPagesTest), by the links it cuts.
+        DangerRow(CUT_ALL_ROW, said ?: if (keys.isEmpty()) "지금 열려 있는 링크가 없어요"
+            else "이 휴대폰이 만든 링크 ${keys.size}개를 한 번에 끊어요. 받은 사람은 더 볼 수 없어요", enabled = keys.isNotEmpty() && !busy) {
+            asking = true
         }
     }
     if (asking) ConfirmDialog(
@@ -1329,10 +1364,23 @@ private fun ForgetSection(vm: SettingsViewModel) {
     val context = LocalContext.current
     SectionCard(title = "지우기") {
         var forgetting by remember { mutableStateOf(false) }
-        var forgot by remember { mutableStateOf<String?>(null) }
-        val last = remember(forgot) { com.bamnat.app.ui.company.ForgetLog.last(context) }
-        DangerRow(FORGET_ALL_ROW, forgot ?: last?.let { com.bamnat.app.ui.company.ForgetLog.line(it, com.bamnat.core.time.Today.zone()) }
-            ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
+        var busy by remember { mutableStateOf(false) }
+        // 2.0.0 [RVO-16] 검토 U40-04: the result once, in full with what stays; the row keeps the short line.
+        var result by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
+        val last = remember(busy) { com.bamnat.app.ui.company.ForgetLog.last(context) }
+        DangerRow(FORGET_ALL_ROW, when {
+            busy -> "지우는 중…"
+            last != null -> com.bamnat.app.ui.company.ForgetLog.line(last, com.bamnat.core.time.Today.zone())
+            else -> "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요"
+        }, enabled = !busy) { forgetting = true }
+        result?.let { (ok, words) ->
+            AlertDialog(
+                onDismissRequest = { result = null },
+                title = { Text(if (ok) "보낸 정보를 지웠어요" else "지우지 못했어요") },
+                text = { Text(if (ok) words + "\n\n" + com.bamnat.app.ui.company.FORGET_STAYS else words) },
+                confirmButton = { TextButton(onClick = { result = null }) { Text("확인") } },
+            )
+        }
         // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
         var links by remember { mutableStateOf<String?>(null) }
         val app = context.appContainer
@@ -1345,8 +1393,8 @@ private fun ForgetSection(vm: SettingsViewModel) {
             onDismiss = { forgetting = false },
             onConfirm = {
                 forgetting = false
-                forgot = "지우는 중…"
-                vm.forgetEverythingSent { forgot = it }
+                busy = true
+                vm.forgetEverythingSent { ok, words -> busy = false; result = ok to words }
             },
         )
     }

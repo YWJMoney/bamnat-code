@@ -191,10 +191,11 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun showAdPrivacy(activity: android.app.Activity) = container.ads.showPrivacyOptions(activity)
 
     /** 1.36 [INQ-07] 이 휴대폰이 보낸 정보 모두 지우기, where the privacy policy says it is. */
-    fun forgetEverythingSent(done: (String) -> Unit) {
+    /** 2.0.0 [RVO-16] [done] with whether the server answered, and what it deleted in words. */
+    fun forgetEverythingSent(done: (Boolean, String) -> Unit) {
         viewModelScope.launch {
             val counts = com.bamnat.app.ui.company.forgetEverythingSent(container)
-            done(counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
+            done(counts != null, counts?.words() ?: "인터넷에 연결한 뒤 다시 해 주세요")
         }
     }
 
@@ -535,11 +536,15 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** Writes work days from three months ago to a year ahead as a calendar file [REL-04]. */
+    /** 2.0.0 [RVO-17] 검토 SET-11 '내 달력만 내보내기': the calendar picked for the next [exportIcs] (내 달력 unless another was). */
+    var icsCalendar: String = com.bamnat.app.data.PersonalCalendar.MAIN
+
+    /** Writes work days from three months ago to a year ahead as a calendar file [REL-04], of [icsCalendar]. */
     fun exportIcs(context: Context, uri: Uri) {
+        val calendar = icsCalendar.also { icsCalendar = com.bamnat.app.data.PersonalCalendar.MAIN }
         viewModelScope.launch {
             _message.value = SettingsMessage(runCatching {
-                val snapshot = container.scheduleRepository.snapshot.first()
+                val snapshot = container.calendars.repository(calendar).snapshot.first()
                 val (from, to) = IcsWriter.defaultRange(Today.date())
                 val ics = withContext(Dispatchers.Default) {
                     IcsWriter.write(snapshot.resolver.resolveRange(from, to), Today.zone())
@@ -1417,6 +1422,22 @@ internal object BackupPlace {
     fun last(context: Context): Uri? =
         runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY, null)?.let(Uri::parse) }.getOrNull()
 
+    /**
+     * 2.0.0 [RVO-17] 검토 SET-11·U11a-09: whether the file is still there, asked of its folder's app (the name only, nothing read or
+     * downloaded). Off the main thread.
+     */
+    fun exists(context: Context, uri: Uri): Boolean = runCatching {
+        context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { it.moveToFirst() } == true
+    }.getOrDefault(false)
+
+    /** 2.0.0 [RVO-17] 검토 U11a-09 '목록에서 빼기': a backup that is gone leaves the list, and its grant goes back. */
+    fun forget(context: Context, uri: Uri) {
+        runCatching { context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val json = org.json.JSONArray()
+        stored(context).filter { it.uri != uri }.forEach { r -> json.put(org.json.JSONObject().put("u", r.uri.toString()).put("n", r.name).put("t", r.at.toString())) }
+        runCatching { context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(RECENT, json.toString()).apply() }
+    }
+
     class Open : ActivityResultContracts.OpenDocument() {
         override fun createIntent(context: Context, input: Array<String>): Intent =
             super.createIntent(context, input).apply { last(context)?.let { putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, it) } }
@@ -1523,19 +1544,40 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
 
 /** 1.38: 파일 불러오기 with the backups this phone saved (newest first) and 다른 파일 고르기 for anything else. */
 @Composable
-private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
-    val at = java.time.format.DateTimeFormatter.ofPattern("M월 d일 a h:mm", java.util.Locale.KOREAN)
+internal fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupPlace.Recent) -> Unit, onOther: () -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    // 2.0.0 [RVO-17] 검토 SET-11·U11a-09: a file deleted or moved since is said so, quiet and not opened, with '목록에서 빼기'.
+    var shown by remember { mutableStateOf(list) }
+    val gone by androidx.compose.runtime.produceState(emptySet<Uri>(), list) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { list.filterNot { BackupPlace.exists(context, it.uri) }.map { it.uri }.toSet() }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("어떤 파일을 불러올까요?") },
         text = {
             Column {
                 Text("이 휴대폰에서 만든 백업이에요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                list.forEach { r ->
-                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onPick(r) }.padding(vertical = 10.dp)) {
-                        Text(r.at.format(at) + " 백업", style = MaterialTheme.typography.bodyLarge)
-                        Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                shown.forEach { r ->
+                    val missing = r.uri in gone
+                    // 2.0.0 [RVO-17] 검토 SET-12: the time as 설정 › 화면과 글자 says (오전/오후 or 24시).
+                    val title = "${Fmt.monthDay(r.at.toLocalDate())} ${Fmt.time(r.at.toLocalTime())} 백업"
+                    val words: @Composable () -> Unit = {
+                        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(enabled = !missing, role = Role.Button) { onPick(r) }
+                            .heightIn(min = 48.dp).padding(vertical = 8.dp)) {
+                            Text(title, style = MaterialTheme.typography.bodyLarge,
+                                color = if (missing) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
+                            Text(if (missing) "지워졌거나 옮겨졌어요 · ${r.name}" else r.name, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
+                    // At 200% or folded the button goes under the words (조건 12).
+                    if (!missing) words() else com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 160.dp, start = words, end = {
+                        TextButton(onClick = {
+                            BackupPlace.forget(context, r.uri)
+                            shown = shown - r
+                            if (shown.isEmpty()) onOther()
+                        }) { Text("목록에서 빼기") }
+                    })
                 }
             }
         },

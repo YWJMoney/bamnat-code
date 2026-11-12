@@ -121,7 +121,6 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
 /**
@@ -472,10 +471,13 @@ private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     else -> "답을 기다려요" to Tone.WAIT
 }
 
-private val stamp = DateTimeFormatter.ofPattern("M월 d일 HH:mm")
-
-/** "10월 18일 21:05" in this phone's time zone. */
-private fun stampOf(at: Instant): String = at.atZone(Today.zone()).format(stamp)
+/**
+ * "10월 18일 21:05" (or "10월 18일 오후 9:05") in this phone's time zone. 2.0.0 [RVO-17] 검토 SET-12: the time as 오전/오후로 보기 says,
+ * as every time in the app ([com.bamnat.app.ui.Fmt.time]).
+ */
+private fun stampOf(at: Instant): String = at.atZone(Today.zone()).let {
+    "${com.bamnat.app.ui.Fmt.monthDay(it.toLocalDate())} ${com.bamnat.app.ui.Fmt.time(it.toLocalTime())}"
+}
 
 /** "[달력] " and the like at the start of a question: the screen it was asked from. */
 private val TAG = Regex("^\\[[^\\]]{1,30}]\\s*")

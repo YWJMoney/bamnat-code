@@ -11,6 +11,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.company.ForgetLog
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,7 +22,10 @@ import org.robolectric.annotation.Config
 import java.time.ZoneId
 import java.time.ZonedDateTime
 
-/** 2.0.0 [RVO-16] 검토 SET-09: 앱 잠금은 휴대폰 잠금으로 확인한 뒤에 켜고 끄고, 보낸 정보 모두 지우기는 지난번 결과를 줄 아래에. */
+/**
+ * 2.0.0 [RVO-16] 검토 SET-09: 앱 잠금은 휴대폰 잠금으로 확인한 뒤에 켜고 끄고, 보낸 정보 모두 지우기는 지난번 결과를 줄 아래에.
+ * [RVO-17] 검토 SET-11: 백업 암호의 짧아요, 지워진 백업 파일.
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class ReviewOSettingsTest {
@@ -46,6 +50,20 @@ class ReviewOSettingsTest {
         assertEquals("마지막 요청 11월 12일 21:30 · 인터넷이 없어 지우지 못했어요", ForgetLog.line(ForgetLog.last(context)!!, zone))
         ForgetLog.record(context, ZonedDateTime.of(2026, 11, 13, 8, 5, 0, 0, zone).toInstant(), ForgetCounts(posts = 1).short())
         assertEquals("the newest request wins", "마지막 요청 11월 13일 08:05 · 지웠어요", ForgetLog.line(ForgetLog.last(context)!!, zone))
+    }
+
+    /** 2.0.0 [RVO-17] 검토 SET-11·I11aa-05: 4~7자는 '짧아요'와 함께 되고, 8자부터 좋아요. */
+    @Test fun aShortBackupPasswordIsAllowedWithAWord() {
+        assertNull(passwordWords(""))
+        assertEquals("4자 이상 넣어 주세요", passwordWords("abc"))
+        assertEquals("짧아요 · 8자 이상이면 더 안전해요", passwordWords("night5"))
+        assertEquals("좋아요", passwordWords("night-shift"))
+        assertEquals(4, MIN_BACKUP_PASSWORD)
+    }
+
+    /** 2.0.0 [RVO-17] 검토 U11a-09: a backup whose file is gone is known before it is opened. */
+    @Test fun aGoneBackupIsKnownBeforeOpening() {
+        assertFalse(BackupPlace.exists(context, android.net.Uri.parse("content://com.example.gone/1")))
     }
 
     @Test fun withoutThePhonesLockTheSwitchDoesNotAsk() {
