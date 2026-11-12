@@ -43,6 +43,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.PutOnNotice
 
 /** Terms are the same for every screen and rarely change: read once per run. */
 private object TermsCache {
@@ -371,6 +372,9 @@ class CompanyDetailViewModel(
     /** The rotation of [setup] as rows of the next seven days, with today's row when the calendar already shows it. */
     suspend fun phases(setup: SharedSetup): Phases? = rotationPhases(c, setup.text, fromSender = false, calendar = calendar)
 
+    /** 2.0.0 [RVN-08] COMP-11 What [setup] would change on this calendar, for the look before it goes in (null when it cannot be read). */
+    suspend fun preview(setup: SharedSetup): CompanyShare.Preview? = runCatching { scope.share.preview(setup.text) }.getOrNull()
+
     /**
      * Applies [setup] with today at [todayStep] of its rotation. What is still to do comes back:
      * the user's own amounts when there was no pay setup yet.
@@ -420,12 +424,37 @@ class CompanyDetailViewModel(
                 val payWaits = withPay && scope.pay.profile.value != null && runCatching { org.json.JSONObject(text).has("pay") }.getOrDefault(false)
                 val full = text
                 if (!withPay || payWaits) text = org.json.JSONObject(text).apply { remove("pay") }.toString()
-                val result = scope.share.apply(text, rotation = true, todayStep = todayStep).let { r -> if (payWaits) r.copy(rules = true) else r }
+                // 2.0.0 [RVN-08] COMP-11 The calendar as it was, for 되돌리기 when this goes over an order it already had.
+                val was = scope.share.before()
+                val usedBefore = store.applied.value
+                val pendingBefore = store.pendingPay
+                val applied = scope.share.apply(text, rotation = true, todayStep = todayStep).let { r -> if (payWaits) r.copy(rules = true) else r }
+                var offered: com.bamnat.app.company.PendingWay? = null
                 if (payWaits) {
-                    com.bamnat.app.company.PendingWays.of(scope).offer(com.bamnat.app.company.PendingWay(page.id, page.name, setup.dept, setup.id, full,
-                        com.bamnat.app.company.PendingWay.Source.APPLY))
+                    offered = com.bamnat.app.company.PendingWay(page.id, page.name, setup.dept, setup.id, full, com.bamnat.app.company.PendingWay.Source.APPLY)
+                    com.bamnat.app.company.PendingWays.of(scope).offer(offered)
                     scope.payWays.askBase(true)
-                } else if (withPay && result.pendingPay) {
+                }
+                val result = if (was.hadOrder) applied.copy(undo = {
+                    runCatching {
+                        scope.share.undo(was)
+                        store.setApplied(usedBefore)
+                        store.pendingPay = pendingBefore
+                        // The pay way this offered waits no more: nothing of it went in.
+                        offered?.let { w ->
+                            val ways = com.bamnat.app.company.PendingWays.of(scope)
+                            if (ways.pending.value == w) { ways.cancel(w); ways.forgetDropped(); scope.payWays.askBase(false) }
+                        }
+                        scope.autoShare.rebase()
+                        runCatching { c.companyApi.use(store.device, page.id, setup.id, false, scope.serverCal) }
+                        if (usedBefore != null && usedBefore.setup != setup.id) {
+                            runCatching { c.companyApi.use(store.device, usedBefore.companyId, usedBefore.setup, true, scope.serverCal) }
+                        }
+                        c.telemetry.event("company_apply", "undone")
+                        true
+                    }.getOrDefault(false)
+                }) else applied
+                if (!payWaits && withPay && result.pendingPay) {
                     // The amounts screen does not ask "쓸까요?" again; the way is kept when its amounts are saved.
                     scope.payWays.decided = true
                 }
@@ -730,8 +759,11 @@ class TalkHolder(
         val o = _open.value ?: return
         scope.launch {
             val next = try {
-                val t = c.companyApi.talk(c.companyStore.device, o.company, o.setup)
-                c.companySearch.cache.keepTalk(o.company, o.setup, t)
+                val page = c.companyApi.talk(c.companyStore.device, o.company, o.setup)
+                c.companySearch.cache.keepTalk(o.company, o.setup, page)
+                // 2.0.0 [RVN-06] COMP-01 A post opened from 지난 글 is not on the first page: its own thread is read and laid in, so
+                // 신고·안 보기·답글 work on it as on any other (before, an answer to it went up as a new post).
+                val t = withThread(o, page)
                 if (o.company == _open.value?.company || _open.value == null) last = t
                 // [TOWN-02] Answers to my posts read here are not new on 광장's line any more.
                 if (o.room) runCatching { com.bamnat.app.company.VillageReplies.seenInTalk(c.appContext, t.posts.map { Triple(it.id, it.parent, it.mine) }) }
@@ -743,6 +775,15 @@ class TalkHolder(
             val now = _open.value
             if (now?.company == o.company && now.setup == o.setup) _open.value = next.copy(talk = next.talk ?: now.talk, focus = now.focus)
         }
+    }
+
+    /** COMP-01 [page] with the thread of [Open.focus] (a 지난 글 of a kind of work's plaza) when the page does not have it. */
+    private suspend fun withThread(o: Open, page: com.bamnat.app.company.Talk): com.bamnat.app.company.Talk {
+        val focus = o.focus ?: return page
+        if (!o.room || !o.company.startsWith("style-") || page.posts.any { it.id == focus }) return page
+        val thread = runCatching { c.companyApi.talkThread(c.companyStore.device, o.company, focus) }.getOrNull() ?: return page
+        if (thread.posts.isEmpty()) return page
+        return page.copy(posts = (thread.posts + page.posts).distinctBy { it.id }.sortedBy { it.at })
     }
 
     /**
@@ -887,11 +928,13 @@ class TalkHolder(
         }
     }
 
-    fun delete(id: String) {
+    /** [done] runs once the server answered (2.0.0 [RVN-06]: 광장's page reads itself again after a card's 지우기). */
+    fun delete(id: String, done: () -> Unit = {}) {
         scope.launch {
             runCatching { c.companyApi.deletePost(c.companyStore.device, id) }
             changed = true
             reload()
+            done()
         }
     }
 
@@ -1186,8 +1229,9 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
 
     val enabled: Boolean = c.companyApi.enabled
     // 1.36 PC 재검토 (교대 사용자에게도 '건설 일용직·기능공'이 먼저): the board opens on the user's own kind of work.
+    // 2.0.0 [RVN-07] COMP-06 …and the calendar open now (its pay is the one 내 급여에 넣기 changes).
     private val _filter = MutableStateFlow(Filter(job = jobOfStyle(
-        c.calendars.styleOf(com.bamnat.app.data.PersonalCalendar.MAIN, c.settingsRepository.current.workStyle)) ?: "construction"))
+        c.calendars.styleOf(c.calendars.current().id, c.settingsRepository.current.workStyle)) ?: "construction"))
     val filter: StateFlow<Filter> = _filter.asStateFlow()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -1250,31 +1294,65 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun takeBack(rate: com.bamnat.app.company.Rate, done: (Boolean) -> Unit) {
+    /** [done] gets whether the server kept an adopted rate, or null when it could not be reached (2.0.0 [RVN-07]: not 되돌렸어요 then). */
+    fun takeBack(rate: com.bamnat.app.company.Rate, done: (Boolean?) -> Unit) {
         viewModelScope.launch {
-            val kept = runCatching { c.companyApi.takeRateBack(c.companyStore.device, rate.id) }.getOrDefault(false)
+            val kept = runCatching { c.companyApi.takeRateBack(c.companyStore.device, rate.id) }.getOrNull()
             load()
             done(kept)
         }
     }
 
     /**
-     * [PLZ-11] 광장 시세를 내 급여에: the middle of [g] becomes my 일당·시급·월급 from this month, when my pay is
-     * paid that way. Earlier months keep what they were; undo is the pay screen's. [done] gets what to say.
+     * 2.0.0 [RVN-07] COMP-06 광장 시세를 내 급여에, asked first: what changes ([ApplyPlan]: 150,000원 → 170,000원, from this month, on the
+     * calendar the screen was opened from), then saved with 되돌리기 on the app's snackbar. A 월급 시세 is said not to be 기본급 before it
+     * goes in. Before: one tap changed my pay at once and said so in a line that could be off the screen.
      */
-    fun applyToMyPay(g: com.bamnat.app.company.RateGroup, done: (String) -> Unit) {
-        val p = c.payStore.profile.value ?: return done("급여 설정이 없어요. 급여 설정을 먼저 해 주세요")
+    data class ApplyPlan(
+        val group: com.bamnat.app.company.RateGroup,
+        val calendar: String,
+        val calendarName: String?,
+        val what: String,
+        val before: Long?,
+        val after: Long,
+        val from: java.time.LocalDate,
+    ) {
+        val monthly: Boolean get() = group.unit == "month"
+    }
+
+    /** COMP-06 The calendar open when the screen was, so the pay of the calendar being looked at is the one changed. */
+    private val calendarId: String = c.calendars.current().id
+
+    /** What [g] would change, or what to say when it cannot go in (no pay yet, or my pay is paid another way). */
+    fun planApply(g: com.bamnat.app.company.RateGroup): Pair<ApplyPlan?, String?> {
+        val scope = c.scopeOf(calendarId)
+        val p = scope.pay.profile.value ?: return null to "급여 설정이 아직 없어요. 급여 화면에서 먼저 설정해 주세요"
         val want = when (g.unit) {
             "day" -> WageType.DAILY
             "hour" -> WageType.HOURLY
             else -> WageType.MONTHLY
         }
-        if (p.wageType != want) return done("내 급여는 ${wageName(p.wageType)} 방식이라 ${com.bamnat.app.company.Plaza.unit(g.unit)}을 넣을 수 없어요")
+        if (p.wageType != want) return null to "내 급여는 ${wageName(p.wageType)} 방식이라 ${com.bamnat.app.company.Plaza.unit(g.unit)}을 넣을 수 없어요"
+        val from = Today.month().atDay(1)
+        val before = p.base.on(from).value.takeIf { it > 0 }
+        val cals = companyCalendars(c.calendars.calendars.value)
+        val name = if (cals.size > 1) cals.firstOrNull { it.id == calendarId }?.name else null
+        return ApplyPlan(g, calendarId, name, wageName(want), before, g.mid, from) to null
+    }
+
+    /** Saves [plan]'s 시세 from its month; 되돌리기 puts back only the pay it changed, while nothing else changed it since. */
+    fun apply(plan: ApplyPlan) {
         viewModelScope.launch {
-            val from = Today.month().atDay(1)
-            c.payStore.save(p.copy(base = p.base.with(com.bamnat.core.pay.DatedValue(from, g.mid))))
+            val store = c.scopeOf(plan.calendar).pay
+            val was = store.profile.value?.base ?: return@launch PutOnNotice.say("급여 설정이 없어 넣지 못했어요")
+            val now = was.with(com.bamnat.core.pay.DatedValue(plan.from, plan.after))
+            store.update("광장 시세를 ${plan.what}으로 넣었어요") { it.copy(base = now) }
             c.telemetry.event("plaza_rate", "applied")
-            done("${from.monthValue}월부터 ${com.bamnat.app.company.Plaza.unit(g.unit)}을 ${won(g.mid)}으로 바꿨어요. 급여 화면에서 되돌릴 수 있어요")
+            PutOnNotice.say("${plan.from.monthValue}월부터 ${plan.what}을 ${won(plan.after)}으로 바꿨어요") {
+                var undone = false
+                store.update("광장 시세 넣기를 되돌렸어요") { p -> if (p.base == now) { undone = true; p.copy(base = was) } else p }
+                undone
+            }
         }
     }
 
@@ -1601,14 +1679,15 @@ class CompanyReportViewModel(
         }
     }
 
-    fun takeBack(id: String, done: (Boolean) -> Unit) {
+    /** [done] gets whether it went, and (2.0.0 [RVN-07] COMP-13) the server's words when an adopted setup stays. */
+    fun takeBack(id: String, done: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
-            val ok = runCatching { c.companyApi.takeBack(c.companyStore.device, id) }.isSuccess
-            if (ok) {
+            val r = runCatching { c.companyApi.takeBackSaying(c.companyStore.device, id) }
+            if (r.isSuccess) {
                 scope.store.removeSent(id)
                 _statuses.value = _statuses.value - id
             }
-            done(ok)
+            done(r.isSuccess, r.getOrNull())
         }
     }
 
@@ -1631,10 +1710,15 @@ class CompanyReportViewModel(
  */
 suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
     val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
+    // 2.0.0 [RVN-09] COMP-43 저절로 나누기 goes back to 묻기 with the rest (CompanyStore.forgetSent), said in the result.
+    val autoWas = c.companyStore.autoShare.value == true
     // [CALI-08] The server forgot everything this phone sent, from every calendar.
     c.forgetSentEverywhere()
-    // [SPD-13] and 내 활동 kept on the phone with it.
-    c.companySearch.cache.forgetActivity()
+    // [SPD-13] and 내 활동 kept on the phone with it; 2.0.0 COMP-43 with the company pages, boards and talks it kept.
+    c.companySearch.cache.forgetMine()
+    // 2.0.0 [RVN-09] COMP-42 The server forgot the push token and what 광장 this phone watched: the phone's copies and switches too.
+    val pushWas = com.bamnat.app.company.PlazaPush.forget(c)
+    com.bamnat.app.company.PushPhone.forget(c)
     // [ADMIN-02] The server deleted this phone's questions with the rest (a 결제·환불 one stays with the developer).
     c.inquiryStore.update(emptyList())
     c.inquiryStore.asked = false
@@ -1644,7 +1728,7 @@ suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.Forget
     c.recipes.peopleChanged()
     // 1.39 [PRIV-06] and every link this phone made on the share server, with the keys it holds (달력·팀·가게 링크).
     val links = runCatching { com.bamnat.app.share.ShareForget.all(c) }.getOrNull()
-    return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0)
+    return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0, alertsOff = pushWas, autoShareOff = autoWas)
 }
 
 /** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */

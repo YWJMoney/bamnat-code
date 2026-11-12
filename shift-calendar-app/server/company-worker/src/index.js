@@ -3855,7 +3855,7 @@ async function takeBack(request, env, id) {
       stmt(env, "DELETE FROM rewards WHERE report_id = ? AND status = 'owed'", id),
       stmt(env, "UPDATE reports SET device = ? WHERE id = ?", `gone${randomId(12)}`, id),
     ]);
-    return json({ kept: true, text: "채택된 규칙은 모두가 쓰는 규칙이라 남아요. 보낸 분과의 연결만 지웠어요." });
+    return json({ kept: true, text: "채택된 설정은 같은 회사 분들이 쓰고 있어 남아요. 나와의 연결과 받기로 한 보상만 지웠어요." });
   }
   await batch(env, [stmt(env, "DELETE FROM rewards WHERE report_id = ?", id), stmt(env, "DELETE FROM reports WHERE id = ?", id)]);
   return new Response(null, { status: 204 });
@@ -3886,6 +3886,12 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM rates WHERE device = ?", dev),
     stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM device_seen WHERE device = ?", dev),
+    // 2.0.0 [RVN-09] COMP-42 Its push token, what 광장 it watched and when it was last told, and its 오늘 출근 taps: nothing left
+    // that can reach this phone or says what it follows (the app takes its own copies back at the same time).
+    stmt(env, "DELETE FROM push_phones WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_watch WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_pushed WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_checkin WHERE device = ?", dev),
   ]);
   const [, reports, votes, , posts, , , kept, , , , , , asked] = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
@@ -4007,6 +4013,9 @@ export const FLAGS = {
   false: "일부러 틀린 정보",
   // AI 1.27 [PLAZA-33] 투자 이야기: a 종목 추천 or 리딩 (결정 AI-D8).
   advice: "종목 추천·리딩",
+  // 2.0.0 [RVN-06] COMP-10 마을 돌봄이 바로 쉬기로 다루는 두 가지(CARE_SEVERE)를 그 이름으로 신고해요(전에는 '욕설'로 섞였어요).
+  sexual: "성적인 내용",
+  illegal: "불법·위험한 내용",
 };
 
 /** Why the developer hid a post, as its writer's app shows it. */
@@ -4143,6 +4152,10 @@ async function talkData(request, env, companyId, grp, known = null) {
   const beforeRaw = new URL(request.url).searchParams.get("before");
   const beforeAt = style && beforeRaw ? Date.parse(beforeRaw) : NaN;
   const before = Number.isFinite(beforeAt) ? beforeAt : null;
+  // 2.0.0 [RVN-06] COMP-01 ?post=<id>: one top post of a kind of work's plaza with its answers, so a post read with ?before= (지난 글)
+  // opens in the sheet like the first page's (신고·안 보기·답 달기 on it). Read the same way, so blocked and hidden writers stay out.
+  const postRaw = new URL(request.url).searchParams.get("post");
+  const thread = style && before === null && typeof postRaw === "string" && /^p[A-Za-z0-9]{8,30}$/.test(postRaw) ? postRaw : null;
   // 1.39 [PAYP-01] A proposal's pay lines to no one (members too); a 보완 요청's lines are where it differs, without values.
   const lines = (change, kind) => (kind === "fix" ? change : change.filter((l) => l.field === "shift" || l.field === "order"));
   const now = Date.now();
@@ -4153,6 +4166,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     room && style && before !== null
       ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? AND parent IS NULL AND created_at < ?
           ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}) ORDER BY created_at, r`, c.id, grp, before)
+      : thread
+      ? all(env, `SELECT *, rowid AS r FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id = ?3 OR parent = ?3) ORDER BY created_at, rowid`, c.id, grp, thread)
       : room
       ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
           ORDER BY created_at, r`, c.id, grp)
@@ -4185,7 +4200,7 @@ async function talkData(request, env, companyId, grp, known = null) {
   }
   // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
   const people = style && (await peopleOn(env, now));
-  const pulse = people && before === null ? await peoplePulse(one, env, c.id, now, grp) : null;
+  const pulse = people && before === null && !thread ? await peoplePulse(one, env, c.id, now, grp) : null;
   // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
   const checkin = pulse ? await plazaCheckins(env, c.id, me, now) : null;
   if (checkin) pulse.checkin = checkin;
@@ -4323,8 +4338,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     ...(past ? { past: true } : {}), ...(muted ? { mutedUntil: iso(muted.until) } : {}),
     ...(hiddenByYou ? { hiddenByYou } : {}), ...(topic ? { topic } : {}), ...(used?.limit ? { left: { posts: used.limit.left }, limit: used.limit } : {}),
     // 1.39 [PLZC-03][PLZC-12] Whether older posts are left to read (a full page, or the newest read reached its cap), and the head line.
-    ...(style && (before !== null ? pageTops >= PEOPLE_LIMITS.page : rows.length >= ROOM_LIMITS.shown) ? { more: true } : {}),
-    ...(before !== null ? { older: true } : {}),
+    ...(style && !thread && (before !== null ? pageTops >= PEOPLE_LIMITS.page : rows.length >= ROOM_LIMITS.shown) ? { more: true } : {}),
+    ...(before !== null ? { older: true } : {}), ...(thread ? { thread } : {}),
     ...(pulse ? { pulse } : {}) } };
 }
 

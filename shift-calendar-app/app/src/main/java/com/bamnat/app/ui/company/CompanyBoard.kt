@@ -395,6 +395,10 @@ fun TalkSheet(holder: TalkHolder) {
     var busy by remember { mutableStateOf(false) }
     var error by remember(o.setup) { mutableStateOf<String?>(null) }
     var flagging by remember { mutableStateOf<TalkPost?>(null) }
+    // 2.0.0 [RVN-06] COMP-09 신고·공감·투표·도움 됐어요의 결과 한 줄: 글 쓰는 칸과 따로 늘 그리고(쉬는 중·지난 판·쓰기 멈춤에도), 된 것은 primary로.
+    var note by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    LaunchedEffect(note) { if (note?.second == true) { kotlinx.coroutines.delay(5_000); note = null } }
+    val noteOf: (String?) -> Unit = { e -> note = e?.let { it to false } }
     var replyId by holder.replyId
     val replyTo = replyId?.let { id -> o.talk?.posts?.firstOrNull { it.id == id } }
     var kind by holder.kind
@@ -519,10 +523,10 @@ fun TalkSheet(holder: TalkHolder) {
                             Column(if (focused) Modifier.bringIntoViewRequester(bring)
                                 .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f), MaterialTheme.shapes.medium) else Modifier) {
                             PostRow(p, onDelete = { holder.delete(p.id) }, onFlag = { flagging = p }, onHide = { hiding = p },
-                                onVote = { ok -> holder.vote(p.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
+                                onVote = { ok -> holder.vote(p.id, ok, noteOf) }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                 company = o.company, setup = o.setup, roomName = if (o.room) o.title else null, meToo = people,
                                 onRedo = if (talk.past || o.room) null else ({ redoing = p }),
-                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i) { e -> error = e } }),
+                                onPoll = if (talk.past) null else ({ i -> holder.pollVote(p.id, i, noteOf) }),
                                 onFixAt = if (o.room || p.kind != "fix" || !canFix) null else holder::openFix)
                             // 1.36 [VIL-09] The reply that helped comes first, marked; the question's writer can pick one.
                             talk.posts.filter { it.parent == p.id }.sortedByDescending { it.id == p.answer }.forEach { r ->
@@ -530,10 +534,10 @@ fun TalkSheet(holder: TalkHolder) {
                                     Spacer(Modifier.width(20.dp))
                                     Column(Modifier.weight(1f)) {
                                         PostRow(r, onDelete = { holder.delete(r.id) }, onFlag = { flagging = r }, onHide = { hiding = r },
-                                            onVote = { ok -> holder.vote(r.id, ok) { e -> error = e } }, onReply = if (talk.past) null else ({ replyId = p.id }),
+                                            onVote = { ok -> holder.vote(r.id, ok, noteOf) }, onReply = if (talk.past) null else ({ replyId = p.id }),
                                             helpful = r.id == p.answer, meToo = people,
                                             onHelpful = if (p.kind == "question" && p.mine && !r.mine && r.hidden == null && !talk.past)
-                                                ({ holder.answer(p.id, r.id) { e -> error = e } }) else null)
+                                                ({ holder.answer(p.id, r.id, noteOf) }) else null)
                                     }
                                 }
                             }
@@ -546,6 +550,10 @@ fun TalkSheet(holder: TalkHolder) {
                     Text("가리거나 차단한 분의 글 ${n}개는 보이지 않아요. 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+            note?.let { (t, ok) ->
+                Text(t, style = MaterialTheme.typography.bodySmall, color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 8.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
             }
             val muted = o.talk?.mutedUntil
             if (o.talk?.past == true) {
@@ -707,29 +715,9 @@ fun TalkSheet(holder: TalkHolder) {
             Spacer(Modifier.height(8.dp))
         }
     }
-    flagging?.let { p ->
-        var reason by remember { mutableStateOf("abuse") }
-        AlertDialog(
-            onDismissRequest = { flagging = null },
-            title = { Text("이 글을 신고할까요?") },
-            text = {
-                Column {
-                    // [PLAZA-33] 1.27 AI: 투자 이야기 takes no 종목 추천·리딩 (결정 AI-D8).
-                    (listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보") +
-                        listOfNotNull(("advice" to "종목 추천·리딩").takeIf { o.company == com.bamnat.core.plaza.StylePlaza.INVEST })).forEach { (key, label) ->
-                        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { reason = key }.padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = reason == key, onClick = { reason = key })
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
-                        }
-                    }
-                    Text("서로 다른 세 분이 신고하면 개발자가 확인할 때까지 가려져요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
-                }
-            },
-            confirmButton = { TextButton(onClick = { flagging = null; holder.flag(p.id, reason) { e -> error = e ?: "신고했어요. 고마워요" } }) { Text("신고하기") } },
-            dismissButton = { TextButton(onClick = { flagging = null }) { Text("취소") } },
-        )
+    // 2.0.0 [RVN-06] COMP-09[U10a-06] 신고 결과는 앱 띠로(오류 칸이 아니라, 쓰기 막힘·지난 판 토론에서도 보이게).
+    FlagPostDialog(flagging, invest = o.company == com.bamnat.core.plaza.StylePlaza.INVEST, onDismiss = { flagging = null }) { p, reason ->
+        holder.flag(p.id, reason) { e -> note = (e ?: FLAGGED) to (e == null) }
     }
 }
 
@@ -766,6 +754,7 @@ private fun ProposalRedoSheet(holder: TalkHolder, company: String, setup: String
     )
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun PostRow(
     p: TalkPost, onDelete: () -> Unit, onFlag: () -> Unit, onHide: () -> Unit = {}, onVote: (Boolean) -> Unit = {}, onReply: (() -> Unit)? = null,
@@ -809,31 +798,16 @@ private fun PostRow(
     ) {
         keptSaid?.let { Text("📌 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite }) }
+        // 2.0.0 [RVN-06] COMP-08 이름·시각·⋮ 한 줄(⋮는 늘 끝), 표식·칩은 둘째 줄: 이름과 칩이 길면 ⋮(신고·안 보기)가 밀려 사라졌어요.
+        val name = p.nick ?: "참여자 ${p.who}"
         Row(verticalAlignment = Alignment.CenterVertically) {
-            val name = p.nick ?: "참여자 ${p.who}"
             // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
             val maker = p.maker
             com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } })
-            if (meToo) WriterMarks(p)
-            when (p.kind) {
-                "question" -> { Spacer(Modifier.width(4.dp)); StatusChip("질문", Tone.QUIET) }
-                "tip" -> { Spacer(Modifier.width(4.dp)); StatusChip("팁", Tone.GOOD) }
-                "show" -> { Spacer(Modifier.width(4.dp)); StatusChip("자랑", Tone.WAIT) }
-                "proposal" -> { Spacer(Modifier.width(4.dp)); StatusChip("고치자는 제안", Tone.WAIT) }
-            }
-            Spacer(Modifier.width(6.dp))
-            when (p.stance) {
-                "sender" -> StatusChip("올린 분", Tone.QUIET)
-                "ok" -> StatusChip("맞았어요", Tone.GOOD)
-                "bad" -> StatusChip("달라요", Tone.BAD)
-            }
-            if (p.verified) {
-                Spacer(Modifier.width(4.dp))
-                StatusChip("명세서 확인", Tone.WAIT)
-            }
+                onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
+                modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+            Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             Spacer(Modifier.weight(1f))
-            Text(ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Box {
                 // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) } // [RVP-10] 48dp
@@ -862,6 +836,29 @@ private fun PostRow(
                     if (!p.mine && p.author != null) DropdownMenuItem(text = { Text("이 사람 글 안 보기") }, onClick = { menu = false; onHide() })
                     DropdownMenuItem(text = { Text("닫기", color = MaterialTheme.colorScheme.onSurfaceVariant) }, onClick = { menu = false })
                 }
+            }
+        }
+        val kindChip = when (p.kind) {
+            "question" -> "질문" to Tone.QUIET
+            "tip" -> "팁" to Tone.GOOD
+            "show" -> "자랑" to Tone.WAIT
+            "proposal" -> "고치자는 제안" to Tone.WAIT
+            else -> null
+        }
+        val stanceChip = when (p.stance) {
+            "sender" -> "올린 분" to Tone.QUIET
+            "ok" -> "맞았어요" to Tone.GOOD
+            "bad" -> "달라요" to Tone.BAD
+            else -> null
+        }
+        if (kindChip != null || stanceChip != null || p.verified || (meToo && (p.first || p.helped > 0))) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                kindChip?.let { (t, tone) -> StatusChip(t, tone) }
+                stanceChip?.let { (t, tone) -> StatusChip(t, tone) }
+                if (p.verified) StatusChip("명세서 확인", Tone.WAIT)
+                if (meToo && p.first) StatusChip("🌱 첫 글", Tone.GOOD)
+                if (meToo && p.helped > 0) Text("도움 ${p.helped}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.align(Alignment.CenterVertically).semantics { contentDescription = "답이 도움 된 횟수 ${p.helped}" })
             }
         }
         if (meToo) p.tag?.let { PlazaTagLine(it) }

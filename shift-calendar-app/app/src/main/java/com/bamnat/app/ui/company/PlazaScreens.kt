@@ -392,7 +392,9 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
     val filter by vm.filter.collectAsStateWithLifecycle()
     val state by vm.state.collectAsStateWithLifecycle()
     var adding by remember { mutableStateOf(false) }
-    var notice by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVN-07] COMP-06 내 급여에 넣기 asks first (what changes, from when, which calendar); results go on the app's snackbar,
+    // not in a line at the top of the list that may be scrolled away.
+    var applying by remember { mutableStateOf<RatesViewModel.ApplyPlan?>(null) }
     val rules = rememberPlazaRules()
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
@@ -406,7 +408,7 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
             com.bamnat.app.ui.components.AddFab("시세 알려 주기", onClick = {
                 // [SRV-04] Paused by the developer: said here, not after the form is filled.
                 if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
-                    notice = com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
+                    com.bamnat.app.ui.PutOnNotice.say(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE))
                 } else rules.ensure { adding = true }
             }, open = fab.open)
         },
@@ -454,17 +456,25 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                notice?.let { n -> item { Text(n, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) } }
                 val b = state.board
                 if (b != null && b.groups.isNotEmpty()) {
                     item { Text("광장 시세", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp)) }
-                    items(b.groups, key = { "${it.region}|${it.trade}|${it.unit}|${it.year}" }) { g -> GroupCard(g, onApply = { vm.applyToMyPay(g) { notice = it } }) }
+                    items(b.groups, key = { "${it.region}|${it.trade}|${it.unit}|${it.year}" }) { g -> GroupCard(g, onApply = {
+                        val (plan, why) = vm.planApply(g)
+                        if (plan != null) applying = plan else why?.let { com.bamnat.app.ui.PutOnNotice.say(it) }
+                    }) }
                 }
                 if (b != null) {
                     item { Text("알려 준 시세", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 4.dp)) }
                     if (b.entries.isEmpty()) item { Text("아직 없어요. 아는 시세를 처음 알려 주세요!", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 16.dp)) }
                     items(b.entries, key = { it.id }) { r ->
-                        RateCard(r, onVote = { ok -> vm.vote(r, ok) }, onTakeBack = { vm.takeBack(r) { kept -> notice = if (kept) "채택된 시세는 남고, 나와의 연결만 지웠어요" else "되돌렸어요" } })
+                        RateCard(r, onVote = { ok -> vm.vote(r, ok) }, onTakeBack = { vm.takeBack(r) { kept ->
+                            com.bamnat.app.ui.PutOnNotice.say(when (kept) {
+                                null -> "거두지 못했어요 · 인터넷 연결을 확인하고 다시 눌러 주세요"
+                                true -> "채택된 시세는 남고, 나와의 연결만 지웠어요"
+                                false -> "거뒀어요"
+                            })
+                        } })
                     }
                 }
                 item {
@@ -480,8 +490,43 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
         }
     }
     if (adding) AddRateDialog(filter, onDismiss = { adding = false }, onSend = { trade, unit, amount, note, done ->
-        vm.add(trade, unit, amount, note) { e -> done(e); if (e == null) { adding = false; notice = "보냈어요. 서로 다른 분들이 맞아요라고 하면 광장 시세가 돼요" } }
+        vm.add(trade, unit, amount, note) { e -> done(e); if (e == null) { adding = false; com.bamnat.app.ui.PutOnNotice.say("보냈어요. 서로 다른 분들이 맞아요라고 하면 광장 시세가 돼요") } }
     })
+    applying?.let { plan -> ApplyRateDialog(plan, onDismiss = { applying = null }, onConfirm = { applying = null; vm.apply(plan) }) }
+}
+
+/**
+ * 2.0.0 [RVN-07] COMP-06 Before 광장 시세 goes into my pay: the change (before → after), from which month, on which calendar, and that
+ * earlier months stay. A 월급 시세 may hold 수당 too, so it is said not to be 기본급 and the button says what it does.
+ */
+@Composable
+private fun ApplyRateDialog(plan: RatesViewModel.ApplyPlan, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    val won = { v: Long -> "%,d원".format(v) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("내 ${plan.what}을 바꿀까요?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "${plan.before?.let(won) ?: "아직 없음"} → ${won(plan.after)}",
+                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                    modifier = Modifier.semantics {
+                        contentDescription = "${plan.before?.let { "지금 ${won(it)}에서 " } ?: ""}${won(plan.after)}으로"
+                    },
+                )
+                Text(
+                    "${plan.from.monthValue}월부터${plan.calendarName?.let { " · $it 달력" } ?: ""}. 지난 달 급여는 그대로예요.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (plan.monthly) Text(
+                    "광장 월급 시세는 수당까지 합친 금액일 수 있어요. 기본급과 다르면 넣지 말고 급여 화면에서 직접 적어 주세요.",
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(if (plan.monthly) "기본급으로 넣기" else "바꾸기") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+    )
 }
 
 @Composable

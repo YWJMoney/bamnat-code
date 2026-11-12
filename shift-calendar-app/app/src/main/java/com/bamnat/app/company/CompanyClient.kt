@@ -522,6 +522,9 @@ data class Reward(val months: Int, val status: String) {
 }
 
 /** Where one report stands [COMM-02][COMM-03][EXTRA-06]. */
+/** 2.0.0 [RVN-07] COMP-13 What an adopted setup's 거두기 did, when the server said kept without words of its own. */
+const val TAKEN_BACK_KEPT = "채택된 설정은 같은 회사 분들이 쓰고 있어 남아요. 나와의 연결과 받기로 한 보상만 지웠어요."
+
 data class ReportStatus(
     val id: String,
     /** pending, adopted, rejected, replaced, withdrawn, ask (a way the app cannot set yet) or answered. */
@@ -628,6 +631,15 @@ interface CompanyApi {
     suspend fun room(device: String, company: String): RoomPage? = null
     suspend fun status(id: String): ReportStatus?
     suspend fun takeBack(device: String, id: String)
+
+    /**
+     * 2.0.0 [RVN-07] COMP-13 As [takeBack], with the server's own words when an adopted setup stays (only my tie to it and the
+     * reward owed go), null when it went from 회사 찾기.
+     */
+    suspend fun takeBackSaying(device: String, id: String): String? {
+        takeBack(device, id)
+        return null
+    }
     suspend fun forgetMine(device: String): Int
 
     /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
@@ -644,6 +656,11 @@ interface CompanyApi {
     suspend fun talk(device: String, company: String, setup: String): Talk = Talk(emptyList())
     /** 1.39 [PLZC-03] 더 불러오기: a kind of work's plaza ([room]) before [before], a page of top posts with their answers. */
     suspend fun talkBefore(device: String, room: String, before: java.time.Instant): Talk = Talk(emptyList())
+    /**
+     * 2.0.0 [RVN-06] COMP-01 One top post of a kind of work's plaza ([room]) with its answers, read the same way as the page (hidden and
+     * blocked writers out): a 지난 글 opens in the sheet with 신고·안 보기·답 like the first page's. Empty from a server before 2.0.0.
+     */
+    suspend fun talkThread(device: String, room: String, post: String): Talk = Talk(emptyList())
     /** Posts in it; the new post's id comes back. */
     suspend fun post(device: String, company: String, setup: String, body: String): String = throw CompanyException("offline")
     suspend fun deletePost(device: String, id: String) = Unit
@@ -944,6 +961,13 @@ class CompanyClient(
             headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
     }
 
+    override suspend fun talkThread(device: String, room: String, post: String): Talk = serverCall {
+        // A server before 2.0.0 does not know ?post= and sends its first page; only this post and its answers are kept.
+        val t = talkOf(exchange("GET", "/api/companies/$room/setups/room/posts?post=" + URLEncoder.encode(post, "UTF-8"), device = device,
+            headers = hidden()?.let { mapOf("X-Hide" to it) }.orEmpty()).json)
+        t.copy(posts = t.posts.filter { it.id == post || it.parent == post })
+    }
+
     override suspend fun post(device: String, company: String, setup: String, body: String, parent: String?, kind: String,
         change: List<ChangeLine>, proposal: JSONObject?): String = serverCall {
         val o = JSONObject().put("device", device).put("company", company).put("setup", setup).put("body", body.trim()).put("kind", kind)
@@ -1157,13 +1181,18 @@ class CompanyClient(
     }
 
     /** Takes a report back with its reward; one already gone counts as taken back. */
-    override suspend fun takeBack(device: String, id: String) = serverCall {
+    override suspend fun takeBack(device: String, id: String) {
+        takeBackSaying(device, id)
+    }
+
+    override suspend fun takeBackSaying(device: String, id: String): String? = serverCall {
         try {
-            request("DELETE", "/api/reports/$id", device = device)
+            val o = request("DELETE", "/api/reports/$id", device = device)
+            if (o.optBoolean("kept")) o.optString("text").ifBlank { TAKEN_BACK_KEPT } else null
         } catch (e: CompanyException) {
             if (e.code != "not_found") throw e
+            null
         }
-        Unit
     }
 
     /** Deletes everything this install sent: reports, rewards not yet given, 맞았어요·달라요, posts and 신고. */
@@ -1283,7 +1312,9 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     /** [PRF-01] 1.36 마을: 올린 작품, 프로필, 팔로우, 모음. */
     val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
     /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
-    val links: Int = 0, val linksLeft: Int = 0) {
+    val links: Int = 0, val linksLeft: Int = 0,
+    /** 2.0.0 [RVN-09] COMP-42COMP-43 광장 바로 알림 and 저절로 나누기 were on and went off with the rest (the phone's, not the server's). */
+    val alertsOff: Boolean = false, val autoShareOff: Boolean = false) {
     /** "보낸 규칙 2·토론 글 3·문의 1을 지웠어요", or that there was nothing to delete. */
     fun words(): String {
         val parts = listOfNotNull(
@@ -1294,7 +1325,9 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
         val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
-        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left
+        val off = listOfNotNull("광장 바로 알림".takeIf { alertsOff }, "저절로 나누기".takeIf { autoShareOff })
+        val offLine = if (off.isEmpty()) "" else ". ${off.joinToString("과 ")}도 껐어요. 설정에서 다시 켤 수 있어요"
+        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) + left + offLine
     }
 }
 

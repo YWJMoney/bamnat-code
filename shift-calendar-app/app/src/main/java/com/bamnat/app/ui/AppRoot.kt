@@ -1998,6 +1998,9 @@ private fun AppNavHost(
                     scope.launch {
                         val hasPattern = company.schedule.patterns.first().isNotEmpty()
                         val pay = company.pay.profile.value != null
+                        val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
+                        // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
+                        applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }
                         when {
                             // A setup without a rotation (요일 고정 회사): the days are still to be set.
                             !hasPattern -> nav.navigate(Routes.pattern(weekdays = weekdays || applied.cycleDays == null, setup = true, calendar = calendar)) {
@@ -2015,12 +2018,12 @@ private fun AppNavHost(
                             else -> {
                                 // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
-                                val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
                                 // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
                                 if (container.companyApi.enabled && company.store.member.value != null) {
-                                    container.pendingPlazaNote = "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
+                                    container.pendingPlazaNote = if (applied.undo != null) "이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
+                                        else "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                     nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true }
-                                } else snackbar.showSnackbar(done)
+                                } else if (applied.undo == null) snackbar.showSnackbar(done)
                             }
                         }
                     }

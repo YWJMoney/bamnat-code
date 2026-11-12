@@ -364,6 +364,9 @@ fun CompanyDetailScreen(
     val room by vm.room.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var choosing by remember { mutableStateOf<Pair<SharedSetup, Phases>?>(null) }
+    // 2.0.0 [RVN-08] COMP-11 What 이 설정 쓰기 changes, shown before it goes in; [confirming] when there is no row to pick.
+    var changes by remember { mutableStateOf<com.bamnat.app.data.CompanyShare.Preview?>(null) }
+    var confirming by remember { mutableStateOf<Pair<SharedSetup, Int?>?>(null) }
     var applying by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     // [PLAZA-09] What 이 값 쓰기 changed, said once.
@@ -383,13 +386,19 @@ fun CompanyDetailScreen(
     var askingPay by remember { mutableStateOf<SharedSetup?>(null) }
     fun use(p: CompanyPage, s: SharedSetup, step: Int?) {
         applying = true
-        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; onApplied(r, p.name) },
-            failed = { applying = false; choosing = null; error = it })
+        vm.apply(p, s, step, withPay = withPay, done = { r -> applying = false; choosing = null; confirming = null; onApplied(r, p.name) },
+            failed = { applying = false; choosing = null; confirming = null; error = it })
     }
     fun order(p: CompanyPage, s: SharedSetup) {
         scope.launch {
             val phases = vm.phases(s)
-            if (phases != null && phases.options.size > 1) choosing = s to phases else use(p, s, if (phases != null) 0 else null)
+            changes = vm.preview(s)
+            // COMP-11 Over a calendar that already has its order, one look first even when there is only one way to put it in.
+            when {
+                phases != null && phases.options.size > 1 -> choosing = s to phases
+                hasPattern == true -> confirming = s to (if (phases != null) 0 else null)
+                else -> use(p, s, if (phases != null) 0 else null)
+            }
         }
     }
     fun start(p: CompanyPage, s: SharedSetup) {
@@ -599,7 +608,55 @@ fun CompanyDetailScreen(
             busy = applying,
             onDismiss = { if (!applying) choosing = null },
             onPick = { step -> use(page, pick.first, step) },
+            changes = changes,
         )
+    }
+    val sure = confirming
+    if (sure != null && page != null) {
+        ApplyConfirmSheet(page.name, changes, busy = applying, onDismiss = { if (!applying) confirming = null }, onConfirm = { use(page, sure.first, sure.second) })
+    }
+}
+
+/**
+ * 2.0.0 [RVN-08] COMP-11 What goes in before it does: the kinds of day whose times change, the kinds added, and that the order
+ * changes from today; 되돌리기 follows on the app's snackbar.
+ */
+@Composable
+private fun SetupChanges(changes: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean) {
+    val lines = buildList {
+        changes?.changed?.forEach { add(it) }
+        changes?.added?.forEach { add("새 근무 · $it") }
+        if (replacing) add(
+            when {
+                changes?.cycle != null -> "오늘부터 ${changes.cycle}일 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+                changes?.weekly == true -> "오늘부터 요일마다 정한 근무로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+                else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+            },
+        )
+    }
+    if (lines.isEmpty()) return
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("바뀌는 것", style = MaterialTheme.typography.titleSmall)
+        lines.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
+        if (replacing) Text("넣은 뒤 화면 아래 ‘되돌리기’로 넣기 전으로 돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** COMP-11 이 설정 쓰기 with no row to pick, over a calendar that has its own order: one look at what changes, then 넣기. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ApplyConfirmSheet(company: String, changes: com.bamnat.app.data.CompanyShare.Preview?, busy: Boolean, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("‘$company’ 설정을 넣을까요?", style = MaterialTheme.typography.titleLarge)
+            SetupChanges(changes, replacing = true)
+            Button(onClick = onConfirm, enabled = !busy, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 설정으로 바꾸기")
+            }
+            TextButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("그대로 두기") }
+        }
     }
 }
 
@@ -753,7 +810,15 @@ internal fun RoomSection(room: CompanyDetailViewModel.Room, onTake: (com.bamnat.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDismiss: () -> Unit, onPick: (Int) -> Unit) {
+internal fun PhaseSheet(
+    phases: Phases,
+    replacing: Boolean,
+    busy: Boolean,
+    onDismiss: () -> Unit,
+    onPick: (Int) -> Unit,
+    /** 2.0.0 [RVN-08] COMP-11 What the setup changes besides the order, from the company screen (null elsewhere). */
+    changes: com.bamnat.app.data.CompanyShare.Preview? = null,
+) {
     var picked by remember(phases) { mutableStateOf(phases.current ?: phases.sent) }
     val today = remember { Today.date() }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -823,7 +888,8 @@ internal fun PhaseSheet(phases: Phases, replacing: Boolean, busy: Boolean, onDis
                     }
                 }
             }
-            if (replacing) {
+            if (changes != null) SetupChanges(changes, replacing)
+            else if (replacing) {
                 Text("오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

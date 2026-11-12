@@ -1102,13 +1102,16 @@ internal const val AUTO_SHARE_ROW = "회사 광장에 저절로 나누기"
 internal fun AutoShareRow() {
     val c = LocalContext.current.appContainer
     val on by c.companyStore.autoShare.collectAsStateWithLifecycle()
+    // 2.0.0 [RVN-11] COMP-44 A yes for the cycle only (근무주기 나누기) says so: the pay way is asked each time.
+    val payToo by c.companyStore.autoPay.collectAsStateWithLifecycle()
     val member by c.companyStore.member.collectAsStateWithLifecycle()
     val place = member?.second?.ifEmpty { null } ?: "다니는 회사"
     // [PLAZA-34] 1.27 AI: on is 저절로 나누기; off asks each time a change is saved, unless 다시 묻지 않기 was chosen.
     SwitchRow(
         AUTO_SHARE_ROW,
         when (on) {
-            true -> "근무 순서와 계산 방식을 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요."
+            true -> if (payToo) "근무 순서와 계산 방식을 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요."
+                else "근무 순서를 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요. 계산 방식은 바꿀 때마다 물어요."
             null -> "꺼 두면 바꿀 때마다 ‘$place 광장에 나눌까요?’ 하고 물어요."
             false -> "‘다시 묻지 않기’로 두셨어요. 바꿔도 묻지 않고 나누지 않아요."
         } + " 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요",
