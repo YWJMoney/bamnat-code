@@ -241,15 +241,26 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
      * [PRF-01] 1.36 PC 사용성 P2: 프로필만 지우기. 얼굴·소개·대표 작품·표지·모음이 지워지고, [works]면 올린 작품도
      * 장터에서 내려요. 팔로워는 남지만 작품이 없으면 프로필 줄에 내가 보이지 않아요.
      */
-    fun clearProfile(works: Boolean) = act(if (works) "프로필과 작품을 지웠어요" else "프로필을 지웠어요. 작품은 장터에 그대로 있어요") {
+    /**
+     * 2.0.0 [RVM-51] 검토 MKT-22 (조건 7·10, 개인정보): each 모음 and work was deleted with its failure swallowed, so a dropped connection
+     * left 2 of 5 works public under "프로필과 작품을 지웠어요". Now what could not be deleted is counted and said, to try again.
+     */
+    fun clearProfile(works: Boolean) = act(null) {
         val p = _state.value.page ?: return@act
-        p.sets.forEach { runCatching { c.recipeApi.setDelete(device, it.id) } }
+        val setsLeft = p.sets.count { runCatching { c.recipeApi.setDelete(device, it.id) }.isFailure }
         c.recipeApi.profile(device, ProfileEdit(bio = "", pins = emptyList(), setStyle = true, styleTag = null, setCover = true, cover = null))
         c.recipeApi.makerMe(device, null, null, set = true)
-        if (works) p.recipes.forEach { runCatching { c.recipeApi.delete(device, it.code) } }
-        c.recipes.hasProfile(!works && p.recipes.isNotEmpty())
-        c.recipes.profileCleared(!works && p.recipes.isNotEmpty())
+        val worksLeft = if (works) p.recipes.count { runCatching { c.recipeApi.delete(device, it.code) }.isFailure } else 0
+        val stays = (!works && p.recipes.isNotEmpty()) || worksLeft > 0
+        c.recipes.hasProfile(stays)
+        c.recipes.profileCleared(stays)
         c.recipes.peopleChanged()
+        say(when {
+            worksLeft > 0 || setsLeft > 0 -> listOfNotNull(worksLeft.takeIf { it > 0 }?.let { "작품 ${it}개" }, setsLeft.takeIf { it > 0 }?.let { "모음 ${it}개" })
+                .joinToString("와 ") + "는 지우지 못해 장터에 남아 있어요. 인터넷을 확인하고 한 번 더 지워 주세요"
+            works -> "프로필과 작품을 지웠어요"
+            else -> "프로필을 지웠어요. 작품은 장터에 그대로 있어요"
+        })
     }
 
     /** [PRF-01] 이름: the same 별명 as 광장 (2~12자), saved with the rest of 프로필 고치기. */
