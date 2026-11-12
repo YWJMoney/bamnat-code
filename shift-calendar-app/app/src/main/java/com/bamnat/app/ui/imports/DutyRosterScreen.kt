@@ -1153,7 +1153,7 @@ private fun Keypad(
                 var more by remember { mutableStateOf(false) }
                 Box {
                     IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreHoriz, KEYPAD_MORE) }
-                    androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                    com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                         androidx.compose.material3.DropdownMenuItem(
                             text = { Text("✕ ${ui.cursor}일 지우기") },
                             onClick = { more = false; vm.erase() },
