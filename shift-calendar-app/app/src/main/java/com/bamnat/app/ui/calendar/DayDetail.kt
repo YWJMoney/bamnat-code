@@ -362,7 +362,7 @@ private fun DayGroups(
                         val changed = day.source == DaySource.OVERRIDE || day.hasCustomTimes || day.entry?.customBreakMinutes != null
                         DayGroup(
                             // 1.36 PC 재검토: a 현장 calendar's day says 일정 (its kinds of day are 일정 종류).
-                            title = com.bamnat.app.ui.shifts.dayKindNoun(style), icon = Icons.Outlined.Work,
+                            title = G.workTitle(style), icon = Icons.Outlined.Work,
                             summary = workSummary(day, snapshot, linkName),
                             summaryColor = if (changed) MaterialTheme.colorScheme.tertiary else null,
                             open = groups.isOpen(key, changed), onToggle = { groups.toggle(key, changed) },
@@ -579,6 +579,7 @@ private fun DayGroups(
             moneyFirst = moneyFirst,
             onChange = vm::setDayGroupOrder,
             onDismiss = { ordering = false },
+            style = style,
         )
     }
 
@@ -662,7 +663,8 @@ private fun workSummary(day: ResolvedDay, snapshot: ScheduleSnapshot, link: Stri
         day.source == DaySource.OVERRIDE && link != null -> "$name$time · ${link}대로"
         day.source == DaySource.OVERRIDE && snapshot.hasPattern -> {
             val pattern = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-            "$name$time · 직접 바꿈" + if (snapshot.hasPattern) " (패턴: ${pattern?.name ?: "쉬는 날"})" else ""
+            // 2.0.0 [RVH-05] 검토 CAL-13: one word for the cycle (근무 주기, or 평소 for a weekday calendar), never 패턴.
+            "$name$time · 직접 바꿈 (${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${pattern?.name ?: "쉬는 날"})"
         }
         day.hasCustomTimes -> "$name$time · 이 날만 시간 바꿈"
         day.source == DaySource.OVERRIDE -> "$name$time"
@@ -737,7 +739,9 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (snapshot.hasPattern) "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}" else "직접 정한 날이에요",
+                // [RVH-05] 검토 CAL-13·사용성 U01-05: "근무 주기는 주간 · 지금은 야간 · 되돌리기" in one line.
+                if (snapshot.hasPattern) "${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${patternType?.name ?: "쉬는 날"} · 지금은 ${day.shiftType?.name ?: "쉬는 날"}"
+                else "직접 정한 날이에요",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.tertiary,
                 modifier = Modifier.weight(1f),

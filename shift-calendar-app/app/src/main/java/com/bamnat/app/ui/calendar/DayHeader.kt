@@ -604,7 +604,7 @@ private fun QuickChips(
     // [J133-19] 1.33 (실사용 테스트 "야간인 날에 '주간 대근'을 누르면 하루 22시간 근무"): on a working day a 대근 of another shift
     // asks first whether the day's shift changes or the 대근 comes on top of it.
     var coverAsk by remember { mutableStateOf<ExtraChoice?>(null) }
-    coverAsk?.let { c -> CoverOrChangeDialog(day, c, snapshot,
+    coverAsk?.let { c -> CoverOrChangeDialog(day, c, snapshot, settings.workStyle,
         onChange = { id -> coverAsk = null; vm.assign(day.date, com.bamnat.core.model.ShiftOverride.Shift(id)) },
         onAdd = { coverAsk = null; vm.toggleExtra(day, c) },
         onDismiss = { coverAsk = null }) }
@@ -871,8 +871,9 @@ internal fun ChipText(text: String, style: androidx.compose.ui.text.TextStyle = 
 
 /** [J133-19] 근무를 바꿀까요, 더할까요: a 대근 chip on a day that already has a shift. */
 @Composable
-private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: ScheduleSnapshot, onChange: (Long) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
+private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: ScheduleSnapshot, style: com.bamnat.core.work.WorkStyle?, onChange: (Long) -> Unit, onAdd: () -> Unit, onDismiss: () -> Unit) {
     val now = day.shiftType?.name ?: "근무"
+    val word = ExtraText.coverWord(style) // 2.0.0 [RVH-07] 검토 CAL-11
     val covered = snapshot.shiftTypes.firstOrNull { it.id == c.entry.coveredShiftId }
     val total = (day.scheduledMinutes + c.entry.paidMinutes) / 60.0
     val hours = if (total % 1.0 == 0.0) "${total.toInt()}시간" else "%.1f시간".format(total)
@@ -882,14 +883,14 @@ private fun CoverOrChangeDialog(day: ResolvedDay, c: ExtraChoice, snapshot: Sche
         text = {
             Text(buildString {
                 covered?.let { append("근무를 ${it.name}${Fmt.ro(it.name)} 바꾸면 이 날은 ${it.name} 하나로 계산돼요. ") }
-                append("‘${c.name}’${Fmt.obj(c.name)} 더하면 $now 근무에 대근이 붙어 하루 $hours 일한 것으로 계산돼요.")
+                append("‘${c.name}’${Fmt.obj(c.name)} 더하면 $now 근무에 $word${Fmt.iga(word)} 붙어 하루 $hours 일한 것으로 계산돼요.")
                 if (total > 16) append(" 실제로 이어서 일했을 때만 더해 주세요.")
             })
         },
         confirmButton = {
             Column(horizontalAlignment = Alignment.End) {
                 covered?.let { t -> TextButton(onClick = { onChange(t.id) }) { Text("근무를 ${t.name}${Fmt.ro(t.name)} 바꾸기") } }
-                TextButton(onClick = onAdd) { Text("대근으로 더하기 (하루 $hours)") }
+                TextButton(onClick = onAdd) { Text("$word${Fmt.ro(word)} 더하기 (하루 $hours)") }
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },

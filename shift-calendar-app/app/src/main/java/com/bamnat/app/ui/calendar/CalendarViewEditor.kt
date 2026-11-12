@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.work.words
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -65,13 +66,16 @@ private fun choice(field: String, v: String): String = when ("$field.$v") {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun CalendarViewEditor(view: CalendarView, onChange: (CalendarView) -> Unit, modifier: Modifier = Modifier, sample: @Composable () -> Unit = { CalendarViewSample(view) }) {
+fun CalendarViewEditor(view: CalendarView, onChange: (CalendarView) -> Unit, modifier: Modifier = Modifier,
+    /** [RVH-16] The calendar's kind, for an example week in its own days. */
+    style: com.bamnat.core.work.WorkStyle? = null,
+    sample: @Composable () -> Unit = { CalendarViewSample(view, sampleDays(style)) }) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("달력 모양", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f).semantics { heading() })
             if (!view.isDefault) TextButton(onClick = { onChange(CalendarView()) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음대로") }
         }
-        Text("칸 높이, 근무 표시, 날짜 자리, 칸에 보일 메모 줄과 순서를 정해요. 메모를 크게 보는 달력도 만들 수 있어요",
+        Text("칸 높이, ${style.words().workDay} 표시, 날짜 자리, 칸에 보일 메모 줄과 순서를 정해요. 메모를 크게 보는 달력도 만들 수 있어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sample()
         Text("바로 고르기", style = MaterialTheme.typography.labelLarge)
@@ -79,7 +83,8 @@ fun CalendarViewEditor(view: CalendarView, onChange: (CalendarView) -> Unit, mod
             CalendarView.PRESETS.forEach { (name, p) -> FilterChip(selected = view == p, onClick = { onChange(p) }, label = { Text(name) }) }
         }
         Pick("칸 높이", "size", CalendarView.SIZES, view.size ?: "normal") { onChange(view.copy(size = it.takeIf { v -> v != "normal" })) }
-        Pick("근무 표시", "badge", CalendarView.BADGES, view.badge ?: "big") { onChange(view.copy(badge = it.takeIf { v -> v != "big" })) }
+        // 2.0.0 [RVH-16] 검토 화면 사진: the mark's name in the calendar's words (가게 '영업 표시').
+        Pick("${style.words().workDay} 표시", "badge", CalendarView.BADGES, view.badge ?: "big") { onChange(view.copy(badge = it.takeIf { v -> v != "big" })) }
         Pick("날짜 자리", "date", CalendarView.DATES, view.date ?: "center") { onChange(view.copy(date = it.takeIf { v -> v != "center" })) }
         Pick("칸 글씨", "text", CalendarView.TEXTS, view.text ?: "normal") { onChange(view.copy(text = it.takeIf { v -> v != "normal" })) }
         Pick("칸 선", "grid", CalendarView.GRIDS, view.grid ?: "none") { onChange(view.copy(grid = it.takeIf { v -> v != "none" })) }
@@ -141,6 +146,64 @@ private val SAMPLE = listOf(
     SampleDay("야", 0xFF3949AB, listOf("대근"), "10h", role = "night", work = setOf("extra", "cover")),
     SampleDay("주", 0xFFEF6C00, listOf("월급날"), "8h"),
 )
+
+/**
+ * 2.0.0 [RVH-16] 검토 CAL-21: the example week in the calendar's own kind of days, so a 가게·투자·알바·현장 calendar is not shown 주·야·휴·대근.
+ * 교대 (and a calendar with no kind yet) keeps [SAMPLE].
+ */
+internal fun sampleDays(style: com.bamnat.core.work.WorkStyle?): List<SampleDay> = when (style) {
+    com.bamnat.core.work.WorkStyle.DAY -> listOf(
+        SampleDay("휴", 0xFF757575, listOf("가족 모임"), off = true),
+        SampleDay("근", 0xFF1E88E5, listOf("병원 예약", "택배"), "8h"),
+        SampleDay("근", 0xFF1E88E5, hours = "8h"),
+        SampleDay("휴", 0xFF757575, holiday = "개천절", off = true),
+        SampleDay("근", 0xFF1E88E5, listOf("회의"), "8h"),
+        SampleDay("근", 0xFF1E88E5, listOf("잔업"), "10h", role = "day", work = setOf("extra")),
+        SampleDay("근", 0xFF1E88E5, listOf("월급날"), "8h"),
+        SampleDay("휴", 0xFF757575, listOf("장보기", "헬스"), off = true),
+    )
+    com.bamnat.core.work.WorkStyle.HOURLY -> listOf(
+        SampleDay("오", 0xFF43A047, listOf("오픈"), "5h"),
+        SampleDay("휴", 0xFF757575, listOf("시험공부"), off = true),
+        SampleDay("마", 0xFF8E24AA, listOf("마감"), "6h"),
+        SampleDay("마", 0xFF8E24AA, hours = "6h", holiday = "개천절"),
+        SampleDay("휴", 0xFF757575, off = true),
+        SampleDay("오", 0xFF43A047, listOf("대타"), "5h", role = "day", work = setOf("extra", "cover")),
+        SampleDay("휴", 0xFF757575, listOf("가족 모임", "장보기"), off = true),
+        SampleDay("마", 0xFF8E24AA, listOf("시급날"), "6h"),
+    )
+    com.bamnat.core.work.WorkStyle.FIELD -> listOf(
+        SampleDay("일", 0xFF6D4C41, listOf("○○아파트", "1공수"), "8h"),
+        SampleDay("일", 0xFF6D4C41, listOf("○○아파트"), "8h"),
+        SampleDay("빈", 0xFF757575, listOf("비 옴"), off = true),
+        SampleDay("일", 0xFF6D4C41, listOf("□□상가", "1.5공수"), "12h", holiday = "개천절"),
+        SampleDay("빈", 0xFF757575, listOf("자재 사기"), off = true),
+        SampleDay("빈", 0xFF757575, off = true),
+        SampleDay("일", 0xFF6D4C41, listOf("□□상가"), "8h"),
+        SampleDay("일", 0xFF6D4C41, listOf("일당 받는 날"), "8h"),
+    )
+    com.bamnat.core.work.WorkStyle.BUSINESS -> listOf(
+        SampleDay("영", 0xFFEF6C00, listOf("재료 주문", "카드 정산"), "11h"),
+        SampleDay("영", 0xFFEF6C00, hours = "11h"),
+        SampleDay("영", 0xFFEF6C00, listOf("단체 예약"), "11h"),
+        SampleDay("휴", 0xFF757575, holiday = "개천절", off = true),
+        SampleDay("휴", 0xFF757575, listOf("정기 휴무", "장보기"), off = true),
+        SampleDay("영", 0xFFEF6C00, listOf("부가세 신고"), "11h"),
+        SampleDay("영", 0xFFEF6C00, hours = "11h"),
+        SampleDay("영", 0xFFEF6C00, listOf("월세 내는 날"), "11h"),
+    )
+    com.bamnat.core.work.WorkStyle.INVEST -> listOf(
+        SampleDay("장", 0xFF00897B, listOf("적립 매수")),
+        SampleDay("장", 0xFF00897B),
+        SampleDay("장", 0xFF00897B, listOf("실적 발표")),
+        SampleDay("휴", 0xFF757575, holiday = "개천절", off = true),
+        SampleDay("휴", 0xFF757575, listOf("투자 일지"), off = true),
+        SampleDay("휴", 0xFF757575, off = true),
+        SampleDay("장", 0xFF00897B, listOf("배당 들어옴", "목표가 확인")),
+        SampleDay("장", 0xFF00897B),
+    )
+    else -> SAMPLE
+}
 
 /**
  * [CVW-02] A week drawn the way [view] says, with [days] (example ones by default) and the calendar's [cell] wash: the same rules as

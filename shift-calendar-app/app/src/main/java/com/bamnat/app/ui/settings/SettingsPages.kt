@@ -822,7 +822,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         HorizontalDivider()
         com.bamnat.app.ui.calendar.CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v ->
             vm.update { with(com.bamnat.app.ui.calendar.CalendarViewSettings) { it.withView(v) } }
-        })
+        }, style = settings.workStyle)
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.CAL_VIEW)
         // [RCP-09] 1.34 달력 테마.
         HorizontalDivider()
@@ -902,13 +902,16 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // [DAY-04] The day's groups in the user's order, beside the unfolded calendar and in the sheet alike.
         var ordering by remember { mutableStateOf(false) }
         val moneyFirst = settings.workStyle?.usesPayEngine == false
-        NavRow("하루 화면 순서", DayGroupKey.order(settings.dayGroupOrder, moneyFirst).joinToString(" · ") { DayGroupKey.label(it) }) { ordering = true }
+        // [RVH-17] 검토 CAL-22: the groups this kind of calendar has, in its words.
+        NavRow("하루 화면 순서", DayGroupKey.order(settings.dayGroupOrder, moneyFirst).filter { DayGroupKey.has(it, settings.workStyle) }
+            .joinToString(" · ") { DayGroupKey.label(it, settings.workStyle) }) { ordering = true }
         if (ordering) {
             DayGroupOrderDialog(
                 custom = settings.dayGroupOrder,
                 moneyFirst = moneyFirst,
                 onChange = { o -> vm.update { it.copy(dayGroupOrder = o) } },
                 onDismiss = { ordering = false },
+                style = settings.workStyle,
             )
         }
     }

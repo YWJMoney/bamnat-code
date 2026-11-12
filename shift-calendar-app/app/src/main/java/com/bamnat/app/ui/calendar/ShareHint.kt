@@ -64,7 +64,9 @@ internal class HintStore(context: Context) {
  * points up at 공유: people did not find it. Closed with ×, or gone once 공유 is used.
  */
 @Composable
-internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
+internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier,
+    /** 2.0.0 [RVH-20] 검토 CAL-25: what is sent, in the calendar's words (근무표, 영업일, 일정). */
+    word: String = "근무표") {
     val color = MaterialTheme.colorScheme.secondaryContainer
     val onColor = MaterialTheme.colorScheme.onSecondaryContainer
     Column(modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }) {
@@ -85,7 +87,7 @@ internal fun ShareHintCard(onShare: () -> Unit, onClose: () -> Unit, modifier: M
                 Icon(Icons.Outlined.Share, null, Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f).padding(vertical = 4.dp)) {
-                    Text("‘공유’로 근무표를 보낼 수 있어요", style = MaterialTheme.typography.titleSmall)
+                    Text("‘공유’로 $word${com.bamnat.app.ui.Fmt.obj(word)} 보낼 수 있어요", style = MaterialTheme.typography.titleSmall)
                     Text("동료·가족에게 이미지나 링크로 보내요. 링크는 앱이 없어도 열려요.", style = MaterialTheme.typography.bodySmall)
                 }
                 IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "공유 안내 닫기") }

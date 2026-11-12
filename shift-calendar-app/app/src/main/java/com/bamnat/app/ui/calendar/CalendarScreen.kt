@@ -204,6 +204,18 @@ private val FAB_HEIGHT = 56.dp
  * 12.1: the month grid's rows the FAB must not sit on, counted from the top: up to the row of the month's last day, or the row
  * before when that day is in the left half (the FAB rests at the right, over next month's faded days then).
  */
+/** 2.0.0 [RVH-03] 검토 CAL-04: the first day of [date]'s week as the month view draws weeks ([weekStart] 일요일 or 월요일). */
+internal fun weekFirstDay(date: LocalDate, weekStart: java.time.DayOfWeek): LocalDate =
+    date.with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+
+/** [RVH-03] "11월 셋째 주": the row of the month view [date] sits on, counted as that view counts them. */
+internal fun weekOfMonthLabel(date: LocalDate, weekStart: java.time.DayOfWeek): String {
+    val first = weekFirstDay(date.withDayOfMonth(1), weekStart)
+    val row = (java.time.temporal.ChronoUnit.DAYS.between(first, weekFirstDay(date, weekStart)) / 7).toInt()
+    val n = listOf("첫째", "둘째", "셋째", "넷째", "다섯째", "여섯째").getOrElse(row) { "${row + 1}째" }
+    return "${date.monthValue}월 $n 주"
+}
+
 internal fun fabKeepRows(month: YearMonth, weekStart: java.time.DayOfWeek): Int {
     val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     val index = java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()).toInt()
@@ -276,6 +288,8 @@ fun CalendarScreen(
         com.bamnat.app.alarm.AlarmsOff.activeUntil(context)
         alarmChannelTrouble = if (notificationsAllowed) Notifications.alarmChannelTrouble(context) else null
     }
+    // 2.0.0 [RVH-15] 검토 CAL-20: going behind another app keeps the day and month, for opening there if the phone closes 밤낮 meanwhile.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.keepPlace() }
     // [ALRM-09] 오늘 남은 알람 모두 끄기, until when.
     val alarmsOffUntil by com.bamnat.app.alarm.AlarmsOff.until.collectAsStateWithLifecycle()
     val safeStart by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
@@ -754,6 +768,7 @@ fun CalendarScreen(
             onSent = { vm.logShare() },
             onDismiss = { imageMonth = null },
             yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y -> y to { imageMonth = null; yearRecapOpen = y } },
+            style = settings.workStyle,
         )
     }
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
@@ -944,23 +959,25 @@ fun CalendarScreen(
         AlarmPlanner.nextAlarm(snap.resolver, Today.dateTime(), lookaheadDays = ALARM_WARNING_DAYS) != null
     }
 
-    // [CAL-03] The tapped date's week, Monday to Sunday, and the whole day under it: no sheet over the
-    // calendar, and the rest of the week a tap away. A sideways swipe goes a week back or on.
+    // [CAL-03] The tapped date's week and the whole day under it: no sheet over the calendar, and the rest of the week a tap
+    // away. A sideways swipe goes a week back or on.
+    // 2.0.0 [RVH-03] 검토 CAL-04: the week starts on the day the month view starts it (카드 배치 › 한 주의 시작), so a Sunday tapped
+    // in a Sunday-first month is the first day of its week here too, and the range says which week of the month it is.
     val weekPart: @Composable () -> Unit = {
-        val monday = selected.minusDays((selected.dayOfWeek.value - 1).toLong())
+        val monday = weekFirstDay(selected, settings.weekStart)
         Row(
             Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "${Fmt.monthDay(monday)} ~ ${Fmt.monthDay(monday.plusDays(6))}",
+                "${weekOfMonthLabel(selected, settings.weekStart)} · ${Fmt.monthDay(monday)} ~ ${Fmt.monthDay(monday.plusDays(6))}",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = { weekOnly = false }) { Text("달 전체 보기") }
         }
-        WeekdayHeader(DayOfWeek.MONDAY, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
+        WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             // [CELL-01] 1.39 A week of cells listing their jobs and memos is as tall as the month's.
             val listOn = cellListOn(settings.cellList, focus == com.bamnat.core.work.CalendarFocus.JOBS, settings.memoInCells, calView, false, hasMemos = datedMemos.isNotEmpty())
@@ -1101,6 +1118,7 @@ fun CalendarScreen(
                     onShare = shareCalendar,
                     onClose = { hints.markDone(HintStore.SHARE); shareHintDone = true },
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 4.dp),
+                    word = com.bamnat.core.work.scheduleWord(settings.workStyle),
                 )
             }
             header(Modifier)
@@ -1513,6 +1531,7 @@ fun CalendarScreen(
                         month = visibleMonth,
                         onOpenStats = onOpenStats,
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+                        tabName = settings.workStyle.words().tab,
                     )
                 }
                 CalendarPart.REST -> if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS) {
@@ -1571,6 +1590,7 @@ fun CalendarScreen(
                         modifier = place.padding(horizontal = 16.dp, vertical = 4.dp),
                         restSigns = restSigns,
                         compact = low,
+                        tabName = settings.workStyle.words().tab,
                         // [R136-03] In the month the phone started, the days before it are the 근무표's, and it says so.
                         rangeLabel = payRange?.let { "${it.from.monthValue}/${it.from.dayOfMonth}~${it.to.monthValue}/${it.to.dayOfMonth} · ${visibleMonth.monthValue}월 월급분" } ?: startDay?.takeIf { YearMonth.from(it) == visibleMonth && it.dayOfMonth > 1 &&
                             snap.entries.none { e -> e.date.isBefore(it) && e.override != ShiftOverride.None } }
@@ -1716,7 +1736,7 @@ fun CalendarScreen(
                         val year = pageToMonth(baseMonth, page).year
                         YearBoard(year, snap, settings.weekStart, today,
                             onYear = { d -> goToMonth(pageToMonth(baseMonth, page).plusYears(d.toLong())) },
-                            onOpen = { m -> goToMonth(m); pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) })
+                            onOpen = { m -> goToMonth(m); pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) }, style = settings.workStyle)
                     } else if (board == com.bamnat.core.layout.CalendarBoard.BAND) {
                         ShiftBandMonth(pageToMonth(baseMonth, page), snap, settings.weekStart, today, selected, onDayClick)
                     } else if (board == com.bamnat.core.layout.CalendarBoard.LINE) {
@@ -2021,7 +2041,7 @@ fun CalendarScreen(
     if (editingLayout) {
         CalendarEditSheet(settings, update = vm::updateSettings, onDismiss = { editingLayout = false }, calendar = activeCalendar.id)
     }
-    coverAsk?.let { ask -> CoverAskDialog(ask, onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
+    coverAsk?.let { ask -> CoverAskDialog(ask, vm.coverWord(), onAnswer = { asCover, keep -> vm.answerCover(ask, asCover, keep) }, onDismiss = vm::dismissCover) }
     restAlarms?.let { ask -> RestAlarmDialog(ask, onAnswer = { off -> vm.answerRestAlarms(ask, off) }, onDismiss = vm::closeRestAlarms) }
 
     if (sheetOpen && !wide) {
@@ -2095,7 +2115,7 @@ fun CalendarScreen(
     }
     if (legendOpen) CalendarLegendSheet(focus, snap, onDismiss = { legendOpen = false },
         payDayOn = payShown && payProfile?.period?.payDay != null, orgGroup = orgGroupOf(settings),
-        payShown = payShown, hasPay = payProfile != null)
+        payShown = payShown, hasPay = payProfile != null, style = settings.workStyle)
 }
 
 /** [DAY-01][DAY-03] The whole day over the calendar, open at once, with its own snackbar for undo. */
@@ -2597,6 +2617,8 @@ private fun HoursLine(
     month: YearMonth,
     onOpenStats: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 2.0.0 [RVH-27] The tab it opens, as the bar names it for this kind of work. */
+    tabName: String = "근무·급여",
 ) {
     val week = remember(calculator, selected) { calculator.week(selected) }
     // [CAL-32] I 리뷰 P9: a night shift over the week's edge is counted on the day it starts; say the other way once.
@@ -2621,7 +2643,7 @@ private fun HoursLine(
                 HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                     limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "근무·급여 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "$tabName 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -2771,12 +2793,14 @@ private fun PaintBar(
                 }
                 // 1.37 시간 바퀴 PC LOW: a weekday calendar (일근·요일 근무) has no cycle to go back to; 되돌리기 and the
                 // day sheet's '평소대로' undo a painted day there.
+                // 2.0.0 [RVH-04] 검토 CAL-07: a calendar with no cycle at all (알바·현장·가게, or shifts painted by hand) has no
+                // '근무 주기' either: the chip says what it does there (지우기), as the day sheet and long press already do.
                 if (!snapshot.weekdayOnly) FilterChip(
                     selected = tool == PaintTool.Clear,
                     onClick = { onTool(if (tool == PaintTool.Clear) PaintTool.Pick else PaintTool.Clear) },
-                    label = { Text("근무 주기대로", maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
-                    leadingIcon = { Icon(Icons.Filled.Autorenew, contentDescription = null) },
-                    modifier = Modifier.semantics { contentDescription = "근무 주기대로 되돌리기" },
+                    label = { Text(snapshot.backWord, maxLines = 1, softWrap = false) }, // 1.36 PC X7: never cut onto two lines
+                    leadingIcon = { Icon(if (snapshot.hasPattern) Icons.Filled.Autorenew else Icons.Filled.Close, contentDescription = null) },
+                    modifier = Modifier.semantics { contentDescription = if (snapshot.hasPattern) "${snapshot.backWord} 되돌리기" else "칠한 것 지우기" },
                 )
                 // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
                 if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {
@@ -3136,9 +3160,10 @@ private fun RestAlarmDialog(ask: CalendarViewModel.RestAlarmAsk, onAnswer: (turn
  * shift's hours as a 대근; the other answer makes them working days. Closing it writes nothing.
  */
 @Composable
-private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: Boolean, keep: Boolean) -> Unit, onDismiss: () -> Unit) {
+private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, word: String, onAnswer: (asCover: Boolean, keep: Boolean) -> Unit, onDismiss: () -> Unit) {
     var keep by remember { mutableStateOf(false) }
     val name = ask.type.name
+    // 2.0.0 [RVH-07] 검토 CAL-11: 알바 calls it 대타, as the bar and the day's chips do.
     val days = if (ask.offDays.size == 1) "${Fmt.monthDay(ask.offDays.first())}은 근무일이 아니에요" else "고른 날 중 ${ask.offDays.size}일은 근무일이 아니에요"
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3146,8 +3171,8 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
         title = { Text(days) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("$name${Fmt.obj(name)} 대근으로 넣을까요?", style = MaterialTheme.typography.bodyLarge)
-                Text("대근으로 넣으면 근무표는 쉬는 날 그대로 두고, $name 시간이 대근(휴일 근무)으로 따로 잡혀 수당에 들어가요. " +
+                Text("$name${Fmt.obj(name)} $word${Fmt.ro(word)} 넣을까요?", style = MaterialTheme.typography.bodyLarge)
+                Text("$word${Fmt.ro(word)} 넣으면 근무표는 쉬는 날 그대로 두고, $name 시간이 $word(휴일 근무)로 따로 잡혀 수당에 들어가요. " +
                     "근무표가 바뀐 거라면 ‘근무일로 바꾸기’를 고르세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
@@ -3159,7 +3184,7 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
                 }
             }
         },
-        confirmButton = { Button(onClick = { onAnswer(true, keep) }) { Text("대근으로") } },
+        confirmButton = { Button(onClick = { onAnswer(true, keep) }) { Text("$word${Fmt.ro(word)}") } },
         dismissButton = { TextButton(onClick = { onAnswer(false, keep) }) { Text("근무일로 바꾸기") } },
     )
 }
@@ -3226,6 +3251,18 @@ internal val ScheduleSnapshot.backWord: String
         !hasPattern -> "지우기"
         weekdayOnly -> "평소대로"
         else -> "근무 주기대로"
+    }
+
+/** 2.0.0 [RVH-05] 검토 CAL-13: what the cycle is called on screen: 평소 on a weekday calendar, else 근무 주기 (never 패턴). */
+internal val ScheduleSnapshot.cycleWord: String
+    get() = if (weekdayOnly) "평소" else "근무 주기"
+
+/** [RVH-04] 검토 CAL-07: what the bar says after a day is put back, in the words of [backWord]. */
+internal val ScheduleSnapshot.backDone: String
+    get() = when {
+        !hasPattern -> "지웠어요"
+        weekdayOnly -> "평소대로 되돌렸어요"
+        else -> "근무 주기대로 되돌렸어요"
     }
 
 /** [EASE-03] Cards above the month that wait for the day after the first setup. */

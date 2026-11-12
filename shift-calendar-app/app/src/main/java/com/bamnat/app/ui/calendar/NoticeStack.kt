@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.remember
 
 /**
  * [CAL-50] 상-4: what the calendar has to say above the month (a question, an alarm that will not ring, records to
@@ -59,7 +60,15 @@ internal fun NoticeStack(
     val present = notices.filter { (state.heights[it.key] ?: 0) > 0 }
     val shownKeys = if (state.expanded) present.map { it.key }.toSet() else present.take(open).map { it.key }.toSet()
     val folded = present.filter { it.key !in shownKeys }
-    Column(modifier.fillMaxWidth()) {
+    // 2.0.0 [RVH-21] 검토 CAL-26: which notices are placed is decided while laying out, in order: the first [open] that drew
+    // something in this very pass. Decided from the heights of the frame before, the first frame (no heights yet) placed every
+    // notice at its full height and folded them the next, so the month dropped and came back up on a day with several.
+    val placed = remember { IntArray(1) }
+    Column(modifier.fillMaxWidth().layout { measurable, constraints ->
+        placed[0] = 0
+        val p = measurable.measure(constraints)
+        layout(p.width, p.height) { p.place(0, 0) }
+    }) {
         notices.forEach { n ->
             val shown = n.key in shownKeys || (state.heights[n.key] ?: 0) == 0 && present.size < open
             androidx.compose.runtime.key(n.key) {
@@ -69,7 +78,9 @@ internal fun NoticeStack(
                         .layout { measurable, constraints ->
                             val p = measurable.measure(constraints)
                             if (state.heights[n.key] != p.height) state.heights[n.key] = p.height
-                            if (shown) layout(p.width, p.height) { p.place(0, 0) } else layout(p.width, 0) {}
+                            val place = p.height > 0 && (state.expanded || placed[0] < open)
+                            if (place) placed[0]++
+                            if (place) layout(p.width, p.height) { p.place(0, 0) } else layout(p.width, 0) {}
                         }
                         .then(if (shown) Modifier else Modifier.clearAndSetSemantics { }),
                 ) {

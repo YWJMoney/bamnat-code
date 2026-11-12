@@ -217,6 +217,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVH-15] 고른 날·보던 달: 잠깐 다른 앱에 다녀온 사이를 잇는 것이라 옮기지 않아요.
+            "calendar_place" to "달력에서 마지막으로 고른 날과 보던 달(6시간 안에 다시 열면 그 자리로), 이 휴대폰의 것",
             // 1.40 [DISC-01] 안 써 본 기능 카드를 언제 무엇을 보였는지: 이 휴대폰의 일이라, 새 휴대폰은 처음처럼 쉬었다가 시작해요.
             "discover" to "‘안 써 본 기능 알려 주기’ 카드를 보인 날과 답, 다음 카드까지의 간격, 이 휴대폰의 것",
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.

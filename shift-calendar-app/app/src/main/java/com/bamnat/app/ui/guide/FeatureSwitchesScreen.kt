@@ -154,7 +154,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
 
                 val guideRows = features.filter { it.id.startsWith("guide.") }
                 if (guideRows.isNotEmpty()) SectionCard(title = "안내") {
-                    guideRows.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) } }
+                    guideRows.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }, style) { toggle(f, it) } }
                     TextButton(onClick = { store.restartChecklist(active, style, Today.date()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
                         Text("‘$name’ 안내 카드 다시 보기")
                     }
@@ -168,7 +168,7 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         cards.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider()
-                            SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) }
+                            SwitchLine(f, isOn(f), waits(f), { ask(f) }, style) { toggle(f, it) }
                         }
                     }
                 }
@@ -179,13 +179,13 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         linked.forEachIndexed { i, f ->
                             if (i > 0) HorizontalDivider()
-                            SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) }
+                            SwitchLine(f, isOn(f), waits(f), { ask(f) }, style) { toggle(f, it) }
                         }
                     }
                 }
                 val app = features.filter { it.off == Off.APP && !it.id.startsWith("guide.") }
                 if (app.isNotEmpty()) {
-                    SectionCard(title = "위젯") { app.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }) { toggle(f, it) } } }
+                    SectionCard(title = "위젯") { app.forEach { f -> SwitchLine(f, isOn(f), waits(f), { ask(f) }, style) { toggle(f, it) } } }
                 }
                 Text("다른 일하는 방식의 달력을 고르면 그 달력의 기능이 보여요.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -212,7 +212,7 @@ private const val SHOW_OFF = 2
 
 /** One feature: name, what it does, where it is, and its switch. */
 @Composable
-private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: () -> Unit, onChange: (Boolean) -> Unit) {
+private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: () -> Unit, style: WorkStyle? = null, onChange: (Boolean) -> Unit) {
     Column {
     Row(
         Modifier.fillMaxWidth().heightIn(min = 64.dp)
@@ -227,7 +227,7 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: 
                 if (com.bamnat.core.guide.ProCatalog.isPro(feature.id)) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp))
             }
             Text(feature.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("어디: ${feature.where}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Text("어디: ${FeatureRegistry.whereFor(feature, style)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
         Spacer(Modifier.width(12.dp))
         Switch(checked = on, onCheckedChange = null)

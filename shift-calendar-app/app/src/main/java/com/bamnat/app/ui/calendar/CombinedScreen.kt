@@ -163,7 +163,8 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
     val lead = (month.atDay(1).dayOfWeek.value - weekStart.value + 7) % 7
     val cells = lead + month.lengthOfMonth()
     val rows = (cells + 6) / 7
-    val today = Today.date()
+    // 2.0.0 [RVH-19] 검토 CAL-24: today moves on at midnight, as the calendar's does.
+    val today = rememberToday()
     Row(Modifier.fillMaxWidth()) {
         (0 until 7).forEach { i ->
             val dow = weekStart.plus(i.toLong())
@@ -196,7 +197,8 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("$n", style = MaterialTheme.typography.labelMedium.merge(NumberStyle))
+                        // [RVH-19] Sundays and 공휴일 in red, Saturdays in blue, as on the calendar.
+                        Text("$n", style = MaterialTheme.typography.labelMedium.merge(NumberStyle), color = dayNumberColor(date))
                         if (clash) Box(Modifier.padding(start = 2.dp).size(6.dp).clip(CircleShape).background(MaterialTheme.colorScheme.error))
                     }
                     Spacer(Modifier.height(4.dp))

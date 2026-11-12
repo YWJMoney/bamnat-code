@@ -10,6 +10,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.R
 import com.bamnat.app.alarm.Notifications
 import com.bamnat.app.appContainer
+import com.bamnat.app.ui.Fmt
 import com.bamnat.app.data.PersonalCalendar
 import kotlinx.coroutines.launch
 import java.time.Duration
@@ -85,12 +86,19 @@ object ShareExpiryReminder {
     )
 
     /** [MCAL-03] "근무표 링크" for the main calendar, "‘알바’ 달력 링크" for an added one; [PROV-04] "근무표 2번 링크" for a second. */
-    internal fun what(key: String, name: String?): String {
+    internal fun what(key: String, name: String?, word: String = "근무표"): String {
         val calendarId = ShareLinkKey.calendar(key)
-        val whose = if (calendarId == PersonalCalendar.MAIN || name == null) "근무표" else "‘$name’ 달력"
+        val whose = if (calendarId == PersonalCalendar.MAIN || name == null) word else "‘$name’ 달력"
         val slot = ShareLinkKey.slot(key)
         return if (slot > 1) "$whose ${slot}번 링크" else "$whose 링크"
     }
+
+    /** [RVH-20] What the link's calendar shares, in its words ([com.bamnat.core.work.scheduleWord]). */
+    internal fun wordOf(context: Context, key: String): String = runCatching {
+        val c = context.appContainer
+        com.bamnat.core.work.scheduleWord(c.calendars.styleOf(ShareLinkKey.calendar(key), c.settingsRepository.current.workStyle))
+            .let { if (it == "달력") "공유" else it }
+    }.getOrDefault("근무표")
 
     /** The sheet of the link's calendar, [PROV-04] on that link. */
     private fun opener(context: Context, key: String): PendingIntent =
@@ -99,13 +107,15 @@ object ShareExpiryReminder {
     /** [PROV-04] [days] is what ‘늘리기’ keeps it open for: a 프로 period is 90 days without 프로. */
     fun post(context: Context, link: ShareLinkState, key: String = PersonalCalendar.MAIN, name: String? = null, days: Int = link.ttlDays) {
         val period = ShareLinkPayload.ttlLabel(days)
+        // 2.0.0 [RVH-20] 검토 TYPE-16: a shop's link holds 영업일, a field worker's 일정.
+        val word = wordOf(context, key)
         val notification = NotificationCompat.Builder(context, Notifications.SHARE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentTitle("${what(key, name)}가 ${dateText(link.expiresAt)}에 닫혀요")
-            .setContentText("늘리지 않으면 받은 사람 앱에서도 근무표가 사라져요")
+            .setContentTitle("${what(key, name, word)}가 ${dateText(link.expiresAt)}에 닫혀요")
+            .setContentText("늘리지 않으면 받은 사람 앱에서도 $word${Fmt.iga(word)} 사라져요")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                "늘리지 않으면 받은 사람 앱에서도 근무표가 사라져요. ‘$period 늘리기’를 누르면 같은 링크가 오늘부터 $period 동안 열려요."))
+                "늘리지 않으면 받은 사람 앱에서도 $word${Fmt.iga(word)} 사라져요. ‘$period 늘리기’를 누르면 같은 링크가 오늘부터 $period 동안 열려요."))
             .setContentIntent(opener(context, key))
             .addAction(0, "$period 늘리기", PendingIntent.getBroadcast(
                 context, EXTEND_REQUEST, Intent(context, ShareExtendReceiver::class.java).forLink(key),
@@ -194,11 +204,11 @@ class ShareExtendReceiver : BroadcastReceiver() {
             try {
                 when (c.shareSync.extend(id)) {
                     ShareSync.Result.Sent -> c.shareLinksOf(id).link.value?.let {
-                        ShareExpiryReminder.postResult(context, "근무표 링크를 늘렸어요", "${ShareExpiryReminder.dateText(it.expiresAt)}까지 열려요", id)
+                        ShareExpiryReminder.postResult(context, "${ShareExpiryReminder.wordOf(context, id)} 링크를 늘렸어요", "${ShareExpiryReminder.dateText(it.expiresAt)}까지 열려요", id)
                     }
                     // These months have nothing to show, so the server would refuse the link.
-                    ShareSync.Result.Same -> ShareExpiryReminder.postResult(context, "링크를 늘리지 못했어요", "보낼 근무가 없어요. 눌러서 공유 화면에서 확인해 주세요", id)
-                    ShareSync.Result.Gone -> ShareExpiryReminder.postResult(context, "근무표 링크가 이미 닫혔어요", "눌러서 새 링크를 만들어 보내 주세요", id)
+                    ShareSync.Result.Same -> ShareExpiryReminder.postResult(context, "링크를 늘리지 못했어요", "보낼 날이 없어요. 눌러서 공유 화면에서 확인해 주세요", id)
+                    ShareSync.Result.Gone -> ShareExpiryReminder.postResult(context, "${ShareExpiryReminder.wordOf(context, id)} 링크가 이미 닫혔어요", "눌러서 새 링크를 만들어 보내 주세요", id)
                     ShareSync.Result.Offline -> ShareExpiryReminder.postResult(context, "링크를 늘리지 못했어요", "인터넷 연결을 확인하고 눌러서 다시 해 주세요", id)
                     ShareSync.Result.Locked -> ShareExpiryReminder.postResult(context, "이 링크는 프로에서 늘릴 수 있어요", "첫 링크는 그대로 늘릴 수 있어요. 눌러서 공유 화면을 열어요", id)
                 }

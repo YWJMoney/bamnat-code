@@ -166,8 +166,17 @@ data class ReceivedCalendar(
     val gone: Boolean get() = raw == null
     /** Like an account name: what the sharer typed, e.g. 민지. */
     val name: String get() = title.trim().ifEmpty { "이름 없음" }
-    /** 민지의 근무표, as the shared page says. */
-    val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표"
+    /** 민지의 근무표, as the shared page says. [RVH-20] 검토 TYPE-16: a shop's link is 민지의 영업일, a field worker's 민지의 일정. */
+    val fullName: String get() = title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "이름 없는 $word"
+
+    /** [RVH-20] What the link holds, as far as it says: 매출 sent → 영업일, 일감 → 일정, else 근무표. */
+    val word: String get() = schedule?.let { s ->
+        when {
+            "pay" in s.shows && s.payKind == com.bamnat.core.work.MoneyShare.SALES -> "영업일"
+            "jobs" in s.shows || "pay" in s.shows && s.payKind == com.bamnat.core.work.MoneyShare.JOBS -> "일정"
+            else -> null
+        }
+    } ?: "근무표"
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
     val initial: String get() = title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?"
