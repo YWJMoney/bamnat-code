@@ -50,8 +50,19 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
         val bar = snackbar ?: return@LaunchedEffect
         val r = bar.showSnackbar(sharedLine(s), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) {
-            c.autoShare.undo()
-            bar.showSnackbar(if (s.queued) "나누지 않을게요" else "광장에서 거뒀어요")
+            // 2.0.0 [RVN-10] COMP-46 Said as it went: 거뒀어요 only when it came off; offline it waits and 다시 하기 tries now.
+            when (c.autoShare.undo()) {
+                AutoShare.Undone.DROPPED -> bar.showSnackbar("나누지 않을게요")
+                AutoShare.Undone.TAKEN -> bar.showSnackbar("광장에서 거뒀어요")
+                AutoShare.Undone.WAITING -> {
+                    val again = bar.showSnackbar("지금은 거두지 못했어요 · 인터넷이 연결되면 저절로 거둬요", actionLabel = "다시 하기",
+                        duration = SnackbarDuration.Long)
+                    if (again == SnackbarResult.ActionPerformed) {
+                        val ok = c.companyScopes().all { it.autoShare.takeBackWaiting() }
+                        bar.showSnackbar(if (ok) "광장에서 거뒀어요" else "아직 연결되지 않았어요 · 연결되면 저절로 거둬요")
+                    }
+                }
+            }
         } else c.autoShare.sharedDone()
     }
     ask?.let { AutoShareDialog(it, onYes = c.autoShare::approve, onNo = c.autoShare::decline, onNever = c.autoShare::never) }

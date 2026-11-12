@@ -310,7 +310,7 @@ class FlagEvalTest {
                 // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
                 else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
                 else if (f.key == FlagCatalog.STATS_DISC) "1.40.0" /* 1.40 DISC-06, 처리방침 3.13 */
-                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED) "2.0.0" /* 2.0.0 RVD-18 */
+                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED || f.key == FlagCatalog.CARD_FONTS) "2.0.0" /* 2.0.0 RVD-18, RVM-21 */
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
@@ -334,6 +334,20 @@ class FlagEvalTest {
         assertFalse(FlagEval.state(counted, phone(kst(2026, 11, 8), agreed = agreed), calendar = cal).on)
         assertTrue(FlagEval.state(counted, phone(kst(2026, 11, 10), agreed = agreed), calendar = cal).on)
         assertEquals(LocalDate.of(2026, 12, 9), FlagCatalog.CARE_FROM)
+    }
+
+    /**
+     * 2.0.0 [RVM-21] MKT-32 (총괄 11-12): the 장터 card fonts come from our public files only from 처리방침 3.13's 7-day effective day; before
+     * it, and while 3.13 is not in the calendar at all, the phone asks nothing (the cards draw in its own fonts).
+     */
+    @Test fun cardFontsWaitForTheSevenDayLineOf313() {
+        val fonts = FlagCatalog.of(FlagCatalog.CARD_FONTS)!!
+        assertEquals("3.13", FlagCatalog.CARD_FONT_POLICY)
+        assertFalse("3.13 일정이 없으면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 12, 31)), calendar = PolicyCalendar.SEED.merged(emptyList())).on)
+        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.13", LocalDate.of(2026, 11, 12), LocalDate.of(2026, 11, 19))))
+        assertFalse(FlagEval.state(fonts, phone(kst(2026, 11, 18, 23, 59)), calendar = cal).on)
+        assertTrue(FlagEval.state(fonts, phone(kst(2026, 11, 19, 0, 1)), calendar = cal).on)
+        assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 11, 20), server = null), calendar = cal).on)
     }
 
     @Test fun unknownKeysAreIgnoredAndFreeRowsAreReadByName() {

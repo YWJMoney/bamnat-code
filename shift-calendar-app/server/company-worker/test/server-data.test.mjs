@@ -20,6 +20,10 @@ test("[SRV-03] every table in the company server's SCHEMA has a line in docs/ser
   for (const m of read("../src/write-limits.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
   // 1.36 [VIL-11] 마을 운영 tables live in village.js, spread into SCHEMA the same way.
   for (const m of read("../src/village.js").matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
+  // 2.0.0 [RVN-09] COMP-42 The push and 광장 알림·오늘 출근 tables, which 모두 지우기 now takes with the rest.
+  for (const f of ["fcm.js", "plaza-push.js", "plaza-checkin.js"]) {
+    for (const m of read(`../src/${f}`).matchAll(/CREATE TABLE IF NOT EXISTS (\w+)/g)) tables.push(m[1]);
+  }
   assert.ok(tables.length > 30, "found the tables");
   const missing = tables.filter((t) => !listed.has(t));
   assert.deepEqual(missing, [], "docs/server-data.md needs a line for these tables");
