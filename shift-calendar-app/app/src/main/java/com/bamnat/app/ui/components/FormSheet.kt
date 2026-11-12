@@ -3,7 +3,8 @@ package com.bamnat.app.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -27,7 +28,7 @@ import androidx.compose.ui.unit.dp
  * the whole width, the fields above the keyboard, the buttons where the thumb is (notes/1.22-285/E.md 5장 2번).
  * The same slots as AlertDialog, so a form moves over by its first word; [text] scrolls itself as before.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FormSheet(
     onDismissRequest: () -> Unit,
@@ -74,10 +75,13 @@ fun FormSheet(
                     ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text() }
                 }
             }
-            Row(
+            // 2.0.0 [RVJ-27] (#460 사진 검토, 조건 12): in one row a long word on the filled button ('근무표에 넣기') was squeezed by
+            // the button beside it at 글자 200% and broke into two lines. The buttons flow as a dialog's do: side by side while
+            // both fit (as before), each on its own line when they do not, the one that saves nearest the thumb.
+            FlowRow(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 dismissButton?.invoke()
                 confirmButton()
