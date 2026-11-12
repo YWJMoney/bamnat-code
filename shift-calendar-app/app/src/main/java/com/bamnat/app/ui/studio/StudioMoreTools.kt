@@ -23,6 +23,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -63,6 +64,7 @@ import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.recipe.ShiftLooks
 import com.bamnat.core.recipe.ThemeSeed
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
 
 // ---- [STU-35] 느낌으로 시작하기 ----
 
@@ -116,9 +118,9 @@ internal fun FeelStartDialog(onDismiss: () -> Unit, onPick: (ThemeSeed.Scheme, I
                 com.bamnat.app.ui.components.FoldRow("studio.seeds", what = "색") {
                     StudioColors.SEEDS.forEachIndexed { i, c ->
                         val on = c == seed
-                        Box(Modifier.size(34.dp).clip(CircleShape).background(Color(c.toInt()))
+                        Box(Modifier.minimumInteractiveComponentSize().size(34.dp).clip(CircleShape).background(Color(c.toInt()))
                             .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                            .clickable { seed = c }.semantics { contentDescription = "색 ${i + 1}"; selected = on })
+                            .clickable(role = Role.Button) { seed = c }.semantics { contentDescription = "색 ${i + 1}"; selected = on })
                     }
                 }
                 Text("3. 칸 모양", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -278,9 +280,9 @@ internal fun ShiftLooksTool(vm: StudioViewModel, d: AppSettings, previewing: Shi
                     com.bamnat.app.ui.components.FoldRow("studio.seeds", what = "색") {
                         StudioColors.SEEDS.forEachIndexed { i, c ->
                             val on = c == seed
-                            Box(Modifier.size(32.dp).clip(CircleShape).background(Color(c.toInt()))
+                            Box(Modifier.minimumInteractiveComponentSize().size(32.dp).clip(CircleShape).background(Color(c.toInt()))
                                 .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                .clickable { put(s = c) }.semantics { contentDescription = "${mode.label} 색 ${i + 1}"; selected = on })
+                                .clickable(role = Role.Button) { put(s = c) }.semantics { contentDescription = "${mode.label} 색 ${i + 1}"; selected = on })
                         }
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

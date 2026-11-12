@@ -52,7 +52,7 @@ class DesignScreenshotTest : ScreenshotBase() {
     @Composable private fun AllFaces(dark: Boolean) {
         KaniMood.entries.chunked(4).forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                row.forEach { m -> Column { Kani(m, night = dark, size = 72.dp); Text(m.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface) } }
+                row.forEach { m -> Column { Kani(m, night = dark, size = 72.dp, speak = true); Text(m.label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface) } }
             }
         }
     }
@@ -112,6 +112,83 @@ class DesignScreenshotTest : ScreenshotBase() {
             }
         }
         settle()
-        check(appears("칸이, 여기예요")) { "칸이 does not point the way" }
+        check(appears("아직 잠 기록이 없어요")) { "the empty screen says nothing" }
+        // 2.0.0 [RVP-32] (검토 UIX-55) 칸이 on an empty screen is a picture for the eye: a screen reader does not read it again.
+        check(!appears("칸이, 여기예요")) { "칸이 is read on every empty screen" }
+    }
+
+    /**
+     * 2.0.0 [RVP-59] (검토 14-5) 말랑 칸이 from 24 to 120 on a light page, a dark page and the warm night page, with a shift colour
+     * on the headband: the face and the band must still read at 24, and the rings must not sink into the dark.
+     */
+    @Composable private fun Sizes(night: Boolean) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            listOf(24, 40, 56, 72, 96, 120).forEach { Kani(KaniMood.Basic, night = night, size = it.dp) }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            Kani(KaniMood.NightShift, night = night, band = androidx.compose.ui.graphics.Color(0xFF6C5CE7), size = 72.dp, speak = true)
+            Kani(KaniMood.Payday, night = night, size = 72.dp)
+            Kani(KaniMood.Hello, night = night, size = 72.dp, date = 12, tomorrow = androidx.compose.ui.graphics.Color(0xFF2F80ED))
+        }
+    }
+
+    @Test fun kaniSizes() = shoot("2705_design_kani_sizes", FOLDED) {
+        content {
+            Column {
+                Page { Sizes(false) }
+            }
+        }
+        settle()
+        check(appears("칸이, 야간 근무")) { "the new 야간 근무 face has no spoken name when it is the message" }
+    }
+
+    @Test fun kaniSizesDark() = shoot("2706_design_kani_sizes_dark", FOLDED) {
+        content { Page(dark = true) { Sizes(true) } }
+        settle()
+    }
+
+    /**
+     * 2.0.0 [RVP-01] (총괄 #445 검토, 조건 12) The nudge card at the folded phone's width with the letters at 200%: a long line, its
+     * button and its X. The words are never cut ('…'); with big letters the button goes under them. Light and dark.
+     */
+    @Composable private fun Nudges() {
+        com.bamnat.app.ui.components.NudgeCard("잠금 화면에 알람 화면이 안 떠요. 알람이 울려도 모를 수 있어요", tone = Tone.Caution,
+            action = "켜러 가기", onClose = {})
+        com.bamnat.app.ui.components.NudgeCard("이번 달 근무표가 아직 비어 있어요", detail = "근무표 사진을 찍으면 한 번에 채워요",
+            action = "사진으로 채우기", onClose = {})
+        com.bamnat.app.ui.components.NudgeCard("백업했어요", tone = Tone.Good, onClose = {})
+    }
+
+    @Test fun nudgeCardsBigTextFolded() = shoot("2708_design_nudge_200", FOLDED, 2f) {
+        content { Page { Nudges() } }
+        settle()
+        check(appears("켜러 가기", exact = true)) { "the button went" }
+        val m = app.resources.displayMetrics
+        val cuts = LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels)
+        check(cuts.isEmpty()) { "words cut at 200%: $cuts" }
+    }
+
+    @Test fun nudgeCardsBigTextFoldedDark() = shoot("2709_design_nudge_200_dark", FOLDED, 2f) {
+        content { Page(dark = true) { Nudges() } }
+        settle()
+        val m = app.resources.displayMetrics
+        check(LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels).isEmpty()) { "words cut at 200% (dark)" }
+    }
+
+    @Test fun nudgeCardsFolded() = shoot("2710_design_nudge_100", FOLDED) {
+        content { Page { Nudges() } }
+        settle()
+        val m = app.resources.displayMetrics
+        check(LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels).isEmpty()) { "words cut at 100%" }
+    }
+
+    @Test fun kaniSizesNight() = shoot("2707_design_kani_sizes_night", FOLDED) {
+        content {
+            com.bamnat.app.ui.theme.BamnatTheme(themeMode = ThemeMode.DARK, night = true) {
+                Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)) { Sizes(true) }
+            }
+        }
+        settle()
     }
 }

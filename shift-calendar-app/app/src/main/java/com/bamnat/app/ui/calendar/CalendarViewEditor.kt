@@ -165,7 +165,7 @@ fun CalendarViewSample(view: CalendarView, days: List<SampleDay> = SAMPLE, cell:
                 val color = d.color.asColor()
                 val wash = when { d.blank -> Color.Transparent; cell == "fill" -> color.copy(alpha = 0.85f); cell == "dot" -> Color.Transparent
                     else -> if (d.off) Color.Transparent else color.copy(alpha = 0.16f) }
-                val shape = if (view.grid == "line") RoundedCornerShape(2.dp) else RoundedCornerShape(8.dp)
+                val shape = if (view.grid == "line") RoundedCornerShape(2.dp) else MaterialTheme.shapes.small
                 Box(
                     Modifier.weight(1f).fillMaxSize().padding(if (view.grid == "line") 0.5.dp else 1.dp)
                         .then(if (view.grid == "line" || d.blank) Modifier.border(0.6.dp, scheme.outlineVariant, shape) else Modifier)

@@ -283,7 +283,7 @@ private fun HowItWorks() {
 
 @Composable
 private fun CompanyRow(hit: CompanyHit, onClick: () -> Unit) {
-    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onClick)) {
+    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick)) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.size(42.dp)) {
                 Box(contentAlignment = Alignment.Center) {
@@ -648,7 +648,7 @@ private fun SetupCard(
             main.forEach { (label, text) -> SetupLine(label, text) }
             if (pay.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { more = !more }.padding(vertical = 6.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { more = !more }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(if (more) "급여 계산 방식 접기" else "급여 계산 방식 보기 (${pay.size}가지)", style = MaterialTheme.typography.labelLarge,

@@ -78,18 +78,17 @@ internal fun scheduleWays(r: MemoReminder): String = when {
 /** [SCHED-01] The schedule in the editor's chip row: tap to change, ✕ to make it a plain memo again. */
 @Composable
 internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: () -> Unit) {
-    AssistChip(
-        onClick = onOpen,
-        label = { Text(reminder?.let { "${scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알람 맞추기") },
-        leadingIcon = {
-            Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
-        },
-        trailingIcon = if (reminder != null) {
-            { Icon(Icons.Filled.Close, "일정 빼기", Modifier.size(18.dp).clickable(role = Role.Button) { onClear() }) }
-        } else {
-            null
-        },
-    )
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        AssistChip(
+            onClick = onOpen,
+            label = { Text(reminder?.let { "${scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알람 맞추기") },
+            leadingIcon = {
+                Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
+            },
+        )
+        // 2.0.0 [RVP-10] (검토 UIX-10) The X is pressed as 48dp beside the chip, not 18dp inside it.
+        if (reminder != null) com.bamnat.app.ui.components.ChipClear("일정 빼기", onClear)
+    }
 }
 
 /**

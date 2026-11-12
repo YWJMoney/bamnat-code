@@ -90,6 +90,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** [IMPORT-01] The span of days to read. */
 enum class ImportRange(val label: String, val back: Long, val ahead: Long) {
@@ -269,7 +270,7 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
                             Text("이 휴대폰에 캘린더가 없어요.", style = MaterialTheme.typography.bodyMedium)
                         }
                         ui.calendars.forEach { c ->
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { vm.toggle(c.id) }, verticalAlignment = Alignment.CenterVertically) {
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { vm.toggle(c.id) }, verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = c.id in ui.chosen, onCheckedChange = { vm.toggle(c.id) })
                                 Column(Modifier.weight(1f)) {
                                     Text(c.name.ifBlank { c.account }, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -325,7 +326,7 @@ private fun ProposalRow(p: CalendarImport.Proposal, left: Boolean, type: ShiftTy
     val muted = left || p.skip != null
     Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        modifier = Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.width(64.dp)) {
                 Text(Fmt.shortDate(p.date), style = MaterialTheme.typography.titleSmall)

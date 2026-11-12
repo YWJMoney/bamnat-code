@@ -199,7 +199,7 @@ internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat
             }
             val density = LocalDensity.current
             var cell by remember { mutableIntStateOf(0) }
-            val dayDigits = with(density) { if (cell == 0) 9.sp else minOf(9.sp.toPx(), cell * 0.42f).toSp() }
+            val dayDigits = with(density) { if (cell == 0) 10.sp else minOf(10.sp.toPx(), cell * 0.42f).toSp() /* [RVP-11] 8~9sp 없음 */ }
             repeat(weeks) { w ->
                 Row(Modifier.fillMaxWidth().onSizeChanged { cell = it.width / 7 }) {
                     repeat(7) { d ->

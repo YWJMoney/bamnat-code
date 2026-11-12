@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -61,6 +62,7 @@ import com.bamnat.core.recipe.ThemeSeed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.semantics.Role
 
 /**
  * [STU-30][STU-33] 1.36 한 색으로 앱 전체·스타일 복사 (스튜디오 극상 조사 S1·S4): what a scheme or a copied look does to the draft.
@@ -263,9 +265,9 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
         (photoColours + StudioColors.SEEDS.filter { it !in photoColours }).forEachIndexed { i, c ->
             if (i == photoColours.size && photoColours.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
             val on = c == seed
-            Box(Modifier.size(36.dp).clip(CircleShape).background(Color(c.toInt()))
+            Box(Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(Color(c.toInt()))
                 .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                .clickable { put(s = c, m = 0) }
+                .clickable(role = Role.Button) { put(s = c, m = 0) }
                 .semantics { contentDescription = (if (i < photoColours.size) "사진 색 ${i + 1}" else "색 ${i - photoColours.size + 1}"); selected = on })
         }
     }
@@ -309,7 +311,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
         com.bamnat.app.ui.components.FoldRow("studio.photocolours", spacing = 10.dp, what = "사진 색") {
             photoColours.forEachIndexed { i, c ->
                 val on = c == seed
-                Column(Modifier.clickable { put(s = c, m = 0) }.semantics { contentDescription = "사진 색 ${names[i]}"; selected = on },
+                Column(Modifier.clickable(role = Role.Button) { put(s = c, m = 0) }.semantics { contentDescription = "사진 색 ${names[i]}"; selected = on },
                     horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(Modifier.size(44.dp).clip(CircleShape).background(Color(c.toInt()))
                         .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape))
@@ -325,7 +327,7 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
     val free = own.filter { it !in heldKeys }
     if (vm.locked.isNotEmpty()) Text(vm.locked.joinToString("·") { lockName(it, vm.style) }.let { "🔒 $it" + com.bamnat.app.ui.Fmt.eun(it) } + " 잠가서 그대로예요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (free.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { put(all = !allScreens) }.padding(vertical = 4.dp),
+    if (free.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { put(all = !allScreens) }.padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("화면마다 따로 고른 색도 이 색으로", style = MaterialTheme.typography.bodyMedium)
@@ -341,9 +343,9 @@ internal fun SeedTool(vm: StudioViewModel, d: AppSettings) {
 /** The scheme's colours side by side with their names, the text on its ground as it will read. */
 @Composable
 internal fun SchemeStrip(s: ThemeSeed.Scheme) {
-    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(s.bg.toInt())).padding(10.dp)) {
+    Box(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(Color(s.bg.toInt())).padding(10.dp)) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(Color(s.card.toInt())).padding(10.dp),
+            Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).background(Color(s.card.toInt())).padding(10.dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("카드 글자", color = Color(s.ink.toInt()), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Text("토", color = Color(s.sat.toInt()), fontWeight = FontWeight.Bold)
@@ -351,7 +353,7 @@ internal fun SchemeStrip(s: ThemeSeed.Scheme) {
                 Box(Modifier.size(26.dp).clip(CircleShape).background(Color(s.today.toInt())), contentAlignment = Alignment.Center) {
                     Text("9", color = Color(Palette.inkOn(null, s.today).toInt()), style = MaterialTheme.typography.labelMedium)
                 }
-                Box(Modifier.clip(RoundedCornerShape(8.dp)).background(Color(s.accent.toInt())).padding(horizontal = 10.dp, vertical = 4.dp)) {
+                Box(Modifier.clip(MaterialTheme.shapes.small).background(Color(s.accent.toInt())).padding(horizontal = 10.dp, vertical = 4.dp)) {
                     Text("단추", color = Color(Palette.inkOn(null, s.accent).toInt()), style = MaterialTheme.typography.labelMedium)
                 }
             }

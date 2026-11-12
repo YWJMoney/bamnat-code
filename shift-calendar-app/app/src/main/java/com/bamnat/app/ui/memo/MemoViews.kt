@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.memo
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import com.bamnat.app.ui.monthSwipe
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -74,6 +76,7 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoProps
 import com.bamnat.core.memo.MemoView
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /**
  * [TAB-02] 1.36 메모장 보기 칩: 목록 · 보드 · 표 · 갤러리, and for a 보드 what makes its 칸 and for every view the order. The 칸 names the
@@ -142,8 +145,8 @@ internal fun PropPills(memo: Memo, max: Int = 3, modifier: Modifier = Modifier) 
                 style = com.bamnat.app.ui.parts.PartMods.text(part, MaterialTheme.typography.labelSmall),
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
                 maxLines = 1,
-                modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f), RoundedCornerShape(6.dp))
-                    .then(com.bamnat.app.ui.parts.PartMods.box(part, RoundedCornerShape(6.dp)))
+                modifier = Modifier.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f), MaterialTheme.shapes.extraSmall)
+                    .then(com.bamnat.app.ui.parts.PartMods.box(part, MaterialTheme.shapes.extraSmall))
                     .padding(horizontal = 6.dp, vertical = 2.dp),
             )
         }
@@ -265,14 +268,14 @@ internal fun MemoBoardView(
             items(columns, key = { it.key }) { col ->
                 val lit = drag != null && target == col.key && drag?.from != col.key
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = MaterialTheme.shapes.medium,
                     color = if (lit) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow,
                     border = if (lit) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                     // PC 확인 9aaf3eef 사용성 제안: an empty 칸 stays narrow and opens wide only while a card is dragged.
                     // PC 확인 d5678f31: one 칸 alone fills the width instead of leaving half the board empty.
                     modifier = Modifier.then(if (columns.size == 1) Modifier.fillParentMaxWidth() else Modifier.width(if (col.memos.isEmpty() && drag == null) 132.dp else 250.dp))
                         .animateItem().fillParentMaxHeight()
-                        .then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp))),
+                        .then(com.bamnat.app.ui.parts.PartMods.box(colPart, MaterialTheme.shapes.medium)),
                 ) {
                     Column {
                         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -314,7 +317,7 @@ internal fun MemoBoardView(
         // The card being dragged, as its title under the finger.
         drag?.let { d ->
             Surface(
-                shape = RoundedCornerShape(10.dp),
+                shape = MaterialTheme.shapes.small,
                 color = MaterialTheme.colorScheme.secondaryContainer,
                 shadowElevation = 6.dp,
                 modifier = Modifier.offset { androidx.compose.ui.unit.IntOffset((d.at.x - boardOrigin.x - 60.dp.toPx()).toInt(), (d.at.y - boardOrigin.y - 24.dp.toPx()).toInt()) }
@@ -443,7 +446,7 @@ internal fun MemoTableView(
     @Composable fun headCell(text: String, key: String, width: androidx.compose.ui.unit.Dp) {
         val on = view.sort.removePrefix("-") == key
         Row(
-            Modifier.width(width).clickable { onSort(if (view.sort == key) "-$key" else key) }.padding(horizontal = 8.dp, vertical = 10.dp)
+            Modifier.width(width).clickable(role = Role.Button) { onSort(if (view.sort == key) "-$key" else key) }.padding(horizontal = 8.dp, vertical = 10.dp)
                 .semantics { contentDescription = "$text 열, 눌러 정렬"; selected = on },
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -454,7 +457,7 @@ internal fun MemoTableView(
     // [TAB-07] 부품 memo.table · memo.table.head.
     val headRowPart = com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table.head")
     val step = with(density) { colW.toPx() }
-    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), RoundedCornerShape(10.dp)))
+    Column(Modifier.fillMaxSize().padding(horizontal = 12.dp).then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.ui.parts.LocalBlueprint.current.style("memo.table"), MaterialTheme.shapes.small))
         .scrollable(slide, androidx.compose.foundation.gestures.Orientation.Horizontal)
         .semantics {
             customActions = listOf(
@@ -462,8 +465,8 @@ internal fun MemoTableView(
                 androidx.compose.ui.semantics.CustomAccessibilityAction("왼쪽 열 보기") { slideX = (slideX - step).coerceIn(0f, maxX); true },
             )
         }) {
-        Row(Modifier.border(1.dp, line, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))
-            .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp)))) {
+        Row(Modifier.border(1.dp, line, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)).background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize))
+            .then(com.bamnat.app.ui.parts.PartMods.box(headRowPart, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)))) {
             headCell("제목", MemoView.SORT_TITLE, titleW)
             Slid {
                 for ((c, _) in columns) headCell(c, "p:$c", colW)
@@ -717,7 +720,7 @@ internal fun MemoCalendarView(
             }
         }
         item(key = "grid") {
-            Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal"), RoundedCornerShape(10.dp))),
+            Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal"), MaterialTheme.shapes.small)),
                 verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(Modifier.fillMaxWidth()) {
                     for (i in 0..6) {
@@ -736,10 +739,10 @@ internal fun MemoCalendarView(
                         val states = setOfNotNull("today".takeIf { date == today }, "sel".takeIf { isPicked })
                         Column(
                             Modifier.weight(1f).heightIn(min = 64.dp)
-                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
-                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
-                                .clickable { picked = if (isPicked) null else date.toString() }
+                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("memo.cal.cell", states, com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                                .clickable(role = Role.Button) { picked = if (isPicked) null else date.toString() }
                                 .semantics(mergeDescendants = true) {
                                     contentDescription = Fmt.monthDay(date) + (shiftOn(date)?.let { " ${it.name}" } ?: "") + if (list.isEmpty()) " 메모 없음" else " 메모 ${list.size}개: " + list.joinToString(", ") { it.title.ifBlank { it.preview } }
                                     selected = isPicked
@@ -823,7 +826,7 @@ internal fun MemoGalleryView(memos: List<Memo>, view: MemoView, actions: CardAct
             val lead = title.codePointAt(0).let { String(Character.toChars(it)) }
             val emoji = lead.firstOrNull()?.let { Character.getType(it) == Character.SURROGATE.toInt() || Character.getType(it) == Character.OTHER_SYMBOL.toInt() } == true
             Surface(
-                shape = RoundedCornerShape(18.dp),
+                shape = MaterialTheme.shapes.large,
                 color = memoBackground(memo.colorIndex),
                 border = if (memo.id in selection) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp).combinedClickable(onClick = { actions.onOpen(memo) }, onLongClick = { actions.onSelect(memo) }),

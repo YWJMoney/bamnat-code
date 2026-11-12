@@ -56,6 +56,7 @@ import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
+import androidx.compose.ui.semantics.Role
 
 /** [LEDG-10] What the 분석 tab draws: the month looked at closely and its year. */
 data class LedgerAnalysis(val month: MonthMoney, val report: MonthReport, val year: YearReport)
@@ -389,7 +390,7 @@ private fun BiggestCard(r: MonthReport, onOpen: (MoneyEntry) -> Unit) {
     SectionCard(title = "가장 큰 지출", trailing = { ProPill() }) {
         r.biggest.forEachIndexed { i, e ->
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp)).clickable { onOpen(e) }.padding(vertical = 4.dp)
+                Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onOpen(e) }.padding(vertical = 4.dp)
                     .semantics(mergeDescendants = true) { contentDescription = "${i + 1}위 ${e.title} ${Fmt.won(e.amount)}, ${Fmt.dayTitle(e.date)}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {

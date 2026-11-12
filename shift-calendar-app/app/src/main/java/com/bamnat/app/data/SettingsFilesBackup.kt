@@ -217,6 +217,8 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVP-08] 설명을 몇 번 봤는지: 새 휴대폰에서는 설명을 처음처럼 한 번 더 다 보여 줘요.
+            "explain_seen" to "설명(ⓘ)을 이 휴대폰에서 본 횟수, 새 휴대폰은 처음처럼 다 보여 줘요",
             // 1.40 [DISC-01] 안 써 본 기능 카드를 언제 무엇을 보였는지: 이 휴대폰의 일이라, 새 휴대폰은 처음처럼 쉬었다가 시작해요.
             "discover" to "‘안 써 본 기능 알려 주기’ 카드를 보인 날과 답, 다음 카드까지의 간격, 이 휴대폰의 것",
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.

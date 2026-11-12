@@ -98,7 +98,7 @@ fun rewardShort(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { i
 @Composable
 fun RewardPill(text: String, modifier: Modifier = Modifier) {
     // Rounded rather than a full pill, so a narrow screen that wraps it into two lines still looks tidy.
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.tertiaryContainer, modifier = modifier) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.tertiaryContainer, modifier = modifier) {
         Text(
             "🎁 $text",
             style = MaterialTheme.typography.labelLarge,

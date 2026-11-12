@@ -38,6 +38,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [FLD-02] The client (업체·고객) field: names from the calendar's past jobs drop down as the user
@@ -96,7 +97,7 @@ fun JobStatusRow(status: JobStatus, paid: Boolean, onChange: (JobStatus) -> Unit
 @Composable
 fun DueRow(due: LocalDate?, opensOn: LocalDate? = null, onChange: (LocalDate?) -> Unit) {
     var picking by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = true }, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = true }, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("입금 약속일 (선택)", style = MaterialTheme.typography.bodyLarge)
             Text(due?.let { "${Fmt.dayTitle(it)} · 다음 날까지 안 들어오면 알려 드려요" } ?: "정하면 그 다음 날 받을 돈을 알려 드려요",

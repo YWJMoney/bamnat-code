@@ -56,6 +56,7 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyEntry
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.32 [LEDX-16][LEDX-19] 확인할 것: what the phone could not decide alone and asks once. A refund whose payment it
@@ -74,7 +75,7 @@ internal fun LedgerAsksCard(book: MoneyBook, today: LocalDate, vm: MoneyViewMode
     var picking by remember { mutableStateOf<MoneyEntry?>(null) }
     SectionCard(title = "확인할 것 ${refunds.size + cards.size.coerceAtMost(2)}건") {
         refunds.take(5).forEach { r ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = r }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = r }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("환불 받은 돈 ${Fmt.won(-r.amount)} · ${r.title}", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Muted("${Fmt.shortDate(r.date)} · 원래 결제를 골라 주시면 남은 금액까지 맞춰요")
@@ -126,7 +127,7 @@ internal fun RefundPickDialog(refund: MoneyEntry, entries: List<MoneyEntry>, onP
                 if (options.isEmpty()) Muted("90일 안에 이만큼 쓴 결제가 없어요. 그냥 환불로 두셔도 돼요")
                 options.forEach { e ->
                     val back = LedgerChecks.refundedBefore(e, entries, except = refund.id)
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(e) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onPick(e) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Muted(listOfNotNull(Fmt.shortDate(e.date), e.category, back.takeIf { it > 0 }?.let { "이미 ${Fmt.won(it)} 돌려받음" }).joinToString(" · "))
@@ -155,7 +156,7 @@ internal fun InstallmentPlanCard(book: MoneyBook, today: LocalDate) {
         Text("남은 할부 ${Fmt.won(owed)}" + if (fees > 0) " · 수수료 ${Fmt.won(fees)}" else "", style = MaterialTheme.typography.titleSmall)
         plan.filter { it.rows.isNotEmpty() }.forEach { b ->
             val key = b.month.toString()
-            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { open = if (open == key) null else key }.padding(vertical = 2.dp),
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { open = if (open == key) null else key }.padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(Fmt.monthShort(b.month) + " 청구", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Text(Fmt.won(b.total), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)

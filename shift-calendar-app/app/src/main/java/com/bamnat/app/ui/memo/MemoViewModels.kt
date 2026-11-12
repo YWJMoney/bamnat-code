@@ -45,7 +45,7 @@ enum class CalendarFilter(val label: String) {
 
 enum class GeneralFilter(val label: String) { ALL("전체"), PINNED("고정"), CHECKLIST("체크리스트"), TEXT("글 메모"), PHOTO("사진") }
 
-enum class MemoSort(val label: String) { UPDATED("최근 수정순"), CREATED("최근 작성순"), TITLE("제목순") }
+enum class MemoSort(val label: String) { UPDATED("최근 고친 순"), CREATED("최근 작성순"), TITLE("제목순") }
 
 /** One date in the calendar memo list, with what was worked that day. */
 data class MemoDateGroup(val date: LocalDate, val day: ResolvedDay?, val memos: List<Memo>)

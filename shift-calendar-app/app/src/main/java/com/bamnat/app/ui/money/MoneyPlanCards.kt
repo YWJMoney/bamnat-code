@@ -92,6 +92,7 @@ import com.bamnat.core.money.Upcoming
 import java.time.LocalDate
 import java.time.LocalDateTime
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
@@ -170,7 +171,7 @@ fun NewRecordsCard(
             if (unseen.isNotEmpty()) HorizontalDivider(Modifier.padding(vertical = 6.dp))
             Text("다 못 읽은 알림", style = MaterialTheme.typography.labelLarge)
             kept.forEach { c ->
-                Row(Modifier.fillMaxWidth().clickable { onFinish(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onFinish(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.text.replace('\n', ' '), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("${c.app} · ${c.reason}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -526,8 +527,8 @@ fun UpcomingCard(
             val name = if (card) "${c.name} ${UpcomingPayments.CARD_BILL}" else c.name
             val income = c.kind == MoneyKind.INCOME
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(RoundedCornerShape(10.dp))
-                    .then(if (c.id > 0) Modifier.clickable { onEdit(c) } else Modifier).padding(vertical = 4.dp),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small)
+                    .then(if (c.id > 0) Modifier.clickable(role = Role.Button) { onEdit(c) } else Modifier).padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CategoryAvatar(c.category, size = 36.dp)
@@ -559,7 +560,7 @@ fun UpcomingCard(
         }
         if (showAll) {
             all.forEach { c ->
-                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onEdit(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onEdit(c) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.name, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(listOfNotNull(c.schedule, c.category, if (c.auto) "자동" else null, c.end?.let { "${Fmt.shortFullDate(it)}까지" }).joinToString(" · "),
@@ -738,7 +739,7 @@ private fun Stepper(label: String, value: Int, range: IntRange, format: (Int) ->
 
 @Composable
 private fun SwitchLine(title: String, caption: String?, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (caption != null) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -749,7 +750,7 @@ private fun SwitchLine(title: String, caption: String?, checked: Boolean, onChan
 
 @Composable
 private fun DateLine(label: String, value: String, clear: (() -> Unit)? = null, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Text(value, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         if (clear != null) IconButton(onClick = clear) { Icon(Icons.Filled.Close, "$label 지우기") }
@@ -763,7 +764,7 @@ fun PlacesSection(places: List<MoneyStats.Place>, selected: String?, onSelect: (
     Text("자주 쓴 곳", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 12.dp))
     places.forEach { p ->
         Row(
-            Modifier.fillMaxWidth().clickable { onSelect(if (selected == p.merchant) null else p.merchant) }.padding(vertical = 5.dp),
+            Modifier.fillMaxWidth().clickable(role = Role.Button) { onSelect(if (selected == p.merchant) null else p.merchant) }.padding(vertical = 5.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {

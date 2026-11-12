@@ -308,7 +308,7 @@ private fun DiffLine(who: String, q: Double, p: Double, minute: Int?, market: co
 
 @Composable
 private fun AskField(label: String, text: String, ask: Boolean, modifier: Modifier, onChange: (String) -> Unit) {
-    Box(modifier.then(if (ask) Modifier.background(warning().copy(alpha = 0.18f), RoundedCornerShape(6.dp)) else Modifier)) {
+    Box(modifier.then(if (ask) Modifier.background(warning().copy(alpha = 0.18f), MaterialTheme.shapes.extraSmall) else Modifier)) {
         DecimalField(if (ask) "$label 확인" else label, text, onChange)
     }
 }
@@ -350,7 +350,7 @@ private fun Step(n: Int, text: String) {
 @Composable
 private fun Example(title: String, lines: List<String>) {
     Column(
-        Modifier.width(188.dp).border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).padding(10.dp),
+        Modifier.width(188.dp).border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)

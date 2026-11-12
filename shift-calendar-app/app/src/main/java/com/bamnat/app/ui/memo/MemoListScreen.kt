@@ -41,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.bamnat.app.appContainer
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.outlined.Dashboard
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.automirrored.outlined.Sort
@@ -71,7 +72,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,7 +79,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,6 +88,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -114,6 +115,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,7 +171,9 @@ fun MemoListScreen(
     )
     androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
-    Box(Modifier.fillMaxSize()) {
+    // 2.0.0 [RVP-06] The new-memo button shrinks to its icon while the list scrolls down.
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    Box(Modifier.fillMaxSize().nestedScroll(fab.connection)) {
         Column(Modifier.fillMaxSize()) {
             if (state.selecting) {
                 SelectionBar(
@@ -298,7 +302,7 @@ fun MemoListScreen(
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
         undo?.let { (said, back, backSaid) ->
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.inverseSurface,
                 shadowElevation = 4.dp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
@@ -324,11 +328,13 @@ fun MemoListScreen(
                 // [DAILY-05] One button, then 메모 or 체크리스트 [UX-06]: said in words, a pencil alone was read as "edit".
                 var choosing by remember { mutableStateOf(false) }
                 Box {
-                    ExtendedFloatingActionButton(
+                    // 2.0.0 [RVP-06] The shared floating-button rule: words at rest, the icon alone while the list goes down.
+                    com.bamnat.app.ui.components.AddFab(
+                        "새 메모",
                         onClick = { choosing = true },
-                        icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                        text = { Text("새 메모") },
-                        modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트" },
+                        open = fab.open,
+                        icon = Icons.Outlined.Edit,
+                        description = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트",
                     )
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
@@ -468,12 +474,12 @@ private fun SelectionBar(
                     Row(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         for (i in MemoPaletteLight.indices) {
                             Box(
-                                Modifier
+                                Modifier.minimumInteractiveComponentSize()
                                     .size(30.dp)
                                     .clip(CircleShape)
                                     .background(memoBackground(i))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                    .clickable {
+                                    .clickable(role = Role.Button) {
                                         palette = false
                                         onColor(i)
                                     },
@@ -781,7 +787,7 @@ internal fun MemoCard(
                         Icon(Icons.Filled.PushPin, "고정됨", Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     if (!selecting) {
-                        IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(44.dp)) { // [RVP-10] 누르는 곳 44dp 이상
                             Icon(Icons.Filled.MoreVert, "메모 메뉴", Modifier.size(18.dp))
                         }
                     } else {
@@ -987,7 +993,7 @@ private fun EmptyMemos(tab: MemoTab, searching: Boolean, style: com.bamnat.core.
             when {
                 searching -> "검색어나 필터를 바꿔 보세요"
                 // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
-                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. " + when (style) {
+                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 단추로 오늘 메모를 남겨 보세요. " + when (style) {
                     com.bamnat.core.work.WorkStyle.INVEST -> "그날 매매 기록이 함께 보여요."
                     com.bamnat.core.work.WorkStyle.BUSINESS -> "그날 영업 여부가 함께 보여요."
                     com.bamnat.core.work.WorkStyle.FIELD -> "그날 일감이 함께 보여요."

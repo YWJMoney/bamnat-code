@@ -9,6 +9,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.Icons
 import android.content.Intent
 import android.net.Uri
@@ -782,6 +783,13 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
         SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
+        // 2.0.0 [RVP-08] (검토 I13c-04) The explanations learned once are a line or ⓘ; this says them in full again.
+        val explainContext = androidx.compose.ui.platform.LocalContext.current
+        var explainedAgain by remember { mutableStateOf(false) }
+        NavRow("설명 처음처럼 보기", if (explainedAgain) "모든 설명을 다시 처음처럼 다 보여 줘요"
+            else "한 번 읽은 설명은 다음부터 한 줄이나 ⓘ로 줄어들어요. 누르면 모두 다시 다 보여 줘요") {
+            com.bamnat.app.ui.components.ExplainSeen.reset(explainContext); explainedAgain = true
+        }
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
         SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요. 달력 아래 카드로도 둘 수 있어요(날짜 화면의 ‘달력 아래에도 두기’ 또는 카드 배치 › ＋ 카드 넣기)",
             settings.dayStory) { on -> vm.update { it.copy(dayStory = on) } }
@@ -1328,7 +1336,7 @@ private fun HealthSleepRow(vm: SettingsViewModel, on: Boolean) {
                 message = "헬스 커넥트를 설치하거나 업데이트한 뒤 다시 켜 주세요."
                 runCatching { context.startActivity(com.bamnat.app.sleep.HealthSleep.installIntent()) }
             }
-            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 버튼으로 기록해 주세요."
+            else -> message = "이 휴대폰에서는 헬스 커넥트를 쓸 수 없어요. 잠들었어요·깼어요 단추로 기록해 주세요."
         }
     }
     message?.let { Note(it) }
@@ -1381,7 +1389,7 @@ private fun RateRegionRow() {
                 androidx.compose.foundation.lazy.LazyColumn {
                     items(com.bamnat.app.company.Plaza.REGIONS.entries.toList(), key = { it.key }) { (code, name) ->
                         androidx.compose.foundation.layout.Row(
-                            Modifier.fillMaxWidth().clickable { store.pick(code); picking = false }.padding(vertical = 10.dp),
+                            Modifier.fillMaxWidth().clickable(role = Role.Button) { store.pick(code); picking = false }.padding(vertical = 10.dp),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         ) {
                             androidx.compose.material3.RadioButton(selected = region == code, onClick = null)
@@ -1484,12 +1492,12 @@ private fun AccentRow(accent: Long, onPick: (Long) -> Unit) {
     Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(ACCENT_ROW, style = MaterialTheme.typography.bodyLarge)
-            Text(if (accent == 0L) "앱 기본 파란색이에요. 버튼과 고른 탭의 색을 바꿔요" else "버튼·고른 탭·선택 표시가 이 색이에요",
+            Text(if (accent == 0L) "앱 기본 파란색이에요. 단추와 고른 탭의 색을 바꿔요" else "단추·고른 탭·선택 표시가 이 색이에요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (accent != 0L) TextButton(onClick = { onPick(0L) }) { Text("처음대로") }
         androidx.compose.foundation.layout.Box(
-            Modifier.size(36.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
+            Modifier.minimumInteractiveComponentSize().size(36.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape)
                 .clickable(onClickLabel = "강조색 고르기") { picking = true },
         )
     }

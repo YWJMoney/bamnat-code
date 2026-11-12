@@ -31,7 +31,6 @@ import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,7 +39,7 @@ import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -123,6 +122,7 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 class MoneyViewModel(
     private val container: AppContainer,
@@ -894,7 +894,7 @@ fun MoneyScreen(
                         DropdownMenuItem(text = { Text("결제 문자 붙여넣기") }, onClick = { menuOpen = false; pasting = true })
                         // 1.38 [LEDH-31]
                         DropdownMenuItem(text = { Text("도전 시작하기") }, onClick = { menuOpen = false; pickingChallenge = true; vm.showPage(MoneyViewModel.Page.SUMMARY) })
-                        DropdownMenuItem(text = { Text("분류 편집") }, onClick = { menuOpen = false; editingCategories = true })
+                        DropdownMenuItem(text = { Text("분류 고치기") }, onClick = { menuOpen = false; editingCategories = true })
                         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
                         DropdownMenuItem(text = { Text("카드 배치") }, onClick = { menuOpen = false; com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MONEY) })
                         DropdownMenuItem(text = { Text(if (settings.hideAmounts) "금액 보이기" else "금액 가리기") }, onClick = { menuOpen = false; flipHide() })
@@ -955,13 +955,8 @@ fun MoneyScreen(
         LaunchedEffect(barUp) { if (barUp) fabBack = false else { kotlinx.coroutines.delay(1_200); fabBack = true } }
         AnimatedVisibility(selection.isEmpty() && page != MoneyViewModel.Page.REPORT && !barUp && fabBack, enter = fadeIn() + scaleIn(), exit = fadeOut() + scaleOut(),
             modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp)) {
-            ExtendedFloatingActionButton(
-                onClick = { adding = MoneyKind.EXPENSE },
-                icon = { Icon(Icons.Filled.Add, null) },
-                text = { Text("돈 적기") },
-                expanded = fabExpanded,
-                modifier = Modifier.semantics { contentDescription = "돈 적기" },
-            )
+            // 2.0.0 [RVP-06] The shared floating-button rule (icon alone with big letters: 검토 UIX-19 '글자 200%의 가계부').
+            com.bamnat.app.ui.components.AddFab("돈 적기", onClick = { adding = MoneyKind.EXPENSE }, open = fabExpanded)
         }
     }
 
@@ -1139,7 +1134,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
             when (o) {
                 is com.bamnat.core.money.Owed.FromJob -> JobRow(o.job, showDate = true) { onOpen(o) }
                 is com.bamnat.core.money.Owed.Written -> Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable { onOpen(o) }.padding(vertical = 6.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onOpen(o) }.padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {

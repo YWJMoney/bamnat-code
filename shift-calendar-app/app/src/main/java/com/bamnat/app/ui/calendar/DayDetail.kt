@@ -739,7 +739,8 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
             Text(
                 if (snapshot.hasPattern) "직접 바꾼 날이에요 · 패턴: ${patternType?.name ?: "쉬는 날"}" else "직접 정한 날이에요",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary,
+                // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A neutral explanation is grey; orange stays for 주의.
+                color = com.bamnat.app.ui.components.QuietInk,
                 modifier = Modifier.weight(1f),
             )
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
@@ -773,7 +774,7 @@ private fun WorkTimeContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
         Text(
             "연차로 줄어든 근무 ${Fmt.timeRange(start, end)} · ${HoursFormat.korean(day.scheduledMinutes)}",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = com.bamnat.app.ui.components.QuietInk, // [RVP-13] neutral, not 주의
         )
     }
     Row(verticalAlignment = Alignment.CenterVertically) {

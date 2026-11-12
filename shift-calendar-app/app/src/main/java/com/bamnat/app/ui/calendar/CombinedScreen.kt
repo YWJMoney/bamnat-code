@@ -64,6 +64,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** [COMN-01] A month of every calendar's work: each day's pieces of work and the days where two calendars clash. */
 private class CombinedMonth(val spans: Map<LocalDate, List<WorkSpan>>, val clashes: List<Pair<WorkSpan, WorkSpan>>) {
@@ -190,9 +191,9 @@ private fun Grid(month: YearMonth, weekStart: DayOfWeek, m: CombinedMonth, calen
                     if (clash) append(", 시간이 겹쳐요")
                 }
                 Column(
-                    Modifier.weight(1f).heightIn(min = 64.dp).clip(RoundedCornerShape(8.dp))
+                    Modifier.weight(1f).heightIn(min = 64.dp).clip(MaterialTheme.shapes.small)
                         .background(if (date == today) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f) else androidx.compose.ui.graphics.Color.Transparent)
-                        .clickable { onPick(date) }.semantics { contentDescription = said }.padding(3.dp),
+                        .clickable(role = Role.Button) { onPick(date) }.semantics { contentDescription = said }.padding(3.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,7 +219,7 @@ private fun DaySheet(day: LocalDate, m: CombinedMonth, calendars: List<PersonalC
         Text(Fmt.dayTitle(day), style = MaterialTheme.typography.titleLarge)
         if (clashes.isNotEmpty()) {
             val names = { s: WorkSpan -> calendars.firstOrNull { it.id == s.calendar }?.name.orEmpty() }
-            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp)) {
+            Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp)) {
                 Text("시간이 겹쳐요", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                 clashes.forEach { (a, b) ->
                     Text("${names(a)} ${a.label} ${timeOf(a)} · ${names(b)} ${b.label} ${timeOf(b)}",

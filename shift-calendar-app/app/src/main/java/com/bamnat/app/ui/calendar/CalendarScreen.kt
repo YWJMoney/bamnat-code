@@ -72,7 +72,6 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -1797,7 +1796,7 @@ fun CalendarScreen(
                     if (foot.hide != true) com.bamnat.app.ui.parts.PartText(line, foot,
                         MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)
-                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))))
+                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, MaterialTheme.shapes.small)))
                 }
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
@@ -1856,21 +1855,15 @@ fun CalendarScreen(
         else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
-            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
-            ExtendedFloatingActionButton(
-                onClick = { quickMoney = true },
-                icon = { Icon(Icons.Filled.Add, contentDescription = label) },
-                text = { Text(label) },
-                expanded = fabExpanded,
-                modifier = place,
-            )
+            // 2.0.0 [RVP-06] The shared floating-button rule: TalkBack reads the words, big letters keep it to the icon.
+            com.bamnat.app.ui.components.AddFab(label, onClick = { quickMoney = true }, open = fabExpanded, modifier = place)
         } else if (!fabGone && paint == null) {
-            ExtendedFloatingActionButton(
+            com.bamnat.app.ui.components.AddFab(
+                "빠른 입력",
                 // [CAL-01] Nothing is chosen yet, so the first tap cannot paint a day by surprise.
                 onClick = { vm.setPaint(PaintTool.Pick) },
-                icon = { Icon(Icons.Filled.EditCalendar, contentDescription = "빠른 입력") },
-                text = { Text("빠른 입력") },
-                expanded = fabExpanded,
+                open = fabExpanded,
+                icon = Icons.Filled.EditCalendar,
                 modifier = place,
             )
         }
@@ -2977,7 +2970,7 @@ private fun MonthMemoCard(
             for (m in shown) {
                 val d = m.date!!
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -3066,7 +3059,7 @@ private fun MonthRestCard(
             for (group in shown) {
                 val issue = group.issues.first()
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(group.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onPick(group.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${group.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
@@ -3151,7 +3144,7 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
                     "근무표가 바뀐 거라면 ‘근무일로 바꾸기’를 고르세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { keep = !keep },
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { keep = !keep },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.Checkbox(checked = keep, onCheckedChange = { keep = it })

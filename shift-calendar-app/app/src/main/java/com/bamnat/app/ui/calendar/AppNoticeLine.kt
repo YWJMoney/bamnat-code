@@ -37,6 +37,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.core.ops.AppNotice
 import com.bamnat.core.ops.AppNotices
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [SRV-04] Which notices the user closed. On this phone only and not in the backup: a notice is about
@@ -103,8 +104,8 @@ fun AppNoticeLine(modifier: Modifier = Modifier) {
     var open by remember(notice.id) { mutableStateOf(false) }
     val tone = if (notice.important) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer
     val onTone = if (notice.important) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
-    Surface(color = tone, contentColor = onTone, shape = RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.clickable { open = true }.heightIn(min = 44.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    Surface(color = tone, contentColor = onTone, shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth()) {
+        Row(Modifier.clickable(role = Role.Button) { open = true }.heightIn(min = 44.dp).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Campaign, null, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
             Text(notice.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))

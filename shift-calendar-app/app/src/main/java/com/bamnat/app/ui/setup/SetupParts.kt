@@ -77,7 +77,7 @@ internal fun ChoiceCard(
     ) {
         Row(Modifier.heightIn(min = 56.dp).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             if (icon != null && picture != null) {
-                Surface(shape = RoundedCornerShape(18.dp), color = picture.copy(alpha = 0.16f), modifier = Modifier.size(60.dp)) {
+                Surface(shape = MaterialTheme.shapes.large, color = picture.copy(alpha = 0.16f), modifier = Modifier.size(60.dp)) {
                     Box(contentAlignment = Alignment.Center) { Icon(icon, null, tint = picture, modifier = Modifier.size(34.dp)) }
                 }
             } else if (icon != null) {

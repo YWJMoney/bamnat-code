@@ -73,8 +73,11 @@ internal fun HourlyTimeMark(day: ResolvedDay, range: String) {
 @Composable
 internal fun AttendanceMark(a: Attendance) {
     val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else LocalCalendarColors.current.warning
-    Box(Modifier.size(13.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
-        Text(a.label.take(1), fontSize = 8.sp, lineHeight = 8.sp, color = com.bamnat.app.ui.components.contentColorOn(bg), fontWeight = FontWeight.Bold)
+    // 2.0.0 [RVP-11] (검토 UIX-11·T13-06 '근무 첫 글자가 8sp') At least 10sp; where big letters would not fit the mark, the colour
+    // alone says it (the day's own sheet says it in words).
+    val fits = androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.15f
+    Box(Modifier.size(16.dp).clip(CircleShape).background(bg), contentAlignment = Alignment.Center) {
+        if (fits) Text(a.label.take(1), fontSize = 10.sp, lineHeight = 10.sp, color = com.bamnat.app.ui.components.contentColorOn(bg), fontWeight = FontWeight.Bold)
     }
 }
 

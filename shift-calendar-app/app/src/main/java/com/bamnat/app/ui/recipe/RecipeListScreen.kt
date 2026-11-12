@@ -320,7 +320,7 @@ fun RecipeListScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(state.query, vm::query, singleLine = true, modifier = Modifier.weight(1f),
                             placeholder = { Text("이름·설명·초성으로 찾기") }, leadingIcon = { Icon(Icons.Filled.Search, null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
-                            shape = RoundedCornerShape(28.dp),
+                            shape = MaterialTheme.shapes.extraLarge,
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search), keyboardActions = KeyboardActions(onSearch = { vm.load() }))
                         Spacer(Modifier.width(8.dp))
                         androidx.compose.material3.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(52.dp)
@@ -720,7 +720,7 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
 private fun Badge(text: String) {
     Spacer(Modifier.width(6.dp))
     Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
+        modifier = Modifier.clip(MaterialTheme.shapes.extraSmall).background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp, vertical = 1.dp))
 }
 
 /** 1.39 [MKD-11] '무료로 다 되는 것' 칩: ✦ 프로 기능 칩과 짝, 고르면 프로 없이 모두 도는 작품만 (서버 fx=0). */
@@ -758,7 +758,7 @@ private fun about(title: String): String = when (title) {
 private fun MarketHalf(title: String, sub: String, emoji: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
     val fg = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface
-    androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = RoundedCornerShape(16.dp),
+    androidx.compose.material3.Surface(onClick = onClick, color = bg, shape = MaterialTheme.shapes.large,
         border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
         modifier = modifier.heightIn(min = 52.dp).semantics(mergeDescendants = true) { this.selected = selected; stateDescription = about(title) }) {
         // Three across a phone (테마 · 탭별 작품 · 도구). 1.39 [MKD-60] (사용자 2026-11-08 "공간을 차지하고 디자인도 별로"): the picture on

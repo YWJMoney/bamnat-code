@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -213,7 +214,7 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                     com.bamnat.app.ui.calendar.CustomCellBody(
                         parts = parts,
                         view = shown, cellLook = look, filled = tint?.takeIf { look?.mark == "fill" || look?.bg != null } ?: com.bamnat.app.ui.calendar.cellFillGround(look), date = date, isToday = isToday,
-                        numberColor = number, dateSize = 13.sp, footerSize = 9.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
+                        numberColor = number, dateSize = 13.sp, footerSize = 10.sp, todayColor = todayColor, holidayName = null, hasMemo = s.memo != null,
                         alarmOff = false, marks = emptyList(), barColor = color.takeIf { !s.off },
                         dayMark = { size ->
                             Box(Modifier.size(size).background(if (s.off) Color.Transparent else color, RoundedCornerShape(4.dp))
@@ -363,15 +364,15 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
 @Composable
 private fun PlaceGrid(value: String, onPick: (String) -> Unit) {
     val names = mapOf('t' to "위", 'm' to "가운데", 'b' to "아래", 'l' to "왼쪽", 'c' to "가운데", 'r' to "오른쪽")
-    Column(Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)).padding(4.dp)) {
+    Column(Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small).padding(4.dp)) {
         for (v in listOf('t', 'm', 'b')) Row {
             for (h in listOf('l', 'c', 'r')) {
                 val k = "$v$h"
                 val on = k == value
                 Box(
-                    Modifier.size(44.dp).padding(3.dp).clip(RoundedCornerShape(6.dp))
+                    Modifier.size(44.dp).padding(3.dp).clip(MaterialTheme.shapes.extraSmall)
                         .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .clickable { onPick(k) }
+                        .clickable(role = Role.Button) { onPick(k) }
                         .semantics { contentDescription = "날짜 ${names[v]} ${names[h]}"; selected = on; role = Role.RadioButton },
                     contentAlignment = Alignment.Center,
                 ) { Text("1", fontSize = 12.sp, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -618,7 +619,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     Group("배경 사진") {
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(40.dp, 84.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+            Box(Modifier.size(40.dp, 84.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                 if (picture != null) androidx.compose.foundation.Image(picture.first, "배경 사진", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             }
             TextButton(onClick = pick) { Text(if (l.photo == null) "사진 고르기" else "바꾸기") }
@@ -820,9 +821,9 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             val c = row[i]
             val on = value == c
             Box(
-                Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
+                Modifier.minimumInteractiveComponentSize().size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                     .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                    .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+                    .clickable(role = Role.Button) { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
             )
         }
         val split = recent.size + LIGHT_SWATCHES
@@ -834,10 +835,10 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             com.bamnat.app.ui.components.FoldButton(if (allOut) "접기 ▴" else "모두 펼치기 ▾", if (allOut) "$label 색 한 줄로 접기" else "$label 색 모두 펼쳐 보기") { setAllOut(!allOut) }
         }
-        if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+        if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth()) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                Modifier.minimumInteractiveComponentSize().size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
@@ -848,27 +849,26 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         Box {
         Row(Modifier.fillMaxWidth().horizontalScroll(swatchScroll).padding(end = if (swatchScroll.canScrollForward) 36.dp else 0.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                Modifier.minimumInteractiveComponentSize().size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     for (i in 0 until split) {
                         if (i == recent.size && recent.isNotEmpty()) Box(Modifier.size(1.dp, 26.dp).background(MaterialTheme.colorScheme.outlineVariant))
                         Dot(i)
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { for (i in split until row.size) Dot(i) }
+                Row { for (i in split until row.size) Dot(i) }
             }
         }
         if (swatchScroll.canScrollForward) {
             val bg = MaterialTheme.colorScheme.surface
             Box(
-                Modifier.align(Alignment.CenterEnd).size(44.dp, 36.dp)
+                Modifier.align(Alignment.CenterEnd).size(44.dp, 48.dp)
                     .background(androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(bg.copy(alpha = 0f), bg, bg)))
                     .clickable(onClickLabel = "색 더 보기") { scope.launch { swatchScroll.animateScrollBy(240f) } },
                 contentAlignment = Alignment.CenterEnd,
@@ -894,7 +894,7 @@ private fun CustomColorDialog(start: Long, onDismiss: () -> Unit, onDone: (Long)
         title = { Text("색 직접 고르기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(10.dp)).background(color), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(48.dp).clip(MaterialTheme.shapes.small).background(color), contentAlignment = Alignment.Center) {
                     Text("가나다 123", color = contentColorOn(color))
                 }
                 Text("빛깔", style = MaterialTheme.typography.bodySmall); Slider(h, { h = it }, valueRange = 0f..360f, modifier = Modifier.semantics { contentDescription = "빛깔" })
