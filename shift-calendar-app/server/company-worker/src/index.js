@@ -115,7 +115,7 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
 import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
@@ -6527,6 +6527,8 @@ async function today(env, actor, now) {
   if (actor.owner) Object.assign(q, OPS_ALERT_SQL(now));
   // 1.39 [LOOP-40] 열면 끝나 있는 관리자 앱: 지난 12시간 동안 저절로 끝난 일과 사람 손이 필요한 것만(같은 batch).
   Object.assign(q, nightQueries(actor, now));
+  // 2.0.0 [RVA-37] 검토 I24c-01: 읽지 못해 빼 둔 줄(장부·정리함·오늘)도 같은 batch로.
+  if (actor.owner || can(actor, "inquiries") || can(actor, "dev")) q.stuck = rowTroubleQuery(now);
   // AX 1.30 [ADMX-01][ADMX-07] Seven days of each count for the tiles' lines and the alerts, in the same trip.
   Object.assign(q, trendQueries({ inquiries: can(actor, "inquiries"), review: can(actor, "review"), community: can(actor, "community"),
     metrics: can(actor, "metrics") }, start));
@@ -6536,7 +6538,15 @@ async function today(env, actor, now) {
   const inbox = Object.fromEntries(keys.filter((k) => k.startsWith("inbox_")).map((k) => [k.slice(6), got[k]]));
   const out = { todo: inboxItems(inbox, actor, now), doneToday: got.doneToday[0].n };
   // 1.39 [ADM3-37] 같은 말로 읽히는 문의는 할 일에서 한 줄로(묶음 첫 줄에 others, 나머지에 bundle).
-  if (inbox.inquiries) bundleInquiries(out.todo.items, new Map(inbox.inquiries.map((r) => [r.id, r.first])));
+  // 2.0.0 [RVA-37] 검토 I24b-02: 묶기가 실패해도 할 일은 묶지 않은 채로 보여요(오류 묶음에 적고).
+  const bad = [];
+  if (inbox.inquiries) {
+    try {
+      bundleInquiries(out.todo.items, new Map(inbox.inquiries.map((r) => [r.id, r.first])));
+    } catch (e) {
+      bad.push({ key: "todo:bundle", e });
+    }
+  }
   for (const k of ["inquiriesToday", "inquiriesYesterday", "inquiriesBad", "reports", "posts", "companies", "rules"]) if (got[k]) out[k] = got[k][0].n;
   if (inbox.inquiries) {
     // How many waiting questions reach their answer target before today ends.
@@ -6557,6 +6567,11 @@ async function today(env, actor, now) {
   out.night = night.summary;
   out.alerts = [...night.alerts, ...out.alerts];
   if (got.versionConflicts) out.versionConflicts = got.versionConflicts[0].n;
+  if (bad.length) await recordRowErrors(env, "today", bad, now).catch(() => {});
+  // 그 사람이 볼 수 있는 줄만: 문의는 문의 권한, 개발사항은 개발 권한, 묶기 같은 화면 오류는 최고 관리자.
+  if (got.stuck) {
+    out.stuck = rowTroubleRows(got.stuck).filter((r) => actor.owner || (r.type === "inquiry" ? can(actor, "inquiries") : r.type === "dev" ? can(actor, "dev") : false));
+  }
   return out;
 }
 

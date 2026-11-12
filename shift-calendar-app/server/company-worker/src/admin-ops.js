@@ -1,5 +1,6 @@
-import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, readJson, stmt } from "./index.js";
-import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, randomId, readJson, stmt } from "./index.js";
+import { DEV, actorName, devEvent } from "./inquiries.js";
+import { ROW_WHERE, WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
 import { RELEASE_SCHEMA, changeMarks, releaseRoute, versionHealth } from "./release-desk.js";
@@ -71,7 +72,8 @@ export const OPS_BADGE_SQL = {
  */
 export const OPS_ALERT_SQL = (now) => ({
   ops_jobs: ["SELECT step, ok_at, fail_at, error FROM job_runs"],
-  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ?", now - DAY],
+  // 2.0.0 [RVA-37] 읽지 못한 줄(row/…)은 오늘 맨 위 '읽지 못한 N줄' 카드가 따로 보여요(같은 일을 두 번 세지 않게).
+  ops_errors: ["SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again') AND last_at > ? AND route NOT LIKE 'row/%'", now - DAY],
   ops_requests: ["SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", now + 2 * DAY],
   ops_incident: ["SELECT id, signals FROM incidents WHERE closed_at IS NULL ORDER BY opened_at DESC LIMIT 1"],
   ops_reviews: ["SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied' AND stars <= 2"],
@@ -262,6 +264,31 @@ export async function opsRoute(request, env, url, path, method, now, vitals) {
     if (!(await setErrorState(env, m[1], body?.status, body?.note, now))) return json({ error: "not_found" }, 404);
     await audit(env, now, "error_state", m[1], `${body?.status ?? ""} ${String(body?.note ?? "").slice(0, 80)}`);
     return json({ ok: true });
+  }
+  // 2.0.0 [RVA-37] 검토 I24c-01: 오늘의 '읽지 못한 줄' 카드에서 [개발사항으로] 한 번에. 묶음은 '보는 중'이 되고 메모에 개발사항 번호가 남아요.
+  m = path.match(/^\/watch\/errors\/([a-z0-9]{1,13})\/dev$/);
+  if (m && method === "POST") {
+    const g = await one(env, "SELECT * FROM error_groups WHERE sig = ?", m[1]);
+    if (!g) return json({ error: "not_found" }, 404);
+    const done = /^개발사항 (d[A-Za-z0-9]{15})/.exec(g.note ?? "");
+    if (done) return json({ error: "already", dev: done[1] }, 409);
+    const [, where = "", key = ""] = String(g.route).startsWith("row/") ? String(g.route).split("/") : [];
+    const place = where ? `읽지 못한 줄(${ROW_WHERE[where] ?? where})` : `서버 오류 ${g.route}`;
+    const title = `${place}: ${g.message}`.slice(0, DEV.title);
+    const text = [`오류 묶음 ${g.sig} · ${g.total}번 · 처음 ${new Date(g.first_at).toISOString().slice(0, 16)}Z`, key ? `원인 줄 ${key}` : "", g.message, g.sample ?? ""]
+      .filter(Boolean).join("\n").slice(0, DEV.body);
+    const id = `d${randomId(15)}`;
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
+      devEvent(env, id, now, "create", { title, from: "오류 묶음" }),
+      // 같은 줄을 다른 곳(장부·정리함)에서 읽다 난 묶음도 같은 개발사항으로.
+      key ? stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ? OR (route LIKE 'row/%' AND route LIKE ?)",
+        `개발사항 ${id}`, now, g.sig, `%/${key}`)
+        : stmt(env, "UPDATE error_groups SET status = 'seen', note = ?, seen_at = ? WHERE sig = ?", `개발사항 ${id}`, now, g.sig),
+    ]);
+    await audit(env, now, "error_dev", title.slice(0, 80), id);
+    return json({ ok: true, dev: id }, 201);
   }
   if (path === "/money" && method === "GET") return json(await moneyBoard(env, now, url.searchParams.get("days")));
   if (path === "/money/prices" && method === "POST") return savePriceTable(request, env, now);

@@ -59,13 +59,27 @@ export function ledgerViews(A) {
     return `<small title="${esc(moment(m.at))}">${m.byKind === "claude" ? '<span class="who-claude">Claude</span>' : esc(m.by || WHO[m.byKind] || "")} · ${esc(m.what)} · ${esc(ago(m.at))}</small>`;
   }
 
+  /**
+   * 2.0.0 [RVA-37] 검토 I24b-02: 화면에서도 한 줄을 그리다 오류가 나면 그 줄만 '그리지 못한 줄'로 두고 장부 전체는 그려요(그 오류는 A.screenError로 알려요).
+   */
+  function safeLine(r) {
+    try {
+      return line(r);
+    } catch (e) {
+      A.screenError?.(e, "ledger-line");
+      return `<li class="lg-line"><p class="note warn">${esc(r?.no ?? "")} 이 줄은 그리지 못했어요. 나머지는 그대로예요.</p></li>`;
+    }
+  }
+
   /** 한 줄(데스크톱 칸 · 휴대폰 카드가 같은 마크업, CSS가 나눠 보여요). */
   function line(r) {
     const picking = S.ledgerPick;
     const flags = [r.reopened > 0 && r.state === "new" ? `<span class="pill bad">다시 열림${r.reopened > 1 ? ` ${r.reopened}` : ""}</span>` : "",
       r.urgent && !r.closed ? '<span class="pill bad">급함</span>' : "", r.skipped?.back ? '<span class="pill warn">빼 둔 뒤 돌아옴</span>' : "",
       r.state === "seeing" || r.state === "waiting" ? `<span class="pill">${esc(r.stateName)}${r.stateReasonName ? ` · ${esc(r.stateReasonName)}` : ""}</span>` : "",
-      r.state === "done" ? `<span class="pill">끝 · ${esc(r.stateReasonName)}</span>` : ""].join("");
+      r.state === "done" ? `<span class="pill">끝 · ${esc(r.stateReasonName)}</span>` : "",
+      // 2.0.0 [RVA-37] 검토 I24b-02: 서버가 읽지 못해 빼 둔 줄(장부는 계속 돌아요).
+      r.unreadable ? '<span class="pill warn">읽지 못함</span>' : ""].join("");
     const title = r.summary || r.title || "(내용 없음)";
     const pick = picking ? `<label class="lg-pick"><input type="checkbox" data-act="ledger-pick" data-key="${esc(r.key)}"${picking.has(r.key) ? " checked" : ""}><span class="sr">고르기</span></label>` : "";
     return `<li class="lg-line${r.late ? " late" : ""}${r.closed ? " shut" : ""}" data-key="${esc(r.key)}"><details data-key="lg-${esc(r.key)}"${S.opened.get(`lg-${r.key}`) ? " open" : ""}>
@@ -89,6 +103,10 @@ export function ledgerViews(A) {
   function detail(r) {
     const editAsk = can("inquiries", "edit");
     const parts = [];
+    if (r.unreadable) {
+      parts.push(`<p class="note warn">이 줄은 읽다가 오류가 나서 빼 두었어요. 나머지 줄은 그대로 돌아요.${S.me.owner ? ` <a href="${href("errors")}">오류 묶음에서 보기</a>` : ""}</p>
+        <p class="meta">오류 원문: <code class="mono">${esc(r.unreadable)}</code></p>`);
+    }
     if (r.text) parts.push(`<blockquote class="lg-text">${esc(r.text)}</blockquote>`);
     const meta = [r.kindName, r.topicName, r.path ? `화면 [${r.path}]` : "", r.app ? `앱 ${r.app}` : "", r.model, `${moment(r.at)}에 들어옴`, r.handedIn ? `넘김 묶음 ${r.handedIn}` : "",
       r.skipped ? `정리함에서 뺌 ${moment(r.skipped.at)}${r.skipped.back ? " · 7일이 지나 다시 왔어요" : " · 7일 뒤 아직 답이 없으면 다시 와요"}` : ""].filter(Boolean);
@@ -184,7 +202,7 @@ export function ledgerViews(A) {
       ship: "고쳐 두었고 Play에 나가기를 기다려요. 올린 뒤 흐름에서 나간 판을 저장하면 묶인 문의에 한꺼번에 안내가 가요.", late: "기한(답 목표·검토 기한·기다림 7일)을 넘긴 줄이에요.",
       open: "끝나지 않은 모든 줄이에요.", closed: `끝낸 줄(최근 ${d.days}일)이에요. 끝낸 뒤 새 움직임이 생기거나, 처리되지 않고 7일 남아 있으면 다시 열려요.`, all: `모든 줄(닫힌 것은 최근 ${d.days}일)이에요.` }[view] ?? "")}
       <span class="meta">j/k 이동 · Enter 펼치기 · s 보는 중 · w 기다림 · e 끝내기 · h 기록</span></p>`;
-    const list = d.items.length ? `<div class="lg-table${picking ? " picking" : ""}">${head()}<ul class="rows ledger">${d.items.map(line).join("")}</ul></div>
+    const list = d.items.length ? `<div class="lg-table${picking ? " picking" : ""}">${head()}<ul class="rows ledger">${d.items.map(safeLine).join("")}</ul></div>
         ${d.more ? `<p class="meta">${d.total}줄 중 ${d.items.length}줄을 보여요. 찾기나 종류로 좁혀 보세요.</p>` : ""}`
       : empty(view === "closed" ? "끝낸 줄이 없어요" : S.deskQuery ? "찾는 줄이 없어요" : "이 보기에는 할 일이 없어요",
         view === "today" ? "새로 들어오면 여기 와요. 열린 것 모두는 위 '열린 것 모두'에서 봐요." : "");

@@ -4,6 +4,7 @@ import { DEV, INQUIRY, actorName, cut, devEvent, devUpdate, holdReply, plainText
 // 1.37 [ADM2-02] 나간 판: 반영 판이 Play에 나간 판 이하일 때만 '이미 고침'.
 import { DESK, isOut, laterText, markTold, shippedVersion } from "./desk.js";
 import { askOwner, replyRisk } from "./ledger.js";
+import { recordRowErrors } from "./ops-watch.js";
 
 // ---- 문의 정리함 [INBOX-01]~[INBOX-08] (1.35, 사용자 2026-10-30 "중복이나 이미 처리된 문의는 자동 대응 … 새롭거나 신규 문제
 // 개선사항을 개발에 넘겨서 … 올인원 관리 체계") ----
@@ -173,7 +174,14 @@ export async function known(env) {
     shipped,
     // 1.39 [DESK-05] 출시 노트 후보: 개발사항의 '업데이트 소식' 한 줄(사용자 말로 쓴 것)도 따로 비교해요.
     devs: devs.map((d) => ({ ...d, g: grams(`${d.title} ${d.title} ${d.body}`), ...(d.news ? { ng: grams(d.news) } : {}) })),
-    answered: answered.filter((a) => a.answer && a.first).map((a) => ({ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic })),
+    // 2.0.0 [RVA-37] 검토 I24b-02: 전에 답한 문의 하나를 못 읽어도 겹침 비교는 나머지로(그 줄은 비교에서만 빠져요).
+    answered: answered.filter((a) => a.answer && a.first).flatMap((a) => {
+      try {
+        return [{ ...a, g: grams(a.first), topic: triage(a.kind, a.first, JSON.parse(a.info)).topic }];
+      } catch {
+        return [];
+      }
+    }),
     templates: templates.map((t) => ({ ...t, g: grams(`${t.label} ${t.text}`) })),
   };
 }
@@ -240,8 +248,19 @@ async function waiting(env, ids = null) {
       AND NOT EXISTS (SELECT 1 FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL WHERE l.inquiry_id = i.id)
       ${ids ? `AND i.id IN (${ids.map(() => "?").join(", ")})` : ""}
     ORDER BY i.created_at DESC LIMIT ${SORTING.candidates}`, back, ...(ids ?? []));
-  return rows.filter((r) => r.last === "user" && r.first).map((r) => ({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
-    at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null, back: r.sorted_at !== null && r.sorted_at !== undefined }));
+  // 2.0.0 [RVA-37] 검토 I24b-02: 못 읽는 문의 한 줄은 정리함에서만 빼고(문의 목록에는 그대로) 오류 묶음에 그 줄을 적어요.
+  const out = [];
+  const bad = [];
+  for (const r of rows.filter((x) => x.last === "user" && x.first)) {
+    try {
+      out.push({ id: r.id, kind: r.kind, info: JSON.parse(r.info), text: r.first,
+        at: r.created_at, same: r.same ?? 0, handedIn: r.handed_in ?? null, back: r.sorted_at !== null && r.sorted_at !== undefined });
+    } catch (e) {
+      bad.push({ key: `inquiry:${r.id}`, e });
+    }
+  }
+  if (bad.length) await recordRowErrors(env, "sort", bad).catch(() => {});
+  return out;
 }
 
 /** [INBOX-02] 자동 대응: which piles the server answers by itself as a question comes in (the owner's choice; off at first). */
@@ -259,13 +278,20 @@ export async function sortInbox(env, preloaded = null) {
   const [list, k, auto] = await Promise.all([waiting(env), preloaded ?? known(env), autoSettings(env)]);
   const piles = Object.fromEntries(PILES.map((p) => [p, []]));
   const fresh = [];
+  const bad = [];
   for (const q of list) {
-    const c = classify(q, k);
-    const item = { id: q.id, kind: q.kind, preview: [...q.text].slice(0, 160).join(""), app: q.info?.app ?? null, model: q.info?.model ?? null,
-      at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply, ...(q.back ? { back: true } : {}) };
-    if (c.pile === "new") fresh.push({ item, g: grams(q.text), topic: c.topic });
-    else piles[c.pile].push(item);
+    try {
+      const c = classify(q, k);
+      const item = { id: q.id, kind: q.kind, preview: [...q.text].slice(0, 160).join(""), app: q.info?.app ?? null, model: q.info?.model ?? null,
+        at: iso(q.at), same: q.same, ...triage(q.kind, q.text, q.info), match: c.match, reply: c.reply, ...(q.back ? { back: true } : {}) };
+      if (c.pile === "new") fresh.push({ item, g: grams(q.text), topic: c.topic });
+      else piles[c.pile].push(item);
+    } catch (e) {
+      // 2.0.0 [RVA-37] 검토 I24b-02: 나누다 오류가 난 문의는 정리함에서만 빼요(자동 답도 가지 않아요).
+      bad.push({ key: `inquiry:${q.id}`, e });
+    }
   }
+  if (bad.length) await recordRowErrors(env, "sort", bad).catch(() => {});
   // Group the new ones: each joins the first group whose oldest question reads like it.
   const groups = [];
   for (const f of [...fresh].reverse()) {

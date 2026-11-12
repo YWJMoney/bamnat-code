@@ -358,7 +358,7 @@ export async function inquiryView(env, row, admin = false, app = null) {
     photos: row.photos ?? (await one(env, "SELECT COUNT(*) AS n FROM inquiry_photos WHERE inquiry_id = ?", row.id)).n,
   };
   if (!admin) return view;
-  const info = JSON.parse(row.info);
+  const info = readInfo(row.info);
   const context = {};
   for (const [label, key] of INQUIRY_INFO) if (info[key]) context[label] = info[key];
   const [reasons, notes, items] = (await batch(env, [
@@ -447,7 +447,7 @@ export function publicItem(r, me, sameByMe, author) {
     ...(author ? { author } : {}),
     createdAt: iso(r.created_at),
     updatedAt: iso(r.updated_at),
-    ...triage(r.kind, r.first, JSON.parse(r.info)),
+    ...triage(r.kind, r.first, readInfo(r.info)),
   };
 }
 
@@ -505,7 +505,7 @@ export async function publicThread(env, id, device, hide) {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
     messages: messages.map((m) => ({ from: m.sender === "user" ? "user" : "admin", text: m.text, at: iso(m.at) })),
-    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, JSON.parse(row.info)),
+    ...triage(row.kind, messages.find((m) => m.sender === "user")?.text, readInfo(row.info)),
     ...(row.hidden ? { hidden: { code: row.hidden, text: INQUIRY_HIDE[row.hidden] ?? "" } } : {}),
   });
 }
@@ -943,7 +943,7 @@ export async function inquiryList(env, params, actorId = "") {
   const targets = readSla(slaRows);
   const writing = typingByInquiry(typing, actorId);
   const listed = rows.map((r) => {
-    const info = JSON.parse(r.info);
+    const info = readInfo(r.info);
     const waitingSince = r.status === "open" && r.last === "user" ? r.updated_at : null;
     return {
       id: r.id,
@@ -1232,6 +1232,19 @@ export async function devRoute(request, env, url, path, now) {
     return devReply(env, row, body, now);
   }
   return json(await devView(env, await one(env, "SELECT * FROM dev_items WHERE id = ?", row.id)));
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24b-02: 문의에 붙은 기기 정보(info)를 못 읽어도 그 문의·목록이 500이 되지 않게. 못 읽으면 빈 정보에
+ * unreadable 표시만(화면은 '기기 정보를 읽지 못했어요'), 운영 장부·정리함은 그 줄을 오류 묶음에 따로 적어요.
+ */
+export function readInfo(raw) {
+  try {
+    const v = JSON.parse(raw || "{}");
+    return v && typeof v === "object" && !Array.isArray(v) ? v : { unreadable: true };
+  } catch {
+    return { unreadable: true };
+  }
 }
 
 /** A new item, by hand or from a question (inquiry): the question is linked in the same step. */

@@ -378,7 +378,7 @@ test("[ADMUX-17][ADMUX-33] 할 일 (받은함 on 오늘) lists what waits, 맡�
   const mine = (await u.api("GET", "/api/admin/inquiries?who=mine")).inquiries;
   assert.equal(mine.length, 1, "the server now holds the question as mine");
   const before = u.$$("#main .rows.inbox li").length;
-  await u.click('#main [data-act="inbox-snooze"]');
+  await u.click('#main .rows.inbox [data-act="inbox-snooze"]');
   assert.equal(u.$$("#main .rows.inbox li").length, before - 1);
   assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
   await u.click("#toast [data-undo]");
@@ -1495,7 +1495,7 @@ test("[ADMX-01][ADMX-11] 오늘: the four numbers with their week, 주의 필요
   assert.ok(u.$("#main .tiles.core .spark"), "a week's line under a number");
   assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 says something either way");
   // The other numbers fold away; the activity never shows a code.
-  assert.ok(u.$('#main details.more-tiles[data-key="home:tiles"] .tiles a.tile'));
+  assert.ok(u.$('#main details.home-fold[data-key="home:tiles"] .tiles a.tile'));
   assert.ok(!/\b[a-z]+_[a-z_]+\b/.test(u.text("#main .feed")), "no activity codes");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
@@ -2973,5 +2973,69 @@ test("[RVA-35] 의미색(조건 6): 메뉴 숫자와 기다리는 일 칸은 파
   assert.ok(waiting.length >= 2);
   for (const a of waiting) assert.ok(!a.classList.contains("bad"), a.textContent);
   assert.ok(!u.$("#main .alerts .card-head .pill.bad"), "the 주의 필요 count is a plain pill");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-36] 오늘은 한 손 화면: 내가 할 것 셋(옆에 내일 볼게요) + 저절로 끝난 일만 펴고, 나머지는 접힌 줄, 채운 단추는 '차례로 답하기' 하나", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const picks = u.$$("#main .today-three li");
+  assert.ok(picks.length >= 1 && picks.length <= 3, "three at most");
+  for (const li of picks) {
+    const later = li.querySelector('button.pick-later[data-act="inbox-snooze"]');
+    assert.ok(later, "each of the three can be put off");
+    assert.match(later.getAttribute("aria-label"), /^내일 볼게요: /);
+    assert.equal(later.dataset.key, li.dataset.swipe);
+  }
+  // Everything else is one folded line each, closed at first.
+  const folds = u.$$("#main details.home-fold").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(folds, [["home:todo", false], ["home:tiles", false], ["home:recent", false]]);
+  assert.match(u.text('#main details[data-key="home:todo"] > summary'), /할 일 모두/);
+  assert.match(u.text('#main details[data-key="home:tiles"] > summary'), /답 대기 \d+ · 검토 대기 \d+/);
+  // One filled button you can see: 차례로 답하기 (the queue), not the one in the to-do list any more.
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.deepEqual(seen.map((b) => b.dataset.act), ["queue-start"]);
+  assert.match(seen[0].textContent, /^문의 \d+건 차례로 답하기$/);
+  // 남은 N개 보기 opens the folded list.
+  await u.click('#main [data-act="home-fold"][data-key="home:todo"]');
+  assert.ok(u.$('#main details[data-key="home:todo"]').open);
+  assert.ok(u.$("#main details[data-key=\"home:todo\"] .rows.inbox li"), "the full list is inside");
+  // Putting the first one off brings the next one up; 되돌리기 brings it back.
+  const first = u.$("#main .today-three li").dataset.swipe;
+  await u.click("#main .today-three li .pick-later");
+  assert.match(u.text("#toast"), /내일 아침까지/);
+  assert.notEqual(u.$("#main .today-three li").dataset.swipe, first);
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$("#main .today-three li").dataset.swipe, first);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.today-three li\{[^}]*touch-action:pan-y/, "a sideways push does not fight the page scroll");
+  assert.match(css, /\.today-three \.t b\{[^}]*-webkit-line-clamp:2/, "titles show two lines on a phone (도약 43)");
+});
+
+test("[RVA-37] 오늘: 서버가 읽지 못해 빼 둔 줄을 원인·[그 줄 열기]·[개발사항으로] 한 장으로", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const id = DB.db.prepare("SELECT id FROM inquiries ORDER BY created_at LIMIT 1").get().id;
+  DB.db.prepare("UPDATE inquiries SET info = ? WHERE id = ?").run("{broken", id);
+  await u.go("#/desk");
+  const stub = u.$$("#main .lg-line").find((li) => /읽지 못한 문의/.test(li.textContent));
+  assert.ok(stub, "the ledger draws, with that one line marked");
+  assert.match(stub.textContent, /읽지 못함/);
+  await u.go("#/home");
+  const card = u.$("#main .card.stuck");
+  assert.ok(card, "오늘 says what was left out");
+  assert.match(card.textContent, /운영 장부·정리함의 문의 한 줄/, "one line per line left out, however many places read it");
+  assert.equal(card.querySelectorAll(".stuck-list > li").length, 1);
+  assert.equal(card.querySelector("a.btn").getAttribute("href"), `#/inquiries/${id}`);
+  await u.click('#main .card.stuck [data-act="stuck-dev"]');
+  assert.match(u.text("#toast"), /개발사항으로 넘겼어요/);
+  const devs = (await u.api("GET", "/api/admin/dev?status=all")).items;
+  assert.ok(devs.some((d) => /^읽지 못한 줄\(/.test(d.title)), "the 개발사항 is made");
+  assert.ok(u.$('#main .card.stuck a[href^="#/dev/"]'), "the card now points at the 개발사항");
   assert.deepEqual(u.errors, []);
 });

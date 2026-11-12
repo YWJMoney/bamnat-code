@@ -1374,7 +1374,7 @@ export function adminLib() {
     launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
     auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
     // 2.0.0 [RVN-15] 검토 SVC-100: 이름이 없어 영어 코드로 보이던 일들(자동으로 한 일, 사고, 열쇠, 보상, 출시).
-    error_state: "오류 묶음 상태 바꿈", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
+    error_state: "오류 묶음 상태 바꿈", error_dev: "오류 묶음을 개발사항으로", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
     inquiry_auto_skip: "문의 자동 정리 건너뜀", inbox_auto: "자동 정리 켬·끔", inbox_auto_reply: "문의에 자동으로 답함", dev_handoff: "Claude에게 넘김",
     dev_result: "개발 결과 붙여 넣기", dev_result_held: "개발 결과 답 보류", incident_open: "사고 시작", incident_close: "사고 끝",
     inquiry_billing_rescan: "결제 문의 다시 가림", inquiry_reply_held: "문의 답 잠시 둠", inquiry_reply_approve: "문의 답 보내기 승인",

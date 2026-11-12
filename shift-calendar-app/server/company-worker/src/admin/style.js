@@ -1407,6 +1407,51 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 .claude-draft{margin:.5rem 0;padding:.6rem .75rem;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--line)}
 .claude-draft p{margin:.15rem 0}.claude-draft .why{font-size:.88rem}.claude-draft .meta a{color:var(--accent)}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
+/* 2.0.0 [RVA-36] 검토 U23-01·I23c-01·ADM-12(도약 41번): 오늘은 '내가 할 것' 셋 + 저절로 끝난 일만 펴고, 나머지는 접힌 줄 하나씩.
+   셋마다 [내일 볼게요] 단추(44px), 휴대폰은 줄을 밀어도 돼요(왼쪽 미루기·오른쪽 열기). */
+.today-three li{display:flex;align-items:center;gap:.3rem;position:relative;touch-action:pan-y}
+/* 도약 43번: 좁은 폭에서도 제목은 두 줄까지(8~10자에서 잘리던 것). */
+.today-three .t b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;line-height:1.35}
+.today-three li>a{flex:1;min-width:0;position:relative;z-index:1}
+.today-three .pick-later{color:var(--muted);border-radius:var(--r)}
+.today-three .pick-later svg{width:1.15rem;height:1.15rem;color:inherit}
+@media (hover:hover){.today-three .pick-later:hover{background:var(--soft);color:var(--fg)}}
+.today-three li.swiping>a{transform:translateX(var(--dx,0));transition:none}
+.today-three li[data-dir]::after{position:absolute;top:50%;transform:translateY(-50%);z-index:0;font-size:.8rem;font-weight:800;color:var(--muted)}
+.today-three li[data-dir=later]::after{content:"내일 볼게요";right:3.6rem}.today-three li[data-dir=open]::after{content:"열기";left:.9rem;color:var(--accent)}
+.today-go{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem .9rem;margin:.8rem 0 0}.today-go .today-rest{margin:0}
+.today-go .btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
+/* 380·글자 200%(오늘 큰 카드 폭이 약 18rem): 셋의 제목이 0칸으로 접히던 것. 좁으면 번호·꺾쇠를 줄이고 맥박 점은 제목 줄 위로,
+   [내일 볼게요]는 48px까지. 숫자 › 한눈에의 큰 신호도 같은 틀이라 함께예요(같은 구조는 함께). */
+.gl-hero{container-type:inline-size;container-name:hero}
+.today-three .pick-later{width:min(2.75rem,48px);height:min(2.75rem,48px)}
+@container hero (width < 24rem){
+  .gl-hero-top{flex-direction:column;gap:.4rem}
+  .gl-pulse{width:min(2.6rem,40px);height:min(2.6rem,40px)}
+  .today-three a{gap:.45rem;padding:.55rem .6rem}
+  .today-three a>svg,.today-three .n{display:none}
+  .today-three{margin-inline:-.45rem}.today-three li{gap:.15rem}
+}
+.home-more{display:grid;grid-template-columns:minmax(0,1fr);gap:.5rem;margin:.25rem 0 .75rem}
+details.card.home-fold{margin:0;padding:0}
+.home-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:3.25rem;padding:.6rem 1.1rem;list-style:none}
+.home-fold>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+.home-fold[open]>summary::after{transform:rotate(-135deg)}
+.home-fold .hf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.home-fold .hf-t b{font-size:.98rem}
+.home-fold .hf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-fold .hf-t .late{color:var(--bad);font-weight:800}
+.home-fold .hf-body{padding:0 1.1rem 1rem;min-width:0}
+.home-fold .hf-body>.card{border:0;box-shadow:none;background:none;padding:0;margin:.25rem 0 1rem;border-radius:0}
+.home-fold .hf-body>.card.alerts{border-bottom:1px solid var(--line);padding-bottom:.75rem}
+.hf-h{font-size:.9rem;margin:.9rem 0 .35rem}
+.home-foot,.home-views{display:flex;flex-wrap:wrap;gap:.4rem;margin:0 0 .5rem}.home-views{margin:0}
+.home-foot a,.home-views a{display:inline-flex;align-items:center;gap:.4rem;min-height:2.75rem;padding:0 .85rem;border-radius:var(--r-sm);background:var(--info-bg);color:var(--fg);text-decoration:none;font-size:.88rem;font-weight:700}
+.home-foot svg{flex:none;width:1rem;height:1rem;color:var(--info)}
+/* 2.0.0 [RVA-37] 검토 I24c-01: 읽지 못해 빼 둔 줄. 안내 카드 한 모양(바탕 하나, 왼쪽 띠 색으로 뜻): 주의예요(장부는 돌아요). */
+.card.stuck{border-left:4px solid var(--warn)}
+.stuck-list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
+.stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}

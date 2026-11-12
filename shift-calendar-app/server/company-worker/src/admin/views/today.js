@@ -49,7 +49,9 @@ export function todayViews(A) {
     const alerts = Array.isArray(t.alerts) ? t.alerts : [];
     const hide = snoozed();
     const todo = (t.todo?.items ?? []).filter((x) => !hide[`${x.type}:${x.id}`]);
-    const ordered = [...alerts.filter((a) => a.tone === "bad"), ...alerts.filter((a) => a.tone !== "bad")];
+    // 2.0.0 [RVA-36] 검토 I23c-01: 위 셋은 미루면 다음 것이 올라와요(주의 필요도 이 기기에서 내일 아침까지).
+    const live = alerts.filter((a) => !hide[`a:${a.key}`]);
+    const ordered = [...live.filter((a) => a.tone === "bad"), ...live.filter((a) => a.tone !== "bad")];
     const picks = [
       ...ordered.map((a) => ({ key: `a:${a.key}`, tone: a.tone === "bad" ? "bad" : "warn", to: a.to, title: a.title, meta: a.meta ?? "", due: null })),
       ...todo.map((x) => ({ key: `${x.type}:${x.id}`, tone: "todo", to: inboxLink(x), title: `${INBOX_NAMES[x.type] ?? x.type} · ${x.title}`, meta: x.company ?? "", due: x })),
@@ -60,6 +62,11 @@ export function todayViews(A) {
   /**
    * 1.39 [ADM3-47] 크롬 둘러보기 디자인 관찰 '첫 화면은 오늘 상태 한 문장 + 할 일 3개': 주의 필요의 수로 한 문장(빨강이 있으면 빨강),
    * 그 아래 먼저 볼 셋(heroPicks). 아래 주의 필요·할 일 카드는 이 셋을 '위에서 본 N개'로 접어요. 모양은 숫자 › 한눈에의 큰 신호와 같아요.
+   */
+  /**
+   * 2.0.0 [RVA-36] 검토 U23-01·I23c-01·ADM-12(도약 41번): 오늘은 '내가 할 것' 셋과 '저절로 끝난 일'만 펴 두는 한 손 화면이에요. 셋마다 [내일 볼게요]가
+   * 바로 옆에 있고(휴대폰은 왼쪽으로 밀어도, 오른쪽으로 밀면 열기), 미루면 다음 것이 올라와요. 채운 단추는 '차례로 답하기' 하나(큐 모드,
+   * 문의를 한 장씩 엄지로 넘겨요). 나머지(할 일 전체·숫자·최근 활동)는 아래 접힌 줄이에요.
    */
   function heroCard(t, o, hi, { alerts, todo, picks }) {
     const bad = alerts.filter((a) => a.tone === "bad");
@@ -74,11 +81,15 @@ export function todayViews(A) {
     const restA = alerts.length - picks.filter((p) => p.key.startsWith("a:")).length;
     const restT = todo.length - picks.filter((p) => !p.key.startsWith("a:")).length;
     const rest = [restA > 0 ? `주의 필요 ${restA}개` : "", restT > 0 ? `할 일 ${restT}개` : ""].filter(Boolean).join(", ");
+    // 지금 할 일 하나(조건 2): 내가 답할 수 있는 문의가 기다리면 큐 모드. 할 일 카드에 있던 단추를 여기로 옮겼어요.
+    const waitingAsks = o.inquiries ?? 0;
+    const go = !S.queue && can("inquiries", "edit") && waitingAsks ? `<button class="btn primary" type="button" data-act="queue-start">문의 ${waitingAsks}건 차례로 답하기</button>` : "";
     return `<section class="gl-hero today-hero ${tone}" aria-labelledby="today-hero-h"><div class="gl-hero-top"><span class="gl-pulse" aria-hidden="true"><span></span></span>
         <div class="gl-hero-text"><p class="gl-eyebrow">${esc(hi)}, ${esc(S.me.name)}님</p><h2 id="today-hero-h">${esc(line)}</h2>${sum ? `<p class="gl-sub">${esc(sum)}</p>` : ""}</div></div>
-        ${picks.length ? `<ol class="today-three">${picks.map((p, i) => `<li class="${p.tone}"><a href="${esc(p.to)}"><span class="n" aria-hidden="true">${i + 1}</span>
-          <span class="t"><b>${esc(p.title)}</b><span class="sub">${p.due ? dueText(p.due, Date.now()) : ""}${p.meta ? `<small>${esc(p.meta)}</small>` : ""}</span></span>${icon(P.chevron)}</a></li>`).join("")}</ol>` : ""}
-        ${picks.length ? `<p class="today-rest">먼저 볼 ${picks.length}가지${rest ? ` · 아래에 ${rest} 더` : ""}</p>` : ""}</section>`;
+        ${picks.length ? `<ol class="today-three">${picks.map((p, i) => `<li class="${p.tone}" data-swipe="${esc(p.key)}"><a href="${esc(p.to)}"><span class="n" aria-hidden="true">${i + 1}</span>
+          <span class="t"><b>${esc(p.title)}</b><span class="sub">${p.due ? dueText(p.due, Date.now()) : ""}${p.meta ? `<small>${esc(p.meta)}</small>` : ""}</span></span>${icon(P.chevron)}</a>
+          <button class="icon-btn pick-later" type="button" data-act="inbox-snooze" data-key="${esc(p.key)}" aria-label="내일 볼게요: ${esc(p.title)}" title="내일 아침까지 이 기기에서 숨겨요">${icon(P.moon)}</button></li>`).join("")}</ol>` : ""}
+        ${go || picks.length ? `<div class="today-go">${go}${picks.length ? `<p class="today-rest">먼저 볼 ${picks.length}가지${rest ? ` · <button class="linkish" type="button" data-act="home-fold" data-key="home:todo">남은 ${esc(rest)} 보기</button>` : ""}</p>` : ""}</div>` : ""}</section>`;
   }
 
   /**
@@ -102,10 +113,53 @@ export function todayViews(A) {
       <p class="hint">사람이 봐야 할 문의(환불·법·개인정보·보안·'사람이냐' 등)는 자동으로 답하지 않고 위 '주의 필요'에 남아요.</p></details>`;
   }
 
+  /**
+   * 2.0.0 [RVA-37] 검토 I24c-01 '무엇 때문에 멈췄나': 서버가 한 줄(문의·개발사항)을 읽지 못해 빼 두고 계속 돌고 있으면, 그 줄과 까닭과
+   * 할 수 있는 것(그 줄 열기 · 개발사항으로)을 한 장으로. 오류 묶음과 로그를 오가지 않고 0~1번 눌러 이어 가요. 주의(주황)예요: 장부는 멈추지 않았어요.
+   */
+  function stuckCard(raw) {
+    if (!Array.isArray(raw) || !raw.length) return "";
+    // 같은 줄을 여러 곳(장부·정리함)이 못 읽었으면 한 줄로: 곳 이름을 잇고, 개발사항 메모는 어느 것에서든.
+    const byKey = new Map();
+    for (const r of raw) {
+      const k = r.type && r.id ? `${r.type}:${r.id}` : r.sig;
+      const had = byKey.get(k);
+      if (!had) byKey.set(k, { ...r, wheres: [r.whereName] });
+      else {
+        if (!had.wheres.includes(r.whereName)) had.wheres.push(r.whereName);
+        had.total += r.total;
+        if (!/^개발사항 /.test(had.note ?? "") && /^개발사항 /.test(r.note ?? "")) had.note = r.note;
+      }
+    }
+    const order = ["ledger", "sort", "today", "inquiries"];
+    const list = [...byKey.values()].map((r) => ({ ...r, wheres: [...r.wheres].sort((a, b) => order.indexOf(raw.find((x) => x.whereName === a)?.where) - order.indexOf(raw.find((x) => x.whereName === b)?.where)) }));
+    const what = (r) => (r.type === "inquiry" ? "문의 한 줄" : r.type === "dev" ? "개발사항 한 줄" : "할 일 묶기");
+    const open = (r) => (r.type === "inquiry" && r.id ? href("inquiries", r.id) : r.type === "dev" && r.id ? href("dev", r.id) : null);
+    const devOf = (r) => /^개발사항 (d[A-Za-z0-9]{15})/.exec(r.note ?? "")?.[1] ?? null;
+    return `<section class="card stuck" aria-labelledby="stuck-h"><div class="card-head"><h2 id="stuck-h">읽지 못한 ${list.length}줄은 빼고 돌고 있어요</h2></div>
+      <ul class="stuck-list">${list.map((r) => {
+        const to = open(r);
+        const dev = devOf(r);
+        // 오류 원문(영어일 수 있어요)은 접어 두고, 보이는 줄은 우리말로(조건 4·13, 검토 T23-06 '개발자가 아닌 최고 관리자').
+        return `<li><p><b>${esc(r.wheres.join("·"))}의 ${esc(what(r))}</b> <small>읽다가 오류가 났어요 · ${r.total}번 · ${esc(ago(new Date(r.lastAt).toISOString()))}</small></p>
+          <details class="quick" data-key="stuck:${esc(r.sig)}"><summary>오류 원문</summary><code class="mono">${esc(r.message)}</code></details>
+          <div class="actions start">${to ? `<a class="btn small" href="${esc(to)}">그 줄 열기</a>` : ""}
+          ${dev ? `<a class="btn small ghost" href="${href("dev", dev)}">개발사항 보기</a>` : S.me.owner ? `<button class="btn small" type="button" data-act="stuck-dev" data-id="${esc(r.sig)}">개발사항으로</button>` : ""}</div></li>`;
+      }).join("")}</ul>
+      <p class="hint">그 줄만 빼고 운영 장부·정리함·오늘은 그대로예요.${S.me.owner ? " 고친 뒤에는 관리 › 서버 상태 › 오류 묶음에서 '고쳤어요'." : " 최고 관리자 화면에도 같은 줄이 보여요."}</p></section>`;
+  }
+
+  /** 접어 두는 줄 하나: 제목 + 한 줄 요약(+ 숫자). 펼침은 기기에 남아요(S.opened). */
+  function fold(key, title, meta, inner, count = null) {
+    return `<details class="card home-fold" data-key="${key}" id="${key.replace(":", "-")}"${S.opened.get(key) ? " open" : ""}>
+      <summary><span class="hf-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ""}</span>${count === null ? "" : `<span class="pill">${count}</span>`}</summary>
+      <div class="hf-body">${inner}</div></details>`;
+  }
+
   function homeView() {
     const t = S.data.today;
     const top = flagAlertCard();
-    if (!t) return `${top}<div class="tiles core">${'<div class="tile skeleton"></div>'.repeat(4)}</div>${skeleton(2)}`;
+    if (!t) return `${top}<section class="gl-hero skeleton" aria-hidden="true"></section>${skeleton(2)}`;
     const o = { ...(S.overview ?? {}), ...t };
     const tr = t.trend ?? {};
     const hour = new Date().getHours();
@@ -113,20 +167,24 @@ export function todayViews(A) {
     const inq = (params) => L.routeHash("inquiries", null, params);
     // The four that need a hand, on every screen size.
     const core = [];
+    const coreLine = [];
     if (can("inquiries")) {
       core.push(kpi({ label: "답 대기", value: o.inquiries, to: inq({ status: "open", sort: "sla" }), desc: `오늘 새 문의 ${o.inquiriesToday ?? 0}건`, list: tr.inquiries, name: "날마다 새 문의" }));
+      coreLine.push(`답 대기 ${o.inquiries ?? 0}`);
     }
     if (can("review")) {
       core.push(kpi({ label: "검토 대기", value: L.reviewCount(o), to: href("review"), desc: `제보 ${o.pending ?? 0} · 앱에 없는 방식 ${o.asks ?? 0} · 달라요 ${o.flagged ?? 0}`, list: tr.reports, name: "날마다 받은 제보" }));
+      coreLine.push(`검토 대기 ${L.reviewCount(o)}`);
     }
     // AT 1.29 [ADMCP-04] New problem reports nobody copied for development yet, one tap from the list that copies them.
     if (can("inquiries")) {
       core.push(kpi({ label: "복사 전 문제 신고", value: o.bugsUncopied, to: inq({ status: "all", kind: "bug", copied: "no" }), desc: "개발에 넘기기 전이에요", list: tr.bugs, name: "날마다 문제 신고" }));
+      coreLine.push(`복사 전 신고 ${o.bugsUncopied ?? 0}`);
     }
     if (can("review") && t.versionConflicts !== undefined) {
       core.push(kpi({ label: "정할 판", value: t.versionConflicts, to: href("versions"), desc: "한 부서에 판이 둘 이상", hot: true, go: "정하러 가기", done: "다 정했어요" }));
+      coreLine.push(`정할 판 ${t.versionConflicts}`);
     }
-    // The rest, folded on a phone and open on a wide screen.
     const rest = [];
     // hot: true(기다리는 일) | "warn"(주의) | "bad"(정말 급함, 빨강).
     const tile = (k, v, d, to, hot) => rest.push(`<a class="tile${hot && v ? ` hot${hot === true ? "" : ` ${hot}`}` : ""}" href="${to}"><span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(d)}</span></a>`);
@@ -144,25 +202,28 @@ export function todayViews(A) {
     if (can("companies")) stats.push(["회사", o.companies], ["쓰는 규칙", o.rules]);
     if (can("review")) stats.push(["모든 제보", o.reports]);
     if (can("community")) stats.push(["토론 글", o.posts]);
-    const restKey = "home:tiles";
-    const more = rest.length || stats.length ? `<details class="more-tiles" data-key="${restKey}"${S.opened.get(restKey) ?? wide() ? " open" : ""}><summary>숫자 모두 보기</summary>
-        ${rest.length ? `<div class="tiles">${rest.join("")}</div>` : ""}
-        ${stats.length ? `<p class="stats">${stats.map(([k, v]) => `<span>${esc(k)}<b>${v ?? 0}</b></span>`).join("")}</p>` : ""}</details>` : "";
     const feed = o.recent ?? null;
-    const people = (o.assigned ?? []).length ? `<section class="card"><h2>누가 몇 건 맡았나</h2><ul class="people">${o.assigned.map((a) =>
-      `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul></section>` : "";
+    const people = (o.assigned ?? []).length ? `<h3 class="hf-h">누가 몇 건 맡았나</h3><ul class="people">${o.assigned.map((a) =>
+      `<li>${a.id === S.me.id ? "나" : esc(a.name)} ${a.n}</li>`).join("")}</ul>` : "";
     const views = S.prefs.views.filter((v) => String(v.hash).startsWith("#/"));
     const hero = heroPicks(t);
-    return `${top}${heroCard(t, o, hi, hero)}${nightCard(t.night)}
-      <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>
-      ${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
-      <a class="sort-nudge" href="#/desk">${icon(P.check)}<span><b>운영 장부</b> 문의·개발사항·스튜디오 요구·신고·사진을 한 줄씩. ${can("inquiries") && o.inquiries ? `답 대기 ${o.inquiries}건은 겹침과 보낼 답까지 적어 두었어요. ` : ""}오늘 할 것부터 빠짐없이 처리해요</span>${icon(P.chevron)}</a>
-      ${views.length ? `<nav class="chips" aria-label="저장한 보기">${views.map((v) => `<a class="chip pick" href="${esc(v.hash)}">${esc(v.name)}</a>`).join("")}</nav>` : ""}
-      <div class="home-grid"><div class="home-main">${alertsCard(t.alerts, hero.shown)}${todoCard(t.todo, hero.shown)}</div>
-        <div class="home-side">${more}${people}
-        ${can("audit") ? `<section class="card"><div class="card-head"><h2>최근 활동</h2><a class="btn small ghost" href="${href("audit")}">모두 보기</a></div>
-          ${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}</section>` : ""}
-        </div></div>`;
+    // 2.0.0 [RVA-36] 검토 U23-01·ADM-12: 위 셋과 저절로 끝난 일 밖의 것은 모두 접힌 줄 하나씩(1440에서 3,682px → 한 화면).
+    const hide = snoozed();
+    const left = (t.todo?.items ?? []).filter((x) => !hide[`${x.type}:${x.id}`]);
+    const late = left.filter((x) => x.due && Date.parse(x.due) < Date.parse(t.todo?.now ?? "")).length;
+    const alertsN = Array.isArray(t.alerts) ? t.alerts.length : 0;
+    const todoMeta = [late ? `<span class="late">넘김 ${late}</span>` : "", alertsN ? `주의 필요 ${alertsN}` : "", `할 일 ${left.length}`].filter(Boolean).join(" · ");
+    const todoFold = fold("home:todo", "할 일 모두", todoMeta, `${alertsCard(t.alerts, hero.shown)}${todoCard(t.todo, hero.shown)}`, alertsN + left.length);
+    const numbers = core.length || rest.length || stats.length ? fold("home:tiles", "숫자", esc(coreLine.join(" · ")), `${core.length ? `<div class="tiles core">${core.join("")}</div>` : ""}
+        ${rest.length ? `<div class="tiles">${rest.join("")}</div>` : ""}
+        ${stats.length ? `<p class="stats">${stats.map(([k, v]) => `<span>${esc(k)}<b>${v ?? 0}</b></span>`).join("")}</p>` : ""}${people}`) : "";
+    const recent = can("audit") ? fold("home:recent", "최근 활동", feed?.length ? `${esc(ago(feed[0].at))} · ${esc(L.actionName(feed[0].action))}` : "",
+      `${feed === null ? '<div class="card skeleton short"></div>' : feed.length ? `<ul class="feed">${feed.map(feedItem).join("")}</ul>` : '<p class="hint">아직 활동이 없어요.</p>'}
+        <p class="actions start"><a class="btn small ghost" href="${href("audit")}">활동 기록 모두 보기</a></p>`) : "";
+    return `${top}${stuckCard(t.stuck)}${heroCard(t, o, hi, hero)}${nightCard(t.night)}
+      <div class="home-more">${todoFold}${numbers}${recent}</div>
+      <div class="home-foot"><a href="#/desk">${icon(P.check)}<span>운영 장부</span>${icon(P.chevron)}</a>${views.length ? `<nav class="home-views" aria-label="저장한 보기">${views.map((v) => `<a href="${esc(v.hash)}"><span>${esc(v.name)}</span>${icon(P.chevron)}</a>`).join("")}</nav>` : ""}</div>
+      <p class="hello-who">${S.me.owner ? "최고 관리자로 로그인했어요." : `내 권한: ${esc(L.permSummary(S.me.perms, S.me.areas ?? {}, A.toggles()))}`}</p>`;
   }
 
   /**
@@ -172,7 +233,8 @@ export function todayViews(A) {
   function todoCard(d, shown = new Set()) {
     const c = d?.counts ?? {};
     const editInq = can("inquiries", "edit");
-    const head = `<div class="card-head"><h2>할 일</h2>${S.queue ? "" : editInq && (S.overview?.inquiries ?? 0) ? '<button class="btn small primary" data-act="queue-start">큐 모드로 답하기</button>' : ""}</div>
+    // 2.0.0 [RVA-36] '차례로 답하기'(큐 모드)는 위 큰 카드의 채운 단추 하나로 옮겼어요.
+    const head = `<div class="card-head"><h2>할 일</h2></div>
       <p class="waiting" id="waiting" data-hub="today">${waitingItems("today")}</p>
       <div class="segmented" role="group" aria-label="할 일 보기">${seg("inbox-view", "today", S.inboxView, "오늘까지", c.today)}${seg("inbox-view", "week", S.inboxView, "이번 주", c.week)}
         ${seg("inbox-view", "mine", S.inboxView, "내 것", c.mine)}${seg("inbox-view", "all", S.inboxView, "모두", c.all)}</div>`;
@@ -227,5 +289,76 @@ export function todayViews(A) {
       <span class="who">${esc(e.actor || "앱 사용자")}</span></li>`;
   }
 
-  return { homeView, todoCard, feedItem, alertsCard };
+  /**
+   * 2.0.0 [RVA-36] 검토 I23c-01 '엄지로 넘기며 끝내요': 휴대폰에서 위 셋의 줄을 왼쪽으로 밀면 [내일 볼게요](되돌리기 15초), 오른쪽으로 밀면 열기.
+   * 보이는 단추는 그대로 있어요(밀기는 덤). 세로 스크롤은 막지 않아요(touch-action: pan-y). 민 뒤 따라오는 누르기는 먹어요.
+   */
+  if (typeof document !== "undefined") {
+    let sw = null;
+    // 민 뒤 바로 따라오는 누르기(손을 뗀 자리에 다시 그려진 다음 줄 위)는 먹어요.
+    let quietUntil = 0;
+    document.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch") return;
+      const li = e.target.closest?.(".today-three li[data-swipe]");
+      sw = li ? { li, x: e.clientX, y: e.clientY, dx: 0, on: false } : null;
+    }, { passive: true });
+    document.addEventListener("pointermove", (e) => {
+      if (!sw) return;
+      const dx = e.clientX - sw.x;
+      const dy = e.clientY - sw.y;
+      if (!sw.on) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) {
+          sw = null;
+          return;
+        }
+        if (Math.abs(dx) < 12) return;
+        sw.on = true;
+        sw.li.classList.add("swiping");
+      }
+      sw.dx = dx;
+      sw.li.style.setProperty("--dx", `${Math.max(-120, Math.min(120, dx))}px`);
+      sw.li.dataset.dir = dx < 0 ? "later" : "open";
+    }, { passive: true });
+    const end = () => {
+      if (!sw) return;
+      const { li, dx, on } = sw;
+      sw = null;
+      li.classList.remove("swiping");
+      li.style.removeProperty("--dx");
+      delete li.dataset.dir;
+      if (!on) return;
+      quietUntil = 0;
+      if (dx <= -80) li.querySelector(".pick-later")?.click();
+      else if (dx >= 80) li.querySelector("a")?.click();
+      quietUntil = Date.now() + 400;
+    };
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    document.addEventListener("click", (e) => {
+      if (Date.now() < quietUntil) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+  }
+
+  const actions = {
+    // '남은 N개 보기': 아래 접힌 '할 일 모두'를 펴고 그 자리로.
+    "home-fold": ({ key }) => {
+      // 다시 그리지 않고 그 줄만 펴요(다시 그리면 화면은 지금 펼침을 그대로 지켜요).
+      const d = document.getElementById(String(key).replace(":", "-"));
+      if (!d) return;
+      d.open = true;
+      S.opened.set(key, true);
+      d.scrollIntoView?.({ block: "start", behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      d.querySelector("summary")?.focus({ preventScroll: true });
+    },
+    // 2.0.0 [RVA-37] 읽지 못한 줄을 개발사항으로(최고 관리자). 오류 묶음은 '보는 중'이 되고 메모에 개발사항 번호가 남아요.
+    "stuck-dev": async ({ id }) => {
+      const r = await A.act(() => A.api(`/watch/errors/${id}/dev`, "POST", {}), "개발사항으로 넘겼어요");
+      if (r) A.load();
+    },
+  };
+
+  return { homeView, todoCard, feedItem, alertsCard, actions };
 }

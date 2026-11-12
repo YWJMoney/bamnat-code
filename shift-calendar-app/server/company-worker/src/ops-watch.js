@@ -183,7 +183,48 @@ export async function countFailure(env, kind, now = Date.now()) {
 /** 500 하나를 묶음에 더해요. [app]은 앱이 보낸 판(있으면). */
 export async function recordError(env, path, e, now = Date.now(), app = "") {
   if (!env?.DB) return;
-  const route = routeOf(path);
+  await addError(env, routeOf(path), e, now, app);
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24b-02 독이 든 한 줄 격리: 문의·개발사항 한 줄을 읽다 난 오류는 그 줄만 빼고(장부·정리함·오늘은 계속 돌아요)
+ * 그 줄을 오류 묶음의 주소 칸에 `row/<어디>/<종류>:<번호>`로 적어요. 같은 줄의 같은 오류는 한 묶음이라 몇 번 열어도 한 줄이에요.
+ * 번호는 관리자 앱 안의 줄 번호(문의·개발사항 id)뿐이고, 글·휴대폰 값은 적지 않아요(오류 첫 줄은 errorLine이 따옴표 안을 지워요).
+ */
+export const ROW_WHERE = { ledger: "운영 장부", sort: "정리함", today: "오늘", inquiries: "문의 목록" };
+
+export async function recordRowError(env, where, key, e, now = Date.now()) {
+  if (!env?.DB || !Object.hasOwn(ROW_WHERE, where)) return;
+  console.error(`row ${where} ${key}: ${e?.stack ?? e}`);
+  await addError(env, `row/${where}/${String(key).replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, 80)}`, e, now).catch(() => countFailure(env, "errfail", now));
+}
+
+/** 여러 줄을 한꺼번에(오류 하나가 다른 줄 기록을 막지 않아요). */
+export async function recordRowErrors(env, where, bad, now = Date.now()) {
+  if (!bad?.length) return;
+  await Promise.all(bad.slice(0, 20).map((b) => recordRowError(env, where, b.key, b.e, now)));
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24c-01 '무엇 때문에 멈췄나': 지난 사흘 안에 읽지 못한 줄(아직 고치지 않은 것). 오늘 화면이 원인 줄·우회·넘기기를 한 장으로 보여요.
+ */
+export const rowTroubleQuery = (now) => [`SELECT sig, route, message, total, first_at, last_at, status, note FROM error_groups
+    WHERE route LIKE 'row/%' AND status IN ('new', 'again', 'seen') AND last_at > ? ORDER BY last_at DESC LIMIT 5`, now - 3 * DAY];
+
+export async function rowTrouble(env, now = Date.now()) {
+  return rowTroubleRows(await all(env, ...rowTroubleQuery(now)).catch(() => []));
+}
+
+export function rowTroubleRows(rows) {
+  return (rows ?? []).map((r) => {
+    const [, where = "", key = ""] = String(r.route).split("/");
+    const [type = "", id = ""] = key.split(":");
+    return { sig: r.sig, where, whereName: ROW_WHERE[where] ?? where, type, id, message: r.message, total: r.total,
+      firstAt: r.first_at, lastAt: r.last_at, status: r.status, note: r.note ?? "" };
+  });
+}
+
+async function addError(env, route, e, now, app = "") {
   const line = errorLine(e);
   const sig = sigOf(route, line);
   const stack = String(e?.stack ?? "").split("\n").slice(1, 6).map((s) => s.trim()).join("\n").replace(/https?:\/\/\S+/g, "").slice(0, WATCH.sample);

@@ -5,6 +5,7 @@ import { PILE_NAMES, compareVersions, grams, known, likeness, sortInbox, titleFr
 import { isOut } from "./desk.js";
 import { askOwnerOf, replyRiskOf } from "./ask-check.js";
 import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_STATE_NAMES, WORK_TYPES, workList } from "./work.js";
+import { errorLine, recordRowErrors } from "./ops-watch.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -214,53 +215,68 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   }
 
   const rows = [];
+  // 2.0.0 [RVA-37] 검토 I24b-02: 한 줄을 읽다 오류가 나면 그 줄만 '읽지 못한 줄'로 두고 장부는 계속(ADMX-01처럼 문의 하나가 장부·오늘을 멈추지 않게).
+  const bad = [];
+  const unreadable = (key, type, id, e, extra = {}) => {
+    bad.push({ key, e });
+    rows.push({ key, type, id, kind: null, kindName: type === "dev" ? "개발사항" : "문의", title: type === "dev" ? "(읽지 못한 개발사항)" : "(읽지 못한 문의)",
+      text: "", path: null, app: null, same: 0, stage: "intake", dueAt: null, unreadable: errorLine(e), ...extra });
+  };
   for (const q of qs) {
-    const info = JSON.parse(q.info || "{}");
-    const text = q.first ?? "";
-    const link = links.get(q.id) ?? null;
-    const d = link ? devById.get(link.item_id) ?? null : null;
-    const owner = askOwner(q.kind, text);
-    const tri = triage(q.kind, text, info);
-    const waitingAdmin = q.status === "open" && q.last === "user";
-    let stage;
-    if (q.status === "closed") stage = "closed";
-    else if (d) {
+    try {
+      const info = JSON.parse(q.info || "{}");
+      const text = q.first ?? "";
+      const link = links.get(q.id) ?? null;
+      const d = link ? devById.get(link.item_id) ?? null : null;
+      const owner = askOwner(q.kind, text);
+      const tri = triage(q.kind, text, info);
+      const waitingAdmin = q.status === "open" && q.last === "user";
+      let stage;
+      if (q.status === "closed") stage = "closed";
+      else if (d) {
+        if (d.status === "rejected") stage = "rejected";
+        else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
+        else if (d.status === "doing") stage = "doing";
+        else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
+        else stage = link.told_at || q.last === "admin" ? "shipped" : "notify";
+      } else if (q.last === "admin") stage = "answered";
+      else stage = piles.has(q.id) ? "sorted" : "intake";
+      rows.push({
+        key: `inquiry:${q.id}`, type: "inquiry", id: q.id, kind: q.kind, kindName: LINE_KINDS[q.kind] ?? q.kind, topic: tri.topic, topicName: tri.topicName,
+        urgent: tri.urgency === "urgent", title: titleFrom(text), text: clip(text, 600), path: screenPath(text), app: vOf(info.app), model: info.model ?? null,
+        at: q.created_at, last: q.last_at ?? q.updated_at, same: q.same ?? 0, status: q.status,
+        waitingAdmin, ownerAsk: owner, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
+        sort: piles.get(q.id) ?? null,
+        bundle: d ? { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
+          out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks, told: Boolean(link.told_at) } : null,
+        said: q.said ? { text: clip(q.said, 300), by: q.said_by ?? "", at: q.said_at } : null,
+        assignee: q.assignee_name ?? null, stage,
+        dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
+        overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
+      });
+    } catch (e) {
+      unreadable(`inquiry:${q.id}`, "inquiry", q.id, e, { at: q.created_at, last: q.updated_at, status: q.status });
+    }
+  }
+  for (const d of devById.values()) {
+    if (d.outside) continue;
+    try {
+      let stage;
       if (d.status === "rejected") stage = "rejected";
       else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
       else if (d.status === "doing") stage = "doing";
       else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
-      else stage = link.told_at || q.last === "admin" ? "shipped" : "notify";
-    } else if (q.last === "admin") stage = "answered";
-    else stage = piles.has(q.id) ? "sorted" : "intake";
-    rows.push({
-      key: `inquiry:${q.id}`, type: "inquiry", id: q.id, kind: q.kind, kindName: LINE_KINDS[q.kind] ?? q.kind, topic: tri.topic, topicName: tri.topicName,
-      urgent: tri.urgency === "urgent", title: titleFrom(text), text: clip(text, 600), path: screenPath(text), app: vOf(info.app), model: info.model ?? null,
-      at: q.created_at, last: q.last_at ?? q.updated_at, same: q.same ?? 0, status: q.status,
-      waitingAdmin, ownerAsk: owner, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
-      sort: piles.get(q.id) ?? null,
-      bundle: d ? { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
-        out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks, told: Boolean(link.told_at) } : null,
-      said: q.said ? { text: clip(q.said, 300), by: q.said_by ?? "", at: q.said_at } : null,
-      assignee: q.assignee_name ?? null, stage,
-      dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
-      overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
-    });
-  }
-  for (const d of devById.values()) {
-    if (d.outside) continue;
-    let stage;
-    if (d.status === "rejected") stage = "rejected";
-    else if (d.status === "todo") stage = d.handed_at ? "handed" : "devwait";
-    else if (d.status === "doing") stage = "doing";
-    else if (d.status === "done" && !isOut(d.released_in, shipped)) stage = "built";
-    else stage = "closed";
-    // 오래전에 나간 개발사항은 닫힌 것으로 기간 안에서만.
-    if (stage === "closed" && d.updated_at <= since) continue;
-    rows.push({ key: `dev:${d.id}`, type: "dev", id: d.id, kind: null, kindName: "개발사항", title: d.title, text: clip(d.body, 600), path: null,
-      app: null, at: d.created_at, last: d.updated_at, same: 0, status: d.status, releasedIn: d.released_in ?? null, out: d.status === "done" && isOut(d.released_in, shipped),
-      bundle: { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
-        out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks },
-      handed: Boolean(d.handed_at), reason: d.reason || "", assignee: d.assignee_name ?? null, createdBy: d.created_by_name, stage, dueAt: null });
+      else stage = "closed";
+      // 오래전에 나간 개발사항은 닫힌 것으로 기간 안에서만.
+      if (stage === "closed" && d.updated_at <= since) continue;
+      rows.push({ key: `dev:${d.id}`, type: "dev", id: d.id, kind: null, kindName: "개발사항", title: d.title, text: clip(d.body, 600), path: null,
+        app: null, at: d.created_at, last: d.updated_at, same: 0, status: d.status, releasedIn: d.released_in ?? null, out: d.status === "done" && isOut(d.released_in, shipped),
+        bundle: { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
+          out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks },
+        handed: Boolean(d.handed_at), reason: d.reason || "", assignee: d.assignee_name ?? null, createdBy: d.created_by_name, stage, dueAt: null });
+    } catch (e) {
+      unreadable(`dev:${d.id}`, "dev", d.id, e, { at: d.created_at, last: d.updated_at, status: d.status });
+    }
   }
   for (const x of work) {
     if (x.type === "inquiry" || x.type === "dev") continue;
@@ -281,6 +297,23 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   for (const got of stateRows) for (const r of got) states.set(r.key, r);
   const kstEnd = Date.parse(`${ledgerDay(now)}T00:00:00+09:00`) + DAY;
   const out = rows.map((r) => {
+    try {
+      return lineOut(r);
+    } catch (e) {
+      bad.push({ key: r.key, e });
+      return { key: r.key, id: r.id, no: lines.get(r.key) ? lineNo(lines.get(r.key).n) : null, n: lines.get(r.key)?.n ?? 0, type: r.type,
+        typeName: Object.hasOwn(LEDGER_TYPES, r.type) ? LEDGER_TYPES[r.type] : "줄", kind: null, kindName: "", group: "ops", title: "(읽지 못한 줄)", summary: "",
+        summaryBy: "", text: "", path: null, app: null, model: null, topic: null, topicName: null, urgent: false, same: 0, n2: 0, meta: null, link: null,
+        at: iso(Number(r.at) || now), last: iso(Number(r.last) || Number(r.at) || now), age: 0, overlap: [], sort: null, skipped: null, handedIn: null, handed: false,
+        bundle: null, releasedIn: null, reason: "", stage: "intake", stageName: STAGES.intake, answer: null, ownerAsk: null, turn: "owner", turnName: TURNS.owner,
+        holder: null, due: null, late: false, dueToday: false, state: "new", stateName: WORK_STATE_NAMES.new, stateReason: "", stateReasonName: "", note: "",
+        reopened: 0, closed: false, lastMove: null, unreadable: errorLine(e) };
+    }
+  });
+  if (bad.length) await recordRowErrors(env, "ledger", bad, now);
+  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length };
+
+  function lineOut(r) {
     const s = states.get(r.key);
     const state = s?.state ?? "new";
     const line = lines.get(r.key);
@@ -303,6 +336,8 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       else if (r.type === "studio_need") turn = "claude";
       else turn = "admin";
       if (state === "waiting") turn = s.reason === "user" ? "asker" : s.reason === "dev" ? "claude" : turn;
+      // 2.0.0 [RVA-37] 읽지 못한 줄은 사람이 봐요(Claude·자동 답이 손대지 않게, 오늘 보기에 올라와요).
+      if (r.unreadable) turn = "owner";
     }
     // 담당: 누가 잡고 있으면 그 사람, 아니면 차례.
     const holder = s && state !== "new" && state !== "done" && s.by_name ? s.by_name : r.assignee && whoKind(r.assignee) === "person" ? r.assignee : null;
@@ -333,9 +368,9 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       stateReasonName: state === "waiting" ? WAIT_REASONS[s?.reason] ?? "" : state === "done" ? DONE_REASONS[s?.reason] ?? "" : "",
       note: s?.note ?? "", reopened: s?.reopened ?? 0, closed: closed || state === "done",
       lastMove: lastMove ? { at: iso(lastMove.at), by: lastMove.by, byKind: whoKind(lastMove.by), what: lastMove.what } : null,
+      ...(r.unreadable ? { unreadable: r.unreadable } : {}),
     };
-  });
-  return { rows: out, shipped, auto: sort?.auto ?? null };
+  }
 }
 
 /** 오래된 것이 위로: 기한 넘김 → 다시 열림 → 최고 관리자 확인 → 기한 가까운 순 → 오래된 순. 닫힌 것은 최근 것이 위로. */
