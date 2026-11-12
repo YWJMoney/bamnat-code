@@ -15,6 +15,7 @@ import java.io.File
  * - 조건 2: 한 화면(함수)에 채운 단추 하나 ([oneFilledButtonPerScreen])
  * - 조건 7: 토스트·화면 코드 속 색 값은 늘지 않아요 ([toastsAndRawColoursOnlyGoDown])
  * - 조건 7·10: 알림 줄은 앱에 하나(AppSnack), 화면이 따로 만들지 않아요 ([oneLineForTheWholeApp])
+ * - 조건 3·5: 카드 바탕은 조용한 면, primaryContainer는 고른 것·채운 단추에만 ([cardsStandOnTheQuietGround])
  * - 조건 1: 달력 시작 높이는 화면 사진 시험 `CalendarStartScreenshotTest`가 봐요.
  *
  * 실패하면 무엇을 써야 하는지 메시지가 알려 줘요. 정말 예외라면(그림 속 휴대폰 틀처럼) 이 파일의 예외 목록에 까닭과 함께 넣어요.
@@ -189,6 +190,20 @@ class DesignRulesTest {
         report("화면 코드 속 색 값 Color(0x…)", colours, COLOUR_CEILING, 0)
         assertTrue("토스트가 $toasts 곳으로 늘었어요: 알림 줄(AppSnack.show)이나 OfflineLine을 써요", toasts <= TOAST_CEILING)
         assertTrue("화면 코드 속 색 값이 $colours 곳으로 늘었어요: MaterialTheme.colorScheme, Tone.color(), LocalCalendarColors를 써요", colours <= COLOUR_CEILING)
+    }
+
+    /**
+     * 2.0.0 [RVP-01] (통합 HQ-06, 조건 3·5) A card's ground is the quiet one (`surfaceContainerLow`, as [com.bamnat.app.ui.components.NudgeCard]).
+     * `primaryContainer` is what is picked or filled (a chosen chip, a picked choice card, a tonal button): in the dark it is the same
+     * strong blue, and a card on it read as one big button (G #447 사진 08). A ground that is `primaryContainer` only while picked is fine.
+     */
+    @Test fun cardsStandOnTheQuietGround() {
+        val ground = Regex("""(?<![A-Za-z])(color|containerColor) = MaterialTheme\.colorScheme\.primaryContainer(?!\.copy)""")
+        val bad = screens.flatMap { s ->
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (ground.containsMatchIn(l) && !l.contains("if (") && !l.contains("CircleShape")) "${s.path}:${i + 1}" else null }
+        }
+        report("카드 바탕 primaryContainer", bad.size, 0, 0)
+        assertEquals("카드 바탕은 surfaceContainerLow(조용한 면)예요. primaryContainer는 고른 것·채운 단추에만(docs/design/공통-부품.md 2절)", emptyList<String>(), bad)
     }
 
     /**

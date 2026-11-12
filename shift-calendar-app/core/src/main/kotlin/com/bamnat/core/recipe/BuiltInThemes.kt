@@ -120,9 +120,13 @@ object BuiltInThemes {
      * coloured by the day's kind came out the same colour in every theme. For them the theme's own accent tints those cells instead.
      */
     private fun cellsFor(f: Family, s: WorkStyle): List<String> {
-        if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return f.cells
+        // 2.0.0 [RVP-63] (검토 REST-04·T14-01·T14-02) A family's 쉬는 날 look hides the day's mark ('mk:none'), which is right only while
+        // it falls on 쉬는 날 (교대's 'shift:off=1'). Every other kind of work takes it by the week (토·일), where an 알바's weekend shift,
+        // a shop's weekend sales or a 현장's weekend job are; there the look keeps a dot at the bottom instead.
+        val shown = if (s == WorkStyle.SHIFT) f.cells else f.cells.map { it.replace("mk:none", "mk:dot|mp:bottom") }
+        if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return shown
         val tint = "bg:" + f.accent.toString(16).uppercase().padStart(8, '0')
-        return f.cells.map { c ->
+        return shown.map { c ->
             when {
                 "mk:fill" in c -> c.replace("mk:fill", "$tint|mk:dot|mp:bottom").replace(Regex("ba:\\d+"), "ba:28")
                 "bg:shift" in c -> c.replace("bg:shift", tint)

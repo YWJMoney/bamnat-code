@@ -137,8 +137,9 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
                      onClose: (() -> Unit)?, closeLabel: String, actions: (@Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit)? = null) {
     val openState = androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     val open = openState.value
-    val on = MaterialTheme.colorScheme.onPrimaryContainer
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = Modifier.fillMaxWidth()) {
+    // 2.0.0 [RVP-01] (통합 HQ-06) The quiet ground of every card, the dark mode's bright blue left to what is picked or filled.
+    val on = MaterialTheme.colorScheme.onSurface
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(start = 16.dp, top = 4.dp, end = 4.dp, bottom = if (actions != null) 16.dp else if (line == null && !open) 4.dp else 8.dp)) {
             val info: @Composable () -> Unit = {
                 androidx.compose.material3.IconButton(onClick = { openState.value = !open }) {
@@ -174,9 +175,7 @@ private fun LinkCard(title: String, line: String?, more: String, mood: com.bamna
 private fun LinkOwnerButton(text: String, lead: Boolean, enabled: Boolean, onClick: () -> Unit) {
     val m = Modifier.fillMaxWidth().heightIn(min = 48.dp)
     if (lead) androidx.compose.material3.Button(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
-    else androidx.compose.material3.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m,
-        colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimaryContainer),
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f))) { Text(text) }
+    else androidx.compose.material3.OutlinedButton(onClick = onClick, enabled = enabled, modifier = m) { Text(text) }
 }
 
 /** [FIT-03] The first screen's question (1.25: was "무슨 일 하세요?"). */

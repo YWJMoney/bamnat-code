@@ -477,12 +477,12 @@ internal fun CalendarStartCard(start: CalendarStart, onAction: () -> Unit, modif
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(Modifier.padding(16.dp)) {
-            Text(start.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+            Text(start.title, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() })
-            Text(start.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+            Text(start.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
             Button(onClick = onAction) { Text(start.action) }
         }

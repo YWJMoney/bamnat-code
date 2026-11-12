@@ -620,13 +620,13 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     when {
                         total != null -> Fmt.won(total)
@@ -634,7 +634,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                         else -> "근무표로 급여 계산하기"
                     },
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요"
@@ -642,10 +642,10 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                     else if (style == WorkStyle.HOURLY) "시급만 넣으면 주휴수당까지 계산해요"
                     else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
     // U 1.32 [UX132-02] 고치기: 기본급 · 수당 · 근무시간 · 월급날·정산 · 회사 규칙, one tap each.

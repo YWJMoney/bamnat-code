@@ -355,7 +355,7 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
     if (removing) AlertDialog(
         onDismissRequest = { removing = false },
         text = { Text("모양 ${i + 1}을 지울까요? 패턴에서 이 모양을 쓰던 칸은 모양 1이 돼요") },
-        confirmButton = { TextButton(onClick = { removing = false; onIndex(0); onChange(view.copy(looks = looks.filterIndexed { n, _ -> n != i })) }) { Text("지우기") } },
+        confirmButton = { TextButton(onClick = { removing = false; onIndex(0); onChange(view.copy(looks = looks).withoutLook(i)) }) { Text("지우기") } }, // [RVP-61]
         dismissButton = { TextButton(onClick = { removing = false }) { Text("그대로 두기") } },
     )
 }
@@ -738,6 +738,10 @@ private fun StepButton(text: String, description: String, enabled: Boolean, onSt
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val step by androidx.compose.runtime.rememberUpdatedState(onStep)
     val release by androidx.compose.runtime.rememberUpdatedState(onRelease)
+    // 2.0.0 [RVP-62] (검토 REST-03·U14-06) Read as it changes, not as the gesture's key: reaching the end (16dp, 100%) turned the button
+    // off, which restarted the gesture mid-hold, so the repeat ran on until the screen closed and the value was never kept.
+    val on by androidx.compose.runtime.rememberUpdatedState(enabled)
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Box(
         Modifier.size(48.dp).clip(CircleShape)
             .semantics {
@@ -746,19 +750,19 @@ private fun StepButton(text: String, description: String, enabled: Boolean, onSt
                 if (!enabled) disabled()
                 onClick { if (enabled) { step(); release() }; enabled }
             }
-            .pointerInput(enabled) {
-                if (!enabled) return@pointerInput
+            .pointerInput(Unit) {
                 detectTapGestures(onPress = {
+                    if (!on) return@detectTapGestures
                     step()
                     val held = scope.launch {
                         // About 8 in the first second and 30 by the third (PC 4차: 2.5초에 40은 너무 빠름, PC 7차: 첫 1초에 4는 너무 느림).
                         kotlinx.coroutines.delay(300)
                         var n = 0
-                        while (true) { step(); n++; kotlinx.coroutines.delay(if (n < 6) 110L else maxOf(80L, 110L - (n - 6) * 10L)) }
+                        while (on) { step(); n++; kotlinx.coroutines.delay(if (n < 6) 110L else maxOf(80L, 110L - (n - 6) * 10L)) }
+                        // [RVP-62] At the end it stops with a short tick, and the value is kept when the finger lifts.
+                        haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.Reject)
                     }
-                    tryAwaitRelease()
-                    held.cancel()
-                    release()
+                    try { tryAwaitRelease() } finally { held.cancel(); release() }
                 })
             },
         contentAlignment = Alignment.Center,

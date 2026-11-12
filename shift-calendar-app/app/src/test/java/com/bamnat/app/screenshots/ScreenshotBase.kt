@@ -516,6 +516,9 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /** 2.0.0 [RVP-62] Holds a finger on what shows [text] for [frames] frames of 16ms (a held −/＋), then lifts it. */
+        fun holdText(text: String, frames: Int, exact: Boolean = true) = touch(reach(text, exact, false, 0, 0.5f).boundsInWindow.center, hold = frames)
+
         /** Holds a finger on what shows [text], for its quick menu. */
         fun longPressText(text: String, prefix: Boolean = false) = touch(reach(text, false, prefix, 0, 0.5f).boundsInWindow.center, hold = 40)
 

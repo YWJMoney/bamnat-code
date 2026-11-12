@@ -94,7 +94,7 @@ internal fun fillAlpha(progress: Float, share: Float): Float = ((progress - shar
 /** The line over the month while it fills: "이번 달 야간 8번" big, the rest under it, 칸이 '해냈어요' beside them. */
 @Composable
 internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifier) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (LocalShowKani.current) {
                 Kani(KaniMood.Done, size = 48.dp)
@@ -102,12 +102,12 @@ internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifi
             }
             Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
                 Text(numberWithUnit(moment.line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurface)
                 val rest = moment.line.restAt(com.bamnat.core.time.Today.dateTime())
                 if (rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurface)
             }
-            IconButton(onClick = SetupFill::close) { Icon(Icons.Filled.Close, "채워진 달력 안내 닫기", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+            IconButton(onClick = SetupFill::close) { Icon(Icons.Filled.Close, "채워진 달력 안내 닫기", tint = MaterialTheme.colorScheme.primary) }
         }
     }
 }

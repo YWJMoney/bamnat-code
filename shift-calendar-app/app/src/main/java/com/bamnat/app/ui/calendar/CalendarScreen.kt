@@ -2472,16 +2472,16 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("근무 설정을 마저 해 주세요", style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                color = MaterialTheme.colorScheme.onSurface)
             Text(
                 if (d.style == null) "어떻게 일하는지만 고르면 나머지는 하나씩 물어볼게요."
                 else "${d.steps.size}단계 중 ${d.position}단계까지 했어요. 고른 답은 그대로 있어요.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }
