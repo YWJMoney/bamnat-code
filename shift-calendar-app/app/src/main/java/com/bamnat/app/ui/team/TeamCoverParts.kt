@@ -111,7 +111,7 @@ internal fun CallCard(
         Text("물어본 ${call.people.size}명 · 본 사람 ${call.seen.size}명 · 된다 ${yes.size}명" + if (past) " · 기한 지남" else "", style = MaterialTheme.typography.bodyMedium)
         call.people.forEach { id ->
             val a = call.answers[id]
-            val word = when { a == true -> "들어갈 수 있어요"; a == false -> "어려워요"; id in call.seen -> "봤어요, 아직 답 없음"; else -> "아직 안 봤어요" }
+            val word = when { a == true -> "들어갈 수 있어요"; a == false -> "어려워요"; id in call.seen -> "열어 봤어요, 아직 답 없음"; else -> "아직 안 열어 봤어요" }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text("${names[id]?.name ?: "?"}: $word", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
                     color = if (a == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,

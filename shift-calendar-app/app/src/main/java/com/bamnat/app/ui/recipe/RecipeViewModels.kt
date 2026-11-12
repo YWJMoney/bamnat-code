@@ -755,6 +755,15 @@ class RecipeMineViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
+    /** 2.0.0 [RVQ-26] 검토 SVC-23: the past 판 of [code] go from the server; only the one up now stays. */
+    fun dropPast(code: String) {
+        viewModelScope.launch {
+            _message.value = runCatching { c.recipeApi.dropPast(c.companyStore.device, code) }.fold({ n ->
+                loadMine(); if (n > 0) "지난 판 ${n}개를 지웠어요" else "지울 지난 판이 없어요"
+            }, { RecipeClient.problem(it) })
+        }
+    }
+
     fun deleteDraft(id: Long) { viewModelScope.launch { c.recipes.deleteDraft(id) } }
     fun shown() { _message.value = null }
 
