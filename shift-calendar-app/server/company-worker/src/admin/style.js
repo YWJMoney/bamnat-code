@@ -121,6 +121,11 @@ font-weight:700;text-decoration:none}
 .waiting a .n{color:var(--bad);font-weight:900}
 .waiting .dot{display:none}
 .todo-card .waiting{margin:0 0 .75rem}
+/* 2.0.0 [RVA-24] 3/3(총괄 11-12): 글자를 크게 키운 폰 폭에서 '지금 기다리는 것' 칩이 한 줄에 하나씩 쌓이지 않게 두 개씩. */
+.waiting{container:waiting/inline-size}
+@container waiting (width < 14rem){.waiting b{flex-basis:100%}
+  p.waiting a{min-height:min(2.75rem,48px)}
+  .waiting a{font-size:min(.88rem,18px);flex:1 1 calc(50% - .4rem);min-width:0;justify-content:center;flex-wrap:wrap;gap:0 .3rem;padding:.2rem min(.8rem,10px);text-align:center;word-break:keep-all;line-height:1.25}}
 .todo-card .rows{box-shadow:none;margin-bottom:.5rem}
 .rows.inbox>li>details.quick{margin:0 1rem .75rem;border-top:0;padding-top:0}
 .quick form{display:grid;gap:.5rem}
@@ -512,7 +517,7 @@ background:var(--info-bg);color:var(--info);font-size:.86rem;font-weight:800;tex
 .toast.has-undo.mini>span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 .toast.has-undo.mini .undo{margin-left:0}
 /* Two panes: on a wide screen the list stays beside the open item. */
-@media (min-width:1024px){.split{display:grid;grid-template-columns:minmax(17rem,24rem) minmax(0,1fr);gap:1rem;align-items:start}
+@media (min-width:1024px){.split{display:grid;grid-template-columns:clamp(15rem,30%,24rem) minmax(0,1fr);gap:1rem;align-items:start}
 .split>.pane-list{position:sticky;top:calc(var(--top-h,4.75rem) + .5rem);max-height:calc(100vh - var(--top-h,4.75rem) - 1.25rem);max-height:calc(100dvh - var(--top-h,4.75rem) - 1.25rem);overflow:auto;border-radius:var(--r-lg)}
 .split>.pane-list .rows{margin:0}.split .row[aria-current=true]{background:var(--accent-soft)}}
 @media (max-width:1023.98px){.split>.pane-list{display:none}}
@@ -555,6 +560,16 @@ del{background:var(--bad-bg);color:var(--bad);border-radius:3px}
 .queue-bar{position:sticky;top:var(--top-h,4rem);z-index:4;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .75rem;margin:0 0 .75rem;
 background:var(--accent-soft);color:var(--accent);border-radius:var(--r);font-weight:800;font-size:.88rem}
 .queue-bar b{margin-right:auto}
+/* 2.0.0 [RVA-31] 검토 U23-08: 휴대폰에서는 위에 붙은 막대가 머리 아래로 가려지고 손이 닿지 않았어요. 아래 탭 바로 위에 한 손 막대로 두고,
+   키보드 안내는 빼요. 답하기 줄과 마지막 글은 그 높이만큼 올라가요. */
+@media (max-width:599.98px){
+  .queue-bar{position:fixed;top:auto;left:.5rem;right:.5rem;bottom:calc(4.4rem + env(safe-area-inset-bottom));z-index:6;margin:0;flex-wrap:nowrap;
+    min-height:3.25rem;padding:.4rem .5rem .4rem .85rem;background:var(--surface);border:1px solid var(--accent);box-shadow:var(--shadow-lg)}
+  .queue-bar>span{display:none}
+  .queue-bar .btn{min-height:2.75rem}
+  body:has(.queue-bar) .composer .actions{bottom:calc(4.4rem + 3.75rem + env(safe-area-inset-bottom))}
+  body:has(.queue-bar) .main{padding-bottom:calc(10.5rem + env(safe-area-inset-bottom))}
+}
 /* The command palette. */
 dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 @media (max-width:599.98px){dialog.palette{margin:0;width:100vw;max-width:100vw;max-height:100dvh;height:100dvh;border-radius:0}}
@@ -605,6 +620,8 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .cond-out .lines{padding-left:1.2rem}
 #flag-cond{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9rem}
 .sim-grid{display:grid;gap:.25rem .75rem;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
+/* 2.0.0 [RVA-31] 검토 T24-09: 이름표가 두 줄인 칸 옆에서 입력 칸이 어긋났어요. 이름표는 위, 입력 칸은 줄 맨 아래로 맞춰요. */
+.sim-grid>.fieldset{display:flex;flex-direction:column}.sim-grid>.fieldset>label{flex:1 0 auto}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 @media (forced-colors:active){.btn,.seg,.tab,.card{border:1px solid CanvasText}}
 /* ---- AX 1.30 [ADMX-01]~[ADMX-11] ---- */
@@ -618,7 +635,12 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 @media (min-width:600px) and (max-width:899.98px){.tiles.core.metric-kpis{--cols:3}}
 .tile.kpi{position:relative;min-height:0;padding:.75rem .85rem .6rem;gap:.15rem}
 .tile.kpi .v{display:flex;align-items:baseline;gap:.4rem;font-size:1.7rem}
-.tile.kpi .d{font-size:.75rem;line-height:1.35;color:var(--muted);display:block}
+.tile.kpi .d{font-size:.75rem;line-height:1.35;color:var(--muted);display:block;margin-top:0}
+/* 2.0.0 [RVA-31] 검토 T24-19: 그래프 자리를 같은 높이의 한 줄로(그래프·한 줄 모두 칸 맨 아래). */
+.tile.kpi .spark,.tile.kpi .tile-go{margin-top:auto}
+.tile-go{display:flex;align-items:center;gap:.25rem;min-height:1.6rem;padding-top:.2rem;font-size:.8rem;font-weight:800;color:var(--accent)}
+.tile-go.done{color:var(--ok)}
+.tile-go svg{width:1rem;height:1rem;flex:none}
 .tile.kpi.rising{border-color:color-mix(in srgb,var(--warn) 55%,var(--line))}
 .tile.skeleton{min-height:6.5rem;background:var(--soft);border-color:transparent}
 .delta{font-size:.75rem;font-weight:800;letter-spacing:0}
@@ -734,7 +756,7 @@ table.list tr.picked td{background:var(--accent-soft)}
   table.list tbody td{border:0;padding:0;text-align:left}
   table.list td.name{grid-column:1 / -1;font-size:1rem}
   table.list td.pick{grid-column:1 / -1}
-  table.list td.n{text-align:left;font-size:.85rem}
+  table.list td.n{text-align:left;font-size:.85rem;white-space:normal;overflow-wrap:anywhere}table.list td.n .lab{display:block}
   table.list .lab{color:var(--muted);font-size:.75rem;font-weight:600}
 }
 /* [ADMX-07] 지표: the period stays on top while scrolling. */
@@ -977,6 +999,8 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .lg-hint{display:flex;flex-wrap:wrap;gap:.25rem .75rem;justify-content:space-between}
 .lg-hint .meta{display:none}
 .rows.ledger{margin:0}
+/* 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 줄마다 접는 칸(details)의 공통 위 여백·선(21px)이 장부 줄 사이에 끼지 않게. */
+.rows.ledger>li>details{margin:0;border-top:0;padding-top:0}
 .rows.ledger>li>details>summary{list-style:none}
 .rows.ledger>li>details>summary::-webkit-details-marker{display:none}
 .lg-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"no sum due" "st st who";gap:.35rem .6rem;align-items:center;min-height:3.5rem;padding:.65rem .85rem}
@@ -1009,8 +1033,11 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .lg-detail .lg-sort{display:grid;gap:.4rem;padding:.6rem .75rem;border:1px solid var(--line);border-radius:var(--r-sm)}
 .lg-detail .lg-sort textarea{width:100%}
 .lg-head{display:none}
-@media (min-width:600px){
-  .lg-hint .meta{display:inline}
+/* 2.0.0 [RVA-24] 검토 ADM-08·U23-05: 칸 수는 화면 폭이 아니라 표 자신의 폭(rem)으로 정해요. 노트북 폭(1024~1472)에서 왼쪽 메뉴를 뺀 표가
+   아홉 칸보다 좁으면 다섯 칸으로 접혀 오른쪽 칸이 잘리지 않아요(가로 넘침 0). 글자가 커지면 같은 폭에서도 일찍 접혀요. */
+.lg-table{container:lg/inline-size}
+@media (min-width:600px){.lg-hint .meta{display:inline}}
+@container lg (width >= 34rem){
   .lg-head{display:grid;padding:.45rem .85rem;font-size:.75rem;font-weight:700;color:var(--muted);background:var(--soft);border:1px solid var(--line);border-bottom:0;border-radius:var(--r-lg) var(--r-lg) 0 0}
   .lg-table .rows.ledger{border-radius:0 0 var(--r-lg) var(--r-lg)}
   .lg-head,.lg-row{grid-template-columns:4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none;gap:.5rem}
@@ -1019,13 +1046,13 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
   .lg-row .c-who,.lg-row .c-due{justify-self:start}
   .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem minmax(0,1fr) 7.5rem 6.5rem 6rem;grid-template-areas:none}
 }
-@media (min-width:1024px){
+@container lg (width >= 66rem){
   .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
   .lg-head .c-in,.lg-head .c-bu,.lg-head .c-an,.lg-head .c-log,.lg-row .c-in,.lg-row .c-bu,.lg-row .c-an,.lg-row .c-log{display:block}
   .lg-row .c-log small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
   .lg-table.picking .lg-head,.lg-table.picking .lg-row{grid-template-columns:1.5rem 4.2rem 5.5rem minmax(11rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
 }
-@media (min-width:1300px){
+@container lg (width >= 74rem){
   .lg-head,.lg-row{grid-template-columns:4.2rem 5.5rem minmax(11rem,1.6fr) minmax(7rem,1fr) 5.5rem 6rem 5.5rem 6rem 6rem 7.5rem}
   .lg-head .c-ov,.lg-row .c-ov{display:block}
   .lg-row .c-ov small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1112,20 +1139,16 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
   .segmented::-webkit-scrollbar{display:none}
   .grid-table input{width:5.25rem}
 }
-/* 편 화면(폴드 안쪽 가로 ~840–1023px): 문의 목록과 열린 문의를 나란히(두 칸), 오른쪽 칸 아래로 사람 패널. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
+/* 편 화면(폴드 안쪽 가로 ~720–1023px): 흐름 칸 둘, 숫자 넷. 세로(~690px)는 한 칸이 더 읽기 좋아요. */
 @media (min-width:720px) and (max-width:1023.98px){
   .flow-cols{grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:start}
   .tiles.core{--cols:4}
 }
+/* 2.0.0 [RVA-30] 검토 U24-02·T24-16·T24-17: 840에서 목록 칸이 170px라 제목이 "문제 신고 · …"만 보이고 사람 정보가 답 칸 아래로
+   한참 내려갔어요. 840~1023은 목록을 접고 '‹ 이전 1/12 다음 ›'만(twoPane() 1024부터), 그 폭으로 답 칸과 사람 정보를 나란히 둬요. */
 @media (min-width:840px) and (max-width:1023.98px){
-  .split{display:grid;grid-template-columns:minmax(13rem,15rem) minmax(0,1fr);gap:.85rem;align-items:start}
-  .split>.pane-list .row{flex-wrap:wrap;gap:.25rem .5rem}
-  .split>.pane-list .row-side{width:100%;justify-content:flex-start}
-  .split>.pane-list .row>svg{display:none}
-  .split>.pane-list{display:block;position:sticky;top:calc(var(--top-h,4.25rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.25rem) - 1.25rem);overflow:auto;border-radius:var(--r-lg)}
-  .split>.pane-list .rows{margin:0}
-  .split .row[aria-current=true]{background:var(--accent-soft)}
-  .split .cols{display:block}
+  .cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(16rem,1fr);gap:.85rem;align-items:start}.cols>*{min-width:0}
+  .cols>aside{position:sticky;top:calc(var(--top-h,4.25rem) + .5rem);max-height:calc(100dvh - var(--top-h,4.25rem) - 1.25rem);overflow:auto}
 }
 /* 데스크톱: 세 칸(메뉴 · 목록 · 열린 것), 넓으면 사람 패널이 오른쪽에 붙어 있어요. */
 @media (min-width:1440px){
@@ -1170,7 +1193,7 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 @keyframes gl-ping{0%{transform:scale(.55);opacity:.55}80%,100%{transform:scale(1.25);opacity:0}}
 .gl-hero-text{min-width:0}
 .gl-eyebrow{margin:0;font-size:.75rem;font-weight:800;letter-spacing:.05em;color:var(--tone)}
-.gl-hero h2{margin:.15rem 0 0;font-size:1.45rem;font-weight:900;letter-spacing:-.025em;line-height:1.2;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap}
+.gl-hero h2{margin:.15rem 0 0;font-size:1.45rem;font-weight:900;letter-spacing:-.025em;line-height:1.2;display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;word-break:keep-all;overflow-wrap:anywhere}
 .gl-count{display:inline-grid;place-items:center;min-width:1.7rem;height:1.7rem;padding:0 .45rem;border-radius:999px;background:var(--tone);color:var(--surface);font-size:.9rem;font-weight:900}
 .gl-sub{margin:.3rem 0 0;font-size:.88rem;color:var(--muted)}
 .gl-signals{list-style:none;display:flex;flex-wrap:wrap;gap:.4rem;margin:.9rem 0 0;padding:0}
@@ -1382,17 +1405,85 @@ details.tip>.hint{margin:.25rem 0 .5rem}
 /* 2.0.0 [RVD-16] 목록 머리 한 줄(조건 1, 관리자 목록 화면의 본보기 HQ-03): 구간 고르기 + 찾기·거르기·고르기·CSV. 좁은 폭은 단추 하나 뒤로.
    구간 고르기는 바깥 여백 없이 한 줄 높이(2.75rem)에, 큰 글자에서는 구간이 줄을 바꿔요(조건 12). */
 .list-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .5rem;container:list-head/inline-size}
-.list-head>.segmented{margin:0;padding:0;flex:0 1 auto;flex-wrap:wrap;overflow:visible}
+/* 2.0.0 [RVA-24] 380·글자 200%에서 보기 줄이 칸마다 한 줄씩 세로로 쌓였어요(검토·개발사항·보상). 늘 한 줄, 넘치면 옆으로 밀고 끝이 흐려져요. */
+.list-head>.segmented{margin:0;padding:0;flex:0 1 auto;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.list-head>.segmented::-webkit-scrollbar{display:none}
 .list-head>.segmented .seg{flex:1 1 auto}
 .list-head .list-more{display:none;position:relative}
 .list-head .list-more.busy::after{content:"";position:absolute;top:.5rem;right:.5rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent)}
 .list-head .list-tools{flex:1 1 22rem;margin:0;flex-wrap:wrap;min-width:0}
-.list-head .list-tools input[type=search]{flex:1 1 9rem;min-width:min(9rem,100%)}
+.list-head .list-tools input[type=search]{flex:1 1 8rem;min-width:min(8rem,100%)}
 /* 접는 기준은 머리 줄 자신의 폭을 rem으로 재요(총괄 11-12 3차): 글자가 커지면 같은 폭에서도 접혀, 찾기 칸이 눌려 잘리지 않아요(조건 12).
    한 줄에 다 들어가는 폭(구간 고르기 + 찾기 9rem + 종류 + 아이콘 둘, 약 40rem)보다 조금 넉넉히 42rem. */
 @container list-head (width > 42rem){.list-head .btn.icon-wide{width:2.75rem;padding:0}.list-head .btn.icon-wide .lbl{display:none}}
 @container list-head (width <= 42rem){.list-head>.segmented{flex:1 1 0;min-width:0}.list-head .list-more{display:inline-grid}
 .list-head .list-tools{display:none;flex-basis:100%}.list-head.open .list-tools{display:flex}.list-head .list-tools select{flex:1 1 8rem}}
+/* 2.0.0 [RVA-24] 거르기 칩 줄은 '거르기' 단추 뒤로 접어요(HQ-03 첫 줄을 화면 위 25% 안으로). 고른 조건 수는 단추 위 숫자, 좁은 폭은 '찾기·거르기' 하나로 같이 펴요. */
+.list-head .filter-panel{flex-basis:100%;display:none;min-width:0}
+.list-head.f-open .filter-panel{display:block}
+.filter-panel .chips{margin:0 0 .5rem}.filter-panel .chips:last-child{margin-bottom:0}
+.btn.filter-toggle{gap:.35rem}
+.btn.filter-toggle.on{border-color:var(--accent);color:var(--accent)}
+.btn.filter-toggle .n{min-width:1.25rem;padding:0 .3rem;border-radius:999px;background:var(--accent);color:var(--on-accent,#fff);font-size:.8rem;line-height:1.25rem;text-align:center;white-space:nowrap}
+.list-meta{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}
+.list-meta .link{min-height:0}
+.filter-panel .filter-row{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .5rem}
+.filter-panel .filter-row label{font-weight:700}
+.filter-panel .filter-row select{flex:0 1 16rem;min-width:0}
+.filter-panel .filter-row input[type=date]{flex:0 1 11rem;min-width:0}
+/* 2.0.0 [RVA-24] 검토 U24-06(조건 2·9): 줄 단추는 주된 것 하나 + ⋯ 메뉴(나머지). 메뉴는 줄 오른쪽 아래에 떠요. */
+.row-acts{flex-direction:row;align-items:center;gap:.35rem}
+details.row-more{position:relative;margin:0;border:0;padding:0}
+details.row-more>summary{list-style:none;cursor:pointer}
+details.row-more>summary::-webkit-details-marker{display:none}
+details.row-more>summary::after,details.row-more[open]>summary::after{content:none}
+details.row-more[open]>summary{background:var(--hover)}
+details.row-more>.menu{position:absolute;right:0;top:calc(100% + .25rem);z-index:4;display:grid;gap:.25rem;min-width:11rem;max-width:min(18rem,80vw);padding:.4rem;
+  border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface);box-shadow:var(--shadow-lg)}
+details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:transparent;background:none}
+@media (hover:hover){details.row-more>.menu .btn:hover{background:var(--hover)}}
+.rows:has(details.row-more[open]){overflow:visible}
+@container rows (width < 30rem){details.row-more>.menu{left:0;right:auto}}
+/* 2.0.0 [RVA-25] 검토 U24-07: 카드의 왼쪽 맞춤 단추 줄에서는 ⋯가 왼쪽에 있어 메뉴를 오른쪽으로 펴요(화면 밖으로 나가지 않게). */
+.actions.start details.row-more>.menu{left:0;right:auto}
+.list-note{margin:.5rem 0 .75rem}
+.list-head .lg-bar{display:flex;flex:1 1 8rem;min-width:min(8rem,100%);margin:0}.list-head .lg-bar input[type=search]{flex:1 1 auto;min-width:0}
+.seg .n.hot{color:var(--bad)}
+.ledger-view>.stage-strip{margin:.75rem 0}
+/* 2.0.0 [RVA-25] 검토 I24a-01·U24-01·U24-03·T24-03·T24-04·T24-05·T24-06·ADMX-10: 좁은 목록의 줄 틀 하나. 목록 자신의 폭이 30rem보다 좁으면
+   (폴드 접은 폭, 큰 글자) 위에 제목 2줄, 아래에 배지·시간·단추 한 줄이에요. 제목이 8~10자에서 잘리거나 오른쪽 칸이 화면 밖으로 나가지 않아요. */
+#main ul.rows{container:rows/inline-size}
+@container rows (width < 30rem){
+  .row{flex-wrap:wrap;row-gap:.35rem}
+  .row>.row-main{flex:1 1 0;min-width:0}
+  .row>svg{order:2}
+  .row>.row-side{order:3;flex:1 1 100%;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:.3rem .45rem;max-width:none}
+  .row-main>b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+}
+@container lg (width < 34rem){.lg-row .c-sum>b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}}
+/* 결정함: 넓은 화면에서도 줄이 화면 끝까지 늘어나지 않게(조건 12 '본문 최대 폭'), 초안은 줄 아래 한 칸. */
+.decide-view{max-width:52rem}
+.company-top input[type=search]{flex:1 1 8rem;min-width:0}
+.btn.icon-only{width:2.75rem;padding:0;flex:none}
+@media (max-width:599.98px){.company-top .btn.primary{width:2.75rem;padding:0;flex:none}.company-top .btn.primary .lbl{display:none}}
+@media (max-width:599.98px){.timebar .meta{display:none}}
+.decide-rows .draft-line{padding:0 1rem .75rem;display:grid;gap:.35rem}
+.decide-rows .draft-line .answer{margin:0;padding:.5rem .7rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
+.decide-rows .draft-line .actions{margin:0}
+.toolbar.list-top{flex-wrap:nowrap}.toolbar.list-top .grow{flex:1 1 auto;min-width:0}
+.day-head.bad{color:var(--bad)}
+.list-head + h2.section,.list-head + h2.day-head,.list-head + .note + h2.day-head{margin-top:.25rem}
+/* 보기가 많은 화면: 구간 줄은 옆으로 밀리고(줄 바꿈 없음) 남은 폭을 다 써요. 끝 흐림은 허브 탭 줄과 같아요. */
+.list-head.seg-scroll>.segmented{flex:1 1 12rem;min-width:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
+.list-head.seg-scroll>.segmented .seg{flex:0 0 auto}
+.list-head.seg-scroll .list-tools{flex:0 1 20rem}
+@container list-head (width > 42rem){.list-head.seg-scroll .list-tools{flex-wrap:nowrap}.list-head.seg-scroll .filter-toggle>span:not(.n){display:none}}
+.segmented[data-more=right]{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - min(2rem,28px)),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - min(2rem,28px)),transparent)}
+.segmented[data-more=left]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 min(2rem,28px));mask-image:linear-gradient(90deg,transparent,#000 min(2rem,28px))}
+.segmented[data-more=both]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 min(2rem,28px),#000 calc(100% - min(2rem,28px)),transparent);mask-image:linear-gradient(90deg,transparent,#000 min(2rem,28px),#000 calc(100% - min(2rem,28px)),transparent)}
+/* 큰 글자에서 구간 고르기가 한 칸에 88px까지 커지지 않게 52px에서 멈춰요(누르는 곳 48px은 지킴, 조건 9·12). */
+.seg{min-height:min(2.6rem,52px)}@media (pointer:coarse){.seg{min-height:min(2.75rem,52px)}}
+@container list-head (width <= 42rem){.list-head .filter-toggle{display:none}.list-head.open .filter-panel{display:block}.list-head.seg-scroll>.segmented{flex-basis:0}}
 .list-foot{margin:.25rem 0 .75rem}.list-foot .claude-draft-empty{margin:0 0 .25rem}
 /* 2.0.0 [RVD-16] 고르기 막대의 할 일 두 단추는 함께, 좁은 폭에서 줄이 바뀌면 오른쪽에. */
 .bulkbar .bulk-acts{display:flex;gap:.5rem;flex-wrap:nowrap}
@@ -1407,6 +1498,11 @@ details.tip>.hint{margin:.25rem 0 .5rem}
 .bar h1{white-space:normal;overflow:visible;font-size:min(1.2rem,26px)}
 .bar .sub{font-size:min(.78rem,15px)}
 .bar h1 .t{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.2}
+/* 2.0.0 [RVA-24] 3/3(총괄 11-12 오늘 380·200% 사진): 제목이 글자마다 줄을 바꿔 세로로 서지 않게(낱말 단위), 막대가 좁으면(글자 150% 넘게 키운 폰 폭)
+   꾸밈 그림(달 표시)을 먼저 빼고 판 알약의 안쪽 여백도 알맞은 크기에서 멈춰요. */
+.bar{container:bar/inline-size}
+.bar h1 .t{word-break:keep-all;overflow-wrap:anywhere}
+@container bar (width < 20rem){.bar .mark{display:none}}
 @media (hover:none) and (pointer:coarse){.bar [data-act=shortcuts]{display:none}}
 @media (max-width:599.98px){.bar{padding-left:min(.75rem,12px);padding-right:min(.5rem,8px)}}
 .tab{font-size:min(.8rem,15px);padding:.25rem 2px;min-height:min(3.4rem,64px)}
@@ -1420,11 +1516,11 @@ details.tip>.hint{margin:.25rem 0 .5rem}
 /* [RVA-19] 검토 ADMX-05·ADM-15·U23-07: 허브 탭 줄. 더 있으면 끝이 흐려지고, '모두'로 한눈에 펼쳐요. */
 .hubrow{display:flex;align-items:center;max-width:80rem;margin:0 auto}
 .hubrow[hidden]{display:none}
-.hubrow .hubtabs{flex:1 1 auto;min-width:0;max-width:none;margin:0}
-.hubtabs[data-more=right]{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 2.5rem),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - 2.5rem),transparent)}
-.hubtabs[data-more=left]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 2.5rem);mask-image:linear-gradient(90deg,transparent,#000 2.5rem)}
-.hubtabs[data-more=both]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 2.5rem,#000 calc(100% - 2.5rem),transparent);mask-image:linear-gradient(90deg,transparent,#000 2.5rem,#000 calc(100% - 2.5rem),transparent)}
-.chip.hub-all{flex:none;gap:.2rem;margin:0 .6rem .45rem .25rem;font-size:.82rem;white-space:nowrap}
+.hubrow .hubtabs{flex:1 1 auto;min-width:0;max-width:none;margin:0;padding-bottom:.25rem}
+.hubtabs[data-more=right]{-webkit-mask-image:linear-gradient(90deg,#000 calc(100% - min(2.5rem,32px)),transparent);mask-image:linear-gradient(90deg,#000 calc(100% - min(2.5rem,32px)),transparent)}
+.hubtabs[data-more=left]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 min(2.5rem,32px));mask-image:linear-gradient(90deg,transparent,#000 min(2.5rem,32px))}
+.hubtabs[data-more=both]{-webkit-mask-image:linear-gradient(90deg,transparent,#000 min(2.5rem,32px),#000 calc(100% - min(2.5rem,32px)),transparent);mask-image:linear-gradient(90deg,transparent,#000 min(2.5rem,32px),#000 calc(100% - min(2.5rem,32px)),transparent)}
+.chip.hub-all{flex:none;gap:.2rem;margin:0 .6rem .25rem .25rem;font-size:.82rem;white-space:nowrap}
 .chip.hub-all[hidden]{display:none}
 .chip.pick[aria-current=page]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
 a.chip.pick{color:var(--fg);text-decoration:none}
@@ -1470,10 +1566,11 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
 .np.important .np-acts i.on{color:var(--warn)}
 /* [RVA-21] 검토 ADMX-17(조건 9): 손가락 화면에서 누르는 곳은 44px 이상. 글 속 이름 링크·작은 글자 단추는 줄 간격은 그대로 두고 누르는 범위만 위아래로 넓혀요. */
 .dl-mini{display:none}
-@media (max-width:599.98px){
+/* 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 배포 줄은 넓은 화면(1024px 이상)에서만 한 줄로. 그보다 좁으면 위 막대의 알약 하나(머리 28px 줄임). */
+@media (max-width:1023.98px){
   .deploy-line{display:none!important}
-  .dl-mini:not([hidden]){flex:none;display:inline-flex;align-items:center;min-height:min(2.75rem,48px);padding:0 .15rem;text-decoration:none}
-  .dl-pill{display:inline-block;padding:.15rem .5rem;border-radius:999px;background:var(--soft);color:var(--muted);font-size:min(.75rem,14px);font-weight:800;white-space:nowrap;line-height:1.4}
+  .dl-mini:not([hidden]){flex:none;display:inline-flex;align-items:center;min-height:min(2.75rem,48px);padding:0 min(.15rem,3px);text-decoration:none}
+  .dl-pill{display:inline-block;padding:min(.15rem,3px) min(.5rem,9px);border-radius:999px;background:var(--soft);color:var(--muted);font-size:min(.75rem,14px);font-weight:800;white-space:nowrap;line-height:1.4}
   .dl-pill.live{background:var(--accent-soft);color:var(--accent)}
   .dl-pill.warn{background:var(--warn-bg);color:var(--warn)}
   .dl-pill.bad{background:var(--bad-bg);color:var(--bad)}

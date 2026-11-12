@@ -5,6 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
+import { readFileSync } from "node:fs";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
 import { SERVER_VERSION } from "../../src/version.js";
@@ -21,8 +22,8 @@ test.after(async () => {
 });
 
 /** A browser tab on the developer app: its fetch goes to the worker, with the sign-in cookie kept like a browser does. */
-async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
-  const window = new Window({ url: `${ORIGIN}/admin/${hash}`, width: 1280, height: 900,
+async function tab(env, { hash = "", storage = null, cookie = null, width = 1280 } = {}) {
+  const window = new Window({ url: `${ORIGIN}/admin/${hash}`, width, height: 900,
     settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
   open.push(window);
   const jar = { cookie };
@@ -107,8 +108,8 @@ async function world(extra = {}) {
   return { ...s, env };
 }
 
-async function signedIn(env) {
-  const t = await tab(env);
+async function signedIn(env, opts = {}) {
+  const t = await tab(env, opts);
   assert.ok(t.$('form[data-form="login"]'), "the sign-in screen first");
   await t.click('[data-act="login-mode"][data-key="owner"]');
   t.$("#password").value = PASSWORD;
@@ -550,6 +551,9 @@ test("[ADMUX-13] 지표: two dates ask the server for that period and the number
   const meta = () => u.$$("#main .meta").map((e) => e.textContent).join(" ");
   assert.match(meta(), /\(28일\)/);
   for (const sec of ["활성", "광장", "문의", "오류", "원격 갱신"]) assert.match(u.text("#main"), new RegExp(sec), `${sec} section`);
+  // 2.0.0 [RVA-24] 날짜 두 칸은 '날짜로'를 누를 때만(기간 막대 한 줄).
+  assert.equal(u.$("#mt-from"), null, "the dates fold behind 날짜로");
+  await u.click('#main [data-act="metric-dates"]');
   const to = u.$("#mt-to").value;
   const from = new Date(Date.parse(to) - 2 * 864e5).toISOString().slice(0, 10);
   const el = u.$("#mt-from");
@@ -634,14 +638,23 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   await t.settle(30);
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
-  assert.match(main, /보상 받음 1명/);
+  // 2.0.0 [RVA-26] 통합 2차 PC Q31: 지급 전이면 '보상 받음'이 아니라 '조건 채움(지급 전)', 0인 칸('상한 넘음 0명')은 없어요.
+  assert.match(main, /조건 채움 1명\(지급 전 1명\)/);
+  assert.doesNotMatch(main, /보상 받음|상한 넘음|(^|\D)0명/);
   // 2.0.0 [RVD-21] 처리방침 3.13이 일정에 없으면 모든 보상 합친 1년 12개월은 아직이에요(약관 1.3·처리방침 3.12는 상한 없음).
-  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  // [RVA-26] 친구가 1명이면 '각자'가 없어요.
+  assert.match(main, /친구 1명이 7일 이상 쓸 때마다 프로 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  assert.doesNotMatch(main, /각자/);
   // [RVD-21] 접힌 한 줄도 같아요: 3.13 전에는 '한 분에 1년 12개월까지'라고 하지 않아요.
   assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 1년 12개월 상한은 처리방침 3.13 시행일부터");
   assert.match(t.text('#main details[data-key="reward-how"] .hint'), /그 전에는 친구 초대 설정의 상한만 봐요/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
   assert.match(main, /최근 30일 몰림 1번/);
+  // [RVA-26] 지급하면 같은 친구가 '지급'으로 옮겨요.
+  DB.db.prepare("UPDATE rewards SET status = 'paid', paid_at = ? WHERE rule_id = 'invite'").run(Date.now());
+  await t.click('[data-act="refresh"]');
+  await t.settle(30);
+  assert.match(t.$("#main").textContent, /조건 채움 1명\(지급 1명\)/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -833,11 +846,14 @@ test("[ADMUX-34] menu numbers: each thing counted once, 더 보기 only its own 
   assert.equal(side("today"), t.$$("#main .alert-list li").length, "오늘 counts only its 주의 필요");
   assert.match(t.text("#main .alert-list"), /꼭 필요한 설정/);
   assert.equal(badge("manage"), side("manage"));
-  // The strip on 문의 says what waits, and opens it filtered.
-  await t.go("#/inquiries");
-  const strip = t.$("#waiting a");
-  assert.match(strip.textContent, /답 대기\s*3/);
+  // 오늘's 할 일 says what waits in each hub, and opens it filtered.
+  const strip = t.$('#waiting a[href^="#/inquiries"]');
+  assert.match(strip.textContent, /사람과 글\s*4/);
   assert.equal(strip.getAttribute("href"), "#/inquiries?sort=sla");
+  // 2.0.0 [RVA-24] A list screen has no line of its own above the list (HQ-03): the hub tab carries the number.
+  await t.go("#/inquiries");
+  assert.equal(t.$("#waiting"), null, "no strip above 문의");
+  assert.equal(Number(t.text('[data-badge="tab:inquiries"]') || 0), 3, "the 문의 tab says 3");
   // An answer makes the number go down without waiting for the next poll.
   const id = (await s.call("GET", "/api/admin/inquiries", undefined, await signIn(s.call))).data.inquiries[0].id;
   await t.go(`#/inquiries/${id}`);
@@ -1818,7 +1834,7 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   await t1.settle(20);
   assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);
   assert.ok(!t1.$(`[data-act="recipe-image"][data-id="${pic.id}"]`), "decided: the buttons go");
-  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
+  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.seg)');
   assert.match(back.textContent, /돌아가기 · 사진 검토/);
   await t1.click(back);
   await t1.settle(20);
@@ -2662,4 +2678,148 @@ test("[RVQ-18] 검토 I21b-01: 보안 한 장 puts what to fix first, each row w
   for (const v of [PASSWORD, "test-salt"]) assert.ok(!text.includes(v), "no secret's value on the page");
   assert.match(u.text("#main .card-head"), /고칠 것 \d+/);
   assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 보기, 이름으로 찾기", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const look = { kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] };
+  for (let i = 1; i <= 42; i++) {
+    const recipe = { format: "bamnat-recipe", v: 1, title: `세트 ${String(i).padStart(2, "0")}`, summary: "야간이 잘 보여요", styles: ["SHIFT"],
+      cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙" }, pieces: [look] };
+    const made = await s.call("POST", "/api/recipes", { device: device(100 + i), recipe, scope: "public" }, from(100 + i));
+    assert.equal(made.status, 201, `recipe ${i}: ${JSON.stringify(made.data)}`);
+  }
+  const u = await asOwner(s.env, t);
+  await u.go("#/recipes");
+  const rows = () => u.$$("#main ul.recipe-rows>li");
+  // Whichever tab holds them (공개 or 검토 대기), go there.
+  for (const key of ["visible", "pending"]) {
+    if (rows().length) break;
+    const tabBtn = u.$(`#main [data-act="recipe-tab"][data-key="${key}"]`);
+    if (tabBtn) {
+      await u.click(tabBtn);
+      await u.idle();
+    }
+  }
+  assert.equal(rows().length, 40, "40 at a time");
+  assert.match(u.text('#main [data-act="recipe-more"]'), /40\/42/);
+  for (const li of rows().slice(0, 3)) {
+    assert.ok(li.querySelector("details.row-more>summary[aria-label]"), "⋯ for the rest");
+    assert.ok(li.querySelector("details.row-more .menu .btn.danger"), "지우기 sits in the menu");
+    assert.ok(!li.querySelector(".btn.primary"), "no filled button on a row");
+  }
+  await u.click('#main [data-act="recipe-more"]');
+  assert.equal(rows().length, 42);
+  assert.ok(!u.$('#main [data-act="recipe-more"]'), "all shown");
+  await u.type("#search", "세트 07");
+  await new Promise((r) => setTimeout(r, 300));
+  await u.settle();
+  assert.equal(rows().length, 1, "found by title");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-24] 활동 기록 머리: 모든 사람·나 한 줄, 누가·종류·기간은 거르기 안, CSV는 단추 하나", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/audit");
+  assert.deepEqual(u.$$('#main .list-head [data-act="audit-who"]').map((b) => b.textContent.trim()), ["모든 사람", "나"]);
+  for (const id of ["au-actor", "au-kind", "au-from", "au-to"]) assert.ok(u.$(`#main .filter-panel #${id}`), `${id} behind 거르기`);
+  assert.ok(u.$('#main .list-head [data-act="audit-csv"][aria-label="CSV로 받기"]'));
+  await u.click('#main [data-act="audit-who"][data-key="me"]');
+  await u.idle();
+  assert.equal(u.$('#main [data-act="audit-who"][data-key="me"]').getAttribute("aria-pressed"), "true");
+  assert.match(u.window.location.hash, /actor=me/, "kept in the address");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-25] 토론 카드: 결정 단추는 왼쪽 한 줄, 쓰기 막기·경고·토론 전부·지우기는 ⋯", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const a = await s.call("POST", "/api/reports", report(1), from(1));
+  await s.call("POST", "/api/posts", { device: device(2), company: a.data.company.id, setup: a.data.setup, body: "단추 줄을 볼 글" }, from(2));
+  const u = await asOwner(s.env, t);
+  await u.go("#/community?show=all");
+  const acts = u.$("#main article.card .actions.start.row-acts");
+  assert.ok(acts, "one left-aligned row");
+  assert.deepEqual([...acts.children].filter((c) => c.matches(".btn")).map((b) => b.textContent.trim()), ["가리기"]);
+  const menu = acts.querySelector("details.row-more .menu");
+  assert.deepEqual([...menu.querySelectorAll(".btn")].map((b) => b.textContent.trim()), ["30일 쓰기 막기", "경고·쉬기", "이 토론 전부", "지우기"]);
+  assert.ok(menu.querySelector('.btn.danger[data-act="post-delete"]'));
+  assert.ok(![...acts.querySelectorAll(".btn")].some((b) => b.matches(".primary")), "no filled button on a card");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-29] 원격 갱신: 휴대폰이 20대보다 적으면 비율 대신 'N대 중 M대'와 자료 부족", async (t) => {
+  const dir = new URL("../../../../../remote/v1/", import.meta.url);
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const name = String(url).split("/").pop();
+    try {
+      return new Response(readFileSync(new URL(name, dir)));
+    } catch {
+      return new Response("", { status: 404 });
+    }
+  };
+  t.after(() => { globalThis.fetch = real; });
+  const { env, DB } = await world();
+  const day = (n) => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  DB.db.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.39.0', 2), (?, '9.9.9', 1)").run(day(1), day(1));
+  const u = await signedIn(env);
+  await u.go("#/gates");
+  await u.settle(40);
+  const card = u.$$("#main section.card").find((c) => /원격 갱신/.test(c.textContent));
+  assert.ok(card, "the card");
+  assert.match(card.textContent, /3대 중 \d대/);
+  assert.match(card.textContent, /자료 부족/);
+  assert.doesNotMatch(card.querySelector("ul.rows").textContent, /\d%/, "no share of three phones");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-30] 문의 상세: 1024보다 좁으면 목록 칸 없이 '‹ 이전 1/N 다음 ›', 주소로 바로 열어도", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const first = await signedIn(env);
+  await first.go("#/inquiries");
+  const id = first.$('#main a.row[href^="#/inquiries/"]').getAttribute("href").split("/").pop().split("?")[0];
+  const u = await signedIn(env, { width: 900 });
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(20);
+  assert.ok(!u.$("#main .split .pane-list"), "no list column at 900");
+  assert.match(u.text("#main .stepnav"), /이전 \d+\/3 ?다음/);
+  const wide = await signedIn(env, { width: 1100 });
+  await wide.go(`#/inquiries/${id}`);
+  assert.ok(wide.$("#main .split .pane-list"), "the list beside it from 1024");
+  assert.deepEqual([...u.errors, ...wide.errors], []);
+});
+
+test("[RVA-31] 오늘: 첫 문장은 아래 셋에 든 종류를 모두 말하고, 정할 판 칸은 그래프 대신 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env);
+  await u.go("#/home");
+  await u.settle(20);
+  const line = u.text("#today-hero-h");
+  const words = { bad: "바로 볼 것", warn: "살펴볼 것", todo: "할 일" };
+  for (const li of u.$$("#main .today-three>li")) {
+    const kind = Object.keys(words).find((k) => li.classList.contains(k));
+    assert.ok(line.includes(words[kind]), `"${line}" names ${words[kind]}`);
+  }
+  const tile = u.$$("#main .tile.kpi").find((x) => /정할 판/.test(x.textContent));
+  if (tile) assert.ok(tile.querySelector(".tile-go"), "a line where the chart would be");
+  // The account screen counts the hubs from the same list the menu uses.
+  await u.go("#/account");
+  assert.match(u.text("#main"), /1~5로 허브를/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기, 기다리는 칩 둘씩, 카드 ⋯ 오른쪽으로, 큐 막대는 폰 아래, 미리 보기 칸 맞춤", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.list-head>\.segmented\{[^}]*flex-wrap:nowrap;overflow-x:auto/);
+  assert.match(css, /@container waiting \(width < 14rem\)\{[^}]*\.waiting b\{flex-basis:100%\}/);
+  assert.match(css, /\.actions\.start details\.row-more>\.menu\{left:0;right:auto\}/);
+  assert.match(css, /@media \(max-width:599\.98px\)\{\s*\.queue-bar\{position:fixed;top:auto/);
+  assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
+  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:grid/);
 });

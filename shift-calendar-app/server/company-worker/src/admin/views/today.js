@@ -9,13 +9,19 @@ export function todayViews(A) {
   const { S, L, esc, can, href, seg, skeleton, icon, P, ago, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, wide } = A;
 
   /** One number with its week: [list] 7 numbers, the last one today. */
-  function kpi({ label, value, to, desc, list, hot = true, name }) {
+  /**
+   * 2.0.0 [RVA-31] 검토 T24-19: 7일 그래프가 없는 숫자(정할 판)는 그 자리가 비어 높이가 떠 보였어요. 그래프 대신 같은 높이의
+   * '할 일 한 줄'(go: 0이면 done)을 둬서 네 칸이 같은 모양이에요.
+   */
+  function kpi({ label, value, to, desc, list, hot = true, name, go, done }) {
     const has = Array.isArray(list) && list.length === 7;
+    const foot = has ? L.spark(list, { name: name ?? label })
+      : go ? `<span class="tile-go${value ? "" : " done"}">${value ? `${esc(go)}${icon(P.chevron)}` : `${icon(P.check)}${esc(done ?? "없어요")}`}</span>` : "";
     const delta = has ? list[6] - list[5] : 0;
     const tone = has ? L.trendTone(list) : "";
     return `<a class="tile kpi${hot && value ? " hot" : ""}${tone ? " rising" : ""}" href="${to}"><span class="k">${esc(label)}</span>
       <span class="v">${value ?? 0}${delta ? `<span class="delta ${delta > 0 ? "up" : "down"}" title="어제보다">${delta > 0 ? "▲" : "▼"}${Math.abs(delta)}</span>` : ""}</span>
-      <span class="d">${esc(desc)}</span>${has ? L.spark(list, { name: name ?? label }) : ""}</a>`;
+      <span class="d">${esc(desc)}</span>${foot}</a>`;
   }
 
   /**
@@ -58,7 +64,11 @@ export function todayViews(A) {
   function heroCard(t, o, hi, { alerts, todo, picks }) {
     const bad = alerts.filter((a) => a.tone === "bad");
     const tone = bad.length ? "bad" : alerts.length ? "warn" : "ok";
-    const line = bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
+    // 2.0.0 [RVA-31] 검토 U24-11: "바로 볼 것이 1개"인데 아래 줄은 셋이던 것. 아래 셋에 든 종류마다 그 수를 함께 말해요.
+    const kinds = [["bad", "바로 볼 것", bad.length], ["warn", "살펴볼 것", alerts.length - bad.length], ["todo", "할 일", todo.length]]
+      .filter(([k, , n]) => n > 0 && picks.some((p) => p.tone === k));
+    const line = kinds.length > 1 ? `${kinds.map(([, w, n]) => `${w} ${n}개`).join(kinds.length === 2 ? "와 " : ", ")}가 있어요`
+      : bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
       : todo.length ? `급한 일은 없고, 할 일이 ${todo.length}개예요` : "지금 기다리는 일이 없어요";
     const sum = [can("inquiries") ? `답 대기 ${o.inquiries ?? 0}` : "", can("review") ? `검토 대기 ${L.reviewCount(o)}` : "", o.doneToday ? `오늘 처리 ${o.doneToday}` : ""].filter(Boolean).join(" · ");
     const restA = alerts.length - picks.filter((p) => p.key.startsWith("a:")).length;
@@ -114,7 +124,7 @@ export function todayViews(A) {
       core.push(kpi({ label: "복사 전 문제 신고", value: o.bugsUncopied, to: inq({ status: "all", kind: "bug", copied: "no" }), desc: "개발에 넘기기 전이에요", list: tr.bugs, name: "날마다 문제 신고" }));
     }
     if (can("review") && t.versionConflicts !== undefined) {
-      core.push(kpi({ label: "정할 판", value: t.versionConflicts, to: href("versions"), desc: "한 부서에 판이 둘 이상", hot: true }));
+      core.push(kpi({ label: "정할 판", value: t.versionConflicts, to: href("versions"), desc: "한 부서에 판이 둘 이상", hot: true, go: "정하러 가기", done: "다 정했어요" }));
     }
     // The rest, folded on a phone and open on a wide screen.
     const rest = [];

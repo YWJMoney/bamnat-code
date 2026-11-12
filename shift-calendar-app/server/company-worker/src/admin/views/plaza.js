@@ -7,7 +7,7 @@
 //   [ADMX-06] 회사 is a table the server sorts; on a phone each row is a small card.
 //   [ADMX-09] 검토 rejects many at once (one reason, undo for all) and 회사 hides or shows many at once.
 export function plazaViews(A) {
-  const { S, L, esc, times, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter, showCopy, danger, askText } = A;
+  const { S, L, esc, times, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter, showCopy, danger, askText, listHead } = A;
   const name = (c, dept) => `${esc(c.name)}${dept ? ` <span class="dept">${esc(dept)}</span>` : ""}`;
 
   // ---- 판 차이 [ADMX-02] ----
@@ -45,19 +45,25 @@ export function plazaViews(A) {
     const counts = q ? { all: q.groups.length + q.asks.length + q.flagged.length, groups: q.groups.length, asks: q.asks.length, flagged: q.flagged.length, shape: shape.length } : {};
     const f = S.reviewFilter;
     const picking = Boolean(S.reviewPick) && editable;
-    const head = `<div class="segmented" role="group" aria-label="보기">
+    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 구간 셋(전체·제보·앱에 없는 방식)과 고르기가 한 줄, 달라요·모양이 다른 판은 '거르기' 안,
+    // 자동 채택 기준과 단축키는 목록 아래 한 줄(펴면 설명).
+    const head = listHead(`<div class="segmented" role="group" aria-label="보기">
         ${seg("review-filter", "all", f, "전체", counts.all)}${seg("review-filter", "groups", f, "제보", counts.groups)}
-        ${seg("review-filter", "asks", f, "앱에 없는 방식", counts.asks)}${seg("review-filter", "flagged", f, "달라요 달린 규칙", counts.flagged)}
-        ${seg("review-filter", "shape", f, "모양이 다른 판", counts.shape)}</div>
-      <div class="toolbar"><p class="hint grow">서로 다른 ${S.overview?.settings?.adoptPersons ?? 3}명 이상, ${points}점, 맞았어요 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이면 자동 채택돼요. 명세서로 맞춘 제보는 2점이에요.${editable ? " 줄을 누르면 펼쳐져요. j·k로 고르고 a 채택, x 거절." : " 보기 권한이라 채택·거절은 할 수 없어요."}</p>
-        ${editable && q?.groups.length ? `<button class="btn small" data-act="review-pick-mode" aria-pressed="${picking}">${picking ? "선택 마침" : `${icon(P.check)}여러 개 고르기`}</button>` : ""}</div>`;
+        ${seg("review-filter", "asks", f, "앱에 없는 방식", counts.asks)}</div>`,
+      editable && q?.groups.length ? (picking ? '<button class="btn" data-act="review-pick-mode" aria-pressed="true">선택 마침</button>'
+        : `<button class="btn icon-wide" data-act="review-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}<span class="lbl">여러 개 고르기</span></button>`) : "",
+      { open: picking, active: f === "flagged" || f === "shape" ? 1 : 0,
+        filters: `<div class="chips" role="group" aria-label="따로 보기">${[["flagged", "달라요 달린 규칙", counts.flagged], ["shape", "모양이 다른 판", counts.shape]].map(([key, label, n]) =>
+          `<button type="button" class="chip pick" data-act="review-filter" data-key="${f === key ? "all" : key}" aria-pressed="${f === key}">${label}${n ? ` ${n}` : ""}</button>`).join("")}</div>` });
+    const foot = `<div class="list-foot"><details class="tip" data-key="review-how"><summary>자동 채택: ${S.overview?.settings?.adoptPersons ?? 3}명 · ${points}점 · 맞았어요 ${S.overview?.settings?.adoptAgree ?? 75}%</summary>
+        <p class="hint">서로 다른 ${S.overview?.settings?.adoptPersons ?? 3}명 이상, ${points}점, 맞았어요 ${S.overview?.settings?.adoptAgree ?? 75}% 이상이면 자동 채택돼요. 명세서로 맞춘 제보는 2점이에요.${editable ? " 줄을 누르면 펼쳐져요. j·k로 고르고 a 채택, x 거절." : " 보기 권한이라 채택·거절은 할 수 없어요."}</p></details></div>`;
     if (!q) return head + skeleton();
     const parts = [];
     const groups = f === "shape" ? shape : q.groups;
     if ((f === "all" || f === "groups" || f === "shape") && groups.length) {
-      const title = f === "shape" ? "" : f === "all" ? `<h2 class="section">채택을 기다리는 제보<span class="count">${groups.length}</span></h2>` : "";
+      // [RVA-24] 첫 묶음(제보)은 제목 없이 바로 줄부터(구간 '제보'가 이미 말해요). 'Claude 추천 없음'과 모양 설명은 목록 아래(조건 1).
       const lead = f === "shape" ? '<p class="hint">같은 회사·부서인데 교대 수나 주기 길이가 쓰는 판과 크게 달라요. 다른 부서일 수 있으니 토론과 메모를 보고 정해 주세요.</p>' : "";
-      parts.push(`${title}${lead}${editable ? L.draftEmpty(groups) : ""}<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>`);
+      parts.push(`<ul class="rows review-rows">${groups.map((g) => groupRow(g, editable, picking)).join("")}</ul>${editable ? L.draftEmpty(groups) : ""}${lead}`);
     }
     if ((f === "all" || f === "asks") && q.asks.length) {
       parts.push(`<h2 class="section">앱에 없는 방식<span class="count">${q.asks.length}</span></h2><p class="hint">앱으로 설정하지 못한 방식이에요. 답을 고르면 보낸 분 앱에 보여요.</p>
@@ -77,7 +83,7 @@ export function plazaViews(A) {
     const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 제보"><b>${n}개 골랐어요</b>
         <button class="btn small ghost" data-act="review-pick-all">${n && n === groups.length ? "모두 풀기" : "보이는 것 모두 고르기"}</button>
         <button class="btn small danger" data-act="review-bulk-reject"${n ? "" : " disabled"}>고른 ${n}개 거절</button></div>` : "";
-    return head + parts.join("") + bar;
+    return head + parts.join("") + bar + foot;
   }
 
   /** One report group as one line; opened, what changed, the notes and the setup. */
@@ -148,11 +154,13 @@ export function plazaViews(A) {
 
   function versionsView() {
     const d = S.data.versions;
-    const head = `<div class="segmented" role="group" aria-label="보기">${seg("versions-show", "conflict", S.versionShow, "정할 것", d?.conflicts)}${seg("versions-show", "history", S.versionShow, "이전 판까지")}</div>
-      <p class="hint">판이 열이에요. 쓰는 판과 다른 칸에 색이 있고, 바뀐 낱말은 밑줄로 보여요. 적용한 휴대폰·맞았어요가 많고 신뢰가 높은 판이 '추천'(금색)이에요. 신뢰 하한은 투표가 적을 때 비율이 튀지 않게 본 값(윌슨 95%)이에요.</p>`;
+    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1·4): 표 읽는 법 네 줄은 목록 아래 접힌 한 줄로, 첫 부서 카드가 위 25% 안에서 시작해요.
+    const head = listHead(`<div class="segmented" role="group" aria-label="보기">${seg("versions-show", "conflict", S.versionShow, "정할 것", d?.conflicts)}${seg("versions-show", "history", S.versionShow, "이전 판까지")}</div>`, "");
+    const foot = `<details class="tip" data-key="versions-how"><summary>표 읽는 법 · 추천(금색)은 어떻게 정하나요</summary>
+      <p class="hint">판이 열이에요. 쓰는 판과 다른 칸에 색이 있고, 바뀐 낱말은 밑줄로 보여요. 적용한 휴대폰·맞았어요가 많고 신뢰가 높은 판이 '추천'(금색)이에요. 신뢰 하한은 투표가 적을 때 비율이 튀지 않게 본 값(윌슨 95%)이에요.</p></details>`;
     if (!d) return head + skeleton(2);
     if (!d.items.length) return head + empty(S.versionShow === "history" ? "판이 여럿인 부서가 없어요" : "정할 판이 없어요", "같은 회사 부서에 판이 둘 이상 생기면 여기와 메뉴에 숫자로 보여요.");
-    return head + d.items.map(versionTable).join("");
+    return head + d.items.map(versionTable).join("") + foot;
   }
 
   /**
@@ -223,10 +231,12 @@ export function plazaViews(A) {
 
   function companiesView() {
     const edit = can("companies", "edit");
-    return `<div class="searchbar"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
-        enterkeyhint="search" aria-label="회사 찾기">${edit ? `<button class="btn" data-act="company-pick-mode" aria-pressed="${Boolean(S.companyPick)}">${S.companyPick ? "선택 마침" : "여러 개 고르기"}</button>
-        <button class="btn primary" data-act="new-company">${icon(P.plus)}회사 만들기</button>` : ""}</div>
-      ${edit && !S.query ? similarCard() : ""}<div id="company-list">${companyRows()}</div>`;
+    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 찾기·고르기·회사 만들기 한 줄(좁은 폭은 아이콘), '같은 회사일까요?'는 목록 아래.
+    return `<div class="toolbar list-top company-top"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
+        enterkeyhint="search" aria-label="회사 찾기">${edit ? `${S.companyPick ? '<button class="btn" data-act="company-pick-mode" aria-pressed="true">선택 마침</button>'
+          : `<button class="btn icon-only" data-act="company-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}</button>`}
+        <button class="btn primary" data-act="new-company" aria-label="회사 만들기">${icon(P.plus)}<span class="lbl">회사 만들기</span></button>` : ""}</div>
+      <div id="company-list">${companyRows()}</div>${edit && !S.query ? similarCard() : ""}`;
   }
 
   /** 1.39 [ADM3-45] 실서버 둘러보기 B2: 이름이 비슷한 회사 짝. 제보·참여가 많은 쪽으로 합치거나 '다른 회사예요'. */
@@ -258,8 +268,7 @@ export function plazaViews(A) {
     const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 회사"><b>${n}개 골랐어요</b>
         <button class="btn small" data-act="company-bulk" data-key="hide"${n ? "" : " disabled"}>회사 찾기에서 숨기기</button>
         <button class="btn small primary" data-act="company-bulk" data-key="show"${n ? "" : " disabled"}>다시 보이기</button></div>` : "";
-    return `<p class="meta">${list.length}곳${S.data.list.total && S.data.list.total > list.length ? ` / ${S.data.list.total}곳` : ""} · 머리글을 누르면 그 순서로 봐요(처음은 새로 생긴 순).</p>
-      <div class="table-wrap"><table class="list companies"><thead><tr>${picking ? '<th scope="col" class="pickcol"><span class="sr">고르기</span></th>' : ""}${COMPANY_COLS.map(th).join("")}</tr></thead>
+    return `<div class="table-wrap"><table class="list companies"><thead><tr>${picking ? '<th scope="col" class="pickcol"><span class="sr">고르기</span></th>' : ""}${COMPANY_COLS.map(th).join("")}</tr></thead>
       <tbody>${list.map((c) => {
         const share = badShare(c);
         return `<tr class="${S.companyPick?.has(c.id) ? "picked" : ""}">${picking ? `<td class="pick"><input type="checkbox" class="check" data-act="company-pick" data-id="${c.id}" aria-label="${esc(c.name)} 고르기"${S.companyPick.has(c.id) ? " checked" : ""}></td>` : ""}
@@ -267,7 +276,8 @@ export function plazaViews(A) {
           ${c.mergedInto ? '<span class="pill">합쳐짐</span>' : c.hidden ? '<span class="pill">숨김</span>' : ""}${c.aliases ? `<small>다른 이름 ${c.aliases}</small>` : ""}${c.previous ? `<small>이전 판 ${c.previous}</small>` : ""}</td>
         ${num("규칙", c.rules)}${num("대기", c.pending, true)}${num("제보", c.reports)}${num("참여", c.members)}${num("30일 적용", c.uses30)}
         <td class="n${share !== null && share >= 40 && c.ok + c.bad >= 5 ? " hot" : ""}"><span class="lab">달라요</span> ${share === null ? "–" : `${share}%`}${c.bad ? ` <small>${c.bad}표</small>` : ""}</td></tr>`;
-      }).join("")}</tbody></table></div>${bar}`;
+      }).join("")}</tbody></table></div>
+      <p class="meta list-note">${list.length}곳${S.data.list.total && S.data.list.total > list.length ? ` / ${S.data.list.total}곳` : ""} · 머리글을 누르면 그 순서로 봐요(처음은 새로 생긴 순).</p>${bar}`;
   }
 
   // ---- what these screens do ----
