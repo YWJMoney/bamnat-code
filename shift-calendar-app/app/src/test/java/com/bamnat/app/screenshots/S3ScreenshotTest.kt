@@ -175,4 +175,21 @@ class S3ScreenshotTest : ScreenshotBase() {
         val ratio = com.bamnat.core.layout.Contrast.ratio(argb, head)
         assertTrue("예시의 달 이름이 머리 색 위에서 읽혀요 (대비 $ratio)", ratio >= com.bamnat.core.recipe.PartFloor.SMALL)
     }
+
+    /** RVS-03 (검토 SN-10): a look with 칸 꾸밈 on the 근무 띠 판 says once that it shows on 월; a tap goes there and it is not said again. */
+    @Test fun aCellLookSaysItShowsOnTheMonth() = shoot("s3/sn10_cell_look_board_light_100_folded", FOLDED) {
+        val look = Recipe("칸 꾸밈", styles = WorkStyle.entries.toSet(), pieces = listOf(Piece(PieceKind.PARTS, mapOf("parts" to listOf(
+            mapOf("id" to "cal.cell", "fill" to 0xFFE3F2FDL, "r" to 12L),
+        )))))
+        runBlocking {
+            c.recipes.apply(look, "CELL2345", 1, PersonalCalendar.MAIN, look.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap())
+            c.settingsRepository.update { it.copy(tabViews = com.bamnat.core.layout.TabViews(cal = com.bamnat.core.layout.CalendarBoard.BAND).encode()) }
+        }
+        settle()
+        assertTrue("근무 띠 판에서 한 줄로 말해요", appears("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", exact = true))
+        tapText("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", exact = true)
+        settle()
+        assertTrue("월 판으로", gone("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", exact = true))
+        assertTrue(com.bamnat.core.layout.TabViews.decode(c.settingsRepository.current.tabViews).cal == com.bamnat.core.layout.CalendarBoard.MONTH)
+    }
 }

@@ -330,8 +330,9 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     val a = org.json.JSONObject(b).optJSONArray("pieces")
                     a != null && (0 until a.length()).any { a.optJSONObject(it)?.optString("kind") !in keys }
                 }.getOrDefault(false) } == true
-                _state.value = _state.value.copy(error = if (newer) "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
-                    else "작품이 오는 길에 바뀌었어요. 받지 않았어요")
+                // 2.0.0 [RVS-05] 검토 U09b-12 ('오는 길에 바뀌었어요'는 누가 바꾼 것처럼 들려요): what happened and what to do, in plain words.
+                _state.value = _state.value.copy(error = if (newer) "새 판에서 만든 작품이에요 · 앱을 업데이트하면 열려요"
+                    else "작품을 다 받지 못했어요 · 잠시 뒤 다시 열어 주세요")
             } catch (e: Exception) {
                 // 1.39 [MKP-03] Shown from the card already: it stays, and the problem is said once below.
                 _state.value = if (_state.value.doc != null) _state.value.copy(message = RecipeClient.problem(e)) else _state.value.copy(error = RecipeClient.problem(e))
