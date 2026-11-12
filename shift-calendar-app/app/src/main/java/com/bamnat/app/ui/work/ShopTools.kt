@@ -2,7 +2,6 @@ package com.bamnat.app.ui.work
 
 import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.guide.FeatureCard
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Cloud
@@ -328,7 +326,22 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
     ToolScreen("직원 근무표", onClose, action = "저장", onAction = ::save) {
         if (roster.staff.isNotEmpty()) {
             SectionCard(title = "한 주 근무표") {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                // 2.0.0 [RVJ-20] 검토 BOSS-62: the grid (64 + 56 × 7 = 456dp) only where it fits; a phone's width (접은 폴드 약 369dp)
+                // and big text get each day on its own line with who works when, so nothing is pushed off to the side.
+                androidx.compose.foundation.layout.BoxWithConstraints {
+                if (maxWidth < 456.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DayOfWeek.entries.forEach { d ->
+                            val on = roster.staff.mapNotNull { s -> s.shifts[d]?.let { sh -> "${s.name.ifBlank { "이름 없음" }} ${short(sh.start)}-${short(sh.end)}" } }
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(32.dp))
+                                Text(on.joinToString(" · ").ifEmpty { "쉬어요" }, style = MaterialTheme.typography.bodySmall,
+                                    color = if (on.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                } else Row {
                     Column {
                         Text("", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(64.dp).padding(vertical = 4.dp))
                         roster.staff.forEach { s ->
@@ -347,6 +360,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                             }
                         }
                     }
+                }
                 }
             }
             val cost = LaborCost.month(roster, month)
@@ -387,7 +401,8 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
             roster = roster.copy(staff = roster.staff + Staff(UUID.randomUUID().toString(), "", minimum))
         }) { Text(if (com.bamnat.core.report.StaffReport.canAdd(roster, pro)) "직원 더하기" else "직원 더하기 (4명부터 프로)") }
         Hint("직원 ${com.bamnat.core.report.StaffReport.FREE_STAFF}명까지는 무료예요. 적어 둔 근무표는 언제든 볼 수 있어요.")
-        Hint("주휴수당은 한 주 15시간 이상이면 한 주 시간 ÷ 40 × 8시간만큼 줘요. 4대보험 사장님 몫은 국민연금 4.75%, 건강보험 3.595%, 장기요양, 고용보험 1.15%(150명 미만)로 셌어요.")
+        // 2.0.0 [RVJ-20] 검토 BOSS-62: the shares of the month on screen, not 2026's in words.
+        Hint("주휴수당은 한 주 15시간 이상이면 한 주 시간 ÷ 40 × 8시간만큼 줘요. 4대보험 사장님 몫은 ${com.bamnat.core.work.LaborCost.employerRatesText(month.atDay(1))}로 셌어요.")
     }
 }
 

@@ -883,6 +883,60 @@ export async function sharedPayOut(text, hash) {
   return { body: out, hash: await sha256hex(out) };
 }
 
+/**
+ * 2.0.0 [PC-28] 달 넘김 날짜 문제 (나간 판 1.36.1~1.39.0): with a 달 넘김 of 스르륵·책장 넘기기·움직이지 않기 — 움직임 끄기 (of:1) makes it
+ * 움직이지 않기 — the day tapped on the calendar opened a month on (11월 12일 → 12월 10일), and a shift held down went in there. 2.0.0
+ * (versionCode [TURN_SAFE_APP]) fixed the app. A work read by an app before it — one that sends no app=, as their 작품 열기 does not —
+ * is served with that turn as 밀기 (the app's own), the rest of its 움직임 as made; 2.0.0 and newer read it as made. Nothing stored
+ * changes, so the operator's 판 and the maker's own (never changed here) stay as they were; the hash is the served text's, as
+ * [sharedPayOut]'s, so a list's card and the work read whole agree for one app. A phone that already wears such a work keeps it as it
+ * is (no new 판 is told of); 스튜디오 › 움직임 › 달 넘길 때 '밀기' is the way round there.
+ */
+export const TURN_SAFE_APP = 54;
+const TURN_RISK = new Set(["fade", "flip", "none"]);
+
+/** [PC-28] A 움직임 ("tn:fade|td:glow|sp:n") an app before [TURN_SAFE_APP] reads safely: the same, its 달 넘김 밀기. */
+export function turnSafeMotion(m) {
+  if (typeof m !== "string" || m === "") return m;
+  const parts = m.split("|");
+  const at = new Map(parts.map((x) => [x.slice(0, x.indexOf(":")), x.slice(x.indexOf(":") + 1)]));
+  if (at.get("of") === "1") {
+    // 움직임 끄기: nothing moves but the month, which slides as the pager does (the app's own, no day moved under the finger).
+    return ["tn:slide", "td:none", "wr:none", at.has("sp") ? `sp:${at.get("sp")}` : null].filter(Boolean).join("|");
+  }
+  if (!TURN_RISK.has(at.get("tn"))) return m;
+  return parts.map((x) => (x.startsWith("tn:") ? "tn:slide" : x)).join("|");
+}
+
+/** [PC-28] [text] as an app at [app] (0: none said) may read it: unchanged for [TURN_SAFE_APP] and newer, else [turnSafeMotion]. */
+export async function turnSafeOut(text, hash, app) {
+  if (app >= TURN_SAFE_APP || typeof text !== "string" || !text.includes('"motion"')) return { body: text, hash };
+  let v;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    return { body: text, hash };
+  }
+  let changed = false;
+  for (const p of Array.isArray(v?.pieces) ? v.pieces : []) {
+    if (p?.kind !== "appFeel" || typeof p.motion !== "string") continue;
+    const m = turnSafeMotion(p.motion);
+    if (m !== p.motion) {
+      p.motion = m;
+      changed = true;
+    }
+  }
+  if (!changed) return { body: text, hash };
+  const out = recipeCanonical(v);
+  return { body: out, hash: await sha256hex(out) };
+}
+
+/** What someone else's phone at [app] reads of a stored [text]: no company pay part ([sharedPayOut]), a safe 달 넘김 ([turnSafeOut]). */
+async function servedOut(text, hash, app) {
+  const shared = await sharedPayOut(text, hash);
+  return turnSafeOut(shared.body, shared.hash, app);
+}
+
 export async function cleanRecipe(textOrObject) {
   const textIn = typeof textOrObject === "string" ? textOrObject : recipeCanonical(textOrObject);
   if (new TextEncoder().encode(textIn).length > RECIPE.maxBytes) fail("too_big");
@@ -1580,9 +1634,10 @@ async function recipeList(d, env, url) {
   // 1.39 [PLZC-40] 만든 분 표식·팔로워 수(장터 카드의 만든 분 줄).
   const marks = await makerMarks(d, env, page.map((r) => r.maker), now);
   return d.json({ style: style ?? null, sort, ...(kind ? { kind } : {}), ...(scope ? { scope } : {}), ...(tab ? { tab } : {}),
-    // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part.
+    // 1.39 [PAYP-08] A work put up before 1.39 is served without a company pay part. 2.0.0 [PC-28] and, to an app before 2.0.0, with
+    // a safe 달 넘김.
     items: await Promise.all(page.map(async (r) => ({ ...listItem(r, now), ...markFields(marks, r.maker),
-      ...(withBody ? await sharedPayOut(r.body, r.hash) : {}) }))),
+      ...(withBody ? await servedOut(r.body, r.hash, app) : {}) }))),
     next: cursor + RECIPE_LIMITS.pageSize < scored.length ? cursor + RECIPE_LIMITS.pageSize : null },
   200, { "cache-control": `public, max-age=${RECIPE_LIMITS.edgeSeconds}` });
 }
@@ -1608,8 +1663,9 @@ async function show(d, env, request, code, url) {
     const old = await d.one(env, "SELECT version, hash, body FROM recipe_versions WHERE code = ? AND version = ?", code, ver);
     if (old) version = old;
   }
-  // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent).
-  if (!mine) Object.assign(version, await sharedPayOut(version.body, version.hash));
+  // 1.39 [PAYP-08] Someone else's: without a company pay part (the maker's own as it was sent). 2.0.0 [PC-28] and, to an app before
+  // 2.0.0 (one that sends no app= is), with a safe 달 넘김; the maker's own stays as made, so a 새 판 made from it keeps its 움직임.
+  if (!mine) Object.assign(version, await servedOut(version.body, version.hash, appCodeOf(url)));
   const myVote = dev ? await d.one(env, "SELECT value, reason FROM recipe_votes WHERE code = ? AND device = ?", code, dev) : null;
   const out = { ...listItem(r, Date.now()), ...markFields(await makerMarks(d, env, [r.maker]), r.maker), ...version, scope: r.scope, mine, ...(myVote ? { myVote: myVote.value, myReason: myVote.reason } : {}),
     // 1.39 판 정리: off the 장터, still the wearer's (the app says so and keeps what is put in).
