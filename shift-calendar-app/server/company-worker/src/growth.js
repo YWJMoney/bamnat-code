@@ -3,6 +3,7 @@ import { DAY } from "./units.js";
 import { grams, likeness, titleFrom } from "./inbox.js";
 import { fcmTell } from "./fcm.js";
 import { grantMakerReward } from "./maker-reward.js";
+import { textProblem } from "./recipes.js";
 
 // ---- 1.36 자가 발전 바퀴 [GRW-01]~[GRW-06] (사용자 2026-11-01 "자가 발전을 자동으로", 2차 조사 4장) ----
 //
@@ -10,8 +11,9 @@ import { grantMakerReward } from "./maker-reward.js";
 //                       붙어요) 와 요청 판에서 14일 동안 아무도 못 만든 요청.
 //   2 저절로 묶어요     비슷한 요구는 한 묶음(studio_needs)이 되고, 부탁한 휴대폰 수를 세요(같은 휴대폰은 한 번). 낱말 비교는 문의 정리함과
 //                       같은 likeness예요.
-//   3 사용자 부품으로   부탁한 분이 셋이 되면 장터 요청 판에 '여러 분이 부탁했어요'로 저절로 올라가요. 누가 만들어 '완성'하면 묶음은 '풀림'이
-//     먼저 풀려요       되고, 부탁한 분 모두의 문의에 답이 가요(앱의 새 답 알림).
+//   3 사용자 부품으로   부탁한 분이 셋(서로 다른 네트워크도 셋)이 되면 '올리기 전 확인'에 와요. 운영자·Claude가 누구나 알아볼 짧은 제목으로
+//     먼저 풀려요       다듬어 올리면 장터 요청 판에 '여러 분이 부탁했어요'로 보여요(2.0.0 [RVQ-29] 검토 SVC-17: 나만 보는 문의의 첫 문장이
+//                       그대로 운영자 이름으로 올라갔어요). 누가 만들어 '완성'하면 묶음은 '풀림'이 되고, 부탁한 분 모두의 문의에 답이 가요.
 //   4 승격 사다리       장터 작품을 실제로 쓴 사람 수와 7일 유지율(Rank와 같은 숫자, 표 수가 아님)로: 모두의 도구 → 기본 도구 후보.
 //   5 개발자는 맨 끝만  관리자 앱의 두 목록('조립으로 못 푸는 요구', '기본 도구 후보')에서 정식 손잡이로 만들 것만 골라요.
 //   6 손잡이 지도       요구가 많은 영역·도구 순위와 출시 노트 줄("여러분이 부탁해서 생긴 꾸미기", "모두의 도구에서 기본이 된 것").
@@ -37,8 +39,8 @@ export const GROWTH = {
   candidateKept: 50,
 };
 
-export const NEED_STATES = ["open", "market", "solved", "building", "official", "declined"];
-export const NEED_STATE_NAMES = { open: "모이는 중", market: "장터에 올림", solved: "사용자 부품으로 풀림", building: "정식으로 만드는 중",
+export const NEED_STATES = ["open", "ready", "market", "solved", "building", "official", "declined"];
+export const NEED_STATE_NAMES = { open: "모이는 중", ready: "올리기 전 확인", market: "장터에 올림", solved: "사용자 부품으로 풀림", building: "정식으로 만드는 중",
   official: "기본 손잡이로 나옴", declined: "하지 않기로 함" };
 export const TIER_NAMES = { 2: "모두의 도구", 3: "기본 도구 후보", 4: "기본 도구로 채택" };
 const GRW_STYLES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
@@ -75,7 +77,17 @@ const missWeek = (now) => {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() - day)).toISOString().slice(0, 10);
 };
 /** [GRW-03] 요청 판 한 줄이 묶음에서 왔으면 부탁한 분 수. */
-export const GROWTH_COLUMNS = ["ALTER TABLE recipe_requests ADD COLUMN askers INTEGER NOT NULL DEFAULT 0"];
+export const GROWTH_COLUMNS = ["ALTER TABLE recipe_requests ADD COLUMN askers INTEGER NOT NULL DEFAULT 0",
+  // 2.0.0 [RVQ-29] 검토 SVC-17: 부탁마다 무리(cluster, 무작위 이름). 그 묶음에 그날 처음 부탁한 네트워크만 새 무리이고, 같은 네트워크의 다음 부탁은
+  // 'x'(세지 않음)예요. 네트워크 해시는 줄에 남기지 않고 하루짜리 한도 칸(counters)으로만 봐요(처리방침: 네트워크 해시는 2시간·한도 칸은 그 기간).
+  "ALTER TABLE studio_need_links ADD COLUMN cluster TEXT NOT NULL DEFAULT ''",
+  // 운영자·Claude가 장터에 올릴 제목을 다듬었는지(첫 부탁 글에서 저절로 뽑은 제목은 0).
+  "ALTER TABLE studio_needs ADD COLUMN titled INTEGER NOT NULL DEFAULT 0"];
+
+/** [RVQ-29] 묶음에 부탁한 서로 다른 네트워크 수(SQL, 묶음 별칭 n). 네트워크를 모르는 부탁(요청 판·옛 줄)은 휴대폰마다 하나, 'x'는 세지 않아요. */
+const NETS_SQL = "(SELECT COUNT(DISTINCT CASE WHEN l.cluster = '' THEN 'd' || l.device WHEN l.cluster = 'x' THEN NULL ELSE l.cluster END) FROM studio_need_links l WHERE l.need_id = n.id)";
+/** [RVQ-29] 장터 요청 판에 올릴 수 있는 제목인지: 요청 판 글과 같은 거름(연락처·금액·링크·단톡방). 걸리면 그 이유. */
+export const marketTitleProblem = (t) => textProblem(String(t ?? ""));
 
 /** [GRW-01] "[스튜디오 › 달력 칸 › 색] 글" → { area, tool, body }. 다른 머리말이면 영역 없이 글 전체. */
 export function parseWhere(text) {
@@ -96,7 +108,7 @@ const WHERE_WORDS = [[/메모/, "메모"], [/가계부/, "가계부"], [/급여|
  * [GRW-02] 요구 하나를 가장 비슷한 열린 묶음에 붙이거나 새 묶음을 만들어요. 같은 휴대폰이 같은 묶음에 두 번 부탁해도 한 명이에요.
  * Returns the need's id.
  */
-export async function attachNeed(env, { src, ref, device, text, area = "", tool = "", style = null, now }) {
+export async function attachNeed(env, { src, ref, device, text, area = "", tool = "", style = null, net = "", now }) {
   if (await one(env, "SELECT need_id FROM studio_need_links WHERE src = ? AND ref = ?", src, ref)) return null;
   const body = String(text ?? "").trim();
   const g = grams(`${area} ${tool} ${body}`);
@@ -109,10 +121,12 @@ export async function attachNeed(env, { src, ref, device, text, area = "", tool 
   }
   const st = GRW_STYLES.includes(style) ? style : null;
   const short = [...body].slice(0, 200).join("");
+  // [RVQ-29] 그 묶음에 그날 이 네트워크가 처음이면 새 무리, 아니면 'x'(세지 않음). 네트워크를 모르면 휴대폰마다 하나('').
+  const clusterIn = async (needId) => (!net ? "" : (await overLimit(env, now, [["network", `neednet|${needId}|${net}`, 1, DAY]])) ? "x" : `c${randomId(10)}`);
   if (best && score >= GROWTH.same) {
     const seen = await one(env, "SELECT 1 AS x FROM studio_need_links WHERE need_id = ? AND device = ?", best.id, device);
     await batch(env, [
-      stmt(env, "INSERT INTO studio_need_links (src, ref, need_id, device, text, at) VALUES (?, ?, ?, ?, ?, ?)", src, ref, best.id, device, short, now),
+      stmt(env, "INSERT INTO studio_need_links (src, ref, need_id, device, text, at, cluster) VALUES (?, ?, ?, ?, ?, ?, ?)", src, ref, best.id, device, short, now, await clusterIn(best.id)),
       // Words of the first few asks only, so one long group does not swallow everything.
       stmt(env, `UPDATE studio_needs SET askers = askers + ?, updated_at = ?, style = COALESCE(style, ?),
         words = CASE WHEN length(words) < 600 THEN words || ' ' || ? ELSE words END WHERE id = ?`, seen ? 0 : 1, now, st, short, best.id),
@@ -123,20 +137,26 @@ export async function attachNeed(env, { src, ref, device, text, area = "", tool 
   await batch(env, [
     stmt(env, `INSERT INTO studio_needs (id, title, area, tool, style, words, askers, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`,
       id, titleFrom(body) || "(내용 없음)", area, tool, st, `${area} ${tool} ${short}`.trim(), now, now),
-    stmt(env, "INSERT INTO studio_need_links (src, ref, need_id, device, text, at) VALUES (?, ?, ?, ?, ?, ?)", src, ref, id, device, short, now),
+    stmt(env, "INSERT INTO studio_need_links (src, ref, need_id, device, text, at, cluster) VALUES (?, ?, ?, ?, ?, ?, ?)", src, ref, id, device, short, now, await clusterIn(id)),
   ]);
   return id;
 }
 
+/** [RVQ-29] 장터로 셀 부탁한 분: 휴대폰 수와 서로 다른 네트워크 수 중 작은 것. */
+async function counted(env, needId) {
+  const r = await one(env, `SELECT n.askers, n.state, ${NETS_SQL} AS nets FROM studio_needs n WHERE n.id = ?`, needId);
+  return r ? { ...r, counted: Math.min(r.askers, r.nets) } : null;
+}
+
 /** [GRW-01] A studio inquiry just sent: into the groups (never fails the question). */
-export async function needFromInquiry(env, id, device, kind, text, info, now) {
+export async function needFromInquiry(env, id, device, kind, text, info, now, net = "") {
   if (kind !== "studio") return;
   try {
     const w = parseWhere(text);
-    const needId = await attachNeed(env, { src: "inq", ref: id, device, text: w.body, area: w.area, tool: w.tool, style: info?.studio ?? null, now });
-    // PC 확인 8d290ec3: 보낸 휴대폰에 '2/3명 모였어요'를 보여 줘요.
-    const n = needId && await one(env, "SELECT askers, state FROM studio_needs WHERE id = ?", needId);
-    return n ? { askers: n.askers, goal: GROWTH.marketAskers, state: n.state } : undefined;
+    const needId = await attachNeed(env, { src: "inq", ref: id, device, text: w.body, area: w.area, tool: w.tool, style: info?.studio ?? null, net, now });
+    // PC 확인 8d290ec3: 보낸 휴대폰에 '2/3명 모였어요'를 보여 줘요. [RVQ-29] 서로 다른 네트워크로 센 수예요.
+    const n = needId && await counted(env, needId);
+    return n ? { askers: n.counted, goal: GROWTH.marketAskers, state: n.state === "ready" ? "open" : n.state } : undefined;
   } catch (e) {
     console.error("growth attach", e && e.stack ? e.stack : String(e));
   }
@@ -194,9 +214,15 @@ export async function growthTick(env, now) {
   const stale = await all(env, `SELECT id, device, style, body FROM recipe_requests WHERE state = 'waiting' AND hidden = 0 AND device != 'operator'
     AND created_at < ? AND id NOT IN (SELECT ref FROM studio_need_links WHERE src = 'req') LIMIT 100`, now - GROWTH.staleDays * DAY);
   for (const q of stale) await attachNeed(env, { src: "req", ref: q.id, device: q.device, text: q.body, style: q.style, now });
-  // 2 셋 이상 모인 묶음: 장터 요청 판에 '여러 분이 부탁했어요'.
-  const ready = await all(env, "SELECT * FROM studio_needs WHERE state = 'open' AND askers >= ? AND request_id IS NULL LIMIT 50", GROWTH.marketAskers);
-  for (const n of ready) await toMarket(env, n, now);
+  // 2 셋 이상 모인 묶음: 2.0.0 [RVQ-29] 검토 SVC-17 저절로 올리지 않고 '올리기 전 확인'으로. 서로 다른 네트워크도 셋이어야 해요.
+  //   운영자·Claude가 제목을 다듬어 올려요(growthAdmin 'market'). 이미 장터에 올렸다 내린 묶음(request_id 있음)은 사람이 정한 대로 둬요.
+  const ready = await all(env, `SELECT n.id, n.title FROM studio_needs n WHERE n.state = 'open' AND n.askers >= ? AND n.request_id IS NULL AND ${NETS_SQL} >= ? LIMIT 50`,
+    GROWTH.marketAskers, GROWTH.marketAskers);
+  if (ready.length) {
+    await batch(env, ready.map((n) => stmt(env, "UPDATE studio_needs SET state = 'ready', updated_at = ? WHERE id = ? AND state = 'open'", now, n.id)));
+    await audit(env, now, "need_ready", `${ready.length}개`, ready.slice(0, 5).map((n) => n.title).join(" · "));
+  }
+
   // 모인 묶음의 요청 판 줄은 부탁한 분 수를 따라가요.
   await run(env, `UPDATE recipe_requests SET askers = (SELECT askers FROM studio_needs WHERE request_id = recipe_requests.id)
     WHERE device = 'operator' AND id IN (SELECT request_id FROM studio_needs WHERE request_id IS NOT NULL)`);
@@ -204,6 +230,7 @@ export async function growthTick(env, now) {
 }
 
 async function toMarket(env, n, now) {
+  // [RVQ-29] 다듬은 제목만 나가요(growthAdmin이 거름을 지난 제목을 n.title에 적은 뒤 불러요).
   const id = `q${randomId(12)}`;
   const body = [...`${n.area ? `[${n.area}${n.tool ? ` › ${n.tool}` : ""}] ` : ""}${n.title}`].slice(0, 200).join("");
   await batch(env, [
@@ -285,8 +312,10 @@ export async function missList(env, now) {
 
 async function needView(env, n) {
   const links = await all(env, "SELECT src, ref, text, at FROM studio_need_links WHERE need_id = ? ORDER BY at LIMIT 5", n.id);
-  const total = await one(env, "SELECT COUNT(*) AS n FROM studio_need_links WHERE need_id = ?", n.id);
-  return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, state: n.state, stateName: NEED_STATE_NAMES[n.state],
+  const total = await one(env, `SELECT COUNT(*) AS n, ${NETS_SQL.replace("l.need_id = n.id", "l.need_id = ?1")} AS nets FROM studio_need_links WHERE need_id = ?1`, n.id);
+  // [RVQ-29] 서로 다른 네트워크 수, 다듬은 제목인지, 지금 제목이 요청 판 거름에 걸리는지.
+  return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, nets: total.nets, titled: Boolean(n.titled),
+    problem: marketTitleProblem(n.title), state: n.state, stateName: NEED_STATE_NAMES[n.state],
     request: n.request_id ?? null, code: n.code ?? null, note: n.note, version: n.version ?? null, at: iso(n.created_at), updated: iso(n.updated_at),
     samples: links.map((l) => ({ src: l.src, ref: l.ref, text: l.text, at: iso(l.at) })) };
 }
@@ -338,9 +367,10 @@ export async function growthAdmin(request, env, url, path, now) {
     const state = NEED_STATES.includes(url.searchParams.get("state")) ? url.searchParams.get("state") : null;
     // 기본: 아직 끝나지 않은 것 (모이는 중·장터·만드는 중), 부탁한 분 많은 순. unsolved: 장터에 올렸는데 14일 넘게 아무도 못 푼 것.
     const show = url.searchParams.get("show");
-    const where = state ? "state = ?" : show === "unsolved" ? "state = 'market' AND updated_at < ?" : show === "ended" ? "state IN ('solved', 'official', 'declined')" : "state IN ('open', 'market', 'building')";
+    const where = state ? "state = ?" : show === "unsolved" ? "state = 'market' AND updated_at < ?" : show === "ended" ? "state IN ('solved', 'official', 'declined')" : "state IN ('open', 'ready', 'market', 'building')";
     const args = state ? [state] : show === "unsolved" ? [now - GROWTH.staleDays * DAY] : [];
-    const rows = await all(env, `SELECT * FROM studio_needs WHERE ${where} ORDER BY askers DESC, updated_at DESC LIMIT 100`, ...args);
+    // [RVQ-29] '올리기 전 확인'이 맨 위.
+    const rows = await all(env, `SELECT * FROM studio_needs WHERE ${where} ORDER BY state = 'ready' DESC, askers DESC, updated_at DESC LIMIT 100`, ...args);
     const counts = Object.fromEntries((await all(env, "SELECT state, COUNT(*) AS n FROM studio_needs GROUP BY state")).map((r) => [r.state, r.n]));
     const unsolved = await one(env, "SELECT COUNT(*) AS n FROM studio_needs WHERE state = 'market' AND updated_at < ?", now - GROWTH.staleDays * DAY);
     const items = [];
@@ -352,17 +382,31 @@ export async function growthAdmin(request, env, url, path, now) {
     const n = await one(env, "SELECT * FROM studio_needs WHERE id = ?", m[1]);
     if (!n) return json({ error: "not_found" }, 404);
     const body = await readJson(request, 2048);
+    // [RVQ-29] Claude 열쇠는 제목 다듬기와 장터에 올리기만(정식·하지 않기·합치기는 사람).
+    if (env.actor?.key && !["title", "market"].includes(body.action)) return json({ error: "no_permission" }, 403);
     const note = typeof body.note === "string" ? [...body.note.trim()].slice(0, 300).join("") : n.note;
     let told = 0;
+    // [RVQ-29] 장터에 올릴 제목: 새로 준 제목이나 이미 다듬은 제목. 요청 판 글과 같은 거름을 지나야 해요.
+    const newTitle = typeof body.title === "string" ? [...body.title.replace(/\s+/g, " ").trim()].slice(0, 60).join("") : null;
     switch (body.action) {
-      case "market":
-        if (!["open"].includes(n.state)) return json({ error: "state" }, 409);
+      case "market": {
+        if (!["open", "ready"].includes(n.state)) return json({ error: "state" }, 409);
+        if (newTitle !== null && newTitle.length < 2) return json({ error: "title", field: "title" }, 400);
+        if (newTitle === null && !n.titled) return json({ error: "title_first", field: "title" }, 400);
+        const t = newTitle ?? n.title;
+        const why = marketTitleProblem(t);
+        if (why) return json({ error: why, field: "title" }, 400);
+        if (newTitle !== null) {
+          await run(env, "UPDATE studio_needs SET title = ?, titled = 1, updated_at = ? WHERE id = ?", t, now, n.id);
+          n.title = t;
+        }
         // 2.0.0 [RVA-04] 검토 ADM-05: 내렸던 요구는 가려 둔 요청 판 줄을 다시 보여요(새 줄을 또 만들지 않아요).
         if (n.request_id) {
           await batch(env, [stmt(env, "UPDATE recipe_requests SET hidden = 0 WHERE id = ? AND device = 'operator'", n.request_id),
             stmt(env, "UPDATE studio_needs SET state = 'market', updated_at = ? WHERE id = ?", now, n.id)]);
         } else await toMarket(env, n, now);
         break;
+      }
       case "unmarket":
         // 2.0.0 [RVA-04] 검토 ADM-05: '장터에 올리기'를 내려요. 요청 판 줄은 가리고 요구는 열린 채로(줄을 남겨 두어 매시간 저절로 다시 올라가지 않아요).
         if (n.state !== "market" || !n.request_id) return json({ error: "state" }, 409);
@@ -389,9 +433,12 @@ export async function growthAdmin(request, env, url, path, now) {
           updated_at = ? WHERE id = ?`, now, n.id);
         break;
       case "title": {
-        const t = typeof body.title === "string" ? [...body.title.trim()].slice(0, 60).join("") : "";
+        const t = newTitle ?? "";
         if (t.length < 2) return json({ error: "title", field: "title" }, 400);
-        await run(env, "UPDATE studio_needs SET title = ?, updated_at = ? WHERE id = ?", t, now, n.id);
+        // [RVQ-29] 장터에 보이는 제목이니 요청 판 글과 같은 거름.
+        const why = marketTitleProblem(t);
+        if (why) return json({ error: why, field: "title" }, 400);
+        await run(env, "UPDATE studio_needs SET title = ?, titled = 1, updated_at = ? WHERE id = ?", t, now, n.id);
         if (n.request_id) await run(env, "UPDATE recipe_requests SET body = ? WHERE id = ? AND device = 'operator'", t, n.request_id);
         break;
       }

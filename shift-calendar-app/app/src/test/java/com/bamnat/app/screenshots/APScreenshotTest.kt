@@ -212,7 +212,7 @@ class APScreenshotTest : ScreenshotBase() {
         assertTrue(appears("‘(주)예시정밀 · 생산팀’ 급여 방식을 쓰고 있어요", exact = true))
         // [PAYG-04] 1.30 BA: the 기본급 is asked by the pay screen's one card, not by a line here.
         assertTrue(gone("기본급을 넣어야 예상 급여가 맞아요", exact = true))
-        assertTrue(appears("맞았어요", exact = true))
+        assertTrue(appears("맞아요", exact = true))
         assertTrue(appears("달라요", exact = true))
         assertTrue(appears("고쳐서 제안하기", exact = true))
         tapText("달라요", exact = true)

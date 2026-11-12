@@ -947,7 +947,7 @@ private fun PayResult(
         if (payTab == PayTab.RULES && locked) {
             SectionCard(title = PayTab.RULES.labelFor(settings.workStyle), trailing = { TextButton(onClick = onEditRules) { Text("열기") } }) {
                 Text(com.bamnat.app.ui.company.SharedPayWords.TITLE, style = MaterialTheme.typography.bodyLarge)
-                Text(com.bamnat.app.ui.company.SharedPayWords.HIDDEN, style = MaterialTheme.typography.bodySmall,
+                Text(com.bamnat.app.ui.company.SharedPayWords.hidden(profile.wageType), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(com.bamnat.app.ui.company.SharedPayWords.ASK, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
             }

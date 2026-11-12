@@ -14,6 +14,7 @@ import com.bamnat.app.data.encodeShiftMissions
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.alarm.AlarmMission
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -45,7 +46,7 @@ class SureAlarmTest {
     private var running: ServiceController<AlarmService>? = null
 
     private fun ring(type: Long = 3, label: String? = null) =
-        RingRequest("주간", LocalDate.now(), LocalTime.of(7, 0), 60, null, System.currentTimeMillis(), label = label, shiftTypeId = type)
+        RingRequest("주간", Today.date(), LocalTime.of(7, 0), 60, null, Today.millis(), label = label, shiftTypeId = type)
 
     private fun start(ring: RingRequest): AlarmService {
         val controller = Robolectric.buildService(AlarmService::class.java,
@@ -149,7 +150,7 @@ class SureAlarmTest {
         assertNotNull("asks later", WakeCheck.pendingRing(app))
         assertEquals(before + 1, alarms.scheduledAlarms.size)
         val ask = alarms.scheduledAlarms.last()
-        assertTrue(ask.triggerAtTime - System.currentTimeMillis() in 4 * 60_000L..5 * 60_000L)
+        assertTrue(ask.triggerAtTime - Today.millis() in 4 * 60_000L..5 * 60_000L)
 
         WakeCheck.ask(app)
         val question = nm.allNotifications.single { it.channelId == Notifications.STATUS_CHANNEL_ID && it.extras.getString("android.title") == "일어났나요?" }

@@ -24,6 +24,27 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     const js = fs.readFileSync(path.join(root, 'calc/calc.js'), 'utf8');
     assert.doesNotMatch(js, /\[(?:WEB|U50|T50|I50a|SPREAD)-\d+\]/);
     assert.match(js, /\/\*@rates\*\/\{"rates":/, '자료를 못 받을 때 값은 rates.json에서 채워요');
+    // [I50c-02] 내 근무 달력: 홈 화면 설치 정보의 아이콘이 모두 있고, 시작 주소는 앱 표시(?app=1), 서비스 워커는 이 사이트 GET만.
+    const mf = JSON.parse(fs.readFileSync(path.join(root, 'shift/manifest.webmanifest'), 'utf8'));
+    assert.equal(mf.start_url, './?app=1');
+    assert.equal(mf.scope, './');
+    for (const i of mf.icons) assert.ok(fs.statSync(path.join(root, 'shift', i.src)).size > 1000, i.src);
+    assert.ok(mf.icons.some((i) => i.purpose === 'maskable' && i.sizes === '512x512'));
+    const sw = fs.readFileSync(path.join(root, 'shift/sw.js'), 'utf8');
+    assert.match(sw, /r\.method !== 'GET' \|\| u\.origin !== location\.origin/);
+    const shift = fs.readFileSync(path.join(root, 'shift/index.html'), 'utf8');
+    assert.match(shift, /<link rel="apple-touch-icon" href="\.\.\/assets\/icon-180\.png">/);
+    // [RVR-37] 순서 없는 듀티: '반복하지 않아요'면 날짜를 눌러 칠하고, 앱이 이어받는 62일까지만.
+    assert.match(shift, /id="paint"[^>]*hidden/);
+    assert.match(shift, /data-c="N"/);
+    assert.match(shift, /MAX=62/);
+    assert.ok(fs.statSync(path.join(root, 'assets/icon-180.png')).size > 1000);
+    // 2.0.0 [RVR-35] 가게 세금 날: 토·일·공휴일이면 다음 날(국세기본법 제5조). 국세청이 알린 2026년 날과 같아요
+    // (2기 부가세 1.25(일) → 1.26(월), 종합소득세 5.31(일) → 6.1(월), 1기 부가세 7.25(토) → 7.27(월)).
+    const shop = fs.readFileSync(path.join(root, 'calc/shop/index.html'), 'utf8');
+    for (const d of ['2026-01-26', '2026-06-01', '2026-07-27', '2026-11-30', '2027-01-25', '2027-07-26']) assert.match(shop, new RegExp(`data-d="${d}"`), d);
+    for (const d of ['2026-01-25', '2026-05-31', '2026-07-25', '2027-07-25']) assert.doesNotMatch(shop, new RegExp(`data-d="${d}"`), d);
+    assert.match(shop, /성실신고확인 대상은 6월 30일까지/);
 
     const bad = (file, text, expect) => {
       const f = path.join(root, file);
@@ -42,6 +63,21 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     bad('calc/y/index.html', '<!-- [WEB-12] -->', /추적 번호 \[WEB-12\]/);
     const ok = py(root, '--verify', '--today', '2026-11-12');
     assert.equal(ok.status, 0, ok.stdout);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// 2.0.0 [RVR-34] 새해 첫날에도 사이트가 만들어져요: 손으로 적은 '2026년'이 남으면 '지난해 숫자' 검사가 막아 CI가 1월 1일에 멈춰요.
+// (앱 시험이 새해 첫날 35개 깨지던 RVR-24와 같은 뿌리) 해가 붙는 글은 THIS·rate()로, 지난 날짜는 '2026. 1. 1.'처럼 적어요.
+test('새해 첫날(2027-01-02)에 만들어도 지난해 숫자가 없어요', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bamnat-site-newyear-'));
+  try {
+    fs.cpSync(remote, path.join(root, 'remote/v1'), { recursive: true });
+    const built = spawnSync('python3', [path.join(site, 'build.py'), root, '--today', '2027-01-02'], { encoding: 'utf8', env: { ...process.env, BAMNAT_SITE_TODAY: '2027-01-02' } });
+    assert.equal(built.status, 0, built.stdout.split('\n').filter((l) => /지난해|Error|Traceback/.test(l)).join('\n') + built.stderr);
+    // 길잡이 글의 4대보험 요율 줄도 그해 값으로 다시 써져요.
+    assert.match(fs.readFileSync(path.join(root, 'guide/alba-33-or-insurance/index.html'), 'utf8'), /올해 근로자 몫은 국민연금 /);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
