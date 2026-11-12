@@ -71,6 +71,10 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.bamnat
+import com.bamnat.app.ui.components.NotesLine
+import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLevel
 import com.bamnat.core.money.BudgetLine
@@ -159,19 +163,36 @@ fun HeroCard(
                 }
             }
         }
-        // 1.37 PC 실사용(자영업 S5-16): '나간 돈 −0원'인데 경비 30만이 있어 헷갈렸어요. 가게 경비는 가게 순수익(들어온 돈)에서 빠져요.
-        if (m.salesCosts > 0) {
-            Text("가게 경비 ${Fmt.won(m.salesCosts)}은 나간 돈이 아니라 들어온 돈의 가게 순수익(매출 − 경비)에서 뺐어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        // 2.0.0 [RVK-29] (검토 HQ-44, 조건 1·4) How these figures were counted was said in up to four grey paragraphs (가게 경비, 안 받은
+        // 일감, the budget's day beside '앞으로의 돈', the repeating costs set aside), and at 글자 200% they filled the first screen with
+        // words. The card says it in one line with ⓘ, and the sentences wait in its sheet. The line under the figures shows only while
+        // one of them was counted apart; with none, the budget's own notes take the line under the budget instead, so a card has one ⓘ.
+        val cycleWord = if (m.range != null) "이번 주기" else "이번 달"
+        val total = status.total
+        val left = status.todayLeft
+        val aheadNote = current && total != null && left != null && aheadSaysToday
+        val fixedNote = current && total != null && status.fixedLeft > 0
+        val notes = buildList {
+            // 1.37 PC 실사용(자영업 S5-16): '나간 돈 −0원'인데 경비 30만이 있어 헷갈렸어요. 가게 경비는 가게 순수익(들어온 돈)에서 빠져요.
+            if (m.salesCosts > 0) add("가게 경비 ${Fmt.won(m.salesCosts)}은 나간 돈이 아니라 들어온 돈의 가게 순수익(매출 − 경비)에서 뺐어요.")
+            // [RECV-04] Work written down but not paid yet stays out of 들어온 돈.
+            if (m.jobOwed > 0) add("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.")
+            // fc374a23 PC 확인 (같은 화면에 '오늘 쓸 수 있는 돈'이 두 숫자).
+            if (aheadNote) add("예산으로 나누면 하루 ${Fmt.won(status.perDay ?: 0)}이에요. 오늘 쓸 돈은 ‘앞으로의 돈’이 통장 잔액으로 셈해요.")
+            if (fixedNote) add("$cycleWord 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 예산에서 미리 빼고 하루에 쓸 돈을 셌어요.")
         }
-        // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
-        if (m.jobOwed > 0) {
-            Text("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.",
-                // 2.0.0 [RVP-13] (조건 6 '빨강은 위험만') An explanation, not a warning: grey like the line above.
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+        val apart = m.salesCosts > 0 || m.jobOwed > 0
+        if (apart) {
+            NotesLine(
+                summary = when {
+                    m.salesCosts > 0 && m.jobOwed > 0 -> "가게 경비·안 받은 일감은 따로 셌어요"
+                    m.salesCosts > 0 -> "가게 경비 ${wonBrief(m.salesCosts)}원은 순수익에서 뺐어요"
+                    else -> "안 받은 일감 ${wonBrief(m.jobOwed)}원은 받을 돈에 있어요"
+                },
+                title = "이렇게 셌어요", notes = notes, modifier = Modifier.padding(top = 4.dp),
+            )
         }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
-        val total = status.total
         if (total == null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("예산을 정하면 하루에 쓸 수 있는 돈을 알려 줘요.", style = MaterialTheme.typography.bodyMedium,
@@ -180,11 +201,10 @@ fun HeroCard(
             }
             return@SectionCard
         }
-        val left = status.todayLeft
         // fc374a23 PC 확인 (같은 화면에 '오늘 쓸 수 있는 돈'이 두 숫자): when 앞으로의 돈 says today's money from the accounts, this card
-        // keeps the budget's share as a quiet line under its own name, not a second 오늘 쓸 돈.
-        if (current && left != null && aheadSaysToday) {
-            Text("예산으로는 하루 ${Fmt.won(status.perDay ?: 0)} · 남은 ${status.daysLeft}일. 오늘 쓸 돈은 ‘앞으로의 돈’이 통장으로 셈해요.",
+        // keeps the budget's share as a quiet line under its own name, not a second 오늘 쓸 돈. [RVK-29] Why is in the notes' sheet.
+        if (aheadNote) {
+            Text("예산으로는 하루 ${Fmt.won(status.perDay ?: 0)} · 남은 ${status.daysLeft}일",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp))
         } else if (current && left != null) {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -193,13 +213,19 @@ fun HeroCard(
                     Text("하루 ${Fmt.won(status.perDay ?: 0)} · 남은 ${status.daysLeft}일", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(Fmt.won(left.coerceAtLeast(0)), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
-                    color = if (left <= 0) cal.warning else MaterialTheme.colorScheme.primary)
+                // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Nothing left today is 주의, not 위험: the figure keeps the text colour and the mark
+                // says 주의 in the one caution colour, as the line under it does.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.semantics(mergeDescendants = true) {}) {
+                    if (left <= 0) {
+                        Icon(Icons.Filled.WarningAmber, "주의", tint = MaterialTheme.bamnat.caution, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(Fmt.won(left.coerceAtLeast(0)), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                        color = if (left <= 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary)
+                }
             }
-            if (left < 0) {
-                Text("오늘 몫보다 ${Fmt.won(-left)} 더 썼어요. 내일부터 조금씩 줄여요.", style = MaterialTheme.typography.bodySmall,
-                    color = cal.warning, modifier = Modifier.padding(top = 2.dp))
-            }
+            // [RVK-30] Spent past today's share is 주의 (it can be made up tomorrow), in the line the app says 주의 with ([ToneLine]).
+            if (left < 0) ToneLine("오늘 몫보다 ${Fmt.won(-left)} 더 썼어요. 내일부터 조금씩 줄여요.", Modifier.padding(top = 2.dp))
             Spacer(Modifier.height(10.dp))
         }
         // 1.38 (1.37 PC 확인: 예산 카드를 누르면 바로 '예산 정하기' 창이 떠요): a tap opens the categories' budgets right here;
@@ -216,10 +242,15 @@ fun HeroCard(
                 TextButton(onClick = onBudget, modifier = Modifier.align(Alignment.End)) { Text("예산 고치기") }
             }
         }
-        if (current && status.fixedLeft > 0) {
-            // 2.0.0 [RVK-20] With 월급날 기준 the payments set aside are the cycle's (until its last day), so they are said so.
-            Text("${if (m.range != null) "이번 주기" else "이번 달"} 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 빼고 계산했어요.", style = MaterialTheme.typography.bodySmall,
+        // 2.0.0 [RVK-20] With 월급날 기준 the payments set aside are the cycle's (until its last day), so they are said so.
+        // [RVK-29] When the line under the figures already has the card's ⓘ this is one short line; otherwise it is the card's ⓘ line.
+        val fixedShort = "$cycleWord 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 뺐어요"
+        if (apart) {
+            if (fixedNote) Text(fixedShort, style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        } else if (fixedNote || aheadNote) {
+            NotesLine(summary = if (fixedNote) fixedShort else "오늘 쓸 돈은 ‘앞으로의 돈’이 통장으로 셈해요",
+                title = "이렇게 셌어요", notes = notes, modifier = Modifier.padding(top = 2.dp))
         }
     }
 }
@@ -228,8 +259,7 @@ fun HeroCard(
 @Composable
 private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false, expanded: Boolean? = null,
                            wholeName: String = "이번 달 예산") {
-    val cal = LocalCalendarColors.current
-    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    val color = budgetColor(b.level)
     val pct = (b.fraction * 100).toInt()
     val status = when {
         b.level == BudgetLevel.OVER -> "${Fmt.won(-b.left)} 넘었어요"
@@ -266,14 +296,12 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
         Spacer(Modifier.height(6.dp))
         LedgerTrack(b.fraction, color, marker = elapsed, height = if (whole) 10.dp else 8.dp)
         Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (b.level == BudgetLevel.OVER || b.headedOver) {
-                Icon(Icons.Filled.WarningAmber, null, tint = if (b.level == BudgetLevel.OVER) cal.warning else cal.changed, modifier = Modifier.size(14.dp))
-                Spacer(Modifier.width(4.dp))
-            }
-            Text(status, style = MaterialTheme.typography.labelMedium,
-                color = when { b.level == BudgetLevel.OVER -> cal.warning; b.headedOver || b.level == BudgetLevel.NEAR -> cal.changed
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant })
+        // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over is 주의 and said as the app says 주의 ([ToneLine]); red is kept for a budget
+        // already gone over. Near it is said in plain words beside the bar's caution colour.
+        when {
+            b.level == BudgetLevel.OVER -> ToneLine(status, tone = Tone.Danger, style = MaterialTheme.typography.labelMedium)
+            b.headedOver -> ToneLine(status, tone = Tone.Caution, style = MaterialTheme.typography.labelMedium)
+            else -> Text(status, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -281,16 +309,26 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
 /** 1.38: one category's budget in a single line under the month's, for the budget opened in place. */
 @Composable
 private fun BudgetMiniRow(b: BudgetLine) {
-    val cal = LocalCalendarColors.current
-    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    val color = budgetColor(b.level)
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {}) {
         // 2.0.0 [RVK-23]·HQ-30
         NameAndAmount({ Text(b.category, style = MaterialTheme.typography.bodySmall) }) {
             Text(if (b.left >= 0) "${Fmt.won(b.left)} 남음" else "${Fmt.won(-b.left)} 넘음", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
-                color = if (b.level == BudgetLevel.OVER) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if (b.level == BudgetLevel.OVER) MaterialTheme.bamnat.danger else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LedgerTrack(b.fraction, color, marker = null, height = 6.dp)
     }
+}
+
+/**
+ * 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) A budget's bar: over it is the one red (위험, it has happened), near it the one caution colour
+ * (주의, the calendar's 'changed' orange was a third colour), within it the app's own.
+ */
+@Composable
+internal fun budgetColor(level: BudgetLevel) = when (level) {
+    BudgetLevel.OVER -> MaterialTheme.bamnat.danger
+    BudgetLevel.NEAR -> MaterialTheme.bamnat.caution
+    BudgetLevel.OK -> MaterialTheme.colorScheme.primary
 }
 
 /** [LEDG-06] Each category with a budget, the ones over or closest to it first. */
@@ -300,9 +338,9 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     val current = YearMonth.from(today) == status.month
     // 1.37 [LEDH-06] Counted over 급여일 주기, it says which days.
     SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
+        // [RVK-30] Gone over is 위험 and said in the app's one line for it.
         if (status.over.isNotEmpty()) {
-            Text("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", style = MaterialTheme.typography.bodySmall,
-                color = LocalCalendarColors.current.warning, modifier = Modifier.padding(bottom = 4.dp))
+            ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp), tone = Tone.Danger)
         }
         status.categories.forEach { b -> BudgetLineView(b, status.elapsed.takeIf { current }, onClick = onEdit) }
     }
