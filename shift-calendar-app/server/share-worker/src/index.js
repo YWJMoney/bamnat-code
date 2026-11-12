@@ -2037,7 +2037,12 @@ export function validate(body) {
     // 2.0.0 [RVD-20] HQ-13 하루 두 구간 (설계 4-4절): where the shift stops between its two parts ('15:00-17:00'), inside `time` with 30
     // minutes or more each side, as the app's WorkTime.gapFits. A receiver before 2.0.0 reads `time` alone, first start to last end.
     if (t.gap != null && !(t.time != null && t.off !== true && isTimeRange(t.gap) && gapFits(t.time, t.gap))) return { error: "type_gap" };
-    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null, ...(t.gap != null ? { gap: t.gap } : {}) });
+    // 2.0.0 [RVD-23] PC-94: the shift's 휴게 (ShiftType.breakMinutes, minutes) and, when known, when it starts, so the receiver does not count it
+    // as work. 0 is '휴게 없음' and differs from no field (an app before 2.0.0, not known). Older receivers ignore both.
+    const rest = restOf(t);
+    if (rest === false) return { error: "type_rest" };
+    types.push({ id: t.id, name, short, color: t.color, time: t.time ?? null, off: t.off === true, icon: t.icon ?? null, ...(t.gap != null ? { gap: t.gap } : {}),
+      ...rest });
   }
   const ids = new Set(types.map((t) => t.id));
   if (!Array.isArray(body.days) || body.days.length > LIMITS.days) return { error: "days" };
@@ -2250,6 +2255,21 @@ function gapFits(time, gap) {
   const between = rangeMinutes(gap);
   const first = (between.from - shift.from + DAY_MINUTES) % DAY_MINUTES;
   return between.length >= 30 && between.length < DAY_MINUTES && first >= 30 && first + between.length + 30 <= shift.length;
+}
+/**
+ * 2.0.0 [RVD-23] PC-94 (갈래 G와 맞춤, 11-12): `rest` whole minutes 0~720, shorter than the shift (with its gap, if any); `restStart` 'HH:MM' when the
+ * app knows it, starting inside the shift with the whole rest inside it. Kept only on a shift with times that is not a day off (dropped
+ * elsewhere, so a stray field never breaks a link); restStart is dropped with a rest of 0. {} when there is none, false when it is not the app's.
+ */
+function restOf(t) {
+  if (t.rest == null || t.time == null || t.off === true) return {};
+  if (!Number.isInteger(t.rest) || t.rest < 0 || t.rest > 720) return false;
+  const shift = rangeMinutes(t.time);
+  if (t.rest + (t.gap != null ? rangeMinutes(t.gap).length : 0) >= shift.length) return false;
+  if (t.restStart == null || t.rest === 0) return { rest: t.rest };
+  if (typeof t.restStart !== "string" || !/^([01]\d|2[0-3]):[0-5]\d$/.test(t.restStart)) return false;
+  const from = (minuteOf(t.restStart) - shift.from + DAY_MINUTES) % DAY_MINUTES;
+  return from + t.rest <= shift.length ? { rest: t.rest, restStart: t.restStart } : false;
 }
 /** 2.0.0 [RVD-20] HQ-13 A shift's times as the page and a calendar app show them: two parts when it stops between them. */
 function parts(t) {
