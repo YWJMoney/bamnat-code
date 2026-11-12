@@ -18,18 +18,25 @@ class ShareLinkBackup(
     private val storeOf: (String) -> ShareLinkStore,
     private val clock: () -> Instant = Today::instant,
 ) {
-    fun export(): JSONArray = JSONArray().apply {
+    /**
+     * 2.0.0 [RVL-03] (검토 DATA-04) [withKeys] false for a backup saved without a password: the key that changes or ends a link stays out,
+     * so whoever gets the file cannot touch the link. Such a link is left out on a restore ([restore]); the phone's own stays.
+     */
+    fun export(withKeys: Boolean = true): JSONArray = JSONArray().apply {
         for (key in calendarIds().flatMap(ShareLinkKey::all)) {
             val store = storeOf(key)
             store.expire()
             val s = store.link.value ?: continue
-            put(JSONObject().put("key", key).put("id", s.id).put("url", s.url).put("token", s.deleteToken)
+            put(JSONObject().put("key", key).put("id", s.id).put("url", s.url).put("token", if (withKeys) s.deleteToken else "")
                 .put("expires", s.expiresAt.toString()).put("title", s.title).put("ttl", s.ttlDays).putOpt("from", s.from?.toString())
                 .put("auto", store.auto).put("feed", store.feed).put("shows", JSONArray(store.options().shows))
                 // [SHR-20] 1.33: who the link is for and whether it carries the company setup.
                 .put("audience", store.options().audience?.key ?: JSONObject.NULL).put("setup", store.options().setup))
         }
     }
+
+    /** 2.0.0 [RVL-13] How many links the user made now (a plain backup leaves their keys out, said in the save dialog). */
+    fun count(): Int = calendarIds().flatMap(ShareLinkKey::all).count { storeOf(it).link.value != null }
 
     /** Takes the file's links in; returns how many. Each is sent again at the next update. */
     fun restore(links: JSONArray): Int {

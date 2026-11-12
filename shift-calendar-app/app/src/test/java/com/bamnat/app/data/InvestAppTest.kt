@@ -247,7 +247,7 @@ class InvestAppTest {
     @Test fun theNoticeOpensItsTradeAndAPlanIsSavedInOneTap() = runBlocking {
         // 매매 기록 on the notice: the target, its calendar and the alarm reach the screen.
         val intent = com.bamnat.app.NoticeLinks.intent(context, com.bamnat.app.NoticeLinks.Target.INVEST_TRADE, PersonalCalendar.MAIN, payload = "42")
-        assertTrue(com.bamnat.app.NoticeLinks.read(intent))
+        assertTrue(com.bamnat.app.NoticeLinks.read(context, intent))
         assertEquals(com.bamnat.app.NoticeLinks.Target.INVEST_TRADE, com.bamnat.app.NoticeLinks.target.value)
         assertEquals("42", com.bamnat.app.NoticeLinks.payload.value)
         assertEquals(PersonalCalendar.MAIN, com.bamnat.app.NoticeLinks.calendar.value)

@@ -151,8 +151,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     // PC f42b2eba·e1ca9e5b (근무·급여 한 화면에 주 52시간과 64시간이 섞임; 급여를 안 정한 일근은 '한 주 근무 경고' 값이어야 함):
     // one week limit for every week line on this screen, the 다음 주 예상 too: the law's for the pay setup (52, 64 under
     // 탄력적 근로시간제, the exception's), else the user's own 한 주 근무 경고 (no setup yet, 5인 미만, a non-wage calendar).
+    // 2.0.0 [RVJ-23] 검토 PC-51 (일근, 급여 설정 전에 '64시간 · 내가 정한 한 주 근무 경고'): 64 was the setting's default, never chosen.
+    // A wage calendar with no pay setup reads the law's 52 until the user sets a 한 주 근무 경고 of their own; after the setup
+    // it is the setup's (52, 64 under 탄력제, the exception's), as before.
     val employee = style?.usesPayEngine != false
-    val weekLimit = (if (employee) payProfile?.let(::legalWeekHours) else null) ?: settings.limits.weeklyLimitHours
+    val weekLimit = weekLimitFor(employee, payProfile, settings.limits.weeklyLimitHours)
     // PC 736fb7a6 (선택적·감시단속은 '한도 없음'인데 '주 64시간 기준'): no weekly limit in law; the user's own warning shows instead.
     val noWeekLaw = employee && payProfile?.fiveOrMoreEmployees == true && legalWeekHours(payProfile) == null
     val calc = remember(snap, settings.limits, weekLimit) {
@@ -523,7 +526,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 }
                 StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate, period)
                 StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
-                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period)
+                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period, weekLimit = weekLimit)
                 else -> Unit
             }
         }
@@ -961,6 +964,18 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
  * The week's legal limit for [profile] (근로기준법 제53조): the 52시간 exception's own, 64 under 탄력적 근로시간제, else 52; null when
  * the law sets none (5인 미만, or an exception with no weekly cap). One value for every week line on the screen.
  */
+/**
+ * 2.0.0 [RVJ-23] 검토 PC-51: the one week limit of the 근무·급여 screen. A wage calendar ([employee]) with a pay setup has the law's
+ * ([legalWeekHours]); with no setup yet it has the law's 52 too, unless the user set a 한 주 근무 경고 of their own ([own] moved
+ * off the default). Anything else (5인 미만, 한도 없는 제도, 자영업·현장·투자) is the user's own warning.
+ */
+internal fun weekLimitFor(employee: Boolean, profile: com.bamnat.core.pay.PayProfile?, own: Int): Int = when {
+    !employee -> own
+    profile != null -> legalWeekHours(profile) ?: own
+    own != com.bamnat.core.hours.HourLimits().weeklyLimitHours -> own
+    else -> legalWeekHours(null) ?: own
+}
+
 internal fun legalWeekHours(profile: com.bamnat.core.pay.PayProfile?): Int? {
     if (profile?.fiveOrMoreEmployees == false) return null
     val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE

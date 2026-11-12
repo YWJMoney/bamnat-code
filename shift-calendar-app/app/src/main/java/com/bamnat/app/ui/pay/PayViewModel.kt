@@ -82,6 +82,10 @@ class PayViewModel(
     private val payStore = scope.pay
     val profile: StateFlow<PayProfile?> = payStore.profile
     val undoAvailable: StateFlow<PayProfile?> = payStore.canUndo
+    /** 2.0.0 [RVJ-25] 검토 PAYU-11·PAYC-21: the setup's file could not be read (and what came back), or the last save did not go through. */
+    val trouble: StateFlow<com.bamnat.app.pay.PayStore.Trouble> = payStore.trouble
+    fun troubleSeen() = payStore.troubleSeen()
+    fun retrySave() = viewModelScope.launch { payStore.retrySave() }
     val gate: StateFlow<Gate> = container.featureGate.state
     val snapshot: StateFlow<ScheduleSnapshot?> =
         scope.schedule.live.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), scope.schedule.lastSnapshot)
