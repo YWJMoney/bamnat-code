@@ -179,7 +179,7 @@ label,.label{display:block;font-size:.88rem;font-weight:800;margin:0 0 .4rem}
 /* 2.0.0 [RVQ-07] 글자 200%에서 두 칸이 너무 좁아 글자가 세로로 섰어요(내 계정 › 로그인 목록, 840px): 칸마다 22rem은 있어야 둘로, 아니면 하나로. 글자가 크면 rem도 커져요. */
 @media (min-width:600px){.grid.two{grid-template-columns:repeat(auto-fit,minmax(min(100%,max(22rem,calc(50% - .4rem))),1fr))}.grid.two>.card{margin:0}}
 @media (min-width:1024px){.cols{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:1rem;align-items:start}.cols>*{min-width:0}}
-.head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem}
+.head{display:flex;align-items:flex-start;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
 .head>:first-child{flex:1;min-width:0}
 .dept{font-weight:500;color:var(--muted);font-size:.94rem}
 .ver{font-size:.8rem;color:var(--muted);font-weight:800}
@@ -619,7 +619,7 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .cond-out{margin:.5rem 0 0;font-size:.88rem}
 .cond-out .lines{padding-left:1.2rem}
 #flag-cond{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9rem}
-.sim-grid{display:grid;gap:.25rem .75rem;grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
+.sim-grid{display:grid;gap:.25rem .75rem;grid-template-columns:repeat(auto-fit,minmax(min(9.5rem,100%),1fr))}
 /* 2.0.0 [RVA-31] 검토 T24-09: 이름표가 두 줄인 칸 옆에서 입력 칸이 어긋났어요. 이름표는 위, 입력 칸은 줄 맨 아래로 맞춰요. */
 .sim-grid>.fieldset{display:flex;flex-direction:column}.sim-grid>.fieldset>label{flex:1 0 auto}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -746,6 +746,13 @@ table.list tr.picked td{background:var(--accent-soft)}
 @media (min-width:600px){table.list thead th:not(:first-child){text-align:right}table.list thead th.pickcol+th{text-align:left}}
 @media (min-width:600px){table.list.nums td:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}}
 @media (min-width:600px){table.list .lab{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+/* 2.0.0 [RVA-32] 총괄 HQ-60: 표의 숨긴 이름표(.lab, position:absolute)가 가로 스크롤 상자 밖 쪽을 기준으로 놓여 840에서 쪽 전체가
+   옆으로 123px 밀렸어요. 스크롤 상자를 기준으로 삼아 표는 상자 안에서만 밀려요(숫자 표를 쓰는 모든 쪽). */
+.table-wrap{position:relative;max-width:100%}
+/* 같은 까닭으로 380·글자 200%: 칸 최소 폭(15rem = 480px)이 화면보다 넓던 격자는 화면 폭에서 멈추고, 카드 머리 알약은 다음 줄로,
+   카드 머리의 긴 단추(자동 순환 '동기화 열쇠 만들기' 등)는 칸 폭에서 줄을 바꿔요. */
+.card-head>.btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
+.table-wrap .lab{left:0;top:0}
 @media (max-width:599.98px){
   .table-wrap:has(table.list){border:0;overflow:visible}
   table.list,table.list tbody{display:block}
@@ -778,7 +785,7 @@ details.card.events>summary h2{display:inline;font-size:1.06rem}
 .palette .group-head{padding:.5rem 1rem .2rem;font-size:.75rem;font-weight:800;color:var(--muted);background:var(--soft)}
 .palette .row small.hint2{display:block;font-size:.75rem;color:var(--muted)}
 /* 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: the piles as a strip of counts, the cards with their answers ready. */
-.pile-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(7.5rem,1fr));gap:.5rem;margin:0 0 .9rem}
+.pile-strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(7.5rem,100%),1fr));gap:.5rem;margin:0 0 .9rem}
 .pile-card{display:flex;flex-direction:column;gap:.1rem;padding:.65rem .8rem;border-radius:var(--r-sm);border:1px solid var(--line);background:var(--surface);color:inherit;text-decoration:none;box-shadow:var(--shadow)}
 .pile-card .pile-n{font-size:1.35rem;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.2}
 .pile-card .pile-name{font-size:.78rem;color:var(--muted);font-weight:700}
@@ -932,7 +939,7 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .pipe-step.next .pipe-no{background:var(--accent);color:var(--on-accent)}
 .pipe-step.stuck{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
 .pipe-step.stuck .pipe-n .v{color:var(--bad)}
-.pipe-skel{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:.6rem;margin:3.5rem 0 1rem}
+.pipe-skel{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(10rem,100%),1fr));gap:.6rem;margin:3.5rem 0 1rem}
 @media (max-width:599.98px){
   .pipe{grid-template-columns:1fr;gap:.45rem}
   .pipe-step{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:.15rem .75rem;padding:.7rem .85rem}
@@ -953,7 +960,7 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how>summary::after{content:"";width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-left:.25rem}
 .how[open]>summary::after{transform:rotate(-135deg)}
 .how>summary .meta{margin:0 0 0 auto}
-.how-steps{list-style:none;margin:.85rem 0 0;padding:0;display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))}
+.how-steps{list-style:none;margin:.85rem 0 0;padding:0;display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(min(15rem,100%),1fr))}
 .how-steps li{display:flex;align-items:flex-start;gap:.7rem}
 .how-steps p{margin:.15rem 0 0;font-size:.86rem;color:var(--muted)}
 .step-no{flex:none;display:inline-grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;background:var(--accent-soft);color:var(--accent);font-weight:800;font-size:.85rem}
@@ -989,7 +996,7 @@ ul.mini li.batch{font-weight:600}
 .handoff-log ul.mini{margin-top:.4rem}
 form[data-form="dev-ship-note"] textarea{min-height:5rem}
 /* 1.38 [DESK-02][DESK-03] 운영 장부: 휴대폰은 카드 한 장(번호·요약 위, 단계·담당·기한 아래), 태블릿은 다섯 칸, 컴퓨터는 열 칸 표. */
-.ledger-view .lg-tiles{grid-template-columns:repeat(auto-fit,minmax(9.5rem,1fr))}
+.ledger-view .lg-tiles{grid-template-columns:repeat(auto-fit,minmax(min(9.5rem,100%),1fr))}
 .lg-tools>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:baseline;cursor:pointer}
 .lg-tools .sort-top{margin-top:.75rem}
 .lg-card .segmented{margin-bottom:.5rem}

@@ -2823,3 +2823,30 @@ test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기
   assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
   assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:grid/);
 });
+
+test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤 상자 안, 숨긴 이름표도 그 상자를 기준으로", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-60: 광장 하루 글 표(폭 868)의 숨긴 이름표(.lab, position:absolute)가 상자 밖을 기준으로 놓여 840에서 쪽이 123px 밀렸어요.
+  assert.match(css, /\.table-wrap\{position:relative;max-width:100%\}/);
+  assert.match(css, /\.table-wrap \.lab\{left:0;top:0\}/);
+  // 380·200%: 칸 최소 폭이 화면보다 넓은 격자가 없어요(15rem = 480px).
+  assert.doesNotMatch(css, /repeat\(auto-(fit|fill),minmax\([0-9.]+rem,1fr\)\)/);
+  assert.match(css, /\.card-head>\.btn\{max-width:100%;white-space:normal/);
+  // Every number table in the app sits in a scroll box (마을 › 광장 효과, 숫자 › 요금제 구간, 회사 표…).
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env);
+  const seen = {};
+  for (const hash of ["#/community?show=village", "#/companies", "#/metrics"]) {
+    await u.go(hash);
+    await u.settle(20);
+    seen[hash] = 0;
+    for (const table of u.$$("#main table.list")) {
+      seen[hash]++;
+      assert.ok(table.closest(".table-wrap"), `${hash}: a table outside a scroll box`);
+    }
+  }
+  // 광장 하루 글(HQ-60)과 회사 표는 시험 자료로도 그려져요. 숫자 › 요금제 구간은 자료가 있을 때만.
+  assert.ok(seen["#/community?show=village"] > 0 && seen["#/companies"] > 0, JSON.stringify(seen));
+  assert.deepEqual(u.errors, []);
+});
