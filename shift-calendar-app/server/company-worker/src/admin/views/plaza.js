@@ -274,7 +274,8 @@ export function plazaViews(A) {
     const picking = Boolean(S.companyPick) && can("companies", "edit");
     const badShare = (c) => (c.ok + c.bad ? Math.round((c.bad / (c.ok + c.bad)) * 100) : null);
     const th = ([key, label]) => `<th scope="col"${sort === key ? ' aria-sort="descending"' : ""}><button class="sort" data-act="company-sort" data-key="${key}" aria-pressed="${sort === key}">${label}${sort === key ? " ▾" : ""}</button></th>`;
-    const num = (label, v, hot = false) => `<td class="n${hot && v ? " hot" : ""}"><span class="lab">${label}</span> ${v ?? 0}</td>`;
+    // 2.0.0 [RVA-62] 조건 6: 대기는 위험이 아니라 할 일이라 빨강 대신 보통 색 굵게(.due). 빨강(.hot)은 '달라요'가 많을 때만.
+    const num = (label, v, due = false) => `<td class="n${due && v ? " due" : ""}"><span class="lab">${label}</span> ${v ?? 0}</td>`;
     const n = picking ? S.companyPick.size : 0;
     const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 회사"><b>${n}개 골랐어요</b>
         <button class="btn small" data-act="company-bulk" data-key="hide"${n ? "" : " disabled"}>회사 찾기에서 숨기기</button>

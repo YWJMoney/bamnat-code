@@ -3609,6 +3609,11 @@ test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 �
   assert.equal(pick.value, "new");
   const css = await adminFile("/admin/app.css").text();
   assert.match(css, /@media \(max-width:599\.98px\)\{\.company-top \.sort-pick\{display:block[^}]*\}(?:[^{}@]+\{[^}]*\})*table\.list\.companies thead\{display:none\}\}/);
+  // 다듬기(총괄 11-13): 대기는 빨강이 아니라 굵게(조건 6), 큰 글자에서 '+'가 둘째 줄에 함께, 오늘 오류 줄의 작은 글은 아래 줄로.
+  assert.equal(u.$$("#main table.list.companies td.n.hot").length, 0, "대기 숫자는 빨강이 아니에요");
+  assert.ok(u.$$("#main table.list.companies td.n.due").length > 0, "대기가 있는 회사는 굵게");
+  assert.match(css, /\.company-top \.sort-pick\{[^}]*max-width:calc\(100% - 2 \* min\(2\.75rem,48px\) - 1rem\)/);
+  assert.match(css, /@container stuck \(width < 30rem\)\{\.stuck-list p>small\{display:block/);
   pick.value = "members";
   pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
   await u.settle(30);

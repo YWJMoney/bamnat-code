@@ -753,7 +753,7 @@ table.list thead th{background:var(--soft);white-space:nowrap}
 table.list .sort{border:0;background:none;padding:0;font:inherit;font-weight:800;color:var(--muted);cursor:pointer}
 table.list .sort[aria-pressed=true]{color:var(--accent)}
 table.list td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-table.list td.n.hot{color:var(--bad);font-weight:800}
+table.list td.n.hot{color:var(--bad);font-weight:800}table.list td.n.due{font-weight:800}
 table.list td.name a{font-weight:800;color:inherit;text-decoration:none}
 @media (hover:hover){table.list td.name a:hover{text-decoration:underline}}
 table.list td.name small{display:block;font-size:.75rem;color:var(--muted)}
@@ -1582,6 +1582,8 @@ details.card.home-fold{margin:0;padding:0}
 .card.stuck{border-left:4px solid var(--warn)}
 .stuck-list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
 .stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
+/* 2.0.0 [RVA-62] 좁은 폭(또는 큰 글자)에서는 굵은 제목 뒤에 작은 글이 이어 붙지 않고 아래 줄로. */
+.stuck-list{container:stuck/inline-size}@container stuck (width < 30rem){.stuck-list p>small{display:block;margin-top:.15rem}}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}
@@ -1659,7 +1661,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 @media (max-width:599.98px){.company-top .btn.primary{width:2.75rem;padding:0;flex:none}.company-top .btn.primary .lbl{display:none}}
 /* 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭은 표 머리 대신 찾기 옆 정렬 고르기 하나(첫 회사 줄이 화면 위 25% 안에서). 큰 글자에서는 다음 줄로 내려가요(조건 12). */
 .company-top .sort-pick{display:none}
-@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:auto;max-width:100%;padding-inline:.5rem 1.4rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{flex-basis:min(6.5rem,40vw);min-width:min(6.5rem,40vw)}.toolbar.list-top.company-top{flex-wrap:wrap}table.list.companies thead{display:none}}
+.toolbar.list-top.company-top{flex-wrap:wrap}.company-top input[type=search]{min-width:min(12rem,100%)}
+@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:auto;max-width:calc(100% - 2 * min(2.75rem,48px) - 1rem);padding-inline:.5rem 1.4rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{flex-basis:min(6.5rem,40vw);min-width:min(6.5rem,40vw)}.toolbar.list-top.company-top{flex-wrap:wrap}.company-top>.btn.icon-only,.company-top>.btn.primary{width:min(2.75rem,48px);min-height:min(2.75rem,48px);height:min(2.75rem,48px)}table.list.companies thead{display:none}}
 @media (max-width:599.98px){.timebar .meta{display:none}}
 .decide-rows .draft-line{padding:0 1rem .75rem;display:grid;gap:.35rem}
 .decide-rows .draft-line .answer{margin:0;padding:.5rem .7rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
