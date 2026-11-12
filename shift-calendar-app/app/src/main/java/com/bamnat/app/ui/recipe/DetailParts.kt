@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -196,15 +197,7 @@ internal fun TryLadder(steps: List<LadderStep>, note: (@Composable () -> Unit)? 
             steps.forEachIndexed { i, s ->
                 if (s.main) {
                     note?.invoke()
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = s.onClick, enabled = s.enabled, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text(s.label, textAlign = TextAlign.Center)
-                                s.sub?.let { Text(it, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center) }
-                            }
-                        }
-                        s.other?.let { (words, go) -> OutlinedButton(onClick = go, modifier = Modifier.heightIn(min = 52.dp)) { Text(words) } }
-                    }
+                    PutRow(s)
                     return@forEachIndexed
                 }
                 Row(
@@ -224,6 +217,104 @@ internal fun TryLadder(steps: List<LadderStep>, note: (@Composable () -> Unit)? 
                     }
                     Text(s.action ?: "›", style = if (s.action == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.labelLarge,
                         color = if (s.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/** The 넣기 step: the one filled button (its words and a line under), and a smaller second way (되돌리기) beside it. */
+@Composable
+internal fun PutRow(s: LadderStep) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = s.onClick, enabled = s.enabled, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(s.label, textAlign = TextAlign.Center)
+                s.sub?.let { Text(it, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center) }
+            }
+        }
+        s.other?.let { (words, go) -> OutlinedButton(onClick = go, modifier = Modifier.heightIn(min = 52.dp)) { Text(words) } }
+    }
+}
+
+/**
+ * [RVM-13] PC-59·60·34 (넣기 창 '이렇게 바뀌어요'가 두 화면 넘는 만든 사람 말투 목록, 알람이 더 울리는 것은 맨 아래에만, 프로가 아니면
+ * 단추가 쉰다는 말이 없음): what 넣기 changes, at most four short lines in the user's words, the full list folded under it.
+ */
+internal data class PutLine(val text: String, val kind: Kind) {
+    enum class Kind { LOOK, LETTERS, LETTERS_KEPT, FX, REST, ALARM, ALARM_OFF, OTHER }
+}
+
+internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLine> {
+    val kinds = com.bamnat.core.recipe.BuiltInThemes.LOOK_KINDS
+    val on = s.pieces.filter { it.on && it.fits }
+    val out = mutableListOf<PutLine>()
+    val tabs = s.lookParts?.mapNotNull { com.bamnat.core.recipe.LookParts.byId(it) }?.map { com.bamnat.core.recipe.LookParts.tabLabel(it.tab) }?.distinct()
+        ?: on.filter { it.kind in kinds }.map { it.kind.label }
+    if (tabs.isNotEmpty()) out += PutLine("모양이 바뀌어요 · " + tabs.take(3).joinToString(", ") + if (tabs.size > 3) " 등" else "", PutLine.Kind.LOOK)
+    // 2.0.0 [PC-33] A 칸 디자인 that shows shifts by colour alone (점만·선·칸 색) is said before it goes in, with '글자 남기기' (조건 14).
+    val cells = on.any { it.kind == com.bamnat.core.recipe.PieceKind.CAL_VIEW } && (s.lookParts == null || "cal.cells" in s.lookParts)
+    val colourOnly = s.recipe?.takeIf { cells }?.let { com.bamnat.core.recipe.CellLetters.colourOnly(it) }
+    if (colourOnly != null) out += if (s.letters) PutLine("칸에 근무 글자를 남겨요", PutLine.Kind.LETTERS_KEPT)
+        else PutLine(com.bamnat.core.recipe.CellLetters.said(colourOnly), PutLine.Kind.LETTERS)
+    val logic = s.recipe?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }
+        ?.takeIf { on.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.LOGIC } }
+        ?.let { com.bamnat.core.formula.Logic.from(it.values) }
+    if (logic != null && (logic.buttons.isNotEmpty() || logic.rules.isNotEmpty())) {
+        val what = listOfNotNull(logic.buttons.size.takeIf { it > 0 }?.let { "단추 ${it}개" }, logic.rules.size.takeIf { it > 0 }?.let { "자동 규칙 ${it}개" })
+        out += PutLine(what.joinToString(" · ") + "가 생겨요", PutLine.Kind.FX)
+        val restB = logic.buttons.count { com.bamnat.core.formula.FxPro.parts(logic, it).isNotEmpty() }
+        val restR = logic.rules.count { com.bamnat.core.formula.FxPro.parts(logic, it).isNotEmpty() }
+        if (!fxOn && restB + restR > 0) {
+            val who = listOfNotNull(restB.takeIf { it > 0 }?.let { "단추 ${it}개" }, restR.takeIf { it > 0 }?.let { "규칙 ${it}개" }).joinToString("·")
+            out += PutLine("${who}는 프로에서 켜져요. 모양은 그대로 입어요", PutLine.Kind.REST)
+        }
+    }
+    val alarms = s.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS && it.fits }
+    if (alarms != null) {
+        val added = alarms.lines.filter { !it.skipped && it.text.endsWith(" 알람 더하기") }.map { it.text.removeSuffix(" 알람 더하기") }
+        when {
+            !alarms.on -> out += PutLine("알람은 빼고 넣어요", PutLine.Kind.ALARM_OFF)
+            added.isNotEmpty() -> out += PutLine("알람이 더 울려요 · " + added.joinToString(", ").let { if (it.length > 40) it.take(39) + "…" else it }, PutLine.Kind.ALARM)
+            alarms.lines.any { !it.skipped } -> out += PutLine("알람 울리는 방식이 바뀌어요", PutLine.Kind.ALARM)
+        }
+    }
+    val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS }
+        .map { it.kind.label }
+    if (rest.isNotEmpty()) out += PutLine("그 밖에 " + rest.take(3).joinToString(" · ") + if (rest.size > 3) " 등" else "", PutLine.Kind.OTHER)
+    return out
+}
+
+/**
+ * [RVM-13] The brief at the top of the 넣기 창. A line with a choice (알람, 칸의 근무 글자) carries it as a switch row under its words, the
+ * whole row pressed (48dp): side-by-side 글자 단추 squeezed the words at 200% into one a line, and with '바뀌는 것 모두 보기' and the 창's
+ * own 닫기·넣기 they were more 글자 단추 than 조건 2 lets a screen have (갈래 J RVJ-17 did the same).
+ */
+@Composable
+internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, onAlarms: (Boolean) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        lines.forEach { l ->
+            Text(
+                l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                color = when (l.kind) {
+                    PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
+                    PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
+                    else -> MaterialTheme.colorScheme.onSurface
+                },
+            )
+            val choice: Triple<String, Boolean, (Boolean) -> Unit>? = when (l.kind) {
+                PutLine.Kind.ALARM, PutLine.Kind.ALARM_OFF -> Triple("알람도 넣기", l.kind == PutLine.Kind.ALARM, onAlarms)
+                PutLine.Kind.LETTERS, PutLine.Kind.LETTERS_KEPT -> Triple("칸에 근무 글자 남기기", l.kind == PutLine.Kind.LETTERS_KEPT, onLetters)
+                else -> null
+            }
+            choice?.let { (label, on, set) ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                        .toggleable(value = on, role = Role.Switch, onValueChange = set).padding(start = 12.dp),
+                ) {
+                    Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                    androidx.compose.material3.Switch(checked = on, onCheckedChange = null)
                 }
             }
         }

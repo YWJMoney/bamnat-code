@@ -1111,7 +1111,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val trialOn = liveTrial != null
     LaunchedEffect(trialOn) {
         val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: run { com.bamnat.app.ui.recipe.LiveTryOn.back = null; return@LaunchedEffect }
-        val entry = nav.currentBackStackEntry
+        // [RVM-21] A trial already on when the screen is first made (the activity made again while trying, or 입혀 보기 started before it
+        // opened) waits for the tabs to be there: going to a tab before then stopped the app ('setGraph() before getGraph()').
+        val entry: androidx.navigation.NavBackStackEntry? = nav.currentBackStackEntryFlow.first()
         val destId = entry?.destination?.id
         val real = entry?.let(::filledRoute)
         // PC 4차 c0ca3d9f (장터 3, 상): the tab the page was opened in (마을 for a 장터 page). A tab moved to while trying keeps that tab's
@@ -1138,7 +1140,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(trialOn, tourAt) {
         val t = com.bamnat.app.ui.recipe.LiveTryOn.trial.value ?: return@LaunchedEffect
         // The screen on show now (the trial's first tab was just opened above): not moved twice, which put the page's tab away.
-        val now = nav.currentBackStackEntry?.destination?.route
+        // [RVM-21] It waits for the tabs to be there, as the one above.
+        val now = nav.currentBackStackEntryFlow.first().destination.route
         TopLevel.entries.firstOrNull { it.route == t.tour.getOrNull(t.at) }?.let { dest -> if (dest.route != now) navigateTop(dest) }
     }
     // The app left while trying on: the trial ends (nothing was saved), 입어 보기 waiting where it was.
@@ -2465,7 +2468,9 @@ private fun AppNavHost(
 /** [UX-06] A tab's name, whole at every text size: at the largest sizes "근무·급여" was cut to "근무·". */
 @Composable
 private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.bamnat.core.recipe.PartStyle.NONE) {
-    val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null), MaterialTheme.typography.labelMedium)
+    // 2.0.0 [PC-62] 딥워크 데스크 (검은 탭 막대, 고른 탭은 귤색 알약): the name sits on the bar under the pill, not on it, so the pill's
+    // fill does not choose its letters (it made them black, as on 귤색, on the black bar). Its colour is the item's (the bar's ink).
+    val style = com.bamnat.app.ui.parts.PartMods.text(part.copy(ink = null, fill = null, paint = null), MaterialTheme.typography.labelMedium)
     // [VIS-04] 중-3: from 150% a two-word name ("근무·급여") used to take two lines and push its icon above the others'
     // (A11Y-04); then it kept one line with its last word ("급여"), then (1.36) both words one above the other.
     // 1.39 총괄 사용성 제안 (화면 사진 164, 글자 2배: '근무·급여'가 두 줄로 꺾이고 그 칸만 키가 커서 아이콘이 위로 올라가요): every name is one
@@ -2864,8 +2869,9 @@ private fun ShiftLookBand() {
 
 
 /**
- * PC 재검토 N3 1.36: for a day after the studio put a look on, a line over the calendar offers the look from before ('어제 모양으로'),
- * even after the app was closed. 닫기 lets it go.
+ * PC 재검토 N3 1.36: after the studio put a look on, a line over the calendar offers the look from before. [RVM-17] PC-57 (띠가 계속 남아
+ * 달력이 한 줄 내려가요): it shows for a moment ([com.bamnat.app.data.LookUndo.BAND_MS]) the first time the calendar shows after 입히기 and
+ * then folds away for good; 되돌리기 stays in the studio for the day ('입히기 전 모양으로').
  */
 @androidx.compose.runtime.Composable
 private fun LookUndoBand() {
@@ -2875,21 +2881,32 @@ private fun LookUndoBand() {
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // PC 20차: in safe mode the looks rest, so '입힌 모양이에요' would say the opposite of what shows.
     val safe by com.bamnat.app.diag.StartGuard.safe.collectAsStateWithLifecycle()
-    if (safe) return
-    val kept = androidx.compose.runtime.remember(settings, tick) { com.bamnat.app.data.LookUndo.read(c.appContext) } ?: return
+    val kept = androidx.compose.runtime.remember(settings, tick) {
+        com.bamnat.app.data.LookUndo.read(c.appContext)?.takeIf { !com.bamnat.app.data.LookUndo.seen(c.appContext) }
+    }
     // Shown only while the look on is the one put on (the settings were not changed back another way).
-    if (c.recipes.pieces.lookSnapshot() == kept.first) return
-    androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
-        .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text("스튜디오에서 입힌 모양이에요 · ${com.bamnat.app.ui.studio.ago(kept.second)}", style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
-        androidx.compose.material3.TextButton(onClick = {
-            c.recipes.pieces.restoreLook(kept.first)
-            com.bamnat.app.data.LookUndo.clear(c.appContext)
-            scope.launch { runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) } }
-            tick++
-        }) { Text("입히기 전 모양으로") }
-        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.data.LookUndo.clear(c.appContext); tick++ }) { Text("닫기") }
+    val show = !safe && kept != null && c.recipes.pieces.lookSnapshot() != kept.first
+    androidx.compose.runtime.LaunchedEffect(show, kept?.second) {
+        if (!show) return@LaunchedEffect
+        kotlinx.coroutines.delay(com.bamnat.app.data.LookUndo.BAND_MS)
+        com.bamnat.app.data.LookUndo.markSeen(c.appContext)
+        tick++
+    }
+    androidx.compose.animation.AnimatedVisibility(show,
+        enter = androidx.compose.animation.expandVertically(com.bamnat.app.ui.theme.BamnatMotion.spec(com.bamnat.app.ui.theme.BamnatMotion.open())),
+        exit = androidx.compose.animation.shrinkVertically(com.bamnat.app.ui.theme.BamnatMotion.spec(com.bamnat.app.ui.theme.BamnatMotion.open()))) {
+        val k = kept ?: return@AnimatedVisibility
+        androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("스튜디오에서 입힌 모양이에요", style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
+            androidx.compose.material3.TextButton(onClick = {
+                c.recipes.pieces.restoreLook(k.first)
+                com.bamnat.app.data.LookUndo.clear(c.appContext)
+                scope.launch { runCatching { com.bamnat.app.widget.WidgetRefresher.refresh(c.appContext) } }
+                tick++
+            }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입히기 전 모양으로") }
+        }
     }
 }
 
