@@ -94,6 +94,8 @@ data class TaxEstimate(
     val otherMarketGain: Long = 0,
     /** [RVK-31] 국내 ETFs sold this year (outside ISA·연금) whose kind was not told, one sale each, counted as 국내주식형 until told. */
     val untoldEtfs: List<Realization> = emptyList(),
+    /** 2.0.0 [RVK-32] (검토 MONEY-68) 해외 주식 sold this year whose 결제일 is next year, so counted there. */
+    val nextYearSales: Int = 0,
 ) {
     val unknownEtfs: Int get() = untoldEtfs.size
     val financialNear: Boolean get() = financialIncome >= InvestTaxes.FINANCIAL_INCOME_LIMIT * 8 / 10
@@ -185,7 +187,8 @@ object InvestTaxes {
         val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
         val others = book.trades.filter { trade.id == 0L || it.id != trade.id }
         fun gain(list: List<Trade>) = Portfolio.fifo(list)
-            .filter { it.market.foreign && it.date.year == trade.date.year && it.accountId !in sheltered }.sumOf { it.pnlWon }.roundToLong()
+            .filter { it.market.foreign && taxYear(it.date, it.market) == taxYear(trade.date, trade.market) && it.accountId !in sheltered }
+            .sumOf { it.pnlWon }.roundToLong()
         val before = gain(others)
         val after = gain(others + trade.copy(id = if (trade.id == 0L) Long.MAX_VALUE else trade.id))
         fun tax(g: Long) = ((g - FOREIGN_DEDUCTION).coerceAtLeast(0) * CAPITAL_GAINS_RATE).roundToLong()
@@ -202,7 +205,7 @@ object InvestTaxes {
         val due = if (today.isAfter(thisYear)) com.bamnat.core.money.TaxDeadlines.workday(LocalDate.of(today.year + 1, 5, 31)) else thisYear
         val year = due.year - 1
         val sheltered = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
-        val gain = Portfolio.fifo(book.trades).filter { it.market.foreign && it.date.year == year && it.accountId !in sheltered }
+        val gain = Portfolio.fifo(book.trades).filter { it.market.foreign && taxYear(it.date, it.market) == year && it.accountId !in sheltered }
             .sumOf { it.pnlWon }.roundToLong()
         val taxable = (gain - FOREIGN_DEDUCTION).coerceAtLeast(0)
         if (taxable <= 0) return emptyList()
@@ -289,6 +292,31 @@ object InvestTaxes {
 
     private fun short(v: Long): String = if (v % 10_000 == 0L) "${v / 10_000}만 원" else won(v)
 
+    /**
+     * 2.0.0 [RVK-32] (검토 MONEY-68) 해외 주식's 양도소득 belongs to the year of its 결제일 (대금 청산일, 소득세법 시행령 제162조): 미국 T+1
+     * from 2024-05-28 (T+2 before), counting weekdays that are not 1월 1일·12월 25일. The app has the day the user typed, so a sale
+     * on the year's last trading day goes to the next year, as brokers tell before the year ends. 국내 and coins: the day itself.
+     */
+    fun settleDay(date: LocalDate, market: Market): LocalDate {
+        if (!market.foreign) return date
+        var left = if (date.isBefore(US_T1_FROM)) 2 else 1
+        var d = date
+        while (left > 0) {
+            d = d.plusDays(1)
+            val closed = d.dayOfWeek == java.time.DayOfWeek.SATURDAY || d.dayOfWeek == java.time.DayOfWeek.SUNDAY ||
+                (d.monthValue == 1 && d.dayOfMonth == 1) || (d.monthValue == 12 && d.dayOfMonth == 25)
+            if (!closed) left--
+        }
+        return d
+    }
+
+    fun taxYear(date: LocalDate, market: Market): Int = settleDay(date, market).year
+
+    private val US_T1_FROM: LocalDate = LocalDate.of(2024, 5, 28)
+
+    /** [RVK-32] Said under the year's 세금 미리 보기 when a 해외 주식 sale moved to the next year. */
+    fun nextYearNote(count: Int, year: Int): String = "12월 말에 판 해외 주식 ${count}건은 결제일이 ${year + 1}년이라 ${year + 1}년 세금으로 셌어요."
+
     fun estimate(book: InvestBook, result: PortfolioResult, year: Int): TaxEstimate {
         val inYear = { d: LocalDate -> d.year == year }
         val deferred = book.accounts.filter { it.type.taxDeferred }.map { it.id }.toSet()
@@ -296,11 +324,14 @@ object InvestTaxes {
         val taxable = { r: Realization -> r.accountId !in deferred && r.accountId !in isa }
         // 해외 주식 are matched oldest first, as the tax office does.
         val fifo = Portfolio.fifo(book.trades)
-        val foreignGain = fifo.filter { it.market.foreign && inYear(it.date) && taxable(it) }.sumOf { it.pnlWon }.roundToLong()
+        // 2.0.0 [RVK-32] (검토 MONEY-68) …in the year of their 결제일: a sale on the year's last trading day settles in the next.
+        val foreignGain = fifo.filter { it.market.foreign && taxYear(it.date, it.market) == year && taxable(it) }.sumOf { it.pnlWon }.roundToLong()
         val foreignTaxable = (foreignGain - FOREIGN_DEDUCTION).coerceAtLeast(0)
         val cryptoGain = result.realizations.filter { it.market == Market.CRYPTO && inYear(it.date) && taxable(it) }.sumOf { it.pnlWon }.roundToLong()
         val cryptoTax = ((cryptoGain - CRYPTO_DEDUCTION).coerceAtLeast(0) * CAPITAL_GAINS_RATE).roundToLong()
-        val cash = book.cash.filter { inYear(it.date) }
+        // 2.0.0 [RVK-32] (검토 MONEY-67) 배당·이자 of ISA·연금 accounts are not this year's 금융소득: the ISA's are in its own line.
+        val sheltered = deferred + isa
+        val cash = book.cash.filter { inYear(it.date) && it.accountId !in sheltered }
         val dividends = cash.filter { it.kind == CashKind.DIVIDEND }
         val interest = cash.filter { it.kind == CashKind.INTEREST }
         // ISA tax is on everything it made over its life, gains and losses together.
@@ -336,6 +367,8 @@ object InvestTaxes {
             otherEtfTax = (etfGain * DIVIDEND_RATE).roundToLong(),
             otherMarketGain = sold.filter { it.market == Market.OTHER }.sumOf { it.pnlWon }.roundToLong(),
             untoldEtfs = sold.filter { it.market == Market.KR_ETF && it.key !in kinds }.distinctBy { it.key },
+            nextYearSales = fifo.filter { it.market.foreign && inYear(it.date) && taxYear(it.date, it.market) != year && taxable(it) }
+                .distinctBy { it.tradeId }.size,
         )
     }
 }

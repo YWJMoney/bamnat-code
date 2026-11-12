@@ -249,7 +249,7 @@ private fun TaxCard(state: InvestState, year: Int, onEtfKind: (String, Boolean) 
             if (t.isaTaxOver > 0) " · 넘는 만큼 9.9% ${InvestFmt.won(t.isaTaxOver, hide)}" else "")
         if (t.deferredGain != 0L) add("연금저축·IRP 손익 ${InvestFmt.signed(t.deferredGain, hide)} · 연금으로 받을 때 과세")
     }
-    if (lines.isEmpty()) return
+    if (lines.isEmpty() && t.nextYearSales == 0) return
     SectionCard(title = "${year}년 세금 미리 보기") {
         lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
         // 2.0.0 [RVK-31] (검토 MONEY-66) 국내 ETFs sold this year whose kind was not told: asked right here, a line and two chips each;
@@ -264,6 +264,9 @@ private fun TaxCard(state: InvestState, year: Int, onEtfKind: (String, Boolean) 
             Modifier.padding(top = 4.dp))
         else if (t.financialNear) com.bamnat.app.ui.components.ToneLine("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.",
             Modifier.padding(top = 4.dp))
+        // 2.0.0 [RVK-32] (검토 MONEY-68) A 해외 주식 sale on the year's last trading day is next year's: said, so the sum is not a puzzle.
+        if (t.nextYearSales > 0) Text(InvestTaxes.nextYearNote(t.nextYearSales, year), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [INV-35] Why this gain and the 보유 tab's can differ.
         if (t.foreignGain != 0L) Text(InvestTaxes.AVERAGE_VS_FIFO, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
