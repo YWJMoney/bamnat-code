@@ -82,6 +82,9 @@ import com.bamnat.core.formula.Parsed
 import com.bamnat.core.formula.RuleTrigger
 import com.bamnat.core.formula.pro
 import java.time.LocalDate
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
 
 /**
  * [RUL-06] 1.36 886 수식·규칙 편집기 (사용자 2026-11-01 "다중 조건식도 가능하게, 다만 사용자가 편하게"): one condition in two views that
@@ -862,7 +865,9 @@ fun LogicEditor(
         logic.buttons.forEachIndexed { i, b ->
             val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
             val shows = remember(bump, b.show, facts, day) { showLine(b, facts, day) }
-            LineCard(plain(b.say()), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
+            // [RVM-20] PC-61: the 단추 by its name and place, then what a press does in a few words.
+            LineCard(listOfNotNull(b.emoji, b.label).joinToString(" ") + " · " + b.place.label, plain(b.brief()),
+                null, null, more = listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null },
                 onEdit = if (readOnly) onOpen else ({ editButton = i }), onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
@@ -902,11 +907,13 @@ fun LogicEditor(
             }
             // PC D10: rules made before names were kept apart show which is which.
             val nth = logic.rules.take(i).count { it.name == r.name }
-            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${plain(r.say())}", note,
+            // [RVM-20] PC-61 (기계 말투, '켜기' 글 단추와 스위치가 둘 다): the name on one line, what it does in a few words on the next, and
+            // on and off by the switch alone (a 받은 규칙 asks first there).
+            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}", plain(r.brief()),
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c); if (v) saidOn(r) } },
+                more = note,
                 onEdit = if (readOnly) onOpen else ({ editRule = i }), onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = when {
-                    phone && !on && came -> "켜기" to { askOn = r }
                     // PC D12 (사용성 중): 놓친 규칙은 그 자리에서 한 번 해요.
                     phone && on && missed -> "지금 한 번 하기" to { c.appScope.launch { LogicRunner.runNow(c, r); bump++ } }
                     else -> null
@@ -1087,7 +1094,8 @@ fun FxDoor(logic: Logic, key: String = com.bamnat.core.formula.FxTaste.OWN) {
     val running = remember(taste) { taste?.running(now) }
     Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("✦ 프로 기능 장치: ${com.bamnat.core.formula.FxPro.say(parts)}", style = MaterialTheme.typography.titleSmall)
+            // 2.0.0 [RVM-12] PC-59·61: the 프로 문 in the words of the one who uses it (설정 › 수식·규칙·버튼 too); each ✦ part is told on its button or rule.
+            Text("✦ 프로 기능 · ${com.bamnat.core.formula.FxPro.plain(parts)}", style = MaterialTheme.typography.titleSmall)
             Text(when {
                 pro -> "프로라 이 기능이 모두 돌아요"
                 running != null -> "하루 써 보기 중이에요 · ${fxUntil(running.second)}까지 모두 돌아요"
@@ -1198,19 +1206,31 @@ private fun ValueDialog(start: com.bamnat.core.formula.LogicValue?, taken: Set<S
 }
 
 @Composable
-private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?,
-    /** PC D8: one more thing to do on the line (받은 규칙 '켜기'). */
-    action: Pair<String, () -> Unit>? = null) {
+private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)? = null, onRemove: (() -> Unit)? = null,
+    /** PC D8: one more thing to do on the line (놓친 규칙 '지금 한 번 하기'). */
+    action: Pair<String, () -> Unit>? = null,
+    /** [RVM-20] PC-61: when it comes next, what happened last time, 지난 7일 (smaller, under what it does). */
+    more: String? = null) {
     Card(Modifier.fillMaxWidth().then(if (onEdit != null) Modifier.clickable(onClickLabel = "고치기", onClick = onEdit) else Modifier)) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                action?.let { (w, go) -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(w) } }
+                more?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // [RVM-20] 총괄 #462 (줄마다 '고치기' 글자 단추가 줄지어 8개, 조건 2): the line's one more thing is a small chip, not a 글자 단추.
+                action?.let { (w, go) ->
+                    androidx.compose.material3.AssistChip(onClick = go, label = { Text(w) }, modifier = Modifier.padding(top = 2.dp))
+                }
             }
             if (on != null && onSwitch != null) Switch(on, onSwitch, Modifier.semantics { contentDescription = if (on) "규칙 켜짐" else "규칙 꺼짐" })
-            onEdit?.let { TextButton(onClick = it) { Text("고치기") } }
-            onRemove?.let { TextButton(onClick = it) { Text("빼기") } }
+            // The whole line opens it (the card's click, 'onClickLabel 고치기'); the arrow only says so.
+            if (onEdit != null) androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
+            onRemove?.let {
+                androidx.compose.material3.IconButton(onClick = it) {
+                    androidx.compose.material3.Icon(Icons.Outlined.Delete, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

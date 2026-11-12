@@ -98,6 +98,26 @@ class ReviewPNoticeBellTest {
         }
     }
 
+    /**
+     * [RVM-17] PC-57 with PC-81: the look the studio just put on is the band on the first visit to the calendar only, and stays for that
+     * visit; once the calendar is left it is a row of the 알림함 for the day.
+     */
+    @Test fun theLookJustPutOnIsTheBandOnTheFirstVisitOnly() {
+        com.bamnat.app.data.LookUndo.keep(app, mapOf("theme" to "before"))
+        var visit by mutableStateOf(true)
+        var band: Boolean? = null
+        show({ if (visit) band = rememberLookUndo()?.band }) {
+            assertEquals("입힌 뒤 처음 보는 달력: 띠", true, band)
+            visit = false
+            compose.waitForIdle()
+            assertTrue("떠나면 본 것으로", com.bamnat.app.data.LookUndo.seen(app))
+            band = null
+            visit = true
+            compose.waitForIdle()
+            assertEquals("다시 오면 알림함 줄", false, band)
+        }
+    }
+
     @Test fun theInboxPutsPeopleFirstSuggestionsLastAndEmptiesWithClearAll() {
         Inbox.post(app, InboxRow("market.work:1", "market.reaction", InboxSection.PEOPLE, "내 작품 ‘봄’", "댓글 2개 · 좋아요 5개",
             target = NoticeLinks.Target.MONEY))

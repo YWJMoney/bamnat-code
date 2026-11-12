@@ -374,6 +374,8 @@ class AIScreenshotTest : ScreenshotBase() {
         ownPay()
         member()
         c.companyStore.setAutoShare(true)
+        // 2.0.0 [RVN-11] COMP-44: a yes that named the pay way (the ask's '다음부터 저절로', 설정's switch); only the 야간 % changes here.
+        c.companyStore.setAutoPay(true)
         c.companyStore.autoBase = mine()
         c.companyStore.autoSentAt = Today.millis()
         runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
@@ -391,6 +393,27 @@ class AIScreenshotTest : ScreenshotBase() {
         tapText("되돌리기", exact = true)
         settle()
         assertFalse(c.autoShare.waiting)
+    }
+    /**
+     * 2.0.0 [RVN-11] COMP-44: 저절로 나누기 from a 근무주기 yes alone (or a phone that said yes before 2.0.0) is for the cycle; a change of the
+     * pay way only is asked as without it, with '다음부터 저절로' to take the pay way too.
+     */
+    @Test fun aCycleYesAsksBeforeThePayWayGoes() = shoot("1137b_ai_pay_asks", PHONE) {
+        rooms()
+        ownPay()
+        member()
+        c.companyStore.setAutoShare(true)
+        c.companyStore.autoBase = mine()
+        c.companyStore.autoSentAt = Today.millis()
+        runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
+        content {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { AutoShareHost(c, onOpen = {}, snackbar = null) }
+        }
+        runBlocking { c.autoShare.check() }
+        settle()
+        assertFalse(c.autoShare.waiting)
+        assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
+        assertTrue(appears("• 야간 50% → 60%", exact = true))
     }
     @Test fun theSettingAsksOrSharesOrNot() = shoot("1138_ai_setting", SMALL_PHONE) {
         companyOn()

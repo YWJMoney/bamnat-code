@@ -600,7 +600,8 @@ private fun ShareCycleLine(company: String, on: Boolean, upload: Boolean = false
                 style = MaterialTheme.typography.bodyLarge)
             if (upload) Text("체크하면 저장할 때 올라가요. 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
+            // 2.0.0 [RVN-11] COMP-44 …and that later changes of the cycle go by themselves (the pay way is asked).
+            Text("근무 이름·시간·순서만 나눠요. 앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

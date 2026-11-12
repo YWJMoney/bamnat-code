@@ -1,5 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.app.ui.parts.cellPartInside
+import com.bamnat.app.ui.parts.cellPartOutside
+import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.parts.fillColor
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.semantics.onClick
@@ -205,10 +208,13 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                 Box(
                     Modifier.weight(1f).fillMaxSize()
                         .then(com.bamnat.app.ui.parts.partSpotModifier("cal.cell"))
+                        // 2.0.0 [RVS-03] the calendar's own cell drawing (바깥 간격·그림자, then 채우기·선·투명도·움직임), so the example
+                        // is what the calendar shows (스튜디오 조사 SN-01: 움직임은 예시에만, 바깥 간격·그림자는 달력에만 보였어요).
+                        .cellPartOutside(cellPart, pShape)
                         .cellEdge(shown, look, pShape, scheme.outlineVariant)
-                        .clip(pShape).fillWith(look?.fill, alpha = com.bamnat.app.ui.calendar.cellFillAlpha(look), animate = isToday)
+                        .drawClip(pShape).fillWith(look?.fill, alpha = com.bamnat.app.ui.calendar.cellFillAlpha(look), animate = isToday)
                         .background(tint ?: Color.Transparent)
-                        .then(com.bamnat.app.ui.parts.PartMods.box(cellPart.copy(pad = null, padX = null, padY = null, out = null, shadow = null), pShape))
+                        .cellPartInside(cellPart, pShape, isToday, isPicked = false)
                         // [LAY-03] The 꾸밈 층 on the example cells too.
                         .decor(com.bamnat.core.recipe.Decor.CELL, remember(date, s.role, s.work, isToday) { com.bamnat.app.ui.decor.decorDay(date, s.role, isToday, work = s.work) })
                         .then(if (onCell == null) Modifier else Modifier.clickable(onClickLabel = "이 칸의 모양 고치기") { onCell(index) }),
