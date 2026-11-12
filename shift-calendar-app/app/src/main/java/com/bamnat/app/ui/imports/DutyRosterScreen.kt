@@ -29,7 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.TouchApp
 import com.bamnat.app.ui.components.AlertDialog
@@ -911,8 +913,14 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (DutyCell) -> Unit, onNewKind: () -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // 2.0.0 [RVL-21] #476 사진 검토(HQ-61 ③, 조건 3): the common card's ground with a question mark on the left, as every notice card;
+    // the apricot (brown at night) ground is kept for the cells that are not sure.
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium) {
+      Row(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 12.dp)) {
+        Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(top = 1.dp).size(22.dp))
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // 1.39 G2 (같은 구조): '휴일'는 → '휴일'은. Letters and codes (D, N, OFF) keep 는.
             val nun = if (ask.raw.trim().lastOrNull()?.let { it in '가'..'힣' } == true) com.bamnat.core.text.Josa.eunneun(ask.raw) else "는"
             // 2.0.0 [RVL-21] (검토 SCAN-06·T07b-04) AM·V·반·생: a leave on one roster, a shift on another. Asked, the leave it
@@ -922,9 +930,9 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (Du
                 ask.leave -> "‘${ask.raw}’$nun 어떤 휴가인가요?"
                 guess != null -> "‘${ask.raw}’$nun ${guess.first}인가요, 근무인가요?"
                 else -> "‘${ask.raw}’$nun 어떤 근무인가요?"
-            }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            }, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
             Text(if (ask.leave || guess != null) "회사마다 달라요. 한 번 고르면 다음 근무표부터는 묻지 않아요." else "한 번 고르면 다음 근무표부터는 바로 들어가요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 if (guess != null && !ask.leave) {
                     val cell = guess.second
@@ -947,6 +955,7 @@ private fun AskCard(ask: DutyCell.Unknown, types: List<ShiftType>, onAnswer: (Du
                 }
             }
         }
+      }
     }
 }
 
@@ -996,25 +1005,42 @@ private fun Keypad(
                     }
                 }
             }
-            Keys {
+            // 2.0.0 [RVL-34] #476 사진 검토(HQ-61 ④, 조건 2·12): the tools went sideways out of sight at the folded width ('건너뛰' at
+            // 100%, '지우' at 200%). The day's two (되돌리기, » 건너뛰기) stay with the arrows, wrapping under each other with big letters;
+            // the month's once-a-month ones (이 순서 반복, 지난달과 같게) and ✕ 지우기 are in '더 보기'.
+            FlowRow(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { vm.step(-1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "앞 날") }
                 IconButton(onClick = { vm.step(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 날") }
                 // A wrong key is taken back first, so 되돌리기 comes before the rest.
-                TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty()) {
+                TextButton(onClick = vm::undo, enabled = ui.history.isNotEmpty(), modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null, Modifier.size(18.dp)); Text(" 되돌리기", maxLines = 1)
                 }
-                // [EASE-13] The same two keys as the keypad sheet (and the team roster's, P3-02): ✕ takes the day away, » leaves it.
-                TextButton(onClick = vm::erase, modifier = Modifier.semantics { contentDescription = "${ui.month.monthValue}월 ${ui.cursor}일 넣은 것 지우기" }) {
-                    Text("✕ 지우기", maxLines = 1)
-                }
-                TextButton(onClick = vm::skip, modifier = Modifier.semantics { contentDescription = "${ui.cursor}일 건너뛰기" }) {
+                // [EASE-13] The same keys as the keypad sheet (and the team roster's, P3-02): » leaves the day, ✕ (in 더 보기) takes it away.
+                TextButton(onClick = vm::skip, modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${ui.cursor}일 건너뛰기" }) {
                     Text("» 건너뛰기", maxLines = 1)
                 }
-                TextButton(onClick = { vm.repeatOrder() }, enabled = vm.canRepeat(ui)) {
-                    Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)); Text(" 이 순서 반복", maxLines = 1)
-                }
-                if (snap != null) TextButton(onClick = { vm.sameAsLastMonth(snap) }) {
-                    Icon(Icons.Filled.ContentCopy, null, Modifier.size(18.dp)); Text(" 지난달과 같게", maxLines = 1)
+                var more by remember { mutableStateOf(false) }
+                Box {
+                    IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreHoriz, KEYPAD_MORE) }
+                    androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("✕ ${ui.cursor}일 지우기") },
+                            onClick = { more = false; vm.erase() },
+                            modifier = Modifier.semantics { contentDescription = "${ui.month.monthValue}월 ${ui.cursor}일 넣은 것 지우기" },
+                        )
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("이 순서 반복") },
+                            leadingIcon = { Icon(Icons.Filled.Repeat, null) },
+                            enabled = vm.canRepeat(ui),
+                            onClick = { more = false; vm.repeatOrder() },
+                        )
+                        if (snap != null) androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("지난달과 같게") },
+                            leadingIcon = { Icon(Icons.Filled.ContentCopy, null) },
+                            onClick = { more = false; vm.sameAsLastMonth(snap) },
+                        )
+                    }
                 }
             }
             HorizontalDivider()
@@ -1033,6 +1059,9 @@ private fun Keypad(
 }
 
 private val KEY_PADDING = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+
+/** The keypad's '더 보기' (✕ 지우기, 이 순서 반복, 지난달과 같게), read aloud and found by the tests. */
+internal const val KEYPAD_MORE = "더 보기: 지우기·이 순서 반복·지난달과 같게"
 
 /** [ROST-07] 연차, and 반차 off the start (오전) or the end (오후) of the day. */
 private val LEAVE_KEYS = listOf(
