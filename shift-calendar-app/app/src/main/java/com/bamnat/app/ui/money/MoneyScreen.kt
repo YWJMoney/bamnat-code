@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.animation.AnimatedVisibility
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -1249,7 +1250,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
         }
         if (overdue.isNotEmpty()) {
             Text("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
-                color = cal.warning, modifier = Modifier.padding(bottom = 4.dp))
+                color = MaterialTheme.bamnat.caution, modifier = Modifier.padding(bottom = 4.dp))
         }
         owed.take(4).forEachIndexed { i, o ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -1266,7 +1267,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(Fmt.won(o.left), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
-                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) cal.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
