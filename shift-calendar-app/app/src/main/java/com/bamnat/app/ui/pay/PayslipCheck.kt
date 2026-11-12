@@ -389,7 +389,7 @@ internal fun SlipLineEditor(
                 suffix = { Text("시간") }, singleLine = true,
                 visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth())
-            if (line != null && line.role != role) Text("다음 명세서부터 ‘${name.ifBlank { line.name }}’ 줄은 ${role.label}(으)로 읽어요.",
+            if (line != null && line.role != role) Text("다음 명세서부터 ‘${name.ifBlank { line.name }}’ 줄은 ${role.label}${com.bamnat.app.ui.Fmt.ro(role.label)} 읽어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                 if (onDelete != null) TextButton(onClick = onDelete, modifier = Modifier.heightIn(min = 48.dp)) { Text("이 줄 빼기") }

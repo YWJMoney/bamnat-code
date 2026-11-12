@@ -152,7 +152,8 @@ internal fun MissionScreen(
 @Composable
 private fun MathMission(onSolved: () -> Unit) {
     var solved by rememberSaveable { mutableIntStateOf(0) }
-    var problem by remember { mutableStateOf(Missions.problem()) }
+    // 2.0.0 [RVI-50] (검토 ALM-18) The same sum after a turn or a fold, with the answer typed so far.
+    var problem by rememberSaveable(stateSaver = MathProblemSaver) { mutableStateOf(Missions.problem()) }
     var typed by rememberSaveable { mutableStateOf("") }
     var wrong by remember { mutableStateOf(false) }
     Text("계산 문제 ${solved + 1}/${Missions.PROBLEMS}", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.titleMedium)
@@ -325,3 +326,9 @@ private tailrec fun Context.activity(): Activity? = when (this) {
 fun hasMotionSensor(context: Context): Boolean = context.getSystemService(SensorManager::class.java)?.let {
     it.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION) != null || it.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) != null
 } ?: false
+
+/** 2.0.0 [RVI-50] A sum kept across the screen being made again. */
+private val MathProblemSaver = androidx.compose.runtime.saveable.Saver<com.bamnat.core.alarm.MathProblem, List<Int>>(
+    save = { listOf(it.a, it.b, if (it.plus) 1 else 0) },
+    restore = { com.bamnat.core.alarm.MathProblem(it[0], it[1], it[2] == 1) },
+)

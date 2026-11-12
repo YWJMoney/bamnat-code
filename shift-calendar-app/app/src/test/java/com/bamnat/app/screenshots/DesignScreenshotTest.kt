@@ -14,6 +14,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.ui.components.EmptyState
@@ -168,6 +169,23 @@ class DesignScreenshotTest : ScreenshotBase() {
         val m = app.resources.displayMetrics
         val cuts = LayoutCheck.cuts(nodes(merged = false), m.widthPixels, m.heightPixels)
         check(cuts.isEmpty()) { "words cut at 200%: $cuts" }
+    }
+
+    /**
+     * 검토 HQ-73 (총괄 #492 사진 06, 조건 1): at the folded width and 200% the band '잠금 화면에 알람 화면이 안 떠요 · 허용' was three lines
+     * (two of words, '허용' on a third). Now '허용' stands under the X, beside the two lines: the band is two lines high.
+     */
+    @Test fun bandButtonBesideTheWordsAt200() = shoot("2722_design_band_200", FOLDED, 2f) {
+        content { Page { com.bamnat.app.ui.components.NudgeCard("잠금 화면에 알람 화면이 안 떠요", tone = Tone.Caution, action = "허용", onClose = {}) } }
+        settle()
+        val all = nodes(merged = false)
+        fun box(t: String) = all.first { n ->
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.any { it.text == t } == true
+        }.boundsInWindow
+        val words = box("잠금 화면에 알람 화면이 안 떠요")
+        val button = box("허용")
+        check(button.top < words.bottom) { "'허용' went under the words (three lines): $button, words $words" }
+        check(button.left > words.right - 1f) { "'허용' is beside the words: $button, words $words" }
     }
 
     @Test fun nudgeCardsBigTextFoldedDark() = shoot("2709_design_nudge_200_dark", FOLDED, 2f) {

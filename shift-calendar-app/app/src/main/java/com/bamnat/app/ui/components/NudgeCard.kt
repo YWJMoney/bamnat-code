@@ -40,7 +40,7 @@ import com.bamnat.app.ui.theme.color
  * 2.0.0 [RVP-01] (검토 UIX-01·UIX-02, 보고서 5장 '안내 카드는 한 모양', 사용자 11-12 카드 '추천대로 전체 적용') What a tip, a reminder or a
  * warning looks like everywhere: one quiet ground for all of them, the meaning only in the colour of the icon on the left
  * ([tone]: [Tone.Plain] 안내, [Tone.Caution] 주의, [Tone.Good] 끝남; [Tone.Danger] only when it cannot be undone), one line of words
- * (a second line of [detail] at most; the words are never cut, and with big letters, when they do not fit beside it, the button goes under them), one text button
+ * (a second line of [detail] at most; the words are never cut, and with big letters, when they do not fit beside it, the button goes under the X, else under them), one text button
  * that goes where it says and one X. It is 56dp high on one line, so the
  * calendar keeps the top of the screen. It never fills its button: the page's one filled button stays the page's own thing
  * to do (보고서 5장 '화면마다 채운 단추 하나').
@@ -87,15 +87,22 @@ fun NudgeCard(
             // 2.0.0 [RVP-45] (갈래 P 3/3 사진: 편 폭의 달력 칸은 320dp보다 좁아, 버튼 옆 두 줄이면 되는 '잠금 화면에 알람 화면이 안 떠요'의
             // '허용'도 아래로 내려가 띠가 세 줄 높이가 됐어요): the button goes under the words only when, beside it, they would take more
             // than two lines (two lines of words still sit in the 56dp, 조건 1); the words are never cut either way.
-            val fits = action != null && big && with(density) {
-                val button = maxOf(ButtonDefaults.MinWidth, measurer.measure(action, actionStyle, maxLines = 1, softWrap = false).size.width.toDp() + 24.dp)
-                val side = 12.dp + (if (lead != null) 40.dp else if (showKani) 36.dp else 22.dp) + 10.dp + (if (onClose != null) 48.dp else 8.dp)
-                val room = (maxWidth - button - side).roundToPx()
-                fun lines(t: String?, style: androidx.compose.ui.text.TextStyle) = if (t.isNullOrBlank()) 0
-                    else measurer.measure(t, style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = room)).lineCount
-                room >= MIN_WORDS.roundToPx() && lines(text, textStyle) + lines(detail, detailStyle) <= 2
+            val button = if (action == null) 0.dp else with(density) {
+                maxOf(ButtonDefaults.MinWidth, measurer.measure(action, actionStyle, maxLines = 1, softWrap = false).size.width.toDp() + 24.dp)
             }
-            val stacked = action != null && big && !fits
+            val leadWidth = 12.dp + (if (lead != null) 40.dp else if (showKani) 36.dp else 22.dp) + 10.dp
+            // Whether the words take two lines at most in [room] beside what stands at their right.
+            fun twoLines(room: androidx.compose.ui.unit.Dp): Boolean = with(density) {
+                val px = room.roundToPx()
+                fun lines(t: String?, style: androidx.compose.ui.text.TextStyle) = if (t.isNullOrBlank()) 0
+                    else measurer.measure(t, style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = px)).lineCount
+                px >= MIN_WORDS.roundToPx() && lines(text, textStyle) + lines(detail, detailStyle) <= 2
+            }
+            val fits = action != null && big && twoLines(maxWidth - button - leadWidth - (if (onClose != null) 48.dp else 8.dp))
+            // 총괄 #492 사진 06 (접은 폭 200%: 글 두 줄 + '허용' 한 줄 = 띠 세 줄, 조건 1): with an X, the button can stand under the X
+            // instead of under the words; the words keep the row's width but the right column's, and the band stays two lines.
+            val besideClose = action != null && big && !fits && onClose != null && twoLines(maxWidth - maxOf(48.dp, button) - leadWidth)
+            val stacked = action != null && big && !fits && !besideClose
             val lead: @Composable () -> Unit = {
                 if (lead != null) lead()
                 else if (showKani) Kani(kani!!, night = isDarkSurface(), size = 36.dp)
@@ -115,7 +122,15 @@ fun NudgeCard(
                     Icon(Icons.Filled.Close, closeLabel, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            if (!stacked) Row(
+            if (besideClose) Row(Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                lead()
+                Spacer(Modifier.width(10.dp))
+                words(Modifier.weight(1f))
+                Column(horizontalAlignment = Alignment.End) {
+                    close()
+                    TextButton(onClick = onAction) { Text(action!!, maxLines = 1) }
+                }
+            } else if (!stacked) Row(
                 Modifier.heightIn(min = NudgeHeight).padding(start = 12.dp, end = if (onClose != null) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

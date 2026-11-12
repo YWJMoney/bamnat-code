@@ -915,6 +915,8 @@ fun CalendarScreen(
         val feature = com.bamnat.app.ui.guide.FeatureLinks.takeToday()
         vm.viewCalendar(feature ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
+        // 2.0.0 [RVI-68] (PC-49) 오늘 보기 opens on today's flow, not its folded line.
+        if (feature == null) vm.openFlowNow()
         sheetOpen = feature != null && !showsDay
         vm.select(Today.date())
         pagerState.scrollToPage(monthToPage(baseMonth, Today.month()))
@@ -2406,7 +2408,7 @@ internal fun CalendarHeader(
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
     val teamRow = otherRows.firstOrNull { it !== homeRow && (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
-        maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null && !HeadBell.atMe, me = me, others = others,
+        maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
         team = teamRow != null, homeChars = if (homeRow != null) chip?.homeWords?.length ?: 0 else 0,
     ).let { if (chip == null) it.copy(name = false) else it }
@@ -2500,7 +2502,8 @@ internal fun CalendarHeader(
             }
         }
         // [RVP-43] HQ-49 The bell (알림함) beside 공유, always there; its number is what waits besides the band.
-        if (!HeadBell.atMe) bell?.let { NoticeBell(it) }
+        // (사용자 11-13 00:35 KST 카드: '공유 옆에 따로', '나' 안이 아니에요.)
+        bell?.let { NoticeBell(it) }
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
         // [A11Y-03] Where the word does not fit, a round icon button takes its place, and TalkBack still reads its name.
         if (!room.toolsWords) {
@@ -2518,7 +2521,7 @@ internal fun CalendarHeader(
             }
         }
         // [NAV2-02] 1.39 설정 and the tabs not in the bar, always (PC NAV2: hidden on a small phone, settings was hard to find).
-        com.bamnat.app.ui.MeButton(bell = bell?.takeIf { HeadBell.atMe })
+        com.bamnat.app.ui.MeButton()
     }
     if (menu) {
         // [FIT-01] Every tool with its id in the fit table; [FIT-02] the ones this kind of work does not use wait under 더 보기.

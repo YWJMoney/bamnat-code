@@ -491,7 +491,7 @@ fun EntryDialog(
                 // 1.32 [LEDX-12] The list shows the shop people know; the line keeps what the text said.
                 if (place.isNotBlank()) {
                     val shown = remember(place) { com.bamnat.core.money.MerchantNames.display(place.trim()) }
-                    if (shown != place.trim()) Text("목록에는 ‘$shown’(으)로 보여요", style = MaterialTheme.typography.bodySmall,
+                    if (shown != place.trim()) Text("목록에는 ‘$shown’${com.bamnat.app.ui.Fmt.ro(shown)} 보여요", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 if (kind == MoneyKind.EXPENSE && (proofs || proof.isNotBlank() || receipt.isNotBlank())) {

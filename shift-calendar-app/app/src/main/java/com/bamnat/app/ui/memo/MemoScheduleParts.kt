@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.bamnat.app.ui.memo
 
 import android.content.Intent
@@ -6,6 +8,8 @@ import android.os.Build
 import android.provider.Settings
 import com.bamnat.core.memo.MemoRepeat.Kind
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,7 +30,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import com.bamnat.app.ui.components.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.bamnat.app.ui.components.OutlinedButton
@@ -44,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -68,6 +73,17 @@ internal fun scheduleText(at: LocalDateTime): String {
     return "${Fmt.dayTitle(at.toLocalDate())} $time"
 }
 
+/**
+ * 2.0.0 [RVI-49] (검토 MEMO-11) A schedule as its chip and card say it: once "11월 13일 (금) 오전 9:00"; repeating "매일 오전 9:00 · 다음
+ * 11/13" (it said the first day, 11/1, as if it were past). [next]: its next time, where it can be worked out.
+ */
+internal fun scheduleLine(memo: com.bamnat.core.memo.Memo, r: MemoReminder, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+    val again = com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName).takeIf { memo.date != null && it.isNotEmpty() }
+        ?: return scheduleText(r.at)
+    val time = scheduleText(r.at).substringAfter(") ")
+    return "$again $time" + (next?.let { " · 다음 ${it.monthValue}/${it.dayOfMonth}" } ?: "")
+}
+
 /** [SCHED-01] How a schedule is brought up, in a few words: "알람·알림", "알람", "알림". */
 internal fun scheduleWays(r: MemoReminder): String = when {
     r.ring && r.notify -> "울리는 알람·알림 메시지"
@@ -77,17 +93,18 @@ internal fun scheduleWays(r: MemoReminder): String = when {
 
 /** [SCHED-01] The schedule in the editor's chip row: tap to change, ✕ to make it a plain memo again. */
 @Composable
-internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: () -> Unit) {
+internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: () -> Unit = {}, line: String? = null) {
+    // 2.0.0 [RVI-30] (검토 MEMO-09·28·29) One name for it, '알림' ('알람' only when it rings). [RVP-10] (검토 UIX-10) The X is pressed
+    // as 48dp beside the chip, not 18dp inside it, and says what it does ('알림 빼기', the window's word too).
     androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         AssistChip(
             onClick = onOpen,
-            label = { Text(reminder?.let { "${scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알람 맞추기") },
+            label = { Text(reminder?.let { "${line ?: scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알림 넣기") },
             leadingIcon = {
                 Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
             },
         )
-        // 2.0.0 [RVP-10] (검토 UIX-10) The X is pressed as 48dp beside the chip, not 18dp inside it.
-        if (reminder != null) com.bamnat.app.ui.components.ChipClear("일정 빼기", onClear)
+        if (reminder != null) com.bamnat.app.ui.components.ChipClear("알림 빼기", onClear)
     }
 }
 
@@ -105,7 +122,7 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Filled.EventAvailable, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
                 Text(
-                    if (changing) "일정 시각을 ‘${found.phrase}’로 바꿀까요?" else "‘${found.phrase}’, 일정으로 넣을까요?",
+                    if (changing) "알림 시각을 ‘${found.phrase}’로 바꿀까요?" else "‘${found.phrase}’, 알림으로 넣을까요?",
                     style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                 )
@@ -117,9 +134,15 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             clash?.let { ClashLine(it) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요") }
-                FilledTonalButton(onClick = onAccept) { Text(if (changing) "바꾸기" else "일정으로 넣기") }
+            // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone '알림 넣기' broke into two lines: the buttons keep one
+            // line each and the filled one goes under when both do not fit. (디자인 품질 2) It is filled: a tonal button on this
+            // card's own colour had no edge to see. (디자인 품질 14) Read aloud with its time: the editor's chips have a '알림 넣기' too.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요", maxLines = 1, softWrap = false) }
+                val said = "${if (changing) "알림 시각 바꾸기" else "알림 넣기"}, ${scheduleText(found.at)}"
+                com.bamnat.app.ui.components.Button(onClick = onAccept, modifier = Modifier.semantics { contentDescription = said }) {
+                    Text(if (changing) "바꾸기" else "알림 넣기", maxLines = 1, softWrap = false)
+                }
             }
         }
     }
@@ -138,6 +161,8 @@ internal fun ScheduleDialog(
     onDismiss: () -> Unit,
     onSave: (MemoReminder) -> Unit,
     now: () -> LocalDateTime = Today::dateTime,
+    /** 2.0.0 [RVI-30] '알림 빼기' for a memo that has one; null leaves it out. */
+    onClear: (() -> Unit)? = null,
     /** [MEMO-05] 1.27 AK: '근무에 맞춰' — the next of each shift ahead (출근 1시간 전) and the next day off. */
     shiftTimes: List<com.bamnat.core.memo.ShiftMemoTime.Suggestion> = emptyList(),
     /** 1.39 [CAL2-20] What a time runs into on the calendar (근무, 야간 뒤 잘 시간), read again as the time changes. */
@@ -173,12 +198,15 @@ internal fun ScheduleDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = { Icon(Icons.Filled.EventAvailable, null) },
-        title = { Text(if (current == null) "일정으로 넣기" else "일정 바꾸기") },
+        title = { Text(if (current == null) "알림 시각" else "알림 시각 바꾸기") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date)) }
-                    OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") ")) }
+            // 2.0.0 [RVI-31] (검토 MEMO-17) Scrolls: on a folded phone or at 200% text the ways and the 허용하기 button were cut off.
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone the time stood in three lines beside the date: each keeps
+                // one line, and the time goes under the date when they do not fit side by side.
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date), maxLines = 1, softWrap = false) }
+                    OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") "), maxLines = 1, softWrap = false) }
                 }
                 if (onRepeat != null) RepeatChips(again, was, repeat, restRepeat) { again = it }
                 if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
@@ -224,7 +252,12 @@ internal fun ScheduleDialog(
                 onSave(MemoReminder(at, ring, notify))
             }, enabled = ahead && (ring || notify)) { Text(if ((notify || ring) && !notificationsOk) "알림 켜고 저장" else "저장") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = {
+            Row {
+                if (current != null && onClear != null) TextButton(onClick = onClear) { Text("알림 빼기") }
+                TextButton(onClick = onDismiss) { Text("취소") }
+            }
+        },
     )
 
     if (pickDate) {

@@ -343,7 +343,7 @@ class MoneyViewModel(
             // [LEDG-18] The other lines from this place can follow in one tap.
             val same = old?.let { money.samePlace(entry, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
-                _undo.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${entry.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                _undo.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${entry.category}’${com.bamnat.app.ui.Fmt.ro(entry.category)} 바꿀까요?", actionLabel = "바꾸기") {
                     recategorize(same, entry.category)
                 })
             }
@@ -405,7 +405,7 @@ class MoneyViewModel(
         container.appScope.launch {
             // One at a time, so a place moved to another category is learned [LEDG-04].
             moved.forEach { money.save(Ledger.recategorize(it, category)) }
-            _undo.tryEmit(UndoMessage("${moved.size}건을 ‘$category’(으)로 옮겼어요") { money.saveAll(moved) })
+            _undo.tryEmit(UndoMessage("${moved.size}건을 ‘$category’${com.bamnat.app.ui.Fmt.ro(category)} 옮겼어요") { money.saveAll(moved) })
         }
     }
 
@@ -443,7 +443,7 @@ class MoneyViewModel(
     fun recategorizeAll(list: List<MoneyEntry>, category: String) {
         container.appScope.launch {
             money.saveAll(list.map { com.bamnat.core.money.Ledger.recategorize(it, category) })
-            _undo.tryEmit(UndoMessage("지난 거래 ${list.size}건을 ‘$category’(으)로 옮겼어요") { money.saveAll(list) })
+            _undo.tryEmit(UndoMessage("지난 거래 ${list.size}건을 ‘$category’${com.bamnat.app.ui.Fmt.ro(category)} 옮겼어요") { money.saveAll(list) })
         }
     }
 

@@ -124,6 +124,9 @@ class StatsViewModel(
         runCatching { com.bamnat.app.tax.SalaryWatch.check(container, calendarId) }
     }
 
+    /** 2.0.0 [RVJ-36] PC-87: whether [month] is closed (급여 › 결과 › 마감), said on the pay card here as it is there. */
+    fun closedPay(month: YearMonth): com.bamnat.core.pay.CalcSnapshot? = scope.pay.closed.value[month]
+
     /** [TAX-02] 1.25 W: the 세후 the records taught (pro), for 월급날 비교's 예상; null when locked or nothing to go on. */
     suspend fun takeHome(gross: Long, month: YearMonth): com.bamnat.core.tax.TaxLearner.Forecast? =
         com.bamnat.app.tax.TakeHomeLine.forecast(container, calendarId, payProfile.value, gross, month)
@@ -341,9 +344,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         // each value people come to change, each straight to its tab and value.
         if (pays && shown(StatsPart.PAY)) {
             val total = payTotal
+            // [RVJ-36] PC-87: a closed month says so here as on the pay screen, with the 세후 kept when it was closed.
+            val closedSnap = remember(month, total) { vm.closedPay(month) }
             PayEntryCard(
                 month = month,
                 total = total,
+                closed = closedSnap != null,
+                today = today,
                 hasProfile = payProfile != null,
                 style = style,
                 onClick = onOpenPay,
@@ -351,7 +358,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             )
             // [HRLY-04] 예상 실수령 next to the pay before tax. [J133-01] 1.33 (보고서 A3): for every kind of pay, the same 세후
             // 가계부 shows, or the tax way asked right here when it never was.
-            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree) }
+            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree, kept = closedSnap?.takeHome) }
         }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
         WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree, weekLimitHours = weekLimit,
@@ -624,7 +631,8 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, label: (Long) -> Str
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null,
+    closed: Boolean = false, today: java.time.LocalDate = com.bamnat.core.time.Today.date()) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
@@ -633,7 +641,8 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("${month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
+                // 2.0.0 [RVJ-36] 검토 PAYU-17·PC-87: '예상' only for a month still to be paid, '마감' on a closed one.
+                Text(com.bamnat.app.ui.pay.payMonthTitle(month, YearMonth.from(today), closed), style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     when {
@@ -943,16 +952,18 @@ private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPi
 
 /** [J133-01][J133-02] 세후 under the pay card: [com.bamnat.app.tax.TaxWay.net], or the three ways to pick when none is. */
 @Composable
-private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?) {
+private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?,
+    /** 2.0.0 [RVJ-36] The 세후 a closed month kept (그때 표·그때 기록), as the pay screen shows it. */
+    kept: com.bamnat.core.tax.TaxLearner.Forecast? = null) {
     val learned by produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, gross, month, profile) {
         value = runCatching { vm.takeHome(gross, month) }.getOrNull()
     }
-    val net = com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
+    val net = kept?.net ?: com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp)) {
         if (net != null) {
-            Text("세후 예상 ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
+            Text("${if (kept != null) "세후(마감 때)" else "세후 예상"} ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         } else {
             Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -30,8 +30,9 @@ class ShiftClashSnoozeTest {
         assertTrue(c.sleep)
         assertEquals("야간 퇴근(07:00) 뒤 3시간이에요 · 잘 시간일 수 있어요", c.text)
         assertEquals("야간 퇴근(07:00) 뒤 30분이에요 · 잘 시간일 수 있어요", ShiftClash.of(today.atTime(7, 30), days)?.text)
-        // Six hours on, the afternoon is free.
-        assertNull(ShiftClash.of(today.atTime(13, 0), days))
+        // 2.0.0 [RVI-42] Seven hours on (the same as the day off's afternoon notice, 14:00), the afternoon is free.
+        assertTrue(ShiftClash.of(today.atTime(13, 0), days)!!.sleep)
+        assertNull(ShiftClash.of(today.atTime(14, 0), days))
         // A day shift's evening is not sleep.
         assertNull(ShiftClash.of(today.atTime(19, 0), listOf(dayShift(today))))
     }
@@ -82,6 +83,11 @@ class ShiftClashSnoozeTest {
         assertEquals(LocalDateTime.of(2026, 11, 12, 9, 0), ShiftMemoTime.offTime(d10.plusDays(2),
             ShiftMemoTime.Day(d10.plusDays(1), "마감", true, LocalTime.of(17, 0), LocalTime.of(0, 30))))
         assertEquals(LocalDateTime.of(2026, 11, 12, 9, 0), ShiftMemoTime.offTime(d10.plusDays(2), dayShift(d10.plusDays(1))))
+        // 2.0.0 [RVI-42] (검토 MEMO-21) A 04:00 퇴근: the afternoon, and the notice is not itself warned of as 잘 시간.
+        val late = ShiftMemoTime.Day(d10.plusDays(1), "마감", true, LocalTime.of(18, 0), LocalTime.of(4, 0))
+        val told = ShiftMemoTime.offTime(d10.plusDays(2), late)
+        assertEquals(LocalDateTime.of(2026, 11, 12, 14, 0), told)
+        assertNull(ShiftClash.of(told, listOf(late)))
         // '근무에 맞춰' and "쉬는 날" in the words say the afternoon too.
         val chip = ShiftMemoTime.suggestions(days, LocalDateTime.of(2026, 11, 9, 20, 0)).first { it.name == "휴무" }
         assertEquals(LocalDateTime.of(2026, 11, 12, 14, 0), chip.at)

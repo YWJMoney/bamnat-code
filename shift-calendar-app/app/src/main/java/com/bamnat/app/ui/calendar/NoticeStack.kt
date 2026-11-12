@@ -451,14 +451,6 @@ internal fun rememberNoticeStackState(): NoticeStackState {
     }
 }
 
-/**
- * 2.0.0 [RVP-43] 검토 HQ-49: where the calendar's bell sits. Beside 공유 (the app's place, 총괄 11-12); [atMe] puts it in 나 instead, its
- * count on 나's mark (사용자 11-12 20:38 KST, the first place said), for the photos that compare the two.
- */
-internal object HeadBell {
-    var atMe: Boolean by mutableStateOf(false)
-}
-
 /** [CAL-50] True inside a notice measured for the band and the bell, not seen whole (the sheet shows it whole). */
 internal val LocalNoticeFolded = compositionLocalOf { false }
 

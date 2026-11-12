@@ -70,6 +70,9 @@ import androidx.lifecycle.viewModelScope
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.Bedtime
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.Delete
+import com.bamnat.app.appContainer
+import com.bamnat.app.ui.components.SegmentedButton
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Surface
 import com.bamnat.app.ui.settings.InquiryLinks
@@ -421,11 +424,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
     fun wokeUp() {
         container.appScope.launch {
             val sleep = container.sleepRepository.wokeUp() ?: return@launch
-            val minutes = sleep.minutes ?: 0L
-            _messages.emit(UndoMessage(
-                if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
-                else "${SleepInsights.hours(minutes)} 잤어요",
-            ) { container.sleepRepository.reopen(sleep.id) })
+            // 2.0.0 [RVI-71] (검토 U03-05) One wording with the calendar and the night screen.
+            _messages.emit(UndoMessage(SleepInsights.wokeLine((sleep.minutes ?: 0L).toLong())) { container.sleepRepository.reopen(sleep.id) })
         }
     }
 }
@@ -437,14 +437,33 @@ fun SleepScreen(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: 
     val state by vm.state.collectAsStateWithLifecycle()
     // 1.38 [DSG-07] Warm and dark at night and while asleep, so opening the screen in bed does not glare.
     val sleeping = state?.log?.any { it.end == null && !it.imported } == true
+    // 2.0.0 [RVI-87] Kept above the night look, which draws the page anew when it turns on or off: '깼어요' in the morning ends
+    // the sleep that kept it on, and the '…잤어요' line with its 되돌리기 went with the old page at once, as did the part
+    // (오늘·패턴·기록) and how far down it was.
+    // 2.0.0 [RVP-23] The app's one line at the bottom (갈래 P): the lane is kept here, above the night look, so a line on its way
+    // still shows when the page is drawn again ([RVI-87]).
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
+    val part = rememberSaveable { mutableStateOf(0) }
+    // The three folded parts and the two wide columns, each where it was scrolled to (디자인 품질 11).
+    val scrolls = List(5) { rememberScrollState() }
+    LaunchedEffect(vm) {
+        vm.refreshHealth()
+        vm.messages.collect { m ->
+            // 2.0.0 [RVI-71] A line with 되돌리기 stays as long as the calendar's (10초, [J133-63]); '깼어요' by a sleepy hand went in 4.
+            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel },
+                duration = if (m.undo != null) SnackbarDuration.Long else SnackbarDuration.Short)
+            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
+        }
+    }
     com.bamnat.app.ui.theme.NightSurface(com.bamnat.app.ui.theme.rememberNightMode(settings.nightLook, sleeping)) {
-        SleepScreenBody(vm, wide, onBack, onNight)
+        SleepScreenBody(vm, wide, onBack, onNight, snackbar, part, scrolls)
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: () -> Unit) {
+private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Unit, onNight: () -> Unit, snackbar: SnackbarHostState,
+    partState: androidx.compose.runtime.MutableState<Int>, scrolls: List<androidx.compose.foundation.ScrollState>) {
     val state by vm.state.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val health by vm.health.collectAsStateWithLifecycle()
@@ -458,14 +477,6 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     var fixing by remember { mutableStateOf<com.bamnat.core.sleep.SleepAuto.Segment?>(null) }
     var editing by remember { mutableStateOf<SleepEntry?>(null) }
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
-    LaunchedEffect(vm) {
-        vm.refreshHealth()
-        vm.messages.collect { m ->
-            val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) vm.runUndo(m)
-        }
-    }
     val target = settings.sleepTargetMinutes
 
     // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19: it sat on the cards).
@@ -494,7 +505,9 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     ) { padding ->
         val s = state ?: return@Scaffold
         val r = s.report
-        val summary: @Composable ColumnScope.() -> Unit = {
+        // 2.0.0 [RVI-58] (검토 U03-02) Folded, the screen was some twenty cards in one column and '최근 2주'·'날마다 잠' far below:
+        // it is in three parts, 오늘 (this morning and tonight) · 패턴 (what the records say) · 기록 (the days), each keeping its place.
+        val today: @Composable ColumnScope.() -> Unit = {
             morning?.let { m ->
                 // [SLEEP-01] Newest first: the one the user just woke from.
                 m.offers.lastOrNull()?.let { o ->
@@ -521,6 +534,8 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 SleepNightCard(n.last, n.events, vm::keepClip, settings.smartWakeMinutes, vm::setSmartWake, n.work, listenShown = inMorning,
                     onNight = onNight)
             }
+        }
+        val pattern: @Composable ColumnScope.() -> Unit = {
             // Design: an empty sleep screen points at where to start.
             if (s.log.isEmpty()) com.bamnat.app.ui.components.EmptyState("아직 잠 기록이 없어요",
                 "자기 전에 ‘잠들었어요’, 깨면 ‘깼어요’를 누르거나 아래 ‘기록 추가’로 적어요",
@@ -538,12 +553,13 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             val findings = if (unlocks.isEmpty()) r.findings else r.findings.filter { it.key != "more-logs" }
             if (findings.isNotEmpty()) Findings(findings)
             extras?.let { CausesCard(it.causes) }
-            Groups(r, target)
+            Groups(r, target, settings.workStyle)
             s.compare?.let { PlanCompare(it) }
             extras?.let { e -> ChallengeCard(e.challenge, vm::startChallenge, vm::stopChallenge) }
             // 1.38 [SLEEP-22] 바꾼 것 전후 비교.
             if (s.log.isNotEmpty()) BeforeAfterCard(mark, vm::markChange, vm::clearMark)
         }
+        val summary: @Composable ColumnScope.() -> Unit = { today(); pattern() }
         val history: @Composable ColumnScope.() -> Unit = {
             Bars(s.log, s.today, target)
             // 1.39 [FLOW-11] 주 띠로 날 고르기, the day's 잠 이야기 줄, then that day's records.
@@ -569,14 +585,26 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
         }
         if (wide) {
             Row(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrolls[3]).padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) { summary(); Spacer(Modifier.height(80.dp)) }
-                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(vertical = 8.dp),
+                Column(Modifier.weight(1f).fillMaxHeight().verticalScroll(scrolls[4]).padding(vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)) { history(); Spacer(Modifier.height(80.dp)) }
             }
         } else {
-            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)) { summary(); history(); Spacer(Modifier.height(80.dp)) }
+            var part by partState
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                androidx.compose.material3.SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    SLEEP_PARTS.forEachIndexed { i, label ->
+                        SegmentedButton(selected = part == i, onClick = { part = i },
+                            shape = androidx.compose.material3.SegmentedButtonDefaults.itemShape(i, SLEEP_PARTS.size)) { Text(label, maxLines = 1) }
+                    }
+                }
+                Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(scrolls[part]).padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (part) { 0 -> today(); 1 -> pattern(); else -> history() }
+                    Spacer(Modifier.height(80.dp))
+                }
+            }
         }
     }
 
@@ -634,21 +662,30 @@ private fun NowCard(open: SleepEntry?, onAsleep: () -> Unit, onAwake: () -> Unit
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Bedtime, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
             Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
-                    style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                // 1.39 [FLOW-29] 조건은 미리 (PC 실사용 11-06: 짧은 잠이 왜 안 남는지 끝에서야 알았음): said before sleeping.
-                Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요. ${com.bamnat.core.sleep.SleepMorning.MIN_MINUTES / 60}시간 넘게 자야 아침 기분을 물어요"
-                    else "일어났으면 ‘깼어요’를 눌러요",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
-            }
-            Spacer(Modifier.width(8.dp))
-            if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요") }
-            else Column(horizontalAlignment = Alignment.End) {
-                Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요") }
-                // 1.39 [FLOW-13] Back to the dark night screen (clock, tomorrow's work and alarm, sounds).
-                TextButton(onClick = onNight, modifier = Modifier.heightIn(min = 48.dp)) { Text("밤 화면") }
-            }
+            // 2.0.0 [RVI-58] PC 사진(통합 머리, 글자 200%): beside '잠들었어요' the words stood a word a line; narrower than 180dp, the
+            // button goes under them.
+            com.bamnat.app.ui.components.SideOrBelow(
+                Modifier.weight(1f),
+                minStart = 180.dp,
+                start = {
+                    Column {
+                        Text(if (open == null) "지금 자려고요?" else "${Fmt.time(open.start.toLocalTime())}부터 자는 중",
+                            style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        // 1.39 [FLOW-29] 조건은 미리 (PC 실사용 11-06: 짧은 잠이 왜 안 남는지 끝에서야 알았음): said before sleeping.
+                        Text(if (open == null) "누르고 자면, 일어나서 ‘깼어요’로 끝내요. ${com.bamnat.core.sleep.SleepMorning.MIN_MINUTES / 60}시간 넘게 자야 아침 기분을 물어요"
+                            else "일어났으면 ‘깼어요’를 눌러요",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                },
+                end = {
+                    if (open == null) Button(onClick = onAsleep, modifier = Modifier.heightIn(min = 48.dp)) { Text("잠들었어요", maxLines = 1) }
+                    else Column(horizontalAlignment = Alignment.End) {
+                        Button(onClick = onAwake, modifier = Modifier.heightIn(min = 48.dp)) { Text("깼어요", maxLines = 1) }
+                        // 1.39 [FLOW-13] Back to the dark night screen (clock, tomorrow's work and alarm, sounds).
+                        TextButton(onClick = onNight, modifier = Modifier.heightIn(min = 48.dp)) { Text("밤 화면", maxLines = 1) }
+                    }
+                },
+            )
         }
     }
 }
@@ -723,9 +760,10 @@ private fun Findings(findings: List<SleepInsights.Finding>) {
  * meaning colour) with the target dashed across, the numbers under each, and the count and usual bedtime below.
  */
 @Composable
-private fun Groups(r: SleepInsights.Report, target: Int) {
+private fun Groups(r: SleepInsights.Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null) {
     if (r.groups.isEmpty()) return
-    SectionCard(title = "근무별 평균") {
+    // 2.0.0 [RVI-40] (검토 ALM-25·T03-07) A shop or an investor has no 근무: '날 종류별 평균'.
+    SectionCard(title = groupsTitle(style)) {
         val bars = r.groups.map { g ->
             com.bamnat.app.ui.components.ChartBar(g.context.label, g.averageMinutes.toDouble(), tone = when {
                 target - g.averageMinutes >= SleepInsights.SHORT_MINUTES -> com.bamnat.app.ui.theme.Tone.Caution
@@ -753,6 +791,12 @@ private fun Groups(r: SleepInsights.Report, target: Int) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
+}
+
+/** 2.0.0 [RVI-40] "근무별 평균" where there is 근무, "날 종류별 평균" for 가게·투자·현장. */
+internal fun groupsTitle(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.BUSINESS, com.bamnat.core.work.WorkStyle.INVEST, com.bamnat.core.work.WorkStyle.FIELD -> "날 종류별 평균"
+    else -> "근무별 평균"
 }
 
 /** The last 14 days by the day the user woke up, with the target as a dashed line. */
@@ -902,6 +946,8 @@ private fun SleepEditDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (valid) MaterialTheme.colorScheme.onSurfaceVariant else com.bamnat.app.ui.theme.Tone.Caution.color(),
                 )
+                // 2.0.0 [RVI-57] (검토 U03-04) A measured night's clips, gone now with one button (not while it is still being measured).
+                if (initial != null && initial.id != 0L && initial.end != null) NightClipsRow(initial.id)
             }
         },
         confirmButton = {
@@ -922,6 +968,42 @@ private fun SleepEditDialog(
         "end" -> TimePickerDialog("깬 시각", endTime, onDismiss = { picking = null }) { end = it.toString(); open = false; picking = null }
     }
 }
+
+/**
+ * 2.0.0 [RVI-57] (검토 U03-04) 이 밤 소리 지우기 in 수면 기록 고치기: how many clips the night still has, and a bin that asks first
+ * (kept ones go too). An icon, so the window keeps its two text buttons and 지우기.
+ */
+@Composable
+private fun NightClipsRow(id: Long) {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    var count by remember(id) { mutableStateOf(0) }
+    var asking by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    LaunchedEffect(id) { count = c.sleepRepository.clipsOf(id) }
+    if (count <= 0) return
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("이 밤 소리 클립 ${count}개", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        IconButton(onClick = { asking = true }) { Icon(Icons.Outlined.Delete, "이 밤 소리 지우기") }
+    }
+    if (asking) AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("이 밤 소리를 지울까요?") },
+        text = { Text("보관한 것까지 이 밤의 소리 ${count}개를 지워요. 들린 시각과 종류는 남아요. 지운 소리는 되돌릴 수 없어요.") },
+        confirmButton = {
+            TextButton(onClick = {
+                asking = false
+                scope.launch {
+                    c.sleepRepository.clearClipsOf(id, java.io.File(c.appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR))
+                    count = 0
+                }
+            }) { Text("지우기") }
+        },
+        dismissButton = { TextButton(onClick = { asking = false }) { Text("그대로 두기") } },
+    )
+}
+
+/** 2.0.0 [RVI-58] The folded sleep screen's three parts. */
+internal val SLEEP_PARTS = listOf("오늘", "패턴", "기록")
 
 /** 1.38 [SLEEP-20] When the user began 회복 도전, and [SLEEP-22] the day they marked a change, on this phone. */
 internal object SleepChallengeStore {
