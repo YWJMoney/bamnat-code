@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -42,6 +43,7 @@ import com.bamnat.app.company.TalkPost
 import com.bamnat.core.plaza.IndustryGroups
 import com.bamnat.core.plaza.PlazaTag
 import com.bamnat.core.plaza.PlazaTags
+import com.bamnat.core.work.WorkStyle
 import com.bamnat.core.plaza.StylePlaza
 import androidx.compose.ui.semantics.Role
 
@@ -364,8 +366,11 @@ internal fun PlazaFeed(
     val menu = FeedMenu(onFlag = { flagging = it }, onHide = { hiding = it }, onDelete = { deleting = it }, room = plan.room, roomName = plan.roomTitle)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         talk?.pulse?.checkin?.let { CheckinRow(plan.room, it, vm.todayShift.collectAsStateWithLifecycle().value, vm::checkin) }
+        // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03: a quiet plaza has a week's topic even when the 운영팀 put none (theirs always wins).
+        val quiet = talk != null && (talk.posts + older).distinctBy { it.id }.count { it.parent == null } < STARTER_POSTS
         PlazaComposer(vm.timeLine.collectAsStateWithLifecycle().value?.first ?: plan.hint.ifBlank { "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" },
-            topic = talk?.topic, onWrite = { vm.openTalk() })
+            topic = talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet },
+            onWrite = { vm.openTalk() })
         // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
         // 2.0.0 [RVN-13] COMP-17·T10a-07 …only when the lounge has something to read (LOUNGE_OPENS posts): a quiet night opened on an
         // empty room every time. With fewer it opens on 전체, the 🌙 chip first in the row.
@@ -416,9 +421,14 @@ internal fun PlazaFeed(
                             onOpen = { vm.openTalk(q.id) }, onVote = { ok -> vm.vote(q.id, ok) }, onReply = { vm.openTalk(q.id, reply = true) })
                     }
                 }
-                if (tops.isEmpty()) Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 16.dp))
-                else if (shown.isEmpty() && lifted == null) Text(when (lens) {
+                // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03 A quiet plaza is not a dead one: what to write, one tap each (오늘 근무 한 줄·질문·투표),
+                // and on an empty one 말랑 칸이 with the 운영팀's welcome; at night, how many are at work now (before: one line of text).
+                if (lens == Lens.ALL && tops.size < STARTER_POSTS) PlazaStarter(
+                    empty = tops.isEmpty(), roomName = plan.roomTitle,
+                    workingNow = talk.pulse?.working?.takeIf { mine?.now == PlazaTag.Now.NIGHT && it > 0 },
+                    style = vm.style, onStart = { s -> vm.openStarter(s) },
+                )
+                if (tops.isNotEmpty() && shown.isEmpty() && lifted == null) Text(when (lens) {
                     Lens.WAITING -> "답을 기다리는 질문이 없어요"
                     Lens.LOUNGE -> "오늘 밤 라운지는 아직 조용해요. 야간 중인 분들께 먼저 한 줄 남겨 보세요"
                     else -> "이렇게 고른 글이 아직 없어요"
@@ -449,6 +459,72 @@ internal fun PlazaFeed(
     }
 }
 
+/** 2.0.0 [RVN-20] Fewer top posts than this, and the plaza shows what to write ([PlazaStarter]). */
+internal const val STARTER_POSTS = 3
+
+/** 2.0.0 [RVN-20] U10a-02 What a plaza's first posts can be, each opening the box ready for it. */
+internal enum class Starter(private val words: String) {
+    TODAY("📅 오늘 근무 한 줄"),
+    QUESTION("🙋 궁금한 것 묻기"),
+    POLL("📊 투표 만들기"),
+    ;
+
+    /** 2.0.0 [RVN-20] 조건 13: a shop's day is the shop's and an investor's has no 근무 ([com.bamnat.core.work.TypeWords] forbids it). */
+    fun label(style: WorkStyle?): String = when {
+        this != TODAY -> words
+        style == WorkStyle.INVEST -> "💬 오늘 한 줄"
+        style == WorkStyle.BUSINESS -> "🏪 오늘 가게 한 줄"
+        else -> words
+    }
+
+    companion object {
+        /** The first words of 오늘 한 줄 in the box: today's shift where there is one, else the kind's own day. */
+        fun todayLine(style: WorkStyle?, now: PlazaTag.Now?): String = when {
+            style == WorkStyle.INVEST -> "오늘은 "
+            style == WorkStyle.BUSINESS -> "오늘 가게는 "
+            now == PlazaTag.Now.NIGHT -> "오늘 야간이에요. "
+            now == PlazaTag.Now.DAY -> "오늘 근무 중이에요. "
+            else -> "오늘 근무는 "
+        }
+
+        /** What the 운영팀's welcome asks for: the plaza's own talk. */
+        fun talkOf(style: WorkStyle?): String = when (style) {
+            WorkStyle.INVEST -> "투자 이야기"
+            WorkStyle.BUSINESS -> "가게 이야기"
+            else -> "근무 이야기"
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03 (빈 광장 시작 꾸러미): on a plaza with few posts, three ways to start, each one tap into the box
+ * ready for it; on an empty one, 말랑 칸이 with the 운영팀's welcome first (조건 7·16: the empty screen's own part, one warm line). The
+ * week's topic is on the box above ([com.bamnat.core.plaza.StarterTopics] when the 운영팀 put none). [workingNow]: at night, how many
+ * are at work now (from the plaza's own count).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun PlazaStarter(empty: Boolean, roomName: String, workingNow: Int?, style: WorkStyle? = null, onStart: (Starter) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (empty) com.bamnat.app.ui.components.EmptyState(
+            "아직 첫 이야기를 기다리고 있어요",
+            "밤낮 운영팀: ${roomName.ifBlank { "이 광장" }}에 오신 걸 반가워요. ${Starter.talkOf(style)}, 궁금한 것, 해 보니 좋았던 것을 편하게 나눠 주세요",
+            mood = com.bamnat.app.ui.components.KaniMood.Basic,
+        )
+        workingNow?.let {
+            Text("🌙 지금 근무 중인 분 ${it}명이 이 광장에 있어요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Text("이렇게 시작해 보세요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { heading() })
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Starter.entries.forEach { st ->
+                androidx.compose.material3.AssistChip(onClick = { onStart(st) }, label = { Text(st.label(style)) },
+                    modifier = Modifier.heightIn(min = 48.dp))
+            }
+        }
+    }
+}
+
 /** 2.0.0 [RVN-06] What a card's ⋮ does; [room]/[roomName] keep a post (간직하기) as the sheet does. */
 internal class FeedMenu(val onFlag: (TalkPost) -> Unit, val onHide: (TalkPost) -> Unit, val onDelete: (TalkPost) -> Unit,
     val room: String?, val roomName: String)
@@ -471,6 +547,10 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
         Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "신고된 글 펼쳐 보기" else "이 글 보기") { if (folded) reveal = true else onOpen() }
             .padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 2.0.0 [RVN-20] 검토 U10a-03 A person, not only letters: the writer's first letter in a circle (as 회사 찾기's rows show a
+                // company), in the color of their 근무 태그 (the tag line under says it in words, 조건 14).
+                WriterInitial(p, name)
+                Spacer(Modifier.width(12.dp))
                 // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
                 // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
                 NameAndTime(p, name, Modifier.weight(1f))
@@ -531,6 +611,35 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
     }
 }
 
+/**
+ * 2.0.0 [RVN-20] U10a-03 The writer's first letter in a circle: a 마을 이름's first letter, a 참여자's number, 나 for my own. Its color goes
+ * with the 근무 태그's 근무형태 (one of the theme's three container colors, so 4조2교대 writers look alike at a glance); without a tag, the
+ * plain one. Read out with the name beside it, so it says nothing itself.
+ */
+@Composable
+internal fun WriterInitial(p: TalkPost, name: String) {
+    val letter = when {
+        p.mine -> "나"
+        p.nick != null -> p.nick.trim().take(1)
+        p.who > 0 -> p.who.toString().take(2)
+        else -> name.take(1)
+    }
+    val scheme = MaterialTheme.colorScheme
+    val (back, fore) = when (p.tag?.form?.ordinal?.rem(3)) {
+        0 -> scheme.primaryContainer to scheme.onPrimaryContainer
+        1 -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    }
+    // The circle grows with the letter (글자 200%: 28sp in 36dp would be cut, 조건 12), up to 1.6x.
+    val side = 36.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
+    androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.CircleShape, color = back,
+        modifier = Modifier.size(side).clearAndSetSemantics { }) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(letter, style = MaterialTheme.typography.titleSmall, color = fore, maxLines = 1)
+        }
+    }
+}
+
 /** [RVN-06] The card's ⋮: 간직하기, 신고하기 or 지우기 (mine), 이 사람 글 안 보기, 닫기 — as in the sheet. */
 @Composable
 private fun FeedMenuButton(p: TalkPost, menu: FeedMenu) {
@@ -560,16 +669,11 @@ private fun FeedMenuButton(p: TalkPost, menu: FeedMenu) {
     }
 }
 
-/**
- * 1.39 [PLZC-60] (사용자 2026-11-08 "화면을 보면 위에 공간이 … 불필요하게 공간을 차지"): the plaza's whole head as one line: its name
- * (in 마을, where there is no top bar), 오늘 글 n, the one door that is the plaza's own business (회사 정보 · 시세 · 선배 답), and a menu with
- * the rest (회사 규칙 광장, 우리 회사 찾기, 내 태그·알림, 지킬 것). Before, these were six rows above the first post.
- */
-@Composable
-internal fun PlazaHead(
-    title: String?,
+/** 2.0.0 [RVN-20] What the plaza's head shows: its own door ([main]), the rest in [menu], and the plaza's rule ([note]). */
+internal data class PlazaHeadModel(val main: Pair<String, () -> Unit>?, val menu: List<Pair<String, () -> Unit>>, val note: String)
+
+internal fun plazaHeadModel(
     plan: StylePlaza.Plan,
-    today: Int?,
     picks: Int,
     onPicks: () -> Unit,
     onCompany: () -> Unit,
@@ -578,7 +682,7 @@ internal fun PlazaHead(
     onAll: (() -> Unit)?,
     onFind: (() -> Unit)?,
     onTag: (() -> Unit)?,
-) {
+): PlazaHeadModel {
     val company = plan.top == StylePlaza.Top.COMPANY_ROOM
     // The one door shown: a company's 정보, else 시세 (알바·현장 광장's own business), else 선배 답 when there are some.
     val main: Pair<String, () -> Unit>? = when {
@@ -587,15 +691,21 @@ internal fun PlazaHead(
         picks > 0 -> "📚 선배 답 $picks" to onPicks
         else -> null
     }
-    val menu = plazaMenu(plan, picks, onPicks, onCompany, onShare, onRates, onAll, onFind, onTag)
-    var menuOpen by remember { mutableStateOf(false) }
-    var rulesOpen by remember { mutableStateOf(false) }
-    if (rulesOpen) AlertDialog(
-        onDismissRequest = { rulesOpen = false },
-        title = { Text("이 광장에서 지킬 것") },
-        text = { Text(plan.note) },
-        confirmButton = { TextButton(onClick = { rulesOpen = false }) { Text("닫기") } },
-    )
+    return PlazaHeadModel(main, plazaMenu(plan, picks, onPicks, onCompany, onShare, onRates, onAll, onFind, onTag), plan.note)
+}
+
+/**
+ * 1.39 [PLZC-60] (사용자 2026-11-08 "화면을 보면 위에 공간이 … 불필요하게 공간을 차지"): the plaza's whole head as one line: its name
+ * (in 마을, where there is no top bar), 오늘 글 n, the one door that is the plaza's own business (회사 정보 · 시세 · 선배 답), and a menu with
+ * the rest (회사 규칙 광장, 우리 회사 찾기, 내 태그·알림, 지킬 것). Before, these were six rows above the first post.
+ * 2.0.0 [RVN-20] 총괄 사진 검토 (rvn_69·71~75): on a screen with a top bar the menu ([menuInBar]) and, when it fits, the door ([mainInBar])
+ * are in the bar ([PlazaBarActions]); this line then shows only what is left (오늘 글 n, the door that did not fit), and nothing when nothing
+ * is (before, a line under the bar held ⋮ alone, even at 100% on a wide screen).
+ */
+@Composable
+internal fun PlazaHead(title: String?, today: Int?, model: PlazaHeadModel, menuInBar: Boolean = false, mainInBar: Boolean = false) {
+    val main = model.main.takeUnless { mainInBar }
+    if (title == null && today == null && main == null && menuInBar) return
     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             title?.let {
@@ -608,18 +718,63 @@ internal fun PlazaHead(
             }
         }
         main?.let { (label, go) -> TextButton(onClick = go) { Text(label, maxLines = 1) } }
-        androidx.compose.foundation.layout.Box {
-            androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
-                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert,
-                    "광장 메뉴: 회사 규칙 광장, 내 근무 태그 등")
+        if (!menuInBar) PlazaMenuButton(model)
+    }
+}
+
+/** 2.0.0 [RVN-20] The plaza's door (when [withMain]) and ⋮ as a top bar's actions. */
+@Composable
+internal fun PlazaBarActions(model: PlazaHeadModel, withMain: Boolean) {
+    if (withMain) model.main?.let { (label, go) -> TextButton(onClick = go) { Text(label, maxLines = 1) } }
+    PlazaMenuButton(model)
+}
+
+/**
+ * 2.0.0 [RVN-20] Whether the plaza's door fits in the top bar beside [title]: measured with the bar's own letters at this font scale,
+ * so 200% or a folded phone keeps the title whole (HQ-89) and the door goes to the line under the bar.
+ */
+@Composable
+internal fun plazaMainFitsBar(title: String, main: String?): Boolean {
+    if (main == null) return true
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val titleStyle = MaterialTheme.typography.titleLarge
+    val mainStyle = MaterialTheme.typography.labelLarge
+    val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    return remember(title, main, width, density.fontScale) {
+        with(density) {
+            val t = measurer.measure(title, titleStyle, maxLines = 1).size.width.toDp().value
+            val m = measurer.measure(main, mainStyle, maxLines = 1).size.width.toDp().value
+            // 뒤로 48 + its gap 8 + the door's own 24 of padding + ⋮ 48 + the bar's ends 8.
+            t + m + BAR_TAKEN_DP <= width
+        }
+    }
+}
+
+private const val BAR_TAKEN_DP = 136f
+
+/** The plaza's ⋮ with its menu and 지킬 것. */
+@Composable
+private fun PlazaMenuButton(model: PlazaHeadModel) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var rulesOpen by remember { mutableStateOf(false) }
+    if (rulesOpen) AlertDialog(
+        onDismissRequest = { rulesOpen = false },
+        title = { Text("이 광장에서 지킬 것") },
+        text = { Text(model.note) },
+        confirmButton = { TextButton(onClick = { rulesOpen = false }) { Text("닫기") } },
+    )
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.IconButton(onClick = { menuOpen = true }) {
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert,
+                "광장 메뉴: 회사 규칙 광장, 내 근무 태그 등")
+        }
+        com.bamnat.app.ui.components.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            model.menu.forEach { (label, go) ->
+                androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { menuOpen = false; go() })
             }
-            com.bamnat.app.ui.components.DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                menu.forEach { (label, go) ->
-                    androidx.compose.material3.DropdownMenuItem(text = { Text(label) }, onClick = { menuOpen = false; go() })
-                }
-                if (plan.note.isNotBlank()) androidx.compose.material3.DropdownMenuItem(text = { Text("ℹ️ 이 광장에서 지킬 것") },
-                    onClick = { menuOpen = false; rulesOpen = true })
-            }
+            if (model.note.isNotBlank()) androidx.compose.material3.DropdownMenuItem(text = { Text("ℹ️ 이 광장에서 지킬 것") },
+                onClick = { menuOpen = false; rulesOpen = true })
         }
     }
 }
@@ -647,18 +802,28 @@ internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) 
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {
             contentDescription = "글 쓰기. $prompt" + (topic?.let { ". 이번 주 주제 $it" } ?: "")
         }) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(prompt, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-            Spacer(Modifier.width(8.dp))
+        // 2.0.0 [RVN-20] With big letters the box's words take the whole width and 글 쓰기 goes under them: beside it the week's topic
+        // (on a quiet plaza, what to write about) was cut to '이번 주 주제 · 쉬…'.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM
+        val words: @Composable () -> Unit = {
+            Text(prompt, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (big) 3 else 2, overflow = TextOverflow.Ellipsis)
+            topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis) }
+        }
+        val write: @Composable () -> Unit = {
             androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.large) {
                 Text("글 쓰기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }
+        }
+        if (big) Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(end = 8.dp)) { words() }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { write() }
+        } else Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { words() }
+            Spacer(Modifier.width(8.dp))
+            write()
         }
     }
 }

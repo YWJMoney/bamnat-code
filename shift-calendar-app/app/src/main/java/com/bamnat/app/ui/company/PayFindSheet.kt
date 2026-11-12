@@ -284,7 +284,8 @@ fun PayFindFlow(
                 fit.first?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 fit.second?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
                 // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds.
-                Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요. " +
+                // PC-155 While the calendar is held by another company the card below says so; this line does not promise '정해져요'.
+                if (wait == null) Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요. " +
                     "이 달력은 30일 동안 ‘${row.name}’${com.bamnat.core.text.Josa.fit(row.name, "으로")} 정해져요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 LaunchedEffect(row.serverId) {

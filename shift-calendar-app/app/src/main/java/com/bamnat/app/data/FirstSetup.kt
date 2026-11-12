@@ -140,9 +140,10 @@ class FirstSetup(
             } else if (source?.kind == SetupSource.Kind.PUBLIC) {
                 // [SPAT-03] From a public row: its own way on (pay, then the plaza as '공개 자료 확인·고침'), not the hand-made invite,
                 // so one card asks, not two. The order is the one saved, as the user may have changed it in the setup.
-                val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept)
+                val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept, source.site)
                 val codes = PublicCycleFiles.codesOf(cycle, marked)
-                store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis()))
+                store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis(),
+                    site = if (cycle.id.isEmpty()) cycle.site else ""))
                 store.setDraft(null)
                 store.setHandMade(false)
             } else if (marked.companyName.isNotBlank()) {

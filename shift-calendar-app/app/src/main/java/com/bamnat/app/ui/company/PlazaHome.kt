@@ -78,7 +78,8 @@ class PlazaHomeViewModel(
     private val scope = c.companyOf(calendar)
     internal val container: AppContainer get() = c
     val enabled: Boolean = c.companyApi.enabled
-    private val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    /** The kind of work of the calendar this plaza is for (조건 13: the 시작 꾸러미 says it in that kind's words). */
+    internal val style = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     /** The company this calendar joined, as the server last said; else none. */
     private val company = scope.store.member.value?.takeIf { it.first.isNotBlank() }
         ?.let { it.first to it.second.ifBlank { scope.store.applied.value?.company ?: "우리 회사" } }
@@ -364,13 +365,34 @@ class PlazaHomeViewModel(
     }
 
     /** [focus]: the post tapped on the card (PC 확인 a6cab3c8: 미리보기를 눌러도 반응이 없어요), scrolled to and marked. */
+    /**
+     * 2.0.0 [RVN-20] U10a-02 One of [Starter]'s ways to begin: the box opens on that kind, 오늘 근무 한 줄 started with today's work as my
+     * calendar says it, 투표 with its two choices out.
+     */
+    internal fun openStarter(s: Starter) {
+        val p = _plan.value
+        val room = p.room ?: return
+        markSeen()
+        val kind = if (s == Starter.TODAY) "talk" else "question"
+        talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note, kind = kind)
+        // The talk may still be the one open a moment ago (then show() keeps what was in it): this way to start is the kind now.
+        talk.kind.value = kind
+        talk.replyId.value = null
+        when (s) {
+            Starter.TODAY -> talk.draft.value = Starter.todayLine(style, _todayShift.value)
+            Starter.POLL -> talk.pollStart.value = true
+            Starter.QUESTION -> Unit
+        }
+        talk.typeNow.value = true
+    }
+
     fun openTalk(focus: String? = null, reply: Boolean = false) {
         val p = _plan.value
         val room = p.room ?: return
         markSeen()
         talk.show(room, StylePlaza.ROOM, p.title, hint = p.hint, note = p.note, focus = focus)
         // PC 4차 c0ca3d9f ('환영 답 남기기'가 시트 맨 위만 열었어요): the box answers that post at once ('○○에게 답글').
-        if (reply && focus != null) talk.replyId.value = focus
+        if (reply && focus != null) { talk.replyId.value = focus; talk.typeNow.value = true }
     }
 
     /**
@@ -426,12 +448,29 @@ fun PlazaHomeScreen(
     LaunchedEffect(state.refreshing) { if (!state.refreshing) pulling = false }
     // [FREE-05] 광장's own emoji (사용자 2026-10-30: 배경이나 이모티콘), on this phone only.
     val homeTitle = listOfNotNull(com.bamnat.app.ui.theme.LocalScreenLook.current.emoji, plan.title).joinToString(" ")
+    // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
+    val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
+    val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
+    // 1.39 [PLZC-60] the head's door and menu; 2.0.0 [RVN-20] (총괄 사진 검토) in the top bar when there is one.
+    val picks = vm.picks.collectAsStateWithLifecycle().value
+    val mine = vm.mine.collectAsStateWithLifecycle().value
+    var picksOpen by remember { mutableStateOf(false) }
+    var tagOpen by remember { mutableStateOf(false) }
+    if (people && picksOpen) PlazaPicksDialog(picks, mine?.form) { picksOpen = false }
+    if (people && tagOpen) PlazaTagScopeDialog(vm.container, plan.room, onDismiss = { tagOpen = false; vm.refreshMine() })
+    val head = plazaHeadModel(plan, picks = picks.size, onPicks = { picksOpen = true },
+        onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
+        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
+        onFind = onFind,
+        onTag = { tagOpen = true }.takeIf { plan.room?.startsWith("style-") == true && mine != null })
+    val mainInBar = onBack != null && people && plazaMainFitsBar(homeTitle, head.main?.first)
     Scaffold(
         topBar = {
             // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title is the page's first line, under 마을's tabs.
             if (onBack != null) TopAppBar(
                 title = { Text(homeTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                actions = { if (people) PlazaBarActions(head, withMain = mainInBar) },
             )
         },
     ) { padding ->
@@ -445,28 +484,13 @@ fun PlazaHomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // PC 4차 c0ca3d9f (X10): read as a state, so 3.12 turning on shows here without opening the app again.
-                val flagRows by vm.container.flags.byKey.collectAsStateWithLifecycle()
-                val people = flagRows[com.bamnat.core.flags.FlagCatalog.PLAZA_PEOPLE]?.on == true && plan.room != null
                 // [SPD-13] What the phone kept is on screen while it is read again: a thin line, not a spinner.
                 // 1.39 [PLZC-60] with 사람 먼저 the name is on the head line ([PlazaHead]).
                 if (onBack == null && !people) Text(homeTitle, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 4.dp).semantics { heading() })
                 // 1.39 [PLZC-60] (사용자 2026-11-08): with 사람 먼저 the head is one line, the plaza's own door beside its name and the rest in its menu.
-                if (people) {
-                    val picks = vm.picks.collectAsStateWithLifecycle().value
-                    val mine = vm.mine.collectAsStateWithLifecycle().value
-                    var picksOpen by remember { mutableStateOf(false) }
-                    var tagOpen by remember { mutableStateOf(false) }
-                    if (picksOpen) PlazaPicksDialog(picks, mine?.form) { picksOpen = false }
-                    if (tagOpen) PlazaTagScopeDialog(vm.container, plan.room, onDismiss = { tagOpen = false; vm.refreshMine() })
-                    PlazaHead(title = homeTitle.takeIf { onBack == null }, plan = plan, today = state.talk?.pulse?.today,
-                        picks = picks.size, onPicks = { picksOpen = true },
-                        onCompany = { plan.room?.let(onCompany) }, onShare = onShare, onRates = onRates,
-                        onAll = onAll.takeIf { plan.top == StylePlaza.Top.COMPANY_ROOM || plan.room == StylePlaza.SHIFT || plan.room == StylePlaza.DAY },
-                        onFind = onFind,
-                        onTag = { tagOpen = true }.takeIf { plan.room?.startsWith("style-") == true && mine != null })
-                }
+                if (people) PlazaHead(title = homeTitle.takeIf { onBack == null }, today = state.talk?.pulse?.today, model = head,
+                    menuInBar = onBack != null, mainInBar = mainInBar)
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 header?.invoke()
                 vm.note?.let { n ->
@@ -506,7 +530,8 @@ fun PlazaHomeScreen(
                             }
                         }
                     }
-                    TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) })
+                    TalkCard(plan, state, seen = vm.seen.collectAsStateWithLifecycle().value, onOpen = { vm.openTalk() }, onPost = { vm.openTalk(it) },
+                        style = vm.style, onStart = { vm.openStarter(it) })
                 }
                 (plan.alsoRoom ?: vm.backRoom.takeIf { plan.top != StylePlaza.Top.COMPANY_ROOM })?.let {
                     OutlinedButton(onClick = vm::across, modifier = Modifier.fillMaxWidth()) {
@@ -556,12 +581,9 @@ private fun InfoCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit) {
             val r = state.room
             if (state.facts.isEmpty()) Text(if (r == null) "불러오는 중이에요" else "아직 정리된 정보가 없어요",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            state.facts.forEach { (label, value) ->
-                Row {
-                    Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.width(88.dp))
-                    Text(value, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
+            // 2.0.0 [RVN-20] HQ-90: the same label·value row as the company page's department card (one shift a line, the label above the
+            // value from 130% or under 280dp), not a fixed 88dp column that left the shifts a word or two a line.
+            state.facts.forEach { (label, value) -> SetupLine(label, value) }
             r?.base?.let { b ->
                 Text((if (b.adopted) "채택된 설정" else "확인 중인 설정") + " · 쓰는 분 ${b.uses}명" + (b.version?.let { " · ${it}판" } ?: ""),
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
@@ -590,13 +612,17 @@ private fun FixesCard(state: PlazaHomeViewModel.State, onCompany: () -> Unit, on
 
 /** 자유 토의: the newest few posts, and the sheet to read and write them all. */
 @Composable
-private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit, onPost: (String) -> Unit = { onOpen() }) {
+private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, seen: Long = 0L, onOpen: () -> Unit, onPost: (String) -> Unit = { onOpen() },
+    style: com.bamnat.core.work.WorkStyle? = null, onStart: (Starter) -> Unit = { onOpen() }) {
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(plan.roomTitle.ifEmpty { "자유 토의" }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             val talk = state.talk
+            // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03: before 3.12's 사람 먼저 too, a quiet plaza has a week's topic (the 운영팀's always first)
+            // and what to write, one tap each, in place of one line of text.
+            val quiet = talk != null && talk.posts.count { it.parent == null && it.hidden == null } < STARTER_POSTS
             // 1.36 [VIL-11] 이번 주 이야기 주제: a door to the talk when there is nothing to say.
-            talk?.topic?.let { t ->
+            (talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet })?.let { t ->
                 Text("이번 주 주제 · $t", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClickLabel = "주제로 글 쓰기", onClick = onOpen).padding(vertical = 4.dp))
             }
@@ -610,8 +636,6 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
             when {
                 talk == null && state.error != null -> Text(state.error, style = MaterialTheme.typography.bodyMedium)
                 talk == null -> CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                talk.posts.isEmpty() -> Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> talk.posts.filter { it.parent == null && it.hidden == null }.takeLast(3).reversed().forEach { p ->
                     // [TOWN-13] PC 확인 a6cab3c8: the preview opens the talk at that post.
                     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "이 글 보기") { onPost(p.id) }.heightIn(min = 48.dp)) {
@@ -624,6 +648,8 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
                     }
                 }
             }
+            if (quiet && talk != null) PlazaStarter(empty = talk.posts.none { it.parent == null && it.hidden == null }, roomName = plan.roomTitle,
+                workingNow = null, style = style, onStart = onStart)
             talk?.limit?.let { l -> Text(l.line(talk.leftPosts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             Button(onClick = onOpen, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("글 보기·쓰기") }
         }
