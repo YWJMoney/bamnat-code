@@ -42,6 +42,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -109,12 +110,15 @@ internal fun NoticeStack(
     val allowed = notices.filter { n -> n.urgent || (n.kind !in muted && !(n.section == InboxSection.SUGGEST && suggestOff)) }
     // Which notices said something the last time they were measured, in order; the band is the first urgent one the user did not put away.
     val present = allowed.filter { (state.heights[it.key] ?: 0) > 0 }
-    val waiting = present.filter { it.key !in state.snoozed }
+    val waiting = present.filter { it.key !in state.snoozed && it.key !in state.answered }
     val urgent = waiting.filter { it.urgent }
     val band: Notice? = when {
         open <= 0 -> null
         // PC-81: Once settled, a closed place stays closed: what comes later is in the bell.
         state.settled && !state.slotOpen -> null
+        // 갈래 P 3/3 (L의 '앱 잠금 쉼'은 화면이 앞에 온 뒤에야 말해서 알람 줄에 띠를 내줬어요): until it settles the first in the order
+        // has it; then the band up keeps its place, so what is under the finger does not change.
+        !state.settled -> urgent.firstOrNull()
         else -> urgent.firstOrNull { it.key == state.bandKey } ?: urgent.firstOrNull()
     }
     // HQ-50: 권유 one at a time: the first of the calendar's, else the one another feature put.
@@ -122,6 +126,9 @@ internal fun NoticeStack(
     val rows = waiting.filter { it.section != InboxSection.SUGGEST || it === suggestion }
     val postedRows = posted.filter { it.kind !in muted && !(it.section == InboxSection.SUGGEST && (suggestOff || suggestion != null)) }
     SideEffect {
+        // A notice answered in the sheet whose own copy here has not heard yet (it reads its store when the app comes back) waits until
+        // that copy says nothing too.
+        if (state.answered.isNotEmpty()) state.answered.filter { (state.heights[it] ?: 0) == 0 }.takeIf { it.isNotEmpty() }?.let { state.answered = state.answered - it.toSet() }
         state.bandKey = band?.key
         if (!state.settled || band == null) state.slotOpen = band != null
         // The bell's number is what its sheet holds (the band's notice too), so '3' on the bell is '알림 3' when it opens.
@@ -273,6 +280,7 @@ private fun PostedRow(r: InboxRow, inbox: Inbox, state: NoticeStackState) {
 @Composable
 private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: NoticeStackState, inbox: Inbox) {
     val context = LocalContext.current
+    val expandable = !(n.onAction != null && n.button)
     Column(Modifier.fillMaxWidth()) {
         InboxLine(
             icon = when (n.tone) {
@@ -281,7 +289,8 @@ private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: Not
                 Tone.Caution, Tone.Danger -> Icons.Outlined.WarningAmber
             },
             tint = if (n.tone == Tone.Plain) MaterialTheme.colorScheme.primary else n.tone.color(),
-            title = n.label ?: n.line.orEmpty(), line = n.line?.takeIf { it != n.label },
+            // Open, the notice says its words itself under the row (the line was said twice, 갈래 L 카드 사진).
+            title = n.label ?: n.line.orEmpty(), line = n.line?.takeIf { it != n.label && !(opened && expandable) },
             onClick = {
                 val go = n.onAction
                 if (go != null && n.button) { state.sheetOpen = false; go() } else onOpen()
@@ -295,11 +304,16 @@ private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: Not
                 inbox.mute(n.kind, n.label ?: n.line.orEmpty())
                 AppSnack.show("이런 알림은 다시 보이지 않아요. 기능 켜고 끄기에서 다시 켤 수 있어요", undo = { inbox.unmute(n.kind) })
             }),
-            expanded = if (n.onAction != null && n.button) null else opened,
+            expanded = if (expandable) opened else null,
             go = n.action?.takeIf { n.onAction != null && n.button },
         )
-        if (opened && !(n.onAction != null && n.button)) Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-            CompositionLocalProvider(LocalNoticeFolded provides false) { n.content() }
+        // Answered or closed in here (its card drew something, then nothing), the row goes with it, also before the calendar's copy of
+        // the notice hears of it (조건 3: 답한 뒤에 크게 남지 않아요).
+        var drew by remember(n.key) { mutableStateOf(false) }
+        if (opened && expandable) Box(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+            Box(Modifier.fillMaxWidth().onSizeChanged { if (it.height > 0) drew = true else if (drew) state.answered = state.answered + n.key }) {
+                CompositionLocalProvider(LocalNoticeFolded provides false) { n.content() }
+            }
         }
     }
 }
@@ -408,6 +422,8 @@ internal class NoticeStackState(sheet: Boolean = false, snoozed: Set<String> = e
     internal var slotOpen by mutableStateOf(false)
     internal var settled by mutableStateOf(false)
     internal var snoozed: Set<String> by mutableStateOf(snoozed)
+    /** Notices answered or closed inside the sheet, until the calendar's own copy says nothing too. */
+    internal var answered: Set<String> by mutableStateOf(emptySet())
     var sheetOpen by mutableStateOf(sheet)
     internal var sheetFocus: String? by mutableStateOf(null)
 
