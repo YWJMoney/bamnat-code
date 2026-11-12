@@ -87,20 +87,23 @@ object BackupCrypto {
     fun decrypt(input: InputStream, key: ByteArray, iv: ByteArray, out: OutputStream) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(TAG_BITS, iv))
-        // GCM gives the plain bytes only after the tag is checked, so they are collected first.
-        val plain = java.io.ByteArrayOutputStream()
+        // GCM gives the plain bytes only after the tag is checked, so they are collected first. 2.0.0 [RVL-10] (검토 DATA-09) Kept as the
+        // cipher hands them out (the phone's and the PC's give nothing before the end), not copied once more into one buffer.
+        val parts = ArrayList<ByteArray>()
+        val last: ByteArray
         val buf = ByteArray(64 * 1024)
         try {
             while (true) {
                 val n = input.read(buf)
                 if (n < 0) break
-                cipher.update(buf, 0, n)?.let { plain.write(it) }
+                cipher.update(buf, 0, n)?.takeIf { it.isNotEmpty() }?.let(parts::add)
             }
-            plain.write(cipher.doFinal())
+            last = cipher.doFinal()
         } catch (e: javax.crypto.AEADBadTagException) {
             throw WrongPassword()
         }
-        plain.writeTo(out)
+        parts.forEach(out::write)
+        out.write(last)
     }
 
     private fun key(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec {
