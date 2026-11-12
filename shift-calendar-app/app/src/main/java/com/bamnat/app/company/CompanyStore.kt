@@ -291,7 +291,7 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         }).apply()
     }
 
-    fun voted(ok: Boolean) {
+    fun voted(ok: Boolean?) {
         _applied.value?.let { setApplied(it.copy(vote = ok)) }
     }
 

@@ -3985,7 +3985,10 @@ async function vote(request, env) {
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");
   if (typeof body.setup !== "string" || !/^[0-9a-f]{16}$/.test(body.setup)) refuse("setup", "setup");
-  if (typeof body.ok !== "boolean") refuse("ok", "ok");
+  // 2.0.0 [RVN-18] 검토 COMP-22-1: ok null takes this phone's 맞아요·달라요 back (pressing ✓ again, as a post's 공감 does). Before, the
+  // ✓ button sent the same vote again. Points come back without it; a version already adopted stays adopted.
+  const takeBack = body.ok === null;
+  if (!takeBack && typeof body.ok !== "boolean") refuse("ok", "ok");
   // AH 1.27 [PLAZA-15] 달라요 says where: the order, the times or the pay items (AH-D9).
   const why = body.ok ? null : VOTE_WHY.includes(body.why) ? body.why : "wrong";
   // AI 1.27 [PLAZA-30] A pay-slip 맞았어요 needs the month the phone matched; an older app's bare one counts as a plain 맞았어요.
@@ -4008,6 +4011,10 @@ async function vote(request, env) {
   const pending = rule ? null : await one(env, `SELECT id FROM reports WHERE company_id = ? AND grp = ? AND status = 'pending' AND ${pgShown()} LIMIT 1`, c.id, grp);
   if (!rule && !pending) return voteGone(env, c.id, grp);
   const dev = await deviceHash(device);
+  if (takeBack) {
+    await run(env, "DELETE FROM votes WHERE company_id = ? AND grp = ? AND device = ?", c.id, grp, dev);
+    return json(await state(env, c.id, grp, (await settings(env)).adoptPoints, Boolean(rule)));
+  }
   await forgetNetworks(env, now);
   const cluster = await clusterFor(env, c.id, net);
   await run(env, `INSERT INTO votes (company_id, grp, device, cluster, ok, verified, why, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

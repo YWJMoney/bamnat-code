@@ -74,14 +74,14 @@ fun FirstPayCard(first: FirstPay, calendar: String, modifier: Modifier = Modifie
                 style = MaterialTheme.typography.bodyMedium)
             Text("금액은 빠지고 가산율·수당 이름 같은 방식만 올라가요. 올리기 전에 한 번 보여 드려요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { open = true }, modifier = Modifier.weight(1f)) { Text("보고 올리기") }
+            // 2.0.0 [RVN-18] COMP-22-6 one under the other with big letters.
+            com.bamnat.app.ui.components.PairRow(first = { m -> Button(onClick = { open = true }, modifier = m) { Text("보고 올리기") } }, second = { m ->
                 TextButton(onClick = {
                     FirstPayAsked.mark(context, first.applied)
                     com.bamnat.app.company.ShareAskGate.declined(context)
                     onClosed()
-                }) { Text("다음에") }
-            }
+                }, modifier = m) { Text("다음에") }
+            })
         }
     }
     if (open) FirstPaySheet(first, calendar, onDismiss = { open = false }, onSent = { open = false; FirstPayAsked.mark(context, first.applied); onClosed() })
@@ -91,7 +91,9 @@ fun FirstPayCard(first: FirstPay, calendar: String, modifier: Modifier = Modifie
 @Composable
 private fun FirstPaySheet(first: FirstPay, calendar: String, onDismiss: () -> Unit, onSent: () -> Unit) {
     val c = LocalContext.current.appContainer
-    val scope = rememberCoroutineScope()
+    // 2.0.0 [RVN-18] 검토 COMP-22-7: the first pay way goes on when the sheet is closed while it is sending (before, closing cut the request,
+    // which may have reached the server, so sending again made two).
+    val scope = remember { kotlinx.coroutines.CoroutineScope(c.appScope.coroutineContext + kotlinx.coroutines.Dispatchers.Main) }
     val holder = remember(calendar) { TalkHolder(c, scope, calendar) }
     var draft by remember { mutableStateOf<ProposalDraft?>(null) }
     var busy by remember { mutableStateOf(false) }
