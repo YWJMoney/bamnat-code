@@ -92,7 +92,7 @@ object WidgetRefresher {
      * up to an hour late, leaving yesterday on the home screen after midnight. Exact and non-waking, it is drawn at 00:00:05 when
      * the screen is on, or the moment it is turned on.
      */
-    private fun scheduleNext(context: Context, flowChanges: LocalDateTime?) {
+    internal fun scheduleNext(context: Context, flowChanges: LocalDateTime?) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = Today.zone()
         val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000

@@ -195,7 +195,7 @@ class AKScreenshotTest : ScreenshotBase() {
     @Test fun memoScheduleShiftChips() = shoot("1170_ak_memo_shift_chips", FOLDED, memos {
         tapText("일반 메모", prefix = true, scrolls = 0)
         tapText("다음 야간 때 열쇠 챙기기")
-        tapText("알림 넣기", exact = true)
+        tapText("알림 넣기, ", prefix = true) // the offer, not the editor chip of the same name
         assertTrue(appears("근무에 맞춰", exact = true))
         tapText("저장", exact = true)
         back() // the editor saves as it closes
@@ -206,7 +206,7 @@ class AKScreenshotTest : ScreenshotBase() {
 
     @Test fun memoLastSameShift() = shoot("1171_ak_memo_last_same_shift", FOLDED, memos {
         tapText("3번 라인 센서 점검 요청", exact = false)
-        tapText("지난 주간(10/9) 메모 1개 보기", exact = false)
+        tapText("지난 주간 메모 1개", exact = false)
         assertTrue(appears("열쇠는 경비실", exact = false))
     })
 

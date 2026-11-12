@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -67,10 +68,13 @@ import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.outlined.PushPin
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import android.widget.Toast
@@ -128,7 +132,7 @@ import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     // [STAB-01] Read at once, on the same frame as the key: a text box one frame behind the keyboard
@@ -253,10 +257,17 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") }
                 },
                 title = {
+                    // 2.0.0 [RVI-48] (디자인 품질 12) At 200% text on a folded phone it stood letter by letter: one line, and where the
+                    // time does not fit beside the five buttons (the unfolded editor pane) only '저장됨', not '저장됨 · …'.
+                    val narrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp to androidx.compose.ui.platform.LocalDensity.current.fontScale
+                    var short by remember(narrow) { mutableStateOf(false) }
                     Text(
-                        savedAt?.let { "저장됨 · " + savedTime(it) } ?: if (memo.id == 0L) "새 메모" else "",
+                        savedAt?.let { if (short) "저장됨" else "저장됨 · " + savedTime(it) } ?: if (memo.id == 0L) "새 메모" else "",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        onTextLayout = { if (it.hasVisualOverflow && !short && savedAt != null) short = true },
                     )
                 },
                 actions = {
@@ -266,12 +277,20 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     IconButton(onClick = vm::redo, enabled = canRedo) { Icon(Icons.AutoMirrored.Filled.Redo, "다시 실행") }
                     // 1.39 [TASK-02] 끝냄, in sight like 고정 (a repeating memo: the day it was opened from).
                     val done = memo.isDoneOn(vm.doneDay)
-                    IconButton(onClick = { vm.setDone(!done) }) {
-                        Icon(
-                            if (done) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
-                            if (done) "끝냄 풀기" else "끝냄 표시",
-                            tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    // 2.0.0 [RVI-62] (검토 U07a-12) What the circle does was hard to tell: held, it says '끝냄 표시' (pressed, the line
+                    // '끝냈어요 · 끝냄 풀기' under the chips already says what happened and the way back).
+                    androidx.compose.material3.TooltipBox(
+                        positionProvider = androidx.compose.material3.TooltipDefaults.rememberPlainTooltipPositionProvider(),
+                        tooltip = { PlainTooltip { Text(if (done) "끝냄 풀기" else "끝냄 표시") } },
+                        state = androidx.compose.material3.rememberTooltipState(),
+                    ) {
+                        IconButton(onClick = { vm.setDone(!done) }) {
+                            Icon(
+                                if (done) Icons.Filled.CheckCircle else Icons.Outlined.CheckCircle,
+                                if (done) "끝냄 풀기" else "끝냄 표시",
+                                tint = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                     IconButton(onClick = vm::togglePinned) {
                         Icon(
@@ -374,11 +393,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             if (showColors) {
                 ColorRow(selected = memo.colorIndex, onSelect = vm::setColor)
             }
-            Row(
-                Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+            // 2.0.0 [RVI-55] (검토 U07a-05) The chips ran off the edge (7 chips took a swipe to find): one line of as many as fit and
+            // '+N' for the rest, every one in sight once it is opened, so the writing still starts in the top quarter (디자인 품질 1)
+            // at 200% text on a folded phone. The day's shift rides in the date chip instead of taking a place of its own.
+            var moreChips by rememberSaveable { mutableStateOf(false) }
+            ChipLine(open = moreChips, onToggle = { moreChips = !moreChips }, modifier = Modifier.padding(horizontal = 16.dp)) {
                 val date = memo.date
                 // [RCP-11] 1.34: a memo not written yet can start from a 틀. [TAB-03] PC 확인 bf62e966: first in the row while the memo
                 // is empty (at the end it took a swipe to find).
@@ -408,8 +427,16 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 AssistChip(
                     onClick = { showDatePicker = true },
                     // This year's date without the year ("11월 7일 (토)"), so the chips after it stay in sight.
-                    label = { Text(if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)) },
-                    leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
+                    label = {
+                        val dayText = if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)
+                        // [RVI-55] The day's shift, as the label beside it said; a day with no shift (a shop, 투자) says nothing more.
+                        val shift = day?.shiftType?.takeIf { date != null }
+                        Text(shift?.let { "$dayText · ${it.name}" } ?: dayText, maxLines = 1)
+                    },
+                    leadingIcon = {
+                        val shift = day?.shiftType?.takeIf { date != null }
+                        if (shift != null) com.bamnat.app.ui.components.ShiftBadge(shift, size = 18.dp, showIcon = false) else Icon(Icons.Filled.Event, null, Modifier.size(18.dp))
+                    },
                     // 2.0.0 [RVI-30] (검토 MEMO-09) No 18dp X beside the date: one stray tap took the date and its repeat. '날짜 떼기' is in
                     // the date window, and what went with it is said.
                 )
@@ -419,7 +446,6 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
                 val say: (String?) -> Unit = { it?.let { line -> said = line } }
                 MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
-                if (date != null) ShiftLabel(day)
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
@@ -441,9 +467,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             }
             // [MEMO-06] 1.27 AK: 인수인계 이어 보기 — the last day with the same shift, a tap away.
             lastSame?.let { (label, memos) ->
+                // 2.0.0 [RVI-55] (디자인 품질 1·12) One line: at 200% '지난 주간(10/14) 메모 2개 보기' took two and pushed the writing
+                // below the top quarter. The day is in the sheet it opens.
                 if (memos.isNotEmpty()) TextButton(onClick = { showLast = true }, modifier = Modifier.padding(horizontal = 8.dp)) {
                     Icon(Icons.Filled.Event, null, Modifier.size(18.dp))
-                    Text("  지난 $label 메모 ${memos.size}개 보기")
+                    Text("  지난 ${label.substringBefore('(')} 메모 ${memos.size}개", maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
             // [UX-12] 1.25 Z (U19): a long memo's 맨 밑으로 / 맨 위로, shown while it is scrolled and gone 2 s after.
@@ -1043,6 +1071,9 @@ private fun ChecklistRow(
                         ) { change, amount -> change.consume(); drag?.invoke(amount.y) }
                     },
             )
+        } else {
+            // 2.0.0 [RVI-35] A finished line (no handle) keeps its box under the open lines' boxes.
+            Spacer(Modifier.minimumInteractiveComponentSize())
         }
         Checkbox(checked = checked, onCheckedChange = onCheckedChange)
         BasicTextField(
@@ -1079,6 +1110,62 @@ private fun ChecklistRow(
 }
 
 private val savedFormat = DateTimeFormatter.ofPattern("a h:mm", java.util.Locale.KOREAN)
+
+/**
+ * 2.0.0 [RVI-55] (검토 U07a-05) The editor's chips: on one line as many as fit and a '+N' chip for the rest; opened, all of them flow
+ * onto as many lines as they take, with '접기' last. When all fit there is no '+N'.
+ */
+@Composable
+private fun ChipLine(open: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier, chips: @Composable () -> Unit) {
+    androidx.compose.ui.layout.SubcomposeLayout(modifier) { c ->
+        val gap = 8.dp.roundToPx()
+        val loose = c.copy(minWidth = 0, minHeight = 0)
+        val items = subcompose("chips", chips).map { it.measure(loose) }
+        val width = c.maxWidth
+        fun toggle(slot: String, hidden: Int) = subcompose(slot) { MoreChips(open, hidden, onToggle) }.map { it.measure(loose) }.first()
+        val rows = mutableListOf<List<androidx.compose.ui.layout.Placeable>>()
+        if (items.sumOf { it.width } + gap * (items.size - 1).coerceAtLeast(0) <= width) {
+            rows += items
+        } else if (!open) {
+            // '+N' is about as wide for any N under ten: measured once for the most it could hide, then for what it does.
+            val probe = toggle("probe", items.size)
+            var shown = 0
+            var x = 0
+            while (shown < items.size && x + items[shown].width + gap + probe.width <= width) { x += items[shown].width + gap; shown++ }
+            val more = toggle("more", items.size - shown.coerceAtLeast(1))
+            // The first chip always shows; when it fills the line itself (a long 알림 at 200%), '+N' goes under it.
+            if (shown == 0) { rows += listOf(items.first()); rows += listOf(more) } else rows += items.take(shown) + more
+        } else {
+            var row = mutableListOf<androidx.compose.ui.layout.Placeable>()
+            var x = 0
+            for (p in items + toggle("more", 0)) {
+                if (row.isNotEmpty() && x + gap + p.width > width) { rows += row; row = mutableListOf(); x = 0 }
+                x += (if (row.isEmpty()) 0 else gap) + p.width
+                row += p
+            }
+            if (row.isNotEmpty()) rows += row
+        }
+        val heights = rows.map { r -> r.maxOf { it.height } }
+        layout(width, heights.sum()) {
+            var y = 0
+            rows.forEachIndexed { i, r ->
+                var x = 0
+                r.forEach { p -> p.placeRelative(x, y + (heights[i] - p.height) / 2); x += p.width + gap }
+                y += heights[i]
+            }
+        }
+    }
+}
+
+@Composable
+private fun MoreChips(open: Boolean, hidden: Int, onToggle: () -> Unit) {
+    AssistChip(
+        onClick = onToggle,
+        label = { Text(if (open) "접기" else "+$hidden", maxLines = 1) },
+        leadingIcon = { Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, Modifier.size(18.dp)) },
+        modifier = Modifier.semantics { contentDescription = if (open) "칩 접기" else "칩 ${hidden}개 더 보기" },
+    )
+}
 
 private fun savedTime(millis: Long): String =
     Instant.ofEpochMilli(millis).atZone(Today.zone()).toLocalTime().format(savedFormat)

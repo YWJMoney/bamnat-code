@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.bamnat.app.ui.memo
 
 import android.content.Intent
@@ -28,7 +30,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import com.bamnat.app.ui.components.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -46,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -127,9 +130,15 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
             clash?.let { ClashLine(it) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요") }
-                FilledTonalButton(onClick = onAccept) { Text(if (changing) "바꾸기" else "알림 넣기") }
+            // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone '알림 넣기' broke into two lines: the buttons keep one
+            // line each and the filled one goes under when both do not fit. (디자인 품질 2) It is filled: a tonal button on this
+            // card's own colour had no edge to see. (디자인 품질 14) Read aloud with its time: the editor's chips have a '알림 넣기' too.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요", maxLines = 1, softWrap = false) }
+                val said = "${if (changing) "알림 시각 바꾸기" else "알림 넣기"}, ${scheduleText(found.at)}"
+                androidx.compose.material3.Button(onClick = onAccept, modifier = Modifier.semantics { contentDescription = said }) {
+                    Text(if (changing) "바꾸기" else "알림 넣기", maxLines = 1, softWrap = false)
+                }
             }
         }
     }
@@ -189,9 +198,11 @@ internal fun ScheduleDialog(
         text = {
             // 2.0.0 [RVI-31] (검토 MEMO-17) Scrolls: on a folded phone or at 200% text the ways and the 허용하기 button were cut off.
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date)) }
-                    OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") ")) }
+                // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone the time stood in three lines beside the date: each keeps
+                // one line, and the time goes under the date when they do not fit side by side.
+                androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date), maxLines = 1, softWrap = false) }
+                    OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") "), maxLines = 1, softWrap = false) }
                 }
                 if (onRepeat != null) RepeatChips(again, was, repeat, restRepeat) { again = it }
                 if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }

@@ -131,7 +131,7 @@ class MemoStatsScreenshotTest : ScreenshotBase() {
         tab(2, wide = false); tapText("건강검진 오전 9시")
     }
     @Test fun foldedMemoScheduleDialog() = shoot("189_folded_memo_schedule_dialog", FOLDED) {
-        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("알림 넣기", exact = true)
+        tab(2, wide = false); tapText("건강검진 오전 9시"); tapText("알림 넣기, ", prefix = true)
     }
 
     @Test fun smallPhoneStats() = shoot("364_small_phone_stats", SMALL_PHONE) { tab(3, wide = false) }

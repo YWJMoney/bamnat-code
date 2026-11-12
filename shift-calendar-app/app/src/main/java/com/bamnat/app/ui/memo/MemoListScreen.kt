@@ -100,6 +100,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.onLongClick
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -114,6 +119,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.color
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -193,7 +199,9 @@ fun MemoListScreen(
                         value = query,
                         onValueChange = vm::setQuery,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                        placeholder = { Text("제목, 내용, #태그 검색") },
+                        // 2.0.0 [RVI-64] (디자인 품질 1·12) In the list pane at 200% the hint stood in four lines and pushed the
+                        // memos to the bottom half: it keeps one line (TalkBack still reads all of it).
+                        placeholder = { Text("제목, 내용, #태그 검색", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
                         trailingIcon = {
                             Row {
@@ -322,13 +330,35 @@ fun MemoListScreen(
                 // On the calendar tab a new memo starts on today so it lands in that list.
                 val date = if (state.tab == MemoTab.CALENDAR) today else null
                 // [DAILY-05] One button, then 메모 or 체크리스트 [UX-06]: said in words, a pencil alone was read as "edit".
+                // 2.0.0 [RVI-61] (검토 U07a-04) A tap writes a memo at once (it took a second tap on 메모); a long press offers 체크리스트,
+                // as the editor's ⋮ › 체크리스트로 바꾸기 does.
                 var choosing by remember { mutableStateOf(false) }
                 Box {
                     ExtendedFloatingActionButton(
-                        onClick = { choosing = true },
+                        onClick = { onNew(false, date) },
                         icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
                         text = { Text("새 메모") },
-                        modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트" },
+                        modifier = Modifier
+                            .pointerInput(Unit) {
+                                // Seen before the button's own tap: held long enough, the menu opens and the tap does not happen.
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false, pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    val up = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                                        waitForUpOrCancellation(pass = androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                    }
+                                    if (up == null) {
+                                        choosing = true
+                                        do {
+                                            val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Initial)
+                                            e.changes.forEach { it.consume() }
+                                        } while (e.changes.any { it.pressed })
+                                    }
+                                }
+                            }
+                            .semantics {
+                                contentDescription = if (date != null) "오늘 날짜로 새 메모" else "새 메모"
+                                onLongClick(label = "체크리스트로 새로 만들기") { choosing = true; true }
+                            },
                     )
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
@@ -491,13 +521,38 @@ private fun SelectionBar(
 /** 1.39 [FLOW-19] 주 띠 (DSG-06): ‹ week › with a dot under each day that has memos; the picked day's line under it with 모두 보기. */
 @Composable
 private fun MemoWeekStrip(state: MemoListState, today: LocalDate, vm: MemoListViewModel) = Column(Modifier.padding(horizontal = 4.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") }
+    val back = @Composable { IconButton(onClick = { vm.moveWeek(-1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난주") } }
+    val next = @Composable { IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") } }
+    val strip = @Composable { m: Modifier ->
         com.bamnat.app.ui.components.WeekStrip(
             days = state.week, selected = state.day ?: LocalDate.MIN, today = today,
-            onPick = vm::pickDay, modifier = Modifier.weight(1f), counts = state.weekCounts, countWord = "메모",
+            onPick = vm::pickDay, modifier = m, counts = state.weekCounts, countWord = "메모",
         )
-        IconButton(onClick = { vm.moveWeek(1, today) }) { Icon(androidx.compose.material.icons.Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
+    }
+    // 2.0.0 [RVI-64] (디자인 품질 4·12) In the 40% list pane of an unfolded phone at 200% letters seven days and two arrows left a
+    // day about 20dp: the arrows go over the strip with the week's dates between them, and the days get the whole width.
+    val numberStyle = MaterialTheme.typography.titleSmall
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val need = remember(numberStyle, density) { with(density) { measurer.measure("30", numberStyle, maxLines = 1).size.width.toDp() } + 10.dp }
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if ((maxWidth - 96.dp) / 7 >= need) {
+            Row(verticalAlignment = Alignment.CenterVertically) { back(); strip(Modifier.weight(1f)); next() }
+        } else Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                back()
+                val first = state.week.firstOrNull()
+                val last = state.week.lastOrNull()
+                Text(when {
+                    first == null || last == null -> ""
+                    first.month == last.month -> "${first.monthValue}/${first.dayOfMonth}~${last.dayOfMonth}"
+                    else -> "${first.monthValue}/${first.dayOfMonth}~${last.monthValue}/${last.dayOfMonth}"
+                }, style = MaterialTheme.typography.labelLarge, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                next()
+            }
+            strip(Modifier.fillMaxWidth())
+        }
     }
     state.day?.let { d ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -599,8 +654,10 @@ private fun CalendarMemoList(state: MemoListState, today: LocalDate, actions: Ca
 private fun GeneralMemoGrid(state: MemoListState, actions: CardActions) {
     val look = com.bamnat.app.ui.theme.LocalMemoLook.current
     LazyVerticalStaggeredGrid(
-        // [FREE-04] The app's own: as many 160dp columns as fit; else the look's.
-        columns = if (look.layout == null) StaggeredGridCells.Adaptive(minSize = 160.dp) else StaggeredGridCells.Fixed(look.columns),
+        // [FREE-04] The app's own: as many 160dp columns as fit; else the look's. 2.0.0 [RVI-48] (디자인 품질 12) 160dp grows with the
+        // text size: at 200% on a folded phone two columns left five letters a line, so it is one column there, two unfolded.
+        columns = if (look.layout == null) StaggeredGridCells.Adaptive(minSize = 160.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 2f))
+            else StaggeredGridCells.Fixed(look.columns),
         modifier = Modifier.fillMaxSize().memoPaper(look),
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 160.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -640,8 +697,11 @@ private fun DateHeader(date: LocalDate, day: ResolvedDay?, today: LocalDate) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        // 2.0.0 [RVI-64] (디자인 품질 12) In the narrow list pane at 200% 'D-5' was cut to 'D-' beside the date: it is its own
+        // piece of its own small row, so it goes under the date when they do not fit side by side.
+        androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(Fmt.dayTitle(date), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.CenterVertically).padding(end = 6.dp))
             val days = ChronoUnit.DAYS.between(today, date)
             val badge = when {
                 days == 0L -> "오늘"
@@ -649,11 +709,9 @@ private fun DateHeader(date: LocalDate, day: ResolvedDay?, today: LocalDate) {
                 days in 2..99 -> "D-$days"
                 else -> null
             }
-            if (badge != null) {
-                Spacer(Modifier.width(6.dp))
+            if (badge != null) Box(Modifier.align(Alignment.CenterVertically)) {
                 Pill(badge, MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimary)
             }
-            Spacer(Modifier.width(8.dp))
         }
         ShiftLabel(day, Modifier.align(Alignment.CenterVertically))
     }
@@ -931,14 +989,20 @@ private fun Footer(memo: Memo, showDate: Boolean) {
         }
         // [SCHED-01] A memo that is a schedule says when it rings or notifies.
         if (reminder != null) {
+            // 2.0.0 [RVI-63] (검토 U07a-08) Late, as the 할 일 위젯 counts it (gone past its time and not finished): the card says '늦음' in
+            // the caution colour, not only the widget.
+            val late = remember(memo, Today.date(), Today.dateTime().hour) {
+                com.bamnat.core.memo.TaskList.of(listOf(memo), Today.date()).firstOrNull()?.let { com.bamnat.core.memo.TaskList.overdue(it, Today.dateTime()) } == true
+            }
+            val tone = if (late) com.bamnat.app.ui.theme.Tone.Caution.color() else androidx.compose.material3.LocalContentColor.current
             Row(
                 Modifier.clip(MaterialTheme.shapes.small).background(pillColor).padding(horizontal = 6.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp))
+                Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp), tint = tone)
                 Spacer(Modifier.width(3.dp))
                 // 2.0.0 [RVI-49] (검토 MEMO-11) "매일 오전 9:00", not the first day as if it were past.
-                Text(scheduleLine(memo, reminder), style = MaterialTheme.typography.labelSmall)
+                Text((if (late) "늦음 · " else "") + scheduleLine(memo, reminder), style = MaterialTheme.typography.labelSmall, color = tone)
             }
         }
         for (tag in tags.take(3)) {
@@ -967,42 +1031,38 @@ private fun Pill(text: String, background: Color, content: Color) {
 
 @Composable
 private fun EmptyMemos(tab: MemoTab, searching: Boolean, style: com.bamnat.core.work.WorkStyle? = null) {
-    Column(
-        Modifier.fillMaxWidth().padding(top = 56.dp, start = 32.dp, end = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Icon(
-            if (tab == MemoTab.CALENDAR) Icons.Filled.Event else Icons.AutoMirrored.Outlined.StickyNote2,
-            contentDescription = null,
-            modifier = Modifier.size(56.dp),
-            tint = MaterialTheme.colorScheme.outline,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            when {
-                searching -> "찾는 메모가 없어요"
-                tab == MemoTab.CALENDAR -> "아직 달력 메모가 없어요"
-                else -> "아직 일반 메모가 없어요"
-            },
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Text(
-            when {
-                searching -> "검색어나 필터를 바꿔 보세요"
-                // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
-                tab == MemoTab.CALENDAR -> "달력에서 날짜를 누르거나 아래 버튼으로 오늘 메모를 남겨 보세요. " + when (style) {
-                    com.bamnat.core.work.WorkStyle.INVEST -> "그날 매매 기록이 함께 보여요."
-                    com.bamnat.core.work.WorkStyle.BUSINESS -> "그날 영업 여부가 함께 보여요."
-                    com.bamnat.core.work.WorkStyle.FIELD -> "그날 일감이 함께 보여요."
-                    else -> "그날 근무가 함께 보여요."
-                }
-                else -> "인수인계, 준비물, 교대 약속처럼 날짜와 상관없는 메모를 적어 두세요. #태그로 묶을 수 있어요."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
+    // 2.0.0 [RVI-70] (PC 통합 1차 PC-65, 디자인 품질 7·16) The empty memo tab was an icon over two paragraphs: it is the shared empty
+    // screen (칸이, one line, the 새 메모 button below starts one). (검토 T07a-07, 디자인 품질 13) The general tab's example was
+    // '인수인계, 준비물, 교대 약속' for every kind of work: each says its own.
+    com.bamnat.app.ui.components.EmptyState(
+        title = when {
+            searching -> "찾는 메모가 없어요"
+            tab == MemoTab.CALENDAR -> "아직 달력 메모가 없어요"
+            else -> "아직 일반 메모가 없어요"
+        },
+        detail = when {
+            searching -> "검색어나 필터를 바꿔 보세요"
+            // PC 확인 5c21f3bb: 투자 has no 근무 — the day's trades show with it; 자영업 its 영업일, 현장 its 일감.
+            tab == MemoTab.CALENDAR -> "날짜에 남긴 메모는 그날 " + when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST -> "매매 기록과"
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 여부와"
+                com.bamnat.core.work.WorkStyle.FIELD -> "일감과"
+                else -> "근무와"
+            } + " 함께 보여요"
+            else -> generalExample(style) + "처럼 날짜와 상관없는 메모를 적어 두세요"
+        },
+        modifier = Modifier.padding(top = 32.dp),
+    )
+}
+
+/** 2.0.0 [RVI-70] (검토 T07a-07) What a general memo is for, in each kind of work's own words. */
+internal fun generalExample(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.DAY -> "회의 준비, 할 일, 준비물"
+    com.bamnat.core.work.WorkStyle.HOURLY -> "근무 바꾸기 약속, 준비물, 매장 안내"
+    com.bamnat.core.work.WorkStyle.FIELD -> "자재 목록, 거래처 연락처, 견적 메모"
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "재료 주문, 단골 메모, 가게 할 일"
+    com.bamnat.core.work.WorkStyle.INVEST -> "매매 원칙, 관심 종목, 공부 메모"
+    else -> "인수인계, 준비물, 교대 약속"
 }
 
 /** Highlights every case-insensitive match of each word in [query]. */

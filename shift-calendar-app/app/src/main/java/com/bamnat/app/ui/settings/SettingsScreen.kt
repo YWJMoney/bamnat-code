@@ -1195,6 +1195,30 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
 }
 
 /**
+ * 2.0.0 [RVI-65] (디자인 품질 12) A line of the alarm card with its button. Beside each other while the line keeps room to read;
+ * at 200% or in the narrow list pane of an unfolded phone the button goes under it (the line stood a word per row beside it).
+ */
+@Composable
+private fun LineWithButton(text: String, label: String, onClick: () -> Unit, color: androidx.compose.ui.graphics.Color = androidx.compose.ui.graphics.Color.Unspecified) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().padding(start = 36.dp)) {
+        val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f)
+        if (maxWidth >= 280.dp * scale) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClick) { Text(label, maxLines = 1) }
+            }
+        } else {
+            Column {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = color)
+                TextButton(onClick = onClick, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
+                    Text(label, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
+/**
  * [SET-01] 알람 준비: when the next alarm rings, and anything that would keep it from ringing on time
  * or from being stopped on the lock screen, each with the one button that fixes it. All fine, it is
  * one line.
@@ -1269,17 +1293,13 @@ private fun AlarmReadyCard(
                 }
             }
             snoozeAt?.let { at ->
-                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요",
-                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = vm::cancelSnooze) { Text("지금 끄기") }
-                }
+                LineWithButton("${Fmt.time(AlarmScheduler.millisToLocal(at).toLocalTime())}에 다시 울려요", "지금 끄기", vm::cancelSnooze)
             }
-            for (fix in fixes) {
-                Row(Modifier.padding(start = 36.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(fix.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = fix.onFix) { Text(fix.label) }
-                }
+            // 2.0.0 [RVI-38] (디자인 품질 2: 글자 단추는 2개까지) The most serious one with its button; the rest are counted, all in 알람 점검.
+            fixes.firstOrNull()?.let { fix -> LineWithButton(fix.text, fix.label, fix.onFix) }
+            if (fixes.size > 1) {
+                LineWithButton("고칠 것이 ${fixes.size - 1}가지 더 있어요", "모두 보기", { onOpenDiagnostics(false) },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

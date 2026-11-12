@@ -204,7 +204,19 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }.getOrNull())
     val flowFolded: StateFlow<Boolean?> = _flowFolded.asStateFlow()
 
+    /**
+     * 2.0.0 [RVI-68] (PC 통합 1차 N18·PC-49) '끄고 오늘 보기' and the other today links opened the calendar with 오늘의 흐름 still folded
+     * to its one line: they open it for this visit, and the fold kept on this phone stays as it was for the next.
+     */
+    private val _flowOpenNow = MutableStateFlow(false)
+    val flowOpenNow: StateFlow<Boolean> = _flowOpenNow.asStateFlow()
+
+    fun openFlowNow() {
+        _flowOpenNow.value = true
+    }
+
     fun setFlowFolded(folded: Boolean) {
+        _flowOpenNow.value = false
         _flowFolded.value = folded
         viewPrefs.edit().putBoolean(K_FLOW_FOLDED, folded).apply()
     }
@@ -560,9 +572,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         container.appScope.launch {
             val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
             val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
-            val minutes = sleep.minutes ?: 0
-            val text = if (minutes > SleepDebt.MAX_SLEEP_MINUTES) "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
-            else "${HoursFormat.korean(minutes.toInt())} 잤어요"
+            // 2.0.0 [RVI-71] One wording with the sleep page and the night screen; a short sleep says why it has no 아침 한 장.
+            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((sleep.minutes ?: 0).toLong())
             _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
         }
     }

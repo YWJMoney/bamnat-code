@@ -420,7 +420,8 @@ class MemoSnoozeReceiver : BroadcastReceiver() {
                 MemoSnoozeStore.put(context, id, at, day ?: MemoSnoozeStore.days(context)[id] ?: Today.date())
                 MemoScheduleAlarm.rescheduleNow(context)
             } else {
-                repo.save(memo.copy(reminder = r.copy(at = at)))
+                // 2.0.0 [RVI-56] (검토 U07a-14) Not an edit: the list keeps its order.
+                repo.save(memo.copy(reminder = r.copy(at = at)), touch = false)
             }
             return at
         }
@@ -479,7 +480,7 @@ class MemoDoneReceiver : BroadcastReceiver() {
             val memo = repo.get(id)?.takeUnless { it.inTrash } ?: return null
             // A 미루기 still waiting on a repeating memo finished now does not ring.
             MemoSnoozeStore.remove(context, id)
-            val saved = if (memo.isDoneOn(day)) memo else repo.save(memo.withDone(true, day, Today.millis()))
+            val saved = if (memo.isDoneOn(day)) memo else repo.save(memo.withDone(true, day, Today.millis()), touch = false)
             runCatching { com.bamnat.app.widget.TaskWidget.redraw(context) }
             return saved
         }

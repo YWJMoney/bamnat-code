@@ -370,6 +370,15 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
                 val leave = day.leave?.takeIf { !it.isFullDay }
                 if (day.isWorkDay && start != null && end != null) {
                     Text(Fmt.timeRangeShort(start, end) + (leave?.let { " · ${it.label}" } ?: ""), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                } else {
+                    // 2.0.0 [RVI-66] (PC 통합 1차 N8) '주간 대근' on a day off had no hours under it, as a shift has.
+                    day.extras.firstOrNull { it.covered != null }?.let { e ->
+                        val from = e.from
+                        val to = e.to
+                        if (from != null && to != null) {
+                            Text(Fmt.timeRangeShort(from.toLocalTime(), to.toLocalTime()), style = small(GlanceTheme.colors.onSurfaceVariant), maxLines = 1)
+                        }
+                    }
                 }
             }
         }

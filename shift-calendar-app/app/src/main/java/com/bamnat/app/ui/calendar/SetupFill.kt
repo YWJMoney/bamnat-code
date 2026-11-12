@@ -32,6 +32,8 @@ import com.bamnat.app.ui.components.LocalShowKani
 import com.bamnat.app.ui.components.numberWithUnit
 import com.bamnat.app.ui.theme.BamnatMotion
 import com.bamnat.app.ui.theme.NumberStyle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.core.setup.FillMoment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -103,7 +105,11 @@ internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifi
             Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
                 Text(numberWithUnit(moment.line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
-                val rest = moment.line.restAt(com.bamnat.core.time.Today.dateTime())
+                // 2.0.0 [RVI-67] (PC-36) The first alarm as it is set now, as 설정 › 알람 says it, not the setup's guess.
+                val set = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) null else
+                    androidx.compose.ui.platform.LocalContext.current.appContainer.alarmScheduler.upcoming.collectAsStateWithLifecycle().value
+                val rest = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) moment.line.restAt(com.bamnat.core.time.Today.dateTime())
+                    else moment.line.restWith(set?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }, com.bamnat.core.time.Today.dateTime())
                 if (rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer)
             }

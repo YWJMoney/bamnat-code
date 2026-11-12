@@ -2532,3 +2532,21 @@ RVI-51,"검토 ALM-26: 작은 것 묶음(알람이 백색 소음 위에 울림, 
 RVI-52,"검토 MEMO-28: 같은 것을 여러 이름으로('알람 맞추기'·'일정으로 넣기'·'일정 빼기', '복사하기'·'복제'가 같은 그림) → '알림 넣기'·'알림 시각'·'알림 빼기', 울리는 것만 '알람', '복제'는 '하나 더 만들기'",2.0.0,진행 중,,"ui/memo/MemoScheduleParts.kt, MemoEditorScreen.kt, MemoListScreen.kt; AKScreenshotTest·MemoStatsScreenshotTest"
 RVI-53,"검토 MEMO-19: 글자를 칠 때마다 메모 전체를 여러 곳에서 다시 읽고 계산 → 편집기는 그 메모 한 줄만, 일정 제안은 읽는 것이 바뀔 때만·메인 밖·최신만, 근무 이름 정규식은 한 번, 할 일 위젯은 보이는 것이 바뀔 때만, 달력 점은 보이는 달 둘레만·날짜·반복이 바뀔 때만",2.0.0,진행 중,,"db Daos.kt MemoDao.observe, data/MemoRepository.kt observe·datesWithMemos(window), ui/memo/MemoViewModels.kt, core memo/ShiftMemoTime.kt·TaskList.looks, AppContainer.kt taskwidget, ui/calendar/CalendarViewModel.kt memoDates; ReviewIGapTest"
 RVI-54,"검토 ALM-27: 시험 빈틈(알림 번호 겹침, 위젯 연달아 두 번 바꿈, 자정 뒤 시작 야간 잠 계획, 워치 다음 날 값, 통화 붙잡기 상한 뒤) → 시험 더함",2.0.0,진행 중,,"core ReviewIGapTest; app alarm/NotificationIdsTest, widget/WidgetTwoChangesTest, alarm/CallHoldTest, NapAlarmTest"
+RVI-55,"검토 U07a-05: 편집기 칩 7개가 옆으로 밀려 스와이프해야 보임 → 칩이 다음 줄로 흐르고, 그날 근무는 날짜 칩 안(근무 표시·이름)으로, 근무 없는 날·유형은 덧붙이지 않음",2.0.0,진행 중,,"ui/memo/MemoEditorScreen.kt 칩 줄 FlowRow, 날짜 칩 ShiftBadge; RviScreenshotTest memoEditor"
+RVI-56,검토 U07a-14: 알림에서 미루기·끝내기도 '고친 시각'을 바꿔 최근 수정순이 뒤바뀜 → 알림 동작은 고친 시각을 그대로,2.0.0,진행 중,,"data/MemoRepository.kt save(touch), memo/MemoScheduleAlarm.kt put·finish; MemoNoticeOrderTest"
+RVI-57,"검토 U03-04: 소리 클립을 밤마다 지울 길이 없음 → 수면 기록 고치기에 '이 밤 소리 클립 N개' 지우기(묻고, 보관한 것까지, 시각·종류는 남김). 모두 지우기는 R200-02",2.0.0,진행 중,,"data/SleepRepository.kt clipsOf·clearClipsOf, ui/sleep/SleepScreen.kt NightClipsRow"
+RVI-58,"검토 U03-02: 접은 폭 수면 화면이 카드 20개 가까이 한 줄 → 위에 오늘·패턴·기록 세 칸, 칸마다 스크롤 자리 그대로(편 폭은 두 단 그대로)",2.0.0,진행 중,,ui/sleep/SleepScreen.kt SLEEP_PARTS; StoreScreenshotTest sleep2Lower
+RVI-59,검토 U03-15: 밤 화면엔 측정 중인지·끝 시각이 없음 → '소리 재는 중 · 늦어도 07:30에 멈춰요 · 측정 끝',2.0.0,진행 중,,ui/sleep/NightScreen.kt status
+RVI-60,"검토 U03-03: 깨우는 구간 칩이 재지 않을 때도 늘 펼쳐져 있음 → 재지 않을 땐 '깨우는 구간 · 30분' 한 줄, 누르면 펼침",2.0.0,진행 중,,ui/sleep/SleepNightCard.kt
+RVI-61,"검토 U07a-04: 새 메모 단추를 누르고 종류를 또 고름(2번) → 한 번 = 글 메모, 길게 = 메모·체크리스트 고르기(읽어 주기의 길게 누르기 동작도)",2.0.0,진행 중,,ui/memo/MemoListScreen.kt 새 메모 단추 pointerInput·onLongClick
+RVI-62,검토 U07a-12: 편집기 끝냄 동그라미의 뜻을 알기 어려움 → 길게 누르면 '끝냄 표시' 풍선 도움말(누른 뒤엔 '끝냈어요 · 끝냄 풀기' 줄),2.0.0,진행 중,,ui/memo/MemoEditorScreen.kt TooltipBox
+RVI-63,"검토 U07a-08: 늦은 일정이 위젯에만 '늦음', 메모 탭 카드엔 표시 없음 → 카드 일정 줄도 주의 색 + '늦음 · '(위젯과 같은 TaskList.overdue)",2.0.0,진행 중,,ui/memo/MemoListScreen.kt Footer
+RVI-64,"갈래 I 고친 뒤 사진(디자인 품질 1·12): 편 폭 메모 목록 칸(40%)·200%에서 주 띠 날짜가 '1 1 1'로 잘리고 'D-5'가 'D-'로, 검색 안내가 네 줄 → 날짜 원은 칸보다 넓지 않고 숫자는 맞는 크기로, D-day는 날짜 아래로, 안내는 한 줄",2.0.0,진행 중,,"ui/components/WeekStrip.kt, ui/memo/MemoListScreen.kt DateHeader·검색"
+RVI-65,"갈래 I 고친 뒤 사진(디자인 품질 2·4·12): 설정 › 알람 다음 알람 셋에 채운 '이번만 끄기' 셋이 줄지어, 200%에서 시각이 한 낱말씩 세로로 → 알람마다 스위치 줄. 고칠 것은 가장 급한 하나 + 'N가지 더', 지킴이·통화 설명 한 줄. 설정 첫 화면 알람 카드는 좁으면 단추를 줄 아래로",2.0.0,진행 중,,"ui/settings/AlarmTrustCard.kt, ui/settings/SettingsScreen.kt LineWithButton"
+RVI-66,"PC 통합 1차 N8(PC-39): 쉬는 날에 대근을 넣어도 잠금 화면 오늘 근무 알림이 '오늘 휴무' → 그날 대근·특근을 그날 일로('오늘 주간 대근 07:00~19:00'), 근무 날엔 옆에('주간 … · 잔업 2시간'). 오늘 위젯도 대근 시각 줄",2.0.0,진행 중,,"alarm/TodayShiftNotice.kt describe, widget/Widgets.kt DayLine"
+RVI-67,PC 통합 1차 N5(PC-36): 달력 위 채워진 달력 띠 '첫 알람'이 첫 설정 때 짐작(06:00·08:00)으로 남아 실제 예약(05:30·07:40)과 다름 → 지금 예약된 알람(설정 › 알람과 같은 값)으로,2.0.0,진행 중,,"core setup/FillMoment.kt restWith, ui/calendar/SetupFill.kt"
+RVI-68,PC 통합 1차 N18(PC-49): 알람 '끄고 오늘 보기' 뒤 오늘의 흐름이 접힌 한 줄 → 오늘 링크로 열면 이번에는 펼쳐 열기(폰에 둔 접기 선택은 그대로),2.0.0,진행 중,,"ui/calendar/CalendarViewModel.kt openFlowNow, TodayFlowCard.kt, CalendarScreen.kt"
+RVI-69,"PC 통합 1차 PC-58(디자인 품질 2·4): 밤 화면·수면 '잠드는 소리' 켜기가 '깼어요'·'잠들었어요'와 함께 채운 단추 → 테두리 단추, 설명 한 줄",2.0.0,진행 중,,ui/sleep/SleepSoundCard.kt
+RVI-70,"PC 통합 1차 PC-65(디자인 품질 7·16) + 검토 T07a-07(조건 13): 메모 빈 화면이 아이콘과 두 문단 → 빈 화면 부품(칸이 + 한 줄), 일반 메모 예시를 유형마다(일근 회의 준비·알바 근무 바꾸기 약속·현장 자재 목록·가게 재료 주문·투자 매매 원칙)",2.0.0,진행 중,,ui/memo/MemoListScreen.kt EmptyMemos·generalExample
+RVI-71,검토 U03-05: 짧은 잠 뒤 '깼어요'가 달력에선 '0시간 잤어요'·수면 화면은 말없이 → 세 화면 같은 말 '40분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요',2.0.0,진행 중,,"core sleep/SleepInsights.kt wokeLine, CalendarViewModel·SleepScreen·NightScreen"
+RVI-72,"검토 U07a-13: 휴지통 메모를 열어 볼 수 없어 되살릴지 고르기 어려움 → 줄을 누르면 읽기 전용 창(날짜·글·체크리스트), '되살리기'·'닫기'",2.0.0,진행 중,,ui/memo/MemoTrashScreen.kt

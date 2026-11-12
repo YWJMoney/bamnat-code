@@ -125,8 +125,9 @@ class NightViewModel(private val container: AppContainer) : ViewModel() {
                 // 1.39.1 [P391-02] 9차 PC(사무직, 1분 잠): '깼어요' opened the sleep log with nothing new to see. Under an hour there is no 아침 한 장,
                 // so say what happened to it.
                 val m = slept?.end?.let { java.time.Duration.between(slept.start, it).toMinutes() }
+                // 2.0.0 [RVI-71] The words the calendar and the sleep page say too.
                 if (m != null && m < com.bamnat.core.sleep.SleepMorning.MIN_MINUTES) android.widget.Toast.makeText(container.appContext,
-                    "${m.coerceAtLeast(1)}분 잠은 짧아서 아침 한 장 없이 기록에만 남겨요", android.widget.Toast.LENGTH_LONG).show()
+                    com.bamnat.core.sleep.SleepInsights.wokeLine(m), android.widget.Toast.LENGTH_LONG).show()
                 done()
             }
         }
@@ -179,9 +180,18 @@ fun NightScreen(
             when {
                 o != null -> (if (o.start.toLocalDate() == now.toLocalDate()) "" else "어제 ") + "${Fmt.time(o.start.toLocalTime())}부터 자는 중"
                 else -> "잠들 때 ‘잠들었어요’를 누르면 잔 시간을 적어요"
-            } + (recording?.let { " · 소리 재는 중" } ?: ""),
+            },
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
         )
+        // 2.0.0 [RVI-59] (검토 U03-15) Measuring, the night screen says when it stops by itself and can stop it, as the sleep screen does.
+        recording?.let { r ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("소리 재는 중" + (r.endsAt?.let { end ->
+                    " · 늦어도 ${Fmt.time(java.time.LocalDateTime.ofInstant(java.time.Instant.ofEpochMilli(end), Today.zone()).toLocalTime())}에 멈춰요"
+                } ?: ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                androidx.compose.material3.TextButton(onClick = { com.bamnat.app.sleep.SleepRecordService.stop(context) }) { Text("측정 끝") }
+            }
+        }
     }
     // 1.39 [FLOW-21] 스튜디오에서 꾸민 밤 화면: 바탕(사진·채우기), 날짜·시계·내일 줄 글자, 카드, 단추. A blueprint without night lines
     // leaves the screen as it was; what a look leaves out stays the warm dark.

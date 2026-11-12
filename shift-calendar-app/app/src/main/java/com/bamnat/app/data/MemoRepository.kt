@@ -131,14 +131,18 @@ class MemoRepository(
     /** 2.0.0 [RVI-53] (검토 MEMO-19) Memo [id] as it changes, read alone; null once it is gone. */
     fun observe(id: Long): Flow<Memo?> = dao.observe(id).map { it?.toModel() }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
-    /** Inserts or updates; returns the memo as stored (with id and timestamps). */
-    suspend fun save(memo: Memo): Memo {
+    /**
+     * Inserts or updates; returns the memo as stored (with id and timestamps). 2.0.0 [RVI-56] (검토 U07a-14) [touch] false keeps the
+     * memo's 고친 시각: a 미루기 or 끝내기 from its notice is not an edit, so '최근 수정순' does not move it to the top.
+     */
+    suspend fun save(memo: Memo, touch: Boolean = true): Memo {
         val now = clock()
         return if (memo.id == 0L) {
             val toInsert = memo.copy(createdAtMillis = now, updatedAtMillis = now)
             toInsert.copy(id = dao.insert(toInsert.toEntity()))
         } else {
-            val toUpdate = memo.copy(updatedAtMillis = now, createdAtMillis = memo.createdAtMillis.takeIf { it > 0 } ?: now)
+            val toUpdate = memo.copy(updatedAtMillis = if (touch || memo.updatedAtMillis <= 0) now else memo.updatedAtMillis,
+                createdAtMillis = memo.createdAtMillis.takeIf { it > 0 } ?: now)
             dao.update(toUpdate.toEntity())
             toUpdate
         }

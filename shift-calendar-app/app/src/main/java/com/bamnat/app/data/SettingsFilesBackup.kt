@@ -217,6 +217,10 @@ class SettingsFilesBackup(
          * travel. The test holds every preferences file in the app to [PARTS], [ELSEWHERE] or this list.
          */
         val DEVICE_ONLY = mapOf(
+            // 2.0.0 [RVI-17] 낮잠 깨우기: 이 휴대폰에 맞춘 알람 하나의 날·시각이라, 새 휴대폰에서 다시 울리지 않게 옮기지 않아요.
+            "nap_wake" to "낮잠 깨우기 알람의 날과 시각, 이 휴대폰에 맞춘 알람의 것",
+            // 2.0.0 [RVI-22] 꺼져 있던 사이 지나간 메모 알림을 어디까지 알렸는지: 이 휴대폰이 꺼져 있던 때의 일이라 옮기지 않아요.
+            "memo_schedule" to "꺼져 있던 사이 지나간 메모 알림을 어디까지 모아 알렸는지, 이 휴대폰의 것",
             // 1.40 [DISC-01] 안 써 본 기능 카드를 언제 무엇을 보였는지: 이 휴대폰의 일이라, 새 휴대폰은 처음처럼 쉬었다가 시작해요.
             "discover" to "‘안 써 본 기능 알려 주기’ 카드를 보인 날과 답, 다음 카드까지의 간격, 이 휴대폰의 것",
             // 1.39 [LOOP-13] Play 인앱 업데이트를 물어본 판: 이 휴대폰에 깔린 판의 일이라 옮기지 않아요.

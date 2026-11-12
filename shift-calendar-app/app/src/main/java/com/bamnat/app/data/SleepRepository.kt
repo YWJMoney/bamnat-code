@@ -166,6 +166,27 @@ class SleepRepository(
         return gone
     }
 
+    /** 2.0.0 [RVI-57] (검토 U03-04) How many sound clips the sleep [id] still has on the phone. */
+    suspend fun clipsOf(id: Long): Int {
+        val log = dao.log(id) ?: return 0
+        return dao.eventsBetween(log.startMillis, (log.endMillis ?: clock()) + 1).count { it.file != null }
+    }
+
+    /**
+     * 2.0.0 [RVI-57] (검토 U03-04) 이 밤 소리 지우기: the clips heard during the sleep [id] go now (kept ones too); the times and kinds
+     * stay, as when a clip goes after 7 days. Returns how many went.
+     */
+    suspend fun clearClipsOf(id: Long, dir: java.io.File): Int {
+        val log = dao.log(id) ?: return 0
+        var gone = 0
+        dao.eventsBetween(log.startMillis, (log.endMillis ?: clock()) + 1).filter { it.file != null }.forEach { e ->
+            java.io.File(dir, e.file!!).delete()
+            dao.dropClip(e.id)
+            gone++
+        }
+        return gone
+    }
+
     private fun SleepCheckEntity.toModel() = SleepCheck(id, local(startMillis), local(endMillis), SleepMood.of(mood), SleepTag.decode(tags), note)
 
     private fun SleepLogEntity.toModel() = SleepEntry(id, local(startMillis), endMillis?.let(::local), auto = source == SleepLogEntity.SOURCE_AUTO)

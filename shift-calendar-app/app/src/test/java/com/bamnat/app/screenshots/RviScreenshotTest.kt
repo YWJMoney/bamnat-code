@@ -1,6 +1,8 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -30,25 +32,40 @@ class RviScreenshotTest : ScreenshotBase() {
 
     /** The first of [words] the screen shows, tapped: the same button kept other words before the change. */
     private fun Screen.tapFirst(vararg words: String) {
-        val word = words.firstOrNull { shows(it, exact = true) } ?: words.first()
-        tapText(word, exact = true)
+        val word = words.firstOrNull { shows(it) } ?: words.first()
+        tapText(word, prefix = true)
     }
 
-    /** Wide, the card sits under the 새 메모 button at the bottom of the list: it is brought up first. */
+    /**
+     * Wide, the card sits under the 새 메모 button at the bottom of the list and a drag can fling past it: it is found
+     * as a person would, by the search box, which brings it to the top of the list.
+     */
     private fun Screen.openCheckup(wide: Boolean) {
-        if (wide) scrollUp(500, across = 0.3f)
+        typeInto("제목, 내용, #태그 검색", "건강검진")
         tapText("건강검진 오전 9시", across = if (wide) 0.3f else 0.5f)
+    }
+
+    /**
+     * 디자인 품질 1: the writing (the editor's first text box) starts in the top quarter of the screen, chips or not. Unfolded the
+     * editor is the right pane, beside the list's search box.
+     */
+    private fun Screen.writingStartsHigh(wide: Boolean) {
+        val width = app.resources.displayMetrics.widthPixels
+        val top = nodes().filter { it.config.contains(SemanticsProperties.EditableText) && (!wide || it.boundsInWindow.left > width * 0.4f) }
+            .minOf { it.boundsInWindow.top }
+        val height = app.resources.displayMetrics.heightPixels
+        assertTrue("the writing starts at ${(100 * top / height).toInt()}% of the screen", top < height * 0.25f)
     }
 
     // [RVI-35] 체크리스트 줄: 끌기 손잡이, 48dp 지우기.
     @Test fun memoChecklist() = eight("memo_checklist") { wide -> tab(2, wide); tapText("준비물") }
 
     // [RVI-30][RVI-49][RVI-52] 일정 칩 이름, 18dp X 없음.
-    @Test fun memoEditor() = eight("memo_editor") { wide -> tab(2, wide); openCheckup(wide) }
+    @Test fun memoEditor() = eight("memo_editor") { wide -> tab(2, wide); openCheckup(wide); writingStartsHigh(wide) }
 
     // [RVI-31][RVI-52] 알림 시각 창: 스크롤, '알림 빼기'.
     @Test fun memoScheduleWindow() = eight("memo_schedule") { wide ->
-        tab(2, wide); openCheckup(wide); tapFirst("알림 넣기", "알람 맞추기", "일정으로 넣기")
+        tab(2, wide); openCheckup(wide); tapFirst("알림 넣기, ", "알람 맞추기", "일정으로 넣기")
     }
 
     // [RVI-48] 카드 ⋮ 48dp, [RVI-49] 다음 차례 줄.

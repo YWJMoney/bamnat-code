@@ -146,3 +146,21 @@
 {"track": "RVI-52", "title": "메모 알림·하나 더 만들기 이름 맞춤", "status": "check", "size": "polish", "route": "app", "check": "메모 편집기 칩 '알림 넣기', 창 '알림 시각'·'알림 빼기', ⋮ '하나 더 만들기'(복사하기와 다른 그림)"}
 {"track": "RVI-53", "title": "메모를 칠 때 끊김 줄이기(편집기·일정 제안·할 일 위젯·달력 점)", "status": "check", "size": "polish", "route": "app", "check": "메모 300개·긴 메모(5천 자)에서 빠르게 치기: 끊김 없음, 할 일 위젯이 칠 때마다 다시 그려지지 않음(logcat), 달력 점 그대로"}
 {"track": "MKS-05", "title": "나간 판을 저장하면(Play 자동 감지 포함) 그 판 앱부터 읽는 출시 대기 장터 작품을 함께 공개", "status": "check", "size": "polish", "route": "server", "check": "출시 대기에 minApp 53 묶음 → 1.39.0 나간 판 저장(dry에 장터 작품 수) → 앱 53 장터에만 보임, 예약·다음 판·minApp 없는 묶음은 그대로"}
+{"track": "RVI-55", "title": "메모 편집기 칩이 다음 줄로 흐르고 그날 근무는 날짜 칩 안에", "status": "check", "size": "polish", "route": "app", "check": "접은 폭 글자 200%로 메모 열기: 칩이 옆으로 잘리지 않고 다음 줄에, 날짜 칩에 '10월 19일 (월) · 주간'"}
+{"track": "RVI-56", "title": "알림에서 미루기·끝내기해도 메모 목록 순서 그대로", "status": "check", "size": "fix", "route": "app", "check": "최근 수정순 목록에서 아래쪽 메모의 알림 '10분 뒤' → 목록에서 그 자리 그대로"}
+{"track": "RVI-57", "title": "수면 기록 고치기에서 그 밤 소리 클립 지우기", "status": "check", "size": "polish", "route": "app", "check": "측정한 밤 기록 누르기 → '이 밤 소리 클립 N개' 휴지통 → 묻고 지움, 시각·종류는 남음"}
+{"track": "RVI-58", "title": "수면 화면을 오늘·패턴·기록 세 칸으로", "status": "check", "size": "polish", "route": "app", "check": "접은 폭 수면 기록: 위에 오늘·패턴·기록, 패턴 반쯤 내린 뒤 기록 갔다 와도 그 자리"}
+{"track": "RVI-59", "title": "밤 화면에 측정 끝 시각과 측정 끝 단추", "status": "check", "size": "polish", "route": "app", "check": "측정 시작 → 밤 화면에 '소리 재는 중 · 늦어도 07:30에 멈춰요' 측정 끝"}
+{"track": "RVI-60", "title": "깨우는 구간은 잴 때만 펼침", "status": "check", "size": "polish", "route": "app", "check": "재지 않을 때 '깨우는 구간 · 끔' 한 줄, 누르면 칩"}
+{"track": "RVI-61", "title": "새 메모 단추 한 번에 글 메모, 길게 누르면 체크리스트", "status": "check", "size": "polish", "route": "app", "check": "메모 탭 새 메모 한 번 → 바로 편집기, 길게 → 메모·체크리스트"}
+{"track": "RVI-62", "title": "메모 끝냄 동그라미에 풍선 도움말", "status": "check", "size": "polish", "route": "app", "check": "편집기 위 동그라미 길게 → '끝냄 표시'"}
+{"track": "RVI-63", "title": "메모 카드에도 늦은 일정 '늦음' 표시", "status": "check", "size": "polish", "route": "app", "check": "어제 알림 메모(안 끝냄) → 카드 일정 줄이 주황 '늦음 · …'"}
+{"track": "RVI-64", "title": "좁은 메모 목록 칸·큰 글자에서 주 띠·D-day·검색 안내 안 잘림", "status": "check", "size": "polish", "route": "app", "check": "편 폭 + 글자 200% 메모 탭 → 주 띠 11~17 두 자리, 'D-5' 다 보임, 검색 안내 한 줄"}
+{"track": "RVI-65", "title": "설정 › 알람 다음 알람을 스위치로, 고칠 것은 하나씩", "status": "check", "size": "polish", "route": "app", "check": "설정 › 알람: 다음 알람 줄마다 스위치(끄면 '이번만 꺼 뒀어요'), 200%에서 시각 한 줄"}
+{"track": "RVI-66", "title": "쉬는 날 대근이 잠금 화면·오늘 위젯에 대근으로", "status": "check", "size": "fix", "route": "app", "check": "잠금 화면 오늘 근무 켜고 쉬는 날에 주간 대근 → '오늘 주간 대근 07:00~19:00', 오늘 위젯 시각 줄", "test": "AlarmSelfCheckTest.aCoverOnADayOffIsTheDaysWork"}
+{"track": "RVI-67", "title": "달력 위 '첫 알람'이 실제 예약 시각으로", "status": "check", "size": "fix", "route": "app", "check": "첫 설정 끝 달력 띠 '첫 알람'이 설정 › 알람 '다음 알람'과 같은 시각", "test": "FillMomentTest.theFirstAlarmIsTheOneSet"}
+{"track": "RVI-68", "title": "'끄고 오늘 보기'가 오늘의 흐름을 펼쳐 열기", "status": "check", "size": "fix", "route": "app", "check": "오늘의 흐름을 접어 둔 채 알람 → '끄고 오늘 보기' → 오늘 카드가 펼쳐져 있음, 다음에 열면 다시 접힘"}
+{"track": "RVI-69", "title": "잠드는 소리 '켜기'를 테두리 단추로", "status": "check", "size": "polish", "route": "app", "check": "밤 화면: 채운 단추는 '깼어요' 하나"}
+{"track": "RVI-70", "title": "메모 빈 화면을 빈 화면 부품으로, 유형별 예시", "status": "check", "size": "polish", "route": "app", "check": "가게 유형 새로 시작 → 메모 › 일반: 칸이 + '재료 주문, 단골 메모, 가게 할 일처럼…'"}
+{"track": "RVI-71", "title": "짧은 잠 뒤 '깼어요'가 까닭을 말하기", "status": "check", "size": "polish", "route": "app", "check": "잠들었어요 → 1분 뒤 깼어요(달력·수면·밤 화면) → '1분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요'"}
+{"track": "RVI-72", "title": "휴지통 메모를 눌러 읽기 전용으로 보기", "status": "check", "size": "polish", "route": "app", "check": "메모 지우기 → 휴지통 → 줄 누르기 → 내용 창, 되살리기·닫기"}
