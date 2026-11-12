@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.SectionCard
@@ -138,12 +139,13 @@ private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, on
             e.kind == EnvelopeKind.TAX -> "들어온 돈의 ${e.sharePercent}%를 떼어 둬요. 세무 조언이 아니라 미리 모아 두는 돈이에요."
             else -> listOfNotNull(
                 s.eta?.let { "이대로면 ${Fmt.monthDay(it)}" },
-                s.neededPerMonth?.let { "${e.due?.let(Fmt::monthDay)}까지 매달 ${Fmt.won(it)}" },
+                s.neededPerMonth?.let { "${e.due?.let(::envelopeDue)}까지 매달 ${Fmt.won(it)}" },
                 Envelopes.shiftsFor(s.left, perShift)?.let { "근무 ${it}번이면 채워요" },
             ).joinToString(" · ").ifBlank { if (e.target > 0) "넣기를 누르거나 월급이 들어올 때 나눠 보세요" else "" }
         }
         if (words.isNotBlank()) Text(words, style = MaterialTheme.typography.bodySmall,
-            color = if (s.late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVK-43] (검토 MONEY-24, 조건 6) Behind pace is worth a look, not a danger: the caution ink, not error red.
+            color = if (s.late) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -195,7 +197,7 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
                 if (e.kind == EnvelopeKind.GOAL) {
                     AmountField("모을 금액 (비워도 돼요)", target, { target = it })
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(due.takeIf { it.isNotBlank() }?.let { "${Fmt.monthDay(LocalDate.parse(it))}까지" } ?: "날짜 없음", modifier = Modifier.weight(1f))
+                        Text(due.takeIf { it.isNotBlank() }?.let { "${envelopeDue(LocalDate.parse(it))}까지" } ?: "날짜 없음", modifier = Modifier.weight(1f))
                         TextButton(onClick = { picking = true }) { Text("날짜 고르기") }
                         if (due.isNotBlank()) TextButton(onClick = { due = "" }) { Text("빼기") }
                     }
@@ -229,3 +231,10 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
         ) { androidx.compose.material3.DatePicker(state, showModeToggle = false) }
     }
 }
+
+/**
+ * 2.0.0 [RVK-43] (검토 U06a-25) A goal's day with its year when it is not this year's: '3월 1일까지' read as this March for a
+ * goal set for next year.
+ */
+internal fun envelopeDue(d: LocalDate, today: LocalDate = com.bamnat.core.time.Today.date()): String =
+    if (d.year != today.year) "${d.year}년 ${Fmt.monthDay(d)}" else Fmt.monthDay(d)

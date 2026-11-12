@@ -600,9 +600,23 @@ private fun NoticesPage(
             warning = warning(settings.sleepingNotice, Notifications.SLEEPING_CHANNEL_ID), onFix = fix(Notifications.SLEEPING_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
+        // 2.0.0 [RVI-89] (검토 I03b-02) Only where the night's sounds can be measured (the flag open).
+        if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }) {
+            SwitchRow(com.bamnat.app.sleep.SleepRecordOffer.ROW, "잘 시간 무렵 충전기에 꽂으면 ‘오늘 밤 소리 잴까요?’를 소리 없이 물어요 · 재 본 적 있는 휴대폰만",
+                settings.recordOffer, warning = warning(settings.recordOffer, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(recordOffer = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
+        }
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
         if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
             com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }
+            // 2.0.0 [RVI-96] (검토 I03c-01) The same morning question for a night the charger saw, with no permission.
+            SwitchRow(com.bamnat.app.sleep.SleepNoTap.ROW, "잘 시간 무렵 충전기에 꽂아 두면, 알람을 끈 아침에 ‘이 잠 맞나요?’ 한 번 물어요 · 휴대폰 밖으로 나가지 않아요",
+                settings.sleepNoTap, warning = warning(settings.sleepNoTap, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(sleepNoTap = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
         }
         // 1.38 [SLEEP-12] 자는 동안 방해 금지.
         val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }
@@ -654,6 +668,17 @@ private fun NoticesPage(
         if (planned) SwitchRow("알람 뒤 오늘 카드", "근무 알람을 끄면 오늘 근무, 이번 주 시간${if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "" else "(52시간까지 남은 시간)"}, 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요",
             settings.afterAlarmCard, warning = warning(settings.afterAlarmCard, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(afterAlarmCard = on) }
+        }
+    }
+    // 2.0.0 [RVIB-05] (검토 I07ac-02) 메모·할 일: 근무 중 알림 모으기 for work with hours, 지난 할 일 for a calendar with days off (not 투자).
+    if (planned || settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SectionCard(title = "메모·할 일") {
+        if (planned || !settings.memoHoldAtWork) SwitchRow(MEMO_HOLD_ROW, "울리지 않는 메모 알림은 근무가 끝날 때 한 장으로 모아 와요 · 울리는 알람은 제때 울려요",
+            settings.memoHoldAtWork, warning = warning(settings.memoHoldAtWork, Notifications.MEMO_CHANNEL_ID), onFix = fix(Notifications.MEMO_CHANNEL_ID)) { on ->
+            set(on) { it.copy(memoHoldAtWork = on) }
+        }
+        SwitchRow(MEMO_REST_ROW, "못 끝낸 할 일을 다음 쉬는 날 아침에 소리 없이 한 장으로 보여 줘요",
+            settings.memoRestCard, warning = warning(settings.memoRestCard, Notifications.MEMO_CHANNEL_ID), onFix = fix(Notifications.MEMO_CHANNEL_ID)) { on ->
+            set(on) { it.copy(memoRestCard = on) }
         }
     }
     // [J133-77] 연차 for work with a company; 급여 입금 for work paid wages.
@@ -1513,6 +1538,9 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
+internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
+internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
 internal const val DAY_CLOSE_ROW = "퇴근 뒤 가계부 정리 알림"
 internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 

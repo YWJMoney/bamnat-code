@@ -108,4 +108,18 @@ class ComplicationDaysTest {
         assertEquals(today.atTime(18, 0), mid.to)
         assertNull(com.bamnat.core.work.WatchDays.countdownLine(null, now))
     }
+
+    /** 2.0.0 [RVIB-09] (SN-18) An emoji 근무 그림 is a letter in front of the name on the watch; a drawn icon stays an image. */
+    @Test fun anEmojiIconIsDrawnAsALetter() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val today = java.time.LocalDate.of(2026, 11, 12)
+        val night = com.bamnat.core.work.WatchDay(today, "야간", "야", 0xFF5B4FCF, java.time.LocalTime.of(22, 0), java.time.LocalTime.of(7, 0), icon = "e:🌙")
+        val c = ComplicationDays.today(listOf(night), today, zone)
+        org.junit.Assert.assertEquals("🌙야", c.shortText)
+        org.junit.Assert.assertEquals("🌙 야간 22:00–07:00", c.longText)
+        org.junit.Assert.assertEquals("오늘 🌙 야간 22:00–07:00", c.description)
+        val drawn = night.copy(icon = "moon")
+        org.junit.Assert.assertEquals("야", ComplicationDays.today(listOf(drawn), today, zone).shortText)
+        org.junit.Assert.assertEquals("야간", drawn.shown)
+    }
 }
