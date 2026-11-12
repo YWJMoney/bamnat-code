@@ -1468,4 +1468,7 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
 .filepick input{position:absolute;opacity:0;width:1px;height:1px;left:0;top:0}
 .filepick input:focus-visible+.btn{box-shadow:var(--focus)}
 .filepick .meta{min-width:0;overflow-wrap:anywhere}
+/* 2.0.0 [RVA-21] 380 폭·글자 200%에서 긴 단추(파일 고르기(여러 개), 내 계정의 '다른 기기 모두 로그아웃' 같은 것)가 화면 밖으로 나가지 않게:
+   한 줄에 안 들어갈 때만 띄어쓰기에서 줄을 바꿔요(낱말은 가르지 않아요). 차트의 읽어 주는 표는 1px 상자 안에(가로 넘침 0). */
+.actions .btn,.filepick .btn{max-width:100%;white-space:normal;word-break:keep-all;text-align:center;padding-top:.35rem;padding-bottom:.35rem}
 `;
