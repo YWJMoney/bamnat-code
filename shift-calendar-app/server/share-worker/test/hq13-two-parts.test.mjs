@@ -81,6 +81,10 @@ test("[RVD-20] HQ-13 the page and a calendar app show a shift in two parts and a
   assert.match(html, /<section class="cal">/);
   assert.match(html, /<span class="num">1<span class="dow"> 화<\/span><\/span>/);
   assert.match(html, /@container \(max-width:20em\)\{\.cal \.grid\{grid-template-columns:1fr/);
+  // Two-letter chips ('주간') switch on a folded phone at 100% (25em), so they never stand letter by letter.
+  const wide = renderSchedule(validate(twoParts((b) => ({ ...b, types: b.types.map((x) => ({ ...x, short: x.name })) }))).schedule,
+    new Date(Date.now() + 86400000).toISOString());
+  assert.match(wide, /@container \(max-width:25em\)/);
   // The hours as the app's link words say them, off the half hours in hours and minutes.
   const short = (m) => renderSchedule(validate(twoParts((b) => ({ ...b, days: [{ date: "2026-12-01", type: 4, leaveMinutes: m }] }))).schedule,
     new Date(Date.now() + 86400000).toISOString()).match(/<span class="leave">([^<]*)<\/span>/)[1];
@@ -111,4 +115,19 @@ test("[RVD-20] HQ-13 the app reads back what it sent; a link from an older app i
   assert.equal(JSON.stringify(validate(old).schedule), JSON.stringify({ v: 1, title: "민지",
     types: [{ id: 1, name: "주간", short: "주", color: "#1E88E5", time: "07:00-19:00", off: false, icon: null }],
     days: [{ date: "2026-12-01", type: 1, second: null, leave: "반차" }] }));
+});
+
+test("[RVD-20] HQ-13 the 근무 신청 month turns into a list of days before a two-letter wish ('오프') stands letter by letter", async () => {
+  const env = { SHARES: kv() };
+  const made = await (await call(env, "/api/ask", { method: "POST", body: JSON.stringify({ team: "6병동", month: "2026-12", members: ["가", "나"],
+    shifts: [{ id: 1, label: "D", color: "#2f7d5b" }], rules: { weekdayCap: 2, weekendCap: 3, kinds: ["OFF", "SHIFT"] } }) })).json();
+  const key = made.members[0].key;
+  const page = async () => (await call(env, `/a/${key}`)).text();
+  // Nothing asked yet, or a one-letter wish: the grid stays down to large letters.
+  assert.match(await page(), /@container \(max-width:20em\)/);
+  await call(env, `/a/${key}/pick`, { method: "POST", body: "d=2026-12-07&k=OFF", headers: { "content-type": "application/x-www-form-urlencoded" } });
+  const html = await page();
+  assert.match(html, /@container \(max-width:25em\)/);
+  assert.match(html, /<div class="cal"><div class="grid">/);
+  assert.match(html, /<span class="num sat">5<span class="dow"> 토<\/span><\/span>/);
 });

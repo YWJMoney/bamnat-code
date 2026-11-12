@@ -1234,7 +1234,7 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   const note = open ? `<form method="post" action="/a/${key}/note" class="note"><input name="note" maxlength="${LIMITS.askNote}" value="${esc(mine.note ?? "")}" placeholder="예: NN 뒤 off 원해요"><button>남기기</button></form>
 <p class="muted small">건강·가족 사정 같은 이유는 적지 말아 주세요. 필요하면 리더에게 직접 말해 주세요.</p>` : mine.note ? `<p>${esc(mine.note)}</p>` : "";
   const body = `<h1>${esc(record.team)} ${mo}월 근무 신청</h1><p class="muted">${esc(me)}님 · ${open ? "신청 받는 중" : "마감"}</p>
-<p class="rule">${esc(rule)}</p>${saidHtml}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
+<p class="rule">${esc(rule)}</p>${saidHtml}${monthList(widestWord(mine.wishes.map(label)))}<div class="cal"><div class="grid">${heads}${cells.join("")}</div></div>${panel}
 <h2>내 신청 ${mine.wishes.length}일</h2>${list}<h2>리더에게 한 줄</h2>${note}
 <p class="foot muted">신청한 날·종류·한 줄·신청한 시각만 리더에게 가요. 다른 사람에게는 날마다 몇 명이 신청했는지만 보여요${rules.showNames ? "(리더가 이름도 보이게 했어요)" : ""}. 위치·전화번호·기기 정보는 보내지 않아요. 근무표가 확정되면 리더가 근무표 링크를 보내 줘요.</p>${spreadSlot("request")}`;
   return html(page(`${record.team} ${mo}월 근무 신청`, body + teamFoot("a", key), "밤낮", "request"), status);
@@ -2640,7 +2640,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
-    `${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
+    `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
   "근무표", kind);
 }
@@ -2762,6 +2762,19 @@ function hours(minutes) {
   return h && m ? `${h}시간 ${m}분` : h ? `${h}시간` : `${m}분`;
 }
 
+/**
+ * 2.0.0 [RVD-20] HQ-13 The month as a list of days once its cells are narrower than what must sit in them on one line: the
+ * widest word of a chip ([widest] letters, '오프', '주간'), at the page's own letter size. One letter switches below 20em (large
+ * text on a folded phone), two below 25em (a folded phone at 100%), and so on, so a chip never stands letter by letter.
+ */
+function monthList(widest) {
+  const em = Math.max(20, Math.ceil(6.1 * Math.min(widest, 8) + 12.5));
+  return `<style>@container (max-width:${em}em){.cal .grid{grid-template-columns:1fr;gap:6px}.cal .wd,.cal .blank{display:none}` +
+    ".cal .cell{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:44px;gap:4px 10px;padding:8px 12px}.cal .num{min-width:3.6em;font-size:1em}" +
+    ".cal .dow{display:inline}.cal .leave,.cal .extra,.cal .memo{text-align:left}}</style>";
+}
+const widestWord = (texts) => Math.max(1, ...texts.flatMap((t) => String(t).split(/\s+/)).map((w) => [...w].length));
+
 /** 2.0.0 [RVD-20] HQ-13 An hour's leave as the app's link words say it ("2시간", "1.5시간"; "30분", "1시간 15분" off the half hours). */
 const leaveLength = (m) => (m > 60 && m % 30 === 0 ? `${m / 60}시간` : hours(m));
 
@@ -2783,8 +2796,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
-.dow{display:none}.cal{container-type:inline-size}
-@container (max-width:20em){.cal .grid{grid-template-columns:1fr;gap:6px}.cal .wd,.cal .blank{display:none}.cal .cell{flex-direction:row;flex-wrap:wrap;align-items:center;min-height:44px;gap:4px 10px;padding:8px 12px}.cal .num{min-width:3.6em;font-size:1em}.cal .dow{display:inline}.cal .leave,.cal .extra,.cal .memo{text-align:left}}
+.dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
