@@ -259,6 +259,8 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
         viewModelScope.launch {
             _state.value = _state.value.copy(busy = true)
             c.recipes.profileCleared(false)
+            // 2.0.0 [RVQ-27] 검토 SVC-24: a 소개 the operator hid, changed, waits for the operator's look before it shows.
+            val waits = _state.value.page?.let { it.bioHidden && it.bioHiddenBy == "operator" && e.bio != null && e.bio.isNotBlank() && e.bio != it.bio } == true
             val rest = runCatching { c.recipeApi.profile(device, e) }
             val name = if (nick == null) null else runCatching {
                 val t = nick.trim()
@@ -269,7 +271,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
             load()
             val nameProblem = name?.exceptionOrNull()?.let(::profileProblem)
             rest.exceptionOrNull()?.let { say(profileProblem(it)) }
-            if (nameProblem == null && rest.isSuccess) say("프로필을 고쳤어요")
+            if (nameProblem == null && rest.isSuccess) say(if (waits) "프로필을 고쳤어요. 고친 소개는 운영자가 확인한 뒤 다른 분께 보여요" else "프로필을 고쳤어요")
             done(nameProblem?.let { if (rest.isSuccess) "$it · 이름 말고 고친 것은 저장했어요. 다른 이름을 적어 주세요" else it })
         }
     }
@@ -317,6 +319,7 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
             b.remixes.forEach { add("r|${it.first}") }
             b.milestones.forEach { add(it.key) }
             b.badges.forEach { add("b|${it.first}") }
+            b.bioBack?.let { add("s|$it") }
         }
     }
 }
@@ -439,8 +442,14 @@ fun MakerScreen(
                             if (p.closed) add("⛔ 운영 규칙에 따라 프로필이 닫혔어요. 다른 분은 볼 수도 팔로우할 수도 없고, 작품은 장터에 그대로 있어요. 궁금하면 설정 › 도움말과 문의로 물어봐 주세요." to null)
                             if (p.hidden) add("🔒 프로필을 숨겨 두었어요. 다른 분은 볼 수 없어요 (⋮ › 프로필 다시 보이기)" to null)
                             // 1.36 PC 사용성 P10: why (the reports' most common reason) and 지금 고치기.
-                            if (p.bioHidden) add((if (p.bioHiddenBy == "operator") "✋ 운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 다시 보여요"
-                                else "✋ 소개 글이 신고로 가려져 있어요" + (bioWhy(p.bioHiddenWhy)?.let { " (많이 받은 이유: $it)" } ?: "") + ". 고치면 다시 보여요") to { editing = true })
+                            // 2.0.0 [RVQ-27] 검토 SVC-24·U22b-09: a 소개 the operator hid shows again only after the operator looks at the fix
+                            // (one letter changed no longer brings it back); one hidden by reports shows again when changed, counted anew.
+                            if (p.bioHidden) add((when {
+                                p.bioChecking -> "⏳ 고친 소개를 운영자가 확인하고 있어요. 다시 보이면 최근 알림으로 알려 드려요"
+                                p.bioHiddenBy == "operator" -> "✋ 운영자가 소개 글을 가렸어요. 운영 규칙에 맞게 고치면 운영자가 확인한 뒤 다시 보여요"
+                                else -> "✋ 소개 글이 신고로 가려져 있어요" + (bioWhy(p.bioHiddenWhy)?.let { " (많이 받은 이유: $it)" } ?: "") +
+                                    ". 고치면 바로 다시 보이고 신고도 새로 세요"
+                            }) to { editing = true })
                             p.limitPerDay?.let { n ->
                                 // 1.36 PC 6차: the same words (and date) as 광장's 쓰기 제한 line.
                                 val until = p.limitUntil
@@ -451,11 +460,13 @@ fun MakerScreen(
                                     ". 기간이 지나면 저절로 풀려요") to null)
                             }
                         }
-                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
+                        // 2.0.0 [RVQ-33] 조건 3·6: 상태 카드는 안내 카드와 같은 바탕이고, 뜻은 줄 앞 표시(⛔·🔒·✋·⏳)로만 전해요(빨강 바탕은
+                        // 확인을 기다리는 '⏳'까지 위험처럼 보였어요).
+                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerLow).padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            if (lines.size > 1) Text("지금 내 프로필 상태", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                            if (lines.size > 1) Text("지금 내 프로필 상태", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
                             lines.forEach { (line, fix) ->
-                                Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
+                                Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                                 if (fix != null) TextButton(onClick = fix, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 고치기") }
                             }
                         }
@@ -667,13 +678,19 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             if (p.bioHidden) Column {
                 Text(it, style = MaterialTheme.typography.bodyLarge.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough),
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-                Text(if (p.bioHiddenBy == "operator") "운영자가 가려 다른 분께는 보이지 않아요" else "신고로 가려져 다른 분께는 보이지 않아요",
-                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                // 2.0.0 [RVQ-27] (조건 6: 빨강은 위험만) a hidden 소개 is a state, said in grey.
+                Text(when {
+                    p.bioChecking -> "운영자가 확인하는 중이라 다른 분께는 아직 보이지 않아요"
+                    p.bioHiddenBy == "operator" -> "운영자가 가려 다른 분께는 보이지 않아요"
+                    else -> "신고로 가려져 다른 분께는 보이지 않아요"
+                }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } else Text(it, style = MaterialTheme.typography.bodyLarge)
         }
             ?: if (mine) Text("한 줄 소개를 적어 보세요 (프로필 고치기)", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) else Unit
-        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        // 숫자 줄: 테마 · 기능별 탭 · 팔로워 · 팔로잉 · 넣은 분. 2.0.0 [RVQ-33] 조건 12: 접은 폭·글자 200%에서 마지막 칸이 한 자씩
+        // 세로로 섰어요. 칸이 다 들어가지 않으면 다음 줄로 내려가요.
+        @OptIn(ExperimentalLayoutApi::class)
+        FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Count(p.themes.size, "테마")
             Count(p.tabRecipes.size, "탭별 작품")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
@@ -748,6 +765,8 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
         b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
         b.badges.filter { "b|${it.first}" in unseen }.forEach { add("🏅 새 배지 ‘${it.second}’" to null) }
+        // 2.0.0 [RVQ-27] 검토 U22b-09: the operator let my 소개 show again.
+        b.bioBack?.let { add("✅ 내 소개가 다시 보여요" to null) }
     }
     var open by remember { mutableStateOf(false) }
     val fresh = unseen.isNotEmpty()
@@ -1322,7 +1341,9 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = s.stats
             if (st == null) { Text(s.error ?: "불러오는 중이에요"); if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }; return@Column }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            // 2.0.0 [RVQ-33] 조건 12: 프로필 숫자 줄과 같은 구조라 같이(큰 글자에서 다음 줄로).
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣어 본 분 모두"); Count(st.likes, "좋아요 모두")
             }
             Text("누가 썼는지는 서버도 몰라요. 작품과 날마다의 수만 세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

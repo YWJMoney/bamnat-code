@@ -421,6 +421,10 @@ private fun PlansCard(c: AppContainer, gate: Gate, pro: ProState, plans: List<Pl
                     onMessage(if (c.proStore.current.sub != null) "구독을 다시 찾았어요" else "이 Google 계정에서 찾은 구독이 없어요")
                 }
             }) { Text("구매 복원") }
+            // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
+            TextButton(onClick = {
+                com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
+            }) { Text("결제·환불 문의") }
             TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관") }) { Text("이용약관") }
             TextButton(onClick = { com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침") }) { Text("개인정보처리방침") }
             // 1.36 [MON-12]

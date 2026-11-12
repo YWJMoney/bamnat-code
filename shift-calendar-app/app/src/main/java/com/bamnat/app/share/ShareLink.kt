@@ -703,7 +703,15 @@ data class ReceivedShare(
     val etag: String? = null,
     /** 1.38 [P3-L-18] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
     val tired: Boolean = false,
+    /** 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this link was looked through: the member's app offers 확인했어요 ([ShareApi.okPress]). */
+    val watch: Boolean = false,
 )
+
+/**
+ * 2.0.0 [RVQ-32] 검토 U22-01: what the leader's app reads about one member's link: [seenAt] a person opened it (never a messenger's preview),
+ * [okAt] the member pressed 확인했어요, both since the link last changed. [okKnown]: the server says 확인 at all (an older one does not).
+ */
+data class SeenOk(val seenAt: Instant?, val okAt: Instant?, val okKnown: Boolean = false)
 
 /** [MKT-09][SHR-02] The link server; tests and screenshots use a fake. */
 interface ShareApi {
@@ -801,6 +809,12 @@ interface ShareApi {
 
     /** 1.38 [P3-L-15] When the link was opened since its last change (null: not yet). The first ask turns it on for that link. */
     suspend fun seen(id: String, token: String): Instant? = null
+
+    /** 2.0.0 [RVQ-32] [seen] with the member's 확인했어요 since the last change. */
+    suspend fun seenOk(id: String, token: String): SeenOk = SeenOk(seen(id, token), null)
+
+    /** 2.0.0 [RVQ-32] The member's 확인했어요 from their own app; "not_found" once the leader no longer asks (or the link is gone). */
+    suspend fun okPress(id: String): Unit = throw ShareLinkException("unsupported")
 
     /** 1.38 [P3-L-15] 병동 전체 보기: the month's table, a row of labels per name ("" for none). */
     suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
@@ -927,7 +941,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         readable {
             ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
                 o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-                reply.etag, o.optBoolean("tired", false))
+                reply.etag, o.optBoolean("tired", false), o.optBoolean("watch", false))
         }
     }
 
@@ -1081,9 +1095,16 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         }
     }
 
-    override suspend fun seen(id: String, token: String): Instant? = withContext(Dispatchers.IO) {
+    override suspend fun seen(id: String, token: String): Instant? = seenOk(id, token).seenAt
+
+    override suspend fun seenOk(id: String, token: String): SeenOk = withContext(Dispatchers.IO) {
         val o = request("GET", "/api/share/$id/seen", null, token).body
-        readable { o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse) }
+        fun at(key: String) = o.optString(key).takeIf { !o.isNull(key) && it.isNotEmpty() }?.let(Instant::parse)
+        readable { SeenOk(at("seenAt"), at("okAt"), okKnown = o.has("okAt")) }
+    }
+
+    override suspend fun okPress(id: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/ok", null, null); Unit
     }
 
     private fun boardBody(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =

@@ -14,6 +14,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -143,13 +144,29 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     "pending" -> com.bamnat.app.ui.company.StatusChip("사진 확인 중 · 보통 하루 안", com.bamnat.app.ui.company.Tone.WAIT)
                                 }
                                 st.third?.let { Text("운영자 메모: $it", style = MaterialTheme.typography.bodySmall) }
-                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users} · 코드 ${item.code}",
+                                // 2.0.0 [RVQ-26] 검토 SVC-23: the past 판 the server keeps (only the maker opens them) can go for good. One text
+                                // button on each card (조건 2): 지우기 (rare, and for good) and 지난 판 지우기 are under the card's 더 보기; how
+                                // many past 판 there are is said on the card's numbers line, so the menu is not the only place that tells.
+                                val past = m.past[item.code] ?: 0
+                                Text("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users} · 코드 ${item.code}" + (if (past > 0) " · 지난 판 ${past}개" else ""),
                                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 RemixCount(item.code)
-                                Row {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     TextButton(onClick = { vm.newVersion(item.code) { body -> onNewVersion(item.code, body) } }) { Text("새 판 만들기") }
-                                    TextButton(onClick = { asking = "‘${item.title}’${com.bamnat.app.ui.Fmt.obj(item.title)} 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) } }) {
-                                        Text("지우기", color = MaterialTheme.colorScheme.error)
+                                    Spacer(Modifier.weight(1f))
+                                    var more by remember(item.code) { mutableStateOf(false) }
+                                    androidx.compose.foundation.layout.Box {
+                                        IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "‘${item.title}’ 더 보기") }
+                                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                            if (past > 0) androidx.compose.material3.DropdownMenuItem(text = { Text("지난 판 ${past}개 지우기") }, onClick = {
+                                                more = false
+                                                asking = "지난 판 ${past}개를 서버에서 지울까요? 지금 판(v${item.version})만 남아요. 지난 판은 원래 나만 열 수 있어요" to { vm.dropPast(item.code) }
+                                            })
+                                            androidx.compose.material3.DropdownMenuItem(text = { Text("장터에서 지우기", color = MaterialTheme.colorScheme.error) }, onClick = {
+                                                more = false
+                                                asking = "‘${item.title}’${com.bamnat.app.ui.Fmt.obj(item.title)} 장터에서 지울까요? 이미 넣은 분들의 설정은 그대로예요" to { vm.delete(item.code) }
+                                            })
+                                        }
                                     }
                                 }
                             }

@@ -280,6 +280,11 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 if (followNews() && prefs.getBoolean(K_HAS_PROFILE, false)) runCatching { c.recipeApi.inbox(c.companyStore.device, since) }.getOrNull()?.let { box ->
                     val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
                     if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
+                    // 2.0.0 [RVQ-27] 검토 U22b-09: once, when the operator let my 소개 show again.
+                    box.bioBack?.let { "s|$it" }?.takeIf { it !in told }?.let { key ->
+                        lines += "운영자가 확인해 내 소개가 다시 보여요 (마을 › 내 프로필)"
+                        prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(key))).apply()
+                    }
                     box.milestones.firstOrNull { it.key !in told }?.let { m ->
                         lines += "‘${m.title}’" + (if (m.kind == "users") "${com.bamnat.app.ui.Fmt.obj("‘${m.title}’")} 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
                         prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()

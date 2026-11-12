@@ -178,7 +178,9 @@ data class Votes(val likes: Int, val dislikes: Int, val myVote: Int?, val held: 
 /** [RCP-29] The phone's own recipes in every state. */
 /** [photos]: 1.36 [GRW-08] 사진이 운영자를 기다리는("pending") 또는 신고로 가려진("held") 작품의 코드별 표시. */
 data class MyRecipes(val trust: Int, val reviewLeft: Int, val items: List<Pair<RecipeItem, Triple<String, String, String?>>>,
-    val photos: Map<String, String> = emptyMap())
+    val photos: Map<String, String> = emptyMap(),
+    /** 2.0.0 [RVQ-26] 검토 SVC-23: how many past 판 of each code the server still keeps (only the maker can open them); none from an older server. */
+    val past: Map<String, Int> = emptyMap())
 
 /** [RCX-01] 계보: the recipes it was made from (nearest first; null where one is gone) and those made from it. */
 data class Lineage(val parents: List<RecipeItem?>, val children: List<RecipeItem>,
@@ -227,6 +229,8 @@ data class MakerPage(
     val bioHiddenBy: String? = null,
     /** The maker's own: the reason most reports gave ("impersonate", "bio", "spam", "other"), never who. */
     val bioHiddenWhy: String? = null,
+    /** 2.0.0 [RVQ-27] 검토 SVC-24·U22b-09: the maker's own: the 소개 the operator hid was changed and waits for the operator's look. */
+    val bioChecking: Boolean = false,
     /** 1.36 [V20] 보이는 믿음 단계: 0 새싹, 1 이웃, 2 단골 (null: 밤낮 운영). */
     val trust: Int? = null,
     /** The maker's own: days to the next step, or [trustHeld] when something hidden keeps 단골 away. */
@@ -264,6 +268,8 @@ data class ProfileInbox(
     val followersLatest: String? = null,
     /** The server's time of this answer, kept as the next since (the phone's clock may be off). */
     val at: Instant? = null,
+    /** 2.0.0 [RVQ-27] 검토 U22b-09: when the operator let my 소개 show again (after reports or my fix), since [at] last time. */
+    val bioBack: Instant? = null,
 ) {
     data class Milestone(val code: String, val title: String, val kind: String, val n: Int) {
         val key: String get() = "$code|$kind|$n"
@@ -341,6 +347,8 @@ interface RecipeApi {
     suspend fun block(device: String, id: String, on: Boolean) {}
     suspend fun flagMaker(device: String, id: String, reason: String) {}
     suspend fun setOpen(device: String?, id: String): SetDoc = throw CompanyException("not_found")
+    /** 2.0.0 [RVQ-26] 검토 SVC-23 지난 판 지우기: the maker's past 판 go from the server; how many went. */
+    suspend fun dropPast(device: String, code: String): Int = throw CompanyException("offline")
     /** A new 모음 ([id] null) or a change to one; its id back. */
     suspend fun setSave(device: String, id: String?, title: String, summary: String, codes: List<String>): String = throw CompanyException("offline")
     suspend fun setDelete(device: String, id: String) {}
@@ -477,7 +485,12 @@ class RecipeClient(
         val rows = o.optJSONArray("items").objects()
         MyRecipes(o.optInt("trust"), o.optInt("reviewLeft"), rows.map {
             item(it) to Triple(it.optString("state"), it.optString("scope"), it.optStringOrNull("note"))
-        }, rows.mapNotNull { r -> r.optStringOrNull("photos")?.let { r.optString("code") to it } }.toMap())
+        }, rows.mapNotNull { r -> r.optStringOrNull("photos")?.let { r.optString("code") to it } }.toMap(),
+            rows.mapNotNull { r -> r.optInt("past").takeIf { it > 0 }?.let { r.optString("code") to it } }.toMap())
+    }
+
+    override suspend fun dropPast(device: String, code: String): Int = serverCall {
+        call("DELETE", "/api/recipes/$code/versions", device = device).optInt("dropped")
     }
 
     override suspend fun talk(device: String?, code: String): RecipeTalk = readCall {
@@ -560,7 +573,7 @@ class RecipeClient(
             sets = o.optJSONArray("sets").objects().map { s -> MakerSet(s.getString("id"), s.optString("title"), s.optString("summary"),
                 s.optJSONArray("codes").strings(), s.optInt("missing"), s.optBoolean("hidden")) },
             cover = o.optStringOrNull("cover"), coverPending = o.optStringOrNull("coverPending"), closed = o.optBoolean("closed"),
-            bioHiddenBy = o.optStringOrNull("bioHiddenBy"), bioHiddenWhy = o.optStringOrNull("bioHiddenWhy"),
+            bioHiddenBy = o.optStringOrNull("bioHiddenBy"), bioHiddenWhy = o.optStringOrNull("bioHiddenWhy"), bioChecking = o.optBoolean("bioChecking"),
             trust = if (o.has("trust") && !o.isNull("trust")) o.optInt("trust").coerceIn(0, 2) else null,
             trustDays = o.optJSONObject("trustNext")?.takeIf { it.has("days") }?.optInt("days"),
             trustHeld = o.optJSONObject("trustNext")?.optBoolean("held") == true,
@@ -603,7 +616,8 @@ class RecipeClient(
             o.optJSONArray("remixes").objects().map { Triple(it.optString("code"), it.optString("title"), it.optString("parentTitle")) },
             o.optJSONArray("milestones").objects().map { ProfileInbox.Milestone(it.optString("code"), it.optString("title"), it.optString("kind"), it.optInt("n")) },
             o.optJSONArray("badges").objects().map { it.optString("key") to it.optString("name") },
-            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() })
+            followersLatest = f?.optStringOrNull("latest"), at = o.optStringOrNull("at")?.let { runCatching { Instant.parse(it) }.getOrNull() },
+            bioBack = o.optStringOrNull("bioBack")?.let { runCatching { Instant.parse(it) }.getOrNull() })
     }
 
     override suspend fun block(device: String, id: String, on: Boolean) = serverCall {

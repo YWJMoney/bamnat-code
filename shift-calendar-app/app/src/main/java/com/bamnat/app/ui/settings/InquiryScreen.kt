@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.EditNote
@@ -797,6 +798,7 @@ private fun placeholder(kind: InquiryKind?): String = when (kind) {
     InquiryKind.COMPANY -> "예: OO공장 생산2팀이에요. 휴무일 근무는 8시간에 기본급 10%, 8시간 넘으면 0.5 가산이에요"
     InquiryKind.OTHER -> "예: 야간 근무 날 화면이 어두워져서 좋아요"
     InquiryKind.STUDIO -> "예: 달력 칸마다 그라데이션 배경을 넣고 싶어요"
+    InquiryKind.BILLING -> "예: 어제 프로 1년을 결제했는데 아직 프로가 안 열려요. Play 주문 번호는 GPA.1234-…예요"
     else -> "예: 대근을 4시간만 하면 급여에 어떻게 들어가나요?"
 }
 
@@ -833,6 +835,7 @@ private fun InquiryKind.icon(): ImageVector = when (this) {
     InquiryKind.COMPANY -> Icons.Outlined.Apartment
     InquiryKind.OTHER -> Icons.Outlined.ChatBubbleOutline
     InquiryKind.STUDIO -> Icons.Outlined.ChatBubbleOutline
+    InquiryKind.BILLING -> Icons.Outlined.CreditCard
 }
 
 @Composable
