@@ -225,10 +225,12 @@ internal data class HeadRoom(
             val steps: List<(HeadRoom) -> HeadRoom> = listOf(
                 { it.copy(faces = 0) }, { it.copy(together = false) }, { it.copy(share = minOf(it.share, ICON)) }, { it.copy(name = false) },
                 { it.copy(team = minOf(it.team, ICON)) },
-                { it.copy(shortTitle = true) }, { it.copy(share = 0) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
+                { it.copy(shortTitle = true) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
                 // [RVP-45] HQ-62: the way home keeps its words longest, and outlasts the arrows (밀어 넘기기 and TalkBack still step).
                 { it.copy(home = minOf(it.home, ICON)) },
-                { it.copy(team = 0) }, { it.copy(arrows = false) }, { it.copy(home = 0) },
+                // 검토 PC-143 (사용자 11-13 '종은 공유 옆에 따로', 사용자 폰은 폴드): 공유 stays beside the bell as its icon after the arrows go
+                // (the month still steps by 밀어 넘기기 and TalkBack); only a row too narrow even then puts it in 도구.
+                { it.copy(team = 0) }, { it.copy(arrows = false) }, { it.copy(share = 0) }, { it.copy(home = 0) },
             )
             // [RVH-42] PC-29: the work's own buttons with their words are worth more than the other calendars' faces, 같이 보기, 공유's
             // word and the calendar's name; when one fits with its words once those are folded, the row stops there.

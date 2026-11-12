@@ -52,6 +52,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -110,8 +111,9 @@ internal fun NoticeStack(
     val allowed = notices.filter { n -> n.urgent || (n.kind !in muted && !(n.section == InboxSection.SUGGEST && suggestOff)) }
     // Which notices said something the last time they were measured, in order; the band is the first urgent one the user did not put away.
     val present = allowed.filter { (state.heights[it.key] ?: 0) > 0 }
-    val waiting = present.filter { it.key !in state.snoozed && it.key !in state.answered }
-    val urgent = waiting.filter { it.urgent }
+    // PC-139: a notice to [Notice.keep] stays in the bell when put away; only its band goes.
+    val waiting = present.filter { (it.keep || it.key !in state.snoozed) && it.key !in state.answered }
+    val urgent = waiting.filter { it.urgent && it.key !in state.snoozed }
     val band: Notice? = when {
         open <= 0 -> null
         // PC-81: Once settled, a closed place stays closed: what comes later is in the bell.
@@ -134,6 +136,11 @@ internal fun NoticeStack(
         // The bell's number is what its sheet holds (the band's notice too), so '3' on the bell is '알림 3' when it opens.
         state.inBell = rows.size + postedRows.size
         state.present = present.map { it.key }
+        // PC-139: what keeps an alarm from working, once fixed, is forgotten as put away: broken again, its band comes again.
+        val keepNow = allowed.filter { it.keep }.map { it.key }.toSet()
+        val fixed = state.keepSeen - keepNow
+        if (fixed.isNotEmpty()) state.snoozed = state.snoozed - fixed
+        if (state.keepSeen != keepNow) state.keepSeen = keepNow
     }
     androidx.compose.ui.layout.Layout(
         modifier = modifier.fillMaxWidth(),
@@ -176,7 +183,8 @@ private fun NoticeBand(n: Notice, state: NoticeStackState) {
         detail = n.detail,
         action = if (n.button) n.action ?: "보기" else null,
         onAction = n.onAction ?: { state.openSheet(n.key) },
-        onClose = n.onClose ?: { state.snooze(context, n.key) },
+        onClose = n.onClose ?: if (n.keep) ({ state.snooze(context, n.key, said = "알림함(종)에 넣어 뒀어요. 고칠 때까지 거기 있어요", persist = false) })
+            else ({ state.snooze(context, n.key) }),
         closeLabel = if (n.onClose == null) "알림함에 넣기" else "이 안내 닫기",
         onClick = { state.openSheet(n.key) },
         kani = n.kani,
@@ -194,23 +202,27 @@ private fun NoticeBand(n: Notice, state: NoticeStackState) {
 private fun NoticeSheet(notices: List<Notice>, posted: List<InboxRow>, state: NoticeStackState, inbox: Inbox) {
     val context = LocalContext.current
     val total = notices.size + posted.size
-    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { state.sheetOpen = false }) {
+    com.bamnat.app.ui.components.AppSheet(onDismissRequest = { state.sheetOpen = false; state.sheetUndo = null }) {
         Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(if (total == 0) "알림" else "알림 $total", style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f).semantics { heading() })
-            if (total > 0) TextButton(onClick = {
+            // PC-139: what keeps an alarm from working is not cleared (it stays until fixed), so 전체 지움 is there while anything else is.
+            if (notices.any { !it.keep } || posted.isNotEmpty()) TextButton(onClick = {
                 val gone = inbox.clearAll()
-                val shut = notices.map { it.key }
+                val shut = notices.filterNot { it.keep }.map { it.key }
                 shut.forEach { NoticeSnooze.put(context, it) }
                 state.snoozed = state.snoozed + shut
                 // 조건 10: taken back once; 조건 16: what stays, in a person's words.
-                AppSnack.show("알림을 모두 지웠어요. 글·작품에 달린 댓글은 그대로예요", undo = {
+                state.say(if (notices.any { it.keep }) "알림을 지웠어요. 알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요"
+                    else "알림을 모두 지웠어요. 글·작품에 달린 댓글은 그대로예요") {
                     inbox.putBack(gone)
                     shut.forEach { NoticeSnooze.remove(context, it) }
                     state.snoozed = state.snoozed - shut.toSet()
-                })
+                }
             }) { Text("전체 지움") }
         }
+        // PC-140: what was just cleared or closed in here is taken back here, not on a line behind the sheet.
+        state.sheetUndo?.let { (words, undo) -> SheetUndoLine(words) { undo(); state.sheetUndo = null } }
         if (total == 0) {
             com.bamnat.app.ui.components.EmptyState("새 알림이 없어요", "누가 내 글·작품에 반응하거나 알릴 것이 생기면 여기에 모아 둘게요",
                 mood = KaniMood.Basic, modifier = Modifier.padding(bottom = 24.dp))
@@ -251,6 +263,16 @@ private fun NoticeSheet(notices: List<Notice>, posted: List<InboxRow>, state: No
     }
 }
 
+/** PC-140: the sheet's own 되돌리기 line, at its top under the title, until the sheet closes or it is used. */
+@Composable
+private fun SheetUndoLine(words: String, onUndo: () -> Unit) {
+    Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+        verticalAlignment = Alignment.CenterVertically) {
+        Text(words, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        TextButton(onClick = onUndo, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") }
+    }
+}
+
 @Composable
 private fun SectionHead(text: String) {
     Text(text, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -267,11 +289,11 @@ private fun PostedRow(r: InboxRow, inbox: Inbox, state: NoticeStackState) {
         onClick = { state.sheetOpen = false; r.open(); inbox.remove(r.key) },
         onClose = {
             inbox.remove(r.key)
-            AppSnack.show("알림을 지웠어요", undo = { inbox.putBack(listOf(r)) })
+            state.say("알림을 지웠어요") { inbox.putBack(listOf(r)) }
         },
         onMute = {
             inbox.mute(r.kind, r.title)
-            AppSnack.show("이런 알림은 다시 보이지 않아요. 기능 켜고 끄기에서 다시 켤 수 있어요", undo = { inbox.unmute(r.kind) })
+            state.say("이런 알림은 다시 보이지 않아요. 기능 켜고 끄기에서 다시 켤 수 있어요") { inbox.unmute(r.kind) }
         },
     )
 }
@@ -295,14 +317,15 @@ private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: Not
                 val go = n.onAction
                 if (go != null && n.button) { state.sheetOpen = false; go() } else onOpen()
             },
-            onClose = {
+            // PC-139: what keeps an alarm from working stays until it is fixed: no X.
+            onClose = if (n.keep) null else ({
                 val answer = n.onClose
                 if (answer != null) answer() else state.snooze(context, n.key, said = "닫았어요. 내일 다시 볼 수 있어요")
-            },
+            }),
             // An alarm that may not ring, an agreement the app waits for: never turned off from here.
             onMute = if (n.urgent) null else ({
                 inbox.mute(n.kind, n.label ?: n.line.orEmpty())
-                AppSnack.show("이런 알림은 다시 보이지 않아요. 기능 켜고 끄기에서 다시 켤 수 있어요", undo = { inbox.unmute(n.kind) })
+                state.say("이런 알림은 다시 보이지 않아요. 기능 켜고 끄기에서 다시 켤 수 있어요") { inbox.unmute(n.kind) }
             }),
             expanded = if (expandable) opened else null,
             go = n.action?.takeIf { n.onAction != null && n.button },
@@ -326,7 +349,7 @@ private fun InboxLine(
     title: String,
     line: String?,
     onClick: () -> Unit,
-    onClose: () -> Unit,
+    onClose: (() -> Unit)?,
     onMute: (() -> Unit)?,
     time: String? = null,
     /** Null for a row that goes somewhere; else whether its notice is open under it. */
@@ -347,8 +370,9 @@ private fun InboxLine(
                 if (quiet.isNotEmpty()) Text(quiet, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (go != null) Text(go, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
             }
-            IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "닫기: $title", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-            if (onMute != null) Box {
+            // PC-142: open, the card under the row has its own X and answers; the row's X and ⋮ wait until it folds again.
+            if (onClose != null && expanded != true) IconButton(onClick = onClose) { Icon(Icons.Filled.Close, "닫기: $title", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            if (onMute != null && expanded != true) Box {
                 var menu by remember { mutableStateOf(false) }
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기: $title", tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
@@ -401,6 +425,12 @@ internal class Notice(
     val button: Boolean = true,
     /** Has to be seen now: may be the band over the month (and is never turned off with 다시 보지 않기). */
     val urgent: Boolean = false,
+    /**
+     * 2.0.0 [RVP-43] 검토 PC-139: what keeps an alarm from working (알림 꺼짐, 잠금 화면 알람, 근무 알람 조용히). It stays in the bell until it
+     * is fixed: 전체 지움 leaves it, its row has no X or ⋮, and its band's X puts it away for this visit only. Fixed and then broken
+     * again, it says so again.
+     */
+    val keep: Boolean = false,
     val section: InboxSection = InboxSection.NOTICE,
     kind: String? = null,
     val content: @Composable () -> Unit,
@@ -432,14 +462,25 @@ internal class NoticeStackState(sheet: Boolean = false, snoozed: Set<String> = e
         sheetOpen = true
     }
 
-    internal fun snooze(context: Context, key: String, said: String = "알림함(종)에 넣어 뒀어요. 내일 다시 띄워 드릴게요") {
-        NoticeSnooze.put(context, key)
+    internal fun snooze(context: Context, key: String, said: String = "알림함(종)에 넣어 뒀어요. 내일 다시 띄워 드릴게요", persist: Boolean = true) {
+        if (persist) NoticeSnooze.put(context, key)
         snoozed = snoozed + key
         // 조건 10: the X is taken back here; 조건 16: where it went, said in a person's words.
-        AppSnack.show(said, undo = {
+        say(said) {
             NoticeSnooze.remove(context, key)
             snoozed = snoozed - key
-        })
+        }
+    }
+
+    /** PC-139: the [Notice.keep] notices on screen the last time, to tell when one was fixed. */
+    internal var keepSeen: Set<String> by mutableStateOf(emptySet())
+
+    /** PC-140: what was just done in the open sheet and its 되돌리기, said inside the sheet. */
+    internal var sheetUndo: Pair<String, () -> Unit>? by mutableStateOf(null)
+
+    /** Says [words] with 되돌리기: inside the 알림함 while it is open (a line behind it was not seen, PC-140), else on the app's line. */
+    internal fun say(words: String, undo: () -> Unit) {
+        if (sheetOpen) sheetUndo = words to undo else AppSnack.show(words, undo = undo)
     }
 }
 

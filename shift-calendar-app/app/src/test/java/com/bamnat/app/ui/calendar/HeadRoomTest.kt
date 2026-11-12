@@ -90,6 +90,15 @@ class HeadRoomTest {
         assertFalse(phone.together)
     }
 
+    /** 검토 PC-143 (사용자 '종은 공유 옆에 따로', 폴드): 공유 stays beside the bell as its icon on the folded and the usual phone at 100%. */
+    @Test fun shareStaysBesideTheBellOnAPhone() {
+        for (w in listOf(369f, 411f)) HeadRoom.of(w, 1f, if (w < 392f) 16f else 22f, bell = true, nameChars = 3).let { r ->
+            assertEquals("$w: 공유는 종 옆에 아이콘으로 $r", HeadRoom.ICON, r.share)
+            assertFalse("$w: ‹ ›가 먼저 빠져요(밀어 넘기기·TalkBack)", r.arrows)
+        }
+        assertEquals("접은 폭 200%에서만 도구 안에", 0, HeadRoom.of(369f, 2f, 16f, bell = true, nameChars = 3).share)
+    }
+
     /** 총괄 HQ-59: a 360dp phone keeps the month at its size at 100% and 200% (no step down, the year goes). */
     @Test fun a360PhoneKeepsTheMonthAtItsSize() {
         for (fs in listOf(1f, 2f)) HeadRoom.of(360f, fs, 16f, bell = true, nameChars = 3).let { r ->

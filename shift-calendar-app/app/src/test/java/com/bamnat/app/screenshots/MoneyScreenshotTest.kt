@@ -107,7 +107,10 @@ class MoneyScreenshotTest : ScreenshotBase() {
     @Test fun calFieldFolded() = shoot("293_folded_field_calendar", FOLDED, plain(WorkStyle.FIELD, moreJobs))
     @Test fun calFieldUnfolded() = shoot("294_unfolded_field_calendar", UNFOLDED, plain(WorkStyle.FIELD, moreJobs))
     @Test fun calFieldDay() = shoot("296_folded_field_day", FOLDED, plain(WorkStyle.FIELD, moreJobs) { openDay(today) })
-    @Test fun calBusinessFolded() = shoot("297_folded_business_calendar", FOLDED, plain(WorkStyle.BUSINESS, moreSales))
+    // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9): '매출 적기' does not stand on the summary card's '하루 평균' under the month.
+    @Test fun calBusinessFolded() = shoot("297_folded_business_calendar", FOLDED, plain(WorkStyle.BUSINESS, moreSales) {
+        LayoutCheck.underFab(nodes(merged = false)).let { check(it.isEmpty()) { "the floating button covers $it" } }
+    })
     @Test fun calBusinessUnfolded() = shoot("298_unfolded_business_calendar", UNFOLDED, plain(WorkStyle.BUSINESS, moreSales))
     @Test fun calBusinessDay() = shoot("299_folded_business_day", FOLDED, plain(WorkStyle.BUSINESS, moreSales) { openDay(today) })
 

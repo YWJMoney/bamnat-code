@@ -197,9 +197,10 @@ class DesignRulesTest {
      * strong blue, and a card on it read as one big button (G #447 사진 08). A ground that is `primaryContainer` only while picked is fine.
      */
     @Test fun cardsStandOnTheQuietGround() {
+        // A chip or button in the pill shape (CircleShape, or [MaterialTheme.pill] that follows the corner setting, PC-128) is not a card.
         val ground = Regex("""(?<![A-Za-z])(color|containerColor) = MaterialTheme\.colorScheme\.primaryContainer(?!\.copy)""")
         val bad = screens.flatMap { s ->
-            s.text.split('\n').mapIndexedNotNull { i, l -> if (ground.containsMatchIn(l) && !l.contains("if (") && !l.contains("CircleShape")) "${s.path}:${i + 1}" else null }
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (ground.containsMatchIn(l) && !l.contains("if (") && !l.contains("CircleShape") && !l.contains("MaterialTheme.pill")) "${s.path}:${i + 1}" else null }
         }
         report("카드 바탕 primaryContainer", bad.size, 0, 0)
         assertEquals("카드 바탕은 surfaceContainerLow(조용한 면)예요. primaryContainer는 고른 것·채운 단추에만(docs/design/공통-부품.md 2절)", emptyList<String>(), bad)

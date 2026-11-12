@@ -408,10 +408,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 if (state.items.isNotEmpty() && state.loadedAt > 0L) com.bamnat.app.ui.company.RefreshLine(refreshing = false, stale = true,
                     onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(com.bamnat.core.time.Today.zone())
                         .toLocalTime().let { "%d:%02d".format(it.hour, it.minute) })
-                else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-                    Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { vm.load() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 시도") }
-                }
+                // 2.0.0 [RVP-13] 검토 UIX-15 (조건 6·7): a market that cannot be read is not a danger: the one offline line, quiet, with 다시 하기.
+                else com.bamnat.app.ui.components.OfflineLine(Modifier.padding(start = 8.dp), text = e, onRetry = { vm.load() })
             } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
                 // [R136-05] 1.36 (리뷰 R-11): an empty list can be read again (다시 불러오기). [RVM-09] PC-64 (찾기 결과 없음에 칸이가 없고

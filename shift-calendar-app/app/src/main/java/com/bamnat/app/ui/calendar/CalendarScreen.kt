@@ -852,6 +852,10 @@ fun CalendarScreen(
     // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
     var gridTop by remember { mutableFloatStateOf(Float.NaN) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
+    // 2.0.0 [RVP-01] 검토 HQ-76: the top of the area the FAB floats in, and of the room left for it under the month (after the
+    // 모든 조·횟수·보기 row and the notes under it).
+    var fabAreaTop by remember { mutableFloatStateOf(Float.NaN) }
+    var fabRoomTop by remember { mutableFloatStateOf(Float.NaN) }
     // How far down the month the FAB may not go: the rows with this month's days where the FAB rests (the right side).
     var ownRowsPx by remember { mutableFloatStateOf(Float.NaN) }
     // 1.39 [CALX-07] (사용자 2026-11-08 "달력만 보기인데 밑에 더 이상 내용이 없는데 스크롤이 돼"): how tall what stands under the month is
@@ -867,12 +871,23 @@ fun CalendarScreen(
     val fabTarget: () -> Float = {
         if (!docking || gridBottom.isNaN() || fabAreaBottom.isNaN()) 0f
         else {
-            // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
-            // it rides under the month only when the whole month shows at the page's top. A longer page keeps it in its usual
-            // place all the way, so it never hides below the edge and does not jump while scrolling.
-            val ride = gridBottom + dockGap - (fabAreaBottom - fabLift)
-            // PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than its own area's bottom.
-            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
+            // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9, 큰 글자에서 단추가 달 아래 '월 ▾'를 덮음): it rides in the room left for it under the month,
+            // under the row of 모든 조·횟수·보기, not right under the last week.
+            val room = if (fabRoomTop.isNaN()) gridBottom else maxOf(gridBottom, fabRoomTop)
+            val ride = room + dockGap - (fabAreaBottom - fabLift)
+            when {
+                // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
+                // while that room is below where the FAB rests, it drops into it only when the whole month shows at the page's top, so it
+                // never hides below the edge. PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than
+                // its own area's bottom.
+                ride >= 0f -> if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
+                // At the page's end it rests in the page's own end room.
+                !pageScroll.canScrollForward -> 0f
+                // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9, 가게 접은 폭: 쉬던 자리의 단추가 달 아래 요약 카드의 '하루 평균'을 가림): a page longer than
+                // the screen has its cards where the FAB rests, so it stays in its room under the month and goes up with it; once that
+                // room has left the screen it is gone until the page's end.
+                else -> ride
+            }
         }
     }
     val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -886,7 +901,7 @@ fun CalendarScreen(
     // so what it would cover stays readable and in reach; at the page's end there is room for its label.
     // [CAL-15] It says "빠른 입력" at the top of the page and while it rides under the month, so the
     // first look tells what it is.
-    val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
+    val fabExpanded by remember { derivedStateOf { kotlin.math.abs(fabDrop.value) > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
     // 12.1 화면 사진(오늘의 흐름 한 줄이 달력 위로 오며 달력이 내려감, 큰 글씨에서 '빠른 입력'이 21~24일을 가림): where the
     // month is longer than the room above the FAB, it steps aside while it would sit on this month's own days, and comes back
@@ -896,11 +911,17 @@ fun CalendarScreen(
             if (!docking || ownRowsPx.isNaN() || gridTop.isNaN() || fabAreaBottom.isNaN()) false
             else {
                 val top = fabAreaBottom - fabLift + fabDrop.value
-                top < gridTop + ownRowsPx && top + fabHeight > gridTop
+                // 2.0.0 [RVP-01] 검토 HQ-76: nor on the row under the month (모든 조·횟수·'월 ▾'), when its room is not on the screen yet.
+                val onRow = !gridBottom.isNaN() && !fabRoomTop.isNaN() && top < fabRoomTop && top + fabHeight > gridBottom
+                top < gridTop + ownRowsPx && top + fabHeight > gridTop || onRow
             }
         }
     }
-    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays } }
+    // 2.0.0 [RVP-01] 검토 HQ-76: gone, too, once it has gone up with the room under the month past the top of its area.
+    val fabUp by remember(fabLift) {
+        derivedStateOf { !fabAreaTop.isNaN() && !fabAreaBottom.isNaN() && fabAreaBottom - fabLift + fabDrop.value < fabAreaTop }
+    }
+    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays || fabUp } }
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
@@ -1184,19 +1205,19 @@ fun CalendarScreen(
             // screen stops it. Asked here, where it is needed, instead of on the first start.
             // 1.38 PC 9차: the app's window that said why (화면이 안 뜨고 소리만) is gone, so the line says it.
             !notificationsAllowed -> AlarmNote(NOTICE_OFF_LINE, NOTICE_OFF_LINE, "허용", askNotifications, com.bamnat.app.ui.theme.Tone.Danger,
-                picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM)
+                picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM, keep = "notifications")
             // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
             !fullScreenAllowed -> AlarmNote("잠금 화면에 알람 화면이 안 떠요", "잠금 화면에 알람 화면이 안 떠요", "허용", {
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
                     android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                         android.net.Uri.parse("package:${context.packageName}")))
-            }, com.bamnat.app.ui.theme.Tone.Danger)
+            }, com.bamnat.app.ui.theme.Tone.Danger, keep = "fullScreen")
             // [ALRM-07] The 근무 알람 notice turned down to 조용히 or hidden: the ringing screen cannot show either.
             alarmChannelTrouble != null -> AlarmNote(alarmChannelTrouble!!, alarmChannelTrouble!!, "고치기", {
                 SystemSettings.open(context, android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                     .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
                     .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, Notifications.ALARM_CHANNEL_ID))
-            }, com.bamnat.app.ui.theme.Tone.Danger)
+            }, com.bamnat.app.ui.theme.Tone.Danger, keep = "alarmChannel")
             else -> null
         }
         // [CUST-01] The user's parts above the month (화면 꾸미기), by part: the name the 알림 line gives it, and the part.
@@ -1434,7 +1455,9 @@ fun CalendarScreen(
             })
             // 1.36 U7: the first day painted brings the next alarm into being; its line waits until quick input closes.
             if (paint == null) alarmLine?.let { a ->
-                add(Notice("alarm", a.label, line = a.text, tone = a.tone, action = a.action, onAction = a.onAction, urgent = true) {
+                // PC-139: what keeps an alarm from working has a key of its own (fixed and broken again, it says so again) and stays until fixed.
+                add(Notice(a.keep?.let { "alarm:$it" } ?: "alarm", a.label, line = a.text, tone = a.tone, action = a.action, onAction = a.onAction,
+                    urgent = true, keep = a.keep != null) {
                     AlarmWarningLine(a.text, a.action, a.onAction, linePlace, picture = a.picture, tone = a.tone)
                 })
             }
@@ -1962,7 +1985,7 @@ fun CalendarScreen(
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
-            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
+            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             Column(Modifier.fillMaxWidth().onSizeChanged { belowPx = it.height }) {
@@ -2009,7 +2032,7 @@ fun CalendarScreen(
     val pageEnd = if (paint == null && settled && belowPx == 0) 0.dp else bottomSpace
     val fab: @Composable BoxScope.() -> Unit = {
         // [CAL-15] Where the FAB rests: the bottom of the area it floats in.
-        Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaBottom = c.positionInWindow().y + c.size.height })
+        Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaTop = c.positionInWindow().y; fabAreaBottom = fabAreaTop + c.size.height })
         val style = settings.workStyle
         val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
@@ -2395,12 +2418,8 @@ internal fun CalendarHeader(
     val titlePart = bp.style("cal.head.title", scope = headScope)
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
-    val baseTitle = when {
-        narrow -> MaterialTheme.typography.titleMedium
-        wideTitle -> MaterialTheme.typography.headlineSmall
-        else -> MaterialTheme.typography.titleLarge
-    }
-    val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
+    val narrowTitle = MaterialTheme.typography.titleMedium
+    val roomyTitle = if (wideTitle) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge
     val otherRows = chip?.rows?.filter { it.key != chip.current.key }.orEmpty()
     val others = otherRows.size
     // 2.0.0 [RVP-45] HQ-62 While someone else's calendar is on screen, the way back to the user's own stays longest (HeadRoom.home).
@@ -2412,6 +2431,14 @@ internal fun CalendarHeader(
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
         team = teamRow != null, homeChars = if (homeRow != null) chip?.homeWords?.length ?: 0 else 0,
     ).let { if (chip == null) it.copy(name = false) else it }
+    // 검토 PC-141 (통합 4차 PC: 접은 폭 100%에서 '11월'이 보통 폭보다 작고 가늘었어요, 자리가 남는데도): a narrow row has the phone's
+    // own month size too when that folds nothing more than the smaller one would; else the smaller one.
+    val baseTitle = if (!narrow) roomyTitle else {
+        val big = roomFor(roomyTitle.fontSize.value)
+        val small = roomFor(narrowTitle.fontSize.value)
+        if (!big.stepDown && big.copy(quick = small.quick) == small) roomyTitle else narrowTitle
+    }
+    val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
     // to fit; when even the folded row has no room for the work's big month, it steps down to the screen's own size.
@@ -2888,6 +2915,8 @@ internal class AlarmNote(
     val onAction: () -> Unit,
     val tone: com.bamnat.app.ui.theme.Tone,
     val picture: com.bamnat.app.ui.components.PermissionResult? = null,
+    /** 2.0.0 검토 PC-139: what keeps the alarm from working, by name, for a notice that stays until it is fixed; null for one turned off on purpose. */
+    val keep: String? = null,
 )
 
 /**
