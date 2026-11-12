@@ -326,7 +326,7 @@ private fun Offline(code: String, onRetry: () -> Unit, onByHand: () -> Unit) {
                 Text(if (code == "offline") "인터넷에 연결되지 않아 찾지 못했어요" else companyProblem(code),
                     style = MaterialTheme.typography.titleSmall)
             }
-            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 설정 > 회사 찾기에서 다시 찾을 수 있어요.",
+            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 ${companyFindWay(androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle)}에서 다시 찾을 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRetry) { Text("다시 찾기") }

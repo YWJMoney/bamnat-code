@@ -54,6 +54,38 @@ class Rvn4ScreenshotTest : ScreenshotBase() {
     @Test fun setupButtonsDarkBig() = shoot("rvn_52_setup_buttons_folded_dark_200", DARK, 2f, setupButtons())
     @Test fun setupButtonsWide() = shoot("rvn_53_setup_buttons_unfolded", UNFOLDED, setupButtons())
 
+    // 2.0.0 [RVN-18] 총괄 HQ-89: the heads with a title and text buttons at 200% on the folded width (the bar's buttons under it there).
+    private fun boardInVillage(): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = null, onOpen = {}, onShare = {}, onRates = {}) }
+        settle()
+    }
+
+    private fun companyTop(): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
+        content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
+        settle()
+    }
+
+    private fun reportTop(): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyReportViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
+        settle()
+    }
+
+    private fun talkTop(): Screen.() -> Unit = {
+        val vm = com.bamnat.app.ui.company.CompanyBoardViewModel(companyOn())
+        content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
+        vm.talk.show("c-v1", "s-v1", "가나다화학 · 품질팀")
+        settle()
+    }
+
+    @Test fun boardTopDarkBig() = shoot("rvn_85_board_top_folded_dark_200", DARK, 2f, boardTop())
+    @Test fun boardInVillageBig() = shoot("rvn_86_board_village_folded_200", FOLDED, 2f, boardInVillage())
+    @Test fun companyTopDarkBig() = shoot("rvn_87_company_top_folded_dark_200", DARK, 2f, companyTop())
+    @Test fun reportTopBig() = shoot("rvn_88_report_top_folded_200", FOLDED, 2f, reportTop())
+    @Test fun talkTopBig() = shoot("rvn_89_talk_top_folded_200", FOLDED, 2f, talkTop())
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val DARK_WIDE = "w707dp-h823dp-port-night-420dpi"

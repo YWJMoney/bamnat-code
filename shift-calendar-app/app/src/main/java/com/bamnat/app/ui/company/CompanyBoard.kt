@@ -143,15 +143,21 @@ fun CompanyBoardScreen(
         if (onRates != null) TextButton(onClick = onRates) { Text("임금표") }
         TextButton(onClick = vm.activity::show) { Text("내 활동") }
     }
+    // 2.0.0 [RVN-18] 총괄 HQ-89 (조건 12): at big letters on a narrow screen the two text buttons took the bar and '규칙 광장' broke
+    // into two lines, the second cut under the bar. There the buttons go on a row of their own under the bar, the title keeps one line.
+    val barBelow = barButtonsBelow()
     Scaffold(
         topBar = {
             // 사용자 2026-11-03 (마을 스크롤, 겹친 상단 막대): in 마을 (no 뒤로) the title and its buttons are the list's first row,
             // under 마을's own tabs, so two bars never stack and the row scrolls away with the list.
-            if (onBack != null) TopAppBar(
-                title = { Text(boardTitle) },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
-                actions = { boardActions() },
-            )
+            if (onBack != null) Column {
+                TopAppBar(
+                    title = { Text(boardTitle, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
+                    actions = { if (!barBelow) boardActions() },
+                )
+                if (barBelow) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.End) { boardActions() }
+            }
         },
         floatingActionButton = {
             // [SETUP-10] F-98: at the top the button is in the list (under the search and its chips, never on them); the round one
@@ -171,10 +177,10 @@ fun CompanyBoardScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (onBack == null) item(key = "title") {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text(boardTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).semantics { heading() })
-                        boardActions()
-                    }
+                    // [RVN-18] HQ-89: the same at big letters in 마을 — the buttons under the title, never the title squeezed to a letter a line.
+                    com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth().padding(top = 4.dp), start = {
+                        Text(boardTitle, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                    }, end = { boardActions() })
                 }
                 if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
@@ -1171,6 +1177,18 @@ private fun PollEditor(options: List<String>, onChange: (List<String>) -> Unit) 
         }
     }
 }
+
+/**
+ * 2.0.0 [RVN-18] HQ-89 Whether a bar's text buttons go on a row under it: big letters (from 130%) on a screen under 600dp, where a title
+ * and two text buttons do not share one bar.
+ */
+@Composable
+internal fun barButtonsBelow(): Boolean =
+    androidx.compose.ui.platform.LocalDensity.current.fontScale >= BAR_BELOW_FONT &&
+        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < BAR_BELOW_WIDTH_DP
+
+private const val BAR_BELOW_FONT = 1.3f
+private const val BAR_BELOW_WIDTH_DP = 600
 
 /** 1.36 [VIL-08] 마을 V8: the kinds of a room's post, as the server takes them (ROOM_KINDS). */
 internal val ROOM_KIND_LABELS = listOf("talk" to "이야기", "question" to "질문", "tip" to "팁", "show" to "자랑")

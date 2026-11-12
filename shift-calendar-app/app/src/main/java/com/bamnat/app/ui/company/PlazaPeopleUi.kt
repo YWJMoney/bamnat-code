@@ -175,7 +175,8 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(if (c.settingsRepository.current.plazaNews) "밤낮 소식 알림 하나로 와요. 자는 시간·근무 중에는 모아 두었다 알려요."
-                    else "설정 › 알림 › 밤낮 소식이 꺼져 있어 지금은 오지 않아요.",
+                    // 2.0.0 [RVN-21] the page's own name (it said 알림, the page is 알림과 잠).
+                    else "${settingsWay("plaza.news", c.settingsRepository.current.workStyle)}이 꺼져 있어 지금은 오지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
