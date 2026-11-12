@@ -1042,6 +1042,12 @@ class AppContainer(context: Context) {
         }
         // Widgets lay out weeks from the user's first day of the week.
         keep("widgetweek") {
+            // 2.0.0 [RVI-83] (검토 U03-08·T03-03) The same job keeps the phone's widget list to the calendars' kinds of work.
+            launch {
+                combine(calendars.calendars, settingsRepository.settings.map { it.workStyle }.distinctUntilChanged()) { list, main ->
+                    (list.mapNotNull { calendars.styleOf(it.id, main) } + listOfNotNull(main)).toSet()
+                }.distinctUntilChanged().collect { styles -> runCatching { com.bamnat.app.widget.WidgetChoices.sync(appContext, styles) } }
+            }
             settingsRepository.settings.map { it.weekStart }.distinctUntilChanged().drop(1)
                 .collect { WidgetRefresher.refresh(appContext) }
         }

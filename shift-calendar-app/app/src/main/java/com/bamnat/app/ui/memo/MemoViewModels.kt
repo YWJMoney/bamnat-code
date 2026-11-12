@@ -60,6 +60,17 @@ internal fun shiftCalendar(memos: List<Memo>, active: String): String? {
     return memos.flatMapTo(HashSet()) { it.owners }.singleOrNull()
 }
 
+/** 2.0.0 [RVI-80] What '오래된 할 일' does to them all at once. */
+enum class OldWay(val label: String, val said: String) { DONE("모두 끝내기", "끝냈어요"), TODAY("모두 오늘로", "오늘로 옮겼어요"), TRASH("모두 휴지통으로", "휴지통으로 옮겼어요") }
+
+/** 2.0.0 [RVI-80] The 할 일 위젯's '오래된 할 일' line opens the memo tab with them shown. */
+object MemoLinks {
+    val old = kotlinx.coroutines.flow.MutableStateFlow(false)
+}
+
+/** 2.0.0 [RVI-80] The payload of [com.bamnat.app.NoticeLinks.Target.MEMOS] that opens '오래된 할 일'. */
+const val OLD_TASKS = "old"
+
 data class MemoListState(
     val loaded: Boolean = false,
     val tab: MemoTab = MemoTab.CALENDAR,
@@ -94,6 +105,13 @@ data class MemoListState(
     val week: List<LocalDate> = emptyList(),
     val day: LocalDate? = null,
     val weekCounts: Map<LocalDate, Int> = emptyMap(),
+    /**
+     * 2.0.0 [RVI-77] (검토 U07a-02·I07ab-01) The memo tab's '오늘' 묶음: 늦음·오늘·고정 of the memos the notebook shows, the same
+     * [com.bamnat.core.memo.TaskList] the 할 일 위젯 shows.
+     */
+    val todayTasks: List<com.bamnat.core.memo.TaskList.Row> = emptyList(),
+    /** 2.0.0 [RVI-80] (검토 U07a-09) To-dos left from before the 늦음 week ([com.bamnat.core.memo.TaskList.old]). */
+    val oldTasks: List<Memo> = emptyList(),
 ) {
     val manyCalendars: Boolean get() = calendars.size > 1
     val activeName: String get() = calendars.firstOrNull { it.id == activeCalendar }?.name ?: com.bamnat.app.data.PersonalCalendar.MAIN_NAME
@@ -198,6 +216,11 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
                 generateSequence(today) { it.plusDays(1) }.take(NEXT_LOOK_DAYS).firstOrNull { com.bamnat.core.memo.MemoRepeat.occursOn(m, it, shifts) } ?: d
             }
         }
+        val repeatShifts = { m: Memo ->
+            if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat)) null
+            else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver
+                ?.let { r -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(r) }
+        }
         val words = com.bamnat.core.memo.MemoSearch.words(query.query)
         searchCache.keepOnly(all.mapTo(HashSet()) { it.id })
         val matching = inTab.filter { m ->
@@ -284,11 +307,9 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
             day = pickedDay,
             weekCounts = weekCounts,
             shiftOn = snapshots[active]?.resolver?.let { r -> { d: LocalDate -> r.resolve(d).shiftType } } ?: { _: LocalDate -> null },
-            shiftsOf = { m: Memo ->
-                if (!com.bamnat.core.memo.MemoRepeat.followsSchedule(m.repeat)) null
-                else snapshots[com.bamnat.app.data.MemoRepository.calendarOf(m, active)]?.resolver
-                    ?.let { r -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(r) }
-            },
+            shiftsOf = repeatShifts,
+            todayTasks = com.bamnat.core.memo.TaskList.of(all, today, repeatShifts),
+            oldTasks = com.bamnat.core.memo.TaskList.old(all, today),
         )
     }
 
@@ -386,9 +407,84 @@ class MemoListViewModel(private val container: AppContainer) : ViewModel() {
         viewModelScope.launch { repo.save(memo) }
     }
 
-    /** 1.39 [TASK-02] 끝냄 from a card: the stored memo (not a repeating one's copy laid on a day) finished or not on [day]. */
+    /**
+     * 1.39 [TASK-02] 끝냄 from a card: the stored memo (not a repeating one's copy laid on a day) finished or not on [day].
+     * 2.0.0 [RVI-74] (검토 U07a-01) Not an edit: '최근 수정순' keeps the card where it is, under the finger.
+     */
     fun setDone(memo: Memo, day: LocalDate?, done: Boolean) {
-        viewModelScope.launch { repo.get(memo.id)?.let { repo.save(it.withDone(done, day, Today.millis())) } }
+        viewModelScope.launch { repo.get(memo.id)?.let { repo.save(it.withDone(done, day, Today.millis()), touch = false) } }
+    }
+
+    /** 2.0.0 [RVI-77] (검토 U07a-11) The calendar on screen's days ahead, so the memo tab's line reads "다음 야간 때" as it is typed. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val shiftDays: StateFlow<List<com.bamnat.core.memo.ShiftMemoTime.Day>> = container.calendars.active.flatMapLatest { cal ->
+        container.calendars.repository(cal).live.map { snap ->
+            val from = Today.date()
+            (-1L..60L).mapNotNull { i -> com.bamnat.core.memo.ShiftMemoTime.of(snap.resolver.resolve(from.plusDays(i))) }
+        }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
+     * 2.0.0 [RVI-77] (검토 U07a-02·03·11, I07ab-01) 한 줄로 적기 in the memo tab's '오늘' 묶음: read as the 할 일 위젯's window reads it
+     * ([com.bamnat.app.memo.quickMemo], "다음 야간 때" by the calendar on screen too), into the notebook shown; [said] gets what was
+     * saved, or null.
+     */
+    fun addQuick(text: String, said: (Memo?) -> Unit) {
+        viewModelScope.launch {
+            val active = container.calendars.active.value
+            val shifts = shiftDays.value.ifEmpty { runCatching { com.bamnat.app.memo.shiftDaysAhead(container, active) }.getOrDefault(emptyList()) }
+            val read = com.bamnat.app.memo.quickMemo(text, com.bamnat.app.memo.QuickDay.READ, ring = true, Today.dateTime(), shifts = shifts)
+            if (read == null) { said(null); return@launch }
+            val calendars = if (container.calendars.calendars.value.size > 1) container.memoNotebook.value.newMemoCalendars(active) else setOf(active)
+            val saved = runCatching { repo.save(read.copy(calendars = calendars)) }.getOrNull()
+            if (saved != null) runCatching { com.bamnat.app.widget.TaskWidget.redraw(container.appContext) }
+            said(saved)
+        }
+    }
+
+    /**
+     * 2.0.0 [RVI-80] (검토 U07a-09) The old to-dos at once: finished, moved to today (a time still ahead today kept, one gone
+     * dropped), or into the trash. Saved without touching '고친 시각'; [before] for 되돌리기 is what they were.
+     */
+    fun settleOld(memos: List<Memo>, how: OldWay) {
+        val now = Today.dateTime()
+        viewModelScope.launch {
+            for (m in memos) {
+                val stored = repo.get(m.id) ?: continue
+                when (how) {
+                    OldWay.DONE -> repo.save(stored.withDone(true, stored.date, Today.millis()), touch = false)
+                    OldWay.TODAY -> repo.save(stored.copy(
+                        date = if (stored.date != null) now.toLocalDate() else null,
+                        reminder = stored.reminder?.let { r -> now.toLocalDate().atTime(r.at.toLocalTime()).takeIf { it.isAfter(now) }?.let { r.copy(at = it) } },
+                    ), touch = false)
+                    OldWay.TRASH -> repo.delete(stored)
+                }
+            }
+            runCatching { com.bamnat.app.widget.TaskWidget.redraw(container.appContext) }
+        }
+    }
+
+    /** 2.0.0 [RVI-80] 되돌리기 of [settleOld]: the memos as they were (out of the trash too). */
+    fun restoreOld(before: List<Memo>) {
+        viewModelScope.launch {
+            repo.restore(before.map { it.id })
+            before.forEach { repo.save(it, touch = false) }
+            runCatching { com.bamnat.app.widget.TaskWidget.redraw(container.appContext) }
+        }
+    }
+
+    /** 2.0.0 [RVI-77] 되돌리기 of a line just written: gone, not into the trash. */
+    fun unwrite(memo: Memo) {
+        viewModelScope.launch {
+            repo.deleteForever(listOf(memo.id))
+            runCatching { com.bamnat.app.widget.TaskWidget.redraw(container.appContext) }
+        }
+    }
+
+    /** 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) A checklist line ticked on the card itself, without opening the memo. */
+    fun setItemChecked(memo: Memo, index: Int, checked: Boolean) {
+        val day = if (memo.repeat.isNotEmpty()) Today.date() else memo.date
+        viewModelScope.launch { repo.get(memo.id)?.let { repo.save(it.withItemChecked(index, checked, day, Today.millis()), touch = false) } }
     }
 }
 
@@ -639,9 +735,9 @@ class MemoEditorViewModel(
         val r = m.reminder
         val moves = date != null && r != null && m.date != null && r.at.toLocalDate() == m.date && date != m.date
         update {
-            val kind = com.bamnat.core.memo.MemoRepeat.kindOf(it.repeat)
-            val repeat = if (kind == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT && date != null) it.repeat
-                else date?.let { d -> com.bamnat.core.memo.MemoRepeat.code(kind, d) }.orEmpty()
+            // 2.0.0 [RVI-73] One read from the date (매주, 매달 14일, 둘째 수요일) is read from the new one; one of its own days (월·수·금,
+            // 격주, 며칠마다, 근무마다) stays as it is, and so does its end.
+            val repeat = date?.let { d -> com.bamnat.core.memo.MemoRepeat.moved(it.repeat, d) }.orEmpty()
             val reminder = if (moves) it.reminder?.let { rr -> rr.copy(at = date!!.atTime(rr.at.toLocalTime())) } else it.reminder
             it.copy(date = date, repeat = repeat, reminder = reminder)
         }
@@ -667,6 +763,38 @@ class MemoEditorViewModel(
         update { it.copy(date = date, repeat = com.bamnat.core.memo.MemoRepeat.code(kind, date)) }
         val day = if (date == today) "오늘" else com.bamnat.app.ui.Fmt.dayTitle(date)
         return if (m.date == null) "반복하려면 시작할 날이 있어야 해서 $day(${com.bamnat.app.ui.Fmt.monthDay(date)})부터로 정했어요" else null
+    }
+
+    /**
+     * 2.0.0 [RVI-73] (검토 U07a-07) What the one repeat window picked, as its stored text ("" none, "K135", "E2W3~20261231" …). A memo
+     * with no date starts on the first day the repeat falls on; one whose day is not one of the weekdays picked moves to the first
+     * that is, its schedule on that day with it. Returns what was done besides the repeat, for the user to read, or null.
+     */
+    fun setRepeatCode(code: String, from: LocalDate? = null): String? {
+        val repeat = com.bamnat.core.memo.MemoRepeat
+        val kind = repeat.kindOf(code)
+        if (kind == repeat.Kind.SHIFT) return repeat.shiftIdOf(code)?.let(::setShiftRepeat)
+        if (code.isEmpty() || kind == repeat.Kind.NONE) { update { it.copy(repeat = "") }; return null }
+        val m = _memo.value
+        val today = Today.date()
+        val base = m.date ?: from ?: today
+        // Its own date is one of its days unless the weekdays picked leave it out (화요일 memo, 월·수·금).
+        val fits = repeat.weekdaysOf(code).let { it.isEmpty() || base.dayOfWeek in it } &&
+            (kind != repeat.Kind.NTH_WEEKDAY || repeat.firstFrom(code, base) == base)
+        val date = if (m.date != null && fits) base else repeat.firstFrom(code, base) ?: base
+        val r = m.reminder
+        val moves = m.date != null && date != m.date && r != null && r.at.toLocalDate() == m.date
+        update {
+            it.copy(date = date, repeat = code, reminder = if (moves) r?.let { rr -> rr.copy(at = date.atTime(rr.at.toLocalTime())) } else it.reminder)
+        }
+        val fmt = com.bamnat.app.ui.Fmt
+        val old = m.date
+        return when {
+            old == null -> "반복하려면 시작할 날이 있어야 해서 ${if (date == today) "오늘" else fmt.dayTitle(date)}(${fmt.monthDay(date)})부터로 정했어요"
+            date != old -> "${fmt.monthDay(old)}${fmt.eun(fmt.monthDay(old))} 고른 날이 아니라서 ${fmt.dayTitle(date)}부터로 옮겼어요" +
+                (if (moves) " · 알림도 함께" else "") + " · 위 ↶로 되돌려요"
+            else -> null
+        }
     }
 
     /**
@@ -713,8 +841,10 @@ class MemoEditorViewModel(
      * when the memo is one already, as its new time. Null when there is nothing to ask.
      */
     /** [MEMO-05] 1.27 AK: the calendar whose shifts this memo goes by (its own, else the one on screen). */
-    private val shiftCal = combine(_memo.map { it.calendars to it.onEveryCalendar }.distinctUntilChanged(), container.calendars.active) { _, active ->
-        (shiftCalendar(listOf(_memo.value), active) ?: active).takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
+    private val shiftCal = combine(_memo.map { Triple(it.calendars, it.onEveryCalendar, com.bamnat.core.memo.MemoRepeat.followsSchedule(it.repeat)) }.distinctUntilChanged(), container.calendars.active) { (_, _, bySchedule), active ->
+        // 2.0.0 [RVI-78] (검토 T07a-04) A 근무마다 memo by the one calendar its notices go by, not the one on screen.
+        (if (bySchedule) com.bamnat.app.data.MemoRepository.scheduleCalendarOf(_memo.value) else shiftCalendar(listOf(_memo.value), active) ?: active)
+            .takeIf { container.calendars.get(it) != null } ?: com.bamnat.app.data.PersonalCalendar.MAIN
     }.distinctUntilChanged()
 
     /**
@@ -774,6 +904,9 @@ class MemoEditorViewModel(
             }
         }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** 2.0.0 [RVI-85] (검토 T07a-11·I07ac-03) The lines left unticked on the last same shift, added to this memo to tick. */
+    fun carry(lines: List<String>) = update { com.bamnat.core.memo.TaskList.withCarried(it, lines) }
+
     /** [SCHED-01] Makes the memo a schedule (or a plain memo again with null); [answered] is the time this answers. */
     fun setReminder(reminder: MemoReminder?, answered: MemoTime.Found? = null) = update {
         it.copy(reminder = reminder, reminderAsked = answered?.key ?: it.reminderAsked)
@@ -818,11 +951,8 @@ class MemoEditorViewModel(
         m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(text = text) else item })
     }
 
-    fun setItemChecked(index: Int, checked: Boolean) = update { m ->
-        val next = m.copy(checklist = m.checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
-        // 1.39 [TASK-05] A line taken off again means the memo is not finished after all.
-        if (!checked && next.isDoneOn(doneDay)) next.withDone(false, doneDay, Today.millis()) else next
-    }
+    // 1.39 [TASK-05] A line taken off again means the memo is not finished after all (Memo.withItemChecked, as on the card).
+    fun setItemChecked(index: Int, checked: Boolean) = update { m -> m.withItemChecked(index, checked, doneDay, Today.millis()) }
 
     /**
      * 2.0.0 [RVI-35] (검토 MEMO-16) Typed or pasted into the line at [index]: several lines pasted become a line each. Returns the

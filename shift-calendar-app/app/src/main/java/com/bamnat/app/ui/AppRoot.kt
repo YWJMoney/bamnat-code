@@ -602,7 +602,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.TAX -> nav.navigateTopLevel(TopLevel.MONEY.route)
             // 1.37 [LEDH-14] The 돈 적기 widget and tile: the money tab opens its add sheet itself.
             NoticeLinks.Target.MONEY_ADD -> nav.navigateTopLevel(TopLevel.MONEY.route)
-            NoticeLinks.Target.MEMOS -> { nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target) }
+            NoticeLinks.Target.MEMOS -> {
+                // 2.0.0 [RVI-80] (검토 U07a-09) The 할 일 위젯's '오래된 할 일' line: the memo tab with them shown.
+                if (NoticeLinks.payload.value == com.bamnat.app.ui.memo.OLD_TASKS) com.bamnat.app.ui.memo.MemoLinks.old.value = true
+                nav.navigateTopLevel(TopLevel.MEMOS.route); NoticeLinks.consume(target)
+            }
             // [RUL-03] 메모 틀 열기 from a button or rule: a new memo on that day, started from the template.
             NoticeLinks.Target.LOGIC_MEMO -> {
                 val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() }

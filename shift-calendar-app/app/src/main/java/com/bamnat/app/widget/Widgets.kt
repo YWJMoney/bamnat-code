@@ -11,6 +11,8 @@ import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
 import androidx.glance.action.clickable
+import androidx.glance.semantics.contentDescription
+import androidx.glance.semantics.semantics
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import androidx.glance.appwidget.SizeMode
@@ -167,7 +169,7 @@ internal fun TodayContent(data: WidgetData) {
         val todayDay = data.day(data.today)
         val alarmToday = data.nextAlarm?.takeIf { it.triggerAt.toLocalDate() == data.today }
         // [DAILY-08] Today's alarm sits on the date line, so a short widget never cuts it off.
-        DayLine("오늘", todayDay, big = true, alarm = alarmToday?.let { Fmt.time(it.triggerAt.toLocalTime()) }, memo = data.memos[data.today])
+        DayLine("오늘", todayDay, big = true, alarm = alarmToday?.let { WidgetAlarm.of(it, data.nextAlarmOff) }, memo = data.memos[data.today])
         // [COMN-05] A part-timer's week and 주휴, a day worker's 연차 and 야근.
         WorkStyleLine(data)
         // [DAYW-03] A day worker leaves work from the home screen.
@@ -197,7 +199,7 @@ internal fun TodayContent(data: WidgetData) {
         if (line == null || LocalSize.current.height >= 150.dp) {
             Spacer(GlanceModifier.height(8.dp))
             val alarmTomorrow = data.nextAlarm?.takeIf { it.triggerAt.toLocalDate() == data.today.plusDays(1) }
-            DayLine("내일", data.day(data.today.plusDays(1)), big = false, alarm = alarmTomorrow?.let { Fmt.time(it.triggerAt.toLocalTime()) },
+            DayLine("내일", data.day(data.today.plusDays(1)), big = false, alarm = alarmTomorrow?.let { WidgetAlarm.of(it, data.nextAlarmOff) },
                 memo = data.memos[data.today.plusDays(1)])
         }
         // An alarm further off keeps its own line.
@@ -339,7 +341,7 @@ private fun InvestToday(data: WidgetData) {
  * [DAILY-06] Tapping it opens that day in the app; [DAILY-07] an alarm turned off for the day says so.
  */
 @Composable
-private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String? = null, memo: String? = null) {
+private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: WidgetAlarm? = null, memo: String? = null) {
     val context = androidx.glance.LocalContext.current
     // [BLU-10] 위젯 칸: each day line of the today widget, in its day's states.
     val cell = widgetPart("widget.cell", widgetDayStates(day, Today.date()))
@@ -349,7 +351,10 @@ private fun DayLine(title: String, day: ResolvedDay, big: Boolean, alarm: String
             when {
                 day.alarmSkipped && (day.isWorkDay || day.coveredShift != null) ->
                     Text(" · 🔕 알람 끔", style = small(GlanceTheme.colors.error), maxLines = 1)
-                alarm != null -> Text(" · ⏰ $alarm", style = small(GlanceTheme.colors.primary), maxLines = 1)
+                // 2.0.0 [RVI-88] (검토 I03b-03) The alarm opens its own small window (이번만 끄기 · 다시 켜기), not the day.
+                alarm != null -> Text(if (alarm.off) " · 🔕 ${alarm.time} 끔" else " · ⏰ ${alarm.time}",
+                    style = small(if (alarm.off) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.primary), maxLines = 1,
+                    modifier = GlanceModifier.clickable(androidx.glance.appwidget.action.actionStartActivity(com.bamnat.app.alarm.AlarmPeekActivity.intent(context, alarm.at, alarm.what))))
             }
         }
         Row(GlanceModifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -589,7 +594,12 @@ private fun MonthCell(data: WidgetData, date: LocalDate, inMonth: Boolean, modif
     val red = KoreanHolidays.isHoliday(date) || date.dayOfWeek == DayOfWeek.SUNDAY
     // [BLU-10] 위젯 칸: the month cell in its day's states (오늘·토·일·공휴일·다른 달·근무 종류).
     val cell = widgetPart("widget.cell", widgetDayStates(day, data.today, inMonth))
-    Column(modifier.padding(1.dp).widgetBox(cell, defaultCorner = 4), horizontalAlignment = Alignment.CenterHorizontally) {
+    // 2.0.0 [RVI-81] (검토 U03-06, 대기열 TASK-41) A day opens that day's window in the app, as the 주 위젯's days do; it opened only the
+    // app's first screen. Read aloud as the day it is.
+    val context = androidx.glance.LocalContext.current
+    val said = "${date.monthValue}월 ${date.dayOfMonth}일" + (leave?.let { " ${it.label}" } ?: type?.let { " ${it.name}" } ?: "")
+    Column(modifier.padding(1.dp).widgetBox(cell, defaultCorner = 4).clickable(openDay(context, date))
+        .semantics { contentDescription = said }, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             "${date.dayOfMonth}",
             style = TextStyle(
@@ -736,4 +746,13 @@ internal fun widgetData(context: Context, first: WidgetData): WidgetData {
         if (stamp != 0L) runCatching { WidgetData.load(context) }.getOrNull()?.let { data = it }
     }
     return data
+}
+
+/** 2.0.0 [RVI-88] The alarm on a day line of the today widget: its time, whether 이번만 끄기 put it aside, and what opens its window. */
+internal class WidgetAlarm(val time: String, val off: Boolean, val at: Long, val what: String) {
+    companion object {
+        fun of(a: com.bamnat.core.alarm.PlannedAlarm, off: Boolean) = WidgetAlarm(Fmt.time(a.triggerAt.toLocalTime()), off,
+            a.triggerAt.atZone(Today.zone()).toInstant().toEpochMilli(),
+            if (a.shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.alarm(a.shiftName))
+    }
 }

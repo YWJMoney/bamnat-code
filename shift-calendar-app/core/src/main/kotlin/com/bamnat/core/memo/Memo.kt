@@ -56,6 +56,15 @@ data class Memo(
         if (repeat.isNotEmpty() && day != null) copy(doneDays = if (done) doneDays + day else doneDays - day)
         else copy(doneAtMillis = if (done) doneAtMillis ?: now else null)
 
+    /**
+     * 1.39 [TASK-05] 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) Line [index] of the checklist ticked ([checked]) or not, from the editor or
+     * from the card itself; a line taken off again means the memo is not finished on [day] after all.
+     */
+    fun withItemChecked(index: Int, checked: Boolean, day: LocalDate?, now: Long): Memo {
+        val next = copy(checklist = checklist.mapIndexed { i, item -> if (i == index) item.copy(checked = checked) else item })
+        return if (!checked && next.isDoneOn(day)) next.withDone(false, day, now) else next
+    }
+
     /** [MEMO-01] Written for every calendar, now and later ones too. */
     val onEveryCalendar: Boolean get() = MemoCalendars.EVERY in calendars
 

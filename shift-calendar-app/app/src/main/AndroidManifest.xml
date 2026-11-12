@@ -364,6 +364,14 @@
             android:isolatedProcess="true"
             android:process=":fontprobe" />
 
+        <!-- 2.0.0 [RVI-88] The today widget's alarm: a small window with 이번만 끄기 · 다시 켜기. Only the widget opens it. -->
+        <activity
+            android:name=".alarm.AlarmPeekActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bamnat.Quick" />
+
         <!-- 1.39 [TASK-39] 다른 때… on a memo's schedule notice: a small window that asks when to tell again. Only our notice opens it. -->
         <activity
             android:name=".memo.MemoLaterActivity"
@@ -461,6 +469,11 @@
         <!-- [J133-24] 문의 답 while a question waits: only the system's job scheduler binds it. -->
         <service
             android:name=".company.InquiryReplyJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 2.0.0 [RVI-89] 충전하면 소리 재기 묻기: runs once the phone charges around the time to sleep. -->
+        <service
+            android:name=".sleep.SleepRecordOfferJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <!-- [R200-03] 구독 끝 무렵 하루 한 번 결제 다시 읽기. -->

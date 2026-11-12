@@ -66,6 +66,8 @@ object WatchStore {
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, NextShiftComplicationService::class.java)).requestUpdateAll()
         }
+        // 2.0.0 [RVI-90] The watch's own alarm a minute after the phone's next one, planned again with each new copy.
+        runCatching { BackupRing.plan(context, load(context)) }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = Today.zone()
         val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000

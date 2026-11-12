@@ -96,6 +96,11 @@ object MemoTime {
         val repeat: MemoRepeat.Kind = MemoRepeat.Kind.NONE,
         /** PC 7차: the time had no 오전·오후 ("8시"), so [at] is a guess the window lets the user flip ([Half]). */
         val unmarked: Boolean = false,
+        /**
+         * 2.0.0 [RVI-76] (검토 U07a-03) The words named the day ("내일", "11/20", "금요일"): a line written in a calendar day's window
+         * without one goes on that day, not on the next such time from now.
+         */
+        val written: Boolean = false,
     )
 
     /** PC 7차: 오전 or 오후, for a time written without one. */
@@ -157,7 +162,7 @@ object MemoTime {
         val skip = if (kind == MemoRepeat.Kind.WEEKDAYS) { d: LocalDate -> generateSequence(d) { it.plusDays(1) }.first(MemoRepeat::isWeekday) } else { d: LocalDate -> d }
         val day = (written?.first ?: at?.toLocalDate())?.let(skip)
         val moved = at?.let { a -> day?.let { a.plusDays(java.time.temporal.ChronoUnit.DAYS.between(a.toLocalDate(), it)) } ?: a }
-        return Line(title, rest, day, moved, read, kind, unmarked)
+        return Line(title, rest, day, moved, read, kind, unmarked, written = written != null)
     }
 
     /** [bareHour]: the hour as written when it had no 오전·오후 and is 1~11 (2.0.0 [RVI-23]), else null. */

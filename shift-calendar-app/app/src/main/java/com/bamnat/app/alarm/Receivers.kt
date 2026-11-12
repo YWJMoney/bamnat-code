@@ -216,6 +216,7 @@ class AlarmActionReceiver : BroadcastReceiver() {
             // [ALRM-21] 곧 알람이 울려요 and its buttons.
             AlarmSoon.ACTION_SOON -> AlarmSoon.onSoon(context, intent)
             AlarmGuard.ACTION_GUARD -> AlarmGuard.onGuard(context, intent)
+            AlarmRehearsal.ACTION -> AlarmRehearsal.onRehearsal(context, intent) // 2.0.0 [RVI-91]
             AlarmGuard.ACTION_BACK -> AlarmGuard.onBack(context, intent) // [ALRM-27]
             AlarmSoon.ACTION_SKIP -> AlarmSoon.skip(context, AlarmSoon.at(intent))
             AlarmSoon.ACTION_KEEP -> Notifications.cancel(context, AlarmSoon.NOTICE_ID)

@@ -448,7 +448,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                 // after the label it sat past the screen's edge and took a swipe to find).
                 val shiftTypes by vm.shiftTypes.collectAsStateWithLifecycle()
                 val say: (String?) -> Unit = { it?.let { line -> said = line } }
-                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeat(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
+                MemoRepeatChip(date, memo.repeat, { say(vm.setRepeatCode(it)) }, shiftTypes, day?.shiftType?.id, { say(vm.setShiftRepeat(it)) })
                 // [NOTE-02] Which calendars show this memo; the shared notebook is every memo on more than one.
                 MemoCalendarsChip(memo.calendars, calendars, vm::setCalendars)
             }
@@ -648,9 +648,10 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
     }
 
     if (scheduling) {
-        var pickedRepeat by remember { mutableStateOf<com.bamnat.core.memo.MemoRepeat.Kind?>(null) }
+        var pickedRepeat by remember { mutableStateOf<String?>(null) }
+        val scheduleTypes by vm.shiftTypes.collectAsStateWithLifecycle()
         ScheduleDialog(
-            initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime()),
+            initial = scheduleStart(answering, memo.reminder, memo.date, Today.dateTime(), shiftDays),
             current = memo.reminder,
             onDismiss = { scheduling = false },
             // 2.0.0 [RVI-30] (검토 MEMO-09·28) '알림 빼기' inside the window, not an 18dp X on the chip.
@@ -659,10 +660,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             clashOf = { at -> com.bamnat.core.memo.ShiftClash.of(at, shiftDays)?.text },
             // 1.39 [TASK-44] PC 6차: 반복 here too (the chip by the date was not found); 쉬는 날 where the calendar has days off.
             repeat = memo.repeat,
-            onRepeat = { kind -> pickedRepeat = kind },
+            onRepeat = { code -> pickedRepeat = code },
             restRepeat = shiftDays.any { !it.work },
+            shiftTypes = scheduleTypes,
             onSave = { r ->
-                pickedRepeat?.let { vm.setRepeat(it, from = r.at.toLocalDate()) }
+                pickedRepeat?.let { said = vm.setRepeatCode(it, from = r.at.toLocalDate()) ?: said }
                 pickedRepeat = null
                 vm.setReminder(r, answered = answering)
                 scheduling = false
@@ -673,7 +675,15 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
         )
     }
 
-    if (showLast) lastSame?.let { (label, memos) -> LastShiftDialog(label, memos) { showLast = false } }
+    if (showLast) lastSame?.let { (label, memos) ->
+        // 2.0.0 [RVI-85] (검토 T07a-11·I07ac-03) What was left unticked last time comes into this memo with one tap.
+        val carry = remember(memos, memo) { com.bamnat.core.memo.TaskList.carried(memos, memo) }
+        LastShiftDialog(label, memos, carry, onCarry = {
+            vm.carry(carry)
+            said = "지난 ${label.substringBefore('(')}에서 ${carry.size}줄을 가져왔어요 · 위 ↶로 되돌려요"
+            showLast = false
+        }) { showLast = false }
+    }
 
     if (confirmDelete) {
         val deleteTypes by vm.shiftTypes.collectAsStateWithLifecycle()
@@ -1198,7 +1208,7 @@ private const val JUMP_SHOWN_MILLIS = 2_000L
 
 /** [MEMO-06] 1.27 AK: the memos of the last day with the same shift, to read while writing today's. */
 @Composable
-private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> Unit) {
+private fun LastShiftDialog(label: String, memos: List<Memo>, carry: List<String> = emptyList(), onCarry: () -> Unit = {}, onDismiss: () -> Unit) {
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("지난 $label 메모") },
@@ -1211,7 +1221,12 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, onDismiss: () -> U
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        // [RVI-85] 안 끝낸 줄 가져오기 is the one thing to do here when there are such lines; 닫기 beside it.
+        confirmButton = {
+            if (carry.isNotEmpty()) androidx.compose.material3.Button(onClick = onCarry) { Text("안 끝낸 ${carry.size}줄 가져오기") }
+            else TextButton(onClick = onDismiss) { Text("닫기") }
+        },
+        dismissButton = if (carry.isNotEmpty()) ({ TextButton(onClick = onDismiss) { Text("닫기") } }) else null,
     )
 }
 

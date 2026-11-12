@@ -567,6 +567,14 @@ private fun NoticesPage(
             warning = warning(settings.sleepingNotice, Notifications.SLEEPING_CHANNEL_ID), onFix = fix(Notifications.SLEEPING_CHANNEL_ID)) { on ->
             set(on) { it.copy(sleepingNotice = on) }
         }
+        // 2.0.0 [RVI-89] (검토 I03b-02) Only where the night's sounds can be measured (the flag open).
+        if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }) {
+            SwitchRow(com.bamnat.app.sleep.SleepRecordOffer.ROW, "잘 시간 무렵 충전기에 꽂으면 ‘오늘 밤 소리 잴까요?’를 소리 없이 물어요 · 재 본 적 있는 휴대폰만",
+                settings.recordOffer, warning = warning(settings.recordOffer, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
+                set(on) { it.copy(recordOffer = on) }
+                context.appContainer.let { c -> c.appScope.launch { runCatching { c.rescheduleAlarms() } } }
+            }
+        }
         // 1.38 [SLEEP-01] Only once the `sleep.auto` flag is open (처리방침 새 판 뒤).
         if (remember { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }) {
             com.bamnat.app.ui.sleep.SleepAutoSwitch(settings.sleepAuto) { on -> vm.update { it.copy(sleepAuto = on) } }

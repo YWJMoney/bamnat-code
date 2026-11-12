@@ -6,7 +6,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
-import com.bamnat.core.memo.MemoRepeat.Kind
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -21,11 +20,10 @@ import androidx.compose.material.icons.filled.Alarm
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Warning
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import com.bamnat.app.ui.components.DatePickerDialog
@@ -111,41 +109,27 @@ internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: 
 /**
  * [SCHED-01] Under the memo when it names a time: "이 메모, 일정으로 넣을까요?". It asks once per time;
  * when the memo is a schedule already and the written time changed, it offers the new time.
+ *
+ * 2.0.0 [RVI-75] (검토 U07a-06, 디자인 품질 3) It was a big card under the words (a title, a line of explanation and two buttons, one
+ * of them filled): now the one line every tip has ([com.bamnat.app.ui.components.NudgeCard]) over the keyboard — "10월 15일 (목) 오후
+ * 3:00 · 알림 넣기", X to keep it a memo — so the memo being written keeps the screen and the page's filled button stays its own.
+ * A time that runs into a 근무 or the sleep after a 야간 says so under it, in the caution colour.
  */
 @Composable
 internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: () -> Unit, onDecline: () -> Unit, clash: String? = null) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Filled.EventAvailable, null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-                Text(
-                    if (changing) "알림 시각을 ‘${found.phrase}’로 바꿀까요?" else "‘${found.phrase}’, 알림으로 넣을까요?",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSecondaryContainer,
-                )
-            }
-            Text(
-                if (changing) "${scheduleText(found.at)}에 알려 드릴게요."
-                else "${scheduleText(found.at)}에 알람을 울리거나 알림 메시지로 알려 드릴 수 있어요. 메모는 그대로 남아요.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            clash?.let { ClashLine(it) }
-            // 2.0.0 [RVI-31] (디자인 품질 12) At 200% on a folded phone '알림 넣기' broke into two lines: the buttons keep one
-            // line each and the filled one goes under when both do not fit. (디자인 품질 2) It is filled: a tonal button on this
-            // card's own colour had no edge to see. (디자인 품질 14) Read aloud with its time: the editor's chips have a '알림 넣기' too.
-            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                TextButton(onClick = onDecline) { Text(if (changing) "그대로 둘게요" else "메모로 둘게요", maxLines = 1, softWrap = false) }
-                val said = "${if (changing) "알림 시각 바꾸기" else "알림 넣기"}, ${scheduleText(found.at)}"
-                androidx.compose.material3.Button(onClick = onAccept, modifier = Modifier.semantics { contentDescription = said }) {
-                    Text(if (changing) "바꾸기" else "알림 넣기", maxLines = 1, softWrap = false)
-                }
-            }
-        }
-    }
+    val at = scheduleText(found.at)
+    com.bamnat.app.ui.components.NudgeCard(
+        text = if (changing) "$at(으)로 바꿀까요?" else at,
+        icon = Icons.Filled.EventAvailable,
+        tone = if (clash != null) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
+        detail = clash,
+        action = if (changing) "바꾸기" else "알림 넣기",
+        onAction = onAccept,
+        onClose = onDecline,
+        closeLabel = if (changing) "그대로 둘게요" else "메모로 둘게요",
+        // (디자인 품질 14) Read aloud as it shows: the time, then '알림 넣기' and '메모로 둘게요'.
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+    )
 }
 
 /**
@@ -173,8 +157,11 @@ internal fun ScheduleDialog(
      * has a schedule to read days off from.
      */
     repeat: String = "",
-    onRepeat: ((com.bamnat.core.memo.MemoRepeat.Kind) -> Unit)? = null,
+    /** 2.0.0 [RVI-73] The stored text of the repeat picked in the one repeat window ("" for none, "S12" for 근무마다). */
+    onRepeat: ((String) -> Unit)? = null,
     restRepeat: Boolean = false,
+    /** 2.0.0 [RVI-73] The calendar's kinds of shift, for 근무마다 in the repeat window. */
+    shiftTypes: List<com.bamnat.core.model.ShiftType> = emptyList(),
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
@@ -189,11 +176,11 @@ internal fun ScheduleDialog(
     val notificationsOk = remember(refresh) { Notifications.canPost(context) }
     val fullScreenOk = remember(refresh) { Notifications.canUseFullScreen(context) }
     val askNotifications = rememberNotificationAsk()
-    val was = remember(repeat) { com.bamnat.core.memo.MemoRepeat.kindOf(repeat) }
-    var again by rememberSaveable { mutableStateOf(was) }
+    var again by rememberSaveable { mutableStateOf(repeat) }
+    var repeating by remember { mutableStateOf(false) }
     val at = date.atTime(time)
     // A repeating schedule whose time today is gone rings on its next day, so it can be kept.
-    val ahead = at.isAfter(now()) || again != com.bamnat.core.memo.MemoRepeat.Kind.NONE
+    val ahead = at.isAfter(now()) || again.isNotEmpty()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -208,7 +195,8 @@ internal fun ScheduleDialog(
                     OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date), maxLines = 1, softWrap = false) }
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") "), maxLines = 1, softWrap = false) }
                 }
-                if (onRepeat != null) RepeatChips(again, was, repeat, restRepeat) { again = it }
+                // 2.0.0 [RVI-73] (검토 U07a-07) One line that opens the one repeat window (the editor's chip opens the same).
+                if (onRepeat != null) RepeatLine(again, shiftTypes) { repeating = true }
                 if (shiftTimes.isNotEmpty()) ShiftTimeChips(shiftTimes, at) { date = it.toLocalDate(); time = it.toLocalTime() }
                 if (ahead) clashOf(at)?.let { ClashLine(it) }
                 if (!ahead) {
@@ -248,7 +236,7 @@ internal fun ScheduleDialog(
                 // [EASE-23] 1.38: notifications that are off are asked for right here as it saves, not left for the user to find
                 // and turn on first; the schedule is kept either way and rings once they are allowed.
                 if ((notify || ring) && !notificationsOk) askNotifications()
-                if (onRepeat != null && again != was) onRepeat(again)
+                if (onRepeat != null && again != repeat) onRepeat(again)
                 onSave(MemoReminder(at, ring, notify))
             }, enabled = ahead && (ring || notify)) { Text(if ((notify || ring) && !notificationsOk) "알림 켜고 저장" else "저장") }
         },
@@ -260,6 +248,9 @@ internal fun ScheduleDialog(
         },
     )
 
+    // 2.0.0 [RVI-73] The one repeat window over this one; what is picked is kept with the schedule when it is saved.
+    if (repeating) RepeatSheet(again, date, onDismiss = { repeating = false }, onPick = { again = it }, shiftTypes = shiftTypes,
+        onShift = { again = com.bamnat.core.memo.MemoRepeat.shiftCode(it) }, restRepeat = restRepeat)
     if (pickDate) {
         val state = rememberDatePickerState(initialSelectedDateMillis = date.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
         DatePickerDialog(
@@ -314,34 +305,33 @@ private fun Fix(text: String, label: String, onFix: () -> Unit) {
     }
 }
 
-/** [SCHED-01] Where the dialog starts: the found time, the schedule already set, or the next round hour. */
-internal fun scheduleStart(found: MemoTime.Found?, current: MemoReminder?, date: LocalDate?, now: LocalDateTime): LocalDateTime =
+/**
+ * [SCHED-01] Where the dialog starts: the found time, the schedule already set, or the next round hour (09:00 on a later day).
+ * 2.0.0 [RVI-79] (검토 U07a-10·T07a-05) That last one moved past a 근무 or the sleep after a 야간 on [days] (퇴근 뒤, 깬 뒤), so a 교대
+ * worker does not start at a time they are at work or asleep.
+ */
+internal fun scheduleStart(
+    found: MemoTime.Found?, current: MemoReminder?, date: LocalDate?, now: LocalDateTime,
+    days: List<com.bamnat.core.memo.ShiftMemoTime.Day> = emptyList(),
+): LocalDateTime =
     found?.at ?: current?.at ?: run {
         val nextHour = now.plusHours(1).withMinute(0).withSecond(0).withNano(0)
-        if (date != null && date.isAfter(now.toLocalDate())) date.atTime(LocalTime.of(9, 0)) else nextHour
+        com.bamnat.core.memo.ShiftClash.free(if (date != null && date.isAfter(now.toLocalDate())) date.atTime(LocalTime.of(9, 0)) else nextHour, days)
     }
 
 /**
- * 1.39 [TASK-44] '반복': 안 함 · 매일 · 평일 · 쉬는 날 (with a schedule to read it from). A repeat set elsewhere (매주 화요일, 야간마다) is
- * shown picked as it is, so saving here keeps it.
+ * 1.39 [TASK-44] '반복' in the 일정 창. 2.0.0 [RVI-73] (검토 U07a-07) One line with what it is now, opening the one repeat window
+ * ([RepeatSheet]): the chips here (안 함·매일·평일·쉬는 날) were another list than the editor's.
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun RepeatChips(
-    picked: com.bamnat.core.memo.MemoRepeat.Kind,
-    was: com.bamnat.core.memo.MemoRepeat.Kind,
-    repeat: String,
-    restRepeat: Boolean,
-    onPick: (com.bamnat.core.memo.MemoRepeat.Kind) -> Unit,
-) {
-    Text("반복", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        val ways = listOfNotNull(Kind.NONE to "안 함", Kind.DAY to "매일", Kind.WEEKDAYS to "평일", (Kind.REST to "쉬는 날").takeIf { restRepeat || was == Kind.REST })
-        val own = (was to com.bamnat.core.memo.MemoRepeat.label(repeat)).takeIf { was != Kind.NONE && ways.none { it.first == was } }
-        for ((kind, label) in ways + listOfNotNull(own)) com.bamnat.app.ui.components.FilterChip(
-            selected = picked == kind,
-            onClick = { onPick(kind) },
-            label = { Text(label) },
+private fun RepeatLine(repeat: String, shiftTypes: List<com.bamnat.core.model.ShiftType>, onOpen: () -> Unit) {
+    val names = remember(shiftTypes) { shiftTypes.associate { it.id to it.name } }
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+        Text("반복", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(end = 8.dp))
+        androidx.compose.material3.AssistChip(
+            onClick = onOpen,
+            label = { Text(com.bamnat.core.memo.MemoRepeat.label(repeat) { names[it] }.ifEmpty { "안 함" }, maxLines = 1) },
+            leadingIcon = { Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)) },
         )
     }
 }

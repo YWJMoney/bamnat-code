@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!-- 2.0.0 [RVI-90] 워치 예비 알람: a minute after the phone's alarm, on time in the night (the phone app holds the same). -->
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- 1.39.1 [WEAR-07]: the watch shows no ads and reads no advertising ID; the line only matches the Play 광고 ID 선언 of the
          phone + watch release (1.39.0 had to be sent '권한 없이 출시' because the watch bundle lacked it). -->
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
@@ -132,6 +134,11 @@
 
         <receiver
             android:name=".RingActionReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVI-90] The watch's own alarm a minute after the phone's. -->
+        <receiver
+            android:name=".BackupRingReceiver"
             android:exported="false" />
 
         <activity

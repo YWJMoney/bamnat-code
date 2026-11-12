@@ -1650,14 +1650,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun addQuickMemo(date: LocalDate, text: String) = gate(WriteKind.MEMO) {
         viewModelScope.launch {
             // [NOTE-01] A quick memo belongs to the calendar it was written on.
-            val memo = memoRepo.addQuick(date, text, setOf(container.calendars.active.value)) ?: return@launch
+            val active = container.calendars.active.value
+            // 2.0.0 [RVI-76] (검토 U07a-03·11) Read as the 할 일 위젯's window and the memo tab's line read it (quickMemo): the day and
+            // time leave the title ("오후 3시 치과" → '치과' at 15:00), "매일"·"평일마다" repeat, "다음 야간 때" goes by the 근무표; a line
+            // that names no day stays on the day it was written on. It was the whole line as the memo's words.
+            val shifts = runCatching { com.bamnat.app.memo.shiftDaysAhead(container, active) }.getOrDefault(emptyList())
+            val read = com.bamnat.app.memo.quickMemo(text.trim(), com.bamnat.app.memo.QuickDay.READ, ring = true, Today.dateTime(), base = date, shifts = shifts)
+                ?: return@launch
+            val memo = memoRepo.save(read.copy(calendars = setOf(active), pinned = false))
             // [SCHED-01] A quick line that names a time gets its notice. 2.0.0 [RVI-41] (검토 PC-10: the day's story showed 15:00 but
             // nothing told the user; the offer took two more taps through the editor) It is put at once, a notice only (no ring),
-            // with 되돌리기, and answered so the editor does not ask about it again.
-            val found = com.bamnat.core.memo.MemoTime.find(memo, Today.dateTime(), Today.zone()) ?: return@launch
-            val put = memoRepo.save(memo.copy(reminder = com.bamnat.core.memo.MemoReminder(found.at, ring = false, notify = true), reminderAsked = found.key))
-            _messages.tryEmit(UndoMessage("${quickWhen(found.at)}에 알려 드릴게요", actionLabel = "되돌리기") {
-                viewModelScope.launch { memoRepo.get(put.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
+            // with 되돌리기.
+            val at = memo.reminder?.at ?: return@launch
+            _messages.tryEmit(UndoMessage("${quickWhen(at)}에 알려 드릴게요", actionLabel = "되돌리기") {
+                viewModelScope.launch { memoRepo.get(memo.id)?.let { memoRepo.save(it.copy(reminder = null)) } }
             })
         }
     }

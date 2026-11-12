@@ -641,6 +641,15 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkSt
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
+            // 2.0.0 [RVI-77] The memo tab's '오늘' 묶음 as it starts: today's to-dos and the line to write one.
+            MemoPart.TODAY -> Column(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("할 일 2개 남았어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("○ 우유 사기   ○ 치과 · 15:00", style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
+                    Text("＋ 한 줄로 적기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)).background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
