@@ -161,7 +161,9 @@ class ReviewOShotsTest : ScreenshotBase() {
     }
 
     // HQ-46: 배포판, 11-13, 서버 답 전, 10-27 전에 깔고 3.1에 동의하지 않은 폰(바탕은 '정식 출시 전이라 모든 기능이 무료예요').
+    // HQ-48 (총괄 11-12 23:37 KST): 그 폰도 구독한 프로가 아니라 '지금' 바로 아래가 친구 초대(초대 서버는 가짜로 켬).
     @Test fun heldPhone() = all("10_pro_held") {
+        invites()
         com.bamnat.core.time.Today.fix(java.time.ZonedDateTime.of(2026, 11, 13, 10, 30, 0, 0, java.time.ZoneId.of("Asia/Seoul")))
         released(true)
         app.container.remoteConfig.save(com.bamnat.app.tier.LaunchConfig())
