@@ -145,7 +145,7 @@ private fun FlipPage(item: RecipeItem, style: WorkStyle?, onOpen: () -> Unit, on
             }
             sectionLine(item, shown, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
             fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
-            Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: "") +
+            Text("♥ ${item.likes} · 넣어 본 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: "") +
  " · " + MarketMaker.line(item),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.size(6.dp))

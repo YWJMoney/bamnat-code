@@ -13,7 +13,7 @@ object LookUndo {
 
     fun keep(context: Context, before: Map<String, String>, at: Long = com.bamnat.core.time.Today.millis()) {
         val json = org.json.JSONObject(before as Map<*, *>).toString()
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("before", json).putLong("at", at).apply()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString("before", json).putLong("at", at).putBoolean("seen", false).apply()
     }
 
     /** The look kept and when, while it is less than a day old. */
@@ -26,4 +26,14 @@ object LookUndo {
     }
 
     fun clear(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().clear().apply()
+
+    /**
+     * [RVM-17] PC-57 (입힌 뒤 달력 맨 위 띠가 계속 남아 달력이 한 줄 내려가요): the calendar's band shows for a moment once a look went on,
+     * then not again; 되돌리기 stays in the studio for the day ([read]).
+     */
+    fun seen(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("seen", false)
+    fun markSeen(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("seen", true).apply()
+
+    /** How long the calendar's band stays. */
+    const val BAND_MS = 6_000L
 }

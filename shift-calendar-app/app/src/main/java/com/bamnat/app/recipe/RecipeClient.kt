@@ -848,7 +848,7 @@ class RecipeClient(
                 "sold" -> "이 글꼴은 글꼴 안에 유료 글꼴 회사가 적혀 있어 나눌 수 없어요. OFL 같은 공개 글꼴만 함께 보낼 수 있어요"
                 "not_yet" -> "정식 출시일부터 쓸 수 있어요"
                 "name_taken" -> "공식·운영자처럼 보이는 이름은 쓸 수 없어요"
-                "name_like" -> "다른 분 레시피와 이름이 거의 같아요. 이름을 바꾸거나 그 레시피를 고쳐 만들어 주세요"
+                "name_like" -> "다른 분 작품과 이름이 거의 같아요. 이름을 바꾸거나 그 작품을 고쳐 만들어 주세요"
                 // 1.39 [FX-17] 서버도 같은 줄: 기능 작품을 남이 보게 올리는 사람은 프로.
                 "fx_pro" -> "프로 기능 장치(✦)가 든 작품은 프로에서 장터에 올려요. 나만 보기로는 지금 올릴 수 있어요"
                 "rate_limited" -> com.bamnat.app.company.RateLimits.wait((e as CompanyException).retryAfter ?: 86_400).let { w ->
@@ -856,12 +856,12 @@ class RecipeClient(
                 }
                 "reason" -> "안좋아요 이유를 골라 주세요"
                 "opinion" -> "의견을 5자 이상 120자 이하로 적어 주세요"
-                "own" -> "내 레시피에는 누를 수 없어요"
+                "own" -> "내 작품에는 누를 수 없어요"
                 // PC 확인 보안 6차: not always 신고, nor 30 days (운영자 가림, 30·90일 단계); the same words as 광장's.
                 "muted" -> (e as? CompanyException)?.untilMillis?.let { com.bamnat.core.plaza.CommunityCare.mutedText(it) }
                     ?: "운영 원칙을 지키지 않은 글·작품이 있어 지금은 쓸 수 없어요"
                 "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
-                "not_found" -> "지워졌거나 가려진 레시피예요"
+                "not_found" -> "지워졌거나 가려진 작품이에요"
                 "too_long" -> "40자까지 쓸 수 있어요"
                 "two_themes" -> "모음에는 테마를 하나만 넣을 수 있어요. 나머지는 탭별 작품으로 골라 주세요"
                 "codes" -> "작품을 2~6개 골라 주세요"
@@ -875,7 +875,7 @@ class RecipeClient(
                 // 1.36 [SEC-11] Play Integrity: the app from Play on a real phone is needed to write where others see.
                 "integrity" -> "Play 스토어에서 받은 밤낮으로만 올리거나 신고할 수 있어요. Play 스토어 앱을 업데이트한 뒤 다시 해 주세요"
                 "image_size" -> "사진이 너무 커요. 다른 사진을 골라 주세요"
-                "too_big", "too_large" -> "레시피가 너무 커요. 조각을 줄여 주세요"
+                "too_big", "too_large" -> "작품이 너무 커요. 조각을 줄여 주세요"
                 else -> com.bamnat.core.recipe.RecipeText.problemText(c)
             }
         }

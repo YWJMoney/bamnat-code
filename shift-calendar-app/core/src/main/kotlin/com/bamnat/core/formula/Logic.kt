@@ -171,6 +171,22 @@ data class LogicAct(
     } + (if (then.isNotEmpty() && verb == LogicVerb.NOTIFY) " (단추 ${then.size}개)" else "") +
         (after?.let { " · ${afterWords(it)} 뒤에" } ?: "")
 
+    /**
+     * [RVM-20] PC-61 (설정의 규칙 글이 기계 말투): what it does in a few words, for a line a person reads ("‘집중’ +1", "50분 뒤 알림",
+     * "가계부 ‘카페 4,500원’"). [say] stays for where the whole act is told.
+     */
+    fun brief(): String = (after?.let { "${afterWords(it)} 뒤 " } ?: "") + when (verb) {
+        LogicVerb.NOTIFY -> "알림" + (if (then.isNotEmpty()) "(단추 ${then.size}개)" else "")
+        LogicVerb.VAL_ADD -> (by ?: 1.0).let { b -> "‘${arg.ifEmpty { "값" }}’ " + (if (b < 0) "−${Formula.numText(-b)}" else "+${Formula.numText(b)}") }
+        LogicVerb.VAL_SET -> "‘${arg.ifEmpty { "값" }}’ ${Formula.numText(by ?: 0.0)}으로"
+        LogicVerb.VAL_STAMP -> "‘${arg.ifEmpty { "값" }}’ 시각 적기"
+        LogicVerb.VAL_TEXT -> "‘${arg.ifEmpty { "값" }}’ 적기"
+        LogicVerb.ADD_MONEY -> "가계부 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’"
+        LogicVerb.ADD_INCOME -> "수입 ‘${arg.ifEmpty { "기타" }}${amount?.let { " " + won(it) } ?: ""}’"
+        LogicVerb.MEMO_LINE -> "메모에 한 줄"
+        else -> say()
+    }
+
     companion object {
         const val MAX_THEN = 2
         const val MAX_BY = 1_000_000.0
@@ -297,6 +313,9 @@ data class LogicButton(val label: String, val emoji: String? = null, val place: 
         if (more.isNotEmpty()) put("more", more.map { it.toMap() })
         if (otherwise.isNotEmpty()) put("else", otherwise.map { it.toMap() })
     }
+
+    /** [RVM-20] PC-61: "누르면 ‘집중’ +1, 50분 뒤 알림" (the 단추's name and place are on the line above). */
+    fun brief(): String = (if (cond.isEmpty()) "누르면 " else "누르면 조건에 따라 ") + briefSteps(listOf(act) + more)
 
     fun say(): String = "${place.label}에 ‘${emoji?.let { "$it " }.orEmpty()}$label’ 단추: 누르면 " +
         sayChain(cond, listOf(act) + more, otherwise) +
@@ -427,6 +446,9 @@ data class LogicRule(
     }
 
     /** One line before it is turned on (사용성 제안: "이 규칙은 야간 근무 전날 밤 9시에 메모 틀을 열어요"). */
+    /** [RVM-20] PC-61: "근무 중 2시간마다 · 알림" (the rule's name is on the line above). */
+    fun brief(): String = sayWhen() + (if (cond.isEmpty()) "" else " · 조건이 맞으면") + " · " + briefSteps(listOf(act) + more)
+
     fun say(): String {
         if (more.isNotEmpty() || otherwise.isNotEmpty()) return "${sayWhen()}, ${sayChain(cond, listOf(act) + more, otherwise)}"
         val c = if (cond.isEmpty()) "" else (EasyWhen.read(cond)?.say() ?: "조건이 맞으면").let { " " + ifWord(it) }
@@ -478,6 +500,10 @@ const val MAX_MORE = 3
 const val MAX_ELSE = 3
 
 /** "야간이면 A 하고 B, 아니면 C" (조건이 없으면 "A 하고 B"). */
+/** [RVM-20] Three steps at most, then '외 N가지'. */
+internal fun briefSteps(acts: List<LogicAct>): String =
+    acts.take(3).joinToString(", ") { it.brief() } + (if (acts.size > 3) " 외 ${acts.size - 3}가지" else "")
+
 internal fun sayChain(cond: String, acts: List<LogicAct>, otherwise: List<LogicAct>): String {
     val run = acts.joinToString(" → ") { it.say() }
     if (cond.isEmpty()) return run
