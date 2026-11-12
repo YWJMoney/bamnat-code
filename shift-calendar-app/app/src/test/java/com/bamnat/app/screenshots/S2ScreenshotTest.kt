@@ -100,6 +100,11 @@ class S2ScreenshotTest : ScreenshotBase() {
                 settle()
                 tapText("달력 머리·요일 줄이 첫 줄을", prefix = true)
                 settle()
+                // RVS-17: at big text 자세히 and the quick tool are one at a time; back to the bar, its 바탕색 tool opened.
+                tapText("닫기", exact = true)
+                settle()
+                tapText("바탕색", exact = true)
+                settle()
                 bigTextMisses(nodes(merged = false), nodes(merged = true)).forEach { misses += "$n: $it" }
             }
         }

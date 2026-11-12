@@ -849,9 +849,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val featurePanel = panel && panelMode == PanelMode.TOOL && tool == Tool.FEATURE
                 val big = if (featurePanel) !featureSmall else panelBig
                 // 2.0.0 [RVS-17] 총괄 HQ-84 (접은 폭 200%에서 부품 막대와 '자세히'가 함께 열리면 예시가 화면의 6%): the example keeps at least
-                // a third of the phone's screen above the panel (over 30% with the bar's edge), which scrolls inside (the feature panel's '크게' is the whole screen on purpose).
+                // a third of the phone's screen above the panel (over 30% with the bar's edge) at big text, and the panel scrolls inside;
+                // '크게' is still the person's choice to give the panel the room.
                 val screenH = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp
-                val keep = if (featurePanel && big) 96.dp else maxOf(96.dp, screenH * 0.35f)
+                val keep = if (bigText && !big) maxOf(96.dp, screenH * 0.35f) else 96.dp
                 val panelH = (if (featurePanel && big) maxHeight - 96.dp else totalH * (if (big) 0.66f else 0.42f))
                     .coerceAtMost(maxHeight - keep).coerceAtLeast(160.dp)
                 val coverPx = with(androidx.compose.ui.platform.LocalDensity.current) { if (panel) panelH.toPx() else 0f }
