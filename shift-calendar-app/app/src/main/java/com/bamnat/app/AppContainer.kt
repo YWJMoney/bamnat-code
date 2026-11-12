@@ -428,13 +428,14 @@ class AppContainer(context: Context) {
         com.bamnat.app.company.OutboxJob.cancelShare(appContext, id)
         if ((used == null && joined == null) || !companyApi.enabled) return
         appScope.launch {
-            val device = companyStore.device
             val others = companyScopes().filter { it.calendarId != id }
+            // 2.0.0 [RVN-13] COMP-48 The calendar's own files are gone: what could not go waits with the phone's (the main calendar's).
+            val keep = companyStore
             used?.takeIf { u -> others.none { it.store.applied.value?.setup == u.setup } }?.let { u ->
-                runCatching { companyApi.use(device, u.companyId, u.setup, false, files.serverCal(id)) }
+                com.bamnat.app.company.SmallSends.send(this@AppContainer, keep, com.bamnat.app.company.SmallSends.use(u.companyId, u.setup, false, files.serverCal(id)))
             }
             joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first || it.store.applied.value?.companyId == j.first } }?.let { j ->
-                runCatching { companyApi.leave(device, j.first) }
+                com.bamnat.app.company.SmallSends.send(this@AppContainer, keep, com.bamnat.app.company.SmallSends.leave(j.first))
             }
         }
     }
@@ -477,8 +478,10 @@ class AppContainer(context: Context) {
     fun companySetupUsed(scope: com.bamnat.app.company.CompanyScope, a: com.bamnat.app.company.AppliedSetup) {
         if (!companyApi.enabled) return
         appScope.launch {
-            runCatching { companyApi.use(scope.store.device, a.companyId, a.setup, true, scope.serverCal) }
-                .onSuccess { if (scope.store.member.value == null) scope.store.setMember(a.companyId, a.company) }
+            // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+            if (com.bamnat.app.company.SmallSends.send(this@AppContainer, scope.store, com.bamnat.app.company.SmallSends.use(a.companyId, a.setup, true, scope.serverCal))) {
+                if (scope.store.member.value == null) scope.store.setMember(a.companyId, a.company)
+            }
         }
     }
 

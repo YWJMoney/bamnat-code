@@ -18,12 +18,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.layout.layout
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -101,7 +103,7 @@ import androidx.compose.ui.semantics.Role
  * come first, so anyone who knows the company can say 맞았어요 or 달라요 and talk it over; adopted ones
  * are there for everyone to use.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CompanyBoardScreen(
     vm: CompanyBoardViewModel,
@@ -176,7 +178,9 @@ fun CompanyBoardScreen(
                 }
                 if (header != null) item(key = "calendars") { header() }
                 // [PLAZA-32] 1.27 AI (443): the way into a company's own room, at the top of the plaza.
-                if (onFind != null) item {
+                // 2.0.0 [RVN-13] COMP-05 Every head row has its own key, so a row coming or going above does not move the search box
+                // out from under the keyboard (focus and the half-typed name stay).
+                if (onFind != null) item(key = "find") {
                     SoftCard(highlighted = true) {
                         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text("회사를 고르면 그 회사 분들끼리 이야기하는 ‘회사 정보 광장’이 열려요", style = MaterialTheme.typography.bodyMedium,
@@ -185,17 +189,19 @@ fun CompanyBoardScreen(
                         }
                     }
                 }
-                item {
+                item(key = "tabs") {
                     PrimaryTabRow(selectedTabIndex = if (adopted) 1 else 0) {
                         Tab(selected = !adopted, onClick = { vm.pick(false) }, text = { Text("투표 중") })
                         Tab(selected = adopted, onClick = { vm.pick(true) }, text = { Text("채택됨") })
                     }
                 }
-                // [SPD-13] 1.30 AP1: the first page kept on the phone is on screen while it is read again.
-                if (tab.items.isNotEmpty() && ((tab.fromCache && tab.loading) || tab.stale)) item(key = "refresh") {
-                    RefreshLine(tab.fromCache && tab.loading, tab.stale, onRetry = vm::refresh)
-                }
-                item {
+                // 2.0.0 [RVN-13] COMP-05·U10a-13 The search box stays at the top as the list goes down (a name can be looked up again
+                // from anywhere), on the ground the market's pinned row uses.
+                stickyHeader(key = "search") { Column(Modifier.fillMaxWidth().layout { m, c ->
+                    val side = 16.dp.roundToPx()
+                    val p = m.measure(c.copy(minWidth = c.maxWidth + 2 * side, maxWidth = c.maxWidth + 2 * side))
+                    layout(c.maxWidth, p.height) { p.place(-side, 0) }
+                }) { androidx.compose.material3.Surface(color = com.bamnat.app.ui.theme.PhotoGround.solid(), modifier = Modifier.fillMaxWidth()) {
                     // [COMM-07] Any company's rules by name, adopted or still being voted on.
                     OutlinedTextField(
                         value = query,
@@ -209,16 +215,16 @@ fun CompanyBoardScreen(
                         shape = MaterialTheme.shapes.extraLarge,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() }),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     )
-                }
-                item { PlazaFilterBar(filter, plazas, vm::setFilter) }
+                } } }
+                item(key = "filters") { PlazaFilterBar(filter, plazas, vm::setFilter) }
                 item(key = "share") {
                     androidx.compose.material3.OutlinedButton(onClick = onShare, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Icon(Icons.Filled.Add, null); Text("우리 회사 규칙 올리기", Modifier.padding(start = 6.dp))
                     }
                 }
-                item {
+                item(key = "about") {
                     Text(
                         if (adopted) "같은 회사 분들이 맞다고 했거나 개발자가 확인한 규칙이에요. 누구나 그대로 가져다 쓸 수 있어요. 금액은 각자 넣어요."
                         else "같은 회사 분들이 올린 규칙이에요. 다니는 회사라면 맞는지 알려 주세요. 맞았어요가 ${terms?.agree ?: 75}% 이상이고 " +
@@ -226,6 +232,11 @@ fun CompanyBoardScreen(
                         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
                     )
+                }
+                // [SPD-13] 1.30 AP1: the first page kept on the phone is on screen while it is read again. 2.0.0 [RVN-13] COMP-05 Under the
+                // search and its chips, right above the cards, so its coming and going moves nothing that is being typed in.
+                if (tab.items.isNotEmpty() && ((tab.fromCache && tab.loading) || tab.stale)) item(key = "refresh") {
+                    RefreshLine(tab.fromCache && tab.loading, tab.stale, onRetry = vm::refresh)
                 }
                 // [COMM-14] Two cards of one company and department get a name each (제보 1·2, 채택 v2) and what only that one has.
                 val labels = tab.items.groupBy { it.companyId }.values.fold(emptyMap<String, String>()) { m, same ->
@@ -235,23 +246,26 @@ fun CompanyBoardScreen(
                     BoardCard(item, onOpen = { onOpen(item.companyId) }, onTalk = { vm.talk.show(item.companyId, item.setup, item.title()) },
                         label = labels[item.setup], diff = diffs[item.setup], agreeNeeded = terms?.agree ?: 75)
                 }
-                item {
+                // 2.0.0 [RVN-13] COMP-15 디자인 품질 7: the list's end says where it is. Reading (뼈대 줄), a next page that did not come
+                // (the words for why and 다시 시도: before, the list stopped there as if it had no more), or 여기까지예요.
+                item(key = "end") {
                     when {
-                        tab.loading && !tab.fromCache -> LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 12.dp))
+                        tab.loading && !tab.fromCache -> com.bamnat.app.ui.components.SkeletonRows(count = if (tab.items.isEmpty()) 3 else 1)
                         tab.loading -> Unit
-                        tab.error != null -> Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(24.dp)) {
-                            Text(tab.error, style = MaterialTheme.typography.bodyMedium)
-                            OutlinedButton(onClick = vm::refresh, modifier = Modifier.padding(top = 8.dp)) { Text("다시 불러오기") }
-                        }
-                        tab.items.isEmpty() -> Text(
+                        tab.error != null -> com.bamnat.app.ui.components.OfflineLine(text = tab.error, onRetry = vm::refresh)
+                        tab.moreFailed != null -> com.bamnat.app.ui.components.OfflineLine(text = tab.moreFailed, onRetry = { vm.more() })
+                        tab.items.isEmpty() -> com.bamnat.app.ui.components.EmptyState(
                             when {
-                                query.isNotBlank() && adopted -> "‘${query.trim()}’의 채택된 규칙은 아직 없어요. 투표 중 탭도 봐 주세요."
-                                query.isNotBlank() -> "‘${query.trim()}’의 투표 중인 규칙이 없어요. 우리 회사 규칙을 처음 올려 주세요!"
-                                adopted -> "아직 채택된 규칙이 없어요."
-                                else -> "지금 투표 중인 규칙이 없어요. 우리 회사 규칙을 처음 올려 주세요!"
+                                query.isNotBlank() && adopted -> "‘${query.trim()}’의 채택된 규칙은 아직 없어요"
+                                query.isNotBlank() -> "‘${query.trim()}’의 투표 중인 규칙이 없어요"
+                                adopted -> "아직 채택된 규칙이 없어요"
+                                else -> "지금 투표 중인 규칙이 없어요"
                             },
-                            style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(vertical = 24.dp),
+                            // No button of its own: '우리 회사 규칙 올리기' is just above, under the search.
+                            detail = if (adopted) "투표 중 탭도 봐 주세요." else "위의 ‘우리 회사 규칙 올리기’로 처음 올려 주세요.",
                         )
+                        tab.next == null -> Text("여기까지예요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp))
                         else -> Unit
                     }
                 }
@@ -561,15 +575,26 @@ fun TalkSheet(holder: TalkHolder) {
                 Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
             } else {
+                // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
+                // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
+                var rulesAsked by remember { mutableStateOf(false) }
+                var sentHere by remember(o.company, o.setup) { mutableStateOf(false) }
+                // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
+                // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
+                var rulesOk by remember { mutableStateOf(rules.isAgreed) }
+                // 2.0.0 [RVN-13] COMP-07·U10a-05 While the keyboard is up (or the letters are big), what goes with the post (kind, 투표,
+                // 제안 편집, 규칙 카드, 태그) scrolls in its own part of the sheet, so the box and 보내기 stay at the bottom, in sight.
+                // 2.0.0 [RVN-06] HQ-38 (총괄 사진 검토, 디자인 조건 1·12): at 130% and up the kinds stacked under '쓸 글' and the box took a
+                // third of a folded screen; there the kinds fold into one chip beside '쓸 글', the box keeps to two lines and its hint to one.
+                val big = com.bamnat.app.ui.components.bigLetters()
+                val tight = androidx.compose.foundation.layout.WindowInsets.isImeVisible || big
+                Column(if (tight) Modifier.weight(2f, fill = false).verticalScroll(rememberScrollState()) else Modifier) {
                 error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
                 // PC 확인 41e73582 (보낸 답이 안 보여 한 번 더 보냈어요): said, and the list goes to it, marked.
                 if (justSent != null && error == null) Text("✓ 올렸어요 · 위에 표시한 글이에요", style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp)
                         .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 // [PLZ-09] What kind of post: a word, a question, or a proposal to change the rule.
-                // 2.0.0 [RVN-06] HQ-38 (총괄 사진 검토, 디자인 조건 1·12): at 130% and up the kinds stacked under '쓸 글' and the box took a
-                // third of a folded screen; there the kinds fold into one chip beside '쓸 글', the box keeps to two lines and its hint to one.
-                val big = com.bamnat.app.ui.components.bigLetters()
                 if (replyTo == null) {
                     // [PLAZA-32] A room has no rule to change: 의견 and 질문 only.
                     // 1.36 [VIL-08] 마을 V8: a room's post is 이야기 · 질문 · 팁 · 자랑.
@@ -626,13 +651,6 @@ fun TalkSheet(holder: TalkHolder) {
                         color = if (n == 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 6.dp))
                 }
-                // PC 확인 보안 11차 (첫 글을 보내면 규칙 창이 뜨고, 그사이 친 글이 첫 글에 붙어 한 글로 올라갔어요): the rules are asked
-                // when the box is first tapped, before anything is written; 보내기 still asks if they were put off (나중에).
-                var rulesAsked by remember { mutableStateOf(false) }
-                var sentHere by remember(o.company, o.setup) { mutableStateOf(false) }
-                // [TOWN-12] PC 확인 a6cab3c8: the rules as a card above the box (the window took the words being written and closed
-                // on a tap outside); the 마을 이름 card [TOWN-03] only once they are agreed, so the two never come one after the other.
-                var rulesOk by remember { mutableStateOf(rules.isAgreed) }
                 if (rulesAsked && !rulesOk) PlazaRulesCard(rules, onAgreed = { rulesOk = true }, modifier = Modifier.padding(top = 8.dp))
                 // PC 4차 c0ca3d9f (중, 보낸 뒤 이름 카드가 커서 시트 안 글이 한 줄만 보였어요): once a post went, the card steps aside
                 // for this sheet; it is asked again the next time the box is used.
@@ -652,6 +670,7 @@ fun TalkSheet(holder: TalkHolder) {
                         label = { Text(if (withCard) "📅 근무 카드 붙임 · ${card.line()}" else "📅 이번 달 근무 카드 붙이기", maxLines = 1,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                         modifier = Modifier.padding(top = 2.dp))
+                }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
@@ -682,7 +701,7 @@ fun TalkSheet(holder: TalkHolder) {
                     )
                     // 1.39 조사 ⑦ 쓰기 전 한마디: 거친 말이 보이면 보내기 전에 한 번만 묻고(막지 않아요), 폰 밖으로는 아무것도 안 나가요.
                     var nudge by remember { mutableStateOf<(() -> Unit)?>(null) }
-                    nudge?.let { go -> com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = null }, onSend = { nudge = null; go() }) }
+                    nudge?.let { go -> com.bamnat.app.ui.hub.NudgeDialog(text, onEdit = { nudge = null }, onSend = { nudge = null; go() }) }
                     IconButton(
                         onClick = {
                             val proposing = kind == "proposal" && replyTo == null
@@ -809,26 +828,28 @@ private fun TalkHowTo(vote: String?, styleRoom: Boolean) {
     var open by rememberSaveable { mutableStateOf(false) }
     val note = (if (styleRoom) "다른 분께는 마을 이름(없으면 ‘참여자 번호’)으로 보여요. " else "다른 분께는 ‘참여자 번호’로만 보여요. ") +
         "이름, 연락처, 금액은 적지 마세요. 욕설·비방·광고는 신고로 가려져요."
-    if (big && !open) {
+    // 2.0.0 [RVN-13] HQ-40 ② One line and ⓘ at every 글자 크기 (조건 4): the two paragraphs, the first in the link color though it could
+    // not be pressed, are behind it, in the quiet color; only 운영 규칙 보기 looks like what it is, a link. The one thing to keep in mind
+    // while writing stays on the line itself.
+    if (!open) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "펼치기") { open = true },
             verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.Info, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Outlined.Info, null, Modifier.size(if (big) 20.dp else 16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(6.dp))
-            Text(if (vote != null) "투표와 글 쓰는 규칙" else "글 쓰는 규칙", style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+            Text((if (vote != null) "투표와 글 쓰는 규칙" else "글 쓰는 규칙") + " · 이름·연락처·금액은 적지 마세요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             Icon(Icons.Filled.ExpandMore, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         return
     }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        vote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        vote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Row(verticalAlignment = Alignment.Top) {
             Icon(Icons.Outlined.Info, null, Modifier.size(16.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.width(6.dp))
             Text(note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-            if (!big) RulesLink()
         }
-        if (big) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             RulesLink()
             TextButton(onClick = { open = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
         }
@@ -884,14 +905,9 @@ private fun PostRow(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every post (a name with
             // fill = false beside a weighted spacer took half the row and moved the ⋮ with the name's length).
-            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장.
-                val maker = p.maker
-                com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                    onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
-                    modifier = Modifier.weight(1f, fill = false), maxLines = 1)
-                Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            }
+            // 1.36 [V3] 마을 이름 하나: the name leads to the writer's 프로필 in a kind of work's 광장. HQ-40 ④ at big letters the time
+            // goes under the name.
+            NameAndTime(p, name, Modifier.weight(1f))
             Box {
                 // [J133-70] 1.33 (실사용 테스트: 손가락에 작은 단추, 메뉴를 그냥 닫는 줄이 없었어요): a finger-sized button and a 닫기 line.
                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기", Modifier.size(20.dp)) } // [RVP-10] 48dp
@@ -974,8 +990,8 @@ private fun PostRow(
         }
         p.poll?.let { v -> PollView(v, enabled = onPoll != null && p.hidden == null, onPick = { i -> onPoll?.invoke(if (v.mine == i) null else i) }) }
         p.hidden?.let {
-            Text("다른 분께는 가려졌어요: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 2.dp))
+            // 2.0.0 [RVN-13] HQ-40 ① a caution in the app's one line shape (J ToneLine), not red: red is for danger only (조건 6).
+            com.bamnat.app.ui.components.ToneLine("다른 분께는 가려졌어요 · $it", Modifier.padding(top = 2.dp))
             // [COMM-11] G2: the writer can ask for another look; the question names the post.
             if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
                 contentPadding = PaddingValues(horizontal = 0.dp)) { Text("이의 제기") }
@@ -1017,10 +1033,13 @@ private fun PostRow(
                 // [COMM-13] Small words, not the rule's big 맞았어요·달라요 buttons: more posts fit, and a post's 공감 is not
                 // read as a vote on the rule (점검 보고서 하 '광장').
                 if (meToo) {
-                    if (p.mine) Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVN-13] HQ-40 ③ no "0": none yet says nothing on my post, and just "나도요" on another's.
+                    if (p.mine) { if (p.agree > 0) Text(meTooWord(p.agree), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     else MeToo(p.agree, p.myVote) { onVote(true) }
                 } else if (p.mine) {
-                    Text("공감 ${p.agree} · 비공감 ${p.disagree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    reactionWords(p.agree, p.disagree)?.let {
+                        Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 } else {
                     PostReactions(p.agree, p.disagree, p.myVote, onVote)
                 }
@@ -1043,8 +1062,9 @@ internal fun WaitReason(points: Int, threshold: Int, adopted: Boolean, agree: In
 @Composable
 private fun PostReactions(agree: Int, disagree: Int, mine: Boolean?, onVote: (Boolean) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-        SmallTextButton("공감 $agree", picked = mine == true, label = if (mine == true) "공감 $agree, 고름" else "공감 $agree") { onVote(true) }
-        SmallTextButton("비공감 $disagree", picked = mine == false, label = if (mine == false) "비공감 $disagree, 고름" else "비공감 $disagree") { onVote(false) }
+        // 2.0.0 [RVN-13] HQ-40 ③ the word alone while it is 0 (its 0 is still read out).
+        SmallTextButton(if (agree > 0) "공감 $agree" else "공감", picked = mine == true, label = if (mine == true) "공감 $agree, 고름" else "공감 $agree") { onVote(true) }
+        SmallTextButton(if (disagree > 0) "비공감 $disagree" else "비공감", picked = mine == false, label = if (mine == false) "비공감 $disagree, 고름" else "비공감 $disagree") { onVote(false) }
     }
 }
 
