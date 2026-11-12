@@ -244,11 +244,13 @@ data class RingShift(val day: String, val name: String, val color: Color)
 /** [EASE-20] The shift [ring] is for, said from [today]: 오늘, 내일 (an alarm the evening before), 어제 (a nap after a 야간). */
 internal fun ringShift(ring: RingRequest, today: java.time.LocalDate): RingShift? {
     if (ring.shiftName.isBlank() || ring.label != null || ring.recheck) return null
+    // 2.0.0 [RVG-09] 검토 TYPE-01: '오늘 영업' on a shop's day.
+    val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName)
     val day = when (ring.shiftDate) {
-        today -> "오늘 근무"
-        today.plusDays(1) -> "내일 근무"
-        today.minusDays(1) -> "어제 시작한 근무"
-        else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 근무"
+        today -> "오늘 $noun"
+        today.plusDays(1) -> "내일 $noun"
+        today.minusDays(1) -> "어제 시작한 $noun"
+        else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 $noun"
     }
     val color = if (ring.shiftColor == 0L) Color(0xFF3D5AFE) else Color(ring.shiftColor.toInt()).copy(alpha = 1f)
     return RingShift(day, ring.shiftName, color)

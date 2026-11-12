@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.settings
 
+import com.bamnat.core.work.words
+
 /**
  * [UX-04] Plain-word search for settings and help: the words people use ("다크 모드", "알람이 안 울려요")
  * find the setting even when it is named another way. Korean endings (이·가·을·를·은·는·에서…) are
@@ -156,6 +158,12 @@ internal object SettingsIndex {
 
     /** [J133-79] 1.33 빌드 5: an 알바's rules come from a 근무지, not a 회사 (the screens say so since J133-77). */
     private fun inWords(e: SettingEntry, style: com.bamnat.core.work.WorkStyle?): SettingEntry = when {
+        // 2.0.0 [RVG-12] 검토 BOSS-69: '근무 주기'·'근무 종류와 시간' read as the row does on that kind of work's page (가게 '영업일·정기휴무'·
+        // '영업시간', 투자 '투자 알람'·'계좌', 알바 '출근 요일'…); the old name still finds it.
+        style != null && (e.place as? SettingPlace.Screen)?.go == SettingsGo.PATTERN && e.title == "근무 주기" ->
+            e.copy(title = style.words().pattern, keywords = e.keywords + e.title)
+        style != null && (e.place as? SettingPlace.Screen)?.go == SettingsGo.SHIFT_TYPES && e.title == "근무 종류와 시간" ->
+            e.copy(title = style.words().types, keywords = e.keywords + e.title)
         style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
             e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
         // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
@@ -192,8 +200,11 @@ internal object SettingsIndex {
     private fun all(board: Boolean, share: Boolean, company: Boolean, sleepAuto: Boolean = true, sleepSound: Boolean = true): List<SettingEntry> = listOfNotNull(
         screen(W.title, "일하는 방식", SettingsGo.WORK_STYLE, "근무 형태", "교대", "일근", "시급", "현장", "프리랜서", "자영업", "가게"),
         screen(W.title, "근무 주기", SettingsGo.PATTERN, "순서", "패턴", "로테이션", "주주야야", "시작일", "요일", "교대 순서",
-            "공휴일 쉬기", "격주 토요일", "격주"), // [SCHED-04]
-        screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게"),
+            "공휴일 쉬기", "격주 토요일", "격주", // [SCHED-04]
+            // [RVG-12] 가게·알바·투자의 말로도 찾아요.
+            "영업일", "정기휴무", "휴무일", "쉬는 요일", "출근 요일", "일하는 요일", "투자 알람", "장 시작"),
+        screen(W.title, "근무 종류와 시간", SettingsGo.SHIFT_TYPES, "주간", "야간", "근무 시간", "출근 시간", "색", "아이콘", "근무 전 알람", "휴게",
+            "영업시간", "브레이크 타임", "알바 시간", "계좌"), // [RVG-12]
         screen(W.title, "연장 휴무일 근무 지정", SettingsGo.EXTRA_KINDS, "잔업", "특근", "대근", "연장", "휴일 근무", "가산", "교육", "교육 시수", "근무별 시수"),
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",

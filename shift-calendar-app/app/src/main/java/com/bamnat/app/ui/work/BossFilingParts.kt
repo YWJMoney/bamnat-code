@@ -35,7 +35,6 @@ import com.bamnat.core.boss.StaffWork
 import com.bamnat.core.boss.Workplace
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.YearMonth
@@ -67,7 +66,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
     val ledgers by produceState<Map<YearMonth, com.bamnat.core.boss.Ledger>?>(null, place, staff, work) {
         value = withContext(Dispatchers.Default) {
             val first = YearMonth.from(today).minusMonths(3)
-            (0..4).associate { i -> first.plusMonths(i.toLong()).let { m -> m to PayrollLedger.month(place, staff, m, store.work(place.id, m).first()) } }
+            (0..4).associate { i -> first.plusMonths(i.toLong()).let { m -> m to store.ledgerOf(place, m) } }
         }
     }
     val got = ledgers ?: return

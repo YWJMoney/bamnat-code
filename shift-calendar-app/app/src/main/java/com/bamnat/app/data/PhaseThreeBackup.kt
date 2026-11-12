@@ -53,15 +53,10 @@ object PhaseThreeBackup {
         val places = d.workplaces()
         if (places.isEmpty()) return
         into.put(WORKPLACES, JSONObject()
-            .put("places", JSONArray().apply { places.forEach { put(JSONObject().put("id", it.id).put("name", it.name).putOpt("fivePlus", it.fivePlus)
-                .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt).put("unit", it.minuteUnit).put("calls", it.calls).putOpt("industry", it.industry)) } })
-            .put("staff", JSONArray().apply { d.staff().forEach { put(JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
-                .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
-                .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
-                .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken).put("contract", it.contract)) } })
+            .put("places", JSONArray().apply { places.forEach { put(placeJson(it)) } })
+            .put("staff", JSONArray().apply { d.staff().forEach { put(staffJson(it)) } })
             .put("punches", JSONArray().apply { d.punches().forEach { put(JSONArray().put(it.staffId).put(it.at).put(it.kind)) } })
-            .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach {
-                put(JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)) } })
+            .put("work", JSONArray().apply { d.work().sortedWith(compareBy({ it.staffId }, { it.epochDay })).forEach { put(workJson(it)) } })
             .put("months", JSONArray().apply { d.months().forEach { put(JSONObject().put("place", it.workplaceId).put("month", it.month).put("state", it.state)
                 .put("rates", it.rateVersion).putOpt("closedAt", it.closedAt)) } })
             .put("lines", JSONArray().apply { d.lines().forEach { put(JSONObject().put("place", it.workplaceId).put("month", it.month).put("staff", it.staffId)
@@ -94,13 +89,9 @@ object PhaseThreeBackup {
     fun readWorkplaces(root: JSONObject): Places? {
         val o = root.optJSONObject(WORKPLACES) ?: return null
         return Places(
-            o.optJSONArray("places").objs().map { WorkplaceEntity(it.getString("id"), it.optString("name"), if (it.has("fivePlus") && !it.isNull("fivePlus")) it.getBoolean("fivePlus") else null,
-                it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60), it.optString("calls"), it.strOrNull("industry")) },
-            o.optJSONArray("staff").objs().map { StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
-                it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
-                it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken"), it.optString("contract")) },
-            o.optJSONArray("work").arrays().map { StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2),
-                if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4)) },
+            o.optJSONArray("places").objs().map(::placeFrom),
+            o.optJSONArray("staff").objs().map(::staffFrom),
+            o.optJSONArray("work").arrays().map(::workFrom),
             o.optJSONArray("months").objs().map { PayrollMonthEntity(it.getString("place"), it.getString("month"), it.optString("state", "OPEN"),
                 it.optString("rates"), it.longOrNull("closedAt")) },
             o.optJSONArray("lines").objs().map { PayrollLineEntity(it.getString("place"), it.getString("month"), it.getString("staff"), it.optLong("gross"),
@@ -108,6 +99,27 @@ object PhaseThreeBackup {
             o.optJSONArray("punches").arrays().map { com.bamnat.app.data.db.StaffPunchEntity(it.getString(0), it.getLong(1), it.optString(2, "IN")) },
         )
     }
+
+    // ---- one row as JSON: the backup's own shape, also kept in a closed month's line ([PhaseThreeStore.close], RVG-01) ----
+
+    fun placeJson(it: WorkplaceEntity): JSONObject = JSONObject().put("id", it.id).put("name", it.name).putOpt("fivePlus", it.fivePlus)
+        .putOpt("payday", it.payday).put("breaks", it.legalBreaks).put("weekStart", it.weekStart).putOpt("team", it.teamId).put("created", it.createdAt).put("unit", it.minuteUnit).put("calls", it.calls).putOpt("industry", it.industry)
+
+    fun placeFrom(it: JSONObject) = WorkplaceEntity(it.getString("id"), it.optString("name"), if (it.has("fivePlus") && !it.isNull("fivePlus")) it.getBoolean("fivePlus") else null,
+        it.intOrNull("payday"), it.optBoolean("breaks", true), it.optInt("weekStart", 1), it.strOrNull("team"), it.optLong("created"), it.optInt("unit", 1).coerceIn(1, 60), it.optString("calls"), it.strOrNull("industry"))
+
+    fun staffJson(it: StaffEntity): JSONObject = JSONObject().put("id", it.id).put("place", it.workplaceId).put("name", it.name)
+        .put("form", it.form).put("base", it.base).put("allowances", it.allowances).putOpt("hired", it.hiredOn).putOpt("left", it.leftOn)
+        .putOpt("birth", it.birth).put("job", it.job).put("insurance", it.insurance).put("weeklyHoliday", it.weeklyHolidayPay)
+        .put("weekly", it.weekly).putOpt("member", it.memberId).put("sort", it.sort).putOpt("clockId", it.clockId).putOpt("clockToken", it.clockToken).put("contract", it.contract)
+
+    fun staffFrom(it: JSONObject) = StaffEntity(it.getString("id"), it.getString("place"), it.optString("name"), it.optString("form", "HOUR"),
+        it.optLong("base"), it.optString("allowances", "[]"), it.longOrNull("hired"), it.longOrNull("left"), it.longOrNull("birth"), it.optString("job"),
+        it.optString("insurance", "{}"), it.optBoolean("weeklyHoliday", true), it.optString("weekly", "{}"), it.strOrNull("member"), it.optInt("sort"), it.strOrNull("clockId"), it.strOrNull("clockToken"), it.optString("contract"))
+
+    fun workJson(it: StaffWorkEntity): JSONArray = JSONArray().put(it.staffId).put(it.epochDay).put(it.kind).put(it.startMinute ?: JSONObject.NULL).put(it.endMinute ?: JSONObject.NULL)
+
+    fun workFrom(it: JSONArray) = StaffWorkEntity(it.getString(0), it.getLong(1), it.getString(2), if (it.isNull(3)) null else it.getInt(3), if (it.isNull(4)) null else it.getInt(4))
 
     suspend fun write(db: AppDatabase, teams: Teams?, places: Places?) {
         teams?.let { t ->

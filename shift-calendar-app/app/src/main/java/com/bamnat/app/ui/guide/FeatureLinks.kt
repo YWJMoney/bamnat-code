@@ -40,6 +40,15 @@ object FeatureLinks {
 
     fun open(feature: AppFeature) = open(feature.route)
 
+    /**
+     * 2.0.0 [RVG-11] What an answer button (내 정보·물어보기 카드) opens: the feature's place, except '회사 찾기', which is the
+     * 회사 찾기 screen itself rather than the 급여 page the feature lives on.
+     */
+    fun openAnswer(feature: String) {
+        if (feature == com.bamnat.core.profile.Questions.COMPANY_FIND) return com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_FIND)
+        com.bamnat.core.guide.FeatureRegistry.get(feature)?.let(::open)
+    }
+
     fun open(route: FeatureRoute) {
         _focus.value = route.focus.takeIf { !route.place.isSettings }
         _target.value = route

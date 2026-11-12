@@ -84,7 +84,9 @@ internal fun TeamsContent(data: WidgetData) {
             style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Spacer(GlanceModifier.height(6.dp))
         if (teams.isNullOrEmpty()) {
-            Text("주주야야비휴처럼 돌아가는 근무 주기를 정하면 조마다 오늘 근무가 보여요",
+            // [RVG-13] Only a 교대 calendar has 조.
+            Text(if (data.style != null && data.style != com.bamnat.core.work.WorkStyle.SHIFT) "조가 있는 교대 근무표에서 써요"
+                else "주주야야비휴처럼 돌아가는 근무 주기를 정하면 조마다 오늘 근무가 보여요",
                 style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)))
             return@Column
         }
@@ -230,13 +232,22 @@ internal fun CountdownContent(data: WidgetData) {
     // [J133-32] 순번 712 (1.32 실사용 테스트: 2×1에서 두 줄 다 말줄임이 됐어요): one cell high, no label and smaller lines.
     val short = androidx.glance.LocalSize.current.height < 90.dp
     Column(GlanceModifier.fillMaxWidth()) {
-        if (!short) Text("다음 근무", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
+        // 2.0.0 [RVG-13] 검토 TYPE-12: '다음 영업' for a shop, and an investor's or a field worker's empty week does not say 근무.
+        val word = countdownWord(data.style)
+        if (!short) Text("다음 $word", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
         Text(
-            data.countdown ?: "7일 안에 근무가 없어요",
+            data.countdown ?: "7일 안에 ${word}${com.bamnat.app.ui.Fmt.iga(word)} 없어요",
             style = TextStyle(color = GlanceTheme.colors.onSurface, fontSize = if (short) wsp(14) else wsp(16), fontWeight = FontWeight.Bold),
             maxLines = if (short) 1 else 2,
         )
         // G 1.32 [WTYP-05] 607 다음 오프까지, one line under.
         data.nextOff?.let { Text(it, style = TextStyle(color = GlanceTheme.colors.primary, fontSize = if (short) wsp(11) else wsp(12)), maxLines = 1) }
     }
+}
+
+/** [RVG-13] The countdown widget's word for the calendar's kind of work. */
+internal fun countdownWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.BUSINESS -> "영업"
+    com.bamnat.core.work.WorkStyle.FIELD, com.bamnat.core.work.WorkStyle.INVEST -> "일정"
+    else -> "근무"
 }

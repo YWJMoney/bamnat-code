@@ -112,20 +112,32 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
     ToolScreen("급여 대장", onClose, bodyModifier = Modifier.monthSwipe(ym) { month = ym.plusMonths(it.toLong()).toString() }) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
         val staff by store.staff(place.id).collectAsStateWithLifecycle(emptyList())
-        val work by store.work(place.id, ym).collectAsStateWithLifecycle(emptyList())
+        // 2.0.0 [RVG-01] 검토 PAYU-01: a closed month is read back as it was closed (시급을 올려도 닫은 달은 그대로).
+        // [RVG-02] PAYU-02: the days 6 on either side of the month come too, so a week that crosses the 1st counts its 결근·대근.
+        val now by remember(place, ym) { store.inputs(place, ym) }.collectAsStateWithLifecycle(null)
+        val last by remember(place, ym) { store.inputs(place, ym.minusMonths(1)) }.collectAsStateWithLifecycle(null)
         val closed by store.payrollMonth(place.id, ym).collectAsStateWithLifecycle(null)
-        val ledger = remember(place, staff, work, ym) { PayrollLedger.month(place, staff, ym, work) }
+        val got = now?.takeIf { it.month == ym } ?: run { Hint("계산하고 있어요…"); return@ToolScreen }
+        val work = got.work
+        val ledger = got.ledger
         val isClosed = closed?.state == "CLOSED"
-        val lastWork by store.work(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(emptyList())
         val lastClosed by store.payrollMonth(place.id, ym.minusMonths(1)).collectAsStateWithLifecycle(null)
         // 1.39 G2 (PC f7f61818 '처음 넣은 직원인데 지난달 같아요'): last month counts only someone known to have worked then: an 입사일
         // before this month, days written last month, or last month closed. Without any of those it was only the usual week guessed.
         // PC 4bd5d745: the head, the bars and the '지난달과 비교' card all use these same people.
-        val lastStaff = remember(staff, lastWork, lastClosed, ym) {
-            val was = lastClosed?.state == "CLOSED"
-            staff.filter { s -> was || s.hiredOn?.isBefore(ym.atDay(1)) == true || lastWork.any { it.staffId == s.id } }
+        val lastLedger = remember(last, lastClosed, ym) {
+            val l = last?.takeIf { it.month == ym.minusMonths(1) }
+            when {
+                l == null -> PayrollLedger.month(place, emptyList(), ym.minusMonths(1), emptyList())
+                l.frozen -> l.ledger
+                else -> {
+                    val lastMonth = ym.minusMonths(1)
+                    val was = lastClosed?.state == "CLOSED"
+                    val lastStaff = l.staff.filter { s -> was || s.hiredOn?.isBefore(ym.atDay(1)) == true || l.work.any { it.staffId == s.id && YearMonth.from(it.date) == lastMonth } }
+                    PayrollLedger.month(l.place, lastStaff, lastMonth, l.work)
+                }
+            }
         }
-        val lastLedger = remember(place, lastStaff, lastWork, ym) { PayrollLedger.month(place, lastStaff, ym.minusMonths(1), lastWork) }
 
         Text(PayrollLedger.NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         // The month: ◀ 2026년 11월 ▶
@@ -241,9 +253,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         // PC 10차: keyed on who is waiting (the first frame's list is empty, so a key on the place alone read nobody).
         val waitingIds = staff.filter { it.contract?.waiting(Today.millis()) == true }.map { it.id }
         LaunchedEffect(place.id, waitingIds) { if (waitingIds.isNotEmpty()) runCatching { com.bamnat.app.boss.BossContractSync.pullWaiting(context.appContainer, staff) } }
-        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
+        ledger.lines.forEach { l -> key(l.staff.id) { LedgerLineCard(l, got.place, ym, work, isClosed, marked[l.staff.id], onEdit = { editing = l.staff }, onFind = { d -> finding = l.staff.id to d },
             onContract = { contracting = l.staff.id },
-            leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()))) } }
+            leaveLeft = com.bamnat.core.leave.LeaveLeft.forStaff(place.fivePlus, l.staff.hiredOn, leaves[l.staff.id].orEmpty(), minOf(Today.date(), ym.atEndOfMonth()),
+                weekMinutes = l.staff.weekly.values.sumOf { it.paidMinutes(place.legalBreaks) })) } }
         finding?.let { (id, d) -> BossCoverDialog(place, staff, work, id, d, onDismiss = { finding = null }) }
         contracting?.let { id -> staff.firstOrNull { it.id == id }?.let { s -> key(id) { ContractDialog(place, s, onEditStaff = { contracting = null; editing = s }) { contracting = null } } } }
         // 1.38 퇴사자: 이 달에 없는 사람도 기록은 3년 남아요(근로기준법 제42조). 눌러서 보거나 다시 입사시켜요.
@@ -340,9 +353,15 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                     }
                 }) { Text("임금대장 파일(CSV)") }
                 if (isClosed) OutlinedButton(onClick = { scope.launch { store.reopen(place.id, ym, RateTable.on(ym.atDay(1)).version) } }) { Text("다시 열기") }
-                else OutlinedButton(onClick = { scope.launch { store.close(place.id, ym, ledger.lines, RateTable.on(ym.atDay(1)).version); context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.LEDGER_CLOSED.key) } }) { Text("이 달 닫기") }
+                else OutlinedButton(onClick = { scope.launch { store.close(got.place, ym, ledger.lines, RateTable.on(ym.atDay(1)).version, work); context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.LEDGER_CLOSED.key) } }) { Text("이 달 닫기") }
             }
             Hint(if (isClosed) "닫은 달은 근무를 고칠 수 없어요. 고칠 게 있으면 다시 열어 주세요." else "닫으면 이 달 계산을 그대로 남겨 둬요. 나중에 규칙이 바뀌어도 닫은 달은 그대로예요.")
+            // 2.0.0 [RVG-01]: a month closed before 2.0.0 kept no inputs; say so instead of letting it move without a word.
+            if (isClosed && !got.frozen) Hint("이 달은 예전 판에서 닫아 지금 직원 정보로 계산해요. 다시 열고 닫으면 이 계산 그대로 굳어요.")
+            // 검토 PAYU-01 (4): the 지급일 has gone by and the month is still open → one line asking to close it.
+            if (!isClosed && place.payDate(ym)?.isBefore(Today.date()) == true)
+                Text("지급일이 지났어요. 닫아 두면 나중에 시급을 바꿔도 ${ym.monthValue}월은 그대로예요.", style = MaterialTheme.typography.bodySmall,
+                    color = LocalCalendarColors.current.warning)
             Hint(LedgerCsv.KEEP)
         }
     }

@@ -10,6 +10,12 @@ object AlarmWords {
     /** "주간 근무", "영업", "단축영업", "주간근무". */
     fun work(name: String): String = if (name.endsWith("영업") || name.endsWith("근무")) name else "$name 근무"
 
+    /**
+     * 2.0.0 [RVG-09] 검토 TYPE-01: the word under the title — "10:00 영업 시작", "오늘 영업" — for a shop's day, "근무" otherwise.
+     * Read from the day's name as [work] does, so the notice, the ringing screen and the watch all say the same.
+     */
+    fun noun(name: String): String = if (name.endsWith("영업")) "영업" else "근무"
+
     /** "주간 근무 알람", "영업 알람". */
     fun alarm(name: String): String = "${work(name)} 알람"
 }

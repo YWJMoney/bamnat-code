@@ -1043,9 +1043,15 @@ private fun DayCell(
             // 1.36 PC 재검토: kinds put away ('안 쓰는 종류') are not offered here either, but the day's own.
             val folded = com.bamnat.app.ui.shifts.foldedHere()
             // [DAILY-10] The types changed to most in the last 60 days come first.
-            val ordered = remember(snapshot, folded, type?.id) {
+            // 2.0.0 [RVG-10] 검토 CAL-08 (PC 9차 가게에서 재현: 잔업·대근·특근·연차·반차·반반차, 칠하기 키가 주간·오후·야간): the
+            // long-press menu takes the day sheet's rules — a shop offers its own 영업 kinds ([dayTypes]), and an owner (가게·투자)
+            // has no 추가 근무 or 연차 of their own; one already on the day still shows so it can be taken off.
+            val owner = extraStyle == com.bamnat.core.work.WorkStyle.BUSINESS || extraStyle == com.bamnat.core.work.WorkStyle.INVEST
+            val ordered = remember(snapshot, folded, type?.id, extraStyle) {
                 val today = Today.date()
-                com.bamnat.core.schedule.QuickOrder.byUse(snapshot.shiftTypes.filter { it.id !in folded || it.id == type?.id }, { it.id },
+                val offered = if (extraStyle == com.bamnat.core.work.WorkStyle.BUSINESS) dayTypes(snapshot, extraStyle, type?.id, folded)
+                    else snapshot.shiftTypes.filter { it.id !in folded || it.id == type?.id }
+                com.bamnat.core.schedule.QuickOrder.byUse(offered, { it.id },
                     (0 until com.bamnat.core.schedule.QuickOrder.DAYS).mapNotNull { back ->
                         snapshot.resolver.resolve(today.minusDays(back.toLong())).takeIf { it.source == DaySource.OVERRIDE }?.shiftType?.id
                     })
@@ -1073,8 +1079,9 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Realign) },
                 )
             }
-            val choices = remember(snapshot, day, usesShifts, folded) {
-                if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day) else emptyList()
+            val choices = remember(snapshot, day, usesShifts, folded, owner) {
+                if (usesShifts) ExtraText.choices(snapshot.kinds, snapshot.shiftTypes.filter { it.id !in folded }, day)
+                    .filter { !owner || ExtraText.indexOf(day, it) >= 0 } else emptyList()
             }
             if (choices.isNotEmpty()) HorizontalDivider()
             for (c in choices) {
@@ -1086,11 +1093,12 @@ private fun DayCell(
                     onClick = { menu = false; onQuickAction(QuickAction.Extra(c)) },
                 )
             }
-            val shift = type?.takeIf { it.hasTimes }
+            val shift = type?.takeIf { it.hasTimes && !owner }
             if (shift != null || day.leave != null) {
                 HorizontalDivider()
                 for (q in listOf(4, 2, 1)) {
                     val l = Leave(LeaveKind.ANNUAL, q)
+                    if (owner && day.leave != l) continue
                     DropdownMenuItem(
                         text = { Text(if (day.leave == l) "${l.label} 해제" else l.label) },
                         leadingIcon = { LeaveMark(l, size = 20.dp) },

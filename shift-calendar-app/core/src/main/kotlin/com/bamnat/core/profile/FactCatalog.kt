@@ -74,8 +74,9 @@ enum class FactKey(
         listOf("today.flow", "sleep.log"), styles = PAID),
     COMMUTE("sleep.commute", "퇴근길 시간", FactGroup.SLEEP, "AppSettings.commuteMinutes",
         listOf("today.flow"), styles = PAID),
+    // [RVG-11] 검토 WORK-21: 회사 찾기 is for 교대·일근; an 알바 saw '회사: 아직 몰라요'.
     COMPANY("work.company", "회사", FactGroup.COMPANY, "CompanyStore",
-        listOf("plaza.news"), styles = PAID),
+        listOf(Questions.COMPANY_FIND), styles = setOf(WorkStyle.SHIFT, WorkStyle.DAY)),
     SHOP_RULES("shop.rules", "영업시간·쉬는 날", FactGroup.SHOP, "PersonalCalendar.shop",
         listOf("shop.days", "shop.autoClose"), styles = setOf(WorkStyle.BUSINESS)),
     SHOP_MONEY("shop.money", "카드 수수료·정산일", FactGroup.SHOP, "PersonalCalendar.shopMoney",

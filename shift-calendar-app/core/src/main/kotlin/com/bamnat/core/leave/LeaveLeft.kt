@@ -36,6 +36,7 @@ object LeaveLeft {
     }
 
     /** The 사장님's view: 연차 is the law's only at a place of 5 or more (제11조, 시행령 별표 1), and needs a hire date. */
-    fun forStaff(fivePlus: Boolean?, hiredOn: LocalDate?, used: Map<LocalDate, Double>, on: LocalDate): Left? =
-        if (fivePlus == false || hiredOn == null) null else of(hiredOn, used, on)
+    fun forStaff(fivePlus: Boolean?, hiredOn: LocalDate?, used: Map<LocalDate, Double>, on: LocalDate, weekMinutes: Int? = null): Left? =
+        // 2.0.0 [RVG-03] 검토 BOSS-51: 한 주 15시간 미만(초단시간)은 제60조가 적용되지 않아요(근로기준법 제18조 제3항).
+        if (fivePlus == false || hiredOn == null || weekMinutes != null && weekMinutes in 1 until 15 * 60) null else of(hiredOn, used, on)
 }

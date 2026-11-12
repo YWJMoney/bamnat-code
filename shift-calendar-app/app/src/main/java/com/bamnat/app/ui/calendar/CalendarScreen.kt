@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.calendar
 
+import com.bamnat.core.work.words
 import com.bamnat.app.ui.decor.decor
 import com.bamnat.app.ui.theme.monthTurn
 import androidx.compose.ui.layout.layout
@@ -488,7 +489,11 @@ fun CalendarScreen(
     // [CAL-38] The extra-work stamps quick input offers, from the calendar's own kinds and shifts.
     // 1.38 사용자 2026-11-06: no 주간·야간 대근 stamp of a kind put away ('안 쓰는 종류', 현장·자영업·투자 start so).
     val foldedKinds = com.bamnat.app.ui.shifts.foldedHere()
-    val stamps = remember(snap.kinds, snap.shiftTypes, foldedKinds) { ExtraText.stampChoices(snap.kinds, snap.shiftTypes.filter { it.id !in foldedKinds }) }
+    // 2.0.0 [RVG-10] 검토 CAL-08: no 대근·특근·잔업 stamps for an owner (가게·투자), as their day sheet has none.
+    val stamps = remember(snap.kinds, snap.shiftTypes, foldedKinds, settings.workStyle) {
+        if (settings.workStyle == com.bamnat.core.work.WorkStyle.BUSINESS || settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) emptyList()
+        else ExtraText.stampChoices(snap.kinds, snap.shiftTypes.filter { it.id !in foldedKinds })
+    }
     // [HRLY-02][HRLY-03] An 알바 calendar's cells show times and pay, and each week its 주휴.
     val hourlyCells = remember(settings.workStyle, payProfile) {
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.HOURLY) null
@@ -2256,7 +2261,14 @@ private fun CalendarHeader(
             Text("오늘", maxLines = 1, softWrap = false, style = with(com.bamnat.app.ui.parts.PartMods) { text(todayPart, androidx.compose.material3.LocalTextStyle.current) })
         }
         if (roomy) {
-            IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, "근무 주기 설정") }
+            // 2.0.0 [RVG-08] 검토 TYPE-05: the icon only where a repeating week is the calendar's own (FitTable 'pattern': 교대·일근, and a
+            // shop's 영업일·알바's 출근 요일 in their words); 투자·현장 opened the 교대 주기 screen from here.
+            val patternWords = when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST, com.bamnat.core.work.WorkStyle.FIELD -> null
+                null -> "근무 주기 설정"
+                else -> style.words().pattern + " 설정"
+            }
+            if (patternWords != null) IconButton(onClick = onOpenPattern) { Icon(Icons.Filled.EventRepeat, patternWords) }
             IconButton(onClick = onAddCalendar) { Icon(Icons.Outlined.LibraryAdd, "새 달력 만들기") }
         }
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
@@ -2732,7 +2744,11 @@ private fun PaintBar(
             }
             // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): kinds put away ('안 쓰는 종류') are not offered to paint with.
             val folded = com.bamnat.app.ui.shifts.foldedHere()
-            val paintTypes = remember(snapshot.shiftTypes, folded) { snapshot.shiftTypes.filter { it.id !in folded } }
+            // 2.0.0 [RVG-10] 검토 CAL-08 (PC 9차: 가게의 칠하기 키가 주간·오후·야간): a shop paints its own 영업 kinds, as its day sheet offers.
+            val paintStyle = ExtraText.styleHere()
+            val paintTypes = remember(snapshot, folded, paintStyle) {
+                if (paintStyle == com.bamnat.core.work.WorkStyle.BUSINESS) dayTypes(snapshot, paintStyle, null, folded) else snapshot.shiftTypes.filter { it.id !in folded }
+            }
             val keys: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
                 // The chips say what a tap on the calendar will do, for TalkBack.
                 for (type in paintTypes) {
@@ -2765,7 +2781,10 @@ private fun PaintBar(
                 // [CAL-09] Leave and 알람 끄기 painted like shifts, for work kept in shifts.
                 if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS || snapshot.hasPattern) {
                     VerticalDivider(Modifier.height(32.dp).align(Alignment.CenterVertically))
+                    // [RVG-10] An owner (가게·투자) has no 연차 of their own: only 알람 끄기 is painted.
+                    val ownerPaint = paintStyle == com.bamnat.core.work.WorkStyle.BUSINESS || paintStyle == com.bamnat.core.work.WorkStyle.INVEST
                     for (m in DayMark.entries) {
+                        if (ownerPaint && m.leave != null) continue
                         FilterChip(
                             selected = mark == m,
                             onClick = {

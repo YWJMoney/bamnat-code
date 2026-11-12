@@ -36,6 +36,19 @@ class StaffContractTest {
         assertTrue(StaffContract.doc(place, s, c).title.startsWith("단시간"))
     }
 
+    /** 2.0.0 [RVG-03] 검토 BOSS-51: 한 주 15시간 미만은 5인 이상이어도 제60조 연차가 없어요(제18조 제3항). */
+    @Test fun underFifteenHoursHasNoAnnualLeave() {
+        val four = StaffShift(LocalTime.of(10, 0), LocalTime.of(14, 0))
+        val short = s.copy(weekly = mapOf(DayOfWeek.SATURDAY to four, DayOfWeek.SUNDAY to four))
+        val body = StaffContract.of(place.copy(fivePlus = true), short).items.associate { it.title to it.body }
+        assertTrue(body.getValue("연차 유급휴가").contains("15시간 미만"))
+        assertFalse(body.getValue("연차 유급휴가").contains("15일"))
+        assertTrue(body.getValue("휴일").contains("15시간 미만"))
+        // 15시간 이상, 5인 이상은 그대로 제60조.
+        val full = StaffContract.of(place.copy(fivePlus = true), s).items.associate { it.title to it.body }
+        assertTrue(full.getValue("연차 유급휴가").startsWith("근로기준법 제60조에 따라"))
+    }
+
     @Test fun saysWhatIsMissing() {
         val c = StaffContract.of(place.copy(payday = null), s.copy(job = "", hiredOn = null, weekly = emptyMap()))
         assertEquals(listOf("입사일(근로 시작일)", "하는 일(업무)", "평소 근무 요일·시간", "급여 지급일(사업장 설정)"), c.missing)
