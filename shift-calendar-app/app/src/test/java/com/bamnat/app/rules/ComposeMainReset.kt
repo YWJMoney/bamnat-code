@@ -14,6 +14,7 @@ import kotlin.coroutines.ContinuationInterceptor
  */
 object ComposeMainReset {
     fun now() {
+        leftovers()
         val ui = AndroidUiDispatcher.CurrentThread[ContinuationInterceptor] as? AndroidUiDispatcher ?: return
         val type = AndroidUiDispatcher::class.java
         fun flag(name: String) = type.getDeclaredField(name).apply { isAccessible = true }
@@ -22,6 +23,19 @@ object ComposeMainReset {
         // Both read under the dispatcher's own lock; the test thread is its main thread, so nothing else runs now.
         if (flag("scheduledTrampolineDispatch").getBoolean(ui)) handler.post(callback as Runnable)
         if (flag("scheduledFrameDispatch").getBoolean(ui)) ui.choreographer.postFrameCallback(callback as Choreographer.FrameCallback)
+    }
+
+    /**
+     * 2.0.0 HQ-93 (총괄, LinkOwnerTest in full runs 2 of 3): the app's screen-wide objects live as long as the JVM too. A line an earlier
+     * test left in [com.bamnat.app.ui.components.AppSnack]'s queue (Robolectric's clock starts again each test, so it never went
+     * stale) showed on the next test's screen over what it pressed: the summary's '가족·동료 근무표였어요' sat just above the bottom bar,
+     * under that line, and the press never reached it. Emptied here as [com.bamnat.app.screenshots.ScreenshotBase] does for shots: the
+     * snack queue, the opening windows' turns and what counts as open.
+     */
+    fun leftovers() {
+        com.bamnat.app.ui.components.AppSnack.resetForTest()
+        com.bamnat.app.ui.components.AskTurn.resetForTest()
+        com.bamnat.app.ui.components.Busy.resetForTest()
     }
 
     /** [now] before everything else of a test, ahead of a Compose rule: `@get:Rule(order = Int.MIN_VALUE)`. */

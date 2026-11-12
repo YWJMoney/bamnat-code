@@ -9,6 +9,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.printToString
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.assertIsEnabled
@@ -184,20 +187,45 @@ class LinkOwnerTest {
         c.setupDrafts.save(LinkStart.draft(com.bamnat.app.share.SharedSchedule.parse(raw("family")), java.time.LocalDate.of(2026, 11, 12))!!)
         val vm = SetupViewModel(c)
         var said: String? = null
-        window({ SetupHost(vm, onNotMine = { said = it }) }) {
+        // HQ-93: what reached the screen, seen last (after the button had its turn), so a miss says whether the press came at all, where,
+        // and whether anything took it.
+        val seen = mutableListOf<String>()
+        window({
+            androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val e = awaitPointerEvent(androidx.compose.ui.input.pointer.PointerEventPass.Final)
+                        e.changes.forEach { ch -> seen += "${e.type} at ${ch.position} ${if (ch.isConsumed) "taken" else "not taken"}" }
+                    }
+                }
+            }) { SetupHost(vm, onNotMine = { said = it }) }
+        }) {
             compose.onNodeWithText("근무 이름과 시간, 날짜를 그대로 넣었어요.").assertDoesNotExist()
             // 디자인 품질 조건 9·14 (총괄 #456): a 48dp button, read out by its own words.
-            compose.onNodeWithText("가족·동료 근무표였어요").pressable("가족·동료 근무표였어요")
-            // P #492 CI (once, a full run; not seen again in full runs here or on the integration branch): the press came back without the
-            // name. The press's answer is waited for (a busy CI may take a frame more), and a miss says where the draft stood: replaced
-            // (another writer) or untouched (the press never reached the button).
+            val button = compose.onNodeWithText("가족·동료 근무표였어요")
+            button.pressable("가족·동료 근무표였어요")
             fun where() = c.setupDrafts.draft.value.let { d -> if (d == null) "draft gone" else "draft at ${d.step}, link '${d.linkTitle}'" }
             assertEquals("before the press: ${where()}", "민지", c.setupDrafts.draft.value?.linkTitle)
-            compose.onNodeWithText("가족·동료 근무표였어요").assertIsEnabled().performClick()
-            runCatching { compose.waitUntil(5_000) { said != null } }
-            assertEquals("after the press: ${where()}", "민지", said)
+            button.assertIsEnabled().performClick()
+            // HQ-93 (총괄, full runs 2 of 3): the press came back without the name and the draft untouched, also after 5 seconds. The
+            // cause was a line an earlier test left in the app's one snack queue (AppSnack, kept for the whole JVM): it showed here, just
+            // above the bottom bar, over this button, and took the press. ComposeMainReset now empties it before each test. Only a wait
+            // that runs out is let through here; anything the press threw fails the test as itself, and a miss says what was on screen.
+            try { compose.waitUntil(5_000) { said != null } } catch (_: androidx.compose.ui.test.ComposeTimeoutException) {}
+            if (said == null) throw AssertionError("after the press: ${where()}; ${screen(button)}; events: $seen")
+            assertEquals("민지", said)
             assertNull(c.setupDrafts.draft.value)
         }
+    }
+
+    /** HQ-93: where the button was, on what window, and what else was drawn there, for a press that did not land. */
+    private fun screen(button: androidx.compose.ui.test.SemanticsNodeInteraction): String {
+        val roots = compose.onAllNodes(androidx.compose.ui.test.isRoot()).fetchSemanticsNodes(atLeastOneRootRequired = false)
+        val node = runCatching { button.fetchSemanticsNode() }.getOrNull()
+        val shown = runCatching { button.assertIsDisplayed() }.isSuccess
+        val tree = runCatching { compose.onAllNodes(androidx.compose.ui.test.isRoot()).printToString(maxDepth = 12) }.getOrElse { "tree: $it" }
+        val line = com.bamnat.app.ui.components.AppSnack.current?.visuals?.message
+        return "button ${node?.boundsInRoot} shown=$shown; snack line ${line?.let { "'$it'" } ?: "none"}; roots ${roots.map { it.size }}; ${tree.take(6000)}"
     }
 
     /** 디자인 품질 조건 9·14: at least 48dp tall to press, a button, and read out as its words (nothing else said for it). */
