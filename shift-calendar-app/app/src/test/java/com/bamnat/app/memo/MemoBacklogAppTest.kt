@@ -11,10 +11,9 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.ui.memo.OldWay
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoReminder
-import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -35,7 +34,7 @@ import org.robolectric.annotation.Config
 class MemoBacklogAppTest {
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val nm = context.getSystemService(NotificationManager::class.java)
-    private fun millis(t: LocalDateTime) = t.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    private fun millis(t: LocalDateTime) = t.atZone(Today.zone()).toInstant().toEpochMilli()
 
     @Before fun channels() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
@@ -43,7 +42,7 @@ class MemoBacklogAppTest {
     }
 
     @Test fun atWorkTheyWaitAndComeInOneCardWhenItEnds() {
-        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val at = LocalDateTime.of(Today.date(), LocalTime.of(15, 0))
         val end = at.toLocalDate().atTime(18, 0)
         val memos = listOf(
             Memo(id = 1, title = "약 받기", date = at.toLocalDate(), reminder = MemoReminder(at, ring = false, notify = true)),
@@ -69,7 +68,7 @@ class MemoBacklogAppTest {
     }
 
     @Test fun aRingingOneRingsOnTimeAndTheSwitchTurnsTheWaitOff() {
-        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val at = LocalDateTime.of(Today.date(), LocalTime.of(15, 0))
         val told = Memo(id = 3, title = "물 마시기", date = at.toLocalDate(), reminder = MemoReminder(at, ring = false, notify = true))
         // Not at work (the switch off gives no end): told at once.
         MemoScheduleAlarm.handle(context, listOf(told), millis(at), now = millis(at) + 30_000, workEnd = { null })
@@ -82,7 +81,7 @@ class MemoBacklogAppTest {
 
     @Test fun aDayOffsMorningCardOnceAWithItsThreeAnswers() = runBlocking<Unit> {
         val repo = context.appContainer.memoRepository
-        val today = LocalDate.now()
+        val today = Today.date()
         val a = repo.save(Memo(date = today.minusDays(2), title = "약 받기", reminder = MemoReminder(today.minusDays(2).atTime(15, 0), ring = false, notify = true)))
         val b = repo.save(Memo(date = today.minusDays(12), title = "서류 내기", reminder = MemoReminder(today.minusDays(12).atTime(10, 0), ring = false, notify = true)))
         repo.save(Memo(date = today.minusDays(1), title = "회식"))
