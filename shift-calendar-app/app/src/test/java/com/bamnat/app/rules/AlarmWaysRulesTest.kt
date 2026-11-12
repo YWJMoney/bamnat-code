@@ -36,6 +36,7 @@ class AlarmWaysRulesTest {
         "widget/WidgetRefresher.kt" to Way.EXACT, // 2.0.0 [RVI-37] the widgets' new day at midnight (a 1-minute window when refused)
         // Notices for which some minutes do not matter.
         "alarm/AlarmGuard.kt" to Way.ROUGH,
+        "alarm/GapNotice.kt" to Way.ROUGH, // 2.0.0 [RVIB-21] 둘째 구간 알림, 10 minutes before the later part (a 1-minute window)
         "alarm/LeaveTimeNotice.kt" to Way.ROUGH,
         "alarm/TodayShiftNotice.kt" to Way.ROUGH, // 2.0.0 [RVI-97] the lock screen's 오늘 근무 bar drawn again (a 1-minute window)
         "calendar/DateNoticeAlarm.kt" to Way.ROUGH,

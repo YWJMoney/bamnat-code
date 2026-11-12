@@ -26,7 +26,7 @@ import java.time.LocalDateTime
  * its own channel; on a phone without the notification permission it is passed over quietly ([Notifications.post]).
  */
 object GapNotice {
-    const val ID = 7640
+    const val ID = 7323
     const val LEAD_MINUTES = 10L
     private const val REQUEST = 3740
     private const val REQUEST_OPEN = 3741
