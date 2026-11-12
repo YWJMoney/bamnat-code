@@ -131,10 +131,181 @@ B.ready.then(function(){
 B.shareButton($('share'),'야간·연장·휴일수당 계산 결과');
 })();''',
     [('야간수당은 몇 시부터인가요?', '밤 10시부터 다음 날 아침 6시 사이에 일한 시간에 통상임금의 50%를 더 받아요(근로기준법 제56조 제3항). 야간이 연장이나 휴일과 겹치면 각각 더해요.'),
-     ('연장수당은 언제 붙나요?', '하루 8시간이나 1주 40시간을 넘게 일한 시간에 50%를 더 받아요. 이 계산기는 하루 8시간 기준만 셈해요. 1주 40시간 초과까지 보려면 한 주 근무를 모두 넣어야 해서 밤낮 앱에서 저절로 계산해요.'),
+     ('연장수당은 언제 붙나요?', '하루 8시간이나 1주 40시간을 넘게 일한 시간에 50%를 더 받아요. 이 계산기는 하루 8시간 기준만 셈해요. 1주 40시간 초과까지 보려면 한 주 연장·야간·휴일 계산기에 요일마다 출퇴근을 넣어요.'),
      ('휴일에 일하면 얼마나 더 받나요?', '휴일에 일한 시간 중 8시간까지는 50%, 8시간을 넘은 시간은 100%를 더 받아요(근로기준법 제56조 제2항).'),
      ('5명 미만 회사도 받을 수 있나요?', '상시 근로자가 5명 미만이면 야간·연장·휴일 가산수당 규정이 적용되지 않아요. 다만 일한 시간만큼의 기본 시급과 주휴수당은 받아요.')],
     'allowance', '야간 근무가 많은 달, 이번 달 월급은?', '밤낮에 근무표를 넣으면 근무마다 야간·연장·휴일 시간을 나눠 수당까지 담은 이번 달 예상 월급을 보여 줘요. 명세서와 다르면 근무 종류마다 시수를 맞출 수 있어요.', 2))
+
+# ---------- 요일 7줄 (사장님 인건비·한 주 계산기) ----------
+WD = ['월', '화', '수', '목', '금', '토', '일']
+
+
+def week_grid(work='12345', start='09:00', end='18:00'):
+    """요일 단추(누르면 일하는 날·쉬는 날)와 출근·퇴근 칸 7줄. 쉬는 날은 칸이 잠겨요(B.weekGrid)."""
+    rows = []
+    for i, d in enumerate(WD, 1):
+        on = str(i) in work
+        rows.append(
+            f'<div class="wk-row{"" if on else " off"}" id="r{i}">'
+            f'<button type="button" class="wk-day" id="w{i}" aria-pressed="{"true" if on else "false"}" aria-label="{d}요일에 일해요">{d}</button>'
+            f'<input type="time" id="s{i}" value="{start}" aria-label="{d}요일 출근"{"" if on else " disabled"}>'
+            f'<span class="wk-to" aria-hidden="true">~</span>'
+            f'<input type="time" id="e{i}" value="{end}" aria-label="{d}요일 퇴근"{"" if on else " disabled"}></div>')
+    return (f'<input type="hidden" id="on" value="{work}"><div class="wk" role="group" aria-label="요일별 출근·퇴근">' + ''.join(rows) + '</div>'
+            '<span class="hint">요일을 누르면 일하는 날·쉬는 날이 바뀌어요. 자정을 넘기면 퇴근에 다음 날 시각을 적어요.</span>')
+
+
+def boss_rate_text(y):
+    p, h, c, u = rate(y, 'pensionRate') / 2, rate(y, 'healthRate') / 2, rate(y, 'longTermCareRate'), rate(y, 'unemploymentRate') / 2
+    total = p + h + c / 2 + u + 0.0025
+    return p, h, c / 2, u + 0.0025, total
+
+
+def boss_faq_rates(y):
+    p, h, c, u, total = boss_rate_text(y)
+    return (f'{y}년 사업주 몫은 국민연금 {pct(p)}, 건강보험 {pct(h)}, 장기요양 {pct(c, 4)}, 고용보험 {pct(u, 2)}(실업급여 {pct(u - 0.0025, 2)} + '
+            f'고용안정·직업능력개발 0.25%, 150명 미만)로 월급의 약 {total * 100:.1f}%예요. 산재보험은 업종마다 달라 따로 내요.')
+
+
+# ---------- 사장님 인건비 [I50b-01·T50-09] ----------
+write('calc/boss/', page(
+    'calc/boss/', f'사장님 인건비 계산기 (주휴·4대보험 사업주 몫) | 밤낮',
+    f'알바·직원 시급과 요일별 근무로 주휴수당과 사업주 4대보험까지 한 달 인건비를 계산해요. {YEARS_TXT} 요율.',
+    '사장님 인건비 계산기', '직원 한 명을 쓰면 한 달에 얼마가 드는지 봐요. 시급과 일하는 요일만 넣으면 주휴수당과 사업주가 내는 4대보험까지 더해요.',
+    f'''<div class="card">
+  <label for="wage">시급 (원)</label>
+  <input id="wage" {DATA_MONEY} data-max="1000000">
+  <div class="chips" id="years" role="group" aria-label="최저시급으로 채우기"></div>
+  <span class="glabel" id="daysL">일하는 요일과 시간</span>
+  <div class="chips" id="preset" role="group" aria-label="자주 쓰는 근무로 채우기">
+    <button type="button" class="chip" data-days="12345" data-s="09:00" data-e="18:00">평일 9&#8288;–&#8288;18</button>
+    <button type="button" class="chip" data-days="12345" data-s="18:00" data-e="23:00">평일 저녁 18&#8288;–&#8288;23</button>
+    <button type="button" class="chip" data-days="67" data-s="10:00" data-e="20:00">주말 10&#8288;–&#8288;20</button>
+    <button type="button" class="chip" data-days="1234567" data-s="11:00" data-e="15:00">매일 점심 11&#8288;–&#8288;15</button>
+  </div>
+  {week_grid()}
+  <label class="check"><input type="checkbox" id="breaks" checked> 휴게 시간 빼기 (4시간이면 30분, 8시간 30분부터 1시간)</label>
+  <label class="check"><input type="checkbox" id="insured" checked> 4대보험에 가입해요</label>
+  <span class="glabel" id="monthL">어느 달</span>
+  <div class="chips" id="month" role="group" aria-labelledby="monthL"></div>
+  <label for="people">이 근무로 일하는 직원 수</label>
+  <input id="people" inputmode="numeric" value="1" data-min="1" data-max="50" data-unit="명">
+</div>
+{result('한 달 인건비 (사업주 부담 포함)')}''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,D=B.d,year=new Date().getFullYear(),save=function(){};
+var grid=B.weekGrid(calc);
+var t=D.today(),ms=[0,1].map(function(k){var x=D.plusMonths(new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),1)),k);return D.iso(x).slice(0,7);});
+$('month').innerHTML=ms.map(function(m,i){return '<button type="button" class="chip" data-v="'+m+'" aria-pressed="'+(i===0)+'">'+(+m.slice(5))+'월'+(i===0?' (이번 달)':'')+'</button>';}).join('');
+var month=B.chips($('month'),function(){calc();});
+$('preset').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;grid.fill(b.dataset.days,b.dataset.s,b.dataset.e);calc();});
+function hm(x){return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');}
+function calc(){
+  var w=B.val('wage'),days=grid.read().filter(function(d){return d.work;}).map(function(d){return [d.day,d.s,d.e];}),n=Math.max(1,Math.round(B.val('people')||1));
+  if(!w||!days.length){$('out').textContent='-';$('lines').innerHTML=B.rows([days.length?null:{note:'일하는 요일을 하나 이상 골라 주세요.'}]);save();return;}
+  var m=month.get()||ms[0],r=F.labor({month:m,wage:w,days:days,breaks:$('breaks').checked,insured:$('insured').checked,shortOff:true}),rows=[];
+  rows.push([(+m.slice(5))+'월 일한 시간 ('+r.workDays+'일)',hm(r.minutes)]);
+  rows.push(['기본급 (시간 × 시급)',B.won(r.base)]);
+  if(r.holMin)rows.push(['주휴수당 ('+B.fmt(r.holMin/60)+'시간 × 일요일 '+r.sundays+'번)',B.won(r.holiday)]);
+  else rows.push({note:'1주 '+B.fmt(r.week/60)+'시간이라 주휴수당이 없어요(1주 15시간부터).'});
+  rows.push(['직원이 받는 돈 (세전)',B.won(r.pay),'sum']);
+  if(r.ins){var x=r.ins;
+    if(r.short)rows.push({note:'주 15시간 미만은 국민연금·건강보험 가입 대상이 아니라 사업주 몫도 없어요(1개월 60시간 미만). 고용보험은 3개월 넘게 일하면 내요.'});
+    else rows.push(['국민연금 '+B.fmt(x.pensionRate*100,3)+'%',B.won(x.pension)],['건강보험 '+B.fmt(x.healthRate*100,3)+'%',B.won(x.health)],['장기요양',B.won(x.care)]);
+    rows.push(['고용보험 '+B.fmt(x.employmentRate*100,2)+'%',B.won(x.employment)]);}
+  rows.push(['한 달 인건비',B.won(r.total),'sum']);
+  rows.push(['주휴 포함 실제 시급',B.won(r.perHour)]);
+  if(r.ins)rows.push(['사업주 부담까지 1시간에',B.won(r.costPerHour)]);
+  if(n>1)rows.push(['직원 '+n+'명이면',B.won(r.total*n),'sum']);
+  if(!r.short)rows.push({note:'퇴직금: 1년 넘게 일하면 따로 줘요. 한 달에 약 '+B.won(Math.round(r.pay/12/10)*10)+'씩(세전의 12분의 1쯤) 모아 두면 편해요(근로자퇴직급여 보장법 제8조).'});
+  rows.push({note:'산재보험(업종마다 다름)은 빠졌어요. 밤 10시~아침 6시·하루 8시간·주 40시간을 넘는 가산은 <a href="../week/">한 주 연장·야간·휴일 계산기</a>에서 봐요.'});
+  var min=B.rateOn(B.dayOf(+m.slice(0,4))).minimumHourlyWage;if(min&&w<min)rows.push({note:m.slice(0,4)+'년 최저시급 '+B.won(min)+'보다 낮아요.',warn:1});
+  $('out').textContent=B.won(r.total*n);$('lines').innerHTML=B.rows(rows);save();
+}
+B.ready.then(function(){
+  year=B.years()[0];var put=function(y){$('wage').value=B.rateOn(B.dayOf(y)).minimumHourlyWage.toLocaleString('ko-KR');};
+  B.yearChips($('years'),function(y){year=y;put(y);calc();});put(year);
+  save=B.keep(['wage','breaks','insured','people'].concat(grid.ids),{month:month});grid.sync();calc();
+});
+['wage','breaks','insured','people'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});
+B.shareButton($('share'),'사장님 인건비 계산 결과');
+})();''',
+    [('알바 한 명 인건비는 얼마인가요?', '시급 × 일한 시간에 주휴수당(1주 15시간 이상)을 더한 것이 직원이 받는 돈이고, 4대보험에 가입하면 사업주 몫을 더 내요. ' + boss_faq_rates(THIS)),
+     ('5명 미만 가게도 주휴수당을 줘야 하나요?', '네. 1주에 일하기로 한 시간이 15시간 이상이고 그 주를 다 나왔으면 사업장 크기와 상관없이 주휴수당을 줘요(근로기준법 제55조, 제18조 제3항). 5명 미만에서 빠지는 것은 야간·연장·휴일 가산수당 등이에요.'),
+     ('주 15시간보다 적게 일하는 알바도 4대보험에 넣나요?', '1개월 소정근로시간이 60시간 미만이면 국민연금·건강보험 사업장 가입 대상이 아니에요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조). 고용보험은 3개월 넘게 계속 일하면 넣고, 산재보험은 모두 적용돼요.'),
+     ('주휴수당은 한 달에 몇 번 주나요?', '주휴일이 그달에 든 주마다 줘요. 이 계산기는 주휴일을 일요일로 보고 그달 일요일 수만큼 셈해서, 달마다 4번이나 5번이에요(밤낮 앱 사장님 인건비와 같은 셈).'),
+     ('퇴직금도 인건비로 잡아야 하나요?', '1년 넘게 주 15시간 이상 일한 직원이 그만두면 1년에 30일분 평균임금 이상을 퇴직금으로 줘요(근로자퇴직급여 보장법 제8조). 그래서 매달 세전의 12분의 1쯤을 따로 모아 두는 사장님이 많아요.')],
+    'boss', '직원 근무표로 인건비를 매달 저절로', '밤낮 사장님 화면에 직원과 요일별 근무를 넣으면 이번 달 인건비·인건비율을 매출과 함께 보여 줘요. 주휴와 4대보험 사업주 몫도 같은 식으로 셈해요.', 2))
+
+# ---------- 한 주 연장·야간·휴일 [I50b-03] ----------
+write('calc/week/', page(
+    'calc/week/', '한 주 연장·야간·휴일수당 계산기 (주 40·52시간) | 밤낮',
+    '요일별 출퇴근을 넣으면 하루 8시간·주 40시간을 넘은 연장, 야간, 휴일 근로와 가산수당, 주 52시간을 함께 봐요.',
+    '한 주 연장·야간·휴일 계산기', '한 주 출퇴근을 요일마다 넣으면 하루 8시간을 넘은 연장과 주 40시간을 넘은 연장 중 큰 쪽, 밤 10시~아침 6시 야간, 휴일 근로를 나눠 가산수당까지 셈해요.',
+    f'''<div class="card">
+  <label for="wage">시급 (원)</label>
+  <input id="wage" {DATA_MONEY} data-max="1000000">
+  <div class="chips" id="years" role="group" aria-label="최저시급으로 채우기"></div>
+  <span class="glabel" id="daysL">이번 주 출근·퇴근</span>
+  <div class="chips" id="preset" role="group" aria-label="예시로 채우기">
+    <button type="button" class="chip" data-days="12345" data-s="09:00" data-e="18:00">평일 9&#8288;–&#8288;18</button>
+    <button type="button" class="chip" data-days="12345" data-s="09:00" data-e="21:00">평일 야근 9&#8288;–&#8288;21</button>
+    <button type="button" class="chip" data-days="123456" data-s="09:00" data-e="18:00">주 6일 9&#8288;–&#8288;18</button>
+    <button type="button" class="chip" data-days="12345" data-s="22:00" data-e="07:00">야간 22&#8288;–&#8288;07</button>
+    <button type="button" class="chip" data-plan="1@07:00-19:00,2@07:00-19:00,3@19:00-07:00,4@19:00-07:00">2교대 주주야야</button>
+  </div>
+  {week_grid()}
+  <span class="glabel" id="holL">유급휴일 (주휴일·공휴일)<span class="hint">휴일에 일한 시간은 휴일 근로예요. 보통 일요일이 주휴일이에요.</span></span>
+  <input type="hidden" id="hol" value="7">
+  <div class="chips wd" id="hols" role="group" aria-labelledby="holL">{''.join(f'<button type="button" class="chip" data-d="{i}" aria-pressed="{"true" if i == 7 else "false"}" aria-label="{d}요일 휴일">{d}</button>' for i, d in enumerate(WD, 1))}</div>
+  <label for="rest">하루 휴게 시간 (분)<span class="hint">비우면 법대로 빼요: 4시간이면 30분, 8시간 30분부터 1시간. 휴게는 근무 시간에 고르게 나눠 빼요.</span></label>
+  <input id="rest" inputmode="numeric" placeholder="법대로" data-max="720" data-unit="분">
+  <label class="check"><input type="checkbox" id="small"> 상시 5명 미만 사업장이에요 (가산수당·52시간 상한 없음)</label>
+</div>
+{result('이번 주 받을 금액 (가산 포함)')}''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,year=new Date().getFullYear(),save=function(){};
+var grid=B.weekGrid(calc);
+function holSync(){var v=$('hol').value;[].forEach.call($('hols').querySelectorAll('.chip'),function(c){c.setAttribute('aria-pressed',v.indexOf(c.dataset.d)>=0?'true':'false');});}
+$('hols').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');
+  $('hol').value=[].filter.call($('hols').querySelectorAll('.chip'),function(c){return c.getAttribute('aria-pressed')==='true';}).map(function(c){return c.dataset.d;}).join('');calc();});
+$('preset').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;if(b.dataset.plan)grid.plan(b.dataset.plan);else grid.fill(b.dataset.days,b.dataset.s,b.dataset.e);calc();});
+function hm(x){x=Math.round(x);return Math.floor(x/60)+'시간'+(x%60?' '+(x%60)+'분':'');}
+function calc(){
+  var w=B.val('wage'),restIn=$('rest').value.trim(),rest=restIn===''?null:B.val('rest'),g=grid.read(),hol=$('hol').value;
+  var days=g.map(function(d){if(!d.work)return null;var sp=F.span(d.s,d.e);return {s:d.s,e:d.e,rest:rest==null?F.legalBreak(sp):Math.min(rest,sp)};});
+  if(!w||!days.some(Boolean)){$('out').textContent='-';$('lines').innerHTML=B.rows([days.some(Boolean)?null:{note:'일한 요일을 하나 이상 골라 주세요.'}]);save();return;}
+  var small=$('small').checked,r=F.week({days:days,holidays:[1,2,3,4,5,6,7].map(function(i){return hol.indexOf(String(i))>=0;}),wage:w,small:small}),rows=[];
+  rows.push(['일한 시간 (휴게 '+hm(r.rest)+' 뺌)',hm(r.worked)]);
+  if(r.overtime)rows.push(['그중 연장'+(r.daily&&r.weekly?' (하루 8시간 넘음 '+hm(r.daily)+' · 주 40시간 넘음 '+hm(r.weekly)+')':r.weekly?' (주 40시간 넘음)':' (하루 8시간 넘음)'),hm(r.overtime)]);
+  if(r.night)rows.push(['그중 야간 (22~06시)',hm(r.night)]);
+  if(r.hWithin||r.hOver)rows.push(['그중 휴일 근로'+(r.hOver?' (8시간 넘음 '+hm(r.hOver)+')':''),hm(r.hWithin+r.hOver)]);
+  rows.push(['기본 (시간 × 시급)',B.won(r.base)]);
+  if(small)rows.push({note:'5명 미만 사업장은 연장·야간·휴일 가산을 주지 않아도 돼요(근로기준법 제11조). 일한 시간만큼의 시급과 주휴수당은 받아요.'});
+  else{if(r.overtime)rows.push(['연장 가산 50%',B.won(r.ext)]);if(r.night)rows.push(['야간 가산 50%',B.won(r.nightP)]);
+    if(r.hWithin||r.hOver)rows.push(['휴일 가산 (8시간까지 50%, 넘으면 100%)',B.won(r.holP)]);}
+  rows.push(['이번 주 합계',B.won(r.sum),'sum']);
+  if(r.holMin)rows.push(['주휴수당 (그 주를 다 나왔다면, 주휴 '+B.fmt(r.holMin/60)+'시간)',B.won(r.holPay)],['주휴 포함',B.won(r.sum+r.holPay),'sum']);
+  if(r.over52&&!small)rows.push({note:'이번 주 '+hm(r.worked)+'이에요. 주 52시간(40시간 + 연장 12시간, 휴일 근로 포함)을 넘었어요(근로기준법 제53조).',warn:1});
+  else if(r.over52)rows.push({note:'5명 미만 사업장은 주 52시간 상한이 적용되지 않아요(근로기준법 제11조).'});
+  if(r.hWithin||r.hOver)rows.push({note:'휴일에 일한 시간도 주 40시간을 채워요. 그 시간은 휴일 가산만 받고, 그 뒤 날의 40시간 넘는 시간이 연장이에요(근로기준법 제2조 제1항 제7호).'});
+  var min=B.rateOn(B.dayOf(year)).minimumHourlyWage;if(min&&w<min)rows.push({note:year+'년 최저시급 '+B.won(min)+'보다 낮아요.',warn:1});
+  $('out').textContent=B.won(r.sum);$('lines').innerHTML=B.rows(rows);save();
+}
+B.ready.then(function(){
+  year=B.years()[0];var put=function(y){$('wage').value=B.rateOn(B.dayOf(y)).minimumHourlyWage.toLocaleString('ko-KR');};
+  B.yearChips($('years'),function(y){year=y;put(y);calc();});put(year);
+  save=B.keep(['wage','rest','small','hol'].concat(grid.ids));grid.sync();holSync();calc();
+});
+['wage','rest','small'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});
+B.shareButton($('share'),'한 주 연장·야간·휴일 계산 결과');
+})();''',
+    [('연장근로는 어떻게 세나요?', '하루 8시간을 넘은 시간과, 한 주(휴일 포함 7일) 40시간을 넘은 시간 가운데 큰 쪽이 연장이에요(근로기준법 제50조·제56조). 하루 8시간씩 6일이면 하루 넘은 시간은 없지만 주 40시간을 8시간 넘어서 8시간이 연장이에요.'),
+     ('휴일에 일한 시간도 주 40시간에 들어가나요?', '네. 근로기준법은 1주를 휴일을 포함한 7일로 정해서(제2조 제1항 제7호) 휴일에 일한 시간도 주 40시간과 52시간을 채워요. 다만 그 시간에는 휴일 가산(8시간까지 50%, 넘으면 100%)만 붙고 연장 가산이 겹치지 않아요(제56조 제2항).'),
+     ('주 52시간은 어떻게 보나요?', '1주 40시간에 연장 12시간을 더한 52시간이 한도예요(근로기준법 제53조). 휴일 근로도 들어가요. 상시 5명 미만 사업장에는 이 상한이 적용되지 않아요.'),
+     ('야간에 쉬었는데 야간 시간이 다르게 나와요.', '휴게 시각을 모를 때는 휴게를 근무 시간에 고르게 나눠 빼요(밤낮 앱과 같은 방법). 밤에만 쉬었다면 야간 시간이 조금 더 줄어요. 하루짜리는 야간·연장·휴일수당 계산기에서 휴게를 밤에 했는지 고를 수 있어요.'),
+     ('주휴수당도 함께 나오나요?', '1주 소정근로시간(휴일 근로를 빼고 연장 전)이 15시간 이상이면 그 주를 다 나왔다고 보고 주휴수당을 함께 보여 줘요. 월급제라면 주휴는 월급에 이미 들어 있어요.')],
+    'week', '근무표만 넣으면 매주 저절로', '밤낮에 근무를 넣으면 주마다 하루 8시간·주 40시간을 따져 연장·야간·휴일 시간을 나누고 이번 달 예상 월급에 넣어요. 52시간이 다가오면 미리 알려 줘요.', 2))
 
 # ---------- 알바 월급 ----------
 write('calc/alba/', page(
@@ -668,6 +839,8 @@ hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</stron
     ('juhyu/', '주휴수당 계산기', '시급과 1주 근무 시간으로 주휴수당과 월 환산'),
     ('alba/', '알바 월급 계산기', '주휴 포함 월급, 3.3%·4대보험 뺀 실수령, 이번 달 날수로'),
     ('allowance/', '야간·연장·휴일수당 계산기', '출퇴근 시각으로 밤 10시~아침 6시, 8시간 초과 시간을 나눠 계산'),
+    ('week/', '한 주 연장·야간·휴일 계산기', '요일별 출퇴근으로 하루 8시간·주 40시간 넘은 연장과 주 52시간'),
+    ('boss/', '사장님 인건비 계산기', '주휴수당과 사업주 4대보험까지 직원 한 달 인건비'),
     ('salary/', '월급·연봉 실수령액 계산기', '4대보험과 간이세액표 소득세를 뺀 통장 금액'),
     ('leave/', '연차 계산기', '입사일·회계연도 기준으로 지금 연차와 근속별 개수'),
     ('severance/', '퇴직금 계산기', '평균임금 × 30일 × 재직일수/365, 통상임금 비교'),

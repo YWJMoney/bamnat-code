@@ -50,7 +50,8 @@
   };
   B.won = function (n) { return Math.round(n).toLocaleString('ko-KR') + '원'; };
   B.minus = function (n) { return n > 0 ? '-' + B.won(n) : '0원'; };
-  B.fmt = function (n, digits) { return (Math.round(n * 100) / 100).toLocaleString('ko-KR', { maximumFractionDigits: digits == null ? 2 : digits }); };
+  // digits: 소수 몇 자리까지(기본 2). 요율 3.595%처럼 셋째 자리가 있는 값을 3.6%로 줄이지 않게 그 자리에서 반올림해요(2.0.0 [I50b-01]).
+  B.fmt = function (n, digits) { var d = digits == null ? 2 : digits, p = Math.pow(10, d); return (Math.round(n * p) / p).toLocaleString('ko-KR', { maximumFractionDigits: d }); };
   // 3000000 → "300만 원", 12345678 → "1,234만 5,678원", 150000000 → "1억 5,000만 원"
   B.read = function (n) {
     n = Math.floor(n);
@@ -233,6 +234,109 @@
     out.net = gross - out.ded;
     return out;
   };
+  // ---------- 근무 시간 (앱 core와 같은 식) ----------
+  // 법정 휴게(근로기준법 제54조): 4시간이면 30분, 8시간 30분부터 1시간(앱 core LegalBreak.minutesFor).
+  F.legalBreak = function (span) { return span >= 510 ? 60 : span >= 240 ? 30 : 0; };
+  // 출근·퇴근(0시부터 분) → 걸친 분. 퇴근이 출근보다 이르면 다음 날까지, 같으면 24시간(앱 core StaffShift.spanMinutes).
+  F.span = function (s, e) { var d = e - s; return d <= 0 ? d + 1440 : d; };
+  // 22~06시 안의 분([from, to)는 그 주 월요일 0시부터 센 분).
+  F.nightOf = function (from, to) {
+    var n = 0;
+    for (var d = Math.floor(from / 1440) - 1; d * 1440 < to; d++) {
+      var a = Math.max(from, d * 1440 + 1320), b = Math.min(to, d * 1440 + 1800);
+      if (b > a) n += b - a;
+    }
+    return n;
+  };
+
+  // ---------- 사장님 인건비 [I50b-01·T50-09] (앱 core LaborCost와 같은 식) ----------
+  // 사업주 4대보험: 국민연금·건강보험·장기요양은 근로자와 같은 몫, 고용보험은 실업급여 몫 + 고용안정·직업능력개발 0.25%
+  // (고용산재보험료징수법 시행령 제12조 제1항 제1호 가목, 150명 미만). 사업주 몫에는 건강보험 하한·상한을 두지 않아요(앱과 같음).
+  // off.pension·off.health: 주 15시간 미만은 국민연금·건강보험 사업장 가입 대상이 아니에요(국민연금법 시행령 제2조, 국민건강보험법 시행령 제9조).
+  F.STABILITY = 0.0025;
+  F.employer = function (pay, day, off) {
+    off = off || {};
+    var r = rowOn(day), pr = B.pensionRateOn(day), hr = r.healthRate != null ? r.healthRate : 0.0719, ur = r.unemploymentRate, pb = B.pensionBaseOn(day);
+    if (!(pay > 0)) return { pension: 0, health: 0, care: 0, employment: 0, total: 0, pensionRate: pr / 2, healthRate: hr / 2, employmentRate: ur / 2 + F.STABILITY };
+    var pension = off.pension ? 0 : B.cut10(Math.min(Math.max(Math.floor(pay / 1000) * 1000, pb.min), pb.max), pr / 2);
+    var health = off.health ? 0 : B.cut10(pay, hr / 2);
+    var cr = B.careRatioOn(day), care = B.cutRatio(health, cr[0], cr[1]);
+    var employment = off.employment ? 0 : B.cut10(pay, ur / 2 + F.STABILITY);
+    return { pension: pension, health: health, care: care, employment: employment, total: pension + health + care + employment,
+      pensionRate: pr / 2, healthRate: hr / 2, employmentRate: ur / 2 + F.STABILITY };
+  };
+  // o: { month: 'YYYY-MM', wage, days: [[요일 1(월)~7(일), 출근 분, 퇴근 분], …], breaks: 법정 휴게 빼기, insured: 4대보험, shortOff: 주 15시간 미만이면 연금·건강 빼기 }
+  // 그달 날마다 그 요일 근무를 더하고(시간 × 시급, 원 미만 반올림), 주휴는 1주 15시간 이상이면 min(1주 분 ÷ 5, 8시간) × 그달 일요일 수
+  // (주휴일이 그달에 든 주마다). 사업주 4대보험은 기본급 + 주휴에 그달 1일 요율로.
+  F.labor = function (o) {
+    var m = /^(\d{4})-(\d{2})$/.exec(o.month || ''), y = m ? +m[1] : 2026, mo = m ? +m[2] - 1 : 0;
+    var last = new Date(Date.UTC(y, mo + 1, 0)).getUTCDate(), paid = {};
+    (o.days || []).forEach(function (d) { var sp = F.span(d[1], d[2]); paid[d[0]] = sp - (o.breaks ? F.legalBreak(sp) : 0); });
+    var minutes = 0, workDays = 0, sundays = 0;
+    for (var i = 1; i <= last; i++) {
+      var wd = new Date(Date.UTC(y, mo, i)).getUTCDay() || 7;
+      if (paid[wd] != null) { minutes += paid[wd]; workDays++; }
+      if (wd === 7) sundays++;
+    }
+    var week = Object.keys(paid).reduce(function (a, k) { return a + paid[k]; }, 0);
+    var hol = week >= 900 ? Math.min(Math.floor(week / 5), 480) : 0;
+    var base = Math.round(minutes / 60 * o.wage), holiday = o.holidayPay === false ? 0 : Math.round(hol / 60 * o.wage * sundays), pay = base + holiday;
+    var short = week < 900, day = (m ? m[0] : '2026-01') + '-01';
+    var ins = o.insured ? F.employer(pay, day, short && o.shortOff ? { pension: true, health: true } : null) : null;
+    var insurance = ins ? ins.total : 0;
+    return { minutes: minutes, workDays: workDays, week: week, holMin: hol, sundays: sundays, base: base, holiday: holiday, pay: pay,
+      ins: ins, insurance: insurance, total: pay + insurance, short: short,
+      perHour: minutes ? pay / (minutes / 60) : 0, costPerHour: minutes ? (pay + insurance) / (minutes / 60) : 0 };
+  };
+
+  // ---------- 한 주 연장·야간·휴일 [I50b-03] (앱 core MinuteClassifier 기본값과 같은 식) ----------
+  // o.days: 월~일 7칸, 칸마다 { s: 출근 분, e: 퇴근 분, rest: 휴게 분 } 또는 null(쉬는 날). o.holidays: 월~일 7칸 true/false(유급휴일: 주휴일·공휴일).
+  // 하루: 휴게는 근무 시간에 고르게 나눠 빼요(휴게 시각을 모를 때 앱과 같음). 휴일(그날 0~24시) 안의 분은 휴일 근로(8시간까지 50%, 넘으면 100%,
+  // 제56조 제2항), 나머지는 하루 8시간까지 소정, 넘으면 연장. 휴일에 시작한 근무는 휴일 분이 먼저 8시간을 채워요(검토 PAYC-02).
+  // 한 주: 월요일부터 날짜 순으로 쌓아 40시간을 넘는 소정 분은 연장. 휴일 근로도 40시간을 채우되 그 분은 휴일 가산만 받아요
+  // (제2조 제1항 제7호 '1주는 휴일을 포함한 7일', 검토 PAYC-01). 야간(22~06시)은 무엇이든 50% 더해요(제56조 제3항).
+  F.week = function (o) {
+    var hols = o.holidays || [], isHol = function (i) { return i >= 0 && i < 7 && !!hols[i]; };
+    var days = [], used = 0, T = { regular: 0, overtime: 0, daily: 0, hWithin: 0, hOver: 0, night: 0, worked: 0, rest: 0 };
+    for (var i = 0; i < 7; i++) {
+      var d = o.days && o.days[i];
+      if (!d) { days.push(null); continue; }
+      var gross = F.span(d.s, d.e), rest = Math.min(Math.max(0, Math.round(d.rest || 0)), gross), paid = gross - rest;
+      var from = i * 1440 + d.s, to = from + gross, mid = (i + 1) * 1440;
+      var grossNext = Math.max(0, to - Math.max(from, mid));
+      var next = paid > 0 ? Math.min(Math.max(Math.round(grossNext * paid / gross), 0), paid) : 0;
+      var night = paid > 0 ? Math.round(F.nightOf(from, to) * paid / gross) : 0;
+      var onHol = (isHol(i) ? paid - next : 0) + (isHol(i + 1) ? next : 0), left = paid - onHol, slot = 480;
+      if (onHol > 0 && left > 0 && isHol(i)) slot -= Math.min(onHol, Math.max(slot, 0));
+      var hWithin = Math.min(onHol, 480), regular = Math.min(left, Math.max(slot, 0)), overtime = left - regular;
+      days.push({ paid: paid, rest: rest, regular: regular, overtime: overtime, daily: overtime, hWithin: hWithin, hOver: onHol - hWithin, night: night });
+    }
+    days.forEach(function (x) {
+      if (!x) return;
+      var over = Math.min(Math.max(used + x.regular - 2400, 0), x.regular);
+      used += x.regular - over + x.hWithin + x.hOver;
+      x.regular -= over; x.overtime += over;
+      ['regular', 'overtime', 'daily', 'hWithin', 'hOver', 'night', 'rest'].forEach(function (k) { T[k] += x[k]; });
+      T.worked += x.paid;
+    });
+    T.weekly = T.overtime - T.daily;
+    T.days = days;
+    // 주휴: 1주 소정(휴일 근로 빼고 연장 전) 15시간 이상이면 min(분 ÷ 5, 8시간). 그 주를 모두 나왔다고 보고 셈해요.
+    var plan = T.regular + T.weekly;
+    T.holMin = plan >= 900 ? Math.min(Math.floor(plan / 5), 480) : 0;
+    T.over52 = T.worked > 52 * 60;
+    if (o.wage != null) {
+      var h = function (x) { return x / 60 * o.wage; }, small = !!o.small;
+      T.base = h(T.worked);
+      T.ext = small ? 0 : h(T.overtime) * 0.5;
+      T.nightP = small ? 0 : h(T.night) * 0.5;
+      T.holP = small ? 0 : h(T.hWithin) * 0.5 + h(T.hOver) * 1.0;
+      T.sum = T.base + T.ext + T.nightP + T.holP;
+      T.holPay = h(T.holMin);
+    }
+    return T;
+  };
+
   // 일용근로소득: 하루 (일당 − 15만 원) × 6% × (1 − 55%) = 2.7%를 원 미만 버림. 받을 때(지급 한 번)마다 그 날들의 합에서
   // 10원 미만을 버리고(국고금 관리법 제47조), 1,000원 미만이면 떼지 않아요(소액부징수). 지방소득세는 그 소득세의 10%에서 10원 미만 버림.
   // 날마다 받으면 날마다 한 번의 지급이에요. 국세청 '일용근로자 원천징수' 예: 20만 원 5일 한 번에 → 6,750원·670원. 앱 core DailyWorkerTax와 같은 식.
@@ -436,6 +540,55 @@
         Object.keys(chipBoxes || {}).forEach(function (k) { var v = chipBoxes[k].get(); if (v != null) p.set(k, v); });
         try { history.replaceState(null, '', location.pathname + '?' + p.toString()); } catch (e) {}
       }, 250);
+    };
+  };
+  // [I50b-01·03] 요일 7줄: 요일 단추(일하는 날·쉬는 날, #on에 '12345'처럼 적어 결과 링크로 나눠요)와 출근·퇴근 칸. 쉬는 날은 칸이 잠겨요.
+  // 사장님 인건비·한 주 계산기가 같이 써요. 칸 모양은 public_pages.py week_grid().
+  B.weekGrid = function (onChange) {
+    var on = B.$('on'), N = [1, 2, 3, 4, 5, 6, 7];
+    var mins = function (t) { var p = /^(\d{1,2}):(\d{2})/.exec(t || ''); return p ? (+p[1]) * 60 + (+p[2]) : null; };
+    var works = function (i) { return on.value.indexOf(String(i)) >= 0; };
+    var paint = function () {
+      N.forEach(function (i) {
+        var w = works(i);
+        B.$('w' + i).setAttribute('aria-pressed', w ? 'true' : 'false'); B.$('r' + i).classList.toggle('off', !w);
+        B.$('s' + i).disabled = !w; B.$('e' + i).disabled = !w;
+      });
+    };
+    var setOn = function (list) { on.value = N.filter(function (i) { return list.indexOf(i) >= 0; }).join(''); paint(); };
+    N.forEach(function (i) {
+      B.$('w' + i).addEventListener('click', function () {
+        var list = N.filter(works), at = list.indexOf(i);
+        if (at >= 0) list.splice(at, 1);
+        else {
+          // 새로 켠 날은 가장 가까운 일하는 날의 시각을 따라요(같은 시간을 일곱 번 넣지 않게).
+          var near = list.slice().sort(function (a, b) { return Math.abs(a - i) - Math.abs(b - i) || a - b; })[0];
+          if (near) { B.$('s' + i).value = B.$('s' + near).value; B.$('e' + i).value = B.$('e' + near).value; }
+          list.push(i);
+        }
+        setOn(list); onChange();
+      });
+      ['s', 'e'].forEach(function (k) { var el = B.$(k + i); el.addEventListener('input', onChange); el.addEventListener('change', onChange); });
+    });
+    return {
+      ids: ['on'].concat(N.map(function (i) { return 's' + i; }), N.map(function (i) { return 'e' + i; })),
+      sync: paint,
+      read: function () {
+        return N.map(function (i) { var s = mins(B.$('s' + i).value), e = mins(B.$('e' + i).value); return { day: i, work: works(i) && s != null && e != null, s: s, e: e }; });
+      },
+      fill: function (days, s, e) {
+        N.forEach(function (i) { if (days.indexOf(String(i)) >= 0) { B.$('s' + i).value = s; B.$('e' + i).value = e; } });
+        setOn(N.filter(function (i) { return days.indexOf(String(i)) >= 0; }));
+      },
+      // '1@07:00-19:00,3@19:00-07:00': 요일마다 다른 근무(2교대 등).
+      plan: function (spec) {
+        var list = [];
+        spec.split(',').forEach(function (p) {
+          var m = /^([1-7])@(\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(p);
+          if (m) { list.push(+m[1]); B.$('s' + m[1]).value = m[2]; B.$('e' + m[1]).value = m[3]; }
+        });
+        setOn(list);
+      }
     };
   };
   B.shareButton = function (btn, title) {

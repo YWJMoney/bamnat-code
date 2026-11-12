@@ -95,6 +95,8 @@ test('칸 읽기: 전각 숫자·쉼표는 읽고, 음수·지수는 숫자가 �
   assert.equal(B.read(3000000), '300만 원');
   assert.equal(B.read(12345678), '1,234만 5,678원');
   assert.equal(B.fmt(3 * 4.9), '14.7');
+  assert.equal(B.fmt(0.0719 * 50, 3), '3.595', '요율 셋째 자리를 3.6으로 줄이지 않아요');
+  assert.equal(B.fmt(0.018 * 50, 2), '0.9');
   assert.equal(B.minus(0), '0원');
 });
 
@@ -114,4 +116,55 @@ test('국민연금: 자료에 없는 해는 법이 정한 요율', () => {
 test('Play 링크 출처는 늘 bamnat_web, 방문 출처는 utm_term에만', () => {
   const link = decodeURIComponent(B.playLink('juhyu', 'calc').split('referrer=')[1]);
   assert.equal(link, 'utm_source=bamnat_web&utm_medium=calc&utm_campaign=juhyu');
+});
+
+// 2.0.0 [I50b-01·T50-09] 사장님 인건비: core LaborCost와 같은 사례(WebCalcParityTest.labor).
+const hm = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+test('사장님 인건비: 그달 요일·일요일 주휴·사업주 4대보험', () => {
+  for (const c of cases.labor) {
+    const r = B.f.labor({ month: c.month, wage: c.wage, days: c.days.map((d) => [d[0], hm(d[1]), hm(d[2])]), breaks: c.breaks, insured: c.insured });
+    assert.deepEqual(pick(r, Object.keys(c.expect)), c.expect, c.name);
+    assert.equal(r.total, r.base + r.holiday + r.insurance, c.name);
+  }
+});
+
+test('사장님 인건비: 주 15시간 안 되면 국민연금·건강보험 사업주 몫이 없어요(웹만)', () => {
+  const days = [[6, hm('11:00'), hm('15:00')], [7, hm('11:00'), hm('15:00')]];
+  const off = B.f.labor({ month: '2026-11', wage: 10320, days, breaks: true, insured: true, shortOff: true });
+  assert.equal(off.short, true);
+  assert.deepEqual([off.ins.pension, off.ins.health, off.ins.care], [0, 0, 0]);
+  assert.ok(off.ins.employment > 0);
+  const all = B.f.labor({ month: '2026-11', wage: 10320, days, breaks: true, insured: true });
+  assert.ok(all.ins.pension > 0, '앱(core)처럼 shortOff 없이는 그대로');
+  assert.equal(B.f.employer(0, '2026-11-01').total, 0);
+  assert.equal(B.f.employer(2146560, '2026-11-01').employmentRate.toFixed(4), '0.0115');
+});
+
+// 2.0.0 [I50b-03] 한 주 연장·야간·휴일: core MinuteClassifier 기본값과 같은 사례(WebCalcParityTest.week).
+test('한 주: 하루 8시간·주 40시간 중 큰 쪽, 휴일도 40시간을 채워요', () => {
+  for (const c of cases.week) {
+    const days = c.days.map((d) => {
+      if (!d) return null;
+      const s = hm(d[0]), e = hm(d[1]);
+      return { s, e, rest: d[2] != null ? d[2] : B.f.legalBreak(B.f.span(s, e)) };
+    });
+    const r = B.f.week({ days, holidays: c.holidays.map(Boolean) });
+    assert.deepEqual(pick(r, Object.keys(c.expect)), c.expect, c.name);
+    assert.equal(r.worked, r.regular + r.overtime + r.hWithin + r.hOver, c.name);
+  }
+});
+
+test('한 주: 가산은 5명 미만이면 없고, 52시간을 넘으면 알려요', () => {
+  const day = { s: hm('09:00'), e: hm('21:00'), rest: 60 };
+  const r = B.f.week({ days: [day, day, day, day, day, day, null], holidays: [0, 0, 0, 0, 0, 0, 1], wage: 10000 });
+  assert.equal(r.over52, true);
+  assert.equal(Math.round(r.ext), Math.round(r.overtime / 60 * 10000 * 0.5));
+  const small = B.f.week({ days: [day, day, day, day, day, day, null], holidays: [0, 0, 0, 0, 0, 0, 1], wage: 10000, small: true });
+  assert.equal(small.ext + small.nightP + small.holP, 0);
+  assert.equal(small.sum, small.base);
+  assert.equal(B.f.nightOf(hm('22:00'), hm('22:00') + 540), 480);
+  assert.equal(B.f.legalBreak(239), 0);
+  assert.equal(B.f.legalBreak(240), 30);
+  assert.equal(B.f.legalBreak(509), 30);
+  assert.equal(B.f.legalBreak(510), 60);
 });
