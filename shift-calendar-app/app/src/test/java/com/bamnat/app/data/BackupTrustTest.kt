@@ -12,6 +12,7 @@ import com.bamnat.app.share.ShareLinkStore
 import com.bamnat.app.tier.ProStore
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.boss.Workplace
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -24,7 +25,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.time.Instant
 
 /**
  * 2.0.0 갈래 L, 검토 12장의 믿음 줄: 되돌리기가 사업장·직원·링크 열쇠까지 돌려놓고(DATA-01), 중간에 멈춘 불러오기는 다음에 열 때 전으로
@@ -51,7 +51,7 @@ class BackupTrustTest {
 
     private fun link(): Pair<ShareLinkStore, ShareLinkBackup> {
         val links = ShareLinkStore(context, PersonalCalendar.MAIN)
-        links.save(ShareLinkState("AbCdEfGh12345678", "https://share.example/s/AbCdEfGh12345678", "dtok-secret", Instant.now().plusSeconds(86_400), "내 근무"))
+        links.save(ShareLinkState("AbCdEfGh12345678", "https://share.example/s/AbCdEfGh12345678", "dtok-secret", Today.instant().plusSeconds(86_400), "내 근무"))
         return links to ShareLinkBackup({ listOf(PersonalCalendar.MAIN) }, { k -> if (k == PersonalCalendar.MAIN) links else ShareLinkStore(context, k) })
     }
 

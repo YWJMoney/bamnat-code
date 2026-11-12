@@ -134,6 +134,38 @@ class ZFullBackupTest {
         c.settingsRepository.update { AppSettings() }
     }
 
+    /**
+     * 2.0.0 [RVR-18] (검토 T60-02) Every kind of work, not only shift work: a phone of each kind with every setting changed (and the
+     * first setup put off, so its own next question waits) is backed up and restored onto a new phone, and comes back the same, with
+     * the main calendar's pay choices (세금 방식·연장 상한·소득 종류).
+     */
+    @Test fun everyKindOfWorkComesBackWithAllItsSettings() = runBlocking {
+        c.scheduleRepository.ensureDefaults()
+        val shiftId = c.scheduleRepository.shiftTypes.first().first().id
+        for (style in WorkStyle.entries) {
+            c.settingsRepository.update { sample(it, shiftId).copy(workStyle = style) }
+            val wanted = c.settingsRepository.current
+            val tax = com.bamnat.core.pay.TaxMode.entries[style.ordinal % com.bamnat.core.pay.TaxMode.entries.size].name
+            prefs("work_type_prefs").edit().putInt("cap_main", 40 + style.ordinal).putString("tax_main", tax).putString("income_main", style.name).commit()
+            val file = c.backupManager.export()
+
+            c.settingsRepository.update { AppSettings() }
+            for (p in SettingsFilesBackup.PARTS) prefs(p.name).edit().clear().commit()
+            c.backupManager.restore(file)
+
+            val back = c.settingsRepository.current
+            assertEquals(style, back.workStyle)
+            for (f in settingFields()) {
+                if (f.name in SettingsFilesBackup.SETTINGS_ON_PHONE) continue
+                assertEquals("$style: 설정 ${f.name}", f.get(wanted), f.get(back))
+            }
+            assertEquals("$style: 연장 상한", 40 + style.ordinal, prefs("work_type_prefs").getInt("cap_main", 0))
+            assertEquals("$style: 세금 방식", tax, prefs("work_type_prefs").getString("tax_main", null))
+            assertEquals("$style: 소득 종류", style.name, prefs("work_type_prefs").getString("income_main", null))
+        }
+        c.settingsRepository.update { AppSettings() }
+    }
+
     /** 1.38 [SLEEP-01][SLEEP-03][SLEEP-07][SLEEP-19] 자동 꼬리표, 아침 답과 소리 사건(파일 없이) go to a new phone. */
     @Test fun sleepSourceMorningAnswersAndEventsComeBack() = runBlocking {
         val dao = c.database.sleepDao()

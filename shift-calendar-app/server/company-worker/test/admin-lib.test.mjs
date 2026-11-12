@@ -174,7 +174,7 @@ test("[ADMUX-07] chart axes use round steps", () => {
   assert.ok(L.ticks(100).every((t, i, a) => i === 0 || t - a[i - 1] === a[1]));
   assert.ok(L.ticks(1234).at(-1) >= 1234);
   const svg = L.barChart([0, 5, 10], { labels: ["1일", "2일", "3일"], name: "새 문의" });
-  assert.match(svg, /<table class="sr">/);
+  assert.match(svg, /<div class="sr"><table>/, "2.0.0 [RVA-21] the read-out table sits in a 1px box (no sideways scroll at 380 · 200%)");
   assert.equal((svg.match(/<rect class="bar"/g) ?? []).length, 3);
 });
 

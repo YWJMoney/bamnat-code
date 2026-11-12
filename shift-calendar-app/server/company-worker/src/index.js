@@ -108,7 +108,7 @@ import { FCM_SCHEMA, fcmRoute, stillHere } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
-import { DESK_COLUMNS, DESK_SCHEMA, deskRoute, keySession, keyView } from "./desk.js";
+import { DESK_COLUMNS, DESK_SCHEMA, DESK_SEED, deskRoute, keySession, keyView } from "./desk.js";
 import { LEDGER_SCHEMA, ledgerQuery, ledgerRoute } from "./ledger.js";
 import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute, playTick, shipTick, syncDev, updatePolicy, WAITING_SQL, waitingFrom } from "./loop.js";
 // 1.38 [ADM3] 관리자 앱 개편: 서버 감시·돈·사람·출시 점검표·판 건강·데이터 요청·백업·리뷰·사고·Claude 조종석.
@@ -1185,6 +1185,8 @@ async function schemaUp(env, made) {
   // with the columns below, where a column already there is skipped.
   const alter = (sql) => /^\s*ALTER\s+TABLE/i.test(sql);
   await batch(env, SCHEMA.filter((sql) => !alter(sql)).map((sql) => env.DB.prepare(sql)));
+  // 2.0.0 [RVR-13] (검토 TEST-06) 처음 한 번 적는 시각들은 SQLite 'now'가 아니라 Date.now()로 묶어요.
+  await batch(env, DESK_SEED(Date.now()).map(([sql, ...params]) => env.DB.prepare(sql).bind(...params)));
   // 1.39 [ADM3-43] 배포 직후 첫 요청이 15초 넘게 걸렸어요(실서버 점검 11-08): ALTER 100여 개를 하나씩 보내서요. 이제 있는 칸을
   // 한 번에 읽고 없는 칸만 더해요. 읽지 못하는 DB면 예전처럼 다 보내고 '이미 있음'은 넘겨요.
   for (const sql of await missingColumns(env, [...SCHEMA.filter(alter), ...COLUMNS])) {
@@ -6417,7 +6419,8 @@ const BADGE_SQL = {
   // 7일 안의 출시 멈춤 권장, (최고 관리자만) 요금을 정할 새 기능. decideBox와 같은 조건.
   decideBack: ["dev", `SELECT COUNT(DISTINCT d.id) AS n FROM dev_history h JOIN dev_items d ON d.id = h.item_id AND d.deleted_at IS NULL
       AND d.status IN ('todo', 'doing') WHERE h.action = 'fixed_no'`],
-  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > (CAST(strftime('%s', 'now') AS INTEGER) - 7 * 86400) * 1000"],
+  // 2.0.0 [RVR-13] (검토 TEST-06) 7일은 SQLite 'now'가 아니라 Date.now()로(시험 시계와 같은 시계).
+  decideHalts: ["dev", "SELECT COUNT(*) AS n FROM audit WHERE action = 'loop_halt_advice' AND at > ?", (now) => now - 7 * 86400 * 1000],
   // [LOOP-35] loop.js ASK_TIER_SQL과 같은 기준: 기존 기능 고침·다듬기와 서버로만 닿는 운영용은 묻지 않아요.
   decideTiers: ["owner", `SELECT COUNT(*) AS n FROM dev_items d WHERE d.deleted_at IS NULL AND (d.basis = 'new' OR (d.basis = '' AND d.size = 'feature' AND d.route != 'server'))
       AND d.status != 'rejected' AND d.tier IN ('', 'later')`],
@@ -6453,7 +6456,10 @@ async function badges(env, actor, now) {
   const epoch = badgeEpoch;
   // AM 1.28 [FLAG-22] billingLive is the billing flag by the server's view; the flag store rides in the same trip.
   const q = Object.fromEntries(Object.entries(FLAG_STORE_SQL).map(([k, sql]) => [k, [sql]]));
-  for (const [k, [area, sql]] of Object.entries(BADGE_SQL)) if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql];
+  // 2.0.0 [RVR-13] [area, sql, ...묶을 값]: 함수인 값은 지금 시각으로 불러요.
+  for (const [k, [area, sql, ...binds]] of Object.entries(BADGE_SQL)) {
+    if (area === "owner" ? actor.owner : can(actor, area)) q[k] = [sql, ...binds.map((b) => (typeof b === "function" ? b(now) : b))];
+  }
   if (can(actor, "ops")) q.opsDone = ["SELECT value FROM settings WHERE key = ?", `ops:${kstDay(now).slice(0, 7)}`];
   // 1.39 [LOOP-19][LOOP-20] 결정함 숫자의 급함·최고 관리자 확인 문의: 같은 batch로 읽고 말로 가려 세요.
   if (actor.owner || can(actor, "inquiries")) q.openAsks = [WAITING_SQL];
