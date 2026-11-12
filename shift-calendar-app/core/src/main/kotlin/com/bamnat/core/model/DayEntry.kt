@@ -72,11 +72,27 @@ enum class Attendance(val label: String, val code: Int) {
 /** An alarm at a clock time on one date, set from the calendar. */
 /**
  * One alarm set by hand for a day. [DAYW-09] [dayBefore] rings on the evening before (a night shift's 23:00 nap
- * alarm), which the day sheet used to drop on saving (I 리뷰 P13).
+ * alarm), which the day sheet used to drop on saving (I 리뷰 P13). 2.0.0 [RVI-17] (검토 ALM-08) [dayAfter] rings on the
+ * day after (a night shift's [EASE-18] 다음날 14:00), which a nap's wake or the day sheet used to drop or move to the day.
  */
-data class DayAlarm(val time: LocalTime, val enabled: Boolean = true, val dayBefore: Boolean = false) {
+data class DayAlarm(val time: LocalTime, val enabled: Boolean = true, val dayBefore: Boolean = false, val dayAfter: Boolean = false) {
     /** When it rings for the shift day [date]. */
-    fun at(date: java.time.LocalDate): java.time.LocalDateTime = (if (dayBefore) date.minusDays(1) else date).atTime(time)
+    fun at(date: java.time.LocalDate): java.time.LocalDateTime =
+        (if (dayBefore) date.minusDays(1) else if (dayAfter) date.plusDays(1) else date).atTime(time)
+
+    /** "전날 23:00", "다음날 14:00" or "07:00" without the time format, which the caller adds: the day part only. */
+    val dayWord: String get() = if (dayBefore) "전날 " else if (dayAfter) "다음날 " else ""
+
+    companion object {
+        /** 2.0.0 [RVI-17] The alarm of shift day [date] that rings at [at], or null when [at] is not within a day of it. */
+        fun ringingAt(date: java.time.LocalDate, at: java.time.LocalDateTime, enabled: Boolean = true): DayAlarm? =
+            when (at.toLocalDate()) {
+                date.minusDays(1) -> DayAlarm(at.toLocalTime(), enabled, dayBefore = true)
+                date -> DayAlarm(at.toLocalTime(), enabled)
+                date.plusDays(1) -> DayAlarm(at.toLocalTime(), enabled, dayAfter = true)
+                else -> null
+            }
+    }
 }
 
 /** Kinds of leave; [paid] keeps the day's pay, [annual] counts against 연차 [FEAT-10]. */

@@ -121,6 +121,14 @@ interface SleepDao {
     @Insert
     suspend fun insertEvent(event: SleepEventEntity): Long
 
+    /** 2.0.0 [RVI-15] (검토 ALM-24) A night's sounds in one write, not one by one. */
+    @Insert
+    suspend fun insertEvents(events: List<SleepEventEntity>)
+
+    /** 2.0.0 [RVI-15] Sounds older than [beforeMillis] go (a clip the user kept, 보관, stays with its sound). */
+    @Query("DELETE FROM sleep_events WHERE startMillis < :beforeMillis AND NOT (file IS NOT NULL AND keep = 1)")
+    suspend fun pruneEvents(beforeMillis: Long): Int
+
     @Query("UPDATE sleep_events SET keep = :keep WHERE id = :id")
     suspend fun keepEvent(id: Long, keep: Boolean)
 

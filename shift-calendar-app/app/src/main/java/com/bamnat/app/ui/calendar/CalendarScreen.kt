@@ -910,6 +910,8 @@ fun CalendarScreen(
         val feature = com.bamnat.app.ui.guide.FeatureLinks.takeToday()
         vm.viewCalendar(feature ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
+        // 2.0.0 [RVI-68] (PC-49) 오늘 보기 opens on today's flow, not its folded line.
+        if (feature == null) vm.openFlowNow()
         sheetOpen = feature != null && !showsDay
         vm.select(Today.date())
         pagerState.scrollToPage(monthToPage(baseMonth, Today.month()))

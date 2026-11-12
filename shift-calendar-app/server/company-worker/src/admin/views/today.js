@@ -9,13 +9,19 @@ export function todayViews(A) {
   const { S, L, esc, can, href, seg, skeleton, icon, P, ago, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, wide } = A;
 
   /** One number with its week: [list] 7 numbers, the last one today. */
-  function kpi({ label, value, to, desc, list, hot = true, name }) {
+  /**
+   * 2.0.0 [RVA-31] 검토 T24-19: 7일 그래프가 없는 숫자(정할 판)는 그 자리가 비어 높이가 떠 보였어요. 그래프 대신 같은 높이의
+   * '할 일 한 줄'(go: 0이면 done)을 둬서 네 칸이 같은 모양이에요.
+   */
+  function kpi({ label, value, to, desc, list, hot = true, name, go, done }) {
     const has = Array.isArray(list) && list.length === 7;
+    const foot = has ? L.spark(list, { name: name ?? label })
+      : go ? `<span class="tile-go${value ? "" : " done"}">${value ? `${esc(go)}${icon(P.chevron)}` : `${icon(P.check)}${esc(done ?? "없어요")}`}</span>` : "";
     const delta = has ? list[6] - list[5] : 0;
     const tone = has ? L.trendTone(list) : "";
     return `<a class="tile kpi${hot && value ? " hot" : ""}${tone ? " rising" : ""}" href="${to}"><span class="k">${esc(label)}</span>
       <span class="v">${value ?? 0}${delta ? `<span class="delta ${delta > 0 ? "up" : "down"}" title="어제보다">${delta > 0 ? "▲" : "▼"}${Math.abs(delta)}</span>` : ""}</span>
-      <span class="d">${esc(desc)}</span>${has ? L.spark(list, { name: name ?? label }) : ""}</a>`;
+      <span class="d">${esc(desc)}</span>${foot}</a>`;
   }
 
   /**
@@ -28,7 +34,7 @@ export function todayViews(A) {
     const line = (a) => `<li class="${a.tone === "bad" ? "bad" : "warn"}"><a href="${esc(a.to)}"><b>${esc(a.title)}</b>${a.meta ? `<small>${esc(a.meta)}</small>` : ""}</a>${icon(P.chevron)}</li>`;
     const top = list.filter((a) => !shown.has(`a:${a.key}`));
     const above = list.filter((a) => shown.has(`a:${a.key}`));
-    return `<section class="card alerts" aria-labelledby="alerts-h"><div class="card-head"><h2 id="alerts-h">주의 필요</h2><span class="pill bad">${list.length}</span></div>
+    return `<section class="card alerts" aria-labelledby="alerts-h"><div class="card-head"><h2 id="alerts-h">주의 필요</h2><span class="pill">${list.length}</span></div>
       ${top.length ? `<ul class="alert-list">${top.map(line).join("")}</ul>` : ""}${aboveFold(above.length, `<ul class="alert-list">${above.map(line).join("")}</ul>`, "home:above-alerts")}</section>`;
   }
 
@@ -58,7 +64,11 @@ export function todayViews(A) {
   function heroCard(t, o, hi, { alerts, todo, picks }) {
     const bad = alerts.filter((a) => a.tone === "bad");
     const tone = bad.length ? "bad" : alerts.length ? "warn" : "ok";
-    const line = bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
+    // 2.0.0 [RVA-31] 검토 U24-11: "바로 볼 것이 1개"인데 아래 줄은 셋이던 것. 아래 셋에 든 종류마다 그 수를 함께 말해요.
+    const kinds = [["bad", "바로 볼 것", bad.length], ["warn", "살펴볼 것", alerts.length - bad.length], ["todo", "할 일", todo.length]]
+      .filter(([k, , n]) => n > 0 && picks.some((p) => p.tone === k));
+    const line = kinds.length > 1 ? `${kinds.map(([, w, n]) => `${w} ${n}개`).join(kinds.length === 2 ? "와 " : ", ")}가 있어요`
+      : bad.length ? `바로 볼 것이 ${bad.length}개 있어요` : alerts.length ? `살펴볼 것이 ${alerts.length}개 있어요`
       : todo.length ? `급한 일은 없고, 할 일이 ${todo.length}개예요` : "지금 기다리는 일이 없어요";
     const sum = [can("inquiries") ? `답 대기 ${o.inquiries ?? 0}` : "", can("review") ? `검토 대기 ${L.reviewCount(o)}` : "", o.doneToday ? `오늘 처리 ${o.doneToday}` : ""].filter(Boolean).join(" · ");
     const restA = alerts.length - picks.filter((p) => p.key.startsWith("a:")).length;
@@ -114,15 +124,16 @@ export function todayViews(A) {
       core.push(kpi({ label: "복사 전 문제 신고", value: o.bugsUncopied, to: inq({ status: "all", kind: "bug", copied: "no" }), desc: "개발에 넘기기 전이에요", list: tr.bugs, name: "날마다 문제 신고" }));
     }
     if (can("review") && t.versionConflicts !== undefined) {
-      core.push(kpi({ label: "정할 판", value: t.versionConflicts, to: href("versions"), desc: "한 부서에 판이 둘 이상", hot: true }));
+      core.push(kpi({ label: "정할 판", value: t.versionConflicts, to: href("versions"), desc: "한 부서에 판이 둘 이상", hot: true, go: "정하러 가기", done: "다 정했어요" }));
     }
     // The rest, folded on a phone and open on a wide screen.
     const rest = [];
-    const tile = (k, v, d, to, hot) => rest.push(`<a class="tile${hot && v ? " hot" : ""}" href="${to}"><span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(d)}</span></a>`);
+    // hot: true(기다리는 일) | "warn"(주의) | "bad"(정말 급함, 빨강).
+    const tile = (k, v, d, to, hot) => rest.push(`<a class="tile${hot && v ? ` hot${hot === true ? "" : ` ${hot}`}` : ""}" href="${to}"><span class="k">${esc(k)}</span><span class="v">${v ?? 0}</span><span class="d">${esc(d)}</span></a>`);
     if (can("inquiries")) {
       tile("오늘 새 문의", o.inquiriesToday, `어제 ${o.inquiriesYesterday ?? 0}건`, inq({ status: "open", sort: "newest" }), false);
-      tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), true);
-      tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), true);
+      tile("오늘 목표 넘김", o.slaLateToday, "오늘 안에 답 목표를 넘겨요", inq({ status: "open", sort: "sla" }), "bad");
+      tile("아쉬워요", o.inquiriesBad, "답이 아쉬웠다는 문의", inq({ status: "answered" }), "warn");
     }
     if (can("dev")) tile("개발사항 접수", o.devTodo, can("devStatus", "edit") ? "처리를 기다려요" : "개발 전이에요", L.routeHash("dev", null, { status: "todo" }), can("devStatus", "edit"));
     if (can("community")) tile("신고된 글", o.flaggedPosts, "토론에서 확인할 글", L.routeHash("community", null, { show: "flagged" }), true);
@@ -200,7 +211,7 @@ export function todayViews(A) {
           <small>${esc(ago(x.at))}${x.company ? ` · ${esc(x.company)}` : ""}${x.n ? ` · ${x.n}${flagged(x) ? "번 신고" : "건"}` : ""}${x.type === "inquiry" ? (x.assignee ? ` · ${x.mine ? "내가 맡음" : esc(x.assignee.name)}` : " · 아무도 안 맡음") : ""}</small></span>
         <span class="row-side">${dueText(x, Date.now())}
           ${x.type === "inquiry" && editInq && !x.assignee ? `<button class="btn small" data-act="inbox-assign" data-id="${x.id}">맡기</button>` : ""}
-          <a class="btn small${x.type === "inquiry" ? "" : " primary"}" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
+          <a class="btn small" href="${inboxLink(x)}">${x.type === "inquiry" ? "열기" : "보기"}</a>
           <button class="btn small ghost" data-act="inbox-snooze" data-key="${esc(`${x.type}:${x.id}`)}" title="이 기기에서 내일 아침까지 숨겨요">내일 볼게요</button></span></div>${bundled(x, more)}${answer}</li>`;
     };
     const top = rows.filter((x) => !shown.has(`${x.type}:${x.id}`));

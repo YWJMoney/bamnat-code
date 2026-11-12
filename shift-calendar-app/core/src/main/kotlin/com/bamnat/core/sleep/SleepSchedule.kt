@@ -34,8 +34,14 @@ class SleepSchedule private constructor(
         val minutes: Long get() = Duration.between(from, to).toMinutes()
         /** Mostly between 22:00 and 06:00. */
         val night: Boolean get() = minutes > 0 && RestCheck.nightMinutes(from, to) * 2 >= minutes
-        /** Runs past midnight, so the sleep after it falls in the day. */
-        val overnight: Boolean get() = to.toLocalDate().isAfter(from.toLocalDate())
+        /**
+         * Runs past midnight, so the sleep after it falls in the day. 2.0.0 [RVI-13] (검토 ALM-11) Or a night that starts after
+         * midnight (00:00~08:00, 01:00~09:00 of a 3교대 or 경비·관제): mostly night and begun before 03:00 (from 03:00 it is an early
+         * start, [early]), it is the same night
+         * though its date does not change, so the 야간 뒤 잠 계획, 퇴근길 and 브리핑 follow it too.
+         */
+        val overnight: Boolean get() = to.toLocalDate().isAfter(from.toLocalDate()) ||
+            (night && from.toLocalTime().isBefore(EARLY_FROM) && to.isAfter(from))
         /** Starts in the morning, so the night before it is cut short by the clock. */
         val early: Boolean get() = from.toLocalTime().let { !it.isBefore(EARLY_FROM) && it.isBefore(SleepPlan.EARLY_START) }
     }
