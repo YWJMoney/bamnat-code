@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.FolderOpen
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
@@ -123,6 +124,10 @@ class CalendarImportViewModel(
         val done: CalendarImporter.Done? = null,
         /** 2.0.0 [RVL-30] (검토 SCAN-26·U07b-13) Reading failed: said as that, never as "일정이 없어요". */
         val failed: Boolean = false,
+        /** 2.0.0 [RVL-73] (검토 I07bb-05) The calendar file (.ics) the proposals were read from, by its name; null for the phone's calendars. */
+        val file: String? = null,
+        /** 2.0.0 [RVL-73] Why the file was not read, in words. */
+        val fileProblem: String? = null,
     ) {
         /** What the button brings in: not skipped and not left out. */
         val todo: List<CalendarImport.Proposal> get() = proposals.orEmpty().filter { it.skip == null && it.key !in left }
@@ -146,8 +151,41 @@ class CalendarImportViewModel(
         }
     }
 
-    fun toggle(id: Long) = _ui.update { u -> u.copy(chosen = if (id in u.chosen) u.chosen - id else u.chosen + id, proposals = null) }
-    fun range(r: ImportRange) = _ui.update { it.copy(range = r, proposals = null) }
+    fun toggle(id: Long) = _ui.update { u -> u.copy(chosen = if (id in u.chosen) u.chosen - id else u.chosen + id, proposals = null, file = null) }
+    fun range(r: ImportRange) = _ui.update { it.copy(range = r, proposals = null, file = null) }
+
+    /**
+     * 2.0.0 [RVL-73] (검토 I07bb-05) A calendar file (.ics) another calendar or roster app exported: read on this phone (no calendar
+     * permission needed) from a year back to a year ahead, and proposed as the phone's events are.
+     */
+    fun readFile(uri: android.net.Uri) {
+        _ui.update { it.copy(loading = true, done = null) }
+        viewModelScope.launch {
+            val ctx = container.appContext
+            val name = runCatching {
+                ctx.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "달력 파일"
+            val read = runCatching {
+                val events = withContext(Dispatchers.IO) {
+                    val bytes = ctx.contentResolver.openInputStream(uri)?.use { it.readNBytes(com.bamnat.core.imports.Ics.MAX_BYTES + 1) }
+                        ?: throw java.io.IOException("open")
+                    val text = String(bytes, Charsets.UTF_8)
+                    if (bytes.size > com.bamnat.core.imports.Ics.MAX_BYTES || !com.bamnat.core.imports.Ics.looksLikeIcs(text)) throw NotIcs()
+                    val today = Today.date()
+                    com.bamnat.core.imports.Ics.read(text, Today.zone(), today.minusYears(1), today.plusYears(1))
+                }
+                importer.propose(events)
+            }
+            read.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
+            _ui.update {
+                it.copy(loading = false, proposals = read.getOrNull() ?: emptyList(), left = emptySet(), file = name,
+                    failed = read.isFailure, fileProblem = when (read.exceptionOrNull()) { null -> null; is NotIcs -> NOT_ICS; else -> FILE_FAILED })
+            }
+        }
+    }
+
+    private class NotIcs : Exception()
 
     fun read() {
         val u = _ui.value
@@ -158,7 +196,7 @@ class CalendarImportViewModel(
             val read = runCatching { importer.propose(u.calendars, u.chosen, u.range.from(today), u.range.to(today)) }
             read.exceptionOrNull()?.let { if (it is kotlinx.coroutines.CancellationException) throw it }
             importer.chosen = u.chosen
-            _ui.update { it.copy(loading = false, proposals = read.getOrNull() ?: emptyList(), left = emptySet(), failed = read.isFailure,
+            _ui.update { it.copy(loading = false, proposals = read.getOrNull() ?: emptyList(), left = emptySet(), failed = read.isFailure, file = null, fileProblem = null,
                 allowed = if (read.isFailure) importer.allowed() else it.allowed) }
         }
     }
@@ -210,6 +248,11 @@ class CalendarImportViewModel(
     }
 
     fun runUndo(m: UndoMessage) { m.undo?.let { u -> container.appScope.launch { u() } } }
+
+    companion object {
+        const val NOT_ICS = "달력 파일(.ics)이 아니에요. 다른 달력 앱의 '내보내기'로 만든 .ics 파일을 골라 주세요."
+        const val FILE_FAILED = "파일을 열지 못했어요. 휴대폰에 내려받은 뒤 다시 골라 주세요."
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -222,6 +265,8 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
     var asked by remember { mutableStateOf(false) }
     var changing by remember { mutableStateOf<CalendarImport.Proposal?>(null) }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { asked = true; vm.refresh() }
+    // 2.0.0 [RVL-73] (검토 I07bb-05) A calendar file from another app; some file apps name it text/calendar, others nothing.
+    val icsFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::readFile) }
     LaunchedEffect(vm) {
         vm.refresh()
         vm.messages.collect { m ->
@@ -264,7 +309,10 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
+            // 2.0.0 [RVL-73] Once a file is read, its events come first (조건 1) and the one filled button is 가져오기 (조건 2): the card
+            // that asks for the phone's calendar steps aside to a line with the file's name.
+            val fromFile = ui.file != null && ui.fileProblem == null
+            if (!fromFile) item {
                 // 2.0.0 [RVL-30] (검토 SCAN-26·U07b-13·T07b-08) Any phone's calendar, not only Samsung's.
                 SectionCard(title = "휴대폰 캘린더 일정을 밤낮으로") {
                     Text("삼성·Google 캘린더 일정에서 근무 이름이나 시간과 맞는 것은 근무로, 연차·휴가는 휴가로, 나머지는 메모로 옮겨요. " +
@@ -283,11 +331,32 @@ fun CalendarImportScreen(vm: CalendarImportViewModel, onBack: () -> Unit) {
                             Text("캘린더 읽기 허용하기")
                         }
                     }
+                    // 2.0.0 [RVL-73] (검토 I07bb-05) Another app's calendar as a file: no permission needed, read on this phone only.
+                    TextButton(onClick = { icsFile.launch(arrayOf("text/calendar", "text/x-vcalendar", "application/ics", "application/octet-stream", "text/plain")) },
+                        modifier = Modifier.heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("달력 파일(.ics)로 가져오기")
+                    }
+                }
+            }
+            // 2.0.0 [RVL-73] What the file was, or why it was not read.
+            ui.fileProblem?.let { p ->
+                item {
+                    com.bamnat.app.ui.components.NudgeCard("파일을 읽지 못했어요", tone = com.bamnat.app.ui.theme.Tone.Caution, detail = p,
+                        action = "다른 파일 고르기", onAction = { icsFile.launch(arrayOf("text/calendar", "application/octet-stream", "text/plain")) })
+                }
+            }
+            if (fromFile) item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("‘${ui.file}’에서 읽은 일정이에요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { icsFile.launch(arrayOf("text/calendar", "text/x-vcalendar", "application/ics", "application/octet-stream", "text/plain")) },
+                        modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 파일") }
                 }
             }
             // 2.0.0 [RVL-30] #476 사진 검토(HQ-61, 조건 1·12): reading failed is said right under the card above, before the settings; under
             // them it was below the fold at 200%. The card reads again itself, so the answer is where the problem is said.
-            if (ui.allowed && ui.failed && ui.proposals?.isEmpty() == true) item {
+            if (ui.allowed && ui.failed && ui.file == null && ui.proposals?.isEmpty() == true) item {
                 com.bamnat.app.ui.components.NudgeCard(
                     "캘린더를 읽지 못했어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
                     detail = "잠시 뒤 다시 읽어 보세요. 계속되면 캘린더 앱에서 동기화를 켜 주세요",

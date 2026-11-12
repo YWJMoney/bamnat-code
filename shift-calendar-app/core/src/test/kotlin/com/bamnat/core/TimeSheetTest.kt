@@ -168,4 +168,17 @@ class TimeSheetTest {
         // The code reader still reads its own rosters as before.
         assertTrue(DutyRoster.readText("1 2 3 4 5 6 7\n김민지 D D E E N N O", DutyCodes(emptyList())).isNotEmpty())
     }
+
+    @Test fun `a lone dash between cells stays a day of its own, and spaced ranges are one`() {
+        val r = TimeSheet.readText(
+            "2026년 11월 알바 시간표\n이름 1 2 3 4 5 6 7 8 9 10\n" +
+                "김알바 09:00-15:00 - 9-3 - 18:00-23:00 휴무 - 10-16 - 9 - 15\n" +
+                "박알바 - 10-16 - 10-16 - - 6h - 18-22 -",
+            null, LocalDate.of(2026, 11, 12),
+        )!!
+        val kim = r.rows.first { it.label == "김알바" }
+        assertEquals(setOf(1, 3, 5, 6, 8, 10), kim.cells.keys)
+        assertEquals(DutyCell.Hours(9 * 60, 360), kim.cells[10])
+        assertEquals(setOf(2, 4, 7, 9), r.rows.first { it.label == "박알바" }.cells.keys)
+    }
 }

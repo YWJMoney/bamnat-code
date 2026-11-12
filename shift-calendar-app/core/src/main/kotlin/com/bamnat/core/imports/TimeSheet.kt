@@ -115,9 +115,33 @@ object TimeSheet {
     /** Pasted text: each line split where it has spaces, tabs or commas (a range written "09:00 - 15:00" kept whole). */
     fun readText(text: String, month: YearMonth? = null, near: LocalDate = Today.date()): Read? {
         val rows = text.lines().map { line ->
-            line.replace(Regex("""(\d)\s*([-~–])\s*(\d)"""), "$1$2$3").split(Regex("""[\t,|]+|\s{2,}|\s(?=\S)""")).map { it.trim() }.filter { it.isNotEmpty() }
+            joined(line.split(Regex("""[\t,|]+|\s+""")).map { it.trim() }.filter { it.isNotEmpty() })
         }.filter { it.isNotEmpty() }
         return read(rows, month, near)
+    }
+
+    private val BARE = Regex("""^\d{1,2}(:\d{2})?$""")
+    private const val DASHES = "-~–"
+
+    /**
+     * "9 - 15", "9- 15", "9 -15" as one range "9-15". Only two bare times around a dash: a "-" between cells ("15:00 - 9-3", a day
+     * off between two days) stays a cell of its own.
+     */
+    private fun joined(words: List<String>): List<String> {
+        val out = ArrayList<String>(words.size)
+        var i = 0
+        while (i < words.size) {
+            val a = words[i]
+            val b = words.getOrNull(i + 1)
+            val c = words.getOrNull(i + 2)
+            when {
+                b != null && c != null && BARE.matches(a) && b.length == 1 && b[0] in DASHES && BARE.matches(c) -> { out += "$a-$c"; i += 3 }
+                b != null && a.length > 1 && a.last() in DASHES && BARE.matches(a.dropLast(1)) && BARE.matches(b) -> { out += "${a.dropLast(1)}-$b"; i += 2 }
+                b != null && b.length > 1 && b[0] in DASHES && BARE.matches(a) && BARE.matches(b.drop(1)) -> { out += "$a-${b.drop(1)}"; i += 2 }
+                else -> { out += a; i++ }
+            }
+        }
+        return out
     }
 
     /** What was read: the lines, and the month their days are in (null for a 요일표, which fits any month). */

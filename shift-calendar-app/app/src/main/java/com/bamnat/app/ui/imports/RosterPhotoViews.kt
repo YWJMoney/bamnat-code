@@ -72,13 +72,14 @@ internal fun WhichLine(rows: List<RosterRow>, types: List<ShiftType>, onPick: (I
     val byId = types.associateBy { it.id }
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium) {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("어느 줄(조)이 내 것인가요?", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            // 2.0.0 [RVL-72] A 시간표·공수표 has people's lines, not 조.
+            Text(if (rows.any { it.timed }) "어느 줄이 내 것인가요?" else "어느 줄(조)이 내 것인가요?", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
             Text("근무표에서 ${rows.size}개 줄을 읽었어요. 고르면 다음 달 근무표에서는 같은 줄을 먼저 골라 둬요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
             rows.forEachIndexed { i, r ->
                 OutlinedButton(onClick = { onPick(i) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Column(Modifier.fillMaxWidth()) {
-                        Text(r.label.ifBlank { "${i + 1}번째 줄" } + " · ${r.cells.size}일", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(r.label.ifBlank { "${i + 1}번째 줄" } + (if (r.weekly.isNotEmpty()) " · 매주 ${r.weekly.size}일" else " · ${r.cells.size}일"), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(preview(r, byId), style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -90,6 +91,10 @@ internal fun WhichLine(rows: List<RosterRow>, types: List<ShiftType>, onPick: (I
 
 /** The first days of a line as they were written: "1일부터 D D E E N N O". */
 internal fun preview(r: RosterRow, byId: Map<Long, ShiftType>): String {
+    // 2.0.0 [RVL-72] A 요일표: "월 9–15 · 수 9–15"; a 시간표·공수표: the days worked with their times ("3일 9–15 · 5일 18–23").
+    if (r.weekly.isNotEmpty()) return r.weekly.toSortedMap().entries.joinToString(" · ") { (d, c) ->
+        d.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN) + " " + short(c, byId) }
+    if (r.timed) return r.cells.toSortedMap().entries.filter { it.value != DutyCell.Off }.take(4).joinToString(" · ") { (d, c) -> "${d}일 ${short(c, byId)}" }
     val first = r.cells.keys.minOrNull() ?: return ""
     return "${first}일부터 " + (first until first + 10).mapNotNull { d -> r.cells[d]?.let { short(it, byId) } }.joinToString(" ")
 }
@@ -99,6 +104,8 @@ private fun short(c: DutyCell, byId: Map<Long, ShiftType>): String = when (c) {
     DutyCell.Off -> "휴"
     is DutyCell.Leave -> "연"
     is DutyCell.Unknown -> c.raw
+    // 2.0.0 [RVL-72] "9–15", "1.5공".
+    is DutyCell.Hours, is DutyCell.Units -> com.bamnat.core.imports.TimeSheet.short(c).orEmpty()
 }
 
 /**

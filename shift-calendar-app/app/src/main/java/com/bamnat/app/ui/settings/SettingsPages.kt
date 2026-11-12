@@ -1097,7 +1097,7 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         if (moving) MoveFromOtherApp(onDismiss = { moving = false })
         HorizontalDivider()
         // [IMPORT-01]
-        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 ${com.bamnat.app.ui.shifts.lockNoun(movedStyle).let { if (it == "근무") "근무와" else it + "과" }} 메모로 옮겨요") {
+        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더나 달력 파일(.ics)을 읽어 ${com.bamnat.app.ui.shifts.lockNoun(movedStyle).let { if (it == "근무") "근무와" else it + "과" }} 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
         }
         HorizontalDivider()

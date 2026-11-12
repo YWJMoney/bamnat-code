@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.TouchApp
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
@@ -198,6 +199,11 @@ class DutyRosterViewModel(
         val copied: Copied? = null,
         /** 2.0.0 [RVL-41] (검토 U07b-10) The file picked is a locked PDF: its password is asked here ([PdfPasswordDialog]). */
         val locked: com.bamnat.app.imports.PdfLock? = null,
+        /**
+         * 2.0.0 [RVL-75] (검토 I07ba-02) The roster's row of weekdays said another month, or columns a day off; null once answered (or when
+         * they fit).
+         */
+        val weekdays: com.bamnat.core.imports.WeekdayCheck.Verdict? = null,
     ) {
         /**
          * 2.0.0 [RVL-39] 지난달과 같게: the [way] used, the user's cells from before it (to put last month in another way over
@@ -216,7 +222,8 @@ class DutyRosterViewModel(
 
         val cells: Map<Int, DutyCell>
             get() {
-                val base = row?.cells.orEmpty().mapValues { (_, c) -> resolve(c) }.toMutableMap()
+                // 2.0.0 [RVL-72] A 요일표 (월 화 수 …) is put on every such weekday of the month on screen.
+                val base = row?.cellsIn(month).orEmpty().mapValues { (_, c) -> resolve(c) }.toMutableMap()
                 edits.forEach { (d, c) -> if (c == null) base.remove(d) else base[d] = c }
                 return base.filterKeys { it <= days }
             }
@@ -230,14 +237,16 @@ class DutyRosterViewModel(
         val unsaved: Boolean get() = applied == null && writable.isNotEmpty()
         /** [NURS-04] Days read with doubt the user has not touched yet, and cells still unknown. */
         val doubtful: Set<Int>
-            get() = (row?.doubtful(days).orEmpty() - edits.keys) + cells.filterValues { it is DutyCell.Unknown }.keys
+            get() = (row?.doubtful(days).orEmpty() - edits.keys) + cells.filterValues { it is DutyCell.Unknown }.keys +
+                // 2.0.0 [RVL-75] Columns a day off from their weekdays: every cell read is to be looked at.
+                (if (weekdays is com.bamnat.core.imports.WeekdayCheck.Verdict.Shifted) row?.cells.orEmpty().keys.filter { it <= days } - edits.keys else emptySet())
         /**
          * [EASE-15] 1.38: cells the user changed from what the photo read, for "사진에서 읽은 28칸 중 2칸 고쳤어요" (a photo
          * that needs few fixes is the point of reading it).
          */
         val fixed: Int
             get() {
-                val read = row?.cells ?: return 0
+                val read = row?.cellsIn(month) ?: return 0
                 return edits.count { (d, c) -> d in read && c != null && resolve(read.getValue(d)) != c }
             }
         /**
@@ -245,7 +254,8 @@ class DutyRosterViewModel(
          * left empty are marked on the month like the doubtful ones, and the run at the end is said with what to do.
          */
         val missing: Set<Int>
-            get() = if (row == null || !(from == RosterFrom.PHOTO || from == RosterFrom.FILE && scan != null)) emptySet()
+            // 2.0.0 [RVL-72] On a 시간표·공수표 a day with nothing is a day not worked, not one the photo lost.
+            get() = if (row == null || row!!.timed || !(from == RosterFrom.PHOTO || from == RosterFrom.FILE && scan != null)) emptySet()
             else (1..days).toSet() - cells.keys
         /** The last day read before an empty run of 5 days or more to the month's end, or null. */
         val readUpTo: Int?
@@ -417,14 +427,22 @@ class DutyRosterViewModel(
 
     /** 2.0.0 [RVL-34] (검토 SCAN-20) [taken]: a photo taken here with the camera, which waits in the cache until the screen goes. */
     fun readPhoto(uri: Uri, taken: Boolean) = read(Ui.Source.Photo(uri, taken)) { c ->
-        RosterReader.photo(container.appContext, uri, c, _ui.value.month.atDay(1), preparing = ::preparing, progress = ::stepped)
+        RosterReader.photo(container.appContext, uri, c, _ui.value.month.atDay(1), preparing = ::preparing, progress = ::stepped, timeFirst = timeFirst)
     }
 
     // 2.0.0 [RVL-32] (검토 SCAN-04) A scanned PDF says how far it got and the reading model coming down, as a photo does.
     fun readFile(uri: Uri) = read(Ui.Source.File(uri)) { c ->
         RosterReader.file(container.appContext, uri, c, _ui.value.month.atDay(1), password = password?.takeIf { it.first == uri }?.second,
-            preparing = ::preparing, progress = ::stepped)
+            preparing = ::preparing, progress = ::stepped, timeFirst = timeFirst)
     }
+
+    /**
+     * 2.0.0 [RVL-72] (검토 T07b-01·T07b-02) An 알바·현장 calendar is given a 시간표 or 공수표 more often than a roster of codes: those are
+     * read first, and what was not found is said in their words.
+     */
+    val timeFirst: Boolean
+        get() = container.calendars.styleOf(calendarId, container.settingsRepository.current.workStyle)
+            .let { it == com.bamnat.core.work.WorkStyle.HOURLY || it == com.bamnat.core.work.WorkStyle.FIELD }
 
     /** 2.0.0 [RVL-41] The password typed for the locked PDF being read: held while this screen is open (다시 읽기), never saved. */
     private var password: Pair<Uri, CharArray>? = null
@@ -484,7 +502,7 @@ class DutyRosterViewModel(
         super.onCleared()
     }
 
-    fun readText(text: String) = read { c -> RosterReader.text(text, c, today) }
+    fun readText(text: String) = read { c -> RosterReader.text(text, c, today, timeFirst) }
 
     /** [READ-04] The last photo read again along the lines the user tapped on it. */
     fun readTapped(hint: com.bamnat.core.imports.RosterHint) {
@@ -519,6 +537,7 @@ class DutyRosterViewModel(
                     // 2.0.0 [RVL-41] A locked PDF asks for its password in its window, not on the failure card.
                     edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error.takeIf { r.locked == null }, from = r.from, advice = r.advice,
                     locked = r.locked,
+                    weekdays = if (rows.isEmpty()) it.weekdays else r.weekdays,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
                     month = r.month ?: it.month, named = r.month, cursor = 1, history = emptyList(),
                     movedFrom = if (r.month != null && r.month != it.month) it.month else null,
@@ -542,6 +561,18 @@ class DutyRosterViewModel(
     fun fitsClip(text: String): Boolean =
         _ui.value.rows == null && !_ui.value.reading && RosterReader.looksLikeRoster(text, DutyCodes(
             types.value.map { DutyType(it.id, it.name, it.label, it.isOff, it.start, it.isNight) }, container.dutyCodes.of(calendarId)))
+
+    /**
+     * 2.0.0 [RVL-75] (검토 I07ba-02) '12월로 넣기': the roster's weekdays are of another month; the screen goes there (one tap back, as a
+     * month the roster named).
+     */
+    fun weekdayMonth() = _ui.update { u ->
+        val m = (u.weekdays as? com.bamnat.core.imports.WeekdayCheck.Verdict.OtherMonth)?.month ?: return@update u
+        u.copy(month = m, movedFrom = u.month, named = m, weekdays = null, cursor = 1)
+    }
+
+    /** 2.0.0 [RVL-75] The weekdays' question answered: the cells are right as read (no longer all yellow). */
+    fun heardWeekdays() = _ui.update { it.copy(weekdays = null) }
 
     /** 2.0.0 [RVL-37] '다른 줄 고르기': '어느 줄(조)이 내 것인가요?' again, nothing on the calendar until a line is picked. */
     fun chooseAgain() = _ui.update { it.copy(chosen = false) }
@@ -640,12 +671,18 @@ class DutyRosterViewModel(
             // 2.0.0 [RVL-38] (검토 U07b-06) '그 날은 그대로 두기': the leave and changed shifts already there stay.
             val all = (cells.mapKeys { u.month.atDay(it.key) } + outside).let { a -> if (u.keepMine) a - overwritten(u, now) else a }
             if (all.isEmpty()) return@launch
+            // 2.0.0 [RVL-72] (검토 T07b-02) A 공수표's days go in as that day's 일당 일감, the calendar's days as they are.
+            val units = all.filterValues { it is DutyCell.Units }.mapValues { (it.value as DutyCell.Units).units }
+            val jobs = if (units.isEmpty()) emptyList() else writeUnits(units)
+            val days = all - units.keys
             // [READ-30] 1.38 PC (x03): 연차 on the roster is a working day taken off, even where the user's own order has a rest day.
             val restLeave = restLeave(u, all, now, types.value.ifEmpty { repo.shiftTypes.first() })
             // 2.0.0 [RVL-18] (검토 SCAN-13) Each day as it was and as this left it, so 되돌리기 leaves alone a day changed since.
-            val fill = repo.fillDays(all.keys.sorted()) { e ->
-                val c = all.getValue(e.date)
-                restLeave[e.date]?.let { id -> DutyRoster.leaveOnRest(e, c as DutyCell.Leave, id) } ?: DutyRoster.apply(e, c)
+            val fill = repo.fillDays(days.keys.sorted()) { e ->
+                val c = days.getValue(e.date)
+                restLeave[e.date]?.let { id -> DutyRoster.leaveOnRest(e, c as DutyCell.Leave, id) }
+                    // 2.0.0 [RVL-72] (검토 T07b-01) A 시간표's day is work at the times written.
+                    ?: (c as? DutyCell.Hours)?.let { h -> hoursOn(e, h, now) } ?: DutyRoster.apply(e, c)
             }
             // [ROST-03] "D*", "N-O", "11D": what the roster said besides the code, as that day's memo; 2.0.0 [RVL-19] (검토 SCAN-12) once,
             // also when the same roster is put in again. 2.0.0 [RVL-34] (검토 U07b-14) '근무표' for every kind of work; a day that has
@@ -663,11 +700,15 @@ class DutyRosterViewModel(
             // first pattern saved is (ShiftsViewModel); it is still asked only after the first month-end card, back on 내 달력.
             if (all.size >= com.bamnat.app.review.InAppReview.ROSTER_DAYS) container.settingsRepository.update { if (it.reviewAsked) it else it.copy(reviewDue = true) }
             // [EASE-15] A photo's month says how few cells needed a hand.
-            val text = "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요" +
+            // 2.0.0 [RVL-74] (검토 I07ba-03) A roster put in again says the days it changed, not the whole month again.
+            val changed = fill.before.count { (d, b) -> b != fill.after[d] && YearMonth.from(d) == u.month }
+            val inMonth = days.keys.count { YearMonth.from(it) == u.month }
+            val text = (if (changed < inMonth && inMonth >= DutyRoster.MIN_DAYS) "${Fmt.month(u.month)}에서 바뀐 ${changed}일을 고쳤어요"
+                else "${Fmt.month(u.month)}에 ${cells.size}일을 넣었어요") +
                 (if (outside.isNotEmpty()) " · ${RosterReader.span(outside.keys)}도" else "") +
                 if (u.from == RosterFrom.PHOTO && u.row != null) " · 사진에서 고친 칸 ${u.fixed}개" else ""
             val undo: suspend () -> Int = {
-                val kept = repo.undoFill(fill).size
+                val kept = repo.undoFill(fill).size + undoUnits(jobs)
                 // A memo the user wrote on since stays too.
                 val untouched = memos.filter { m -> container.memoRepository.get(m.id)?.updatedAtMillis == m.updatedAtMillis }
                 if (untouched.isNotEmpty()) container.memoRepository.delete(untouched, offerUndo = false)
@@ -683,6 +724,34 @@ class DutyRosterViewModel(
                 if (kept > 0) _messages.emit(UndoMessage(com.bamnat.app.ui.RecentFill.undone(kept)))
             })
         }
+    }
+
+    /**
+     * 2.0.0 [RVL-72] (검토 T07b-02) Each day's 공수 as its 일당 일감 ([DayRate]): the job already on the day changed (what was paid kept), else a
+     * new one at the calendar's 일당 and last 업체. The jobs as they were before (null: there was none) and as written, for 되돌리기.
+     */
+    private suspend fun writeUnits(units: Map<LocalDate, Double>): List<Pair<com.bamnat.core.money.Job?, com.bamnat.core.money.Job>> {
+        val money = container.calendars.money(calendarId)
+        val jobs = money.book.first().jobs
+        val rules = container.calendars.get(calendarId)?.field ?: com.bamnat.core.money.FieldRules()
+        return units.toSortedMap().map { (date, n) ->
+            val existing = com.bamnat.core.money.DayRate.on(date, jobs)
+            val rate = existing?.let(com.bamnat.core.money.DayRate::rateOf) ?: rules.rateOn(date)
+            // As stored, so 되돌리기 can tell a job changed since from one left as this wrote it.
+            existing to money.save(com.bamnat.core.money.DayRate.job(date, n, rate, rules.lastClient, existing)).let { saved -> money.job(saved.id) ?: saved }
+        }
+    }
+
+    /** 2.0.0 [RVL-72] Those 일감 back as they were; one changed since is left alone and counted, as a day is ([RecentFill]). */
+    private suspend fun undoUnits(jobs: List<Pair<com.bamnat.core.money.Job?, com.bamnat.core.money.Job>>): Int {
+        if (jobs.isEmpty()) return 0
+        val money = container.calendars.money(calendarId)
+        var kept = 0
+        for ((before, written) in jobs) {
+            if (money.job(written.id) != written) { kept++; continue }
+            if (before == null) money.delete(written) else money.save(before)
+        }
+        return kept
     }
 
     /** [READ-30] Leave days of [all] that are rest days on the calendar now, with the shift each is put on. */
@@ -727,6 +796,25 @@ class DutyRosterViewModel(
         fun overwritten(u: Ui, snap: ScheduleSnapshot): Set<LocalDate> =
             DutyRoster.overwrites(u.writable.mapKeys { u.month.atDay(it.key) } + u.outside, snap.entries.associateBy { it.date })
 
+        /**
+         * 2.0.0 [RVL-74] (검토 I07ba-03) A roster put in again (fixed mid-month and sent again): the days whose work it changes on the calendar
+         * as it is now, each with what it shows before and after ("주간" → "야간"), in day order.
+         */
+        fun changes(u: Ui, snap: ScheduleSnapshot): List<Triple<LocalDate, String, String>> {
+            val cells = if (u.keepMine) u.writable.filterKeys { u.month.atDay(it) !in overwritten(u, snap) } else u.writable
+            val after = overlay(snap, u.month, cells.filterValues { it !is DutyCell.Units }, leaveShift(u, snap.shiftTypes))
+            fun said(r: com.bamnat.core.schedule.ResolvedDay): String {
+                val kind = r.entry?.leave?.label ?: r.shiftType?.name ?: "빈 날"
+                val s = r.start; val e = r.end
+                return if (r.hasCustomTimes && s != null && e != null) "$kind ${Fmt.timeRangeShort(s, e)}" else kind
+            }
+            return cells.keys.sorted().map { u.month.atDay(it) }.mapNotNull { d ->
+                val a = said(snap.resolver.resolve(d))
+                val b = said(after.resolver.resolve(d))
+                if (a == b) null else Triple(d, a, b)
+            }
+        }
+
         /** 2.0.0 [RVL-38] How many days '넣기' writes: all, or all but the kept ones. */
         fun writes(u: Ui, snap: ScheduleSnapshot?): Int {
             val month = u.writable.size
@@ -747,6 +835,28 @@ class DutyRosterViewModel(
     }
 }
 
+/**
+ * 2.0.0 [RVL-72] (검토 T07b-01) A 시간표's day on the calendar: a working day keeps its kind and takes the times; a day off becomes the
+ * calendar's first kind of work at those times. "6시간" starts when that kind does.
+ */
+internal fun hoursOn(e: com.bamnat.core.model.DayEntry, c: DutyCell.Hours, snap: ScheduleSnapshot): com.bamnat.core.model.DayEntry {
+    val day = snap.resolver.resolve(e.date).shiftType?.takeIf { !it.isOff }
+    val kinds = snap.shiftTypes.filter { !it.isOff }
+    fun startOf(t: ShiftType) = t.start?.let { it.hour * 60 + it.minute }
+    // A day's own kind when it starts near the times written; else the kind that starts nearest them ("9-15" on a 야간 day is 주간).
+    fun apart(t: ShiftType): Int = startOf(t)?.let { k -> c.start?.let { s -> Math.floorMod(k - s, 1440).let { minOf(it, 1440 - it) } } } ?: Int.MAX_VALUE
+    val near = c.start?.let { kinds.filter { startOf(it) != null }.minByOrNull(::apart) }
+    val kind = when {
+        day != null && (c.start == null || apart(day) <= NEAR_KIND_MINUTES) -> day
+        near != null -> near
+        else -> day ?: kinds.firstOrNull()
+    }
+    return DutyRoster.hours(e, c, work = kind?.id?.takeIf { it != day?.id }, kindStart = kind?.let(::startOf))
+}
+
+/** 2.0.0 [RVL-72] How far a written start may be from the day's own kind and still be that kind. */
+private const val NEAR_KIND_MINUTES = 120
+
 /** [ROST-01] The month as it will be: the calendar's days with the cells about to go on them. */
 internal fun overlay(snap: ScheduleSnapshot, month: YearMonth, cells: Map<Int, DutyCell>, leaveOn: Long? = null): ScheduleSnapshot {
     if (cells.isEmpty()) return snap
@@ -756,6 +866,7 @@ internal fun overlay(snap: ScheduleSnapshot, month: YearMonth, cells: Map<Int, D
         val e = byDate[date] ?: com.bamnat.core.model.DayEntry(date)
         // [READ-30] As it will be written: the roster's 연차 on a rest day is that shift taken off.
         byDate[date] = if (c is DutyCell.Leave && leaveOn != null && !snap.resolver.resolve(date).isWorkDay) DutyRoster.leaveOnRest(e, c, leaveOn)
+            else if (c is DutyCell.Hours) hoursOn(e, c, snap)
             else DutyRoster.apply(e, c)
     }
     return snap.copy(entries = byDate.values.toList())
@@ -897,6 +1008,7 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             // [PHOTO-09] 1.29: '사진이 달라요' on every photo's result.
             if (ui.from == RosterFrom.PHOTO && !ui.reading && failed == null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.ROSTER)
             ui.asks.firstOrNull()?.let { ask -> AskCard(ask, types, vm.leaveKeys, onAnswer = { vm.answer(ask.raw, it) }, onNewKind = { newKindFor = ask.raw }) }
+            WeekdayCard(ui, onMonth = vm::weekdayMonth, onRight = vm::heardWeekdays)
             Notices(ui, snap, vm::keepOutside, vm::keepMine)
             val s = snap
             if (s != null) {
@@ -944,13 +1056,15 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
         if (wide && types.isNotEmpty()) Keypad(ui, types, snap, vm, Modifier.width(360.dp).fillMaxHeight(), wide = true)
       }
     }
-    if (pasting) PasteDialog(onDismiss = { pasting = false }) { pasting = false; vm.readText(it) }
+    if (pasting) PasteDialog(timed = vm.timeFirst, onDismiss = { pasting = false }) { pasting = false; vm.readText(it) }
     ui.scan?.let { scan ->
         if (tapping) PhotoTapDialog(scan, onDismiss = { tapping = false }) { hint -> tapping = false; vm.readTapped(hint) }
         if (seeing) ReadDiagnosisDialog(scan, ui.rows.orEmpty(), onDismiss = { seeing = false })
     }
     editing?.let { day ->
-        CellDialog(ui.month.atDay(day), types, leave = vm.leaveKeys, onDismiss = { editing = null }) { cell -> vm.edit(day, cell); editing = null }
+        // 2.0.0 [RVL-72] A 시간표's day is fixed as times, a 공수표's as 공수.
+        CellDialog(ui.month.atDay(day), types, leave = vm.leaveKeys, current = ui.cells[day], timed = ui.row?.timed == true,
+            onDismiss = { editing = null }) { cell -> vm.edit(day, cell); editing = null }
     }
     newKindFor?.let { raw ->
         NewKindDialog(raw, onDismiss = { newKindFor = null }) { name, range -> vm.newKind(raw, name, range); newKindFor = null }
@@ -961,6 +1075,29 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
 internal fun longWeeks(calculator: WorkHoursCalculator, month: YearMonth, weekStart: java.time.DayOfWeek): Int {
     val first = month.atDay(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
     return (0 until com.bamnat.app.ui.calendar.GRID_ROWS).count { calculator.week(first.plusDays(it * 7L + 3)).overLimit }
+}
+
+/**
+ * 2.0.0 [RVL-75] (검토 I07ba-02) What the roster's row of weekdays says: "요일을 보면 12월 근무표예요" with '12월로 넣기', or columns a day off,
+ * every cell yellow until looked at. The app's one notice card (조건 3).
+ */
+@Composable
+private fun WeekdayCard(ui: DutyRosterViewModel.Ui, onMonth: () -> Unit, onRight: () -> Unit) {
+    if (ui.reading || ui.row == null) return
+    when (val w = ui.weekdays) {
+        is com.bamnat.core.imports.WeekdayCheck.Verdict.OtherMonth -> com.bamnat.app.ui.components.NudgeCard(
+            "요일을 보면 ${w.month.monthValue}월 근무표예요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+            detail = "${ui.month.monthValue}월로 읽었는데 1일이 ${Fmt.dayOfWeekShort(w.month.atDay(1).dayOfWeek)}요일인 달은 ${w.month.monthValue}월이에요",
+            action = "${w.month.monthValue}월로 넣기", onAction = onMonth, onClose = onRight,
+        )
+        is com.bamnat.core.imports.WeekdayCheck.Verdict.Shifted -> com.bamnat.app.ui.components.NudgeCard(
+            "날짜와 요일이 하루씩 어긋나 보여요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+            detail = "칸이 빠졌을 수 있어요. 노란 칸을 봐 주세요",
+            action = "맞게 읽었어요", onAction = onRight,
+        )
+        null -> return
+    }
+    Spacer(Modifier.height(6.dp))
 }
 
 /** [READ-37] "사진에서 7월로 읽었어요. 맞나요?" with the month the screen was on as the other answer. */
@@ -1011,6 +1148,15 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
         Spacer(Modifier.height(6.dp))
     }
     val lines = buildList {
+        // 2.0.0 [RVL-74] (검토 I07ba-03) The same roster sent again, fixed: only the days it changes, said first (the rest stay as they are).
+        if (snap != null && ui.row != null && ui.writable.size >= DutyRoster.MIN_DAYS) {
+            val changed = DutyRosterViewModel.changes(ui, snap)
+            if (changed.size < ui.writable.size) add(
+                if (changed.isEmpty()) "지금 달력과 같아요. 넣어도 바뀌는 날이 없어요"
+                else "지금 달력과 견주면 바뀌는 날은 ${changed.size}일이에요: " + changed.take(3).joinToString(", ") { (d, a, b) -> "${d.dayOfMonth}일 $a→$b" } +
+                    (if (changed.size > 3) " 외 ${changed.size - 3}일" else ""),
+            )
+        }
         if (ui.named != null && ui.row != null) add("근무표에 적힌 ${ui.named.monthValue}월로 넣어요" + if (ui.outside.isNotEmpty()) " (${ui.named.monthValue}월 ${ui.writable.size}일 + ${ui.outside.size}일)" else "")
         if (ui.beyond.isNotEmpty()) add("${ui.beyond.joinToString(",")}일 칸이 있는데 ${ui.month.monthValue}월은 ${ui.month.lengthOfMonth()}일까지라 그 칸은 빼요")
         if (ui.doubtful.isNotEmpty()) add("노란 칸 ${ui.doubtful.size}개는 확실하지 않아요. 누르고 키로 맞춰 주세요")
@@ -1192,12 +1338,19 @@ private fun Keypad(
             if (copied != null && snap != null) CopyWays(copied) { vm.sameAsLastMonth(snap, it) }
             HorizontalDivider()
             val n = DutyRosterViewModel.writes(ui, snap)
-            Button(onClick = vm::apply, enabled = n > 0 && ui.applied == null && ui.chosen,
+            // 2.0.0 [RVL-74] (검토 I07ba-03) The same roster again: the button says the days it changes, not the whole month again.
+            val again = remember(ui, snap) {
+                if (snap == null || ui.row == null || ui.writable.size < DutyRoster.MIN_DAYS || ui.outside.isNotEmpty()) null
+                else DutyRosterViewModel.changes(ui, snap).size.takeIf { it < ui.writable.size }
+            }
+            Button(onClick = vm::apply, enabled = n > 0 && ui.applied == null && ui.chosen && again != 0,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)) {
                 Text(when {
                     ui.applied != null -> "넣었어요"
                     !ui.chosen -> "먼저 내 줄을 골라 주세요"
                     n == 0 -> "키를 눌러 하루씩 넣어요"
+                    again == 0 -> "지금 달력과 같아요"
+                    again != null -> "바뀐 ${again}일 고치기"
                     else -> "${ui.month.monthValue}월에 ${n}일 넣기"
                 }, maxLines = 1)
             }
@@ -1255,16 +1408,40 @@ private val LEAVE_KEYS = listOf(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun CellDialog(date: LocalDate, types: List<ShiftType>, leave: Boolean = true, onDismiss: () -> Unit, onPick: (DutyCell?) -> Unit) {
+internal fun CellDialog(
+    date: LocalDate, types: List<ShiftType>, leave: Boolean = true,
+    /** 2.0.0 [RVL-72] The day as it is now, and whether the line read is a 시간표·공수표 (its times or 공수 are fixed here first). */
+    current: DutyCell? = null, timed: Boolean = false,
+    onDismiss: () -> Unit, onPick: (DutyCell?) -> Unit,
+) {
+    // 2.0.0 [RVL-72] (검토 T07b-01) The day's times, picked as a shift's are; a length only starts at 09:00 in the picker.
+    var times by remember { mutableStateOf(false) }
+    if (times) {
+        val h = current as? DutyCell.Hours
+        val start = h?.start ?: DutyRoster.DEFAULT_START
+        fun at(m: Int) = LocalTime.of((m / 60) % 24, m % 60)
+        TimeRangeDialog(title = "${Fmt.monthDay(date)} 일한 시간", initial = TimeRange(at(start), at(start + (h?.minutes ?: 6 * 60))),
+            onDismiss = { times = false }, onConfirm = { r -> onPick(DutyCell.Hours(r.start.hour * 60 + r.start.minute, r.spanMinutes)) },
+            confirmLabel = "넣기")
+        return
+    }
+    val units = current is DutyCell.Units
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(Fmt.monthDay(date)) },
         text = {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                types.forEach { t -> FilterChip(selected = false, onClick = { onPick(DutyCell.Shift(t.id)) }, label = { Text(t.name) },
+                if (timed && units) com.bamnat.core.money.DayRate.UNITS.forEach { u ->
+                    FilterChip(selected = (current as DutyCell.Units).units == u, onClick = { onPick(DutyCell.Units(u)) },
+                        label = { Text(com.bamnat.core.money.DayRate.label(u)) })
+                }
+                if (timed && !units) FilterChip(selected = current is DutyCell.Hours, onClick = { times = true },
+                    label = { Text(com.bamnat.core.imports.TimeSheet.short(current ?: DutyCell.Off)?.let { "$it 고치기" } ?: "시간 넣기") },
+                    leadingIcon = { Icon(Icons.Filled.Schedule, null, Modifier.size(18.dp)) })
+                if (!(timed && units)) types.forEach { t -> FilterChip(selected = false, onClick = { onPick(DutyCell.Shift(t.id)) }, label = { Text(t.name) },
                     leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) }) }
-                if (types.none { it.isOff }) FilterChip(selected = false, onClick = { onPick(DutyCell.Off) }, label = { Text("쉬는 날") })
-                if (leave) LEAVE_KEYS.forEach { (name, cell) -> FilterChip(selected = false, onClick = { onPick(cell) }, label = { Text(name) }) }
+                if (timed || types.none { it.isOff }) FilterChip(selected = false, onClick = { onPick(DutyCell.Off) }, label = { Text("쉬는 날") })
+                if (leave && !timed) LEAVE_KEYS.forEach { (name, cell) -> FilterChip(selected = false, onClick = { onPick(cell) }, label = { Text(name) }) }
                 FilterChip(selected = false, onClick = { onPick(null) }, label = { Text("그대로 두기") })
             }
         },
@@ -1300,7 +1477,7 @@ private fun NewKindDialog(raw: String, onDismiss: () -> Unit, onSave: (String, T
 }
 
 @Composable
-private fun PasteDialog(onDismiss: () -> Unit, onRead: (String) -> Unit) {
+private fun PasteDialog(timed: Boolean = false, onDismiss: () -> Unit, onRead: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
     AlertDialog(
         // 2.0.0 [RVL-20] (조건 10) A tap beside the window does not throw away what was pasted; 취소 still does.
@@ -1308,7 +1485,8 @@ private fun PasteDialog(onDismiss: () -> Unit, onRead: (String) -> Unit) {
         title = { Text(PASTE) },
         text = {
             Column {
-                Text("날짜 줄과 근무 줄을 한 줄씩 붙여 넣어 주세요.\n예) 1 2 3 4 5\n김민지 D E N O O",
+                // 2.0.0 [RVL-72] 알바·현장: a 시간표's example (a day and its times on each line).
+                Text(if (timed) "날짜와 시간을 한 줄씩 붙여 넣어 주세요.\n예) 11/3 09:00-15:00\n11/5 18-23 · 월 9-15" else "날짜 줄과 근무 줄을 한 줄씩 붙여 넣어 주세요.\n예) 1 2 3 4 5\n김민지 D E N O O",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
                 // Pasted text is the point here; this is the fallback way in (결정 D62).

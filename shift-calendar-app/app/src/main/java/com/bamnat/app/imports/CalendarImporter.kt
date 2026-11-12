@@ -49,13 +49,16 @@ class CalendarImporter(
 
     /** What the calendars hold from [from] to [to], each as it would come in. */
     suspend fun propose(calendars: List<DeviceCalendar>, ids: Set<Long>, from: LocalDate, to: LocalDate): List<CalendarImport.Proposal> =
+        withContext(Dispatchers.IO) { propose(source.events(ids, from, to), calendars.filter { it.generated }.map { it.id }.toSet()) }
+
+    /** 2.0.0 [RVL-73] (검토 I07bb-05) [events] read from a calendar file (.ics), each as it would come in, the same way. */
+    suspend fun propose(events: List<com.bamnat.core.imports.DeviceEvent>, generated: Set<Long> = emptySet()): List<CalendarImport.Proposal> =
         withContext(Dispatchers.IO) {
-            val events = source.events(ids, from, to)
             val snapshot = schedule.snapshot.first()
             CalendarImport.propose(
                 events, snapshot.shiftTypes, imported.keys().toSet(),
                 current = { d -> snapshot.resolver.resolve(d).shiftType?.id },
-                generatedCalendars = calendars.filter { it.generated }.map { it.id }.toSet(),
+                generatedCalendars = generated,
             )
         }
 
