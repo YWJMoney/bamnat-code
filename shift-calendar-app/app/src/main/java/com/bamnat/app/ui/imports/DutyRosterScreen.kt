@@ -179,6 +179,11 @@ class DutyRosterViewModel(
         val same: Boolean? = null,
         /** [READ-14] The photo read, but poorly: what to do for a better one. */
         val advice: String? = null,
+        /**
+         * 2.0.0 [RVL-81] (검토 I07bc-03 '찍는 순간 안내') The photo just read would read better taken again: said once right after it, in
+         * the one card ('다시 찍기', X = 이대로 쓰기), in place of [advice]'s line.
+         */
+        val check: com.bamnat.core.imports.PhotoQuality.Issue? = null,
         /** [READ-13] Reading n of m ("5번 중 2번째"); m is 0 until known. */
         val step: Pair<Int, Int>? = null,
         /** 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down: percent, -1 while its size is not known; null when not waiting. */
@@ -289,7 +294,14 @@ class DutyRosterViewModel(
     } ?: Ui(start))
     val ui: StateFlow<Ui> = _ui.asStateFlow()
 
+    /**
+     * 2.0.0 [RVL-81] (검토 I07bc-03) '찍기 전 한 줄 요령' until this calendar has put in a sheet from a photo (its form is then known,
+     * [com.bamnat.core.imports.RosterForm]): the people who need it are the ones taking their first.
+     */
+    val tip = MutableStateFlow(false)
+
     init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { tip.value = forms.rosterForm(calendarId) == null }
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             @OptIn(kotlinx.coroutines.FlowPreview::class)
             _ui.debounce(DRAFT_QUIET_MS).collect { u -> keepDraft(u) }
@@ -490,6 +502,9 @@ class DutyRosterViewModel(
         u.copy(error = null, fix = null, cursor = empty)
     }
 
+    /** 2.0.0 [RVL-81] '이대로 쓰기' (the card's X), or '다시 찍기' on its way: the card goes, the month read stays. */
+    fun keepShot() = _ui.update { it.copy(check = null) }
+
     /** The failure's card closed with its X. */
     fun heardError() = _ui.update { it.copy(error = null, fix = null) }
 
@@ -508,8 +523,16 @@ class DutyRosterViewModel(
     /** [READ-04] The last photo read again along the lines the user tapped on it. */
     fun readTapped(hint: com.bamnat.core.imports.RosterHint) {
         val scan = _ui.value.scan ?: return
+        // 2.0.0 [RVL-80] (검토 I07bc-02) Where on the table the user tapped, so next month's sheet of the same ward is read so by itself.
+        taps = RosterReader.taps(scan, hint)
         read { c -> RosterReader.tapped(scan, c, hint, _ui.value.month.atDay(1)) }
     }
+
+    /** 2.0.0 [RVL-80] The taps on the photo last read (per mille of its table's height), kept in the ward's form once a line goes in. */
+    private var taps: Pair<Int?, Int?>? = null
+
+    /** 2.0.0 [RVL-80] The ward's sheet as learned on this calendar ([com.bamnat.core.imports.RosterForm]); on this phone only. */
+    private val forms get() = com.bamnat.app.data.ReadFixBook.get(container.appContext)
 
     private fun read(source: Ui.Source? = null, how: suspend (DutyCodes) -> RosterResult) {
         reading?.cancel()
@@ -517,7 +540,20 @@ class DutyRosterViewModel(
         reading = viewModelScope.launch {
             // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
             // 2.0.0 [RVL-26] (검토 SCAN-21) Read off the main thread: a big file or text never freezes the screen.
-            val r = try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { how(codes()) } }
+            var auto = false
+            val r = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    val c = codes()
+                    val first = how(c)
+                    // 2.0.0 [RVL-80] (검토 I07bc-02) A sheet whose row of days was not found is read along last month's taps first,
+                    // when last month's sheet needed them: the same ward's sheet stands the same way.
+                    val scan = first.scan
+                    val hint = if (first.rows.isEmpty() && first.from == RosterFrom.PHOTO && scan != null && first.locked == null && source != null)
+                        RosterReader.formHint(scan, forms.rosterForm(calendarId)) else null
+                    val again = hint?.let { h -> RosterReader.tapped(scan!!, c, h, _ui.value.month.atDay(1)).takeIf { it.rows.isNotEmpty() } }
+                    if (again != null) { auto = true; again.copy(advice = first.advice, check = first.check) } else first
+                }
+            }
             catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) {
                 // 2.0.0 [RVL-32] Said as every other failed reading is, with its one fix.
                 RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.said(container.appContext, e),
@@ -527,8 +563,12 @@ class DutyRosterViewModel(
             val rows = r.rows.sortedBy { it.line }
             // [READ-06] The line picked on last month's roster, found again by its name or 조.
             // 2.0.0 [RVL-22] (검토 SCAN-07) Two people of that name ("김민지", "김민지 (2)"): asked, never the first taken.
-            val mine = container.dutyCodes.mine(calendarId)?.takeIf { m -> !DutyRoster.twins(rows, m) }
-                ?.let { m -> rows.indexOfFirst { it.label == m } }?.takeIf { it >= 0 }
+            // 2.0.0 [RVL-80] (검토 I07bc-02) And by the ward's form: a name the photo read a letter off ("김민시"), or lost, in the same
+            // place on a sheet of as many lines.
+            val mine = if (rows.isEmpty()) null else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.bamnat.core.imports.RosterForm.find(rows, container.dutyCodes.mine(calendarId), forms.rosterForm(calendarId))
+            }
+            if (source != null) taps = null
             _ui.update {
                 it.copy(
                     reading = false, step = null, preparing = null, fix = r.fix, same = if (rows.isEmpty()) it.same else null,
@@ -537,6 +577,7 @@ class DutyRosterViewModel(
                     chosen = if (rows.isEmpty()) it.chosen else rows.size == 1 || mine != null,
                     // 2.0.0 [RVL-41] A locked PDF asks for its password in its window, not on the failure card.
                     edits = if (rows.isEmpty()) it.edits else emptyMap(), error = r.error.takeIf { r.locked == null }, from = r.from, advice = r.advice,
+                    check = if (rows.isEmpty()) null else r.check,
                     locked = r.locked,
                     weekdays = if (rows.isEmpty()) it.weekdays else r.weekdays,
                     // [ROST-04] The month the roster names wins over the one on screen (중-6).
@@ -544,6 +585,10 @@ class DutyRosterViewModel(
                     movedFrom = if (r.month != null && r.month != it.month) it.month else null,
                     scan = r.scan ?: it.scan.takeIf { r.from == RosterFrom.PHOTO },
                 )
+            }
+            if (auto) {
+                taps = forms.rosterForm(calendarId)?.let { f -> f.dayAt to f.myAt }
+                _messages.tryEmit(UndoMessage("지난달 근무표처럼 읽었어요"))
             }
         }
     }
@@ -604,13 +649,43 @@ class DutyRosterViewModel(
      * [READ-17] "사진과 내용이 같은가요?": yes takes the read cells as looked at (the yellow ones too: the user saw the
      * photo beside them); no lets each one be tapped and fixed.
      */
-    fun sameAsPhoto(yes: Boolean) = _ui.update { u ->
+    fun sameAsPhoto(yes: Boolean) {
+        if (yes) learnSeen(_ui.value)
+        sameSaid(yes)
+    }
+
+    private fun sameSaid(yes: Boolean) = _ui.update { u ->
         if (!yes) return@update u.copy(same = false)
         val seen = u.doubtful.mapNotNull { d -> u.cells[d]?.takeIf { it !is DutyCell.Unknown }?.let { d to it } }.toMap()
         (if (seen.isEmpty()) u else change(u, u.edits + seen)).copy(same = true)
     }
 
     fun askSameAgain() = _ui.update { it.copy(same = null) }
+
+    /**
+     * 2.0.0 [RVL-80] (검토 I07bc-02) '네, 같아요': the sheet's shape is kept as the ward's form, and the words read by a guess that the
+     * user saw are right go toward the code book, as a fix does ([com.bamnat.core.imports.RosterLearn.confirmed]): a word said so on
+     * two days, or in two months, reads as theirs next time (no longer yellow).
+     */
+    private fun learnSeen(u: Ui) {
+        val row = u.row ?: return
+        if (u.from != RosterFrom.PHOTO) return
+        val seen = com.bamnat.core.imports.RosterLearn.confirmed(row, u.cells)
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val book = com.bamnat.app.data.ReadFixBook.get(container.appContext)
+            seen.forEach { (word, said) ->
+                val (cell, days) = said
+                if (days >= com.bamnat.core.imports.RosterLearn.TIMES || book.dutyFixed(calendarId, word, cell)) container.dutyCodes.learn(calendarId, codeKey(word), cell)
+            }
+            learnForm(u)
+        }
+    }
+
+    private fun learnForm(u: Ui) {
+        val rows = u.rows ?: return
+        val form = com.bamnat.core.imports.RosterForm.of(rows, u.picked, taps) ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { forms.learnRosterForm(calendarId, form) }
+    }
 
     /**
      * 2.0.0 [RVL-36] (검토 U07b-04) One yellow cell looked at on the photo and right as read: it is taken as it is (no longer yellow), and
@@ -696,6 +771,8 @@ class DutyRosterViewModel(
             // A roster whose common codes were matched to the user's kinds says something about those kinds.
             if (u.from != RosterFrom.TYPED && u.row?.guessed.orEmpty().any { it in cells && it !in u.edits }) markShiftsInferred()
             _ui.update { it.copy(applied = all.size, history = emptyList()) }
+            // 2.0.0 [RVL-80] (검토 I07bc-02) A sheet read from a photo or scan and put in is the ward's form for next month.
+            if (u.row != null && (u.from == RosterFrom.PHOTO || u.from == RosterFrom.FILE && u.scan != null)) learnForm(u)
             container.proMoments.rosterIn() // 1.32 [PROX-02]
             // 1.39 [SPREAD-06] A month filled from a 근무표 (사진·파일·직접) is the first good moment for Play's review too, as a
             // first pattern saved is (ShiftsViewModel); it is still asked only after the first month-end card, back on 내 달력.
@@ -997,6 +1074,10 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
             if (ui.reading) ReadingLine(ui.step, ui.preparing, action = "멈추기", onAction = vm::stopReading)
             else if (failed == null) RosterWaysRow(ways, enabled = true)
             // [ROST-10] "복사한 글이 있어요 · 붙여 넣기": the clip's description only, read on the tap (Q ClipboardHint, 1.24 통합).
+            // 2.0.0 [RVL-81] (검토 I07bc-03 '찍기 전 한 줄 요령') Before the first photo: how a sheet reads best, in one line (조건 4).
+            val tipNow by vm.tip.collectAsStateWithLifecycle()
+            if (tipNow && ui.rows == null && !ui.reading && failed == null) Text(SHOT_TIP, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (ui.rows == null && !ui.reading && failed == null) ClipboardHint("근무표", fits = vm::fitsClip, onPaste = vm::readText)
             // The photo was fine and only the reading model was missing (인터넷·저장 공간·Play 서비스): once that is fixed, the same
             // photo is read again instead of taking a new one.
@@ -1014,7 +1095,21 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                     else -> "다시 찍기"
                 },
             )
-            ui.advice?.let { a -> Text(a, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
+            // 2.0.0 [RVL-81] (검토 I07bc-03) Right after a photo that would read better taken again: what it is a little, and one press
+            // to take another; the month read stays below, and the X keeps it as it is.
+            val check = ui.check?.takeIf { !ui.reading && failed == null }
+            if (check != null) {
+                val taken = (ui.source as? DutyRosterViewModel.Ui.Source.Photo)?.taken == true || ways.scanner
+                com.bamnat.app.ui.components.NudgeCard(
+                    check.soft,
+                    tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    detail = "이대로 써도 돼요. 노란 칸만 한 번 봐 주세요",
+                    action = if (taken) "다시 찍기" else "다른 사진 고르기",
+                    onAction = { vm.keepShot(); if (taken) ways.first() else ways.pick() },
+                    onClose = vm::keepShot,
+                    closeLabel = "이대로 쓰기",
+                )
+            } else ui.advice?.let { a -> Text(a, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
             // 2.0.0 [RVL-41] (검토 U07b-10) A locked PDF opened here, with its password.
             ui.locked?.let { lock -> PdfPasswordDialog(lock, working = ui.reading, payslip = false, onOpen = vm::unlock, onDismiss = vm::cancelUnlock) }
             // [READ-04][READ-05] A photo that read, but not what the user sees: tap it, or see what was read.

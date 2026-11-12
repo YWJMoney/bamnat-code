@@ -62,6 +62,10 @@ object RosterScanner {
     @VisibleForTesting
     var fakeReads: (suspend (Uri) -> List<List<RosterWord>>)? = null
 
+    /** 2.0.0 [RVL-81] For tests: how good [fake]'s photo is (the phone measures it from the picture). */
+    @VisibleForTesting
+    var fakeQuality: PhotoQuality.Report? = null
+
     /** The picture behind [fake]'s words, for screenshots of 사진 위에서 누르기. */
     @VisibleForTesting
     var fakeImage: (() -> Bitmap)? = null
@@ -87,7 +91,7 @@ object RosterScanner {
         fake?.let { f ->
             fakeUnderWay?.invoke(preparing, progress)
             val words = f(uri)
-            return@withContext Scan(words, DutyRoster.analyse(words, codes), fakeImage?.invoke(), 1f)
+            return@withContext Scan(words, DutyRoster.analyse(words, codes), fakeImage?.invoke(), 1f, quality = fakeQuality)
         }
         scanPicture(context, ImagePrep.load(context, uri), codes, preparing, progress)
     }

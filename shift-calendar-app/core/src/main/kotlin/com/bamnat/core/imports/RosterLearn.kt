@@ -21,4 +21,25 @@ object RosterLearn {
         val raw = row.raw[day]?.trim().orEmpty()
         return DutyCodes.norm(raw).takeIf { it.isNotEmpty() && it.length <= 6 }?.let { raw }
     }
+
+    /**
+     * 2.0.0 [RVL-80] (검토 I07bc-02) '네, 같아요' on [row]: the words read by a guess (a common code, a stroke off) that stay as read in
+     * [cells], each with what it means and on how many days the user saw it so. A day changed by hand is [word]'s, not this; a word
+     * that came out with two meanings teaches nothing.
+     */
+    fun confirmed(row: RosterRow, cells: Map<Int, DutyCell>): Map<String, Pair<DutyCell, Int>> {
+        val seen = LinkedHashMap<String, MutableList<Pair<String, DutyCell>>>()
+        row.guessed.forEach { d ->
+            val was = row.cells[d] ?: return@forEach
+            val now = cells[d] ?: return@forEach
+            if (now != was || now is DutyCell.Unknown || now is DutyCell.Hours || now is DutyCell.Units) return@forEach
+            val raw = row.raw[d]?.trim().orEmpty()
+            val key = DutyCodes.norm(raw)
+            if (key.isEmpty() || key.length > 6) return@forEach
+            seen.getOrPut(key) { mutableListOf() } += raw to now
+        }
+        return seen.values.mapNotNull { said ->
+            said.map { it.second }.distinct().singleOrNull()?.let { cell -> said.first().first to (cell to said.size) }
+        }.toMap()
+    }
 }

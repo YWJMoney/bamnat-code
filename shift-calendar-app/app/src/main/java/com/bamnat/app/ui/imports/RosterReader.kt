@@ -31,6 +31,8 @@ data class RosterResult(
     val locked: com.bamnat.app.imports.PdfLock? = null,
     /** 2.0.0 [RVL-75] (검토 I07ba-02) What the roster's row of weekdays says of the month read: another month, or columns a day off. */
     val weekdays: com.bamnat.core.imports.WeekdayCheck.Verdict? = null,
+    /** 2.0.0 [RVL-81] (검토 I07bc-03) A photo that read, but would read better taken again: the one thing to say right after it. */
+    val check: com.bamnat.core.imports.PhotoQuality.Issue? = null,
 )
 
 object RosterReader {
@@ -95,6 +97,7 @@ object RosterReader {
         return RosterResult(rows, month ?: times?.month.takeIf { rows === times?.rows }, RosterFrom.PHOTO,
             error ?: none.takeIf { rows.isEmpty() }?.let { p -> retake?.let { "$p $it" } ?: p }, s,
             advice = retake.takeIf { rows.isNotEmpty() }, fix = failed?.let { com.bamnat.app.pay.OcrModel.fix(it) },
+            check = s?.quality?.check?.takeIf { rows.isNotEmpty() },
             weekdays = if (rows.isEmpty() || rows === times?.rows) null else weekdays(com.bamnat.core.imports.WeekdayCheck.ofWords(list), month, near))
     }
 
@@ -103,6 +106,20 @@ object RosterReader {
         val month = DutyRoster.monthIn(scan.words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
         val rows = DutyRoster.read(scan.words, codes, hint).map { it.placed(month ?: YearMonth.from(near)) }
         return RosterResult(rows, month, RosterFrom.PHOTO, TAPPED_NOTHING.takeIf { rows.isEmpty() }, scan)
+    }
+
+    /** 2.0.0 [RVL-80] (검토 I07bc-02) Where [hint] tapped on [scan]'s table: the row of days and the user's line, per mille of its height. */
+    fun taps(scan: RosterScanner.Scan, hint: RosterHint): Pair<Int?, Int?>? {
+        val w = scan.words.takeIf { it.isNotEmpty() } ?: return null
+        // Measured on the table laid level: a name tapped at the left edge of a turned photo is its line's place, as the middle is.
+        val my = hint.myRow?.let { com.bamnat.core.imports.RosterForm.at(it.first, it.second, w) } ?: return null
+        return hint.dayRow?.let { com.bamnat.core.imports.RosterForm.at(it.first, it.second, w) } to my
+    }
+
+    /** 2.0.0 [RVL-80] Last month's taps ([form]) on [scan]'s table, or null when last month's sheet needed none. */
+    fun formHint(scan: RosterScanner.Scan, form: com.bamnat.core.imports.RosterForm?): RosterHint? {
+        val w = scan.words.takeIf { it.isNotEmpty() } ?: return null
+        return com.bamnat.core.imports.RosterForm.hint(form, w)
     }
 
     /** [READ-05] Why a photo gave nothing, and what to do next. */
