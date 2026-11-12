@@ -30,8 +30,11 @@ data class MemoTemplate(
         val kind = MemoRepeat.kindOf(repeat)
         val repeat = if (kind == MemoRepeat.Kind.NONE) "" else repeat
         val day = when (kind) {
-            MemoRepeat.Kind.WEEK -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(repeat.drop(1).toInt())))
-            MemoRepeat.Kind.MONTH -> nextDayOfMonth(date ?: today, repeat.drop(1).toInt())
+            // 2.0.0 [RVI-73] The repeat's body: one that ends ("W3~20261231") reads its weekday before the end.
+            MemoRepeat.Kind.WEEK -> (date ?: today).with(TemporalAdjusters.nextOrSame(java.time.DayOfWeek.of(MemoRepeat.bodyOf(repeat).drop(1).toInt())))
+            MemoRepeat.Kind.MONTH -> nextDayOfMonth(date ?: today, MemoRepeat.bodyOf(repeat).drop(1).toInt())
+            // [RVI-73] 요일 골라·격주·몇째 요일: their first day from the date picked (or today).
+            MemoRepeat.Kind.DAYS_OF_WEEK, MemoRepeat.Kind.EVERY_WEEKS, MemoRepeat.Kind.NTH_WEEKDAY -> MemoRepeat.firstFrom(repeat, date ?: today)
             else -> picked(answers, today) ?: date
         }
         return base.copy(

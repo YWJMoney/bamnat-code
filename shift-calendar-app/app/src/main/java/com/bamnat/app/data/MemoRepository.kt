@@ -93,12 +93,12 @@ class MemoRepository(
      * Any other memo gets null. No such memo: no schedule is read at all.
      */
     fun shiftLookup(list: List<Memo>, calendar: String): Flow<(Memo) -> MemoRepeat.ShiftOf?> {
-        val cals = list.filter { MemoRepeat.followsSchedule(it.repeat) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
+        val cals = list.filter { MemoRepeat.followsSchedule(it) }.mapTo(LinkedHashSet()) { calendarOf(it, calendar) }
         if (cals.isEmpty()) return flowOf { _: Memo -> null }
         return combine(cals.map { c -> shiftsOf(c).map { c to it } }) { pairs ->
             val byCal = pairs.toMap()
             val lookup: (Memo) -> MemoRepeat.ShiftOf? = { m ->
-                if (MemoRepeat.followsSchedule(m.repeat)) byCal[calendarOf(m, calendar)] else null
+                if (MemoRepeat.followsSchedule(m)) byCal[calendarOf(m, calendar)] else null
             }
             lookup
         }
@@ -261,8 +261,20 @@ class MemoRepository(
          * [EASE-22][MEMO-01] The calendar whose kinds of day a memo seen on [viewing] goes by: [viewing] itself when the memo is
          * its own or every calendar's, else the one calendar it was written on (as the memo editor reads its 근무).
          */
-        fun calendarOf(memo: Memo, viewing: String): String =
-            if (memo.onEveryCalendar || viewing in memo.owners) viewing else memo.owners.singleOrNull() ?: viewing
+        fun calendarOf(memo: Memo, viewing: String): String = when {
+            // 2.0.0 [RVI-78] (검토 T07a-04) One that comes back by the 근무표 keeps to its own calendar whichever is on screen.
+            MemoRepeat.followsSchedule(memo) -> scheduleCalendarOf(memo)
+            memo.onEveryCalendar || viewing in memo.owners -> viewing
+            else -> memo.owners.singleOrNull() ?: viewing
+        }
+
+        /**
+         * 2.0.0 [RVI-78] (검토 T07a-04) The calendar a memo that comes back by the 근무표 (근무마다·쉬는 날마다) goes by, whichever is on
+         * screen: the one it was written on (내 달력 first when it is on several), 내 달력 for one written on every calendar. It went by
+         * the calendar on screen, so an 알바's shared '근무마다' memo rang on the other job's days once the other calendar was opened.
+         */
+        fun scheduleCalendarOf(memo: Memo): String =
+            memo.owners.minWithOrNull(compareBy<String> { it != com.bamnat.core.memo.MemoCalendars.MAIN }.thenBy { it }) ?: com.bamnat.core.memo.MemoCalendars.MAIN
 
         fun repeatWindow(today: LocalDate = Today.date()): Pair<LocalDate, LocalDate> =
             today.minusYears(1).withDayOfMonth(1) to today.plusYears(3)

@@ -119,7 +119,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     val openNow by vm.flowOpenNow.collectAsStateWithLifecycle()
     val folded = !openNow && (chosen ?: (short || monthFirst))
     val now = rememberMinute()
-    val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
+    // 2.0.0 [RVI-93] A 쪽잠 on: the card says when it vibrates.
+    val napUntil by com.bamnat.app.alarm.ShiftNap.until.collectAsStateWithLifecycle()
+    val card = remember(snapshot, settings, log, now, napUntil) { vm.todayFlow(snapshot, settings, log, now, napUntil) }
     // 1.39 [FLOW-28] 하루 다이얼: the same day as a 24-hour ring (work, planned and real sleep, alarms, now), off in 설정 › 화면과 글자.
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     val dial = remember(snapshot, settings, log, now, calendarAlarms) {
@@ -155,6 +157,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
                 TodayFlow.Action.AWAKE_AT -> Unit // asks for the time first, below
                 // 1.38 [SLEEP-23] 낮잠 자기: asleep now, and a wake alarm at the nap's end.
                 TodayFlow.Action.NAP -> card.napUntil?.let(vm::napNow) ?: vm.fellAsleep()
+                // 2.0.0 [RVI-93] 쪽잠 20분 in a night's 휴게, and 일어났어요 before its vibration.
+                TodayFlow.Action.SHIFT_NAP -> vm.shiftNap()
+                TodayFlow.Action.SHIFT_NAP_END -> vm.endShiftNap()
             }
         },
         onWokeAt = { vm.wokeUp(it) },
@@ -345,13 +350,15 @@ private fun ActionButton(action: TodayFlow.Action, modifier: Modifier = Modifier
         TodayFlow.Action.AWAKE_AT -> "깬 시각 적기" to Icons.Outlined.Schedule
         TodayFlow.Action.ALARM_ON -> "알람 켜기" to Icons.Outlined.Alarm
         TodayFlow.Action.NAP -> "낮잠 자기" to Icons.Outlined.Bedtime
+        TodayFlow.Action.SHIFT_NAP -> "쪽잠 ${TodayFlow.SHIFT_NAP_MINUTES}분" to Icons.Outlined.Snooze
+        TodayFlow.Action.SHIFT_NAP_END -> "일어났어요" to Icons.Outlined.WbSunny
     }
     val content: @Composable () -> Unit = {
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, maxLines = 1)
     }
-    if (action == TodayFlow.Action.ASLEEP || action == TodayFlow.Action.NAP) {
+    if (action == TodayFlow.Action.ASLEEP || action == TodayFlow.Action.NAP || action == TodayFlow.Action.SHIFT_NAP) {
         val cal = LocalCalendarColors.current
         FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             colors = ButtonDefaults.filledTonalButtonColors(containerColor = cal.sleepContainer, contentColor = cal.onSleepContainer)) { content() }

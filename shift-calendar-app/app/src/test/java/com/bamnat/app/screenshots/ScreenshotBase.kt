@@ -421,7 +421,7 @@ abstract class ScreenshotBase {
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */
-        private fun shownWords(): List<String> {
+        fun shownWords(): List<String> {
             val words = mutableListOf<String>()
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
@@ -804,6 +804,21 @@ abstract class ScreenshotBase {
         }
 
         /** [CAL-51] Every node in the topmost window, for checks of what shows where (묶음 R's layout checks). */
+        /**
+         * 2.0.0 [RVI-75] The lowest node that says exactly [text]: a memo's offer is a one-line nudge under the words now, its
+         * '알림 넣기' like the editor's chip above it.
+         */
+        /**
+         * Taps the lowest on screen of what shows exactly [text]: a button under a card that shows the same words, or (with
+         * [merged] false) a memo's own title under the search box that holds the same word, at the title, not the card's middle.
+         */
+        fun tapLowest(text: String, merged: Boolean = true) {
+            val node = nodes(merged).filter { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { it.text == text } }
+                .maxByOrNull { it.boundsInWindow.top } ?: error("no '$text' on screen")
+            touch(node.boundsInWindow.center)
+            settle()
+        }
+
         fun nodes(merged: Boolean = true): List<SemanticsNode> {
             var all: List<SemanticsNode> = emptyList()
             scenario.onActivity { activity ->
