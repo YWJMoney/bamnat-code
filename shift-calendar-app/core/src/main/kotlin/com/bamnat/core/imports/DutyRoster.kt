@@ -104,8 +104,17 @@ data class RosterRow(
     val y: Int = 0,
     /** [READ-41] Days the photo had nothing on that the line's repeat filled ([RosterPeriod.fill]): yellow, and said so. */
     val filled: Set<Int> = emptySet(),
+    /**
+     * 2.0.0 [RVL-24] (검토 SCAN-10·T07b-05) A 4주 듀티 photo's days before the 1st (26 27 … 31 | 1 2 …), counted back from it: 0 is
+     * the last day of the month before. In memory only, until the month is known ([placed]) and they join [outside].
+     */
+    val before: Map<Int, DutyCell> = emptyMap(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
+
+    /** 2.0.0 [RVL-24] [before] as dates of the month before [month], in [outside] with the file's. */
+    fun placed(month: java.time.YearMonth): RosterRow = if (before.isEmpty()) this
+        else copy(outside = before.mapKeys { (d, _) -> month.atDay(1).plusDays(d - 1L) } + outside, before = emptyMap())
 
     /**
      * [NURS-04] The days to look at before saving (순번 275): cells read but not matched, cells guessed from a
@@ -313,6 +322,23 @@ class DutyCodes(
         val RANKS = setOf("RN", "CN", "HN", "PN", "UM", "NA", "AN", "LPN", "수간호사", "책임", "책임간호사", "주임", "간호사", "조무사", "간호조무사", "선임", "팀장", "조장", "반장")
 
         /**
+         * 2.0.0 [RVL-21] (검토 SCAN-06·T07b-04) Short leave words that mean something else on many rosters: AM·PM are 오전·오후
+         * 근무 in many 병동 and 가게, V·MS·HD·AL and one-letter 반·생·년 are a 메모 or a team's own mark as often as a leave. Read
+         * as a leave without asking they took 연차 off quietly; now each is asked once ([DutyCell.Unknown], answered into the code
+         * book), with the leave it most often is offered first: its name on the chip and the cell it puts in.
+         */
+        private val GUESSES: Map<String, Pair<String, DutyCell>> = buildMap {
+            listOf("V", "AL", "년").forEach { put(it, "연차" to DutyCell.Leave()) }
+            put("AM", "오전 반차" to DutyCell.Leave(quarters = 2, fromStart = true))
+            put("PM", "오후 반차" to DutyCell.Leave(quarters = 2))
+            listOf("반", "HD").forEach { put(it, "반차" to DutyCell.Leave(quarters = 2)) }
+            listOf("생", "MS").forEach { put(it, "생리휴가" to DutyCell.Leave(LeaveKind.UNPAID)) }
+        }
+
+        /** 2.0.0 [RVL-21] The leave a short word asked about most often is ([GUESSES]): its name and cell, or null. */
+        fun guessOf(raw: String): Pair<String, DutyCell>? = GUESSES[norm(raw)]
+
+        /**
          * [ROST-05] Leave words (상-3). 연차 is a whole day; 반차 half a day of it (오전반 off the start); 반반차 a quarter.
          * 생리휴가 is 무급: 근로기준법 제73조 "사용자는 여성 근로자가 청구하면 월 1일의 생리휴가를 주어야 한다."
          * says nothing of pay (2004년 개정으로 유급 문구가 빠짐; 출처 위키문헌 근로기준법 조문, 현행 원문 대조 확인 필요 —
@@ -328,6 +354,8 @@ class DutyCodes(
             listOf("생", "생휴", "생리", "생리휴가", "MS").forEach { put(it, DutyCell.Leave(LeaveKind.UNPAID)) }
             listOf("병", "병가", "SL", "공가", "경조", "경", "경조사", "특휴", "특별휴가", "특", "보", "보건", "보건휴가", "청원", "포상", "위로", "하계", "하휴", "교육휴가")
                 .forEach { put(it, DutyCell.Unknown(it, leave = true)) }
+            // 2.0.0 [RVL-21] A short word that is a leave on one roster and a shift on another is asked once instead.
+            GUESSES.keys.forEach { put(it, DutyCell.Unknown(it)) }
         }
     }
 }
@@ -426,6 +454,41 @@ object DutyRoster {
      * [SHFT-06] Reads text pasted by hand (from Google Lens or a messenger): one line of the table per line,
      * cells apart by spaces or tabs. A person's name at the start of a line is kept as the line's name.
      */
+    /**
+     * 2.0.0 [RVL-16] (검토 SCAN-08) The lines of one roster read page by page (a scanned PDF of 1~15일 and 16~31일): a name on two pages is
+     * one line, its days joined, as [TeamSheet.pages] does for a team. A day two pages read differently keeps the first page's and is
+     * looked at ([RosterRow.contested]); a line without a name stays a line of its own. Before, the second page's days were dropped.
+     */
+    fun joinPages(rows: List<RosterRow>): List<RosterRow> {
+        val out = LinkedHashMap<String, RosterRow>()
+        for (r in rows) {
+            var key = DutyCodes.norm(r.label).ifEmpty { "#${out.size}" }
+            // 2.0.0 [RVL-22] (검토 SCAN-07) Another person of the same name (their days meet this one's): a line of its own.
+            var n = 1
+            while (out[key]?.let { had -> had.cells.keys.count(r.cells::containsKey) > SEAM } == true) {
+                n++
+                key = DutyCodes.norm(twin(r.label, n))
+            }
+            val had = out[key]
+            out[key] = if (had == null) (if (n == 1) r else r.copy(label = twin(r.label, n))) else {
+                fun Set<Int>.fresh() = filter { it !in had.cells }
+                val clash = r.cells.filter { (d, c) -> had.cells[d]?.let { it != c } == true }.keys
+                had.copy(
+                    cells = had.cells + r.cells.filterKeys { it !in had.cells },
+                    guessed = had.guessed + r.guessed.fresh(),
+                    notes = r.notes.filterKeys { it !in had.cells } + had.notes,
+                    unsure = had.unsure + r.unsure.fresh(),
+                    contested = had.contested + r.contested.fresh() + clash,
+                    raw = r.raw.filterKeys { it !in had.cells } + had.raw,
+                    outside = r.outside + had.outside,
+                    filled = had.filled + r.filled.fresh(),
+                    before = r.before + had.before,
+                )
+            }
+        }
+        return out.values.toList()
+    }
+
     fun readText(text: String, codes: DutyCodes): List<RosterRow> {
         val words = mutableListOf<RosterWord>()
         text.lines().forEachIndexed { i, line ->
@@ -487,34 +550,50 @@ object DutyRoster {
         }.toSet()
 
     /**
-     * [ROST-04] The month a pasted roster names (중-6): "2026년 10월", "2026-10", "2026.10", or "10월 근무표" / "10월
-     * 듀티" (the year nearest [near]), or the month of the dates in its row of days ("10/1 10/2 …"). Null when it names none.
+     * [ROST-04] The month a pasted roster names (중-6): "10월 근무표" / "10월 듀티" first (its year beside it, or the one nearest
+     * [near]), "2026년 10월", "2026-10", "2026.10", a span "2026.10.26 ~ 11.22", or the month of the dates in its row of days
+     * ("10/1 10/2 …"). A date with its day (작성일) names no month. Null when it names none.
      */
     fun monthIn(text: String, near: LocalDate): YearMonth? {
         val t = DutyCodes.fold(text)
+        fun nearest(month: Int): YearMonth = listOf(near.year - 1, near.year, near.year + 1).map { YearMonth.of(it, month) }
+            .minBy { abs(it.atDay(1).toEpochDay() - near.toEpochDay()) }
+        // 2.0.0 [RVL-25] (검토 SCAN-11) A date with its day (작성일 2026.10.25, 2026년 10월 25일) is when it was written, never the
+        // roster's month: "11월 근무표" comes first, then a year and month alone ("2026년 11월", "2026.11"), then a span of dates.
+        val yearMonth = Regex("""(20\d{2})\s*년\s*(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)""")
+        val dotted = Regex("""(?<!\d)(20\d{2})\s*[.\-/]\s*(\d{1,2})(?!\d)(?!\s*[.\-/]\s*\d)""")
+        fun pairs(r: Regex) = r.findAll(t).mapNotNull { m -> runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull() }
+        Regex("""(?<!\d)(\d{1,2})\s*월\s*(?:근무|듀티|근무표|DUTY|스케줄|일정|당직)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toInt()
+            ?.takeIf { it in 1..12 }?.let { named ->
+                return (pairs(yearMonth) + pairs(dotted)).firstOrNull { it.monthValue == named } ?: nearest(named)
+            }
         // [READ-37] 1.38 PC: "7병동 2026년 11월" read as July. The words of a title come in reading order only roughly (a
         // tilted photo puts "2026년" before "7병동"), so "2026년 7…" is never a month unless 월 follows it; "11월" is.
-        Regex("""(20\d{2})\s*년\s*(\d{1,2})\s*월""").find(t)?.let { m ->
-            runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
-        }
-        Regex("""(?<!\d)(20\d{2})\s*[.\-/]\s*(\d{1,2})(?!\d)""").find(t)?.let { m ->
-            runCatching { YearMonth.of(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }.getOrNull()?.let { return it }
-        }
+        pairs(yearMonth).firstOrNull()?.let { return it }
+        pairs(dotted).firstOrNull()?.let { return it }
+        // 2.0.0 [RVL-25] "2026.10.26 ~ 2026.11.22" (a 4주 듀티): the month most of its days are in.
+        Regex("""(20\d{2})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})\s*일?\s*[~∼～]\s*(?:(20\d{2})\s*[.\-/년]\s*)?(\d{1,2})\s*[.\-/월]\s*(\d{1,2})""")
+            .find(t)?.let { m ->
+                val g = m.groupValues
+                runCatching {
+                    val from = LocalDate.of(g[1].toInt(), g[2].toInt(), g[3].toInt())
+                    val to = LocalDate.of(g[4].ifEmpty { g[1] }.toInt(), g[5].toInt(), g[6].toInt()).let { if (it < from) it.plusYears(1) else it }
+                    generateSequence(from) { it.plusDays(1) }.takeWhile { it <= to }.take(62).groupingBy { YearMonth.from(it) }.eachCount().maxBy { it.value }.key
+                }.getOrNull()?.let { return it }
+            }
         // A year and, apart from it, a month ("2026년" … "11월"): the first "n월" that is not a day's date ("11월 3일").
         Regex("""(20\d{2})\s*년""").find(t)?.let { y ->
             Regex("""(?<![\d.])(\d{1,2})\s*월(?!\s*\d{1,2}\s*일)""").findAll(t).map { it.groupValues[1].toInt() }.firstOrNull { it in 1..12 }
                 ?.let { return YearMonth.of(y.groupValues[1].toInt(), it) }
         }
-        val month = Regex("""(?<!\d)(\d{1,2})\s*월\s*(?:근무|듀티|근무표|DUTY|스케줄|일정|당직)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)?.toInt()
-            ?: t.lines().firstNotNullOfOrNull { line ->
+        val month = t.lines().firstNotNullOfOrNull { line ->
                 val months = line.split(Regex("""\s+""")).mapNotNull { DAY_TOKEN.matchEntire(it.trim())?.groupValues?.get(1)?.toIntOrNull() }
                 months.takeIf { it.size >= MIN_DAYS }?.groupingBy { it }?.eachCount()?.maxByOrNull { it.value }?.key
             }
             ?: return null
         if (month !in 1..12) return null
         // The year that puts the month closest to [near]: a December roster read in January is last year's.
-        return listOf(near.year - 1, near.year, near.year + 1).map { YearMonth.of(it, month) }
-            .minBy { abs(it.atDay(1).toEpochDay() - near.toEpochDay()) }
+        return nearest(month)
     }
 
     /** [ROST-04] Days [row] has that [month] does not (31일 on a 30-day month): said before they are left out. */
@@ -640,7 +719,7 @@ object DutyRoster {
                 carried[h] = fit
                 val ys = row.map { it.y }.sorted()
                 out += RosterRow(read.label, read.cells.toSortedMap(), read.guessed, read.notes, read.unsure, line = i, raw = read.raws,
-                    y = ys[ys.size / 2].toInt())
+                    y = ys[ys.size / 2].toInt(), before = read.before)
             }
         }
         return out
@@ -648,7 +727,7 @@ object DutyRoster {
 
     private class LineRead(
         val label: String, val cells: Map<Int, DutyCell>, val guessed: Set<Int>, val notes: Map<Int, String>, val unsure: Set<Int>,
-        val positions: List<Pair<Int, Double>>, val raws: Map<Int, String> = emptyMap(),
+        val positions: List<Pair<Int, Double>>, val raws: Map<Int, String> = emptyMap(), val before: Map<Int, DutyCell> = emptyMap(),
     )
 
     private fun readLine(row: List<Placed>, fit: DayFit, codes: DutyCodes): Pair<LineRead, DayFit> {
@@ -658,6 +737,7 @@ object DutyRoster {
         val guessed = HashSet<Int>()
         val notes = HashMap<Int, String>()
         val raws = HashMap<Int, String>()
+        val before = HashMap<Int, DutyCell>()
         val label = StringBuilder()
         // 1.25 통합 직접 시험: a table with its names at the right end (after the last day) read every cell but no name.
         val rightLabel = StringBuilder()
@@ -693,6 +773,14 @@ object DutyRoster {
                 }
                 continue
             }
+            // 2.0.0 [RVL-24] (검토 SCAN-10·T07b-05) A 4주 듀티 that starts in the month before (26 27 … 31 | 1 2 …): a code left of the
+            // 1st after the name is that month's day, counted back from the 1st ([RosterRow.before]); never part of the name.
+            if (leftOfDays && read != null && fit.first == 1 && label.any { it.isLetter() }) {
+                val back = (firstX - w.x) / fit.step(fit.first)
+                val r = back.roundToInt()
+                if (r >= 1 && abs(back - r) <= 0.45) before.putIfAbsent(1 - r, read.first)
+                continue
+            }
             val near = if (leftOfDays) null else fit.day(w.x)
             val aligned = near != null && near.second <= 0.45
             val cell = read?.first ?: if (codes.looksLikeCode(w.text) && aligned) DutyCell.Unknown(w.text.trim()) else null
@@ -723,7 +811,10 @@ object DutyRoster {
         // [READ-13] 1.27: a line written in 한글 codes (주·야·비·휴) with one Latin word ("OF" for 야, the bench's dim 조 표)
         // has a misread cell: the word matched a code of the other alphabet. Looked at, never quiet.
         guessed += mixedScript(raws, cells)
-        return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }, raws) to fit
+        // 2.0.0 [RVL-24] Days of the month before only as a run up to the 1st (two at least): one code beside a name is a 조 or a mark.
+        val run = generateSequence(0) { it - 1 }.takeWhile { it in before }.count()
+        val kept = if (run >= 2) before.filterKeys { it > -run } else emptyMap()
+        return LineRead(label.toString(), cells, guessed, notes, unsure, at.map { (d, x) -> d to x }, raws, kept) to fit
     }
 
     /** [READ-13] Days whose word is in the other alphabet from most of the line's work and days off (leave words aside). */
@@ -869,14 +960,37 @@ object DutyRoster {
 
     private const val SHORT_ROW = 6
     private const val FULL_ROW = 20
+    /** 2.0.0 [RVL-22] Days two halves of one line may share where a photo's halves meet; more and they are two people. */
+    private const val SEAM = 1
+    private val TWIN = Regex("""^(.*) \((\d+)\)$""")
+
+    /** 2.0.0 [RVL-22] (검토 SCAN-07) The [n]th person of one name on a roster: "김민지 (2)". */
+    fun twin(label: String, n: Int): String = "$label ($n)"
+
+    /** 2.0.0 [RVL-22] [a] and [b] are one name on the roster, "(2)" aside. */
+    fun sameName(a: String, b: String): Boolean = (TWIN.matchEntire(a)?.groupValues?.get(1) ?: a) == (TWIN.matchEntire(b)?.groupValues?.get(1) ?: b)
+
+    /** 2.0.0 [RVL-22] True when [rows] hold two people named [label]: my line is then asked, never taken by its name. */
+    fun twins(rows: List<RosterRow>, label: String): Boolean = rows.count { sameName(it.label, label) } > 1
 
     private fun merge(rows: List<RosterRow>): List<RosterRow> {
-        val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.map { (label, parts) ->
-            RosterRow(label, parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
-                parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
-                parts.flatMap { it.unsure }.toSet(), line = parts.first().line, y = parts.first().y,
-                // [READ-19] 1.27: the words as read, for 고친 것 배우기 (two halves of one person kept them apart).
-                raw = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.raw })
+        val named = rows.filter { it.label.isNotBlank() }.groupBy { it.label }.flatMap { (label, lines) ->
+            // 2.0.0 [RVL-22] (검토 SCAN-07) Lines of one name are one person's halves only when their days do not meet (a day read
+            // twice at the seam aside); two people of one name (동명이인, two lines of one 조) stay two: "김민지", "김민지 (2)".
+            val people = mutableListOf<MutableList<RosterRow>>()
+            for (l in lines) {
+                val home = people.firstOrNull { ps -> ps.sumOf { p -> p.cells.keys.count(l.cells::containsKey) } <= SEAM }
+                if (home != null) home += l else people += mutableListOf(l)
+            }
+            people.mapIndexed { i, parts ->
+                RosterRow(if (i == 0) label else twin(label, i + 1),
+                    parts.fold(sortedMapOf<Int, DutyCell>()) { acc, r -> acc.apply { r.cells.forEach { (d, c) -> putIfAbsent(d, c) } } },
+                    parts.flatMap { it.guessed }.toSet(), parts.reversed().fold(emptyMap()) { acc, r -> acc + r.notes },
+                    parts.flatMap { it.unsure }.toSet(), line = parts.first().line, y = parts.first().y,
+                    // [READ-19] 1.27: the words as read, for 고친 것 배우기 (two halves of one person kept them apart).
+                    raw = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.raw },
+                    before = parts.reversed().fold(emptyMap()) { acc, r -> acc + r.before })
+            }
         }
         val blank = rows.filter { it.label.isBlank() }
         // Two blank lines whose days do not overlap are one person's two halves.

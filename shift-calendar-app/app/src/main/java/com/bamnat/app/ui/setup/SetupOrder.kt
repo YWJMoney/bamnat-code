@@ -624,6 +624,10 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
                 Text("‘${ask.raw}’로 읽은 칸($where)은 무엇인가요?", style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onTertiaryContainer)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 2.0.0 [RVL-21] (검토 SCAN-06) AM·V·반·생 are asked now: the leave each most often is, first.
+                    com.bamnat.core.imports.DutyCodes.guessOf(ask.raw)?.takeIf { !ask.leave }?.let { (name, cell) ->
+                        FilterChip(selected = false, onClick = { vm.answerRosterCode(ask.raw, cell) }, label = { Text(name) })
+                    }
                     if (!ask.leave) d.types.forEach { t ->
                         FilterChip(selected = false, onClick = { vm.answerRosterCode(ask.raw, com.bamnat.core.imports.DutyCell.Shift(t.id)) }, label = { Text(t.name) })
                     }
