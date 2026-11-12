@@ -160,6 +160,8 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                     }
                     // 1.40 [DISC-04] What '안 써 본 기능 알려 주기' told so far, each back with '다시 알려 주세요'.
                     if (guideRows.any { it.id == com.bamnat.core.guide.DiscoverPicker.SWITCH }) DiscoverToldList()
+                    // 2.0.0 [RVP-43] 검토 HQ-50: 알림함의 권유를 끄고, '다시 보지 않기'로 끈 알림을 다시 켜는 곳 (DISC-04와 한곳).
+                    InboxSwitches()
                 }
                 val cards = features.filter { it.off == Off.CALENDAR }
                 if (cards.isNotEmpty()) {
