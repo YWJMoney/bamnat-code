@@ -899,7 +899,7 @@ private fun SettingsHub(
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
             val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 초대 코드 넣기", false) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 받은 코드 넣기", false) {
                 SettingsLinks.go(SettingsGo.PRO)
             }
         }

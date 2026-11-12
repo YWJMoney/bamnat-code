@@ -182,7 +182,7 @@ class AGScreenshotTest : ScreenshotBase() {
         assertTrue(appears("개발자가 직접 읽고 답을 드리고"))
         // [J133-77] 1.33: while this card says 친구 초대, the 더 보기 row does not say it again.
         reveal("더 보기", exact = true)
-        assertTrue(gone("초대 코드 넣기"))
+        assertTrue(gone("받은 코드 넣기"))
         scrollDown(2000)
         reveal("함께 만들어요", exact = true)
         noCuts("settings_top")

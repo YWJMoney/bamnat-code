@@ -82,7 +82,8 @@ object InviteRules {
      */
     fun shareText(link: String, code: String): String =
         "밤낮 근무 달력 같이 써요. 근무표·알람·월급 계산을 한 앱에서 보고, 쉬는 날도 한눈에 맞춰 볼 수 있어요.\n$link\n" +
-            "이 링크로 깔면 초대가 저절로 알려져요. 링크가 안 열리면 앱을 깔고 7일 안에 설정 맨 위 ‘친구 초대’ › ‘초대 코드 넣기’에 ${shown(code)}를 넣어 주세요."
+            // 2.0.0 [RVO-06] 받은 코드는 프로 화면 맨 아래 '코드를 받으셨나요?' 한 칸에서.
+            "이 링크로 깔면 초대가 저절로 알려져요. 링크가 안 열리면 앱을 깔고 7일 안에 설정 › 프로 › 맨 아래 ‘코드를 받으셨나요?’에 ${shown(code)}를 넣어 주세요."
 
     /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
     fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"

@@ -80,6 +80,47 @@ class ReviewOShotsTest : ScreenshotBase() {
         app.container.settingsRepository.update { it.copy(previewTier = Tier.FREE) }
         app.container.featureGate.refresh()
         open(FeatureRoute(Place.PRO))
-        reveal("사업자 정보", exact = true)
+        // 2.0.0 [RVO-05] 요금제 카드 끝(약관·사업자 정보는 한 단추의 메뉴로).
+        reveal(com.bamnat.app.ui.pro.PAY_PAPERS, exact = true)
+    }
+
+    // ---- 2차 PR: 프로 화면 한 장(U11b-01·02·03, PRO-12·30), 페이월 가격 한 줄(U11b-04). 같은 시험을 바탕과 고친 커밋에서 돌려요. ----
+
+    // U11b-01: 정식 출시 뒤 무료인 교대 근무자가 프로 화면을 열면 맨 위.
+    @Test fun proTopShift() = all("5_pro_top_shift") {
+        app.container.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
+        launched().invoke(this)
+        open(FeatureRoute(Place.PRO))
+    }
+
+    // PRO-30·T11b-02: 가게 사장님이 아래로 내려 본 모습(기능 목록과 무료인 것).
+    @Test fun proMiddleBusiness() = all("6_pro_middle_business") {
+        app.container.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS) }
+        launched().invoke(this)
+        open(FeatureRoute(Place.PRO))
+        // 내용을 위로 900dp 밀어 가운데를 봐요(scrollUp은 내용을 위로 올려요).
+        repeat(2) { scrollUp(450, across = 0.5f) }
+    }
+
+    // U11b-03·SET-10: 프로 화면 맨 아래(관리자 연결 → 코드를 받으셨나요?).
+    @Test fun proBottom() = all("7_pro_bottom") {
+        // 초대·이용권·코드 칸은 서버가 켜져 있을 때만 보여요: 가짜 서버로 켜요(설정은 서버에서 받지 않음).
+        app.container.tierApi = com.bamnat.app.tier.FakeTierApi(configAnswer = null)
+        app.container.inviteApi = com.bamnat.app.tier.FakeInviteApi()
+        launched().invoke(this)
+        open(FeatureRoute(Place.PRO))
+        repeat(16) { scrollUp(500, across = 0.5f) }
+        // 2차 PR: 맨 아래 '코드를 받으셨나요?'를 펴서 칸 하나를 봐요(바탕에는 없음).
+        if (appears("코드를 받으셨나요?", exact = true)) {
+            tapText("코드를 받으셨나요?", exact = true)
+            repeat(4) { scrollUp(500, across = 0.5f) }
+        }
+    }
+
+    // U11b-04·T11b-01: 페이월의 '프로가 더해 주는 것' 장(찾아 준 돈이 없으면 첫 장), 아래에 가격 한 줄. 투자의 다섯 줄.
+    @Test fun paywallPitchPage() = all("8_paywall_pitch") {
+        app.container.settingsRepository.update { it.copy(workStyle = WorkStyle.INVEST) }
+        launched().invoke(this)
+        content { com.bamnat.app.ui.pro.ProPaywallContent(app.container, onClose = {}) }
     }
 }

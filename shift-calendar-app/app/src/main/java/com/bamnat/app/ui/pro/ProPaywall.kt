@@ -20,11 +20,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -78,6 +81,9 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
     var at by rememberSaveable { mutableIntStateOf(if (ProPaywall.plansFirst) pages.lastIndex else 0) }
     val page = pages[at.coerceIn(0, pages.lastIndex)]
     LaunchedEffect(page) { c.telemetry.event("pro_paywall", "page${page + 1}") }
+    // 2.0.0 [RVO-07] (검토 PRO-11 '결제 창을 못 열면 아무 말도 안 해요') 요금제 단추의 말은 이 창 안에.
+    var said by rememberSaveable { mutableStateOf<String?>(null) }
+    val playPass by c.billing.pass.collectAsStateWithLifecycle()
     // 1.39 [FLOW-25] 닫기 늘 보임: the pages scroll, the buttons under them stay put.
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(
@@ -99,18 +105,25 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
                     Text("프로가 더해 주는 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     Text(ProPitch.headline(settings.workStyle), style = MaterialTheme.typography.bodyLarge)
                     ProPitch.five(settings.workStyle).forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
-                    Text("여기 없는 기능은 모두 무료예요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVO-07] (검토 PRO-12) 다섯 줄만 보이니 "여기 없는 기능은 모두 무료"는 틀려요: 나머지가 어디 있는지.
+                    Text(PAYWALL_REST, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 else -> {
                     Text("요금제", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                     if (plans.isEmpty()) Text("Play에서 요금제를 불러오는 중이에요. 인터넷을 켜고 잠시 뒤 다시 열어 주세요.", style = MaterialTheme.typography.bodyMedium)
-                    else PlanRows(c, plans, onMessage = {})
-                    Text("어떤 요금제도 미리 골라 두지 않아요. 해지는 언제든 Play 스토어에서 하고, 해지해도 낸 기간까지는 프로예요.",
+                    else PlanRows(c, plans, onMessage = { said = it })
+                    said?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite }) }
+                    Text("어떤 요금제도 미리 골라 두지 않아요. 해지해도 낸 기간까지는 프로예요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVO-07] (검토 PRO-05) 결제 단추가 있는 곳의 고지는 프로 화면과 같은 부품: 한 줄 + 모두 보기(청약철회·판매자까지).
+                    PayNotice(plans, shownPass(gate, playPass)?.price)
                     TextButton(onClick = { onClose(); goPro() }) { Text("자세한 안내와 해지 방법") }
                 }
             }
         }
+        // 2.0.0 [RVO-07] (검토 U11b-04 '가격은 세 번째 장에 가야 보여요') 앞 장에서도 가격 한 줄이 늘 보여요.
+        if (page != 2) priceLine(plans)?.let { Text(it, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             if (at < pages.lastIndex) Button(onClick = { at += 1 }) { Text("다음") }
             if (at > 0) OutlinedButton(onClick = { at -= 1 }) { Text("이전") }
@@ -118,6 +131,21 @@ internal fun ProPaywallContent(c: AppContainer, onClose: () -> Unit) {
             TextButton(onClick = { c.proMoments.snooze(Today.date()); onClose() }) { Text("7일간 보지 않기") }
         }
     }
+}
+
+/** 2.0.0 [RVO-07] (검토 PRO-12) 페이월 둘째 장 끝 한 줄. */
+internal const val PAYWALL_REST = "이 밖의 프로 기능은 다음 장 ‘자세한 안내’에서 볼 수 있어요. 나머지는 모두 무료예요."
+
+/**
+ * 2.0.0 [RVO-07] (검토 U11b-04) 페이월 앞 장 아래에 늘 보이는 가격 한 줄: "월 4,990원 · 연 39,000원(35% 할인)". 할인은 Play가 두 가격을 같은
+ * 돈으로 줄 때만. Play가 아직 아무것도 주지 않았으면 null.
+ */
+internal fun priceLine(plans: List<Plan>): String? {
+    val month = plans.firstOrNull { !it.yearly }
+    val year = plans.firstOrNull { it.yearly }
+    val pct = if (month != null && year != null && month.currency == year.currency) RewardLedger.savingsPercent(month.priceMicros, year.priceMicros) else null
+    return listOfNotNull(month?.priceWords, year?.let { it.priceWords + (pct?.let { p -> "(${p}% 할인)" } ?: "") })
+        .joinToString(" · ").ifEmpty { null }
 }
 
 /**
@@ -153,7 +181,8 @@ internal fun PlanRows(c: AppContainer, plans: List<Plan>, onMessage: (String) ->
                 if (previewNoPay(gate)) onMessage(PREVIEW_NO_PAY)
                 else if (activity == null || !c.billing.buy(activity, plan)) onMessage("Play 결제 화면을 열지 못했어요. 잠시 뒤 다시 해 주세요.")
             }
-            val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}로 구독"
+            // 2.0.0 [RVO-07] (검토 PRO-13 "월 4,990원로 구독") 조사를 낱말에 맞게.
+            val words = if (trial) "1개월 무료로 시작 (연 요금제)" else "${plan.priceWords}${com.bamnat.app.ui.Fmt.ro(plan.priceWords)} 구독"
             // 2.0.0 [RVO-01] (PC-54 미리 보기로 처음 본 요금제 창: 채운 단추가 둘) 채운 단추는 맨 위 추천 하나, 나머지는 테두리 단추(조건 2).
             if (i == 0) Button(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }
             else OutlinedButton(onClick = buy, modifier = Modifier.fillMaxWidth()) { Text(words) }

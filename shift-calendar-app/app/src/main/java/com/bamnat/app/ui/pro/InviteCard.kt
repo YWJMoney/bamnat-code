@@ -121,19 +121,14 @@ internal fun InviteProgressLines(c: AppContainer) {
 
 /**
  * [INVITE-02][INVITE-05][INVITE-03] 설정 › 프로 › 친구 초대: the inviter's counts and link (made after the line above),
- * shared with the phone's share sheet; and, for a phone installed in the last 7 days, 초대 코드 넣기.
+ * shared with the phone's share sheet. 2.0.0 [RVO-06] (검토 U11b-03) a code received goes in at the bottom of 프로 ([CodeInbox]);
+ * this card keeps only what the friend's phone was told.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
     if (!c.inviteApi.enabled) return
-    val scope = rememberCoroutineScope()
     val state by c.invites.store.state.collectAsStateWithLifecycle()
-    var typing by rememberSaveable { mutableStateOf(false) }
-    var typed by rememberSaveable { mutableStateOf("") }
-    var busy by remember { mutableStateOf(false) }
-    // 1.39 시험 제보: 틀린 코드의 말이 프로 화면 맨 위에만 나와, 누른 단추 근처에서는 아무 일도 없는 것처럼 보였어요.
-    var said by remember { mutableStateOf<String?>(null) }
     val view = state.view
     val terms = state.rules
     LaunchedEffect(view?.code) { runCatching { c.invites.refresh() } }
@@ -152,33 +147,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
             }
             Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
         }
-        InviteShareAction(c, onMessage) {
-            if (c.invites.mayType() && !typing) TextButton(onClick = { typing = true }) { Text("초대 코드 넣기") }
-        }
-        if (typing && c.invites.mayType()) {
-            OutlinedTextField(typed, { said = null; typed = it.uppercase().filter { ch -> ch.isLetterOrDigit() || ch == '-' }.take(9) },
-                label = { Text("받은 초대 코드 (8자리)") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters), modifier = Modifier.fillMaxWidth())
-            val code = InviteRules.code(typed)
-            if (code != null) Text(inviteUseConsent(code, terms.days), style = MaterialTheme.typography.bodySmall)
-            Button(enabled = code != null && !busy, onClick = {
-                busy = true
-                scope.launch {
-                    try {
-                        val a = c.invites.report(code!!, "typed")
-                        typing = false
-                        onMessage(inviteAnswerWords(a))
-                    } catch (e: CompanyException) {
-                        val w = if (e.code == "code") "초대 코드가 맞지 않아요. 친구에게 다시 확인해 주세요." else serverProblem(e.code)
-                        // 4차 PC: shown once, under the button (the screen's own line said it a second time below the card).
-                        said = w
-                    } finally {
-                        busy = false
-                    }
-                }
-            }) { Text("동의하고 보내기") }
-            said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        }
+        // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.
+        InviteShareAction(c, onMessage, tonal = true)
         state.answer?.takeIf { state.reportedCode != null }?.let {
             Text(inviteAnswerWords(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
