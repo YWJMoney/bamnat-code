@@ -37,6 +37,16 @@ class HeadRoomTest {
         assertFalse(r.todayWords || r.toolsWords)
     }
 
+    /** [RVG-34] PC-132: a 팀 리더's link stays beside the chip after the other faces fold (open screen); a phone has it in the chip's list. */
+    @Test fun aTeamLinkStaysLongestOnTheOpenScreen() {
+        val open = HeadRoom.of(707f, 1f, 24f, bell = true, others = 2, team = true, nameChars = 3)
+        assertTrue("팀 근무표 얼굴은 남아요: $open", open.team > 0)
+        assertTrue("다른 얼굴은 하나까지: $open", open.faces <= 1)
+        assertTrue("200%에서도 얼굴은 남아요", HeadRoom.of(707f, 2f, 24f, bell = true, others = 1, team = true).team == HeadRoom.ICON)
+        assertEquals("접은 폭에서는 칩의 목록에", 0, HeadRoom.of(369f, 1f, 16f, bell = true, others = 1, team = true).team)
+        assertEquals("팀 링크가 없으면 없어요", 0, HeadRoom.of(707f, 1f, 24f, bell = true, others = 1).team)
+    }
+
     @Test fun aWorksBigMonthStepsDownOneSizeInsteadOfShrinking() {
         assertTrue("HQ-22: 28sp 달 제목은 접은 폭 200%에서 한 단계 낮춰요", HeadRoom.of(369f, 2f, 28f, bell = true).stepDown)
         assertFalse(HeadRoom.of(369f, 2f, 16f, bell = true).stepDown)

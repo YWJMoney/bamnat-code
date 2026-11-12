@@ -284,6 +284,11 @@ class SettingsFilesBackup(
             "company:auto_share" to "근무 순서·계산 방식을 저절로 나눌지, 이 휴대폰에서 답한 것(새 휴대폰에서 다시 물어요)",
             "company:auto_dirty" to "저절로 나눌 바뀐 것이 남았는지, 이 휴대폰의 보내기 대기",
             "company:auto_sent_at" to "저절로 나눈 마지막 때, 하루 한 번을 세는 이 휴대폰의 것",
+            // 2.0.0 [RVN-10][RVN-11][RVN-13] COMP-44·46·47: this phone's yes and what waits for its connection.
+            "company:auto_pay" to "저절로 나누기에 계산 방식도 넣을지, 이 휴대폰에서 답한 것(새 휴대폰에서 다시 물어요)",
+            "company:auto_once" to "인터넷이 없을 때 누른 '나눌게요', 연결되면 한 번 보내는 이 휴대폰의 대기",
+            "company:take_back_later" to "인터넷이 없을 때 누른 되돌리기, 연결되면 거두는 이 휴대폰의 대기",
+            "company:kept_calls" to "인터넷이 없을 때 누른 쓰고 있어요·맞아요·회사 빼기, 연결되면 보내는 이 휴대폰의 대기",
             "company:member" to "참여한 회사는 이 휴대폰의 설치 번호로 서버에 있어요",
             // [PLAZA-34] 1.27 AI (결정 AI-D9): what was shared last, held against a change; asked again on a new phone.
             "company:auto_base" to "광장에 마지막으로 나누거나 물은 설정(금액 없음), 바뀐 것을 견주는 이 휴대폰의 것",
