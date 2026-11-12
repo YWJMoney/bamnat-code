@@ -101,6 +101,15 @@ class LedgerTest(unittest.TestCase):
         j = json.loads(out.getvalue())
         self.assertIn("policy-3.13-p30", [r["id"] for r in j["upcoming"]])
         self.assertTrue(all(r["left"] >= -7 for r in j["upcoming"]))
+        # 서버 사본(dates-built.js, 갈래 Q2 카드)이 장부·코드와 같아요.
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(L.main(["check"]), 0, "python3 tools/dates_ledger.py build")
+
+    def test_built_module_keeps_gap(self):
+        rows, _ = self.ledger([self.row("rates", date="2027-01-01", source="s", next={"plus_years": 1, "what": "그해 요율 없음", "warn_days": 120})])
+        text = L.built_text(rows)
+        self.assertTrue(text.rstrip().endswith("];"))
+        self.assertIn('"gap": {"from": "2028-01-01", "warnDays": 120, "what": "그해 요율 없음"}', text)
 
 
 if __name__ == "__main__":

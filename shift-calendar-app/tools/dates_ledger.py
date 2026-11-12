@@ -9,6 +9,9 @@
   python3 tools/dates_ledger.py list [--today D] [--days N]
                                                        다가오는 날(D-n), 지난 7일, 미리 할 일. 빈 다음 해 경고도
   python3 tools/dates_ledger.py json [--today D]       같은 것을 JSON으로(관리자 앱 '다가오는 날짜' 카드·날짜 시험용)
+  python3 tools/dates_ledger.py build                  server/company-worker/src/dates-built.js 다시 만들기(서버가 지금 시각으로
+                                                       남은 날을 셈해 관리자 앱 › 자동 순환 '다가오는 날짜' 카드에, 갈래 Q2).
+                                                       check가 이 파일이 장부·코드와 맞는지도 봐요. 코드의 날을 옮기면 build
   python3 tools/dates_ledger.py shifts [--today D] [--days N] [--base 0,7,30,90,365]
                                                        날짜 시험(date-watch)이 돌릴 '오늘부터 며칠 뒤' 목록: base와,
                                                        N일(기본 10) 안에 오는 장부 날마다 그날·다음 날(켜지는 날과 켜진 뒤)
@@ -24,6 +27,7 @@ from pathlib import Path
 
 APP = Path(__file__).resolve().parents[1]
 LEDGER = APP / "ops/dates.json"
+BUILT = APP / "server/company-worker/src/dates-built.js"
 KST = dt.timezone(dt.timedelta(hours=9))
 
 
@@ -137,6 +141,30 @@ def as_json(rows, today, days) -> dict:
             "all": [one(r) for r in rows]}
 
 
+def built_text(rows) -> str:
+    """오늘에 묶이지 않은 장부 전부. gap: 다음 해 자료가 비는 날·경고 시작(남은 날)·무엇."""
+    items = []
+    for r in rows:
+        x = {"id": r["id"], "date": r["date"].isoformat(), "what": r["what"], "area": r["area"], "before": r["before"], "source": r["source"]}
+        nx = r.get("next")
+        if nx:
+            empty = plus_years(r["date"], int(nx["plus_years"])) if nx.get("plus_years") else r["date"] + dt.timedelta(days=1)
+            x["gap"] = {"from": empty.isoformat(), "warnDays": int(nx.get("warn_days", 90)), "what": nx.get("what", r["what"])}
+        items.append(x)
+    body = ",\n".join("  " + json.dumps(x, ensure_ascii=False, sort_keys=True) for x in items)
+    return ("// 2.0.0 [RVR-38] 날짜가 걸린 약속(ops/dates.json). 손으로 고치지 않아요: python3 tools/dates_ledger.py build가\n"
+            "// 장부가 가리키는 코드 줄에서 날을 읽어 만들어요. 서버가 지금 시각으로 남은 날을 셈해 관리자 앱 › 자동 순환에 보여요.\n"
+            f"export const DATES = [\n{body}\n];\n")
+
+
+def write_built(path: Path = LEDGER) -> Path:
+    rows, problems = load(path)
+    if problems:
+        raise SystemExit("\n".join("문제: " + p for p in problems))
+    BUILT.write_text(built_text(rows), encoding="utf-8")
+    return BUILT
+
+
 def shifts(rows, today, days, base) -> list[int]:
     out = set(base)
     for r in rows:
@@ -148,7 +176,7 @@ def shifts(rows, today, days, base) -> list[int]:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=["check", "list", "json", "shifts"])
+    ap.add_argument("cmd", choices=["check", "list", "json", "shifts", "build"])
     ap.add_argument("--today", type=dt.date.fromisoformat, default=None)
     ap.add_argument("--days", type=int, default=None)
     ap.add_argument("--base", default="0,7,30,90,365")
@@ -156,7 +184,12 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     today = a.today or today_kst()
     rows, problems = load(a.ledger)
+    if a.cmd == "build":
+        print(f"{write_built(a.ledger).relative_to(APP)} 만듦")
+        return 0
     if a.cmd == "check":
+        if a.ledger == LEDGER and not problems and (not BUILT.exists() or BUILT.read_text(encoding="utf-8") != built_text(rows)):
+            problems.append("server/company-worker/src/dates-built.js가 장부·코드의 날과 달라요: python3 tools/dates_ledger.py build")
         for p in problems:
             print("문제:", p)
         print(f"날짜 장부 {len(rows)}줄, 문제 {len(problems)}개")
