@@ -1,5 +1,13 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.dp
 import com.bamnat.core.recipe.widgetDraws
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.getOrNull
@@ -252,6 +260,44 @@ class S3ScreenshotTest : ScreenshotBase() {
             w.fill == null -> "the shader lost its colour"
             richWidget.style("widget.cell", setOf("today")).widgetDraws().motion != null -> "the pulse is still there"
             else -> null
+        }
+    }
+
+    /** RVS-20 (SI-05): from 메모 카드, one chip takes the look to 가계부 한 줄·급여 한 줄 too, and the look made already goes over in one tap. */
+    @Test fun aRowLookGoesToTheOtherListsAtOnce() {
+        val start = com.bamnat.core.recipe.Blueprint(listOf(mapOf("id" to "memo.card", "fill" to 0xFFFFF4CCL, "r" to 14L))).encode()
+        var look = 0
+        fourLooks("rvs20_same_rows") {
+            var now = start
+            val fresh = ++look
+            val scroll = androidx.compose.foundation.ScrollState(0)
+            // A fresh screen each look (its saved chips and scroll are this look's own).
+            content { androidx.compose.runtime.key(fresh) {
+                var parts by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(start) }
+                androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                    .verticalScroll(scroll).padding(16.dp)) {
+                    com.bamnat.app.ui.studio.PartsTool("memo", parts, focus = "memo.card", onChange = { parts = it; now = it })
+                }
+            } }
+            settle()
+            // From the top, as a maker opens the tool (the state chips' keep-in-view may have scrolled it).
+            scroll.dispatchRawDelta(-1e6f)
+            settle()
+            // Pressed through its click action: at 200% on the open fold the window's touch at the chip's centre did not reach it in
+            // Robolectric (the same tap works in the other three looks); the click is the chip's own, as TalkBack presses it.
+            val chip = nodes(merged = true).first { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { t -> t.text == "가계부 한 줄·급여 한 줄도 함께 고치기" } }
+            chip.config[androidx.compose.ui.semantics.SemanticsActions.OnClick].action?.invoke()
+            settle()
+            // Anywhere in the tool (a big-text tap may scroll the chip out of the window).
+            val said = nodes(merged = true).flatMap { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { t -> t.text } }
+            if ("✓ 메모 카드·가계부 한 줄·급여 한 줄 함께" !in said) return@fourLooks "the chip did not take the others"
+            tapText("지금 모양을 2곳에도 넣기")
+            settle()
+            val bp = com.bamnat.core.recipe.Blueprint.decode(now)
+            when {
+                listOf("money.row", "pay.row").any { r -> bp.lines.none { it["id"] == r && it["fill"] == 0xFFFFF4CCL && it["r"] == 14L } } -> "the look did not go over: $now"
+                else -> null
+            }
         }
     }
 }
