@@ -1442,6 +1442,28 @@ fun CalendarScreen(
             if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.TODAY_FLOW }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
+            // 1.40 [DISC-01] 안 써 본 기능 가끔 알려 주기: always the last card, and only on a day nothing else above the month speaks
+            // (the user's own parts and 밤낮이 한 일 do not count as speaking). At most one in 7 days, rarer when not answered.
+            if (guideHere && paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("discover", "이런 기능도 있어요") {
+                val ownParts = remember(calendarParts) { calendarParts.map { it.part.id }.toSet() + setOf("discover", "journal") }
+                val trades = investState?.full?.trades?.size ?: 0
+                com.bamnat.app.ui.guide.DiscoverNotice(
+                    calendar = activeCalendar.id, style = settings.workStyle,
+                    othersUp = { notices.heights.any { (k, h) -> h > 0 && k !in ownParts } },
+                    startUp = startRows != null || startCardUp,
+                    ready = { need ->
+                        when (need) {
+                            com.bamnat.core.guide.DiscoverNeed.DAYS -> !snap.isEmpty
+                            com.bamnat.core.guide.DiscoverNeed.PAY -> payProfile != null
+                            com.bamnat.core.guide.DiscoverNeed.JOBS -> moneyBook.jobs.any { !it.cancelled }
+                            com.bamnat.core.guide.DiscoverNeed.SALES -> moneyBook.sales.any { it.sales > 0 }
+                            com.bamnat.core.guide.DiscoverNeed.TRADES -> trades > 0
+                            com.bamnat.core.guide.DiscoverNeed.MONEY -> moneyBook.entries.size >= 10
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            })
         }.let { all ->
             // [EASE-03] 1.38 PC 994c2328 (첫날 알림 허용 줄 밑에 '알림 1개 더 보기 · 근무주기 다음 단계'): on the first setup's day only
             // what keeps the calendar working stays (the alarm line, money promised and late, the developer’s notice, what an invite
@@ -3190,5 +3212,5 @@ internal val ScheduleSnapshot.backWord: String
 /** [EASE-03] Cards above the month that wait for the day after the first setup. */
 private val FIRST_DAY_WAITS = setOf(
     "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
-    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal",
+    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal", "discover",
 )

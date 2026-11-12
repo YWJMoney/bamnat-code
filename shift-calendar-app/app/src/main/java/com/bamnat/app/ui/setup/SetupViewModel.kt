@@ -332,6 +332,7 @@ class SetupViewModel(
             runCatching {
                 c.backupManager.restore(json)
                 c.telemetry.event("setup_restore")
+                com.bamnat.app.data.DiscoverStore.get(c.appContext).restored() // 1.40 [DISC-03]
                 // A backup from before the kind of work was asked, without a pattern: the setup goes on.
                 if (c.settingsRepository.current.setupDone) store.clear()
                 // [SETUP-16] 1.37 PC f42b2eba HIGH-2: a backup made while its first setup was put off goes on here, from its step, and says so.

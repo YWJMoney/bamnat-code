@@ -40,6 +40,12 @@ export const OBS = {
   keepMin: 20,
   /** 유형별 흐름 신호: 7일째를 알 수 있는 처음 연 휴대폰이 이만큼 있어야 견줘요. */
   kindMin: 30,
+  /** 1.40 [DISC-06] 안 써 본 기능 카드: 14일에 카드를 본 휴대폰이 이만큼 있어야 비율을 견줘요. */
+  discMin: 50,
+  /** 그만 보기가 보임의 이 비율(%)을 넘으면 빈도·문구가 틀린 것(설계 3-8, 넘으면 사용자에게 B로 늦출지 물어요). */
+  discOffMax: 5,
+  /** 열어 봄이 이 비율(%) 아래면 후보 고르기가 틀린 것. */
+  discTryMin: 3,
   scope: "https://www.googleapis.com/auth/devstorage.read_only",
   storage: "https://storage.googleapis.com/storage/v1/b",
   /** 보고서는 하루 한 번 바뀌어요: 12시간(실패는 1시간) 둬요. */
@@ -434,6 +440,18 @@ export function obsRules(b) {
         dev: `${r.name} 유형 첫 주 이탈 줄이기(첫 설정·홈·알람 둘러보기)`, to: "#/glance" });
     }
   }
+  // 1.40 [DISC-06] 안 써 본 기능 카드(깃발 stats.disc, 처리방침 3.13): 그만 보기가 많으면 빈도·문구, 열어 봄이 적으면 후보 고르기.
+  const dc = b.disc;
+  if (dc && dc.shown >= OBS.discMin) {
+    push({ kind: "disc-off-high", value: dc.offRate, base: OBS.discOffMax, better: "down", unit: "%", on: dc.offRate > OBS.discOffMax, tone: "bad",
+      title: `'안 써 본 기능' 카드의 그만 보기가 ${dc.offRate}%예요(14일, 본 휴대폰 ${dc.shown})`,
+      why: "7일에 한 장(사용자 결정 2026-11-11)이 잦거나 문구가 거슬리는 거예요. 10일에 한 장으로 늦출지 사용자에게 물어요.",
+      dev: "안 써 본 기능 카드의 빈도·문구 다시 보기(그만 보기 줄이기)", to: "#/metrics" });
+    push({ kind: "disc-try-low", value: dc.tryRate, base: OBS.discTryMin, better: "up", unit: "%", on: dc.tryRate < OBS.discTryMin,
+      title: `'안 써 본 기능' 카드를 열어 본 비율이 ${dc.tryRate}%예요(14일)`,
+      why: "알려 주는 기능이 그 사람에게 맞지 않는 거예요. 유형별 후보와 고르는 순서를 봐요.",
+      dev: "안 써 본 기능 카드의 후보 고르기 다시 보기", to: "#/metrics" });
+  }
   for (const f of (s?.features ?? []).slice(0, OBS.featureSignals)) {
     push({ kind: "feature-fall", subject: f.event, value: f.now, base: f.before, better: "up", unit: "대", on: true,
       title: `'${f.name}' 쓰는 휴대폰이 반 넘게 줄었어요(7일 ${f.now}, 그 전 ${f.before})`,
@@ -700,11 +718,24 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     dev: { noEvents: noEvRows.map((d) => ({ id: d.id, title: d.title })), noEventsCount: noEvCount[0]?.n ?? 0 },
     kinds,
     keep,
+    disc: obsDisc(eventRows),
   };
   board.found = obsRules(board);
   board.signals = stored;
   board.gaps = obsGaps(board);
   return board;
+}
+
+/**
+ * 1.40 [DISC-06] 14일 동안 '안 써 본 기능' 카드를 본·열어 본·그만 본 휴대폰 수(그날마다 센 것의 합)와 비율. 카드를 본 휴대폰이 없으면 null.
+ * 어떤 기능을 알렸는지는 서버에 없어요.
+ */
+export function obsDisc(rows) {
+  const sum = (e) => obsSum(rows.filter((r) => r.event === e).map((r) => r.phones ?? 0));
+  const shown = sum("disc_shown");
+  if (!shown) return null;
+  const pct = (n) => Math.round((n / shown) * 1000) / 10;
+  return { shown, tried: sum("disc_try"), later: sum("disc_later"), off: sum("disc_off"), tryRate: pct(sum("disc_try")), offRate: pct(sum("disc_off")) };
 }
 
 /** 매시 작업 [OBS2-04]: 관측 판을 다시 읽어 신호를 합쳐 둬요. 새로 생긴 신호 수. */

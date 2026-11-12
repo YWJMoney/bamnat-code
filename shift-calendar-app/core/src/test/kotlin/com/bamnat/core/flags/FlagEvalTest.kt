@@ -245,6 +245,7 @@ class FlagEvalTest {
                 else if (f.key == FlagCatalog.SHARE_LOOK) "1.37.0" /* 1.37 SHR-31 */
                 // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
                 else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
+                else if (f.key == FlagCatalog.STATS_DISC) "1.40.0" /* 1.40 DISC-06, 처리방침 3.13 */
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")

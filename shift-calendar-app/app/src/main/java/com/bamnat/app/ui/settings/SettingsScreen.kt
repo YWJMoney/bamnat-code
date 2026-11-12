@@ -377,6 +377,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     context.contentResolver.openInputStream(uri)!!.use { container.backupManager.verifyFile(it, password) }
                 }.isSuccess
                 container.telemetry.event(DiagEvents.BACKUP_EXPORT)
+                com.bamnat.app.data.GuideStore.get(context).used("data.backup") // 1.40 [DISC-03] 써 봄, also without the guide
                 if (opens) container.backupNudge.saved() // 1.32 [STAB-08]
                 when {
                     !opens -> "저장한 백업을 다시 열어 보니 손상돼 있어요. 다른 위치에 한 번 더 저장해 주세요"
@@ -596,6 +597,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 container.importUndo.save()
                 container.backupManager.restore(json)
                 container.telemetry.event(DiagEvents.BACKUP_RESTORE)
+                // 1.40 [DISC-03] The 써 봄 marks stay on the old phone: '안 써 본 기능' cards rest a while.
+                com.bamnat.app.data.DiscoverStore.get(container.appContext).restored()
                 // [J133-87] 1.33 빌드 6 (복원 뒤 완료 알림이 안 보여요): the restored settings (12시간 보기, 글자 크기) draw the app's root
                 // again, and a message shown at once went with the old one. Said once the new screen is up.
                 kotlinx.coroutines.delay(RESTORED_SAY_MS)

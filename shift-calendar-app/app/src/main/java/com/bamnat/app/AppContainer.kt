@@ -550,6 +550,8 @@ class AppContainer(context: Context) {
         // 1.39 [OBS2-08]: 유형별 흐름·기능과 머묾 from 처리방침 3.12's date on (사용자 2026-11-08 '유형별·기능 둘만').
         com.bamnat.app.diag.UsageStats.kindAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KIND) }
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
+        // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
+        com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }

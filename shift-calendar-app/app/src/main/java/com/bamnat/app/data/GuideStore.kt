@@ -78,6 +78,12 @@ class GuideStore private constructor(context: Context) {
     /** [GUIDE-03] "다시 보지 않기". */
     fun never(id: String) = edit { putStringSet(K_NEVER, current.never + id) }
 
+    /** 1.40 [DISC-01] 되돌리기 on the '안 써 본 기능' card: its '이미 써요' or '안 볼래요' taken back. */
+    fun unmark(id: String, used: Boolean, never: Boolean) = edit {
+        if (used) putStringSet(K_USED, current.used - id)
+        if (never) putStringSet(K_NEVER, current.never - id)
+    }
+
     /** [GUIDE-03] Today's tip, recorded once it shows, so no other comes today. */
     fun tipShown(day: LocalDate, id: String) = edit {
         putString(K_TIP_DAY, day.toString()); putString(K_TIP_ID, id); putBoolean(K_TIP_CLOSED, false)
