@@ -429,8 +429,10 @@ fun PublicApplySheet(
                         error = null
                         scope.launch {
                             runCatching { PublicCycleFiles.apply(c, cycle, codes, if (needsToday) today else null, calendar) }
-                                .onSuccess {
+                                .onSuccess { applied ->
                                     done = true
+                                    // 2.0.0 [RVN-08] COMP-11 Over the calendar's own order: 되돌리기 on the app's snackbar.
+                                    applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say("달력에 넣었어요 · 오늘부터 이 순서예요", it) }
                                     // [CYC-04] 1.38 업종 기념일.
                                     com.bamnat.app.ui.calendar.rememberOrgGroup(c.settingsRepository, cycle)
                                     // [PLAZA-14] 1.27 AH: once, "이 정보를 다른 사람이 사용해도 될까요?" (AH-D6).
