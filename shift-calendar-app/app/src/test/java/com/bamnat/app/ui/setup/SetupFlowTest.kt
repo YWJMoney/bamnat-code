@@ -574,6 +574,87 @@ class SetupFlowTest {
         assertEquals(next, c.shownMonth.month.value)
     }
 
+    /** 민지's 근무표 (가족 link): 데이 today and the day after, a day off between, 나이트 on the fourth. */
+    private val familyId = "Fm1jNg2hKo3pLq4rMs5tNu"
+    private fun familyShare() = com.bamnat.app.share.ReceivedShare(
+        JSONObject("""{"v":2,"title":"민지","audience":"family",
+            "types":[{"id":1,"name":"데이","short":"D","color":"#2196F3","time":"07:00-15:00"},{"id":2,"name":"나이트","short":"N","color":"#673AB7","time":"22:00-07:00"}],
+            "days":[{"date":"$today","type":1},{"date":"${today.plusDays(1)}","type":1},{"date":"${today.plusDays(2)}"},{"date":"${today.plusDays(3)}","type":2}]}"""),
+        java.time.Instant.now().plus(java.time.Duration.ofDays(60)), java.time.Instant.now(), "e1",
+    )
+
+    /** '내 근무표예요' on the first screen, as AppRoot does it: the setup filled from the link, the link kept as the user's own. */
+    private fun startAsMine(): SetupViewModel {
+        // The link is kept on the setup's day (its month is where the link's days start).
+        com.bamnat.core.time.Today.fix(now.atZone(java.time.ZoneId.systemDefault()))
+        val share = familyShare()
+        c.setupDrafts.save(LinkStart.draft(com.bamnat.app.share.SharedSchedule.parse(share.schedule), today)!!)
+        LinkStart.keepMine(c.received, familyId, share)
+        return vm()
+    }
+
+    /**
+     * [RVG-19] 검토 HQ-09 (조건 10): '내 근무표예요' pressed for 민지's link by mistake. Before, the summary had no way back to the question
+     * (← only went to earlier questions) and the link stayed the user's own, followed. '가족·동료 근무표였어요' keeps it beside as theirs
+     * (only seen, never put into my days), lets the setup go, and the first screen says where it went.
+     */
+    @Test fun aWrongMineGoesBackFromTheSummaryAsTheirs() = runBlocking {
+        val vm = startAsMine()
+        assertEquals(SetupStep.SUMMARY, draft.step)
+        assertTrue(c.received.get(familyId)!!.mine)
+        assertEquals("민지", vm.notMine())
+        assertNull("the setup goes: the first screen asks the user's own work again", c.setupDrafts.draft.value)
+        val cal = c.received.get(familyId)!!
+        assertFalse(cal.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.OFF, com.bamnat.app.share.RosterFollower.mode(cal))
+        assertFalse(c.settingsRepository.current.setupDone)
+        val snap = c.scheduleRepository.snapshot.first()
+        assertTrue("nothing of 민지's is in my days", (0L..3L).all { snap.resolver.resolve(today.plusDays(it)).entry == null })
+    }
+
+    @org.junit.After fun letTheLinkGo() {
+        c.received.remove(familyId)
+        com.bamnat.core.time.Today.reset()
+    }
+
+    /**
+     * [RVG-20] 검토 HQ-09 (조건 10): found after the setup. Before, '넣지 않기' was the only way, and the days the link had put in stayed.
+     * '내 근무표가 아니에요' says how many days come out first, takes out only the link's (a day the user changed by hand stays), keeps
+     * the link beside as theirs, and 되돌리기 puts both back.
+     */
+    @Test fun notMineAfterTheSetupTakesOutOnlyTheLinksDays() = runBlocking {
+        val vm = startAsMine()
+        vm.save()
+        waitFor("the save") { c.settingsRepository.current.setupDone && c.setupDrafts.draft.value == null }
+        val before = c.scheduleRepository.snapshot.first()
+        val day = before.resolver.resolve(today).shiftType!!.id
+        assertEquals("나이트", before.resolver.resolve(today.plusDays(3)).shiftType?.name)
+        // The user changes the day after by hand (나이트 instead of 데이).
+        val night = before.resolver.resolve(today.plusDays(3)).shiftType!!.id
+        c.scheduleRepository.setOverride(today.plusDays(1), com.bamnat.core.model.ShiftOverride.Shift(night))
+
+        val plan = com.bamnat.app.share.NotMine.plan(c, familyId)!!
+        assertEquals("데이, 쉬는 날, 나이트: three days are the link's", listOf(today, today.plusDays(2), today.plusDays(3)), plan.theirs)
+        assertEquals(listOf(today.plusDays(1)), plan.kept)
+        val undo = com.bamnat.app.share.NotMine.apply(c, familyId, plan)
+
+        val cal = c.received.get(familyId)!!
+        assertFalse(cal.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.OFF, com.bamnat.app.share.RosterFollower.mode(cal))
+        val after = c.scheduleRepository.snapshot.first()
+        assertNull("민지's 데이 is out of my days", after.resolver.resolve(today).shiftType)
+        assertNull(after.resolver.resolve(today.plusDays(3)).shiftType)
+        assertEquals("the day changed by hand stays", night, after.resolver.resolve(today.plusDays(1)).shiftType?.id)
+
+        undo()
+        val back = c.scheduleRepository.snapshot.first()
+        assertEquals(day, back.resolver.resolve(today).shiftType?.id)
+        assertEquals(night, back.resolver.resolve(today.plusDays(3)).shiftType?.id)
+        assertEquals(night, back.resolver.resolve(today.plusDays(1)).shiftType?.id)
+        assertTrue(c.received.get(familyId)!!.mine)
+        assertEquals(com.bamnat.app.share.RosterFollower.Mode.AUTO, com.bamnat.app.share.RosterFollower.mode(c.received.get(familyId)!!))
+    }
+
     @Test fun aLinkWithoutTimesAsksTheTimesOnly() {
         val schedule = com.bamnat.app.share.SharedSchedule(
             "팀", listOf(com.bamnat.app.share.SharedType(1, "주간", "주", 0xFF2196F3, null, false, null)),
