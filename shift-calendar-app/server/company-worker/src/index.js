@@ -6349,8 +6349,22 @@ async function auditLog(env, url) {
   };
 }
 
+/** 2.0.0 [RVA-28] 검토 ADMX-18: 권한 묶음("review:edit dev:view")·관리자 바꿈("approve / suspend")을 말로. */
+const AUDIT_LEVELS = { view: "보기", edit: "고치기" };
+const AUDIT_STATES = { approve: "승인", resume: "다시 씀", suspend: "멈춤", none: "권한 없음" };
+function permWords(text) {
+  return String(text ?? "").split(" / ").map((part) => (AUDIT_STATES[part] ?? part.split(" ").filter(Boolean).map((x) => {
+    const [area, level] = x.split(":");
+    return AREAS[area] ? `${AREAS[area]} ${AUDIT_LEVELS[level] ?? level ?? ""}`.trim() : AUDIT_STATES[x] ?? x;
+  }).join(" · "))).join(" / ");
+}
+
 /** [ADMIN-17] What an entry's detail says, in words where it was stored as data. */
 function auditDetail(r) {
+  // 2.0.0 [RVA-28] 검토 ADMX-18: 안쪽 코드(규칙·설정 번호, 이유 열쇠, 권한 열쇠)가 그대로 보였어요. 이름은 label이 말하고 누르면 그 화면으로 가요.
+  if (r.action === "reject" || r.action === "reject_undo") return REASONS[r.detail] ?? (r.detail ? r.detail : "");
+  if (r.action === "adopt" || r.action === "post_autohide") return /^[A-Za-z0-9/_-]{12,}$/.test(r.detail ?? "") ? "" : r.detail;
+  if (r.action === "invite" || r.action === "admin_update") return permWords(r.detail);
   if (r.action !== "company_update") return r.detail;
   try {
     const b = JSON.parse(r.detail);
@@ -7777,7 +7791,8 @@ export async function remoteState(env, now, fresh = false) {
       source: typeof f.source === "string" ? f.source.slice(0, 200) : "", signed: Boolean(sig2 || sig1),
       valid: (sig2 ? await signedBy(bytes, new TextDecoder().decode(sig2)) : false) || (sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false),
       oldApps: sig1 ? await signedBy(bytes, new TextDecoder().decode(sig1)) : false,
-      reach: phones ? Math.round((1000 * able) / phones) / 10 : null, unknown,
+      // 2.0.0 [RVA-29] 검토 ADM-22·U23-11: 몇 대 가운데 몇 대인지도 보내 표본이 적으면 %가 아니라 "3대 중 1대"로 보여요.
+      reach: phones ? Math.round((1000 * able) / phones) / 10 : null, able, unknown,
     };
   }));
   const value = { base, at: iso(now), phones, files };

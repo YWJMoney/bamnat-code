@@ -6,7 +6,7 @@
 //   오류 묶음 #/errors [ADM3-13] · 서버 상태 판 [ADM3-04·05·19] · 사람 옆 패널 [ADM3-11] · 개발사항 이야기 [ADM3-34]
 // 화면마다 [loads]가 읽을 길을, [has]가 다 왔는지를 앱에 알려요(앱의 load()·hasData()가 이것을 써요).
 export function opsViews(A) {
-  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl, askText, danger } = A;
+  const { S, L, esc, icon, P, ago, can, href, seg, empty, skeleton, api, act, load, toast, openDialog, dialog, confirmBox, syncUrl, askText, danger, serverVersion } = A;
 
   const won = (n) => `${Math.round(n ?? 0).toLocaleString("ko-KR")}원`;
   const when = (ms) => (ms ? new Date(ms).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
@@ -104,7 +104,7 @@ export function opsViews(A) {
     if (!d) return skeleton(2);
     const key = d.keys.find((k) => k.alive);
     const state = `<div class="tiles core">${tile("보류 중인 답", d.held.length, "10분 안에 멈출 수 있어요", d.held.length ? "hot" : "")}${tile("오늘 Claude가 한 일", d.today, d.reads ? `고친 일 · 읽기 ${d.reads}번 따로` : "활동 기록 'Claude'")}
-      ${tile("열쇠", key ? "켜짐" : "없음", key ? `${esc(key.label)}${key.lastAt ? ` · ${agoMs(key.lastAt)}` : ""}` : "관리 › Claude 열쇠", key ? "" : "hot", href("keys"))}
+      ${tile("열쇠", key ? "켜짐" : "없음", key ? `${key.label}${key.lastAt ? ` · ${agoMs(key.lastAt)}` : ""}` : "관리 › Claude 열쇠", key ? "" : "hot", href("keys"))}
       ${tile("Claude 차례", "장부", "Claude가 볼 줄만 모아 보기", "", L.routeHash("desk", null, { view: "claude" }))}
       ${d.drafts ? tile("제보·보상 추천", d.drafts.agree === null ? `${d.drafts.open}개` : `${d.drafts.agree}%`,
         d.drafts.agree === null ? "사람이 정하면 맞았는지 세요" : `정한 ${d.drafts.done}건 중 같음 ${d.drafts.same} · 열린 추천 ${d.drafts.open}${d.drafts.gate.ready ? " · 더 맡길지 여쭐 때예요" : ` · ${d.drafts.gate.least}건·${d.drafts.gate.agree}%면 더 맡길지 여쭤요`}`,
@@ -241,7 +241,7 @@ export function opsViews(A) {
     const id = S.route.id;
     const run = id ? d.items.find((r) => r.version === id) ?? (S.data.launchOne?.version === id ? S.data.launchOne : null) : d.items.find((r) => !r.doneAt) ?? d.items[0];
     const edit = can("ops", "edit");
-    const start = edit ? `<form data-form="launch-start" class="toolbar"><label class="sr" for="ls-v">판</label><input id="ls-v" name="version" required pattern="\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" placeholder="1.38.0" inputmode="decimal">
+    const start = edit ? `<form data-form="launch-start" class="toolbar"><label class="sr" for="ls-v">판</label><input id="ls-v" name="version" required pattern="\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" placeholder="${esc(serverVersion() || "2.0.0")}" inputmode="decimal">
       <button class="btn primary small" type="submit">${icon(P.plus)}새 점검표</button></form>` : "";
     const others = d.items.length > 1 ? `<div class="chips">${d.items.map((r) => `<a class="chip${r.version === run?.version ? " on" : ""}" href="${L.routeHash("launch", r.version, {})}">${esc(r.version)}${r.doneAt ? " ✓" : ` · ${r.left}`}</a>`).join("")}</div>` : "";
     if (!run) return `${start}${empty("점검표가 없어요", "Play에 올릴 판을 적으면 할 일이 순서대로 나와요.")}`;
@@ -367,7 +367,7 @@ export function opsViews(A) {
       const ver = j.ver ? ` · ${esc(j.ver)}${d.version && j.ver !== d.version ? "(옛 판 기록)" : ""}` : d.version && j.runs ? " · 1.39 전 판 기록" : "";
       return `<li><div class="row"><span class="row-main"><b>${esc(j.name)}</b><small>${j.off ? esc(j.off) : `${j.okAt ? `마지막 성공 ${esc(agoMs(j.okAt))}` : "성공 기록 없음"}${j.ms ? ` · ${j.ms}ms` : ""} · ${j.runs}번 중 실패 ${j.fails}${j.error ? ` · ${esc(j.error)}` : ""}${ver}`}</small></span>
         <span class="pill ${tone}">${name}</span></div></li>`;
-    }).join("")}</ul>` : '<p class="hint">아직 돈 적이 없어요. 매시 정각에 돌아요.</p>'}</section>`;
+    }).join("")}</ul>` : '<p class="hint">아직 돈 적이 없어요. 매시 17분에 돌아요.</p>'}</section>`;
     const t = d.speed.total;
     const used = d.dbBytes ? d.dbBytes / d.dbLimit : 0;
     const tiles = `<div class="tiles core">${tile("응답 중간", t.n ? `${t.p50}ms` : "—", `24시간 ${t.n}번`)}${tile("느린 5%", t.n ? `${t.p95}ms` : "—", `가장 느림 ${t.max}ms`, t.p95 > 1500 ? "hot" : "")}
@@ -393,7 +393,7 @@ export function opsViews(A) {
     const m = d.money;
     const n = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
     return `<aside class="card person" aria-label="이 휴대폰"><div class="card-head"><h2>이 휴대폰 <span class="mono">${esc(d.mark)}</span></h2></div>
-      <p class="meta">${[d.app ? `앱 ${d.app}` : "", d.type ? `유형 ${d.type}` : ""].filter(Boolean).map(esc).join(" · ") || "판·유형 모름"}</p>
+      <p class="meta">${[d.app ? `앱 ${d.app}` : "", d.type ? `유형 ${L.WORK_NAMES[d.type] ?? d.type}` : ""].filter(Boolean).map(esc).join(" · ") || "판·유형 모름"}</p>
       ${d.flags.length ? `<div class="chips">${d.flags.map((f) => `<span class="pill ${f.tone}">${esc(f.text)}</span>`).join("")}</div>` : ""}
       <dl class="lines"><div><dt>문의</dt><dd>${d.inquiries.length}</dd></div><div><dt>제보</dt><dd>${n(c.reports)}</dd></div><div><dt>글 · 신고 받음</dt><dd>${n(c.posts)} · ${c.postFlags}</dd></div>
         <div><dt>레시피 · 신고 받음</dt><dd>${n(c.recipes)} · ${c.recipeFlags}</dd></div><div><dt>회사</dt><dd>${c.companies}</dd></div><div><dt>초대</dt><dd>${n(c.invited)}</dd></div></dl>
@@ -489,8 +489,10 @@ export function opsViews(A) {
   /** 출시 › 스튜디오 재료 [ADM3-06]: 장터 › 출시 대기에 있던 재료 잠금을 제 화면으로. 그리는 것은 앱의 materialsView 그대로. */
   function materialsTab(draw) {
     const d = S.data.materials;
-    return `<p class="hint">스튜디오 색 아이콘·배경 묶음을 공개하고, 무료로 줄지(아이콘은 모두 무료, 배경은 앞 3분의 1) 광고·프로로 열지 정해요. 출시 날 점검표의 '재료 잠금'이 이 화면이에요.</p>
-      ${d ? draw(d, can("community", "edit")) : skeleton(2)}`;
+    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1·4): 묶음 목록이 먼저, 이 화면 설명은 아래 한 줄(펴면 설명).
+    return `${d ? draw(d, can("community", "edit")) : skeleton(2)}
+      <div class="list-foot"><details class="tip" data-key="material-how"><summary>스튜디오 › 꾸밈 › 넣기의 ‘밤낮 재료’ 칸 · 출시 날 '재료 잠금'</summary>
+        <p class="hint">스튜디오 색 아이콘·배경 묶음을 공개하고, 무료로 줄지(아이콘은 모두 무료, 배경은 앞 3분의 1) 광고·프로로 열지 정해요. 무료가 아닌 재료는 광고 한 편으로 그 묶음을 30일 열거나 프로로 모두 써요. 출시 날 점검표의 '재료 잠금'이 이 화면이에요.</p></details></div>`;
   }
 
   const views = {
@@ -533,7 +535,7 @@ export function opsViews(A) {
       // way it can fail says why.
       const platform = await window.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable?.().catch(() => false);
       if (!platform) {
-        openDialog(`<div class="box"><h2>이 기기는 지문 로그인을 못 해요</h2><p class="hint">이 브라우저에서 지문·얼굴 인식이나 화면 잠금을 쓸 수 없어요. 갤럭시 폴드의 Chrome이나 삼성 인터넷에서 관리자 앱을 열고 다시 눌러 주세요. 비밀번호 로그인은 그대로 쓸 수 있어요.</p>
+        openDialog(`<div class="box"><h2>이 기기는 지문 로그인을 못 해요</h2><p class="hint">이 브라우저에서 지문·얼굴 인식이나 화면 잠금을 쓸 수 없어요. 휴대폰의 Chrome이나 삼성 인터넷(지문·화면 잠금을 켠 기기)에서 관리자 앱을 열고 다시 눌러 주세요. 비밀번호 로그인은 그대로 쓸 수 있어요.</p>
           <div class="actions"><button class="btn" data-act="close">닫기</button></div></div>`);
         return;
       }

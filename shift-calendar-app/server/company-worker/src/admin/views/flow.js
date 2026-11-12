@@ -10,8 +10,9 @@ export function flowViews(A) {
   const num = (v, unit = "") => (v === null || v === undefined ? "—" : `${v}${unit}`);
 
   function stageCard(s, i, next) {
-    const go = s.act.route ? `<a class="btn small${s.key === next ? " primary" : ""}" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
-      : `<button class="btn small${s.key === next ? " primary" : ""}" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
+    // 2.0.0 [RVA-34] 조건 2: 다음 단계의 채운 단추는 위 '지금 할 일' 막대에 하나만(같은 단추가 두 번 채워졌어요).
+    const go = s.act.route ? `<a class="btn small" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
+      : `<button class="btn small" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
     return `<li class="pipe-step${s.stuck ? " stuck" : ""}${s.n ? "" : " zero"}${s.key === next ? " next" : ""}" data-stage="${s.key}">
       <div class="pipe-top"><span class="pipe-no">${i + 1}</span><b>${esc(s.name)}</b>${s.stuck ? '<span class="pill bad">막힘</span>' : ""}</div>
       <div class="pipe-n"><span class="v">${s.n}</span><span class="u">건</span></div>
@@ -88,12 +89,15 @@ export function flowViews(A) {
 
   // ---- 운영 열쇠 ----
 
+  // 2.0.0 [RVA-27] 검토 ADMX-15: 날짜는 한국 시간으로(UTC 앞 10자는 00~09시에 하루 전으로 보였어요).
+  const kst10 = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
+
   function keysView() {
     const d = S.data.keys;
     if (!d) return skeleton(2);
     const alive = d.keys.filter((k) => k.alive);
     const rows = d.keys.length ? `<ul class="rows">${d.keys.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.label)}</b>
-        <small>${esc(k.createdAt.slice(0, 10))} 만듦 · ${k.alive ? `${esc(k.expiresAt.slice(0, 10))}까지` : k.revokedAt ? "끊음" : "기한 지남"}${k.lastAt ? ` · 마지막 ${esc(ago(k.lastAt))}` : " · 아직 안 씀"}${k.today ? ` · 오늘 ${k.today}번` : ""}</small></span>
+        <small>${esc(kst10(k.createdAt))} 만듦 · ${k.alive ? `${esc(kst10(k.expiresAt))}까지` : k.revokedAt ? "끊음" : "기한 지남"}${k.lastAt ? ` · 마지막 ${esc(ago(k.lastAt))}` : " · 아직 안 씀"}${k.today ? ` · 오늘 ${k.today}번` : ""}</small></span>
         <span class="pill ${k.alive ? "ok" : ""}">${k.alive ? "쓰는 중" : "꺼짐"}</span>${k.alive ? `<button class="btn small danger" type="button" data-act="key-revoke" data-id="${k.id}">끊기</button>` : ""}</div></li>`).join("")}</ul>`
       : empty("아직 열쇠가 없어요", "열쇠를 만들어 Claude 프로젝트에 넣으면 \"처리해\" 한 마디로 Claude가 직접 처리해요.");
     return `<section class="card"><div class="card-head"><h2>Claude 운영 열쇠</h2>
@@ -170,7 +174,7 @@ export function flowViews(A) {
       if (!r) return;
       openDialog(`<div class="key-once" data-secret="key"><h2>열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> 지금 복사해서 Claude 프로젝트 설정 › 클라우드 환경 비밀값 BAMNAT_OPS_KEY에 넣어요.</p>
         <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono">
-        <p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
+        <p class="meta">${esc(kst10(r.expiresAt))}까지 써요.</p>
         <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);
       S.data.keys = null;
       load();
