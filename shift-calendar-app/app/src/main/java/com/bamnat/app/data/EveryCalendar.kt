@@ -22,6 +22,8 @@ data class CalendarParts(
     val snapshot: ScheduleSnapshot,
     val book: MoneyBook,
     val profile: PayProfile?,
+    /** 2.0.0 [RVJ-18] 굳은 달: the months this calendar closed, whose total every screen shows as kept. */
+    val closed: Map<YearMonth, Long> = emptyMap(),
 )
 
 /** [COMN-01][COMN-02][COMN-03] Every calendar side by side: 합쳐 보기, the money tab's 모든 달력 합계 and 통계's 전체. */
@@ -32,8 +34,8 @@ object EveryCalendar {
         if (list.isEmpty()) flowOf(emptyList())
         else combine(list.map { cal ->
             val scope = c.scopeOf(cal.id)
-            combine(scope.schedule.snapshot, scope.money.book, scope.pay.profile, scope.settings) { s, b, p, st ->
-                CalendarParts(cal, st.workStyle, s, b, p)
+            combine(scope.schedule.snapshot, scope.money.book, scope.pay.profile, scope.settings, scope.pay.closed) { s, b, p, st, closed ->
+                CalendarParts(cal, st.workStyle, s, b, p, closed.mapValues { it.value.total })
             }
         }) { it.toList() }
     }
@@ -45,7 +47,8 @@ object EveryCalendar {
     fun month(parts: List<CalendarParts>, month: YearMonth): AllCalendarsMonth = AllCalendarsMonth(parts.map { p ->
         // [MON-01] The wage estimate is free.
         val estimate = p.profile?.takeIf { p.style?.usesPayEngine != false }?.let { profile ->
-            runCatching { PayCalculator().calculate(profile, month, p.snapshot.resolver::resolve).total }.getOrNull()
+            // 2.0.0 [RVJ-18] 검토 PAYU-06: a closed month is the amount it was closed at, here as on the pay screen.
+            p.closed[month] ?: runCatching { PayCalculator().calculate(profile, month, p.snapshot.resolver::resolve).total }.getOrNull()
         }
         val days = (1..month.lengthOfMonth()).map { p.snapshot.resolver.resolve(month.atDay(it)) }
         val work = CombinedView.workOf(days, p.book.jobs)
