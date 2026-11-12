@@ -45,6 +45,10 @@ class SlowTestsTest(unittest.TestCase):
         self.assertEqual([{"name": "A.dateBomb", "at": "A.kt:12"}, {"name": "A.mine", "at": "A.kt:40"}], data["failed"])
         self.assertEqual(["A.later"], data["skipped"])
 
+    def test_json_makes_its_folder(self):
+        self.run_it("--json", str(self.dir / "new" / "tests-core.json"))
+        self.assertTrue((self.dir / "new" / "tests-core.json").exists())
+
     def test_failures_are_told_against_the_base(self):
         (self.dir / "base.json").write_text(json.dumps({"tests": 4, "failed": [{"name": "A.dateBomb", "at": "A.kt:12"}]}), encoding="utf-8")
         out = self.run_it("--base", str(self.dir / "base.json"))

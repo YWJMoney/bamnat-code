@@ -115,6 +115,8 @@ def main(argv):
         print("\n".join(lines))
     print(table(classes, cases, top, skipped))
     if out_json:
+        # CI가 결과 묶음 폴더(build/tests)를 따로 만들지 않아요. 없으면 만들어요.
+        os.makedirs(os.path.dirname(out_json) or ".", exist_ok=True)
         with open(out_json, "w", encoding="utf-8") as f:
             json.dump({
                 "tests": sum(c[1] for c in classes.values()),
