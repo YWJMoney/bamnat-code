@@ -10,6 +10,7 @@ import com.bamnat.app.ui.calendar.newCalendarBadge
 import com.bamnat.app.ui.setup.SetupViewModel
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.setup.SetupStep
+import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -44,9 +45,9 @@ class PersonalCalendarsTest {
     private val today = now.toLocalDate()
 
     private fun waitFor(what: String, done: () -> Boolean) {
-        val end = System.currentTimeMillis() + 60_000
+        val end = System.currentTimeMillis() + 60_000  // real clock: a timeout
         while (!done()) {
-            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }
+            check(System.currentTimeMillis() < end) { "Timed out waiting for $what" }  // real clock: a timeout
             shadowOf(Looper.getMainLooper()).idle()
             Thread.sleep(20)
         }
@@ -276,7 +277,7 @@ class PersonalCalendarsTest {
 
     @Test fun eachCalendarKeepsItsOwnLink() {
         val id = listedCalendar("알바")
-        val link = ShareLinkState("abc", "https://example.test/s/abc", "token", Instant.now().plusSeconds(86_400), "민지")
+        val link = ShareLinkState("abc", "https://example.test/s/abc", "token", Today.instant().plusSeconds(86_400), "민지")
         ShareLinkStore(app, id).save(link)
         assertEquals("abc", ShareLinkStore(app, id).load()?.id)
         assertNull(ShareLinkStore(app).load())

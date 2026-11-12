@@ -671,7 +671,9 @@ private fun DayCell(
         // [CAL-05] A field or shop day without work is not a day off: it says what the day has, or that it is empty.
         val shiftWords = when {
             day.isWorkDay -> (type?.name ?: "근무") + " " + HoursFormat.korean(day.scheduledMinutes)
-            type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null) -> type.name
+            // 2.0.0 [RVR-40] (누르는 시험이 찾음): a shop day the owner turned to 휴무 says so even with an 일감 or 외상 on it, so
+            // '직접 바꿈' is not read without what it was changed to.
+            type != null && (focus == CalendarFocus.SHIFTS || !type.isOff || jobs == 0 && sales == null || day.source == DaySource.OVERRIDE) -> type.name
             focus == CalendarFocus.SHIFTS -> "쉬는 날"
             jobs > 0 || sales != null -> null
             else -> focus.emptyDay(day.isWorkDay)

@@ -681,9 +681,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigateTopLevel(TopLevel.PLAZA.route); NoticeLinks.consume(target)
             }
             NoticeLinks.Target.RECIPE -> {
-                // Only a work's code (letters and numbers), whatever the intent carried.
-                val code = NoticeLinks.payload.value?.takeIf { Regex("[A-Za-z0-9]{4,16}").matches(it) }
-                if (code != null) nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                // Only a work's code (letters and numbers), whatever the intent carried. [RVM-36] HQ-52: a row that says a 글 came
+                // opens the work at its 이야기.
+                com.bamnat.app.recipe.MakerReactions.opened(NoticeLinks.payload.value)?.let { (code, talk) ->
+                    com.bamnat.app.recipe.RecipeLinks.talkFocus = if (talk) code else null
+                    nav.navigate(Routes.recipe(code)) { launchSingleTop = true }
+                }
                 NoticeLinks.consume(target)
             }
             NoticeLinks.Target.VILLAGE_POSTS -> { com.bamnat.app.ui.company.TalkSheets.closeAll(); nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -764,6 +767,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     var manageAsk by remember { mutableStateOf<Triple<com.bamnat.app.IncomingRoster.Shared, android.net.Uri, List<com.bamnat.app.imports.SharedToManage.Place>>?>(null) }
     var manageBusy by remember { mutableStateOf<String?>(null) }
     var manageNote by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVL-41] A locked 근무표 PDF shared into a team: its password asked here, for this reading only.
+    var manageLocked by remember { mutableStateOf<Pair<com.bamnat.app.imports.SharedToManage.Place.Team, com.bamnat.app.imports.PdfLock>?>(null) }
     var rosterToMine by remember { mutableStateOf(false) }
     LaunchedEffect(sharedRoster) {
         // [INV-40] On an investor calendar a shared screenshot is a 체결 내역 capture for its 투자 tab; one shared while
@@ -801,6 +806,32 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
     manageAsk?.let { (shared, uri, places) ->
         val askContext = LocalContext.current
+        fun readTeam(place: com.bamnat.app.imports.SharedToManage.Place.Team, password: CharArray?) = rootScope.launch {
+            manageBusy = "근무표를 읽고 있어요…"
+            manageNote = null
+            val team = container.phaseThree.teamList.first().firstOrNull { it.id == place.id }
+            val today = com.bamnat.core.time.Today.date()
+            val got = if (team == null) com.bamnat.app.imports.ManageImport.Got.Failed("이 팀을 찾지 못했어요.")
+                else com.bamnat.app.imports.ManageImport.roster(askContext, uri, java.time.YearMonth.from(today).plusMonths(1), team.shifts, today, password)
+            password?.fill('\u0000')
+            manageBusy = null
+            when (got) {
+                is com.bamnat.app.imports.ManageImport.Got.Read -> {
+                    manageAsk = null
+                    manageLocked = null
+                    com.bamnat.app.imports.SharedToManage.putTeam(com.bamnat.app.imports.SharedToManage.ForTeam(place.id, got.value, got.fromPhoto))
+                    container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, "shared")
+                    nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true }
+                }
+                // [RVL-41] Locked: asked (again) here, and read once more with what is typed.
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> manageLocked = place to got.lock
+                is com.bamnat.app.imports.ManageImport.Got.Failed -> {
+                    manageLocked = null
+                    manageNote = got.why
+                    container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "shared")
+                }
+            }
+        }
         com.bamnat.app.imports.SharedToManageChoice(places, busy = manageBusy, note = manageNote,
             onMine = {
                 manageAsk = null; manageNote = null
@@ -814,31 +845,15 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                         com.bamnat.app.imports.SharedToManage.putStaff(uri)
                         nav.navigate(Routes.MANAGE) { launchSingleTop = true }
                     }
-                    is com.bamnat.app.imports.SharedToManage.Place.Team -> rootScope.launch {
-                        manageBusy = "근무표를 읽고 있어요…"
-                        manageNote = null
-                        val team = container.phaseThree.teamList.first().firstOrNull { it.id == place.id }
-                        val today = com.bamnat.core.time.Today.date()
-                        val got = if (team == null) com.bamnat.app.imports.ManageImport.Got.Failed("이 팀을 찾지 못했어요.")
-                            else com.bamnat.app.imports.ManageImport.roster(askContext, uri, java.time.YearMonth.from(today).plusMonths(1), team.shifts, today)
-                        manageBusy = null
-                        when (got) {
-                            is com.bamnat.app.imports.ManageImport.Got.Read -> {
-                                manageAsk = null
-                                com.bamnat.app.imports.SharedToManage.putTeam(com.bamnat.app.imports.SharedToManage.ForTeam(place.id, got.value, got.fromPhoto))
-                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_IMPORT.key, "shared")
-                                nav.navigate(Routes.LEADER_TEAMS) { launchSingleTop = true }
-                            }
-                            is com.bamnat.app.imports.ManageImport.Got.Failed -> {
-                                manageNote = got.why
-                                container.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "shared")
-                            }
-                        }
-                    }
+                    is com.bamnat.app.imports.SharedToManage.Place.Team -> readTeam(place, null)
                 }
             },
-            onDismiss = { manageAsk = null; manageNote = null },
+            onDismiss = { manageAsk = null; manageNote = null; manageLocked = null },
         )
+        manageLocked?.let { (place, lock) ->
+            com.bamnat.app.ui.imports.PdfPasswordDialog(lock, working = manageBusy != null, payslip = false,
+                onOpen = { pw -> readTeam(place, pw) }, onDismiss = { manageLocked = null })
+        }
     }
     shotToPlace?.let { (uri, investor) ->
         com.bamnat.app.ui.invest.SharedShotChoice(
@@ -900,6 +915,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val villageNew by com.bamnat.app.company.VillageReplies.count.collectAsStateWithLifecycle()
     // [TOWN-07] PC 확인 699bbbc8 (켠 뒤 22초까지 점이 없어요): the count last worked out is read as the tabs first show, off the main thread.
     LaunchedEffect(Unit) { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { com.bamnat.app.company.VillageReplies.restore(container.appContext) } } }
+    // 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since, into the 알림함 (사람들 반응), whenever the app comes to the
+    // front (asked at most every 10 minutes).
+    val reactionScope = rememberCoroutineScope()
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_START) {
+        reactionScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCatching { container.recipes.reactions() } }
+    }
     LaunchedEffect(homeRequests) {
         if (!container.inquiryApi.enabled || !container.inquiryStore.asked) return@LaunchedEffect
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
