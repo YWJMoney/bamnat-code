@@ -52,6 +52,14 @@ PERSONAL = [
     (re.compile(r"\bq[A-Za-z0-9]{21}\b"), "문의 번호"),
     (re.compile(r"\b[0-9a-f]{32,}\b"), "기기 번호처럼 보이는 값"),
 ]
+# 2.0.0 [RVQ-28] 검토 SVC-10: news·shipReply는 판이 나갈 때 사람 확인 없이 모든 사용자·묶인 문의에 나가요. 서버(desk.js broadcastRisk)가
+# 걸린 칸을 빼고 보내기 전에, 여기서 먼저 알려요(뜻은 같고 서버가 정본).
+BROADCAST = [
+    (re.compile(r"(^|\s)a\s?i\s*(상담|답|응답|도우미|어시스턴트|비서|챗)|에이\s*아이|인공\s*지능|챗\s*봇|gpt|\bllm\b|claude|클로드|anthropic|자동\s*(답변|응답)|사람이\s*아니", re.I), "AI·자동 답 표현"),
+    (re.compile(r"(https?|ftp)\s*:\s*/\s*/|www\s*\.|[a-z0-9-]+\s*\.\s*(com|net|org|kr|co|io|me|ly|gl|app|dev|xyz|link|site|shop|kakao)(?![A-Za-z0-9])", re.I), "링크·주소"),
+    (re.compile(r"(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}"), "전화번호"),
+    (re.compile(r"오픈\s*채팅|단톡|카톡\s*방|텔레그램|디스코드|/api/|/admin|관리자\s*(페이지|화면|앱|계정)|서버\s*(주소|구조|코드)|소스\s*코드|깃허브|github|토큰|비밀\s*(값|키)|데이터\s*베이스", re.I), "보안 정보·단톡방"),
+]
 LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300}
 
 
@@ -134,6 +142,12 @@ def check_item(n, x):
         say("check에는 PC에서 무엇을 볼지(check 칸)를 적어요")
     if x.get("status") == "rejected" and not x.get("reason"):
         say("rejected에는 reason(반려 이유)을 적어요")
+    for k in ("news", "shipReply"):
+        v = x.get(k)
+        if isinstance(v, str):
+            for pat, what in BROADCAST:
+                if pat.search(v):
+                    say(f"{k}에 {what}이 있어요. 판이 나갈 때 사람 확인 없이 나가는 글이라 서버가 그 칸을 빼요")
     for k in ("title", "publicTitle", "news", "shipReply", "tierWhy", "check", "test", "reason"):
         v = x.get(k)
         if isinstance(v, str):

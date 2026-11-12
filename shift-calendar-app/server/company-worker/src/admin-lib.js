@@ -10,6 +10,13 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // 2.0.0 [RVQ-28] 검토 SVC-10: 판이 나갈 때 사람 확인 없이 나가는 글(공지 한 줄·출시 답), 열쇠로 저장하려던 판.
+    // 2.0.0 [RVQ-29] 검토 SVC-17: 스튜디오 요구를 장터 요청 판에 올리는 제목(요청 판 글과 같은 거름).
+    link: "링크·주소는 적을 수 없어요",
+    chat: "단톡방·오픈 채팅 안내는 적을 수 없어요",
+    title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
+    notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
+    version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
     // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
     cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
     state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",

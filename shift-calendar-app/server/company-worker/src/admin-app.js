@@ -286,9 +286,9 @@ function adminApp(L, BUILD, M) {
     rejected: "보내 주신 의견을 꼼꼼히 살펴봤어요. 아쉽지만 지금은 넣기 어려워요. 같은 의견이 더 모이면 다시 볼게요.",
     doing: "말씀해 주신 내용을 지금 만들고 있어요. 업데이트되면 다시 알려 드릴게요.",
   };
-  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기" };
+  const KIND_NAMES = { question: "질문", bug: "문제 신고", problem: "문제 신고", idea: "건의·제안", company: "회사 방식", other: "그 밖의 이야기", studio: "스튜디오 부탁", billing: "결제·환불" };
   // [J133-40] 순번 720: the kind as the sender picked it in the app (InquiryKind), said beside the admin's name for it.
-  const APP_KIND_NAMES = { question: "궁금해요", bug: "앱이 이상해요", idea: "건의·제안", company: "회사 방식 알려 주기", other: "그 밖의 이야기" };
+  const APP_KIND_NAMES = { question: "궁금해요", bug: "앱이 이상해요", idea: "건의·제안", company: "회사 방식 알려 주기", other: "그 밖의 이야기", studio: "원하는 꾸미기 부탁", billing: "결제·환불" };
   // [J133-40] "접수됨으로", "답변 완료로": 로 after a vowel or ㄹ, 으로 after another final consonant; (으)로 for anything else.
   const roSuffix = (w) => {
     const c = String(w ?? "").trim().slice(-1).charCodeAt(0);

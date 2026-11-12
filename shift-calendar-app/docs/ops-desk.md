@@ -36,12 +36,14 @@
 | `/api/admin/desk` 장부 한 번에(규칙, shipped, 흐름, 정리함, 진행 중 개발사항, 넘김 글) | `/inquiries/<id>/reply·status·assign·notes` |
 | `/flow`, `/me`, `/badges` | `/inquiries/sort/apply`, `/inquiries/handoff/mark·result` |
 | `/inquiries`, `/inquiries/<id>`(알람 점검 기록은 빠짐), `/inquiries/sort`, `/inquiries/handoff` | `/dev`, `/dev/<id>`, `/dev/<id>/links·links/remove·notes·reply` |
-| `/dev`, `/dev/<id>`, `/templates` | `/desk/ship` |
+| `/dev`, `/dev/<id>`, `/templates` | `/desk/ship`(2.0.0부터 Play·서버가 아는 판만, 10분 보류 뒤, 아래) |
 | `/ledger?view=claude&q=…`(장부 줄, 300줄씩 `more`), `/ledger.csv`, `/ledger/log?key=q12` | `/ledger/state {keys,state,reason}`, `/ledger/undo {key}`, `/ledger/summary {key,text}` |
 | 1.39 `/loop`(자동 순환 상태), `/loop/queue`(영향도 순 개발 대기열), `/loop/decide`(결정함), `/loop/tiers`, `/loop/tier/<d…>`(요금 관측치, 읽기만), `/loop/autonomy` | 1.39 `/loop/drafts`(결정함 문의에 보낼 답 초안만) |
 | 1.39 `/queue`(검토함: 제보 묶음·명세서 확인 수·달라요·토론 수), `/companies?q=`, `/companies/<id>`, `/companies/similar`, `/versions`(여러 판), `/rewards`(드릴 보상), `/drafts`(열린 추천과 일치율) | 1.39 `/drafts` 추천만(아래) |
 
-그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
+그 밖(지우기, 여러 개 한 번에 닫기, 공개 바꾸기, 사진, 결제 기록, 자동 대응 설정, 기능 스위치, 공지 직접 올리기, 관리자, 열쇠 목록)은 403. 하루 3000번·바꾸기 400번을 넘으면 429.
+
+**공지 한 줄·출시 답과 나간 판 저장 (2.0.0 RVQ-28, 검토 SVC-10)**: 개발사항의 `news`(업데이트 소식 한 줄)·`shipReply`(출시 답)는 판이 나갈 때 사람 확인 없이 모든 사용자·묶인 문의에 나가요. 그래서 링크·전화번호·이메일·단톡방, AI·자동 답이라는 말, 보안 정보가 있으면 적히지 않아요(`notice_risk`, 관리자 앱도 같아요). 저장소 동기화는 그 칸만 빼고 상태·판은 반영하고(`held`), 그 전에 적혀 있던 줄은 판이 나갈 때 다시 봐서 공지 줄은 빼고 출시 답은 기본 답으로 보낸 뒤 관리자에게 알려요. 열쇠로 부른 `POST /desk/ship`은 Play에서 본 판(트랙의 100%·단계적·멈춤)이나 서버가 아는 판(이 판으로 쓰는 휴대폰)만 받고(`version_unknown`), 바로 보내지 않고 자동 출시 안내와 같은 줄에 10분 보류로 넣어 관리자에게 알려요(202, 오늘 › 자동 순환의 '멈추기'·'지금 보내기'는 사람 몫). 스스로 출시 안내가 꺼져 있으면 사람이 '지금 보내기'를 눌러야 나가요. 사람이 멈춘 판은 `cancelled`, 이미 나간 판은 `already`.
 
 ## 제보 검토·보상·회사 합치기 추천 (1.39 ADM3-49, 사용자 2026-11-08)
 열쇠는 **추천만** 적어요. 채택·거절·되돌리기(`/groups/…`), 보상 지급(`/rewards/<id>`), 회사 합치기(`/companies/<id>/merge`, `/companies/similar/skip`)는 403이고, 관리자 앱에서 사람이 추천을 보고 버튼을 한 번 눌러요.

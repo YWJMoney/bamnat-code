@@ -44,7 +44,7 @@ export function loopViews(A) {
       : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "서버 비밀값 PLAY_SERVICE_ACCOUNT에 '앱 정보 보기' 권한이 있으면 매시 Play 프로덕션 트랙을 읽어요. 없으면 지금처럼 흐름 › '나간 판 저장'을 눌러요."}</p>`;
     const ships = d.ships.length ? `<ul class="rows">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
         <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 이 판으로 쓰는 휴대폰이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
-          : s.status === "waiting" ? `${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
         ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small primary" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
