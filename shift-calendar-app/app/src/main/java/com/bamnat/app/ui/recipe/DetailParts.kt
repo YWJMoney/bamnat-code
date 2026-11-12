@@ -348,7 +348,7 @@ internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, o
                 Text(
                     l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
                     color = when (l.kind) {
-                        PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
+                        PutLine.Kind.REST -> MaterialTheme.colorScheme.onSurfaceVariant
                         PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
                         else -> MaterialTheme.colorScheme.onSurface
                     },

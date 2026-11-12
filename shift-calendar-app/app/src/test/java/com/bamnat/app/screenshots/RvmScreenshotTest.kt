@@ -229,6 +229,37 @@ class RvmScreenshotTest : ScreenshotBase() {
             com.bamnat.app.ui.recipe.marketCols(675, false), com.bamnat.app.ui.recipe.marketCols(675, true)))
     }
 
+    /**
+     * 2.0.0 [RVM-34] 총괄 HQ-72 (조건 4·12): at 200% a 장터 card's numbers line ('♥ 38 · 넣어 본 분 214 · 오래 써요 81%') went over three lines
+     * in a folded phone's tile. Now it keeps the two numbers that matter ('♥ 38 · 214명') and is two lines at most, on a light and a dark page.
+     */
+    @Test fun theNumbersLineStaysWithinTwoLines() {
+        fun Screen.numbers(): List<Pair<String, Int>> = nodes(merged = false).mapNotNull { n ->
+            val action = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action ?: return@mapNotNull null
+            val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            if (action(out) != true) return@mapNotNull null
+            out.firstOrNull { it.layoutInput.text.text.startsWith("♥") }?.let { it.layoutInput.text.text.replace('\u00A0', ' ') to it.lineCount }
+        }
+        for ((name, qualifiers) in listOf("rvm_60_market_numbers_folded_200" to FOLDED, "rvm_61_market_numbers_folded_dark_200" to DARK)) {
+            shoot(name, qualifiers, 2f) {
+                market()(this)
+                val lines = numbers()
+                check(lines.isNotEmpty()) { "숫자 줄이 안 보여요" }
+                check(lines.all { it.first == "♥ 38 · 214명" }) { "200%의 숫자 줄은 두 숫자만: $lines" }
+                check(lines.all { it.second <= 2 }) { "200%에서 두 줄을 넘어요: $lines" }
+                // Read aloud whole, in words, at any size.
+                val said = nodes(merged = false).mapNotNull { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.joinToString() }
+                check("좋아요 38 · 넣어 본 분 214명 · 7일 뒤에도 쓰는 분 81%" in said) { "읽어 주는 숫자 줄: ${said.filter { "좋아요" in it }}" }
+            }
+        }
+        shoot("rvm_62_market_numbers_folded", FOLDED) {
+            market()(this)
+            check(numbers().any { it.first == "♥ 38 · 넣어 본 분 214 · 오래 써요 81%" }) { "100%에서는 그대로: ${numbers()}" }
+            // A wrapped line breaks between the numbers, not inside one ('오래 / 써요 81%' before).
+            check(numbers().all { it.second <= 2 }) { "100%에서 두 줄을 넘어요: ${numbers()}" }
+        }
+    }
+
     private val cardWords = setOf("테마 보기", "작품 보기", "도구 보기")
     private fun Screen.cards() = nodes().filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.label in cardWords && n.boundsInWindow.height > 1f }
     private fun Screen.firstRow(): Int { val top = cards().minOf { it.boundsInWindow.top }; return cards().count { kotlin.math.abs(it.boundsInWindow.top - top) < 2f } }

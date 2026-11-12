@@ -144,10 +144,13 @@ private fun FlipPage(item: RecipeItem, style: WorkStyle?, onOpen: () -> Unit, on
                 if (item.fx.isNotEmpty()) FxBadge(locked = !com.bamnat.app.logic.FxAccess.pro(c))
             }
             sectionLine(item, shown, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-            fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
-            Text("♥ ${item.likes} · 넣어 본 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: "") +
- " · " + MarketMaker.line(item),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // [RVM-34] HQ-72: the numbers and who made it, within two lines at 200% (at large text the maker has a line of its own).
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) {
+                MarketNumbersText(item)
+                Text(MarketMaker.line(item), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else MarketNumbersText(item, tail = MarketMaker.line(item))
             Spacer(Modifier.size(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onTry, enabled = recipe != null, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {
