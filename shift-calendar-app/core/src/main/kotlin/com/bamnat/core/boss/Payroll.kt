@@ -55,8 +55,42 @@ data class Workplace(
     val calls: List<com.bamnat.core.team.TeamCall> = emptyList(),
     /** 1.39 [BOSS-12] 산재보험 사업종류 ([AccidentRates.Kind.code] or "custom:‰"); null until the 사장님 picks it (DB 32판). */
     val industry: String? = null,
+    /**
+     * 2.0.0 [RVJ-09] 검토 PAYC-09·BOSS-56·U04-09: the month's pay goes out the next month (말일 마감 → 다음 달 10일, the default) or
+     * the same month (매월 25일·말일 당월 지급). Kept in the `payday` column as 100 + day, so no DB change.
+     */
+    val payNextMonth: Boolean = true,
+    /**
+     * 2.0.0 [RVJ-17] 검토 BOSS-55: 대표자 이름과 사업장 주소 (선택), for the 근로계약서 to say who the 사업주 is. On the phone only,
+     * in the `calls` column's object form (no DB change).
+     */
+    val owner: String = "",
+    val address: String = "",
 ) {
-    fun payDate(month: YearMonth): LocalDate? = payday?.let { month.plusMonths(1).atDay(it.coerceAtMost(month.plusMonths(1).lengthOfMonth())) }
+    fun payDate(month: YearMonth): LocalDate? = payday?.let {
+        val m = if (payNextMonth) month.plusMonths(1) else month
+        m.atDay(it.coerceAtMost(m.lengthOfMonth()))
+    }
+
+    /**
+     * 2.0.0 [RVJ-09] 검토 I05ba-05: a pay day on a weekend or 공휴일 is paid the working day before (임금은 정한 날에 주고, 쉬는 날이면 앞당겨
+     * 주는 것이 통례예요: 근로기준법 제43조 제2항 '매월 1회 이상 일정한 날짜'). The day itself is kept; this is the one to plan on.
+     */
+    fun payDateWorkday(month: YearMonth): LocalDate? = payDate(month)?.let { d ->
+        var x = d
+        while (x.dayOfWeek == DayOfWeek.SATURDAY || x.dayOfWeek == DayOfWeek.SUNDAY || com.bamnat.core.holiday.KoreanHolidays.isHoliday(x)) x = x.minusDays(1)
+        x
+    }
+
+    companion object {
+        /** [RVJ-09] The `payday` column: 1..31 for the next month, 101..131 for the same month. */
+        fun encodePayday(day: Int?, nextMonth: Boolean): Int? = day?.let { if (nextMonth) it else 100 + it }
+        fun decodePayday(v: Int?): Pair<Int?, Boolean> = when {
+            v == null -> null to true
+            v > 100 -> (v - 100).coerceIn(1, 31) to false
+            else -> v.coerceIn(1, 31) to true
+        }
+    }
 }
 
 enum class WageForm(val label: String) { HOUR("시급"), MONTH("월급"), DAY("일급") }
@@ -64,7 +98,18 @@ enum class WageForm(val label: String) { HOUR("시급"), MONTH("월급"), DAY("�
 /** [BOSS-01] 4대보험 enrolment, each on its own (설계 2-2 직원 추가). 산재 has no employee share and is always on by law. */
 data class Insurance(val pension: Boolean = false, val health: Boolean = false, val employment: Boolean = false,
                      /** 1.38 [BOSS-08] How income tax comes off the 명세서: 간이세액표, 사업소득 3.3%, or none. */
-                     val tax: StaffTax = StaffTax.WAGE) {
+                     val tax: StaffTax = StaffTax.WAGE,
+                     /**
+                      * 2.0.0 [RVJ-10] 검토 PAYC-08·PAYU-14·T05-06: 간이세액표 공제대상가족 수 (본인 포함, 1~11) and of them 8~20세 자녀, as the
+                      * staff member said (근로소득 원천징수 신고서). 1 and 0 until asked.
+                      */
+                     val family: Int = 1,
+                     val children: Int = 0,
+                     /**
+                      * [RVJ-16] 검토 BOSS-74: 외국인 직원. 건강보험·산재는 내국인과 같고, 국민연금은 나라(상호주의, 국민연금법 제126조),
+                      * 고용보험은 체류자격(고용보험법 제10조의2)에 따라 달라 사장님이 고르는 칸을 그대로 두고 까닭만 말해요.
+                      */
+                     val foreign: Boolean = false) {
     val any: Boolean get() = pension || health || employment
     val label: String get() = listOfNotNull("국민".takeIf { pension }, "건강".takeIf { health }, "고용".takeIf { employment }).joinToString("·").ifEmpty { "가입 안 함" }
 
@@ -73,11 +118,23 @@ data class Insurance(val pension: Boolean = false, val health: Boolean = false, 
     }
 }
 
-/** 1.38 [BOSS-08] 소득세 떼는 법. 3.3% is for a 사업소득자 (프리랜서) only; an employee's is the 간이세액표 (소득세법 제134조). */
-enum class StaffTax(val label: String) { WAGE("근로소득(간이세액표)"), BIZ("사업소득 3.3%"), NONE("떼지 않음") }
+/**
+ * 1.38 [BOSS-08] 소득세 떼는 법. 3.3% is for a 사업소득자 (프리랜서) only; an employee's is the 간이세액표 (소득세법 제134조).
+ * 2.0.0 [RVJ-11] 검토 PAYC-22·T05c-05: 일용근로자 (3개월 미만 고용, 소득세법 시행령 제20조) are taxed day by day, (일당 − 15만 원) × 6% less
+ * 55% ([com.bamnat.core.money.DailyWorkerTax]), and the 연말정산 does not reach them.
+ */
+enum class StaffTax(val label: String) { WAGE("근로소득(간이세액표)"), DAILY("일용근로(하루 15만 원 공제)"), BIZ("사업소득 3.3%"), NONE("떼지 않음") }
 
-/** [BOSS-01] A fixed allowance paid every month (식대·교통비 같은), or every working day. */
-data class StaffAllowance(val name: String, val amount: Long, val perDay: Boolean = false)
+/**
+ * [BOSS-01] A fixed allowance paid every month (식대·교통비 같은), or every working day. 2.0.0 [RVJ-10] 검토 PAYC-08·U04-10: [taxFree]
+ * is 비과세 (식대 월 20만 원까지, 소득세법 제12조 제3호 머목·시행령 제17조의2), so the 명세서 takes no tax or 보험 on it.
+ */
+data class StaffAllowance(val name: String, val amount: Long, val perDay: Boolean = false, val taxFree: Boolean = looksTaxFree(name)) {
+    companion object {
+        /** 식대 is the 비과세 most shops pay; a new allowance with that name starts with the switch on. */
+        fun looksTaxFree(name: String): Boolean = name.contains("식대") || name.contains("식비")
+    }
+}
 
 /**
  * [BOSS-01] 직원. The name and (결정 P3-D8: optional) birth date are what a 임금대장·임금명세서 needs to tell people apart (시행령
@@ -216,15 +273,40 @@ object PayrollLedger {
     /** The fixed shift type of [day] for a staff member: id 1..7 by the weekday, so the week is a plain weekly pattern. */
     private fun typeId(day: DayOfWeek): Long = day.value.toLong()
 
-    fun profile(place: Workplace, s: StaffMember): PayProfile = PayProfile(
+    /**
+     * 2.0.0 [RVJ-12] 검토 PAYC-07·T04-09: the usual week's 소정근로 (minutes, at most 40 hours) from [StaffMember.weekly], the legal
+     * break taken off as the ledger does. 0 with no usual week (then 209시간·8시간 stand).
+     */
+    fun weeklyMinutes(place: Workplace, s: StaffMember): Int =
+        s.weekly.values.sumOf { it.paidMinutes(place.legalBreaks).coerceIn(0, 8 * 60) }.coerceAtMost(40 * 60)
+
+    /** [RVJ-12] 월 소정근로시간 of a 월급 staff member: (주 소정 + 주휴) × 365 ÷ 7 ÷ 12, 209 for a full week (최저임금법 시행령 제5조). */
+    fun monthlyHours(place: Workplace, s: StaffMember): Int =
+        weeklyMinutes(place, s).takeIf { it > 0 }?.let { com.bamnat.core.pay.StandardHours.monthly(it) }?.coerceAtLeast(1) ?: 209
+
+    /** [RVJ-12] 1일 소정근로 of an 일급 staff member: the usual working day's paid minutes (the longest, at most 8 hours), else 8 hours. */
+    fun dailyMinutes(place: Workplace, s: StaffMember): Int =
+        s.weekly.values.map { it.paidMinutes(place.legalBreaks) }.filter { it > 0 }.maxOrNull()?.coerceIn(60, 8 * 60) ?: 8 * 60
+
+    /** [RVJ-13] 검토 PAYC-19: under 18 on the month's first day (근로기준법 제69조: 하루 7시간·한 주 35시간). */
+    fun youngIn(s: StaffMember, month: YearMonth?): Boolean =
+        month != null && s.birth != null && month.atDay(1).isBefore(s.birth.plusYears(18))
+
+    fun profile(place: Workplace, s: StaffMember, month: YearMonth? = null): PayProfile = PayProfile(
         occupation = Occupation.PART_TIME,
         wageType = when (s.form) { WageForm.HOUR -> WageType.HOURLY; WageForm.MONTH -> WageType.MONTHLY; WageForm.DAY -> WageType.DAILY },
         // 1.38 PC 8차: dated from the hire day, a 월급 joined on 11/20 read 0원 for November (the month asks the value on the 1st).
         base = ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), s.base))),
         items = s.allowances.mapIndexed { i, a ->
             PayItem("staff-$i", a.name, ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), a.amount))),
-                if (a.perDay) Cadence.PER_WORK_DAY else Cadence.MONTHLY)
+                if (a.perDay) Cadence.PER_WORK_DAY else Cadence.MONTHLY, taxable = !a.taxFree)
         },
+        // [RVJ-12] 단시간 월급 (주 20시간 → 104시간) and an 일급 for 6 hours: 통상시급 and the 최저임금 check use their own hours.
+        monthlyHours = if (s.form == WageForm.MONTH) monthlyHours(place, s) else 209,
+        dailyHours = if (s.form == WageForm.DAY) dailyMinutes(place, s) else 8 * 60,
+        // [RVJ-13] 검토 PAYC-19·T04-04: 18세 미만 연장은 하루 7시간·주 35시간을 넘는 시간 (제69조, 가산은 제56조).
+        dailyLimitMinutes = if (youngIn(s, month)) 7 * 60 else 8 * 60,
+        weeklyLimitMinutes = if (youngIn(s, month)) 35 * 60 else 40 * 60,
         hireDate = s.hiredOn,
         // 1.38 퇴사·휴직: the 월급 of a month left or rested part way is cut to the days worked (it was a whole month before).
         leaveDate = s.leftOn,
@@ -298,7 +380,7 @@ object PayrollLedger {
         // 요일별 시급: the engine works at the 통상시급, then each day's hours get the difference to that day's own 시급.
         val ordinary = ordinaryHourly(place, s)
         val calcAs = if (ordinary != s.base) s.copy(base = ordinary) else s
-        val pay = if (employed) calculator.calculate(profile(place, calcAs), month, r::resolve).let { p ->
+        val pay = if (employed) calculator.calculate(profile(place, calcAs, month), month, r::resolve).let { p ->
             if (s.dayRates.isEmpty() || s.form != WageForm.HOUR) p else {
                 val diff = p.minutes.filter { s.workingOn(it.date) }.sumOf { dm ->
                     (rateOn(s, dm.date.dayOfWeek) - ordinary) * dm.total.worked / 60.0
@@ -407,9 +489,10 @@ object PayrollLedger {
         val hourly = when (s.form) {
             // 요일별 시급: the lowest day is the one the 최저임금 has to hold for.
             WageForm.HOUR -> (s.dayRates.values + s.base).min()
-            WageForm.DAY -> s.base / 8
-            // 월급 ÷ 209시간 (주 40시간, 주휴 포함), 최저임금법 시행령 제5조 제1항 제3호.
-            WageForm.MONTH -> s.base / 209
+            // 2.0.0 [RVJ-12] 검토 PAYC-07: 일급 ÷ that day's 소정근로, not always 8시간 (최저임금법 시행령 제5조 제1항 제2호).
+            WageForm.DAY -> s.base * 60 / dailyMinutes(place, s)
+            // 월급 ÷ 월 소정근로시간 (주 40시간이면 209시간, 주휴 포함), 최저임금법 시행령 제5조 제1항 제3호. [RVJ-12] 단시간은 그 사람 시간으로.
+            WageForm.MONTH -> s.base / monthlyHours(place, s)
         }
         if (hourly in 1 until minimum) add(LedgerWarning("min", "최저임금보다 적어요",
             "시간당 ${"%,d".format(hourly)}원으로 ${l.month.year}년 최저임금 ${"%,d".format(minimum)}원보다 적어요(최저임금법 제6조). 수습 3개월 감액은 1년 이상 계약·단순 노무가 아닐 때만이에요."))

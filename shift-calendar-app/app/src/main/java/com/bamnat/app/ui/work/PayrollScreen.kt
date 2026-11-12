@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -57,6 +58,7 @@ import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.Insurance
+import com.bamnat.core.boss.StaffAllowance
 import com.bamnat.core.boss.LedgerCsv
 import com.bamnat.core.boss.LedgerLine
 import com.bamnat.core.boss.PayrollLedger
@@ -306,7 +308,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                 when (val got = com.bamnat.app.imports.ManageImport.staff(context, uri, Today.date())) {
                     is com.bamnat.app.imports.ManageImport.Got.Read -> {
                         reading = null
-                        importing = com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1)) to got.fromPhoto
+                        importing = com.bamnat.core.boss.StaffImport.lines(got.value.rows, staff, ym.atDay(1), legalBreaks = place?.legalBreaks ?: true) to got.fromPhoto
                     }
                     is com.bamnat.app.imports.ManageImport.Got.Failed -> {
                         reading = got.why
@@ -689,6 +691,8 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 if (s.dayRates.values.any { it in 1 until minimum }) Text("최저임금 ${Fmt.won(minimum)}보다 적은 요일이 있어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             }
         }
+        // 2.0.0 [RVJ-10] 검토 PAYC-08·U04-10: 식대·교통비 같은 고정 수당, each with its 세금 없는 돈(비과세) switch (식대 starts on).
+        StaffAllowances(s.allowances) { s = s.copy(allowances = it) }
         // 1.39 G2 PC 4bd5d745: the 4대보험 hint follows the days, so it sits below them (it pushed the 요일 칩 as they were tapped).
         Text("4대보험 (사장님 몫 계산)", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -713,6 +717,9 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
                 " 뺐어요(본인이 원하면 가입). 실제로 들지 않은 보험은 풀어 주세요.")
         else if (com.bamnat.core.boss.InsuranceRules.unticked(s, breaks)) Text("월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요. 고르지 않으면 사장님 몫이 0원으로 계산돼 인건비가 적게 보여요.",
             style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        // 2.0.0 [RVJ-16] 검토 BOSS-74: 외국인 직원은 국민연금·고용보험이 나라·체류자격에 따라 달라요.
+        FilterChip(selected = s.insurance.foreign, onClick = { s = s.copy(insurance = s.insurance.copy(foreign = !s.insurance.foreign)) }, label = { Text("외국인 직원") })
+        if (s.insurance.foreign) Hint("건강보험·산재는 같고, 국민연금은 나라에 따라, 고용보험은 체류자격에 따라 달라요. 4대사회보험 정보연계센터에서 확인해 주세요.")
         Text("소득세 떼는 법 (명세서)", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             com.bamnat.core.boss.StaffTax.entries.forEach { t -> FilterChip(selected = s.insurance.tax == t, onClick = { s = s.copy(insurance = s.insurance.copy(tax = t)) }, label = { Text(t.label) }) }
@@ -720,6 +727,19 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
         if (s.insurance.tax == com.bamnat.core.boss.StaffTax.BIZ && s.weekly.isNotEmpty()) Text(
             "정해진 요일·시간에 일하는 직원은 보통 근로자예요. 3.3%는 프리랜서(사업소득)일 때만 맞아요.",
             style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+        // 2.0.0 [RVJ-10] 검토 PAYU-14·T05-06: 간이세액표 가족 수, as the staff member put it on the 원천징수 신고서.
+        if (s.insurance.tax == com.bamnat.core.boss.StaffTax.WAGE) {
+            com.bamnat.app.ui.components.StepperRow("공제대상 가족 (본인 포함)", hint = "명세서 소득세에 들어가요") {
+                com.bamnat.app.ui.components.CountStepper(s.insurance.family, { v -> s = s.copy(insurance = s.insurance.copy(family = v.coerceIn(1, 11), children = s.insurance.children.coerceAtMost(v - 1))) },
+                    name = "공제대상 가족 수", range = 1..11, format = { "${it}명" })
+            }
+            if (s.insurance.family > 1) com.bamnat.app.ui.components.StepperRow("그중 8~20세 자녀") {
+                com.bamnat.app.ui.components.CountStepper(s.insurance.children, { v -> s = s.copy(insurance = s.insurance.copy(children = v.coerceIn(0, s.insurance.family - 1))) },
+                    name = "8~20세 자녀", range = 0..(s.insurance.family - 1).coerceAtLeast(0), format = { "${it}명" })
+            }
+        }
+        // 2.0.0 [RVJ-11] 검토 PAYC-22: 일용근로는 하루 15만 원을 빼고 떼고, 연말정산이 없어요.
+        if (s.insurance.tax == com.bamnat.core.boss.StaffTax.DAILY) Hint("일용근로: 일당에서 15만 원을 빼고 2.7%(지방소득세 따로)를 떼요. 다음 달 15일 근로내용확인신고, 말일 지급명세서가 신고 달력에 올라와요.")
         if (start.name.isNotBlank()) TextButton(onClick = { removeAsk = true }) {
             Icon(Icons.Outlined.Delete, null, Modifier.size(18.dp)); Text(" 직원 빼기")
         }
@@ -770,6 +790,38 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, onDismiss: () -> 
     })
 }
 
+/**
+ * 2.0.0 [RVJ-10] 검토 PAYC-08·U04-10·T05-06: 직원 고정 수당. Each row is a name, an amount, 매월 or 일한 날마다, and 세금 없는 돈(비과세):
+ * 식대 starts with it on (월 20만 원까지 비과세, 소득세법 시행령 제17조의2). Quick names for the usual ones.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StaffAllowances(list: List<StaffAllowance>, onChange: (List<StaffAllowance>) -> Unit) {
+    Text("고정 수당", style = MaterialTheme.typography.labelLarge)
+    list.forEachIndexed { i, a ->
+        fun set(x: StaffAllowance) = onChange(list.mapIndexed { j, o -> if (j == i) x else o })
+        Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(a.name, { set(a.copy(name = it.take(12))) }, label = { Text("수당 이름") }, singleLine = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onChange(list.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("빼기") }
+            }
+            AmountField(if (a.perDay) "하루 금액" else "한 달 금액", amountDigits(a.amount), { set(a.copy(amount = it.toAmount())) })
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = !a.perDay, onClick = { set(a.copy(perDay = false)) }, label = { Text("매월") })
+                FilterChip(selected = a.perDay, onClick = { set(a.copy(perDay = true)) }, label = { Text("일한 날마다") })
+            }
+            SwitchLine("세금 없는 돈(비과세)", a.taxFree, { set(a.copy(taxFree = it)) },
+                if (a.taxFree) "식대는 월 20만 원까지 소득세·4대보험을 떼지 않아요" else "켜면 명세서에서 이 수당엔 세금·4대보험을 떼지 않아요")
+        }
+    }
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        listOf("식대" to 200_000L, "교통비" to 100_000L, "직책수당" to 100_000L).filter { (n, _) -> list.none { it.name == n } }.forEach { (n, v) ->
+            androidx.compose.material3.AssistChip(onClick = { onChange(list + StaffAllowance(n, v)) }, label = { Text("+ $n") })
+        }
+        androidx.compose.material3.AssistChip(onClick = { onChange(list + StaffAllowance("", 0, taxFree = false)) }, label = { Text("+ 직접") })
+    }
+}
+
 /** [BOSS-01] 사업장 설정: the name, 5인 이상 once (설계 P3-D7: asked once, never guessed), 지급일 and the legal break. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -794,8 +846,21 @@ private fun PlaceDialog(start: Workplace, onDismiss: () -> Unit, onSave: (Workpl
         Hint("5인 미만이면 연장·야간·휴일 가산(50%)이 없어요(근로기준법 제11조). 사장님 본인과 가족은 빼고 세요.")
         Text("급여 주는 날", style = MaterialTheme.typography.labelLarge)
         // 1.39 G2 PC 4bd5d745: 10일 was painted before anything was picked, so it read as set while the 대장 said '지급일 미정'.
+        // 2.0.0 [RVJ-09] 검토 BOSS-56·U04-09: 그달에 주는 가게(매월 25일·말일 당월 지급)도 있어요. 어느 달인지 먼저, 그다음 날.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(selected = p.payNextMonth, onClick = { p = p.copy(payNextMonth = true) }, label = { Text("다음 달에 줘요") })
+            FilterChip(selected = !p.payNextMonth, onClick = { p = p.copy(payNextMonth = false) }, label = { Text("이번 달에 줘요") })
+        }
         com.bamnat.app.ui.components.DayOfMonthPicker(p.payday ?: 0, { p = p.copy(payday = it) })
         if (p.payday == null) Hint("아직 고르지 않았어요. 고르면 대장·명세서에 지급일이 나와요.")
+        p.payday?.let { d ->
+            val m = java.time.YearMonth.from(Today.date())
+            Hint("${m.monthValue}월분은 ${p.payDate(m)?.let(Fmt::shortFullDate)}에 줘요" +
+                (p.payDateWorkday(m)?.takeIf { it != p.payDate(m) }?.let { " · 쉬는 날이라 보통 ${Fmt.shortFullDate(it)}에 미리 줘요" } ?: ""))
+        }
+        // 2.0.0 [RVJ-17] 검토 BOSS-55: 근로계약서에 사업주를 적을 때 써요(선택).
+        OutlinedTextField(p.owner, { p = p.copy(owner = it.take(20)) }, label = { Text("대표자 이름 (선택, 계약서에)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(p.address, { p = p.copy(address = it.take(60)) }, label = { Text("사업장 주소 (선택, 계약서에)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         SwitchLine("휴게시간 빼고 세기", p.legalBreaks, { p = p.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
         // 1.38 계산 단위 (경쟁 앱 조사 P3-B-12): up only — 깎는 절사는 임금 전액 지급(제43조)에 어긋나요.
         Text("근무 시간 계산 단위", style = MaterialTheme.typography.labelLarge)
@@ -834,7 +899,7 @@ private fun IndustryPicker(code: String?, onPick: (String?) -> Unit) {
         onPick(typed.toDoubleOrNull()?.takeIf { it > 0 && it <= 200 }?.let { com.bamnat.core.boss.AccidentRates.CUSTOM + com.bamnat.core.boss.AccidentRates.permille(it) })
     }, label = { Text("업종 요율 (천분율 ‰, 출퇴근재해 빼고)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
         keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))
-    Hint(picked?.let { "${com.bamnat.core.boss.AccidentRates.describe(it)} · 급여에 곱해 사장님만 내요(직원 명세서에서 떼지 않아요). ${com.bamnat.core.boss.AccidentRates.YEAR}년 고시 요율이에요." }
+    Hint(picked?.let { "${com.bamnat.core.boss.AccidentRates.describe(it)} · 급여에 곱해 사장님만 내요(직원 명세서에서 떼지 않아요). ${com.bamnat.core.boss.AccidentRates.yearOn(com.bamnat.core.time.Today.date())}년 고시 요율이에요." }
         ?: "업종을 고르면 인건비에 산재보험료를 더해요. 근로복지공단 사업종류 결정 통지서의 요율이 따로 있으면 '요율 직접 넣기'로 넣어요.")
     if (more) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { more = false }, title = { Text("산재보험 업종") }, text = {
         Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())) {

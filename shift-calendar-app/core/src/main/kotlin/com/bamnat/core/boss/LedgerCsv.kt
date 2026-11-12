@@ -7,7 +7,7 @@ import java.time.YearMonth
  * [BOSS-07][P3-03] 임금대장 내보내기 (순번 502): one row per staff member with the items 근로기준법 시행령 제27조 제1항 lists, in its
  * order (원문 대조 2026-11-05, 국가법령정보센터 본문과 같은 korea.legal 사본):
  * 1 성명 · 2 생년월일 등 근로자를 특정할 수 있는 정보 · 3 고용 연월일 · 4 종사하는 업무 · 5 임금 계산기초 · 6 근로일수 · 7 근로시간수 ·
- * 8 연장·야간·휴일근로 시간수 · 9 기본급·수당 등 내역별 금액 · 10 공제액 (B2 공제 미리보기 전에는 빈칸).
+ * 8 연장·야간·휴일근로 시간수 · 9 기본급·수당 등 내역별 금액 · 10 공제액 (2.0.0 [RVJ-15] 검토 PAYU-13: the 명세서's 공제, [Payslip.of]).
  * 제2항: a day worker kept under 30 days may leave 2·5 out; 제27조 제3항 (상시 4명 이하) may leave 7·8 out, but this keeps them.
  *
  * 임금대장 must be kept 3 years (근로기준법 제42조, 시행령 제22조): the app does not say it keeps them for the boss (설계 2-2), the
@@ -26,14 +26,20 @@ object LedgerCsv {
         appendLine(row(listOf("${ledger.workplace.name} ${ledger.month.year}년 ${ledger.month.monthValue}월 임금대장")))
         ledger.note?.let { appendLine(row(listOf(it))) }
         appendLine(row(HEADER))
-        for (l in ledger.lines) appendLine(row(cells(l)))
-        appendLine(row(listOf("합계", "", "", "", "", "", "", "", "", "", "", "", "", "", ledger.gross.toString(), "", ledger.employerInsurance.toString())))
+        for (l in ledger.lines) appendLine(row(cells(l, ledger.workplace)))
+        val deducted = ledger.lines.sumOf { deducted(ledger.workplace, it) }
+        appendLine(row(listOf("합계", "", "", "", "", "", "", "", "", "", "", "", "", "", ledger.gross.toString(), deducted.toString(), ledger.employerInsurance.toString())))
         appendLine(row(listOf(KEEP)))
     }
 
-    fun cells(l: LedgerLine): List<String> {
+    /** [RVJ-15] What comes off this person's 명세서 (4대보험 근로자 몫·소득세·지방소득세), the same as the slip they get. */
+    fun deducted(place: Workplace, l: LedgerLine): Long = if (l.gross <= 0) 0 else Payslip.of(place, l).deducted
+
+    fun cells(l: LedgerLine, place: Workplace? = null): List<String> {
         val s = l.staff
-        val basis = "${s.form.label} ${"%,d".format(s.base)}원" + s.allowances.joinToString("") { " · ${it.name} ${"%,d".format(it.amount)}원" + if (it.perDay) "/일" else "" }
+        val basis = "${s.form.label} ${"%,d".format(s.base)}원" + s.allowances.joinToString("") {
+            " · ${it.name} ${"%,d".format(it.amount)}원" + (if (it.perDay) "/일" else "") + (if (it.taxFree) "(비과세)" else "")
+        }
         val weekly = l.lines.filter { it.kind == LineKind.ALLOWANCE && it.label.contains("주휴") }
         val holiday = weekly.sumOf { it.amount } + l.amountOf(LineKind.LEAVE)
         val base = l.amountOf(LineKind.BASE) + l.amountOf(LineKind.EXTRA_HOURS) + l.amountOf(LineKind.EXTRA)
@@ -42,7 +48,8 @@ object LedgerCsv {
         return listOf(
             s.name, s.birth?.toString().orEmpty(), s.hiredOn?.toString().orEmpty(), s.job, basis,
             l.workDays.toString(), hours(l.workMinutes), hours(l.overtimeMinutes), hours(l.nightMinutes), hours(l.holidayMinutes),
-            base.toString(), holiday.toString(), premiums.toString(), others.toString(), l.gross.toString(), "", l.employerInsurance.toString(),
+            base.toString(), holiday.toString(), premiums.toString(), others.toString(), l.gross.toString(),
+            place?.let { deducted(it, l).toString() } ?: "", l.employerInsurance.toString(),
         )
     }
 
