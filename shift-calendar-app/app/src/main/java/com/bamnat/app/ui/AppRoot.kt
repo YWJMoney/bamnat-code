@@ -2447,7 +2447,10 @@ private fun AppNavHost(
                 }) else null,
                 onOpenShiftTypes = { nav.openTypes(container, calendar) },
                 // [SPAT-02] The company's cycle is for the main calendar, as a coworker's setup is (MCAL-06).
-                onFindCompany = if (!setup && calendar == PersonalCalendar.MAIN) ({
+                // 2.0.0 [RVH-53] HQ-27 (조건 13, 사용자 2026-10-29 '알바·파트타임 유형에서 회사 검색은 의미가 없다'): only where the work
+                // has a company, as every other company thing ([J133-71]): 교대·일근 always, an 알바 once it joined one, 현장·가게·투자 never.
+                // The public cycles it finds are in the app, so no company server is needed.
+                onFindCompany = if (!setup && calendar == PersonalCalendar.MAIN && container.companyFits(calendar, needsServer = false)) ({
                     vm.draft.forget()
                     nav.navigate(Routes.companyFind()) { popUpTo(Routes.PATTERN) { inclusive = true }; launchSingleTop = true }
                 }) else null,
