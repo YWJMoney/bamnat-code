@@ -1086,6 +1086,8 @@ internal val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
             t.breakPaid?.toString().orEmpty(),
             // 검토 WORK-19 The hours it had before: a window made again must not let them go on saving.
             com.bamnat.core.model.TimeVersion.encode(t.timeHistory),
+            // 2.0.0 [RVH-44] The gap between two parts, kept across a fold like the rest.
+            t.gapStart?.toString().orEmpty(), t.gapMinutes.toString(), t.gapAlarm.toString(),
         )
     },
     restore = { v ->
@@ -1097,6 +1099,9 @@ internal val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
             sortOrder = v[12].toInt(), icon = v[13].ifEmpty { null }, premiumPercent = v[14].toInt(),
             breakPaid = v.getOrNull(15)?.takeIf { it.isNotEmpty() }?.toBoolean(),
             timeHistory = com.bamnat.core.model.TimeVersion.decode(v.getOrNull(16)),
+            gapStart = v.getOrNull(17)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
+            gapMinutes = v.getOrNull(18)?.toIntOrNull() ?: 0,
+            gapAlarm = v.getOrNull(19)?.toBoolean() ?: false,
         )
     },
 )

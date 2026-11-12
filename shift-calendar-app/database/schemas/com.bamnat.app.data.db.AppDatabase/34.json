@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 34,
-    "identityHash": "ea2f8c345a79b47f2814a4544abd94f9",
+    "identityHash": "d14adb66cc6d26468b986c5983df59d7",
     "entities": [
       {
         "tableName": "shift_types",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `label` TEXT NOT NULL, `colorArgb` INTEGER NOT NULL, `startMinute` INTEGER, `endMinute` INTEGER, `breakMinutes` INTEGER NOT NULL, `isOff` INTEGER NOT NULL, `alarmEnabled` INTEGER NOT NULL, `alarmOffsetMinutes` INTEGER NOT NULL, `alarmSoundUri` TEXT, `sortOrder` INTEGER NOT NULL, `alarmOffsets` TEXT NOT NULL DEFAULT '', `icon` TEXT DEFAULT NULL, `breakStartMinute` INTEGER DEFAULT NULL, `premiumPercent` INTEGER NOT NULL DEFAULT 0, `breakPaid` INTEGER DEFAULT NULL, `timeHistory` TEXT NOT NULL DEFAULT '')",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `label` TEXT NOT NULL, `colorArgb` INTEGER NOT NULL, `startMinute` INTEGER, `endMinute` INTEGER, `breakMinutes` INTEGER NOT NULL, `isOff` INTEGER NOT NULL, `alarmEnabled` INTEGER NOT NULL, `alarmOffsetMinutes` INTEGER NOT NULL, `alarmSoundUri` TEXT, `sortOrder` INTEGER NOT NULL, `alarmOffsets` TEXT NOT NULL DEFAULT '', `icon` TEXT DEFAULT NULL, `breakStartMinute` INTEGER DEFAULT NULL, `premiumPercent` INTEGER NOT NULL DEFAULT 0, `breakPaid` INTEGER DEFAULT NULL, `timeHistory` TEXT NOT NULL DEFAULT '', `gapStartMinute` INTEGER DEFAULT NULL, `gapMinutes` INTEGER NOT NULL DEFAULT 0, `gapAlarm` INTEGER NOT NULL DEFAULT 0)",
         "fields": [
           {
             "fieldPath": "id",
@@ -115,6 +115,26 @@
             "affinity": "TEXT",
             "notNull": true,
             "defaultValue": "''"
+          },
+          {
+            "fieldPath": "gapStartMinute",
+            "columnName": "gapStartMinute",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "gapMinutes",
+            "columnName": "gapMinutes",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "gapAlarm",
+            "columnName": "gapAlarm",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
           }
         ],
         "primaryKey": {
@@ -173,7 +193,7 @@
       },
       {
         "tableName": "day_entries",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epochDay` INTEGER NOT NULL, `overrideMode` INTEGER NOT NULL, `overrideShiftTypeId` INTEGER, `customStartMinute` INTEGER, `customEndMinute` INTEGER, `customBreakMinutes` INTEGER, `overtimeMinutes` INTEGER NOT NULL, `holidayWorkMinutes` INTEGER NOT NULL, `alarmSkipped` INTEGER NOT NULL, `customAlarms` TEXT DEFAULT NULL, `extraWork` INTEGER NOT NULL DEFAULT 0, `leave` INTEGER NOT NULL DEFAULT 0, `secondShiftTypeId` INTEGER DEFAULT NULL, `attendance` INTEGER NOT NULL DEFAULT 0, `swapWith` TEXT NOT NULL DEFAULT '', PRIMARY KEY(`epochDay`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epochDay` INTEGER NOT NULL, `overrideMode` INTEGER NOT NULL, `overrideShiftTypeId` INTEGER, `customStartMinute` INTEGER, `customEndMinute` INTEGER, `customBreakMinutes` INTEGER, `overtimeMinutes` INTEGER NOT NULL, `holidayWorkMinutes` INTEGER NOT NULL, `alarmSkipped` INTEGER NOT NULL, `customAlarms` TEXT DEFAULT NULL, `extraWork` INTEGER NOT NULL DEFAULT 0, `leave` INTEGER NOT NULL DEFAULT 0, `secondShiftTypeId` INTEGER DEFAULT NULL, `attendance` INTEGER NOT NULL DEFAULT 0, `swapWith` TEXT NOT NULL DEFAULT '', `customGapStartMinute` INTEGER DEFAULT NULL, `customGapMinutes` INTEGER DEFAULT NULL, `leaveMinutes` INTEGER DEFAULT NULL, `leaveAt` INTEGER DEFAULT NULL, PRIMARY KEY(`epochDay`))",
         "fields": [
           {
             "fieldPath": "epochDay",
@@ -264,6 +284,30 @@
             "affinity": "TEXT",
             "notNull": true,
             "defaultValue": "''"
+          },
+          {
+            "fieldPath": "customGapStartMinute",
+            "columnName": "customGapStartMinute",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "customGapMinutes",
+            "columnName": "customGapMinutes",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "leaveMinutes",
+            "columnName": "leaveMinutes",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
+          },
+          {
+            "fieldPath": "leaveAt",
+            "columnName": "leaveAt",
+            "affinity": "INTEGER",
+            "defaultValue": "NULL"
           }
         ],
         "primaryKey": {
@@ -3488,7 +3532,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'ea2f8c345a79b47f2814a4544abd94f9')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'd14adb66cc6d26468b986c5983df59d7')"
     ]
   }
 }

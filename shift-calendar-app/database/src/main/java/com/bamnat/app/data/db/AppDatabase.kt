@@ -490,13 +490,22 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         /**
-         * Version 34 (2.0.0, 총괄이 준 판 하나에 갈래들이 줄을 보태요). [RVH-33] 검토 WORK-19 갈래 H: a kind of day's times before a change
-         * made '오늘부터만' ([com.bamnat.core.model.ShiftType.timeHistory]). Every kind of day of version 33 has none: its times are
-         * every day's, as they were.
+         * Version 34 (2.0.0, 총괄이 준 판 하나에 갈래들이 줄을 보태요; 2.0.0의 DB 변경은 모두 이 하나). [RVH-33] 검토 WORK-19 갈래 H: a kind of
+         * day's times before a change made '오늘부터만' ([com.bamnat.core.model.ShiftType.timeHistory]). Every kind of day of version 33 has
+         * none: its times are every day's, as they were. [RVH-44] 하루 두 구간: a kind of day's gap between its parts and a day's own;
+         * [RVH-45] 시간 단위 연차: a day's leave in minutes and where in the day. Only columns added, every row of 33 keeps its meaning
+         * (one part, leave in quarters).
          */
         val MIGRATION_33_34 = object : Migration(33, 34) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `timeHistory` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapMinutes` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `shift_types` ADD COLUMN `gapAlarm` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapStartMinute` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `customGapMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveMinutes` INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE `day_entries` ADD COLUMN `leaveAt` INTEGER DEFAULT NULL")
             }
         }
 

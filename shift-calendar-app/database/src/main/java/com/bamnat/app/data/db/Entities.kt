@@ -32,6 +32,13 @@ data class ShiftTypeEntity(
     @ColumnInfo(defaultValue = "NULL") val breakPaid: Boolean? = null,
     /** Version 34 (2.0.0 [RVH-33] 검토 WORK-19): the times it had before, see [com.bamnat.core.model.TimeVersion.encode]; empty for none. */
     @ColumnInfo(defaultValue = "") val timeHistory: String = "",
+    /**
+     * Version 34 (2.0.0 [RVH-44] 하루 두 구간): the gap between the day's two parts, its start (minute of the day) and minutes, and whether
+     * the second part rings an alarm. Null and 0 on every row of version 33: one part, as it was.
+     */
+    @ColumnInfo(defaultValue = "NULL") val gapStartMinute: Int? = null,
+    @ColumnInfo(defaultValue = "0") val gapMinutes: Int = 0,
+    @ColumnInfo(defaultValue = "0") val gapAlarm: Boolean = false,
 )
 
 /**
@@ -82,6 +89,15 @@ data class DayEntryEntity(
     /** Version 17: [com.bamnat.core.model.Attendance.code], 0 for none [HRLY-01]; who the day was swapped with [SHFT-03]. */
     @ColumnInfo(defaultValue = "0") val attendance: Int = 0,
     @ColumnInfo(defaultValue = "''") val swapWith: String = "",
+    /** Version 34 (2.0.0 [RVH-44]): this day's own gap between two parts; null follows the shift, minutes 0 is none this day. */
+    @ColumnInfo(defaultValue = "NULL") val customGapStartMinute: Int? = null,
+    @ColumnInfo(defaultValue = "NULL") val customGapMinutes: Int? = null,
+    /**
+     * Version 34 (2.0.0 [RVH-45] 시간 단위 연차): an hour's leave, its minutes beside [leave]'s code (which keeps the nearest quarter of a
+     * day) and where a leave in the middle of the day starts (minute of the day). Null on every row of version 33.
+     */
+    @ColumnInfo(defaultValue = "NULL") val leaveMinutes: Int? = null,
+    @ColumnInfo(defaultValue = "NULL") val leaveAt: Int? = null,
 ) {
     companion object {
         const val MODE_NONE = 0
