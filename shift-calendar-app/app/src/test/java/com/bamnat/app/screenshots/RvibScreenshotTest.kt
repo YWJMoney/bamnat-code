@@ -113,6 +113,8 @@ class RvibScreenshotTest : ScreenshotBase() {
         tapText("알람 추가", across = if (wide) 0.75f else 0.5f)
         tapText("시작 기준", exact = true)
         tapText("1시간 전", exact = true)
+        // [RVIB-18] (HQ-85) The quick chips wrap, so the last one is in sight at 200% on the folded width too.
+        org.junit.Assert.assertTrue(shows("3시간 전", exact = true))
     }
 
     // [RVIB-07] (PC-89) 수면 기록: '날마다 잠'(이번 주 띠)이 맨 위.

@@ -1,7 +1,6 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +8,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,6 +33,7 @@ import java.time.LocalTime
  * the user found "너무 기초적이고 불편". [EASE-18] 1.38: "울릴 시각" also picks the day, 전날·당일·다음날, so an alarm can ring
  * after the start too (a nap after a 야간, stored below zero).
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun AlarmOffsetDialog(
     title: String,
@@ -134,7 +133,8 @@ fun AlarmOffsetDialog(
                         }
                     }
                 }
-                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 2.0.0 [RVIB-18] (총괄 HQ-85, 7항) The chips wrap onto the next line, all in sight, instead of a row that slides sideways.
+                androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
                     for (m in shortcuts) {
                         FilterChip(selected = picked == m, enabled = m !in existing, onClick = { setMinutes(m); jump++ },
                             label = { Text(Fmt.offset(m), maxLines = 1, softWrap = false) })
