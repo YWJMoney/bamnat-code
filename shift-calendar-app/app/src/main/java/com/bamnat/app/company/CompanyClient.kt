@@ -517,6 +517,8 @@ object Plaza {
      */
     fun jobsFor(style: com.bamnat.core.work.WorkStyle?): List<Pair<String, String>> {
         val first = when (style) {
+            // 2.0.0 [RVN-18] 검토 T10a-06: 교대 starts at the jobs that work in turns (before, the plaza's own order).
+            com.bamnat.core.work.WorkStyle.SHIFT -> listOf("shift", "factory", "nurse", "police", "fire", "security", "care", "transport")
             com.bamnat.core.work.WorkStyle.DAY -> listOf("public", "factory", "care", "security", "transport", "nurse")
             com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourly", "shop", "care")
             com.bamnat.core.work.WorkStyle.FIELD -> listOf("construction", "field", "transport")
@@ -674,6 +676,9 @@ interface CompanyApi {
     /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
     suspend fun forgetMineCounts(device: String): ForgetCounts = ForgetCounts(reports = forgetMine(device))
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
+
+    /** 2.0.0 [RVN-18] 검토 COMP-22-1: this phone's 맞아요·달라요 on [setup] taken back (✓ pressed again); the counts without it. */
+    suspend fun unvote(device: String, company: String, setup: String): VoteResult = throw CompanyException("not_yet")
 
     /**
      * [COMM-07] Every company's rule sets: [adopted] ones anyone can use, or ones still being voted on.
@@ -1256,6 +1261,13 @@ class CompanyClient(
             if (ok) proofOf(verified, body) else body.put("verified", false)
             if (!ok && why != null) body.put("why", why)
             val o = request("POST", "/api/votes", body)
+            VoteResult(o.optInt("points"), o.optInt("persons"), o.optInt("bad"), o.optInt("threshold", 3), o.optString("status") == "adopted",
+                o.optInt("trust"), o.optInt("agree"))
+        }
+
+    override suspend fun unvote(device: String, company: String, setup: String): VoteResult =
+        serverCall {
+            val o = request("POST", "/api/votes", JSONObject().put("device", device).put("company", company).put("setup", setup).put("ok", JSONObject.NULL))
             VoteResult(o.optInt("points"), o.optInt("persons"), o.optInt("bad"), o.optInt("threshold", 3), o.optString("status") == "adopted",
                 o.optInt("trust"), o.optInt("agree"))
         }

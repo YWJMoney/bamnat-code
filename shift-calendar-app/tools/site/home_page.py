@@ -64,6 +64,7 @@ def main():
         '<!--GALLERY-->': gallery, '<!--JOBS1-->': jobs(JOBS1), '<!--JOBS2-->': jobs(JOBS2),
         '<!--FAQ-->': faq, '<!--FAQ_LD-->': faq_ld, '<!--PATS-->': str(pats),
         '<!--HOL_TILES-->': hol_tiles, '<!--PRINT_YEAR-->': str(PRINT_YEAR),
+        '<!--THIS_YEAR-->': f'{THIS}년',  # [RVR-34] 미리 보기 폰의 해: 손으로 적으면 새해에 '지난해 숫자' 검사가 막아요
     }
     for k, v in I.items(): rep[f'<!--I_{k}-->'] = v
     rep['<!--CHECK-->'] = I['CHECK']; rep['<!--ARROW-->'] = I['ARROW']

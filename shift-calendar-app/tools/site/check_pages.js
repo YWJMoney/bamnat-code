@@ -1,7 +1,7 @@
 // 공개 사이트 쪽 점검과 화면 사진 (2.0.0 갈래 R).
 // 쓰는 법: node check_pages.js <만든 사이트 폴더> [사진 폴더] [--shots 경로,경로] [--all] [--widths 380,840,1440] [--print 경로,경로]
 //  - sitemap.xml의 모든 쪽을 폭마다(기본 380·840·1440) 밝은·어두운 모드로 열어 가로 넘침, 콘솔 오류, 바깥 요청(모두 막고 셈),
-//    숫자 가운데 줄바꿈(다이얼·큰 숫자), 접힌 메뉴의 초점 받는 링크를 봐요. 문제가 하나라도 있으면 끝 코드 1.
+//    숫자 가운데 줄바꿈(다이얼·큰 숫자), 접힌 메뉴의 초점 받는 링크, 머리 띠 아래 주인공이 화면 위 25% 안에서 시작하는지(조건 1)를 봐요. 문제가 하나라도 있으면 끝 코드 1.
 //  - 사진 폴더를 주면 --shots 쪽(없으면 대표 쪽)을 쪽 전체 사진으로 남겨요(--all이면 모든 쪽). --print 쪽은 A4 PDF도 남겨요.
 // 서버로 보내는 것은 없고, 바깥 요청은 모두 막아요.
 const http = require('http');
@@ -53,7 +53,8 @@ function pagesFromSitemap() {
   if (OUT) fs.mkdirSync(OUT, { recursive: true });
   for (const scheme of ['light', 'dark']) {
     for (const w of WIDTHS) {
-      const ctx = await browser.newContext({ viewport: { width: w, height: 900 }, colorScheme: scheme, deviceScaleFactor: 1, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
+      // 2.0.0 [RVR-36] 조건 1을 재는 화면: 380×840, 그보다 넓으면 ×900(docs/디자인-품질-조건.md '조건 1 재는 법').
+      const ctx = await browser.newContext({ viewport: { width: w, height: w <= 400 ? 840 : 900 }, colorScheme: scheme, deviceScaleFactor: 1, locale: 'ko-KR', timezoneId: 'Asia/Seoul' });
       await ctx.route('**/*', (r) => {
         const u = r.request().url();
         if (u.startsWith(base)) return r.continue();
@@ -84,8 +85,14 @@ function pagesFromSitemap() {
           }
           await page.evaluate(() => window.scrollTo(0, 0));
         }
-        const r = await page.evaluate(() => {
-          const out = { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, split: [], menuFocus: 0 };
+        const r = await page.evaluate((p) => {
+          const out = { overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth, split: [], menuFocus: 0, first: null };
+          // 2.0.0 [RVR-36] 조건 1: 머리 띠가 있는 쪽은 주인공(길잡이 글은 첫 줄 답, 나머지는 본문 첫 덩어리)이 화면 위 25% 안에서 시작해요.
+          if (document.querySelector('.page-hero') && window.scrollY === 0) {
+            const el = /^guide\/[^/]+\/$/.test(p) ? document.querySelector('.page-hero .lead')
+              : [...document.querySelectorAll('main > *')].find((e) => e.getBoundingClientRect().height > 0 && getComputedStyle(e).display !== 'none');
+            if (el) out.first = Math.round(el.getBoundingClientRect().top / innerHeight * 100);
+          }
           // 숫자 가운데에서 줄이 바뀐 큰 글자(예: "19:0 / 0")
           document.querySelectorAll('.big, .dial .center strong, .hero h1').forEach((el) => {
             const t = el.textContent.trim();
@@ -105,8 +112,9 @@ function pagesFromSitemap() {
             });
           }
           return out;
-        });
+        }, p);
         const tag = `${p || '/'} ${w} ${scheme}`;
+        if (r.first !== null && r.first > 25) problems.push(`${tag}: 주인공이 화면 ${r.first}%에서 시작(조건 1, 25% 안)`);
         if (r.overflow > 0) problems.push(`${tag}: 가로 넘침 ${r.overflow}px`);
         if (r.split.length) problems.push(`${tag}: 숫자 가운데 줄바꿈 ${JSON.stringify(r.split)}`);
         if (dialSplit.length) problems.push(`${tag}: 다이얼 가운데 글이 너무 여러 줄 ${JSON.stringify([...new Set(dialSplit)])}`);

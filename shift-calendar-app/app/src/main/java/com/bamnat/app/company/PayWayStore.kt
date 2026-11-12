@@ -57,9 +57,9 @@ class PayWayStore internal constructor(private val prefs: SharedPreferences) {
         prefs.edit().apply { if (way == null) remove(KEY) else putString(KEY, write(way)) }.apply()
     }
 
-    fun voted(ok: Boolean, why: String?) {
+    fun voted(ok: Boolean?, why: String?) {
         val w = _way.value ?: return
-        use(w.copy(vote = ok, why = if (ok) null else why))
+        use(w.copy(vote = ok, why = if (ok != false) null else why))
     }
 
     fun askBase(on: Boolean) { _askBase.value = on }

@@ -596,6 +596,33 @@ class CompanyDetailViewModel(
         }
     }
 
+    /**
+     * 2.0.0 [RVN-18] 검토 COMP-22-1: 맞아요 ✓ pressed again takes it back (as a post's 공감), the counts without it; before, it sent the
+     * same vote again. Without a connection it says so (a take-back is not kept for later).
+     */
+    fun takeBack(page: CompanyPage, setup: SharedSetup, done: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            val error = try {
+                val r = c.companyApi.unvote(c.companyStore.device, page.id, setup.id)
+                _votes.value = _votes.value - setup.id
+                if (scope.store.applied.value?.setup == setup.id) scope.store.voted(null)
+                c.telemetry.event("company_vote", "taken_back")
+                (_state.value as? State.Loaded)?.page?.let { now ->
+                    _state.value = State.Loaded(now.copy(setups = now.setups.map { s ->
+                        if (s.id != setup.id) s else s.copy(points = r.points, persons = r.persons, bad = r.bad,
+                            trust = r.trust, agree = r.agree, opinion = s.opinion.copy(mine = null))
+                    }))
+                }
+                null
+            } catch (e: CompanyException) {
+                companyProblem(e)
+            }
+            com.bamnat.app.ui.components.AppSnack.show(error ?: "‘${com.bamnat.core.plaza.PlazaWords.AGREE}’를 거뒀어요",
+                kind = if (error != null) com.bamnat.app.ui.components.AppSnack.Kind.FAIL else com.bamnat.app.ui.components.AppSnack.Kind.INFO)
+            done(error)
+        }
+    }
+
     /** [COMM-06] The talk on one setup, while its sheet is open. */
     val talk = TalkHolder(c, viewModelScope, calendar)
 
@@ -825,7 +852,7 @@ class TalkHolder(
     fun voteLine(): String {
         val t = c.termsNow()
         return "글마다 맞아요·달라요로 알려 주세요. ‘고치자는 제안’은 맞아요가 ${t?.agree ?: 75}% 이상이고 ${t?.threshold ?: 3}점이 모이면 " +
-            "다음 버전으로 채택돼요. 다니는 회사일 때만 눌러 주세요."
+            "다음 판으로 채택돼요. 다니는 회사일 때만 눌러 주세요."
     }
 
     /**
@@ -1030,7 +1057,11 @@ class TalkHolder(
     /** [done] runs once the server answered (2.0.0 [RVN-06]: 광장's page reads itself again after a card's 지우기). */
     fun delete(id: String, done: () -> Unit = {}) {
         scope.launch {
-            runCatching { c.companyApi.deletePost(c.companyStore.device, id) }
+            // 2.0.0 [RVN-18] COMP-16 A post that could not be taken off says so (before, it stayed and nothing was said), and one
+            // that went says 지웠어요.
+            val error = try { c.companyApi.deletePost(c.companyStore.device, id); null } catch (e: CompanyException) { talkProblem(e) }
+            com.bamnat.app.ui.components.AppSnack.show(error ?: "글을 지웠어요",
+                kind = if (error != null) com.bamnat.app.ui.components.AppSnack.Kind.FAIL else com.bamnat.app.ui.components.AppSnack.Kind.INFO)
             changed = true
             reload()
             done()
@@ -1065,7 +1096,7 @@ fun talkProblem(code: String): String = when (code) {
     "phone" -> "전화번호는 빼 주세요"
     "email" -> "메일 주소는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
-    "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 글을 쓸 수 없어요"
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(null)
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "rate_limited" -> com.bamnat.app.company.RateLimits.text("글쓰기")
     "own" -> "내 글에는 할 수 없어요"
@@ -1305,7 +1336,7 @@ class ActivityHolder(
     /** Sets the plaza name, or none when blank; [done] gets what to tell the user. */
     fun setNick(nick: String, done: (String?) -> Unit) {
         val t = nick.trim()
-        if (t.isNotEmpty() && (t.length < 2 || t.length > 12)) return done("별명은 2~12자로 정해 주세요")
+        if (t.isNotEmpty() && (t.length < 2 || t.length > 12)) return done("마을 이름은 2~12자로 정해 주세요")
         CompanyText.personal(t)?.let { return done(talkProblem(it)) }
         scope.launch {
             val error = try {
@@ -1315,7 +1346,7 @@ class ActivityHolder(
             } catch (e: CompanyException) {
                 when (e.code) {
                     "taken" -> com.bamnat.app.ui.village.VillageName.TAKEN
-                    "nick" -> "쓸 수 없는 별명이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
+                    "nick" -> "쓸 수 없는 마을 이름이에요. 관리자·개발자·운영자 같은 말은 빼 주세요"
                     else -> talkProblem(e)
                 }
             }
@@ -1328,15 +1359,19 @@ class ActivityHolder(
  * [PLZ-14][PLZ-15] 임금표: what a trade is paid per day, hour or month in a job and region, as people
  * shared it, with the adopted ones' middle as 광장 시세. Sending one asks no name or pay slip.
  */
-class RatesViewModel(private val c: AppContainer) : ViewModel() {
+class RatesViewModel(
+    private val c: AppContainer,
+    /** 2.0.0 [RVN-18] COMP-21 The calendar whose 광장 opened the board (its kind of work, and the pay 내 급여에 넣기 changes). */
+    private val calendarId: String = c.calendars.current().id,
+) : ViewModel() {
     data class Filter(val job: String = "construction", val region: String = "", val unit: String = "")
     data class State(val board: com.bamnat.app.company.RateBoard? = null, val loading: Boolean = true, val error: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
     // 1.36 PC 재검토 (교대 사용자에게도 '건설 일용직·기능공'이 먼저): the board opens on the user's own kind of work.
     // 2.0.0 [RVN-07] COMP-06 …and the calendar open now (its pay is the one 내 급여에 넣기 changes).
-    private val _filter = MutableStateFlow(Filter(job = jobOfStyle(
-        c.calendars.styleOf(c.calendars.current().id, c.settingsRepository.current.workStyle)) ?: "construction"))
+    // 2.0.0 [RVN-18] 검토 T10a-06: …and with no job of its own (일근, 투자 with no work calendar), the first chip of its order.
+    private val _filter = MutableStateFlow(Filter(job = firstJob(c.jobStyleOf(calendarId))))
     val filter: StateFlow<Filter> = _filter.asStateFlow()
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
@@ -1394,7 +1429,11 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
 
     fun vote(rate: com.bamnat.app.company.Rate, ok: Boolean) {
         viewModelScope.launch {
-            runCatching { c.companyApi.rateVote(c.companyStore.device, rate.id, if (rate.myVote == ok) null else ok) }
+            // 2.0.0 [RVN-18] COMP-16 A 맞아요·달라요 that did not go says why (before, the list came back the same and said nothing).
+            try { c.companyApi.rateVote(c.companyStore.device, rate.id, if (rate.myVote == ok) null else ok) } catch (e: CompanyException) {
+                com.bamnat.app.ui.components.AppSnack.show(companyProblem(e), kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+                return@launch
+            }
             load()
         }
     }
@@ -1424,9 +1463,6 @@ class RatesViewModel(private val c: AppContainer) : ViewModel() {
     ) {
         val monthly: Boolean get() = group.unit == "month"
     }
-
-    /** COMP-06 The calendar open when the screen was, so the pay of the calendar being looked at is the one changed. */
-    private val calendarId: String = c.calendars.current().id
 
     /** What [g] would change, or what to say when it cannot go in (no pay yet, or my pay is paid another way). */
     fun planApply(g: com.bamnat.app.company.RateGroup): Pair<ApplyPlan?, String?> {
@@ -1484,6 +1520,16 @@ class CompanyPayViewModel(
     val company: String = scope.store.applied.value?.company
         ?: text?.let { t -> runCatching { org.json.JSONObject(t).optString("company").trim() }.getOrNull() }.orEmpty()
     internal val app: AppContainer get() = c
+
+    /**
+     * 2.0.0 [RVN-18] 검토 T10a-02: how this calendar's work is paid, first: 시급 for an 알바, 일당 for 현장, 월급 otherwise (before,
+     * always 월급, and an 알바 had to open '시급·일당이거나…' first).
+     */
+    val startWage: WageType = when (c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)) {
+        com.bamnat.core.work.WorkStyle.HOURLY -> WageType.HOURLY
+        com.bamnat.core.work.WorkStyle.FIELD -> WageType.DAILY
+        else -> WageType.MONTHLY
+    }
     /** [PLAZA-03] The applied rule set, for 다른 점 말하기 on it; null when the setup came from a file, not the plaza. */
     private val applied: AppliedSetup? = scope.store.applied.value
     val canPropose: Boolean get() = applied != null
@@ -1579,7 +1625,8 @@ class CompanyReportViewModel(
     private val scope = c.companyOf(calendar)
 
     /** [J133-93] The calendar's kind of work, for the 광장 job when the pay setup names none. */
-    fun styleOf(): com.bamnat.core.work.WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
+    // 2.0.0 [RVN-18] 검토 T10a-05: 투자 follows the phone's work calendar (it has no job of its own).
+    fun styleOf(): com.bamnat.core.work.WorkStyle? = c.jobStyleOf(calendar)
     /**
      * [PRF-01] 1.36 PC 사용성 P1: what of 마을 this phone has up (작품·모음·프로필·팔로잉), said in the 모두 지우기 question
      * with its numbers. Null while asking or with nothing up.
@@ -1837,7 +1884,7 @@ suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.Forget
 }
 
 /** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */
-const val FORGET_ALL_WORDS = "보낸 설정, 맞았어요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 작품·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. " +
+const val FORGET_ALL_WORDS = "보낸 설정, 맞아요·달라요, 토론 글과 신고, 받기로 한 보상, 앱 문의, 마을에 올린 작품·프로필·모음·팔로우·차단까지 서버에서 모두 지워요. " +
     // 1.39 [PRIV-06] 공유 서버도: 이 휴대폰이 만든 링크는 모두 끊겨 받은 사람에게 더 보이지 않아요. 무엇이 끊기는지는 ShareForget.held가 앞에 말해요.
     "이 휴대폰이 만든 공유 링크도 모두 끊어서 받은 사람에게 더 보이지 않아요. " +
     "이 휴대폰에서 쓰는 설정과 넣은 작품은 그대로예요. 결제·환불 문의는 전자상거래법에 따라 앱에서만 사라지고 운영자가 3년 보관해요."
