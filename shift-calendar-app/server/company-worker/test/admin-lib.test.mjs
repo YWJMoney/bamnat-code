@@ -73,7 +73,8 @@ test("[ADMUX-30][ADM3] five hubs: every pre-1.28 screen has a place, and an admi
   assert.deepEqual(L.HUBS.map((h) => h.tabs), [["home", "desk", "decide", "flow", "loop", "cockpit", "incident"],
     ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"],
     ["launch", "flags", "materials", "types", "notices", "chores", "gates"], ["glance", "metrics", "health", "money", "errors", "effects", "tiers"],
-    ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
+    // 2.0.0 [RVQ-18] 검토 I21b-01: 보안 한 장은 서버 상태 옆.
+    ["server", "security", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"]]);
   const tabs = L.HUBS.flatMap((h) => h.tabs);
   assert.equal(new Set(tabs).size, tabs.length, "each tab once");
   for (const t of tabs) assert.ok(L.TABS[t]?.label, `${t} has a name`);
@@ -167,7 +168,7 @@ test("[ADMUX-07] chart axes use round steps", () => {
   assert.ok(L.ticks(100).every((t, i, a) => i === 0 || t - a[i - 1] === a[1]));
   assert.ok(L.ticks(1234).at(-1) >= 1234);
   const svg = L.barChart([0, 5, 10], { labels: ["1일", "2일", "3일"], name: "새 문의" });
-  assert.match(svg, /<table class="sr">/);
+  assert.match(svg, /<div class="sr"><table>/, "2.0.0 [RVA-21] the read-out table sits in a 1px box (no sideways scroll at 380 · 200%)");
   assert.equal((svg.match(/<rect class="bar"/g) ?? []).length, 3);
 });
 

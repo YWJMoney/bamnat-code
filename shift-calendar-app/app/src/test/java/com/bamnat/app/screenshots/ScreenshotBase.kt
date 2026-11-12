@@ -114,6 +114,8 @@ abstract class ScreenshotBase {
         // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
         com.bamnat.app.ui.calendar.HeadBell.atMe = false
         com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
+        // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
+        com.bamnat.app.ui.RecentFill.reset()
         // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()

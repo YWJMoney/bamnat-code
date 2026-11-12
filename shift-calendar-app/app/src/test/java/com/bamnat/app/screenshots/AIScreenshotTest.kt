@@ -19,6 +19,8 @@ import com.bamnat.app.company.RoomPage
 import com.bamnat.app.company.RoomVersion
 import com.bamnat.app.company.Talk
 import com.bamnat.app.company.TalkPost
+import com.bamnat.app.needs
+import com.bamnat.app.nodeWorks
 import com.bamnat.app.ui.company.AutoShareHost
 import com.bamnat.app.ui.company.CompanyBoardScreen
 import com.bamnat.app.ui.company.CompanyBoardViewModel
@@ -46,7 +48,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -431,8 +432,8 @@ class AIScreenshotTest : ScreenshotBase() {
     /** The company server on Node (server/company-worker), as PlazaAIAppTest runs it. */
     private fun server(block: (String) -> Unit) {
         val dir = File("../server/company-worker")
-        assumeTrue(dir.resolve("test/local-server.mjs").exists())
-        assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
+        needs("server/company-worker/test/local-server.mjs", dir.resolve("test/local-server.mjs").exists())
+        needs("node", nodeWorks())
         val port = ServerSocket(0).use { it.localPort }
         val node = ProcessBuilder("node", "test/local-server.mjs", port.toString()).directory(dir).redirectErrorStream(true).start()
         try {

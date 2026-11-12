@@ -1320,6 +1320,18 @@ fun CalendarScreen(
             // [MAT-06] 1.36 PC 확인 7차: shared fonts a theme was waiting for, come down by themselves (was a toast). PC 8차: first, so it
             // is the one open (it was folded as '글꼴' under the others); it goes once closed or taken back.
             if (FontArrivals.fonts.isNotEmpty()) add(Notice("fontArrived", "기다리던 글꼴", line = "기다리던 글꼴이 도착했어요") { FontArrivedLine(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)) })
+            // 2.0.0 [RVL-18] (검토 U07b-11) A month just put in (한 달 근무 넣기, 근태·캘린더 가져오기): 되돌리기 over the calendar for 10분,
+            // as the user comes back from that screen. Draws nothing (and is not counted) otherwise.
+            // [RVP-43] HQ-49: it can take back a whole month, so it may be the band (its line and 되돌리기; the '10분' line is in the card
+            // opened whole in the 알림함). What the undo did is a row of the 알림함's 안내, said once.
+            if (paint == null && viewingReceived == null) {
+                rememberRecentFill(activeCalendar.id)?.let { e ->
+                    add(Notice("recentFill", "방금 넣은 것", line = e.text, action = "되돌리기", onAction = { com.bamnat.app.ui.RecentFill.undo(e) },
+                        onClose = { com.bamnat.app.ui.RecentFill.close(e) }, urgent = true) { RecentFillNotice(e) })
+                }
+                add(Notice("recentFillSaid", "되돌림", line = com.bamnat.app.ui.RecentFill.said.collectAsStateWithLifecycle().value ?: "방금 넣은 것을 되돌렸어요",
+                    onClose = com.bamnat.app.ui.RecentFill::heard) { RecentFillSaid() })
+            }
             // PC 재검토 N3 1.36: for a day after the studio put a look on, the look from before is one tap away.
             lookUndo?.let { u ->
                 add(Notice("lookUndo", "입힌 모양", line = u.line, action = "입히기 전으로", onAction = u.undo, onClose = u.close, urgent = u.band) { LookUndoLine(u) })
