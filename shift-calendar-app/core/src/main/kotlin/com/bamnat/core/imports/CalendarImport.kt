@@ -1,5 +1,7 @@
 package com.bamnat.core.imports
 
+import com.bamnat.core.model.Leave
+import com.bamnat.core.model.LeaveKind
 import com.bamnat.core.model.ShiftType
 import java.time.Duration
 import java.time.LocalDate
@@ -65,7 +67,8 @@ data class DeviceCalendar(
  * day with its time and place. One shift per day: a second one on the same day becomes a memo.
  */
 object CalendarImport {
-    enum class As { SHIFT, OFF, MEMO }
+    /** 2.0.0 [RVL-30] (검토 SCAN-26·T07b-08) [LEAVE]: a 연차·반차·휴가 event goes in as leave, not as a plain day off. */
+    enum class As { SHIFT, OFF, MEMO, LEAVE }
 
     data class Proposal(
         val event: DeviceEvent,
@@ -76,8 +79,14 @@ object CalendarImport {
         val reason: String,
         /** Already brought in before, or already what the calendar says: left out unless the user asks. */
         val skip: Skip? = null,
+        /** 2.0.0 [RVL-30] One day of an event over several (여름휴가 8/4~8/8); null for the event's own day. */
+        val day: LocalDate? = null,
+        /** 2.0.0 [RVL-30] The leave for [As.LEAVE]. */
+        val leave: Leave? = null,
     ) {
-        val date: LocalDate get() = event.date
+        val date: LocalDate get() = day ?: event.date
+        /** 2.0.0 [RVL-30] What this proposal is remembered by once brought in: the event, and its day when it spans several. */
+        val key: String get() = if (day == null || day == event.date) event.key else "${event.key}#$day"
     }
 
     enum class Skip(val label: String) { IMPORTED("이미 가져왔어요"), SAME("이미 같은 근무예요"), GENERATED("공휴일·생일 달력") }
@@ -90,7 +99,7 @@ object CalendarImport {
         listOf("주간", "주", "데이", "day", "d", "오전", "아침").forEach { put(it, Word.DAY) }
         listOf("오후", "이브닝", "evening", "eve", "e", "저녁", "석", "중간", "미들", "middle", "m").forEach { put(it, Word.EVENING) }
         listOf("야간", "야", "나이트", "night", "n", "밤", "철야").forEach { put(it, Word.NIGHT) }
-        listOf("휴무", "휴", "휴일", "비번", "비", "오프", "off", "o", "쉼", "쉬는날", "휴가", "연차").forEach { put(it, Word.OFF) }
+        listOf("휴무", "휴", "휴일", "비번", "비", "오프", "off", "o", "쉼", "쉬는날").forEach { put(it, Word.OFF) }
         listOf("당직", "당번", "당", "24", "24시간").forEach { put(it, Word.DUTY) }
     }
 
@@ -101,6 +110,24 @@ object CalendarImport {
         .replace(Regex("근무|출근|shift"), "")
         .replace(Regex("[\\s\\[\\]()<>{}·.,:;!?~*#/\\\\|_\\-]+"), "")
         .filter { it.isLetterOrDigit() }
+
+    /**
+     * 2.0.0 [RVL-30] (검토 SCAN-26) 연차·반차·휴가 and the leave words of a company calendar: the leave each is. 병가·경조·공가 are
+     * paid by most companies' rules ([LeaveKind.PAID]); the user can change any proposal.
+     */
+    private fun leaveOf(n: String): Leave? = when (n) {
+        in setOf("반반차", "반반") -> Leave(LeaveKind.ANNUAL, 1)
+        in setOf("오전반차", "오전반", "am반차") -> Leave(LeaveKind.ANNUAL, 2, fromStart = true)
+        in setOf("반차", "오후반차", "오후반", "pm반차") -> Leave(LeaveKind.ANNUAL, 2)
+        in setOf("무급휴가", "무급") -> Leave(LeaveKind.UNPAID)
+        in setOf("연차", "월차", "휴가", "연가", "연차휴가", "여름휴가", "하계휴가", "겨울휴가", "동계휴가", "정기휴가", "개인휴가",
+            "annual", "annualleave", "vacation", "pto") -> Leave(LeaveKind.ANNUAL)
+        in setOf("병가", "경조", "경조휴가", "경조사", "공가", "특별휴가", "보건휴가", "포상휴가") -> Leave(LeaveKind.PAID)
+        else -> null
+    }
+
+    /** 2.0.0 [RVL-30] Days an event over several is split into for leave or days off; longer ones stay one memo. */
+    const val MAX_SPLIT_DAYS = 31
 
     fun propose(
         events: List<DeviceEvent>,
@@ -113,19 +140,32 @@ object CalendarImport {
         val work = types.filter { it.hasTimes }
         val offs = types.filter { it.isOff }
         val taken = HashSet<LocalDate>()
-        return events.sortedWith(compareBy({ it.begin }, { it.eventId })).map { e ->
+        return events.sortedWith(compareBy({ it.begin }, { it.eventId })).flatMap { e ->
             val p = classify(e, work, offs)
-            val single = !e.allDay || e.lastDate == e.date
-            val asWork = p.kind != As.MEMO && single && taken.add(e.date)
-            val proposal = if (asWork || p.kind == As.MEMO) p else p.copy(kind = As.MEMO, shiftTypeId = null, reason = "같은 날 근무가 이미 있어요")
-            val skip = when {
-                e.key in imported -> Skip.IMPORTED
-                e.calendarId in generatedCalendars -> Skip.GENERATED
-                proposal.kind == As.SHIFT && current(e.date) == proposal.shiftTypeId -> Skip.SAME
-                proposal.kind == As.OFF && current(e.date)?.let { id -> offs.any { it.id == id } } == true -> Skip.SAME
-                else -> null
+            val span = if (e.allDay) java.time.temporal.ChronoUnit.DAYS.between(e.date, e.lastDate) + 1 else 1
+            // 2.0.0 [RVL-30] (검토 SCAN-26·T07b-08) 여름휴가 8/4~8/8: each day its own leave (or day off), not one memo whose reason
+            // said "같은 날 근무가 이미 있어요". Any other event over several days is one memo, and says why.
+            val days = when {
+                span <= 1 -> listOf(p)
+                (p.kind == As.LEAVE || p.kind == As.OFF) && span <= MAX_SPLIT_DAYS ->
+                    (0 until span).map { i -> p.copy(day = e.date.plusDays(i)) }
+                else -> listOf(p.copy(kind = As.MEMO, shiftTypeId = null, leave = null, reason = "여러 날 일정이라 메모로"))
             }
-            proposal.copy(skip = skip)
+            days.map { d ->
+                val proposal = if (d.kind == As.MEMO || taken.add(d.date)) d
+                    else d.copy(kind = As.MEMO, shiftTypeId = null, leave = null, reason = "같은 날 근무가 이미 있어요")
+                proposal.copy(skip = skipOf(proposal, imported, current, generatedCalendars, offs))
+            }
+        }
+    }
+
+    private fun skipOf(proposal: Proposal, imported: Set<String>, current: (LocalDate) -> Long?, generatedCalendars: Set<Long>, offs: List<ShiftType>): Skip? {
+        return when {
+            proposal.key in imported -> Skip.IMPORTED
+            proposal.event.calendarId in generatedCalendars -> Skip.GENERATED
+            proposal.kind == As.SHIFT && current(proposal.date) == proposal.shiftTypeId -> Skip.SAME
+            proposal.kind == As.OFF && current(proposal.date)?.let { id -> offs.any { it.id == id } } == true -> Skip.SAME
+            else -> null
         }
     }
 
@@ -135,6 +175,7 @@ object CalendarImport {
             (work + offs).firstOrNull { normalize(it.name) == n || normalize(it.label) == n }?.let { t ->
                 return Proposal(e, if (t.isOff) As.OFF else As.SHIFT, t.id, "이름이 같아요")
             }
+            leaveOf(n)?.let { l -> return Proposal(e, As.LEAVE, null, "휴가로 읽었어요", leave = l) }
             WORDS[n]?.let { w ->
                 if (w == Word.OFF) return Proposal(e, As.OFF, offs.firstOrNull()?.id, "쉬는 날로 읽었어요")
                 byWord(w, work)?.let { return Proposal(e, As.SHIFT, it.id, "‘${e.title.trim()}’를 ${it.name}으로 읽었어요") }
@@ -186,12 +227,12 @@ object CalendarImport {
     private const val MAX_DESCRIPTION = 500
 
     /** How many of each kind will come in, for the button: "근무 12 · 메모 5". */
-    data class Count(val shifts: Int, val offs: Int, val memos: Int) {
-        val total: Int get() = shifts + offs + memos
+    data class Count(val shifts: Int, val offs: Int, val memos: Int, val leaves: Int = 0) {
+        val total: Int get() = shifts + offs + memos + leaves
     }
 
     fun count(proposals: List<Proposal>): Count {
         val todo = proposals.filter { it.skip == null }
-        return Count(todo.count { it.kind == As.SHIFT }, todo.count { it.kind == As.OFF }, todo.count { it.kind == As.MEMO })
+        return Count(todo.count { it.kind == As.SHIFT }, todo.count { it.kind == As.OFF }, todo.count { it.kind == As.MEMO }, todo.count { it.kind == As.LEAVE })
     }
 }
