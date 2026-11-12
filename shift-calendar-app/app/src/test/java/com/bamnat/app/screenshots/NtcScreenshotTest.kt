@@ -71,18 +71,28 @@ class NtcScreenshotTest : ScreenshotBase() {
     private fun Screen.detail() {
         c.recipeApi = One(summaryWork, code)
         val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, code, com.bamnat.app.data.PersonalCalendar.MAIN)
+        // [RVM-13] With this server the work is read and 내 달력 미리 보기 is worked out inside the constructor (on the main thread,
+        // measured 2026-11-12: the overlap is there before the screen is drawn). So a wait that runs out is never "still running":
+        // either the overlap was not found as the work was read, or something took it away after. What the state was here is kept
+        // for the message, beside what it is when the wait ends.
+        val first = said(vm)
         content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = {}) }
         settle()
-        // 2.0.0 (#444 CI shots-b): 내 달력 미리 보기 runs off the main thread after the work is read; a tap on 넣기 made while it was
-        // still running did not open the 넣기 창 (2 of 3 runs). Every test here turns the lock-screen 오늘 근무 on first, so the
-        // preview is done once the overlap it finds is in the state.
+        // 2.0.0 (#444 CI shots-b): a tap on 넣기 made before the preview was in did not open the 넣기 창. Every test here turns the
+        // lock-screen 오늘 근무 on first, so the preview is in once the overlap it finds is in the state.
         check(waitFor { vm.state.value.pieces.any { it.overlaps.isNotEmpty() } }) {
-            val s = vm.state.value
-            "내 달력 미리 보기가 끝나지 않았어요: recipe=${s.recipe?.title} error=${s.error} message=${s.message} " +
-                "pieces=${s.pieces.map { "${it.kind}:on=${it.on},fits=${it.fits},lines=${it.lines.size},overlaps=${it.overlaps.size}" }} " +
-                "today=${c.settingsRepository.current.todayShiftNotice} logic=${c.settingsRepository.current.logic.length} " +
-                "now=${c.recipes.pieces.overlaps(summaryWork.pieces.single().values).size}"
+            "내 달력 미리 보기에 겹침이 없어요. 만든 바로 뒤: $first / 기다린 뒤: ${said(vm)} " +
+                "now=${c.recipes.pieces.overlaps(summaryWork.pieces.single().values).size} " +
+                "log=${org.robolectric.shadows.ShadowLog.getLogsForTag("BamnatRecipe").map { "${it.msg}: ${it.throwable}" }}"
         }
+    }
+
+    /** The detail's state and the settings the overlap is worked out from, in one line. */
+    private fun said(vm: com.bamnat.app.ui.recipe.RecipeDetailViewModel): String {
+        val s = vm.state.value
+        return "recipe=${s.recipe?.title} doc=${s.doc?.hash?.take(8)} error=${s.error} message=${s.message} " +
+            "pieces=${s.pieces.map { "${it.kind}:on=${it.on},fits=${it.fits},lines=${it.lines.size},overlaps=${it.overlaps.size}" }} " +
+            "today=${c.settingsRepository.current.todayShiftNotice} logic=${c.settingsRepository.current.logic.length}"
     }
 
     private fun lockOn(on: Boolean = true) = c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT, todayShiftNotice = on, logic = "") }

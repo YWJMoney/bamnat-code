@@ -12,6 +12,7 @@ import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import org.json.JSONObject
 import com.bamnat.core.recipe.keepMyCellContent
 
@@ -47,6 +48,39 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         }.onFailure { android.util.Log.w(TAG, "cell content", it) }
     }
 
+    /**
+     * 2.0.0 [RVM-26] RCP-08 (서랍 30개 한도가 '내 테마로 저장'한 것까지 말없이 밀어냄): [list] kept to [ThemeLease.HISTORY] themes of
+     * others, mine never pushed out ([ThemeLease.capped]); what the limit let go is kept in 자동으로 정리한 것 to put back.
+     */
+    private fun cap(list: List<ThemeLease.Wear>, keep: String?): List<ThemeLease.Wear> {
+        val (kept, out) = ThemeLease.capped(list, keep)
+        tidy(out)
+        return kept
+    }
+
+    /** [RVM-26] Themes let go of by the limit, each kept 30 days in 자동으로 정리한 것 (내 서랍 아래 한 줄) with its way back. */
+    private fun tidy(out: List<ThemeLease.Wear>) {
+        if (out.isEmpty()) return
+        c.appScope.launch {
+            out.forEach { w ->
+                runCatching {
+                    c.autoTidy.add(com.bamnat.app.data.AutoTidy.AREA_RECIPE, com.bamnat.app.data.PersonalCalendar.MAIN, w.title,
+                        "입었던 테마가 ${ThemeLease.HISTORY}개를 넘어 가장 오래 전에 입은 것을 서랍에서 뺐어요", KIND_PUSHED,
+                        ThemeLease.encode(ThemeLease(history = listOf(w))))
+                }
+            }
+        }
+    }
+
+    /** [RVM-26] A theme the limit let go ([payload] from [tidy]) back in 입었던 테마, newest; true when it is there. */
+    fun putBack(payload: String): Boolean {
+        val w = ThemeLease.decode(payload).history.firstOrNull() ?: return false
+        val l = _lease.value
+        if (l.history.any { it.key == w.key }) return true
+        save(l.copy(history = cap(listOf(w) + l.history, l.worn?.key)))
+        return _lease.value.history.any { it.key == w.key }
+    }
+
     private fun save(l: ThemeLease) {
         prefs.edit().putString(K_LEASE, ThemeLease.encode(l)).apply()
         _lease.value = l
@@ -78,7 +112,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = l.worn?.takeIf { isMix(it.title) && !it.own } ?: return l
         val from = l.history.firstOrNull { it.key == w.key }?.title ?: w.title.removePrefix(MIX)
         val mine = ThemeLease.Wear(w.title, "", w.body, w.from, w.until, own = true, mixedFrom = from.take(30), mixedCodes = w.code)
-        return l.copy(history = (listOf(mine) + l.history.filter { it.key != mine.key }).take(ThemeLease.HISTORY))
+        return l.copy(history = cap(listOf(mine) + l.history.filter { it.key != mine.key }, l.worn?.key))
     }
 
     /** Whether ads may run (the `ads` switch) and the user is on 프로; before launch the gate says 프로, so nothing runs. */
@@ -153,11 +187,13 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val next = l.wear(ThemeLease.Wear(looks.title, code, RecipeCodec.write(only), 0, 0, own, shared, if (ver > 0) ver else was?.ver ?: 0, was?.bare == true,
             mixedFrom = was?.mixedFrom?.takeIf { own }.orEmpty(), mixedCodes = was?.mixedCodes?.takeIf { own }.orEmpty()),
             Today.date().toEpochDay(), free)
+        // [RVM-26] RCP-08: what the 입었던 테마 limit let go is kept in 자동으로 정리한 것.
+        tidy(l.pushedOut(next))
         save(when {
             whole != null -> keepWhole(l, next, whole)
             // 1.37 PC (스튜디오에서 입힌 섞은 모양이 서랍에서 그 테마 자리를 차지해요): the theme its parts came from stays in 입었던 테마.
-            isMix(looks.title) && !own -> next.copy(history = (l.history.filter { it.key == next.worn?.key && !isMix(it.title) } + next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) })
-                .take(ThemeLease.HISTORY))
+            isMix(looks.title) && !own -> next.copy(history = cap(l.history.filter { it.key == next.worn?.key && !isMix(it.title) } +
+                next.history.filter { it.key != next.worn?.key && !(isMix(it.title) && !it.own) }, next.worn?.key))
             else -> next
         })
         next.worn?.let { stamp(it.key) }
@@ -174,7 +210,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = now.copy(title = whole.title.take(30), body = RecipeCodec.write(looks))
         val before = prev.history.firstOrNull { it.key == w.key }
         val keep = before?.copy(from = now.from, until = now.until) ?: w
-        return l.copy(history = (listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }).take(ThemeLease.HISTORY))
+        return l.copy(history = cap(listOf(keep) + l.history.filter { it.key != w.key && it.key != now.key }, now.key))
     }
 
     /**
@@ -188,7 +224,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         var l = keepMix(_lease.value)
         if (after != null && after != now) {
             val mine = myLookRecipe("내가 고친 ${worn.title}".take(30))
-            l = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
+            val worn2 = l.wear(ThemeLease.Wear(mine.title, "", RecipeCodec.write(mine), 0, 0, own = true), Today.date().toEpochDay(), free = false)
+            tidy(l.pushedOut(worn2))
+            l = worn2
         }
         readMap(K_MINE)?.let { c.recipes.pieces.restoreLook(it) }
         prefs.edit().remove(K_MINE).remove(K_WORN_LOOK).remove(K_PREV).apply()
@@ -253,7 +291,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         if (r.pieces.isEmpty()) return false
         val l = _lease.value
         val w = ThemeLease.Wear(r.title, "", RecipeCodec.write(r), Today.date().toEpochDay(), Today.date().toEpochDay(), own = true)
-        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        save(l.copy(history = cap(listOf(w) + l.history.filter { it.key != w.key }, l.worn?.key)))
         stamp(w.key)
         return true
     }
@@ -466,7 +504,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val w = ThemeLease.Wear(name.ifBlank { "내 테마 ${mine + 1}" }, "", RecipeCodec.write(only), keep?.from ?: Today.date().toEpochDay(),
             keep?.until ?: Today.date().toEpochDay(), own = true, shared = keep?.shared.orEmpty(), ver = keep?.ver ?: 0, bare = keep?.bare == true,
             mixedFrom = mixedFrom, mixedCodes = mixedCodes)
-        save(l.copy(history = (listOf(w) + l.history.filter { it.key != w.key }).take(ThemeLease.HISTORY)))
+        save(l.copy(history = cap(listOf(w) + l.history.filter { it.key != w.key }, l.worn?.key)))
         stamp(w.key)
         return true
     }
@@ -667,6 +705,8 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         /** The name the studio gives a look made of other themes' parts ("조합 · <내 모양>"). */
         const val MIX = "조합 · "
         fun isMix(title: String) = title.startsWith(MIX)
+        /** [RVM-26] RCP-08 자동으로 정리한 것: a theme 입었던 테마's limit let go. */
+        const val KIND_PUSHED = "recipe.wardrobe"
         const val FREE_OUTFITS = 1
         const val PRO_OUTFITS = 10
         /** [TRY-03] 조각 보관함: free 20, 프로 200. */

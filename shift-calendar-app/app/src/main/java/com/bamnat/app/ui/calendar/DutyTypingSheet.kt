@@ -3,7 +3,6 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -202,8 +201,10 @@ fun DutyTypingPanel(
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
             }
             MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { pad = pad.tap(it) }
-            // [ROST-08] Sideways, so three buttons never squeeze under a big font.
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // [ROST-08] Three buttons never squeeze under a big font. 2.0.0 [RVL-34] (HQ-61 ④, same structure as 한 달 근무 넣기): they wrap
+            // under each other instead of going sideways out of sight at the folded width (조건 12).
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
                 if (lastMonth.isNotEmpty()) OutlinedButton(onClick = {
                     pad = pad.putAll(lastMonth.mapKeys { it.key.dayOfMonth })
                 }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -218,7 +219,6 @@ fun DutyTypingPanel(
                     Icon(Icons.Filled.Repeat, null)
                     Text(" 이 순서 반복", maxLines = 1)
                 }
-                Spacer(Modifier.width(4.dp))
                 TextButton(onClick = { pad = pad.undo() }, enabled = pad.canUndo, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null)
                     Text(" 되돌리기")
