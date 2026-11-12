@@ -93,6 +93,12 @@ object StaffContract {
         val week = DayOfWeek.entries.filter { it in s.weekly }
         val weekMinutes = week.sumOf { s.weekly.getValue(it).paidMinutes(place.legalBreaks) }
         val shortTime = s.weekly.isNotEmpty() && weekMinutes < 40 * 60
+        // 2.0.0 [RVJ-42] 검토 PC-104: the 소정 is each day up to 8시간 and the week up to 40시간 (근로기준법 제50조); the rest of the usual
+        // week is 연장 (제53조 합의, 1주 12시간까지). A place of 4 or fewer has neither (시행령 [별표 1]), the line says so.
+        val usual = PayrollLedger.weeklyMinutes(place, s)
+        val over = (weekMinutes - usual).coerceAtLeast(0)
+        val five = place.fivePlus != false
+        fun hm(m: Int) = "${m / 60}시간" + if (m % 60 != 0) " ${m % 60}분" else ""
         val items = ArrayList<Item>()
         items += Item("근로 시작일", (start?.let(::date) ?: "____년 __월 __일") + "부터" + (s.leftOn?.let { " ${date(it)}까지" } ?: " (기간을 정하지 않음)"))
         items += Item("근무 장소", place.name)
@@ -101,7 +107,9 @@ object StaffContract {
             val sh = s.weekly.getValue(d)
             val brk = if (place.legalBreaks) LegalBreak.minutesFor(sh.spanMinutes) else 0
             "${day(d)}요일 ${sh.start}~${sh.end}" + (if (brk > 0) " (휴게 ${brk}분, 근로시간 중에)" else "")
-        } + "\n한 주 소정근로시간 ${weekMinutes / 60}시간" + (if (weekMinutes % 60 != 0) " ${weekMinutes % 60}분" else ""))
+        } + if (over > 0) "\n한 주 소정근로시간 ${hm(usual)}, 그 밖의 평소 근무 한 주 ${hm(over)}은 연장근로" +
+            (if (five) "(근로자와 합의, 근로기준법 제53조: 한 주 12시간까지)" else "(5명 미만 사업장이라 주 40시간 제한·가산은 없어요)")
+        else "\n한 주 소정근로시간 ${hm(weekMinutes)}")
         // 주휴일: a day not in the week, 일요일 first.
         val rest = listOf(DayOfWeek.SUNDAY, DayOfWeek.SATURDAY, DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
             .firstOrNull { it !in s.weekly }
@@ -114,10 +122,19 @@ object StaffContract {
         items += Item("휴일", (if (weekMinutes >= 15 * 60 && s.weeklyHolidayPay) "매주 ${rest?.let(::day) ?: "_"}요일 (유급 주휴일)" else "매주 ${rest?.let(::day) ?: "_"}요일" +
             if (weekMinutes in 1 until 15 * 60) " (한 주 15시간 미만이라 주휴일은 유급이 아니에요, 제18조 제3항)" else "") + paidDays)
         val pay = buildString {
+            val split = MonthlyOvertime.of(place, s)
             append(when (s.form) {
                 WageForm.HOUR -> "시급 ${won(s.base)}"
                 WageForm.DAY -> "일급 ${won(s.base)}"
-                WageForm.MONTH -> "월급 ${won(s.base)}"
+                // [RVJ-42] The 월급 and the usual hours past 40, as the 대장 pays them.
+                WageForm.MONTH -> "월급 ${won(s.base)}" + when {
+                    split == null -> ""
+                    s.overtimeInPay == true -> " (기본급 ${won(split.base)} + ${PayrollLedger.FIXED_OT} ${won(split.fixed)})\n${PayrollLedger.FIXED_OT}: 40시간을 넘는 평소 근무" +
+                        "(한 주 ${split.overHours}시간, 한 달 약 ${split.monthOverHours}시간)를 " + (if (five) "통상시급의 150%로" else "통상시급으로") +
+                        " 미리 줘요. 실제 연장근로가 더 많은 달은 차액을 더 줘요"
+                    else -> " (한 주 40시간 몫, 월 ${split.hours}시간)\n40시간을 넘는 근로(평소 한 주 ${split.overHours}시간)는 " +
+                        (if (five) "통상시급의 150%를" else "통상시급만큼") + " 더 줘요 · 평소 한 달 약 ${won(split.onTop)}"
+                }
             })
             if (s.dayRates.isNotEmpty()) append("\n요일별 시급: " + DayOfWeek.entries.filter { it in s.dayRates }.joinToString(", ") { "${day(it)} ${won(s.dayRates.getValue(it))}" })
             if (s.allowances.isNotEmpty()) append("\n수당: " + s.allowances.joinToString(", ") {
@@ -126,7 +143,8 @@ object StaffContract {
             if (s.form == WageForm.HOUR && s.weeklyHolidayPay && weekMinutes >= 15 * 60) append("\n주휴수당: 한 주 소정근로일을 다 나오면 유급 주휴일 1일분")
             if (place.fivePlus != false) append("\n연장·야간·휴일 근로: 통상임금의 50%를 더해 줘요(근로기준법 제56조)")
             // 2.0.0 [RVJ-09] 검토 BOSS-56: 그달에 주는 가게는 '그달 것을 그달에'.
-            append("\n지급일: " + (place.payday?.let { "매월 ${it}일 (" + (if (place.payNextMonth) "그달 것을 다음 달에" else "그달 것을 그달에") + ", 쉬는 날이면 그 전날)" } ?: "매월 __일"))
+            // 2.0.0 [RVJ-41] 검토 PC-103: 31 is the picker's '말일' (a short month pays on its last day), so the contract says 말일 too.
+            append("\n지급일: " + (place.payday?.let { "매월 ${if (it >= 31) "말일" else "${it}일"} (" + (if (place.payNextMonth) "그달 것을 다음 달에" else "그달 것을 그달에") + ", 쉬는 날이면 그 전날)" } ?: "매월 __일"))
             append("\n지급 방법: 근로자 명의 예금 통장에 입금")
         }
         items += Item("임금", pay)
@@ -154,6 +172,9 @@ object StaffContract {
         }
         items += Item("계약서 주기", "사업주는 이 계약서를 만들면 근로자에게 한 부를 줘요(근로기준법 제17조). 근로자가 원하지 않아도 줘야 해요.")
         items += Item("그 밖의 것", "이 계약에 적지 않은 것은 근로기준법과 그 시행령을 따라요." + if (shortTime) " 단시간 근로자라 근로일과 근로일별 근로시간을 위에 적었어요(시행령 제9조)." else "")
+        // [RVJ-42] Asked once in the 직원 정보; the contract says 'paid on top' until then, and says that it does.
+        if (MonthlyOvertime.unasked(place, s)) warn += "40시간을 넘는 시간을 월급에 넣었는지 아직 안 골랐어요. 지금은 '더 줘요'로 적었어요 · 직원 정보에서 골라요"
+        if (five && over > 12 * 60) warn += "평소 연장근로가 한 주 ${hm(over)}이에요. 근로자와 합의해도 한 주 12시간까지예요(제53조)"
         return Contract(items, missing, shortTime, warn)
     }
 
