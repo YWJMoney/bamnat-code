@@ -313,7 +313,8 @@ fun BamnatTheme(
         androidx.compose.runtime.LaunchedEffect(partFonts) { partFonts.forEach { AppFonts.start(ctx, it) } }
     }
     val parts = androidx.compose.runtime.remember(raw, dark, fontsCame) { raw.forDark(dark).let { if (fontsCame > 0) com.bamnat.core.recipe.Blueprint(it.lines) else it } }
-    CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
+    // 2.0.0 [RVP-14] (검토 UIX-05) 밤 색 over the whole app takes the dark calendar colours too, whatever the phone's own theme.
+    CompositionLocalProvider(LocalCalendarColors provides if (dark || night) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
         val base = androidx.compose.ui.platform.LocalDensity.current

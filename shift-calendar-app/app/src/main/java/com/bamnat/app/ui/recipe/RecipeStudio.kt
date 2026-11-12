@@ -133,7 +133,7 @@ internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel,
 @Composable
 internal fun MiniPhone(r: Recipe, style: WorkStyle?, tab: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val scale = 0.42f
-    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clip(RoundedCornerShape(14.dp))
+    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clip(MaterialTheme.shapes.medium)
         .clickable(onClickLabel = "예시 앱 크게 보기", onClick = onOpen).semantics(mergeDescendants = true) { contentDescription = "작은 예시 앱. 누르면 크게 봐요" },
         contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(340.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {

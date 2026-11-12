@@ -49,6 +49,7 @@ import androidx.compose.foundation.rememberScrollState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.36 [VIL-06] 마을 V6 검색 하나: one box for 장터 작품, 광장 글 and 요청, each in its own group (동물의 숲에 검색이 없어 생긴 불편에서 착안,
@@ -225,7 +226,7 @@ private fun Hint(text: String) {
 
 @Composable
 private fun Row(title: String, line: String, onClick: () -> Unit) {
-    SoftCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    SoftCard(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)

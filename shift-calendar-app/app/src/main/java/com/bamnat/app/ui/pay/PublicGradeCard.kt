@@ -32,6 +32,7 @@ import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.PublicGrade
 import com.bamnat.core.pay.PublicPayTable
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /**
  * [JOB-02][JOB-03] 공무원 봉급표 (순번 270): 계급·호봉·근무 연수를 고르면 봉급, 시간외·야간·휴일 수당 단가,
@@ -67,7 +68,7 @@ internal fun PublicGradeCard(profile: PayProfile, month: LocalDate, enabled: Boo
         Stepper("호봉", "${step}호봉", step, 1..maxStep, enabled) { step = it }
         Stepper("근무 연수", "${years}년", years, 0..40, enabled) { years = it }
         Row(
-            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(enabled = enabled) { onSite = !onSite },
+            Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, enabled = enabled) { onSite = !onSite },
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("교대·현업 근무", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

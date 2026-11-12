@@ -363,15 +363,15 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
 @Composable
 private fun PlaceGrid(value: String, onPick: (String) -> Unit) {
     val names = mapOf('t' to "위", 'm' to "가운데", 'b' to "아래", 'l' to "왼쪽", 'c' to "가운데", 'r' to "오른쪽")
-    Column(Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp)).padding(4.dp)) {
+    Column(Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.small).padding(4.dp)) {
         for (v in listOf('t', 'm', 'b')) Row {
             for (h in listOf('l', 'c', 'r')) {
                 val k = "$v$h"
                 val on = k == value
                 Box(
-                    Modifier.size(44.dp).padding(3.dp).clip(RoundedCornerShape(6.dp))
+                    Modifier.size(44.dp).padding(3.dp).clip(MaterialTheme.shapes.extraSmall)
                         .background(if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .clickable { onPick(k) }
+                        .clickable(role = Role.Button) { onPick(k) }
                         .semantics { contentDescription = "날짜 ${names[v]} ${names[h]}"; selected = on; role = Role.RadioButton },
                     contentAlignment = Alignment.Center,
                 ) { Text("1", fontSize = 12.sp, color = if (on) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -618,7 +618,7 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
     Group("배경 사진") {
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Box(Modifier.size(40.dp, 84.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+            Box(Modifier.size(40.dp, 84.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
                 if (picture != null) androidx.compose.foundation.Image(picture.first, "배경 사진", Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
             }
             TextButton(onClick = pick) { Text(if (l.photo == null) "사진 고르기" else "바꾸기") }
@@ -822,7 +822,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             Box(
                 Modifier.size(30.dp).clip(CircleShape).background(Color(c.toInt()))
                     .border(if (on) 3.dp else 1.dp, if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                    .clickable { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
+                    .clickable(role = Role.Button) { pick(c) }.semantics { contentDescription = "$label ${names[i]}" + (if (c in memory.pinned) " (내 색)" else if (i < recent.size) " (최근)" else ""); selected = on },
             )
         }
         val split = recent.size + LIGHT_SWATCHES
@@ -837,7 +837,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
         if (allOut) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
@@ -851,7 +851,7 @@ fun ColorPick(label: String, value: Long?, allowNone: Boolean = true, onPick: (L
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Box(
-                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable { custom = true }
+                Modifier.size(34.dp).clip(CircleShape).border(1.dp, MaterialTheme.colorScheme.outline, CircleShape).clickable(role = Role.Button) { custom = true }
                     .semantics { contentDescription = "$label 직접 고르기" },
                 contentAlignment = Alignment.Center,
             ) { Text("+", style = MaterialTheme.typography.titleMedium) }
@@ -894,7 +894,7 @@ private fun CustomColorDialog(start: Long, onDismiss: () -> Unit, onDone: (Long)
         title = { Text("색 직접 고르기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(10.dp)).background(color), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().height(48.dp).clip(MaterialTheme.shapes.small).background(color), contentAlignment = Alignment.Center) {
                     Text("가나다 123", color = contentColorOn(color))
                 }
                 Text("빛깔", style = MaterialTheme.typography.bodySmall); Slider(h, { h = it }, valueRange = 0f..360f, modifier = Modifier.semantics { contentDescription = "빛깔" })

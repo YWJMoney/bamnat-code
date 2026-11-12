@@ -246,7 +246,7 @@ fun CalendarIdentityBar(
                         Text(row.title.take(4), style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false)
                     }
                 } else Box(
-                    Modifier.size(40.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) }
+                    Modifier.size(48.dp).clip(CircleShape).clickable(role = Role.Button) { onPick(row) } /* [RVP-10] 48dp */
                         .semantics { contentDescription = "$name 보기" },
                     contentAlignment = Alignment.Center,
                 ) { row.Avatar(size = 30.dp) }

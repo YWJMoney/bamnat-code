@@ -136,7 +136,7 @@ private fun MaterialCell(m: StudioMaterial, usable: Boolean, busy: Boolean, onCl
         if (LookImages.fetch(c, m.shelf)) bmp = LookImages.bitmap(c.appContext, m.shelf)?.asImageBitmap()
     }
     val (w, h) = if (m.isIcon) 56.dp to 56.dp else 56.dp to 112.dp
-    val shape = RoundedCornerShape(10.dp)
+    val shape = MaterialTheme.shapes.small
     Box(Modifier.size(w, h).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)
         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
         .clickable(onClickLabel = "${m.name} 넣기", onClick = onClick)

@@ -71,7 +71,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material.icons.outlined.Groups
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,7 +78,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -88,6 +87,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
@@ -114,6 +114,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -169,7 +170,9 @@ fun MemoListScreen(
     )
     androidx.compose.runtime.LaunchedEffect(undo) { undo?.let { u -> kotlinx.coroutines.delay(if (u.back == null) 3_000 else 10_000); undo = null } }
 
-    Box(Modifier.fillMaxSize()) {
+    // 2.0.0 [RVP-06] The new-memo button shrinks to its icon while the list scrolls down.
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    Box(Modifier.fillMaxSize().nestedScroll(fab.connection)) {
         Column(Modifier.fillMaxSize()) {
             if (state.selecting) {
                 SelectionBar(
@@ -298,7 +301,7 @@ fun MemoListScreen(
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
         undo?.let { (said, back, backSaid) ->
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.inverseSurface,
                 shadowElevation = 4.dp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
@@ -324,11 +327,13 @@ fun MemoListScreen(
                 // [DAILY-05] One button, then 메모 or 체크리스트 [UX-06]: said in words, a pencil alone was read as "edit".
                 var choosing by remember { mutableStateOf(false) }
                 Box {
-                    ExtendedFloatingActionButton(
+                    // 2.0.0 [RVP-06] The shared floating-button rule: words at rest, the icon alone while the list goes down.
+                    com.bamnat.app.ui.components.AddFab(
+                        "새 메모",
                         onClick = { choosing = true },
-                        icon = { Icon(Icons.Outlined.Edit, contentDescription = null) },
-                        text = { Text("새 메모") },
-                        modifier = Modifier.semantics { contentDescription = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트" },
+                        open = fab.open,
+                        icon = Icons.Outlined.Edit,
+                        description = if (date != null) "오늘 날짜로 새 메모 또는 체크리스트" else "새 메모 또는 체크리스트",
                     )
                     DropdownMenu(expanded = choosing, onDismissRequest = { choosing = false }) {
                         DropdownMenuItem(text = { Text("메모") }, leadingIcon = { Icon(Icons.Outlined.Edit, null) },
@@ -473,7 +478,7 @@ private fun SelectionBar(
                                     .clip(CircleShape)
                                     .background(memoBackground(i))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                    .clickable {
+                                    .clickable(role = Role.Button) {
                                         palette = false
                                         onColor(i)
                                     },

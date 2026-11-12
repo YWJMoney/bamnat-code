@@ -37,7 +37,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -63,6 +62,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -395,17 +395,20 @@ fun RatesScreen(vm: RatesViewModel, onBack: () -> Unit) {
     var notice by remember { mutableStateOf<String?>(null) }
     val rules = rememberPlazaRules()
     val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(title = { Text("임금표") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = {
+            com.bamnat.app.ui.components.AddFab("시세 알려 주기", onClick = {
                 // [SRV-04] Paused by the developer: said here, not after the form is filled.
                 if (c.flags.paused(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)) {
                     notice = com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
                 } else rules.ensure { adding = true }
-            }, text = { Text("시세 알려 주기") }, icon = { Icon(Icons.Filled.Add, null) })
+            }, open = fab.open)
         },
     ) { padding ->
         Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {

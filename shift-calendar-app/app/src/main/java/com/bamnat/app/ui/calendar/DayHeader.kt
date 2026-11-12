@@ -349,7 +349,8 @@ private fun DayFacts(day: ResolvedDay, today: LocalDate, snapshot: ScheduleSnaps
             Text(
                 "이 날 합계 ${HoursFormat.korean(day.totalMinutes)}",
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                color = cal.holidayWork,
+                // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A plain sum is not a caution: the page's own ink, orange only for 주의.
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
         val tokens = dayTokens(day, snapshot, vm, settings, memoToken)

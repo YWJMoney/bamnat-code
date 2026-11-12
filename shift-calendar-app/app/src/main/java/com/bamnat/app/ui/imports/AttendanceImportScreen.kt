@@ -73,6 +73,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [DAYW-06] 근태 엑셀·CSV 가져오기: a file exported from the company's 근태 system (.xlsx or .csv) is read on the
@@ -302,7 +303,7 @@ private fun CompareCard(vm: AttendanceImportViewModel, days: List<AttendanceRow>
 
 @Composable
 private fun MapRow(label: String, value: String, onClick: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(96.dp))
         Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1,
             overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
@@ -333,7 +334,7 @@ private fun <T> PickDialog(title: String, options: List<T>, label: (T) -> String
         text = {
             LazyColumn(Modifier.heightIn(max = 420.dp)) {
                 items(options) { o ->
-                    Column(Modifier.fillMaxWidth().clickable { onPick(o) }.padding(vertical = 10.dp)) {
+                    Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(o) }.padding(vertical = 10.dp)) {
                         Text(label(o), style = MaterialTheme.typography.bodyLarge)
                         sample(o)?.takeIf { it.isNotBlank() }?.let {
                             Text("예) $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,

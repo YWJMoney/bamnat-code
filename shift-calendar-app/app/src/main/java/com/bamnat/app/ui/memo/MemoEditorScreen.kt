@@ -111,6 +111,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -378,12 +379,9 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     // This year's date without the year ("11월 7일 (토)"), so the chips after it stay in sight.
                     label = { Text(if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)) },
                     leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
-                    trailingIcon = if (date != null) {
-                        { Icon(Icons.Filled.Close, "날짜 떼기", Modifier.size(18.dp).clickable { vm.setDate(null) }) }
-                    } else {
-                        null
-                    },
                 )
+                // 2.0.0 [RVP-10] (검토 UIX-10·U13-20) 날짜 떼기 is pressed as 48dp beside the chip, not 18dp inside it.
+                if (date != null) com.bamnat.app.ui.components.ChipClear("날짜 떼기", onClick = { vm.setDate(null) })
                 // [NOTE-05] A memo can come back every week, month or year, [EASE-22] or every 야간; [EASE-23] one with no date
                 // gets the day to start from, and says so. Right after the date, before the shift label (1.38 PC 확인 9b028f4c:
                 // after the label it sat past the screen's edge and took a swipe to find).
@@ -640,7 +638,7 @@ private fun ColorRow(selected: Int, onSelect: (Int) -> Unit) {
                         color = if (i == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                         shape = CircleShape,
                     )
-                    .clickable { onSelect(i) },
+                    .clickable(role = Role.Button) { onSelect(i) },
                 contentAlignment = Alignment.Center,
             ) {
                 if (i == selected) Icon(Icons.Filled.Check, "선택됨", Modifier.size(18.dp))

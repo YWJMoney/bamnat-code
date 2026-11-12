@@ -136,7 +136,11 @@ internal fun SwitchRow(
                     if (pro) com.bamnat.app.ui.components.ProBadge(Modifier.padding(start = 6.dp), locked = proLocked)
                 }
                 subtitle?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVP-08] (검토 U13-10 '스위치마다 2~4줄 설명') A long line is said in full the first time, then as its
+                    // first sentence with ⓘ for the rest.
+                    if (com.bamnat.app.ui.components.firstSentence(it) == it.trim()) {
+                        Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else com.bamnat.app.ui.components.Explain("switch:$title", it, iconOnly = false)
                 }
             }
             Spacer(Modifier.width(12.dp))

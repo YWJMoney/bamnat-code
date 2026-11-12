@@ -77,6 +77,22 @@ class ContrastTest {
 
     @Test fun darkThemeTextIsReadable() = assertEquals(emptyList<String>(), check("dark", DarkColors, DarkCalendarColors))
 
+    /** 2.0.0 [RVP-14] (검토 UIX-05·UIX-24) 밤 색 too, with the calendar colours [com.bamnat.app.ui.theme.NightSurface] hands down. */
+    @Test fun nightColoursAreReadable() =
+        assertEquals(emptyList<String>(), check("night", com.bamnat.app.ui.theme.NightPalette.scheme, DarkCalendarColors))
+
+    /** [RVP-14] No role of 밤 색 is left to Material's own lavender or pink. */
+    @Test fun nightLeavesNoDefaultRole() {
+        val night = com.bamnat.app.ui.theme.NightPalette.scheme
+        val plain = androidx.compose.material3.darkColorScheme()
+        val roles = listOf<(ColorScheme) -> Color>(
+            { it.secondaryContainer }, { it.onSecondaryContainer }, { it.tertiary }, { it.onTertiary }, { it.tertiaryContainer },
+            { it.onTertiaryContainer }, { it.error }, { it.onError }, { it.errorContainer }, { it.onErrorContainer },
+            { it.surfaceContainerLowest }, { it.inverseSurface }, { it.inverseOnSurface }, { it.inversePrimary }, { it.surfaceBright },
+        )
+        assertEquals(emptyList<Int>(), roles.indices.filter { roles[it](night) == roles[it](plain) })
+    }
+
     /**
      * [A11Y-03] Letters on a shift's or an extra kind's colour, wherever they are drawn: the app's badges, the
      * widgets, the shared month image and the watch all pick the ink the same way. #E5484D is the closest, 4.47:1.

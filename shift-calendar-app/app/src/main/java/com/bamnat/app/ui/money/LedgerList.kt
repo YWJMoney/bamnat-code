@@ -355,7 +355,7 @@ private fun SearchRow(view: LedgerView, onView: (LedgerView) -> Unit, onFilter: 
                     Icon(Icons.Filled.Close, "찾는 말 지우기")
                 }
             },
-            shape = RoundedCornerShape(28.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             modifier = Modifier.weight(1f).semantics { contentDescription = "가게, 메모, #태그, 금액으로 기록 찾기" },
         )

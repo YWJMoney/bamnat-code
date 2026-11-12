@@ -71,6 +71,7 @@ import com.bamnat.core.recipe.LookParts
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
 
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
 @Composable
@@ -179,7 +180,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                         androidx.compose.ui.semantics.CustomAccessibilityAction("선을 오른쪽으로") { onSplit((latest + 0.1f).coerceIn(0.05f, 0.95f)); true },
                     )
                 }, contentAlignment = Alignment.Center) {
-                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
+                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small))
             }
         }
     }
@@ -409,7 +410,7 @@ fun TryOnScreen(
                         parts.groupBy { it.tab }.forEach { (t, list) ->
                             val ids = list.map { it.id }.toSet()
                             val all = picked.containsAll(ids)
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(all, { on -> picked = if (on) picked + ids else picked - ids })
                                 Text(LookParts.tabLabel(t) + " 전체", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

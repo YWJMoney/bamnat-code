@@ -53,6 +53,7 @@ import com.bamnat.core.team.TeamCheck
 import com.bamnat.core.tier.WorkPlanKind
 import com.bamnat.core.time.Today
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.38 관리 화면 (사용자 2026-11-05 "리더·사장님에게 보여지는 페이지는 일반 사용자 페이지와 달라야 해"): one place apart from the
@@ -115,7 +116,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                     else "지금 챙길 일이 없어요.")
                 todos.forEach { t ->
                     val color = if (t.urgent) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
-                    Row(Modifier.fillMaxWidth().clickable {
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) {
                         if (t.where == ManageDesk.Where.TEAM) teamOpen = t.id else ledgerOpen = true
                     }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text((if (t.urgent) "⚠ " else "· ") + t.text, style = MaterialTheme.typography.bodyMedium, color = color, modifier = Modifier.weight(1f))
@@ -259,7 +260,7 @@ fun rememberManageOn(): Boolean {
 @Composable
 fun ManageSample(layout: String, onTap: () -> Unit) {
     val parts = remember(layout) { com.bamnat.core.layout.PageLayout.decode(layout).arrange(ManagePart.editable) { it.id } }
-    Column(Modifier.fillMaxWidth().clickable(onClick = onTap).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onTap).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("팀·가게 관리", style = MaterialTheme.typography.titleMedium)
         SectionCard(title = "할 일 2") {
             Text("⚠ 7병동 12월 근무표 짜기 · 빈칸 40", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

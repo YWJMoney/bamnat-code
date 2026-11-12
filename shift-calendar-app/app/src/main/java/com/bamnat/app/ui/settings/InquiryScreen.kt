@@ -61,7 +61,7 @@ import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -448,7 +448,7 @@ internal fun standing(list: List<Inquiry>, unread: (Inquiry) -> Boolean): String
 
 @Composable
 private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
-    SoftCard(Modifier.clickable(onClick = onClick), highlighted = unread) {
+    SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick), highlighted = unread) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(i.kind.label + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
@@ -991,7 +991,7 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {},
  */
 @Composable
 private fun FixedAsk(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {}, onAnswer: (Boolean) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (i.fixed) {
                 1 -> Text("해결됐다고 알려 주셨어요. 고마워요", style = MaterialTheme.typography.bodyMedium)
@@ -1095,7 +1095,7 @@ private fun PublicBoard(vm: InquiryViewModel, onNew: () -> Unit, onOpen: (Public
 
 @Composable
 private fun PublicCard(i: PublicInquiry, onClick: () -> Unit) {
-    SoftCard(Modifier.clickable(onClick = onClick)) {
+    SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${i.kind.label} · ${i.topicName}" + if (i.mine) " · 내 문의" else "", style = MaterialTheme.typography.bodySmall,
@@ -1244,7 +1244,7 @@ private fun KnownIssues(vm: InquiryViewModel) {
     if (known.isEmpty()) return
     var open by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("지금 알려진 문제", style = MaterialTheme.typography.titleSmall)
             Text("같은 일을 겪으면 ‘나도 겪어요’만 눌러 주세요. 고친 업데이트가 나오면 내 문의로 알려 드려요.",

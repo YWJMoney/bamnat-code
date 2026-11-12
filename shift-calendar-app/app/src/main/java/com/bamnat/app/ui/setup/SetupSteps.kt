@@ -74,6 +74,7 @@ import com.bamnat.core.setup.SetupDraft
 import com.bamnat.core.setup.SetupSource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 // ---- 1. how the user works ----
 
@@ -168,7 +169,7 @@ internal fun styleTitle(d: SetupDraft): String =
 @Composable
 private fun FileCard(title: String, text: String, onClick: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Filled.FileOpen, null, tint = MaterialTheme.colorScheme.primary)

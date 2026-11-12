@@ -42,6 +42,7 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.JobReminders
 import java.time.LocalDate
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 /** Most a single line may hold: 100억원, far above any household amount, and safe from overflow. */
 // 1.36 실사용 S16 (받을 금액에 900억도 들어가요): up to 99억 원 a line.
@@ -277,7 +278,7 @@ private fun TimeChip(label: String, time: LocalTime?, modifier: Modifier, onClic
     Column(
         modifier
             .background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -287,7 +288,7 @@ private fun TimeChip(label: String, time: LocalTime?, modifier: Modifier, onClic
 
 @Composable
 private fun SwitchRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Switch(checked = checked, onCheckedChange = onChange)
     }

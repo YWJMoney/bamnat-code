@@ -351,8 +351,8 @@ internal fun CalendarLegendSheet(
                 }
             }
             LegendRow("고른 날", "테두리와 옅은 색") {
-                Box(Modifier.size(width = 30.dp, height = 24.dp).clip(RoundedCornerShape(6.dp)).background(scheme.primary.copy(alpha = 0.08f))
-                    .border(2.dp, scheme.primary, RoundedCornerShape(6.dp)))
+                Box(Modifier.size(width = 30.dp, height = 24.dp).clip(MaterialTheme.shapes.extraSmall).background(scheme.primary.copy(alpha = 0.08f))
+                    .border(2.dp, scheme.primary, MaterialTheme.shapes.extraSmall))
             }
             LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름 · 쉬는 날이에요") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
             // [EASE-04] 1.38 (통합 7차): 업종 기념일 next to 공휴일, so the two are told apart; where to turn it on when off.

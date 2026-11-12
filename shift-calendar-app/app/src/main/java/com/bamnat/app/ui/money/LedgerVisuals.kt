@@ -100,6 +100,7 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Reports
 import kotlin.math.abs
+import androidx.compose.ui.semantics.Role
 
 /** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
 fun categoryIcon(name: String): ImageVector = when (name) {
@@ -412,9 +413,9 @@ fun PairBars(
         labels.forEachIndexed { i, label ->
             val on = i == selected
             Column(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(MaterialTheme.shapes.extraSmall)
                     .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .clickable(role = Role.Button) { onSelect(i) }
                     .semantics(mergeDescendants = true) { contentDescription = descriptions.getOrElse(i) { label } },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -476,8 +477,8 @@ fun ShareRow(
     onClick: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(MaterialTheme.shapes.small)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {

@@ -64,7 +64,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
@@ -97,6 +96,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -148,7 +148,10 @@ fun ShiftTypesScreen(
         }
     }
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
@@ -158,7 +161,8 @@ fun ShiftTypesScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            com.bamnat.app.ui.components.AddFab(
+                "${dayKindNoun(vm.workStyle)} 추가",
                 onClick = {
                     editing = ShiftType(
                         id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
@@ -166,8 +170,7 @@ fun ShiftTypesScreen(
                         alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
                     )
                 },
-                icon = { Icon(Icons.Filled.Add, "${dayKindNoun(vm.workStyle)} 추가") },
-                text = { Text("${dayKindNoun(vm.workStyle)} 추가") },
+                open = fab.open,
             )
         },
     ) { padding ->
@@ -991,7 +994,7 @@ private fun TimeButton(label: String, time: LocalTime, modifier: Modifier = Modi
         modifier
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)

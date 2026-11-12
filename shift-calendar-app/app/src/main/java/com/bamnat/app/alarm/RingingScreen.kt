@@ -263,7 +263,7 @@ private fun ShiftBlock(shift: RingShift) {
     Surface(
         color = shift.color,
         contentColor = ink,
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier.widthIn(min = 200.dp, max = 420.dp).fillMaxWidth()
             .semantics(mergeDescendants = true) {},
     ) {

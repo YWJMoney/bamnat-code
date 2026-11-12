@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.Role
 
 /**
  * [PAYIN-01] 1.37 B1 (사용자 2026-11-04 "넣은 사진을 보면서 쉽게 입력… 지금은 클릭하고 닫고 입력하는 불편함"): the payslip photo stays
@@ -110,7 +111,7 @@ internal fun PinnedPhotos(photos: List<Bitmap>, labels: List<String> = listOf("�
             } else Text("단추 보기", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.inverseOnSurface,
                 modifier = Modifier.align(Alignment.BottomEnd).padding(2.dp)
-                    .clickable { controls = 1 }
+                    .clickable(role = Role.Button) { controls = 1 }
                     .background(MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.5f), MaterialTheme.shapes.small).padding(horizontal = 6.dp, vertical = 2.dp))
         }
     }

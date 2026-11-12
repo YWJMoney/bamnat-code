@@ -78,6 +78,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -730,7 +731,7 @@ private fun StepCell(index: Int, type: ShiftType?, selected: Boolean, onClick: (
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clip(MaterialTheme.shapes.small)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -745,7 +746,7 @@ private fun DateRow(label: String, date: LocalDate, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

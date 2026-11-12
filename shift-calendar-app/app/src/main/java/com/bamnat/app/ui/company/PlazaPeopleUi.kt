@@ -43,6 +43,7 @@ import com.bamnat.core.plaza.IndustryGroups
 import com.bamnat.core.plaza.PlazaTag
 import com.bamnat.core.plaza.PlazaTags
 import com.bamnat.core.plaza.StylePlaza
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.39 [PLZC] 광장을 사람 먼저로 (사용자 2026-11-07 "광장은 급여를 나누는 것 말고는 하는 것이 전혀 없어", 설계 `계획/1.39-광장-커뮤니티-설계.md`):
@@ -398,7 +399,7 @@ private fun FeedCard(p: TalkPost, answers: List<TalkPost>, inSheet: Boolean, onO
                     helped -> "답 ${answers.size} · 도움 된 답 있음"
                     else -> "답 ${answers.size}"
                 }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clickable { if (answers.isEmpty()) onReply() else onOpen() }.padding(vertical = 12.dp, horizontal = 4.dp))
+                    modifier = Modifier.clickable(role = Role.Button) { if (answers.isEmpty()) onReply() else onOpen() }.padding(vertical = 12.dp, horizontal = 4.dp))
             }
             if (open && !inSheet) answers.forEach { r ->
                 Column(Modifier.padding(start = 16.dp, top = 4.dp)) {
@@ -506,7 +507,7 @@ internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) 
                     maxLines = 1, overflow = TextOverflow.Ellipsis) }
             }
             Spacer(Modifier.width(8.dp))
-            androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp)) {
+            androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.large) {
                 Text("글 쓰기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }

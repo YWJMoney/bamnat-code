@@ -64,7 +64,7 @@ internal fun SharedLookCards(schedule: com.bamnat.app.share.SharedSchedule, link
     // PC 3차: 되돌리기 put the days back but left 일하는 방식 on the sender's; the line then offers the old one back too.
     var switchedFrom by remember(linkId) { mutableStateOf<com.bamnat.core.work.WorkStyle?>(null) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 when {
