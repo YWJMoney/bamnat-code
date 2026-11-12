@@ -763,6 +763,14 @@ export const RETENTION = [
     prune: { where: "(at < ? AND device NOT IN (SELECT device FROM push_phones)) OR at < ?", days: [30, 180] },
   },
   {
+    table: "push_fails",
+    what: "**2.0.0** [RVQ-51] 문의 답 알림이 못 간 문의: 문의 번호·까닭(바쁨·없는 토큰·그 밖)·다시 보낸 수·다음에 볼 때",
+    why: "알림이 못 간 답을 다시 보내고 관리자에게 '알림이 못 갔어요'를 보여 줌",
+    keep: "보내지면 바로, 30일, 문의가 지워질 때 함께",
+    link: "문의 번호로(설치 ID·토큰 없음)",
+    prune: { where: "at < ?", days: 30 },
+  },
+  {
     table: "push_phones",
     what: "**1.36** [PUSH-01] 휴대폰 알림 토큰(FCM)·설치 해시·받은 때(**2.0.0** 앱이 소식·문의 답을 물으면 30일에 한 번 새로 적음, 백업에는 잠가서)",
     why: "문의 답·광장 답 바로 알림",

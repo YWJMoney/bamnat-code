@@ -481,11 +481,28 @@ async function lineLog(env, key) {
   return { key, items: out.slice(0, 80), undo: undo ? { log: undo.id, to: undo.action === "undo" ? null : undo.before, what: WORK_STATE_NAMES[undo.action] ?? undo.action } : null };
 }
 
-/** 이 관리자(또는 열쇠)가 볼 수 있는 줄인지. */
+/**
+ * 이 관리자(또는 열쇠)가 볼 수 있는 줄인지. 2.0.0 [RVQ-52] 검토 SVC-22: 줄 기록·상태·되돌리기·요약을 부를 때마다 장부 전체(문의 수백 줄과 정리함
+ * 판단)를 다시 만들던 것을, 그 줄 번호로 필요한 줄만 봐요. 문의·개발사항은 장부와 같은 조건(권한·스튜디오 요구 아님·닫힌 지 오래되지 않음)을
+ * 그 id로만 묻고, 그 밖의 할 일(신고·작품 등)은 할 일함 목록만 읽어요.
+ */
 async function visible(env, actor, now, keys) {
-  const { rows } = await ledgerList(env, actor, now, { days: LEDGER.maxDays });
-  const mine = new Set(rows.map((r) => r.key));
-  return keys.filter((k) => mine.has(k));
+  const since = now - LEDGER.maxDays * DAY;
+  const ok = new Set();
+  const ids = (type) => keys.filter((k) => k.startsWith(`${type}:`)).map((k) => k.slice(type.length + 1));
+  const marks = (list) => list.map(() => "?").join(",");
+  const inq = can(actor, "inquiries") ? ids("inquiry").slice(0, 90) : [];
+  if (inq.length) {
+    for (const r of await all(env, `SELECT id FROM inquiries WHERE id IN (${marks(inq)}) AND kind != 'studio' AND (status != 'closed' OR updated_at > ?)`, ...inq, since)) ok.add(`inquiry:${r.id}`);
+  }
+  const dev = can(actor, "inquiries") || can(actor, "dev") ? ids("dev").filter((x) => /^\d{1,12}$/.test(x)).map(Number).slice(0, 90) : [];
+  if (dev.length) {
+    for (const r of await all(env, `SELECT id FROM dev_items WHERE id IN (${marks(dev)}) AND deleted_at IS NULL AND (status IN ('todo', 'doing', 'done') OR updated_at > ?)`, ...dev, since)) ok.add(`dev:${r.id}`);
+  }
+  if (keys.some((k) => !k.startsWith("inquiry:") && !k.startsWith("dev:"))) {
+    for (const x of await workList(env, actor, now)) if (x.type !== "inquiry" && x.type !== "dev") ok.add(x.key);
+  }
+  return keys.filter((k) => ok.has(k));
 }
 
 const KEY_RE = /^[a-z_]{2,20}:[A-Za-z0-9._-]{1,60}$/;

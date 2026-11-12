@@ -3186,3 +3186,70 @@ test("[RVQ-47] 검토 HQ-88 큰 글자: 머리의 제목은 16rem을 지키고 �
   assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
   assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
 });
+
+// 2.0.0 [RVQ-50][RVQ-51][RVQ-52] 검토 U22b-01·U22b-04·I22bb-04·SVC-67: 문의 상세의 '다시 열림'·이어 쓴 사진·'알림 못 감',
+// 두 관리자가 같은 문의에 답할 때 한 번 묻기, 자주 쓰는 답을 밤낮 Q&A에 올리기 전 공개 글 미리 보기.
+function tinyJpeg() {
+  const seg = (marker, body) => [0xff, marker, ((body.length + 2) >> 8) & 0xff, (body.length + 2) & 0xff, ...body];
+  const text = (s) => [...new TextEncoder().encode(s)];
+  return Buffer.from(Uint8Array.from([0xff, 0xd8, ...seg(0xe0, text("JFIF\0\x01\x01\0\0\x01\0\x01\0\0")), ...seg(0xdb, Array(65).fill(1)),
+    ...seg(0xc0, [8, 0, 1, 0, 1, 1, 1, 0x11, 0]), ...seg(0xda, [1, 1, 0, 0, 0x3f, 0]), 0x12, 0x34, 0x56, 0xff, 0xd9])).toString("base64");
+}
+
+test("[RVQ-50][RVQ-51] 문의 상세: 다시 열린 문의는 '다시 열림', 이어 쓴 사진, 못 간 알림 한 줄, 그사이 다른 답이 가면 한 번 묻기", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  const owner = await signIn(call);
+  const mine = { ...from(31), "x-device": device(31) };
+  const q = (await call("POST", "/api/inquiries", { v: 1, device: device(31), kind: "bug", text: "알람이 안 울려요 다시 놓아도 그래요", info: { app: "1.39.0 (53)" } }, from(31))).data;
+  await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "알람을 한 번 껐다 켜 주세요. 밤낮 운영팀" }, owner);
+  await call("POST", `/api/inquiries/${q.id}/messages`, { text: "껐다 켜도 그대로예요", photos: [tinyJpeg(), tinyJpeg()] }, mine);
+  env.DB.db.prepare("INSERT INTO push_fails (inquiry_id, why, tries, next_at, at) VALUES (?, 'busy', 1, ?, ?)").run(q.id, Date.now() + 30 * 60e3, Date.now());
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${q.id}`);
+  await u.idle();
+  assert.match(u.text("#main .card-head"), /다시 열림/);
+  assert.match(u.text("#main"), /알림 못 감 구글이 바빠 답 알림이 아직 못 갔어요\. .+에 다시 보내요\. 보낸 분이 앱을 열면 답은 보여요\./);
+  assert.equal(u.$$("#main .photos img").length, 2);
+  assert.match(u.$("#main .photos img").getAttribute("alt"), /이어 쓴 글과 함께/);
+  assert.match(u.text("#main"), /이어 쓴 글과 함께 온 사진도 있어요/);
+  // 이 화면을 연 뒤 다른 관리자가 먼저 답했어요.
+  await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인했어요. 고쳐서 알려 드릴게요. 밤낮 운영팀" }, owner);
+  const count = () => env.DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ?").get(q.id).n;
+  const before = count();
+  u.$("#reply").value = "다시 설치해 주세요. 밤낮 운영팀";
+  u.$('form[data-form="reply"]').requestSubmit();
+  await u.settle(40);
+  assert.ok(u.$('dialog[open] form[data-form="confirm"]'), "보내지 않고 한 번 물어요");
+  assert.match(u.text("dialog[open]"), /방금 다른 답이 갔어요/);
+  assert.equal(count(), before, "아직 안 갔어요");
+  assert.match(u.text("#main .thread"), /고쳐서 알려 드릴게요/, "새 답이 보이게 다시 그렸어요");
+  assert.equal(u.$("#reply").value, "다시 설치해 주세요. 밤낮 운영팀", "적던 답은 그대로");
+  u.$('dialog[open] form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(count(), before + 1, "그래도 보내기면 가요");
+  assert.deepEqual([...u.errors, ...u.broken], []);
+});
+
+test("[RVQ-52] 자주 쓰는 답을 밤낮 Q&A에 올릴 때: 같은 창 안에 서버가 검사한 공개 글을 먼저 보여 주고 '올리기'로 저장", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  await call("POST", "/api/inquiries", { v: 1, device: device(32), kind: "question", text: "위젯 날짜가 안 바뀌어요 왜 그래요", info: { app: "1.39.0 (53)" } }, from(32));
+  const u = await signedIn(env);
+  await u.go("#/templates");
+  await u.idle();
+  await u.click('#main [data-act="templates"]');
+  await u.idle();
+  u.$("#tpl-label").value = "위젯";
+  u.$("#tpl-text").value = "{앱버전}에서 고쳤어요. 위젯을 다시 놓아 주세요";
+  u.$("#tpl-q").value = "위젯 날짜가 안 바뀌어요";
+  u.$('dialog form[data-form="template-add"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("dialog .public-preview"), /밤낮 Q&A에 이렇게 보여요.+묻는 말 ?위젯 날짜가 안 바뀌어요 ?답 ?최신 버전에서 고쳤어요/);
+  assert.equal(u.text('dialog form[data-form="template-add"] button[type="submit"]'), "올리기");
+  assert.equal(env.DB.db.prepare("SELECT COUNT(*) AS n FROM reply_templates WHERE label = '위젯'").get().n, 0, "미리 보기만으론 저장 안 해요");
+  u.$('dialog form[data-form="template-add"]').requestSubmit();
+  await u.settle(30);
+  assert.equal(env.DB.db.prepare("SELECT public_a FROM reply_templates WHERE label = '위젯'").get().public_a, "최신 버전에서 고쳤어요. 위젯을 다시 놓아 주세요");
+  assert.deepEqual([...u.errors, ...u.broken], []);
+});
