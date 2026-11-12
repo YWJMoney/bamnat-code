@@ -457,7 +457,7 @@ fun ExtraKindsScreen(
     val edit by vm.editing.collectAsStateWithLifecycle(context = Dispatchers.Main.immediate)
     val kinds = settings.extraKinds
     var adding by rememberSaveable { mutableStateOf(false) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var started by rememberSaveable { mutableStateOf(start == null) }
     var focusPay by remember { mutableStateOf(false) }
     val startSnap = snapshot
@@ -488,7 +488,7 @@ fun ExtraKindsScreen(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] One rule for floating buttons; the words stay with TalkBack even when it is the icon alone.
             com.bamnat.app.ui.components.AddFab("종류 추가", onClick = { adding = true }, open = fab.open)

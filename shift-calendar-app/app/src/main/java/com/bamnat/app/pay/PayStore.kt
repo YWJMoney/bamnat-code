@@ -65,6 +65,31 @@ class PayStore(
     dir: File = File(context.filesDir, "pay"),
 ) {
     private val file = File(dir, "profile.json")
+    /** 2.0.0 [RVJ-25] The setup as it was before the last save, and a file that could not be read, kept aside (검토 PAYU-11·PAYC-21). */
+    private val bak = File(dir, "profile.json.bak")
+    private val bad = File(dir, "profile.json.bad")
+    /** Which of [Trouble.RESTORED]·[Trouble.LOST] has not been read yet: the line waits for the pay screen across a restart. */
+    private val mark = File(dir, "profile.trouble")
+    private val historyFile = File(dir, "history.json")
+
+    /**
+     * 2.0.0 [RVJ-25] 검토 PAYU-11·PAYC-21 (급여 설정 파일이 깨지면 '설정 없음'으로 보이고 다음 저장이 덮어씀, 저장 실패도 말이 없음): what
+     * went wrong with the file, for one line on the pay screen. [RESTORED]: the file could not be read and the setup came back from
+     * the copy before the last save (or the newest of the 7 days of changes), so the last change may be missing. [LOST]: nothing
+     * to bring it back from; the broken file is kept aside (`.bad`) so a new setup does not write over it. [NOT_SAVED]: the last
+     * change is on the screen but did not reach the phone's storage. The first two wait until they are read ([troubleSeen]) or,
+     * for [LOST], until a setup is saved; the third until a save goes through.
+     */
+    enum class Trouble { NONE, RESTORED, LOST, NOT_SAVED }
+
+    private val _trouble = MutableStateFlow(Trouble.NONE)
+    val trouble: StateFlow<Trouble> = _trouble.asStateFlow()
+
+    /** The line was read and closed (a failed save's line stays until a save goes through). */
+    fun troubleSeen() { if (_trouble.value != Trouble.NOT_SAVED) { _trouble.value = Trouble.NONE; mark.delete() } }
+
+    private fun marked(): Trouble = runCatching { if (mark.exists()) Trouble.valueOf(mark.readText().trim()) else Trouble.NONE }.getOrDefault(Trouble.NONE)
+
     private val _profile = MutableStateFlow(read())
     val profile: StateFlow<PayProfile?> = _profile.asStateFlow()
 
@@ -96,13 +121,33 @@ class PayStore(
         if (keepUndo) _undo.value = _profile.value
         // [PAYIN-06] 1.37 B6·B7: every change kept with what it was before, for 7 days ('고친 기록 · 되돌리기').
         if (keepUndo && was != profile) remember(was, why)
-        if (profile == null) file.delete() else {
-            file.parentFile?.mkdirs()
-            val tmp = File(file.parentFile, "profile.json.tmp")
-            tmp.writeText(PayCodec.encode(profile).toString())
-            tmp.renameTo(file)
-        }
+        // [RVJ-25] A save that does not reach the storage (full, or the rename refused) is said on the pay screen instead of
+        // thrown at whoever pressed 저장; the change stays on the screen and [retrySave] writes it again.
+        val saved = runCatching { store(profile, keepCopy = was != null) }.isSuccess
         _profile.value = profile
+        when {
+            !saved -> _trouble.value = Trouble.NOT_SAVED
+            // Saved: the failed save is over, and with a setup again '읽지 못했어요' has nothing left to say.
+            _trouble.value == Trouble.NOT_SAVED -> _trouble.value = marked()
+            _trouble.value == Trouble.LOST && profile != null -> { _trouble.value = Trouble.NONE; mark.delete() }
+        }
+    }
+
+    /** The file itself: a temp file renamed over it, the file as it was kept as `.bak` first ([keepCopy]: only one that was read). */
+    private fun store(profile: PayProfile?, keepCopy: Boolean) {
+        if (profile == null) { file.delete(); bak.delete(); return }
+        file.parentFile?.mkdirs()
+        val tmp = File(file.parentFile, "profile.json.tmp")
+        tmp.writeText(PayCodec.encode(profile).toString())
+        if (keepCopy && file.exists()) runCatching { file.copyTo(bak, overwrite = true) }
+        if (!tmp.renameTo(file)) { tmp.copyTo(file, overwrite = true); tmp.delete() }
+    }
+
+    /** [RVJ-25] '다시 저장': the setup on the screen written once more after a save that failed. */
+    suspend fun retrySave() = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            if (_trouble.value == Trouble.NOT_SAVED && runCatching { store(_profile.value, keepCopy = false) }.isSuccess) _trouble.value = marked()
+        }
     }
 
     suspend fun undo() {
@@ -111,8 +156,26 @@ class PayStore(
         _undo.value = null
     }
 
-    private fun read(): PayProfile? =
-        runCatching { if (file.exists()) PayCodec.decode(JSONObject(file.readText())) else null }.getOrNull()
+    /**
+     * [RVJ-25] A file that is there and cannot be read is not '설정 없음': it is kept aside as `.bad` (the next save would have
+     * written over it), and the setup comes back from the copy before the last save, then from the newest of the 7 days of
+     * changes. [trouble] says which, or that nothing could bring it back.
+     */
+    private fun read(): PayProfile? {
+        val good = if (file.exists()) decode(file) else null
+        if (good != null || !file.exists()) { _trouble.value = marked(); return good }
+        val aside = runCatching { file.copyTo(bad, overwrite = true) }.isSuccess
+        val back = decode(bak) ?: readHistory().firstOrNull()?.before
+        // Back in the file, so the next start reads it; with nothing to bring back the broken file leaves its place only once
+        // its copy is safe aside (the next start is then plainly '설정 없음', and the line still waits to be read).
+        if (back != null) runCatching { store(back, keepCopy = false) } else if (aside) file.delete()
+        val what = if (back != null) Trouble.RESTORED else Trouble.LOST
+        runCatching { mark.parentFile?.mkdirs(); mark.writeText(what.name) }
+        _trouble.value = what
+        return back
+    }
+
+    private fun decode(f: File): PayProfile? = runCatching { if (f.exists()) PayCodec.decode(JSONObject(f.readText())) else null }.getOrNull()
 
     // ---- [PAYIN-06] 1.37 B6·B7: the last 7 days of changes ----
 
@@ -122,7 +185,6 @@ class PayStore(
      */
     data class Change(val at: Long, val why: String, val before: PayProfile?)
 
-    private val historyFile = File(dir, "history.json")
     private val _history = MutableStateFlow(readHistory())
     /** Newest first. */
     val history: StateFlow<List<Change>> = _history.asStateFlow()
@@ -775,7 +837,8 @@ object PayCodec {
         } ?: JSONObject.NULL)
 
     private fun timeline(o: JSONObject): ValueTimeline = ValueTimeline(
-        entries = o.optJSONArray("entries").objects().map { DatedValue(LocalDate.parse(it.getString("from")), it.getLong("value")) },
+        // [RVJ-25] 검토 PAYC-21: one entry with a date that does not read is left out, not the whole setup with it.
+        entries = o.optJSONArray("entries").objects().mapNotNull { runCatching { DatedValue(LocalDate.parse(it.getString("from")), it.getLong("value")) }.getOrNull() },
         raise = o.optJSONObject("raise")?.let { r ->
             RaiseRule(
                 month = r.getInt("month"),

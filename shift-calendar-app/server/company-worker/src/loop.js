@@ -1100,6 +1100,20 @@ export async function loopState(env, now) {
     all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []),
     scoreCard(env), autonomy(env), rewardRules(env),
   ]);
+  // 2.0.0 [RVA-05] 검토 ADM-06: 인앱 업데이트 기준 칸 옆에 '지금 나간 번호'와 최근 7일 폰이 어느 번호에 있는지. 판 번호는 옛 표 + 문의가 실어 온
+  // '1.39.0 (53)' + Play 트랙에서 읽은 번호로 알아요(원격 파일 화면과 같은 방법). 모르는 판은 code null.
+  const [apps, learned] = await Promise.all([
+    all(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day >= ? GROUP BY app", kstDay(now - 7 * DAY)).catch(() => []),
+    all(env, "SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries WHERE json_valid(info) AND created_at > ? LIMIT 200", now - 90 * DAY).catch(() => []),
+  ]);
+  const codes = { ...APP_CODES };
+  for (const { app } of learned) {
+    const m = /^(\d{1,2}\.\d{1,3}\.\d{1,3}) \((\d{1,6})\)$/.exec(app ?? "");
+    if (m) codes[m[1]] = Number(m[2]);
+  }
+  const liveCode = Math.min(...(track.doneCodes ?? []).map(Number).filter((c) => Number.isInteger(c) && c > 0 && c < 100_000));
+  const liveName = track.done ?? shipped?.v ?? null;
+  if (liveName && Number.isFinite(liveCode)) codes[liveName] = liveCode;
   return {
     now: iso(now), switches: sw, train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
     shipped, ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
@@ -1107,6 +1121,7 @@ export async function loopState(env, now) {
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
     urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
+    live: { name: liveName, code: liveName ? codes[liveName] ?? null : null, phones: apps.map((a) => ({ app: a.app, code: codes[a.app] ?? null, phones: a.phones })) },
   };
 }
 

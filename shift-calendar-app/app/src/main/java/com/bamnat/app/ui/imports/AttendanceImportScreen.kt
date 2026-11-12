@@ -168,7 +168,7 @@ class AttendanceImportViewModel(private val container: AppContainer, val calenda
 @Composable
 fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
     val ui by vm.ui.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var choosing by remember { mutableStateOf<AttendanceField?>(null) }
     var choosingHeader by remember { mutableStateOf(false) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::open) }
@@ -185,7 +185,7 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = {
             if (ui.rows.isNotEmpty()) Surface(tonalElevation = 3.dp) {
                 val n = ui.todo.size
