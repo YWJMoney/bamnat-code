@@ -423,7 +423,8 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
         var seller by remember { mutableStateOf(false) }
         Box {
             TextButton(onClick = { menu = true }) { Text(PAY_PAPERS) }
-            androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            // The app's menu (AppDialogsTest): keeps the app's text size and is not built while closed.
+            com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 androidx.compose.material3.DropdownMenuItem(text = { Text("이용약관") }, onClick = {
                     menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
                 })

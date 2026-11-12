@@ -61,6 +61,14 @@ class SearchShortcutScreenTest : ScreenshotBase() {
         assertEquals(emptyList<String>(), wrong)
     }
 
+    /** The photo for the pull request: the results scrolled to their end with the keyboard up (the keyboard itself is not drawn here). */
+    @Test fun searchEndWithKeyboardUp() = shoot("9322_search_end_keyboard", PHONE, fresh(WorkStyle.SHIFT) {
+        tab(SETTINGS_TAB, wide = false)
+        typeInto("설정 찾기", "수면 기록")
+        keyboard(KEYBOARD_DP)
+        repeat(8) { scrollUp(350, 0.5f) }
+    })
+
     private fun walk(style: WorkStyle) {
         val wrong = mutableListOf<String>()
         val missed = mutableListOf<String>()
