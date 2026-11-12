@@ -136,7 +136,8 @@ fun HeroCard(m: MonthMoney, status: BudgetStatus, today: LocalDate, onBudget: ()
         // [RECV-04] Work written down but not paid yet stays out of 들어온 돈 and shows here instead.
         if (m.jobOwed > 0) {
             Text("아직 안 받은 일감 ${Fmt.won(m.jobOwed)}은 받을 돈에 있어요. 돈 받음을 켜면 들어온 돈에 더해져요.",
-                style = MaterialTheme.typography.bodySmall, color = cal.warning, modifier = Modifier.padding(top = 8.dp))
+                // 2.0.0 [RVP-13] (조건 6 '빨강은 위험만') An explanation, not a warning: grey like the line above.
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
         HorizontalDivider(Modifier.padding(vertical = 12.dp))
         val total = status.total

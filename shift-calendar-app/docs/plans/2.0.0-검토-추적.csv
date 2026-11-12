@@ -528,7 +528,7 @@ UIX-05,발견,13 공통 UI·디자인·성능·접근성,중간,디자인(색·�
 UIX-08,발견,13 공통 UI·디자인·성능·접근성,중간,데이터 손실,"폰이 어두운 모드로 바뀌는 순간, 열어 둔 입력 시트가 닫히고 적던 내용이 사라질 수 있어요",,"`app/src/main/AndroidManifest.xml:108`(`configChanges`에 `uiMode`·`fontScale` 없음), `ui/money/MoneyScreen.kt:56…",G,RVG-14,코드 고침(확인 전),
 UIX-10,발견,13 공통 UI·디자인·성능·접근성,중간,디자인(접근성),손가락으로 누르기 작은 곳이 있어요(18dp X 2곳 등),,"`ui/memo/MemoEditorScreen.kt:382`(18dp X '날짜 떼기', 역할 없음), `ui/memo/MemoScheduleParts.kt:88`(18dp X '일정 빼기'), …",P,RVP-10,코드 고침(확인 전),
 UIX-13,발견,13 공통 UI·디자인·성능·접근성,중간,문구,같은 것을 여러 이름으로 불러요,,"아래 표의 대표 자리. 아래 메뉴 이름은 `ui/settings/TabOrderRows.kt`와 설정 화면, 사진 `NAV2-n-200.jpg`",P,RVP-16,진행 중,말 표와 기계 바꿈 1차(지우기·고치기·단추·메뉴). 쉬는 날 낱말(T13-08)은 남음
-UIX-15,발견,13 공통 UI·디자인·성능·접근성,중간,디자인,"의미색 규칙(빨강은 위험에만)이 지켜지지 않고, 주황 하나에 뜻이 다섯 개예요",,"`ui/theme/Theme.kt`(`changed` #A14F00, `holidayWork` #A14F00, `payOvertime` #A35200, `tertiary` #A14F00, `cau…",P,RVP-13,코드 고침(확인 전),
+UIX-15,발견,13 공통 UI·디자인·성능·접근성,중간,디자인,"의미색 규칙(빨강은 위험에만)이 지켜지지 않고, 주황 하나에 뜻이 다섯 개예요",,"`ui/theme/Theme.kt`(`changed` #A14F00, `holidayWork` #A14F00, `payOvertime` #A35200, `tertiary` #A14F00, `cau…",P,RVP-13,진행 중,검토가 짚은 곳(날짜 창·급여 대장·팀 표·가계부 설명)은 고침. 앱 전체 빨강 정리는 달력 위 한 줄 PR과 함께
 UIX-16,발견,13 공통 UI·디자인·성능·접근성,중간,디자인,작은 회색 설명 글이 너무 많아 화면이 문서처럼 읽혀요,,"글자 모양 수 bodySmall 1,610 · bodyMedium 906 · titleSmall 486 · labelLarge 377 · labelSmall 319 · bodyLarge 284 ·…",P,RVP-08,코드 고침(확인 전),
 UIX-17,발견,13 공통 UI·디자인·성능·접근성,중간,디자인,마을(광장·장터)은 내용 위에 조작 층이 너무 많아요,,"`ui/hub/HubScreen.kt:158-172`(탭 줄), `ui/company/PlazaScreens.kt`, `ui/recipe/`의 장터 화면; 사진 `7차-장터-윗부분.jpg`, `9…",P,,할 일,
 UIX-22,발견,13 공통 UI·디자인·성능·접근성,중간,디자인,펼친 폴드·태블릿에서 그냥 늘어나는 화면 묶음이 있어요,,"넓은 폭 처리가 없는 폴더 `ui/team/`, `ui/work/`(`ToolScreen`), `ui/leave/`, `ui/shifts/`; 탁상 자세(`LocalTabletop`)는 `ui/s…",P,,할 일,
