@@ -9,6 +9,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.work.words
 import kotlinx.coroutines.flow.first
 import java.time.LocalDate
 import java.time.LocalTime
@@ -34,7 +35,7 @@ object TodayShiftNotice {
             cancel(context)
             return false
         }
-        val (title, text) = lines(snapshot.resolver, today)
+        val (title, text) = lines(snapshot.resolver, today, container.settingsRepository.current.workStyle)
         // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
         val extra = folded(context, today)
         fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
@@ -88,10 +89,11 @@ object TodayShiftNotice {
     fun cancel(context: Context) = NotificationManagerCompat.from(context).cancel(ID)
 
     /** "오늘 주간 07:00~19:00" over "내일 야간 19:00~07:00". */
-    fun lines(resolver: ScheduleResolver, today: LocalDate): Pair<String, String> =
-        "오늘 ${describe(resolver.resolve(today))}" to "내일 ${describe(resolver.resolve(today.plusDays(1)))}"
+    fun lines(resolver: ScheduleResolver, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): Pair<String, String> =
+        "오늘 ${describe(resolver.resolve(today), style)}" to "내일 ${describe(resolver.resolve(today.plusDays(1)), style)}"
 
-    internal fun describe(day: ResolvedDay): String {
+    /** 2.0.0 [RVH-41] 검토 T30-100: a day off is a shop's 휴무, a field worker's 빈 날 ([style]'s own word). */
+    internal fun describe(day: ResolvedDay, style: com.bamnat.core.work.WorkStyle? = null): String {
         // The lock screen is seen by anyone nearby: the kind of leave shows only as a link shows it.
         val leave = day.leave?.let { ShareLinkPayload.leaveLabel(it, kinds = false) }
         val name = day.shiftType?.name?.takeIf { it.isNotBlank() }
@@ -108,7 +110,7 @@ object TodayShiftNotice {
             leave != null -> "$work · $leave"
             work != null -> work
             name != null -> name
-            else -> "쉬는 날"
+            else -> style.words().offDay
         }
     }
 

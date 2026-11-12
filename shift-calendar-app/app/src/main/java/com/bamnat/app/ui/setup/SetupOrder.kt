@@ -197,7 +197,8 @@ private fun RotationOrder(vm: SetupViewModel, d: SetupDraft, header: Boolean = t
     )
     if (custom) {
         val today = remember(d.types) { vm.questionDate(d) }
-        RotationEditor(d, types, onChange = vm::setRotation, today = today, realToday = vm.today, onToday = { step -> vm.answerToday(today, step) })
+        RotationEditor(d, types, onChange = vm::setRotation, today = today, realToday = vm.today, onToday = { step -> vm.answerToday(today, step) },
+            weekStart = vm.weekStart)
     }
 }
 
@@ -223,6 +224,8 @@ internal fun orderLine(steps: List<Long?>, types: Map<Long, ShiftType>): String 
 private fun RotationEditor(
     d: SetupDraft, types: Map<Long, ShiftType>, onChange: (List<Long?>) -> Unit,
     today: java.time.LocalDate, onToday: (Int) -> Unit = {}, realToday: java.time.LocalDate = today,
+    /** [RVH-32] 검토 WORK-09 The week as the calendar shows it (it was always Sunday first here). */
+    weekStart: java.time.DayOfWeek = java.time.DayOfWeek.SUNDAY,
 ) {
     var picked by rememberSaveable { mutableStateOf<Int?>(null) }
     val steps = d.rotation
@@ -289,7 +292,7 @@ private fun RotationEditor(
             if (steps.isNotEmpty()) {
                 Text(orderLine(steps, types), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 // [EASE-14] The order repeated over the months at once, and today's place in it.
-                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) }, realToday = realToday)
+                OrderPreview(steps, types, today, todayStep, onToday = { s -> todayStep = s; startChosen = true; onToday(s) }, weekStart = weekStart, realToday = realToday)
             }
         }
     }
@@ -331,22 +334,10 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             WEEK.forEachIndexed { i, day ->
                 val on = d.weekly.getOrNull(i) == t.id
-                Box(
-                    Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
-                        // [J133-39] 순번 719: an off day reads as 쉼, not as the shift it would be.
-                        .semantics { contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${if (on) t.name else "쉼"}" },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        Fmt.dayOfWeekShort(day),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                // [RVH-31] 검토 WORK-10 48dp to tap, the circle as before. [J133-39] 순번 719: an off day reads as 쉼, not as the shift it would be.
+                com.bamnat.app.ui.shifts.DayToggle(day, on, color, null, Modifier.weight(1f), size = 44.dp,
+                    said = "${Fmt.dayOfWeekShort(day)}요일 ${if (on) t.name else "쉼"}", style = MaterialTheme.typography.titleMedium,
+                ) { onSet(i, if (it) t.id else null) }
             }
         }
         Text(
@@ -370,28 +361,13 @@ private fun WeekDays(d: SetupDraft, onSet: (Int, Long?) -> Unit) {
             WEEK.forEachIndexed { i, day ->
                 val on = d.weekly.getOrNull(i) == t.id
                 val other = d.weekly.getOrNull(i)?.takeIf { it != t.id && !d.isOff(it) }?.let(d::type)
-                Box(
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(if (on) color else MaterialTheme.colorScheme.surfaceContainerHigh)
-                        .then(if (other != null) Modifier.border(2.dp, other.colorArgb.asColor().copy(alpha = 0.6f), CircleShape) else Modifier)
-                        .toggleable(value = on, role = Role.Checkbox, onValueChange = { onSet(i, if (it) t.id else null) })
-                        .semantics {
-                            contentDescription = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
-                                on -> "일해요"
-                                other != null -> "아니고 ${other.name}"
-                                else -> "쉼"
-                            }
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        Fmt.dayOfWeekShort(day),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = if (on) contentColorOn(color) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                com.bamnat.app.ui.shifts.DayToggle(day, on, color, other, Modifier.weight(1f), size = 40.dp,
+                    said = "${Fmt.dayOfWeekShort(day)}요일 ${t.name} " + when {
+                        on -> "일해요"
+                        other != null -> "아니고 ${other.name}"
+                        else -> "쉼"
+                    },
+                ) { onSet(i, if (it) t.id else null) }
             }
         }
     }

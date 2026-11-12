@@ -880,7 +880,15 @@ fun LogicEditor(
 
         if (show != LogicShow.BUTTONS) {
         Text("규칙", style = MaterialTheme.typography.titleSmall)
-        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: 야간 근무 1시간 전에 알림, 날짜를 누르면 그날 메모 틀 열기",
+        // 2.0.0 [RVH-41] 검토 T30-84: the example in the kind's words (an investor has no 근무 to go by).
+        val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: " + when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST -> ""
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 시작 1시간 전에 알림, "
+                com.bamnat.core.work.WorkStyle.FIELD -> "일정 시작 1시간 전에 알림, "
+                null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 근무 1시간 전에 알림, "
+                else -> "근무 1시간 전에 알림, "
+            } + "날짜를 누르면 그날 메모 틀 열기",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }

@@ -593,18 +593,37 @@ class CalendarBook(
             .put("holidays", r.holidaysClosed).put("auto", r.autoClosed)
             .putOpt("checked", r.checkedUntil?.toString())
             .putOpt("autoDays", r.autoClosedDays.sorted().joinToString(",").ifEmpty { null })
+            // [RVH-36] 검토 TYPE-23 검토 I02b-03 단축영업 요일과 시간, 브레이크 타임, 격주 휴무.
+            .putOpt("short", r.shortWeekdays.joinToString(",") { it.name }.ifEmpty { null })
+            .putOpt("shortOpen", r.shortOpen?.toString()).putOpt("shortClose", r.shortClose?.toString())
+            .putOpt("break", r.breakStart?.takeIf { r.breakMinutes > 0 }?.toString())
+            .putOpt("breakMin", r.breakMinutes.takeIf { r.breakStart != null && it > 0 })
+            .putOpt("everyOther", r.everyOther.joinToString(",") { it.name }.ifEmpty { null })
+            .putOpt("everyOtherFrom", r.everyOtherFrom?.toString())
+
+        private fun weekdays(raw: String): Set<java.time.DayOfWeek> =
+            raw.split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet()
+
+        private fun time(raw: String): java.time.LocalTime? = raw.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() }
 
         /** A shop entry that cannot be read is left unset rather than turned into default rules. */
         fun shopOf(o: JSONObject): com.bamnat.core.work.ShopRules? = runCatching {
             com.bamnat.core.work.ShopRules(
                 open = java.time.LocalTime.parse(o.optString("open", "10:00")),
                 close = java.time.LocalTime.parse(o.optString("close", "22:00")),
-                closedWeekdays = o.optString("closed").split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet(),
+                closedWeekdays = weekdays(o.optString("closed")),
                 monthly = com.bamnat.core.work.NthWeekday.decode(o.optString("monthly")),
                 holidaysClosed = o.optBoolean("holidays"),
                 autoClosed = o.optBoolean("auto", true),
                 checkedUntil = o.optString("checked").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
                 autoClosedDays = o.optString("autoDays").split(',').mapNotNull { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }.toSet(),
+                shortWeekdays = weekdays(o.optString("short")),
+                shortOpen = time(o.optString("shortOpen")),
+                shortClose = time(o.optString("shortClose")),
+                breakStart = time(o.optString("break")),
+                breakMinutes = o.optInt("breakMin", 0).coerceIn(0, 12 * 60),
+                everyOther = weekdays(o.optString("everyOther")),
+                everyOtherFrom = o.optString("everyOtherFrom").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
             )
         }.getOrNull()
     }

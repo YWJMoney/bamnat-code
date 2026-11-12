@@ -27,9 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -280,13 +277,7 @@ internal fun TradeSheet(
             }
         },
     ) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            Side.entries.forEachIndexed { i, s ->
-                SegmentedButton(selected = side == s, onClick = { side = s }, shape = SegmentedButtonDefaults.itemShape(i, Side.entries.size)) {
-                    Text(s.label)
-                }
-            }
-        }
+        com.bamnat.app.ui.components.ChoiceRow(Side.entries.map { it.label }, selected = side.ordinal, onSelect = { side = Side.entries[it] })
         AccountPicker(accounts, accountId) { id ->
             accountId = id
             if (key.isEmpty()) book.account(id)?.type?.market?.let { market = it }

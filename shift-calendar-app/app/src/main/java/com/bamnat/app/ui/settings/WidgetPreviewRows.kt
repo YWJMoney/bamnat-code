@@ -77,8 +77,9 @@ private fun OneWidget(kind: WidgetPreviews.Kind, key: Any) {
 internal fun LockNoticePreview(modifier: Modifier = Modifier) {
     val c = LocalContext.current.appContainer
     val snapshot by c.scheduleRepository.snapshot.collectAsState(null)
-    val lines = remember(snapshot) {
-        snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.app.alarm.TodayShiftNotice.lines(it.resolver, Today.date()) }
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val lines = remember(snapshot, style) {
+        snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.app.alarm.TodayShiftNotice.lines(it.resolver, Today.date(), style) }
     } ?: return
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)

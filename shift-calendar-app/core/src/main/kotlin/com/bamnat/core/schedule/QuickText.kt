@@ -28,19 +28,21 @@ object QuickText {
 
     /**
      * Reads [text]; [today] anchors 오늘·내일 and the weekdays, [base] is the day the sheet is open on (used when the
-     * line names no day). Null when the line says nothing the calendar can take.
+     * line names no day). Null when the line says nothing the calendar can take. 2.0.0 [RVH-41] 검토 TYPE-14: with no [leave] (현장·가게,
+     * who have no 연차) '휴가'·'연차' is a day off, never a 연차 put on the calendar.
      */
-    fun parse(text: String, today: LocalDate, base: LocalDate, types: List<ShiftType>, kinds: ExtraKinds): Proposal? {
+    fun parse(text: String, today: LocalDate, base: LocalDate, types: List<ShiftType>, kinds: ExtraKinds, leave: Boolean = true): Proposal? {
         val t = text.trim()
         if (t.isEmpty()) return null
-        val act = act(t, types, kinds) ?: return null
+        val act = act(t, types, kinds, leave) ?: return null
         val dates = dates(t, today).ifEmpty { listOf(base) }
         return Proposal(dates, act, "${datesText(dates)} ${actText(act, types, kinds)}")
     }
 
-    private fun act(t: String, types: List<ShiftType>, kinds: ExtraKinds): Act? {
+    private fun act(t: String, types: List<ShiftType>, kinds: ExtraKinds, leave: Boolean): Act? {
         val compact = t.replace(" ", "")
         when {
+            !leave -> if ("연차" in compact || "휴가" in compact) return types.firstOrNull { it.isOff && it.name in compact }?.let { Act.Shift(it.id) } ?: Act.Off
             "반반차" in compact -> return Act.Leave(1)
             "반차" in compact -> return Act.Leave(2)
             "연차" in compact || "휴가" in compact -> return Act.Leave(4)

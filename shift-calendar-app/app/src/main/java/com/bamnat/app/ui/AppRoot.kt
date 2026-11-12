@@ -922,8 +922,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
         }
-        com.bamnat.app.ui.guide.WhatsNewDialog(
+        // [RVH-40] 검토 WORK-14 Nothing new for this kind of work and nothing else to say: no window, only marked as seen.
+        val nothingMine = com.bamnat.core.guide.WhatsNew.forStyle(whatsNew.value, settingsNow.workStyle).let { it.mine.isEmpty() && it.moreMine.isEmpty() }
+        if (nothingMine && fixedForMe.isEmpty() && recommendOff == 0) LaunchedEffect(Unit) { closeNew() }
+        else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
+            style = settingsNow.workStyle,
             recommendOff = recommendOff,
             onRecommend = { closeNew(); SettingsLinks.go(SettingsGo.RECOMMENDED) },
             onOpen = { id -> closeNew(); com.bamnat.core.guide.FeatureRegistry.get(id)?.let(com.bamnat.app.ui.guide.FeatureLinks::open) },
@@ -2455,7 +2459,7 @@ private fun TabLabel(text: String, part: com.bamnat.core.recipe.PartStyle = com.
 /** 1.39: a tab name's letters grow with the phone's text size up to this much, so five names fit the bar on one line. */
 private const val TAB_SCALE_MAX = 1.5f
 
-/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장 휴무일 근무 지정's ready '교육'). */
+/** [PAYX-51] The kind 교육 시수 정하기 opens, by name (설정 › 연장·휴무일 근무 지정's ready '교육'). */
 internal const val SCHOOLING_KIND = "교육"
 
 
@@ -2603,9 +2607,10 @@ private fun RingingBanner() {
             Icon(Icons.Filled.Alarm, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
-                Text(current.title, style = MaterialTheme.typography.titleSmall,
+                val ringStyle = com.bamnat.app.alarm.BootAlarms.ringSettings(androidx.compose.ui.platform.LocalContext.current).style
+                Text(current.title(ringStyle), style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
-                Text(AlarmService.describe(current), style = MaterialTheme.typography.bodySmall,
+                Text(AlarmService.describe(current, ringStyle), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onErrorContainer)
             }
             TextButton(onClick = { AlarmService.snooze(context) }) { Text("다시 울림") }
