@@ -7,6 +7,7 @@ import com.bamnat.core.journal.JournalKind
 import com.bamnat.core.money.MoneyCategories
 import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
+import com.bamnat.core.pay.CalcSnapshot
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.tax.PayObservation
@@ -34,13 +35,14 @@ object SalaryWatch {
         val money = c.calendars.money(calendarId)
         val tax = c.tax(calendarId)
         val profile = c.calendars.pay(calendarId).profile.value
+        val closed = c.calendars.pay(calendarId).closed.value
         val snapshot = runCatching { c.calendars.repository(calendarId).snapshot.first() }.getOrNull()
-        return check(money.allEntries(), tax, profile, snapshot, today) { e -> money.save(e) }
+        return check(money.allEntries(), tax, profile, snapshot, today, closed) { e -> money.save(e) }
             .also { r -> if (r.seen.isNotEmpty()) c.journal.note(JournalKind.PAY_OBSERVED, count = r.seen.size) }
             .also { r ->
                 // D 1.32 [PAYA-05] 579: a deposit just read from a notification is set against the estimate right away.
                 if (notify && c.settingsRepository.current.payDepositNotice) r.seen.lastOrNull()?.let { s ->
-                    val expected = expected(profile, snapshot, tax.allObservations(), today).firstOrNull { it.payMonth == s.payMonth }?.net
+                    val expected = expected(profile, snapshot, tax.allObservations(), today, closed).firstOrNull { it.payMonth == s.payMonth }?.net
                     PayDepositNotice.post(c.appContext, calendarId, s.payMonth, s.entry.amount, expected)
                 }
             }
@@ -49,6 +51,7 @@ object SalaryWatch {
     /** The check itself, apart from where the data lives, for tests. */
     suspend fun check(
         entries: List<MoneyEntry>, tax: TaxRepository, profile: PayProfile?, snapshot: ScheduleSnapshot?, today: LocalDate,
+        closed: Map<YearMonth, CalcSnapshot> = emptyMap(),
         save: suspend (MoneyEntry) -> Unit,
     ): Result {
         val settings = tax.currentSettings()
@@ -60,7 +63,7 @@ object SalaryWatch {
         val from = today.minusDays(DAYS)
         val recent = entries.filter { it.kind == MoneyKind.INCOME && !it.date.isBefore(from) && !it.date.isAfter(today) && it.id !in settings.notPay }
         if (recent.isEmpty()) return Result(emptyList(), emptyList())
-        val expected = expected(profile, snapshot, observations, today)
+        val expected = expected(profile, snapshot, observations, today, closed)
         val seen = recent.mapNotNull { SalaryDeposits.seen(it, expected, settings.payers) }
         val refiled = ArrayList<MoneyEntry>()
         for (s in seen) {
@@ -95,23 +98,32 @@ object SalaryWatch {
      * The pay months around [today] with their pay day and expected 실수령: the pay engine's 세전 through [TaxLearner]
      * with the records so far.
      */
-    fun expected(profile: PayProfile?, snapshot: ScheduleSnapshot?, observations: List<PayObservation>, today: LocalDate): List<SalaryDeposits.Expected> {
+    fun expected(
+        profile: PayProfile?, snapshot: ScheduleSnapshot?, observations: List<PayObservation>, today: LocalDate,
+        closed: Map<YearMonth, CalcSnapshot> = emptyMap(),
+    ): List<SalaryDeposits.Expected> {
         if (profile == null) return emptyList()
         val table = TaxLearner.Table.of(profile)
-        val gross = grossOf(profile, snapshot)
+        val gross = grossOf(profile, snapshot, closed)
         val fit = TaxLearner.fit(observations, table, gross)
         val now = YearMonth.from(today)
         return (-3..0).map { now.plusMonths(it.toLong()) }.map { m ->
             val g = gross(m)
-            SalaryDeposits.Expected(m, profile.period.payDate(m), g?.let { TaxLearner.forecast(m, it, fit, table).net })
+            // 2.0.0 [RVJ-18] 굳은 달: a closed month expects the 세후 kept when it was closed.
+            SalaryDeposits.Expected(m, profile.period.payDate(m), closed[m]?.net ?: g?.let { TaxLearner.forecast(m, it, fit, table).net })
         }
     }
 
-    /** The pay engine's 세전 of a pay month; null without a schedule or when it cannot be worked out. */
-    fun grossOf(profile: PayProfile, snapshot: ScheduleSnapshot?): (YearMonth) -> Long? {
-        if (snapshot == null) return { null }
+    /**
+     * The pay engine's 세전 of a pay month; null without a schedule or when it cannot be worked out. 2.0.0 [RVJ-18] A month in
+     * [closed] is the 합계 it was closed at, as on the pay screen.
+     */
+    fun grossOf(profile: PayProfile, snapshot: ScheduleSnapshot?, closed: Map<YearMonth, CalcSnapshot> = emptyMap()): (YearMonth) -> Long? {
         val calc = PayCalculator()
         val cache = HashMap<YearMonth, Long?>()
-        return { m -> cache.getOrPut(m) { runCatching { calc.calculate(profile, m, snapshot.resolver::resolve, checks = false).total }.getOrNull() } }
+        return { m ->
+            closed[m]?.total ?: if (snapshot == null) null
+            else cache.getOrPut(m) { runCatching { calc.calculate(profile, m, snapshot.resolver::resolve, checks = false).total }.getOrNull() }
+        }
     }
 }
