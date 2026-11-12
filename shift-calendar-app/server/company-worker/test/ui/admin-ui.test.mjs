@@ -2120,6 +2120,8 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   assert.match(main(), /만든 작품 1/);
   assert.match(main(), /이분의 1년 보상 12\/12개월 · 더 드릴 수 없어요/);
   assert.match(main(), /모두의 도구 · ABCD2345 · 쓰는 분 0/);
+  // Play Integrity is off here (INTEGRITY_MODE), so '0명 확인' is not a warning, just said off.
+  assert.match(main(), /친구 0명 · Play 확인 꺼짐/);
   assert.ok(!t.$('[data-act="reward"][data-status="paid"][data-id="iOVERaaaaaaaaaaaaaaaaa"]'), "no 지급하기 past the cap");
   await t.click('[data-act="reward-kind"][data-key="invite"]');
   await t.settle(30);

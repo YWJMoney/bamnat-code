@@ -336,8 +336,11 @@ export async function careList(d, env, now) {
     d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
   ]);
   const HOUR = DAY / 24;
+  const on = await careOn(d, env, now);
   return {
-    on: await careOn(d, env, now),
+    on,
+    // 2.0.0 [RVD-18] 마을 돌봄 전(12-09)에도 처리방침 3.12 시행일부터 신고로 가려진 것은 확인을 기다려요.
+    confirmed: on || Boolean(d.legalOpen && (await d.legalOpen(env, "community.confirmed", now))),
     appeals: waiting.map((a) => ({ inquiry: a.inquiry_id, kind: a.target.startsWith("post:") ? "post" : a.target === "limit" ? "limit" : "note",
       at: isoOf(a.at), hoursLeft: Math.floor((a.at + APPEAL.answerHours * HOUR - now) / HOUR) })),
     unconfirmed: { n: open?.n ?? 0, ...(open?.oldest ? { daysLeft: Math.max(0, Math.ceil((open.oldest + 30 * DAY - now) / DAY)) } : {}) },

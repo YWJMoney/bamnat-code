@@ -69,7 +69,7 @@ test("[RVD-13] SVC-98: 채택 and 이달의 주제 by someone with only the comm
 
 test("[RVD-14] SVC-06: a group of friends gives an owed month with what the admin needs to judge it; the friend's phone hears it is checked", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
-  const { call, DB } = server();
+  const { call, DB } = server({ INTEGRITY_MODE: "watch" });
   const admin = await signIn(call);
   await friends(call, admin, 2);
   // One friend proved Play's app on a real phone (Play Integrity) this week.
@@ -86,7 +86,7 @@ test("[RVD-14] SVC-06: a group of friends gives an owed month with what the admi
   assert.equal(list.rewards.length, 2);
   assert.ok(list.rewards.every((w) => w.kind === "invite" && w.invite));
   const sig = list.rewards.map((w) => w.friends).sort((a, b) => b.proven - a.proven);
-  assert.deepEqual(sig.map((s) => [s.n, s.proven, s.typed]), [[1, 1, 0], [1, 0, 1]]);
+  assert.deepEqual(sig.map((s) => [s.n, s.proven, s.checked, s.typed]), [[1, 1, true, 0], [1, 0, true, 1]]);
   assert.deepEqual(list.kinds, { invite: 2 });
 });
 
@@ -116,9 +116,12 @@ test("[RVD-15] one person gets at most 12 months of rewards in 365 days, all kin
   const full = (await owed(call, admin)).rewards.find((x) => x.kind === "maker");
   assert.deepEqual([full.year.used, full.year.left, full.capped], [12, 0, true]);
   assert.equal((await call("POST", `/api/admin/rewards/${full.id}`, { status: "paid" }, admin)).status, 409);
-  // A year on, the room is back.
+  // A year on, the room is back, and the daily tidy forgets what was kept on the old install only for counting.
+  assert.ok((await DB.prepare("SELECT COUNT(*) AS n FROM rewards WHERE status = 'moved'").first()).n > 0);
   t.mock.timers.tick(366 * DAY);
   assert.equal((await call("POST", `/api/admin/rewards/${full.id}`, { status: "paid" }, await signIn(call))).status, 200);
+  await tick(env, Date.now());
+  assert.equal((await DB.prepare("SELECT COUNT(*) AS n FROM rewards WHERE status = 'moved'").first()).n, 0);
 });
 
 test("[RVD-15] the invite rules say the cap: 12 months a year unless the developer set a lower one", async () => {

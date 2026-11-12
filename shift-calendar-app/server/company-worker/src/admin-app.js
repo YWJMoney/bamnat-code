@@ -1552,7 +1552,10 @@ function adminApp(L, BUILD, M) {
     if (!c) return skeleton(1);
     const banner = c.on
       ? '<p class="note ok">마을 돌봄이 켜져 있어요. 운영자가 확인해 가린 글만 세고, 쉬기 전에 늘 경고가 먼저 가요. 받은 분은 앱에서 해명할 수 있어요.</p>'
-      : '<p class="note warn">마을 돌봄은 아직 꺼져 있어요. 처리방침 3.12 시행일(기능 관리 › 일정)에 저절로 켜져요. 그 전에는 1.36 신고 누적 제한만 돌고, 이미 건 쉬기는 끝날 때까지 그대로예요.</p>';
+      // 2.0.0 [RVD-18] 검토 LEGAL-02·03: 마을 쉬기는 2026-12-09부터(코드), 확인한 것만 세기는 처리방침 3.12 시행일부터.
+      : c.confirmed
+        ? '<p class="note warn">마을 돌봄(경고·쉬기)은 2026-12-09에 저절로 켜져요. 처리방침 3.12대로 지금도 운영자가 확인해 가린 것만 세고, 셈과 제한 단계는 1.36 신고 누적 제한 그대로예요.</p>'
+        : '<p class="note warn">마을 돌봄은 아직 꺼져 있어요. 처리방침 3.12 시행일(기능 관리 › 일정)과 2026-12-09가 모두 지나면 저절로 켜져요. 그 전에는 1.36 신고 누적 제한만 돌고, 이미 건 쉬기는 끝날 때까지 그대로예요.</p>';
     const q = S.careQuery ?? { by: "post", q: "" };
     const find = `<form class="toolbar" data-form="care-find"><select name="by" aria-label="무엇으로 찾을까요">${CARE_FIND.map(([k, l]) =>
       `<option value="${k}"${q.by === k ? " selected" : ""}>${l}</option>`).join("")}</select>
@@ -1567,7 +1570,7 @@ function adminApp(L, BUILD, M) {
     const appeals = waiting.length ? `<h4>답을 기다리는 해명 ${waiting.length}</h4><ul class="rows">${waiting.map((a) => `<li class="item"><a class="row-main" href="${href("inquiries", a.inquiry)}">
       <span>${a.kind === "post" ? "가려진 글 다시 보여 주세요" : a.kind === "limit" ? "신고 누적 쓰기 제한 해명" : "경고·쉬기 해명"} · ${esc(ago(a.at))}</span></a>${left(a.hoursLeft)}</li>`).join("")}</ul>` : "";
     const u = c.unconfirmed ?? { n: 0 };
-    const unconfirmed = c.on && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
+    const unconfirmed = (c.on || c.confirmed) && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
       <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
     return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
@@ -1606,7 +1609,10 @@ function adminApp(L, BUILD, M) {
     const step = (i) => { const x = r.steps[i - 1]; return x ? (x.perDay ? `${x.days}일 동안 하루 ${x.perDay}번` : `${x.days}일 쓰기 막기`) : ""; };
     const rules = r.care ? `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 운영자가 확인해 가린 글·작품·이야기만 세요(신고만으로 가려진 것은 확인 전까지 세지 않아요).
       ${r.windowDays}일 안에 1번이면 부드러운 안내, 2번이면 경고가 앱에 가고, ${r.strikes}번째부터 제한이 걸려요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}.
-      제한이 끝난 뒤 ${r.windowDays}일 안에 또 확인되면 바로 다음 단계예요. ${r.forgetDays}일 동안 조용하면 한 단계 내려가고, 해명을 받아들이면 그 건은 빠져요.</p>` : `<p class="hint">하루에 쓰는 횟수 제한은 없어요. 글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이 ${r.windowDays}일 안에 ${r.strikes}번이면
+      제한이 끝난 뒤 ${r.againDays ?? r.windowDays}일 안에 또 확인되면 바로 다음 단계예요. ${r.forgetDays}일 동안 조용하면 한 단계 내려가고, 해명을 받아들이면 그 건은 빠져요.</p>` : `<p class="hint">하루에 쓰는 횟수 제한은 없어요. ${r.confirmedOnly
+        // 2.0.0 [RVD-18] 처리방침 3.12 시행일부터: 신고만으로 가려진 것은 운영자가 확인하기 전까지 세지 않아요.
+        ? "운영자가 확인해 가린 글·레시피·이야기(신고로 먼저 가려진 것은 여기서 가린 채 두기로 확인한 것)가"
+        : "글·레시피·이야기가 신고(서로 다른 세 분)나 여기서 가려진 것이"} ${r.windowDays}일 안에 ${r.strikes}번이면
       제한이 걸리고, 받을 때마다 더 줄어요: ${r.steps.map((_, i) => step(i + 1)).join(" → ")}. 기간이 지나면 저절로 풀리고, ${r.forgetDays}일 동안 조용하면 한 단계 내려가요.
       가려진 글을 다시 보이게 하면 그 건은 빠져요.</p>`;
     // 1.36 PC 6차: 풀거나 끝난 제한은 아래 '최근 30일에 끝난 제한'으로 접혀서, 지금 제한 중인 목록이 바로 비어요.
@@ -2425,8 +2431,9 @@ function adminApp(L, BUILD, M) {
     }
     if (w.friends) {
       const f = w.friends;
-      const doubt = f.proven < f.n || f.bursts > 0;
-      out.push(`<small class="judge${doubt ? " warn" : ""}">친구 ${f.n}명 · Play 확인 ${f.proven}명${f.typed ? ` · 코드로 넣음 ${f.typed}명` : ""}${f.bursts ? ` · 같은 코드 몰림 ${f.bursts}번(30일)` : ""}</small>`);
+      // Play 확인은 INTEGRITY_MODE가 켜져 있을 때만 뜻이 있어요(꺼져 있으면 0명이 당연해서 경고하지 않아요).
+      const doubt = (f.checked && f.proven < f.n) || f.bursts > 0;
+      out.push(`<small class="judge${doubt ? " warn" : ""}">친구 ${f.n}명${f.checked ? ` · Play 확인 ${f.proven}명` : " · Play 확인 꺼짐"}${f.typed ? ` · 코드로 넣음 ${f.typed}명` : ""}${f.bursts ? ` · 같은 코드 몰림 ${f.bursts}번(30일)` : ""}</small>`);
     }
     if (w.year) {
       const y = w.year;

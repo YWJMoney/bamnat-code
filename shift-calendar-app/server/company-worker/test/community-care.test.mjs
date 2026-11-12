@@ -5,7 +5,8 @@ import assert from "node:assert/strict";
 import { careNext, CARE } from "../src/community-care.js";
 import { server, report, device, from, signIn } from "./helpers.mjs";
 
-const NOW = Date.parse("2026-11-08T03:00:00Z");
+// 2.0.0 [RVD-18] 마을 돌봄은 코드로 2026-12-09부터(검토 LEGAL-03): 그 뒤의 하루에서 봐요.
+const NOW = Date.parse("2026-12-10T03:00:00Z");
 const DAY = 24 * 3600e3;
 const mine = (n) => ({ "x-device": device(n) });
 

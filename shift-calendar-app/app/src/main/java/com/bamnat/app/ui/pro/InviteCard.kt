@@ -57,7 +57,8 @@ fun inviteAnswerWords(a: InviteAnswer): String = when (a.status) {
     "waiting" -> "초대한 분께 알렸어요. " + (a.daysLeft?.takeIf { it > 0 }?.let { "${it}일 뒤에 앱을 다시 열면 초대한 분의 친구 수에 들어가요." }
         ?: "사용 기간이 지난 뒤 앱을 다시 열면 초대한 분의 친구 수에 들어가요.")
     "qualified" -> "사용 기간을 채웠어요. 초대한 분의 친구 수에 들어갔어요."
-    "credited" -> "사용 기간을 채웠어요. 초대한 분이 프로를 받았어요."
+    // 2.0.0 [RVD-14] 사용자 결정 2026-11-12 '확인 뒤 지급': 초대한 분의 보상은 운영팀이 확인한 뒤 들어가요.
+    "credited" -> "사용 기간을 채웠어요. 초대한 분의 보상은 운영팀이 확인한 뒤 들어가요."
     "capped" -> "사용 기간을 채웠어요. 초대한 분은 올해 받을 수 있는 프로를 모두 받았어요."
     "expired" -> "사용 기간 안에 앱을 다시 열지 않아 이 초대는 끝났어요."
     else -> InviteRules.refused(a.reason)
@@ -144,6 +145,8 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit) {
         if (view?.code != null) {
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
+            // 2.0.0 [RVD-14] 확인 뒤 들어와요.
+            if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             if (view.capReached) {
                 Text("올해 받을 수 있는 ${terms.capMonths}개월을 모두 받았어요. 친구는 계속 셀게요.", style = MaterialTheme.typography.bodySmall)
             }

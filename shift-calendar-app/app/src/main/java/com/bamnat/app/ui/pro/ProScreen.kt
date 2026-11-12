@@ -438,11 +438,17 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     var code by rememberSaveable { mutableStateOf("") }
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 되거나, 초대한 친구가 밤낮을 쓰면 프로 이용권을 드려요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
+        // 2.0.0 [RVD-13]~[RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 드리고, 보상 이용권은 1년에 모두 합쳐 12개월까지.
+        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 되거나, 초대한 친구가 밤낮을 쓰면 운영팀이 확인한 뒤 프로 이용권을 드려요. 보상 이용권은 1년에 모두 합쳐 ${REWARD_CAP_MONTHS}개월까지예요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${item.what ?: passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",
                 style = MaterialTheme.typography.bodyMedium)
+        }
+        // 2.0.0 [RVD-13][RVD-14] 확인 뒤 들어와요: 바로 생긴 것처럼 보이지 않게 따로 말해요.
+        passes?.pending?.forEach { p ->
+            Text("• 프로 ${p.months}개월 (${p.what ?: passWhy(p.why)}) · 운영팀이 확인한 뒤 들어와요", style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         // 1.36 841 쓰면 쌓이는 날.
         passes?.earned?.forEach { e ->
@@ -592,6 +598,9 @@ internal suspend fun runServer(onMessage: (String) -> Unit, block: suspend () ->
         onMessage(serverProblem("bad_response"))
     }
 }
+
+/** 2.0.0 [RVD-15] 보상 이용권은 한 사람이 1년에 모두 합쳐 이만큼까지예요(company-worker REWARD_CAP). */
+const val REWARD_CAP_MONTHS = 12
 
 /** [MON-08][INVITE-05] Why a reward pass was given, as the server names it. */
 fun passWhy(why: String): String = when (why) {

@@ -88,7 +88,7 @@ import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
-import { INTEGRITY_SCHEMA, integrityGate, integrityRoute, integrityState } from "./integrity.js";
+import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
 import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
@@ -337,6 +337,8 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM muted WHERE until < ?", now),
     // 1.39 [CARE-04] 끝난 의견 쉬기는 소식 한 번, 끝난 지 180일 지난 경고·쉬기 기록은 지움.
     ...carePrune(recipeDeps, env, now),
+    // 2.0.0 [RVD-15] 복구 코드로 옮긴 이용권을 1년 상한으로 세려고 예전 설치에 남긴 기록('moved')은 드린 날부터 1년이 지나면 지워요.
+    stmt(env, "DELETE FROM rewards WHERE status = 'moved' AND paid_at < ?", now - REWARD_CAP.days * DAY),
     stmt(env, "DELETE FROM plaza_results WHERE at < ?", now - 30 * DAY),
     // [PLAZA-07] A company left is forgotten once its 30 days are over.
     stmt(env, "DELETE FROM members WHERE left = 1 AND since < ?", now - MEMBER.waitDays * DAY),
@@ -6903,7 +6905,8 @@ async function rewardSignals(env, items, now) {
       const f = await one(env, `SELECT COUNT(*) AS n, COALESCE(SUM(u.source = 'typed'), 0) AS typed, COALESCE(SUM(g.ok = 1 AND g.at > ?2), 0) AS proven, MIN(u.code) AS code
         FROM invite_uses u LEFT JOIN integrity g ON g.device = u.invitee WHERE u.batch = ?1`, w.id, now - 7 * DAY);
       const burst = f.code ? await one(env, "SELECT COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND target = ? AND at > ?", f.code, now - 30 * DAY) : null;
-      out.set(w.id, { friends: { n: f.n, proven: f.proven, typed: f.typed, bursts: burst?.n ?? 0 } });
+      // [checked] false: Play Integrity is off (INTEGRITY_MODE), so no phone could have proven itself and [proven] says nothing.
+      out.set(w.id, { friends: { n: f.n, proven: f.proven, checked: integrityMode(env) !== "off", typed: f.typed, bursts: burst?.n ?? 0 } });
     }
   }
   return out;
