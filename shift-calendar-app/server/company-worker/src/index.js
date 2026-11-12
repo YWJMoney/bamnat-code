@@ -113,6 +113,7 @@ import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, 
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
 import { flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { FIVE_STEP, hourlyAgo, hourlyWatch } from "./incident.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -270,7 +271,10 @@ export default {
     // 1.38 [DESK-09] 5분마다: 보류가 끝난 Claude 답만 보내요(나머지 정리는 매시 17분 그대로).
     if (event?.cron === "*/5 * * * *") {
       // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내도 5분마다.
-      ctx.waitUntil(ready(env).then(() => releaseHeld(env, Date.now())).then(() => shipTick(env, Date.now(), loopAnswer)));
+      // 2.0.0 [RVN-02] 정기 작업 기록(five)에 남기고, 매시 작업이 멈췄으면 알려요(서로 지켜보기, SVC-83).
+      ctx.waitUntil(ready(env)
+        .then(() => runJobs(env, [[FIVE_STEP, () => releaseHeld(env, Date.now()).then(() => shipTick(env, Date.now(), loopAnswer))]], Date.now()))
+        .then(() => hourlyWatch(env, Date.now()).catch(() => {})));
       return;
     }
     // 1.38 [ADM3-05] 단계마다 따로: 한 단계가 실패해도 다음 단계가 돌고, 관리 › 서버 상태에 단계마다 마지막 성공·실패가 남아요.
@@ -488,7 +492,16 @@ async function routeOnce(request, env, url, ctx) {
   if (path.startsWith("/admin/")) return adminFile(path, request);
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
-  if (path === "/api/admin/health" && method === "GET") return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
+  if (path === "/api/admin/health" && method === "GET") {
+    // 2.0.0 [RVN-02] ?jobs=1: 마지막 매시 작업이 몇 분 전인지 숫자 하나(바깥 가동 감시가 60분 넘으면 알려요, SVC-83·I22cb-03).
+    if (url.searchParams.get("jobs") === "1") {
+      if (!env.DB) return json({ hourlyAgoMin: null }, 503);
+      await ready(env);
+      const ago = await hourlyAgo(env, Date.now());
+      return json({ version: SERVER_VERSION, hourlyAgoMin: ago }, ago == null || ago <= 90 ? 200 : 503);
+    }
+    return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
+  }
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
@@ -540,7 +553,7 @@ async function routeOnce(request, env, url, ctx) {
   // 1.39 [PAYP-03] A version's pay part, for the phone putting that way in now.
   m = path.match(/^\/api\/companies\/([A-Za-z0-9]{12})\/setups\/([0-9a-f]{16})\/take$/);
   if (m && method === "POST") return takeWay(request, env, m[1], m[2]);
-  if (path === "/api/posts" && method === "POST") return post(request, env);
+  if (path === "/api/posts" && method === "POST") return post(request, env, ctx);
   m = path.match(/^\/api\/posts\/(p[A-Za-z0-9]{15})(\/flag)?$/);
   if (m && method === "DELETE" && !m[2]) return takePostBack(request, env, m[1]);
   if (m && method === "POST" && m[2]) return flag(request, env, m[1]);
@@ -2645,7 +2658,7 @@ async function roomViewer(request, env, place) {
 }
 
 /** A post in a room: the same words as any post (no amounts, contacts or names), a reply under the same room's post. */
-async function roomPost(request, env, body) {
+async function roomPost(request, env, body, ctx) {
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string") refuse("company", "company");
@@ -2707,7 +2720,13 @@ async function roomPost(request, env, body) {
     VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
   poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null, card ? JSON.stringify(card) : null);
   // 1.39 [PLZC-41] 답이 오면 질문한 분에게, 근무형태가 붙은 질문이면 그 근무를 지켜보는 분에게 바로 (말 없는 알림).
-  if (place.style) await plazaPushAfter(env, { room: place.id, writer: dev, parent, kind, form: tag?.f ?? null, on: await peopleOn(env, now) }, now);
+  // 2.0.0 [RVN-04][SVC-91] After the answer, not before it: the writer's 올리기 no longer waits on Google (up to 200 phones, one call each).
+  if (place.style) {
+    const push = peopleOn(env, now).then((on) => plazaPushAfter(env, { room: place.id, writer: dev, parent, kind, form: tag?.f ?? null, on }, now))
+      .catch(() => null);
+    if (ctx?.waitUntil) ctx.waitUntil(push);
+    else await push;
+  }
   return json({ id, at: iso(now) }, 201);
 }
 
@@ -2723,6 +2742,18 @@ async function myPosts(request, env) {
       (SELECT COUNT(*) FROM posts r WHERE r.parent = p.id AND r.status = 'shown') AS replies
     FROM posts p LEFT JOIN companies c ON c.id = p.company_id
     WHERE p.device = ? AND p.grp = ? ORDER BY p.created_at DESC LIMIT 60`, dev, ROOM);
+  // 2.0.0 [RVN-04][SVC-92] 답 수 counts what this phone would see when it opens the post: not the replies of writers it blocked.
+  const blocked = new Set((await all(env, "SELECT maker FROM recipe_blocks WHERE device = ?", dev).catch(() => [])).map((b) => b.maker));
+  if (blocked.size) {
+    const asked = rows.filter((p) => p.replies > 0);
+    const byId = new Map(asked.map((p) => [p.id, p]));
+    for (let i = 0; i < asked.length; i += 90) {
+      const part = asked.slice(i, i + 90).map((p) => p.id);
+      for (const r of await all(env, `SELECT parent, device FROM posts WHERE status = 'shown' AND parent IN (${part.map(() => "?").join(",")})`, ...part)) {
+        if (r.device !== dev && blocked.has(await makerId(r.device))) byId.get(r.parent).replies -= 1;
+      }
+    }
+  }
   return json({ items: rows.map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id] ?? p.name ?? "", body: p.body,
     kind: p.kind ?? "talk", ...(p.parent ? { parent: p.parent } : {}), replies: p.replies, at: iso(p.created_at),
     ...(p.status === "shown" ? {} : { hidden: true }) })) });
@@ -4262,11 +4293,11 @@ async function talkData(request, env, companyId, grp, known = null) {
 }
 
 /** [COMM-06] A post in the talk on a rule set: no email, phone number or amount, like everything else sent here. */
-async function post(request, env) {
+async function post(request, env, ctx) {
   if (await paused(env, "PLAZA_WRITE")) return json({ error: "paused" }, 503);
   const body = await readJson(request, LIMITS.reportBytes + 4096);
   // AI 1.27 [PLAZA-32][PLAZA-33] A post in a company's or a kind of work's room.
-  if (body?.setup === ROOM) return roomPost(request, env, body);
+  if (body?.setup === ROOM) return roomPost(request, env, body, ctx);
   const device = deviceId(body.device);
   if (!device) refuse("device", "device");
   if (typeof body.company !== "string" || !/^[A-Za-z0-9]{12}$/.test(body.company)) refuse("company", "company");

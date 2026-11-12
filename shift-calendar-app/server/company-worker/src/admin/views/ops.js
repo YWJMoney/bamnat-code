@@ -61,11 +61,16 @@ export function opsViews(A) {
     const d = S.data.incident;
     if (!d) return skeleton(3);
     const o = d.open;
-    const sig = d.signals.length ? `<ul class="alert-list">${d.signals.map((s) => `<li class="bad"><span><b>${esc(s.text)}</b></span></li>`).join("")}</ul>`
-      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`;
+    // 2.0.0 [RVN-01] 신호마다 확실·의심, 표본, 평소 값, 다시 묻지 않기(U22c-01, I22ca-01).
+    const sigLine = (s) => `<li class="${s.off || s.muted ? "" : "bad"}"><span><b>${esc(s.text)}</b><small>${esc([s.sure ? "확실(밤에도 알림)" : "의심(아침에 알림)",
+      s.n ? `표본 ${s.n}` : "", s.was ?? "", s.off ? "지금은 잠잠해요" : "", s.muted ? "다시 묻지 않기로 한 신호" : ""].filter(Boolean).join(" · "))}</small></span></li>`;
+    const MUTE_NAMES = { errors: "서버 오류", rate: "서버 오류 비율", bugs: "문제 신고", jobs: "정기 작업 실패", stale: "5분 작업 멈춤", crash: "비정상 종료", anr: "ANR" };
+    const muteLine = (d.mutes ?? []).length ? `<p class="hint">다시 묻지 않는 신호: ${esc(d.mutes.map((m) => `${MUTE_NAMES[m.key] ?? m.key}(${m.until ? `${when(m.until)}까지` : "한 번 꺼질 때까지"})`).join(", "))}</p>` : "";
+    const sig = (d.signals.length ? `<ul class="alert-list">${d.signals.map(sigLine).join("")}</ul>`
+      : `<p class="calm">${icon(P.check)}<span>지금 기준을 넘은 신호는 없어요.</span></p>`) + muteLine;
     const top = o ? `<section class="card incident-open"><div class="card-head"><h2>사고 진행 중</h2><span class="pill bad">${esc(agoMs(o.openedAt))}부터</span></div>
         <p class="hint">${o.auto ? "서버가 신호를 보고 열었어요." : `${esc(o.by)}님이 직접 열었어요.${o.note ? ` ${esc(o.note)}` : ""}`} 사람이 무엇을 했는지 적어야 닫혀요.</p>
-        ${o.signals.length ? `<h3>열 때 본 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}</li>`).join("")}</ul>` : ""}
+        ${o.signals.length ? `<h3>이 사고의 신호</h3><ul class="mini">${o.signals.map((s) => `<li>${esc(s.text)}${s.off ? " · 지금은 잠잠해요" : ""}</li>`).join("")}</ul>` : ""}
         <div class="actions start"><button class="btn primary" type="button" data-act="incident-close" data-id="${esc(o.id)}">고쳤어요 · 닫기</button></div></section>`
       : `<section class="card">${head("사고 없음", "급증·실패가 보이면 서버가 열고 바로 알려요")}
         <div class="actions start"><button class="btn" type="button" data-act="incident-open">직접 열기</button></div></section>`;
@@ -478,6 +483,9 @@ export function opsViews(A) {
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">열기</button></div></form>`),
     "incident-close": ({ id }) => openDialog(`<form data-form="incident-close" data-id="${esc(id)}"><h2>무엇을 했나요?</h2><p>한 줄이면 돼요. 다음에 같은 일이 생기면 이 기록을 먼저 봐요.</p>
       <div class="fieldset"><label for="ic-note">한 일</label><textarea id="ic-note" name="note" maxlength="1000" required placeholder="예: 1.38.0 결제 화면 기능을 강제로 끄고 1.38.1로 고쳤어요"></textarea></div>
+      <div class="fieldset"><label for="ic-days">지금 있는 신호를 다시 묻지 않기</label><select id="ic-days" name="days">
+        <option value="0" selected>한 번 꺼질 때까지(더 나빠지면 다시 열어요)</option><option value="1">하루</option><option value="3">3일</option><option value="7">7일</option><option value="14">14일</option></select>
+        <small class="hint">Play 비정상 종료·ANR은 28일 평균이라 몇 주 남을 수 있어요. 닫을 때보다 1.3배 나빠지면 날 수와 상관없이 다시 열려요.</small></div>
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">닫기</button></div></form>`),
     "copy-text": async ({ target }) => {
       const el = document.getElementById(target);
@@ -545,7 +553,8 @@ export function opsViews(A) {
     },
     "incident-close": async (form) => {
       dialog.close();
-      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: new FormData(form).get("note") }), "사고를 닫았어요")) {
+      const f = new FormData(form);
+      if (await act(() => api(`/incident/${form.dataset.id}/close`, "POST", { note: f.get("note"), days: Number(f.get("days") ?? 0) }), "사고를 닫았어요")) {
         if (S.overview) S.overview.incidentOpen = 0;
         reload("incident");
       }
