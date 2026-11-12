@@ -170,7 +170,7 @@ export function marketViews(A) {
         <button type="button" class="linkish" data-act="photo-big" aria-label="사진 크게 보기"><img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img"></button>
         <b>보러 온 사진${ph.whyName ? ` <span class="pill ${ph.state === "held" ? "bad" : "warn"}">${esc(ph.whyName)}</span>` : ""}</b>
         ${ph.done ? `<small>${ph.done === "ok" ? "보이게 했어요" : "가렸어요"}</small>` : ""}</span>
-        ${edit && !ph.done ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
+        ${edit && !ph.done ? `<span class="row-side"><button class="btn small" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="hide">가리기</button></span>` : ""}</div></div>` : "";
     // 설명은 목록 아래 접힌 한 줄(첫 문장), 이달 숫자와 처리 기록도 아래로.
     const [lead, ...restHelp] = String(help ?? "").split(/(?<=요\.) /);
@@ -240,7 +240,7 @@ export function marketViews(A) {
         ${edit ? `<span class="row-side inline"><select name="mode" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
           .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
           <button class="btn small" type="submit">바꾸기</button>
-          ${p.ok < p.n ? `<button class="btn small primary" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
+          ${p.ok < p.n ? `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
             : `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="hidden">숨기기</button>`}</span>` : ""}</form></li>`;
     const group = (kind, label) => {
       const list = [...packs].filter(([, p]) => p.kind === kind);
@@ -309,7 +309,7 @@ export function marketViews(A) {
       ${edit ? `<label>공개할 때 <input type="datetime-local" name="at"></label>` : ""}</span>
       ${edit ? `<span class="row-side"><button class="btn small" type="submit" name="do" value="schedule">예약</button>
         ${b.releaseAt ? `<button class="btn small" type="submit" name="do" value="unschedule">예약 풀기</button>` : ""}
-        <button class="btn small primary" type="submit" name="do" value="now">지금 공개</button></span>` : ""}</form></li>`).join("")}</ul>`;
+        <button class="btn small" type="submit" name="do" value="now">지금 공개</button></span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
@@ -319,7 +319,7 @@ export function marketViews(A) {
       <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "이번 주 고른 것 없음"}</small>
         ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
+        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
@@ -337,7 +337,7 @@ export function marketViews(A) {
         <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
         <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" data-key="${esc(i.id)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
         <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
+        ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
           <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
@@ -351,7 +351,7 @@ export function marketViews(A) {
         <small>${esc(m.maker)} · ${m.flags ? `신고 ${m.flags}건${m.settled ? `(가릴 때 쓴 ${m.settled}건 포함)` : ""} · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")}` : "신고 없음"} · ${esc(ago(m.at))}</small>
         <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioChecking ? ' <span class="pill warn">고친 소개 확인 대기</span>' : m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
         ${edit ? `<span class="row-side">
-          ${m.bioChecking ? `<button class="btn small primary" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="bio-show">고친 소개 보이기</button>
+          ${m.bioChecking ? `<button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="bio-show">고친 소개 보이기</button>
           <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="bio-hide">가린 채 두기</button>`
             : `<button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>`}
           <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
@@ -368,7 +368,7 @@ export function marketViews(A) {
         <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음"}</small>
         ${cand(k).length ? `<small data-candidates>후보: ${cand(k).map((c) => `${esc(c.face ?? "🙂")} ${esc(c.nick ?? "이름 없음")}(${esc(c.maker)}, 쓰는 분 ${c.users})`).join(" · ")}</small>` : ""}
         ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul>`;
+        ${edit ? `<span class="row-side"><button class="btn small" type="submit">저장</button>${cand(k).length && !by(k).length ? `<button class="btn small" type="button" data-act="recipe-month-take" data-key="${k}">후보 그대로 고르기</button>` : ""}</span>` : ""}</form></li>`).join("")}</ul>`;
   }
 
   /**
@@ -408,7 +408,7 @@ export function marketViews(A) {
         <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}</small>
         ${own(f)}
         <small class="mono">${esc(f.id)}</small></span>
-        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
+        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
           ${f.state !== "hidden" ? `<button class="btn small danger" data-act="recipe-font" data-id="${f.id}" data-key="hide">내리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 

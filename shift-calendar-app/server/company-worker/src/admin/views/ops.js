@@ -251,7 +251,7 @@ export function opsViews(A) {
         <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
         <p>${esc(s.what)}</p>${s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
         <div class="actions start">${s.to ? `<a class="btn small" href="${esc(s.to)}">열기</a>` : ""}${edit ? (s.done && !s.autoDone ? `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="undo">되돌리기</button>`
-          : s.done ? "" : `<button class="btn small primary" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button><button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
+          : s.done ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button><button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
           + `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="note">메모</button>` : ""}</div></div></li>`).join("")}</ol>`;
     return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
   }
@@ -330,7 +330,7 @@ export function opsViews(A) {
         <span class="row-side">${L.spark ? L.spark(g.trend.slice(-7), { name: "7일" }) : ""}<span class="pill ${tone}">${esc(name)}</span></span></summary>
         <pre class="mono err-sample">${esc(g.sample || "")}</pre>${g.note ? `<p class="meta">메모: ${esc(g.note)}</p>` : ""}
         <div class="actions start">${g.status !== "seen" ? `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="seen">보는 중</button>` : ""}
-        ${g.status !== "fixed" ? `<button class="btn small primary" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="fixed">고쳤어요</button>` : `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="new">다시 열기</button>`}</div></details></li>`;
+        ${g.status !== "fixed" ? `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="fixed">고쳤어요</button>` : `<button class="btn small" type="button" data-act="error-state" data-id="${esc(g.sig)}" data-key="new">다시 열기</button>`}</div></details></li>`;
     }).join("")}</ul>` : empty(d.loose ? "묶인 오류가 없어요" : "오류가 없어요", "서버가 500을 내면 주소·이유로 묶여 여기 쌓여요.");
     // 1.39 [ADM3-43] 판 건강의 '서버 오류'와 이 화면이 다르게 보이지 않게: 날마다 센 오류 가운데 묶음에 없는 것.
     // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 세 갈래로, 그리고 세 숫자가 무엇을 세는지 한 줄씩.

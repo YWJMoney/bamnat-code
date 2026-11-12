@@ -3555,3 +3555,68 @@ test("[RVA-61] 좁은 막대(380·200%)에서 판 알약은 점, 제목은 한 �
   assert.match(css, /\.feed\{container:feed\/inline-size\}/);
   assert.match(css, /@container feed \(width < 22rem\)\{\.feed li\{grid-template-columns:1fr/);
 });
+
+test("[RVA-59] 자동 순환의 '다가오는 날짜': 남은 날 순서, 2주 안은 펴 두고 그 뒤는 접힌 줄, 빈틈은 주의 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const d = (await u.api("GET", "/api/admin/loop")).dates;
+  await u.go("#/loop");
+  await u.settle(30);
+  const card = u.$("#main #loop-dates");
+  if (!d.upcoming.length && !d.gaps.length) {
+    assert.equal(card, null, "걸린 날이 없으면 카드도 없어요");
+    return;
+  }
+  assert.match(u.text("#main #loop-dates > summary"), /다가오는 날짜/);
+  const near = d.upcoming.filter((x) => x.left <= 14);
+  assert.equal(card.querySelectorAll(":scope > ul.dates-rows > li").length, near.length);
+  if (near[0]) assert.match(card.querySelector(":scope > ul.dates-rows > li b").textContent, new RegExp(near[0].what.slice(0, 8).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  const later = d.upcoming.length - near.length;
+  if (later) assert.match(u.text("#main #loop-dates .dl-later > summary"), new RegExp(`그 뒤 ${later}개`));
+  assert.equal(card.querySelectorAll(":scope > .note.warn").length, d.gaps.length);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVA-62] PC-157(조건 2): 줄·카드 안 단추는 테두리. 운영 장부·검토·오늘에서 채운 단추는 화면에 '지금 할 일' 하나만.
+test("[RVA-62] PC-157 줄 안에는 채운 단추가 없어요(운영 장부 끝내기·검토 채택·오늘 바로 답하기 보내기)", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const inRows = () => u.$$("#main .rows li .btn.primary, #main .lg-line .btn.primary, #main table .btn.primary").length;
+  await u.go("#/desk");
+  await u.settle(30);
+  assert.ok(u.$$("#main .lg-line").length > 0, "장부에 줄이 있어요");
+  assert.equal(inRows(), 0, "운영 장부 줄의 끝내기는 테두리");
+  await u.go("#/review");
+  await u.settle(30);
+  assert.equal(inRows(), 0, "검토 줄의 채택은 테두리");
+  await u.go("#/home");
+  await u.settle(30);
+  assert.ok(u.$$("#main .btn.primary").length <= 1, "오늘은 '차례로 답하기' 하나까지");
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭의 회사 목록은 표 머리 대신 찾기 옆 정렬 고르기 하나.
+test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 그 순서로", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/companies");
+  await u.settle(30);
+  const pick = u.$('#main .company-top select.sort-pick[data-change="company-sort"]');
+  assert.ok(pick, "정렬 고르기");
+  assert.equal(pick.value, "new");
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /@media \(max-width:599\.98px\)\{\.company-top \.sort-pick\{display:block[^}]*\}(?:[^{}@]+\{[^}]*\})*table\.list\.companies thead\{display:none\}\}/);
+  // 다듬기(총괄 11-13): 대기는 빨강이 아니라 굵게(조건 6), 큰 글자에서 '+'가 둘째 줄에 함께, 오늘 오류 줄의 작은 글은 아래 줄로.
+  assert.equal(u.$$("#main table.list.companies td.n.hot").length, 0, "대기 숫자는 빨강이 아니에요");
+  assert.ok(u.$$("#main table.list.companies td.n.due").length > 0, "대기가 있는 회사는 굵게");
+  assert.match(css, /\.company-top \.sort-pick\{[^}]*max-width:calc\(100% - 2 \* min\(2\.75rem,48px\) - 1rem\)/);
+  assert.match(css, /@container stuck \(width < 30rem\)\{\.stuck-list p>small\{display:block/);
+  pick.value = "members";
+  pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
+  await u.settle(30);
+  assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
+  assert.deepEqual(u.errors, []);
+});

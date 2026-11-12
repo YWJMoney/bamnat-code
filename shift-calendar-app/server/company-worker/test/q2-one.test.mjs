@@ -349,3 +349,26 @@ test("[RVA-58] 개발사항 580줄: 처음은 지금 볼 것(1순위·문의·�
   const queue = (await call("GET", "/api/admin/loop/queue", undefined, owner)).data;
   assert.equal(queue.items[0].title, "직접 넣은 것");
 });
+
+test("[RVA-59] 다가오는 날짜: 날짜 약속 장부를 KST 오늘부터 남은 날 순서로, 지난 날은 빼고, 빈틈은 그 날짜까지 경고 일수 안일 때만", async (t) => {
+  const { datesNow } = await import("../src/dates.js");
+  const at = Date.parse("2026-11-12T16:30:00Z"); // KST 11-13 01:30
+  const d = datesNow([
+    { id: "b", date: "2026-11-20", what: "7일 줄", area: "앱", before: "글꼴 봐요" },
+    { id: "a", date: "2026-11-13", what: "게시일", area: "사람", before: "" },
+    { id: "old", date: "2026-11-12", what: "어제", area: "", before: "" },
+    { id: "rates", date: "2027-01-01", what: "새해 요율", gap: { from: "2028-01-01", warnDays: 120, what: "요율 줄 없음" } },
+    { id: "hol", date: "2027-12-31", what: "공휴일 끝", gap: { from: "2027-03-01", warnDays: 180, what: "공휴일 표 끝" } },
+    { id: "bad", date: "11월 30일", what: "모양이 틀린 줄" },
+  ], at);
+  assert.equal(d.today, "2026-11-13");
+  assert.deepEqual(d.upcoming.map((x) => [x.id, x.left]), [["a", 0], ["b", 7], ["rates", 49], ["hol", 413]]);
+  assert.deepEqual(d.gaps.map((x) => [x.id, x.left]), [["hol", 108]]);
+  assert.equal(d.soon, 2);
+  // 자동 순환 답에 실려 와요(장부 줄은 저장소에서 만든 것).
+  const { call } = server({ t });
+  const owner = await signIn(call);
+  const loop = (await call("GET", "/api/admin/loop", undefined, owner)).data;
+  assert.ok(Array.isArray(loop.dates.upcoming) && Array.isArray(loop.dates.gaps));
+  assert.match(loop.dates.today, /^\d{4}-\d{2}-\d{2}$/);
+});

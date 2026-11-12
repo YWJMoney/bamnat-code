@@ -753,7 +753,7 @@ table.list thead th{background:var(--soft);white-space:nowrap}
 table.list .sort{border:0;background:none;padding:0;font:inherit;font-weight:800;color:var(--muted);cursor:pointer}
 table.list .sort[aria-pressed=true]{color:var(--accent)}
 table.list td.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
-table.list td.n.hot{color:var(--bad);font-weight:800}
+table.list td.n.hot{color:var(--bad);font-weight:800}table.list td.n.due{font-weight:800}
 table.list td.name a{font-weight:800;color:inherit;text-decoration:none}
 @media (hover:hover){table.list td.name a:hover{text-decoration:underline}}
 table.list td.name small{display:block;font-size:.75rem;color:var(--muted)}
@@ -1005,6 +1005,10 @@ details.card.loop-fold[open]>summary{margin-bottom:.6rem}
 .dev-rows .dev-st.ask{color:var(--warn)}
 .tier-rows .row-main small{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .tier-rows details[open] .row-main small{display:block}
+.dates-rows .item{padding:.55rem .85rem}
+.dates-rows .dl-soon{font-weight:700;color:var(--fg)}
+.dates-rows .dl-before{color:var(--muted)}
+.dl-later{margin-top:.5rem}
 /* 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 넘긴 줄은 빨간 띠·칩 대신 '기한 넘김 N' 머리 하나, 줄의 칸은 굵은 보통 글자('넘음'·'넘김'은 글로) */
 .pill.late{background:transparent;border-color:transparent;color:var(--fg);font-weight:800;padding-inline:0}
 .seg .n.warm{color:var(--warn)}
@@ -1578,6 +1582,8 @@ details.card.home-fold{margin:0;padding:0}
 .card.stuck{border-left:4px solid var(--warn)}
 .stuck-list{list-style:none;margin:0;padding:0;display:grid;gap:.6rem}
 .stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
+/* 2.0.0 [RVA-62] 좁은 폭(또는 큰 글자)에서는 굵은 제목 뒤에 작은 글이 이어 붙지 않고 아래 줄로. */
+.stuck-list{container:stuck/inline-size}@container stuck (width < 30rem){.stuck-list p>small{display:block;margin-top:.15rem}}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}
@@ -1653,6 +1659,10 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 .company-top input[type=search]{flex:1 1 8rem;min-width:0}
 .btn.icon-only{width:2.75rem;padding:0;flex:none}
 @media (max-width:599.98px){.company-top .btn.primary{width:2.75rem;padding:0;flex:none}.company-top .btn.primary .lbl{display:none}}
+/* 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭은 표 머리 대신 찾기 옆 정렬 고르기 하나(첫 회사 줄이 화면 위 25% 안에서). 큰 글자에서는 다음 줄로 내려가요(조건 12). */
+.company-top .sort-pick{display:none}
+.toolbar.list-top.company-top{flex-wrap:wrap}.company-top input[type=search]{min-width:min(12rem,100%)}
+@media (max-width:599.98px){.company-top .sort-pick{display:block;flex:0 0 auto;width:auto;max-width:calc(100% - 2 * min(2.75rem,48px) - 1rem);padding-inline:.5rem 1.4rem;min-height:min(2.75rem,48px)}.company-top input[type=search]{flex-basis:min(6.5rem,40vw);min-width:min(6.5rem,40vw)}.toolbar.list-top.company-top{flex-wrap:wrap}.company-top>.btn.icon-only,.company-top>.btn.primary{width:min(2.75rem,48px);min-height:min(2.75rem,48px);height:min(2.75rem,48px)}table.list.companies thead{display:none}}
 @media (max-width:599.98px){.timebar .meta{display:none}}
 .decide-rows .draft-line{padding:0 1rem .75rem;display:grid;gap:.35rem}
 .decide-rows .draft-line .answer{margin:0;padding:.5rem .7rem;border-left:3px solid var(--line-strong);background:var(--soft);border-radius:var(--r-sm);white-space:pre-wrap;overflow-wrap:anywhere}
@@ -1660,6 +1670,9 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 .toolbar.list-top{flex-wrap:nowrap}.toolbar.list-top .grow{flex:1 1 auto;min-width:0}
 .day-head.bad{color:var(--bad)}
 .list-head + h2.section,.list-head + h2.day-head,.list-head + .note + h2.day-head{margin-top:.25rem}
+/* 2.0.0 [RVA-62] PC-158(조건 1): 380×800 기능 관리의 첫 줄이 25.4%. 목록 머리 바로 밑 묶음 제목의 위아래 틈을 줄여요(모든 목록 같은 값). */
+.list-head{margin-bottom:.35rem}
+.list-head + h2.day-head{margin-top:.1rem;margin-bottom:.3rem}
 /* 보기가 많은 화면: 구간 줄은 옆으로 밀리고(줄 바꿈 없음) 남은 폭을 다 써요. 끝 흐림은 허브 탭 줄과 같아요. */
 .list-head.seg-scroll>.segmented{flex:1 1 12rem;min-width:0;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}
 .list-head.seg-scroll>.segmented .seg{flex:0 0 auto}

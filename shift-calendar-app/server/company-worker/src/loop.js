@@ -1,5 +1,7 @@
 import { all, audit, batch, can, deviceHash, deviceId, iso, json, network, networkCheck, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
 import { pushReady } from "./push.js";
+import { DATES } from "./dates-built.js";
+import { datesNow } from "./dates.js";
 import { DAY, HOUR } from "./units.js";
 import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } from "./money.js";
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
@@ -1154,6 +1156,8 @@ export async function loopState(env, now) {
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
     urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
+    // 2.0.0 [RVA-59] 날짜 약속 장부(RVR-38)의 남은 날과 빈틈.
+    dates: datesNow(DATES, now),
     live: { name: liveName, code: liveName ? codes[liveName] ?? null : null, phones: apps.map((a) => ({ app: a.app, code: codes[a.app] ?? null, phones: a.phones })) },
   };
 }
