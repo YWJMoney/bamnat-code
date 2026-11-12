@@ -159,3 +159,5 @@
 {"track": "RVP-69", "title": "PDF·사진 보내기가 실패하면 한 가지 말과 다시 하기", "status": "check", "size": "fix", "route": "app", "check": "저장 공간이 꽉 찬 폰에서 연차 PDF·견적서 사진을 보내면 앱이 닫히지 않고 '파일을 만들지 못했어요'와 '다시 하기'", "test": "ReportShareTest"}
 {"track": "RVP-71", "title": "색 고르기를 큰 손가락에도(36dp 동그라미, 색 코드 검사)", "status": "check", "size": "polish", "route": "app", "check": "꾸미기 색 줄의 색 동그라미가 옆 색과 같이 눌리지 않고, 색 코드에 한글을 치면 '0~9와 A~F로 여섯 글자예요'"}
 {"track": "RVP-72", "title": "레시피 요약이 이름 없는 부품 조각에 막히지 않게", "status": "check", "size": "fix", "route": "app", "check": "부품 id가 숫자인 레시피도 장터 설명이 '부품 n개 꾸밈'으로 나옴", "test": "RecipeWordsTest"}
+{"track": "RVP-66", "title": "꾸미기 예시와 근무별 패턴을 내 유형 말로", "status": "check", "size": "polish", "route": "app", "check": "알바로 스튜디오 › 급여 꾸미기를 열면 '시급 10,030원 × 96시간·주휴수당', 가게 달력의 칸 디자인 › 패턴에는 야간·24시간 당직 줄이 없음", "test": "LookEditorsTest"}
+{"track": "RVP-67", "title": "꾸미기 편집기마다 같은 자리 '처음대로', 색 안내가 실제 화면대로", "status": "check", "size": "polish", "route": "app", "check": "메모장·가계부·급여·마을 꾸미기 맨 아래에 '처음대로'가 같은 모양, 어두운 화면에서 글자색 경고가 실제와 맞음", "test": "LookEditorsTest"}

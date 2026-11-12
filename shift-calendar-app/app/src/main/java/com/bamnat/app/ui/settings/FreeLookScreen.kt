@@ -384,8 +384,8 @@ internal fun CellDesigner(view: CalendarView, index: Int, onIndex: (Int) -> Unit
             onReset = l.pad?.let { { set(l.copy(pad = null)) } }) { set(l.copy(pad = it.toInt())) }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { set(CellLook()) }, enabled = !l.isDefault) { Text("이 모양 처음대로") }
-        if (looks.size > 1) OutlinedButton(onClick = { removing = true }) { Text("모양 ${i + 1} 지우기") }
+        ResetAll("이 모양 처음대로", !l.isDefault) { set(CellLook()) }
+        if (looks.size > 1) OutlinedButton(onClick = { removing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("모양 ${i + 1} 지우기") }
     }
     if (removing) AlertDialog(
         onDismissRequest = { removing = false },
@@ -420,7 +420,13 @@ private fun PlaceGrid(value: String, onPick: (String) -> Unit) {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit) {
+internal fun PatternEditor(view: CalendarView,
+    /**
+     * 2.0.0 [RVP-66] (검토 REST-07·T14-09) The roles the calendar's kinds of day have ([com.bamnat.core.recipe.ShiftRole] keys); 근무별 shows
+     * only those (a 가게 has no 야간·24시간 당직 line), and not at all with fewer than two. Null shows every role.
+     */
+    roles: Set<String>? = null,
+    onChange: (CalendarView) -> Unit) {
     val n = view.looks.size
     if (n < 2) {
         Text("모양이 두 개 이상이면 번갈아 쓸 수 있어요. ‘칸 디자인’에서 + 모양 더하기를 눌러요", style = MaterialTheme.typography.bodySmall,
@@ -428,11 +434,14 @@ internal fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit)
         return
     }
     val p = view.pattern
-    Chips(listOf(CellPattern.ONE to "모두 모양 1", CellPattern.CYCLE to "몇 칸마다 반복", CellPattern.WEEK to "요일별", CellPattern.SHIFT to "근무별"), p.mode) { m ->
+    val shown = ShiftRole.entries.filter { roles == null || it.key in roles || it.key in p.shift.keys }
+    val byShift = shown.size >= 2 || p.mode == CellPattern.SHIFT
+    Chips(listOf(CellPattern.ONE to "모두 모양 1", CellPattern.CYCLE to "몇 칸마다 반복", CellPattern.WEEK to "요일별") +
+        listOfNotNull((CellPattern.SHIFT to "근무별").takeIf { byShift }), p.mode) { m ->
         onChange(view.copy(pattern = when (m) {
             CellPattern.CYCLE -> CellPattern(CellPattern.CYCLE, n = minOf(n, 2).coerceAtLeast(2))
             CellPattern.WEEK -> CellPattern(CellPattern.WEEK, week = listOf(0, 0, 0, 0, 0, minOf(1, n - 1), minOf(1, n - 1)))
-            CellPattern.SHIFT -> CellPattern(CellPattern.SHIFT, shift = mapOf("off" to minOf(1, n - 1)))
+            CellPattern.SHIFT -> CellPattern(CellPattern.SHIFT, shift = mapOf((if (shown.any { it.key == "off" }) "off" else shown.last().key) to minOf(1, n - 1)))
             else -> CellPattern()
         }))
     }
@@ -450,7 +459,7 @@ internal fun PatternEditor(view: CalendarView, onChange: (CalendarView) -> Unit)
                 Chips(choices, p.week.getOrElse(d) { 0 }) { k -> onChange(view.copy(pattern = p.copy(week = p.week.toMutableList().also { it[d] = k }))) }
             }
         }
-        CellPattern.SHIFT -> ShiftRole.entries.forEach { r ->
+        CellPattern.SHIFT -> shown.forEach { r ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(r.label, Modifier.width(72.dp), style = MaterialTheme.typography.bodyMedium)
                 Chips(choices, p.shift[r.key] ?: 0) { k -> onChange(view.copy(pattern = p.copy(shift = p.shift + (r.key to k)))) }
@@ -498,6 +507,7 @@ internal fun MemoLookEditor(l: MemoLook, onChange: (MemoLook) -> Unit) {
         ColorPick("바탕색", l.bg) { onChange(l.copy(bg = it)) }
         Text("사진 배경은 아래 ‘색·배경’에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    ResetAll("메모장 모양 처음대로", !l.isDefault) { onChange(MemoLook()) }
 }
 
 internal fun memoSummary(l: MemoLook): String = if (l.isDefault) "처음대로 (목록, 메모마다 색)" else
@@ -517,6 +527,7 @@ internal fun MoneyLookEditor(l: MoneyLook, onChange: (MoneyLook) -> Unit) {
         ColorPick("지출 색", l.expense) { onChange(l.copy(expense = it)) }
         Text("글씨가 잘 안 보이는 색이면 처음 색으로 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+    ResetAll("가계부 모양 처음대로", !l.isDefault) { onChange(MoneyLook()) }
 }
 
 internal fun moneySummary(l: MoneyLook): String = if (l.isDefault) "처음대로" else listOfNotNull(
@@ -595,6 +606,7 @@ internal fun PayLookEditor(l: PayLook, onChange: (PayLook) -> Unit) {
         Chips(listOf(null to "풀이 접어 두기", true to "풀이 펼쳐 두기"), l.open?.takeIf { it }) { onChange(l.copy(open = it)) }
         Chips(listOf(null to "날짜별 내역 보이기", false to "날짜별 내역 숨기기"), l.days?.takeIf { !it }) { onChange(l.copy(days = it)) }
     }
+    ResetAll("급여 모양 처음대로", !l.isDefault) { onChange(PayLook()) }
 }
 
 internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
@@ -602,16 +614,32 @@ internal fun paySummary(l: PayLook?): String = if (l == null || l.isDefault) "�
     mapOf("compact" to "촘촘히", "roomy" to "넉넉히")[l.rows], "풀이 펼침".takeIf { l.open == true }, "날짜별 숨김".takeIf { l.days == false },
 ).joinToString(" · ").ifEmpty { "바꿈" }
 
+/**
+ * 2.0.0 [RVP-66] (검토 REST-07·T14-08) The pay example in each kind of work's own words: 알바 시급×시간·주휴수당, 현장 일당×공수·3.3%,
+ * 가게 매출·경비, 투자 실현 손익·수수료 (it said 월급·야간근로수당·결근 공제 to everyone). The total is the sum of the lines.
+ */
+internal class PaySampleWords(val kind: String, val title: String, val lines: List<Pair<String, Long>>)
+
+internal fun paySampleOf(style: WorkStyle): PaySampleWords = when (style) {
+    WorkStyle.DAY -> PaySampleWords("월급", "11월 예상 급여 (세전)", listOf("기본급" to 2_600_000L, "연장근로수당" to 312_000L, "식대" to 200_000L))
+    WorkStyle.HOURLY -> PaySampleWords("시급", "11월 받을 돈 (예상)", listOf("시급 10,030원 × 96시간" to 962_880L, "주휴수당" to 160_480L, "3.3% 떼기" to -37_070L))
+    WorkStyle.FIELD -> PaySampleWords("일당", "11월 받을 돈", listOf("일당 180,000원 × 14공" to 2_520_000L, "잔업 0.5공 × 2번" to 180_000L, "3.3% 떼기" to -89_100L))
+    WorkStyle.BUSINESS -> PaySampleWords("매출", "11월 남는 돈 (추정)", listOf("매출" to 8_400_000L, "재료·임대 경비" to -5_100_000L, "카드 수수료" to -84_000L))
+    WorkStyle.INVEST -> PaySampleWords("수익", "11월 실현 손익", listOf("실현 수익" to 412_000L, "배당" to 38_000L, "수수료·세금" to -21_400L))
+    WorkStyle.SHIFT -> PaySampleWords("월급", "11월 예상 급여 (세전)", listOf("기본급" to 2_397_500L, "야간근로수당" to 691_778L, "결근 공제" to -96_000L))
+}
+
 /** The pay screen's example: its head, its total card and three lines, by the look of [style] and the 급여 parts (BLU-11). */
 @Composable
 internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
+    val sample = paySampleOf(style)
     Column(Modifier.fillMaxWidth().clickable(onClickLabel = "급여 모양 고치기", onClick = onTap).padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         val todayScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
         val head = bp.style("pay.head", scope = todayScope)
         if (head.hide != true) Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.head"))
             .then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp))), verticalAlignment = Alignment.CenterVertically) {
-            com.bamnat.app.ui.parts.PartText("${style.label.substringBefore(' ')} · 월급", head, MaterialTheme.typography.titleMedium, Modifier.weight(1f))
+            com.bamnat.app.ui.parts.PartText("${style.label.substringBefore(' ')} · ${sample.kind}", head, MaterialTheme.typography.titleMedium, Modifier.weight(1f))
             Text("‹ 11월 ›", style = MaterialTheme.typography.titleSmall)
         }
         val total = bp.style("pay.total", scope = todayScope)
@@ -621,12 +649,12 @@ internal fun PaySample(look: PayLook, style: WorkStyle, onTap: () -> Unit) {
         Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.total"))
             .then(com.bamnat.app.ui.parts.PartMods.box(total.copy(fill = null, fillA = null, pad = null, padX = null, padY = null), shape))
             .clip(shape).then(if (total.paint != null) Modifier else Modifier.background(fill)).padding(horizontal = (total.padH ?: 16).dp, vertical = (total.padV ?: 16).dp)) {
-            Text("11월 예상 급여 (세전) · ${style.label.substringBefore(' ')}", style = MaterialTheme.typography.labelLarge, color = on)
-            Text("3,120,000원", color = on, fontWeight = FontWeight.Bold,
+            Text(sample.title, style = MaterialTheme.typography.labelLarge, color = on)
+            Text("%,d원".format(sample.lines.sumOf { it.second }), color = on, fontWeight = FontWeight.Bold,
                 style = com.bamnat.app.ui.parts.PartMods.text(total.copy(ink = null),
                     when (look.total) { "m" -> MaterialTheme.typography.headlineMedium; "xl" -> MaterialTheme.typography.displayMedium; else -> MaterialTheme.typography.displaySmall }))
         }
-        listOf("기본급" to 2_397_500L, "야간근로수당" to 691_778L, "결근 공제" to -96_000L).forEach { (name, v) ->
+        sample.lines.forEach { (name, v) ->
             val row = bp.style("pay.row", setOf(if (v < 0) "out" else "in"), todayScope)
             val rowShape = com.bamnat.app.ui.parts.PartMods.shapeOf(row, MaterialTheme.shapes.small)
             Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.partSpotModifier("pay.row"))
@@ -662,7 +690,10 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
             TextButton(onClick = pick) { Text(if (l.photo == null) "사진 고르기" else "바꾸기") }
             if (l.photo != null) TextButton(onClick = { onChange(l.copy(photo = null)) }) { Text("없애기") }
         }
-        if (l.photo != null || shown.photo != null) LabeledSlider("사진 위 흐리게", (l.dim ?: 30).toFloat(), 20f..80f, "%") { onChange(l.copy(dim = it.toInt())) }
+        // 2.0.0 [RVP-67] (검토 REST-08) Not chosen here reads what this screen has now: 앱 전체's 흐리게 when it is set there, not 30%.
+        if (l.photo != null || shown.photo != null) LabeledSlider("사진 위 흐리게", (l.dim ?: shown.dim ?: 30).toFloat(), 20f..80f, "%",
+            unset = if (l.dim == null) (if (target != FreeTarget.ALL && shown.dim != null) "앱 전체 따라 · 지금 ${shown.dim}%" else "처음대로 · 지금 ${shown.dim ?: 30}%") else null,
+            onReset = l.dim?.let { { onChange(l.copy(dim = null)) } }) { onChange(l.copy(dim = it.toInt())) }
         // [MAT-03] 1.36 사진 조정·블렌드.
         if (l.photo != null || shown.photo != null) PhotoAdjustEditor(l.adjust ?: shown.adjust ?: com.bamnat.core.recipe.PhotoAdjust()) {
             onChange(l.copy(adjust = it.takeIf { a -> !a.isDefault }))
@@ -673,19 +704,21 @@ internal fun ScreenLookEditor(target: FreeTarget, l: ScreenLook, shown: ScreenLo
             Text("마을 제목 앞에 붙어요. 이 휴대폰에서만 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Chips(listOf<Pair<String?, String>>(null to "없음") + listOf("🌙", "☀️", "🌿", "🐻", "🍀", "⭐", "💬", "🔥", "🎈", "🧸").map { it to it }, l.emoji) { onChange(l.copy(emoji = it)) }
         }
+        // [RVP-67] (REST-08) 마을 too has its way back, in the same place as the other screens.
+        ResetAll("이 화면 색·배경 처음대로", !l.isDefault) { onChange(ScreenLook()) }
         return
     }
     ColorPick("카드 색", l.card) { onChange(l.copy(card = it)) }
     ColorPick("글자색", l.ink) { onChange(l.copy(ink = it)) }
     // [MAT-05] 1.36 이 화면 글꼴 (비워 두면 ‘앱 전체’ 글꼴).
     FontRow(if (target == FreeTarget.ALL) "앱 전체 글꼴" else "이 화면 글꼴", l.font) { onChange(l.copy(font = it)) }
-    val ground = (shown.bg ?: 0xFFF7F8FCL)
-    if (shown.ink != null && Palette.inkOn(shown.ink, ground, shown.card ?: ground) != shown.ink) {
+    // [RVP-67] (REST-08) The warning asks the same rule the screen is drawn by (dark screens and the theme's own ground), not a light page.
+    if (shown.ink != null && com.bamnat.app.ui.theme.inkShown(MaterialTheme.colorScheme, shown) != shown.ink) {
         Text("고른 글자색은 바탕에서 잘 안 보여서 검정이나 흰색으로 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
     }
     ColorPick("강조색 (단추·고른 것)", l.accent) { onChange(l.copy(accent = it)) }
     if (target == FreeTarget.ALARM) Text("끄기 단추는 어떤 색에서도 글자가 또렷하게 보여요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (!l.isDefault) OutlinedButton(onClick = { onChange(ScreenLook()) }) { Text("이 화면 색·배경 처음대로") }
+    ResetAll("이 화면 색·배경 처음대로", !l.isDefault) { onChange(ScreenLook()) }
 }
 
 internal fun colorSummary(l: ScreenLook?): String = if (l == null || l.isDefault) "처음대로" else listOfNotNull(
@@ -759,6 +792,15 @@ internal fun Group(
         }
         if (open) content()
     }
+}
+
+/**
+ * 2.0.0 [RVP-67] (검토 U14-04) Every look editor ends with the same way back, in the same place and shape: an outlined 처음대로 that
+ * is there but off while nothing is changed.
+ */
+@Composable
+internal fun ResetAll(words: String, enabled: Boolean, onClick: () -> Unit) {
+    OutlinedButton(onClick = onClick, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(words) }
 }
 
 /** 2.0.0 [RVP-68] (검토 REST-09) A dp shown to one place, kept in tenths: rounded (1.3 stays 13), 0.5~4dp. */
