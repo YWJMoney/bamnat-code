@@ -170,16 +170,21 @@ object MainStall {
     private fun keyguardShown(context: Context): Boolean =
         runCatching { context.getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true }.getOrDefault(false)
 
-    /** The first app line of [frames] ("PayViewModel.save:212"), else the first line. */
+    /**
+     * The first app line of [frames] ("PayViewModel.save:212"), else the first line.
+     * 2.0.0 [RVL-55] (검토 DATA-07) In the release build a renamed line whole, with the next of ours ([AppFrames.where]).
+     */
     private fun where(frames: Array<StackTraceElement>): String {
-        val f = frames.firstOrNull { it.className.startsWith("com.bamnat") } ?: frames.firstOrNull() ?: return "none"
+        com.bamnat.core.diag.AppFrames.where(frames)?.let { return it }
+        val f = frames.firstOrNull() ?: return "none"
         return "${f.className.substringAfterLast('.')}.${f.methodName}:${f.lineNumber}"
     }
 
     fun write(context: Context, ms: Long, frames: Array<StackTraceElement>, atMillis: Long): File {
         val dir = CrashLog.dir(context).apply { mkdirs() }
         val file = File(dir, "$PREFIX$atMillis.txt")
-        val kept = frames.filter { it.className.startsWith("com.bamnat") || it.className.startsWith("android") || it.className.startsWith("androidx") }
+        // 2.0.0 [RVL-55] (검토 DATA-07) The release build's renamed lines are ours too: 1.32~1.39 kept only android's there.
+        val kept = frames.filter { com.bamnat.core.diag.AppFrames.kept(it.className) }
             .take(FRAMES).joinToString("\n") { "  at ${it.className}.${it.methodName}:${it.lineNumber}" }
         file.writeText("${ms}ms\n$kept\n")
         notes(context).drop(KEEP).forEach { it.delete() }
@@ -195,9 +200,9 @@ object MainStall {
         val text = runCatching { f.readLines() }.getOrNull() ?: return@mapNotNull null
         val ms = text.firstOrNull()?.removeSuffix("ms")?.toLongOrNull() ?: return@mapNotNull null
         val frames = text.drop(1).map { it.trim().removePrefix("at ") }.filter { it.isNotEmpty() }
-        // "com.bamnat.app.ui.pay.PayViewModel.save:212" → "PayViewModel.save:212"
-        val where = (frames.firstOrNull { it.startsWith("com.bamnat") } ?: frames.firstOrNull())
-            ?.split('.')?.takeLast(2)?.joinToString(".") ?: "알 수 없음"
+        // "com.bamnat.app.ui.pay.PayViewModel.save:212" → "PayViewModel.save:212"; a renamed line (release build) whole.
+        val where = (frames.firstOrNull { com.bamnat.core.diag.AppFrames.ours(com.bamnat.core.diag.AppFrames.classOf(it)) } ?: frames.firstOrNull())
+            ?.let { com.bamnat.core.diag.AppFrames.shortLine(it) } ?: "알 수 없음"
         "${SimpleDateFormat("MM-dd HH:mm", Locale.KOREA).format(Date(at))} · ${"%.1f".format(ms / 1000.0)}초 · $where"
     }
 

@@ -404,4 +404,41 @@ class PersonalCalendarsTest {
         listedCalendar("알바")
         assertEquals("프로", badge())
     }
+
+    /** 2.0.0 [RVL-65] (검토 DATA-16) A list file that cannot be read loses no calendar: they come back by their files, and 데이터 점검 says so. */
+    @Test fun aBrokenListGivesTheCalendarsBackByTheirFiles() {
+        val a = listedCalendar("알바")
+        val b = listedCalendar("가족")
+        runBlocking { c.calendars.repository(a).ensureDefaults(); c.calendars.repository(b).ensureDefaults() }
+        assertEquals(setOf(a, b), CalendarStorage.Files(app).found())
+        val list = File(app.filesDir, "calendars.json")
+        list.writeText("{\"v\":1,\"calendars\":[{\"id\":")  // cut off half way
+
+        val reread = CalendarBook(list, c.scheduleRepository, CalendarStorage.Files(app), { error("not opened") })
+        assertEquals(listOf(PersonalCalendar.MAIN) + listOf(a, b).sorted(), reread.calendars.value.map { it.id })
+        assertEquals(listOf("되찾은 달력 1", "되찾은 달력 2"), reread.recovered)
+        assertTrue(reread.calendars.value.drop(1).all { it.ready && it.style == null })
+        assertTrue("the broken file is kept beside for a look", File(app.filesDir, "calendars.json.broken").isFile)
+        // Once the person renames one, the list is written again and reads as before.
+        reread.rename(a, "편의점 알바")
+        val again = CalendarBook(list, c.scheduleRepository, CalendarStorage.Files(app), { error("not opened") })
+        assertEquals("편의점 알바", again.get(a)?.name)
+        assertTrue(again.recovered.isEmpty())
+        // A list that reads well takes nothing from the files, and a name that is not a calendar's file is none.
+        assertNull(CalendarStorage.idOf("calendar_main.db"))
+        assertNull(CalendarStorage.idOf("calendar_example.db"))
+        assertNull(CalendarStorage.idOf("calendar_ab12.db-journal"))
+        assertEquals("ab12", CalendarStorage.idOf("calendar_ab12.db"))
+    }
+
+    @Test fun theDataCheckNamesACalendarFileTheListDoesNot() = runBlocking {
+        val a = listedCalendar("알바")
+        c.calendars.repository(a).ensureDefaults()
+        // A file left by a calendar the list no longer has.
+        app.getDatabasePath(CalendarStorage.fileName("stray1")).apply { parentFile!!.mkdirs(); writeBytes(ByteArray(0)) }
+        val lines = com.bamnat.app.diag.DataCheck.run(c)
+        assertTrue(lines.joinToString { it.text }, lines.any { !it.ok && it.text.startsWith("목록에 없는 달력 파일 1개") })
+        app.getDatabasePath(CalendarStorage.fileName("stray1")).delete()
+        Unit
+    }
 }

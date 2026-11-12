@@ -324,6 +324,29 @@ class FlagEvalTest {
     }
 
     /**
+     * 2.0.0 [RVL-63] (검토 DATA-19) A row that sends something new to a server is LEGAL (shift-calendar-app/CLAUDE.md): one whose words
+     * name a server or a link it makes, and does not say it sends nothing. 팀원 근무 링크·출퇴근·서명 링크·지금 자는 중 were 보통, so a force-on
+     * opened them on a phone that had not said yes to 3.11. The server's own switches (서버 기능 끄기) are not rows that send.
+     */
+    @Test fun aRowThatSendsToAServerIsLegal() {
+        val sends = Regex("서버|링크")
+        val loose = FlagCatalog.ALL.filter { f ->
+            f.group != FlagGroup.SERVER && f.risk != Risk.LEGAL && sends.containsMatchIn(f.what + " " + f.whyOff) &&
+                !(f.what + " " + f.whyOff).contains("보내지 않")
+        }.map { it.key }
+        assertEquals(emptyList<String>(), loose)
+        // A phone installed before 3.11 was posted (11-07) that has not said yes waits until 12-07, also when forced on.
+        val held = phone(kst(2026, 11, 20), agreed = emptySet(), installed = LocalDate.of(2026, 10, 21), version = 54)
+        for (key in listOf(FlagCatalog.TEAM_LEADER, FlagCatalog.BOSS_PAYROLL, FlagCatalog.SLEEP_SHARE)) {
+            val f = FlagCatalog.of(key)!!
+            assertEquals(key, Risk.LEGAL, f.risk)
+            val forced = FlagEval.state(f, held, FlagOverride(force = Force.ON))
+            assertFalse("$key: ${forced.reason}", forced.on)
+            assertTrue(key, FlagEval.state(f, held.copy(agreed = setOf(FlagCatalog.PHASE3_POLICY)), FlagOverride(force = Force.ON)).on)
+        }
+    }
+
+    /**
      * 2.0.0 [RVD-18] 검토 LEGAL-02·03 (사용자 결정 2026-11-12): 3.12가 11-09에 시행돼도 마을 쉬기(community.care)는 코드로 12-09부터, '확인한 것만
      * 세기'(community.confirmed)는 11-09부터. 서버가 보는 것처럼(동의와 상관없이) 봐요.
      */

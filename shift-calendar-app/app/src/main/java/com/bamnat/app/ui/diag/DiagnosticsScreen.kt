@@ -468,9 +468,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line. [RVL-59] (검토 DATA-25) 복사 waits in ⋮, so the line names the button at the
+                // bottom that takes this report along.
                 Text(
-                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 맨 아래 ‘점검 내용과 함께 문의하기’로 이 내용이 함께 가요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

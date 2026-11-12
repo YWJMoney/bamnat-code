@@ -1375,6 +1375,8 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
     val recipes: Int = 0, val profile: Boolean = false, val follows: Int = 0, val sets: Int = 0,
     /** 1.39 [PRIV-06] 공유 서버: links cut with this phone's keys, and those left for want of a connection. */
     val links: Int = 0, val linksLeft: Int = 0,
+    /** 2.0.0 [RVL-58] (검토 DATA-22) Cutting the links stopped on something unexpected: they are not gone yet and are tried again. */
+    val linksFailed: Boolean = false,
     /** 2.0.0 [RVN-09] COMP-42·43 광장 바로 알림 and 저절로 나누기 were on and went off with the rest (the phone's, not the server's). */
     val alertsOff: Boolean = false, val autoShareOff: Boolean = false,
     /** 2.0.0 [RVN-09] U10b-04 채택된 규칙·시세 that stay for the people using them, cut loose from this phone. */
@@ -1388,13 +1390,18 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
             "팔로우 $follows".takeIf { follows > 0 }, "공유 링크 ${links}개".takeIf { links > 0 },
         )
         val kept = if (inquiriesKept > 0) " (결제·환불 문의 ${inquiriesKept}건은 법에 따라 운영자가 3년 보관해요)" else ""
-        val left = if (linksLeft > 0) ". 공유 링크 ${linksLeft}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else ""
+        val left = com.bamnat.app.share.ShareForget.leftWords(linksLeft, linksFailed)?.let { ". $it" }.orEmpty()
         val stay = listOfNotNull("채택된 규칙 ${adoptedKept}개".takeIf { adoptedKept > 0 }, "채택된 시세 ${ratesKept}개".takeIf { ratesKept > 0 })
         val stayLine = if (stay.isEmpty()) "" else ". ${stay.joinToString("·")}는 다른 분들이 쓰고 있어 남고, 나와의 연결만 지웠어요"
         val off = listOfNotNull("광장 바로 알림".takeIf { alertsOff }, "저절로 나누기".takeIf { autoShareOff })
         val offLine = if (off.isEmpty()) "" else ". ${off.joinToString("과 ")}도 껐어요. 설정에서 다시 켤 수 있어요"
-        return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) +
-            stayLine + left + offLine
+        // 2.0.0 [RVL-58] Links still to cut are not "nothing to delete": then the words start with them.
+        val head = when {
+            parts.isNotEmpty() -> parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept
+            left.isNotEmpty() -> ""
+            else -> "서버에 지울 것이 없었어요"
+        }
+        return (head + stayLine + left + offLine).removePrefix(". ")
     }
 
     /** 2.0.0 [RVO-16] 검토 SET-09: how the last request went, in a few words under the row ([com.bamnat.app.ui.company.ForgetLog]). */

@@ -7913,17 +7913,32 @@ function publicRules(text, q) {
 export const REMOTE = {
   kinds: ["presets", "rates", "wages", "taxtable", "publicpay", "holidays", "taxes", "alarm-guide", "cycles", "merchants"],
   base: "https://ywjmoney.github.io/-/remote/v1",
-  // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file). [REMOTE-08] The last two are the
-  // 2026-10-26 key and its spare (결정 D83); their signatures are in <kind>.json.sig2. [REMOTE-09] 1.38 adds the
-  // 2026-11-05 key and its spare (the 2026-10-26 pair stayed in the old account); files changed from 1.38 on use it.
-  keys: ["6e6J4SWfNWAY8142S4+UDOjBJz+4/njmfjxATwAl55I=", "fzoA27EsvTUDa4EA/xtL/z4039vz1TSwmTr48lksmXQ=",
-    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=", "ey5slM4bow7nLuljDW6ZCc2pVVIUN0o5dFkWsBQUc/E=",
-    "FVLFYF4Vrj5dhvb3b2+sxXCjI2U3BRH1vFkynSMNv4s=", "r2r7SkGBcGZlOpMK9IHocHQEsHEbuPJ1oVec8lhB5LU="],
+  // The same keys as core RemoteKeys.TRUSTED (a test reads the Kotlin file): [REMOTE-09] the 2026-11-05 key and its spare.
+  // 2.0.0 [RVL-57] (검토 DATA-14) The keys this project no longer holds are gone (the 2022-10-22 pair, the 2026-10-26 spare);
+  // the 2026-10-26 key ([REMOTE-08], 결정 D83) is trusted only for the six files it signed (SHA-256 hex), as RemoteKeys.PINNED.
+  keys: ["FVLFYF4Vrj5dhvb3b2+sxXCjI2U3BRH1vFkynSMNv4s=", "r2r7SkGBcGZlOpMK9IHocHQEsHEbuPJ1oVec8lhB5LU="],
+  pinned: {
+    "DjM9UzLI9MlnEWqpweAItpsvGvzNsFo8FNcai5M/NPY=": [
+      "7f16058e68f9f4bf534973fda8ee449cb97a57d9ec1c38bba8faad95305cb4d8", "0b73db1cfceac6babd92a3b42ce9fbf0136ed579d9ec669505c64d309400c472",
+      "e586d0e09c84e060a775f3d9ca6d1992d8de3f17d27cc64dbee4b3d465dcf3bd", "4f903ea9afb47b77ad326b473f0532c6a7e57f3a2a6b315a79b4379f98463cf1",
+      "0d38092d02dd02cc2588544e01a29f71537723a1ea37934c637fdc98fe15f935", "036dcf62ef927332295847f8db7b768f70cdb4533f13b959e65e12ab7a64be79",
+    ],
+  },
   keepMs: 10 * 60 * 1000,
 };
 const remoteKept = new WeakMap();
 
 const unb64 = (text) => Uint8Array.from(atob(text.trim()), (c) => c.charCodeAt(0));
+
+async function verifiedBy(k, sig, bytes) {
+  try {
+    const key = await crypto.subtle.importKey("raw", unb64(k), { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "Ed25519" }, key, sig, bytes);
+  } catch {
+    // A runtime without Ed25519 cannot say; the file shows as not checked.
+    return false;
+  }
+}
 
 async function signedBy(bytes, signature) {
   let sig;
@@ -7933,12 +7948,14 @@ async function signedBy(bytes, signature) {
     return false;
   }
   for (const k of REMOTE.keys) {
-    try {
-      const key = await crypto.subtle.importKey("raw", unb64(k), { name: "Ed25519" }, false, ["verify"]);
-      if (await crypto.subtle.verify({ name: "Ed25519" }, key, sig, bytes)) return true;
-    } catch {
-      // A runtime without Ed25519 cannot say; the file shows as not checked.
-    }
+    if (await verifiedBy(k, sig, bytes)) return true;
+  }
+  // 2.0.0 [RVL-57] A pinned key vouches only for the exact bytes it signed, never for a changed or new file.
+  const pins = Object.entries(REMOTE.pinned ?? {});
+  if (!pins.length) return false;
+  const sha = [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  for (const [k, files] of pins) {
+    if (files.includes(sha) && await verifiedBy(k, sig, bytes)) return true;
   }
   return false;
 }

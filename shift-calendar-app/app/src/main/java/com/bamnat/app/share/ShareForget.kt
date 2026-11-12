@@ -22,11 +22,25 @@ import java.io.IOException
  * A link already gone on the server (cut, past its date, taken down) counts as cut ([ShareApi]'s deletes say so).
  */
 object ShareForget {
-    data class Result(val cut: Int, val left: Int) {
+    /**
+     * [failed]: 2.0.0 [RVL-58] (검토 DATA-22) the cutting stopped on something other than one link's answer, so how many went is not
+     * known; what the phone held is kept to be tried again ([allOrLater]). Before, that read as "nothing to cut".
+     */
+    data class Result(val cut: Int, val left: Int, val failed: Boolean = false) {
         /** "공유 링크 3개", for the words after 모두 지우기; null when there was none. */
         val words: String? get() = if (cut > 0) "공유 링크 ${cut}개" else null
-        /** Said after the rest when some could not be cut, so the user knows to press again. */
-        val leftWords: String? get() = if (left > 0) "공유 링크 ${left}개는 인터넷이 끊겨 남았어요. 인터넷이 연결되면 저절로 마저 지워요" else null
+        /**
+         * Said after the rest when some could not be cut. 2.0.0 [RVL-58] Not "인터넷이 끊겨": a link the server refused also stays, and the
+         * phone tries again by itself once it is online either way.
+         */
+        val leftWords: String? get() = leftWords(left, failed)
+    }
+
+    /** 2.0.0 [RVL-58] (검토 DATA-22) The one line for links still on the server, with or without a count. */
+    fun leftWords(left: Int, failed: Boolean = false): String? = when {
+        left > 0 -> "공유 링크 ${left}개는 아직 못 지웠어요. 인터넷이 연결되면 저절로 마저 지워요"
+        failed -> "공유 링크는 아직 못 지웠어요. 인터넷이 연결되면 저절로 마저 지워요"
+        else -> null
     }
 
     /**
@@ -81,6 +95,12 @@ object ShareForget {
             leftKeys += key
             false
         } catch (e: ShareLinkException) {
+            leftKeys += key
+            false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 2.0.0 [RVL-58] (검토 DATA-22) Any other trouble with one link (an answer it could not read) leaves that link, not the rest.
             leftKeys += key
             false
         }
@@ -170,6 +190,48 @@ object ShareForget {
         return Result(cut, leftKeys.size)
     }
 
+    /**
+     * 2.0.0 [RVL-58] (검토 DATA-22) [all] for 모두 지우기: when it stops on something it did not expect (not one link's answer, which
+     * [all] counts as left), every link this phone still holds is kept to be cut by itself later, and the result says the links are not
+     * gone yet. Before, the caller dropped the error and the words read as if there had been nothing to cut. [run] is for the test.
+     */
+    suspend fun allOrLater(c: AppContainer, run: suspend () -> Result = { all(c) }): Result = try {
+        run()
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        val held = runCatching { heldKeys(c) }.getOrNull()
+        val waiting = pending(c) + (held ?: setOf(EVERY))
+        keep(c, waiting)
+        Result(0, held?.size ?: 0, failed = true)
+    }
+
+    /** 2.0.0 [RVL-58] The keys ("kind:id") of every link this phone made and still holds the key for, as [all] would cut them. */
+    suspend fun heldKeys(c: AppContainer): Set<String> {
+        if (!c.shareApi.enabled) return emptySet()
+        val keys = mutableSetOf<String>()
+        c.shareGroup.code.value?.let { keys += "group:$it" }
+        calendarLinkIds(c).forEach { keys += "share:$it" }
+        val store = c.phaseThree
+        for (team in store.teamList.first()) {
+            store.members(team.id).first().forEach { m -> m.linkId?.let { keys += "share:$it" } }
+            team.ask?.let { keys += "ask:${it.id}" }
+            team.swap?.let { keys += "swap:${it.id}" }
+            team.calls.forEach { keys += "call:${it.id}" }
+            TeamReceiveSync.board(c.appContext, team.id)?.let { keys += "board:${it.id}" }
+            TeamReceiveSync.tiredBox(c.appContext, team.id)?.let { keys += "tired:${it.id}" }
+        }
+        store.workplaces.first().forEach { p -> p.calls.forEach { keys += "call:${it.id}" } }
+        for (s in store.allStaff()) {
+            s.clockId?.let { keys += "clock:$it" }
+            s.contract?.linkId?.let { keys += "sign:$it" }
+        }
+        return keys
+    }
+
+    /** 2.0.0 [RVL-58] Kept when not even the list of links could be read: the next try cuts everything this phone holds then. */
+    private const val EVERY = "*"
+
     private fun calendarLinkIds(c: AppContainer): Set<String> =
         c.shareSync.allLinks().mapNotNull { c.shareLinksOf(it).link.value?.id }.toSet()
 
@@ -191,6 +253,6 @@ object ShareForget {
     suspend fun retry(c: AppContainer): Boolean {
         val waiting = pending(c)
         if (waiting.isEmpty()) return true
-        return all(c, waiting).left == 0
+        return all(c, waiting.takeUnless { EVERY in it }).left == 0
     }
 }

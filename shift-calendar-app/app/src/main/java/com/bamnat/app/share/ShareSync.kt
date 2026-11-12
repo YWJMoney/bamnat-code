@@ -214,6 +214,9 @@ class ShareSync(
             if (store.unsent.value) store.sendResult(clock())
             return Result.Same
         }
+        // 2.0.0 [RVL-56] (검토 DATA-12) The very change the server turned down is not sent again by itself on every other edit or
+        // every outbox run (1.39 sent it again each time and was turned down each time); a change to it, or 지금 보내기, goes.
+        if (byItself && ttlDays == null && store.refusedPrint == sent) return Result.Refused
         return try {
             // 2.0.0 [RVG-27] 검토 SN-13: a part the server turns down for what it carries goes without, said once above the calendar.
             val went = sendLeavingOut(payload, store.leaveOut()) { c.shareApi.update(link, it) }
@@ -231,7 +234,7 @@ class ShareSync(
                 // again); the share card says so, and the second time running above the calendar too (검토 S7-3).
                 ShareLinkPayload.refused(e) -> {
                     c.telemetry.event("share_link_refused", e.message.orEmpty().take(24))
-                    store.refusedNow()
+                    store.refusedNow(ShareLinkPayload.refusedWhy(e), sent)
                     if (byItself && store.refusedAgain(e.message)) store.setDropped(ShareLinkPayload.REFUSED_AGAIN)
                     Result.Refused
                 }

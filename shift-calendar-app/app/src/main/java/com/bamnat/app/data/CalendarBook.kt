@@ -97,6 +97,12 @@ sealed interface CalendarKey {
 /** Where added calendars keep their databases; tests use in-memory ones. */
 interface CalendarStorage {
     fun open(id: String): AppDatabase
+
+    /**
+     * 2.0.0 [RVL-65] (검토 DATA-16) The ids of the added calendars whose database files are on the phone (the example's is in no-backup
+     * storage and not among them), so a list that could not be read is made again from them.
+     */
+    fun found(): Set<String> = emptySet()
     /** [keepTools]: its work tools and contract photos stay, for a calendar a restore brings back. */
     fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
@@ -112,6 +118,7 @@ interface CalendarStorage {
             doors.compute(id) { _, list -> (list ?: java.util.concurrent.CopyOnWriteArrayList()).apply { add(door) } }
             return AppDatabase.create(context, pathOf(context, id), door)
         }
+        override fun found(): Set<String> = context.databaseList().mapNotNull(::idOf).toSet()
 
         override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
             // 2.0.0 [RVH-54] Shut first: nothing that still holds this calendar opens its file again, before or after it goes.
@@ -129,6 +136,11 @@ interface CalendarStorage {
     companion object {
         /** In the databases folder beside the main one, so backups and phone transfers carry it [REL-04]. */
         fun fileName(id: String) = "calendar_$id.db"
+
+        /** 2.0.0 [RVL-65] The calendar id of a database file's name ([fileName]); null for any other file (journals, the main one). */
+        fun idOf(file: String): String? = file.removePrefix("calendar_").removeSuffix(".db")
+            .takeIf { file.startsWith("calendar_") && file.endsWith(".db") && it.isNotEmpty() && it.length <= 40 && it.all { c -> c.isLetterOrDigit() } }
+            ?.takeIf { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }
 
         /**
          * [EASY-01] The database's name for Room: [fileName] in the databases folder, or for the example calendar a
@@ -174,6 +186,13 @@ class CalendarBook(
     private val onDelete: (id: String, kept: Boolean) -> Unit = { _, _ -> },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
+
+    /**
+     * 2.0.0 [RVL-65] (검토 DATA-16) Added calendars found by their database files when the list could not be read (a broken or lost
+     * calendars.json), put back as '되찾은 달력 N' so they are not gone from the list; 알람 점검 › 데이터 점검 says so.
+     */
+    var recovered: List<String> = emptyList()
+        private set
 
     private val state = MutableStateFlow(load())
 
@@ -445,6 +464,9 @@ class CalendarBook(
      */
     fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready && !it.isExample }
 
+    /** 2.0.0 [RVL-65] Every calendar the list names, those still being set up too (their files are on the phone as well). */
+    fun ids(): Set<String> = all.map { it.id }.toSet()
+
     /**
      * [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. One that
      * comes back keeps its work tools and contract photos, which the backup restores over or lacks.
@@ -516,8 +538,16 @@ class CalendarBook(
             val order = o.optJSONArray("order")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } }.orEmpty()
             State(list, order, o.optString("active", PersonalCalendar.MAIN))
         }.getOrNull()
+        // 2.0.0 [RVL-65] (검토 DATA-16) A list that could not be read lost every added calendar from sight, though their files stayed:
+        // they come back by their files, named so the person can tell them apart, and the broken file is kept beside for a look.
+        val back = if (read != null) emptyList() else runCatching { storage.found() }.getOrDefault(emptySet()).sorted()
+        if (back.isNotEmpty() && file.exists()) runCatching { file.copyTo(File(file.parentFile, file.name + ".broken"), overwrite = true) }
+        val found = back.mapIndexed { i, id ->
+            PersonalCalendar(id, "되찾은 달력 ${i + 1}", PersonalCalendar.COLORS[(i + 1) % PersonalCalendar.COLORS.size], createdAt = clock())
+        }
+        recovered = found.map { it.name }
         // [MCAL-01] The calendar the app always had becomes the first of the list as it is: nothing moves.
-        val list = read?.calendars.orEmpty().distinctBy { it.id }
+        val list = (read?.calendars.orEmpty() + found).distinctBy { it.id }
         val withMain = if (list.any { it.isMain }) list.sortedBy { if (it.isMain) 0 else 1 } else listOf(defaultMain()) + list
         val active = read?.active?.takeIf { a -> withMain.any { it.id == a && it.ready } } ?: PersonalCalendar.MAIN
         return State(withMain, read?.order.orEmpty(), active)

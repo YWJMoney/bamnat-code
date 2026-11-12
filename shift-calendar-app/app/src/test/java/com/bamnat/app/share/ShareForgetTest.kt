@@ -52,8 +52,11 @@ class ShareForgetTest {
         override val enabled = true
         val cut = mutableListOf<String>()
         val offline = mutableSetOf<String>()
+        /** Ids whose answer cannot be read (not offline, not a refusal). */
+        val broken = mutableSetOf<String>()
         private fun go(kind: String, id: String, token: String) {
             if (id in offline) throw IOException("offline")
+            if (id in broken) throw IllegalStateException("an answer it could not read")
             require(token.isNotEmpty())
             cut += "$kind:$id"
         }
@@ -165,5 +168,40 @@ class ShareForgetTest {
         assertNull(ShareForget.held(c))
         assertEquals(ShareForget.Result(0, 0), ShareForget.all(c))
         assertTrue(api.cut.isEmpty())
+    }
+
+    /** 2.0.0 [RVL-58] (검토 DATA-22) One link's unexpected trouble leaves that link only, said as not gone yet. */
+    @Test fun oneLinksOddTroubleLeavesOnlyThatLink() = runBlocking {
+        seed()
+        api.broken += "L3"
+        val r = ShareForget.all(c)
+        assertEquals(ShareForget.Result(10, 1), r)
+        assertEquals(setOf("share:L3"), ShareForget.pending(c))
+        assertEquals("공유 링크 1개는 아직 못 지웠어요. 인터넷이 연결되면 저절로 마저 지워요", r.leftWords)
+    }
+
+    /** 2.0.0 [RVL-58] (검토 DATA-22) A stop the cutting did not expect: not "0 links", and every held link waits to be cut by itself. */
+    @Test fun aStopIsNotNothingToCutAndEveryHeldLinkWaits() = runBlocking {
+        seed()
+        val r = ShareForget.allOrLater(c) { throw IllegalStateException("stopped half way") }
+        assertTrue(r.failed)
+        assertEquals(0, r.cut)
+        val held = setOf("share:CalLinkAb3dEfGh5Jk", "share:L2", "share:L3", "ask:A1", "swap:S1", "call:C1", "board:B1", "tired:T1",
+            "call:C2", "clock:K1", "sign:G1")
+        assertEquals(held, ShareForget.pending(c))
+        assertEquals(held.size, r.left)
+        val jobs = app.getSystemService(android.app.job.JobScheduler::class.java)
+        assertNotNull("a job waits to cut them", jobs.allPendingJobs.firstOrNull { it.id == 4408 })
+        // What 모두 지우기 says: the links first, never "서버에 지울 것이 없었어요".
+        val words = com.bamnat.app.company.ForgetCounts(linksLeft = r.left, linksFailed = r.failed).words()
+        assertEquals("공유 링크 11개는 아직 못 지웠어요. 인터넷이 연결되면 저절로 마저 지워요", words)
+        assertEquals("보낸 규칙 1을 지웠어요. 공유 링크는 아직 못 지웠어요. 인터넷이 연결되면 저절로 마저 지워요",
+            com.bamnat.app.company.ForgetCounts(reports = 1, linksFailed = true).words())
+
+        // Online again: the job cuts them all.
+        assertTrue(ShareForget.retry(c))
+        assertEquals(held, api.cut.toSet())
+        assertTrue(ShareForget.pending(c).isEmpty())
+        assertNull(ShareForget.held(c))
     }
 }

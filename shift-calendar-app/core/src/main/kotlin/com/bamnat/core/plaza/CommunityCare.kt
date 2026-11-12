@@ -256,6 +256,23 @@ object TeamLinkText {
         return "‘${text.trim()}’에 $what 있어 링크에 넣을 수 없어요. ${place(key)}에서 빼고 다시 보내 주세요. 링크로 돈을 요구하는 사기를 막으려는 거예요."
     }
 
+    /**
+     * 2.0.0 [RVL-56] (검토 U12-07) The same in one line for a card (the share card's 못 보낸 변경): what, and where to mend it.
+     * "‘유나 010-1234-5678’에 전화번호가 있어 못 보냈어요. 근무 이름에서 빼 주세요."
+     */
+    fun oneLine(why: String?, text: String?, key: String?): String {
+        val what = when (why) {
+            "phone" -> "전화번호가"
+            "link" -> "다른 사이트 주소가"
+            "account" -> "계좌번호 같은 긴 숫자가"
+            "messenger" -> "다른 메신저로 옮기자는 말이"
+            else -> "연락처가"
+        }
+        val where = place(key)
+        return if (text.isNullOrBlank()) "$what 든 줄이 있어 못 보냈어요. 그 줄을 빼고 다시 보내 주세요."
+        else "‘${text.trim().take(24)}’에 $what 있어 못 보냈어요. ${if (where == "그 줄") "그 줄에서" else "${where}에서"} 빼 주세요."
+    }
+
     /** Where in the app the line is fixed, from the server's field name. */
     fun place(key: String?): String = when (key) {
         "people", "names", "name", "staff", "members", "member" -> "팀원·직원 이름"

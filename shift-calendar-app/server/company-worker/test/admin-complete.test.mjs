@@ -186,6 +186,8 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
   assert.equal(r.files.length, 10);
   // 2026-11-08: merchants.json got its .sig2 (2026-11-05 key), so all ten but the changed wages check out.
   assert.equal(f.merchants.valid, true, "signed with a key the app trusts");
+  // 2.0.0 [RVL-57] holidays.json still has only the 2026-10-26 key's .sig2: pinned to those bytes, it checks out.
+  assert.equal(f.holidays.valid, true, "a pinned key vouches for the file it signed");
   const rates = JSON.parse(read("rates.json"));
   assert.deepEqual([f.rates.version, f.rates.minApp, f.rates.valid], [rates.version, rates.minApp, true]);
   assert.equal(f.wages.valid, false, "a file changed after signing does not check out");
@@ -203,7 +205,17 @@ test("[ADMUX-15] remote files: version, signature checked with the app's keys, a
 test("[ADMUX-15] the server trusts the same remote keys as the app", () => {
   const kotlin = readFileSync(new URL("../../../core/src/main/kotlin/com/bamnat/core/remote/RemoteFile.kt", import.meta.url), "utf8");
   const block = kotlin.slice(kotlin.indexOf("object RemoteKeys"));
-  assert.deepEqual([...block.matchAll(/"([A-Za-z0-9+/=]{44})"/g)].map((m) => m[1]), REMOTE.keys);
+  const between = (a, b) => block.slice(block.indexOf(a), block.indexOf(b));
+  assert.deepEqual([...between("val TRUSTED", "val PINNED").matchAll(/"([A-Za-z0-9+/=]{44})"/g)].map((m) => m[1]), REMOTE.keys);
+  // 2.0.0 [RVL-57] The pinned key and the files it may vouch for, the same on both sides.
+  const pinned = {};
+  let key = null;
+  for (const m of between("val PINNED", "val SIGNATURES").matchAll(/"([A-Za-z0-9+/=]{44}|[0-9a-f]{64})"/g)) {
+    if (m[1].length === 44) pinned[key = m[1]] = [];
+    else pinned[key].push(m[1]);
+  }
+  assert.deepEqual(pinned, REMOTE.pinned);
+  assert.ok(Object.keys(pinned).every((k) => !REMOTE.keys.includes(k)), "a pinned key is not also trusted for everything");
   const kinds = kotlin.match(/val KINDS = listOf\(([^)]*)\)/)[1].split(",").map((k) => k.trim());
   assert.equal(kinds.length, REMOTE.kinds.length);
 });

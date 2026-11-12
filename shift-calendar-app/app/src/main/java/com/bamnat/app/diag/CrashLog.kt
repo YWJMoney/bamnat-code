@@ -89,13 +89,17 @@ object CrashLog {
     /**
      * C 1.32 [STAB-03] Where it stopped, to tell one problem from another: the exception's class and the first frame of
      * the app's own code (no message, nothing typed).
+     * 2.0.0 [RVL-55] (검토 DATA-07) In the release build the app's lines are renamed (`a.b.c`) and none starts with
+     * com.bamnat, so this took the first line of the stack (the phone's) or a name without its package that no mapping
+     * turns back. Now [AppFrames.where]: the first line of ours by name, or a renamed one whole with the next after it.
      */
     fun signature(error: Throwable): String {
         var root: Throwable = error
         val seen = HashSet<Throwable>()
         while (root.cause != null && seen.add(root)) root = root.cause!!
-        val frame = (root.stackTrace.firstOrNull { it.className.startsWith("com.bamnat") } ?: root.stackTrace.firstOrNull())
-        return "${root.javaClass.simpleName}@${frame?.className?.substringAfterLast('.')}.${frame?.methodName}:${frame?.lineNumber}"
+        val where = com.bamnat.core.diag.AppFrames.where(root.stackTrace)
+            ?: root.stackTrace.firstOrNull()?.let { "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}" }
+        return "${root.javaClass.simpleName}@$where"
     }
 
     /**
@@ -165,7 +169,8 @@ object CrashLog {
         val trace = if (e.reason == ApplicationExitInfo.REASON_ANR) runCatching {
             e.traceInputStream?.bufferedReader()?.useLines { lines ->
                 lines.dropWhile { !it.startsWith("\"main\"") }.drop(1).filter { it.trimStart().startsWith("at ") }
-                    .map { it.trim().substringBefore('(') }.filter { it.startsWith("at com.bamnat") || it.startsWith("at android") || it.startsWith("at androidx") }
+                    // 2.0.0 [RVL-55] (검토 DATA-07) Ours by name or renamed (the release build), not only "com.bamnat".
+                    .map { it.trim().substringBefore('(') }.filter { com.bamnat.core.diag.AppFrames.kept(com.bamnat.core.diag.AppFrames.classOf(it)) }
                     .take(6).toList()
             }
         }.getOrNull().orEmpty() else emptyList()

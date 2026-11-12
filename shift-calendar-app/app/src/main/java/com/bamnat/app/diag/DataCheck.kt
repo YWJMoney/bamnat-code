@@ -41,6 +41,13 @@ object DataCheck {
         } else {
             Line(false, "추가 달력 파일이 없어요: " + missing.joinToString { it.name })
         }
+        // 2.0.0 [RVL-65] (검토 DATA-16) The other way round: a calendar's file the list does not name, and the ones put back by their files.
+        val listed = runCatching { c.calendars.ids() }.getOrDefault(emptySet())
+        val stray = c.appContext.databaseList().mapNotNull(com.bamnat.app.data.CalendarStorage::idOf).filter { it !in listed }
+        if (stray.isNotEmpty()) out += Line(false, "목록에 없는 달력 파일 ${stray.size}개가 있어요. 앱을 다시 열면 ‘되찾은 달력’으로 목록에 올려요")
+        c.calendars.recovered.takeIf { it.isNotEmpty() }?.let { names ->
+            out += Line(false, "달력 목록을 읽지 못해 ${names.size}개를 파일에서 되찾았어요(${names.joinToString()}). 달력 이름을 눌러 ‘달력 목록’에서 이름을 바꿔 주세요")
+        }
         out += backupRoundTrip(c)
         out
     }

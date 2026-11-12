@@ -527,7 +527,8 @@ fun ShareDialog(
             } else {
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
                 val refused by store.refused.collectAsState()
-                SentLine(store.sentAt, unsent, busy, refused) { run { container.shareSync.resend(store.key) } }
+                val why by store.refusedWhy.collectAsState()
+                SentLine(store.sentAt, unsent, busy, refused, why) { run { container.shareSync.resend(store.key) } }
                 if (chosen() != saved || title.trim() != current.title.trim()) {
                     Text("고른 항목이나 이름이 바뀌었어요. ‘지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -648,17 +649,19 @@ private fun LeftOutLine(words: String) {
 
 /** [SHR-13] 마지막으로 보낸 때, and 보내지 못한 변경 with a button that sends it now. */
 @Composable
-internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, refused: Boolean = false, onSend: () -> Unit) {
+internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, refused: Boolean = false, why: String? = null, onSend: () -> Unit) {
     if (unsent) {
-        Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // 2.0.0 [RVG-27] 검토 SN-13: turned down by the server is not 'waiting for the internet' (it never went by itself).
-                Text(if (refused) "서버가 이 변경을 받지 않았어요. 다시 보내 보고, 계속 안 되면 문의해 주세요."
-                    else "보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                TextButton(enabled = !busy, onClick = onSend, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 보내기") }
-            }
-        }
+        // 2.0.0 [RVL-56] (검토 U12-07, 조건 3·6) The common 안내 카드 in the caution tone, not a red box of its own: a change that has
+        // not gone yet is a thing to see to, not a danger. Its one text button sends it now.
+        com.bamnat.app.ui.components.NudgeCard(
+            // 2.0.0 [RVG-27] 검토 SN-13: turned down by the server is not 'waiting for the internet' (it never went by itself).
+            // 2.0.0 [RVL-56] (검토 U12-07) With the reason the server gave, what and where to mend it in one line.
+            if (refused) why ?: "서버가 이 변경을 받지 않았어요. 다시 보내 보고, 계속 안 되면 문의해 주세요."
+            else "보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.",
+            tone = com.bamnat.app.ui.theme.Tone.Caution,
+            action = if (busy) "보내는 중…" else "지금 보내기",
+            onAction = { if (!busy) onSend() },
+        )
     }
     sentAt?.let {
         Text("마지막으로 보낸 때 " + it.atZone(Today.zone()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm")),

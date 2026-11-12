@@ -376,6 +376,9 @@ object FlagCatalog {
      * 1.38 [P3-01] Phase 3 (사용자 2026-11-05 "1.38에서 개발 시작", 결정 P3-D1 B: 꺼진 채 개발, 켜는 건 관문 뒤). Each row waits for a fact
      * only the developer confirms in the admin app (파일럿 시작, 워치 수면 확인); until then only an admin phone given 미리 보기 sees it.
      * None sends anything new to a server (설계 1-1 원칙 1): 팀 표·직원 정보·잠은 휴대폰 안, a member's link is today's 근무표 링크.
+     * 2.0.0 [RVL-63] (검토 DATA-19) Not quite: 팀원 근무 링크 carry the members' names, 출퇴근·서명 링크 a staff member's name, and
+     * 지금 자는 중 the sleep state, to the share server. Those three rows are [Risk.LEGAL] now, so a force-on in the admin app or a preview
+     * keeps 3.11's consent and reads the server's date, as the rule for rows that send something new says (shift-calendar-app/CLAUDE.md).
      */
     /**
      * 1.38 Phase 3 (사용자 2026-11-05 C안 "모든 기능을 해당 일에 푸는 거야, 내가 따로 지정하면 그날에"): every Phase 3 row opens on
@@ -395,16 +398,16 @@ object FlagCatalog {
         TEAM_LEADER, "리더 팀 근무표",
         what = "달력 › 도구 › ‘내 팀 근무표 짜기’(모든 조 위 막대에도 있어요)에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일, 관리자 앱 처리방침 날짜로 옮겨요)에 다른 기능과 함께 켜져요(사용자 2026-11-05 C안). 그 전에는 미리 보기를 받은 관리자 휴대폰에만 보여요.",
-        basis = Basis(decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     val BOSS_PAYROLL_FLAG = Flag(
         BOSS_PAYROLL, "사장님 급여 대장",
-        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있어요.",
+        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있고, 출퇴근·계약서 서명 링크를 만들 때만 그 직원 이름이 링크와 함께 공유 서버에 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일)에 자영업 달력에서 켜져요(사용자 2026-11-05 C안). 그 전에는 지금 ‘직원 인건비’ 그대로예요.",
-        basis = Basis(decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
-        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, since = "1.38.0",
+        basis = Basis(policy = "3.11", decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
+        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, risk = Risk.LEGAL, since = "1.38.0",
         group = FlagGroup.PHASE3,
     )
 
@@ -436,8 +439,8 @@ object FlagCatalog {
         SLEEP_SHARE, "지금 자는 중 나누기",
         what = "달력을 공유한 사람에게 ‘지금 자는 중 · 14:10쯤 깸’ 한 줄을 보여 줘요. 공유 링크마다 켜고 끌 수 있어요.",
         whyOff = "공유 서버로 잠 상태(자는 중·깰 시각)를 새로 보내니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
-        basis = Basis(requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     /**

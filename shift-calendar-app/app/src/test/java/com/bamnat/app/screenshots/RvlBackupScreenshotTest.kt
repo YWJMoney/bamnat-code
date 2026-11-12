@@ -144,7 +144,11 @@ class RvlBackupScreenshotTest : ScreenshotBase() {
         runBlocking {
             repeat(8) { i -> c.memoRepository.save(Memo(date = Today.date().minusDays(i.toLong()), title = "메모 ${i + 1}", body = "")) }
         }
-        return Uri.fromFile(File(app.cacheDir, "older.${BackupManager.EXTENSION}").apply { writeText(json.toString()) })
+        val file = File(app.cacheDir, "older.${BackupManager.EXTENSION}").apply { writeText(json.toString()) }
+        // 2.0.0 [RVL-64] (검토 DATA-23) As a messenger hands it over: a content:// address of another app (file:// is not taken).
+        val uri = Uri.parse("content://com.android.providers.downloads.documents/document/${file.name}")
+        shadowOf(app.contentResolver).registerInputStreamSupplier(uri) { file.inputStream() }
+        return uri
     }
 
     private fun restoring(wide: Boolean = false): Screen.() -> Unit = {
