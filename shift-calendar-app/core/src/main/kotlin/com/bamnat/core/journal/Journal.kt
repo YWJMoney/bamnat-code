@@ -34,6 +34,10 @@ enum class JournalKind(val feature: String, val why: String, val route: FeatureR
     RESTORE_BACK("data.backup", "백업 불러오기가 중간에 멈춰, 불러오기 전 기록으로 돌려놓았어요", FeatureRoute(Place.SETTINGS_DATA, "파일 불러오기")),
     /** 2.0.0 [RVL-05] (검토 DATA-02) A phone brought back by Google's own backup or a phone move: the settings kept apart were joined again. */
     PHONE_MOVED("data.movePhone", "구글 백업이나 휴대폰 옮기기로 온 설정을 이어 붙였어요", FeatureRoute(Place.SETTINGS_DATA, "새 휴대폰으로 옮기기")),
+    /**
+     * 2.0.0 [RVL-71] (검토 I12b-01) The weekly 데이터 점검 ran; detail "2 1 0": days put back, photos taken away, problems left ([dataCheckDetail]).
+     */
+    DATA_CHECK("data.check", "일주일에 한 번 데이터를 스스로 살펴봐요", FeatureRoute(Place.SETTINGS_DATA, "데이터 점검")),
 }
 
 /** [ROST-11] Where a month's roster came from, as the journal's detail keeps it (a digit, never the roster). */
@@ -44,6 +48,9 @@ enum class RosterFrom(val code: Int, val word: String) {
         fun of(code: Int?): RosterFrom? = entries.firstOrNull { it.code == code }
     }
 }
+
+/** 2.0.0 [RVL-71] "2 1 0": the weekly 데이터 점검 put 2 days back, took 1 photo away and left no problem. */
+fun dataCheckDetail(days: Int, photos: Int, problems: Int): String = "$days $photos $problems"
 
 /** [ROST-11] "10 31 1": October, 31 days, from a photo. */
 fun rosterDetail(month: Int, days: Int, from: RosterFrom): String = "$month $days ${from.code}"
@@ -121,6 +128,14 @@ object Journal {
             JournalKind.ALARMS_OFF -> "오늘 남은 알람·다시 울림 멈춤"
             JournalKind.RESTORE_BACK -> "멈춘 불러오기를 전으로 돌려놓음"
             JournalKind.PHONE_MOVED -> "옮겨 온 설정 이어 붙임 · 알람 다시 잡음"
+            JournalKind.DATA_CHECK -> d?.split(' ')?.mapNotNull { it.toIntOrNull() }?.takeIf { it.size == 3 }?.let { (days, photos, left) ->
+                listOfNotNull(
+                    "데이터 점검",
+                    "지운 근무를 가리키던 날 ${days}개 근무표대로".takeIf { days > 0 },
+                    "쓰지 않는 사진 ${photos}장 치움".takeIf { photos > 0 },
+                    (if (left > 0) "살펴볼 것 ${left}개 알림" else "이상 없음").takeIf { left > 0 || days + photos == 0 },
+                ).joinToString(" · ")
+            } ?: "데이터 점검"
         }
         return if (n > 1) "$what · ${n}번" else what
     }

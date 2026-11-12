@@ -1075,6 +1075,16 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         NavRow("최근 지운 기록", if (cleared.isEmpty()) "지운 기록·달력은 7일, 가계부 기록은 30일 동안 여기서 되돌릴 수 있어요"
             else "${cleared.size}개 · 남은 날 안에 되돌릴 수 있어요") { showCleared = true }
         if (showCleared) RecordsTrashDialog(cleared, onRestore = vm::restoreCleared, onDismiss = { showCleared = false })
+        // 2.0.0 [RVL-70][RVL-71] (검토 U12-09·T12-07) 데이터 점검 where the records and backups are, for every kind of work (not only inside
+        // 알람 점검), with what the weekly check last did said on the row. In this card, not one of its own: a card titled as its one row
+        // said the name twice.
+        HorizontalDivider()
+        val self by c.dataSelfCheck.state.collectAsStateWithLifecycle()
+        NavRow(com.bamnat.app.ui.diag.DATA_CHECK_TITLE,
+            if (settings.dataSelfCheck) com.bamnat.app.diag.DataSelfCheck.words(self)
+            else "근무·기록과 백업이 온전한지 휴대폰 안에서 살펴봐요") {
+            com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.DATA_CHECK)
+        }
     }
     SectionCard(title = "다른 캘린더 앱과") {
         // [GROW-05] 1.38 다른 앱에서 옮기기: the two ways that read only what is on the phone — a screenshot, the phone's calendar.

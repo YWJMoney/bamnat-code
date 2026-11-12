@@ -247,6 +247,8 @@ data class AppSettings(
     val spendHeat: Boolean = false,
     /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
     val backupNudge: Boolean = true,
+    /** 2.0.0 [RVL-71] 데이터 점검 by itself once a week ([com.bamnat.app.diag.DataSelfCheck]); on unless turned off. */
+    val dataSelfCheck: Boolean = true,
     /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
     val leaveTimeNotice: Boolean = false,
     /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
@@ -577,6 +579,7 @@ class SettingsRepository(context: Context) {
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            dataSelfCheck = prefs.getBoolean(K_DATA_SELF_CHECK, d.dataSelfCheck),
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
@@ -771,6 +774,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putBoolean(K_DATA_SELF_CHECK, s.dataSelfCheck)
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
@@ -847,6 +851,7 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_DATA_SELF_CHECK = "data_self_check"
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"

@@ -716,6 +716,8 @@ class AppContainer(context: Context) {
     val proMoments by lazy { com.bamnat.app.tier.ProMomentStore(appContext) }
     /** 1.32 [STAB-08] The last backup saved by hand, for the calendar's 30-day line. */
     val backupNudge by lazy { com.bamnat.app.data.BackupNudgeStore(appContext) }
+    /** 2.0.0 [RVL-71] (검토 I12b-01·U12-09) 데이터 점검 by itself once a week. */
+    val dataSelfCheck by lazy { com.bamnat.app.diag.DataSelfCheck(this) }
     /** 1.32 [WTYP-11] 희망 오프, per calendar. */
     val wishOff by lazy { com.bamnat.app.data.WishOffStore(appContext) }
 
@@ -839,6 +841,8 @@ class AppContainer(context: Context) {
         const val RETRY_MAX_MILLIS = 60_000L
         /** [PROV-03] After the app has opened and settled, not while the first screen draws. */
         const val AUTO_BACKUP_DELAY_MILLIS = 20_000L
+        /** 2.0.0 [RVL-71] Well after the backup's turn, so the two never read every calendar at once on opening. */
+        const val DATA_CHECK_DELAY_MILLIS = 90_000L
         /** [PERF-03] When no calendar month showed by then, the waiting jobs start anyway. */
         const val LATER_FALLBACK_MILLIS = 3_000L
         /** [PERF-10] After the month and an idle main thread: the jobs that read every calendar's money, memos and leave. */
@@ -1041,11 +1045,23 @@ class AppContainer(context: Context) {
                 }
         }
         // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
+        // 2.0.0 [RVL-71] And the weekly 데이터 점검 beside it, in the same job (the start's budget of jobs, StartupBudgetTest): the job
+        // while the app is closed (or none when it is turned off), and a week owed now.
         keep("autobackup") {
-            if (autoBackup.on) {
-                com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
-                delay(AUTO_BACKUP_DELAY_MILLIS)
-                autoBackup.runIfDue()
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    settingsRepository.settings.map { it.dataSelfCheck }.distinctUntilChanged().collect { on ->
+                        if (!on) { com.bamnat.app.diag.DataCheckJob.cancel(appContext); return@collect }
+                        com.bamnat.app.diag.DataCheckJob.schedule(appContext)
+                        delay(DATA_CHECK_DELAY_MILLIS)
+                        dataSelfCheck.runIfDue()
+                    }
+                }
+                if (autoBackup.on) {
+                    com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
+                    delay(AUTO_BACKUP_DELAY_MILLIS)
+                    autoBackup.runIfDue()
+                }
             }
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.

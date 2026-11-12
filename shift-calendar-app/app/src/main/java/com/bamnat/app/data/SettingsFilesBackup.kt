@@ -327,6 +327,8 @@ class SettingsFilesBackup(
             "inquiry" to "문의 기록은 이 휴대폰의 설치 번호로 열려요",
             "commute" to "출퇴근 장소의 지도 위 좌표는 다니는 파일에 넣지 않아요",
             "auto_backup" to "자동 백업 폴더와 열쇠(비밀값)",
+            // 2.0.0 [RVL-71] What this phone's weekly 데이터 점검 last found; the switch itself is in the settings (dataSelfCheck).
+            "data_self_check" to "데이터 점검이 이 휴대폰에서 마지막으로 살펴본 때와 찾은 것이에요",
             "device" to "동의 기록은 새 휴대폰에서 다시 물어요",
             "usage_stats" to "사용 통계는 이 휴대폰에서 동의한 만큼만",
             "alarm_state" to "알람 예약 상태는 설정에서 다시 만들어요",
