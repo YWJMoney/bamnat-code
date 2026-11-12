@@ -32,7 +32,6 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.rememberTextMeasurer
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
@@ -105,8 +104,10 @@ fun NudgeCard(
             val words: @Composable (Modifier) -> Unit = { m ->
                 Column(m.padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(text, style = textStyle, color = MaterialTheme.colorScheme.onSurface)
+                    // 갈래 P 3/3 (R 점검 360dp: 공유 안내의 설명 줄이 '…'로 잘림, 조건 12): the detail is never cut either; a long one takes
+                    // its lines (the band says the notice's one line, so this is the card opened whole in the 알림함).
                     if (!detail.isNullOrBlank()) Text(detail, style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = if (big) Int.MAX_VALUE else 2, overflow = TextOverflow.Ellipsis)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             val close: @Composable () -> Unit = {

@@ -101,12 +101,17 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun leftOutFoldLight() = shoot("rvg27_share_left_out_fold_light_100", FOLDED, leftOut())
     @Test fun leftOutFoldDarkHuge() = shoot("rvg27_share_left_out_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, leftOut())
 
-    /** SN-13: the automatic update left the 그림 out; said once above the calendar (안내 카드 한 모양, 조건 3), with its X. */
+    /**
+     * SN-13: the automatic update left the 그림 out; said once (안내 카드 한 모양, 조건 3), with its X. 2.0.0 [RVP-43] HQ-49 (총괄 11-12):
+     * something to know, not to do now, so a row of the 알림함's 안내, '근무표 링크 안내', not over the month.
+     */
     private fun calendarNotice(): Screen.() -> Unit = {
         c.shareLinks.save(ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
             Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
         c.shareLinks.setDropped(com.bamnat.app.share.ShareLinkPayload.withoutRefused(JSONObject("""{"types":[{"icon":"e:☀️"}]}"""), "type_icon")!!.second)
         settle()
+        tapText("알림 ", prefix = true, scrolls = 0)
+        assertTrue(appears("근무표 링크 안내", exact = true))
         assertTrue(appears("빼고 보냈어요", exact = false))
     }
     @Test fun calendarNoticeFoldLight() = shoot("rvg27_calendar_left_out_fold_light_100", FOLDED, calendarNotice())
@@ -114,7 +119,7 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
     @Test fun calendarNoticeOpenDarkHuge() = shoot("rvg27_calendar_left_out_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, calendarNotice())
     @Test fun calendarNoticeCloses() = shoot("rvg27_calendar_left_out_closed_fold_light_100", FOLDED) {
         calendarNotice().invoke(this)
-        tapText("링크 안내 닫기", exact = true)
+        tapText("닫기: 근무표 링크 안내", exact = true, scrolls = 0)
         assertTrue(gone("빼고 보냈어요", exact = false))
         assertEquals(null, c.shareLinks.dropped.value)
     }

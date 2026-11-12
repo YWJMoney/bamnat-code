@@ -275,9 +275,11 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
             autoSize = TextAutoSize.StepBased(minFontSize = 11.sp, maxFontSize = 17.sp, stepSize = 0.5.sp),
         )
         // [CAL-52] Each note on its own line, shrinking a little before it would be cut.
+        // 갈래 P 3/3 (R 점검 편 폭: 한 줄에 다 들지 않는 '10/14 전은 근무표'가 '10/14 전은'에서 잘림, 조건 12): at the smallest size it
+        // takes a second line instead of losing its end.
         f.notes.forEach {
             BasicText(it, style = MaterialTheme.typography.labelSmall.merge(TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)),
-                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
+                maxLines = 2, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
         }
     }
 }
