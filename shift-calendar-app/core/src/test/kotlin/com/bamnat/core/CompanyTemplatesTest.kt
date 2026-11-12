@@ -34,7 +34,8 @@ class CompanyTemplatesTest {
 
     @Test fun `each kind of work that is set up gets its own templates`() {
         assertTrue(CompanyTemplates.forStyle(WorkStyle.SHIFT).size >= 5)
-        assertEquals(listOf("office", "daily"), CompanyTemplates.forStyle(WorkStyle.DAY).map { it.id })
+        // [RVH-43] 검토 PC-67: an office worker is not offered 일용직 일당.
+        assertEquals(listOf("office"), CompanyTemplates.forStyle(WorkStyle.DAY).map { it.id })
         assertEquals(listOf("parttime", "daily"), CompanyTemplates.forStyle(WorkStyle.HOURLY).map { it.id })
         assertTrue(CompanyTemplates.forStyle(WorkStyle.FIELD).isEmpty())
         assertTrue(CompanyTemplates.forStyle(null).isEmpty())

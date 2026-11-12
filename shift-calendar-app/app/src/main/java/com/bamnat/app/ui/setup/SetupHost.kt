@@ -112,6 +112,11 @@ fun SetupHost(
     /** [SETUP-17] Back on the examples opened from the very first screen goes back to it. */
     onBrowseBack: (() -> Unit)? = null,
     onFirstStyleUsed: () -> Unit = {},
+    /**
+     * [RVG-19] 검토 HQ-09: '가족·동료 근무표였어요' on the summary of a setup started from a link; gets the link's name once the link is
+     * kept beside as theirs and the setup let go (the first screen says where it went). Null: no such button (a calendar added, again).
+     */
+    onNotMine: ((String) -> Unit)? = null,
 ) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
@@ -192,9 +197,16 @@ fun SetupHost(
     // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계: 첫 설정에서만, 미리 켜 두지 않고 두 단추로 직접 골라요(D42). 1.39 7차 PC 1-12: 요약
     // 본문 맨 아래에 있으면 스크롤해야 보여서, 저장 단추 바로 위에 둬요. 고르지 않고 저장해도 꺼짐 그대로예요.
     val statsSettings by inviteContainer.settingsRepository.settings.collectAsStateWithLifecycle()
+    // 2.0.0 [RVH-47] 총괄 #451 사진 검토(글자 200%, 접은·편 폭): the card and the button under it took half the screen and the month to
+    // check showed one row, cut through its cells (조건 1·12). At a large font the card goes in the scroll, under the month; only
+    // '저장하고 달력 보기' stays at the bottom. At the usual size it stays just above the button, where 7차 PC 1-12 put it.
+    val statsInScroll = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+    val statsAsk: @Composable () -> Unit = {
+        com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) }
+    }
     val primary = primaryNoAsk?.let { p ->
-        if (!atSummary) p
-        else p.copy(above = { com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) } })
+        if (!atSummary || statsInScroll) p
+        else p.copy(above = statsAsk)
     }
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
@@ -301,7 +313,10 @@ fun SetupHost(
                         SetupStep.ORDER -> OrderStep(vm, d)
                         SetupStep.TODAY -> TodayStep(vm, d)
                         SetupStep.ALARM -> AlarmStep(vm, d)
-                        SetupStep.SUMMARY -> SummaryStep(vm, d)
+                        SetupStep.SUMMARY -> {
+                            SummaryStep(vm, d, onNotMine = onNotMine?.let { done -> { vm.notMine()?.let(done) } })
+                            if (atSummary && statsInScroll) statsAsk()
+                        }
                     }
                     Spacer(Modifier.height(16.dp))
                 }

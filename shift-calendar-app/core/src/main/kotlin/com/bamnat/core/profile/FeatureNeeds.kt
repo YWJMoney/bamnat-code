@@ -15,7 +15,6 @@ object FeatureNeeds {
         "pay.slipAudit" to setOf(FactKey.PAY_ITEMS),
         "pay.compLeave" to setOf(FactKey.DAILY_HOURS),
         "hourly.takeHome" to setOf(FactKey.WAGE_TYPE, FactKey.TAX_MODE),
-        "hourly.weeks" to setOf(FactKey.HOLIDAY_PAY),
         "leave.ledger" to setOf(FactKey.HIRE_DATE, FactKey.FIVE_OR_MORE),
         "leave.promotion" to setOf(FactKey.HIRE_DATE),
         "leave.payout" to setOf(FactKey.HIRE_DATE, FactKey.BASE_PAY),

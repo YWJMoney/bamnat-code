@@ -373,7 +373,7 @@ class CompanyShare(
             val mine = existing.firstOrNull { it.name == incoming.name }
             ids[incoming.name] = if (mine != null) {
                 schedule.saveShiftType(mine.copy(start = incoming.start, end = incoming.end, breakMinutes = incoming.breakMinutes,
-                    breakStart = incoming.breakStart, isOff = incoming.isOff))
+                    breakStart = incoming.breakStart, isOff = incoming.isOff, gapStart = incoming.gapStart, gapMinutes = incoming.gapMinutes))
             } else {
                 added++
                 schedule.saveShiftType(incoming)
@@ -742,26 +742,46 @@ class CompanyShare(
             items = p.items + items,
             // The user's own leave days stay theirs.
             rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry,
-                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears)) ?: p.rules,
+                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears,
+                    // 2.0.0 [RVH-45] Whether the company lets leave go by the hour is the company's; the 1일 기준 is the user's own.
+                    dayMinutes = p.rules.leave.dayMinutes)) ?: p.rules,
         )
     }
 
+    /**
+     * 2.0.0 [RVH-44] 하루 두 구간 (설계 4-4절, 갈래 D HQ-08·HQ-13과 맞춘 키): the file stays v4. "break"·"breakStart" are what an app before
+     * 2.0.0 reads, so with a gap they hold the break and the gap together from the gap's start; "rest"·"restStart"·"gapStart"·"gap" hold
+     * them apart, always with rest + gap = break (the server turns a file away otherwise). Times as "HH:mm", lengths in minutes.
+     */
     private fun typeJson(t: ShiftType): JSONObject = JSONObject()
         .put("name", t.name).put("label", t.label).put("color", t.colorArgb)
         .putOpt("start", t.start?.toString()).putOpt("end", t.end?.toString())
-        .put("break", t.breakMinutes).putOpt("breakStart", t.breakStart?.toString())
+        .put("break", t.breakMinutes + if (t.hasGap) t.gapMinutes else 0)
+        .putOpt("breakStart", (if (t.hasGap) t.gapStart else t.breakStart)?.toString())
         .put("off", t.isOff).putOpt("icon", t.icon)
+        .apply {
+            if (t.hasGap) put("rest", t.breakMinutes).putOpt("restStart", t.breakStart?.toString())
+                .put("gapStart", t.gapStart.toString()).put("gap", t.gapMinutes)
+        }
 
-    private fun type(o: JSONObject): ShiftType = ShiftType(
-        id = 0,
-        name = o.getString("name").take(MAX_NAME),
-        label = o.optString("label"),
-        colorArgb = o.optLong("color", 0xFF5C6BC0),
-        start = o.optTime("start"), end = o.optTime("end"),
-        breakMinutes = o.optInt("break"), breakStart = o.optTime("breakStart"),
-        isOff = o.optBoolean("off"),
-        icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
-    )
+    private fun type(o: JSONObject): ShiftType {
+        val plain = ShiftType(
+            id = 0,
+            name = o.getString("name").take(MAX_NAME),
+            label = o.optString("label"),
+            colorArgb = o.optLong("color", 0xFF5C6BC0),
+            start = o.optTime("start"), end = o.optTime("end"),
+            breakMinutes = o.optInt("break"), breakStart = o.optTime("breakStart"),
+            isOff = o.optBoolean("off"),
+            icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
+        )
+        // [RVH-44] With a gap that fits, the break and the gap apart; else (a file from before 2.0.0) the "break" is the break.
+        val gapStart = o.optTime("gapStart")
+        val gap = o.optInt("gap", 0)
+        val split = plain.copy(breakMinutes = o.optInt("rest").coerceIn(0, 24 * 60), breakStart = o.optTime("restStart"), gapStart = gapStart,
+            gapMinutes = gap)
+        return if (o.has("gap") && split.hasGap) split else plain
+    }
 
     private fun rekey(o: JSONObject, key: (String) -> String?): JSONObject = JSONObject().apply {
         o.keys().forEach { kind ->

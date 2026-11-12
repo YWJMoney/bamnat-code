@@ -46,9 +46,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -284,21 +281,15 @@ fun EntryDialog(
                         account = MoneyAccounts.lastUsed(entries, kind, ledger.accounts); fromDraft = false
                     }) { Text("지우고 새로") }
                 }
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    MoneyKind.entries.forEachIndexed { i, k ->
-                        SegmentedButton(
-                            selected = kind == k,
-                            onClick = {
-                                if (kind == k) return@SegmentedButton
-                                kind = k
-                                val list = ledger.categoriesOf(k)
-                                if (category !in list) category = (if (isNew) Ledger.lastCategory(entries, k)?.takeIf { it in list } else null) ?: list.first()
-                                if (isNew) account = MoneyAccounts.lastUsed(entries, k, ledger.accounts) ?: account
-                            },
-                            shape = SegmentedButtonDefaults.itemShape(i, MoneyKind.entries.size),
-                        ) { Text(k.label) }
+                com.bamnat.app.ui.components.ChoiceRow(MoneyKind.entries.map { it.label }, selected = kind.ordinal, onSelect = { i ->
+                    val k = MoneyKind.entries[i]
+                    if (kind != k) {
+                        kind = k
+                        val list = ledger.categoriesOf(k)
+                        if (category !in list) category = (if (isNew) Ledger.lastCategory(entries, k)?.takeIf { it in list } else null) ?: list.first()
+                        if (isNew) account = MoneyAccounts.lastUsed(entries, k, ledger.accounts) ?: account
                     }
-                }
+                })
                 // [LEDG-25] A new spending line can be filled from a receipt photo, read on the phone.
                 if (isNew && kind == MoneyKind.EXPENSE) {
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -22,9 +22,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,18 +49,9 @@ import com.bamnat.core.memo.MemoNotebook
 internal fun NotebookBar(state: MemoListState, onPick: (MemoNotebook) -> Unit) {
     if (!state.manyCalendars) return
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            MemoNotebook.entries.forEachIndexed { i, n ->
-                SegmentedButton(
-                    selected = state.notebook == n,
-                    onClick = { onPick(n) },
-                    shape = SegmentedButtonDefaults.itemShape(i, MemoNotebook.entries.size),
-                    label = {
-                        Text(if (n == MemoNotebook.CALENDAR) state.activeName else n.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    },
-                )
-            }
-        }
+        // [RVH-46] Words never cut at a large font.
+        com.bamnat.app.ui.components.ChoiceRow(MemoNotebook.entries.map { n -> if (n == MemoNotebook.CALENDAR) state.activeName else n.label },
+            selected = state.notebook.ordinal, onSelect = { onPick(MemoNotebook.entries[it]) })
         Text(
             when (state.notebook) {
                 // [MEMO-01] Each calendar keeps its own memos unless 설정 › 메모 공유 puts calendars together.
