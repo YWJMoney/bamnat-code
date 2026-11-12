@@ -189,6 +189,8 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(r.title, style = MaterialTheme.typography.titleLarge)
                     if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVM-42] 총괄 HQ-100: a work for another kind of work says so under its name, and what that means for 넣기.
+                    otherKindLine(r, vm.style)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 // [RCX-05][PRF-01] 만든 분: 표식 · 팔로워, 누르면 프로필.
                 MakerLine(doc.item, onMaker.takeIf { doc.item.maker != null })
@@ -531,6 +533,10 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
     if (disliking) DislikeDialog(onSend = { reason, opinion -> vm.vote(-1, reason, opinion); disliking = false }, onDismiss = { disliking = false })
 }
 
+/** 2.0.0 [RVM-42] 총괄 HQ-100: "일근용 작품이에요 · 교대에 맞는 조각만 들어가요"; null for a work that is for [mine] (or every kind). */
+internal fun otherKindLine(r: com.bamnat.core.recipe.Recipe, mine: com.bamnat.core.work.WorkStyle?): String? =
+    RecipeDescribe.otherKind(r.styles, mine)?.let { "$it 작품이에요 · ${RecipeDescribe.short(mine!!)}에 맞는 조각만 들어가요" }
+
 /** [RVM-13] PC-59·60·34 · 총괄 #462 The 넣기 창: short lines first, '바뀌는 것 모두 보기' as a row, '넣기' its one filled button and '닫기'. */
 @Composable
 private fun PutDialog(
@@ -544,6 +550,8 @@ private fun PutDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), the 알람 line's switch '알람도 넣기', and the full list folded.
                 val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
+                // [RVM-42] HQ-100: said first in the 넣기 창 too.
+                s.recipe?.let { otherKindLine(it, vm.style) }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 PutBrief(putBrief(s, fxOn), onLetters = vm::letters, onWeaker = vm::alarmWeaker) { vm.toggle(PieceKind.ALARMS, it) }
                 // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
                 s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
