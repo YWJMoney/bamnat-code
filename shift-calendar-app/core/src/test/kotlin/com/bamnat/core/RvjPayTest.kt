@@ -207,4 +207,15 @@ class RvjPayTest {
         assertTrue("이름 칸에 직업이 들어가지 않아요", !Regex("이름[^\\n]*제조").containsMatchIn(text))
         assertTrue("시각이 없는 줄은 말로", text.contains("2시간 (시각 안 적음)") && !text.contains("시각 없음"))
     }
+
+    /** [RVJ-47] PC-111 같은 틀: the 연간 교대 리포트 put the 직업 under '이름' too; the 현장 일한 날 증빙 has a 이름 칸 to write in. */
+    @Test fun theOtherReportsOnTheSameFrameNameTheJob() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), emptyList())
+        val months = com.bamnat.core.report.YearShiftReport.months(2026, LocalDate.of(2026, 11, 30), r::resolve) { null }
+        val year = com.bamnat.core.report.YearShiftReport.doc(2026, "제조·생산 교대", months, mon).text()
+        assertTrue(year, year.contains("직업: 제조·생산 교대") && !Regex("이름[^\\n]*제조").containsMatchIn(year))
+        val field = com.bamnat.core.report.FieldDaysProof.doc("", mon, mon, emptyList(), mon).text()
+        assertTrue(field, field.contains("이름: "))
+    }
 }
