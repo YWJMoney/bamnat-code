@@ -168,8 +168,9 @@ internal fun AheadCard(
         if (next.isNotEmpty()) {
             Column(Modifier.padding(top = 6.dp)) {
                 next.forEach { f ->
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                        Text("${Fmt.shortDate(f.date)} ${f.label}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1)
+                    // 2.0.0 [RVK-23]·HQ-30: at 200% the name was cut to its date; it now wraps and the amount goes under it.
+                    NameAndAmount({ Text("${Fmt.shortDate(f.date)} ${f.label}", style = MaterialTheme.typography.bodyMedium) },
+                        Modifier.padding(vertical = 2.dp)) {
                         Text((if (f.amount > 0) "+" else "−") + Fmt.won(kotlin.math.abs(f.amount)), style = MaterialTheme.typography.bodyMedium,
                             color = if (f.amount > 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                     }

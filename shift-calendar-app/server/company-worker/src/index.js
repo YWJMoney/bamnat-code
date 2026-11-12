@@ -114,8 +114,8 @@ import { LOOP_COLUMNS, LOOP_SCHEMA, effectTick, knownRoute, liveTick, loopRoute,
 import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, opsArea, opsRoute, opsSteps } from "./admin-ops.js";
 // 1.38 [ADM3-01] 패스키(지문) 로그인.
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
-import { flushWatch, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
-import { FIVE_STEP, hourlyAgo, hourlyWatch } from "./incident.js";
+import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
+import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -147,6 +147,10 @@ export const LIMITS = {
   // a week at a time, for at most 30 days from the password.
   loginDelayMs: 150,
   sessionMaxMs: 30 * 24 * 60 * 60 * 1000,
+  // 2.0.0 [RVQ-06] 검토 SRV-06: 패스키를 더하려면 10분 안에 로그인했거나 비밀번호를 한 번 더(틀린 것은 시간에 5번까지).
+  reauthMs: 10 * 60 * 1000,
+  // 2.0.0 [RVQ-07] 검토 U21-04: 로그인 목록의 '마지막 사용'은 10분에 한 번만 적어요(요청마다 쓰지 않게).
+  sessionTouchMs: 10 * 60 * 1000,
   // [ADMIN-04] An invite link works for a week; a mailed code for 15 minutes and five tries.
   inviteMs: 7 * 24 * 60 * 60 * 1000,
   codeMs: 15 * 60 * 1000,
@@ -249,7 +253,8 @@ export default {
       console.error(e && e.stack ? e.stack : String(e));
       // [ADMUX-16] 지표 › 오류 counts these; a count that cannot be written changes nothing.
       if (env.DB) await countError(env).catch(() => {});
-      if (env.DB) await recordError(env, new URL(request.url).pathname, e).catch(() => {});
+      // 2.0.0 [RVQ-13] 검토 SRV-18: 묶기가 실패하면 따로 세요(전에는 조용히 넘어가 '묶이지 않은 오류'의 까닭을 몰랐어요).
+      if (env.DB) await recordError(env, new URL(request.url).pathname, e).catch(() => countFailure(env, "errfail"));
       return json({ error: "server" }, 500);
     } finally {
       if (env.DB) {
@@ -268,16 +273,18 @@ export default {
   async scheduled(event, env, ctx) {
     if (!env.DB) return;
     // 1.38 [DESK-09] 5분마다: 보류가 끝난 Claude 답만 보내요(나머지 정리는 매시 17분 그대로).
-    if (event?.cron === "*/5 * * * *") {
-      // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내도 5분마다.
-      // 2.0.0 [RVN-02] 정기 작업 기록(five)에 남기고, 매시 작업이 멈췄으면 알려요(서로 지켜보기, SVC-83).
-      ctx.waitUntil(ready(env)
-        .then(() => runJobs(env, [[FIVE_STEP, () => releaseHeld(env, Date.now()).then(() => shipTick(env, Date.now(), loopAnswer))]], Date.now()))
+    // 2.0.0 [RVQ-12] 검토 SRV-14·I21a-03: 5분 작업도 단계마다 기록해 실패가 관리 › 서버 상태에 남아요(전에는 어디에도 없었어요).
+    if (event?.cron === CRONS.five) {
+      // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내도 5분마다. 2.0.0 [RVN-02] 매시 작업이 멈췄으면 알려요(서로 지켜보기, SVC-83).
+      ctx.waitUntil(ready(env).then(() => metered(env, "five", (e) => runJobs(e, fiveMinuteSteps(e), Date.now())))
         .then(() => hourlyWatch(env, Date.now()).catch(() => {})));
       return;
     }
     // 1.38 [ADM3-05] 단계마다 따로: 한 단계가 실패해도 다음 단계가 돌고, 관리 › 서버 상태에 단계마다 마지막 성공·실패가 남아요.
-    ctx.waitUntil(ready(env).then(() => runJobs(env, hourlySteps(env), Date.now())).finally(badgesChanged)); // AX 1.30 [ADMX-10]
+    // 2.0.0 [RVQ-12] 검토 SVC-07: 매시 작업을 17분과 47분 두 번으로 나눠 한 호출의 D1 질의 수를 줄여요. 모르는 cron이면 예전처럼 한 번에 모두.
+    const half = event?.cron === CRONS.first ? 1 : event?.cron === CRONS.second ? 2 : 0;
+    ctx.waitUntil(ready(env).then(() => metered(env, half ? `hour${half}` : "hour", (e) => runJobs(e, hourlySteps(e, half), Date.now())))
+      .finally(badgesChanged)); // AX 1.30 [ADMX-10]
   },
 };
 
@@ -286,8 +293,24 @@ function loopAnswer(e, id, text, at) {
   return inboxAnswer(e, id, text, at, e.actor ? actorName(e) : "자동 정리");
 }
 
-/** 1.38 [ADM3-05] 매시 17분 작업의 단계(이름은 ops-watch.js JOB_NAMES). 순서는 1.37까지와 같아요. */
-export const hourlySteps = (env) => [
+/** 2.0.0 [RVQ-12] wrangler.toml [triggers] crons와 같은 글자여야 해요(test/jobs-q1.test.mjs가 맞춰 봐요). */
+export const CRONS = { first: "17 * * * *", second: "47 * * * *", five: "*/5 * * * *" };
+/** 2.0.0 [RVQ-12] 47분에 도는 단계: Play·출시 안내·효과·응답 속도·운영(리뷰·백업·사고·요청)·개선 신호. 나머지는 17분. */
+export const SECOND_HALF = new Set(["play", "ship", "live", "effect", "watch", "reviews", "backup", "incident", "requests", "observe"]);
+
+/** 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업의 단계(이름은 ops-watch.js JOB_NAMES). [RVQ-11] 광장 글 급증도 5분마다 봐요. */
+export const fiveMinuteSteps = (env) => [
+  ["held5", () => releaseHeld(env, Date.now())],
+  ["ship5", () => shipTick(env, Date.now(), loopAnswer)], // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내
+  ["surge", () => plazaSurge(env, Date.now())],
+];
+
+/**
+ * 1.38 [ADM3-05] 매시 작업의 단계(이름은 ops-watch.js JOB_NAMES). 순서는 1.37까지와 같아요. 2.0.0 [RVQ-12] [half] 1이면 17분 몫, 2면 47분
+ * 몫([SECOND_HALF]), 0이면 모두(옛 cron·시험).
+ */
+export const hourlySteps = (env, half = 0) => allHourlySteps(env).filter(([step]) => !half || (half === 2) === SECOND_HALF.has(step));
+const allHourlySteps = (env) => [
   // 1.40 [RVD-05] 옛 식으로 잘못 찍힌 결제·환불 기록을 한 번 다시 봐요(다 보면 멈춤).
   ["prune", () => prune(env, Date.now()).then(() => rescanBilling(env, Date.now()))],
   ["trials", () => stopUnconsentedTrials(env, Date.now())],
@@ -417,6 +440,11 @@ async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+  // 2.0.0 [RVQ-13] 검토 SRV-23: workers.dev 주소는 옛 앱이 새 주소에 못 닿을 때 다시 보내는 길(SRV-30)이라 열어 두되, 관리자 길은 거절해요
+  // (Cloudflare의 속도 규칙·WAF가 도메인에만 걸려 있어 비켜 가지 못하게). 도메인이 고장 난 날은 ADMIN_ON_WORKERS_DEV=1로 잠시 열어요.
+  if (url.hostname.endsWith(".workers.dev") && (path === "/admin" || path.startsWith("/admin/") || path.startsWith("/api/admin")) && env.ADMIN_ON_WORKERS_DEV !== "1") {
+    return json({ error: "use_domain", to: `https://api.bamnat.app${path}` }, 404);
+  }
   // [SRV-08] Any write through this Worker may change 모두의 문의, so its kept rows are read afresh.
   if (method !== "GET") publicRows.delete(env.DB ?? env);
   // AS 1.29 [SRCH-01] and may add a name whose 초성 and reading are not there yet.
@@ -466,18 +494,15 @@ const PUBLIC_READS = [/^\/api\/companies$/, /^\/api\/board$/, /^\/api\/rates$/, 
   // AI 1.27 [PLAZA-33] A kind of work's plaza is read by any phone with the app, so it is held to the same count.
   /^\/api\/companies\/style-[a-z]+\/setups\/room\/posts$/,
   // 1.34 [RCP-29] the 나눔 판's lists and recipes.
-  /^\/api\/recipes$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}(\/talk)?$/];
-const publicReads = new Map();
+  /^\/api\/recipes$/, /^\/api\/recipes\/[2-9A-HJ-NP-Z]{8}(\/talk)?$/,
+  // 2.0.0 [RVQ-10] 검토 SRV-12 (가)(나): 설치 ID 없이 두 표를 훑는 마을 찾기와, workers.dev 주소에서는 엣지 캐시가 없는 공개 회사 목록.
+  /^\/api\/village\/search$/, /^\/api\/public\/firms$/];
 
 async function publicAllowed(request, env, path) {
   if (request.method !== "GET" || !PUBLIC_READS.some((r) => r.test(path))) return true;
   const now = Date.now();
-  const hour = Math.floor(now / HOUR);
-  const key = `${(await network(request, env, now)).now}|${hour}`;
-  const n = (publicReads.get(key) ?? 0) + 1;
-  publicReads.set(key, n);
-  if (publicReads.size > 20000) for (const k of publicReads.keys()) if (!k.endsWith(`|${hour}`)) publicReads.delete(k);
-  return n <= PUBLIC_PER_HOUR;
+  // 2.0.0 [RVQ-10] 검토 SRV-12 (마): Worker 사본마다 따로 세던 것을 여럿이 함께(50번에 한 번 D1에 더해요).
+  return (await sharedCount(env, `pub|${(await network(request, env, now)).now}`, HOUR, now, 50)) <= PUBLIC_PER_HOUR;
 }
 
 async function routeOnce(request, env, url, ctx) {
@@ -492,6 +517,12 @@ async function routeOnce(request, env, url, ctx) {
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
   if (path === "/api/admin/health" && method === "GET") {
+    // 2.0.0 [RVQ-03] 배포 도구의 카나리 비교: 새 판·앞 판 번호를 아는 쪽만 그 두 판의 숫자를 받아요.
+    if (url.searchParams.has("canary")) {
+      const [fresh, base] = [url.searchParams.get("canary"), url.searchParams.get("base")];
+      const got = await canaryStats(env, [fresh, base], Number(url.searchParams.get("minutes")) || 10).catch(() => ({}));
+      return json({ ...health(env), canary: { new: got[fresh] ?? {}, base: got[base] ?? {} } });
+    }
     // 2.0.0 [RVN-02] ?jobs=1: 마지막 매시 작업이 몇 분 전인지 숫자 하나(SVC-83·I22cb-03). 열쇠 없이 닿고, 답은 상태와 분만이에요
     // (판·내부 값 없음). 읽기 한 번(job_runs)이라 5분마다 불러도 돼요. 운영 장부 자동 처리가 하루 두 번 봐요(docs/ops-desk.md).
     if (url.searchParams.get("jobs") === "1") {
@@ -981,6 +1012,14 @@ const COLUMNS = [
   "ALTER TABLE posts ADD COLUMN attach TEXT",
   // 1.39 [PLZC-10] 근무 태그.
   ...PEOPLE_COLUMNS,
+  // 2.0.0 [RVQ-07] 검토 SRV-07·U21-04: 로그인마다 최고 관리자 비밀번호 지문(비밀값으로 서명한 것, 바뀌면 끊김), 마지막 사용, 기기 이름(브라우저·
+  // 운영체제 두 낱말만, 전체 UA는 남기지 않음), 들어온 길(비밀번호·패스키).
+  "ALTER TABLE admin_sessions ADD COLUMN pw TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE admin_sessions ADD COLUMN last_at INTEGER",
+  "ALTER TABLE admin_sessions ADD COLUMN ua TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE admin_sessions ADD COLUMN via TEXT NOT NULL DEFAULT ''",
+  // 2.0.0 [RVQ-06] 검토 U21-03: 패스키마다 마지막으로 쓴 기기 이름.
+  "ALTER TABLE admin_passkeys ADD COLUMN last_ua TEXT NOT NULL DEFAULT ''",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -1086,7 +1125,13 @@ function ready(env) {
     // 1.39 [STAT2-05] 서버 판도 같이 읽어, 바뀌었으면 '서버 배포'로 활동 기록·바꾼 일·사고 타임라인에 남겨요(실서버 둘러보기 A8·C1).
     done = env.DB.prepare("SELECT key, value FROM settings WHERE key IN ('schema', 'server_version')").all()
       .then((r) => Object.fromEntries((r.results ?? []).map((x) => [x.key, x.value]))).catch(() => ({})).then(async (got) => {
-      await schemaUp(env, got.schema ?? null);
+      // 2.0.0 [RVQ-14] 검토 SRV-16·I21a-01·U21-02: 표를 올리는 데 걸린 시간을 남겨 서버 상태 맨 위 줄에 보여요(배포 도구가 올린 직후 판 고정
+      // deep health로 먼저 불러, 사람이 첫 요청에서 기다리지 않게).
+      const t0 = Date.now();
+      if (await schemaUp(env, got.schema ?? null)) {
+        await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema_up', ?)")
+          .bind(JSON.stringify({ ms: Date.now() - t0, at: Date.now(), name: deployName(env), from: got.schema ?? null })).run().catch(() => {});
+      }
       await noteDeploy(env, got);
     // AM 1.28 [FLAG-23] the 1.27 switches become flag overrides, once per database.
     }).then(() => migrateFlags(env)).catch((e) => {
@@ -1116,13 +1161,15 @@ async function noteDeploy(env, got) {
   } else {
     const r = await env.DB.prepare("UPDATE settings SET value = ? WHERE key = 'server_version' AND value = ?").bind(name, was).run();
     if (!r?.meta?.changes) return;
+    // 2.0.0 [RVQ-14] 검토 U21-02: 바로 앞 판 이름(되돌릴 판). 카나리 동안 두 판이 번갈아 적어도 100%가 된 뒤의 마지막 바뀜이 남아요.
+    await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('server_prev', ?)").bind(was).run().catch(() => {});
   }
   await audit(env, Date.now(), "server_deployed", name, was ? `${was} → ${name}` : name).catch(() => {});
 }
 
-/** Tables as this code has them; [made] is the schema mark the database had. */
+/** Tables as this code has them; [made] is the schema mark the database had. 2.0.0 [RVQ-14] true when it had to go up. */
 async function schemaUp(env, made) {
-  if (made === SCHEMA_VERSION) return;
+  if (made === SCHEMA_VERSION) return false;
   // 1.37 hotfix: an ALTER TABLE in SCHEMA (recipe-fonts' info·glyphs·fallback) fails as "duplicate column" on a database that
   // already has it, and that failed the whole batch, so every request was a 500 after any later schema change. ALTERs run
   // with the columns below, where a column already there is skipped.
@@ -1145,6 +1192,7 @@ async function schemaUp(env, made) {
     console.error(`company_fts: ${e?.message ?? e}`);
   }
   await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('schema', ?)").bind(SCHEMA_VERSION).run();
+  return true;
 }
 
 export const stmt = (env, sql, ...params) => env.DB.prepare(sql).bind(...params);
@@ -1176,6 +1224,88 @@ function meterAdd(env, r, n = Number(r?.meta?.rows_written ?? r?.meta?.changes ?
 }
 
 const meterDay = (now) => new Date(now).toISOString().slice(0, 10);
+
+/**
+ * 2.0.0 [RVQ-12] 검토 SVC-07: 정기 작업 한 호출이 D1에 보낸 질의 수(묶음은 그 안의 문장 수만큼)를 세어 settings `job_queries`에 남겨요.
+ * D1은 호출 하나에 질의 수 상한이 있어(유료 1,000·무료 50) 넘으면 그 뒤 단계가 조용히 실패해요. 관리 › 서버 상태에 보이고 80%를 넘으면
+ * 오늘의 주의에 떠요. 세는 일이 실패해도 작업은 그대로 돌아요.
+ */
+export function countingDB(DB, meter) {
+  const raw = new WeakMap();
+  const wrap = (s) => {
+    const p = new Proxy(s, {
+      get(t, k) {
+        if (k === "bind") return (...v) => wrap(t.bind(...v));
+        if (k === "first" || k === "all" || k === "run" || k === "raw") return (...a) => { meter.n++; return t[k](...a); };
+        const v = Reflect.get(t, k);
+        return typeof v === "function" ? v.bind(t) : v;
+      },
+    });
+    raw.set(p, s);
+    return p;
+  };
+  return new Proxy(DB, {
+    get(t, k) {
+      if (k === "prepare") return (sql) => wrap(t.prepare(sql));
+      if (k === "batch") return (list) => { meter.n += list.length; return t.batch(list.map((x) => raw.get(x) ?? x)); };
+      if (k === "exec") return (sql) => { meter.n += Math.max(1, String(sql).split(";").filter((x) => x.trim()).length); return t.exec(sql); };
+      const v = Reflect.get(t, k);
+      return typeof v === "function" ? v.bind(t) : v;
+    },
+  });
+}
+
+/** 2.0.0 [RVQ-12] [fn]을 질의를 세는 env로 돌리고, 센 수를 [name] 몫으로 남겨요. */
+export async function metered(env, name, fn) {
+  const meter = { n: 0 };
+  let e = env;
+  try {
+    e = { ...env, DB: countingDB(env.DB, meter), DB_ROOT: spDbKey(env) };
+  } catch {
+    e = env;
+  }
+  try {
+    return await fn(e);
+  } finally {
+    try {
+      const now = Date.now();
+      const was = JSON.parse((await one(env, "SELECT value FROM settings WHERE key = 'job_queries'"))?.value ?? "{}");
+      const prev = was[name];
+      // 오늘 가장 많았던 호출도 함께(한 번 크게 튄 것을 놓치지 않게).
+      const day = meterDay(now);
+      const top = prev?.day === day ? Math.max(prev.top ?? 0, meter.n) : meter.n;
+      was[name] = { n: meter.n, at: now, day, top };
+      await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('job_queries', ?)", JSON.stringify(was));
+    } catch (err) {
+      console.error(`job queries: ${err?.message ?? err}`);
+    }
+  }
+}
+
+/** 2.0.0 [RVQ-12] 관리 › 서버 상태의 요금제 줄: 요금제, 오늘 D1 쓰기와 하루 몫, 정기 작업 호출의 질의 수와 상한. */
+export async function budgetState(env, now) {
+  const plan = cfPlan(env);
+  const [meter, jobs] = await Promise.all([
+    one(env, "SELECT count FROM counters WHERE key = ?", `meter|${meterDay(now)}`).catch(() => null),
+    one(env, "SELECT value FROM settings WHERE key = 'job_queries'").catch(() => null),
+  ]);
+  let queries = {};
+  try {
+    queries = JSON.parse(jobs?.value ?? "{}");
+  } catch {
+    queries = {};
+  }
+  const d1Used = Number(meter?.count ?? 0);
+  const day = meterDay(now);
+  const top = Math.max(0, ...Object.values(queries).filter((q) => q?.day === day).map((q) => Number(q.top ?? q.n ?? 0)));
+  return {
+    plan: plan.name, overage: plan.overage,
+    d1: { used: d1Used, day: plan.d1WritesDay, share: plan.d1WritesDay ? d1Used / plan.d1WritesDay : 0 },
+    queries: { top, limit: plan.queriesPerCall, share: top / plan.queriesPerCall,
+      jobs: Object.fromEntries(Object.entries(queries).map(([k, q]) => [k, { n: q.n, top: q.top ?? q.n, at: iso(q.at) }])) },
+    kv: { day: plan.kvWritesDay },
+  };
+}
 
 /** Adds what was counted here to the day's meter; [force] does it now (the hourly job). */
 export async function flushMeter(env, now, force = false) {
@@ -1291,10 +1421,65 @@ export async function freshDevice(env, dev, now) {
     UNION ALL SELECT 1 AS x FROM muted WHERE device = ?1 AND until > ?2 LIMIT 1`, dev, now));
 }
 
-/** The network check for [overLimit] as a list to spread in: none for an old install, else [kind]'s hourly share of [perDay]. */
+/**
+ * 2.0.0 [RVQ-11] 검토 SRV-13·I21c-03: '사람에게는 제한 없음'(LIM-10)을 지키면서 사람이 닿지 않는 안전 천장. 설치 ID는 앱이 만든 무작위 값이라
+ * 스크립트도 만들 수 있고 3일만 묵히면 한도가 사라졌어요. 천장(종류마다)은 설치마다 시간에 30·하루 200, 대화처럼 빠르게 오가는 글(post·room·rtalk, 답글 포함)은
+ * 시간에 120·하루 600(30초에 한 줄씩 한 시간 내내), 네트워크마다 시간에 600이에요. 사용자 결정(2026-11-01 '통신사 주소 하나를 수천 명이 같이 써요')대로 네트워크 천장은
+ * 지금 한도(새 휴대폰의 시간 몫)보다 열 배 넘게 넉넉하게 두었어요.
+ * 7일 안에 Play Integrity를 통과한 설치(진짜 Play 앱·진짜 휴대폰, integrity 표)는 천장 없이 지금처럼. 무결성 확인이 꺼진 동안
+ * (INTEGRITY_MODE off, 기본)은 아무도 증명하지 못하니 표를 읽지 않아요. 앱을 바꾸지 않아도 돼요.
+ */
+export const CEILING = { deviceHour: 30, deviceDay: 200, networkHour: 600, talk: { kinds: ["post", "rtalk", "room"], deviceHour: 120, deviceDay: 600 } };
+
+/** 2.0.0 [RVQ-11] 7일 안에 무결성을 통과한 설치인지(설치 증명). 확인이 꺼졌거나 표를 읽지 못하면 아니라고 봐요. */
+export async function provenDevice(env, dev, now) {
+  if (!dev || integrityMode(env) === "off") return false;
+  const row = await one(env, "SELECT ok, at FROM integrity WHERE device = ?", dev).catch(() => null);
+  return Boolean(row?.ok) && now - Number(row.at) < 7 * DAY;
+}
+
+/**
+ * The network check for [overLimit] as a list to spread in: [kind]'s hourly share of [perDay] for a new or restricted install, and
+ * 2.0.0 [RVQ-11] for any install that has not proven itself, the ceilings above (both looked up together: one wait for D1).
+ */
 export async function networkCheck(env, dev, net, kind, perDay, now) {
-  if (!(await freshDevice(env, dev, now))) return [];
-  return [["network", `${kind}|${net.now}`, Math.max(1, Math.ceil(perDay / NEW_DEVICE.hourShare)), HOUR]];
+  const [fresh, proven] = await Promise.all([freshDevice(env, dev, now), provenDevice(env, dev, now)]);
+  const out = fresh ? [["network", `${kind}|${net.now}`, Math.max(1, Math.ceil(perDay / NEW_DEVICE.hourShare)), HOUR]] : [];
+  if (proven) return out;
+  const c = CEILING.talk.kinds.includes(kind) ? CEILING.talk : CEILING;
+  if (dev) out.push(["device", `ceil|${kind}|${dev}|h`, c.deviceHour, HOUR], ["device", `ceil|${kind}|${dev}|d`, c.deviceDay, DAY]);
+  out.push(["network", `ceil|${kind}|${net.now}`, CEILING.networkHour, HOUR]);
+  return out;
+}
+
+/**
+ * 2.0.0 [RVQ-10] 검토 SRV-12 (마): 값이 큰 한도(시간에 3,000번 같은)를 Worker 사본 여럿이 함께 세요. 요청마다 D1에 쓰면 읽기 한 번이 쓰기 한 번이
+ * 되어, 사본마다 [step]번에 한 번 더하고 그때 전체 값을 받아요. 오차는 사본 하나에 [step]보다 작아요. 돌려주는 값은 지금까지 센 전체(대략).
+ * D1이 안 되면 그 사본의 수만으로 봐요(요청을 막지 않아요).
+ */
+const sharedCounts = new Map();
+export async function sharedCount(env, key, windowMs, now, step = 25) {
+  const win = Math.floor(now / windowMs);
+  const k = `${key}|${win}`;
+  let e = sharedCounts.get(k);
+  if (!e) {
+    if (sharedCounts.size > 20000) for (const [old, v] of sharedCounts) if (v.win !== win) sharedCounts.delete(old);
+    e = { win, local: 0, sent: 0, total: 0 };
+    sharedCounts.set(k, e);
+  }
+  e.local += 1;
+  if (env?.DB && e.local - e.sent >= step) {
+    const add = e.local - e.sent;
+    e.sent = e.local;
+    try {
+      const row = await one(env, `INSERT INTO counters (key, count, expires) VALUES (?1, ?2, ?3)
+        ON CONFLICT (key) DO UPDATE SET count = count + ?2 RETURNING count`, `sc|${k}`, add, (win + 1) * windowMs);
+      e.total = Number(row?.count ?? e.total + add);
+    } catch {
+      e.total += add;
+    }
+  }
+  return e.total + (e.local - e.sent);
 }
 
 /** Counts one use against [limit] for the window; false once the window's uses are spent. */
@@ -1310,7 +1495,7 @@ async function limitCheck(env, key, limit, windowMs, now) {
       expires = CASE WHEN expires <= ?3 THEN ?2 ELSE expires END
     RETURNING count, expires`, key, now + windowMs, now);
   meterAdd(env, null, 1);
-  return { ok: row.count <= limit, expires: Number(row.expires ?? now + windowMs) };
+  return { ok: row.count <= limit, expires: Number(row.expires ?? now + windowMs), count: Number(row.count) };
 }
 
 /**
@@ -2009,17 +2194,14 @@ async function versionFacts(env, companyId, dev) {
 
 /** [PAYP-03] How many ways one phone may take in a day: enough to try a few versions, not to read every company's. */
 export const TAKES_PER_DAY = 12;
-const takes = new Map();
 
-/** One more take by [dev] today, false past [TAKES_PER_DAY] (in memory, per Worker, as memberRead). */
-function takeCounted(dev, now) {
-  const day = Math.floor(now / DAY);
-  const key = `${dev}|${day}`;
-  const n = (takes.get(key) ?? 0) + 1;
-  if (n > TAKES_PER_DAY) return false;
-  takes.set(key, n);
-  if (takes.size > 20000) for (const k of takes.keys()) if (!k.endsWith(`|${day}`)) takes.delete(k);
-  return true;
+/**
+ * One more take by [dev] today, false past [TAKES_PER_DAY]. 2.0.0 [RVQ-10] 검토 SRV-12 (마): Worker 사본 여럿이 함께 세요(하루 12번이라
+ * 한 번마다). 카운터 열쇠는 설치 해시를 한 번 더 감싼 것이라 어느 회사를 받았는지는 여전히 어디에도 없어요.
+ */
+async function takeCounted(env, dev, now) {
+  const key = `take|${(await sha256(`take|${dev}`)).slice(0, 24)}`;
+  return (await sharedCount(env, key, DAY, now, 1)) <= TAKES_PER_DAY;
 }
 
 /**
@@ -2039,7 +2221,7 @@ async function takeWay(request, env, companyId, grp) {
   const member = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, c.id);
   if (!member) return json({ error: "member" }, 403);
   // Counted in memory like a member's reads (memberRead): nothing about who took what is written down.
-  if (!takeCounted(dev, now)) return json({ error: "rate_limited" }, 429);
+  if (!(await takeCounted(env, dev, now))) return json({ error: "rate_limited" }, 429);
   const row = await one(env, `SELECT dept, setup FROM rules WHERE company_id = ?1 AND grp = ?2 AND withdrawn = 0
       UNION ALL SELECT r.dept, r.setup FROM reports r WHERE r.company_id = ?1 AND r.grp = ?2 AND r.status IN ('pending', 'adopted') AND ${pgShown("r")}
         AND NOT EXISTS (SELECT 1 FROM reports x WHERE x.company_id = r.company_id AND x.grp = r.grp AND x.status = 'rejected')
@@ -2086,8 +2268,6 @@ export function shiftsOnly(setup) {
   return rest;
 }
 
-const memberReads = new Map();
-
 /**
  * Who is asking about [companyId]: their install (X-Device) and whether they joined it. A member reading pay more than
  * [MEMBER.readsPerDay] times a day reads as anyone else until the next day ([limited]), counted in memory like the
@@ -2100,16 +2280,25 @@ async function viewer(request, env, companyId) {
   const row = await one(env, "SELECT 1 AS ok FROM members WHERE device = ? AND company_id = ? AND left = 0 LIMIT 1", dev, companyId);
   if (!row) return { dev, member: false };
   // R131 1.31 [SPD-24] A read the app makes ahead of time or again in the background (X-Read-Ahead: 1) does not count.
-  return memberRead(dev, request?.headers.get("x-read-ahead") === "1");
+  return memberRead(env, dev, request?.headers.get("x-read-ahead") === "1");
 }
 
-/** A member's read of pay, counted in memory: past [MEMBER.readsPerDay] a day it reads as anyone else ([limited]). */
-function memberRead(dev, ahead = false) {
-  const day = Math.floor(Date.now() / DAY);
-  const key = `${dev}|${day}`;
-  const n = (memberReads.get(key) ?? 0) + (ahead ? 0 : 1);
-  memberReads.set(key, n);
-  if (memberReads.size > 20000) for (const k of memberReads.keys()) if (!k.endsWith(`|${day}`)) memberReads.delete(k);
+/**
+ * A member's read of pay: past [MEMBER.readsPerDay] a day it reads as anyone else ([limited]). 2.0.0 [RVQ-10] 검토 SRV-11·SRV-12 (마):
+ * Worker 메모리에만 세면 사본이 여럿일 때 그만큼 느슨해서, 사본들이 함께 세요(10번에 한 번 D1). 미리 읽기는 세지 않아요.
+ */
+const memberAhead = new Map();
+async function memberRead(env, dev, ahead = false) {
+  const now = Date.now();
+  const key = `mread|${(await sha256(`mread|${dev}`)).slice(0, 24)}`;
+  let n;
+  if (ahead) {
+    n = memberAhead.get(key) ?? 0;
+  } else {
+    n = await sharedCount(env, key, DAY, now, 10);
+    if (memberAhead.size > 20000) memberAhead.clear();
+    memberAhead.set(key, n);
+  }
   return n > MEMBER.readsPerDay ? { dev, member: false, limited: true } : { dev, member: true };
 }
 
@@ -2179,7 +2368,7 @@ async function members(request, env) {
   // 방식 쓰기 go on without asking for the page again. An app before 1.30 asks for neither and gets the answer as before.
   const asked = new URL(request.url).searchParams.get("with") ?? body.with;
   if (r.joined && typeof asked === "string" && asked.split(",").includes("page")) {
-    r.page = (await companyData(env, c.id, request, new Set(), memberRead(dev))).body;
+    r.page = (await companyData(env, c.id, request, new Set(), await memberRead(env, dev))).body;
   }
   return json(r, r.joined ? 200 : 409);
 }
@@ -2553,13 +2742,37 @@ async function communitySeen(request, env) {
  * with its members) and 요청 판's requests with these words. 장터 is searched as before (/api/recipes?q=). Writers this phone hid
  * (X-Hide) are left out; no writer is named.
  */
+// 데이터베이스마다 따로(시험이 서버를 여럿 띄워도 섞이지 않게). 실서버에서는 사본 하나에 하나예요.
+const villageMemos = new WeakMap();
 async function villageSearch(request, env, url) {
   const q = String(url.searchParams.get("q") ?? "").replace(/\s+/g, " ").trim().slice(0, 30);
   if (q.length < 2) return json({ posts: [], requests: [] });
+  // 2.0.0 [RVQ-10] 검토 T21-03: 앱이 내 유형 광장(mine=style-…)을 보내면 그 광장 글을 먼저(그 안의 순서는 그대로). 옛 앱은 지금처럼.
+  const mine = Object.hasOwn(STYLE_ROOMS, url.searchParams.get("mine") ?? "") ? url.searchParams.get("mine") : null;
+  const hidden = await hiddenAuthors(await authorKey(env), request.headers.get("x-hide"));
+  // 2.0.0 [RVQ-10] 검토 SRV-12 (가): 같은 말은 1분 동안 이 사본의 메모리에서(두 표를 다시 훑지 않게). 가린 글쓴이는 휴대폰마다라 꺼낸 뒤에 걸러요.
+  const now = Date.now();
+  const key = spDbKey(env);
+  const villageMemo = key && typeof key === "object" ? (villageMemos.get(key) ?? villageMemos.set(key, new Map()).get(key)) : new Map();
+  let got = villageMemo.get(q);
+  if (!got || now - got.at > 60 * 1000) {
+    got = { at: now, rows: await villageRows(env, q) };
+    if (villageMemo.size > 200) villageMemo.clear();
+    villageMemo.set(q, got);
+  }
+  const [posts, requests] = got.rows;
+  const ordered = mine ? [...posts.filter((p) => p.company_id === mine), ...posts.filter((p) => p.company_id !== mine)] : posts;
+  return json({
+    posts: ordered.filter((p) => !hidden.has(p.device)).slice(0, 15).map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id],
+      body: p.body.slice(0, 200), kind: p.kind ?? "talk", replies: p.replies, at: iso(p.created_at), ...(mine ? { mine: p.company_id === mine } : {}) })),
+    requests: requests.map((r) => ({ id: r.id, style: r.style, body: r.body, likes: r.likes, state: r.state, ...(r.code ? { code: r.code } : {}) })),
+  });
+}
+
+async function villageRows(env, q) {
   const like = `%${q.replace(/[%_]/g, "")}%`;
   const rooms = Object.keys(STYLE_ROOMS);
-  const hidden = await hiddenAuthors(await authorKey(env), request.headers.get("x-hide"));
-  const [posts, requests] = await Promise.all([
+  return Promise.all([
     all(env, `SELECT p.id, p.company_id, p.device, p.body, p.kind, p.created_at,
         (SELECT COUNT(*) FROM posts r WHERE r.parent = p.id AND r.status = 'shown') AS replies
       FROM posts p WHERE p.grp = ? AND p.company_id IN (${rooms.map(() => "?").join(",")}) AND p.parent IS NULL AND p.status = 'shown' AND p.body LIKE ?
@@ -2567,11 +2780,6 @@ async function villageSearch(request, env, url) {
     all(env, `SELECT id, style, body, likes, state, code FROM recipe_requests WHERE hidden = 0 AND body LIKE ? ORDER BY likes DESC, created_at DESC LIMIT 10`, like)
       .catch(() => []),
   ]);
-  return json({
-    posts: posts.filter((p) => !hidden.has(p.device)).slice(0, 15).map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id],
-      body: p.body.slice(0, 200), kind: p.kind ?? "talk", replies: p.replies, at: iso(p.created_at) })),
-    requests: requests.map((r) => ({ id: r.id, style: r.style, body: r.body, likes: r.likes, state: r.state, ...(r.code ? { code: r.code } : {}) })),
-  });
 }
 
 /** 1.36 [VIL-10] A poll's choices: 2 to 4 different lines of 1~30 letters, nothing personal in them. */
@@ -2913,8 +3121,13 @@ async function edgeCached(request, ctx, seconds, make) {
     // Read afresh.
   }
   const res = await make();
-  if (res.status === 200) {
-    const copy = res.clone();
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (마): [seconds]를 실제로 써요. 가장자리에 둘 시간은 s-maxage로 붙여(휴대폰은 보지 않는 값) 답의 max-age와
+  // 따로 정해요. 나눠 갖지 않는 답(private·no-store)은 두지 않아요.
+  const cc = res.headers.get("cache-control") ?? "";
+  if (res.status === 200 && !/no-store|private/i.test(cc)) {
+    const headers = new Headers(res.headers);
+    if (seconds > 0 && !/s-maxage/i.test(cc)) headers.set("cache-control", cc ? `${cc}, s-maxage=${seconds}` : `public, s-maxage=${seconds}`);
+    const copy = new Response(res.clone().body, { status: res.status, statusText: res.statusText, headers });
     const put = cache.put(key, copy).catch(() => {});
     if (ctx?.waitUntil) ctx.waitUntil(put);
     else await put;
@@ -3274,8 +3487,17 @@ async function companyFor(env, name, now, r = {}) {
   }
   const id = randomId(12);
   const kind = r.topic ? "topic" : r.job === "nurse" ? "hospital" : "company";
-  await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said) VALUES (?, ?, ?, 0, NULL, ?, ?, ?, ?, ?)`,
-    id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (다): 같은 이름을 동시에 처음 보내도 회사가 둘 생기지 않게, 없을 때만 넣는 한 문장으로(D1은 문장 하나씩 차례로
+  // 써요). 이미 있는 회사에 유일 색인을 걸면 실서버에 겹친 이름이 있을 때 스키마 올림이 실패해서 색인 대신 이렇게 했어요.
+  const put = await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, kind, job, region, said)
+    SELECT ?1, ?2, ?3, 0, NULL, ?4, ?5, ?6, ?7, ?8 WHERE NOT EXISTS (SELECT 1 FROM companies WHERE norm = ?3)
+      AND NOT EXISTS (SELECT 1 FROM aliases WHERE norm = ?3)`,
+  id, name, norm, now, kind, r.job ?? "", r.region ?? "", spoken(name) || "-");
+  if (!Number(put?.meta?.changes ?? 1)) {
+    const first = (await one(env, "SELECT id FROM companies WHERE norm = ? ORDER BY merged_into IS NOT NULL, created_at LIMIT 1", norm))
+      ?? (await one(env, "SELECT company_id AS id FROM aliases WHERE norm = ?", norm));
+    if (first) return follow(env, first.id);
+  }
   return one(env, "SELECT * FROM companies WHERE id = ?", id);
 }
 
@@ -4613,7 +4835,17 @@ async function takePostBack(request, env, id) {
   const p = await one(env, "SELECT device FROM posts WHERE id = ?", id);
   if (!p) return json({ error: "not_found" }, 404);
   if (!device || (await deviceHash(device)) !== p.device) return json({ error: "forbidden" }, 403);
-  await batch(env, [stmt(env, "DELETE FROM post_flags WHERE post_id = ?", id), stmt(env, "DELETE FROM posts WHERE id = ?", id)]);
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (가): 그 글에 달린 답글(과 그 신고·투표), 맞아요·달라요, 투표, 아직 정해지지 않은 제안 제보도 함께(주인 없는 줄이 남지 않게).
+  // 채택된 제보는 이미 회사 규칙이라 그대로예요.
+  const kids = "SELECT id FROM posts WHERE parent = ?1";
+  await batch(env, [
+    stmt(env, `DELETE FROM post_flags WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, `DELETE FROM post_votes WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, `DELETE FROM poll_votes WHERE post_id = ?1 OR post_id IN (${kids})`, id),
+    stmt(env, "DELETE FROM reports WHERE post_id = ? AND status = 'pending'", id),
+    stmt(env, "DELETE FROM posts WHERE parent = ?", id),
+    stmt(env, "DELETE FROM posts WHERE id = ?", id),
+  ]);
   return new Response(null, { status: 204 });
 }
 
@@ -4682,7 +4914,14 @@ async function deepHealth(env) {
   if (!env.DB) return json(out, 503);
   try {
     await ready(env);
-    out.schema = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value === SCHEMA_VERSION;
+    let mark = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value ?? null;
+    // 2.0.0 [RVQ-02] 카나리처럼 앞 판과 함께 돌 때, 앞 판의 새 isolate가 표 표시를 자기 판으로 바꿔 둘 수 있어요(앞 판은 없는 표·칸만 만들어
+    // 표는 그대로예요). 이 판의 표를 다시 맞춘 뒤 봐요. 그러지 않으면 멀쩡한 새 판이 배포 확인에서 '표 판 틀림'으로 되돌려져요.
+    if (mark !== SCHEMA_VERSION) {
+      await schemaUp(env, mark);
+      mark = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value ?? null;
+    }
+    out.schema = mark === SCHEMA_VERSION;
     await Promise.all([config(env), updatePolicy(env)]);
     out.config = true;
   } catch (e) {
@@ -4696,6 +4935,43 @@ async function deepHealth(env) {
 export function playIntegrity(env) {
   const account = playReady(env);
   return account ? { pkg: env.PLAY_PACKAGE || "com.bamnat.app", token: (scope) => playToken(env, account, Date.now(), scope) } : null;
+}
+
+/**
+ * 2.0.0 [RVQ-14] 검토 U21-02·I21a-01: 서버 상태 맨 위 한 줄 '지금 판 · 배포 번호 · 스키마 올림 N초 · 되돌릴 판'과 깊은 점검(DB 읽기·쓰기·정기 작업).
+ * 쓰기 점검은 counters의 한 줄(health|write, 하루)을 올려 봐요.
+ */
+export async function deployState(env, now = Date.now()) {
+  const info = deployInfo(env);
+  const out = { ...info, schemaUp: null, prev: null, checks: { read: false, write: false, jobs: false } };
+  try {
+    const rows = await all(env, "SELECT key, value FROM settings WHERE key IN ('schema_up', 'server_prev')");
+    const got = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    out.checks.read = true;
+    try {
+      const up = JSON.parse(got.schema_up ?? "null");
+      if (up) out.schemaUp = { ms: Number(up.ms) || 0, at: Number(up.at) || null, name: String(up.name ?? "").slice(0, 40) };
+    } catch {
+      out.schemaUp = null;
+    }
+    out.prev = got.server_prev ? String(got.server_prev).slice(0, 40) : null;
+  } catch {
+    out.checks.read = false;
+  }
+  try {
+    await run(env, "INSERT INTO counters (key, count, expires) VALUES ('health|write', 1, ?1) ON CONFLICT (key) DO UPDATE SET count = count + 1, expires = ?1", now + DAY);
+    out.checks.write = true;
+  } catch {
+    out.checks.write = false;
+  }
+  try {
+    const jobs = (await all(env, "SELECT step, ok_at, fail_at, error FROM job_runs")).map((r) => jobRow(r, now, env));
+    out.checks.jobs = !jobs.some((j) => j.state === "fail" || j.state === "stale");
+    out.checks.jobsBad = jobs.filter((j) => j.state === "fail" || j.state === "stale").map((j) => j.name);
+  } catch {
+    out.checks.jobs = false;
+  }
+  return out;
 }
 
 function serverState(env) {
@@ -4791,7 +5067,12 @@ export async function admin(request, env, url) {
   }
   if (path === "/login" && method === "POST") return login(request, env, now);
   // 1.38 [ADM3-01] 패스키: 도전값 받기, 서명으로 들어오기.
-  if (path === "/passkey/start" && method === "POST") return passkeyStart(env, url, now);
+  if (path === "/passkey/start" && method === "POST") {
+    // 2.0.0 [RVQ-10] 검토 SRV-12 (다): 부를 때마다 D1에 한 줄을 써서, 로그인처럼 네트워크마다 시간에 30번까지.
+    const hit = await overLimit(env, now, [["network", `pkstart|${(await network(request, env, now)).login}`, 30, HOUR]]);
+    if (hit) return hit;
+    return passkeyStart(env, url, now);
+  }
   if (path === "/passkey/login" && method === "POST") return passkeyLogin(request, env, url, now);
   // [ADMIN-15] The invite token goes in the body, out of logs and history. [ADMUX-11] The 1.23 GET /join?t= is gone
   // (the developer app has used POST /join/info since 1.23).
@@ -4848,10 +5129,18 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // [MON-09] A code for this admin's own phone.
   if (path === "/me/link-code" && method === "POST") return linkCode(env, actor, now);
   if (path === "/me/password" && method === "POST") return changePassword(request, env, actor, session.token, now);
+  // 2.0.0 [RVQ-07] 검토 U21-04: 살아 있는 로그인 목록과 하나씩 끊기.
+  if (path === "/me/sessions" && method === "GET") return json(await sessionList(env, actor, session.token, now));
+  const sm = path.match(/^\/me\/sessions\/([0-9a-f]{12})\/end$/);
+  if (sm && method === "POST") {
+    if (actor.key) return json({ error: "no_permission" }, 403);
+    return sessionEnd(env, actor, sm[1], session.token, now);
+  }
   // R131 1.31 [ADMX-16] 두 번째 확인: see whether it is on, start it (a new secret), confirm it with a code, turn it off with one.
   if (path === "/me/passkeys" || path.startsWith("/me/passkeys/")) {
     if (env.actor?.key) return json({ error: "no_permission" }, 403);
-    const r = await passkeyMine(request, env, url, path, method, actor, now);
+    const r = await passkeyMine(request, env, url, path, method, actor, now, { recentlyIn: now - (session.made ?? 0) < LIMITS.reauthMs,
+      reauth: (password) => reauthCheck(env, actor, password, now), label: deviceLabel(request) });
     if (r) return r;
   }
   // 1.39 [ADM3-42] 로그인 잠금 보기·풀기: 최고 관리자만, 운영 열쇠(Claude)로는 못 해요(사용자 11-07 '슈퍼관리자만').
@@ -4888,9 +5177,11 @@ async function signedRoute(request, env, url, path, method, now, session) {
   // [ADMIN-15] Which optional services are connected: the owner's (areaFor gives "owner").
   if (path === "/server" && method === "GET") {
     // 1.39 [ADM3-43] 회사·쓰는 규칙 수와 서버 판도 여기서(서버 상태 화면은 오늘을 읽지 않아 '–'로 보였어요, 실서버 점검 11-08).
-    const [integrity, counts] = await Promise.all([integrityState(recipeDeps, env, now, playIntegrity(env) !== null),
-      batch(env, [stmt(env, "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"), stmt(env, "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0")])]);
-    return json({ ...serverState(env), integrity, companies: counts[0].results?.[0]?.n ?? 0, rules: counts[1].results?.[0]?.n ?? 0, version: SERVER_VERSION });
+    // 2.0.0 [RVQ-12] 검토 SVC-07: 요금제와 오늘 쓰기·정기 작업 질의 수도.
+    const [integrity, counts, budget, deploy] = await Promise.all([integrityState(recipeDeps, env, now, playIntegrity(env) !== null),
+      batch(env, [stmt(env, "SELECT COUNT(*) AS n FROM companies WHERE merged_into IS NULL"), stmt(env, "SELECT COUNT(*) AS n FROM rules WHERE withdrawn = 0 AND superseded = 0")]),
+      budgetState(env, now), deployState(env, now)]);
+    return json({ ...serverState(env), integrity, budget, deploy, companies: counts[0].results?.[0]?.n ?? 0, rules: counts[1].results?.[0]?.n ?? 0, version: SERVER_VERSION });
   }
   if (path === "/audit" && method === "GET") return json(await auditLog(env, url));
   if (path === "/admins" && method === "GET") return json(await adminList(env));
@@ -5095,16 +5386,23 @@ async function login(request, env, now) {
   else if (body.email !== undefined) return json({ error: "email" }, 400);
   const password = env.ADMIN_PASSWORD;
   if (!email && (typeof password !== "string" || password.length < 10)) return json({ error: "not_set" }, 503);
-  let worst = null;
-  for (const key of keys) {
-    const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
-    if (row && (!worst || row.count > worst.count)) worst = row;
-  }
+  // 2.0.0 [RVQ-05] 검토 SRV-08 (나): 횟수를 먼저 올리고(한 문장, 원자적) 그 값으로 판정해요. 읽은 뒤 틀리면 올리던 1.39까지는 한꺼번에
+  // 보낸 요청이 모두 '아직 4번'을 읽어 5번 제한을 넘었어요. 맞으면 아래에서 지워요.
+  const tried = await Promise.all(keys.map((key) => limitCheck(env, key, LIMITS.loginFailures, LIMITS.lockMs, now)));
+  const worstCount = Math.max(...tried.map((r) => r.count));
+  const before = worstCount - 1;
   const everyone = await one(env, "SELECT count FROM counters WHERE key = 'login|all' AND expires > ?", now);
+  const wide = (everyone?.count ?? 0) >= 10 * LIMITS.loginFailures;
   // [ADMIN-15] Under a wide guessing run (50 wrong in the hour) only a network or account that was wrong
   // this hour is shut out: the owner on a clean network still gets in, so the run cannot lock everyone.
-  if ((worst?.count ?? 0) >= LIMITS.loginFailures || ((everyone?.count ?? 0) >= 10 * LIMITS.loginFailures && (worst?.count ?? 0) > 0)) {
-    return json({ error: "locked", until: iso(worst?.expires ?? now + LIMITS.lockMs) }, 429);
+  if (worstCount > LIMITS.loginFailures || (wide && before > 0)) {
+    const until = Math.max(...tried.map((r) => r.expires));
+    return json({ error: "locked", until: iso(until || now + LIMITS.lockMs) }, 429);
+  }
+  // 2.0.0 [RVQ-05] 검토 SRV-08 (가): 넓게 맞혀 보는 중(이번 시간 전체 실패 10번 넘음)이면 최고 관리자 로그인은 맞든 틀리든 점점 늦게 답해요
+  // (새 네트워크마다 한 번씩 맞혀 보는 것을 느리게). 계정 잠금은 여전히 없어요(1인 운영자가 잠기지 않게).
+  if (!email && (everyone?.count ?? 0) >= 2 * LIMITS.loginFailures) {
+    await new Promise((done) => setTimeout(done, Math.min(20, Math.floor((everyone.count) / LIMITS.loginFailures)) * LIMITS.loginDelayMs));
   }
   let account = null;
   let right = false;
@@ -5116,12 +5414,10 @@ async function login(request, env, now) {
     right = typeof body.password === "string" && (await sameSecret(body.password, password));
   }
   if (!right) {
-    let count = 0;
-    for (const key of keys) {
-      await allow(env, key, Infinity, LIMITS.lockMs, now);
-      const row = await one(env, "SELECT count FROM counters WHERE key = ?", key);
-      if (row.count >= LIMITS.loginFailures) await run(env, "UPDATE counters SET expires = ? WHERE key = ?", now + LIMITS.lockMs, key);
-      count = Math.max(count, row.count);
+    // 횟수는 위에서 이미 올렸어요. 다섯째 틀림부터는 잠금 1시간을 그때부터 다시 세요.
+    const count = worstCount;
+    if (count >= LIMITS.loginFailures) {
+      for (const key of keys) await run(env, "UPDATE counters SET expires = ? WHERE key = ? AND count >= ?", now + LIMITS.lockMs, key, LIMITS.loginFailures);
     }
     await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
     // [ADMIN-15] The email tried is kept only as a short hash, and only for 30 days: enough to see that one
@@ -5142,18 +5438,22 @@ async function login(request, env, now) {
     if (body.code === undefined || body.code === "") return json({ error: "code_needed" }, 401);
     const step = await totpCheck(second.secret, String(body.code), now, second.used_step);
     if (step === null) {
-      for (const key of keys) await allow(env, key, Infinity, LIMITS.lockMs, now);
+      // 비밀번호는 맞았고 코드가 틀림: 위에서 올린 횟수가 그대로 남고, 2.0.0 [RVQ-05] 검토 SRV-08 (다)부터 전체 실패에도 들어가요.
+      await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
       await audit(env, now, "login_failed", "code");
       return json({ error: "code_wrong" }, 401);
     }
     await run(env, "UPDATE admin_totp SET used_step = ? WHERE admin = ?", step, who);
   }
+  // 2.0.0 [RVQ-08] 검토 SRV-19: 옛 횟수(2만 번)로 만든 해시는 맞게 들어온 이때 지금 횟수로 다시 만들어요(비밀번호를 바꾸는 것이 아니라 끊지 않아요).
+  const rehash = account && passwordRounds(account.pw) < pbkdf2Rounds ? await hashPassword(body.password).catch(() => null) : null;
   await batch(env, [
     ...keys.map((key) => stmt(env, "DELETE FROM counters WHERE key = ?", key)),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
-    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)",
-      await sha256(`session|${token}`), who, now + LIMITS.sessionMs, now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at, pw, last_at, ua, via) VALUES (?, ?, ?, ?, ?, ?, ?, 'password')",
+      await sha256(`session|${token}`), who, now + LIMITS.sessionMs, now, account ? "" : await ownerPasswordMark(env), now, deviceLabel(request)),
     ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
+    ...(rehash ? [stmt(env, "UPDATE admins SET pw = ? WHERE id = ? AND pw = ?", rehash, account.id, account.pw)] : []),
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "");
   return json({ ok: true }, 200, { "set-cookie": cookie(token, LIMITS.sessionMs / 1000) });
@@ -5185,17 +5485,19 @@ async function loginUnlock(env, now) {
 
 /**
  * 1.38 [ADM3-01] 패스키로 들어오기: 비밀번호와 같은 잠금(같은 곳에서 여러 번 틀리면 1시간)을 쓰고, 맞으면 같은 세션을 열어요.
- * 패스키는 기기와 지문(또는 얼굴) 두 가지라 두 번째 확인 코드는 묻지 않아요. 멈춘 관리자의 패스키는 들어오지 못해요.
+ * 패스키는 기기와 지문(또는 얼굴) 두 가지라 두 번째 확인 코드는 묻지 않아요. 2.0.0 [RVQ-06] 검토 SRV-05: 그래서 서버가 '지문·PIN으로
+ * 확인함(UV)' 깃발을 꼭 봐요(passkey.js). 멈춘 관리자의 패스키는 들어오지 못해요.
  */
 async function passkeyLogin(request, env, url, now) {
   const net = await network(request, env, now);
   const key = `login|${net.login}`;
-  const row = await one(env, "SELECT count, expires FROM counters WHERE key = ? AND expires > ?", key, now);
-  if ((row?.count ?? 0) >= LIMITS.loginFailures) return json({ error: "locked", until: iso(row.expires) }, 429);
-  const got = await passkeyCheck(request, env, url, now);
+  // 2.0.0 [RVQ-05] 비밀번호와 같이 먼저 올리고 판정해요(맞으면 아래에서 지워요).
+  const tried = await limitCheck(env, key, LIMITS.loginFailures, LIMITS.lockMs, now);
+  if (!tried.ok) return json({ error: "locked", until: iso(tried.expires) }, 429);
+  const got = await passkeyCheck(request, env, url, now, deviceLabel(request));
   const account = got && got.admin !== OWNER.id ? await one(env, "SELECT * FROM admins WHERE id = ?", got.admin) : null;
   if (!got || (got.admin !== OWNER.id && !account)) {
-    await allow(env, key, Infinity, LIMITS.lockMs, now);
+    await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
     await audit(env, now, "login_failed", "passkey");
     return json({ error: "wrong" }, 401);
   }
@@ -5204,7 +5506,8 @@ async function passkeyLogin(request, env, url, now) {
   await batch(env, [
     stmt(env, "DELETE FROM counters WHERE key = ?", key),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
-    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at) VALUES (?, ?, ?, ?)", await sha256(`session|${token}`), got.admin, now + LIMITS.sessionMs, now),
+    stmt(env, "INSERT INTO admin_sessions (token, admin, expires, created_at, pw, last_at, ua, via) VALUES (?, ?, ?, ?, ?, ?, ?, 'passkey')",
+      await sha256(`session|${token}`), got.admin, now + LIMITS.sessionMs, now, got.admin === OWNER.id ? await ownerPasswordMark(env) : "", now, deviceLabel(request)),
     ...(account ? [stmt(env, "UPDATE admins SET last_login = ? WHERE id = ?", now, account.id)] : []),
   ]);
   await audit(Object.assign(Object.create(env), { actor: account ? actorOf(account) : OWNER }), now, "login", "", `패스키 ${got.name}`);
@@ -5249,11 +5552,24 @@ async function signedIn(request, env, now) {
   if (!token || !/^[A-Za-z0-9]{40}$/.test(token)) return null;
   const hash = await sha256(`session|${token}`);
   // The account is read with the session on every call, so a pause or a change of permissions applies at once.
-  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, s.created_at AS session_made, a.* FROM admin_sessions s
-    LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
+  const row = await one(env, `SELECT s.admin AS session_admin, s.expires AS session_expires, s.created_at AS session_made, s.pw AS session_pw,
+    s.last_at AS session_last, a.* FROM admin_sessions s LEFT JOIN admins a ON a.id = s.admin AND a.status = 'active' WHERE s.token = ?`, hash);
   if (!row || row.session_expires <= now) return null;
   const actor = row.session_admin === OWNER.id ? OWNER : row.id ? actorOf(row) : null;
   if (!actor) return null;
+  // 2.0.0 [RVQ-07] 검토 SRV-07: 최고 관리자 비밀번호(Cloudflare ADMIN_PASSWORD)를 바꾸면 그 전의 로그인은 모두 끊겨요. 이 판 전에 연
+  // 로그인(표시 없음)은 처음 쓸 때 지금 표시를 받아요. 관리자 계정은 비밀번호를 바꿀 때 다른 로그인을 지워요(changePassword).
+  if (actor.owner) {
+    const mark = await ownerPasswordMark(env);
+    if (row.session_pw && row.session_pw !== mark) {
+      await run(env, "DELETE FROM admin_sessions WHERE token = ?", hash);
+      return null;
+    }
+    if (!row.session_pw) await run(env, "UPDATE admin_sessions SET pw = ? WHERE token = ? AND pw = ''", mark, hash);
+  }
+  if (!row.session_last || now - row.session_last > LIMITS.sessionTouchMs) {
+    await run(env, "UPDATE admin_sessions SET last_at = ? WHERE token = ?", now, hash).catch(() => {});
+  }
   // [ADMIN-15] Used with less than half the week left, it runs on for another week, never past 30 days.
   let renewed = null;
   const end = Math.min(now + LIMITS.sessionMs, row.session_made + LIMITS.sessionMaxMs);
@@ -5261,7 +5577,52 @@ async function signedIn(request, env, now) {
     await run(env, "UPDATE admin_sessions SET expires = ? WHERE token = ?", end, hash);
     renewed = cookie(token, Math.floor((end - now) / 1000));
   }
-  return { token: hash, actor, renewed };
+  return { token: hash, actor, renewed, made: row.session_made };
+}
+
+/**
+ * 2.0.0 [RVQ-07] 최고 관리자 비밀번호의 표시: 비밀번호를 RATE_SALT(서버 비밀값)로 서명한 것의 앞 16자. DB만 새어서는 비밀번호를 맞혀 볼 수
+ * 없어요(소금이 DB 밖에 있어요). 같은 isolate에서는 한 번만 셈해요.
+ */
+const ownerMarks = new Map();
+async function ownerPasswordMark(env) {
+  const pw = String(env.ADMIN_PASSWORD ?? "");
+  const key = `${pw.length}|${env.RATE_SALT ?? ""}`;
+  const known = ownerMarks.get(key);
+  if (known && known.pw === pw) return known.mark;
+  const k = await crypto.subtle.importKey("raw", new TextEncoder().encode(`owner-pw|${env.RATE_SALT ?? ""}`), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const mark = [...new Uint8Array(await crypto.subtle.sign("HMAC", k, new TextEncoder().encode(pw)))].slice(0, 8).map((b) => b.toString(16).padStart(2, "0")).join("");
+  ownerMarks.set(key, { pw, mark });
+  return mark;
+}
+
+/** 2.0.0 [RVQ-07] 로그인 목록에 보이는 기기 이름: 브라우저와 운영체제 두 낱말만(전체 User-Agent·주소는 남기지 않아요). */
+export function deviceLabel(request) {
+  const ua = String(request.headers.get("user-agent") ?? "");
+  const os = /Android/i.test(ua) ? "Android" : /iPhone|iPad|iOS/i.test(ua) ? "iPhone·iPad" : /Windows/i.test(ua) ? "Windows"
+    : /Mac OS X|Macintosh/i.test(ua) ? "Mac" : /CrOS/i.test(ua) ? "Chromebook" : /Linux/i.test(ua) ? "Linux" : "";
+  const browser = /SamsungBrowser/i.test(ua) ? "삼성 인터넷" : /Edg\//i.test(ua) ? "Edge" : /Firefox\//i.test(ua) ? "Firefox"
+    : /Chrome\//i.test(ua) ? "Chrome" : /Safari\//i.test(ua) ? "Safari" : ua ? "다른 브라우저" : "";
+  return [browser, os].filter(Boolean).join(" · ").slice(0, 40);
+}
+
+/** 2.0.0 [RVQ-07] 검토 U21-04: 내 로그인 목록(지금 이 로그인 먼저). 번호는 저장된 해시의 앞 12자라 쿠키를 알 수 없어요. */
+async function sessionList(env, actor, current, now) {
+  const rows = await all(env, "SELECT token, created_at, last_at, expires, ua, via FROM admin_sessions WHERE admin = ? AND expires > ? ORDER BY COALESCE(last_at, created_at) DESC LIMIT 50", actor.id, now);
+  const items = rows.map((r) => ({ id: r.token.slice(0, 12), current: r.token === current, createdAt: iso(r.created_at), lastAt: r.last_at ? iso(r.last_at) : null,
+    until: iso(r.expires), device: r.ua || "알 수 없는 기기", via: r.via || "" }));
+  items.sort((a, b) => Number(b.current) - Number(a.current));
+  return { items };
+}
+
+async function sessionEnd(env, actor, id, current, now) {
+  if (!/^[0-9a-f]{12}$/.test(id)) return json({ error: "not_found" }, 404);
+  const row = await one(env, "SELECT token, ua FROM admin_sessions WHERE admin = ? AND substr(token, 1, 12) = ?", actor.id, id);
+  if (!row) return json({ error: "not_found" }, 404);
+  if (row.token === current) return json({ error: "current" }, 409);
+  await run(env, "DELETE FROM admin_sessions WHERE token = ?", row.token);
+  await audit(env, now, "session_end", actor.id, row.ua || "");
+  return json(await sessionList(env, actor, current, now));
 }
 
 const actorOf = (a) => ({ id: a.id, name: a.name, email: a.email, owner: false, perms: readPerms(a.perms) });
@@ -5296,6 +5657,8 @@ const PUSH_KINDS = {
   incident: { label: "사고(서버 오류·문제 신고 급증, 정기 작업 실패)", area: "owner" },
   requests: { label: "데이터 요청(개인정보·환불·법) 기한", area: "owner" },
   reviews: { label: "새 스토어 리뷰(별 1~2개는 바로)", area: "owner" },
+  // 2.0.0 [RVQ-06] 검토 SRV-06·U21-03: 패스키가 생기거나 지워짐. 고른 종류와 상관없이 그 관리자와 최고 관리자에게 가요(끌 수 없음).
+  security: { label: "보안(내 계정에 패스키가 생기거나 지워짐)", area: "owner", always: true },
 };
 const PUSH = { perAdmin: 5, hosts: /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com|[a-z0-9-]+\.push\.apple\.com)$/ };
 
@@ -5401,7 +5764,7 @@ async function pushView(env, actor) {
   const rows = await all(env, "SELECT id, kinds, quiet_from, quiet_to, created_at, sent_at FROM push_subscriptions WHERE admin = ? ORDER BY created_at", actor.id);
   return {
     ready: Boolean(keys), publicKey: keys?.publicKey ?? null,
-    kinds: Object.entries(PUSH_KINDS).filter(([k]) => mayGet(actor, k)).map(([key, k]) => ({ key, label: k.label })),
+    kinds: Object.entries(PUSH_KINDS).filter(([key, k]) => !k.always && mayGet(actor, key)).map(([key, k]) => ({ key, label: k.label })),
     subscriptions: rows.map((r) => ({ id: r.id, kinds: r.kinds.split(",").filter(Boolean), quiet: r.quiet_from === null ? null : { from: r.quiet_from, to: r.quiet_to },
       createdAt: iso(r.created_at), sentAt: r.sent_at ? iso(r.sent_at) : null })),
   };
@@ -5487,17 +5850,22 @@ async function deliver(env, keys, rows, message, now) {
  * 1.28 통합 [FLAG-37] 결정 D101: [ignoreQuiet] sends inside quiet time too — only a legal flag's day-before and turned-on
  * news (D99's safety net is pointless if it arrives after the payments started); every other kind keeps quiet time.
  */
-export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false } = {}) {
+export async function notifyAdmins(env, kind, message, now = Date.now(), { ignoreQuiet = false, only = null } = {}) {
   try {
     const keys = pushReady(env);
     if (!keys || !env.DB || !Object.hasOwn(PUSH_KINDS, kind)) return { sent: 0, gone: 0 };
+    if (typeof message === "string") message = { title: PUSH_KINDS[kind].label.split("(")[0], body: message, url: "/admin/#/account" };
     // An urgent question is a question too: it goes once to those who asked for either.
     const also = kind === "urgent" ? "inquiry" : kind;
-    const rows = await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
+    // 2.0.0 [RVQ-06] 끌 수 없는 종류(보안)는 고른 종류와 상관없이 모든 구독을 봐요.
+    const rows = PUSH_KINDS[kind].always ? await all(env, "SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin")
+      : await all(env, `SELECT s.*, a.perms, a.status FROM push_subscriptions s LEFT JOIN admins a ON a.id = s.admin
       WHERE (',' || s.kinds || ',') LIKE ? OR (',' || s.kinds || ',') LIKE ?`, `%,${kind},%`, `%,${also},%`);
     const to = rows.filter((r) => {
       const actor = r.admin === OWNER.id ? OWNER : r.status === "active" ? { owner: false, perms: readPerms(r.perms) } : null;
-      return actor && mayGet(actor, kind) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
+      // [only] 그 관리자 자신(그리고 최고 관리자)에게만.
+      const mine = only !== null && r.admin === only;
+      return actor && (mine || mayGet(actor, kind)) && (ignoreQuiet || !quietNow(r.quiet_from, r.quiet_to, now));
     });
     if (!to.length) return { sent: 0, gone: 0 };
     return await deliver(env, keys, to, { tag: kind, ...message }, now);
@@ -5556,7 +5924,27 @@ function newPassword(v, email) {
 }
 
 // PBKDF2 at a cost a Worker's CPU limit allows; the count is stored with each hash so it can rise later.
-const PBKDF2_ROUNDS = 20000;
+// 2.0.0 [RVQ-08] 검토 SRV-19: 2만 번 → 10만 번. 옛 해시는 맞게 들어올 때 다시 만들어요. Workers는 상한을 넘는 횟수를 NotSupportedError로
+// 거절해요(workerd src/workerd/api/crypto/impl.c++ checkPbkdfLimits, 2026-11-12 확인). 상한 값 자체는 운영 환경 설정이라 공개 문서에 없어
+// '10만 번'은 확인 필요예요: 거절되면 예전 2만 번으로 만들고(로그인이 막히지 않게) 로그에 한 줄 남겨요.
+const PBKDF2_ROUNDS = 100000;
+const PBKDF2_FALLBACK = 20000;
+export const passwordRounds = (stored) => Number(String(stored ?? "").split("$")[1]) || 0;
+
+/**
+ * 2.0.0 [RVQ-06] 검토 SRV-06: 패스키를 더하기 전에 비밀번호를 한 번 더. 최고 관리자는 ADMIN_PASSWORD, 관리자는 자기 비밀번호. 틀린 것은
+ * 관리자마다 시간에 5번까지 받고, 로그인 실패처럼 활동 기록에 남아요.
+ */
+async function reauthCheck(env, actor, password, now) {
+  if (typeof password !== "string" || !password) return false;
+  if (!(await allow(env, `reauth|${actor.id}`, LIMITS.loginFailures, LIMITS.lockMs, now))) return false;
+  let right = false;
+  if (actor.owner) right = typeof env.ADMIN_PASSWORD === "string" && (await sameSecret(password, env.ADMIN_PASSWORD));
+  else right = await checkPassword(password, (await one(env, "SELECT pw FROM admins WHERE id = ?", actor.id))?.pw ?? DUMMY_HASH);
+  if (right) await run(env, "DELETE FROM counters WHERE key = ?", `reauth|${actor.id}`);
+  else await audit(env, now, "login_failed", "reauth");
+  return right;
+}
 const b64 = (bytes) => btoa(String.fromCharCode(...bytes));
 
 async function pbkdf2(password, saltBytes, rounds) {
@@ -5565,9 +5953,17 @@ async function pbkdf2(password, saltBytes, rounds) {
   return new Uint8Array(bits);
 }
 
+let pbkdf2Rounds = PBKDF2_ROUNDS;
 async function hashPassword(password) {
   const saltBytes = crypto.getRandomValues(new Uint8Array(16));
-  return `pbkdf2$${PBKDF2_ROUNDS}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, PBKDF2_ROUNDS))}`;
+  try {
+    return `pbkdf2$${pbkdf2Rounds}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, pbkdf2Rounds))}`;
+  } catch (e) {
+    if (pbkdf2Rounds === PBKDF2_FALLBACK || e?.name !== "NotSupportedError") throw e;
+    console.error(`pbkdf2 ${pbkdf2Rounds} refused, using ${PBKDF2_FALLBACK}: ${e?.message ?? e}`);
+    pbkdf2Rounds = PBKDF2_FALLBACK;
+    return `pbkdf2$${pbkdf2Rounds}$${b64(saltBytes)}$${b64(await pbkdf2(password, saltBytes, pbkdf2Rounds))}`;
+  }
 }
 
 const DUMMY_HASH = `pbkdf2$${PBKDF2_ROUNDS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=`;
@@ -5575,7 +5971,14 @@ const DUMMY_HASH = `pbkdf2$${PBKDF2_ROUNDS}$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAA
 async function checkPassword(password, stored) {
   const [kind, rounds, saltText, hashText] = String(stored).split("$");
   if (kind !== "pbkdf2") return false;
-  const got = await pbkdf2(password, Uint8Array.from(atob(saltText), (c) => c.charCodeAt(0)), Number(rounds));
+  // 2.0.0 [RVQ-08] 없는 계정의 가짜 해시가 거절된 횟수(위 PBKDF2_FALLBACK)로 되어 있으면 지금 쓰는 횟수로 맞춰 걸린 시간이 같게.
+  const n = stored === DUMMY_HASH ? pbkdf2Rounds : Number(rounds);
+  let got;
+  try {
+    got = await pbkdf2(password, Uint8Array.from(atob(saltText), (c) => c.charCodeAt(0)), n);
+  } catch {
+    return false;
+  }
   const want = Uint8Array.from(atob(hashText), (c) => c.charCodeAt(0));
   let diff = got.length ^ want.length;
   for (let i = 0; i < Math.min(got.length, want.length); i++) diff |= got[i] ^ want[i];
@@ -5770,6 +6173,9 @@ async function removeAdmin(env, id, now) {
     stmt(env, "DELETE FROM link_codes WHERE admin = ?", id),
     // [ADMIN-19] Their browsers stop getting web push.
     stmt(env, "DELETE FROM push_subscriptions WHERE admin = ?", id),
+    // 2.0.0 [RVQ-09] 검토 SRV-22 (나): 패스키·두 번째 확인 줄도 함께(로그인은 이미 안 되지만 남겨 둘 까닭이 없어요).
+    stmt(env, "DELETE FROM admin_passkeys WHERE admin = ?", id),
+    stmt(env, "DELETE FROM admin_totp WHERE admin = ?", id),
   ]);
   await audit(env, now, "admin_remove", a.email);
   return json(await adminList(env));
@@ -5792,7 +6198,7 @@ async function changePassword(request, env, actor, token, now) {
 
 /** [ADMIN-17] The activity log's 종류 filter: which actions each one holds (a trailing * is a prefix). */
 const AUDIT_KINDS = {
-  login: ["login", "login_failed", "logout_all", "password"],
+  login: ["login", "login_failed", "logout_all", "password", "session_end", "passkey_*", "second_*"],
   admins: ["invite*", "join", "admin_*", "device_*"],
   review: ["adopt", "reject", "reject_undo", "answer"],
   companies: ["company_*", "alias_*", "merge", "rule_*"],
@@ -6441,7 +6847,11 @@ async function createCompany(request, env, now) {
   const taken = await named(env, norm);
   if (taken) return json({ error: "exists", company: taken }, 409);
   const id = randomId(12);
-  await run(env, "INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) VALUES (?, ?, ?, 0, NULL, ?, ?)", id, name, norm, now, spoken(name) || "-");
+  // 2.0.0 [RVQ-13] 검토 SRV-22 (다): 없을 때만 넣는 한 문장(위 companyFor와 같은 까닭).
+  const put = await run(env, `INSERT INTO companies (id, name, norm, hidden, merged_into, created_at, said) SELECT ?1, ?2, ?3, 0, NULL, ?4, ?5
+    WHERE NOT EXISTS (SELECT 1 FROM companies WHERE norm = ?3 AND merged_into IS NULL) AND NOT EXISTS (SELECT 1 FROM aliases WHERE norm = ?3)`,
+  id, name, norm, now, spoken(name) || "-");
+  if (!Number(put?.meta?.changes ?? 1)) return json({ error: "exists", company: await named(env, norm) }, 409);
   await audit(env, now, "company_create", id, name);
   return json({ id, name }, 201);
 }
@@ -7814,20 +8224,42 @@ export async function syncShareSwitch(env) {
 }
 
 /**
- * [SRV-10] N8 쉬는 기능 자동: when today's D1 writes pass 90% of the free day (D1_WRITES_PER_DAY, 100,000
- * unless set), the hourly job rests 사용 통계 받기, and an hour later still over, 문의 사진 받기; when the
- * share server's KV writes pass 90% of KV_WRITES_PER_DAY (1,000), 근무표 링크 새로 만들기. Each comes with a
+ * [SRV-10] N8 쉬는 기능 자동: when today's D1 writes pass 90% of the plan's day ([cfPlan], 2.0.0 [RVQ-12]: Paid by default, before
+ * 2.0.0 always the free 100,000), the hourly job rests 사용 통계 받기, and an hour later still over, 문의 사진 받기; when the
+ * share server's KV writes pass 90% of the plan's KV day, 근무표 링크 새로 만들기. Each comes with a
  * notice for the day. Next day, below the line, it turns back on what it turned off itself, never a
  * switch the developer turned off by hand.
  */
 const AUTO_REST = { share: 0.9, d1: ["USAGE_STATS", "INQUIRY_PHOTOS"], kv: "SHARE_CREATE" };
 
+/**
+ * 2.0.0 [RVQ-12] 검토 SVC-07: 실서버 요금제와 그 몫. 2026-11-12에 Workers Paid로 바꿨어요(사용자 결정, 월 5달러). 숫자는 Cloudflare 문서
+ * (developers.cloudflare.com/d1/platform/pricing/·/d1/platform/limits/·/kv/platform/pricing/, 2026-11-12 확인): D1 무료 하루 쓰기 10만·읽기
+ * 500만·호출당 질의 50, 유료 달마다 쓰기 5천만·읽기 250억 포함·호출당 질의 1,000, KV 무료 하루 쓰기 1,000·읽기 10만, 유료 달마다 쓰기
+ * 100만·읽기 1,000만 포함. 유료의 하루 몫은 달 포함량을 30으로 나눈 것이라 넘어도 멈추지 않고 돈이 더 나가요(그래서 90%에서 덜 중요한 것부터
+ * 쉬는 규칙은 그대로). CF_PLAN(free|paid, 기본 paid)과 D1_WRITES_PER_DAY·KV_WRITES_PER_DAY로 바꿀 수 있어요.
+ */
+export const CF_PLANS = {
+  paid: { name: "Workers Paid", d1WritesDay: Math.floor(50_000_000 / 30), d1ReadsDay: Math.floor(25_000_000_000 / 30), queriesPerCall: 1000,
+    kvWritesDay: Math.floor(1_000_000 / 30), kvReadsDay: Math.floor(10_000_000 / 30), overage: true },
+  free: { name: "Workers Free", d1WritesDay: 100_000, d1ReadsDay: 5_000_000, queriesPerCall: 50, kvWritesDay: 1000, kvReadsDay: 100_000, overage: false },
+};
+/** 2.0.0 [RVQ-12] 이 서버의 요금제와 하루 몫(환경 값이 있으면 그것). */
+export function cfPlan(env) {
+  const plan = CF_PLANS[String(env?.CF_PLAN ?? "").trim().toLowerCase()] ?? CF_PLANS.paid;
+  const n = (v, d) => (Number(v) > 0 ? Number(v) : d);
+  return { ...plan, d1WritesDay: n(env?.D1_WRITES_PER_DAY, plan.d1WritesDay), kvWritesDay: n(env?.KV_WRITES_PER_DAY, plan.kvWritesDay) };
+}
+/** 2.0.0 [RVQ-12] 하루 몫의 이만큼을 넘으면 관리자에게 알려요(쉬기는 90%). */
+export const BUDGET_WARN = 0.8;
+
 export async function autoRest(env, now) {
   await flushMeter(env, now, true);
   const day = meterDay(now);
   const used = (await one(env, "SELECT count FROM counters WHERE key = ?", `meter|${day}`))?.count ?? 0;
-  const d1Budget = Number(env.D1_WRITES_PER_DAY) > 0 ? Number(env.D1_WRITES_PER_DAY) : 100000;
-  const kvBudget = Number(env.KV_WRITES_PER_DAY) > 0 ? Number(env.KV_WRITES_PER_DAY) : 1000;
+  const plan = cfPlan(env);
+  const d1Budget = plan.d1WritesDay;
+  const kvBudget = plan.kvWritesDay;
   let kv = 0;
   if (shareAdmin(env)) {
     try {
@@ -7888,6 +8320,57 @@ export async function autoRest(env, now) {
     stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('auto_rested', ?)", JSON.stringify(mine)),
   ]);
   return { used, kv, rested: mine.map((r) => r.key) };
+}
+
+/**
+ * 2.0.0 [RVQ-11] 검토 SRV-13: 광장 전체 글쓰기가 갑자기 늘면(스크립트 도배) 5분 작업이 '광장 글쓰기'를 1시간 쉬게 해요. 쓰기 시도는 paused()가
+ * 사본들이 함께 세고(usage.js, `plazaw`), 평소 값은 시간마다 천천히 따라가요(앞 시간 10%). 선은 평소의 8배와 [SURGE.min](PLAZA_SURGE_MIN) 가운데
+ * 큰 것. 쉬면 앱은 '잠시 쉬고 있어요'를 보이고, 공지 한 줄과 관리자 '사고' 알림이 가요. 기한(1시간)이 지나면 저절로 켜지고, 관리자가 손으로
+ * 다시 켠 뒤 6시간은 다시 쉬지 않아요.
+ */
+export const SURGE = { min: 600, times: 8, follow: 0.1, restMs: HOUR, handMs: 6 * HOUR };
+
+export async function plazaSurge(env, now) {
+  const win = Math.floor(now / HOUR);
+  const [cur, prev, kept, flag] = await Promise.all([
+    one(env, "SELECT count FROM counters WHERE key = ?", `sc|plazaw|${win}`),
+    one(env, "SELECT count FROM counters WHERE key = ?", `sc|plazaw|${win - 1}`),
+    one(env, "SELECT value FROM settings WHERE key = 'plaza_rate'"),
+    one(env, "SELECT force, until, by_id, at FROM flag_overrides WHERE key = 'plaza.write'"),
+  ]);
+  let rate = { rate: 0, hour: null };
+  try {
+    rate = { ...rate, ...JSON.parse(kept?.value ?? "{}") };
+  } catch {
+    // 처음이에요.
+  }
+  if (rate.hour !== win) {
+    const last = Number(prev?.count ?? 0);
+    rate = { rate: rate.rate ? Math.round(rate.rate * (1 - SURGE.follow) + last * SURGE.follow) : last, hour: win };
+    await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('plaza_rate', ?)", JSON.stringify(rate));
+  }
+  const n = Number(cur?.count ?? 0);
+  const line = Math.max(Number(env.PLAZA_SURGE_MIN) > 0 ? Number(env.PLAZA_SURGE_MIN) : SURGE.min, SURGE.times * rate.rate);
+  const out = { n, line, rate: rate.rate };
+  if (n < line) return out;
+  const offNow = flag?.force === "off" && !(flag.until && flag.until <= now);
+  if (offNow) return { ...out, already: true };
+  if (flag && flag.by_id !== "system" && now - Number(flag.at ?? 0) < SURGE.handMs) return { ...out, hand: true };
+  const until = now + SURGE.restMs;
+  const s = await opsState(env);
+  const notice = { id: `n${randomId(9)}`, title: "잠시 쉬는 기능이 있어요", body: `광장에 글이 갑자기 많이 올라와 '${SWITCHES.PLAZA_WRITE}'를 1시간 쉬어요. 읽기는 그대로예요.`,
+    level: "info", from: now, until, minApp: null, maxApp: null, audience: null, action: null };
+  const notices = [...s.notices, notice].filter((x) => x.until > now - 30 * DAY).slice(-NOTICE.max);
+  await batch(env, [
+    stmt(env, `INSERT INTO flag_overrides (key, force, why, conditions, until, review_at, by_name, by_id, at, auto)
+      VALUES ('plaza.write', 'off', '광장 글이 갑자기 많아 1시간 쉬어요(자동)', NULL, ?, NULL, '', 'system', ?, 1)
+      ON CONFLICT (key) DO UPDATE SET force = 'off', why = excluded.why, until = excluded.until, by_name = '', by_id = 'system', at = excluded.at, auto = 1`,
+    until, now),
+    stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('notices', ?)", JSON.stringify(notices)),
+  ]);
+  await audit(env, now, "auto_rest", "PLAZA_WRITE", `광장 글 급증 ${n}/${line}`);
+  await notifyAdmins(env, "incident", `광장 글이 이번 시간에 ${n}번(평소 ${rate.rate}) 올라와 광장 글쓰기를 1시간 쉬어요. 기능 관리에서 바로 다시 켤 수 있어요.`, now);
+  return { ...out, rested: true, until };
 }
 
 // [SRV-05][STAT-04] The share server, from here: its reported links, taking one down, its day totals.
@@ -8020,8 +8503,7 @@ export function json(data, status = 200, headers = {}) {
 export async function readJson(request, maxBytes) {
   if (!(request.headers.get("content-type") || "").startsWith("application/json")) throw new Refuse("content_type", "body");
   if (Number(request.headers.get("content-length") || 0) > maxBytes) throw new Refuse("too_large", "body", 413);
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > maxBytes) throw new Refuse("too_large", "body", 413);
+  const text = await bodyText(request, maxBytes);
   let body;
   try {
     body = JSON.parse(text);
@@ -8030,6 +8512,34 @@ export async function readJson(request, maxBytes) {
   }
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Refuse("bad_json", "body");
   return body;
+}
+
+/**
+ * 2.0.0 [RVQ-13] 검토 SRV-22 (라): 본문을 흐름으로 읽으며 [maxBytes]를 넘는 순간 끊어요. 길이 머리말 없이(chunked) 큰 본문을 보내도 다 읽은 뒤에
+ * 크기를 보던 전과 달리 한도만큼만 메모리에 들어요.
+ */
+export async function bodyText(request, maxBytes) {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const parts = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new Refuse("too_large", "body", 413);
+    }
+    parts.push(value);
+  }
+  const all = new Uint8Array(size);
+  let at = 0;
+  for (const p of parts) {
+    all.set(p, at);
+    at += p.byteLength;
+  }
+  return new TextDecoder().decode(all);
 }
 
 export const iso = (ms) => new Date(ms).toISOString();

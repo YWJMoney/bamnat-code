@@ -296,7 +296,10 @@ class MoneyViewModel(
      * month's wage estimate. Months still ahead are counted without one.
      */
     suspend fun analysis(book: MoneyBook, style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?,
-                         month: YearMonth, today: LocalDate): LedgerAnalysis = withContext(Dispatchers.Default) {
+                         month: YearMonth, today: LocalDate,
+                         /** 2.0.0 [RVK-20] With 급여일 주기: this month's cycle and the one before, counted instead of the months. */
+                         cycle: com.bamnat.core.money.PayCycle.Range? = null, cycleBefore: com.bamnat.core.money.PayCycle.Range? = null,
+    ): LedgerAnalysis = withContext(Dispatchers.Default) {
         val now = YearMonth.from(today)
         // [J133-37] 순번 717 (중간 빌드 확인: 오늘 깐 앱인데 '올해 들어온 돈 4천만 원'): no estimate for months before the app was in
         // use (installed, or the first line written, whichever is earlier: a backup brought over keeps its months).
@@ -308,10 +311,11 @@ class MoneyViewModel(
         val at = { m: YearMonth ->
             book.month(m, if (m.isAfter(now) || (since != null && m.isBefore(since))) null else pays.getOrPut(m) { payEstimate(style, profile, snapshot, m) }, today = today)
         }
-        val current = at(month)
+        val current = cycle?.let { book.cycle(month, it, today) } ?: at(month)
+        val before = if (cycle != null && cycleBefore != null) book.cycle(month.minusMonths(1), cycleBefore, today) else at(month.minusMonths(1))
         // [J133-62] 올해 들어온 돈 is money that came in: this month's pay still to come stays out of it.
         val year = (1..12).map { YearMonth.of(month.year, it) }.map { m -> if (m == now) book.month(m, null, today = today) else at(m) }
-        LedgerAnalysis(current, Reports.month(current, at(month.minusMonths(1)), book, today), Reports.year(month.year, year))
+        LedgerAnalysis(current, Reports.month(current, before, book, today), Reports.year(month.year, year))
     }
 
     private val _undo = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
@@ -693,9 +697,18 @@ fun MoneyScreen(
     val monthKey = "money:${vm.calendarId}:$month"
     val lastMonth by com.bamnat.app.ui.rememberLast(monthKey, book, style, profile, snapshot, month) { vm.month(book, style, profile, snapshot, month) }
     val m = lastMonth ?: book.month(month, today = today)
-    val analysis by com.bamnat.app.ui.rememberLast("money.report:${vm.calendarId}:$month", book, style, profile, snapshot, month,
+    // 2.0.0 [RVK-20] (검토 U06a-07·MONEY-18): with 급여일 주기 on, 요약·내역·통계 count each month as its pay cycle, not only the
+    // budget: today's month is the cycle holding today, and a month away is one cycle away (never the same cycle twice).
+    val payCycle = remember(settings.moneyByPayCycle, profile, today, month, style) {
+        if (!settings.moneyByPayCycle || style?.usesPayEngine == false) null
+        else profile?.period?.takeIf { it.payDay != null }?.let { p -> com.bamnat.core.money.PayCycle.forMonth(today, month) { p.payDate(it) } }
+    }
+    val cycleBefore = remember(payCycle, profile, today, month) {
+        payCycle?.let { profile?.period?.let { p -> com.bamnat.core.money.PayCycle.forMonth(today, month.minusMonths(1)) { p.payDate(it) } } }
+    }
+    val analysis by com.bamnat.app.ui.rememberLast("money.report:${vm.calendarId}:$month", book, style, profile, snapshot, month, payCycle,
         page == MoneyViewModel.Page.REPORT) {
-        if (page == MoneyViewModel.Page.REPORT) vm.analysis(book, style, profile, snapshot, month, today)
+        if (page == MoneyViewModel.Page.REPORT) vm.analysis(book, style, profile, snapshot, month, today, payCycle, cycleBefore)
         else com.bamnat.app.ui.LastValues.value("money.report:${vm.calendarId}:$month") as LedgerAnalysis?
     }
     val side = taxSide(style)
@@ -744,10 +757,9 @@ fun MoneyScreen(
         }
     }
     // 1.37 [LEDH-06] 급여일 주기: this month's budget counted from the last pay day to the day before the next.
-    val cycle = remember(settings.moneyByPayCycle, profile, today, month) {
-        if (!settings.moneyByPayCycle || month != YearMonth.from(today)) null
-        else profile?.period?.let { p -> com.bamnat.core.money.PayCycle.around(today, (-2L..2L).mapNotNull { p.payDate(YearMonth.from(today).plusMonths(it)) }) }
-    }
+    val cycle = payCycle.takeIf { month == YearMonth.from(today) }
+    // The summary's figures over the same days as the list and the stats.
+    val counted = remember(m, payCycle, book, today) { payCycle?.let { book.cycle(month, it, today) } ?: m }
     // 1.37 [LEDH-34] 예산 넘김: chosen categories carry last stretch's leftover (or overspend).
     val rolling = remember(settings.budgetRollover, settings.workStyle) {
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.INVEST) emptySet() else settings.budgetRollover.split('\t').filter { it.isNotBlank() }.toSet()
@@ -785,7 +797,11 @@ fun MoneyScreen(
         }.getOrDefault(false)
     }
     val cards: Map<MoneyPart, @Composable () -> Unit> = mapOf(
-        MoneyPart.HERO to { HeroCard(m, budget, today, onBudget = { budgeting = true }, aheadSaysToday = aheadSaysToday) },
+        MoneyPart.HERO to {
+            HeroCard(counted, budget, today, onBudget = { budgeting = true }, aheadSaysToday = aheadSaysToday,
+                // 2.0.0 [RVK-19] (U06a-06·MONEY-19): a tap on the figure or ⇅ swaps 수입 − 지출 and 나간 돈, and it stays swapped.
+                hero = settings.moneyHero, onHero = { key -> vm.updateSettings { it.copy(moneyHero = key) } })
+        },
         MoneyPart.NEW to {
             NewRecordsCard(unseen, captures, onOpen = { editing = it }, onAllSeen = vm::markAllSeen,
                 onFinish = { finishing = it }, onDrop = vm::dropCapture,
@@ -995,7 +1011,7 @@ fun MoneyScreen(
                 // 1.39 [CALX-08] 내역·통계도 옆으로 밀어 달을 넘겨요 (사용자 11-08 "돈을 보여 주는 곳 모두"); 내역 줄의 밀기와 고르는 중에는 그쪽이 먼저.
                 MoneyViewModel.Page.LIST -> Box(Modifier.fillMaxSize().then(if (selection.isEmpty()) Modifier.monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) } else Modifier)) {
                     LedgerListPane(book, month, view, vm::setView, selection, vm::select, listActions, wide,
-                        onAdd = { adding = MoneyKind.EXPENSE })
+                        onAdd = { adding = MoneyKind.EXPENSE }, cycle = payCycle)
                 }
                 MoneyViewModel.Page.REPORT -> Box(Modifier.fillMaxSize().monthSwipe(month) { vm.showMonth(month.plusMonths(it.toLong())) }) {
                     LedgerReportsPane(analysis, book, budget.total?.budget, style, gate, wide, today,

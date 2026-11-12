@@ -83,7 +83,8 @@ enum class ProReason(val words: String) {
     SHARED("프로를 산 분이 나눠 준 프로예요. 그분이 프로를 쓰는 동안 이어져요"),
     NONE("무료로 쓰고 있어요"),
     /** A tester's preview from the alarm check screen; [ProAccess.resolve] never answers it. */
-    PREVIEW("알람 점검 화면에서 고른 등급으로 미리 보고 있어요"),
+    // 2.0.0 [RVO-01] 미리 보기는 프로 화면 맨 위에도 있어요(알람 점검과 같은 카드).
+    PREVIEW("개발용 미리 보기에서 고른 등급으로 보고 있어요"),
 }
 
 /** Everything that can give this phone 프로, as last known on the phone. */

@@ -40,7 +40,7 @@ async function plaza(t) {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   const s = server({ FCM_SERVICE_ACCOUNT: sa });
   const h = await signIn(s.call);
-  const r = await s.call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await s.call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험", confirm: true }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
   return { ...s, sent, fail };
 }

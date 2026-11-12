@@ -216,7 +216,9 @@ class ShareLinksProTest {
         c.shareLinks.save(link(a, ttl = 180))
         c.shareLinks.apply { feed = true; auto = false; saveOptions(ShareOptions(memos = true)) }
         c.shareLinksOf(second).save(link(b))
-        val json = c.backupManager.export()
+        // 2.0.0 [RVL-03] The keys go only in a file sealed with a password.
+        val json = c.backupManager.exportSealed()
+        val plain = c.backupManager.export()
         fun ids() = ShareLinkKey.all(PersonalCalendar.MAIN).mapNotNull { c.shareLinksOf(it).link.value?.id }
         fun emptyPhone() = ShareLinkKey.all(PersonalCalendar.MAIN).forEach {
             c.shareLinksOf(it).apply { clear(); feed = false; auto = true; saveOptions(ShareOptions()) }
@@ -244,6 +246,13 @@ class ShareLinksProTest {
         assertEquals(listOf(own, a, b), ids())
         c.backupManager.restore(json)
         assertEquals(listOf(own, a, b), ids())
+
+        // 2.0.0 [RVL-03] A file saved without a password has no keys: its links are left out and the phone's own stays.
+        emptyPhone()
+        assertTrue(JSONObject(plain).getJSONArray("shareLinks").let { l -> (0 until l.length()).all { l.getJSONObject(it).optString("token").isEmpty() } })
+        c.shareLinks.save(link(own))
+        c.backupManager.restore(plain)
+        assertEquals(listOf(own), ids())
 
         // A part that is not a link this app made is left out.
         emptyPhone()

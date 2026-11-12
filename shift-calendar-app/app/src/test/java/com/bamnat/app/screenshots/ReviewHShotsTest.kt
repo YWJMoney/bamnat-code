@@ -29,6 +29,8 @@ class ReviewHShotsTest : ScreenshotBase() {
         Triple("c_open_light_200", UNFOLDED, 2f), Triple("d_open_dark_100", UNFOLDED.replace("-port-", "-port-night-"), 1f),
     )
 
+    private val PAGE_SIDE = 0.75f
+
     private fun all(name: String, style: WorkStyle, go: Screen.() -> Unit) {
         for ((look, q, scale) in looks) shoot("rvh_${name}_$look", q, scale, style(style) { go() })
     }
@@ -38,14 +40,17 @@ class ReviewHShotsTest : ScreenshotBase() {
         settle()
     }
 
+    // 2.0.0 [RVO-02] (HQ-01) 편 폭·큰 글자에서 설정 왼쪽 목록이 폭의 절반까지 넓어져, 가운데를 밀면 목록이 움직여요: 오른쪽 쪽을 밀어요.
+    // #452 CI(shots-b, 편 폭 밝은 200%): 손으로 민 거리가 CI에서 달라 '빠른 메뉴' 아래에서 더 내려가지 않았어요(여기서는 통과). 설정 찾기에서
+    // 고른 것처럼 그 줄을 가리켜 열면 앱이 줄을 화면에 들여와요(UX-04 focusMark): 밀기 없이 같은 화면이에요.
     @Test fun shopDayOrder() = all("1_shop_day_order", WorkStyle.BUSINESS) {
-        open(FeatureRoute(Place.SETTINGS_CALENDAR))
-        tapText("하루 화면 순서", exact = true)
+        open(FeatureRoute(Place.SETTINGS_CALENDAR, "하루 화면 순서"))
+        tapText("하루 화면 순서", exact = true, across = PAGE_SIDE)
     }
 
     @Test fun shopLookSample() = all("2_shop_look_sample", WorkStyle.BUSINESS) {
         open(FeatureRoute(Place.SETTINGS_CALENDAR))
-        reveal("칸 높이")
+        reveal("칸 높이", across = PAGE_SIDE)
     }
 
     // 총괄 사진 검토(11-12): the sample days are a shift worker's (주·야·휴 chips on a shop's year); a shop's own days instead.

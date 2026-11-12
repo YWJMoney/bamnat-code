@@ -23,6 +23,7 @@ import { waitingPhotos } from "./photo-guard.js";
 import { PARTS_SINCE } from "./parts-since.js";
 import { cleanSetup } from "./company-setup.js";
 import { ZWJ, graphemes } from "./letters.js";
+import { SHIFT_RULES } from "./shift-rules.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -232,8 +233,10 @@ const LOGIC_ACT_MORE = [TS("then", 2, 12), N("after", 1, 720, { optional: true }
 const LOGIC_ACT = [P("do", LOGIC_VERBS), T("arg", 120, { optional: true, guard: false, check: logicText }), M("amount", 0, 100_000_000, { optional: true }),
   N("by", -1_000_000, 1_000_000, { decimals: 2, optional: true }), ...LOGIC_ACT_MORE];
 export const RECIPE_PIECES = {
-  shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", 20, { min: 1 }), P("role", ROLES),
-    T("label", 2, { min: 1, check: (s) => (graphemes(s) > 2 ? "label" : null) }), C("color"), E("emoji")], { min: 1 })] },
+  // 2.0.0 [RVD-28] SD-08: a name and a 근무 글자 in letters, from the 근무 종류 한 규칙표 (core ShiftRules → shift-rules.js), as core PieceCatalog.
+  shiftLook: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("items", 12, [T("name", SHIFT_RULES.name.letters, { min: 1 }), P("role", ROLES),
+    T("label", SHIFT_RULES.label.letters, { min: 1, check: (s) => (graphemes(s) > SHIFT_RULES.label.letters ? "label" : null) }), C("color"), E("emoji")],
+    { min: 1 })] },
   calTheme: { styles: STYLES, fields: [C("today", { optional: true }), C("sat", { optional: true }), C("sun", { optional: true }),
     C("holiday", { optional: true }), P("cell", ["fill", "tint", "dot"], { optional: true })] },
   alarms: { styles: ["SHIFT", "DAY", "HOURLY"], fields: [I("byRole", 6, [P("role", ROLES), NS("before", 4, 0, 720, { optional: false })]),
