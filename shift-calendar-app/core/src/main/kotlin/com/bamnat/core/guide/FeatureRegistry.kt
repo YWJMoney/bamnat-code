@@ -364,7 +364,7 @@ object FeatureRegistry {
         f("field.year", "FLD-07", "연간 3.3%·경비 합계와 출역일", "종합소득세 신고에 쓸 올해 번 돈·뗀 3.3%·경비와 출역일을 모아 봐요",
             setOf(FIELD), "${tab(FIELD)} › 출역일", at(Place.STATS), "종합소득세", "5월", "출역일", "퇴직공제", "경비", off = Off.CALENDAR),
         f("field.dailyTax", "FLD-13", "일용직 세금", "이번 달 일당에서 떼는 일용근로소득세를 한 번에·날마다 받을 때로 보여 줘요",
-            setOf(FIELD), "${tab(FIELD)} › 일용직 세금", at(Place.STATS), "원천징수", "일용근로", "세금", "2.7%", off = Off.CALENDAR),
+            setOf(FIELD), "${tab(FIELD)} › 일용직 세금", at(Place.STATS, "dailyTax"), "원천징수", "일용근로", "세금", "2.7%", off = Off.CALENDAR),
         f("field.quote", "FLD-11", "견적서", "품목·수량·단가로 견적서 사진을 만들어 보내고, 좋다고 하면 일감으로 저장해요",
             setOf(FIELD), "${tab(FIELD)} › 견적서 › 새 견적서", at(Place.STATS, "quote"), "견적", "견적서", "부가세", "단가", off = Off.CALENDAR),
         f("field.tradeWage", "FLD-12", "공종별 평균 일당", "대한건설협회 시중노임단가(반기마다 저절로 새 값)를 보고 일당을 골라 넣어요",
