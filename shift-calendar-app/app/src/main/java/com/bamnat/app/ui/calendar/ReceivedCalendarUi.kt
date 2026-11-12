@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.LinkOff
@@ -672,6 +673,9 @@ fun ReceivedCalendarView(
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this was looked through. Under the month (the month comes
+            // first), one card with 확인했어요 until pressed for the version here now, then one quiet line; a changed link asks again.
+            if (cal.watch) OkCard(vm, cal)
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
             // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
             (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
@@ -717,6 +721,43 @@ fun ReceivedCalendarView(
             detailPart(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
     }
+}
+
+/**
+ * 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인했어요 for a link the leader watches. The leader's line reads '확인 3/8명 · 열어 봄 5/8명':
+ * opening is not reading, so the member says it once per change. Pressed, the card is one quiet line with when.
+ */
+@Composable
+private fun OkCard(vm: ReceivedViewModel, cal: ReceivedCalendar) {
+    var sending by remember(cal.id) { mutableStateOf(false) }
+    var said by remember(cal.id, cal.updatedAt) { mutableStateOf<String?>(null) }
+    val okAt = cal.okAt
+    if (okAt != null && cal.okFor == cal.updatedAt) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("${okWhen(okAt)} 확인했다고 알렸어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    com.bamnat.app.ui.components.NudgeCard(
+        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨으면 다시 알려 주세요" else "보낸 분이 이 근무표를 다 보셨는지 궁금해해요",
+        detail = said ?: "누르면 보낸 분에게 '확인'이 가요. 열어 보기만 한 것과 따로 보여요",
+        icon = Icons.Outlined.CheckCircle,
+        action = if (sending) "보내는 중…" else "확인했어요",
+        onAction = {
+            if (!sending) {
+                sending = true
+                vm.okPress(cal.id) { s -> sending = false; said = s }
+            }
+        },
+    )
+}
+
+private fun okWhen(at: Instant, now: Instant = Today.instant()): String {
+    val local = at.atZone(Today.zone())
+    return if (local.toLocalDate() == now.atZone(Today.zone()).toLocalDate()) "오늘 ${Fmt.time(local.toLocalTime())}에"
+    else "${Fmt.monthDay(local.toLocalDate())}에"
 }
 
 /** [SRV-05] A received link that breaks the rules can be reported; the share server never learns by whom. */

@@ -797,10 +797,13 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 seen?.let { got ->
                     val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
                     // 2.0.0 [RVP-13] (검토 UIX-15 '위험이 아닌 아직 안 연 사람이 빨강') Not yet opened is grey words with a 주의 mark.
+                    // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인 (pressed) big, 열어 봄 (opened, never a messenger's preview) beside it small.
+                    line.big?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (line.gone.isNotEmpty()) Icon(Icons.Outlined.WarningAmber, null, tint = com.bamnat.app.ui.theme.Tone.Caution.color(),
                             modifier = Modifier.padding(end = 6.dp).size(18.dp))
-                        Text(line.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text(line.rest, style = if (line.big != null) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                            color = if (line.big != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
@@ -816,8 +819,8 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                         }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
                         if (line.notSeen.isNotEmpty()) OutlinedButton(onClick = {
                             send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
-                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
-                        }) { Text("안 본 ${line.notSeen.size}명에게만 보내기") }
+                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 연 사람에게 보내기")
+                        }) { Text("안 연 ${line.notSeen.size}명에게만 보내기") }
                         TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
                     }
                 }
