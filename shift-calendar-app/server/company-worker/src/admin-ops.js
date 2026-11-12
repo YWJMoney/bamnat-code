@@ -1,4 +1,4 @@
-import { LIMITS, audit, batch, can, json, one, readJson, stmt } from "./index.js";
+import { BUDGET_WARN, LIMITS, audit, batch, can, cfPlan, json, one, readJson, stmt } from "./index.js";
 import { WATCH_SCHEMA, errorState, healthBoard, jobRow, requiredSetup, setErrorState, speedState } from "./ops-watch.js";
 import { moneyBoard, moneyYesterday, savePriceTable } from "./money-board.js";
 import { findDevice, personView } from "./person.js";
@@ -81,6 +81,11 @@ export const OPS_ALERT_SQL = (now) => ({
   ops_owed: ["SELECT COUNT(*) AS n, MIN(created_at) AS since FROM rewards WHERE status = 'owed' AND created_at < ?", now - REWARD_DAYS * DAY],
   ops_idle_admins: ["SELECT COUNT(*) AS n FROM admins WHERE status = 'active' AND COALESCE(last_login, approved_at, created_at) < ?", now - IDLE_ADMIN_DAYS * DAY],
   ops_passkey: ["SELECT COUNT(*) AS n FROM admin_passkeys WHERE admin = 'owner'"],
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자의 두 번째 확인(켬)이 있는지.
+  ops_second: ["SELECT COUNT(*) AS n FROM admin_totp WHERE admin = 'owner' AND on_at IS NOT NULL"],
+  // 2.0.0 [RVQ-12] 검토 SVC-07: 오늘 D1 쓰기(UTC 날, D1의 하루)와 정기 작업 한 호출의 질의 수.
+  ops_meter: ["SELECT count FROM counters WHERE key = ?", `meter|${new Date(now).toISOString().slice(0, 10)}`],
+  ops_jobq: ["SELECT value FROM settings WHERE key = 'job_queries'"],
 });
 
 /**
@@ -121,8 +126,41 @@ export function opsAlertsFrom(env, got, now = Date.now()) {
     meta: owed.since ? `가장 오래된 것 ${Math.floor((now - owed.since) / DAY)}일째` : "", to: "#/rewards" });
   if (got.ops_idle_admins?.[0]?.n) out.push({ key: `idle-admins:${got.ops_idle_admins[0].n}`, kind: "nudge", tone: "warn",
     title: `${IDLE_ADMIN_DAYS}일 넘게 안 쓴 관리자 ${got.ops_idle_admins[0].n}명`, meta: "안 쓰는 계정은 멈춰 두면 안전해요(관리 › 관리자)", to: "#/admins" });
-  if (got.ops_passkey && !got.ops_passkey[0]?.n) out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
-    meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  // 2.0.0 [RVQ-05] 검토 SRV-08·U21-05: 최고 관리자는 두 번째 확인이나 패스키 중 하나는 꼭. 둘 다 없으면 비밀번호 하나에 기대니 붉게(맨 위 쪽).
+  const second = Boolean(got.ops_second?.[0]?.n);
+  const passkey = Boolean(got.ops_passkey?.[0]?.n);
+  if (got.ops_second && !second && got.ops_passkey && !passkey) {
+    out.unshift({ key: "owner:single", kind: "incident", tone: "bad", title: "최고 관리자가 비밀번호 하나로만 들어와요",
+      meta: "두 번째 확인이나 패스키 중 하나를 켜요(내 계정). 비밀번호가 새면 바로 들어올 수 있어요", to: "#/account" });
+  } else if (got.ops_passkey && !passkey) {
+    out.push({ key: "passkey:none", kind: "nudge", tone: "warn", title: "최고 관리자 패스키가 없어요",
+      meta: "지문·얼굴로 들어오면 비밀번호 잠김·피싱 걱정이 줄어요(내 계정 › 패스키)", to: "#/account" });
+  }
+  // 2.0.0 [RVQ-12] 검토 SVC-07: 요금제의 하루 몫·호출당 질의 상한의 80%를 넘으면(90%에서 덜 중요한 것부터 쉬어요).
+  const plan = cfPlan(env);
+  const used = Number(got.ops_meter?.[0]?.count ?? 0);
+  if (got.ops_meter && used >= plan.d1WritesDay * BUDGET_WARN) {
+    out.push({ key: `budget:d1:${new Date(now).toISOString().slice(0, 10)}`, kind: "spike", tone: "warn",
+      title: `오늘 D1 쓰기가 하루 몫의 ${Math.floor((used / plan.d1WritesDay) * 100)}%예요`,
+      meta: `${plan.name} 하루 몫 ${plan.d1WritesDay.toLocaleString("ko-KR")}번. 90%면 사용 통계·문의 사진부터 내일까지 쉬어요`, to: "#/server" });
+  }
+  let jobq = {};
+  try {
+    jobq = JSON.parse(got.ops_jobq?.[0]?.value ?? "{}");
+  } catch {
+    jobq = {};
+  }
+  const today = new Date(now).toISOString().slice(0, 10);
+  const heavy = Object.entries(jobq).filter(([, q]) => q?.day === today && Number(q.top ?? q.n) >= plan.queriesPerCall * BUDGET_WARN);
+  if (heavy.length) {
+    out.push({ key: `budget:queries:${heavy.map(([k]) => k).join(",")}`, kind: "incident", tone: "bad",
+      title: `정기 작업 한 번이 D1 질의 ${Math.max(...heavy.map(([, q]) => Number(q.top ?? q.n)))}번을 썼어요`,
+      meta: `상한 ${plan.queriesPerCall}번을 넘으면 그 뒤 단계가 실패해요. 단계를 47분 쪽으로 옮기거나 묶어 읽게 고쳐요`, to: "#/server" });
+  }
+  if (second && env?.ADMIN_2FA_RESET === "1") {
+    out.unshift({ key: "owner:2fa-reset", kind: "incident", tone: "bad", title: "최고 관리자 두 번째 확인이 꺼진 채예요",
+      meta: "Cloudflare의 ADMIN_2FA_RESET이 1이에요. 휴대폰을 찾았으면 지워요", to: "#/account" });
+  }
   return out;
 }
 

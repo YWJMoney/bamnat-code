@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -245,15 +246,14 @@ fun DayLedgerSection(
  */
 @Composable
 fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)
-        else CategoryAvatar(e.category, size = 36.dp)
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    // 2.0.0 [RVK-21]·HQ-23 (총괄 #457 리뷰): at large text a long shop name and its date line were cut to '…' beside the amount.
+    // There they wrap to two lines and, like every 'name … amount' row (NameAndAmount), the amount goes under them when both do
+    // not fit on one line, so the name has the row's whole width; at 100% the row is as before.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+    val lines = if (big) 2 else 1
+    val words: @Composable () -> Unit = {
+        Column {
+            Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = lines, overflow = TextOverflow.Ellipsis)
             val source = when (e.source) {
                 MoneySource.NOTIFICATION -> "알림에서"
                 MoneySource.PASTE -> "문자에서"
@@ -271,11 +271,26 @@ fun EntryRow(e: MoneyEntry, showDate: Boolean = false, onClick: () -> Unit) {
                     e.tags.takeIf { it.isNotEmpty() }?.joinToString(" ") { "#$it" },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                maxLines = lines, overflow = TextOverflow.Ellipsis,
             )
         }
-        Spacer(Modifier.width(8.dp))
+    }
+    val amount: @Composable () -> Unit = {
         Text(signedWon(e), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, color = amountColor(e))
+    }
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onClick).padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (e.kind == MoneyKind.TRANSFER) IconAvatar(Icons.Filled.SwapHoriz, MaterialTheme.colorScheme.onSurfaceVariant, size = 36.dp)
+        else CategoryAvatar(e.category, size = 36.dp)
+        Spacer(Modifier.width(12.dp))
+        if (big) NameAndAmount(words, Modifier.weight(1f)) { amount() }
+        else {
+            Box(Modifier.weight(1f)) { words() }
+            Spacer(Modifier.width(8.dp))
+            amount()
+        }
     }
 }
 

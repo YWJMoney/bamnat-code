@@ -24,7 +24,7 @@ async function talk(call) {
 
 /** 처리방침 3.12 시행일이 지났어요(관리자 앱 › 기능 관리 › 일정): 깃발이 저절로 켜져요. */
 async function careOnNow(call, h) {
-  const r = await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
 }
 

@@ -59,6 +59,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.material3.OutlinedButton
 import com.bamnat.app.NoticeLinks
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
@@ -246,18 +247,23 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
 private fun OverviewTab(vm: InvestViewModel, state: InvestState, open: (InvestSheet) -> Unit) {
     val s = state.result.summary
     val hide = state.hide
+    // 2.0.0 [RVK-24] (조건 2) Trades found in notifications are the thing to do first: their card goes on top and keeps the screen's
+    // one filled button, and the empty book's 입금 적기 steps back to an outlined one.
+    val waiting = vm.alerts.collectAsStateWithLifecycle().value.isNotEmpty()
+    if (waiting) FoundTradesCard(vm, state, open)
     if (state.full.isEmpty) {
         SectionCard(title = "원금부터 적어 보세요") {
             Text("계좌에 넣은 돈(입금)을 적으면 원금이 정해지고, 매매를 적을 때마다 수익률·현금·목표가 바로 바뀌어요.",
                 style = MaterialTheme.typography.bodyMedium)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) }) { Text("입금 적기") }
+                if (waiting) OutlinedButton(onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) }) { Text("입금 적기") }
+                else FilledTonalButton(onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) }) { Text("입금 적기") }
                 TextButton(onClick = { open(InvestSheet.AccountEdit()) }) { Text("계좌부터 만들기") }
             }
         }
     }
-    FoundTradesCard(vm, state, open)
+    if (!waiting) FoundTradesCard(vm, state, open)
     SummaryCard(vm, state, open)
     QuickActions(open)
     if (s.missingQuotes.isNotEmpty()) WarningBanner(

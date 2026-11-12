@@ -148,13 +148,13 @@ fun LedgerReportsPane(
 /** [LEDG-10] The month's three numbers, each against the month before. */
 @Composable
 private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
-    SectionCard(title = "${m.month.monthValue}월 한눈에") {
+    SectionCard(title = "${m.label} 한눈에") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             // [J133-62] 1.33 (중간 빌드 확인): the pay still to come is not money that came in; it is said under the tile.
             StatTile("들어온 돈", Fmt.won(m.received), Modifier.weight(1f),
                 caption = m.payExpected?.let { "들어올 급여(예상) ${wonBrief(it)} 별도" }
-                    ?: changeText(m.income, r.previousIncome, "많이", "적게")?.let { "지난달보다 $it" })
-            StatTile("나간 돈", Fmt.won(m.spent), Modifier.weight(1f), caption = changeText(m.spent, r.previousSpent)?.let { "지난달보다 $it" })
+                    ?: changeText(m.income, r.previousIncome, "많이", "적게")?.let { "${r.earlier}보다 $it" })
+            StatTile("나간 돈", Fmt.won(m.spent), Modifier.weight(1f), caption = changeText(m.spent, r.previousSpent)?.let { "${r.earlier}보다 $it" })
         }
         Spacer(Modifier.height(8.dp))
         // [J133-73] 중간 빌드 확인 ("들어온 돈 0원인데 '들어온 돈의 100%를 남겼어요'"): 남은 돈 is what came in less what went out,
@@ -166,7 +166,7 @@ private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
                 ?: saved?.let { if (it >= 0) "들어온 돈의 $it%를 남겼어요" else "들어온 돈보다 더 썼어요" })
         if (r.daysCounted > 0) {
             val perDay = r.spent / r.daysCounted
-            Text("하루 평균 ${Fmt.won(perDay)} · 무지출 ${r.noSpendDays}일" + if (YearMonth.from(today) == m.month) " (오늘까지)" else "",
+            Text("하루 평균 ${Fmt.won(perDay)} · 무지출 ${r.noSpendDays}일" + if (r.holds(today)) " (오늘까지)" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
     }
@@ -205,7 +205,7 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetL
                 "많이 쓴 곳", chips.caution.map { c -> com.bamnat.app.ui.components.ToneChip(Fmt.hideShort(c.words(word))) { onCategory(c.category) } },
             )
             com.bamnat.app.ui.components.ToneChipNote(
-                if (YearMonth.from(today) == r.month) "예산이 있으면 예산과, 없으면 지난달 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 지난달과 견줘요.")
+                if (r.holds(today)) "예산이 있으면 예산과, 없으면 ${r.earlier} 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 ${r.earlierWith} 견줘요.")
             Spacer(Modifier.height(12.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -229,7 +229,7 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetL
                 onClick = if (c.category == Reports.JOB_COSTS) null else ({ onCategory(c.category) }),
             )
         }
-        Text("▲▼는 지난달과 비교예요. 분류를 누르면 그 기록만 보여요.", style = MaterialTheme.typography.labelSmall,
+        Text("▲▼는 ${r.earlierWith} 비교예요. 분류를 누르면 그 기록만 보여요.", style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
 }
@@ -240,22 +240,22 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetL
 private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
     if (r.spent <= 0 && r.previousSpent <= 0) return
     val cal = LocalCalendarColors.current
-    val current = YearMonth.from(today) == r.month
+    val current = r.holds(today)
     val diff = r.spent - r.previousSameDay
     val line = when {
-        !current -> changeText(r.spent, r.previousSpent)?.let { "지난달보다 $it 썼어요" } ?: "${Fmt.won(r.spent)} 썼어요"
+        !current -> changeText(r.spent, r.previousSpent)?.let { "${r.earlier}보다 $it 썼어요" } ?: "${Fmt.won(r.spent)} 썼어요"
         r.previousCumulative.isEmpty() || r.previousSpent == 0L -> "오늘까지 ${Fmt.won(r.spent)} 썼어요"
-        diff > 0 -> "지난달 같은 날보다 ${Fmt.won(diff)} 더 썼어요"
-        diff < 0 -> "지난달 같은 날보다 ${Fmt.won(-diff)} 덜 썼어요"
-        else -> "지난달 같은 날과 똑같이 썼어요"
+        diff > 0 -> "${r.earlier} 같은 날보다 ${Fmt.won(diff)} 더 썼어요"
+        diff < 0 -> "${r.earlier} 같은 날보다 ${Fmt.won(-diff)} 덜 썼어요"
+        else -> "${r.earlier} 같은 날과 똑같이 썼어요"
     }
     SectionCard(title = "쓰는 속도", trailing = { ProPill() }) {
         Text(Fmt.hide(line), style = MaterialTheme.typography.titleSmall, color = if (current && diff > 0) cal.expense else MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.height(8.dp))
-        PaceChart(r.cumulative, r.previousCumulative, r.month.lengthOfMonth(), budget, "$line. 이번 달 ${Fmt.won(r.spent)}, 지난달 ${Fmt.won(r.previousSpent)}")
+        PaceChart(r.cumulative, r.previousCumulative, r.length, budget, "$line. ${r.thisOne} ${Fmt.won(r.spent)}, ${r.earlier} ${Fmt.won(r.previousSpent)}")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
-            LegendKey(cal.expense, "이번 달")
-            LegendKey(MaterialTheme.colorScheme.onSurfaceVariant, "지난달", dashed = true)
+            LegendKey(cal.expense, r.thisOne)
+            LegendKey(MaterialTheme.colorScheme.onSurfaceVariant, r.earlier, dashed = true)
             if (budget != null && budget > 0) LegendKey(cal.warning, "예산 ${wonBrief(budget)}", dashed = true)
         }
     }

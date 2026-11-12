@@ -504,7 +504,8 @@ test("[ADM3-43] 서버 상태: company counts and versions, an old share server 
   const u = await asOwner(env, t);
   await u.go("#/server");
   await u.settle(30);
-  assert.match(u.text("#main"), new RegExp(`회사 1 · 쓰는 규칙 \\d+ · 서버 ${SERVER_VERSION.replaceAll(".", "\\.")} · 관리자 앱 빌드`));
+  // 2.0.0 [RVQ-14] 판은 맨 앞 '지금 판'으로 옮겼어요(검토 U21-02).
+  assert.match(u.text("#main .server-sum"), new RegExp(`^지금 판 ${SERVER_VERSION.replaceAll(".", "\\.")} · .* · 회사 1 · 쓰는 규칙 \\d+ · 관리자 앱 빌드`));
   const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
   assert.match(share.textContent, /살아 있음 · 판 다름/);
   assert.ok(!share.classList.contains("hot"));
@@ -2169,6 +2170,58 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   assert.deepEqual(t.errors, []);
 });
 
+// 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 날짜 창은 오늘보다 앞이나 알림 기간 안으로 옮길 때만 까닭 한 줄과 확인 칸을 보여요(평소에는 짧게).
+test("[RVQ-15] the policy dialog asks once more only when the date moves before today or inside the notice period", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  await t.go("#/flags");
+  await t.settle(20);
+  await t.click('#main [data-act="flag-view"][data-key="timeline"]');
+  await t.click('#main [data-act="flag-policy"]:not([data-version])');
+  const kst = (days) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+  const row = () => t.$("dialog [data-policy-confirm]");
+  assert.ok(row()?.hidden, "새 판을 열면 확인 칸이 없어요");
+  await t.type("#fp-version", "3.30");
+  await t.type("#fp-posted", kst(0));
+  await t.type("#fp-effective", kst(10));
+  assert.ok(row().hidden, "알림 기간(7일)을 지키면 묻지 않아요");
+  await t.type("#fp-effective", kst(3));
+  assert.ok(!row().hidden);
+  assert.match(t.text("dialog [data-policy-why]"), /3일이에요.*7일/);
+  await t.type("#fp-posted", kst(-3));
+  await t.type("#fp-effective", kst(-1));
+  assert.match(t.text("dialog [data-policy-why]"), /오늘보다 앞/);
+  // 확인하지 않고 저장하면 서버가 409로 막고, 확인하면 저장돼요.
+  t.$("#fp-why").value = "시험";
+  t.$('dialog form[data-form="flag-policy"]').requestSubmit();
+  await t.settle(30);
+  assert.ok(t.$("dialog[open]") && !row().hidden, "막히면 창과 확인 칸이 그대로");
+  t.$('dialog input[name="confirm"]').checked = true;
+  t.$('dialog form[data-form="flag-policy"]').requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(s.call);
+  const pol = (await s.call("GET", "/api/admin/flags", undefined, owner)).data.policy;
+  assert.equal(pol.find((p) => p.version === "3.30")?.effective, kst(-1));
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVQ-14] 검토 U21-02: 서버 상태 맨 위 한 줄 앞머리에 지금 판·배포 번호·되돌릴 판, 아래에 깊은 점검 셋. 머리띠의 배포 줄과 이름이 겹치지 않아요.
+test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback version and three deep checks", async () => {
+  const s = await world({ CF_VERSION_METADATA: { id: "1789720e-0000-4000-8000-000000000000", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" } });
+  const t = await signedIn(s.env);
+  s.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('server_prev', ?)").run("1.39.0 aaaabbbb");
+  await t.go("#/server");
+  await t.settle(30);
+  const sum = t.text("#main .server-sum");
+  assert.match(sum, /^지금 판 \d+\.\d+\.\d+ · 배포 1789720e/);
+  assert.match(sum, /되돌릴 판 1\.39\.0/);
+  assert.match(sum, /관리자 앱 빌드/);
+  assert.equal(t.$$("#main [data-deploy] li").length, 3);
+  assert.equal(t.$$("#main .deploy-line").length, 0, "머리띠의 배포 줄(#deploy-line)과 같은 이름을 쓰지 않아요");
+  assert.match(t.text("#main [data-budget]"), /요금제/);
+  assert.deepEqual(t.errors, []);
+});
+
 // ---- 2.0.0 갈래 Q2 (검토 영역 23·24): 믿음·안전 ----
 
 test("[RVA-10] a question that is gone says so, with 목록으로, not '서버가 답하지 않아요'", async () => {
@@ -2313,7 +2366,7 @@ test("[RVA-03] 경고·쉬기: Enter in the line sends nothing, a warning asks w
   t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-10T03:00:00Z") });
   const { env, call } = await world({ plaza: true });
   const owner = await signIn(call);
-  await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, owner);
+  await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험", confirm: true }, owner);
   const a = await call("POST", "/api/reports", report(2, { company: "마을화학" }), from(2));
   const post = (await call("POST", "/api/posts", { device: device(3), company: a.data.company.id, setup: a.data.setup, body: "광고 글이에요 셋" }, from(3))).data.id;
   const u = await signedIn(env);

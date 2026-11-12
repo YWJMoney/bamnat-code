@@ -1,14 +1,22 @@
 # 1.39 [DEPLOY-01] 서버 자동 배포 (크롬·대시보드 붙여 넣기 없이). 사용자 결정 2026-11-08: Claude가 시작해 끝까지(승인 단계 없음).
 # 시작: Actions › deploy-server › Run workflow (main에서), 배포할 브랜치를 ref에. Claude는 GitHub 도구로 같은 일을 해요.
-# 안전장치는 shift-calendar-app/tools/deploy_worker.py 맨 위 설명: 시험 → 올리기만 → 바인딩 대조 → 100% → health 5번 → 실패면 앞 판으로.
-# 열쇠: 저장소 Settings › Secrets › Actions의 CLOUDFLARE_API_TOKEN(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만).
+# 안전장치는 shift-calendar-app/tools/deploy_worker.py 맨 위 설명: 시험 → 올리기만 → 바인딩 대조 → (회사) 카나리 → 100% → health 5번
+# → 실패면 앞 판·정기 작업까지 되돌리고 되돌린 것을 다시 확인.
+#
+# 2.0.0 [RVQ-01] 검토 SRV-02: 일을 넷으로 나눠 Cloudflare 토큰과 고른 브랜치의 코드가 한 기계에 있지 않게 해요.
+#   gate  (main에서 누른 것만) ref가 main·열린 PR의 브랜치인지 보고, 지금 판을 올린 커밋을 읽어요. main의 도구만 돌아요.
+#   build (토큰 없음)  고른 브랜치의 npm ci --ignore-scripts·npm test·번들·스키마 호환. 결과 파일만 넘겨요.
+#   ship  (토큰 있음)  main의 도구 + build가 만든 번들·설정만. 설정은 아는 칸만 받아요(명령을 돌리는 칸이 있으면 멈춤).
+# 바깥 액션은 커밋 번호로, wrangler는 tools/deploy/package-lock.json(무결성 값)으로 묶어요.
+# 열쇠: 저장소 Settings › Secrets › Actions의 CLOUDFLARE_API_TOKEN(Cloudflare 'Workers 편집' 토큰, 밤낮 계정만). gate의 지금 판 읽기와 ship의
+# 배포 단계 env에만 있어요(job 전체 env가 아니에요). 사용자가 한 번 볼 것: 토큰 권한이 '밤낮 Worker 두 개 편집'으로 좁혀져 있는지.
 # 고를 수 있는 값: Variables의 CLOUDFLARE_ACCOUNT_ID(토큰이 닿는 계정이 하나면 없어도 됨), BAMNAT_API·BAMNAT_SHARE(health 주소, 기본 api.·s.bamnat.app).
 name: deploy-server
 on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 배포할 브랜치·커밋 (예 claude/project-thread-r5u2si 또는 main)
+        description: 배포할 브랜치·커밋 (main, 열린 PR의 브랜치, 그 안의 커밋만. 예 claude/project-thread-f33c16)
         required: true
         default: main
       target:
@@ -34,7 +42,7 @@ on:
         required: false
         default: ""
   pull_request:
-    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", ".github/workflows/deploy-server.yml"]
+    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", "shift-calendar-app/tools/deploy/**", ".github/workflows/deploy-server.yml"]
 permissions:
   contents: read
 # 배포는 한 번에 하나씩, 도중에 끊지 않아요.
@@ -46,44 +54,128 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
       - run: python3 shift-calendar-app/tools/test_deploy_flow.py
-  deploy:
-    if: github.event_name == 'workflow_dispatch'
+
+  gate:
+    # 다른 브랜치에서 누르면 그 브랜치의 workflow·도구가 쓰여 안전장치를 비켜 갈 수 있어서, main에서 누른 것만 받아요.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.ref.outputs.sha }}
+      company_prev: ${{ steps.probe.outputs.company_prev }}
     env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-      BAMNAT_API: ${{ vars.BAMNAT_API }}
-      BAMNAT_SHARE: ${{ vars.BAMNAT_SHARE }}
       IN_REF: ${{ inputs.ref }}
       IN_TARGET: ${{ inputs.target }}
-      IN_MODE: ${{ inputs.mode }}
-      IN_REASON: ${{ inputs.reason }}
-      IN_OLDER: ${{ inputs.allow_older }}
-      IN_SKIP: ${{ inputs.skip_tests }}
     steps:
-      # 배포 도구는 main의 것, 서버 코드는 고른 브랜치의 것.
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.ref }}
-          path: target
-      - uses: actions/setup-node@v4
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: 22
-      - name: 배포
+      - name: 배포 도구 시험
         run: |
           python3 shift-calendar-app/tools/test_deploy_worker.py
           python3 shift-calendar-app/tools/test_deploy_flow.py
-          sha=$(git -C target rev-parse HEAD)
-          echo "## 서버 배포 ${IN_MODE}: ${IN_REF} (${sha:0:8})" >> "$GITHUB_STEP_SUMMARY"
+      - name: ref 확인
+        id: ref
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 shift-calendar-app/tools/deploy_worker.py --check-ref "$IN_REF"
+      - name: wrangler(묶은 판)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix shift-calendar-app/tools/deploy
+      - name: 지금 판을 올린 커밋
+        id: probe
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 shift-calendar-app/tools/deploy_worker.py --phase probe --worker "$IN_TARGET"
+
+  build:
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      IN_TARGET: ${{ inputs.target }}
+      IN_SKIP: ${{ inputs.skip_tests }}
+    steps:
+      # 도구는 main의 것, 서버 코드는 고른 커밋의 것, 앞 판 코드는 지금 도는 판의 커밋(스키마 호환).
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          path: target
+          persist-credentials: false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        if: needs.gate.outputs.company_prev != ''
+        with:
+          ref: ${{ needs.gate.outputs.company_prev }}
+          path: prev
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+      - name: 시험·번들·스키마 호환 (토큰 없음)
+        run: |
+          skip=(); [ -n "$IN_SKIP" ] && skip=(--skip-test "$IN_SKIP")
+          BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
+            python3 shift-calendar-app/tools/deploy_worker.py --phase build --worker "$IN_TARGET" \
+              --out "$RUNNER_TEMP/ship" --prev "$GITHUB_WORKSPACE/prev/shift-calendar-app/server" "${skip[@]}"
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: ship
+          path: ${{ runner.temp }}/ship
+          retention-days: 3
+          if-no-files-found: error
+
+  ship:
+    needs: [gate, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      # 고른 브랜치는 받지 않아요: main의 도구 + build가 만든 파일만.
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+      - name: wrangler(묶은 판)
+        run: npm ci --ignore-scripts --no-audit --no-fund --prefix shift-calendar-app/tools/deploy
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        with:
+          name: ship
+          path: ${{ runner.temp }}/ship
+      - name: 배포
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          BAMNAT_API: ${{ vars.BAMNAT_API }}
+          BAMNAT_SHARE: ${{ vars.BAMNAT_SHARE }}
+          SHIP_SHA: ${{ needs.gate.outputs.sha }}
+          IN_REF: ${{ inputs.ref }}
+          IN_TARGET: ${{ inputs.target }}
+          IN_MODE: ${{ inputs.mode }}
+          IN_REASON: ${{ inputs.reason }}
+          IN_OLDER: ${{ inputs.allow_older }}
+        run: |
+          echo "## 서버 배포 ${IN_MODE}: ${IN_REF} (${SHIP_SHA:0:8})" >> "$GITHUB_STEP_SUMMARY"
           older=(); [ "$IN_OLDER" = "true" ] && older=(--allow-older)
-          [ -n "$IN_SKIP" ] && older+=(--skip-test "$IN_SKIP")
-          case "$IN_TARGET" in both) workers="company share";; *) workers="$IN_TARGET";; esac
-          for w in $workers; do
-            BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
-              python3 shift-calendar-app/tools/deploy_worker.py --worker "$w" --mode "$IN_MODE" --sha "$sha" --reason "$IN_REASON" "${older[@]}"
-          done
+          python3 shift-calendar-app/tools/deploy_worker.py --phase ship --worker "$IN_TARGET" --from "$RUNNER_TEMP/ship" \
+            --mode "$IN_MODE" --sha "$SHIP_SHA" --reason "$IN_REASON" "${older[@]}"
