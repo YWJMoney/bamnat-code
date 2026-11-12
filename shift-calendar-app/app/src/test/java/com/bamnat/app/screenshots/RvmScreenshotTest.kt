@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.recipe.MyRecipes
@@ -154,6 +155,85 @@ class RvmScreenshotTest : ScreenshotBase() {
         shoot("rvm_29_market_folded_dark_200", DARK, 2f, market())
         shoot("rvm_30_market_unfolded", UNFOLDED, market())
         shoot("rvm_31_market_folded_dark", DARK, market())
+    }
+
+    /**
+     * 2.0.0 [RVM-31] 총괄 HQ-42 (조건 1·12): 장터's first card begins in the top quarter of the window on a folded phone (35% before, 53% at
+     * 200%), the 장터 opened on its own with its top bar and inside 마을 under 마을's name and tabs; above it, the box and one row of chips.
+     * At 200% the 구간 are one-line chips of the same height (before, tiles where '탭별 작품' was four lines and the others two), each name
+     * whole, and the box asks in two words.
+     */
+    @Test fun theWorksStartInTheTopQuarter() {
+        shoot("rvm_48_market_top_folded", FOLDED) { market()(this); worksStartHigh("장터 접은 폭") }
+        shoot("rvm_49_market_village_folded", FOLDED) { village()(this); worksStartHigh("마을 › 장터 접은 폭") }
+        shoot("rvm_50_market_village_folded_dark", DARK) { village()(this); worksStartHigh("마을 › 장터 어두운") }
+        shoot("rvm_51_market_halves_folded_200", FOLDED, 2f) {
+            market()(this)
+            worksStartHigh("장터 접은 폭 200%")
+            val halves = listOf("테마", "탭별 작품").map { t ->
+                checkNotNull(nodes().firstOrNull { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == t } && n.boundsInWindow.width > 1f }) { "200%에서 ‘$t’가 안 보여요" }
+            }
+            val tall = halves.map { it.boundsInWindow.height }
+            check(tall.max() - tall.min() < 1f) { "구간 칩의 높이가 서로 달라요: $tall" }
+            check(appears("작품 찾기", exact = true)) { "200%에서 찾기 칸 안내가 짧지 않아요" }
+        }
+        shoot("rvm_57_market_village_folded_dark_200", DARK, 2f) { village()(this); worksStartHigh("마을 › 장터 어두운 200%") }
+    }
+
+    /**
+     * [RVM-31] HQ-42: picking 탭별 작품 slides the row so its 탭 are in sight (모든 탭 · 근무·급여 …), the 구간 picked first; picking 도구 brings
+     * its own chips (전체 · ✦ 프로 기능 · 무료 · 종류).
+     */
+    @Test fun aHalfPickedBringsItsChips() {
+        shoot("rvm_52_market_tabs_folded", FOLDED) {
+            market()(this)
+            tapText("🗂 탭별 작품", exact = true)
+            settle()
+            check(appears("모든 탭", exact = true)) { "탭별 작품을 골라도 탭 칩이 화면 밖이에요" }
+        }
+        shoot("rvm_53_market_tools_folded_dark", DARK) {
+            market()(this)
+            tapText("🧰 도구", exact = true)
+            settle()
+            // 도구's own chips start in sight (전체 · ✦ 프로 기능 first, [MKC-04]); its 종류 follow them.
+            check(appears("전체", exact = true) && appears("✦ 프로 기능", exact = true)) { "도구를 골라도 도구 칩이 화면 밖이에요" }
+        }
+    }
+
+    /** 2.0.0 [RVM-32] 총괄 HQ-43 (조건 1·12 넓은 화면): an unfolded phone shows four cards a row (two before), a folded one still two. */
+    @Test fun anUnfoldedPhoneShowsFourARow() {
+        shoot("rvm_54_market_grid_unfolded", UNFOLDED) { market()(this); check(firstRow() == 4) { "편 폭 첫 줄 카드 ${firstRow()}장" } }
+        shoot("rvm_55_market_grid_unfolded_dark_200", UNFOLDED_DARK, 2f) { market()(this); check(firstRow() == 4) { "편 폭 200% 첫 줄 카드 ${firstRow()}장" } }
+        shoot("rvm_56_market_grid_folded", FOLDED) { market()(this); check(firstRow() == 2) { "접은 폭 첫 줄 카드 ${firstRow()}장" } }
+        org.junit.Assert.assertEquals(listOf(2, 3, 4, 6), listOf(com.bamnat.app.ui.recipe.marketCols(337, false), com.bamnat.app.ui.recipe.marketCols(337, true),
+            com.bamnat.app.ui.recipe.marketCols(675, false), com.bamnat.app.ui.recipe.marketCols(675, true)))
+    }
+
+    private val cardWords = setOf("테마 보기", "작품 보기", "도구 보기")
+    private fun Screen.cards() = nodes().filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.OnClick)?.label in cardWords && n.boundsInWindow.height > 1f }
+    private fun Screen.firstRow(): Int { val top = cards().minOf { it.boundsInWindow.top }; return cards().count { kotlin.math.abs(it.boundsInWindow.top - top) < 2f } }
+
+    /** 조건 1: the first card begins within the top quarter of the window. */
+    private fun Screen.worksStartHigh(name: String) {
+        val all = nodes()
+        val height = all.maxOf { it.boundsInWindow.bottom }
+        val top = cards().minOf { it.boundsInWindow.top }
+        check(top <= height * 0.25f) { "$name: 첫 작품이 화면 위 25% 안에서 시작해야 해요 (${top.toInt()} / ${height.toInt()} = ${(top / height * 100).toInt()}%)" }
+    }
+
+    /** 마을 › 장터, as the bottom bar's 마을 opens it on 장터: 마을's name and tabs above the list. */
+    private fun village(): Screen.() -> Unit = {
+        Market().also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        app.getSharedPreferences("village_ui", 0).edit().putString("section", "SHARE").commit()
+        val model = RecipeListViewModel(c)
+        content {
+            com.bamnat.app.ui.hub.HubScreen(c, WorkStyle.SHIFT, talk = {}, share = {
+                RecipeListScreen(model, onBack = null, onOpen = {}, onMake = {}, onMine = {}, title = "장터", onSwipe = {})
+            }, onMake = {}, onMine = {}, onRequests = {}, onCode = {}, onStudio = {})
+        }
+        settle()
+        settle()
     }
     // 2.0.0 [RVM-22] RCP-05: 큰 시계 기상 (울림 5분) on a phone that rings 10분: the 넣기 창 names what would make the alarm weaker and
     // leaves it out unless '약하게 하는 설정도 넣기' is on.
@@ -354,6 +434,7 @@ class RvmScreenshotTest : ScreenshotBase() {
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
+        const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"
         /** The release build's public files (gradle.properties `bamnat.remoteBaseUrl`). */
         const val PAGES = "https://ywjmoney.github.io/-/"
     }

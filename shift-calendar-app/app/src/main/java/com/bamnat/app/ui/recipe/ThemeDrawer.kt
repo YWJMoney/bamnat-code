@@ -17,8 +17,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
-import androidx.compose.material.icons.filled.Search
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -126,10 +124,8 @@ fun ThemeDrawer(
             modifier = Modifier.heightIn(min = 48.dp)) { Text("↕ ${sort.label}") }
     }
     if (items.isNotEmpty()) {
-        OutlinedTextField(query, { query = it.take(30) }, Modifier.fillMaxWidth(), singleLine = true,
-            placeholder = { Text("서랍에서 찾기") },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            trailingIcon = if (query.isNotEmpty()) ({ IconButton(onClick = { query = "" }) { Icon(Icons.Filled.Clear, "찾기 지우기") } }) else null)
+        // 2.0.0 [RVM-31] the same 48dp 찾기 칸 as 장터 (조건 5, 같은 구조는 함께).
+        SearchBox(query, { query = it.take(30) }, "서랍에서 찾기", Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             // PC 08a6f771: the numbers follow what 찾기 and the 묶음 leave.
             Drawer.counts(Drawer.shown(items, null, folder, query, sort)).forEach { (k, n) ->
