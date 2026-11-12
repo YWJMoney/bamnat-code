@@ -430,9 +430,12 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
     val types = remember(snapshot, style, day.shiftType?.id, folded) { dayTypes(snapshot, style, day.shiftType?.id, folded) }
     if (types.isEmpty()) return
     val fullLeave = day.leave?.isFullDay == true
-    // 2.0.0 [RVH-71] 검토 HQ-87: two lines before "+n", and the 쉬는 날 chip (the most common change) never in it.
-    ChipRow(modifier, start = 12.dp, end = endSpace, lines = 2) {
-        for (t in types) item(key = "shift-${t.id}", pin = t.isOff) {
+    // 2.0.0 [RVH-71] 검토 HQ-87: the 쉬는 날 chip (the most common change) and the day's own chip are never in "+n". With big
+    // letters the chips may take two lines first; at the usual size one, so the sheet's fixed head stays short (조건 1: at folded
+    // 100% a second line pushed the day's groups under it).
+    val lines = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f) 2 else 1
+    ChipRow(modifier, start = 12.dp, end = endSpace, lines = lines) {
+        for (t in types) item(key = "shift-${t.id}", pin = t.isOff || !fullLeave && day.shiftType?.id == t.id) {
             val on = !fullLeave && day.shiftType?.id == t.id
             FilterChip(
                 selected = on,

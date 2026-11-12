@@ -49,7 +49,7 @@ class ReviewH9ShotsTest : ScreenshotBase() {
             vm.tap(1)
             repeat(14) { i -> vm.put(DutyCell.Shift(id(if (i % 4 < 2) "주간" else "야간"))) }
             settle()
-            assertTrue(appears("5·12일 · 달력에 테두리로 보여요"))
+            assertTrue(appears("5·12일 (연차·바꾼 근무)"))
             assertFalse("미리 보기의 날마다 '직접 바꿈'", shows("직접 바꿈"))
             // A finger's swipe over the month would paint it (a key is held): scrolled by its semantics instead.
             scrollToEnd()

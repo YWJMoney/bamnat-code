@@ -82,7 +82,7 @@ class ReviewH10ShotsTest : ScreenshotBase() {
     @Test fun manageD() = one("52_manage", 3, WorkStyle.FIELD, manage())
 
     /**
-     * HQ-99 (G가 본 것, 조건 1·9): on a short screen (a phone on its side) the summary's bottom keeps only '저장하고 달력 보기'; the
+     * HQ-99 (G가 본 것, 조건 1·9): on a short screen (a split window, a phone on its side) the summary's bottom keeps only '저장하고 달력 보기'; the
      * 사용 통계 card waits in the scroll, under the month, as at a big font ([RVH-47]).
      */
     @Test fun shortSummary() {
@@ -104,8 +104,8 @@ class ReviewH10ShotsTest : ScreenshotBase() {
     }
 
     private companion object {
-        /** A folded phone on its side. */
-        const val SHORT = "w905dp-h369dp-land-420dpi"
+        /** A short window (a phone split in two, a small phone): lower than [com.bamnat.app.ui.setup.SHORT_SCREEN_DP]. */
+        const val SHORT = "w369dp-h560dp-port-420dpi"
         const val FOLDED_ACROSS = 0.5f
         const val OPEN_ACROSS = 0.8f
     }
