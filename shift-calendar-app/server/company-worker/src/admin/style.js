@@ -634,6 +634,11 @@ dialog.palette{margin-top:12vh;width:min(94vw,38rem)}
 .review-rows>li.picked>details>summary{background:var(--accent-soft)}
 .row-side.inline{flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:.35rem;max-width:60%}
 @media (max-width:599.98px){.review-rows .row{flex-wrap:wrap}.review-rows .row-side.inline{max-width:none;width:100%;justify-content:flex-start;padding-left:1rem}}
+/* 2.0.0 [RVD-20] HQ-08: large letters on a wide screen too: the buttons go under the words once the list is under 40 of its letters wide (사진 D/HQ-13 06). */
+.review-rows{container-type:inline-size}
+.nw{white-space:nowrap}
+.review-rows .row-acts{display:inline-flex;gap:.35rem}
+@container (max-width:40rem){.review-rows .row{flex-wrap:wrap}.review-rows .row-side.inline{max-width:none;width:100%;justify-content:flex-start;padding-left:1rem}}
 .score.mini{margin:0;gap:.3rem}.score.mini meter{width:3.5rem;height:.5rem}.score.mini b{font-size:.78rem}
 .rv-body{padding:.25rem 1rem 1rem 1.85rem;border-top:1px dashed var(--line)}
 @media (max-width:599.98px){.rv-body{padding-left:1rem}}
