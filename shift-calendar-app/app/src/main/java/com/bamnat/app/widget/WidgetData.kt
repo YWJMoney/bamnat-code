@@ -209,7 +209,7 @@ data class WidgetData(
                 memos = if (settings.widgetMemo) memoLines(container, today) else emptyMap(),
                 teams = teamsToday(container, snapshot, today),
                 nextChange = com.bamnat.core.schedule.ShiftEvents.nextChange(soon, now),
-                countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
+                countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now, TodayFlow.WorkTalk.of(settings.workStyle).gap),
                 nextOff = if (snapshot.isEmpty) null else com.bamnat.core.schedule.ShiftEvents.nextOff(soon, today),
                 coverTeams = coverToday(container, snapshot, today, settings),
                 memoDays = if (settings.widgetMemo) memoDays(container, today) else emptySet(),

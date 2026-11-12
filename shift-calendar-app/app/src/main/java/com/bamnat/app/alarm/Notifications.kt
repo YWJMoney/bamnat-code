@@ -51,6 +51,8 @@ object Notifications {
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
     const val TODAY_CHANNEL_ID = "today_shift_v1"
+    /** 2.0.0 [RVIB-21] (결정 19) 둘째 구간 알림: "17:00 다시 시작" before the later part of a day of two parts ([GapNotice]). */
+    const val GAP_CHANNEL_ID = "gap_resume_v1"
     /** [RUL-04] 1.36 수식·규칙: what a rule says (내일 야간 준비 등). */
     const val RULES_CHANNEL_ID = "rules_v1"
     /** 2.0.0 [RVM-24] STU-13 What a rule that came with someone's work says, apart from mine (turned off at once in the system settings). */
@@ -129,7 +131,8 @@ object Notifications {
     /** [TOWN-08] Whether the newest channel this version made is on the phone (one check, not a call per channel). */
     fun channelsMade(context: Context): Boolean =
         context.getSystemService(NotificationManager::class.java)?.let {
-            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null
+            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null &&
+                it.getNotificationChannel(GAP_CHANNEL_ID) != null
         } == true
 
     fun createChannels(context: Context) {
@@ -259,7 +262,12 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, received, inquiry, clock, roster))
+        // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 7번) Its own channel, so it can be turned off on its own; quiet like 오늘의 흐름.
+        val gap = NotificationChannel(GAP_CHANNEL_ID, "둘째 구간 시작", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "브레이크 타임·비는 시간이 있는 날, 다시 시작하기 10분 전에 소리 없이 한 줄로 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, gap, invest, pro, backup, plaza, rules, received, inquiry, clock, roster))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }

@@ -249,6 +249,8 @@ data class AppSettings(
     val backupNudge: Boolean = true,
     /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
     val leaveTimeNotice: Boolean = false,
+    /** 2.0.0 [RVIB-21] (결정 19) 둘째 구간 알림: "17:00 다시 시작" 10분 전, quiet, on a day of two parts (on by default). In the backup. */
+    val gapNotice: Boolean = true,
     /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
@@ -572,6 +574,7 @@ class SettingsRepository(context: Context) {
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
+            gapNotice = prefs.getBoolean(K_GAP_NOTICE, d.gapNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
             payAutoClose = prefs.getBoolean(K_PAY_AUTO_CLOSE, d.payAutoClose),
@@ -720,6 +723,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
+            .putBoolean(K_GAP_NOTICE, s.gapNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
             .putBoolean(K_PAY_AUTO_CLOSE, s.payAutoClose)
@@ -797,6 +801,7 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
+        const val K_GAP_NOTICE = "gap_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
         const val K_PAY_AUTO_CLOSE = "pay_auto_close"

@@ -43,11 +43,16 @@ object TodayShiftNotice {
         val now = Today.dateTime()
         val work = listOf(today.minusDays(1), today).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(it)) }
         val going = if (android.os.Build.VERSION.SDK_INT >= 36) com.bamnat.core.schedule.ShiftProgress.of(work, now) else null
+        // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the bar fills to the 브레이크 타임·비는 시간, then rests there with when work starts
+        // again, and is drawn again when the next part starts (every part's start and end, not only the day's first start).
+        val stop = com.bamnat.core.schedule.ShiftProgress.stopOf(work, now)
         scheduleTick(context, going?.let { com.bamnat.core.schedule.ShiftProgress.nextDraw(it, now) }
-            ?: work.map { it.from }.filter { it.isAfter(now) }.minOrNull())
-        val untilEnd = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style).untilEnd
-        val title = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, untilEnd) } ?: dayLine
-        val text = if (going != null) "$dayLine · $nextLine" else nextLine
+            ?: com.bamnat.core.schedule.ShiftProgress.changes(work, now).firstOrNull())
+        val talk = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style)
+        val title = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, if (it.pausesAtEnd) "${talk.gap}까지" else talk.untilEnd) }
+            ?: stop?.let { "${talk.gap} · ${hm(it.endInclusive.toLocalTime())} 다시 시작" }
+            ?: dayLine
+        val text = if (going != null || stop != null) "$dayLine · $nextLine" else nextLine
         // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
         val extra = folded(context, today)
         fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
@@ -143,6 +148,8 @@ object TodayShiftNotice {
         val start = day.start
         val end = day.end
         val work = when {
+            // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 3번) A day of two parts shows both: "주간 11:00~15:00, 17:00~21:00".
+            day.isWorkDay && day.split -> "${name ?: "근무"} " + day.segments.joinToString(", ") { "${hm(it.start.toLocalTime())}~${hm(it.endInclusive.toLocalTime())}" }
             day.isWorkDay && start != null && end != null -> "${name ?: "근무"} ${hm(start)}~${hm(end)}"
             day.isWorkDay -> name ?: "근무"
             else -> null

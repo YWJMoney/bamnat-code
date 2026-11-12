@@ -102,7 +102,10 @@ internal fun ChipScope.hourlyChips(
     now: LocalDateTime = Today.dateTime(),
 ) {
     val works = day.shiftType?.isOff == false
-    val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT
+    // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) After the first of two parts, 출근 would move the day's start to the 브레이크 타임's end
+    // and lose the first part: coming back is not a second 출근.
+    val clockIn = day.date == today && works && day.entry?.attendance != Attendance.ABSENT &&
+        !com.bamnat.core.work.Commute.inSecondHalf(day, now)
     // [HRLY-08] A shift past midnight is clocked out on the day it started, from either day's sheet.
     val out = clockOutDay(day, today, now) { snapshot.resolver.resolve(today.minusDays(1)) }
     if (clockIn) {

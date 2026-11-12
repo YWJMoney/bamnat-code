@@ -10,15 +10,32 @@ import java.time.LocalDateTime
  * screen, the watch's 끝까지 and the calendar never count differently.
  */
 object ShiftProgress {
-    data class Now(val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long?, val elapsedMinutes: Long, val totalMinutes: Long) {
+    data class Now(
+        val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long?, val elapsedMinutes: Long, val totalMinutes: Long,
+        /** 2.0.0 [RVIB-21] (결정 19) This part stops at [to] and work goes on after it: count to the 브레이크 타임·비는 시간, not to 퇴근. */
+        val pausesAtEnd: Boolean = false,
+    ) {
         val leftMinutes: Long get() = (totalMinutes - elapsedMinutes).coerceAtLeast(0)
     }
 
-    /** The work going on at [now] among [work] (the one ending first when two meet), or null. */
+    /**
+     * The work going on at [now] among [work] (the one ending first when two meet), or null. 2.0.0 [RVIB-21] (결정 19) On a day of two
+     * parts it is the part [now] is in, so the bar fills to the stop between them; in the stop itself nothing is going ([stopOf]).
+     */
     fun of(work: List<SleepSchedule.Work>, now: LocalDateTime): Now? =
-        work.filter { !now.isBefore(it.from) && now.isBefore(it.to) && it.to.isAfter(it.from) }.minByOrNull { it.to }?.let { w ->
-            Now(w.from, w.to, w.name, w.colorArgb, Duration.between(w.from, now).toMinutes(), Duration.between(w.from, w.to).toMinutes())
-        }
+        work.flatMap { w -> w.parts.map { w to it } }
+            .filter { (_, p) -> !now.isBefore(p.start) && now.isBefore(p.endInclusive) && p.endInclusive.isAfter(p.start) }
+            .minByOrNull { (_, p) -> p.endInclusive }?.let { (w, p) ->
+                Now(p.start, p.endInclusive, w.name, w.colorArgb, Duration.between(p.start, now).toMinutes(),
+                    Duration.between(p.start, p.endInclusive).toMinutes(), pausesAtEnd = p.endInclusive.isBefore(w.to))
+            }
+
+    /** [RVIB-21] The stop between two parts [now] is in (its start and when work starts again), or null. */
+    fun stopOf(work: List<SleepSchedule.Work>, now: LocalDateTime): ClosedRange<LocalDateTime>? = work.firstNotNullOfOrNull { it.stopAt(now) }
+
+    /** [RVIB-21] Every moment the picture changes from [now] on: each part's start and end, earliest first. */
+    fun changes(work: List<SleepSchedule.Work>, now: LocalDateTime): List<LocalDateTime> =
+        work.flatMap { w -> w.parts.flatMap { listOf(it.start, it.endInclusive) } }.filter { it.isAfter(now) }.distinct().sorted()
 
     /** "퇴근까지 3시간 20분", "마감까지 45분": [untilEnd] is the kind of work's word ([com.bamnat.core.sleep.TodayFlow.WorkTalk.untilEnd]). */
     fun left(n: Now, untilEnd: String): String {

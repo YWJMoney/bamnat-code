@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -641,6 +643,13 @@ private fun NoticesPage(
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.DAY) SwitchRow(LEAVE_TIME_ROW, "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요",
             settings.leaveTimeNotice, warning = warning(settings.leaveTimeNotice, Notifications.DAY_CHANNEL_ID), onFix = fix(Notifications.DAY_CHANNEL_ID)) { on ->
             set(on) { it.copy(leaveTimeNotice = on) }
+        }
+        // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 7번) 둘째 구간 알림: only where a 근무 종류 has a 브레이크 타임·비는 시간 (or it was turned off).
+        val hasGap = rememberHasGap()
+        if (hasGap) SwitchRow(GAP_ROW,
+            "${com.bamnat.core.sleep.TodayFlow.WorkTalk.of(settings.workStyle).gap}이 있는 날, 다시 시작하기 10분 전에 소리 없이 한 줄로 알려 줘요. 그때 자는 분은 근무 종류에서 ‘둘째 구간도 알람’을 켜면 알람이 울려요",
+            settings.gapNotice, warning = warning(settings.gapNotice, Notifications.GAP_CHANNEL_ID), onFix = fix(Notifications.GAP_CHANNEL_ID)) { on ->
+            set(on) { it.copy(gapNotice = on) }
         }
         // 1.37 [LEDH-09] 퇴근 시각 하루 마감 (가계부): 근무 끝 30분 뒤, 쉬는 날은 저녁 9시.
         if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST && settings.workStyle != com.bamnat.core.work.WorkStyle.BUSINESS)
@@ -1538,6 +1547,16 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-21] 둘째 구간 알림's row, for 설정 찾기. */
+internal const val GAP_ROW = "둘째 구간 시작 알림"
+
+/** 2.0.0 [RVIB-21] Some 근무 종류 of the open calendar has a 브레이크 타임·비는 시간 between two parts. */
+@Composable
+internal fun rememberHasGap(): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val flow = remember(c) { c.scheduleRepository.snapshot.map { s -> s.shiftTypes.any { it.hasGap } }.distinctUntilChanged() }
+    return flow.collectAsStateWithLifecycle(false).value
+}
 /** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
 internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
 internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"

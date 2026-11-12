@@ -660,7 +660,7 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("payAutoClose", s.payAutoClose).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("gapNotice", s.gapNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("payAutoClose", s.payAutoClose).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
                 // 2.0.0 [RVK-19] 요약의 큰 숫자를 바꿔 둔 것.
@@ -1297,6 +1297,7 @@ class BackupManager(
                     spendHeat = o.optBoolean("spendHeat", s.spendHeat),
                     backupNudge = o.optBoolean("backupNudge", s.backupNudge),
                     leaveTimeNotice = o.optBoolean("leaveTimeNotice", s.leaveTimeNotice),
+                    gapNotice = o.optBoolean("gapNotice", s.gapNotice),
                     stretchLimitHours = o.optInt("stretchLimit", s.stretchLimitHours).coerceIn(0, 48),
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
                     payAutoClose = o.optBoolean("payAutoClose", s.payAutoClose),

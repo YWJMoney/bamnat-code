@@ -176,6 +176,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 runCatching { com.bamnat.app.logic.LogicRunner.fire(container) }
                 // 1.32 [WTYP-16] 퇴근 시각 알림.
                 LeaveTimeNotice.reschedule(context)
+                // 2.0.0 [RVIB-21] 둘째 구간 알림.
+                GapNotice.reschedule(context)
                 com.bamnat.app.money.DayCloseNotice.reschedule(context)
                 com.bamnat.app.money.ShiftPreviewNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.

@@ -63,6 +63,8 @@ object NoticeBoard {
             { planned(it) && (it == null || it == WorkStyle.SHIFT) }),
         Own("leaveTimeNotice", { "퇴근 시각 알림" }, "근무가 끝나는 시각에", { it.leaveTimeNotice }, { s, on -> s.copy(leaveTimeNotice = on) },
             { it == WorkStyle.DAY }),
+        // 2.0.0 [RVIB-21] Listed only where a 근무 종류 has two parts ([NoticeBoardCard]).
+        Own(GAP_KEY, { "둘째 구간 시작" }, "브레이크 타임·비는 시간 끝나기 10분 전", { it.gapNotice }, { s, on -> s.copy(gapNotice = on) }, { true }),
         Own("dayCloseNotice", { "하루 마감" }, "근무 끝 30분 뒤 오늘 쓴 돈", { it.dayCloseNotice }, { s, on -> s.copy(dayCloseNotice = on) },
             not(WorkStyle.INVEST, WorkStyle.BUSINESS)),
         Own("shiftPreviewNotice", { "근무 전 한 줄 예고" }, "근무 전날 저녁, 더 쓰는 분류", { it.shiftPreviewNotice }, { s, on -> s.copy(shiftPreviewNotice = on) },
@@ -70,6 +72,9 @@ object NoticeBoard {
         Own("moneyNotices", { "나갈 돈·받을 돈" }, "고정비 3일 전·당일", { it.moneyNotices }, { s, on -> s.copy(moneyNotices = on) }, { true }),
         Own("plazaNews", { "밤낮 소식" }, "하루 한 번 묶어서", { it.plazaNews }, { s, on -> s.copy(plazaNews = on) }, { true }),
     )
+
+    /** 2.0.0 [RVIB-21] 둘째 구간 알림's key: on the list only with a 근무 종류 of two parts. */
+    const val GAP_KEY = "gapNotice"
 
     /** My rules that send an 알림. */
     fun noticeRules(s: AppSettings): List<LogicRule> = Logic.decode(s.logic).rules.filter { r -> r.acts.any { it.verb == LogicVerb.NOTIFY } }
@@ -102,7 +107,8 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
     val overlaps = remember(settings, tick) {
         NoticeOverlap.now(Logic.decode(settings.logic), c.recipes.pieces.noticesOn(settings), ruleOn)
     }
-    val own = NoticeBoard.OWN.filter { it.shows(style) || it.get(settings) }
+    val hasGap = rememberHasGap()
+    val own = NoticeBoard.OWN.filter { (it.shows(style) || it.get(settings)) && (it.key != NoticeBoard.GAP_KEY || hasGap) }
     val onOwn = own.filter { it.get(settings) }
     val offOwn = own.filter { !it.get(settings) }
     val onRules = rules.filter(ruleOn)
