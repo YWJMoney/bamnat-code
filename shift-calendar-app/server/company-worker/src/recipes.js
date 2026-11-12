@@ -1464,7 +1464,7 @@ export { PARTS_SINCE };
 /** [RVD-24] A fill's kind as parts-since.js names it: pt.<무늬>·tx.<질감>·sh.<셰이더>, else its first word. */
 const fillKind = (f) => (/^(pt|tx|sh)\./.test(f) ? f.split(".").slice(0, 2).join(".") : f.split(".")[0]);
 
-/** [RVD-29] A 부품 줄's order names its children by their last word: the children's whole ids, under [parent] ("page" under app is memo.page). */
+/** [RVD-29] A 부품 줄's order names its children by their last word: the children's whole ids, under [parent] ("page" under app is memo.page, "card" app.card·memo.card). */
 const PART_CHILD_IDS = {};
 for (const id of PART_IDS) {
   const p = partParent(id);
@@ -1536,8 +1536,15 @@ export function partsMinApp(recipe) {
         if (typeof l?.id !== "string") continue;
         since(PARTS_SINCE.ids, l.id);
         if (typeof l.on === "string" && PART_IDS.includes(l.id)) since(PARTS_SINCE.states, l.on);
-        // [RVD-29] order names children an older app may not know ("date,clock" under night is night.date, night.clock).
-        if (typeof l.order === "string") for (const c of l.order.split(",")) for (const id of PART_CHILD_IDS[l.id]?.[c] ?? []) since(PARTS_SINCE.ids, id);
+        // [RVD-29] order names children an older app may not know ("date,clock" under night is night.date, night.clock). An older app only
+        // asks whether the name is one of its children's last words (core Blueprint.linesProblem), so of several children with that last word
+        // (card under app: app.card, memo.card) the oldest one answers.
+        if (typeof l.order === "string") {
+          for (const c of l.order.split(",")) {
+            const kids = PART_CHILD_IDS[l.id]?.[c];
+            if (kids) need = Math.max(need, Math.min(...kids.map((id) => (Object.hasOwn(PARTS_SINCE.ids, id) ? PARTS_SINCE.ids[id] : 0))));
+          }
+        }
       }
     }
     if (p?.kind === "decor" && Array.isArray(p.items)) {

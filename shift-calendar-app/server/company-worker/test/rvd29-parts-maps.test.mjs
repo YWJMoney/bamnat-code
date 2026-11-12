@@ -43,12 +43,19 @@ test("[RVD-29] a 조각 종류, a field (also one inside an 항목) and a 고른
   });
 });
 
-test("[RVD-29] a 부품 줄's order names children an older app may not know: page under app is memo.page (52), task under widget 1.39's (53)", () => {
+test("[RVD-29] a 부품 줄's order names children an older app may not know: page under app is memo.page (52), task under widget 1.39's (53), the oldest of a shared last word", () => {
   const order = (id, o) => partsMinApp({ pieces: [{ kind: "parts", parts: [{ id, order: o }] }] });
   assert.equal(order("app", "page"), 52);
   assert.equal(order("widget", "head,task"), 53);
   assert.equal(order("app", "night"), 53);
   assert.equal(order("widget", "head,cell"), null);
+  // Several children share a last word (head under app: memo.head, money.head, pay.head): an older app knows the name if it knows any of
+  // them, so the oldest answers.
+  withMaps({ ids: { ...PARTS_SINCE.ids, "memo.head": 54 } }, () => {
+    assert.equal(order("app", "head"), null);
+    assert.equal(order("memo", "head"), null);
+  });
+  withMaps({ ids: { ...PARTS_SINCE.ids, "memo.head": 54, "money.head": 53, "pay.head": 54 } }, () => assert.equal(order("app", "head"), 53));
   // A child name the parent does not have is no part (the server refuses such an order on its own).
   assert.equal(order("cal.cell", "task"), null);
 });
