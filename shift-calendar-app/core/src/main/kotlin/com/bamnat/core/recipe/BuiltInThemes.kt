@@ -120,9 +120,13 @@ object BuiltInThemes {
      * coloured by the day's kind came out the same colour in every theme. For them the theme's own accent tints those cells instead.
      */
     private fun cellsFor(f: Family, s: WorkStyle): List<String> {
-        if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return f.cells
+        // 2.0.0 [RVP-63] (검토 REST-04·T14-01·T14-02) A family's 쉬는 날 look hides the day's mark ('mk:none'), which is right only while
+        // it falls on 쉬는 날 (교대's 'shift:off=1'). Every other kind of work takes it by the week (토·일), where an 알바's weekend shift,
+        // a shop's weekend sales or a 현장's weekend job are; there the look keeps a dot at the bottom instead.
+        val shown = if (s == WorkStyle.SHIFT) f.cells else f.cells.map { it.replace("mk:none", "mk:dot|mp:bottom") }
+        if (s != WorkStyle.BUSINESS && s != WorkStyle.INVEST) return shown
         val tint = "bg:" + f.accent.toString(16).uppercase().padStart(8, '0')
-        return f.cells.map { c ->
+        return shown.map { c ->
             when {
                 "mk:fill" in c -> c.replace("mk:fill", "$tint|mk:dot|mp:bottom").replace(Regex("ba:\\d+"), "ba:28")
                 "bg:shift" in c -> c.replace("bg:shift", tint)
@@ -158,7 +162,7 @@ object BuiltInThemes {
             "· 앱 전체 바탕·카드·글자·강조 색${if (f.dark) " (어두운 화면)" else ""}\n" +
             "· 달력 칸 모양 ${looksCount}가지, ${patternWords(pattern)}${f.todayLook?.let { ", 오늘 칸 따로" }.orEmpty()}\n" +
             "· 메모장 ${RecipeDescribe.FREE_NAMES["layout.${m.layout}"]}, 가계부·급여 화면 모양\n" +
-            "· 광장 ${f.emoji}, 위젯·모서리\n" +
+            "· 마을 ${f.emoji}, 위젯·모서리\n" +
             "주의할 점: 모양만 바뀌어요. 근무·메모·돈 기록과 알람은 그대로예요"
         val cover = Cover(f.accent or 0xFF000000L, f.bg or 0xFF000000L, 2, f.emoji)
         return Recipe("${f.name} ${word(s)}", "${f.mood} ${word(s)} 테마", desc, setOf(s), cover, pieces = pieces)

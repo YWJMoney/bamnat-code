@@ -101,7 +101,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
         androidx.compose.material3.OutlinedButton(onClick = {
             if (locked && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
             scope.launch {
-                runCatching {
+                com.bamnat.app.report.ReportShare.orTell { // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
                     val from = today.minusMonths(18).plusDays(1)
                     val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                         com.bamnat.core.report.FieldDaysProof.doc("", from, today, com.bamnat.core.report.FieldDaysProof.days(book.jobs, from, today), today)
@@ -190,7 +190,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     // 1.38 PC 5차(사진으로 보내기와 같은 구조): closing at the tap ended this dialog's scope and the file was never
                     // shared. The dialog closes once the share window has been asked for.
                     scope.launch {
-                        runCatching {
+                        com.bamnat.app.report.ReportShare.orTell { // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
                                 "bamnat-거래내역서-${statement.month}.pdf")
                         }
@@ -198,7 +198,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     }
                 }) { Text(if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) "PDF (프로)" else "PDF") }
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
+                    scope.launch { com.bamnat.app.report.ReportShare.orTell { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
                 }) { Text("사진으로 보내기") }
             }
         },

@@ -133,8 +133,11 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
                 if (fits && feature.canTurnOff && !on) {
                     FilledTonalButton(onClick = { FeatureSwitches.set(c, feature, active, true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("켜기") }
                 }
+                // [RVP-75] (검토 T14-06) A feature with no screen to open (the ringing alarm's 모두 끄기) shows where it is only.
                 if (fits) {
-                    OutlinedButton(onClick = { FeatureLinks.open(feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("바로 가기") }
+                    if (feature.route.place != Place.NOWHERE) {
+                        OutlinedButton(onClick = { FeatureLinks.open(feature) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("바로 가기") }
+                    }
                 } else {
                     OutlinedButton(onClick = { FeatureLinks.open(FeatureRoute(Place.CALENDARS)) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("달력 목록") }
                 }

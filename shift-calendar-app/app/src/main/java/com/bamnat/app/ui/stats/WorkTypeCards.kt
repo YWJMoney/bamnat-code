@@ -409,8 +409,9 @@ private fun PayGapCard(
                         if (gate.allows(com.bamnat.app.tier.Feature.PAY_REPORT) || com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) scope.launch {
                             val gross = payTotal ?: return@launch
                             val ded = TakeHome.of(profile, month, gross, mode ?: TaxMode.NONE, nonTaxable).deductions
-                            com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
-                                "bamnat-덜받은돈-$month.pdf")
+                            // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                            com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, PayGaps.doc(gap, gross, if (fromRecords) emptyList() else ded, basisLabel),
+                                "bamnat-덜받은돈-$month.pdf") }
                         } else com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT)
                     }) {
                         Text("근거표·정리본 PDF")

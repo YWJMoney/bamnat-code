@@ -145,7 +145,7 @@ fun InvestScreen(vm: InvestViewModel, wide: Boolean, snackbar: SnackbarHostState
     Column(Modifier.fillMaxSize()) {
         InvestHeader(vm, state, open) { kind ->
             val (csv, name) = vm.csv(kind)
-            scope.launch { LedgerExport.share(context, csv, name) }
+            scope.launch { com.bamnat.app.report.ReportShare.orTell { LedgerExport.share(context, csv, name) } } // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
         }
         PrimaryScrollableTabRow(selectedTabIndex = tab.ordinal, edgePadding = 12.dp, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
             InvestTab.entries.forEach { t -> Tab(selected = tab == t, onClick = { tab = t }, text = { Text(t.label) }) }

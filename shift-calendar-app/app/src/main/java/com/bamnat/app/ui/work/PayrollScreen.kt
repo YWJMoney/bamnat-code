@@ -352,7 +352,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
                     scope.launch {
-                        runCatching { com.bamnat.app.report.ReportShare.csv(context, LedgerCsv.write(ledger), LedgerCsv.fileName(place, ym), "${place.name} ${Fmt.month(ym)} 임금대장") }
+                        com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, LedgerCsv.write(ledger), LedgerCsv.fileName(place, ym), "${place.name} ${Fmt.month(ym)} 임금대장") }
                     }
                 }) { Text("임금대장 파일(CSV)") }
                 if (isClosed) OutlinedButton(onClick = { scope.launch { store.reopen(place.id, ym, RateTable.on(ym.atDay(1)).version) } }) { Text("다시 열기") }
@@ -971,9 +971,11 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
         Row {
             TextButton(enabled = slip.ready, onClick = {
                 scope.launch {
-                    runCatching { com.bamnat.app.report.ReportShare.pdf(context, slip.doc(), "임금명세서-${l.staff.name.ifBlank { "직원" }}-$month.pdf") }
-                    store.mark(place.id, month, l, sent = true)
-                    context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.SLIP_SENT.key)
+                    // 2.0.0 [RVP-69] (검토 REST-11) Marked 보냄 only when the share window opened; a failed file says so.
+                    if (com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, slip.doc(), "임금명세서-${l.staff.name.ifBlank { "직원" }}-$month.pdf") }) {
+                        store.mark(place.id, month, l, sent = true)
+                        context.appContainer.telemetry.event(com.bamnat.core.stats.UsageEvent.SLIP_SENT.key)
+                    }
                 }
             }) { Text("PDF") }
             TextButton(enabled = slip.ready, onClick = {

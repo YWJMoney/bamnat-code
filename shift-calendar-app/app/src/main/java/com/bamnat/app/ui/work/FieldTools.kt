@@ -210,7 +210,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !q.isBlank, modifier = Modifier.weight(1f), onClick = {
                 val saved = persist()
-                scope.launch { runCatching { QuoteImage.share(context, saved, sender.trim()) } }
+                scope.launch { com.bamnat.app.report.ReportShare.orTell { QuoteImage.share(context, saved, sender.trim()) } } // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
             }) { Text("사진으로 보내기") }
         }
         SectionCard(title = "일감으로 저장") {
