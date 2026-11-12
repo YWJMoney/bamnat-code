@@ -196,11 +196,15 @@ internal fun DiscoverNotice(
     }
 
     val motion = !com.bamnat.app.ui.theme.systemAnimationsOff(context)
-    Column(modifier.fillMaxWidth()) {
-        after?.let { a -> AfterLine(a) { a.undo(); after = null } }
+    // 2.0.0 통합 (#434를 합친 뒤 '알림 2개 더 보기'): on a day it has nothing to say, or another card above the month speaks,
+    // it draws nothing at all, not even its padding, so it is 0 high and never counted among the folded notices.
+    val othersSpeaking = othersUp()
+    Column(Modifier.fillMaxWidth()) {
+        after?.let { a -> Box(modifier) { AfterLine(a) { a.undo(); after = null } } }
         val p = pick
         AnimatedVisibility(
-            visible = p != null && settled && after == null,
+            visible = p != null && settled && after == null && !othersSpeaking,
+            modifier = modifier,
             enter = if (motion) fadeIn() + expandVertically() else EnterTransition.None,
             exit = if (motion) fadeOut() + shrinkVertically() else ExitTransition.None,
         ) {
