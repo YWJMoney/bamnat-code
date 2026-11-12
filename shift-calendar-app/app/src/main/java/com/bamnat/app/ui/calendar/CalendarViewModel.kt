@@ -57,7 +57,9 @@ import com.bamnat.core.work.CalendarFocus
 import com.bamnat.core.work.asksHolidaysOff
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -279,7 +281,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [J133-03] 1.33 앞으로도 늘 쉬어요: the weekly pattern itself keeps public holidays off, so the card is not asked again
      * next month. Said back with undo.
      */
-    fun restHolidaysAlways() {
+    fun restHolidaysAlways() = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = schedule.patterns.first()
@@ -290,8 +292,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [CAL-07] The holidays become days off in one write, said back with undo. */
-    fun restHolidays(dates: List<LocalDate>) {
-        if (dates.isEmpty()) return
+    fun restHolidays(dates: List<LocalDate>) = gate(WriteKind.DAYS) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        if (dates.isEmpty()) return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.updateDays(dates.distinct()) { e ->
@@ -394,12 +396,30 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** The law's defaults with no money, to sort minutes before the pay setup is done. */
     private fun lawOnly(s: AppSettings) = PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(), weekStart = s.weekStart)
 
-    private val _selected = MutableStateFlow(Today.date())
+    // 2.0.0 [RVH-15] 검토 CAL-20: the day left picked, when 밤낮 was closed by the phone less than 6 hours ago in the month it shows.
+    private val _selected = MutableStateFlow(
+        runCatching { container.calendarPlace.day() }.getOrNull()?.takeIf { YearMonth.from(it) == container.shownMonth.month.value } ?: Today.date(),
+    )
     val selected: StateFlow<LocalDate> = _selected.asStateFlow()
 
     /** [NAV-01] The month on screen, shared with 돈 and 근무·급여. */
     val shownMonth: StateFlow<YearMonth> = container.shownMonth.month
     fun showMonth(month: YearMonth) = container.shownMonth.show(month)
+
+    /** [RVH-15] The day and month kept for opening there again; also when 밤낮 goes behind another app. */
+    fun keepPlace() {
+        runCatching { container.calendarPlace.keep(shownMonth.value, _selected.value) }
+    }
+
+    init {
+        viewModelScope.launch {
+            // collectLatest: a swipe through months writes once, when it stops.
+            combine(container.shownMonth.month, _selected) { m, d -> m to d }.drop(1).collectLatest {
+                kotlinx.coroutines.delay(PLACE_DEBOUNCE_MILLIS)
+                keepPlace()
+            }
+        }
+    }
 
     private val _paint = MutableStateFlow<PaintTool?>(null)
     val paint: StateFlow<PaintTool?> = _paint.asStateFlow()
@@ -737,6 +757,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     /** [CAL-19] The answer: [asCover] keeps the days off and adds a 대근 of the shift's hours; else the days become working days. */
     fun answerCover(ask: CoverAsk, asCover: Boolean, keep: Boolean) {
         _coverAsk.value = null
+        // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does.
+        gate(WriteKind.SHIFT) { coverWrite(ask, asCover, keep) }
+    }
+
+    private fun coverWrite(ask: CoverAsk, asCover: Boolean, keep: Boolean) {
         if (keep) coverAnswer = asCover
         val snap = snapshot.value ?: return
         if (!asCover) {
@@ -782,6 +807,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     private suspend fun restDayAlarms(dates: Collection<LocalDate>, before: ScheduleSnapshot): String {
         if (!settings.value.alarmsEnabled || !calendarAlarmsOn.value || dates.isEmpty()) return ""
         val was = dates.associateWith { before.resolver.entryOn(it) }
+        // 2.0.0 [RVH-08] 검토 CAL-12: the same shift painted again changes nothing; the bar comes at once instead of after 3 s.
+        fun DayEntry?.plain() = this?.takeUnless { it.isEmpty }
+        if (dates.all { schedule.entryNow(it).plain() == was[it].plain() }) return ""
         val after = kotlinx.coroutines.withTimeoutOrNull(3_000) {
             container.calendars.activeSnapshot.first { s -> dates.any { s.resolver.entryOn(it) != was[it] } }
         } ?: return ""
@@ -919,7 +947,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val alarms = restDayAlarms(before.keys, snap) // [ALRM-20]
             val what = if (before.size == 1) Fmt.monthDay(before.keys.first()) + "을" else "${before.size}일을"
             _lastPaint.value = PaintUndo(
-                (if (name == null) "$what 근무 주기대로 되돌렸어요" else "$what $name${Fmt.ro(name)} 칠했어요") + alarms,
+                (if (name == null) "$what ${snap.backDone}" else "$what $name${Fmt.ro(name)} 칠했어요") + alarms,
                 // Only the shift goes back: a memo or alarm changed on those days since stays.
                 undo = {
                     schedule.updateDays(before.keys.toList()) { now ->
@@ -1012,8 +1040,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * and sets the days in [clear] back to the pattern. Said back with one undo for both.
      */
     /** G 1.32 [WTYP-07] 명절 휴무: the order stops for [days] days from [date] and goes on after, with one undo. */
-    fun pausePattern(date: LocalDate, days: Int) {
-        val snap = snapshot.value ?: return
+    fun pausePattern(date: LocalDate, days: Int) = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        val snap = snapshot.value ?: return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule
             val before = snap.patterns
@@ -1024,9 +1052,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
-    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) {
-        val snap = snapshot.value ?: return
-        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return
+    fun realignFrom(date: LocalDate, step: Int, clear: List<LocalDate>) = gate(WriteKind.PATTERN) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
+        val snap = snapshot.value ?: return@gate
+        val rotation = snap.resolver.patternOn(date) as? WorkPattern.Rotation ?: return@gate
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val beforePatterns = snap.patterns
@@ -1068,7 +1096,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val name = (override as? ShiftOverride.Shift)?.let { snapshot.value?.typesById?.get(it.shiftTypeId)?.name }
                 ?: if (override == ShiftOverride.Off) "쉬는 날" else null
             _messages.emit(
-                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms) {
+                UndoMessage((if (name == null) "${Fmt.monthDay(date)}을 ${snap.backDone}" else "${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요") + alarms) {
                     schedule.restoreDay(date, before)
                 },
             )
@@ -1086,7 +1114,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = changeShift(date) { override }
             val alarms = restDayAlarms(listOf(date), snapshot) // [ALRM-20]
-            val name = type?.name ?: if (override == ShiftOverride.None) "패턴" else "쉬는 날"
+            val name = type?.name ?: if (override == ShiftOverride.None) snapshot.backWord else "쉬는 날" // [RVH-05] 검토 CAL-13
             val restore: suspend () -> Unit = { schedule.restoreDay(date, before) }
             val cover = type?.takeIf { isRosterRestDay(day, it) }?.let { coverKind(snapshot, it) }
             _messages.emit(
@@ -1100,7 +1128,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
                         schedule.restoreDay(date, before)
                         schedule.addExtra(date, ExtraText.cover(cover, type))
                     }
-                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요$alarms", undo = restore)
+                    override == ShiftOverride.None -> UndoMessage("${Fmt.monthDay(date)}을 ${snapshot.backDone}$alarms", undo = restore)
                     else -> UndoMessage("${Fmt.monthDay(date)}을 $name${Fmt.ro(name)} 바꿨어요$alarms", undo = restore)
                 },
             )
@@ -1108,7 +1136,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     }
 
     /** [EASE-11] What a shift on a day off is called here: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
-    internal fun coverWord(): String = if (container.settingsRepository.current.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
+    internal fun coverWord(): String = ExtraText.coverWord(container.settingsRepository.current.workStyle)
 
     /** [EXTRA-01] True when [type] would turn a day the roster gives off into a working day: likely a 대근. */
     fun isRosterRestDay(day: ResolvedDay, type: ShiftType): Boolean =
@@ -1240,7 +1268,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * undo for all of them. A 대근 copies the covered shift's hours; extra work with a start and a length is
      * that span; otherwise the kind's usual piece.
      */
-    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) {
+    fun applyQuickText(p: com.bamnat.core.schedule.QuickText.Proposal, snapshot: ScheduleSnapshot) = gate(WriteKind.DAYS) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = p.dates.associateWith { snapshot.resolver.entryOn(it) }
@@ -1335,7 +1363,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
      * [DAYW-11] Start, end and break of one day from the one time window. [DAYW-08] Always the planned shift,
      * before leave took its part: the resolver takes the leave off again from what is saved here.
      */
-    fun setDayTimes(date: LocalDate, start: LocalTime, end: LocalTime, breakMinutes: Int, type: ShiftType?) {
+    fun setDayTimes(date: LocalDate, start: LocalTime, end: LocalTime, breakMinutes: Int, type: ShiftType?) = gate(WriteKind.DAY_TIME) { // [RVH-22] 검토 CAL-27: the example calendar asks first, as every other write does
         viewModelScope.launch {
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             // The shift's own times are not "this day only": the day keeps following the shift type.
@@ -1511,7 +1539,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             val schedule = this@CalendarViewModel.schedule // [MCAL-01] an undo stays with the calendar it was made in
             val before = schedule.resetDay(date)
             if (before != null && !before.isEmpty) {
-                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 근무 주기대로 되돌렸어요") {
+                _messages.emit(UndoMessage("${Fmt.monthDay(date)}을 ${currentSnapshot().backDone}") {
                     schedule.restoreDay(date, before)
                 })
             }
@@ -1694,6 +1722,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         const val K_LIST = "list"
         const val K_FLOW_FOLDED = "flow_folded"
         const val K_HOLIDAYS = "holidays_kept"
+        const val PLACE_DEBOUNCE_MILLIS = 500L
         val FULL_LEAVE = Leave(LeaveKind.ANNUAL, 4)
     }
 }

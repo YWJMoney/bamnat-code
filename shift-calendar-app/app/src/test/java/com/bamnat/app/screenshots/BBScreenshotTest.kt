@@ -116,8 +116,7 @@ class BBScreenshotTest : ScreenshotBase() {
         val page = runBlocking { c.companyApi.company("c1") }
         var done = false
         vm.apply(page, page.setups.first { it.id == "s1" }, null, withPay = true, done = { done = true }, failed = { error(it) })
-        waitFor(300)
-        assertTrue(done)
+        assertTrue(waitUntil { done }) // [QA-11] the apply ends off the main thread
         assertEquals("s1", c.companyOf(b).store.applied.value?.setup)
         // [PAYG-01] 1.30 BA: the second calendar's pay way waits for its 기본급; 내 달력's has nothing waiting.
         assertEquals("s1", c.companyOf(b).pendingWays.pending.value?.setup)

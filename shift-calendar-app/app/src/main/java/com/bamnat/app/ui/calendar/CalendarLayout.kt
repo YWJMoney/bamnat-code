@@ -241,7 +241,7 @@ internal fun CalendarEditSheet(
         }
         androidx.compose.material3.HorizontalDivider(androidx.compose.ui.Modifier.padding(vertical = 8.dp))
         // [CVW-02] 1.35 달력 모양; 메모 줄 turns the cells' memo on with it.
-        CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v -> update { it.withCalendarView(v) } })
+        CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v -> update { it.withCalendarView(v) } }, style = settings.workStyle)
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.CAL_VIEW, androidx.compose.ui.Modifier.heightIn(min = 48.dp))
         },
     )

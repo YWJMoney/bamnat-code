@@ -58,6 +58,11 @@ data class ScheduleSnapshot(
      * the calendar draws from such a snapshot, and only inside it ([covers]).
      */
     val window: ClosedRange<LocalDate>? = null,
+    /**
+     * 2.0.0 [RVH-14] 검토 CAL-19: the 공휴일 table this was worked out with ([com.bamnat.app.remote.RemoteFilesStore.holidays]). A new
+     * table makes a snapshot unequal to the last, so what is remembered from it (the month's cells, the next alarm) is worked out again.
+     */
+    val holidays: Int = 0,
 ) {
     constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
         this(shiftTypes, listOfNotNull(pattern), entries, kinds)
@@ -145,7 +150,9 @@ class ScheduleRepository(
      * days it was long enough, on every edit and for every screen watching, to make taps stop answering.
      */
     val snapshot: Flow<ScheduleSnapshot> =
-        combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
+        combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged(), com.bamnat.app.remote.RemoteFilesStore.holidays) { t, p, e, k, h ->
+            ScheduleSnapshot(t, p, e, k, holidays = h)
+        }
             .flowOn(Dispatchers.Default)
             .onEach { lastSnapshot = it }
 
@@ -197,7 +204,8 @@ class ScheduleRepository(
         val extras = extraDao.inRange(from, to)
         val k = kinds.first()
         return kotlinx.coroutines.withContext(Dispatchers.Default) {
-            ScheduleSnapshot(types.map { it.toModel() }, periods.mapNotNull { it.toModel() }, assembleDays(rows, extras), k, window = window)
+            ScheduleSnapshot(types.map { it.toModel() }, periods.mapNotNull { it.toModel() }, assembleDays(rows, extras), k, window = window,
+                holidays = com.bamnat.app.remote.RemoteFilesStore.holidays.value)
         }
     }
 
@@ -480,6 +488,9 @@ class ScheduleRepository(
     }
 
     /** One day as stored, with its extra work; null when the day follows the pattern untouched. */
+    /** 2.0.0 [RVH-08] The day as stored now (not as the last snapshot had it). */
+    suspend fun entryNow(date: LocalDate): DayEntry? = readDay(date.toEpochDay())
+
     private suspend fun readDay(epochDay: Long): DayEntry? {
         val row = dayEntryDao.get(epochDay)
         val extras = extraDao.onDay(epochDay).map { it.toModel() }

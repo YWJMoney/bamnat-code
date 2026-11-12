@@ -42,6 +42,8 @@ object MonthImage {
         val name: String = "",
         /** 1.39 [SPREAD-05] The small '밤낮 근무 달력' in the corner (설정 › 데이터, or this sheet, turns it off). */
         val mark: Boolean = true,
+        /** 2.0.0 [RVH-20] 검토 CAL-25: what the picture is in the calendar's words ([com.bamnat.core.work.scheduleWord]): 근무표, 영업일, 일정. */
+        val word: String = "근무표",
     )
 
     /** A day's extras from the memos: the first line ([memo]) and a leading emoji ([sticker]). */
@@ -89,7 +91,7 @@ object MonthImage {
 
         text.textSize = 64f; text.typeface = bold
         val whose = look.name.trim().takeIf { it.isNotEmpty() }?.let { "${it.take(12)}의 " }.orEmpty()
-        c.drawText("$whose${month.year}년 ${month.monthValue}월 근무표", PAD, 110f, text)
+        c.drawText("$whose${month.year}년 ${month.monthValue}월 ${look.word}", PAD, 110f, text)
         // 1.39 [SPREAD-05] The app's name sits small in the lower right corner now (it said '교대' to every kind of work at the top).
         if (look.mark) drawMark(c, height)
 
@@ -233,9 +235,9 @@ object MonthImage {
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "image/png"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_TEXT, "${month.year}년 ${month.monthValue}월 근무표")
+            putExtra(Intent.EXTRA_TEXT, "${month.year}년 ${month.monthValue}월 ${look.word}")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
-        context.startActivity(Intent.createChooser(send, "근무표 공유"))
+        context.startActivity(Intent.createChooser(send, "${look.word} 공유"))
     }
 }

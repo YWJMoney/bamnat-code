@@ -849,6 +849,12 @@ private fun ReceivedDayCell(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
+            // 2.0.0 [RVH-11] 검토 CAL-16: the date's size stops at what its 20dp circle holds (as the month view's cells do), so
+            // at 150~200% text it stays inside; the memo line likewise.
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val dateSp = with(density) { minOf(13.sp.toDp(), 14.dp).toSp() }
+            // 2.0.0 [RVP-11][RVH-11] 10sp at least (검토 UIX-11), and capped so that at 200% it stays inside the cell (CAL-16).
+            val memoSp = with(density) { minOf(10.sp.toDp(), 11.dp).toSp() }
             Box(Modifier.fillMaxWidth().height(20.dp)) {
                 Box(
                     Modifier.align(Alignment.Center).size(20.dp).clip(CircleShape).background(if (isToday) scheme.primary else Color.Transparent),
@@ -859,7 +865,8 @@ private fun ReceivedDayCell(
                         style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = if (isToday) scheme.onPrimary else numberColor,
-                        fontSize = 13.sp,
+                        fontSize = dateSp,
+                        maxLines = 1,
                     )
                 }
                 if (together) {
@@ -875,8 +882,8 @@ private fun ReceivedDayCell(
             // [CAL-12] Without a memo, a job's start time says when the day begins.
             Text(
                 day?.memo ?: day?.extras?.firstOrNull { it.time != null }?.time?.substringBefore("-").orEmpty(),
-                fontSize = 10.sp, // 2.0.0 [RVP-11] (검토 UIX-11) 10sp at least
-                lineHeight = 11.sp,
+                fontSize = memoSp,
+                lineHeight = memoSp * 1.1f,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
