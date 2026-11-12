@@ -133,3 +133,99 @@ internal fun HeadQuickRound(q: HeadQuick, onPress: (String) -> Unit, modifier: M
         Text(q.face, maxLines = 1, style = MaterialTheme.typography.titleMedium, modifier = Modifier.clearAndSetSemantics {})
     }
 }
+
+/**
+ * 2.0.0 [RVP-45] 검토 UIX-01·U13-01·PC-55 (달력 위가 화면 절반: 달력 칩 줄 + 달 줄, 두 줄에 단추 모양이 다섯 가지) and HQ-29·HQ-22 (작품을
+ * 입은 접은 폭·글자 200%에서 '내 달력' 칩이 '내 달…', 큰 달 제목이 '2026'으로 작게 줄어듦): the calendar's head is one row on every width
+ * and text size: the calendar chip, ‹ 11월 ▾ ›, the work's 바로 단추, 오늘, 공유, the bell (알림함), 도구 and 나. What does not fit is never
+ * cut or squeezed: it turns into its icon or waits in 도구 / the calendar chip's list, in this order: the other calendars' faces and
+ * 같이 보기 (in the chip's list), 공유's word, the calendar's name (the chip keeps its face, read by name), the month's year, 공유 (in
+ * 도구), 오늘's word, 도구's word, the arrows (the month swipes, and TalkBack has 이전 달·다음 달 on the month).
+ *
+ * Widths are worked out from the text size the way [HeadQuickRoom] does (H's 3묶음), and the work's 바로 단추 take what is left, so
+ * there is one place that decides the row.
+ */
+internal data class HeadRoom(
+    /** The calendar chip says the calendar's name; else its face and ▾ only. */
+    val name: Boolean,
+    /** Other calendars' faces beside the chip, one tap to switch (a wide screen). */
+    val faces: Int,
+    /** 같이 보기 in words beside the chip (a wide screen, before another calendar sits there). */
+    val together: Boolean,
+    /** 공유 on the row: [WORDS], [ICON], or 0 (in 도구 only). */
+    val share: Int,
+    val todayWords: Boolean,
+    val toolsWords: Boolean,
+    /** The month without this year's number. */
+    val shortTitle: Boolean,
+    val arrows: Boolean,
+    /** The room the work's 바로 단추 take. */
+    val quick: HeadQuickRoom,
+    /** Even with everything folded the row is too narrow for the month at its size: it steps down one size (조건 12). */
+    val stepDown: Boolean = false,
+) {
+    companion object {
+        const val WORDS = 2
+        const val ICON = 1
+        private const val BUTTON = 48f
+        private const val PAD = 8f
+        /** The first steps of the fold (faces, 같이 보기, 공유's word, the calendar's name), which the work's word buttons go before. */
+        private const val SOFT_STEPS = 4
+
+        /**
+         * The row for a head [widthDp] wide at [fontScale] (capped at 2) whose month is [titleSp] big: [quick] 바로 단추, the bell
+         * when [bell], 나 when [me], [others] other calendars, 같이 보기 when [together], 공유 when [share], and [nameChars] letters
+         * in the calendar's name.
+         */
+        fun of(
+            widthDp: Float, fontScale: Float, titleSp: Float, quick: Int = 0, bell: Boolean = false, me: Boolean = true,
+            others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3,
+        ): HeadRoom {
+            val fs = fontScale.coerceAtMost(2f)
+            val wide = widthDp >= 600f
+            var r = HeadRoom(
+                name = wide, faces = if (wide) minOf(others, 2) else 0, together = wide && together && others == 0,
+                share = if (share) WORDS else 0, todayWords = true, toolsWords = true, shortTitle = false, arrows = true, quick = HeadQuickRoom.NONE,
+            )
+            fun need(x: HeadRoom, sp: Float = titleSp): Float {
+                var w = PAD
+                w += 52f + (if (x.name) 6f + 14f * fs * nameChars else 0f) // the chip: face, name, ▾
+                w += x.faces * (42f + 48f * fs)
+                if (x.together) w += 44f + 56f * fs
+                if (x.arrows) w += 2 * BUTTON
+                w += sp * fs * (if (x.shortTitle) 2.15f else 4.65f) + 32f // the month and ▾
+                w += if (x.todayWords) maxOf(58f, 24f + 28f * fs) else BUTTON
+                w += when (x.share) { WORDS -> maxOf(58f, 52f + 28f * fs); ICON -> BUTTON; else -> 0f }
+                if (bell) w += BUTTON
+                w += if (x.toolsWords) 46f + 32f * fs else BUTTON
+                if (me) w += BUTTON
+                return w
+            }
+            val steps: List<(HeadRoom) -> HeadRoom> = listOf(
+                { it.copy(faces = 0) }, { it.copy(together = false) }, { it.copy(share = minOf(it.share, ICON)) }, { it.copy(name = false) },
+                { it.copy(shortTitle = true) }, { it.copy(share = 0) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
+                { it.copy(arrows = false) },
+            )
+            // [RVH-42] PC-29: the work's own buttons with their words are worth more than the other calendars' faces, 같이 보기, 공유's
+            // word and the calendar's name; when one fits with its words once those are folded, the row stops there.
+            val wordButton = 28f + 72f * fs
+            val start = r
+            var i = 0
+            if (quick > 0) {
+                while (need(r) + wordButton > widthDp && i < SOFT_STEPS) r = steps[i++](r)
+                if (need(r) + wordButton > widthDp) {
+                    r = start
+                    i = 0
+                }
+            }
+            // Else room for one round 바로 단추 at least, before the work's buttons share what is left.
+            val least = if (quick > 0 && need(r) + wordButton > widthDp) BUTTON else if (quick > 0) wordButton else 0f
+            while (need(r) + least > widthDp && i < steps.size) r = steps[i++](r)
+            val stepDown = need(r) + minOf(least, if (quick > 0) BUTTON else 0f) > widthDp
+            if (quick <= 0) return r.copy(stepDown = stepDown)
+            val free = widthDp - need(r)
+            val words = (free / (28f + 72f * fs)).toInt().coerceIn(0, minOf(HeadQuick.ROW_MAX, quick))
+            return r.copy(quick = HeadQuickRoom(words, round = words == 0, tight = !r.toolsWords), stepDown = stepDown)
+        }
+    }
+}

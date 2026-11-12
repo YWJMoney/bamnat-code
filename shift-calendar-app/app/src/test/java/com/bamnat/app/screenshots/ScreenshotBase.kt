@@ -111,6 +111,9 @@ abstract class ScreenshotBase {
         // 1.39 [FLOW-03] Nor a setup's '이번 달이 채워졌어요' line from a shot that went through setup (kept in memory, so it leaked
         // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
         com.bamnat.app.ui.calendar.SetupFill.close()
+        // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
+        com.bamnat.app.ui.calendar.HeadBell.atMe = false
+        com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
         // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()

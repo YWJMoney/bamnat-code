@@ -641,25 +641,6 @@ internal fun TodaySalesCard(today: LocalDate, sales: List<DailySales>, onWrite: 
     }
 }
 
-/** [CAL-13] The added calendar on screen does not ring; one line says so and turns it back on. */
-@Composable
-internal fun CalendarAlarmsOffLine(name: String, onTurnOn: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onTurnOn,
-        shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        modifier = modifier.fillMaxWidth().heightIn(min = 48.dp),
-    ) {
-        Row(Modifier.padding(start = 12.dp, end = 8.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.AlarmOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Text("‘$name’ 달력은 알람이 꺼져 있어요", style = MaterialTheme.typography.bodyMedium, maxLines = 3,
-                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-            Text("켜기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp))
-        }
-    }
-}
-
 @Composable
 private fun VersusLine(text: String, modifier: Modifier = Modifier) {
     Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)

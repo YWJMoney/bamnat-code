@@ -148,7 +148,7 @@ class DesignScreenshotTest : ScreenshotBase() {
 
     /**
      * 2.0.0 [RVP-01] (총괄 #445 검토, 조건 12) The nudge card at the folded phone's width with the letters at 200%: a long line, its
-     * button and its X. The words are never cut ('…'); with big letters the button goes under them. Light and dark.
+     * button and its X. The words are never cut ('…'); with big letters the button goes under them when beside it they would take more than two lines (갈래 P 3/3). Light and dark.
      */
     @Composable private fun Nudges() {
         com.bamnat.app.ui.components.NudgeCard("잠금 화면에 알람 화면이 안 떠요. 알람이 울려도 모를 수 있어요", tone = Tone.Caution,

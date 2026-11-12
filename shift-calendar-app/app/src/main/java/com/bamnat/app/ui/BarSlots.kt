@@ -3,6 +3,7 @@ package com.bamnat.app.ui
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material3.BadgedBox
@@ -53,17 +54,36 @@ internal val LocalMe = compositionLocalOf { MeState() }
 
 /** [NAV2-02] The round 나 at the end of a tab's top row; nothing when the bar already holds every tab. */
 @Composable
-internal fun MeButton(rail: Boolean = false) {
+internal fun MeButton(
+    rail: Boolean = false,
+    /**
+     * 2.0.0 [RVP-43] 검토 HQ-49 (사용자 11-12 "나(이모지) 설정 등이 있는 곳에 알림을 넣고"): the calendar's 알림함 in 나 when the bell
+     * sits here ([com.bamnat.app.ui.calendar.HeadBell.atMe]); its count joins 나's mark and its first row opens the 알림함.
+     */
+    bell: com.bamnat.app.ui.calendar.NoticeStackState? = null,
+) {
     val me = LocalMe.current
     if (!me.show || me.inRail != rail) return
     var open by remember { mutableStateOf(false) }
+    val waiting = bell?.inBell ?: 0
+    val marks = me.unread + waiting
     Box {
         IconButton(onClick = { open = true }) {
-            if (me.unread > 0) BadgedBox(badge = { IconCountBadge(me.unread, "문의에 새 답 ${me.unread}개", cap = 9) }) {
+            if (marks > 0) BadgedBox(badge = {
+                IconCountBadge(marks, listOfNotNull("알림 ${waiting}개".takeIf { waiting > 0 }, "문의에 새 답 ${me.unread}개".takeIf { me.unread > 0 }).joinToString(", "), cap = 9)
+            }) {
                 Icon(Icons.Outlined.AccountCircle, ME_BUTTON)
             } else Icon(Icons.Outlined.AccountCircle, ME_BUTTON)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (bell != null) {
+                DropdownMenuItem(
+                    text = { Text(if (waiting > 0) "알림 $waiting" else "알림") },
+                    leadingIcon = { Icon(Icons.Outlined.Notifications, null) },
+                    onClick = { open = false; bell.openSheet(null) },
+                )
+                HorizontalDivider()
+            }
             me.missing.forEach { p ->
                 DropdownMenuItem(
                     text = { Text(p.label + if (p.key == com.bamnat.core.layout.TabOrder.SETTINGS && me.unread > 0) " · 새 답 ${me.unread}" else "") },
