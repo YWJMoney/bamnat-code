@@ -103,6 +103,10 @@ class AppContainer(context: Context) {
         calendars.repository(id).live.map { s -> com.bamnat.core.memo.ShiftMemoTime.shiftOf(s.resolver) }
     })
     val sleepRepository = com.bamnat.app.data.SleepRepository(database)
+    /** 1.39.1 [R391-04] Removes a 소리 클립 by its file name. */
+    val sleepClipDeleter: (String) -> Unit = { name ->
+        java.io.File(java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR), name).delete()
+    }
     /** 1.38 [P3-01] Phase 3: 리더 팀 근무표와 사업장 급여 대장 (DB 27), used only while their flags are on. */
     val phaseThree = com.bamnat.app.data.PhaseThreeStore(database).also { it.prefsOf = { appContext.getSharedPreferences("work_plans", android.content.Context.MODE_PRIVATE) } }
     /** [ONBOARD-01] What this phone was told about on the first-start consent pages. */
@@ -546,6 +550,8 @@ class AppContainer(context: Context) {
         // 1.39 [OBS2-08]: 유형별 흐름·기능과 머묾 from 처리방침 3.12's date on (사용자 2026-11-08 '유형별·기능 둘만').
         com.bamnat.app.diag.UsageStats.kindAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KIND) }
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
+        // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
+        com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
         com.bamnat.core.guide.FeatureRegistry.flagOn = { flags.on(it) }
     }
@@ -632,6 +638,13 @@ class AppContainer(context: Context) {
         val every = if (!opened) com.bamnat.app.tier.RemoteConfigStore.EVERY
             else if (BuildConfig.DEBUG) java.time.Duration.ZERO else com.bamnat.app.tier.RemoteConfigStore.ON_OPEN
         runCatching { remoteConfig.refresh(tierApi, force = force, every = every) }
+        // 1.39.1 [R391-11] (검토 PRO-08) Play's purchases first, right after the switch: read last, the few seconds after a renewal
+        // showed the app as free (locks flashing, 휴대폰 캘린더's shifts taken off and written again).
+        // Play is asked only once paying is possible, or for a subscription this phone already knew.
+        if (flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) || proStore.current.sub != null) {
+            runCatching { billing.refresh() }
+            featureGate.refresh()
+        }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
@@ -642,8 +655,6 @@ class AppContainer(context: Context) {
         runCatching { sendConsent() }
         // [INVITE-03] A friend's next day and the inviter's counts; not before the calendar has drawn (afterFirstFrame).
         runCatching { if (laterStarted.get()) invites.sync(force) }
-        // Play is asked only once paying is possible, or for a subscription this phone already knew.
-        if (flags.on(com.bamnat.core.flags.FlagCatalog.BILLING) || proStore.current.sub != null) runCatching { billing.refresh() }
         featureGate.refresh()
         // [STAT-04] A day with a paid subscription counts toward the G2 gate (구독 사용자 비율).
         if (featureGate.state.value.access.reason == com.bamnat.core.tier.ProReason.SUBSCRIPTION) {
@@ -1039,6 +1050,13 @@ class AppContainer(context: Context) {
             delay(LATER_SECOND_MILLIS)
             // F 1.32 [TAXP-03] 연말정산 매주 다시 계산 (프로 구독, 10월~1월, its switch on the card).
             launch { runCatching { com.bamnat.app.tax.YearEndWeekly.check(this@AppContainer) } }
+            // 1.39.1 [R391-04] 검토 ALM-03: 소리 클립 7일, also for a phone that stopped measuring (not a named job: one pass).
+            launch {
+                runCatching {
+                    sleepRepository.sweepClips(java.io.File(appContext.filesDir, com.bamnat.app.sleep.SleepRecordService.CLIP_DIR),
+                        com.bamnat.app.sleep.SleepRecordService.KEEP_DAYS)
+                }
+            }
             // [WORK-02] Any change to the booked jobs re-plans the next job reminder.
             // [SLP-15] So does the 나갈 돈·받을 돈 switch.
             keep("money") {
@@ -1057,10 +1075,11 @@ class AppContainer(context: Context) {
             // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
             keep("memoschedule") {
                 // 1.39 [TASK-44] A repeat changed or a day finished moves the next ring too.
+                // 1.39.1 [R391-06] So does a one-off memo marked 끝냄.
                 memoRepository.memos.map { list -> list.filter { it.reminder != null } }
                     .distinctUntilChanged { a, b ->
-                        a.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) } ==
-                            b.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.skips, it.inTrash) }
+                        a.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.doneAtMillis, it.skips, it.inTrash) } ==
+                            b.map { listOf(it.id, it.reminder, it.repeat, it.date, it.doneDays, it.doneAtMillis, it.skips, it.inTrash) }
                     }
                     .debounce(300)
                     .collect { list ->

@@ -2,6 +2,8 @@ package com.bamnat.app.widget
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -61,20 +63,22 @@ import com.bamnat.core.time.Today
 class TodayWidget : GlanceAppWidget() {
     // [SLP-14] Laid out for its real size, so a short widget keeps the line of 오늘의 흐름 over 내일.
     override val sizeMode: SizeMode = SizeMode.Exact
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
-        provideContent { WidgetLookTheme { WidgetFrame { TodayContent(data) } } }
+        val first = WidgetData.load(context)
+        provideContent { val data = widgetData(context, first); WidgetLookTheme { WidgetFrame { TodayContent(data) } } }
     }
 }
 
 class WeekWidget : GlanceAppWidget() {
     // [J133-32] 순번 712: laid out for its real size, so the 4×1 it is put down at keeps its marks whole.
     override val sizeMode: SizeMode = SizeMode.Exact
+    override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
-        provideContent { WidgetLookTheme { WidgetFrame { WeekContent(data) } } }
+        val first = WidgetData.load(context)
+        provideContent { val data = widgetData(context, first); WidgetLookTheme { WidgetFrame { WeekContent(data) } } }
     }
 }
 
@@ -83,8 +87,9 @@ class MonthWidget : GlanceAppWidget() {
     override val stateDefinition = androidx.glance.state.PreferencesGlanceStateDefinition
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = WidgetData.load(context)
+        val first = WidgetData.load(context)
         provideContent {
+            val data = widgetData(context, first)
             // G 1.32 [WTYP-05] 607 A month turned last month counts from the month it was turned in, so on the 1st the
             // widget comes back to the new month instead of staying a month ahead or behind.
             val base = androidx.glance.currentState(MonthPageAction.BASE)
@@ -703,3 +708,21 @@ private fun small(color: ColorProvider) = TextStyle(color = color, fontSize = ws
 internal fun widgetFace(): com.bamnat.core.recipe.PartStyle = widgetPart("widget").let { com.bamnat.core.recipe.PartStyle(font = it.font, italic = it.italic, deco = it.deco) }
 
 private fun onColor(background: Color): Color = contentColorOn(background)
+
+/**
+ * 1.39.1 [R391-03] (검토 ALM-02) A running widget session only recomposes on update, it does not call provideGlance again
+ * for about 45초, so a second change soon after the first (근무 칸을 이어 칠함, 출근 뒤 바로 퇴근) showed the first one.
+ * [WidgetRefresher] stamps each widget's state; the data is read again inside the composition for each new stamp, as
+ * [MoneyWidget] and [TaskWidget] already do.
+ */
+internal val WIDGET_DATA_STAMP = androidx.datastore.preferences.core.longPreferencesKey("data_stamp")
+
+@Composable
+internal fun widgetData(context: Context, first: WidgetData): WidgetData {
+    val stamp = androidx.glance.currentState(WIDGET_DATA_STAMP) ?: 0L
+    var data by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(first) }
+    androidx.compose.runtime.LaunchedEffect(stamp) {
+        if (stamp != 0L) runCatching { WidgetData.load(context) }.getOrNull()?.let { data = it }
+    }
+    return data
+}

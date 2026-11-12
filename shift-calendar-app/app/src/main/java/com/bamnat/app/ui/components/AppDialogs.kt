@@ -54,6 +54,7 @@ fun AlertDialog(
     properties: DialogProperties = DialogProperties(),
 ) {
     val d = LocalDensity.current
+    StaysUnderTheLock()
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = keep(d, confirmButton),
@@ -75,7 +76,29 @@ fun AlertDialog(
 @Composable
 fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogProperties(), content: @Composable () -> Unit) {
     val d = LocalDensity.current
+    StaysUnderTheLock()
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d, content))
+}
+
+/**
+ * 1.39.1 [R391-10] (검토 UIX-41) A 창 or 시트 is a window over the activity: drawn inside the activity, 앱 잠금's cover stayed under
+ * it, and 급여 대장 or 돈 적기 left open showed over the cover. The cover is a window of its own now ([LockWindow]); one opened
+ * while locked (a notice's 돈 적기) tells it to come back on top.
+ */
+@Composable
+internal fun StaysUnderTheLock() {
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.bamnat.app.AppLock.windowOpened() }
+}
+
+/** 1.39.1 [R391-10] 앱 잠금's cover as a full-screen window over every 창 and 시트; [onBack] leaves the app. */
+@Composable
+fun LockWindow(onBack: () -> Unit, content: @Composable () -> Unit) {
+    val d = LocalDensity.current
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
+        content = keep(d, content),
+    )
 }
 
 /** The current context with a Korean locale, for Material parts that word themselves (the date picker). */
@@ -106,6 +129,7 @@ fun DatePickerDialog(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val d = LocalDensity.current
+    StaysUnderTheLock()
     androidx.compose.material3.DatePickerDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = keep(d, confirmButton),

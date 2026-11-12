@@ -33,6 +33,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -207,10 +208,14 @@ internal fun Wheel(
         }
     }
     val haptics = LocalHapticFeedback.current
+    // 1.39.1 [R391-01] The newest [onValue], not the one from the first frame: a caller whose lambda reads a plain
+    // value (the alarm window's '시작 기준' wheels read the minutes of that frame) would otherwise write an old value
+    // back when the other wheel turns.
+    val latest by rememberUpdatedState(onValue)
     LaunchedEffect(state) {
         var first = true
         snapshotFlow { selected }.collect {
-            onValue(Math.floorMod(it, count))
+            latest(Math.floorMod(it, count))
             // [VIS-02] A light tick for each number that passes the middle, like a real wheel.
             if (!first) haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
             first = false

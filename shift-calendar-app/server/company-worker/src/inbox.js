@@ -68,7 +68,8 @@ export function grams(text) {
     if (!w) continue;
     const bare = [...w].length > 2 ? w.replace(TAIL, "") : w;
     if (bare) w = bare;
-    w = SAME_WORD[w] ?? w;
+    // [RVD-03] Own words only: 'constructor', 'tostring' … are names every object has, and one in an inquiry broke the whole ledger.
+    if (Object.hasOwn(SAME_WORD, w)) w = SAME_WORD[w];
     words.add(w);
     const c = [...w];
     if (c.length === 1) pairs.add(w);
@@ -389,6 +390,9 @@ export async function inboxAnswer(env, id, text, now, by, pile = "") {
       return false;
     }
   }
+  // [RVD-10] 검토 SVC-65: 같은 문의에 같은 답이 이미 갔거나 보류 중이면 다시 보내지 않아요(결과 덩어리를 두 번 붙여 넣어도 한 번).
+  if (await one(env, `SELECT 1 AS x FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ?
+      UNION ALL SELECT 1 FROM held_replies WHERE inquiry_id = ? AND text = ? LIMIT 1`, id, t, id, t)) return false;
   // 1.38 [DESK-09] Claude 열쇠의 답은 10분 보류. 1.39 [LOOP-12] 정리함 더미(pile)를 같이 적어 '믿을수록 더 맡기기'를 세요.
   if (env.actor?.key) return (await one(env, "SELECT id FROM inquiries WHERE id = ?", id)) ? holdReply(env, { id }, t, { pile }, now) : false;
   const r = await run(env, "UPDATE inquiries SET status = 'answered', updated_at = ?, assignee = COALESCE(assignee, ?), assignee_name = CASE WHEN assignee IS NULL THEN ? ELSE assignee_name END WHERE id = ?",
@@ -479,11 +483,13 @@ export async function handoff(env, params, now) {
   const askLine = (q) => {
     const c = classify(q, k);
     const m = c.match;
-    const guess = m?.type === "dev" ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ${m.id} ‘${m.title}’(${DEV.statuses[m.status] ?? m.status}${m.releasedIn ? ` ${m.releasedIn}` : ""})`
+    // [RVD-07] 검토 ADMX-06: 사람이 먼저 봐야 하는 문의는 '새 문제·개선'과 추천 답 대신 그 이유를 실어요(Claude가 답을 적지 않게).
+    const owner = askOwner(q.kind, q.text);
+    const guess = owner ? ` · 관리자 확인(${owner.name}): 답을 적지 말고 사용자에게 먼저 물어요` : m?.type === "dev" ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ${m.id} ‘${m.title}’(${DEV.statuses[m.status] ?? m.status}${m.releasedIn ? ` ${m.releasedIn}` : ""})`
       : m ? ` · 서버 판단: ${PILE_NAMES[c.pile]} ≈ ‘${oneLine(m.title, 60)}’` : " · 서버 판단: 새 문제·개선";
     out.push(`- q${q.id} · ${KIND_WORDS[q.kind] ?? q.kind} · 받음 ${handoffTime(q.at)}${q.info?.app ? ` · 앱 ${String(q.info.app).split(" ")[0]}` : ""}${q.same ? ` · 나도 그래요 ${q.same}` : ""}${q.handedIn ? ` · 전에 넘김 ${q.handedIn}` : ""}${guess}`);
     out.push(`  문의: ${oneLine(q.text, 600)}`);
-    if (c.reply) out.push(`  추천 답: ${oneLine(c.reply, 400)}`);
+    if (c.reply && !owner) out.push(`  추천 답: ${oneLine(c.reply, 400)}`);
   };
   out.push(`## 새로 들어온 문의 (${last ? `지난 묶음 ${last.id} 뒤` : "처음"}, ${fresh.length}건)`, "");
   fresh.forEach(askLine);
@@ -701,8 +707,8 @@ export async function applyResult(request, env, now) {
     l.warn = [!has("shipReply", "ship_reply") && "출시 답이 없어요(기본 답이 가요)", !has("news", "news") && "공지 한 줄이 없어요"].filter(Boolean);
   }
   const batchLine = String(body.text ?? "").match(BATCH_LINE)?.[1] ?? null;
-  const batchRow = batchLine ? await one(env, "SELECT id, at FROM handoffs WHERE id = ?", batchLine)
-    : await one(env, "SELECT id, at FROM handoffs WHERE result_at IS NULL ORDER BY at DESC LIMIT 1").catch(() => null);
+  const batchRow = batchLine ? await one(env, "SELECT id, at, result_at FROM handoffs WHERE id = ?", batchLine)
+    : await one(env, "SELECT id, at, result_at FROM handoffs WHERE result_at IS NULL ORDER BY at DESC LIMIT 1").catch(() => null);
   const askIds = [...new Set(askLines.flatMap((a) => a.ids))];
   const asked = new Map();
   for (let i = 0; i < askIds.length; i += 90) {
@@ -713,11 +719,23 @@ export async function applyResult(request, env, now) {
   const items = new Set(rows.map((r) => r.id));
   const linkTo = [...new Set(askLines.filter((a) => a.do === "link" && a.item).map((a) => a.item))].filter((id) => !items.has(id));
   for (const r of linkTo.length ? await all(env, `SELECT id FROM dev_items WHERE deleted_at IS NULL AND id IN (${linkTo.map(() => "?").join(", ")})`, ...linkTo) : []) items.add(r.id);
-  const askPlan = askLines.map((a) => ({ ...a, previews: a.ids.map((id) => oneLine(asked.get(id)?.first, 60)),
-    problem: a.ids.some((id) => !asked.has(id)) ? "없는 문의" : a.do === "reply" && !a.text ? "답이 비어 있어요"
-      : a.do === "link" && !(a.item && items.has(a.item)) ? "없는 개발사항" : a.do === "dev" && !a.title.trim() ? "제목이 없어요" : null }));
-  const batchInfo = { id: batchRow?.id ?? batchLine, known: Boolean(batchRow), at: batchRow ? iso(batchRow.at) : null };
-  if (body.dry === true) return json({ lines: plan, asks: askPlan, batch: batchInfo });
+  // [RVD-07] 검토 ADMX-07: 붙여 넣은 답도 사람 없이 가는 답과 같은 문을 지나요. 사람이 먼저 볼 문의에 가는 답, AI·보안 말이 든 답은
+  // 미리 보기에 이유가 보이고, '그래도 보내기'(risky) 없이는 가지 않아요.
+  const askPlan = askLines.map((a) => {
+    const owner = a.text ? a.ids.map((id) => asked.get(id)).filter(Boolean).map((q) => askOwner(q.kind, q.first)?.name).find(Boolean) : null;
+    return { ...a, previews: a.ids.map((id) => oneLine(asked.get(id)?.first, 60)),
+      ...(a.text && (owner || replyRisk(a.text)) ? { risk: owner ? `관리자 확인: ${owner}` : replyRisk(a.text) } : {}),
+      problem: a.ids.some((id) => !asked.has(id)) ? "없는 문의" : a.do === "reply" && !a.text ? "답이 비어 있어요"
+        : a.do === "link" && !(a.item && items.has(a.item)) ? "없는 개발사항" : a.do === "dev" && !a.title.trim() ? "제목이 없어요" : null };
+  });
+  for (const l of plan) if (l.text && replyRisk(l.text)) l.risk = replyRisk(l.text);
+  // 읽지 못한 줄: q·d로 시작하는데 모양이 틀린 줄은 말없이 버리지 않고 보여 줘요.
+  const unread = String(body.text ?? "").split(/\r?\n/).map((l) => l.trim()).filter((l) => /^[-*•]?\s*[qd][A-Za-z0-9]{2,}\b/.test(l) && !RESULT.test(l) && !ASK_LINE.test(l)).slice(0, 20);
+  // [RVD-10] 검토 SVC-65: 이미 반영한 묶음을 다시 붙여 넣으면 답이 두 번 가요. 묶음이 반영됐으면 알려 주고, again 없이는 멈춰요.
+  const batchInfo = { id: batchRow?.id ?? batchLine, known: Boolean(batchRow), at: batchRow ? iso(batchRow.at) : null, appliedAt: batchRow?.result_at ? iso(batchRow.result_at) : null };
+  if (body.dry === true) return json({ lines: plan, asks: askPlan, batch: batchInfo, unread });
+  if (batchLine && batchRow?.result_at && body.again !== true) return json({ error: "already_applied", batch: batchInfo }, 409);
+  const risky = body.risky === true;
   if (plan.some((l) => !l.problem && l.status && l.status !== "doing" && l.status !== "todo") && !can(env.actor, "devStatus", "edit")) return json({ error: "no_permission", area: "devStatus" }, 403);
   if (plan.some((l) => !l.problem && (l.note || l.shipReply || l.news)) && !can(env.actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
   let changed = 0;
@@ -739,7 +757,7 @@ export async function applyResult(request, env, now) {
       if (Object.keys(extra).length) prepared++;
     }
     if (!l.status) continue;
-    if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text)) {
+    if (body.notify === true && (l.status === "done" || l.status === "rejected" || l.text) && !(l.risk && !risky)) {
       const waitingOnes = await all(env, `SELECT i.id FROM dev_links k JOIN inquiries i ON i.id = k.inquiry_id WHERE k.item_id = ? AND i.status != 'closed'`, l.id);
       // 1.37 [ADM2-02] 'Play 업데이트'는 그 판이 나갔을 때만. 나가기 전이면 "업데이트에 들어가요", 판을 저장할 때 다시 알려요.
       const text = l.text || (l.status === "done"
@@ -752,7 +770,10 @@ export async function applyResult(request, env, now) {
   }
   // 1.37 [ADM2-08] 문의 lines, after the 개발사항 ones (a line may tie a question to an item the block just set).
   const actions = [];
-  for (const a of askPlan.filter((x) => !x.problem)) {
+  const held = askPlan.filter((x) => !x.problem && x.risk && !risky).length + plan.filter((l) => !l.problem && l.risk && !risky).length;
+  // A held line still ties or makes its 개발사항; only its answer waits (a 답 line waits whole).
+  for (const raw of askPlan.filter((x) => !x.problem && !(x.risk && !risky && x.do === "reply"))) {
+    const a = raw.risk && !risky ? { ...raw, text: "" } : raw;
     if (a.do === "dev") actions.push({ do: "dev", ids: a.ids, title: a.title, body: "", ...(a.text ? { text: a.text } : {}) });
     // 개발 with an answer is 정리함's "reply with item": tied and answered.
     else for (const id of a.ids) actions.push({ do: a.do === "link" && a.text ? "reply" : a.do, id, ...(a.item ? { item: a.item } : {}), ...(a.text ? { text: a.text } : {}) });
@@ -770,7 +791,8 @@ export async function applyResult(request, env, now) {
   if (batchRow) await run(env, "UPDATE handoffs SET result_at = ?, result = ? WHERE id = ?", now, JSON.stringify(summary), batchRow.id);
   await audit(env, now, "dev_result", `${changed}개`, [batchRow && `묶음 ${batchRow.id}`, noted && `개발 기록 ${noted}줄`, prepared && `출시 안내 ${prepared}개`, answered && `문의 ${answered}건에 답`, sorted.replied && `문의 줄 답 ${sorted.replied}`,
     sorted.created.length && `새 개발사항 ${sorted.created.length}`].filter(Boolean).join(" · "));
-  return json({ lines: plan, asks: askPlan, batch: batchInfo, changed, noted, prepared, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
+  if (held) await audit(env, now, "dev_result_held", `${held}줄`, "사람이 먼저 볼 문의·위험한 답이라 보내지 않음");
+  return json({ lines: plan, asks: askPlan, batch: batchInfo, unread, held, changed, noted, prepared, answered: answered + sorted.replied, linked: sorted.linked, created: sorted.created, skipped: sorted.skipped });
 }
 
 /** The routes under /api/admin/inquiries/sort and /handoff; null for any other path. */

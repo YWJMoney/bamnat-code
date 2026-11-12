@@ -332,6 +332,7 @@ class SetupViewModel(
             runCatching {
                 c.backupManager.restore(json)
                 c.telemetry.event("setup_restore")
+                com.bamnat.app.data.DiscoverStore.get(c.appContext).restored() // 1.40 [DISC-03]
                 // A backup from before the kind of work was asked, without a pattern: the setup goes on.
                 if (c.settingsRepository.current.setupDone) store.clear()
                 // [SETUP-16] 1.37 PC f42b2eba HIGH-2: a backup made while its first setup was put off goes on here, from its step, and says so.
@@ -618,8 +619,15 @@ class SetupViewModel(
         rosterJob = viewModelScope.launch {
             val started = System.nanoTime()
             // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): a reading that takes too long ends with why and what to do.
-            val r = kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) { how(rosterCodes()) }
-                ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
+            // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
+            val r = try {
+                kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) { how(rosterCodes()) }
+                    ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.FILE, com.bamnat.app.pay.OcrModel.why(e).text)
+            }
             _rosterReading.value = false
             // The steps of the reading, for 진단 (no words of the photo): how long, how many ways, words and lines found.
             runCatching {

@@ -872,6 +872,8 @@ function adminApp(L, BUILD, M) {
       if (name === "audit") jobs.push(api(`/audit${auditQuery()}`).then(keep((d) => { S.data.audit = d; })));
       // [ADMUX-32] 운영 in tabs of 출시: 앱 공지 and 이달 할 일 (its 기능 스위치 are flags in 기능 관리 now).
       if (name === "notices") jobs.push(api("/notices").then(keep((d) => { S.data.notices = d; })));
+      // 1.40 [PAYP-19] 옛 앱 급여 끊기, under 앱 공지 (its notice goes to apps up to 1.38 by itself).
+      if (name === "notices") jobs.push(api("/old-pay").then(keep((d) => { S.data.oldPay = d; })).catch(() => {}));
       if (name === "chores") jobs.push(api(`/ops${S.opsMonth ? `?month=${S.opsMonth}` : ""}`).then(keep((d) => { S.data.ops = d; })));
       if (name === "metrics" || name === "gates") {
         const range = S.metricFrom && S.metricTo ? `from=${S.metricFrom}&to=${S.metricTo}` : `days=${S.metricDays}`;
@@ -922,9 +924,15 @@ function adminApp(L, BUILD, M) {
       // 1.39 [STAT2-01] 숫자 › 한눈에(glance.js glanceLoads).
       for (const [path, k] of V.glanceLoads[name]?.(id) ?? []) jobs.push(api(path).then(keep((d) => { S.data[k] = d; })));
       // [ADM3-11] 문의 하나를 열면 그 휴대폰(사람 옆 패널), [ADM3-34] 개발사항 하나를 열면 이야기: 화면을 기다리게 하지 않아요.
-      if (name === "inquiries" && id && can("inquiries") && S.data.person?.for !== id) {
-        S.data.person = { for: id, loading: true };
-        api(`/person?inquiry=${encodeURIComponent(id)}`).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
+      // 1.40 [RVD-06] 검토 ADM-01: 미리 데우기(warm)는 남은 답만 '묵은 것'으로 채우고, 못 찾아도 아무것도 적지 않아요. 예전엔 그때 적은
+      // '못 불러옴'이 '이미 읽음'으로 여겨져 진짜 읽기를 건너뛰었어요. 묵은 것·못 불러온 것은 다음 읽기에서 다시 읽어요.
+      const person = S.data.person;
+      const personPath = `/person?inquiry=${encodeURIComponent(id)}`;
+      if (name === "inquiries" && id && can("inquiries") && S.warming) {
+        if (person?.for !== id) peek(personPath).then((kept) => { if (kept && S.data.person?.for !== id) S.data.person = { for: id, d: kept, stale: true }; }, () => {});
+      } else if (name === "inquiries" && id && can("inquiries") && (person?.for !== id || person.stale || (person.d === null && !person.loading))) {
+        S.data.person = person?.for === id && person.d ? { ...person, stale: false } : { for: id, loading: true };
+        api(personPath).then((d) => { S.data.person = { for: id, d }; }, () => { S.data.person = { for: id, d: null }; })
           .then(() => { if (S.route.name === "inquiries" && S.route.id === id) render({ keepScroll: true }); });
       }
       // 1.38 [ADM3-10] 장부 맨 위 단계 막대(흐름 한 줄).
@@ -2024,11 +2032,14 @@ function adminApp(L, BUILD, M) {
     const res = S.sortResult;
     const ASK_DO = { reply: "답", link: "개발사항에 묶고 답", dev: "새 개발사항", skip: "빼 두기" };
     const askRows = (res?.asks ?? []).map((a) => `<li>${a.ids.length > 1 ? `문의 ${a.ids.length}건` : "문의"} · ${esc(ASK_DO[a.do] ?? a.do)}${a.item ? ` ${esc(a.item)}` : ""}${a.title ? ` ‘${esc(a.title)}’` : ""}
-        <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}</li>`).join("");
+        <small>${esc(a.previews.filter(Boolean).join(" / "))}</small>${a.text ? `<small class="answer">답: ${esc(a.text)}</small>` : ""}${a.problem ? ` <span class="pill bad">${esc(a.problem)}</span>` : ""}${a.risk ? ` <span class="pill warn">${esc(a.risk)} · 보내지 않아요</span>` : ""}</li>`).join("");
     const what = (l) => l.status ? DEV_NAMES[l.status] ?? l.status : l.note ? "개발 기록" : l.shipReply ? "출시 답" : l.news ? "공지 한 줄" : "개발 기록";
     const batchRow = res?.batch?.id ? `<li class="batch">넘김 묶음 ${esc(res.batch.id)}${res.batch.at ? ` <small>${esc(moment(res.batch.at))}에 넘긴 것의 결과예요</small>` : res.batch.known ? "" : ' <span class="pill warn">기록에 없는 묶음</span>'}</li>` : "";
     const lines = res ? `<ul class="mini">${batchRow}${res.lines.map((l) => `<li>${esc(l.id)} · ${esc(what(l))}${l.version ? ` ${esc(l.version)}` : ""}${l.reason ? ` · ${esc(l.reason)}` : ""}
-        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.shipReply ? `<small class="answer">출시 답: ${esc(l.shipReply)}</small>` : ""}${l.news ? `<small class="answer">공지: ${esc(l.news)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}${(l.warn ?? []).map((w) => ` <span class="pill warn">${esc(w)}</span>`).join("")}</li>`).join("")}${askRows}</ul>
+        ${l.title ? `<small>${esc(l.title)}</small>` : ""}${l.note ? `<small class="answer">기록: ${esc(l.note)}</small>` : ""}${l.text ? `<small class="answer">답: ${esc(l.text)}</small>` : ""}${l.shipReply ? `<small class="answer">출시 답: ${esc(l.shipReply)}</small>` : ""}${l.news ? `<small class="answer">공지: ${esc(l.news)}</small>` : ""}${l.problem ? ` <span class="pill bad">${esc(l.problem)}</span>` : ""}${(l.warn ?? []).map((w) => ` <span class="pill warn">${esc(w)}</span>`).join("")}${l.risk ? ` <span class="pill warn">${esc(l.risk)} · 답은 보내지 않아요</span>` : ""}</li>`).join("")}${askRows}</ul>
+      ${res.unread?.length ? `<p class="hint">[RVD-07] 읽지 못한 줄 ${res.unread.length}개(모양이 틀려 빠져요): ${res.unread.map((u) => `<code>${esc(u)}</code>`).join(" ")}</p>` : ""}
+      ${res.batch?.appliedAt ? `<p class="hint">이 묶음은 ${esc(moment(res.batch.appliedAt))}에 이미 반영했어요. 같은 답은 다시 가지 않아요.</p>` : ""}
+      ${[...res.lines, ...(res.asks ?? [])].some((l) => l.risk) ? `<label class="switch"><input type="checkbox" id="sort-risky"><span class="track" aria-hidden="true"></span><span>사람이 먼저 볼 문의·위험한 답도 보내기(하나하나 읽었어요)</span></label>` : ""}
       <label class="switch"><input type="checkbox" id="sort-notify" checked><span class="track" aria-hidden="true"></span><span>완료·반려된 개발사항의 문의에도 답 보내기</span></label>
       <div class="actions"><button class="btn small primary" data-act="sort-result-go"${[...res.lines, ...(res.asks ?? [])].some((l) => !l.problem) ? "" : " disabled"}>반영하기</button>
         <button class="btn small ghost" data-act="sort-result-clear">다시 붙여 넣기</button></div>` : "";
@@ -2726,7 +2737,19 @@ function adminApp(L, BUILD, M) {
           <small>${esc(kstDate(x.from))} ~ ${esc(kstDate(x.until))}${esc(range)}</small><small>${esc(x.body)}</small></span>
           <span class="row-side"><span class="pill ${tone}">${label}</span>${edit ? `<button class="btn small" data-act="notice-edit" data-id="${x.id}">고치기</button>
             <button class="btn small" data-act="notice-remove" data-id="${x.id}">내리기</button>` : ""}</span></div></li>`;
-      }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>`;
+      }).join("")}</ul>` : '<p class="meta">지금 올린 공지가 없어요.</p>'}</section>${oldPayCard(edit)}`;
+  }
+
+  /** 1.40 [PAYP-19] 공유급여 결정 1: when apps up to 1.38 stop getting a company's pay way, and the switch to hold or force it. */
+  function oldPayCard(edit) {
+    const o = S.data.oldPay;
+    if (!o) return "";
+    const modes = [["auto", `${o.from} 나간 날 저절로`], ["on", "지금 끊기"], ["off", "끊지 않기"]];
+    const state = o.on ? `<span class="pill bad">끊었어요</span>` : `<span class="pill">아직 줘요</span>`;
+    return `<section class="card"><div class="card-head"><h2>옛 앱 급여 끊기</h2>${state}</div>
+      <p class="hint">앱 ${esc(String(o.maxApp))}번(1.38) 이하에 회사 판 급여 계산식을 주지 않아요. 끊긴 동안 그 앱에는 업데이트 공지가 30일 떠요. 이미 넣은 급여는 폰에 그대로 남아요.
+        지금 저장된 나간 판: ${esc(o.shipped ?? "없음")}${o.at ? ` · 끊은 때 ${esc(kstDate(new Date(o.at).toISOString()))}` : ""}</p>
+      <div class="row">${modes.map(([m, label]) => `<button class="btn small${o.mode === m ? " primary" : ""}" ${edit && o.mode !== m ? `data-act="old-pay-mode" data-mode="${m}"` : "disabled"}>${esc(label)}</button>`).join(" ")}</div></section>`;
   }
 
   function openNotice(x) {
@@ -4660,8 +4683,10 @@ function adminApp(L, BUILD, M) {
       const res = S.sortResult;
       if (!res) return;
       const notify = document.getElementById("sort-notify")?.checked === true;
-      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify }), (r) => [r.batch?.id && `묶음 ${r.batch.id}`, r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.prepared && `출시 안내 ${r.prepared}개`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
-        r.skipped && `빼 둠 ${r.skipped}건`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
+      const risky = document.getElementById("sort-risky")?.checked === true;
+      const again = Boolean(res.batch?.appliedAt);
+      const r = await act(() => api("/inquiries/handoff/result", "POST", { text: res.text, notify, risky, again }), (r) => [r.batch?.id && `묶음 ${r.batch.id}`, r.changed && `개발사항 ${r.changed}개 반영`, r.noted && `개발 기록 ${r.noted}줄`, r.prepared && `출시 안내 ${r.prepared}개`, r.created?.length && `새 개발사항 ${r.created.length}개`, r.answered && `문의 ${r.answered}건에 답`,
+        r.skipped && `빼 둠 ${r.skipped}건`, r.held && `보내지 않은 답 ${r.held}줄(관리자 확인)`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
     ...FLAG_ACTIONS,
@@ -5390,6 +5415,11 @@ function adminApp(L, BUILD, M) {
       if (o) S.data.ops = o;
       load();
     },
+    "old-pay-mode": ({ mode }) => confirmBox("옛 앱 급여 끊기를 바꿀까요?", mode === "off" ? "1.38 이하 앱이 회사 판 급여 계산식을 다시 받아요." : mode === "on" ? "지금부터 1.38 이하 앱은 근무만 받고, 업데이트 공지를 받아요." : "1.40이 나간 것으로 저장되는 날부터 저절로 끊어요.", "바꾸기", async () => {
+      const d = await act(() => api("/old-pay", "POST", { mode }), "바꿨어요");
+      if (d) S.data.oldPay = d;
+      render({ keepScroll: true });
+    }),
     "notice-new": () => openNotice(null),
     "notice-edit": ({ id }) => openNotice(S.data.notices?.notices.find((x) => x.id === id)),
     "notice-remove": ({ id }) => confirmBox("공지를 내릴까요?", "앱은 다음에 새로 받을 때 이 공지를 빼요.", "내리기", async () => {
@@ -6453,12 +6483,17 @@ function adminApp(L, BUILD, M) {
     confirmBox, mergeWords, syncUrl, refilter, go, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
   };
   const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
-  const V = Object.assign({}, ...groups);
+  // [RVD-04] A name two groups give would hide the first one's (ADMX-02: V.changes became loop's switch table); say so at once.
+  const V = {};
+  for (const g of groups) for (const k of Object.keys(g)) {
+    if (k in V && !["actions", "forms", "changeHandlers"].includes(k)) console.error(`admin views: ${k} is given twice`);
+    V[k] = g[k];
+  }
   Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
   Object.assign(ACTIONS, V.actions ?? {});
   Object.assign(FORMS, V.forms ?? {});
   // [LOOP-32] 화면 묶음이 주는 즉시 저장 칸(data-change).
-  for (const g of groups) Object.assign(CHANGES, g.changes ?? {});
+  for (const g of groups) Object.assign(CHANGES, g.changeHandlers ?? {});
   // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
   CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 

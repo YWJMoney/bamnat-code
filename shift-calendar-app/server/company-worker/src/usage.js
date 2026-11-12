@@ -312,6 +312,11 @@ export const EVENTS = {
   life_d30: "깐 지 30일째 다시 염",
   life_back7: "7일 넘게 쉬다 다시 염",
   life_back30: "30일 넘게 쉬다 다시 염",
+  // 1.40 [DISC-06] 안 써 본 기능 카드 합계(깃발 stats.disc, 처리방침 3.13 전에는 받지 않아요). 어떤 기능인지는 오지 않아요.
+  disc_shown: "안 써 본 기능 카드 보임",
+  disc_try: "안 써 본 기능 카드 열어 봄",
+  disc_later: "안 써 본 기능 카드 나중에",
+  disc_off: "안 써 본 기능 카드 그만 보기",
 };
 
 export async function usage(request, env) {
@@ -362,6 +367,10 @@ export async function usage(request, env) {
   // 1.39 [STAT2-02] 처리방침 3.12 시행일(깃발 stats.life) 전에 온 life_*는 버려요.
   if (rows.some((r) => r[1].startsWith("life_")) && !serverEval(await flagStore(env), "stats.life", now).on) {
     for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("life_")) rows.splice(i, 1);
+  }
+  // 1.40 [DISC-06] 처리방침 3.13 시행일(깃발 stats.disc) 전에 온 disc_*는 버려요.
+  if (rows.some((r) => r[1].startsWith("disc_")) && !serverEval(await flagStore(env), "stats.disc", now).on) {
+    for (let i = rows.length - 1; i >= 0; i--) if (rows[i][1].startsWith("disc_")) rows.splice(i, 1);
   }
   const app = body.app;
   if (days.size === 0) return json({ ok: true, skipped });

@@ -33,6 +33,10 @@ object FlagCatalog {
     const val STATS_KIND = "stats.kind"
     /** 1.39 [OBS2-08]: which features were used on a day the phone came back to within 7·30 days, once 처리방침 3.12 names it. */
     const val STATS_KEEP = "stats.keep"
+    /** 1.40 [DISC-06]: the four daily totals of '안 써 본 기능 알려 주기' (보임·열어 봄·나중에·그만 보기, 기능 이름 없이), once 처리방침 3.13 names them. */
+    const val STATS_DISC = "stats.disc"
+    /** 1.40 [DISC-06]: the 처리방침 판 that first names the four totals (사용자 결정 2026-11-11 '합계 4가지만'). */
+    const val DISCOVER_POLICY = "3.13"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
@@ -468,6 +472,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.40 [DISC-06] (사용자 결정 2026-11-11 '측정은 합계 4가지만'): '안 써 본 기능 알려 주기' 카드가 그날 몇 번 보였는지·열어 봤는지·나중에를
+     * 눌렀는지·그만 보기를 눌렀는지를 이미 동의한 사용 통계에 날마다 횟수로만 실어요. 어떤 기능을 알렸는지와 휴대폰 구별은 보내지 않아요.
+     * 처리방침 3.13의 시행일에 저절로 켜지고, 그 전에는 세지도 보내지도 않아요(카드는 이것 없이도 휴대폰 안에서만 돌아요).
+     */
+    val STATS_DISC_FLAG = Flag(
+        STATS_DISC, "안 써 본 기능 카드 합계 보내기",
+        what = "사용 통계를 켠 휴대폰이 ‘안 써 본 기능 알려 주기’ 카드가 그날 보인 횟수·열어 본 횟수·나중에를 누른 횟수·그만 보기를 누른 횟수만 보내요. 관리자 앱이 그만 보기 비율로 빈도와 문구가 알맞은지 봐요. 어떤 기능을 알렸는지와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 4가지 늘어 처리방침 3.13의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.13 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.13 1-9항", requirement = "DISC-06", note = "1.40 안 써 본 기능 알려 주기 (사용자 결정 2026-11-11 '합계 4가지만')"),
+        conditions = listOf(Condition.Date(policy = DISCOVER_POLICY), Condition.Policy(DISCOVER_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.40.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -509,7 +527,7 @@ object FlagCatalog {
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

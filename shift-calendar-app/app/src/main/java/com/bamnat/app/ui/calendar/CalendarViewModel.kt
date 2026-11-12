@@ -551,7 +551,8 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
         }
     }
-    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.delete(id) } }
+    // 1.39.1 [R391-04] The night's sounds and clips go with it.
+    fun deleteSleep(id: Long) { container.appScope.launch { container.sleepRepository.deleteWithSounds(id, container.sleepClipDeleter) } }
 
     /** Rest-gap signs that fall on [date]. */
     fun restIssuesOn(snapshot: ScheduleSnapshot, date: LocalDate, rules: RestRules): List<RestCheck.Issue> {
@@ -1115,6 +1116,49 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
 
     /** The kind for a 대근 of [type] [EXTRA-07]. */
     fun coverKind(snapshot: ScheduleSnapshot, type: ShiftType): ExtraKind = ExtraText.coverKind(snapshot.kinds, snapshot.shiftTypes, type)
+
+    /**
+     * 1.40 [SPREAD-37] 연말 근무 결산 for [year] on the calendar [snapshot]: from the day this calendar started ([startDay], or the
+     * first day written by hand before it), in the kind of work's own figures. The money is the pay engine's 세전 예상 month by
+     * month for shifts, done 일감 for field work, 순수익 for a shop; it stays hidden until the user shows it. Off the main thread.
+     */
+    suspend fun yearRecap(
+        year: Int, today: LocalDate, startDay: LocalDate?, snapshot: ScheduleSnapshot, focus: com.bamnat.core.work.CalendarFocus,
+        style: com.bamnat.core.work.WorkStyle?, profile: PayProfile?, book: com.bamnat.core.money.MoneyBook,
+    ): com.bamnat.core.work.YearRecap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val firstWritten = snapshot.entries.filter { it.date.year == year && !it.isEmpty }.minOfOrNull { it.date }
+        // Field and shop records are the user's own whatever the start; shifts before the calendar started are only the pattern.
+        val (from, to) = com.bamnat.core.work.YearRecap.range(year, today,
+            startDay.takeIf { focus == com.bamnat.core.work.CalendarFocus.SHIFTS }, firstWritten)
+        val days = snapshot.resolver.resolveRange(from, to)
+        val sleep = runCatching { kotlinx.coroutines.withTimeoutOrNull(3_000) { container.sleepRepository.recent(days = 400).first() } }.getOrNull().orEmpty()
+        fun inRange(d: LocalDate) = !d.isBefore(from) && !d.isAfter(to)
+        val money: Long? = when (focus) {
+            com.bamnat.core.work.CalendarFocus.SHIFTS -> if (profile == null || style?.usesPayEngine == false) null else
+                generateSequence(YearMonth.from(from)) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(to)) }
+                    .mapNotNull { m -> monthEstimate(profile, snapshot, m) }.toList().takeIf { it.isNotEmpty() }?.sum()
+            com.bamnat.core.work.CalendarFocus.JOBS -> book.jobs.filter { !it.cancelled && inRange(it.date) && it.isDone(today) }.sumOf { it.payable }
+            com.bamnat.core.work.CalendarFocus.SALES -> book.sales.filter { inRange(it.date) }.sumOf { it.sales - it.costs }
+            com.bamnat.core.work.CalendarFocus.INVEST -> null
+        }
+        com.bamnat.core.work.YearRecap.of(
+            year, from, to, focus, days,
+            restCounts = snapshot.hasPattern,
+            jobs = book.jobs, sales = book.sales, sleep = sleep,
+            money = money,
+            moneyLabel = when (focus) {
+                com.bamnat.core.work.CalendarFocus.SHIFTS -> if (style == com.bamnat.core.work.WorkStyle.HOURLY) "알바비 (세전 예상)" else "급여 (세전 예상)"
+                else -> style?.incomeLabel ?: if (focus == com.bamnat.core.work.CalendarFocus.JOBS) "일감 수입" else "가게 순수익"
+            },
+            today = today,
+        )
+    }
+
+    /** 1.40 [SPREAD-37] The 연말 결산 card is closed for this part of the window (12월, then once more in 1월). */
+    fun closeYearRecap(today: LocalDate) {
+        val key = com.bamnat.core.work.YearRecap.key(today)
+        container.settingsRepository.update { s -> if (s.yearRecapSeen >= key) s else s.copy(yearRecapSeen = key) }
+    }
 
     /** [CAL-46] The month's "내 기록" card is not shown again. */
     fun closeMonthRecap(month: java.time.YearMonth) {

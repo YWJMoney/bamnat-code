@@ -178,4 +178,32 @@ class AlarmSoonCallTest {
         assertNotNull(AlarmService.ringing.value)
         assertNotNull("rings with its screen again", nm.getNotification(Notifications.ALARM_NOTIFICATION_ID).fullScreenIntent)
     }
+
+    // 1.39.1 [R391-02] 검토 ALM-01: a phone left in 메신저 통화 mode held the ring 3분, rang 1.5초, then held 3분 again.
+    @Test fun aCallModeLeftOnHoldsOnceThenKeepsRinging() {
+        var t = day.atTime(6, 0)
+        at(t)
+        val ring = RingRequest("주간", day, LocalTime.of(7, 0), 60, null, millis(t), shiftTypeId = 3)
+        running = Robolectric.buildService(AlarmService::class.java,
+            ring.putInto(Intent(app, AlarmService::class.java).setAction(AlarmService.ACTION_START))).create().startCommand(0, 1)
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        // The clock the hold reads moves with the looper, 1.5초 at a time.
+        fun pass(seconds: Long, each: (Int) -> Unit = {}) {
+            for (i in 0 until (seconds * 2 / 3).toInt()) {
+                t = t.plusNanos(1_500_000_000L)
+                at(t)
+                ShadowLooper.idleMainLooper(1_500, TimeUnit.MILLISECONDS)
+                each(i)
+            }
+        }
+        pass(3)
+        assertTrue("held for the app call", AlarmService.inCall.value)
+        pass(AlarmService.APP_CALL_HOLD_MILLIS / 1000)
+        assertFalse("rings after 3분", AlarmService.inCall.value)
+        pass(5 * 60) { assertFalse("keeps ringing, the cap is not taken again", AlarmService.inCall.value) }
+        // A real call after it still holds.
+        audio.mode = AudioManager.MODE_IN_CALL
+        pass(3)
+        assertTrue("a phone call holds it", AlarmService.inCall.value)
+    }
 }

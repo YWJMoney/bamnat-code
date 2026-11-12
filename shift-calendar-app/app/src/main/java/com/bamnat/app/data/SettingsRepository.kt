@@ -353,6 +353,8 @@ data class AppSettings(
     val reviewAskedDay: Long = 0,
     /** [CAL-46] The last month (yyyymm) whose "이번 달 내 기록" card was shown and closed; kept on this phone only. */
     val monthRecapSeen: Int = 0,
+    /** 1.40 [SPREAD-37] The last 연말 결산 card closed (yyyy1 in 12월, yyyy2 in 1월, [com.bamnat.core.work.YearRecap.key]); this phone only. */
+    val yearRecapSeen: Int = 0,
     /** [ALRM-03] 알람 제안: a card with one suggestion for one shift's alarm; on by default (D42), in the backup. */
     val alarmSuggest: Boolean = true,
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
@@ -594,6 +596,7 @@ class SettingsRepository(context: Context) {
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
             reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
             monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
+            yearRecapSeen = prefs.getInt(K_YEAR_RECAP, 0),
             alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
             alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
             exportMark = prefs.getBoolean(K_EXPORT_MARK, d.exportMark),
@@ -733,6 +736,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
             .putLong(K_REVIEW_DAY, s.reviewAskedDay)
             .putInt(K_MONTH_RECAP, s.monthRecapSeen)
+            .putInt(K_YEAR_RECAP, s.yearRecapSeen)
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .putBoolean(K_EXPORT_MARK, s.exportMark)
@@ -807,6 +811,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"
         const val K_REVIEW_DAY = "review_asked_day"
         const val K_MONTH_RECAP = "month_recap_seen"
+        const val K_YEAR_RECAP = "year_recap_seen"
         const val K_ALARM_SUGGEST = "alarm_suggest"
         const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
         const val K_EXPORT_MARK = "export_mark"

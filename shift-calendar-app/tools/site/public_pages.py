@@ -201,12 +201,13 @@ function calc(){
   if(!w||!week){$('out').textContent='-';$('lines').innerHTML='';return;}
   if(week<15){$('out').textContent='0원';
     $('lines').innerHTML='<tr><td>1주 근무 시간</td><td>'+week+'시간</td></tr><tr><td colspan="2">1주 15시간보다 적으면 주휴수당이 생기지 않아요.</td></tr>';return;}
-  var hrs=Math.min(week,40)/40*8,pay=hrs*w,month=pay*365/7/12;
+  var hrs=Math.min(week,40)/40*8,pay=hrs*w,month=pay*365/7/12,tot=Math.round((week+hrs)*365/7/12);
   $('out').textContent=B.won(pay);
   $('lines').innerHTML='<tr><td>1주 근무 시간</td><td>'+week+'시간'+(week>40?' (40시간까지만 셈)':'')+'</td></tr>'+
     '<tr><td>주휴 시간 (근무시간÷40×8)</td><td>'+(Math.round(hrs*100)/100)+'시간</td></tr>'+
     '<tr><td>한 달 환산 (4.345주)</td><td>'+B.won(month)+'</td></tr>'+
-    '<tr class="sum"><td>근무+주휴 한 달 합계</td><td>'+B.won(week*w*365/7/12+month)+'</td></tr>';
+    '<tr class="sum"><td>근무+주휴 한 달 합계 (월 '+tot+'시간)</td><td>'+B.won(tot*w)+'</td></tr>'+
+    (week>=40?'<tr><td colspan="2" class="note">주 40시간이면 고시 월 환산액(209시간)과 같아요.</td></tr>':'');
 }
 B.ready.then(function(){
   var y=B.years()[0]||new Date().getFullYear();$('wage').value=B.rateFor(y).minimumHourlyWage;
@@ -524,7 +525,7 @@ function calc(){
     '<tr class="sum"><td>월 실수령</td><td>'+B.won(net)+'</td></tr>'+
     '<tr><td>1년 실수령 (×12)</td><td>'+B.won(net*12)+'</td></tr>';
 }
-$('kind').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){$('kind').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');kind=b.dataset.v;
+$('kind').querySelectorAll('.chip').forEach(function(b){b.onclick=function(){if(b.getAttribute('aria-pressed')==='true')return;$('kind').querySelectorAll('.chip').forEach(function(c){c.setAttribute('aria-pressed','false')});b.setAttribute('aria-pressed','true');kind=b.dataset.v;
   $('amountLabel').textContent=kind==='year'?'세전 연봉 (원, 퇴직금 빼고)':'세전 월급 (원)';var v=B.num($('amount').value);$('amount').value=kind==='year'?v*12:Math.floor(v/12);calc();};});
 Promise.all([B.ready,B.loadTaxTable().catch(function(){})]).then(function(){
   var box=$('years');B.years().forEach(function(y,i){var b=document.createElement('button');b.type='button';b.className='chip';b.textContent=y+'년';b.setAttribute('aria-pressed',i===0?'true':'false');
@@ -559,11 +560,11 @@ write('calc/leave/', page(
 var $=function(i){return document.getElementById(i)};
 function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function addY(x,n){return new Date(x.getFullYear()+n,x.getMonth(),x.getDate());}
-function addM(x,n){return new Date(x.getFullYear(),x.getMonth()+n,x.getDate());}
+function addM(x,n){var m=x.getMonth()+n,last=new Date(x.getFullYear(),m+1,0).getDate();return new Date(x.getFullYear(),m,Math.min(x.getDate(),last));}
 function f(x){return x.getFullYear()+'.'+(x.getMonth()+1)+'.'+x.getDate();}
 function per(n){return Math.min(25,15+Math.floor((n-1)/2));}
 function calc(){
-  if(!$('start').value||!$('today').value)return;var s=d($('start').value),t=d($('today').value);if(t<s){$('out').textContent='-';$('lines').innerHTML='';return;}
+  if(!$('start').value||!$('today').value){$('out').textContent='-';$('lines').innerHTML='';return;}var s=d($('start').value),t=d($('today').value);if(t<s){$('out').textContent='-';$('lines').innerHTML='';return;}
   var years=0;while(addY(s,years+1)<=t)years++;
   var rows='';
   if(years<1){var m=0;while(m<11&&addM(s,m+1)<=t)m++;
@@ -614,18 +615,19 @@ write('calc/severance/', page(
 var B=Bamnat,$=function(i){return document.getElementById(i)};
 function d(v){var p=v.split('-');return new Date(+p[0],+p[1]-1,+p[2]);}
 function days(a,b){return Math.round((b-a)/864e5);}
+function addM(x,n){var m=x.getMonth()+n,last=new Date(x.getFullYear(),m+1,0).getDate();return new Date(x.getFullYear(),m,Math.min(x.getDate(),last));}
 function calc(){
-  if(!$('start').value||!$('last').value)return;
+  if(!$('start').value||!$('last').value){$('out').textContent='-';$('lines').innerHTML='';return;}
   var s=d($('start').value),l=d($('last').value),retire=new Date(l.getFullYear(),l.getMonth(),l.getDate()+1);
   var served=days(s,retire);if(served<=0){$('out').textContent='-';$('lines').innerHTML='';return;}
-  var from=new Date(retire.getFullYear(),retire.getMonth()-3,retire.getDate()),n3=days(from,retire);
+  var from=addM(retire,-3),n3=days(from,retire),year=new Date(s.getFullYear()+1,s.getMonth(),s.getDate())<=retire;
   var pay=B.num($('pay').value)*3,bonus=B.num($('bonus').value)*3/12,lp=B.num($('leavepay').value)*3/12;
   var avg=(pay+bonus+lp)/n3,sev=Math.floor(avg*30*served/365);
   var rows='<tr><td>재직 일수</td><td>'+served.toLocaleString('ko-KR')+'일 (약 '+(Math.floor(served/365*10)/10)+'년)</td></tr>'+
     '<tr><td>최근 3개월 일수</td><td>'+n3+'일</td></tr>'+
     '<tr><td>3개월 임금 + 상여·연차수당의 3/12</td><td>'+B.won(pay+bonus+lp)+'</td></tr>'+
     '<tr><td>1일 평균임금</td><td>'+B.won(avg)+'</td></tr>';
-  if(served<365){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
+  if(!year){$('out').textContent='0원';rows+='<tr><td colspan="2">계속 근로 1년 미만이면 퇴직금이 생기지 않아요.</td></tr>';}
   else{$('out').textContent=B.won(sev);rows+='<tr class="sum"><td>평균임금 × 30일 × 재직일수 ÷ 365</td><td>'+B.won(sev)+'</td></tr>';}
   $('lines').innerHTML=rows;
 }

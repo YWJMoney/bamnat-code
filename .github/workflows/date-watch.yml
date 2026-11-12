@@ -1,0 +1,35 @@
+name: 날짜 시험 (날마다)
+# [RVD-02] 시험이 날짜에 묶여 깨지는 것(2026-11-12 서버 배포가 `npm test`에서 멈춘 일)을 그날이 오기 전에 알아요.
+# 날마다 main에서 서버 시험을 오늘과 7·30·90·365일 뒤로 시계를 옮겨 돌려요(tools/fake-date.mjs). PR 때만 돌던 CI는
+# main이 '어제 초록, 오늘 빨강'이 돼도 몰랐어요. 실패하면 Actions가 저장소 주인에게 메일로 알려요.
+# 한 번에 서버 두 곳 × 5날짜, 6분쯤(비공개 저장소 한 달 2,000분 중 180분쯤).
+on:
+  schedule:
+    - cron: "17 21 * * *" # 06:17 KST
+  workflow_dispatch:
+concurrency:
+  group: date-watch
+  cancel-in-progress: true
+jobs:
+  servers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        days: [0, 7, 30, 90, 365]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: share-worker (+${{ matrix.days }}일)
+        working-directory: shift-calendar-app/server/share-worker
+        env:
+          BAMNAT_FAKE_DAYS: ${{ matrix.days }}
+        run: node --import ../company-worker/tools/fake-date.mjs --test --disable-warning=ExperimentalWarning test/*.test.mjs
+      - name: company-worker (+${{ matrix.days }}일)
+        working-directory: shift-calendar-app/server/company-worker
+        env:
+          BAMNAT_FAKE_DAYS: ${{ matrix.days }}
+        run: node --import ./tools/fake-date.mjs --test --disable-warning=ExperimentalWarning "test/*.test.mjs"

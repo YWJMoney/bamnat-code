@@ -732,12 +732,23 @@ fun CalendarScreen(
             onOpenReceived = { showShare = false; adding = "" },
         )
     }
+    // 1.40 [SPREAD-37] 연말 근무 결산 (12-20~1-10): the year whose sheet is open, from the card or the picture sheet.
+    var yearRecapOpen by remember { mutableStateOf<Int?>(null) }
+    val recapStyle = activeCalendar.style ?: settings.workStyle
+    val recapHere = viewingReceived == null && !activeCalendar.isExample && focus != com.bamnat.core.work.CalendarFocus.INVEST
+    yearRecapOpen?.let { y ->
+        val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
+            value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
+        }
+        YearRecapSheet(recap, onSent = { vm.closeYearRecap(today) }, onDismiss = { yearRecapOpen = null })
+    }
     imageMonth?.let { m ->
         ImageShareSheet(
             snapshot = snap, month = m, weekStart = settings.weekStart, memos = datedMemos,
             startName = remember(activeCalendar.id) { context.appContainer.shareLinksOf(com.bamnat.app.share.ShareLinkKey.of(activeCalendar.id, 1)).link.value?.title.orEmpty() },
             onSent = { vm.logShare() },
             onDismiss = { imageMonth = null },
+            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y -> y to { imageMonth = null; yearRecapOpen = y } },
         )
     }
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
@@ -1353,6 +1364,18 @@ fun CalendarScreen(
                     )
                 }
             })
+            // 1.40 [SPREAD-37] 연말 근무 결산, 12-20~1-10: once in 12월 (the year so far), once more in 1월 (the whole year).
+            if (paint == null && recapHere) add(Notice("yearRecap", "연말 결산") {
+                val due = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
+                due?.let { y ->
+                    val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
+                        value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
+                    }
+                    recap?.takeIf { it.worthShowing }?.let { r ->
+                        YearRecapCard(r, onOpen = { yearRecapOpen = y }, onClose = { vm.closeYearRecap(today) })
+                    }
+                }
+            })
             // [CAL-46] I 리뷰 N9: once the month's last shift is done, the month in one line and its picture to share.
             if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && viewingReceived == null) add(Notice("recap", "지난달 정리") {
                 val recapMonth = remember(snap, today, settings.monthRecapSeen) {
@@ -1419,6 +1442,28 @@ fun CalendarScreen(
             if (low) calendarParts.filter { isAbove(it.part) && it.part.movable && it.shown && it.part != CalendarPart.TODAY_FLOW }.forEach { placed ->
                 aboveParts[placed.part]?.let { (label, part) -> add(Notice(placed.part.id, label) { part() }) }
             }
+            // 1.40 [DISC-01] 안 써 본 기능 가끔 알려 주기: always the last card, and only on a day nothing else above the month speaks
+            // (the user's own parts and 밤낮이 한 일 do not count as speaking). At most one in 7 days, rarer when not answered.
+            if (guideHere && paint == null && viewingReceived == null && !activeCalendar.isExample) add(Notice("discover", "이런 기능도 있어요") {
+                val ownParts = remember(calendarParts) { calendarParts.map { it.part.id }.toSet() + setOf("discover", "journal") }
+                val trades = investState?.full?.trades?.size ?: 0
+                com.bamnat.app.ui.guide.DiscoverNotice(
+                    calendar = activeCalendar.id, style = settings.workStyle,
+                    othersUp = { notices.heights.any { (k, h) -> h > 0 && k !in ownParts } },
+                    startUp = startRows != null || startCardUp,
+                    ready = { need ->
+                        when (need) {
+                            com.bamnat.core.guide.DiscoverNeed.DAYS -> !snap.isEmpty
+                            com.bamnat.core.guide.DiscoverNeed.PAY -> payProfile != null
+                            com.bamnat.core.guide.DiscoverNeed.JOBS -> moneyBook.jobs.any { !it.cancelled }
+                            com.bamnat.core.guide.DiscoverNeed.SALES -> moneyBook.sales.any { it.sales > 0 }
+                            com.bamnat.core.guide.DiscoverNeed.TRADES -> trades > 0
+                            com.bamnat.core.guide.DiscoverNeed.MONEY -> moneyBook.entries.size >= 10
+                        }
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                )
+            })
         }.let { all ->
             // [EASE-03] 1.38 PC 994c2328 (첫날 알림 허용 줄 밑에 '알림 1개 더 보기 · 근무주기 다음 단계'): on the first setup's day only
             // what keeps the calendar working stays (the alarm line, money promised and late, the developer’s notice, what an invite
@@ -2438,6 +2483,28 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
     }
 }
 
+/** 1.40 [SPREAD-37] "2026년 내 근무 결산이 나왔어요": a few of the year's numbers (never the money), 결산 보기 and 닫기. */
+@Composable
+internal fun YearRecapCard(recap: com.bamnat.core.work.YearRecap, onOpen: () -> Unit, onClose: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = androidx.compose.ui.graphics.Color(0xFF1E2447),
+        onClick = onOpen,
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("${recap.year}년 내 근무 결산이 나왔어요", style = MaterialTheme.typography.titleSmall,
+                color = androidx.compose.ui.graphics.Color(0xFFF2C46D))
+            Text(recap.line, style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFF6F1E7),
+                modifier = Modifier.padding(end = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onClose, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFA9AFCB))) { Text("닫기") }
+                TextButton(onClick = onOpen, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFF2C46D))) { Text("결산 보기") }
+            }
+        }
+    }
+}
+
 /** [CAL-46] "이번 달 내 기록": the finished month in one line, shared as the month's picture, closed for good. */
 @Composable
 internal fun MonthRecapCard(recap: com.bamnat.core.work.MonthRecap, onShare: () -> Unit, onClose: () -> Unit) {
@@ -3145,5 +3212,5 @@ internal val ScheduleSnapshot.backWord: String
 /** [EASE-03] Cards above the month that wait for the day after the first setup. */
 private val FIRST_DAY_WAITS = setOf(
     "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
-    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal",
+    "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal", "discover",
 )

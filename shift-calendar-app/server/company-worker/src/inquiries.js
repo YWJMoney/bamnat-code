@@ -2,6 +2,7 @@ import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken
 import { DAY, HOUR } from "./units.js";
 import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, version } from "./inbox.js";
 import { replyRisk } from "./ledger.js";
+import { isBillingRecord } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
@@ -44,7 +45,27 @@ export const INQUIRY = {
  * 1.36 [INQ-07] Words that make a question a 결제·환불 record. Narrower than the 결제 topic below (광고 or 무료
  * alone is not a dispute about money), and an admin can set or clear it on the question by hand.
  */
-export const BILLING_RECORD = /결제|환불|청약\s*철회|구독|구매|이용권|주문\s*번호|영수증|요금|해지|돈이\s*(빠져|나갔)|두\s*번\s*(빠져|나갔)/;
+// [RVD-05] 검토 ADMX-03: '더해지는'의 '해지', '달력 구독', '통신 요금'은 아니에요. 글을 고른 뒤 짝으로 봐요(src/ask-check.js).
+export const BILLING_RECORD = { test: (text) => isBillingRecord(text) };
+
+/**
+ * 1.40 [RVD-05] 검토 ADMX-03: 옛 식('해지' 하나로)이 결제·환불 기록으로 찍은 평범한 문의를 지금 식으로 다시 봐요. 관리자가 손으로
+ * 켠 것('inquiry_billing' on)은 그대로, 보낸 분이 지운 것(gone)도 그대로예요. 한 번에 [limit]건, 다 보면 settings에 적고 멈춰요.
+ */
+export async function rescanBilling(env, now, limit = 300) {
+  if (await one(env, "SELECT value FROM settings WHERE key = 'billing_rescan'")) return 0;
+  const rows = await all(env, `SELECT i.id, (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words
+    FROM inquiries i WHERE i.billing_at IS NOT NULL AND i.device NOT LIKE 'gone%' AND i.id > COALESCE((SELECT value FROM settings WHERE key = 'billing_rescan_at'), '')
+      AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.action = 'inquiry_billing' AND a.target = i.id) ORDER BY i.id LIMIT ?`, limit);
+  const off = rows.filter((r) => !isBillingRecord(r.words ?? "")).map((r) => r.id);
+  const stmts = off.map((id) => stmt(env, "UPDATE inquiries SET billing_at = NULL WHERE id = ?", id));
+  stmts.push(rows.length < limit
+    ? stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan', ?)", String(now))
+    : stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan_at', ?)", rows.at(-1).id));
+  await batch(env, stmts);
+  if (off.length) await audit(env, now, "inquiry_billing_rescan", `${off.length}건`, "결제·환불 기록 아님(검토 ADMX-03)");
+  return off.length;
+}
 
 /** 1.36 [INQ-07] The questions old enough to go: half a year without a word, three years for a 결제·환불 record. */
 export const expiredInquiries = (now) => ["(billing_at IS NULL AND updated_at < ?) OR updated_at < ?", now - INQUIRY.keepMs, now - INQUIRY.billingKeepMs];

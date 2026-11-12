@@ -40,6 +40,34 @@
 {"track": "P391-01", "title": "장터 찾기: 지난번 구간에 없으면 세 구간을 다 찾고 '테마에 1개 있어요'와 가는 단추", "status": "check", "size": "polish", "route": "app", "check": "도구 구간에 둔 채 테마 이름 찾기 → '찾는 중' 뒤 '테마에 1개 있어요 · 테마에서 보기'"}
 {"track": "P391-02", "title": "1시간 안 짧은 잠은 깼어요 뒤 '아침 한 장 없이 기록에만' 한 줄", "status": "check", "size": "polish", "route": "app", "check": "잠들었어요 → 1분 뒤 깼어요 → 짧은 알림 한 줄"}
 {"track": "P391-03", "title": "리더 신청 카드: 열 때 가져오기 실패면 '못 가져왔어요 · 다시'", "status": "check", "size": "polish", "route": "app", "check": "공유 서버를 끈 채 팀 화면 열기 → 경고색 한 줄과 다시 단추"}
+{"track": "RVD-01", "title": "날짜에 묶인 서버·앱 시험: 시험 시계 고정, 시험 DB의 SQL now가 시험 시계를 따름", "status": "check", "size": "fix", "route": "server", "test": "test/review-d.test.mjs 외 admin-an·payp-139·ledger 시계 고정", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-02", "title": "날마다 서버 시험을 오늘·7·30·90·365일 뒤로 돌림(date-watch)", "status": "check", "size": "fix", "route": "server", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-03", "title": "문의 글의 constructor 같은 낱말로 관리자 앱 오늘·운영 장부가 500", "status": "check", "size": "fix", "route": "server", "test": "[RVD-03] an inquiry or a dev item with 'constructor' in it leaves 오늘, 운영 장부, the desk and the handoff open", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-04", "title": "판 2개 회사의 관리자 앱 회사 상세가 빈 화면", "status": "check", "size": "fix", "route": "server", "test": "[RVD-04] no two admin screen groups give the same name", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-05", "title": "'더해지는' 같은 평범한 문의가 결제·환불 기록으로 잡힘, 옛 기록 다시 보기", "status": "check", "size": "fix", "route": "server", "test": "[RVD-05] a new inquiry with '더해지는' keeps no billing mark", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-06", "title": "처음 여는 문의의 '이 휴대폰' 패널이 안 읽힘", "status": "check", "size": "fix", "route": "server", "test": "[RVD-06] an inquiry opened from the list reads its phone panel once", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-07", "title": "사람이 볼 문의 거르기·답 글 검사를 한 문으로(넘길 글·결과 붙여 넣기 포함)", "status": "check", "size": "fix", "route": "server", "test": "[RVD-07] every risky inquiry in the corpus goes to a person", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-08", "title": "배포 뒤 health가 DB 표 판과 /api/config까지 봄", "status": "check", "size": "fix", "route": "server", "test": "[RVD-08] deep health reads the tables", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-09", "title": "광장 답글·뽑힌 답 색인", "status": "check", "size": "fix", "route": "server", "test": "[RVD-09] replies and chosen answers are found through an index", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-10", "title": "결과를 두 번 붙여 넣어도 답은 한 번", "status": "check", "size": "fix", "route": "server", "test": "[RVD-10] the same 결과 block twice answers once", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "RVD-11", "title": "나간 판 저장이 끊겨도 남은 출시 안내·공지를 이어 보냄", "status": "check", "size": "fix", "route": "server", "test": "[RVD-11] one answer failing does not stop the others", "check": "서버 배포 뒤 관리자 앱에서 확인"}
+{"track": "R391-01", "title": "알람 시각 창 '시작 기준': 시·분 바퀴를 둘 다 돌려도 바퀴에 보이는 값이 저장", "status": "check", "size": "fix", "route": "app", "check": "주간 › 알람 추가 › 시작 기준 › 분 바퀴 30 → 시간 바퀴 2 → 줄 글 '시작 2시간 30분 전'과 저장값이 같음"}
+{"track": "R391-02", "title": "통화 모드가 남은 폰: 3분 붙잡은 뒤엔 계속 울림(1.5초만 울리고 다시 멈추지 않음)", "status": "check", "size": "fix", "route": "app", "check": "메신저 통화 모드를 남긴 채 알람 → 3분 뒤부터 끄기 전까지 계속 울림"}
+{"track": "R391-03", "title": "오늘·주·달·모든 조·다음 근무 위젯이 연달아 바꾼 근무를 바로 그림", "status": "check", "size": "fix", "route": "app", "check": "오늘 위젯을 놓고 근무를 바꾼 뒤 10초 안에 한 번 더 → 위젯이 두 번째 값"}
+{"track": "R391-04", "title": "수면 소리 클립 7일 지우기를 앱 시작 때도, 저장 전에 끊긴 밤의 파일과 지운 수면의 소리도 지움", "status": "check", "size": "fix", "route": "app", "check": "8일 지난 클립·DB에 없는 하루 지난 파일이 앱을 열면 사라짐, 수면 기록 지우기 → 그 밤의 소리도 사라짐"}
+{"track": "R391-05", "title": "설정 › 알람의 첫 알람 칩·모든 알람 옮기기가 보고 있는 달력의 근무만 고침", "status": "check", "size": "fix", "route": "app", "check": "두 번째 달력을 보며 15분 당기기 → 내 달력 알람은 그대로"}
+{"track": "R391-06", "title": "끝낸 할 일(반복 없는 것)은 제시각에 울리지 않음", "status": "check", "size": "fix", "route": "app", "check": "3시 은행 일정을 1시에 끝냄 → 3시에 알림 없음"}
+{"track": "R391-07", "title": "회사 규칙 칸에서 수당 금액을 고쳐도 지난 달 값은 그대로", "status": "check", "size": "fix", "route": "app", "check": "1월부터 식대 20만 → 11월 보며 칸에서 22만 → 10월 식대 20만 그대로"}
+{"track": "R391-08", "title": "입사일 기준에서 받은 연차(1월 1일)를 넣으면 그해 앱 몫을 대신함", "status": "check", "size": "fix", "route": "app", "check": "입사 3월 2일 · 받은 연차 15일(1월 1일) → 남은 연차 30일이 아니라 15일"}
+{"track": "R391-09", "title": "가게 달력: 맞는 날을 못 찾은 카드사 입금은 부수입이 아니라 '카드 매출 입금' 이체로", "status": "check", "size": "fix", "route": "app", "check": "카드 매출과 금액이 다른 카드사 입금 문자 → 수입 합계 그대로, 이체 한 줄(확인 표시)"}
+{"track": "R391-10", "title": "앱 잠금 덮개가 열어 둔 창·시트(급여 대장 등) 위에 덮임", "status": "check", "size": "fix", "route": "app", "check": "앱 잠금 켬 → 급여 대장 연 채 1분 넘게 홈 → 다시 열면 덮개만 보임"}
+{"track": "R391-11", "title": "자동 갱신 구독은 끝 시각이 지나도 3일 동안 프로로 봄(밤사이 갱신 뒤 알람 미션이 빠지지 않음), 앱을 열면 구매부터 읽음", "status": "check", "size": "fix", "route": "app", "check": "라이선스 시험 계정으로 갱신 직후 앱을 안 연 채 알람 → 미션 그대로"}
+{"track": "R391-12", "title": "체험 동의 창은 연 요금으로 묻고, 요금을 못 읽었으면 묻지 않음, 서버가 읽은 요금제를 받음", "status": "check", "size": "fix", "route": "app", "check": "체험 중 새 폰에서 복원 → 동의 창 금액이 연 요금"}
+{"track": "R391-13", "title": "스캔한 PDF 근무표를 읽다 글자 인식이 실패하면 앱이 꺼지지 않고 이유를 말함", "status": "check", "size": "fix", "route": "app", "check": "망을 끈 채(인식 준비물 없음) 한 달 근무 넣기 › 엑셀·PDF › 스캔 PDF → 안내 글"}
+{"track": "PAYP-18", "title": "명세서 한 장으로 가장 맞는 회사 급여 판 고르기(급여 방식 넣기 › 지난달 명세서로 맞추기)", "status": "doing", "size": "feature", "route": "app", "check": "회사 판 2~3개 있는 회사 → 이 급여 방식 쓰기 → 명세서로 맞추기 → 지급 총액·기본급 → 가장 맞는 판 한 줄·이 방식 넣기 → 급여 화면 금액"}
+{"track": "PAYP-19", "title": "옛 앱(1.38 이하)에 회사 판 급여 계산식 주기 끊기, 1.40 나간 날 저절로", "status": "doing", "size": "fix", "route": "server", "check": "나간 판 1.39.0 → 옛 앱 참여자 급여 부분 받음, 1.40.0 저장 → 근무만·1.38 이하 공지, 관리자 앱 앱 공지 › 옛 앱 급여 끊기"}
+{"track": "SPREAD-37", "title": "연말 근무 결산: 12-20~1-10 한 해 야간·공휴일 근무·가장 길게 쉰 날·평균 잠, 금액 기본 가림, 사진 저장·보내기", "status": "doing", "size": "feature", "route": "app", "check": "12-20·1-2로 시계를 옮겨 유형마다 달력 카드 → 결산 보기 → 금액 켜고 끄기 → 사진에 저장·보내기, 투자·받은 달력엔 안 보임"}
+{"id": "dnK4t99rbpYEXVLZ", "track": "DISC-01", "title": "안 써 본 기능을 가끔 알려 주는 달력 위 카드(재치, 점점 뜸해짐, 그만 보기)", "status": "doing", "size": "feature", "route": "app", "tierAsk": "free", "tierWhy": "기존 기능을 알려 주는 안내·발견이고 새로 닿는 기능이 아니에요. 프로 기능은 4장에 1장 이하로만 알려요.", "events": ["disc_shown", "disc_try", "disc_later", "disc_off"]}
 {"track": "RVF-01", "title": "칸 디자인 '처음대로' 모양이 저장 뒤 사라져 주말 강조가 모든 날에 들어가던 것", "status": "check", "size": "fix", "route": "app", "check": "설정 › 칸 디자인 › 주말 강조: 평일은 그대로, 토·일만 주말 모양. + 모양 더하기로 모양 2가 생김"}
 {"track": "RVF-02", "title": "문의 답을 읽은 뒤 온 두 번째 답(출시 안내)에도 알림", "status": "check", "size": "fix", "route": "app", "check": "문의 → 답 1 알림 → 읽음 → 관리자 앱에서 답 하나 더 → 알림이 다시 옴"}
 {"track": "RVF-03", "title": "작품 이야기: 내 글 지우기, 남의 글 신고", "status": "check", "size": "fix", "route": "app", "check": "장터 작품 › 이야기: 내 글에 지우기, 남의 글에 신고(관리자 앱 커뮤니티에 신고가 들어옴)"}

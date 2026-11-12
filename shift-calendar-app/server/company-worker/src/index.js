@@ -58,6 +58,7 @@
 
 import { adminFile, adminBuild } from "./admin-app.js";
 import { SERVER_VERSION } from "./version.js";
+import { cutFrom, oldPayCut, oldPayRoute } from "./old-pay.js";
 import { glance } from "./glance.js";
 import { OBS_BADGE_SQL, observeRoute, observeTick } from "./observe.js";
 import { draftMap, draftRoute, draftsFor, groupDraftKey, mergeDraftKey, rewardDraftKey, settleDraft } from "./claude-drafts.js";
@@ -81,7 +82,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
-import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -284,7 +285,8 @@ function loopAnswer(e, id, text, at) {
 
 /** 1.38 [ADM3-05] 매시 17분 작업의 단계(이름은 ops-watch.js JOB_NAMES). 순서는 1.37까지와 같아요. */
 export const hourlySteps = (env) => [
-  ["prune", () => prune(env, Date.now())],
+  // 1.40 [RVD-05] 옛 식으로 잘못 찍힌 결제·환불 기록을 한 번 다시 봐요(다 보면 멈춤).
+  ["prune", () => prune(env, Date.now()).then(() => rescanBilling(env, Date.now()))],
   ["trials", () => stopUnconsentedTrials(env, Date.now())],
   ["lapsed", () => recheckLapsed(env, Date.now())],
   ["rest", () => autoRest(env, Date.now())],
@@ -484,7 +486,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path.startsWith("/admin/")) return adminFile(path, request);
   // AE 1.26: the invite link needs no database.
   if (path.startsWith("/i/") && method === "GET") return invitePage(path.slice(3));
-  if (path === "/api/admin/health" && method === "GET") return json(health(env));
+  if (path === "/api/admin/health" && method === "GET") return url.searchParams.get("deep") === "1" ? deepHealth(env) : json(health(env));
   if (!env.DB) return json({ error: "no_database" }, 503);
   await ready(env);
   // R131 1.31 [SPD-26] I2: the app opens its connection (and this Worker) when a lookup screen opens, before the first letter.
@@ -980,6 +982,10 @@ const LATE_INDEXES = [
   "CREATE INDEX IF NOT EXISTS inquiries_bad ON inquiries (status) WHERE rating = -1",
   "CREATE INDEX IF NOT EXISTS posts_flagged ON posts (flags, created_at) WHERE kept = 0 AND (flags > 0 OR hide_reason = 'flags')",
   "CREATE INDEX IF NOT EXISTS audit_action ON audit (action, id)",
+  // 1.40 [RVD-09] 검토 SVC-89: 광장의 답글(parent)·뽑힌 답(answer)을 찾는 질의가 글 표 전체를 훑었어요(글 2만 줄에 1초쯤). 답글·뽑힌 답이
+  // 있는 줄만 담는 부분 색인이라 작아요. parent·answer 칸은 COLUMNS가 더하니 이 줄은 그 뒤(LATE)에 있어요.
+  "CREATE INDEX IF NOT EXISTS posts_parent ON posts (parent, created_at) WHERE parent IS NOT NULL",
+  "CREATE INDEX IF NOT EXISTS posts_answer ON posts (answer) WHERE answer IS NOT NULL",
   // AN 1.28 끝
   // AO 1.28 시작 [PERF-17] How long the app took to open on consenting phones, as counts per bucket: per day, app version,
   // kind (cold: a new process, warm: it was running) and step (container wait, screen, first month). No phone, no time.
@@ -1165,10 +1171,16 @@ export async function flushMeter(env, now, force = false) {
     ON CONFLICT (key) DO UPDATE SET count = count + ?2`).bind(`meter|${meterDay(now)}`, n + 1, now + 3 * DAY).run();
 }
 
-const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months'";
+const SETTING_KEYS = "'adopt_points', 'reward_months', 'adopt_agree', 'adopt_persons', 'amend_persons', 'auto_reward', 'reward_cap_months', 'reward_cap_days', 'first_months', 'first_cap_year', 'ask_months', 'old_pay_cut', 'shipped_version'";
 
 async function settings(env) {
   return readSettings(await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`));
+}
+
+/** 1.40 [PAYP-19] [settings] and 옛 앱 급여 끊기 in the same read, so a company page takes no more reads. */
+async function settingsAndCut(env) {
+  const rows = await all(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`);
+  return { ...readSettings(rows), oldPay: cutFrom(rows.find((r) => r.key === "old_pay_cut")?.value, rows.find((r) => r.key === "shipped_version")?.value) };
 }
 
 function readSettings(rows) {
@@ -2093,11 +2105,11 @@ const readWith = (url) => new Set(String(url?.searchParams.get("with") ?? "").sp
 async function companyData(env, id, request, parts = new Set(), known = null) {
   const now = Date.now();
   // AS 1.29 [SRCH-05] The page's reads go together, not one setup after another (the same answer, in the same order).
-  const [c, who, { adoptPoints }, aliasRows, rules, groups, downRows, stable] = await Promise.all([
+  const [c, who, { adoptPoints, oldPay }, aliasRows, rules, groups, downRows, stable] = await Promise.all([
     one(env, "SELECT * FROM companies WHERE id = ?", id),
     // [PLAZA-08] Pay only for a phone that joined this company; anyone else (an app before 1.26 too) gets the shifts.
     known ?? viewer(request, env, id),
-    settings(env),
+    settingsAndCut(env),
     all(env, "SELECT name FROM aliases WHERE company_id = ? ORDER BY name", id),
     all(env, "SELECT * FROM rules WHERE company_id = ? AND withdrawn = 0 AND superseded = 0 ORDER BY dept_norm", id),
     all(env, `SELECT grp, MAX(created_at) AS last FROM reports WHERE company_id = ? AND status = 'pending' AND ${pgShown()}
@@ -2115,13 +2127,15 @@ async function companyData(env, id, request, parts = new Set(), known = null) {
   // 1.39 [PAYP-01] (사용자 2026-11-07 "급여 계산식은 보여지지 않게"): pay lines go to no one, members too; the pay part itself
   // only to an app before 1.39 that joined (it puts a way in from the page), never to a 1.39 app, which takes it (/take) when
   // it puts the way in and shows it nowhere.
-  const payBody = who.member && !payPrivate(request);
+  // 1.40 [PAYP-19] 결정 1: and from 1.40's release day, to no older app either (oldPayCut; read only for an older app's member).
+  const withheld = payPrivate(request) || oldPay.on;
+  const payBody = who.member && !withheld;
   const view = (text) => (payBody ? shared(text, c.name) : shiftsOnly(shared(text, c.name)));
   const words = (setup) => shiftLines(describe(setup));
   const waitingGroups = groups.filter((g) => !rules.some((r) => r.grp === g.grp));
   const pair = (grp) => ({ company: c.id, grp });
   const extra = who.member && (parts.has("room") || parts.has("talk")) ? Promise.all([
-    parts.has("room") ? roomData(env, c, who, now, payPrivate(request)) : null,
+    parts.has("room") ? roomData(env, c, who, now, withheld) : null,
     parts.has("talk") ? talkData(request, env, c.id, ROOM, { c, who }) : null,
   ]) : null;
   // Its failure is the answer's, below; not a second one if the page's own reads fail first.
@@ -2229,6 +2243,9 @@ const shared = (text, name) => ({ ...JSON.parse(text), company: name });
 
 /** Whether the asking app is 1.39 or later, which never shows a shared pay way and takes it with /take. */
 export const payPrivate = (request) => request?.headers?.get?.("x-pay-private") === "1";
+
+/** 1.40 [PAYP-19] 결정 1: no pay part for this app: a 1.39 app (it takes the way with /take), or any app once 1.40 is out. */
+export const payWithheld = async (request, env) => payPrivate(request) || (await oldPayCut(env)).on;
 
 /** A version the developer turned down (a key the answer never carries: JSON.stringify leaves symbols out). */
 const DOWN = Symbol("down");
@@ -2475,7 +2492,7 @@ async function room(request, env, companyId) {
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   if (!who.dev) refuse("device", "device");
   if (!who.member) return who.limited ? tooMany("reads", DAY - (Date.now() % DAY)) : json({ error: "member" }, 403);
-  const r = await roomData(env, c, who, Date.now(), payPrivate(request));
+  const r = await roomData(env, c, who, Date.now(), await payWithheld(request, env));
   return json(r.body, r.status);
 }
 
@@ -4219,7 +4236,7 @@ async function talkData(request, env, companyId, grp, known = null) {
     });
   }
   // [PLZ-04] An older version's talk is read only; the app points to the version in use.
-  if (member && !room) await withProposalTexts(all, env, c, posts, { withoutPay: payPrivate(request) }); // BC 1.30 [PROP-01]
+  if (member && !room) await withProposalTexts(all, env, c, posts, { withoutPay: await payWithheld(request, env) }); // BC 1.30 [PROP-01]
   // [J133-91] 1.33 빌드 7 확인 ("고쳐 다시 올리기를 열면 전에 바꾼 값이 비어 있어요"): the writer's own proposals come with their
   // setup to anyone, so it opens as it was sent; without the pay part when this version has a pay way they may not see (결정 D79).
   else if (!room) {
@@ -4559,7 +4576,8 @@ export async function history(env, companyId, url, request) {
   const who = c.id === companyId ? asked : await viewer(request, env, c.id);
   // 1.39 [PAYP-01] Pay lines to no one; a version's pay part only to an older app's member, which can put it back on a phone.
   const words = (setup) => shiftLines(describe(setup));
-  const payBody = who.member && !payPrivate(request);
+  // 1.40 [PAYP-19] 결정 1: not to an older app either once 1.40 is out.
+  const payBody = who.member && !(await payWithheld(request, env));
   const deptOf = `SELECT dept_norm FROM rules WHERE company_id = ?1 AND grp = ?2
     UNION ALL SELECT dept_norm FROM reports WHERE company_id = ?1 AND grp = ?2 LIMIT 1`;
   const [dept, rules] = await Promise.all([one(env, deptOf, c.id, grp), all(env, `SELECT r.*,
@@ -4908,6 +4926,25 @@ function health(env) {
   return { database: Boolean(env.DB), password: why.password === null, salt: why.salt === null, why };
 }
 
+/**
+ * 1.40 [RVD-08] 검토 SRV-03: 배포 뒤 확인(tools/deploy_worker.py)이 DB를 건드려 봐요. 표를 이 코드의 판으로 맞추고(ready), 판 표시를 읽고,
+ * 모든 앱이 매일 부르는 길(/api/config)의 두 읽기를 해요. 스키마가 깨진 판이면 schema·config가 false라 자동 되돌리기가 돌아요.
+ * 무엇이 왜 깨졌는지 글은 내보내지 않아요(공개 길이라 맞음·틀림만).
+ */
+async function deepHealth(env) {
+  const out = { ...health(env), schema: false, config: false };
+  if (!env.DB) return json(out, 503);
+  try {
+    await ready(env);
+    out.schema = (await one(env, "SELECT value FROM settings WHERE key = 'schema'"))?.value === SCHEMA_VERSION;
+    await Promise.all([config(env), updatePolicy(env)]);
+    out.config = true;
+  } catch (e) {
+    console.error(`deep health: ${e?.message ?? e}`);
+  }
+  return json(out, out.schema && out.config ? 200 : 503);
+}
+
 /** [ADMIN-15] The setup screen's full state, for the owner: health plus the optional services. */
 /** 1.36 [SEC-11] The service account as Play Integrity uses it, or null. */
 export function playIntegrity(env) {
@@ -4987,7 +5024,7 @@ function areaFor(path) {
   if (path.startsWith("/growth/")) return "community";
   // AM 1.28 [FLAG-27] the switches are flags now: 기능 관리 (forcing off checks flagOff as well).
   if (path === "/switches" || path === "/flags" || path.startsWith("/flags/") || path === "/types" || path === "/policy" || path.startsWith("/checks/")) return "flags";
-  if (path.startsWith("/notices") || path === "/ops") return "ops";
+  if (path.startsWith("/notices") || path === "/ops" || path === "/old-pay") return "ops";
   // 1.28 통합 [ADMUX-40] 분석 › 기능별 효과 reads flag numbers beside the other numbers.
   if (path === "/metrics" || path === "/remote" || path === "/effects" || path === "/glance") return "metrics";
   if (path.startsWith("/shares")) return "shares";
@@ -5259,6 +5296,8 @@ async function signedRoute(request, env, url, path, method, now, session) {
   m = path.match(/^\/notices\/(n[A-Za-z0-9]{9})\/remove$/);
   if (m && method === "POST") return removeNotice(env, m[1], now);
   if (path === "/switches" && method === "POST") return setSwitch(request, env, now);
+  // 1.40 [PAYP-19] 옛 앱 급여 끊기: 저절로(1.40 나간 날)·지금·끊지 않기.
+  if (path === "/old-pay" && (method === "GET" || method === "POST")) return oldPayRoute(request, env, method, now);
   if (path === "/ops" && method === "GET") return json(await opsMonth(env, url.searchParams.get("month"), now));
   if (path === "/ops" && method === "POST") return checkOps(request, env, now);
   // 1.39 [STAT2-01~05] 숫자 › 한눈에: 정상도·사용자 흐름·초기 모드.

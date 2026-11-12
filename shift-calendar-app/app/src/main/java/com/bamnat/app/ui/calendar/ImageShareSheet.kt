@@ -69,6 +69,8 @@ fun ImageShareSheet(
     onDismiss: () -> Unit,
     /** The name the calendar's link went out with, if any: the picture's title can say whose it is. */
     startName: String = "",
+    /** 1.40 [SPREAD-37] In 12-20~1-10, the year whose 결산 picture can be made instead, and how to open it. */
+    yearRecap: Pair<Int, () -> Unit>? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -97,6 +99,11 @@ fun ImageShareSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("${month.monthValue}월 사진으로 보내기", style = MaterialTheme.typography.titleLarge)
+            yearRecap?.let { (y, open) ->
+                androidx.compose.material3.OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    Text("${y}년 근무 결산 사진 만들기")
+                }
+            }
             Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview
                 // The whole picture inside the frame (PC 5차: FillWidth under a height cap cut off the title and the 이름표).

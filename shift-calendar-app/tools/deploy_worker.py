@@ -205,16 +205,22 @@ def get(url: str) -> tuple[int, str]:
         return 0, type(e).__name__
 
 
-def healthy(worker: str, base: str, want_version: str) -> tuple[bool, str]:
+def company_ok(code: int, h: dict, deep: bool) -> bool:
+    """1.40 [RVD-08] 검토 SRV-03: 새 판은 deep=1로 DB까지(표 판 맞음·/api/config 읽기) 봐요. 되돌린 옛 판은 deep을 몰라 예전 기준으로."""
+    ok = code == 200 and h.get("database") is True and h.get("password") is True and h.get("salt") is True
+    return ok and (not deep or (h.get("schema") is True and h.get("config") is True))
+
+
+def healthy(worker: str, base: str, want_version: str, deep: bool = True) -> tuple[bool, str]:
     if worker == "company":
-        code, body = get(f"{base}/api/admin/health")
+        code, body = get(f"{base}/api/admin/health?deep=1" if deep else f"{base}/api/admin/health")
         try:
             h = json.loads(body)
         except ValueError:
             h = {}
-        ok = code == 200 and h.get("database") is True and h.get("password") is True and h.get("salt") is True
+        ok = company_ok(code, h, deep)
         code2, _ = get(f"{base}/admin/")
-        return ok and code2 == 200, f"health {code} db/password/salt {'모두 맞음' if ok else '빠짐'}, /admin/ {code2}"
+        return ok and code2 == 200, f"health {code} db/password/salt{'/표 판/config' if deep else ''} {'모두 맞음' if ok else '빠짐'}, /admin/ {code2}"
     code, body = get(f"{base}/api/health")
     try:
         h = json.loads(body)
@@ -332,7 +338,7 @@ def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> 
     if problems:
         run(WRANGLER + ["versions", "deploy", f"{old_id}@100%", "--yes", "--message", f"자동 되돌리기 {sha[:8]}"] + name, wd, check=False)
         time.sleep(10)
-        ok, note = healthy(worker, base, live or new_ver)
+        ok, note = healthy(worker, base, live or new_ver, deep=False)
         say(f"- **실패 → 앞 판 `{old_id[:8]}`으로 되돌림** (되돌린 뒤 {note}). 문제: " + " / ".join(problems))
         raise SystemExit(1)
     say(f"- **배포 끝**: {w['name']} {new_ver} `{new_id[:8]}`, health 5번 모두 맞음. 되돌릴 판 `{old_id[:8]}`")

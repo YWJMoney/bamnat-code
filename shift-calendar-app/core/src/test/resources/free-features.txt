@@ -49,6 +49,7 @@ field.units
 field.year
 grow.card
 guide.checklist
+guide.discover
 guide.tips
 help.inquiry
 hourly.attendance

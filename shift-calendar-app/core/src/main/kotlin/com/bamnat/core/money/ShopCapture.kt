@@ -103,6 +103,9 @@ object ShopCapture {
      * [SHOP-08] The amount of a card company's deposit (e.g. "신한카드 입금 1,234,000원", "카드대금 정산"),
      * read by the payment parser as a deposit; null for any other text.
      */
+    /** 1.39.1 [R391-09] The 이체 line of a card company's deposit that fits no day's card sales. */
+    const val CARD_DEPOSIT = "카드 매출 입금"
+
     fun settlement(text: String, parsed: PaymentParser.Parsed?): Long? {
         if (parsed == null || parsed.type != PaymentParser.Type.DEPOSIT) return null
         val amount = parsed.amount?.takeIf { it > 0 } ?: return null

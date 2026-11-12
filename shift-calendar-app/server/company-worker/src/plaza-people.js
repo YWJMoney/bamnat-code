@@ -96,8 +96,9 @@ export async function peopleFacts(all, env, devices) {
     const [a, b] = await Promise.all([
       all(env, `SELECT device, MIN(created_at) AS first FROM posts WHERE grp = 'room' AND company_id IN (${PEOPLE_ROOMS.map((r) => `'${r}'`).join(",")})
         AND parent IS NULL AND device IN (${q}) GROUP BY device`, ...part),
-      all(env, `SELECT a.device, COUNT(*) AS n FROM posts q JOIN posts a ON a.id = q.answer WHERE q.answer IS NOT NULL AND q.status = 'shown'
-        AND a.status = 'shown' AND a.device <> q.device AND a.device IN (${q}) GROUP BY a.device`, ...part),
+      // 1.40 [RVD-09] 검토 SVC-89: 글쓴이의 글(posts_device)에서 시작해 그 글을 뽑은 질문(posts_answer)으로. CROSS JOIN은 SQLite에 그 순서를 지켜요.
+      all(env, `SELECT a.device, COUNT(*) AS n FROM posts a CROSS JOIN posts q ON q.answer = a.id WHERE a.device IN (${q}) AND a.status = 'shown'
+        AND q.status = 'shown' AND a.device <> q.device GROUP BY a.device`, ...part),
     ]);
     for (const r of a) first.set(r.device, r.first);
     for (const r of b) helped.set(r.device, r.n);

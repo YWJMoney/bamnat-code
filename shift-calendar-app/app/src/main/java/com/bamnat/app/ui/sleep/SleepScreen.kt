@@ -390,7 +390,8 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
 
     fun delete(entry: SleepEntry) {
         container.appScope.launch {
-            container.sleepRepository.delete(entry.id)
+            // 1.39.1 [R391-04] The night's sounds and clips go with it.
+            container.sleepRepository.deleteWithSounds(entry.id, container.sleepClipDeleter)
             // 1.39 G5 [SLEEP-09] The copy written to 헬스 커넥트 goes too; 되돌리기 writes it again on the next look.
             if (settings.value.healthWrite) container.healthSleep.forget(entry.id)
             _messages.emit(UndoMessage("기록을 지웠어요") {

@@ -23,6 +23,23 @@ object AppLock {
     private val _locked = MutableStateFlow(false)
     val locked: StateFlow<Boolean> = _locked.asStateFlow()
 
+    /**
+     * 1.39.1 [R391-10] (검토 UIX-41) Bumped when a 창 or 시트 opens while locked: each is a window of its own over the activity,
+     * so the cover (a window too, [com.bamnat.app.ui.LockCover]) is put back on top of it.
+     */
+    private val _opened = MutableStateFlow(0)
+    val opened: StateFlow<Int> = _opened.asStateFlow()
+
+    /** A 창·시트 window was just added; only matters while locked. */
+    fun windowOpened() {
+        if (_locked.value) _opened.value++
+    }
+
+    /** For tests: the cover as after a minute away. */
+    internal fun lockNow() {
+        _locked.value = true
+    }
+
     private var stoppedAt = 0L
     private var started = false
 

@@ -143,6 +143,9 @@ object FeatureRegistry {
             ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
         f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요",
             ALL, "달력 맨 위 한 줄", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
+        // 1.40 [DISC-04] 안 써 본 기능 가끔 알려 주기 (사용자 2026-11-11): the calendar's one card about a feature not tried yet.
+        f("guide.discover", "DISC-04", "안 써 본 기능 알려 주기", "오래 안 써 본 기능 가운데 내 일에 맞는 것 하나를 가끔(7일에 한 장까지) 달력 위 카드로 알려 줘요. 안 눌러 주면 점점 뜸해져요",
+            ALL, "달력 맨 위 카드", at(Place.FEATURES), "이런 기능", "모르는 기능", "기능 소개", "알려 주기", off = Off.APP),
         // [ONBOARD-03][ONBOARD-04] The recommended features and what they need, on one screen.
         f("settings.recommended", "ONBOARD-04", "추천 기능 한 번에 켜기", "켜 둬도 괜찮은 알림과 필요한 허용을 한 화면에서 켜고, 끄는 곳을 알려 줘요",
             ALL, "설정 › 기능 켜고 끄기 › 추천 기능 한 번에 켜기", at(Place.RECOMMENDED),

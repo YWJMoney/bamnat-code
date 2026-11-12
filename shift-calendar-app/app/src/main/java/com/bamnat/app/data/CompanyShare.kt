@@ -475,6 +475,33 @@ class CompanyShare(
         return merge(profile, JSONObject(pay.toString()), ids, kindIds)
     }
 
+    /**
+     * [PAYP-18] 1.40 명세서로 가장 맞는 판 고르기: [text]'s pay way on this calendar's pay as [applyRulesWith] would put it in with
+     * [base] from [month], nothing saved (kinds of extra work the user does not have keep their ids). A user with no pay yet starts
+     * from a monthly pay; what the way leaves to each person is 금액 모름 until the payslip names it ([com.bamnat.core.pay.WayPick.filled]).
+     */
+    suspend fun tryWay(text: String, base: Long, month: java.time.YearMonth): PayProfile? {
+        val root = parse(text)
+        check(root)
+        val pay = root.optJSONObject("pay") ?: return null
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        val mine = settings.current.extraKinds
+        val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            ExtraKinds.decode(encoded).kinds.mapNotNull { k ->
+                val id = if (k.isBuiltIn) k.id else mine.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }?.id
+                id?.let { k.id to it }
+            }.toMap()
+        }.orEmpty()
+        val had = payStore.profile.value
+        val start = had ?: PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.MONTHLY,
+            ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(month.atDay(1), base))))
+        val merged = merge(start, JSONObject(pay.toString()), ids, kindIds)
+        val marked = merged.copy(estimatedFields = merged.estimatedFields +
+            merged.items.filter { it.amount.entries.isEmpty() && !it.isPercent && !it.isCompanyFixed &&
+                !(it.cadence == com.bamnat.core.pay.Cadence.BONUS && it.percentOfBase != null) }.map { Unknowns.item(it.id) })
+        return com.bamnat.core.pay.BaseAsk.apply(marked, base, month)
+    }
+
     /** [PROP-02] [p]'s allowances as the proposal [pay] has them, against the version [base] it changes. */
     private fun proposed(p: PayProfile, base: String, pay: JSONObject): PayProfile {
         val was = runCatching { JSONObject(base).optJSONObject("pay")?.optJSONArray("items").objects().map { it.optString("name") }.toSet() }
