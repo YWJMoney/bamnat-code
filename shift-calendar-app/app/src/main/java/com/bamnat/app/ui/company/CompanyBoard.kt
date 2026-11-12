@@ -577,7 +577,7 @@ fun TalkSheet(holder: TalkHolder) {
                     // 2.0.0 [RVN-06] 디자인 품질 12: at 200% the bar cut '고치자는 제안' to '고치자' (and a room's four kinds the same way);
                     // with big letters the kinds are chips that go on to a second line instead.
                     if (com.bamnat.app.ui.components.bigLetters()) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 2.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         kinds.forEach { (k, label) ->
                             com.bamnat.app.ui.components.FilterChip(selected = kind == k, onClick = { kind = k; error = null },
                                 label = { Text(label) }, modifier = Modifier.heightIn(min = 48.dp))

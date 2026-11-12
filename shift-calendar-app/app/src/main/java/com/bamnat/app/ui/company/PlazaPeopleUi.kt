@@ -396,7 +396,7 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
     val name = p.nick ?: if (p.who > 0) "참여자 ${p.who}" else "참여자"
     SoftCard {
         Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "신고된 글 펼쳐 보기" else "이 글 보기") { if (folded) reveal = true else onOpen() }
-            .padding(start = 14.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            .padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
                 Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
@@ -415,14 +415,14 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
                 "show" -> "자랑" to Tone.WAIT
                 else -> null
             }
-            if (p.first || p.helped > 0 || kindChip != null) androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 14.dp),
+            if (p.first || p.helped > 0 || kindChip != null) androidx.compose.foundation.layout.FlowRow(Modifier.padding(end = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 kindChip?.let { (t, tone) -> StatusChip(t, tone) }
                 if (p.first) StatusChip("🌱 첫 글", Tone.GOOD)
                 if (p.helped > 0) Text("도움 ${p.helped}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary,
                     modifier = Modifier.align(Alignment.CenterVertically).semantics { contentDescription = "답이 도움 된 횟수 ${p.helped}" })
             }
-            Column(Modifier.padding(end = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(Modifier.padding(end = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 p.tag?.let { PlazaTagLine(it) }
                 if (folded) {
                     // COMP-02 Until an operator looks, the words stay folded on 광장's first page as in the sheet.
@@ -456,7 +456,7 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
                     else -> "답 ${answers.size}"
                 }, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { if (answers.isEmpty()) onReply() else onOpen() }
-                        .padding(vertical = 14.dp, horizontal = 8.dp))
+                        .padding(vertical = 12.dp, horizontal = 8.dp))
             }
         }
     }
