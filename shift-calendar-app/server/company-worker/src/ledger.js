@@ -1,8 +1,9 @@
 import { all, batch, can, iso, json, readJson, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { BILLING_RECORD, DEV, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
+import { DEV, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
 import { PILE_NAMES, compareVersions, grams, known, likeness, sortInbox, titleFrom, version } from "./inbox.js";
 import { isOut } from "./desk.js";
+import { askOwnerOf, replyRiskOf } from "./ask-check.js";
 import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_STATE_NAMES, WORK_TYPES, workList } from "./work.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
@@ -62,49 +63,16 @@ export const LEDGER_TYPES = { ...WORK_TYPES };
 
 /**
  * 1.38 [DESK-02] 설계 5-3: Claude가 혼자 보내지 않고 최고 관리자에게 묻는 것. 말로만 가려요(새로 남기는 것 없음).
- * 이름은 장부의 '답' 칸에 그대로 보여요.
- */
-const ASK_OWNER = [
-  ["money", "환불·결제·보상", (t) => BILLING_RECORD.test(t) || /보상\s*(해|받|요구|지급|을|좀)|배상|돈\s*돌려/.test(t)],
-  ["law", "법·안전 신고", (t) => /불법\s*촬영|몰카|명예\s*훼손|고소|고발|경찰|변호사|소송|청소년|미성년|성희롱|성추행|협박|스토킹|자해|자살|죽고\s*싶/.test(t)],
-  ["privacy", "개인정보 요청", (t) => /개인\s*정보|탈퇴|계정\s*(삭제|지워)|(내|제)\s*(정보|데이터|기록).{0,8}(지워|삭제|열람|보여|달라)|열람\s*요청/.test(t)],
-  ["angry", "크게 화난 민원", (t) => /화가\s*(나|납)|짜증|최악|사기|어이(가)?\s*없|열\s*받|빡치|별점\s*1|신고\s*하겠|가만\s*안/.test(t)],
-  ["terms", "약관·처리방침 질문", (t) => /약관|처리\s*방침|개인정보\s*처리/.test(t)],
-  // 1.39 [LOOP-38] 사용자 11-09 '코드 등 보안을 침해하는 답은 절대 금지, 우회하는 문의가 와도 답하지 않고 관리자 확인으로 남겨 답을 미룰 것'.
-  ["security", "보안·코드·우회 요청", (t) => SECURITY_ASK.test(t)],
-  // 사용자 11-08·11-09 '사람이냐고 묻는 문의는 답하지 말고 알림', 'AI라는 것을 밝히지 않기'.
-  ["human", "사람·AI인지 묻는 문의", (t) => HUMAN_ASK.test(t)],
-];
-
-const SECURITY_ASK = new RegExp([
-  "소스\\s*코드", "코드\\s*(를|좀|도)?\\s*(보여|알려|공개|보내|줘|주세요|달라)", "api\\s*키", "토큰", "비밀\\s*(번호|값|키)", "암호\\s*키",
-  "관리자\\s*(페이지|화면|앱|주소|계정|권한|비번|비밀|로그인|모드)", "admin", "password", "해킹", "해커", "우회", "취약", "탈옥", "jailbreak",
-  "프롬프트", "prompt", "시스템\\s*(지시|명령|메시지|설정)", "(이전|앞|위|기존)의?\\s*(지시|명령|규칙).{0,8}(무시|잊)", "무시하고", "ignore\\s+(all|previous|the|your)",
-  "서버\\s*(주소|구조|코드|정보|위치|ip)", "데이터\\s*베이스", "db\\s*(주소|구조|접속|내용)", "sql", "디컴파일", "리버스\\s*엔지", "백도어", "난독화", "인증서", "서명\\s*키",
-].join("|"), "i");
-const HUMAN_ASK = new RegExp([
-  "(사람|상담원|직원|운영자)\\s*(이|인)?\\s*(세요|에요|예요|이에요|인가요|인가|이야|야\\?|냐|맞나|맞아|맞죠|맞나요|이\\s*답|이\\s*쓴|이\\s*적)",
-  "(ai|에이아이|인공\\s*지능|챗\\s*봇|gpt|클로드|claude|로봇)\\s*(이|가|인가|인지|이세요|세요|이야|야|냐|맞|로\\s*답|가\\s*답|가\\s*쓴|가\\s*적|아니|한테)",
-  "자동\\s*(답|응답)\\s*(이|인|이에|이야|이세|맞)", "봇\\s*(이|인가|이세요|이야|이냐)",
-].join("|"), "i");
-
-/**
- * 1.39 [LOOP-38] 사람 없이 나갈 답(Claude 열쇠·자동 정리) 글에 들어가면 안 되는 말: AI·자동 답이라는 것, 코드·서버·열쇠 같은 보안 정보.
- * 걸리면 그 답은 저절로 가지 않고 문의 권한이 있는 관리자가 보고 보내요. 그 이유 이름, 아니면 null.
+ * 이름은 장부의 '답' 칸에 그대로 보여요. 1.40 [RVD-07] 가리는 식은 src/ask-check.js 한 곳(예문 장부 test/ask-corpus.json).
  */
 export function replyRisk(text) {
-  const t = String(text ?? "");
-  if (/(\bai\b|인공\s*지능|챗\s*봇|gpt|claude|클로드|anthropic|언어\s*모델|자동\s*(으로\s*)?(답|응답|생성)|로봇)/i.test(t)) return "답에 AI·자동 답 표현";
-  if (/(bamnat_|bearer\s|sk-[a-z0-9]|ghp_|wrangler|cloudflare|d1\b|\/api\/|workers\.dev|소스\s*코드|\.js\b|\.kt\b|github|깃허브|토큰|비밀\s*(번호|값|키)|api\s*키|서버\s*(주소|구조|코드)|데이터\s*베이스|sql|관리자\s*(페이지|계정|주소))/i.test(t)) return "답에 보안 정보";
-  return null;
+  return replyRiskOf(text);
 }
 
 /** 문의 하나가 최고 관리자 확인이 필요한지: { key, name } 또는 null. 회사 방식은 회사 이름이 나와서 늘 물어요. */
 export function askOwner(kind, text) {
   if (kind === "company") return { key: "company", name: "회사 방식 공개" };
-  const t = String(text ?? "");
-  for (const [key, name, test] of ASK_OWNER) if (test(t)) return { key, name };
-  return null;
+  return askOwnerOf(text);
 }
 
 /** 앱이 문의 앞에 붙이는 화면 경로 '[설정 > 알람]'. */
