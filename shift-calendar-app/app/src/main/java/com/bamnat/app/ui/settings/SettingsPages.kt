@@ -169,7 +169,13 @@ private fun WorkPage(
         if (work.workStyle?.usesPayEngine != false) {
             HorizontalDivider()
             // [EXTRA-04][EXTRA-07] Each company names, times and pays work on a day off and extra hours its own way.
-            NavRow("연장·휴무일 근무 지정", settings.extraKinds.visible().joinToString(" · ") { it.name } + " · 시간·가산 임금", onOpenExtraKinds)
+            // 2.0.0 [RVO-19] 검토 T11a-12: an 알바 reads '연장·휴일 근무', and that the 1.5배 is for a place where five or more work
+            // (근로기준법 제56조, 시행령 제7조 별표 1); the row keeps its name for 설정 찾기.
+            val kinds = settings.extraKinds.visible().joinToString(" · ") { it.name }
+            Column(Modifier.focusMark("연장·휴무일 근무 지정")) {
+                if (work.workStyle == WorkStyle.HOURLY) NavRow("연장·휴일 근무", "$kinds · 가산 임금은 5명 이상 일하는 곳만", onOpenExtraKinds)
+                else NavRow("연장·휴무일 근무 지정", "$kinds · 시간·가산 임금", onOpenExtraKinds)
+            }
         }
         HorizontalDivider()
         // [PLAZA-06] U25-나: the first setup's questions again, company search included; nothing changes until saved.
@@ -343,7 +349,9 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
         if (ringing.isEmpty()) {
             Note(if (quiet) "시작 전 알람이 켜진 ${com.bamnat.app.ui.shifts.dayKindSubject(calStyle)} 없어요." else "근무 전 알람이 켜진 근무가 없어요.")
             if (quiet) NavRow(if (calStyle == WorkStyle.INVEST) "알람 켜기" else "${calStyle.words().types}에서 알람 켜기", "몇 분 전에 울릴지 정해요", onOpenShiftTypes)
-            else NavRow("근무 종류에서 알람 켜기", "근무마다 몇 분 전에 울릴지 정해요", onOpenShiftTypes)
+            // 2.0.0 [RVO-19] 검토 SET-06: the row it opens by the name 내 근무 gives it (일근 '출근 시간', 알바 '알바 시간').
+            else NavRow(if (calStyle == null || calStyle == WorkStyle.SHIFT) "근무 종류에서 알람 켜기" else "${calStyle.words().types}에서 알람 켜기",
+                "근무마다 몇 분 전에 울릴지 정해요", onOpenShiftTypes)
         }
         for ((i, t) in ringing.withIndex()) {
             if (i > 0) HorizontalDivider()
@@ -381,8 +389,9 @@ private fun AlarmPage(vm: SettingsViewModel, settings: AppSettings, onOpenShiftT
             modifier = Modifier.focusMark("알람음"),
         )
         // [UX-04] Said as a way there, not only as a sentence. 2.0.0 [RVH-41] 검토 T30-85: an investor's alarms have no kinds of day.
-        if (settings.workStyle != WorkStyle.INVEST)
-            NavRow("근무마다 다른 소리", "${settings.workStyle.words().types}에서 따로 정해요", onOpenShiftTypes)
+        // 2.0.0 [RVO-19] The kinds it opens are the calendar's on this page (as the rows above), so said in its words.
+        if (calStyle != WorkStyle.INVEST)
+            NavRow("근무마다 다른 소리", "${calStyle.words().types}에서 따로 정해요", onOpenShiftTypes)
         // 2.0.0 [RVG-06] 검토 ALM-06: 무음 with 진동 off read as an alarm that makes nothing; it always vibrates then, and says so.
         SwitchRow("진동", when {
             settings.defaultAlarmSound == AppSettings.SILENT_SOUND -> "무음 알람음이라 이 스위치와 상관없이 진동으로 울려요"
@@ -769,7 +778,10 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
         }, onOpenPay)
         HorizontalDivider()
         // [LEAVE-14] 1.36 실사용 S11 (설정 › 급여와 연차에 연차가 없어요): the 연차 screen from here too, not only 3 levels down in 근무·급여.
-        NavRow("연차", "남은 연차·없어지는 날·입사일 · 연차·반차는 달력에서 넣어요") { SettingsLinks.go(SettingsGo.LEAVE) }
+        // 2.0.0 [RVO-19] 검토 T11a-11·SET-07: an 알바 has 연차 only at 15 hours a week or more (4주 평균, 근로기준법 제18조 제3항) where five
+        // or more work (시행령 제7조 별표 1); said with the row, not left to find out on the 연차 screen.
+        NavRow("연차", if (hourly) "주 15시간 이상, 5명 이상 일하는 곳이면 생겨요 · 남은 연차·입사일"
+            else "남은 연차·없어지는 날·입사일 · 연차·반차는 달력에서 넣어요") { SettingsLinks.go(SettingsGo.LEAVE) }
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
         SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
             else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
@@ -845,8 +857,12 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     }
     SectionCard(title = "모양") {
         // [SHFT-05] 야간 근무 중 어둡게: dark during a night shift on the calendar being viewed.
-        ChoiceRow("테마", if (settings.themeMode == ThemeMode.NIGHT_SHIFT) "22~06시에 걸친 근무 중에는 어둡게, 그 밖에는 휴대폰 따라" else null,
-            listOf(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게", ThemeMode.NIGHT_SHIFT to "야간 근무 중 어둡게"),
+        // 2.0.0 [RVO-19] 검토 SET-06·T11a-08: said in the kind's words ('밤 영업 중 어둡게'), and not offered to work with no nights
+        // (일근·현장·투자) unless it is the one chosen.
+        val pageStyle = LocalSettingsStyle.current
+        ChoiceRow("테마", if (settings.themeMode == ThemeMode.NIGHT_SHIFT) DisplayWords.nightThemeHint(pageStyle) else null,
+            listOfNotNull(ThemeMode.SYSTEM to "휴대폰 따라", ThemeMode.LIGHT to "밝게", ThemeMode.DARK to "어둡게",
+                (ThemeMode.NIGHT_SHIFT to DisplayWords.nightTheme(pageStyle)).takeIf { DisplayWords.night(pageStyle) != null || settings.themeMode == ThemeMode.NIGHT_SHIFT }),
             settings.themeMode) { m ->
             vm.update { it.copy(themeMode = m) }
         }
@@ -874,7 +890,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         if (settings.workStyle?.usesPayEngine != false) SwitchRow("하루 다이얼", "오늘의 흐름에 하루 24시간을 원으로 보여 줘요. 근무는 근무 색 호, 잘 시간은 점선, 잔 시간은 칠한 호, 알람은 점, 지금은 바늘이에요",
             settings.dayDial) { on -> vm.update { it.copy(dayDial = on) } }
         // 1.39 [FLOW-30] 근무 기준 하루: where a small-hours note, spending or sleep belongs on a day with no work around it.
-        ChoiceRow("하루 시작 시각", "야간 근무 중 새벽에 적은 돈·메모·잠은 그 야간 날에 붙어요. 근무가 없는 날은 이 시각 전까지 어제로 쳐요",
+        ChoiceRow("하루 시작 시각", DisplayWords.dayStartHint(pageStyle),
             // 2.0.0 [RVO-17] 검토 SET-12: as 오전/오후로 보기 says ('오전 3:00' or '03:00'), as every time in the app.
             listOf(0, 180, 240, 300, 360).map { it to if (it == 0) "자정" else Fmt.time(java.time.LocalTime.of(it / 60, 0)) }, settings.dayStartMinutes) { m ->
             vm.update { it.copy(dayStartMinutes = m) }
@@ -887,7 +903,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     }
     SectionCard(title = "달력") {
         // [CAL-02] Sunday first, as most Korean calendars are.
-        ChoiceRow("한 주의 시작", "달력 첫 칸의 요일이에요. 주 근무시간은 늘 월~일로 세요", listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
+        ChoiceRow("한 주의 시작", DisplayWords.weekStartHint(LocalSettingsStyle.current), listOf(DayOfWeek.SUNDAY to "일요일", DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             vm.update { it.copy(weekStart = d) }
         }
         // One choice: before, two switches quietly took each other's place.
@@ -898,8 +914,13 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             settings.showHoursInCells -> CellLine.HOURS
             else -> CellLine.NONE
         }
+        // 2.0.0 [RVO-19] 검토 SET-06·T11a-08: the hours in the kind's word (영업시간, 일정 시간); an investor's days have none to show,
+        // so only 음력 is offered there (an hours line chosen before stays to be changed).
+        val hoursWord = DisplayWords.hours(LocalSettingsStyle.current)
+        val hoursShown = hoursWord != null || line == CellLine.HOURS || line == CellLine.BOTH
         ChoiceRow("날짜 칸 아래", "날짜 밑에 작게 보여 줄 것을 골라요",
-            listOf(CellLine.NONE to "비움", CellLine.HOURS to "근무시간 (8h)", CellLine.LUNAR to "음력 (8.24)", CellLine.BOTH to "둘 다 (8h·8.24)"), line) { l ->
+            listOfNotNull(CellLine.NONE to "비움", (CellLine.HOURS to "${hoursWord ?: "시간"} (8h)").takeIf { hoursShown },
+                CellLine.LUNAR to "음력 (8.24)", (CellLine.BOTH to "둘 다 (8h·8.24)").takeIf { hoursShown }), line) { l ->
             vm.update { it.copy(showHoursInCells = l == CellLine.HOURS || l == CellLine.BOTH, showLunar = l == CellLine.LUNAR || l == CellLine.BOTH) }
         }
         // [CYC-04] 1.38 업종 기념일.
@@ -1044,7 +1065,9 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         )
     }
     SectionCard(title = "백업") {
-        Note("근무, 바꾼 날짜, 메모, 돈 기록, 수면 기록, 급여 설정, 앱 설정을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없고, 사업장·직원·급여 대장과 내가 만든 근무표 링크의 열쇠도 같이 들어가요.")
+        // 2.0.0 [RVO-19] 검토 T11a-16: what goes in, in the words of the kind on screen (a shop's 매출, its 영업일 링크).
+        val dataStyle = LocalSettingsStyle.current
+        Note(com.bamnat.core.work.TypeWords.say(dataStyle, DisplayWords.backupHolds(dataStyle) + "을 파일 하나로 저장해요. 휴대폰을 바꾸거나 앱을 다시 설치할 때 불러오세요. 암호를 걸면 남이 열어 볼 수 없고, 사업장·직원·급여 대장과 내가 만든 근무표 링크의 열쇠도 같이 들어가요."))
         // 1.32 [STAB-08] When the last backup was, said where it is made.
         val c = LocalContext.current.appContainer
         val nudge by c.backupNudge.state.collectAsStateWithLifecycle()
@@ -1085,11 +1108,15 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
     SectionCard(title = "다른 캘린더 앱과") {
         // [GROW-05] 1.38 다른 앱에서 옮기기: the two ways that read only what is on the phone — a screenshot, the phone's calendar.
         var moving by remember { mutableStateOf(false) }
-        NavRow("다른 앱에서 옮기기", "쓰던 근무 앱의 한 달 화면 캡처나 휴대폰 캘린더에서 근무를 옮겨 와요") { moving = true }
+        // 2.0.0 [RVO-19] 검토 T11a-16: what moves, in the kind's words ('쓰던 달력 앱 … 영업일을').
+        val movedStyle = LocalSettingsStyle.current
+        val days = DisplayWords.daysObject(movedStyle)
+        NavRow("다른 앱에서 옮기기", (if (movedStyle?.usesPayEngine != false) "쓰던 근무 앱" else "쓰던 달력 앱") +
+            "의 한 달 화면 캡처나 휴대폰 캘린더에서 $days 옮겨 와요") { moving = true }
         if (moving) MoveFromOtherApp(onDismiss = { moving = false })
         HorizontalDivider()
         // [IMPORT-01]
-        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 근무와 메모로 옮겨요") {
+        NavRow("캘린더에서 가져오기", "삼성·구글 캘린더 일정을 읽어 ${com.bamnat.app.ui.shifts.lockNoun(movedStyle).let { if (it == "근무") "근무와" else it + "과" }} 메모로 옮겨요") {
             com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.CALENDAR_IMPORT)
         }
         HorizontalDivider()
@@ -1100,12 +1127,12 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         val calendars by book.calendars.collectAsStateWithLifecycle()
         val mine = remember(calendars) { calendars.filter { it.isMain || it in book.added() } }
         var choosing by remember { mutableStateOf(false) }
-        NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 근무를 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)") {
+        NavRow("캘린더 앱으로 내보내기", "구글·삼성 캘린더에 $days 넣는 파일을 만들어요 (3개월 전부터 1년 뒤까지)") {
             if (mine.size > 1) choosing = true else files.exportIcs()
         }
         if (choosing) AlertDialog(
             onDismissRequest = { choosing = false },
-            title = { Text("어느 달력의 근무를 내보낼까요?") },
+            title = { Text("어느 달력을 내보낼까요?") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     for (cal in mine) {

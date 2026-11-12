@@ -1074,7 +1074,22 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     if (style == null) return this
     val first = HelpFaq.firstFor(style)
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
-        .map { if (style == com.bamnat.core.work.WorkStyle.HOURLY) it.copy(question = workplaceWords(it.question), answer = workplaceWords(it.answer)) else it }
+        .map { t ->
+            if (style == com.bamnat.core.work.WorkStyle.SHIFT) t
+            else t.copy(question = kindWords(style, t.question), answer = kindWords(style, t.answer),
+                action = t.action?.let { (label, go) -> kindWords(style, label) to go })
+        }
+}
+
+/**
+ * 2.0.0 [RVO-19] 검토 T11a-16: an answer in the words of the calendar's kind ([com.bamnat.core.work.TypeWords.say]: '근무마다' is a
+ * shop's '영업일마다', '퇴근' a freelancer's '일 끝'), and the settings rows named as that kind's settings name them ('근무 종류와 시간'
+ * is '영업시간', '일정 종류'), so an answer never sends someone to a row their settings do not have. 알바 also reads 근무지 for 회사.
+ */
+internal fun kindWords(style: com.bamnat.core.work.WorkStyle, text: String): String {
+    val rows = text.replace("근무 종류와 시간", style.words().types).replace("근무 주기", style.words().pattern)
+    val said = com.bamnat.core.work.TypeWords.say(style, rows)
+    return if (style == com.bamnat.core.work.WorkStyle.HOURLY) workplaceWords(said) else said
 }
 
 /**

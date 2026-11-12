@@ -9,6 +9,9 @@ import com.bamnat.app.AppLock
 import com.bamnat.app.company.ForgetCounts
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.company.ForgetLog
+import com.bamnat.core.tier.InviteTerms
+import com.bamnat.core.work.TypeWords
+import com.bamnat.core.work.WorkStyle
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -74,6 +77,61 @@ class ReviewOSettingsTest {
         val installed = java.time.Instant.parse("2026-11-10T00:00:00Z")
         assertFalse(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plus(java.time.Duration.ofDays(1)), 3))
         assertTrue(com.bamnat.core.tier.AdRules.sdkMayStart(true, false, installed, installed.plus(java.time.Duration.ofDays(4)), 3))
+    }
+
+    /**
+     * 2.0.0 [RVO-19] 검토 T11a-16: each kind's help answers (as 도움말 shows them for the calendar's kind) hold no word of another
+     * kind's work ([TypeWords.leaks]), and name its settings rows as its settings name them.
+     */
+    @Test fun theHelpAnswersSpeakEachKindsWords() {
+        val bad = mutableListOf<String>()
+        for (style in WorkStyle.entries) for (t in HelpFaq.topics(true, InviteTerms.DEFAULT).forStyle(style)) {
+            for (text in listOfNotNull(t.question, t.answer, t.action?.first)) {
+                val leaks = TypeWords.leaks(style, text)
+                if (leaks.isNotEmpty()) bad += "$style ${t.id} $leaks: $text"
+            }
+        }
+        java.io.File("build/help-kind-words.txt").writeText(bad.joinToString("\n"))
+        assertEquals("${bad.size}줄", emptyList<String>(), bad)
+        val shop = HelpFaq.topics(true, InviteTerms.DEFAULT).forStyle(WorkStyle.BUSINESS)
+        assertFalse(shop.any { "근무 종류와 시간" in it.answer })
+    }
+
+    /** 2.0.0 [RVO-19] 검토 SET-06·T11a-08: 화면과 글자 in each kind's words; nothing about nights where the kind has none. */
+    @Test fun theDisplayPageSpeaksEachKindsWords() {
+        assertEquals("밤 영업 중 어둡게", DisplayWords.nightTheme(WorkStyle.BUSINESS))
+        assertEquals("야간 근무 중 어둡게", DisplayWords.nightTheme(WorkStyle.SHIFT))
+        assertNull(DisplayWords.night(WorkStyle.DAY))
+        assertNull(DisplayWords.night(WorkStyle.INVEST))
+        assertEquals("영업시간", DisplayWords.hours(WorkStyle.BUSINESS))
+        assertNull("an investor's days have no hours", DisplayWords.hours(WorkStyle.INVEST))
+        assertEquals("달력 첫 칸의 요일이에요", DisplayWords.weekStartHint(WorkStyle.BUSINESS))
+        for (style in WorkStyle.entries) for (line in listOf(DisplayWords.nightTheme(style), DisplayWords.nightThemeHint(style),
+            DisplayWords.dayStartHint(style), DisplayWords.weekStartHint(style), DisplayWords.hours(style).orEmpty())) {
+            assertEquals("$style: $line", emptyList<String>(), TypeWords.leaks(style, line))
+        }
+        assertFalse(DisplayWords.dayStartHint(WorkStyle.DAY).contains("야간"))
+        assertEquals("팀 관리", manageTitle(leader = true, boss = false, style = WorkStyle.DAY))
+        assertEquals("직원 관리", manageTitle(leader = false, boss = true, style = WorkStyle.FIELD))
+        assertEquals("팀·가게 관리", manageTitle(leader = true, boss = true, style = WorkStyle.BUSINESS))
+    }
+
+    /**
+     * 2.0.0 [RVO-20] 검토 SET-15: a kind being written survives the screen going away. A half-written one (no name yet, 0분)
+     * comes back exactly as it was, and why it cannot be saved yet is said in a line.
+     */
+    @Test fun aKindBeingWrittenComesBackAsItWasLeft() {
+        val kind = com.bamnat.core.model.ExtraKind(1001, "", "", 0xFF4C6EF5, com.bamnat.core.model.ExtraTiming.AfterShift(0))
+        val rule = com.bamnat.core.pay.ExtraRule(basis = com.bamnat.core.pay.ExtraBasis.FIXED_PER_TIME, amount = 80_000)
+        val draft = KindDraft(kind, rule, mapOf(2L to com.bamnat.core.pay.ExtraRule(multiplier = 2.0)))
+        val edit = KindEdit(KindDraft(kind.copy(name = "대근", short = "대")), draft, isNew = true)
+        assertEquals(edit, KindDraftCodec.decode(KindDraftCodec.encode(edit)))
+        val band = com.bamnat.core.model.ExtraTiming.Band(java.time.LocalTime.of(9, 0), java.time.LocalTime.of(13, 0), 0, null)
+        val whole = KindEdit(draft, draft.copy(kind = kind.copy(name = "교육", short = "교", timing = band, hidden = true)), isNew = false)
+        assertEquals(whole, KindDraftCodec.decode(KindDraftCodec.encode(whole)))
+        assertNull("a broken line is no draft", KindDraftCodec.decode("{"))
+        assertEquals("이름을 넣어야 저장돼요.", unsavedWhy(draft))
+        assertEquals("시간을 1분 넘게 넣어야 저장돼요.", unsavedWhy(draft.copy(kind = kind.copy(name = "대근"))))
     }
 
     @Test fun withoutThePhonesLockTheSwitchDoesNotAsk() {

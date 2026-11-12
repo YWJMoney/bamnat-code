@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.settings
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -7,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.alarm.WakeCheck
@@ -77,16 +79,20 @@ internal fun SureAlarmCard(vm: SettingsViewModel, settings: AppSettings, ringing
         if (ringing.isNotEmpty()) {
             HorizontalDivider()
             // 2.0.0 [RVH-41] 검토 T30-85: the example in the kind's own days.
-            SwitchRow("근무마다 다르게", when (settings.workStyle) {
+            // 2.0.0 [RVO-19] 검토 T11a-09·SET-06: the kind of the page (the calendar these alarms are of, as the rows above), not 내 달력's;
+            // an investor's alarms are 투자 알람 (장 시작·정기 매수일), so it reads '알람마다' and keeps its name for 설정 찾기.
+            val pageStyle = LocalSettingsStyle.current
+            Column(Modifier.focusMark("근무마다 다르게")) { SwitchRow(if (pageStyle == com.bamnat.core.work.WorkStyle.INVEST) "알람마다 다르게" else "근무마다 다르게", when (pageStyle) {
                 com.bamnat.core.work.WorkStyle.BUSINESS -> "예: 이른 오픈 날만 계산 문제"
                 com.bamnat.core.work.WorkStyle.FIELD -> "예: 새벽 일정만 계산 문제"
                 com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "예: 이른 출근 날만 계산 문제"
+                com.bamnat.core.work.WorkStyle.INVEST -> "예: 장 시작 알람만 계산 문제"
                 else -> "예: 야간 뒤 아침 근무만 계산 문제"
             }, perShift || mine.isNotEmpty()) { on ->
                 if (!open && !com.bamnat.app.ui.pro.tryFeature(Feature.SURE_ALARM)) { openPro(com.bamnat.app.tier.Feature.SURE_ALARM); return@SwitchRow }
                 perShift = on
                 if (!on) vm.update { it.copy(shiftMissions = com.bamnat.core.model.ShiftRef.without(it.shiftMissions, cal)) }
-            }
+            } }
             if (open && (perShift || mine.isNotEmpty())) {
                 for (t in ringing) {
                     val own = mine[t.id]?.let(AlarmMission::of)
