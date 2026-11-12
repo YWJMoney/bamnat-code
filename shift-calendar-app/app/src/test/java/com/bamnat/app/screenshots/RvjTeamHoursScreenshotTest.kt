@@ -148,12 +148,16 @@ class RvjTeamHoursScreenshotTest : ScreenshotBase() {
 
     @Test fun sixDaysOfNineToSixAreNotOverTheLimit() = shoot("rvj_69_team_six_days_folded", FOLDED) {
         nineToSix(6).invoke(this)
-        assertTrue("엿새 48시간은 52시간을 넘지 않아요", gone("52시간을 넘어요"))
+        assertTrue("엿새 48시간은 52시간을 넘지 않아요", gone("주 52시간 넘김"))
     }
 
     private fun sevenDays(): Screen.() -> Unit = {
         nineToSix(7).invoke(this)
-        assertTrue("이레 56시간은 휴게를 뺐다고 말하며 알려요", scrolledTo("휴게 빼고 56시간, 52시간을 넘어요"))
+        // 2.0.0 [RVJ-68] (HQ-107) The three weeks are one line, "주 52시간 넘김 3건", which opens to each week.
+        assertTrue("세 사람의 주가 한 줄로", scrolledTo("주 52시간 넘김 3건"))
+        tapText("주 52시간 넘김 3건", exact = true, scrolls = 0)
+        settle()
+        assertTrue("이레 56시간은 휴게를 뺐다고 말하며 알려요", scrolledTo("휴게 빼고 56시간"))
     }
 
     @Test fun sevenDaysAreToldWithTheBreakOff() = shoot("rvj_70_team_seven_days_folded", FOLDED, sevenDays())
@@ -163,7 +167,7 @@ class RvjTeamHoursScreenshotTest : ScreenshotBase() {
     private fun underFive(): Screen.() -> Unit = {
         runBlocking { app.container.phaseThree.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = false, payday = 10, teamId = "t1")) }
         nineToSix(7).invoke(this)
-        assertTrue("5인 미만 사업장에는 주 52시간을 알리지 않아요", gone("52시간을 넘어요"))
+        assertTrue("5인 미만 사업장에는 주 52시간을 알리지 않아요", gone("주 52시간 넘김"))
         reveal("근무 시간과 휴게", exact = true)
         tapText("근무 시간과 휴게", exact = true, scrolls = 0)
         settle()

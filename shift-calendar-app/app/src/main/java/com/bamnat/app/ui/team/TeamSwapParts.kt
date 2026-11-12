@@ -51,8 +51,9 @@ internal fun SwapCard(
             val locked = board.cell(a.from, a.date)?.locked == true || board.cell(a.to, a.date)?.locked == true
             Text("${Fmt.monthDay(a.date)} ${names[a.from] ?: "?"} ${label(a.from, a)} ↔ ${names[a.to] ?: "?"} ${label(a.to, a)} · 둘 다 좋대요",
                 style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
-            signs.forEach { Text("⚠ " + it.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            if (locked) Text("잠긴 칸이 있어요. 잠금을 풀어야 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 위험은 규칙 줄(⚠)만
+            // 2.0.0 [RVJ-68] (HQ-107) What the trade would break, with the 확인할 것 card's words and marks (52시간 위험, 기준 주의).
+            if (signs.isNotEmpty()) SignLines(signs)
+            if (locked) Text("잠긴 칸이 있어요. 잠금을 풀어야 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 위험은 주 52시간 줄만
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = { onDecide(a, true) }, enabled = !busy && !locked) { Text("승인") }
                 TextButton(onClick = { onDecide(a, false) }, enabled = !busy) { Text("거절") }

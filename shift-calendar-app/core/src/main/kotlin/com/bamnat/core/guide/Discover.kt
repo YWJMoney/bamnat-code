@@ -196,7 +196,7 @@ object DiscoverCatalog {
         // 알바
         "hourly.takeHome" to Discover("통장에 찍힐 돈이 궁금하다면", "없음·3.3%·4대보험 중에 골라 손에 쥐는 돈을 보여 줘요.", "골라 보기", 9),
         "hourly.weeks" to Discover("이번 주 15시간, 채웠을까", "주마다 근무시간과 주휴수당을 받을 수 있는지 보여 줘요.", "주별로 보기", 9, DiscoverNeed.DAYS),
-        "hourly.breaks" to Discover("쉬는 시간까지 일한 시간으로 세고 있다면", "4시간에 30분, 8시간에 1시간 법정 휴게를 저절로 빼요.", "켜는 곳 보기", 6),
+        "hourly.breaks" to Discover("쉬는 시간까지 일한 시간으로 세고 있다면", "일한 시간 4시간에 30분, 8시간에 1시간 법정 휴게를 저절로 빼요.", "켜는 곳 보기", 6),
         "hourly.offers" to Discover("두 알바 사이에서 고민 중이라면", "시급·주휴·세금·교통비까지 따져 시간당 남는 돈을 나란히 봐요.", "견줘 보기", 7),
         "hourly.contract" to Discover("계약서는 사진 한 장으로 챙겨 두면", "계약서 사진과 시급·기간을 보관하고 끝나기 7일 전에 알려 줘요.", "보관해 보기", 6),
         "hourly.attendance" to Discover("늦은 날도 한 번만 눌러 적어요", "지각·조퇴·결근을 하루 화면에서 한 번에 적고 대타는 대근으로 남겨요.", "열어 보기", 5, DiscoverNeed.DAYS),

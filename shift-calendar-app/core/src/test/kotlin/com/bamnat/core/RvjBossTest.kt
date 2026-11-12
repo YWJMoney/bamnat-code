@@ -198,8 +198,41 @@ class RvjBossTest {
         val slip = Payslip.of(place, line)
         val days = line.pay!!.days.map { day -> day.parts.sumOf { it.amount } }.filter { it > 0 }
         val want = DailyWorkerTax.paidTogether(days)
-        assertEquals(want.income, slip.deductions.toMap()[com.bamnat.core.pay.TakeHome.TAX_LABEL] ?: 0L)
+        assertEquals(want.income, slip.deductions.toMap()[Payslip.DAILY_TAX_LABEL] ?: 0L)
         assertTrue(want.income > 0)
+    }
+
+    /**
+     * 2.0.0 [RVJ-72] (PC-177) 일급 20만 원, 월·수·금 13일 + 주휴: the line is '일용근로 소득세' (not the 간이세액표's), and 주휴수당 goes to
+     * the days of the week that earned it (국세청 서면-2022-소득관리-4916), so a day whose week earned none keeps its own 20만 원.
+     */
+    @Test fun dailyWorkersHolidayPayGoesToItsOwnWeek() {
+        // 11월 1일부터: 11/2~11/29의 네 주가 주휴 12만 원씩(48만 원), 11/30(월)은 다음 달에 끝나는 주라 주휴가 없어요.
+        val d = StaffMember("d", "이일용", form = WageForm.DAY, base = 200_000, hiredOn = LocalDate.of(2026, 11, 1),
+            weekly = listOf(DayOfWeek.MONDAY, DayOfWeek.WEDNESDAY, DayOfWeek.FRIDAY).associateWith { nine }, insurance = Insurance(tax = StaffTax.DAILY))
+        val line = PayrollLedger.month(place, listOf(d), nov, emptyList()).lines.single()
+        val slip = Payslip.of(place, line)
+        val taxes = slip.deductions.toMap()
+        assertFalse("간이세액표 이름이 아니에요", com.bamnat.core.pay.TakeHome.TAX_LABEL in taxes)
+        val days = line.pay!!.days.filter { it.amount > 0 }
+        assertEquals(13, days.size)
+        val weekly = line.lines.filter { it.label == "주휴수당" }.sumOf { it.amount }
+        assertTrue("주휴수당이 있어요", weekly > 0)
+        val pays = Payslip.dailyPays(line, days, line.gross)
+        assertEquals("나눈 돈의 합은 그달 과세 지급액", line.gross.toDouble(), pays.sum(), 1.0)
+        val weeks = line.pay!!.holidayWeeks.filter { it.earned }
+        days.forEachIndexed { i, day ->
+            val inEarned = weeks.any { w -> !day.date.isBefore(w.from) && !day.date.isAfter(w.to) }
+            if (!inEarned) assertEquals("${day.date}: 주휴가 없는 주의 날은 제 일당 그대로", day.amount.toDouble(), pays[i], 1.0)
+            else assertTrue("${day.date}: 주휴가 있는 주의 날은 더 받아요", pays[i] > day.amount)
+        }
+        assertEquals(DailyWorkerTax.paidTogether(pays.map { Math.round(it) }).income, taxes[Payslip.DAILY_TAX_LABEL])
+        assertEquals(480_000L, weekly)
+        // 12일 × (24만 − 15만) × 2.7% + 11/30 (20만 − 15만) × 2.7% = 29,160 + 1,350 (예전 셈: 한 달에 고루 나눠 30,490원).
+        assertEquals(30_510L, taxes[Payslip.DAILY_TAX_LABEL])
+        assertEquals(3_050L, taxes[com.bamnat.core.pay.TakeHome.LOCAL_TAX_LABEL])
+        // 원천징수 이행상황: the 일용 tax still counts as the 소득세 it holds back.
+        assertEquals(taxes[Payslip.DAILY_TAX_LABEL], BossFilings.withheld(place, PayrollLedger.month(place, listOf(d), nov, emptyList())).single().tax)
     }
 
     /** [RVJ-16] 검토 BOSS-60·BOSS-74: 명단으로 넣은 주 40시간 직원은 4대보험이 채워지고, 3.3%·일용·외국인은 까닭을 말해요. */

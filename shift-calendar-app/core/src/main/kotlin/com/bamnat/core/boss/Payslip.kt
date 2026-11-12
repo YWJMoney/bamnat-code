@@ -82,6 +82,14 @@ data class Payslip(
     companion object {
         const val NOTE = "근로기준법 제48조 제2항에 따라 드리는 임금명세서예요. 계산이 다르면 사장님께 말씀해 주세요."
 
+        /** 2.0.0 [RVJ-72] (PC-177) The 소득세 line of an 일용근로자 (하루 15만 원 공제, [com.bamnat.core.money.DailyWorkerTax]). */
+        const val DAILY_TAX_LABEL = "일용근로 소득세"
+
+        /** 2.0.0 [RVJ-72] (PC-177) What the 일용근로 소득세 line is, for its ⓘ. */
+        const val DAILY_TAX_HOW = "일용근로자는 간이세액표가 아니라 일한 날마다 따로 셈해요: 그날 받은 돈에서 15만 원을 빼고 6%, 거기서 55%를 덜어요" +
+            "(소득세법 제47조 제2항·제129조 제1항 제4호·제59조 제3항). 주휴수당은 그 주에 일한 날에 나눠 넣어요(국세청 서면-2022-소득관리-4916). " +
+            "한 번에 주는 돈의 세금이 1,000원 미만이면 떼지 않고(제86조), 10원 미만은 버려요. 지방소득세는 그 10%예요. 이 세금으로 끝나 연말정산·종합소득 신고에 넣지 않아요."
+
         /**
          * 2.0.0 [RVJ-10] 검토 PAYC-08·PAYU-14: the 비과세 is the staff's 비과세 수당 (식대 up to its 한도) and the 가족 수 theirs, unless
          * given; [RVJ-11] an 일용근로자's 소득세 is worked out day by day ([com.bamnat.core.money.DailyWorkerTax]).
@@ -105,8 +113,9 @@ data class Payslip(
             }
             if (tax == StaffTax.DAILY) {
                 val t = dailyTax(line, free)
+                // 2.0.0 [RVJ-72] (PC-177) An 일용근로자's 소득세 is not the 간이세액표's: the line says which way it was worked out.
                 kept = kept.filter { it.first != TakeHome.TAX_LABEL && it.first != TakeHome.LOCAL_TAX_LABEL } +
-                    listOf(TakeHome.TAX_LABEL to t.income, TakeHome.LOCAL_TAX_LABEL to t.local).filter { it.second > 0 }
+                    listOf(DAILY_TAX_LABEL to t.income, TakeHome.LOCAL_TAX_LABEL to t.local).filter { it.second > 0 }
             }
             // G4 건강보험 보수월액 하한 28만 원 (시행령 제32조): 1.39 [PAYX-59] [TakeHome.estimate] floors it itself, with the exact won × rate.
             return Payslip(place, line, place.payDate(line.month), kept)
@@ -124,11 +133,41 @@ data class Payslip(
          */
         fun dailyTax(line: LedgerLine, free: Long = 0): com.bamnat.core.money.DailyWorkerTax.Tax {
             val taxable = (line.gross - free).coerceAtLeast(0)
-            val days = line.pay?.days.orEmpty().map { d -> d.parts.sumOf { it.amount } }.filter { it > 0 }
+            val days = line.pay?.days.orEmpty().filter { it.amount > 0 }
             if (taxable == 0L) return com.bamnat.core.money.DailyWorkerTax.Tax(0, 0)
             if (days.isEmpty()) return com.bamnat.core.money.DailyWorkerTax.paidTogether(List(line.workDays.coerceAtLeast(1)) { taxable / line.workDays.coerceAtLeast(1) })
-            val sum = days.sum().toDouble()
-            return com.bamnat.core.money.DailyWorkerTax.paidTogether(days.map { Math.round(it * taxable / sum) })
+            return com.bamnat.core.money.DailyWorkerTax.paidTogether(dailyPays(line, days, taxable).map { Math.round(it) })
+        }
+
+        /**
+         * 2.0.0 [RVJ-72] (PC-177) Each working day's 일급여 for the 일용 tax. 주휴수당 goes to the working days of the week that earned
+         * it (국세청 서면-2022-소득관리-4916, 2023-01-05: 일용근로자의 주휴수당은 "당해 법령에서 정한 기간의 근로일수에 배분하여
+         * 원천징수"; 원천세과-240, 2012-05-02: 일괄 지급해도 과세표준은 "근로를 제공한 날별로"), so a week without 주휴 takes none of it;
+         * the rest of the month's taxable pay (수당·가산, 비과세 빼고) by what each day earned, as before. A 주휴 whose week has no day
+         * in this payment (a week that began last month, its days paid then) joins the rest: 확인 필요, the 해석 says only "그 기간의
+         * 근로일수", and those days' tax was held back already.
+         */
+        internal fun dailyPays(line: LedgerLine, days: List<com.bamnat.core.pay.DayPay>, taxable: Long): List<Double> {
+            val earned = days.map { it.amount.toDouble() }
+            val base = earned.sum()
+            val out = earned.toMutableList()
+            val weeks = line.pay?.holidayWeeks.orEmpty().filter { it.earned }
+            val weekly = line.lines.filter { it.label == "주휴수당" }.sumOf { it.amount }.coerceAtMost((taxable - base.toLong()).coerceAtLeast(0))
+            var placed = 0.0
+            if (weekly > 0 && weeks.isNotEmpty()) {
+                val paid = weeks.sumOf { it.paidMinutes }.toDouble()
+                weeks.forEach { w ->
+                    val idx = days.indices.filter { !days[it].date.isBefore(w.from) && !days[it].date.isAfter(w.to) }
+                    val inWeek = idx.sumOf { earned[it] }
+                    if (idx.isEmpty() || inWeek <= 0) return@forEach
+                    val share = weekly * w.paidMinutes / paid
+                    idx.forEach { out[it] += share * earned[it] / inWeek }
+                    placed += share
+                }
+            }
+            val rest = taxable - base - placed
+            if (rest != 0.0 && base > 0) earned.indices.forEach { out[it] += rest * earned[it] / base }
+            return out
         }
     }
 }

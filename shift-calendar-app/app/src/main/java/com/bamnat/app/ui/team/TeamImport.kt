@@ -265,6 +265,3 @@ fun importSummary(a: TeamGridImport.Applied, added: Int): String = buildString {
         else "\n마음에 안 들면 위의 되돌리기 한 번이면 가져오기 전으로 돌아가요.")
 }
 
-/** 가져오기 entry for the board's tools. */
-@Composable
-fun ImportButton(onClick: () -> Unit) { OutlinedButton(onClick = onClick) { Text("파일·사진에서 가져오기") } }

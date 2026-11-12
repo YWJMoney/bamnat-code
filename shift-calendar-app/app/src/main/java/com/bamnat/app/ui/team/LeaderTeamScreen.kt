@@ -69,6 +69,12 @@ import com.bamnat.app.share.ShareLinkState
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
+import com.bamnat.app.ui.components.ToneLine
+import com.bamnat.app.ui.components.boldNumbers
+import com.bamnat.app.ui.theme.Tone
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.foundation.layout.wrapContentHeight
 import com.bamnat.core.imports.PaintPad
 import com.bamnat.core.model.DayEntry
 import com.bamnat.core.model.ShiftOverride
@@ -301,6 +307,9 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     var linksFor by remember { mutableStateOf<List<Pair<TeamMember, String>>?>(null) }
     var busy by remember { mutableStateOf<String?>(null) }
     var dialog by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVJ-68] (HQ-107) A cell's, a day's or a 맞바꾸기's signs, told with the 확인할 것 card's marks ([SignsDialog]).
+    var signsShown by remember { mutableStateOf<Pair<String, List<TeamCheck.Sign>>?>(null) }
+    var signsWho by remember { mutableStateOf(true) }
     var planAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var plans by remember { mutableStateOf<List<TeamAuto.Plan>?>(null) }
     var resent by remember { mutableStateOf<Pair<Int, List<Pair<TeamMember, String>>>?>(null) }
@@ -517,7 +526,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                                 color = dayColor, fontSize = if (small) 10.sp /* [RVP-11] */ else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
                                 modifier = Modifier.width(cellDp.dp)
                                     .background(if (lack) MaterialTheme.bamnat.caution.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(4.dp)) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 모자란 날: 주의
-                                    .clickable(role = Role.Button, enabled = short.isNotEmpty()) { dialog = short.joinToString("\n") { "${Fmt.monthDay(d)} ${it.text}" } })
+                                    .clickable(role = Role.Button, enabled = short.isNotEmpty()) { signsWho = true; signsShown = Fmt.monthDay(d) to short })
                             Box(Modifier.width(cellDp.dp).height(4.dp), contentAlignment = Alignment.Center) {
                                 if (short.isNotEmpty() && !lack) Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)))
                             }
@@ -539,16 +548,17 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                                 val toCheck = (m.id to d) in checkCells
                                 Box(Modifier.size(cellDp.dp).padding(if (small) 0.5.dp else 1.dp)
                                     .background(t?.let { Color(it.colorArgb).copy(alpha = 0.85f) } ?: MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
+                                    // 2.0.0 [RVJ-68] (HQ-107, 조건 6) A cell with a sign is outlined in 주의 like a cell to check: the red of 주 52시간 is
+                                    // said once, on the 확인할 것 card, not on every cell of the weeks over it.
                                     .then(if (marked) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                                        else if (warn != null) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp))
-                                        else if (toCheck) Modifier.border(2.dp, MaterialTheme.bamnat.caution, RoundedCornerShape(4.dp)) else Modifier) // [RVJ-66] 빨강 테두리는 규칙 위반 칸만
+                                        else if (warn != null || toCheck) Modifier.border(2.dp, MaterialTheme.bamnat.caution, RoundedCornerShape(4.dp)) else Modifier)
                                     .clickable(role = Role.Button) {
                                         val from = swapFrom
                                         if (from != null && from.second == d && from.first != m.id) {
                                             val news = TeamCheck.swapCheck(team, b, from.first, m.id, d, rules, prevBoard, nextBoard)
                                             change { it.swap(from.first, m.id, d) }; swapFrom = null
-                                            if (news.isNotEmpty()) dialog = "맞바꿨어요. 확인할 것:\n" + news.joinToString("\n") { it.text }
-                                        } else { member = m.id; cursor = d.dayOfMonth; if (toCheck) checkCells = checkCells - (m.id to d); warn?.let { w -> dialog = w.joinToString("\n") { it.text } } }
+                                            if (news.isNotEmpty()) { signsWho = true; signsShown = "맞바꿨어요 · 확인할 것 ${news.size}" to news }
+                                        } else { member = m.id; cursor = d.dayOfMonth; if (toCheck) checkCells = checkCells - (m.id to d); warn?.let { w -> signsWho = false; signsShown = "${m.name} ${Fmt.monthDay(d)}" to w } }
                                     }
                                     .semantics { contentDescription = "${m.name} ${Fmt.monthDay(d)} ${t?.name ?: "빈칸"}" + (if (toCheck) ", 확인할 칸" else "") + (wishAt[m.id to d]?.let { ", 신청 ${it.kind.label}" + if (t != null && !TeamAuto.kept(team, it, t)) ", 신청과 달라요" else "" } ?: "") },
                                     contentAlignment = Alignment.Center) {
@@ -584,6 +594,12 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 }) { Text("다음 칸") }
             }
             if (swapFrom != null) Text("${Fmt.monthDay(swapFrom!!.second)} 같은 날 다른 사람 칸을 누르면 맞바꿔요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+            // 2.0.0 [RVJ-68] (HQ-107) A line of 확인할 것 goes to its cell: that member and day under the keypad, outlined on the board.
+            fun goTo(one: TeamCheck.Sign) {
+                if (YearMonth.from(one.date) != month) return
+                one.memberId?.let { member = it }
+                cursor = one.date.dayOfMonth
+            }
             if (signs.isNotEmpty()) SectionCard(title = "확인할 것 ${signs.size}") {
                 // 1.38 PC 1차: danger first, 부족·책임자 없음 one line each, so an N→D is never under 50 notes.
                 val charges = active.count { it.skill == Skill.CHARGE }
@@ -602,11 +618,31 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     }
                     return@SectionCard
                 }
-                lines.take(if (all) lines.size else 6).forEach { l ->
-                    val danger = l.kind == TeamCheck.Kind.RULE || l.kind == TeamCheck.Kind.WEEK_HOURS
-                    Text((if (danger) "⚠ " else "· ") + l.text, style = MaterialTheme.typography.bodySmall,
-                        color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                        fontWeight = if (danger) FontWeight.Medium else null)
+                // 2.0.0 [RVJ-68] (총괄 HQ-107, 조건 6) Every line was red with "⚠ " (28 of them on Q1's picture). Now the mark's colour says
+                // it and the words stay quiet: 위험 (red) only for 주 52시간, the law (a 5인 이상 사업장); the team's 기준 (역순·휴식·연속) and
+                // 인원 부족 are 주의 (amber, as the board's short days: 갈래 P C4); 책임자 없음 an 안내. Only the numbers are bold, and signs of
+                // one sort are one line ("야간 뒤 2일째 근무 6건") that opens to its days, each one going to that cell.
+                var open by remember(lines) { mutableStateOf(setOf<Int>()) }
+                lines.take(if (all) lines.size else 6).forEachIndexed { i, l ->
+                    val tone = l.kind.tone()
+                    val opens = l.items.size > 1
+                    val isOpen = i in open
+                    ToneLine(boldNumbers(if (opens) l.head + (if (l.tip.isNotEmpty()) " · ${l.tip}" else "") else l.text), tone = tone,
+                        onClick = if (opens) ({ open = if (isOpen) open - i else open + i }) else l.items.singleOrNull()?.let { one -> { goTo(one) } },
+                        onClickLabel = if (opens) (if (isOpen) "접기" else "날짜 펼치기") else "그 칸으로",
+                        trailing = if (opens) ({
+                            Icon(if (isOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }) else null)
+                    if (opens && isOpen) Column(Modifier.padding(start = 20.dp)) {
+                        l.items.forEach { one ->
+                            val words = listOf(Fmt.monthDay(one.date), one.who.ifEmpty { if (one.memberId == null) one.text else "" }, one.detail)
+                                .filter { it.isNotEmpty() }.joinToString(" · ")
+                            Text(words, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "그 칸으로") { goTo(one) }
+                                    .wrapContentHeight(Alignment.CenterVertically))
+                        }
+                    }
                 }
                 if (lines.size > 6) TextButton(onClick = { all = !all }) { Text(if (all) "접기" else "나머지 ${lines.size - 6}줄 더 보기") }
                 Text("알림이에요. 그대로 확정해도 돼요. 기준은 설정 › 알림과 잠 › 근무표 점검 기준과 같아요.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -651,40 +687,32 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 onRefresh = { scope.launch { busy = "고친 표를 올리고 있어요…"; runCatching { com.bamnat.app.team.TeamSwapSync.refresh(c, team, b, rules, prevBoard, nextBoard) }
                     .onSuccess { dialog = "팀원 링크에 고친 표와 바꿀 수 있는 날을 새로 올렸어요." }.onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "인터넷이 될 때 다시 눌러 주세요." }; busy = null } },
                 onEnd = { scope.launch { com.bamnat.app.team.TeamSwapSync.end(c, team) } })
-            // The month's tools.
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                if (round == null) OutlinedButton(onClick = { asking = true }) { Text("근무 신청 받기") }
-                // 1.38 [P3-X-02]: once the month is painted, members trade days from their own links.
-                if (swap == null && b.cells.isNotEmpty()) OutlinedButton(enabled = busy == null, onClick = {
-                    scope.launch {
-                        busy = "바꿀 수 있는 날을 찾고 있어요…"
-                        val members = swapPeople(b)
-                        runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, rules, prevBoard, nextBoard) }
-                            .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members, rules.weekLimit), "근무 바꾸기 링크 보내기") } }
-                            .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
-                        busy = null
-                    }
-                }) { Text("바꾸기 요청 받기") }
-                OutlinedButton(onClick = { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } }) { Text("지난달 이어 칠하기") }
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        // 1.38 PC 11차 (23): with no 근무별 인원 the fill can only put days off ("1안 · 부족 없음" meant nothing), so the
-                        // numbers are asked first; 1.39 G2 (1.38 최종 PC 제안 ②) and the fill runs as soon as they are saved.
-                        if (team.need.values.none { it > 0 }) { fillAfterNeed = true; dialog = "need"; return@launch }
-                        fill(team)
-                    }
-                }, enabled = b.empty > 0) { Text("빈칸 자동 채우기") }
-                OutlinedButton(onClick = { dialog = "need" }) { Text("근무별 인원") }
-                OutlinedButton(onClick = { dialog = "wish" }) { Text("신청·희망 ${wishes.size}") }
-                OutlinedButton(onClick = { dialog = "fair" }) { Text("공정성 표") }
-                OutlinedButton(onClick = { dialog = "members" }) { Text("팀원") }
-                ImportButton(onClick = pickFile)
+            // 2.0.0 [RVJ-69] (총괄 HQ-108, 조건 2·8) The month's tools: the stage fills its one button, two 글자 단추 beside it, the rest in
+            // '더 보기' (받기·채우기·보기): [TeamToolBar]. The jobs are the same as before.
+            // 1.38 [P3-X-02]: once the month is painted, members trade days from their own links.
+            val openSwap: (() -> Unit)? = if (swap == null && b.cells.isNotEmpty()) ({
+                scope.launch {
+                    busy = "바꿀 수 있는 날을 찾고 있어요…"
+                    val members = swapPeople(b)
+                    runCatching { com.bamnat.app.team.TeamSwapSync.open(c, store.teamNow(team.id) ?: team, b, members, rules, prevBoard, nextBoard) }
+                        .onSuccess { t -> t.swap?.let { send(context, com.bamnat.app.team.TeamSwapSync.message(t, it, members, rules.weekLimit), "근무 바꾸기 링크 보내기") } }
+                        .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "바꾸기 링크를 못 만들었어요. 인터넷이 될 때 다시 눌러 주세요." }
+                    busy = null
+                }
+            }) else null
+            val autoFill: () -> Unit = {
+                scope.launch {
+                    // 1.38 PC 11차 (23): with no 근무별 인원 the fill can only put days off ("1안 · 부족 없음" meant nothing), so the
+                    // numbers are asked first; 1.39 G2 (1.38 최종 PC 제안 ②) and the fill runs as soon as they are saved.
+                    if (team.need.values.none { it > 0 }) { fillAfterNeed = true; dialog = "need"; return@launch }
+                    fill(team)
+                }
             }
             val changes = remember(b, was, state) { if (state.state == MonthState.CONFIRMED) b.changesFrom(TeamBoard(month, b.members, was.mapValues { (k, v) -> com.bamnat.core.team.TeamCell(k.first, k.second, v) })) else emptyList() }
             // 1.39 G2 (PC f7f61818): with links gone and nothing changed, '링크 다시 보내기' next to '새 링크 n개 만들어 보내기' read as two ways
             // to the same thing; the 봤어요 line's button is the one left.
             val goneNow = seen?.let { com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, it).gone }.orEmpty()
-            if (!(state.state == MonthState.CONFIRMED && changes.isEmpty() && goneNow.isNotEmpty())) Button(onClick = {
+            val confirm: () -> Unit = {
                 scope.launch {
                     // 1.38 PC 11차: a member with no day filled has nothing to share (the server refuses an empty link), so say who
                     // before 확정 instead of confirming and then blaming the internet.
@@ -727,13 +755,33 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                         dialog = (if (again) "" else "확정은 했어요(${m.version}판). ") + why
                     }
                 }
-            }, enabled = busy == null, modifier = Modifier.fillMaxWidth()) {
-                Text(when {
+            }
+            val sentAll = state.state == MonthState.CONFIRMED && changes.isEmpty()
+            val stage = when {
+                checkCells.isNotEmpty() -> TeamStage.REVIEW
+                round?.open(Today.millis()) == true -> TeamStage.ASKING
+                state.state != MonthState.CONFIRMED && b.empty > 0 -> TeamStage.FILL
+                state.state != MonthState.CONFIRMED -> TeamStage.CONFIRM
+                changes.isNotEmpty() -> TeamStage.RECONFIRM
+                else -> TeamStage.SENT
+            }
+            TeamToolBar(stage, TeamTools(
+                ask = if (round == null) TeamTool("근무 신청 받기") { asking = true } else null,
+                wishes = TeamTool("신청·희망 ${wishes.size}") { dialog = "wish" },
+                swap = openSwap?.let { TeamTool("바꾸기 요청 받기", enabled = busy == null, onClick = it) },
+                fill = TeamTool("빈칸 자동 채우기", enabled = b.empty > 0, onClick = autoFill),
+                copy = TeamTool("지난달 이어 칠하기") { scope.launch { val last = store.boardNow(team.id, month.minusMonths(1)); change { TeamCopy.nextMonth(last, it) } } },
+                import = TeamTool("파일·사진에서 가져오기", onClick = pickFile),
+                need = TeamTool("근무별 인원") { dialog = "need" },
+                fair = TeamTool("공정성 표") { dialog = "fair" },
+                members = TeamTool("팀원") { dialog = "members" },
+                // 1.39 G2 (PC f7f61818): with links gone and nothing changed, the 봤어요 line's '새 링크 n개 만들어 보내기' is the one way.
+                confirm = if (sentAll && goneNow.isNotEmpty()) null else TeamTool(when {
                     state.state != MonthState.CONFIRMED -> "확정하고 팀원 링크 보내기"
                     changes.isEmpty() -> "링크 다시 보내기"
                     else -> "바뀐 칸 ${changes.size}개로 다시 확정"
-                })
-            }
+                }, enabled = busy == null, onClick = confirm),
+            ))
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
@@ -929,6 +977,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
             }
         }
     }
+    signsShown?.let { (title, list) -> SignsDialog(title, list, who = signsWho) { signsShown = null } }
     plans?.let { list ->
         AlertDialog(onDismissRequest = { plans = null }, title = { Text("빈칸 자동 채우기") }, text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -943,14 +992,20 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
                 list.forEachIndexed { i, p ->
+                    // 2.0.0 [RVJ-70] (PC-178) The whole 안 is the button, and it says so: '이 안으로 채우기' under its numbers, so '닫기' is
+                    // not the only button one sees. The words are the 안's own (onSurface); only the action is in the button colour.
                     OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
                             Text("${i + 1}안 · ${p.filled}칸 · " + (if (p.shortPeople > 0) "부족 ${p.shortPeople}명·${p.short.size}일" else "부족 없음"),
-                                style = MaterialTheme.typography.bodyMedium)
-                            Text((if (p.danger > 0) "⚠ " + listOfNotNull(p.overWeeks.takeIf { it > 0 }?.let { "52시간 넘김 ${it}건" }, p.ruleSigns.takeIf { it > 0 }?.let { "규칙 ${it}건" }).joinToString(" · ") + " · "
-                                else "위험 없음 · ") + "최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 야간 차이 ${p.spread}번",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (p.danger > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                            // 2.0.0 [RVJ-68] (HQ-107) The 확인할 것 card's words and marks: 주 52시간 위험, the team's 기준 주의, none ✓.
+                            ToneLine(boldNumbers(if (p.danger > 0) listOfNotNull(p.overWeeks.takeIf { it > 0 }?.let { "주 52시간 넘김 ${it}건" },
+                                p.ruleSigns.takeIf { it > 0 }?.let { "기준 넘김 ${it}건" }).joinToString(" · ") else "넘는 것 없음"),
+                                tone = when { p.overWeeks > 0 -> TeamCheck.Kind.WEEK_HOURS.tone(); p.ruleSigns > 0 -> Tone.Caution; else -> Tone.Good })
+                            Text(boldNumbers("최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 야간 차이 ${p.spread}번"),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("이 안으로 채우기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
                         }
                     }
                 }
