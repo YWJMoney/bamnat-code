@@ -397,6 +397,16 @@ class CalendarI123Test {
         assertEquals((12..16).map { LocalDate.of(2026, 10, it) }, p("다음 주 월~금 주간")!!.dates)
         assertNull(p("병원 가기"))
         assertNull(p(""))
+        // 2.0.0 [RVH-06] 검토 CAL-09: 저녁·밤 are evening hours; 밤·오전·새벽 12시 is midnight; 오후 12시 is noon.
+        fun start(t: String) = (p(t)!!.act as QuickText.Act.Extra).start
+        assertEquals(LocalTime.of(19, 0), start("내일 야간 대근 저녁 7시"))
+        assertEquals(LocalTime.of(22, 0), start("내일 대근 밤 10시"))
+        assertEquals(LocalTime.of(0, 0), start("내일 대근 밤 12시"))
+        assertEquals(LocalTime.of(0, 0), start("내일 대근 오전 12시"))
+        assertEquals(LocalTime.of(12, 0), start("내일 대근 오후 12시"))
+        assertEquals(LocalTime.of(2, 0), start("내일 대근 밤 2시"))
+        assertEquals(LocalTime.of(7, 0), start("내일 대근 아침 7시"))
+        assertEquals(LocalTime.of(19, 30), start("내일 대근 오후 7시 30분"))
     }
 
     /** [SCHED-07] A swap both ways: the team that takes my night, and a day of theirs I can work back. */

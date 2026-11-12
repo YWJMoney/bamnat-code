@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -77,7 +78,24 @@ private fun timesOf(day: ResolvedDay?): String? {
     if (!w.worked) return null
     val s = w.start ?: return null
     val e = w.end ?: return null
-    return "${s.hour}:${"%02d".format(s.minute)}–${e.hour}:${"%02d".format(e.minute)}"
+    // 2.0.0 [RVH-10] 검토 CAL-15: times as every other screen writes them ("07:00", or 오전/오후 when the phone says so).
+    return "${Fmt.time(s)}–${Fmt.time(e)}"
+}
+
+/**
+ * [RVH-10] 검토 CAL-15: a date's number in the month view's colours (일요일·공휴일 red, 토요일 blue, the theme's own when it has
+ * them), so the timeline and the week board read the same as the month.
+ */
+@Composable
+internal fun dayNumberColor(date: LocalDate): Color {
+    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
+    val look = com.bamnat.app.ui.theme.LocalCalendarLook.current
+    return when {
+        com.bamnat.core.holiday.KoreanHolidays.nameOf(date) != null -> look.holiday(cal)
+        date.dayOfWeek == DayOfWeek.SUNDAY -> look.sunday(cal)
+        date.dayOfWeek == DayOfWeek.SATURDAY -> look.saturday(cal)
+        else -> MaterialTheme.colorScheme.onSurface
+    }
 }
 
 /** [LINK-01] A board day's part states: 오늘·고른 날 and the day's work (근무 종류, 대근·특근·연차·직접 바꾼 날), as the month's cells have them. */
@@ -133,7 +151,7 @@ internal fun ShiftBandMonth(
         verticalArrangement = Arrangement.spacedBy(6.dp)) {
         WeekdayHeader(weekStart, Modifier.padding(start = 0.dp))
         for (week in days.chunked(7)) {
-            Row(Modifier.fillMaxWidth().height(52.dp)) {
+            Row(Modifier.fillMaxWidth().height(52.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f))) { // [RVH-11]
                 week.forEachIndexed { i, (date, day) ->
                     val c = shiftColor(day)
                     // [LINK-01] A 대근·특근 day breaks the band of days off around it.
@@ -150,7 +168,7 @@ internal fun ShiftBandMonth(
                     val name = work.name
                     val isPicked = date == selected
                     Box(
-                        Modifier.weight(1f).height(52.dp).padding(start = if (sameBefore) 0.dp else 2.dp, end = if (sameAfter) 0.dp else 2.dp)
+                        Modifier.weight(1f).fillMaxHeight().padding(start = if (sameBefore) 0.dp else 2.dp, end = if (sameAfter) 0.dp else 2.dp)
                             .background((c ?: MaterialTheme.colorScheme.surfaceContainerHighest).copy(alpha = (if (off) 0.28f else 0.85f) * (if (inMonth) 1f else 0.35f)), shape)
                             .then(if (date == selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                             // [TAB-07] 부품 cal.band.slot (오늘·고른 날 상태도).
@@ -225,14 +243,18 @@ internal fun TimelineMonth(
                     cornerRadius = CornerRadius(6f, 6f))
             }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 52.dp, end = 64.dp, bottom = 4.dp)) {
+        // 2.0.0 [RVH-11] 검토 CAL-16: the date and time columns grow with the font size (to 200%), so "07:00–15:00" and "28 수"
+        // are not cut under big text; the hour ruler moves with them.
+        val grow = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 2f)
+        val dateW = 52.dp * grow
+        val timeW = 76.dp * grow
+        Row(Modifier.fillMaxWidth().padding(start = dateW, end = timeW, bottom = 4.dp)) {
             for (h in listOf("0", "6", "12", "18")) Text(h, style = MaterialTheme.typography.labelSmall, color = ink, modifier = Modifier.weight(1f))
         }
         for ((date, day, pair) in rows) {
             val (spans, beforeColor) = pair
             val c = shiftColor(day)
             val times = timesOf(day)
-            val weekend = date.dayOfWeek == DayOfWeek.SATURDAY || date.dayOfWeek == DayOfWeek.SUNDAY
             val isPicked = date == selected
             // [FXR-03] 타임라인 하루 줄과 막대 with the day's values, so 조건부 꾸미기 works on them.
             val dayScope = com.bamnat.app.logic.scopeOn(date)
@@ -254,8 +276,8 @@ internal fun TimelineMonth(
             ) {
                 Text("${date.dayOfMonth} ${Fmt.dayOfWeekShort(date.dayOfWeek)}", style = MaterialTheme.typography.labelMedium,
                     fontWeight = if (date == today) FontWeight.Bold else null,
-                    color = if (date == today) MaterialTheme.colorScheme.primary else if (weekend) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.width(52.dp))
+                    color = if (date == today) MaterialTheme.colorScheme.primary else dayNumberColor(date), // [RVH-10]
+                    modifier = Modifier.width(dateW))
                 Canvas(Modifier.weight(1f).height(18.dp)) {
                     val w = size.width
                     drawRoundRect(grid.copy(alpha = 0.25f), size = size, cornerRadius = CornerRadius(6f, 6f))
@@ -274,7 +296,7 @@ internal fun TimelineMonth(
                 }
                 val carriedTo = spans.firstOrNull { it.carried }?.to
                 Text(times ?: carriedTo?.let { "~${it / 60}:${"%02d".format(it % 60)}" } ?: workOf(day)?.name ?: "", style = MaterialTheme.typography.labelSmall, color = ink, maxLines = 1,
-                    textAlign = TextAlign.End, modifier = Modifier.width(64.dp))
+                    textAlign = TextAlign.End, modifier = Modifier.width(timeW))
             }
         }
     }
@@ -342,11 +364,7 @@ internal fun WeekCardsMonth(
                         ) {
                             Text("${date.dayOfMonth} ${Fmt.dayOfWeekShort(date.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, maxLines = 1,
                                 fontWeight = if (date == today) FontWeight.Bold else null,
-                                color = when {
-                                    !inMonth -> ink.copy(alpha = 0.5f)
-                                    date.dayOfWeek == DayOfWeek.SUNDAY -> MaterialTheme.colorScheme.error
-                                    else -> MaterialTheme.colorScheme.onSurface
-                                })
+                                color = dayNumberColor(date).let { if (!inMonth) it.copy(alpha = 0.5f) else it }) // [RVH-10]
                             workOf(day)?.name?.let { t ->
                                 Text(t + (workOf(day)?.extraKinds?.filter { it != t }?.firstOrNull()?.let { "+" + it.take(1) } ?: ""), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, textAlign = TextAlign.Center,
                                     color = c?.let { com.bamnat.app.ui.components.contentColorOn(it) } ?: MaterialTheme.colorScheme.onSurface,
@@ -377,6 +395,8 @@ internal fun YearBoard(
     onYear: (Int) -> Unit,
     onOpen: (YearMonth) -> Unit,
     modifier: Modifier = Modifier,
+    /** [RVH-19] The calendar's kind, for its words. */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val days by androidx.compose.runtime.produceState<Map<LocalDate, ResolvedDay>?>(null, snapshot, year) {
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
@@ -393,7 +413,7 @@ internal fun YearBoard(
             androidx.compose.material3.IconButton(onClick = { onYear(1) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
         }
         val loaded = days ?: emptyMap()
-        YearCounts(snapshot, loaded.values)
+        YearCounts(snapshot, loaded.values, style)
         val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
         val columns = if (big) 2 else 3
         Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 16.dp)) {
@@ -403,7 +423,7 @@ internal fun YearBoard(
                         val month = YearMonth.of(year, m)
                         Box(Modifier.weight(1f).then(com.bamnat.app.ui.parts.PartMods.box(
                             bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month }), com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month, today))), MaterialTheme.shapes.medium))) {
-                            MiniMonth(month, loaded, null, weekStart, today, Modifier.fillMaxWidth()) { onOpen(month) }
+                            MiniMonth(month, loaded, null, weekStart, today, Modifier.fillMaxWidth(), style) { onOpen(month) }
                         }
                     }
                     repeat(columns - row.size) { Box(Modifier.weight(1f)) }

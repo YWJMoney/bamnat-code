@@ -129,6 +129,39 @@ export function stack(rows, launchedAt) {
   return { until: given.length ? until : null, waiting: 0, items: given };
 }
 
+/**
+ * 2.0.0 [RVD-15] 사용자 결정 2026-11-12 '확인 뒤 지급 + 1년 상한': one person gets at most [months] of 보상 프로 in [days],
+ * every kind together (회사 방식 채택·제안·임금표·친구 초대·만든 작품). Months moved to a new phone with the recovery code stay
+ * counted on the install they left as 'moved' rows (a work stays on the old install and its rewards would start from 0 again).
+ */
+export const REWARD_CAP = { months: 12, days: 365 };
+
+/**
+ * 2.0.0 [RVD-15] PC 확인 D-442 (클라우드 로컬 서버에서 재현): owed 친구 초대·만든 작품 months as the phone may say them, the oldest
+ * first and cut to what the year's cap still [left] (an admin pays no more: '11개월만 지급', or none past it). Before, a person at
+ * the cap read '프로 12개월은 운영팀이 확인한 뒤 들어와요' beside '올해 받을 수 있는 12개월을 모두 받았어요'.
+ */
+export function pendingWithin(rows, left) {
+  const out = [];
+  for (const r of rows.filter((x) => x.status === "owed" && PENDING_RULES.includes(x.rule_id)).sort((a, b) => a.created_at - b.created_at)) {
+    const months = Math.min(r.months, left);
+    if (months <= 0) break;
+    out.push({ ...r, months });
+    left -= months;
+  }
+  return out;
+}
+
+/** How much of the year's cap [dev] used, as { used, cap, left }. */
+export async function rewardYear(env, dev, now) {
+  const r = await one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND status IN ('paid', 'moved') AND paid_at > ?",
+    dev, now - REWARD_CAP.days * DAY);
+  return { used: r.m, cap: REWARD_CAP.months, left: Math.max(0, REWARD_CAP.months - r.m) };
+}
+
+/** 2.0.0 [RVD-13][RVD-14] Rewards that wait for an admin, as the phone says them: "확인 뒤 들어와요". */
+export const PENDING_RULES = ["invite", "maker"];
+
 // ---- 1.36 841 쓰면 쌓이는 날 (수익설계 2판 B안: 광고 없는 보상, 월 14일까지, 나눔 대상 아님) ----
 
 export const EARNED = {
@@ -223,11 +256,12 @@ function makerWhat(memo) {
 
 /** [MON-08][MON-09] What this install has: its passes, its admin link and whether it holds a recovery code. */
 export async function passes(env, dev, now) {
-  const [rows, link, code, s] = await Promise.all([
-    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo FROM rewards WHERE device = ?", dev),
+  const [rows, link, code, s, year] = await Promise.all([
+    all(env, "SELECT months, status, paid_at, deferred, rule_id, memo, created_at FROM rewards WHERE device = ?", dev),
     one(env, "SELECT status, admin_name, admin, previews FROM admin_devices WHERE device = ?", dev),
     one(env, "SELECT created_at FROM pass_codes WHERE device = ?", dev),
     launchState(env),
+    rewardYear(env, dev, now),
   ]);
   if (link) await run(env, "UPDATE admin_devices SET seen_at = ? WHERE device = ?", now, dev);
   const p = stack(rows, s.launchedAt);
@@ -241,6 +275,10 @@ export async function passes(env, dev, now) {
     earned: earned.map((r) => ({ days: r.days, at: iso(r.given_at), why: EARNED.words[r.kind] ?? "쓰면 쌓이는 날" })),
     // 1.36 [GRW-09] 만든 분 보상은 무엇 때문인지까지("이달의 주제에 뽑힘 · 테마 이름").
     items: p.items.map((r) => ({ months: r.months, at: iso(r.paid_at), why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
+    // 2.0.0 [RVD-13][RVD-14] 친구 초대·만든 작품 보상은 운영팀이 확인한 뒤 들어와요: the phone says them as waiting, not given.
+    // [RVD-15] PC 확인 D-442: only as much as the year's cap still leaves, so it never promises months an admin cannot pay.
+    pending: pendingWithin(rows, year.left)
+      .map((r) => ({ months: r.months, why: rewardWhy(r.rule_id), ...(r.rule_id === "maker" && r.memo ? { what: makerWhat(r.memo) } : {}) })),
     deferred: rows.filter((r) => r.status === "paid" && r.deferred).length,
     // AM 1.28 [FLAG-26] owner: the link code was the owner's, so the app shows every way of working (숨긴 근무 유형 포함).
     // S 1.32 [SECX-01] previews: the flags the developer app turned on for this phone only (approved phones only).
@@ -389,7 +427,11 @@ export async function money(request, env, path) {
     if (row.device !== dev) {
       // The passes move; the old phone keeps nothing and the code is spent.
       await batch(env, [
-        stmt(env, "UPDATE rewards SET device = ? WHERE device = ?", dev, row.device),
+        // 2.0.0 [RVD-15] The year's paid months stay counted on the install they left (not given again: status 'moved').
+        stmt(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
+          SELECT 'v' || lower(hex(randomblob(11))), 'moved:' || report_id || ':' || ?2, rule_id, device, months, 'moved', '', created_at, paid_at, 0
+          FROM rewards WHERE device = ?1 AND status IN ('paid', 'moved') AND paid_at > ?3`, row.device, dev.slice(0, 12), now - REWARD_CAP.days * DAY),
+        stmt(env, "UPDATE rewards SET device = ? WHERE device = ? AND status != 'moved'", dev, row.device),
         stmt(env, "UPDATE day_rewards SET device = ? WHERE device = ?", dev, row.device),
         stmt(env, "DELETE FROM pass_codes WHERE device IN (?, ?)", row.device, dev),
         // [INVITE-02] The invite code moves with them, so links already sent count here.
@@ -528,14 +570,17 @@ if(a)location.replace(w?${JSON.stringify(app)}:${JSON.stringify(store)});</scrip
 }
 
 /** Months the inviter was given for invites since [since]. */
-export async function inviteMonths(env, dev, since = 0) {
-  const r = await one(env, `SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND rule_id = 'invite' AND status = 'paid'
-    AND paid_at > ?`, dev, since);
+export async function inviteMonths(env, dev, since = 0, withOwed = false) {
+  // 2.0.0 [RVD-14] 'owed' months wait for an admin (made at created_at); a cap counts them with the paid ones.
+  const r = await one(env, `SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ?1 AND rule_id = 'invite'
+    AND (status = 'paid' AND paid_at > ?2${withOwed ? " OR status = 'owed' AND created_at > ?2" : ""})`, dev, since);
   return r.m;
 }
 
 /** [INVITE-08] The rules as the app says them, before anything is sent. */
-export const inviteRules = (set) => ({ need: set.friends, days: set.days, months: set.months, capMonths: set.capMonths });
+// 2.0.0 [RVD-15] The cap the person meets: the developer's own invite cap when lower, else the 1년 12달 of all rewards together.
+export const inviteRules = (set) => ({ need: set.friends, days: set.days, months: set.months,
+  capMonths: set.capMonths > 0 ? Math.min(set.capMonths, REWARD_CAP.months) : REWARD_CAP.months });
 
 /**
  * [INVITE-05][INVITE-08] What the inviter sees: the code and link, the rules, friends counted toward the next
@@ -544,13 +589,16 @@ export const inviteRules = (set) => ({ need: set.friends, days: set.days, months
  */
 export async function inviteView(env, dev, origin, now) {
   const set = await inviteSettings(env);
-  const [mine, counts, months, recent, used] = await Promise.all([
+  const [mine, counts, months, recent, used, pending, year] = await Promise.all([
     one(env, "SELECT code FROM invite_codes WHERE device = ?", dev),
     all(env, "SELECT status, COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND (status != 'waiting' OR created_at > ?) GROUP BY status",
       dev, now - inviteDeadline(set)),
     inviteMonths(env, dev),
-    set.capMonths ? inviteMonths(env, dev, now - INVITE.capDays * DAY) : 0,
+    set.capMonths ? inviteMonths(env, dev, now - INVITE.capDays * DAY, true) : 0,
     one(env, "SELECT status FROM invite_uses WHERE invitee = ?", dev),
+    // 2.0.0 [RVD-14] months an admin has yet to look at.
+    one(env, "SELECT COALESCE(SUM(months), 0) AS m FROM rewards WHERE device = ? AND rule_id = 'invite' AND status = 'owed'", dev),
+    rewardYear(env, dev, now),
   ]);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return {
@@ -561,7 +609,10 @@ export async function inviteView(env, dev, origin, now) {
     waiting: n("waiting"),
     friends: n("credited") + n("capped") + n("qualified"),
     given: months,
-    capReached: set.capMonths > 0 && recent + set.months > set.capMonths,
+    // 2.0.0 [RVD-14] 확인 뒤 들어와요: the app says these apart from the months given. [RVD-15] PC 확인 D-442: no more than the
+    // year's cap leaves, so '프로 12개월은 운영팀이 확인한 뒤 들어와요' never stands beside '올해 … 모두 받았어요'.
+    pending: Math.min(pending.m, year.left),
+    capReached: (set.capMonths > 0 && recent + set.months > set.capMonths) || year.used + Math.min(pending.m, year.left) + set.months > year.cap,
     // The invite this phone itself came by, as this phone reported it.
     used: used?.status ?? null,
   };
@@ -576,7 +627,7 @@ export async function settleInvites(env, inviter, set, now) {
   for (let i = 0; i < 50; i++) {
     const have = await one(env, "SELECT COUNT(*) AS n FROM invite_uses WHERE inviter = ? AND status = 'qualified'", inviter);
     if (have.n < set.friends) return;
-    const recent = set.capMonths ? await inviteMonths(env, inviter, now - INVITE.capDays * DAY) : 0;
+    const recent = set.capMonths ? await inviteMonths(env, inviter, now - INVITE.capDays * DAY, true) : 0;
     const capped = inviter.startsWith("gone") || (set.capMonths > 0 && recent + set.months > set.capMonths);
     const id = `i${randomId(21)}`;
     const took = await run(env, `UPDATE invite_uses SET status = ?, batch = ? WHERE invitee IN (SELECT invitee FROM invite_uses
@@ -588,16 +639,10 @@ export async function settleInvites(env, inviter, set, now) {
       await audit(env, now, "invite_capped", id, inviter.slice(0, 8));
       continue;
     }
-    let deferred = null;
-    try {
-      deferred = await deferFor(env, inviter, set.months, now);
-    } catch (e) {
-      console.error(`defer invite: ${e?.code ?? e}`);
-    }
-    const memo = `친구 초대 ${took.meta.changes}명`;
+    // 2.0.0 [RVD-14] 검토 SVC-06: the install id and the phone mark are what the app sent, so the months wait in 드릴 보상 for an
+    // admin, who sees the friends' signals (Play 확인, 코드로 넣음, 몰림) and pays there (setReward; Play 결제 미룸 then).
     await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
-      VALUES (?, ?, 'invite', ?, ?, 'paid', ?, ?, ?, ?)`, id, `invite:${id}`, inviter, set.months,
-      deferred ? `${memo} · Play 결제 미룸(다음 결제 ${iso(deferred).slice(0, 10)})` : memo, now, now, deferred ? 1 : 0);
+      VALUES (?, ?, 'invite', ?, ?, 'owed', ?, ?, NULL, 0)`, id, `invite:${id}`, inviter, set.months, `친구 초대 ${took.meta.changes}명`, now);
     await audit(env, now, "invite_credit", id, inviter.slice(0, 8));
   }
 }
@@ -717,7 +762,7 @@ export async function inviteSettingsRoute(request, env, method, now) {
  * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
  */
 export async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows, bursts] = (await batch(env, [
+  const [rewardRows, counts, refused, top, codes, setRows, bursts, kinds] = (await batch(env, [
     stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
     stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
@@ -727,6 +772,9 @@ export async function rewardCounts(env, withInvites, now) {
     stmt(env, INVITE_SETTINGS_SQL),
     // AG 1.27 [INVITE-10] 몰림: friends of one code from one network in an hour, the last 30 days.
     stmt(env, "SELECT target AS code, COUNT(*) AS n FROM audit WHERE action = 'invite_burst' AND at > ? GROUP BY target ORDER BY n DESC LIMIT 5", now - 30 * DAY),
+    // 2.0.0 [RVD-16] 드릴 보상 by what for: the chips over the list.
+    stmt(env, `SELECT CASE rule_id WHEN 'invite' THEN 'invite' WHEN 'maker' THEN 'maker' WHEN 'rate' THEN 'rate' WHEN '' THEN 'ask' WHEN 'first' THEN 'first'
+      ELSE 'rule' END AS k, COUNT(*) AS n FROM rewards WHERE status = 'owed' GROUP BY 1`),
   ])).map((r) => r.results ?? []);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return [rewardRows, withInvites ? {
@@ -736,7 +784,7 @@ export async function rewardCounts(env, withInvites, now) {
     top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),
     bursts: bursts.reduce((a, b) => a + b.n, 0),
     burstCodes: bursts.map((b) => ({ code: b.code, n: b.n })),
-  } : undefined];
+  } : undefined, Object.fromEntries(kinds.map((x) => [x.k, x.n]))];
 }
 // AE 1.26 끝
 

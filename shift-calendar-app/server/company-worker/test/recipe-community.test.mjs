@@ -603,6 +603,9 @@ test("[VIL-19] 이달의 주제 공모: 운영자가 주제를 정하면 내 공
   // 1.36 [GRW-09] 고르면 주인 기기의 프로 내역에 만든 작품 보상이 생기고, 다시 저장해도 두 번 가지 않아요.
   assert.equal(picked.data.rewarded, 1);
   assert.equal((await call("POST", "/api/admin/village/contests/pick", { month: list.month, style: "SHIFT", codes: [mine] }, admin)).data.rewarded, 0);
+  // 2.0.0 [RVD-13] 확인 뒤 지급: the phone says it waits, then has it once an admin pays.
+  assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.pending.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, admin)).data.rewards) await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, admin);
   assert.ok((await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data.items.some((x) => x.why === "maker" && x.what.startsWith("이달의 주제에 뽑힘 · ")));
   t.mock.timers.setTime(AFTER + 3 * 86_400_000); // December (KST): November's picks show
   const next = (await see(3)).data;

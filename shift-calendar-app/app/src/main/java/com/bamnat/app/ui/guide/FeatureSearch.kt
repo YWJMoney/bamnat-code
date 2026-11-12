@@ -118,8 +118,8 @@ fun FeatureHelpRow(feature: AppFeature, modifier: Modifier = Modifier) {
                 }
             }
             Text(feature.what, style = MaterialTheme.typography.bodyMedium)
-            // 2.0.0 [RVP-75] (검토 REST-17·T14-04) In the words of the calendar on screen: 알바 reads 근무·급여 as 시급·주휴, a 가게 its 장부.
-            Text("어디: ${feature.whereFor(style)}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+            // 2.0.0 [RVH-25] 검토 WORK-12·REST-17: the way in this calendar's own tab names.
+            Text("어디: ${FeatureRegistry.whereFor(feature, style)}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
             val note = when {
                 !fits -> "${feature.styles.joinToString("·") { it.label }} 달력에서 쓰는 기능이에요. 달력 이름을 눌러 그 달력으로 바꾸거나 새로 만들어요."
                 feature.canTurnOff && !on && feature.off == Off.ELSEWHERE -> "지금 꺼져 있어요. 켜면 바로 써요."

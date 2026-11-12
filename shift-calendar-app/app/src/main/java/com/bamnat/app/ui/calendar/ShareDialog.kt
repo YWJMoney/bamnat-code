@@ -143,6 +143,8 @@ fun ShareDialog(
     // Employees' parts: leave kinds and extra work mean nothing to a shop or a freelancer's calendar.
     val employee = style?.usesPayEngine != false
     val field = kind == MoneyShare.JOBS
+    // 2.0.0 [RVH-20] 검토 CAL-25: the days sent, in the calendar's words, said the same in '보여 줄 것' and '보내는 것'.
+    val daysPart = if (employee) "근무" else if (field) "일한 날" else com.bamnat.core.work.scheduleWord(style)
     // [SHR-11] The figures a link would carry, worked out here so the row can show them before anything is sent.
     val money by produceState<List<SharedPay>?>(null, kind, month, snapshot, profile) {
         value = orElse(emptyList()) { ShareContent.money(container, snapshot, month.atDay(1), kind, calendarId) }
@@ -250,8 +252,8 @@ fun ShareDialog(
                         Text("링크로 보내기")
                     }
                 }
-                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·급여 빼고). " +
-                    (if (keeps) "프로를 쓰는 동안 열려 있어요." else "${ShareLinkPayload.ttlLabel(ttl)} 열려요.") + "\n" + SHARE_SERVER_NOTICE,
+                Text("링크는 ${linkMonth.monthValue}월부터 3개월 ${com.bamnat.core.work.scheduleWord(style)}만 담아요(메모·${shareLeftOut(style)} 빼고). " +
+                    (if (keeps) "프로를 쓰는 동안 열려 있어요." else "${ShareLinkPayload.ttlLabel(ttl)} 열려요.") + "\n" + shareServerNotice(style),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (quickPaused) Text(com.bamnat.core.ops.ServerSwitch.pausedText(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -349,7 +351,7 @@ fun ShareDialog(
             Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     // [J133-87] 1.33 빌드 6: a shop's first row is its 영업일, a field worker's its 일정 days, in their words.
-                    PartRow(if (employee) "근무" else if (field) "일한 날" else com.bamnat.core.work.scheduleWord(style),
+                    PartRow(daysPart,
                         if (employee) "이름·색·시간, 늘 들어가요" else "적은 날만, 이름·색·시간", checked = true, enabled = false) {}
                     if (field) {
                         PartRow("일정", "날마다 일감 이름과 시간, ${ShareLinkPayload.JOBS_PER_DAY}개까지. 고객·장소·금액은 빼요", options.jobs) { options = options.copy(jobs = it) }
@@ -445,10 +447,10 @@ fun ShareDialog(
             // [MKT-09][OPS-13][SHR-01] Said before the data leaves the phone, in the policy's words, with what was ticked.
             Text(
                 // [FEAT-15] The feed also sends the phone's time zone name (처리방침 2.6, 1항).
-                "보내는 것: " + (listOf("근무") + chosen().partNames(kind) + listOfNotNull("회사 설정(금액 없이)".takeIf { chosen().sendsSetup },
+                "보내는 것: " + (listOf(daysPart) + chosen().partNames(kind) + listOfNotNull("회사 설정(금액 없이)".takeIf { chosen().sendsSetup },
                     "내 테마(사진 빼고)".takeIf { chosen().look }, "근무 설정(급여 빼고)".takeIf { chosen().kit },
                     "휴대폰 시간대 이름".takeIf { feed && feedOpen }))
-                    .joinToString(", ") + "\n" + SHARE_SERVER_NOTICE,
+                    .joinToString(", ") + "\n" + shareServerNotice(style),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             if (empty) {
@@ -541,7 +543,8 @@ fun ShareDialog(
                     Icon(Icons.Outlined.CalendarMonth, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text("동료 근무표도 받아 볼까요?", style = MaterialTheme.typography.titleSmall)
+                        // [RVH-20] A shop, a field worker or an investor takes someone's calendar, not a 동료's 근무표.
+                        Text(if (employee) "동료 근무표도 받아 볼까요?" else "다른 사람 달력도 받아 볼까요?", style = MaterialTheme.typography.titleSmall)
                         Text("받은 링크를 넣으면 내 달력과 바꿔 가며 보고, 같이 쉬는 날도 보여요", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -732,8 +735,9 @@ internal fun moneyHint(kind: MoneyShare, money: List<SharedPay>?): String = when
 
 /** [SHR-11] Why the link button waits: these months have nothing to show yet. */
 internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
-    field -> "이 기간에는 근무가 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
-    kind == MoneyShare.SALES -> "이 기간에는 근무가 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
+    // 2.0.0 [RVH-20] 검토 낱말 검사: a field calendar has 일정, a shop 영업일, not 근무.
+    field -> "이 기간에는 일정이 없어요. ‘일정’이나 ‘${kind.label}’을 고르면 링크를 만들 수 있어요."
+    kind == MoneyShare.SALES -> "이 기간에는 영업일이 없어요. ‘${kind.label}’이나 ‘메모’를 고르면 링크를 만들 수 있어요."
     // 빌드 10 (알바: 일한 날을 아직 안 칠했는데 무엇을 할지 몰라요): what to do first, in the calendar's words.
     else -> "이 기간에는 보낼 근무가 없어요. 달력에서 일한 날을 먼저 칠하거나, 보여 줄 것을 골라 주세요."
 }
@@ -741,6 +745,16 @@ internal fun emptyHint(kind: MoneyShare, field: Boolean): String = when {
 /** What leaves the phone with a link, where it is kept, and who can open it. Matches privacy policy 1.6, sections 1 and 5. */
 internal const val SHARE_SERVER_NOTICE =
     "링크를 만들면 적은 이름과 근무표, 고른 항목이 공유 서버(Cloudflare, 미국)에 저장되고, 주소를 받은 사람은 누구나 볼 수 있어요. 원하지 않으면 이미지로 보내 주세요."
+
+/** 2.0.0 [RVH-20] 검토 화면 사진(가게 공유): [SHARE_SERVER_NOTICE] in the calendar's word for its days (영업일, 일정). */
+internal fun shareServerNotice(style: com.bamnat.core.work.WorkStyle?): String =
+    SHARE_SERVER_NOTICE.replace("근무표", com.bamnat.core.work.scheduleWord(style))
+
+/** 2.0.0 [RVH-20] 총괄 사진 검토(가게 공유 '메모·급여 빼고'): what a link leaves out, in the calendar's own money word. */
+internal fun shareLeftOut(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.INVEST -> "투자 기록"
+    else -> com.bamnat.core.work.MoneyShare.of(style).label
+}
 
 private fun expiryText(s: ShareLinkState): String =
     s.expiresAt.atZone(Today.zone()).toLocalDate().format(DateTimeFormatter.ofPattern("M월 d일"))

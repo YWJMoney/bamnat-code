@@ -228,10 +228,10 @@ class DesignRulesTest {
     }
 
     companion object {
-        /** 2.0.0 첫 PR(갈래 P)에서 센 값. */
-        const val PADDING_CEILING = 471
-        /** 46 at the first PR; 43 once 테마 기간·새 판 said theirs on the app's line (2.0.0 [RVP-23]). */
-        const val TOAST_CEILING = 43
+        /** 2.0.0 첫 PR(갈래 P)에서 센 값 471, 2/3(H·D가 들어간 통합 위)에서 470. */
+        const val PADDING_CEILING = 470
+        /** 46 at the first PR; 43 once 테마 기간·새 판 said theirs on the app's line (2.0.0 [RVP-23]); 42 with 급여 리포트 on `ReportShare.orTell` (RVP-69). */
+        const val TOAST_CEILING = 42
         const val COLOUR_CEILING = 74
 
         /** Screens that had more than one filled button when the rule came (2.0.0): how many over one, by file. */

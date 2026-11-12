@@ -604,13 +604,28 @@ internal fun CoverPanel(
     }
 }
 
-/** [J133-46] A sideways swipe: left for the next day, right for the day before. */
+/**
+ * [J133-46] A sideways swipe: left for the next day, right for the day before.
+ * 2.0.0 [RVH-12] 검토 CAL-17: the distance is 56dp (the day header's), not 60 pixels that are a nudge on a dense screen.
+ */
 private fun Modifier.daySwipe(day: LocalDate, onStep: (Int) -> Unit): Modifier = pointerInput(day) {
     var dx = 0f
+    val far = 56.dp.toPx()
     detectHorizontalDragGestures(onDragStart = { dx = 0f }, onDragEnd = {
-        if (dx < -60f) onStep(1) else if (dx > 60f) onStep(-1)
+        if (dx < -far) onStep(1) else if (dx > far) onStep(-1)
     }) { _, amount -> dx += amount }
 }
+
+/** [RVH-12] A roster being edited, as plain lists a saved state can hold. */
+internal val TeamRosterSaver = androidx.compose.runtime.saveable.Saver<TeamRoster, ArrayList<String>>(
+    save = { r -> ArrayList(r.teams.map { "${it.lag}|${if (it.mine) 1 else 0}|${it.name}" }) },
+    restore = { list ->
+        list.mapNotNull { line ->
+            val parts = line.split('|', limit = 3)
+            if (parts.size < 3) null else TeamRoster.Team(parts[2], parts[0].toIntOrNull() ?: 0, parts[1] == "1")
+        }.takeIf { it.isNotEmpty() }?.let { TeamRoster(it) }
+    },
+)
 
 @Composable
 private fun OptionRow(o: CoverFinder.Option, judged: Boolean) {
@@ -687,7 +702,8 @@ private fun TeamEditor(
     start: TeamRoster, rotation: WorkPattern.Rotation, snap: ScheduleSnapshot, today: LocalDate,
     onSave: (TeamRoster) -> Unit, onReset: () -> Unit, onDismiss: () -> Unit,
 ) {
-    var roster by remember { mutableStateOf(start) }
+    // 2.0.0 [RVH-12] 검토 CAL-17: kept through folding or turning the phone (and a process restart), as the 쳐 넣기 sheet is.
+    var roster by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = TeamRosterSaver) { mutableStateOf(start) }
     val steps = rotation.steps
     val size = steps.size
     fun stepLabel(i: Int): String {

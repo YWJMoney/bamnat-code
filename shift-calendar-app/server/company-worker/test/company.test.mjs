@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { normName, personal, cleanSetup, readReport, fingerprint, describe as words, support } from "../src/index.js";
 import { server, setup, report, device, from, slipProof } from "./helpers.mjs";
+import { SERVER_VERSION } from "../src/version.js";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -509,7 +510,7 @@ test("without a database the server says so", async () => {
   const { call } = server({ DB: undefined });
   assert.equal((await call("GET", "/api/companies?q=예시")).status, 503);
   const health = await call("GET", "/api/admin/health");
-  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
+  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null }, version: SERVER_VERSION });
 });
 
 test("1.38 PAYX-49: a kind's own 시수 is kept and said, and changes the fingerprint", async () => {

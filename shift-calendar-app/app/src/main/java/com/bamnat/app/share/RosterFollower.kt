@@ -134,18 +134,26 @@ object RosterFollower {
         val from = Today.date().withDayOfMonth(1)
         val plan = RosterFollow.plan(theirDays(old), theirDays(new), pairs, mine.shiftTypes, mine.resolver::resolve, from)
         if (plan.isEmpty) return
+        val prefixes = plan.lines.map { it.substringBefore(' ') }.toSet()
         if (plan.apply.isEmpty()) {
-            said(c, after.id, FollowNote(FollowNote.ASK, Today.instant(), emptyList(), kept = plan.kept))
+            // 2.0.0 [RVH-01] 검토 CAL-05: a change with only kept days (the member had changed them by hand) does not wipe the note
+            // before it: an unanswered '넣을까요?' keeps its days and its button, and a change put in by itself keeps its 되돌리기.
+            val prev = after.note?.takeIf { (it.kind == FollowNote.ASK && it.apply.isNotEmpty()) || (it.kind == FollowNote.DONE && it.undo.isNotEmpty()) }
+            val kept = (prev?.kept.orEmpty() + plan.kept).distinct().sorted()
+            said(c, after.id, prev?.copy(kept = kept, at = Today.instant()) ?: FollowNote(FollowNote.ASK, Today.instant(), emptyList(), kept = kept))
             return
         }
         if (mode == Mode.AUTO) {
             val was = c.scheduleRepository.updateDays(plan.apply.keys.toList()) { e -> e.copy(override = plan.apply.getValue(e.date)) }
             val undo = was.mapValues { (_, e) -> code(e?.override ?: ShiftOverride.None) }
-            said(c, after.id, FollowNote(FollowNote.DONE, Today.instant(), plan.lines, undo = undo, kept = plan.kept))
+            // [RVH-01] Two changes in a row: 되돌리기 takes both back to how the days were before the first (the older value wins).
+            val prev = after.note?.takeIf { it.kind == FollowNote.DONE && it.undo.isNotEmpty() }
+            val lines = prev?.lines.orEmpty().filter { it.substringBefore(' ') !in prefixes } + plan.lines
+            val kept = (prev?.kept.orEmpty().filter { it !in plan.apply.keys } + plan.kept).distinct().sorted()
+            said(c, after.id, FollowNote(FollowNote.DONE, Today.instant(), lines, undo = undo + prev?.undo.orEmpty(), kept = kept))
         } else {
             // A change asked earlier and not answered yet stays in the question with this one.
             val prev = after.note?.takeIf { it.kind == FollowNote.ASK }
-            val prefixes = plan.lines.map { it.substringBefore(' ') }.toSet()
             val lines = prev?.lines.orEmpty().filter { it.substringBefore(' ') !in prefixes } + plan.lines
             val apply = prev?.apply.orEmpty() + plan.apply.mapValues { code(it.value) }
             val kept = (prev?.kept.orEmpty().filter { it !in plan.apply.keys } + plan.kept).distinct()

@@ -147,6 +147,8 @@ fun CalendarEditScreen(
     onPay: () -> Unit,
     onMoney: () -> Unit,
     onShare: () -> Unit,
+    /** [RVH-18] An investor calendar's 투자 tab. */
+    onInvest: () -> Unit = onMoney,
     onDeleted: () -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -202,7 +204,8 @@ fun CalendarEditScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 8.dp)) {
                         Text("이 달력의 일", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
-                        EditRow("근무 형태", state.style?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업 중에서 골라요", onWorkStyle)
+                        // 2.0.0 [RVH-18] 검토 CAL-23: 투자 is one of the kinds too.
+                        EditRow("근무 형태", state.style?.let { "${it.label} · ${it.description}" } ?: "교대·일근·시급·현장·자영업·투자 중에서 골라요", onWorkStyle)
                         HorizontalDivider()
                         EditRow(
                             words.pattern,
@@ -213,10 +216,12 @@ fun CalendarEditScreen(
                         EditRow(words.types, if (state.shiftKinds > 0) "${state.shiftKinds}가지 · 이름·시간·색·알람" else "이름·시간·색·알람", onShiftTypes)
                         HorizontalDivider()
                         val moneyFirst = state.style == WorkStyle.FIELD || state.style == WorkStyle.BUSINESS
+                        // [RVH-18] 검토 CAL-23: an investor's '원금과 수익률' opened the 급여 setup; it opens the 투자 tab (계좌·원금·수익률).
+                        val invest = state.style == WorkStyle.INVEST
                         EditRow(
                             words.income,
-                            if (moneyFirst || state.hasPay) words.incomeHint else "아직 정하지 않았어요 · ${words.incomeHint}",
-                            if (moneyFirst) onMoney else onPay,
+                            if (moneyFirst || invest || state.hasPay) words.incomeHint else "아직 정하지 않았어요 · ${words.incomeHint}",
+                            when { invest -> onInvest; moneyFirst -> onMoney; else -> onPay },
                         )
                         if (state.style == WorkStyle.FIELD) {
                             HorizontalDivider()
@@ -227,7 +232,9 @@ fun CalendarEditScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(vertical = 8.dp)) {
                         if (!cal.isMain) {
-                            ToggleRow("근무 알람 울리기", "이 달력의 근무·영업 알람도 울려요", cal.alarms, onChange = vm::setAlarms)
+                            // [RVH-18] In the calendar's words: 투자 알람, 영업 알람, 일정 알람.
+                            val noun = com.bamnat.app.ui.shifts.alarmNoun(state.style)
+                            ToggleRow("$noun 알람 울리기", "이 달력의 $noun 알람도 울려요", cal.alarms, onChange = vm::setAlarms)
                             HorizontalDivider()
                         }
                         if (state.many) {

@@ -181,6 +181,8 @@ android {
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.
             (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
+            // 2.0.0 [RVH-24] TypeWordsScreenTest writes what it found, to make its list anew.
+            (findProperty("bamnat.typeWordsDump") as String?)?.let { v -> it.systemProperty("bamnat.typeWordsDump", v) }
             when (testSet) {
                 "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
                 "unit" -> {

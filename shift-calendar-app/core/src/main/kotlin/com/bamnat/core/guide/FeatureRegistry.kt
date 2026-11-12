@@ -2,7 +2,6 @@ package com.bamnat.core.guide
 
 import com.bamnat.core.work.WorkStyle
 import com.bamnat.core.work.words
-import com.bamnat.core.work.moneyTab
 
 /**
  * [GUIDE-01] Where a feature opens in the app. The app maps each place to its screen (a tab, a screen of
@@ -14,8 +13,6 @@ enum class Place {
     PAY, PATTERN, SHIFT_TYPES, EXTRA_KINDS, WORK_STYLE, CALENDARS, CALENDAR_EDIT, SHOP_DAYS, COMBINED, OWED,
     SLEEP, DUTY_ROSTER, HEALTH_REPORT, TEAMS, LEADER_TEAMS, YEAR, ATTENDANCE_IMPORT, COMMUTE, CALENDAR_IMPORT, SHARE, RECEIVE,
     DIAGNOSTICS, INQUIRY, FEATURES, PRO,
-    /** 2.0.0 [RVP-75] (검토 REST-18) 마을 on 광장, and a company's 우리 회사 광장 board (they opened the pay screen). */
-    VILLAGE, COMPANY_BOARD,
     /** [RVP-75] A feature with no screen to jump to (the ringing alarm): 기능 찾기 shows where it is and no 바로 가기. */
     NOWHERE,
     /** [ONBOARD-04] 추천 기능 한 번에 켜기. */
@@ -26,6 +23,8 @@ enum class Place {
     PROFILE, JOURNAL,
     // [RCP-38] 1.34 나눔 판: the recipes of the calendar's kind of work, and 설정 › 나눔 판.
     RECIPES, RECIPE_MINE,
+    // 2.0.0 [RVH-25] 검토 WORK-11: 마을 › 광장, and a company's 회사 규칙 광장 (they opened the pay screen).
+    PLAZA, BOARD,
     SETTINGS_WORK, SETTINGS_ALARM, SETTINGS_NOTICES, SETTINGS_PAY, SETTINGS_CALENDAR,
     SETTINGS_DATA, SETTINGS_PRIVACY,
     ;
@@ -75,9 +74,6 @@ enum class Moment {
  * its deep link, other words people use for it, whether and how it can be turned off, a feature it
  * belongs to ([under]: off when that one is), and a tip for its good moment.
  */
-/** The names the hours-and-money tab goes by, one per kind of work ([words]). */
-private val TAB_NAMES: Set<String> = WorkStyle.entries.map { it.words().tab }.toSet()
-
 data class AppFeature(
     val id: String,
     val req: String,
@@ -94,24 +90,6 @@ data class AppFeature(
     /** 1.38: the 기능 깃발 the feature waits on ([com.bamnat.core.flags.FlagCatalog] key); while it is off the guide and search leave it out. */
     val flag: String? = null,
 ) {
-    /**
-     * 2.0.0 [RVP-75] (검토 REST-17) [where] in the words of [style]'s own screens: the tab that holds hours and money is 출근·시급 for 알바,
-     * 일감·수입 for 현장, 매출·영업 for 가게, 투자·수익 for 투자, and the money tab 장부 for 현장·가게. Only the first step is a tab.
-     */
-    fun whereFor(style: WorkStyle?): String {
-        val steps = where.split(" › ")
-        val first = steps.first()
-        val tab = style.words().tab
-        val money = moneyTab(style)
-        val now = when (first) {
-            in TAB_NAMES, "통계", "통계 탭" -> tab
-            "가계부", "장부" -> money
-            "통계·가계부" -> "$tab·$money"
-            else -> return where
-        }
-        return (listOf(now) + steps.drop(1)).joinToString(" › ")
-    }
-
     /** For this kind of work; a main calendar from before kinds of work were asked is a shift calendar. */
     fun fits(style: WorkStyle?): Boolean = styles.isEmpty() || (style ?: WorkStyle.SHIFT) in styles
     val canTurnOff: Boolean get() = off != null
@@ -230,7 +208,7 @@ object FeatureRegistry {
             setOf(SHIFT), "달력 › 도구 › 이번 달 전부 넣기 (빠른 입력 › 이번 달 전부 넣기)", at(Place.CALENDAR, "typeMonth"),
             "연달아", "키패드", "한 달 입력", "듀티 입력", "간호사", "나이트", "역순", "근무표 점검"),
         f("shift.restRules", "REST-01", "근무표 점검 기준", "휴식 11시간·야간 뒤 쉬는 날·연속 야간·연속 근무·한 달 야간 기준을 병원·회사에 맞추고, 이달 야간 수와 시간외를 함께 봐요",
-            setOf(SHIFT), "달력 › 휴식 점검 카드 › 기준 바꾸기 (설정 › 알림과 잠 › 근무표 점검 기준)", at(Place.SETTINGS_NOTICES, "근무표 점검 기준"),
+            setOf(SHIFT), "설정 › 알림과 잠 › 근무표 점검 기준 (달력의 휴식 점검 카드 › 기준 바꾸기에서도)", at(Place.SETTINGS_NOTICES, "근무표 점검 기준"),
             "휴식 점검", "근무표 점검", "N-O-D", "나오데", "이브데이", "연속 나이트", "나이트 개수", "11시간", "점검 끄기", off = Off.ELSEWHERE),
         f("shift.health", "SHFT-07", "연간 건강 지표", "야간 비율, 가장 길게 이어진 야간, 11시간 못 쉰 날을 1년으로 봐요",
             setOf(SHIFT), "${tab(SHIFT)} › ○년 건강 지표", at(Place.HEALTH_REPORT), "야간 비율", "연속 야간", "건강", "휴식",
@@ -241,7 +219,7 @@ object FeatureRegistry {
         // 1.39 사용자 2026-11-08 (수면은 밤낮의 핵심, 찾기 쉽게): every kind of work sleeps, so 기능 목록 and 설정 검색 show it to all
         // (it was 교대 only, and an office worker searching '잠' found no feature).
         f("sleep.log", "SLP-16", "수면 기록", "잠든 시간과 깬 시간을 적고 근무별 평균을 봐요",
-            ALL, "달력 › 오늘 칸 › 몸 (또는 설정 › 알림과 잠 › 수면 기록 보기)", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
+            ALL, "설정 › 알림과 잠 › 수면 기록 보기 (달력 › 오늘 칸 › 몸에서도)", at(Place.SLEEP), "잠", "수면", "잠들었어요", "깼어요", "낮잠"),
         // 1.38 수면 도약 [SLEEP-19]: what is new on 수면 기록, found by what people call it.
         f("sleep.noise", "SLEEP-04", "잠드는 소리", "백색·분홍·갈색 소음, 빗소리·선풍기·파도를 섞어 틀고, 정한 시간에 서서히 꺼져요",
             ALL, "설정 › 알림과 잠 › 수면 기록 보기 › 잠드는 소리", at(Place.SLEEP), "백색 소음", "빗소리", "수면 소리", "자장가", "잠 안 와요",
@@ -298,9 +276,9 @@ object FeatureRegistry {
         f("leave.ledger", "LEAVE-06", "연차 원장", "입사일로 연차를 법대로 세고, 달력에 넣은 연차·받은 날·이월·소멸을 한 줄씩 보여 줘요",
             PAID, "${tab(SHIFT)} › ○월 예상 급여 › 연차 카드 › 연차 화면", at(Place.LEAVE), "연차", "남은 연차", "연차 계산", "소멸", "이월", "입사일", "회계연도"),
         f("leave.promotion", "LEAVE-03", "연차 사용 촉진 알림", "연차가 없어지기 6개월 전·2개월 전에 쓸 예정을 빼고도 남는 날을 알려 줘요",
-            PAID, "연차 화면 › 쓰라고 알려 주기", at(Place.LEAVE), "연차 알림", "소멸 알림", "사용 촉진", "연차 촉진", off = Off.ELSEWHERE),
+            PAID, "근무·급여 › ○월 예상 급여 › 연차 화면 › 쓰라고 알려 주기", at(Place.LEAVE), "연차 알림", "소멸 알림", "사용 촉진", "연차 촉진", off = Off.ELSEWHERE),
         f("leave.payout", "LEAVE-05", "미사용 연차수당", "못 쓴 연차가 돈으로 얼마인지 셈하고, 받으면 원장에 정산으로 남겨요",
-            PAID, "연차 화면 › 못 쓴 연차, 돈으로는", at(Place.LEAVE), "연차수당", "미사용 연차", "연차 정산", "수당"),
+            PAID, "근무·급여 › ○월 예상 급여 › 연차 화면 › 못 쓴 연차, 돈으로는", at(Place.LEAVE), "연차수당", "미사용 연차", "연차 정산", "수당"),
         f("pay.compLeave", "PAYX-18", "보상휴가", "추가 근무를 돈 대신 쉬는 시간으로 받으면 가산까지 더해 연차 화면에 쌓아요",
             setOf(SHIFT, DAY), "$DAY_SHEET › 추가 근무 › 돈 대신 보상휴가로 받기", at(Place.TODAY), "보상휴가", "대체휴가", "휴가로 받기", "근로기준법 57조"),
         // [PAYX-38..45][LEAVE-10..13] 1.23 묶음 K.
@@ -313,9 +291,9 @@ object FeatureRegistry {
         f("pay.counsel", "PAYX-45", "상담용 묶음", "급여 PDF·CSV, 주별 근무시간, 연차 원장을 한 번에 묶어 노무사나 1350 상담에 보여 줘요",
             PAID, "${tab(SHIFT)} › ○월 예상 급여 › 도구 › 급여 리포트 › 상담용 묶음", at(Place.PAY, "tools"), "노무사", "상담", "고용노동부", "체불", "묶음"),
         f("leave.promotionLog", "LEAVE-11", "연차 사용 촉진 기록", "회사가 보낸 촉진 통보와 내가 정한 날을 날짜로 남기고, 법대로 했는지 수당을 받을 수 있는지 알려 줘요",
-            PAID, "연차 화면 › 회사의 사용 촉진 기록", at(Place.LEAVE), "촉진 통보", "연차 촉진", "61조", "미사용 수당"),
+            PAID, "근무·급여 › ○월 예상 급여 › 연차 화면 › 회사의 사용 촉진 기록", at(Place.LEAVE), "촉진 통보", "연차 촉진", "61조", "미사용 수당"),
         f("leave.plan", "LEAVE-13", "없어지기 전에 쓰는 법", "없어질 연차를 공휴일·쉬는 날 옆에 놓아 가장 길게 쉬는 날을 골라 줘요",
-            PAID, "연차 화면 › 없어지기 전에 쓰는 법", at(Place.LEAVE), "연차 계획", "연휴", "징검다리", "연차 쓰기"),
+            PAID, "근무·급여 › ○월 예상 급여 › 연차 화면 › 없어지기 전에 쓰는 법", at(Place.LEAVE), "연차 계획", "연휴", "징검다리", "연차 쓰기"),
         f("extra.kinds", "EXTRA-04", "잔업·특근·대근", "추가 근무의 이름과 가산 방식을 회사에 맞게 정하고 날짜마다 적어요",
             setOf(SHIFT, DAY), "설정 › 내 근무 › 연장 휴무일 근무 지정", at(Place.EXTRA_KINDS), "잔업", "특근", "대근", "연장", "야근", "휴일 근무"),
 
@@ -500,7 +478,7 @@ object FeatureRegistry {
         f("calendar.combined", "COMN-01", "모든 달력 합쳐 보기", "모든 달력을 한 달력에 색 막대로 보고 겹치는 시간을 알려 줘요",
             ALL, "달력 › 달력 이름 › 모든 달력 합쳐 보기", at(Place.COMBINED), "합쳐 보기", "겹치는", "한눈에", "모든 달력"),
         f("stats.all", "COMN-03", "통계 전체 보기", "모든 달력의 총수입·총지출·순저축을 한 번에 봐요",
-            ALL, "통계 탭 › 전체", at(Place.STATS), "전체", "모든 달력 통계", "총수입"),
+            ALL, "근무·급여 › 전체", at(Place.STATS), "전체", "모든 달력 통계", "총수입"),
         f("memo.sharing", "MEMO-02", "메모 공유", "메모를 달력마다 따로 두거나, 몇 달력끼리 함께 봐요",
             ALL, "설정 › 화면과 글자 › 메모 공유", at(Place.SETTINGS_CALENDAR, "메모 공유"), "공용 메모장", "메모 같이", "달력별 메모"),
         // 1.39 (DB 33판) [TASK-02][TASK-05] 할 일처럼 끝냄.
@@ -640,7 +618,7 @@ object FeatureRegistry {
         // ---- 1.25 묶음 X (계획/1.25-X-개발계획.md 386·390) ----
         f("plaza.diff", "PLAZA-02", "다른 점 말하기", "같은 회사 설정이 우리와 조금 다르면 그 회사 값이 채워진 창에서 다른 곳만 골라 바꿔요. 바꾼 칸은 제안으로 올라가고, 급여 단계에서 고치면 내 급여도 고친 대로 계산해요",
             // [RVP-75] 같은 회사 is 교대·일근's, like 우리 회사 광장 (RVG-11).
-            MONTHLY, "${tab(SHIFT)} › ○월 예상 급여 › 같은 회사 분들 규칙 보기 › 우리는 달라요", at(Place.COMPANY_BOARD), "다른 점", "달라요", "제안", "대표 판", "비교", "되돌리기", "초성", "회사 설정"),
+            MONTHLY, "${tab(SHIFT)} › ○월 예상 급여 › 같은 회사 분들 규칙 보기 › 우리는 달라요", at(Place.BOARD), "다른 점", "달라요", "제안", "대표 판", "비교", "되돌리기", "초성", "회사 설정"),
         f("setup.again", "PLAZA-06", "처음 설정 다시 받기", "회사 찾기부터 근무·급여까지 첫 설정 질문을 다시 받아요. 저장해야 오늘부터 바뀌고, 그만두면 그대로예요",
             ALL, "설정 › 내 근무 › 처음 설정 다시 받기", at(Place.SETTINGS_WORK, "처음 설정 다시 받기"), "첫 설정", "처음 설정", "다시", "건너뛴", "회사 찾기"),
         // 1.25 묶음 Y: 프로 기능 모아보기 and the pro features that had no line here (계획/1.25-Y-개발계획.md 393).
@@ -667,12 +645,12 @@ object FeatureRegistry {
             setOf(SHIFT), "설정 › 내 근무 › 근무 주기 › 회사 이름으로 근무주기 찾기", at(Place.PATTERN), "회사 근무주기", "공개 자료",
             "근무주기 찾기", "회사 검색", "4조 2교대", "교대 주기", "처음 제공"),
         // 1.26 묶음 AE (계획/1.26-AE-개발계획.md 424·425).
-        f("pro.invite", "INVITE-02", "친구 초대", "초대 링크로 깐 친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(운영자가 정한 규칙, 상한 없음). 링크로 깔면 저절로 알아보고, 링크 없이 깐 친구는 설치 7일 안에 코드를 넣어요",
+        f("pro.invite", "INVITE-02", "친구 초대", "초대 링크로 깐 친구 5명이 각자 7일 이상 쓰면 나에게 프로 1개월, 5명 더 채울 때마다 또 1개월(운영자가 정한 규칙, 운영팀이 확인한 뒤 들어오고 보상은 1년에 모두 합쳐 12개월까지). 링크로 깔면 저절로 알아보고, 링크 없이 깐 친구는 설치 7일 안에 코드를 넣어요",
             ALL, "설정 맨 위 › 친구 초대 (설정 › 프로 › 친구 초대)", at(Place.PRO), "초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜 프로", flag = "billing"),
         // AF 1.26 시작 (계획/1.26-AF-개발계획.md, 결정 D79)
         f("plaza.room", "PLAZA-09", "우리 회사 광장", "참여한 회사에서는 다른 분들이 바꾼 값만 ‘야간 50% → 60%로 바꾼 사람 3명’처럼 카드로 보이고, ‘이 값 쓰기’로 그 값만 가져와요. 내 금액은 그대로예요",
             // 2.0.0 [RVG-11] 검토 WORK-21 (PC 9차: 알바·현장의 찾기 '광장'이 급여 계산 설정을 열었어요): 회사 광장 is 교대·일근's.
-            setOf(WorkStyle.SHIFT, WorkStyle.DAY), "${tab(SHIFT)} › ○월 예상 급여 › 같은 회사 분들 규칙 보기", at(Place.COMPANY_BOARD), "회사 광장", "참여", "이 값 쓰기", "바꾼 사람", "안정", "제보 1", "급여 방식 있음"),
+            setOf(WorkStyle.SHIFT, WorkStyle.DAY), "${tab(SHIFT)} › ○월 예상 급여 › 같은 회사 분들 규칙 보기", at(Place.BOARD), "회사 광장", "참여", "이 값 쓰기", "바꾼 사람", "안정", "제보 1", "급여 방식 있음"),
         f("plaza.autoShare", "PLAZA-07", "회사 광장에 저절로 나누기", "한 번 허락하면 근무 순서·계산 방식을 바꿀 때마다 하루 한 번 회사 광장에 고쳐 올려요. 금액·이름·연락처는 보내지 않아요",
             ALL, "설정 › 개인정보·앱 정보 › 회사 광장에 저절로 나누기", at(Place.SETTINGS_PRIVACY, "회사 광장에 저절로 나누기"), "저절로 나누기", "자동 공유", "회사 광장", "공유 끄기"),
         // AF 1.26 끝
@@ -690,9 +668,9 @@ object FeatureRegistry {
         // AK 1.27 끝
         // AI 1.27 시작 (계획/1.27-AI-개발계획.md 441~445)
         f("plaza.info", "PLAZA-32", "회사 정보 광장", "회사 설정을 쓰거나 보내면 광장이 ‘우리 회사 정보 광장’으로 바뀌어요. 같은 회사 분들끼리만 참여자 번호로 자유롭게 이야기하고, 근무·급여 정보와 고친 점을 함께 봐요",
-            ALL, "마을 › 광장 › ‘회사’ 정보 광장", at(Place.VILLAGE), "정보 광장", "회사 광장", "자유 토의", "회사 게시판", "동료", "익명", "고친 점"),
+            ALL, "마을 › 광장 › ‘회사’ 정보 광장", at(Place.PLAZA), "정보 광장", "회사 광장", "자유 토의", "회사 게시판", "동료", "익명", "고친 점"),
         f("plaza.styles", "PLAZA-33", "일 유형별 광장", "현장은 지역·직종 일당 시세와 현장 이야기, 가게는 영업·매출 팁, 알바는 지역 시급과 알바 이야기, 투자는 종목 추천 없는 투자 이야기를 나눠요",
-            setOf(FIELD, SHOP, HOURLY, INVEST), "마을 › 광장", at(Place.VILLAGE), "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "단가", "일당", "매출 팁"),
+            setOf(FIELD, SHOP, HOURLY, INVEST), "마을 › 광장", at(Place.PLAZA), "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "단가", "일당", "매출 팁"),
         // AI 1.27 끝
         // AG 1.27 시작 (계획/1.27-AG-개발계획.md 434·435, 결정 AG-D6)
         f("invite.nudge", "INVITE-11", "달력의 친구 초대 카드", "설치 사흘 뒤부터 2주에 한 번, 그날만 달력 위에 친구 초대 카드를 보여요. 닫거나 끌 수 있어요",
@@ -705,7 +683,7 @@ object FeatureRegistry {
             setOf(WorkStyle.SHIFT), "설정 › 내 근무 › 근무 주기 › 회사 이름으로 근무주기 찾기", at(Place.PATTERN), "대표 주기", "사업장", "맞아요", "달라요",
             "쓰고 있어요", "회사 이름", "자동 완성", "다른 사람이 사용"),
         f("plaza.payFind", "PLAZA-16", "우리 회사 급여 방식 찾기", "급여 간편 설정에서 회사 이름으로 같은 회사 분들이 확인한 계산 방식을 찾아요. 쓰기 전에는 ‘급여 방식 있음 · 맞아요 n명’만 보이고, 쓰면 내 금액만 넣어요",
-            setOf(WorkStyle.SHIFT, WorkStyle.DAY), "급여 › 급여 계산 설정 › 우리 회사 급여 방식 찾기", at(Place.PAY), "급여 방식 찾기", "회사 급여", "계산 방식", "수당 가져오기"),
+            setOf(WorkStyle.SHIFT, WorkStyle.DAY), "근무·급여 › ○월 예상 급여 › 급여 계산 설정 › 우리 회사 급여 방식 찾기", at(Place.PAY), "급여 방식 찾기", "회사 급여", "계산 방식", "수당 가져오기"),
         // AH 1.27 끝
         // ---- 1.27 묶음 AJ (계획/1.27-AJ-개발계획.md 446~449) ----
         f("photo.sameCheck", "READ-17", "사진과 같은가요?", "듀티표·명세서 사진을 읽으면 사진 옆에 읽은 칸·줄을 보여 주고 같은지 물어요. 다른 곳만 눌러 그 자리에서 고치고, 고친 글자는 다음부터 배워요",
@@ -750,7 +728,7 @@ object FeatureRegistry {
         f("shift.pause", "WTYP-07", "명절·공장 휴무로 멈추기", "명절이나 공장 휴무로 며칠 쉬면 근무 순서를 그만큼 멈췄다가 이어 가요. 되돌리기가 있어요",
             setOf(SHIFT), "달력 › 날짜 누르기 › 순서 맞추기 › 며칠 멈추기", at(Place.CALENDAR), "명절", "휴무", "순서 멈추기", "공장 휴무", "설 연휴", "추석"),
         f("field.platform", "WTYP-02", "배달·운전 플랫폼", "배민·쿠팡이츠·대리운전 같은 플랫폼 일을 건수·금액·운행 시간으로 적고, 주마다 정산 날과 시간당 순수익을 보여 줘요",
-            setOf(FIELD), "설정 › 내 근무 › 일하는 방식 › 플랫폼, 달력 › 날짜 누르기", at(Place.CALENDAR), "배달", "배민", "쿠팡이츠", "대리운전", "라이더", "정산", "시간당"),
+            setOf(FIELD), "달력 › 날짜 누르기 (켜기: 설정 › 내 근무 › 일하는 방식 › 플랫폼)", at(Place.CALENDAR), "배달", "배민", "쿠팡이츠", "대리운전", "라이더", "정산", "시간당"),
         f("field.rateFrom", "WTYP-04", "이 날부터 일당 바꾸기", "일당이 오르면 그날부터만 새 일당으로 다시 셈해요. 공수는 소수 셋째 자리까지 넣어요",
             setOf(FIELD), "달력 › 날짜 누르기 › 공수 › 직접", at(Place.CALENDAR), "일당 인상", "단가 변경", "공수 소수", "0.125"),
         f("shop.staffFree", "WTYP-03", "직원 근무표 3명 무료", "직원 3명까지 근무표와 인건비를 무료로 써요. 4명부터와 직원별 PDF는 프로예요",
@@ -831,7 +809,7 @@ object FeatureRegistry {
         f("backup.nudge", "STAB-08", "백업 안 한 지 30일 알림", "매일 자동 백업을 쓰지 않을 때 마지막 백업이 30일 지나면 달력 위에 한 줄로 알려 줘요. 데이터 화면에 마지막 백업 날도 보여요",
             ALL, "설정 › 데이터 › 백업 안 한 지 30일 알림", at(Place.SETTINGS_DATA, "백업 안 한 지 30일 알림"), "백업 알림", "마지막 백업", "기록 잃어버림", "백업 언제", off = Off.ELSEWHERE),
         f("stats.range", "CALX-06", "통계 기간 고르기", "통계를 1일~말일, 급여 기간, 주, 직접 고른 날로 세고, 달력 위에 이번 급여 기간이 끝나는 날을 한 줄로 보여 줘요",
-            PAID, "통계 › 기간 칩", at(Place.STATS), "기간", "급여 기간", "주별", "직접 기간", "마감일", "주급"),
+            PAID, "근무·급여 › 기간 칩", at(Place.STATS), "기간", "급여 기간", "주별", "직접 기간", "마감일", "주급"),
         f("shift.callout", "WTYP-09", "비상소집 한 번에 기록", "쉬는 날 불려 나가면 날짜를 누르고 ‘비상소집’ 한 번으로 시작·끝 시간을 추가 근무로 넣어요. 경찰·소방·해양경찰·교정·공무원(교대) 직군에 보이고, 다른 직군은 추가 근무 종류에 ‘비상소집’을 만들면 보여요",
             setOf(SHIFT, DAY), "$DAY_SHEET › 비상소집", at(Place.TODAY), "비상소집", "동원", "소집", "불려 나감", "비번 출근", off = Off.CALENDAR),
         f("hours.stretch", "WTYP-12", "연속 근무 경고·전공의 한도", "당직 뒤 바로 이어진 근무까지 한 번에 센 시간이 정한 시간을 넘으면 알려 주고, 전공의 값(주 80·평균 72·연속 24시간)을 한 번에 정해요",
@@ -891,7 +869,7 @@ object FeatureRegistry {
             setOf(FIELD), "${tab(FIELD)} › 거래처별 › 거래처 누르기 › PDF", at(Place.STATS), "거래내역서 PDF", "정산서", "업체별 정산", "거래명세서", "인쇄",
             under = "field.statement"),
         f("calendar.jumpMonth", "WTYP-21", "연·월 바로 이동", "통계·가계부·급여 화면 위의 ‘○년 ○월’을 누르면 연·월을 골라 바로 가요. 화살표로 한 달씩 넘기지 않아도 돼요",
-            ALL, "통계·가계부 › 맨 위 ○년 ○월 누르기", at(Place.STATS), "연월 이동", "달 고르기", "작년", "몇 월로", "바로 가기"),
+            ALL, "근무·급여 › 맨 위 ○년 ○월 누르기 (가계부도 같아요)", at(Place.STATS), "연월 이동", "달 고르기", "작년", "몇 월로", "바로 가기"),
         f("day.approved", "WTYP-24", "시간외 신청·인정 따로", "신청한 시간외보다 덜 인정되면 인정된 시간을 따로 적어, 수당은 인정된 시간으로, 52시간은 실제 일한 시간으로 세요",
             setOf(DAY), "$DAY_SHEET › 추가 근무 › 인정된 시간이 달라요", at(Place.TODAY), "인정 시간", "신청 시간", "결재", "시간외 인정", "덜 인정"),
         f("day.hourBars", "WTYP-26", "52시간·57시간 막대", "첫 카드에 이번 주 52시간까지와 이번 달 시간외 상한(공무원 57시간)까지 막대로 보여 주고, 위젯에도 시간외 막대가 나와요",
@@ -917,7 +895,7 @@ object FeatureRegistry {
         f("memo.template", "RCP-11", "메모 틀", "자주 쓰는 체크 목록을 틀로 저장하고 ‘틀에서 시작’으로 바로 써요. 매주·매달 되풀이도 돼요",
             ALL, "메모 › 메모 쓰기 › 틀에서 시작", at(Place.MEMOS), "메모 틀", "템플릿", "체크리스트", "되풀이 메모", "틀로 저장"),
         f("plaza.shiftRoom", "RCP-34", "교대·일근 광장", "회사와 상관없이 같은 교대·일근 분들과 이야기를 나누는 광장이 생겼어요. 회사 규칙 광장 위에서 들어가요",
-            setOf(SHIFT, DAY), "마을 › 광장 › 교대 광장(일근 광장) 가기", at(Place.VILLAGE), "교대 광장", "일근 광장", "교대 이야기", "수면", "야간 팁"),
+            setOf(SHIFT, DAY), "마을 › 광장 › 교대 광장(일근 광장) 가기", at(Place.PLAZA), "교대 광장", "일근 광장", "교대 이야기", "수면", "야간 팁"),
         // ---- 1.35 나눔 판 완성 (RCX-01..17) ----
         f("recipe.update", "RCX-03", "레시피 새 판 받기", "넣은 레시피에 새 판이 나오면 알려 드리고, 내가 고친 곳은 그대로 둔 채 바뀐 곳만 골라 넣어요. 둘 다 고친 곳은 따로 물어봐요",
             ALL, "설정 맨 위 카드 › 나눔 판 › 받은 레시피 › 새 판 보기", at(Place.RECIPE_MINE), "새 판", "업데이트", "레시피 갱신", "새 버전", "새 판 알림",
@@ -990,4 +968,43 @@ object FeatureRegistry {
 
     /** The features of [style], in the registry's order. */
     fun of(style: WorkStyle?): List<AppFeature> = all.filter { it.fits(style) }
+
+    /** Every name the hours-and-money tab has, and the money tab's: what [whereFor] puts in the style's own words. */
+    private val TAB_NAMES: Set<String> = WorkStyle.entries.map { it.words().tab }.toSet() + "통계" + "통계 탭"
+    private val MONEY_NAMES = setOf("가계부", "장부")
+
+    /**
+     * 2.0.0 [RVH-25] 검토 뿌리 고침 13번 (WORK-12, REST-17): the way to [feature] as [style]'s own tabs are named. The list is
+     * written once with the shift worker's names; '근무·급여 › …' reads '출근·시급 › …' for a part-timer, '가계부 › …' reads
+     * '장부 › …' for a shop. Other places keep their words.
+     */
+    fun whereFor(feature: AppFeature, style: WorkStyle?): String {
+        val first = feature.where.substringBefore(" › ")
+        val rest = feature.where.removePrefix(first)
+        val home = when (first) {
+            in TAB_NAMES -> style.words().tab
+            in MONEY_NAMES -> com.bamnat.core.work.moneyTab(style)
+            else -> first
+        }
+        return home + rest
+    }
+
+    /**
+     * 2.0.0 [RVH-25] Where the 바로 가기 of a [place] lands for [style], as the first part of its way ('설정', a tab's name): what the
+     * first part of [whereFor] has to say, checked for every feature and kind of work by `FeatureWayTest`, and on screen by the
+     * app's `FeatureWayScreenTest`.
+     */
+    fun homeOf(place: Place, style: WorkStyle?): String = when (place) {
+        Place.CALENDAR, Place.TODAY, Place.CALENDARS, Place.CALENDAR_EDIT, Place.COMBINED, Place.SHARE, Place.RECEIVE,
+        Place.YEAR, Place.TEAMS, Place.LEADER_TEAMS -> "달력"
+        Place.MONEY, Place.AUTO_RECORD, Place.OWED -> com.bamnat.core.work.moneyTab(style)
+        Place.MEMOS -> "메모"
+        // 2.0.0 [RVP-75] (검토 REST-18 (2)) 회사 규칙 광장 opens from the pay screen's 같은 회사 분들 규칙 보기; settings has no row of it.
+        Place.STATS, Place.PAY, Place.HEALTH_REPORT, Place.LEAVE, Place.BOARD -> style.words().tab
+        Place.RECIPES, Place.PLAZA -> HUB
+        else -> "설정"
+    }
+
+    /** The tab that holds 광장, 장터 and 공방 (the app's `HUB_NAME`). */
+    const val HUB = "마을"
 }
