@@ -112,6 +112,11 @@ fun SetupHost(
     /** [SETUP-17] Back on the examples opened from the very first screen goes back to it. */
     onBrowseBack: (() -> Unit)? = null,
     onFirstStyleUsed: () -> Unit = {},
+    /**
+     * [RVG-19] 검토 HQ-09: '가족·동료 근무표였어요' on the summary of a setup started from a link; gets the link's name once the link is
+     * kept beside as theirs and the setup let go (the first screen says where it went). Null: no such button (a calendar added, again).
+     */
+    onNotMine: ((String) -> Unit)? = null,
 ) {
     val d by vm.draft.collectAsStateWithLifecycle()
     val fixing by vm.fixing.collectAsStateWithLifecycle()
@@ -301,7 +306,7 @@ fun SetupHost(
                         SetupStep.ORDER -> OrderStep(vm, d)
                         SetupStep.TODAY -> TodayStep(vm, d)
                         SetupStep.ALARM -> AlarmStep(vm, d)
-                        SetupStep.SUMMARY -> SummaryStep(vm, d)
+                        SetupStep.SUMMARY -> SummaryStep(vm, d, onNotMine = onNotMine?.let { done -> { vm.notMine()?.let(done) } })
                     }
                     Spacer(Modifier.height(16.dp))
                 }

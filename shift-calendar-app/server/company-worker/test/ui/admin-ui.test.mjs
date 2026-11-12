@@ -634,7 +634,11 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
   assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
+  // 2.0.0 [RVD-21] 처리방침 3.13이 일정에 없으면 모든 보상 합친 1년 12개월은 아직이에요(약관 1.3·처리방침 3.12는 상한 없음).
+  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  // [RVD-21] 접힌 한 줄도 같아요: 3.13 전에는 '한 분에 1년 12개월까지'라고 하지 않아요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 1년 12개월 상한은 처리방침 3.13 시행일부터");
+  assert.match(t.text('#main details[data-key="reward-how"] .hint'), /그 전에는 친구 초대 설정의 상한만 봐요/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
   assert.match(main, /최근 30일 몰림 1번/);
   assert.deepEqual(t.errors, []);
@@ -647,7 +651,7 @@ test("[INVITE-08] 관리 › 보상 › 친구 초대 (1.27 설정): the develop
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 1년에 12개월까지\(모든 보상 합쳐\)/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
   assert.match(card().textContent, /초대만의 1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
@@ -2110,6 +2114,8 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   const { env, DB } = await world();
   const put = (id, rule, device, months, status = "owed", paidAt = null, report = id) => DB.db.prepare(`INSERT INTO rewards (id, report_id, rule_id, device, months,
     status, memo, created_at, paid_at, deferred) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0)`).run(id, report, rule, device, months, status, Date.now(), paidAt);
+  // [RVD-21] 1년 12개월은 처리방침 3.13 게시 + 30일부터: 일정에 3.13을 한 달 반 전 게시로 넣어 상한이 걸린 때를 봐요.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)").run(JSON.stringify({ "3.13": { posted: "2026-10-01", effective: "2026-10-01", heldUntil: null } }));
   put("wPAIDaaaaaaaaaaaaaaaaaa", "rule-x", "full", 12, "paid", Date.now());
   put("iOVERaaaaaaaaaaaaaaaaa", "invite", "full", 1);
   put("iFREEaaaaaaaaaaaaaaaaa", "invite", "free", 1);
@@ -2134,6 +2140,8 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   assert.equal(t.document.querySelectorAll("#main ul.rows .btn.primary").length, 0);
   assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
   assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
+  // [RVD-21] 3.13 + 30일이 지났으니 접힌 한 줄은 상한을 말해요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 한 분에 1년 12개월까지");
   assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
   // 조건 1(총괄 11-12 2차): 구간·찾기·종류·고르기·CSV는 목록 머리 한 줄, 그 바로 밑이 드릴 보상 목록. 한 줄 설명·Claude 줄은 목록 아래.
   const order = [...t.$("#main").children].map((e) => e.matches(".list-head") ? "head" : e.matches("ul.rows") ? "rows" : e.matches(".list-foot") ? "foot" : e.matches("section.card") ? "card" : "?");
