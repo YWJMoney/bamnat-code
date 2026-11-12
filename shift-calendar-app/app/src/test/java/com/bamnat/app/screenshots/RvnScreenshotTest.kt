@@ -156,7 +156,8 @@ class RvnScreenshotTest : ScreenshotBase() {
             reveal("알림함에 올 반응", exact = true)
             tapText("알림함에 올 반응", exact = true)
             settle()
-            reveal("누가 했는지는 알리지 않고, 몇 번인지만 한 줄로 모아 알려 줘요", exact = true)
+            // The head stays in sight with the first switches under it (revealing the last line cut the head at the top).
+            reveal("광장의 내 글", exact = true)
         }
     }
 
