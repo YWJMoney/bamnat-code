@@ -119,6 +119,17 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         assertEquals(null, c.shareLinks.dropped.value)
     }
 
+    /** 검토 S7-3 (갈래 R 의견 3): the automatic update turned down twice running for something it cannot leave out; one line, its X. */
+    private fun calendarRefused(): Screen.() -> Unit = {
+        c.shareLinks.save(ShareLinkState("Ab3dEfGh5JkLmNoPqRsTuv", "https://bamnat-share.example.workers.dev/s/Ab3dEfGh5JkLmNoPqRsTuv", "t",
+            Today.instant().plus(java.time.Duration.ofDays(30)), "민지"))
+        c.shareLinks.setDropped(com.bamnat.app.share.ShareLinkPayload.REFUSED_AGAIN)
+        settle()
+        assertTrue(appears("바뀐 근무가 링크에 안 갔어요", exact = false))
+    }
+    @Test fun calendarRefusedFoldLight() = shoot("rvg27_calendar_refused_again_fold_light_100", FOLDED, calendarRefused())
+    @Test fun calendarRefusedFoldDarkHuge() = shoot("rvg27_calendar_refused_again_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, calendarRefused())
+
     /** A link sent without a name by an app before 2.0.0 (no breaks): 민지's days, no title, no rest. */
     private fun oldNoName(): JSONObject = JSONObject(minjiShare().schedule.toString()).apply {
         put("title", "")

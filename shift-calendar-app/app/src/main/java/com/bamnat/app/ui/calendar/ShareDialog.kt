@@ -248,7 +248,7 @@ fun ShareDialog(
                     options = ShareOptions.forAudience(com.bamnat.app.share.ShareAudience.FAMILY, employee, field).copy(memos = false, pay = false)
                     run {
                         val sent = payload()
-                        val (made, left) = client.createLeaving(sent)
+                        val (made, left) = client.createLeaving(sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_create", "quick_family")
@@ -496,7 +496,7 @@ fun ShareDialog(
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
                         val sent = payload()
-                        val (made, left) = client.createLeaving(sent)
+                        val (made, left) = client.createLeaving(sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
@@ -519,7 +519,7 @@ fun ShareDialog(
                     OutlinedButton(enabled = !busy && !empty, onClick = {
                         run {
                             val sent = payload(null)
-                            val (made, left) = client.updateLeaving(current, sent)
+                            val (made, left) = client.updateLeaving(current, sent, store)
                             keep(made, sent)
                             leftOut = left
                         }
@@ -532,7 +532,7 @@ fun ShareDialog(
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@OutlinedButton }
                     run {
                         val sent = payload(ttl)
-                        val (made, left) = client.updateLeaving(current, sent)
+                        val (made, left) = client.updateLeaving(current, sent, store)
                         keep(made, sent)
                         leftOut = left
                         container.telemetry.event("share_link_extend", "sheet")
