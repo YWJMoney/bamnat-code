@@ -269,9 +269,42 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
 
   // 관리자 앱: 장터 › 장터 건강 보기와 #/recipes?tab=health 주소.
   const { readFile } = await import("node:fs/promises");
-  const app = await readFile(new URL("../src/admin-app.js", import.meta.url), "utf8");
+  const app = await readFile(new URL("../src/admin-app.js", import.meta.url), "utf8") + await readFile(new URL("../src/admin/views/market.js", import.meta.url), "utf8");
   assert.match(app, /\["health", "장터 건강"\]/);
   assert.match(app, /recipes: \{ tab: "recipeTab" \}/);
   const ci = await readFile(new URL("../../../../.github/workflows/android.yml", import.meta.url), "utf8");
   assert.match(ci, /tools\/market_health\.py --shots app\/build\/market-compare\.json/);
+});
+
+test("[RVA-57] 묶음 나누기: 첫 묶음은 압축해 150KB 아래, 화면 묶음 열한 개는 해시 이름 파일, 이름표를 못 만들면 예전처럼 한 파일", async () => {
+  const { gzipSync } = await import("node:zlib");
+  const { adminPrebuilt, viewNames } = await import("../src/admin-app.js");
+  const { files } = adminPrebuilt();
+  const app = files["/admin/app.js"].body;
+  const gz = gzipSync(Buffer.from(app)).length;
+  assert.ok(gz < 150 * 1024, `첫 묶음 압축 ${Math.round(gz / 1024)}KB`);
+  assert.ok(Buffer.byteLength(app) < 520 * 1024, `첫 묶음 ${Math.round(Buffer.byteLength(app) / 1024)}KB (나누기 전 838KB)`);
+  const groups = Object.keys(files).filter((p) => p.startsWith("/admin/v/"));
+  assert.deepEqual(groups.map((p) => p.split("/").pop().split(".")[0]).sort(),
+    ["flags", "flow", "glance", "insight", "ledger", "loop", "market", "ops", "plaza", "today", "work"]);
+  for (const p of groups) {
+    assert.match(p, /^\/admin\/v\/[a-z]+\.[0-9a-z]+\.js$/);
+    assert.equal(files[p].hashed, true);
+    assert.ok(app.includes(JSON.stringify(p)), `${p} is named in the first bundle`);
+  }
+  // 이름표: 묶음이 돌려주는 이름(기능 관리의 단추·양식·즉시 저장도).
+  const { flagsViews } = await import("../src/admin/views/flags.js");
+  const n = viewNames(flagsViews);
+  assert.ok(n.fns.includes("flagsView") && n.fns.includes("policyConfirmRow"));
+  assert.ok(n.actions.length > 10 && n.forms.length > 3 && n.changes.length >= 1);
+  const { opsViews } = await import("../src/admin/views/ops.js");
+  assert.ok(viewNames(opsViews).maps.opsViews.includes("incident"));
+  // 같은 이름을 두 묶음이 주지 않아요(RVD-04).
+  const all = [];
+  for (const mod of ["today", "plaza", "insight", "work", "flow", "ledger", "ops", "loop", "glance", "market", "flags"]) {
+    const m = await import(`../src/admin/views/${mod}.js`);
+    const v = viewNames(Object.values(m).find((f) => typeof f === "function" && /Views$/.test(f.name)));
+    all.push(...v.fns, ...Object.keys(v.maps));
+  }
+  assert.deepEqual(all.filter((k, i) => all.indexOf(k) !== i), []);
 });

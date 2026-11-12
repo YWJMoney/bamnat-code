@@ -16,6 +16,24 @@ const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
 const BODY = HTML.slice(HTML.indexOf("<body>") + 6, HTML.indexOf("</body>"));
 
+/**
+ * 2.0.0 [RVA-57] 화면 묶음 파일(v/<묶음>.<해시>.js): happy-dom은 파일을 받지 않으니, 앱이 붙이는 <script src>를 그 창의 fetch(워커)로 받아
+ * 실행하고 load를 알려요. 진짜 브라우저처럼 그 화면을 열 때 받아요.
+ */
+function loadScripts(window) {
+  const head = window.document.head;
+  const append = head.appendChild.bind(head);
+  head.appendChild = (node) => {
+    if (node.tagName !== "SCRIPT" || !node.src) return append(node);
+    window.fetch(node.src).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      window.eval(await r.text());
+      node.onload?.(new window.Event("load"));
+    }).catch(() => node.onerror?.(new window.Event("error")));
+    return node;
+  };
+}
+
 const open = [];
 test.after(async () => {
   for (const w of open) await w.happyDOM.close();
@@ -47,6 +65,7 @@ async function tab(env, { hash = "", storage = null, cookie = null, width = 1280
   if (storage) for (const [k, v] of Object.entries(storage)) window.localStorage.setItem(k, v);
   window.structuredClone ??= structuredClone;
   window.document.body.innerHTML = BODY;
+  loadScripts(window);
   window.eval(APP_JS);
   const t = {
     window, document: window.document, jar, errors, broken,
@@ -3391,5 +3410,37 @@ test("[RVA-56] 장터 › 장터 건강: 깨진 작품은 빨간 머리 하나 �
   await u.click('#main [data-act="recipe-tab"][data-key="visible"]');
   await u.settle(20);
   assert.match(u.window.location.hash, /tab=visible/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-57] 묶음 나누기: 화면 묶음은 그 화면을 열 때 받고, 받지 못하면 '서버에 닿지 않아요'와 다시 불러오기, 다시 누르면 열려요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const asked = [];
+  let block = true;
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const path = new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname;
+    if (path.startsWith("/admin/v/")) {
+      asked.push(path.split("/").pop().split(".")[0]);
+      if (block && path.startsWith("/admin/v/flags.")) return new u.window.Response("", { status: 503 });
+    }
+    return real(input, init);
+  };
+  await u.go("#/flags");
+  await u.settle(30);
+  assert.ok(asked.includes("flags"), "기능 관리를 열 때 그 묶음을 받아요");
+  assert.match(u.text("#main .empty.failed"), /서버에 닿지 않아요/);
+  block = false;
+  await u.click('#main [data-act="refresh"]');
+  await u.settle(30);
+  assert.ok(!u.$("#main .empty.failed"), "다시 불러오면 열려요");
+  assert.ok(u.$("#main [data-act]"), "기능 관리 화면");
+  // 마을 장터는 장터 묶음과 기본 도구 후보(work) 묶음을 함께 기다려요.
+  await u.go("#/recipes?tab=tools");
+  await u.settle(30);
+  assert.ok(asked.includes("market"));
+  assert.ok(!u.$("#main .empty.failed"));
   assert.deepEqual(u.errors, []);
 });

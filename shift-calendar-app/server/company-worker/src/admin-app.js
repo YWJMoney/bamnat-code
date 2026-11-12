@@ -21,6 +21,9 @@ import { ledgerViews } from "./admin/views/ledger.js";
 import { opsViews } from "./admin/views/ops.js";
 import { loopViews } from "./admin/views/loop.js";
 import { glanceViews } from "./admin/views/glance.js";
+// 2.0.0 [RVA-57] 검토 ADM-11·I23c-02: 첫 묶음에서 떼어 낸 마을 장터와 기능 관리.
+import { marketViews } from "./admin/views/market.js";
+import { flagsViews } from "./admin/views/flags.js";
 
 const ADMIN_CSP = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; " +
   "manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
@@ -35,12 +38,16 @@ export function adminFile(path, request) {
       headers: { "content-type": "image/png", "cache-control": "public, max-age=86400", "x-content-type-options": "nosniff" },
     });
   }
-  const file = adminFiles()[path];
+  // [RVA-57] 배포 사이에 옛 화면 틀이 옛 해시 이름을 부르면 지금 첫 묶음으로 답해요(오래 남겨 두지 않게 해시 표시 없이).
+  const old = /^\/admin\/app\.[0-9a-z]+\.(js|css)$/.exec(path);
+  const file = adminFiles()[path] ?? (old ? { ...adminFiles()[`/admin/app.${old[1]}`], hashed: false } : null);
   if (!file) return new Response("Not found", { status: 404 });
   const headers = {
     "content-type": file.type,
     // Checked each time, but an unchanged file is answered with 304 and no body (ETag).
-    "cache-control": "no-cache",
+    // 2.0.0 [RVA-57] 검토 ADM-11·I23c-02: 이름에 내용의 해시가 든 파일(app.<해시>.js·app.<해시>.css·v/<묶음>.<해시>.js)은 내용이 바뀌면 이름이
+    // 바뀌니 휴대폰이 1년 동안 다시 묻지 않아요.
+    "cache-control": file.hashed ? "public, max-age=31536000, immutable" : "no-cache",
     etag: file.etag,
     "content-security-policy": ADMIN_CSP,
     "x-content-type-options": "nosniff",
@@ -77,7 +84,31 @@ export function adminBuild() {
 }
 
 /** AX 1.30 [ADMX-12] The screen groups as the app gets them: { today, plaza, insight }, each its function's own text. */
-const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews}, loop: ${loopViews}, glance: ${glanceViews} }`;
+const VIEW_GROUPS = { today: todayViews, plaza: plazaViews, insight: insightViews, work: workViews, flow: flowViews, ledger: ledgerViews, ops: opsViews,
+  loop: loopViews, glance: glanceViews, market: marketViews, flags: flagsViews };
+
+/**
+ * 2.0.0 [RVA-57] 검토 ADM-11·I23c-02 '진짜 열면 바로': 화면 묶음 하나가 앱에 주는 이름들. 묶음 함수를 아무 일도 하지 않는 A로 한 번 불러
+ * 돌려주는 것의 이름만 읽어요(화면은 그리지 않아요). 앱은 이 목록으로 이름마다 자리를 만들어 두고, 그 화면을 열 때 묶음 파일을 받아요.
+ * { fns: [...], maps: { opsViews: ["incident", ...] }, actions, forms, changes }
+ */
+export function viewNames(fn) {
+  const stub = () => new Proxy(function stand() {}, {
+    get: (t, k) => (k === Symbol.toPrimitive ? () => "" : k === "then" ? undefined : stub()),
+    apply: () => stub(),
+    construct: () => stub(),
+  });
+  const g = fn(new Proxy({}, { get: () => stub() }));
+  const out = { fns: [], maps: {}, actions: Object.keys(g.actions ?? {}), forms: Object.keys(g.forms ?? {}), changes: Object.keys(g.changeHandlers ?? {}) };
+  for (const [k, v] of Object.entries(g)) {
+    if (["actions", "forms", "changeHandlers"].includes(k)) continue;
+    if (v && typeof v === "object") out.maps[k] = Object.keys(v);
+    else out.fns.push(k);
+  }
+  return out;
+}
+
+const adminViewsText = () => `{ today: ${todayViews}, plaza: ${plazaViews}, insight: ${insightViews}, work: ${workViews}, flow: ${flowViews}, ledger: ${ledgerViews}, ops: ${opsViews}, loop: ${loopViews}, glance: ${glanceViews}, market: ${marketViews}, flags: ${flagsViews} }`;
 
 /**
  * [ADMUX-08] Smaller files for the phone: whole-line comments and the indentation go. Only lines that are
@@ -109,17 +140,42 @@ const slimCss = (css) => css.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s*\n\s*/
 function adminFiles() {
   if (builtFiles) return builtFiles;
   const version = adminBuild();
+  const JS = "text/javascript; charset=utf-8";
+  // 2.0.0 [RVA-57] 검토 ADM-11·I23c-02: 첫 묶음(app.js)에는 틀·로그인·공통 부품과 화면 이름표만, 화면 묶음 아홉은 각자 파일
+  // (v/<묶음>.<해시>.js)로 그 화면을 열 때 받아요. 이름표를 읽지 못하면(묶음이 바뀌어 아무 일도 하지 않는 A로 부를 수 없으면) 예전처럼
+  // 한 파일에 모두 넣어요.
+  const groups = {};
+  const files = {};
+  try {
+    for (const [name, fn] of Object.entries(VIEW_GROUPS)) {
+      const body = slimJs(`(self.BamnatViews = self.BamnatViews || {}).${name} = (${fn});`);
+      const src = `/admin/v/${name}.${hashText(body)}.js`;
+      groups[name] = { src, ...viewNames(fn) };
+      files[src] = [body, JS, true];
+    }
+  } catch {
+    for (const k of Object.keys(files)) delete files[k];
+  }
+  const lazy = Object.keys(files).length > 0;
   // [ADMUX-08] The app knows its own build, so it can say when the server has a newer one.
-  const app = slimJs(`(${adminApp})((${adminLib})(), ${JSON.stringify(version)}, ${adminViewsText()});`);
+  const app = slimJs(`(${adminApp})((${adminLib})(), ${JSON.stringify(version)}, ${lazy ? JSON.stringify(groups) : adminViewsText()});`);
+  const css = slimCss(ADMIN_CSS);
+  const appSrc = `/admin/app.${hashText(app)}.js`;
+  const cssSrc = `/admin/app.${hashText(css)}.css`;
+  const html = ADMIN_HTML.replace('href="/admin/app.css"', `href="${cssSrc}"`).replace('src="/admin/app.js"', `src="${appSrc}"`);
   const list = {
-    "/admin/app.js": [app, "text/javascript; charset=utf-8"],
-    "/admin/sw.js": [slimJs(`(${adminWorker})(${JSON.stringify(version)});`), "text/javascript; charset=utf-8"],
-    "/admin/app.css": [slimCss(ADMIN_CSS), "text/css; charset=utf-8"],
+    // 옛 이름(/admin/app.js·app.css)도 같은 내용으로 답해요(바뀌기 전에 받아 둔 화면 틀이 부르는 이름).
+    "/admin/app.js": [app, JS],
+    [appSrc]: [app, JS, true],
+    "/admin/sw.js": [slimJs(`(${adminWorker})(${JSON.stringify(version)}, ${JSON.stringify([appSrc, cssSrc, ...Object.keys(files)])});`), JS],
+    "/admin/app.css": [css, "text/css; charset=utf-8"],
+    [cssSrc]: [css, "text/css; charset=utf-8", true],
     "/admin/manifest.webmanifest": [JSON.stringify(MANIFEST), "application/manifest+json; charset=utf-8"],
     "/admin/icon.svg": [ICON_SVG, "image/svg+xml"],
+    ...files,
   };
-  for (const page of PAGES) list[page] = [ADMIN_HTML, "text/html; charset=utf-8"];
-  builtFiles = Object.fromEntries(Object.entries(list).map(([p, [body, type]]) => [p, { body, type, etag: `"${hashText(body)}"` }]));
+  for (const page of PAGES) list[page] = [html, "text/html; charset=utf-8"];
+  builtFiles = Object.fromEntries(Object.entries(list).map(([p, [body, type, hashed]]) => [p, { body, type, etag: `"${hashText(body)}"`, ...(hashed ? { hashed: true } : {}) }]));
   return builtFiles;
 }
 
@@ -514,8 +570,8 @@ function adminApp(L, BUILD, M) {
       if (!Object.hasOwn(p, k)) continue;
       S[field] = field === "metricDays" ? ([7, 28, 90].includes(Number(p[k])) ? Number(p[k]) : 28) : p[k];
     }
-    // [RVA-56] 모르는 장터 보기나 작품 코드 없는 '하나만 보기'는 신고됨으로.
-    if (route.name === "recipes" && Object.hasOwn(p, "tab") && (!RECIPE_TABS.some(([k]) => k === S.recipeTab) || S.recipeTab === "one")) S.recipeTab = "flagged";
+    // [RVA-56] 이상한 장터 보기나 작품 코드 없는 '하나만 보기'는 신고됨으로.
+    if (route.name === "recipes" && Object.hasOwn(p, "tab") && (S.recipeTab === "one" || !/^[a-z]{3,12}$/.test(S.recipeTab ?? ""))) S.recipeTab = "flagged";
   }
   /** Writes the filters into the address without a new history step or a reload. */
   function syncUrl() {
@@ -887,6 +943,10 @@ function adminApp(L, BUILD, M) {
     refreshBadges();
     loadServers();
     try {
+      // 2.0.0 [RVA-57] 그 화면의 묶음 파일이 먼저(무엇을 읽을지 묶음이 알아요). 보통은 이미 와 있어요.
+      // 화면의 묶음을 받지 못하면(연결 없음) 그 화면은 '다시 해 보기'와 함께 말해요(뼈대 줄만 남지 않게).
+      const miss = (await Promise.all(groupsFor(name).map((g) => needGroup(g).then(() => null, (e) => ([ROUTE_GROUP[name]].flat().includes(g) ? e : null))))).find(Boolean);
+      if (miss) jobs.push(Promise.reject(miss));
       // [ADMUX-33] 오늘: the one 할 일 list and the numbers above it, only while it is shown.
       if (name === "home") jobs.push(api("/today").then(keep((d) => { S.data.today = d; S.alertsN = d.alerts?.length ?? 0; })));
       // 1.37 [ADM2-01] 흐름과 [ADM2-03] 운영 열쇠.
@@ -967,7 +1027,7 @@ function adminApp(L, BUILD, M) {
         const t = S.recipeTab ?? "flagged";
         // [PRF-06][PRF-10] 1.36 신고된 프로필, 이달의 제작자.
         const src = { picks: "/recipes/picks", images: "/recipes/images", requests: "/recipes/requests", tools: `/growth/tools?show=${S.growthTools ?? "candidates"}`, makers: "/recipes/makers/flagged",
-          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}`, health: "/recipes/health" }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : recipeListPath(t));
+          month: "/recipes/makers/month", fonts: `/recipes/fonts?state=${S.fontState ?? "pending"}`, health: "/recipes/health" }[t] ?? (t === "one" ? `/recipes?tab=one&code=${encodeURIComponent(S.recipeCode ?? "")}` : V.recipeListPath(t));
         jobs.push(api(src).then(keep((d) => { S.data.recipes = { tab: t, ...d }; })));
         jobs.push(api("/recipes/month").then(keep((d) => { S.data.recipeMonth = d; })).catch(() => {}));
         // 1.36 [MKS-01] 출시 대기 묶음.
@@ -1512,7 +1572,7 @@ function adminApp(L, BUILD, M) {
       const first = S.data.posts?.posts?.[0];
       return { title: first ? first.company.name : "토론", sub: first?.room ? (first.room === "style" ? "유형 광장 이야기" : "회사 정보 광장 자유 토의") : first ? `${first.dept || "회사 전체"} 규칙의 토론` : "규칙 토론", back: href("community") };
     }
-    if (name === "flags" && id) return flagHeading();
+    if (name === "flags" && id) return V.flagHeading();
     if (name === "more") return { title: "더 보기" };
     // [ADMUX-32] #/settings is now the list of where its cards went.
     if (name === "settings") return { title: "설정은 자리를 옮겼어요", back: href("account") };
@@ -1544,15 +1604,15 @@ function adminApp(L, BUILD, M) {
     community: () => communityView(),
     companies: (id) => (id ? companyView(S.data.company) : V.companiesView()),
     shares: () => sharesView(),
-    recipes: () => recipesView(),
+    recipes: () => V.recipesView(),
     adopt: () => adoptView(),
-    flags: (id) => (id ? flagView() : flagsView()),
-    types: () => typesView(),
+    flags: (id) => (id ? V.flagView() : V.flagsView()),
+    types: () => V.typesView(),
     notices: () => noticesView(),
     chores: () => choresView(),
     gates: () => V.gatesView(),
     metrics: () => V.metricsView(),
-    effects: () => effectsView(),
+    effects: () => V.effectsView(),
     audit: () => auditView(),
     admins: () => adminsView(),
     rewards: () => rewardsView(),
@@ -1571,7 +1631,7 @@ function adminApp(L, BUILD, M) {
     health: () => V.opsViews.health(),
     money: () => V.opsViews.money(),
     errors: () => V.opsViews.errors(),
-    materials: () => V.materialsTab((d, edit) => materialsView(d, edit, true)),
+    materials: () => V.materialsTab((d, edit) => V.materialsView(d, edit, true)),
     // 1.39 [LOOP] 자동 순환(src/admin/views/loop.js).
     loop: () => V.loopViews.loop(),
     decide: () => V.loopViews.decide(),
@@ -1583,7 +1643,9 @@ function adminApp(L, BUILD, M) {
   function view() {
     const { name, id } = S.route;
     // [ADMUX-01] The data did not come: say so, with a way to try again, instead of a skeleton for ever.
-    if (S.failed === routeKey() && !hasData()) return failedView(name, id);
+    // [RVA-57] 데이터는 왔어도 그 화면의 묶음 파일을 받지 못했으면 같은 실패 화면.
+    const noGroup = [ROUTE_GROUP[name] ?? []].flat().some((g) => M[g] && !groupsOn[g]);
+    if (S.failed === routeKey() && (!hasData() || noGroup)) return failedView(name, id);
     return VIEWS[name]?.(id) ?? "";
   }
 
@@ -3455,250 +3517,6 @@ function adminApp(L, BUILD, M) {
 
   const SHARE_REASONS = { scam: "돈·계좌 요구(사기 의심)", personal: "다른 사람의 개인정보", abuse: "욕설·괴롭힘", spam: "광고·스팸", illegal: "불법 정보", other: "그 밖의 문제" };
 
-  // [RCP-39] 1.34 나눔 판.
-  // 1.35 [RCX-28] 첫 3개 검토 is gone: 신고됨 comes first; 검토 대기 holds only what waited before (and goes when empty).
-  const RECIPE_TABS = [["flagged", "신고됨"], ["visible", "새로 올라온 것"], ["waiting", "출시 대기"], ["hidden", "가린 것"], ["retired", "판 정리로 내림"], ["health", "장터 건강"], ["queue", "전에 기다리던 것"], ["official", "공식·공개 자료"],
-    ["showcase", "보여주기"], ["picks", "이번 주 고른 것"], ["images", "사진 검토"], ["requests", "요청 판"], ["tools", "기본 도구 후보"], ["makers", "프로필 신고"], ["month", "이달의 제작자"], ["fonts", "나눈 글꼴"]];
-  const RECIPE_STYLES = [["ALL", "모두"], ["SHIFT", "교대"], ["DAY", "일근"], ["HOURLY", "알바"], ["FIELD", "현장"], ["BUSINESS", "자영업"], ["INVEST", "투자"]];
-  const RECIPE_FLAGS = { personal: "개인 정보", fake: "사칭·거짓", harm: "해롭거나 불쾌", spam: "광고·도배", copy: "베낌", other: "그 밖" };
-  /**
-   * PC 확인 보안 6차 (신고 광고·도배 2가 세지 않은 것까지 합한 수): what counted toward hiding a recipe and all that came, with
-   * reasons. "신고 2 (광고·도배 2)" when all counted, "센 신고 1 · 전체 2 (광고·도배 2)" when some went to the operator only.
-   */
-  function recipeFlagCount(flags) {
-    const all = flags.reduce((a, f) => a + f.n, 0);
-    const counted = flags.reduce((a, f) => a + (f.counted ?? f.n), 0);
-    const why = flags.map((f) => `${esc(RECIPE_FLAGS[f.reason] ?? f.reason)} ${f.n}`).join(", ");
-    return `${counted === all ? `신고 ${all}` : `센 신고 ${counted} · 전체 ${all}`} (${why})`;
-  }
-  const RECIPE_PIECES = { shiftLook: "근무 꾸미기", calTheme: "달력 테마", alarms: "알람 묶음", memoTpl: "메모 틀", hourly: "알바 근무지 규칙",
-    field: "현장 단가표 틀", shop: "가게 영업 틀", invest: "투자 원칙·일지 틀", company: "근무 주기·급여 방식",
-    bundle: "묶음", layout: "화면 배치", cards: "카드 순서", widget: "위젯 모양", photoLook: "그림 꾸미기", calView: "달력 모양", appFeel: "앱 동작",
-    memoLook: "메모장 모양", moneyLook: "가계부 모양", screenLook: "화면 색·배경", ledger: "가계부 틀", parts: "부품 꾸미기", logic: "규칙·단추",
-    decor: "꾸밈 조각", tabView: "탭 보기" };
-  /** 1.37 PC 확인 (관리자 본문이 JSON이라 읽기 어려움): a 가계부 틀 said as the app's preview says it. */
-  function ledgerWords(p) {
-    const n = (v) => (Array.isArray(v) ? v.length : 0);
-    const yours = (list, key) => (list ?? []).filter((x) => x?.[key]?.input).length;
-    return [n(p.costs) && `지출 분류 ${n(p.costs)}개`, n(p.incomes) && `수입 분류 ${n(p.incomes)}개`,
-      n(p.budgets) && `예산 ${n(p.budgets)}개${yours(p.budgets, "amount") ? `(받는 분이 넣음 ${yours(p.budgets, "amount")})` : ""}`,
-      n(p.envelopes) && `빈 봉투 ${n(p.envelopes)}개`].filter(Boolean).join(", ");
-  }
-  const RECIPE_ACTS = { approve: "올림", return: "돌려줌", hide: "가림", show: "다시 보임", delete: "지움", official: "공식", showcase: "보여주기", auto: "자동 가림",
-    // 1.36 [MKS-01]
-    waiting: "출시 대기에 넣음", release: "출시 대기에서 공개", schedule: "공개 예약" };
-
-  /** What a recipe holds, in words: its pieces and the 받는 사람이 정할 칸 (never run, only read). */
-  function recipeParts(body) {
-    try {
-      const r = JSON.parse(body);
-      return `${(r.pieces ?? []).map((p) => esc((RECIPE_PIECES[p.kind] ?? p.kind) + (p.kind === "ledger" && ledgerWords(p) ? ` (${ledgerWords(p)})` : ""))).join(" · ")}${r.inputs?.length ? ` · 정할 칸 ${r.inputs.length}개` : ""}`;
-    } catch { return ""; }
-  }
-
-  // 1.36 장터 네 구간 (앱 마을 › 장터 칩과 같은 이름). 1.39 [MKC-01] 테마 · 탭별 작품 · 도구(부품·규칙·단추).
-  const RECIPE_SECTIONS = { theme: "테마", tab: "탭별 작품", part: "도구 · 부품", logic: "도구 · 규칙·단추" };
-  const RECIPE_TAB_WORDS = { calendar: "달력", memo: "메모", money: "가계부", pay: "근무·급여", app: "앱 전체", widget: "위젯", alarm: "알람" };
-
-  /**
-   * 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 장터 목록은 50개씩 이어 받아요. 찾기·구간은 서버가 걸러요(받은 것 안에서만 찾던 것).
-   */
-  const RECIPE_PAGE = 50;
-  function recipeListPath(t, offset = 0) {
-    const q = (S.recipeQuery ?? "").trim();
-    const sec = S.recipeSection ?? "all";
-    return `/recipes?tab=${encodeURIComponent(t)}&limit=${RECIPE_PAGE}${offset ? `&offset=${offset}` : ""}${q ? `&q=${encodeURIComponent(q)}` : ""}${sec !== "all" ? `&section=${encodeURIComponent(sec)}` : ""}`;
-  }
-
-  function recipesView() {
-    const d = S.data.recipes;
-    const m = S.data.recipeMonth;
-    const edit = can("community", "edit");
-    const tab = S.recipeTab ?? "flagged";
-    // 2.0.0 [RVA-24] 검토 U24-06·T24-08·HQ-03(조건 1·2): 보기 15개가 칩 다섯 줄로 첫 화면을 채웠어요. 한 줄 옆으로 밀리는 구간(지금 보기는 가운데,
-    // 끝 흐림)과 찾기 칸 하나로, 구간 칩은 '거르기' 뒤로. 줄 단추는 주된 것 하나 + ⋯, 709개를 한 번에 그리지 않고 40개씩.
-    const sec = S.recipeSection ?? "all";
-    const listTab = !["picks", "images", "tools", "requests", "makers", "month", "fonts", "health", "one"].includes(tab);
-    const ready = d && (d.tab ?? tab) === tab && !(tab === "one" && d.code !== S.recipeCode);
-    const paged = ready && d.total !== undefined;
-    const secCounts = ready && listTab && (paged ? Object.keys(d.sections ?? {}).length > 1 : d.items?.some((r) => r.section))
-      ? [["all", "모든 구간", paged ? d.sections.all : d.items.length], ...Object.entries(RECIPE_SECTIONS).map(([k, label]) => [k, label, paged ? d.sections[k] ?? 0 : d.items.filter((r) => r.section === k).length])] : null;
-    const secChips = secCounts ? `<div class="chips" role="group" aria-label="구간">${secCounts.map(([k, label, n]) =>
-      `<button type="button" class="chip pick" data-act="recipe-section" data-key="${k}" aria-pressed="${sec === k}">${esc(label)} ${n}</button>`).join("")}</div>` : "";
-    const chips = listHead(`<div class="segmented" role="group" aria-label="보기">${RECIPE_TABS.map(([k, label]) =>
-      `<button type="button" class="seg" data-act="recipe-tab" data-key="${k}" aria-pressed="${tab === k}">${esc(label)}</button>`).join("")}</div>`,
-      listTab && tab !== "one" ? `<input id="search" type="search" placeholder="이름·코드·만든 분으로 찾기" value="${esc(S.recipeQuery ?? "")}" autocomplete="off" enterkeyhint="search" aria-label="레시피 찾기">` : "",
-      { scroll: true, filters: secChips, active: sec !== "all" ? 1 : 0, busy: Boolean(S.recipeQuery) });
-    const month = m ? `<p class="list-note">${esc(m.month)} · 새 레시피 ${m.made}개 · ${Object.entries(m.actions ?? {}).map(([k, n]) => `${esc(RECIPE_ACTS[k] ?? k)} ${n}`).join(" · ") || "처리 없음"}</p>` : "";
-    if (!ready) return chips + skeleton(2);
-    if (tab === "picks") return chips + recipePicksView(d, edit);
-    if (tab === "images") return chips + recipeImagesView(d, edit);
-    // 1.36 [GRW-05] 기본 도구 후보·모두의 도구 (문의 › 스튜디오 요구에도 같은 목록).
-    if (tab === "tools") return chips + V.toolsBlock(d, edit);
-    if (tab === "requests") return chips + recipeRequestsView(d, edit);
-    if (tab === "makers") return chips + recipeMakersView(d, edit);
-    if (tab === "month") return chips + recipeMonthView(d, edit);
-    if (tab === "fonts") return chips + recipeFontsView(d, edit);
-    // 2.0.0 [RVA-56] 검토 SX-04: 빌드마다 작품 전체를 넣어 찍고 옛 앱으로 열어 본 결과.
-    if (tab === "health") return chips + recipeHealthView(d, edit);
-    const help = {
-      queue: "1.35부터 레시피는 바로 광장에 올라가요. 그 전에 검토를 기다리던 것만 여기 남아 있어요. 올리거나 고칠 점을 적어 돌려줘요.",
-      flagged: "신고가 들어온 레시피예요. 다른 회선의 신고가 3건 쌓이면 저절로 가려지고 여기서 다시 보일지 정해요. 새 기기(3일 안)의 신고와 같은 회선의 두 번째 신고는 여기에만 보이고 가리기에는 세지 않아요.",
-      hidden: "가린 레시피는 90일 뒤 지워져요.",
-      // 1.39 판 정리
-      retired: "새 판이 나와 장터에서 내린 운영자 작품이에요. 목록·찾기·추천에는 안 나오지만 이미 넣은 분은 그대로 쓰고 코드로 열 수 있어요. 지우지 않아요. 아래에 정리 계획(market-…-refresh-plan.json)을 붙여 넣어 몇 개인지 먼저 보고 숨기거나, 잘못 숨긴 것을 한 번에 되돌려요.",
-      visible: "광장에 보이는 레시피예요. 새로 올라온 것이 위에 와요. 이상한 것은 가리기로 내려요.",
-      official: "운영자가 올린 시작 레시피와 공공 자료 레시피예요.",
-      // [RCX-32]
-      one: `작품 ${S.recipeCode ?? ""} 하나만 보고 있어요. 가리기·지우기도 여기서 바로 할 수 있어요.`,
-      // 1.36 [MKS-01]
-      waiting: "앱 업데이트와 함께 장터에 나올 운영자 작품이에요. 아직 아무에게도 안 보여요. 묶음마다 ‘지금 공개’하거나 공개할 때를 예약해요. ‘이 판부터’를 적은 작품은 공개한 뒤에도 그 판 이상 앱에만 보여서, 업데이트한 분부터 바로 보고 옛 앱에는 안 보여요.",
-      showcase: "장터로 이런 것까지 된다는 걸 보여 주는 레시피예요. 근무 유형마다 마을 › 장터 맨 위 ‘이런 것도 만들 수 있어요’에 크게 보여요. 아래에서 showcase-recipes.json을 붙여 넣거나, 장터의 좋은 레시피를 ‘보여주기에 넣기’로 더해요.",
-    }[tab];
-    const q = (S.recipeQuery ?? "").trim().toLowerCase();
-    const found = paged ? d.items : (sec === "all" ? d.items : d.items.filter((r) => r.section === sec))
-      .filter((r) => !q || [r.title, r.code, r.nick, r.summary, r.batch].some((x) => String(x ?? "").toLowerCase().includes(q)));
-    const limit = S.recipeLimit ?? 40;
-    const shown = paged ? d.items : found.slice(0, limit);
-    const foundN = paged ? d.total : found.length;
-    // ⋯ 안의 단추: 주된 것(상태마다 하나) 말고 나머지.
-    const rowMore = (r) => {
-      const items = [
-        r.state === "pending" ? `<button class="btn small" data-act="recipe-return" data-id="${r.code}">돌려주기</button>` : "",
-        r.official ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="unofficial">공식 빼기</button>` : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="official">공식 표시</button>`,
-        r.state === "visible" && r.scope === "public" ? `<button class="btn small" data-act="recipe-showcase" data-id="${r.code}" data-key="${r.showcase ? "off" : "on"}">${r.showcase ? "보여주기에서 빼기" : "보여주기에 넣기"}</button>` : "",
-        r.maker && r.maker !== "operator" ? `<button class="btn small" data-act="recipe-helper" data-id="${esc(r.maker)}">도우미 배지</button>` : "",
-        `<button class="btn small danger" data-act="recipe-delete" data-id="${r.code}">지우기</button>`,
-      ].filter(Boolean).join("");
-      return moreMenu(r.title, items);
-    };
-    const mainAct = (r) => r.state === "pending" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="approve">올리기</button>`
-      : r.state === "waiting" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">이것만 지금 공개</button>`
-        : r.state === "hidden" ? `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="show">다시 보이기</button>`
-          : `<button class="btn small" data-act="recipe-do" data-id="${r.code}" data-key="hide">가리기</button>`;
-    const rows = shown.length ? `<ul class="rows recipe-rows">${shown.map((r) => `<li><div class="row"><span class="row-main">
-        <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}</span>` : ""} <small>${r.tabs?.length ? `${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")} · ` : ""}${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
-        ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
-        ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
-        ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
-        ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
-        ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
-        <details><summary>본문 보기</summary><pre class="mono">${esc(JSON.stringify(JSON.parse(r.body), null, 1))}</pre></details></span>
-        ${edit ? `<span class="row-side row-acts">${mainAct(r)}${rowMore(r)}</span>` : ""}</div></li>`).join("")}</ul>
-      ${foundN > shown.length ? `<div class="more"><button class="btn" data-act="recipe-more">더 보기 <span class="meta">${shown.length}/${foundN}</span></button></div>` : ""}`
-      : q ? empty("찾는 레시피가 없어요", "이름·코드·만든 분 이름으로 찾아요.") : empty("여기 있는 레시피가 없어요", tab === "queue" ? "검토를 기다리는 레시피가 없어요." : "");
-    const release = tab === "waiting" ? recipeReleaseView(S.data.recipeRelease, edit) + materialsView(S.data.materials, edit)
-      : tab === "retired" && edit ? recipeRetireView(S.recipeRetire) : "";
-    const upload = edit && (tab === "official" || tab === "showcase" || tab === "waiting") ? `<form data-form="recipe-upload" class="card"><h3>${tab === "showcase" ? "보여주기 레시피 올리기" : tab === "waiting" ? "출시 작품 올리기" : "시작 레시피·공개 자료 올리기"}</h3>
-      <p class="hint">앱의 ‘올라갈 내용 전부 보기’에 나오는 레시피 글(JSON)이나, 시작 레시피 파일(starter-recipes.json) 전체를 붙여 넣어요. 공공 자료라면 설명에 출처(기관·자료 이름·날짜)를 꼭 적어요. 공공누리 4유형 자료는 쓰지 않아요.</p>
-      <textarea name="recipe" rows="8"${tab === "waiting" ? "" : " required"}></textarea>
-      ${tab === "waiting" ? `<p class="label">또는 파일로 <span class="meta">(docs/recipes/market-….json, 휴대폰에서 긴 글을 붙여 넣기 어려울 때)</span></p>${filePick("file", ".json,application/json")}` : ""}
-      ${tab === "showcase" ? `<p class="hint">showcase-recipes.json 전체를 붙여 넣으면 30개가 한 번에 올라가요. 하나만 붙여 넣어도 보여주기로 올라가요.</p><input type="hidden" name="showcase" value="on">`
-        : tab === "waiting" ? "" : `<label class="switch"><input type="checkbox" name="publicData"><span class="track" aria-hidden="true"></span><span>공공 자료 레시피 (공개 자료 탭)</span></label>`}
-      ${recipeHoldFields(tab === "waiting")}
-      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>` : "";
-    const log = S.recipeLog ? (S.data.recipeLog ? `<h3>처리 기록</h3><ul class="rows">${S.data.recipeLog.items.slice(0, 100).map((a) =>
-      `<li><div class="row"><span class="row-main"><b>${esc(RECIPE_ACTS[a.action] ?? a.action)}</b> <small>${esc(a.code)} · ${esc(a.actor ?? "")} · ${esc(ago(a.at))}${a.reason ? ` · ${esc(a.reason)}` : ""}</small></span></div></li>`).join("")}</ul>` : skeleton(1))
-      : `<button class="btn small ghost" data-act="recipe-log">처리 기록 보기</button>`;
-    // 1.36 [GRW-12] 작품 하나를 연 곳(사진 검토·고친 판)으로 돌아가기.
-    const back = tab === "one" ? `<p><button type="button" class="btn small" data-act="recipe-tab" data-key="${esc(S.recipeBack ?? "flagged")}">← 돌아가기 · ${esc(RECIPE_TABS.find(([k]) => k === (S.recipeBack ?? "flagged"))?.[1] ?? "목록")}</button></p>` : "";
-    const ph = tab === "one" ? S.recipePhoto : null;
-    const photo = ph ? `<div class="card"><div class="row"><span class="row-main">
-        <button type="button" class="linkish" data-act="photo-big" aria-label="사진 크게 보기"><img src="data:image/webp;base64,${esc(ph.data)}" alt="보러 온 사진" width="128" height="128" class="cover-img"></button>
-        <b>보러 온 사진${ph.whyName ? ` <span class="pill ${ph.state === "held" ? "bad" : "warn"}">${esc(ph.whyName)}</span>` : ""}</b>
-        ${ph.done ? `<small>${ph.done === "ok" ? "보이게 했어요" : "가렸어요"}</small>` : ""}</span>
-        ${edit && !ph.done ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="ok">보이기</button>
-          <button class="btn small danger" data-act="recipe-image" data-id="${esc(ph.id)}" data-key="hide">가리기</button></span>` : ""}</div></div>` : "";
-    // 설명은 목록 아래 접힌 한 줄(첫 문장), 이달 숫자와 처리 기록도 아래로.
-    const [lead, ...restHelp] = String(help ?? "").split(/(?<=요\.) /);
-    const tip = restHelp.length ? `<details class="tip" data-key="recipe-how-${tab}"><summary>${esc(lead)}</summary><p class="hint">${esc(restHelp.join(" "))}</p></details>` : lead ? `<p class="list-note">${esc(lead)}</p>` : "";
-    return `${chips}${back}${photo}${tab === "one" ? "" : release}${rows}<div class="list-foot">${tip}${tab === "one" ? "" : month}</div>${upload}${tab === "one" ? "" : log}`;
-  }
-
-  /**
-   * 2.0.0 [RVA-56] 검토 SX-04 장터 건강: 빌드가 바뀔 때마다 CI가 작품 전체를 넣어 찍고 옛 앱 core로 열어 본 결과 한 장.
-   * 깨진 작품(넘어짐·옛 앱에서 안 열림·서버가 거절·되돌린 뒤 달력이 다름)이 먼저, 빨강은 그 머리 하나(조건 6). 달라진 작품은 실패가 아니라
-   * 사람이 한 번 보는 목록이라 접어 둬요. 결과가 없거나 14일이 넘으면 그 말이 먼저예요.
-   */
-  function recipeHealthView(d, edit) {
-    const last = d?.last;
-    const kinds = d?.kinds ?? {};
-    const form = edit ? `<details class="card" data-key="market-health-upload"${last ? "" : " open"}><summary><b>결과 올리기</b> <span class="meta">CI market-shots의 market-health.json</span></summary>
-      <form data-form="market-health" class="mh-form"><p class="hint">GitHub Actions › 실행 › market-shots 묶음에 든 market-health.json을 골라요. 작품 이름·제목·까닭 한 줄·빌드뿐이고 사람 정보는 없어요.</p>
-      ${filePick("file", ".json,application/json", { required: true })}
-      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form></details>` : "";
-    if (!last) return empty("아직 장터 건강 결과가 없어요", "빌드가 바뀌면 CI가 장터 작품 전체를 넣어 찍고 옛 앱으로 열어 봐요. 그 결과를 올리면 여기와 운영 장부에 보여요.") + form;
-    const n = last.broken?.length ?? 0;
-    const when = `${esc(ago(last.at))}${last.by ? ` · ${esc(last.by)}` : ""}`;
-    // 깨진 수는 아래 빨간 머리 하나가 말해요(조건 6). 위 카드는 무엇을 얼마나 봤는지.
-    const head = `<div class="card mh-head"><p class="mh-sum"><b>작품 ${last.works}개를 넣어 봤어요</b>${n ? "" : ` <span class="pill ok">깨진 작품 없음</span>`}</p>
-      <p class="meta">옛 앱 목록 ${last.listed}개 중 ${last.opened}개 열림 · 달라짐 ${last.changed?.length ?? 0}개</p>
-      <p class="meta">빌드 <code>${esc(String(last.build).slice(0, 12))}</code> · ${when}${d.stale ? ` · <span class="pill warn">14일 넘게 새 결과 없음</span>` : ""}</p></div>`;
-    const broken = n ? `<ul class="rows mh-rows"><li class="lg-group"><span class="pill bad">깨진 작품 ${n}</span><small>다음 출시 전에 고쳐요 · 운영 장부에도 같은 줄이 있어요</small></li>${last.broken.map((b) =>
-      `<li><div class="row"><span class="row-main"><b>${esc(b.title || b.key)}</b> <span class="pill">${esc(kinds[b.kind] ?? b.kind)}</span>
-        <small>${esc(b.key)}${b.app ? ` · 옛 앱 ${b.app}` : ""}</small>${b.why ? `<small>${esc(b.why)}</small>` : ""}</span></div></li>`).join("")}</ul>` : "";
-    const list = (rows, title, note, line) => (rows?.length ? `<details class="card" data-key="mh-${title}"><summary><b>${esc(title)} ${rows.length}</b> <span class="meta">${esc(note)}</span></summary>
-      <ul class="rows">${rows.map(line).join("")}</ul></details>` : "");
-    const changed = list(last.changed, "달라진 작품", "실패는 아니에요 · 일부러 바꾼 화면인지 한 번 봐요", (c) =>
-      `<li><div class="row"><span class="row-main"><b>${esc(c.title || c.key)}</b> <small>${esc(c.key)} · 차이 ${c.d}</small></span></div></li>`);
-    const same = list(last.unchanged, "효과가 사라졌을 수 있는 작품", "넣기 전과 사진이 같아요 · 작품이 아무것도 안 바꾸는지 봐요", (c) =>
-      `<li><div class="row"><span class="row-main"><b>${esc(c.title || c.key)}</b> <small>${esc(c.key)}</small></span></div></li>`);
-    const runs = (d.runs ?? []).length > 1 ? `<details class="card" data-key="mh-runs"><summary><b>지난 결과 ${d.runs.length}</b></summary><ul class="rows">${d.runs.map((r) =>
-      `<li><div class="row"><span class="row-main"><b><code>${esc(String(r.build).slice(0, 12))}</code></b> <small>${esc(ago(r.at))} · 작품 ${r.works} · 깨짐 ${r.broken} · 달라짐 ${r.changed}</small></span></div></li>`).join("")}</ul></details>` : "";
-    return `<div class="mh">${head}${broken}${changed}${same}${runs}${form}</div>`;
-  }
-
-  /** 1.36 [MKS-01] 출시 대기로 넣기: hold, 이 판부터 (versionCode), 묶음 이름, 같은 이름은 새 판으로. */
-  function recipeHoldFields(on) {
-    return `<fieldset class="card"><legend>출시 대기</legend>
-      <label class="switch"><input type="checkbox" name="hold"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>출시 대기로 넣기 (공개 전까지 아무에게도 안 보여요)</span></label>
-      <label>묶음 이름 <input name="batch" maxlength="40" placeholder="예: ${esc(serverVersion() || "2.0.0")} 출시 작품" value="${on ? `${esc(serverVersion())} 출시 작품`.trim() : ""}"></label>
-      <label>이 앱 판부터 보이기 (versionCode, 비우면 모든 앱) <input name="minApp" inputmode="numeric" pattern="[0-9]*" maxlength="6"></label>
-      <label class="switch"><input type="checkbox" name="replace"${on ? " checked" : ""}><span class="track" aria-hidden="true"></span><span>같은 이름의 운영자 작품은 새 판으로 고치기 (다시 넣어도 두 개가 되지 않아요)</span></label>
-      <p class="hint">파일 안의 항목에 hold·batch·minApp·replace가 있으면 그것이 먼저예요.</p></fieldset>`;
-  }
-
-  /** 1.38 [STM-10] 밤낮 재료 묶음: 몇 개·공개 상태·무료 수, 공개·숨기기, 무료·광고 나누기(광고로 연 묶음은 30일, 프로는 모두). */
-  function materialsView(d, edit, bare = false) {
-    // [RVA-24] 재료 화면에서는 화면 이름이 '스튜디오 재료'라 '밤낮 재료' 제목 줄을 빼요(레시피 › 출시 대기 안에서는 그대로).
-    const h3 = bare ? "" : "<h3>밤낮 재료</h3>";
-    if (!d) return "";
-    if (!d.items.length) return `${h3}<p class="hint">넣은 재료가 없어요. 아래 ‘재료 파일 올리기’로 넣어요.</p>${edit ? materialUploadForm() : ""}`;
-    const packs = new Map();
-    for (const m of d.items) {
-      const p = packs.get(m.pack) ?? { kind: m.kind, n: 0, ok: 0, waiting: 0, hidden: 0, free: 0 };
-      p.n++; p[m.state] = (p[m.state] ?? 0) + 1; if (m.free) p.free++;
-      packs.set(m.pack, p);
-    }
-    const c = d.counts ?? {};
-    const freeOf = (p) => (p.free === p.n ? "all" : p.free === 0 ? "none" : "third");
-    const row = ([name, p]) => `<li><form data-form="material-free" data-key="${esc(name)}" class="row"><span class="row-main"><b>${esc(name)}</b>
-        <small>${p.n}개 · 공개 ${p.ok}${p.waiting ? ` · 대기 ${p.waiting}` : ""}${p.hidden ? ` · 숨김 ${p.hidden}` : ""} · 무료 ${p.free}</small></span>
-        ${edit ? `<span class="row-side inline"><select name="mode" aria-label="${esc(name)} 무료·광고">${[["all", "모두 무료"], ["third", "3분의 1 무료"], ["none", "모두 광고·프로"]]
-          .map(([k, l]) => `<option value="${k}"${freeOf(p) === k ? " selected" : ""}>${l}</option>`).join("")}</select>
-          <button class="btn small" type="submit">바꾸기</button>
-          ${p.ok < p.n ? `<button class="btn small primary" type="button" data-act="material-state" data-id="${esc(name)}" data-key="ok">공개</button>`
-            : `<button class="btn small" type="button" data-act="material-state" data-id="${esc(name)}" data-key="hidden">숨기기</button>`}</span>` : ""}</form></li>`;
-    const group = (kind, label) => {
-      const list = [...packs].filter(([, p]) => p.kind === kind);
-      return list.length ? `<details data-key="materials-${kind}"><summary>${label} ${list.length}묶음 · ${list.reduce((n, [, p]) => n + p.n, 0)}개</summary><ul class="rows">${list.map(row).join("")}</ul></details>` : "";
-    };
-    return `${h3}<p class="meta">공개 ${c.ok ?? 0} · 대기 ${c.waiting ?? 0} · 숨김 ${c.hidden ?? 0}</p>
-      ${group("icon", "색 아이콘")}${group("bg", "배경")}${edit ? materialUploadForm() : ""}`;
-  }
-
-  /**
-   * 1.39 E11 재료 파일 올리기: the files `tools/materials-seed.mjs --files` writes (재료-01.json …), picked here with this login, so the real
-   * server gets its materials without a password in any tool. They go in as 대기 (공개는 위 묶음마다); the same picture again only renames.
-   */
-  function materialUploadForm() {
-    return `<form data-form="material-upload" class="card"><h3>재료 파일 올리기</h3>
-      <p class="hint">tools/materials-seed.mjs --files로 만든 재료-01.json … 을 모두 골라요. 대기로 들어가고, 공개는 위 묶음마다 해요. 같은 그림을 다시 올리면 이름·순서만 바뀌어요.</p>
-      ${filePick("files", ".json,application/json", { multiple: true, required: true })}
-      <div class="actions"><button class="btn primary" type="submit">올리기</button></div></form>`;
-  }
-
   /**
    * 2.0.0 [RVA-21] 검토 T24-13·ADMX-17: 파일 고르기. 브라우저 기본 'Choose Files / No file chosen' 대신 앱의 단추(44px)와 고른 파일 이름 한 줄.
    * 칸은 그대로 <input type=file>이라 폼·검사·파일 읽기는 바뀌지 않아요.
@@ -3707,161 +3525,6 @@ function adminApp(L, BUILD, M) {
     return `<label class="filepick"><input type="file" name="${name}" accept="${esc(accept)}"${multiple ? " multiple" : ""}${required ? " required" : ""}>
       <span class="btn">${icon(P.plus)}${multiple ? "파일 고르기(여러 개)" : "파일 고르기"}</span><span class="meta" data-file-names>아직 고르지 않았어요</span></label>`;
   }
-
-  /** 1.36 [MKS-01] 출시 대기 묶음: 몇 개, 예약, 지금 공개. */
-  /**
-   * 1.39 판 정리: 계획 파일({"hide":[{title, why}]}, 제목 목록 줄마다, 코드)을 붙여 넣거나 골라 '몇 개인지 보기'(dry) → 숨기기, 또는 되돌리기.
-   * [last] 마지막으로 본 결과(찾은 수·없는 제목)를 보여 줘요.
-   */
-  function recipeRetireView(last) {
-    const said = last ? `<p class="hint" data-retire-said>${esc(last.say)}${last.missing?.length ? ` · 못 찾은 것 ${last.missing.length}개: ${esc(last.missing.slice(0, 20).join(", "))}${last.missing.length > 20 ? " …" : ""}` : ""}</p>` : "";
-    return `<form data-form="recipe-retire" class="card"><h3>판 정리 붙여 넣기</h3>
-      <p class="hint">정리 계획 JSON 전체, 또는 제목(이나 작품 코드)을 한 줄에 하나씩. 운영자 작품만 찾고 사용자 작품은 건드리지 않아요. 한 번에 1,200개까지.</p>
-      <textarea name="plan" rows="6" required></textarea>
-      <p class="label">또는 파일로</p>${filePick("file", ".json,.txt,application/json,text/plain")}
-      <label>메모 <input name="note" maxlength="200" placeholder="1.39 장터 정리"></label>
-      <label>옛 앱에는 남기기: 이 앱 판 미만에는 계속 보여요(계획 파일의 belowApp이 먼저) <input name="below" inputmode="numeric" pattern="\\d{1,6}" placeholder="53"></label>
-      <div class="actions"><button class="btn" type="submit" name="go" value="dry">몇 개인지 보기</button>
-        <button class="btn primary" type="submit" name="go" value="hide">숨기기</button>
-        <button class="btn" type="submit" name="go" value="show">되돌리기</button></div>${said}</form>`;
-  }
-
-  /**
-   * The titles and codes in what was pasted (a plan file {hide:[{title, code?, belowApp?}]}, a list of strings, or lines), grouped by
-   * belowApp (작품 갈래: '그 판 미만 앱에는 계속 보임'); [below] is for those that say none.
-   */
-  function retireGroups(text, below) {
-    const groups = new Map();
-    const add = (x, b) => {
-      const t = String(x ?? "").trim();
-      if (!t) return;
-      const k = Number.isInteger(b) && b > 0 ? b : below;
-      if (!groups.has(k)) groups.set(k, { belowApp: k, titles: [], codes: [] });
-      (/^[2-9A-HJ-NP-Z]{8}$/.test(t) ? groups.get(k).codes : groups.get(k).titles).push(t);
-    };
-    let j = null;
-    try { j = JSON.parse(text); } catch { j = null; }
-    const list = Array.isArray(j) ? j : Array.isArray(j?.hide) ? j.hide : null;
-    if (list) for (const x of list) { if (typeof x === "string") add(x); else add(x?.code || x?.title, x?.belowApp); }
-    else for (const line of String(text).split(/\r?\n/)) add(line);
-    return [...groups.values()];
-  }
-
-  function recipeReleaseView(d, edit) {
-    if (!d) return skeleton(1);
-    if (!d.items.length) return `<p class="hint">출시 대기 중인 작품이 없어요.</p>`;
-    return `<ul class="rows">${d.items.map((b) => `<li><form data-form="recipe-release" data-key="${esc(b.batch ?? "")}" data-n="${b.n}" class="row">
-      <span class="row-main"><b>${esc(b.batch ?? "묶음 없음")}</b><small>${b.n}개 기다림${b.minApp ? ` · 앱 판 ${b.minApp} 이상만` : ""}${b.releaseAt ? ` · 공개 예약 ${esc(new Date(b.releaseAt).toLocaleString("ko-KR"))}` : " · 예약 없음"}</small>
-      ${edit ? `<label>공개할 때 <input type="datetime-local" name="at"></label>` : ""}</span>
-      ${edit ? `<span class="row-side"><button class="btn small" type="submit" name="do" value="schedule">예약</button>
-        ${b.releaseAt ? `<button class="btn small" type="submit" name="do" value="unschedule">예약 풀기</button>` : ""}
-        <button class="btn small primary" type="submit" name="do" value="now">지금 공개</button></span>` : ""}</form></li>`).join("")}</ul>`;
-  }
-
-  /** [RCX-08] 1.35 이번 주 고른 것: up to three codes for each kind of work; last week's stay until a new pick. */
-  function recipePicksView(d, edit) {
-    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.code);
-    return `<p class="hint">${esc(d.week)} 주. 근무 유형마다 레시피 3개까지 골라 광장 맨 위에 보여요. 새로 고르기 전까지 지난주 것이 그대로 보여요. 광장에 보이는 레시피의 코드(8자)를 넣어요.</p>
-      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-picks" data-key="${k}" class="row">
-        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "이번 주 고른 것 없음"}</small>
-        ${edit ? `<input name="codes" aria-label="${esc(label)} 레시피 코드" placeholder="코드 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
-  }
-
-  /** [RCX-15] 1.35 그림 표지: shown to others only after a look here. */
-  // 1.36 [GRW-08] 사진 세 겹: 운영자가 보는 것은 새싹 첫 사진·자동 검사에 걸린 것·신고로 먼저 가린 것뿐이에요.
-  const PHOTO_FLAG_NAMES = { nude: "성적인 사진", violence: "폭력·잔인", personal: "개인정보", copy: "남의 저작물", other: "그 밖" };
-  function recipeImagesView(d, edit) {
-    const c = d.counts ?? {};
-    const rules = d.rules ?? { lookFirst: 3, flagsToHold: 2 };
-    const head = `<p class="hint">세 겹으로 봐요. ① 올릴 때 자동 검사(설정되어 있으면) ② 새싹은 첫 ${rules.lookFirst}장만 여기서 보고, 그 뒤와 이웃·단골은 바로 보여요 ③ 신고 ${rules.flagsToHold}번이면 먼저 가려져 여기로 와요.
-      얼굴·개인정보·성적인 사진·남의 저작물이면 가리기(쓰기 제한 한 번), 괜찮으면 보이기(신고는 비워요).</p>
-      <p class="meta">새싹 첫 사진 ${c.pending ?? 0} · 먼저 가린 것 ${c.held ?? 0}</p>`;
-    if (!d.items.length) return `${head}${empty("볼 사진이 없어요", "새싹의 첫 사진, 자동 검사에 걸린 사진, 신고로 먼저 가린 사진이 여기 와요.")}`;
-    return `${head}<ul class="rows">${d.items.map((i) => `<li><div class="row"><span class="row-main">
-        <img src="data:image/webp;base64,${esc(i.data)}" alt="올린 사진" width="128" height="128" class="cover-img">
-        <b>${i.whyName ? `<span class="pill ${i.state === "held" ? "bad" : "warn"}">${esc(i.whyName)}</span>` : ""}${i.state === "held" ? ' <span class="pill">다른 분께 가려짐</span>' : ""}</b>
-        <small>${i.uses?.length ? `${i.uses.map((u, k) => `${k ? "" : "작품 "}${esc(u.title)} (<button type="button" class="linkish" data-act="recipe-open" data-id="${esc(u.code)}" data-key="${esc(i.id)}" aria-label="작품 ${esc(u.title)} 열기">${esc(u.code)} 열기</button>)`).join(" · ")}${i.uses.length > 1 ? ` · 같은 사진 ${i.uses.length}곳` : ""}` : "아직 작품에 쓰이지 않음"} · 올린 분 ${esc(i.trustName ?? "새싹")}</small>
-        <small>${i.flags ? `신고 ${i.flags}번 (${Object.entries(i.reasons ?? {}).map(([k, n]) => `${esc(PHOTO_FLAG_NAMES[k] ?? k)} ${n}`).join(", ")}) · ` : ""}자동 검사 ${esc({ pass: "통과", block: "걸림" }[i.checked] ?? (rules.checkOn ? "안 함(늦거나 답이 분명하지 않음)" : "안 함(검사 모델 설정 전)"))} · ${Math.round(i.bytes / 1024)}KB · ${esc(ago(i.at))}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" data-act="recipe-image" data-id="${i.id}" data-key="ok">보이기</button>
-          <button class="btn small danger" data-act="recipe-image" data-id="${i.id}" data-key="hide">가리기</button></span>` : ""}</div></li>`).join("")}</ul>`;
-  }
-
-  /** [PRF-06] 1.36 프로필 신고: 사칭·나쁜 소개. 3건이면 소개가 먼저 가려져요. Who reported is never shown. */
-  function recipeMakersView(d, edit) {
-    if (!d.items.length) return empty("신고된 프로필이 없어요", "앱의 프로필 › ⋮ › 신고하기로 들어온 것이 여기 와요.");
-    const why = { impersonate: "사칭", bio: "나쁜 소개", spam: "광고·도배", other: "그 밖의 것" };
-    return `<p class="hint">소개만 문제면 소개를 가리고, 사칭이면 프로필을 닫아요. 닫힌 프로필은 다른 분이 볼 수도 팔로우할 수도 없고, 작품은 장터에 남아요(작품은 레시피 탭에서 따로 가려요). 문제없으면 신고를 비워요.</p>
-      <ul class="rows">${d.items.map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.face ?? "🙂")} ${esc(m.nick ?? "이름 없음")}</b>
-        <small>${esc(m.maker)} · 신고 ${m.flags}건 · ${Object.entries(m.reasons ?? {}).map(([k, n]) => `${esc(why[k] ?? k)} ${n}`).join(", ")} · ${esc(ago(m.at))}</small>
-        <small>소개: ${m.bio ? esc(m.bio) : "없음"}${m.bioHidden ? ` <span class="pill warn">${m.bioHiddenBy === "operator" ? "운영자가 소개 가림" : "신고로 소개 가림"}</span>` : ""}${m.closed ? ' <span class="pill warn">프로필 닫힘</span>' : ""}</small></span>
-        ${edit ? `<span class="row-side">
-          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.bioHidden ? "bio-show" : "bio-hide"}">${m.bioHidden ? "소개 다시 보이기" : "소개 가리기"}</button>
-          <button class="btn small ${m.closed ? "" : "danger"}" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="${m.closed ? "open" : "close"}">${m.closed ? "프로필 다시 열기" : "프로필 닫기"}</button>
-          <button class="btn small" data-act="recipe-maker" data-id="${esc(m.maker)}" data-key="clear">신고 비우기</button></span>` : ""}</div></li>`).join("")}</ul>`;
-  }
-
-  /** [PRF-10] 1.36 이달의 제작자: up to three maker ids for each kind of work; with none, the most put-on makers of the month show. */
-  function recipeMonthView(d, edit) {
-    const by = (k) => d.items.filter((i) => i.style === k).map((i) => i.maker);
-    return `<p class="hint">${esc(d.month)}. 근무 유형마다 3명까지 골라 마을 맨 위(팔로우한 분이 없는 분)에 보여요. 비워 두면 이달에 가장 많이 넣은 작품의 만든 분이 저절로 보여요. 프로필 id(12자)는 레시피 탭의 ‘도우미 배지’ 옆이나 앱의 프로필 링크 끝에 있어요.</p>
-      <ul class="rows">${RECIPE_STYLES.map(([k, label]) => `<li><form data-form="recipe-month" data-key="${k}" class="row">
-        <span class="row-main"><b>${esc(label)}</b><small>${by(k).length ? esc(by(k).join(", ")) : "고른 분 없음 (저절로)"}</small>
-        ${edit ? `<input name="makers" aria-label="${esc(label)} 제작자 id" placeholder="프로필 id 3개까지, 쉼표로" value="${esc(by(k).join(", "))}">` : ""}</span>
-        ${edit ? `<span class="row-side"><button class="btn small primary" type="submit">저장</button></span>` : ""}</form></li>`).join("")}</ul>`;
-  }
-
-  /**
-   * [MAT-06] 1.36 나눈 글꼴: 신고 셋이면 저절로 내려가요. 라이선스가 맞으면 다시 올리고, 아니면 내린 채로 둬요.
-   * 1.36 [SEC-10] 보안 점검 H3·M7·M8: 나누는 글꼴은 모두 여기서 본 뒤에 다른 분께 가요. 글꼴이 스스로 밝힌 이름·만든 곳·라이선스 글을 함께 보여요.
-   */
-  function recipeFontsView(d, edit) {
-    const state = d.state ?? "pending";
-    const names = { pending: "확인 기다림", reported: "신고로 내려감", hidden: "내린 것", ok: "나누는 중" };
-    const whys = { license: "라이선스가 의심돼요", broken: "글자가 깨져요", bad: "불쾌한 모양" };
-    const sub = `<div class="chips" role="group" aria-label="글꼴 상태">${Object.entries(names).map(([k, label]) =>
-      `<button type="button" class="chip pick" data-act="font-state" data-key="${k}" aria-pressed="${state === k}">${esc(label)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
-    if (!d.items.length) return sub + empty({ pending: "확인을 기다리는 글꼴이 없어요", reported: "신고로 내려간 글꼴이 없어요" }[state] ?? "글꼴이 없어요", "앱에서 공개 글꼴(OFL 등)이라고 밝히고 레시피와 함께 나눈 글꼴이 여기 보여요.");
-    const says = { ofl: "글꼴 안에 OFL이라고 적혀 있어요", apache: "글꼴 안에 Apache라고 적혀 있어요" };
-    // 1.36 PC 12차 ('신고 0 · 글자가 깨져요 1'로 숫자가 맞지 않음): every report, its reasons in brackets, and how many count toward taking
-    // it down when that differs (새로 깐 휴대폰·같은 회선의 둘째 신고는 내림에 세지 않아요, 보안 점검 M3).
-    const reportLine = (f) => {
-      const all = Object.values(f.whys ?? {}).reduce((a, n) => a + n, 0);
-      const reasons = Object.entries(f.whys ?? {}).map(([k, n]) => `${esc(whys[k] ?? k)} ${n}`).join(" · ");
-      return `신고 ${Math.max(all, f.reports)}${reasons ? `(${reasons})` : ""}${all > f.reports ? ` · 내림에 세는 것 ${f.reports}` : ""}`;
-    };
-    const own = (f) => {
-      const i = f.info ?? {};
-      const bits = [i.family && `이름 ${i.family}`, i.maker && `만든 곳 ${i.maker}`, i.designer && `디자이너 ${i.designer}`, i.vendor && `회사 코드 ${i.vendor}`].filter(Boolean);
-      return `<small>${bits.length ? esc(bits.join(" · ")) : "글꼴 안에 이름 정보가 없어요"}</small>
-        <small>${f.says ? `<span class="pill ok">${esc(says[f.says])}</span>` : '<span class="pill warn">글꼴 안에 OFL·Apache 글이 없어요</span>'}${i.license ? ` ${esc(i.license.slice(0, 160))}` : ""}${i.licenseUrl ? ` · ${esc(i.licenseUrl)}` : ""}</small>
-        ${i.copyright ? `<small>${esc(i.copyright.slice(0, 160))}</small>` : ""}
-        ${like(f)}`;
-    };
-    // 1.36 [SEC-10] M8 (PC 7차): 이미 나누는 글꼴과 같은 글자 모양이거나 같은 이름·저작권이면 나란히 보여요. 크기 차이가 작으면 이름만 바꾼 복사본일 수 있어요.
-    const likeWhy = { glyphs: "글자 모양이 같은", family: "글꼴 이름이 같은", copyright: "저작권 글이 같은" };
-    const bytesDiff = (n) => n === 0 ? "크기 같음" : `${n > 0 ? "+" : "−"}${Math.abs(n) < 1024 ? `${Math.abs(n)}B` : `${(Math.abs(n) / 1024).toFixed(1)}KB`}`;
-    const like = (f) => (f.like ?? []).length ? `<small class="like">${f.like.map((l) =>
-      `<span class="pill ${l.why === "glyphs" ? "ok" : "warn"}">${esc(likeWhy[l.why] ?? "비슷한")} 글꼴을 나누는 중: ${esc(l.name)} · ${esc(bytesDiff(l.diff))}</span>`).join(" ")}</small>` : "";
-    return `${sub}<p class="hint">${state === "pending" ? "다른 분께 가기 전에 보는 글꼴이에요. 글꼴 안의 이름·만든 곳·라이선스 글이 보낸 분이 고른 라이선스와 맞는지 봐요. 맞으면 나누기, 유료 글꼴이거나 알 수 없으면 내리기를 눌러요." : "글꼴 이름으로 찾아 라이선스(OFL·Apache·무료 공개)가 맞는지 봐요. 맞으면 다시 올리기, 상용 글꼴이면 내리기를 눌러요."}</p>
-      <ul class="rows">${d.items.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(f.name)}</b>
-        <small>보낸 분이 고른 것: ${esc(f.licenseName ?? f.license)} · ${(f.bytes / 1048576).toFixed(1)}MB · ${reportLine(f)} · ${esc(ago(f.at))}</small>
-        ${own(f)}
-        <small class="mono">${esc(f.id)}</small></span>
-        ${edit ? `<span class="row-side">${f.state !== "ok" ? `<button class="btn small primary" data-act="recipe-font" data-id="${f.id}" data-key="ok">${f.state === "pending" ? "나누기" : "다시 올리기"}</button>` : ""}
-          ${f.state !== "hidden" ? `<button class="btn small danger" data-act="recipe-font" data-id="${f.id}" data-key="hide">내리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
-  }
-
-  /** [RCX-04] 1.35 요청 판: what people asked to be made; hide one that breaks the rules. Who wrote it is never shown. */
-  function recipeRequestsView(d, edit) {
-    if (!d.items.length) return empty("요청이 없어요", "앱의 ‘이런 레시피 있었으면’에서 올린 요청이 여기 보여요.");
-    const states = { waiting: "기다리는 중", making: "만드는 중", done: "완성" };
-    const style = Object.fromEntries(RECIPE_STYLES);
-    return `<ul class="rows">${d.items.map((q) => `<li><div class="row"><span class="row-main"><b>${esc(q.body)}</b>
-        <small>${q.style === "ALL" ? "모든 유형" : esc(style[q.style] ?? q.style)} · ${esc(states[q.state] ?? q.state)}${q.askers ? ` · 스튜디오 요구 ${q.askers}명` : ""} · 좋아요 ${q.likes}${q.code ? ` · ${esc(q.code)}` : ""} · ${esc(ago(q.at))}${q.hidden ? ' · <span class="pill warn">가림</span>' : ""}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small" data-act="recipe-request" data-id="${q.id}" data-key="${q.hidden ? "show" : "hide"}">${q.hidden ? "다시 보이기" : "가리기"}</button></span>` : ""}</div></li>`).join("")}</ul>`;
-  }
-
   function sharesView() {
     const d = S.data.shares;
     if (!d) return skeleton(2);
@@ -4971,386 +4634,8 @@ function adminApp(L, BUILD, M) {
   // the ways of working, and the home screen's warning for a legal flag that just turned on. The screens read
   // /api/admin/flags, /flags/<key> and /types; who may press what comes from the server (reach) and every locked
   // button says why. AN's 출시 hub points at the routes flags and types (통합계획 2-2).
-
-  const FLAG_STATE = { forced_off: ["bad", "강제로 끔"], forced_on: ["info", "강제로 켬"], on: ["ok", "켜짐"], waiting: ["warn", "대기"], off: ["", "꺼짐"] };
-  const FLAG_SHOW = [["all", "전체"], ["waiting", "대기"], ["on", "켜짐"], ["forced_off", "강제로 끔"], ["cleanup", "정리 대상"]];
-  const FLAG_GROUPS = { money: "결제·광고", type: "근무 유형", law: "법 시행", server: "서버 기능", stats: "사용 통계", free: "무료로 연 프로 기능", phase3: "Phase 3(출시일에 함께 켜짐 · 날짜는 일정에서)" };
-  /** 1.22's 기능 스위치 by their flag (운영 screen's card links each to its flag). */
-  const SWITCH_FLAGS = { PLAZA_WRITE: "plaza.write", COMPANY_REPORT: "company.report", INQUIRY_PHOTOS: "inquiry.photos", SHARE_CREATE: "share.create",
-    USAGE_STATS: "usage.stats", PLAZA_NEWS: "plaza.news" };
-  const PRIVACY_URL = "https://ywjmoney.github.io/-/privacy/";
-  const LOCK = {
-    off: "강제로 끄기는 최고 관리자나 '기능 강제로 끄기' 권한을 받은 관리자만 해요(결정 D97).",
-    on: "강제로 켜기는 최고 관리자만 해요.",
-    legal: "법적 기능이라 조건 바꾸기·확인·되돌리기는 최고 관리자만 해요.",
-    edit: "조건을 바꾸려면 기능 관리 고치기 권한이 있어야 해요.",
-  };
-
   const flagLink = (key) => L.routeHash("flags", key, {});
   const md = (d) => (d ? `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일` : "");
-  const statePill = (r) => {
-    const [tone, label] = FLAG_STATE[r.state] ?? ["", r.state];
-    const left = r.state === "waiting" && r.daysLeft !== null && r.daysLeft !== undefined && r.daysLeft >= 0 ? ` · ${r.daysLeft === 0 ? "오늘" : `${r.daysLeft}일 남음`}` : "";
-    return `<span class="pill ${tone}">${label}${left}</span>`;
-  };
-  const riskPill = (r) => (r.risk === "LEGAL" ? '<span class="pill gold" title="결제·광고·새로 보내는 정보처럼 법적 조건이 붙은 기능">법적</span>' : "");
-  const flagPills = (r) => [statePill(r), riskPill(r), r.warnings?.length ? '<span class="pill bad">고지 기간 확인</span>' : "",
-    r.sunsetDue ? '<span class="pill">정리 대상</span>' : "", r.reviewDue ? '<span class="pill warn">다시 볼 날</span>' : ""].join("");
-
-  /** What a step needs, by the reach the server sent: null when allowed, else the reason the button is locked. */
-  function flagLock(r, reach, step) {
-    if (reach.owner) return null;
-    const legal = r.risk === "LEGAL";
-    const forced = r.override?.force && !(r.override.until && Date.parse(r.override.until) <= Date.now()) ? r.override.force : null;
-    if (step === "on") return LOCK.on;
-    if (step === "off") return reach.off ? null : LOCK.off;
-    if (step === "clear") return forced === "on" ? (reach.off ? null : LOCK.off) : legal ? LOCK.legal : reach.off ? null : LOCK.off;
-    if (step === "conditions") return legal ? LOCK.legal : reach.edit ? null : LOCK.edit;
-    if (step === "check") return legal ? LOCK.legal : reach.edit ? null : LOCK.edit;
-    return null;
-  }
-  const lockedBtn = (label, lock, attrs, tone = "") => `<button class="btn small${tone ? ` ${tone}` : ""}" ${lock ? `disabled title="${esc(lock)}"` : attrs}>${esc(label)}</button>`;
-
-  // ---- the list [ADMUX-21] ----
-
-  function flagsView() {
-    const d = S.data.flags;
-    const timeline = S.flagView === "timeline";
-    const viewSeg = `<div class="segmented" role="group" aria-label="보기">${seg("flag-view", "", S.flagView, "목록")}${seg("flag-view", "timeline", S.flagView, "일정")}</div>`;
-    if (!d) return listHead(viewSeg, "") + skeleton(3);
-    if (timeline) return listHead(viewSeg, "") + flagTimeline(d);
-    const rows = d.flags;
-    const match = (r) => ({ all: true, waiting: r.state === "waiting", on: r.state === "on" || r.state === "forced_on", forced_off: r.state === "forced_off", cleanup: r.sunsetDue }[S.flagShow] ?? true);
-    const q = S.flagQuery.trim().toLowerCase();
-    const found = rows.filter(match).filter((r) => !q || `${r.name} ${r.key} ${r.what}`.toLowerCase().includes(q));
-    const counts = Object.fromEntries(FLAG_SHOW.map(([k]) => [k, rows.filter((r) => ({ all: true, waiting: r.state === "waiting", on: r.state === "on" || r.state === "forced_on",
-      forced_off: r.state === "forced_off", cleanup: r.sunsetDue })[k]).length]));
-    const alerts = rows.filter((r) => r.warnings?.length);
-    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 목록·일정과 찾기가 한 줄, 상태 칩은 '거르기' 안, 설명은 목록 아래 한 줄(펴면 설명).
-    const chips = `<div class="chips" role="group" aria-label="상태">${FLAG_SHOW.map(([k, label]) =>
-        `<button type="button" class="chip pick" data-act="flag-show" data-key="${k}" aria-pressed="${S.flagShow === k}">${label}${counts[k] ? ` ${counts[k]}` : ""}</button>`).join("")}</div>`;
-    const head = listHead(viewSeg, `<input id="search" type="search" placeholder="이름이나 키로 찾기(예: billing, 결제)" value="${esc(S.flagQuery)}" autocomplete="off" enterkeyhint="search" aria-label="기능 찾기">`,
-      { busy: Boolean(q), filters: chips, active: S.flagShow !== "all" ? 1 : 0 });
-    const filters = ``;
-    const foot = `<div class="list-foot"><details class="tip" data-key="flag-how"><summary>기능은 조건대로 저절로 켜져요 · 법적 기능은 처리방침 조건을 지켜요</summary>
-      <p class="hint">앱 안에 들어 있는 기능이 언제 저절로 켜지는지(날짜·처리방침·확인), 지금 왜 그런지 보여요. 서버는 덮어쓸 것만 보내고, 휴대폰은 인터넷이 없어도 조건대로 켜요. 법적 기능은 강제로 켜도 처리방침 조건을 계속 지켜요.${d.statsPhones ? ` 켜진 비율은 지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰 ${d.statsPhones}대 기준이에요.` : ""}</p></details></div>`;
-    if (!found.length) return head + filters + empty(q ? "찾는 기능이 없어요" : "이 상태의 기능이 없어요", "", '<button class="btn" data-act="flag-show" data-key="all">전체 보기</button>');
-    // [RVA-24] 고지 기간이 모자란 기능은 경고 상자 대신 목록 맨 위 묶음으로(조건 1·3·6): 줄 자체가 할 일이고, 누르면 그 기능으로 가요.
-    const warned = new Set(alerts.map((r) => r.key));
-    const groups = [...(found.some((r) => warned.has(r.key)) ? ["warned"] : []), ...new Set(found.filter((r) => !warned.has(r.key)).map((r) => r.group))];
-    const inGroup = (r, g) => (g === "warned" ? warned.has(r.key) : !warned.has(r.key) && r.group === g);
-    const groupName = (g) => (g === "warned" ? "고지 기간이 모자라요 · 처리방침 9항(7일, 불리하면 30일)" : FLAG_GROUPS[g] ?? g);
-    return head + filters + groups.map((g) => `<h2 class="day-head${g === "warned" ? " bad" : ""}" ${g === "warned" ? 'role="status"' : ""}>${esc(groupName(g))}</h2><ul class="rows">${found.filter((r) => inGroup(r, g)).map((r) =>
-      `<li><a class="row" href="${flagLink(r.key)}"><span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)}${r.onShare !== null && r.onShare !== undefined ? ` · 휴대폰 ${r.onShare}%에서 켜짐` : ""}</small>
-        <span class="preview">${esc(r.reason)}</span></span><span class="row-side pills">${flagPills(r)}</span>${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("") + foot;
-  }
-
-  // ---- the calendar [ADMUX-25] ----
-
-  function flagTimeline(d) {
-    const today = L.flagDay(Date.now());
-    const from = L.flagDay(Date.now() - 14 * 864e5);
-    const items = [];
-    const add = (day, text, to, tone, kind) => day && day >= from && items.push({ day, text, to, tone, kind });
-    for (const r of d.flags) {
-      for (const c of r.conditions.flatMap((c) => (c.type === "any" ? c.of : [c]))) {
-        if (c.type !== "date") continue;
-        const day = L.dateFrom(c, d.policy);
-        if (day && day > today) add(day, `${r.name}: ${L.conditionLabel(c, d.policy)} 조건`, flagLink(r.key), r.risk === "LEGAL" ? "gold" : "info", "날짜 조건");
-      }
-      if (r.override?.until) add(L.flagDay(Date.parse(r.override.until)), `${r.name}: 강제${r.override.force === "on" ? " 켬" : " 끔"} 기한 끝`, flagLink(r.key), "warn", "강제 기한");
-      if (r.override?.reviewAt) add(r.override.reviewAt, `${r.name}: 강제로 끈 것 다시 보기`, flagLink(r.key), "warn", "다시 볼 날");
-    }
-    for (const p of d.policy) {
-      add(p.posted, `처리방침 ${p.version} 게시`, null, "", "처리방침");
-      add(p.effective, `처리방침 ${p.version} 시행`, null, "info", "처리방침");
-      if (p.heldUntil) add(p.heldUntil, `처리방침 ${p.version}: 동의하지 않은 휴대폰에도 시행`, null, "info", "처리방침");
-    }
-    items.sort((a, b) => a.day.localeCompare(b.day));
-    let month = "";
-    const out = [];
-    for (const x of items) {
-      const m = x.day.slice(0, 7);
-      if (m !== month) {
-        if (month) out.push("</ul>");
-        out.push(`<h2 class="day-head">${Number(m.slice(0, 4))}년 ${Number(m.slice(5))}월</h2><ul class="rows agenda">`);
-        month = m;
-      }
-      const n = L.daysLeft(x.day);
-      const when = x.day === today ? "오늘" : n > 0 ? `D-${n}` : "지남";
-      const inner = `<span class="date">${md(x.day)}<small>${when}</small></span><span class="row-main"><b class="wrap">${esc(x.text)}</b></span><span class="pill ${x.tone}">${esc(x.kind)}</span>`;
-      out.push(`<li>${x.to ? `<a class="row" href="${x.to}">${inner}</a>` : `<div class="row">${inner}</div>`}</li>`);
-    }
-    if (month) out.push("</ul>");
-    const o = S.data.flagOps;
-    const chores = o ? `<section class="card"><div class="card-head"><h2>이달 운영 할 일</h2><a class="btn small ghost" href="${href("chores")}">이달 할 일에서 보기</a></div>
-      <ul class="rows">${o.items.map((i) => `<li><div class="row"><span class="row-main"><b class="wrap">${esc(i.text)}</b><small>${esc(i.source)}</small></span>
-        <span class="pill ${i.done ? "ok" : ""}">${i.done ? "마침" : "남음"}</span></div></li>`).join("")}</ul></section>` : "";
-    const owner = d.reach.owner;
-    const policy = `<section class="card"><div class="card-head"><h2>처리방침 일정</h2>${owner ? '<button class="btn small" data-act="flag-policy">판 더하기·날짜 고치기</button>' : ""}</div>
-      <p class="hint">휴대폰은 앱에 든 날짜를 쓰다가 서버가 고친 날짜로 바꿔요. 시행일이 바뀌면 그 판에 기댄 기능도 함께 움직여요.${owner ? "" : " 고치기는 최고 관리자만 해요."}</p>
-      <ul class="rows">${d.policy.map((p) => `<li><div class="row"><span class="row-main"><b>처리방침 ${esc(p.version)}${p.changed ? ' <span class="pill info">고침</span>' : ""}</b>
-        <small>게시 ${esc(p.posted)} · 시행 ${esc(p.effective)}${p.heldUntil ? ` · 동의 없이 ${esc(p.heldUntil)}` : ""}${p.unfavourable ? " · 불리한 변경(30일 전 고지)" : ""}</small></span>
-        ${owner ? `<button class="btn small ghost" data-act="flag-policy" data-version="${esc(p.version)}">고치기</button>` : ""}</div></li>`).join("")}</ul></section>`;
-    return `${out.length ? out.join("") : empty("다가오는 날짜가 없어요", "날짜 조건, 강제 기한, 다시 볼 날, 처리방침 날짜가 여기에 모여요.")}<div class="grid two">${policy}${chores}</div>`;
-  }
-
-  // ---- one flag [ADMUX-22][ADMUX-23][ADMUX-24] ----
-
-  function flagHeading() {
-    const r = S.data.flag;
-    const ok = r && r.key === S.route.id;
-    return { title: ok ? r.name : "기능", sub: ok ? `${r.key} · ${(FLAG_STATE[r.state] ?? ["", ""])[1]}` : "", back: href("flags") };
-  }
-
-  function flagView() {
-    const r = S.data.flag;
-    if (!r || r.key !== S.route.id) return skeleton(3);
-    const reach = r.reach;
-    const share = r.onShare !== null && r.onShare !== undefined ? `휴대폰 ${r.onShare}%` : null;
-    const top = `<section class="card${r.alert ? " flag-alert" : ""}"><div class="card-head"><h2>지금 상태</h2><span class="pills">${flagPills(r)}</span></div>
-      <p class="lead">${esc(r.reason)}</p>
-      ${r.next ? `<p class="meta">다음 날짜: ${md(r.next)}(${r.daysLeft === 0 ? "오늘" : `${r.daysLeft}일 남음`}) 0시, 한국 시간</p>` : ""}
-      ${r.override?.force ? `<p class="note ${r.override.force === "off" ? "bad" : "info"}">${esc(r.override.by || "시스템")} · ${esc(moment(r.override.at))}에 강제로 ${r.override.force === "off" ? "껐어요" : "켰어요"}${r.override.auto ? "(사용량 자동 쉼)" : ""}: ${esc(r.override.why)}${r.override.until ? ` · ${esc(moment(r.override.until))}까지` : ""}${r.override.reviewAt ? ` · 다시 볼 날 ${esc(r.override.reviewAt)}` : ""}</p>` : ""}
-      ${r.alert ? `<p class="note bad" role="status">켜진 지 24시간이 안 됐어요(${esc(ago(r.onSince))}). 문제가 보이면 바로 강제로 꺼 주세요.</p>` : ""}
-      ${r.warnings.map((w) => `<p class="note warn">${esc(w)}</p>`).join("")}
-      ${r.sunsetDue ? `<p class="note">정리 예정 판(${esc(r.sunset)})이 나왔어요. 두 판 넘게 켜져 있었다면 코드에서 이 플래그를 걷어 내요.</p>` : ""}
-      <div class="actions start">
-        ${r.state === "forced_off" ? lockedBtn("강제 끔 풀기", flagLock(r, reach, "clear"), `data-act="flag-clear" data-key="${esc(r.key)}"`, "primary")
-          : lockedBtn("강제로 끄기", flagLock(r, reach, "off"), `data-act="flag-force" data-key="${esc(r.key)}" data-force="off"`, "danger")}
-        ${r.override?.force === "on" ? lockedBtn("강제 켬 풀기", flagLock(r, reach, "clear"), `data-act="flag-clear" data-key="${esc(r.key)}"`)
-          : r.state !== "forced_off" ? lockedBtn("강제로 켜기", flagLock(r, reach, "on"), `data-act="flag-force" data-key="${esc(r.key)}" data-force="on"`) : ""}
-        ${lockedBtn("조건 고치기", flagLock(r, reach, "conditions"), `data-act="flag-cond" data-key="${esc(r.key)}"`)}</div>
-      ${[["off", "강제로 끄기"], ["on", "강제로 켜기"], ["conditions", "조건 고치기"]].map(([s, label]) => [label, flagLock(r, reach, s)]).filter(([, l]) => l)
-        .map(([label, l]) => `<p class="help">${esc(label)}: ${esc(l)}</p>`).join("")}</section>`;
-
-    const checks = r.checks ?? {};
-    const lockCheck = flagLock(r, reach, "check");
-    const list = `<section class="card"><h2>켜지는 조건</h2>
-      ${r.override?.conditions ? `<p class="note info">앱에 든 조건 대신 관리자가 바꾼 조건이에요(${esc(r.override.by)} · ${esc(moment(r.override.at))}).</p>` : ""}
-      ${r.checklist.length ? `<ul class="checklist">${r.checklist.map((c) => {
-        const cls = c.met === true ? "met" : c.met === "phone" ? "phone" : "unmet";
-        const mark = c.met === true ? "✓" : c.met === "phone" ? "~" : "○";
-        const what = c.met === true ? "채움" : c.met === "phone" ? `휴대폰마다 달라요${share ? ` · 지금 켜진 ${share}` : ""}` : "남음";
-        const manual = c.keys.map((k) => {
-          const got = checks[k];
-          return got ? `<small>${esc(r.manualNames?.[k] ?? k)}: ${esc(got.by || "관리자")} · ${esc(moment(got.at))}에 확인${got.note ? ` · ${esc(got.note)}` : ""}</small>
-              ${lockedBtn("확인 취소", lockCheck, `data-act="flag-check" data-name="${esc(k)}" data-done=""`, "ghost")}`
-            : lockedBtn("확인했어요", lockCheck, `data-act="flag-check" data-name="${esc(k)}" data-done="1"`, "primary");
-        }).join("");
-        return `<li class="${cls}"><span class="mark" aria-hidden="true">${mark}</span><span class="c-main">${esc(c.label)}<small>${what}</small></span>${manual}</li>`;
-      }).join("")}</ul>` : `<p class="meta">조건이 없어요. ${r.default ? "기본으로 켜져 있어요." : "기본으로 꺼져 있고, 강제로 켜야 열려요."}</p>`}
-      ${lockCheck && r.manualKeys.length ? `<p class="help">확인: ${esc(lockCheck)}</p>` : ""}
-      ${flagRangeBlock(r, reach)}</section>`;
-
-    const b = r.basis ?? {};
-    const about = `<section class="card"><h2>무엇이고 왜 꺼 뒀나</h2>
-      <dl class="kv"><dt>하는 일</dt><dd>${esc(r.what)}</dd><dt>꺼 둔 이유</dt><dd>${esc(r.whyOff)}</dd>
-        <dt>근거</dt><dd>${[b.policy ? `<a href="${PRIVACY_URL}" target="_blank" rel="noopener">처리방침 ${esc(b.policy)}</a>` : "", b.law ? esc(b.law) : "", b.note ? esc(b.note) : "",
-          b.decision ? `결정 ${esc(b.decision)}` : "", b.req ? esc(b.req) : ""].filter(Boolean).join(" · ") || "–"}</dd>
-        <dt>담당·만든 판</dt><dd>${esc(r.owner)} · ${esc(r.since)}${r.sunset ? ` · 정리 예정 ${esc(r.sunset)}` : ""}</dd>
-        ${r.switchKey ? `<dt>옛 이름</dt><dd>기능 스위치 ${esc(r.switchKey)}(1.27까지의 앱은 이 이름으로 읽어요)</dd>` : ""}</dl></section>`;
-
-    const phones = `<section class="card"><h2>휴대폰</h2>
-      ${r.statsPhones ? `<p class="lead">${share ? `지난 7일 ${share}에서 켜져 있었어요` : "아직 켜진 휴대폰이 없어요"}</p><p class="meta">'사용 통계 더 보내기'를 보낸 휴대폰 ${r.statsPhones}대 기준(휴대폰 구별 없음)</p>
-        ${r.series.length ? L.barChart(r.series.map((x) => x.share ?? 0), { labels: r.series.map((x) => x.day.slice(5).replace("-", "/")), name: "날마다 켜진 휴대폰 비율(%)" }) : ""}
-        ${r.versions.length ? `<ul class="rows">${r.versions.map((v) => `<li><div class="row"><span class="row-main"><b>${esc(v.app)}</b><small>${v.code ? `번호 ${v.code}` : "번호 모름"}</small></span>
-          <span class="row-side"><b>${v.share ?? "–"}%</b><span class="meta">${v.phones}대</span></span></div></li>`).join("")}</ul>` : ""}`
-        : '<p class="meta">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. \'사용 통계 더 보내기\'(처리방침 3.2)가 시행되고 동의한 휴대폰부터 와요.</p>'}
-      <h3 class="section">켜지기 전후 ${r.compare.days}일</h3>
-      ${r.compare.measured ? `<dl class="kv"><dt>문제 신고</dt><dd>${r.compare.bugsBefore} → ${r.compare.bugsAfter}${r.compare.bugsAfter > r.compare.bugsBefore ? ' <span class="pill warn">늘었어요</span>' : ""}</dd>
-        <dt>서버 오류</dt><dd>${r.compare.errorsBefore} → ${r.compare.errorsAfter}${r.compare.errorsAfter > r.compare.errorsBefore ? ' <span class="pill warn">늘었어요</span>' : ""}</dd></dl>
-        <p class="help">${esc(moment(r.compare.pivot))}(서버가 마지막으로 켜짐·꺼짐을 본 때) 앞뒤예요. 켠 휴대폰과 안 켠 휴대폰을 나눠 세지는 않아요.</p>` : '<p class="meta">서버가 아직 이 기능의 켜짐·꺼짐을 기록하지 않았어요(매시 17분).</p>'}</section>`;
-
-    const billing = r.key === "billing" ? `<section class="card"><h2>정식 출시</h2>
-      <dl class="kv"><dt>정식 출시일</dt><dd>${r.launchedAt ? esc(moment(new Date(r.launchedAt).toISOString())) : "아직(처음 켜지는 순간 서버가 한 번 적어요)"}</dd></dl>
-      <form data-form="flag-thanks"><div class="fieldset"><label for="flag-thanks">테스트 참여자 감사 보상(개월)</label>
-        <input id="flag-thanks" name="thanks" type="number" min="0" max="12" value="${r.thanksMonths ?? 1}"${reach.owner ? "" : " disabled"}>
-        <span class="help">정식 출시 전에 설치한 휴대폰에 출시일부터 드리는 프로 개월 수예요. ${reach.owner ? "" : "최고 관리자만 바꿔요."}</span></div>
-        ${reach.owner ? '<div class="actions"><button class="btn" type="submit">저장</button></div>' : ""}</form></section>` : "";
-
-    const sim = flagSimCard(r);
-    const hist = `<section class="card"><h2>기록</h2>${r.history.length ? `<ul class="feed">${r.history.map((h) => `<li><span class="when">${esc(moment(h.at))}</span>
-      <span><b>${esc(L.actionName(h.action))}</b> <span class="meta">${esc(flagSummary(h.before))} → ${esc(flagSummary(h.after))}</span>${h.why ? `<span class="meta">${esc(h.why)}</span>` : ""}</span>
-      <span class="who">${esc(h.actor)}</span></li>`).join("")}</ul>` : '<p class="meta">아직 바꾼 적이 없어요.</p>'}</section>`;
-    return `${top}<div class="grid two">${list}${about}${phones}${billing}${sim}</div>${hist}`;
-  }
-
-  /**
-   * 1.28 통합 [FLAG-36] AL-D3 앱 판 범위: the versionCode range the flag works in (판단 2단계). Outside it a phone keeps it
-   * off whatever else holds, so a feature that breaks on one version can be kept from it without a force for everyone.
-   */
-  function flagRangeBlock(r, reach) {
-    const lo = r.override?.minApp ?? null;
-    const hi = r.override?.maxApp ?? null;
-    const lock = flagLock(r, reach, "conditions");
-    return `<h3 class="section">앱 판 범위</h3>
-      <p class="meta">${lo == null && hi == null ? "모든 앱 판에서 조건대로 켜져요." : `앱 번호 ${esc(L.appRange(lo, hi))}에서만 켜질 수 있어요. 그 밖의 판은 다른 조건과 상관없이 꺼져요.`}</p>
-      <div class="actions start">${lockedBtn("앱 판 범위 고치기", lock, `data-act="flag-range" data-key="${esc(r.key)}"`)}</div>
-      ${lock ? `<p class="help">앱 판 범위: ${esc(lock)}</p>` : ""}`;
-  }
-
-  function openFlagRange(key) {
-    const r = S.data.flag;
-    const lo = r.override?.minApp ?? "";
-    const hi = r.override?.maxApp ?? "";
-    openDialog(`<form data-form="flag-range" data-key="${esc(key)}"><h2>${esc(r.name)}의 앱 판 범위</h2>
-      <p>앱 번호(versionCode)가 이 범위 밖인 휴대폰은 이 기능을 꺼요. 강제로 끈 것 다음으로 먼저 따져요. 비우면 그쪽 끝이 없어요.</p>
-      <div class="fieldset"><label for="fr-min">이 번호부터</label><input id="fr-min" name="minApp" type="number" min="1" max="999999" inputmode="numeric" value="${esc(lo)}" placeholder="예: 39"></div>
-      <div class="fieldset"><label for="fr-max">이 번호까지</label><input id="fr-max" name="maxApp" type="number" min="1" max="999999" inputmode="numeric" value="${esc(hi)}" placeholder="비우면 끝 없음"></div>
-      <div class="fieldset"><label for="fr-why">이유(필수)</label><input id="fr-why" name="why" maxlength="300" required></div>
-      <div class="actions">${lo !== "" || hi !== "" ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>범위 없애기</button>' : ""}
-        <button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
-  }
-
-  /** One side of a history line in words. */
-  function flagSummary(o) {
-    if (!o) return "없음";
-    if (o.check) return `${S.data.flag?.manualNames?.[o.check] ?? o.check} 확인`;
-    if (o.thanksMonths !== undefined) return `${o.thanksMonths}개월`;
-    if (o.effective) return `게시 ${o.posted} · 시행 ${o.effective}${o.heldUntil ? ` · 동의 없이 ${o.heldUntil}` : ""}`;
-    const parts = [];
-    if (o.force) parts.push(`강제로 ${o.force === "on" ? "켬" : "끔"}`);
-    if (o.conditions) parts.push(`조건 ${L.conditionText(o.conditions).replace(/\n/g, " · ")}`);
-    if (o.minApp != null || o.maxApp != null) parts.push(`앱 판 ${L.appRange(o.minApp, o.maxApp)}`);
-    return parts.join(", ") || "조건대로";
-  }
-
-  /** 2.0.0 [RVA-27] 검토 ADM-21: 미리 보기 휴대폰의 앱 번호 기본값은 지금 나간 판(서버 값), 모르면 2.0.0(54). 옛 값 39(1.28)는 굳은 숫자였어요. */
-  const simApp = (r) => String(r?.versionCode ?? S.data.notices?.latestApp?.code ?? 54);
-
-  /** [ADMUX-24] 미리 보기: one pretend phone through the same evaluator, to see what a change does before it is made. */
-  function flagSimCard(r) {
-    const sim = S.flagSim ?? {};
-    const today = sim.day || L.flagDay(Date.now());
-    const opt = (v, label, cur) => `<option value="${v}"${cur === v ? " selected" : ""}>${label}</option>`;
-    return `<section class="card"><h2>미리 보기</h2><p class="hint">이런 휴대폰이면 어떻게 될지 서버와 같은 판단기로 봐요. 아무것도 바뀌지 않아요.</p>
-      <form id="flag-sim" class="sim-grid" aria-describedby="flag-sim-out">
-        <div class="fieldset"><label for="sim-day">날짜</label><input id="sim-day" type="date" data-change="flag-sim" name="day" value="${esc(today)}"></div>
-        <div class="fieldset"><label for="sim-app">앱 번호</label><input id="sim-app" type="number" min="1" data-change="flag-sim" name="app" value="${esc(sim.app ?? simApp(r))}"></div>
-        <div class="fieldset"><label for="sim-agreed">동의한 처리방침</label><input id="sim-agreed" data-change="flag-sim" name="agreed" value="${esc(sim.agreed ?? "")}" placeholder="예: 3.1"></div>
-        <div class="fieldset"><label for="sim-installed">설치한 날</label><input id="sim-installed" type="date" data-change="flag-sim" name="installed" value="${esc(sim.installed ?? "")}"></div>
-        ${Object.entries(L.CONSENT_NAMES).map(([k, label], i) => `<div class="fieldset"><label for="sim-c${i}">${esc(label)}</label><select id="sim-c${i}" data-change="flag-sim" name="consent:${k}">
-          ${opt("", "아직 안 물음", sim[`consent:${k}`] ?? "")}${opt("yes", "동의", sim[`consent:${k}`] ?? "")}${opt("no", "거절", sim[`consent:${k}`] ?? "")}</select></div>`).join("")}
-        <div class="fieldset"><label for="sim-type">근무 유형</label><select id="sim-type" data-change="flag-sim" name="workType">${L.WORK_TYPES.map((w) => opt(w, L.WORK_NAMES[w], sim.workType ?? "SHIFT")).join("")}</select></div>
-        <div class="fieldset"><label for="sim-bucket">설치 자리(0~99)</label><input id="sim-bucket" type="number" min="0" max="99" data-change="flag-sim" name="bucket" value="${esc(sim.bucket ?? "50")}"></div>
-        <label class="check-row"><input type="checkbox" data-change="flag-sim" name="preview"${sim.preview ? " checked" : ""}>관리자 휴대폰 미리 보기</label>
-      </form><div id="flag-sim-out" class="cond-out" aria-live="polite">${flagSimText(r)}</div></section>`;
-  }
-
-  function flagSimText(r) {
-    const s = S.flagSim ?? {};
-    const day = s.day || L.flagDay(Date.now());
-    const consents = {};
-    for (const k of Object.keys(L.CONSENT_NAMES)) if (s[`consent:${k}`]) consents[k] = s[`consent:${k}`] === "yes";
-    const phone = { app: Number(s.app ?? simApp(r)), agreed: s.agreed || null, installed: s.installed || null, consents, workType: s.workType ?? "SHIFT",
-      profile: [], bucket: Number(s.bucket ?? 50), admin: Boolean(s.preview), preview: Boolean(s.preview) };
-    const ev = L.evalFlag({ conditions: r.catalogConditions, default: r.default, risk: r.risk }, r.override,
-      { now: Date.parse(`${day}T12:00:00+09:00`), policy: r.policy, checks: r.checks ?? {}, phone });
-    return `<p class="lead"><span class="pill ${ev.on ? "ok" : "warn"}">${ev.on ? "켜짐" : "꺼짐"}</span> ${esc(ev.reason)}</p>
-      <ul class="checklist">${ev.conditions.map((c) => `<li class="${c.met === true ? "met" : "unmet"}"><span class="mark" aria-hidden="true">${c.met === true ? "✓" : "○"}</span><span class="c-main">${esc(c.label)}</span></li>`).join("")}</ul>`;
-  }
-
-  // ---- dialogs ----
-
-  function openFlagForce(key, force, why = "") {
-    const r = S.data.flag?.key === key ? S.data.flag : S.data.flags?.flags.find((x) => x.key === key) ?? S.overview?.flagAlerts?.find((x) => x.key === key) ?? { key, name: key };
-    const off = force === "off";
-    const tomorrow = L.flagDay(Date.now() + 864e5);
-    openDialog(`<form data-form="flag-force" data-key="${esc(key)}" data-force="${force}"><h2>${esc(r.name)}을(를) 강제로 ${off ? "끌까요" : "켤까요"}?</h2>
-      <p>${off ? "모든 휴대폰에서 다음 확인 때(하루 안, 앱을 열 때) 꺼지고, 서버도 바로 그 기능을 받지 않아요. 조건이 다 차도 켜지지 않아요."
-        : "조건과 상관없이 켜요. 법적 기능은 강제로 켜도 처리방침 조건이 남은 휴대폰에서는 꺼져 있어요."}</p>
-      <div class="fieldset"><label for="ff-why">이유(필수, 기록에 남아요)</label><textarea id="ff-why" name="why" maxlength="300" required placeholder="${off ? "예: 결제 화면 오류 신고가 몰려요" : "예: Play 승인을 받았어요"}">${esc(why)}</textarea></div>
-      ${off ? `<div class="fieldset"><label for="ff-review">다시 볼 날(선택)</label><input id="ff-review" name="reviewAt" type="date" min="${L.flagDay(Date.now())}">
-        <span class="help">그날 목록과 메뉴 숫자로 다시 보라고 알려요. 저절로 켜지지는 않아요.</span></div>` : ""}
-      <div class="fieldset"><label for="ff-until">이날 0시에 저절로 풀기(선택)</label><input id="ff-until" name="until" type="date" min="${tomorrow}">
-        <span class="help">비우면 풀 때까지 그대로예요. 1년 안으로 골라요.</span></div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn ${off ? "danger" : "primary"}" type="submit">강제로 ${off ? "끄기" : "켜기"}</button></div></form>`);
-  }
-
-  function openFlagConditions(key) {
-    const r = S.data.flag;
-    const text = L.conditionText(r.conditions);
-    openDialog(`<form data-form="flag-cond" data-key="${esc(key)}"><h2>${esc(r.name)}의 켜지는 조건</h2>
-      <p>한 줄에 조건 하나, 모두 채우면 켜져요. 'or'로 이으면 그중 하나면 돼요. 저장하면 휴대폰은 앱에 든 조건 대신 이 조건을 써요.</p>
-      <div class="fieldset"><label for="flag-cond">조건</label><textarea id="flag-cond" name="conditions" spellcheck="false" aria-describedby="flag-cond-out">${esc(text)}</textarea>
-        <span class="help">예: date >= 2026-11-12 · date >= policy 3.1 · policy 3.1 · consent ads? · profile pay.setup · app 39..45 · workType SHIFT,DAY · rollout 10% · manual play.production · admin</span></div>
-      <div class="rollout-pick"><p class="label">단계 출시 (1.38 [ADM3-17])</p><p class="hint">휴대폰 몇 %에 먼저 켤지 누르면 조건에 한 줄로 들어가요(같은 휴대폰은 늘 같은 쪽). 문제 신고가 늘면 숫자 › 판 건강과 사고 화면이 먼저 알려 줘요.</p>
-        <div class="chips" role="group" aria-label="단계 출시 비율">${[1, 10, 25, 50, 100].map((n) => `<button type="button" class="chip pick" data-act="flag-rollout" data-key="${n}">${n === 100 ? "모두(비율 빼기)" : `${n}%`}</button>`).join("")}
-        <button type="button" class="chip pick" data-act="flag-minapp" aria-expanded="false" aria-controls="flag-minapp-row">이 앱 판 이상만</button></div>
-        <div class="fieldset inline-ask" id="flag-minapp-row" hidden><label for="flag-minapp-n">이 앱 판부터 켜기 · 앱 판 번호(versionCode)</label>
-          <div class="row-input"><input id="flag-minapp-n" inputmode="numeric" maxlength="6" autocomplete="off" data-enter="flag-minapp-put">
-          <button type="button" class="btn small" data-act="flag-minapp-put">조건에 넣기</button></div>
-          <span class="help">${r.versionCode ? `지금 나간 판은 ${esc(r.versionCode)}이에요.` : "예: 54"} 넣으면 'app >= 번호' 한 줄이 조건에 들어가요.</span></div></div>
-      <div id="flag-cond-out" class="cond-out" aria-live="polite">${flagCondPreview(text)}</div>
-      <div class="fieldset"><label for="fc-why">이유(필수)</label><input id="fc-why" name="why" maxlength="300" required></div>
-      <div class="actions">${r.override?.conditions ? '<button class="btn ghost" type="submit" name="reset" value="1" formnovalidate>앱 조건으로 되돌리기</button>' : ""}
-        <button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`, "wide");
-  }
-
-  /** The editor's lines as the checklist will say them, or the first mistake. */
-  function flagCondPreview(text) {
-    const got = L.parseConditions(text);
-    if (got.error) return `<p class="note bad" role="alert">${esc(got.error)}</p>`;
-    const unknown = JSON.stringify(got.list).match(/"type":"manual","key":"([^"]+)"/g)?.map((m) => m.slice(23, -1)).filter((k) => !Object.hasOwn(L.MANUAL_NAMES, k)) ?? [];
-    if (unknown.length) return `<p class="note bad" role="alert">모르는 확인 이름이에요: ${esc(unknown[0])}. ${Object.keys(L.MANUAL_NAMES).join(", ")} 가운데에서 골라요.</p>`;
-    if (!got.list.length) return '<p class="note">조건이 없으면 기본값을 따라요.</p>';
-    return `<ol class="lines">${got.list.map((c) => `<li>${esc(L.conditionLabel(c, S.data.flag?.policy ?? []))}</li>`).join("")}</ol>`;
-  }
-
-  function openFlagPolicy(version) {
-    const p = (S.data.flags?.policy ?? []).find((x) => x.version === version) ?? null;
-    openDialog(`<form data-form="flag-policy"><h2>${p ? `처리방침 ${esc(p.version)} 날짜` : "처리방침 판 더하기"}</h2>
-      <p>게시일·시행일을 바꾸면 그 판에 기대는 기능(날짜 조건·동의)도 같이 움직여요. 휴대폰은 다음 확인 때 따라와요.</p>
-      <div class="fieldset"><label for="fp-version">판</label><input id="fp-version" name="version" required pattern="\\d{1,2}\\.\\d{1,2}" value="${esc(p?.version ?? "")}"${p ? " readonly" : ""} placeholder="예: 3.3"></div>
-      <div class="fieldset"><label for="fp-posted">게시일</label><input id="fp-posted" name="posted" type="date" required value="${esc(p?.posted ?? "")}"></div>
-      <div class="fieldset"><label for="fp-effective">시행일</label><input id="fp-effective" name="effective" type="date" required value="${esc(p?.effective ?? "")}"></div>
-      <div class="fieldset"><label for="fp-held">동의하지 않은 휴대폰에도 시행하는 날(선택)</label><input id="fp-held" name="heldUntil" type="date" value="${esc(p?.heldUntil ?? "")}"></div>
-      <label class="check-row"><input type="checkbox" name="unfavourable"${p?.unfavourable ? " checked" : ""}>이용자에게 불리한 변경(30일 전에 알려요)</label>
-      <div data-policy-confirm hidden><p class="note warn" role="status" data-policy-why></p>
-        <label class="check-row"><input type="checkbox" name="confirm">알고 이대로 저장해요</label></div>
-      <div class="fieldset"><label for="fp-why">이유(필수)</label><input id="fp-why" name="why" maxlength="300" required></div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
-  }
-
-  /**
-   * 2.0.0 [RVQ-15] 검토 SRV-17: 날짜를 오늘보다 앞이나 알림 기간 안으로 옮길 때만 까닭 한 줄과 확인 칸을 보여요(서버와 같은 규칙,
-   * admin-lib policyEarly). 그렇지 않으면 칸이 없어 창이 짧아요. [force]면 서버가 409로 물었을 때 규칙과 상관없이 보여요.
-   */
-  function policyConfirmRow(form, force = false) {
-    const row = form.querySelector("[data-policy-confirm]");
-    if (!row) return;
-    const v = (name) => form.elements[name]?.value ?? "";
-    const before = (S.data.flags?.policy ?? []).find((x) => x.version === v("version")) ?? null;
-    const early = L.policyEarly(before, { posted: v("posted"), effective: v("effective"), unfavourable: form.elements.unfavourable?.checked }, L.flagDay(Date.now()));
-    row.hidden = !early && !force;
-    const why = row.querySelector("[data-policy-why]");
-    if (why) why.textContent = early ? L.policyEarlyText(early) : "서버가 한 번 더 확인해 달래요.";
-    if (row.hidden) form.elements.confirm.checked = false;
-  }
-
-  // ---- 근무 유형 [ADMUX-26] ----
-
-  function typesView() {
-    const d = S.data.types;
-    if (!d) return skeleton(2);
-    const shown = d.types.filter((t) => t.on).length;
-    const lock = d.reach.off ? null : LOCK.off;
-    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1·2·4): 설명 네 줄은 목록 아래 접힌 한 줄로, 목록 위는 '보이는 유형 n/n' 한 줄. 숨긴 유형이 여럿이어도
-    // 채운 '보이기'가 줄지어 서지 않게 줄 단추는 모두 테두리 모양.
-    return `<p class="meta list-meta">보이는 유형 ${shown}/${d.types.length}</p>
-      <ul class="rows">${d.types.map((t) => {
-        const last = t.on && shown <= 1;
-        const button = t.on ? lockedBtn("숨기기", lock ?? (last ? "마지막 남은 유형은 숨길 수 없어요." : null), `data-act="type-hide" data-type="${t.style}"`)
-          : lockedBtn("보이기", lock, `data-act="type-show" data-type="${t.style}"`);
-        return `<li class="item"><span class="row-main"><b>${esc(t.label)}</b><small>${esc(t.key)}${t.override?.force === "off" ? ` · ${esc(t.override.by || "관리자")}: ${esc(t.override.why)}` : ""}</small></span>
-          <span class="pill ${t.on ? "ok" : "warn"}">${t.on ? "보임" : "숨김"}</span>${button}<a class="btn small ghost" href="${flagLink(t.key)}">자세히</a></li>`;
-      }).join("")}</ul>
-      ${lock ? `<p class="note">${esc(lock)}</p>` : ""}
-      <details class="tip" data-key="types-how"><summary>숨기면 어디서 빠지나요 · 하나는 늘 보여요</summary>
-        <p class="hint">숨긴 유형은 첫 질문, 근무 형태 화면, 새 달력 만들기, 직업 찾기, 둘러보기 예시에서만 빠져요. 이미 그 유형을 쓰는 달력·백업 복원·회사 파일은 그대로 열리고, 최고 관리자로 연결한 휴대폰에는 '숨김'으로 보여요. 휴대폰은 하루 안에 따라와요. 숨기기·보이기는 모두 기록에 남아요.</p></details>`;
-  }
-
   // ---- home [ADMUX-27][FLAG-28] ----
 
   /** A legal flag that turned on in the last 24 hours: at the top of 홈, with a one-tap force off (결정 D99). */
@@ -5380,248 +4665,6 @@ function adminApp(L, BUILD, M) {
         <span class="row-side">${off(a)}<a class="btn small" href="${flagLink(a.key)}">자세히</a></span></div></li>`).join("")}</ul></details></section>`;
   }
 
-  // ---- 분석 › 기능별 효과 (1.28 통합) [ADMUX-40][FLAG-30] ----
-
-  /**
-   * Each flag's share of phones (stats.more, last 7 days) and problem reports and server errors in the 7 days
-   * before and after the server saw it turn on or off: the flag page's numbers for all flags side by side.
-   */
-  function effectsView() {
-    const d = S.data.effects;
-    if (!d) return skeleton(3);
-    const rows = [...d.flags].sort((a, b) => (b.compare ? Date.parse(b.compare.pivot) : 0) - (a.compare ? Date.parse(a.compare.pivot) : 0)
-      || (b.onShare ?? -1) - (a.onShare ?? -1));
-    const up = (a, b) => (b > a ? ' <span class="pill warn">늘었어요</span>' : "");
-    const line = (r) => {
-      const c = r.compare;
-      const share = r.onShare !== null && r.onShare !== undefined ? ` · 휴대폰 ${r.onShare}%에서 켜짐` : "";
-      // AU 1.29 [NXT-07]: the same reports split by whether the flag was on for the phone (문의 시각·앱 판으로만).
-      const sp = c?.split;
-      const split = sp ? ` · 켜진 휴대폰 ${sp.on}${sp.maybe ? `(+휴대폰마다 다름 ${sp.maybe})` : ""} / 꺼진 휴대폰 ${sp.off}${sp.unknown + sp.unseen ? ` / 모름 ${sp.unknown + sp.unseen}` : ""}` : "";
-      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)}${split} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>` : "";
-      const inner = `<span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)}${share}</small>${nums}</span><span class="row-side pills">${statePill(r)}${riskPill(r)}</span>`;
-      return `<li>${d.flagsReach ? `<a class="row" href="${flagLink(r.key)}">${inner}${icon(P.chevron)}</a>` : `<div class="row">${inner}</div>`}</li>`;
-    };
-    const measured = rows.filter((r) => r.compare);
-    // 2.0.0 [RVA-43] 검토 ADMX-22·T24-10: 볼 숫자가 하나도 없는 기능(켜짐·꺼짐을 본 적 없고 켜진 비율도 모름)은 줄마다 같은 문장을
-    // 되풀이하지 않고 접힌 한 줄 '아직 볼 숫자가 없는 기능 N개'로(380에서 쪽 5,388px). 켜진 비율만 있는 기능은 줄로 남겨요.
-    const rest = rows.filter((r) => !r.compare && r.onShare !== null && r.onShare !== undefined);
-    const blank = rows.filter((r) => !r.compare && (r.onShare === null || r.onShare === undefined));
-    const blankFold = blank.length ? `<details class="card fx-blank" data-key="fx-blank"${S.opened.get("fx-blank") ? " open" : ""}><summary><span class="lf-t"><b>아직 볼 숫자가 없는 기능 ${blank.length}개</b>
-        <small>서버가 켜짐·꺼짐을 본 적 없고, 켜진 휴대폰 수도 아직 몰라요</small></span></summary>
-        <ul class="fx-names">${blank.map((r) => { const t = `<b>${esc(r.name)}</b><small class="mono">${esc(r.key)}</small>`; return `<li>${d.flagsReach ? `<a href="${flagLink(r.key)}">${t}</a>` : `<span>${t}</span>`}</li>`; }).join("")}</ul></details>` : "";
-    // 2.0.0 [RVA-43] 설명은 펴는 한 줄로(조건 4).
-    return `<details class="tip" data-key="fx-how"${S.opened.get("fx-how") ? " open" : ""}><summary>기능마다 켜진 비율과 켜고 끈 앞뒤 7일의 문제 신고·서버 오류</summary><p class="hint">켜진 휴대폰 비율은 지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰${d.statsPhones ? ` ${d.statsPhones}대` : ""} 기준이에요(휴대폰 구별 없음).
-        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 문제 신고는 보낸 시각과 앱 판으로 그 기능이 켜진 휴대폰·꺼진 휴대폰으로도 나눠요(동의·근무 유형처럼 휴대폰만 아는 조건은 '휴대폰마다 다름').${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p></details>
-      ${d.statsPhones ? "" : '<p class="note">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}
-      ${measured.length ? `<h2 class="day-head">켜짐·꺼짐을 본 기능</h2><ul class="rows">${measured.map(line).join("")}</ul>` : ""}
-      ${rest.length ? `<h2 class="day-head">켜진 비율만 있는 기능</h2><ul class="rows">${rest.map(line).join("")}</ul>` : ""}${blankFold}`;
-  }
-
-  const FLAG_ACTIONS = {
-    "flag-show": ({ key }) => {
-      S.flagShow = key;
-      syncUrl();
-      render({ keepScroll: true });
-    },
-    "flag-view": ({ key }) => {
-      S.flagView = key;
-      syncUrl();
-      render({ keepScroll: true });
-      load();
-    },
-    "flag-force": ({ key, force, why }) => openFlagForce(key, force, why ?? ""),
-    "flag-clear": ({ key }) => {
-      const r = S.data.flag;
-      confirmBox("강제를 풀까요?", `${r?.name ?? key}이(가) 다시 조건대로 켜지고 꺼져요. 지금 조건이면 ${r?.checklist?.every((c) => c.met !== false) ? "켜져요" : "꺼진 채예요"}.`, "풀기", async () => {
-        // 1.36 PC 재검토 ('강제 켬 풀기' 뒤에도 '강제로 켰어요'가 남아 다시 누르게 돼요): the answer is drawn at once and the toast
-        // says the state it is in now; the page is read again past any kept copy.
-        const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", { force: null }),
-          (r) => `강제를 풀었어요 · 지금 ${(FLAG_STATE[r?.state] ?? ["", "조건대로"])[1]}`);
-        if (d) S.data.flag = d;
-        render({ keepScroll: true });
-        etags.clear();
-        load({ quiet: true });
-      }, "primary");
-    },
-    "flag-cond": ({ key }) => openFlagConditions(key),
-    // 1.38 [ADM3-01] 패스키로 들어오기.
-    "passkey-login": async () => {
-      S.error = "";
-      try {
-        if (await V.passkeyAssert()) await enter();
-      } catch (e) {
-        S.error = e.message === "locked" ? "여러 번 틀려서 1시간 동안 잠겼어요. 다른 기기에 최고 관리자로 로그인해 있으면 관리 › 내 계정 › 로그인에서 바로 풀 수 있어요."
-          : e.message === "suspended" ? "사용이 멈춘 계정이에요. 최고 관리자에게 물어봐 주세요."
-          // 2.0.0 [RVA-14] 검토 ADM-27·U23-13: 창을 닫은 때와 이 기기에 패스키가 없는 때는 브라우저가 같은 오류라, 말없이 지나가지 않고 한 줄로 알려요.
-          : e.name === "NotAllowedError" || e.name === "AbortError" ? "패스키 창이 닫혔어요. 이 기기에 패스키가 없으면 비밀번호로 들어와 주세요."
-          : "패스키로 들어오지 못했어요. 비밀번호로 들어와 내 계정에서 패스키를 다시 만들어 주세요.";
-        render();
-      }
-    },
-    // 2.0.0 [RVA-19] 검토 ADM-15·U23-07: 허브의 모든 화면을 한눈에(자주 여는 것 먼저). 가로로 밀지 않아도 돼요.
-    "hub-all": () => {
-      const here = L.hubOf(S.route.name);
-      const hub = hubs().find((h) => h.key === here);
-      if (!hub) return;
-      const v = visits();
-      const often = [...hub.tabs].filter((t) => v[t] > 1).sort((a, b) => v[b] - v[a]).slice(0, 3);
-      const cell = (t) => `<a class="chip pick" href="${href(t)}" data-act="hub-go" data-tab="${t}"${t === S.route.name ? ' aria-current="page"' : ""}>
-        ${esc(tabName(t))}<i class="badge" data-badge="tab:${t}"></i></a>`;
-      openDialog(`<div class="box"><h2>${esc(hub.label)}의 모든 화면</h2>
-        ${often.length ? `<p class="label">자주 여는 화면</p><div class="chips">${often.map(cell).join("")}</div><p class="label">모두</p>` : ""}
-        <div class="chips">${hub.tabs.map(cell).join("")}</div>
-        <div class="actions"><button class="btn" type="button" data-act="close">닫기</button></div></div>`);
-      updateBadges();
-    },
-    "hub-go": ({ tab }) => goFromDialog(href(tab)),
-    // 1.38 [ADM3-17] 단계 출시: 'rollout N%' 한 줄을 넣거나 바꾸고(100이면 빼요), '이 앱 판 이상만'은 'app >= 번호' 한 줄.
-    "flag-rollout": ({ key }) => {
-      const box = document.getElementById("flag-cond");
-      if (!box) return;
-      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:rollout|비율)\s+\d+/i.test(l));
-      if (Number(key) < 100) lines.push(`rollout ${Number(key)}%`);
-      box.value = lines.join("\n");
-      flagInput(box);
-    },
-    // 2.0.0 [RVA-02] 검토 ADM-13: 기본 입력 창 대신 조건 창 안의 한 줄 칸. 새 창을 띄우면 적던 조건·이유가 사라지니(조건 10) 같은 창에서 펴요.
-    "flag-minapp": (_, el) => {
-      const row = document.getElementById("flag-minapp-row");
-      if (!row) return;
-      row.hidden = !row.hidden;
-      el?.setAttribute("aria-expanded", String(!row.hidden));
-      if (!row.hidden) document.getElementById("flag-minapp-n")?.focus();
-    },
-    "flag-minapp-put": () => {
-      const box = document.getElementById("flag-cond");
-      const input = document.getElementById("flag-minapp-n");
-      if (!box || !input) return;
-      const n = input.value.trim();
-      if (!/^\d{1,6}$/.test(n)) return fieldError(input, "숫자만 적어 주세요(예: 54)");
-      const lines = box.value.split("\n").filter((l) => l.trim() && !/^\s*(?:app|앱)\s*>=\s*\d+/i.test(l));
-      lines.push(`app >= ${n}`);
-      box.value = lines.join("\n");
-      flagInput(box);
-      input.value = "";
-      document.getElementById("flag-minapp-row").hidden = true;
-      document.querySelector('[data-act="flag-minapp"]')?.setAttribute("aria-expanded", "false");
-      box.focus();
-    },
-    "flag-range": ({ key }) => openFlagRange(key),
-    "flag-check": ({ name, done }) => {
-      const label = S.data.flag?.manualNames?.[name] ?? name;
-      if (done) {
-        openDialog(`<form data-form="flag-check" data-name="${esc(name)}"><h2>${esc(label)}, 확인했나요?</h2>
-          <p>확인하면 이 조건을 기다리는 기능이 다른 조건을 채운 대로 바로 켜질 수 있어요. 누가 언제 확인했는지 남아요.</p>
-          <div class="fieldset"><label for="fk-note">메모(선택)</label><input id="fk-note" name="note" maxlength="300" placeholder="예: Play Console 출시 개요에서 봄"></div>
-          <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">확인했어요</button></div></form>`);
-        return;
-      }
-      confirmBox(`${label} 확인을 취소할까요?`, "이 조건을 기다리는 기능이 다시 대기로 돌아가요.", "확인 취소", async () => {
-        await act(() => api(`/checks/${encodeURIComponent(name)}`, "POST", { done: false }), "확인을 취소했어요");
-        load();
-      });
-    },
-    "flag-policy": ({ version }) => openFlagPolicy(version ?? null),
-    "type-show": async ({ type }) => {
-      const d = await act(() => api("/types", "POST", { type, show: true }), "다시 보여요. 휴대폰은 하루 안에 따라와요");
-      if (d) S.data.types = d;
-      render({ keepScroll: true });
-    },
-    "type-hide": ({ type }) => openDialog(`<form data-form="type-hide" data-type="${esc(type)}"><h2>${esc(L.WORK_NAMES[type] ?? type)} 유형을 숨길까요?</h2>
-      <p>새로 고르는 곳에서만 빠지고, 이미 쓰는 달력은 그대로예요.</p>
-      <div class="fieldset"><label for="th-why">이유(필수)</label><input id="th-why" name="why" maxlength="300" required placeholder="예: 화면을 다듬는 중이에요"></div>
-      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn danger" type="submit">숨기기</button></div></form>`),
-  };
-
-  const FLAG_FORMS = {
-    "flag-force": async (form) => {
-      const data = new FormData(form);
-      const { key, force } = form.dataset;
-      const body = { force, why: String(data.get("why") ?? "").trim(), until: data.get("until") || null, ...(force === "off" ? { reviewAt: data.get("reviewAt") || null } : {}) };
-      const d = await act(() => api(`/flags/${encodeURIComponent(key)}/force`, "POST", body), force === "off" ? "강제로 껐어요. 휴대폰은 하루 안에 따라와요" : "강제로 켰어요");
-      if (!d) return;
-      dialog.close();
-      if (S.route.name === "flags") S.data.flag = d;
-      render({ keepScroll: true });
-      load({ quiet: true });
-    },
-    "flag-cond": async (form, submitter) => {
-      const reset = submitter?.name === "reset";
-      const why = String(new FormData(form).get("why") ?? "").trim() || (reset ? "앱에 든 조건으로 되돌림" : "");
-      let conditions = null;
-      if (!reset) {
-        const got = L.parseConditions(form.elements.conditions.value);
-        if (got.error) return toast(got.error);
-        conditions = got.list;
-      }
-      const d = await act(() => api(`/flags/${encodeURIComponent(form.dataset.key)}/conditions`, "POST", { conditions, why }), reset ? "앱 조건으로 되돌렸어요" : "조건을 바꿨어요");
-      if (!d) return;
-      dialog.close();
-      S.data.flag = d;
-      render({ keepScroll: true });
-    },
-    "flag-range": async (form, submitter) => {
-      const reset = submitter?.name === "reset";
-      const data = new FormData(form);
-      const num = (k) => (reset || !String(data.get(k) ?? "").trim() ? null : Number(data.get(k)));
-      const why = String(data.get("why") ?? "").trim() || (reset ? "앱 판 범위를 없앰" : "");
-      const d = await act(() => api(`/flags/${encodeURIComponent(form.dataset.key)}/range`, "POST", { minApp: num("minApp"), maxApp: num("maxApp"), why }),
-        reset ? "앱 판 범위를 없앴어요" : "앱 판 범위를 바꿨어요. 휴대폰은 하루 안에 따라와요");
-      if (!d) return;
-      dialog.close();
-      S.data.flag = d;
-      render({ keepScroll: true });
-    },
-    "flag-check": async (form) => {
-      const r = await act(() => api(`/checks/${encodeURIComponent(form.dataset.name)}`, "POST", { done: true, note: String(new FormData(form).get("note") ?? "").trim() }), "확인했어요");
-      if (!r) return;
-      dialog.close();
-      load();
-    },
-    "flag-thanks": async (form) => {
-      const d = await act(() => api("/flags/billing/thanks", "POST", { thanksMonths: Number(new FormData(form).get("thanks")) }), "저장했어요");
-      if (d) S.data.flag = d;
-      render({ keepScroll: true });
-    },
-    "flag-policy": async (form) => {
-      const data = new FormData(form);
-      const body = { version: data.get("version"), posted: data.get("posted"), effective: data.get("effective"), heldUntil: data.get("heldUntil") || null,
-        unfavourable: data.get("unfavourable") === "on", why: String(data.get("why") ?? "").trim(), confirm: data.get("confirm") === "on" };
-      let code = null;
-      const d = await act(() => api("/policy", "POST", body).catch((e) => { code = e.message; throw e; }), "처리방침 일정을 고쳤어요");
-      if (!d) return code === "policy_confirm" ? policyConfirmRow(form, true) : undefined;
-      dialog.close();
-      S.data.flags = d;
-      render({ keepScroll: true });
-    },
-    "type-hide": async (form) => {
-      const d = await act(() => api("/types", "POST", { type: form.dataset.type, show: false, why: String(new FormData(form).get("why") ?? "").trim() }), "숨겼어요. 휴대폰은 하루 안에 따라와요");
-      if (!d) return;
-      dialog.close();
-      S.data.types = d;
-      render({ keepScroll: true });
-    },
-  };
-
-  const FLAG_CHANGES = {
-    "flag-sim": () => {
-      const form = document.getElementById("flag-sim");
-      const out = document.getElementById("flag-sim-out");
-      if (!form || !out || !S.data.flag) return;
-      const data = new FormData(form);
-      S.flagSim = Object.fromEntries([...data.entries()].map(([k, v]) => [k, String(v)]));
-      S.flagSim.preview = data.get("preview") === "on";
-      out.innerHTML = flagSimText(S.data.flag);
-    },
-  };
-
-  /** Typing in the condition editor: what it will say, or the first mistake, as the admin types. */
-  function flagInput(t) {
-    if (t.id !== "flag-cond") return;
-    const out = document.getElementById("flag-cond-out");
-    if (out) out.innerHTML = flagCondPreview(t.value);
-  }
   // ---- AM 1.28 기능 관리 끝 ----
 
   const ACTIONS = {
@@ -5694,7 +4737,6 @@ function adminApp(L, BUILD, M) {
         r.skipped && `빼 둠 ${r.skipped}건`, r.held && `‘사람이 보내야 해요’로 멈춘 답 ${r.held}건(문의에서 읽고 보내요)`].filter(Boolean).join(" · ") || "바뀐 것이 없어요");
       if (r) { S.sortResult = null; S.data.sort = null; S.data.handoff = null; load(); }
     },
-    ...FLAG_ACTIONS,
     refresh: () => {
       loadServers(true);
       return load();
@@ -6747,7 +5789,7 @@ function adminApp(L, BUILD, M) {
       const d = S.data.recipes;
       if (d?.total === undefined) { S.recipeLimit = (S.recipeLimit ?? 40) + 40; return render({ keepScroll: true }); }
       if (d.next === null || d.next === undefined) return;
-      const n = await act(() => api(recipeListPath(d.tab, d.next)));
+      const n = await act(() => api(V.recipeListPath(d.tab, d.next)));
       if (!n || S.data.recipes !== d) return;
       const have = new Set(d.items.map((r) => r.code));
       S.data.recipes = { ...d, ...n, tab: d.tab, items: [...d.items, ...n.items.filter((r) => !have.has(r.code))] };
@@ -6970,7 +6012,6 @@ function adminApp(L, BUILD, M) {
   const fillJoinForm = (v) => Object.entries(v).forEach(([id, value]) => { const el = document.getElementById(id); if (el) el.value = value; });
 
   const FORMS = {
-    ...FLAG_FORMS,
     login: async (form) => {
       S.error = "";
       const data = new FormData(form);
@@ -7169,7 +6210,7 @@ function adminApp(L, BUILD, M) {
       const f = new FormData(form);
       const file = form.querySelector('input[name="file"]')?.files?.[0];
       const below = Number(f.get("below"));
-      const groups = retireGroups(file ? await file.text() : String(f.get("plan") ?? ""), Number.isInteger(below) && below > 0 ? below : null);
+      const groups = V.retireGroups(file ? await file.text() : String(f.get("plan") ?? ""), Number.isInteger(below) && below > 0 ? below : null);
       const asked = groups.reduce((n, g) => n + g.titles.length + g.codes.length, 0);
       if (!asked) { toast("정리 계획이나 제목을 붙여 넣어 주세요"); return; }
       const note = String(f.get("note") ?? "").trim() || "판 정리";
@@ -7674,7 +6715,6 @@ function adminApp(L, BUILD, M) {
 
   /** Changes that are a setting, not a form: [data-change] names which. */
   const CHANGES = {
-    ...FLAG_CHANGES,
     hidden: async (t) => {
       if (S.route.name !== "companies") return;
       const c = await act(() => api(`/companies/${S.route.id}`, "POST", { hidden: t.checked }),
@@ -7836,19 +6876,112 @@ function adminApp(L, BUILD, M) {
     S, L, esc, times, icon, P, day, moment, ago, can, href, seg, empty, skeleton, lines, api, act, load, render, toast, fail, openDialog, dialog,
     confirmBox, danger, askText, showCopy, fieldError, mergeWords, syncUrl, refilter, go, reloginThen, flagAlertCard, waitingItems, snoozed, inboxLink, dueText, INBOX_NAMES, KIND_NAMES, toggles, wide, handoffCard,
     listHead, csvButton, serverVersion, screenError, stepsLine,
+    app, busy, copy, filePick, health, moreMenu, schedule, visible,
+    enter, etags, flagLink, goFromDialog, hubs, md, tabName, timeline, updateBadges, view, visits,
   };
-  const groups = [M.today(A), M.plaza(A), M.insight(A), M.work(A), M.flow(A), M.ledger(A), M.ops(A), M.loop(A), M.glance(A)];
+  /**
+   * 2.0.0 [RVA-57] 검토 ADM-11·I23c-02 '진짜 열면 바로': 화면 묶음 아홉은 따로 받는 파일이에요. 서버가 준 이름표(M: 묶음마다 파일 주소와
+   * 돌려줄 이름들)로 이름마다 자리를 만들어 두고, 그 화면을 열 때(load가 먼저 기다려요) 묶음 파일을 받아 자리를 채워요. 처음 그린 뒤 한가할 때
+   * 나머지도 받아 두어 다음 화면은 기다리지 않아요. 예전처럼 함수가 오면(서버가 이름표를 못 만든 때) 바로 써요.
+   */
+  const groupsOn = {};
+  const groupsComing = {};
+  const groupFailed = new Set();
+  function takeGroup(name, make) {
+    groupsOn[name] ??= make(A);
+    return groupsOn[name];
+  }
+  function needGroup(name) {
+    if (groupsOn[name]) return Promise.resolve(groupsOn[name]);
+    const f = M[name];
+    if (!f) return Promise.resolve(null);
+    if (typeof f === "function") return Promise.resolve(takeGroup(name, f));
+    groupsComing[name] ??= new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = f.src;
+      s.async = true;
+      s.onload = () => {
+        const make = self.BamnatViews?.[name];
+        if (make) resolve(takeGroup(name, make));
+        else reject(new Error(`views ${name}`));
+      };
+      s.onerror = () => {
+        delete groupsComing[name];
+        s.remove();
+        // 실패 화면은 '서버에 닿지 않아요'(연결이 끊겼으면 '인터넷에 연결되지 않았어요')와 '다시 불러오기'.
+        reject(Object.assign(new Error("unreachable"), { group: name }));
+      };
+      document.head.appendChild(s);
+    });
+    return groupsComing[name];
+  }
+  /** 그 화면에 필요한 묶음: 화면의 묶음과, 틀(사고 띠)·문의 옆 패널·개발 이야기·패스키를 주는 ops. */
+  // 마을 장터는 기본 도구 후보(work)도, 스튜디오 재료는 장터 묶음의 재료 화면도 써요.
+  const ROUTE_GROUP = { home: "today", review: "plaza", versions: "plaza", companies: "plaza", metrics: "insight", gates: "insight", growth: "work",
+    recipes: ["market", "work"], materials: "market", flags: "flags", types: "flags", effects: "flags", flow: "flow", keys: "flow", desk: "ledger" };
+  for (const [name, f] of Object.entries(M)) if (typeof f !== "function") for (const routes of Object.values(f.maps ?? {})) for (const r of routes) ROUTE_GROUP[r] ??= name;
+  const groupsFor = (route) => [...new Set([ROUTE_GROUP[route] ?? [], "ops"].flat().filter((g) => M[g]))];
+  /** 묶음이 와서 자리가 찼어요: 지금 화면을 다시(로그인 창은 아직 아무것도 적지 않았을 때만). */
+  function groupArrived() {
+    if (S.phase === "app") renderSoon();
+    else if (S.phase === "login" && ![...document.querySelectorAll(".gate input")].some((i) => i.value)) render();
+  }
+  function lateGroup(name) {
+    needGroup(name).then(groupArrived, () => {
+      if (groupFailed.has(name)) return;
+      groupFailed.add(name);
+      toast("화면 일부를 받지 못했어요. 연결을 확인하고 새로 고쳐 주세요");
+    });
+  }
+  /** 처음 그린 뒤 한가할 때 나머지 묶음을 받아 둬요(서비스 워커도 남겨 둬요). */
+  function warmGroups() {
+    const idle = typeof requestIdleCallback === "function" ? requestIdleCallback : (f) => setTimeout(f, 1200);
+    idle(() => { for (const name of Object.keys(M)) needGroup(name).catch(() => {}); });
+  }
+
   // [RVD-04] A name two groups give would hide the first one's (ADMX-02: V.changes became loop's switch table); say so at once.
   const V = {};
-  for (const g of groups) for (const k of Object.keys(g)) {
-    if (k in V && !["actions", "forms", "changeHandlers"].includes(k)) console.error(`admin views: ${k} is given twice`);
-    V[k] = g[k];
+  // 떼어 낸 묶음(장터)이 다른 묶음의 이름(기본 도구 후보)을 써요: 묶음을 만들기 전에.
+  A.V = V;
+  const given = new Set();
+  for (const [name, f] of Object.entries(M)) {
+    const names = typeof f === "function" ? null : f;
+    if (!names) {
+      const g = takeGroup(name, f);
+      for (const k of Object.keys(g)) {
+        if (["actions", "forms", "changeHandlers"].includes(k)) continue;
+        if (given.has(k)) console.error(`admin views: ${k} is given twice`);
+        given.add(k);
+        V[k] = g[k];
+      }
+      Object.assign(ACTIONS, g.actions ?? {});
+      Object.assign(FORMS, g.forms ?? {});
+      // [LOOP-32] 화면 묶음이 주는 즉시 저장 칸(data-change).
+      Object.assign(CHANGES, g.changeHandlers ?? {});
+      continue;
+    }
+    for (const k of [...names.fns, ...Object.keys(names.maps)]) {
+      if (given.has(k)) console.error(`admin views: ${k} is given twice`);
+      given.add(k);
+    }
+    // 이름: 묶음이 왔으면 그 함수, 아직이면 받으러 보내고 빈 글(곧 다시 그려요).
+    for (const k of names.fns) V[k] = (...a) => (groupsOn[name] ? groupsOn[name][k](...a) : (lateGroup(name), ""));
+    // 표(opsViews·opsLoads·opsHas 등): 묶음이 왔으면 그 칸, 아직이면 화면은 빈 글을 그리는 함수, 나머지는 없음.
+    for (const [k, routes] of Object.entries(names.maps)) {
+      V[k] = new Proxy({}, {
+        get: (_, r) => (groupsOn[name] ? groupsOn[name][k]?.[r] : routes.includes(r) && /Views$/.test(k) ? () => (lateGroup(name), skeleton(2)) : undefined),
+        has: (_, r) => routes.includes(r),
+      });
+    }
+    // 단추·양식·즉시 저장: 그 묶음이 그린 화면에서만 눌리니 보통은 이미 와 있어요. 아니면 받고 나서.
+    const later = (box, key, list) => {
+      for (const k of list) box[k] = (...a) => (groupsOn[name] ? groupsOn[name][key][k](...a) : needGroup(name).then((g) => g[key][k](...a)));
+    };
+    later(ACTIONS, "actions", names.actions);
+    later(FORMS, "forms", names.forms);
+    later(CHANGES, "changeHandlers", names.changes);
   }
-  Object.assign(V, { actions: Object.assign({}, ...groups.map((g) => g.actions ?? {})), forms: Object.assign({}, ...groups.map((g) => g.forms ?? {})) });
-  Object.assign(ACTIONS, V.actions ?? {});
-  Object.assign(FORMS, V.forms ?? {});
-  // [LOOP-32] 화면 묶음이 주는 즉시 저장 칸(data-change).
-  for (const g of groups) Object.assign(CHANGES, g.changeHandlers ?? {});
+  V.actions = ACTIONS;
   // 1.38 [DESK-02] 장부의 판 고르기(select)는 바꿀 때만.
   CHANGES["ledger-v"] = (t) => V.actions["ledger-v"]({}, t);
 
@@ -7937,7 +7070,7 @@ function adminApp(L, BUILD, M) {
     }
     if (t.dataset?.keep && t.closest("dialog")) writeDraft(t.dataset.keep, t.value);
     const pf = t.closest?.('form[data-form="flag-policy"]');
-    if (pf) policyConfirmRow(pf);
+    if (pf) V.policyConfirmRow(pf);
     if (KEEP.includes(t.id) && t.closest("#main")) {
       writeDraft(t.id, t.value);
       if (t.id === "reply") {
@@ -7974,7 +7107,7 @@ function adminApp(L, BUILD, M) {
       return paintPalette();
     }
     if (t.id === "dev-find") return showCandidates(t.value);
-    if (t.id === "flag-cond") return flagInput(t);
+    if (t.id === "flag-cond") return V.flagInput(t);
     if (t.id !== "search") return;
     const plan = SEARCH[S.route.name]?.();
     if (!plan) return;
@@ -8405,6 +7538,7 @@ function adminApp(L, BUILD, M) {
     render();
     if (kept) await warm();
     load({ quiet: true });
+    warmGroups();
     schedule();
     loadBasics().then(() => { if (S.phase === "app") render({ keepScroll: true }); }).catch(() => {});
     if ("serviceWorker" in navigator && "PushManager" in window) currentPush();
@@ -8442,6 +7576,8 @@ function adminApp(L, BUILD, M) {
     }
     // What the server still lacks only shows on the login screen, so it is not waited for before signing in.
     const checked = health().then((h) => { S.health = h; return h; });
+    // [RVA-57] 로그인 창의 패스키 단추·사고 띠는 ops 묶음이 줘요: 세션을 묻는 동안 같이 받아요.
+    const opsGroup = needGroup("ops").catch(() => null);
     try {
       // 1.39 [ADM3-52] 전에 들어온 적이 있으면 /session·/badges를 기다리지 않고 남은 답으로 바로 열어요. 로그인이 끝났으면
       // 첫 새 답이 401이라 그 화면 위에 다시 로그인 창이 떠요(쓰던 화면은 그대로).
@@ -8469,6 +7605,7 @@ function adminApp(L, BUILD, M) {
       await enter();
     } catch {
       await checked;
+      await opsGroup;
       S.phase = "login";
       render();
     }
@@ -8483,7 +7620,7 @@ function adminApp(L, BUILD, M) {
  * still shows something (marked x-admin-cache), and signing out deletes it. [ADMIN-19] Pushes become
  * notifications that open the screen they are about.
  */
-function adminWorker(version) {
+function adminWorker(version, files = []) {
   const CACHE = `bamnat-admin-${version}`;
   const API = "bamnat-admin-api";
   // 2.0.0 [RVA-01] 검토 ADM-02·T23-04·I23a-04: 휴대폰에 남기는 답은 화면 틀·메뉴 숫자·목록뿐이에요(허용 목록). 문의 하나의 글, 사람 패널,
@@ -8501,7 +7638,8 @@ function adminWorker(version) {
     if (parts[0] === "ledger" && (parts.length > 1 || url.searchParams.get("view") === "claude")) return false;
     return true;
   };
-  const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest", "/admin/install"];
+  // 2.0.0 [RVA-57] 해시 이름의 첫 묶음·화면 묶음도 설치할 때 받아 둬요(연결이 없어도 모든 화면이 열려요).
+  const SHELL = ["/admin/", "/admin/app.js", "/admin/app.css", "/admin/icon.svg", "/admin/manifest.webmanifest", "/admin/install", ...files];
   self.addEventListener("install", (event) => {
     event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: "reload" })))).then(() => self.skipWaiting()));
   });

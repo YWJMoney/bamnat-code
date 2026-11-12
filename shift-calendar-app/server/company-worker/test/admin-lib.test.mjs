@@ -404,8 +404,15 @@ test("[ADMX-01][ADMX-12] the stylesheet no longer hides the numbers on a phone, 
   const css = await adminFile("/admin/app.css").text();
   assert.ok(!css.includes("@media (max-width:599.98px){.tiles{display:none}}"));
   assert.match(css, /\.tiles\.core\{--cols:2;grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(9rem,/, "휴대폰은 숫자 두 칸, 글자가 커지면 한 칸으로");
+  // 2.0.0 [RVA-57] 화면 묶음은 각자 파일(v/<묶음>.<해시>.js)이고, 첫 묶음에는 이름표만 있어요.
+  const { adminPrebuilt } = await import("../src/admin-app.js");
+  const files = adminPrebuilt().files;
+  for (const [g, f] of [["today", "todayViews"], ["plaza", "plazaViews"], ["insight", "insightViews"], ["market", "marketViews"], ["flags", "flagsViews"]]) {
+    const path = Object.keys(files).find((p) => p.startsWith(`/admin/v/${g}.`));
+    assert.ok(path && files[path].body.includes(`function ${f}(A)`), f);
+  }
   const app = await adminFile("/admin/app.js").text();
-  for (const f of ["todayViews", "plazaViews", "insightViews"]) assert.ok(app.includes(`function ${f}(A)`), f);
+  assert.ok(!app.includes("function todayViews(A)"), "the first bundle has only the names");
 });
 
 test("[CYC-03] a 제보 with an order becomes one line of the public cycle table", () => {
