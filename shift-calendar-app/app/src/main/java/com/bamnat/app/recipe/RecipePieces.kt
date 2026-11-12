@@ -734,12 +734,17 @@ class RecipePieces(private val c: AppContainer) {
                 val patterns = schedule.snapshot.first().patterns
                 val profile = c.payStore.profile.value
                 c.companyShare.apply(values["setup"] as String)
-                val now = schedule.snapshot.first().shiftTypes
+                val after = schedule.snapshot.first()
+                val now = after.shiftTypes
+                // 2.0.0 [RVM-44] 검토 RCP-03: what it left too, so 되돌리기 takes back only what it changed (not what the user changed since).
                 JSONObject()
                     .put("types", JSONArray(types.map { t -> typeTimes(t) }))
                     .put("added", JSONArray(now.filter { n -> types.none { it.id == n.id } }.map { it.id }))
                     .put("patterns", JSONArray(patterns.map { p -> patternJson(p) }))
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
+                    .put("typesAfter", JSONArray(now.map { t -> typeTimes(t) }))
+                    .put("patternsAfter", JSONArray(after.patterns.map { p -> patternJson(p) }))
+                    .put("profileAfter", c.payStore.profile.value?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
             PieceKind.LEDGER -> {
@@ -1000,15 +1005,48 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.COMPANY -> {
                 if (cal != PersonalCalendar.MAIN) return
                 val schedule = c.scheduleRepository
-                before.optJSONArray("patterns")?.let { a -> schedule.restorePatterns(a.objects().mapNotNull(::patternFrom)) }
+                // 2.0.0 [RVM-44] 검토 RCP-03·T09b-05 (조건 10): only what this put on goes back. A work order, a shift's hours or a pay
+                // setting the user changed since stays, and a shift it added stays while a day, a 대근 or a work order uses it (a 교대
+                // worker's own 교육·대근 days are not wiped). A record from before 2.0.0 has no "…After" and is taken back as it was.
+                before.optJSONArray("patterns")?.let { a ->
+                    val after = before.optJSONArray("patternsAfter")
+                    val now = JSONArray(schedule.snapshot.first().patterns.map { p -> patternJson(p) })
+                    if (after == null || UndoMerge.same(now, after)) schedule.restorePatterns(a.objects().mapNotNull(::patternFrom))
+                }
                 val mine = schedule.snapshot.first().shiftTypes.associateBy { it.id }
+                val typesAfter = before.optJSONArray("typesAfter")?.objects()?.associateBy { it.getLong("id") }
                 before.optJSONArray("types")?.objects()?.forEach { o ->
                     val t = mine[o.getLong("id")] ?: return@forEach
-                    schedule.saveShiftType(t.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse), end = o.optStringOrNull("end")?.let(LocalTime::parse),
-                        breakMinutes = o.optInt("break"), breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse), isOff = o.optBoolean("off")))
+                    val a = typesAfter?.get(t.id)
+                    val cur = typeTimes(t)
+                    fun untouched(key: String) = a == null || UndoMerge.same(cur.opt(key), a.opt(key))
+                    var n = t
+                    if (untouched("start")) n = n.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse))
+                    if (untouched("end")) n = n.copy(end = o.optStringOrNull("end")?.let(LocalTime::parse))
+                    if (untouched("break")) n = n.copy(breakMinutes = o.optInt("break"))
+                    if (untouched("breakStart")) n = n.copy(breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse))
+                    if (untouched("off")) n = n.copy(isOff = o.optBoolean("off"))
+                    if (n != t) schedule.saveShiftType(n)
                 }
-                before.optJSONArray("added")?.let { a -> (0 until a.length()).forEach { runCatching { schedule.deleteShiftTypeUndoable(a.getLong(it)) } } }
-                before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
+                before.optJSONArray("added")?.let { a ->
+                    (0 until a.length()).forEach { i ->
+                        val id = a.getLong(i)
+                        runCatching {
+                            val t = mine[id] ?: return@runCatching
+                            val changed = typesAfter?.get(id)?.let { !UndoMerge.same(typeTimes(t), it) } ?: false
+                            if (typesAfter != null && (changed || schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 })) return@runCatching
+                            schedule.deleteShiftTypeUndoable(id)
+                        }
+                    }
+                }
+                before.optJSONObject("profile")?.let { p ->
+                    runCatching {
+                        val a = before.optJSONObject("profileAfter")
+                        val now = c.payStore.profile.value
+                        if (a == null && !before.has("typesAfter")) c.payStore.save(PayCodec.decode(p))
+                        else if (a != null && now != null) PayCodec.decode(UndoMerge.back(PayCodec.encode(now), p, a)).takeIf { it != now }?.let { c.payStore.save(it) }
+                    }
+                }
             }
             PieceKind.BUNDLE -> {}
             PieceKind.LEDGER -> {

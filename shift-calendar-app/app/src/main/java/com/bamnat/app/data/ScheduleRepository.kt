@@ -293,13 +293,14 @@ class ScheduleRepository(
     }
 
     /** [SHFT-09] Where shift type [id] is used: days it was put on by hand, and whether a work order has it. */
-    data class ShiftTypeUse(val days: Int, val inPattern: Boolean)
+    data class ShiftTypeUse(val days: Int, val inPattern: Boolean, /** 2.0.0 [RVM-44] 대근·추가 근무 that covered it. */ val covers: Int = 0)
 
     /** [SHFT-09] How much deleting shift type [id] touches, said before it goes. */
     suspend fun shiftTypeUse(id: Long): ShiftTypeUse = db.withTransaction {
         ShiftTypeUse(
             days = dayEntryDao.withOverride(id).size,
             inPattern = patternDao.getAll().any { p -> decodeSteps(p.steps).any { it == id } },
+            covers = extraDao.covering(id).size,
         )
     }
 
