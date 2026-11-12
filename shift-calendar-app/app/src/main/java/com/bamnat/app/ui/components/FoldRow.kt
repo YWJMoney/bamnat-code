@@ -134,10 +134,12 @@ private fun ChipLine(spacing: Dp, ends: ChipEnds, content: @Composable () -> Uni
                 measurables: List<androidx.compose.ui.layout.IntrinsicMeasurable>, height: Int,
             ): Int {
                 val gap = spacing.roundToPx()
+                // A thin line between chips (a separator) is no place for the part to end, so only chips are noted.
+                val thin = 12.dp.roundToPx()
                 var x = 0
-                val at = IntArray(measurables.size)
-                measurables.forEachIndexed { i, m -> if (i > 0) x += gap; x += m.maxIntrinsicWidth(height); at[i] = x }
-                ends.at = at
+                val at = ArrayList<Int>(measurables.size)
+                measurables.forEachIndexed { i, m -> if (i > 0) x += gap; val w = m.maxIntrinsicWidth(height); x += w; if (w >= thin) at += x }
+                ends.at = at.toIntArray()
                 return x
             }
 
