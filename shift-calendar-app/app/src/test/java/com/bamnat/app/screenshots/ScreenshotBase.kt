@@ -628,6 +628,18 @@ abstract class ScreenshotBase {
         }
 
         /** Types [text] into the field labelled [label], as the keyboard would. */
+        /** 2.0.0 [RVIB-20] HQ-86 The memo tab's search box: opened from the 🔍 on the head's row, then typed into. */
+        fun memoSearch(text: String) {
+            if (!shows(MEMO_SEARCH_HINT, exact = true)) tapText("메모 검색", prefix = true, scrolls = 0)
+            typeInto(MEMO_SEARCH_HINT, text)
+        }
+
+        /** [RVIB-20] The memo tab's filter chips, behind the search box's filter icon. */
+        fun memoFilters() {
+            if (!shows("필터 펼치기", exact = true)) tapText("메모 검색", prefix = true, scrolls = 0)
+            tapText("필터 펼치기", exact = true, scrolls = 0)
+        }
+
         fun typeInto(label: String, text: String) {
             reach(label, exact = true, prefix = false, scrolls = 4, across = 0.5f)
             scenario.onActivity { activity ->
@@ -1178,6 +1190,8 @@ abstract class ScreenshotBase {
     }
 
     internal companion object {
+        /** The memo tab's search box hint ([RVIB-20] behind the 🔍 until opened). */
+        const val MEMO_SEARCH_HINT = "제목, 내용, #태그 검색"
         const val RULES_PERIOD_SCROLL = 420
 
         /** [SETUP-15] The first card on "무슨 일 하세요?". */
