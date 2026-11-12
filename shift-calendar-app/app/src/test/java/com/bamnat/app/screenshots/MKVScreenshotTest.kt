@@ -235,7 +235,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue(appears("1/2잔", exact = true))
         tapText("✨ 💧 물 한 잔", exact = true)
         settle()
-        assertTrue(appears("2/2잔", exact = true))
+        assertTrue("[RVM-05] 목표에 닿으면 '2잔 채움'", appears("2잔 채움", exact = true))
         assertTrue("목표에 닿으면 규칙이 따라 돌아요", appears("그러면 ‘다 마셨어요’ 규칙이 돌아요", exact = false))
         tapText("처음으로", exact = true)
         settle()
