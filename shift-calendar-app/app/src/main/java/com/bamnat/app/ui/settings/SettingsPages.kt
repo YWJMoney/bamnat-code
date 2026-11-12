@@ -1381,7 +1381,7 @@ private fun RateRegionRow() {
                 androidx.compose.foundation.lazy.LazyColumn {
                     items(com.bamnat.app.company.Plaza.REGIONS.entries.toList(), key = { it.key }) { (code, name) ->
                         androidx.compose.foundation.layout.Row(
-                            Modifier.fillMaxWidth().clickable { store.pick(code); picking = false }.padding(vertical = 10.dp),
+                            Modifier.fillMaxWidth().clickable(role = Role.Button) { store.pick(code); picking = false }.padding(vertical = 10.dp),
                             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
                         ) {
                             androidx.compose.material3.RadioButton(selected = region == code, onClick = null)

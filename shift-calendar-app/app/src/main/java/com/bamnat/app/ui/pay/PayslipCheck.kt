@@ -58,7 +58,7 @@ internal fun PhotoThumb(photo: Bitmap, modifier: Modifier = Modifier.fillMaxWidt
     val image = remember(photo) { photo.asImageBitmap() }
     Image(
         image, contentDescription = "읽은 사진, 누르면 크게 봐요", contentScale = ContentScale.Crop,
-        modifier = modifier.clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "사진 크게 보기") { big = true },
+        modifier = modifier.clip(MaterialTheme.shapes.small).clickable(onClickLabel = "사진 크게 보기") { big = true },
     )
     if (big) Dialog(onDismissRequest = { big = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
@@ -154,8 +154,8 @@ internal fun SlipCheck(
         val doubt = i in unsure
         Column(
             Modifier.fillMaxWidth()
-                .then(if (doubt) Modifier.background(WARN.copy(alpha = 0.3f), RoundedCornerShape(6.dp)) else Modifier)
-                .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)) else Modifier)
+                .then(if (doubt) Modifier.background(WARN.copy(alpha = 0.3f), MaterialTheme.shapes.extraSmall) else Modifier)
+                .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraSmall) else Modifier)
                 // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
                 .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }
                 .heightIn(min = 44.dp)

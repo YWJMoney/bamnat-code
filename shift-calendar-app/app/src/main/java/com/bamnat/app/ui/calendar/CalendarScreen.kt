@@ -1797,7 +1797,7 @@ fun CalendarScreen(
                     if (foot.hide != true) com.bamnat.app.ui.parts.PartText(line, foot,
                         MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp)
-                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, androidx.compose.foundation.shape.RoundedCornerShape(8.dp))))
+                            .then(com.bamnat.app.ui.parts.PartMods.box(foot, MaterialTheme.shapes.small)))
                 }
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
@@ -2977,7 +2977,7 @@ private fun MonthMemoCard(
             for (m in shown) {
                 val d = m.date!!
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onOpen(m.id, m.date) }.padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
@@ -3066,7 +3066,7 @@ private fun MonthRestCard(
             for (group in shown) {
                 val issue = group.issues.first()
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(group.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onPick(group.date) }.padding(horizontal = 16.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text("${group.date.dayOfMonth}일", style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
@@ -3151,7 +3151,7 @@ private fun CoverAskDialog(ask: CalendarViewModel.CoverAsk, onAnswer: (asCover: 
                     "근무표가 바뀐 거라면 ‘근무일로 바꾸기’를 고르세요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { keep = !keep },
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { keep = !keep },
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.Checkbox(checked = keep, onCheckedChange = { keep = it })

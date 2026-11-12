@@ -874,7 +874,7 @@ private fun DayCell(
                 Row(Modifier.fillMaxWidth().heightIn(min = 20.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         // At least 20dp round, wider with a big font so today's "14" stays inside its circle.
-                        Modifier.defaultMinSize(20.dp, 20.dp).clip(RoundedCornerShape(10.dp)).background(if (isToday) look.today ?: scheme.primary else Color.Transparent)
+                        Modifier.defaultMinSize(20.dp, 20.dp).clip(MaterialTheme.shapes.small).background(if (isToday) look.today ?: scheme.primary else Color.Transparent)
                             .padding(horizontal = 2.dp),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -1166,7 +1166,7 @@ internal fun JobBadge(count: Int, owed: Boolean) {
     val bg = if (owed) LocalCalendarColors.current.warningContainer else scheme.secondaryContainer
     Box(
         // [CAL-52] At least 22dp, taller with large text: a fixed 22dp cut the "일" in half at 200%.
-        Modifier.heightIn(min = 22.dp).clip(RoundedCornerShape(6.dp)).background(bg).padding(horizontal = 5.dp),
+        Modifier.heightIn(min = 22.dp).clip(MaterialTheme.shapes.extraSmall).background(bg).padding(horizontal = 5.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(if (count > 1) "일$count" else "일", fontSize = 11.sp, lineHeight = 11.sp, fontWeight = FontWeight.Bold,

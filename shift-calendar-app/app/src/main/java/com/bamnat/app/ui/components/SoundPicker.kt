@@ -58,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
 import com.bamnat.app.data.AppSettings
+import androidx.compose.ui.semantics.Role
 
 object SoundNames {
     fun describe(context: Context, sound: String?, fallbackLabel: String): String {
@@ -294,7 +295,7 @@ private fun SoundListDialog(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(MaterialTheme.shapes.small)
-                                .clickable {
+                                .clickable(role = Role.Button) {
                                     chosen = s.value
                                     playing?.stop()
                                     playing = playPreview(context, s.value)

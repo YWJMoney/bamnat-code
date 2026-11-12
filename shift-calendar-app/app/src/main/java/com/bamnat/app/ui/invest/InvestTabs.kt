@@ -54,6 +54,7 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** [INV-03] One trade as a line: what, how many at what price, and for a sale what it made. */
 @Composable
@@ -62,7 +63,7 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
     val realized = state.result.realizations.firstOrNull { it.tradeId == t.id }
     val unit = if (t.market == Market.CRYPTO) "개" else "주"
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp),
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(t.side.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
@@ -113,7 +114,7 @@ internal fun MarketBadge(text: String, market: Market) {
 @Composable
 internal fun CashLine(c: CashFlow, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
-    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(c.kind.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp),
             color = if (c.kind == CashKind.WITHDRAW || c.kind == CashKind.FEE) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
             maxLines = 1)
@@ -164,7 +165,7 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
     val unit = if (h.market == Market.CRYPTO) "개" else "주"
     val fx = state.settings.usdKrw
     SectionCard(title = null) {
-        Row(Modifier.fillMaxWidth().clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(h.title, style = MaterialTheme.typography.titleSmall)
                 Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.price(h.averagePrice, h.market)} · 비중 ${"%.0f".format(weight * 100)}%",
@@ -226,7 +227,7 @@ internal fun DayRecords(d: LocalDate, state: InvestState, open: (InvestSheet) ->
             HorizontalDivider()
             Text("일지 · " + listOfNotNull(j.grade?.label, j.review.ifBlank { j.market }.take(40).ifBlank { null }).joinToString(" · "),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().clickable { open(InvestSheet.Journal(d)) }.padding(vertical = 6.dp))
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.Journal(d)) }.padding(vertical = 6.dp))
         }
     }
 }
@@ -263,7 +264,7 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
             Text(listOfNotNull(j.grade?.label, pnl?.let { InvestFmt.signedShort(it, state.hide) }).joinToString(" · "),
                 color = pnl?.let { pnlColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
         }) {
-            Column(Modifier.fillMaxWidth().clickable { open(InvestSheet.Journal(j.date)) }) {
+            Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.Journal(j.date)) }) {
                 if (j.market.isNotBlank()) Text("시장 · ${j.market}", style = MaterialTheme.typography.bodyMedium)
                 if (j.review.isNotBlank()) Text("복기 · ${j.review}", style = MaterialTheme.typography.bodyMedium)
                 if (principles.isNotEmpty()) Text("원칙 ${principles.count { it in j.checked }}/${principles.size} 지킴",
@@ -297,7 +298,7 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     alarms.forEach { a ->
         SectionCard(title = null) {
-            Row(Modifier.fillMaxWidth().clickable { open(InvestSheet.AlarmEdit(editing = a)) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.AlarmEdit(editing = a)) }, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(a.title, style = MaterialTheme.typography.titleSmall)
                     Text(InvestAlarms.describe(a) + (if (a.ring) " · 소리" else "") +
@@ -336,7 +337,7 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
     if (events.isEmpty()) Text("배당락일, 실적 발표, 청약 날짜를 적어 두면 달력에 점이 찍히고 그날 아침에 알려 드려요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     events.forEach { e ->
-        Row(Modifier.fillMaxWidth().clickable { open(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 8.dp)) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 8.dp)) {
             Text(Fmt.shortDate(e.date), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), modifier = Modifier.width(48.dp))
             Column(Modifier.weight(1f)) {
                 Text("${e.kind.label} · ${e.label}", style = MaterialTheme.typography.bodyLarge)

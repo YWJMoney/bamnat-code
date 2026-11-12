@@ -207,7 +207,7 @@ private fun MemoPhotoBlock(
             val picture: @Composable () -> Unit = {
                 // [MPH-06] 스튜디오 부품 '메모 사진'(memo.photo): 모서리·테두리·그림자·틀(채우기+안 여백, 폴라로이드처럼).
                 val photoPart = com.bamnat.app.ui.parts.partStyle("memo.photo")
-                val photoShape = com.bamnat.app.ui.parts.PartMods.shapeOf(photoPart, RoundedCornerShape(10.dp))
+                val photoShape = com.bamnat.app.ui.parts.PartMods.shapeOf(photoPart, MaterialTheme.shapes.small)
                 Box(
                     Modifier
                         .width(w)
@@ -215,7 +215,7 @@ private fun MemoPhotoBlock(
                         .aspectRatio(ratio ?: (4f / 3f))
                         .clip(photoShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
-                        .then(if (chosen) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)) else Modifier)
+                        .then(if (chosen) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
                         .clickable(onClickLabel = if (chosen) "사진 고르기 끝" else "사진 고르기") { onChoose() }
                         .semantics { contentDescription = "메모 사진, 너비 ${live}%" },
                 ) {
@@ -268,7 +268,7 @@ private fun MemoPhotoBlock(
         MemoToolPanel(chosen) { Column {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
             ) {
                 // Wrapped, never a row to scroll sideways: every choice is in sight.
@@ -445,7 +445,7 @@ internal fun MemoPhotoStrip(names: List<String>) {
     Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         names.take(3).forEach { name ->
             val img by produceState<ImageBitmap?>(null, name) { value = MemoPhotoFiles.load(context, name, 240) }
-            Box(Modifier.size(56.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant)) {
+            Box(Modifier.size(56.dp).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant)) {
                 img?.let { Image(it, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
             }
         }

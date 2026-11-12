@@ -39,6 +39,7 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /** 1.37 [LEDH-11][LEDH-13] What the envelopes card does, given by the money tab. */
 internal interface EnvelopeActions {
@@ -119,7 +120,7 @@ internal fun EnvelopesCard(
 @Composable
 private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, onPut: () -> Unit, onEdit: () -> Unit) {
     val e = s.envelope
-    Column(Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(vertical = 6.dp)
+    Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onEdit).padding(vertical = 6.dp)
         .semantics { contentDescription = "${e.name} 봉투, ${Fmt.won(s.saved)}" + if (e.target > 0) " / ${Fmt.won(e.target)}" else "" }) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text((e.emoji.ifBlank { if (e.kind == EnvelopeKind.TAX) "🧾" else "✉️" }) + " " + e.name, style = MaterialTheme.typography.bodyLarge,

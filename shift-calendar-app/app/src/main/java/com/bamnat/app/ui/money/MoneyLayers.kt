@@ -161,7 +161,7 @@ internal fun ChallengeCard(
             Text("하루마다 도장을 찍어요. 보상은 없고, 휴대폰 안에서만 세요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             com.bamnat.core.money.Challenges.Kind.entries.filter { it != com.bamnat.core.money.Challenges.Kind.NIGHT_LUNCHBOX || isNight != null }.forEach { k ->
-                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable { onStart(k) }.padding(vertical = 8.dp)) {
+                androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { onStart(k) }.padding(vertical = 8.dp)) {
                     Text(k.label, style = MaterialTheme.typography.titleSmall)
                     Text(k.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -31,6 +31,7 @@ import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.parts.lineColor
 import com.bamnat.app.ui.parts.partStyle
 import com.bamnat.core.memo.MemoPhotos.PaperKind
+import androidx.compose.ui.semantics.Role
 
 /**
  * [MPH-05][MPH-06] 1.38 메모 종이: how the lines behind the words look. Without a theme it is the app's own soft line; a theme's 부품
@@ -98,7 +99,7 @@ internal fun MemoPaperDialog(current: PaperKind?, themed: Boolean, onPick: (Pape
                 val choices = listOf<Pair<PaperKind?, String>>(null to (if (themed) "테마 종이 그대로" else "없음(빈 종이)")) +
                     listOf(PaperKind.LINES to "줄 노트", PaperKind.GRID to "모눈", PaperKind.DOTS to "점")
                 choices.forEach { (k, label) ->
-                    Row(Modifier.fillMaxWidth().clickable { onPick(k) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(k) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = current == k, onClick = { onPick(k) })
                         Text(label, style = MaterialTheme.typography.bodyLarge)
                     }
@@ -122,7 +123,7 @@ internal fun MemoPageSample() {
     val page = partStyle("memo.page")
     val look = memoPaperLook(null) ?: MemoPaperLook(PaperKind.LINES, MaterialTheme.colorScheme.outlineVariant, 1f)
     val photo = partStyle("memo.photo")
-    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(photo, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+    val shape = com.bamnat.app.ui.parts.PartMods.shapeOf(photo, MaterialTheme.shapes.small)
     val style = com.bamnat.app.ui.parts.PartMods.text(page, MaterialTheme.typography.bodyLarge)
     val ground = page.fillColor ?: MaterialTheme.colorScheme.surfaceContainerLow
     Column(Modifier.fillMaxWidth().then(androidx.compose.ui.Modifier.drawBehind { drawRect(ground) }).padding(12.dp)) {

@@ -93,7 +93,7 @@ internal fun ShiftPremiumMarks(type: ShiftType) {
 
 @Composable
 private fun SmallMark(text: String) {
-    Surface(shape = RoundedCornerShape(6.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+    Surface(shape = MaterialTheme.shapes.extraSmall, color = MaterialTheme.colorScheme.secondaryContainer) {
         Text(text, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
             modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp))
     }

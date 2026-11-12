@@ -111,6 +111,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -379,7 +380,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                     label = { Text(if (date == null) "날짜 붙이기" else if (date.year == com.bamnat.core.time.Today.date().year) Fmt.dayTitle(date) else Fmt.fullDate(date)) },
                     leadingIcon = { Icon(Icons.Filled.Event, null, Modifier.size(18.dp)) },
                     trailingIcon = if (date != null) {
-                        { Icon(Icons.Filled.Close, "날짜 떼기", Modifier.size(18.dp).clickable { vm.setDate(null) }) }
+                        { Icon(Icons.Filled.Close, "날짜 떼기", Modifier.size(18.dp).clickable(role = Role.Button) { vm.setDate(null) }) }
                     } else {
                         null
                     },
@@ -640,7 +641,7 @@ private fun ColorRow(selected: Int, onSelect: (Int) -> Unit) {
                         color = if (i == selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
                         shape = CircleShape,
                     )
-                    .clickable { onSelect(i) },
+                    .clickable(role = Role.Button) { onSelect(i) },
                 contentAlignment = Alignment.Center,
             ) {
                 if (i == selected) Icon(Icons.Filled.Check, "선택됨", Modifier.size(18.dp))

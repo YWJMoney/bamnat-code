@@ -58,6 +58,7 @@ import com.bamnat.core.plaza.FactGroup
 import com.bamnat.core.plaza.SetupCompare
 import com.bamnat.core.plaza.SetupEdit
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 /*
  * [PLAZA-02] 1.25 묶음 X (계획/1.25-X-개발계획.md 386, U2): a company's rule set compared item by item, and
@@ -79,7 +80,7 @@ fun CompareRows(rows: List<CompareRow>, beforeName: String, afterName: String) {
         }
         if (kept.isNotEmpty()) {
             Row(
-                Modifier.fillMaxWidth().clickable { same = !same }.padding(vertical = 6.dp),
+                Modifier.fillMaxWidth().clickable(role = Role.Button) { same = !same }.padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(if (same) "같은 곳 접기" else "같은 곳 ${kept.size}가지 보기", style = MaterialTheme.typography.labelLarge,

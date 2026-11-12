@@ -1,5 +1,7 @@
 package com.bamnat.app.memo
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -103,7 +105,7 @@ internal fun MemoLater(rest: LocalDateTime?, onClose: () -> Unit, onPick: (MemoS
         Surface(
             Modifier.widthIn(max = 560.dp).fillMaxWidth().navigationBarsPadding()
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { },
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+            shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
             tonalElevation = 3.dp,
         ) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

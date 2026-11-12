@@ -63,6 +63,7 @@ import java.time.DayOfWeek
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * [NURS-01][NURS-02] A month's duty from the roster sheet, typed like a keypad: a code goes into the
@@ -260,7 +261,7 @@ fun DutyTypingPanel(
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (warnings.isNotEmpty()) {
-                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp)).padding(12.dp),
+                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.medium).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("확인해 보세요 ${warnings.size}건", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                     warnings.take(8).forEach { w -> Text("· ${w.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer) }
@@ -346,10 +347,10 @@ private fun MonthCells(
                                         date in doubtful -> MaterialTheme.colorScheme.tertiaryContainer
                                         typed.contains(date) -> MaterialTheme.colorScheme.secondaryContainer
                                         else -> MaterialTheme.colorScheme.surfaceContainer
-                                    }, RoundedCornerShape(8.dp))
+                                    }, MaterialTheme.shapes.small)
                                     .border(if (here) 2.dp else if (date in warned) 1.dp else 0.dp,
-                                        if (here) MaterialTheme.colorScheme.primary else if (date in warned) MaterialTheme.colorScheme.error else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .clickable { onPick(day) }
+                                        if (here) MaterialTheme.colorScheme.primary else if (date in warned) MaterialTheme.colorScheme.error else Color.Transparent, MaterialTheme.shapes.small)
+                                    .clickable(role = Role.Button) { onPick(day) }
                                     .semantics {
                                         contentDescription = "${month.monthValue}월 ${day}일 ${t?.name ?: "비어 있음"}" +
                                             (if (date in doubtful) ", 확인할 칸" else "") + if (here) ", 지금 넣을 날" else ""
@@ -363,7 +364,7 @@ private fun MonthCells(
                                 if (t != null && color != null) Text(
                                     t.label, style = MaterialTheme.typography.titleSmall, color = contentColorOn(color),
                                     fontWeight = FontWeight.Bold, maxLines = 1,
-                                    modifier = Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp),
+                                    modifier = Modifier.background(color, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp),
                                 ) else Text("·", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }

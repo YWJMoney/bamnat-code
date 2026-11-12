@@ -62,6 +62,7 @@ import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.recipe.ThemeLease
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /** What one [DrawerItem] stands for, so its sheet knows what it can do. */
 private sealed interface Held {
@@ -308,7 +309,7 @@ private fun Grid(items: List<DrawerItem>, byKey: Map<String, Held>, onOpen: (Dra
 
 @Composable
 private fun Cell(i: DrawerItem, h: Held?, width: androidx.compose.ui.unit.Dp, onOpen: (DrawerItem) -> Unit) {
-    Column(Modifier.width(width).clip(RoundedCornerShape(10.dp)).clickable(onClickLabel = "할 일 보기") { onOpen(i) },
+    Column(Modifier.width(width).clip(MaterialTheme.shapes.small).clickable(onClickLabel = "할 일 보기") { onOpen(i) },
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Thumb(h, width)
         Text((if (i.kind == DrawerKind.MINE && h is Held.Theme) "🎨 " else "") + i.title, style = MaterialTheme.typography.labelLarge, maxLines = 2,
@@ -329,7 +330,7 @@ private fun Thumb(h: Held?, width: androidx.compose.ui.unit.Dp) {
         is Held.Got -> h.e.pieces.split(',').firstNotNullOfOrNull { PieceKind.of(it) }?.let(::emojiOf) ?: "📦"
         else -> "🧩"
     }
-    Box(Modifier.width(width).aspectRatio(1.8f).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+    Box(Modifier.width(width).aspectRatio(1.8f).clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center) { Text(emoji, style = MaterialTheme.typography.headlineMedium) }
 }
 
@@ -509,7 +510,7 @@ private fun FolderPick(i: DrawerItem, onDone: () -> Unit) {
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 names.forEach { n ->
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { c.wardrobe.setFolder(i.key, n); onDone() },
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { c.wardrobe.setFolder(i.key, n); onDone() },
                         verticalAlignment = Alignment.CenterVertically) {
                         Text((if (i.folder == n) "✓ " else "") + "📁 $n", style = MaterialTheme.typography.bodyLarge)
                     }

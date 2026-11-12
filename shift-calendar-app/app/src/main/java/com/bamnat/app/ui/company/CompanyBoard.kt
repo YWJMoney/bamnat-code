@@ -92,6 +92,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [COMM-07] 회사 규칙 광장: the rule sets coworkers shared, from every company. Ones still being voted on
@@ -268,7 +269,7 @@ private fun BoardItem.title() = "$company · ${dept.ifEmpty { "회사 전체" }}
 
 @Composable
 private fun BoardCard(item: BoardItem, onOpen: () -> Unit, onTalk: () -> Unit, label: String? = null, diff: String? = null, agreeNeeded: Int = 75) {
-    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(onClick = onOpen)) {
+    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onOpen)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -358,7 +359,7 @@ fun VoteButtons(
             text = {
                 Column {
                     WHY_TEXT.entries.map { it.key to it.value }.forEach { (key, text) ->
-                        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { why = key }.padding(vertical = 4.dp),
+                        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { why = key }.padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = why == key, onClick = { why = key })
                             Text(text, style = MaterialTheme.typography.bodyMedium)
@@ -716,7 +717,7 @@ fun TalkSheet(holder: TalkHolder) {
                     // [PLAZA-33] 1.27 AI: 투자 이야기 takes no 종목 추천·리딩 (결정 AI-D8).
                     (listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보") +
                         listOfNotNull(("advice" to "종목 추천·리딩").takeIf { o.company == com.bamnat.core.plaza.StylePlaza.INVEST })).forEach { (key, label) ->
-                        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = key }.padding(vertical = 2.dp),
+                        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { reason = key }.padding(vertical = 2.dp),
                             verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(selected = reason == key, onClick = { reason = key })
                             Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -1108,7 +1109,7 @@ private fun ProposalEditor(
             }
         }
         if (change.size < 6) TextButton(onClick = { onChange(change + blankChange()) }) { Text("한 줄 더") }
-        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onWithSetup(!withSetup) }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onWithSetup(!withSetup) }, verticalAlignment = Alignment.CenterVertically) {
             androidx.compose.material3.Checkbox(checked = withSetup, onCheckedChange = onWithSetup)
             Text("내 앱 설정(금액 빼고)을 고친 규칙으로 함께 보내요. 맞아요가 모이면 이 설정이 다음 버전이 돼요.", style = MaterialTheme.typography.bodySmall)
         }

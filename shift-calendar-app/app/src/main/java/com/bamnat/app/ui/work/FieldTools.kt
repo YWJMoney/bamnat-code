@@ -62,6 +62,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [FLD-11][FLD-13] A field calendar's extra cards on 일감·수입: 일용직 원천징수 for the month's day-rate
@@ -112,7 +113,7 @@ private fun QuotesCard(calendarId: String, today: LocalDate) {
     }) {
         if (tools.quotes.isEmpty()) Hint("품목·수량·단가를 적으면 견적서 사진을 만들어 보낼 수 있어요. 손님이 좋다고 하면 일감으로 저장해요.")
         tools.quotes.sortedByDescending { it.date }.take(8).forEach { q ->
-            Row(Modifier.fillMaxWidth().clickable { editing = q }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { editing = q }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(listOf(q.client, q.title).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "견적서" },
                         style = MaterialTheme.typography.bodyLarge, maxLines = 1)
@@ -277,7 +278,7 @@ fun TradeWageDialog(onDismiss: () -> Unit, onPick: (Long) -> Unit) {
                 OutlinedTextField(query, { query = it.take(10) }, label = { Text("직종 찾기 (예: 타일)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 LazyColumn(Modifier.heightIn(max = 340.dp)) {
                     items(list, key = { it.name }) { t ->
-                        Row(Modifier.fillMaxWidth().clickable { onPick(t.daily) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(t.daily) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(t.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Text(Fmt.won(t.daily), style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
                         }

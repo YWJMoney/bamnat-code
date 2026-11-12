@@ -53,6 +53,7 @@ import com.bamnat.app.ui.TabPicks
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.core.layout.TabSlots
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
 
 /** [NAV-07] 1.26 AD, [NAV2-03] 1.39: the row's name, which settings search and help open. */
 const val TAB_ORDER_ROW = "아래 메뉴 채우기·순서"
@@ -124,7 +125,7 @@ internal fun BarSlotsDialog(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (!more) Text("자세히", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable { more = true }.padding(vertical = 6.dp))
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { more = true }.padding(vertical = 6.dp))
                 Spacer(Modifier.height(8.dp))
                 slots.forEachIndexed { i, slot ->
                     // 1.39 [NAV2-07] The places past five show only beside the rail of an unfolded phone; folded, they wait by 나.
@@ -239,7 +240,7 @@ private fun SlotLine(
             Text("${index + 1}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(24.dp))
             Icon(picks.firstOrNull()?.icon ?: TabPicks.groupIcon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Column(Modifier.weight(1f).clip(MaterialTheme.shapes.small).clickable(onClick = onReplace)) {
+            Column(Modifier.weight(1f).clip(MaterialTheme.shapes.small).clickable(role = Role.Button, onClick = onReplace)) {
                 Text(name, style = MaterialTheme.typography.bodyLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     if (slot is TabSlots.Group) Tag("묶음 ${slot.members.size}개", MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer)
@@ -328,7 +329,7 @@ private fun PickHeading(text: String) {
 @Composable
 private fun PickLine(p: TabPick, where: String?, onPick: (String) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable { onPick(p.key) }.padding(horizontal = 4.dp),
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onPick(p.key) }.padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(p.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)

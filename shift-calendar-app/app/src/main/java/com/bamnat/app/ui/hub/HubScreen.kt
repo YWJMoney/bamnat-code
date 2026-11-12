@@ -258,7 +258,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val accent = if (photo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
     val linkColors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = accent)
     Row(Modifier.fillMaxWidth().padding(horizontal = side, vertical = 2.dp)
-        .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(horizontal = 8.dp) else Modifier)
+        .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), MaterialTheme.shapes.medium).padding(horizontal = 8.dp) else Modifier)
         .heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.

@@ -65,6 +65,7 @@ import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
+import androidx.compose.ui.semantics.Role
 
 fun Long.asColor(): Color = Color(this.toInt())
 
@@ -272,7 +273,7 @@ fun StatTile(
     val cal = LocalCalendarColors.current
     val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
     Surface(
-        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(onClick = onClick) else Modifier),
+        modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
         color = bg,
         border = androidx.compose.foundation.BorderStroke(

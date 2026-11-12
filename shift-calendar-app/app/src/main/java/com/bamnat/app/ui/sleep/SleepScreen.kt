@@ -109,6 +109,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [SLP-16] The sleep log as something to use: what the two taps are for, the user's own averages
@@ -789,7 +790,7 @@ internal fun RecordRows(shown: List<SleepEntry>, r: SleepInsights.Report, onOpen
         shown.forEachIndexed { i, e ->
             if (i > 0) HorizontalDivider()
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = !e.imported) { onOpen(e) }.padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, enabled = !e.imported) { onOpen(e) }.padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(if (e.imported) Icons.Filled.Watch else Icons.Filled.Bedtime, contentDescription = if (e.imported) "워치 기록" else null,

@@ -61,6 +61,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.company.AppliedSetup
 import com.bamnat.app.company.CompanyDraft
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /** Where to correct a setup the user said was wrong [COMM-03]. */
 enum class FixPlace { PAY, SHIFT_TYPES, PATTERN, NONE }
@@ -337,7 +338,7 @@ private fun WrongSheet(vm: CompanyNudgeViewModel, a: AppliedSetup, onDismiss: ()
 
 @Composable
 private fun ChoiceRow(title: String, subtitle: String, enabled: Boolean, onClick: () -> Unit) {
-    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(enabled = enabled, onClick = onClick)) {
+    SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, enabled = enabled, onClick = onClick)) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)

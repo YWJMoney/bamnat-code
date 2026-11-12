@@ -215,8 +215,8 @@ private fun Cell(day: Int, cell: DutyCell?, doubt: Boolean, byId: Map<Long, Shif
     val warn = Warn
     Column(
         modifier.width(32.dp)
-            .then(if (doubt) Modifier.background(warn.copy(alpha = 0.35f), RoundedCornerShape(6.dp)) else Modifier)
-            .then(if (tappable) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(6.dp))
+            .then(if (doubt) Modifier.background(warn.copy(alpha = 0.35f), MaterialTheme.shapes.extraSmall) else Modifier)
+            .then(if (tappable) Modifier.border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.extraSmall)
                 .clickable(role = Role.Button, onClickLabel = "${day}일 고치기") { onFix(day) } else Modifier)
             .semantics { contentDescription = "${day}일 $name" + if (doubt) ", 확인 필요" else "" }
             .padding(vertical = 2.dp),

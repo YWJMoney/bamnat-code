@@ -114,6 +114,7 @@ import com.bamnat.core.schedule.ResolvedDay
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -298,7 +299,7 @@ fun MemoListScreen(
         // [TAB-02] 누락 점검 N9: what a 보드·표 change did, and 되돌리기, above the 새 메모 button.
         undo?.let { (said, back, backSaid) ->
             Surface(
-                shape = RoundedCornerShape(12.dp),
+                shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.inverseSurface,
                 shadowElevation = 4.dp,
                 modifier = Modifier.align(Alignment.BottomCenter).padding(start = 16.dp, end = 16.dp, bottom = 88.dp).fillMaxWidth()
@@ -473,7 +474,7 @@ private fun SelectionBar(
                                     .clip(CircleShape)
                                     .background(memoBackground(i))
                                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-                                    .clickable {
+                                    .clickable(role = Role.Button) {
                                         palette = false
                                         onColor(i)
                                     },

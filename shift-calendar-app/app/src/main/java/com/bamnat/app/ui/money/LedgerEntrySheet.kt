@@ -99,6 +99,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** Most months a card payment is spread over. */
 private const val MAX_INSTALLMENTS = 36
@@ -484,7 +485,7 @@ fun EntryDialog(
                 }
                 HorizontalDivider()
                 Row(
-                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { more = !more }.semantics(mergeDescendants = true) {},
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { more = !more }.semantics(mergeDescendants = true) {},
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {

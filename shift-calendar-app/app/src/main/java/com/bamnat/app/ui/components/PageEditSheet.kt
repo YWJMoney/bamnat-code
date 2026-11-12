@@ -144,7 +144,7 @@ private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Bo
                 if (row.isNew) {
                     Spacer(Modifier.width(6.dp))
                     Text("새 기능", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                        modifier = Modifier.background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
             }
             Text(row.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -186,7 +186,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
 
 @Composable
 private fun Block(label: String, color: Color, tall: Boolean = false) {
-    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center) {
         Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (tall) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
