@@ -41,13 +41,18 @@ class TypeWordsScreenTest : ScreenshotBase() {
     @Test fun invest() = sweep(WorkStyle.INVEST)
 
     /** The screens swept, by name: how to reach each one. */
-    private fun screens(style: WorkStyle): List<Pair<String, Screen.() -> Unit>> = listOf(
+    private fun screens(style: WorkStyle): List<Pair<String, Screen.() -> Unit>> = listOf<Pair<String, Screen.() -> Unit>>(
         "달력" to { tab(0, wide = false) },
         "설정" to { tab(SETTINGS_TAB, wide = false) },
         "설정 › ${SettingsPage.WORK.titleFor(style)}" to { open(Place.SETTINGS_WORK) },
         "설정 › ${SettingsPage.ALARM.titleFor(style)}" to { open(Place.SETTINGS_ALARM) },
         "설정 › ${SettingsPage.NOTICES.titleFor(style)}" to { open(Place.SETTINGS_NOTICES) },
+    ) + listOfNotNull(
+        // 2.0.0 [RVH-53] HQ-27: 근무 주기 (출근 요일·일정 순서) of the kinds that have one.
+        ("근무 주기" to pattern).takeIf { style in setOf(WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD) },
     )
+
+    private val pattern: Screen.() -> Unit = { open(Place.PATTERN) }
 
     private fun open(place: Place) {
         FeatureLinks.open(FeatureRoute(place))
@@ -74,6 +79,29 @@ class TypeWordsScreenTest : ScreenshotBase() {
         }.toSortedSet()
         assertEquals("$style 새로 샌 말(그 유형의 말로 바꾸거나 숨겨요)", emptyList<String>(), (found - known).toList())
         assertEquals("$style 고쳐졌어요: KNOWN에서 지워 주세요", emptyList<String>(), (known - found).toList())
+    }
+
+    /**
+     * 2.0.0 [RVH-53] HQ-27 (조건 13, 사용자 2026-10-29 '알바·파트타임 유형에서 회사 검색은 의미가 없다'): 근무 주기's 회사 이름으로
+     * 근무주기 찾기 is where the work has a company: 교대·일근 always, an 알바 once it joined one, 현장 never.
+     */
+    @Test fun companySearchOnlyWhereTheWorkHasACompany() {
+        val find = "회사 이름으로 근무주기 찾기"
+        fun shows(style: WorkStyle, joined: Boolean = false): Boolean {
+            var seen = false
+            shoot("9301_typewords_company_${style.name.lowercase()}${if (joined) "_joined" else ""}", PHONE, fresh(style) {
+                if (joined) {
+                    app.container.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "매장", "s1", 1, true,
+                        com.bamnat.core.time.Today.instant()))
+                    app.container.companyStore.setMember("c1", "(주)예시정밀")
+                }
+                open(Place.PATTERN)
+                seen = appears(find, exact = true)
+            })
+            return seen
+        }
+        assertEquals(listOf(true, true, false, true, false), listOf(shows(WorkStyle.SHIFT), shows(WorkStyle.DAY), shows(WorkStyle.HOURLY),
+            shows(WorkStyle.HOURLY, joined = true), shows(WorkStyle.FIELD, joined = true)))
     }
 
     /** A screen's name without the page title that differs by kind ('내 근무' is '내 가게'), so one line serves every kind. */
