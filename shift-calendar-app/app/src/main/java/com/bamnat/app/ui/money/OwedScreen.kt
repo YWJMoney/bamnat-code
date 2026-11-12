@@ -291,7 +291,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
     // [NAV-04] 1.25 Z 후속: back closes the search (and its words) first, as the close button does.
     androidx.activity.compose.BackHandler(enabled = searching) { searching = false; query = "" }
     var person by rememberSaveable { mutableStateOf<String?>(null) }
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(vm) {
         vm.messages.collect { m ->
             val r = snackbar.showSnackbar(m.message, actionLabel = m.undo?.let { m.actionLabel }, duration = SnackbarDuration.Short)
@@ -341,7 +341,7 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
                 },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         floatingActionButton = {
             // [RVP-06] The shared rule (icon alone with big letters too).
             com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)

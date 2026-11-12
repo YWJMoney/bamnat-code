@@ -184,7 +184,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val hire by vm.hire.collectAsStateWithLifecycle()
     val counted = LeaveSources.withHire(profile, hire)
     val context = LocalContext.current
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val ui = rememberCoroutineScope()
     var adding by remember { mutableStateOf<EntryKind?>(null) }
     var opened by remember { mutableStateOf<LedgerEntry?>(null) }
@@ -203,7 +203,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { NowCard(s, counted) }

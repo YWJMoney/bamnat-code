@@ -96,7 +96,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
     onToStudio: (() -> Unit)? = null) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var menu by remember { mutableStateOf(false) }
     var flagging by remember { mutableStateOf(false) }
     var disliking by remember { mutableStateOf(false) }
@@ -119,7 +119,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
         if (r == SnackbarResult.ActionPerformed) vm.undo()
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(
                 title = { Text(s.doc?.item?.title ?: "레시피") },

@@ -169,7 +169,23 @@ object NoticeLinks {
     /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
     const val ON_SCREEN = "on_screen"
 
+    /**
+     * Done with [target]. 2.0.0 [RVP-26] (검토 UIX-48) Its [payload] and [calendar] go with it: they stayed, and the next screen to read
+     * them (같이 보는 근무 opened from the 나 메뉴) started on a widget's old date. Read them before this, or [hand] them to the screen.
+     */
     fun consume(target: Target) {
-        _target.compareAndSet(target, null)
+        if (_target.compareAndSet(target, null)) {
+            _payload.value = null
+            _calendar.value = null
+        }
     }
+
+    private val handed = java.util.concurrent.ConcurrentHashMap<Target, String>()
+
+    /** 2.0.0 [RVP-26] A value for the screen [target] opens, taken once by that screen ([takeHanded]) however it is drawn. */
+    fun hand(target: Target, value: String?) {
+        if (value == null) handed.remove(target) else handed[target] = value
+    }
+
+    fun takeHanded(target: Target): String? = handed.remove(target)
 }

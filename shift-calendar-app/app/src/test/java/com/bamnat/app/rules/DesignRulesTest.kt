@@ -14,6 +14,7 @@ import java.io.File
  * - 조건 9: 44dp보다 작은 누르는 곳 0곳 ([pressedThingsAreAtLeast44dp])
  * - 조건 2: 한 화면(함수)에 채운 단추 하나 ([oneFilledButtonPerScreen])
  * - 조건 7: 토스트·화면 코드 속 색 값은 늘지 않아요 ([toastsAndRawColoursOnlyGoDown])
+ * - 조건 7·10: 알림 줄은 앱에 하나(AppSnack), 화면이 따로 만들지 않아요 ([oneLineForTheWholeApp])
  * - 조건 1: 달력 시작 높이는 화면 사진 시험 `CalendarStartScreenshotTest`가 봐요.
  *
  * 실패하면 무엇을 써야 하는지 메시지가 알려 줘요. 정말 예외라면(그림 속 휴대폰 틀처럼) 이 파일의 예외 목록에 까닭과 함께 넣어요.
@@ -186,8 +187,21 @@ class DesignRulesTest {
             .sumOf { Regex("""Color\(0x""").findAll(it.text).count() }
         report("토스트", toasts, TOAST_CEILING, 0)
         report("화면 코드 속 색 값 Color(0x…)", colours, COLOUR_CEILING, 0)
-        assertTrue("토스트가 $toasts 곳으로 늘었어요: 알림 줄(AppSnackbar)이나 OfflineLine을 써요", toasts <= TOAST_CEILING)
+        assertTrue("토스트가 $toasts 곳으로 늘었어요: 알림 줄(AppSnack.show)이나 OfflineLine을 써요", toasts <= TOAST_CEILING)
         assertTrue("화면 코드 속 색 값이 $colours 곳으로 늘었어요: MaterialTheme.colorScheme, Tone.color(), LocalCalendarColors를 써요", colours <= COLOUR_CEILING)
+    }
+
+    /**
+     * 2.0.0 [RVP-23] 뿌리 고침 4 (조건 7·10): one line for the whole app. A screen with a `SnackbarHostState()` or `SnackbarHost(…)` of
+     * its own had its own queue, and its 되돌리기 waited behind another's. Now [com.bamnat.app.ui.components.AppSnack]: `rememberLane()`
+     * for a screen that still calls `showSnackbar`, `AppSnackHost()` where the line shows.
+     */
+    @Test fun oneLineForTheWholeApp() {
+        val own = Regex("""SnackbarHostState\(\)|(?<![A-Za-z.])SnackbarHost\(""")
+        val bad = screens.filter { it.path != "ui/components/AppSnack.kt" }.flatMap { s ->
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (own.containsMatchIn(l)) "${s.path}:${i + 1}" else null }
+        }
+        assertEquals("화면이 따로 만든 알림 줄: AppSnack.rememberLane()과 AppSnackHost()를 써요(docs/design/공통-부품.md 9절)", emptyList<String>(), bad)
     }
 
     /** The numbers for the PR (도약 숫자): build/reports/design-rules.txt. */
@@ -201,7 +215,8 @@ class DesignRulesTest {
     companion object {
         /** 2.0.0 첫 PR(갈래 P)에서 센 값. */
         const val PADDING_CEILING = 473
-        const val TOAST_CEILING = 46
+        /** 46 at the first PR; 43 once 테마 기간·새 판 said theirs on the app's line (2.0.0 [RVP-23]). */
+        const val TOAST_CEILING = 43
         const val COLOUR_CEILING = 74
 
         /** Screens that had more than one filled button when the rule came (2.0.0): how many over one, by file. */

@@ -122,3 +122,8 @@
 {"track": "RVP-84", "title": "공통 부품과 값 문서", "status": "check", "size": "polish", "route": "app", "check": "화면에 닿지 않음(문서)"}
 {"track": "MKS-05", "title": "나간 판을 저장하면(Play 자동 감지 포함) 그 판 앱부터 읽는 출시 대기 장터 작품을 함께 공개", "status": "check", "size": "polish", "route": "server", "check": "출시 대기에 minApp 53 묶음 → 1.39.0 나간 판 저장(dry에 장터 작품 수) → 앱 53 장터에만 보임, 예약·다음 판·minApp 없는 묶음은 그대로"}
 {"track": "PC-28", "title": "달 넘김 효과나 움직임 끄기를 써도 달력에서 누른 날짜가 그대로 열림", "status": "check", "size": "fix", "route": "app", "test": "MonthTurnTapTest", "check": "달 넘김 스르륵·책장 넘기기·움직이지 않기 작품, 움직임 끄기, 휴대폰 애니메이션 삭제에서 11월 12일을 누르고 길게 눌러 근무 넣기 → 11월 12일에 열리고 저장, 달 넘김 모양은 그대로"}
+{"track": "RVP-22", "title": "앱을 열 때 창은 하나씩(법이 걸린 동의 먼저)", "status": "check", "size": "polish", "route": "app", "check": "업데이트한 날 처음 열면 창 하나만, 닫으면 다음 열 때 다음 창. 적는 중이거나 시트가 열려 있으면 기다림. 첫 설정을 마친 날엔 새 소식 창 없음"}
+{"track": "RVP-23", "title": "알림 줄은 앱에 하나, 되돌리기가 먼저", "status": "check", "size": "polish", "route": "app", "check": "메모를 지우고 바로 다른 안내가 와도 되돌리기 줄이 먼저 8초 뜸. 같은 말은 한 번만, 시간은 화면에 뜬 때부터"}
+{"track": "RVP-24", "title": "적던 글 지키기(날이 바뀌거나 다른 앱에 다녀와도)", "status": "check", "size": "polish", "route": "app", "check": "시트에 적다가 다른 앱에 갔다 와도, 자정을 넘겨도 글이 그대로. 닫거나 뒤로 가면 버릴지 한 번 물음"}
+{"track": "RVP-26", "title": "알림·링크로 넘긴 값은 한 번 쓰고 비움", "status": "check", "size": "fix", "route": "app", "check": "알림으로 '같이 보는 근무'를 연 뒤 달력에 갔다 와도 처음 날로 다시 안 감"}
+{"track": "RVP-37", "title": "뼈대 고침 시험 묶음(창 차례·알림 줄)", "status": "doing", "size": "polish", "route": "app", "check": "SnackQueueTest·OpenAskTest와 뼈대 사진 시험"}

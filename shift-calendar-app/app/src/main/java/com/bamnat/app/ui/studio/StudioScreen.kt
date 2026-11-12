@@ -458,7 +458,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
     var wish by remember { mutableStateOf(false) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val resumable by vm.resumable.collectAsStateWithLifecycle()
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
@@ -594,7 +594,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         val foldHost = remember { com.bamnat.app.ui.components.FoldHost() }
         CompositionLocalProvider(com.bamnat.app.ui.components.LocalFoldHost provides foldHost) {
         Scaffold(
-            snackbarHost = { SnackbarHost(snack) },
+            snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
             topBar = {
                 TopAppBar(
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },

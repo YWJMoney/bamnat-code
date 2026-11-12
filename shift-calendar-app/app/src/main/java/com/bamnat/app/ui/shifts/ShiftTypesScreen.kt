@@ -139,7 +139,7 @@ fun ShiftTypesScreen(
     var deleting by remember { mutableStateOf<ShiftType?>(null) }
     var addingSet by remember { mutableStateOf<ShiftTypeSet?>(null) }
     // [SHFT-09] 1.25 Z (U25-가): a delete says what it changed and offers 되돌리기.
-    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(vm) {
         vm.removed.collect { removal ->
             val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 지웠어요", actionLabel = "되돌리기",
@@ -152,7 +152,7 @@ fun ShiftTypesScreen(
     val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
         modifier = Modifier.nestedScroll(fab.connection),
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(
                 // 1.36 PC 재검토 (현장은 설정 줄이 '일정 종류'인데 제목은 '근무 종류와 시간'): the same words as the row that opened it.
