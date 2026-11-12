@@ -45,8 +45,8 @@ import androidx.compose.material.icons.outlined.Email
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -73,6 +73,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
@@ -477,7 +478,10 @@ fun ExtraKindsScreen(
         }
     }
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
                 title = { Text("연장 휴무일 근무 지정") },
@@ -486,8 +490,8 @@ fun ExtraKindsScreen(
         },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            // The extended FAB drops its text from semantics, so the icon carries the label for TalkBack.
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, "종류 추가") }, text = { Text("종류 추가") })
+            // [RVP-06] One rule for floating buttons; the words stay with TalkBack even when it is the icon alone.
+            com.bamnat.app.ui.components.AddFab("종류 추가", onClick = { adding = true }, open = fab.open)
         },
     ) { padding ->
         val snap = snapshot
@@ -598,7 +602,7 @@ private fun TemplateDialog(templates: List<KindTemplate>, onPick: (KindTemplate)
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 4.dp))
                 for (t in templates) {
                     Row(
-                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
+                        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(role = Role.Button) { onPick(t) }.padding(vertical = 10.dp, horizontal = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (t.kind.name.isBlank()) {
@@ -714,11 +718,12 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "색") {
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // 2.0.0 [RVP-83] Each colour is a 48dp touch with its own space around the dot, so the row adds none (조건 9, 공통-부품 4절).
+                        FlowRow {
                             for (c in ExtraPalette) {
                                 val selected = c == kind.colorArgb
                                 Box(
-                                    Modifier.size(36.dp).clip(CircleShape).background(c.asColor())
+                                    Modifier.minimumInteractiveComponentSize().size(36.dp).clip(CircleShape).background(c.asColor())
                                         .selectable(selected = selected, role = Role.RadioButton) { setKind(kind.copy(colorArgb = c)) },
                                     contentAlignment = Alignment.Center,
                                 ) {

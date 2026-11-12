@@ -84,16 +84,35 @@ object AccidentRates {
         .add(if (k.code == PUBLIC) java.math.BigDecimal.ZERO else java.math.BigDecimal.valueOf(WAGE_CLAIM_PERMILLE))
         .add(java.math.BigDecimal.valueOf(ASBESTOS_PERMILLE))
 
+    /**
+     * 2.0.0 [RVJ-04] 검토 PAYC-04: the 사업주 rate on [on], with a newer year's 고시 from the signed rates file (`accidentPermille`,
+     * `commutePermille`, `wageClaimPermille`, `asbestosPermille`) laid over the built-in [YEAR] values.
+     */
+    fun totalPermille(k: Kind, on: LocalDate): java.math.BigDecimal {
+        val t = com.bamnat.core.pay.RateTable
+        val own = if (k.code.startsWith(CUSTOM)) k.permille else t.latest(on) { it.accidentPermille[k.code] }?.first ?: k.permille
+        val commute = t.latest(on) { it.commutePermille }?.first ?: COMMUTE_PERMILLE
+        val claim = t.latest(on) { it.wageClaimPermille }?.first ?: WAGE_CLAIM_PERMILLE
+        val asbestos = t.latest(on) { it.asbestosPermille }?.first ?: ASBESTOS_PERMILLE
+        return java.math.BigDecimal.valueOf(own).add(java.math.BigDecimal.valueOf(commute))
+            .add(if (k.code == PUBLIC) java.math.BigDecimal.ZERO else java.math.BigDecimal.valueOf(claim))
+            .add(java.math.BigDecimal.valueOf(asbestos))
+    }
+
+    /** 2.0.0 [RVJ-04] The year of the 고시 the rate on [on] comes from: a newer one from the rates file, else [YEAR]. */
+    fun yearOn(on: LocalDate): Int = com.bamnat.core.pay.RateTable.latest(on) { r -> r.accidentPermille.takeIf { it.isNotEmpty() } }
+        ?.second?.effectiveFrom?.year?.coerceAtLeast(YEAR) ?: YEAR
+
     fun permille(v: Double): String = if (v == Math.floor(v)) v.toLong().toString() else v.toString()
 
     /**
      * The month's 산재보험료 for [pay] (보수: 비과세 뺀 지급액) at [code]'s rate plus 출퇴근재해, 임금채권부담금 and 석면피해구제분담금, cut to 10원 like the other 4대보험. 0 with no
      * 업종 picked: the ledger then asks for it once.
      */
-    fun premium(pay: Long, code: String?, @Suppress("UNUSED_PARAMETER") on: LocalDate? = null): Long {
+    fun premium(pay: Long, code: String?, on: LocalDate? = null): Long {
         val k = kind(code) ?: return 0
         if (pay <= 0) return 0
-        val rate = totalPermille(k)
+        val rate = on?.let { totalPermille(k, it) } ?: totalPermille(k)
         return java.math.BigDecimal.valueOf(pay).multiply(rate).divide(java.math.BigDecimal.valueOf(1000))
             .setScale(0, java.math.RoundingMode.DOWN).toLong() / 10 * 10
     }

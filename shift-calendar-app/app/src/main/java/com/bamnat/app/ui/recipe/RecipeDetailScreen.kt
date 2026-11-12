@@ -81,6 +81,7 @@ import kotlinx.coroutines.launch
 import com.bamnat.core.recipe.RecipeDescribe
 import com.bamnat.core.recipe.RecipeResolve
 import com.bamnat.core.recipe.RecipeText
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -317,7 +318,7 @@ fun RecipeDetailScreen(vm: RecipeDetailViewModel, onBack: () -> Unit, onRemake: 
                 val shownPieces = s.pieces.filter { it.fits && !(it.lines.isNotEmpty() && it.lines.all { l -> l.skipped && l.text.startsWith("지금과 같아서") }) }
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 14.dp, vertical = 4.dp)) {
-                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable { details = !open },
+                        Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).clickable(role = Role.Button) { details = !open },
                             verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text("자세히 보기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })

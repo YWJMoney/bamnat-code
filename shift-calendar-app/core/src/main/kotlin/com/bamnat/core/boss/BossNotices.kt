@@ -76,11 +76,15 @@ object Durunuri {
     val checked: Map<Int, Long> = mapOf(2026 to 2_700_000L)
     const val PLACE_UNDER = 10
 
+    /** 2.0.0 [RVJ-04] 검토 PAYC-04: the year's 기준 from the signed rates file (that year's own row), else [checked]. */
+    fun limit(year: Int): Long? = com.bamnat.core.pay.RateTable.current.firstOrNull { it.effectiveFrom.year == year && it.durunuriUnder != null }
+        ?.durunuriUnder ?: checked[year]
+
     /** The people the hint is about: 국민연금 or 고용보험 ticked, paid under the year's 기준 (any pay when the year is not checked). */
     fun who(ledger: Ledger): List<LedgerLine> {
         val counted = ledger.lines.count { it.gross > 0 }
         if (counted == 0 || counted >= PLACE_UNDER) return emptyList()
-        val limit = checked[ledger.month.year]
+        val limit = limit(ledger.month.year)
         return ledger.lines.filter { l ->
             val ins = l.staff.insurance
             (ins.pension || ins.employment) && l.staff.insurance.tax != StaffTax.BIZ && l.gross > 0 && (limit == null || l.gross < limit)
@@ -89,7 +93,7 @@ object Durunuri {
 
     fun hint(ledger: Ledger): String? {
         val people = who(ledger).takeIf { it.isNotEmpty() } ?: return null
-        val limit = checked[ledger.month.year]
+        val limit = limit(ledger.month.year)
         val names = people.map { it.staff.name.ifBlank { "이름 없음" } }.let { if (it.size <= 3) it.joinToString(", ") else "${it.size}명" }
         val rule = if (limit != null) "직원 10명 미만 사업장에서 월 보수 ${limit / 10_000}만 원 미만인 새 가입 직원" else "직원 10명 미만 사업장의 새 가입 직원(보수 기준은 그해 공고)"
         // PC 5066b027: someone with neither 보험 ticked was left out without a word; the list now says who it looked at.

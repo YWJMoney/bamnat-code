@@ -244,7 +244,7 @@ private fun TipLine(
                 Spacer(Modifier.width(10.dp))
                 Text(feature.tip.orEmpty(), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(top = 1.dp))
                 Box {
-                    IconButton(onClick = { menu = true }, modifier = Modifier.size(36.dp)) { Icon(Icons.Filled.MoreVert, "안내 더 보기") }
+                    IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "안내 더 보기") } // 2.0.0 [RVP-10] 48dp
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(text = { Text("다시 보지 않기") }, onClick = { menu = false; onNever() })
                         DropdownMenuItem(text = { Text("이런 안내 모두 끄기") }, onClick = { menu = false; onTipsOff() })

@@ -275,7 +275,7 @@ private fun FigureColumn(f: Figure, modifier: Modifier) {
         // [CAL-52] Each note on its own line, shrinking a little before it would be cut.
         f.notes.forEach {
             BasicText(it, style = MaterialTheme.typography.labelSmall.merge(TextStyle(color = MaterialTheme.colorScheme.onSurfaceVariant)),
-                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
+                maxLines = 1, autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 11.sp, stepSize = 0.5.sp))
         }
     }
 }
@@ -351,8 +351,8 @@ internal fun CalendarLegendSheet(
                 }
             }
             LegendRow("고른 날", "테두리와 옅은 색") {
-                Box(Modifier.size(width = 30.dp, height = 24.dp).clip(RoundedCornerShape(6.dp)).background(scheme.primary.copy(alpha = 0.08f))
-                    .border(2.dp, scheme.primary, RoundedCornerShape(6.dp)))
+                Box(Modifier.size(width = 30.dp, height = 24.dp).clip(MaterialTheme.shapes.extraSmall).background(scheme.primary.copy(alpha = 0.08f))
+                    .border(2.dp, scheme.primary, MaterialTheme.shapes.extraSmall))
             }
             LegendRow("공휴일·일요일", "빨간 날짜와 공휴일 이름 · 쉬는 날이에요") { Text("9", color = cal.sunday, fontWeight = FontWeight.Bold) }
             // [EASE-04] 1.38 (통합 7차): 업종 기념일 next to 공휴일, so the two are told apart; where to turn it on when off.

@@ -309,12 +309,12 @@ class ZScreenshotTest : ScreenshotBase() {
     private fun Screen.deleteNight() {
         settingsPage("내 근무")
         tapText("근무 종류와 시간", exact = true)
-        tapText("야간 삭제", exact = true)
+        tapText("야간 지우기", exact = true)
     }
 
     @Test fun deleteAsksWhereTheShiftIsUsed() = shoot("917_z_delete_ask", FOLDED) {
         deleteNight()
-        assertTrue(appears("‘야간’ 근무를 삭제할까요?"))
+        assertTrue(appears("‘야간’ 근무를 지울까요?"))
         assertTrue(appears("근무 주기에 들어 있어요"))
     }
 
@@ -323,7 +323,7 @@ class ZScreenshotTest : ScreenshotBase() {
         val night = before.shiftTypes.first { it.name == "야간" }.id
         deleteNight()
         tapText("주간으로 바꾸기", exact = true)
-        tapText("삭제", exact = true)
+        tapText("지우기", exact = true)
         val gone = runBlocking { c.scheduleRepository.snapshot.first() }
         assertTrue(gone.shiftTypes.none { it.id == night })
         assertTrue("the work order has 주간 where 야간 was", gone.resolver.resolve(today).shiftType != null)
@@ -430,7 +430,7 @@ class ZScreenshotTest : ScreenshotBase() {
             assertFalse("one back on the very first screen does not close the app", scenario.finishing())
             assertTrue(appears("어떤 일을 하고 계신가요?"))
             // [SETUP-17] 1.37: straight to the file chooser (no features pages); closed without a file, the first question stays.
-            tapText("백업이나 회사 파일로 시작할게요", exact = true)
+            tapText("파일로 시작", exact = true)
             assertTrue(appears("어떻게 일하세요?"))
             back()
             assertFalse("one back on the first question does not close the app", scenario.finishing())

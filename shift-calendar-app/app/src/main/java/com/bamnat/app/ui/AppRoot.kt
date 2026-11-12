@@ -394,17 +394,27 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val exit = remember { ExitGuard() }
                     androidx.activity.compose.BackHandler { exit.press(context) }
                     val shown by container.settingsRepository.settings.collectAsStateWithLifecycle()
-                    // 1.38 PC 11차: opened from a teammate's 근무표 link on a new phone, the first screen names it and offers the
-                    // matching start (매달 나오는 근무표) in one tap.
+                    // 1.38 PC 11차: opened from a 근무표 link on a new phone, the first screen names it. [RVG-15] 검토 TYPE-04 (사용자 결정
+                    // 2026-11-12 '두 단추로 묻기'): it asks whose it is first, so a 가족·친구's 근무 never becomes the user's own calendar.
                     val waitingLink by container.received.opening.collectAsStateWithLifecycle()
-                    // 1.39 [TEAM-22] The copy the setup fills the days from, kept as what later changes are compared with.
-                    val waitingRaw by produceState<org.json.JSONObject?>(null, waitingLink) {
-                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id).schedule }.getOrNull() }
+                    // 1.39 [TEAM-22] The copy the setup fills the days from, kept as what later changes are compared with. [RVG-17] 검토
+                    // UIX-59: the whole first read is kept and put as it is (no second read that can fail after the link was let go),
+                    // and the buttons wait while it is read (they changed under the finger before).
+                    val waitingRead by produceState<Result<com.bamnat.app.share.ReceivedShare>?>(null, waitingLink) {
+                        value = null
+                        value = waitingLink?.let { id -> runCatching { container.shareApi.read(id) } }
                     }
+                    val waitingShare = waitingRead?.getOrNull()
+                    val waitingRaw = waitingShare?.schedule
                     val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
+                    // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go.
+                    var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
+                    var theirsLater by rememberSaveable { mutableStateOf(false) }
+                    // [RVG-15] The card's X: neither answer now; the link waits and the calendar offers it after the setup.
+                    var linkClosed by rememberSaveable { mutableStateOf(false) }
                     // [R136-01] 1.36: this screen shows the size chips at its top, so going on from it answers the size too;
                     // the 1.32 size dialog is not shown again after the first save (it was, over the pay sheet, on a phone set up again).
                     val sizeSeen = { container.settingsRepository.update { it.copy(textAsked = true) } }
@@ -420,7 +430,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
-                        linkWaiting = waitingLink != null, linkTitle = waitingTitle,
+                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle,
+                        linkLoading = waitingLink != null && waitingRead == null,
+                        // [RVG-17] Said in place of the line: no signal, the server, or a link that is gone (ShareLinkException's own words).
+                        linkProblem = waitingRead?.exceptionOrNull()?.let(com.bamnat.app.ui.setup.LinkStart::problem),
+                        linkLean = com.bamnat.app.ui.setup.LinkStart.lean(waitingRaw),
+                        onLinkClose = { container.telemetry.event("setup_link", "closed"); linkClosed = true },
+                        theirsKept = theirsKept, theirsLater = theirsLater,
+                        onTheirsClose = { theirsKept = null; theirsLater = false; linkClosed = true },
                         onLinkStart = linkDraft?.let { draft -> {
                             sizeSeen()
                             com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
@@ -429,16 +446,26 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                             // 1.38 PC 12.3: the link that started the setup is kept as a 받은 달력 (it is the team's, and follows its next
                             // 판), and the waiting link is let go, so the calendar does not offer to add it again after the setup.
                             val id = waitingLink
-                            val filledFrom = waitingRaw
-                            container.received.open(null)
-                            if (id != null) rootScope.launch {
-                                // PC a483ca15 (12/3 주→야 not put in): the days come from [filledFrom]; a change the 리더 made since is
-                                // put in by the next look, not lost in this fresh read.
-                                runCatching { container.received.put(id, container.shareApi.read(id), mine = true, basis = filledFrom) }
-                                // 1.39 [TEAM-22] The 리더's later changes of this link come into the member's days by themselves.
-                                com.bamnat.app.share.RosterFollower.sync(container.appContext, container)
+                            if (id != null && waitingShare != null) {
+                                com.bamnat.app.ui.setup.LinkStart.keepMine(container.received, id, waitingShare)
+                                // 1.39 [TEAM-22] The 리더's later changes of this link come into the member's days by themselves; a change
+                                // made since this read (PC a483ca15: 12/3 주→야) comes in now, compared with the copy the days came from.
+                                rootScope.launch { runCatching { com.bamnat.app.share.RosterFollower.sync(container.appContext, container) } }
                             }
-                        } })
+                        } },
+                        onLinkTheirs = {
+                            val id = waitingLink
+                            if (id != null && waitingShare != null) {
+                                com.bamnat.app.ui.setup.LinkStart.keepTheirs(container.received, id, waitingShare)
+                                container.telemetry.event("setup_link", "theirs")
+                                container.telemetry.event("received_add", "new")
+                                theirsKept = waitingTitle ?: "받은"
+                            } else {
+                                // Not read (no signal): the link stays waiting, and the calendar offers it as a 받은 달력 after the setup.
+                                container.telemetry.event("setup_link", "theirs_later")
+                                theirsLater = true
+                            }
+                        })
                     return
                 }
                 // 1.36 W4: before 1.36 the recommended-features page came here, between "무슨 일 하세요?" and the setup. A phone
@@ -1509,8 +1536,9 @@ private fun AppNavHost(
                 // the month: in half of 600dp the days were too narrow for their shift chips (660 shot).
                 wide = wide && androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= CALENDAR_BESIDE_DP,
                 snackbarHostState = snackbar,
-                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) },
-                onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) },
+                // 2.0.0 [RVP-34] (검토 UIX-58) Two quick taps open one editor, not two stacked.
+                onOpenMemo = { id, day -> nav.navigate(Routes.memo(id, day)) { launchSingleTop = true } },
+                onNewMemo = { date -> nav.navigate(Routes.memo(0, date)) { launchSingleTop = true } },
                 // [MCAL-01] The calendar on screen is the one these edit.
                 onOpenPattern = { nav.openPattern(container, container.calendars.active.value) },
                 onOpenShiftTypes = { nav.openTypes(container, container.calendars.active.value) },
@@ -1717,8 +1745,8 @@ private fun AppNavHost(
             val list = @Composable {
                 MemoListScreen(
                     vm = vm,
-                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) },
-                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) },
+                    onOpen = { id -> if (wide) pane = next(id) else nav.navigate(Routes.memo(id)) { launchSingleTop = true } }, // [RVP-34]
+                    onNew = { checklist, date -> if (wide) pane = next(0, checklist, date) else nav.navigate(Routes.memo(0, date, checklist, notebook = true)) { launchSingleTop = true } },
                     onOpenTrash = { nav.navigate(Routes.MEMO_TRASH) { launchSingleTop = true } },
                     style = memoStyle,
                 )
@@ -2830,9 +2858,9 @@ private fun LookUndoBand() {
     }
 }
 
-/** The words' colour that reads on [ground]: near-black on a light colour, white on a dark one. */
+/** The words' colour that reads on [ground]; 2.0.0 [RVP-12] (검토 UIX-12) the app's one contrast rule, not a fixed near-black. */
 private fun inkOn(ground: androidx.compose.ui.graphics.Color): androidx.compose.ui.graphics.Color =
-    if (ground.luminance() > 0.45f) androidx.compose.ui.graphics.Color(0xFF1C1B1F) else androidx.compose.ui.graphics.Color.White
+    com.bamnat.app.ui.components.contentColorOn(ground)
 
 /** [READ-31] 1.39: where a shared roster may go besides 내 달력: the leader's teams, the 사장님's staff list (each behind its flag). */
 private suspend fun sharedPlaces(c: AppContainer): List<com.bamnat.app.imports.SharedToManage.Place> {

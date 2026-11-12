@@ -104,14 +104,14 @@ fun ImageShareSheet(
                     Text("${y}년 근무 결산 사진 만들기")
                 }
             }
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview
                 // The whole picture inside the frame (PC 5차: FillWidth under a height cap cut off the title and the 이름표).
                 if (bmp != null) Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
                     Image(bmp, "보낼 사진 미리보기", contentScale = ContentScale.Fit,
                         modifier = Modifier.heightIn(max = 420.dp)
                             .aspectRatio(bmp.width.toFloat() / bmp.height.coerceAtLeast(1), matchHeightConstraintsFirst = true)
-                            .clip(RoundedCornerShape(8.dp)))
+                            .clip(MaterialTheme.shapes.small))
                 }
                 else Spacer(Modifier.fillMaxWidth().heightIn(min = 200.dp))
             }

@@ -466,6 +466,10 @@ fun CompanyRulesEditor(
                     Toggle("밤샘 근무는 시작한 날로 휴일 판단", say("끄면 공휴일 0시~24시에 일한 시간만 휴일근로예요. 회사가 근무 시작일로 정하면 켜 주세요"), rules.holidayByShiftStart) {
                         setRules(rules.copy(holidayByShiftStart = it))
                     }
+                    // 2.0.0 [RVJ-01] 검토 U04-11: 휴일에 일한 시간도 주 40시간에 넣어요(법 기준, 제2조 제1항 제7호). 끄는 회사만 켜요.
+                    Toggle("휴일 근무는 주 40시간에 안 넣음", say("법은 휴일에 일한 시간도 한 주 40시간에 넣어요. 그래서 그 주의 다른 날이 40시간을 넘으면 연장이에요. 회사가 휴일 근무를 빼고 세면 켜 주세요"), rules.holidayOutsideWeek) {
+                        setRules(rules.copy(holidayOutsideWeek = it))
+                    }
                     Toggle("공휴일 연차는 연차 일수에서 안 빠짐", say("공휴일 근무일에 쉬어도 연차가 줄지 않는 회사라면 켜 주세요"), rules.holidayLeaveFree) {
                         setRules(rules.copy(holidayLeaveFree = it))
                     }

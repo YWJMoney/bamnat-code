@@ -35,7 +35,7 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -75,6 +75,7 @@ import com.bamnat.core.invest.TradeDraft
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 private enum class InvestTab(val label: String) { OVERVIEW("한눈에"), HOLDINGS("종목"), RECORDS("기록"), STATS("통계"), JOURNAL("일지"), ALARMS("알람") }
 
@@ -393,7 +394,7 @@ private fun AccountsCard(state: InvestState, open: (InvestSheet) -> Unit) {
     SectionCard(title = "계좌별", trailing = { TextButton(onClick = { open(InvestSheet.AccountEdit()) }) { Text("계좌 추가") } }) {
         state.fullResult.accounts.filter { it.account?.hidden != true }.forEach { a ->
             Row(
-                Modifier.fillMaxWidth().clickable { a.account?.let { open(InvestSheet.AccountEdit(it)) } }.padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().clickable(role = Role.Button) { a.account?.let { open(InvestSheet.AccountEdit(it)) } }.padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
@@ -448,11 +449,11 @@ private fun UpcomingCard(state: InvestState, open: (InvestSheet) -> Unit) {
     SectionCard(title = "다가오는 일") {
         next?.let { (a, at) ->
             Text("${a.title} · ${Fmt.dayTitle(at.toLocalDate())} ${minuteText(at.hour * 60 + at.minute)}", style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth().clickable { open(InvestSheet.AlarmEdit(editing = a)) }.padding(vertical = 4.dp))
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.AlarmEdit(editing = a)) }.padding(vertical = 4.dp))
         }
         events.forEach { e ->
             Text("${Fmt.shortDate(e.date)} ${e.kind.label} · ${e.label}", style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.fillMaxWidth().clickable { open(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 4.dp))
+                modifier = Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 4.dp))
         }
     }
 }

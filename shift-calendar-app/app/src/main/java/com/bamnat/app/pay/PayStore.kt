@@ -518,6 +518,8 @@ object PayCodec {
         // [LEAVE-02] How 연차 is counted; left out at its default so older files stay the same.
         .apply { if (r.leave != LeavePolicy()) put("leave", leavePolicy(r.leave)) }
         .put("holidayByStart", r.holidayByShiftStart)
+        // 2.0.0 [RVJ-01] Holiday hours left out of the week's 40 hours (회사 규칙).
+        .put("holidayOutWeek", r.holidayOutsideWeek)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
         .put("supervisory", r.supervisoryApproved).put("holidaysU5", r.holidaysUnderFive).put("breakPay", r.breakPay.name)
@@ -559,6 +561,7 @@ object PayCodec {
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         leave = o.optJSONObject("leave")?.let(::leavePolicyFrom) ?: LeavePolicy(),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
+        holidayOutsideWeek = o.optBoolean("holidayOutWeek", false),
         supervisoryApproved = o.optBoolean("supervisory", false),
         holidaysUnderFive = o.optBoolean("holidaysU5", false),
         breakPay = o.optString("breakPay").let { n -> BreakPay.entries.firstOrNull { it.name == n } } ?: BreakPay.UNPAID,

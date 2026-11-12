@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.calendar
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import androidx.compose.ui.semantics.selected
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -246,7 +248,7 @@ fun TeamsScreen(vm: TeamsViewModel, onBack: () -> Unit, onOpenPattern: () -> Uni
                         modifier = Modifier.weight(1f)) { picked = if (picked == it) null else it }
                     picked?.let { day ->
                         Surface(
-                            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
+                            shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             shadowElevation = 6.dp,
                             // [J133-58] 1.33 (중간 빌드 확인): a sideways swipe anywhere on the panel steps the day, not only on its title.
@@ -336,10 +338,10 @@ private fun TeamCard(team: TeamRoster.Team, type: ShiftType?, next: ShiftType?, 
     val tint = type?.colorArgb?.asColor() ?: MaterialTheme.colorScheme.outline
     val desc = "${team.name}${if (team.mine) ", 내 조" else ""}, 오늘 ${type?.name ?: "쉬는 날"}, 내일 ${next?.name ?: "쉬는 날"}"
     Surface(
-        shape = RoundedCornerShape(16.dp),
+        shape = MaterialTheme.shapes.large,
         color = if (type == null) MaterialTheme.colorScheme.surfaceContainerLow else tint.copy(alpha = 0.14f),
         modifier = modifier
-            .then(if (team.mine) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp)) else Modifier)
+            .then(if (team.mine) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.large) else Modifier)
             .semantics(mergeDescendants = true) { contentDescription = desc },
     ) {
         Column(Modifier.padding(horizontal = 6.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -458,7 +460,7 @@ private fun TeamTable(
                         Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 4.dp, vertical = 1.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(MaterialTheme.shapes.small)
                             .background(
                                 when (day) {
                                     picked -> com.bamnat.app.ui.components.Selection.container
@@ -717,7 +719,7 @@ private fun TeamEditor(
                 items(roster.teams.size) { index ->
                     val team = roster.teams[index]
                     val todayStep = Math.floorMod(rotation.stepIndexOn(today) - team.lag, size)
-                    Column(Modifier.fillMaxWidth().border(1.dp, if (team.mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)).padding(10.dp),
+                    Column(Modifier.fillMaxWidth().border(1.dp, if (team.mine) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, MaterialTheme.shapes.medium).padding(10.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${index + 1}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.width(22.dp))

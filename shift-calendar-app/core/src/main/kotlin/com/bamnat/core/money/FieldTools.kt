@@ -122,6 +122,9 @@ object TradeWages {
  * i.e. 2.7% of what is over 15만 원, and 지방소득세 a tenth of that. Tax under 1,000원 for one payment is
  * not taken (소액부징수); paid day by day that is judged per day, paid together (월 1~2회 정산) on the sum,
  * so the same days can owe tax when paid at once. Apart from 3.3% 사업소득.
+ * 2.0.0 [RVJ-11] 검토 PAYC-10: the only 일용 tax function (돈 › 세금 카드 and the 사장님 명세서 use it too). 끝자리: 소득세는 원 단위,
+ * 지방소득세는 그 10%의 원 단위로 둬요. 10원 미만 끝수를 사람마다 버리는지(국고금 관리법 제47조의 끝수 계산이 납부 단위인지)는 원문
+ * 확인 필요예요 (확인 전 그대로).
  */
 object DailyWorkerTax {
     const val DEDUCTION = 150_000L

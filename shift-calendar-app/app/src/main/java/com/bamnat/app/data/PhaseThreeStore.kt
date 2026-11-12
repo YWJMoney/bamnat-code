@@ -316,7 +316,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         }.toString()
 
         fun decodeCalls(t: String): List<com.bamnat.core.team.TeamCall> = if (t.isBlank()) emptyList() else runCatching {
-            val a = JSONArray(t)
+            // [RVJ-17] the object form keeps the list under "calls".
+            val a = if (t.trimStart().startsWith("{")) JSONObject(t).optJSONArray("calls") ?: JSONArray() else JSONArray(t)
             fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
             (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
                 val g = o.getJSONObject("gap")
@@ -419,8 +420,27 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         // ---- 사업장 rows ----
 
-        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls), industry)
-        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit, encodeCalls(calls), industry)
+        // 2.0.0 [RVJ-09] 'payday' holds 100 + day for a place that pays the same month; [RVJ-17] 'calls' becomes {"calls":[…],"owner","address"}
+        // when the place has a 대표자·주소, so neither needs a new column (an old row reads as before).
+        fun WorkplaceEntity.toModel(): Workplace {
+            val (day, next) = Workplace.decodePayday(payday)
+            val extra = decodePlaceExtra(calls)
+            return Workplace(id, name, fivePlus, day, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls), industry,
+                payNextMonth = next, owner = extra.first, address = extra.second)
+        }
+        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, Workplace.encodePayday(payday, payNextMonth), legalBreaks, weekStart.value, teamId, createdAt,
+            minuteUnit, encodePlaceCalls(calls, owner, address), industry)
+
+        /** [RVJ-17] The 'calls' column: the old list, or an object with the list and the place's 대표자·주소. */
+        fun encodePlaceCalls(calls: List<com.bamnat.core.team.TeamCall>, owner: String, address: String, withToken: Boolean = true): String {
+            val list = encodeCalls(calls, withToken)
+            if (owner.isBlank() && address.isBlank()) return list
+            return JSONObject().put("calls", if (list.isBlank()) JSONArray() else JSONArray(list)).put("owner", owner).put("address", address).toString()
+        }
+
+        fun decodePlaceExtra(t: String): Pair<String, String> = if (!t.trimStart().startsWith("{")) "" to "" else runCatching {
+            JSONObject(t).let { it.optString("owner") to it.optString("address") }
+        }.getOrDefault("" to "")
 
         fun StaffEntity.toModel() = StaffMember(
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,
@@ -439,7 +459,7 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         fun encodeContract(c: StaffContract.Sent?): String = c?.let {
             JSONObject().put("title", it.title).put("items", JSONArray().apply { it.items.forEach { i -> put(JSONObject().put("t", i.title).put("b", i.body)) } })
                 .put("sent", it.sentAt).putOpt("id", it.linkId).putOpt("token", it.token).putOpt("url", it.url).putOpt("expires", it.expiresAt)
-                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper)
+                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper).putOpt("given", it.givenAt)
                 .apply { if (it.past.isNotEmpty()) put("past", JSONArray().apply { it.past.forEach { p -> put(JSONObject(encodeContract(p))) } }) }.toString()
         }.orEmpty()
 
@@ -449,7 +469,7 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             fun num(k: String) = if (o.has(k) && !o.isNull(k)) o.getLong(k) else null
             val a = o.optJSONArray("items") ?: JSONArray()
             StaffContract.Sent(o.optString("title"), (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { StaffContract.Item(it.optString("t"), it.optString("b")) },
-                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"),
+                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"), num("given"),
                 o.optJSONArray("past")?.let { p -> (0 until p.length()).mapNotNull { p.optJSONObject(it)?.let { x -> decodeContract(x.toString()) } } }.orEmpty())
         }.getOrNull()
 
@@ -461,18 +481,23 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         fun StaffWork.toEntity() = StaffWorkEntity(staffId, date.toEpochDay(), kind.name, start?.let { it.hour * 60 + it.minute }, end?.let { it.hour * 60 + it.minute })
 
         fun encodeAllowances(l: List<StaffAllowance>) = JSONArray().apply {
-            l.forEach { put(JSONObject().put("name", it.name).put("amount", it.amount).put("perDay", it.perDay)) }
+            l.forEach { put(JSONObject().put("name", it.name).put("amount", it.amount).put("perDay", it.perDay).put("free", it.taxFree)) }
         }.toString()
 
         fun decodeAllowances(t: String): List<StaffAllowance> = runCatching {
             JSONArray(t).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
-                .map { StaffAllowance(it.optString("name"), it.optLong("amount").coerceAtLeast(0), it.optBoolean("perDay")) }
+                .map { StaffAllowance(it.optString("name"), it.optLong("amount").coerceAtLeast(0), it.optBoolean("perDay"),
+                    // [RVJ-10] older rows had no switch: 식대 reads as 비과세, as a new one starts.
+                    if (it.has("free")) it.optBoolean("free") else StaffAllowance.looksTaxFree(it.optString("name"))) }
         }.getOrDefault(emptyList())
 
-        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).put("tax", i.tax.name).toString()
+        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).put("tax", i.tax.name)
+            .put("family", i.family).put("children", i.children).apply { if (i.foreign) put("foreign", true) }.toString()
         fun decodeInsurance(t: String): Insurance = runCatching {
             JSONObject(t).let { Insurance(it.optBoolean("pension"), it.optBoolean("health"), it.optBoolean("employment"),
-                runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE)) }
+                runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE),
+                // [RVJ-10] 가족 수 (1~11) and 8~20세 자녀.
+                it.optInt("family", 1).coerceIn(1, 11), it.optInt("children", 0).coerceIn(0, 10), it.optBoolean("foreign", false)) }
         }.getOrDefault(Insurance())
 
         /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */

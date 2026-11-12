@@ -30,7 +30,6 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material.icons.filled.Watch
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,6 +53,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -112,6 +112,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [SLP-16] The sleep log as something to use: what the two taps are for, the user's own averages
@@ -466,7 +467,10 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
     }
     val target = settings.sleepTargetMinutes
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19: it sat on the cards).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
     Scaffold(
+        modifier = Modifier.nestedScroll(fab.connection),
         topBar = {
             TopAppBar(
                 title = { Text("수면 기록") },
@@ -484,7 +488,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
         },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, "기록 추가") }, text = { Text("기록 추가") })
+            com.bamnat.app.ui.components.AddFab("기록 추가", onClick = { adding = true }, open = fab.open)
         },
     ) { padding ->
         val s = state ?: return@Scaffold
@@ -690,8 +694,8 @@ private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
     SectionCard(title = "수면 기록은 이렇게 쓰여요") {
         listOf(
             // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 card to press in.
-            if (style?.usesPayEngine == false) "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 오늘 날짜와 자는 중 알림에 버튼이 있어요."
-            else "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 버튼이 있어요.",
+            if (style?.usesPayEngine == false) "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 오늘 날짜와 자는 중 알림에 단추가 있어요."
+            else "잠들 때 ‘잠들었어요’, 깼을 때 ‘깼어요’를 누르면 돼요. 달력 위 오늘의 흐름 카드, 오늘 날짜, 자는 중 알림에 단추가 있어요.",
             "깜빡했으면 여기서 ‘기록 추가’로 나중에 적어도 돼요. 워치 기록은 설정 > 알림과 잠에서 헬스 커넥트를 켜면 함께 세요.",
             // 1.38 사용자 2026-11-06 (교대가 없는 유형에 주·야): 야간 뒤 is said to 교대 only.
             when (style) {
@@ -815,7 +819,7 @@ internal fun RecordRows(shown: List<SleepEntry>, r: SleepInsights.Report, onOpen
         shown.forEachIndexed { i, e ->
             if (i > 0) HorizontalDivider()
             Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(enabled = !e.imported) { onOpen(e) }.padding(vertical = 8.dp),
+                Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, enabled = !e.imported) { onOpen(e) }.padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(if (e.imported) Icons.Filled.Watch else Icons.Filled.Bedtime, contentDescription = if (e.imported) "워치 기록" else null,

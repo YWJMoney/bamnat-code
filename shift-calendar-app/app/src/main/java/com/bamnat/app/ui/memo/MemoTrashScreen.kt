@@ -95,7 +95,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
         ) {
             item {
                 Text(
-                    "지운 메모는 ${MemoRepository.TRASH_DAYS}일이 지나면 완전히 삭제돼요.",
+                    "지운 메모는 ${MemoRepository.TRASH_DAYS}일이 지나면 완전히 지워져요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -116,7 +116,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
         AlertDialog(
             onDismissRequest = { confirmEmpty = false },
             title = { Text("휴지통을 비울까요?") },
-            text = { Text("메모 ${list.size}개가 완전히 삭제되고 되살릴 수 없어요.") },
+            text = { Text("메모 ${list.size}개가 완전히 지워지고 되살릴 수 없어요.") },
             confirmButton = {
                 TextButton(onClick = { confirmEmpty = false; vm.emptyTrash() }) { Text("비우기") }
             },
@@ -145,10 +145,10 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
     confirmForever?.let { memo ->
         AlertDialog(
             onDismissRequest = { confirmForever = null },
-            title = { Text("완전히 삭제할까요?") },
+            title = { Text("완전히 지울까요?") },
             text = { Text("이 메모는 되살릴 수 없어요.") },
             confirmButton = {
-                TextButton(onClick = { confirmForever = null; vm.deleteForever(memo) }) { Text("삭제") }
+                TextButton(onClick = { confirmForever = null; vm.deleteForever(memo) }) { Text("지우기") }
             },
             dismissButton = { TextButton(onClick = { confirmForever = null }) { Text("취소") } },
         )
@@ -170,11 +170,11 @@ private fun TrashRow(memo: Memo, daysLeft: Int, onRestore: () -> Unit, onDeleteF
                 Text(memo.title.ifBlank { memo.preview }.ifBlank { "(빈 메모)" }, style = MaterialTheme.typography.titleSmall,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val date = memo.date?.let { "${Fmt.dayTitle(it)} · " }.orEmpty()
-                Text("${date}${daysLeft}일 뒤 삭제", style = MaterialTheme.typography.bodySmall,
+                Text("${date}${daysLeft}일 뒤 지워져요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             IconButton(onClick = onRestore) { Icon(Icons.Outlined.Restore, "되살리기") }
-            IconButton(onClick = onDeleteForever) { Icon(Icons.Outlined.DeleteForever, "완전히 삭제") }
+            IconButton(onClick = onDeleteForever) { Icon(Icons.Outlined.DeleteForever, "완전히 지우기") }
         }
     }
 }

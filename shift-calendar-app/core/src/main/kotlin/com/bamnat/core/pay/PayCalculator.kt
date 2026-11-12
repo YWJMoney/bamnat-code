@@ -209,7 +209,8 @@ class PayCalculator(
             // [PAYS-03] No 8시간·40시간 for an approved 감시·단속 worker: every hour is paid at 100%.
             options = ClassifyOptions(profile.dailyLimitMinutes.takeUnless { supervisory }, profile.weeklyLimitMinutes.takeUnless { supervisory },
                 profile.weekStart, restDayWork = rules.restDayWork, scheduleIsRegular = profile.scheduleIsRegular,
-                flexPeriod = flex, flexStart = profile.flexStart, holidayByClock = !rules.holidayByShiftStart),
+                flexPeriod = flex, flexStart = profile.flexStart, holidayByClock = !rules.holidayByShiftStart,
+                holidayInWeek = !rules.holidayOutsideWeek),
         )
         val allMinutes = classifier.classify(days, holiday).map { roundOvertime(it, rules.overtimeRounding) }
         // [PAYX-17] 탄력적 근로시간제 still caps a single week: 48시간 for 2주, 52시간 for 3개월 이내 (제51조 단서).
@@ -381,6 +382,12 @@ class PayCalculator(
         val hourParts = setOf(LineKind.BASE, LineKind.EXTRA_HOURS, LineKind.OVERTIME, LineKind.NIGHT, LineKind.HOLIDAY)
         var probationMinutes = 0
         var probationTotal = 0L
+        // 2.0.0 [RVJ-03] 검토 PAYC-03: a 시급·일당 that changes inside the pay period (1월 1일부터 10,700원, a period of
+        // 12/21~1/20) pays each day at that day's rate. The month's lines use the rate on the 1st; days at another rate
+        // add their difference here, part by part, as the 수습 감액 does.
+        fun dayRate(d: LocalDate): Long = if (byHour && setHourly == null) profile.base.on(d).value else base.value
+        val rateDays = sortedMapOf<Long, MutableList<LocalDate>>()
+        var rateGap = 0L
 
         for (day in monthDays) {
             val m = byDate[day.date] ?: DayMinutes(day.date)
@@ -527,6 +534,17 @@ class PayCalculator(
                 premiumTotals.getOrPut(t.id) { ShiftPremium(t.name, t.premiumPercent) }.minutes += mins
                 parts += DayPart(LineKind.ALLOWANCE, "${t.name} 근무 수당", money(mins, rate), "${hours(mins)} × ${won(hourly)} × ${pct(rate)}")
             }
+            // [RVJ-03] This day's own 시급·일당, when it is not the month's.
+            dayRate(day.date).takeIf { it > 0 && it != base.value && base.value > 0 }?.let { r ->
+                val ratePay = parts.filter { it.kind in hourParts || it.kind == LineKind.LEAVE || it.label == "유급휴일" || it.label.endsWith(" 근무 수당") }
+                    .sumOf { it.amount }
+                val gap = (ratePay * (r.toDouble() / base.value - 1.0)).roundToLong()
+                if (gap != 0L) {
+                    rateGap += gap
+                    rateDays.getOrPut(r) { mutableListOf() } += day.date
+                    parts += DayPart(LineKind.BASE, "그날 시급", gap, "그날 ${if (profile.wageType == WageType.DAILY) "일당" else "시급"} ${won(r)} (${won(ratePay)} 기준)")
+                }
+            }
             // [EXTRA-03] Allowances counted the same way however the work was entered: the day's shift
             // and each piece of extra work that counts as a shift.
             val shifts = day.extras.filter { it.kind.countsAsShift }
@@ -607,6 +625,27 @@ class PayCalculator(
             weeklyHolidayLine(allMinutes, attendedByDate, paidHolidayByDate, holidayWeekFrom, periodStart, periodEnd, hourly, baseEstimated, absentDates,
                 profile::onProbation, holiday, holidayWeeks)
         } else null
+        // [RVJ-03] 주휴 is paid at the rate of the week's 주휴일 (the week's last day).
+        if (weeklyHoliday != null && byHour && setHourly == null && base.value > 0) holidayWeeks.filter { it.earned }.forEach { w ->
+            val r = dayRate(w.to.coerceAtMost(periodEnd))
+            if (r > 0 && r != base.value) {
+                val gap = (money(w.paidMinutes, 1.0) * (r.toDouble() / base.value - 1.0)).roundToLong()
+                if (gap != 0L) { rateGap += gap; rateDays.getOrPut(r) { mutableListOf() } += w.to }
+            }
+        }
+        if (rateGap != 0L) {
+            val word = if (profile.wageType == WageType.DAILY) "일당" else "시급"
+            val spans = rateDays.entries.joinToString(" · ") { (r, ds) ->
+                val a = ds.min(); val b = ds.max()
+                (if (a == b) "${a.monthValue}/${a.dayOfMonth}" else "${a.monthValue}/${a.dayOfMonth}~${b.monthValue}/${b.dayOfMonth}") + " ${won(r)}"
+            }
+            lines += PayLine(
+                LineKind.BASE, "그날 $word 차이", rateGap,
+                formula = "$spans (나머지 날은 ${won(base.value)})",
+                basis = "${word}이 급여 기간 가운데 바뀌어 날마다 그날 ${word}으로 계산했어요",
+                estimated = baseEstimated,
+            )
+        }
         // [HRLY-06] 주휴 earned by days on probation, at the 수습 rate too.
         weeklyHoliday?.second?.takeIf { it > 0 }?.let { mins ->
             probationMinutes += mins
@@ -664,7 +703,10 @@ class PayCalculator(
             LineKind.OVERTIME, "연장근로", overtime, hourly, mOt,
             "하루 8시간·주 40시간을 넘는 근무" + companyNote(rules.overtimePremium != null) +
                 if (rules.restDayWork == RestDayWork.OVERTIME) ", 쉬는 날 근무 포함" else "",
-            "근로기준법 제56조 제1항$restNote", baseEstimated,
+            "근로기준법 제56조 제1항$restNote" +
+                // 2.0.0 [RVJ-01] 결정 9번(노무사 확인) 전이라, 휴일 근무가 주 40시간에 들어간 달은 그렇게 셌다고 적어요.
+                (if (!rules.holidayOutsideWeek && hWithin + hOver + rWithin + rOver > 0) " · 휴일에 일한 시간도 한 주 40시간에 셌어요(제2조 제1항 제7호, 확인 필요, 회사 규칙에서 바꿔요)" else ""),
+            baseEstimated,
         )
         if (night > 0 && pr.night > 0) lines += line(
             LineKind.NIGHT, "야간근로 가산", night, hourly, pr.night,

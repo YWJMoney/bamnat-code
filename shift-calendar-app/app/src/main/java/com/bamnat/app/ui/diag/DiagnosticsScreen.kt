@@ -153,7 +153,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         add(AlarmCheck("알람 사용", settings.alarmsEnabled, "꺼져 있으면 근무 알람이 하나도 울리지 않아요.", "켜기", Fix.TurnOn))
         // [ALRM-01] R11: without it the alarm still rings, but its buttons and 일어났나요? cannot show.
         add(AlarmCheck("알림 허용", Notifications.canPost(context),
-            "꺼져 있으면 알람이 울려도 끄기·다시 울림 버튼이 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
+            "꺼져 있으면 알람이 울려도 끄기·다시 울림 단추가 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
             Fix.Open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))))
         // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
         if (Notifications.canPost(context)) {
@@ -463,7 +463,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
         ) {
             item {
                 Text(
-                    "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 버튼으로 내용을 복사해 문의에 붙여 주세요. " +
+                    "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 단추로 내용을 복사해 문의에 붙여 주세요. " +
                         "기록은 이 휴대폰에만 있고 메모와 금액은 담지 않아요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -481,7 +481,7 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                 SectionCard(title = "점검") {
                     val bad = checks.count { it.ok == false }
                     Text(
-                        if (bad == 0) "알람이 울리는 데 필요한 것이 모두 준비됐어요." else "고칠 것이 ${bad}개 있어요. 버튼을 누르면 바로 그 화면이 열려요.",
+                        if (bad == 0) "알람이 울리는 데 필요한 것이 모두 준비됐어요." else "고칠 것이 ${bad}개 있어요. 단추를 누르면 바로 그 화면이 열려요.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (bad == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     )

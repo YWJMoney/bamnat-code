@@ -131,6 +131,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -370,7 +371,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                                 )
                             }
                             DropdownMenuItem(
-                                text = { Text("삭제", color = MaterialTheme.colorScheme.error) },
+                                text = { Text("지우기", color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = { Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.error) },
                                 onClick = { menu = false; confirmDelete = true },
                             )
@@ -437,9 +438,11 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         val shift = day?.shiftType?.takeIf { date != null }
                         if (shift != null) com.bamnat.app.ui.components.ShiftBadge(shift, size = 18.dp, showIcon = false) else Icon(Icons.Filled.Event, null, Modifier.size(18.dp))
                     },
-                    // 2.0.0 [RVI-30] (검토 MEMO-09) No 18dp X beside the date: one stray tap took the date and its repeat. '날짜 떼기' is in
-                    // the date window, and what went with it is said.
+                    // 2.0.0 [RVI-30] (검토 MEMO-09) No 18dp X inside the chip: one stray tap took the date and its repeat. '날짜 떼기' is
+                    // in the date window too, and what went with it is said.
                 )
+                // 2.0.0 [RVP-10] (검토 UIX-10·U13-20) 날짜 떼기 is pressed as 48dp beside the chip, not 18dp inside it.
+                if (date != null) com.bamnat.app.ui.components.ChipClear("날짜 떼기", onClick = { vm.setDate(null) })
                 // [NOTE-05] A memo can come back every week, month or year, [EASE-22] or every 야간; [EASE-23] one with no date
                 // gets the day to start from, and says so. Right after the date, before the shift label (1.38 PC 확인 9b028f4c:
                 // after the label it sat past the screen's edge and took a swipe to find).
@@ -1104,7 +1107,7 @@ private fun ChecklistRow(
             },
         )
         IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Close, "항목 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+            Icon(Icons.Filled.Close, "항목 지우기", tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
     }
 }

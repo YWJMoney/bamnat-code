@@ -282,7 +282,7 @@ private fun MonthPage(p: WatchPayload) {
         item {
             Row(Modifier.padding(horizontal = 14.dp)) {
                 WatchDays.weekHead(p.weekStart).forEach {
-                    Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 9.sp, color = WearTone.Muted)
+                    Text(it, Modifier.weight(1f), textAlign = TextAlign.Center, fontSize = 10.sp, color = WearTone.Muted)
                 }
             }
         }
@@ -297,18 +297,18 @@ private fun MonthPage(p: WatchPayload) {
                                 d.off -> Color(0xFF333A46)
                                 else -> Color(d.colorArgb.toInt())
                             }
-                            Text("${date.dayOfMonth}", fontSize = 8.sp, color = if (date == today) Color.White else WearTone.Muted,
+                            Text("${date.dayOfMonth}", fontSize = 10.sp, color = if (date == today) Color.White else WearTone.Muted,
                                 fontWeight = if (date == today) FontWeight.Bold else FontWeight.Normal)
-                            Box(Modifier.fillMaxWidth().height(13.dp).clip(RoundedCornerShape(3.dp))
+                            Box(Modifier.fillMaxWidth().height(15.dp).clip(RoundedCornerShape(3.dp))
                                 .background(badge), contentAlignment = Alignment.Center) {
-                                Text(d?.label?.take(1) ?: "", fontSize = 8.sp, color = inkOn(badge), maxLines = 1)
+                                Text(d?.label?.take(1) ?: "", fontSize = 10.sp, color = inkOn(badge), maxLines = 1)
                             }
                         }
                     }
                 }
             }
         }
-        item { Text("받은 기간 밖의 날은 비어 있어요", fontSize = 9.sp, color = WearTone.Hint) }
+        item { Text("받은 기간 밖의 날은 비어 있어요", fontSize = 10.sp, color = WearTone.Hint) }
     }
 }
 

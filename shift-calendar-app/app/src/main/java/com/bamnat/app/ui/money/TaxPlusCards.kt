@@ -46,6 +46,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * F 1.32 [TAXP-01] 592: the month's 세전 and 세후 on one line of 수입 내역, from the payslip, the deposit, the user's own
@@ -55,7 +56,7 @@ import java.time.YearMonth
 internal fun NetSummaryLine(line: TaxPlus.NetLine?, gate: Gate) {
     line ?: return
     val locked = line.estimated && gate.locked(Feature.TAX_FORECAST)
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) } else it },
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp).let { if (locked) it.clickable(role = Role.Button) { if (!com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) openPro(Feature.TAX_FORECAST) } else it },
         verticalAlignment = Alignment.CenterVertically) {
         Text(if (locked) listOfNotNull(line.gross?.let { "세전 ${Fmt.won(it)}" }, "세후 예상은 프로").joinToString(" · ") else Fmt.hide(TaxPlus.netText(line)),
             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))

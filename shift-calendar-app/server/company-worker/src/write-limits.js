@@ -19,22 +19,33 @@ export const WRITE_LIMITS = {
 /**
  * 1.39 [CARE-06] 더 잘게, 확인한 것만 (사용자 2026-11-07 "2회는 너무 타이트, 실제로 잘못된 행동을 하고 있을 때 제재"): 마을 돌봄 깃발이 켜지면
  * (처리방침 3.12·광장 운영 규칙 다음 판 시행일) 이 규칙을 써요. 신고로 먼저 가려진 것은 '확인 대기'로만 두고 운영자가 가린 채 둔 것만 세요.
- * 60일 안 1번 안내, 2번 경고(막는 것 없음), 3번부터 한 단계씩, 제한을 받은 뒤 180일 안에는 1번마다 다음 단계.
+ * 60일 안 1번 안내, 2번 경고(막는 것 없음), 3번부터 한 단계씩, 제한을 받은 뒤 60일 안에는 1번마다 다음 단계.
+ * 2.0.0 [RVD-17] 검토 LEGAL-07 (사용자 결정 2026-11-12 '서버를 60일로'): 광장 운영 규칙 6항 "한 번 제한을 받은 뒤 60일 안에 또 확인되면 바로 다음
+ * 단계"대로, 제한이 끝난 뒤 60일이 지나면 다시 3번부터 세요(1.39는 단계가 내려가기 전 180일 동안 1번마다 올렸어요). 180일 조용하면 한 단계씩
+ * 내려가는 것은 그대로예요.
  */
 export const WRITE_LIMITS_V2 = {
   windowDays: 60,
   strikes: 3,
-  /** After a restriction (its step not yet forgotten), each confirmed one steps up. */
+  /** After a restriction (its step not yet forgotten), each confirmed one within [againDays] of its end steps up. */
   again: 1,
+  againDays: 60,
   steps: WRITE_LIMITS.steps,
   forgetDays: 180,
   /** Report-hidden strikes wait for the operator; the ones under [strikes] bring a gentle 안내·경고 (community-care.js). */
   care: true,
 };
 
-/** The rules in force now: the finer ones once 마을 돌봄 is on. */
+/**
+ * 2.0.0 [RVD-18] 검토 LEGAL-02 (사용자 결정 2026-11-12): 처리방침 3.12 1-4항 "3.12 시행일부터는 운영자가 확인해 가린 것만 셉니다"를 그날부터.
+ * 마을 돌봄(12-09) 전에도 신고로 가려진 것은 '확인 대기'로 두고, 셈과 단계는 1.36 그대로(30일 안 2번)예요.
+ */
+export const WRITE_LIMITS_CONFIRMED = { ...WRITE_LIMITS, confirmedOnly: true };
+
+/** The rules in force now: the finer ones once 마을 돌봄 is on, else 1.36's counting only what the operator confirmed once 3.12 is in force. */
 export async function writeRules(d, env, now) {
-  return (await careOn(d, env, now)) ? WRITE_LIMITS_V2 : WRITE_LIMITS;
+  if (await careOn(d, env, now)) return WRITE_LIMITS_V2;
+  return d.legalOpen && (await d.legalOpen(env, "community.confirmed", now)) ? WRITE_LIMITS_CONFIRMED : WRITE_LIMITS;
 }
 
 export const WRITE_LIMITS_SCHEMA = [
@@ -88,7 +99,7 @@ export function limitJson(a, extra = {}) {
 export async function addStrike(d, env, dev, kind, ref, now, rules = null, by = null) {
   if (!dev) return null;
   rules ??= await writeRules(d, env, now);
-  const waits = Boolean(rules.care) && by !== "operator";
+  const waits = Boolean(rules.care || rules.confirmedOnly) && by !== "operator";
   await d.run(env, "INSERT INTO write_strikes (device, kind, ref, at, hidden_by, confirmed) VALUES (?, ?, ?, ?, ?, ?)",
     dev, kind, String(ref).slice(0, 80), now, by, waits ? 0 : 1);
   if (waits) return null;
@@ -102,10 +113,12 @@ async function weigh(d, env, dev, kind, ref, now, rules, by) {
   // A strike already counted toward a restriction does not count again.
   const from = Math.max(now - rules.windowDays * DAY, last ? last.since : 0);
   const n = (await d.one(env, "SELECT COUNT(*) AS n FROM write_strikes WHERE device = ? AND confirmed = 1 AND at > ?", dev, from))?.n ?? 0;
-  const need = rules.again && last && stepAfter(last, now, rules) > 0 ? rules.again : rules.strikes;
+  // [RVD-17] Only within [againDays] after the last restriction ended does one more step up; after that it is [strikes] again.
+  const recent = last && (!rules.againDays || now - last.until <= rules.againDays * DAY);
+  const need = rules.again && recent && stepAfter(last, now, rules) > 0 ? rules.again : rules.strikes;
   if (n < need) {
     // 1.39 [CARE-01] 막기 전에 부드럽게: 처음은 안내, 그다음은 '한 번 더면 며칠 줄어요' 경고.
-    if (rules.care) await careAutoWarn(d, env, dev, kind, ref, by, now, { n, need, again: Boolean(last) });
+    if (rules.care) await careAutoWarn(d, env, dev, kind, ref, by, now, { n, need, again: Boolean(recent) });
     return null;
   }
   const step = Math.min(stepAfter(last, now, rules) + 1, rules.steps.length);

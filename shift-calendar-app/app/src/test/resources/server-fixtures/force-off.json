@@ -207,6 +207,7 @@
     "waitingDays": 0,
     "earned": [],
     "items": [],
+    "pending": [],
     "deferred": 0,
     "admin": {
       "status": "approved",
@@ -224,6 +225,7 @@
     "waitingDays": 0,
     "earned": [],
     "items": [],
+    "pending": [],
     "deferred": 0,
     "admin": {
       "status": "pending",

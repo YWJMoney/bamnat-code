@@ -59,7 +59,8 @@ class FirstSetup(
          */
         quiet: Boolean = false,
     ): SetupDraft = lock.withLock {
-        val style = requireNotNull(draft.style) { "A setup without a kind of work" }
+        // [RVG-16] A setup filled from a 근무표 link saves the kind of work its summary was told.
+        val style = requireNotNull(draft.savedStyle) { "A setup without a kind of work" }
         val marked = draft.copy(committing = true, later = quiet)
         withContext(Dispatchers.IO) {
             drafts.save(marked)

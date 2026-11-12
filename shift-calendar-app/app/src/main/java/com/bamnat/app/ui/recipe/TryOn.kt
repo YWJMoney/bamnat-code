@@ -71,6 +71,7 @@ import com.bamnat.core.recipe.LookParts
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
 
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
 @Composable
@@ -179,7 +180,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                         androidx.compose.ui.semantics.CustomAccessibilityAction("선을 오른쪽으로") { onSplit((latest + 0.1f).coerceIn(0.05f, 0.95f)); true },
                     )
                 }, contentAlignment = Alignment.Center) {
-                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
+                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small))
             }
         }
     }
@@ -386,7 +387,7 @@ fun TryOnScreen(
                         if (!onlyChanges) Slider(split, { split = it }, modifier = Modifier.fillMaxWidth(0.7f).semantics { contentDescription = "지금과 입으면 나눠 보기"; stateDescription = "입으면 ${(split * 100).toInt()}%" })
                         // [R136-06] 1.36 (리뷰 R-18): what the picture shows follows the slider.
                         Text(when {
-                            onlyChanges && changedBlocks == 0 && changedHere.isEmpty() -> "이 화면은 입어도 똑같아요. 아래 탭을 눌러 다른 화면을 봐요."
+                            onlyChanges && changedBlocks == 0 && changedHere.isEmpty() -> "이 화면은 입어도 똑같아요. 아래 메뉴를 눌러 다른 화면을 봐요."
                             // 빌드 6 확인: what changes but does not show on the example is said in words.
                             onlyChanges && changedBlocks == 0 -> "이 화면에서 바뀌는 것: ${changedHere.joinToString(" · ")}. 예시에는 잘 드러나지 않아요."
                             onlyChanges -> "밝은 곳이 바뀌어요" + (changedHere.takeIf { it.isNotEmpty() }?.let { ": " + it.joinToString(" · ") } ?: "") +
@@ -409,7 +410,7 @@ fun TryOnScreen(
                         parts.groupBy { it.tab }.forEach { (t, list) ->
                             val ids = list.map { it.id }.toSet()
                             val all = picked.containsAll(ids)
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(all, { on -> picked = if (on) picked + ids else picked - ids })
                                 Text(LookParts.tabLabel(t) + " 전체", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))

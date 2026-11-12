@@ -2432,6 +2432,13 @@ RVD-09,"검토 2026-11-12 SVC-89: 광장 글 표(posts)에 parent·answer 색인
 RVD-10,"검토 2026-11-12 SVC-65: 개발 결과 붙여 넣기를 두 번 하면 문의 답이 두 번 감",1.40,진행 중,,"inbox.js applyResult already_applied, inboxAnswer 같은 답"
 RVD-11,"검토 2026-11-12 SVC-01: 나간 판 저장이 중간에 끊기면 남은 출시 안내·공지가 다시 가지 않음",1.40,진행 중,,"desk.js shipNow pending·resumeShip, loop.js shipTick"
 RVD-12,"검토 2026-11-12 WEB-01~04·06: 공개 웹 계산기 숫자(연봉 칩 12배, 퇴직금 윤년·3개월 일수, 연차 달 끝 입사, 주 40시간 월급 쪽마다 다름)",1.40,진행 중,,"tools/site/public_pages.py 실수령액 칩·퇴직금 addM·연차 addM·주휴 tot, 공개 저장소 PR"
+RVD-13,"검토 2026-11-12 SVC-05·98: 모두의 도구·채택·이달의 주제 작품 보상이 확인 없이 바로 지급됨 → 지급 대기로 두고 관리자가 작품 숫자를 보고 지급 (사용자 카드 11-12 '확인 뒤 지급 + 1년 상한')",2.0.0,진행 중,,"maker-reward.js grantMakerReward owed, money.js passes pending, test/review-d-reward.test.mjs"
+RVD-14,"검토 2026-11-12 SVC-06: 친구 초대 보상이 앱이 보낸 phoneMark만 믿고 바로 지급됨 → 지급 대기 + 관리자 판단 근거(Play 확인 폰 수·직접 입력·몰림)",2.0.0,진행 중,,"money.js settleInvites owed, index.js rewardSignals friends, test/review-d-reward.test.mjs"
+RVD-15,"검토 2026-11-12 SVC-05·06: 한 사람이 받는 보상 프로는 모든 보상 합쳐 1년 12개월까지(이용권을 옮겨도 그대로), 넘는 것은 지급 대기에 '상한'으로",2.0.0,진행 중,,"money.js REWARD_CAP rewardYear·moved 행, index.js applyReward cap 409, test/review-d-reward.test.mjs"
+RVD-16,"검토 2026-11-12: 늘어난 지급 대기를 관리자 앱에서 편하게 → 종류별 칩, 줄마다 판단 근거·1년 상한, 여러 개 골라 지급·취소",2.0.0,진행 중,,"admin-app.js rewardsView·rewardJudge, index.js bulkRewards, test/ui/admin-ui.test.mjs"
+RVD-17,"검토 2026-11-12 LEGAL-07: 글쓰기 제한 뒤 다시 세는 기간을 공개 광장 운영 규칙 6항대로 60일(서버는 180일이었음) (사용자 카드 11-12)",2.0.0,진행 중,,"write-limits.js WRITE_LIMITS_V2 againDays, test/review-d-legal.test.mjs"
+RVD-18,"검토 2026-11-12 LEGAL-02·03: 마을 돌봄 깃발을 나눔 → '운영자가 확인한 신고만 센다'는 처리방침 3.12 시행일부터(community.confirmed), 마을 쉬기는 코드 기본값으로 2026-12-09부터 (사용자 카드 11-12)",2.0.0,진행 중,,"FlagCatalog COMMUNITY_CONFIRMED·CARE_FROM, write-limits.js WRITE_LIMITS_CONFIRMED, test/review-d-legal.test.mjs, FlagEvalTest"
+RVD-19,"총괄 2026-11-12: 서버 자동 배포의 판 이름 확인을 그 Worker 자신의 지금 판과 비교 → 회사는 앞 판 메시지 맨 앞 판(공유 서버 판이 아니라), 낮거나 알 수 없으면 멈춤(--allow-older로만). main(1.39.0) 회사 배포가 2.0.0 위에 조용히 올라가는 것을 막음",2.0.0,진행 중,,"tools/deploy_worker.py message_version·live_version·version_gate, tools/test_deploy_worker.py test_company_compares_with_its_own_live_version·test_company_health_says_its_version. PC-32: 회사 /api/admin/health에 version(src/index.js health), 배포 도구가 지금 판·새 판을 그 값으로 봄. workflow는 main의 사본을 쓰니 main에 먼저 들어가야 효과"
 R391-01,"1.39.1 검토 UIX-49: 알람 시각 창 '시작 기준' 탭에서 시·분 바퀴를 둘 다 돌리면 바퀴와 다른 값이 저장됨 → 바퀴가 늘 새 onValue를 부름",1.39.1,진행 중,,"TimeWheel Wheel rememberUpdatedState, ZScreenshotTest"
 R391-02,"1.39.1 검토 ALM-01: 통화 중 붙잡기 상한(3분·30분)이 끝나자마자 다시 걸려 알람이 1.5초만 울림 → 상한을 쓰면 통화 모드가 평상시로 돌아올 때까지 다시 붙잡지 않음",1.39.1,진행 중,,AlarmService callActive
 R391-03,"1.39.1 검토 ALM-02: 오늘·주·달·모든 조·다음 근무 위젯이 45초 안의 두 번째 변경을 그리지 않음 → 가계부 위젯처럼 도장으로 다시 읽기",1.39.1,진행 중,,"Widgets, DailyWidgets, WidgetRefresher"
@@ -2550,3 +2557,112 @@ RVI-69,"PC 통합 1차 PC-58(디자인 품질 2·4): 밤 화면·수면 '잠드�
 RVI-70,"PC 통합 1차 PC-65(디자인 품질 7·16) + 검토 T07a-07(조건 13): 메모 빈 화면이 아이콘과 두 문단 → 빈 화면 부품(칸이 + 한 줄), 일반 메모 예시를 유형마다(일근 회의 준비·알바 근무 바꾸기 약속·현장 자재 목록·가게 재료 주문·투자 매매 원칙)",2.0.0,진행 중,,ui/memo/MemoListScreen.kt EmptyMemos·generalExample
 RVI-71,검토 U03-05: 짧은 잠 뒤 '깼어요'가 달력에선 '0시간 잤어요'·수면 화면은 말없이 → 세 화면 같은 말 '40분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요',2.0.0,진행 중,,"core sleep/SleepInsights.kt wokeLine, CalendarViewModel·SleepScreen·NightScreen"
 RVI-72,"검토 U07a-13: 휴지통 메모를 열어 볼 수 없어 되살릴지 고르기 어려움 → 줄을 누르면 읽기 전용 창(날짜·글·체크리스트), '되살리기'·'닫기'",2.0.0,진행 중,,ui/memo/MemoTrashScreen.kt
+RVJ-01,"검토 PAYC-01·T04-02·U04-11: 한 주 40시간을 셀 때 휴일(빨간날·주휴일)에 일한 시간이 빠짐 → 휴일 근무도 한 주에 셈(근로기준법 제2조 제1항 제7호 '1주는 휴일 포함 7일'), 회사 규칙 '휴일 근무는 주 40시간에 안 넣음'으로 바꿀 수 있고 연장 줄에 '확인 필요'(결정 9번 노무사 확인 전)",2.0.0,진행 중,,"core/pay/MinuteClassifier.kt holidayInWeek, CompanyRules.holidayOutsideWeek, ui/pay/CompanyRulesEditor.kt; RvjPayTest"
+RVJ-02,검토 PAYC-02·T04-01: 빨간날에 시작해 다음 날로 넘어가는 긴 근무의 8시간 넘는 연장이 빠짐 → 한 번 이어 일한 근무는 휴일 시간부터 하루 8시간을 채우고 나머지 평일 시간은 연장,2.0.0,진행 중,,"core/pay/MinuteClassifier.kt holidayFirst; RvjPayTest, M7Test"
+RVJ-03,검토 PAYC-03·T04-03·U04-04·I04a-03·I05a-01: 급여 기간이 달 가운데에서 끊기면 1월 1일 시급 인상이 12월 하순 근무에도 적용됨 → 날마다 그날 시급·일당으로 계산하고 '그날 시급 차이' 한 줄로 보여 줌(주휴는 그 주 주휴일 시급),2.0.0,진행 중,,core/pay/PayCalculator.kt dayRate·rateGap; RvjPayTest
+RVJ-04,"검토 PAYC-04·PAYC-14·BOSS-62(요율 문구): 새해(2027-01-01)에 원격 파일로 못 바꾸는 값(건강보험 상한·하한, 식대 비과세 한도, 두루누리 기준, 산재 출퇴근·임금채권·석면 요율, 국민연금 법정 일정)이 코드에 박힘 → rates.json 선택 칸으로 읽고 없으면 법정 일정·2026 값, 해가 바뀌었는데 새 값이 없으면 '올해 값 확인 중' 안내",2.0.0,진행 중,,"core/pay/Rates.kt latest·staleYear·LAW_PENSION·pensionRateOn, TakeHome.kt, boss/AccidentRates.kt, boss/BossNotices.kt, ui/pay/HourlyPay.kt StaleRatesNote; RvjPayTest"
+RVJ-05,검토 PAYC-20·U04-05: 해가 바뀐 뒤 요율 표가 지난해 값이면 조용히 지난해 값으로 계산 → 급여·시급 화면에 '올해 요율을 아직 못 받았어요' 한 줄,2.0.0,진행 중,,"core/pay/Rates.kt staleYear, ui/pay/PayScreen.kt·HourlyPay.kt StaleRatesNote; RvjPayTest"
+RVJ-06,"검토 PAYC-05·PAYU-48·T04-07·T04-08·T05b-06·U05b-04·I05bb-02: 연말정산 미리보기가 떼지 않는 보험·그해 입사·퇴사·마감한 달을 반영하지 않음 → 그해 일한 달만, 마감한 달은 마감 값으로, 보험은 내 설정대로(TakeHome.forProfile)",2.0.0,진행 중,,"core/pay/YearEndPreview.kt ofYear(closed)·projectedMonths, ui/pay/PayYearCards.kt; RvjPayTest"
+RVJ-07,"검토 PAYC-06: 근무 기록 증빙(PDF)의 '더 일함'이 급여 계산과 다름(시각 없는 추가 근무가 빠짐) → 급여 계산과 같은 분 수, 시각 없는 것은 '(시각 없음)'으로",2.0.0,진행 중,,core/report/WorkProof.kt; RvjPayTest
+RVJ-08,"검토 PAYU-07·U05-02: '기본 금액 바꾸기'의 기본 선택이 '모든 달 같게'라 지난 달과 인상 이력이 바뀜 → 지난 달이 바뀌면 첫 줄에 '지난 n개월도 바뀌어요', 인상이면 'N월부터'(그날부터)가 기본",2.0.0,진행 중,,"core/pay/BulkEditPlanner.kt FromMonth(start)·FromDate, ui/pay/PayDialogs.kt EditValueDialog, ui/pay/PayViewModel.kt planEdit"
+RVJ-09,"검토 PAYC-09·BOSS-56·T05c-04·U04-09·I05ba-05: 사장님 급여 지급일이 늘 '다음 달' → 당월 지급(매월 25일·말일)도 고르고, 쉬는 날이면 앞 영업일을 함께 알려 줌(payday 칸 100+일, DB 그대로)",2.0.0,진행 중,,"core/boss/Payroll.kt Workplace.payNextMonth·payDateWorkday·encodePayday, data/PhaseThreeStore.kt, ui/work/PayrollScreen.kt PlaceDialog; RvjBossTest.payDayCanBeTheSameMonth"
+RVJ-10,"검토 PAYC-08·PAYU-14·T04-10·T05-06·U04-10: 사장님 임금명세서에 비과세(식대)와 부양가족 수를 넣을 길이 없음 → 직원 수당마다 '세금 없는 돈' 스위치(식대는 기본 켬), 공제대상 가족·8~20세 자녀 수",2.0.0,진행 중,,"core/boss/Payroll.kt StaffAllowance.taxFree·Insurance.family/children, Payslip.kt freeOf, data/PhaseThreeStore.kt, ui/work/PayrollScreen.kt StaffAllowances; RvjBossTest.taxFreeMealAndFamilyReachTheSlip"
+RVJ-11,"검토 PAYC-22·PAYC-10·T05c-05: 일용근로자 소득세 방식이 없고 계산기마다 끝자리가 다름 → 소득세 떼는 법 '일용근로(하루 15만 원 공제)', 명세서·학습·계산기가 DailyWorkerTax 하나로(끝자리 규정은 원문 확인 필요)",2.0.0,진행 중,,"core/boss/Payroll.kt StaffTax.DAILY, Payslip.kt dailyTax, tax/TaxLearner.kt, money/FieldTools.kt; RvjBossTest.dailyWorkerTaxIsTheSameEverywhere"
+RVJ-12,"검토 PAYC-07·T04-09: 사장님 급여 대장의 월급·일급 직원 통상시급·최저임금 판단이 209시간·8시간 고정 → 그 사람의 평소 주 소정근로로 월 소정근로시간, 일급은 그날 소정근로로",2.0.0,진행 중,,core/boss/Payroll.kt weeklyMinutes·monthlyHours·dailyMinutes; RvjBossTest.partTimeMonthlyUsesItsOwnHours
+RVJ-13,검토 PAYC-19·T04-04: 18세 미만은 하루 7시간·주 35시간이 기준인데 8시간째를 연장으로 계산하지 않음 → 생년월일로 18세 미만이면 7·35시간 넘는 시간이 연장(근로기준법 제69조),2.0.0,진행 중,,"core/pay/PayProfile dailyLimitMinutes·weeklyLimitMinutes, core/boss/Payroll.kt youngIn; RvjPayTest"
+RVJ-14,"검토 BOSS-57·BOSS-58·BOSS-59·T05c-06·U05c-05: 신고 달력 기한이 주말·공휴일이어도 그대로, 근로소득 간이지급명세서·일용 지급명세서·근로내용확인신고가 없음, 3.3% 직원에게 산재 신고가 뜸 → 다음 영업일로 옮기고 까닭, 빠진 신고 넣음, 3.3%는 4대보험 신고 없음",2.0.0,진행 중,,"core/boss/BossFilings.kt deadline·moved·WAGE_BRIEF·DAILY_STATEMENT; BossFilingsTest, RvjBossTest"
+RVJ-15,검토 PAYU-13: 임금대장 파일(CSV)의 '공제액' 칸이 늘 비어 있음 → 명세서와 같은 공제액과 합계,2.0.0,진행 중,,core/boss/LedgerCsv.kt deducted; RvjBossTest.ledgerCsvHasTheDeductions
+RVJ-16,"검토 BOSS-60·BOSS-74: 명단 가져오기로 넣은 직원은 4대보험이 모두 꺼진 채, 일급·외국인·3.3% 규칙이 없음 → 가져올 때 법대로 채우고, 일급도 주 15시간 미만 규칙, 3.3%는 4대보험 없음, 일용·외국인 직원은 까닭 안내(외국인 직원 칩)",2.0.0,진행 중,,"core/boss/StaffImport.kt, InsuranceRules.kt, Payroll.kt Insurance.foreign, ui/work/PayrollScreen.kt; RvjBossTest.importAndInsuranceRules"
+RVJ-17,"검토 BOSS-52·BOSS-54·BOSS-55·T05c-03: 근로계약서 휴일 항목에 공휴일·노동절이 없고 주 7일 직원은 주휴일 빈칸, 18세 미만 안내·7시간·밤 근무 경고 없음, 사업주 칸이 가게 이름뿐이고 링크 서명본의 사업주 줄이 빈칸, 직원에게 줬는지 안 남음 → 유급휴일 줄, 주휴일 먼저 묻기, 18세 미만 안내·경고, 대표자·주소, 사업주 줄, '직원에게 줬어요' 날짜",2.0.0,진행 중,,"core/boss/StaffContract.kt, Payroll.kt Workplace.owner·address, data/PhaseThreeStore.kt, ui/work/PayrollScreen.kt; StaffContractTest, RvjBossTest.contractHolidaysMinorsAndOwner"
+RVG-15,"검토 TYPE-04(사용자 결정 2026-11-12 '두 단추로 묻기'): 받은 근무표 링크로 새로 깐 사람의 첫 단추가 '이 근무표로 시작'이라 가족·친구의 근무가 내 달력이 되고 따라 바뀜 → 첫 화면에서 '내 근무표예요 / 가족·동료 것이에요' 두 단추로 묻고, 가족·동료 것은 받은 달력(보기만)으로 두고 내 일은 유형 고르기부터. 팀 링크는 '내 근무표예요', 가족·친구 링크는 '가족·동료 것이에요'가 앞",2.0.0,진행 중,,"ui/setup/LinkStart.kt lean·keepMine·keepTheirs, ui/onboarding/FirstStyleScreen.kt, ui/AppRoot.kt, ui/setup/SetupFinish.kt 요약 제목"
+RVG-16,"검토 TYPE-21: 링크로 시작한 직원은 늘 교대 유형 → 요약에 '어떻게 일하세요? 교대 근무·평일 근무·알바·시급' 한 줄, 날짜는 받은 근무표 그대로, 고른 유형으로 저장(급여 설정·메뉴·추천 알림)",2.0.0,진행 중,,"core setup/SetupDraft.kt workAs·savedStyle, data/SetupDraftStore.kt, data/FirstSetup.kt, ui/setup/SetupViewModel.kt workAs, ui/setup/SetupFinish.kt LinkWorkAs"
+RVG-17,"검토 UIX-59: '이 근무표로 시작' 뒤 근무표를 한 번 더 읽다 실패하면(신호 없음) 리더 근무표 따라 바뀜이 조용히 꺼지고, 첫 화면 단추가 응답 뒤에 글·하는 일이 바뀜 → 처음 읽은 것을 그대로 받은 달력으로 두고(두 번째 읽기 없음), 읽는 동안 단추는 '근무표를 불러오는 중…'으로 잠깐 막음",2.0.0,진행 중,,"ui/setup/LinkStart.kt keepMine, ui/AppRoot.kt waitingRead, ui/onboarding/FirstStyleScreen.kt linkLoading"
+RVG-18,"검토 PC-22(도약 14) 일부: 리더가 다음 달 근무표를 확정해 보낸 링크로 시작하면 요약 달력과 첫 달력이 빈 이번 달로 열림 → 이번 달에 근무가 없으면 받은 근무가 있는 첫 달로 열기('달력만 크게 보고 있어요' 카드는 갈래 H)",2.0.0,진행 중,,"core setup/SetupDraft.kt openingMonth, ui/setup/SetupFinish.kt 요약 달력, ui/setup/SetupViewModel.kt 저장 뒤 shownMonth"
+RVP-01,"검토 UIX-02·I13a-01·U13-02: 안내·주의·끝남 카드가 화면마다 모양이 달라요 → 안내 띠 한 모양 NudgeCard(조용한 바탕, 뜻은 왼쪽 아이콘 색, 한 줄+단추 하나+X, 56dp)",2.0.0,진행 중,,
+RVP-02,검토 UIX-06·U13-12·I13a-02: 고르지 않은 탭 글자가 기본 보라·검정으로 섞여요 → 공통 Tab(고르지 않은 글자 onSurfaceVariant)으로 모두 바꿈,2.0.0,진행 중,,
+RVP-03,검토 UIX-14·I13a-02: '인터넷 없음' 말이 87줄에서 제각각 → OfflineLine 한 줄과 NetWords 공통 말,2.0.0,진행 중,,
+RVP-04,"검토 UIX-18·UIX-02: 불러오는 동안 빈 화면·돌림 원만 → 뼈대 줄 SkeletonRows, 빈 화면은 EmptyState로",2.0.0,진행 중,,
+RVP-05,검토 UIX-07·I13a-03: 모서리 둥글기 절반이 토큰 밖이라 '모서리' 꾸미기를 안 따라요 → 6·8·10·12·14·16·20·28dp를 MaterialTheme.shapes로,2.0.0,진행 중,,
+RVP-06,"검토 UIX-19·I13a-04·U13-03: 떠 있는 단추가 글·마지막 주 칸을 가려요 → AddFab 한 규칙(내리면 아이콘만, 큰 글자는 처음부터 아이콘만)",2.0.0,진행 중,,
+RVP-07,"검토 UIX-04·T13-03·I13a-05·UIX-22: 도구 화면이 창처럼 떠 있고 넓은 화면에서 늘어나기만 → 진짜 쪽 화면(밀려 들어옴, 상태 막대 색) + 본문 폭 PageWidth 640dp",2.0.0,진행 중,,
+RVP-08,"검토 UIX-16·I13a-06·I13c-04·U13-10: 작은 회색 설명이 너무 많아요 → 설명은 처음엔 다, 두 번째부터 한 줄+ⓘ, 세 번째부터 ⓘ만(Explain), 설정 스위치 긴 설명도, '설명 처음처럼 보기'",2.0.0,진행 중,,
+RVP-09,검토 UIX-09: 눌리는 줄 143곳에 단추 역할이 없어요 → clickable에 Role.Button,2.0.0,진행 중,,
+RVP-10,검토 UIX-10·U13-20: 18dp X 등 누르기 작은 곳 → 48dp 터치 넓이,2.0.0,진행 중,,
+RVP-11,"검토 UIX-11·T13-05·T13-06·T13-07: 8~9sp 글자, 글자 크기를 안 따르는 글자 → 10sp 이상, 글자 크기 설정 따름",2.0.0,진행 중,,
+RVP-12,검토 UIX-12: 뜻이 정해진 색을 화면에서 직접 적어 씀 → 테마 색(달력 토·일 색 등)으로,2.0.0,진행 중,,
+RVP-13,"검토 UIX-15·U13-06: 빨강은 위험에만, 주황 하나에 뜻 다섯 → 의미색 규칙(주황은 '바뀜·주의' 하나, 중립 설명은 회색)",2.0.0,진행 중,,
+RVP-14,검토 UIX-05: 밤 색에 빠진 역할 색이 있어 보라·분홍 기본색이 섞여요 → 밤 색 모든 역할 채움 + 대비 시험,2.0.0,진행 중,,
+RVP-15,검토 UIX-03·UIX-24·I13c-03: 채운 단추가 한 화면에 여럿 → 화면마다 채운 단추 하나 규칙과 세는 시험,2.0.0,진행 중,,
+RVP-16,검토 UIX-13·T13-08·I13b-03·U13-21·U13-08: 같은 것을 부르는 말이 화면마다 달라요 → 말 표와 금지어 시험,2.0.0,진행 중,,
+RVP-17,"검토 UIX-25·U13-24: 창과 아래 시트 쓰임이 섞여요 → 규칙(확인·짧은 질문은 창, 고르기·입력은 시트), 효과 미리보기 시트",2.0.0,진행 중,,
+RVP-18,검토 U13-27: 진동 피드백이 곳마다 달라요 → 진동 규칙 한 곳,2.0.0,진행 중,,
+RVP-19,"검토 UIX-21·UIX-57·UIX-61: 목록 key·contentType, 날짜 서식 매번 만들기, 큰 화면 다시 그리기 → 성능 묶음",2.0.0,진행 중,,
+RVP-20,검토 UIX-23: 로고의 남색·크림·금색과 앱 색이 이어지지 않아요 → '밤낮 기본' 색 묶음(기본값 바꾸기는 사용자 결정),2.0.0,진행 중,,
+RVP-21,검토 UIX-42·U13b-04: 12시간제 설정이 화면 상태와 어긋나요 → 시계 형식 상태 한 곳,2.0.0,진행 중,,
+RVP-22,검토 UIX-43·I13ba-01·U13b-02·U13b-08·UIX-47: 창이 한꺼번에 여러 개 떠요 → 창은 하나씩(차례),2.0.0,진행 중,,
+RVP-23,검토 UIX-44·I13ba-02·U13b-10·U13-22: 알림 줄(스낵바)이 겹치고 묻혀요 → 알림 줄 차례 하나,2.0.0,진행 중,,
+RVP-24,검토 UIX-45·T13b-03·U13b-09: 날이 바뀌면 쓰던 글이 사라져요 → 쓰던 글 지키기,2.0.0,진행 중,,
+RVP-25,"검토 UIX-46·U13b-06·I13bb-01: '홈' 말과 탭이 아닌 첫 화면 → 말 고침, 탭 밖 첫 화면",2.0.0,진행 중,,
+RVP-26,검토 UIX-48: 알림·링크로 넘긴 값이 두 번 쓰여요 → 한 번 쓰고 비움,2.0.0,진행 중,,
+RVP-27,"검토 UIX-50·T13b-09·U13b-05·I13ba-03: 12시간 바퀴, 숫자로 바로 치기 → 시간 바퀴 다듬기",2.0.0,진행 중,,
+RVP-28,"검토 UIX-51·T13b-08: 지역 서식, 억 단위 버림, 받침 조사 → 숫자·말 서식 고침",2.0.0,진행 중,,
+RVP-29,검토 UIX-52·U13b-11·I13ba-05: 막대그래프 → 값 읽기·축·빈 막대,2.0.0,진행 중,,
+RVP-30,검토 UIX-53: 시간 창이 작은 화면에서 잘려요 → 스크롤,2.0.0,진행 중,,
+RVP-31,검토 UIX-54·U13b-12: 소리 고르기 → 미리 듣기·멈춤·이름,2.0.0,진행 중,,
+RVP-32,"검토 UIX-55: 화면 읽어 주기 묶음(그림 설명, 제목, 상태 말)",2.0.0,진행 중,,
+RVP-33,검토 UIX-56·U13b-13: 처리방침 보기 웹뷰 → 바깥 링크·뒤로·글자 크기,2.0.0,진행 중,,
+RVP-34,검토 UIX-58: 메모 알림으로 열면 화면이 겹쳐요 → launchSingleTop,2.0.0,진행 중,,
+RVP-35,검토 UIX-59·T13b-04·U13b-14: 링크로 시작할 때 첫 설정·잠금과 어긋나요 → 링크 시작 다듬기,2.0.0,진행 중,,
+RVP-36,검토 UIX-60: 공유받은 사진이 화면을 돌리면 사라져요 → 저장되는 상태,2.0.0,진행 중,,
+RVP-37,검토 UIX-62: 뼈대 고침 시험 묶음,2.0.0,진행 중,,
+RVP-38,검토 UIX-63·T13b-05·T13b-06·T13b-07·U13b-07·I13bb-02·I13bb-03: 아래 막대가 유형과 안 맞아요 → 유형별 막대,2.0.0,진행 중,,
+RVP-39,검토 U13b-01: 알람 앞당김 결과를 크게 → 결과 한 줄 크게,2.0.0,진행 중,,
+RVP-40,검토 I13bb-04: 앱 바로 가기(길게 눌러 근무 적기·오늘·메모),2.0.0,진행 중,,
+RVP-41,검토 I13bb-05: 잠금 범위(앱 전체·돈만) 고르기,2.0.0,진행 중,,
+RVP-42,검토 I13bc-01: 시간에 따라 달라지는 첫 화면(출근 전·근무 중·잘 시간),2.0.0,진행 중,,
+RVP-43,검토 I13bc-02·I13b-01: 받은 소식 한 줄과 종 → 받은 소식 모음,2.0.0,진행 중,,
+RVP-44,검토 I13bc-03: 알람 간격 배우기(끄고 다시 맞춘 것을 보고 제안),2.0.0,진행 중,,
+RVP-45,"검토 UIX-01·U13-01·U13-02·I13c-01: 달력 위가 화면의 절반 → 한 줄 + 안내 띠 하나, 달력 위 30% 예산 시험",2.0.0,진행 중,,
+RVP-46,검토 UIX-03·T13-04·U13-16·U13-17·I13b-05·I13c-02: 팀 리더 근무표 → 단계 띠·칩·넓은 화면 두 칸,2.0.0,진행 중,,
+RVP-47,"검토 U13-07·U13-09: 수면 화면 → 채운 단추 하나, 큰 숫자",2.0.0,진행 중,,
+RVP-48,검토 U13-11·T13-10: 첫 설정 마지막 쪽 → 한 쪽 요약,2.0.0,진행 중,,
+RVP-49,검토 U13-04·T13-01: 가게 배지 숨기기,2.0.0,진행 중,,
+RVP-50,검토 U13-05: 날짜 시트 칩 한 줄,2.0.0,진행 중,,
+RVP-51,검토 UIX-17·U13-13·U13-14·U13-15: 장터·광장 층이 깊어요 → 층 줄이기,2.0.0,진행 중,,
+RVP-52,검토 U13-18·T13-02: 급여 화면 다듬기,2.0.0,진행 중,,
+RVP-53,검토 UIX-20·U13-19: 연차 화면 닫기 X,2.0.0,진행 중,,
+RVP-54,검토 U13-23: 위젯 늦은 순서,2.0.0,진행 중,,
+RVP-55,검토 U13-25: 꾸민 제목 최소 크기,2.0.0,진행 중,,
+RVP-56,검토 U13-26: 입어 보기 빈 칸,2.0.0,진행 중,,
+RVP-57,검토 I13b-02: 쉬운 화면 바꾸기,2.0.0,진행 중,,
+RVP-58,검토 I13b-04: 글자 2배·밤 색 화면 사진 시험,2.0.0,진행 중,,
+RVP-59,결정 11장 17번(사용자 11-12 시안 A): 새 캐릭터 '말랑 칸이' 그림·10표정(SVG·앱 그림),2.0.0,진행 중,,
+RVP-60,"말랑 칸이 움직임(떨어짐·눌림·깜빡임·숨), 크기별 모양, 놓는 곳(빈 화면 96·밤 112), 시간 따라 표정, 위젯·워치 작은 얼굴",2.0.0,진행 중,,
+RVP-61,검토 REST-02·U14-03: 꾸밈 지우면 번호가 비어요 → 다시 매김,2.0.0,진행 중,,
+RVP-62,검토 REST-03·U14-06: −/＋ 길게 누르면 계속,2.0.0,진행 중,,
+RVP-63,검토 REST-04·T14-01·T14-02·I14a-02: 기본 테마에 주말 색,2.0.0,진행 중,,
+RVP-64,검토 REST-05·U14-07·I14b-01: 글귀 그림 저장·공유,2.0.0,진행 중,,
+RVP-65,검토 REST-06·REST-20: 이름 말 맞춤,2.0.0,진행 중,,
+RVP-66,검토 REST-07·T14-08·T14-09: 급여 예시·역할 무늬를 유형에 맞게,2.0.0,진행 중,,
+RVP-67,검토 REST-08·U14-04: 색 편집 안내,2.0.0,진행 중,,
+RVP-68,검토 REST-09·REST-10·U14-01·U14-02·I14a-05: 칸 꾸미기 편집,2.0.0,진행 중,,
+RVP-69,검토 REST-11·U14-08·I14a-04: PDF 공유 도우미 한 곳,2.0.0,진행 중,,
+RVP-70,검토 REST-12·U14-12: PDF 넘침,2.0.0,진행 중,,
+RVP-71,검토 REST-13·U14-05: 색 고르기,2.0.0,진행 중,,
+RVP-72,검토 REST-14: 레시피 설명 '무엇으로',2.0.0,진행 중,,
+RVP-73,"검토 REST-15·I14b-04: 글꼴을 자동 백업에서 빼기, 백업 건강 보기",2.0.0,진행 중,,
+RVP-74,검토 REST-16: 잠금 화면 위젯 메모 가리기,2.0.0,진행 중,,
+RVP-75,"검토 REST-17·REST-18·REST-19·T14-03~T14-07·T14-10~T14-12·T14-14·U14-09·I14a-03: 기능 '어디' 안내를 유형별로, 길·등록부 유형·플래그",2.0.0,진행 중,,
+RVP-76,검토 REST-21·T14-13·U14-11: 위젯 고르기 그림·이름,2.0.0,진행 중,,
+RVP-77,검토 U14-10·I14b-02: 위젯 홈 화면에 바로 놓기,2.0.0,진행 중,,
+RVP-78,검토 I14a-01: 꾸밈 코덱 왕복 시험,2.0.0,진행 중,,
+RVP-79,검토 I14b-03: 바뀐 것만 보기,2.0.0,진행 중,,
+RVP-80,검토 I14c-01: 사진으로 테마 만들기,2.0.0,진행 중,,
+RVP-81,검토 I14c-02: 근무에 따라 바뀌는 화면,2.0.0,진행 중,,
+RVP-82,검토 I14c-03: 말로 기능 찾기,2.0.0,진행 중,,
+RVP-83,"검토 UIX-24·I13c-01·I13c-03: 디자인 규칙을 세는 시험(달력 시작 높이·채운 단추·모서리·여백·8~9sp·44dp·토스트·색, DesignRulesTest·CalendarStartScreenshotTest)",2.0.0,진행 중,,
+RVP-84,"뿌리 고침 1(지시서 5장): 공통 부품과 값 문서 docs/design/공통-부품.md(달력 위 한 줄·안내 카드·단추 위계·창과 시트·상태·말 표·칸이 놓는 곳·뿌리 고침 2~4 쓰는 법)",2.0.0,진행 중,,
+PC-28,"2.0.0 통합 1차 PC 확인(2026-11-12, 빌드 3413f50b): 달 넘김이 스르륵·책장 넘기기·움직이지 않기일 때(움직임 끄기·휴대폰 '애니메이션 삭제' 포함) 달력에서 누른 날이 다음 달 같은 자리 날짜로 열리고 길게 누른 근무도 그 날에 저장됨(1.36.1부터 같은 코드) → 달 넘김은 그릴 때만 옮기고 안 보이는 달은 옮기지 않음",2.0.0,진행 중,,"MotionUi.kt monthTurn·monthTurnShift, MonthTurnTapTest(실제 달력 칸으로 여섯 달 넘김 모두), MonthTurnDrawTest"
+RVJ-19,"검토 품질 조건 6(PR #444 총괄 검토): 사장님 급여 직원 창의 '월급이거나 한 주 15시간 이상이면 4대보험 가입 대상이에요…' 줄이 빨강(위험색) → 주의 색(Tone.Caution), 갈래 P 색 부품(#445) 합친 뒤",2.0.0,대기,,ui/work/PayrollScreen.kt 직원 창 4대보험 줄
+QA-10,"2.0.0 통합: 화면 사진 시험이 누르는 때에 따라 흔들림(NtcScreenshotTest.replaceTurnsTheOldOneOffAndUndoBringsItBack 161줄, #444·#446 CI와 로컬 재현). 작품 상세 '규칙 1개 넣기'는 글이 먼저 보이고 '내 달력 미리 보기'가 끝나야 켜지는데, 시험이 꺼진 단추를 눌러 넣기 창이 안 열림 → tapText가 꺼진 단추는 켜질 때까지(5초까지) 기다렸다 눌러요(건너뛰기 없음)",2.0.0,진행 중,,"ScreenshotBase.tapText, NtcScreenshotTest 7개(고친 뒤 로컬에서 4번 이어 돌려 모두 통과, 2026-11-12)"
+PC-32,"2.0.0 통합 1차 PC 확인: 회사 서버에는 도는 판을 알려 주는 주소가 없었어요(/api/health 없음, /api/admin/health에 판 없음) → /api/admin/health가 version을 주고 배포 도구가 그 값으로 지금 판·새 판을 봐요(갈래 D, RVD-19와 함께)",2.0.0,진행 중,,"server/company-worker test_company_health_says_its_version, tools/deploy_worker.py company_ok (#442 99bcb42b)"

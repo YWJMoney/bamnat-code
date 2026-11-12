@@ -93,15 +93,19 @@ internal fun scheduleWays(r: MemoReminder): String = when {
 
 /** [SCHED-01] The schedule in the editor's chip row: tap to change, ✕ to make it a plain memo again. */
 @Composable
-internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, @Suppress("UNUSED_PARAMETER") onClear: () -> Unit = {}, line: String? = null) {
-    // 2.0.0 [RVI-30] (검토 MEMO-09·28·29) One name for it, '알림' ('알람' only when it rings); no 18dp X, '알림 빼기' is in the window.
-    AssistChip(
-        onClick = onOpen,
-        label = { Text(reminder?.let { "${line ?: scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알림 넣기") },
-        leadingIcon = {
-            Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
-        },
-    )
+internal fun ScheduleChip(reminder: MemoReminder?, onOpen: () -> Unit, onClear: () -> Unit = {}, line: String? = null) {
+    // 2.0.0 [RVI-30] (검토 MEMO-09·28·29) One name for it, '알림' ('알람' only when it rings). [RVP-10] (검토 UIX-10) The X is pressed
+    // as 48dp beside the chip, not 18dp inside it, and says what it does ('알림 빼기', the window's word too).
+    androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        AssistChip(
+            onClick = onOpen,
+            label = { Text(reminder?.let { "${line ?: scheduleText(it.at)} · ${if (it.ring) "알람" else "알림"}" } ?: "알림 넣기") },
+            leadingIcon = {
+                Icon(if (reminder?.ring == true) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(18.dp))
+            },
+        )
+        if (reminder != null) com.bamnat.app.ui.components.ChipClear("알림 빼기", onClear)
+    }
 }
 
 /**

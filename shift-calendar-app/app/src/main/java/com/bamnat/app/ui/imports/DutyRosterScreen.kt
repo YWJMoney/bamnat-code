@@ -732,7 +732,7 @@ private fun MonthMovedCard(named: YearMonth, before: YearMonth, from: RosterFrom
     val what = when (from) { RosterFrom.PHOTO -> "사진"; RosterFrom.FILE -> "파일"; else -> "근무표" }
     val name = if (named.year == before.year) "${named.monthValue}월" else Fmt.month(named)
     val other = if (named.year == before.year) "${before.monthValue}월" else Fmt.month(before)
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer, RoundedCornerShape(12.dp)).padding(start = 12.dp, top = 8.dp, end = 4.dp)
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.shapes.medium).padding(start = 12.dp, top = 8.dp, end = 4.dp)
         .semantics { liveRegion = LiveRegionMode.Polite }) {
         Text("${what}에서 ${name}로 읽었어요. 맞나요?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -749,7 +749,7 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
     // [READ-30] 1.38 PC: a 4주 듀티 across two months says the other month's days go in too, and lets them be left out.
     val spill = ui.outsideAll.keys
     if (ui.row != null && spill.isNotEmpty()) {
-        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(12.dp)).padding(start = 10.dp),
+        Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.medium).padding(start = 10.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Text(if (ui.withOutside) "근무표에 있는 ${RosterReader.span(spill)}도 함께 넣어요" else "${RosterReader.span(spill)}은 넣지 않아요",
                 style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -790,7 +790,7 @@ private fun Notices(ui: DutyRosterViewModel.Ui, snap: ScheduleSnapshot?, onOutsi
         }
     }
     if (lines.isEmpty()) return
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp)).padding(10.dp),
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.medium).padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
         lines.forEach { Text("· $it", style = MaterialTheme.typography.bodySmall) }
     }

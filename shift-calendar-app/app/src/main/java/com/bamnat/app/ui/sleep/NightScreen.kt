@@ -214,7 +214,7 @@ fun NightScreen(
         }
     }
     val soundCard: @Composable () -> Unit = {
-        Box(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(cardStyle, RoundedCornerShape(16.dp)))) {
+        Box(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(cardStyle, MaterialTheme.shapes.large))) {
             SleepSoundCard(settings.noiseMix, settings.noiseTimerMinutes, vm::saveSound)
         }
     }
@@ -240,7 +240,7 @@ fun NightScreen(
                                     style = com.bamnat.app.ui.parts.PartMods.text(dateStyle, MaterialTheme.typography.titleMedium))
                                 Text(Fmt.time(now.toLocalTime()), color = MaterialTheme.colorScheme.onSurface,
                                     style = com.bamnat.app.ui.parts.PartMods.text(clockStyle, NumberStyle.copy(fontSize = 96.sp, fontWeight = FontWeight.Light)),
-                                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, RoundedCornerShape(16.dp))).semantics { heading() })
+                                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, MaterialTheme.shapes.large)).semantics { heading() })
                                 line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
                             }
                         }
@@ -270,7 +270,7 @@ fun NightScreen(
                     style = com.bamnat.app.ui.parts.PartMods.text(dateStyle, MaterialTheme.typography.titleMedium))
                 Text(Fmt.time(now.toLocalTime()), color = MaterialTheme.colorScheme.onSurface,
                     style = com.bamnat.app.ui.parts.PartMods.text(clockStyle, NumberStyle.copy(fontSize = 76.sp, fontWeight = FontWeight.Light)),
-                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, RoundedCornerShape(16.dp))).semantics { heading() })
+                    modifier = Modifier.then(com.bamnat.app.ui.parts.PartMods.box(clockStyle, MaterialTheme.shapes.large)).semantics { heading() })
                 line?.let { l -> NightLineRow(l, onAlarms, vm::turnOnAlarms, switchOff = !settings.alarmsEnabled) }
                 if (com.bamnat.app.ui.components.LocalShowKani.current) {
                     Spacer(Modifier.height(16.dp))

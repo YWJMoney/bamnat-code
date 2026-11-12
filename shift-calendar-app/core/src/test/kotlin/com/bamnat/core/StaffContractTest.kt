@@ -30,7 +30,7 @@ class StaffContractTest {
         assertTrue(body.getValue("근무 요일과 시간").contains("한 주 소정근로시간 15시간"))
         assertTrue(body.getValue("휴일").startsWith("매주 월요일 (유급 주휴일)"))
         assertTrue(body.getValue("임금").contains("시급 10,320원"))
-        assertTrue(body.getValue("임금").contains("식대 5,000원(일한 날마다)"))
+        assertTrue(body.getValue("임금").contains("식대 5,000원(일한 날마다, 비과세)"))
         assertFalse("5인 미만은 가산 줄 없음", body.getValue("임금").contains("50%"))
         assertTrue(body.getValue("연차 유급휴가").contains("5명 미만"))
         assertTrue(StaffContract.doc(place, s, c).title.startsWith("단시간"))

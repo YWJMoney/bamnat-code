@@ -123,7 +123,7 @@ class TaskWidgetTest {
         walk(early.remoteViews.apply(context, android.widget.FrameLayout(context)))
         assertTrue("not yet: $texts", texts.none { "늦음" in it })
         val first = three.first { it.text == "우유 사기" }
-        assertTrue(note(first, TaskList.overdue(first, today.atTime(21, 30)))!!.startsWith("늦음 · "))
+        assertTrue(note(first, TaskList.overdue(first, today.atTime(21, 30)))!!.endsWith("늦음")) // [RVP-54] when first, 늦음 last
         assertEquals(null, note(three.first { it.text == "운동" }, false))
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) {
             WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskContent(three, today, today.atTime(21, 30)) } }

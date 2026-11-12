@@ -207,7 +207,7 @@ internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp 
 internal fun ZoomControls(z: ZoomState, onFocus: (() -> Unit)?, modifier: Modifier = Modifier) {
     // PC 확인 1.37 A1 (확대 상자가 미리 보기의 아래 탭 막대를 늘 가림): folded to its percent, one tap opens it.
     var open by z::controlsOpen
-    Surface(modifier, shape = RoundedCornerShape(20.dp), tonalElevation = 4.dp, shadowElevation = 2.dp) {
+    Surface(modifier, shape = MaterialTheme.shapes.large, tonalElevation = 4.dp, shadowElevation = 2.dp) {
         if (!open) {
             TextButton(onClick = { open = true }, modifier = Modifier.heightIn(min = 44.dp).semantics { contentDescription = "확대 ${z.percent}퍼센트, 확대 단추 펴기" }) {
                 Text("🔍 ${z.percent}%")
@@ -396,7 +396,7 @@ internal val PICK_RING = androidx.compose.ui.graphics.Color(0xFFE91E63)
 /** Shown once over an example nothing is picked on yet. */
 @Composable
 internal fun PickHint(modifier: Modifier = Modifier) {
-    Surface(modifier, shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.9f)) {
+    Surface(modifier, shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.9f)) {
         Text("고칠 곳을 화면에서 눌러요 · 두 손가락으로 크게", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.inverseOnSurface,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp))
     }

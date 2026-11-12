@@ -52,6 +52,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
+import androidx.compose.ui.semantics.Role
 
 // [LINK-01] 1.39 The boards read the day as the month's cell does (com.bamnat.core.schedule.DayWork): a 대근 or 특근 on a day off shows as
 // that work (its colour, name and times), not as 휴무.
@@ -154,7 +155,7 @@ internal fun ShiftBandMonth(
                             .then(if (date == selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
                             // [TAB-07] 부품 cal.band.slot (오늘·고른 날 상태도).
                             .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.band.slot", boardStates(day, today, isPicked, snapshot.hasPattern), com.bamnat.app.logic.scopeOn(date)), shape, ))
-                            .clickable { onDay(date) }
+                            .clickable(role = Role.Button) { onDay(date) }
                             .clearAndSetSemantics { contentDescription = "${Fmt.monthDay(date)} ${name ?: "근무 없음"}"; this.selected = isPicked },
                         contentAlignment = Alignment.Center,
                     ) {
@@ -205,7 +206,7 @@ internal fun TimelineMonth(
     // PC 확인 fc2db3b0 사용성 제안: '진하기' alone keeps each shift's own colour, only stronger or fainter.
     val barAlpha = barStyle.fillA?.let { it / 100f }
     val ink = MaterialTheme.colorScheme.onSurfaceVariant
-    val rowShape = RoundedCornerShape(8.dp)
+    val rowShape = MaterialTheme.shapes.small
     Column(modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line"), RoundedCornerShape(0.dp))).padding(horizontal = 12.dp)) {
         // PC 확인 c6bfa8b2 사용성 제안: a month with no timed work drew only grey bars; it says how bars come, with one example.
         if (rows.none { (_, _, pair) -> pair.first.isNotEmpty() }) Row(
@@ -240,10 +241,10 @@ internal fun TimelineMonth(
             val rowBarAlpha = dayBar?.fillA?.let { it / 100f } ?: barAlpha
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 30.dp)
-                    .background(if (date == selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .background(if (date == selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, MaterialTheme.shapes.small)
                     // [TAB-07] 부품 cal.line.row (오늘, 고른 날).
                     .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.line.row", boardStates(day, today, isPicked, snapshot.hasPattern), dayScope), rowShape))
-                    .clickable { onDay(date) }
+                    .clickable(role = Role.Button) { onDay(date) }
                     .clearAndSetSemantics {
                         contentDescription = "${Fmt.monthDay(date)} ${workOf(day)?.let { w -> listOfNotNull(w.name, w.extraKinds.takeIf { it.isNotEmpty() }?.joinToString("·")).distinct().joinToString(" ") } ?: "근무 없음"}" + (times?.let { " $it" } ?: "") +
                             (spans.firstOrNull { it.carried }?.to?.let { ", 전날 근무가 ${it / 60}시 ${it % 60}분까지" } ?: "")
@@ -308,7 +309,7 @@ internal fun WeekCardsMonth(
             // [LINK-01] 1.39 잔업·특근·대근 count too, and a day off with a 대근·특근 is a day worked.
             val minutes = week.sumOf { (_, d) -> d.totalMinutes }
             val works = week.count { (_, d) -> workOf(d)?.worked == true }
-            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(12.dp)).padding(6.dp)) {
+            Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.medium).padding(6.dp)) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 2.dp)) {
                     Text("${Fmt.monthDay(week.first().first)} – ${Fmt.monthDay(week.last().first)}", style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.weight(1f).semantics { heading() })
@@ -327,10 +328,10 @@ internal fun WeekCardsMonth(
                             com.bamnat.core.schedule.DayWork.of(day, snapshot.hasPattern).states
                         Column(
                             Modifier.weight(1f).heightIn(min = 104.dp)
-                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly.day", states, com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
-                                .clickable { onDay(date) }
+                                .background(if (isPicked) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surface, MaterialTheme.shapes.small)
+                                .then(if (date == today) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("cal.weekly.day", states, com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                                .clickable(role = Role.Button) { onDay(date) }
                                 .clearAndSetSemantics {
                                     contentDescription = "${Fmt.monthDay(date)} ${Fmt.dayOfWeekShort(date.dayOfWeek)} ${workOf(day)?.name ?: "근무 없음"}" +
                                         (times?.let { " $it" } ?: "") + (if (memo.isNotEmpty()) ", 메모 ${memo.size}개: ${memo.first()}" else "")
@@ -401,7 +402,7 @@ internal fun YearBoard(
                     row.forEach { m ->
                         val month = YearMonth.of(year, m)
                         Box(Modifier.weight(1f).then(com.bamnat.app.ui.parts.PartMods.box(
-                            bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month }), com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month, today))), RoundedCornerShape(12.dp)))) {
+                            bp.style("cal.year.month", setOfNotNull("today".takeIf { YearMonth.from(today) == month }), com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month, today))), MaterialTheme.shapes.medium))) {
                             MiniMonth(month, loaded, null, weekStart, today, Modifier.fillMaxWidth()) { onOpen(month) }
                         }
                     }

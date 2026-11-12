@@ -208,7 +208,8 @@ fun TimeRangeDialog(
     )
 }
 
-private fun clock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+// 2.0.0 [RVP-27] (검토 UIX-50) In the clock the settings chose.
+private fun clock(t: LocalTime): String = com.bamnat.app.ui.Fmt.time(t)
 
 /**
  * [TIME-03] Ends to offer for a shift starting at [start], each with its words: 8·9·10·12시간 of work after the

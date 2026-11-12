@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -144,7 +145,7 @@ private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Bo
                 if (row.isNew) {
                     Spacer(Modifier.width(6.dp))
                     Text("새 기능", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.background(MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp))
+                        modifier = Modifier.background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp, vertical = 1.dp))
                 }
             }
             Text(row.what, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -153,7 +154,9 @@ private fun EditRowLine(row: EditRow, first: Boolean, last: Boolean, onShow: (Bo
             IconButton(onClick = { onMove(-1) }, enabled = !first) { Icon(Icons.Filled.KeyboardArrowUp, if (crossUp) "${row.label} 달력 위로 옮기기" else "${row.label} 위로") }
             IconButton(onClick = { onMove(1) }, enabled = !last) { Icon(Icons.Filled.KeyboardArrowDown, if (crossDown) "${row.label} 달력 아래로 옮기기" else "${row.label} 아래로") }
         }
-        Switch(checked = row.shown, onCheckedChange = onShow, modifier = Modifier.padding(start = 4.dp))
+        // 2.0.0 [RVP-32] (검토 UIX-55) TalkBack says whose switch it is, not only "스위치, 켬".
+        Switch(checked = row.shown, onCheckedChange = onShow, modifier = Modifier.padding(start = 4.dp)
+            .semantics { contentDescription = "${row.label} 보이기" })
     }
 }
 
@@ -165,7 +168,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
         Column(
             Modifier
                 .width(160.dp)
-                .border(2.dp, scheme.outline, RoundedCornerShape(18.dp))
+                .border(2.dp, scheme.outline, MaterialTheme.shapes.large)
                 .padding(8.dp)
                 .animateContentSize(),
             verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -186,7 +189,7 @@ private fun LayoutPreview(groups: List<EditGroup>, middle: String) {
 
 @Composable
 private fun Block(label: String, color: Color, tall: Boolean = false) {
-    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp, vertical = 1.dp),
+    Box(Modifier.fillMaxWidth().heightIn(min = if (tall) 44.dp else 18.dp).background(color, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp, vertical = 1.dp),
         contentAlignment = Alignment.Center) {
         Text(label, style = MaterialTheme.typography.labelSmall, fontWeight = if (tall) FontWeight.Bold else FontWeight.Normal, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }

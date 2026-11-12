@@ -15,6 +15,9 @@ import com.bamnat.core.time.Today
 /** [what]: 1.36 [GRW-09] 만든 분 보상이 무엇 때문인지("이달의 주제에 뽑힘" 등), 다른 이용권은 null. */
 data class PassItem(val months: Int, val at: Instant, val why: String, val what: String? = null)
 
+/** 2.0.0 [RVD-13][RVD-14] A reward an admin has yet to look at (친구 초대·만든 작품): it comes in after that. */
+data class PendingPass(val months: Int, val why: String, val what: String? = null)
+
 /** 1.36 841 쓰면 쌓이는 날: days earned without an ad (a problem report fixed), [why] in words from the server. */
 data class EarnedDays(val days: Int, val at: Instant, val why: String)
 
@@ -48,6 +51,8 @@ data class Passes(
     val waitingDays: Int = 0,
     /** 1.39 [FAM-03] The owner paused this phone's 가족 프로 이용권: free until resumed, which needs no new code. */
     val familyPaused: Boolean = false,
+    /** 2.0.0 [RVD-13][RVD-14] 확인 뒤 들어와요: 친구 초대·만든 작품 보상 waiting for an admin (사용자 결정 2026-11-12). */
+    val pending: List<PendingPass> = emptyList(),
 )
 
 /**
@@ -188,6 +193,7 @@ class TierClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) : T
             earned = o.optJSONArray("earned").objects().map { EarnedDays(it.getInt("days"), Instant.parse(it.getString("at")), it.optString("why")) },
             waitingDays = o.optInt("waitingDays"),
             familyPaused = o.optBoolean("familyPaused"),
+            pending = o.optJSONArray("pending").objects().map { PendingPass(it.getInt("months"), it.optString("why"), it.optString("what").ifEmpty { null }) },
         )
 
         fun readShare(o: JSONObject): ProShare = ProShare(

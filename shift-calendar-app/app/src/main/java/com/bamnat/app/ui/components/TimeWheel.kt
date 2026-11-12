@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -87,16 +89,26 @@ fun TimePickerDialog(
     }
     val current = LocalTime.of(hour, minute)
 
+    // 2.0.0 [RVP-27] (검토 UIX-50·U13b-05·I13ba-03) 오전/오후로 보기 gives an 오전·오후 wheel and 1~12, and the time can be typed as
+    // four digits (0630) for a one-hand change.
+    val twelve = com.bamnat.app.ui.Fmt.clock12
+    var typing by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "${if (hour < 12) "오전" else "오후"} ${(hour % 12).let { if (it == 0) 12 else it }}시 ${minute}분",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            // 2.0.0 [RVP-30] (검토 UIX-53) It scrolls like its sibling windows, so a sideways phone or big letters keep the shortcuts.
+            ScrollMoreColumn {
+              Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "${if (hour < 12) "오전" else "오후"} ${(hour % 12).let { if (it == 0) 12 else it }}시 ${minute}분",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { typing = !typing }) { Text(if (typing) "바퀴로" else "숫자로 치기") }
+                }
+                if (typing) TimeDigits(current) { set(it); typing = false }
                 // [TIME-03] What 완료 will change, so a wheel turned by accident shows before it is kept.
                 TimeChangeLine(timeChangeNote(null, initial, current))
                 Box(Modifier.fillMaxWidth().height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS), contentAlignment = Alignment.Center) {
@@ -109,7 +121,12 @@ fun TimePickerDialog(
                             .background(MaterialTheme.colorScheme.primaryContainer),
                     )
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        WheelHalf(count = 24, value = hour, jump = jump, label = "시", onValue = { hour = it })
+                        if (twelve) {
+                            WheelHalf(count = 2, value = hour / 12, jump = jump, label = "", cyclic = false,
+                                shown = { if (it == 0) "오전" else "오후" }, onValue = { half -> hour = half * 12 + hour % 12 })
+                            WheelHalf(count = 12, value = hour % 12, jump = jump, label = "시",
+                                shown = { "%02d".format(if (it == 0) 12 else it) }, onValue = { h -> hour = (hour / 12) * 12 + h })
+                        } else WheelHalf(count = 24, value = hour, jump = jump, label = "시", onValue = { hour = it })
                         WheelHalf(count = 60, value = minute, jump = jump, label = "분", onValue = { minute = it })
                     }
                 }
@@ -129,9 +146,11 @@ fun TimePickerDialog(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     for (t in presets) {
-                        AssistChip(onClick = { set(t) }, label = { Text("%02d:%02d".format(t.hour, t.minute), maxLines = 1, softWrap = false) })
+                        // [RVP-27] In the clock the settings chose.
+                        AssistChip(onClick = { set(t) }, label = { Text(com.bamnat.app.ui.Fmt.time(t), maxLines = 1, softWrap = false) })
                     }
                 }
+              }
             }
         },
         confirmButton = { TextButton(onClick = { onConfirm(current) }) { Text("완료") } },
@@ -155,9 +174,10 @@ internal fun RowScope.WheelHalf(
     label: String,
     onValue: (Int) -> Unit,
     cyclic: Boolean = true,
+    shown: (Int) -> String = { "%02d".format(it) },
 ) {
     Box(Modifier.weight(1f).padding(horizontal = 2.dp), contentAlignment = Alignment.Center) {
-        Wheel(count, value, jump, label, onValue, cyclic, Modifier.fillMaxWidth())
+        Wheel(count, value, jump, label, onValue, cyclic, Modifier.fillMaxWidth(), shown)
         // The unit sits right of the centred digits. An invisible copy on the left keeps the digits
         // centred over the wheel. Plain text takes no touches, so swipes over it still turn the wheel.
         Row(Modifier.clearAndSetSemantics {}, verticalAlignment = Alignment.CenterVertically) {
@@ -194,6 +214,7 @@ internal fun Wheel(
     onValue: (Int) -> Unit,
     cyclic: Boolean = true,
     modifier: Modifier = Modifier.width(64.dp),
+    shown: (Int) -> String = { "%02d".format(it) },
 ) {
     val middle = if (cyclic) count * LOOPS / 2 else 0
     val state = rememberLazyListState(initialFirstVisibleItemIndex = middle + value)
@@ -234,7 +255,7 @@ internal fun Wheel(
         modifier = modifier
             .height(WHEEL_ROW_HEIGHT * VISIBLE_ITEMS)
             .semantics {
-                contentDescription = "$value$label"
+                contentDescription = "${shown(value)}$label"
                 // [VIS-02] TalkBack moves the wheel one step at a time, not only a page.
                 val unit = if (label == "시") "1시간" else "1$label"
                 val last = if (cyclic) count * LOOPS - 1 else count - 1
@@ -253,11 +274,13 @@ internal fun Wheel(
                 Modifier
                     .height(WHEEL_ROW_HEIGHT)
                     .fillMaxWidth()
-                    .clickable(interactionSource = null, indication = null) { scope.launch { state.animateScrollToItem(i) } },
+                    .clickable(interactionSource = null, indication = null) { scope.launch { state.animateScrollToItem(i) } }
+                    // 2.0.0 [RVP-32] (검토 UIX-55) One TalkBack stop for the wheel (with its 늘리기·줄이기), not one per row.
+                    .clearAndSetSemantics {},
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    "%02d".format(v),
+                    shown(v),
                     style = WheelDigits,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                     fontSize = when (distance) { 0 -> 28.sp; 1 -> 22.sp; else -> 18.sp },
@@ -351,7 +374,8 @@ private class WheelFling(
  */
 internal fun timeChangeNote(part: String?, was: LocalTime, now: LocalTime, nextDay: Boolean = false): String? {
     if (was.hour == now.hour && was.minute == now.minute) return null
-    return (part?.let { "$it " } ?: "") + "${wheelClock(was)} → ${if (nextDay) "다음날 " else ""}${wheelClock(now)}으로 바뀌어요"
+    val to = wheelClock(now)
+    return (part?.let { "$it " } ?: "") + "${wheelClock(was)} → ${if (nextDay) "다음날 " else ""}$to${com.bamnat.app.ui.Fmt.ro(to)} 바뀌어요"
 }
 
 /**
@@ -367,15 +391,16 @@ internal fun rangeChangeNote(wasStart: LocalTime, wasEnd: LocalTime, start: Loca
         same(wasEnd, end) -> timeChangeNote("시작", wasStart, start)
         same(wasStart, start) -> timeChangeNote("끝", wasEnd, end, nextDay)
         // With large text only the new times, which two lines hold whole (PC cf5ee1c6: the end was cut on a third).
-        short -> "${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}으로 바뀌어요"
-        else -> "${wheelClock(wasStart)}~${wheelClock(wasEnd)} → ${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}으로 바뀌어요"
+        short -> "${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}${com.bamnat.app.ui.Fmt.ro(wheelClock(end))} 바뀌어요"
+        else -> "${wheelClock(wasStart)}~${wheelClock(wasEnd)} → ${wheelClock(start)}~${if (nextDay) "다음날 " else ""}${wheelClock(end)}${com.bamnat.app.ui.Fmt.ro(wheelClock(end))} 바뀌어요"
     }
 }
 
 /** [TIME-03] Above this text scale the change line keeps two lines' room instead of shrinking into one. */
 private const val LARGE_TEXT_SCALE = 1.15f
 
-private fun wheelClock(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+// 2.0.0 [RVP-27] (검토 UIX-50) In the clock the settings chose.
+private fun wheelClock(t: LocalTime): String = com.bamnat.app.ui.Fmt.time(t)
 
 /**
  * [TIME-03] One line in the primary colour under the time, saying what is about to change. With nothing changed
@@ -400,4 +425,37 @@ internal fun TimeChangeLine(text: String?, modifier: Modifier = Modifier, largeT
             com.bamnat.app.ui.FitText(text ?: " ", style = style)
         }
     }
+}
+
+/**
+ * 2.0.0 [RVP-27] (검토 I13ba-03 '가운데 숫자를 누르면 네 자리 치기(0630)') The time as four digits: 0630 is 06:30, 1915 is 19:15; with
+ * 오전/오후 on, 630 is 06:30 too. Kept when the digits make a real time.
+ */
+@Composable
+internal fun TimeDigits(now: LocalTime, onTime: (LocalTime) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+    val parsed = typedTime(text)
+    androidx.compose.material3.OutlinedTextField(
+        value = text,
+        onValueChange = { v -> text = v.filter(Char::isDigit).take(4); typedTime(text)?.takeIf { text.length == 4 }?.let(onTime) },
+        label = { Text("시각 네 자리 (예: ${"%02d%02d".format(now.hour, now.minute)})") },
+        supportingText = { Text(parsed?.let { com.bamnat.app.ui.Fmt.time(it) + "으로" } ?: if (text.isEmpty()) "숫자만 쳐요" else "00:00~23:59로 쳐요") },
+        singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+            keyboardType = androidx.compose.ui.text.input.KeyboardType.NumberPassword,
+            imeAction = androidx.compose.ui.text.input.ImeAction.Done,
+        ),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { parsed?.let(onTime) }),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).focusRequester(focus),
+    )
+}
+
+/** [RVP-27] "0630" → 06:30, "630" → 06:30, "1915" → 19:15; null when it is not a time. */
+internal fun typedTime(digits: String): LocalTime? {
+    if (digits.length !in 3..4 || digits.any { !it.isDigit() }) return null
+    val h = digits.dropLast(2).toInt()
+    val m = digits.takeLast(2).toInt()
+    return if (h in 0..23 && m in 0..59) LocalTime.of(h, m) else null
 }

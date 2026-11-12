@@ -74,7 +74,7 @@ test("[ADMIN-15] the tried email is kept only as a short hash, and only for 30 d
 test("[ADMIN-15] the login screen learns only what it needs; the owner sees the services", async () => {
   // (With mail set up, test/accounts.test.mjs reads mail: true here.)
   const { call } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "t".repeat(32) });
-  assert.deepEqual(Object.keys((await call("GET", "/api/admin/health")).data).sort(), ["database", "password", "salt", "why"]);
+  assert.deepEqual(Object.keys((await call("GET", "/api/admin/health")).data).sort(), ["database", "password", "salt", "version", "why"]);
   const owner = await signIn(call);
   const full = (await call("GET", "/api/admin/server", undefined, owner)).data;
   assert.deepEqual([full.mail, full.play, full.share, full.push], [false, false, true, false]);

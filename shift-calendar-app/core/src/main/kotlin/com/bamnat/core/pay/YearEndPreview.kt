@@ -38,6 +38,11 @@ object YearEndPreview {
         /** F 1.32 [TAXP-03] What could still bring more back, with the won each one is worth. */
         val tips: List<Tip> = emptyList(),
         val extras: Extras = Extras(),
+        /**
+         * 2.0.0 [RVJ-06] 검토 PAYU-48: months after the one looked at, counted from the calendar's work (not run on from the
+         * months so far); 0 when [months] were run on to twelve the old way.
+         */
+        val projectedMonths: Int = 0,
     ) {
         /** Positive: money back in February (소득세 + 지방소득세); negative: more to pay. */
         val refund: Long get() = ((withheld - determined) * 1.1).roundToLong()
@@ -194,8 +199,9 @@ object YearEndPreview {
      * worker paid, and the 소득세 withheld, all for the [months] counted so far, run on to twelve.
      */
     fun estimate(year: Int, gross: Long, insurance: Long, pension: Long, withheld: Long, months: Int, dependents: Int, children: Int,
-                 extras: Extras = Extras(), withTips: Boolean = true): Result {
-        val k = 12.0 / months.coerceIn(1, 12)
+                 extras: Extras = Extras(), withTips: Boolean = true, whole: Boolean = false): Result {
+        // 2.0.0 [RVJ-06] [whole]: the sums already hold the whole year (months so far + the calendar's months ahead).
+        val k = if (whole) 1.0 else 12.0 / months.coerceIn(1, 12)
         val salary = (gross * k).roundToLong()
         val earned = earnedDeduction(salary)
         val card = cardDeduction(salary, extras, year, cardChildren(extras, children))
@@ -217,16 +223,17 @@ object YearEndPreview {
         val r = Result(year, salary, earned, taxBase, best.first, best.second, best.third / 10 * 10, best.third / 100 * 10,
             w, months.coerceIn(1, 12), card, if (useA) special else 0, pensionCr, !useA, emptyList(), extras)
         if (!withTips) return r
-        return r.copy(tips = tips(r, year, gross, insurance, pension, withheld, months, dependents, children))
+        return r.copy(tips = tips(r, year, gross, insurance, pension, withheld, months, dependents, children, whole))
     }
 
     /**
      * F 1.32 [TAXP-03] What one more step is worth: 연금저축 up to its 한도, and the 신용카드 spending of the rest of the year
      * on a 체크카드 instead. Each is worked out by running the year again, so the 한도 and the tax left are kept.
      */
-    private fun tips(r: Result, year: Int, gross: Long, insurance: Long, pension: Long, withheld: Long, months: Int, dependents: Int, children: Int): List<Tip> {
+    private fun tips(r: Result, year: Int, gross: Long, insurance: Long, pension: Long, withheld: Long, months: Int, dependents: Int, children: Int,
+                     whole: Boolean = false): List<Tip> {
         if (r.determined <= 0) return emptyList()
-        fun again(x: Extras) = estimate(year, gross, insurance, pension, withheld, months, dependents, children, x, withTips = false).let { it.refund - r.refund }
+        fun again(x: Extras) = estimate(year, gross, insurance, pension, withheld, months, dependents, children, x, withTips = false, whole = whole).let { it.refund - r.refund }
         val x = r.extras
         val out = mutableListOf<Tip>()
         val room = (9_000_000L - minOf(x.pensionSavings, 6_000_000L) - x.irp).coerceAtLeast(0)
@@ -262,22 +269,29 @@ object YearEndPreview {
      * on it ([TakeHome.estimate]), from January to [upTo]. Null when no month has pay.
      */
     fun ofYear(profile: PayProfile, upTo: YearMonth, resolve: (LocalDate) -> ResolvedDay, calculator: PayCalculator = PayCalculator(),
-               extras: Extras = Extras()): Result? {
-        var gross = 0L; var ins = 0L; var pension = 0L; var tax = 0L; var n = 0
-        for (m in 1..upTo.monthValue) {
+               extras: Extras = Extras(), closed: (YearMonth) -> Long? = { null }): Result? {
+        var gross = 0L; var ins = 0L; var pension = 0L; var tax = 0L; var n = 0; var ahead = 0
+        // 2.0.0 [RVJ-06] 검토 PAYC-05·PAYU-48: every month of the year from the calendar, not the months so far run on to twelve:
+        // a month before the hire date or after the last day holds no pay (so a July start is half a year, not twelve months of
+        // five), a 상여 month counts once in its own month, and the months ahead are the calendar's work. A closed month uses
+        // its kept total ([closed]) so this card and the year report say the same. The 보험·세금 go through [TakeHome.forProfile]
+        // like every 실수령: the 보험 the worker is out of (60세 국민연금, 주 15시간 미만) are not taken.
+        for (m in 1..12) {
             val ym = YearMonth.of(upTo.year, m)
-            val pay = runCatching { calculator.calculate(profile, ym, resolve, checks = false) }.getOrNull() ?: continue
-            if (pay.total <= 0) continue
+            val pay = runCatching { calculator.calculate(profile, ym, resolve, checks = false) }.getOrNull()
+            val total = (if (m <= upTo.monthValue) closed(ym) else null) ?: pay?.total ?: continue
+            if (total <= 0) continue
             val free = TakeHome.nonTaxable(profile, ym, pay)
-            val r = TakeHome.estimate(pay.total, TaxMode.INSURANCE_4, profile.taxFamily, ym.atDay(1), profile.taxChildren, free).deductions.toMap()
-            gross += pay.total - free
+            val r = TakeHome.forProfile(profile, ym, total, free, mode = TaxMode.INSURANCE_4, pay = pay).deductions.toMap()
+            gross += total - free
             pension += r["국민연금"] ?: 0
             ins += (r["건강보험"] ?: 0) + (r["장기요양"] ?: 0) + (r["고용보험"] ?: 0)
             tax += r[TakeHome.TAX_LABEL] ?: 0
-            n++
+            if (m <= upTo.monthValue) n++ else ahead++
         }
         if (n == 0) return null
-        return estimate(upTo.year, gross, ins, pension, tax, n, profile.taxFamily, profile.taxChildren, extras)
+        return estimate(upTo.year, gross, ins, pension, tax, n, profile.taxFamily, profile.taxChildren, extras, whole = true)
+            .copy(projectedMonths = ahead)
     }
 
     /**

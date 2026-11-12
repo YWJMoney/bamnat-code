@@ -131,7 +131,7 @@ internal fun RosterFollowLine(cal: com.bamnat.app.share.ReceivedCalendar, modifi
     val app = c.appScope
     val (title, text) = remember(cal, note) { com.bamnat.app.share.RosterFollower.words(cal, note) }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp), modifier = modifier.fillMaxWidth()) {
+        shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth()) {
         androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 4.dp)) {
             Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             Text(text, style = MaterialTheme.typography.bodySmall)

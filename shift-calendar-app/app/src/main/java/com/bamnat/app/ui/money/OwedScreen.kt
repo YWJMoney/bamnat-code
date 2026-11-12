@@ -63,7 +63,6 @@ import com.bamnat.app.ui.components.DatePickerDialog
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -154,6 +153,7 @@ import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** [RECV-01][RECV-02][RECV-05] 받을 돈: everything owed to the user, written down here or left on a job. */
 class OwedViewModel(
@@ -343,9 +343,8 @@ fun OwedScreen(vm: OwedViewModel, wide: Boolean, onBack: () -> Unit, today: Loca
         },
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            ExtendedFloatingActionButton(onClick = { adding = startKinds(style).first() }, expanded = atTop || wide,
-                icon = { Icon(Icons.Filled.Add, null) }, text = { Text("받을 돈 적기") },
-                modifier = Modifier.semantics { contentDescription = "받을 돈 적기" })
+            // [RVP-06] The shared rule (icon alone with big letters too).
+            com.bamnat.app.ui.components.AddFab("받을 돈 적기", onClick = { adding = startKinds(style).first() }, open = atTop || wide)
         },
     ) { padding ->
         val top: @Composable ColumnScope.() -> Unit = {
@@ -542,8 +541,8 @@ private fun Bar(fraction: Float, color: Color, height: androidx.compose.ui.unit.
 private fun MeterRow(label: String, value: String, fraction: Float, color: Color, selected: Boolean = false, onClick: (() -> Unit)? = null) {
     val animated by animateFloatAsState(fraction, tween(600, easing = FastOutSlowInEasing), label = "meter")
     Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick).heightIn(min = 48.dp) else Modifier)
+        Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick).heightIn(min = 48.dp) else Modifier)
             .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
             .padding(horizontal = if (onClick != null) 6.dp else 0.dp, vertical = 4.dp)
             .semantics(mergeDescendants = true) {},
@@ -646,7 +645,7 @@ private fun NoMatch(onClear: () -> Unit) {
 @Composable
 private fun StatusChip(status: ReceivableStatus) {
     val (bg, fg) = statusColors(status)
-    Surface(color = bg, shape = RoundedCornerShape(6.dp)) {
+    Surface(color = bg, shape = MaterialTheme.shapes.extraSmall) {
         Text(status.label, style = MaterialTheme.typography.labelSmall, color = fg, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
     }
 }

@@ -338,7 +338,7 @@ internal fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Bo
             }
         }
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val who = sender.trim().ifEmpty { "동료" }
             Text("$who 님이 ${company.ifEmpty { "회사" }} 근무표와 급여 계산 방식을 보냈어요.", style = MaterialTheme.typography.titleSmall)
@@ -385,7 +385,7 @@ internal fun FriendStart() {
 @Composable
 private fun NoLinkYet() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text("링크가 아직 없나요?", style = MaterialTheme.typography.titleSmall)
             // PC 확인 20ab0254 (공유 말과 단추 이름이 섞여 있어요): the button is ‘링크로 보내기’ in both of 공유's views.
@@ -408,7 +408,7 @@ internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달
 
 @Composable
 private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, today: LocalDate) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -690,7 +690,7 @@ private fun ReportLink(vm: ReceivedViewModel, id: String) {
         text = {
             Column {
                 com.bamnat.app.share.ShareReport.entries.forEach { r ->
-                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = r }.padding(vertical = 2.dp),
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { reason = r }.padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.RadioButton(selected = reason == r, onClick = { reason = r })
                         Text(r.label, style = MaterialTheme.typography.bodyMedium)
@@ -728,7 +728,7 @@ private fun Freshness(cal: ReceivedCalendar, loading: Boolean, offline: Boolean,
 
 @Composable
 private fun GoneCard(cal: ReceivedCalendar, onRemove: () -> Unit, onMine: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.LinkOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -796,7 +796,7 @@ private fun ReceivedDayCell(
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(10.dp)
+    val shape = MaterialTheme.shapes.small
     val inRange = schedule.covers(date)
     // [CAL-12] The day's job or extra work is its badge when it has no shift; then no corner letter repeats it.
     val extraIsBadge = day != null && day.type == null && day.second == null && !day.fullLeave && day.extras.isNotEmpty()
@@ -868,15 +868,15 @@ private fun ReceivedDayCell(
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
                     Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
-                    ) { Text(e.name.take(1), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
+                    ) { Text(e.name.take(1), fontSize = 10.sp /* [RVP-11] T13-07 */, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
                 }
             }
             if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
             // [CAL-12] Without a memo, a job's start time says when the day begins.
             Text(
                 day?.memo ?: day?.extras?.firstOrNull { it.time != null }?.time?.substringBefore("-").orEmpty(),
-                fontSize = 9.sp,
-                lineHeight = 10.sp,
+                fontSize = 10.sp, // 2.0.0 [RVP-11] (검토 UIX-11) 10sp at least
+                lineHeight = 11.sp,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
@@ -926,7 +926,7 @@ private fun ReceivedDayCard(
     mine: ResolvedDay?,
     together: Boolean,
 ) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(Fmt.dayTitle(date) + if (date == today) " · 오늘" else "", style = MaterialTheme.typography.titleMedium)
             val day = schedule.days[date]
@@ -967,7 +967,7 @@ private fun ReceivedDayCard(
                             )
                         }
                         day?.memo?.let { m ->
-                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
                                 Text(m, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                             }
                         }
@@ -1001,7 +1001,7 @@ private fun ReceivedDayCard(
             }
             if (together) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(TogetherColor.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(TogetherColor.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.size(18.dp))
@@ -1015,7 +1015,7 @@ private fun ReceivedDayCard(
 
 @Composable
 private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, kind: com.bamnat.core.work.MoneyShare) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(cal.title.trim().takeIf { it.isNotEmpty() }?.let { "$it 님이 함께 보낸 ${kind.label}" } ?: "함께 받은 ${kind.label}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)

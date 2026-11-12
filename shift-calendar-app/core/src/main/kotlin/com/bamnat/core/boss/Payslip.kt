@@ -82,13 +82,20 @@ data class Payslip(
     companion object {
         const val NOTE = "근로기준법 제48조 제2항에 따라 드리는 임금명세서예요. 계산이 다르면 사장님께 말씀해 주세요."
 
-        fun of(place: Workplace, line: LedgerLine, nonTaxable: Long = 0, dependents: Int = 1): Payslip {
+        /**
+         * 2.0.0 [RVJ-10] 검토 PAYC-08·PAYU-14: the 비과세 is the staff's 비과세 수당 (식대 up to its 한도) and the 가족 수 theirs, unless
+         * given; [RVJ-11] an 일용근로자's 소득세 is worked out day by day ([com.bamnat.core.money.DailyWorkerTax]).
+         */
+        fun of(place: Workplace, line: LedgerLine, nonTaxable: Long? = null, dependents: Int? = null): Payslip {
             val ins = InsuranceRules.of(place, line.staff, line.month).effective
             val on = line.month.atEndOfMonth()
-            val mode = when (line.staff.insurance.tax) { StaffTax.BIZ -> TaxMode.WITHHOLDING_3_3; StaffTax.WAGE -> TaxMode.INSURANCE_4; StaffTax.NONE -> TaxMode.NONE }
-            val all = TakeHome.estimate(line.gross, mode, dependents, on, nonTaxable = nonTaxable).deductions
+            val tax = line.staff.insurance.tax
+            val mode = when (tax) { StaffTax.BIZ -> TaxMode.WITHHOLDING_3_3; StaffTax.WAGE, StaffTax.DAILY -> TaxMode.INSURANCE_4; StaffTax.NONE -> TaxMode.NONE }
+            val free = (nonTaxable ?: freeOf(place, line)).coerceIn(0, line.gross.coerceAtLeast(0))
+            val all = TakeHome.estimate(line.gross, mode, dependents ?: line.staff.insurance.family, on, line.staff.insurance.children,
+                nonTaxable = free).deductions
             // Only the 4대보험 they are in; the 소득세 always as its way says.
-            val kept = all.filter { (name, _) ->
+            var kept = all.filter { (name, _) ->
                 when (name) {
                     "국민연금" -> ins.pension
                     "건강보험", "장기요양" -> ins.health
@@ -96,8 +103,32 @@ data class Payslip(
                     else -> true
                 }
             }
+            if (tax == StaffTax.DAILY) {
+                val t = dailyTax(line, free)
+                kept = kept.filter { it.first != TakeHome.TAX_LABEL && it.first != TakeHome.LOCAL_TAX_LABEL } +
+                    listOf(TakeHome.TAX_LABEL to t.income, TakeHome.LOCAL_TAX_LABEL to t.local).filter { it.second > 0 }
+            }
             // G4 건강보험 보수월액 하한 28만 원 (시행령 제32조): 1.39 [PAYX-59] [TakeHome.estimate] floors it itself, with the exact won × rate.
             return Payslip(place, line, place.payDate(line.month), kept)
+        }
+
+        /** [RVJ-10] The month's 비과세: the staff's allowances marked 세금 없는 돈, each kind up to its 한도 ([TakeHome.nonTaxable]). */
+        fun freeOf(place: Workplace, line: LedgerLine): Long {
+            if (line.staff.allowances.none { it.taxFree } || line.gross <= 0) return 0
+            return TakeHome.nonTaxable(PayrollLedger.profile(place, line.staff, line.month), line.month, line.pay)
+        }
+
+        /**
+         * [RVJ-11] 일용근로 소득세: each working day's pay (the month's 지급 spread over the days by what each day earned, 비과세 taken
+         * off), paid together for the month ([com.bamnat.core.money.DailyWorkerTax.paidTogether]).
+         */
+        fun dailyTax(line: LedgerLine, free: Long = 0): com.bamnat.core.money.DailyWorkerTax.Tax {
+            val taxable = (line.gross - free).coerceAtLeast(0)
+            val days = line.pay?.days.orEmpty().map { d -> d.parts.sumOf { it.amount } }.filter { it > 0 }
+            if (taxable == 0L) return com.bamnat.core.money.DailyWorkerTax.Tax(0, 0)
+            if (days.isEmpty()) return com.bamnat.core.money.DailyWorkerTax.paidTogether(List(line.workDays.coerceAtLeast(1)) { taxable / line.workDays.coerceAtLeast(1) })
+            val sum = days.sum().toDouble()
+            return com.bamnat.core.money.DailyWorkerTax.paidTogether(days.map { Math.round(it * taxable / sum) })
         }
     }
 }

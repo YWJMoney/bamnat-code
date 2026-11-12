@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.core.schedule.RestRules
 import com.bamnat.core.schedule.RotationSpeed
+import androidx.compose.ui.semantics.Role
 
 /**
  * [REST-01][REST-02][REST-03] 근무표 점검 기준: one sheet for the calendar's 휴식 점검, the month typed at once and
@@ -55,7 +56,7 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
             Text("병원·회사마다 기준이 달라요. 우리 기준으로 맞추면 달력, 이번 달 전부 넣기, 받은 근무표가 모두 이 기준으로 알려 줘요. " +
                 "알려만 주고 저장은 막지 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { draft = draft.copy(on = !draft.on) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { draft = draft.copy(on = !draft.on) }, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("근무표 점검", style = MaterialTheme.typography.bodyLarge)
                     Text(if (draft.on) "켜 두면 휴식이 짧은 날을 미리 알 수 있어요" else "꺼져 있어요. 아무것도 알려 주지 않아요",

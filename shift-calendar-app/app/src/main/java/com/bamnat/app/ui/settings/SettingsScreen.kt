@@ -1183,7 +1183,7 @@ private fun VersionLine(onOpenDiagnostics: (Boolean) -> Unit) {
         textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .clickable {
+            .clickable(role = Role.Button) {
                 taps++
                 if (taps >= 7) {
                     taps = 0
@@ -1515,7 +1515,7 @@ private fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (BackupP
             Column {
                 Text("이 휴대폰에서 만든 백업이에요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 list.forEach { r ->
-                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { onPick(r) }.padding(vertical = 10.dp)) {
+                    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { onPick(r) }.padding(vertical = 10.dp)) {
                         Text(r.at.format(at) + " 백업", style = MaterialTheme.typography.bodyLarge)
                         Text(r.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

@@ -23,6 +23,7 @@ data class InviteTerms(val need: Int, val days: Int, val months: Int, val capMon
 
     companion object {
         /** Until the server says otherwise: the developer app's defaults. */
+        // 2.0.0 [RVD-15] 초대만의 상한 기본값(0)이에요. 서버는 모든 보상을 합친 1년 12개월을 capMonths로 말해요(company-worker inviteRules).
         val DEFAULT = InviteTerms(need = 5, days = 7, months = 1, capMonths = 0)
     }
 }
@@ -85,6 +86,9 @@ object InviteRules {
 
     /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
     fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"
+
+    /** 2.0.0 [RVD-14] "프로 1개월은 운영팀이 확인한 뒤 들어와요". */
+    fun pending(months: Int): String = "프로 ${months}개월은 운영팀이 확인한 뒤 들어와요"
 
     /** [INVITE-08] Toward the next months: "3/5명 · 2명은 사용 기간 채우는 중". */
     fun progress(progress: Int, need: Int, waiting: Int): String =

@@ -19,7 +19,7 @@ const CONTRACT = ["billing", "ads", "type.shift", "type.day", "type.hourly", "ty
   "team.leader", "boss.payroll", "health.compare" /* 1.38 Phase 3, on from 정식 출시일 */,
   "sleep.auto", "sleep.sound", "sleep.share" /* 1.38 SLEEP-01·06·11, same launch day */,
   "plaza.fix_request" /* 1.39 PAYP-05, on from 처리방침 3.12 */,
-  "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
+  "community.care" /* 1.39 CARE-01, on from the 처리방침 3.12 day and 2026-12-09 (2.0.0 RVD-18) */, "community.confirmed" /* 2.0.0 RVD-18, 3.12 */, "plaza.people" /* 1.39 PLZC-10, 3.12 */,
   "sleep.plan_share" /* 1.39 G5-N4, on from the 처리방침 3.12 day */, "stats.setup" /* 1.39 SETUP-20, 3.12 */,
   "stats.life" /* 1.39 STAT2-02, 3.12 */, "stats.kind", "stats.keep" /* 1.39 OBS2-08, 3.12 */, "stats.disc" /* 1.40 DISC-06, 3.13 */];
 

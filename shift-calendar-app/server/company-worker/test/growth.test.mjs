@@ -205,7 +205,7 @@ test("[GRW-08] first, check and report: an automatic check, three looked at then
 // ---- [GRW-09] 만든 분 보상 ----
 import { grantMakerReward, rewardContestPicks, MAKER_REWARD } from "../src/maker-reward.js";
 
-test("[GRW-09] a maker gets 프로 once per work: 모두의 도구 1달, 채택 3달, 이달의 주제 1달, at most 12 a year", async (t) => {
+test("[GRW-09] a maker gets 프로 once per work: 모두의 도구 1달, 채택 3달, 이달의 주제 1달, paid after an admin looks (2.0.0)", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: AFTER });
   const { call, env, DB } = server({ plaza: true });
   const admin = await signIn(call);
@@ -214,16 +214,16 @@ test("[GRW-09] a maker gets 프로 once per work: 모두의 도구 1달, 채택 
   await tick(env, AFTER);
   await tick(env, AFTER + 3600000);
   await call("POST", `/api/admin/growth/tools/${code}`, { action: "adopt", version: "1.37" }, admin);
+  // 2.0.0 [RVD-13] 사용자 결정 '확인 뒤 지급': they wait in 드릴 보상.
   const rows = (await DB.prepare("SELECT months, status, rule_id FROM rewards WHERE rule_id = 'maker' ORDER BY months").all()).results;
-  assert.deepEqual(rows.map((r) => [r.months, r.status]), [[1, "paid"], [3, "paid"]]);
+  assert.deepEqual(rows.map((r) => [r.months, r.status]), [[1, "owed"], [3, "owed"]]);
   const owner = (await DB.prepare("SELECT owner FROM recipes WHERE code = ?").bind(code).first()).owner;
-  assert.equal((await rewardContestPicks(env, [code], "2026-11", AFTER))[0].given, true);
+  assert.equal((await rewardContestPicks(env, [code], "2026-11", AFTER))[0].owed, true);
   assert.equal(await grantMakerReward(env, owner, "contest", `2026-11:${code}`, AFTER), null, "once per pick");
-  // 1 + 3 + 1 = 5; 7 more reach 12, the next is capped.
-  for (let i = 0; i < 7; i++) await grantMakerReward(env, owner, "tool", `X${i}`, AFTER);
-  const over = await grantMakerReward(env, owner, "tool", "OVER", AFTER);
-  assert.equal(over.capped, true);
   assert.equal(MAKER_REWARD.capMonthsYear, 12);
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed", undefined, admin)).data.rewards) {
+    assert.equal((await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, admin)).status, 200);
+  }
   const pass = (await call("GET", "/api/passes", undefined, { "x-device": device(1) })).data;
   assert.ok(pass.items.some((x) => x.why === "maker"));
   const maker = (await DB.prepare("SELECT maker FROM recipes WHERE code = ?").bind(code).first()).maker;
