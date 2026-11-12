@@ -2,9 +2,14 @@ name: Android (밤낮)
 # [REPO-01] 1.34: the repository is private (결정 D110), where Actions has 2,000 minutes a month. A draft pull request runs
 # the quick checks only (servers, core, tracker); the app's shards and lint run once it is ready for review, or by hand
 # (Actions › Android › Run workflow). main is not built again after a merge: the same commits passed on the pull request.
+# 2.0.0 [RVR-14] (총괄 HQ-37) 통합 PR은 초안이라 그 머리에서 앱 시험이 돌지 않았어요(서버 PR #463 뒤 InviteAppTest가 깨진 채
+# 들어가 그 위 PR 넷이 함께 빨강). 통합 브랜치에 들어올 때마다 서버·core와 앱 (unit)이 돌아요(겹친 push는 앞 것을 멈춰요).
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    paths: ["shift-calendar-app/**", "privacy/**", "terms/**", "community/**", "remote/**", ".github/workflows/android.yml"]
+  push:
+    branches: [claude/project-thread-f33c16]
     paths: ["shift-calendar-app/**", "privacy/**", "terms/**", "community/**", "remote/**", ".github/workflows/android.yml"]
   workflow_dispatch:
 concurrency:
@@ -50,6 +55,11 @@ jobs:
       - run: python3 tools/check_tracker.py
       - run: python3 tools/test_check_checklist.py
       - run: python3 tools/test_dev_status.py
+      # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
+      # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
+      - run: python3 tools/test_cycles_build.py && python3 tools/cycles_build.py --check
+      - run: pip install --quiet cryptography==44.0.2 && python3 tools/test_remote_sign.py && python3 tools/remote_sign.py check --need-sig2
+      - run: pip install --quiet pillow==11.1.0 && python3 tools/test_shot_hashes.py && python3 tools/shot_hashes.py names
       - run: sh ./gradlew $GRADLE_FLAGS -p core test
       - if: always()
         run: python3 tools/slow_tests.py core/build/test-results >> "$GITHUB_STEP_SUMMARY"
@@ -63,13 +73,14 @@ jobs:
   # classes that run on Android 8, 11, 13 and 15 (app/build.gradle.kts bamnat.testSet). Each shard runs its classes
   # in parallel forks too.
   app:
-    if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        set: [unit, shots-a, shots-b, api]
+        # [RVR-14] A push to the integration branch runs the unit shard only (the screenshots and Android levels run on its PR).
+        set: ${{ fromJSON(github.event_name == 'push' && '["unit"]' || '["unit", "shots-a", "shots-b", "api"]') }}
     defaults:
       run:
         working-directory: shift-calendar-app
@@ -88,6 +99,11 @@ jobs:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
           restore-keys: robolectric-
+      # [RVR-12] (검토 TEST-13) Node 22 before Gradle: the app tests that start server/company-worker (node:sqlite) need it, and
+      # in CI (CI=true) a test that cannot find Node or the privacy page fails instead of being skipped (app test CiNeed.kt).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=${{ matrix.set }} --continue
       # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
       - name: Room schema committed
@@ -98,14 +114,11 @@ jobs:
           test -z "$changed" || { echo "Commit these schema files: $changed"; exit 1; }
       # The share server checks the payloads the app tests just wrote (app/build/share-payload*.json).
       - if: matrix.set == 'unit'
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - if: matrix.set == 'unit'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
       # [QA-06] 43 key screenshots (drawn on a fixed day, QA-08) against their fingerprints (tools/shot_hashes.py); a change that was meant
-      # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request.
+      # comes with `python3 tools/shot_hashes.py update app/build/screenshots` in the same pull request. [RVR-11] With --results, a key
+      # shot whose test class ran in this shard but left no picture fails ('비교 못 함') instead of passing without a word.
       - if: startsWith(matrix.set, 'shots-')
         uses: actions/setup-python@v5
         with:
@@ -114,7 +127,7 @@ jobs:
         if: startsWith(matrix.set, 'shots-')
         run: |
           python3 -m pip install --quiet pillow
-          python3 tools/shot_hashes.py check app/build/screenshots >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/shot_hashes.py check app/build/screenshots --results app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest --json app/build/tests-${{ matrix.set }}.json >> "$GITHUB_STEP_SUMMARY"
       - if: always()
@@ -127,8 +140,65 @@ jobs:
             shift-calendar-app/app/build/screenshots
             shift-calendar-app/app/build/tests-${{ matrix.set }}.json
           retention-days: 7
+  # 2.0.0 [RVR-14] (총괄 HQ-37) A draft pull request that changes a server runs the app tests that start that server
+  # (server/company-worker/test/local-server.mjs, or the share server's payload check), so a server answer the app no longer
+  # reads fails on the pull request that changed it, not on the integration branch after it.
+  server-app:
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: changed
+        run: |
+          if git diff --quiet ${{ github.event.pull_request.base.sha }} HEAD -- server/; then
+            echo "server=0" >> "$GITHUB_OUTPUT"; echo "서버가 바뀌지 않았어요: 앱의 서버 시험은 준비 PR 때 돌아요" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "server=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changed.outputs.server == '1'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - if: steps.changed.outputs.server == '1'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - if: steps.changed.outputs.server == '1'
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
+          restore-keys: robolectric-
+      - if: steps.changed.outputs.server == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The classes that start server/company-worker/test/local-server.mjs, and ShareLinkTest (it writes the payloads the share
+      # server checks next). tools/server_app_tests.py finds them in the test sources, so a new one joins by itself.
+      - if: steps.changed.outputs.server == '1'
+        run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest $(python3 tools/server_app_tests.py --gradle) --continue
+      - if: steps.changed.outputs.server == '1'
+        run: npm test
+        working-directory: shift-calendar-app/server/share-worker
+      - if: always() && steps.changed.outputs.server == '1'
+        run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
+      - if: always() && steps.changed.outputs.server == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-app-reports
+          path: |
+            shift-calendar-app/app/build/test-results/testDebugUnitTest
+            shift-calendar-app/app/build/reports
+          retention-days: 7
   lint:
-    if: github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -144,8 +214,10 @@ jobs:
         with:
           cache-read-only: false
       - run: sh ./gradlew $GRADLE_FLAGS :app:lintDebug --continue
-      # [REL-09] The watch app builds and passes lint too.
-      - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug --continue
+      # [REL-09] The watch app builds and passes lint too. [RVR-12] (검토 TEST-13) and its unit tests run.
+      - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug :wear:testDebugUnitTest --continue
+      - if: always()
+        run: python3 tools/slow_tests.py wear/build/test-results >> "$GITHUB_STEP_SUMMARY"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -153,4 +225,5 @@ jobs:
           path: |
             shift-calendar-app/app/build/reports
             shift-calendar-app/wear/build/reports
+            shift-calendar-app/wear/build/test-results
           retention-days: 7

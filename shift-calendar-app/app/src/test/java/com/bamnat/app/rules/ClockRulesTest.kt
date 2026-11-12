@@ -18,6 +18,9 @@ import java.time.ZonedDateTime
  * that fixes the clock draws the same screen on any day. A line that needs the real clock (a new item's id) says
  * so with a `// real clock:` comment.
  */
+/** [RVR-15] How many direct clock reads the tests may still have; it only goes down. */
+private const val TEST_CLOCK_CAP = 216
+
 class ClockRulesTest {
     private val roots = listOf("src/main", "../core/src/main", "../wear/src/main", "../database/src/main").map(::File)
     private val direct = Regex(
@@ -38,6 +41,28 @@ class ClockRulesTest {
             }.toList()
         }
         assertEquals("read the clock through com.bamnat.core.time.Today", emptyList<String>(), found)
+    }
+
+    /**
+     * 2.0.0 [RVR-15] (검토 I60a-02·TEST-07) The tests' own direct reads of the clock: 216 lines when this rule came in (2026-11-12),
+     * nearly all in the app's tests. They may only go down: a new test reads Today (fixed with Today.fix/use) or says why it needs
+     * the real clock with `// real clock:` (a timeout, a file stamp). When you take some out, lower [TEST_CLOCK_CAP] with them.
+     */
+    @Test fun testsDoNotReadTheClockMoreThanBefore() {
+        val tests = listOf("src/test", "../core/src/test", "../wear/src/test", "../database/src/test").map(::File).filter { it.isDirectory }
+        val withYear = Regex(direct.pattern + """|\bYear\.now\(""")
+        val found = tests.flatMap { root ->
+            root.walkTopDown().filter { it.isFile && it.extension == "kt" && it.name != "ClockRulesTest.kt" }.flatMap { f ->
+                f.readLines().withIndex()
+                    .filter { (_, line) -> withYear.containsMatchIn(line) && "// real clock:" !in line && !line.trimStart().startsWith("*") }
+                    .map { (i, _) -> "${f.path}:${i + 1}" }
+            }.toList()
+        }
+        assertTrue(
+            "tests read the clock directly in ${found.size} lines (at most $TEST_CLOCK_CAP): use Today, or `// real clock:` with why.\n" +
+                found.takeLast(5).joinToString("\n"),
+            found.size <= TEST_CLOCK_CAP,
+        )
     }
 
     @Test fun aFixedClockStaysPutAndResetGoesBackToTheSystem() {

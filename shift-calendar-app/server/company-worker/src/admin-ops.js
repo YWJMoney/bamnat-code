@@ -49,13 +49,15 @@ export const opsSteps = (env, vitals) => [
 ];
 
 /**
- * 배지에 더하는 숫자: index.js BADGE_SQL에 들어가 메뉴 숫자와 같은 한 번의 batch로 읽어요([area, sql], 볼 수 있는 사람에게만).
+ * 배지에 더하는 숫자: index.js BADGE_SQL에 들어가 메뉴 숫자와 같은 한 번의 batch로 읽어요([area, sql, ...묶을 값], 볼 수 있는 사람에게만;
+ * 묶을 값이 함수면 지금 시각 now로 불러요).
  * 사고는 열린 수(맨 위 띠), 데이터 요청은 기한이 이틀 안이거나 넘은 수도 따로.
  */
 export const OPS_BADGE_SQL = {
   errorsNew: ["owner", "SELECT COUNT(*) AS n FROM error_groups WHERE status IN ('new', 'again')"],
   requestsOpen: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open'"],
-  requestsLate: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < (CAST(strftime('%s', 'now') AS INTEGER) + 2 * 86400) * 1000"],
+  // 2.0.0 [RVR-13] (검토 TEST-06) 시각은 SQLite 'now'가 아니라 서버의 Date.now()로 묶어요: 시험 시계(--test-clock)와 같은 시계.
+  requestsLate: ["owner", "SELECT COUNT(*) AS n FROM data_requests WHERE status = 'open' AND due_at < ?", (now) => now + 2 * DAY],
   incidentOpen: ["owner", "SELECT COUNT(*) AS n FROM incidents WHERE closed_at IS NULL"],
   reviewsWaiting: ["inquiries", "SELECT COUNT(*) AS n FROM store_reviews WHERE status <> 'replied'"],
   releaseOpen: ["ops", "SELECT COUNT(*) AS n FROM release_runs WHERE done_at IS NULL"],

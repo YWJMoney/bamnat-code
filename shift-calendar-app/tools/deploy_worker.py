@@ -19,6 +19,10 @@
   8. health를 10초 간격 5번 + 배포 상태가 새 판 100%인지 확인. 하나라도 실패하면 앞 판을 100%로 되돌리고 실패로 끝나요.
      되돌리기는 코드만이에요. DB 판(스키마)은 앞으로만 가요.
 
+2.0.0 [RVR-17] (검토 TEST-14·I60a-03) 날짜에 묶여 낡은 시험 하나가 급한 보안 고침을 막지 않게: --skip-test '시험 이름|까닭|기한'
+(workflow 입력 skip_tests, ';'로 여러 개). 까닭이 없거나 기한(YYYY-MM-DD)이 지났거나 14일보다 멀면 멈춰요. 넘긴 시험은 배포 기록에 남아요.
+이 도구의 흐름(나뉜 판·check·변수 다시 올리기·바인딩 빠짐·판 낮음·배포·되돌리기)은 tools/test_deploy_flow.py가 가짜 wrangler로 시험해요.
+
 열쇠: 환경 변수 CLOUDFLARE_API_TOKEN(GitHub Secret). 출력하지 않아요. 계정 번호는 CLOUDFLARE_ACCOUNT_ID가 없으면 토큰이 닿는
 계정이 하나일 때 그 계정을 써요.
 """
@@ -293,7 +297,43 @@ def version_gate(worker: str, new_ver: str, live: str | None, allow_older: bool)
     return None
 
 
-def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> None:
+SKIP_MAX_DAYS = 14
+
+
+def parse_skips(items, today) -> list[tuple[str, str, str]]:
+    """2.0.0 [RVR-17] '시험 이름|까닭|YYYY-MM-DD' → [(이름, 까닭, 기한)]. 모양이 틀리거나 기한이 지났거나 너무 멀면 Stop."""
+    import datetime
+    out = []
+    for item in items or []:
+        for one in str(item).split(";"):
+            if not one.strip():
+                continue
+            parts = [x.strip() for x in one.split("|")]
+            if len(parts) != 3 or not all(parts):
+                raise Stop(f"넘길 시험은 '시험 이름|까닭|기한(YYYY-MM-DD)' 모양이어야 해요: {one.strip()}")
+            name, why, until = parts
+            try:
+                day = datetime.date.fromisoformat(until)
+            except ValueError:
+                raise Stop(f"넘길 시험의 기한이 날짜가 아니에요: {until}") from None
+            if day < today:
+                raise Stop(f"넘길 시험 '{name}'의 기한 {until}이 지났어요: 시험을 고치거나 새 기한과 까닭으로")
+            if (day - today).days > SKIP_MAX_DAYS:
+                raise Stop(f"넘길 시험 '{name}'의 기한 {until}이 {SKIP_MAX_DAYS}일보다 멀어요")
+            out.append((name, why, until))
+    return out
+
+
+def test_command(wd: Path, skips) -> list[str]:
+    """[RVR-17] 서버 시험 명령: 넘길 것이 없으면 npm test, 있으면 같은 시험을 이름으로 건너뛰어요(node --test-skip-pattern)."""
+    if not skips:
+        return ["npm", "test"]
+    pattern = "|".join("^" + re.escape(name) + "$" for name, _, _ in skips)
+    files = sorted(str(p.relative_to(wd)) for p in (wd / "test").glob("*.test.mjs"))
+    return ["node", "--test", "--disable-warning=ExperimentalWarning", f"--test-skip-pattern={pattern}", *files]
+
+
+def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool, skips=()) -> None:
     w = WORKERS[worker]
     wd = SERVER / w["dir"]
     base = (os.environ.get(w["health_env"]) or w["health_base"]).rstrip("/")
@@ -320,7 +360,9 @@ def deploy(worker: str, mode: str, sha: str, reason: str, allow_older: bool) -> 
     # 2. 시험·번들
     if (wd / "package-lock.json").exists():
         run(["npm", "ci", "--no-audit", "--no-fund"], wd)
-    run(["npm", "test"], wd)
+    for test_name, why, until in skips:  # 'name'은 위의 --name 인자예요
+        say(f"- **넘긴 시험**: `{test_name}` — {why} (기한 {until})")
+    run(test_command(wd, skips), wd)
     run(["npm", "run", "bundle"], wd)
     bundle = wd / "dist/worker.js"
     if not bundle.exists():
@@ -406,10 +448,13 @@ def main() -> None:
     ap.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "local"))
     ap.add_argument("--reason", default="")
     ap.add_argument("--allow-older", action="store_true")
+    ap.add_argument("--skip-test", action="append", default=[], help="'시험 이름|까닭|YYYY-MM-DD' (RVR-17, 기한 14일 안)")
     a = ap.parse_args()
     say(f"### {WORKERS[a.worker]['name']} ({a.mode}) {a.sha[:8]}")
     try:
-        deploy(a.worker, a.mode, a.sha, re.sub(r"\s+", " ", a.reason).strip(), a.allow_older)
+        import datetime
+        skips = parse_skips(a.skip_test, datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date())
+        deploy(a.worker, a.mode, a.sha, re.sub(r"\s+", " ", a.reason).strip(), a.allow_older, skips)
     except Stop as e:
         say(f"- **멈춤(앞 판 그대로)**: {e}")
         raise SystemExit(1)

@@ -29,8 +29,12 @@ on:
         description: 지금 도는 판보다 낮은 판도 올리기(되돌릴 때만)
         type: boolean
         default: false
+      skip_tests:
+        description: "[RVR-17] 날짜에 묶여 낡은 시험 넘기기 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
+        required: false
+        default: ""
   pull_request:
-    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", ".github/workflows/deploy-server.yml"]
+    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", ".github/workflows/deploy-server.yml"]
 permissions:
   contents: read
 # 배포는 한 번에 하나씩, 도중에 끊지 않아요.
@@ -44,6 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
+      - run: python3 shift-calendar-app/tools/test_deploy_flow.py
   deploy:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
@@ -58,6 +63,7 @@ jobs:
       IN_MODE: ${{ inputs.mode }}
       IN_REASON: ${{ inputs.reason }}
       IN_OLDER: ${{ inputs.allow_older }}
+      IN_SKIP: ${{ inputs.skip_tests }}
     steps:
       # 배포 도구는 main의 것, 서버 코드는 고른 브랜치의 것.
       - uses: actions/checkout@v4
@@ -71,9 +77,11 @@ jobs:
       - name: 배포
         run: |
           python3 shift-calendar-app/tools/test_deploy_worker.py
+          python3 shift-calendar-app/tools/test_deploy_flow.py
           sha=$(git -C target rev-parse HEAD)
           echo "## 서버 배포 ${IN_MODE}: ${IN_REF} (${sha:0:8})" >> "$GITHUB_STEP_SUMMARY"
           older=(); [ "$IN_OLDER" = "true" ] && older=(--allow-older)
+          [ -n "$IN_SKIP" ] && older+=(--skip-test "$IN_SKIP")
           case "$IN_TARGET" in both) workers="company share";; *) workers="$IN_TARGET";; esac
           for w in $workers; do
             BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
