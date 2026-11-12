@@ -10,9 +10,65 @@ import java.time.temporal.TemporalAdjusters
  * [SCHED-01] A memo that is a plan: when it is, and how it is brought up. At least one of [ring]
  * (an alarm that rings like the shift alarm) and [notify] (a message in the notification shade).
  */
-data class MemoReminder(val at: LocalDateTime, val ring: Boolean, val notify: Boolean) {
+data class MemoReminder(
+    val at: LocalDateTime,
+    val ring: Boolean,
+    val notify: Boolean,
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) Told by the work, not the clock ([at] is then the time it was saved for, a fallback). */
+    val work: WorkAnchor? = null,
+) {
     init {
         require(ring || notify) { "A schedule that neither rings nor notifies" }
+    }
+}
+
+/**
+ * 2.0.0 [RVIB-04] (검토 I07ac-01) 근무에 붙는 알림: "출근 1시간 전", "퇴근 30분 뒤", "야간 끝나고 일어나면". The time is read from each
+ * day's work, so a changed shift needs nothing changed and a work past midnight is its own night's (MEMO-10). Other to-do apps do
+ * not know the work, so they cannot. [minutes] from the work's start ([From.START]) or end ([From.END]); [From.WAKE] is a night's
+ * end and the sleep after it ([minutes]), on nights only. Stored as its [code] ("S-60", "E30", "W420").
+ */
+data class WorkAnchor(val from: From, val minutes: Int) {
+    enum class From(val letter: Char) { START('S'), END('E'), WAKE('W') }
+
+    val code: String get() = "${from.letter}$minutes"
+
+    /** "출근 1시간 전", "퇴근 30분 뒤", "출근할 때", "야간 끝나고 일어나면". */
+    val label: String get() = when (from) {
+        From.START -> if (minutes == 0) "출근할 때" else if (minutes < 0) "출근 ${span(-minutes)} 전" else "출근 ${span(minutes)} 뒤"
+        From.END -> if (minutes == 0) "퇴근할 때" else if (minutes > 0) "퇴근 ${span(minutes)} 뒤" else "퇴근 ${span(-minutes)} 전"
+        From.WAKE -> "야간 끝나고 일어나면"
+    }
+
+    /** Whether a day with [hours] (start to end; an end at or before the start is the next morning's) has a time for it. */
+    fun fits(hours: Pair<LocalTime, LocalTime>?): Boolean = hours != null && (from != From.WAKE || !hours.second.isAfter(hours.first))
+
+    /** When it is told for [day]'s work of [hours], to the minute; null when the day has none for it. */
+    fun on(day: LocalDate, hours: Pair<LocalTime, LocalTime>?): LocalDateTime? {
+        if (hours == null || !fits(hours)) return null
+        val (start, end) = hours
+        val night = !end.isAfter(start)
+        val base = if (from == From.START) day.atTime(start) else (if (night) day.plusDays(1) else day).atTime(end)
+        return base.plusMinutes(minutes.toLong()).withSecond(0).withNano(0)
+    }
+
+    companion object {
+        /** The choices offered, in order: 출근 2시간·1시간·30분 전, 출근할 때, 퇴근할 때, 퇴근 30분·1시간 뒤. */
+        val CHOICES = listOf(WorkAnchor(From.START, -120), WorkAnchor(From.START, -60), WorkAnchor(From.START, -30), WorkAnchor(From.START, 0),
+            WorkAnchor(From.END, 0), WorkAnchor(From.END, 30), WorkAnchor(From.END, 60))
+
+        fun parse(code: String?): WorkAnchor? {
+            if (code.isNullOrEmpty()) return null
+            val from = From.entries.firstOrNull { it.letter == code[0] } ?: return null
+            val minutes = code.drop(1).toIntOrNull()?.takeIf { it in -24 * 60..24 * 60 } ?: return null
+            return WorkAnchor(from, minutes)
+        }
+
+        private fun span(m: Int): String = when {
+            m % 60 == 0 -> "${m / 60}시간"
+            m < 60 -> "${m}분"
+            else -> "${m / 60}시간 ${m % 60}분"
+        }
     }
 }
 
