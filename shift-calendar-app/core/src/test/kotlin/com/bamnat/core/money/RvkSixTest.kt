@@ -244,12 +244,11 @@ class RvkSixTest {
         assertEquals("이번 달 12일 중 11일은 적은 지출이 없어요.", LedgerAsk.answer(LedgerAsk.Question.NO_SPEND, older, d(11, 12)))
     }
 
-    // ---- MONEY-58 일용 세금 끝자리 ----
+    // ---- MONEY-58 일용 세금 끝자리 (갈래 J [RVJ-37]이 지급 한 번 단위로 먼저 고침, 여기는 검토 줄의 예만) ----
 
     @Test fun dailyWorkerTaxDropsBelowTenWon() {
         assertEquals(DailyWorkerTax.Tax(1_080, 100), DailyWorkerTax.paidDaily(listOf(190_000)))
         assertEquals(DailyWorkerTax.Tax(2_160, 210), DailyWorkerTax.paidTogether(listOf(190_000, 190_000)))
-        assertEquals(990L, DailyWorkerTax.incomeTaxOfDay(187_000))
     }
 
     // ---- MONEY-42 계좌에서 나간 통신비·월세가 '내 계좌로 옮김'으로만 적혀 지출에 안 들던 것 ----

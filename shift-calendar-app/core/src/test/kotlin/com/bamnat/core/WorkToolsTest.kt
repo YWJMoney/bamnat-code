@@ -158,14 +158,21 @@ class WorkToolsTest {
     @Test
     fun dailyWorkerTaxIsTwoPointSevenOverTheDeduction() {
         assertEquals(1_350, DailyWorkerTax.incomeTaxOfDay(200_000))
+        // 2.0.0 [RVJ-37] 지방소득세 135원의 끝수 5원은 버려요 (국고금 관리법 제47조 제1항).
         assertEquals(DailyWorkerTax.Tax(1_350, 130), DailyWorkerTax.paidTogether(listOf(200_000)))
+        // 국세청 '일용근로자 원천징수' 안내의 예시: 일당 20만 원 5일을 한 번에 → 소득세 6,750원, 지방소득세 670원.
+        assertEquals(DailyWorkerTax.Tax(6_750, 670), DailyWorkerTax.paidTogether(List(5) { 200_000L }))
+        // 소득세도 10원 미만을 버려요: 일당 215,555원 → 1,769원 → 1,760원, 지방소득세 176원 → 170원.
+        assertEquals(DailyWorkerTax.Tax(1_760, 170), DailyWorkerTax.paidTogether(listOf(215_555)))
+        // 날마다 받으면 그날그날이 한 번의 지급이라 끝수도 날마다 버려요.
+        assertEquals(DailyWorkerTax.Tax(3_520, 340), DailyWorkerTax.paidDaily(listOf(215_555, 215_555)))
         assertEquals(0, DailyWorkerTax.incomeTaxOfDay(150_000))
         // 18만 원 a day is 810원, not taken day by day, but taken when five days are paid together.
         val five = List(5) { 180_000L }
         assertEquals(0, DailyWorkerTax.paidDaily(five).total)
         assertEquals(DailyWorkerTax.Tax(4_050, 400), DailyWorkerTax.paidTogether(five))
         assertEquals(187_037, DailyWorkerTax.TAX_FREE_UP_TO)
-        assertEquals(990, DailyWorkerTax.incomeTaxOfDay(DailyWorkerTax.TAX_FREE_UP_TO))
+        assertEquals(999, DailyWorkerTax.incomeTaxOfDay(DailyWorkerTax.TAX_FREE_UP_TO))
     }
 
     @Test
