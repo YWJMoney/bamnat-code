@@ -174,7 +174,8 @@ internal fun PhotoBand(
                     inMenu.forEach { a ->
                         DropdownMenuItem(
                             text = { Text(if (a in choices) "${a.label} 사진" else a.label) },
-                            leadingIcon = if (a.selected) ({ Icon(Icons.Filled.Check, contentDescription = "보는 중") }) else null,
+                            // The ✓ goes after the words so every line in the menu starts at the same place.
+                            trailingIcon = if (a.selected) ({ Icon(Icons.Filled.Check, contentDescription = "보는 중") }) else null,
                             onClick = { open = false; a.onClick() },
                         )
                     }
