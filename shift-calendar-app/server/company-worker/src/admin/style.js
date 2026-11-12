@@ -1476,6 +1476,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 /* 2.0.0 [RVA-25] 검토 U24-07: 카드의 왼쪽 맞춤 단추 줄에서는 ⋯가 왼쪽에 있어 메뉴를 오른쪽으로 펴요(화면 밖으로 나가지 않게). */
 .actions.start details.row-more>.menu{left:0;right:auto}
 .list-note{margin:.5rem 0 .75rem}
+/* 2.0.0 [RVQ-39] 보류된 표의 묶음 줄: 세기·버리기는 한 묶음으로 글 옆이나 그 아래 줄에 함께 놓여요(하나만 다음 줄로 떨어지지 않게). */
+.held-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}.held-acts{display:inline-flex;gap:.35rem}
 .list-head .lg-bar{display:flex;flex:1 1 8rem;min-width:min(8rem,100%);margin:0}.list-head .lg-bar input[type=search]{flex:1 1 auto;min-width:0}
 .seg .n.hot{color:var(--bad)}
 .ledger-view>.stage-strip{margin:.75rem 0}
