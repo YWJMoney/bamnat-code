@@ -459,7 +459,12 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }
             _state.value = _state.value.copy(applying = false, appliedId = id ?: _state.value.appliedId, appliedAt = if (id != null) Today.millis() else _state.value.appliedAt,
                 undoable = undoableNow(), laidAt = laidHere().maxOfOrNull { it.at }, usersPlus = _state.value.usersPlus + plus,
-                message = when {
+                message = c.recipes.lastMissed.takeIf { picks.isNotEmpty() && it.isNotEmpty() }?.let { m ->
+                    // 2.0.0 [RVS-12]: what could not go in is said, never 'nothing changed'.
+                    val names = m.joinToString("·") { it.label }
+                    if (id == null && !laid) "‘$names’ 조각을 넣지 못했어요. 앱을 업데이트한 뒤 다시 넣어 보세요"
+                    else "넣었어요. ‘$names’ 조각만 넣지 못했어요(앱을 업데이트하면 될 수 있어요). 7일 안에 되돌릴 수 있어요"
+                } ?: when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
                     id == null -> "바뀐 것이 없어요"

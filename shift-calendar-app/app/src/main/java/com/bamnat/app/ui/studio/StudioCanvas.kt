@@ -249,18 +249,19 @@ internal fun PartBar(
         Trail(StudioEdit.trail(sel).map { it to (BlueprintParts.LABELS[it] ?: it) }, onSel)
         com.bamnat.app.ui.components.FoldRow("studio.partbar", what = "꾸미기 도구", over = true) {
             // 언제 고치나: 언제나, the part's own states, its conditions.
-            val states = statesFor(sel)
+            val style = studioStyle()
+            val states = statesFor(sel, style, keep = on)
             val conds = remember(parts, sel, on) { StudioEdit.conditions(parts, sel, on) }
             if (states.isNotEmpty() || BlueprintParts.dated(sel)) Box {
                 var open by remember { mutableStateOf(false) }
                 val hold = com.bamnat.app.ui.components.LocalFoldHold.current
                 FilterChip(selected = on != null || whenF != null, onClick = { hold(); open = true },
-                    label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it) }, whenF?.let { w ->
+                    label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it, style) }, whenF?.let { w ->
                         "만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(12) }).ifEmpty { listOf("언제나") }.joinToString(" · ") + " ▾",
                         maxLines = 1) })
                 com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
                     (listOf<String?>(null) + states).forEach { st ->
-                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(sel, st)) }, onClick = { open = false; onOn(st, null) })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(sel, st, style)) }, onClick = { open = false; onOn(st, null) })
                     }
                     conds.forEach { w ->
                         androidx.compose.material3.DropdownMenuItem(text = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(24)) },

@@ -217,7 +217,14 @@ fun rememberDayFacts(snap: ScheduleSnapshot?, memos: List<Memo>, money: MoneyBoo
     val sleepFlow = remember(c) { c.sleepRepository.recent(60) }
     val sleeps by sleepFlow.collectAsState(emptyList())
     val link = rememberLinkOn(c)
-    return remember(snap, memos, money, style, today, extras, sleeps, link) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps, link) } }
+    // 2.0.0 [RVS-11] 검토 STU-28: a memo, a money line or a day changed made the whole book again on the main thread while the screen
+    // drew. Now only the first book is made there (so the month never shows without its 조건 꾸밈 for a frame), and every one after it
+    // in the background, the last one staying on screen until the next is ready.
+    val first = remember(snap == null) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps, link) } }
+    val later by androidx.compose.runtime.produceState<DayFactsBook?>(null, snap, memos, money, style, today, extras, sleeps, link) {
+        value = snap?.let { s -> kotlinx.coroutines.withContext(Dispatchers.Default) { dayFactsOf(s, memos, money, style, today, extras, sleeps, link) } }
+    }
+    return if (snap == null) null else later ?: first
 }
 
 /**

@@ -565,6 +565,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
                       /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // 2.0.0 [RVS-12] A 부품 piece this app cannot read is said by 넣기 ([RecipeRepository.lastMissed]), not taken for 'nothing changed'.
+        if (kind == PieceKind.PARTS) (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.takeIf { it.isNotEmpty() }
+            ?.let { com.bamnat.core.recipe.Blueprint.clean(it) }
         // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
         if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
         // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
@@ -1034,7 +1037,14 @@ class RecipePieces(private val c: AppContainer) {
                                       cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
-                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
+                // 2.0.0 [RVS-09] 검토 SN-12(3): 탭 순서 is one's own (the first tab is where the app opens). A work always carries one, so its
+                // usual order said nothing and put a phone's own order back to the usual; now only an order the maker changed is put on,
+                // and the phone's own first tab stays first.
+                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.layout.TabOrder.of(it) }
+                    ?.takeIf { it != com.bamnat.core.layout.TabOrder.DEFAULT }?.let { theirs ->
+                        val home = com.bamnat.core.layout.TabOrder.home(cur.tabOrder)
+                        "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(com.bamnat.core.layout.TabOrder.move(theirs, home, 0)).joinToString(",")
+                    },
                 (values["calendar"] as? String)?.let { "calendarLayout" to it },
             ).toMap()
             PieceKind.CARDS -> listOfNotNull(

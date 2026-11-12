@@ -282,7 +282,7 @@ private fun gather(lease: ThemeLease, kept: List<ThemeWardrobe.Kept>, drafts: Li
 
 /** The kinds of piece a draft holds (null when it holds none), read as loosely as 만들기 reads its drafts. */
 private fun draftKinds(body: String): List<PieceKind>? {
-    val kinds = runCatching { RecipeCodec.read(body).pieces.map { it.kind } }.getOrNull()
+    val kinds = runCatching { RecipeCodec.readDraft(body).pieces.map { it.kind } }.getOrNull()
         ?: runCatching {
             val a = org.json.JSONObject(body).optJSONArray("pieces") ?: org.json.JSONArray()
             (0 until a.length()).mapNotNull { i -> a.optJSONObject(i)?.optString("kind")?.let(PieceKind::of) }

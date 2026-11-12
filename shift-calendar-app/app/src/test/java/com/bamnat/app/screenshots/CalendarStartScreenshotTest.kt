@@ -29,9 +29,13 @@ class CalendarStartScreenshotTest : ScreenshotBase() {
         fun look(): Float? {
             val all = nodes()
             val height = all.maxOfOrNull { it.boundsInWindow.bottom } ?: return null
+            val width = all.maxOf { it.boundsInWindow.right }
+            // 2.0.0 HQ-56: only the cell drawn inside the window; the months beside it are laid out too, and the month before ends with
+            // this month's 1st (off to the left).
             val cell = all.firstOrNull { n ->
                 val b = n.boundsInWindow
-                b.height > 1f && n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
+                b.height > 1f && b.left >= 0f && b.right <= width + 1f &&
+                    n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
             } ?: return null
             return cell.boundsInWindow.top / height
         }

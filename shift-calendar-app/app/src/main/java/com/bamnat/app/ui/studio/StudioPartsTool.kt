@@ -17,6 +17,9 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import com.bamnat.app.ui.components.FilterChip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -32,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -42,6 +46,9 @@ import com.bamnat.app.ui.settings.ColorPick
 import com.bamnat.app.ui.settings.LabeledSlider
 import com.bamnat.core.recipe.Blueprint
 import com.bamnat.core.recipe.BlueprintParts
+import com.bamnat.app.appContainer
+import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.work.TypeWords
 
 /**
  * [BLU-06] 1.36 스튜디오 '부품' 도구 (계획 갈래 A 866, 제안 11·5): pick one part of the screen (달력 머리, 날짜 숫자, 탭 막대 …) and the
@@ -131,10 +138,11 @@ internal fun PartsTool(
         }
     }
     // 어떤 때
-    val states = statesFor(id)
+    val style = studioStyle()
+    val states = statesFor(id, style, keep = on)
     if (states.isNotEmpty()) com.bamnat.app.ui.components.FoldRow("studio.states", what = "어떤 때") {
         (listOf<String?>(null) + states).forEach { st ->
-            FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st)) })
+            FilterChip(selected = st == on, onClick = { on = st }, label = { Text(stateWord(id, st, style)) })
         }
     }
     // [BLU-12] 어두운 화면 colours show in the example once it is seen dark.
@@ -149,7 +157,7 @@ internal fun PartsTool(
         if (firstId == null) firstId = id else if (firstId != id) { kotlinx.coroutines.delay(120); bring.bringIntoView(); firstId = "" }
     }
     androidx.compose.foundation.layout.Box(Modifier.bringIntoViewRequester(bring)) { BoardPartSample(id, bp) }
-    Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${STATE_WORDS[it]}" } ?: ""), style = MaterialTheme.typography.titleSmall,
+    Text("${BlueprintParts.LABELS[id] ?: id} 꾸미기" + (on?.let { " · ${stateWord(id, it, style)}" } ?: ""), style = MaterialTheme.typography.titleSmall,
         modifier = Modifier.semantics { heading() })
     // [RUL-02] 1.36 조건부 꾸미기: "이럴 때만" (야간이고 메모에 #인수인계가 있으면 …), as a table to pick from or a 수식.
     val conds = remember(bp, id, on) { bp.lines.filter { it["id"] == id && it["on"] == on }.mapNotNull { it["when"] as? String }.distinct() }
@@ -218,6 +226,17 @@ internal fun PartsTool(
     fun set(k: String, v: Any?) = setAll(k to v)
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+    // 2.0.0 [RVS-06] STU-11·SI-02 '바꿔 그려요': what the app changes when it draws this part (그릴 때 지키는 바닥선), worked out on the
+    // colour really under it (the parts above it laid on the screen), not on this line's own fill alone; one quiet line each.
+    val screen = MaterialTheme.colorScheme.background.toArgb().toLong() and 0xFFFFFFFFL
+    val onStates = on?.let { setOf(it) } ?: emptySet()
+    val floored = remember(bp, screen) { bp.floored(screen) }
+    val fixes = remember(floored, id, on) { floored.fixes(id, onStates) }
+    @Composable
+    fun Said(f: com.bamnat.core.recipe.PartFloor.Fix, keep: (() -> Unit)? = null) {
+        if (f in fixes) com.bamnat.app.ui.components.ToneLine(f.say + if (keep != null) " · 누르면 그 색으로 저장해요" else "",
+            tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = keep)
+    }
     // PC 확인 46b9004b 사용성 제안: the 막대 keep one 진하기 for "근무 색 그대로" and one for "한 가지 색으로", so going back and forth
     // brings each one back instead of starting again from 100%.
     var otherA by remember(id, on) { mutableStateOf<Long?>(null) }
@@ -225,7 +244,8 @@ internal fun PartsTool(
     // [MAT-01] PC 14차 사용성 제안: 칸이 많아 원하는 묶음까지 길게 내려야 해서, 위에 묶음 바로 가기.
     // 하나를 고르면 그 묶음만 보여요(스크롤로 데려가는 방식은 이 편집 칸에서 믿을 만하지 않았어요). 다른 부품으로 가도 고른 묶음 그대로.
     val kids = BlueprintParts.CHILDREN[id].orEmpty()
-    val groups = listOf("채우기", "선", "모서리", "그림자·여백", "글자", "투명도·숨기기") + (if (kids.size > 1) listOf("배치 (안에 든 것)") else emptyList())
+    // 2.0.0 [RVS-08] SI-01·SN-11: 움직임·크기·자리 too (장터 작품 587줄이 쓰는 움직임을 보고 끄거나 바꿀 곳).
+    val groups = listOf("채우기", "선", "모서리", "그림자·여백", "글자", "투명도·숨기기", "움직임·크기·자리") + (if (kids.size > 1) listOf("배치 (안에 든 것)") else emptyList())
     var only by rememberSaveable(group) { mutableStateOf<String?>(null) }
     if (only != null && only !in groups) only = null
     // PC 15차: 옆으로 밀지 않아도 다 보이게 감싸서.
@@ -240,6 +260,24 @@ internal fun PartsTool(
     @Composable
     fun Group(title: String, content: @Composable () -> Unit) {
         if (only == null || only == title) com.bamnat.app.ui.settings.Group(title, content = content)
+    }
+    /**
+     * 2.0.0 [RVS-08] 더 보기 (검토 SI-01·SN-11, 디자인 품질 조건 2·8): a field most makers never touch, folded to one line that says what is
+     * set now ("무늬 점", "없음"), so a 장터 work's 반짝임 can be seen and taken off without opening it; a tap opens its editor.
+     */
+    @Composable
+    fun MoreRow(label: String, now: String?, content: @Composable () -> Unit) {
+        var open by rememberSaveable(id, on, label) { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(open, role = androidx.compose.ui.semantics.Role.Button) { open = it },
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(label, style = MaterialTheme.typography.bodyMedium)
+                Text(now ?: "없음", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            androidx.compose.material3.Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                if (open) "$label 접기" else "$label 더 보기")
+        }
+        if (open) content()
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(22.dp), modifier = Modifier.padding(top = 4.dp)) {
@@ -260,12 +298,23 @@ internal fun PartsTool(
             // PC 확인 fc2db3b0 사용성 제안: one colour for every 막대 hid which shift is which; with no 색 the 막대 keep their shift's colour and
             // this sets how strong.
             else if (id == "cal.line.bar") LabeledSlider("근무 색 그대로 · 진하기", num("fillA") ?: 90f, 20f..100f, "%") { set("fillA", it.toLong()) }
+            // 2.0.0 [RVS-08] SN-11: 무늬·질감·유리·셰이더·그라데이션 (장터 1,541줄). When set it wins over 색 above, so it is said on this line.
+            val paint = com.bamnat.core.recipe.Fill.decode(line["paint"] as? String)
+            MoreRow("채우기 종류" + if (paint != null) " · 위 색보다 먼저 그려요" else "", paint?.let { com.bamnat.app.ui.settings.fillSummary(it) }) {
+                com.bamnat.app.ui.settings.FillEditor("채우기 종류", paint, base = col("fill") ?: 0xFFFFF4CCL) { set("paint", it?.encode()) }
+            }
         }
         Group("선") {
             Chips(listOf(null to "처음대로", "none" to "없음", "solid" to "실선", "dash" to "끊은 선", "dot" to "점선", "double" to "두 줄"), line["line"] as? String) { set("line", it) }
             if (line["line"] != null && line["line"] != "none") {
                 LabeledSlider("두께", num("lineW") ?: 1f, 0f..8f, "dp", unset = if (line["lineW"] == null) "처음대로" else null) { set("lineW", (Math.round(it * 2) / 2.0).let { d -> if (d % 1 == 0.0) d.toLong() else d }) }
                 ColorPick("선 색", col("lineC")) { set("lineC", it) }
+                // 2.0.0 [RVS-08] SI-01: 선 진하기 and 선 채우기 (무늬·그라데이션 선), which only 고급·장터 works could set.
+                LabeledSlider("선 진하기", num("lineA") ?: 100f, 0f..100f, "%", unset = if (line["lineA"] == null) "처음대로" else null) { set("lineA", it.toLong().takeIf { v -> v < 100 }) }
+                val linePaint = com.bamnat.core.recipe.Fill.decode(line["linePaint"] as? String)
+                MoreRow("선 채우기", linePaint?.let { com.bamnat.app.ui.settings.fillSummary(it) }) {
+                    com.bamnat.app.ui.settings.FillEditor("선 채우기", linePaint, base = col("lineC") ?: 0xFF5C6BC0L) { set("linePaint", it?.encode()) }
+                }
             }
         }
         Group("모서리") {
@@ -290,6 +339,13 @@ internal fun PartsTool(
             if ((num("shadow") ?: 0f) > 0f) ColorPick("그림자 색", col("shadowC")) { set("shadowC", it) }
             LabeledSlider("안 여백", num("pad") ?: 0f, 0f..32f, "dp", unset = if (line["pad"] == null) "처음대로" else null) { set("pad", it.toLong()) }
             LabeledSlider("바깥 간격", num("out") ?: 0f, 0f..32f, "dp", unset = if (line["out"] == null) "처음대로" else null) { set("out", it.toLong().takeIf { v -> v > 0 }) }
+            // 2.0.0 [RVS-08] SI-01: 가로·세로 여백 따로.
+            MoreRow("가로·세로 여백 따로", listOfNotNull(num("padX")?.let { "가로 ${it.toInt()}dp" }, num("padY")?.let { "세로 ${it.toInt()}dp" }).joinToString(" · ").ifEmpty { null }) {
+                LabeledSlider("가로 여백", num("padX") ?: num("pad") ?: 0f, 0f..32f, "dp", unset = if (line["padX"] == null) "안 여백대로" else null) { set("padX", it.toLong()) }
+                LabeledSlider("세로 여백", num("padY") ?: num("pad") ?: 0f, 0f..32f, "dp", unset = if (line["padY"] == null) "안 여백대로" else null) { set("padY", it.toLong()) }
+            }
+            // 2.0.0 [RVS-14] 첫 줄 먼저 (HQ-56): 달력 머리·요일 줄 that push the first row too far are drawn a little smaller, said here.
+            if (id != "cal.head.title" && id != "cal.week.day") Said(com.bamnat.core.recipe.PartFloor.Fix.ABOVE)
         }
         Group("글자") {
             // PC 15차: 작은 미리 보기에선 밑줄·그림자가 잘 안 보여서, 이 부품 글자를 크게.
@@ -302,18 +358,14 @@ internal fun PartsTool(
             }
             Chips(listOf(null to "처음대로") + FONT_WORDS, line["font"] as? String) { set("font", it) }
             LabeledSlider("크기", num("size") ?: 14f, 6f..48f, "sp", unset = if (line["size"] == null) "처음대로" else null) { set("size", it.toLong()) }
+            Said(com.bamnat.core.recipe.PartFloor.Fix.SIZE)
+            if (id == "cal.head.title" || id == "cal.week.day") Said(com.bamnat.core.recipe.PartFloor.Fix.ABOVE)
             Chips(listOf(null to "처음대로", 300L to "가늘게", 400L to "보통", 700L to "굵게", 900L to "아주 굵게"), (line["weight"] as? Number)?.toLong()) { set("weight", it) }
             ColorPick("글자 색", col("ink")) { set("ink", it) }
-            // [BLU-06] 글자 색과 채우기가 비슷하면 알려요 (WCAG 4.5:1). 글자 색을 비워 두면 채우기에 맞춰 검정·흰색이 저절로 골라져요.
-            val fillNow = col("fill")
-            val inkNow = col("ink")
-            if (fillNow != null && inkNow != null && com.bamnat.core.layout.Contrast.ratio(fillNow or 0xFF000000L, inkNow or 0xFF000000L) < 4.5) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("채우기와 글자 색이 비슷해 잘 안 보일 수 있어요", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { set("ink", null) }) { Text("저절로 맞추기") }
-                }
-            } else if (fillNow != null && inkNow == null) {
+            // [BLU-06] 글자 색을 비워 두면 채우기에 맞춰 검정·흰색이 저절로 골라져요. 2.0.0 [RVS-06] 읽히지 않는 색은 앱이 그릴 때 같은 색 계열로
+            // 옮겨 그리고 여기 한 줄로 알려요(빨간 글로 겁주지 않고, 누르면 그린 색 그대로 저장).
+            Said(com.bamnat.core.recipe.PartFloor.Fix.INK) { set("ink", floored.style(id, onStates).ink) }
+            if (com.bamnat.core.recipe.PartFloor.Fix.INK !in fixes && col("fill") != null && col("ink") == null) {
                 Text("글자 색을 비워 두면 채우기에 맞춰 잘 보이는 색으로 그려요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -335,6 +387,9 @@ internal fun PartsTool(
             }
             Chips(listOf(null to (if (on == null) "처음대로(줄 없음)" else "평소대로")) + (if (on != null || line["deco"] == "none") listOf("none" to "줄 없음") else emptyList()) +
                 listOf("under" to "밑줄", "strike" to "가운데 줄", "both" to "둘 다"), line["deco"] as? String) { set("deco", it) }
+            // 2.0.0 [RVS-08] SI-01: 글자 맞춤과 줄 수.
+            Chips(listOf(null to "처음대로", "start" to "왼쪽 맞춤", "center" to "가운데 맞춤", "end" to "오른쪽 맞춤"), line["talign"] as? String) { set("talign", it) }
+            LabeledSlider("최대 줄 수", num("lines") ?: 1f, 1f..10f, "줄", unset = if (line["lines"] == null) "처음대로" else null) { set("lines", it.toLong()) }
         }
         Group("투명도·숨기기") {
             LabeledSlider("보이는 정도", num("alpha") ?: 100f, 0f..100f, "%", step = 5, unset = if (line["alpha"] == null) "처음대로" else null) { set("alpha", it.toLong().takeIf { v -> v < 100 }) }
@@ -342,8 +397,29 @@ internal fun PartsTool(
                 Text("숨기기", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                 Switch(line["hide"] == true, { set("hide", it.takeIf { h -> h }) })
             }
+            Said(com.bamnat.core.recipe.PartFloor.Fix.SHOW)
+            Said(com.bamnat.core.recipe.PartFloor.Fix.ALPHA)
             if (id in BlueprintParts.DATA) Text("날짜·근무 같은 정보는 숨겨도 화면 읽기(TalkBack)에는 그대로 읽혀요",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        // 2.0.0 [RVS-08] SI-01·SN-11: 움직임 (장터 587줄), 너비·높이, 자리, 늘이기. Each says what it is now and goes back to 처음대로 in one tap.
+        Group("움직임·크기·자리") {
+            Text("움직임", style = MaterialTheme.typography.bodyMedium)
+            Chips(listOf<Pair<String?, String>>(null to "처음대로") + BlueprintParts.MOTIONS.map { it to (PART_MOTION_NAMES[it] ?: it) }, line["motion"] as? String) { set("motion", it) }
+            Said(com.bamnat.core.recipe.PartFloor.Fix.MOTION)
+            if (line["motion"] != null && line["motion"] != "none") Text("휴대폰의 '애니메이션 삭제'와 밤낮의 움직임 끄기를 켠 분에게는 멈춰 보여요",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            MoreRow("너비·높이", listOfNotNull(num("w")?.let { "너비 ${it.toInt()}dp" }, num("h")?.let { "높이 ${it.toInt()}dp" }).joinToString(" · ").ifEmpty { null }) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(selected = line["w"] == null && line["h"] == null, onClick = { setAll("w" to null, "h" to null) }, label = { Text("처음대로") })
+                }
+                LabeledSlider("너비", num("w") ?: 0f, 0f..600f, "dp", unset = if (line["w"] == null) "처음대로" else null) { set("w", it.toLong().takeIf { v -> v > 0 }) }
+                LabeledSlider("높이", num("h") ?: 0f, 0f..600f, "dp", unset = if (line["h"] == null) "처음대로" else null) { set("h", it.toLong().takeIf { v -> v > 0 }) }
+            }
+            MoreRow("자리·늘이기", listOfNotNull((line["place"] as? String)?.let { PLACE_NAMES[it] }, num("grow")?.let { "늘이기 ${it.toInt()}" }).joinToString(" · ").ifEmpty { null }) {
+                Chips(listOf<Pair<String?, String>>(null to "처음대로") + BlueprintParts.PLACES.map { it to (PLACE_NAMES[it] ?: it) }, line["place"] as? String) { set("place", it) }
+                LabeledSlider("늘이기 (남는 자리를 나눠 가짐)", num("grow") ?: 0f, 0f..10f, "", unset = if (line["grow"] == null) "처음대로" else null) { set("grow", it.toLong().takeIf { v -> v > 0 }) }
+            }
         }
         if (kids.size > 1) Group("배치 (안에 든 것)") {
             Chips(listOf(null to "처음대로", "col" to "세로로", "row" to "가로로", "stack" to "겹쳐서"), line["dir"] as? String) { set("dir", it) }
@@ -364,7 +440,7 @@ internal fun PartsTool(
         if (line.keys.any { it != "id" && it != "on" }) OutlinedButton(onClick = {
             val others = bp.lines.filterNot { it["id"] == id && it["on"] == on }
             onChange(if (others.isEmpty()) "" else Blueprint(others).encode())
-        }, modifier = Modifier.fillMaxWidth()) { Text("이 부품 처음대로 (${stateWord(id, on)})") }
+        }, modifier = Modifier.fillMaxWidth()) { Text("이 부품 처음대로 (${stateWord(id, on, style)})") }
         // [BLU-07] 1.36 이 부품만 올리기 (사용자 2026-11-01): 장터 '부품'에 이 부품(과 그 속)만, 다른 분이 스튜디오에서 얹어 써요.
         val unit = BlueprintParts.unitOf(id)
         if (onUploadPart != null && bp.lines.any { BlueprintParts.unitOf(it["id"] as? String ?: "") == unit }) {
@@ -387,11 +463,27 @@ private fun cornerNote(id: String): String = "처음대로 · 지금 " + when (i
     "memo.card", "app.sheet" -> "16dp"; "app.tab" -> "알약"; else -> "네모(0dp)"
 }
 
-internal fun partWords(id: String, on: String?): String =
-    (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + stateWord(id, it) } ?: "")
+internal fun partWords(id: String, on: String?, style: WorkStyle? = null): String =
+    (BlueprintParts.LABELS[id] ?: id) + (on?.let { " · " + stateWord(id, it, style) } ?: "")
 
 // [BLU-12] Every part has 어두운 화면 last: its colours when the phone (or the widget) is dark.
-internal fun statesFor(id: String): List<String> = statesOf(id) + "dark"
+// 2.0.0 [RVS-10] 검토 T09a-06·STU-27: only the kinds of 근무 of the maker's own work ([TypeWords.roles]), and no 연차·대근 where
+// there is no employer; [keep] (the state being changed, from a work made elsewhere) stays so it can still be changed or taken off.
+internal fun statesFor(id: String, style: WorkStyle? = null, keep: String? = null): List<String> =
+    statesOf(id).filter { fits(it, style) || it == keep } + "dark"
+
+private fun fits(st: String, style: WorkStyle?): Boolean = when {
+    st.startsWith("role.") -> st.removePrefix("role.") in TypeWords.roles(style)
+    st in NO_EMPLOYER -> style !in setOf(WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)
+    else -> true
+}
+
+/** 연차·잔업·대근: words of a job with an employer (TypeWords EMPLOYEE). */
+private val NO_EMPLOYER = setOf("leave", "extra", "cover")
+
+/** 2.0.0 [RVS-10] The studio's own kind of work (the calendar's), for the words of '어떤 때'. */
+@Composable
+internal fun studioStyle(): WorkStyle? = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
 
 private fun statesOf(id: String): List<String> = when {
     // The shift a mark shows comes first there (PC 3차: '야간 근무'가 줄 끝에 있어 밀어야 보여요).
@@ -418,11 +510,12 @@ private fun statesOf(id: String): List<String> = when {
 
 private val DAY_WORK_STATES = com.bamnat.core.schedule.DayWork.STATES
 
-/** A state's words on [id]: 급여 한 줄's in·out are 더하는·빼는 항목. */
-internal fun stateWord(id: String, st: String?): String = when {
+/** A state's words on [id]: 급여 한 줄's in·out are 더하는·빼는 항목; a kind of 근무 in [style]'s words (가게의 영업일·휴무, RVS-10). */
+internal fun stateWord(id: String, st: String?, style: WorkStyle? = null): String = when {
     id.startsWith("pay.") && st == "in" -> "더하는 항목"
     id.startsWith("pay.") && st == "out" -> "빼는 항목"
-    else -> STATE_WORDS[st] ?: "언제나"
+    st != null && st.startsWith("role.") -> TypeWords.roleWord(style, st.removePrefix("role.")) ?: TypeWords.say(style, STATE_WORDS[st] ?: st)
+    else -> STATE_WORDS[st]?.let { TypeWords.say(style, it) } ?: "언제나"
 }
 
 internal val STATE_WORDS = mapOf<String?, String>(
@@ -436,6 +529,13 @@ internal val STATE_WORDS = mapOf<String?, String>(
 )
 
 private val FONT_WORDS = listOf("sans" to "고딕", "serif" to "명조", "mono" to "고정폭", "hand" to "손글씨", "round" to "둥근")
+
+/** 2.0.0 [RVS-08] A part's own motion ([BlueprintParts.MOTIONS]) in the words the 움직임 tool uses for 오늘 칸. */
+internal val PART_MOTION_NAMES = com.bamnat.core.recipe.Motion.TODAY_NAMES + mapOf("none" to "멈춤", "shimmer" to "반짝임")
+
+/** 2.0.0 [RVS-08] Where a part sits in its parent ([BlueprintParts.PLACES]). */
+internal val PLACE_NAMES = mapOf("tl" to "왼쪽 위", "tc" to "위 가운데", "tr" to "오른쪽 위", "ml" to "왼쪽 가운데", "mc" to "한가운데", "mr" to "오른쪽 가운데",
+    "bl" to "왼쪽 아래", "bc" to "아래 가운데", "br" to "오른쪽 아래")
 
 /** Which parts the studio offers in each of its areas. */
 internal fun partsGroupOf(area: String): String = when (area) {

@@ -107,14 +107,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
      * Puts [r] on calendar [cal]: the [picks] in order, each with [answers] for its inputs. Records stay as they are. Returns the
      * id of the record that 되돌리기 reads, or null when nothing changed.
      */
+    /** 2.0.0 [RVS-12] The pieces the last [apply] could not put on (this app could not read or write them), for 넣기 to say. */
+    @Volatile var lastMissed: List<PieceKind> = emptyList()
+        private set
+
     suspend fun apply(r: Recipe, code: String, version: Int, cal: String, picks: List<Pick>, answers: Map<String, Any?>): Long? {
         val filled = RecipeResolve.answers(r, answers)
         val before = JSONObject()
         val done = ArrayList<String>()
+        val missed = ArrayList<PieceKind>()
+        lastMissed = emptyList()
         for (pick in picks) {
             val piece = r.pieces.firstOrNull { it.kind == pick.kind } ?: continue
-            val values = RecipeResolve.piece(r, piece, filled)
-            val snap = runCatching { pieces.apply(pick.kind, values, cal, code.ifEmpty { "x" + Today.millis().toString(36) }, pick.mode) }.getOrNull() ?: continue
+            // 2.0.0 [RVS-12] (갈래 R SD-07): a piece that could not be put on was let go without a word, the same as one already on.
+            val snap = runCatching {
+                val values = RecipeResolve.piece(r, piece, filled)
+                pieces.apply(pick.kind, values, cal, code.ifEmpty { "x" + Today.millis().toString(36) }, pick.mode)
+            }.onFailure { missed += pick.kind }.getOrNull()
+            lastMissed = missed.toList()
+            if (snap == null) continue
             before.put(pick.kind.key, snap)
             done += pick.kind.key
         }

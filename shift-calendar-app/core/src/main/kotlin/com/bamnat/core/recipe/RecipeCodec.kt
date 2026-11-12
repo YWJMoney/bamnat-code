@@ -46,14 +46,24 @@ object RecipeCodec {
         return Soft(clean(parse(text), skipped), skipped)
     }
 
+    /**
+     * 2.0.0 [RVS-07] 초안 읽기 (검토 SN-08·SD-04 ②): a draft kept on this phone (자동 저장, 만들던 작품) opens even when it has grown past
+     * what 올리기 takes ([MAX_PIECES] pieces, [MAX_BYTES]); before, [read] refused it and 이어서 하기 did nothing, as if what was being made
+     * had gone. Up to [DRAFT_BYTES]; everything else is checked as [read] does. Only 올리기 keeps the limits ([read], [WorkSize]).
+     */
+    fun readDraft(text: String): Recipe = clean(parse(text, DRAFT_BYTES), draft = true)
+
+    /** How big a draft kept on this phone may be ([readDraft]): every piece at its fullest still fits. */
+    const val DRAFT_BYTES = 8 * MAX_BYTES
+
     /** What [readSoft] read: the work as far as this app knows it, and the paths it left out (empty when it read the whole work). */
     class Soft(val recipe: Recipe, val skipped: List<String>) {
         /** How many things the work has that only a newer app draws (a piece, a field or a list's line each). */
         val left: Int get() = skipped.size
     }
 
-    private fun parse(text: String): Any? {
-        if (RecipePlatform.utf8(text).size > MAX_BYTES) throw RecipeException("too_big")
+    private fun parse(text: String, maxBytes: Int = MAX_BYTES): Any? {
+        if (RecipePlatform.utf8(text).size > maxBytes) throw RecipeException("too_big")
         if (depth(text) > MAX_DEPTH) throw RecipeException("too_deep")
         return try { Json.parse(text) } catch (e: Exception) { throw RecipeException("json") }
     }
@@ -82,9 +92,12 @@ object RecipeCodec {
         return max
     }
 
-    /** [raw] (parsed JSON) as a clean recipe. With [soft] ([readSoft]), what this app does not know is left out and its path added there. */
+    /**
+     * [raw] (parsed JSON) as a clean recipe. With [soft] ([readSoft]), what this app does not know is left out and its path added there.
+     * A [draft] ([readDraft]) may have more than [MAX_PIECES] pieces.
+     */
     @Suppress("UNCHECKED_CAST")
-    fun clean(raw: Any?, soft: MutableList<String>? = null): Recipe {
+    fun clean(raw: Any?, soft: MutableList<String>? = null, draft: Boolean = false): Recipe {
         val m = raw as? Map<String, Any?> ?: throw RecipeException("format")
         if (m["format"] != Recipe.FORMAT) throw RecipeException("format", "format")
         val v = (m["v"] as? Long) ?: throw RecipeException("version", "v")
@@ -105,7 +118,7 @@ object RecipeCodec {
         if (inputs.map { it.id }.toSet().size != inputs.size) throw RecipeException("inputs", "inputs")
         val ctx = Ctx(inputs.associateBy { it.id }, tokens.map { it.name }.toSet(), soft)
         val rawPieces = m["pieces"] as? List<Any?> ?: throw RecipeException("pieces", "pieces")
-        if (rawPieces.size > MAX_PIECES) throw RecipeException("pieces", "pieces")
+        if (rawPieces.size > MAX_PIECES && !draft) throw RecipeException("pieces", "pieces")
         val seen = HashSet<PieceKind>()
         val pieces = rawPieces.mapIndexedNotNull { i, p ->
             val o = p as? Map<String, Any?> ?: throw RecipeException("pieces", "pieces.$i")
@@ -273,6 +286,10 @@ object RecipeCodec {
 
     /** [v] as a reference to an input or a token, where [f] may hold one; null when [v] is a plain value. */
     private fun ref(f: Field, v: Any?, path: String, ctx: Ctx): Ref? {
+        // 2.0.0 [RVS-12] (갈래 R SD-07 장터 사진 대조): 넣기 hands the parts on already read (RecipeResolve keeps a formula as Ref.Formula), and
+        // cleaning them again threw on it; the throw was swallowed, so a work with one {"fx"} in its 부품 줄 put on none of its parts, silently,
+        // since 1.36. It is the same formula, checked again as written.
+        if (v is Ref.Formula) return ref(f, mapOf("fx" to v.src), path, ctx)
         val m = v as? Map<*, *> ?: return null
         if (m.size != 1) throw RecipeException("ref", path)
         // [RUL-02] A formula, only where a part's style takes one (부품 꾸미기); checked as every formula field is.
