@@ -158,6 +158,8 @@ fun FeatureSwitchesScreen(onBack: () -> Unit) {
                     TextButton(onClick = { store.restartChecklist(active, style, Today.date()); message = "달력 맨 위에 ‘이 달력으로 할 수 있는 것’을 다시 보여 드려요" }) {
                         Text("‘$name’ 안내 카드 다시 보기")
                     }
+                    // 1.40 [DISC-04] What '안 써 본 기능 알려 주기' told so far, each back with '다시 알려 주세요'.
+                    if (guideRows.any { it.id == com.bamnat.core.guide.DiscoverPicker.SWITCH }) DiscoverToldList()
                 }
                 val cards = features.filter { it.off == Off.CALENDAR }
                 if (cards.isNotEmpty()) {
@@ -232,4 +234,47 @@ private fun SwitchLine(feature: AppFeature, on: Boolean, waits: String?, onAsk: 
     }
     if (waits != null) TextButton(onClick = onAsk, modifier = Modifier.heightIn(min = 48.dp)) { Text(waits) }
     }
+}
+
+/** 1.40 [DISC-04] '지금까지 알려 드린 것': the cards of '안 써 본 기능 알려 주기', newest first, and a way to hear of one again. */
+@Composable
+private fun DiscoverToldList() {
+    val context = LocalContext.current
+    val store = remember { com.bamnat.app.data.DiscoverStore.get(context) }
+    val s by store.state.collectAsStateWithLifecycle()
+    var open by rememberSaveable { mutableStateOf(false) }
+    val told = s.told.filter { FeatureRegistry.get(it.id) != null }.asReversed()
+    if (told.isEmpty()) return
+    HorizontalDivider()
+    TextButton(onClick = { open = !open }, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text(if (open) "지금까지 알려 드린 것 접기" else "지금까지 알려 드린 것 ${told.size}개 보기")
+    }
+    if (!open) return
+    told.take(20).forEach { t ->
+        val f = FeatureRegistry.get(t.id) ?: return@forEach
+        Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(f.name, style = MaterialTheme.typography.bodyLarge)
+                Text("${t.on.monthValue}월 ${t.on.dayOfMonth}일 · ${answerWords(t.answer)}", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (t.answer != null && t.answer != com.bamnat.core.guide.DiscoverAnswer.OPENED) {
+                TextButton(onClick = {
+                    store.again(t.id)
+                    val g = GuideStore.get(context)
+                    g.unmark(t.id, used = t.answer == com.bamnat.core.guide.DiscoverAnswer.USED, never = t.answer == com.bamnat.core.guide.DiscoverAnswer.NEVER)
+                }) { Text("다시 알려 주세요") }
+            }
+        }
+    }
+}
+
+private fun answerWords(a: com.bamnat.core.guide.DiscoverAnswer?): String = when (a) {
+    null -> "오늘 보여 드림"
+    com.bamnat.core.guide.DiscoverAnswer.OPENED -> "열어 봤어요"
+    com.bamnat.core.guide.DiscoverAnswer.LATER -> "나중에"
+    com.bamnat.core.guide.DiscoverAnswer.IGNORED -> "지나감"
+    com.bamnat.core.guide.DiscoverAnswer.USED -> "이미 써요"
+    com.bamnat.core.guide.DiscoverAnswer.NEVER -> "안 볼래요"
+    com.bamnat.core.guide.DiscoverAnswer.FEWER -> "줄여 달라고 함"
 }

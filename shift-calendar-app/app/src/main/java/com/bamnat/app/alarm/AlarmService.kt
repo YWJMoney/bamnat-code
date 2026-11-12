@@ -623,6 +623,8 @@ class AlarmService : Service() {
     }
 
     override fun onDestroy() {
+        // 1.40 [DISC-01] No '안 써 본 기능' card in the minutes right after an alarm.
+        runCatching { com.bamnat.app.data.DiscoverStore.get(this).alarmEnded() }
         onScreen = null
         stopOutputs()
         _ringing.value = null

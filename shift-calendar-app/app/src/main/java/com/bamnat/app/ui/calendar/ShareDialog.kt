@@ -239,6 +239,7 @@ fun ShareDialog(
                         val made = client.create(sent)
                         keep(made, sent)
                         container.telemetry.event("share_link_create", "quick_family")
+                        com.bamnat.app.data.GuideStore.get(container.appContext).used("share.link") // 1.40 [DISC-03]
                         send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
@@ -468,6 +469,7 @@ fun ShareDialog(
                         val made = client.create(sent)
                         keep(made, sent)
                         container.telemetry.event("share_link_create", chosen().shows.joinToString(",").ifEmpty { "shifts" } + if (slot > 1) ",slot$slot" else "")
+                        com.bamnat.app.data.GuideStore.get(container.appContext).used("share.link") // 1.40 [DISC-03]
                         send(context, made, style)
                     }
                 }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {

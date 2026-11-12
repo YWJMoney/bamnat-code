@@ -15,8 +15,8 @@ object KeepMarks {
     /** Came back within 7 days, or within 8~30. Longer gaps say nothing about one day's features. */
     val WINDOWS = listOf(7L, 30L)
 
-    /** The 진입·머묾 marks (life_*) are about the phone, not a feature, and are left out. */
-    fun counts(e: UsageEvent): Boolean = e !in UsageEvent.POLICY_312
+    /** The 진입·머묾 marks (life_*) are about the phone, not a feature, and are left out; so are 1.40's disc_* card totals. */
+    fun counts(e: UsageEvent): Boolean = e !in UsageEvent.POLICY_312 && e !in UsageEvent.POLICY_313
 
     /** What came back: the day the features were used, the window it falls in and the names. */
     data class Mark(val day: Long, val window: Long, val events: List<String>)

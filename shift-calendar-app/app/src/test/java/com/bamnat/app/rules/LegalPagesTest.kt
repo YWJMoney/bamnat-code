@@ -20,7 +20,8 @@ class LegalPagesTest {
     private val site = File("../..")
 
     /** 1.39 [STAT2-02] The events the page in force names: 3.12's life_* come in when 3.12 is published (then count them all). */
-    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size
+    private val policyEvents = com.bamnat.core.stats.UsageEvent.entries.size - com.bamnat.core.stats.UsageEvent.POLICY_312.size -
+        com.bamnat.core.stats.UsageEvent.POLICY_313.size // 1.40 [DISC-06] 3.13's disc_* likewise
 
     @Test fun thePrivacyPolicyCoversProAndAds() {
         val policy = File(site, "privacy/index.html")
