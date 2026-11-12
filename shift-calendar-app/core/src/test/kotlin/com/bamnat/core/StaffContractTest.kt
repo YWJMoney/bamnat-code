@@ -83,4 +83,41 @@ class StaffContractTest {
         val again = waiting.replacedBy(StaffContract.Sent("근로계약서", c.items, sentAt = 4, linkId = "y", token = "u"))
         assertEquals(1, again.past.size)
     }
+
+    /** 2.0.0 [RVJ-24] 검토 BOSS-53: 종이 계약서를 받은 날을 고를 수 있고(늘 오늘이었어요), 그날이 PDF의 '받음'에 남아요. */
+    @Test fun paperKeepsTheDayItCameBack() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val now = LocalDate.of(2026, 11, 12).atTime(15, 30).atZone(zone).toInstant().toEpochMilli()
+        val c = StaffContract.of(place, s)
+        val today = StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 12), zone)
+        assertEquals("오늘 받은 것은 누른 때", now, today.signedAt)
+        val lastWeek = StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 5), zone)
+        assertTrue(lastWeek.signed && lastWeek.paper)
+        assertEquals("표시한 때는 지금", now, lastWeek.sentAt)
+        assertEquals(LocalDate.of(2026, 11, 5), java.time.Instant.ofEpochMilli(lastWeek.signedAt!!).atZone(zone).toLocalDate())
+        assertTrue(StaffContract.doc(place, s, lastWeek, zone).blocks.toString().contains("종이 계약서에 서명함 (2026년 11월 5일 받음)"))
+        // A day still to come is not a day it came back: it reads as today.
+        assertEquals(now, StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 20), zone).signedAt)
+    }
+
+    /** 2.0.0 [RVJ-24] 검토 BOSS-53: 잘못 누른 '종이로 받았어요'는 되돌릴 수 있고, 그 앞의 서명한 계약서와 지난 계약서는 그대로예요. */
+    @Test fun paperMarkCanBeTakenBack() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val c = StaffContract.of(place, s)
+        val paper = StaffContract.onPaper(c, 2_000L, LocalDate.of(1970, 1, 1), zone)
+        assertEquals("앞에 아무것도 없었으면 계약서 없음으로", null, StaffContract.withoutPaper(paper))
+        assertTrue(StaffContract.lacking(s.copy(contract = StaffContract.withoutPaper(paper)), LocalDate.of(2026, 11, 12)))
+        // A contract signed on the link, replaced by a paper one pressed by mistake: the signed one is the contract again.
+        val older = StaffContract.Sent("근로계약서", c.items, 100L, signedName = "박마바", signedAt = 150L)
+        val linked = StaffContract.Sent("근로계약서", c.items, 500L, signedName = "박마바", signedAt = 600L, past = listOf(older))
+        val back = StaffContract.withoutPaper(linked.replacedBy(paper))
+        assertEquals(600L, back?.signedAt)
+        assertFalse(back!!.paper)
+        assertEquals("지난 계약서는 그대로", listOf(older), back.past)
+        // What the staff member signed on the link is never taken back here, nor a link still waiting.
+        assertEquals(linked, StaffContract.withoutPaper(linked))
+        val waiting = StaffContract.Sent("근로계약서", c.items, 700L, linkId = "l", token = "t")
+        assertEquals(waiting, StaffContract.withoutPaper(waiting))
+        assertEquals(null, StaffContract.withoutPaper(null))
+    }
 }

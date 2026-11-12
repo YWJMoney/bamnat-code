@@ -133,6 +133,33 @@ data class PayslipRead(
                 .forEach { merge(it.name, it.amount!!, Long::plus) }
         }
 
+    /**
+     * 2.0.0 [RVJ-26] 검토 PAYU-52 (명세서로 맞춰 보기: 사진에서 읽은 '앱에 없는 수당'이 일곱 번째부터 말없이 버려짐): where every allowance
+     * and bonus read goes in the form. An allowance the app has under the same name ([items]: id to name, spaces and case aside)
+     * fills that one; every other is a line of its own, none left out however many, its name cut to [nameMax] letters and two
+     * that then read the same added up (one would have written over the other).
+     */
+    fun places(items: List<Pair<String, String>>, nameMax: Int = 20): SlipPlaces {
+        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
+        val known = linkedMapOf<String, Long>()
+        val others = linkedMapOf<String, Long>()
+        allowances.forEach { (name, amount) ->
+            val id = items.firstOrNull { norm(it.second) == norm(name) }?.first
+            if (id != null) known.merge(id, amount, Long::plus) else others.merge(name.trim().take(nameMax).trim(), amount, Long::plus)
+        }
+        return SlipPlaces(known, others.toList())
+    }
+
+    /**
+     * [RVJ-26] How many lines read went into a field of 명세서로 맞춰 보기 (기본급, 연장·야간·휴일, 수당·상여, and the 지급 총액 the
+     * payslip states itself), so '몇 줄을 채웠어요' says what was put in, not what was read.
+     */
+    val placedLines: Int
+        get() = lines.count { it.amount != null && it.role in PLACED } + if (statedGross != null) 1 else 0
+
+    /** [RVJ-26] Earnings the form has no field for (주휴수당, 추가 근무 수당): they count inside the 지급 총액 only, and it says so. */
+    val unplaced: List<SlipLine> get() = lines.filter { it.isEarning && it.role !in PLACED }
+
     /** What [PayslipMatcher] takes; null without a 지급 총액 to aim at. */
     fun payslip(): Payslip? {
         val g = gross ?: return null
@@ -150,6 +177,11 @@ data class PayslipRead(
     fun withLine(index: Int, line: SlipLine?): PayslipRead =
         copy(lines = lines.toMutableList().also { if (line == null) it.removeAt(index) else it[index] = line })
 }
+
+/** [RVJ-26] [PayslipRead.places]: amounts by the id of the app's allowance, and the lines the app has no allowance for. */
+data class SlipPlaces(val known: Map<String, Long>, val others: List<Pair<String, Long>>)
+
+private val PLACED = setOf(SlipRole.BASE, SlipRole.OVERTIME, SlipRole.NIGHT, SlipRole.HOLIDAY, SlipRole.ALLOWANCE, SlipRole.BONUS)
 
 /**
  * [PAYS-05] Reads a payslip from text: what on-device text recognition got from a photo, or what the user pasted.

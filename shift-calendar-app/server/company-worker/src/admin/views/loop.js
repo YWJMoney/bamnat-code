@@ -110,6 +110,30 @@ export function loopViews(A) {
         <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}`);
   }
 
+  /** 2.0.0 [RVA-05] 검토 ADM-06: 지금 나간 판 번호, 판 번호(versionCode)가 무엇인지 한 줄. */
+  function liveLine(d) {
+    const l = d.live ?? {};
+    return `<p class="note info">${l.code ? `지금 Play에 나간 판은 <b>${esc(l.name ?? "")} (번호 ${l.code})</b>예요.` : "지금 나간 판 번호를 아직 몰라요(Play 연결 뒤 보여요)."}
+      판 번호는 앱 설정 › 앱 정보의 괄호 안 숫자예요. 비우면 바꾸지 않아요.</p>`;
+  }
+
+  /** 2.0.0 [RVA-05] 이 번호보다 낮은 판을 쓰는 폰이 최근 7일에 몇 %인지(판 번호를 모르는 옛 판은 따로). */
+  function reach(d, n) {
+    const rows = d.live?.phones ?? [];
+    const all = rows.reduce((a, r) => a + r.phones, 0);
+    const below = rows.filter((r) => r.code !== null && r.code < n).reduce((a, r) => a + r.phones, 0);
+    const unknown = rows.filter((r) => r.code === null).reduce((a, r) => a + r.phones, 0);
+    return { all, below, unknown, share: all ? Math.round((1000 * below) / all) / 10 : null };
+  }
+  function reachText(d, n) {
+    n = Number(n);
+    if (!n) return "0이면 권하지 않아요.";
+    const r = reach(d, n);
+    const live = d.live?.code;
+    const over = live && n > live ? ` 지금 나간 번호(${live})보다 커서 모든 폰이 걸려요.` : "";
+    return r.all ? `최근 7일 폰 ${r.all}대 중 ${r.below}대(약 ${r.share}%)가 걸려요.${r.unknown ? ` 판 번호를 모르는 옛 판 ${r.unknown}대는 빼고 셌어요.` : ""}${over}` : `최근 7일 폰 수를 아직 몰라요.${over}`;
+  }
+
   function switchCard(d) {
     const sw = d.switches;
     // [LOOP-32] 체크하면 바로 저장돼요(전에는 아래 '저장'을 눌러야 해서 화면만 바뀐 줄 몰랐어요, 실서버 11-08).
@@ -121,10 +145,13 @@ export function loopViews(A) {
         ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
         ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
         ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}</div>
-      <form data-form="loop-switches"><h3>Play 인앱 업데이트</h3>
+      <form data-form="loop-switches" data-guard="인앱 업데이트 기준"><h3>Play 인앱 업데이트</h3>
         <p class="hint">앱이 하루 한 번 읽고 열 때마다 봐요(첫 설정을 마친 폰만). 이 versionCode보다 낮은 앱은 긴급이면 Play 전체 화면 업데이트를, 정기면 Play의 '업데이트할까요?' 창을 새 판마다 한 번 띄우고 뒤에서 받은 뒤 '다시 시작'을 물어요. 0이면 권하지 않아요. Play에서 받은 앱에서만 돼요.</p>
-        <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
-        <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
+        ${liveLine(d)}
+        <div class="fieldset"><label for="ls-urgent">긴급(바로 업데이트) 기준 판 번호</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}" aria-describedby="ls-urgent-reach"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-urgent-reach" aria-live="polite">${esc(reachText(d, sw.urgentMin))}</span></div>
+        <div class="fieldset"><label for="ls-flex">정기(한 번 권함) 기준 판 번호</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}" aria-describedby="ls-flex-reach"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-flex-reach" aria-live="polite">${esc(reachText(d, sw.flexibleMin))}</span></div>
         ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
 
@@ -144,7 +171,7 @@ export function loopViews(A) {
     const r = d.rewards;
     return fold("rewards", "쓰면 쌓이는 날 규칙", `문제 신고 ${r.bugDays}일 · 새 기능 제안 ${r.featureDays}일 · 한 달 ${r.monthCap}일까지`, `
       <p class="hint">프로를 날 수만큼 열어 드려요. 회사 방식 채택·요청 반영의 개월 보상은 관리 › 채택 규칙에 있어요.</p>
-      <form data-form="loop-rewards">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
+      <form data-form="loop-rewards" data-guard="보상 규칙">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
         <input id="lr-${k}" name="${k}" type="number" min="0" max="${k === "monthCap" ? 60 : 30}" inputmode="numeric" value="${r[k]}"${owner() ? "" : " disabled"}>`).join("")}
         ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
@@ -274,14 +301,14 @@ export function loopViews(A) {
 
   const actions = {
     "loop-ship-cancel": ({ v }) => confirmBox(`${v} 자동 안내를 멈출까요?`, "멈추면 이 판은 스스로 저장되지 않아요. 나중에 흐름 › '나간 판 저장'으로 직접 저장해요.", "멈추기", async () => {
-      if (await act(() => api(`/loop/ship/${v}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
     }),
     // [LOOP-32] Play Console에서 '게시됨'을 본 사람이 눌러요: 그때부터 1시간 보류.
     "loop-ship-live": ({ v }) => confirmBox(`${v}이 Play에 게시된 걸 확인했나요?`, "Play Console › 게시 개요에서 '검토 중'이 아니라 게시됨인지 보고 눌러요. 누르면 1시간 뒤 묶인 문의 안내와 업데이트 소식이 나가요(그 사이 멈출 수 있어요).", "게시됨 확인", async () => {
-      if (await act(() => api(`/loop/ship/${v}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
     }, "primary"),
     "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
-      if (await act(() => api(`/loop/ship/${v}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
     }, "primary"),
     "loop-check": async () => {
       const r = await act(() => api("/loop/check?play=1"));
@@ -301,7 +328,7 @@ export function loopViews(A) {
     "loop-sync-key": async () => {
       const r = await act(() => api("/keys", "POST", { scope: "sync" }));
       if (!r) return;
-      openDialog(`<div class="key-once"><h2>동기화 열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> GitHub 저장소 bamnat-code › Settings › Secrets and variables › Actions에
+      openDialog(`<div class="key-once" data-secret="key"><h2>동기화 열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> GitHub 저장소 bamnat-code › Settings › Secrets and variables › Actions에
         이름 BAMNAT_SYNC_KEY로 넣어요. 이 열쇠는 개발 상태 보내기 한 가지만 할 수 있어요.</p>
         <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono"><p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
         <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);
@@ -349,14 +376,41 @@ export function loopViews(A) {
       const f = new FormData(form);
       if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")) }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
     },
+    /**
+     * 2.0.0 [RVA-05] 검토 ADM-06·U24-10: 빈 칸은 바꾸지 않아요(전에는 0이 됐어요). 바뀐 것만 '앞 → 뒤 · 걸리는 폰'으로 한 번 보여 주고 묻고,
+     * 지금 나간 번호보다 크면 모든 폰이 강제 업데이트를 보니 빨간 창으로 한 번 더 분명히 물어요.
+     */
     "loop-switches": async (form) => {
-      const f = new FormData(form);
-      const body = { urgentMin: Number(f.get("urgentMin") || 0), flexibleMin: Number(f.get("flexibleMin") || 0) };
-      if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState");
+      const d = S.data.loopState;
+      const sw = d?.switches ?? {};
+      const body = {};
+      for (const k of ["urgentMin", "flexibleMin"]) {
+        const raw = String(form.elements[k].value ?? "").trim();
+        if (raw === "") continue;
+        if (!/^\d{1,6}$/.test(raw)) return A.fieldError(form.elements[k], "0 이상 숫자만 적어 주세요");
+        if (Number(raw) !== Number(sw[k] ?? 0)) body[k] = Number(raw);
+      }
+      if (!Object.keys(body).length) return toast("바뀐 값이 없어요");
+      const live = d?.live?.code;
+      const over = live ? Object.entries(body).filter(([, v]) => v > live) : [];
+      const name = { urgentMin: "긴급(바로 업데이트)", flexibleMin: "정기(한 번 권함)" };
+      A.danger({ title: over.length ? "지금 나간 번호보다 큰 기준이에요" : "인앱 업데이트 기준을 바꿀까요?",
+        text: over.length ? `지금 나간 판 번호는 ${live}이에요. 이대로면 모든 폰이 ${over.some(([k]) => k === "urgentMin") ? "앱을 쓰기 전에 업데이트 화면을" : "업데이트 창을"} 보고, 아직 받을 판이 없을 수 있어요.`
+          : "앱이 하루 안에 이 기준을 읽어요.",
+        rows: Object.entries(body).map(([k, v]) => [name[k], `${sw[k] ?? 0} → ${v} · ${reachText(d, v)}`]),
+        label: over.length ? "그래도 저장" : "저장", tone: over.length || body.urgentMin ? "danger" : "primary",
+        run: async () => { if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState"); } });
     },
     "loop-rewards": async (form) => {
-      const f = new FormData(form);
-      const body = Object.fromEntries(REWARD_NAMES.map(([k]) => [k, Number(f.get(k) || 0)]));
+      const body = {};
+      for (const [k] of REWARD_NAMES) {
+        const raw = String(form.elements[k].value ?? "").trim();
+        if (raw === "") continue;
+        const max = Number(form.elements[k].max);
+        if (!/^\d{1,3}$/.test(raw) || Number(raw) > max) return A.fieldError(form.elements[k], `0~${max} 사이 숫자로 적어 주세요`);
+        body[k] = Number(raw);
+      }
+      if (!Object.keys(body).length) return toast("바뀐 값이 없어요");
       if (await act(() => api("/loop/rewards", "POST", body), "보상 규칙을 저장했어요")) reload("loopState");
     },
     "loop-basis": async (form) => {
@@ -384,6 +438,15 @@ export function loopViews(A) {
     "loop-switch": (t) => saveBox(t, { [t.name]: t.checked }, t.checked),
     "loop-instant": (t) => saveBox(t, { instant: [...t.form.querySelectorAll('input[name="instant"]:checked')].map((x) => x.value) }, t.checked),
   };
+
+  // 2.0.0 [RVA-05] 기준 칸에 적는 대로 '걸리는 폰'을 바로 다시 세요(시험처럼 문서가 없는 곳에서는 건너뛰어요).
+  if (typeof document !== "undefined") document.addEventListener("input", (e) => {
+    const t = e.target;
+    if ((t.id === "ls-urgent" || t.id === "ls-flex") && S.data.loopState) {
+      const help = document.getElementById(`${t.id}-reach`);
+      if (help) help.textContent = t.value.trim() === "" ? "비우면 바꾸지 않아요." : reachText(S.data.loopState, t.value);
+    }
+  });
 
   return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changeHandlers };
 }

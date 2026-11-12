@@ -2029,7 +2029,8 @@ export function validate(body) {
   const types = [];
   for (const t of body.types) {
     const name = cleanText(t?.name, LIMITS.text);
-    const short = cleanText(t?.short, 4);
+    // 2.0.0 [RVD-26] SN-16: 근무 글자 as the app and a 작품 keep it, two letters (👩‍⚕️ is one) up to 16 code units ([shortOf]).
+    const short = shortOf(t?.short);
     if (!Number.isInteger(t?.id) || !name || !short || !isColor(t?.color)) return { error: "type" };
     if (t.time != null && !isTimeRange(t.time)) return { error: "type_time" };
     // [SHR-02] The shift's icon key (sun, moon …), so the app draws the badge as the sharer sees it. 2.0.0 [RVD-22] or an emoji ('e:🌙').
@@ -2239,6 +2240,49 @@ const isTimeRange = (t) => typeof t === "string" && /^([01]\d|2[0-3]):[0-5]\d-([
  * longest the picker gives is 10 code points (🧑🏻‍❤️‍💋‍🧑🏼), so 12 at most. Letters, controls, '<', quotes and spaces are refused. The page and
  * the calendar feed never print it; it goes back to the receiving app in the JSON only (an app before 1.34 draws no icon for it).
  */
+/**
+ * 2.0.0 [RVD-26] SN-16 (스튜디오 제작 오류 조사): the letters of [s] as a person counts them, core RecipeText.graphemes cut apart (company-worker
+ * letters.js counts the same way; test/rvd26-short.test.mjs holds the two together): an emoji joined by ZWJ, with its VS16·skin tone·tags or
+ * a keycap is one, and so is a flag's pair.
+ */
+export function letters(s) {
+  const out = [];
+  const cps = [...s];
+  let flagHalf = false;
+  const join = (x) => { if (out.length) out[out.length - 1] += x; else out.push(x); };
+  for (let i = 0; i < cps.length; i++) {
+    const cp = cps[i].codePointAt(0);
+    if (cp === 0x200d) {
+      join(cps[i] + (cps[i + 1] ?? ""));
+      i++;
+    } else if ((cp >= 0xfe00 && cp <= 0xfe0f) || (cp >= 0x1f3fb && cp <= 0x1f3ff) || (cp >= 0xe0020 && cp <= 0xe007f) || /[\p{Mn}\p{Me}]/u.test(cps[i])) {
+      join(cps[i]);
+    } else if (cp >= 0x1f1e6 && cp <= 0x1f1ff) {
+      if (flagHalf) join(cps[i]); else out.push(cps[i]);
+      flagHalf = !flagHalf;
+      continue;
+    } else out.push(cps[i]);
+    flagHalf = false;
+  }
+  return out;
+}
+
+/**
+ * [RVD-26] SN-16 근무 글자: what 4 code units took before goes as it is; longer is its first two letters up to 16 code units (an app before
+ * 2.0.0 cut it at 4, half an emoji). More is cut, not refused: a 근무 글자 never stops the link (총괄 11-12, PC-92의 교훈). Null when empty.
+ */
+export function shortOf(v) {
+  const s = cleanText(v, 200);
+  if (!s) return null;
+  if (s.length <= 4) return s;
+  let out = "";
+  for (const l of letters(s).slice(0, 2)) {
+    if ((out + l).length > 16) break;
+    out += l;
+  }
+  return out || null;
+}
+
 const EMOJI_PART = String.raw`(?:[#*0-9]️?⃣|\p{Regional_Indicator}{2}|\p{Extended_Pictographic}️?\p{Emoji_Modifier}?️?(?:[\u{E0020}-\u{E007E}]+\u{E007F})?)`;
 const EMOJI_ICON = new RegExp(`^e:${EMOJI_PART}(?:\\u200D${EMOJI_PART})*$`, "u");
 export const iconOk = (icon) => typeof icon === "string" && (/^[a-z0-9]{1,16}$/.test(icon) || ([...icon].length <= 14 && EMOJI_ICON.test(icon)));

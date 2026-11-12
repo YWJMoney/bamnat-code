@@ -470,6 +470,16 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
     }
     // 2.0.0 [RVH-41] 검토 T30-80·82: 주 52시간·3개월 평균·전공의 연속 근무는 회사 근무의 한도라 알바에게는 보이지 않아요(이번 주 시간은 달력 위 줄).
     if (settings.workStyle != WorkStyle.HOURLY) SectionCard(title = "근무시간 경고") {
+        // 2.0.0 [RVJ-23] 검토 U04-07: the law's limit and the user's own warning are two things, said apart. Only a wage calendar has
+        // the law's (근무·급여 [weekLimitFor]); 현장·가게·투자 read the first sentence alone, and each kind its own tab's name (TypeWords:
+        // 알바 '출근·시급', no '52시간').
+        val style = settings.workStyle
+        val law = when {
+            style?.usesPayEngine == false -> ""
+            style == com.bamnat.core.work.WorkStyle.HOURLY -> " 법 한도(근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
+            else -> " 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${style.words().tab} 화면에 따로 보여요."
+        }
+        Text("건강을 위해 내가 정하는 경고예요.$law", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
@@ -888,7 +898,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         WidgetPreviewStrip(key = settings.widgetMemo to settings.widgetLook)
         // [DAILY-01] On by default; a home screen is seen by others, so it turns off here.
         val widgetContext = LocalContext.current
-        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요. 홈 화면을 남이 볼 수 있으면 끄세요"
+        SwitchRow("위젯에 메모 보이기", if (settings.widgetMemo) "오늘·내일 위젯에 그날 메모 첫 줄이 보여요(잠금 화면에서는 안 보여요). 홈 화면을 남이 볼 수 있으면 끄세요"
             else "위젯에는 근무만 보여요", settings.widgetMemo) { on ->
             vm.update { it.copy(widgetMemo = on) }
             widgetContext.appContainer.appScope.launch { com.bamnat.app.widget.WidgetRefresher.refresh(widgetContext) }
