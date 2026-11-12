@@ -208,6 +208,21 @@ class RvjPayTest {
         assertTrue("시각이 없는 줄은 말로", text.contains("2시간 (시각 안 적음)") && !text.contains("시각 없음"))
     }
 
+    /** [RVJ-52] PC-120: 말일 마감에 월급날 10일은 다음 달 10일; 25일(당월 지급이 흔한 날)은 그대로, 손으로 끈 '다음 달'은 안 켜요. */
+    @Test fun anEarlyPayDayIsTheNextMonths() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val ten = PayPeriod().withPayDay(10)
+        assertTrue(ten.payNextMonth)
+        assertEquals(LocalDate.of(2026, 12, 10), ten.payDate(nov))
+        assertEquals("25일은 그달에 주는 곳이 많아 그대로", false, PayPeriod().withPayDay(25).payNextMonth)
+        assertTrue("20일 마감 · 10일 지급", PayPeriod(endDay = 20).withPayDay(10).payNextMonth)
+        assertEquals("20일 마감 · 25일은 마감 뒤라 그달", false, PayPeriod(endDay = 20).withPayDay(25).payNextMonth)
+        // 손으로 '이번 달'로 돌린 뒤 10일 → 11일로 옮겨도 다시 켜지 않아요.
+        assertEquals(false, ten.copy(payNextMonth = false).withPayDay(11).payNextMonth)
+        // 25일에서 21일로 내려와 이른 날이 되면 그때 켜요.
+        assertTrue(PayPeriod(payDay = 25).withPayDay(21).payNextMonth)
+    }
+
     /** [RVJ-47] PC-111 같은 틀: the 연간 교대 리포트 put the 직업 under '이름' too; the 현장 일한 날 증빙 has a 이름 칸 to write in. */
     @Test fun theOtherReportsOnTheSameFrameNameTheJob() {
         val mon = LocalDate.of(2026, 11, 2)

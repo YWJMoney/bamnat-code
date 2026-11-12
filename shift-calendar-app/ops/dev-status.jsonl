@@ -533,3 +533,8 @@
 {"track": "RVJ-45", "title": "한 주 15시간이 안 되는 직원의 4대보험 칩이 꺼진 까닭 한 줄", "status": "check", "size": "polish", "route": "app", "check": "(PC) 사장님 › 직원 정보 › 토·일 4시간 직원의 4대보험 아래 한 줄 / 일용직은 '고용보험은 첫날부터'"}
 {"track": "RVJ-46", "title": "기본 금액 바꾸기 창: 바꾸기 전에는 '그대로예요' 대신 무엇을 보여 줄지", "status": "check", "size": "polish", "route": "app", "check": "(PC) 급여 › 내 급여 값 › 기본급 › 금액을 바꾸지 않은 창 / 낮춘 금액의 달 줄 색"}
 {"track": "RVJ-47", "title": "근무 기록 증빙 PDF: 직업·이름 칸, 시각 안 적음, 휴무일 특근 시각, 낱말 안 끊기", "status": "check", "size": "polish", "route": "app", "check": "(PC) 급여 › 보고서 › 근무 기록 증빙(이번 달·3개월) PDF"}
+{"track": "RVJ-48", "title": "새해 첫날 12월 대장에서 더한 직원의 시급 처음 값과 최저임금 경고를 한 해로", "status": "check", "size": "fix", "route": "app", "check": "(PC) 시계 2027-01-02, 가게 급여 대장 12월 › 직원 더하기 › 시급 처음 값과 10,320원을 적었을 때 경고"}
+{"track": "RVJ-49", "title": "'이대로 마감할까요?' 카드에 그 달 금액, '나중에' 뒤 도구 안내 한 줄", "status": "check", "size": "polish", "route": "app", "check": "(PC) 월급날 다음 날 급여 결과 › 마감 카드의 금액 › 나중에 › 한 줄 누르기"}
+{"track": "RVJ-50", "title": "가게 카드의 인건비 칸 빨간 바탕 없애기", "status": "check", "size": "polish", "route": "app", "check": "(PC) 팀·가게 관리 › 가게 카드 '닫기 전'과 '5인 이상인지' 줄"}
+{"track": "RVJ-51", "title": "금액 없는 수당을 넣은 뒤 글", "status": "check", "size": "polish", "route": "app", "check": "(PC) 급여 › 내 급여 값 › 수당 추가 › 금액 없이 매달 › 추가 뒤 글"}
+{"track": "RVJ-52", "title": "말일 마감에 월급날 10일은 다음 달 10일로", "status": "check", "size": "polish", "route": "app", "check": "(PC) 회사 규칙 › 정산 기간과 월급날 › 10일 / 25일"}

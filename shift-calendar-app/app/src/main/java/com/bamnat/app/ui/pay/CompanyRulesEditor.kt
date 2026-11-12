@@ -339,25 +339,29 @@ fun CompanyRulesEditor(
                 Hint("${month.monthValue}월 급여는 ${period.label(month)} 근무로 계산해요.")
                 Label(say("월급날"))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.copy(payDay = null)) },
+                    FilterChip(selected = period.payDay == null, onClick = { draft = draft.copy(period = period.withPayDay(null)) },
                         label = { Text("안 정함") })
                     listOf(10, 25).forEach { d ->
-                        FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.copy(payDay = d)) },
+                        FilterChip(selected = period.payDay == d, onClick = { draft = draft.copy(period = period.withPayDay(d)) },
                             label = { Text("${d}일") })
                     }
                     // PC 6da49f0b (−/+ 단추가 줄바꿈되면서 '말일'·'-' 글자만 혼자 남음): the stepper keeps together on one line.
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 26) - 1).coerceIn(1, 31))) }) { Text("−") }
                         Text(period.payDay?.let { "${it}일" } ?: "없음", style = MaterialTheme.typography.titleSmall,
                             modifier = Modifier.align(Alignment.CenterVertically).widthIn(min = 40.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                        OutlinedButton(onClick = { draft = draft.copy(period = period.copy(payDay = ((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
+                        OutlinedButton(onClick = { draft = draft.copy(period = period.withPayDay(((period.payDay ?: 24) + 1).coerceIn(1, 31))) }) { Text("+") }
                     }
                 }
                 if (period.payDay != null) {
                     Toggle("마감한 다음 달에 지급", "예: 말일 마감, 다음 달 10일 지급", period.payNextMonth) {
                         draft = draft.copy(period = period.copy(payNextMonth = it))
                     }
-                    period.payDate(month)?.let { Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요.") }
+                    // [RVJ-52] 검토 PC-120: a day inside the period itself is said as such (당월 지급), so '11월 10일' for 11월's work reads as meant.
+                    period.payDate(month)?.let {
+                        val early = it.isBefore(period.end(month))
+                        Hint("${month.monthValue}월 급여는 ${it.monthValue}월 ${it.dayOfMonth}일에 들어와요." + if (early) " 일이 끝나기 전에 미리 받는 날이에요." else "")
+                    }
                 }
                 // 1.32 [CALX-06] 주급: the weekday it arrives; the week runs from the 주휴 week's first day.
                 Label("주급이면 받는 요일")

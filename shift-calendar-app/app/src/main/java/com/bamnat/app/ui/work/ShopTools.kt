@@ -321,7 +321,9 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
     val context = LocalContext.current
     val store = remember { WorkToolsStore.get(context) }
     var roster by remember { mutableStateOf(store.current(calendarId).roster) }
-    val minimum = RateTable.on(month.atDay(1)).minimumHourlyWage.toLong()
+    // 2.0.0 [RVJ-48] 검토 PC-117 같은 구조: the 최저임금 of the day a wage is paid from (wageOn), said with its year.
+    val wageDay = wageOn(month)
+    val minimum = RateTable.on(wageDay).minimumHourlyWage.toLong()
     fun save() { store.update(calendarId) { it.copy(roster = roster) }; onClose() }
     ToolScreen("직원 근무표", onClose, action = "저장", onAction = ::save) {
         if (roster.staff.isNotEmpty()) {
@@ -389,7 +391,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
         SwitchLine("휴게시간 빼고 세기", roster.legalBreaks, { roster = roster.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
         roster.staff.forEachIndexed { i, s ->
             key(s.id) {
-                StaffEditor(s, minimum, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
+                StaffEditor(s, minimum, wageDay.year, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
                     onRemove = { roster = roster.copy(staff = roster.staff.filterIndexed { k, _ -> k != i }) })
             }
         }
@@ -410,13 +412,13 @@ private fun short(t: LocalTime): String = if (t.minute == 0) "${t.hour}" else "$
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StaffEditor(s: Staff, minimum: Long, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
+private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     SectionCard(title = s.name.ifBlank { "새 직원" }, trailing = { IconButton(onClick = onRemove) { Icon(Icons.Outlined.Delete, "직원 빼기") } }) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(s.name, { onChange(s.copy(name = it.take(12))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(s.hourlyWage), { onChange(s.copy(hourlyWage = it.toAmount())) })
-            if (s.hourlyWage in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+            if (s.hourlyWage in 1 until minimum) Text("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             SwitchLine("주휴수당 주기", s.holidayPay, { onChange(s.copy(holidayPay = it)) }, "한 주 15시간이 안 되면 저절로 빠져요")
             SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) }, "사장님이 내는 몫을 인건비에 더해요")
             Text("일하는 요일", style = MaterialTheme.typography.labelLarge)

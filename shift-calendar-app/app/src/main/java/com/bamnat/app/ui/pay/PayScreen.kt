@@ -663,10 +663,20 @@ private fun PayResult(
             val due = remember(profile, closed, asked, paid) { vm.closeDue(profile, paid) }
             val auto = settings.payAutoClose
             androidx.compose.runtime.LaunchedEffect(due, auto) { if (due != null && auto) vm.closeMonthOf(profile, snapshot, due) }
+            // 2.0.0 [RVJ-49] 검토 PC-121: the card asks about 11월 while the big number above is 12월; it shows the 11월 amount it would
+            // keep, and after '나중에' one line says where the 마감 still is (누르면 그 달의 도구).
+            var later by rememberSaveable { mutableStateOf<String?>(null) }
             if (!auto) due?.let { m ->
-                CloseAskCard(m, deposited = vm.paidOn(paid, m) != null,
-                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m) },
+                val amount by androidx.compose.runtime.produceState<Long?>(null, profile, snapshot, m) {
+                    value = if (m == month) shown.total else runCatching { vm.calculateOff(profile, snapshot, m).total }.getOrNull()
+                }
+                CloseAskCard(m, amount, deposited = vm.paidOn(paid, m) != null,
+                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m); later = m.toString() },
                     onAlways = { vm.setAutoClose(true); vm.closeMonthOf(profile, snapshot, m) })
+            }
+            later?.takeIf { due == null }?.let { java.time.YearMonth.parse(it) }?.let { m ->
+                com.bamnat.app.ui.components.ToneLine("${m.monthValue}월 마감은 도구 › ${m.monthValue}월 마감에서 할 수 있어요",
+                    tone = com.bamnat.app.ui.components.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null })
             }
         }
         if (noBase) guides()
@@ -1846,8 +1856,10 @@ private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: Sched
  * it away for that month (the 도구 탭's 마감 is still there).
  */
 @Composable
-private fun CloseAskCard(month: YearMonth, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
+private fun CloseAskCard(month: YearMonth, amount: Long?, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
     SectionCard(title = if (deposited) "${month.monthValue}월 급여가 들어왔어요. 이대로 마감할까요?" else "${month.monthValue}월 급여, 이대로 마감할까요?") {
+        // [RVJ-49] 검토 PC-121: the amount being kept, of that month.
+        amount?.let { Text("${month.monthValue}월 급여 (세전) ${won(it)}", style = MaterialTheme.typography.titleMedium) }
         Text("마감하면 규칙·요율이 바뀌어도 이 달 금액·날짜별·세후가 그대로예요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {

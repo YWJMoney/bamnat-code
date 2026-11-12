@@ -42,7 +42,6 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.manage.ManageDesk
@@ -233,13 +232,14 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     if (!show) return
     SectionCard(title = place.name, trailing = { TextButton(onClick = onOpen) { Text("급여 대장") } }) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            StatTile("${last.monthValue}월 인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${staff.size}명 · " + if (isClosed) "닫음" else "닫기 전",
-                warning = !isClosed && staff.isNotEmpty())
+            // 2.0.0 [RVJ-50] 검토 PC-118: a month not closed yet is a to-do (할 일 says it with the 지급일), not a danger: the tile
+            // was red. It is a plain tile whose caption says '닫기 전' (조건 6, 빨강은 위험만).
+            StatTile("${last.monthValue}월 인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${staff.size}명 · " + if (isClosed) "닫음" else "닫기 전")
             StatTile("지급·명세서", if (isClosed) "${g.lastPaid}/${g.lastLines} · ${g.lastSent}/${g.lastLines}" else "-", Modifier.weight(1f),
                 caption = place.payDate(last)?.let { "지급일 ${Fmt.monthDay(it)}" } ?: "지급일 미정")
         }
-        if (place.fivePlus == null) Text("5인 이상인지 아직 안 골랐어요", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning, modifier = Modifier.padding(top = 6.dp))
+        // [RVJ-50] The one thing to look at here, as the 주의 line every card uses (it was red text).
+        if (place.fivePlus == null) com.bamnat.app.ui.components.ToneLine("5인 이상인지 아직 안 골랐어요", Modifier.padding(top = 6.dp), onClick = onOpen)
     }
 }
 
