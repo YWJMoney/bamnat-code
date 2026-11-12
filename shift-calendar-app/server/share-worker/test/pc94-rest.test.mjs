@@ -1,6 +1,7 @@
 // 2.0.0 [RVD-23] PC-94 (통합 2차 PC 검증): a calendar started from a received link ('내 근무표예요') counted the shift's 휴게 as work (주간 11시간 on
 // the sender, 12 on the receiver), because the link carried only the start and end. Now a shift may carry `rest` (minutes, 0~720, 0 = 휴게 없음)
-// and `restStart` ('HH:MM'); the names and ranges are the ones agreed with 갈래 G (11-12). An app before 2.0.0 ignores both. `npm test`.
+// and `restStart` ('HH:MM'); the names and ranges are the ones agreed with 갈래 G (11-12). What does not fit is dropped, never the link (총괄 11-12).
+// An app before 2.0.0 ignores both. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker, { validate } from "../src/index.js";
@@ -43,10 +44,20 @@ test("[RVD-23] PC-94 rest across midnight and beside a two-part shop day", () =>
   assert.equal("rest" in typeOf({ ...day, time: undefined, rest: 30 }), false);
 });
 
-test("[RVD-23] PC-94 a rest that is not the app's is refused (type_rest)", () => {
-  for (const t of [{ ...day, rest: -1 }, { ...day, rest: 721 }, { ...day, rest: 30.5 }, { ...day, rest: "60" }, { ...day, rest: 720 },
-    { ...shop, rest: 540 }, { ...day, rest: 60, restStart: "18:30" }, { ...day, rest: 60, restStart: "06:00" }, { ...day, rest: 60, restStart: "12" },
-    { ...day, rest: 60, restStart: "24:00" }, { ...night, rest: 60, restStart: "06:30" }, { ...day, rest: 60, restStart: 720 }]) {
-    assert.equal(error(t), "type_rest", JSON.stringify(t));
+test("[RVD-23] PC-94 a rest that is not the app's is dropped and the link is still made (총괄 11-12, PC-92's lesson)", async () => {
+  // The rest itself does not fit: no rest at all, so the receiver knows it was not told.
+  for (const t of [{ ...day, rest: -1 }, { ...day, rest: 721 }, { ...day, rest: 30.5 }, { ...day, rest: "60" }, { ...day, rest: 720 }, { ...shop, rest: 540 },
+    { ...day, rest: 720, restStart: "07:00" }]) {
+    assert.equal(error(t), undefined, JSON.stringify(t));
+    assert.equal("rest" in typeOf(t), false, JSON.stringify(t));
   }
+  // Only the start does not fit: the minutes stay, the start goes.
+  for (const t of [{ ...day, rest: 60, restStart: "18:30" }, { ...day, rest: 60, restStart: "06:00" }, { ...day, rest: 60, restStart: "12" },
+    { ...day, rest: 60, restStart: "24:00" }, { ...night, rest: 60, restStart: "06:30" }, { ...day, rest: 60, restStart: 720 }]) {
+    assert.deepEqual([typeOf(t).rest, "restStart" in typeOf(t)], [60, false], JSON.stringify(t));
+  }
+  // A phone whose 휴게 is longer than its shift still makes its link.
+  const env = { SHARES: kv() };
+  const res = await call(env, "/api/share", { method: "POST", body: JSON.stringify(link([{ ...day, rest: 800 }, { ...night, rest: 60, restStart: "08:00" }])) });
+  assert.equal(res.status, 201);
 });
