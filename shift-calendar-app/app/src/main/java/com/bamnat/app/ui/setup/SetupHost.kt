@@ -123,7 +123,7 @@ fun SetupHost(
     val saving by vm.saving.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val note by vm.note.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(message) {
         val m = message ?: return@LaunchedEffect
         // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
@@ -264,7 +264,7 @@ fun SetupHost(
             }
         },
         bottomBar = { primary?.let { BottomButton(it, busy = saving) } },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
     ) { padding ->
         AnimatedContent(
             targetState = d.step,

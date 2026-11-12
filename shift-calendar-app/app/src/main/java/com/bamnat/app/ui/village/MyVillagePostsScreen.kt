@@ -61,7 +61,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     // [TOWN-02] 1.37: answers that came since this phone last looked, marked on each of my posts until I leave this screen.
     var fresh by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var problem by remember { mutableStateOf<String?>(null) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = rememberCoroutineScope()
     // PC 확인: 글 보기 opens the post itself in its plaza's talk.
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
@@ -93,7 +93,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
         }
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("간직한 글 · 내 글") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {

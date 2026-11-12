@@ -282,4 +282,14 @@ private fun averageColour(b: androidx.compose.ui.graphics.ImageBitmap): Color? =
     Color(px).copy(alpha = 1f)
 }.getOrNull()
 
+/**
+ * 2.0.0 [RVP-67] (검토 REST-08) The ink [skinned] draws for [look] on [base] (a photo aside), so the 색·배경 editor's "잘 안 보여서"
+ * warning follows the same rule as the screen, dark screens and the theme's own ground included.
+ */
+internal fun inkShown(base: ColorScheme, look: ScreenLook): Long {
+    val ground = groundOf(base, look, null)
+    val card = look.card?.let { Color(it) }
+    return Palette.inkOn(look.ink, ground.argb(), (card ?: base.surfaceContainerLow).argb(), (card ?: base.surfaceContainerHigh).argb())
+}
+
 private fun Color.argb(): Long = toArgb().toLong() and 0xFFFFFFFFL

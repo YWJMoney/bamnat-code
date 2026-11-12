@@ -88,6 +88,8 @@ fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogPr
 @Composable
 internal fun StaysUnderTheLock() {
     androidx.compose.runtime.LaunchedEffect(Unit) { com.bamnat.app.AppLock.windowOpened() }
+    // 2.0.0 [RVP-24] Open over the screen: the first tab and the opening windows wait for it (Busy).
+    Busy.Window()
 }
 
 /** 1.39.1 [R391-10] 앱 잠금's cover as a full-screen window over every 창 and 시트; [onBack] leaves the app. */
