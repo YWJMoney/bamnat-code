@@ -33,6 +33,12 @@ import com.bamnat.core.recipe.PieceKind
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.RecipeCodec
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.junit.Test
@@ -227,6 +233,74 @@ class RvmScreenshotTest : ScreenshotBase() {
         shoot("rvm_56_market_grid_folded", FOLDED) { market()(this); check(firstRow() == 2) { "접은 폭 첫 줄 카드 ${firstRow()}장" } }
         org.junit.Assert.assertEquals(listOf(2, 3, 4, 6), listOf(com.bamnat.app.ui.recipe.marketCols(337, false), com.bamnat.app.ui.recipe.marketCols(337, true),
             com.bamnat.app.ui.recipe.marketCols(675, false), com.bamnat.app.ui.recipe.marketCols(675, true)))
+    }
+
+    /**
+     * 2.0.0 [RVM-34] 총괄 HQ-72 (조건 4·12): at 200% a 장터 card's numbers line ('♥ 38 · 넣어 본 분 214 · 오래 써요 81%') went over three lines
+     * in a folded phone's tile. Now it keeps the two numbers that matter ('♥ 38 · 214명') and is two lines at most, on a light and a dark page.
+     */
+    @Test fun theNumbersLineStaysWithinTwoLines() {
+        fun Screen.numbers(): List<Pair<String, Int>> = nodes(merged = false).mapNotNull { n ->
+            val action = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action ?: return@mapNotNull null
+            val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            if (action(out) != true) return@mapNotNull null
+            out.firstOrNull { it.layoutInput.text.text.startsWith("♥") }?.let { it.layoutInput.text.text.replace('\u00A0', ' ') to it.lineCount }
+        }
+        for ((name, qualifiers) in listOf("rvm_60_market_numbers_folded_200" to FOLDED, "rvm_61_market_numbers_folded_dark_200" to DARK)) {
+            shoot(name, qualifiers, 2f) {
+                market()(this)
+                val lines = numbers()
+                check(lines.isNotEmpty()) { "숫자 줄이 안 보여요" }
+                check(lines.all { it.first == "♥ 38 · 214명" }) { "200%의 숫자 줄은 두 숫자만: $lines" }
+                check(lines.all { it.second <= 2 }) { "200%에서 두 줄을 넘어요: $lines" }
+                // Read aloud whole, in words, at any size.
+                val said = nodes(merged = false).mapNotNull { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.joinToString() }
+                check("좋아요 38 · 넣어 본 분 214명 · 7일 뒤에도 쓰는 분 81%" in said) { "읽어 주는 숫자 줄: ${said.filter { "좋아요" in it }}" }
+            }
+        }
+        shoot("rvm_62_market_numbers_folded", FOLDED) {
+            market()(this)
+            check(numbers().any { it.first == "♥ 38 · 넣어 본 분 214 · 오래 써요 81%" }) { "100%에서는 그대로: ${numbers()}" }
+            // A wrapped line breaks between the numbers, not inside one ('오래 / 써요 81%' before).
+            check(numbers().all { it.second <= 2 }) { "100%에서 두 줄을 넘어요: ${numbers()}" }
+        }
+    }
+
+    /**
+     * 2.0.0 [RVM-35] 총괄 HQ-66 (갈래 H PC-88과 같은 구조): 크게 넘겨 보기에서 빠르게 세 번 밀면 세 작품을 넘겨요. 페이저 그대로는 넘기는 중에
+     * 민 것을 손가락 밑 작품부터 세어, 이미 가고 있는 작품에 다시 내려앉았어요. 달력과 같은 [com.bamnat.app.ui.calendar.queuedTurns]를 써요.
+     * 되돌아 두 번이면 두 작품 앞으로, 멈춘 뒤 한 번은 한 작품, '다음 ▶'을 빠르게 두 번 누르면 두 작품이에요.
+     */
+    @Test fun threeQuickSwipesTurnThreeWorks() = shoot("rvm_63_flip_quick_folded", FOLDED) {
+        val market = Market().also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val items = runBlocking { market.list(WorkStyle.SHIFT, "", "", 0, null).items }
+        var at = 0
+        content { com.bamnat.app.ui.recipe.MarketFlip(items, 0, WorkStyle.SHIFT, onDismiss = {}, onOpen = {}, onTry = {}, onAt = { at = it }) }
+        settle()
+        val works = compose.onNodeWithTag(com.bamnat.app.ui.recipe.FLIP_WORKS_TAG)
+        fun flick(forward: Boolean = true) = works.performTouchInput {
+            if (forward) swipe(Offset(width * 0.7f, height * 0.3f), Offset(width * 0.4f, height * 0.3f), durationMillis = 60)
+            else swipe(Offset(width * 0.3f, height * 0.3f), Offset(width * 0.6f, height * 0.3f), durationMillis = 60)
+        }
+        fun quick(n: Int, forward: Boolean = true) {
+            compose.mainClock.autoAdvance = false
+            repeat(n) { flick(forward); compose.mainClock.advanceTimeBy(60) }
+            compose.mainClock.autoAdvance = true
+            settle(); settle()
+        }
+        quick(3)
+        org.junit.Assert.assertEquals("빠르게 세 번 밀면 세 작품", 3, at)
+        quick(2, forward = false)
+        org.junit.Assert.assertEquals("되돌아 두 번이면 두 작품 앞으로", 1, at)
+        flick(); settle(); settle()
+        org.junit.Assert.assertEquals("멈춘 뒤 한 번은 한 작품", 2, at)
+        // '다음 ▶' twice quickly: from the work it is going to, not the one still under the finger.
+        compose.mainClock.autoAdvance = false
+        repeat(2) { compose.onNodeWithText("다음 ▶").performClick(); compose.mainClock.advanceTimeBy(60) }
+        compose.mainClock.autoAdvance = true
+        settle(); settle()
+        org.junit.Assert.assertEquals("'다음 ▶' 빠르게 두 번이면 두 작품", 4, at)
     }
 
     private val cardWords = setOf("테마 보기", "작품 보기", "도구 보기")

@@ -63,8 +63,9 @@ class AppContainer(context: Context) {
 
     val database: AppDatabase = AppDatabase.create(context)
     val settingsRepository = SettingsRepository(context)
-    val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds },
-        extraName = { settingsRepository.current.extraKinds.name(it) }, shareScope = appScope)
+    // [RVH-50] The main calendar's kinds in its own words (an 알바's 추가 근무·쉬는 날 출근·대타), in the day's record and its log too.
+    val scheduleRepository = ScheduleRepository(database, kinds = settingsRepository.settings.map { it.extraKinds.forStyle(it.workStyle) },
+        extraName = { settingsRepository.current.let { s -> s.extraKinds.forStyle(s.workStyle).name(it) } }, shareScope = appScope)
     /** [MCAL-01] The user's calendars; the main one is [scheduleRepository]. */
     val calendars: com.bamnat.app.data.CalendarBook = com.bamnat.app.data.CalendarBook(
         java.io.File(appContext.filesDir, "calendars.json"), scheduleRepository, com.bamnat.app.data.CalendarStorage.Files(appContext),
@@ -139,6 +140,8 @@ class AppContainer(context: Context) {
         com.bamnat.app.data.AutoTidy(java.io.File(appContext.noBackupFilesDir, "auto_tidy.json")).also { t ->
             t.register(MoneyRepository.KIND_LEFT_OUT) { calendars.money(it.calendarId).putBackLeftOut(it.payload) }
             t.register(MoneyRepository.KIND_JOINED) { calendars.money(it.calendarId).putBackJoined(it.payload) }
+            // 2.0.0 [RVH-57] A received link's day kept as I had changed it by hand.
+            t.register(com.bamnat.app.share.RosterFollower.KIND_KEPT) { com.bamnat.app.share.RosterFollower.putBackKept(this, it.payload) }
             t.register(com.bamnat.app.invest.TradeCapture.KIND_FILL) { item ->
                 val p = com.bamnat.core.invest.TradeAlerts.decode(org.json.JSONObject(item.payload).optString("fill")).firstOrNull()
                 p != null && invest(item.calendarId).addAlertAnyway(p)

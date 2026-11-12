@@ -89,8 +89,9 @@ class AJScreenshotTest : ScreenshotBase() {
     }
 
     // ---- 447 듀티표: 사진과 내용이 같은가요? ----
-    @Test fun rosterAsk() = shoot("1140_aj_roster_same_ask", PHONE_393, asked { reveal("사진과 내용이 같은가요?") })
-    @Test fun rosterAskDark() = shoot("1142_aj_roster_same_dark", FOLDED_NIGHT, asked { reveal("사진과 내용이 같은가요?") })
+    // 2.0.0 [RVL-36] (검토 U07b-04) With a yellow cell left the card asks for those first: "노란 칸 1개만 사진과 맞는지 봐 주세요".
+    @Test fun rosterAsk() = shoot("1140_aj_roster_same_ask", PHONE_393, asked { reveal("사진과 맞는지 봐 주세요") })
+    @Test fun rosterAskDark() = shoot("1142_aj_roster_same_dark", FOLDED_NIGHT, asked { reveal("사진과 맞는지 봐 주세요") })
     @Test fun rosterAskHuge() = shoot("1143_aj_roster_same_huge_text", PHONE, fontScale = 2f, asked { reveal("다른 곳이 있어요") })
     @Test fun rosterFixing() = shoot("1144_aj_roster_fixing", PHONE_393, asked { vm ->
         tapText("다른 곳이 있어요")
@@ -106,10 +107,11 @@ class AJScreenshotTest : ScreenshotBase() {
     })
 
     // ---- 447 첫 설정 ----
-    @Test fun setupAsk() = shoot("1146_aj_setup_same_ask", PHONE_393, setup { reveal("사진과 내용이 같은가요?") })
+    @Test fun setupAsk() = shoot("1146_aj_setup_same_ask", PHONE_393, setup { reveal("사진과 맞는지 봐 주세요") })
     // The month screen's keypad takes the lower half of a 320×568 phone, where the test's drag starts, so the small phone is
     // shown on the first setup's roster step, which has the same card.
-    @Test fun setupAskSmall() = shoot("1141_aj_setup_same_small_phone", SMALL_PHONE, setup { reveal("네, 같아요") })
+    // 2.0.0 [RVL-36] '네, 같아요' comes once the yellow cells are looked at; first '노란 n칸 확인하기'.
+    @Test fun setupAskSmall() = shoot("1141_aj_setup_same_small_phone", SMALL_PHONE, setup { reveal("칸 확인하기") })
 
     private fun setup(then: Screen.() -> Unit): Screen.() -> Unit = {
         fourWays()
