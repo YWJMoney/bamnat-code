@@ -29,10 +29,18 @@
   "daily": [
     { "name": "18만 원 × 20일 한꺼번에", "pay": 180000, "days": 20, "paid": "together", "expect": { "income": 16200, "local": 1620 } },
     { "name": "18만 원 × 20일 날마다 (하루 810원이라 0)", "pay": 180000, "days": 20, "paid": "daily", "expect": { "income": 0, "local": 0 } },
-    { "name": "20만 원 × 20일 날마다", "pay": 200000, "days": 20, "paid": "daily", "expect": { "income": 27000, "local": 2700 } },
+    { "name": "20만 원 × 20일 날마다 (하루 1,350원·130원)", "pay": 200000, "days": 20, "paid": "daily", "expect": { "income": 27000, "local": 2600 } },
     { "name": "18만 원 하루만 한꺼번에", "pay": 180000, "days": 1, "paid": "together", "expect": { "income": 0, "local": 0 } },
-    { "name": "18만 원 × 2일 한꺼번에", "pay": 180000, "days": 2, "paid": "together", "expect": { "income": 1620, "local": 162 } },
-    { "name": "25만 원 × 3일 날마다", "pay": 250000, "days": 3, "paid": "daily", "expect": { "income": 8100, "local": 810 } }
+    { "name": "18만 원 × 2일 한꺼번에 (지방소득세 162 → 160)", "pay": 180000, "days": 2, "paid": "together", "expect": { "income": 1620, "local": 160 } },
+    { "name": "25만 원 × 3일 날마다", "pay": 250000, "days": 3, "paid": "daily", "expect": { "income": 8100, "local": 810 } },
+    { "name": "국세청 예: 20만 원 × 5일 한 번에 (675 → 670)", "pay": 200000, "days": 5, "paid": "together", "expect": { "income": 6750, "local": 670 } },
+    { "name": "18만 원 × 5일 한 번에", "pay": 180000, "days": 5, "paid": "together", "expect": { "income": 4050, "local": 400 } },
+    { "name": "18만 원 × 5일 날마다", "pay": 180000, "days": 5, "paid": "daily", "expect": { "income": 0, "local": 0 } },
+    { "name": "215,555원 하루 (1,769 → 1,760)", "pay": 215555, "days": 1, "paid": "together", "expect": { "income": 1760, "local": 170 } },
+    { "name": "215,555원 × 2일 날마다", "pay": 215555, "days": 2, "paid": "daily", "expect": { "income": 3520, "local": 340 } },
+    { "name": "19만 원 하루", "pay": 190000, "days": 1, "paid": "daily", "expect": { "income": 1080, "local": 100 } },
+    { "name": "187,037원 하루 (999원이라 0)", "pay": 187037, "days": 1, "paid": "daily", "expect": { "income": 0, "local": 0 } },
+    { "name": "187,038원 하루 (1,000원)", "pay": 187038, "days": 1, "paid": "daily", "expect": { "income": 1000, "local": 100 } }
   ],
   "juhyu": [
     { "week": 900, "expect": { "holMin": 180 } },
