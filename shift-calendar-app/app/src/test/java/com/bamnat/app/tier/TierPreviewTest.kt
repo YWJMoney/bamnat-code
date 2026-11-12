@@ -6,7 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.appContainer
 import com.bamnat.app.data.SettingsRepository
 import com.bamnat.app.flags.Flags
-import com.bamnat.app.ui.pro.PREVIEW_PLANS
+import com.bamnat.app.ui.pro.previewPlans
 import com.bamnat.app.ui.pro.shownPlans
 import com.bamnat.app.ui.pro.tierPreviewShown
 import com.bamnat.core.flags.PhoneFacts
@@ -90,8 +90,8 @@ class TierPreviewTest {
 
     @Test fun thePlansShowInAPreviewEvenWithoutPlayAndNeverOtherwise() {
         val free = gate(Tier.FREE, debug = true)
-        assertEquals(PREVIEW_PLANS, shownPlans(free, emptyList()))
-        assertTrue("the example prices say so", PREVIEW_PLANS.all { "예시" in it.price })
+        assertEquals(previewPlans(), shownPlans(free, emptyList()))
+        assertTrue("the example prices say so", previewPlans().all { "예시" in it.price })
         assertEquals(emptyList<com.bamnat.app.billing.Plan>(), shownPlans(gate(null, debug = true), emptyList()))
         val play = listOf(com.bamnat.app.billing.Plan("monthly", "4,990원", 4_990_000_000, "KRW", "P1M", trial = false, offerToken = "m"))
         assertEquals("Play's own plans first, when it gave them", play, shownPlans(free, play))

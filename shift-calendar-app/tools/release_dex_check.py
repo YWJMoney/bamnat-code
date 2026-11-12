@@ -14,8 +14,9 @@ import zipfile
 FORBIDDEN = [
     "출시 뒤 화면 미리 보기 · 개발용",   # TierPreview.TIER_PREVIEW_TITLE
     "미리 보기라 결제는 되지 않아요",     # TierPreview.PREVIEW_NO_PAY
-    "4,990원(예시)",                    # TierPreview.PREVIEW_PLANS
-    "45,000원(예시)",                   # TierPreview.PREVIEW_PASS
+    "4,990원(예시)",                    # TierPreview.previewPlans()
+    "39,000원(예시)",
+    "45,000원(예시)",                   # TierPreview.previewPass()
     "맛보기 처음부터",                   # TierPreviewCard 디버그 단추
     "하루 써 보기 처음부터",
 ]

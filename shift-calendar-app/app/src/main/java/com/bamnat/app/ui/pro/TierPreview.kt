@@ -76,19 +76,21 @@ private fun setPreview(c: AppContainer, t: Tier?) {
  * [RVO-01] 미리 보기에서 Play가 요금제를 아직 주지 않았을 때(로컬 빌드는 Play 결제에 붙지 않아요) 요금제 창 모양을 볼 수 있게, 미리 보기에만 쓰는
  * 예시 요금제예요. 단추를 눌러도 결제하지 않아요([PlanRows]가 미리 보기를 봐요). 가격 글자에 '예시'가 붙어 실제 값으로 읽히지 않아요.
  */
-internal val PREVIEW_PLANS = listOf(
+// 출시 dex 점검(tools/release_dex_check.py)이 찾은 것: 맨 위 값(listOf)은 파일의 정적 초기화에 남아 R8이 지우지 못했어요. 함수로 두면
+// BuildConfig.DEBUG 안에서만 불려 출시 빌드에서 함께 지워져요.
+internal fun previewPlans(): List<Plan> = listOf(
     Plan(com.bamnat.app.billing.ProductIds.MONTHLY, "4,990원(예시)", 4_990_000_000, "KRW", "P1M", trial = false, offerToken = ""),
     Plan(com.bamnat.app.billing.ProductIds.YEARLY, "39,000원(예시)", 39_000_000_000, "KRW", "P1Y", trial = true, offerToken = ""),
 )
-internal val PREVIEW_PASS = PassOffer("45,000원(예시)", 45_000_000_000, "KRW")
+internal fun previewPass(): PassOffer = PassOffer("45,000원(예시)", 45_000_000_000, "KRW")
 
 /** [RVO-01] The plans a screen shows: Play's, or in a preview without them the example ones. */
-internal fun shownPlans(gate: Gate, plans: List<Plan>): List<Plan> = if (BuildConfig.DEBUG && gate.preview && plans.isEmpty()) PREVIEW_PLANS else plans
+internal fun shownPlans(gate: Gate, plans: List<Plan>): List<Plan> = if (BuildConfig.DEBUG && gate.preview && plans.isEmpty()) previewPlans() else plans
 
 /** [RVO-01] A buy button in a preview says so and never opens Play (debug builds only, as the preview). */
 internal fun previewNoPay(gate: Gate): Boolean = BuildConfig.DEBUG && gate.preview
 
 /** [RVO-01] The 1년 이용권 row: Play's offer, or in a preview the example one. */
-internal fun shownPass(gate: Gate, pass: PassOffer?): PassOffer? = pass ?: PREVIEW_PASS.takeIf { BuildConfig.DEBUG && gate.preview }
+internal fun shownPass(gate: Gate, pass: PassOffer?): PassOffer? = pass ?: if (BuildConfig.DEBUG && gate.preview) previewPass() else null
 
 internal const val PREVIEW_NO_PAY = "미리 보기라 결제는 되지 않아요"
