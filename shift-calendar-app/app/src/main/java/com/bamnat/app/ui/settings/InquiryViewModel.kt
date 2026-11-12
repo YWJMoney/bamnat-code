@@ -255,11 +255,12 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** [INQ-05] 지금 보내기 on the waiting questions. */
-    fun sendQueued(done: (Boolean) -> Unit) {
+    fun sendQueued(done: (com.bamnat.app.company.OutboxResult) -> Unit) {
         viewModelScope.launch {
-            val ok = com.bamnat.app.company.InquiryOutbox.flush(c)
-            if (ok) refresh()
-            done(ok)
+            // 2.0.0 [RVN-22] COMP-54: what went and what the user has to fix, said as it is (before, a refused one said 보냈어요).
+            val r = com.bamnat.app.company.InquiryOutbox.flushSaying(c)
+            if (r.sent > 0) refresh()
+            done(r)
         }
     }
 

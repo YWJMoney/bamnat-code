@@ -814,6 +814,12 @@ class CompanyClient(
      * goes only with a month that matched, and with just the month and yes or no (결정 D68, AI-D3).
      */
     private val proof: () -> com.bamnat.core.pay.SlipProof? = { null },
+    /**
+     * 2.0.0 [RVN-22] COMP-45·I10ba-01: where the whole list's two parts and the tagged reads are kept between runs with their
+     * ETags (the app's cache folder), so a new start asks "changed?" and a 304 costs a few hundred bytes. null keeps them in
+     * memory only, as before (tests that make a client per run).
+     */
+    private val keepDir: java.io.File? = null,
 ) : CompanyApi {
     override val enabled: Boolean get() = baseUrl.isNotBlank()
 
@@ -903,14 +909,17 @@ class CompanyClient(
         // [SPD-21] 1.31 R3: the names (they rarely change) and the counts (they change with every new user) each with its own
         // ETag, as one "names␟counts" tag: when only the counts changed, only they come. A 1.30 server sends the whole list.
         val tags = etag?.split(TAG_SEP)?.takeIf { it.size == 2 }
-        val names = namesKept?.takeIf { tags != null && it.first == tags[0] }
+        // 2.0.0 [RVN-22] COMP-45: a new run has nothing in memory; the parts kept on the phone with the same tags stand in, so
+        // the two reads are asked with their tags (before, a new start took the whole list and every count again).
+        val names = tags?.let { keptNames(it[0]) }
+        val counts0 = tags?.let { keptCounts(it[1]) }
         val namesRead = async {
             // A tag of the whole list (a 1.30 server's, or kept from before 1.31) is sent as it is: that server answers 304 to it.
             val tag = names?.first ?: etag?.takeIf { tags == null }
             exchange("GET", "/api/companies/all?part=names", headers = tag?.let { mapOf("If-None-Match" to it) }.orEmpty())
         }
         val countsRead = async {
-            runCatching { exchange("GET", "/api/companies/counts", headers = tags?.takeIf { countsKept != null }?.let { mapOf("If-None-Match" to it[1]) }.orEmpty()) }
+            runCatching { exchange("GET", "/api/companies/counts", headers = tags?.takeIf { counts0 != null }?.let { mapOf("If-None-Match" to it[1]) }.orEmpty()) }
         }
         val n = namesRead.await()
         if (n.code == 304 && names == null) {
@@ -925,8 +934,9 @@ class CompanyClient(
         val c = countsRead.await().getOrThrow()
         if (n.code == 304 && c.code == 304) return@readCall null
         val byId = if (n.code == 304) names!!.second
-        else n.json.optJSONArray("companies").objects().associateBy { it.optString("id") }.also { namesKept = (n.etag ?: "") to it }
-        val counts = if (c.code == 304) countsKept!! else c.json.optJSONArray("counts").objects().also { countsKept = it }
+        else n.json.optJSONArray("companies").objects().associateBy { it.optString("id") }.also { namesKept = (n.etag ?: "") to it; keepPart(NAMES_FILE, n) }
+        val counts = if (c.code == 304) counts0!!
+        else c.json.optJSONArray("counts").objects().also { countsKept = c.etag.orEmpty() to it; keepPart(COUNTS_FILE, c) }
         val list = counts.mapNotNull { k ->
             val name = byId[k.optString("id")] ?: return@mapNotNull null
             runCatching { knownCompany(JSONObject(name.toString()).also { j -> k.keys().forEach { key -> j.put(key, k.get(key)) } }) }.getOrNull()
@@ -934,9 +944,41 @@ class CompanyClient(
         CompanyList(list, "${namesKept?.first.orEmpty()}$TAG_SEP${c.etag.orEmpty()}")
     }
 
-    /** [SPD-21] The names and counts last read (memory only), so a 304 for one is joined with the other. */
+    /**
+     * [SPD-21] The names and counts last read with their tags, so a 304 for one is joined with the other. 2.0.0 [RVN-22]
+     * COMP-45: also kept in [keepDir] ([keepPart]), read back when a new run has none in memory.
+     */
     @Volatile private var namesKept: Pair<String, Map<String, JSONObject>>? = null
-    @Volatile private var countsKept: List<JSONObject>? = null
+    @Volatile private var countsKept: Pair<String, List<JSONObject>>? = null
+
+    private fun keptNames(tag: String): Pair<String, Map<String, JSONObject>>? {
+        namesKept?.takeIf { it.first == tag }?.let { return it }
+        val o = readPart(NAMES_FILE, tag) ?: return null
+        return (tag to o.optJSONArray("companies").objects().associateBy { it.optString("id") }).also { namesKept = it }
+    }
+
+    private fun keptCounts(tag: String): List<JSONObject>? {
+        countsKept?.takeIf { it.first == tag }?.let { return it.second }
+        val o = readPart(COUNTS_FILE, tag) ?: return null
+        return o.optJSONArray("counts").objects().also { countsKept = tag to it }
+    }
+
+    /** 2.0.0 [RVN-22] An answer kept as its tag on the first line and the body after it; nothing when it has no tag. */
+    private fun keepPart(name: String, a: Answer) {
+        val dir = keepDir ?: return
+        val tag = a.etag?.takeIf { it.isNotBlank() && '\n' !in it } ?: return
+        runCatching { writeKept(java.io.File(dir, name), tag + "\n" + a.json.toString()) }
+    }
+
+    /** The body kept under [name] when its tag is [tag]; null when there is none, it is another tag's, or it does not read. */
+    private fun readPart(name: String, tag: String): JSONObject? {
+        val f = keepDir?.let { java.io.File(it, name) }?.takeIf { it.isFile } ?: return null
+        return runCatching {
+            val text = f.readText()
+            val cut = text.indexOf('\n')
+            if (cut < 0 || text.substring(0, cut) != tag) null else JSONObject(text.substring(cut + 1))
+        }.getOrNull()
+    }
 
     override suspend fun terms(): CompanyTerms = readCall {
         termsOf(request("GET", "/api/terms"))
@@ -1254,6 +1296,9 @@ class CompanyClient(
 
     override suspend fun forgetMineCounts(device: String): ForgetCounts = serverCall {
         val o = request("DELETE", "/api/mine", device = device)
+        // 2.0.0 [RVN-22] COMP-45: the pages read as this phone, kept with their tags, go with what the server forgot.
+        tagged.evictAll()
+        keepDir?.let { runCatching { java.io.File(it, TAGGED_DIR).deleteRecursively() } }
         ForgetCounts(o.optInt("reports"), o.optInt("votes"), o.optInt("posts"), o.optInt("inquiries"), inquiriesKept = o.optInt("inquiriesKept"),
             recipes = o.optInt("recipes"), profile = o.optInt("profile") > 0, follows = o.optInt("follows"), sets = o.optInt("sets"),
             adoptedKept = o.optInt("adoptedKept"), ratesKept = o.optInt("ratesKept"))
@@ -1325,18 +1370,55 @@ class CompanyClient(
         // gave, and a 304 answers from what came last time: a few hundred bytes instead of the page.
         if (method != "GET" || headers.containsKey("If-None-Match") || UNTAGGED.any { path.startsWith(it) }) return serverExchange(baseUrl, method, path, body, device, headers, session)
         val key = "$path|${device.orEmpty()}|${headers["X-Hide"].orEmpty()}"
-        val kept = tagged.get(key)
+        val kept = tagged.get(key) ?: keptTagged(key)
         val a = serverExchange(baseUrl, method, path, body, device, kept?.let { headers + ("If-None-Match" to it.first) } ?: headers, session)
         if (a.code == 304 && kept != null) return Answer(200, JSONObject(kept.second), kept.first)
-        a.etag?.let { tagged.put(key, it to a.json.toString()) } ?: tagged.remove(key)
+        a.etag?.let { tagged.put(key, it to a.json.toString()); keepTagged(key, a) } ?: run { tagged.remove(key); dropTagged(key) }
         return a
     }
 
-    /** [SPD-23] The tagged answers last read, in memory only (the screens keep their own copies on the phone, [PageCache]). */
+    /**
+     * [SPD-23] The tagged answers last read. 2.0.0 [RVN-22] COMP-45: in memory and, when there is a [keepDir], on the phone
+     * ([TAGGED_KEEP] of them, the oldest let go), so a company's page or the plaza opened after a new start is a 304 too.
+     */
     private val tagged = android.util.LruCache<String, Pair<String, String>>(TAGGED_KEEP)
+
+    private fun taggedFile(key: String): java.io.File? = keepDir?.let { dir ->
+        val hash = java.security.MessageDigest.getInstance("SHA-256").digest(key.toByteArray()).joinToString("") { "%02x".format(it) }.take(32)
+        java.io.File(java.io.File(dir, TAGGED_DIR), hash)
+    }
+
+    private fun keptTagged(key: String): Pair<String, String>? {
+        val f = taggedFile(key)?.takeIf { it.isFile } ?: return null
+        return runCatching {
+            val text = f.readText()
+            // The key is kept too, so two keys that share a name never answer for each other.
+            val lines = text.split('\n', limit = 3)
+            if (lines.size < 3 || lines[0] != key) null else (lines[1] to lines[2]).also { tagged.put(key, it) }
+        }.getOrNull()
+    }
+
+    private fun keepTagged(key: String, a: Answer) {
+        val f = taggedFile(key) ?: return
+        val tag = a.etag?.takeIf { '\n' !in it } ?: return
+        if ('\n' in key) return
+        runCatching {
+            writeKept(f, key + "\n" + tag + "\n" + a.json.toString())
+            val all = f.parentFile?.listFiles()?.filter { it.isFile && !it.name.endsWith(".tmp") }.orEmpty()
+            if (all.size > TAGGED_KEEP) all.sortedBy { it.lastModified() }.take(all.size - TAGGED_KEEP).forEach { it.delete() }
+        }
+    }
+
+    private fun dropTagged(key: String) {
+        taggedFile(key)?.let { runCatching { it.delete() } }
+    }
 
     private companion object {
         const val TAGGED_KEEP = 60
+        const val NAMES_FILE = "all_names.json"
+        const val COUNTS_FILE = "all_counts.json"
+        const val TAGGED_DIR = "tagged"
+
         /** The whole list keeps its own tags ([allCompanies]); a search changes with each letter. */
         val UNTAGGED = listOf("/api/companies/all", "/api/companies/counts", "/api/companies?")
         const val TAG_SEP = "\u241f"
@@ -1654,6 +1736,14 @@ internal fun CompanyHit.toJson(): JSONObject = JSONObject().put("id", id).put("n
 internal fun serverRequest(
     baseUrl: String, method: String, path: String, body: JSONObject? = null, device: String? = null, headers: Map<String, String> = emptyMap(),
 ): JSONObject = serverExchange(baseUrl, method, path, body, device, headers).json
+
+/** 2.0.0 [RVN-22] Writes [text] to [f] whole or not at all (a half-written file would answer for a tag it does not hold). */
+internal fun writeKept(f: java.io.File, text: String) {
+    f.parentFile?.mkdirs()
+    val tmp = java.io.File(f.parentFile, f.name + ".tmp")
+    tmp.writeText(text)
+    if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+}
 
 /** [SPD-11] An answer with what the app keeps of its headers: 304 (empty [json]) and the ETag. */
 internal class Answer(val code: Int, val json: JSONObject, val etag: String?)

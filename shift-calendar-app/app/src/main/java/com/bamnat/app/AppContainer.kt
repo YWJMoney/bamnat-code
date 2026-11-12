@@ -324,7 +324,9 @@ class AppContainer(context: Context) {
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
         device = { companyStore.device },
         // [PLAZA-30] 1.27 AI: the main calendar's matched month (the pay file, so the backup keeps it).
-        proof = { slipProof() })
+        proof = { slipProof() },
+        // 2.0.0 [RVN-22] COMP-45: the whole list's parts and tagged reads kept between runs (cache: the phone may clear it).
+        keepDir = java.io.File(appContext.cacheDir, "company_tags"))
     /** 1.39 [PLZC-10] 근무 태그: what this phone shows in the plazas and the tag a post carries. */
     val plazaTags by lazy { com.bamnat.app.company.PlazaTagSource(this) }
     init {
@@ -395,6 +397,10 @@ class AppContainer(context: Context) {
         val store = companyOf(calendarId).store
         return store.applied.value != null || store.member.value != null
     }
+
+    /** 2.0.0 [RVN-22] T10b-05: whether any of this phone's calendars is offered company things ([companyFits]). */
+    fun companyCalendars(): Boolean =
+        (listOf(com.bamnat.app.data.PersonalCalendar.MAIN) + calendars.added().map { it.id }).any { runCatching { companyFits(it) }.getOrDefault(false) }
 
     /** [CALI-01] The main calendar's and every added one's (not the example's), for what goes over all of them. */
     fun companyScopes(): List<com.bamnat.app.company.CompanyScope> =
@@ -1310,7 +1316,9 @@ class AppContainer(context: Context) {
                 // [SRCH-12] and the public rows' index, so 회사 찾기's first letter does not make it.
                 runCatching { com.bamnat.core.plaza.PublicCycles.warm() }
                 // [SPD-12] 1.30 AP1: the whole list of companies and this phone's company page with its room, on mobile data too.
-                runCatching { warmCompaniesNow() }
+                // 2.0.0 [RVN-22] T10b-05: only when a calendar is offered company things (교대·일근, an 알바 with its company);
+                // 현장·가게·투자 and an 알바 without one never search companies, and a screen that does warms them as it opens.
+                if (companyCalendars()) runCatching { warmCompaniesNow() }
                 // [CALI-01] 1.30 BB: an added calendar's two small company files, read here rather than on its first screen.
                 runCatching { calendars.added().forEach { companyOf(it.id) } }
             }

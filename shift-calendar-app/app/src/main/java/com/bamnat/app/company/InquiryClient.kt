@@ -398,6 +398,31 @@ class InquiryStore(context: Context) {
 
     fun seen(id: String): Int = prefs.getInt("seen_$id", 0)
 
+    /**
+     * 2.0.0 [RVN-22] I10ba-03: answers of question [id] already said in a notice, each question its own count (one count for
+     * all, as before, could be held up by another question's answers).
+     */
+    fun told(id: String): Int = prefs.getInt("told_$id", 0)
+
+    /** The questions with an answer neither opened nor said yet ([told] and [seen] both below it). */
+    fun untold(list: List<Inquiry>): List<Inquiry> = list.filter { it.answers > maxOf(seen(it.id), told(it.id)) }
+
+    /** [list]'s answers so far are said. */
+    fun tell(list: List<Inquiry>) {
+        if (list.isEmpty()) return
+        prefs.edit { list.forEach { putInt("told_${it.id}", it.answers) } }
+    }
+
+    /**
+     * Once, when the counts per question start (2.0.0): what the one count said stays said, so an answer already told is not
+     * told again; when it held less than what is unread now, the rest is told as it comes.
+     */
+    fun startTelling(list: List<Inquiry>, saidBefore: Int) {
+        if (prefs.getBoolean("told_v", false)) return
+        if (saidBefore >= list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }) tell(list)
+        prefs.edit().putBoolean("told_v", true).apply()
+    }
+
     /** 1.38 [EASE-32] Questions already thanked for in 새로 생긴 것 ("보내 주신 의견으로 고쳤어요"), so each is said once. */
     fun thanked(id: String): Boolean = id in prefs.getStringSet("thanked", emptySet()).orEmpty()
 
@@ -433,6 +458,7 @@ class InquiryStore(context: Context) {
     fun forget(id: String) {
         prefs.edit {
             remove("seen_$id")
+            remove("told_$id")
             remove("reply_$id")
         }
     }
@@ -522,6 +548,9 @@ data class QueuedInquiry(
             info.diag?.let { put("diag", it) }
             info.pay?.let { put("pay", it) }
             info.setup?.let { put("setup", it) }
+            // 2.0.0 [RVN-22] COMP-53: 스튜디오 요구's kind of work and place go with it after the app was closed (photos never
+            // wait on the phone: a question queued with photos goes without them, as the box says).
+            info.studio?.let { put("studio", it) }
             if (!info.public) put("public", false)
             refused?.let { put("refused", it) }
         }
@@ -532,7 +561,7 @@ data class QueuedInquiry(
                 requestId = o.getString("id"), kind = InquiryKind.of(o.optString("kind")), text = o.getString("text"),
                 info = InquiryInfo(o.optString("app"), o.optString("model"), o.optString("android"),
                     diag = o.optStringOrNull("diag"), pay = o.optStringOrNull("pay"), setup = o.optStringOrNull("setup"),
-                    public = o.optBoolean("public", true)),
+                    public = o.optBoolean("public", true), studio = o.optStringOrNull("studio")),
                 at = Instant.parse(o.getString("at")), refused = o.optStringOrNull("refused"),
             )
         }.getOrNull()

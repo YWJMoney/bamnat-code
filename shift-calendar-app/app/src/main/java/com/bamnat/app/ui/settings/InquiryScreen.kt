@@ -117,6 +117,7 @@ import com.bamnat.app.ui.company.HeroIcon
 import com.bamnat.app.ui.company.SoftCard
 import com.bamnat.app.ui.company.StatusChip
 import com.bamnat.app.ui.company.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -413,10 +414,14 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.CloudOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("보내기 대기 ${outbox.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                TextButton(enabled = !sending, onClick = {
+                // 2.0.0 [RVN-22] U10b-08: how many wait and how many the user has to fix, apart.
+                val toFix = outbox.count { it.refused != null }
+                Text("보내기 대기 ${outbox.size}" + (if (toFix > 0) " · 고칠 것 $toFix" else ""), style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f))
+                // Only what a try could send: a refused one waits for 고쳐서 다시 보내기.
+                if (toFix < outbox.size) TextButton(enabled = !sending, onClick = {
                     sending = true
-                    vm.sendQueued { ok -> sending = false; said = if (ok) "보냈어요" else "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요" }
+                    vm.sendQueued { r -> sending = false; said = r.words }
                 }) { Text("지금 보내기") }
             }
             Text("인터넷이 연결되면 앱을 닫아 두어도 저절로 보내요. 사진은 함께 가지 않아요.", style = MaterialTheme.typography.bodySmall,
@@ -424,10 +429,11 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
             outbox.forEach { q ->
                 HorizontalDivider()
                 Text("${q.kind.label} · " + q.text.take(80), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                q.refused?.let { Text("서버가 받지 않았어요: " + CompanyText.problem(it), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error) }
+                // 2.0.0 [RVN-22] U10b-08: why it was not taken, in the caution color (not 빨강: nothing is lost), and the way on.
+                q.refused?.let { Text("보내지 못했어요 · " + CompanyText.problem(it), style = MaterialTheme.typography.bodySmall,
+                    color = com.bamnat.app.ui.theme.Tone.Caution.color()) }
                 Row {
-                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = true); onEdit() }) { Text("고치기") }
+                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = true); onEdit() }) { Text(if (q.refused != null) "고쳐서 다시 보내기" else "고치기") }
                     TextButton(onClick = { vm.dropQueued(q.requestId, edit = false) }) { Text("지우기") }
                 }
             }

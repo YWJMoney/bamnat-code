@@ -147,9 +147,12 @@ class OutboxJob : JobService() {
  * Photos do not wait; the form says so.
  */
 object InquiryOutbox {
-    /** Sends what waits, oldest first; true when nothing is left. */
-    suspend fun flush(c: AppContainer): Boolean {
-        if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.isEmpty()
+    /** Sends what waits, oldest first; true when nothing is left that a later try could send (refused ones wait for the user). */
+    suspend fun flush(c: AppContainer): Boolean = flushSaying(c).waiting == 0
+
+    /** 2.0.0 [RVN-22] COMP-54: as [flush], with how many went, how many the user has to fix and how many still wait. */
+    suspend fun flushSaying(c: AppContainer): OutboxResult {
+        if (!c.inquiryApi.enabled) return c.inquiryStore.outbox.value.let { l -> OutboxResult(0, l.count { it.refused != null }, l.count { it.refused == null }) }
         var sent = 0
         // [OBS-01] 기록 지점 7: how many went, also when the rest still waits.
         try {
@@ -159,20 +162,41 @@ object InquiryOutbox {
         }
     }
 
-    private suspend fun flushEach(c: AppContainer, onSent: () -> Unit): Boolean {
-        for (q in c.inquiryStore.outbox.value) {
+    private suspend fun flushEach(c: AppContainer, onSent: () -> Unit): OutboxResult {
+        val list = c.inquiryStore.outbox.value
+        var sent = 0
+        var toFix = 0
+        for ((i, q) in list.withIndex()) {
+            // 2.0.0 [RVN-22] COMP-54: one the server refused for what it says waits for the user to fix it; sending it again as it
+            // is would only be refused again (before, every try sent it and 지금 보내기 said 보냈어요).
+            if (q.refused != null) { toFix++; continue }
             try {
                 c.inquiryApi.send(c.companyStore.device, q.kind, q.text, q.info, q.requestId)
                 c.inquiryStore.asked = true
                 c.inquiryStore.unqueue(q.requestId)
+                sent++
                 onSent()
                 c.telemetry.event(com.bamnat.core.stats.UsageEvent.INQUIRY.key)
             } catch (e: CompanyException) {
-                if (e.retryable) return false
+                if (e.retryable) {
+                    val rest = list.drop(i)
+                    return OutboxResult(sent, toFix + rest.count { it.refused != null }, rest.count { it.refused == null })
+                }
                 // Refused for what it says (a phone number, too long): it would be refused again, so it stays for the user to fix.
                 c.inquiryStore.refused(q.requestId, e.code)
+                toFix++
             }
         }
-        return true
+        return OutboxResult(sent, toFix, 0)
+    }
+}
+
+/** 2.0.0 [RVN-22] COMP-54·U10b-08: a send of the waiting questions, said as it went ("보낸 문의 1개 · 고쳐서 보낼 문의 1개"). */
+data class OutboxResult(val sent: Int, val toFix: Int, val waiting: Int) {
+    val words: String get() = when {
+        waiting > 0 -> (if (sent > 0) "${sent}개를 보냈어요. " else "") + "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요"
+        toFix > 0 -> (if (sent > 0) "보낸 문의 ${sent}개 · " else "") + "고쳐서 보낼 문의 ${toFix}개: 아래 까닭을 보고 고쳐 주세요"
+        sent > 0 -> "${sent}개를 보냈어요"
+        else -> "보낼 문의가 없어요"
     }
 }
