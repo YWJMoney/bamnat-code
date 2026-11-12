@@ -164,7 +164,7 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     var more by remember(item.code) { mutableStateOf(false) }
                                     androidx.compose.foundation.layout.Box {
                                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "‘${item.title}’ 더 보기") }
-                                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                        com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                                             if (past > 0) androidx.compose.material3.DropdownMenuItem(text = { Text("지난 판 ${past}개 지우기") }, onClick = {
                                                 more = false
                                                 asking = "지난 판 ${past}개를 서버에서 지울까요? 지금 판(v${item.version})만 남아요. 지난 판은 원래 나만 열 수 있어요" to { vm.dropPast(item.code) }

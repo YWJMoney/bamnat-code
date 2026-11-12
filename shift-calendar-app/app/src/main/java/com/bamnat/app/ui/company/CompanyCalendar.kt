@@ -56,12 +56,16 @@ fun PlazaCalendarChips(c: AppContainer, selected: String, onPick: (String) -> Un
         for (cal in list) {
             val company = c.companyOf(cal.id).companyName()
             val label = cal.name + (company?.let { " · $it" } ?: "")
-            FilterChip(
-                selected = cal.id == selected,
-                onClick = { if (cal.id != selected) onPick(cal.id) },
-                label = { Text(label, maxLines = 1) },
-                modifier = Modifier.semantics { contentDescription = "${cal.name} 달력의 광장" + (company?.let { ", $it" } ?: "") },
-            )
+            // 2.0.0 (조건 12): folded on a small phone at 200%, the picked calendar's chip slides into view (RVS-16's KeepInView),
+            // so the 광장 shown always says whose it is.
+            com.bamnat.app.ui.components.KeepInView(cal.id == selected) {
+                FilterChip(
+                    selected = cal.id == selected,
+                    onClick = { if (cal.id != selected) onPick(cal.id) },
+                    label = { Text(label, maxLines = 1) },
+                    modifier = Modifier.semantics { contentDescription = "${cal.name} 달력의 광장" + (company?.let { ", $it" } ?: "") },
+                )
+            }
         }
     }
 }
