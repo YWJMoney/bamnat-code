@@ -65,17 +65,30 @@ object WatchSync {
         }
         val alarmToday = com.bamnat.core.alarm.AlarmPlanner.alarmsOn(snap.resolver, today).any { it.triggerAt.isAfter(nowTime) }
         // 1.38 [LEDH-14] 워치로 돈 적기: the main 가계부's most used spending categories of the last 60 days.
-        val moneyCategories = runCatching { com.bamnat.app.watch.WatchMoneyIn.categories(c.calendars.money(PersonalCalendar.MAIN).book.first(), today) }.getOrDefault(emptyList())
+        val moneyBook = runCatching { c.calendars.money(PersonalCalendar.MAIN).book.first() }.getOrNull()
+        val moneyCategories = runCatching { com.bamnat.app.watch.WatchMoneyIn.categories(moneyBook!!, today) }.getOrDefault(emptyList())
+        // 2.0.0 [RVI-10] (검토 U03-10) And the amounts written most often, for one-tap chips.
+        val recentAmounts = runCatching { WatchMoneyIn.amounts(moneyBook!!, today) }.getOrDefault(emptyList())
         // 1.38 [SLEEP-14] 워치 타일의 오늘 잘 시간: the same line as the 오늘의 흐름 widget.
         val sleepLine = runCatching {
-            if (!settings.sleepTips || settings.workStyle?.usesPayEngine == false || snap.isEmpty) null
+            if (!settings.sleepTips) null
+            // 2.0.0 [RVI-18] (검토 T03-08) 가게·현장·투자: the line by the next alarm and the target, as on the today widget.
+            else if (settings.workStyle?.usesPayEngine == false) com.bamnat.core.sleep.RestLine.of(nowTime,
+                com.bamnat.core.sleep.SleepMerge.merge(c.sleepRepository.recent(days = 2).first(), c.healthSleep.sleeps.value),
+                alarmAt, settings.alarmsEnabled, settings.sleepTargetMinutes)?.text
+            else if (snap.isEmpty) null
             else com.bamnat.core.sleep.TodayFlow.of(nowTime, snap.resolver, settings.alarmsEnabled,
                 com.bamnat.core.sleep.SleepMerge.merge(c.sleepRepository.recent(days = 2).first(), c.healthSleep.sleeps.value),
                 settings.sleepTargetMinutes, settings.commuteMinutes, settings.restCheck, settings.strictRest).line
         }.getOrNull().orEmpty()
+        // 2.0.0 [RVI-09] (검토 ALM-15) 이번 주 n시간 / 52시간 is a worker's line: a 가게, 현장 or 투자 calendar sends none, as the phone's
+        // 알람 뒤 오늘 카드 already hides it, and the watch says 영업·일정 where it said 근무.
+        val payEngine = settings.workStyle?.usesPayEngine != false
+        val noun = com.bamnat.app.widget.countdownWord(settings.workStyle)
         fun payload(at: LocalDateTime, sent: Long) = WatchPayload(days, at, alarmAt, label, name, sentAtMillis = sent, moneyCategories = moneyCategories, sleepLine = sleepLine,
-            weekStart = settings.weekStart.value, weekMinutes = week.totalMinutes, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
-            clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF)
+            weekStart = settings.weekStart.value, weekMinutes = if (payEngine) week.totalMinutes else -1, weekLimitMinutes = settings.limits.legalWeeklyHours * 60,
+            clock = clock, alarmToday = alarmToday, ringOnWatch = settings.watchAlarm != com.bamnat.app.data.AppSettings.WATCH_ALARM_OFF,
+            hourly = settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY, noun = noun, recentAmounts = recentAmounts)
         val sameDays = WatchDays.encode(payload(LocalDateTime.of(2000, 1, 1, 0, 0), 0))
         val now = Today.millis()
         if (!force && sameDays == lastBody && now - lastAt < RESEND_MILLIS) return@withLock
@@ -104,8 +117,17 @@ class WatchRequestService : WearableListenerService() {
             WatchDays.ALARM_OFF_PATH -> c.appScope.launch {
                 val date = runCatching { LocalDate.parse(String(event.data)) }.getOrNull() ?: Today.date()
                 // The alarms follow the calendar's change as they do for the phone's own 알람 끄기.
-                if (date == Today.date()) c.scheduleRepository.updateDay(date) { it.copy(alarmSkipped = true) }
+                if (date == Today.date()) {
+                    c.scheduleRepository.updateDay(date) { it.copy(alarmSkipped = true) }
+                    // 2.0.0 [RVI-11] (검토 ALM-10) The phone says so, quietly, with 되돌리기: a brush on the wrist is never a silent alarm off.
+                    WatchAlarmNotice.post(applicationContext, date)
+                }
                 WatchSync.push(applicationContext, force = true)
+            }
+            // 2.0.0 [RVI-11] 되돌리기 from the watch.
+            WatchDays.ALARM_ON_PATH -> c.appScope.launch {
+                val date = runCatching { LocalDate.parse(String(event.data)) }.getOrNull() ?: Today.date()
+                WatchAlarmNotice.undo(applicationContext, date)
             }
             // [WEAR-06] 1.31 N2: 끄기 and 다시 울림 pressed on the watch while the phone's alarm rings.
             WatchDays.RING_OFF_PATH -> com.bamnat.app.alarm.AlarmService.fromWatch(applicationContext, snooze = false)
@@ -140,6 +162,13 @@ class WatchRequestService : WearableListenerService() {
 object WatchMoneyIn {
     private const val PREFS = "bamnat_watch_money"
     private const val K_SEEN = "seen"
+
+    /** 2.0.0 [RVI-10] The spending amounts written most often in the last 60 days (at least twice), for the watch's chips. */
+    fun amounts(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate): List<Long> {
+        val lately = book.entries.filter { it.kind == com.bamnat.core.money.MoneyKind.EXPENSE && !it.date.isBefore(today.minusDays(60)) }.map { it.amount }
+        val twice = lately.groupingBy { it }.eachCount().filterValues { it >= 2 }.keys
+        return com.bamnat.core.work.WatchMoney.recentAmounts(lately.filter { it in twice })
+    }
 
     fun categories(book: com.bamnat.core.money.MoneyBook, today: java.time.LocalDate): List<String> {
         val shown = book.categoriesOf(com.bamnat.core.money.MoneyKind.EXPENSE).toSet()

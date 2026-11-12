@@ -232,6 +232,43 @@ class MigrationTest {
     }
 
     /**
+     * 2.0.0 (DB 35) [RVIB-04] 검토 I07ac-01: memos of 1.38 (32), 1.39 (33) and 2.0.0's 34 arrive told by the clock as they were (no
+     * work anchor, the column NULL), and one told by the work ('출근 1시간 전') saved after comes back as saved.
+     */
+    @Test
+    fun versions32To34MemosArriveToldByTheClock() = runBlocking {
+        for (version in listOf(32, 33, 34)) {
+            val name = "migration-$version-35.db"
+            context.deleteDatabase(name)
+            val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+            val sql = createTables(file, version)
+            sql.execSQL(
+                "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, deletedAt, " +
+                    "remindAt, remindRing, remindNotify, remindAsked, calendars, repeat, skips) " +
+                    "VALUES (1, 20000, '인수인계', '', '', 0, 0, 0, 1, 2, NULL, '2026-11-12T21:00', 0, 1, NULL, '', '', '')",
+            )
+            sql.version = version
+            sql.close()
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+            try {
+                val stored = db.memoDao().get(1)!!
+                assertNull("$version: 근무 기준 없음", stored.remindWork)
+                val reminder = stored.toModel().reminder!!
+                assertEquals(java.time.LocalDateTime.of(2026, 11, 12, 21, 0), reminder.at)
+                assertNull(reminder.work)
+                val anchor = com.bamnat.core.memo.WorkAnchor(com.bamnat.core.memo.WorkAnchor.From.START, -60)
+                db.memoDao().update(stored.toModel().copy(reminder = reminder.copy(work = anchor)).toEntity())
+                assertEquals("S-60", db.memoDao().get(1)!!.remindWork)
+                assertEquals(anchor, db.memoDao().get(1)!!.toModel().reminder!!.work)
+            } finally {
+                db.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    /**
      * 2.0.0 (DB 34) [RVH-33] 검토 WORK-19 Kinds of day from 1.38 (32) and 1.39 (33) arrive with no hours before: every day keeps the
      * hours it had, and a change '오늘부터만' saved after is kept.
      */

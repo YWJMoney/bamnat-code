@@ -600,7 +600,9 @@ class BackupManager(
                     // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
                     .putOpt("skips", m.skips.ifEmpty { null })
                     // 1.39 DB 33판 끝냄. An older app ignores them and the memo is not finished there.
-                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null }),
+                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null })
+                    // 2.0.0 DB 35판 근무에 붙는 알림 [RVIB-04]. An older app ignores it and tells the memo at its saved time.
+                    .putOpt("remindWork", m.remindWork),
             )
         }
         root.put("memos", memos)
@@ -1142,6 +1144,8 @@ class BackupManager(
                 skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
                 doneAt = if (o.isNull("doneAt") || !o.has("doneAt")) null else o.getLong("doneAt"),
                 doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("doneDays"))),
+                // 2.0.0 [RVIB-04] A backup of 1.39 (DB 33) or of 34 has none: told by the clock, as there.
+                remindWork = o.optStringOrNull("remindWork")?.takeIf { com.bamnat.core.memo.WorkAnchor.parse(it) != null },
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
