@@ -99,8 +99,8 @@ class ShiftPreviewReceiver : BroadcastReceiver() {
             try {
                 if (intent.action == ShiftPreviewNotice.FIRE) ShiftPreviewNotice.post(context)
             } finally {
-                ShiftPreviewNotice.reschedule(context, Today.dateTime().plusMinutes(1))
-                pending.finish()
+                // 2.0.0 [RVK-43] (검토 MONEY-34) A next one that could not be planned still lets the broadcast go.
+                ReceiverSteps.thenFinish({ ShiftPreviewNotice.reschedule(context, Today.dateTime().plusMinutes(1)) }, pending::finish)
             }
         }
     }

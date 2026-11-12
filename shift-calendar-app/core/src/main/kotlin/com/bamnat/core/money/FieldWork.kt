@@ -310,7 +310,13 @@ object JobHours {
         val s = job.start ?: return 0
         val e = job.end ?: return 0
         val m = java.time.Duration.between(s, e).toMinutes().toInt()
-        return if (m <= 0) m + 24 * 60 else m
+        // 2.0.0 [RVK-43] (검토 T06b-06) The same start and end is no length (a time picked twice), not 24 hours: a field job is
+        // a day's work, and a night one still runs over midnight (end before start).
+        return when {
+            m == 0 -> 0
+            m < 0 -> m + 24 * 60
+            else -> m
+        }
     }
 
     /** The weeks starting on [weekStart] that touch [month], with the minutes worked on the month's own days. */

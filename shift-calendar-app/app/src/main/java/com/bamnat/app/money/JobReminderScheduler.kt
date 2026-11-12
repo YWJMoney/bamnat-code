@@ -130,10 +130,13 @@ class JobReminderReceiver : BroadcastReceiver() {
                         JobReminderScheduler.postMoney(context, rest)
                     }
                 }
-                // Plan the next one after this moment, so the same alert never repeats.
-                JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), settings, Today.dateTime().plusSeconds(1))
             } finally {
-                pending.finish()
+                // Plan the next one after this moment, so the same alert never repeats. 2.0.0 [RVK-43] (검토 MONEY-34): planned even
+                // when a notice above failed, and the broadcast goes even when planning fails.
+                ReceiverSteps.thenFinish({
+                    JobReminderScheduler.reschedule(context, container.calendars.everyMoneyNow(), container.settingsRepository.current,
+                        Today.dateTime().plusSeconds(1))
+                }, pending::finish)
             }
         }
     }
