@@ -631,6 +631,9 @@ private fun NoticesPage(
             settings.payDepositNotice, warning = warning(settings.payDepositNotice, Notifications.MONEY_CHANNEL_ID), onFix = fix(Notifications.MONEY_CHANNEL_ID)) { on ->
             set(on) { it.copy(payDepositNotice = on) }
         }
+        // 2.0.0 [RVJ-18] 검토 I05a-02: 급여 › 도구 › ○월 마감의 같은 줄.
+        if (settings.workStyle?.usesPayEngine != false) SwitchRow(com.bamnat.app.ui.pay.AUTO_CLOSE_TITLE, com.bamnat.app.ui.pay.AUTO_CLOSE_TEXT,
+            settings.payAutoClose) { on -> vm.update { it.copy(payAutoClose = on) } }
         // 1.39 [PAYX-62] 발굴 G3-M3: 알바만. 급여 화면 알바 카드의 '이 알림 끄기'로 끈 것을 여기서 다시 켜요.
         if (settings.workStyle == com.bamnat.core.work.WorkStyle.HOURLY) SwitchRow(com.bamnat.core.pay.WeekHoursNudge.ROW,
             "이번 주 근무가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄로 알려 줘요. 주휴수당은 한 주 15시간부터예요(근로기준법 제18조 제3항)",

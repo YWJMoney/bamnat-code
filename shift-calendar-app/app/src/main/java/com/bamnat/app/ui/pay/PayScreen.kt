@@ -451,9 +451,8 @@ private fun PayResult(
     val result = v.result
     val closedSnap = closed[result.month]
     // A closed month shows what was saved, not today's recalculation [PAYX-03].
-    val shown = remember(result, closedSnap) {
-        closedSnap?.let { result.copy(lines = it.lines, ratesVersion = it.ratesVersion) } ?: result
-    }
+    // 2.0.0 [RVJ-18] 굳은 달: its days and 세후 too, so 날짜별 내역 adds up to the 합계 shown.
+    val shown = remember(result, closedSnap) { closedSnap?.frozen(result) ?: result }
     val year = v.year
     val range = v.range.takeIf { closedSnap == null }
     val context = LocalContext.current
@@ -599,6 +598,20 @@ private fun PayResult(
             val older = remember(profile, month) { com.bamnat.core.pay.PaySameness.of(profile, month) }
             if (!older.same) OlderValuesCard(older.line, onUnify = { vm.unifyMonths() }, onHistory = { editTarget = ValueTarget.Base })
         }
+        // 2.0.0 [RVJ-18] 검토 U05-01·I05a-02: after the 급여일, "이대로 마감할까요?" once for that month ('나중에' keeps it away),
+        // or, with 저절로 마감 on, the month closes by itself and 도구 › ○월 마감 says so.
+        if (unlocked && !locked && !noBase) {
+            val asked by vm.closeAsked.collectAsStateWithLifecycle()
+            val paid by vm.payRecords.collectAsStateWithLifecycle(emptyList())
+            val due = remember(profile, closed, asked, paid) { vm.closeDue(profile, paid) }
+            val auto = settings.payAutoClose
+            androidx.compose.runtime.LaunchedEffect(due, auto) { if (due != null && auto) vm.closeMonthOf(profile, snapshot, due) }
+            if (!auto) due?.let { m ->
+                CloseAskCard(m, deposited = vm.paidOn(paid, m) != null,
+                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m) },
+                    onAlways = { vm.setAutoClose(true); vm.closeMonthOf(profile, snapshot, m) })
+            }
+        }
         if (noBase) guides()
         // [J133-98] 1.33 빌드 8 확인 ("첫 급여 방식 카드가 '내 급여 값' 탭 안에만 있어요"): on 결과, where the pay screen opens.
         val first by vm.firstPay.collectAsStateWithLifecycle()
@@ -609,8 +622,9 @@ private fun PayResult(
         if (payTab == PayTab.RESULT) {
         // [TAX-02] 세후 예상 under the 세전 (프로, 순번 380): the table × what the records taught; 돈 › 세금·실수령 has the rest.
         val records by vm.payRecords.collectAsStateWithLifecycle(emptyList())
-        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate) {
-            value = vm.takeHome(profile, shown.total, month)
+        val takeHome by androidx.compose.runtime.produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, profile, shown.total, month, records, gate, closedSnap) {
+            // [RVJ-18] A closed month keeps the 세후 of the day it was closed (그때 표·그때 기록).
+            value = closedSnap?.takeHome ?: vm.takeHome(profile, shown.total, month)
         }
         takeHome?.let { f ->
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -690,7 +704,7 @@ private fun PayResult(
 
         GuideFold(guides)
 
-        if (payLook.days != false) DayLedger(result, unlocked)
+        if (payLook.days != false) DayLedger(shown, unlocked, keptDays = closedSnap?.hasDays)
 
         } // RESULT
         // U 1.32 [UX132-03] 도구: 만약에, 연말정산, 마감, 리포트.
@@ -713,7 +727,7 @@ private fun PayResult(
         }
 
         if (unlocked && !month.isAfter(Today.month())) {
-            CloseMonthCard(vm, result, closedSnap)
+            CloseMonthCard(vm, result, closedSnap, autoClose = settings.payAutoClose)
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
@@ -1442,9 +1456,11 @@ private fun Glossary() {
  * holiday, so a change on the calendar can be traced to the money.
  */
 @Composable
-private fun DayLedger(result: MonthPay, unlocked: Boolean) {
+private fun DayLedger(result: MonthPay, unlocked: Boolean, keptDays: Boolean? = null) {
     val days = result.days.filter { it.amount > 0 }
     if (days.isEmpty()) return
+    // 2.0.0 [RVJ-18] 검토 PC-02: 날짜별 합 + 달로 주는 몫 = 합계, said under the list so the two never read as different sums.
+    val split = remember(result) { com.bamnat.core.pay.DaySplit.of(result) }
     var expanded by rememberSaveable(result.month) { mutableStateOf(false) }
     var open by remember(result.month) { mutableStateOf<java.time.LocalDate?>(null) }
     val shown = if (expanded) days else days.take(6)
@@ -1500,6 +1516,17 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean) {
         }
         if (days.size > 6) {
             TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "접기" else "${days.size - 6}일 더 보기") }
+        }
+        if (unlocked) {
+            Text("날짜별 합 ${won(split.days)}" + when {
+                split.month > 0L -> " + 달로 주는 몫(${split.kinds.joinToString("·")}) ${won(split.month)}"
+                split.month < 0L -> " − 달로 빼는 몫(${split.kinds.joinToString("·")}) ${won(-split.month)}"
+                else -> ""
+            } +
+                " = 합계 ${won(split.total)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
+            if (keptDays == false) Text("2.0.0 전에 마감한 달이라 날짜별 내역은 지금 설정으로 다시 셌어요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -1686,9 +1713,27 @@ private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: Sched
     }
 }
 
+/**
+ * 2.0.0 [RVJ-18] 검토 U05-01: the day after the 급여일, one card for that month. 마감하기 keeps it as it is (날짜별·세후까지); 나중에 puts
+ * it away for that month (the 도구 탭's 마감 is still there).
+ */
+@Composable
+private fun CloseAskCard(month: YearMonth, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
+    SectionCard(title = if (deposited) "${month.monthValue}월 급여가 들어왔어요. 이대로 마감할까요?" else "${month.monthValue}월 급여, 이대로 마감할까요?") {
+        Text("마감하면 규칙·요율이 바뀌어도 이 달 금액·날짜별·세후가 그대로예요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            OutlinedButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Icon(Icons.Filled.Lock, null); Text(" 마감하기") }
+            TextButton(onClick = onLater, modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에") }
+            // I05a-02 (자동/물어보기 선택): 도구 › ○월 마감과 설정 › 알림 › 돈에서 다시 끌 수 있어요.
+            TextButton(onClick = onAlways, modifier = Modifier.heightIn(min = 48.dp)) { Text("앞으로 저절로") }
+        }
+    }
+}
+
 /** 마감 [PAYX-03]: keeps a month's result fixed once the pay slip is in, with a way to compare and redo. */
 @Composable
-private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?) {
+private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?, autoClose: Boolean) {
     SectionCard(title = "${result.month.monthValue}월 마감") {
         if (closed == null) {
             Text("급여를 받은 달은 마감해 두세요. 나중에 규칙이나 요율이 바뀌어도 이 달 결과는 그대로 남아요.",
@@ -1721,8 +1766,14 @@ private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnaps
                 TextButton(onClick = { vm.reopenMonth(result.month) }) { Text("마감 풀기") }
             }
         }
+        // 2.0.0 [RVJ-18] 검토 I05a-02: 묻기 대신 저절로 (설정 › 알림 › 돈에도 같은 줄).
+        com.bamnat.app.ui.settings.SwitchRow(AUTO_CLOSE_TITLE, AUTO_CLOSE_TEXT, autoClose) { on -> vm.setAutoClose(on) }
     }
 }
+
+/** 2.0.0 [RVJ-18] The 저절로 마감 row, the same words on 도구 › ○월 마감 and 설정 › 알림 › 돈. */
+internal const val AUTO_CLOSE_TITLE = "급여 저절로 마감"
+internal const val AUTO_CLOSE_TEXT = "급여일 다음 날 그 달을 묻지 않고 마감해요. 꺼 두면 2주 동안 한 번 물어요"
 
 /** 오류 제보 [PAY-09]: the user picks where to send it; nothing leaves the phone otherwise. */
 private fun reportProblem(context: android.content.Context, profile: PayProfile, result: MonthPay) {

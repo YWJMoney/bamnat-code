@@ -96,12 +96,14 @@ class StatsViewModel(
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     private val payCalculator = PayCalculator()
 
+    // 2.0.0 [RVJ-18] 검토 PAYU-06 굳은 달: a closed month is its closed value here too (통계 탭과 급여 화면이 같은 수).
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
-        payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
+        scope.pay.closed.value[month]?.total ?: payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
 
     /** [PROV-02] A month's pay with its minutes, for the comparison cards; null when it cannot be worked out. */
     fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): com.bamnat.core.pay.MonthPay? =
         runCatching { payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve, checks = false) }.getOrNull()
+            ?.let { fresh -> scope.pay.closed.value[month]?.frozen(fresh) ?: fresh }
 
     /** [PROV-02] Whether the comparison cards are open. */
     val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state

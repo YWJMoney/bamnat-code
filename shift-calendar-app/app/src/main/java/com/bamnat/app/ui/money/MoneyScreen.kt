@@ -176,10 +176,14 @@ class MoneyViewModel(
         _page.value = Page.LIST
     }
 
+    /** 2.0.0 [RVJ-18] The 합계 a closed month was closed at. */
+    private fun closedTotal(m: YearMonth): Long? = scope.pay.closed.value[m]?.total
+
     /** [WORK-04] Wages come from the existing pay engine; null when it is not set up. [MON-01] Free for everyone. */
     fun payEstimate(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, month: YearMonth): Long? {
         if (style?.usesPayEngine == false || profile == null || snapshot == null) return null
-        val gross = { m: YearMonth -> runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false).total }.getOrNull() }
+        // 2.0.0 [RVJ-18] 굳은 달: a closed month counts at the 합계 it was closed at, as on the pay screen.
+        val gross = { m: YearMonth -> closedTotal(m) ?: runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false).total }.getOrNull() }
         // [LEDG-29] As the bank account sees it: the 실수령 that arrives on the pay day in this month.
         if (profile.ledgerTakeHome) return PayIncome.paidIn(profile, month, gross).takeIf { it.isNotEmpty() }?.sumOf { it.net }
         return gross(month)
@@ -188,7 +192,10 @@ class MoneyViewModel(
     /** E 1.32 [LEDX-10] The year's 총급여 the pay engine expects (세전, every month of [year]); null without pay set up. */
     suspend fun yearGross(style: WorkStyle?, profile: PayProfile?, snapshot: ScheduleSnapshot?, year: Int): Long? = withContext(Dispatchers.Default) {
         if (style?.usesPayEngine == false || profile == null || snapshot == null) return@withContext null
-        (1..12).sumOf { m -> runCatching { payCalculator.calculate(profile, YearMonth.of(year, m), snapshot.resolver::resolve, checks = false).total }.getOrDefault(0L) }
+        (1..12).sumOf { m ->
+            closedTotal(YearMonth.of(year, m))
+                ?: runCatching { payCalculator.calculate(profile, YearMonth.of(year, m), snapshot.resolver::resolve, checks = false).total }.getOrDefault(0L)
+        }
             .takeIf { it > 0 }
     }
 
@@ -204,7 +211,7 @@ class MoneyViewModel(
             val months = generateSequence(first) { it.plusMonths(1) }.takeWhile { !it.isAfter(YearMonth.from(until)) }.toList()
             val pays = months.associateWith { m -> runCatching { payCalculator.calculate(profile, m, snapshot.resolver::resolve, checks = false) }.getOrNull() }
             val days = pays.mapNotNull { (m, p) ->
-                val gross = p?.total?.takeIf { it > 0 } ?: return@mapNotNull null
+                val gross = (closedTotal(m) ?: p?.total)?.takeIf { it > 0 } ?: return@mapNotNull null
                 val date = profile.period.payDate(m)
                 com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), PayIncome.net(profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
             }
@@ -246,7 +253,7 @@ class MoneyViewModel(
 
     /** [TAX-02] The 세금·실수령 card's numbers, off the main thread. */
     suspend fun takeHome(profile: PayProfile?, snapshot: ScheduleSnapshot?, records: List<com.bamnat.core.tax.PayObservation>, month: YearMonth) =
-        withContext(Dispatchers.Default) { com.bamnat.app.tax.TakeHomeView.of(profile, snapshot, records, month) }
+        withContext(Dispatchers.Default) { com.bamnat.app.tax.TakeHomeView.of(profile, snapshot, records, month, scope.pay.closed.value) }
 
     fun savePayRecord(o: com.bamnat.core.tax.PayObservation) {
         container.appScope.launch {
