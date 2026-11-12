@@ -12,7 +12,6 @@ import com.bamnat.app.inbox.Inbox
 import com.bamnat.app.inbox.InboxRow
 import com.bamnat.app.inbox.InboxSection
 import com.bamnat.app.ui.Fmt
-import com.bamnat.app.ui.calendar.HeadBell
 import com.bamnat.core.formula.ButtonPlace
 import com.bamnat.core.formula.Logic
 import com.bamnat.core.formula.LogicAct
@@ -171,14 +170,14 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         })
     }
 
-    /** 총괄 HQ-49: the bell beside 공유 and in 나, for the user to compare (380 폭 100%·200%, 편 폭). */
-    @Test fun bellPlaces() {
+    /** 총괄 HQ-49: the bell beside 공유 (사용자 11-13 00:35 KST 카드 '공유 옆에 따로'), 380 폭 100%·200%, 편 폭. */
+    @Test fun bellBesideShare() {
         val sizes = listOf(Triple("folded_100", FOLDED, 1f), Triple("folded_200", FOLDED, 2f), Triple("open_100", UNFOLDED, 1f))
-        for (atMe in listOf(false, true)) for ((look, q, scale) in sizes) {
-            HeadBell.atMe = atMe
-            shoot("rvp3_06_bell_${if (atMe) "me" else "share"}_$look", q, scale, style(WorkStyle.SHIFT) { reactions(); settle() })
-        }
-        HeadBell.atMe = false
+        for ((look, q, scale) in sizes) shoot("rvp3_06_bell_share_$look", q, scale, style(WorkStyle.SHIFT) {
+            reactions()
+            settle()
+            assertTrue("종이 머리 줄에 있어요", appears("알림", exact = false))
+        })
     }
 
     /**

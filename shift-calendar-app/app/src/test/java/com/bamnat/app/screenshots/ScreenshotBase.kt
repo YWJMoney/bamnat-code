@@ -112,7 +112,6 @@ abstract class ScreenshotBase {
         // into the next class's calendars: 가게 달력에 '이번 달 야간 5번', 3차 통합 화면 지문).
         com.bamnat.app.ui.calendar.SetupFill.close()
         // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
-        com.bamnat.app.ui.calendar.HeadBell.atMe = false
         com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
         // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
         com.bamnat.app.ui.RecentFill.reset()
