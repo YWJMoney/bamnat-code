@@ -216,12 +216,15 @@ class MainActivity : ComponentActivity() {
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
                 // [J133-87] A size already picked (settings, or the first screen of 1.32) is an answer too.
-                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                // 2.0.0 [RVP-22] With the other opening windows, one at a time (OpenAsk).
+                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone &&
+                    com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.TEXT_SIZE)) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // 1.39 [LOOP-13] The update downloaded behind the app: 다시 시작 when the user wants, never by itself.
                 val updateReady by com.bamnat.app.review.InAppUpdate.ready.collectAsStateWithLifecycle()
-                if (updateReady) com.bamnat.app.ui.components.AlertDialog(
+                // 2.0.0 [RVP-22] (검토 U13b-08) Never over a sheet being filled in, and one opening window at a time (OpenAsk).
+                if (updateReady && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.UPDATE_READY)) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { com.bamnat.app.review.InAppUpdate.later() },
                     title = { androidx.compose.material3.Text("새 버전을 받았어요") },
                     text = { androidx.compose.material3.Text("다시 시작하면 바로 새 버전으로 열려요. 몇 초면 끝나고, 기록은 그대로예요.") },

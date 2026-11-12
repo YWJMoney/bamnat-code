@@ -335,7 +335,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val showNav = topLevel != null || route == null
     // Fold unfolded, tablets and landscape get a navigation rail and two-pane calendar.
     val wide = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-    val snackbar = remember { SnackbarHostState() }
+    // 2.0.0 [RVP-23] 뿌리 고침 4: the screens' lines go through the app's one queue (com.bamnat.app.ui.components.AppSnack); the root's own lines ask it directly.
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
 
     // [SETUP-01] First launch asks how the user works and sets it all up before the calendar. Phones
     // that already have a pattern were set up before this question existed, so they are shift workers
@@ -389,6 +390,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         true -> if (setupDraft?.later != true && !browse.browsing) {
             // [NAV-03] 1.25 Z (U4): a help link tapped during the setup is not followed later, out of the blue, once it is done.
             LaunchedEffect(Unit) { SettingsLinks.target.collect { it?.let(SettingsLinks::consume) } }
+            // 2.0.0 [RVP-22] (검토 UIX-47) No '새로 생긴 것' over the first calendar of a phone installed before an update it never opened.
+            LaunchedEffect(Unit) {
+                com.bamnat.app.data.GuideStore.get(container.appContext).firstSetup(com.bamnat.app.BuildConfig.VERSION_CODE) { runCatching { container.flags.on(it) }.getOrDefault(false) }
+            }
             if (consentSeen == null && setupDraft == null) {
                 val key = firstStyleKey
                 if (key == null) {
@@ -535,18 +540,28 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         // Kept per process with the count: a screen rebuilt (a fold, a restore) does not take one twice or miss one.
         if (homeRequests != HomeRequests.handled) {
             HomeRequests.handled = homeRequests
+            // 2.0.0 [RVP-22] A new visit: the next opening window may come (one per visit).
+            if (homeRequests > 0) com.bamnat.app.ui.components.AskTurn.newVisit()
+            // 2.0.0 [RVP-24] (검토 UIX-45·T13b-03) A sheet or window open over a tab, or words typed and not saved (23:58 돈 적기 →
+            // 은행 앱 → 00:01): the screen stays as it was. Leaving a tab, its state is kept for when it is opened again.
+            if (com.bamnat.app.ui.components.Busy.now) return@LaunchedEffect
             // Only from another tab: an editor the user left open (pay setup, a pattern) keeps their input.
             // A tapped notice says where to go instead [SLP-15].
             val current = nav.currentBackStackEntry?.destination?.route
             val homeRoute = container.settingsRepository.current.let {
                 com.bamnat.core.layout.TabSlots.home(com.bamnat.core.layout.TabSlots.resolve(it.tabSlots, it.tabOrder, TabPicks.known))
             }
-            if (NoticeLinks.target.value == null && current != homeRoute && TopLevel.entries.any { it.route == current }) {
+            if (NoticeLinks.target.value == null && current != homeRoute && current != null && TopLevel.entries.any { it.route == current }) {
                 TabHistory.clear()
                 nav.navigate(homeRoute) {
-                    popUpTo(nav.graph.findStartDestination().id) { inclusive = false }
+                    popUpTo(nav.graph.findStartDestination().id) { saveState = true }
                     launchSingleTop = true
+                    restoreState = true
                 }
+                // 2.0.0 [RVP-24] (검토 U13b-09) Why the screen changed, with the way back, for 5 seconds.
+                val homeName = TopLevel.entries.firstOrNull { it.route == homeRoute }?.labelFor(activeStyle) ?: "첫 화면"
+                if (com.bamnat.app.ui.components.AppSnack.ask("다시 열어서 ${homeName}${Fmt.ro(homeName)} 왔어요", "보던 곳으로", millis = 5_000L))
+                    nav.navigateTopLevel(current)
             }
             // [NAV-01] Away long enough to count as opening the app again: this month, like a fresh start.
             if (NoticeLinks.target.value == null && TopLevel.entries.any { it.route == current }) {
@@ -566,8 +581,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             androidx.compose.runtime.snapshotFlow { com.bamnat.app.ui.calendar.FirstMonth.settled.value }.first { it }
         }
         val count = runCatching { container.calendarImporter.countNew(Today.date()) }.getOrDefault(0)
-        if (count > 0 && snackbar.showSnackbar("캘린더에 새 일정 ${count}개가 있어요", actionLabel = "가져오기",
-                duration = androidx.compose.material3.SnackbarDuration.Long) == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+        if (count > 0 && com.bamnat.app.ui.components.AppSnack.ask("캘린더에 새 일정 ${count}개가 있어요", "가져오기")) {
             NoticeLinks.open(NoticeLinks.Target.CALENDAR_IMPORT)
         }
     }
@@ -631,7 +645,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.CALENDAR_IMPORT -> { nav.navigate(Routes.CALENDAR_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.DUTY_ROSTER -> { nav.navigate(Routes.DUTY_ROSTER) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.HEALTH_REPORT -> { nav.navigate(Routes.HEALTH_REPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
-            NoticeLinks.Target.TEAMS -> { nav.navigate(Routes.TEAMS) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 2.0.0 [RVP-26] The day goes to that screen once; opened any other way it starts today.
+            NoticeLinks.Target.TEAMS -> {
+                NoticeLinks.hand(target, NoticeLinks.payload.value)
+                nav.navigate(Routes.TEAMS) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.YEAR -> { nav.navigate(Routes.YEAR) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ATTENDANCE_IMPORT -> { nav.navigate(Routes.ATTENDANCE_IMPORT) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMMUTE -> { nav.navigate(Routes.COMMUTE) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -840,9 +858,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         com.bamnat.app.ui.guide.FeatureLinks.turnedOff.collect { off ->
             // 1.39 발굴 [GUIDE-06][GUIDE-21] A card's records stay: said so, with where it comes back.
             val kept = if (off.keepsRecords) " 적은 기록은 그대로 남아요." else ""
-            val result = snackbar.showSnackbar("‘${off.name}’ 껐어요.$kept 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요",
-                actionLabel = "바로 가기", duration = SnackbarDuration.Long)
-            if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.FEATURES) { launchSingleTop = true }
+            if (com.bamnat.app.ui.components.AppSnack.ask("‘${off.name}’ 껐어요.$kept 설정 › 기능 켜고 끄기에서 다시 켤 수 있어요", "바로 가기"))
+                nav.navigate(Routes.FEATURES) { launchSingleTop = true }
         }
     }
     // [UX-05] A new answer to the user's question shows on the 설정 tab from the moment the app opens.
@@ -865,11 +882,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 q.messages.lastOrNull { m -> m.fromDeveloper }?.text?.let { t -> Regex("""코드 ([2-9A-HJ-NP-Z]{8})""").find(t)?.groupValues?.get(1) }?.let { code -> q.id to code }
             }
             if (solved != null) {
-                prefs.edit().putStringSet("told", told + solved.first).apply()
-                // PC 6ec395bf: 몇 초 만에 사라지지 않고, 닫기나 보러 가기를 누를 때까지 남아요.
-                val result = snackbar.showSnackbar("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요",
-                    actionLabel = "보러 가기", withDismissAction = true, duration = SnackbarDuration.Indefinite)
-                if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.recipe(solved.second))
+                // 2.0.0 [RVP-23] (검토 UIX-44·U13b-10) It stayed until pressed and held every line behind it, and was marked told before
+                // it showed: now 8 s with 보러 가기 in the queue, marked told once it is on screen.
+                if (com.bamnat.app.ui.components.AppSnack.ask("부탁하신 꾸미기가 풀렸어요. 다른 분이 만들어 장터에 올렸어요", "보러 가기", withDismissAction = true,
+                        onShown = { prefs.edit().putStringSet("told", told + solved.first).apply() }))
+                    nav.navigate(Routes.recipe(solved.second))
             }
         }
     }
@@ -900,10 +917,12 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             com.bamnat.core.consent.RecommendedPlan.offNow(on).size else 0
     }
     // [SRV-09] A notice's 새 기능 보기 button: this version's lines again, from wherever.
+    var whatsNewAsked by remember { mutableStateOf(false) }
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.WHATS_NEW) return@LaunchedEffect
         NoticeLinks.consume(NoticeLinks.Target.WHATS_NEW)
         whatsNew.value = com.bamnat.core.guide.WhatsNew.releases.filter { it.versionCode <= com.bamnat.app.BuildConfig.VERSION_CODE }.take(1)
+        whatsNewAsked = true
     }
     // 1.38 [EASE-32] The user's own questions this version fixed, read once the update notice is up (never before: no
     // call for a phone that never asked).
@@ -913,7 +932,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             container.inquiryStore.fixedNow(container.inquiryApi.mine(container.companyStore.device), com.bamnat.app.BuildConfig.VERSION_NAME)
         }.getOrDefault(emptyList())
     }
-    if (whatsNew.value.isNotEmpty()) {
+    // 2.0.0 [RVP-22] (검토 UIX-43·U13b-02) Each opening window takes its turn (OpenAsk): one at a time, one per visit, the law first,
+    // never over a sheet or writing. The update notice was the only rule before (it held back four windows, which then came all at once).
+    if (whatsNew.value.isNotEmpty() && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.WHATS_NEW, asked = whatsNewAsked)) {
         val closeNew = {
             container.inquiryStore.markThanked(fixedForMe.map { it.first })
             com.bamnat.app.data.GuideStore.get(container.appContext).whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
@@ -921,6 +942,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 com.bamnat.core.guide.WhatsNew.switched.filter { (_, line) -> whatsNew.value.any { line in it.lines } }.map { it.first })
             if (recommendOff > 0) container.consentStore.markRecommendOffered()
             whatsNew.value = emptyList()
+            whatsNewAsked = false
         }
         // [RVH-40] 검토 WORK-14 Nothing new for this kind of work and nothing else to say: no window, only marked as seen.
         val nothingMine = com.bamnat.core.guide.WhatsNew.forStyle(whatsNew.value, settingsNow.workStyle).let { it.mine.isEmpty() && it.moreMine.isEmpty() }
@@ -936,14 +958,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             thanks = fixedForMe.map { it.second },
             onOpenAsks = { closeNew(); SettingsLinks.go(SettingsGo.INQUIRY) },
         )
-    } else {
-        // [MON-06][MON-10] One at a time, after what the update brought.
-        com.bamnat.app.ui.pro.TrialConsentPrompt(container)
-        // [FREE-10] 1.35 테마 기간: asked when the app opens (never over an alarm, which has its own activity).
-        com.bamnat.app.ui.recipe.ThemeExpiryAsk()
-        com.bamnat.app.ui.recipe.ThemeUpdateAsk()
-        com.bamnat.app.ui.pro.LaunchThanks(container)
     }
+    // [MON-06][MON-10] Each in its turn (above).
+    com.bamnat.app.ui.pro.TrialConsentPrompt(container)
+    // [FREE-10] 1.35 테마 기간: asked when the app opens (never over an alarm, which has its own activity).
+    com.bamnat.app.ui.recipe.ThemeExpiryAsk()
+    com.bamnat.app.ui.recipe.ThemeUpdateAsk()
+    com.bamnat.app.ui.pro.LaunchThanks(container)
 
     // [SHR-02] A tapped shared calendar link opens on the calendar. Over an editor it goes on top,
     // so the editor's input is still there after back.
@@ -994,7 +1015,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
 
     // [PLAZA-07] 결정 D79: the one-time ask to share the work order and pay way; yes opens the company's 광장.
     // [PLAZA-34] 1.27 AI: each change asks with what changed; 저절로 나누기 says it in one line with 되돌리기.
-    com.bamnat.app.ui.company.AutoShareHost(container, snackbar = snackbar,
+    com.bamnat.app.ui.company.AutoShareHost(container, snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane(),
         onOpen = { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } })
     // [PLAZA-14] 1.27 AH: "이 정보를 다른 사람이 사용해도 될까요?" after a cycle picked from a company search.
     com.bamnat.app.ui.company.LeadShareHost(container) { id -> nav.navigate(Routes.company(id, setup = false, weekdays = false)) { launchSingleTop = true } }
@@ -1004,16 +1025,16 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(lastDeleted) {
         val deleted = lastDeleted ?: return@LaunchedEffect
         val title = deleted.label
-        val result = snackbar.showSnackbar(
-            message = when {
+        // 2.0.0 [RVP-23] 되돌리기 first, 8 s from when it shows (it waited behind other lines, and came minutes late).
+        val undo = com.bamnat.app.ui.components.AppSnack.ask(
+            when {
                 deleted.memos.size > 1 -> "메모 ${deleted.memos.size}개를 휴지통으로 옮겼어요"
                 title.isBlank() -> "메모를 휴지통으로 옮겼어요"
                 else -> "‘$title’ 메모를 휴지통으로 옮겼어요"
             },
-            actionLabel = "되돌리기",
-            duration = SnackbarDuration.Long,
+            "되돌리기",
         )
-        if (result == SnackbarResult.ActionPerformed) {
+        if (undo) {
             container.appScope.launch { container.memoRepository.undoDelete() }
         } else {
             container.memoRepository.consumeLastDeleted()
@@ -1025,12 +1046,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     LaunchedEffect(lastSkipped) {
         val skipped = lastSkipped ?: return@LaunchedEffect
         val title = skipped.memo.title.ifBlank { skipped.memo.preview }.take(20)
-        val result = snackbar.showSnackbar(
-            message = (if (title.isBlank()) "메모를" else "‘$title’ 메모를") + " ${Fmt.monthDay(skipped.day)}에서만 뺐어요",
-            actionLabel = "되돌리기",
-            duration = SnackbarDuration.Long,
-        )
-        if (result == SnackbarResult.ActionPerformed) {
+        val undo = com.bamnat.app.ui.components.AppSnack.ask((if (title.isBlank()) "메모를" else "‘$title’ 메모를") + " ${Fmt.monthDay(skipped.day)}에서만 뺐어요", "되돌리기")
+        if (undo) {
             container.appScope.launch { container.memoRepository.undoSkip() }
         } else {
             container.memoRepository.consumeLastSkipped()
@@ -1038,9 +1055,9 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     }
 
     // [RUL-03][RUL-04] 1.36 what a button or rule did, with 되돌리기 when it wrote.
-    com.bamnat.app.logic.LogicMessageHost(container, snackbar)
+    com.bamnat.app.logic.LogicMessageHost(container)
     // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
-    PutOnNoticeHost(container, snackbar)
+    PutOnNoticeHost(container)
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.
@@ -1053,19 +1070,19 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             com.bamnat.app.ui.shifts.TypeFoldAsk.asking.first { it == null }
             val fold = com.bamnat.app.ui.shifts.TypeFoldAsk.done.value
             if (fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
-            // 1.36 PC 재검토 (되돌리기가 있는 두 줄 띠가 3초쯤이라 읽기 빠듯해요): 8 seconds, by its own clock.
-            val result = kotlinx.coroutines.withTimeoutOrNull(8_000) {
-                snackbar.showSnackbar(offer.message + (fold?.let { " · ${it.message}" } ?: ""), actionLabel = "되돌리기", duration = SnackbarDuration.Indefinite)
-            } ?: SnackbarResult.Dismissed
-            if (result == SnackbarResult.ActionPerformed && fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, fold)
+            // 1.36 PC 재검토 (되돌리기가 있는 두 줄 띠가 3초쯤이라 읽기 빠듯해요): 8 seconds. 2.0.0 [RVP-23] (검토 UIX-44) counted from when it
+            // shows, first in the queue: behind a long line it used to run out unseen.
+            val undo = com.bamnat.app.ui.components.AppSnack.ask(offer.message + (fold?.let { " · ${it.message}" } ?: ""), "되돌리기")
+            if (undo && fold != null) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, fold)
             // Read once the snackbar is answered: the change sets it right after it is offered.
             val extras = styleExtras.value?.takeIf { it.entryId == offer.entry.id }
             if (extras != null) styleExtras.value = null
-            if (result == SnackbarResult.ActionPerformed) {
+            if (undo) {
                 val ok = undoOffer(container, offer.entry.id, extras)
                 // [UNDO-01] Its next step closes too.
                 if (ok) extras?.opened?.let { nav.popFrom(it) }
-                snackbar.showSnackbar(if (ok) "되돌렸어요" else "되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요")
+                if (ok) com.bamnat.app.ui.components.AppSnack.show("되돌렸어요")
+                else com.bamnat.app.ui.components.AppSnack.show("되돌리지 못했어요. 설정 › 데이터 › 최근 지운 기록에서 다시 해 주세요", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
             }
         }
     }
@@ -1078,9 +1095,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             kotlinx.coroutines.delay(1_500)
             if (com.bamnat.app.ui.shifts.TypeFoldAsk.done.value != d) return@collect
             com.bamnat.app.ui.shifts.TypeFoldAsk.done.value = null
-            snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", actionLabel = "되돌리기", duration = SnackbarDuration.Long)
-            if (r == SnackbarResult.ActionPerformed) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
+            // 2.0.0 [RVP-23] A 되돌리기 goes first by itself; it no longer closes another's line by hand.
+            if (com.bamnat.app.ui.components.AppSnack.ask("${d.message} · 설정 › 내 근무 › 근무 종류와 시간 맨 아래에 있어요", "되돌리기")) com.bamnat.app.ui.shifts.TypeFoldAsk.undo(container, d)
         }
     }
 
@@ -1318,7 +1334,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.logic.LocalDayFacts provides appFacts) {
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
-                snackbarHost = { SnackbarHost(snackbar) },
+                snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
                 // Inner screens with their own top bar handle insets themselves.
                 contentWindowInsets = if (showNav) ScaffoldDefaults.contentWindowInsets else WindowInsets(0, 0, 0, 0),
                 bottomBar = {
@@ -2315,7 +2331,7 @@ private fun AppNavHost(
             val calendar = remember { container.calendars.active.value }
             val vm = appViewModel(key = "teams_$calendar") { com.bamnat.app.ui.calendar.TeamsViewModel(it, calendar) }
             // [CREW-04] Opened from a day's 대근 찾기, the finder starts on that day.
-            val startDay = remember { NoticeLinks.payload.value?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
+            val startDay = remember { NoticeLinks.takeHanded(NoticeLinks.Target.TEAMS)?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() } }
             val flagRows by container.flags.byKey.collectAsStateWithLifecycle()
             val leader = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
             com.bamnat.app.ui.calendar.TeamsScreen(vm = vm, onBack = { nav.popFrom(Routes.TEAMS) },
@@ -2489,7 +2505,12 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
     fun screen(r: String) = navigate(r) { launchSingleTop = true }
     when (link.place) {
         // [CUST-01] 화면 꾸미기 opens over the month, not over today.
-        Place.CALENDAR -> if (link.focus == "customize") navigateTopLevel(TopLevel.CALENDAR.route) else {
+        // 2.0.0 [RVP-75] (검토 REST-18) "month": a card over the month (한 달 마감 카드), and "typeMonth" the keypad of 이번 달 전부
+        // 넣기 (the calendar takes it), not today's sheet.
+        Place.CALENDAR -> if (link.focus == "customize" || link.focus == "month" || link.focus == "typeMonth") {
+            if (link.focus == "month") com.bamnat.app.ui.guide.FeatureLinks.take("month")
+            navigateTopLevel(TopLevel.CALENDAR.route)
+        } else {
             navigateTopLevel(TopLevel.CALENDAR.route)
             com.bamnat.app.ui.guide.FeatureLinks.today(cal)
             NoticeLinks.open(NoticeLinks.Target.TODAY)
@@ -2528,6 +2549,8 @@ private fun NavHostController.openFeature(c: AppContainer, link: com.bamnat.core
         Place.INQUIRY -> com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(help = true))
         Place.FEATURES -> screen(Routes.FEATURES)
         Place.PRO -> screen(Routes.PRO)
+        // 2.0.0 [RVP-75] (검토 REST-18 (5)) The ringing alarm's 모두 끄기: no screen to open; 기능 찾기 shows where it is only.
+        Place.NOWHERE -> {}
         Place.RECOMMENDED -> screen(Routes.RECOMMENDED)
         Place.LEAVE -> screen(Routes.leave(cal))
         Place.PROFILE -> screen(Routes.PROFILE)

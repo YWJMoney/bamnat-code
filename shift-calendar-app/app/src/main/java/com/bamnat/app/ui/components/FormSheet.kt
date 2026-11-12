@@ -44,13 +44,9 @@ fun FormSheet(
 ) {
     var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
-    if (asking) com.bamnat.app.ui.components.AlertDialog(
-        onDismissRequest = { asking = false },
-        title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
-        text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
-    )
+    // 2.0.0 [RVP-24] 뿌리 고침 3: the app's one ask before typed words go (DiscardAsk); typed and unsaved counts as writing (Busy).
+    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismissRequest() })
+    Busy.Writing(unsaved)
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
     })

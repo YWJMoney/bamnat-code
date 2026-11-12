@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.recipe
 
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -227,7 +226,6 @@ private fun ThemeSheetBody(r: Recipe, code: String, style: WorkStyle?, ver: Int,
 @Composable
 fun ThemeExpiryAsk() {
     val c = LocalContext.current.appContainer
-    val context = LocalContext.current
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val worn = lease.worn ?: return
     var shown by remember { mutableStateOf(true) }
@@ -235,11 +233,14 @@ fun ThemeExpiryAsk() {
     LaunchedEffect(worn.key, worn.until) {
         if (c.wardrobe.state() == ThemeLease.State.SOON && c.wardrobe.soonSaid() != "${worn.key}|${worn.until}") {
             c.wardrobe.saySoon("${worn.key}|${worn.until}")
-            Toast.makeText(context, "‘${worn.title}’ 테마가 ${lease.daysLeft(Today.date().toEpochDay())}일 뒤에 끝나요", Toast.LENGTH_LONG).show()
+            // 2.0.0 [RVP-23] On the app's line, not a toast (글자 크기·꾸미기를 따라요).
+            com.bamnat.app.ui.components.AppSnack.show("‘${worn.title}’ 테마가 ${lease.daysLeft(Today.date().toEpochDay())}일 뒤에 끝나요")
         }
     }
     if (!shown || !c.wardrobe.ask()) return
-    fun said(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    // 2.0.0 [RVP-22] One opening window at a time (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.THEME_EXPIRY)) return
+    fun said(text: String) = com.bamnat.app.ui.components.AppSnack.show(text, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
     AlertDialog(
         onDismissRequest = { shown = false; c.wardrobe.later() },
         title = { Text("‘${worn.title}’ 기간이 끝났어요. 연장할까요?") },
@@ -282,7 +283,6 @@ fun ThemeExpiryAsk() {
 @Composable
 fun ThemeUpdateAsk() {
     val c = LocalContext.current.appContainer
-    val context = LocalContext.current
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val worn = lease.worn ?: return
     var newer by remember(worn.key, worn.ver) { mutableStateOf<Pair<Recipe, Int>?>(null) }
@@ -296,11 +296,13 @@ fun ThemeUpdateAsk() {
     val (r, v) = newer ?: return
     fun update() = c.appScope.launch {
         val ok = c.wardrobe.updateWorn(r, v)
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            Toast.makeText(context, if (ok) "‘${worn.title}’${com.bamnat.app.ui.Fmt.obj(worn.title)} 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
-                Toast.LENGTH_LONG).show()
-        }
+        com.bamnat.app.ui.components.AppSnack.show(
+            if (ok) "‘${worn.title}’${com.bamnat.app.ui.Fmt.obj(worn.title)} 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
+            kind = if (ok) com.bamnat.app.ui.components.AppSnack.Kind.INFO else com.bamnat.app.ui.components.AppSnack.Kind.FAIL,
+            millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
     }
+    // 2.0.0 [RVP-22] One opening window at a time (OpenAsk); 바뀐 모습 보기 keeps the turn.
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.THEME_UPDATE)) return
     if (trying) TryOnScreen(r, c.settingsRepository.current.workStyle, onDismiss = { trying = false }, onKeep = null, own = worn.own) { _ ->
         Button(onClick = { trying = false; newer = null; update() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("새 판으로 바꾸기") }
     } else AlertDialog(

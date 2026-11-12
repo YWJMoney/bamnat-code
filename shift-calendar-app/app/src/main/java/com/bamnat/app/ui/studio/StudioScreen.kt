@@ -458,7 +458,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     var inkAsk by remember { mutableStateOf<(() -> Unit)?>(null) }
     // 1.36 [GRW-01] 원하는 꾸미기가 없을 때 스튜디오를 떠나지 않고 그 자리에서 부탁해요.
     var wish by remember { mutableStateOf(false) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val resumable by vm.resumable.collectAsStateWithLifecycle()
     var resumeShut by rememberSaveable { mutableStateOf(false) }
     var feelOpen by remember { mutableStateOf(false) }
@@ -594,7 +594,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         val foldHost = remember { com.bamnat.app.ui.components.FoldHost() }
         CompositionLocalProvider(com.bamnat.app.ui.components.LocalFoldHost provides foldHost) {
         Scaffold(
-            snackbarHost = { SnackbarHost(snack) },
+            snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
             topBar = {
                 TopAppBar(
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
@@ -1017,7 +1017,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     fun saveView(v: CalendarView) = vm.change { with(CalendarViewSettings) { it.withView(v) } }
                                     when (t) {
                                         Tool.CELL -> CellDesigner(view, lookIndex, { lookIndex = it }, ::saveView)
-                                        Tool.PATTERN -> PatternEditor(view, ::saveView)
+                                        Tool.PATTERN -> PatternEditor(view, calendarRoles(), ::saveView)
                                         Tool.VIEW -> com.bamnat.app.ui.calendar.CalendarViewEditor(view, ::saveView, sample = {})
                                         Tool.DAYS -> com.bamnat.app.ui.settings.CalendarThemeRows(d.calTheme) { v -> vm.change { it.copy(calTheme = v) } }
                                         Tool.PHOTO -> com.bamnat.app.ui.settings.PhotoLookRows(d.photoLook) { v -> vm.change { it.copy(photoLook = v) } }
@@ -1849,4 +1849,20 @@ internal fun ago(millis: Long, now: Long = com.bamnat.core.time.Today.millis()):
 /** [STU-41] 1.36 장터 표지 자동: the studio's example as a picture when 올리기 opened, offered as the 표지 there. */
 object StudioShot {
     @Volatile var last: android.graphics.Bitmap? = null
+}
+
+/**
+ * 2.0.0 [RVP-66] (검토 REST-07·T14-09) The roles of the main calendar's kinds of day, by the same guess the 근무 꾸미기 piece matches
+ * with, so 칸 디자인 › 패턴 › 근무별 offers only the lines this calendar has; null until the calendar is read.
+ */
+@Composable
+private fun calendarRoles(): Set<String>? {
+    val c = LocalContext.current.appContainer
+    val snapFlow = remember(c) { c.scopeOf(com.bamnat.app.data.PersonalCalendar.MAIN).schedule.snapshot }
+    val snap by snapFlow.collectAsStateWithLifecycle(null)
+    return remember(snap) {
+        snap?.shiftTypes?.map { t ->
+            com.bamnat.core.recipe.ShiftRole.guess(t.name, t.isOff, t.start?.hour, if (t.isOff) 0 else t.durationMinutes).key
+        }?.toSet()
+    }
 }

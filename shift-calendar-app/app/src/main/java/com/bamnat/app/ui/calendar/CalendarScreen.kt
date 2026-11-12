@@ -441,7 +441,7 @@ fun CalendarScreen(
     val selectedNow: () -> LocalDate = { vm.selected.value }
     val dayView = settings.phoneDayView
     // [DAY-03] While the sheet is open its own snackbar says what happened, above the sheet, not hidden under it.
-    val sheetSnackbar = remember { SnackbarHostState() }
+    val sheetSnackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val messageHost by rememberUpdatedState(if (sheetOpen && !wide) sheetSnackbar else snackbarHostState)
     LaunchedEffect(vm) {
         // [CAL-10] The newest change replaces a message still showing, so undo always means the last thing done.
@@ -521,6 +521,11 @@ fun CalendarScreen(
     val baseMonth = BASE_MONTH
     val pagerState = rememberPagerState(initialPage = monthToPage(baseMonth, shownMonth)) { PAGE_COUNT }
     val visibleMonth = pageToMonth(baseMonth, pagerState.currentPage)
+    // 2.0.0 [RVP-75] (검토 REST-18) 기능 찾기 › 이번 달 전부 넣기 opens the keypad for the month on screen, as the tool's own button does
+    // (before, it opened today's sheet).
+    com.bamnat.app.ui.guide.FocusedTool("typeMonth", "shift.dutyTyping") {
+        if (viewingReceived == null && snap.shiftTypes.isNotEmpty()) fillMonth(visibleMonth)
+    }
     // [CAL-06] The month on screen in the kind of work's own figures; pay is worked out off the main thread.
     // 1.32 [CALX-06] The month's days and hours over the 급여 기간 when 통계 counts by it, so both say the same.
     // [EASE-04] 1.38 월급날 '급여' on the cells, where the pay is counted (not 현장·자영업·투자).
@@ -913,11 +918,13 @@ fun CalendarScreen(
     // [DAILY-06] A widget's date opens that day on 내 달력, as tapping it on the calendar does.
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.DAY) return@LaunchedEffect
-        NoticeLinks.consume(NoticeLinks.Target.DAY)
+        // 2.0.0 [RVP-26] Read before it is taken: taking the target empties its day and calendar.
         val day = NoticeLinks.payload.value?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: Today.date()
+        val noticeCalendar = NoticeLinks.calendar.value
+        NoticeLinks.consume(NoticeLinks.Target.DAY)
         received.view(null)
         // [DAILY-07] 근무·급여's week bar names its calendar; a widget's date is always 내 달력.
-        vm.viewCalendar(NoticeLinks.calendar.value ?: com.bamnat.app.data.PersonalCalendar.MAIN)
+        vm.viewCalendar(noticeCalendar ?: com.bamnat.app.data.PersonalCalendar.MAIN)
         vm.setPaint(null)
         vm.select(day)
         pagerState.scrollToPage(monthToPage(baseMonth, YearMonth.from(day)))
@@ -926,13 +933,13 @@ fun CalendarScreen(
     // [SHR-12] The link's expiry notice opens the share sheet on the user's own calendar, to 늘리기.
     LaunchedEffect(noticeTarget) {
         if (noticeTarget != NoticeLinks.Target.SHARE) return@LaunchedEffect
-        NoticeLinks.consume(NoticeLinks.Target.SHARE)
-        received.view(null)
         // [MCAL-03] An added calendar's notice opens that calendar's sheet.
-        // [PROV-04] A notice about a second link names it too, and the sheet opens on it.
+        // [PROV-04] A notice about a second link names it too, and the sheet opens on it. 2.0.0 [RVP-26] Read before it is taken.
         val key = NoticeLinks.calendar.value
             ?: (if (NoticeLinks.payload.value == NoticeLinks.ON_SCREEN) context.appContainer.calendars.active.value else null)
             ?: com.bamnat.app.data.PersonalCalendar.MAIN
+        NoticeLinks.consume(NoticeLinks.Target.SHARE)
+        received.view(null)
         vm.viewCalendar(com.bamnat.app.share.ShareLinkKey.calendar(key))
         shareSlot = com.bamnat.app.share.ShareLinkKey.slot(key)
         if (shareLinks) showShare = true
@@ -2129,14 +2136,13 @@ fun CalendarScreen(
 @Composable
 private fun DaySheet(snackbar: SnackbarHostState, onDismiss: () -> Unit, content: @Composable () -> Unit) {
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    // [STAB-01] A message still showing here when the sheet closes is closed with it: otherwise it waits for
-    // a host that is gone, and every later message (되돌리기 and the rest) stops appearing.
-    DisposableEffect(snackbar) { onDispose { snackbar.currentSnackbarData?.dismiss() } }
+    // [STAB-01] A message still showing here when the sheet closed used to wait for a host that was gone. 2.0.0 [RVP-23]: the app's
+    // one line moves to the host under the sheet by itself (AppSnack), so a 되돌리기 made in the sheet is still seen after it closes.
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = state, holdHeight = true) {
         // [UX-13] 1.25 Z (U13): scrolling the day up to its top no longer goes on to close it.
         Box(Modifier.fillMaxWidth().sheetScrollGuard()) {
             content()
-            SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
+            com.bamnat.app.ui.components.AppSnackHost(Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp))
         }
     }
 }
@@ -2529,16 +2535,16 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
     Surface(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
     ) {
         Column(Modifier.padding(16.dp)) {
             Text("근무 설정을 마저 해 주세요", style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer)
+                color = MaterialTheme.colorScheme.onSurface)
             Text(
                 if (d.style == null) "어떻게 일하는지만 고르면 나머지는 하나씩 물어볼게요."
                 else "${d.steps.size}단계 중 ${d.position}단계까지 했어요. 고른 답은 그대로 있어요.",
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }

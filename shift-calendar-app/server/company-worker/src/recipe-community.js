@@ -12,7 +12,10 @@ import { addStrike, confirmStrike, limitJson, operatorStrike, writeAllowance, wr
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
-export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50,
+export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12,
+  // 2.0.0 [RVD-27] SN-15: a phone past 새싹 whose pictures have already passed the operator (PHOTO_GUARD.lookFirst) may send a whole work
+  // a day (꾸밈 사진 up to 40 and the screen·head·widget·shift pictures); a new phone keeps 12. 갈래 M과 맞춤 11-12.
+  imagesPerDaySure: 48, picks: 3, versionsAsk: 50,
   // [PRF-01..06] 1.36 창작자 프로필: 한 줄 소개, 대표 작품, 하루 팔로우, 차단, 신고 3번이면 소개 먼저 가림. 모음 쓰기는 [LIM-10] 신고 누적 제한만.
   bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerNetworkDay: 400, follows: 200, blocks: 500,
   flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40 };
@@ -960,21 +963,41 @@ async function rcImagePost(d, env, request) {
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
   { const size = rcWebpSize(bytes); if (!size || size.w < 1 || size.h < 1 || size.w > RC_IMAGE_SIDE || size.h > RC_IMAGE_SIDE) return d.json({ error: "image_size", field: "webp" }, 400); }
+  // 2.0.0 [RVD-27] SN-15 (스튜디오 제작 오류 조사): the same picture from the same phone again (a work sent again the next day, or 다시 시도) is
+  // the picture it already has, not one more of the day's: its id back, nothing counted. One the operator hid is sent as new.
+  const sum = (await sha256hex(body.webp)).slice(0, 32);
+  const same = await d.one(env, "SELECT id, state FROM recipe_images WHERE owner = ? AND sum = ? AND state != 'hidden' ORDER BY at LIMIT 1", dev, sum);
+  if (same) {
+    // 1.36 [SEC-11] Play Integrity all the same: nothing new goes up, but the answer still says a picture is there.
+    const gate = d.integrity ? await d.integrity(env, dev, now) : null;
+    return gate ?? d.json({ id: same.id, state: same.state === "ok" ? "ok" : "pending", again: true }, 200);
+  }
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const passed = await passedPhotos(env, dev);
+  // [RVD-27] A phone past 새싹 with pictures the operator already passed: a whole work a day, and its network's count is not its to share.
+  const sure = trust.level >= 1 && passed >= PHOTO_GUARD.lookFirst;
+  const perDay = sure ? COMMUNITY_LIMITS.imagesPerDaySure : COMMUNITY_LIMITS.imagesPerDay;
   const net = await d.network(request, env, now);
   // 1.36 [SEC-07] 보안 점검 H1: a day's pictures per network and for everyone, not only per install (an id costs nothing to make).
-  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY],
-    ["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY], ["network", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]]);
-  if (hit) return hit;
+  const checks = [["device", `rimg|${dev}`, perDay, DAY], ...(sure ? [] : [["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY]]),
+    ["all", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]];
+  const hit = await d.overLimit(env, now, checks);
+  if (hit) {
+    // [RVD-27] What the app says with (갈래 M): none left today, of how many, and when it opens again ('남은 사진은 내일 이어서 올라가요').
+    const said = await hit.clone().json();
+    const limit = said.why === "device" ? perDay : PHOTO_GUARD.perNetworkDay;
+    return d.json({ ...said, why: said.why === "all" ? "network" : said.why, left: 0, limit, retryAt: new Date(now + said.retryAfter * 1000).toISOString() }, 429,
+      { "retry-after": String(said.retryAfter) });
+  }
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
 
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
   // 1.36 [GRW-08] 세 겹: 자동 검사 → 믿음 단계(새싹 첫 사진만 운영자가) → 신고 즉시 가림. Before 1.36 every picture waited for the operator.
   const check = await autoCheck(env, body.webp);
-  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
-  const first = firstState(check, trust.level, await passedPhotos(env, dev));
-  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at, state, checked, why, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, dev, body.webp,
-    bytes.length, now, first.state === "ok" ? "ok" : first.state, check, first.why, first.state === "ok" ? now : null);
+  const first = firstState(check, trust.level, passed);
+  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at, state, checked, why, decided_at, sum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, dev, body.webp,
+    bytes.length, now, first.state === "ok" ? "ok" : first.state, check, first.why, first.state === "ok" ? now : null, sum);
   // The phone hears ok or pending only; why it waits stays with the operator.
   return d.json({ id, state: first.state === "ok" ? "ok" : "pending" }, 201);
 }

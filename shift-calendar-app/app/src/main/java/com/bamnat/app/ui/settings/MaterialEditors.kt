@@ -549,7 +549,7 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                                     Text("+ 내 글꼴 넣기")
                                 }
                             }
-                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 작품과 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요",
+                            Text("TTF·OTF 파일을 이 휴대폰에 넣어요(20MB까지). 만든 곳이 누구나 쓰게 허락한 공개 글꼴(OFL 등)로 밝히면 작품과 함께 가요(8MB까지). 아니면 받는 분께 비슷한 앱 글꼴로 보여요. 구글 자동 백업에는 들어가지 않아요(폰 옮기기에는 들어가요)", // 2.0.0 [RVP-73] REST-15
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         items(mine.filter { hit(it.name) }, key = { it.id + stamp }) { f ->

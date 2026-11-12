@@ -350,7 +350,7 @@ fun MakerScreen(
             while (true) { kotlinx.coroutines.delay(60_000); vm.load() }
         }
     }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val context = LocalContext.current
     var picking by remember { mutableStateOf(false) }
     var coloring by remember { mutableStateOf(false) }
@@ -380,7 +380,7 @@ fun MakerScreen(
     val mine = p?.mine == true && !s.asOthers
     androidx.compose.runtime.CompositionLocalProvider(LocalViewerStyle provides viewerStyle(vm.c)) {
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(title = { Text(p?.nick ?: "프로필", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
@@ -1044,7 +1044,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     val s by vm.state.collectAsStateWithLifecycle()
     val parts = listOf("new" to "새 작품", "following" to "팔로잉", "followers" to "팔로워", "blocked" to "차단")
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val hiddenCount = vm.hidden.collectAsStateWithLifecycle().value.writers.size
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
@@ -1055,7 +1055,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
         if (snack.showSnackbar("차단을 풀었어요", actionLabel = "되돌리기", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.reblock(id)
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text(parts[part].second, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {

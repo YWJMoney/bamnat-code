@@ -475,7 +475,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     // 1.37 PC 4차: 뒤로 가기로 만들던 규칙이 말없이 사라졌어요. 바꾼 게 있으면 먼저 물어요.
     val first = remember { r }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (r != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -589,7 +589,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
     // 1.37 PC 4차: 규칙 창과 같은 구조라 같이 (뒤로 가기 전에 묻기, 요약은 맨 아래).
     val first = remember { b }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (b != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "단추 만들기" else "단추 고치기") },
@@ -656,16 +656,6 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
-
-/** 1.37 PC 4차: 만들던 규칙·단추를 뒤로 가기로 닫을 때 한 번 물어요. */
-@Composable
-private fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit) = AlertDialog(
-    onDismissRequest = onKeep,
-    title = { Text("적은 내용을 버릴까요?") },
-    text = { Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-    confirmButton = { TextButton(onClick = onDiscard) { Text("버리기") } },
-    dismissButton = { TextButton(onClick = onKeep) { Text("계속 적기") } },
-)
 
 /** Which half of the editor a studio tool shows. */
 enum class LogicShow { ALL, RULES, BUTTONS }

@@ -350,7 +350,7 @@ internal fun FreelanceCard(calendarId: String, book: MoneyBook, today: LocalDate
         f.refund?.let { r -> if (gate.allows(Feature.TAX_FORECAST)) Muted(if (r >= 0) "5월 신고 뒤 약 ${Fmt.won(r)} 돌려받을 것 같아요" else "5월에 약 ${Fmt.won(-r)} 더 낼 것 같아요") }
         TextButton(onClick = {
             if (gate.locked(Feature.TAX_FORECAST) && !com.bamnat.app.ui.pro.tryFeature(Feature.TAX_FORECAST)) { openPro(Feature.TAX_FORECAST); return@TextButton }
-            scope.launch { runCatching { com.bamnat.app.report.ReportShare.pdf(context, TaxPlus.mayPack(f), "bamnat-may-$year.pdf") } }
+            scope.launch { com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, TaxPlus.mayPack(f), "bamnat-may-$year.pdf") } } // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
         }, modifier = Modifier.heightIn(min = 48.dp)) { Text(if (gate.locked(Feature.TAX_FORECAST)) "5월 신고 준비 묶음 (프로)" else "5월 신고 준비 묶음 PDF") }
     }
 }

@@ -107,7 +107,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
     onMaker: (String) -> Unit, onNewVersion: (String) -> Unit, onTakeInto: (String, String) -> Unit, onToStudio: (() -> Unit)?) {
     val s by vm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     var menu by remember { mutableStateOf(false) }
     var flagging by remember { mutableStateOf(false) }
     var disliking by remember { mutableStateOf(false) }
@@ -132,7 +132,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
         if (r == SnackbarResult.ActionPerformed) vm.undo()
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         bottomBar = { putBar?.let { StickyPut(it) } },
         topBar = {
             TopAppBar(

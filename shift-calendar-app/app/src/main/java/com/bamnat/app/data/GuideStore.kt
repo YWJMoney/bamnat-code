@@ -71,6 +71,15 @@ class GuideStore private constructor(context: Context) {
         prefs.edit().putStringSet(K_SWITCHED, prefs.getStringSet(K_SWITCHED, emptySet()).orEmpty() + keys).apply()
     }
 
+    /**
+     * 2.0.0 [RVP-22] (검토 UIX-47) A phone in its first setup has had everything so far, however long ago it was installed: Play may
+     * have updated it before it was first opened (weekly releases), and '새로 생긴 것' then came over its first calendar.
+     */
+    fun firstSetup(currentCode: Int, on: (String) -> Boolean) {
+        whatsNew(currentCode, freshInstall = true)
+        switchedNew(on, freshInstall = true)
+    }
+
     fun whatsNewSeen(currentCode: Int) {
         prefs.edit().putInt(K_SEEN_VERSION, currentCode).apply()
     }

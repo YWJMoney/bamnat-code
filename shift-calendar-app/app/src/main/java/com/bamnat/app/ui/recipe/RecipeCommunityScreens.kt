@@ -148,7 +148,7 @@ private fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done
 @Composable
 fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onMake: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     // 1.36 [VIL-15] Opened from a plaza question: 요청 쓰기 starts with its words.
     val draft = remember { RequestDraft.text.also { RequestDraft.text = null } }
     var writing by remember { mutableStateOf(draft != null && vm.canWrite) }
@@ -163,7 +163,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
     LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(title = { Text("요청 판" + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: ""), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
