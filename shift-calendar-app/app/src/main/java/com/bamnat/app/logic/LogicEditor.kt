@@ -441,7 +441,7 @@ private fun StepsEditor(title: String, hint: String, steps: List<LogicAct>, max:
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}. ${a.say()}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Text("${i + 1}. ${com.bamnat.core.formula.FormulaText.blanks(a.say())}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onChange(steps.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.semantics { contentDescription = "이 동작 빼기" }) { Text("빼기") }
                 }
                 ActEditor(a, { n -> onChange(steps.toMutableList().also { it[i] = n }) }, scope, title = null)
@@ -556,7 +556,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 StepsEditor("그리고 이어서", "한 번에 여러 일을 해요(예: 알림 + 값 +1 + 메모 한 줄)", r.more, MAX_MORE, { r = r.copy(more = it) }, scope)
                 if (r.cond.isNotEmpty()) StepsEditor("조건이 아니면", "조건이 맞지 않는 날에 할 일(비우면 아무것도 안 해요)", r.otherwise, MAX_ELSE, { r = r.copy(otherwise = it) }, scope)
                 // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로. 1.37 PC 4차: 요약이 위에서 늘면 아래 칸이 밀려 맨 아래로 옮겼어요.
-                Text(ruleDone(r).say(), style = MaterialTheme.typography.bodyMedium,
+                Text(com.bamnat.core.formula.FormulaText.blanks(ruleDone(r).say()), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
@@ -645,7 +645,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     ConditionEditor(b.cond, { b = b.copy(cond = it) }, scope, empty = "조건을 넣어요")
                     StepsEditor("조건이 아니면", "조건이 맞지 않을 때 할 일(비우면 아무것도 안 해요)", b.otherwise, MAX_ELSE, { b = b.copy(otherwise = it) }, scope)
                 }
-                Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                Text(com.bamnat.core.formula.FormulaText.blanks(b.say()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -944,7 +944,7 @@ fun LogicEditor(
             AlertDialog(onDismissRequest = { askOn = null },
                 title = { Text("받은 규칙을 켤까요?") },
                 // [RVM-23] STU-23: every step and its condition (not the first step alone), and the 쓰기 line only when a step writes.
-                text = { Text("‘${r.name}’: ${r.say()}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
+                text = { Text("‘${r.name}’: ${com.bamnat.core.formula.FormulaText.blanks(r.say())}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
                 confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c); saidOn(r) }) { Text("켜기") } },
                 dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
         }
