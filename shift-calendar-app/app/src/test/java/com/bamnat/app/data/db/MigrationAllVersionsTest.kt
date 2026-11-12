@@ -214,6 +214,8 @@ class MigrationAllVersionsTest(private val from: Int) {
             "jobs" to mapOf("id" to 1, "epochDay" to 20741, "title" to "타일", "client" to "가나다", "place" to "현장", "startMinute" to 480,
                 "endMinute" to 1020, "amount" to 300000, "deposit" to 50000, "depositPaid" to 1, "balancePaid" to 0, "remindMinutes" to 60,
                 "note" to "", "endEpochDay" to 20742, "costs" to 20000, "withholding" to 1, "status" to 2, "units" to 1.5, "dueEpochDay" to 20760),
+            // 2.0.0 [RVK-46] Version 36's 일감 받은 기록: no older version had it, so it arrives empty and takes this row on a fresh install.
+            "job_payments" to mapOf("id" to 1, "jobId" to 1, "epochDay" to 20745, "amount" to 50000, "label" to "중도금", "note" to ""),
             "daily_sales" to mapOf("epochDay" to 20742, "sales" to 500000, "costs" to 30000, "note" to "", "card" to 400000, "cash" to 100000,
                 "transfer" to 0, "delivery" to 0, "cashCounted" to 98000, "cardSettled" to 1),
             "fixed_costs" to mapOf("id" to 1, "name" to "월세", "amount" to 500000, "day" to 25, "kind" to "EXPENSE", "category" to "주거",

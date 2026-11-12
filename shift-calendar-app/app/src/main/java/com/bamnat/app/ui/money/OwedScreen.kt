@@ -47,6 +47,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.Sort
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Engineering
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -234,12 +237,19 @@ private enum class Show(val label: String) { OWED("받을 것"), DONE("끝난 �
 /** What a line is, in one picture: a job, a sale on credit, pay, a loan, anything else. */
 private fun Owed.icon(): ImageVector = when (this) {
     is Owed.FromJob -> Icons.Filled.Construction
-    is Owed.Written -> when (r.kind) {
-        ReceivableKind.SALE -> Icons.Filled.Storefront
-        ReceivableKind.WORK -> Icons.Filled.Payments
-        ReceivableKind.LOAN -> Icons.Filled.VolunteerActivism
-        ReceivableKind.OTHER -> Icons.AutoMirrored.Filled.ReceiptLong
-    }
+    is Owed.Written -> r.kind.icon()
+}
+
+/** Each kind of 받을 돈 and 줄 돈 in one picture. */
+private fun ReceivableKind.icon(): ImageVector = when (this) {
+    ReceivableKind.SALE -> Icons.Filled.Storefront
+    ReceivableKind.WORK -> Icons.Filled.Payments
+    ReceivableKind.LOAN -> Icons.Filled.VolunteerActivism
+    ReceivableKind.OTHER -> Icons.AutoMirrored.Filled.ReceiptLong
+    // 2.0.0 [RVK-46] 줄 돈.
+    ReceivableKind.SUPPLY -> Icons.Filled.LocalShipping
+    ReceivableKind.WAGE -> Icons.Filled.Engineering
+    ReceivableKind.BORROWED -> Icons.Filled.AccountBalance
 }
 
 /** [RECV-05] The kinds an empty list offers first, by how the user works. */
@@ -1047,7 +1057,7 @@ private fun ReceivableDialog(
                     label = { Text("무슨 돈 (예: 10월 납품, 3일치 일당)") }, modifier = Modifier.fillMaxWidth())
                 Text("어떤 돈인가요", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ReceivableKind.entries.forEach { k ->
+                    ReceivableKind.of(toPay = false).forEach { k ->
                         FilterChip(selected = kind == k, onClick = {
                             kind = k
                             if (!touchedIncome) income = k.incomeByDefault

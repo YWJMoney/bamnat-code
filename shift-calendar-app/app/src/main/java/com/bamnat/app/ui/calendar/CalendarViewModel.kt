@@ -1792,7 +1792,7 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         val money = money
         container.appScope.launch {
             money.delete(job)
-            _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+            _messages.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.restore(job) })
         }
     }
 

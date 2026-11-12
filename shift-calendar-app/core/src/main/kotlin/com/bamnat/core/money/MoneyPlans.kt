@@ -36,6 +36,11 @@ data class FixedCost(
     /** First and last day it repeats on; null for no limit. */
     val start: LocalDate? = null,
     val end: LocalDate? = null,
+    /**
+     * 2.0.0 [RVK-46] (검토 MONEY-07) Where a repeating 이체 goes: 적금 통장, 대출, 내 다른 계좌. Its line moves the money from [accountId]
+     * to this one, so the balances and 순자산 stay right instead of falling every month. Null for spending and income.
+     */
+    val toAccountId: Long? = null,
 ) {
     fun dueIn(month: YearMonth): LocalDate = month.atDay(day.coerceIn(1, month.lengthOfMonth()))
 
@@ -144,10 +149,12 @@ object UpcomingPayments {
     fun entry(cost: FixedCost, date: LocalDate) = MoneyEntry(
         date = date, kind = cost.kind, amount = cost.amount, category = cost.category,
         source = MoneySource.FIXED, merchant = cost.name, accountId = cost.accountId, fixedId = cost.id.takeIf { it > 0 },
+        // 2.0.0 [RVK-46] (검토 MONEY-07) A repeating 이체 lands where it was set to go.
+        toAccountId = cost.toAccountId.takeIf { cost.kind == MoneyKind.TRANSFER && it != cost.accountId },
     )
 
     /** [LEDG-08] The line for [u]: a card's bill moves money from its account to the card. */
-    fun entry(u: Upcoming, date: LocalDate) = entry(u.cost, date).copy(toAccountId = u.cardId)
+    fun entry(u: Upcoming, date: LocalDate) = entry(u.cost, date).let { e -> e.copy(toAccountId = u.cardId ?: e.toAccountId) }
 
     const val CARD_BILL = "카드값"
 }

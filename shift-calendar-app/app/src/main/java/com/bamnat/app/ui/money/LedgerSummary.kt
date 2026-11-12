@@ -81,6 +81,7 @@ import com.bamnat.core.money.AccountType
 import com.bamnat.core.money.BudgetLevel
 import com.bamnat.core.money.BudgetLine
 import com.bamnat.core.money.BudgetStatus
+import com.bamnat.core.money.Budgets
 import com.bamnat.core.money.CardCycle
 import com.bamnat.core.money.CategoryEdit
 import com.bamnat.core.money.MoneyAccount
@@ -376,7 +377,7 @@ fun BudgetEditor(
     val categories = remember(book) { book.categoriesOf(MoneyKind.EXPENSE) }
     val focusAt = remember { androidx.compose.ui.focus.FocusRequester() }
     val values = remember {
-        mutableStateMapOf<String, String>().apply { book.budgets.forEach { put(it.category, amountDigits(it.amount)) } }
+        mutableStateMapOf<String, String>().apply { Budgets.everyMonth(book.budgets).forEach { put(it.category, amountDigits(it.amount)) } }
     }
     val lastMonth = remember(book, month) { book.month(month.minusMonths(1)).expenseByCategory.associate { it.category to it.amount } }
     val average = remember(book, month) {
@@ -461,7 +462,7 @@ fun BudgetEditor(
             }
             HorizontalDivider()
             com.bamnat.app.ui.components.SaveButton(
-                onClick = { onSave((listOf(MoneyBudget.TOTAL) + categories + book.budgets.map { it.category }).distinct().associateWith { values[it]?.toAmount() ?: 0 }) },
+                onClick = { onSave((listOf(MoneyBudget.TOTAL) + categories + Budgets.everyMonth(book.budgets).map { it.category }).distinct().associateWith { values[it]?.toAmount() ?: 0 }) },
                 modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp, vertical = 10.dp).heightIn(min = 48.dp),
             ) { Text("저장") }
         }

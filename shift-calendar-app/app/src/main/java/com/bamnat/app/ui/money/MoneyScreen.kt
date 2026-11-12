@@ -426,7 +426,7 @@ class MoneyViewModel(
     override fun deleteJob(job: Job) {
         container.appScope.launch {
             money.delete(job)
-            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.save(job) })
+            _undo.tryEmit(UndoMessage("‘${job.title}’ 일감을 지웠어요") { money.restore(job) })
         }
     }
     val rules: StateFlow<Map<String, String>> = money.rules.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())

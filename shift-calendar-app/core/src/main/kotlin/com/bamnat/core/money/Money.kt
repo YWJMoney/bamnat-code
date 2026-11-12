@@ -112,6 +112,11 @@ data class Job(
     val units: Double? = null,
     /** [FLD-09] When the money is promised; null follows the last day. */
     val due: LocalDate? = null,
+    /**
+     * 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01·I06ab-04) Money that came in besides 선금·잔금: 계약금·중도금, or the pay in several parts, each
+     * with the day it came. It counts toward [received] with the deposit and balance ticked as paid.
+     */
+    val payments: List<JobPayment> = emptyList(),
 ) {
     val lastDate: LocalDate get() = endDate?.takeIf { it.isAfter(date) } ?: date
     val days: Int get() = (lastDate.toEpochDay() - date.toEpochDay()).toInt() + 1
@@ -123,7 +128,11 @@ data class Job(
     /** What actually reaches the account; deposit and balance are parts of it. */
     val payable: Long get() = amount - withheld
     val balance: Long get() = (payable - deposit).coerceAtLeast(0)
-    val received: Long get() = (if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0)
+    /** What came in: the deposit and balance ticked as paid and [payments], never more than [payable]. */
+    val received: Long get() = ((if (depositPaid) deposit.coerceAtMost(payable) else 0) + (if (balancePaid) balance else 0) +
+        payments.sumOf { it.amount.coerceAtLeast(0) }).coerceAtMost(payable.coerceAtLeast(0))
+    /** 2.0.0 [RVK-46] The last day money came in for this job, when its payments say so. */
+    val lastPaid: LocalDate? get() = payments.maxOfOrNull { it.date }
     /** [FLD-03] A cancelled job is owed nothing more; a deposit already paid is kept. */
     val unpaid: Long get() = if (cancelled) 0 else (payable - received).coerceAtLeast(0)
     val profit: Long get() = payable - costs
@@ -139,6 +148,23 @@ data class Job(
 
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
+}
+
+/** 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) One payment for a [Job] besides its 선금·잔금, with its day. */
+data class JobPayment(
+    val id: Long = 0,
+    val jobId: Long = 0,
+    val date: LocalDate,
+    val amount: Long,
+    /** What it was: '계약금', '중도금', or "" for a plain part. */
+    val label: String = "",
+    val note: String = "",
+) {
+    companion object {
+        const val MAX_LABEL = 20
+        /** The usual names, in the order money comes in for building work. */
+        val LABELS = listOf("계약금", "중도금", "잔금")
+    }
 }
 
 /** [WORK-02] Withholding on 사업소득: 소득세 3% + 지방소득세 (소득세의 10%), each below 10 won dropped. */
@@ -276,8 +302,14 @@ object MoneyCategories {
     const val MAX_NAME = 12
 }
 
-/** [LEDG-14] One category the user added, hid or moved, for one kind of line. */
-data class CategoryEdit(val kind: MoneyKind, val name: String, val position: Int, val hidden: Boolean = false)
+/**
+ * [LEDG-14] One category the user added, hid or moved, for one kind of line. 2.0.0 [RVK-46] (검토 U06a-15·I06aa-09) With the icon
+ * ([CategoryLook.ICONS] key) and color (a [CategoryLook.COLORS] place, 1 on) the user picked; "" and 0 keep the usual look.
+ */
+data class CategoryEdit(
+    val kind: MoneyKind, val name: String, val position: Int, val hidden: Boolean = false,
+    val icon: String = "", val color: Int = 0,
+)
 
 data class CategoryTotal(val category: String, val amount: Long, val count: Int)
 
@@ -461,6 +493,11 @@ data class MoneyBook(
     val pending: List<MoneyEntry> = emptyList(),
     /** 2.0.0 [RVK-40] (검토 MONEY-50) The shops' 일반·간이과세 behind this book, for the 부가세 deadlines. */
     val vat: Set<TaxDeadlines.Vat> = emptySet(),
+    /**
+     * 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈: money the user owes, kept apart from [receivables] so nothing that adds up 받을 돈 or
+     * money coming in ever counts it.
+     */
+    val payables: List<Receivable> = emptyList(),
 ) {
     /** [SHOP-04] Every kind of work behind this book, for the tax deadlines that go with them. */
     val allStyles: Set<com.bamnat.core.work.WorkStyle> get() = styles + setOfNotNull(style)
@@ -508,7 +545,7 @@ data class MoneyBook(
                 moved.flatMap { it.entries }, moved.flatMap { it.jobs }, moved.flatMap { it.sales }, moved.flatMap { it.fixed },
                 moved.flatMap { it.receivables }, moved.flatMap { it.accounts },
                 styles = books.flatMap { it.allStyles }.toSet(), pending = moved.flatMap { it.pending },
-                vat = books.flatMap { it.vat }.toSet(),
+                vat = books.flatMap { it.vat }.toSet(), payables = moved.flatMap { it.payables },
             )
         }
 
@@ -518,7 +555,7 @@ data class MoneyBook(
             val m = { id: Long? -> id?.plus(by) }
             return copy(
                 entries = entries.map { it.copy(accountId = m(it.accountId), toAccountId = m(it.toAccountId), fixedId = m(it.fixedId)) },
-                fixed = fixed.map { it.copy(id = it.id + by, accountId = m(it.accountId)) },
+                fixed = fixed.map { it.copy(id = it.id + by, accountId = m(it.accountId), toAccountId = m(it.toAccountId)) },
                 accounts = accounts.map { it.copy(id = it.id + by, payFromId = m(it.payFromId)) },
             )
         }
