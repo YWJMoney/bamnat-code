@@ -119,6 +119,8 @@ fun PayQuickSetup(
     onApplied: () -> Unit = {},
     /** [J133-05] The calendar's kind of work: 알바 starts on 시급 파트타임, 직장인 on 주5일, whatever the shifts look like. */
     style: com.bamnat.core.work.WorkStyle? = null,
+    /** 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): the 시급 typed on bamnat.app and taken on the first setup's card, for a first pay. */
+    webWage: Long? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
@@ -148,7 +150,7 @@ fun PayQuickSetup(
     // 1.36 PC X5 (빠른 설정 다시 뒤 제목이 '직접 설정' → '제조·생산 교대', 고른 적 없음): a form only shown picked is not the user's
     // choice of job; the job changes only when they tap a form.
     var formTapped by remember { mutableStateOf(false) }
-    var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
+    var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 } ?: webWage?.takeIf { initial == null && form?.wageType == WageType.HOURLY }) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
     var hours by remember { mutableStateOf<Int?>(null) }
     // [PAYG-06] Opens on the company the user works for: "쓰고 있어요", its way at once, or 직접 만들기 when it has none.

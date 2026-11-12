@@ -119,8 +119,11 @@ internal fun PartTitle(title: String, line: String? = null) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RotationOrder(vm: SetupViewModel, d: SetupDraft, header: Boolean = true) {
-    if (header) StepHeader("근무가 어떤 순서로 돌아가요?", "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요.")
-    else PartTitle("근무 순서", "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요.")
+    // [RVH-68] An order that came with its first day (the web's 교대 달력) has today answered already: said, not asked as to come.
+    val line = d.anchor?.takeIf { d.todayConfirmed }?.let { "회사 근무표에서 한 바퀴만 보면 돼요. 순서의 첫날은 ${com.bamnat.app.ui.Fmt.monthDay(it)}로 넣어 뒀어요." }
+        ?: "회사 근무표에서 한 바퀴만 보면 돼요. 오늘이 어디쯤인지는 다음에 물어요."
+    if (header) StepHeader("근무가 어떤 순서로 돌아가요?", line)
+    else PartTitle("근무 순서", line)
     val types = remember(d.types) { d.types.associateBy { it.id } }
     val shared = remember(d.source) { vm.sourceOrder(d) }
     val presets = remember(d.bundle, d.roles, d.types) { vm.presets(d).map { it to PatternPresets.toSteps(it, d.roles) } }

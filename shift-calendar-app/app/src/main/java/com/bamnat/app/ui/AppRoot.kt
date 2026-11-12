@@ -935,6 +935,17 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // 2.0.0 [RVH-64] 검토 PC-72 (설계 4절): every phone that came from 1.36.1~1.39.0 with a line found gets one line in the update
     // notice, '최근에 넣은 근무를 한 번 봐 주세요', whatever its month turn; the notice waits for the look (one query per calendar).
     LaunchedEffect(Unit) { com.bamnat.app.ui.calendar.TurnSlipAsk.load(container) }
+    // 2.0.0 [RVH-68] 검토 I50c-03 (RVR-31): a phone that came from the site's 명세서 맞춰 보기 goes on to '내 월급 맞나요?' once, after its
+    // first setup (the setup's last button said so); a pay not set up yet is set up there first, then the check opens.
+    LaunchedEffect(Unit) {
+        val web = container.webStart
+        runCatching { web.look() }
+        if (web.slipDue()) {
+            web.slipOpened()
+            container.pendingMatch = true
+            runCatching { nav.navigate(Routes.pay()) { launchSingleTop = true } }
+        }
+    }
     val slipLoaded by com.bamnat.app.ui.calendar.TurnSlipAsk.loaded.collectAsStateWithLifecycle()
     val slipAsk by com.bamnat.app.ui.calendar.TurnSlipAsk.ask.collectAsStateWithLifecycle()
     val slipTold by com.bamnat.app.ui.calendar.TurnSlipAsk.toldNow.collectAsStateWithLifecycle()

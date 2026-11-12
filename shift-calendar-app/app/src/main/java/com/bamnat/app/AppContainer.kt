@@ -694,10 +694,14 @@ class AppContainer(context: Context) {
     var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
     var referrerSource: com.bamnat.app.tier.ReferrerSource = com.bamnat.app.tier.PlayReferrer
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
+    /** 2.0.0 [RVH-68] Play's referrer, read once for 친구 초대 and 웹에서 이어 받기 alike. */
+    val installReferrer by lazy { com.bamnat.app.tier.ReferrerOnce(appContext) { referrerSource } }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { installReferrer })
     }
+    /** 2.0.0 [RVH-68] 검토 I50c-01·I50c-03 (RVR-31): what bamnat.app's Play link carried, for the first setup. */
+    val webStart by lazy { com.bamnat.app.data.WebStart(appContext, installReferrer) }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
     /** 1.32 [PROX-02] The money-day 체험 권유, this phone only. */

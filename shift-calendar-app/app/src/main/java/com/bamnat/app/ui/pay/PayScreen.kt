@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.appContainer
 import com.bamnat.app.ui.parts.drawClip
 import com.bamnat.app.ui.monthSwipe
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -356,6 +357,8 @@ fun PayScreen(
                     if (detailed == null) PayQuickSetup(
                         initial = profile,
                         style = settings.workStyle,
+                        // [RVH-68] The 시급 taken from bamnat.app on the first setup, for the main calendar's first pay.
+                        webWage = if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) setupContext.appContainer.webStart.wage else null,
                         snapshot = snap,
                         preview = { draft -> vm.preview(draft, snap, month) },
                         slipRules = { base, read, rules -> vm.slipRules(base, snap, read, rules) },

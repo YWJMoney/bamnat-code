@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -180,6 +181,11 @@ fun SetupHost(
         }
     }
     val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
+    // 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): what the user picked on bamnat.app, read on the phone as the setup starts.
+    LaunchedEffect(Unit) { runCatching { vm.lookWeb() } }
+    val webHandoff = vm.webStart?.handoff?.collectAsStateWithLifecycle()?.value
+    val webAnswer = vm.webStart?.answer?.collectAsStateWithLifecycle()?.value
+    val webAsk = remember(d.style, webHandoff, webAnswer) { vm.webAsk(d) }
     val todayAsk by vm.todayAsk.collectAsStateWithLifecycle()
     val primaryNoAsk = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
         val code = inviteCode
@@ -207,6 +213,11 @@ fun SetupHost(
     val primary = primaryNoAsk?.let { p ->
         if (!atSummary || statsInScroll) p
         else p.copy(above = statsAsk)
+    }?.let { p ->
+        // [RVH-68] 검토 I50c-03: came from the site's 명세서 맞춰 보기, said where the last button is, so the pay screen after it is expected.
+        if (atSummary && webAnswer != com.bamnat.app.data.WebStart.DECLINED && webHandoff?.target == com.bamnat.core.setup.WebHandoff.SLIP)
+            p.copy(note = listOfNotNull(p.note, "저장하면 웹에서 하던 ‘내 월급 맞나요?’로 이어 가요.").joinToString(" "))
+        else p
     }
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
@@ -302,6 +313,12 @@ fun SetupHost(
                                 IconButton(onClick = vm::closeNote) { Icon(Icons.Filled.Close, "안내 닫기") }
                             }
                         }
+                    }
+                    // [RVH-68] One card, on the question after the kind of work: the order and today, or the 시급 (조건 3: one ground, one
+                    // button, X). Answered, it is gone; the times' screen then shows what it filled.
+                    webAsk?.takeIf { it.on == step }?.let { ask ->
+                        com.bamnat.app.ui.components.NudgeCard(ask.text, icon = Icons.Filled.Language, action = ask.action,
+                            onAction = { vm.useWeb(ask) }, onClose = vm::declineWeb, closeLabel = "웹에서 고른 것 쓰지 않기")
                     }
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
