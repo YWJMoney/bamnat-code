@@ -43,6 +43,13 @@ object PushPhone {
             .setProjectId(BuildConfig.FCM_PROJECT_ID).setGcmSenderId(BuildConfig.FCM_SENDER_ID).build())
     }.getOrNull()
 
+    /**
+     * 2.0.0 [RVN-22] 검토 COMP-55·I10ba-05: the server holds this phone's token, so an answer comes by push and the job's look
+     * is only the fallback.
+     */
+    fun given(context: Context): Boolean = configured &&
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_SENT, null) != null
+
     private fun wanted(c: AppContainer): Boolean = configured && (
         (c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews) || PlazaPush.wanted(c))
 

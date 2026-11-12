@@ -181,6 +181,13 @@ class PublicCyclesTest {
         assertEquals(null, PublicCycles.orderCodes("휴휴"))
         assertEquals(null, PublicCycles.orderCodes("포스코"))
         assertEquals("포스코", PublicCycles.search("ㅍㅅㅋ").first().company)
+        // 2.0.0 [RVN-22] 검토 COMP-56: a name made of order letters ('오비') keeps its name's rows after the order's.
+        val obRows = listOf(
+            all.first().copy(id = "t-order", company = "가나 물류", display = "가나 물류", site = "", codes = "EB"),
+            all.first().copy(id = "t-name", company = "오비맥주", display = "오비맥주 이천공장", site = "", codes = "DDNNOO"),
+        )
+        assertEquals(listOf("t-order", "t-name"), PublicCycles.search("오비", rows = obRows).map { it.id })
+        assertEquals(listOf("t-name"), PublicCycles.search("오비맥주", rows = obRows).map { it.id })
         // An old source is marked by its year.
         assertEquals(22, PublicCycles.yearsOld(all.first { it.company == "대구 법인택시" }, LocalDate.of(2026, 11, 6)))
     }

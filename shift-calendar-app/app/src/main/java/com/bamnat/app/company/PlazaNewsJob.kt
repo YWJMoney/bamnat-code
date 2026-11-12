@@ -259,13 +259,19 @@ class PlazaNewsJob : JobService() {
                     device = c.companyStore.device)
             }
             o.optStringOrNull("now")?.let { prefs.edit().putString(K_SINCE, it).apply() }
-            val answers = o.optJSONArray("answers").objects().sumOf { it.optInt("count") }
-            // The 설정 tab's badge is right the next time the app opens.
-            if (answers > 0) runCatching { c.inquiryStore.update(c.inquiryApi.mine(c.companyStore.device)) }
+            val written = o.optJSONArray("answers").objects().sumOf { it.optInt("count") }
+            // [J133-24] Answers the reply job already said at once are not said again. 2.0.0 [RVN-22] I10ba-03: counted per question
+            // (opened or told), and what this line says is told from now on. The 설정 tab's badge is right the next time the app opens.
+            val answers = if (written > 0 && c.inquiryStore.asked) runCatching {
+                val list = c.inquiryApi.mine(c.companyStore.device)
+                c.inquiryStore.update(list)
+                c.inquiryStore.startTelling(list, InquiryReplyJob.said(c.appContext))
+                val fresh = c.inquiryStore.untold(list)
+                fresh.sumOf(c.inquiryStore::fresh).also { c.inquiryStore.tell(fresh) }
+            }.getOrDefault(written) else 0
             return Digest(
                 plaza = if (plazaOn) o.optJSONArray("plaza").rows(::item) else emptyList(),
-                // [J133-24] Answers the reply job already said at once are not said again.
-                answers = if (c.inquiryStore.asked && c.inquiryStore.unread.value > InquiryReplyJob.said(c.appContext)) answers else 0,
+                answers = answers,
                 notices = o.optJSONArray("notices").objects().map { it.optString("title") }.filter { it.isNotBlank() },
                 reactions = o.optJSONArray("reactions").rows(::reaction),
             )

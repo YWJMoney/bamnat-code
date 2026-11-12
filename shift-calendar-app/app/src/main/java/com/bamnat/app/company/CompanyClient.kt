@@ -838,6 +838,14 @@ class CompanyClient(
         }
     }
 
+    /** 2.0.0 [RVN-22] COMP-59 A vote's tag: the plaza's kind of work ("s", the server checks it) and 근무형태 ("f") only; null without one. */
+    internal suspend fun voteTag(room: String): JSONObject? {
+        if (!room.startsWith("style-")) return null
+        val t = runCatching { roomTag?.invoke(room) }.getOrNull() ?: return null
+        val f = t.optString("f").takeIf { t.has("f") && !t.isNull("f") && it.isNotEmpty() } ?: return null
+        return JSONObject().put("s", t.optString("s")).put("f", f)
+    }
+
     // AS 1.29 [SRCH-06] A read the screen may stop waiting for (a new letter typed, a time limit) returns at once.
     override suspend fun search(query: String): List<CompanyHit> = readCall {
         if (CompanyText.norm(query).length < 2) return@readCall emptyList()
@@ -1129,7 +1137,8 @@ class CompanyClient(
 
     override suspend fun pollVote(device: String, id: String, choice: Int?, room: String?): Poll = serverCall {
         val o = JSONObject().put("device", device).put("choice", choice ?: JSONObject.NULL)
-        if (choice != null && room != null) o.tagged(room, com.bamnat.core.plaza.StylePlaza.ROOM)
+        // 2.0.0 [RVN-22] 검토 COMP-59: only what the vote counts by (the plaza's kind and my 근무형태), not the whole tag.
+        if (choice != null && room != null) voteTag(room)?.let { o.put("tag", it) }
         pollOf(request("POST", "/api/posts/$id/poll", o).getJSONObject("poll"))
     }
 

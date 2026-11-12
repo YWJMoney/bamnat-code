@@ -722,7 +722,11 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             NoticeLinks.Target.SETUP_AGAIN -> { nav.navigate(Routes.SETUP_AGAIN) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [INQ-05] 밤낮 소식's answer line opens 내 문의 (문의하기 opens there when an answer is new).
-            NoticeLinks.Target.INQUIRY -> { nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 2.0.0 [RVN-22] U10b-01: the notice of one question's answer opens that question.
+            NoticeLinks.Target.INQUIRY -> {
+                com.bamnat.app.ui.settings.InquiryLinks.openMine(NoticeLinks.payload.value)
+                nav.navigate(Routes.INQUIRY) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             // 1.32.1 [STAB-13] Not 알람 점검: a 앱 멈춤 문의 whose 점검 기록 starts with the stop.
             NoticeLinks.Target.STOP_REPORT -> {
                 com.bamnat.app.ui.grow.GrowAsk.feedback(com.bamnat.app.ui.grow.STOP_ABOUT, kind = com.bamnat.app.company.InquiryKind.BUG, withCheck = true)
@@ -926,8 +930,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         runCatching { container.inquiryApi.mine(container.companyStore.device) }.onSuccess {
             container.inquiryStore.update(it)
             // [J133-24] A question still waiting is looked at every few hours, so its answer is told at once.
-            if (it.any { q -> q.waiting } && container.settingsRepository.current.plazaNews) com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext,
-                soon = it.any { q -> q.waiting && java.time.Duration.between(q.updatedAt, com.bamnat.core.time.Today.instant()).toDays() < 1 })
+            // 2.0.0 [RVN-22] COMP-55: how often by how long the newest waiting question has waited, and whether push reaches this phone.
+            it.filter { q -> q.waiting }.maxOfOrNull { q -> q.updatedAt }?.takeIf { container.settingsRepository.current.plazaNews }?.let { newest ->
+                com.bamnat.app.company.InquiryReplyJob.schedule(container.appContext, java.time.Duration.between(newest, com.bamnat.core.time.Today.instant()))
+            }
             // 1.36 [GRW-03] PC 확인 a4899e83: 스튜디오 부탁이 풀렸으면 앱을 열 때 한 번 '보러 가기'로 알려요(설정 탭까지 가지 않아도).
             val prefs = container.appContext.getSharedPreferences("studio_solved", android.content.Context.MODE_PRIVATE)
             val told = prefs.getStringSet("told", emptySet()).orEmpty()

@@ -384,7 +384,6 @@ class InquiryClient(
  * The questions themselves stay on the server, found by the random install id of [CompanyStore].
  */
 class InquiryStore(context: Context) {
-    private val appContext = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("inquiry", Context.MODE_PRIVATE)
 
     private val _unread = MutableStateFlow(prefs.getInt("unread", 0))
@@ -404,8 +403,11 @@ class InquiryStore(context: Context) {
      */
     fun told(id: String): Int = prefs.getInt("told_$id", 0)
 
+    /** The answers of [i] neither opened nor said yet. */
+    fun fresh(i: Inquiry): Int = (i.answers - maxOf(seen(i.id), told(i.id))).coerceAtLeast(0)
+
     /** The questions with an answer neither opened nor said yet ([told] and [seen] both below it). */
-    fun untold(list: List<Inquiry>): List<Inquiry> = list.filter { it.answers > maxOf(seen(it.id), told(it.id)) }
+    fun untold(list: List<Inquiry>): List<Inquiry> = list.filter { fresh(it) > 0 }
 
     /** [list]'s answers so far are said. */
     fun tell(list: List<Inquiry>) {
@@ -445,8 +447,7 @@ class InquiryStore(context: Context) {
         val n = list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }
         _unread.value = n
         prefs.edit().putInt("unread", n).apply()
-        // [RVF-02] What was read is no longer 'said': the next answer is told again.
-        InquiryReplyJob.lowerSaid(appContext, n)
+        // [RVF-02]'s one 'said' count is gone (2.0.0 [RVN-22] I10ba-03): each question keeps its own ([told]).
     }
 
     /** The user opened [inquiry]: its answers so far are read. */

@@ -78,6 +78,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -215,6 +216,19 @@ private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
         formKey++
         if (s.help) { query = s.text; view = HELP } else view = NEW
     }
+    // 2.0.0 [RVN-22] 검토 U10b-01·I10bb-04: a notice of one question's answer opens that question (its 아직이에요 says it there,
+    // so the one line of what is still wrong is right under it). Gone from the list: 내 문의.
+    val mineLink by InquiryLinks.mine.collectAsStateWithLifecycle()
+    LaunchedEffect(mineLink, list) {
+        val loaded = list ?: return@LaunchedEffect
+        val link = InquiryLinks.takeMine() ?: return@LaunchedEffect
+        val id = link.removeSuffix(com.bamnat.app.company.InquiryReplyJob.STILL_MARK)
+        val q = loaded.firstOrNull { it.id == id }
+        message = null
+        view = q?.id ?: LIST
+        if (q != null && link != id && q.askFixed && q.fixed == 0) vm.fixed(q.id, false) { why -> if (why != null) message = why }
+    }
+    DisposableEffect(Unit) { onDispose { InquiryLinks.takeMine() } }
     val open = list?.firstOrNull { it.id == view }
     val publicId = view.removePrefix(PUB).takeIf { view.startsWith(PUB) }
     val home = view == HELP || view == LIST || view == BOARD
