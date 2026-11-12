@@ -55,8 +55,11 @@
 // GET    /api/sign/:id         header X-Delete-Token -> { seenAt, signed:{name, at}|null, expiresAt }
 // DELETE /api/sign/:id         header X-Delete-Token -> 204: the boss's app takes it down once it has the signature
 // GET    /k/:key               the staff member's page: the contract, a name box and 동의; POST /k/:key/sign form name, agree=1
-// GET    /api/share/:id/seen   1.38 [P3-L-15] header X-Delete-Token -> { seenAt, updatedAt }: when the link was last opened since its
-//                              last change (the page or the app). The first ask turns it on for that link; nothing but the time is kept.
+// GET    /api/share/:id/seen   1.38 [P3-L-15] header X-Delete-Token -> { seenAt, okAt, updatedAt }: when the link was last opened by a person
+//                              since its last change (the page or the app), and (2.0.0 [RVQ-19]) when the member pressed 확인했어요 on
+//                              the page since then. The first ask turns it on for that link; nothing but the times is kept.
+// POST   /s/:id/ok             2.0.0 [RVQ-19] the page's '확인했어요' (a link the leader watches): back to the page with ?k=1
+// POST   /api/share/:id/ok     2.0.0 [RVQ-19] the same press from the member's app (GET /api/share/:id says watch:true) -> 204
 // POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
 //                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
 // PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
@@ -95,6 +98,8 @@ export const LIMITS = {
   createsPerHour: 20,
   // 1.36 [SEC-02] Reads a network may make in an hour: a whole plant on one Wi-Fi opening shared calendars stays far under it.
   readsPerHour: 3000,
+  // 2.0.0 [RVQ-20] SVC-12: every request a network may make in an hour (reads, presses, edits, reports), before KV is read.
+  callsPerHour: 6000,
   groupReadsPerHour: 60,
   // [SHR-01] What a sharer may add to v2 links.
   memo: 80,
@@ -158,6 +163,10 @@ export const LIMITS = {
   boardDaysAfter: 60,
   // 1.38 [P3-L-18] 피곤해요 팀 합계: counts per day only, shown to the leader from this many people up, kept this many days.
   tiredMin: 3,
+  // 2.0.0 [RVQ-21] SVC-14: and this many tied links that did not press that day.
+  tiredQuiet: 2,
+  // 2.0.0 [RVQ-25] 검토 I22a-04: a round's summary written by a press is checked against the members' own keys this long after.
+  settleMs: 60 * 1000,
   tiredDays: 30,
   tiredBoxDays: 120,
 };
@@ -184,6 +193,8 @@ const SCAM_TEXT = [
   ["link", /https?:\/\/|www\.|\b[a-z0-9-]{2,}\.(com|net|kr|co|me|io|ly|gg|xyz|app|link|site|shop)\b|t\.me\//i],
   ["account", /(?<![\d:.])\d{2,6}(?:[\s-]\d{2,8}){1,4}(?![\d:.])/],
   ["messenger", /오픈\s*채팅|오픈\s*톡|텔레그램|카톡\s*(아이디|id)|카카오톡\s*(아이디|id)|라인\s*아이디|위챗|whats\s*app/i],
+  // 2.0.0 [RVQ-20] '카톡 nurse_min7'처럼 아이디라는 말 없이 메신저 이름 바로 뒤에 영문 아이디. '라인'은 빼요(생산 라인 SMT01 같은 현장 말).
+  ["messenger", /(?:카톡|카카오톡|텔레그램|위챗)\s*[:：]?\s*[A-Za-z][A-Za-z0-9._-]{3,}/],
 ];
 const digitsIn = (s) => s.replace(/\D/g, "").length;
 /** 1.39 [CARE-09] 걸러내기는 1.39 앱(versionCode 53)부터만 (사용자 2026-11-08 "1.39 앱에서만 걸리게"). 1.38 이하 앱은 헤더가 없어 예전처럼 받고,
@@ -229,11 +240,46 @@ export function scamFind(value, key = null, depth = 0) {
   return null;
 }
 
-/** 1.39 [CARE-09] The 400 a 1.39 app (versionCode 53+) gets for contact words in [value]; null to go on (older apps are not checked). */
+/**
+ * 1.39 [CARE-09] The 400 a 1.39 app (versionCode 53+) gets for contact words in [value]; null to go on.
+ * 2.0.0 [RVQ-20] 검토 SVC-11: a request without the app's header (a 1.38 app, or anything made outside the app) is not refused, so an
+ * old app still works as the user decided (2026-11-08), but the contact words in [value] are covered over in place (***) before it is
+ * kept: a page made outside the app can no longer carry an account number, a phone, a link or a messenger to a teammate.
+ */
 export function scamRefusal(request, value) {
-  if (!scamChecked(request)) return null;
+  if (!scamChecked(request)) {
+    scamMask(value);
+    return null;
+  }
   const hit = scamFind(value);
   return hit ? json({ error: "contact", ...hit }, 400) : null;
+}
+
+/** 2.0.0 [RVQ-20] [s] with each phone·link·account·messenger covered by stars (never longer than what it covers). */
+export function scamMaskText(s) {
+  const star = (m) => "*".repeat(Math.min(3, m.length));
+  // A whole address goes, not only its https:// (a bare domain the list does not know would stay readable).
+  let out = s.replace(/(?:https?:\/\/|www\.|t\.me\/)\S*/gi, star)
+    // A messenger id goes with its word ('카톡 id abc12').
+    .replace(/(?:카톡|카카오톡|라인|텔레그램|위챗)\s*(?:아이디|id)\s*[:：]?\s*\S+/gi, star)
+    // and without the word ('카톡 nurse_min7'), as SCAM_TEXT finds it.
+    .replace(/(?:카톡|카카오톡|텔레그램|위챗)\s*[:：]?\s*[A-Za-z][A-Za-z0-9._-]{3,}/g, star)
+    // A handle (@abcd) or a mail address goes too.
+    .replace(/[A-Za-z0-9._-]*@[A-Za-z0-9_.-]{3,}/g, star);
+  for (const [code, re] of SCAM_TEXT) {
+    const all = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+    out = out.replace(all, (m) => (code === "account" && digitsIn(m) < 11 ? m : star(m)));
+  }
+  return out.replace(/\d{11,}/g, star);
+}
+
+/** 2.0.0 [RVQ-20] Covers the contact words in every string of [value] (objects and arrays, in place). */
+export function scamMask(value, depth = 0) {
+  if (depth > 6 || value == null || typeof value !== "object") return;
+  for (const k of Object.keys(value)) {
+    if (typeof value[k] === "string") value[k] = scamMaskText(value[k]);
+    else scamMask(value[k], depth + 1);
+  }
 }
 
 /** [SHR-01] The parts a sharer can tick on top of the shifts. */
@@ -275,7 +321,9 @@ export function plainLeave(label) {
 const ID_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
 
 export default {
-  async fetch(request, env, ctx) {
+  async fetch(request, raw, ctx) {
+    // 2.0.0 [RVQ-24] Every KV read is counted with the writes (the company server's 서버 상태 shows the day against the plan).
+    const env = oncePerRequest(metered(raw));
     try {
       return await spread(request, await route(request, env));
     } catch (e) {
@@ -294,6 +342,10 @@ export const APP_ADS_TXT = "google.com, pub-4920911396563628, DIRECT, f08c47fec0
 async function route(request, env) {
   const url = new URL(request.url);
   const path = url.pathname;
+  // 2.0.0 [RVQ-20] 검토 SVC-12: one hourly budget per network for every request, whatever its way or method, before anything is read
+  // from KV (before, only some reads were held, and a press, an edit or a report read KV first). Counted in this Worker's memory.
+  // Cloudflare's own rate limiting rule (dashboard) can hold the same in front of every Worker; see README.
+  if (path !== "/api/health" && !readAllowed(request, "any", LIMITS.callsPerHour)) return tooManyReads(path);
   if ((request.method === "GET" || request.method === "HEAD") && (path.startsWith("/s/") || path.startsWith("/c/") || path.startsWith("/a/") || path.startsWith("/api/ask/") || path.startsWith("/v/") || path.startsWith("/api/call/") || path.startsWith("/w/") || path.startsWith("/api/swap/") || path.startsWith("/k/") || path.startsWith("/b/") || path.startsWith("/api/sign/") || path.startsWith("/api/share/") || path.startsWith("/api/clock/") || path.startsWith("/api/groups/"))) {
     if (!readAllowed(request, "read", LIMITS.readsPerHour)) return tooManyReads(path);
     if (path.startsWith("/api/groups/") && !readAllowed(request, "group", LIMITS.groupReadsPerHour)) return tooManyReads(path);
@@ -329,7 +381,7 @@ async function route(request, env) {
   if (askApi && request.method === "PUT") return askChange(request, env, askApi[1]);
   if (askApi && request.method === "DELETE") return askDelete(request, env, askApi[1]);
   const askPage = path.match(/^\/a\/([A-Za-z0-9]{22})(\/pick|\/note)?$/);
-  if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null);
+  if (askPage && !askPage[2] && (request.method === "GET" || request.method === "HEAD")) return askView(env, askPage[1], url.searchParams.get("d"), null, 200, null, null, opened(request));
   if (askPage && askPage[2] && request.method === "POST") return askPost(request, env, askPage[1], askPage[2].slice(1));
   if (path === "/api/swap" && request.method === "POST") return swapCreate(request, env, url);
   const swapApi = path.match(/^\/api\/swap\/([A-Za-z0-9]{22})$/);
@@ -337,7 +389,7 @@ async function route(request, env) {
   if (swapApi && request.method === "PUT") return swapChange(request, env, swapApi[1], url);
   if (swapApi && request.method === "DELETE") return swapDelete(request, env, swapApi[1]);
   const swapPage = path.match(/^\/w\/([A-Za-z0-9]{22})(\/ask|\/cancel|\/reply)?$/);
-  if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null);
+  if (swapPage && !swapPage[2] && (request.method === "GET" || request.method === "HEAD")) return swapView(env, swapPage[1], null, 200, null, opened(request));
   if (swapPage && swapPage[2] && request.method === "POST") return swapPress(request, env, swapPage[1], swapPage[2].slice(1));
   if (path === "/api/board" && request.method === "POST") return boardCreate(request, env, url);
   const boardApi = path.match(/^\/api\/board\/([A-Za-z0-9]{22})$/);
@@ -354,6 +406,8 @@ async function route(request, env) {
   if (tiredLink && request.method === "POST") return tiredSay(request, env, tiredLink[1]);
   const tiredForm = path.match(/^\/s\/([A-Za-z0-9]{16,32})\/tired$/);
   if (tiredForm && request.method === "POST") return tiredPress(request, env, tiredForm[1]);
+  const okForm = path.match(/^\/(s|api\/share)\/([A-Za-z0-9]{16,32})\/ok$/);
+  if (okForm && request.method === "POST") return okPress(request, env, okForm[2], okForm[1] !== "s");
   const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
   if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
@@ -361,7 +415,7 @@ async function route(request, env) {
   if (signApi && request.method === "GET") return signRead(request, env, signApi[1]);
   if (signApi && request.method === "DELETE") return signDelete(request, env, signApi[1]);
   const signPage = path.match(/^\/k\/([A-Za-z0-9]{22})(\/sign)?$/);
-  if (signPage && !signPage[2] && (request.method === "GET" || request.method === "HEAD")) return signView(env, signPage[1], null);
+  if (signPage && !signPage[2] && (request.method === "GET" || request.method === "HEAD")) return signView(env, signPage[1], null, 200, null, opened(request));
   if (signPage && signPage[2] && request.method === "POST") return signPost(request, env, signPage[1]);
   if (path === "/api/call" && request.method === "POST") return callCreate(request, env, url);
   const callApi = path.match(/^\/api\/call\/([A-Za-z0-9]{22})$/);
@@ -369,7 +423,7 @@ async function route(request, env) {
   if (callApi && request.method === "PUT") return callChange(request, env, callApi[1]);
   if (callApi && request.method === "DELETE") return callDelete(request, env, callApi[1]);
   const callPage = path.match(/^\/v\/([A-Za-z0-9]{22})(\/answer)?$/);
-  if (callPage && !callPage[2] && (request.method === "GET" || request.method === "HEAD")) return callView(env, callPage[1], null);
+  if (callPage && !callPage[2] && (request.method === "GET" || request.method === "HEAD")) return callView(env, callPage[1], null, 200, null, opened(request));
   if (callPage && callPage[2] && request.method === "POST") return callAnswer(request, env, callPage[1]);
   const reported = path.match(/^\/(api\/share|s)\/([A-Za-z0-9]{16,32})\/report$/);
   if (reported && request.method === "POST") return report(request, env, reported[2], reported[1] === "s");
@@ -458,6 +512,8 @@ async function remove(request, env, id) {
   const record = await authorized(request, env, id);
   if (record instanceof Response) return record;
   await kvDel(env, id);
+  // 2.0.0 [RVQ-19] 열어 봄·확인했어요 go with the link at once, not when their time runs out.
+  if (record.watch) await Promise.all([kvDel(env, seenKey(id)), kvDel(env, okKey(id))]);
   return new Response(null, { status: 204 });
 }
 
@@ -484,14 +540,17 @@ async function view(request, env, id) {
   if (request.method === "GET") {
     count(env, "views");
     // 1.39 [IOS-06] The same view by kind of phone (a person, not a preview robot).
-    if (!previewBot(request)) { count(env, `views_${phone}`); await markSeen(env, id, record); }
+    if (!previewBot(request)) count(env, `views_${phone}`);
+    if (opened(request)) await markSeen(env, id, record);
   }
   const url = new URL(request.url);
   // 1.39 [IOS-04] A leader's 피곤해요 합계 is on for this link: the page offers the press too (once a day, like the app).
   const tired = record.tired ? await tiredState(env, id, record) : null;
+  // 2.0.0 [RVQ-19] A link the leader watches asks the member to press 확인했어요 once per change.
+  const ok = record.watch ? { at: await okAt(env, id, record), said: url.searchParams.get("k") } : null;
   // [SHR-02] On Android the page offers the app, which keeps it as a 받은 달력 next to the user's own.
   return html(renderSchedule(record.schedule, record.expiresAt, phone === "android" ? id : null, id,
-    { phone, feed: `${url.host}/s/${id}.ics`, scheme: url.protocol.replace(":", ""), tired, said: url.searchParams.get("t") }));
+    { phone, feed: `${url.host}/s/${id}.ics`, scheme: url.protocol.replace(":", ""), tired, said: url.searchParams.get("t"), ok }));
 }
 
 /**
@@ -545,14 +604,18 @@ async function read(request, env, id) {
   if (record?.removed) return json({ error: "removed", ...(record.reason ? { reason: record.reason } : {}), at: record.at ?? null }, 410);
   if (!record || Date.parse(record.expiresAt) < Date.now()) return json({ error: "not_found" }, 404);
   // [SHR-12] Receivers ask often and download only when the schedule or its end date changed.
-  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}${record.tired ? "|t" : ""}`)).slice(0, 20)}"`;
+  const tag = `W/"${(await sha256(`${record.updatedAt ?? ""}|${record.expiresAt}${record.tired ? "|t" : ""}${record.watch ? "|w" : ""}`)).slice(0, 20)}"`;
+  // 1.39 G2: the member's app checking in the background (받은 근무표 따라가기, 하루 한 번 소식) is not the member looking.
+  // 2.0.0 [RVQ-19] Before the 304: when the background check already brought the new version, the member opening it later is
+  // answered 304 and used never to count as 열어 봄.
+  if (request.headers.get("x-bamnat-quiet") !== "1") await markSeen(env, id, record);
   const asked = (request.headers.get("if-none-match") || "").split(",").map((t) => t.trim().replace(/^W\//, ""));
   if (asked.includes(tag.replace(/^W\//, ""))) {
     return new Response(null, { status: 304, headers: { etag: tag, "cache-control": "no-store" } });
   }
-  // 1.39 G2: the member's app checking in the background (받은 근무표 따라가기, 하루 한 번 소식) is not the member looking.
-  if (request.headers.get("x-bamnat-quiet") !== "1") await markSeen(env, id, record);
-  const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null, ...(record.tired ? { tired: true } : {}) });
+  // 2.0.0 [RVQ-19] watch: the leader asks for 확인했어요 on this link (the app may offer the press, POST /api/share/:id/ok).
+  const res = json({ schedule: record.schedule, expiresAt: record.expiresAt, updatedAt: record.updatedAt ?? null, ...(record.tired ? { tired: true } : {}),
+    ...(record.watch ? { watch: true } : {}) });
   res.headers.set("etag", tag);
   return res;
 }
@@ -764,6 +827,8 @@ async function teamTakeDown(request, env, kind, id) {
   }
   // The content goes; member pages' keys stay until they end, only to find the mark.
   if (record) await kvDel(env, k.main(id));
+  // 2.0.0 [RVQ-25] The round's summary (everyone's requests or swaps) goes with it.
+  if (kind === "a" || kind === "w") await kvDel(env, roundKey(kind === "a" ? "ask" : "swap", id));
   await kvDel(env, `report:${kind}:${id}`);
   return new Response(null, { status: 204 });
 }
@@ -998,6 +1063,48 @@ async function clockView(env, id, done, status = 200, known = null) {
 // asked is kept and the leader's app orders by it, core TeamAsk.order). Kept: the team's and members' names as the leader wrote
 // them, the days and kinds asked, a line each, when. Never a reason (병가 is not a kind members can ask), no address, no device.
 
+// ---- 2.0.0 [RVQ-25] 검토 I22a-04·SVC-07: 팀 라운드 요약 키 ----
+// A member's page shows everyone's part of the round (how many took a day, who asked me to swap). Before, it read every member's
+// key on each open: 80 reads for a ward of 80, 160 for a press. Now one key per round (askx:<id>, swapx:<id>) holds each member's
+// part as the pages need it. The members' own keys stay the truth (the leader's app and the 선착순 check read them): a press writes
+// its part here too, and as two presses at once may each write over the other's part, the first open a minute after a press reads
+// the truth once and settles the summary. A page now reads 4 keys (its link, the round, its own part, the summary).
+
+const roundKey = (kind, id) => `${kind}x:${id}`;
+
+/** Each member's part {i: part}, from the summary, or rebuilt from the members' keys when there is none or it is not settled. */
+async function roundParts(env, kind, id, record, n, truthKey, partOf) {
+  const sum = await env.SHARES.get(roundKey(kind, id), "json");
+  if (sum && (sum.settled || Date.now() - Date.parse(sum.at) < LIMITS.settleMs)) return sum.parts ?? {};
+  const parts = {};
+  for (let i = 0; i < n; i++) {
+    const v = await env.SHARES.get(truthKey(id, i), "json");
+    const part = v ? partOf(v) : null;
+    if (part) parts[i] = part;
+  }
+  // A press landing while this read: its summary is newer than the one this started from, so it is not written over.
+  const now = await (env.SHARES.fresh ?? env.SHARES.get).call(env.SHARES, roundKey(kind, id), "json");
+  if ((now?.at ?? null) === (sum?.at ?? null)) await put(env, roundKey(kind, id), { at: new Date().toISOString(), settled: true, parts, expiresAt: record.expiresAt });
+  return parts;
+}
+
+/** A press: these members' parts are now these. Nothing to do before the first open builds the summary. */
+async function roundNote(env, kind, id, record, changed, base = null) {
+  const sum = base ? { parts: base } : await env.SHARES.get(roundKey(kind, id), "json");
+  if (!sum) return null;
+  const parts = { ...(sum.parts ?? {}) };
+  for (const [i, part] of Object.entries(changed)) {
+    if (part) parts[i] = part;
+    else delete parts[i];
+  }
+  await put(env, roundKey(kind, id), { at: new Date().toISOString(), settled: false, parts, expiresAt: record.expiresAt });
+  return parts;
+}
+
+const askPart = (v) => (v.wishes?.length ? v.wishes.map(({ d, k, s, at }) => ({ d, k, ...(s != null ? { s } : {}), at })) : null);
+const askWishesOf = (parts) => Object.entries(parts).flatMap(([m, list]) => list.map((w) => ({ m: Number(m), ...w })));
+const swapPart = (v) => (v.asks?.length ? v.asks.map(({ d, q, state }) => ({ d, q, state })) : null);
+
 const askKey = (id) => `ask:${id}`;
 const askMemberKey = (key) => `askm:${key}`;
 const askWishKey = (id, m) => `askw:${id}:${m}`;
@@ -1122,6 +1229,7 @@ async function askDelete(request, env, id) {
     await kvDel(env, askWishKey(id, m));
     await kvDel(env, askMemberKey(record.members[m].key));
   }
+  await kvDel(env, roundKey("ask", id));
   await kvDel(env, askKey(id));
   return new Response(null, { status: 204 });
 }
@@ -1145,6 +1253,7 @@ async function askPost(request, env, key, what) {
   const form = new URLSearchParams((await request.text()).slice(0, 512));
   const mine = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
   let said = null;
+  let truth = null;
   if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
   else if (what === "note") {
     const note = cleanText(form.get("note") ?? "", LIMITS.askNote);
@@ -1161,7 +1270,8 @@ async function askPost(request, env, key, what) {
       const s = k === "SHIFT" ? Number.parseInt(form.get("s") ?? "", 10) : null;
       if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
       else {
-        const all = (await askAll(env, id, record)).wishes;
+        // The 선착순 check reads every member's own key (the truth), not the summary.
+        const all = (truth = (await askAll(env, id, record)).wishes);
         const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
         if (no) said = { bad: no };
         else {
@@ -1172,18 +1282,34 @@ async function askPost(request, env, key, what) {
       }
     }
   }
-  if (said.ok) { await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); count(env, "askPicks"); }
-  return askView(env, key, what === "pick" ? form.get("d") : null, said, said.bad ? 409 : 200, found, mine);
+  let parts = null;
+  if (said.ok) {
+    await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
+    count(env, "askPicks");
+    // 2.0.0 [RVQ-25]: the summary from the truth just read (a note or a removal has none, so the summary's own parts).
+    let base = null;
+    if (truth) {
+      base = {};
+      for (const w of truth) (base[w.m] ??= []).push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+    }
+    parts = await roundNote(env, "ask", id, record, { [m]: askPart(mine) }, base);
+  }
+  return askView(env, key, what === "pick" ? form.get("d") : null, said, said.bad ? 409 : 200, found, mine, true, parts);
 }
 
-async function askView(env, key, day, said, status = 200, known = null, mineKnown = null) {
+async function askView(env, key, day, said, status = 200, known = null, mineKnown = null, human = true, partsKnown = null) {
   const found = known ?? await askFind(env, key);
   if (!found) return askGone();
   const { id, m, record } = found;
   const { rules, month } = record;
-  const all = await askAll(env, id, record);
   const mine = mineKnown ?? (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
-  if (!mine.seenAt) { mine.seenAt = new Date().toISOString(); await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); }
+  // 2.0.0 [RVQ-25] 검토 I22a-04: everyone's requests from the round's summary (one read), mine from my own key.
+  const parts = { ...(partsKnown ?? (await roundParts(env, "ask", id, record, record.members.length, askWishKey, askPart))) };
+  const minePart = askPart(mine);
+  if (minePart) parts[m] = minePart;
+  else delete parts[m];
+  const all = { wishes: askWishesOf(parts) };
+  if (human && !mine.seenAt) { mine.seenAt = new Date().toISOString(); await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); }
   const me = record.members[m].name;
   const open = askOpen(record);
   const [y, mo] = month.split("-").map(Number);
@@ -1348,12 +1474,12 @@ async function callAnswer(request, env, key) {
   return callView(env, key, { ok: a === "yes" ? "들어갈 수 있다고 전했어요. 리더가 정하면 이 페이지와 근무표 링크에 나와요." : "어렵다고 전했어요. 고마워요." }, 200, found);
 }
 
-async function callView(env, key, said, status = 200, known = null) {
+async function callView(env, key, said, status = 200, known = null, human = true) {
   const found = known ?? await callFind(env, key);
   if (!found) return callGone();
   const { id, p, record } = found;
   const mine = (await env.SHARES.get(callAnswerKey(id, p), "json")) ?? {};
-  if (!mine.seenAt) await put(env, callAnswerKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  if (human && !mine.seenAt) await put(env, callAnswerKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
   const me = record.people[p].name;
   const done = record.taken != null;
   const state = done ? (record.taken === p ? `<p class="done">${esc(me)}님이 들어가기로 정해졌어요. 고마워요!</p>` : `<p class="muted">다른 분이 들어가기로 정해졌어요. 답해 줘서 고마워요.</p>`)
@@ -1384,7 +1510,17 @@ const seenKey = (id) => `seen:${id}`;
  */
 export function previewBot(request) {
   const ua = request.headers.get("user-agent") || "";
-  return /kakaotalk-scrap|facebookexternalhit|slackbot|twitterbot|telegrambot|discordbot|linkedinbot|whatsapp\/|skypeuripreview|embedly|yeti\/|daumoa|googlebot|bingbot|applebot|naverbot|crawler|spider|[a-z]bot\//i.test(ua);
+  // 2.0.0 [RVQ-19] 검토 SVC-03: Teams·Outlook(MicrosoftPreview), LINE(line-poker), 주소 검사기가 쓰는 머리 없는 브라우저(HeadlessChrome)도.
+  return /kakaotalk-scrap|facebookexternalhit|slackbot|twitterbot|telegrambot|discordbot|linkedinbot|whatsapp\/|skypeuripreview|microsoftpreview|line-poker|iframely|google-pagerenderer|headlesschrome|embedly|yeti\/|daumoa|googlebot|bingbot|applebot|naverbot|crawler|spider|[a-z]bot\//i.test(ua);
+}
+
+/**
+ * 2.0.0 [RVQ-19] 검토 SVC-03·T22-01·T22-03: whether this request is a person opening the page, the only thing that may set 열어 봄
+ * (봤어요) on a link the leader or 사장님 watches. A HEAD (a messenger or a link checker asking whether the page is there), a preview
+ * robot, and the member's app checking in the background (X-Bamnat-Quiet) are not. One place for the five pages (/s, /a, /v, /w, /k).
+ */
+export function opened(request) {
+  return request.method === "GET" && !previewBot(request) && request.headers.get("x-bamnat-quiet") !== "1";
 }
 
 async function markSeen(env, id, record) {
@@ -1400,7 +1536,38 @@ async function seenRead(request, env, id) {
   if (!record.watch) await put(env, id, { ...record, watch: true });
   const seen = await env.SHARES.get(seenKey(id), "json");
   const at = seen && Date.parse(seen.at) >= Date.parse(record.updatedAt ?? 0) ? seen.at : null;
-  return json({ seenAt: at, updatedAt: record.updatedAt ?? null });
+  return json({ seenAt: at, okAt: await okAt(env, id, record), updatedAt: record.updatedAt ?? null });
+}
+
+// ---- 2.0.0 [RVQ-19] 확인했어요 (검토 U22-01·I22b-01) ----
+// 열어 봄 says the page was opened by what looked like a person; only a press says the member read it. The leader's app shows the
+// presses big ('확인 3/8명') and the opens small. One key per link, kept for this version of the schedule only (a change asks again).
+
+const okKey = (id) => `ok:${id}`;
+
+/** When the member pressed 확인했어요 since the link last changed, or null. */
+async function okAt(env, id, record) {
+  const ok = await env.SHARES.get(okKey(id), "json");
+  return ok && Date.parse(ok.at) >= Date.parse(record.updatedAt ?? 0) ? ok.at : null;
+}
+
+/**
+ * POST /s/:id/ok: the page's form, then back to the page (no script). POST /api/share/:id/ok: the member's app (204, or 404·429).
+ * A press is a person, so it counts as 열어 봄 too.
+ */
+async function okPress(request, env, id, app = false) {
+  const record = await env.SHARES.get(id, "json");
+  const back = (k) => app ? (k === "1" ? new Response(null, { status: 204 }) : json({ error: k === "wait" ? "rate_limited" : "not_found" }, k === "wait" ? 429 : 404))
+    : new Response(null, { status: 303, headers: { location: `/s/${id}?k=${k}`, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.watch) return back("off");
+  if (!(await allow(env, request, "ko", LIMITS.createsPerHour))) return back("wait");
+  if (!(await okAt(env, id, record))) {
+    const at = new Date().toISOString();
+    await put(env, okKey(id), { at, expiresAt: record.expiresAt });
+    await markSeen(env, id, record);
+    count(env, "oks");
+  }
+  return back("1");
 }
 
 // ---- 1.38 [P3-L-18] 피곤해요 팀 합계 ----
@@ -1435,10 +1602,7 @@ async function tiredRead(request, env, id) {
   if (record instanceof Response) return record;
   // Reading keeps the box alive while the leader uses it.
   if (Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...record, expiresAt: expiry(LIMITS.tiredBoxDays) });
-  const days = Array.from({ length: 7 }, (_, i) => kstDay(new Date(Date.now() - i * 86400 * 1000).toISOString())).map((d) => {
-    const n = record.days[d] ?? 0;
-    return { d, n: n >= LIMITS.tiredMin ? n : null };
-  });
+  const days = Array.from({ length: 7 }, (_, i) => kstDay(new Date(Date.now() - i * 86400 * 1000).toISOString())).map((d) => ({ d, n: tiredShown(record, d) }));
   return json({ min: LIMITS.tiredMin, days });
 }
 
@@ -1455,13 +1619,43 @@ async function tiredTie(request, env, id) {
   let body;
   try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return json({ error: "bad_json" }, 400); }
   const box = body?.box ?? null;
-  if (box !== null && !(typeof box === "string" && /^[A-Za-z0-9]{22}$/.test(box) && (await env.SHARES.get(tiredKey(box))))) return json({ error: "bad_box" }, 400);
-  if ((record.tired ?? null) !== box) {
+  const boxRecord = box === null ? null : typeof box === "string" && /^[A-Za-z0-9]{22}$/.test(box) ? await env.SHARES.get(tiredKey(box), "json") : null;
+  if (box !== null && !boxRecord) return json({ error: "bad_box" }, 400);
+  const was = record.tired ?? null;
+  if (was !== box) {
     const next = { ...record };
     if (box) next.tired = box; else delete next.tired;
     await put(env, id, next);
   }
+  // 2.0.0 [RVQ-21] 검토 SVC-14: the box knows how many links are tied to it (never whose), so a day is shown only while enough of them
+  // did not press. A leader's app ties every member again when it turns 피곤해요 on, so an older box learns them then.
+  const tie = async (boxId, rec, on) => {
+    const links = new Set(rec.links ?? []);
+    if (on === links.has(id)) return;
+    if (on) links.add(id); else links.delete(id);
+    await put(env, tiredKey(boxId), { ...rec, links: [...links].slice(-LIMITS.askMembers * 2) });
+  };
+  if (was && was !== box) {
+    const old = await env.SHARES.get(tiredKey(was), "json");
+    if (old) await tie(was, old, false);
+  }
+  if (box) await tie(box, boxRecord, true);
   return new Response(null, { status: 204 });
+}
+
+/**
+ * 2.0.0 [RVQ-21] 검토 SVC-14·T22-04: what the leader sees for day [d], or null. A number shows only when at least LIMITS.tiredMin
+ * different phones pressed (the same phone pressing for two links counts once, so a leader pressing two links of their own cannot lift
+ * one member's press over the line), and, when the box knows its tied links, at least LIMITS.tiredQuiet of them did not press (so a
+ * team where all but one pressed does not point at that one). Days before 2.0.0 have no phone count and keep the old rule.
+ */
+export function tiredShown(box, d) {
+  const n = box.days?.[d] ?? 0;
+  const people = box.people?.[d] ?? n;
+  if (people < LIMITS.tiredMin) return null;
+  const tied = box.links?.length ?? 0;
+  if (tied && tied - n < LIMITS.tiredQuiet) return null;
+  return people;
 }
 
 async function tiredSay(request, env, id) {
@@ -1490,7 +1684,14 @@ async function tiredAdd(request, env, id) {
   const keep = kstDay(new Date(Date.now() - LIMITS.tiredDays * 86400 * 1000).toISOString());
   const days = Object.fromEntries(Object.entries(box.days).filter(([d]) => d > keep));
   days[day] = (days[day] ?? 0) + 1;
-  await put(env, tiredKey(record.tired), { ...box, days });
+  // 2.0.0 [RVQ-21] SVC-14: how many different phones pressed today. The marks are a salted hash of the network and the browser or app
+  // line, kept for today only (the next press of another day drops them); only their number stays for the day.
+  const mark = (await sha256(`${env.RATE_SALT || "bamnat"}:tp:${day}:${netOf(request.headers.get("cf-connecting-ip"))}:${request.headers.get("user-agent") || ""}`)).slice(0, 10);
+  const marks = box.marks?.day === day ? new Set(box.marks.list) : new Set();
+  marks.add(mark);
+  const people = Object.fromEntries(Object.entries(box.people ?? {}).filter(([d]) => d > keep));
+  people[day] = marks.size;
+  await put(env, tiredKey(record.tired), { ...box, days, people, marks: { day, list: [...marks].slice(-LIMITS.askMembers * 2) } });
   count(env, "tired");
   return "ok";
 }
@@ -1682,11 +1883,11 @@ async function signPost(request, env, key) {
   return signView(env, key, { ok: "서명했어요. 사장님이 서명한 계약서 PDF를 보내 드려요." }, 200, found);
 }
 
-async function signView(env, key, said, status = 200, known = null) {
+async function signView(env, key, said, status = 200, known = null, human = true) {
   const found = known ?? await signFind(env, key);
   if (!found) return signGone();
   const { id, record } = found;
-  if (!record.seenAt) { record.seenAt = new Date().toISOString(); await put(env, signKey(id), record); }
+  if (human && !record.seenAt) { record.seenAt = new Date().toISOString(); await put(env, signKey(id), record); }
   const items = record.items.map((i, n) => `<h2>${n + 1}. ${esc(i.t)}</h2>${i.b ? `<p>${esc(i.b).replace(/\n/g, "<br>")}</p>` : ""}`).join("");
   const saidHtml = said ? `<p class="${said.bad ? "bad" : "done"}">${esc(said.bad ?? said.ok)}</p>` : "";
   const form = record.signed
@@ -1801,18 +2002,24 @@ async function swapChange(request, env, id, url) {
     record.ok = board.ok;
   }
   if (typeof body?.closed === "boolean") record.closed = body.closed;
-  await put(env, swapKey(id), record);
-  // The leader's word on asks: {decide:[{p, d, state:"done"|"denied"}]}.
+  // The leader's word on asks: {decide:[{p, d, state:"done"|"denied"}]}. 2.0.0 [RVQ-23] 검토 SVC-36: every line is checked before
+  // anything is kept (before, the board was saved and some asks decided, and then a bad line answered 400: half a change).
   const decide = Array.isArray(body?.decide) ? body.decide.slice(0, 100) : [];
+  if (decide.some((x) => !Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied"))) {
+    return json({ error: "bad_swap" }, 400);
+  }
+  await put(env, swapKey(id), record);
+  const changed = {};
   for (const x of decide) {
-    if (!Number.isInteger(x?.p) || x.p < 0 || x.p >= record.people.length || !Number.isInteger(x?.d) || (x.state !== "done" && x.state !== "denied")) return json({ error: "bad_swap" }, 400);
     const mine = await env.SHARES.get(swapAskKey(id, x.p), "json");
     const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
     if (!ask) continue;
     ask.state = x.state;
     ask.decidedAt = new Date().toISOString();
     await put(env, swapAskKey(id, x.p), { ...mine, expiresAt: record.expiresAt });
+    changed[x.p] = swapPart(mine);
   }
+  if (Object.keys(changed).length) await roundNote(env, "swap", id, record, changed);
   return new Response(null, { status: 204 });
 }
 
@@ -1823,6 +2030,7 @@ async function swapDelete(request, env, id) {
     await kvDel(env, swapAskKey(id, p));
     await kvDel(env, swapPersonKey(record.people[p].key));
   }
+  await kvDel(env, roundKey("swap", id));
   await kvDel(env, swapKey(id));
   return new Response(null, { status: 204 });
 }
@@ -1860,7 +2068,8 @@ async function swapPress(request, env, key, what) {
     ask.answeredAt = now;
     await put(env, swapAskKey(id, from), { ...theirs, expiresAt: record.expiresAt });
     count(env, "swapAnswers");
-    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found);
+    const parts = await roundNote(env, "swap", id, record, { [from]: swapPart(theirs) });
+    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found, true, parts);
   }
   const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
   const asks = mine.asks ?? [];
@@ -1869,7 +2078,8 @@ async function swapPress(request, env, key, what) {
     if (!ask) return swapView(env, key, { bad: "거둘 요청이 없어요" }, 409, found);
     ask.state = "cancel";
     await put(env, swapAskKey(id, p), { ...mine, asks, expiresAt: record.expiresAt });
-    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found);
+    const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks }) });
+    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found, true, parts);
   }
   const q = Number(form.get("q"));
   if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return swapView(env, key, { bad: "이 날은 그분과 바꿀 수 없어요" }, 400, found);
@@ -1880,15 +2090,16 @@ async function swapPress(request, env, key, what) {
   kept.push({ d, q, state: "asked", at: now });
   await put(env, swapAskKey(id, p), { ...mine, asks: kept, expiresAt: record.expiresAt });
   count(env, "swapAsks");
-  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found);
+  const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks: kept }) });
+  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found, true, parts);
 }
 
-async function swapView(env, key, said, status = 200, known = null) {
+async function swapView(env, key, said, status = 200, known = null, human = true, partsKnown = null) {
   const found = known ?? await swapFind(env, key);
   if (!found) return swapGone();
   const { id, p, record } = found;
   const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
-  if (!mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  if (human && !mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
   const me = record.people[p].name;
   const name = (q) => esc(record.people[q]?.name ?? "?");
   const y = Number(record.month.slice(0, 4));
@@ -1896,12 +2107,12 @@ async function swapView(env, key, said, status = 200, known = null) {
   const dayName = (d) => `${m}/${d}(${WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]})`;
   const label = (q, d) => esc(record.rows[q]?.[d - 1] || "·");
   const word = { asked: "답 기다림", yes: "상대가 좋대요 · 리더 승인 기다림", no: "상대가 어렵대요", cancel: "거둠", done: "리더가 승인했어요", denied: "리더가 거절했어요" };
-  // Asks to me: everyone else's lists (a ward is at most 80 people, read once per open).
+  // Asks to me: everyone else's lists. 2.0.0 [RVQ-25] 검토 I22a-04: from the round's summary (one read, not one per person).
+  const parts = partsKnown ?? (await roundParts(env, "swap", id, record, record.people.length, swapAskKey, swapPart));
   const incoming = [];
   for (let o = 0; o < record.people.length; o++) {
     if (o === p) continue;
-    const theirs = await env.SHARES.get(swapAskKey(id, o), "json");
-    for (const a of theirs?.asks ?? []) if (a.q === p && a.state !== "cancel") incoming.push({ from: o, ...a });
+    for (const a of parts[o] ?? []) if (a.q === p && a.state !== "cancel") incoming.push({ from: o, ...a });
   }
   const inHtml = incoming.length === 0 ? "" : `<h2>받은 요청</h2>` + incoming.map((a) => `<div class="panel"><p><b>${name(a.from)}</b>님: ${dayName(a.d)} 그분 ${label(a.from, a.d)} ↔ 내 ${label(p, a.d)}</p>` +
     (a.state === "asked" && !record.closed ? `<div class="picks"><form method="post" action="/w/${key}/reply"><input type="hidden" name="from" value="${a.from}"><input type="hidden" name="d" value="${a.d}"><input type="hidden" name="a" value="yes"><button class="pick on">좋아요</button></form>` +
@@ -1945,11 +2156,60 @@ async function kvDel(env, key) {
 
 const pending = new WeakMap();
 
+/**
+ * 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: the KV store with its reads counted (the writes were, [SRV-10]). One wrapper per store, so the
+ * counts gathered in this Worker stay in one place; the day's total reaches `stats:<day>` with the other counts.
+ */
+const meteredKv = new WeakMap();
+export function metered(env) {
+  const kv = env?.SHARES;
+  if (!kv || kv.raw) return env;
+  let m = meteredKv.get(kv);
+  if (!m) {
+    const read = () => count({ SHARES: kv }, "reads");
+    m = { raw: kv, get: (k, t) => (read(), kv.get(k, t)), put: (...a) => kv.put(...a), delete: (k) => kv.delete(k), list: (o) => (read(), kv.list(o)),
+      ...(kv.getWithMetadata ? { getWithMetadata: (k, t) => (read(), kv.getWithMetadata(k, t)) } : {}) };
+    meteredKv.set(kv, m);
+  }
+  return { ...env, SHARES: m };
+}
+/** The store under the meter (counts and the rate limit's memory are kept per store). */
+const storeOf = (kv) => kv?.raw ?? kv;
+
+/**
+ * 2.0.0 [RVQ-25] 검토 I22a-04: a key is read once in a request (a team page read its link key twice, once for the take-down mark and
+ * once for the page). A write or delete of the key forgets it; each reader gets its own copy, so changing one changes nothing else.
+ * `fresh` reads past it, for the one place that must see a write made meanwhile by another request.
+ */
+export function oncePerRequest(env) {
+  const kv = env?.SHARES;
+  if (!kv) return env;
+  const seen = new Map();
+  const forget = (k) => {
+    for (const key of seen.keys()) if (key.startsWith(`${k}\u0000`)) seen.delete(key);
+  };
+  const copy = (v) => (v && typeof v === "object" ? structuredClone(v) : v);
+  const once = {
+    raw: kv.raw ?? kv,
+    get(k, t) {
+      const key = `${k}\u0000${typeof t === "string" ? t : t?.type ?? ""}`;
+      if (!seen.has(key)) seen.set(key, kv.get(k, t));
+      return seen.get(key).then(copy);
+    },
+    fresh: (k, t) => kv.get(k, t),
+    put: (k, ...a) => (forget(k), kv.put(k, ...a)),
+    delete: (k) => (forget(k), kv.delete(k)),
+    list: (o) => kv.list(o),
+    ...(kv.getWithMetadata ? { getWithMetadata: (k, t) => kv.getWithMetadata(k, t) } : {}),
+  };
+  return { ...env, SHARES: once };
+}
+
 function count(env, field) {
   if (!env.SHARES) return;
   const day = new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  let p = pending.get(env.SHARES);
-  if (!p) pending.set(env.SHARES, (p = { since: Date.now(), days: {} }));
+  let p = pending.get(storeOf(env.SHARES));
+  if (!p) pending.set(storeOf(env.SHARES), (p = { since: Date.now(), days: {} }));
   const d = (p.days[day] ??= {});
   d[field] = (d[field] ?? 0) + 1;
 }
@@ -1959,10 +2219,10 @@ function count(env, field) {
  * asked. Two Workers flushing at the same moment can lose a few counts: these are rough numbers.
  */
 export async function flushStats(env, now = true) {
-  const p = env.SHARES && pending.get(env.SHARES);
+  const p = env.SHARES && pending.get(storeOf(env.SHARES));
   if (!p || Object.keys(p.days).length === 0) return;
   if (!now && Date.now() - p.since < LIMITS.statsFlushMs) return;
-  pending.delete(env.SHARES);
+  pending.delete(storeOf(env.SHARES));
   for (const [day, add] of Object.entries(p.days)) {
     const key = `stats:${day}`;
     const was = (await env.SHARES.get(key, "json")) ?? {};
@@ -1985,7 +2245,7 @@ async function stats(env, daysParam) {
     const day = new Date(today - i * 86400 * 1000).toISOString().slice(0, 10);
     const got = (await env.SHARES.get(`stats:${day}`, "json")) ?? {};
     raw.push(got);
-    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0,
+    days.push({ day, created: got.created ?? 0, views: got.views ?? 0, reports: got.reports ?? 0, removed: got.removed ?? 0, writes: got.writes ?? 0, reads: got.reads ?? 0,
       // 1.39 [IOS-06] People opening the pages, by kind of phone (근무표 /s and the team pages apart).
       phones: Object.fromEntries(PHONES.flatMap((k) => [[`views_${k}`, got[`views_${k}`] ?? 0], [`team_${k}`, got[`team_${k}`] ?? 0]])) });
   }
@@ -1994,7 +2254,7 @@ async function stats(env, daysParam) {
   const sum = (k) => raw.reduce((a, g) => a + (g[k] ?? 0), 0);
   const phones = Object.fromEntries(PHONES.flatMap((k) => [`views_${k}`, `team_${k}`]).map((k) => [k, sum(k)]));
   // [SRV-08] Counted in each Worker and added up every few minutes: two at once can lose a few, so 대략.
-  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), tired: sum("tired"), phones, approximate: true };
+  return { days, created: sum("created"), views: sum("views"), reports: sum("reports"), removed: sum("removed"), clocks: sum("clocks"), punches: sum("punches"), asks: sum("asks"), askPicks: sum("askPicks"), calls: sum("calls"), callAnswers: sum("callAnswers"), oks: sum("oks"), reads: sum("reads"), writes: sum("writes"), swaps: sum("swaps"), swapAsks: sum("swapAsks"), swapAnswers: sum("swapAnswers"), signs: sum("signs"), signed: sum("signed"), boards: sum("boards"), tired: sum("tired"), phones, approximate: true };
 }
 
 // ---- input ----
@@ -2416,19 +2676,29 @@ async function allow(env, request, prefix, max) {
   const ip = netOf(request.headers.get("cf-connecting-ip"));
   const hour = Math.floor(Date.now() / 3600000);
   const local = `${prefix}|${ip}|${hour}`;
-  let counts = counted.get(env.SHARES);
-  if (!counts) counted.set(env.SHARES, (counts = new Map()));
-  const mine = (counts.get(local) ?? 0) + 1;
-  counts.set(local, mine);
+  let counts = counted.get(storeOf(env.SHARES));
+  if (!counts) counted.set(storeOf(env.SHARES), (counts = new Map()));
+  // 2.0.0 [RVQ-20] 검토 SVC-13: this Worker's own count (mine), what the other Workers added that this one has seen (others), and the
+  // highest total this one wrote (last). Before, after the first use this Worker's own count led (max(stored, mine)), so each of two
+  // Workers let the whole hour's count through. Now a stored total above what this Worker last wrote is the others' part, and the
+  // total is mine + others: a Worker's own writes landing out of order are never counted twice.
+  const st = counts.get(local) ?? { mine: 0, others: 0, last: null };
+  const mine = (st.mine += 1);
+  counts.set(local, st);
   if (counts.size > 5000) for (const k of counts.keys()) if (!k.endsWith(`|${hour}`)) counts.delete(k);
-  if (mine > max) return false;
+  if (mine + st.others > max) return false;
   // "rl" keeps the hash it always had, so a deploy does not reset the hour's count.
   const salt = prefix === "rl" ? "" : `${prefix}:`;
   const key = `${prefix}:${(await sha256(`${env.RATE_SALT || "bamnat"}:${salt}${ip}:${hour}`)).slice(0, 24)}`;
-  // The first use here adds to what other Workers counted; after that this Worker's own count leads.
   const stored = parseInt((await env.SHARES.get(key)) || "0", 10);
-  const n = Math.max(mine === 1 ? stored + 1 : stored, mine);
+  if (st.last == null) st.others = Math.max(st.others, stored);
+  else if (stored > st.last) {
+    st.others += stored - st.last;
+    st.last = stored;
+  }
+  const n = mine + st.others;
   if (n > max) return false;
+  st.last = Math.max(st.last ?? 0, n);
   await kvPut(env, key, String(n), { expirationTtl: 3600 });
   return true;
 }
@@ -2745,7 +3015,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
-    `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
+    `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${okPanel(reportId, opts.ok)}${pay}` +
     `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
   "근무표", kind);
 }
@@ -2778,6 +3048,26 @@ function tiredPanel(id, tired, said) {
     `<p class="muted small">리더에게는 하루에 몇 명이 눌렀는지만 가요. 누가 눌렀는지는 리더도 몰라요.</p>${button}</div>`;
 }
 
+/**
+ * 2.0.0 [RVQ-19] 검토 U22-01·I22b-01: under the month, on a link the leader watches: one button the member presses after reading
+ * (the leader then knows it was a person, not a messenger's preview), or the time it was pressed. A change asks again.
+ */
+export function okPanel(id, ok) {
+  if (!id || !ok) return "";
+  // One box whatever the state (디자인 품질 3): the ask in a panel, the answer in the same place as a done line, no box in a box.
+  if (ok.said === "off") return `<p class="muted small ok-off">이 링크는 확인을 받지 않아요.</p>`;
+  if (ok.at || ok.said === "1") {
+    const [, mo, d] = (ok.at ? kstDay(ok.at) : "").split("-").map(Number);
+    const when = ok.at ? `${mo}월 ${d}일 ${kstTime(ok.at)}` : "방금";
+    return `<div class="done ok"><p>✓ ${ok.said === "1" ? "확인했다고 리더에게 알렸어요." : `${esc(when)}에 확인했어요.`}</p>` +
+      `<p class="muted small">근무표가 바뀌면 다시 확인을 부탁해요.</p></div>`;
+  }
+  const wait = ok.said === "wait" ? `<p>잠시 뒤에 다시 눌러 주세요.</p>` : "";
+  return `<div class="panel ok"><p class="t">다 봤으면 리더에게 알려 주세요</p>${wait}` +
+    `<form method="post" action="/s/${esc(id)}/ok"><button class="pick">확인했어요</button></form>` +
+    `<p class="muted small">눌렀다는 것과 그 시각만 리더에게 가요.</p></div>`;
+}
+
 /** 1.39 [IOS-05] iPhone only: a page added to the home screen opens like an app (the icon is /apple-touch-icon.png). */
 function homeHint() {
   return `<p class="muted small">아이폰: 아래 공유 단추(□↑) › ‘홈 화면에 추가’를 누르면 다음부터 아이콘 하나로 바로 열려요.</p>`;
@@ -2802,9 +3092,11 @@ export function renderIcs(schedule, id, updatedAt) {
   const tz = schedule.tz || "Asia/Seoul";
   const stamp = icsStamp(updatedAt ? new Date(updatedAt) : new Date());
   const name = schedule.title ? `${schedule.title}의 근무` : "밤낮 근무";
+  const dates = schedule.days.map((d) => d.date).sort();
   const lines = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bamnat//Share//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsText(name)}`, `X-WR-TIMEZONE:${tz}`, "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H",
+    ...vtimezone(tz, dates[0], dates.at(-1)),
   ];
   const event = (uid, summary, date, time, description) => {
     lines.push("BEGIN:VEVENT", `UID:${uid}@${id}.bamnat`, `DTSTAMP:${stamp}`);
@@ -2839,6 +3131,58 @@ export function renderIcs(schedule, id, updatedAt) {
 
 function nextDay(date) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + 86400 * 1000).toISOString().slice(0, 10);
+}
+
+/** Minutes [tz] is ahead of UTC at [ms] (Intl's own zone data), or null for a zone it does not know. */
+function zoneOffset(tz, ms) {
+  try {
+    const name = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "longOffset" }).formatToParts(new Date(ms)).find((p) => p.type === "timeZoneName")?.value ?? "";
+    const m = /GMT(?:([+-])(\d{1,2})(?::?(\d{2}))?)?/.exec(name);
+    if (!m) return null;
+    return m[1] ? (m[1] === "-" ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3] ?? 0)) : 0;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 2.0.0 [RVQ-22] 검토 SVC-35·U22-09: the VTIMEZONE the events' TZID names (RFC 5545 3.6.5), so a calendar app that does not know
+ * the zone by name (or guesses it from the phone) puts a 09:00 shift at 09:00, not nine hours off. One observance from before the
+ * first day, then one for each change of offset between the first and the last day (found from the zone data, to the minute), so a
+ * zone with summer time is right too. Nothing for a zone the data does not know (the calendar app's own guess, as before).
+ */
+export function vtimezone(tz, first, last) {
+  if (!first || !last) return [];
+  const DAY = 86400 * 1000;
+  const from = Date.parse(`${first}T00:00:00Z`) - 2 * DAY;
+  const to = Date.parse(`${last}T00:00:00Z`) + 2 * DAY;
+  const start = zoneOffset(tz, from);
+  if (start == null) return [];
+  const year = new Date(from).getUTCFullYear();
+  const standard = Math.min(zoneOffset(tz, Date.UTC(year, 0, 1)) ?? start, zoneOffset(tz, Date.UTC(year, 6, 1)) ?? start);
+  const off = (m) => `${m < 0 ? "-" : "+"}${String(Math.floor(Math.abs(m) / 60)).padStart(2, "0")}${String(Math.abs(m) % 60).padStart(2, "0")}`;
+  const local = (ms) => new Date(ms).toISOString().slice(0, 19).replace(/[-:]/g, "");
+  const part = (at, was, now) => {
+    const kind = now > standard ? "DAYLIGHT" : "STANDARD";
+    return [`BEGIN:${kind}`, `DTSTART:${at == null ? "19700101T000000" : local(at + was * 60000)}`, `TZOFFSETFROM:${off(was)}`, `TZOFFSETTO:${off(now)}`, `END:${kind}`];
+  };
+  const out = ["BEGIN:VTIMEZONE", `TZID:${tz}`, ...part(null, start, start)];
+  let was = start;
+  for (let t = from; t < to; t += DAY) {
+    const next = zoneOffset(tz, Math.min(t + DAY, to));
+    if (next == null || next === was) continue;
+    // The change is in this day: find its minute.
+    let lo = t;
+    let hi = Math.min(t + DAY, to);
+    while (hi - lo > 60000) {
+      const mid = lo + Math.floor((hi - lo) / 120000) * 60000;
+      if (zoneOffset(tz, mid) === was) lo = mid; else hi = mid;
+    }
+    out.push(...part(hi, was, next));
+    was = next;
+  }
+  out.push("END:VTIMEZONE");
+  return out;
 }
 
 const icsStamp = (d) => d.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -2890,7 +3234,7 @@ function page(title, body, short = "밤낮", og = null) {
 <meta name="apple-mobile-web-app-title" content="${esc(short)}"><style>
 :root{--fg:#15192B;--muted:#5b5f73;--line:#e6e2d9;--bg:#F7F4EE;--card:#fff;--sun:#d14343;--sat:#3b5bdb;--today:#C2A36B}
 @media (prefers-color-scheme:dark){:root{--fg:#F2ECE1;--muted:#a7a9b8;--line:#2a2f45;--bg:#15192B;--card:#1d2236;--sun:#ff8787;--sat:#91a7ff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif;word-break:keep-all;overflow-wrap:break-word}
 main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;margin:0 0 16px}h2{font-size:17px;margin:24px 0 8px}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.wd{text-align:center;font-size:12px;color:var(--muted);padding:4px 0}
 .cell{background:var(--card);border:1px solid var(--line);border-radius:10px;min-height:64px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -2904,10 +3248,10 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
-.buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
+.buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5em),1fr));gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
 .buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.buttons .other{opacity:.45;min-height:64px;font-size:18px}.buttons .picked{outline:4px solid var(--today);outline-offset:2px}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-top:16px}.ok>*{margin:0}.ok>*+*{margin-top:8px}.ok .t{font-weight:700}.done.ok{margin-top:16px}.done.ok .small{font-weight:400}.ok-off{margin-top:16px}.picks{display:flex;flex-wrap:wrap;gap:8px}.picks form{margin:0}
 .pick{min-height:44px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font-size:15px;cursor:pointer}.pick.on{background:var(--sat);color:#fff;border-color:var(--sat)}
 .wide{overflow-x:auto;margin:0 -16px;padding:0 16px}.ward{border-collapse:collapse;font-size:12px}.ward th,.ward td{border:1px solid var(--line);padding:2px;text-align:center;min-width:26px}.ward .who{position:sticky;left:0;background:var(--bg);text-align:left;white-space:nowrap;padding:2px 6px;z-index:1}.ward .chip{min-width:20px;padding:0 3px;font-size:11px}
 .sign label{display:block;margin:12px 0}.sign input[name=name]{width:100%;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:17px}.sign input[type=checkbox]{width:22px;height:22px;vertical-align:middle;margin-right:6px}.sign button{width:100%;min-height:56px;border-radius:16px;border:none;background:#2f7d5b;color:#fff;font-size:18px;font-weight:800}
