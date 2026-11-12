@@ -45,6 +45,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [HRLY-02][HRLY-03] What an 알바 calendar's cells need: the pay setup for each day's pay and the weekday
@@ -72,7 +74,7 @@ internal fun HourlyTimeMark(day: ResolvedDay, range: String) {
 /** [HRLY-01] 지각·조퇴 (주황) and 결근 (빨강) in a cell's corner. */
 @Composable
 internal fun AttendanceMark(a: Attendance) {
-    val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else LocalCalendarColors.current.warning
+    val bg = if (a == Attendance.ABSENT) MaterialTheme.colorScheme.error else Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) 지각·조퇴는 주황(주의)
     // 2.0.0 [RVP-11] (검토 UIX-11·T13-06 '근무 첫 글자가 8sp') At least 10sp; where big letters would not fit the mark, the colour
     // alone says it (the day's own sheet says it in words).
     val fits = androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.15f

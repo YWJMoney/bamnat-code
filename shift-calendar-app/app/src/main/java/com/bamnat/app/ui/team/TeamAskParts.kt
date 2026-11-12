@@ -43,6 +43,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** The kinds a leader may take requests for, in the order the setup shows them (병가 is never one: 건강 사유는 리더 앱에서만). */
 internal val ASK_KINDS = listOf(WishKind.OFF, WishKind.LEAVE, WishKind.HALF, WishKind.EDU, WishKind.SHIFT, WishKind.AVOID_NIGHT)
@@ -92,7 +94,7 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
                 }
             }
             if (kinds.isEmpty()) Text("하나도 켜지 않으면 팀원이 신청할 수 없어요.", style = MaterialTheme.typography.labelSmall,
-                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                color = Tone.Caution.color())
             Text("자리가 다 찬 날", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = firstCome, onClick = { firstCome = true }, label = { Text("먼저 신청한 순(종이처럼)") })
@@ -158,7 +160,7 @@ internal fun AskCard(
             (closes?.let { " · 마감 ${it.monthValue}/${it.dayOfMonth} ${"%02d".format(it.hour)}:00" } ?: ""), style = MaterialTheme.typography.bodyMedium)
         val notOpened = members.filter { it.id in round.links && it.id !in round.seen }
         if (notOpened.isNotEmpty() && open) Text("아직 안 연 사람: " + notOpened.joinToString(", ") { it.name }, style = MaterialTheme.typography.bodySmall,
-            color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+            color = Tone.Caution.color())
         if (over.isNotEmpty()) {
             Text("자리보다 많이 신청한 날 ${over.size}일", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
             over.take(6).forEach { d ->
@@ -191,7 +193,7 @@ internal fun AskCard(
             // 1.39.1 9차 PC 리더: when the fetch on opening failed, say so with a way to try again instead of the old time alone.
             if (pullFailed) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("새 신청을 못 가져왔어요($at 것을 보여 줘요)", style = MaterialTheme.typography.labelSmall,
-                    color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning, modifier = Modifier.weight(1f))
+                    color = Tone.Caution.color(), modifier = Modifier.weight(1f))
                 TextButton(onClick = onPull, enabled = !busy && round.token != null) { Text("다시") }
             } else Text("${at}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

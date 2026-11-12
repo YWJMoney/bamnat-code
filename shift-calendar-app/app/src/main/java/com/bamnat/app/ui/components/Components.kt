@@ -58,7 +58,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
@@ -269,30 +270,34 @@ fun StatTile(
     caption: String? = null,
     warning: Boolean = false,
     onClick: (() -> Unit)? = null,
+    /**
+     * 2.0.0 [RVP-13] (검토 HQ-54, 조건 6) What the number means: [warning] alone is [Tone.Caution] (a thing to look at: 받을 돈, 마감 전);
+     * a number gone wrong (넘김·밀림·법 위반) says [Tone.Danger]. The tile keeps the quiet ground: the mark, the edge and the number
+     * carry the colour.
+     */
+    tone: Tone = if (warning) Tone.Caution else Tone.Plain,
 ) {
-    val cal = LocalCalendarColors.current
-    val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
+    val marked = tone == Tone.Caution || tone == Tone.Danger
+    val ink = tone.color()
     Surface(
         modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
-        color = bg,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (warning) cal.warning.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            if (marked) ink.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (warning) {
-                    Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
+                if (marked) {
+                    Icon(Icons.Filled.WarningAmber, if (tone == Tone.Danger) "위험" else "주의", tint = ink, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
                 BasicText(
                     label,
-                    style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
+                    style = MaterialTheme.typography.labelMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                     maxLines = 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
                 )
@@ -303,7 +308,7 @@ fun StatTile(
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                    color = if (marked) ink else MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = if (big) 2 else 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
@@ -323,6 +328,11 @@ fun StatTile(
     }
 }
 
+/**
+ * A thing on this screen that needs the user: the one notice-card shape ([NudgeCard], 조건 3) with its mark in [tone]'s colour.
+ * 2.0.0 [RVP-13] (검토 HQ-54): [Tone.Caution] for a thing to set or check (권한, 알림, 시세 없음); [Tone.Danger] only when something
+ * has gone wrong (상한 넘김, 법 위반, 울리지 않을 알람).
+ */
 @Composable
 fun WarningBanner(
     title: String,
@@ -331,24 +341,9 @@ fun WarningBanner(
     /** [SLP-15] One button that fixes it, at the end of the banner. */
     action: String? = null,
     onAction: () -> Unit = {},
+    tone: Tone = Tone.Caution,
 ) {
-    val cal = LocalCalendarColors.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(cal.warningContainer)
-            .padding(start = 14.dp, end = if (action != null) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = cal.warning)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = cal.warning)
-            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (action != null) TextButton(onClick = onAction) { Text(action) }
-    }
+    NudgeCard(title, modifier, tone = tone, detail = message, action = action, onAction = onAction)
 }
 
 /**

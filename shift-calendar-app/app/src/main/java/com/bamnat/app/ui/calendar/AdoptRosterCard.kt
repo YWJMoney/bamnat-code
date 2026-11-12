@@ -110,8 +110,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { withHand = !withHand }) { Text(if (withHand) "직접 바꾼 날은 빼기" else "직접 바꾼 날도 넣기") }
         }
-        if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
-            style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+        if (missing.isNotEmpty()) com.bamnat.app.ui.components.ToneLine("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.")
         Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val putIn = {
             val todo = changes

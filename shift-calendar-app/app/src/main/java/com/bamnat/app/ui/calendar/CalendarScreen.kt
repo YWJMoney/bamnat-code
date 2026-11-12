@@ -173,6 +173,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.bamnat.app.data.PhoneDayView
 import com.bamnat.core.time.Today
 import androidx.compose.material.icons.filled.Today
+import com.bamnat.app.ui.theme.Tone
 
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
@@ -1041,7 +1042,7 @@ fun CalendarScreen(
                 Text(
                     "이 주 ${glance.text}",
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                    color = if (glance.leftToLegal < 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (glance.leftToLegal < 0) Tone.Danger.color() else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
@@ -2812,14 +2813,14 @@ private fun HoursLine(
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 HoursPart("이 주", HoursFormat.korean(week.totalMinutes),
-                    limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
+                    limits.weeklyLimitHours.takeIf { week.overLimit }, Tone.Danger.color())
                 if (split != week.totalMinutes) {
                     Text("자정에 나눠 세면 ${HoursFormat.korean(split)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 // Its own limit (52), not the week's (64), so the number it is over is said.
                 HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
-                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
+                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, Tone.Danger.color())
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "$tabName 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }

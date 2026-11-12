@@ -97,6 +97,10 @@ internal val DarkColors = darkColorScheme(
 data class CalendarColors(
     val sunday: Color,
     val saturday: Color,
+    /**
+     * Sunday's red under another name. 2.0.0 [RVP-13] (검토 HQ-54): screens do not read it: a thing to check is [Tone.Caution],
+     * a thing gone wrong (넘김·밀림·법 위반) is [Tone.Danger] (`Tone.color()`, `Tone.container()`); DesignRulesTest counts it.
+     */
     val warning: Color,
     val warningContainer: Color,
     val holidayWork: Color,
@@ -420,10 +424,19 @@ val MemoPaletteDark: List<Color> = listOf(
 enum class Tone { Plain, Good, Caution, Danger }
 
 @Immutable
-data class BamnatColors(val good: Color, val caution: Color, val danger: Color) {
+data class BamnatColors(
+    val good: Color, val caution: Color, val danger: Color,
+    /**
+     * 2.0.0 [RVP-13] (검토 HQ-54) The soft ground under a 주의 or 위험 mark that must stand apart from the card (a 노란 칸 in a
+     * table, a cell to check); its own ink reads on it at 4.5:1 (ContrastTest). Notice cards keep the one quiet ground (조건 3).
+     */
+    val cautionContainer: Color = Color(0xFFFFEFD9), val dangerContainer: Color = Color(0xFFFEE4E2),
+) {
     companion object {
-        val Light = BamnatColors(good = Color(0xFF1B7A4C), caution = Color(0xFFA65400), danger = Color(0xFFC62828))
-        val Dark = BamnatColors(good = Color(0xFF6FD3A0), caution = Color(0xFFFFB25C), danger = Color(0xFFFF8A80))
+        val Light = BamnatColors(good = Color(0xFF1B7A4C), caution = Color(0xFFA65400), danger = Color(0xFFC62828),
+            cautionContainer = Color(0xFFFFEFD9), dangerContainer = Color(0xFFFEE4E2))
+        val Dark = BamnatColors(good = Color(0xFF6FD3A0), caution = Color(0xFFFFB25C), danger = Color(0xFFFF8A80),
+            cautionContainer = Color(0xFF3F2A0E), dangerContainer = Color(0xFF4A1712))
     }
 }
 
@@ -443,4 +456,15 @@ fun Tone.color(): Color = when (this) {
     Tone.Good -> MaterialTheme.bamnat.good
     Tone.Caution -> MaterialTheme.bamnat.caution
     Tone.Danger -> MaterialTheme.bamnat.danger
+}
+
+/**
+ * 2.0.0 [RVP-13] (검토 HQ-54) The soft ground a [Tone] mark stands on where it must stand apart (a cell or a tile to check);
+ * [Tone.Plain] and [Tone.Good] keep the card's quiet ground.
+ */
+@Composable @androidx.compose.runtime.ReadOnlyComposable
+fun Tone.container(): Color = when (this) {
+    Tone.Plain, Tone.Good -> MaterialTheme.colorScheme.surfaceContainerLow
+    Tone.Caution -> MaterialTheme.bamnat.cautionContainer
+    Tone.Danger -> MaterialTheme.bamnat.dangerContainer
 }

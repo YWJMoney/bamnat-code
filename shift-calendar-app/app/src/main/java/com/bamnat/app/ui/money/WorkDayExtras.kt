@@ -22,6 +22,8 @@ import com.bamnat.core.money.JobStatus
 import com.bamnat.core.money.ReceivableKind
 import com.bamnat.core.work.CardSettlement
 import com.bamnat.core.work.ShopMoney
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [SHOP-01][SHOP-02][SHOP-06] Under a shop day's sales: how they were paid, when the card money
@@ -55,7 +57,7 @@ fun SalesDayExtras(sales: DailySales) {
         }
         credits.forEach { r ->
             Text("외상 ${r.who.ifBlank { "이름 없음" }} ${Fmt.won(r.amount)}" + if (r.left == 0L) " · 받음" else "",
-                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) LocalCalendarColors.current.warning else muted)
+                style = MaterialTheme.typography.bodySmall, color = if (r.left > 0) Tone.Caution.color() else muted)
         }
     }
 }

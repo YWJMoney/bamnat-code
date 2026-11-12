@@ -125,6 +125,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 class MoneyViewModel(
     private val container: AppContainer,
@@ -1206,8 +1208,9 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
             return@SectionCard
         }
         if (overdue.isNotEmpty()) {
-            Text("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", style = MaterialTheme.typography.bodyMedium,
-                color = cal.warning, modifier = Modifier.padding(bottom = 4.dp))
+            // 2.0.0 [RVP-13] (HQ-54, 조건 6) 밀린 돈은 위험: the line says it with its mark, the amounts below carry the red.
+            com.bamnat.app.ui.components.ToneLine("약속일 지난 돈 ${overdue.size}건 · ${Fmt.won(overdue.sumOf { it.left })}", Modifier.padding(bottom = 4.dp),
+                tone = Tone.Danger, style = MaterialTheme.typography.bodyMedium)
         }
         owed.take(4).forEachIndexed { i, o ->
             if (i > 0) HorizontalDivider(Modifier.padding(vertical = 4.dp))
@@ -1224,7 +1227,7 @@ private fun OwedCard(owed: List<com.bamnat.core.money.Owed>, today: LocalDate, o
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(Fmt.won(o.left), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold,
-                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) cal.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (o.status(today) == com.bamnat.core.money.ReceivableStatus.OVERDUE) Tone.Danger.color() else MaterialTheme.colorScheme.onSurface)
                 }
             }
         }

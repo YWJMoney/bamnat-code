@@ -93,6 +93,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
@@ -531,8 +533,7 @@ fun PasteDialog(
                             val e = r.entry
                             if (e != null) {
                                 EntryRow(e, showDate = true) { if (i in skipped) skipped.remove(i) else skipped.add(i) }
-                                if (r.duplicate) Text("이미 적힌 결제 같아요", style = MaterialTheme.typography.labelSmall,
-                                    color = LocalCalendarColors.current.warning)
+                                if (r.duplicate) com.bamnat.app.ui.components.ToneLine("이미 적힌 결제 같아요", style = MaterialTheme.typography.labelSmall)
                             } else {
                                 Text(r.chunk.replace('\n', ' '), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                 Text(r.reason.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
@@ -605,7 +606,7 @@ fun UpcomingCard(
                         listOfNotNull(if (u.daysLeft == 0) "오늘" else "D-${u.daysLeft}", Fmt.shortDate(u.date),
                             if (c.auto) "저절로 적어요" else null).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (u.daysLeft <= 1 && !income) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (u.daysLeft <= 1 && !income) Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {

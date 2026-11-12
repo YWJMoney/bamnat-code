@@ -88,6 +88,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [LEDG-01][LEDG-06] The month at a glance: what is left, money in and out, and with a budget,
@@ -194,11 +196,11 @@ fun HeroCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(Fmt.won(left.coerceAtLeast(0)), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold,
-                    color = if (left <= 0) cal.warning else MaterialTheme.colorScheme.primary)
+                    color = if (left <= 0) Tone.Caution.color() else MaterialTheme.colorScheme.primary)
             }
             if (left < 0) {
                 Text("오늘 몫보다 ${Fmt.won(-left)} 더 썼어요. 내일부터 조금씩 줄여요.", style = MaterialTheme.typography.bodySmall,
-                    color = cal.warning, modifier = Modifier.padding(top = 2.dp))
+                    color = Tone.Caution.color(), modifier = Modifier.padding(top = 2.dp))
             }
             Spacer(Modifier.height(10.dp))
         }
@@ -229,7 +231,8 @@ fun HeroCard(
 private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, whole: Boolean = false, expanded: Boolean? = null,
                            wholeName: String = "이번 달 예산") {
     val cal = LocalCalendarColors.current
-    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    // 2.0.0 [RVP-13] (HQ-54·UIX-15) 넘음은 위험(빨강), 가까움은 주의(주황): the orange of 바꾼 날 no longer stands in for 주의.
+    val color = when (b.level) { BudgetLevel.OVER -> Tone.Danger.color(); BudgetLevel.NEAR -> Tone.Caution.color(); BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
     val pct = (b.fraction * 100).toInt()
     val status = when {
         b.level == BudgetLevel.OVER -> "${Fmt.won(-b.left)} 넘었어요"
@@ -268,11 +271,11 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (b.level == BudgetLevel.OVER || b.headedOver) {
-                Icon(Icons.Filled.WarningAmber, null, tint = if (b.level == BudgetLevel.OVER) cal.warning else cal.changed, modifier = Modifier.size(14.dp))
+                Icon(Icons.Filled.WarningAmber, null, tint = if (b.level == BudgetLevel.OVER) Tone.Danger.color() else Tone.Caution.color(), modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
             }
             Text(status, style = MaterialTheme.typography.labelMedium,
-                color = when { b.level == BudgetLevel.OVER -> cal.warning; b.headedOver || b.level == BudgetLevel.NEAR -> cal.changed
+                color = when { b.level == BudgetLevel.OVER -> Tone.Danger.color(); b.headedOver || b.level == BudgetLevel.NEAR -> Tone.Caution.color()
                     else -> MaterialTheme.colorScheme.onSurfaceVariant })
         }
     }
@@ -282,12 +285,13 @@ private fun BudgetLineView(b: BudgetLine, elapsed: Float?, onClick: () -> Unit, 
 @Composable
 private fun BudgetMiniRow(b: BudgetLine) {
     val cal = LocalCalendarColors.current
-    val color = when (b.level) { BudgetLevel.OVER -> cal.warning; BudgetLevel.NEAR -> cal.changed; BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
+    // 2.0.0 [RVP-13] (HQ-54·UIX-15) 넘음은 위험(빨강), 가까움은 주의(주황): the orange of 바꾼 날 no longer stands in for 주의.
+    val color = when (b.level) { BudgetLevel.OVER -> Tone.Danger.color(); BudgetLevel.NEAR -> Tone.Caution.color(); BudgetLevel.OK -> MaterialTheme.colorScheme.primary }
     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp).semantics(mergeDescendants = true) {}) {
         // 2.0.0 [RVK-23]·HQ-30
         NameAndAmount({ Text(b.category, style = MaterialTheme.typography.bodySmall) }) {
             Text(if (b.left >= 0) "${Fmt.won(b.left)} 남음" else "${Fmt.won(-b.left)} 넘음", style = MaterialTheme.typography.labelMedium.merge(NumberStyle),
-                color = if (b.level == BudgetLevel.OVER) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+                color = if (b.level == BudgetLevel.OVER) Tone.Danger.color() else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         LedgerTrack(b.fraction, color, marker = null, height = 6.dp)
     }
@@ -301,8 +305,8 @@ fun BudgetCard(status: BudgetStatus, today: LocalDate, onEdit: () -> Unit) {
     // 1.37 [LEDH-06] Counted over 급여일 주기, it says which days.
     SectionCard(title = if (status.isCycle) "분류별 예산 (${status.from.monthValue}/${status.from.dayOfMonth}~${status.to.monthValue}/${status.to.dayOfMonth})" else "분류별 예산", trailing = { TextButton(onClick = onEdit) { Text("고치기") } }) {
         if (status.over.isNotEmpty()) {
-            Text("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", style = MaterialTheme.typography.bodySmall,
-                color = LocalCalendarColors.current.warning, modifier = Modifier.padding(bottom = 4.dp))
+            com.bamnat.app.ui.components.ToneLine("${status.over.joinToString(", ") { it.category }} 예산을 넘었어요", Modifier.padding(bottom = 4.dp),
+                tone = Tone.Danger)
         }
         status.categories.forEach { b -> BudgetLineView(b, status.elapsed.takeIf { current }, onClick = onEdit) }
     }

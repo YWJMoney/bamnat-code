@@ -1,18 +1,8 @@
 package com.bamnat.app.ui.components
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.ui.Alignment
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.color
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -99,21 +89,13 @@ private fun DrawScope.sleepSound(accent: Color) {
 
 /**
  * 1.39 [FLOW-05] The card that asks a permission where it is first needed: the picture of what it gives at its top left, the one
- * line of why beside it and one button. Same colours as [WarningBanner], whose place it takes there.
+ * line of why beside it and one button. 2.0.0 [RVP-13] (검토 HQ-54, 조건 3·6) The one notice-card shape ([NudgeCard]) with the 주의
+ * colour on the picture: asking for a permission is a thing to do, not a danger.
  */
 @Composable
 fun PermissionAskCard(result: PermissionResult, title: String, message: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier) {
-    val cal = LocalCalendarColors.current
-    val ink = contentColorOn(cal.warningContainer)
-    Surface(shape = MaterialTheme.shapes.medium, color = cal.warningContainer, contentColor = ink, modifier = modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.Top) {
-            PermissionPicture(result, accent = cal.warning, ink = MaterialTheme.colorScheme.inverseSurface)
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleSmall)
-                Text(message, style = MaterialTheme.typography.bodySmall)
-                TextButton(onClick = onAction, modifier = Modifier.padding(top = 2.dp)) { Text(action) }
-            }
-        }
-    }
+    val accent = com.bamnat.app.ui.theme.Tone.Caution.color()
+    val ink = MaterialTheme.colorScheme.inverseSurface
+    NudgeCard(title, modifier, tone = com.bamnat.app.ui.theme.Tone.Caution, detail = message, action = action, onAction = onAction,
+        lead = { PermissionPicture(result, accent = accent, ink = ink, height = 40.dp) })
 }

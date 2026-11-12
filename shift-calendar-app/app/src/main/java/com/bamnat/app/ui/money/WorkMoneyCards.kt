@@ -35,6 +35,8 @@ import com.bamnat.core.work.ShopMoney
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [FLD-06][SHOP-02] Cards in 돈 > 요약 for work calendars: a deposit that looks like a job's money
@@ -110,7 +112,7 @@ private fun CardDepositsCard(c: AppContainer, calendarId: String, book: MoneyBoo
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("${Fmt.shortDate(e.payDate)} · ${Fmt.won(e.amount)}", style = MaterialTheme.typography.bodyLarge,
-                        color = if (late) cal.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (late) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface)
                     Text("${Fmt.shortDate(e.saleDate)} 카드 매출 ${Fmt.won(e.card)}" + if (late) " · 예정일 지남" else "",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -173,7 +175,7 @@ private fun PlatformMoneyCard(c: AppContainer, calendarId: String, book: MoneyBo
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("${p.platform} ${Fmt.shortDate(p.payDate)} 정산 ${Fmt.won(p.expected)}", style = MaterialTheme.typography.bodyLarge,
-                        color = if (p.payDate.isBefore(today.minusDays(2)) && dep == null) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurface)
+                        color = if (p.payDate.isBefore(today.minusDays(2)) && dep == null) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface)
                     Text("${Fmt.shortDate(p.from)}~${Fmt.shortDate(p.to)} 일한 몫" + (dep?.let { " · ${Fmt.shortDate(it.date)} ${Fmt.won(it.amount)} 들어온 것 같아요" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

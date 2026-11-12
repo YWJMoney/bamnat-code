@@ -57,6 +57,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [LEDG-10] What the 분석 tab draws: the month looked at closely and its year. */
 data class LedgerAnalysis(val month: MonthMoney, val report: MonthReport, val year: YearReport)
@@ -256,7 +258,7 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
             LegendKey(cal.expense, r.thisOne)
             LegendKey(MaterialTheme.colorScheme.onSurfaceVariant, r.earlier, dashed = true)
-            if (budget != null && budget > 0) LegendKey(cal.warning, "예산 ${wonBrief(budget)}", dashed = true)
+            if (budget != null && budget > 0) LegendKey(Tone.Caution.color(), "예산 ${wonBrief(budget)}", dashed = true)
         }
     }
 }

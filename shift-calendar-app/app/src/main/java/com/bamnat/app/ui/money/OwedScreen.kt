@@ -151,6 +151,9 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** [RECV-01][RECV-02][RECV-05] 받을 돈: everything owed to the user, written down here or left on a job. */
 class OwedViewModel(
@@ -466,7 +469,8 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
             modifier = Modifier.semantics { contentDescription = "아직 못 받은 돈 ${Fmt.won(s.total)}" })
         Text(if (s.count == 0) "받을 돈이 없어요" else "${s.count}건" + if (s.overdueCount > 0) " · 약속일 지난 것 ${s.overdueCount}건" else "",
             style = MaterialTheme.typography.bodyMedium,
-            color = if (s.overdueCount > 0) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVP-13] (HQ-54 ③) The red is the 약속일 지남 tile right under it; the line stays quiet.
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         // How much of this month's money has come back against what is still out.
         val whole = s.receivedThisMonth + s.total
         if (whole > 0) {
@@ -485,7 +489,7 @@ private fun Totals(s: OwedSummary, filter: OwedFilter, onFilter: (OwedFilter) ->
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("약속일 지남", Fmt.won(s.overdue), Modifier.weight(1f).selectedRing(filter == OwedFilter.OVERDUE),
-                caption = "${s.overdueCount}건 · 눌러서 보기", warning = s.overdue > 0, onClick = { onFilter(OwedFilter.OVERDUE) })
+                caption = "${s.overdueCount}건 · 눌러서 보기", tone = if (s.overdue > 0) Tone.Danger else Tone.Plain, onClick = { onFilter(OwedFilter.OVERDUE) })
             StatTile("3일 안에 받을 날", Fmt.won(s.dueSoon), Modifier.weight(1f).selectedRing(filter == OwedFilter.DUE_SOON),
                 caption = "눌러서 보기", onClick = { onFilter(OwedFilter.DUE_SOON) })
             StatTile("이번 달 받은 돈", Fmt.won(s.receivedThisMonth), Modifier.weight(1f), caption = "끝난 것 보기", onClick = onShowDone)
@@ -517,7 +521,7 @@ private fun Breakdown(s: OwedSummary, person: String?, startOpen: Boolean, onPer
         AnimatedVisibility(open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) { Column {
         HorizontalDivider(Modifier.padding(vertical = 8.dp))
         val ageMax = (s.aging.maxOrNull() ?: 1).coerceAtLeast(1)
-        val warn = LocalCalendarColors.current.warning
+        val warn = Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) older money is to mind; the red is the 약속일 지남 tile
         s.aging.forEachIndexed { i, v ->
             MeterRow(Receivables.AGING_LABELS[i], Fmt.won(v), v.toFloat() / ageMax, if (i >= 2) warn else MaterialTheme.colorScheme.tertiary)
         }
@@ -646,7 +650,7 @@ private fun StatusChip(status: ReceivableStatus) {
 private fun statusColors(status: ReceivableStatus): Pair<Color, Color> {
     val cal = LocalCalendarColors.current
     return when (status) {
-        ReceivableStatus.OVERDUE -> cal.warningContainer to cal.warning
+        ReceivableStatus.OVERDUE -> Tone.Danger.container() to Tone.Danger.color()
         ReceivableStatus.DUE_SOON -> MaterialTheme.colorScheme.tertiaryContainer to MaterialTheme.colorScheme.onTertiaryContainer
         ReceivableStatus.PAID -> cal.income.copy(alpha = 0.16f) to cal.income
         ReceivableStatus.PARTLY -> MaterialTheme.colorScheme.secondaryContainer to MaterialTheme.colorScheme.onSecondaryContainer
@@ -740,8 +744,8 @@ private fun OwedCard(o: Owed, today: LocalDate, modifier: Modifier = Modifier, o
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
         color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(1.dp, if (status == ReceivableStatus.OVERDUE) LocalCalendarColors.current.warning.copy(alpha = 0.45f)
-            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
+        // 2.0.0 [RVP-13] (HQ-54 ③) The status chip says 약속일 지남 in red; the card's edge stays quiet, so a list of them is not a wall of red.
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)),
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.heightIn(min = 72.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -975,7 +979,7 @@ private fun PartLine(label: String, amount: Long, paid: Boolean) {
         Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
         Spacer(Modifier.width(8.dp))
         Text(if (paid) "받음" else "안 받음", style = MaterialTheme.typography.labelMedium,
-            color = if (paid) cal.income else cal.warning)
+            color = if (paid) cal.income else Tone.Caution.color())
     }
 }
 
@@ -1028,8 +1032,7 @@ private fun ReceivableDialog(
                 }
                 AmountField("얼마", amount, { amount = it })
                 if (amount.toAmount() in 1 until minAmount) {
-                    Text("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.", style = MaterialTheme.typography.bodySmall,
-                        color = LocalCalendarColors.current.warning)
+                    com.bamnat.app.ui.components.ToneLine("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.")
                 }
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
                     label = { Text("무슨 돈 (예: 10월 납품, 3일치 일당)") }, modifier = Modifier.fillMaxWidth())
@@ -1056,7 +1059,7 @@ private fun ReceivableDialog(
                     FilterChip(selected = other, onClick = { picking = "due" }, label = { Text(if (other) Fmt.shortDate(dueDate!!) else "날짜 고르기") })
                 }
                 if (dueDate != null && dueDate.isBefore(start)) {
-                    Text("약속일이 생긴 날보다 앞이에요.", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                    com.bamnat.app.ui.components.ToneLine("약속일이 생긴 날보다 앞이에요.")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("생긴 날", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

@@ -101,6 +101,8 @@ import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Reports
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
 fun categoryIcon(name: String): ImageVector = when (name) {
@@ -337,7 +339,7 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
     val line = cal.expense
     val before = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-    val warn = cal.warning
+    val warn = Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) the budget line is a mark to mind, not a danger
     val top = maxOf(current.maxOrNull() ?: 0, previous.maxOrNull() ?: 0, budget ?: 0).coerceAtLeast(1)
     Column(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
         Row {
