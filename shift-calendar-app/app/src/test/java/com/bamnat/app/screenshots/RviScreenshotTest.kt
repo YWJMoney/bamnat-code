@@ -41,7 +41,7 @@ class RviScreenshotTest : ScreenshotBase() {
      * as a person would, by the search box, which brings it to the top of the list.
      */
     private fun Screen.openCheckup(wide: Boolean) {
-        typeInto("제목, 내용, #태그 검색", "건강검진")
+        memoSearch("건강검진")
         tapText("건강검진 오전 9시", across = if (wide) 0.3f else 0.5f)
     }
 

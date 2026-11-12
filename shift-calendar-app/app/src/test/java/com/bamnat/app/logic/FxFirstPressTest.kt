@@ -143,6 +143,16 @@ class FxFirstPressTest {
         assertEquals("그날 메모에 ‘#우천 비로 쉼 · 이달 공수’ 더하기", LogicRunner.sayNow(rain, null, today))
     }
 
+    @Test fun whatARuleDidHasItsNumberNotItsFormula() = runBlocking {
+        // 2.0.0 [RVM-39] PC-148: '실행 기록' and '규칙이 쓴 것' said '‘커피 {값("커피")}잔째예요’ 알림을 했어요'.
+        val cup = coffee.copy(more = listOf(LogicAct(LogicVerb.NOTIFY, "커피 {값(\"커피\")}잔째예요")))
+        use(cup)
+        FxOutside.press(c, cup.id)
+        val said = LogicStore(app).log().filter { it.who == cup.label }.map { it.what }
+        assertTrue(said.toString(), said.any { "잔째예요" in it })
+        assertTrue(said.toString(), said.none { "{" in it || "값(" in it })
+    }
+
     @Test fun aWorkPutInDoesNotRunItsOpeningRuleThere() = runBlocking {
         // [RVM-19] PC-48: 레트로 데스크톱 '넣기' opened its '오늘 계획' 메모 틀 over the work at once.
         val plan = com.bamnat.core.formula.LogicRule("오늘 계획", com.bamnat.core.formula.RuleTrigger.OPEN, act = LogicAct(LogicVerb.MEMO_TEMPLATE, "오늘 계획"))

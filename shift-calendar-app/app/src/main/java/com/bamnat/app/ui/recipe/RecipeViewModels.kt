@@ -77,6 +77,11 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         val other: Int = 0,
         /** 1.39.1 9차 PC(장터가 지난번 구간에 머문 채 찾으면 '이 구간에 없어요'가 먼저): the other halves are still being looked in. */
         val looking: Boolean = false,
+        /**
+         * 2.0.0 [RVM-40] PC-149: a word found in none of the three 구간 for my kind of work, but in another kind's works: where and how
+         * many ('테마에 1개'), so the way there is one tap and not ▾ › 다른 유형도.
+         */
+        val otherStyles: Map<String, String> = emptyMap(),
         /** 1.38 (장터 그림 LOW): when the list shown was read, so an offline list says how old it is. */
         val loadedAt: Long = 0L)
     private val _state = MutableStateFlow(State())
@@ -112,6 +117,9 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 
     /** PC D12: a '다른 구간에 N개' chip: that half, in 새로 (where it was counted). */
     fun jump(half: String) { _state.value = _state.value.copy(kind = half, tab = Tab.NEW); load() }
+
+    /** [RVM-40] PC-149: '다른 유형 작품 보기': 다른 유형도 on, in the 구간 they were counted in ([Tab.NEW]). */
+    fun otherStyles(half: String) { _state.value = _state.value.copy(allStyles = true, kind = half, tab = Tab.NEW); load() }
 
     /** The half [kind] is in. */
     fun halfNow(): String = halfOf(_state.value.kind)
@@ -155,7 +163,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                 val at = com.bamnat.core.time.Today.millis()
                 if (!more) synchronized(pages) { pages[key] = Kept(items, page.next, at); while (pages.size > PAGES) pages.remove(pages.keys.first()) }
                 _state.value = _state.value.copy(items = items, next = page.next, loading = false, loadedAt = at,
-                    elsewhere = if (more) _state.value.elsewhere else emptyMap(), other = if (more) _state.value.other else 0)
+                    elsewhere = if (more) _state.value.elsewhere else emptyMap(), other = if (more) _state.value.other else 0,
+                    otherStyles = if (more) _state.value.otherStyles else emptyMap())
                 if (!more) count(s, styleNow, got.isEmpty(), items.isNotEmpty())
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -188,10 +197,19 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                     }
                 }
             }.awaitAll().filterNotNull().toMap()
+            // [RVM-40] PC-149 ('딥워크' on a 교대 phone: only '맞는 작품이 없어요'): nowhere for my kind of work, the other kinds' too.
+            val otherStyles = if (s.query.isBlank() || styleNow == null || !noneHere || other.isNotEmpty()) emptyMap() else HALVES.map { h ->
+                async {
+                    runCatching { c.recipeApi.list(null, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
+                        val n = p.items.count { RecipeClient.fits(it, h) && !c.recipes.hides(it) }
+                        if (n == 0) null else h to (if (p.next != null) "${n}개 넘게" else "${n}개")
+                    }
+                }
+            }.awaitAll().filterNotNull().toMap()
             val otherCount = if (!wantOther) 0 else runCatching {
                 c.recipeApi.list(styleNow, "hot", "", 0, otherKind).items.count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
             }.getOrDefault(0)
-            _state.value = _state.value.copy(elsewhere = other, other = otherCount, looking = false)
+            _state.value = _state.value.copy(elsewhere = other, other = otherCount, otherStyles = otherStyles, looking = false)
         }
     }
 
