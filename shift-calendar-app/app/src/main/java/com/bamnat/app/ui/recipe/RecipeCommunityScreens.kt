@@ -236,7 +236,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
         // 1.39 발굴(마을 돌봄): 요청 글도 거친 말이면 올리기 전에 한 번 물어요(막지 않아요).
         var nudge by remember { mutableStateOf(false) }
         val go = { vm.write(text) { ok -> if (ok) writing = false } }
-        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(text, onEdit = { nudge = false }, onSend = { nudge = false; go() })
         AlertDialog(
             onDismissRequest = { writing = false },
             title = { Text("이런 레시피 있었으면") },

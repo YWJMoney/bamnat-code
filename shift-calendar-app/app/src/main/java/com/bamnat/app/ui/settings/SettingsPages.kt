@@ -11,6 +11,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -708,6 +710,8 @@ private fun NoticesPage(
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
             }
         } else Note("문의 답도 이제 바로 알리지 않아요. 답은 설정 › 도움말과 문의 › 내 문의에서 볼 수 있어요")
+        // 2.0.0 [RVN-14] 검토 HQ-51: what others did to what I put out comes to the 알림함, each kind with its own switch.
+        if (settings.plazaNews) ReactionSwitches(settings) { off -> vm.update { it.copy(reactionsOff = off) } }
     }
     SectionCard(title = "자는 동안") {
         // 2.0.0 [RVH-41] 검토 T30-83: 연차 where there is a company; the time of work in the kind's words.
@@ -1606,3 +1610,45 @@ internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
 }
 
 internal const val NIGHT_LOOK_ROW = "밤 색"
+
+/**
+ * 2.0.0 [RVN-14] 검토 HQ-51 (사용자 11-12 20:40 KST "사용자들과 상호작용하는 모든 알림이 알림으로 가야해", "끌 수 있게"): which reactions
+ * to what I put out come to the 알림함 and count on its bell. One line that opens to a switch per kind (조건 4: a page of five more
+ * switches would read like a document); a kind this kind of work never has (회사 규칙 for 현장·가게·투자, 시세 where the 광장 has none) is
+ * not shown (조건 13).
+ */
+@Composable
+private fun ReactionSwitches(settings: AppSettings, onChange: (String) -> Unit) {
+    val style = settings.workStyle
+    val groups = com.bamnat.core.plaza.Reactions.Group.entries.filter { g ->
+        when (g) {
+            com.bamnat.core.plaza.Reactions.Group.BOARD -> style == null || style.usesCompany
+            com.bamnat.core.plaza.Reactions.Group.RATE -> com.bamnat.core.plaza.StylePlaza.own(style).rates != null
+            else -> true
+        }
+    }
+    val off = com.bamnat.core.plaza.Reactions.decodeOff(settings.reactionsOff)
+    val offHere = groups.count { it.kind in off }
+    var open by rememberSaveable { mutableStateOf(false) }
+    Row(
+        Modifier.focusMark("알림함에 올 반응").fillMaxWidth().heightIn(min = 48.dp)
+            .clickable(role = Role.Button, onClickLabel = if (open) "접기" else "펼치기") { open = !open }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text("알림함에 올 반응", style = MaterialTheme.typography.bodyLarge)
+            Text(if (offHere == 0) "내 글·제보·부탁에 온 답과 좋아요 · 모두 받아요" else "내 글·제보·부탁에 온 답과 좋아요 · ${offHere}가지는 받지 않아요",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    if (!open) return
+    groups.forEach { g ->
+        SwitchRow(g.label, g.about, g.kind !in off) { on ->
+            onChange(com.bamnat.core.plaza.Reactions.encodeOff(if (on) off - g.kind else off + g.kind))
+        }
+    }
+    Note("누가 했는지는 알리지 않고, 몇 번인지만 한 줄로 모아 알려 줘요")
+}

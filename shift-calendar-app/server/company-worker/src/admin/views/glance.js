@@ -203,6 +203,23 @@ export function glanceViews(A) {
 
   const SIGNAL_STATE = { new: ["새 신호", "warn"], watch: ["지켜보는 중", "info"], dev: ["개발사항", "ok"], dismiss: ["아님", ""] };
 
+  /**
+   * 2.0.0 [RVN-15] 검토 U22c-03: 신호가 선 숫자의 날마다 줄(관측 판에 있는 것만). 사용 통계 신호처럼 판에 줄이 없는 것은 빈 글.
+   */
+  function signalLine(s, o) {
+    const days = o.play?.days ?? [];
+    const pick = {
+      "uninstall-spike": () => days.map((d) => d.uninstalls),
+      "net-loss": () => days.map((d) => (d.installs ?? 0) - (d.uninstalls ?? 0)),
+      "store-conv": () => days.map((d) => (d.visitors ? Math.round(((d.acq ?? 0) / d.visitors) * 1000) / 10 : 0)),
+      "rating-low": () => days.map((d) => d.rating ?? 0),
+      "active-drop": () => (o.active?.play ?? []).map((x) => x.n),
+      "config-drop": () => (o.active?.config ?? []).map((x) => x.n),
+    }[s.kind];
+    const values = pick ? pick().filter((v) => v !== null && v !== undefined) : [];
+    return values.length >= 2 ? L.spark(values, { name: s.title }) : "";
+  }
+
   /** [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인. */
   function signalsCard(o) {
     const list = o.signals ?? [];
@@ -217,7 +234,8 @@ export function glanceViews(A) {
            ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
            <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
       return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
-        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
+        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.sample === null || s.sample === undefined ? "" : ` · 표본 ${esc(String(s.sample))}`}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
+        ${signalLine(s, o)}${s.caveat ? `<p class="meta">틀릴 수 있는 까닭: ${esc(s.caveat)}</p>` : ""}
         ${s.human && s.state !== "dev" ? `<p class="meta" data-human-check>사람 확인 필요 · ${esc(s.src === "server" ? "서버가 센 요청" : "사용 통계")}에서 나온 숫자라 꾸밀 수 있어요${s.play === null || s.play === undefined ? " · Play 숫자가 아직 없어요" : ` · 같은 주 Play 하루 사용자 ${s.play > 0 ? "+" : ""}${esc(String(s.play))}%`}</p>` : ""}
         <div class="actions start">${btns}</div></li>`;
     };
@@ -293,13 +311,19 @@ export function glanceViews(A) {
       }
     },
     "obs-signal": ({ key, do: what }) => {
-      const go = async () => {
-        if (await act(() => api("/observe/signals", "POST", { key, act: what }), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요" : "아님으로 두었어요")) {
+      const go = (wrong = false) => async () => {
+        const body = wrong ? { key, act: "dismiss", wrong: true } : { key, act: what };
+        if (await act(() => api("/observe/signals", "POST", body), what === "dev" ? (r) => `개발사항 ${r.signal.devId}을 만들었어요` : what === "watch" ? "지켜볼게요"
+          : wrong ? "거짓 신호로 닫고, 같은 규칙은 표본이 더 모여야 뜨게 했어요" : "아님으로 두었어요")) {
           await load({ quiet: true });
         }
       };
-      if (what === "dismiss") return confirmBox("이 신호를 '아님'으로 둘까요?", "30일 동안 같은 신호를 다시 띄우지 않아요. 활동 기록에 남아요.", "아님으로", go, "primary");
-      return go();
+      // 2.0.0 [RVN-15] 검토 U22c-03: 같은 창에서 '거짓이었어요'도 골라요. 그 규칙의 표본 기준을 1.5배 올려요(세 번까지, 다시 열면 내려요).
+      if (what === "dismiss") {
+        return confirmBox("이 신호를 '아님'으로 둘까요?", "30일 동안 같은 신호를 다시 띄우지 않아요. 숫자가 틀렸던 거라면 '거짓이었어요'를 눌러 주세요. 같은 규칙은 표본이 1.5배 더 모여야 떠요. 활동 기록에 남아요.",
+          "아님으로", go(), "primary", [], { label: "거짓이었어요", then: go(true) });
+      }
+      return go()();
     },
   };
 

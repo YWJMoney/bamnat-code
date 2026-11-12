@@ -2,7 +2,7 @@
 // server error in plain words, no inline style (the CSP forbids it), colour pairs readable. `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { adminLib } from "../src/admin-lib.js";
 import { adminFile } from "../src/admin-app.js";
 
@@ -25,6 +25,12 @@ test("[ADMIN-18] every error code the server can send has words in the app", () 
   const missing = [...codes].filter((c) => !Object.hasOwn(L.ERRORS, c));
   assert.deepEqual(missing, [], "src/admin-lib.js ERRORS needs words for these");
   assert.equal(L.errorText("nope"), "처리하지 못했어요. 잠시 뒤 다시 해 주세요");
+  // 2.0.0 [RVN-15] 검토 SVC-101: 같은 코드가 두 번 적히면 뒤의 말이 앞의 말을 가려요(마을 돌봄의 'off'가 그랬어요).
+  const lib = read("../src/admin-lib.js");
+  const block = lib.slice(lib.indexOf("const ERRORS = {"), lib.indexOf("\n  };", lib.indexOf("const ERRORS = {")));
+  const keys = [...block.matchAll(/^\s+"?([A-Za-z0-9_]+)"?:/gm)].map((m) => m[1]);
+  assert.deepEqual(keys.filter((k, i) => keys.indexOf(k) !== i), [], "ERRORS has a code twice");
+  assert.ok(keys.length > 80);
   for (const [code, text] of Object.entries(L.ERRORS)) assert.ok(!/[A-Za-z]{4,}/.test(text.replace(/[A-Z_]{3,}|versionCode|Cloudflare|Play|Excel|MONEY_STATS|SHARE_\w+|PLAY_\w+|ADMIN_\w+|Ctrl/g, "")), `${code} reads as Korean`);
 });
 
@@ -346,14 +352,16 @@ test("[ADMCP-01][ADMCP-02] c copies and Space picks, and the ? list says so", ()
 // ---- AX 1.30 ----
 
 test("[ADMX-01] every activity code the server writes has words, and an unknown one never shows as a code", () => {
-  const src = ["../src/index.js", "../src/admin-insight.js", "../src/push.js"].map(read).join("\n");
+  // 2.0.0 [RVN-15] 검토 SVC-100: 세 파일만 읽어 다른 파일의 새 일 40여 가지가 영어 코드로 보였어요. 이제 src의 모든 파일.
+  const files = readdirSync(new URL("../src/", import.meta.url)).filter((f) => f.endsWith(".js") && f !== "dev-built.js");
+  const src = files.map((f) => read(`../src/${f}`)).join("\n");
   const codes = new Set([
     ...[...src.matchAll(/audit\(env, [^,]+, "([a-z_]+)"/g)].map((m) => m[1]),
     ...[...src.matchAll(/audit\(env, [^,]+, [^,]*\? "([a-z]+_[a-z_]+)" : "([a-z]+_[a-z_]+)"/g)].flatMap((m) => [m[1], m[2]]),
     // Codes made from a status: rate_${status}, reward_${status}, ${what}_bulk; and flag_migrate written in SQL.
     "rate_adopted", "rate_hidden", "rate_pending", "reward_paid", "reward_void", "reward_owed", "post_bulk", "rate_bulk", "flag_migrate",
   ]);
-  assert.ok(codes.size > 40, "the codes were found");
+  assert.ok(codes.size > 100, "the codes were found");
   assert.deepEqual([...codes].filter((c) => !Object.hasOwn(L.ACTION_NAMES, c)), []);
   assert.equal(L.actionName("reward_auto"), "보상 저절로 지급");
   assert.equal(L.actionName("invite_something_new"), "친구 초대 처리");

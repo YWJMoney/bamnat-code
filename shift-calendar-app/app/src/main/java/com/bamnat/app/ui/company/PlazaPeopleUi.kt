@@ -87,10 +87,35 @@ internal fun MeToo(count: Int, mine: Boolean?, onVote: (Boolean?) -> Unit) {
     val picked = mine == true
     TextButton(onClick = { onVote(if (picked) null else true) }, modifier = Modifier.heightIn(min = 48.dp)
         .semantics { contentDescription = if (picked) "나도요 $count, 눌렀어요" else "나도요 $count" }) {
-        Text("🙋 나도요 $count", style = MaterialTheme.typography.labelMedium, fontWeight = if (picked) FontWeight.Bold else FontWeight.Normal,
+        Text(meTooWord(count), style = MaterialTheme.typography.labelMedium, fontWeight = if (picked) FontWeight.Bold else FontWeight.Normal,
             color = if (picked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/**
+ * A post's head: the writer's name (a tap to the 프로필) and when. 2.0.0 [RVN-13] HQ-40 ④ At 글자 크기 150% and more the name has the
+ * whole line and the time goes under it: side by side, a name such as '새벽세시까지…' was cut while the time kept its room.
+ */
+@Composable
+internal fun NameAndTime(p: TalkPost, name: String, modifier: Modifier = Modifier) {
+    val shown = if (p.mine) "나 ($name)" else name
+    val onProfile = p.maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } }
+    val time = MaterialTheme.typography.labelSmall
+    if (com.bamnat.app.ui.components.bigLetters()) Column(modifier) {
+        com.bamnat.app.ui.village.MakerName(shown, p.mark, onProfile = onProfile, maxLines = 2)
+        Text(ago(p.at), style = time, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    } else Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.village.MakerName(shown, p.mark, onProfile = onProfile, modifier = Modifier.weight(1f, fill = false), maxLines = 1)
+        Text(" · " + ago(p.at), style = time, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+/** 2.0.0 [RVN-13] HQ-40 ③ "🙋 나도요 2", and with none yet just "🙋 나도요" (a 0 reads as nobody cares rather than a button). */
+internal fun meTooWord(count: Int): String = if (count > 0) "🙋 나도요 $count" else "🙋 나도요"
+
+/** 2.0.0 [RVN-13] HQ-40 ③ "공감 2 · 비공감 1" with the 0s left out; null when there is none of either. */
+internal fun reactionWords(agree: Int, disagree: Int): String? =
+    listOfNotNull("공감 $agree".takeIf { agree > 0 }, "비공감 $disagree".takeIf { disagree > 0 }).joinToString(" · ").ifEmpty { null }
 
 /** [PLZC-10] 3-3 공개 범위: what my posts show, kept on this phone. */
 @Composable
@@ -193,6 +218,9 @@ internal object Lens {
 
 /** [PLZC-32] How far back 야간 라운지 looks. */
 private const val LOUNGE_HOURS = 12L
+
+/** 2.0.0 [RVN-13] COMP-17 How many night posts the lounge needs before a night shift opens on it, and below which 전체 follows it. */
+internal const val LOUNGE_OPENS = 3
 
 /** Whether [p] (a top post) answers to [lens], with my tag for 나와 같은 근무 and 같은 업종, and the answers under it. */
 internal fun inLens(p: TalkPost, lens: String, mine: PlazaTag?, answers: List<TalkPost>): Boolean = when (lens) {
@@ -317,10 +345,16 @@ internal fun PlazaFeed(
         PlazaComposer(vm.timeLine.collectAsStateWithLifecycle().value?.first ?: plan.hint.ifBlank { "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" },
             topic = talk?.topic, onWrite = { vm.openTalk() })
         // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
+        // 2.0.0 [RVN-13] COMP-17·T10a-07 …only when the lounge has something to read (LOUNGE_OPENS posts): a quiet night opened on an
+        // empty room every time. With fewer it opens on 전체, the 🌙 chip first in the row.
         val night = styleRoom && mine?.now == PlazaTag.Now.NIGHT
         var loungeOpened by rememberSaveable(plan.room) { mutableStateOf(false) }
-        androidx.compose.runtime.LaunchedEffect(night) {
-            if (night && !loungeOpened) { loungeOpened = true; if (lens == Lens.ALL) lens = Lens.LOUNGE }
+        val loungePosts = talk?.let { t -> (t.posts + older).count { it.parent == null && inLens(it, Lens.LOUNGE, mine, emptyList()) } }
+        androidx.compose.runtime.LaunchedEffect(night, loungePosts) {
+            if (night && !loungeOpened && loungePosts != null) {
+                loungeOpened = true
+                if (lens == Lens.ALL && loungePosts >= LOUNGE_OPENS) lens = Lens.LOUNGE
+            }
             if (!night && lens == Lens.LOUNGE) lens = Lens.ALL
         }
         val lenses = buildList {
@@ -369,6 +403,16 @@ internal fun PlazaFeed(
                     FeedCard(p, answersOf[p.id].orEmpty(), menu,
                         onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
                 } }
+                // 2.0.0 [RVN-13] COMP-17 A quiet lounge goes on with the rest of the plaza under it, so a night is never an empty page.
+                val rest = if (lens == Lens.LOUNGE && shown.size < LOUNGE_OPENS) tops.filter { t -> shown.none { it.id == t.id } && t.id != lifted?.id } else emptyList()
+                if (rest.isNotEmpty()) {
+                    Text("광장의 다른 글", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp).semantics { heading() })
+                    rest.forEach { p -> androidx.compose.runtime.key("rest-" + p.id) {
+                        FeedCard(p, answersOf[p.id].orEmpty(), menu,
+                            onOpen = { vm.openTalk(p.id) }, onVote = { ok -> vm.vote(p.id, ok) }, onReply = { vm.openTalk(p.id, reply = true) })
+                    } }
+                }
                 if (talk.more && (older.isEmpty() || olderMore)) OutlinedButton(onClick = vm::more, enabled = !loadingOlder,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(if (loadingOlder) "불러오는 중…" else "지난 글 더 보기") }
             }
@@ -399,14 +443,8 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
             .padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    val maker = p.maker
-                    // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
-                    com.bamnat.app.ui.village.MakerName(if (p.mine) "나 ($name)" else name, p.mark,
-                        onProfile = maker?.takeIf { !p.mine }?.let { m -> { com.bamnat.app.recipe.RecipeLinks.openMaker(m) } },
-                        modifier = Modifier.weight(1f, fill = false), maxLines = 1)
-                    Text(" · " + ago(p.at), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-                }
+                // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
+                NameAndTime(p, name, Modifier.weight(1f))
                 FeedMenuButton(p, menu)
             }
             val kindChip = when (p.kind) {
@@ -436,7 +474,8 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
                 }
                 p.hidden?.let { why ->
                     // COMP-02 My post others no longer see: said on the card too, with 이의 제기.
-                    Text("다른 분께는 가려졌어요 · $why", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    // 2.0.0 [RVN-13] HQ-40 ① a caution (it can be looked at again), in the app's one line shape, not red.
+                    com.bamnat.app.ui.components.ToneLine("다른 분께는 가려졌어요 · $why")
                     if (p.mine) TextButton(onClick = { com.bamnat.app.ui.settings.InquiryLinks.ask(appealStart(p.id)) },
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp), modifier = Modifier.heightIn(min = 48.dp)) { Text("이의 제기") }
                 }
@@ -445,7 +484,8 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
             if (p.hidden == null) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(end = 6.dp),
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 if (!p.mine) Box(Modifier.align(Alignment.CenterVertically)) { MeToo(p.agree, p.myVote, onVote) }
-                else Text("🙋 나도요 ${p.agree}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                // HQ-40 ③ My own post with no 나도요 yet says nothing rather than "나도요 0".
+                else if (p.agree > 0) Text(meTooWord(p.agree), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.CenterVertically).padding(horizontal = 8.dp))
                 val helped = p.answer != null
                 Text(when {

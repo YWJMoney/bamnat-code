@@ -446,9 +446,10 @@ class CompanyDetailViewModel(
                             if (ways.pending.value == w) { ways.cancel(w); ways.forgetDropped(); scope.payWays.askBase(false) }
                         }
                         scope.autoShare.rebase()
-                        runCatching { c.companyApi.use(store.device, page.id, setup.id, false, scope.serverCal) }
+                        // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+                        com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, false, scope.serverCal))
                         if (usedBefore != null && usedBefore.setup != setup.id) {
-                            runCatching { c.companyApi.use(store.device, usedBefore.companyId, usedBefore.setup, true, scope.serverCal) }
+                            com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(usedBefore.companyId, usedBefore.setup, true, scope.serverCal))
                         }
                         c.telemetry.event("company_apply", "undone")
                         true
@@ -461,9 +462,10 @@ class CompanyDetailViewModel(
                 // [PLZ-08] 쓰는 사람: this calendar now uses this rule set, and no longer the one before (by the company's id; 1.29 sent its name).
                 val before = store.applied.value
                 if (before != null && before.setup != setup.id) {
-                    launch { runCatching { c.companyApi.use(store.device, before.companyId, before.setup, false, scope.serverCal) } }
+                    launch { com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(before.companyId, before.setup, false, scope.serverCal)) }
                 }
-                launch { runCatching { c.companyApi.use(store.device, page.id, setup.id, true, scope.serverCal) } }
+                // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached.
+                launch { com.bamnat.app.company.SmallSends.send(c, store, com.bamnat.app.company.SmallSends.use(page.id, setup.id, true, scope.serverCal)) }
                 store.setApplied(AppliedSetup(page.id, page.name, setup.dept, setup.id, setup.version, setup.adopted, Today.instant()))
                 store.setDraft(null)
                 // [PLAZA-32] 1.27 AI: a member already (page.member) is one here too, so 광장 opens to this company's room.
@@ -988,7 +990,9 @@ class CompanyBoardViewModel(
      * top, the cards stay); [stale] when reading it again failed.
      */
     data class Tab(val items: List<com.bamnat.app.company.BoardItem> = emptyList(), val next: Int? = 0, val loading: Boolean = false, val error: String? = null,
-        val fromCache: Boolean = false, val stale: Boolean = false)
+        val fromCache: Boolean = false, val stale: Boolean = false,
+        /** 2.0.0 [RVN-13] COMP-15 Why the next page did not come, said at the list's end with 다시 시도 (null when it did). */
+        val moreFailed: String? = null)
 
     val enabled: Boolean = c.companyApi.enabled
     private val _adopted = MutableStateFlow(false)
@@ -1077,8 +1081,8 @@ class CompanyBoardViewModel(
         val key = "$adopted|$q|${fl.job}|${fl.region}|${fl.sort}"
         val cache = c.companySearch.cache
         val kept = if (from == 0) cache.board(key)?.value else null
-        f.value = if (kept != null) f.value.copy(items = kept.items, next = kept.next, loading = true, error = null, fromCache = true, stale = false)
-        else f.value.copy(loading = true, error = null, stale = false)
+        f.value = if (kept != null) f.value.copy(items = kept.items, next = kept.next, loading = true, error = null, fromCache = true, stale = false, moreFailed = null)
+        else f.value.copy(loading = true, error = null, stale = false, moreFailed = null)
         viewModelScope.launch {
             if (from == 0 && kept == null && !cache.loaded) {
                 cache.load()
@@ -1094,7 +1098,8 @@ class CompanyBoardViewModel(
                     next = b.next, loading = false, fromCache = false)
             } catch (e: CompanyException) {
                 val shown = f.value.items.isNotEmpty()
-                f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0)
+                f.value.copy(loading = false, error = if (shown) null else companyProblem(e), stale = shown && from == 0,
+                    moreFailed = if (shown && from > 0) companyProblem(e) else null)
             }
             // A page for a name no longer in the box is dropped; the new name's pages are on their way.
             if (q == asked && fl == _filter.value) {
