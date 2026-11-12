@@ -2239,6 +2239,34 @@ test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback v
 });
 
 // 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 정기 작업이 잰 공유 서버 KV 오늘 쓰기·읽기가 요금제 줄에 하루 몫의 %로, 80%를 넘으면 주의 색으로.
+test("[RVQ-26] SVC-52 장터 › 다시 올라온 것: 줄에 볼 일 둘(채운 괜찮아요·다시 돌려주기), 가리기와 나머지는 ⋯ 안", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const body = (summary) => ({ format: "bamnat-recipe", v: 1, title: "봄꽃 교대 달력", summary, styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] });
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe: body("주간은 분홍"), scope: "public" }, from(1))).data.code;
+  const u = await asOwner(env, t);
+  await u.api("POST", `/api/admin/recipes/${code}/return`, { note: "연락처를 빼 주세요" });
+  t.mock.timers.tick(60e3);
+  await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: body("연락처를 뺐어요. 주간은 분홍") }, from(1));
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="again"]');
+  await u.idle();
+  const side = u.$("#main .recipe-rows .row-side");
+  assert.ok(side, "다시 올라온 작품 한 줄");
+  const shown = [...side.children].filter((e) => e.matches("button")).map((b) => b.textContent.trim());
+  assert.deepEqual(shown, ["괜찮아요", "다시 돌려주기"]);
+  assert.equal(side.querySelectorAll(":scope > .btn.primary").length, 1, "채운 단추는 하나");
+  const menu = [...side.querySelectorAll(".row-more .menu button")].map((b) => b.textContent.trim());
+  assert.equal(menu[0], "가리기");
+  assert.ok(menu.includes("지난 판 지우기") && menu.includes("지우기"), menu.join(","));
+  side.querySelector('[data-key="approve"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT state FROM recipes WHERE code = ?").get(code).state, "visible");
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVQ-24] 서버 상태 shows the share server's KV writes and reads for today against the plan's day", async () => {
   const s = await world();
   const t = await signedIn(s.env);

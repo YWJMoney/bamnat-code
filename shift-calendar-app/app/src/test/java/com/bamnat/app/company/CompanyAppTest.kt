@@ -180,6 +180,73 @@ class CompanyAppTest {
     }
 
     /**
+     * 2.0.0 [RVN-17] 검토 COMP-14: once 방 글에 금액 받기 is on, a room's post is held back only for a way to reach someone (the server's
+     * CONTACT, a real phone number's shape); a rule's talk keeps the amounts out either way.
+     */
+    @Test fun aRoomsPostTakesAmountsOnlyWhenTheServerSays() {
+        assertEquals("phone", CompanyText.contact("궁금하면 010-1234-5678로 연락 주세요"))
+        assertEquals("phone", CompanyText.contact("+82 10 1234 5678"))
+        assertEquals("phone", CompanyText.contact("02-123-4567"))
+        assertEquals("email", CompanyText.contact("메일 a.b@example.com 주세요"))
+        assertNull(CompanyText.contact("연봉 300000000원이면 좋겠다"))
+        assertNull(CompanyText.contact("야간 수당 한 달에 50만원 정도 나와요"))
+        assertNull(CompanyText.contact("1,500,000원"))
+        // Off (as every server before it is turned on): as before. A rule's talk, on or off: no amounts.
+        assertEquals("amount", CompanyText.post("야간 수당 한 달에 50만원 정도", room = true, roomMoney = false))
+        assertNull(CompanyText.post("야간 수당 한 달에 50만원 정도", room = true, roomMoney = true))
+        assertEquals("amount", CompanyText.post("기본급 250만원이에요", room = false, roomMoney = true))
+        assertEquals("phone", CompanyText.post("010-1234-5678", room = true, roomMoney = true))
+    }
+
+    /**
+     * 2.0.0 [RVN-17] 검토 COMP-12 (보고서 11장 결정 10): the wait says which company holds the calendar and until when, in one line with
+     * the 조사 fitted, and falls back when a server before 2.0.0 sends no name.
+     */
+    @Test fun theWaitSaysWhichCompanyHoldsTheCalendar() {
+        val until = LocalDate.of(2026, 12, 10).atTime(12, 0).atZone(com.bamnat.core.time.Today.zone()).toInstant()
+        assertEquals("이 달력은 12월 10일까지 ‘가나상사’로 정해져 있어요", com.bamnat.app.ui.company.MemberWait("가나상사", until, true).line)
+        assertEquals("이 달력은 12월 10일까지 ‘다라전자’로 정해져 있어요", com.bamnat.app.ui.company.MemberWait("다라전자", until, false).line)
+        assertEquals("이 달력은 12월 10일까지 ‘한빛물산’으로 정해져 있어요", com.bamnat.app.ui.company.MemberWait("한빛물산", until, false).line)
+        assertEquals("이 달력은 12월 10일까지 다른 회사로 정해져 있어요", com.bamnat.app.ui.company.MemberWait(null, until, false).line)
+        // '잘못 골랐어요' used up: the card keeps the reason, without the button; no signal keeps the button to try again.
+        val w = com.bamnat.app.ui.company.MemberWait("가나상사", until, true)
+        val used = w.failed(CompanyException("undo_used"))
+        assertFalse(used.undo)
+        assertEquals("잘못 고른 회사 풀기를 이미 썼어요(한 해에 한 번)", used.why)
+        assertTrue(w.failed(CompanyException("offline")).undo)
+    }
+
+    /**
+     * 2.0.0 [RVN-17] 검토 COMP-12 against the real server: a look before choosing joins nothing and already names the company holding
+     * the calendar; '잘못 골랐어요' frees it once, and the next wait offers no undo.
+     */
+    @Test fun aCompanyPickedByMistakeIsFreedOnceAYear() = withServer { base ->
+        val api = CompanyClient(base, device = { "app-test-device-0009" })
+        val share = CompanyShare(senderSetup(), store, settings, today = { today })
+        val ids = listOf("가나상사", "다라상사", "마바상사").mapIndexed { i, name ->
+            api.report("app-test-device-000${i + 1}", name, "", false, "", share.exportForServer())
+            api.search(name).single().id
+        }
+        val me = "app-test-device-0009"
+        // 고르기 전에 알리고: the page says how long a join holds the calendar, and that a mistake can be undone.
+        assertEquals(30, api.company(ids[0]).joinWaitDays)
+        assertTrue(api.company(ids[0]).joinUndo)
+        assertTrue(api.join(me, ids[0], "app").joined)
+        val look = api.joinCheck(me, ids[1], "app")
+        assertEquals(listOf<Any?>("member_wait", "가나상사", true), listOf(look.error, look.held, look.undo))
+        assertNotNull(look.until)
+        val (wait, _) = api.joinWithPage(me, ids[1], "app")
+        assertEquals(listOf<Any?>(false, "member_wait", "가나상사", true), listOf(wait.joined, wait.error, wait.held, wait.undo))
+        assertTrue(api.undoJoin(me, "app"))
+        assertTrue(api.join(me, ids[1], "app").joined)
+        val again = api.join(me, ids[2], "app")
+        assertEquals(listOf<Any?>("member_wait", "다라상사", false), listOf(again.error, again.held, again.undo))
+        val used = runCatching { api.undoJoin(me, "app") }.exceptionOrNull() as CompanyException
+        assertEquals("undo_used", used.code)
+        assertFalse(api.terms().roomMoney)
+    }
+
+    /**
      * The app's own file against the real server code (server/company-worker on Node with SQLite):
      * a format drift on either side fails here, not on a user's phone. Skipped where Node is missing.
      */

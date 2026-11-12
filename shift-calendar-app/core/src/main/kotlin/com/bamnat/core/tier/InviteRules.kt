@@ -82,13 +82,43 @@ object InviteRules {
      */
     fun shareText(link: String, code: String): String =
         "밤낮 근무 달력 같이 써요. 근무표·알람·월급 계산을 한 앱에서 보고, 쉬는 날도 한눈에 맞춰 볼 수 있어요.\n$link\n" +
-            "이 링크로 깔면 초대가 저절로 알려져요. 링크가 안 열리면 앱을 깔고 7일 안에 설정 맨 위 ‘친구 초대’ › ‘초대 코드 넣기’에 ${shown(code)}를 넣어 주세요."
+            // 2.0.0 [RVO-06] 받은 코드는 프로 화면 맨 아래 '코드를 받으셨나요?' 한 칸에서.
+            "이 링크로 깔면 초대가 저절로 알려져요. 링크가 안 열리면 앱을 깔고 7일 안에 설정 › 프로 › 맨 아래 ‘코드를 받으셨나요?’에 ${shown(code)}를 넣어 주세요."
+
+    /**
+     * 2.0.0 [RVO-13] 검토 HQ-48 (사용자 2026-11-12 20:28 KST "프로를 무료로 사용하는 조건부 기능이 있다는것을 알아야 적극적 참여를 이끌어
+     * 낼수 있으므로"): the one-line promise on top of 프로 for a phone without it, in the server's own rules, "친구 5명이 7일 쓰면 프로 1개월 ·
+     * 1년에 12개월까지". The cap is said only while the server counts it (처리방침 3.13 1-7항, from 12-12).
+     */
+    fun promise(t: InviteTerms): String = t.short() + if (t.capMonths > 0) " · 1년에 ${t.capMonths}개월까지" else ""
+
+    /** 2.0.0 [RVO-13] The 3.13 lines the long form ends with: how a friend counts, and that 프로 comes in after the 운영팀 looked (1-12항). */
+    fun details(t: InviteTerms): String = "내 링크로 깐 친구는 앱이 저절로 알아봐요. 친구가 첫 설정 마지막에 알린 날부터 ${t.days}일이 지나 앱을 다시 열면 " +
+        "친구 한 명으로 세요. ${t.words()}. 같은 친구·같은 휴대폰은 한 번만, 내 휴대폰은 세지 않아요. 친구가 모이면 운영팀이 확인한 뒤 프로가 들어와요."
+
+    /**
+     * 2.0.0 [RVO-13] What this phone has from its invites so far, in one line ("받은 프로 2개월 · 확인 기다리는 1개월 · 기다리는 친구 3명"),
+     * null before there is any of it.
+     */
+    fun status(given: Int, pending: Int, waiting: Int): String? = listOfNotNull(
+        "받은 프로 ${given}개월".takeIf { given > 0 },
+        "확인 기다리는 ${pending}개월".takeIf { pending > 0 },
+        "기다리는 친구 ${waiting}명".takeIf { waiting > 0 },
+    ).joinToString(" · ").ifEmpty { null }
 
     /** [INVITE-05] The inviter's line: "초대한 친구 2명 · 프로 2개월". */
     fun summary(friends: Int, months: Int): String = "초대한 친구 ${friends}명 · 프로 ${months}개월"
 
     /** 2.0.0 [RVD-14] "프로 1개월은 운영팀이 확인한 뒤 들어와요". */
     fun pending(months: Int): String = "프로 ${months}개월은 운영팀이 확인한 뒤 들어와요"
+
+    /**
+     * 2.0.0 [RVO-13] 통합 2차 PC-114: the year's months are all spoken for. Some may still wait for the 운영팀 ([pending]): then it is not
+     * '모두 받았어요' but how many come in after the look; the friends go on being counted either way.
+     */
+    fun capped(capMonths: Int, pending: Int): String =
+        if (pending > 0) "프로 ${pending}개월은 운영팀이 확인한 뒤 들어와요. 확인이 끝나면 올해 받을 수 있는 ${capMonths}개월이 모두 차요. 친구는 계속 셀게요."
+        else "올해 받을 수 있는 ${capMonths}개월을 모두 받았어요. 친구는 계속 셀게요."
 
     /** [INVITE-08] Toward the next months: "3/5명 · 2명은 사용 기간 채우는 중". */
     fun progress(progress: Int, need: Int, waiting: Int): String =

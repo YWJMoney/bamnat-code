@@ -54,20 +54,29 @@ internal fun AutoTidyLine(area: String, calendarId: String?, modifier: Modifier 
         androidx.compose.foundation.layout.Spacer(Modifier.size(8.dp))
         Text("자동으로 정리한 것 ${mine.size}건 보기")
     }
-    if (open) AutoTidySheet(mine, box, onDismiss = { open = false })
+    if (open) AutoTidySheet(mine, box, tidyAbout(area), onDismiss = { open = false })
+}
+
+/**
+ * What the sheet says it holds, in the words of the screen it is under: 2.0.0 [RVM-26] RCP-08 the 내 서랍 one holds themes the 입었던 테마
+ * limit let go, not payments.
+ */
+internal fun tidyAbout(area: String): String = when (area) {
+    AutoTidy.AREA_RECIPE -> "입었던 테마가 ${com.bamnat.core.recipe.ThemeLease.HISTORY}개를 넘어 서랍에서 뺀 것이에요. 다시 두려면 되살려요."
+    else -> "같은 결제로 보고 한 번만 적었거나 하나로 합친 것이에요. 다르면 되살려요."
 }
 
 /** [RVK-13] What the app left out or joined, newest first, each with why and '되살리기' (or '맞아요' to let it go). */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: () -> Unit) {
+private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, about: String, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     var said by remember { mutableStateOf<String?>(null) }
     val now = Today.millis()
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 20.dp)) {
             Text("자동으로 정리한 것", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
-            Text(said ?: "같은 결제로 보고 한 번만 적었거나 하나로 합친 것이에요. 다르면 되살려요.",
+            Text(said ?: about,
                 style = MaterialTheme.typography.bodySmall,
                 color = if (said != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
@@ -89,7 +98,7 @@ private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: 
                             TextButton(onClick = { scope.launch { box.forget(item.id) } }) { Text("맞아요") }
                             TextButton(onClick = {
                                 scope.launch {
-                                    said = if (box.restore(item.id)) "‘${item.title}’을 되살렸어요" else "되살리지 못했어요. 다시 해 주세요"
+                                    said = if (box.restore(item.id)) "‘${item.title}’${com.bamnat.core.text.Josa.eulreul(item.title)} 되살렸어요" else "되살리지 못했어요. 다시 해 주세요"
                                 }
                             }) { Text("되살리기") }
                         }

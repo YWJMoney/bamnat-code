@@ -6,6 +6,12 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
@@ -95,16 +101,31 @@ internal fun SleepNightCard(
                 if (SleepRecordService.permitted(context)) { SleepRecordService.start(context); onNight() } else ask.launch(Manifest.permission.RECORD_AUDIO)
             }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 시작") }
         }
-        // 1.38 [SLEEP-08] 깨우는 구간: only earlier than the alarm, and only while measuring.
-        Text("깨우는 구간 (재는 동안, 알람보다 일찍 얕은 잠일 때)", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 12.dp))
-        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            com.bamnat.core.sleep.SmartWakeRule.CHOICES_MINUTES.forEach { m ->
-                com.bamnat.app.ui.components.FilterChip(selected = smartWake == m, onClick = { onSmartWake(m) },
-                    label = { Text(com.bamnat.core.sleep.SmartWakeRule.label(m)) })
-            }
+        // 1.38 [SLEEP-08] 깨우는 구간: only earlier than the alarm, and only while measuring. 2.0.0 [RVI-60] (검토 U03-03) Not measuring,
+        // it is one line with what is chosen, opened with a tap: the chips were always out under 측정 시작.
+        var wakeOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+        val wakeShown = r != null || wakeOpen
+        Row(
+            Modifier.padding(top = 8.dp).fillMaxWidth().heightIn(min = 48.dp)
+                .then(if (r == null) Modifier.clickable(onClickLabel = if (wakeOpen) "접기" else "펼치기") { wakeOpen = !wakeOpen } else Modifier),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("깨우는 구간 · ${com.bamnat.core.sleep.SmartWakeRule.label(smartWake)}", style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.weight(1f))
+            if (r == null) androidx.compose.material3.Icon(
+                if (wakeOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
         }
-        if (smartWake > 0) Text("근무 알람은 정시에 그대로 울려요. 구간 안에 뒤척이면 그때 먼저 깨우고, 정시 알람은 꺼요.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (wakeShown) {
+            Text("재는 동안, 알람보다 일찍 얕은 잠일 때 깨워요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                com.bamnat.core.sleep.SmartWakeRule.CHOICES_MINUTES.forEach { m ->
+                    com.bamnat.app.ui.components.FilterChip(selected = smartWake == m, onClick = { onSmartWake(m) },
+                        label = { Text(com.bamnat.core.sleep.SmartWakeRule.label(m)) })
+                }
+            }
+            if (smartWake > 0) Text("근무 알람은 정시에 그대로 울려요. 구간 안에 뒤척이면 그때 먼저 깨우고, 정시 알람은 꺼요.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (r == null && last != null && last.end.isAfter(Today.dateTime().minusHours(18))) {
             Text("지난밤 ${Fmt.time(last.start.toLocalTime())}–${Fmt.time(last.end.toLocalTime())} · ${last.line}" +
                 (if (last.battery >= 0) " · 배터리 ${last.battery}%" else "") +

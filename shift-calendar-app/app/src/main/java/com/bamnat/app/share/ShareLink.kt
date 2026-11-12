@@ -438,8 +438,9 @@ object ShareLinkPayload {
         used.values.forEach { t ->
             types.put(JSONObject().apply {
                 put("id", t.id)
-                put("name", t.name.take(20))
-                put("short", t.label.take(4).ifEmpty { t.name.take(1) })
+                // 2.0.0 [RVM-29] SN-16: cut at a letter by the 근무 종류 한 규칙표 (ShiftRules), never half an emoji (take(4) sent 👩‍⚕️ half).
+                put("name", com.bamnat.core.model.ShiftRules.fitName(t.name))
+                put("short", com.bamnat.core.model.ShiftRules.fitLabel(t.label).ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS) })
                 put("color", "#%06X".format(t.colorArgb and 0xFFFFFF))
                 if (t.start != null && t.end != null && !t.isOff) {
                     put("time", "${t.start}-${t.end}")
@@ -1060,6 +1061,13 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         Unit
     }
 
+    /**
+     * 2.0.0 [RVM-29] SN-16: the 신청 서버 takes a 근무 글자 of 4 code units ([ASK_LABEL_UNITS]); cut at a letter, never half an emoji, and a
+     * 글자 that does not fit at all (👩‍⚕️ is 5) gives the name's first letter instead of being refused.
+     */
+    private fun askLabel(t: com.bamnat.core.team.TeamShift): String = com.bamnat.core.model.ShiftRules.cut(t.label.trim(), com.bamnat.core.model.ShiftRules.LABEL_LETTERS, ASK_LABEL_UNITS)
+        .ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, ASK_LABEL_UNITS) }.ifEmpty { "?" }
+
     override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
                                    leave: List<Double?>): AskMade =
         withContext(Dispatchers.IO) {
@@ -1068,7 +1076,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 .put("holidays", org.json.JSONArray(rules.holidays.sorted().map { it.toString() })).put("blocked", org.json.JSONArray(rules.blocked.sorted().map { it.toString() }))
                 .put("showNames", rules.showNames)
             val body = JSONObject().put("team", team).put("month", month.toString()).put("rules", r)
-                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", it.label.take(4)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
+                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", askLabel(it)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
                 .put("members", org.json.JSONArray(names))
             if (leave.any { it != null }) body.put("leave", org.json.JSONArray(leave.map { it ?: JSONObject.NULL }))
             val o = request("POST", "/api/ask", body, null).body
@@ -1352,6 +1360,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     private companion object {
         const val MAX_REPLY_BYTES = 256 * 1024
+        /** share-worker LIMITS.askShiftLabel. */
+        const val ASK_LABEL_UNITS = 4
     }
 }
 

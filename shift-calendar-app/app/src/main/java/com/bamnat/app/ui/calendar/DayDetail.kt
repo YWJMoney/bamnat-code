@@ -988,7 +988,8 @@ private fun AlarmContent(
         DayAlarmEditorDialog(
             date = day.date,
             // [DAYW-09] The evening before's alarms come along as 전날 ones, so saving keeps them (I 리뷰 P13).
-            initial = custom ?: planned.map { DayAlarm(it.triggerAt.toLocalTime(), dayBefore = it.triggerAt.toLocalDate().isBefore(day.date)) },
+            // 2.0.0 [RVI-17] (검토 ALM-08) And the day after's as 다음날 ones: a night's 다음날 14:00 became 14:00 of the day.
+            initial = custom ?: planned.mapNotNull { DayAlarm.ringingAt(day.date, it.triggerAt) },
             suggested = start?.minusHours(1) ?: LocalTime.of(8, 0),
             onDismiss = { editing = false },
             onSave = { list ->
@@ -1031,7 +1032,7 @@ private fun DayAlarmEditorDialog(
                 alarms.forEachIndexed { i, alarm ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            (if (alarm.dayBefore) "전날 " else "") + Fmt.time(alarm.time),
+                            alarm.dayWord + Fmt.time(alarm.time),
                             style = MaterialTheme.typography.headlineSmall.merge(NumberStyle),
                             color = if (alarm.enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
                             modifier = Modifier
@@ -1041,8 +1042,8 @@ private fun DayAlarmEditorDialog(
                                 .padding(vertical = 6.dp),
                         )
                         Switch(checked = alarm.enabled, onCheckedChange = { on -> alarms[i] = alarm.copy(enabled = on) },
-                            modifier = Modifier.semantics { contentDescription = "${Fmt.time(alarm.time)} 알람" })
-                        IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${Fmt.time(alarm.time)} 알람 지우기") }
+                            modifier = Modifier.semantics { contentDescription = "${alarm.dayWord}${Fmt.time(alarm.time)} 알람" })
+                        IconButton(onClick = { alarms.removeAt(i) }) { Icon(Icons.Filled.Close, "${alarm.dayWord}${Fmt.time(alarm.time)} 알람 지우기") }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1068,16 +1069,17 @@ private fun DayAlarmEditorDialog(
     )
     picking?.let { index ->
         val before = if (index >= 0) alarms[index].dayBefore else newDayBefore
+        val after = index >= 0 && alarms[index].dayAfter // 2.0.0 [RVI-17] a 다음날 alarm stays 다음날 when its time changes
         val initialTime = when {
             index >= 0 -> alarms[index].time
             before -> LocalTime.of(22, 0)
-            else -> alarms.filter { !it.dayBefore }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
+            else -> alarms.filter { !it.dayBefore && !it.dayAfter }.maxOfOrNull { it.time }?.plusMinutes(10) ?: suggested
         }
         TimePickerDialog(
             when { index >= 0 -> "알람 시각 바꾸기"; before -> "전날 알람 추가"; else -> "알람 추가" },
             initialTime, onDismiss = { picking = null },
         ) { t ->
-            if (alarms.none { it.time == t && it.dayBefore == before }) {
+            if (alarms.none { it.time == t && it.dayBefore == before && it.dayAfter == after }) {
                 if (index >= 0) alarms[index] = alarms[index].copy(time = t) else alarms.add(DayAlarm(t, dayBefore = before))
                 alarms.sortBy { it.at(date) }
             }

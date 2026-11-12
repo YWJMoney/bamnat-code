@@ -125,4 +125,21 @@ class AlarmSelfCheckTest {
         assertTrue(today, today.startsWith("주간 ") && today.endsWith(" · 반차"))
         assertEquals("주간 07:00~19:00", TodayShiftNotice.lines(snapshot.resolver, start).second.removePrefix("내일 "))
     }
+
+    /**
+     * 2.0.0 [RVI-66] (PC 통합 1차 N8) A 대근 on a day off is the day's work on the lock screen, not '휴무'; 잔업 on a work day goes
+     * beside the shift.
+     */
+    @Test fun aCoverOnADayOffIsTheDaysWork() {
+        val off = ShiftType(3, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+        val start = LocalDate.of(2026, 11, 2)
+        val snapshot = ScheduleSnapshot(listOf(day, off), WorkPattern.Rotation(start, listOf(1L, 3L)), listOf(
+            com.bamnat.core.model.DayEntry(start, extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.OVERTIME_ID, minutes = 120))),
+            com.bamnat.core.model.DayEntry(start.plusDays(1), extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID,
+                LocalTime.of(7, 0), LocalTime.of(19, 0), coveredShiftId = 1L))),
+        ))
+        val (today, tomorrow) = TodayShiftNotice.lines(snapshot.resolver, start)
+        assertTrue(today, today.startsWith("오늘 주간 07:00~19:00 · 잔업"))
+        assertEquals("내일 주간 대근 07:00~19:00", tomorrow)
+    }
 }
