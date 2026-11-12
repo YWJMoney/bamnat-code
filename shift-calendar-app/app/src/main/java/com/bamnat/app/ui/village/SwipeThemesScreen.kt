@@ -75,7 +75,8 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                     val pager = rememberPagerState { list.size }
                     Text("위로 넘기면 다음 테마 · ${pager.currentPage + 1}/${list.size}", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }) { i ->
+                    // 2.0.0 [RVM-35] HQ-66 (같은 구조): quick swipes up turn as many themes as swiped (the calendar's fling).
+                    VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }, flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(pager)) { i ->
                         val t = list[i]
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {

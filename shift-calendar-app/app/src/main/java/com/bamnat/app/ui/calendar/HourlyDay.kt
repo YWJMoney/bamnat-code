@@ -3,7 +3,6 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Login
@@ -97,7 +96,7 @@ internal fun HolidayWeekCheck(modifier: Modifier = Modifier) {
  * [HRLY-01][HRLY-08] An 알바 day's chips: 출근·퇴근 today (the time now, to 5 minutes, kept in the day's
  * change history), 지각·조퇴·결근 (a second tap takes it off), and 대타, which adds the 대근 of a shift.
  */
-internal fun LazyListScope.hourlyChips(
+internal fun ChipScope.hourlyChips(
     day: ResolvedDay,
     today: LocalDate,
     snapshot: ScheduleSnapshot,

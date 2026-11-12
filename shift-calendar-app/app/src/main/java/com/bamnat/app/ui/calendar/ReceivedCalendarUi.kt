@@ -611,6 +611,9 @@ fun ReceivedCalendarView(
     val restTogether: (LocalDate) -> Boolean = { d -> canCompare && schedule.isRest(d) == true && mine.resolver.resolve(d).isRestForMe() }
     val togetherCount = remember(schedule, mine, month) { (1..month.lengthOfMonth()).count { restTogether(month.atDay(it)) } }
     val goTo: (YearMonth) -> Unit = { m -> scope.launch { pager.animateScrollToPage(monthToPage(BASE_MONTH, m)) } }
+    // 2.0.0 [RVH-55] 검토 PC-88 (같은 구조): ‹ › counted from the month a turn is heading to, so quick taps each move a month, as on
+    // the calendar (its headingMonth); counted from the month under the turn, a second quick tap went to the same month again.
+    val heading = { pageToMonth(BASE_MONTH, pager.targetPage) }
     val loading = refresh == ReceivedViewModel.Refresh.Loading(cal.id)
     val offline = refresh == ReceivedViewModel.Refresh.Offline(cal.id)
 
@@ -623,11 +626,11 @@ fun ReceivedCalendarView(
         if (head != null) head(ReceivedHead(
             month = month,
             atToday = selected == today && month == YearMonth.from(today),
-            onPrev = { goTo(month.minusMonths(1)) },
-            onNext = { goTo(month.plusMonths(1)) },
+            onPrev = { goTo(heading().minusMonths(1)) },
+            onNext = { goTo(heading().plusMonths(1)) },
             onToday = { selected = today; goTo(YearMonth.from(today)) },
             onPickMonth = { pickingMonth = true },
-        )) else ReceivedMonthRow(month, identityBar, goTo = goTo, onToday = { selected = today; goTo(YearMonth.from(today)) })
+        )) else ReceivedMonthRow(month, identityBar, goTo = goTo, heading = heading, onToday = { selected = today; goTo(YearMonth.from(today)) })
         // [RVG-22] 검토 HQ-20: at large text on a narrow column the chip took the row and '방금 받음 ↻' was cut to '방금'; now when both
         // do not fit, the freshness goes whole to the line under the chip (the chip is never squeezed either).
         FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
@@ -647,7 +650,8 @@ fun ReceivedCalendarView(
         WeekdayHeader(weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             val cellHeight = LocalCalendarView.current.cellHeight(maxWidth) + cellTextGrowth()
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS), beyondViewportPageCount = 1, key = { it }) { page ->
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS), beyondViewportPageCount = 1, key = { it },
+                flingBehavior = queuedTurns(pager)) { page ->
                 ReceivedMonthGrid(
                     month = pageToMonth(BASE_MONTH, page),
                     schedule = schedule,
@@ -721,7 +725,7 @@ fun ReceivedCalendarView(
 
 /** The received month's head before 2.0.0 [RVP-45] HQ-62, kept for a screen that gives no [ReceivedHead]: the chip's row, then the month's. */
 @Composable
-private fun ReceivedMonthRow(month: YearMonth, identityBar: @Composable () -> Unit, goTo: (YearMonth) -> Unit, onToday: () -> Unit) {
+private fun ReceivedMonthRow(month: YearMonth, identityBar: @Composable () -> Unit, goTo: (YearMonth) -> Unit, heading: () -> YearMonth, onToday: () -> Unit) {
     identityBar()
     // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
     // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
@@ -734,13 +738,13 @@ private fun ReceivedMonthRow(month: YearMonth, identityBar: @Composable () -> Un
             (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
         } + HEAD_BUTTONS <= maxWidth
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+            IconButton(onClick = { goTo(heading().minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                 com.bamnat.app.ui.FitText(
                     if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
                     monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
                 )
-                IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+                IconButton(onClick = { goTo(heading().plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
             }
             if (roomy) TextButton(onClick = onToday) { Text("오늘", maxLines = 1, softWrap = false) }
             else IconButton(onClick = onToday) { Icon(Icons.Filled.Today, "오늘") }

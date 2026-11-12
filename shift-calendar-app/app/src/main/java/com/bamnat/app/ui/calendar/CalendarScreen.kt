@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -139,6 +140,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.data.rules
@@ -1885,6 +1887,8 @@ fun CalendarScreen(
                     // [CAL-01] With a stamp chosen, a sideways drag paints days instead of turning the month.
                     // [TAB-04] N1 연간 판 turns by its own year arrows; a sideways swipe would only creep a month along the same year.
                     userScrollEnabled = !stamping && board != com.bamnat.core.layout.CalendarBoard.YEAR,
+                    // 2.0.0 [RVH-55] 검토 PC-88: quick swipes each turn a month, as quick taps on › do.
+                    flingBehavior = queuedTurns(pagerState),
                 ) { page ->
                     if (board == com.bamnat.core.layout.CalendarBoard.WEEK) {
                         val titles = remember(datedMemos) {
@@ -2413,6 +2417,13 @@ internal fun CalendarHeader(
     // [FXR-03] With the shown month's day (today in this month, else its first), so 조건부 꾸미기 works on the head too.
     val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.app.logic.dayOfMonth(month))
     val headPart = bp.style("cal.head", scope = headScope)
+    // 2.0.0 [RVH-52] 검토 HQ-22 (진짜 장터 작품으로 다시 찍음: '야간 회복 스테이션'의 머리 상자는 바깥 6·안 12 여백이라 접은 폭에서 제목이
+    // '1'): the work's head box (바깥 간격·안 여백) takes its sides from the one row ([HeadRoom] reserved).
+    val headSides = 2f * ((headPart.out ?: 0) + (headPart.padH ?: 0))
+    // [RVH-52] This month without its year at the least size the head draws it ([MONTH_TITLE_MIN_SP]): the round 바로 단추 leaves it that.
+    val monthMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val shortMonth = monthTitle(month, short = true)
     val navPart = bp.style("cal.head.nav", scope = headScope)
     val todayPart = bp.style("cal.head.today", scope = headScope)
     val titlePart = bp.style("cal.head.title", scope = headScope)
@@ -2420,6 +2431,14 @@ internal fun CalendarHeader(
     // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
     val narrowTitle = MaterialTheme.typography.titleMedium
     val roomyTitle = if (wideTitle) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge
+    // [RVH-52] Measured in the work's letters at the least size (the size is set here, so which of the two titles does not matter).
+    val leastTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, narrowTitle) }
+    val monthDp = remember(shortMonth, leastTitle, density) {
+        with(density) {
+            monthMeasurer.measure(shortMonth, leastTitle.copy(fontSize = (MONTH_TITLE_MIN_SP / density.fontScale).sp), maxLines = 1,
+                softWrap = false).size.width.toDp().value
+        }
+    }
     val otherRows = chip?.rows?.filter { it.key != chip.current.key }.orEmpty()
     val others = otherRows.size
     // 2.0.0 [RVP-45] HQ-62 While someone else's calendar is on screen, the way back to the user's own stays longest (HeadRoom.home).
@@ -2427,7 +2446,7 @@ internal fun CalendarHeader(
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
     val teamRow = otherRows.firstOrNull { it !== homeRow && (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
-        maxWidth.value, fontScale, sp, quick = quick.size, bell = bell != null, me = me, others = others,
+        maxWidth.value, fontScale, sp, reserved = headSides, monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
         team = teamRow != null, homeChars = if (homeRow != null) chip?.homeWords?.length ?: 0 else 0,
     ).let { if (chip == null) it.copy(name = false) else it }
@@ -2505,7 +2524,7 @@ internal fun CalendarHeader(
             if (room.arrows && navPart.hide != true) IconButton(onClick = onNext, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, nextLabel, tint = navTint) }
         }
         // [RVH-42] The work's 바로 단추, before 오늘.
-        if (quickRoom.round) HeadQuickRound(quick.first(), onQuick)
+        if (quickRoom.round) { if (quickShown > 0) HeadQuickRound(quick.first(), onQuick) }
         else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit

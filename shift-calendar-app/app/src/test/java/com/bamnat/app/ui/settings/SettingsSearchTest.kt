@@ -150,9 +150,20 @@ class SettingsSearchTest {
         assertFalse("우리 회사 급여 방식 찾기" in titles)
         assertFalse("회사 규칙 광장" in titles)
         assertTrue("광장" in titles)
-        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title.startsWith("회사") })
+        // 2.0.0 [RVH-53]: with '처음 설정 다시 받기' no longer found by '회사 찾기' here, the closest may be 회사 규모 (the pay rule an
+        // 알바 has too); what must not come is a company's search, setup or board.
+        val companyThings = setOf("회사 찾기", "회사 이름으로 근무주기 찾기", "회사 대표 주기", "회사 설정 보내기", "회사 설정 불러오기", "회사 규칙 광장")
+        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title in companyThings })
         assertEquals("광장", SettingsIndex.search("알바 광장", entries).first().title)
         assertTrue("회사 찾기" in SettingsIndex.entries().map { it.title })
+        // 2.0.0 [RVH-53] HQ-27: '처음 설정 다시 받기' is not found by '회사 찾기' where the work has no company, and its answer asks none.
+        assertFalse("회사 찾기" in entries.first { it.title == SETUP_AGAIN_ROW }.keywords)
+        assertTrue("회사 찾기" in SettingsIndex.entries().first { it.title == SETUP_AGAIN_ROW }.keywords)
+        val again = { s: com.bamnat.core.work.WorkStyle -> HelpFaq.topics().forStyle(s).first { it.id == "setupAgain" } }
+        assertTrue("회사 찾기부터" in again(com.bamnat.core.work.WorkStyle.SHIFT).answer)
+        assertTrue("근무 시간과 요일, 알람, 급여까지" in again(com.bamnat.core.work.WorkStyle.HOURLY).answer)
+        assertTrue("일하는 방식부터" in again(com.bamnat.core.work.WorkStyle.FIELD).answer)
+        assertFalse("회사 찾기" in again(com.bamnat.core.work.WorkStyle.HOURLY).keywords)
     }
 
     @Test fun everyShortcutIsInTheIndex() {

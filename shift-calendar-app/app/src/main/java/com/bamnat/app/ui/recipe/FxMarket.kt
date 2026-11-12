@@ -86,7 +86,7 @@ internal fun FxHeadLine(parts: Set<FxPro.Part>) {
     val locked = !gate.allows(com.bamnat.app.tier.Feature.FX_WORKS)
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ProBadge(locked = locked)
-        Text("✦ " + FxPro.plain(parts), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary)
+        Text("✦ " + FxPro.plain(parts), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -108,14 +108,14 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, ladd
     val status = remember(taste, code) { FxAccess.status(c, code) }
     var asking by remember { mutableStateOf(false) }
     var refused by remember { mutableStateOf(false) }
-    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ProBadge(locked = !pro)
-                Text("프로 기능이 든 작품", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onTertiaryContainer,
+                Text("프로 기능이 든 작품", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.semantics { heading() })
             }
-            Text("✦ 들어 있는 것: " + FxPro.plain(parts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
+            Text("✦ 들어 있는 것: " + FxPro.plain(parts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             // 1.39 [MKD-13] 장치마다 무엇인지: 누르면 한 줄 설명.
             // [RVM-12] PC-59: one chip a thing it does for me (홈 화면 단추·알림 단추·자동 기록 …), its parts told under it.
             var told by remember(parts) { mutableStateOf<FxPro.Plain?>(null) }
@@ -127,14 +127,14 @@ internal fun FxCard(parts: Set<FxPro.Part>, code: String, applied: Boolean, ladd
             }
             told?.let { p ->
                 parts.filter { it in p.parts }.forEach { part ->
-                    Text(part.label + ": " + FxMarket.explain(part), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                    Text(part.label + ": " + FxMarket.explain(part), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             Text("1.38까지 있던 모양·규칙·단추는 무료 그대로예요. 1.39부터 새로 연 ✦ 장치만 프로에서 돌아요", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onTertiaryContainer)
-            Text(FxMarket.stateLine(pro, status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(FxMarket.stateLine(pro, status), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (!pro && status is FxTaste.Status.Used) FxAccess.summary(c)?.let {
-                Text("써 보는 동안 한 일: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                Text("써 보는 동안 한 일: $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (refused) Text("이 작품은 하루 써 보기를 이미 썼어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             if (!pro) Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {

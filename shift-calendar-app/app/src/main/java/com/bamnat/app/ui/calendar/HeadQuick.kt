@@ -75,9 +75,14 @@ internal data class HeadQuickRoom(
     val round: Boolean,
     /** [round] on a narrow phone or with large text: 도구 is an icon too. */
     val tight: Boolean,
+    /**
+     * 2.0.0 [RVH-52] 검토 HQ-22: the round button leaves the month room to read at the head's own size. When it does not (a work's
+     * padded head on a folded phone, 글자 200%), the button waits in 도구 with the others: the month is never squeezed for it (조건 12).
+     */
+    val roundFits: Boolean = true,
 ) {
     /** How many are in the row; the rest are in 도구. */
-    val shown: Int get() = if (round) 1 else words
+    val shown: Int get() = if (round) (if (roundFits) 1 else 0) else words
 
     companion object {
         val NONE = HeadQuickRoom(0, round = false, tight = false)
@@ -85,15 +90,24 @@ internal data class HeadQuickRoom(
         /**
          * The room for [count] buttons in a head [widthDp] wide at [fontScale] (capped at 2), beside the month with its arrows (176dp
          * and 110dp a text step), 오늘 (58dp a step), the head's padding (34dp) and 도구 (48dp a step), less [reserved] dp that something
-         * else in the row takes. A button with its words is about 28dp + 72dp a step; at most [HeadQuick.ROW_MAX].
+         * else in the row takes. A button with its words is about 28dp + 72dp a step; at most [HeadQuick.ROW_MAX]. 2.0.0 [RVH-52] HQ-22:
+         * a work's month [titleGrow] times the app's size takes that much more of the row; [reserved] holds the work's head box too
+         * (바깥 간격·안 여백). The round button stands only where the month ([titleMin] dp: this month at the head's own size) still fits
+         * beside the arrows and ▾ (136dp with the row's sides), the round button, 오늘 and 나 (48dp each, [me]) and 도구 (48dp as an icon,
+         * else 64dp + 30dp a text step).
          */
-        fun of(count: Int, widthDp: Float, fontScale: Float, narrow: Boolean, reserved: Float = 0f): HeadQuickRoom {
+        fun of(
+            count: Int, widthDp: Float, fontScale: Float, narrow: Boolean, reserved: Float = 0f, titleGrow: Float = 1f,
+            titleMin: Float = 0f, me: Boolean = true,
+        ): HeadQuickRoom {
             if (count <= 0) return NONE
             val fs = fontScale.coerceAtMost(2f)
-            val free = widthDp - reserved - (176f + 110f * fs + 58f * fs + 34f + 48f * fs)
+            val free = widthDp - reserved - (176f + 110f * fs * titleGrow.coerceIn(1f, 2f) + 58f * fs + 34f + 48f * fs)
             val words = (free / (28f + 72f * fs)).toInt().coerceIn(0, minOf(HeadQuick.ROW_MAX, count))
             val round = words == 0
-            return HeadQuickRoom(words, round, tight = round && (narrow || fs >= 1.3f))
+            val tight = round && (narrow || fs >= 1.3f)
+            val left = widthDp - reserved - (136f + 48f * (if (me) 3 else 2) + (if (tight) 48f else 64f + 30f * fs))
+            return HeadQuickRoom(words, round, tight, roundFits = !round || left >= titleMin)
         }
     }
 }
@@ -187,16 +201,21 @@ internal data class HeadRoom(
         /**
          * The row for a head [widthDp] wide at [fontScale] (capped at 2) whose month is [titleSp] big: [quick] 바로 단추, the bell
          * when [bell], 나 when [me], [others] other calendars, 같이 보기 when [together], 공유 when [share], and [nameChars] letters
-         * in the calendar's name.
+         * in the calendar's name. 2.0.0 [RVH-52] 검토 HQ-22: [reserved] dp of the row is the work's head box (바깥 간격·안 여백, '야간
+         * 회복 스테이션' 6·12), not the row's. The round 바로 단추 stands only where the month ([monthDp]: this month without its year
+         * at the head's least size, measured; 0 when not known) still reads beside it; else it waits in 도구 with the others
+         * ([HeadQuickRoom.roundFits]): the month is never squeezed for it (조건 12; before, a padded head left it '1').
          */
         fun of(
             widthDp: Float, fontScale: Float, titleSp: Float, quick: Int = 0, bell: Boolean = false, me: Boolean = true,
             others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3, team: Boolean = false,
+            reserved: Float = 0f, monthDp: Float = 0f,
             /** Letters in the way back's words ([home]); 0 while the user's own calendar is on screen. */
             homeChars: Int = 0,
         ): HeadRoom {
             val fs = fontScale.coerceAtMost(2f)
             val wide = widthDp >= 600f
+            val room = widthDp - reserved
             val homeNow = homeChars > 0
             val teamNow = wide && team && others > (if (homeNow) 1 else 0)
             val beside = others - (if (teamNow) 1 else 0) - (if (homeNow) 1 else 0)
@@ -238,20 +257,24 @@ internal data class HeadRoom(
             val start = r
             var i = 0
             if (quick > 0) {
-                while (need(r) + wordButton > widthDp && i < SOFT_STEPS) r = steps[i++](r)
-                if (need(r) + wordButton > widthDp) {
+                while (need(r) + wordButton > room && i < SOFT_STEPS) r = steps[i++](r)
+                if (need(r) + wordButton > room) {
                     r = start
                     i = 0
                 }
             }
             // Else room for one round 바로 단추 at least, before the work's buttons share what is left.
-            val least = if (quick > 0 && need(r) + wordButton > widthDp) BUTTON else if (quick > 0) wordButton else 0f
-            while (need(r) + least > widthDp && i < steps.size) r = steps[i++](r)
-            val stepDown = need(r) + minOf(least, if (quick > 0) BUTTON else 0f) > widthDp
+            val least = if (quick > 0 && need(r) + wordButton > room) BUTTON else if (quick > 0) wordButton else 0f
+            while (need(r) + least > room && i < steps.size) r = steps[i++](r)
+            val stepDown = need(r) + minOf(least, if (quick > 0) BUTTON else 0f) > room
             if (quick <= 0) return r.copy(stepDown = stepDown)
-            val free = widthDp - need(r)
+            val free = room - need(r)
             val words = (free / (28f + 72f * fs)).toInt().coerceIn(0, minOf(HeadQuick.ROW_MAX, quick))
-            return r.copy(quick = HeadQuickRoom(words, round = words == 0, tight = !r.toolsWords), stepDown = stepDown)
+            val round = words == 0
+            // What the row needs besides the month's letters (its ▾ and sides stay), with the month at its least size instead.
+            val others = need(r) - titleSp * fs * (if (r.shortTitle) 2.15f else 4.65f)
+            val roundFits = !round || monthDp <= 0f || !r.shortTitle || others + monthDp + BUTTON <= room
+            return r.copy(quick = HeadQuickRoom(words, round, tight = !r.toolsWords, roundFits = roundFits), stepDown = stepDown)
         }
     }
 }

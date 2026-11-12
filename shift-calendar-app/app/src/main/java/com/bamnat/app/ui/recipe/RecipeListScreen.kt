@@ -708,12 +708,9 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
                 // [MKX-01] One tab's: which tab it changes, said once. 1.39 [MKC-01]: and whether it is 꾸미기 or 기능; a 도구 says which.
                 sectionLine(item, style, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
                 // 1.39 [MKC-04] 무엇이 프로 기능 장치인지 한 줄 ("✦ 값 칸 · 단추 위젯·빠른 설정·바로가기").
-                fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                Text(buildString {
-                    append("좋아요 ${item.likes} · 안좋아요 ${item.dislikes} · 넣어 본 분 ${item.users}")
-                    item.kept?.let { append(" · 7일 유지 $it%") }
-                    append(" · ").append(RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
-                }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                // [RVM-34] HQ-72: within two lines at 200% (the styles go at large text; the line is read aloud whole).
+                MarketNumbersText(item, long = true, tail = RecipeDescribe.styles(com.bamnat.core.recipe.Recipe(item.title, styles = item.styles, pieces = emptyList())))
             }
         }
     }
@@ -743,16 +740,47 @@ private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = 
                 Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             // 1.39 [MKC-04] 프로 기능 장치가 무엇인지 (값 칸 · 알림 단추 …).
-            if (!small) fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+            if (!small) fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             // 1.36 [VIL-18] 오래 쓰는 분이 많은 것과 새 창작자의 첫 작품이 눈에 띄게.
-            Text("♥ ${item.likes} · 넣어 본 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: ""),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // [RVM-34] HQ-72: '♥ 12 · 34명' at large text, so it stays within two lines in a tile.
+            MarketNumbersText(item)
             // 1.39 [MKD-41] 누가 만들었는지 (표식 · 팔로워). 표식이 있으면 이름 색으로도.
             if (!small) Text(MarketMaker.line(item), style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MarketMaker.mark(item.mark)?.let { com.bamnat.app.ui.village.markColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant)
             if (item.newMaker) Text("새 창작자", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         }
     }
+}
+
+/**
+ * 2.0.0 [RVM-34] (총괄 HQ-72, 조건 4·12: 글자 200%에서 장터 카드의 숫자 줄이 세 줄): how many like and put in a work, in one line that
+ * stays within two at any text size. At 100% it says it in words; at large text it keeps the two numbers that matter ("♥ 12 · 34명")
+ * and drops the rest, and a screen reader always hears the whole of it in words.
+ */
+internal object MarketNumbers {
+    /** The whole line in words, as read aloud. */
+    fun spoken(item: RecipeItem): String = listOfNotNull("좋아요 ${item.likes}", "넣어 본 분 ${item.users}명",
+        item.kept?.let { "7일 뒤에도 쓰는 분 $it%" }).joinToString(" · ")
+
+    /**
+     * The card line: [long] is the list row's (with 안좋아요 and 7일 유지), else the tile's; [big] is text at 130% or more. A line that
+     * wraps breaks between the numbers ('·'), never inside one ('오래 / 써요 81%'): the spaces inside each are no-break spaces.
+     */
+    fun line(item: RecipeItem, big: Boolean, long: Boolean = false): String = when {
+        big -> listOf("♥ ${item.likes}", "${item.users}명")
+        long -> listOfNotNull("좋아요 ${item.likes}", "안좋아요 ${item.dislikes}", "넣어 본 분 ${item.users}", item.kept?.let { "7일 유지 $it%" })
+        else -> listOfNotNull("♥ ${item.likes}", "넣어 본 분 ${item.users}", item.kept?.takeIf { it >= 60 }?.let { "오래 써요 $it%" })
+    }.joinToString(" · ") { it.replace(' ', '\u00A0') }
+}
+
+/** [MarketNumbers] as a card shows it: two lines at most, read aloud in words. [tail] goes at large text unless [keepTail] (공방's 코드). */
+@Composable
+internal fun MarketNumbersText(item: RecipeItem, long: Boolean = false, tail: String? = null, keepTail: Boolean = false, modifier: Modifier = Modifier) {
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+    val spoken = MarketNumbers.spoken(item) + (tail?.let { " · $it" } ?: "")
+    Text(MarketNumbers.line(item, big, long) + (tail?.takeIf { !big || keepTail }?.let { " · $it" } ?: ""), style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.semantics { contentDescription = spoken })
 }
 
 @Composable

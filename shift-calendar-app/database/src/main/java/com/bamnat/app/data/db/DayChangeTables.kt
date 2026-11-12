@@ -26,6 +26,10 @@ interface DayChangeDao {
     @Query("SELECT * FROM day_changes WHERE epochDay = :epochDay ORDER BY atMillis DESC, id DESC LIMIT 1")
     suspend fun latest(epochDay: Long): DayChangeEntity?
 
+    /** 2.0.0 [RVH-51] PC-72 Every change made from [fromMillis] until [untilMillis] (not included). */
+    @Query("SELECT * FROM day_changes WHERE atMillis >= :fromMillis AND atMillis < :untilMillis ORDER BY atMillis")
+    suspend fun between(fromMillis: Long, untilMillis: Long): List<DayChangeEntity>
+
     @Query("DELETE FROM day_changes WHERE id = :id")
     suspend fun delete(id: Long)
 
