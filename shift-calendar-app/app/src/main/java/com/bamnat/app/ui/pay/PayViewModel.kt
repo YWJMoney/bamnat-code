@@ -326,8 +326,13 @@ class PayViewModel(
 
     // ---- [PAYIN-05][PAYIN-06] 1.37 B5·B6·B7: what a change did, the 7 days of changes, starting over ----
 
-    /** [PAYIN-05] One change just saved: what it was, the month on screen before and after, and the change to put back. */
-    data class ChangeNote(val what: String, val month: YearMonth, val before: Long?, val after: Long?, val change: com.bamnat.app.pay.PayStore.Change?)
+    /**
+     * [PAYIN-05] One change just saved: what it was, the month on screen before and after, and the change to put back. 2.0.0 [RVJ-32]
+     * (PC-80): [shut] is the closed month on screen, which stays as closed; [month] is then the first open month after it, where the
+     * change lands.
+     */
+    data class ChangeNote(val what: String, val month: YearMonth, val before: Long?, val after: Long?, val change: com.bamnat.app.pay.PayStore.Change?,
+        val shut: YearMonth? = null)
 
     private val _note = MutableStateFlow<ChangeNote?>(null)
     /**
@@ -340,10 +345,12 @@ class PayViewModel(
         val after = payStore.profile.value
         val change = payStore.history.value.firstOrNull()?.takeIf { it.why == what }
         val snap = snapshot.value ?: scope.schedule.lastSnapshot
-        val m = month.value
+        val shown = month.value
+        // 2.0.0 [RVJ-32] PC-80: a closed month keeps its closed result, so the change is said where it lands.
+        val m = landsIn(shown, closed.value.keys)
         val total = { p: PayProfile? -> p?.let { q -> snap?.let { runCatching { calculator.calculate(q.named(settings.value.extraKinds).hourlyWeek(settings.value), m, it.resolver::resolve, checks = false).total }.getOrNull() } } }
         val (b, a) = withContext(Dispatchers.Default) { total(before) to total(after) }
-        _note.value = ChangeNote(what, m, b, a, change)
+        _note.value = ChangeNote(what, m, b, a, change, shut = shown.takeIf { it != m })
     }
 
     fun noteShown() { _note.value = null }
