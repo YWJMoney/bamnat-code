@@ -27,7 +27,6 @@ import com.bamnat.app.ui.theme.Tone
 import com.bamnat.core.boss.StaffImport
 import com.bamnat.core.boss.StaffTax
 import com.bamnat.core.boss.WageForm
-import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 
 /**
