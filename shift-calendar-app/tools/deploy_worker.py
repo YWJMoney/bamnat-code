@@ -34,6 +34,13 @@ ship 순서 (한 단계라도 어긋나면 손님을 받기 전에 멈춰요)
 (workflow 입력 skip_tests, ';'로 여러 개). 까닭이 없거나 기한(YYYY-MM-DD)이 지났거나 14일보다 멀면 멈춰요. 넘긴 시험은 build 요약과
 notes.txt(배포 기록)에 남아요. build·ship 흐름(나뉜 판·check·변수 다시 올리기·바인딩 빠짐·판 낮음·카나리·배포·되돌리기)은
 tools/test_deploy_flow.py가 가짜 wrangler로 끝까지 돌려 봐요.
+  쓰는 규칙(총괄 2026-11-12): ① 날짜에 묶여 낡은 시험에만(어제 main에서도 깨지는 시험, 아래 explain이 알려 줘요) ② 그 배포에 대해
+  사용자가 고르기 카드로 허락했을 때만 ③ 넘긴 시험·까닭·기한을 배포 결과 한 줄(사용자에게 알리는 판·배포 번호·되돌릴 판)에 함께.
+  갈래 스레드가 스스로 쓰지 않아요. 넘긴 시험은 기한 안에 고치는 PR을 따로 열어요. 자세히는 docs/ops-deploy.md.
+
+2.0.0 [RVR-25] (검토 U60-02) 시험에서 멈추면 build가 실패한 시험 이름·줄을 fail/<서버>-fail.json으로 넘기고, workflow의 explain 일이
+어제 main의 날짜 시험(+0일, date-watch.yml) 결과와 견줘 '어제 main에서도 깨짐 → 이 브랜치 탓이 아님 / 어제 main에서는 통과 → 이 브랜치의
+바뀜을 먼저'를 요약에 적어요(tools/date_watch.py explain).
 
 열쇠: 환경 변수 CLOUDFLARE_API_TOKEN(GitHub Secret, ship 일에만). 출력하지 않아요. 계정 번호는 CLOUDFLARE_ACCOUNT_ID가 없으면 토큰이
 닿는 계정이 하나일 때 그 계정을 써요.

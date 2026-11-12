@@ -38,7 +38,7 @@ on:
         type: boolean
         default: false
       skip_tests:
-        description: "[RVR-17] 날짜에 묶여 낡은 시험 넘기기 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
+        description: "[RVR-17] 날짜에 묶여 낡은 시험만, 이 배포에 사용자가 허락했을 때만 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
         required: false
         default: ""
   pull_request:
