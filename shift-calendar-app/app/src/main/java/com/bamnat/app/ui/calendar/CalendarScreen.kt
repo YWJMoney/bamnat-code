@@ -732,12 +732,23 @@ fun CalendarScreen(
             onOpenReceived = { showShare = false; adding = "" },
         )
     }
+    // 1.40 [SPREAD-37] 연말 근무 결산 (12-20~1-10): the year whose sheet is open, from the card or the picture sheet.
+    var yearRecapOpen by remember { mutableStateOf<Int?>(null) }
+    val recapStyle = activeCalendar.style ?: settings.workStyle
+    val recapHere = viewingReceived == null && !activeCalendar.isExample && focus != com.bamnat.core.work.CalendarFocus.INVEST
+    yearRecapOpen?.let { y ->
+        val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
+            value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
+        }
+        YearRecapSheet(recap, onSent = { vm.closeYearRecap(today) }, onDismiss = { yearRecapOpen = null })
+    }
     imageMonth?.let { m ->
         ImageShareSheet(
             snapshot = snap, month = m, weekStart = settings.weekStart, memos = datedMemos,
             startName = remember(activeCalendar.id) { context.appContainer.shareLinksOf(com.bamnat.app.share.ShareLinkKey.of(activeCalendar.id, 1)).link.value?.title.orEmpty() },
             onSent = { vm.logShare() },
             onDismiss = { imageMonth = null },
+            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y -> y to { imageMonth = null; yearRecapOpen = y } },
         )
     }
     // [SHR-02][MCAL-01] Whose calendar is on screen, once there is more than one.
@@ -1351,6 +1362,18 @@ fun CalendarScreen(
                         onNo = { vm.declineAlarmSuggestion(s, forGood = false) },
                         onNever = { vm.declineAlarmSuggestion(s, forGood = true) },
                     )
+                }
+            })
+            // 1.40 [SPREAD-37] 연말 근무 결산, 12-20~1-10: once in 12월 (the year so far), once more in 1월 (the whole year).
+            if (paint == null && recapHere) add(Notice("yearRecap", "연말 결산") {
+                val due = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
+                due?.let { y ->
+                    val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
+                        value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
+                    }
+                    recap?.takeIf { it.worthShowing }?.let { r ->
+                        YearRecapCard(r, onOpen = { yearRecapOpen = y }, onClose = { vm.closeYearRecap(today) })
+                    }
                 }
             })
             // [CAL-46] I 리뷰 N9: once the month's last shift is done, the month in one line and its picture to share.
@@ -2434,6 +2457,28 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }
+        }
+    }
+}
+
+/** 1.40 [SPREAD-37] "2026년 내 근무 결산이 나왔어요": a few of the year's numbers (never the money), 결산 보기 and 닫기. */
+@Composable
+internal fun YearRecapCard(recap: com.bamnat.core.work.YearRecap, onOpen: () -> Unit, onClose: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+        shape = MaterialTheme.shapes.large,
+        color = androidx.compose.ui.graphics.Color(0xFF1E2447),
+        onClick = onOpen,
+    ) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("${recap.year}년 내 근무 결산이 나왔어요", style = MaterialTheme.typography.titleSmall,
+                color = androidx.compose.ui.graphics.Color(0xFFF2C46D))
+            Text(recap.line, style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFF6F1E7),
+                modifier = Modifier.padding(end = 8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onClose, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFA9AFCB))) { Text("닫기") }
+                TextButton(onClick = onOpen, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFF2C46D))) { Text("결산 보기") }
+            }
         }
     }
 }

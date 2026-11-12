@@ -205,6 +205,7 @@ class SettingsFilesBackup(
             "payReviewDue" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
             "payReviewAsked" to "평가 부탁은 이 휴대폰에서 쓴 만큼",
             "monthRecapSeen" to "이 휴대폰에서 본 달 돌아보기",
+            "yearRecapSeen" to "이 휴대폰에서 본 연말 결산",
             "alarmSuggestMemory" to "알람 제안에 이 휴대폰에서 답한 것",
         )
 
