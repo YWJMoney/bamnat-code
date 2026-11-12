@@ -53,7 +53,8 @@ class InviteAppTest {
         // The developer app's 설정 › 친구 초대, applied by the server and read by the app before anything is sent.
         setRules(url, """{"friends":2,"days":7}""")
         inviter.refresh()
-        assertEquals(InviteTerms(need = 2, days = 7, months = 1, capMonths = 0), inviter.store.current.rules)
+        // 2.0.0 [RVD-15] The server says the year's cap: 12 months of rewards, all kinds together.
+        assertEquals(InviteTerms(need = 2, days = 7, months = 1, capMonths = 12), inviter.store.current.rules)
         val made = inviter.makeLink()
         val code = made.code!!
         assertEquals("$url/i/$code", made.link)
@@ -92,16 +93,25 @@ class InviteAppTest {
         assertEquals("qualified", friend.store.current.answer?.status)
         counts = inviter.refresh()!!
         assertEquals("1/2명 · 1명은 사용 기간 채우는 중", InviteRules.progress(counts.progress, counts.terms.need, counts.waiting))
-        // The second one makes two: the month.
+        // The second one makes two: the month, which waits for the operator (2.0.0 [RVD-14], 사용자 결정 2026-11-12 '확인 뒤 지급').
         second.sync()
         assertEquals("credited", second.store.current.answer?.status)
         counts = inviter.refresh()!!
-        assertEquals(InviteRules.summary(2, 1), InviteRules.summary(counts.friends, counts.given))
+        assertEquals(InviteRules.summary(2, 0), InviteRules.summary(counts.friends, counts.given))
+        assertEquals(1, counts.pending)
         assertEquals("0/2명", InviteRules.progress(counts.progress, counts.terms.need, counts.waiting))
-        // The month is one of the inviter's reward passes, named as an invite, waiting for the launch.
-        val passes = TierClient(url).passes("test-device-inviter-0001")
+        var passes = TierClient(url).passes("test-device-inviter-0001")
+        assertEquals(emptyList<Pair<Int, String>>(), passes.items.map { it.months to it.why })
+        assertEquals(listOf(1 to "invite"), passes.pending.map { it.months to it.why })
+        // The developer app's 보상 › 지급 대기: the admin looks and pays it.
+        val cookie = signIn(url)
+        val owed = Regex(""""id":"(i[A-Za-z0-9]{20,24})"""").find(get("$url/api/admin/rewards?status=owed", cookie))!!.groupValues[1]
+        post("$url/api/admin/rewards/$owed", """{"status":"paid"}""", cookie).disconnect()
+        // Now the month is one of the inviter's reward passes, named as an invite, waiting for the launch.
+        passes = TierClient(url).passes("test-device-inviter-0001")
         assertEquals(listOf(1 to "invite"), passes.items.map { it.months to it.why })
         assertEquals(1, passes.waitingMonths)
+        assertEquals(1, inviter.refresh()!!.given)
 
         // The friend installs again (a new install id) on the same phone: it does not count twice.
         val again = phone(url, "c", "test-device-friend-00002", "android-b") { referrer }
@@ -117,10 +127,7 @@ class InviteAppTest {
 
     /** Signs in to the developer app on the local server, as its 설정 screen does, and saves the invite rules. */
     private fun setRules(url: String, body: String) {
-        val login = post("$url/api/admin/login", """{"password":"$PASSWORD"}""", null)
-        val cookie = login.getHeaderField("set-cookie")!!.substringBefore(';')
-        login.disconnect()
-        val saved = post("$url/api/admin/settings/invite", body, cookie)
+        val saved = post("$url/api/admin/settings/invite", body, signIn(url))
         assertEquals(200, saved.responseCode)
         saved.disconnect()
     }
@@ -137,8 +144,15 @@ class InviteAppTest {
         return conn
     }
 
-    private fun get(url: String): String {
+    /** The developer app's sign-in on the local server: its session cookie. */
+    private fun signIn(url: String): String {
+        val login = post("$url/api/admin/login", """{"password":"$PASSWORD"}""", null)
+        return login.getHeaderField("set-cookie")!!.substringBefore(';').also { login.disconnect() }
+    }
+
+    private fun get(url: String, cookie: String? = null): String {
         val conn = URL(url).openConnection() as HttpURLConnection
+        cookie?.let { conn.setRequestProperty("cookie", it); conn.setRequestProperty("x-admin", "1") }
         return try {
             conn.inputStream.bufferedReader().use { it.readText() }
         } finally {

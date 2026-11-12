@@ -250,6 +250,9 @@ details.card .steps{margin-top:.6rem}
 .item .row-main{flex:1 1 14rem}
 .item .actions{margin:0 0 0 auto}
 .memo{font-style:italic}
+.row-main small.judge{color:var(--fg)}
+.row-main small.judge.warn{color:var(--warn)}
+.item label.row{display:flex;gap:.6rem;align-items:flex-start;flex:1;min-width:0}
 .chips{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 .75rem}
 .chip{display:inline-flex;align-items:center;gap:.15rem;padding:.25rem .25rem .25rem .75rem;border-radius:999px;background:var(--soft);font-size:.88rem;font-weight:700}
 .chip button{width:1.9rem;height:1.9rem;border:0;border-radius:50%;background:none;cursor:pointer;font-size:1.1rem;line-height:1;color:var(--muted)}
@@ -1308,4 +1311,31 @@ a.gl-gauge:hover{border-color:var(--g)}
 .claude-draft{margin:.5rem 0;padding:.6rem .75rem;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--line)}
 .claude-draft p{margin:.15rem 0}.claude-draft .why{font-size:.88rem}.claude-draft .meta a{color:var(--accent)}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
+/* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
+   글이 label의 굵은 글씨를 물려받지 않아요. */
+label.row{font-weight:inherit;font-size:inherit;margin:0}
+details.tip{margin:0 0 .5rem;border-top:0;padding-top:0}
+details.tip>summary{font-weight:650;color:var(--muted)}
+details.tip>.hint{margin:.25rem 0 .5rem}
+@media (pointer:coarse){details.tip>summary{min-height:2.75rem;display:flex;align-items:center;gap:.25rem}}
+.row-main>.pill{align-self:flex-start}
+.row-main .row-tags{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.3rem}
+/* 2.0.0 [RVD-16] 목록 머리 한 줄(조건 1, 관리자 목록 화면의 본보기 HQ-03): 구간 고르기 + 찾기·거르기·고르기·CSV. 좁은 폭은 단추 하나 뒤로.
+   구간 고르기는 바깥 여백 없이 한 줄 높이(2.75rem)에, 큰 글자에서는 구간이 줄을 바꿔요(조건 12). */
+.list-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;margin:0 0 .5rem;container:list-head/inline-size}
+.list-head>.segmented{margin:0;padding:0;flex:0 1 auto;flex-wrap:wrap;overflow:visible}
+.list-head>.segmented .seg{flex:1 1 auto}
+.list-head .list-more{display:none;position:relative}
+.list-head .list-more.busy::after{content:"";position:absolute;top:.5rem;right:.5rem;width:.5rem;height:.5rem;border-radius:50%;background:var(--accent)}
+.list-head .list-tools{flex:1 1 22rem;margin:0;flex-wrap:wrap;min-width:0}
+.list-head .list-tools input[type=search]{flex:1 1 9rem;min-width:min(9rem,100%)}
+/* 접는 기준은 머리 줄 자신의 폭을 rem으로 재요(총괄 11-12 3차): 글자가 커지면 같은 폭에서도 접혀, 찾기 칸이 눌려 잘리지 않아요(조건 12).
+   한 줄에 다 들어가는 폭(구간 고르기 + 찾기 9rem + 종류 + 아이콘 둘, 약 40rem)보다 조금 넉넉히 42rem. */
+@container list-head (width > 42rem){.list-head .btn.icon-wide{width:2.75rem;padding:0}.list-head .btn.icon-wide .lbl{display:none}}
+@container list-head (width <= 42rem){.list-head>.segmented{flex:1 1 0;min-width:0}.list-head .list-more{display:inline-grid}
+.list-head .list-tools{display:none;flex-basis:100%}.list-head.open .list-tools{display:flex}.list-head .list-tools select{flex:1 1 8rem}}
+.list-foot{margin:.25rem 0 .75rem}.list-foot .claude-draft-empty{margin:0 0 .25rem}
+/* 2.0.0 [RVD-16] 고르기 막대의 할 일 두 단추는 함께, 좁은 폭에서 줄이 바뀌면 오른쪽에. */
+.bulkbar .bulk-acts{display:flex;gap:.5rem;flex-wrap:nowrap}
+@media (max-width:599.98px){.bulkbar .bulk-acts{margin-left:auto}}
 `;

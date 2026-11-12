@@ -105,8 +105,8 @@ test("[PLZC-03] 지난 글 더 보기: posts before a time, a page at a time, wi
 });
 
 test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자 on 장터 cards and 광장 posts, after 3.12, resting while held", async (t) => {
-  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs).
-  const LATER = Date.parse("2026-11-30T03:00:00Z");
+  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs); 2.0.0 [RVD-18] the hold below needs 마을 돌봄, from 2026-12-09.
+  const LATER = Date.parse("2026-12-10T03:00:00Z");
   t.mock.timers.enable({ apis: ["Date"], now: LATER });
   const { call } = server({ plaza: true });
   const h = await signIn(call);
