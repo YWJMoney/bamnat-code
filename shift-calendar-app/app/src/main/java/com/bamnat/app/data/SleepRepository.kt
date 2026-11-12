@@ -60,6 +60,24 @@ class SleepRepository(
         return SleepEntry(open.id, local(open.startMillis), local(end))
     }
 
+    /**
+     * 2.0.0 [RVIB-14] (PC-124) 깼어요 pressed by hand (the sleep page, the calendar, the night screen; a 낮잠 too): a sleep that
+     * ends within [com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES] was a tap, not a sleep, and is not kept (it read
+     * '계획보다 7시간 적게'). [undoWoke] puts back what the tap changed: the sleep open again either way.
+     */
+    suspend fun wokeUpByHand(atMillis: Long? = null): Woke? {
+        val sleep = wokeUp(atMillis) ?: return null
+        val short = (sleep.minutes ?: 0) < com.bamnat.core.sleep.TodayFlow.MIN_LOGGED_MINUTES
+        if (short) dao.delete(sleep.id)
+        return Woke(sleep, dropped = short)
+    }
+
+    /** The sleep [wokeUpByHand] ended; [dropped] when it was too short to keep. */
+    data class Woke(val sleep: SleepEntry, val dropped: Boolean)
+
+    /** Takes back a [wokeUpByHand]: the sleep is open again (a dropped one is put back open). */
+    suspend fun undoWoke(w: Woke) { if (w.dropped) restore(w.sleep.copy(end = null)) else reopen(w.sleep.id) }
+
     /** The sleep still going on, if any (1.39 [SLEEP-06]: 자는 동안 소리 stops when it closes). */
     suspend fun openNow(): SleepEntry? = dao.open()?.toModel()
 

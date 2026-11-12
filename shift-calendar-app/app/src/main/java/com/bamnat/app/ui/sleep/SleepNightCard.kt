@@ -13,7 +13,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -96,7 +95,8 @@ internal fun SleepNightCard(
                 Text("배터리가 $pct%예요. 밤새 재려면 충전기에 꽂아 두세요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.padding(top = 4.dp))
             }
-            Button(onClick = {
+            // 2.0.0 [RVIB-13] (PC-122, 디자인 품질 2) An outline: on the sleep page '잠들었어요' is the one filled button.
+            OutlinedButton(onClick = {
                 // 1.39 [FLOW-13] Measuring starts the night: the dark night screen opens.
                 if (SleepRecordService.permitted(context)) { SleepRecordService.start(context); onNight() } else ask.launch(Manifest.permission.RECORD_AUDIO)
             }, modifier = Modifier.padding(top = 8.dp)) { Text("측정 시작") }

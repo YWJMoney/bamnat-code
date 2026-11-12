@@ -95,7 +95,19 @@ internal fun fillAlpha(progress: Float, share: Float): Float = ((progress - shar
 
 /** The line over the month while it fills: "이번 달 야간 8번" big, the rest under it, 칸이 '해냈어요' beside them. */
 @Composable
-internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifier) {
+internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifier, snap: com.bamnat.app.data.ScheduleSnapshot? = null) {
+    // 2.0.0 [RVIB-17] (PC-129, with PC-36) The line was counted once, from the setup's days: a roster that came in by itself (리더가
+    // 내일을 휴무로), a day changed by hand, 되돌리기 or a 작품 worn left '쉬는 날 12일 · 첫 알람 내일 06:00' as it was. It is counted
+    // again from the calendar as it is now, each time the calendar changes; the first alarm is the one the phone has set (below).
+    val now = com.bamnat.core.time.Today.dateTime()
+    val live = androidx.compose.runtime.remember(snap, moment) {
+        snap?.takeIf { !it.isEmpty }?.let { s ->
+            runCatching {
+                com.bamnat.core.setup.FillMoment.of(s.resolver.resolveRange(now.toLocalDate(), now.toLocalDate().plusDays(70)), now.toLocalDate(), moment.line.alarm)
+            }.getOrNull()
+        }
+    }
+    val line = live ?: moment.line
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (LocalShowKani.current) {
@@ -103,13 +115,13 @@ internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifi
                 Spacer(Modifier.width(10.dp))
             }
             Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
-                Text(numberWithUnit(moment.line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
+                Text(numberWithUnit(line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface)
                 // 2.0.0 [RVI-67] (PC-36) The first alarm as it is set now, as 설정 › 알람 says it, not the setup's guess.
                 val set = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) null else
                     androidx.compose.ui.platform.LocalContext.current.appContainer.alarmScheduler.upcoming.collectAsStateWithLifecycle().value
-                val rest = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) moment.line.restAt(com.bamnat.core.time.Today.dateTime())
-                    else moment.line.restWith(set?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }, com.bamnat.core.time.Today.dateTime())
+                val rest = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) line.restAt(now)
+                    else line.restWith(set?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
                 if (rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface)
             }

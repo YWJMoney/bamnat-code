@@ -451,9 +451,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
                 Text(
-                    "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 단추로 내용을 복사해 문의에 붙여 주세요. " +
-                        "기록은 이 휴대폰에만 있고 메모와 금액은 담지 않아요.",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -462,10 +462,6 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             week?.takeIf { it.planned > 0 }?.let { w ->
                 item { AlarmWeekCard(w, events.orEmpty()) }
             }
-            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
-            item { ServerCheckCard() }
-            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
-            item { SpeedCheckCard() }
             item {
                 SectionCard(title = "점검") {
                     val bad = checks.count { it.ok == false }
@@ -513,6 +509,12 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
+            // 2.0.0 [RVI-86] (디자인 품질 1) The alarm's own cards first (this week, 점검, 시험 알람); the servers and the plaza's speed,
+            // which a person looking at a late alarm does not look for first, come after them.
+            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
+            item { ServerCheckCard() }
+            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
+            item { SpeedCheckCard() }
             if (BuildConfig.DEBUG) item {
                 // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터). 디버그 빌드에만.
                 val gate by vm.gate.collectAsStateWithLifecycle()

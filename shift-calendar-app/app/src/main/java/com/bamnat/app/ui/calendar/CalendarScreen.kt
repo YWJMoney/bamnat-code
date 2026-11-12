@@ -1712,7 +1712,7 @@ fun CalendarScreen(
             val fillMoment by SetupFill.now.collectAsStateWithLifecycle()
             val fillMine = fillMoment?.takeIf { it.calendar == activeCalendar.id && paint == null }
             val fillNow = rememberSetupFill(fillMine, activeCalendar.id, ready = !snap.isEmpty)
-            if (fillMine != null) SetupFillCard(fillMine, Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
+            if (fillMine != null) SetupFillCard(fillMine, Modifier.padding(horizontal = 16.dp, vertical = 6.dp), snap = snap)
             if (!showList) WeekdayHeader(settings.weekStart, Modifier.padding(start = 8.dp + WEEK_BAR_SPACE, end = 8.dp))
             BoxWithConstraints(
                 Modifier.fillMaxWidth().padding(horizontal = if (showList) 0.dp else 8.dp)

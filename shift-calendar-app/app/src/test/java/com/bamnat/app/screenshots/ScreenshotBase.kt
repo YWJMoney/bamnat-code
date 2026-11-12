@@ -417,7 +417,7 @@ abstract class ScreenshotBase {
         }
 
         /** Every word on screen, for a failure message that says what was there instead. */
-        private fun shownWords(): List<String> {
+        fun shownWords(): List<String> {
             val words = mutableListOf<String>()
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity

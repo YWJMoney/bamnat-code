@@ -1,6 +1,8 @@
 package com.bamnat.app.screenshots
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.bamnat.core.diag.DiagEvents
+import com.bamnat.core.diag.EventBook
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
@@ -139,19 +141,71 @@ class RvibScreenshotTest : ScreenshotBase() {
         }
         settle()
         openDay(today.plusDays(1))
+        // At 200% on the folded width the day's chips keep 휴무 under '+2 · 2개 더 보기', as a person finds it.
+        if (!appears("휴무", exact = true, ms = 500)) tapText("개 더 보기")
         tapText("휴무", exact = true)
     }
 
     // [RVI-86] 알람 점검의 이번 주 알람, [RVI-92] 마지막 시험 결과, [RVI-91] 설정 › 알람의 예행 연습 줄.
     @Test fun alarmCheck() = eight("alarm_check") { wide ->
+        // A week as the phone logs it: four alarms on time, one 4분 late, one with no record, the daytime rehearsals and a test.
+        val now = com.bamnat.core.time.Today.millis()
+        val day = 24 * 60 * 60_000L
+        val log = c.telemetry
+        for (back in 1..6) {
+            val at = now - back * day
+            log.event(DiagEvents.ALARM_SCHEDULED, EventBook.triggerDetail(at))
+            when (back) {
+                3 -> log.event(DiagEvents.ALARM_FIRED, EventBook.triggerDetail(at, "late_s=240"))
+                5 -> Unit
+                else -> log.event(DiagEvents.ALARM_FIRED, EventBook.triggerDetail(at, "late_s=2"))
+            }
+            log.event(DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(at + 6 * 60 * 60_000L))
+            log.event(DiagEvents.ALARM_REHEARSAL, EventBook.triggerDetail(at + 6 * 60 * 60_000L, "late_s=5"))
+        }
+        log.event(DiagEvents.ALARM_TEST_SET, EventBook.triggerDetail(now - 30 * 60_000L))
+        log.event(DiagEvents.ALARM_TEST_FIRED, EventBook.triggerDetail(now - 30 * 60_000L, "late_s=3"))
         settingsPage("알람", wide)
-        tapText("알람 점검", across = if (wide) 0.75f else 0.5f)
+        // The link's words start with 알람 점검; a line above says '아래 알람 점검에서…'.
+        tapText("알람 점검 · ", prefix = true, across = if (wide) 0.75f else 0.5f)
     }
 
     // [RVIB-05] 설정 › 알림과 잠 › 메모·할 일: 근무 중 메모 알림 모으기·쉬는 날 아침 지난 할 일, [RVI-96] 충전하면 잠 잡기.
     @Test fun noticeRows() = eight("notice_rows") { wide ->
         settingsPage("알림과 잠", wide)
         reveal("메모·할 일", exact = true, across = if (wide) 0.75f else 0.5f)
+    }
+
+    // [RVIB-13] (PC-122) 기록이 없을 때 수면 기록: '지금 자려고요?'와 빈 안내 먼저, 소리 카드는 접혀 아래에, 채운 단추는 하나.
+    @Test fun sleepFirst() = eight("sleep_first") { wide ->
+        runBlocking { c.sleepRepository.recent(days = 3650).first().forEach { c.sleepRepository.delete(it.id) } }
+        val vm = com.bamnat.app.ui.sleep.SleepViewModel(c)
+        content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = wide, onBack = {}) }
+        settle()
+        org.junit.Assert.assertTrue(appears("아직 잠 기록이 없어요"))
+    }
+
+    // [RVIB-16] (PC-125) 가게: 아래 막대에 없는 '잠'이 '나'에.
+    @Test fun meSleep() = eight("me_sleep") { _ ->
+        runBlocking { c.settingsRepository.update { it.copy(workStyle = WorkStyle.BUSINESS) } }
+        settle()
+        tapText(com.bamnat.app.ui.ME_BUTTON, exact = true)
+        org.junit.Assert.assertTrue(inPopup("잠"))
+    }
+
+    // [RVIB-17] (PC-129, PC-36) 달력 위 띠는 지금 달력에서 다시 센 값: 첫 설정 때 센 '야간 99번 · 쉬는 날 99일'이 남지 않아요.
+    @Test fun fillBandRecounts() {
+        try {
+            eight("fill_band") { _ ->
+                com.bamnat.app.ui.calendar.SetupFill.set(com.bamnat.app.ui.calendar.SetupFill.Moment(com.bamnat.app.data.PersonalCalendar.MAIN,
+                    com.bamnat.core.setup.FillMoment.Line("이번 달 남은 야간 99번", "쉬는 날 99일", null, "쉬는 날 99일")))
+                settle()
+                org.junit.Assert.assertTrue(appears("채워진 달력 안내 닫기"))
+                org.junit.Assert.assertFalse(shows("99번") || shows("99일"))
+            }
+        } finally {
+            com.bamnat.app.ui.calendar.SetupFill.close()
+        }
     }
 
     private companion object {

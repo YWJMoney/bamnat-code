@@ -51,7 +51,7 @@ internal data class MeState(
 
 internal val LocalMe = compositionLocalOf { MeState() }
 
-/** [NAV2-02] The round 나 at the end of a tab's top row; nothing when the bar already holds every tab. */
+/** [NAV2-02] The round 나 at the end of a tab's top row; nothing when the bar already holds every tab (and 잠, 2.0.0 [RVIB-16]). */
 @Composable
 internal fun MeButton(rail: Boolean = false) {
     val me = LocalMe.current

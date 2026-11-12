@@ -611,10 +611,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
     fun wokeUp(at: LocalDateTime? = null) = gate(WriteKind.SLEEP) {
         container.appScope.launch {
             val millis = at?.atZone(Today.zone())?.toInstant()?.toEpochMilli()
-            val sleep = container.sleepRepository.wokeUp(millis) ?: return@launch
+            // 2.0.0 [RVIB-14] (PC-124) Within minutes (a 낮잠 stopped at once too) it is not kept; 되돌리기 opens it again.
+            val woke = container.sleepRepository.wokeUpByHand(millis) ?: return@launch
             // 2.0.0 [RVI-71] One wording with the sleep page and the night screen; a short sleep says why it has no 아침 한 장.
-            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((sleep.minutes ?: 0).toLong())
-            _messages.emit(UndoMessage(text) { container.sleepRepository.reopen(sleep.id) })
+            val text = com.bamnat.core.sleep.SleepInsights.wokeLine((woke.sleep.minutes ?: 0).toLong())
+            _messages.emit(UndoMessage(text) { container.sleepRepository.undoWoke(woke) })
         }
     }
     // 1.39.1 [R391-04] The night's sounds and clips go with it.

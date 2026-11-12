@@ -130,8 +130,13 @@ class MainActivity : ComponentActivity() {
             onDispose { }
         }
         // Status bar icons follow the app theme, not only the system one.
-        DisposableEffect(dark) {
-            enableEdgeToEdge(
+        // 2.0.0 [RVIB-15] (PC-123) While the night screen (or the sleep page's night look) is up, dark bars with no pale scrim.
+        val nightBars = com.bamnat.app.ui.components.DarkSystemBars.held > 0
+        DisposableEffect(dark, nightBars) {
+            if (nightBars) enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            ) else enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
                 navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
             )

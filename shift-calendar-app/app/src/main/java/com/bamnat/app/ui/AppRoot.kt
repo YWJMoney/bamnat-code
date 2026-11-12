@@ -1275,10 +1275,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     val missingTabs = com.bamnat.core.layout.TabSlots.missing(barSlots)
     // [NAV2-07] Folded, the screens of the sixth and seventh places wait here too.
     val offBar = com.bamnat.core.layout.TabSlots.offBar(slots, wide).filter { it !in missingTabs }
+    // 2.0.0 [RVIB-16] (PC-125, 디자인 품질 13) A shop (no 오늘의 흐름, no 몸 tips on the day) found 잠 only in 설정 › 알림과 잠: when no
+    // place of the bar holds it, 나 lists it, for every kind of work (sleep is everyone's).
+    val sleepKey = com.bamnat.core.layout.TabSlots.FEATURE + com.bamnat.core.guide.Place.SLEEP.name
+    val sleepAway = listOfNotNull(sleepKey.takeIf { !com.bamnat.core.layout.TabSlots.shows(slots, it) })
     val meState = MeState(
-        show = missingTabs.isNotEmpty() || offBar.isNotEmpty(),
+        show = missingTabs.isNotEmpty() || offBar.isNotEmpty() || sleepAway.isNotEmpty(),
         unread = if (com.bamnat.core.layout.TabOrder.SETTINGS in missingTabs) inquiryUnread else 0,
-        missing = (missingTabs + offBar).mapNotNull(pickOf),
+        missing = (missingTabs + offBar + sleepAway).mapNotNull(pickOf),
         open = openPick,
         editBar = { editingBar = true },
         inRail = wide,
