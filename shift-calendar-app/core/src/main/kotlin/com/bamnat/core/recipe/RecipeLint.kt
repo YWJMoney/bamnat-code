@@ -93,7 +93,7 @@ object RecipeLint {
         return when (code) {
             "text" -> "$where 글자 수를 맞춰 주세요"
             // 2.0.0 [RVS-07] SD-04 ③: by case (용량·조각 수·없음), with how far over, not one line for all.
-            "too_big" -> WorkSize.of(r).overLine ?: "레시피가 너무 커요. 조각을 줄여 주세요"
+            "too_big" -> WorkSize.of(r).overLine ?: "작품이 너무 커요. 조각을 줄여 주세요"
             "range" -> "$where 값이 범위를 넘었어요"
             "pieces" -> when {
                 r.pieces.isEmpty() -> "조각을 하나 이상 골라 주세요"

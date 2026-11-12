@@ -93,6 +93,17 @@ object PartFloor {
             val fixed = readable(ink, under, if (isSmall || big) SMALL else BODY)
             if (fixed != ink) { out = out.copy(ink = fixed); fixes += Fix.INK }
         }
+        // [RVS-14] 달력 머리 sides: the month, ‹ ›, 오늘, 도구 and 나 share one line, so the head and its buttons keep their 바깥 간격 + 옆 여백
+        // within [HEAD_SIDES] (E9's 6 + 10 is kept); past it the month was squeezed out (조건 12).
+        HEAD_SIDES[id]?.let { max ->
+            val o = out.out ?: 0
+            val h = out.padH ?: 0
+            if (o + h > max) {
+                val k = max.toDouble() / (o + h)
+                out = out.copy(out = out.out?.let { (it * k).toInt() }, padX = (h * k).toInt(), padY = out.padV)
+                fixes += Fix.SPACE
+            }
+        }
         if (out.motion != null && out.motion != "none" && repeated(id) && "today" !in states && "sel" !in states) {
             out = out.copy(motion = null)
             fixes += Fix.MOTION
@@ -107,6 +118,9 @@ object PartFloor {
      * the same share until it fits. 1,034 market works: 66 go past it (60dp at most), E9 '16조각' takes 32.
      */
     const val ABOVE_DP = 32
+
+    /** 바깥 간격 + 옆 여백 on each side of the 달력 머리 and of the parts in its one line. */
+    val HEAD_SIDES: Map<String, Int> = mapOf("cal.head" to 16, "cal.head.title" to 4, "cal.head.nav" to 4, "cal.head.today" to 4)
     const val HEAD_TITLE_SP = 34.0
     const val WEEK_DAY_SP = 16.0
     val ABOVE: Set<String> = setOf("cal.head", "cal.head.title", "cal.head.nav", "cal.head.today", "cal.week", "cal.week.day")

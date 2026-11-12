@@ -166,13 +166,14 @@ class PartFloorTest {
 
     /**
      * 2.0.0 [RVS-14] 첫 줄 먼저 (HQ-56): the biggest 달력 머리 a maker can set (바깥 간격·안 여백 32, 달 이름 96sp, 요일 글자 96sp) is kept as
-     * set and drawn within [PartFloor.ABOVE_DP]; the sides of its padding are kept; the studio hears what it pushes and that it is kept.
+     * set and drawn within [PartFloor.ABOVE_DP]; its sides are kept within [PartFloor.HEAD_SIDES]; the studio hears what it pushes and that it is kept.
      */
     @Test fun theHeadPushesTheFirstRowOnlySoFar() {
         val bp = Blueprint(listOf(
             line("id" to "cal.head", "out" to 32, "pad" to 32, "fill" to 0xFFFFFFFFL),
             line("id" to "cal.head.title", "size" to 96.0, "pad" to 12),
             line("id" to "cal.head.today", "out" to 20),
+            line("id" to "cal.head.nav", "pad" to 32),
             line("id" to "cal.week", "pad" to 32),
             line("id" to "cal.week.day", "size" to 96.0),
         ))
@@ -182,7 +183,8 @@ class PartFloorTest {
             val drawn = aboveIds.associateWith { shown.style(it) }
             assertTrue("drawn: ${PartFloor.abovePush(drawn)}", PartFloor.abovePush(drawn) <= PartFloor.ABOVE_DP)
             assertEquals(PartFloor.HEAD_TITLE_SP, drawn.getValue("cal.head.title").size)
-            assertEquals(32, drawn.getValue("cal.head").padH)
+            // The sides too: the month, ‹ ›, 오늘 and 도구 keep their one line.
+            for ((id, max) in PartFloor.HEAD_SIDES) drawn.getValue(id).let { assertTrue("$id ${it.out} + ${it.padH}", (it.out ?: 0) + (it.padH ?: 0) <= max) }
             assertTrue(PartFloor.Fix.ABOVE in shown.fixes("cal.head"))
             assertTrue(PartFloor.Fix.ABOVE in shown.fixes("cal.week.day", setOf("sun")))
         }

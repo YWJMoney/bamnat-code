@@ -32,19 +32,19 @@ class StudioDraftKeepTest {
     @Test fun aResumedDraftKeepsWhereItCameFrom() {
         val vm = StudioViewModel(c)
         idle()
-        vm.startRecipe(theirs, "THEIRS01", null)
-        settle { vm.state.value.parentCode == "THEIRS01" }
+        vm.startRecipe(theirs, "THERS234", null)
+        settle { vm.state.value.parentCode == "THERS234" }
         vm.change { it.copy(calTheme = "sun=FF1565C0") }
         settle { vm.state.value.draftId != 0L }
         val id = vm.state.value.draftId
         assertTrue("자동 저장", id != 0L)
         val body = runBlocking { c.database.recipeDao().drafts().first { it.id == id }.body }
-        assertEquals("초안이 출처를 담아요", "THEIRS01", RecipeCodec.readDraft(body).parent)
+        assertEquals("초안이 출처를 담아요", "THERS234", RecipeCodec.readDraft(body).parent)
         val again = StudioViewModel(c)
         idle()
         again.resume(id)
         settle { again.state.value.draftId == id }
-        assertEquals("이어서 하기도 그분 작품", "THEIRS01", again.state.value.parentCode)
+        assertEquals("이어서 하기도 그분 작품", "THERS234", again.state.value.parentCode)
     }
 
     /** STU-07: after 저장, 되돌리기 makes it not saved again (so leaving asks, and the 자동 저장 row stays). */

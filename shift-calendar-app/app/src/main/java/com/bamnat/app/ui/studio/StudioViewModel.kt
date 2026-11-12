@@ -247,7 +247,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
 
     /** Someone else's work this draft was made from, as [upload] names it; never my own theme (it would come back as someone else's). */
     private fun draftParent(s: State): String? = (s.parentCode ?: leasedFrom()?.first ?: mixedCodes().firstOrNull().takeIf { !ownMake() }
-        ?: (s.origin as? Origin.Theme)?.wear?.takeIf { !it.own }?.code)?.takeIf { it.isNotBlank() && !it.startsWith("builtin:") }
+        ?: (s.origin as? Origin.Theme)?.wear?.takeIf { !it.own }?.code)?.takeIf { com.bamnat.core.recipe.RecipeCodec.CODE.matches(it) }
 
     /**
      * 2.0.0 [RVS-13] 검토 U09a-13: the draft kept at once, not 1.2초 later (뒤로 가기·홈으로·화면 끄기). On the app's own scope, so leaving

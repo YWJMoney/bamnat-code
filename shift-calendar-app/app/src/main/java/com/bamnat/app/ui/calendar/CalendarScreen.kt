@@ -2250,6 +2250,9 @@ private fun CalendarHeader(
     val headPart = bp.style("cal.head", scope = headScope)
     val navPart = bp.style("cal.head.nav", scope = headScope)
     val todayPart = bp.style("cal.head.today", scope = headScope)
+    // 2.0.0 [RVS-14] A work's 달력 머리 with room at its sides (E9: 6 + 10) leaves the month less of the line: it drops the year and 오늘 is
+    // an icon, as on a narrow phone, so the month itself is never squeezed out.
+    val headTight = (headPart.out ?: 0) + (headPart.padH ?: 0) >= 8
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     Row(
         // [LAY-03] 1.36 꾸밈 층 on the calendar's top (달력 머리).
@@ -2285,7 +2288,7 @@ private fun CalendarHeader(
                 val titleText = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, titleStyle) }
                 // [BLU-05] The small year takes the title's own letters (a little lighter), so it reads on the part's fill too (PC 2차).
                 val yearInk = titleText.color.takeIf { titlePart.ink != null || titlePart.fill != null }?.takeIf { it != androidx.compose.ui.graphics.Color.Unspecified }?.let { it.copy(alpha = it.alpha * 0.8f) }
-                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded || quickRound, yearInk = yearInk), titleText,
+                com.bamnat.app.ui.FitText(monthTitle(month, short = small || crowded || quickRound || headTight, yearInk = yearInk), titleText,
                     (if (small) Modifier.weight(1f) else Modifier.weight(1f, fill = false)).then(with(com.bamnat.app.ui.parts.PartMods) { box(titlePart.copy(ink = null), MaterialTheme.shapes.small) }))
                 Icon(Icons.Filled.ArrowDropDown, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -2296,7 +2299,7 @@ private fun CalendarHeader(
         else quick.take(quickShown).forEach { HeadQuickButton(it, onQuick) }
         val todayMod = with(com.bamnat.app.ui.parts.PartMods) { box(todayPart.copy(ink = null), MaterialTheme.shapes.extraLarge) }
         if (todayPart.hide == true) Unit
-        else if (small || crowded || quickRound) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
+        else if (small || crowded || quickRound || headTight) IconButton(onClick = onToday, enabled = !atToday, modifier = todayMod) { Icon(Icons.Filled.Today, "오늘") }
         // PC 확인 C15 1.36 (사진 위 '오늘' 2.1:1): on this month already the button is off, and its 38% grey vanished on a 꾸밈 사진; there it
         // keeps most of the ink (still lighter than when it can be pressed).
         else TextButton(onClick = onToday, enabled = !atToday, modifier = todayMod,
