@@ -114,7 +114,7 @@ class ReviewLScanTest {
         assertEquals(DutyCell.Shift(9), own.match("AM"))
         assertEquals(DutyCell.Off, own.match("V"))
         // On a roster read as text, the day with V waits for the answer instead of going in as 연차.
-        val row = DutyRoster.readText("이름 1 2 3\n김간호 D V N", codes).first()
+        val row = DutyRoster.readText("1 2 3 4 5 6 7 8\n김간호 D V N O D E N O", codes).first()
         assertEquals(DutyCell.Unknown("V"), row.cells[2])
     }
 

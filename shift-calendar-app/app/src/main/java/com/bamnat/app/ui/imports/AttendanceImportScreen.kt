@@ -262,7 +262,10 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
         },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item {
+            // 2.0.0 [RVL-26] 사진 검토 (여러 사람 파일에서 '누구 근태를 넣을까요?'가 열 맞추기 아래 화면 끝에 걸리고, 채운 단추가 둘이었어요,
+            // 조건 1·2): once a file is read, the explanation folds into one line with '다른 파일 고르기' as a text button, so the one
+            // filled button is the bottom bar's '넣기'; the question who to put in comes before the columns.
+            if (ui.rows.isEmpty()) item {
                 SectionCard(title = "회사 근태 기록을 달력으로") {
                     Text("회사 근태 시스템에서 내려받은 엑셀(.xlsx)이나 CSV 파일을 골라요. 날짜·출근·퇴근·연장·휴가 칸을 읽어서 " +
                         "늦은 출근, 이른 퇴근, 야근(잔업), 쉬는 날 근무(특근), 연차·반차를 그날에 적어요. 파일은 휴대폰 안에서만 읽고 따로 저장하지 않아요.",
@@ -270,16 +273,28 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.height(10.dp))
                     Button(onClick = {
                         picker.launch(SheetFiles.TYPES)
-                    }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text(if (ui.rows.isEmpty()) "파일 고르기" else "다른 파일 고르기") }
+                    }, enabled = !ui.reading, modifier = Modifier.fillMaxWidth()) { Text("파일 고르기") }
                     // 2.0.0 [RVL-27] (검토 SCAN-27) 옛 엑셀(.xls) is read as it is: no line asking to save it again.
                 }
+            } else item {
+                // 200%: the button goes under the words instead of squeezing them to a few letters a line (조건 12).
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 168.dp, start = {
+                    Column {
+                        Text(ui.fileName.ifBlank { "고른 파일" } + " · ${ui.rows.size}줄", style = MaterialTheme.typography.titleSmall)
+                        Text("휴대폰 안에서만 읽고 따로 저장하지 않아요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }, end = {
+                    androidx.compose.material3.TextButton(onClick = { picker.launch(SheetFiles.TYPES) }, enabled = !ui.reading) { Text("다른 파일 고르기") }
+                })
             }
+            // 2.0.0 [RVL-26] (검토 SCAN-14·T07b-06) A file of many people (사장님's 출퇴근 기록): whose days go in, asked first, before
+            // any day is shown, so another's 연차·결근 never lands on my calendar.
+            if (ui.rows.isNotEmpty() && ui.people.isNotEmpty()) item { WhoCard(ui.people, ui.who, vm::pickWho) }
             if (ui.reading) item { Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
             ui.error?.let { e -> item { Text(e, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) } }
             if (ui.rows.isNotEmpty()) item {
                 SectionCard(title = "어느 열이 무엇인가요?") {
-                    Text(ui.fileName.ifBlank { "고른 파일" } + " · ${ui.rows.size}줄", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     MapRow("제목 줄", ui.map?.headerRow?.let { if (it < 0) "없음" else "${it + 1}번째 줄" } ?: "-") { choosingHeader = true }
                     AttendanceField.entries.forEach { f ->
                         HorizontalDivider()
@@ -287,9 +302,6 @@ fun AttendanceImportScreen(vm: AttendanceImportViewModel, onBack: () -> Unit) {
                     }
                 }
             }
-            // 2.0.0 [RVL-26] (검토 SCAN-14·T07b-06) A file of many people (사장님's 출퇴근 기록): whose days go in, asked before any
-            // day is shown, so another's 연차·결근 never lands on my calendar.
-            if (ui.rows.isNotEmpty() && ui.people.isNotEmpty()) item { WhoCard(ui.people, ui.who, vm::pickWho) }
             if (ui.rows.isNotEmpty() && !ui.asking && ui.shared > AttendanceImport.MANY_ROWS) item {
                 com.bamnat.app.ui.components.NudgeCard(
                     "같은 날 줄이 ${ui.shared}일 있어요",
