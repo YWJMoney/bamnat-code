@@ -285,9 +285,11 @@ internal fun ConsentWaiting(c: AppContainer, pro: ProState, onMessage: (String) 
 /**
  * 2.0.0 [RVO-13] (HQ-48) Whether 친구 초대 comes right under '지금': 결제 is open and this phone did not buy 프로 (no 프로, a day by an ad,
  * the 감사 months, reward passes). A subscription, the 1년 이용권, a 팀·직원 요금제, an admin's or a shared 프로 keep it lower down.
+ * 처리방침 3.1을 미뤄 둔 폰(9항, 11-23까지 모두 무료)도 산 프로가 아니라 먼저예요(총괄 11-12 23:37 KST, 사용자 말 '프로를 구독 안 한 사람은').
+ * 결제를 잠시 끈 때·개발용 빌드(ALL_OPEN)는 구독한 폰도 같은 모습이라 아래 그대로예요.
  */
 internal fun inviteFirst(gate: com.bamnat.app.tier.Gate): Boolean =
-    gate.live && (!gate.access.pro || gate.access.reason in INVITE_FIRST)
+    (gate.live && (!gate.access.pro || gate.access.reason in INVITE_FIRST)) || gate.access.reason == ProReason.HELD
 
 private val INVITE_FIRST = setOf(ProReason.DAY_PASS, ProReason.THANKS, ProReason.PASS, ProReason.NONE)
 
