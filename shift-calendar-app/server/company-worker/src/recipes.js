@@ -1102,6 +1102,9 @@ export const RECIPE_COLUMNS = [
   "ALTER TABLE recipes ADD COLUMN ix_kinds TEXT",
   "ALTER TABLE recipes ADD COLUMN ix_look TEXT",
   "ALTER TABLE recipes ADD COLUMN ix_emoji TEXT",
+  // 2.0.0 [RVQ-39] 검토 SVC-53: 보류된 표의 네트워크 묶음 이름('11-13 02시 · 1', 그 시간 그 작품에서 몇째 네트워크인지). 네트워크 해시(net)는
+  // 다른 표처럼 2시간 뒤 지우고(처리방침), 관리자는 이 이름으로 묶음을 세거나 버려요.
+  "ALTER TABLE recipe_votes ADD COLUMN cluster TEXT",
 ];
 
 export function newCode() {
@@ -2196,6 +2199,14 @@ async function recipeVote(d, env, request, code) {
   const burst = (await d.allow(env, `rvotenet|${code}|${net.now}`, RECIPE_LIMITS.networkVotesHour, HOUR, now))
     && (await d.allow(env, `rvotenetall|${net.now}`, RECIPE_LIMITS.networkVotesAllHour, HOUR, now));
   const held = burst ? 0 : 1;
+  // [RVQ-39] SVC-53: a held vote is put in its network's 묶음 for this work and hour, named without the hash.
+  let cluster = null;
+  if (held) {
+    const hour = new Date(now + 9 * HOUR).toISOString().slice(5, 13).replace("T", " ");
+    const same = await d.one(env, "SELECT cluster FROM recipe_votes WHERE code = ? AND held = 1 AND net = ? AND cluster IS NOT NULL LIMIT 1", code, net.now);
+    cluster = same?.cluster
+      ?? `${hour}·${((await d.one(env, "SELECT COUNT(DISTINCT cluster) AS n FROM recipe_votes WHERE code = ? AND cluster LIKE ?", code, `${hour}·%`))?.n ?? 0) + 1}`;
+  }
   const before = await d.one(env, "SELECT value, weight, held FROM recipe_votes WHERE code = ? AND device = ?", code, dev);
   const stmts = [];
   if (before && !before.held) {
@@ -2205,10 +2216,10 @@ async function recipeVote(d, env, request, code) {
   if (body.value === null) {
     stmts.push(d.stmt(env, "DELETE FROM recipe_votes WHERE code = ? AND device = ?", code, dev));
   } else {
-    stmts.push(d.stmt(env, `INSERT INTO recipe_votes (code, device, value, weight, reason, opinion, held, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    stmts.push(d.stmt(env, `INSERT INTO recipe_votes (code, device, value, weight, reason, opinion, held, net, cluster, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (code, device) DO UPDATE SET value = excluded.value, weight = excluded.weight, reason = excluded.reason, opinion = excluded.opinion,
-        held = excluded.held, net = excluded.net, at = excluded.at`, code, dev, body.value, trust.weight, reason?.reason ?? null, reason?.opinion ?? null,
-    held, net.now, now));
+        held = excluded.held, net = excluded.net, cluster = excluded.cluster, at = excluded.at`, code, dev, body.value, trust.weight, reason?.reason ?? null, reason?.opinion ?? null,
+    held, net.now, cluster, now));
     if (!held) {
       stmts.push(d.stmt(env, body.value === 1 ? "UPDATE recipes SET likes = likes + 1, wlikes = wlikes + ? WHERE code = ?"
         : "UPDATE recipes SET dislikes = dislikes + 1, wdislikes = wdislikes + ? WHERE code = ?", trust.weight, code));
@@ -2541,8 +2552,8 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
       return q.length ? { fresh: n("new"), net: n("net") } : null;
     };
     // [RVQ-39] SVC-53: each work's held votes by the network that sent them (a short mark of the hour's network, never the hash itself).
-    const heldRows = tab === "votes" ? await byCodes((marks) => `SELECT code, substr(net, 1, 8) AS grp, SUM(value = 1) AS likes, SUM(value = -1) AS dislikes,
-      COUNT(*) AS n, MIN(at) AS since FROM recipe_votes WHERE held = 1 AND code IN (${marks}) GROUP BY code, grp ORDER BY n DESC`) : [];
+    const heldRows = tab === "votes" ? await byCodes((marks) => `SELECT code, cluster AS grp, SUM(value = 1) AS likes, SUM(value = -1) AS dislikes,
+      COUNT(*) AS n, MIN(at) AS since FROM recipe_votes WHERE held = 1 AND code IN (${marks}) GROUP BY code, cluster ORDER BY n DESC`) : [];
     const heldAll = await d.one(env, "SELECT COUNT(*) AS n, COUNT(DISTINCT code) AS works FROM recipe_votes WHERE held = 1");
     const piecesOf = (text) => { try { const v = JSON.parse(text); return { pieces: (v.pieces ?? []).map((p) => p.kind), inputs: (v.inputs ?? []).length }; } catch { return { pieces: [], inputs: 0 }; } };
     return d.json({ tab, ...(tab === "one" ? { code } : {}), held: { votes: heldAll?.n ?? 0, works: heldAll?.works ?? 0 }, items: rows.map((r) => ({ ...listItem(r, now),
@@ -2763,7 +2774,7 @@ export async function recipeAdmin(d, request, env, path, url, now, actorName) {
     // ({group}: the mark the list shows) or the whole work.
     const body = await d.readJson(request, 512);
     if (typeof body.code !== "string" || !CODE.test(body.code)) return d.json({ error: "code" }, 400);
-    const group = typeof body.group === "string" && /^[0-9a-f]{8}$/.test(body.group) ? body.group : null;
+    const group = typeof body.group === "string" && /^\d\d-\d\d \d\d·\d{1,4}$/.test(body.group) ? body.group : null;
     const n = path.endsWith("/release") ? await releaseHeldVotes(d, env, body.code, group, actorName) : await dropHeldVotes(d, env, body.code, group, actorName);
     return d.json(path.endsWith("/release") ? { released: n } : { dropped: n });
   }
@@ -2885,7 +2896,7 @@ export async function reindexRecipes(d, env, limit = 200, pages = 5) {
 
 /** [RVQ-39] Count held votes of [code] (one network's [group] or all): they go into the work's numbers as they would have. */
 async function releaseHeldVotes(d, env, code, group, actor, devices = null) {
-  const held = await d.all(env, `SELECT device, value, weight FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND substr(net, 1, 8) = ?" : ""}`,
+  const held = await d.all(env, `SELECT device, value, weight FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND cluster = ?" : ""}`,
     code, ...(group ? [group] : []));
   const pick = devices ? held.filter((v) => devices.has(v.device)) : held;
   if (!pick.length) return 0;
@@ -2902,7 +2913,7 @@ async function releaseHeldVotes(d, env, code, group, actor, devices = null) {
 
 /** [RVQ-39] Throw held votes of [code] away (one network's [group] or all): they never count; the phones may vote again. */
 async function dropHeldVotes(d, env, code, group, actor) {
-  const res = await d.run(env, `DELETE FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND substr(net, 1, 8) = ?" : ""}`, code, ...(group ? [group] : []));
+  const res = await d.run(env, `DELETE FROM recipe_votes WHERE code = ? AND held = 1${group ? " AND cluster = ?" : ""}`, code, ...(group ? [group] : []));
   const n = res?.meta?.changes ?? 0;
   if (n) await d.run(env, "INSERT INTO recipe_actions (code, action, reason, actor, at) VALUES (?, 'drop_held', ?, ?, ?)", code,
     `보류된 표 ${n}개 버림${group ? " · 네트워크 묶음 하나" : ""}`, actor, Date.now());

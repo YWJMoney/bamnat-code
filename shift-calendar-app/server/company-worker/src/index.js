@@ -360,6 +360,8 @@ export async function prune(env, now) {
     stmt(env, "UPDATE votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE rates SET net = NULL WHERE net IS NOT NULL AND created_at < ?", now - 2 * HOUR),
     stmt(env, "UPDATE rate_votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
+    // 2.0.0 [RVQ-39] 장터 좋아요·안좋아요의 네트워크 해시도 2시간 뒤 지워요(보류된 표의 묶음은 해시 없는 이름 cluster로 남아요).
+    stmt(env, "UPDATE recipe_votes SET net = NULL WHERE net IS NOT NULL AND at < ?", now - 2 * HOUR),
     stmt(env, "DELETE FROM counters WHERE expires < ?", now),
     stmt(env, "DELETE FROM admin_sessions WHERE expires < ?", now),
     stmt(env, "DELETE FROM invites WHERE used_at IS NULL AND expires < ?", now),
