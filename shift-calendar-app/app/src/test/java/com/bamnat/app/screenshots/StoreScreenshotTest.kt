@@ -256,7 +256,7 @@ class StoreScreenshotTest : ScreenshotBase() {
     /** 11 공휴일: 2027년 2월, 설날 연휴 on the month. */
     @Config(sdk = [33])
     @Test fun holiday() = shoot("store_11_holiday", STORE) {
-        repeat(4) { tapText("다음 달", exact = true, scrolls = 0) }
+        repeat(4) { stepMonth("다음 달") }
     }
 
     /** 11 공휴일: the pay items, down to 휴일. */

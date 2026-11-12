@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -54,12 +55,14 @@ import java.time.temporal.TemporalAdjusters
 import androidx.compose.ui.semantics.Role
 
 /** [TAB-06] 1.36 가계부 판 칩: 목록 · 달력 · 분류 보드 · 표. The period and filters above stay as they are. */
+// 2.0.0 [RVK-35] (PC-126) The four wrap instead of sliding off the edge, and are read without '가계부' (a shop's tab is 장부).
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun LedgerBoardChips(board: LedgerBoard, onPick: (LedgerBoard) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (b in LedgerBoard.entries) {
             FilterChip(selected = board == b, onClick = { onPick(b) }, label = { Text(b.label) },
-                modifier = Modifier.semantics { contentDescription = "가계부 ${b.label}${com.bamnat.app.ui.Fmt.ro(b.label)} 보기" })
+                modifier = Modifier.semantics { contentDescription = "${b.label}${com.bamnat.app.ui.Fmt.ro(b.label)} 보기" })
         }
     }
 }
@@ -102,33 +105,69 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
             for (d in listOf("일", "월", "화", "수", "목", "금", "토")) Text(d, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         }
-        for (week in weeks) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            for (date in week) {
-                val inMonth = YearMonth.from(date) == month
-                val day = days[date]
-                val on = date == picked
-                Column(
-                    Modifier.weight(1f).heightIn(min = 54.dp)
-                        .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
-                        .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
-                        .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
-                        .clickable(role = Role.Button, enabled = inMonth) { onPick(date) }
-                        .clearAndSetSemantics {
-                            contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
-                            selected = on
+        // 2.0.0 [RVK-35] (총괄 #477 사진) A day with money in and out is three lines: its week's other days stand as tall, not short beside it.
+        // And at large letters on the folded phone '18.3만' was cut to '18.' (the 만 gone): the month's amounts step down together, as
+        // '18만' and then as − and + (나간·들어온, read out with their amounts, the day's lines under the month), never cut.
+        val labelStyle = MaterialTheme.typography.labelSmall
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val room = (constraints.maxWidth - with(androidx.compose.ui.platform.LocalDensity.current) { (2.dp * 6 + 6.dp * 7).roundToPx() }) / 7
+            val amounts = days.values.flatMap { listOf(it.expense, it.income) }.filter { it > 0 }
+            val step = remember(amounts, room, labelStyle, Fmt.masked) {
+                fun fits(f: (Long) -> String) = amounts.all { measurer.measure(f(it), labelStyle, maxLines = 1, softWrap = false).size.width <= room }
+                when { fits(Fmt::wonShort) -> CellAmount.SHORT; fits(::cellWon) -> CellAmount.ROUND; else -> CellAmount.SIGN }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                for (week in weeks) Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    for (date in week) {
+                        val inMonth = YearMonth.from(date) == month
+                        val day = days[date]
+                        val on = date == picked
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().heightIn(min = 54.dp)
+                                .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                                .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                                .clickable(role = Role.Button, enabled = inMonth) { onPick(date) }
+                                .clearAndSetSemantics {
+                                    contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
+                                    selected = on
+                                }
+                                .padding(3.dp),
+                        ) {
+                            Text("${date.dayOfMonth}", style = labelStyle,
+                                color = if (!inMonth) Color.Transparent else MaterialTheme.colorScheme.onSurface)
+                            if (inMonth && day != null) when (step) {
+                                CellAmount.SIGN -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    if (day.expense > 0) Text("−", style = labelStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                                    if (day.income > 0) Text("+", style = labelStyle, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                                else -> {
+                                    val say: (Long) -> String = if (step == CellAmount.SHORT) Fmt::wonShort else ::cellWon
+                                    if (day.expense > 0) Text(say(day.expense), style = labelStyle, color = MaterialTheme.colorScheme.error, maxLines = 1, softWrap = false)
+                                    if (day.income > 0) Text(say(day.income), style = labelStyle, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false)
+                                }
+                            }
                         }
-                        .padding(3.dp),
-                ) {
-                    Text("${date.dayOfMonth}", style = MaterialTheme.typography.labelSmall,
-                        color = if (!inMonth) Color.Transparent else MaterialTheme.colorScheme.onSurface)
-                    if (inMonth && day != null) {
-                        if (day.expense > 0) Text(Fmt.wonShort(day.expense), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, maxLines = 1)
-                        if (day.income > 0) Text(Fmt.wonShort(day.income), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     }
                 }
+                if (step == CellAmount.SIGN && amounts.isNotEmpty()) Text("− 나간 돈 · + 들어온 돈. 금액은 날짜를 누르면 아래에 나와요.", style = labelStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }
+}
+
+/** 2.0.0 [RVK-35] How a day's amount stands in its cell: '18.3만', '18만' when that is cut, − and + when even that is. */
+private enum class CellAmount { SHORT, ROUND, SIGN }
+
+/** '18만' for 183,000, '4천' for 4,500: cut down like [Fmt.wonShort], one place shorter. */
+private fun cellWon(amount: Long): String = when {
+    Fmt.masked -> "•••"
+    amount >= 100_000_000 -> "${amount / 100_000_000}억"
+    amount >= 10_000 -> "${amount / 10_000}만"
+    amount >= 1_000 -> "${amount / 1_000}천"
+    else -> "$amount"
 }
 
 /** [TAB-06] 분류 보드: a column a category, its total on top and its lines under it; a line opens as in the list. */

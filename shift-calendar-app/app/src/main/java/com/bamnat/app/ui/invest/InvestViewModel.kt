@@ -371,7 +371,7 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
         if (first) repo.setFillAutoTold()
         val words = listOfNotNull("캡처에서 ${n}건을 바로 넣었어요", same.takeIf { it > 0 }?.let { "이미 있음 ${it}건" }).joinToString(" · ")
         // Long enough to read and to take back: it went in without a question.
-        say(words + if (first) ". 넣기 전에 묻게 하려면 투자 탭 ⋮ › ‘캡처로 채우기: 넣기 전에 묻기’" else "", long = true) { repo.undoCapture(applied) }
+        say(words + if (first) ". 넣기 전에 묻게 하려면 투자 탭 ⋮ › 체결 알림·캡처 설정 › ‘캡처로 채울 때 넣기 전에 묻기’" else "", long = true) { repo.undoCapture(applied) }
     }
 
     /**
