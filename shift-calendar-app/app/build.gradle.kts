@@ -164,7 +164,9 @@ android {
         // api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
-        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
+        // 2.0.0 [RVO-09] SearchShortcutScreenTest types every way in for six kinds of work (about 22 minutes in one JVM): it goes with
+        // the shorter shard, so shots-b does not run near the job's 45 minutes.
+        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" } + "$shots.SearchShortcutScreenTest"
         // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
         // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
         // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.

@@ -51,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -833,7 +834,9 @@ private fun SettingsHub(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
     val pick: (SettingEntry) -> Unit = { keyboard?.hide(); onFound(it) }
-    Column(modifier.nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // 2.0.0 [RVO-09] (PC-82 '수면 기록' 바로 가기가 안 열림): the app draws under the keyboard (edge to edge), so the found features at the
+    // foot of the results stayed under it and a tap on their 바로 가기 went to the keyboard. The list ends above the keyboard.
+    Column(modifier.imePadding().nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
         val work by vm.workSettings.collectAsStateWithLifecycle()
