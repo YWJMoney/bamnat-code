@@ -1,5 +1,6 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.pay.PayPeriod
@@ -65,6 +66,48 @@ class RvjFrozenScreenshotTest : ScreenshotBase() {
     @Test fun weekDarkBig() = shoot("rvj_20_staff_week_folded_dark_200", DARK, 2f, staffWeek(false))
     @Test fun weekWide() = shoot("rvj_21_staff_week_unfolded", UNFOLDED, staffWeek(false))
     @Test fun weekRates() = shoot("rvj_22_staff_rates_folded", FOLDED, staffWeek(true))
+
+    /**
+     * 2.0.0 [RVJ-21] 검토 HQ-07 (조건 12): at 200% on the folded width the 항목별 내역's names broke inside the word ('연장근/로') and the
+     * 추정 chip touched the amount. Each line is now [com.bamnat.app.ui.components.AmountRow]: nothing cut, and a one-word name stays whole.
+     */
+    @Test fun itemsBigNothingCut() = shoot("rvj_23_items_folded_200", FOLDED, 2f) {
+        payScreen(Tier.PRO, withProfile = true, adjust = paidOnTheTenth).invoke(this)
+        reveal("항목별 내역", exact = true)
+        val m = app.resources.displayMetrics
+        val all = nodes(merged = false)
+        val cuts = LayoutCheck.cuts(all, m.widthPixels, m.heightPixels)
+        LayoutCheck.report("rvj_23_items", cuts)
+        org.junit.Assert.assertEquals("$cuts", emptyList<LayoutCheck.Cut>(), cuts)
+        org.junit.Assert.assertEquals(emptyList<String>(), brokenWords(all, m.heightPixels))
+    }
+
+    /** [RVJ-21] At the usual size a folded phone's line stays one line: the name, the chip and the amount side by side (조건 1: 목록이 길어지지 않게). */
+    @Test fun itemsStayOnOneLineAtTheUsualSize() = shoot("rvj_27_items_folded", FOLDED) {
+        payScreen(Tier.PRO, withProfile = true, adjust = paidOnTheTenth).invoke(this)
+        reveal("항목별 내역", exact = true)
+        val all = nodes(merged = false)
+        fun one(text: String) = all.first { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.any { it.text == text } == true }.boundsInWindow
+        val name = one("연장근로")
+        val amount = all.filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.any { it.text.endsWith("원") } == true }
+            .map { it.boundsInWindow }.filter { it.left > name.right && it.top < name.bottom && it.bottom > name.top }
+        org.junit.Assert.assertTrue("금액이 이름 옆 줄에 있어야 해요: $name", amount.isNotEmpty())
+    }
+
+    /** One Korean word (no space, up to 8 letters) laid out on more than one line, like '연장근/로'. */
+    private fun brokenWords(nodes: List<androidx.compose.ui.semantics.SemanticsNode>, height: Int): List<String> = buildList {
+        for (n in nodes) {
+            val b = n.boundsInWindow
+            if (b.height < 1f || b.bottom <= 0f || b.top >= height) continue
+            val action = n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action ?: continue
+            val results = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+            if (action(results) != true) continue
+            for (r in results) {
+                val t = r.layoutInput.text.text
+                if (t.length in 2..8 && t.none { it.isWhitespace() } && t.any { it in '가'..'힣' } && r.lineCount > 1) add(t)
+            }
+        }
+    }
 
     @Test fun askLight() = shoot("rvj_12_close_ask_folded", FOLDED, ask())
     @Test fun askDarkBig() = shoot("rvj_13_close_ask_folded_dark_200", DARK, 2f, ask())
