@@ -406,10 +406,10 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.
-    Card("내 것", "올린 레시피의 좋아요·댓글, 받은 레시피(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
+    Card("내 것", "올린 작품의 좋아요·댓글, 받은 작품(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
     // 1.36 [VIL-13] 마을 V13: 간직한 글 · 내 글 · 내 답글 next to 내 것.
     Card("간직한 글 · 내 글", "광장에서 간직한 팁, 내가 쓴 글과 답글을 다시 봐요", "보기", onPosts)
-    Card("이런 거 있었으면", "필요한 레시피를 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
+    Card("이런 거 있었으면", "필요한 작품을 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
     OutlinedButton(onClick = onCode, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드·링크로 받기") }
 }
 
@@ -439,7 +439,7 @@ private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) 
     androidx.compose.runtime.LaunchedEffect(q.code) { onTop() }
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("🎁 부탁한 레시피가 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("🎁 부탁한 작품이 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text("‘${q.body.take(40)}’" + if (fresh.size > 1) " 외 ${fresh.size - 1}개" else "", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

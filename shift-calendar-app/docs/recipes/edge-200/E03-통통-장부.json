@@ -1,0 +1,42 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E3 통통 장부",
+ "summary": "가계부·메모 달력 칸이 통통 튀어요",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "money.cal.cell",
+     "motion": "bounce",
+     "r": 48
+    },
+    {
+     "id": "money.table.row",
+     "motion": "bounce",
+     "r": 48
+    },
+    {
+     "id": "memo.cal.cell",
+     "motion": "bounce",
+     "r": 48
+    }
+   ]
+  },
+  {
+   "kind": "tabView",
+   "money": "cal",
+   "memo": "cal"
+  }
+ ]
+}
