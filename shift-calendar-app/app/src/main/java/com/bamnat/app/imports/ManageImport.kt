@@ -74,8 +74,9 @@ object ManageImport {
     suspend fun staff(context: Context, uri: Uri, near: LocalDate): Got<StaffSheet> = open(context, uri) { o ->
         when (o) {
             is AnyFile.Opened.Table -> StaffSheet.read(o.sheets, near)?.let { Got.Read(it, false) }
+            // 2.0.0 [RVJ-40] 검토 PC-102: a photo goes the same way as a file (the same columns read, the same unread ones said).
             else -> scans(context, o, DutyCodes(emptyList())).mapNotNull { StaffSheet.read(WordTable.rows(it.words), near) }
-                .flatMap { it.rows }.takeIf { it.isNotEmpty() }?.let { Got.Read(StaffSheet(it), true) }
+                .takeIf { it.isNotEmpty() }?.let { l -> Got.Read(StaffSheet(l.flatMap { it.rows }, l.flatMap { it.unread }.distinct()), true) }
         } ?: Got.Failed("직원 이름 줄을 찾지 못했어요. 첫 줄에 '이름'과 '시급'(또는 근무 요일·시간) 같은 칸 이름이 있는 명단이면 돼요.")
     }
 }

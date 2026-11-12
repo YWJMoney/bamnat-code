@@ -32,8 +32,8 @@ object TeamSwap {
      * neither cell locked, and no new 근무 규칙 or 주 52시간 sign for either of the two. Only their own two rows are checked, so a
      * ward of 30 is a moment's work.
      */
-    fun options(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null, from: LocalDate = board.month.atDay(1)):
-        Map<String, Map<LocalDate, List<String>>> {
+    fun options(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null, from: LocalDate = board.month.atDay(1),
+                next: TeamBoard? = null): Map<String, Map<LocalDate, List<String>>> {
         val off = team.shifts.filter { it.isOff }.map { it.id }.toSet()
         fun works(id: Long?) = id != null && id !in off
         val people = board.members.filter { it.active }
@@ -43,15 +43,18 @@ object TeamSwap {
             val a = people[i]
             val b = people[j]
             val pair = board.copy(members = listOf(a, b), cells = board.cells.filterKeys { it.first == a.id || it.first == b.id })
-            val pairPrev = prev?.let { p -> p.copy(members = listOf(a, b).filter { m -> p.members.any { it.id == m.id } }, cells = p.cells.filterKeys { it.first == a.id || it.first == b.id }) }
-            val before = TeamCheck.check(team, pair, rules, pairPrev).filter { it.memberId != null && bad(it) }.map { it.kind to it.text }.toSet()
+            fun ofPair(o: TeamBoard?) = o?.let { p -> p.copy(members = listOf(a, b).filter { m -> p.members.any { it.id == m.id } }, cells = p.cells.filterKeys { it.first == a.id || it.first == b.id }) }
+            val pairPrev = ofPair(prev)
+            // 2.0.0 [RVJ-30] next month's first days too: a trade in the last week is read with them.
+            val pairNext = ofPair(next)
+            val before = TeamCheck.check(team, pair, rules, pairPrev, pairNext).filter { it.memberId != null && bad(it) }.map { it.kind to it.text }.toSet()
             for (d in days) {
                 val ca = pair.cell(a.id, d)
                 val cb = pair.cell(b.id, d)
                 if (ca?.shiftId == cb?.shiftId || ca?.locked == true || cb?.locked == true) continue
                 if (!works(ca?.shiftId) && !works(cb?.shiftId)) continue
                 if (ca == null || cb == null) continue
-                val after = TeamCheck.check(team, pair.swap(a.id, b.id, d), rules, pairPrev).filter { it.memberId != null && bad(it) }
+                val after = TeamCheck.check(team, pair.swap(a.id, b.id, d), rules, pairPrev, pairNext).filter { it.memberId != null && bad(it) }
                 if (after.any { (it.kind to it.text) !in before }) continue
                 out.getOrPut(a.id) { LinkedHashMap() }.merge(d, listOf(b.id), { x, y -> x + y })
                 out.getOrPut(b.id) { LinkedHashMap() }.merge(d, listOf(a.id), { x, y -> x + y })
