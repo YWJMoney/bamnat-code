@@ -10,7 +10,9 @@ on:
     paths: ["shift-calendar-app/**", "privacy/**", "terms/**", "community/**", "remote/**", ".github/workflows/android.yml"]
   push:
     branches: [claude/project-thread-f33c16]
-    paths: ["shift-calendar-app/**", "privacy/**", "terms/**", "community/**", "remote/**", ".github/workflows/android.yml"]
+    # 추적표·개발 기록만 바뀐 push는 돌지 않아요(총괄이 줄을 넣을 때마다 앞 실행이 멈추지 않게). 그 검사 셋은 올리기 전에 손으로 돌려요.
+    paths: ["shift-calendar-app/**", "privacy/**", "terms/**", "community/**", "remote/**", ".github/workflows/android.yml",
+            "!shift-calendar-app/docs/plans/**", "!shift-calendar-app/docs/tracker.csv", "!shift-calendar-app/ops/dev-status.jsonl"]
   workflow_dispatch:
 concurrency:
   group: android-${{ github.ref }}
