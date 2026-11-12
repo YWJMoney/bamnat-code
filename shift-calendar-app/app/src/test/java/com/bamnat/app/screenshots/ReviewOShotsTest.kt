@@ -178,7 +178,7 @@ class ReviewOShotsTest : ScreenshotBase() {
     // RVO-17 (검토 SET-11·U11a-07·I11aa-05): 백업 암호 창, 짧은 암호에 '짧아요' 한 줄, 보기 단추, 단추는 세로, '암호 없이 저장'은 작은 줄.
     @Test fun backupPassword() = all("13_backup_password") {
         content { com.bamnat.app.ui.settings.ExportPasswordDialog(onDismiss = {}, onExport = {}) }
-        typeInto("암호 (8자 이상 권해요)", "night5")
+        typeInto("암호", "night5")
     }
 
     // RVO-17 (검토 SET-11·U11a-09): 파일 불러오기의 최근 백업, 지워진 파일은 흐리게 '지워졌거나 옮겨졌어요'와 '목록에서 빼기'.

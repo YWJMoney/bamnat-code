@@ -57,7 +57,7 @@ class ReviewOSettingsTest {
 
     /** 2.0.0 [RVO-17] 검토 SET-11·I11aa-05: 4~7자는 '짧아요'와 함께 되고, 8자부터 좋아요. */
     @Test fun aShortBackupPasswordIsAllowedWithAWord() {
-        assertNull(passwordWords(""))
+        assertEquals("8자 이상 권해요", passwordWords(""))
         assertEquals("4자 이상 넣어 주세요", passwordWords("abc"))
         assertEquals("짧아요 · 8자 이상이면 더 안전해요", passwordWords("night5"))
         assertEquals("좋아요", passwordWords("night-shift"))

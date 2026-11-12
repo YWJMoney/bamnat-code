@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -44,7 +45,8 @@ const val GOOD_BACKUP_PASSWORD = 8
 
 /** 2.0.0 [RVO-17] What is said under a new backup password: nothing yet, short (allowed), or good. */
 internal fun passwordWords(password: String): String? = when {
-    password.isEmpty() -> null
+    // 2.0.0 [RVO-17] 권하는 길이는 칸 아래 한 줄로(칸 이름은 '암호' 하나: 긴 이름이었을 때 접은 폭·글자 200%에서 입력하면 창이 그리기를 멈추지 않았어요).
+    password.isEmpty() -> "${GOOD_BACKUP_PASSWORD}자 이상 권해요"
     password.length < MIN_BACKUP_PASSWORD -> "${MIN_BACKUP_PASSWORD}자 이상 넣어 주세요"
     password.length < GOOD_BACKUP_PASSWORD -> "짧아요 · ${GOOD_BACKUP_PASSWORD}자 이상이면 더 안전해요"
     else -> "좋아요"
@@ -71,7 +73,8 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
         onDismissRequest = onDismiss,
         title = { Text("백업에 암호를 걸까요?") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            // 2.0.0 [RVO-17] 접은 폭·글자 200%에서 창이 화면보다 길어요: 글과 칸은 창 안에서 내려 봐요(단추는 늘 보여요).
+            Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 gaps?.takeIf { !it.isEmpty }?.let { g ->
                     Row(verticalAlignment = androidx.compose.ui.Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Outlined.WarningAmber, contentDescription = null,
@@ -91,7 +94,7 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-                PasswordField(first, { first = it }, "암호 (${GOOD_BACKUP_PASSWORD}자 이상 권해요)", hint = passwordWords(first))
+                PasswordField(first, { first = it }, "암호", hint = passwordWords(first))
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
                 // 2.0.0 [RVO-17] 검토 U11a-07: 암호 없이 is a small line of its own under the fields, not a third button in the row.
                 TextButton(onClick = { onExport(null) }, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) {
@@ -140,7 +143,7 @@ fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray) -> Unit) 
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                PasswordField(first, { first = it }, "암호 (${GOOD_BACKUP_PASSWORD}자 이상 권해요)", hint = passwordWords(first))
+                PasswordField(first, { first = it }, "암호", hint = passwordWords(first))
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
             }
         },

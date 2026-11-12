@@ -120,8 +120,12 @@ object NoticeBoard {
             { true }, { s, _ -> s }, { true }, Notifications.INQUIRY_CHANNEL_ID, onlyChannel = true),
     )
 
-    /** The ones [style]'s pages have, and any already on (so it can be turned off). */
-    fun shown(settings: AppSettings, style: WorkStyle?): List<Own> = OWN.filter { it.shows(style) || (!it.onlyChannel && it.get(settings)) }
+    /**
+     * The ones [style]'s pages have. 2.0.0 [RVO-22] One left on from another kind of work (연차 알림 on a 현장 calendar) is not shown: the
+     * page hides its switch too, and its words are another kind's (조건 13, 유형 낱말 검사).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun shown(settings: AppSettings, style: WorkStyle?): List<Own> = OWN.filter { it.shows(style) }
 
     /** My rules that send an 알림. */
     fun noticeRules(s: AppSettings): List<LogicRule> = Logic.decode(s.logic).rules.filter { r -> r.acts.any { it.verb == LogicVerb.NOTIFY } }
