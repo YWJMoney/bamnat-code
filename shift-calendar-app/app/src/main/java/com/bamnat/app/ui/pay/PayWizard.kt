@@ -113,6 +113,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /** [PAYS-01] How the pay is stated. 연봉 is worked out to a monthly 기본급 the engine runs on. */
 internal enum class Wage(val title: String, val subtitle: String, val type: WageType) {
@@ -798,11 +799,11 @@ private fun AmountStep(s: PaySetupState, today: LocalDate, slipNote: String?) {
             ". 이보다 오래 일한 시간과 연장·야간 가산은 이 시급으로 더해요.")
         if (hourly != null && hourly < rates.minimumHourlyWage) {
             Text("시급으로 치면 최저시급(${won(rates.minimumHourlyWage)})보다 적어요. 금액과 시간을 확인해 주세요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 확인할 일
         }
     }
     if (s.wage == Wage.HOURLY) s.amount?.takeIf { it in 1 until rates.minimumHourlyWage }?.let {
-        Text("최저시급보다 적어요. 계약서를 다시 확인해 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        Text("최저시급보다 적어요. 계약서를 다시 확인해 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
     }
     // [SETUP-04] The question people paid by the hour ask most, answered before they go looking.
     if (s.wage == Wage.HOURLY || s.wage == Wage.DAILY) {
@@ -843,7 +844,7 @@ private fun AnnualFields(s: PaySetupState) {
                 Text("월 기본급 ${won(b.monthlyBase)}", style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSecondaryContainer)
                 b.lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer) }
-                b.warnings.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                b.warnings.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) } // [RVJ-66]
             }
         }
     }

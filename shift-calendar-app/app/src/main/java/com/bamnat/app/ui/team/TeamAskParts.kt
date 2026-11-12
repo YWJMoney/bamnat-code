@@ -43,6 +43,7 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
+import com.bamnat.app.ui.theme.bamnat
 
 /** The kinds a leader may take requests for, in the order the setup shows them (병가 is never one: 건강 사유는 리더 앱에서만). */
 internal val ASK_KINDS = listOf(WishKind.OFF, WishKind.LEAVE, WishKind.HALF, WishKind.EDU, WishKind.SHIFT, WishKind.AVOID_NIGHT)
@@ -92,7 +93,7 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
                 }
             }
             if (kinds.isEmpty()) Text("하나도 켜지 않으면 팀원이 신청할 수 없어요.", style = MaterialTheme.typography.labelSmall,
-                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6)
             Text("자리가 다 찬 날", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = firstCome, onClick = { firstCome = true }, label = { Text("먼저 신청한 순(종이처럼)") })
@@ -158,9 +159,9 @@ internal fun AskCard(
             (closes?.let { " · 마감 ${it.monthValue}/${it.dayOfMonth} ${"%02d".format(it.hour)}:00" } ?: ""), style = MaterialTheme.typography.bodyMedium)
         val notOpened = members.filter { it.id in round.links && it.id !in round.seen }
         if (notOpened.isNotEmpty() && open) Text("아직 안 연 사람: " + notOpened.joinToString(", ") { it.name }, style = MaterialTheme.typography.bodySmall,
-            color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+            color = MaterialTheme.bamnat.caution) // [RVJ-66]
         if (over.isNotEmpty()) {
-            Text("자리보다 많이 신청한 날 ${over.size}일", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+            Text("자리보다 많이 신청한 날 ${over.size}일", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.bamnat.caution) // [RVJ-66] 정할 일: 주의
             over.take(6).forEach { d ->
                 Text("${Fmt.monthDay(d.date)} (${d.cap}자리): " + d.inside.joinToString(", ") { names[it.memberId].orEmpty() } +
                     " | 넘침 " + d.over.joinToString(", ") { names[it.memberId].orEmpty() }, style = MaterialTheme.typography.bodySmall)
@@ -176,7 +177,7 @@ internal fun AskCard(
         if (shiftWishes > 0) Text("근무 희망 ${shiftWishes}개(" + shifts.filter { s -> linked.any { it.shiftId == s.id } }.joinToString(" ") { s -> "${s.label} ${linked.count { it.shiftId == s.id }}" } +
             ")는 자동 채우기가 먼저 넣어요.", style = MaterialTheme.typography.bodySmall)
         if (round.token == null) Text("이 휴대폰에 신청 링크 열쇠가 없어요(암호 없는 백업에서 되살림). 새로 열어 주세요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
+            color = MaterialTheme.bamnat.caution) // [RVJ-66]
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onPull, enabled = !busy && round.token != null) { Text("신청 가져오기") }
             OutlinedButton(onClick = onSend) { Text("링크 다시 보내기") }
@@ -191,7 +192,7 @@ internal fun AskCard(
             // 1.39.1 9차 PC 리더: when the fetch on opening failed, say so with a way to try again instead of the old time alone.
             if (pullFailed) Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("새 신청을 못 가져왔어요($at 것을 보여 줘요)", style = MaterialTheme.typography.labelSmall,
-                    color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning, modifier = Modifier.weight(1f))
+                    color = MaterialTheme.bamnat.caution, modifier = Modifier.weight(1f)) // [RVJ-66]
                 TextButton(onClick = onPull, enabled = !busy && round.token != null) { Text("다시") }
             } else Text("${at}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

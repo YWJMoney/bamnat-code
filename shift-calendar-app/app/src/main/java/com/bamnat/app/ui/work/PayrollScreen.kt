@@ -58,7 +58,6 @@ import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.theme.color
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.boss.Insurance
 import com.bamnat.core.boss.StaffAllowance
 import com.bamnat.core.boss.LedgerCsv
@@ -81,6 +80,7 @@ import java.time.LocalTime
 import java.time.YearMonth
 import androidx.compose.ui.text.font.FontWeight
 import java.util.UUID
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * 1.38 [P3-03][BOSS-01..07] 사장님 급여 대장 (순번 501·502, 설계 2-2), behind `boss.payroll`. The 직원 인건비 card's roster comes in
@@ -1003,7 +1003,7 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
         Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             slip.checks.forEach { c ->
                 Text((if (c.ok) "✓ " else "✕ ") + c.name + if (!c.ok && c.fix.isNotBlank()) " · ${c.fix}" else "", style = MaterialTheme.typography.bodySmall,
-                    color = if (c.ok) MaterialTheme.colorScheme.onSurface else LocalCalendarColors.current.warning)
+                    color = if (c.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 보내기 전에 채울 줄(✕): 주의
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             ValueLine("지급 합계", Fmt.won(slip.gross))

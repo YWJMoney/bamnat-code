@@ -215,12 +215,15 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
         if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
-                caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", warning = !g.confirmed && members > 0 && g.painted > 0)
+                // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 짜는 중인 달은 할 일이지 위험이 아니에요(가게 칸 RVJ-50과 같이): 빨간 칸 대신 주의 글.
+                caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움",
+                captionTone = if (!g.confirmed && members > 0 && g.painted > 0) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain)
             StatTile("${now.plusMonths(1).monthValue}월", if (g.nextConfirmed) "확정 ${nm?.version ?: 0}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.nextEmpty > 0) "빈칸 ${g.nextEmpty}" else "다 채움")
         }
         Text("${members}명 · 위험 $danger · 인원 모자란 날 $short", style = MaterialTheme.typography.bodySmall,
-            color = if (danger > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+            // [RVJ-66] 위험은 위 할 일 줄 하나가 빨강이에요; 여기는 같은 수를 말로만.
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

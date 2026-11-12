@@ -57,6 +57,7 @@ import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.WarningBanner
+import com.bamnat.app.ui.theme.bamnat
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
@@ -190,8 +191,9 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
             SectionCard(title = "회사에 도착하면 출근, 나오면 퇴근") {
                 Text(DISCLOSURE, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error) }
-            if (refused > 0 && (!fine || !background)) {
+            // 2.0.0 [RVJ-66] (HQ-103): 위치를 못 찾음은 다시 눌러 볼 일(주의). 빨강은 기록이 안 되는 권한 띠 하나만.
+            error?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.bamnat.caution) }
+            if (refused > 0 && !s.enabled && (!fine || !background)) {
                 WarningBanner("위치 권한이 없어서 켜지 못했어요",
                     "휴대폰 설정 > 애플리케이션 > 밤낮 > 권한 > 위치에서 ‘항상 허용’과 ‘정확한 위치’를 켜 주세요.")
                 OutlinedButton(onClick = {
@@ -212,13 +214,18 @@ fun CommuteScreen(vm: CommuteViewModel, onBack: () -> Unit) {
             }
             if (!fine || !background) {
                 WarningBanner("위치 권한이 ‘항상 허용’이 아니에요", "앱을 닫아 두면 출퇴근을 적지 못해요. 위치 권한에서 ‘항상 허용’을 골라 주세요.")
-                OutlinedButton(onClick = { start() }, modifier = Modifier.fillMaxWidth()) { Text("권한 다시 확인") }
+                // A refused permission is not asked again by the phone: the settings, as when it could not be turned on.
+                if (refused > 0) OutlinedButton(onClick = {
+                    context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
+                }, modifier = Modifier.fillMaxWidth()) { Text("권한 설정 열기") }
+                else OutlinedButton(onClick = { start() }, modifier = Modifier.fillMaxWidth()) { Text("권한 다시 확인") }
             }
             if (!s.auto && !canNotify) {
-                WarningBanner("알림이 꺼져 있어요", "‘물어보고 적기’는 알림으로 물어봐요. 알림을 켜거나 ‘바로 적기’를 골라 주세요.")
-                OutlinedButton(onClick = {
-                    context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
-                }, modifier = Modifier.fillMaxWidth()) { Text("알림 켜기") }
+                // 2.0.0 [RVJ-66] (HQ-103): 묻는 알림이 꺼짐은 챙길 일(주의), 단추는 카드 안에 하나.
+                com.bamnat.app.ui.components.NudgeCard("알림이 꺼져 있어요", tone = com.bamnat.app.ui.theme.Tone.Caution,
+                    detail = "‘물어보고 적기’는 알림으로 물어봐요. 알림을 켜거나 ‘바로 적기’를 골라 주세요.", action = "알림 켜기", onAction = {
+                        context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
+                    })
             }
             SectionCard(title = "회사 위치") {
                 // [RVH-35] 검토 WORK-16 Said in words, not as 위도·경도 numbers.

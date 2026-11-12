@@ -98,6 +98,7 @@ import java.time.LocalTime
 import java.time.YearMonth
 import kotlin.math.abs
 import kotlin.math.roundToLong
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * [PAYS-07] What a line on a company's payslip can be, in the words a payslip uses. 매달·일한 날마다 make an
@@ -670,7 +671,8 @@ private fun KindCard(kind: ItemKind, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp),
     ) {
         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(kind.icon, null, tint = if (kind == ItemKind.DEDUCT) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+            // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 빠지는 돈은 위험이 아니에요: 모양으로 가르고 보조 색.
+            Icon(kind.icon, null, tint = if (kind == ItemKind.DEDUCT) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
@@ -1059,11 +1061,12 @@ private fun EffectBar(
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
                     takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
-                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface) // [RVJ-66]
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + if (per) " · ${effect.times}번" else "",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = if (effect.amount < 0 || huge) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 1억 원 넘는 금액은 확인할 일(주의), 빠지는 돈은 보통 글씨.
+                        color = if (huge) MaterialTheme.bamnat.caution else if (effect.amount < 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                     )
                     timesOnly != null && per -> Text(
                         (if (shut != null) "${month.monthValue}월" else "이번 달").let { m ->
@@ -1075,10 +1078,10 @@ private fun EffectBar(
                     else -> Text("금액을 넣으면 바로 계산해요", style = MaterialTheme.typography.titleSmall)
                 }
                 if (huge) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp).padding(end = 4.dp))
+                    Icon(Icons.Filled.Warning, null, tint = MaterialTheme.bamnat.caution, modifier = Modifier.size(18.dp).padding(end = 4.dp))
                     Text(
                         "금액을 확인해 주세요. 1억 원이 넘어요" + if (per && (draft.amount ?: 0) < HUGE_WON) " (한 번 ${won(draft.amount ?: 0)} × ${effect?.times ?: 0}번)" else "",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution,
                     )
                 }
                 if (gap != null && effect != null) {

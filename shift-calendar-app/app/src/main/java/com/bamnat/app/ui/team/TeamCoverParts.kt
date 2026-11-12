@@ -34,6 +34,7 @@ import com.bamnat.core.team.TeamCall
 import com.bamnat.core.team.TeamCover
 import com.bamnat.core.team.TeamMember
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * 1.38 [P3-X-01] 결원 메우기 ①: who could come instead, best first, with what weighs on each. The ones who break nothing are
@@ -64,7 +65,7 @@ internal fun CoverDialog(
                     Checkbox(checked = on, onCheckedChange = null)
                     Column(Modifier.weight(1f)) {
                         Text(cand.member.name + if (cand.ok) "" else " ⚠", fontWeight = FontWeight.Medium,
-                            color = if (cand.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                            color = if (cand.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 고르기 전의 걸림: 주의
                         Text((if (cand.ok) "괜찮아요" else cand.why.joinToString(" · ")) + " · 이번 달 ${cand.minutes / 60}시간" +
                             (if (cand.sameKind > 0) " · ${shift?.label ?: ""} ${cand.sameKind}번" else ""),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -103,7 +104,7 @@ internal fun CallCard(
             Text("${taken.name}님이 들어가요. 표에 넣었어요.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             // 1.39 G2 PC 5066b027 (상): the small grey line was missed; the leader's next step is said as one, in the warning colour.
             Text("남은 일: 아래 '다시 확정'을 눌러야 두 사람 링크와 달력·알람에 바뀐 근무가 들어가요.", style = MaterialTheme.typography.bodyMedium,
-                color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                color = MaterialTheme.bamnat.caution) // [RVJ-66]
             TextButton(onClick = onEnd) { Text("이 카드 닫기") }
             return@SectionCard
         }
@@ -120,7 +121,7 @@ internal fun CallCard(
             }
         }
         if (call.token == null) Text("이 휴대폰에 요청 링크 열쇠가 없어요(암호 없는 백업에서 되살림). 다시 보내 주세요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
+            color = MaterialTheme.bamnat.caution) // [RVJ-66]
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onPull, enabled = !busy && call.token != null) { Text("답 가져오기") }
             OutlinedButton(onClick = onSend, enabled = call.urls.isNotEmpty()) { Text("링크 다시 보내기") }

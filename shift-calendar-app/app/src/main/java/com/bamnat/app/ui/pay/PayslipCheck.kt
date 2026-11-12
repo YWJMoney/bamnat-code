@@ -50,6 +50,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.SlipLine
 import com.bamnat.core.pay.SlipRole
+import com.bamnat.app.ui.theme.bamnat
 
 /** [READ-18] The photo read, small; a tap shows it whole to compare line by line. In memory only. */
 @Composable
@@ -157,7 +158,8 @@ internal fun SlipCheck(
         Column(
             Modifier.fillMaxWidth()
                 // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour.
-                .then(if (doubt) Modifier.background(com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
+                // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 노란 줄은 주의 색이에요(빨강이었어요).
+                .then(if (doubt) Modifier.background(MaterialTheme.bamnat.caution.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
                 .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraSmall) else Modifier)
                 // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
                 .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }

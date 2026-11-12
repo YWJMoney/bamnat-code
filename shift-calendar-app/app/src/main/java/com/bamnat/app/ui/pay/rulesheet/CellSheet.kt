@@ -217,7 +217,8 @@ private fun EffectLine(host: RuleSheetHost, change: RuleChange?, effect: CellEff
                     effect != null -> Text(
                         (if (effect.amount >= 0) "+" else "−") + won(abs(effect.amount)) + (effect.times?.let { " · ${it}번" } ?: ""),
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                        color = if (effect.amount < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 빠지는 돈은 위험이 아니에요: − 표시와 보통 글씨.
+                        color = if (effect.amount < 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
                     )
                     host.effect == null -> Text("적용하면 급여에 들어가요", style = MaterialTheme.typography.titleSmall)
                     else -> Text("계산하는 중", style = MaterialTheme.typography.titleSmall)

@@ -83,6 +83,7 @@ import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /** A month of hours, 31일 × 24시간: more than this cannot be one month's premium. */
 private const val MAX_MONTH_MINUTES = 744 * 60
@@ -629,7 +630,7 @@ private fun ColumnScope.AmountsStage(
             Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")
         }
     }
-    if (failed) Text("맞춰 보지 못했어요. 한 번 더 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    if (failed) Text("맞춰 보지 못했어요. 한 번 더 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
 
     SectionCard(title = null) {
         Row(
@@ -844,7 +845,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             val mine = gaps.filter { it.basket == b }
             if (mine.isEmpty()) return@forEach
             Text(b.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp),
-                color = if (b == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                color = if (b == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.primary) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 회사에 물어볼 일: 주의
             mine.forEach { g ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                     Text(g.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -861,7 +862,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
                     Text("${com.bamnat.core.pay.SlipAudit.hoursText(h.slipMinutes)} · ${com.bamnat.core.pay.SlipAudit.hoursText(h.appMinutes)}",
                         style = MaterialTheme.typography.bodySmall)
                     Text(" ${h.cause.label}", style = MaterialTheme.typography.labelMedium,
-                        color = if (h.cause == com.bamnat.core.pay.SlipAudit.Cause.SAME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                        color = if (h.cause == com.bamnat.core.pay.SlipAudit.Cause.SAME) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution) // [RVJ-66]
                 }
             }
             com.bamnat.core.pay.SlipAudit.hoursVerdict(hours)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -870,7 +871,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             }
         }
         if (gaps.any { it.basket == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS } || m.belowLaw != null) {
-            Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
         }
         if (deductions.isNotEmpty()) {
             Text("공제 (명세서 · 앱 예상)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))

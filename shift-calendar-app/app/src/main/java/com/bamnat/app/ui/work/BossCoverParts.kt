@@ -43,6 +43,7 @@ import com.bamnat.core.team.TeamCover
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.bamnat
 
 private fun share(context: android.content.Context, text: String) {
     val i = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
@@ -80,7 +81,7 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                     Checkbox(checked = on, onCheckedChange = null)
                     Column(Modifier.weight(1f)) {
                         Text(cand.staff.name.ifBlank { "직원" } + (if (cand.ok) "" else " ⚠") + " · +${Fmt.won(cand.extra)}", fontWeight = FontWeight.Medium,
-                            color = if (cand.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
+                            color = if (cand.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 고르기 전의 걸림(⚠과 까닭 글): 주의
                         Text((cand.why + cand.notes).ifEmpty { listOf("괜찮아요") }.joinToString(" · ") + " · 그 주 ${cand.weekMinutes / 60}시간",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

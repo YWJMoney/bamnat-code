@@ -24,6 +24,7 @@ import com.bamnat.core.team.TeamBoard
 import com.bamnat.core.team.TeamCheck
 import com.bamnat.core.team.TeamMember
 import com.bamnat.core.team.TeamSwap
+import com.bamnat.app.ui.theme.bamnat
 
 /**
  * 1.38 [P3-X-02] 바꾸기 요청 카드: the trades both sides agreed to on top, each with what the board would say after it (checked again
@@ -51,7 +52,7 @@ internal fun SwapCard(
             Text("${Fmt.monthDay(a.date)} ${names[a.from] ?: "?"} ${label(a.from, a)} ↔ ${names[a.to] ?: "?"} ${label(a.to, a)} · 둘 다 좋대요",
                 style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             signs.forEach { Text("⚠ " + it.text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-            if (locked) Text("잠긴 칸이 있어요. 잠금을 풀어야 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            if (locked) Text("잠긴 칸이 있어요. 잠금을 풀어야 바꿀 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 위험은 규칙 줄(⚠)만
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Button(onClick = { onDecide(a, true) }, enabled = !busy && !locked) { Text("승인") }
                 TextButton(onClick = { onDecide(a, false) }, enabled = !busy) { Text("거절") }
@@ -62,7 +63,7 @@ internal fun SwapCard(
             waiting.forEach { a -> Text("${Fmt.monthDay(a.date)} ${names[a.from] ?: "?"} → ${names[a.to] ?: "?"}", style = MaterialTheme.typography.bodySmall) }
         }
         if (round.token == null) Text("이 휴대폰에 바꾸기 링크 열쇠가 없어요(암호 없는 백업에서 되살림). 새로 열어 주세요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error)
+            color = MaterialTheme.bamnat.caution) // [RVJ-66]
         Text("승인하면 표가 바로 바뀌고 팀원 링크의 바꿀 수 있는 날도 새로 맞춰요. 근무표 링크는 확정을 다시 누르면 고쳐져요.",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
