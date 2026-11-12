@@ -102,7 +102,7 @@ test("SVC-88 표본이 작거나, 연 휴대폰이 함께 줄었거나, 달마�
   assert.deepEqual(fell.map((f) => [f.event, f.name, f.now, f.before]), [["plaza_post", "광장 글쓰기", 14, 56]]);
 });
 
-test("U22c-03 신호마다 표본과 '틀릴 수 있는 까닭'이 있고, '거짓이었어요'는 그 규칙의 기준을 올려요", async () => {
+test("U22c-03 신호마다 표본과 '틀릴 수 있는 까닭'이 있고, '거짓이었어요'는 그 규칙의 기준을 올려요", async (t) => {
   const miss = (tune, n = 4) => obsRules({ tune, voice: { misses: [{ word: "교대 바꾸기", place: "settings", placeName: "설정 검색", n }] } })
     .find((f) => f.kind === "search-miss");
   assert.equal(miss({}).on, true);
@@ -119,7 +119,7 @@ test("U22c-03 신호마다 표본과 '틀릴 수 있는 까닭'이 있고, '거�
   disc: { shown: 60, tryRate: 10, offRate: 1 } });
   for (const f of all) assert.ok(f.caveat, `${f.kind} 까닭 없음`);
   // 경로: 아님 + wrong은 기준을 올리고 기록에 남고, 다시 열면 내려요.
-  const { call, DB } = server();
+  const { call, DB } = server({ t });
   const owner = await signIn(call);
   DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)").run(JSON.stringify({ list: [
     { key: "search-miss:settings:a:2026-11-20", kind: "search-miss", subject: "settings:a", title: "'a'를 찾았는데 없었어요", why: "", unit: "번", value: 3, base: 3, state: "new", first: 1, last: 1, at: 1 }] }));
@@ -132,9 +132,9 @@ test("U22c-03 신호마다 표본과 '틀릴 수 있는 까닭'이 있고, '거�
   assert.equal(back.data.tune.step, 0);
 });
 
-test("SVC-103 판 건강은 나간 판(또는 단계적 출시 중인 판)을 그 앞 판과, 같은 '나간 뒤 N일'끼리 견주고, 시험판은 빼요", async () => {
+test("SVC-103 판 건강은 나간 판(또는 단계적 출시 중인 판)을 그 앞 판과, 같은 '나간 뒤 N일'끼리 견주고, 시험판은 빼요", async (t) => {
   const { versionHealth } = await import("../src/release-desk.js");
-  const { call, DB } = server();
+  const { call, DB } = server({ t });
   await signIn(call);
   const now = Date.now();
   const kst = (ms) => new Date(ms + 9 * 3_600_000).toISOString().slice(0, 10);

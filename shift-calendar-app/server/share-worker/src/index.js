@@ -477,8 +477,10 @@ async function view(request, env, id) {
   if (!record || Date.parse(record.expiresAt) < Date.now()) {
     // 1.39 PC (SPREAD 2차): an expired link still kept says whose it was (a leader's teammate link speaks to a teammate); one
     // the sharer cut is gone, so its card speaks to anyone who keeps a schedule.
-    return html(page("링크가 없어요", `<p class="empty">이 근무표 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
-      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : "최신 근무표가 필요하면 보낸 분께 새 링크를 부탁해 주세요.", record?.schedule ? scheduleKind(record.schedule) : "schedule")}`), 404);
+    // [RVD-30] HQ-64 An expired link still kept is named as its page was (이 영업일 링크는 …).
+    const word = record?.schedule && !record.schedule.team ? linkWord(record.schedule) : "근무표";
+    return html(page("링크가 없어요", `<p class="empty">이 ${word} 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule", word)}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -2501,15 +2503,19 @@ function storeHref(kind, ua) {
     `S.browser_fallback_url=${encodeURIComponent(store)};end`;
 }
 
-const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?-->/;
+const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?(?::(영업일|일정))?-->/;
 const SPREAD_COOKIE = "bn_spread=off";
 const SPREAD_HIDE = "/spread/hide";
 /** The pages a card may go back to once closed: only this server's own receive pages, never another address. */
 const SPREAD_BACK = /^\/(s\/[A-Za-z0-9]{16,32}|[cavwkb]\/[A-Za-z0-9]{22})$/;
 
-/** Where a page leaves room for its card (filled or emptied by [spread]). */
-function spreadSlot(kind, gone = false) {
-  return SPREAD_KINDS[kind] ? `<!--spread:${kind}${gone ? ":gone" : ""}-->` : "";
+/**
+ * Where a page leaves room for its card (filled or emptied by [spread]). 2.0.0 [RVD-30] A family card also keeps the page's word
+ * (영업일·일정, linkWord), so a shop's page does not end on '가족 근무 … 이 근무표'. The store link stays the family one.
+ */
+function spreadSlot(kind, gone = false, word = null) {
+  const said = kind === "family" && (word === "영업일" || word === "일정") ? `:${word}` : "";
+  return SPREAD_KINDS[kind] ? `<!--spread:${kind}${gone ? ":gone" : ""}${said}-->` : "";
 }
 
 /**
@@ -2517,8 +2523,8 @@ function spreadSlot(kind, gone = false) {
  * same card (without "다시 누르면 앱에서 열려요", since this link will not open again). A link taken down for its content (410)
  * keeps only its own words.
  */
-function goneNext(next, kind) {
-  return (next ? `<p class="muted">${esc(next)}</p>` : "") + spreadSlot(kind, true);
+function goneNext(next, kind, word = null) {
+  return (next ? `<p class="muted">${esc(next)}</p>` : "") + spreadSlot(kind, true, word);
 }
 
 /**
@@ -2528,6 +2534,9 @@ function goneNext(next, kind) {
  */
 export const OG_TEXT = {
   family: { title: "근무표가 왔어요", line: "보낸 분의 근무를 달력으로 볼 수 있어요." },
+  // 2.0.0 [RVD-30] HQ-64 A 근무표 링크 named by what came with it (linkWord), still only the kind of page.
+  familySales: { title: "영업일이 왔어요", line: "보낸 분의 영업일을 달력으로 볼 수 있어요." },
+  familyJobs: { title: "일정이 왔어요", line: "보낸 분의 일정을 달력으로 볼 수 있어요." },
   team: { title: "확정된 근무표가 왔어요", line: "내 근무를 달력으로 확인해 주세요." },
   board: { title: "팀 전체 근무표가 왔어요", line: "이번 달 팀 근무표를 볼 수 있어요." },
   request: { title: "근무 신청 링크가 왔어요", line: "원하는 날을 골라 신청해 주세요." },
@@ -2558,15 +2567,20 @@ function appleUa(ua) {
 }
 
 /** [SPREAD-01..04] The card for [kind] as this phone should see it. */
-export function spreadCard(kind, ua, back, gone = false) {
-  const k = SPREAD_KINDS[kind];
-  if (!k) return "";
+export function spreadCard(kind, ua, back, gone = false, word = null) {
+  const base = SPREAD_KINDS[kind];
+  if (!base) return "";
+  // [RVD-30] HQ-64 A shop's 영업일 or a freelancer's 일정 is not a 가족 근무.
+  const k = kind === "family" && (word === "영업일" || word === "일정")
+    ? { ...base, title: `${word === "영업일" ? "가게 영업일" : "보낸 분의 일정"}을 내 달력 옆에서 바로`, line: base.line.replace("이 근무표를", `이 ${word}을`) }
+    : base;
   const android = /Android/i.test(ua);
   const apple = !android && appleUa(ua);
   // [SPREAD-04] Back to the link after the install: a schedule link opens in the app; the others stay pages.
   const after = gone ? "" : kind === "family" || kind === "team" ? "설치한 뒤 이 링크를 다시 누르면 앱에서 열려요." : "앱을 받은 뒤에도 이 링크는 그대로 열려요.";
   const get = android
-    ? `<a class="get" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a>${after ? `<p class="muted small">${after}</p>` : ""}`
+    // 2.0.0 [RVD-31] HQ-68 조건 2: the card is never the page's filled button (the page's own job is: 앱에서 보기, 출근, 서명…).
+    ? `<a class="get line" href="${esc(storeHref(kind, ua))}">밤낮 받기 · 무료</a>${after ? `<p class="muted small">${after}</p>` : ""}`
     // [SPREAD-03] No dead end on an iPhone: say what 밤낮 is and that this page keeps working.
     : apple ? ""
     : `<p class="muted small">밤낮은 Android 휴대폰 앱이에요. <a href="${esc(storeLink(kind))}">Play 스토어에서 보기</a></p>`;
@@ -2589,7 +2603,7 @@ async function spread(request, res) {
   const m = body.match(SPREAD_MARK);
   if (!m) return new Response(body, res);
   const closed = (request.headers.get("cookie") ?? "").split(/;\s*/).includes(SPREAD_COOKIE);
-  const card = closed ? "" : spreadCard(m[1], request.headers.get("user-agent") ?? "", spreadBack(new URL(request.url).pathname), !!m[2]);
+  const card = closed ? "" : spreadCard(m[1], request.headers.get("user-agent") ?? "", spreadBack(new URL(request.url).pathname), !!m[2], m[3] ?? null);
   return new Response(body.replace(SPREAD_MARK, card), res);
 }
 
@@ -2665,6 +2679,28 @@ export function scheduleKind(schedule) {
 }
 
 /**
+ * 2.0.0 [RVD-30] HQ-64 (총괄 A안, 앱 core linkWord와 같은 규칙): what the link is a schedule of, from what the sharer sent with it and
+ * nothing new. 매출을 함께 보낸 가게는 영업일, 일감·일감 수입을 보낸 사람은 일정, 나머지는 근무표 (가게·투자가 날짜만 보내면 근무표).
+ */
+export function linkWord(schedule) {
+  const shows = Array.isArray(schedule?.shows) ? schedule.shows : [];
+  const pay = shows.includes("pay") ? schedule.payKind ?? "pay" : null;
+  if (pay === "sales") return "영업일";
+  if (shows.includes("jobs") || pay === "jobs") return "일정";
+  return "근무표";
+}
+
+/**
+ * [RVD-30] The word with its endings (받침: 영업일이·일정이, 근무표가). [days] is what the page's days are (the 캘린더 이름, '…가 바뀔 때'),
+ * [with] heads what came along ('일정과 함께 보낸 것: 일정' would say it twice).
+ */
+const WORD_FORMS = {
+  근무표: { is: "근무표예요", subj: "근무표가", days: "근무", daysSubj: "근무가", daysTopic: "근무는", with: "근무와 함께 보낸 것", og: "family" },
+  영업일: { is: "영업일이에요", subj: "영업일이", days: "영업일", daysSubj: "영업일이", daysTopic: "영업일은", with: "영업일과 함께 보낸 것", og: "familySales" },
+  일정: { is: "일정이에요", subj: "일정이", days: "일정", daysSubj: "일정이", daysTopic: "일정은", with: "함께 보낸 것", og: "familyJobs" },
+};
+
+/**
  * Month grids for every month the days touch, weeks starting on Sunday.
  * 1.39 [IOS-02..05] [opts]: `phone` (platformOf), `feed` ("host/s/<id>.ics" when the page is served), `tired` (tiredState or null),
  * `said` (the ?t= answer of the 피곤해요 form).
@@ -2708,7 +2744,9 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
       ? `<span class="muted">${parts(t).map((p) => `<span class="nm">${esc(p.replace("-", "~"))}</span>`).join(" · ")}</span>` : ""}</li>`,
   ).join("");
   const until = new Date(Date.parse(expiresAt) + 9 * 3600 * 1000).toISOString().slice(0, 10);
-  const title = schedule.title ? `${schedule.title}의 근무표` : "근무표";
+  // [RVD-30] HQ-64 The app's words: "민지의 영업일", and without a name "받은 영업일" (what the sharer's help says the other phone shows).
+  const word = linkWord(schedule);
+  const title = schedule.title ? `${schedule.title}의 ${word}` : `받은 ${word}`;
   const payKind = Object.hasOwn(PAY_KINDS, schedule.payKind ?? "") ? schedule.payKind : "pay";
   // 1.38 PC 11차 (18): a kind ticked but with nothing in it (no day has a memo) is not listed as sent.
   const present = { jobs: (d) => d.jobs?.length, leaveKinds: (d) => d.leave, extras: (d) => d.extras?.length, memos: (d) => d.memo };
@@ -2723,12 +2761,12 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const shows = Object.keys(SHOW_NAMES).filter((k) => (schedule.shows ?? []).includes(k))
     .filter((k) => !present[k] || schedule.days.some((d) => present[k](d)))
     .flatMap((k) => (k === "pay" ? [PAY_KINDS[payKind]] : k === "memos" ? memoNames : [SHOW_NAMES[k]]));
-  const has = shows.length ? `<p class="muted">근무와 함께 보낸 것: ${esc(shows.join(", "))}</p>` : "";
+  const has = shows.length ? `<p class="muted">${WORD_FORMS[word].with}: ${esc(shows.join(", "))}</p>` : "";
   // [SHR-20] The page never shows the setup itself: only that the app takes it.
   // 1.39 [IOS-03] An iPhone has no 밤낮 app: it is told the extras are for the Android app and the days are all here.
   const extras = [schedule.setup && "회사 근무 설정", schedule.look && "테마", schedule.kit && "근무 설정"].filter(Boolean);
   const setupLine = ios
-    ? (extras.length ? `<p class="muted">${esc(extras.join("·"))}도 함께 왔어요. 이건 Android 밤낮 앱에서만 받을 수 있고, 근무는 이 페이지에서 그대로 볼 수 있어요.</p>` : "")
+    ? (extras.length ? `<p class="muted">${esc(extras.join("·"))}도 함께 왔어요. 이건 Android 밤낮 앱에서만 받을 수 있고, ${WORD_FORMS[word].daysTopic} 이 페이지에서 그대로 볼 수 있어요.</p>` : "")
     : (schedule.setup ? `<p class="muted">회사 근무 설정도 함께 보냈어요. 밤낮 앱에서 열면 기본급만 넣고 바로 쓸 수 있어요.</p>` : "") +
       // 1.37 [SHR-31][SHR-32] Like the setup, the page names what came and never shows it.
       (schedule.look || schedule.kit
@@ -2744,10 +2782,10 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
   const app = appId
     ? `<p class="app"><a href="${esc(appLink(appId, kind))}">밤낮 앱에서 보기</a><span class="muted">앱에서는 내 달력과 바꿔 가며 볼 수 있어요</span></p>`
     : "";
-  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme)}${tiredPanel(reportId, opts.tired, opts.said)}` +
+  return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme, !app)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 근무표예요. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind) + (reportId ? reportForm(reportId) : ""),
-  "근무표", kind);
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind, false, word) + (reportId ? reportForm(reportId) : ""),
+  word, kind === "family" ? WORD_FORMS[word].og : kind);
 }
 
 /**
@@ -2755,13 +2793,15 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
  * calendar. iPhone: webcal:// opens 캘린더's 구독. Anything else: Google Calendar's add-by-address page (Android, a computer).
  * It follows changes within hours; it is not an alarm, and the page says so.
  */
-export function feedButton(schedule, feed, phone, scheme = "https") {
+export function feedButton(schedule, feed, phone, scheme = "https", primary = true) {
   if (schedule.ics !== true || !feed) return "";
   const webcal = `webcal://${feed}`;
   const href = phone === "ios" ? webcal : `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcal)}`;
   const label = phone === "ios" ? "아이폰 캘린더에 넣기" : "구글 캘린더에 넣기";
-  return `<div class="panel feed"><p class="feed-t"><a class="get" href="${esc(href)}">${label}</a></p>` +
-    `<p class="muted small">한 번 넣어 두면 근무가 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. 출근 알람은 아니에요.` +
+  const word = linkWord(schedule);
+  return `<div class="panel feed"><p class="feed-t"><a class="get${primary ? "" : " line"}" href="${esc(href)}">${label}</a></p>` +
+    // [RVD-30] HQ-64 '영업일이 바뀔 때'·'일정이 바뀔 때' for a shop's or a freelancer's link.
+    `<p class="muted small">한 번 넣어 두면 ${WORD_FORMS[word].daysSubj} 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. ${word === "근무표" ? "출근 " : ""}알람은 아니에요.` +
     (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
     `</p><p class="muted small">다른 캘린더 앱: <span class="addr">${esc(scheme)}://${esc(feed)}</span></p></div>`;
 }
@@ -2801,7 +2841,9 @@ export function renderIcs(schedule, id, updatedAt) {
   const types = new Map(schedule.types.map((t) => [t.id, t]));
   const tz = schedule.tz || "Asia/Seoul";
   const stamp = icsStamp(updatedAt ? new Date(updatedAt) : new Date());
-  const name = schedule.title ? `${schedule.title}의 근무` : "밤낮 근무";
+  // [RVD-30] HQ-64 The subscribed calendar's name says the same word as the page ("민지의 영업일").
+  const days = WORD_FORMS[linkWord(schedule)].days;
+  const name = schedule.title ? `${schedule.title}의 ${days}` : `밤낮 ${days}`;
   const lines = [
     "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Bamnat//Share//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     `X-WR-CALNAME:${icsText(name)}`, `X-WR-TIMEZONE:${tz}`, "REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H",
@@ -2890,7 +2932,7 @@ function page(title, body, short = "밤낮", og = null) {
 <meta name="apple-mobile-web-app-title" content="${esc(short)}"><style>
 :root{--fg:#15192B;--muted:#5b5f73;--line:#e6e2d9;--bg:#F7F4EE;--card:#fff;--sun:#d14343;--sat:#3b5bdb;--today:#C2A36B}
 @media (prefers-color-scheme:dark){:root{--fg:#F2ECE1;--muted:#a7a9b8;--line:#2a2f45;--bg:#15192B;--card:#1d2236;--sun:#ff8787;--sat:#91a7ff}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 -apple-system,"Noto Sans KR","Apple SD Gothic Neo",sans-serif;word-break:keep-all;overflow-wrap:break-word}
 main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;margin:0 0 16px}h2{font-size:17px;margin:24px 0 8px}
 .grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.wd{text-align:center;font-size:12px;color:var(--muted);padding:4px 0}
 .cell{background:var(--card);border:1px solid var(--line);border-radius:10px;min-height:64px;padding:4px;display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -2899,8 +2941,8 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .chip{display:inline-block;min-width:24px;padding:1px 6px;border-radius:8px;color:#fff;font-weight:700;font-size:13px;text-align:center;text-shadow:0 0 2px rgba(0,0,0,.35)}
 .leave{font-size:11px;color:var(--muted);text-align:center;word-break:keep-all;overflow-wrap:anywhere}.extra{font-size:10px;line-height:1.2;color:var(--fg);background:var(--line);border-radius:6px;padding:0 4px;text-align:center}
 .job{background:#C2A36B33}.memo{font-size:10px;line-height:1.25;color:var(--muted);text-align:center;word-break:break-all;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}
-.pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li:first-child{border-top:none}
+.app{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;margin:0 0 8px}.app a{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}
+.pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li b{white-space:nowrap;margin-left:auto}.pay li:first-child{border-top:none}
 .dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
 .legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
@@ -2914,10 +2956,10 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .bad{background:var(--card);border:2px solid var(--sun);border-radius:12px;padding:12px 14px;font-weight:700}.rule{font-size:14px}.small{font-size:12px}
 .note{display:flex;flex-wrap:wrap;gap:8px}.note input{flex:1 1 10em;min-width:0;min-height:44px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg);font-size:15px}.note button{min-height:44px;padding:8px 14px;border-radius:999px;border:none;background:var(--today);color:#15192B;font-weight:700}
 .punches{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.punches li{display:flex;justify-content:space-between;padding:12px 14px;border-top:1px solid var(--line)}.punches li:first-child{border-top:none}
-.spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 48px 14px 14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700}
+.spread{position:relative;margin-top:28px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}.spread p{margin:0 0 4px}.spread .t{font-weight:700;padding-right:34px}
 .spread .x{position:absolute;top:4px;right:4px;margin:0}.spread .x button{width:44px;height:44px;border:none;background:none;color:var(--muted);font-size:22px;cursor:pointer}
-.spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.spread a{color:var(--fg)}
-.feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none}.addr{user-select:all;word-break:break-all}
+.spread .get{display:inline-block;margin:8px 0 4px;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.spread a{color:var(--fg)}
+.feed p{margin:4px 0}.feed .get{display:inline-block;padding:10px 16px;border-radius:999px;background:var(--today);color:#15192B;font-weight:700;text-decoration:none;min-height:44px;box-sizing:border-box}.get.line{background:none;color:var(--fg);border:1px solid var(--muted);padding:9px 15px}.addr{user-select:all;word-break:break-all}
 </style></head><body><main>${body}</main></body></html>`;
 }
 

@@ -1641,9 +1641,9 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
             // [LEDG-18] When the category changed, offer the other lines from this place instead.
             val same = before?.let { money.samePlace(saved, it.category) }.orEmpty()
             if (same.isNotEmpty()) {
-                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’(으)로 바꿀까요?", actionLabel = "바꾸기") {
+                _messages.tryEmit(UndoMessage("같은 곳 기록 ${same.size}건도 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 바꿀까요?", actionLabel = "바꾸기") {
                     same.forEach { money.save(com.bamnat.core.money.Ledger.recategorize(it, saved.category)) }
-                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’(으)로 옮겼어요") { money.saveAll(same) })
+                    _messages.tryEmit(UndoMessage("${same.size}건을 ‘${saved.category}’${com.bamnat.app.ui.Fmt.ro(saved.category)} 옮겼어요") { money.saveAll(same) })
                 })
                 return@launch
             }

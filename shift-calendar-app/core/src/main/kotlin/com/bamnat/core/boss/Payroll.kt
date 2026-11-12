@@ -90,6 +90,21 @@ data class Workplace(
             v > 100 -> (v - 100).coerceIn(1, 31) to false
             else -> v.coerceIn(1, 31) to true
         }
+
+        /**
+         * 2.0.0 [RVJ-31] (검토 T05-01) Whether a 리더 팀 근무표 belongs to a 5인 미만 사업장, so its 주 52시간 sign is left out the way
+         * this ledger's [BOSS-10] one is: the place tied to the team (else the boss's only place) once it has answered [fivePlus];
+         * while it has not, or with no place, what the leader's own 급여 설정 says of their workplace ([ownFiveOrMore]: null when
+         * not set up or only guessed). Not known anywhere is 5인 이상, as the ledger takes it.
+         */
+        fun teamUnderFive(teamId: String, places: List<Workplace>, ownFiveOrMore: Boolean?): Boolean {
+            val place = places.firstOrNull { it.teamId == teamId } ?: places.singleOrNull()
+            return when (place?.fivePlus) {
+                true -> false
+                false -> true
+                null -> ownFiveOrMore == false
+            }
+        }
     }
 }
 
@@ -170,6 +185,11 @@ data class StaffMember(
     val clockToken: String? = null,
     /** 1.38 [P3-X-06] 근로계약서: as sent, its sign link and the signature; null until the boss makes one. */
     val contract: StaffContract.Sent? = null,
+    /**
+     * 2.0.0 [RVJ-42] 검토 PC-104: a 월급 whose usual week is past 40시간: true when the 월급 already holds those hours (기본급 + 고정
+     * 연장근로수당, [MonthlyOvertime]), false when they are paid on top, null until the boss is asked (paid on top meanwhile).
+     */
+    val overtimeInPay: Boolean? = null,
 ) {
     fun employedOn(d: LocalDate): Boolean = (hiredOn == null || !d.isBefore(hiredOn)) && (leftOn == null || !d.isAfter(leftOn))
     fun onLeave(d: LocalDate): Boolean = leaves.any { it.covers(d) }
@@ -292,15 +312,22 @@ object PayrollLedger {
     fun youngIn(s: StaffMember, month: YearMonth?): Boolean =
         month != null && s.birth != null && month.atDay(1).isBefore(s.birth.plusYears(18))
 
-    fun profile(place: Workplace, s: StaffMember, month: YearMonth? = null): PayProfile = PayProfile(
+    /** [RVJ-42] The 월급 split into 기본급 and 고정 연장근로수당, when the boss said it holds the usual hours past 40. */
+    fun inPay(place: Workplace, s: StaffMember): MonthlyOvertime.Split? = if (s.overtimeInPay == true) MonthlyOvertime.of(place, s) else null
+
+    fun profile(place: Workplace, s: StaffMember, month: YearMonth? = null): PayProfile = inPay(place, s).let { split -> PayProfile(
         occupation = Occupation.PART_TIME,
         wageType = when (s.form) { WageForm.HOUR -> WageType.HOURLY; WageForm.MONTH -> WageType.MONTHLY; WageForm.DAY -> WageType.DAILY },
         // 1.38 PC 8차: dated from the hire day, a 월급 joined on 11/20 read 0원 for November (the month asks the value on the 1st).
-        base = ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), s.base))),
+        base = ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), split?.base ?: s.base))),
         items = s.allowances.mapIndexed { i, a ->
             PayItem("staff-$i", a.name, ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), a.amount))),
                 if (a.perDay) Cadence.PER_WORK_DAY else Cadence.MONTHLY, taxable = !a.taxFree)
-        },
+        } + listOfNotNull(split?.let {
+            // [RVJ-42] 고정 연장근로수당: covers the usual 연장 a month; a month with more pays the difference (2008다6052).
+            PayItem("staff-fixed-ot", FIXED_OT, ValueTimeline(listOf(DatedValue(LocalDate.of(2000, 1, 1), it.fixed))), Cadence.MONTHLY,
+                fixedOvertimeMinutes = it.monthOverMinutes)
+        }),
         // [RVJ-12] 단시간 월급 (주 20시간 → 104시간) and an 일급 for 6 hours: 통상시급 and the 최저임금 check use their own hours.
         monthlyHours = if (s.form == WageForm.MONTH) monthlyHours(place, s) else 209,
         dailyHours = if (s.form == WageForm.DAY) dailyMinutes(place, s) else 8 * 60,
@@ -318,7 +345,10 @@ object PayrollLedger {
         weekStart = place.weekStart,
         legalBreaks = place.legalBreaks,
         rules = CompanyRules(weeklyHolidayPay = s.weeklyHolidayPay),
-    )
+    ) }
+
+    /** [RVJ-42] The 명세서·대장 name of the part of a 월급 that pays the usual hours past 40. */
+    const val FIXED_OT = "고정 연장근로수당"
 
     /** [Workplace.minuteUnit]: [end] moved later so start → end is a whole number of units (never earlier). */
     fun roundUp(start: LocalTime?, end: LocalTime?, unit: Int): LocalTime? {
@@ -492,7 +522,8 @@ object PayrollLedger {
             // 2.0.0 [RVJ-12] 검토 PAYC-07: 일급 ÷ that day's 소정근로, not always 8시간 (최저임금법 시행령 제5조 제1항 제2호).
             WageForm.DAY -> s.base * 60 / dailyMinutes(place, s)
             // 월급 ÷ 월 소정근로시간 (주 40시간이면 209시간, 주휴 포함), 최저임금법 시행령 제5조 제1항 제3호. [RVJ-12] 단시간은 그 사람 시간으로.
-            WageForm.MONTH -> s.base / monthlyHours(place, s)
+            // [RVJ-42] A 월급 that holds the usual 연장: its 기본급 (연장근로수당은 최저임금에 넣지 않아요, 최저임금법 제6조 제4항).
+            WageForm.MONTH -> (inPay(place, s)?.base ?: s.base) / monthlyHours(place, s)
         }
         if (hourly in 1 until minimum) add(LedgerWarning("min", "최저임금보다 적어요",
             "시간당 ${"%,d".format(hourly)}원으로 ${l.month.year}년 최저임금 ${"%,d".format(minimum)}원보다 적어요(최저임금법 제6조). 수습 3개월 감액은 1년 이상 계약·단순 노무가 아닐 때만이에요."))
@@ -506,6 +537,9 @@ object PayrollLedger {
             add(LedgerWarning("week52", "주 52시간을 넘은 주가 있어요", "${w.size}주가 한 주 52시간(근로기준법 제53조)을 넘었어요. 근무를 나눠 주세요."))
         }
         if (noWork) add(LedgerWarning("empty", "근무가 없어요", "이번 달 일한 날이 없어요. 평소 근무 요일·시간을 넣거나 근무를 고쳐 주세요."))
+        // [RVJ-42] 검토 PC-104: asked once, in the 직원 정보; until then the hours past 40 are paid on top and the line says so.
+        if (s.overtimeInPay == null) MonthlyOvertime.of(place, s)?.let { sp -> add(LedgerWarning("monthly-ot", "40시간 넘는 몫 정하기",
+            MonthlyOvertime.ask(sp) + " 지금은 더 줘서 한 달 약 ${"%,d".format(sp.onTop)}원을 더했어요. 직원 정보에서 골라요.")) }
         l.pay?.warnings.orEmpty().take(2).forEachIndexed { i, w -> add(LedgerWarning("engine-$i", "확인 필요", w)) }
     }
 

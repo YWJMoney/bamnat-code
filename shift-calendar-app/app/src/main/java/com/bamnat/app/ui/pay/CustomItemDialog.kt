@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.appContainer
@@ -479,8 +480,12 @@ internal fun CustomItemDialog(
     gap: Long? = null,
     startKind: ItemKind? = null,
     oneWindow: Boolean = false,
-) = CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf,
-    oneWindow = oneWindow, allowUnknownAmount = oneWindow)
+) {
+    // 2.0.0 [RVJ-32] PC-80: with a closed month on screen the bar says the month the item lands in (a payslip's gap stays its month).
+    val closed by vm.closed.collectAsStateWithLifecycle()
+    CustomItemDialog(profile, snapshot, month, onDismiss, onSave, editing, gap, startKind, effectOf = vm::effectOf,
+        oneWindow = oneWindow, allowUnknownAmount = oneWindow, landsIn = if (gap == null) landsIn(month, closed.keys) else month)
+}
 
 /**
  * [ITEM-06][FIN130-08] Whether calendar [calendar]'s pay comes from a company's way (광장): its pay way in use, or a coworkers'
@@ -525,6 +530,8 @@ internal fun CustomItemDialog(
     oneWindow: Boolean = false,
     /** [PAYX-50] A 사람마다 매달·일한 날마다 수당 can go in with no amount, as 금액 모름 (the old '수당 추가' window let it). */
     allowUnknownAmount: Boolean = false,
+    /** 2.0.0 [RVJ-32] PC-80: the month the bar works out and names: [month], or the first open month after it when [month] is closed. */
+    landsIn: YearMonth = month,
 ) {
     val id = remember { editing?.id ?: editingItem?.id ?: ("rule-" + System.currentTimeMillis().toString(36)) }  // real clock: an id, not a time
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -551,7 +558,7 @@ internal fun CustomItemDialog(
     val made = if (allowUnknownAmount) draft.madeOrAsked(start) else draft.made(start)
     val probe = draft.made(start, probe = true)
     val full = !isEdit && probe is MadeItem.Rule && base.customRules.size >= CustomRule.MAX
-    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, month, it) } }
+    val effect by produceState<ItemEffect?>(null, probe, base) { value = probe?.let { effectOf(base, snapshot, landsIn, it) } }
     val real = if (made != null && draft.made(start) != null && effect != null) effect else null
     val huge = rememberHugeCheck()
     // [PAYX-50] One window has no list of kinds to go back to.
@@ -573,7 +580,8 @@ internal fun CustomItemDialog(
                 },
                 bottomBar = {
                     if (draft.kind != null) {
-                        EffectBar(month, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
+                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
+                            shut = month.takeIf { it != landsIn },
                             label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
                             unknown = made != null && draft.made(start) == null,
                             // [PAYX-53] 1.38 PC 12.4.1: a name is asked once, on the first 추가 with none.
@@ -1025,6 +1033,8 @@ private fun EffectBar(
     unknown: Boolean = false,
     /** [PAYX-53] The name it gets when none is typed, said over the button once a name was asked. */
     askName: String? = null,
+    /** 2.0.0 [RVJ-32] PC-80: the closed month on screen; [month] is then the first open month after it. */
+    shut: YearMonth? = null,
     onSave: () -> Unit,
 ) {
     // [PAYX-53] 1.38 PC 12.4.1: an amount past 1억 (or a month that comes to it) is said here too, not only in the question.
@@ -1036,7 +1046,10 @@ private fun EffectBar(
             Column(Modifier.semantics(mergeDescendants = true) {}) {
                 // 1.39 [PAYX-56] PC a483ca15 사용성: a 세후 공제 is '실수령 −50,000원', not '급여에 +0원'.
                 val takeHomeOnly = effect != null && effect.amount == 0L && effect.afterTax != 0L
-                Text("${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else "급여에"}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVJ-32] PC-80: "10월은 마감돼 그대로예요 · 11월 급여부터", not '10월 급여에' for a month that stays as closed.
+                Text((shut?.let { "${it.monthValue}월은 마감돼 그대로예요 · " } ?: "") +
+                    "${month.monthValue}월 ${if (takeHomeOnly) "실수령에서" else if (shut != null) "급여부터" else "급여에"}",
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
                     takeHomeOnly -> Text("−" + won(abs(effect!!.afterTax)) + " (세금 뗀 뒤 빼요)",
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.error)
@@ -1046,7 +1059,9 @@ private fun EffectBar(
                         color = if (effect.amount < 0 || huge) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                     )
                     timesOnly != null && per -> Text(
-                        if (timesOnly == 0) "이번 달엔 맞는 근무가 없어요" else "이번 달 ${timesOnly}번 해당돼요. 금액을 넣어 주세요",
+                        (if (shut != null) "${month.monthValue}월" else "이번 달").let { m ->
+                            if (timesOnly == 0) "${m}엔 맞는 근무가 없어요" else "$m ${timesOnly}번 해당돼요. 금액을 넣어 주세요"
+                        },
                         style = MaterialTheme.typography.titleSmall,
                     )
                     unknown -> Text("금액 모름으로 넣어요. 합계에서 빼고 금액을 넣어 달라고 알려 드려요", style = MaterialTheme.typography.titleSmall)
@@ -1080,7 +1095,8 @@ private fun EffectBar(
                 }
             }
             if (askName != null) Text(
-                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 비운 채 ‘$label’을 누르면 ‘$askName’(으)로 넣어요",
+                // 2.0.0 [RVJ-33] PC-84: "‘추가’을 … ‘매달 수당 1’(으)로" with the particles worked out.
+                "이름을 넣으면 명세서와 맞춰 보기 쉬워요. 이름을 비우면 ‘$askName’${com.bamnat.app.ui.Fmt.ro(askName)} 넣어요",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary,
             )
             Button(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(label) }

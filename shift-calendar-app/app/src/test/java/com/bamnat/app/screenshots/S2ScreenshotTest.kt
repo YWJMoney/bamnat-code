@@ -8,6 +8,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
@@ -75,6 +79,59 @@ class S2ScreenshotTest : ScreenshotBase() {
         settle()
         if (!appears("첫 줄을")) "스튜디오 아래에 '첫 줄을 …dp 내려요' 줄이 없어요"
         else { tapText("달력 머리·요일 줄이 첫 줄을", prefix = true); settle(); null }
+    }
+
+    /**
+     * RVS-16 (총괄 #495 사진 검토, 조건 12): the same screen at 글자 200% on the folded phone, light and dark. No word stands letter by
+     * letter (‘바 / 탕 / 색’), the bar's title is not cut, the open tool's chip shows whole beside ‘펼치기’, and the colour line's note is
+     * one line with ⓘ.
+     */
+    @Test fun thePartBarFitsBigTextFolded() {
+        val misses = ArrayList<String>()
+        for (dark in listOf(false, true)) {
+            val n = "s2/rvs16_part_bar_${lookName(dark, 2f, FOLDED)}"
+            shoot(n, if (dark) night(FOLDED) else FOLDED, 2f) {
+                runBlocking {
+                    c.recipes.apply(bigHead, "HEAD2345", 1, PersonalCalendar.MAIN, bigHead.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }, emptyMap())
+                }
+                settle()
+                tapText("도구")
+                tapText("카드 배치", exact = true)
+                settle()
+                tapText("달력 머리·요일 줄이 첫 줄을", prefix = true)
+                settle()
+                bigTextMisses(nodes(merged = false), nodes(merged = true)).forEach { misses += "$n: $it" }
+            }
+        }
+        assertTrue(misses.joinToString("\n"), misses.isEmpty())
+    }
+
+    private fun textOf(node: SemanticsNode): String? =
+        node.config.getOrNull(SemanticsProperties.Text)?.joinToString("") { it.text }?.takeIf { it.isNotBlank() }
+
+    /** What breaks at big text: a word standing (taller than twice its width), the bar's title cut, the open tool's chip cut, no ⓘ. */
+    private fun bigTextMisses(all: List<SemanticsNode>, merged: List<SemanticsNode>): List<String> {
+        val out = ArrayList<String>()
+        for (node in all) {
+            val t = textOf(node) ?: continue
+            // Standing: as many lines as letters (‘바 / 탕 / 색’), read off the text's own layout.
+            val chars = t.replace(" ", "").length
+            if (chars < 3) continue
+            val layouts = ArrayList<androidx.compose.ui.text.TextLayoutResult>()
+            node.config.getOrNull(SemanticsActions.GetTextLayoutResult)?.action?.invoke(layouts)
+            val lines = layouts.firstOrNull()?.lineCount ?: continue
+            if (lines >= 3 && lines * 2 > chars) out += "‘$t’ 글자가 세로로 섰어요 (${lines}줄)"
+        }
+        val title = all.firstOrNull { it.config.getOrNull(SemanticsActions.OnClick)?.label == "시작할 모양 바꾸기" }
+        if (title == null) out += "위 막대 제목이 없어요"
+        else (listOf(title) + title.children).forEach { n ->
+            if (n.boundsInRoot.height + 2 < n.size.height) out += "위 막대 ‘${textOf(n) ?: "제목"}’의 아래가 잘렸어요 (${n.boundsInRoot.height.toInt()}/${n.size.height}px)"
+        }
+        val chip = merged.firstOrNull { textOf(it) == "바탕색" && it.config.getOrNull(SemanticsProperties.Selected) == true }
+        if (chip == null) out += "고른 ‘바탕색’ 칩이 없어요"
+        else if (chip.boundsInRoot.width + 2 < chip.size.width) out += "고른 ‘바탕색’ 칩이 잘렸어요 (${chip.boundsInRoot.width.toInt()}/${chip.size.width}px)"
+        if (all.none { it.config.getOrNull(SemanticsProperties.ContentDescription)?.any { d -> d == "설명 보기" } == true }) out += "색 줄 설명에 ⓘ가 없어요"
+        return out
     }
 
     /** RVS-10: a 가게 sees its own days in 어떤 때 (영업일·휴무), not 주간·야간·연차. */

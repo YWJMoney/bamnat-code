@@ -149,8 +149,9 @@ class TeamL2L3Test {
         assertTrue("나이트 고르게: ${best.spread}", best.spread <= 3)
         assertTrue(plans.size >= 2)
         assertEquals(plans.size, plans.map { listOf(it.shortPeople, it.short.size, it.hourSpread, it.spread, it.maxRun) }.distinct().size)
-        // 평균 주 51시간이 필요한 인원: 빠듯함을 미리 알려요.
-        assertEquals(51.3, TeamAuto.weekHoursNeeded(t, board), 0.1)
+        // 평균으로 필요한 시간: 빠듯함을 미리 알려요. 2.0.0 [RVJ-29] 휴게 1시간씩을 뺀 일한 시간(10시간 × 4자리 × 7일 ÷ 6명)이에요.
+        // 전에는 시계 시간 11시간으로 세어 51.3시간이라고 했어요.
+        assertEquals(46.7, TeamAuto.weekHoursNeeded(t, board), 0.1)
     }
 }
 

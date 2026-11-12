@@ -781,7 +781,7 @@ export async function inviteSettingsRoute(request, env, method, now) {
  * the rules, and the codes most friends came by. One trip, so the screen stays at three (ADMIN-16).
  */
 export async function rewardCounts(env, withInvites, now) {
-  const [rewardRows, counts, refused, top, codes, setRows, bursts, kinds, policy] = (await batch(env, [
+  const [rewardRows, counts, refused, top, codes, setRows, bursts, kinds, policy, paidBy] = (await batch(env, [
     stmt(env, "SELECT status, COUNT(*) AS n FROM rewards GROUP BY status"),
     stmt(env, "SELECT status, COUNT(*) AS n FROM invite_uses GROUP BY status"),
     stmt(env, "SELECT detail, COUNT(*) AS n FROM audit WHERE action = 'invite_refused' AND at > ? GROUP BY detail", now - 30 * DAY),
@@ -796,11 +796,16 @@ export async function rewardCounts(env, withInvites, now) {
       ELSE 'rule' END AS k, COUNT(*) AS n FROM rewards WHERE status = 'owed' GROUP BY 1`),
     // 2.0.0 [RVD-21] whether the 1년 12개월 counts yet, in the same trip.
     stmt(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"),
+    // 2.0.0 [RVA-26] 통합 2차 PC Q31: 조건을 채운 친구가 묶인 보상이 아직 확인 전인지(드릴 보상)·취소인지. 묶음 번호가 보상 번호예요.
+    stmt(env, `SELECT r.status AS s, COUNT(*) AS n FROM invite_uses u JOIN rewards r ON r.id = u.batch
+      WHERE u.status = 'credited' AND r.status IN ('owed', 'void') GROUP BY r.status`),
   ])).map((r) => r.results ?? []);
   const year = capOn(rewardCapFromPolicy(policy[0]?.value), now);
   const n = (s) => counts.find((c) => c.status === s)?.n ?? 0;
   return [rewardRows, withInvites ? {
     codes: codes[0]?.n ?? 0, credited: n("credited"), capped: n("capped"), qualified: n("qualified"), waiting: n("waiting"),
+    // [RVA-26] credited 가운데 지급 전(owed)·취소(void). 나머지는 지급했거나 확인 단계가 생기기 전(1.39까지)에 바로 준 것.
+    owed: paidBy.find((x) => x.s === "owed")?.n ?? 0, voided: paidBy.find((x) => x.s === "void")?.n ?? 0,
     expired: n("expired"), rules: { ...readInviteSettings(setRows), yearCap: year.cap, yearCapFrom: year.from },
     refused: Object.fromEntries(refused.map((r) => [r.detail, r.n])),
     top: top.map((t) => ({ code: t.code, friends: t.friends, counted: t.counted ?? 0, waiting: t.waiting ?? 0 })),

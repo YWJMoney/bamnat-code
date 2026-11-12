@@ -24,7 +24,8 @@ object TypeWords {
         WorkStyle.DAY -> ROTA + NIGHT
         WorkStyle.HOURLY -> ROTA + NIGHT + listOf("52시간", "대근", "근무·급여")
         WorkStyle.FIELD -> ROTA + NIGHT + EMPLOYEE
-        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날")
+        // [RVJ-44] 검토 PC-106: a shop's 사장님 has no '회사 규칙' (the 급여 대장 said '회사 규칙에 넣지 않은 … 가산').
+        WorkStyle.BUSINESS -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "쉬는 날", "회사 규칙")
         WorkStyle.INVEST -> ROTA + NIGHT + EMPLOYEE + listOf("출근", "연속 근무", "야간", "근무", "명세서", "급여", "회사")
     }
 
@@ -37,6 +38,8 @@ object TypeWords {
             "직원 급여", "가게 급여", "급여 대장", "직원 근무표", "직원 연차", "직원 출근", "알바 출근", "매달 쉬는 날",
             // 2.0.0 [RVH-41] A boss's staff pay and the staff's schedule (직원 인건비 › 근무표 짜기).
             "주휴수당", "주휴·연장·야간", "근무표 짜기",
+            // [RVJ-44] The 직원 급여's 야간 가산 (근로기준법 제56조 제3항) is the 사장님's to pay, as 직원 연차 is; the 광장's name stays.
+            "회사 규칙 광장", "야간·휴일 가산", "야간 가산",
         )
         WorkStyle.INVEST -> listOf("회사 규칙 광장", "회사 정보")
         else -> emptyList()

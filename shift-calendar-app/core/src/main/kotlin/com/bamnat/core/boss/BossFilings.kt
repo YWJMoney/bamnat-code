@@ -18,6 +18,16 @@ object BossFilings {
         /** [RVJ-14] 일용근로소득 지급명세서 (매월, 다음 달 말일)와 고용·산재 근로내용확인신고 (다음 달 15일). */
         DAILY_STATEMENT }
 
+    /**
+     * 2.0.0 [RVJ-38] (검토 PC-100) The people a past month's line leaves out because they have no 입사일 (the ledger counts them as
+     * always employed, so someone added today would land in last month's 신고), and what the line would come to with them in.
+     */
+    data class Missing(val staffIds: List<String>, val names: List<String>, val amount: Long? = null) {
+        /** One line said right by the amount: who is left out, and what putting the 입사일 in would make it. */
+        fun line(shown: Long?): String = "입사일 없는 ${names.joinToString(", ")}님 빼고예요 · 그 달에 일했으면 입사일을 넣어요" +
+            (amount?.takeIf { it != (shown ?: 0L) && it > 0 }?.let { "(넣으면 ${"%,d원".format(it)})" } ?: "")
+    }
+
     data class Due(
         val date: LocalDate,
         val kind: Kind,
@@ -29,6 +39,10 @@ object BossFilings {
         val where: String = "",
         /** For a 했어요 tick: stays the same for the same duty. */
         val key: String,
+        /** [RVJ-38] Who a past month's line leaves out for want of an 입사일. */
+        val missing: Missing? = null,
+        /** [RVJ-38] The month worked that the line is about (the 원천세 표 is made for it). */
+        val worked: YearMonth? = null,
     ) {
         fun daysFrom(today: LocalDate): Long = ChronoUnit.DAYS.between(today, date)
     }
@@ -83,59 +97,66 @@ object BossFilings {
             val bizDue = YearMonth.from(paid).plusMonths(1).atEndOfMonth()
             val taxDay = deadline(taxDue)
             val bizDay = deadline(bizDue)
-            // [RVJ-14] 근로소득 간이지급명세서: 2026년 지급분까지 상반기분 7월 말일·하반기분 이듬해 1월 말일, 2027년 지급분부터 지급한 달의
-            // 다음 달 말일 (소득세법 제164조의3, 법률 제19196호 부칙으로 2027-01-01까지 미룸: 2025 세제개편, 세무 언론 확인 · 법 원문 확인 필요).
-            val briefDue = if (paid.year >= 2027) bizDue
-                else if (paid.monthValue <= 6) LocalDate.of(paid.year, 7, 31) else LocalDate.of(paid.year + 1, 1, 31)
-            val briefDay = deadline(briefDue)
-            val half = paid.year < 2027
-            if (!inside(paid) && !inside(taxDay) && !inside(bizDay) && !(inside(briefDay) && (!half || paid.monthValue == 6 || paid.monthValue == 12))) continue
+            // [RVJ-14] 근로소득 간이지급명세서: 2027년 지급분부터 지급한 달의 다음 달 말일(매달). 2026년 지급분까지의 반기분은 아래
+            // [halfBriefs]에서 직원 줄로 봐요. 출처는 [halfBriefs].
+            val monthly = paid.year >= 2027
+            if (!inside(paid) && !inside(taxDay) && !inside(bizDay)) continue
             // PC 10차(중): a staff member with no 입사일 counts as always employed in the ledger; a month before this one is not
             // filed for them (they may have just been added), and the card asks for the date instead.
             val full = ledgerOf(worked)
-            val ledger = if (worked < YearMonth.from(today)) full.copy(lines = full.lines.filter { it.staff.hiredOn != null }) else full
+            val ledger = filed(full, worked, today)
             val lines = ledger.lines.filter { it.gross > 0 }
-            if (lines.isEmpty()) continue
+            val fullLines = full.lines.filter { it.gross > 0 }
+            // [RVJ-38] (검토 PC-100) A month whose only paid people have no 입사일 still has its lines, said as left out: the 신고 is not
+            // hidden by a missing date.
+            if (fullLines.isEmpty()) continue
             val w = withheld(place, ledger)
-            // 1.39 G2 PC ef175fbf: the amount without the people left out read as a wrong sum; say right under it who is not in it.
-            val left = full.lines.filter { it.gross > 0 && it.staff.id !in lines.map { l -> l.staff.id } }.map { it.staff.name.ifBlank { "이름 없음" } }
-            val only = if (left.isEmpty()) "" else "입사일을 넣은 ${lines.size}명만이에요(${left.joinToString(", ")} 빠짐, 입사일을 넣으면 더해져요). "
+            val wFull = withheld(place, full)
+            // 1.39 G2 PC ef175fbf · [RVJ-38]: the amount without the people left out read as a wrong sum; each line says right by its amount
+            // who is not in it and what it comes to with them.
+            val leftLines = fullLines.filter { l -> lines.none { it.staff.id == l.staff.id } }
+            fun missing(of: (LedgerLine) -> Boolean, amount: Long?): Missing? =
+                leftLines.filter(of).takeIf { it.isNotEmpty() }?.let { m -> Missing(m.map { it.staff.id }, m.map { it.staff.name.ifBlank { "이름 없음" } }, amount) }
+            // [RVJ-39] (검토 PC-101) Which month's work a 지급분 is, when it is not the month it was paid.
+            val span = "${YearMonth.from(paid).monthValue}월 지급분" + if (YearMonth.from(paid) != worked) " · ${worked.monthValue}월 일한 몫" else ""
             // [RVJ-09] 검토 BOSS-57: the pay day stays; on a day off it says the usual earlier day.
             val early = place.payDateWorkday(worked)?.takeIf { it != paid }
                 ?.let { " 지급일이 ${weekday[paid.dayOfWeek.value - 1]}요일${if (paid.dayOfWeek.value < 6) "(공휴일)" else ""}이에요. 보통 ${day(it)}(${weekday[it.dayOfWeek.value - 1]})에 미리 줘요." }.orEmpty()
             if (place.payDate(worked) != null && inside(paid)) out += Due(paid, Kind.PAY, "${worked.monthValue}월분 급여 지급",
-                only + "${lines.size}명 · 세전 ${won(ledger.gross)}. 명세서도 같이 줘요(근로기준법 제48조).$early", ledger.gross, lines.map { it.staff.id },
-                "급여 대장", "pay:${place.id}:$worked")
+                (if (lines.isEmpty()) "" else "${lines.size}명 · 세전 ${won(ledger.gross)}. ") + "명세서도 같이 줘요(근로기준법 제48조).$early", ledger.gross, lines.map { it.staff.id },
+                "급여 대장", "pay:${place.id}:$worked", missing({ true }, full.gross), worked)
             val tax = w.sumOf { it.tax }
             val local = w.sumOf { it.local }
-            if (inside(taxDay) && (tax > 0 || local > 0 || w.isNotEmpty())) out += Due(taxDay, Kind.WITHHOLD, "원천세 신고·납부 (${YearMonth.from(paid).monthValue}월 지급분)",
-                "소득세 ${won(tax)} · 지방소득세 ${won(local)}" + (if (tax == 0L) ". 떼지 않은 달도 지급한 사람이 있으면 신고는 해요" else "") +
-                    ". 반기별 납부를 승인받았으면 7월·1월 10일에 모아서 해요." + moved(taxDue), tax + local, w.map { it.staff.id },
-                "홈택스(소득세) · 위택스(지방소득세)", "withhold:${place.id}:${YearMonth.from(paid)}")
+            if (inside(taxDay) && wFull.isNotEmpty()) out += Due(taxDay, Kind.WITHHOLD, "원천세 신고·납부 ($span)",
+                (if (w.isEmpty()) "" else "소득세 ${won(tax)} · 지방소득세 ${won(local)}" + (if (tax == 0L) ". 떼지 않은 달도 지급한 사람이 있으면 신고는 해요" else "") + ". ") +
+                    "반기별 납부를 승인받았으면 7월·1월 10일에 모아서 해요." + moved(taxDue), tax + local, w.map { it.staff.id },
+                "홈택스(소득세) · 위택스(지방소득세)", "withhold:${place.id}:${YearMonth.from(paid)}",
+                missing({ true }, wFull.sumOf { it.tax + it.local }), worked)
             val biz = w.filter { it.biz }
-            if (biz.isNotEmpty() && inside(bizDay)) out += Due(bizDay, Kind.BIZ_STATEMENT, "사업소득 간이지급명세서 (${YearMonth.from(paid).monthValue}월 지급분)",
-                "3.3% 떼고 준 ${biz.size}명, 지급 ${won(biz.sumOf { it.gross })}" + moved(bizDue) + ". 3.3%로 주는 분은 4대보험 신고가 없어요", biz.sumOf { it.gross }, biz.map { it.staff.id }, "홈택스",
-                "bizst:${place.id}:${YearMonth.from(paid)}")
-            // [RVJ-14] 검토 BOSS-58: 근로소득 (간이세액표) 직원의 간이지급명세서.
+            val bizFull = wFull.filter { it.biz }
+            if (bizFull.isNotEmpty() && inside(bizDay)) out += Due(bizDay, Kind.BIZ_STATEMENT, "사업소득 간이지급명세서 ($span)",
+                (if (biz.isEmpty()) "" else "3.3% 떼고 준 ${biz.size}명, 지급 ${won(biz.sumOf { it.gross })}. ") + "3.3%로 주는 분은 4대보험 신고가 없어요" + moved(bizDue) + ".", biz.sumOf { it.gross }, biz.map { it.staff.id }, "홈택스",
+                "bizst:${place.id}:${YearMonth.from(paid)}", missing({ it.staff.insurance.tax == StaffTax.BIZ }, bizFull.sumOf { it.gross }), worked)
+            // [RVJ-14] 검토 BOSS-58: 근로소득 (간이세액표) 직원의 간이지급명세서, 2027년 지급분부터 매달.
             val wageLines = lines.filter { it.staff.insurance.tax == StaffTax.WAGE }
-            if (wageLines.isNotEmpty() && inside(briefDay) && (!half || paid.monthValue == 6 || paid.monthValue == 12)) {
-                val span = if (half) (if (paid.monthValue <= 6) "${paid.year}년 상반기(1~6월 지급분)" else "${paid.year}년 하반기(7~12월 지급분)")
-                    else "${YearMonth.from(paid).monthValue}월 지급분"
-                out += Due(briefDay, Kind.WAGE_BRIEF, "근로소득 간이지급명세서 ($span)",
-                    "근로소득으로 준 ${wageLines.size}명" + (if (half) ". 2027년 지급분부터는 매달 내요(20명 이하 사업장은 2028년까지 반기에 내도 가산세 없음)" else "") +
-                        moved(briefDue) + ".", null, wageLines.map { it.staff.id }, "홈택스", "wagebrief:${place.id}:${if (half) "${paid.year}-H${if (paid.monthValue <= 6) 1 else 2}" else YearMonth.from(paid).toString()}")
-            }
+            val wageMissing = missing({ it.staff.insurance.tax == StaffTax.WAGE }, null)
+            if (monthly && (wageLines.isNotEmpty() || wageMissing != null) && inside(bizDay)) out += Due(bizDay, Kind.WAGE_BRIEF, "근로소득 간이지급명세서 ($span)",
+                listOfNotNull(if (wageLines.isEmpty()) "근로소득으로 준 돈을 내요" else "근로소득으로 준 ${wageLines.size}명",
+                    "2027년 지급분은 반기 기한(7월·1월 말일)까지 내도 가산세가 없어요".takeIf { paid.year == 2027 }).joinToString(". ") + moved(bizDue) + ".", null, wageLines.map { it.staff.id }, "홈택스", "wagebrief:${place.id}:${YearMonth.from(paid)}", wageMissing, worked)
             // [RVJ-14] 일용근로자: 일용근로소득 지급명세서 (지급한 달의 다음 달 말일, 소득세법 제164조 제1항) and 고용·산재 근로내용확인신고
             // (일한 달의 다음 달 15일, 고용보험 및 산업재해보상보험의 보험료징수 등에 관한 법률 제16조의10·시행령 제19조의7).
-            val daily = lines.filter { it.staff.insurance.tax == StaffTax.DAILY }
-            if (daily.isNotEmpty() && inside(bizDay)) out += Due(bizDay, Kind.DAILY_STATEMENT, "일용근로소득 지급명세서 (${YearMonth.from(paid).monthValue}월 지급분)",
-                "일용으로 준 ${daily.size}명, 지급 ${won(daily.sumOf { it.gross })}" + moved(bizDue) + ".", daily.sumOf { it.gross }, daily.map { it.staff.id }, "홈택스",
-                "dailyst:${place.id}:${YearMonth.from(paid)}")
+            val isDaily = { l: LedgerLine -> l.staff.insurance.tax == StaffTax.DAILY }
+            val daily = lines.filter(isDaily)
+            val dailyFull = fullLines.filter(isDaily)
+            if (dailyFull.isNotEmpty() && inside(bizDay)) out += Due(bizDay, Kind.DAILY_STATEMENT, "일용근로소득 지급명세서 ($span)",
+                (if (daily.isEmpty()) "일용근로자에게 준 돈을 내요" else "일용으로 준 ${daily.size}명, 지급 ${won(daily.sumOf { it.gross })}") + moved(bizDue) + ".", daily.sumOf { it.gross }, daily.map { it.staff.id }, "홈택스",
+                "dailyst:${place.id}:${YearMonth.from(paid)}", missing(isDaily, dailyFull.sumOf { it.gross }), worked)
             val reportDue = worked.plusMonths(1).atDay(15)
-            if (daily.isNotEmpty() && inside(deadline(reportDue))) out += Due(deadline(reportDue), Kind.DAILY_STATEMENT, "근로내용확인신고 (${worked.monthValue}월 일한 일용직)",
-                "고용·산재보험 일용 ${daily.size}명, 일한 날과 받은 돈을 내요. 지급명세서와 같이 내면 한 번에 끝나요" + moved(reportDue) + ".", null, daily.map { it.staff.id },
-                "근로복지공단 고용·산재 토탈서비스", "dailyreport:${place.id}:$worked")
+            if (dailyFull.isNotEmpty() && inside(deadline(reportDue))) out += Due(deadline(reportDue), Kind.DAILY_STATEMENT, "근로내용확인신고 (${worked.monthValue}월 일한 일용직)",
+                "고용·산재보험 일용" + (if (daily.isEmpty()) "" else " ${daily.size}명") + ", 일한 날과 받은 돈을 내요. 지급명세서와 같이 내면 한 번에 끝나요" + moved(reportDue) + ".", null, daily.map { it.staff.id },
+                "근로복지공단 고용·산재 토탈서비스", "dailyreport:${place.id}:$worked", missing(isDaily, null), worked)
         }
+        out += halfBriefs(place, staff, ::inside)
         // 근로소득 지급명세서: last year's 근로소득, 3월 10일.
         val marchDue = LocalDate.of(today.year, 3, 10)
         val march = deadline(marchDue)
@@ -188,6 +209,45 @@ object BossFilings {
             }
         }
         return out.sortedWith(compareBy({ it.date }, { it.kind.ordinal }))
+    }
+
+    /**
+     * [RVJ-38] The ledger a month's 신고 is worked out from: a month before this one leaves out those with no 입사일 (PC 10차: someone
+     * added today is not in last month's 원천세), this month and later count everyone as the ledger does. The card and its 원천세 표 both
+     * use it, so the two agree.
+     */
+    fun filed(full: Ledger, worked: YearMonth, today: LocalDate): Ledger =
+        if (worked < YearMonth.from(today)) full.copy(lines = full.lines.filter { it.staff.hiredOn != null }) else full
+
+    /**
+     * 2.0.0 [RVJ-39] 근로소득 간이지급명세서, 2026년 지급분까지: 지급일이 속하는 반기의 마지막 달의 다음 달 말일(상반기분 7월 말일, 하반기분
+     * 이듬해 1월 말일). 2027년 1월 지급분부터는 매달, 지급한 달의 다음 달 말일이고 위 [upcoming]에서 봐요. 2027년 지급분은 종전 반기 기한까지
+     * 내면 미제출 가산세가 없어요(직전 연도 상시 종업원 20명 이하이고 원천세를 반기별로 내는 사업자는 2028년 지급분까지).
+     * 출처: 소득세법 제164조의3 제1항 제1호(현행 조문, '제1호의 소득' 개정 부분 시행 2027. 1. 1.), 국세청 '간이지급명세서(근로소득)
+     * 제출기한 적용 사례'(www.nts.go.kr, cntntsId 239032, 2026-11-12 확인). 시행일을 미룬 개정 법률의 번호는 확인 필요.
+     * The half is read from the staff rows (근로소득으로 일한 달의 지급일이 그 반기에 있는 사람), so someone who left before the last month
+     * of the half is still in it, which the five months of ledgers the card reads would miss.
+     */
+    internal fun halfBriefs(place: Workplace, staff: List<StaffMember>, inside: (LocalDate) -> Boolean): List<Due> {
+        val out = ArrayList<Due>()
+        for (year in 2024..2026) for (second in listOf(false, true)) {
+            val due = if (second) LocalDate.of(year + 1, 1, 31) else LocalDate.of(year, 7, 31)
+            val day = deadline(due)
+            if (!inside(day)) continue
+            val from = LocalDate.of(year, if (second) 7 else 1, 1)
+            val to = if (second) LocalDate.of(year, 12, 31) else LocalDate.of(year, 6, 30)
+            // The months worked whose pay goes out in the half (다음 달 지급이면 그 앞달부터).
+            val months = (0L..6L).map { YearMonth.from(from).minusMonths(1).plusMonths(it) }
+                .filter { m -> (place.payDate(m) ?: m.plusMonths(1).atDay(1)).let { !it.isBefore(from) && !it.isAfter(to) } }
+            val who = staff.filter { s -> s.insurance.tax == StaffTax.WAGE && months.any { m ->
+                (s.hiredOn == null || !s.hiredOn.isAfter(m.atEndOfMonth())) && (s.leftOn == null || !s.leftOn.isBefore(m.atDay(1))) } }
+            if (who.isEmpty()) continue
+            val half = if (second) "하반기(7~12월 지급분)" else "상반기(1~6월 지급분)"
+            out += Due(day, Kind.WAGE_BRIEF, "근로소득 간이지급명세서 (${year}년 $half)",
+                "근로소득으로 준 ${who.size}명. 2027년 1월 지급분부터는 매달 내요" + moved(due) + ".", null, who.map { it.id }, "홈택스",
+                "wagebrief:${place.id}:$year-H${if (second) 2 else 1}")
+        }
+        return out
     }
 
     /** Staff with no 입사일: the past months' 신고 leaves them out until it is put in. */

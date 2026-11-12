@@ -208,10 +208,13 @@ test("money keeps its kind, and jobs show by title and time only", () => {
   const shopPage = renderSchedule(shop.schedule, new Date(Date.now() + 86400000).toISOString());
   assert.match(shopPage, /함께 보낸 매출/);
   assert.match(shopPage, /18,450,000원/);
-  assert.match(shopPage, /근무와 함께 보낸 것: 매출/);
+  // 2.0.0 [RVD-30] HQ-64 A shop's link is its 영업일, a freelancer's its 일정 (the app's words).
+  assert.match(shopPage, /<h1>가나다식당의 영업일<\/h1>/);
+  assert.match(shopPage, /영업일과 함께 보낸 것: 매출/);
   assert.ok(!shopPage.includes("명세서"));
   const fieldPage = renderSchedule(out, new Date(Date.now() + 86400000).toISOString());
-  assert.match(fieldPage, /근무와 함께 보낸 것: 일정, 일감 수입/);
+  assert.match(fieldPage, /<h1>준호의 일정<\/h1>/);
+  assert.match(fieldPage, /<p class="muted">함께 보낸 것: 일정, 일감 수입/);
   assert.match(fieldPage, /욕실 시공 09:00/);
 });
 

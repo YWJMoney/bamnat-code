@@ -54,13 +54,17 @@ class BossFilingsTest {
         assertTrue(csv.lines().last { it.isNotBlank() }.contains("합계"))
     }
 
-    // PC 10차(중): someone added today with no 입사일 is not in last month's 원천세.
+    // PC 10차(중): someone added today with no 입사일 is not in last month's 원천세. 2.0.0 [RVJ-38] (검토 PC-100): the line stays and says so
+    // right by its amount, with what it comes to if they did work that month (the 신고 is not hidden by a missing date).
     @Test fun noHireDateIsLeftOutOfPastMonths() {
         val c = StaffMember("c", "새직원", base = 10_320, weekly = week)
         val all = listOf(c)
         val due = BossFilings.upcoming(place, all, LocalDate.of(2026, 11, 12), ledgerOf = { m -> PayrollLedger.month(place, all, m, emptyList()) })
-        assertTrue("10월 지급분 원천세 없음", due.none { it.kind == BossFilings.Kind.WITHHOLD })
-        assertTrue("10월분 급여 없음", due.none { it.key.endsWith(":2026-10") })
+        val tax = due.single { it.kind == BossFilings.Kind.WITHHOLD && it.key.endsWith(":2026-10") }
+        assertEquals("10월 지급분 원천세에 새직원 몫은 없음", 0L, tax.amount)
+        assertEquals(listOf("c"), tax.missing!!.staffIds)
+        assertTrue(tax.missing!!.line(tax.amount), tax.missing!!.line(tax.amount).startsWith("입사일 없는 새직원님 빼고예요"))
+        assertTrue("말에 0명이 없음: ${tax.detail}", !tax.detail.contains("0원 ·") && !tax.detail.contains("0명"))
         assertEquals(listOf("c"), BossFilings.noHireDate(all, LocalDate.of(2026, 11, 12)).map { it.id })
     }
 
@@ -71,6 +75,9 @@ class BossFilingsTest {
         val all = listOf(c, d)
         val due = BossFilings.upcoming(place, all, LocalDate.of(2026, 11, 3), ledgerOf = { m -> PayrollLedger.month(place, all, m, emptyList()) })
         val pay = due.first { it.kind == BossFilings.Kind.PAY && it.key.endsWith(":2026-10") }
-        assertTrue(pay.detail, pay.detail.startsWith("입사일을 넣은 1명만이에요(민수 빠짐"))
+        assertTrue(pay.detail, pay.detail.startsWith("1명 · 세전"))
+        // [RVJ-38] Said right by the amount, with what it comes to with 민수 in.
+        val line = pay.missing!!.line(pay.amount)
+        assertTrue(line, line.startsWith("입사일 없는 민수님 빼고예요 · 그 달에 일했으면 입사일을 넣어요(넣으면 "))
     }
 }
