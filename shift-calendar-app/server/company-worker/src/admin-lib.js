@@ -800,7 +800,8 @@ export function adminLib() {
    */
   function draftEmpty(items) {
     if (!items?.length || items.some((x) => x?.draft?.pick)) return "";
-    return '<p class="hint claude-draft-empty"><span class="pill">Claude 추천 없음</span> 아직 추천이 적히지 않았어요. 운영 장부 자동 처리(매일 08·20시)가 읽고 붙여요. 기다리지 않고 바로 정해도 돼요.</p>';
+    // 2.0.0 [RVD-16] 조건 1·4: 목록 위에서 한 줄로 끝나게.
+    return '<p class="hint claude-draft-empty"><span class="pill">Claude 추천 없음</span> 매일 08·20시에 붙어요</p>';
   }
 
   /** [ADMUX-09] Points all in and still waiting: why, in the app's words (core SetupDiff.waitReason). */

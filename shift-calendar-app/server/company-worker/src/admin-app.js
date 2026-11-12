@@ -2422,24 +2422,44 @@ function adminApp(L, BUILD, M) {
   /**
    * 2.0.0 [RVD-13][RVD-14][RVD-15] 드릴 보상 한 줄에서 판단할 것: 만든 작품은 작품의 쓰는 분·7일 유지·신고, 친구 초대는 친구 수·Play 확인·
    * 코드로 넣음·몰림(설치 번호와 휴대폰 표시는 앱이 보낸 값이라 이것뿐이에요), 그리고 이분의 1년 보상 12개월 중 쓴 것.
+   * [RVD-16] 디자인 품질(총괄 11-12, 조건 4·6): 근거는 보통 글씨 한 줄, 살펴볼 것은 글자 폭의 주의 칩으로만(굵은 글·띠 없음).
    */
   function rewardJudge(w) {
-    const out = [];
+    const facts = [];
+    const tags = [];
     if (w.work) {
       const k = w.work;
-      out.push(`<small class="judge">${esc(MAKER_KIND_NAMES[w.makerKind] ?? "만든 작품")} · ${k.title ? `‘${esc(k.title)}’` : esc(k.code)} · 쓰는 분 ${k.users} · 7일 유지 ${k.kept}%${k.flags ? ` · <b>신고 ${k.flags}</b>` : ""}${k.shown ? "" : " · <b>지금 장터에 안 보여요</b>"}</small>`);
+      facts.push(`쓰는 분 ${k.users}`, `7일 유지 ${k.kept}%`);
+      if (k.flags) tags.push(`신고 ${k.flags}`);
+      if (!k.shown) tags.push("장터에 안 보여요");
     }
     if (w.friends) {
       const f = w.friends;
-      // Play 확인은 INTEGRITY_MODE가 켜져 있을 때만 뜻이 있어요(꺼져 있으면 0명이 당연해서 경고하지 않아요).
-      const doubt = (f.checked && f.proven < f.n) || f.bursts > 0;
-      out.push(`<small class="judge${doubt ? " warn" : ""}">친구 ${f.n}명${f.checked ? ` · Play 확인 ${f.proven}명` : " · Play 확인 꺼짐"}${f.typed ? ` · 코드로 넣음 ${f.typed}명` : ""}${f.bursts ? ` · 같은 코드 몰림 ${f.bursts}번(30일)` : ""}</small>`);
+      // Play 확인은 INTEGRITY_MODE가 켜져 있을 때만 뜻이 있어요(꺼져 있으면 0명이 당연해서 주의로 보이지 않아요).
+      facts.push(`친구 ${f.n}명${f.checked ? ` · Play 확인 ${f.proven}명` : " · Play 확인 꺼짐"}${f.typed ? ` · 코드로 넣음 ${f.typed}명` : ""}`);
+      if (f.checked && f.proven < f.n) tags.push(`Play 확인 안 됨 ${f.n - f.proven}명`);
+      if (f.bursts) tags.push(`같은 코드 몰림 ${f.bursts}번(30일)`);
     }
     if (w.year) {
-      const y = w.year;
-      out.push(`<small class="judge${w.capped ? " warn" : ""}">이분의 1년 보상 ${y.used}/${y.cap}개월${w.capped ? (y.left ? ` · ${y.left}개월만 더 드릴 수 있어요` : " · 더 드릴 수 없어요") : ""}</small>`);
+      facts.push(`이분의 1년 보상 ${w.year.used}/${w.year.cap}개월`);
+      if (w.capped) tags.push(w.year.left ? `상한 · ${w.year.left}개월 남음` : "상한");
     }
-    return out.join("");
+    const line = facts.length ? `<small class="judge">${esc(facts.join(" · "))}</small>` : "";
+    const chips = tags.length || w.deferred ? `<span class="row-tags">${tags.map((x) => `<span class="pill warn">${esc(x)}</span>`).join("")}${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}</span>` : "";
+    return line + chips;
+  }
+
+  /** 2.0.0 [RVD-16] 줄 제목: 만든 작품은 작품 이름(없으면 코드), 나머지는 회사·부서나 종류. '만든 작품'을 줄마다 되풀이하지 않아요. */
+  function rewardTitle(w) {
+    if (w.work) return w.work.title ? `‘${esc(w.work.title)}’` : `만든 작품 · ${esc(w.work.code)}`;
+    return `${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}`;
+  }
+
+  /** 2.0.0 [RVD-16] 제목 아래 한 줄: 프로 몇 개월 · 날짜, 그리고 제목이 말하지 않는 종류만. */
+  function rewardWhat(w) {
+    const kind = w.invite ? "" : w.kind === "maker" ? MAKER_KIND_NAMES[w.makerKind] ?? ""
+      : w.rate ? "" : w.ask ? "앱에 없는 방식" : "채택";
+    return `프로 ${w.months}개월 · ${day(w.createdAt)}${kind ? ` · ${kind}` : ""}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}`;
   }
 
   function rewardsView() {
@@ -2461,35 +2481,36 @@ function adminApp(L, BUILD, M) {
         ${overCap.length ? `<button class="btn small ghost" data-act="reward-pick-cap">상한 넘은 것 ${overCap.length}개 고르기</button>` : ""}
         <button class="btn small danger" data-act="reward-bulk" data-key="void"${picked ? "" : " disabled"}>취소</button>
         <button class="btn small primary" data-act="reward-bulk" data-key="paid"${picked ? "" : " disabled"}>지급하기</button></div>` : "";
+    // [RVD-16] 조건 2: 줄마다의 단추는 가벼운 모양(지급하기는 테두리, 취소는 글자). 채운 단추는 여러 개 고르기의 아래 막대에만.
     const payButton = (w) => {
       const months = w.draft?.pick === "paid" && w.draft.months ? w.draft.months : w.months;
-      if (w.capped && !w.year?.left) return `<button class="btn primary" disabled title="이분은 1년에 받을 수 있는 12개월을 다 받았어요">상한</button>`;
+      if (w.capped && !w.year?.left) return "";
       const give = w.capped ? Math.min(months, w.year.left) : months;
-      return `<button class="btn primary" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${give}">${give !== w.months ? `${give}개월만 지급` : "지급하기"}</button>`;
+      return `<button class="btn small" data-act="reward" data-id="${w.id}" data-status="paid" data-months="${give}">${give < months ? `${give}개월만 지급` : give !== w.months ? `${give}개월 지급` : "지급하기"}</button>`;
     };
     const row = (w) => {
-      const inner = `<div class="row-main"><b>${esc(w.company.name)}${w.dept ? ` · ${esc(w.dept)}` : ""}</b>
-          <small>프로 ${w.months}개월 · ${day(w.createdAt)} ${w.invite ? "친구 초대" : w.kind === "maker" ? "만든 작품 보상" : w.ask ? "앱에 없는 방식" : "채택"}${w.version ? ` · 규칙 v${w.version}` : ""}${w.paidAt ? ` · ${day(w.paidAt)} 지급함` : ""}</small>
-          ${w.capped ? `<span class="pill warn">상한${w.year?.left ? ` · ${w.year.left}개월만` : ""}</span>` : ""}${w.deferred ? '<span class="pill ok">Play 결제 미룸</span>' : ""}
+      const inner = `<div class="row-main"><b>${rewardTitle(w)}</b>
+          <small>${rewardWhat(w)}</small>
           ${rewardJudge(w)}
           ${w.memo ? `<small class="memo">${esc(w.memo)}</small>` : ""}
           ${L.draftNote(w.draft, w.draft?.months ? `${w.draft.months}개월` : "")}</div>
-        ${edit && !picking ? `<div class="actions">${w.status === "owed" ? `<button class="btn" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
+        ${edit && !picking ? `<div class="actions">${w.status === "owed" ? `<button class="btn small ghost" data-act="reward" data-id="${w.id}" data-status="void">취소</button>
           ${payButton(w)}`
-          : `<button class="btn" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}`;
-      return picking ? `<li class="item${S.rewardPick.has(w.id) ? " picked" : ""}"><label class="row"><input class="check" type="checkbox" data-pick-reward="${w.id}"${S.rewardPick.has(w.id) ? " checked" : ""} aria-label="이 보상 고르기">${inner}</label></li>`
+          : `<button class="btn small ghost" data-act="reward" data-id="${w.id}" data-status="owed">대기로 되돌리기</button>`}</div>` : ""}`;
+      return picking ? `<li><label class="row${S.rewardPick.has(w.id) ? " picked" : ""}"><input class="check" type="checkbox" data-pick-reward="${w.id}"${S.rewardPick.has(w.id) ? " checked" : ""} aria-label="이 보상 고르기">${inner}</label></li>`
         : `<li class="item">${inner}</li>`;
     };
     const body = !ready ? skeleton() : !r.rewards.length ? empty(owedTab ? "드릴 보상이 없어요" : "목록이 비어 있어요", "")
       : `${owedTab && edit ? L.draftEmpty(r.rewards) : ""}${bar}<ul class="rows">${r.rewards.map(row).join("")}</ul>${moreButton(r.next, "rewards-more", r.total, r.rewards.length)}`;
     // AN 1.28 [ADMUX-32] 친구 초대 규칙 (from 설정) under the list; an admin with only 설정 sees just that.
-    const rules = can("settings") ? inviteSettingsCard(can("settings", "edit")) : "";
+    // 2.0.0 [RVD-16] 조건 1·4(총괄 11-12): 친구 초대 숫자도 목록 아래 그 카드로 옮겨, 드릴 보상이 종류 칩 바로 밑에 와요. 규칙 문장은 한 곳에만.
+    const rules = inviteCard(can("rewards") ? r?.invites : null, can("settings"), can("settings", "edit"));
     if (!can("rewards")) return rules;
     return `<div class="segmented" role="group" aria-label="보상 상태">${segs}</div>
       <div class="toolbar"><input id="search" type="search" placeholder="회사나 부서로 찾기" value="${esc(S.rewardQuery)}" autocomplete="off" enterkeyhint="search" aria-label="보상 찾기">${pickTool}${csvButton("rewards", ready ? r.rewards : null)}</div>
       ${kinds}
-      ${inviteSummaryView(r?.invites)}
-      <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 한 분이 받는 보상은 종류를 합쳐 1년에 12개월까지예요.</p>${body}${rules}`;
+      <details class="tip" data-key="reward-how"><summary>확인 뒤 지급 · 한 분에 1년 12개월까지</summary>
+        <p class="hint">[지급하기]를 누르면 보낸 분 휴대폰에 프로 이용권이 생겨요. 이용권은 쌓이고, 정식 출시 전에 드린 것은 출시 날부터 세요. 이미 구독 중인 분은 Play의 다음 결제일이 그만큼 미뤄져요(서버에 Play 키가 있을 때). 스토어 리뷰와는 묶지 않아요. 친구 초대·만든 작품 보상도 여기서 확인한 뒤 나가요. 상한을 넘는 만큼은 지급하지 않아요.</p></details>${body}${rules}`;
   }
 
   // AE 1.26 시작
@@ -2500,9 +2521,8 @@ function adminApp(L, BUILD, M) {
     const refused = Object.entries(v.refused ?? {}).map(([k, n]) => `${why[k] ?? k} ${n}`).join(" · ") || "없음";
     const top = v.top.length ? `<ul class="rows">${v.top.map((t) => `<li class="item"><div class="row-main"><b>${esc(t.code)}</b>
       <small>친구 ${t.friends}명 · 채움 ${t.counted} · 사용 기간 채우는 중 ${t.waiting}</small></div></li>`).join("")}</ul>` : "";
-    return `<section class="card" aria-label="친구 초대"><h3>친구 초대</h3>
-      <p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
-      <p class="hint">${v.rules ? `${esc(inviteRuleWords(v.rules))} ` : ""}최근 30일 막음: ${refused}. 규칙은 아래 친구 초대 카드에서 바꿔요. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${burstLine(v)}${top}</section>`;
+    return `<p>초대 코드 ${v.codes}개 · 보상 받음 ${v.credited}명 · 다음 보상 기다림 ${v.qualified ?? 0}명 · 상한 넘음 ${v.capped}명 · 사용 기간 채우는 중 ${v.waiting}명 · 끝남 ${v.expired ?? 0}명</p>
+      <p class="hint">최근 30일 막음: ${refused}. 같은 코드에 친구가 갑자기 몰리면 살펴봐 주세요.</p>${burstLine(v)}${top}`;
   }
 
   /**
@@ -2522,17 +2542,24 @@ function adminApp(L, BUILD, M) {
     return `<p class="hint warn">최근 30일 몰림 ${v.bursts}번(같은 네트워크에서 한 시간에 같은 코드로 친구 3명 넘게): ${codes}. 같은 회사 와이파이일 수 있어 막지는 않았어요.</p>`;
   }
 
-  /** [INVITE-08] 설정 › 친구 초대: the developer's numbers, applied by the server to every invite from then on. */
-  function inviteSettingsCard(edit) {
-    const s = S.inviteDraft ?? S.data.inviteSettings;
-    if (!s) return '<section class="card"><h2>친구 초대</h2>' + skeleton(1) + "</section>";
-    return `<section class="card"><h2>친구 초대</h2>
-      ${stepper("friends", "보상에 필요한 친구", s.friends, "명", edit, "friend-step")}
+  /**
+   * [INVITE-08] 설정 › 친구 초대: the developer's numbers, applied by the server to every invite from then on.
+   * 2.0.0 [RVD-16] 친구 초대 숫자([INVITE-06])와 한 카드: 규칙 문장은 여기 한 번(조건 4), 저장 단추는 고친 것이 있을 때만(조건 2).
+   */
+  function inviteCard(v, show, edit) {
+    const s = show ? S.inviteDraft ?? S.data.inviteSettings : null;
+    if (!v && !show) return "";
+    if (show && !s) return '<section class="card"><h2>친구 초대</h2>' + skeleton(1) + "</section>";
+    const rule = s ?? v.rules;
+    return `<section class="card" aria-label="친구 초대"><h2>친구 초대</h2>
+      ${rule ? `<p class="hint">${esc(inviteRuleWords(rule))}</p>` : ""}
+      ${inviteSummaryView(v)}
+      ${s ? `${stepper("friends", "보상에 필요한 친구", s.friends, "명", edit, "friend-step")}
       ${stepper("days", "친구가 써야 하는 기간", s.days, "일", edit, "friend-step")}
       ${stepper("months", "보상", s.months, "개월", edit, "friend-step")}
       ${stepper("capMonths", "초대만의 1년 상한", s.capMonths ? `${s.capMonths}` : "없음", s.capMonths ? "개월" : "", edit, "friend-step")}
-      <p class="hint">${esc(inviteRuleWords(s))} 쓴다는 건 친구가 초대를 알린 날부터 이 기간이 지난 날(한국 날짜, 서버 시계)에 앱을 다시 여는 거예요. 기간을 채운 친구가 모일 때마다 초대한 분께 보상을 드려요. 상한을 0으로 두면 없음이에요. 같은 휴대폰은 한 번만 세고 자기 초대는 막아요.</p>
-      ${edit ? `<div class="actions">${S.inviteDraft ? '<button class="btn ghost" data-act="friend-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-friend"${S.inviteDraft ? "" : " disabled"}>저장</button></div>` : ""}
+      <p class="hint">쓴다는 건 친구가 초대를 알린 날부터 이 기간이 지난 날(한국 날짜, 서버 시계)에 앱을 다시 여는 거예요. 상한을 0으로 두면 없음이에요.</p>
+      ${edit && S.inviteDraft ? '<div class="actions"><button class="btn ghost" data-act="friend-undo">되돌리기</button><button class="btn primary" data-act="save-friend">저장</button></div>' : ""}` : ""}
     </section>`;
   }
   // AE 1.26 끝

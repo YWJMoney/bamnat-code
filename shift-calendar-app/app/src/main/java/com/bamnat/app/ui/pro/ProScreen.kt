@@ -439,7 +439,9 @@ private fun PassesCard(c: AppContainer, pro: ProState, gate: Gate, zone: ZoneId,
     val passes = pro.passes
     SectionCard(title = "보상 이용권") {
         // 2.0.0 [RVD-13]~[RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 드리고, 보상 이용권은 1년에 모두 합쳐 12개월까지.
-        Text("회사 근태·급여 방식이 채택되거나 제안이 반영되거나, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 되거나, 초대한 친구가 밤낮을 쓰면 운영팀이 확인한 뒤 프로 이용권을 드려요. 보상 이용권은 1년에 모두 합쳐 ${REWARD_CAP_MONTHS}개월까지예요. 보내 주신 문제 신고가 고쳐지면 3일을 드려요(한 달 14일까지). 받을수록 기간이 이어져요.",
+        // [RVD-16] 디자인 품질 조건 4(총괄 11-12): 첫 줄은 이 한 줄. 받는 때 목록은 갈래 P의 설명 ⓘ 부품이 오면 그 안으로 옮겨요(부품 대기).
+        Text("운영팀이 확인한 뒤 드려요. 1년에 모두 합쳐 ${REWARD_CAP_MONTHS}개월까지예요.", style = MaterialTheme.typography.bodyMedium)
+        Text("받는 때: 회사 근태·급여 방식이 채택되거나 제안이 반영될 때, 만든 작품이 이달의 주제에 뽑히거나 모두의 도구·기본 도구가 될 때, 초대한 친구가 밤낮을 쓸 때. 보내 주신 문제 신고가 고쳐지면 3일(한 달 14일까지). 받을수록 기간이 이어져요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         passes?.items?.forEach { item ->
             Text("• 프로 ${item.months}개월 (${item.what ?: passWhy(item.why)}, ${dateWords(item.at.atZone(zone).toLocalDate())})",

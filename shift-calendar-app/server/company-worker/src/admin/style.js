@@ -1311,4 +1311,13 @@ a.gl-gauge:hover{border-color:var(--g)}
 .claude-draft{margin:.5rem 0;padding:.6rem .75rem;border-radius:var(--r);background:var(--accent-soft);border:1px solid var(--line)}
 .claude-draft p{margin:.15rem 0}.claude-draft .why{font-size:.88rem}.claude-draft .meta a{color:var(--accent)}
 .hello-who{margin:0 0 .75rem;font-size:.8rem;color:var(--muted)}
+/* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
+   글이 label의 굵은 글씨를 물려받지 않아요. */
+label.row{font-weight:inherit;font-size:inherit;margin:0}
+details.tip{margin:0 0 .5rem;border-top:0;padding-top:0}
+details.tip>summary{font-weight:650;color:var(--muted)}
+details.tip>.hint{margin:.25rem 0 .5rem}
+@media (pointer:coarse){details.tip>summary{min-height:2.75rem;display:flex;align-items:center;gap:.25rem}}
+.row-main>.pill{align-self:flex-start}
+.row-main .row-tags{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.3rem}
 `;

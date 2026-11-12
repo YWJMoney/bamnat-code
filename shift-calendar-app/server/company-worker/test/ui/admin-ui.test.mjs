@@ -2118,8 +2118,24 @@ test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and 
   const main = () => t.$("#main").textContent;
   assert.match(main(), /친구 초대 2/);
   assert.match(main(), /만든 작품 1/);
-  assert.match(main(), /이분의 1년 보상 12\/12개월 · 더 드릴 수 없어요/);
-  assert.match(main(), /모두의 도구 · ABCD2345 · 쓰는 분 0/);
+  assert.match(main(), /이분의 1년 보상 12\/12개월/);
+  // 디자인 품질(총괄 11-12): 제목·'프로 1개월 · 날짜 · 종류'·근거 한 줄, '만든 작품'은 한 번만, 살펴볼 것은 주의 칩.
+  const work = [...t.document.querySelectorAll("#main ul.rows > li")].find((li) => li.textContent.includes("ABCD2345"));
+  assert.match(work.querySelector("b").textContent, /만든 작품 · ABCD2345/);
+  assert.match(work.textContent, /프로 1개월 · .+ · 모두의 도구/);
+  assert.match(work.textContent, /쓰는 분 0 · 7일 유지 0%/);
+  assert.equal(work.textContent.split("만든 작품").length - 1, 1, "만든 작품 once in a row");
+  assert.ok([...work.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "장터에 안 보여요"));
+  const over = t.$('#main ul.rows > li [data-id="iOVERaaaaaaaaaaaaaaaaa"]').closest("li");
+  assert.ok([...over.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "상한"));
+  // 조건 2: 줄 안에는 채운 단추가 없고, 설명은 한 줄 + 펼치기, 규칙 문장은 아래 친구 초대 카드에 한 번만.
+  assert.equal(t.document.querySelectorAll("#main ul.rows .btn.primary").length, 0);
+  assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
+  assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
+  assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
+  // 조건 1: 드릴 보상 목록이 종류 칩 바로 밑(한 줄 설명·Claude 추천 한 줄 다음)에 와요.
+  const order = [...t.$("#main").children].map((e) => e.matches(".chips") ? "chips" : e.matches("ul.rows") ? "rows" : e.matches("section.card") ? "card" : "");
+  assert.ok(order.indexOf("chips") < order.indexOf("rows") && order.indexOf("rows") < order.indexOf("card"), order.join(","));
   // Play Integrity is off here (INTEGRITY_MODE), so '0명 확인' is not a warning, just said off.
   assert.match(main(), /친구 0명 · Play 확인 꺼짐/);
   assert.ok(!t.$('[data-act="reward"][data-status="paid"][data-id="iOVERaaaaaaaaaaaaaaaaa"]'), "no 지급하기 past the cap");
