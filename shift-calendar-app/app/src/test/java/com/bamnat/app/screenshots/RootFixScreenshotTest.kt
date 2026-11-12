@@ -24,7 +24,6 @@ import com.bamnat.app.ui.components.AppSnack
 import com.bamnat.app.ui.components.AppSnackHost
 import com.bamnat.app.ui.components.AskTurn
 import com.bamnat.app.ui.components.FormSheet
-import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.guide.OpenAsk
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,7 +40,7 @@ import org.robolectric.annotation.GraphicsMode
 @Config(sdk = [35])
 class RootFixScreenshotTest : ScreenshotBase() {
     @Composable private fun Page(body: @Composable () -> Unit) {
-        BamnatTheme(themeMode = ThemeMode.LIGHT) {
+        ShotTheme(themeMode = ThemeMode.LIGHT) {
             Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp)) { body() }
                 AppSnackHost(Modifier.align(Alignment.BottomCenter))

@@ -13,7 +13,6 @@ import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.ThemeMode
 import com.bamnat.app.ui.settings.LabeledSlider
-import com.bamnat.app.ui.theme.BamnatTheme
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -30,7 +29,7 @@ class StudioFixScreenshotTest : ScreenshotBase() {
     @Test fun aHeldPlusStopsAtTheEndAndKeepsIt() = shoot("2715_studio_held_plus_end", FOLDED) {
         var kept by androidx.compose.runtime.mutableFloatStateOf(-1f)
         content {
-            BamnatTheme(themeMode = ThemeMode.LIGHT) {
+            ShotTheme(themeMode = ThemeMode.LIGHT) {
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp)) {
                     LabeledSlider("모서리", 13f, 0f..16f, "dp") { kept = it }
                 }

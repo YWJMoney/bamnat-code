@@ -651,9 +651,12 @@ abstract class ScreenshotBase {
             tapText(title, exact = true, across = if (wide) 0.2f else 0.5f)
         }
 
-        /** Replaces the activity's content, for screens that are slow to reach by touch. */
+        /**
+         * Replaces the activity's content, for screens that are slow to reach by touch. [QA-12] On the theme's background with
+         * onBackground for words, as the app's Scaffold gives them ([ShotGround]); a test that sets its own theme uses [ShotTheme].
+         */
         fun content(body: @androidx.compose.runtime.Composable () -> Unit) {
-            scenario.onActivity { activity -> activity.setContent { BamnatTheme { body() } } }
+            scenario.onActivity { activity -> activity.setContent { BamnatTheme { ShotGround(body) } } }
         }
 
         /** Taps a point given in dp from the top-left, or from the right edge when [fromRight]. */

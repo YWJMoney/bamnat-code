@@ -19,7 +19,6 @@ import com.bamnat.app.ui.settings.CellDesigner
 import com.bamnat.app.ui.settings.ColorPick
 import com.bamnat.app.ui.settings.PaySample
 import com.bamnat.app.ui.components.scrollEdges
-import com.bamnat.app.ui.theme.BamnatTheme
 import com.bamnat.core.recipe.CalendarView
 import com.bamnat.core.recipe.CellLook
 import com.bamnat.core.recipe.CellPattern
@@ -45,7 +44,7 @@ class LookEditorScreenshotTest : ScreenshotBase() {
     )
 
     private fun Screen.designer(dark: Boolean) = content {
-        BamnatTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
+        ShotTheme(themeMode = if (dark) ThemeMode.DARK else ThemeMode.LIGHT) {
             var view by remember { mutableStateOf(weekend) }
             var index by remember { mutableStateOf(1) }
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(16.dp)) {
@@ -60,7 +59,7 @@ class LookEditorScreenshotTest : ScreenshotBase() {
 
     @Test fun aColourCodeTakesOnlyItsLetters() = shoot("2718_look_color_code", FOLDED) {
         content {
-            BamnatTheme(themeMode = ThemeMode.LIGHT) {
+            ShotTheme(themeMode = ThemeMode.LIGHT) {
                 var c by remember { mutableStateOf<Long?>(0xFF2F5BEA) }
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp)) {
                     ColorPick("칸 바탕", c) { c = it }
@@ -75,7 +74,7 @@ class LookEditorScreenshotTest : ScreenshotBase() {
 
     @Test fun thePaySampleOfAPartTimer() = shoot("2719_look_pay_hourly", FOLDED) {
         content {
-            BamnatTheme(themeMode = ThemeMode.LIGHT) {
+            ShotTheme(themeMode = ThemeMode.LIGHT) {
                 Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(16.dp)) {
                     PaySample(PayLook(), WorkStyle.HOURLY) {}
                 }
@@ -87,7 +86,7 @@ class LookEditorScreenshotTest : ScreenshotBase() {
     /** [RVP-83] (조건 11) A dialog whose words scroll: a line under the title and above the buttons while there is more. Number 2720. */
     @Test fun aScrollingDialogShowsItsEdges() = shoot("2720_parts_scroll_edges", FOLDED) {
         content {
-            BamnatTheme(themeMode = ThemeMode.LIGHT) {
+            ShotTheme(themeMode = ThemeMode.LIGHT) {
                 com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = {},
                     title = { androidx.compose.material3.Text("근로계약서") },
