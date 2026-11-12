@@ -244,6 +244,13 @@ object LogicRunner {
     }
 
     /**
+     * PC-99 What [act] says for [date] with its {수식} worked out from the day's facts and the 값 칸 as they are now; with no facts yet,
+     * the {수식} places are left out (no made-up number).
+     */
+    internal fun sayNow(act: LogicAct, facts: DayFactsBook?, date: LocalDate): String =
+        com.bamnat.core.formula.FormulaText.render(act.say(), facts?.let { scopeNow(it, date) } ?: com.bamnat.core.formula.FormulaScope.EMPTY)
+
+    /**
      * 1.39 [FX-11] 동작 줄: [acts] one after another (a later one reads what an earlier one counted), a screen or a 메모 틀 opened once.
      */
     suspend fun runSteps(c: AppContainer, acts: List<LogicAct>, date: LocalDate, scope: FormulaScope, who: String, quiet: Boolean = false, depth: Int = 0,
@@ -374,7 +381,7 @@ object LogicRunner {
     }
 
     /** [RVM-01] One number for each press or run of a 동작 줄. */
-    private val PRESSES = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis() * 1000)
+    private val PRESSES = java.util.concurrent.atomic.AtomicLong(System.currentTimeMillis() * 1000) // real clock: a press id unique across restarts, not a time anything is shown or worked out by
 
     /**
      * 1.36 [SEC-12] 보안 점검 M4 '규칙이 쓴 것 모두 되돌리기': everything the rules and buttons wrote in the last 7 days, newest first
@@ -801,7 +808,7 @@ object LogicRunner {
         fun woke(): android.service.notification.StatusBarNotification? = runCatching {
             nm.activeNotifications.firstOrNull { n ->
                 n.id == com.bamnat.app.alarm.Notifications.SLEEPING_ID && n.notification.flags and android.app.Notification.FLAG_ONGOING_EVENT == 0 &&
-                    System.currentTimeMillis() - n.postTime < SLEPT_FOLD_MS &&
+                    System.currentTimeMillis() - n.postTime < SLEPT_FOLD_MS && // real clock: the system stamps postTime with it
                     n.notification.extras.getCharSequence(android.app.Notification.EXTRA_TITLE)?.endsWith("잤어요") == true
             }
         }.getOrNull()

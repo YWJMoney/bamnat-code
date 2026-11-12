@@ -307,7 +307,7 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                             var menu by remember { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, "더 보기: 코드로 받기, 내 작품") }
-                                androidx.compose.material3.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                                     androidx.compose.material3.DropdownMenuItem(text = { Text("코드로 받기") }, onClick = { menu = false; codeAsk = true })
                                     androidx.compose.material3.DropdownMenuItem(text = { Text("내 작품") }, onClick = { menu = false; onMine() })
                                 }

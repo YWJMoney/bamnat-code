@@ -48,6 +48,8 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
     val provided = LocalDayFacts.current
     val facts by produceState(provided, provided, settings.logic, date) { if (value == null) value = runCatching { LogicRunner.facts(c) }.getOrNull() }
     val scope = rememberCoroutineScope()
+    // PC-99: a press changes the 값 칸; the buttons' words read them again.
+    val kept = FxValues.flow(c).collectAsStateWithLifecycle().value
     val shown = buttons.filter { b -> b.show.isEmpty() || facts?.let { Formula.eval(b.show, it.scope(date))?.truthy == true } == true }
     if (shown.isEmpty()) return
     Row(
@@ -55,6 +57,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for (b in shown) {
+            val said = remember(b, kept, facts, date) { LogicRunner.sayNow(b.act, facts, date) }
             AssistChip(
                 onClick = {
                     scope.launch {
@@ -63,7 +66,9 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
                     }
                 },
                 label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) },
-                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 ${com.bamnat.app.ui.recipe.sample(b.act.say())}" },
+                // PC-99 (현장 '🌧️ 우천 쉼'이 '… 이달 3공수'라고 읽힘, 그때 1.5공수): what it says is worked out from the values as they are now
+                // (the example numbers of 장터's 예시 are never read out for the phone's own button).
+                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 $said" },
             )
         }
     }

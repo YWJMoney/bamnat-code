@@ -12,6 +12,7 @@ import com.bamnat.core.formula.LogicValue
 import com.bamnat.core.formula.LogicVerb
 import com.bamnat.core.formula.ValueKind
 import com.bamnat.core.formula.ValueReset
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -108,6 +109,34 @@ class FxFirstPressTest {
         assertEquals("the last press's 카페 line out", before - 1, money.allEntries().count { it.category == "카페" })
         assertEquals("and its 1잔", 1.0, FxValues.kept(c, "커피")?.v)
         assertEquals("the first press stays", 1, LogicStore(app).written().count { it.optString("who") == coffee.label && it.has("money") })
+    }
+
+    /**
+     * PC-98 (통합 2차, 작품 '공수 카운터'): the home widget's '1공수' then '0.5공수' left 1.5공수 but one memo line ('0.5공수 · 이달
+     * 1.5공수'); the first press's line was lost the same way as PC-41's 카페 line (the first 값 동작 stopped the press half-way).
+     * Both presses write their line, each with the count as it is after that press.
+     */
+    @Test fun aCounterWritesTheFirstPressLineToo() = runBlocking {
+        val one = LogicButton("1공수", "🦺", ButtonPlace.WIDGET, LogicAct(LogicVerb.VAL_ADD, "공수", by = 1.0),
+            more = listOf(LogicAct(LogicVerb.MEMO_LINE, "1공수 · 이달 {값(\"공수\")}공수")))
+        val half = LogicButton("0.5공수", "⛑️", ButtonPlace.WIDGET, LogicAct(LogicVerb.VAL_ADD, "공수", by = 0.5),
+            more = listOf(LogicAct(LogicVerb.MEMO_LINE, "0.5공수 · 이달 {값(\"공수\")}공수")))
+        use(one, half, values = listOf(LogicValue("공수", ValueReset.MONTH, goal = 22.0, unit = "공수")))
+        val today = com.bamnat.core.time.Today.date()
+        c.memoRepository.deleteForever(c.memoRepository.memos.first().filter { it.date == today }.map { it.id })
+        FxOutside.press(c, one.id)
+        FxOutside.press(c, half.id)
+        assertEquals(1.5, FxValues.kept(c, "공수")?.v)
+        val memo = c.memoRepository.memos.first().single { it.date == today && !it.inTrash }
+        val lines = (listOf(memo.title) + memo.body.lines()).filter { it.isNotBlank() }
+        assertEquals("both presses wrote their line", listOf("1공수 · 이달 1공수", "0.5공수 · 이달 1.5공수"), lines)
+        assertEquals(1, LogicStore(app).runs(one.label))
+        assertEquals(1, LogicStore(app).runs(half.label))
+        // PC-99: the 날짜 창's '🌧️ 우천 쉼' read '… 이달 3공수' (장터 예시의 숫자) at 1.5공수; it says the count as it is now.
+        val rain = LogicAct(LogicVerb.MEMO_LINE, "#우천 비로 쉼 · 이달 {값(\"공수\")}공수")
+        assertEquals("그날 메모에 ‘#우천 비로 쉼 · 이달 1.5공수’ 더하기", LogicRunner.sayNow(rain, LogicRunner.facts(c), today))
+        // With nothing to work it out from (a launcher's label), the place is left out, never a made-up number.
+        assertEquals("그날 메모에 ‘#우천 비로 쉼 · 이달 공수’ 더하기", LogicRunner.sayNow(rain, null, today))
     }
 
     @Test fun aWorkPutInDoesNotRunItsOpeningRuleThere() = runBlocking {

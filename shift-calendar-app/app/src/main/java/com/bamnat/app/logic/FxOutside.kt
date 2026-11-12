@@ -73,7 +73,8 @@ object FxOutside {
         val r = runCatching { LogicRunner.pressButton(c, b, date, LogicRunner.scopeNow(f, date), quiet = true) }
         if (r.isFailure) { LogicStore(c.appContext).log(b.label, "하다가 멈췄어요"); return "‘${b.label}’${com.bamnat.core.text.Josa.eulreul(b.label)} 하다가 멈췄어요" }
         changed(c)
-        return if (b.act.verb.value && b.act.after == null) line(c, b) else "‘${b.label}’: ${b.act.say()}"
+        // PC-99: what was done, its {수식} worked out as it is now (not the formula's letters).
+        return if (b.act.verb.value && b.act.after == null) line(c, b) else "‘${b.label}’: ${LogicRunner.sayNow(b.act, f, date)}"
     }
 
     /**
@@ -160,7 +161,8 @@ object FxOutside {
             val list = buttons(c, ButtonPlace.SHORTCUT).take(MAX_SHORTCUTS).map { b ->
                 ShortcutInfoCompat.Builder(ctx, "fx_${b.id}")
                     .setShortLabel(listOfNotNull(b.emoji, b.label).joinToString(" ").take(24))
-                    .setLongLabel("${b.label}: ${b.act.say()}".take(48))
+                    // PC-99: a label kept by the launcher has no {수식} letters (the number would go stale); those places are left out.
+                    .setLongLabel("${b.label}: ${LogicRunner.sayNow(b.act, null, Today.date())}".take(48))
                     .setIcon(IconCompat.createWithResource(ctx, R.drawable.ic_tile_money_add))
                     .setIntent(Intent(ctx, FxPressActivity::class.java).setAction(FxPressActivity.ACTION).putExtra(FxPressActivity.ID, b.id))
                     .build()
