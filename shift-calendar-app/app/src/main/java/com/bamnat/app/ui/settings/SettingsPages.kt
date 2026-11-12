@@ -1183,12 +1183,18 @@ private fun PrivacyPage(
         }
         // [LOCK-01] Pay and memos behind the phone's own lock.
         val lockable = remember(refresh) { com.bamnat.app.AppLock.available(context) }
+        // 2.0.0 [RVL-09] 총괄 검토 #458: on, but resting for want of the phone's lock: the switch stays on as the user left it (it can be
+        // turned off), with one line and the way to the phone's lock, also once the card over the calendar was closed.
+        val resting = settings.appLock && !lockable
         SwitchRow(
             "앱 잠금",
-            if (lockable) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
+            if (lockable || resting) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
             else "휴대폰에 잠금(PIN·패턴·지문)을 먼저 설정하면 켤 수 있어요",
-            settings.appLock && lockable,
-            enabled = lockable,
+            settings.appLock && (lockable || resting),
+            enabled = lockable || resting,
+            warning = if (resting) APP_LOCK_RESTING_LINE else null,
+            fixLabel = "잠금 설정",
+            onFix = { openPhoneLockSettings(context) },
         ) { on ->
             vm.update { it.copy(appLock = on) }
             if (!on) com.bamnat.app.AppLock.release()
