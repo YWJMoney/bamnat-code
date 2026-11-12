@@ -118,7 +118,9 @@ font-weight:800;font-size:.9rem;text-decoration:none;white-space:nowrap}
 .waiting a{display:inline-flex;align-items:center;gap:.35rem;min-height:2.5rem;padding:0 .8rem;border-radius:999px;background:var(--soft);color:var(--fg);
 font-weight:700;text-decoration:none}
 @media (hover:hover){.waiting a:hover{background:var(--hover)}}
-.waiting a .n{color:var(--bad);font-weight:900}
+.waiting a .n{color:var(--fg);font-weight:900}
+/* 2.0.0 [RVA-33] 검토 HQ-65(조건 6): 빨강은 기한 넘김·오류가 있는 칸의 글 한 조각에만. */
+.waiting a .late{color:var(--bad);font-size:min(.8rem,16px);font-weight:800;white-space:nowrap}
 .waiting .dot{display:none}
 .todo-card .waiting{margin:0 0 .75rem}
 /* 2.0.0 [RVA-24] 3/3(총괄 11-12): 글자를 크게 키운 폰 폭에서 '지금 기다리는 것' 칩이 한 줄에 하나씩 쌓이지 않게 두 개씩. */
@@ -1468,6 +1470,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
   .row>svg{order:2}
   .row>.row-side{order:3;flex:1 1 100%;flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:flex-start;gap:.3rem .45rem;max-width:none}
   .row-main>b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+  /* 오늘 할 일 줄(.rows.inbox)은 넓은 화면의 한 줄 규칙이 더 세서 840·200%에서 내일 볼게요가 잘리고 제목이 한 줄로 잘렸어요. */
+  .rows.inbox .row>.row-side{flex-wrap:wrap;justify-content:flex-start}.rows.inbox .row-main>b{white-space:normal}
 }
 @container lg (width < 34rem){.lg-row .c-sum>b{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}}
 /* 결정함: 넓은 화면에서도 줄이 화면 끝까지 늘어나지 않게(조건 12 '본문 최대 폭'), 초안은 줄 아래 한 칸. */

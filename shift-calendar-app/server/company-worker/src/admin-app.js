@@ -1394,9 +1394,32 @@ function adminApp(L, BUILD, M) {
     return href(x.tab);
   }
 
+  /**
+   * 2.0.0 [RVA-33] 검토 HQ-65(조건 6·14): 숫자는 보통 색이에요. 그 칸에 기한을 넘긴 할 일(이 기기에서 내일로 미룬 것은 빼고)이나
+   * 새 오류·열린 사고가 있을 때만 빨강으로 '넘김 N'·'오류 N'을 글로 말해요. 메뉴 숫자와 같은 수를 되풀이하지 않고 급한 것만 더해요.
+   */
+  const FAIL_TABS = ["errors", "incident"];
+  function waitingHot(hubKey, x) {
+    const mine = (to) => {
+      const name = L.parseRoute(to).name;
+      return hubKey === "today" ? L.hubOf(name) === x.hub : name === x.tab;
+    };
+    // 할 일 목록의 보기(오늘까지·이번 주)와 같은 시계: 서버가 같이 보낸 지금.
+    const todo = S.data.today?.todo;
+    const now = Date.parse(todo?.now ?? "") || Date.now();
+    const hide = snoozed();
+    const late = (todo?.items ?? []).filter((i) => i.due && Date.parse(i.due) < now && !hide[`${i.type}:${i.id}`] && mine(inboxLink(i))).length;
+    const tabs = hubKey === "today" ? L.HUBS.find((h) => h.key === x.hub)?.tabs ?? [] : [x.tab];
+    const fail = tabs.filter((k) => FAIL_TABS.includes(k)).reduce((n, k) => n + L.tabBadge(k, S.overview ?? {}, S.me), 0);
+    return [late ? `넘김 ${late}` : "", fail ? `오류 ${fail}` : ""].filter(Boolean).join(" · ");
+  }
+
   function waitingItems(hubKey) {
     const list = L.waiting(hubKey, S.overview ?? {}, S.me);
-    return `<b>지금 기다리는 것</b>${list.length ? list.map((x) => `<a href="${waitingLink(x)}">${esc(x.label)} <span class="n">${x.n}</span></a>`).join('<span class="dot" aria-hidden="true">·</span>')
+    return `<b>지금 기다리는 것</b>${list.length ? list.map((x) => {
+      const hot = waitingHot(hubKey, x);
+      return `<a href="${waitingLink(x)}"${hot ? ' class="hot"' : ""}>${esc(x.label)} <span class="n">${x.n}</span>${hot ? `<span class="late">${hot}</span>` : ""}</a>`;
+    }).join('<span class="dot" aria-hidden="true">·</span>')
       : '<span class="meta">없어요</span>'}`;
   }
 

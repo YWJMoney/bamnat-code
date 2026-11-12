@@ -2744,7 +2744,13 @@ test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 40개씩 더 �
     assert.ok(li.querySelector("details.row-more>summary[aria-label]"), "⋯ for the rest");
     assert.ok(li.querySelector("details.row-more .menu .btn.danger"), "지우기 sits in the menu");
     assert.ok(!li.querySelector(".btn.primary"), "no filled button on a row");
+    // 알약은 종류 하나만(탭 아홉 개를 붙인 605px 알약이 380·200%에서 카드 밖으로 잘렸어요), 탭은 아래 작은 글로.
+    for (const p of li.querySelectorAll(".row-main>.pill")) assert.doesNotMatch(p.textContent, /·/, p.textContent);
   }
+  // 줄 가운데에서 연 ⋯ 메뉴는 열 때 재어 화면 안으로 옮겨요(--menu-dx).
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.row-more>\.menu\{[^}]*transform:translateX\(var\(--menu-dx,0\)\)/);
+  assert.match(await adminFile("/admin/app.js").text(), /setProperty\("--menu-dx"/);
   await u.click('#main [data-act="recipe-more"]');
   assert.equal(rows().length, 42);
   assert.ok(!u.$('#main [data-act="recipe-more"]'), "all shown");
@@ -2865,6 +2871,8 @@ test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤
   // HQ-60: 광장 하루 글 표(폭 868)의 숨긴 이름표(.lab, position:absolute)가 상자 밖을 기준으로 놓여 840에서 쪽이 123px 밀렸어요.
   assert.match(css, /\.table-wrap\{position:relative;max-width:100%\}/);
   assert.match(css, /\.table-wrap \.lab\{left:0;top:0\}/);
+  // 상자 안 표 칸은 낱말을 지켜요('투자 이야기'가 '이야/기'로 갈라졌어요).
+  assert.match(css, /\.table-wrap table\.list th,\.table-wrap table\.list td\{overflow-wrap:break-word\}/);
   // 380·200%: 칸 최소 폭이 화면보다 넓은 격자가 없어요(15rem = 480px).
   assert.doesNotMatch(css, /repeat\(auto-(fit|fill),minmax\([0-9.]+rem,1fr\)\)/);
   assert.match(css, /\.card-head>\.btn\{max-width:100%;white-space:normal/);
@@ -2884,5 +2892,40 @@ test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤
   }
   // 광장 하루 글(HQ-60)과 회사 표는 시험 자료로도 그려져요. 숫자 › 요금제 구간은 자료가 있을 때만.
   assert.ok(seen["#/community?show=village"] > 0 && seen["#/companies"] > 0, JSON.stringify(seen));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-33] 오늘 '지금 기다리는 것': 숫자는 보통 색, 기한을 넘긴 칸에만 빨간 '넘김 N'을 글로", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-65(조건 6·14): 숫자마다 빨강이던 칩을 보통 색으로, 빨강은 넘김·오류를 말하는 글 한 조각에만.
+  assert.match(css, /\.waiting a \.n\{color:var\(--fg\)/);
+  assert.match(css, /\.waiting a \.late\{color:var\(--bad\)/);
+  // 380·200%에서도 칩은 둘씩(허브는 많아야 넷이라 두 줄 안).
+  assert.match(css, /\.waiting a\{[^}]*flex:1 1 calc\(50% - \.4rem\)/);
+  // 같은 화면의 할 일 줄: 좁은 목록에서 넓은 화면의 한 줄 규칙보다 세게, 단추 줄은 바뀌고 제목은 두 줄까지(840·200% '내일 볼게요' 잘림).
+  assert.match(css, /\.rows\.inbox \.row>\.row-side\{flex-wrap:wrap;justify-content:flex-start\}\.rows\.inbox \.row-main>b\{white-space:normal\}/);
+  const t0 = Date.parse("2026-11-12T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { env } = await world();
+  let u = await signedIn(env);
+  const ask = '#waiting a[href^="#/inquiries"]';
+  const release = '#waiting a[href^="#/launch"], #waiting a[href^="#/chores"], #waiting a[href^="#/flags"]';
+  assert.ok(u.$$("#waiting a").length <= 4, "one chip per other hub");
+  // 막 들어온 문의 셋·제보 하나는 기한 전: 숫자 4는 보통 색, 빨강 없음(서버가 보낸 '지금'으로 재요).
+  assert.match(u.text(`${ask} .n`), /^4$/);
+  assert.equal(u.$$("#waiting .late").length, 0, "nothing late yet: no red");
+  assert.ok(u.$(release), "출시 has a chip");
+  // 열흘 뒤: 문의 셋과 제보 하나가 모두 기한을 넘겨 '사람과 글'에만 '넘김 4'. 출시의 이달 운영은 달 끝이 기한이라 아직이에요.
+  t.mock.timers.setTime(t0 + 10 * 864e5);
+  u = await signedIn(env);
+  assert.ok(u.$(ask).classList.contains("hot"));
+  assert.match(u.text(`${ask} .n`), /^4$/);
+  assert.equal(u.text(`${ask} .late`), "넘김 4");
+  assert.equal(u.$(release).querySelector(".late"), null, "이달 운영 is not late: no red");
+  for (const a of u.$$("#waiting a:not(.hot)")) assert.equal(a.querySelector(".late"), null);
+  // 이 기기에서 '내일 볼게요'로 미룬 것은 빨강에서도 빠져요.
+  u.$('#main .rows.inbox [data-act="inbox-snooze"]').click();
+  await u.settle(20);
+  assert.equal(u.text(`${ask} .late`), "넘김 3");
   assert.deepEqual(u.errors, []);
 });
