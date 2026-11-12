@@ -103,7 +103,7 @@ import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 // 2.0.0 [RVD-25] SN-17 회사 설정 파일 검사(장터 서버도 같은 함수로).
 import { Refuse, refuse, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, given, object, list, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, cleanSetup, usesNewer, period, kindRef, rules, extraRule, tiers, premium, item } from "./company-setup.js";
-import { FCM_SCHEMA, fcmRoute } from "./fcm.js";
+import { FCM_SCHEMA, fcmRoute, stillHere } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
@@ -116,6 +116,8 @@ import { OPS_ALERT_SQL, OPS_BADGE_SQL, OPS_SCHEMA, morningExtra, opsAlertsFrom, 
 import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passkey.js";
 import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
+import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
+import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
 
@@ -395,7 +397,11 @@ export async function prune(env, now) {
     // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
       now - PHOTO.keepAfterCloseMs),
+    // 2.0.0 [RVQ-16] 검토 SRV-09: 보관 장부가 정한 기한(알림 토큰·같은 근무 알림·기기 확인·광장 알림 보낸 때·사진 신고·꾸미기 부탁 연결·운영 기록).
+    ...retentionPrune(stmt, env, now),
   ]);
+  // 2.0.0 [RVQ-16] 검토 SRV-15: 아직 잠그지 않은 2단계 키를 서버 비밀값으로 잠가요(한 번, 그 뒤로는 0줄).
+  await sealLegacyTotp(env).catch(() => {});
 }
 
 /**
@@ -405,7 +411,8 @@ export async function prune(env, now) {
 export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    // 2.0.0 [RVQ-16] 보내려고 잠깐 둔 답도 문의와 함께(문의가 없으면 보낼 곳도 없어요).
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -1020,6 +1027,8 @@ const COLUMNS = [
   "ALTER TABLE admin_sessions ADD COLUMN via TEXT NOT NULL DEFAULT ''",
   // 2.0.0 [RVQ-06] 검토 U21-03: 패스키마다 마지막으로 쓴 기기 이름.
   "ALTER TABLE admin_passkeys ADD COLUMN last_ua TEXT NOT NULL DEFAULT ''",
+  // 2.0.0 [RVQ-17] 검토 U21-07·I21b-02: 데이터 요청을 대신 한 증빙(JSON 배열: 지운 표·줄 수, 남은 것, 내보낸 표·줄 수).
+  "ALTER TABLE data_requests ADD COLUMN proof TEXT",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
@@ -3744,7 +3753,22 @@ async function takeBack(request, env, id) {
 async function forgetMine(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
-  const dev = await deviceHash(device);
+  const r = await forgetDevice(env, await deviceHash(device));
+  return json({ reports: r.reports, votes: r.votes, posts: r.posts, inquiries: r.inquiries,
+    // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
+    ...(r.inquiriesKept ? { inquiriesKept: r.inquiriesKept } : {}),
+    ...(r.recipes ? { recipes: r.recipes } : {}), ...(r.profile ? { profile: r.profile } : {}), ...(r.follows ? { follows: r.follows } : {}),
+    ...(r.sets ? { sets: r.sets } : {}) });
+}
+
+/**
+ * 2.0.0 [RVQ-16] 검토 SRV-09·U21-07·I21b-02: 설치 해시 [dev]의 모든 것(모두 지우기와 관리자의 데이터 요청 대행이 같은 일). 맨 끝에 보관 장부의
+ * 쓸기(forgetSweep)가 장부에 delete로 적힌 모든 표에서 남은 줄을 지워요. [keepInquiry]는 요청을 받은 문의 하나를 남겨 결과를 그 문의로 알릴
+ * 수 있게 해요(대행만). [count]면 지우기 전과 뒤에 표마다 이 해시가 든 줄을 세어 증빙으로 돌려줘요.
+ */
+export async function forgetDevice(env, dev, { keepInquiry = null, count = false } = {}) {
+  const before = count ? await deviceRows(env, dev) : null;
+  const askWhere = keepInquiry ? ["device = ? AND id <> ?", dev, keepInquiry] : ["device = ?", dev];
   // [PLZ-04] Adopted rules and the posts that proposed them stay, cut loose from this install (결정 D34).
   const gone = `gone${randomId(12)}`;
   await batch(env, [
@@ -3766,7 +3790,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM day_rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM device_seen WHERE device = ?", dev),
   ]);
-  const [, reports, votes, , posts, , , kept, , , , , , asked] = await batch(env, [
+  // 2.0.0 [RVQ-16] 문의 문장 수가 바뀌어도(보내려고 둔 답을 더함) 센 줄을 제자리에서 읽게, 문의 문장의 처음·끝을 따로 기억해요.
+  const asks = forgetInquiries(env, ...askWhere);
+  const results = await batch(env, [
     stmt(env, "DELETE FROM rewards WHERE device = ?", dev),
     stmt(env, "DELETE FROM reports WHERE device = ?", dev),
     stmt(env, "DELETE FROM votes WHERE device = ?", dev),
@@ -3778,7 +3804,7 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM post_flags WHERE device = ? OR post_id NOT IN (SELECT id FROM posts)", dev),
     // [ADMIN-11][ADMIN-12] Their questions, with what admins attached to them. 1.36 [INQ-07] A 결제·환불
     // record is cut from this phone instead and stays with the developer for its three years.
-    ...forgetInquiries(env, "device = ?", dev),
+    ...asks,
     // [ADMIN-02] Their 나도 그래요 and 신고 on others' questions go too, and those count one fewer.
     stmt(env, `UPDATE inquiries SET same = same - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'same')`, dev),
     stmt(env, `UPDATE inquiries SET flags = flags - 1 WHERE id IN (SELECT inquiry_id FROM inquiry_marks WHERE device = ? AND kind = 'flag')`, dev),
@@ -3800,6 +3826,9 @@ async function forgetMine(request, env) {
     stmt(env, "DELETE FROM write_limits WHERE device = ? AND until <= ?", dev, Date.now()),
     stmt(env, "UPDATE pro_shares SET guest = NULL, guest_at = NULL WHERE guest = ?", dev),
   ]);
+  const [, reports, votes, , posts] = results;
+  const kept = results[7];
+  const asked = results[7 + asks.length - 1];
   // 1.34 [RCP-28] its recipes with their votes and talk, its votes on others' (off their counts), its 신뢰 단계.
   const recipes = await forgetRecipes(recipeDeps, env, dev);
   // 1.35 its requests, likes, follows, maker page and pictures.
@@ -3810,10 +3839,30 @@ async function forgetMine(request, env) {
   await batch(env, forgetCommunity(recipeDeps, env, dev));
   // 1.36 the fonts it shared and its font reports.
   await batch(env, forgetFonts(recipeDeps, env, dev));
-  return json({ reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
-    // 1.36 [INQ-07] how many of those the law keeps with the developer, said on the phone.
-    ...(kept.meta.changes ? { inquiriesKept: kept.meta.changes } : {}),
-    ...(recipes ? { recipes } : {}), ...(profile ? { profile } : {}), ...(follows ? { follows } : {}), ...(sets ? { sets } : {}) });
+  // 2.0.0 [RVQ-16] 검토 SRV-09: 장부에 delete로 적힌 표에서 남은 것(알림 토큰·같은 근무 알림·기기 확인·광장 출석·사진 신고·꾸미기 부탁 연결 등).
+  // 요청 문의를 남길 때는 그 문의의 '나도 그래요'·신고는 문의 쪽 일이라 그대로 두고, 문의 표는 cut이라 쓸지 않아요.
+  const sweep = forgetSweep(stmt, env, dev);
+  const swept = await batch(env, sweep.map((x) => x.s));
+  const sweptRows = Object.fromEntries(sweep.map((x, i) => [x.table, swept[i].meta.changes]).filter(([, n]) => n > 0));
+  const out = { reports: reports.meta.changes, votes: votes.meta.changes, posts: posts.meta.changes, inquiries: asked.meta.changes + kept.meta.changes,
+    inquiriesKept: kept.meta.changes, recipes, profile, follows, sets, swept: sweptRows };
+  if (count) {
+    const after = await deviceRows(env, dev);
+    out.proof = { gone: Object.fromEntries(Object.entries(before).map(([t, n]) => [t, n - (after[t] ?? 0)]).filter(([, n]) => n > 0)),
+      left: Object.fromEntries(Object.entries(after).filter(([, n]) => n > 0)) };
+  }
+  return out;
+}
+
+/** 2.0.0 [RVQ-16] 보관 장부에서 설치 해시 열이 있는 표마다 [dev]가 든 줄 수(0은 빼요). */
+export async function deviceRows(env, dev) {
+  const tables = RETENTION.filter((r) => deviceColumns(r).length);
+  const rows = await batch(env, tables.map((r) => {
+    const cols = deviceColumns(r);
+    return stmt(env, `SELECT COUNT(*) AS n FROM ${r.table} WHERE ${cols.map(([c, a]) => (a === "contains" ? `instr(${c}, ?) > 0` : `${c} = ?`)).join(" OR ")}`,
+      ...cols.map(() => dev));
+  }));
+  return Object.fromEntries(tables.map((r, i) => [r.table, Number(rows[i].results?.[0]?.n ?? 0)]).filter(([, n]) => n > 0));
 }
 
 async function vote(request, env) {
@@ -5419,7 +5468,14 @@ async function login(request, env, now) {
   const second = await one(env, "SELECT secret, used_step FROM admin_totp WHERE admin = ? AND on_at IS NOT NULL", who);
   if (second && !(who === OWNER.id && env.ADMIN_2FA_RESET === "1")) {
     if (body.code === undefined || body.code === "") return json({ error: "code_needed" }, 401);
-    const step = await totpCheck(second.secret, String(body.code), now, second.used_step);
+    // 2.0.0 [RVQ-16] 검토 SRV-15: 키는 서버 비밀값으로 잠가 둬요. 비밀값을 옛 값 없이 바꿔 열 수 없으면 들이지 않고(닫힌 채), 최고 관리자는
+    // ADMIN_2FA_RESET, 다른 관리자는 최고 관리자가 2단계를 풀어 다시 켜요.
+    const secret = await totpOf(env, second.secret);
+    if (!secret) {
+      await audit(env, now, "login_failed", "code_sealed");
+      return json({ error: "code_reset" }, 401);
+    }
+    const step = await totpCheck(secret, String(body.code), now, second.used_step);
     if (step === null) {
       // 비밀번호는 맞았고 코드가 틀림: 위에서 올린 횟수가 그대로 남고, 2.0.0 [RVQ-05] 검토 SRV-08 (다)부터 전체 실패에도 들어가요.
       await allow(env, "login|all", Infinity, LIMITS.lockMs, now);
@@ -5510,19 +5566,28 @@ async function secondView(env, actor) {
 async function secondChange(request, env, actor, now) {
   const body = await readJson(request, 1024);
   if (body.do === "start") {
-    const secret = totpSecret();
+    // 2.0.0 [RVQ-16] 검토 SRV-15: D1에는 잠근 값만(백업에도 잠근 채로 가요). 앱에 보여 줄 때만 열어요.
     await run(env, `INSERT INTO admin_totp (admin, secret, on_at, used_step, created_at) VALUES (?, ?, NULL, -1, ?)
       ON CONFLICT (admin) DO UPDATE SET secret = excluded.secret, on_at = NULL, used_step = -1, created_at = excluded.created_at
-      WHERE admin_totp.on_at IS NULL`, actor.id, secret, now);
+      WHERE admin_totp.on_at IS NULL`, actor.id, await totpSealed(env, totpSecret()), now);
     const row = await one(env, "SELECT secret, on_at FROM admin_totp WHERE admin = ?", actor.id);
     if (row.on_at) return json({ error: "second_on" }, 409);
-    return json({ secret: row.secret, uri: totpUri(row.secret, actor.owner ? "최고 관리자" : actor.email) });
+    const secret = await totpOf(env, row.secret);
+    if (!secret) return json({ error: "code_reset" }, 409);
+    return json({ secret, uri: totpUri(secret, actor.owner ? "최고 관리자" : actor.email) });
   }
   if (body.do !== "confirm" && body.do !== "off") refuse("do", "do");
   const row = await one(env, "SELECT secret, on_at, used_step FROM admin_totp WHERE admin = ?", actor.id);
   if (!row || (body.do === "confirm") === Boolean(row.on_at)) return json({ error: body.do === "confirm" ? "second_not_started" : "second_off" }, 409);
-  const step = await totpCheck(row.secret, String(body.code ?? ""), now, row.used_step);
-  if (step === null) return json({ error: "code_wrong", field: "code" }, 400);
+  const secret = await totpOf(env, row.secret);
+  // 열 수 없는 키(서버 비밀값이 바뀜)는 끄기만 코드 없이 돼요: 이미 쓸 수 없는 2단계라 지우는 것이 안전해요. 켜기는 다시 시작해요.
+  if (!secret && body.do === "off") {
+    await run(env, "DELETE FROM admin_totp WHERE admin = ?", actor.id);
+    await audit(env, now, "second_off", actor.id, "열 수 없는 키");
+    return json(await secondView(env, actor));
+  }
+  const step = secret ? await totpCheck(secret, String(body.code ?? ""), now, row.used_step) : null;
+  if (step === null) return json({ error: secret ? "code_wrong" : "code_reset", field: "code" }, 400);
   if (body.do === "confirm") await run(env, "UPDATE admin_totp SET on_at = ?, used_step = ? WHERE admin = ?", now, step, actor.id);
   else await run(env, "DELETE FROM admin_totp WHERE admin = ?", actor.id);
   await audit(env, now, body.do === "confirm" ? "second_on" : "second_off", actor.id);
@@ -8017,6 +8082,8 @@ const newsSince = (url, now) => {
 async function digest(request, env, url) {
   const dev = await installOf(request);
   const now = Date.now();
+  // 2.0.0 [RVQ-16] 하루 한 번 묻는 이 길이 '아직 쓰는 중'(알림 토큰·같은 근무 알림의 정리 기한).
+  await stillHere(env, dev, now).catch(() => {});
   const since = newsSince(url, now);
   const [plaza, answers, ops] = await Promise.all([
     paused(env, "PLAZA_NEWS").then((off) => (off ? null : newsItems(env, dev, since, now))),
