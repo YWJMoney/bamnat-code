@@ -2834,8 +2834,11 @@ async function careAdmin(request, env, url, path, method, now) {
   }
   const m = path.match(/^\/care\/(c[A-Za-z0-9]{15})\/lift$/);
   if (m && method === "POST") {
-    const out = await careLift(recipeDeps, env, m[1], now);
-    if (out) await audit(env, now, "care_lift", m[1], out.kind);
+    // 2.0.0 [RVA-03] {undo: true}: 방금 건 것을 없던 일로(1분 안, 운영자가 건 것만).
+    const undo = (await readJson(request, 256).catch(() => ({})))?.undo === true;
+    const out = await careLift(recipeDeps, env, m[1], now, { undo });
+    if (out?.error) return json(out, 409);
+    if (out) await audit(env, now, undo ? "care_undo" : "care_lift", m[1], out.kind);
     return json(out ?? { error: "not_found" }, out ? 200 : 404);
   }
   return json({ error: "not_found" }, 404);
@@ -5129,7 +5132,8 @@ export async function admin(request, env, url) {
   if (keyed instanceof Response) return keyed;
   const session = keyed ? { token: null, actor: keyed.actor } : await signedIn(request, env, now);
   // [ADMUX-11] Opening the app asks this first: signed out is an answer, not a 401 in the browser's console.
-  if (path === "/session" && method === "GET") return json({ signedIn: Boolean(session) }, 200, { "cache-control": "no-store" });
+  // 2.0.0 [RVA-01] 검토 ADM-02: 열면 바로(남은 답으로 먼저 그림) 옆에서 이 답을 함께 받아, 로그인이 끝났거나 다른 관리자면 남은 화면을 바로 가리고 지워요.
+  if (path === "/session" && method === "GET") return json({ signedIn: Boolean(session), ...(session ? { who: session.actor.id } : {}) }, 200, { "cache-control": "no-store" });
   if (!session) return json({ error: "login" }, 401);
   let res = await signedRoute(request, env, url, path, method, now, session);
   // [ADMIN-16] A list or screen that did not change since the app last had it is a 304 with no body.

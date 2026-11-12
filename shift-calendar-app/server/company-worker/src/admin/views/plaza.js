@@ -7,7 +7,7 @@
 //   [ADMX-06] 회사 is a table the server sorts; on a phone each row is a small card.
 //   [ADMX-09] 검토 rejects many at once (one reason, undo for all) and 회사 hides or shows many at once.
 export function plazaViews(A) {
-  const { S, L, esc, times, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter } = A;
+  const { S, L, esc, times, can, href, seg, skeleton, empty, lines, day, moment, icon, P, api, act, load, render, toast, openDialog, dialog, syncUrl, refilter, showCopy, danger, askText } = A;
   const name = (c, dept) => `${esc(c.name)}${dept ? ` <span class="dept">${esc(dept)}</span>` : ""}`;
 
   // ---- 판 차이 [ADMX-02] ----
@@ -282,7 +282,8 @@ export function plazaViews(A) {
         await navigator.clipboard.writeText(row);
         toast("공개 표 한 줄을 복사했어요. (업종)을 채워 개발에 넘겨 주세요");
       } catch {
-        window.prompt("이 줄을 복사해 주세요", row);
+        // 2.0.0 [RVA-02] 검토 ADMX-16: 기본 입력 창 대신 고를 수 있는 칸과 [복사].
+        showCopy("공개 표 한 줄", "(업종)을 채워 개발에 넘겨 주세요.", row);
       }
     },
     // [ADMX-09] 검토 여러 개 거절
