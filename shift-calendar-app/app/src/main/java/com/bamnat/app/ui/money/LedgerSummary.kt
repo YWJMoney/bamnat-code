@@ -217,7 +217,8 @@ fun HeroCard(
             }
         }
         if (current && status.fixedLeft > 0) {
-            Text("이번 달 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 빼고 계산했어요.", style = MaterialTheme.typography.bodySmall,
+            // 2.0.0 [RVK-20] With 월급날 기준 the payments set aside are the cycle's (until its last day), so they are said so.
+            Text("${if (m.range != null) "이번 주기" else "이번 달"} 남은 반복 지출 ${Fmt.won(status.fixedLeft)}은 미리 빼고 계산했어요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
         }
     }

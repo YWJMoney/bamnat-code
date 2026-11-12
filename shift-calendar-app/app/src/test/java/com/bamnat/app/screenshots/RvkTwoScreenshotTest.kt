@@ -38,6 +38,11 @@ class RvkTwoScreenshotTest : ScreenshotBase() {
     private fun payCycle(page: String?, wide: Boolean = false): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         runBlocking { app.container.payStore.save(closeOn20(com.bamnat.app.ui.pay.PayViewModel(app.container).sampleProfile()), keepUndo = false) }
         app.container.settingsRepository.update { it.copy(moneyByPayCycle = true) }
+        // Spending in 9/25~9/30, so the cycle's sums differ from October's.
+        runBlocking {
+            app.container.moneyRepository.save(com.bamnat.core.money.MoneyEntry(date = today.minusDays(17), kind = MoneyKind.EXPENSE,
+                amount = 52_000, category = "식비", merchant = "이마트"))
+        }
         ledgerPage(page, wide).invoke(this)
         settle()
     }
