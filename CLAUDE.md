@@ -181,6 +181,7 @@ Claude Code는 저장소 맨 위의 이 파일을 저절로 읽어요(클라우�
   - `apksigner verify --print-certs`로 인증서 SHA-256이 `8e7891b3…a97acb`(`shift-calendar-app/docs/HANDOFF.md` 5항 전체 값)인지
   - 디컴파일(JADX)·`apkanalyzer`로 앱 안에 비밀값·관리자 토큰·내부 주소가 없는지, `exported` 구성요소가 권한으로 막혀 있는지, 개발용 로그에 개인 정보가 없는지
   - `python3 tools/app_size.py`로 크기 예산
+  - `python3 tools/release_dex_check.py <APK>`로 개발용 등급 미리 보기·예시 요금제 글귀가 dex에 없는지(2.0.0, 출시 빌드에서 등급을 바꾸는 길은 없어요)
   - 워치는 AAB만 나오니 bundletool로 APK를 뽑아 같은 점검을 해요
 - 리버스 엔지니어링 MCP **REA는 도입하지 않아요**(2026-10-30 결정). 위 점검은 기본 도구로 충분하고, 갑자기 유명해진 패키지를 까는 위험만 늘어요. 나중에 쓰게 되면 버전을 고정하고, 키·사용자 데이터는 분석 폴더에 넣지 않아요. 분석 문서: 프로젝트 파일 `조사/리버스엔지니어링-MCP-REA-활용방안.md`.
 
