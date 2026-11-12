@@ -3559,8 +3559,9 @@ function adminApp(L, BUILD, M) {
       ${m.owner ? familyCard() : ""}
       ${previewCard()}
       <section class="card"><div class="card-head"><h2>로그인</h2>${S.data.sessions?.items?.length ? `<span class="pill">${S.data.sessions.items.length}곳</span>` : ""}</div>
-        <p class="hint">쓰는 동안 저절로 이어지고 7일 동안 안 쓰면 끝나요(길어도 30일). ${m.owner ? "Cloudflare에서 ADMIN_PASSWORD를 바꾸면" : "비밀번호를 바꾸면"} 그 전의 로그인은 모두 끊겨요.</p>
         ${sessionRows()}
+        <details class="tip" data-key="session-how"><summary>7일 안 쓰면 끝나요</summary>
+          <p class="hint">쓰는 동안 저절로 이어지고 7일 동안 안 쓰면 끝나요(길어도 30일). ${m.owner ? "Cloudflare에서 ADMIN_PASSWORD를 바꾸면" : "비밀번호를 바꾸면"} 그 전의 로그인은 모두 끊겨요.</p></details>
         <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
           <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
         ${m.owner ? lockLine() : ""}</section>
