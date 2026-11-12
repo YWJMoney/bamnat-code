@@ -51,6 +51,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -830,7 +831,9 @@ private fun SettingsHub(
     val keyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val hideOnDrag = com.bamnat.app.ui.components.rememberHideKeyboardOnDrag()
     val pick: (SettingEntry) -> Unit = { keyboard?.hide(); onFound(it) }
-    Column(modifier.nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // 2.0.0 [RVO-09] (PC-82 '수면 기록' 바로 가기가 안 열림): the app draws under the keyboard (edge to edge), so the found features at the
+    // foot of the results stayed under it and a tap on their 바로 가기 went to the keyboard. The list ends above the keyboard.
+    Column(modifier.imePadding().nestedScroll(hideOnDrag).verticalScroll(scroll).padding(horizontal = 12.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("설정", style = MaterialTheme.typography.headlineSmall,
             modifier = Modifier.padding(start = 4.dp, bottom = 8.dp).semantics { heading() })
         val work by vm.workSettings.collectAsStateWithLifecycle()
@@ -896,7 +899,7 @@ private fun SettingsHub(
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
         if (LocalContext.current.appContainer.inviteApi.enabled && !com.bamnat.app.ui.grow.rememberGrowCardShown()) {
             val inviteRules by LocalContext.current.appContainer.invites.store.state.collectAsStateWithLifecycle()
-            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 초대 코드 넣기", false) {
+            GroupRow(Icons.Outlined.PersonAdd, "친구 초대", "${inviteRules.rules.short()}, ${inviteRules.rules.need}명 더 채울 때마다 또 · 받은 코드 넣기", false) {
                 SettingsLinks.go(SettingsGo.PRO)
             }
         }
@@ -996,7 +999,8 @@ private fun SearchResults(query: String, results: List<SettingEntry>, share: Boo
     }
     // [UX-05] The same words find the help answers too: "알람이 안 울려요" is a question more than a setting.
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
-    val answers = remember(query, share, hiddenKinds, screenStyle) { HelpFaq.search(query, HelpFaq.topics(share).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
+    val inviteTerms = rememberInviteTerms()
+    val answers = remember(query, share, hiddenKinds, screenStyle, inviteTerms) { HelpFaq.search(query, HelpFaq.topics(share, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle), limit = 3) }
     if (answers.isNotEmpty()) {
         Text("도움말의 답 ${answers.size}개", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 4.dp))
@@ -1168,10 +1172,12 @@ internal fun boardRow(style: com.bamnat.core.work.WorkStyle?): Pair<String, Stri
     else -> "회사 규칙 광장" to "회사별 근무표·급여 규칙 찾기 · 맞았어요·달라요 · 토론"
 }
 
-/** [MON-04] The 프로 row's words: before the 정식 출시, with 프로, and without it. */
+/** [MON-04] The 프로 row's words: while 결제 is not open, with 프로, and without it. */
 internal fun proSummary(gate: com.bamnat.app.tier.Gate): String = when {
-    !gate.live -> "지금은 모든 기능 무료 · 출시 소식은 앱에서 알려 드려요" // [J133-43] 순번 723
-    gate.access.pro -> gate.access.reason.words
+    // 2.0.0 [RVO-12] (HQ-46) 3.1 보류 중인 휴대폰은 그 끝나는 날을, 나머지(개발용 빌드·결제를 잠시 끈 때)는 '출시' 말 없이. [J133-43] 순번 723
+    !gate.live && gate.access.reason == com.bamnat.core.tier.ProReason.HELD -> gate.access.say(com.bamnat.core.time.Today.zone())
+    !gate.live -> "지금은 모든 기능 무료 · 결제가 열리면 앱에서 알려 드려요"
+    gate.access.pro -> gate.access.say(com.bamnat.core.time.Today.zone())
     else -> "광고 없애기 · 명세서 대조 · 돈 통계 · 1개월 무료 체험"
 }
 

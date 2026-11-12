@@ -18,7 +18,10 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.WarningAmber
 import com.bamnat.app.ui.components.Button
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
@@ -44,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.bamnat.app.recipe.RecipeItem
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.village.MakerBadge
 import com.bamnat.app.ui.village.markColor
 import com.bamnat.core.plaza.MakerMark
@@ -242,7 +246,21 @@ internal fun PutRow(s: LadderStep) {
  * 단추가 쉰다는 말이 없음): what 넣기 changes, at most four short lines in the user's words, the full list folded under it.
  */
 internal data class PutLine(val text: String, val kind: Kind) {
-    enum class Kind { LOOK, LETTERS, LETTERS_KEPT, FX, REST, ALARM, ALARM_OFF, OTHER }
+    enum class Kind { LOOK, LETTERS, LETTERS_KEPT, FX, REST, ALARM, ALARM_OFF, ALARM_WEAK, ALARM_WEAK_ON, WRITES, TAPS, OTHER }
+
+    /** 2.0.0 [RVM-23] U09b-01 A 조심 줄: what the work does that one would not see coming, said first, with the caution mark. */
+    val caution: Boolean get() = kind in CAUTION
+
+    companion object {
+        val CAUTION = setOf(Kind.ALARM_WEAK, Kind.ALARM_WEAK_ON, Kind.WRITES, Kind.TAPS)
+    }
+}
+
+/** 2.0.0 [RVM-23] U09b-01 What steps that write are written in, as the 조심 줄 says it: "가계부", "메모", "가계부·메모". */
+private fun writesTo(acts: List<com.bamnat.core.formula.LogicAct>): String {
+    val money = setOf(com.bamnat.core.formula.LogicVerb.ADD_MONEY, com.bamnat.core.formula.LogicVerb.ADD_INCOME, com.bamnat.core.formula.LogicVerb.ENVELOPE)
+    val w = acts.filter { it.verb.writes }
+    return listOfNotNull("가계부".takeIf { w.any { it.verb in money } }, "메모".takeIf { w.any { it.verb !in money } }).joinToString("·")
 }
 
 internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLine> {
@@ -273,16 +291,43 @@ internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLi
     val alarms = s.pieces.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.ALARMS && it.fits }
     if (alarms != null) {
         val added = alarms.lines.filter { !it.skipped && it.text.endsWith(" 알람 더하기") }.map { it.text.removeSuffix(" 알람 더하기") }
+        // 2.0.0 [RVM-22] RCP-05: the way it rings (진동·점점 크게·울림 길이·다시 울림·미션) is said even when alarms are added too.
+        val how = alarms.lines.any { !it.skipped && !it.text.endsWith(" 알람 더하기") }
         when {
             !alarms.on -> out += PutLine("알람은 빼고 넣어요", PutLine.Kind.ALARM_OFF)
-            added.isNotEmpty() -> out += PutLine("알람이 더 울려요 · " + added.joinToString(", ").let { if (it.length > 40) it.take(39) + "…" else it }, PutLine.Kind.ALARM)
-            alarms.lines.any { !it.skipped } -> out += PutLine("알람 울리는 방식이 바뀌어요", PutLine.Kind.ALARM)
+            added.isNotEmpty() -> out += PutLine("알람이 더 울려요 · " + added.joinToString(", ").let { if (it.length > 32) it.take(31) + "…" else it } +
+                (if (how) " · 울리는 방식도 바뀌어요" else ""), PutLine.Kind.ALARM)
+            how -> out += PutLine("알람 울리는 방식이 바뀌어요", PutLine.Kind.ALARM)
+        }
+        // 2.0.0 [RVM-22] RCP-05 (받은 작품 하나로 알람이 약해져 못 깨는 사고): what would make the alarm weaker stays out unless chosen.
+        if (alarms.on && s.alarmWeak.isNotEmpty()) {
+            val w = s.alarmWeak.joinToString(", ").let { if (it.length > 32) it.take(31) + "…" else it }
+            out += if (s.alarmWeaker) PutLine("알람이 약해져요 · $w", PutLine.Kind.ALARM_WEAK_ON)
+                else PutLine("알람을 약하게 하는 설정은 빼고 넣어요 · $w", PutLine.Kind.ALARM_WEAK)
         }
     }
     val rest = on.filter { it.kind !in kinds && it.kind != com.bamnat.core.recipe.PieceKind.LOGIC && it.kind != com.bamnat.core.recipe.PieceKind.ALARMS }
         .map { it.kind.label }
     if (rest.isNotEmpty()) out += PutLine("그 밖에 " + rest.take(3).joinToString(" · ") + if (rest.size > 3) " 등" else "", PutLine.Kind.OTHER)
-    return out
+    // 2.0.0 [RVM-23] U09b-01 (넣기 창 맨 위에 '조심 줄'을 따로, RCP-05·17·STU-23): what one would not see coming goes first — the alarm made
+    // weaker, a 단추 or 규칙 that writes 가계부·메모 (any step, not the first alone), a 꾸밈 that presses a 단추 when the calendar is touched.
+    if (logic != null) {
+        val bw = logic.buttons.filter { b -> b.acts.any { it.verb.writes } }
+        val rw = logic.rules.filter { r -> r.acts.any { it.verb.writes } }
+        val said = listOfNotNull(
+            bw.takeIf { it.isNotEmpty() }?.let { "누르면 ${writesTo(it.flatMap { b -> b.acts })}에 적는 단추 ${it.size}개" },
+            rw.takeIf { it.isNotEmpty() }?.let { "${writesTo(it.flatMap { r -> r.acts })}에 적는 규칙 ${it.size}개는 꺼진 채로 들어와요" },
+        )
+        if (said.isNotEmpty()) out += PutLine(said.joinToString(" · "), PutLine.Kind.WRITES)
+        val decor = s.recipe?.pieces?.firstOrNull { it.kind == com.bamnat.core.recipe.PieceKind.DECOR }
+            ?.takeIf { on.any { p -> p.kind == com.bamnat.core.recipe.PieceKind.DECOR } }
+        val taps = decor?.let { com.bamnat.core.recipe.DecorTapRule.taps(com.bamnat.core.recipe.Decor.of(it.values).items) }
+            ?.filter { t -> t.tap?.let(logic::button) != null }.orEmpty()
+        if (taps.isNotEmpty()) out += PutLine(
+            (if (taps.any { it.at == com.bamnat.core.recipe.Decor.CELL }) "달력 칸의 꾸밈을 누르면 단추가 눌려요" else "꾸밈을 누르면 단추가 눌려요") + " · ${taps.size}개",
+            PutLine.Kind.TAPS)
+    }
+    return out.filter { it.caution } + out.filterNot { it.caution }
 }
 
 /**
@@ -291,20 +336,28 @@ internal fun putBrief(s: RecipeDetailViewModel.State, fxOn: Boolean): List<PutLi
  * own 닫기·넣기 they were more 글자 단추 than 조건 2 lets a screen have (갈래 J RVJ-17 did the same).
  */
 @Composable
-internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, onAlarms: (Boolean) -> Unit) {
+internal fun PutBrief(lines: List<PutLine>, onLetters: (Boolean) -> Unit = {}, onWeaker: (Boolean) -> Unit = {}, onAlarms: (Boolean) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         lines.forEach { l ->
-            Text(
-                l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                color = when (l.kind) {
-                    PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
-                    PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
-                    else -> MaterialTheme.colorScheme.onSurface
-                },
-            )
+            // [RVM-23] U09b-01: a 조심 줄 has the caution mark at its left (the words stay the page's colour, 조건 3·6·14).
+            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+                if (l.caution) {
+                    Icon(Icons.Outlined.WarningAmber, contentDescription = "조심", tint = MaterialTheme.bamnat.caution,
+                        modifier = Modifier.padding(top = 2.dp, end = 8.dp).size(18.dp))
+                }
+                Text(
+                    l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
+                    color = when (l.kind) {
+                        PutLine.Kind.REST -> MaterialTheme.colorScheme.tertiary
+                        PutLine.Kind.ALARM_OFF -> MaterialTheme.colorScheme.onSurfaceVariant
+                        else -> MaterialTheme.colorScheme.onSurface
+                    },
+                )
+            }
             val choice: Triple<String, Boolean, (Boolean) -> Unit>? = when (l.kind) {
                 PutLine.Kind.ALARM, PutLine.Kind.ALARM_OFF -> Triple("알람도 넣기", l.kind == PutLine.Kind.ALARM, onAlarms)
                 PutLine.Kind.LETTERS, PutLine.Kind.LETTERS_KEPT -> Triple("칸에 근무 글자 남기기", l.kind == PutLine.Kind.LETTERS_KEPT, onLetters)
+                PutLine.Kind.ALARM_WEAK, PutLine.Kind.ALARM_WEAK_ON -> Triple("약하게 하는 설정도 넣기", l.kind == PutLine.Kind.ALARM_WEAK_ON, onWeaker)
                 else -> null
             }
             choice?.let { (label, on, set) ->

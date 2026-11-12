@@ -487,6 +487,41 @@ abstract class ScreenshotBase {
             settle()
         }
 
+        /**
+         * 2.0.0 [RVO-09] (PC-82) The keyboard up, [heightDp] tall over the foot of the screen, as the phone tells an app drawn edge to edge
+         * (it does not shrink the window): the window insets say so, and what is drawn under them is out of reach. 0 puts it away.
+         * Returns the keyboard's top in window pixels.
+         */
+        fun keyboard(heightDp: Int): Float {
+            var top = 0f
+            scenario.onActivity { activity ->
+                val decor = activity.window.decorView
+                val h = (heightDp * activity.resources.displayMetrics.density).toInt()
+                val ime = androidx.core.view.WindowInsetsCompat.Type.ime()
+                val insets = androidx.core.view.WindowInsetsCompat.Builder()
+                    .setInsets(ime, androidx.core.graphics.Insets.of(0, 0, 0, h))
+                    .setVisible(ime, h > 0)
+                    .build().toWindowInsets()
+                if (insets != null) decor.dispatchApplyWindowInsets(insets)
+                top = (decor.height - h).toFloat()
+            }
+            settle()
+            return top
+        }
+
+        /** 2.0.0 [RVO-13] PC-112: how many places on screen now say [text] (a line said twice is a fault). */
+        fun shownTimes(text: String): Int {
+            var n = 0
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                n = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).count { node ->
+                    val b = node.boundsInWindow
+                    b.width > 1f && b.height > 1f && node.words().any { w -> text in w }
+                }
+            }
+            return n
+        }
+
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
@@ -1765,7 +1800,23 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         ))
     }
 
-    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3)
+    /** 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기 as the server says it. */
+    var roomMoney = false
+    override suspend fun terms() = com.bamnat.app.company.CompanyTerms(3, 3, roomMoney = roomMoney)
+
+    /** 2.0.0 [RVN-17] COMP-12 This calendar held by another company: the look before choosing and the join say so. */
+    var held: com.bamnat.app.company.Membership? = null
+    /** 2.0.0 [RVN-17] COMP-12 Why '잘못 골랐어요' fails (null: it frees the calendar). */
+    var undoFails: String? = null
+    override suspend fun joinCheck(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(false, company)
+    override suspend fun join(device: String, company: String, cal: String) =
+        held?.copy(company = company) ?: com.bamnat.app.company.Membership(true, company)
+    override suspend fun undoJoin(device: String, cal: String): Boolean {
+        undoFails?.let { throw com.bamnat.app.company.CompanyException(it) }
+        held = null
+        return true
+    }
 
     /** [SPAT-05] What was sent: the note and the setup file, to check that no amount went. */
     val reports = mutableListOf<Pair<String, org.json.JSONObject>>()

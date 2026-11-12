@@ -233,13 +233,16 @@ class RvgPc2ScreenshotTest : ScreenshotBase() {
         assertTrue(gone("‘민지의", exact = false))
     }
 
-    /** HQ-55 for 현장: the receiving app still says '받은 근무표' for a nameless link; a named one takes 으로 after 일정. */
+    /**
+     * HQ-55 for 현장: a named link takes 으로 after 일정. [RVG-35] 검토 HQ-64: the quick link carries the 일정, so a nameless one is
+     * '받은 일정' in the receiving app and on the web page, and the hint says so (was '받은 근무표').
+     */
     @Test fun blankNameFieldFoldDarkHuge() = shoot("rvg33_share_blank_name_field_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {
         c.settingsRepository.update { it.copy(workStyle = com.bamnat.core.work.WorkStyle.FIELD) }
         c.shareLinks.clear()
         c.shareLinks.typedName = null
         sheet(Refusing())
-        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 근무표’로 보여요", exact = false))
+        assertTrue(appears("적지 않으면 받는 분 화면에 ‘받은 일정’으로 보여요", exact = false))
         typeInto("내 이름 (선택)", "민지")
         assertTrue(appears("받는 분 화면에 ‘민지의 일정’으로 보여요", exact = false))
     }

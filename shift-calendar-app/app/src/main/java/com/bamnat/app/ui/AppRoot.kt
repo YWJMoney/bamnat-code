@@ -384,6 +384,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     // [RVG-15] '가족·동료 것이에요' pressed: the title said over the question once the link is let go. [RVG-19] Kept out here: the
     // summary's '가족·동료 근무표였어요' comes back to the first screen with it.
     var theirsKept by rememberSaveable { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVG-35] 검토 HQ-64: what the kept link is called (‘민지’ 영업일은 받은 달력에 넣었어요).
+    var theirsWord by rememberSaveable { mutableStateOf("근무표") }
     when (needsSetup) {
         null -> return
         // "나중에" opens the calendar with a card to go on from where the user stopped.
@@ -416,6 +418,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingRaw = waitingShare?.schedule
                     val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
+                    // 2.0.0 [RVG-35] 검토 HQ-64: the link in its own word, as the web page that opened it said (‘민지’ 영업일).
+                    val waitingWord = waitingSchedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
@@ -436,14 +440,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     }, onSkip = { skip(com.bamnat.app.ui.onboarding.FirstStyle.FILE) },
                         onLater = { skip(com.bamnat.app.ui.onboarding.FirstStyle.BROWSE) },
                         textStep = shown.textStep, onTextStep = { step -> container.settingsRepository.update { it.copy(textStep = step, textAsked = true) } },
-                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle,
+                        linkWaiting = waitingLink != null && !theirsLater && !linkClosed, linkTitle = waitingTitle, linkWord = waitingWord,
                         linkLoading = waitingLink != null && waitingRead == null,
                         // [RVG-17] Said in place of the line: no signal, the server, or a link that is gone (ShareLinkException's own words).
                         linkProblem = waitingRead?.exceptionOrNull()?.let(com.bamnat.app.ui.setup.LinkStart::problem),
                         linkLean = com.bamnat.app.ui.setup.LinkStart.lean(waitingRaw),
                         onLinkClose = { container.telemetry.event("setup_link", "closed"); linkClosed = true },
-                        theirsKept = theirsKept, theirsLater = theirsLater,
-                        onTheirsClose = { theirsKept = null; theirsLater = false; linkClosed = true },
+                        theirsKept = theirsKept, theirsWord = theirsWord, theirsLater = theirsLater,
+                        onTheirsClose = { theirsKept = null; theirsWord = "근무표"; theirsLater = false; linkClosed = true },
                         onLinkStart = linkDraft?.let { draft -> {
                             sizeSeen()
                             com.bamnat.app.ui.onboarding.QuietStart.apply(container, com.bamnat.core.work.WorkStyle.SHIFT)
@@ -466,6 +470,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                                 container.telemetry.event("setup_link", "theirs")
                                 container.telemetry.event("received_add", "new")
                                 theirsKept = waitingTitle ?: com.bamnat.app.ui.setup.LinkStart.NO_NAME
+                                theirsWord = waitingWord
                             } else {
                                 // Not read (no signal): the link stays waiting, and the calendar offers it as a 받은 달력 after the setup.
                                 container.telemetry.event("setup_link", "theirs_later")
@@ -499,7 +504,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 onBrowseBack = { firstStyleKey = null }.takeIf { firstStyleKey == com.bamnat.app.ui.onboarding.FirstStyle.BROWSE },
                 onFirstStyleUsed = { firstStyleKey = "" },
                 // [RVG-19] 검토 HQ-09: '내 근무표예요' by mistake: the link is beside as theirs, the first screen says so and asks again.
-                onNotMine = { title -> theirsKept = title; firstStyleKey = null })
+                onNotMine = { title -> theirsKept = title; theirsWord = "근무표"; firstStyleKey = null })
             return
         }
         false -> if (consentSeen == null && container.consentStore.afterSetup && !browse.browsing) {
@@ -2034,7 +2039,10 @@ private fun AppNavHost(
                     scope.launch {
                         val hasPattern = company.schedule.patterns.first().isNotEmpty()
                         val pay = company.pay.profile.value != null
-                        val done = "‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: "")
+                        // 2.0.0 [RVN-17] 검토 I10ab-02 The order alone, on a calendar held by another company: said as what it was.
+                        val done = applied.heldBy?.let { h ->
+                            "‘$name’ 근무 순서를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
+                        } ?: ("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                         // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
                         applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }
                         when {
@@ -2055,7 +2063,7 @@ private fun AppNavHost(
                                 // From 회사 규칙 광장 there is no 회사 찾기 below: back to the board.
                                 if (!nav.popBackStack(Routes.COMPANY_FIND, inclusive = true)) nav.popFrom(Routes.COMPANY)
                                 // [PLAZA-32] 1.27 AI (443): the company's 정보 광장 opens at once, with one line on what just happened.
-                                if (container.companyApi.enabled && company.store.member.value != null) {
+                                if (container.companyApi.enabled && company.store.member.value != null && applied.heldBy == null) {
                                     container.pendingPlazaNote = if (applied.undo != null) "이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                         else "$done. 이제 같은 회사 분들끼리 이야기하는 정보 광장이에요"
                                     nav.navigate(Routes.companyBoard(calendar)) { launchSingleTop = true }
@@ -2602,7 +2610,7 @@ private fun SettingsGo.route(): String? = when (this) {
     SettingsGo.INQUIRY -> Routes.INQUIRY
     SettingsGo.BOARD -> Routes.companyBoard()
     SettingsGo.FEATURES -> Routes.FEATURES
-    SettingsGo.PRO -> Routes.PRO
+    SettingsGo.PRO, SettingsGo.PRO_CODE -> Routes.PRO
     SettingsGo.RECOMMENDED -> Routes.RECOMMENDED
     SettingsGo.PROFILE -> Routes.PROFILE
     SettingsGo.JOURNAL -> Routes.JOURNAL

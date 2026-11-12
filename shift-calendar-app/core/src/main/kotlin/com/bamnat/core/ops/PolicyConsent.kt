@@ -65,7 +65,7 @@ object PolicyConsent {
      * SEED에는 넣지 않아요(3.12와 같은 까닭: 서버 기본 일정이 바뀌어 일정을 안 정한 시험 서버의 깃발이 달라져요).
      */
     const val REVISION_VERSION = "3.13"
-    val REVISION_POSTED: LocalDate = LocalDate.of(2026, 11, 12)
+    val REVISION_POSTED: LocalDate = LocalDate.of(2026, 11, 13)
     /** 7일 줄: 체험 3일 전 알림, 생체 인증 설명, 백업·글꼴 바로잡기, 장터 카드 글꼴(앱 2.0.0, 갈래 M은 이날 전에는 받지 않음), 코드 넣는 곳. */
     val REVISION_EFFECTIVE: LocalDate = REVISION_POSTED.plusDays(7)
     /** 30일 줄: 1-7·1-12항 보상 확인 뒤 지급·1년 12개월 상한, 1-9항 사용 통계 4가지(`stats.disc`), 이용약관 1.4 전부. */

@@ -127,8 +127,9 @@ private fun KitDialog(
     var switchStyle by remember(theirs) { mutableStateOf(theirs != null) }
     val lines by produceState<Map<PieceKind, String>>(emptyMap(), kit) {
         value = kit.pieces.associate { p ->
+            // 2.0.0 [RVM-22] RCP-05: what would make my alarm weaker is said and stays out (설정 › 알람에서 바꿔요).
             p.kind to (runCatching { c.recipes.pieces.preview(p.kind, p.values, PersonalCalendar.MAIN) }.getOrNull()
-                ?.joinToString(" · ") { it.text }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
+                ?.joinToString(" · ") { it.text + if (it.weak) "(넣지 않아요)" else "" }?.takeIf { it.isNotBlank() } ?: RecipeDescribe.line(p, amounts = false))
         }
     }
     fun put() {
@@ -141,7 +142,9 @@ private fun KitDialog(
             val switching = theirs != null && switchStyle && picks.any { it.kind == PieceKind.COMPANY }
             if (switching) runCatching { c.settingsRepository.update { it.copy(workStyle = theirs) } }
             // [CELL-02] 1.39 Their 달력 모양, my cells' content (메모 줄·줄 순서·시간·음력·지출).
-            val id = runCatching { c.recipes.apply(kit.keepMyCellContent(), "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
+            // 2.0.0 [RVM-22] RCP-05 Their 알람 묶음 never makes my alarm weaker (진동 끔·짧게 울림·작게 시작 stay mine).
+            val strong = com.bamnat.core.recipe.AlarmStrength.keepStrong(kit.keepMyCellContent(), c.recipes.pieces.alarmNow())
+            val id = runCatching { c.recipes.apply(strong, "", 0, PersonalCalendar.MAIN, picks, emptyMap()) }.getOrNull()
             val ok = id != null
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 busy = false

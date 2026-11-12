@@ -92,9 +92,9 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
                 Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
                 LeaseAdOption(feature, gate)
             }
-            // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet.
+            // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet. 2.0.0 [RVO-13] (HQ-48) by the same name everywhere.
             if (LocalContext.current.appContainer.inviteApi.enabled) {
-                OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text("친구 초대로 프로 이용권 받기") }
+                OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text(INVITE_FREE_TITLE) }
             }
         }
     }

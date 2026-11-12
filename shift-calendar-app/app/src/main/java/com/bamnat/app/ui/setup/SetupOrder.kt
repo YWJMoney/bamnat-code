@@ -26,8 +26,10 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.LayersClear
 import com.bamnat.app.ui.components.FilledTonalButton
@@ -422,7 +424,7 @@ private fun HolidaysOffRow(on: Boolean, onChange: (Boolean) -> Unit) {
 private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
     StepHeader(
         "이번 달 근무표를 넣어 볼까요?",
-        "듀티표 사진이나 파일이 있으면 읽어서 칠해 드려요. 없으면 근무를 고르고 날짜를 누르거나 손가락으로 쓸어 칠해요.",
+        "근무표 사진이나 파일이 있으면 읽어서 칠해 드려요. 없으면 근무를 고르고 날짜를 누르거나 손가락으로 쓸어 칠해요.",
     )
     val tool by vm.paintTool.collectAsStateWithLifecycle()
     val month by vm.paintMonth.collectAsStateWithLifecycle()
@@ -480,26 +482,15 @@ private fun RosterPaint(vm: SetupViewModel, d: SetupDraft) {
     }
 }
 
-/** 1.36 PC W10: the roster being read, with a spinner, the reading under way, the seconds gone and 취소. */
+/**
+ * 1.36 PC W10: the roster being read, the reading under way and a way out. 2.0.0 [RVL-32] (검토 SCAN-04·U07b-01·I07ba-01) the
+ * same reading line as 한 달 근무 넣기: the reading model coming down with its percent, which way is being read, and 멈추기.
+ */
 @Composable
 private fun RosterReadingCard(vm: SetupViewModel) {
     val step by vm.rosterStep.collectAsStateWithLifecycle()
-    var seconds by remember { androidx.compose.runtime.mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { while (true) { kotlinx.coroutines.delay(1_000); seconds += 1 } }
-    androidx.compose.material3.Card(Modifier.fillMaxWidth().semantics(mergeDescendants = false) {
-        liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
-    }) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            androidx.compose.material3.CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 3.dp)
-            Column(Modifier.weight(1f)) {
-                Text("듀티표를 읽는 중이에요…", style = MaterialTheme.typography.titleSmall)
-                val how = if (step.second > 0) "${step.first}/${step.second}번째로 읽는 중" else "처음 읽는 중"
-                Text("$how · ${seconds}초 · 휴대폰 안에서만 읽어요", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            androidx.compose.material3.TextButton(onClick = vm::cancelRosterRead) { Text("취소") }
-        }
-    }
+    val preparing by vm.rosterPreparing.collectAsStateWithLifecycle()
+    com.bamnat.app.ui.imports.ReadingLine(step.takeIf { it.first > 0 }, preparing, action = "멈추기", onAction = vm::cancelRosterRead)
 }
 
 /**
@@ -512,9 +503,6 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val roster by vm.roster.collectAsStateWithLifecycle()
     val reading by vm.rosterReading.collectAsStateWithLifecycle()
-    val picker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()) { uri ->
-        uri?.let { vm.readRosterPhoto(context, it) }
-    }
     val files = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let { vm.readRosterFile(context, it) }
     }
@@ -528,39 +516,58 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
             null -> Unit
         }
     }
-    Text("듀티표가 있어요", style = MaterialTheme.typography.titleSmall)
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        FilterChip(selected = false, enabled = !reading,
-            onClick = { picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-            label = { Text("사진으로") }, leadingIcon = { Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
+    // 2.0.0 [RVL-34] (검토 SCAN-20·U07b-08·U07b-14) The same ways and names as 한 달 근무 넣기: Google's scanner, or '사진 찍기' on a
+    // phone that cannot run it (no chip that leads nowhere), '사진 고르기' and '파일 고르기', each one tap as before.
+    val ways = com.bamnat.app.ui.imports.rememberRosterWays(
+        onPhoto = { vm.readRosterPhoto(context, it) }, onTaken = { vm.readRosterPhoto(context, it) },
+        onFile = { vm.readRosterFile(context, it) }, onPaste = {}, onError = { vm.say(it) },
+    )
+    // 2.0.0 [RVL-33] (검토 U07b-02·I07ba-01) A reading that gave nothing: why with its one fix, and the next steps on the card itself.
+    val failed = roster?.takeIf { !reading && it.rows.isEmpty() }?.error
+    val modelOnly = roster?.fix.let { it != null && it != com.bamnat.app.pay.OcrModel.Fix.AGAIN }
+    Text("근무표가 있어요", style = MaterialTheme.typography.titleSmall)
+    // Under a failure the card holds the next steps (as on 한 달 근무 넣기), so the chips do not stand beside it twice; X brings them back.
+    if (failed == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         // [READ-15] 1.27: straightened by Google's scanner on the phone.
-        com.bamnat.app.imports.ScannerButton(onImage = { vm.readRosterPhoto(context, it) }, onError = { vm.say(it) }, enabled = !reading)
+        FilterChip(selected = false, enabled = !reading, onClick = ways.first,
+            label = { Text(if (ways.scanner) com.bamnat.app.ui.imports.SCANNER else com.bamnat.app.ui.imports.CAMERA) },
+            leadingIcon = { Icon(if (ways.scanner) Icons.Filled.DocumentScanner else Icons.Filled.PhotoCamera, null, Modifier.size(18.dp)) })
+        FilterChip(selected = false, enabled = !reading, onClick = ways.pick,
+            label = { Text(com.bamnat.app.ui.imports.PICK) }, leadingIcon = { Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp)) })
         FilterChip(selected = false, enabled = !reading, onClick = { files.launch(com.bamnat.app.ui.imports.SheetFiles.ROSTER_TYPES) },
-            label = { Text("엑셀·PDF") }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
+            label = { Text(com.bamnat.app.ui.imports.FILE) }, leadingIcon = { Icon(Icons.Filled.Description, null, Modifier.size(18.dp)) })
         FilterChip(selected = roster == null, onClick = vm::clearRoster, label = { Text("직접 칠하기") }, leadingIcon = { Icon(Icons.Filled.Edit, null, Modifier.size(18.dp)) })
     }
-    // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a card that says it is reading, how far, for how long, with 취소;
-    // a photo that gave nothing says why with '직접 칠하기' beside it.
-    if (reading) RosterReadingCard(vm)
-    val failed = roster?.takeIf { !reading && it.rows.isEmpty() }?.error
-    if (failed != null) androidx.compose.material3.OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(failed, style = MaterialTheme.typography.bodyMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                com.bamnat.app.ui.components.Button(onClick = vm::clearRoster) { Text("직접 칠하기") }
-                androidx.compose.material3.TextButton(onClick = {
-                    picker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                }) { Text("다른 사진") }
-            }
-        }
-    }
-    roster?.advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     // [READ-04][READ-05] The photo itself: tapped when it read nothing or the wrong thing, or looked at to see what was read.
     var tapping by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var seeing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a line that says it is reading and how far, with 멈추기.
+    if (reading) RosterReadingCard(vm)
+    if (failed != null) com.bamnat.app.ui.imports.ReadFailed(
+        failed, roster?.fix,
+        onFix = {
+            when (val f = roster?.fix) {
+                com.bamnat.app.pay.OcrModel.Fix.AGAIN -> vm.readRosterAgain()
+                null -> Unit
+                else -> com.bamnat.app.ui.imports.openFix(context, f)
+            }
+        },
+        onClose = vm::heardRosterError,
+        onTapPhoto = roster?.scan?.image?.let { { tapping = true } },
+        // Only the reading model was missing: the same photo read again once that is fixed.
+        onRetake = if (modelOnly) vm::readRosterAgain else ways.first,
+        onByHand = vm::clearRoster,
+        retakeLabel = when {
+            modelOnly -> "다시 읽기"
+            ways.scanner -> "스캐너로 다시 찍기"
+            else -> "다시 찍기"
+        },
+    )
+    roster?.advice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary) }
     roster?.scan?.let { scan ->
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (scan.image != null) FilterChip(selected = false, enabled = !reading, onClick = { tapping = true }, label = { Text("사진 위에서 누르기") })
+            // Under a failure the card above has it already.
+            if (scan.image != null && failed == null) FilterChip(selected = false, enabled = !reading, onClick = { tapping = true }, label = { Text(com.bamnat.app.ui.imports.TAP_PHOTO) })
             FilterChip(selected = false, onClick = { seeing = true }, label = { Text("무엇을 읽었는지 보기") })
         }
         // [PHOTO-09] 1.29 통합: the first setup's roster photo gets '사진이 달라요' too, like every other photo result.
