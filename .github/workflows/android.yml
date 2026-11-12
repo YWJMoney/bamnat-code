@@ -53,7 +53,7 @@ jobs:
         with:
           cache-read-only: false
       - run: python3 tools/check_tracker.py
-      - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py
+      - run: python3 tools/test_check_checklist.py && python3 tools/test_app_size.py && python3 tools/test_market_works.py
       - run: python3 tools/test_dev_status.py
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
       # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
@@ -117,6 +117,12 @@ jobs:
       - if: matrix.set == 'unit'
         run: npm test
         working-directory: shift-calendar-app/server/share-worker
+        env:
+          BAMNAT_NEED_APP_PAYLOADS: "1"
+      # 2.0.0 [RVR-22] (검토 SD-09) The company server's half of the 바깥 길 시험: the bodies OutsideBodiesTest just wrote.
+      - if: matrix.set == 'unit'
+        run: node --test --disable-warning=ExperimentalWarning test/outside-bodies.test.mjs
+        working-directory: shift-calendar-app/server/company-worker
         env:
           BAMNAT_NEED_APP_PAYLOADS: "1"
       # [QA-06] 43 key screenshots (drawn on a fixed day, QA-08) against their fingerprints (tools/shot_hashes.py); a change that was meant
@@ -192,6 +198,11 @@ jobs:
         working-directory: shift-calendar-app/server/share-worker
         env:
           BAMNAT_NEED_APP_PAYLOADS: "1"
+      - if: steps.changed.outputs.server == '1'
+        run: node --test --disable-warning=ExperimentalWarning test/outside-bodies.test.mjs
+        working-directory: shift-calendar-app/server/company-worker
+        env:
+          BAMNAT_NEED_APP_PAYLOADS: "1"
       - if: always() && steps.changed.outputs.server == '1'
         run: python3 tools/slow_tests.py app/build/test-results/testDebugUnitTest >> "$GITHUB_STEP_SUMMARY"
       - if: always() && steps.changed.outputs.server == '1'
@@ -202,6 +213,104 @@ jobs:
             shift-calendar-app/app/build/test-results/testDebugUnitTest
             shift-calendar-app/app/build/reports
           retention-days: 7
+  # 2.0.0 [RVR-21] (검토 SD-07, 스튜디오 제작 오류 점검 S6-3·S6-4) 장터 작품 전체(docs/recipes, tools/market_works.py):
+  # ① 나간 판(tools/data/release-cores.json, 1.36.1~1.39)의 core를 따로 빌드해 그 판 목록에 나오는 작품이 다 열리는지(안 열리면 빨강),
+  # ② 작품마다 실제로 넣은 달력을 찍어 지난 통합 빌드의 지문과 대고 크게 달라진 것만 요약에(실패 아님, 사진은 artifact market-shots),
+  # ③ [RVR-22] (SD-09) 작품마다 넣은 폰의 링크·자동 갱신·회사 방식 공유·다시 올리기 몸통을 두 서버의 검사기가 모두 받는지(안 받으면 빨강).
+  # 통합 브랜치 push 가운데 작품·그리기에 닿는 파일이 바뀐 것과 손으로 돌릴 때만(약 20분).
+  market:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      actions: read
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - id: changed
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then echo "run=1" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git fetch --quiet --depth=1 origin "$BEFORE" 2>/dev/null || true
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git diff --quiet "$BEFORE" HEAD -- docs/recipes \
+              core/src/main/kotlin/com/bamnat/core/recipe app/src/main/java/com/bamnat/app/recipe app/src/main/java/com/bamnat/app/ui/theme \
+              app/src/main/java/com/bamnat/app/ui/calendar app/src/main/java/com/bamnat/app/ui/parts app/src/main/java/com/bamnat/app/ui/decor \
+              server/company-worker/src/recipes.js server/company-worker/src/parts-since.js server/company-worker/tools/served-works.mjs \
+              tools/market_works.py tools/old_core_check.py tools/market_shots.py tools/data/release-cores.json \
+              server/share-worker/src server/company-worker/src/company-setup.js app/src/main/java/com/bamnat/app/share \
+              app/src/test/java/com/bamnat/app/screenshots/MarketWorks.kt app/src/test/java/com/bamnat/app/screenshots/MarketWorksShotsTest.kt \
+              app/src/test/java/com/bamnat/app/recipe/OutsideBodiesTest.kt; then
+            echo "run=0" >> "$GITHUB_OUTPUT"; echo "작품·그리기에 닿는 파일이 바뀌지 않았어요: 장터 작품 대조를 건너뛰어요" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "run=1" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changed.outputs.run == '1'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - if: steps.changed.outputs.run == '1'
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
+      - if: steps.changed.outputs.run == '1'
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
+          restore-keys: robolectric-
+      - if: steps.changed.outputs.run == '1'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - if: steps.changed.outputs.run == '1'
+        run: python3 tools/test_market_works.py
+      - name: Old apps open every work they list
+        if: steps.changed.outputs.run == '1'
+        run: python3 tools/old_core_check.py --json app/build/old-core-check.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Every work on the calendar, and every work's bodies going out (SD-09)
+        if: always() && steps.changed.outputs.run == '1'
+        run: |
+          sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest --tests com.bamnat.app.screenshots.MarketWorksShotsTest \
+            --tests com.bamnat.app.recipe.OutsideBodiesTest -Pbamnat.marketShots=all -Pbamnat.outsideBodies=all --rerun --continue
+      - name: The three servers take every work's bodies (SD-09)
+        if: always() && steps.changed.outputs.run == '1'
+        env:
+          BAMNAT_NEED_APP_PAYLOADS: "1"
+        run: |
+          (cd server/share-worker && node --test --disable-warning=ExperimentalWarning test/outside-bodies.test.mjs)
+          (cd server/company-worker && node --test --disable-warning=ExperimentalWarning test/outside-bodies.test.mjs)
+      - name: The last integration build's fingerprints
+        if: always() && steps.changed.outputs.run == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p ../prev-shots
+          for id in $(gh run list --repo "$GITHUB_REPOSITORY" --workflow android.yml --branch "$GITHUB_REF_NAME" --limit 30 --json databaseId --jq '.[].databaseId'); do
+            [ "$id" = "$GITHUB_RUN_ID" ] && continue
+            if gh run download "$id" --repo "$GITHUB_REPOSITORY" -n market-shots -D ../prev-shots >/dev/null 2>&1; then
+              echo "지난 지문: 실행 $id" >> "$GITHUB_STEP_SUMMARY"; break
+            fi
+          done
+      - name: Works that look different from the last build
+        if: always() && steps.changed.outputs.run == '1'
+        run: |
+          prev=$(find ../prev-shots -name shots.json | head -1)
+          python3 tools/market_shots.py compare "${prev:--}" app/build/market-shots/shots.json \
+            --png app/build/market-shots/png --changed-out app/build/market-shots/changed >> "$GITHUB_STEP_SUMMARY"
+      - if: always() && steps.changed.outputs.run == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-shots
+          path: |
+            shift-calendar-app/app/build/market-shots/shots.json
+            shift-calendar-app/app/build/market-shots/changed
+            shift-calendar-app/app/build/old-core-check.json
+          retention-days: 30
   lint:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     runs-on: ubuntu-latest
