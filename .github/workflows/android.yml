@@ -68,6 +68,8 @@ jobs:
       - run: python3 tools/test_dev_status.py && python3 tools/dev_status.py check
       # [I60b-01][U60-01] 날짜 시험 요약·PR 요약의 '처음 깨짐/기준에서도 깨짐' 도구
       - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py
+      # 2.0.0 [RVR-38] 날짜 장부(ops/dates.json)가 가리키는 코드 줄이 모두 하나씩 있는지
+      - run: python3 tools/test_dates_ledger.py && python3 tools/dates_ledger.py check
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
       # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
       - run: python3 tools/test_cycles_build.py && python3 tools/cycles_build.py --check
