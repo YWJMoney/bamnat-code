@@ -1,6 +1,7 @@
 // 1.38 [ADM3] 관리자 앱 개편의 새 화면들. 보고서 /mnt/project-files/조사/1.38-관리자앱-전면리뷰-보고서.md(사용자 2026-11-06 "전부 진행").
 // 다른 화면 묶음처럼 글(String(fn))로 브라우저에 가고, 앱이 나눠 주는 것(A)으로 불려요. 밖의 이름은 쓰지 않아요.
 //   사고 #/incident [ADM3-32] · Claude 조종석 #/cockpit [ADM3-31] · 스토어 리뷰 #/reviews [ADM3-18] · 데이터 요청 #/requests, 백업 #/backup [ADM3-16]
+//   보안 한 장 #/security [RVQ-18]
 //   출시 점검표 #/launch [ADM3-14] · 스튜디오 재료 #/materials [ADM3-06] · 판 건강 #/health [ADM3-15·33] · 돈 #/money [ADM3-12]
 //   오류 묶음 #/errors [ADM3-13] · 서버 상태 판 [ADM3-04·05·19] · 사람 옆 패널 [ADM3-11] · 개발사항 이야기 [ADM3-34]
 // 화면마다 [loads]가 읽을 길을, [has]가 다 왔는지를 앱에 알려요(앱의 load()·hasData()가 이것을 써요).
@@ -17,7 +18,8 @@ export function opsViews(A) {
     return h < 48 ? `${h}시간 남음` : `${Math.floor(h / 24)}일 남음`;
   };
   const tile = (k, v, d, tone = "", to = "") => `<${to ? `a href="${to}"` : "div"} class="tile kpi${tone ? ` ${tone}` : ""}"><span class="k">${esc(k)}</span><span class="v">${v}</span>${d ? `<span class="d">${esc(d)}</span>` : ""}</${to ? "a" : "div"}>`;
-  const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
+  // 2.0.0 [RVQ-16][RVQ-18] 총괄 사진 검토: 좁거나 큰 글자에서 제목이 '하루/백업'처럼 세로로 서지 않게, 설명이 다음 줄로 내려가요.
+  const head = (title, meta = "", side = "") => `<div class="card-head wraps"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
   const segs = (act, list, current) => `<div class="segmented" role="group">${list.map(([k, label, n]) => seg(act, k, current, label, n)).join("")}</div>`;
   const bytes = (n) => (n >= 1024 ** 3 ? `${(n / 1024 ** 3).toFixed(2)}GB` : n >= 1024 ** 2 ? `${(n / 1024 ** 2).toFixed(1)}MB` : `${Math.round((n ?? 0) / 1024)}KB`);
 
@@ -149,6 +151,15 @@ export function opsViews(A) {
 
   // ---- [ADM3-16] 데이터 요청·백업 ----
 
+  // 2.0.0 [RVQ-17] 검토 U21-07·I21b-02: 대신 한 일의 증빙 한 줄(누가·언제·지운 표와 줄 수·남은 것과 까닭, 또는 내보낸 표와 줄 수).
+  const sumOf = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
+  function proofWords(p) {
+    const who = `${dayOf(p.at)} ${p.by}${p.via === "code" ? " · 복구 코드로 찾음" : ""}`;
+    if (p.do === "export") return `${who} · 열람 파일 내보냄: ${Object.keys(p.tables ?? {}).length}개 표 ${sumOf(p.tables)}줄`;
+    const left = Object.entries(p.left ?? {});
+    return `${who} · 지움: ${Object.keys(p.gone ?? {}).length}개 표 ${sumOf(p.gone)}줄 · ${left.length ? `남음 ${left.map(([t, n]) => `${t} ${n}(${p.leftWhy?.[t] ?? "남음"})`).join(", ")}` : "남은 것 없음"}`;
+  }
+
   function requestsView() {
     const d = S.data.requests;
     const tabs = segs("requests-show", [["open", "진행 중", d?.open], ["done", "끝남"], ["all", "모두"]], S.requestsShow ?? "open");
@@ -161,11 +172,13 @@ export function opsViews(A) {
       <div class="fieldset"><label for="rq-sum">무엇을 바라는지</label><textarea id="rq-sum" name="summary" maxlength="300" rows="2" required></textarea></div>
       <div class="fieldset"><label for="rq-at">받은 날(선택, 비우면 지금)</label><input id="rq-at" name="openedAt" type="date"></div>
       <div class="actions"><button class="btn primary" type="submit">적기</button></div></form></details>`;
-    const rows = d.items.length ? `<ul class="rows">${d.items.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name)} · ${esc(r.summary || "")}</b>
+    const rows = d.items.length ? `<ul class="rows req-rows">${d.items.map((r) => `<li><div class="row"><span class="row-main"><b>${esc(r.name)} · ${esc(r.summary || "")}</b>
         <small>${esc(dayOf(r.openedAt))} 받음 · 기한 ${esc(dayOf(r.dueAt))}${r.mark ? ` · 기기 ${esc(r.mark)}` : ""}${r.status !== "open" ? ` · ${esc(r.by)} ${esc(r.note)}` : ""}</small></span>
-        <span class="row-side">${r.status === "open" ? `<span class="pill ${r.late ? "bad" : r.soon ? "warn" : ""}">${esc(left(r.dueAt))}</span>` : `<span class="pill ${r.status === "done" ? "ok" : ""}">${r.status === "done" ? "처리함" : "거절"}</span>`}
+        <span class="row-side req-side">${r.status === "open" ? `<span class="pill ${r.late ? "bad" : r.soon ? "warn" : ""}">${esc(left(r.dueAt))}</span>` : `<span class="pill ${r.status === "done" ? "ok" : ""}">${r.status === "done" ? "처리함" : "거절"}</span>`}
         ${r.inquiry ? `<a class="btn small" href="${L.routeHash("inquiries", r.inquiry, {})}">문의</a>` : ""}
-        ${r.status === "open" ? `<button class="btn small primary" type="button" data-act="request-close" data-id="${r.id}">끝내기</button>` : ""}</span></div></li>`).join("")}</ul>`
+        ${r.status === "open" && r.runnable ? `<button class="btn small" type="button" data-act="request-run" data-id="${r.id}">대신 하기</button>` : ""}
+        ${r.status === "open" ? `<button class="btn small" type="button" data-act="request-close" data-id="${r.id}">끝내기</button>` : ""}</span></div>
+        ${r.proof?.length ? `<ul class="mini proof">${r.proof.slice().reverse().map((p) => `<li>${esc(proofWords(p))}</li>`).join("")}</ul>` : ""}</li>`).join("")}</ul>`
       : empty("기다리는 요청이 없어요", "열람·삭제·환불·법 신고가 오면 기한과 함께 적어 두세요.");
     const law = `<details class="data-table" data-key="req-law"><summary>기한 근거</summary><ul class="mini">${kinds.map(([, v]) => `<li><b>${esc(v.name)} ${v.days}일</b> ${esc(v.why)}</li>`).join("")}</ul></details>`;
     return `${tabs}${make}<section class="card">${head("법정 기한 있는 요청", d.late ? `기한 넘김 ${d.late}` : "")}${rows}${law}</section>`;
@@ -175,13 +188,49 @@ export function opsViews(A) {
     const d = S.data.backup;
     if (!d) return skeleton(2);
     const p = d.progress;
+    const owner = S.me?.owner;
     const state = !d.ready ? '<span class="pill bad">R2 없음</span>' : d.late ? '<span class="pill bad">늦음</span>' : '<span class="pill ok">정상</span>';
-    return `<section class="card">${head("하루 백업", `매일 ${d.hour}시부터 · ${d.keepDays}일 보관`, state)}
+    const sealedTables = Object.keys(d.sealed ?? {});
+    const keyWords = { SEAL_KEY: "서버 비밀값 SEAL_KEY", RATE_SALT: "서버 비밀값 RATE_SALT", local: "로컬 서버의 소금(실서버 아님)" }[d.sealKey] ?? d.sealKey;
+    // 2.0.0 [RVQ-16] 검토 SRV-15: 무엇을 잠그고 빼는지 한 줄, 표 이름은 펼쳐서.
+    const rules = d.ready ? `<details class="data-table" data-key="backup-rules"${S.opened.get("backup-rules") ? " open" : ""}><summary>잠그는 칸 ${sealedTables.length}개 표 · 빼는 표 ${d.skipped?.length ?? 0}개</summary>
+      <ul class="mini">${sealedTables.map((t) => `<li><b>${esc(t)}</b> ${esc(d.sealed[t].join("·"))}</li>`).join("")}</ul>
+      <p class="meta">빼는 표(곧 지워지거나 다시 만들 수 있어요): ${esc((d.skipped ?? []).join(", ") || "없음")}</p></details>` : "";
+    const backup = `<section class="card">${head("하루 백업", `매일 ${d.hour}시부터 · ${d.keepDays}일 보관`, state)}
       ${d.ready ? `<p>${d.lastOk ? `마지막 성공 <b>${esc(d.lastOk)}</b>` : "아직 끝난 백업이 없어요"}${p && !p.doneAt ? ` · 진행 중 ${p.done}/${p.of}표` : ""}${p?.bytes ? ` · ${esc(bytes(p.bytes))}` : ""}</p>
-        ${d.days.length ? `<p class="meta">보관 중: ${d.days.map(esc).join(" · ")}</p>` : ""}
-        ${S.me?.owner ? '<div class="actions start"><button class="btn small" type="button" data-act="backup-run">지금 이어서 백업</button></div>' : ""}`
+        <p class="meta">비밀 칸은 ${esc(keyWords)}로 잠가요. R2만 새어서는 열 수 없어요.</p>
+        ${d.days.length ? `<p class="meta">보관 중: ${d.days.map(esc).join(" · ")}</p>` : ""}${rules}
+        ${owner ? '<div class="actions start"><button class="btn small" type="button" data-act="backup-run">지금 이어서 백업</button></div>' : ""}`
       : '<p class="hint">Cloudflare R2 저장소를 만들어 서버에 BACKUP이라는 이름으로 묶으면 매일 표마다 내보내요. 그 전에는 아래 D1 되돌리기만 쓸 수 있어요.</p>'}
-      </section><section class="card">${head("되돌리기")}<p class="hint">${esc(d.timeTravel)}</p></section>`;
+      </section>`;
+    // 검토 U21-08: 되살리기 연습(마지막 날을 다시 읽어 줄 수·잠근 칸을 맞춰 봄)과 표마다 오늘 DB 줄 수.
+    const x = d.drill;
+    const drillState = !d.ready ? "" : !x ? '<span class="pill">아직 안 함</span>' : !x.doneAt ? `<span class="pill">하는 중 · ${x.left}표 남음</span>`
+      : !x.ok ? '<span class="pill bad">문제 있음</span>' : d.drillLate ? '<span class="pill warn">늦음</span>' : '<span class="pill ok">되살릴 수 있음</span>';
+    const drillBody = !x ? `<p class="hint">${d.ready ? `백업이 끝난 날이 생기면 ${d.drillEveryDays}일마다 매시 작업이 스스로 해요.` : "R2 백업이 생기면 할 수 있어요."}</p>`
+      : `<p>${x.doneAt ? `마지막 연습 <b>${esc(dayOf(x.doneAt))}</b>` : "읽는 중"} · 표 ${x.tables}개 · ${Number(x.rowsTotal ?? 0).toLocaleString("ko-KR")}줄</p>
+        <p class="meta">${esc(x.day)} 백업을 다시 읽음 · ${x.checked ? `잠근 칸 ${x.checked}개를 지금 열쇠로 열어 봄` : "잠근 칸은 아직 없어요"}</p>
+        ${x.problems?.length ? `<ul class="mini">${x.problems.map((r) => `<li><b>${esc(r.table)}</b> ${esc(r.problem)}</li>`).join("")}</ul>` : ""}
+        ${x.shrunk?.length ? `<p class="meta">백업보다 크게 줄어든 표: ${x.shrunk.map((r) => `${esc(r.table)} ${r.want}→${r.db}`).join(", ")} (지운 것이 맞는지 살펴보세요)</p>` : ""}
+        ${x.rows?.length ? `<details class="data-table" data-key="drill-rows"${S.opened.get("drill-rows") ? " open" : ""}><summary>표마다 줄 수(백업 · 오늘 DB)</summary>
+          <ul class="drill-rows">${[...x.rows].sort((a, b) => Boolean(b.problem) - Boolean(a.problem)).map((r) => `<li${r.problem ? ' class="bad"' : ""}><b>${esc(r.table)}</b>
+            <span>백업 ${r.rows.toLocaleString("ko-KR")}${r.rows !== r.want ? ` · 목록 ${r.want.toLocaleString("ko-KR")}` : ""} · 오늘 ${r.db < 0 ? "—" : r.db.toLocaleString("ko-KR")}${r.problem ? ` · ${esc(r.problem)}` : ""}</span></li>`).join("")}</ul></details>` : ""}`;
+    const drill = `<section class="card">${head("되살리기 연습", `${d.drillEveryDays}일마다 저절로`, drillState)}${drillBody}
+      ${owner && d.ready && (d.days.length || p?.doneAt) ? '<div class="actions start"><button class="btn small" type="button" data-act="backup-drill">지금 연습하기</button></div>' : ""}</section>`;
+    return `${backup}${drill}<section class="card">${head("되돌리기")}<p class="hint">${esc(d.timeTravel)}</p>${d.restore ? `<p class="hint">${esc(d.restore)}</p>` : ""}</section>`;
+  }
+
+  // ---- 2.0.0 [RVQ-18] 검토 I21b-01: 보안 한 장 ----
+
+  function securityView() {
+    const d = S.data.security;
+    if (!d) return skeleton(3);
+    const tone = { ok: ["ok", "괜찮아요"], warn: ["warn", "살펴보기"], bad: ["bad", "고치기"] };
+    const sum = d.bad ? `<span class="pill bad">고칠 것 ${d.bad}</span>` : d.warn ? `<span class="pill warn">살펴볼 것 ${d.warn}</span>` : '<span class="pill ok">모두 괜찮아요</span>';
+    const rows = `<ul class="rows security-rows">${d.rows.map((r) => `<li class="sec-${r.tone}"><div class="row"><span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.state)}</small>
+      <small class="fix">${r.fix?.href ? `<a href="${esc(r.fix.href)}">${esc(r.fix.label)}</a>` : esc(r.fix?.label ?? "")}</small></span>
+      <span class="row-side"><span class="pill ${tone[r.tone][0]}">${tone[r.tone][1]}</span></span></div></li>`).join("")}</ul>`;
+    return `<section class="card">${head("지금 안전한가", `${when(d.at)} 기준 · 값은 보이지 않아요`, sum)}${rows}</section>`;
   }
 
   // ---- [ADM3-14] 출시 날 점검표 ----
@@ -423,6 +472,7 @@ export function opsViews(A) {
     reviews: () => [[`/reviews?status=${S.reviewsShow ?? "open"}`, "storeReviews"]],
     requests: () => [[`/data-requests?status=${S.requestsShow ?? "open"}`, "requests"]],
     backup: () => [["/backup", "backup"]],
+    security: () => [["/security", "security"]],
     launch: (id) => [["/release", "launch"], ...(id ? [[`/release/${encodeURIComponent(id)}`, "launchOne"]] : [])],
     materials: () => [["/recipes/materials", "materials"]],
     health: () => [[`/health/versions?days=${S.healthDays ?? 14}`, "health"], [`/changes?from=${Date.now() - (S.healthDays ?? 14) * 864e5}`, "changes"]],
@@ -432,7 +482,7 @@ export function opsViews(A) {
     account: () => [["/me/passkeys", "passkeys"]],
   };
   const has = {
-    incident: () => S.data.incident, cockpit: () => S.data.cockpit, reviews: () => S.data.storeReviews, requests: () => S.data.requests, backup: () => S.data.backup,
+    incident: () => S.data.incident, cockpit: () => S.data.cockpit, reviews: () => S.data.storeReviews, requests: () => S.data.requests, backup: () => S.data.backup, security: () => S.data.security,
     launch: () => S.data.launch, materials: () => S.data.materials, health: () => S.data.health, money: () => S.data.money, errors: () => S.data.errors,
   };
 
@@ -444,7 +494,7 @@ export function opsViews(A) {
   }
 
   const views = {
-    incident: () => incidentView(), cockpit: () => cockpitView(), reviews: () => reviewsView(), requests: () => requestsView(), backup: () => backupView(),
+    incident: () => incidentView(), cockpit: () => cockpitView(), reviews: () => reviewsView(), requests: () => requestsView(), backup: () => backupView(), security: () => securityView(),
     launch: () => launchView(), health: () => healthView(), money: () => moneyView(), errors: () => errorsView(),
   };
 
@@ -539,6 +589,23 @@ export function opsViews(A) {
       S.opened.set("req-new", true);
       location.hash = href("requests");
     },
+    "backup-drill": async () => {
+      const r = await act(() => api("/backup/drill", "POST", {}), (x) => (x.done ? (x.ok ? "되살리기 연습: 모두 맞아요" : "되살리기 연습: 문제가 있어요") : `읽는 중 · ${x.left ?? 0}표 남음`));
+      if (r) reload("backup");
+    },
+    "request-run": ({ id }) => {
+      const r = S.data.requests?.items.find((x) => x.id === id);
+      if (!r) return;
+      const first = r.kind === "access" ? "export" : "forget";
+      openDialog(`<form data-form="request-run" data-id="${esc(id)}"><h2>${esc(r.name)} 대신 하기</h2>
+        <p class="hint">${r.inquiry ? "이 요청에 묶인 문의를 보낸 설치의 자료로 해요." : "묶인 문의가 없어요. 그분이 가진 복구 코드로 설치를 찾아요. 코드는 저장하지 않아요."}</p>
+        ${r.inquiry ? "" : '<div class="fieldset"><label for="rr-code">복구 코드</label><input id="rr-code" name="code" autocomplete="off" spellcheck="false" required></div>'}
+        <div class="radios" role="radiogroup" aria-label="할 일">
+          <label class="radio"><input type="radio" name="do" value="export"${first === "export" ? " checked" : ""}><span>가진 것 내보내기<small class="radio-sub">열람 · JSON 파일로 받아요</small></span></label>
+          <label class="radio"><input type="radio" name="do" value="forget"${first === "forget" ? " checked" : ""}><span>모두 지우기<small class="radio-sub">앱의 '모두 지우기'와 같아요</small></span></label>
+        </div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">다음</button></div></form>`);
+    },
     "backup-run": async () => {
       const r = await act(() => api("/backup/run", "POST", {}), (x) => `백업 ${x.done ?? 0}/${x.of ?? 0}표`);
       if (r) reload("backup");
@@ -614,6 +681,46 @@ export function opsViews(A) {
         S.requestFrom = "";
         reload("requests");
       }
+    },
+    "request-run": async (form) => {
+      const f = new FormData(form);
+      const id = form.dataset.id;
+      const body = { do: f.get("do") };
+      const code = String(f.get("code") ?? "").trim();
+      if (code) body.code = code;
+      dialog.close();
+      const failWords = { no_device: "이 요청에는 묶인 문의가 없어요. 복구 코드로 찾아 주세요", code: "그 복구 코드로 찾은 설치가 없어요", closed: "끝난 요청이에요", kind: "이 요청 종류는 대신 할 수 없어요" };
+      const call = async (b) => {
+        const res = await api(`/data-requests/${id}/run`, "POST", b).catch((e) => ({ error: e?.data?.error ?? e?.message ?? "fail" }));
+        if (res?.error) {
+          toast(failWords[res.error] ?? "하지 못했어요. 다시 해 주세요");
+          return null;
+        }
+        return res;
+      };
+      if (body.do === "export") {
+        const res = await call(body);
+        if (!res) return;
+        const url = URL.createObjectURL(new Blob([JSON.stringify(res.file, null, 2)], { type: "application/json" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `bamnat-data-${id}-${new Date().toISOString().slice(0, 10)}.json`;
+        document.body.append(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        toast(`${Object.keys(res.proof.tables).length}개 표 ${sumOf(res.proof.tables)}줄을 받았어요. 증빙을 남겼어요`);
+        reload("requests");
+        return;
+      }
+      danger({ title: "이 설치의 자료를 모두 지울까요?", text: "앱의 '모두 지우기'와 같아요. 되돌릴 수 없어요.", label: "모두 지우기",
+        rows: [["남는 것", "요청 문의 하나(답을 보내려고), 법이 정한 구매·동의 기록, 진행 중인 제재"], ["증빙", "지운 표와 줄 수가 이 요청에 남아요"]],
+        run: async () => {
+          const res = await call({ ...body, confirm: true });
+          if (!res) return;
+          toast(`${Object.keys(res.proof.gone).length}개 표 ${sumOf(res.proof.gone)}줄을 지웠어요. 증빙을 남겼어요`);
+          reload("requests");
+        } });
     },
     "request-close": async (form) => {
       const f = new FormData(form);

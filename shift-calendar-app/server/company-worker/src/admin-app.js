@@ -1130,7 +1130,7 @@ function adminApp(L, BUILD, M) {
         </aside>
         <div class="content">
           <header class="top">
-            <a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a>
+            <div class="deploy-wrap"><a class="deploy-line" id="deploy-line" href="${href("server")}" data-tab="server" hidden></a></div>
             <div class="bar" id="bar"></div>
             <nav class="hubtabs" id="hubtabs" hidden></nav>
             <div id="progress" class="progress${S.busy ? " on" : ""}"></div>
@@ -1374,6 +1374,7 @@ function adminApp(L, BUILD, M) {
     reviews: () => V.opsViews.reviews(),
     requests: () => V.opsViews.requests(),
     backup: () => V.opsViews.backup(),
+    security: () => V.opsViews.security(),
     launch: () => V.opsViews.launch(),
     health: () => V.opsViews.health(),
     money: () => V.opsViews.money(),
