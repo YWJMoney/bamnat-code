@@ -3,6 +3,7 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -148,9 +149,12 @@ internal fun RosterFollowLine(cal: com.bamnat.app.share.ReceivedCalendar, modifi
     }
 }
 
-/** 1.39 [TEAM-22] 근무표가 바뀌면: 바로 내 달력에 넣기 / 넣을지 물어보기 / 넣지 않기, for one received link. */
+/**
+ * 1.39 [TEAM-22] 근무표가 바뀌면: 바로 내 달력에 넣기 / 넣을지 물어보기 / 넣지 않기, for one received link. [RVG-20] For the link the
+ * user's own work came from, '내 근무표가 아니에요' too ([NotMineButton]); [onSay] says what it did, with 되돌리기.
+ */
 @Composable
-internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar) {
+internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar, onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null) {
     val c = LocalContext.current.appContainer
     val mode = com.bamnat.app.share.RosterFollower.mode(cal)
     SectionCard(title = "이 근무표가 바뀌면") {
@@ -164,6 +168,49 @@ internal fun FollowModeRow(cal: com.bamnat.app.share.ReceivedCalendar) {
                 }, label = { Text(m.words) })
             }
         }
+        if (cal.mine && onSay != null) NotMineButton(cal, onSay)
     }
+}
+
+/**
+ * [RVG-20] 2.0.0 검토 HQ-09 (조건 10): '내 근무표예요' was picked for a 가족·동료's link, found after the setup. '넣지 않기' only stops
+ * later changes; this takes out the days the link put in. How many is said first (and how many the user changed by hand, which stay);
+ * the line after it has 되돌리기 for both the days and the link.
+ */
+@Composable
+private fun NotMineButton(cal: com.bamnat.app.share.ReceivedCalendar, onSay: (com.bamnat.app.ui.UndoMessage) -> Unit) {
+    val c = LocalContext.current.appContainer
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var asking by remember(cal.id) { mutableStateOf<com.bamnat.core.schedule.LinkDays.Split?>(null) }
+    // Its words line up with the card's (a text button's own side room is 12dp).
+    TextButton(onClick = { scope.launch { asking = com.bamnat.app.share.NotMine.plan(c, cal.id) } },
+        modifier = androidx.compose.ui.Modifier.offset(x = (-12).dp)) { Text("내 근무표가 아니에요") }
+    val split = asking ?: return
+    val out = split.theirs.size
+    // "N일 치": a count of days, never read as a date ("8일" alone reads as the 8th).
+    com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { asking = null },
+        title = { Text(if (out > 0) "‘${cal.name}’ 근무표가 넣은 ${out}일 치를 뺄까요?" else "‘${cal.name}’ 근무표를 받은 달력으로 옮길까요?") },
+        text = {
+            Text(listOfNotNull(
+                "직접 바꾼 ${split.kept.size}일 치는 그대로 둬요.".takeIf { split.kept.isNotEmpty() },
+                "이 근무표는 받은 달력에서 보기만 해요.",
+            ).joinToString(" "))
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                asking = null
+                // Outlives this card: once the link is not the user's own, the card goes.
+                c.appScope.launch {
+                    val undo = com.bamnat.app.share.NotMine.apply(c, cal.id, split)
+                    onSay(com.bamnat.app.ui.UndoMessage(
+                        if (out > 0) "‘${cal.name}’ 근무표가 넣은 ${out}일 치를 뺐어요" else "‘${cal.name}’ 근무표는 받은 달력에서 보기만 해요",
+                        undo = undo,
+                    ))
+                }
+            }) { Text(if (out > 0) "${out}일 치 빼기" else "옮기기") }
+        },
+        dismissButton = { TextButton(onClick = { asking = null }) { Text("그대로 두기") } },
+    )
 }
 

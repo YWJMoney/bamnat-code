@@ -326,6 +326,21 @@ class ReceivedCalendarStore(
         write(_calendars.value.map { if (it.id == id) it.copy(adopted = true, basis = it.raw ?: it.basis) else it })
     }
 
+    /**
+     * [RVG-19][RVG-20] 검토 HQ-09: '내 근무표예요' was picked for someone else's link. It stays beside as theirs, only seen: not the
+     * user's work any more, never put in again by itself (follow back to its default, [RosterFollower.Mode.OFF]), no line left over.
+     */
+    fun notMine(id: String) {
+        write(_calendars.value.map { if (it.id == id) it.copy(mine = false, adopted = false, follow = null, note = null) else it })
+    }
+
+    /** [RVG-20] 되돌리기 of [notMine]: the link's own answers as they were in [before]; its copy stays the newest. */
+    fun putBack(before: ReceivedCalendar) {
+        write(_calendars.value.map {
+            if (it.id == before.id) it.copy(mine = before.mine, adopted = before.adopted, follow = before.follow, note = before.note, basis = before.basis) else it
+        })
+    }
+
     /** 1.39 [TEAM-22] My days now match [schedule] of this link. */
     fun setBasis(id: String, schedule: JSONObject?) {
         write(_calendars.value.map { if (it.id == id) it.copy(basis = schedule) else it })

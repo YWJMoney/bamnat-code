@@ -1902,6 +1902,7 @@ fun CalendarScreen(
                 startMonth = visibleMonth,
                 identityBar = identityBar,
                 rules = settings.rules,
+                onSay = vm::say,
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {

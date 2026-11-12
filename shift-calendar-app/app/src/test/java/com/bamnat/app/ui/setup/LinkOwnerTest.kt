@@ -144,6 +144,24 @@ class LinkOwnerTest {
         }
     }
 
+    /**
+     * [RVG-19] 검토 HQ-09 (조건 10): '내 근무표예요' pressed by mistake. The summary has the other answer right under its question; one
+     * press lets the setup go and gives the link's name to the first screen's line.
+     */
+    @Test fun theSummaryHasTheOtherAnswer() {
+        val c = androidx.test.core.app.ApplicationProvider.getApplicationContext<com.bamnat.app.BamnatApp>().container
+        c.setupDrafts.save(LinkStart.draft(com.bamnat.app.share.SharedSchedule.parse(raw("family")), java.time.LocalDate.of(2026, 11, 12))!!)
+        val vm = SetupViewModel(c)
+        var said: String? = null
+        window({ SetupHost(vm, onNotMine = { said = it }) }) {
+            compose.onNodeWithText("근무 이름과 시간, 날짜를 그대로 넣었어요.").assertDoesNotExist()
+            compose.onNodeWithText("가족·동료 근무표였어요").assertIsEnabled().performClick()
+            compose.waitForIdle()
+            assertEquals("민지", said)
+            assertNull(c.setupDrafts.draft.value)
+        }
+    }
+
     /** [RVG-17] 디자인 품질 조건 7: no signal, a slow server, a link gone, each in its own words. */
     @Test fun aLinkNotReadSaysWhy() {
         assertTrue(LinkStart.problem(java.io.IOException()).startsWith("인터넷에 연결되지 않았어요"))

@@ -532,6 +532,8 @@ fun ReceivedCalendarView(
     modifier: Modifier = Modifier,
     /** [NURS-06] The user's own 근무표 점검 기준, to read their roster with. */
     rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
+    /** [RVG-20] Says what was done on this calendar, with 되돌리기 (the calendar screen's line at the bottom). */
+    onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null,
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -639,7 +641,7 @@ fun ReceivedCalendarView(
             // 1.38 [P3-X-03]: the link's month as the user's own days, with what their pay setup makes of it.
             if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(cal.id, schedule, month, mine)
             // 1.39 [TEAM-22] What happens when this link changes, for the link the user's days come from or were put in from.
-            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal)
+            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal, onSay)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
             Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",

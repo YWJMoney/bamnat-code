@@ -1712,6 +1712,11 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         }
     }
 
+    /** [RVG-20] A line said for something done elsewhere on this screen (a received calendar's '내 근무표가 아니에요'). */
+    fun say(message: UndoMessage) {
+        _messages.tryEmit(message)
+    }
+
     fun runUndo(message: UndoMessage) {
         val undo = message.undo ?: return
         container.appScope.launch { undo() }
