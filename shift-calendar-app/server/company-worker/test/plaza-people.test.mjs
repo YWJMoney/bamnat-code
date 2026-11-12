@@ -128,7 +128,10 @@ test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자
   assert.deepEqual([card.followers, card.mark], [30, undefined]);
   await policyOn(call);
   await call("POST", "/api/admin/recipes/makers/month", { style: "ALL", makers: [ma] }, h);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: ⭐ counts followers that are 이웃 (3 days on the 나눔 판) or more.
   t.mock.timers.setTime(LATER + 60e3);
+  assert.equal((await call("GET", `/api/recipes/${b}`)).data.mark, undefined, "new installs' follows make no ⭐");
+  t.mock.timers.setTime(LATER + 3 * 86400e3 + 60e3);
   assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, "month");
   assert.deepEqual([(await call("GET", `/api/recipes/${b}`)).data.mark, (await call("GET", `/api/recipes/${b}`)).data.followers], ["popular", 30]);
   // On 광장, beside a 마을 이름.

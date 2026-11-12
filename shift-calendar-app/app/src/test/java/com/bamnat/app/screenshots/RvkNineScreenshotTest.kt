@@ -27,7 +27,7 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35])
 class RvkNineScreenshotTest : ScreenshotBase() {
-    /** [HQ-75] 배달 (쿠팡이츠) ten days this month, a 유류비 by hand; the week of 10/9 not paid in yet. */
+    /** [RVK-44] (HQ-75) 배달 (쿠팡이츠) ten days this month, a 유류비 by hand; the week of 10/9 not paid in yet. */
     private fun platform(wide: Boolean = false, at: String = "남은 돈"): Screen.() -> Unit = style(WorkStyle.FIELD) {
         app.container.calendars.updateField(PersonalCalendar.MAIN) { it.copy(mode = com.bamnat.core.money.FieldMode.PLATFORM) }
         runBlocking {

@@ -1,11 +1,9 @@
 package com.bamnat.app.ui.company
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
@@ -53,11 +51,8 @@ fun PlazaCalendarChips(c: AppContainer, selected: String, onPick: (String) -> Un
     val all by c.calendars.calendars.collectAsStateWithLifecycle()
     val list = companyCalendars(all)
     if (list.size < 2) return
-    Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // 2.0.0 [RVN-18] 검토 U10a-04: one line, every calendar with 펼치기.
+    com.bamnat.app.ui.components.FoldRow("plaza.calendars", modifier.padding(vertical = 4.dp), spacing = 8.dp, what = "달력 칩") {
         for (cal in list) {
             val company = c.companyOf(cal.id).companyName()
             val label = cal.name + (company?.let { " · $it" } ?: "")

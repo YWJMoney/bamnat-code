@@ -543,6 +543,9 @@ private fun RosterSource(vm: SetupViewModel, d: SetupDraft) {
     var seeing by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): at once a line that says it is reading and how far, with 멈추기.
     if (reading) RosterReadingCard(vm)
+    // 2.0.0 [RVL-41] (검토 U07b-10) A locked roster PDF opened here, with its password.
+    val locked by vm.rosterLocked.collectAsStateWithLifecycle()
+    locked?.let { lock -> com.bamnat.app.ui.imports.PdfPasswordDialog(lock, working = reading, payslip = false, onOpen = vm::unlockRoster, onDismiss = vm::cancelRosterUnlock) }
     if (failed != null) com.bamnat.app.ui.imports.ReadFailed(
         failed, roster?.fix,
         onFix = {
