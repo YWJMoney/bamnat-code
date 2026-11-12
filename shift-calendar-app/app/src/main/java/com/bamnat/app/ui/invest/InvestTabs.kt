@@ -56,6 +56,7 @@ import java.time.YearMonth
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.bamnat
 
 /** [INV-03] One trade as a line: what, how many at what price, and for a sale what it made. */
 @Composable
@@ -67,8 +68,13 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(t.side.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
-            color = if (t.side == Side.BUY) com.bamnat.app.ui.theme.LocalCalendarColors.current.sunday else com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday,
+        // 2.0.0 [RVK-27] A 수량 바뀜 says which in a quiet colour: no money moved.
+        Text(when (t.side) { Side.SPLIT -> "분할"; else -> t.side.label }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+            color = when (t.side) {
+                Side.BUY -> com.bamnat.app.ui.theme.LocalCalendarColors.current.sunday
+                Side.SELL -> com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            },
             modifier = Modifier.width(36.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -78,7 +84,12 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
             }
             Text(
                 listOfNotNull(
-                    "${InvestFmt.quantity(t.quantity)}$unit × ${InvestFmt.price(t.price, t.market)}",
+                    when (t.side) {
+                        Side.BUY, Side.SELL -> "${InvestFmt.quantity(t.quantity)}$unit × ${InvestFmt.price(t.price, t.market)}"
+                        Side.SPLIT -> ratioParts(t.quantity).let { (a, b) -> "${a}$unit → ${b}$unit" }
+                        Side.IN -> "${InvestFmt.quantity(t.quantity)}$unit " + if (t.price > 0) "× ${InvestFmt.price(t.price, t.market)}" else "무상"
+                        Side.OUT -> "${InvestFmt.quantity(t.quantity)}$unit 옮김"
+                    },
                     t.minute?.let { minuteText(it) },
                     // [INV-31] A trade from a notification says which app it came from.
                     (t.tags.map { tag -> tag.removePrefix(com.bamnat.core.invest.TradeAlerts.TAG_PREFIX).let { if (it != tag) "$it 알림" else tag } } +
@@ -89,7 +100,8 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
             )
         }
         Column(horizontalAlignment = Alignment.End) {
-            Text(InvestFmt.won(kotlin.math.abs(t.cashWon).roundToLong(), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
+            if (t.side.trade) Text(InvestFmt.won(kotlin.math.abs(t.cashWon).roundToLong(), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
+            else Text("수량만", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             realized?.let { r ->
                 Text("${InvestFmt.signed(r.pnlWon.roundToLong(), hide)} ${InvestFmt.percent(r.rate)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
                     color = pnlColor(r.pnlWon))
@@ -145,7 +157,9 @@ internal fun HoldingsTab(state: InvestState, open: (InvestSheet) -> Unit) {
     val sold = state.result.byKey.filter { !it.held }
     if (sold.isNotEmpty()) SectionCard(title = "다 판 종목") {
         sold.forEach { h ->
-            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            // 2.0.0 [RVK-28] (검토 U06b-04) A holding sold out opens its records in order (before, pressing it did nothing).
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open(InvestSheet.Story(h.key, state.account)) }
+                .padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(h.title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Text(InvestFmt.signed((h.realizedWon + h.dividendsWon).roundToLong(), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
                     color = pnlColor(h.realizedWon + h.dividendsWon))
@@ -159,6 +173,7 @@ internal fun HoldingsTab(state: InvestState, open: (InvestSheet) -> Unit) {
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (InvestSheet) -> Unit) {
     val hide = state.hide
@@ -169,8 +184,14 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(h.title, style = MaterialTheme.typography.titleSmall)
-                Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.price(h.averagePrice, h.market)} · 비중 ${"%.0f".format(weight * 100)}%",
+                Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.average(h.averagePrice, h.market)} · 비중 ${"%.0f".format(weight * 100)}%",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVK-25] (검토 MONEY-69) A price from an earlier day says so on the folded card, in the caution colour after a week.
+                h.quote?.date?.takeIf { it.isBefore(state.today) }?.let { d ->
+                    val stale = java.time.temporal.ChronoUnit.DAYS.between(d, state.today) >= InvestFmt.STALE_DAYS
+                    Text("현재가 ${InvestFmt.ago(d, state.today)} 가격", style = MaterialTheme.typography.bodySmall,
+                        color = if (stale) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
             Column(horizontalAlignment = Alignment.End) {
                 Text(InvestFmt.won((h.valueWon ?: h.costWon).roundToLong(), hide), style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
@@ -190,11 +211,15 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
                 h.openedOn?.let { "보유 ${java.time.temporal.ChronoUnit.DAYS.between(it, state.today)}일째 (${Fmt.shortFullDate(it)}부터)" },
             )
             lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+            // 2.0.0 [RVK-27][RVK-28] Six now, wrapping on a narrow screen or with big letters (before, four in a row ran off it).
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 AssistChip(onClick = { open(InvestSheet.TradeEdit(TradeDraft(h.symbol, h.name, h.market, Side.BUY, price = h.quote?.price))) }, label = { Text("더 사기") })
                 AssistChip(onClick = { open(InvestSheet.TradeEdit(TradeDraft(h.symbol, h.name, h.market, Side.SELL, h.quantity, h.quote?.price))) }, label = { Text("팔기") })
                 AssistChip(onClick = { open(InvestSheet.CashEdit(CashKind.DIVIDEND)) }, label = { Text("배당") })
                 AssistChip(onClick = { open(InvestSheet.AlarmEdit(AlarmKind.TARGET)) }, label = { Text("목표가 알람") })
+                AssistChip(onClick = { open(InvestSheet.QuantityEdit(TradeDraft(h.symbol, h.name, h.market, Side.SPLIT, accountId = h.accountId ?: state.account))) },
+                    label = { Text("수량 바뀜") })
+                AssistChip(onClick = { open(InvestSheet.Story(h.key, state.account)) }, label = { Text("기록 한 장") })
             }
         }
     }

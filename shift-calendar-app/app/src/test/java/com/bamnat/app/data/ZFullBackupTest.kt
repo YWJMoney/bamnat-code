@@ -35,6 +35,8 @@ class ZFullBackupTest {
         dynamicColor = true, showHoursInCells = false, showLunar = true, showKani = false, dayStory = false, dayDial = false, dayStartMinutes = 300, orgDayGroup = "fire", orgDaysOn = false, vibrate = false, gradualVolume = false,
         snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, alarmGuard = false, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
+        // 2.0.0 [RVN-14] HQ-51.
+        reactionsOff = "plaza.rate",
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
         setupLater = true,

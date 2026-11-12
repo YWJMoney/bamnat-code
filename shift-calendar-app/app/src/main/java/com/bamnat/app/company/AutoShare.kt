@@ -77,6 +77,13 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         val cal: String = com.bamnat.app.data.PersonalCalendar.MAIN,
         /** 2.0.0 [RVN-10] COMP-46 The file as it was when it went or was queued: a queued one taken back becomes the base. */
         internal val now: String? = null,
+        /** 2.0.0 [RVN-13] COMP-47 It could not go now for want of a connection: it goes once online, and the line says so. */
+        val offline: Boolean = false,
+        /**
+         * 2.0.0 [RVN-13] COMP-47 The server would not take it (its error word, said by [com.bamnat.app.ui.company.companyProblem]):
+         * nothing waits, and the line has no 되돌리기.
+         */
+        val refused: CompanyException? = null,
     )
 
     /** 2.0.0 [RVN-10] COMP-46 What 되돌리기 did: a queued change left the queue, a sent one came off the 광장, or it waits for a connection. */
@@ -157,10 +164,15 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         val base = store.autoBase
         val sentAt = store.autoSentAt
         store.autoDirty = true
-        val id = if (Today.millis() - sentAt >= DAY) runCatching { send(force = false) }.getOrNull() else null
+        // 2.0.0 [RVN-13] COMP-47 A refusal is said as one (it said 내일 나눠요 before, for something that would never go); no connection
+        // on its day waits for one.
+        var failed: Exception? = null
+        val id = if (Today.millis() - sentAt >= DAY) try { send(force = false) } catch (e: Exception) { failed = e; null } else null
         if (id == null && store.autoDirty) schedule()
-        _shared.value = Shared(name, ChangeAsk.line(change) ?: "근무 순서·계산 방식", queued = id == null,
-            report = id?.let { lastReport }, base = base, sentAt = sentAt, cal = cal, now = now)
+        val refused = (failed as? CompanyException)?.takeIf { !it.retryable }
+        _shared.value = Shared(name, ChangeAsk.line(change) ?: "근무 순서·계산 방식", queued = id == null && refused == null,
+            report = id?.let { lastReport }, base = base, sentAt = sentAt, cal = cal, now = now,
+            offline = failed != null && refused == null, refused = refused)
     }
 
     /**
@@ -179,9 +191,19 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
             val base = store.autoBase
             val sentAt = store.autoSentAt
             // The lines asked about went with the yes, the pay way's too.
-            val id = runCatching { send(force = true, pay = true) }.getOrNull()
+            var failed: Exception? = null
+            val id = try { send(force = true, pay = true) } catch (e: Exception) { failed = e; null }
+            // 2.0.0 [RVN-13] COMP-47 A yes without a connection is kept and goes once online (before, it was gone without a word); a
+            // refusal is said.
+            val refused = (failed as? CompanyException)?.takeIf { !it.retryable }
+            if (failed != null && refused == null) {
+                store.autoOnce = true
+                OutboxJob.scheduleShare(c.appContext, 0, cal)
+            }
             if (a == null || a.first) (id ?: store.applied.value?.companyId)?.let { _opened.value = it }
-            else if (id != null) _shared.value = Shared(a.company, a.line.orEmpty(), queued = false, report = lastReport, base = base, sentAt = sentAt, cal = cal)
+            if (failed != null) _shared.value = Shared(a?.company ?: company()?.first.orEmpty(), a?.line ?: "근무 순서·계산 방식",
+                queued = refused == null, base = base, sentAt = sentAt, cal = cal, offline = refused == null, refused = refused)
+            else if (a != null && !a.first && id != null) _shared.value = Shared(a.company, a.line.orEmpty(), queued = false, report = lastReport, base = base, sentAt = sentAt, cal = cal)
             if (store.autoDirty && store.autoShare.value == true) schedule()
         }
     }
@@ -229,6 +251,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         c.telemetry.event("plaza_auto", "undo")
         if (s.queued) {
             store.autoDirty = false
+            store.autoOnce = false
             s.now?.let { store.autoBase = it }
             return Undone.DROPPED
         }
@@ -283,7 +306,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
     }
 
     /** Whether something of this calendar waits to be shared, for 서버 연결 점검's count. */
-    val waiting: Boolean get() = store.autoShare.value == true && store.autoDirty
+    val waiting: Boolean get() = (store.autoShare.value == true && store.autoDirty) || store.autoOnce
 
     /** COMP-46 Whether a 되돌리기 of this calendar waits for a connection, for 서버 연결 점검's count. */
     val takingBack: Boolean get() = store.takeBackLater.isNotEmpty()
@@ -300,6 +323,15 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
      */
     suspend fun flush(): Boolean {
         if (!waiting) return true
+        // 2.0.0 [RVN-13] COMP-47 A 나눌게요 that waited for a connection goes now, not held to the day's one (as it would have).
+        if (store.autoOnce) return try {
+            send(force = true, pay = true)
+            store.autoOnce = false
+            true
+        } catch (e: CompanyException) {
+            if (!e.retryable) store.autoOnce = false
+            !e.retryable
+        }
         if (Today.millis() - store.autoSentAt < DAY) {
             schedule()
             return true

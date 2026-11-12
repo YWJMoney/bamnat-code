@@ -42,6 +42,7 @@ import com.bamnat.core.invest.FillSheetReader
 import com.bamnat.core.invest.Side
 import com.bamnat.core.invest.TradeAlerts
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /** [INV-40] One read row as the user sees and corrects it before anything is put in. */
 private class FillRow(val read: FillSheetReader.Fill) {
@@ -207,7 +208,7 @@ internal fun FillCaptureSheet(
 }
 
 @Composable
-private fun warning() = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning
+private fun warning() = MaterialTheme.bamnat.caution
 
 @Composable
 private fun sideColor(side: Side) =

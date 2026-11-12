@@ -59,8 +59,8 @@ data class MyPost(val id: String, val room: String, val roomName: String, val bo
     val replies: Int, val at: Instant, val hidden: Boolean)
 
 internal fun myPostsOf(o: JSONObject): List<MyPost> {
-    val a = o.optJSONArray("items") ?: return emptyList()
-    return (0 until a.length()).map { a.getJSONObject(it) }.map {
+    // 2.0.0 [RVN-13] COMP-49 row by row: one row the app cannot read is left out, not the whole list.
+    return o.optJSONArray("items").rows {
         MyPost(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
             it.optString("parent").takeIf { p -> p.isNotEmpty() }, it.optInt("replies"), Instant.parse(it.getString("at")), it.optBoolean("hidden"))
     }
@@ -77,11 +77,11 @@ internal fun villageFoundOf(o: JSONObject): VillageFound {
     val p = o.optJSONArray("posts") ?: JSONArray()
     val r = o.optJSONArray("requests") ?: JSONArray()
     return VillageFound(
-        (0 until p.length()).map { p.getJSONObject(it) }.map {
+        p.rows {
             FoundPost(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
                 it.optInt("replies"), Instant.parse(it.getString("at")))
         },
-        (0 until r.length()).map { r.getJSONObject(it) }.map {
+        r.rows {
             FoundRequest(it.getString("id"), it.optString("body"), it.optInt("likes"), it.optString("state"), it.optString("code").takeIf { c -> c.isNotEmpty() },
                 it.optString("style").takeIf { s -> s.isNotEmpty() })
         },

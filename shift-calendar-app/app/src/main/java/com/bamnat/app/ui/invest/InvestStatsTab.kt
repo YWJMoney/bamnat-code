@@ -52,6 +52,8 @@ internal fun InvestStatsTab(
     state: InvestState, wide: Boolean, calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN,
     /** 1.39 [CALX-08] Kept by the screen, which also turns it on a sideways swipe. */
     shownMonth: String, onMonth: (String) -> Unit, yearly: Boolean, onYearly: (Boolean) -> Unit,
+    /** 2.0.0 [RVK-31] A 국내 ETF's kind told from the 세금 미리 보기. */
+    onEtfKind: (String, Boolean) -> Unit = { _, _ -> },
 ) {
     val ym = YearMonth.parse(shownMonth)
     val hide = state.hide
@@ -82,7 +84,7 @@ internal fun InvestStatsTab(
         com.bamnat.app.ui.guide.FeatureCard("invest.mind", calendarId) { Behaviour(stats, hide) }
         com.bamnat.app.ui.guide.FeatureCard("invest.weekdays", calendarId) { Weekdays(stats, hide) }
     }
-    com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year) }
+    com.bamnat.app.ui.guide.FeatureCard("invest.tax", calendarId) { TaxCard(state, ym.year, onEtfKind) }
     // 1.32 [WTYP-29] 연말 손실 정리 미리 보기 and the coins' 12월 31일 notice, this year only.
     if (ym.year == state.today.year) com.bamnat.app.ui.guide.FeatureCard(com.bamnat.app.calendar.DateNoticeAlarm.YEAR_END, calendarId) { HarvestCard(state) }
 }
@@ -230,27 +232,41 @@ private fun Weekdays(s: PeriodStats, hide: Boolean) {
  * 코인 from 2027, 배당·이자 15.4% and 금융소득종합과세 at 2,000만, ISA's 비과세 한도, 연금 계좌 deferred.
  */
 @Composable
-private fun TaxCard(state: InvestState, year: Int) {
+private fun TaxCard(state: InvestState, year: Int, onEtfKind: (String, Boolean) -> Unit) {
     val t = remember(state, year) { InvestTaxes.estimate(state.full, state.fullResult, year) }
     val hide = state.hide
     val lines = buildList {
-        if (t.domesticGain != 0L || t.tradeTax > 0) add("국내 주식 손익 ${InvestFmt.signed(t.domesticGain, hide)} · 거래세 ${InvestFmt.won(t.tradeTax, hide)} (대주주가 아니면 양도세 없음)")
+        // [RVK-31] 국내주식형 ETF (and ETFs not told yet) are counted with 국내 주식: no tax on the gain.
+        if (t.domesticGain != 0L || t.tradeTax > 0) add("국내 주식·주식형 ETF 손익 ${InvestFmt.signed(t.domesticGain, hide)} · 거래세 ${InvestFmt.won(t.tradeTax, hide)} (대주주가 아니면 양도세 없음)")
+        if (t.otherEtfGain > 0) add("해외지수·채권 등 ETF 이익 ${InvestFmt.won(t.otherEtfGain, hide)} → 증권사가 떼는 세금 어림 ${InvestFmt.won(t.otherEtfTax, hide)} (15.4%, 금융소득에 더함)")
+        if (t.otherMarketGain != 0L) add("기타 손익 ${InvestFmt.signed(t.otherMarketGain, hide)} (세금은 상품마다 달라 셈하지 않아요)")
         if (t.foreignGain != 0L) add("해외 주식 손익 ${InvestFmt.signed(t.foreignGain, hide)} → 예상 양도세 ${InvestFmt.won(t.foreignTax, hide)}" +
             if (t.foreignDeductionLeft > 0) " (250만 원 공제 ${InvestFmt.short(t.foreignDeductionLeft, hide)} 남음)" else "")
         if (t.cryptoGain != 0L) add("코인 손익 ${InvestFmt.signed(t.cryptoGain, hide)} · " +
             if (t.cryptoTaxed) "예상 세금 ${InvestFmt.won(t.cryptoTax, hide)}" else "${InvestTaxes.CRYPTO_FROM_YEAR}년부터 과세 (그 기준이면 ${InvestFmt.won(t.cryptoTax, hide)})")
-        if (t.financialIncome > 0) add("배당·이자 ${InvestFmt.won(t.financialIncome, hide)} · 떼인 세금 ${InvestFmt.won(t.dividendTax, hide)}")
+        if (t.dividendsGross + t.interestGross > 0) add("배당·이자 ${InvestFmt.won(t.dividendsGross + t.interestGross, hide)} · 떼인 세금 ${InvestFmt.won(t.dividendTax, hide)}")
         if (t.hasIsa) add("ISA 순이익 ${InvestFmt.signed(t.isaGain, hide)} / 비과세 ${InvestFmt.short(t.isaLimit, hide)}" +
             if (t.isaTaxOver > 0) " · 넘는 만큼 9.9% ${InvestFmt.won(t.isaTaxOver, hide)}" else "")
         if (t.deferredGain != 0L) add("연금저축·IRP 손익 ${InvestFmt.signed(t.deferredGain, hide)} · 연금으로 받을 때 과세")
     }
-    if (lines.isEmpty()) return
+    if (lines.isEmpty() && t.nextYearSales == 0) return
     SectionCard(title = "${year}년 세금 미리 보기") {
         lines.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
-        if (t.financialOver) Text("금융소득이 2,000만 원을 넘었어요. 다른 소득과 합쳐 종합과세될 수 있어요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
-        else if (t.financialNear) Text("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.", style = MaterialTheme.typography.bodySmall,
-            color = LocalCalendarColors.current.warning)
+        // 2.0.0 [RVK-31] (검토 MONEY-66) 국내 ETFs sold this year whose kind was not told: asked right here, a line and two chips each;
+        // picking moves its gain to the right line above at once. Three at most, the rest wait for the next visit.
+        t.untoldEtfs.take(3).forEach { r ->
+            Text("${r.name.ifBlank { r.key }}, 어떤 ETF예요?", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+            ChoiceChips(listOf(false, true), { false }, { if (it) "해외지수·채권·원자재 등" else "국내주식형" },
+                { onEtfKind(r.key, it) })
+        }
+        // [RVK-30] 주의 is said the one way the app says it: the mark and the words, not words in an orange of their own.
+        if (t.financialOver) com.bamnat.app.ui.components.ToneLine("금융소득이 2,000만 원을 넘었어요. 다른 소득과 합쳐 종합과세될 수 있어요.",
+            Modifier.padding(top = 4.dp))
+        else if (t.financialNear) com.bamnat.app.ui.components.ToneLine("금융소득이 2,000만 원에 가까워요. 넘으면 종합과세 대상이에요.",
+            Modifier.padding(top = 4.dp))
+        // 2.0.0 [RVK-32] (검토 MONEY-68) A 해외 주식 sale on the year's last trading day is next year's: said, so the sum is not a puzzle.
+        if (t.nextYearSales > 0) Text(InvestTaxes.nextYearNote(t.nextYearSales, year), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
         // [INV-35] Why this gain and the 보유 tab's can differ.
         if (t.foreignGain != 0L) Text(InvestTaxes.AVERAGE_VS_FIFO, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)

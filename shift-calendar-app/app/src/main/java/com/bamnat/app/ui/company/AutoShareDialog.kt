@@ -48,6 +48,12 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
     LaunchedEffect(shared) {
         val s = shared ?: return@LaunchedEffect
         val bar = snackbar ?: return@LaunchedEffect
+        // 2.0.0 [RVN-13] COMP-47 A refusal has nothing to take back: said, no 되돌리기.
+        if (s.refused != null) {
+            bar.showSnackbar(sharedLine(s), duration = SnackbarDuration.Long)
+            c.autoShare.sharedDone()
+            return@LaunchedEffect
+        }
         val r = bar.showSnackbar(sharedLine(s), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) {
             // 2.0.0 [RVN-10] COMP-46 Said as it went: 거뒀어요 only when it came off; offline it waits and 다시 하기 tries now.
@@ -68,9 +74,16 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
     ask?.let { AutoShareDialog(it, onYes = c.autoShare::approve, onNo = c.autoShare::decline, onNever = c.autoShare::never) }
 }
 
-/** [PLAZA-34] "나눴어요 · 야간 50% → 60%", or the day's wait. */
-internal fun sharedLine(s: AutoShare.Shared): String =
-    (if (s.queued) "${s.company} 광장에 내일 나눠요(하루 한 번)" else "${s.company} 광장에 나눴어요") + " · ${s.line}"
+/**
+ * [PLAZA-34] "나눴어요 · 야간 50% → 60%", or the day's wait. 2.0.0 [RVN-13] COMP-47 Or that it waits for a connection, or why the server
+ * would not take it.
+ */
+internal fun sharedLine(s: AutoShare.Shared): String = when {
+    s.refused != null -> "${s.company} 광장에 나누지 못했어요 · ${companyProblem(s.refused)}"
+    s.offline -> "인터넷이 연결되면 ${s.company} 광장에 나눠요 · ${s.line}"
+    s.queued -> "${s.company} 광장에 내일 나눠요(하루 한 번) · ${s.line}"
+    else -> "${s.company} 광장에 나눴어요 · ${s.line}"
+}
 
 @Composable
 fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Unit, onNever: () -> Unit = onNo) {

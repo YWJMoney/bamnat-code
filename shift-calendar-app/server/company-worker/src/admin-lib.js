@@ -99,7 +99,7 @@ export function adminLib() {
     label: "이름을 1~20자로 적어 주세요",
     level: "공지 종류를 골라 주세요",
     locked: "여러 번 틀려서 잠시 잠겼어요. 한 시간 뒤 다시 해 주세요",
-    login: "로그인이 끝났어요. 다시 로그인해 주세요",
+    login: "로그인 시간이 지났어요. 다시 로그인해 주세요",
     mail_failed: "메일을 보내지 못했어요. 잠시 뒤 다시 해 주세요",
     merge: "합칠 수 없는 회사예요",
     month: "달을 다시 골라 주세요",
@@ -110,7 +110,7 @@ export function adminLib() {
     warn_first: "먼저 경고를 보내 주세요. 불법·성적인 내용·개인 정보 노출만 바로 쉬게 할 수 있어요",
     // 2.0.0 [RVA-03] 1분이 지나 되돌리기 대신 거두기·풀기로
     late: "되돌릴 시간이 지났어요. 그 줄의 거두기·풀기로 해 주세요",
-    off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
+    care_off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
     name: "이름을 1~30자로 적어 주세요",
     nick: "별명을 다시 확인해 주세요",
     no_database: "데이터베이스가 연결되지 않았어요",
@@ -710,16 +710,16 @@ export function adminLib() {
     return plain[key] ?? null;
   }
 
-  /** The list of keys for the ? screen, as [keys, what]. */
+  /** The list of keys for the ? screen, as [keys, what]. 2.0.0 [RVA-27] 검토 U23-12: 허브 수와 이름은 HUBS에서 읽어요. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["1~5", "허브: 오늘·사람과 글·출시·숫자·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["Esc · Backspace", "뒤로"], [`1~${HUBS.length}`, `허브: ${HUBS.map((h) => h.label).join("·")}`], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "운영 장부·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
     ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
-    ["s · w · e · h (할 일함)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
+    ["s · w · e · h (운영 장부)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -1132,7 +1132,7 @@ export function adminLib() {
     const words = left.map((x) => x.label).join(", ");
     if (flag.default) return { ...base, on: true, state: "on", source: "default", reason: `기본으로 켜져 있어요(남은 조건: ${words})` };
     const tail = left.every((x) => x.c.type === "manual") ? " 확인하면 바로 켜져요." : left.every((x) => x.c.type === "date") ? " 그날 저절로 켜져요." : "";
-    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. ${words}이(가) 남았어요.${tail}` };
+    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. 남은 조건: ${words}.${tail}` };
   }
 
   /** Whole days from [now] to the KST start of [day] ("15일 남음"), or null. */
@@ -1380,6 +1380,22 @@ export function adminLib() {
     flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
     launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
     auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
+    // 2.0.0 [RVN-15] 검토 SVC-100: 이름이 없어 영어 코드로 보이던 일들(자동으로 한 일, 사고, 열쇠, 보상, 출시).
+    error_state: "오류 묶음 상태 바꿈", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
+    inquiry_auto_skip: "문의 자동 정리 건너뜀", inbox_auto: "자동 정리 켬·끔", inbox_auto_reply: "문의에 자동으로 답함", dev_handoff: "Claude에게 넘김",
+    dev_result: "개발 결과 붙여 넣기", dev_result_held: "개발 결과 답 보류", incident_open: "사고 시작", incident_close: "사고 끝",
+    inquiry_billing_rescan: "결제 문의 다시 가림", inquiry_reply_held: "문의 답 잠시 둠", inquiry_reply_approve: "문의 답 보내기 승인",
+    inquiry_reply_cancel: "문의 답 취소", inquiry_reply_edit: "문의 답 고침", data_request: "개인정보 요청 받음", data_request_close: "개인정보 요청 끝냄",
+    backup_run: "서버 백업", loop_halt_advice: "출시 멈춤 권함", loop_ship_seen: "출시 감지", loop_ship_sent: "출시 안내 보냄", loop_sync: "개발 기록 맞춤",
+    loop_basis: "요금 판단 기준 바꿈", loop_tier: "요금 판단 바꿈", dev_effect: "개발사항 효과 판정", loop_ship_cancel: "출시 안내 취소",
+    loop_switches: "자동 순환 스위치 바꿈", loop_train: "정기 출시 일정 바꿈", loop_rewards: "쓰면 쌓이는 날 바꿈", loop_draft: "자동 답 초안 처리",
+    maker_reward_owed: "제작자 보상 줄 것 생김", price_table: "가격표 바꿈", earned_days: "제보 보상 날 줌", pro_share_code: "프로 나눔 코드 만듦",
+    pro_share_claim: "프로 나눔 받음", link_guess: "친구 초대 링크 추측 막음", old_pay_cut: "옛 결제 정리", release_start: "출시 점검표 시작",
+    release_step: "출시 점검표 단계", review_reply: "스토어 리뷰에 답함", review_draft: "스토어 리뷰 답 초안",
+    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김",
+    sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", ops_key_ship: "운영 열쇠로 나간 판 저장(10분 보류)", need_ready: "꾸미기 부탁 올리기 전 확인에 옴", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
+    // 2.0.0 갈래 Q1 #478의 보관 장부(keep.js): 백업 되살려 보기와 개인정보 요청 처리.
+    backup_drill: "백업 되살려 보기(저절로)", backup_drill_run: "백업 되살려 보기 지금 함", data_request_run: "개인정보 요청 처리함",
   };
   const ACTION_AREAS = { login: "로그인", admin: "관리자", invite: "친구 초대", reward: "보상", post: "토론 글", rate: "임금표", inquiry: "문의", dev: "개발사항",
     template: "자주 쓰는 답", device: "관리자 휴대폰", notice: "공지", ops: "이달 할 일", flag: "기능", rule: "규칙", company: "회사", alias: "다른 이름",

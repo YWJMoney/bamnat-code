@@ -946,7 +946,8 @@ class PayCalculator(
                 if (company != null && company < legalRate) warnings += "회사 $name ${pct(company)}가 법정 ${pct(legalRate)}보다 낮아요"
             }
         } else {
-            warnings += "5인 미만 사업장이라 회사 규칙에 넣지 않은 연장·야간·휴일 가산은 계산하지 않았어요"
+            // 2.0.0 [RVJ-44] 검토 PC-106: the 사장님's 급여 대장 shows this too, where there is no '회사 규칙' (조건 13).
+            warnings += "5인 미만 사업장이라 따로 정하지 않은 연장·야간·휴일 가산은 계산하지 않았어요"
         }
         val r = rules.overtimeRounding
         if (r.unit > 1 && r.rounding == Rounding.DOWN) {

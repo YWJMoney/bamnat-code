@@ -38,17 +38,18 @@ on:
         type: boolean
         default: false
       skip_tests:
-        description: "[RVR-17] 날짜에 묶여 낡은 시험 넘기기 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
+        description: "[RVR-17] 날짜에 묶여 낡은 시험만, 이 배포에 사용자가 허락했을 때만 '시험 이름|까닭|기한 YYYY-MM-DD' (여러 개는 ;로, 기한 14일 안, 배포 기록에 남아요)"
         required: false
         default: ""
   pull_request:
-    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", "shift-calendar-app/tools/deploy/**", ".github/workflows/deploy-server.yml"]
+    paths: ["shift-calendar-app/tools/deploy_worker.py", "shift-calendar-app/tools/test_deploy_worker.py", "shift-calendar-app/tools/test_deploy_flow.py", "shift-calendar-app/tools/date_watch.py", "shift-calendar-app/tools/test_date_watch.py", "shift-calendar-app/tools/deploy/**", ".github/workflows/deploy-server.yml"]
 permissions:
   contents: read
 # 배포는 한 번에 하나씩, 도중에 끊지 않아요.
+# PR 시험(test 일)은 묶음을 따로 써요: 같은 묶음이면 PR에 push할 때마다 러너를 기다리던 배포 run이 밀려 취소돼요(2026-11-12, 갈래 D run 123).
 concurrency:
-  group: deploy-server
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('deploy-server-test-{0}', github.ref) || 'deploy-server' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   test:
     if: github.event_name == 'pull_request'
@@ -59,6 +60,7 @@ jobs:
           persist-credentials: false
       - run: python3 shift-calendar-app/tools/test_deploy_worker.py
       - run: python3 shift-calendar-app/tools/test_deploy_flow.py
+      - run: python3 shift-calendar-app/tools/test_date_watch.py
 
   gate:
     # 다른 브랜치에서 누르면 그 브랜치의 workflow·도구가 쓰여 안전장치를 비켜 갈 수 있어서, main에서 누른 것만 받아요.
@@ -140,6 +142,51 @@ jobs:
           path: ${{ runner.temp }}/ship
           retention-days: 3
           if-no-files-found: error
+      # [U60-02] 시험에서 멈추면 실패한 시험 이름·줄(<서버>-fail.json)만 따로 넘겨 explain이 어제 main과 견줘요.
+      - if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: build-fail
+          path: ${{ runner.temp }}/ship/fail
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # 2.0.0 [U60-02] (검토 2026-11-12) 배포가 시험에서 멈췄을 때 요약 맨 위에: 실패한 시험 이름·줄, 어제 main(날짜 시험 +0일)에서는
+  # 통과/실패, 그래서 할 일(main에서도 깨지면 이 브랜치 탓이 아니니 고치는 PR 먼저, 급하면 skip_tests). 토큰 없음, main의 도구만.
+  explain:
+    needs: [gate, build]
+    if: failure() && needs.build.result == 'failure'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@95815c38cf2ff2164869cbab79da8d1f422bc89e # v4.2.1
+        continue-on-error: true
+        with:
+          name: build-fail
+          path: ${{ runner.temp }}/fail
+      - name: 어제 main과 견주기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          main="$RUNNER_TEMP/main"
+          for id in $(gh run list -R "$GITHUB_REPOSITORY" --workflow date-watch.yml --branch main --status completed --limit 6 --json databaseId --jq '.[].databaseId'); do
+            gh run download "$id" -R "$GITHUB_REPOSITORY" -n date-watch-servers-0 -D "$main" 2>/dev/null && break
+          done
+          echo "### 시험에서 멈춤: 어제 main과 견주기" >> "$GITHUB_STEP_SUMMARY"
+          shopt -s nullglob
+          got=0
+          for f in "$RUNNER_TEMP"/fail/*-fail.json; do
+            w=$(basename "$f" -fail.json)
+            python3 shift-calendar-app/tools/date_watch.py explain "$f" "$main/$w+0.json" >> "$GITHUB_STEP_SUMMARY"
+            got=1
+          done
+          [ "$got" = 1 ] || echo "시험 말고 다른 단계(번들·스키마 호환)에서 멈췄어요. 위 build 요약을 봐요" >> "$GITHUB_STEP_SUMMARY"
 
   ship:
     needs: [gate, build]

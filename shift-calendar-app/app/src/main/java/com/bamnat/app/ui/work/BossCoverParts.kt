@@ -90,7 +90,8 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                     }) { Text("넣기") }
                 }
             }
-            failed?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            // 2.0.0 [RVJ-43] 검토 PC-105 같은 구조: a send that did not go is said on the one 알림 줄 (주의), not in red (조건 6).
+            failed?.let { com.bamnat.app.ui.components.ToneLine(it) }
         }
     }, confirmButton = {
         TextButton(enabled = picked.isNotEmpty() && shift != null && !busy, onClick = {
@@ -139,8 +140,9 @@ internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMem
                 }) { Text("${name(id)}님 넣기") }
             }
         }
-        note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-        if (call.token == null) Text("이 휴대폰에 요청 링크 열쇠가 없어요. 다시 보내 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        // [RVJ-43] 검토 PC-105 같은 구조: 알림 줄 한 모양 (조건 3·6).
+        note?.let { com.bamnat.app.ui.components.ToneLine(it) }
+        if (call.token == null) com.bamnat.app.ui.components.ToneLine("이 휴대폰에 요청 링크 열쇠가 없어요. 다시 보내 주세요.")
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(enabled = !busy && call.token != null, onClick = {
                 busy = true

@@ -81,6 +81,35 @@ class RvjFrozenMonthTest {
         assertTrue(split.kinds.toString(), split.kinds.none { it == "야간" || it == "휴일" })
     }
 
+    /**
+     * 2.0.0 [RVJ-35] 검토 PC-86: '달로 주는 몫(기본급·원 단위 끝전) 2,799,993원' read as a wrong 기본급. The share comes with its pieces
+     * (기본급 2,800,000원, 끝전 −7원), which always add up to it, and its ⓘ says them in words.
+     */
+    @Test fun theMonthsShareComesWithPiecesThatAddUpToIt() {
+        val d = ShiftType(1, "주간", "주", 0xFF000000, t(7), t(15), 60, t(12))
+        val e = ShiftType(2, "저녁", "저", 0xFF000000, t(15), t(23), 60, t(19))
+        val n = ShiftType(3, "야간", "야", 0xFF000000, t(23), t(7), 60, t(3))
+        val preset = com.bamnat.core.pay.PayPresets.of(Occupation.NURSE)
+        val nurse = com.bamnat.core.pay.PayPresets.profile(preset, preset.wageType, preset.baseHint, LocalDate.of(2020, 1, 1),
+            preset.items.filter { it.checked }, fiveOrMore = true, holidayMode = com.bamnat.core.pay.HolidayPayMode.FULL, estimated = setOf("base"))
+        val r = ScheduleResolver(listOf(d, e, n, off), WorkPattern.Rotation(LocalDate.of(2026, 9, 1), listOf(1L, 1L, 2L, 2L, 3L, 3L, 9L, 9L)), emptyList())
+        for (m in listOf(pay(monthly), pay(hourly), PayCalculator().calculate(nurse, YearMonth.of(2026, 10), r::resolve))) {
+            val split = DaySplit.of(m)
+            if (split.month != 0L) {
+                assertEquals(split.toString(), split.month, split.pieces.sumOf { it.second })
+                assertEquals(split.toString(), split.kinds.toSet(), split.pieces.map { it.first }.toSet())
+            }
+        }
+        val won = { v: Long -> "%,d원".format(v) }
+        val baseLessRounding = DaySplit.Split(days = 1_200_000, month = 2_799_993, kinds = listOf("기본급", "원 단위 끝전"),
+            pieces = listOf("기본급" to 2_800_000L, "원 단위 끝전" to -7L))
+        assertEquals("기본급 2,800,000원 − 원 단위 끝전 7원", DaySplit.piecesText(baseLessRounding, won))
+        assertEquals("기본급 2,800,000원 + 주휴·월 수당 300,000원",
+            DaySplit.piecesText(DaySplit.Split(0, 3_100_000, listOf("기본급", "주휴·월 수당"), listOf("기본급" to 2_800_000L, "주휴·월 수당" to 300_000L)), won))
+        // One piece is the line itself: no ⓘ.
+        assertNull(DaySplit.piecesText(DaySplit.Split(0, 2_800_000, listOf("기본급"), listOf("기본급" to 2_800_000L)), won))
+    }
+
     @Test fun anAllowanceWhoseAmountIsUnknownIsInNeitherTheDaysNorTheTotal() {
         // 예전: 금액 모름(짐작 8,000원) 식대가 날짜별 내역에는 더해지고 합계에서는 빠져 두 합이 달랐어요.
         val unknown = monthly.copy(estimatedFields = setOf(Unknowns.item(meal.id)))

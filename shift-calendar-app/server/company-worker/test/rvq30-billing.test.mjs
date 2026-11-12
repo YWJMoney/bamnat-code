@@ -6,6 +6,7 @@ import { server, device, signIn } from "./helpers.mjs";
 import { isBillingRecord } from "../src/ask-check.js";
 import { rescanBilling2 } from "../src/inquiries.js";
 
+
 const ask = (call, n, text, kind = "question") => call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, public: true, info: { app: "2.0.0 (54)" } }).then((r) => r.data);
 
 test("[RVQ-30] SVC-21 놓쳤던 결제 문의(프로 샀는데·광고 제거권·돈만 나가고·Play 주문 번호)는 기록이에요", () => {
@@ -20,8 +21,8 @@ test("[RVQ-30] SVC-21 같은 낱말의 다른 뜻(회사 결재 오타·수당 �
     "가계부에 구매한 물건 적는 칸이 있나요", "프로필 사진을 바꾸고 싶어요", "프로젝트 비용 청구 일정", "돈 나가는 날 알림이 필요해요"]) assert.equal(isBillingRecord(t), false, t);
 });
 
-test("[RVQ-30] SVC-21 앱의 '결제·환불'로 보낸 문의는 글과 상관없이 기록이고, 모두의 문의에 안 나가고, 사람이 먼저 봐요", async () => {
-  const { call, env } = server();
+test("[RVQ-30] SVC-21 앱의 '결제·환불'로 보낸 문의는 글과 상관없이 기록이고, 모두의 문의에 안 나가고, 사람이 먼저 봐요", async (t) => {
+  const { call, env } = server({ t });
   const admin = await signIn(call);
   const q = await ask(call, 1, "어제 산 게 안 보여요", "billing");
   assert.equal(q.kind, "billing");
@@ -37,8 +38,8 @@ test("[RVQ-30] SVC-21 앱의 '결제·환불'로 보낸 문의는 글과 상관�
   assert.equal(line.answer.why, "환불·결제·보상");
 });
 
-test("[RVQ-30] SVC-21 남아 있는 문의를 새 기준으로 한 번 더 봐요: 빠뜨린 것은 켜고 잘못 잡은 것은 끄고, 관리자가 정한 것은 그대로", async () => {
-  const { call, env } = server();
+test("[RVQ-30] SVC-21 남아 있는 문의를 새 기준으로 한 번 더 봐요: 빠뜨린 것은 켜고 잘못 잡은 것은 끄고, 관리자가 정한 것은 그대로", async (t) => {
+  const { call, env } = server({ t });
   const admin = await signIn(call);
   const missed = (await ask(call, 1, "프로 샀는데 적용이 안 돼요")).id;
   const wrong = (await ask(call, 2, "휴가 결제 올렸는데 근무표에 안 떠요")).id;

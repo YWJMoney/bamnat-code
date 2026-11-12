@@ -101,7 +101,7 @@ class ShareSync(
         // [TRY-06] A work only being tried never goes out; once it is put back, the change sends what is there.
         if (com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return@withLock Result.Same
         // 1.36: 프로 keeps every link open while it lasts; after it ends a kept link closes within 90 days.
-        send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks))
+        send(store, link, ShareLinkPayload.keepOpen(link, clock(), c.featureGate.state.value.keepsLinks), byItself = true)
     }
 
     /**
@@ -199,7 +199,8 @@ class ShareSync(
         send(store, link, ShareLinkPayload.allowedTtl(days ?: link.ttlDays, pro))
     }
 
-    private suspend fun send(store: ShareLinkStore, link: ShareLinkState, ttlDays: Int?): Result {
+    /** [byItself]: the automatic update, the one a refusal is counted for ([ShareLinkStore.refusedAgain]). */
+    private suspend fun send(store: ShareLinkStore, link: ShareLinkState, ttlDays: Int?, byItself: Boolean = false): Result {
         // [MCAL-03] A calendar removed since has no link left to keep.
         val cal = c.calendars.get(store.calendarId) ?: return Result.Gone
         val from = ShareLinkPayload.startMonth(link, today())
@@ -214,44 +215,26 @@ class ShareSync(
             return Result.Same
         }
         return try {
-            val updated = c.shareApi.update(link, payload)
-            store.save(updated.copy(from = from), sent)
+            // 2.0.0 [RVG-27] 검토 SN-13: a part the server turns down for what it carries goes without, said once above the calendar.
+            val went = sendLeavingOut(payload, store.leaveOut()) { c.shareApi.update(link, it) }
+            if (went.fresh.isNotEmpty()) c.telemetry.event("share_link_refused", went.fresh.joinToString(",").take(24))
+            store.save(went.value.copy(from = from), sent)
             store.sendResult(clock())
+            store.leftOut(went, onCalendar = true)
             if (ttlDays != null) store.noticedFor = null
             c.telemetry.event(if (ttlDays == null) "share_link_auto" else "share_link_extend")
             Result.Sent
         } catch (e: ShareLinkException) {
             when {
                 e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
-                ShareLinkPayload.refused(e) -> sendWithout(store, link, from, payload, sent, ttlDays, e.message)
-                else -> { store.sendResult(null); Result.Offline }
-            }
-        } catch (e: IOException) {
-            store.sendResult(null)
-            Result.Offline
-        }
-    }
-
-    /**
-     * 2.0.0 [RVG-27] 검토 SN-13: the server turned the change down for one part (an emoji 근무 그림 on a 1.34~1.39 share server):
-     * the link goes without that part, the sender is told once above the calendar, and the fingerprint is the calendar's, so the
-     * same part is not tried again until something else changes. A part the app cannot leave out is [Result.Refused].
-     */
-    private suspend fun sendWithout(store: ShareLinkStore, link: ShareLinkState, from: java.time.YearMonth, payload: org.json.JSONObject,
-                                    sent: String, ttlDays: Int?, code: String?): Result {
-        c.telemetry.event("share_link_refused", code.orEmpty().take(24))
-        val (fixed, words) = ShareLinkPayload.withoutRefused(payload, code) ?: run { store.refusedNow(); return Result.Refused }
-        return try {
-            val updated = c.shareApi.update(link, fixed)
-            store.save(updated.copy(from = from), sent)
-            store.sendResult(clock())
-            store.setDropped(words)
-            if (ttlDays != null) store.noticedFor = null
-            Result.Sent
-        } catch (e: ShareLinkException) {
-            when {
-                e.message == "not_found" || e.message == "forbidden" -> { store.clear(); Result.Gone }
-                ShareLinkPayload.refused(e) -> { store.refusedNow(); Result.Refused }
+                // [RVG-27] Turned down for something that cannot be left out: not tried again by itself (it would be turned down
+                // again); the share card says so, and the second time running above the calendar too (검토 S7-3).
+                ShareLinkPayload.refused(e) -> {
+                    c.telemetry.event("share_link_refused", e.message.orEmpty().take(24))
+                    store.refusedNow()
+                    if (byItself && store.refusedAgain(e.message)) store.setDropped(ShareLinkPayload.REFUSED_AGAIN)
+                    Result.Refused
+                }
                 else -> { store.sendResult(null); Result.Offline }
             }
         } catch (e: IOException) {

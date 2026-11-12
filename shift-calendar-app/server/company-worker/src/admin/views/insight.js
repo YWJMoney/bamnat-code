@@ -25,9 +25,13 @@ export function insightViews(A) {
     const d = S.data.metrics;
     // [ADMUX-13] 7·28·90일, or two dates (180 days at most, up to yesterday).
     const custom = Boolean(S.metricFrom && S.metricTo);
+    // 2.0.0 [RVA-24] 검토 HQ-03·U23-09(조건 1): 기간 막대는 한 줄(7·28·90일 + '날짜로'), 날짜 두 칸은 '날짜로'를 누르거나 날짜로 고른 동안만 보여요.
+    // 막대는 머리 밑에 붙어 있고(--top-h), 고른 기간은 주소(days·from·to)에 남아요.
+    const dates = custom || Boolean(S.metricDatesOpen);
     const head = `<div class="timebar"><div class="toolbar"><div class="segmented" role="group" aria-label="기간">${[7, 28, 90].map((n) => seg("metric-days", String(n), custom ? "" : String(S.metricDays), `${n}일`)).join("")}</div>
-      <label class="sr" for="mt-from">시작 날짜</label><input id="mt-from" type="date" value="${esc(S.metricFrom || d?.from || "")}" data-change="metric-from" aria-label="이날부터">
-      <label class="sr" for="mt-to">끝 날짜</label><input id="mt-to" type="date" value="${esc(S.metricTo || d?.to || "")}" data-change="metric-to" aria-label="이날까지">
+      ${custom ? "" : `<button type="button" class="btn small ghost" data-act="metric-dates" aria-expanded="${dates}">날짜로</button>`}
+      ${dates ? `<label class="sr" for="mt-from">시작 날짜</label><input id="mt-from" type="date" value="${esc(S.metricFrom || d?.from || "")}" data-change="metric-from" aria-label="이날부터">
+      <label class="sr" for="mt-to">끝 날짜</label><input id="mt-to" type="date" value="${esc(S.metricTo || d?.to || "")}" data-change="metric-to" aria-label="이날까지">` : ""}
       ${custom ? '<button class="btn small ghost" data-act="metric-clear">날짜 지우기</button>' : ""}
       ${d ? `<p class="meta">${esc(d.from)} ~ ${esc(d.to)} (${d.days}일) · 이전 ${d.days}일과 견줘요</p>` : ""}</div></div>`;
     if (!d) return head + `<div class="tiles core">${'<div class="tile skeleton"></div>'.repeat(4)}</div>${skeleton(3)}`;
@@ -149,7 +153,8 @@ export function insightViews(A) {
 
   // 1.39 [SETUP-20] 첫 설정 누른 횟수 (사용자 결정 2026-11-07, '처음 1분'을 숫자로): per app version and kind of work, the middle
   // value and 9 in 10 phones, from phones with 사용 통계 once 처리방침 3.12 is in force.
-  const SETUP_STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "가게", INVEST: "투자" };
+  // 2.0.0 [RVA-27] 검토 T23-02: 다른 화면과 같은 이름('가게' 대신 '자영업'). L.WORK_NAMES는 core 깃발 장부와 같아야 해서(시급) 여기 이름은 따로예요.
+  const SETUP_STYLE_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   const taps = (n) => (n >= 150 ? "100번 넘음" : `${n}번`);
   function setupTapsCard(d) {
     const st = d.startup;
@@ -257,7 +262,18 @@ export function insightViews(A) {
   }
 
   const REMOTE_NAMES = { presets: "직군 프리셋", rates: "최저임금·4대 보험 요율", wages: "시중노임단가", taxtable: "간이세액표", publicpay: "공무원 보수",
-    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내", cycles: "회사 근무주기" };
+    holidays: "공휴일", taxes: "세금", "alarm-guide": "알람 기종별 안내", cycles: "회사 근무주기",
+    // 2.0.0 [RVA-27] 검토 ADM-21: 영어 열쇠가 그대로 보이던 것.
+    merchants: "가게 이름(결제 내역 읽기)" };
+
+  // 2.0.0 [RVA-29] 검토 ADM-22·U23-11: 폰 3대에 "33%"처럼 적은 표본을 비율로 보이지 않아요.
+  // 20대 아래면 "3대 중 1대"와 '자료 부족', 그 위에서만 %예요(옛 서버라 able이 없으면 –).
+  const REACH_FEW = 20;
+  function reachWords(f, phones) {
+    if (!phones || f.reach === null) return '<b title="받을 수 있는 휴대폰">–</b>';
+    if (phones >= REACH_FEW || !Number.isInteger(f.able)) return `<b title="받을 수 있는 휴대폰">${f.reach}%</b>`;
+    return `<b title="받을 수 있는 휴대폰">${phones}대 중 ${f.able}대</b><span class="pill" title="지난 7일 휴대폰이 ${REACH_FEW}대보다 적어 비율로 보지 않아요">자료 부족</span>`;
+  }
 
   function remoteCard() {
     const r = S.data.remote;
@@ -268,7 +284,7 @@ export function insightViews(A) {
       <ul class="rows">${r.files.map((f) => `<li><div class="row"><span class="row-main"><b>${esc(REMOTE_NAMES[f.kind] ?? f.kind)}</b>
         <small>${f.found ? `판 ${esc(f.version ?? "?")} · ${esc(f.issued ?? "")} · 앱 ${esc(f.minApp ?? "모두")}부터${f.valid && f.oldApps === false ? " · 1.26 이하 앱은 앱 안 값" : ""}` : "사이트에 없어요"}</small></span>
         <span class="row-side">${f.found ? `<span class="pill ${f.valid ? "ok" : "bad"}">${f.valid ? "서명 맞음" : f.signed ? "서명 틀림" : "서명 없음"}</span>
-          <b title="받을 수 있는 휴대폰">${f.reach === null ? "–" : `${f.reach}%`}</b>` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
+          ${reachWords(f, r.phones)}` : '<span class="pill bad">없음</span>'}</span></div></li>`).join("")}</ul>
       <p class="meta">${esc(r.base)} · ${esc(ago(r.at))} 읽음</p></section>`;
   }
 

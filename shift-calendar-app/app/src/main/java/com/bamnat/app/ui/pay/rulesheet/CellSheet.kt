@@ -108,7 +108,7 @@ internal fun CellSheet(start: CellStart, host: RuleSheetHost, onDismiss: () -> U
                     if (guess != null || named != null) {
                         val label = guess?.name ?: named!!
                         FilledTonalButton(onClick = { if (guess != null) pick(guess) else draft = ItemDraft.ofName(named!!, id).also { it.source = sentence } },
-                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("‘$label’(으)로 시작하기") }
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("‘$label’${com.bamnat.app.ui.Fmt.ro(label)} 시작하기") }
                     }
                     OutlinedTextField(
                         value = query, onValueChange = { query = it.take(20) },
@@ -206,7 +206,9 @@ private fun EffectLine(host: RuleSheetHost, change: RuleChange?, effect: CellEff
     Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Column(Modifier.semantics(mergeDescendants = true) {}) {
-                Text("${host.month.monthValue}월 급여에", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVJ-32] PC-80: a closed month on screen is not where the 칸 lands.
+                Text(if (host.landsIn != host.month) "${host.month.monthValue}월은 마감돼 그대로예요 · ${host.landsIn.monthValue}월 급여부터"
+                    else "${host.month.monthValue}월 급여에", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 when {
                     asked -> Text("사람마다 달라요. 금액은 급여 화면에서 넣어요", style = MaterialTheme.typography.titleSmall)
                     change == null -> Text("금액이나 %를 넣으면 바로 계산해요", style = MaterialTheme.typography.titleSmall)

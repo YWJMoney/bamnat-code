@@ -145,8 +145,9 @@ class LeadShare(private val c: AppContainer) {
         if (!c.companyApi.enabled) return
         c.appScope.launch {
             val others = c.companyScopes().filter { it.calendarId != cal }
-            used?.let { runCatching { c.companyApi.use(store.device, it.companyId, it.setup, false, scope.serverCal) } }
-            joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first } }?.let { runCatching { c.companyApi.leave(store.device, it.first) } }
+            // 2.0.0 [RVN-13] COMP-48 kept for later when the server could not be reached: 개인정보 takes it back for sure.
+            used?.let { SmallSends.send(c, store, SmallSends.use(it.companyId, it.setup, false, scope.serverCal)) }
+            joined?.takeIf { j -> others.none { it.store.member.value?.first == j.first } }?.let { SmallSends.send(c, store, SmallSends.leave(it.first)) }
         }
     }
 

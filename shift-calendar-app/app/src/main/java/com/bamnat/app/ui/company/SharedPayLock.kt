@@ -141,7 +141,7 @@ fun FixRequestSheet(
         error = null
         vm.fix(picked, body) { e, done -> busy = false; if (e != null) error = e else sent = done }
     }
-    if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+    if (nudge) com.bamnat.app.ui.hub.NudgeDialog(body, onEdit = { nudge = false }, onSend = { nudge = false; go() })
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {

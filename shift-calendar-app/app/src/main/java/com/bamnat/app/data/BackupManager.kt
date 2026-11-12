@@ -698,6 +698,8 @@ class BackupManager(
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
+                // 2.0.0 [RVN-14] HQ-51 알림함 반응 kinds turned off.
+                .put("reactionsOff", s.reactionsOff)
                 // [FLAG-16] 1.28 AL: the 3.2 extra yes, like 사용 통계's own (null: not asked yet).
                 .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL)
                 // [STAT-08] 1.31: whether that yes named 조회 시간.
@@ -1377,6 +1379,9 @@ class BackupManager(
                     plazaNews = o.optBoolean("plazaNews", s.plazaNews),
                     plazaHidden = o.optStringOrNull("plazaHidden")?.let { com.bamnat.core.plaza.HideList.decode(it).encode() } ?: s.plazaHidden,
                     plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
+                    // 2.0.0 [RVN-14] HQ-51: only kinds this app knows; a backup before 2.0.0 keeps what this phone has.
+                    reactionsOff = o.optStringOrNull("reactionsOff")?.let { com.bamnat.core.plaza.Reactions.encodeOff(com.bamnat.core.plaza.Reactions.decodeOff(it)) }
+                        ?: s.reactionsOff,
                     // [FLAG-16] 1.28: a backup without it keeps what this phone has.
                     usageStatsMore = if (!o.has("usageStatsMore")) s.usageStatsMore else if (o.isNull("usageStatsMore")) null else o.optBoolean("usageStatsMore"),
                     // [STAT-08] 1.31: a backup from before keeps what this phone has.

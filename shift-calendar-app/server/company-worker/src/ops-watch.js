@@ -51,10 +51,21 @@ const kst = (ms) => new Date(ms + 9 * HOUR).toISOString();
 export const watchHour = (ms) => kst(ms).slice(0, 13);
 export const watchDay = (ms) => kst(ms).slice(0, 10);
 
-/** 주소에서 번호·글자 덩어리(휴대폰·문의·회사 번호)를 :id로. 같은 주소의 요청이 한 줄로 모여요. */
+/**
+ * 주소에서 번호·글자 덩어리(휴대폰·문의·회사 번호)를 :id로. 같은 주소의 요청이 한 줄로 모여요.
+ * 2.0.0 [RVN-15] 검토 SVC-104: 번호는 57글자(대·소문자·숫자, index.js ID_CHARS)에서 뽑아 숫자가 없는 번호도 있어요. 그런 번호가 그대로 남아
+ * 같은 주소가 번호마다 갈라지고, 문의·글 번호가 통계 표에 14~90일 남았어요. 이제 8자 이상이면서 대문자나 숫자가 든 조각도 :id예요(주소의 낱말은
+ * 소문자뿐이라 'companies'·'reactions'는 그대로). '%'가 든 조각(찾은 말 같은 글)은 :text.
+ */
 export function routeOf(path) {
   const p = String(path ?? "").split("?")[0].slice(0, 200);
-  return p.split("/").map((s) => (s.length >= 6 && /\d/.test(s) && /^[A-Za-z0-9_.~-]+$/.test(s)) || s.length > 24 || /^\d+$/.test(s) ? ":id" : s).join("/") || "/";
+  return p.split("/").map((s) => {
+    if (s.includes("%")) return ":text";
+    const plain = /^[A-Za-z0-9_.~-]+$/.test(s);
+    if ((s.length >= 6 && /\d/.test(s) && plain) || s.length > 24 || /^\d+$/.test(s)) return ":id";
+    if (s.length >= 8 && plain && /[A-Z0-9]/.test(s)) return ":id";
+    return s;
+  }).join("/") || "/";
 }
 
 /** 걸린 시간이 들어갈 칸(0..7). */

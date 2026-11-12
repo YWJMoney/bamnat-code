@@ -217,7 +217,9 @@ class RvmScreenshotTest : ScreenshotBase() {
     private fun market(): Screen.() -> Unit = {
         Market().also { c.recipeApi = it }
         style(WorkStyle.SHIFT)
-        content { RecipeListScreen(RecipeListViewModel(c), onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        // Made outside the composable (lint ViewModelConstructorInComposable), as the other screenshot tests do.
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
         settle()
         settle()
     }

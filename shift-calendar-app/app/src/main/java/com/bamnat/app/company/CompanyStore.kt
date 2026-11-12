@@ -156,6 +156,8 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         if (phone != null) {
             phone.setAutoShare(on)
             if (on != true) autoDirty = false
+            // 2.0.0 [RVN-13] COMP-47 나누지 않기 also drops a 나눌게요 still waiting for a connection.
+            if (on == false) autoOnce = false
             return
         }
         _autoShare.value = on
@@ -163,6 +165,7 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         prefs.edit().apply {
             if (on == null) remove("auto_share") else putBoolean("auto_share", on)
             if (on != true) putBoolean("auto_dirty", false).remove("auto_pay")
+            if (on == false) putBoolean("auto_once", false)
         }.apply()
     }
 
@@ -193,6 +196,10 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
     var autoDirty: Boolean
         get() = prefs.getBoolean("auto_dirty", false)
         set(v) = prefs.edit().putBoolean("auto_dirty", v).apply()
+    /** 2.0.0 [RVN-13] COMP-47 A 나눌게요 given without a connection: it goes once online ([AutoShare.flush]), then this is off. */
+    var autoOnce: Boolean
+        get() = prefs.getBoolean("auto_once", false)
+        set(v) = prefs.edit().putBoolean("auto_once", v).apply()
     var autoSentAt: Long
         get() = prefs.getLong("auto_sent_at", 0)
         set(v) = prefs.edit().putLong("auto_sent_at", v).apply()
@@ -208,6 +215,23 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         val now = if (waiting) takeBackLater + id else takeBackLater - id
         prefs.edit().apply { if (now.isEmpty()) remove("take_back_later") else putString("take_back_later", now.joinToString(",")) }.apply()
     }
+
+    /** 2.0.0 [RVN-13] COMP-48 쓰고 있어요·맞아요·회사 빼기 that could not reach the server, oldest first ([SmallSends], [OutboxJob]). */
+    internal val keptCalls: List<SmallSends.Call>
+        get() = SmallSends.read(prefs.getString("kept_calls", null))
+
+    /** The newest word for a thing takes the older's place (and goes to the end, so the order sent is the order said). */
+    @Synchronized
+    internal fun keepCall(call: SmallSends.Call) = writeCalls(keptCalls.filter { it.key != call.key } + call)
+
+    @Synchronized
+    internal fun dropCall(key: String) {
+        val now = keptCalls
+        if (now.any { it.key == key }) writeCalls(now.filter { it.key != key })
+    }
+
+    private fun writeCalls(calls: List<SmallSends.Call>) =
+        prefs.edit().apply { if (calls.isEmpty()) remove("kept_calls") else putString("kept_calls", SmallSends.write(calls)) }.apply()
 
     private val _member = MutableStateFlow(readMember())
     /** [PLAZA-07] The company this calendar joined, as the server last said: (id, name). [CALI-02] Each calendar its own. */
@@ -249,7 +273,9 @@ class CompanyStore internal constructor(private val prefs: SharedPreferences, pr
         // choice, [setAutoShare] null), and a change waiting for its day or a take-back waiting for a connection has nothing left to do.
         if (autoShare.value == true) setAutoShare(null)
         autoDirty = false
-        prefs.edit().remove("take_back_later").apply()
+        autoOnce = false
+        // COMP-48 What waited to go is about what the server no longer has.
+        prefs.edit().remove("take_back_later").remove("kept_calls").apply()
     }
 
     fun setApplied(a: AppliedSetup?) {

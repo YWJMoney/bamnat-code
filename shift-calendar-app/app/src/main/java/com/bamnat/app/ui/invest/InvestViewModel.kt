@@ -490,6 +490,11 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     }
 
     // [INV-05][INV-11][INV-17] The calendar's own choices.
+    /** 2.0.0 [RVK-31] (검토 MONEY-66) A 국내 ETF's kind: [taxed] for 해외지수·채권·원자재 등, false for 국내주식형. */
+    fun setEtfKind(key: String, taxed: Boolean) = viewModelScope.launch {
+        if (key.isNotEmpty()) repo.saveSettings { it.copy(etfTaxed = it.etfTaxed + (key to taxed)) }
+    }
+
     fun saveSettings(change: (InvestSettings) -> InvestSettings) = viewModelScope.launch {
         repo.saveSettings(change)
         changed()

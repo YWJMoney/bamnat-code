@@ -6,11 +6,36 @@ export const ORIGIN = "https://company.example";
 export const PASSWORD = "night-and-day-admin";
 
 /**
+ * 2.0.0 [I60a-01] (검토 TEST-05·07의 날짜 폭탄 4건은 모두 시계를 고정하지 않았거나 고정과 진짜 시계가 섞였어요) 시험의 기본 시각.
+ * 날짜에 걸린 약속(새해, 공휴일 표 끝, 처리방침 시행일 12-07·12-09·12-12)을 모두 지난 평범한 평일 한낮(KST 2027-03-17 수 12:00)이에요.
+ * 시험 DB의 SQL 'now'도 이 시계를 따라요(d1.mjs).
+ */
+export const TEST_NOW = Date.parse("2027-03-17T03:00:00Z");
+
+/**
+ * [I60a-01] 이 시험의 시계를 [at](기본 [TEST_NOW])에 멈춰요. 시험이 이미 시계를 켰으면 그 시계를 그대로 써요.
+ * 움직이려면 `t.mock.timers.tick(ms)`나 `setTime`.
+ */
+export function fixClock(t, at = TEST_NOW) {
+  const now = typeof at === "string" ? Date.parse(at) : at;
+  try {
+    t.mock.timers.enable({ apis: ["Date"], now });
+  } catch (e) {
+    if (e?.code !== "ERR_INVALID_STATE") throw e; // 이미 켠 시계
+  }
+  return Date.now();
+}
+
+/**
  * A worker with its own empty database; [call] sends one request and reads the answer. Tests written
  * before 1.21 adopt with two people and give rewards by hand; [plaza] true keeps the server's own
  * defaults instead (three people, rewards given by themselves, 결정 D32·D33).
+ *
+ * 2.0.0 [I60a-01] [t]를 주면 시계를 [at](기본 [TEST_NOW])에 고정한 채 시작해요: `server({ t })`. 새 시험 파일은 이렇게 써요
+ * (clock-rules.test.mjs가 진짜 시계로 도는 파일이 늘지 않게 봐요).
  */
-export function server({ plaza = false, ...extra } = {}) {
+export function server({ plaza = false, t = undefined, at = TEST_NOW, ...extra } = {}) {
+  if (t) fixClock(t, at);
   const DB = d1();
   const env = { DB, RATE_SALT: "test-salt", ADMIN_PASSWORD: PASSWORD, ...extra };
   let seeded = plaza || !env.DB;

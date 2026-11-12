@@ -131,6 +131,19 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertEqual(d.failing_tests(spec), ["passkey needs user verification"])
         self.assertEqual(d.failing_tests("all good"), [])
 
+    def test_failing_places_name_and_line_like_the_date_watch(self):
+        """[U60-02] 실패한 시험 이름·줄이 날짜 시험 결과(date_watch)와 같은 모양이라 어제 main과 견줄 수 있어요."""
+        tap = ("ok 1 - a\nnot ok 2 - 새해 첫날 시험\n  ---\n  location: '/w/server/company-worker/test/village-r.test.mjs:41:3'\n"
+               "  failureType: 'testCodeFailure'\n  ...\nnot ok 3 - test/village-r.test.mjs\n# fail 1\n")
+        self.assertEqual([{"name": "village-r.test.mjs › 새해 첫날 시험", "at": "village-r.test.mjs:41"}], d.failing_places(tap))
+        spec = ("✖ passkey needs user verification (12.5ms)\n  AssertionError [ERR_ASSERTION]: x\n"
+                "      at TestContext.<anonymous> (file:///w/test/accounts.test.mjs:88:9)\n✖ failing tests:\n"
+                "✖ passkey needs user verification (12.5ms)\n      at TestContext.<anonymous> (file:///w/test/accounts.test.mjs:88:9)\n"
+                "✖ 줄 없음 (1ms)\n  boom\n")
+        self.assertEqual([{"name": "accounts.test.mjs › passkey needs user verification", "at": "accounts.test.mjs:88"},
+                          {"name": "줄 없음", "at": ""}], d.failing_places(spec))
+        self.assertEqual([], d.failing_places("all good"))
+
     def test_canary_verdict(self):
         self.assertEqual(d.canary_verdict({"n": 10, "err": 5}, {"n": 900, "err": 0})[0], "few")
         self.assertEqual(d.canary_verdict({"n": 100, "err": 1, "ms": 9000}, {"n": 900, "err": 0, "ms": 81000})[0], "ok")
@@ -265,9 +278,13 @@ class DeployWorkerTest(unittest.TestCase):
         jobs = wf.split("\njobs:\n", 1)[1]
         parts = re.split(r"(?m)^  ([a-z]+):\n", jobs)
         blocks = dict(zip(parts[1::2], parts[2::2]))
-        self.assertEqual(sorted(blocks), ["build", "gate", "ship", "test"])
-        # 고른 브랜치의 코드가 도는 build에는 비밀값이 없어요.
+        self.assertEqual(sorted(blocks), ["build", "explain", "gate", "ship", "test"])
+        # 고른 브랜치의 코드가 도는 build와 실패를 풀어 주는 explain에는 비밀값이 없어요.
         self.assertNotIn("secrets.", blocks["build"])
+        self.assertNotIn("secrets.", blocks["explain"])
+        self.assertNotIn("path: target", blocks["explain"])
+        self.assertIn("date_watch.py explain", blocks["explain"])
+        self.assertIn("name: build-fail", blocks["build"])
         self.assertIn("--phase build", blocks["build"])
         # 토큰은 job 전체 env가 아니라 그 단계 env에만.
         for name in ("gate", "ship"):

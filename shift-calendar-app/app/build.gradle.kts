@@ -185,6 +185,8 @@ android {
             (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
             // 2.0.0 [RVR-21] -Pbamnat.marketShots=all: MarketWorksShotsTest puts on every 장터 작품 and keeps a fingerprint of each calendar.
             (findProperty("bamnat.marketShots") as String?)?.let { v -> it.systemProperty("bamnat.marketShots", v) }
+            // 2.0.0 [I60b-01] 시간 여행: Today의 시스템 시계를 이만큼 앞으로(core와 같은 속성, date-watch.yml).
+            (findProperty("bamnat.todayShift") as String?)?.let { v -> it.systemProperty("bamnat.todayShift", v) }
             // 2.0.0 [RVR-22] -Pbamnat.outsideBodies=all: OutsideBodiesTest writes the bodies of every 장터 작품 worn (SD-09).
             (findProperty("bamnat.outsideBodies") as String?)?.let { v -> it.systemProperty("bamnat.outsideBodies", v) }
             it.outputs.dir(layout.buildDirectory.dir("outside-bodies"))

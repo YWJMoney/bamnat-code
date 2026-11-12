@@ -64,16 +64,17 @@ export function workViews(A) {
   function growthView() {
     const t = S.growthTab ?? "needs";
     const d = S.data.growth;
-    const tabs = `<div class="chips">${GROWTH_TABS.filter(([k]) => (k === "tools" ? can("community") : true))
-      .map(([k, label]) => `<button type="button" class="chip pick" data-act="growth-tab" data-key="${k}" aria-pressed="${t === k}">${esc(label)}${k === "needs" && d?.counts ? ` <span class="n">${(d.counts.open ?? 0) + (d.counts.ready ?? 0) + (d.counts.market ?? 0) + (d.counts.building ?? 0)}</span>` : k === "unsolved" && d?.counts?.unsolved ? ` <span class="n">${d.counts.unsolved}</span>` : ""}</button>`).join("")}</div>`;
+    // 2.0.0 [RVA-24] 검토 HQ-03(조건 1·4): 보기 칩 줄을 목록 머리의 구간 한 줄로, 설명 문단은 목록 아래 접힌 한 줄로.
+    const tabs = A.listHead(`<div class="segmented" role="group" aria-label="보기">${GROWTH_TABS.filter(([k]) => (k === "tools" ? can("community") : true))
+      .map(([k, label]) => `<button type="button" class="seg" data-act="growth-tab" data-key="${k}" aria-pressed="${t === k}">${esc(label)}${k === "needs" && d?.counts ? `<span class="n">${(d.counts.open ?? 0) + (d.counts.ready ?? 0) + (d.counts.market ?? 0) + (d.counts.building ?? 0)}</span>` : k === "unsolved" && d?.counts?.unsolved ? `<span class="n">${d.counts.unsolved}</span>` : ""}</button>`).join("")}</div>`, "", { scroll: true });
     if (!d || d.tab !== t) return `${tabs}${skeleton(2)}`;
     if (t === "tools") return `${tabs}${toolsBlock(d, can("community", "edit"))}`;
     if (t === "map") return `${tabs}${mapBlock(d)}`;
     const edit = can("inquiries", "edit");
-    const intro = t === "unsolved" ? `<p class="hint">장터 요청 판에 올린 지 ${d.rules.staleDays}일이 지나도 아무도 사용자 부품으로 못 푼 요구예요. 지금 부품으로는 못 만드는 것일 수 있어요. 정식 손잡이 후보로 보세요.</p>`
-      : t === "needs" ? `<p class="hint">스튜디오 "원하는 꾸미기가 없나요?"와 요청 판에서 ${d.rules.staleDays}일 동안 아무도 못 만든 요청이 비슷한 것끼리 저절로 묶여요. ${d.rules.marketAskers}명(서로 다른 네트워크도 ${d.rules.marketAskers}곳)이 모이면 '올리기 전 확인'에 와요. 부탁 글은 나만 보는 문의라 그대로 올리지 않고, 누구나 알아볼 짧은 제목으로 다듬어 올려요. 누가 만들어 완성하면 부탁한 분 모두에게 답이 가요.</p>` : "";
-    if (!d.items.length) return `${tabs}${intro}${empty("요구가 없어요", "")}`;
-    return `${tabs}${intro}<ul class="rows needs">${d.items.map((n) => needCard(n, edit, d.items.filter((o) => o.id !== n.id))).join("")}</ul>`;
+    const intro = t === "unsolved" ? `<details class="tip" data-key="growth-unsolved-how"><summary>올린 지 ${d.rules.staleDays}일 넘게 아무도 못 푼 요구예요</summary><p class="hint">장터 요청 판에 올린 지 ${d.rules.staleDays}일이 지나도 아무도 사용자 부품으로 못 푼 요구예요. 지금 부품으로는 못 만드는 것일 수 있어요. 정식 손잡이 후보로 보세요.</p></details>`
+      : t === "needs" ? `<details class="tip" data-key="growth-needs-how"><summary>비슷한 요청이 저절로 묶여요 · ${d.rules.marketAskers}명이면 '올리기 전 확인'에</summary><p class="hint">스튜디오 "원하는 꾸미기가 없나요?"와 요청 판에서 ${d.rules.staleDays}일 동안 아무도 못 만든 요청이 비슷한 것끼리 저절로 묶여요. ${d.rules.marketAskers}명(서로 다른 네트워크도 ${d.rules.marketAskers}곳)이 모이면 '올리기 전 확인'에 와요. 부탁 글은 나만 보는 문의라 그대로 올리지 않고, 누구나 알아볼 짧은 제목으로 다듬어 올려요. 누가 만들어 완성하면 부탁한 분 모두에게 답이 가요.</p></details>` : "";
+    if (!d.items.length) return `${tabs}${empty("요구가 없어요", "")}<div class="list-foot">${intro}</div>`;
+    return `${tabs}<ul class="rows needs">${d.items.map((n) => needCard(n, edit, d.items.filter((o) => o.id !== n.id))).join("")}</ul><div class="list-foot">${intro}</div>`;
   }
 
   async function needAct(id, body, done, undo) {
