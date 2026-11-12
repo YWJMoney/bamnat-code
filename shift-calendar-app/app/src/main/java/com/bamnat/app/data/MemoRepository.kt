@@ -143,9 +143,14 @@ class MemoRepository(
      * 2.0.0 [RVL-19] (검토 SCAN-12) [addQuick] unless [date] already has a memo with the same line: the same roster put in again
      * does not leave a second '듀티표 표시' memo.
      */
-    suspend fun addQuickOnce(date: LocalDate, text: String, calendars: Set<String> = emptySet()): Memo? {
+    suspend fun addQuickOnce(
+        date: LocalDate, text: String, calendars: Set<String> = emptySet(),
+        /** 2.0.0 [RVL-34] The same memo as an older version worded it, so a renamed label is not put in twice. */
+        alsoAs: Collection<String> = emptyList(),
+    ): Memo? {
         val trimmed = text.trim()
-        if (trimmed.isEmpty() || memosOn(date).first().any { it.body.trim() == trimmed }) return null
+        val same = alsoAs.mapTo(hashSetOf(trimmed)) { it.trim() }
+        if (trimmed.isEmpty() || memosOn(date).first().any { it.body.trim() in same }) return null
         return addQuick(date, trimmed, calendars)
     }
 

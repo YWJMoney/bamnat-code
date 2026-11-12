@@ -294,10 +294,15 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
     // 1.38 가져오기: the file read (and whether from a photo) waiting for ① 이름 ② 코드, and the cells to check after it.
     var importing by remember { mutableStateOf(startImport) }
     var checkCells by remember(team.id, month) { mutableStateOf<List<Pair<String, LocalDate>>>(emptyList()) }
+    // 2.0.0 [RVL-33] (검토 T07b-07) A team roster that could not be read: why, and the ways on (the fix, another file, the keypad).
+    var readFailed by remember { mutableStateOf<com.bamnat.app.imports.ManageImport.Got.Failed?>(null) }
     val pickFile = rememberAnyFilePicker { uri ->
         scope.launch {
             busy = "파일을 읽고 있어요…"
-            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date())
+            // 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down is said, with how far it got.
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date()) { p ->
+                busy = "글자 읽기 준비물 받는 중" + (if (p != null) " · $p%" else "") + " (처음 한 번만)"
+            }
             busy = null
             when (got) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
@@ -306,7 +311,7 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
                 }
                 is com.bamnat.app.imports.ManageImport.Got.Failed -> {
                     c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
-                    dialog = got.why
+                    readFailed = got
                 }
             }
         }
@@ -788,6 +793,17 @@ private fun TeamBoardScreen(team: Team, onBack: () -> Unit, startImport: Pair<co
             }, dismissButton = { TextButton(onClick = { dialog = null }) { Text("닫기") } })
             "members" -> MembersDialog(team, b.members, onDismiss = { dialog = null })
             else -> AlertDialog(onDismissRequest = { dialog = null }, confirmButton = { TextButton(onClick = { dialog = null }) { Text("알겠어요") } }, text = { Text(dialog!!) })
+        }
+        readFailed?.let { f ->
+            // The fix its cause asks for (와이파이·저장 공간·Play 서비스), else another photo or file; the board's keypad is the other way.
+            val fix = f.fix?.takeIf { it != com.bamnat.app.pay.OcrModel.Fix.AGAIN }
+            AlertDialog(onDismissRequest = { readFailed = null }, title = { Text("근무표를 읽지 못했어요") }, text = { Text(f.why) },
+                confirmButton = {
+                    TextButton(onClick = { readFailed = null; if (fix != null) com.bamnat.app.ui.imports.openFix(context, fix) else pickFile() }) {
+                        Text(fix?.label ?: "다른 사진·파일 고르기")
+                    }
+                },
+                dismissButton = { TextButton(onClick = { readFailed = null }) { Text("표에 직접 칠하기") } })
         }
     }
     coverGap?.let { gap ->
