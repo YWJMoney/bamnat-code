@@ -40,7 +40,7 @@ class AlarmMatrixTest {
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val alarms get() = shadowOf(app.getSystemService(AlarmManager::class.java))
     private val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), alarmEnabled = true)
-    private val calendars = listOf(null to ScheduleSnapshot(listOf(day), WorkPattern.Rotation(LocalDate.now().minusDays(3), listOf(1L)), emptyList()))
+    private val calendars = listOf(com.bamnat.app.alarm.RingingCalendar(null, ScheduleSnapshot(listOf(day), WorkPattern.Rotation(LocalDate.now().minusDays(3), listOf(1L)), emptyList())))
 
     @Before fun quiet() {
         // The app's own planning would use the same slots a moment later.

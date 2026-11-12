@@ -131,6 +131,10 @@ interface SleepDao {
     @Query("UPDATE sleep_events SET file = NULL WHERE id = :id")
     suspend fun dropClip(id: Long)
 
+    /** [R200-02] How many sounds still have a clip on the phone, for 소리 클립 모두 지우기. */
+    @Query("SELECT COUNT(*) FROM sleep_events WHERE file IS NOT NULL")
+    fun observeClipCount(): Flow<Int>
+
     /** 1.39.1 [R391-04] The sounds heard during a sleep the user deletes. */
     @Query("SELECT * FROM sleep_events WHERE startMillis >= :fromMillis AND startMillis < :toMillis")
     suspend fun eventsBetween(fromMillis: Long, toMillis: Long): List<SleepEventEntity>

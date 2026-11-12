@@ -82,13 +82,13 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     val c = context.appContainer
     val scope = rememberCoroutineScope()
     // Which place the next picked photo is for: a slot, and for 근무 그림 the kind of day.
-    var target by remember { mutableStateOf<Pair<Slot, Long?>?>(null) }
+    var target by remember { mutableStateOf<Pair<Slot, String?>?>(null) }
     var framing by remember { mutableStateOf<Uri?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     // [J135-07] F-67: 없애기·처음으로 ask first (a framed photo cannot be got back without framing it again).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> framing = uri; problem = null }
-    fun choose(slot: Slot, type: Long? = null) {
+    fun choose(slot: Slot, type: String? = null) {
         target = slot to type
         runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     }
@@ -126,12 +126,12 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
             Text("근무마다 동그란 사진이 달력 표시 앞에 붙어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 types.forEach { t ->
-                    val has = look.icons[t.id] != null
-                    OutlinedButton(onClick = { choose(Slot.ICON, t.id) }) {
+                    val has = look.iconFor(active, t.id) != null
+                    OutlinedButton(onClick = { choose(Slot.ICON, com.bamnat.core.model.ShiftRef.key(active, t.id)) }) {
                         ShiftBadge(t)
                         Text(if (has) " 바꾸기" else " 사진", style = MaterialTheme.typography.labelMedium)
                     }
-                    if (has) TextButton(onClick = { asking = "${t.name} 그림을 없앨까요?" to { save(look.copy(icons = look.icons - t.id)) } }) { Text("${t.name} 그림 없애기") }
+                    if (has) TextButton(onClick = { asking = "${t.name} 그림을 없앨까요?" to { save(look.copy(icons = look.icons - com.bamnat.core.model.ShiftRef.key(active, t.id))) } }) { Text("${t.name} 그림 없애기") }
                 }
             }
         }

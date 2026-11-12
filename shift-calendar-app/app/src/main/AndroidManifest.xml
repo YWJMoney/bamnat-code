@@ -457,6 +457,11 @@
             android:name=".company.InquiryReplyJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- [R200-03] 구독 끝 무렵 하루 한 번 결제 다시 읽기. -->
+        <service
+            android:name=".tier.ProRecheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
         <service

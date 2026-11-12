@@ -29,9 +29,36 @@ data class PlaySub(
         else -> false
     }
 
+    /** [R200-03] When it stops counting ([entitled] turns false by itself), or null when it does not end by the clock. */
+    fun endsAt(): Instant? = when (state) {
+        State.ACTIVE -> expiry?.let { if (autoRenew) it.plus(RENEW_LEEWAY) else it }
+        State.GRACE, State.CANCELED -> expiry
+        else -> null
+    }
+
+    /**
+     * [R200-03] (검토 PRO-08 넘긴 일) Play's purchases read again in the background, once a day, from [RECHECK_BEFORE] before
+     * [expiry] until [RECHECK_AFTER] past it: a renewal (or a fixed payment) is then known before an alarm asks for 프로,
+     * even when the app is not opened. [checkedAt] is when the phone last read them.
+     */
+    fun recheckDue(now: Instant, checkedAt: Instant): Boolean {
+        if (state !in RECHECKED) return false
+        val end = expiry ?: return false
+        val from = end.minus(RECHECK_BEFORE)
+        if (now.isBefore(from) || now.isAfter(end.plus(RECHECK_AFTER))) return false
+        return checkedAt.isBefore(from) || !now.isBefore(checkedAt.plus(Duration.ofDays(1)))
+    }
+
+    /** [R200-03] Whether the daily look is still wanted at all (it stops itself after [RECHECK_AFTER]). */
+    fun recheckWanted(now: Instant): Boolean = state in RECHECKED && expiry?.plus(RECHECK_AFTER)?.isAfter(now) == true
+
     companion object {
         /** 1.39.1 [R391-11] As long as Play's own grace period for a failed renewal (3일). */
         val RENEW_LEEWAY: Duration = Duration.ofDays(3)
+        val RECHECK_BEFORE: Duration = Duration.ofHours(6)
+        /** Past the leeway and Play's account hold notice, so a late renewal still comes back by itself. */
+        val RECHECK_AFTER: Duration = Duration.ofDays(7)
+        private val RECHECKED = setOf(State.ACTIVE, State.GRACE, State.CANCELED, State.ON_HOLD)
     }
 }
 

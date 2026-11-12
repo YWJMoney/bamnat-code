@@ -211,6 +211,9 @@ val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
 /** [RCX-30] 1.35 그림 꾸미기, as the settings keep it (pictures by id, drawn from files/looks/). */
 val LocalPhotoLook = staticCompositionLocalOf { com.bamnat.core.recipe.PhotoLook() }
 
+/** [R200-01] The pictures of the shown calendar's kinds of day, by shift id ([com.bamnat.core.recipe.PhotoLook.icons] is by calendar). */
+val LocalShiftIcons = staticCompositionLocalOf { emptyMap<Long, String>() }
+
 /**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions

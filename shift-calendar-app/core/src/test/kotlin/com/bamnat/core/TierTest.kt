@@ -151,4 +151,23 @@ class TierTest {
         assertEquals(ProReason.NONE, ProAccess.resolve(live { copy(sharedUntil = now.minusSeconds(1)) }, now, zone).reason)
         assertEquals(ProReason.SUBSCRIPTION, ProAccess.resolve(live { copy(sharedUntil = until, subscription = sub()) }, now, zone).reason)
     }
+
+    /** [R200-03] (검토 PRO-08 넘긴 일) Read again once a day from 6시간 before the end, until 7일 past it. */
+    @Test fun aSubscriptionNearItsEndIsReadAgainOnceADay() {
+        val end = at("2027-01-01T00:00:00Z")
+        val s = sub(expiry = end)
+        val long = at("2026-12-01T00:00:00Z")
+        assertFalse("a week before, nothing", s.recheckDue(end.minus(Duration.ofDays(7)), long))
+        assertTrue("6시간 before", s.recheckDue(end.minus(Duration.ofHours(6)), long))
+        val read = end.minus(Duration.ofHours(5))
+        assertFalse("read an hour ago", s.recheckDue(end.minus(Duration.ofHours(4)), read))
+        assertTrue("a day after the last read", s.recheckDue(read.plus(Duration.ofDays(1)), read))
+        assertFalse("7일 past it, no more", s.recheckDue(end.plus(Duration.ofDays(8)), read))
+        assertFalse(s.recheckWanted(end.plus(Duration.ofDays(8))))
+        assertTrue(s.recheckWanted(end.minus(Duration.ofDays(30))))
+        assertFalse("nothing to watch once expired", sub(state = PlaySub.State.EXPIRED, expiry = end).recheckWanted(end))
+        assertEquals(end.plus(PlaySub.RENEW_LEEWAY), s.endsAt())
+        assertEquals(end, sub(expiry = end, autoRenew = false).endsAt())
+        assertNull(sub(state = PlaySub.State.EXPIRED).endsAt())
+    }
 }

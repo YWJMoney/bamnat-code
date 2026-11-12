@@ -177,9 +177,9 @@ class PersonalCalendarsTest {
 
     @Test fun anAddedCalendarRingsUnderItsNameUntilItsAlarmsAreOff() = runBlocking {
         val id = listedCalendar("알바")
-        assertEquals(listOf(null, "알바"), c.calendars.ringing.first().map { it.first })
+        assertEquals(listOf(null, "알바"), c.calendars.ringing.first().map { it.name })
         c.calendars.setAlarms(id, false)
-        assertEquals(listOf<String?>(null), c.calendars.ringing.first().map { it.first })
+        assertEquals(listOf<String?>(null), c.calendars.ringing.first().map { it.name })
     }
 
     @Test fun eachCalendarKeepsItsOwnLink() {

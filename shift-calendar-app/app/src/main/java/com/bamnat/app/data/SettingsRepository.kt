@@ -294,7 +294,7 @@ data class AppSettings(
     /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
     val alarmMission: String = "none",
     /** [PROV-06] A shift's own mission, by shift type id, in place of [alarmMission]. */
-    val shiftMissions: Map<Long, String> = emptyMap(),
+    val shiftMissions: Map<String, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
     /** [ALRM-08] What 소리 줄이기·키우기·전원 버튼 do while an alarm rings (결정 D78): [com.bamnat.app.alarm.AlarmButtons.Action.key]. */
@@ -390,13 +390,19 @@ data class AppSettings(
 /** [DAY-04] "memo,work" back to its keys; blank parts are dropped. */
 fun decodeGroupOrder(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
-/** [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. */
-fun decodeShiftMissions(text: String): Map<Long, String> = text.split(',').mapNotNull { part ->
+/**
+ * [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. [R200-01] A shift of an added
+ * calendar is written with it ("ab12cd:3=math", [com.bamnat.core.model.ShiftRef]); a plain id is the main calendar's, as
+ * every older phone and backup wrote it.
+ */
+fun decodeShiftMissions(text: String): Map<String, String> = text.split(',').mapNotNull { part ->
     val (id, key) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
-    id.trim().toLongOrNull()?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
+    id.trim().takeIf(com.bamnat.core.model.ShiftRef::isKey)?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
 }.toMap()
 
-fun encodeShiftMissions(map: Map<Long, String>): String = map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+fun encodeShiftMissions(map: Map<String, String>): String =
+    map.entries.sortedWith(compareBy({ com.bamnat.core.model.ShiftRef.calendarOf(it.key) != com.bamnat.core.model.ShiftRef.MAIN }, { it.key.length }, { it.key }))
+        .joinToString(",") { "${it.key}=${it.value}" }
 
 /**
  * Small settings store on SharedPreferences. Reads are synchronous so the very first frame

@@ -466,7 +466,7 @@ fun ExtraKindsScreen(
         val norm = start!!.replace(" ", "")
         val have = kinds.kinds.firstOrNull { it.name.replace(" ", "") == norm }
         if (have != null) vm.open(have)
-        else templates(kinds, startSnap.shiftTypes).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
+        else templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) startSnap.shiftTypes else emptyList()).firstOrNull { it.title.replace(" ", "") == norm }?.let(vm::openNew) ?: return@LaunchedEffect
         focusPay = true
     }
 
@@ -532,7 +532,7 @@ fun ExtraKindsScreen(
         }
         if (adding) {
             TemplateDialog(
-                templates = remember(kinds, snap.shiftTypes) { templates(kinds, snap.shiftTypes) },
+                templates = remember(kinds, snap.shiftTypes) { templates(kinds, if (vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN) snap.shiftTypes else emptyList()) },
                 onPick = { t -> adding = false; vm.openNew(t) },
                 onDismiss = { adding = false },
             )
@@ -729,7 +729,7 @@ private fun KindEditor(
                     }
 
                     SectionCard(title = "시간") {
-                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it })
+                        TimingContent(kind, timed, snapshot, onTiming = ::setTiming, onPick = { picking = it }, ownShifts = vm.calendarId == com.bamnat.app.data.PersonalCalendar.MAIN)
                     }
 
                     SectionCard(title = "급여와 가산", modifier = Modifier.bringIntoViewRequester(payView)) {
@@ -878,7 +878,11 @@ private fun KindEditor(
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit) {
+private fun TimingContent(
+    kind: ExtraKind, timed: List<ShiftType>, snapshot: ScheduleSnapshot, onTiming: (ExtraTiming) -> Unit, onPick: (String) -> Unit,
+    /** [R200-01] False in an added calendar: the kinds are the app's and a chosen shift would name the main calendar's. */
+    ownShifts: Boolean = true,
+) {
     val t = kind.timing
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = t is ExtraTiming.Band, onClick = {
@@ -945,6 +949,8 @@ private fun TimingContent(kind: ExtraKind, timed: List<ShiftType>, snapshot: Sch
         is ExtraTiming.AsShift -> {
             if (timed.isEmpty()) {
                 Hint("시간이 있는 근무 종류가 없어요. 근무 종류를 만들면 그 시간이 그대로 들어가요. 지금은 09:00–18:00으로 넣어요.")
+            } else if (!ownShifts) {
+                Hint("이 달력에서는 그날 대신한 근무를 달력에서 골라 넣어요. 어느 근무만 대신하는지는 내 달력에서 정해요.")
             } else {
                 // [EXTRA-07] Several shifts at once: one 대근 for 모닝 and 나이트 alike. A shift deleted since is left out.
                 val picked = t.shiftTypeIds.filter { id -> timed.any { it.id == id } }.toSet()

@@ -268,10 +268,10 @@ class CalendarBook(
      * [MCAL-01] Every calendar whose alarms ring, with the name an alarm from it is told by; the main
      * calendar has none, so its alarms read as before.
      */
-    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
+    val ringing: Flow<List<com.bamnat.app.alarm.RingingCalendar>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
         .flatMapLatest { list ->
             if (list.isEmpty()) flowOf(emptyList())
-            else combine(list.map { cal -> repository(cal.id).live.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
+            else combine(list.map { cal -> repository(cal.id).live.map { s -> com.bamnat.app.alarm.RingingCalendar(if (cal.isMain) null else cal.name, s, cal.id) } }) { it.toList() }
         }
 
     @Synchronized

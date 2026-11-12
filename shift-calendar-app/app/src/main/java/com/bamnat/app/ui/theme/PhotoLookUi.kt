@@ -75,7 +75,7 @@ fun PhotoHead(modifier: Modifier = Modifier) {
 /** [RCX-30] A kind of day's own picture, round, where its icon or emoji would go; null when it has none. */
 @Composable
 fun ShiftPicture(typeId: Long?, size: Dp): Boolean {
-    val id = typeId?.let { LocalPhotoLook.current.icons[it] } ?: return false
+    val id = typeId?.let { LocalShiftIcons.current[it] } ?: return false
     val (picture, _) = rememberLookPicture(id) ?: return false
     // [MAT-04] 1.36 틀 모양 (처음대로는 동그라미).
     Image(picture, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.size(size).clip(frameShape(LocalPhotoLook.current.frame, CircleShape)))

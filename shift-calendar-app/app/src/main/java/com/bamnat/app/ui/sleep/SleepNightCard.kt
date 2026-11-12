@@ -21,6 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
+import com.bamnat.app.appContainer
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.data.db.SleepEventEntity
@@ -77,6 +79,7 @@ internal fun SleepNightCard(
             Text("머리맡에 두고 ‘측정 시작’을 누르면 코골이·잠꼬대·기침·이갈이를 시간과 함께 남겨요. 휴대폰 안에서만 듣고, 짧은 소리는 7일 뒤 지워요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (refused) Text("마이크를 허용해야 잴 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            ClearClipsRow()
             // 1.39 G5-B2: a night that never got saved is said, with what helps, instead of just missing in the morning.
             remember(r, saved) { SleepRecordService.cutOff(context) }?.let { from ->
                 Text("${Fmt.time(from.toLocalTime())}에 시작한 측정이 저장되기 전에 멈췄어요. 휴대폰이 꺼졌거나 다시 켜졌을 수 있어요.",
@@ -169,3 +172,36 @@ internal fun listenFirst(events: List<SleepEventEntity>): List<SleepEventEntity>
     val withClip = events.filter { it.file != null }
     return ClipPicker.listen(withClip.map { it.toEvent() }).mapNotNull { e -> withClip.firstOrNull { it.startMillis == e.startMillis } }
 }
+
+/**
+ * [R200-02] (검토 ALM-03 넘긴 일) 소리 클립 지금 모두 지우기: the clips need not wait for their 7 days. Shown only when there are
+ * some and not while a night is being measured (its file is still being written); asks first, since kept ones go too.
+ */
+@Composable
+private fun ClearClipsRow() {
+    val c = LocalContext.current.appContainer
+    val count by remember { c.sleepRepository.clipCount }.collectAsStateWithLifecycle(0)
+    var asking by remember { mutableStateOf(false) }
+    var done by remember { mutableStateOf<Int?>(null) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    if (count > 0) {
+        androidx.compose.material3.TextButton(onClick = { asking = true }, modifier = Modifier.padding(top = 4.dp)) { Text("$CLEAR_CLIPS ($count)") }
+    } else done?.let {
+        Text("소리 클립을 모두 지웠어요. 들린 시각과 종류는 남아요.", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+    }
+    if (asking) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("소리 클립을 모두 지울까요?") },
+        text = { Text("보관한 것까지 휴대폰에 남은 소리 $count 개를 지금 지워요. 들린 시각과 종류는 기록에 남아요. 지운 소리는 되돌릴 수 없어요.") },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = {
+                asking = false
+                scope.launch { done = c.sleepRepository.clearClips(java.io.File(c.appContext.filesDir, SleepRecordService.CLIP_DIR)) }
+            }) { Text("모두 지우기") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { Text("그대로 두기") } },
+    )
+}
+
+internal const val CLEAR_CLIPS = "소리 클립 지금 모두 지우기"

@@ -27,14 +27,14 @@ object BootAlarms {
         val ringMinutes: Int = 10,
         /** [PROV-06] 끄기 미션 and each shift's own; none without 프로. */
         val mission: AlarmMission = AlarmMission.NONE,
-        val shiftMissions: Map<Long, AlarmMission> = emptyMap(),
+        val shiftMissions: Map<String, AlarmMission> = emptyMap(),
         /** [PROV-07] 0 without 프로 or when off. */
         val wakeCheckMinutes: Int = 0,
         /** [ALRM-08] What the volume and power buttons do while it rings. */
         val buttons: AlarmButtons.Action = AlarmButtons.Action.DISMISS,
     ) {
         /** [PROV-06] What turning [ring] off asks for. */
-        fun missionFor(ring: RingRequest): AlarmMission = AlarmMission.forAlarm(mission, shiftMissions, ring.shiftTypeId)
+        fun missionFor(ring: RingRequest): AlarmMission = AlarmMission.forAlarm(mission, shiftMissions, ring.calendarId, ring.shiftTypeId)
 
         companion object {
             /** [sure] is whether 확실한 알람 is open ([com.bamnat.app.tier.Feature.SURE_ALARM]). */

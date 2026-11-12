@@ -122,6 +122,14 @@ data class ExtraEntry(
 data class ExtraKinds(val kinds: List<ExtraKind> = DEFAULTS) {
     fun byId(id: Long): ExtraKind? = kinds.firstOrNull { it.id == id }
 
+    /**
+     * [R200-01] The kinds as an added calendar uses them. The kinds are the app's, but a 대근 for chosen shifts names the
+     * main calendar's shift ids, which in another calendar's own database are other kinds of day: there it covers any shift.
+     */
+    fun forAddedCalendar(): ExtraKinds =
+        if (kinds.none { (it.timing as? ExtraTiming.AsShift)?.shiftTypeIds?.isNotEmpty() == true }) this
+        else copy(kinds = kinds.map { k -> if (k.timing is ExtraTiming.AsShift && k.timing.shiftTypeIds.isNotEmpty()) k.copy(timing = ExtraTiming.AsShift()) else k })
+
     /** The kind for [id]; a kind deleted since still shows, as 추가 근무. */
     fun of(id: Long): ExtraKind = byId(id) ?: DEFAULTS.firstOrNull { it.id == id }
         ?: ExtraKind(id, "추가 근무", "추", 0xFF78909C, ExtraTiming.AfterShift(DEFAULT_AFTER_MINUTES))

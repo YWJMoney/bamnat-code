@@ -746,7 +746,8 @@ data class WidgetLook(
 /**
  * [RCX-30] 1.35 그림 꾸미기, as the settings keep it ("bg=…;dim=30;head=…;widget=…;corners=soft;icon.12=…"): pictures by id
  * (16 hex: a file the phone keeps under looks/, the server's id when it came in a recipe), the background's dimming (0..80 %)
- * and the corners. [icons] is by the kind of day's id on this phone. Empty is the app's own look.
+ * and the corners. [icons] is by the kind of day on this phone, keyed with its calendar ([R200-01] [com.bamnat.core.model.ShiftRef]).
+ * Empty is the app's own look.
  */
 data class PhotoLook(
     val bg: String? = null,
@@ -754,7 +755,7 @@ data class PhotoLook(
     val head: String? = null,
     val widget: String? = null,
     val corners: String? = null,
-    val icons: Map<Long, String> = emptyMap(),
+    val icons: Map<String, String> = emptyMap(),
     /** [MAT-03] 1.36 배경·머리 그림 조정. */
     val adjust: PhotoAdjust = PhotoAdjust(),
     /** [MAT-04] 1.36 근무 그림·머리 그림의 틀 모양 ([PhotoFrame]); null is the app's own (둥근 네모). */
@@ -765,10 +766,13 @@ data class PhotoLook(
     /** Every picture it uses, so the ones nothing uses can be let go. */
     val images: Set<String> get() = setOfNotNull(bg, head, widget) + icons.values
 
+    /** [R200-01] The picture of [calendarId]'s kind of day [shiftId] (null calendar: the main one). */
+    fun iconFor(calendarId: String?, shiftId: Long): String? = icons[com.bamnat.core.model.ShiftRef.key(calendarId, shiftId)]
+
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         bg?.let { "bg=$it" }, "dim=$dim".takeIf { dim != DIM }, head?.let { "head=$it" }, widget?.let { "widget=$it" },
         corners?.let { "corners=$it" }, adjust.takeIf { !it.isDefault }?.let { "adjust=" + it.encode() }, frame?.let { "frame=$it" },
-    ).plus(icons.entries.sortedBy { it.key }.map { (t, id) -> "icon.$t=$id" }).joinToString(";")
+    ).plus(icons.entries.sortedWith(compareBy({ com.bamnat.core.model.ShiftRef.calendarOf(it.key) != com.bamnat.core.model.ShiftRef.MAIN }, { it.key.length }, { it.key })).map { (t, id) -> "icon.$t=$id" }).joinToString(";")
 
     companion object {
         const val DIM = 30
@@ -787,7 +791,7 @@ data class PhotoLook(
                 bg = one["bg"]?.takeIf(::isId), dim = one["dim"]?.toIntOrNull()?.coerceIn(0, 80) ?: DIM,
                 head = one["head"]?.takeIf(::isId), widget = one["widget"]?.takeIf(::isId),
                 corners = one["corners"]?.takeIf { it in CORNERS },
-                icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") }?.toLongOrNull()?.takeIf { isId(v) }?.let { it to v } }.toMap(),
+                icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") && com.bamnat.core.model.ShiftRef.isKey(it) && isId(v) }?.let { it to v } }.toMap(),
                 adjust = PhotoAdjust.decode(one["adjust"]), frame = one["frame"]?.takeIf { it.isNotEmpty() && PhotoFrame.problem(it) == null },
             )
         }

@@ -72,17 +72,41 @@ object ShopNotices {
         // 이체 into the account (when one is known by its last digits), for the user to check and tick the day's 입금 확인.
         if (matched.isEmpty()) return once(c, key) {
             val day = parsed?.date ?: date
-            money.save(com.bamnat.core.money.MoneyEntry(
+            // [R200-04] (검토 MONEY-41 넘긴 일) 카드사마다 따로 들어온 입금: with the parts already waiting, the day may fit now.
+            val waiting = book.entries.filter { it.isWaitingCardPart() }
+            val parts = CardSettlement.matchParts(amount, day, waiting.map { CardSettlement.Part(it.id, it.date, it.amount) },
+                CardSettlement.expected(book.sales, rules, KoreanHolidays::isHoliday))
+            val line = com.bamnat.core.money.MoneyEntry(
                 date = day, kind = com.bamnat.core.money.MoneyKind.TRANSFER, amount = amount, category = ShopCapture.CARD_DEPOSIT,
-                note = "맞는 매출 날을 못 찾았어요 · 카드 매출 입금 확인에서 맞는 날을 눌러 주세요",
+                note = WAITING_NOTE,
                 source = com.bamnat.core.money.MoneySource.NOTIFICATION, merchant = parsed?.merchant.orEmpty(),
                 time = parsed?.time ?: arrived.toLocalTime().withSecond(0).withNano(0), reviewed = false,
                 toAccountId = parsed?.last4?.let { com.bamnat.core.money.MoneyAccounts.match(it, money.allAccounts()) },
-            ))
+            )
+            if (parts == null) { money.save(line); return@once }
+            val (days, used) = parts
+            val note = settledNote(days.map { it.saleDate })
+            money.save(line.copy(note = note, reviewed = true))
+            for (p in used) waiting.firstOrNull { it.id == p.id }?.let { money.save(it.copy(note = note, reviewed = true)) }
+            for (e in days) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         }
         return once(c, key) {
             for (e in matched) book.sales.firstOrNull { it.date == e.saleDate }?.let { money.save(it.copy(cardSettled = true)) }
         }
+    }
+
+    /** [R200-04] What a card company's deposit waiting for its other parts says until they come. */
+    const val WAITING_NOTE = "맞는 매출 날을 못 찾았어요 · 다른 카드사 입금과 합쳐 맞으면 저절로 확인돼요. 아니면 카드 매출 입금 확인에서 맞는 날을 눌러 주세요"
+
+    private fun com.bamnat.core.money.MoneyEntry.isWaitingCardPart() = kind == com.bamnat.core.money.MoneyKind.TRANSFER &&
+        category == ShopCapture.CARD_DEPOSIT && !reviewed && source == com.bamnat.core.money.MoneySource.NOTIFICATION
+
+    /** "11월 2일 카드 매출 입금 확인" (several days: "11월 2일·3일 …"). */
+    internal fun settledNote(days: List<java.time.LocalDate>): String {
+        val sorted = days.distinct().sorted()
+        val first = sorted.first()
+        val rest = sorted.drop(1).joinToString("") { d -> if (d.monthValue == first.monthValue) "·${d.dayOfMonth}일" else "·${d.monthValue}월 ${d.dayOfMonth}일" }
+        return "${first.monthValue}월 ${first.dayOfMonth}일$rest 카드 매출 입금 확인"
     }
 
     /** [DAILY-13] A waiting sale goes into its day's sales, as it would have without 확인하고 적기. */
