@@ -517,3 +517,8 @@ input[aria-invalid] { border-color: var(--caution); }
 .app-line span { flex: none; font-size: 22px; line-height: 1; color: var(--gold); }
 .app-line:hover, .app-line:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
 .result .app-line { color: var(--ivory); border-top-color: rgba(255, 255, 255, 0.12); }
+
+/* 2.0.0 [RVR-34] 길잡이 글의 근거(법 조문·안내·판결) 목록 */
+ul.src { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 6px; }
+ul.src li { color: var(--text-2); font-size: 14px; line-height: 1.5; }
+ul.src a { color: inherit; }

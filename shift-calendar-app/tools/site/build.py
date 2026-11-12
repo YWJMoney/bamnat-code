@@ -8,7 +8,7 @@
 하는 일
 1. static/(calc.css·calc.js·home.css·home.js·robots.txt)을 공개 폴더로 옮겨요. calc.js의 '자료를 못 받을 때 값'은
    공개 폴더의 remote/v1/rates.json을 그대로 채워 넣어요(손으로 적지 않아요).
-2. public_pages.py → print_pages.py → r_page.py → home_page.py를 한 프로세스에서 차례로 돌려요(쪽 목록을 함께 쌓아요).
+2. public_pages.py → guide_pages.py → print_pages.py → r_page.py → home_page.py를 한 프로세스에서 차례로 돌려요(쪽 목록을 함께 쌓아요).
 3. sitemap.xml: 쪽 목록은 새로, 고친 날(lastmod)은 내용이 바뀐 쪽만 오늘로.
 4. 검사: 공개 저장소에 둘 수 있는 파일만 있는지, 공개 파일에 내부 주소·비밀 이름·도구 경로·추적 번호가 없는지,
    지난해 숫자가 남지 않았는지. 하나라도 걸리면 실패해요. 그리고 '공개로 나가는 파일 목록'(git 기준 바뀐 것)을 찍어요.
@@ -31,10 +31,10 @@ REPO_REMOTE = os.path.normpath(os.path.join(HERE, '../../../remote/v1'))  # bamn
 
 # 공개 저장소에 있어도 되는 것(맨 위 이름). 이 밖의 파일이 섞이면 실패해요.
 ALLOWED_TOP = {'.git', '.nojekyll', 'README.md', 'index.html', 'sitemap.xml', 'robots.txt', 'privacy.html',
-               'assets', 'calc', 'shift', 'holiday', 'form', 'r', 'og', 'css', 'privacy', 'terms', 'community', 'remote'}
+               'assets', 'calc', 'shift', 'holiday', 'form', 'guide', 'r', 'og', 'css', 'privacy', 'terms', 'community', 'remote'}
 INDEXNOW_KEY = re.compile(r'^[0-9a-f]{32}\.txt$')
 # 이 도구가 만드는 곳(아래 글자 검사를 받는 곳)
-GENERATED = ('index.html', 'sitemap.xml', 'robots.txt', 'calc/', 'shift/', 'holiday/', 'form/', 'r/', 'assets/home.', 'assets/icon-', 'og/')
+GENERATED = ('index.html', 'sitemap.xml', 'robots.txt', 'calc/', 'shift/', 'holiday/', 'form/', 'guide/', 'r/', 'assets/home.', 'assets/icon-', 'og/')
 TEXT_EXT = ('.html', '.js', '.css', '.txt', '.xml', '.json', '.svg', '.webmanifest')
 # 공개 파일에 있으면 안 되는 글자: 내부 주소, 비밀 이름, 개발 저장소·도구 경로, 내부 문서 이름
 FORBIDDEN = ['10.0.2.2', 'localhost', '127.0.0.1', '/api/admin', 'ADMIN_PASSWORD', 'RATE_SALT', 'MAIL_API_KEY', 'PLAY_SERVICE_ACCOUNT',
@@ -102,7 +102,7 @@ def generate(root, today=None):
     old_urls = re.findall(r'<loc>https://bamnat\.app/(.*?)</loc>', open(sm, encoding='utf-8').read()) if os.path.exists(sm) else []
     for u in old_urls: before[u] = h(page_file(root, u))
     copy_static(root)
-    for g in ('public_pages.py', 'print_pages.py', 'r_page.py', 'home_page.py'):
+    for g in ('public_pages.py', 'guide_pages.py', 'print_pages.py', 'r_page.py', 'home_page.py'):
         runpy.run_path(os.path.join(HERE, g), run_name='__main__')
     import site_common as sc
     # 만든 쪽에서 추적 번호를 지워요(소스 주석에만 남아요).

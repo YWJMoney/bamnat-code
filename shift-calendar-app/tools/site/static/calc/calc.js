@@ -466,6 +466,8 @@
   // 마지막 30일(둘 이상이면 45일)은 고용보험이 통상임금을 상한까지 주고, 처음 60일·75일은 회사가 통상임금 그대로(우선지원대상기업은
   // 고용보험이 상한까지 먼저 주고 회사가 나머지, 근로기준법 제74조 제4항 단서). 통상임금이 최저임금보다 낮을 때의 하한은 확인 필요라 셈하지 않아요.
   F.MATERNITY = { single: { days: 90, paid: 60, cap30: 2200000 }, multi: { days: 120, paid: 75, cap30: 2200000 } };
+  // [RVR-32] 고시 제2026-67호의 적용 기간 끝. 이 날이 지나면 쪽이 '확인 필요'를 보여요(새 고시를 확인하면 값과 함께 옮겨요).
+  F.MATERNITY_SURE = '2026-12-31';
   F.maternity = function (o) {
     var k = F.MATERNITY[o.kind] || F.MATERNITY.single, w = Math.max(0, o.month || 0), rest = k.days - k.paid;
     var company = Math.round(w * k.paid / 30), insured = Math.round(Math.min(w, k.cap30) * rest / 30);

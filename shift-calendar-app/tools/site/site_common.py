@@ -73,11 +73,14 @@ PLAY = 'https://play.google.com/store/apps/details?id=com.bamnat.app'
 NAV = [('calc/', '무료 계산기'), ('shift/', '교대 근무 달력'), ('holiday/', '공휴일'), ('form/', '근무표 양식')]
 MENU = [('계산기', [('calc/juhyu/', '주휴수당'), ('calc/alba/', '알바 월급'), ('calc/allowance/', '야간·연장·휴일수당'), ('calc/week/', '한 주 연장·52시간'), ('calc/ordinary/', '통상임금·명세서'), ('calc/daily/', '일당'),
                   ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/jobless/', '실업급여'), ('calc/parental/', '출산·육아휴직'), ('calc/boss/', '사장님 인건비'), ('calc/', '계산기 모두')]),
-        ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/print/', f'{PRINT_YEAR} 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/', '공휴일·연휴')])]
+        ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/print/', f'{PRINT_YEAR} 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/', '공휴일·연휴')]),
+        # 2.0.0 [RVR-34] 길잡이 글: 법 조문 출처와 계산 예시(guide_pages.py)
+        ('길잡이', [('guide/shift-4j2k-pay/', '4조 2교대 수당'), ('guide/nurse-night-pay/', '간호사 나이트 수당'), ('guide/holiday-work-pay/', '공휴일 근무 수당'),
+                  ('guide/juhyu-not-paid/', '주휴수당 못 받는 경우'), ('guide/', '길잡이 모두')])]
 
 
 def _here(path, u):
-    return path == u or (u not in ('calc/', 'shift/', 'form/', 'holiday/') and path.startswith(u))
+    return path == u or (u not in ('calc/', 'shift/', 'form/', 'holiday/', 'guide/') and path.startswith(u))
 
 
 def site_header(up, path=''):
@@ -134,19 +137,23 @@ def cta_shot(c):
     if c == 'form_shift_team': return SHOTS['team']
     if c in ('form_alba_week', 'boss'): return SHOTS['boss']
     if c in ('juhyu', 'allowance', 'week', 'ordinary', 'alba', 'salary', 'severance', 'jobless', 'parental'): return SHOTS['pay']
+    if c == 'guide_leave': return SHOTS['leave']
+    if c == 'guide_daily': return SHOTS['field']
+    if c == 'guide_nurse': return SHOTS['roster']
+    if c.startswith('guide'): return SHOTS['pay']
     return SHOTS['calendar']
 
 
 def kind_of(path):
     return ('print' if path.startswith('shift/print/') else 'shift' if path.startswith('shift/') else 'form' if path.startswith('form/')
-            else 'holiday' if path.startswith('holiday/') else 'calc')
+            else 'holiday' if path.startswith('holiday/') else 'guide' if path.startswith('guide/') else 'calc')
 
 
 def hero_tags(path):
     k = kind_of(path)
     t = {'print': ['열두 달 A4 한 장', '공휴일 표시', '로그인 없이'], 'shift': ['석 달 달력', '같은 조에 링크로', '로그인 없이'],
          'form': ['인쇄·엑셀 무료', '로그인 없이'], 'holiday': ['대체공휴일 포함', '교대 근무자 쉬는 날'],
-         'calc': ['무료', '로그인 없이', '입력값은 보내지 않아요']}[k]
+         'calc': ['무료', '로그인 없이', '입력값은 보내지 않아요'], 'guide': ['법 조문 출처', '계산기와 같은 식']}[k]
     return ''.join(f'<span>{x}</span>' for x in t)
 
 
@@ -156,7 +163,7 @@ def og_image(path):
     if k == 'holiday':
         m = re.match(r'holiday/(\d{4})/', path)
         return f'holiday-{m.group(1)}' if m else f'holiday-{HOL_YEAR}'
-    return {'print': 'shift', 'shift': 'shift', 'form': 'form', 'calc': 'calc'}[k]
+    return {'print': 'shift', 'shift': 'shift', 'form': 'form', 'calc': 'calc', 'guide': 'calc'}[k]
 
 
 def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, cta_text, depth, crumbs=None, head=''):
@@ -165,7 +172,11 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
     assert len(desc) <= 80, ('설명은 80자 안으로(네이버 사이트 진단)', path, len(desc), desc)
     assert len(title) <= 60, ('제목은 60자 안으로(검색 결과에서 잘리지 않게)', path, len(title), title)
     k = kind_of(path)
-    ld = [{
+    # [RVR-34] 길잡이 글은 글(Article)이에요. 날짜는 넣지 않아요(빌드 날마다 쪽이 바뀐 것으로 보이지 않게).
+    ld = [{"@context": "https://schema.org", "@type": "Article", "headline": h1, "description": desc, "url": canonical, "inLanguage": "ko",
+           "mainEntityOfPage": canonical, "image": f"{SITE}og/{og_image(path)}.png", "author": {"@type": "Organization", "name": "밤낮"},
+           "publisher": {"@type": "Organization", "name": "밤낮"}}] if k == 'guide' and path != 'guide/' else [{
+        "@context": "https://schema.org", "@type": "CollectionPage", "name": h1, "url": canonical, "inLanguage": "ko", "description": desc}] if k == 'guide' else [{
         "@context": "https://schema.org", "@type": "WebApplication", "name": h1, "url": canonical,
         "applicationCategory": "FinanceApplication" if k == 'calc' else "UtilitiesApplication", "operatingSystem": "Any", "inLanguage": "ko",
         "offers": {"@type": "Offer", "price": "0", "priceCurrency": "KRW"},
@@ -181,7 +192,9 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
             crumbs = [(f'{up}form/', '근무표 양식')]
         elif path.startswith('holiday/') and path != 'holiday/':
             crumbs = [(f'{up}holiday/', '공휴일')]
-        elif path in ('shift/', 'form/', 'calc/', 'holiday/'):
+        elif path.startswith('guide/') and path != 'guide/':
+            crumbs = [(f'{up}guide/', '길잡이')]
+        elif path in ('shift/', 'form/', 'calc/', 'holiday/', 'guide/'):
             crumbs = []
         else:
             crumbs = [(f'{up}calc/', '무료 계산기')]
@@ -193,7 +206,9 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
     crumb_html = f'<a href="{up}">밤낮</a>' + ''.join(f'<span class="sep">/</span><a href="{u}">{t}</a>' for u, t in crumbs)
     # [WEB-21] 계산하는 쪽에만 '참고용 계산' 안내를 붙여요.
     note = ('<p class="note" style="margin-top:18px">참고용 계산이에요. 실제 지급액은 근로계약·회사 규정·세법 적용에 따라 달라질 수 있어요. '
-            '요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율, 근로소득 간이세액표)를 써요.</p>') if k == 'calc' and path != 'calc/' else ''
+            '요율은 밤낮 앱과 같은 공개 자료(최저임금 고시, 4대보험 요율, 근로소득 간이세액표)를 써요.</p>') if k == 'calc' and path != 'calc/' else (
+        '<p class="note" style="margin-top:18px">법과 고용노동부·국세청 안내를 쉬운 말로 옮긴 글이에요. 근로계약·취업규칙에 따라 다를 수 있으니, '
+        '내 경우가 궁금하면 고용노동부 고객상담센터(국번 없이 1350)에 물어보세요.</p>') if k == 'guide' and path != 'guide/' else ''
     return f'''<!doctype html>
 <html lang="ko">
 <head>

@@ -57,3 +57,18 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// 2.0.0 [RVR-34] 새해 첫날에도 사이트가 만들어져요: 손으로 적은 '2026년'이 남으면 '지난해 숫자' 검사가 막아 CI가 1월 1일에 멈춰요.
+// (앱 시험이 새해 첫날 35개 깨지던 RVR-24와 같은 뿌리) 해가 붙는 글은 THIS·rate()로, 지난 날짜는 '2026. 1. 1.'처럼 적어요.
+test('새해 첫날(2027-01-02)에 만들어도 지난해 숫자가 없어요', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bamnat-site-newyear-'));
+  try {
+    fs.cpSync(remote, path.join(root, 'remote/v1'), { recursive: true });
+    const built = spawnSync('python3', [path.join(site, 'build.py'), root, '--today', '2027-01-02'], { encoding: 'utf8', env: { ...process.env, BAMNAT_SITE_TODAY: '2027-01-02' } });
+    assert.equal(built.status, 0, built.stdout.split('\n').filter((l) => /지난해|Error|Traceback/.test(l)).join('\n') + built.stderr);
+    // 길잡이 글의 4대보험 요율 줄도 그해 값으로 다시 써져요.
+    assert.match(fs.readFileSync(path.join(root, 'guide/alba-33-or-insurance/index.html'), 'utf8'), /올해 근로자 몫은 국민연금 /);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
