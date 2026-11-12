@@ -1494,7 +1494,7 @@ abstract class ScreenshotBase {
     // [ONBOARD-03][ONBOARD-04] 추천 기능 한 번에 켜기, in place of the consent pages of 1.13~1.21.
     internal fun recommended(
         items: Set<ConsentItem> = ConsentItem.entries.toSet(),
-        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "백업이나 회사 파일로 시작할게요". */
+        /** [SETUP-15] The card tapped on "무슨 일 하세요?" first; null taps "파일로 시작" (RVG-15: the one file start). */
         firstStyle: String? = SHIFT_CARD,
         then: Screen.() -> Unit = {},
     ): Screen.() -> Unit {
@@ -1502,7 +1502,7 @@ abstract class ScreenshotBase {
         c.consentStore.forget()
         c.consentStore.availableForTest = items
         return fresh(null) {
-            tapText(firstStyle ?: "백업이나 회사 파일로 시작할게요", exact = true)
+            tapText(firstStyle ?: "파일로 시작", exact = true)
             then()
         }
     }
