@@ -251,3 +251,28 @@ test('명세서: 몇 원 차이(반올림·10원 절사)는 맞아요, 시수가
   assert.equal(odd.ok, false);
   assert.equal(odd.of, undefined, '8,000원은 흔한 시수로 나눈 값이 아니에요');
 });
+
+// 2.0.0 [RVR-35] (검토 T50-04) 혼자 하는 가게: 그달 문 여는 날(쉬는 요일·공휴일·더 쉬는 날)과 하루 매출 목표.
+test('가게: 문 여는 날은 쉬는 요일과 공휴일을 한 번씩만 빼요', () => {
+  const hols = JSON.parse(fs.readFileSync(path.join(remote, 'holidays.json'), 'utf8')).data.days.map((h) => h.date);
+  // 2026년 11월: 일요일 1·8·15·22·29일
+  assert.deepEqual(plain(B.f.openDays({ month: '2026-11', off: '7', holidays: hols })), { days: 30, open: 25, weekly: 5, holidays: 0, extra: 0 });
+  // 2026년 10월: 일요일 4번, 공휴일 3·5·9일(개천절이 토요일이라도 일요일만 쉬는 가게는 공휴일로 쉬어요), 더 쉬는 날 2일
+  assert.deepEqual(plain(B.f.openDays({ month: '2026-10', off: '7', holOff: true, holidays: hols, extra: 2 })), { days: 31, open: 22, weekly: 4, holidays: 3, extra: 2 });
+  // 2026년 5월: 부처님오신날(24일)이 일요일이라 쉬는 요일로 한 번만, 노동절·어린이날·대체공휴일 3일
+  assert.deepEqual(plain(B.f.openDays({ month: '2026-05', off: '7', holOff: true, holidays: hols })), { days: 31, open: 23, weekly: 5, holidays: 3, extra: 0 });
+  // 월·일 쉬고 공휴일엔 열어요. 더 쉬는 날이 문 여는 날보다 많으면 0일
+  assert.equal(B.f.openDays({ month: '2026-11', off: '17', holidays: hols }).open, 20);
+  assert.equal(B.f.openDays({ month: '2026-11', off: '1234567', holidays: hols, extra: 3 }).open, 0);
+});
+
+test('가게: 하루 매출 목표는 고정비와 가져갈 돈이 남는 매출 ÷ 문 여는 날, 줄을 더하면 한 달 매출', () => {
+  const a = B.f.shop({ fixed: 2000000, want: 3000000, cost: 35, open: 25 });
+  assert.deepEqual(pick(a, ['ok', 'sales', 'cost', 'fee', 'vat', 'daily', 'more']), { ok: true, sales: 7692308, cost: 2692308, fee: 0, vat: 0, daily: 307700, more: 12900 });
+  // 일반과세자·수수료 2%: 받은 돈 = 부가세 뺀 매출 × 1.1, 부가세는 재료에 낸 부가세를 빼고(부가가치세법 제30·38조)
+  const b = B.f.shop({ fixed: 2000000, want: 3000000, cost: 35, fee: 2, vat: true, open: 24 });
+  assert.deepEqual(pick(b, ['sales', 'cost', 'fee', 'vat', 'daily', 'more']), { sales: 8757962, cost: 3065287, fee: 175159, vat: 517516, daily: 365000, more: 15800 });
+  for (const r of [a, b]) assert.ok(Math.abs(r.cost + r.fee + r.vat + r.fixed + r.want - r.sales) <= 2, '줄의 합이 한 달 매출');
+  assert.equal(B.f.shop({ fixed: 1000000, want: 1000000, cost: 70, fee: 30, open: 20 }).ok, false, '원가와 수수료가 매출을 다 먹으면 셀 수 없어요');
+  assert.equal(B.f.shop({ fixed: 1000000, want: 0, cost: 0, open: 0 }).daily, null);
+});

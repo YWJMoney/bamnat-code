@@ -35,6 +35,12 @@ test('목록 밖 파일·내부 주소·지난해 숫자가 섞이면 실패해�
     const shift = fs.readFileSync(path.join(root, 'shift/index.html'), 'utf8');
     assert.match(shift, /<link rel="apple-touch-icon" href="\.\.\/assets\/icon-180\.png">/);
     assert.ok(fs.statSync(path.join(root, 'assets/icon-180.png')).size > 1000);
+    // 2.0.0 [RVR-35] 가게 세금 날: 토·일·공휴일이면 다음 날(국세기본법 제5조). 국세청이 알린 2026년 날과 같아요
+    // (2기 부가세 1.25(일) → 1.26(월), 종합소득세 5.31(일) → 6.1(월), 1기 부가세 7.25(토) → 7.27(월)).
+    const shop = fs.readFileSync(path.join(root, 'calc/shop/index.html'), 'utf8');
+    for (const d of ['2026-01-26', '2026-06-01', '2026-07-27', '2026-11-30', '2027-01-25', '2027-07-26']) assert.match(shop, new RegExp(`data-d="${d}"`), d);
+    for (const d of ['2026-01-25', '2026-05-31', '2026-07-25', '2027-07-25']) assert.doesNotMatch(shop, new RegExp(`data-d="${d}"`), d);
+    assert.match(shop, /성실신고확인 대상은 6월 30일까지/);
 
     const bad = (file, text, expect) => {
       const f = path.join(root, file);

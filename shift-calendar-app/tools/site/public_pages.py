@@ -41,7 +41,7 @@ def ins_faq_text(y):
 write('calc/juhyu/', page(
     'calc/juhyu/', f'주휴수당 계산기 ({YEARS_TXT} 최저시급) | 밤낮',
     f'시급과 1주 근무 시간만 넣으면 주휴수당과 월 환산액을 바로 계산해요. 주 15시간 조건, {YEARS_TXT} 최저시급 반영.',
-    '주휴수당 계산기', '시급과 1주에 일하기로 한 시간만 넣으면 돼요. 알바·파트타임·교대 근무 모두 같은 방법으로 계산해요.',
+    '주휴수당 계산기', '시급과 1주에 일하기로 한 시간만 넣으면 주휴수당과 월 환산액이 나와요.',
     f'''<div class="card">
   <label for="wage">시급 (원)</label>
   <input id="wage" {DATA_MONEY} data-max="1000000">
@@ -84,7 +84,7 @@ B.shareButton($('share'),'주휴수당 계산 결과');
 write('calc/allowance/', page(
     'calc/allowance/', '야간·연장·휴일수당 계산기 (밤 10시~아침 6시) | 밤낮',
     '출퇴근 시각과 시급으로 야간(22~06시)·연장·휴일 가산수당을 나눠 계산해요. 자정 넘는 야간, 5인 미만도 반영.',
-    '야간·연장·휴일수당 계산기', '출근과 퇴근 시각만 넣으면 밤 10시~아침 6시 야간 시간과 8시간을 넘은 연장 시간을 저절로 나눠요. 자정을 넘는 야간 근무도 그대로 넣으세요.',
+    '야간·연장·휴일수당 계산기', '출퇴근 시각만 넣으면 야간(밤 10시~아침 6시)과 8시간 넘은 연장을 저절로 나눠요.',
     f'''<div class="card">
   <span class="glabel" id="presetL">예시로 채우기</span>
   <div class="chips" id="preset" role="group" aria-labelledby="presetL">
@@ -176,7 +176,7 @@ def boss_faq_rates(y):
 write('calc/boss/', page(
     'calc/boss/', f'사장님 인건비 계산기 (주휴·4대보험 사업주 몫) | 밤낮',
     f'알바·직원 시급과 요일별 근무로 주휴수당과 사업주 4대보험까지 한 달 인건비를 계산해요. {YEARS_TXT} 요율.',
-    '사장님 인건비 계산기', '직원 한 명을 쓰면 한 달에 얼마가 드는지 봐요. 시급과 일하는 요일만 넣으면 주휴수당과 사업주가 내는 4대보험까지 더해요.',
+    '사장님 인건비 계산기', '시급과 일하는 요일만 넣으면 주휴수당과 사업주 4대보험까지 한 달 인건비가 나와요.',
     f'''<div class="card">
   <label for="wage">시급 (원)</label>
   <input id="wage" {DATA_MONEY} data-max="1000000">
@@ -246,7 +246,7 @@ B.shareButton($('share'),'사장님 인건비 계산 결과');
 write('calc/week/', page(
     'calc/week/', '한 주 연장·야간·휴일수당 계산기 (주 40·52시간) | 밤낮',
     '요일별 출퇴근을 넣으면 하루 8시간·주 40시간을 넘은 연장, 야간, 휴일 근로와 가산수당, 주 52시간을 함께 봐요.',
-    '한 주 연장·야간·휴일 계산기', '한 주 출퇴근을 요일마다 넣으면 하루 8시간을 넘은 연장과 주 40시간을 넘은 연장 중 큰 쪽, 밤 10시~아침 6시 야간, 휴일 근로를 나눠 가산수당까지 셈해요.',
+    '한 주 연장·야간·휴일 계산기', '요일마다 출퇴근을 넣으면 연장(하루 8시간·주 40시간)·야간·휴일 근로와 52시간을 봐요.',
     f'''<div class="card">
   <label for="wage">시급 (원)</label>
   <input id="wage" {DATA_MONEY} data-max="1000000">
@@ -320,7 +320,7 @@ slip_html = ''.join(f'''<div class="slip-row"><span class="slip-name" id="{k}N">
 write('calc/ordinary/', page(
     'calc/ordinary/', '통상임금·통상시급 계산기, 명세서 수당 맞춰 보기 | 밤낮',
     '기본급·고정 수당·정기상여로 통상시급을 거꾸로 구하고, 명세서의 연장·야간·휴일수당이 맞는지 맞춰 봐요.',
-    '통상임금·명세서 맞춰 보기', '기본급과 매달 받는 고정 수당, 정기상여로 통상시급을 구하고, 명세서의 연장·야간·휴일수당이 그 시급으로 셈한 금액과 같은지 봐요. 회사가 어떤 시급으로 셈했는지도 거꾸로 찾아요.',
+    '통상임금·명세서 맞춰 보기', '기본급·고정 수당·정기상여로 통상시급을 구하고, 명세서의 수당이 맞는지 맞춰 봐요.',
     f'''<div class="card">
   <label for="base">월 기본급 (원)</label>
   <input id="base" {DATA_MONEY} data-max="100000000">
@@ -401,7 +401,7 @@ B.shareButton($('share'),'통상시급 계산 결과');
 write('calc/alba/', page(
     'calc/alba/', '알바 월급 계산기 (주휴수당·3.3%·4대보험) | 밤낮',
     f'시급과 근무 시간으로 주휴수당 포함 알바 월급, 3.3%·4대보험 뺀 실수령액을 계산해요. {YEARS_TXT} 최저시급 반영.',
-    '알바 월급 계산기', '시급과 근무 시간으로 한 달 월급을 계산해요. 주휴수당을 넣고, 3.3% 떼는지 4대보험인지 골라 손에 쥐는 돈까지 봐요.',
+    '알바 월급 계산기', '시급과 근무 시간으로 주휴수당까지 넣은 월급과, 3.3%·4대보험을 뗀 손에 쥐는 돈을 봐요.',
     f'''<div class="card">
   <label for="wage">시급 (원)</label>
   <input id="wage" {DATA_MONEY} data-max="1000000">
@@ -528,7 +528,7 @@ B.shareButton($('share'),'일당 계산 결과');
 write('calc/salary/', page(
     'calc/salary/', f'월급·연봉 실수령액 계산기 {THIS} (4대보험·간이세액표) | 밤낮',
     f'월급·연봉에서 4대보험과 근로소득세(간이세액표)를 뺀 실수령액을 계산해요. 부양가족·비과세 식대' + (f', {NEXT}년 요율도.' if NEXT else '.'),
-    '월급·연봉 실수령액 계산기', '세전 월급이나 연봉을 넣으면 4대보험과 소득세를 뺀 통장에 들어오는 돈을 계산해요. 소득세는 국세청 근로소득 간이세액표 원문 그대로예요.',
+    '월급·연봉 실수령액 계산기', '세전 월급·연봉에서 4대보험과 소득세(국세청 간이세액표 그대로)를 뺀 통장 금액을 봐요.',
     f'''<div class="card">
   <div class="chips" id="kind" role="group" aria-label="금액 종류">
     <button type="button" class="chip" data-v="month" aria-pressed="true">월급</button>
@@ -587,7 +587,7 @@ B.shareButton($('share'),'월급 실수령액 계산 결과');
 write('calc/leave/', page(
     'calc/leave/', '연차 계산기 (입사일·회계연도 기준, 1년 미만 월차) | 밤낮',
     '입사일만 넣으면 지금 연차 개수, 다음 연차가 생기는 날, 근속별 연차(15~25일)를 보여 줘요. 회계연도 기준도.',
-    '연차 계산기', '입사일만 넣으면 돼요. 1년 미만은 한 달 개근마다 1일, 1년이 지나면 15일, 그 뒤 2년마다 1일씩 늘어 25일까지예요.',
+    '연차 계산기', '입사일만 넣으면 지금 생긴 연차와 근속 해마다 생기는 개수가 나와요.',
     f'''<div class="card">
   <div class="row">
     <div><label for="start">입사일</label><input id="start" type="date"></div>
@@ -642,7 +642,7 @@ B.shareButton($('share'),'연차 계산 결과');
 write('calc/severance/', page(
     'calc/severance/', '퇴직금 계산기 (평균임금 × 30일 × 재직일수/365) | 밤낮',
     '입사일·퇴사일과 최근 3개월 월급으로 평균임금과 예상 퇴직금을 법정 방식 그대로 계산해요. 상여·연차수당 반영.',
-    '퇴직금 계산기', '입사일과 마지막 근무일, 최근 석 달 월급만 넣으면 돼요. 상여와 연차수당이 있으면 함께 넣어요.',
+    '퇴직금 계산기', '입사일, 마지막 근무일, 최근 석 달 월급만 넣으면 퇴직금이 나와요.',
     f'''<div class="card">
   <div class="row">
     <div><label for="start">입사일</label><input id="start" type="date"></div>
@@ -689,7 +689,7 @@ B.shareButton($('share'),'퇴직금 계산 결과');
 write('calc/jobless/', page(
     'calc/jobless/', '실업급여 계산기 (구직급여 하루 금액·받는 날 수) | 밤낮',
     '퇴직 전 3개월 임금과 나이·고용보험 가입 기간으로 하루 구직급여와 받는 날 수, 모두 받으면 얼마인지 계산해요.',
-    '실업급여 계산기', '마지막 근무일과 최근 석 달 월급, 나이와 고용보험에 든 기간만 넣으면 하루 구직급여와 받는 날 수가 나와요.',
+    '실업급여 계산기', '최근 석 달 월급과 나이, 고용보험에 든 기간으로 하루 구직급여와 받는 날 수를 봐요.',
     f'''<div class="card">
   <label for="last">마지막 근무일 (이직일)</label>
   <input id="last" type="date" min="2019-10-01">
@@ -738,7 +738,7 @@ B.shareButton($('share'),'실업급여 계산 결과');
 write('calc/parental/', page(
     'calc/parental/', '출산휴가·육아휴직 급여 계산기 (6+6·한부모) | 밤낮',
     '월 통상임금으로 출산전후휴가 90일과 육아휴직 달마다 받는 돈, 6+6 부모 함께·한부모 상한까지 계산해요.',
-    '출산휴가·육아휴직 급여 계산기', '월 통상임금과 쉴 달 수만 넣으면 육아휴직 달마다 받는 돈과 출산전후휴가 90일에 받는 돈이 나와요.',
+    '출산휴가·육아휴직 급여 계산기', '월 통상임금만 넣으면 육아휴직 달마다 받는 돈과 출산전후휴가 급여가 나와요.',
     f'''<div class="card">
   <label for="month">월 통상임금 (원)<span class="hint">기본급과 매달 정해진 수당. 야간·연장처럼 달마다 다른 수당은 빼요.</span></label>
   <input id="month" {DATA_MONEY} value="3,000,000" data-max="100000000">
@@ -780,6 +780,114 @@ B.shareButton($('share'),'육아휴직 급여 계산 결과');
      ('배우자 출산휴가는요?', '20일이고 유급이에요(2025.2.23.부터). 우선지원대상기업 근로자는 고용보험이 20일에 1,684,210원까지 줘요(고용노동부고시 제2026-67호).'),
      ('교대 근무 수당도 통상임금에 들어가나요?', '매달 정해진 교대수당·직책수당처럼 일한 시간과 상관없이 정해진 돈은 들어가요. 야간·연장·휴일수당처럼 달마다 다른 돈은 들어가지 않아요. 통상임금은 통상임금 계산기에서 구할 수 있어요.')],
     'parental', '복직하면 근무와 월급을 밤낮으로', '다시 일을 시작하면 근무를 넣는 대로 이번 달 예상 월급과 남은 연차를 보여 줘요.', 2))
+# ---------- 2.0.0 [RVR-35] (검토 T50-04) 혼자 하는 가게: 쉬는 날·하루 매출 목표·세금 날 ----------
+# 세금 날 출처: 국세청 '부가가치세 신고납부기한'(개인 일반과세자 1.25·7.25 확정, 4.25·10.25 예정고지(50만 원 미만은 고지 안 함),
+# 간이과세자 1.25, 예정부과 7.25), '사업장현황신고'(면세 개인사업자 2.10, 소득세법 제78조), '중간예납'(11.30, 소득세법 제65조),
+# 소득세법 제70조(5.31)·제70조의2(성실신고확인 6.30). 기한이 토·일·공휴일이면 다음 날(국세기본법 제5조, 앱 core TaxDeadlines.workday와 같음).
+SHOP_TAX = [(1, 25, '부가세 확정신고', '일반과세자는 지난해 7~12월, 간이과세자는 지난해 한 해 몫을 신고하고 내요.'),
+            (2, 10, '사업장현황신고', '부가세가 면제되는 가게(학원·병의원·농축수산물 판매 등)만 지난해 수입을 신고해요.'),
+            (4, 25, '부가세 예정고지', '일반과세자에게 고지서가 오면 내요(지난 6개월 낸 부가세의 절반, 50만 원 미만이면 오지 않아요).'),
+            (5, 31, '종합소득세 신고', '지난해 번 돈을 신고하고 내요. 성실신고확인 대상은 {late}까지예요.'),
+            (7, 25, '부가세 확정신고', '일반과세자는 올해 1~6월 몫을 신고하고 내요. 간이과세자는 예정부과 고지서가 오면 내요.'),
+            (10, 25, '부가세 예정고지', '일반과세자에게 고지서가 오면 내요.'),
+            (11, 30, '종합소득세 중간예납', '고지서가 오면 내요(지난해 종합소득세의 절반쯤).')]
+
+
+def tax_day(x):
+    hd = {h['date'] for h in HOLS['days']}
+    while x.weekday() >= 5 or x.isoformat() in hd:
+        x += dt.timedelta(days=1)
+    return x
+
+
+def tax_rows():
+    out = []
+    for y in HOL_YEARS:
+        for m, d, name, text in SHOP_TAX:
+            due = dt.date(y, m, d)
+            x = tax_day(due)
+            late = tax_day(dt.date(y, 6, 30))
+            moved = f' · {d}일이 {"토요일" if due.weekday() == 5 else "일요일" if due.weekday() == 6 else "공휴일"}이라 옮김' if x != due else ''
+            out.append(f'<tr data-d="{x.isoformat()}" data-n="{html.escape(name)}"><th scope="row">{x.year}. {x.month}. {x.day}. ({WD[x.weekday()]})</th>'
+                       f'<td><b>{name}</b><span class="muted">{html.escape(text.format(late=f"{late.month}월 {late.day}일"))}{moved}</span></td></tr>')
+    return ''.join(out)
+
+
+SHOP_HOLS = json.dumps([h['date'] for h in HOLS['days'] if int(h['date'][:4]) in HOL_YEARS])
+write('calc/shop/', page(
+    'calc/shop/', '가게 하루 매출 목표 계산기 (쉬는 날·고정비·카드 수수료) | 밤낮',
+    '쉬는 요일·공휴일과 고정비·원가·수수료로 이번 달 문 여는 날과 하루 매출 목표, 다가오는 가게 세금 날을 봐요.',
+    '가게 하루 매출 목표 계산기', '쉬는 요일과 한 달 고정비만 넣으면 문 여는 날과 하루 매출 목표가 나와요.',
+    f'''<div class="card">
+  <span class="glabel" id="monthL">어느 달</span>
+  <div class="chips" id="month" role="group" aria-labelledby="monthL"></div>
+  <span class="glabel" id="offL">매주 쉬는 요일</span>
+  <input type="hidden" id="off" value="7">
+  <div class="chips wd" id="offs" role="group" aria-labelledby="offL">{''.join(f'<button type="button" class="chip" data-d="{i}" aria-pressed="{"true" if i == 7 else "false"}" aria-label="{d}요일에 쉬어요">{d}</button>' for i, d in enumerate(WD, 1))}</div>
+  <label class="check"><input type="checkbox" id="hol"> 공휴일에도 쉬어요</label>
+  <label for="extra">그 밖에 쉬는 날<span class="hint">휴가·임시휴무처럼 이달 더 쉬는 날 수</span></label>
+  <input id="extra" inputmode="numeric" value="0" data-max="31" data-unit="일">
+  <label for="fixed">한 달 고정비 (원)<span class="hint">월세·관리비·전기·가스·통신·대출 이자처럼 매달 나가는 돈. 직원이 있으면 인건비도.</span></label>
+  <input id="fixed" {DATA_MONEY} value="2,000,000" data-max="1000000000">
+  <label for="want">한 달에 내가 가져갈 돈 (원)</label>
+  <input id="want" {DATA_MONEY} value="3,000,000" data-max="1000000000">
+  <div class="row">
+    <div><label for="cost">재료·원가 (매출의 %)</label><input id="cost" inputmode="decimal" value="35" data-max="95" data-unit="%"></div>
+    <div><label for="fee">카드·배달 수수료 (%)</label><input id="fee" inputmode="decimal" placeholder="0" data-max="30" data-unit="%"></div>
+  </div>
+  <span class="hint">수수료는 카드사·배달앱이 알려 준 가맹점 수수료율, 모르면 비워요. 매출이 모두 카드라고 보고 셈해요.</span>
+  <label class="check"><input type="checkbox" id="vat"> 일반과세자예요 (받은 돈의 부가세를 떼어 둬요)</label>
+</div>
+{result('하루 매출 목표')}
+<div class="card">
+  <h2 class="in-card">다가오는 가게 세금 날</h2>
+  <div class="dday" id="taxNext"></div>
+  <table class="lines info tax" id="tax">{tax_rows()}</table>
+  <p class="note">기한이 토요일·일요일·공휴일이면 그다음 날로 옮겨 적었어요(국세기본법 제5조). 출처: 국세청 부가가치세 신고납부기한·사업장현황신고·중간예납 안내, 소득세법 제65·70·70조의2·78조.</p>
+</div>''',
+    r'''(function(){
+var B=Bamnat,F=B.f,$=B.$,D=B.d,H=%HOLS%,save=function(){};
+var t=D.today(),ms=[0,1].map(function(k){return D.iso(D.plusMonths(new Date(Date.UTC(t.getUTCFullYear(),t.getUTCMonth(),1)),k)).slice(0,7);});
+$('month').innerHTML=ms.map(function(m,i){return '<button type="button" class="chip" data-v="'+m+'" aria-pressed="'+(i===0)+'">'+(+m.slice(5))+'월'+(i===0?' (이번 달)':'')+'</button>';}).join('');
+var month=B.chips($('month'),function(){calc();});
+function offSync(){var v=$('off').value;[].forEach.call($('offs').querySelectorAll('.chip'),function(c){c.setAttribute('aria-pressed',v.indexOf(c.dataset.d)>=0?'true':'false');});}
+$('offs').addEventListener('click',function(e){var b=e.target.closest('.chip');if(!b)return;b.setAttribute('aria-pressed',b.getAttribute('aria-pressed')!=='true');
+  $('off').value=[].filter.call($('offs').querySelectorAll('.chip'),function(c){return c.getAttribute('aria-pressed')==='true';}).map(function(c){return c.dataset.d;}).join('');calc();});
+var WDN='월화수목금토일';
+function calc(){
+  var m=month.get()||ms[0],off=$('off').value,o=F.openDays({month:m,off:off,holOff:$('hol').checked,holidays:H,extra:B.val('extra')}),rows=[];
+  var known=H.some(function(d){return d.slice(0,4)===m.slice(0,4);});
+  var r=F.shop({fixed:B.val('fixed'),want:B.val('want'),cost:B.val('cost'),fee:B.val('fee'),vat:$('vat').checked,open:o.open});
+  if(!o.open){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'문 여는 날이 없어요. 쉬는 요일을 하나 이상 풀어 주세요.'}]);save();return;}
+  if(!r.ok){$('out').textContent='-';$('lines').innerHTML=B.rows([{note:'재료·원가와 수수료가 매출보다 커서 목표를 셀 수 없어요. 두 비율을 확인해 주세요.',warn:1}]);save();return;}
+  var why=[];if(o.weekly)why.push((off.split('').sort().map(function(d){return WDN[d-1];}).join('·'))+'요일 '+o.weekly+'일');if(o.holidays)why.push('공휴일 '+o.holidays+'일');if(o.extra)why.push('더 쉬는 날 '+o.extra+'일');
+  rows.push([(+m.slice(5))+'월 문 여는 날',o.open+'일'],{note:o.days+'일 가운데 '+(why.length?why.join(', ')+' 쉬어요.':'쉬는 날 없이 매일 열어요.')});
+  if($('hol').checked&&!known)rows.push({note:m.slice(0,4)+'년 공휴일 자료가 아직 없어 공휴일은 빼지 않았어요.',warn:1});
+  rows.push(['재료·원가',B.won(r.cost)]);
+  if(r.fee)rows.push(['카드·배달 수수료',B.won(r.fee)]);
+  if($('vat').checked)rows.push(['부가세 낼 몫 (재료에 낸 부가세는 뺌)',B.won(r.vat)]);
+  rows.push(['고정비',B.won(r.fixed)],['내가 가져갈 돈',B.won(r.want)],['한 달 필요한 매출',B.won(r.sales),'sum']);
+  if(r.more!=null)rows.push(['하루 더 쉬면 하루 목표',(r.more>0?'+':'')+B.won(r.more)]);
+  if(!$('vat').checked)rows.push({note:'간이과세자는 부가세가 업종별 부가가치율로 훨씬 적어 빼고 셈했어요. 일반과세자면 위 칸을 켜요.'});
+  else rows.push({note:'부가세는 받은 돈의 11분의 1에서 재료에 낸 부가세를 뺀 대략이에요(카드 매출 세액공제·고정비의 부가세는 빼요).'});
+  if(r.sales*12>=104000000&&!$('vat').checked)rows.push({note:'한 해 매출이 1억 400만 원을 넘으면 다음 해 7월부터 일반과세자가 돼요(부가가치세법 시행령 제109조).'});
+  $('out').textContent=B.won(r.daily);$('lines').innerHTML=B.rows(rows);save();
+}
+// 지난 세금 날은 숨기고 1년 안의 날만, 맨 위에 다음 날까지 며칠.
+(function(){var next=null,until=D.plusYears(t,1);[].forEach.call(document.querySelectorAll('#tax tr[data-d]'),function(tr){var d=D.parse(tr.dataset.d);
+  if(d<t||d>until){tr.hidden=true;return;}if(!next)next={d:d,n:tr.dataset.n};});
+  if(next){var k=D.between(t,next.d);$('taxNext').innerHTML='<span class="muted">다음 세금 날</span><span class="big">'+(k?'D-'+k:'오늘')+'</span><span>'+D.md(next.d)+' '+next.n+'</span>';}
+  else $('taxNext').hidden=true;})();
+save=B.keep(['off','hol','extra','fixed','want','cost','fee','vat'],{month:month});offSync();
+['hol','extra','fixed','want','cost','fee','vat'].forEach(function(i){$(i).addEventListener('input',calc);$(i).addEventListener('change',calc);});calc();
+B.shareButton($('share'),'가게 하루 매출 목표');
+})();'''.replace('%HOLS%', SHOP_HOLS),
+    [('하루 매출 목표는 어떻게 셈하나요?', '한 달에 나가는 고정비와 내가 가져갈 돈이 남으려면 얼마를 팔아야 하는지 먼저 구해요. 매출에서 재료·원가와 카드·배달 수수료(일반과세자는 부가세도)를 빼고 남은 돈이 고정비와 가져갈 돈이 되는 매출이에요. 그 매출을 그달 문 여는 날 수로 나눈 것이 하루 목표예요.'),
+     ('쉬는 날을 하루 늘리면 얼마나 더 팔아야 하나요?', "한 달에 필요한 매출은 그대로라 문 여는 날이 하루 줄면 남은 날이 그만큼 나눠 져요. 결과의 '하루 더 쉬면 하루 목표' 줄이 그 차이예요. 쉬는 요일을 바꾸면 달마다 문 여는 날이 달라지는 것도 함께 보여요."),
+     ('부가세는 언제 내나요?', '개인 일반과세자는 1월 25일(지난해 7~12월)과 7월 25일(1~6월)에 신고하고 내고, 4월·10월에는 지난 6개월 낸 부가세의 절반을 고지서로 내요(50만 원 미만은 고지하지 않아요). 간이과세자는 1월 25일에 지난해 한 해 몫을 신고해요(국세청 부가가치세 신고납부기한 안내). 기한이 주말·공휴일이면 그다음 날이에요(국세기본법 제5조).'),
+     ('간이과세자는 무엇이 다른가요?', '직전 연도 매출(공급대가)이 1억 400만 원보다 적은 개인사업자는 간이과세자가 될 수 있어요(부가가치세법 제61조, 시행령 제109조). 부가세는 매출에 업종별 부가가치율과 10%를 곱해 일반과세자보다 적어요(제63조). 그래서 이 계산기는 간이과세자일 때 부가세를 빼고 셈해요.'),
+     ('직원이 있으면요?', '직원 인건비를 한 달 고정비에 더해 넣으면 돼요. 직원 한 명의 주휴수당과 사업주 4대보험까지는 사장님 인건비 계산기에서 구할 수 있어요.')],
+    'shop', '가게 매출과 쉬는 날을 한 달력에', '밤낮 가게 화면에서 결제 수단별로 매출을 적으면 남은 영업일로 나눈 하루 목표가 날마다 바뀌고, 부가세·종합소득세 낼 달을 미리 알려 줘요.', 2))
 print('calc ok')
 
 # ---------- 교대 근무 달력 ----------
@@ -787,7 +895,7 @@ FALLBACK_PATS = [{'name': p['name'], 'description': p['description'], 'codes': p
 write('shift/', page(
     'shift/', '교대 근무 달력 만들기 · 4조2교대·3조2교대 근무표 | 밤낮',
     '4조2교대·3조2교대·4조3교대·주야비휴 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 앱에선 알람까지.',
-    '교대 근무 달력 만들기', '근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 마음에 들면 같은 순서로 앱에 옮겨 알람까지 맞춰요.',
+    '교대 근무 달력 만들기', '근무 순서와 첫날만 고르면 석 달 근무 달력이 바로 나와요. 앱으로 옮기면 알람까지.',
     '''<div class="card" id="setup">
   <label for="pat">근무 순서</label>
   <select id="pat"></select>
@@ -981,7 +1089,7 @@ for year in HOL_YEARS:
     write(f'holiday/{year}/', page(
         f'holiday/{year}/', f'{year}년 공휴일·대체공휴일·연휴 달력 | 밤낮',
         f'{year}년 공휴일 {len(days)}일과 대체공휴일, 연휴를 한눈에. 교대 순서를 넣으면 공휴일 중 쉬는 날과 일하는 날을 나눠 봐요.',
-        f'{year}년 공휴일·연휴 달력', f'{year}년 공휴일과 대체공휴일, 주말을 붙여 쉬는 연휴를 모았어요. 교대 근무자는 아래에서 내 근무 순서로 공휴일에 쉬는지 바로 봐요.',
+        f'{year}년 공휴일·연휴 달력', f'{year}년 공휴일·대체공휴일과 연휴예요. 교대 근무자는 내 순서로 쉬는 공휴일도 봐요.',
         body, script,
         [(f'{year}년 공휴일은 며칠인가요?', f'관공서의 공휴일에 관한 규정과 한국천문연구원 월력요항 기준으로 대체공휴일까지 {len(days)}일이에요(일요일과 겹친 날 포함, 그중 월~금 {weekday_n}일). 임시공휴일이 정해지면 고쳐요.'),
          ('민간 회사도 공휴일에 쉬나요?', '상시 5명 이상 사업장은 공휴일이 유급휴일이에요(근로기준법 제55조 제2항). 쉬는 날에 일하면 휴일 근로 수당(8시간까지 50%)을 받아요. 교대 근무는 대체휴일 합의가 있으면 다른 날 쉬기도 해요.'),
@@ -999,7 +1107,7 @@ all_days = [h for y in show for h in hol_days(y)]
 write('holiday/', page(
     'holiday/', f'공휴일·대체공휴일 달력 ({"·".join(map(str, show))}) | 밤낮',
     f'{"·".join(map(str, show))}년 공휴일과 대체공휴일, 다음 공휴일까지 남은 날을 한눈에. 교대 근무자 쉬는 공휴일도 확인해요.',
-    '공휴일·연휴 달력', '올해와 내년 공휴일을 한 쪽에 모았어요. 지난 날은 흐리게, 다음 공휴일까지 며칠 남았는지 맨 위에 보여 줘요.',
+    '공휴일·연휴 달력', '올해와 내년 공휴일을 한 쪽에 모았어요. 다음 공휴일까지 남은 날이 맨 위예요.',
     f'<div class="card dday" id="dday"></div>\n{blocks}\n<ul class="links">' + ''.join(f'<li><a href="{y}/"><strong>{y}년 연휴·교대 근무자 쉬는 날</strong></a></li>' for y in HOL_YEARS) + '</ul>',
     HOL_SCRIPT.replace('%H%', json.dumps([[h['date'], h['name']] for h in all_days], ensure_ascii=False)).replace('%UP%', '../'),
     [('공휴일은 어떻게 정해지나요?', '관공서의 공휴일에 관한 규정과 한국천문연구원 월력요항을 따라요. 대체공휴일·임시공휴일이 정해지면 밤낮 앱과 같은 자료를 고쳐 바로 반영해요.'),
@@ -1047,7 +1155,7 @@ for p in PRESETS:
     write(f'shift/p/{slug}/', page(
         f'shift/p/{slug}/', title,
         (f'{name} 근무표: {L}일 주기, 한 달 평균 약 {pm:.0f}일 근무. 첫날만 넣으면 석 달 근무 달력을 바로 보여 줘요.')[:80],
-        f'{name} 근무표', f'{html.escape(p["description"])} 순서로 {L}일마다 돌아요. 첫 근무 날만 고르면 몇 달치 달력이 나와요.',
+        f'{name} 근무표', lead_of(p['description'], f'순서로 {L}일마다 돌아요.', '첫 근무 날만 고르면 몇 달치 달력이 나와요.', '첫날만 고르면 달력이 나와요.'),
         body, '',
         [(f'{josa(name, "는/은")} 한 달에 며칠 일하나요?', f'{L}일 중 {work}일 일해서 한 달(30.4일)에 평균 약 {pm:.1f}일이에요. 달마다 하루 이틀 차이가 나요.'),
          (f'{name} 근무 알람을 맞추려면?', '밤낮 앱에서 같은 순서를 고르면 근무마다 다른 시각에 알람이 울리고, 쉬는 날엔 조용해요. 대근·연차로 바뀐 날만 눌러 고치면 돼요.')],
@@ -1118,7 +1226,7 @@ for slug, gname, kinds, who in WORK_GROUPS:
     write(f'shift/work/{slug}/', page(
         f'shift/work/{slug}/', title,
         f'{gname} 교대 근무는 {josa(top, "가/이")} 가장 많아요. 공개 자료 {len(rows)}곳의 방식과 야간·연장 수당 셈법.'[:80],
-        f'{gname} 교대 근무', f'{who}처럼 교대로 일하는 곳의 근무 방식을 모았어요. 순서를 누르면 내 첫날로 석 달 달력을 바로 봐요.',
+        f'{gname} 교대 근무', f'{who}처럼 교대로 일하는 곳의 근무 방식을 공개 자료로 모았어요.',
         body, '',
         [(f'{gname} 교대 근무는 보통 몇 조 몇 교대인가요?', f'공개 자료 {len(rows)}곳 가운데 ' + ', '.join(f'{FORM_NAME.get(k, k)} {n}곳' for k, n in forms[:4]) + '이에요. 같은 회사·기관도 사업장·부서마다 다를 수 있어요.'),
          ('우리 회사 근무 순서를 바로 맞추려면?', '밤낮 앱의 회사 찾기에서 회사 이름으로 고르면 근무 순서와 시간이 맞춰져요. 없는 회사는 앱에서 알려 주시면 확인해서 더해요.')],
@@ -1140,6 +1248,7 @@ hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</stron
     ('week/', '한 주 연장·야간·휴일 계산기', '요일별 출퇴근으로 하루 8시간·주 40시간 넘은 연장과 주 52시간'),
     ('ordinary/', '통상임금·명세서 맞춰 보기', '기본급·고정 수당·정기상여로 통상시급, 명세서 연장·야간·휴일수당 확인'),
     ('boss/', '사장님 인건비 계산기', '주휴수당과 사업주 4대보험까지 직원 한 달 인건비'),
+    ('shop/', '가게 하루 매출 목표 계산기', '쉬는 요일로 이번 달 문 여는 날, 고정비·원가·수수료로 하루 매출 목표와 가게 세금 날'),
     ('salary/', '월급·연봉 실수령액 계산기', '4대보험과 간이세액표 소득세를 뺀 통장 금액'),
     ('leave/', '연차 계산기', '입사일·회계연도 기준으로 지금 연차와 근속별 개수'),
     ('severance/', '퇴직금 계산기', '평균임금 × 30일 × 재직일수/365, 통상임금 비교'),
@@ -1152,7 +1261,7 @@ hub_body = '<ul class="links">' + ''.join(f'<li><a href="{u}"><strong>{t}</stron
     ('../shift/print/', f'{PRINT_YEAR} 교대 근무 달력 인쇄', '순서와 첫날로 열두 달 한 장')]) + '</ul>'
 write('calc/', page('calc/', '근무·급여 계산기 모음 (주휴수당·야간수당·실수령액) | 밤낮',
     f'주휴수당·알바 월급·야간수당·실수령액·연차·퇴직금·일당 세금을 무료로 계산해요. {YEARS_TXT} 최저시급 반영.',
-    '근무·급여 계산기', '일하는 시간이 남다른 모든 분을 위한 무료 계산기예요. 입력한 값은 이 화면에서만 계산해요.',
+    '근무·급여 계산기', '일하는 시간이 남다른 모든 분을 위한 무료 계산기예요. 넣은 값은 보내지 않아요.',
     hub_body, '', [
      ('계산기는 무료인가요?', '네, 로그인 없이 무료예요. 입력한 값은 휴대폰·컴퓨터 화면 안에서만 계산하고 보내지 않아요.'),
      ('계산 결과를 남에게 보낼 수 있나요?', "계산기마다 '결과 링크 보내기'를 누르면 넣은 값이 담긴 주소를 카톡 등으로 보내요. 값은 주소에만 있고 서버로 가지 않아요."),

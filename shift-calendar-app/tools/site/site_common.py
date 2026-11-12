@@ -72,7 +72,7 @@ PLAY_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3.6v16.8c0 
 PLAY = 'https://play.google.com/store/apps/details?id=com.bamnat.app'
 NAV = [('calc/', '무료 계산기'), ('shift/', '교대 근무 달력'), ('holiday/', '공휴일'), ('form/', '근무표 양식')]
 MENU = [('계산기', [('calc/juhyu/', '주휴수당'), ('calc/alba/', '알바 월급'), ('calc/allowance/', '야간·연장·휴일수당'), ('calc/week/', '한 주 연장·52시간'), ('calc/ordinary/', '통상임금·명세서'), ('calc/daily/', '일당'),
-                  ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/jobless/', '실업급여'), ('calc/parental/', '출산·육아휴직'), ('calc/boss/', '사장님 인건비'), ('calc/', '계산기 모두')]),
+                  ('calc/salary/', '실수령액'), ('calc/leave/', '연차'), ('calc/severance/', '퇴직금'), ('calc/jobless/', '실업급여'), ('calc/parental/', '출산·육아휴직'), ('calc/boss/', '사장님 인건비'), ('calc/shop/', '가게 매출 목표'), ('calc/', '계산기 모두')]),
         ('근무 달력', [('shift/', '교대 근무 달력 만들기'), ('shift/print/', f'{PRINT_YEAR} 달력 인쇄'), ('form/', '근무표 엑셀 양식'), ('holiday/', '공휴일·연휴')]),
         # 2.0.0 [RVR-34] 길잡이 글: 법 조문 출처와 계산 예시(guide_pages.py)
         ('길잡이', [('guide/shift-4j2k-pay/', '4조 2교대 수당'), ('guide/nurse-night-pay/', '간호사 나이트 수당'), ('guide/holiday-work-pay/', '공휴일 근무 수당'),
@@ -125,7 +125,7 @@ def site_footer(up):
 # 앱으로 이어 가기 카드에 보일 스토어 화면 (assets/app/<이름>-360|720.webp)과 [WEB-20] 그림마다 다른 설명
 SHOTS = {'pay': ('05-pay', '밤낮 앱의 이번 달 예상 월급 화면'), 'field': ('09-field', '밤낮 앱의 현장 일정·일당 화면'),
          'leave': ('12-leave', '밤낮 앱의 남은 연차 화면'), 'holiday': ('11-holiday', '밤낮 앱의 공휴일이 표시된 근무 달력'),
-         'calendar': ('01-calendar', '밤낮 앱의 한 달 근무 달력'), 'roster': ('02-roster', '밤낮 앱의 근무표 사진 넣기 화면'),
+         'calendar': ('01-calendar', '밤낮 앱의 한 달 근무 달력'), 'ledger': ('14-ledger', '밤낮 앱의 가게 매출·가계부 화면'), 'roster': ('02-roster', '밤낮 앱의 근무표 사진 넣기 화면'),
          'team': ('06-team', '밤낮 앱의 팀 근무표 화면'), 'boss': ('07-boss', '밤낮 앱의 사장님 직원 근무 화면')}
 
 
@@ -136,6 +136,7 @@ def cta_shot(c):
     if c == 'form_duty': return SHOTS['roster']
     if c == 'form_shift_team': return SHOTS['team']
     if c in ('form_alba_week', 'boss'): return SHOTS['boss']
+    if c == 'shop': return SHOTS['ledger']
     if c in ('juhyu', 'allowance', 'week', 'ordinary', 'alba', 'salary', 'severance', 'jobless', 'parental'): return SHOTS['pay']
     if c == 'guide_leave': return SHOTS['leave']
     if c == 'guide_daily': return SHOTS['field']
@@ -272,6 +273,12 @@ def page(path, title, desc, h1, lead, body, script, faqs, campaign, cta_title, c
 </body>
 </html>
 '''
+
+
+def lead_of(desc, verb, tail, short_tail):
+    """2.0.0 [RVR-36] 교대 순서 쪽의 첫 줄 글: 괄호 설명은 본문 표에 두고, 순서가 길면 뒷말을 줄여 두 줄 안에(조건 1·4)."""
+    d = re.sub(r'\s*\([^)]*\)', '', desc)
+    return f'{html.escape(d)} {verb} ' + (tail if len(d) <= 20 else short_tail)
 
 
 SITEMAP = []

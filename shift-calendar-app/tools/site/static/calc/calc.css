@@ -115,7 +115,8 @@ a:hover { text-decoration-thickness: 2px; }
 /* ---------- 쪽 머리 띠 (계산기·달력 쪽) ---------- */
 .page-hero {
   position: relative; isolation: isolate; overflow: hidden;
-  margin-top: -60px; padding: 92px 16px 64px;
+  /* 2.0.0 [RVR-36] 조건 1: 머리 띠를 낮춰 계산기·목록(주인공)이 380×840·840×900·1440×900에서 위 25% 안에서 시작해요. */
+  margin-top: -60px; padding: 70px 16px 42px;
   background:
     radial-gradient(1200px 400px at 85% -10%, rgba(106, 76, 224, 0.35), transparent 60%),
     radial-gradient(900px 380px at 0% 130%, rgba(58, 111, 240, 0.25), transparent 60%),
@@ -142,15 +143,23 @@ a:hover { text-decoration-thickness: 2px; }
   -webkit-mask: linear-gradient(180deg, #000 50%, transparent 50%); mask: linear-gradient(180deg, #000 50%, transparent 50%);
 }
 @keyframes twinkle { from { opacity: 0.3; } to { opacity: 0.7; } }
-.page-hero .in { max-width: 760px; margin: 0 auto; position: relative; }
-.crumbs { font-size: 14px; color: rgba(242, 236, 225, 0.65); margin-bottom: 14px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.page-hero .in { max-width: 760px; margin: 0 auto; position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; align-items: center; }
+.page-hero .in > * { grid-column: 1 / -1; }
+.crumbs { font-size: 13.5px; color: rgba(242, 236, 225, 0.65); margin-bottom: 6px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .crumbs a { color: var(--gold-2); text-decoration: none; }
 .crumbs a:hover { text-decoration: underline; }
 .crumbs .sep { opacity: 0.45; }
-.page-hero h1 { font-size: clamp(28px, 6.4vw, 44px); line-height: 1.22; letter-spacing: -0.035em; margin: 0 0 12px; font-weight: 800; }
-.page-hero .lead { color: rgba(242, 236, 225, 0.78); font-size: clamp(15px, 2.2vw, 17px); margin: 0; max-width: 620px; }
-.page-hero .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
-.page-hero .tags span { font-size: 13px; padding: 5px 11px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); color: rgba(242, 236, 225, 0.85); }
+.page-hero h1 { font-size: clamp(25px, 4.6vw, 33px); line-height: 1.2; letter-spacing: -0.035em; margin: 0 0 6px; font-weight: 800; }
+.page-hero .lead { color: rgba(242, 236, 225, 0.8); font-size: clamp(14.5px, 2vw, 16px); line-height: 1.55; margin: 0; max-width: 640px; }
+/* 머리 띠의 꼬리표는 넓은 화면에서 위치 줄 오른쪽에, 좁은 화면에서는 숨겨요(같은 말이 바닥에 있어요). */
+.page-hero .in > .crumbs { grid-column: 1; grid-row: 1; }
+.page-hero .tags { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin: 0 0 4px; }
+.page-hero .tags span { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.1); color: rgba(242, 236, 225, 0.85); }
+
+@media (max-width: 599px) {
+  .page-hero { padding-top: 74px; }
+  .page-hero .crumbs, .page-hero .tags { display: none; }
+}
 
 /* ---------- 본문 ---------- */
 main { max-width: 760px; margin: 0 auto; padding: 0 16px 56px; position: relative; }
@@ -397,6 +406,8 @@ table.lines tr.noterow td { text-align: left; white-space: normal; padding-left:
 @container (max-width: 280px) {
   /* 큰 금액은 한 단계 낮춰 쉼표 뒤에서 두 줄 안에(조건 12: 줄이지 말고 줄 바꾸거나 한 단계 낮춤). */
   .big { font-size: 26px; }
+  /* [RVR-35] 두 칸 줄(재료·수수료, 근무일·시간 등)도 좁으면 한 줄에 하나씩: 칸 안 글이 잘리지 않게. */
+  .row { grid-template-columns: minmax(0, 1fr); gap: 0; }
   table.lines, table.lines tbody, table.lines tr, table.lines th, table.lines td { display: block; width: auto; }
   table.lines tr { border-bottom: 1px solid var(--line); }
   .result table.lines tr { border-bottom-color: rgba(255, 255, 255, 0.09); }
@@ -414,6 +425,11 @@ tr.past th::after { content: ' · 지남'; font-size: 12px; }
 .dday .muted { flex-basis: 100%; font-size: 14px; }
 .dday .big { margin: 0; }
 h2.in-card { font-size: 18px; margin: 0 0 8px; }
+/* 2.0.0 [RVR-35] 가게 세금 날 표: 날 옆(좁으면 아래)에 이름과 한 줄 설명, 왼쪽 맞춤 */
+table.lines.tax td:last-child { text-align: left; white-space: normal; }
+table.lines.tax td b { display: block; font-weight: 650; }
+table.lines.tax td .muted { display: block; font-size: 14px; margin-top: 2px; }
+#taxNext { margin: 4px 0 6px; }
 h2.in-card a { text-decoration: none; }
 /* 칸 아래 한 줄(범위 안내·금액 읽기·복사했어요) */
 .say { display: block; font-size: 13.5px; line-height: 1.5; color: var(--text-2); margin-top: 6px; }
@@ -459,7 +475,7 @@ input[aria-invalid] { border-color: var(--caution); }
 .mine-row .chip { flex: none; }
 .mine .today-big { font-size: 24px; }
 .mine .today-big .s { font-size: 22px; padding: 2px 12px; }
-.mine .page-hero { padding-top: 84px; padding-bottom: 40px; }
+.mine .page-hero { padding-top: 74px; padding-bottom: 40px; }
 .mine .page-hero .lead, .mine .page-hero .tags { display: none; }
 .mine .page-hero h1 { font-size: clamp(24px, 5vw, 34px); margin-bottom: 0; }
 .calnav { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px; }

@@ -487,6 +487,40 @@
     return { months: out, total: sum, full: w * n };
   };
 
+  // ---------- 2.0.0 [RVR-35] (검토 T50-04) 혼자 하는 가게: 문 여는 날과 하루 매출 목표 ----------
+  // 그달 문 여는 날: 매주 쉬는 요일(월=1…일=7), 공휴일에 쉬면 그 공휴일(쉬는 요일과 겹친 날은 한 번만), 그 밖에 쉬는 날 수를 빼요.
+  // 앱 '영업일·정기휴무'(core WorkKit)처럼 날마다 세요.
+  F.openDays = function (o) {
+    var first = D.parse(o.month + '-01'), off = String(o.off || ''), hol = {}, n = 0, weekly = 0, holidays = 0;
+    if (!first) return null;
+    (o.holidays || []).forEach(function (d) { hol[d] = true; });
+    for (var x = first; x.getUTCMonth() === first.getUTCMonth(); x = D.plusDays(x, 1)) {
+      var wd = ((x.getUTCDay() + 6) % 7) + 1;
+      if (off.indexOf(String(wd)) >= 0) weekly++;
+      else if (o.holOff && hol[D.iso(x)]) holidays++;
+      else n++;
+    }
+    var extra = Math.min(n, Math.max(0, Math.floor(o.extra || 0)));
+    return { days: D.between(first, D.plusMonths(first, 1)), open: n - extra, weekly: weekly, holidays: holidays, extra: extra };
+  };
+  // 한 달 매출 S: 부가세를 뺀 매출 R(일반과세자 S ÷ 1.1, 아니면 S)에서 재료·원가(R × 원가율)와 수수료(S × 수수료율)를 빼고
+  // 고정비와 가져갈 돈이 남는 매출. R × (1 − 원가율) − S × 수수료율 = 고정비 + 가져갈 돈.
+  // 일반과세자는 받은 돈의 11분의 1이 부가세이고 재료에 낸 부가세는 공제받아 낼 몫은 R × 10% × (1 − 원가율)이에요
+  // (부가가치세법 제30조 세율 10%, 제38조 매입세액 공제, 대략: 카드 매출 세액공제·고정비의 부가세는 빼요). 줄은 S로 다 더해져요.
+  F.shop = function (o) {
+    var v = o.vat ? 1.1 : 1, c = Math.max(0, o.cost || 0) / 100, f = Math.max(0, o.fee || 0) / 100;
+    var fixed = Math.max(0, o.fixed || 0), want = Math.max(0, o.want || 0), k = (1 - c) / v - f;
+    // 원가·수수료가 매출을 다 먹으면(소수 오차까지) 셀 수 없어요.
+    if (k <= 1e-9) return { ok: false };
+    var S = (fixed + want) / k, R = S / v, open = o.open || 0;
+    return {
+      ok: true, sales: Math.round(S), cost: Math.round(c * R * v), fee: Math.round(f * S), vat: Math.round((v - 1) * R * (1 - c)), fixed: fixed, want: want,
+      // 하루 목표는 100원 단위로 올려요(목표가 모자라지 않게).
+      daily: open > 0 ? Math.ceil(S / open / 100) * 100 : null,
+      more: open > 1 ? Math.ceil(S / (open - 1) / 100) * 100 - Math.ceil(S / open / 100) * 100 : null
+    };
+  };
+
   // ---------- 자료 받기 ----------
   var getJson = function (name) {
     if (typeof fetch !== 'function') return Promise.resolve(null);
