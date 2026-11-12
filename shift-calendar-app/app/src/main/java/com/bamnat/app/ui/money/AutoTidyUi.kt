@@ -80,7 +80,7 @@ private fun AutoTidySheet(items: List<AutoTidy.Item>, box: AutoTidy, onDismiss: 
                         Text(item.title, style = MaterialTheme.typography.titleSmall)
                         Text(item.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         val at = AlarmScheduler.millisToLocal(item.at)
-                        val left = ((item.at + AutoTidy.KEEP_MILLIS - now) / (24 * 60 * 60 * 1000L) + 1).coerceAtLeast(1)
+                        val left = item.daysLeft(now)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("${Fmt.monthDay(at.toLocalDate())} ${Fmt.time(at.toLocalTime())} · ${left}일 남음",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

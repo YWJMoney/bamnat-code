@@ -40,7 +40,10 @@ class AutoTidy(private val file: File?, private val clock: () -> Long = Today::m
         val kind: String,
         /** What the way back needs; never shown. */
         val payload: String,
-    )
+    ) {
+        /** Whole days it is still kept, as the list says it: 30 the moment it is added, 1 on its last day. */
+        fun daysLeft(now: Long): Int = ((at + KEEP_MILLIS - now + DAY_MILLIS - 1) / DAY_MILLIS).toInt().coerceIn(1, KEEP_DAYS.toInt())
+    }
 
     private val lock = Mutex()
     private val _items = MutableStateFlow(read())
@@ -118,6 +121,7 @@ class AutoTidy(private val file: File?, private val clock: () -> Long = Today::m
         const val AREA_INVEST = "invest"
         const val KEEP_DAYS = 30L
         const val KEEP_MILLIS = KEEP_DAYS * 24 * 60 * 60 * 1000L
+        private const val DAY_MILLIS = 24 * 60 * 60 * 1000L
         const val MAX = 300
     }
 }

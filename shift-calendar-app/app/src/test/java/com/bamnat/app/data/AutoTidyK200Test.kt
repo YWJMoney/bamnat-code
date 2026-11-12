@@ -61,6 +61,10 @@ class AutoTidyK200Test {
 
     @Test fun whatWasRightIsLetGoAndOldOnesGoAfter30Days() = runBlocking {
         val a = box.add(AutoTidy.AREA_MONEY, "main", "스타벅스 4,500원", "같은 결제로 봤어요", MoneyRepository.KIND_LEFT_OUT, "{}")
+        // '30일 남음' the moment it is kept (the sheet said 31), '1일 남음' on its last day.
+        assertEquals(30, a.daysLeft(now))
+        assertEquals(29, a.daysLeft(now + 24 * 60 * 60 * 1000L + 1))
+        assertEquals(1, a.daysLeft(now + AutoTidy.KEEP_MILLIS - 1))
         box.add(AutoTidy.AREA_INVEST, "main", "삼성전자 매수", "이미 적혔어요", "invest.fill", "{}")
         box.forget(a.id)
         assertEquals(listOf("삼성전자 매수"), box.items.value.map { it.title })
