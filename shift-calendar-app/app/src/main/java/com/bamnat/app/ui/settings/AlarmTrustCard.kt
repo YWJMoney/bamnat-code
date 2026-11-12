@@ -43,6 +43,7 @@ import com.bamnat.app.ui.diag.applyAlarmFix
 import com.bamnat.core.time.Today
 import java.time.LocalDate
 import kotlinx.coroutines.launch
+import com.bamnat.app.ui.theme.color
 
 /** [EASE-17] The row title settings search points at. */
 const val SKIP_ONCE_ROW = "이번만 끄기"

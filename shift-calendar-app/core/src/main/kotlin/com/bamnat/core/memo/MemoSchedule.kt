@@ -1,5 +1,6 @@
 package com.bamnat.core.memo
 
+import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -40,6 +41,31 @@ data class WorkAnchor(val from: From, val minutes: Int) {
         From.WAKE -> "야간 끝나고 일어나면"
     }
 
+    /**
+     * [label] in the words of [style] (디자인 품질 13): 가게 '영업 시작 1시간 전'·'마감 30분 뒤', 투자 '장 시작'·'장 마감', 현장 '일 끝나고
+     * 30분 뒤'. 교대·일근·알바 and a calendar from before kinds of work read [label].
+     */
+    fun label(style: WorkStyle?): String {
+        val w = Words.of(style) ?: return label
+        return when (from) {
+            From.START -> if (minutes == 0) "${w.start}할 때" else if (minutes < 0) "${w.start} ${span(-minutes)} 전" else "${w.start} ${span(minutes)} 뒤"
+            From.END -> if (minutes == 0) w.atEnd else if (minutes > 0) "${w.afterEnd} ${span(minutes)} 뒤" else "${w.beforeEnd} ${span(-minutes)} 전"
+            From.WAKE -> w.wake
+        }
+    }
+
+    /** The words of a kind of work that does not 출근·퇴근 as a shift does; null keeps [label]'s. */
+    private class Words(val start: String, val atEnd: String, val afterEnd: String, val beforeEnd: String, val wake: String) {
+        companion object {
+            fun of(style: WorkStyle?): Words? = when (style) {
+                WorkStyle.BUSINESS -> Words("영업 시작", "마감할 때", "마감", "마감", "늦은 마감 뒤 일어나면")
+                WorkStyle.INVEST -> Words("장 시작", "장 마감할 때", "장 마감", "장 마감", "밤 장 끝나고 일어나면")
+                WorkStyle.FIELD -> Words("출근", "일 끝날 때", "일 끝나고", "일 끝나기", "밤일 끝나고 일어나면")
+                else -> null
+            }
+        }
+    }
+
     /** Whether a day with [hours] (start to end; an end at or before the start is the next morning's) has a time for it. */
     fun fits(hours: Pair<LocalTime, LocalTime>?): Boolean = hours != null && (from != From.WAKE || !hours.second.isAfter(hours.first))
 
@@ -56,6 +82,22 @@ data class WorkAnchor(val from: From, val minutes: Int) {
         /** The choices offered, in order: 출근 2시간·1시간·30분 전, 출근할 때, 퇴근할 때, 퇴근 30분·1시간 뒤. */
         val CHOICES = listOf(WorkAnchor(From.START, -120), WorkAnchor(From.START, -60), WorkAnchor(From.START, -30), WorkAnchor(From.START, 0),
             WorkAnchor(From.END, 0), WorkAnchor(From.END, 30), WorkAnchor(From.END, 60))
+
+        /** The window's line over the choices, in [style]'s words: '근무에 붙여 매번', 가게 '영업 시간에 붙여 매번', 투자 '장 시간에 붙여 매번'. */
+        fun heading(style: WorkStyle?): String = when (style) {
+            WorkStyle.BUSINESS -> "영업 시간에 붙여 매번"
+            WorkStyle.INVEST -> "장 시간에 붙여 매번"
+            WorkStyle.FIELD -> "일정에 붙여 매번"
+            else -> "근무에 붙여 매번"
+        }
+
+        /** The line under a picked one: it follows the work, in [style]'s words. */
+        fun follows(style: WorkStyle?): String = when (style) {
+            WorkStyle.BUSINESS -> "영업 시간이 바뀌면 저절로 맞춰요"
+            WorkStyle.INVEST -> "장 시간이 바뀌면 저절로 맞춰요"
+            WorkStyle.FIELD -> "일정이 바뀌면 저절로 맞춰요"
+            else -> "근무가 바뀌면 저절로 맞춰요"
+        }
 
         fun parse(code: String?): WorkAnchor? {
             if (code.isNullOrEmpty()) return null

@@ -44,7 +44,7 @@ class WidgetChildLimitTest {
     // A Friday: work today, the weekend off, Monday's alarm further off.
     private val today = LocalDate.of(2026, 11, 13)
     private val work = ShiftType(id = 1, name = "일근", label = "일", colorArgb = 0xFF2F80ED, start = LocalTime.of(9, 0), end = LocalTime.of(18, 0))
-    private val off = ShiftType(id = 2, name = "휴무", label = "휴", colorArgb = 0xFF9E9E9E, isOff = true)
+    private val off = ShiftType(id = 2, name = "휴무", label = "휴", colorArgb = 0xFF9E9E9E, start = null, end = null, isOff = true)
     private val resolver = ScheduleResolver(listOf(work, off), listOf(WorkPattern.Rotation(LocalDate.of(2026, 11, 9), listOf(1L, 1L, 1L, 1L, 1L, 2L, 2L))), emptyList())
     private val monday = PlannedAlarm(LocalDateTime.of(2026, 11, 16, 7, 30), LocalDate.of(2026, 11, 16), LocalTime.of(9, 0), 1, "일근", 90, null)
 

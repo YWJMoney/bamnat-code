@@ -24,7 +24,7 @@ import kotlinx.coroutines.launch
  * 2.0.0 [RVIB-05] (검토 I07ac-02) 지난 할 일 한 장. The to-dos left from before (the 늦음 week's and the older ones) come, without blame,
  * as one quiet card on the next day off's morning (the afternoon after a 야간): "지난 할 일 3개 · 쉬는 날이에요. 천천히 해도 돼요",
  * with 모두 끝내기, 오늘로 and 지우기 (into the 휴지통, where it can be brought back) for all of them at once. Once a day at most, and
- * not at all with none left; 설정 › 알림 › 메모·할 일 turns it off.
+ * not at all with none left; 설정 › 알림과 잠 › 메모·할 일 turns it off.
  */
 object MemoRestCard {
     const val NOTICE_ID = 7396

@@ -75,9 +75,12 @@ internal fun scheduleText(at: LocalDateTime): String {
  * 2.0.0 [RVI-49] (검토 MEMO-11) A schedule as its chip and card say it: once "11월 13일 (금) 오전 9:00"; repeating "매일 오전 9:00 · 다음
  * 11/13" (it said the first day, 11/1, as if it were past). [next]: its next time, where it can be worked out.
  */
-internal fun scheduleLine(memo: com.bamnat.core.memo.Memo, r: MemoReminder, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+internal fun scheduleLine(
+    memo: com.bamnat.core.memo.Memo, r: MemoReminder, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null },
+    style: com.bamnat.core.work.WorkStyle? = null,
+): String {
     // 2.0.0 [RVIB-04] Told by the work: "출근 1시간 전마다", "야간마다 출근 1시간 전", once "출근 1시간 전 · 11/13".
-    r.work?.let { a -> return workLine(memo, a, next, shiftName) }
+    r.work?.let { a -> return workLine(memo, a, next, shiftName, style) }
     val again = com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName).takeIf { memo.date != null && it.isNotEmpty() }
         ?: return scheduleText(r.at)
     val time = scheduleText(r.at).substringAfter(") ")
@@ -85,12 +88,16 @@ internal fun scheduleLine(memo: com.bamnat.core.memo.Memo, r: MemoReminder, next
 }
 
 /** 2.0.0 [RVIB-04] (검토 I07ac-01) A schedule told by the work, as its chip and card say it. */
-internal fun workLine(memo: com.bamnat.core.memo.Memo, a: com.bamnat.core.memo.WorkAnchor, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null }): String {
+internal fun workLine(
+    memo: com.bamnat.core.memo.Memo, a: com.bamnat.core.memo.WorkAnchor, next: LocalDateTime? = null, shiftName: (Long) -> String? = { null },
+    style: com.bamnat.core.work.WorkStyle? = null,
+): String {
+    val said = a.label(style)
     val kind = com.bamnat.core.memo.MemoRepeat.kindOf(memo.repeat)
     val head = when {
-        memo.date == null || kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE -> a.label
-        kind == com.bamnat.core.memo.MemoRepeat.Kind.DAY -> a.label + "마다"
-        else -> com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName) + " " + a.label
+        memo.date == null || kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE -> said
+        kind == com.bamnat.core.memo.MemoRepeat.Kind.DAY -> said + "마다"
+        else -> com.bamnat.core.memo.MemoRepeat.label(memo.repeat, shiftName) + " " + said
     }
     return head + (next?.let { " · 다음 ${it.monthValue}/${it.dayOfMonth} ${Fmt.time(it.toLocalTime())}" } ?: "")
 }
@@ -135,7 +142,9 @@ internal fun ScheduleOffer(found: MemoTime.Found, changing: Boolean, onAccept: (
         text = if (changing) "$at(으)로 바꿀까요?" else at,
         icon = Icons.Filled.EventAvailable,
         tone = if (clash != null) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
-        detail = clash,
+        // What the time was read from when the words do not say it themselves: '다음 야간(10/16) 출근 1시간 전' under '10월 16일 (금)
+        // 오후 7:00', so a time taken from the calendar is not a bare date (the card before kept it in its title).
+        detail = clash ?: found.phrase.takeIf { '(' in it },
         action = if (changing) "바꾸기" else "알림 넣기",
         onAction = onAccept,
         onClose = onDecline,
@@ -199,6 +208,8 @@ internal fun ScheduleDialog(
     workNext: ((com.bamnat.core.memo.WorkAnchor) -> LocalDateTime?)? = null,
     /** 2.0.0 [RVIB-04] '야간 끝나고 일어나면': how long the sleep after a night is (잠 목표). */
     wakeAfterMinutes: Int = 7 * 60,
+    /** 2.0.0 [RVIB-04] (디자인 품질 13) The calendar's kind of work: 가게 '영업 시작 1시간 전', 투자 '장 마감할 때'. */
+    style: com.bamnat.core.work.WorkStyle? = null,
 ) {
     val context = LocalContext.current
     var date by rememberSaveable { mutableStateOf(initial.toLocalDate()) }
@@ -236,7 +247,7 @@ internal fun ScheduleDialog(
                     OutlinedButton(onClick = { pickDate = true }) { Text(Fmt.dayTitle(date), maxLines = 1, softWrap = false) }
                     OutlinedButton(onClick = { pickTime = true }) { Text(scheduleText(at).substringAfter(") "), maxLines = 1, softWrap = false) }
                 }
-                if (workNext != null) WorkRow(anchor, wakeAfterMinutes, anchorAt, workNext) { a ->
+                if (workNext != null) WorkRow(anchor, wakeAfterMinutes, anchorAt, workNext, style) { a ->
                     work = a?.code
                     // "출근 1시간 전마다": picked on a memo that does not repeat, it comes back on each day with work.
                     if (a != null && again.isEmpty() && onRepeat != null) again = com.bamnat.core.memo.MemoRepeat.code(com.bamnat.core.memo.MemoRepeat.Kind.DAY, date)
@@ -394,7 +405,8 @@ private fun RepeatLine(repeat: String, shiftTypes: List<com.bamnat.core.model.Sh
 @Composable
 private fun WorkRow(
     picked: com.bamnat.core.memo.WorkAnchor?, wakeAfter: Int, next: LocalDateTime?,
-    nextOf: (com.bamnat.core.memo.WorkAnchor) -> LocalDateTime?, onPick: (com.bamnat.core.memo.WorkAnchor?) -> Unit,
+    nextOf: (com.bamnat.core.memo.WorkAnchor) -> LocalDateTime?, style: com.bamnat.core.work.WorkStyle?,
+    onPick: (com.bamnat.core.memo.WorkAnchor?) -> Unit,
 ) {
     val S = com.bamnat.core.memo.WorkAnchor.From.START
     val E = com.bamnat.core.memo.WorkAnchor.From.END
@@ -402,13 +414,13 @@ private fun WorkRow(
         com.bamnat.core.memo.WorkAnchor(E, 30), com.bamnat.core.memo.WorkAnchor(com.bamnat.core.memo.WorkAnchor.From.WAKE, wakeAfter))
     val offered = (listOfNotNull(picked?.takeIf { it !in all }) + all).filter { it == picked || nextOf(it) != null }
     if (offered.isEmpty()) return
-    Text("근무에 붙여 매번", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
+    Text(com.bamnat.core.memo.WorkAnchor.heading(style), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
     androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         com.bamnat.app.ui.components.FilterChip(selected = picked == null, onClick = { onPick(null) }, label = { Text("시각으로") })
-        for (a in offered) com.bamnat.app.ui.components.FilterChip(selected = picked == a, onClick = { onPick(a) }, label = { Text(a.label) })
+        for (a in offered) com.bamnat.app.ui.components.FilterChip(selected = picked == a, onClick = { onPick(a) }, label = { Text(a.label(style)) })
     }
     if (picked != null && next != null) {
-        Text("다음 ${scheduleText(next)} · 근무가 바뀌면 저절로 맞춰요", style = MaterialTheme.typography.bodySmall,
+        Text("다음 ${scheduleText(next)} · ${com.bamnat.core.memo.WorkAnchor.follows(style)}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

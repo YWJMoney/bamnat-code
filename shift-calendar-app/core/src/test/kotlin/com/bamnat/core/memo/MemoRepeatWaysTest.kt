@@ -85,10 +85,10 @@ class MemoRepeatWaysTest {
         assertEquals(sat, MemoRepeat.firstFrom("N10", sat))
         assertNull(MemoRepeat.firstFrom("", sat))
         // A 틀 that repeats with an end starts on its weekday (the end crashed the old read).
-        val m = MemoTemplate(title = "납품", repeat = "W3~20261231").start(null, sat)
+        val m = MemoTemplate(id = "t1", title = "납품", repeat = "W3~20261231").start(null, sat)
         assertEquals(LocalDate.of(2026, 11, 11), m.date)
         assertEquals("W3~20261231", m.repeat)
-        assertEquals(LocalDate.of(2026, 11, 9), MemoTemplate(title = "납품", repeat = "K135").start(null, sat).date)
+        assertEquals(LocalDate.of(2026, 11, 9), MemoTemplate(id = "t2", title = "납품", repeat = "K135").start(null, sat).date)
     }
 
     @Test fun theScheduleStartsAfterTheShiftOrTheSleepAfterANight() {

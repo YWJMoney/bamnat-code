@@ -8,6 +8,8 @@ import com.bamnat.core.memo.ShiftMemoTime
 import com.bamnat.core.memo.TaskList
 import com.bamnat.core.memo.WorkAnchor
 import com.bamnat.core.memo.WorkAnchor.From
+import com.bamnat.core.work.TypeWords
+import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -98,5 +100,21 @@ class WorkAnchorTest {
             ShiftMemoTime.Day(d, if (h == null) "휴무" else "근무", h != null, h?.first, h?.second)
         }
         assertEquals(LocalDateTime.of(2026, 11, 16, 6, 0), ShiftMemoTime.workNext(days, WorkAnchor(From.START, -60), LocalDateTime.of(2026, 11, 13, 19, 0)))
+    }
+
+    /** 디자인 품질 13: each kind of work hears its own words, none [com.bamnat.core.work.TypeWords.forbidden] for it. */
+    @Test fun eachKindOfWorkHearsItsOwnWords() {
+        val all = listOf(WorkAnchor(From.START, -60), WorkAnchor(From.START, 0), WorkAnchor(From.END, 0), WorkAnchor(From.END, 30),
+            WorkAnchor(From.END, -30), WorkAnchor(From.WAKE, 420))
+        assertEquals(listOf("영업 시작 1시간 전", "영업 시작할 때", "마감할 때", "마감 30분 뒤", "마감 30분 전", "늦은 마감 뒤 일어나면"),
+            all.map { it.label(WorkStyle.BUSINESS) })
+        assertEquals(listOf("장 시작 1시간 전", "장 시작할 때", "장 마감할 때", "장 마감 30분 뒤", "장 마감 30분 전", "밤 장 끝나고 일어나면"),
+            all.map { it.label(WorkStyle.INVEST) })
+        assertEquals("일 끝나고 30분 뒤", WorkAnchor(From.END, 30).label(WorkStyle.FIELD))
+        assertEquals(WorkAnchor(From.START, -60).label, WorkAnchor(From.START, -60).label(WorkStyle.SHIFT))
+        for (style in WorkStyle.entries + listOf<WorkStyle?>(null)) {
+            val said = all.map { it.label(style) } + WorkAnchor.heading(style) + WorkAnchor.follows(style)
+            for (line in said) assertTrue("$style: $line", TypeWords.leaks(style, line).isEmpty())
+        }
     }
 }

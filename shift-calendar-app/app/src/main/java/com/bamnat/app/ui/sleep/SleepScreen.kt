@@ -850,20 +850,25 @@ internal fun RecordRows(shown: List<SleepEntry>, r: SleepInsights.Report, onOpen
                 Icon(if (e.imported) Icons.Filled.Watch else Icons.Filled.Bedtime, contentDescription = if (e.imported) "워치 기록" else null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(Fmt.dayTitle(e.wakeDate ?: e.start.toLocalDate()), style = MaterialTheme.typography.bodyLarge)
-                    Text(
-                        listOfNotNull(
-                            "${hm(e.start)}–${e.end?.let(::hm) ?: "자는 중"}",
-                            contexts[e.id]?.label,
-                            if (e.imported) "워치·헬스 커넥트" else null,
-                        ).joinToString(" · "),
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Text(e.minutes?.let { if (it > SleepDebt.MAX_SLEEP_MINUTES) "통계 제외" else SleepInsights.hours(it) } ?: "",
-                    style = MaterialTheme.typography.titleSmall)
+                // 2.0.0 [RVIB-07] (디자인 품질 12, 2묶음 사진: 접은 폭 200%) The day broke as '10월 14일 / (수)' beside '6시간 40분':
+                // the hours go under the day once the day has less than 160dp beside them.
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.weight(1f), minStart = 160.dp, start = {
+                    Column {
+                        Text(Fmt.dayTitle(e.wakeDate ?: e.start.toLocalDate()), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            listOfNotNull(
+                                "${hm(e.start)}–${e.end?.let(::hm) ?: "자는 중"}",
+                                contexts[e.id]?.label,
+                                if (e.imported) "워치·헬스 커넥트" else null,
+                            ).joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }, end = {
+                    Text(e.minutes?.let { if (it > SleepDebt.MAX_SLEEP_MINUTES) "통계 제외" else SleepInsights.hours(it) } ?: "",
+                        style = MaterialTheme.typography.titleSmall)
+                })
             }
         }
     }

@@ -6,6 +6,7 @@ import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.memo.QuickTaskActivity
@@ -16,12 +17,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.annotation.Config
 
 /**
  * 2.0.0 [RVIB-06] (PC-83, 통합 2차 확인 n-04·n-05) In the alarm window's '시작 기준' tab the shortcuts ('1시간 전', '1시간 30분 전') left the
  * line and the wheels at '시작 10분 전'; the '울릴 시각' tab's did not. A shortcut moves the line, both wheels and what 완료 saves.
  */
+// A phone's height (Pixel 9): on Robolectric's default 470dp the window scrolls, and a tapped chip pulls the line above out of view.
 @RunWith(AndroidJUnit4::class)
+@Config(qualifiers = "w411dp-h891dp")
 class AlarmOffsetChipTest {
     @get:Rule val compose = createEmptyComposeRule()
 
@@ -38,7 +42,7 @@ class AlarmOffsetChipTest {
             for (m in listOf(90, 60, 120)) {
                 compose.onNodeWithText(Fmt.offset(m)).performClick()
                 compose.waitForIdle()
-                compose.onNodeWithText(alarmLine(start, m)).assertIsDisplayed()
+                compose.onNodeWithText(alarmLine(start, m)).performScrollTo().assertIsDisplayed()
                 compose.onNodeWithContentDescription("%02d시간".format(m / 60)).assertIsDisplayed()
                 compose.onNodeWithContentDescription("%02d분".format(m % 60)).assertIsDisplayed()
             }

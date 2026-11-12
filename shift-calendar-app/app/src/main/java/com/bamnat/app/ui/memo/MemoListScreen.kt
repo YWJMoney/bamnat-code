@@ -160,7 +160,8 @@ fun MemoListScreen(
     var arranging by rememberSaveable { mutableStateOf(false) }
     // [DAILY-05] Filter chips fold into the search box's icon unless a filter is on or the user keeps them open.
     var filtersOpen by rememberSaveable { mutableStateOf(false) }
-    val filterOn = state.tag != null ||
+    // 2.0.0 [RVI-77] A '야간 날' chip counts too: the filter icon shows it and the chips stay open while it is on.
+    val filterOn = state.tag != null || state.shift != null ||
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
     val today = Today.date()
@@ -224,8 +225,8 @@ fun MemoListScreen(
             for (p in parts) {
                 if (!p.shown) continue
                 when (p.part) {
-                    // 2.0.0 [RVI-77] Not while searching or picking memos: then the list is what is looked for.
-                    MemoPart.TODAY -> if (state.loaded && !state.selecting && query.isEmpty()) MemoTodayBlock(
+                    // 2.0.0 [RVI-77] Not while searching, filtering or picking memos: then the list is what is looked for.
+                    MemoPart.TODAY -> if (state.loaded && !state.selecting && query.isEmpty() && !filterOn) MemoTodayBlock(
                         rows = state.todayTasks,
                         onOpen = open,
                         onDone = { memo, day, done -> actions.onDone?.invoke(memo, day, done) },
@@ -980,9 +981,10 @@ private fun MemoContent(memo: Memo, query: String, onCheck: ((memo: Memo, index:
         val cardLook = LocalMemoCardLook.current
         val shown = cardLook.lines ?: 6
         for ((index, item) in items.take(shown)) {
-            // 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) The card's lines tick without opening the memo: the whole line is the box.
+            // 2.0.0 [RVI-74] (검토 U07a-01·I07aa-01) The card's lines tick without opening the memo: the whole line is the box,
+            // 44dp tall (디자인 품질 9: lines stacked in a card, the width is the whole card).
             val tick = onCheck?.let { check ->
-                Modifier.heightIn(min = 40.dp).toggleable(value = item.checked, role = androidx.compose.ui.semantics.Role.Checkbox) { check(memo, index, it) }
+                Modifier.heightIn(min = 44.dp).toggleable(value = item.checked, role = androidx.compose.ui.semantics.Role.Checkbox) { check(memo, index, it) }
             } ?: Modifier.padding(top = 4.dp)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().then(tick)) {
                 Icon(
@@ -1039,6 +1041,9 @@ private fun Footer(memo: Memo, showDate: Boolean) {
     val progress = memo.isChecklist && memo.itemCount > 0
     val reminder = memo.reminder
     if (date == null && tags.isEmpty() && !progress && reminder == null) return
+    // 2.0.0 [RVIB-04] (디자인 품질 13) A schedule told by the work in the kind's words (가게 '영업 시작 1시간 전마다').
+    val container = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val style = remember(reminder?.work) { if (reminder?.work != null) container.settingsRepository.current.workStyle else null }
     Row(
         Modifier.padding(top = 10.dp).horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
@@ -1074,7 +1079,7 @@ private fun Footer(memo: Memo, showDate: Boolean) {
                 Icon(if (reminder.ring) Icons.Filled.Alarm else Icons.Filled.EventAvailable, null, Modifier.size(12.dp), tint = tone)
                 Spacer(Modifier.width(3.dp))
                 // 2.0.0 [RVI-49] (검토 MEMO-11) "매일 오전 9:00", not the first day as if it were past.
-                Text((if (late) "늦음 · " else "") + scheduleLine(memo, reminder), style = MaterialTheme.typography.labelSmall, color = tone)
+                Text((if (late) "늦음 · " else "") + scheduleLine(memo, reminder, style = style), style = MaterialTheme.typography.labelSmall, color = tone)
             }
         }
         for (tag in tags.take(3)) {

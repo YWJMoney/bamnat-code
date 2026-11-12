@@ -31,7 +31,7 @@ object SleepRecordOffer {
     const val ROW = "충전하면 소리 재기 묻기"
     private const val JOB_ID = 4410
     private const val REQ_OPEN = 3410
-    const val NOTICE_ID = 7321
+    const val NOTICE_ID = 7322
     private const val PREFS = "sleep_record_offer"
     private const val K_ASKED = "asked"
     /** How far before and after the time to sleep the charger asks. */

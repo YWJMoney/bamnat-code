@@ -1150,6 +1150,14 @@ class AppContainer(context: Context) {
             }
             // [SCHED-01] A memo saved, moved to the trash, restored or brought back from a backup re-plans the next schedule.
             keep("memoschedule") {
+                // 2.0.0 [RVIB-05] (검토 I07ac-02) The 지난 할 일 card's morning follows the calendar on screen (a day off moved) and its
+                // switch. In this job, not one of its own: the start keeps its budget of jobs (StartupBudgetTest).
+                launch {
+                    combine(calendars.active.flatMapLatest { calendars.repository(it).live.map { s -> s.resolver } },
+                        settingsRepository.settings.map { it.memoRestCard }.distinctUntilChanged()) { r, on -> r to on }
+                        .debounce(1_000)
+                        .collect { runCatching { com.bamnat.app.memo.MemoRestCard.plan(appContext) } }
+                }
                 // 1.39 [TASK-44] A repeat changed or a day finished moves the next ring too.
                 // 1.39.1 [R391-06] So does a one-off memo marked 끝냄.
                 // 2.0.0 [RVI-28] (검토 MEMO-05) And so does a change to the schedule a 근무마다·쉬는 날마다 memo goes by, or to the calendar
@@ -1167,13 +1175,6 @@ class AppContainer(context: Context) {
                         runCatching { com.bamnat.app.memo.MemoScheduleAlarm.settle(appContext, list) }
                         com.bamnat.app.memo.MemoScheduleAlarm.reschedule(appContext, list, shiftsOf = shifts)
                     }
-            }
-            // 2.0.0 [RVIB-05] (검토 I07ac-02) The 지난 할 일 card's morning follows the calendar on screen (a day off moved) and its switch.
-            keep("memorestcard") {
-                combine(calendars.active.flatMapLatest { calendars.repository(it).live.map { s -> s.resolver } },
-                    settingsRepository.settings.map { it.memoRestCard }.distinctUntilChanged()) { r, on -> r to on }
-                    .debounce(1_000)
-                    .collect { runCatching { com.bamnat.app.memo.MemoRestCard.plan(appContext) } }
             }
             // 1.39 [TASK-07] 할 일 위젯 follows the memos (finished in the app, a new one, one moved to the trash) and 프로 (its second widget).
             keep("taskwidget") {

@@ -171,7 +171,42 @@
 {"track": "RVI-70", "title": "메모 빈 화면을 빈 화면 부품으로, 유형별 예시", "status": "check", "size": "polish", "route": "app", "check": "가게 유형 새로 시작 → 메모 › 일반: 칸이 + '재료 주문, 단골 메모, 가게 할 일처럼…'"}
 {"track": "RVI-71", "title": "짧은 잠 뒤 '깼어요'가 까닭을 말하기", "status": "check", "size": "polish", "route": "app", "check": "잠들었어요 → 1분 뒤 깼어요(달력·수면·밤 화면) → '1분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요'"}
 {"track": "RVI-72", "title": "휴지통 메모를 눌러 읽기 전용으로 보기", "status": "check", "size": "polish", "route": "app", "check": "메모 지우기 → 휴지통 → 줄 누르기 → 내용 창, 되살리기·닫기"}
-{"track": "RVIB-04", "title": "메모 알림을 근무에 맞춰 적을 칸(DB 35판 memos.remindWork, 고르는 화면은 2묶음)", "status": "doing", "size": "feature", "route": "app", "check": "1.39.0 앱에서 일정 알림 메모를 백업하고 이 빌드에 되살려 알림 시각이 그대로인지(옛 백업은 시계 기준)"}
+{"track": "RVIB-04", "title": "근무에 붙는 메모 알림(출근 1시간 전마다·퇴근 30분 뒤·야간 끝나고 일어나면)", "status": "check", "size": "feature", "route": "app", "check": "메모 › 알림 넣기 › '근무에 붙여 매번'으로 고르고 근무를 바꾸면 알림 시각이 따라가는지, 가게 '영업 시작'·투자 '장 마감' 말, 1.39.0 백업 되살리기"}
+{"track": "RVI-73", "title": "반복 창 하나(여러 요일·격주·N째 요일·N일마다·끝나는 날)", "status": "check", "size": "feature", "route": "app", "check": "편집기 반복 칩과 일정 창 '반복' 줄이 같은 창을 열고, 격주·둘째 수요일·3일마다·끝나는 날이 저장되어 다음 날짜가 맞는지"}
+{"track": "RVI-74", "title": "카드에서 한 번에 끝내기(할 일·체크리스트 줄)", "status": "check", "size": "polish", "route": "app", "check": "메모 카드 왼쪽 동그라미로 끝내고 되돌리기, 최근 수정순 자리가 그대로인지"}
+{"track": "RVI-75", "title": "일정 제안을 공통 한 줄 안내로", "status": "check", "size": "polish", "route": "app", "check": "편집기 키보드 위 '10월 15일 (목) 오후 3:00 · 알림 넣기' 한 줄, 채운 단추 하나"}
+{"track": "RVI-76", "title": "한 줄 창에서 '다음 야간 때' 읽기", "status": "check", "size": "fix", "route": "app", "check": "할 일 한 줄 창에 '다음 야간 때 약'을 적으면 다가오는 야간 출근 전으로 잡히는지"}
+{"track": "RVI-77", "title": "메모 탭 맨 위 '오늘' 묶음과 한 줄로 적기", "status": "check", "size": "feature", "route": "app", "check": "메모 탭 첫 화면에서 늦음·오늘·고정이 위젯과 같은 순서로 맨 위, 한 줄 적기"}
+{"track": "RVI-78", "title": "근무마다 메모가 알림이 따르는 달력 하나로", "status": "check", "size": "fix", "route": "app", "check": "달력 둘 이상에서 근무마다 메모가 화면 달력을 바꿔도 같은 달력 근무로 울리는지"}
+{"track": "RVI-79", "title": "일정 창 시작 시각이 근무 중·잘 시간을 피함", "status": "check", "size": "polish", "route": "app", "check": "야간 뒤 날에 일정 창을 열면 깬 뒤 첫 30분 단위로 시작하는지"}
+{"track": "RVI-80", "title": "오래된 할 일 한 줄과 한꺼번에 정리", "status": "check", "size": "feature", "route": "app", "check": "일주일 넘은 할 일 N개 줄에서 모두 끝내기·오늘로·휴지통(되돌리기)"}
+{"track": "RVI-81", "title": "위젯 날짜를 누르면 그날 창", "status": "check", "size": "fix", "route": "app", "check": "오늘·주 위젯의 날짜를 누르면 앱이 그날 창으로 열리는지"}
+{"track": "RVI-83", "title": "위젯 목록을 유형에 맞게", "status": "check", "size": "polish", "route": "app", "check": "가게·투자 유형 위젯 고르기에 근무 위젯이 안 보이고, 이미 둔 위젯은 그대로인지"}
+{"track": "RVI-84", "title": "자정 넘겨 열어 둔 주 위젯 창이 오늘로", "status": "check", "size": "fix", "route": "app", "check": "주 위젯 창을 열어 둔 채 자정을 넘기면 1분 안에 새 주"}
+{"track": "RVI-85", "title": "지난 같은 근무의 안 끝낸 줄 이어 받기", "status": "check", "size": "feature", "route": "app", "check": "야간 메모에서 지난 야간의 안 끝낸 줄을 한 번 눌러 가져오는지"}
+{"track": "RVI-86", "title": "이번 주 알람 기록(제때·늦게·기록 없음)", "status": "check", "size": "feature", "route": "app", "check": "알람 점검에 요일별 결과, 빨강은 한 단어만"}
+{"track": "RVI-88", "title": "위젯에서 다음 알람 보기·이번만 끄기", "status": "check", "size": "feature", "route": "app", "check": "오늘 위젯 ⏰를 누르면 작은 창에서 이번만 끄기·다시 켜기"}
+{"track": "RVI-89", "title": "잘 시간 무렵 충전하면 소리 잴지 한 번 묻기", "status": "check", "size": "feature", "route": "app", "check": "잘 시간 30분 안에 충전기를 꽂으면 한 번 묻고, 끄기가 설정에 있는지"}
+{"track": "RVI-90", "title": "워치 예비 알람", "status": "check", "size": "feature", "route": "app", "check": "휴대폰 알람이 안 오면 워치가 울리고 '휴대폰 알람이 오지 않았어요'"}
+{"track": "RVI-91", "title": "하루 한 번 소리 없는 알람 연습", "status": "check", "size": "feature", "route": "app", "check": "낮에 소리 없이 재고, 늦게 오는 폰이면 밤 전에 알림"}
+{"track": "RVI-92", "title": "1분 뒤 시험 알람 결과 남기기", "status": "check", "size": "polish", "route": "app", "check": "알람 점검에 마지막 시험 시각과 결과"}
+{"track": "RVI-93", "title": "야간 근무 중 쪽잠 20분", "status": "check", "size": "feature", "route": "app", "check": "오늘의 흐름 '쪽잠 20분'이 진동만, 워치 진동, 근무 알람과 따로"}
+{"track": "RVI-94", "title": "워치 잠 타일", "status": "check", "size": "feature", "route": "app", "check": "워치 타일에서 잠들었어요·깼어요가 휴대폰 수면 기록에 그 시각으로"}
+{"track": "RVI-95", "title": "워치 할 일 타일", "status": "check", "size": "feature", "route": "app", "check": "워치 타일의 오늘 할 일이 위젯과 같은 순서, 눌러 끝냄"}
+{"track": "RVI-96", "title": "충전한 밤은 아침에 '이 잠 맞나요?'", "status": "check", "size": "feature", "route": "app", "check": "잘 시간 무렵 충전한 밤 다음 알람을 끄면 한 번 묻고 기록"}
+{"track": "RVI-97", "title": "안드로이드 16 근무 진행 막대", "status": "check", "size": "feature", "route": "app", "check": "근무 중 잠금 화면 알림에 진행 막대·남은 시간"}
+{"track": "RVI-98", "title": "연결된 워치가 있을 때만 워치 줄", "status": "check", "size": "polish", "route": "app", "check": "워치 없는 폰에서 예비 알람·워치 줄이 안 보이는지"}
+{"track": "RVI-99", "title": "놓친 일정 한 장", "status": "check", "size": "feature", "route": "app", "check": "폰이 꺼진 동안 지난 일정이 둘 넘으면 한 장으로, 모두 끝내기·쉬는 날로"}
+{"track": "RVIB-01", "title": "말로 할 일 적기", "status": "check", "size": "feature", "route": "app", "check": "할 일 한 줄 창 마이크로 '내일 저녁 6시 치과'가 한 줄로 적히고 시각을 읽는지(음성 인식 있는 폰만)"}
+{"track": "RVIB-02", "title": "체크리스트 별표·줄 시각·줄 메모", "status": "check", "size": "feature", "route": "app", "check": "별표 줄이 열린 줄 맨 위로, 줄 시각·메모가 글로 바꿔도 남는지"}
+{"track": "RVIB-03", "title": "Glance 위젯 줄 수 10개 제한", "status": "check", "size": "fix", "route": "app", "check": "일근 금요일 다 켬·현장 조용한 주·8조 위젯에서 마지막 줄이 보이는지"}
+{"track": "RVIB-05", "title": "근무 중 메모 알림은 퇴근 때 한 장, 지난 할 일은 쉬는 날 아침 한 장", "status": "check", "size": "feature", "route": "app", "check": "근무 중 알림 두 개가 퇴근 때 한 장(소리 한 번), 쉬는 날 아침 지난 할 일 카드 세 단추"}
+{"track": "RVIB-06", "title": "알람 더하기 '시작 기준' 칩과 바퀴를 함께", "status": "check", "size": "fix", "route": "app", "check": "알람 더하기에서 '시작 기준' 칩을 누르면 바퀴·줄 글·저장 값이 같이 바뀌는지(PC-83)"}
+{"track": "RVIB-07", "title": "수면 기록 '날마다 잠'을 맨 위로", "status": "check", "size": "polish", "route": "app", "check": "수면 › 기록 첫 화면에 이번 주 띠, 나머지는 더 보기(PC-89)"}
+{"track": "RVIB-08", "title": "반복 돈 한 줄로 메모와 가계부 함께", "status": "check", "size": "feature", "route": "app", "check": "'매달 25일 월세 50만 원'을 넣기 한 번에 반복 메모와 고정 지출, 되돌리기 둘 다"}
+{"track": "RVIB-09", "title": "이모지 근무 그림을 워치에서 글자로", "status": "check", "size": "fix", "route": "app", "check": "이모지 근무 그림의 근무가 워치 오늘·타일·컴플리케이션에 '🌙야'처럼 보이는지(SN-18)"}
+{"track": "RVIB-10", "title": "근무를 바꾸면 알람·잘 시간·워치가 따라왔다고 한 줄", "status": "check", "size": "polish", "route": "app", "check": "오늘·내일 근무를 바꾼 줄에 ' · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요'"}
+{"track": "RVIB-11", "title": "쉬는 날이 된 날의 알람 끄기 창에 원래 근무", "status": "check", "size": "fix", "route": "app", "check": "근무를 쉬는 날로 바꾸면 '11월 14일(원래 야간 19:00)은 쉬는 날이 됐어요'(PC-75)"}
 {"track": "RVP-01", "title": "안내·주의 카드 한 모양(안내 띠)", "status": "check", "size": "polish", "route": "app", "check": "부품만: 화면 적용은 다음 PR. 디자인 시험 쪽에서 안내 띠 56dp 한 줄, 아이콘 색으로만 뜻, 글자 단추 하나와 X. 글이 '…'로 잘리지 않고, 글자 130% 이상이나 좁은 폭(320dp 밑)에서는 단추가 글 아래 줄로(사진 시험 2708·2709·2710)"}
 {"track": "RVP-02", "title": "고르지 않은 탭은 회색", "status": "check", "size": "polish", "route": "app", "check": "마을·메모·급여·투자 위 탭 줄: 고른 탭만 파랑, 나머지 회색"}
 {"track": "RVP-03", "title": "인터넷 없음 한 줄과 세 문구", "status": "check", "size": "polish", "route": "app", "check": "부품만: 비행기 모드에서 화면별 문구 확인은 다음 PR"}

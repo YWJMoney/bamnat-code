@@ -227,7 +227,8 @@ object MemoRepeat {
             Kind.REST -> "쉬는 날마다"
             Kind.LUNAR -> "매년 음력 ${n.take(2).toInt()}월 ${n.drop(2).toInt()}일"
             Kind.DAYS_OF_WEEK -> "매주 " + days(weekdaysOf(repeat))
-            Kind.EVERY_WEEKS -> (if (stepOf(repeat) == 2) "격주 " else "${stepOf(repeat)}주마다 ") + days(weekdaysOf(repeat)) + "요일"
+            // "격주 수요일" (days() says 요일 for one day), "3주마다 월·금요일".
+            Kind.EVERY_WEEKS -> (if (stepOf(repeat) == 2) "격주 " else "${stepOf(repeat)}주마다 ") + days(weekdaysOf(repeat)).let { if (it.endsWith("요일")) it else it + "요일" }
             Kind.EVERY_DAYS -> "${n.toInt()}일마다"
             Kind.NTH_WEEKDAY -> "매달 " + (if (n.first() - '0' == LAST) "마지막" else NTH_WORDS[n.first() - '1']) + " " +
                 "월화수목금토일"[n.last() - '1'] + "요일"

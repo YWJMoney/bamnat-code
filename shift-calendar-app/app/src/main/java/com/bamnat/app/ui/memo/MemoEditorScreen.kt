@@ -422,7 +422,7 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
                         val names = vm.shiftTypes.value.associate { it.id to it.name }
                         val next = if (com.bamnat.core.memo.MemoRepeat.followsSchedule(memo)) null
                             else com.bamnat.core.memo.MemoSchedules.nextOf(memo, Today.dateTime().minusMinutes(1))
-                        scheduleLine(memo, r, next) { names[it] }
+                        scheduleLine(memo, r, next, { names[it] }, vm.workStyle)
                     },
                 )
                 // [TAB-03] 1.36 메모 → 가계부: a 금액 칸 offers one line, written only after the user checks it. Second in the row
@@ -676,13 +676,14 @@ fun MemoEditorScreen(vm: MemoEditorViewModel, onBack: () -> Unit) {
             // 2.0.0 [RVIB-04] (검토 I07ac-01) 근무에 붙여 매번: the next time each choice falls on, from the calendar's next 60 days.
             workNext = { a -> com.bamnat.core.memo.ShiftMemoTime.workNext(shiftDays, a, Today.dateTime()) },
             wakeAfterMinutes = vm.sleepTarget,
+            style = vm.workStyle,
             onSave = { r ->
                 pickedRepeat?.let { said = vm.setRepeatCode(it, from = r.at.toLocalDate()) ?: said }
                 pickedRepeat = null
                 vm.setReminder(r, answered = answering)
                 scheduling = false
                 val again = com.bamnat.core.memo.MemoRepeat.label(vm.memo.value.repeat).let { if (it.isEmpty()) "" else "$it " }
-                val at = r.work?.let { workLine(vm.memo.value, it) }
+                val at = r.work?.let { workLine(vm.memo.value, it, style = vm.workStyle) }
                     ?: if (again.isEmpty()) scheduleText(r.at) else again + scheduleText(r.at).substringAfter(") ")
                 Toast.makeText(context, "${at}에 ${scheduleWays(r)}${com.bamnat.app.ui.Fmt.ro(scheduleWays(r))} 알려 드릴게요", Toast.LENGTH_SHORT).show()
             },

@@ -2788,3 +2788,4 @@ RVIB-08,검토 I07ac-04: '매달 25일 월세 50만 원'을 메모와 가계부�
 RVIB-09,총괄 SN-18(통합 30065c07): 이모지 근무 그림이 워치에서 안 보임 → 워치 문자열 칸에 글자로(짧은 칸은 앞에 붙여 '🌙야'),2.0.0,진행 중,,core work/WatchDays.kt WatchDay.shown; wear ComplicationDays·MainActivity·ShiftTileService
 RVIB-10,"검토 I03c-04: 근무를 바꾼 뒤 알람·잠 계획·워치가 따라왔는지 따로 확인 → 바꾼 줄에 한 줄 ' · 알람 17:30 · 잘 시간 08:00–15:00 · 워치에도 보냈어요'(오늘·내일 근무만, 워치는 연결됐을 때만)",2.0.0,진행 중,,"core sleep/ShiftFollow.kt, ui/calendar/CalendarViewModel.kt followLine"
 RVIB-11,"PC-75(통합 PC, ★ 출근 알람): 쉬는 날이 된 날의 '알람을 끌까요?' 창에서 그날이 원래 근무가 있던 날인지 안 보임 → '11월 14일(원래 야간 19:00)은 쉬는 날이 됐어요', 여러 날이면 '원래 11월 14일 야간 19:00 · …' 한 줄",2.0.0,진행 중,,"ui/calendar/CalendarViewModel.kt RestAlarmAsk.was, CalendarScreen.kt RestAlarmDialog"
+RVIB-12,"2.0.0 갈래 I 2묶음 사진에서 찾음(디자인 품질 12): 날짜 창의 직접 바꾼 날 줄 '근무 주기는 주간 · 지금은 휴무 | 근무 주기대로'가 편 폭 날짜 칸·접은 폭에서 글자 200%일 때 한 글자씩 세로로 → 자리가 없으면 단추가 줄 아래로(공통 SideOrBelow)",2.0.0,진행 중,,ui/calendar/DayDetail.kt

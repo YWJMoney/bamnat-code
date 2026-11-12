@@ -618,10 +618,10 @@ class MemoEditorViewModel(
     fun undo() {
         val previous = undoStack.removeLastOrNull() ?: return
         redoStack.addLast(_memo.value)
-        // 2.0.0 [RVIB-08] The step that made a 고정 지출 takes it back too.
-        costStep?.takeIf { previous === it.before }?.let { s ->
-            s.saved?.let { c -> container.appScope.launch { container.calendars.money(s.calendar).delete(c) } }
-            s.saved = null
+        // 2.0.0 [RVIB-08] The step that made a 고정 지출 takes it back too. Matched by what the memo holds, not by the object: each ↶ and
+        // ↷ puts a copy on the other stack, so ↶ ↷ ↶ met a different object and left the 고정 지출 behind.
+        costStep?.takeIf { previous.sameAs(it.before) }?.let { s ->
+            s.then(container.appScope) { s.saved?.let { c -> container.calendars.money(s.calendar).delete(c) }; s.saved = null }
         }
         applyChange(record = false) { cur -> previous.keepIdentityOf(cur) }
     }
@@ -629,14 +629,17 @@ class MemoEditorViewModel(
     fun redo() {
         val next = redoStack.removeLastOrNull() ?: return
         undoStack.addLast(_memo.value)
-        costStep?.takeIf { next === it.after && it.saved == null }?.let { s ->
-            container.appScope.launch { s.saved = container.calendars.money(s.calendar).save(s.cost.copy(id = 0)) }
+        costStep?.takeIf { next.sameAs(it.after) }?.let { s ->
+            s.then(container.appScope) { if (s.mine && s.saved == null) s.saved = container.calendars.money(s.calendar).save(s.cost.copy(id = 0)) }
         }
         applyChange(record = false) { cur -> next.keepIdentityOf(cur) }
     }
 
     private fun Memo.keepIdentityOf(cur: Memo) =
         copy(id = cur.id, createdAtMillis = cur.createdAtMillis, updatedAtMillis = cur.updatedAtMillis)
+
+    /** The same words, date, repeat and answers, whatever was saved when. */
+    private fun Memo.sameAs(other: Memo) = keepIdentityOf(other) == other
 
     private fun applyChange(record: Boolean, transform: (Memo) -> Memo) {
         if (deleted) return
@@ -771,14 +774,14 @@ class MemoEditorViewModel(
     fun setRepeatCode(code: String, from: LocalDate? = null): String? {
         val repeat = com.bamnat.core.memo.MemoRepeat
         val kind = repeat.kindOf(code)
-        if (kind == repeat.Kind.SHIFT) return repeat.shiftIdOf(code)?.let(::setShiftRepeat)
-        if (code.isEmpty() || kind == repeat.Kind.NONE) { update { it.copy(repeat = "") }; return null }
+        if (kind == com.bamnat.core.memo.MemoRepeat.Kind.SHIFT) return repeat.shiftIdOf(code)?.let(::setShiftRepeat)
+        if (code.isEmpty() || kind == com.bamnat.core.memo.MemoRepeat.Kind.NONE) { update { it.copy(repeat = "") }; return null }
         val m = _memo.value
         val today = Today.date()
         val base = m.date ?: from ?: today
         // Its own date is one of its days unless the weekdays picked leave it out (화요일 memo, 월·수·금).
         val fits = repeat.weekdaysOf(code).let { it.isEmpty() || base.dayOfWeek in it } &&
-            (kind != repeat.Kind.NTH_WEEKDAY || repeat.firstFrom(code, base) == base)
+            (kind != com.bamnat.core.memo.MemoRepeat.Kind.NTH_WEEKDAY || repeat.firstFrom(code, base) == base)
         val date = if (m.date != null && fits) base else repeat.firstFrom(code, base) ?: base
         val r = m.reminder
         val moves = m.date != null && date != m.date && r != null && r.at.toLocalDate() == m.date
@@ -867,6 +870,8 @@ class MemoEditorViewModel(
     val sleepTarget: Int get() = container.settingsRepository.current.sleepTargetMinutes
     /** 2.0.0 [RVIB-05] 근무 중 메모 알림 모으기 ([com.bamnat.app.memo.MemoMissed.hold]). */
     val holdAtWork: Boolean get() = container.settingsRepository.current.memoHoldAtWork
+    /** 2.0.0 [RVIB-04] (디자인 품질 13) The words a schedule told by the work is said in (가게 '영업 시작', 투자 '장 마감'). */
+    val workStyle: com.bamnat.core.work.WorkStyle? get() = container.settingsRepository.current.workStyle
 
     /** [EASE-22] The kinds of day offered as '야간마다', in the calendar's order; 1.36 kinds put away are left out. */
     val shiftTypes: StateFlow<List<com.bamnat.core.model.ShiftType>> = shiftSnap.map { s -> s?.shiftTypes.orEmpty().sortedBy { it.sortOrder } }
@@ -932,6 +937,14 @@ class MemoEditorViewModel(
     /** 2.0.0 [RVIB-08] The 고정 지출 [acceptMoney] made, so ↶ takes it back with the repeat (and ↷ puts it back). */
     private class CostStep(val before: Memo, val after: Memo, val cost: com.bamnat.core.money.FixedCost, val calendar: String) {
         @Volatile var saved: com.bamnat.core.money.FixedCost? = null
+        /** False when the 가계부 already had it: ↶ leaves that one and ↷ makes none. */
+        @Volatile var mine = true
+        private var last: kotlinx.coroutines.Job? = null
+        /** One after another (called on the main thread), so a quick ↶ ↷ ↶ sees what the step before it saved or took back. */
+        fun then(scope: kotlinx.coroutines.CoroutineScope, work: suspend () -> Unit) {
+            val before = last
+            last = scope.launch { before?.join(); work() }
+        }
     }
     private var costStep: CostStep? = null
 
@@ -948,11 +961,11 @@ class MemoEditorViewModel(
         val calendar = container.calendars.active.value
         val cost = found.cost()
         val step = CostStep(before, after, cost, calendar).also { costStep = it }
-        container.appScope.launch {
+        step.then(container.appScope) {
             val money = container.calendars.money(calendar)
             val there = money.book.first().fixed.any { it.name == cost.name && it.amount == cost.amount && it.day == cost.day && it.repeat == cost.repeat }
             // The 가계부's notices re-plan from the book (AppContainer), so its 알림 comes with it.
-            if (!there) step.saved = money.save(cost)
+            if (!there) step.saved = money.save(cost) else step.mine = false
         }
         val what = if (found.kind == com.bamnat.core.money.MoneyKind.INCOME) "고정 수입" else "고정 지출"
         return "${found.said}에 메모가 돌아오고, 가계부 $what${com.bamnat.app.ui.Fmt.ro(what)} 넣었어요 · 위 ↶로 되돌려요"
