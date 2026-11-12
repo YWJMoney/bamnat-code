@@ -97,7 +97,7 @@ class SmallSendsTest {
 
     @Test fun aVoteOnTheInviteCardWithNoConnectionWaitsAndSaysSoInOneLine() {
         // 2.0.0 [RVN-16] 검토 U10b-03: 맞아요 on the card under the calendar, offline: the card stops asking, the word waits, one line says it will go.
-        store.setApplied(AppliedSetup("c1", "가상화학", "", "s1", 1, true, java.time.Instant.now()))
+        store.setApplied(AppliedSetup("c1", "가상화학", "", "s1", 1, true, com.bamnat.core.time.Today.instant()))
         val notes = Collections.synchronizedList(mutableListOf<String>())
         val listen = c.appScope.launch { com.bamnat.app.ui.PutOnNotice.notes.collect { notes += it.text } }
         try {
