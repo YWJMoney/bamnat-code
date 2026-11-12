@@ -189,7 +189,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 // 1.36 누락 점검 N14 (1차 사용성 제안): 14일 동안 아무도 못 만든 요청은 이유와 다음 일을 말해요.
                                 if (q.told && q.state == "waiting") Text("스튜디오로 아직 못 만드는 것일 수 있어요. 개발자에게 알렸어요. 만들 수 있게 되면 이 요청에 알려 드려요",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
