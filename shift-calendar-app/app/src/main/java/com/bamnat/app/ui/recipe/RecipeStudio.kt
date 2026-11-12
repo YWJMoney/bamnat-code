@@ -67,6 +67,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -516,18 +520,16 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
             memos[i % memos.size], hours = if (d["role"] == "off" || style == WorkStyle.INVEST) null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(Modifier.partSpot("cal"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
-        // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
+        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too. [BLU-09] Found by a tap in the 부품 도구.
+        // [RVM-18] PC-46 (미리 그림은 큰 제목 옆에 '집중 시작'이 나란한데, 넣으면 머리 줄 위에 겹쳐요): the calendar's own 머리 is drawn here, so a
+        // 꾸밈 on it sits where it will sit. A tap on it does nothing here (the 부품 도구 still picks its parts, before this).
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-        val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
-        val head = bp.style("cal.head", scope = headScope)
-        val title = bp.style("cal.head.title", scope = headScope)
-        // PC 10차 사용성 제안 (점선이 글자만 감싸 범위가 헷갈림): the head is the whole row, as on the calendar.
-        Box(Modifier.fillMaxWidth().partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
-            if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {
-                com.bamnat.app.ui.parts.PartText(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", title,
-                    MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-            }
+        val month = java.time.YearMonth.from(if (real != null) today else exFirst)
+        Box(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "${month.monthValue}월 달력 머리 미리 그림" }) {
+            com.bamnat.app.ui.calendar.CalendarHeader(month, onPrev = {}, onNext = {}, onToday = {}, onPickMonth = {}, onOpenPattern = {}, atToday = true, style = style)
+            Box(Modifier.matchParentSize().pointerInput(Unit) {
+                awaitEachGesture { awaitFirstDown(requireUnconsumed = false).consume() }
+            })
         }
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
@@ -759,7 +761,7 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
 @Composable
 internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, note: String? = null, onChange: (String?) -> Unit) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }
-    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
+    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 작품에 들어가요" else "바꾼 순서와 숨김이 작품에 들어가요",
         onReset = line?.let { { onChange(null) } }) {
         placed.forEachIndexed { i, p ->
             val (id, label, movable) = p.part

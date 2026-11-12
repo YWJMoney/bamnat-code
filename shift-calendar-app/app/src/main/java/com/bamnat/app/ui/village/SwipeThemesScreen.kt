@@ -91,7 +91,7 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                             if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             t.nick?.let { Text("만든 분 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣은 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
+                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣어 본 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val on = t.code in liked.value

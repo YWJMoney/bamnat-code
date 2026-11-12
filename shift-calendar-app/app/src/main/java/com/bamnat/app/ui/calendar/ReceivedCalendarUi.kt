@@ -413,10 +413,10 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?", color, size = 44.dp)
+                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받", color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표", style = MaterialTheme.typography.titleMedium)
+                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "받은 근무표", style = MaterialTheme.typography.titleMedium)
                     if (s.first != null && s.last != null) {
                         Text("${Fmt.monthDay(s.first)} ~ ${Fmt.monthDay(s.last)}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1087,7 +1087,8 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
+            // [RVG-32] 검토 PC-93: no '이름 없음님' for a link sent without a name.
+            Text((if (cal.title.isBlank()) "받은 근무표" else "${cal.name}님 근무표") + " 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
             // [REST-02] The same sign over the month is one line: the first in full, then the other days.
             val groups = warnings.groupBy { it.kind to it.pattern }.values.toList()
             groups.take(5).forEach { same ->

@@ -33,6 +33,18 @@ class ShareKitTest {
         assertNull(ShareKit.readLook(ShareKit.kitText(Recipe("설정", styles = setOf(WorkStyle.SHIFT), pieces = listOf(alarms)))))
     }
 
+    /** 2.0.0 [RVG-29] 검토 SN-14: a theme too big for a link is known before '내 테마' is ticked, not left out without a word. */
+    @Test
+    fun aThemeTooBigForALinkIsKnownAhead() {
+        val theme = BuiltInThemes.of(WorkStyle.SHIFT).first()
+        assertFalse("a usual theme fits", ShareKit.lookTooBig(theme))
+        val big = theme.copy(pieces = List(60) { theme.pieces }.flatten())
+        assertTrue("over ${ShareKit.LOOK_CHARS} letters", ShareKit.lookTooBig(big))
+        assertNull(runCatching { ShareKit.lookText(big) }.getOrNull())
+        // No look at all is not a big look: the row is simply not there.
+        assertFalse(ShareKit.lookTooBig(Recipe("설정", styles = setOf(WorkStyle.SHIFT), pieces = listOf(alarms))))
+    }
+
     @Test
     fun aKitCarriesShiftsAlarmsAndTheCycleButNeverPay() {
         val company = Piece(PieceKind.COMPANY, mapOf("setup" to cycle))

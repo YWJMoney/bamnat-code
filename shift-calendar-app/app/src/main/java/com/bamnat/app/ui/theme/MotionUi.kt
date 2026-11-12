@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
@@ -112,14 +113,18 @@ internal fun monthTurnShift(turn: String?, o: Float): Float = when (turn) {
     else -> 0f
 }
 
-/** [MAT-07] 1.36 오늘 강조: today's date moving as [Motion.today] says (숨쉬기, 은은한 빛, 도는 테, 통통), in [tint]. */
+/**
+ * [MAT-07] 1.36 오늘 강조: today's date moving as [Motion.today] says (숨쉬기, 은은한 빛, 도는 테, 통통), in [tint]. 2.0.0 [RVS-02]
+ * (스튜디오 조사 SN-02, PC-28과 같은 뿌리): 숨쉬기 and 통통 move only how it is drawn. As a layer's scale and shift they moved where a
+ * finger lands too, so the edge of the day before a breathing 오늘 opened 오늘 and the bottom of a bouncing 오늘 opened nothing.
+ */
 fun Modifier.todayMotion(kind: String?, tint: Color): Modifier = if (kind == null || kind == "none") this else composed {
     val t = rememberInfiniteTransition(label = "today")
     val v by t.animateFloat(0f, 1f, infiniteRepeatable(tween(if (kind == "ring") 2400 else 1100, easing = FastOutSlowInEasing),
         if (kind == "ring") RepeatMode.Restart else RepeatMode.Reverse), label = "v")
     when (kind) {
-        "pulse" -> graphicsLayer { val s = 1f + 0.12f * v; scaleX = s; scaleY = s }
-        "bounce" -> graphicsLayer { translationY = -3.dp.toPx() * v }
+        "pulse" -> drawWithContent { val s = 1f + 0.12f * v; scale(s, s) { this@drawWithContent.drawContent() } }
+        "bounce" -> drawWithContent { translate(top = -3.dp.toPx() * v) { this@drawWithContent.drawContent() } }
         "glow" -> drawBehind { drawCircle(tint.copy(alpha = 0.18f + 0.22f * v), radius = size.minDimension * (0.62f + 0.12f * v)) }
         "ring" -> drawBehind {
             val w = 1.6.dp.toPx()

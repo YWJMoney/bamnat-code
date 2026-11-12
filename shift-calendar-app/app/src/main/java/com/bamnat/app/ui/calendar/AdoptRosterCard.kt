@@ -74,7 +74,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     }
     var withHand by remember(id, month) { mutableStateOf(false) }
     val changes = if (withHand) all else all.filterKeys { it !in hand }
-    var undo by remember(schedule, month) { mutableStateOf<Map<LocalDate, DayEntry?>?>(null) }
+    var undo by remember(schedule, month) { mutableStateOf<com.bamnat.app.share.PutIn.Undo?>(null) }
     if (days.isEmpty() || (all.isEmpty() && undo == null)) return
     // The pay the user's own setup makes of the month, now and with the link's days (참고, 닫은 달이 아니어도).
     val pay = remember(changes, profile, mine, settings.extraKinds) {
@@ -89,9 +89,10 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     val missing = theirs.filter { pairs[it.id] == null && days.values.any { d -> d == it.id } }
     SectionCard(title = "내 달력에 넣기") {
         if (undo != null && (changes.isEmpty() || all.isEmpty())) {
-            Text("${undo!!.size}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
+            Text("${undo!!.days}일 넣었어요. 근무 알람도 이 근무대로 울려요.", style = MaterialTheme.typography.bodyMedium)
             Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.forEach { (d, e) -> c.scheduleRepository.restoreDay(d, e) } } }) { Text("되돌리기") }
+            // [RVG-31] 검토 PC-95: back to before '넣기' only (the days and the link's answers), so the days can be put in again.
+            TextButton(onClick = { val u = undo!!; undo = null; app.launch { u.back() } }) { Text("되돌리기") }
             return@SectionCard
         }
         Text("${month.monthValue}월 받은 근무 중 내 달력과 다른 날 ${changes.size}일", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
@@ -114,13 +115,7 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
         Text(onceNote(cal?.fromLeader == true), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         val putIn = {
             val todo = changes
-            app.launch {
-                val before = todo.mapValues { (d, o) -> c.scheduleRepository.updateDay(d) { it.copy(override = o) } }
-                undo = before
-                // 1.39 [TEAM-22] Put in once: when the 리더 changes this link later, the change is offered (or as set below).
-                c.received.markAdopted(id)
-                com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
-            }
+            app.launch { undo = com.bamnat.app.share.PutIn.apply(c, id, todo) }
             Unit
         }
         val words = "${changes.size}일 내 달력에 넣기"
@@ -206,7 +201,7 @@ private fun NotMineButton(cal: com.bamnat.app.share.ReceivedCalendar, onSay: (co
     // "N일 치": a count of days, never read as a date ("8일" alone reads as the 8th).
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { asking = null },
-        title = { Text(if (out > 0) "‘${cal.name}’ 근무표가 넣은 ${out}일 치를 뺄까요?" else "‘${cal.name}’ 근무표를 받은 달력으로 옮길까요?") },
+        title = { Text(if (out > 0) "${cal.roster}가 넣은 ${out}일 치를 뺄까요?" else "${cal.roster}를 받은 달력으로 옮길까요?") },
         text = {
             Text(listOfNotNull(
                 "직접 바꾼 ${split.kept.size}일 치는 그대로 둬요.".takeIf { split.kept.isNotEmpty() },
@@ -220,7 +215,7 @@ private fun NotMineButton(cal: com.bamnat.app.share.ReceivedCalendar, onSay: (co
                 c.appScope.launch {
                     val undo = com.bamnat.app.share.NotMine.apply(c, cal.id, split)
                     onSay(com.bamnat.app.ui.UndoMessage(
-                        if (out > 0) "‘${cal.name}’ 근무표가 넣은 ${out}일 치를 뺐어요" else "‘${cal.name}’ 근무표는 받은 달력에서 보기만 해요",
+                        if (out > 0) "${cal.roster}가 넣은 ${out}일 치를 뺐어요" else "${cal.roster}는 받은 달력에서 보기만 해요",
                         undo = undo,
                     ))
                 }
