@@ -163,6 +163,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 // [MON-06] The trial's question before it turns paid.
                 com.bamnat.app.tier.TrialNotice.reschedule(context, container.proStore.current)
                 com.bamnat.app.tier.EndNotice.reschedule(context, container.proStore.current)
+                // 2.0.0 [RVO-14] 프로·끄기 미션 7일이 끝나기 전날 저녁.
+                com.bamnat.app.tier.ProEndNotice.reschedule(context, container.featureGate.state.value)
                 // [SLP-15] What waited while the user slept: its alarm did not survive the reboot either.
                 com.bamnat.app.sleep.QuietHold.release(context)
                 // A new date or time zone changes what "today" is on the widgets.

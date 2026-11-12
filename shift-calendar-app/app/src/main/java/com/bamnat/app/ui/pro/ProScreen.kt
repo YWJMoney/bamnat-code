@@ -79,6 +79,8 @@ import com.bamnat.app.review.InAppReview.findActivity
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Gate
 import com.bamnat.app.tier.ProState
+import com.bamnat.app.tier.knownEnd
+import com.bamnat.app.tier.trialEnd
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.tier.ProPitch
 import com.bamnat.core.tier.ProReason
@@ -196,7 +198,7 @@ fun ProScreen(onBack: () -> Unit) {
                 val sellFirst = selling && (!gate.access.pro || gate.access.reason == ProReason.DAY_PASS)
                 // 2.0.0 [RVO-01] (PC-54) 개발용 빌드에서는 등급 미리 보기를 맨 위에: 프로가 아닐 때 모습을 여기서 바로 골라 봐요.
                 if (tierPreviewShown()) TierPreviewCard(c, gate, showNow = false)
-                StatusCard(gate, pro, zone, style)
+                StatusCard(gate, pro, zone, style, waiting = c.billing.pending.collectAsStateWithLifecycle().value)
                 ConsentWaiting(c, pro, onMessage = say("top"))
                 Said("top")
                 // 2.0.0 [RVO-13] 검토 HQ-48 (사용자 2026-11-12 20:28 KST "프로를 구독 안한사람은 프로를 눌렀을때 친구 초대를 먼져"): 프로를 사지
@@ -312,8 +314,10 @@ fun consentWaitingText(q: com.bamnat.app.tier.PendingConsent): String =
         " 인터넷이 연결되면 저절로 다시 보내요. 답은 이 휴대폰에 그대로 있어요."
 
 @Composable
-private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?) {
+private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamnat.core.work.WorkStyle?, waiting: Boolean = false) {
     SectionCard(title = "지금") {
+        // 2.0.0 [RVO-15] 검토 PRO-09: a payment Play still waits for opens nothing yet; said before anything else, once it is there.
+        if (waiting) Text(PAYMENT_WAITING, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         // 1.39 [FAM-03] 1.38 최종 PC 제안 5: a family phone is said as one at the top, before the launch too ('모든 기능이 무료' alone
         // left it to the 관리자 연결 card at the very bottom), and after it not as an admin's phone. An admin's phone the same way.
         val admin = pro.passes?.admin?.takeIf { it.approved }
@@ -328,8 +332,23 @@ private fun StatusCard(gate: Gate, pro: ProState, zone: ZoneId, style: com.bamna
         if (pro.passes?.familyPaused == true) {
             Text(FAMILY_PAUSED, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
         }
+        // 2.0.0 [RVO-15] 검토 PRO-04·U11b-05: while the server has not read the subscription from Play, its end on the phone is a 3-day
+        // hold, not the 결제일: say so, with Play's own page a tap away. A trial's end counts from when it began, as the trial notice does.
+        val sub = pro.sub?.takeIf { gate.access.reason == ProReason.SUBSCRIPTION || gate.access.reason == ProReason.TRIAL }
+        val context = LocalContext.current
+        val dateless = sub != null && gate.access.reason == ProReason.SUBSCRIPTION && sub.knownEnd() == null
+        if (sub != null && dateless) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(if (sub.autoRenew) SUB_DATE_CHECKING else "해지했어요 · 끝나는 날을 확인 중이에요",
+                    style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { open(context, ProductIds.manageUrl(context.packageName)) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("Play 스토어에서 보기")
+                }
+            }
+        }
         // 2.0.0 [RVO-12] 3.1 보류의 끝나는 날은 윗줄에 있어요.
-        gate.access.until?.takeIf { gate.access.reason != ProReason.HELD }?.let { until ->
+        gate.access.until?.takeIf { gate.access.reason != ProReason.HELD && !dateless }?.let { held ->
+            val until = if (sub != null && gate.access.reason == ProReason.TRIAL) sub.trialEnd(zone) else held
             val day = lastDay(until, zone)
             val words = when (gate.access.reason) {
                 ProReason.TRIAL -> "체험은 ${dateWords(day)}에 끝나요"
@@ -450,7 +469,7 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
             scope.launch {
                 c.billing.refresh()
                 c.featureGate.refresh()
-                onMessage(if (c.proStore.current.sub != null) "구독을 다시 찾았어요" else "이 Google 계정에서 찾은 구독이 없어요")
+                onMessage(restoreWords(c.billing.state.value, c.proStore.current, Today.instant(), Today.zone()))
             }
         }) { Text("구매 복원") }
         // 조건 2 (글자 단추는 둘까지): 약관·처리방침·사업자 정보(1.36 [MON-12])는 한 단추의 메뉴로.
@@ -623,6 +642,24 @@ fun serverProblem(code: String): String = when (code) {
     else -> "지금은 처리하지 못했어요. 잠시 뒤 다시 해 주세요."
 }
 
+/**
+ * 2.0.0 [RVO-15] 검토 PRO-06·U11b-06: what '구매 복원' found, in one line: a subscription, a 1년 이용권 (and until when), a 팀·직원 요금제,
+ * nothing, or that Play could not be reached (not "찾은 구독이 없어요" for a pass that came back or a Play that did not answer).
+ */
+internal fun restoreWords(billing: BillingState, pro: ProState, now: Instant, zone: ZoneId): String {
+    if (billing == BillingState.UNAVAILABLE) return "Play에 연결하지 못했어요. 인터넷과 Play 스토어 로그인을 확인해 주세요"
+    if (pro.sub?.play()?.entitled(now) == true) return "구독을 다시 찾았어요"
+    pro.yearPassUntil?.takeIf { now < it }?.let { val d = lastDay(it, zone); return "1년 이용권을 다시 찾았어요 · ${d.monthValue}월 ${d.dayOfMonth}일까지 써요" }
+    if (pro.workUntil(now) != null) return "팀·직원 요금제를 다시 찾았어요"
+    return "이 Google 계정에서 찾은 구매가 없어요"
+}
+
+/** 2.0.0 [RVO-15] 검토 PRO-09: a purchase Play holds as waiting for payment. */
+const val PAYMENT_WAITING = "결제를 기다리는 중이에요. 승인되면 바로 열려요"
+
+/** 2.0.0 [RVO-15] 검토 U11b-05: the 지금 card's line while the server has not read the subscription from Play yet. */
+const val SUB_DATE_CHECKING = "결제일을 확인 중이에요"
+
 fun dateWords(d: LocalDate): String = "${d.year}년 ${d.monthValue}월 ${d.dayOfMonth}일"
 
 /** The last day an end time still counts: an end at midnight belongs to the day before. */
@@ -657,7 +694,10 @@ private val RECOVERY_CODE = Regex("""[A-Z0-9]{4}(-?[A-Z0-9]{4}){3}""")
  * 1.32 [PROX-03] (가계부 조사 5장 "결제 투명성"): 설정's first line while money is or will be taken: the next 결제일 and 금액,
  * when a 체험 turns into a payment, or that a payment failed; and the way to 해지 one tap away. Null when nothing is billed.
  */
-fun billingWords(reason: ProReason, lastDay: LocalDate?, autoRenew: Boolean, price: String?): String? {
+fun billingWords(reason: ProReason, lastDay: LocalDate?, autoRenew: Boolean, price: String?, known: Boolean = true): String? {
+    // 2.0.0 [RVO-15] 검토 PRO-04: a subscription the server has not read from Play has no 결제일 yet (the phone's 3-day hold is not one).
+    if (!known && reason == ProReason.SUBSCRIPTION) return if (autoRenew) "프로 구독 중 · 결제일 확인 중" + (price?.let { " · $it" } ?: "")
+        else "구독을 해지했어요 · 끝나는 날 확인 중"
     val day = lastDay?.let { "${it.monthValue}월 ${it.dayOfMonth}일" } ?: return null
     return when (reason) {
         ProReason.SUBSCRIPTION -> if (autoRenew) "프로 구독 중 · 다음 결제 $day" + (price?.let { " · $it" } ?: "") else "구독을 해지했어요 · ${day}까지 써요"
@@ -678,7 +718,9 @@ fun BillingTopLine(modifier: Modifier = Modifier) {
     if (!gate.live || gate.preview) return
     val sub = pro.sub ?: return
     val price = plans.firstOrNull { it.basePlan == sub.basePlan }?.priceWords
-    val words = billingWords(gate.access.reason, gate.access.until?.let { lastDay(it, Today.zone()) }, sub.autoRenew, price) ?: return
+    // 2.0.0 [RVO-15] 검토 PRO-04: the trial's end from when it began, a subscription's only as the server read it.
+    val end = if (gate.access.reason == ProReason.TRIAL) sub.trialEnd(Today.zone()) else gate.access.until
+    val words = billingWords(gate.access.reason, end?.let { lastDay(it, Today.zone()) }, sub.autoRenew, price, known = sub.knownEnd() != null) ?: return
     Surface(
         color = if (gate.access.reason == ProReason.GRACE) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
         shape = MaterialTheme.shapes.medium, modifier = modifier.fillMaxWidth(),

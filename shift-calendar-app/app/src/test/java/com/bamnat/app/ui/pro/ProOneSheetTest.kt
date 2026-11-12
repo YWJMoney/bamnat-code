@@ -71,6 +71,36 @@ class ProOneSheetTest {
     }
 
     /** [RVO-13] HQ-58: the 1년 12개월 line only while the server counts it, from 처리방침 3.13's 30-day date (12-12). */
+    /** 2.0.0 [RVO-15] 검토 PRO-06·U11b-06: '구매 복원' says what came back, or that Play did not answer. */
+    @Test fun restoreSaysWhatItFound() {
+        val now = java.time.Instant.parse("2027-03-10T01:00:00Z")
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val t0 = now.minus(java.time.Duration.ofDays(10))
+        val none = com.bamnat.app.tier.ProState()
+        assertEquals("Play에 연결하지 못했어요. 인터넷과 Play 스토어 로그인을 확인해 주세요",
+            restoreWords(com.bamnat.app.billing.BillingState.UNAVAILABLE, none, now, zone))
+        assertEquals("이 Google 계정에서 찾은 구매가 없어요", restoreWords(com.bamnat.app.billing.BillingState.READY, none, now, zone))
+        assertEquals("1년 이용권을 다시 찾았어요 · 2월 28일까지 써요",
+            restoreWords(com.bamnat.app.billing.BillingState.READY, none.copy(yearPasses = mapOf("GPA.1" to t0)), now, zone))
+        val sub = com.bamnat.app.tier.SubRecord(ProductIds.PRO, ProductIds.YEARLY, com.bamnat.core.tier.PlaySub.State.ACTIVE,
+            now.plus(java.time.Duration.ofDays(30)), false, true, t0, true, now)
+        assertEquals("구독을 다시 찾았어요", restoreWords(com.bamnat.app.billing.BillingState.READY, none.copy(sub = sub), now, zone))
+    }
+
+    /** 2.0.0 [RVO-15] 검토 PRO-07: a subscription beside 프로 already open until a day says so first. */
+    @Test fun aSubscriptionOverAPaidPeriodSaysItOverlaps() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        fun access(r: com.bamnat.core.tier.ProReason, until: String? = "2027-12-05T03:00:00Z") =
+            com.bamnat.core.tier.Access(true, r, until?.let { java.time.Instant.parse(it) })
+        assertEquals("12월 5일까지 1년 이용권으로 프로를 써요. 지금 구독하면 그 기간과 겹쳐요.", overlapWords(access(com.bamnat.core.tier.ProReason.PASS_1Y), zone))
+        assertEquals("12월 5일까지 감사 기간으로 프로를 써요. 지금 구독하면 그 기간과 겹쳐요.", overlapWords(access(com.bamnat.core.tier.ProReason.THANKS), zone))
+        assertEquals("12월 5일까지 나눠 받은 프로를 써요. 지금 구독하면 그 기간과 겹쳐요.", overlapWords(access(com.bamnat.core.tier.ProReason.SHARED), zone))
+        assertTrue(overlapWords(access(com.bamnat.core.tier.ProReason.ADMIN, null), zone)!!.startsWith("관리자 휴대폰이라"))
+        assertNull("nothing to overlap", overlapWords(com.bamnat.core.tier.Access(false, com.bamnat.core.tier.ProReason.NONE), zone))
+        assertNull("today only", overlapWords(access(com.bamnat.core.tier.ProReason.DAY_PASS), zone))
+        assertNull("already subscribed: the plans do not show", overlapWords(access(com.bamnat.core.tier.ProReason.SUBSCRIPTION), zone))
+    }
+
     @Test fun thePassesCapLineWaitsForTheServersCap() {
         val d = com.bamnat.core.ops.PolicyConsent.REVISION_EFFECTIVE_30
         val noCap = com.bamnat.core.tier.InviteTerms(need = 5, days = 7, months = 1, capMonths = 0)

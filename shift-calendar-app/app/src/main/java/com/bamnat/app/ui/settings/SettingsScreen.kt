@@ -1,11 +1,8 @@
 package com.bamnat.app.ui.settings
 
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -1244,7 +1241,11 @@ private fun AlarmReadyCard(
     val snoozeAt by vm.snoozeAt.collectAsStateWithLifecycle()
     val missed by vm.missed.collectAsStateWithLifecycle()
     LaunchedEffect(refresh) { vm.recheckMissed() }
-    val fixes = remember(refresh, settings.alarmsEnabled, missed) { alarmFixes(context, vm, settings, missed, askNotifications, onOpenDiagnostics) }
+    // 2.0.0 [RVO-16] 검토 SET-02·U11a-02: the same verdict as 설정 › 알람 and 알람 점검 (it said '준비 완료' while 설정 › 알람 said '고칠 것 1').
+    val verdict = remember(refresh, settings.alarmsEnabled, missed) {
+        runCatching { com.bamnat.app.ui.diag.alarmVerdict(com.bamnat.app.ui.diag.alarmChecks(context.appContainer, context)) }.getOrNull()
+    }
+    val fixes = remember(verdict, missed) { alarmFixes(context, settings, verdict, missed, askNotifications, onOpenDiagnostics) }
     val cal = LocalCalendarColors.current
     val next = upcoming
     val (icon, headline, tint) = when {
@@ -1312,43 +1313,51 @@ private fun AlarmReadyCard(
                     Text(fix.text, style = MaterialTheme.typography.bodyMedium)
                 }, end = { TextButton(onClick = fix.onFix) { Text(fix.label) } })
             }
+            // 2.0.0 [RVO-16] U11a-02 '꼭 고칠 것 0 · 권장 1': ready, and what would make it surer, one line and its place.
+            val better = verdict?.better.orEmpty()
+            if (settings.alarmsEnabled && fixes.isEmpty() && better.isNotEmpty()) {
+                com.bamnat.app.ui.components.SideOrBelow(Modifier.padding(start = 36.dp), minStart = 120.dp, start = {
+                    Text("하면 더 좋은 것 ${better.size}가지 · ${better.joinToString(", ") { it.title }}", style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }, end = { TextButton(onClick = { onOpenDiagnostics(false) }) { Text("보기") } })
+            }
         }
     }
 }
 
 private class AlarmFix(val text: String, val label: String, val onFix: () -> Unit)
 
-/** What keeps the alarm from working, most serious first. Nothing while every alarm is off on purpose. */
+/**
+ * What keeps the alarm from ringing or showing, most serious first, said in a line each with its one button. Nothing while every
+ * alarm is off on purpose. 2.0.0 [RVO-16] 검토 SET-02: from the one verdict ([com.bamnat.app.ui.diag.alarmVerdict]), so the sound at 0,
+ * 방해 금지 and a lost alarm are said here too.
+ */
 private fun alarmFixes(
     context: Context,
-    vm: SettingsViewModel,
     settings: AppSettings,
+    verdict: com.bamnat.app.ui.diag.AlarmVerdict?,
     missed: Int,
     askNotifications: () -> Unit,
     onOpenDiagnostics: (Boolean) -> Unit,
 ): List<AlarmFix> {
     if (!settings.alarmsEnabled) return emptyList()
-    val pkg = Uri.parse("package:${context.packageName}")
-    val canPost = Notifications.canPost(context)
+    val c = context.appContainer
+    fun fix(check: com.bamnat.app.ui.diag.AlarmCheck): () -> Unit = { com.bamnat.app.ui.diag.applyAlarmFix(c, context, check.fix, "settings top") }
     return buildList {
-        if (!canPost) add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
-        else if (!Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
-            add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
-        }
-        if (canPost && !Notifications.canUseFullScreen(context) && Build.VERSION.SDK_INT >= 34) {
-            add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))
-            })
-        }
-        if (!vm.canScheduleExact() && Build.VERSION.SDK_INT >= 31) {
-            add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용") {
-                SystemSettings.open(context, Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))
-            })
-        }
-        if (Build.VERSION.SDK_INT >= 28 && context.getSystemService(ActivityManager::class.java)?.isBackgroundRestricted == true) {
-            add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기") {
-                SystemSettings.open(context, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pkg))
-            })
+        for (check in verdict?.must.orEmpty()) {
+            when (check.title) {
+                "알람 사용" -> Unit // said by the card's own line
+                "알림 허용" -> add(AlarmFix("알림이 꺼져 있어 알람이 울려도 화면이 뜨지 않고 소리만 나요", "허용", askNotifications))
+                "알람 알림 켜짐" -> add(AlarmFix("휴대폰 설정에서 근무 알람 알림이 꺼져 있어요", "켜기") { SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID) })
+                "잠금 화면 알람" -> add(AlarmFix("잠금 화면에 알람 화면이 뜨지 않아요", "허용", fix(check)))
+                "잠금 화면에 알람 보이기" -> add(AlarmFix("알람 알림이 조용히·숨김으로 바뀌어 알람 화면이 뜨지 않아요", "바꾸기", fix(check)))
+                "정확한 알람" -> add(AlarmFix("알람이 몇 분 늦게 울릴 수 있어요", "허용", fix(check)))
+                "알람 소리 크기" -> add(AlarmFix("알람 소리가 0이라 울려도 들리지 않아요", "올리기", fix(check)))
+                "방해 금지" -> add(AlarmFix("‘완전히 무음’ 방해 금지라 알람도 울리지 않아요", "열기", fix(check)))
+                "백그라운드 제한 없음" -> add(AlarmFix("배터리 설정이 밤낮을 막고 있어 알람이 늦을 수 있어요", "풀기", fix(check)))
+                "다음 알람 등록" -> add(AlarmFix("휴대폰이 다음 알람을 잃어버렸어요", "다시 걸기", fix(check)))
+                else -> add(AlarmFix(check.why, check.fixLabel, fix(check)))
+            }
         }
         if (missed > 0) add(AlarmFix("지난 7일에 울리지 않았을 수 있는 알람이 ${missed}번 있어요", "보기") { onOpenDiagnostics(false) })
     }

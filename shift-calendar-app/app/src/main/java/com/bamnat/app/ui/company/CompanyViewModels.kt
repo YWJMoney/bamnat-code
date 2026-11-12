@@ -1711,7 +1711,10 @@ class CompanyReportViewModel(
  * [INQ-05] 이 휴대폰이 보낸 정보 모두 지우기, from 보낸 설정 and (1.36 [INQ-07]) from 설정 › 개인정보·앱 정보:
  * the server forgets what this phone sent and the phone forgets its copies. Null when the server could not be reached.
  */
-suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
+suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? =
+    forgetEverythingSentNow(c).also { ForgetLog.record(c.appContext, Today.instant(), it?.short() ?: ForgetLog.OFFLINE) }
+
+private suspend fun forgetEverythingSentNow(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
     val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
     // 2.0.0 [RVN-09] COMP-43 저절로 나누기 goes back to 묻기 with the rest (CompanyStore.forgetSent), said in the result.
     val autoWas = c.companyStore.autoShare.value == true
@@ -1732,6 +1735,33 @@ suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.Forget
     // 1.39 [PRIV-06] and every link this phone made on the share server, with the keys it holds (달력·팀·가게 링크).
     val links = runCatching { com.bamnat.app.share.ShareForget.all(c) }.getOrNull()
     return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0, alertsOff = pushWas, autoShareOff = autoWas)
+}
+
+/**
+ * 2.0.0 [RVO-16] 검토 SET-09: when this phone last asked the server to forget everything and how it went, said under the row
+ * ('마지막 요청 11월 12일 오후 9:30 · 지웠어요'). This phone's own note: not in the backup, as a new phone sent nothing.
+ */
+object ForgetLog {
+    private const val PREFS = "forget_all"
+    const val OFFLINE = "인터넷이 없어 지우지 못했어요"
+
+    data class Last(val at: java.time.Instant, val words: String)
+
+    fun record(context: android.content.Context, at: java.time.Instant, words: String) {
+        context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit()
+            .putLong("at", at.toEpochMilli()).putString("words", words).apply()
+    }
+
+    fun last(context: android.content.Context): Last? {
+        val p = context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
+        val at = p.getLong("at", 0).takeIf { it > 0 } ?: return null
+        return Last(java.time.Instant.ofEpochMilli(at), p.getString("words", null) ?: return null)
+    }
+
+    fun line(last: Last, zone: java.time.ZoneId): String {
+        val t = last.at.atZone(zone)
+        return "마지막 요청 ${com.bamnat.app.ui.Fmt.monthDay(t.toLocalDate())} ${com.bamnat.app.ui.Fmt.time(t.toLocalTime())} · ${last.words}"
+    }
 }
 
 /** [INQ-05] What 모두 지우기 asks before it goes; 1.36 [INQ-07] says what the law keeps. */

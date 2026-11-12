@@ -36,8 +36,9 @@ class ReviewOShotsTest : ScreenshotBase() {
 
     @After fun back() {
         app.container.calendars.setActive(PersonalCalendar.MAIN)
-        app.container.settingsRepository.update { it.copy(previewTier = null) }
+        app.container.settingsRepository.update { it.copy(previewTier = null, phoneCalendars = emptyList()) }
         released(false)
+        app.getSharedPreferences("forget_all", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         com.bamnat.core.time.Today.fix(SHOT_TIME)
     }
 
@@ -158,6 +159,20 @@ class ReviewOShotsTest : ScreenshotBase() {
         launched().invoke(this)
         val gate = app.container.featureGate.state.value
         content { com.bamnat.app.ui.pro.ProOfferContent(app.container, com.bamnat.app.tier.Feature.PAYSLIP_MATCH, gate, onPro = {}) }
+    }
+
+    // RVO-14 (총괄 11-12): 프로가 아닌 폰에 휴대폰 캘린더를 골라 둔 채(프로가 끝난 뒤) 설정 › 기록과 백업의 그 줄.
+    @Test fun phoneCalendarPaused() = all("11_phone_calendar_paused") {
+        app.container.settingsRepository.update { it.copy(phoneCalendars = listOf(PersonalCalendar.MAIN), previewTier = Tier.FREE) }
+        app.container.featureGate.refresh()
+        open(FeatureRoute(Place.SETTINGS_DATA, "휴대폰 캘린더에 근무 쓰기"))
+    }
+
+    // RVO-16 (검토 SET-09): 설정 › 개인정보 맨 아래 따로 둔 '지우기', 지난번 요청이 인터넷이 없어 못 지운 폰.
+    @Test fun forgetRowApart() = all("12_privacy_forget_row") {
+        com.bamnat.app.ui.company.ForgetLog.record(app, java.time.ZonedDateTime.of(2026, 11, 12, 21, 30, 0, 0,
+            java.time.ZoneId.of("Asia/Seoul")).toInstant(), com.bamnat.app.ui.company.ForgetLog.OFFLINE)
+        open(FeatureRoute(Place.SETTINGS_PRIVACY, com.bamnat.app.ui.settings.FORGET_ALL_ROW))
     }
 
     // HQ-46: 배포판, 11-13, 서버 답 전, 10-27 전에 깔고 3.1에 동의하지 않은 폰(바탕은 '정식 출시 전이라 모든 기능이 무료예요').

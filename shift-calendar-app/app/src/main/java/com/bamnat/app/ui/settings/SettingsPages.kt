@@ -100,9 +100,13 @@ internal fun ColumnScope.SettingsPageContent(
         SettingsPage.CALENDAR -> CalendarPage(vm, settings, onOpenCalendars)
         SettingsPage.DATA -> DataPage(vm, files, settings)
         // [SET-02] 개인정보·앱 정보: privacy and permissions, then the terms, licences and version.
+        // 2.0.0 [RVO-16] 검토 SET-09: what deletes for good comes last, apart, above only the version.
         SettingsPage.PRIVACY -> {
             PrivacyPage(vm, settings, refresh, askNotifications)
             AboutPage()
+            ForgetSection(vm)
+            Text("밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.focusMark("버전"))
         }
     }
 }
@@ -557,8 +561,15 @@ private fun NoticesPage(
         )
     }
     SectionCard(title = "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람") {
-        PermissionRow(ok = canPost && Notifications.ALARM_CHANNEL_ID !in off, title = "울릴 때 잠금 화면에 크게 떠요", fixLabel = "켜기") {
-            if (!canPost) askNotifications() else SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID)
+        // 2.0.0 [RVO-16] 검토 SET-02: on Android 14+ the lock-screen alarm needs its own permission too (설정 첫 화면·설정 › 알람과 같은 판정).
+        val fullScreen = remember(refresh) { Notifications.canUseFullScreen(context) }
+        PermissionRow(ok = canPost && Notifications.ALARM_CHANNEL_ID !in off && fullScreen, title = "울릴 때 잠금 화면에 크게 떠요",
+            fixLabel = if (canPost && Notifications.ALARM_CHANNEL_ID !in off) "허용" else "켜기") {
+            when {
+                !canPost -> askNotifications()
+                Notifications.ALARM_CHANNEL_ID in off -> SystemSettings.channel(context, Notifications.ALARM_CHANNEL_ID)
+                Build.VERSION.SDK_INT >= 34 -> SystemSettings.open(context, Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:${context.packageName}")))
+            }
         }
         // [SET-02] The alarm's own switches are in 설정 › 알람 only.
         Note("${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람을 켜고 끄는 것과 소리는 설정 › 알람에서 정해요.")
@@ -1202,27 +1213,6 @@ private fun PrivacyPage(
         // 2.0.0 [RVO-08] 처리방침 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
         NavRow("개인정보 처리방침", "${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
         HorizontalDivider()
-        // 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent.
-        var forgetting by remember { mutableStateOf(false) }
-        var forgot by remember { mutableStateOf<String?>(null) }
-        NavRow(FORGET_ALL_ROW, forgot ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
-        // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
-        var links by remember { mutableStateOf<String?>(null) }
-        val app = context.appContainer
-        androidx.compose.runtime.LaunchedEffect(forgetting) { if (forgetting) links = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
-        if (forgetting) ConfirmDialog(
-            title = "보낸 정보를 모두 지울까요?",
-            message = (links?.let { "$it.\n\n" } ?: "") + com.bamnat.app.ui.company.FORGET_ALL_WORDS,
-            confirmLabel = "모두 지우기",
-            destructive = true,
-            onDismiss = { forgetting = false },
-            onConfirm = {
-                forgetting = false
-                forgot = "지우는 중…"
-                vm.forgetEverythingSent { forgot = it }
-            },
-        )
-        HorizontalDivider()
         // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
         NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
         // [PRF-05] 1.36 PC 사용성 P8: 탈퇴·삭제를 찾는 분이 개인정보에서 바로 찾아요. 회원 가입이 없으니 이것이 '탈퇴'예요.
@@ -1258,6 +1248,17 @@ private fun PrivacyPage(
         // 2.0.0 [RVL-09] 총괄 검토 #458: on, but resting for want of the phone's lock: the switch stays on as the user left it (it can be
         // turned off), with one line and the way to the phone's lock, also once the card over the calendar was closed.
         val resting = settings.appLock && !lockable
+        // 2.0.0 [RVO-16] 검토 SET-09: turning it on or off asks the phone's lock first (resting, there is no lock to ask: off at once).
+        fun setLock(on: Boolean) {
+            vm.update { it.copy(appLock = on) }
+            if (!on) com.bamnat.app.AppLock.release()
+        }
+        var lockWanted by remember { mutableStateOf<Boolean?>(null) }
+        val lockConfirm = rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+            val want = lockWanted
+            lockWanted = null
+            if (want != null && r.resultCode == android.app.Activity.RESULT_OK) setLock(want)
+        }
         SwitchRow(
             "앱 잠금",
             if (lockable || resting) "열 때와 1분 넘게 다른 앱을 쓰다 돌아올 때 지문·얼굴·PIN을 물어요. 최근 앱 화면과 화면 캡처에도 내용이 안 보여요. 알람은 그대로 울려요"
@@ -1268,8 +1269,13 @@ private fun PrivacyPage(
             fixLabel = "잠금 설정",
             onFix = { openPhoneLockSettings(context) },
         ) { on ->
-            vm.update { it.copy(appLock = on) }
-            if (!on) com.bamnat.app.AppLock.release()
+            val activity = with(com.bamnat.app.review.InAppReview) { context.findActivity() }
+            if (activity == null || resting) setLock(on)
+            else {
+                lockWanted = on
+                com.bamnat.app.AppLock.check(activity, if (on) "앱 잠금 켜기" else "앱 잠금 끄기",
+                    onOk = { lockWanted = null; setLock(on) }, confirm = { lockConfirm.launch(it) })
+            }
         }
         // 1.38 PC 12.2 (금액 가리기를 가계부 머리 눈 단추에서만 찾을 수 있었어요): the same switch here, by 앱 잠금.
         SwitchRow("금액 가리기", "앱과 위젯의 금액을 •••로 가려요. 버스나 회사에서 열 때 써요. 가계부 머리의 눈 단추로도 바로 켜고 꺼요",
@@ -1315,6 +1321,38 @@ private fun PrivacyPage(
 }
 
 /**
+ * 1.36 [INQ-07] Where 처리방침 6항 says it is, not only under 보낸 설정 once something was sent. 2.0.0 [RVO-16] 검토 SET-09: apart at the
+ * bottom of the page, red with a bin, and when it was last asked and how it went under it.
+ */
+@Composable
+private fun ForgetSection(vm: SettingsViewModel) {
+    val context = LocalContext.current
+    SectionCard(title = "지우기") {
+        var forgetting by remember { mutableStateOf(false) }
+        var forgot by remember { mutableStateOf<String?>(null) }
+        val last = remember(forgot) { com.bamnat.app.ui.company.ForgetLog.last(context) }
+        DangerRow(FORGET_ALL_ROW, forgot ?: last?.let { com.bamnat.app.ui.company.ForgetLog.line(it, com.bamnat.core.time.Today.zone()) }
+            ?: "보낸 설정·글·신고·문의와 내가 만든 공유 링크를 서버에서 지워요") { forgetting = true }
+        // 1.39 [PRIV-06] What links it cuts, read when it asks (none said for a phone that made none).
+        var links by remember { mutableStateOf<String?>(null) }
+        val app = context.appContainer
+        androidx.compose.runtime.LaunchedEffect(forgetting) { if (forgetting) links = runCatching { com.bamnat.app.share.ShareForget.held(app) }.getOrNull() }
+        if (forgetting) ConfirmDialog(
+            title = "보낸 정보를 모두 지울까요?",
+            message = (links?.let { "$it.\n\n" } ?: "") + com.bamnat.app.ui.company.FORGET_ALL_WORDS,
+            confirmLabel = "모두 지우기",
+            destructive = true,
+            onDismiss = { forgetting = false },
+            onConfirm = {
+                forgetting = false
+                forgot = "지우는 중…"
+                vm.forgetEverythingSent { forgot = it }
+            },
+        )
+    }
+}
+
+/**
  * [SET-02] What was 앱 정보, under privacy: the terms and licences and the version. 알람 점검 is in 설정 › 알람,
  * 도움말과 문의 on the settings list and 처리방침 just above, each in one place.
  */
@@ -1338,8 +1376,6 @@ private fun AboutPage() {
         NavRow("오픈소스 라이선스", null) { licenses = true }
         if (licenses) OpenSourceLicensesDialog { licenses = false }
     }
-    Text("밤낮 ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.focusMark("버전"))
 }
 
 /** [MON-07] Said where Google gives no consent form of its own to open again. */

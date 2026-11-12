@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material3.Badge
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
@@ -204,6 +205,30 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(8.dp))
         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.outline)
+    }
+}
+
+/**
+ * 2.0.0 [RVO-16] 검토 SET-09: a row that deletes for good, kept apart at the bottom of its page so it is not taken for an ordinary
+ * row: the bin and the words in the danger colour (the one red on the page, 조건 6), what it did last under it.
+ */
+@Composable
+internal fun DangerRow(title: String, subtitle: String?, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .focusMark(title)
+            .fillMaxWidth()
+            .heightIn(min = ROW_MIN_HEIGHT)
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Delete, null, tint = MaterialTheme.colorScheme.error)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(said(title), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.error)
+            subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
     }
 }
 

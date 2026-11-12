@@ -700,6 +700,10 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             }
             // [SRV-09] Shown by the update's own dialog below, which takes the target.
             NoticeLinks.Target.WHATS_NEW -> Unit
+            NoticeLinks.Target.SURE_ALARM -> {
+                com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.ALARM)
+                NoticeLinks.consume(target)
+            }
             NoticeLinks.Target.BACKUP -> {
                 com.bamnat.app.ui.settings.SettingsLinks.open(com.bamnat.app.ui.settings.SettingsPage.DATA, com.bamnat.app.ui.settings.AUTO_BACKUP_ROW)
                 NoticeLinks.consume(target)
