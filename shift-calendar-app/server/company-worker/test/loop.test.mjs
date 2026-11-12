@@ -28,10 +28,13 @@ async function item(call, admin, title, inquiries) {
   return id;
 }
 
+// 2.0.0 [RVQ-12] 매시 작업은 17분과 47분 두 번(Play 읽기·출시 안내는 47분).
 async function hourly(env, now = Date.now()) {
-  const waits = [];
-  await worker.scheduled({ cron: "17 * * * *", scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
-  await Promise.all(waits);
+  for (const cron of ["17 * * * *", "47 * * * *"]) {
+    const waits = [];
+    await worker.scheduled({ cron, scheduledTime: now }, env, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits);
+  }
 }
 async function fiveMinutes(env, now = Date.now()) {
   const waits = [];

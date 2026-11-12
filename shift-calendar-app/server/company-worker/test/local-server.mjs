@@ -422,8 +422,10 @@ http.createServer(async (req, res) => {
   // 1.36 [GRW-02][GRW-03][GRW-05] POST /__test/tick: the hourly work now (스튜디오 요구 묶음 → 장터, 승격 사다리), so a phone test needn't wait.
   if (testClock && req.method === "POST" && req.url.startsWith("/__test/tick")) {
     const waits = [];
-    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기).
-    const cron = new URL(req.url, "http://x").searchParams.get("cron") === "5" ? "*/5 * * * *" : "17 * * * *";
+    // 1.38 [ADM3-05] ?cron=5 runs the five-minute work instead (보류가 끝난 Claude 답 보내기). 2.0.0 [RVQ-12] 매시 작업은 17분·47분으로
+    // 나뉘었어요: ?cron=17·?cron=47은 그 몫만, 없으면 예전처럼 모두(모르는 cron은 모두 돌아요).
+    const want = new URL(req.url, "http://x").searchParams.get("cron");
+    const cron = { 5: "*/5 * * * *", 17: "17 * * * *", 47: "47 * * * *" }[want] ?? "manual";
     await worker.scheduled({ cron, scheduledTime: Date.now() }, env, { waitUntil: (p) => waits.push(p) });
     await Promise.all(waits);
     res.writeHead(204);
