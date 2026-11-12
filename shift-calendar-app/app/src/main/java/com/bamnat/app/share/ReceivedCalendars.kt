@@ -216,7 +216,8 @@ data class ReceivedCalendar(
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
     /** [RVG-32] 검토 PC-93: a link without a name shows 받 (as in 받은 표), not a question mark. */
-    val initial: String get() = title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받"
+    /** 2.0.0 [RVG-34] 검토 PC-132: a 팀 리더's link shows 팀, not its team name's first letter ('3' of 3병동), where its face stands alone. */
+    val initial: String get() = if (fromLeader) "팀" else title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받"
 
     companion object {
         /** Avatar colours, one per calendar in the order they were added. */

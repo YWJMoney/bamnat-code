@@ -239,7 +239,8 @@ export async function playTick(env, now = Date.now()) {
   }
   let advice = null;
   if (track.rolling && sw.halt) {
-    const h = await versionHealth(env, now, 14);
+    // 2.0.0 [RVN-15] 검토 SVC-103: 단계적 출시 중인 판을 그 앞 판과(시험판이 섞여도) 견줘요.
+    const h = await versionHealth(env, now, 14, null, { focus: track.rolling.v });
     if (h.latest === track.rolling.v && h.worse.length) {
       const said = await one(env, "SELECT id FROM audit WHERE action = 'loop_halt_advice' AND target = ?", track.rolling.v);
       if (!said) {

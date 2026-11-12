@@ -9,12 +9,15 @@
     python3 tools/dev_status.py payload --version 1.39.0 --sha <커밋> [--pr N]   # 서버 /api/admin/dev/sync 몸통
     python3 tools/dev_status.py notes 1.39.0     # 그 판의 '업데이트 소식' 줄(출시 노트 초안)
     python3 tools/dev_status.py pc 1.39.0        # 그 판의 PC 확인 목록(check 칸)
+    python3 tools/dev_status.py misses           # PC 확인·문의로 찾은 문제: 잡을 시험과 '왜 못 잡았나'
 
 칸(쓰는 것만): id(d로 시작하는 서버 개발사항 번호) 또는 track(추적 번호, 예 LOOP-17) 하나는 꼭,
 title, status(todo·doing·check·done·rejected), size(fix·polish·feature), route(server·remote·flag·app·hotfix),
 remote("kind@번호"), flag, events, tierAsk(free·pro·pass·trial·later, Claude의 제안일 뿐), tierWhy,
 publicTitle(앱 '지금 알려진 문제'에 보일 쉬운 제목, 60자), known(true·false), styles(보일 근무 유형 목록, 없으면 모두), test, check, pr,
-news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인 문의에 가는 답), reason(반려 이유).
+news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인 문의에 가는 답), reason(반려 이유),
+miss(2.0.0 [RVR-26] 시험이 왜 못 잡았나, 200자: PC 확인·문의로 찾은 문제는 done 전에 test와 함께 꼭).
+test에 적은 시험(클래스·파일·'[번호] 이름'·test_함수)은 check가 저장소에 정말 있는지 봐요. 시험으로 못 잡는 것은 "PC: …".
 요금(tier)은 사용자만 관리자 앱에서 정해요. 이 파일에 tier를 적으면 검사가 막아요.
 """
 import argparse
@@ -33,7 +36,7 @@ GRADLE = ROOT / "gradle.properties"
 MERGED = {"1.39.1": "2.0.0", "1.40.0": "2.0.0"}
 
 KEYS = {"id", "track", "title", "status", "size", "route", "remote", "flag", "events", "tierAsk", "tierWhy", "publicTitle",
-        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason"}
+        "known", "styles", "test", "check", "pr", "news", "shipReply", "reason", "miss"}
 STATUS = {"todo", "doing", "check", "done", "rejected"}
 SIZES = {"fix", "polish", "feature"}
 ROUTES = {"server", "remote", "flag", "app", "hotfix"}
@@ -60,7 +63,7 @@ BROADCAST = [
     (re.compile(r"(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}"), "전화번호"),
     (re.compile(r"오픈\s*채팅|단톡|카톡\s*방|텔레그램|디스코드|/api/|/admin|관리자\s*(페이지|화면|앱|계정)|서버\s*(주소|구조|코드)|소스\s*코드|깃허브|github|토큰|비밀\s*(값|키)|데이터\s*베이스", re.I), "보안 정보·단톡방"),
 ]
-LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300}
+LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300, "miss": 200}
 
 
 def read(path=None):
@@ -148,7 +151,7 @@ def check_item(n, x):
             for pat, what in BROADCAST:
                 if pat.search(v):
                     say(f"{k}에 {what}이 있어요. 판이 나갈 때 사람 확인 없이 나가는 글이라 서버가 그 칸을 빼요")
-    for k in ("title", "publicTitle", "news", "shipReply", "tierWhy", "check", "test", "reason"):
+    for k in ("title", "publicTitle", "news", "shipReply", "tierWhy", "check", "test", "reason", "miss"):
         v = x.get(k)
         if isinstance(v, str):
             for pat, what in PERSONAL:
@@ -169,6 +172,148 @@ def check_all(items):
                     errors.append(f"{n}줄: {k} {v}가 {seen[(k, v)]}줄과 겹쳐요")
                 seen[(k, v)] = n
     return errors
+
+
+# ---------- 2.0.0 [RVR-26] (검토 I60c-02) 시험이 왜 못 잡았나 ----------
+# PC 확인(검토 추적의 PC-… 줄)이나 문의(d 번호 + fix)로 찾은 문제는 '이걸 잡을 시험'(test)과 '시험이 왜 못 잡았나'(miss)를 남겨요.
+# done이 되려면 둘 다 있어야 하고(오류), check인 동안은 경고 한 줄로 세어요. test에 적은 시험은 저장소에 정말 있어야 해요(오류).
+
+REVIEW = ROOT / "docs" / "plans" / "2.0.0-검토-추적.csv"
+TEST_DIRS = ("app/src/test", "core/src/test", "wear/src/test", "server/company-worker/test", "server/share-worker/test",
+             "server/site-worker/test", "tools")
+WORKER_DIRS = ("", "server/company-worker", "server/share-worker", "server/site-worker")
+PATH_TOKEN = re.compile(r"[\w./-]*[\w-]+\.(?:test\.mjs|mjs|py|js|kt)\b")
+CLASS_TOKEN = re.compile(r"\b([A-Z][A-Za-z0-9]*Test)\b(?:\.([A-Za-z_][A-Za-z0-9_]*))?")
+PY_TOKEN = re.compile(r"\btest_[A-Za-z0-9_]+")
+
+
+class Tests:
+    """저장소의 시험 파일 색인: 파일 이름, Kotlin 시험 클래스, 시험 글(이름으로 찾기)."""
+
+    def __init__(self, root=ROOT):
+        self.root = Path(root)
+        self.paths: list[Path] = []
+        for d in TEST_DIRS:
+            base = self.root / d
+            if not base.is_dir():
+                continue
+            for f in base.rglob("*"):
+                if f.suffix in (".kt", ".mjs", ".js", ".py") and f.is_file() and not {"node_modules", "build", "__pycache__"} & set(f.parts):
+                    self.paths.append(f)
+        self.by_name: dict[str, list[Path]] = {}
+        for f in self.paths:
+            self.by_name.setdefault(f.name, []).append(f)
+        self._text: dict[Path, str] = {}
+        self.classes: dict[str, Path] = {}
+        for f in self.paths:
+            if f.suffix == ".kt":
+                self.classes.setdefault(f.stem, f)
+                for m in re.finditer(r"\bclass\s+([A-Z][A-Za-z0-9]*Test)\b", self.text(f)):
+                    self.classes.setdefault(m.group(1), f)
+
+    def text(self, f: Path) -> str:
+        if f not in self._text:
+            try:
+                self._text[f] = f.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                self._text[f] = ""
+        return self._text[f]
+
+    def has_path(self, p: str) -> bool:
+        if any((self.root / w / p).is_file() for w in WORKER_DIRS):
+            return True
+        return bool(self.by_name.get(Path(p).name))
+
+    def problems(self, test: str) -> list[str]:
+        """test 칸 하나 → 못 찾은 것들(빈 목록이면 됨)."""
+        t = (test or "").strip()
+        if not t or t.startswith("PC:"):
+            return []
+        out, found = [], 0
+        rest = t
+        for m in PATH_TOKEN.finditer(t):
+            found += 1
+            if not self.has_path(m.group(0)):
+                out.append(f"시험 파일 {m.group(0)}: 저장소에 없어요")
+        rest = PATH_TOKEN.sub(" ", rest)
+        for m in CLASS_TOKEN.finditer(rest):
+            found += 1
+            f = self.classes.get(m.group(1))
+            if not f:
+                out.append(f"시험 {m.group(1)}: 저장소에 없어요")
+            elif m.group(2) and not re.search(r"\bfun\s+`?" + re.escape(m.group(2)) + r"\b", self.text(f)):
+                out.append(f"{m.group(1)}.{m.group(2)}: 그 클래스에 이 시험이 없어요")
+        rest = CLASS_TOKEN.sub(" ", rest)
+        for m in PY_TOKEN.finditer(rest):
+            found += 1
+            if not any(f.suffix == ".py" and ("def " + m.group(0) + "(") in self.text(f) for f in self.paths):
+                out.append(f"파이썬 시험 {m.group(0)}: 저장소에 없어요")
+        if found:
+            return out
+        if t.startswith("["):
+            # node·관리자 앱 시험은 이름으로: '[RVD-03] …' 앞 40자가 어느 시험 파일에 그대로 있어야 해요.
+            head = t[:40].rstrip()
+            if not any(head in self.text(f) for f in self.paths if f.suffix in (".mjs", ".js", ".py")):
+                return [f"'{head}…'(으)로 시작하는 시험이 없어요"]
+            return []
+        return ["시험을 알아보지 못했어요(클래스 이름·시험 파일·'[번호] 시험 이름'·test_함수, 시험으로 못 잡으면 \"PC: …\")"]
+
+
+def missing_tests(items, tests: "Tests | None" = None) -> list[str]:
+    tests = tests or Tests()
+    out = []
+    for n, x in items:
+        if isinstance(x.get("test"), str):
+            for m in tests.problems(x["test"]):
+                out.append(f"{n}줄 {x.get('track') or x.get('id')}: test: {m}")
+    return out
+
+
+def pc_found(path=None) -> dict[str, list[str]]:
+    """검토 추적에서 PC 확인으로 찾은 줄(PC-…)이 이어진 추적 번호 → PC 번호들."""
+    out: dict[str, list[str]] = {}
+    try:
+        with (path or REVIEW).open(encoding="utf-8", newline="") as f:
+            for r in csv.DictReader(f):
+                if (r.get("id") or "").startswith("PC-"):
+                    for t in re.split(r"[,·\s]+", r.get("track") or ""):
+                        if t:
+                            out.setdefault(t, []).append(r["id"])
+    except OSError:
+        pass
+    return out
+
+
+def found_outside(x, pcs) -> list[str]:
+    """시험 밖에서 찾은 문제인지: PC 확인(PC-… 줄이 이어짐·track이 PC-…) 또는 문의로 생긴 고침(d 번호 + fix). 근거 목록."""
+    why = []
+    t = x.get("track") if isinstance(x.get("track"), str) else ""
+    if t.startswith("PC-"):
+        why.append(t)
+    why += [p for p in pcs.get(t, []) if p not in why]
+    if x.get("id") and x.get("size") == "fix":
+        why.append("문의")
+    return why
+
+
+def miss_rules(items, pcs) -> tuple[list[str], list[str]]:
+    """(오류, 경고): done인데 test·miss가 없으면 오류, check·doing이면 경고 한 줄로 셈."""
+    errors, waiting = [], []
+    for n, x in items:
+        why = found_outside(x, pcs)
+        if not why:
+            continue
+        lack = [k for k in ("test", "miss") if not x.get(k)]
+        if not lack:
+            continue
+        if x.get("status") == "done":
+            errors.append(f"{n}줄 {x.get('track') or x.get('id')}: {'·'.join(why[:3])}에서 찾은 문제라 done에는 "
+                          + " · ".join({"test": "test(이걸 잡을 시험)", "miss": "miss(시험이 왜 못 잡았나)"}[k] for k in lack) + "를 적어요")
+        elif x.get("status") in ("doing", "check"):
+            waiting.append(x.get("track") or x.get("id"))
+    warns = [f"PC 확인·문의로 찾은 줄 {len(waiting)}개가 아직 test·miss가 없어요(done 전에 적어요): " + ", ".join(waiting[:12])
+             + (" …" if len(waiting) > 12 else "")] if waiting else []
+    return errors, warns
 
 
 def norm(v):
@@ -254,6 +399,7 @@ def main(argv=None):
     pl.add_argument("--version", default="")
     pl.add_argument("--sha", default="")
     pl.add_argument("--pr", type=int, default=0)
+    sub.add_parser("misses")
     for name in ("notes", "pc"):
         s = sub.add_parser(name)
         s.add_argument("version")
@@ -261,12 +407,16 @@ def main(argv=None):
     items, errors = read()
     errors += check_all(items)
     ph = phases()
+    pcs = pc_found()
     if a.cmd == "check":
         if BUILT_FILE.read_text(encoding="utf-8") != built_text(items):
             errors.append("server/company-worker/src/dev-built.js가 개발 상태 파일과 달라요: python3 tools/dev_status.py build")
+        errors += missing_tests(items)
+        miss_errors, miss_warns = miss_rules(items, pcs)
+        errors += miss_errors
         for e in errors:
             print(e)
-        warns = stale(items, ph, current_version())
+        warns = stale(items, ph, current_version()) + miss_warns
         if warns:
             print(f"경고 {len(warns)}개 (실패는 아니에요):")
             for w in warns:
@@ -277,6 +427,15 @@ def main(argv=None):
         for e in errors:
             print(e, file=sys.stderr)
         return 1
+    if a.cmd == "misses":
+        rows = [(x, found_outside(x, pcs)) for _, x in items]
+        rows = [(x, w) for x, w in rows if w]
+        print(f"PC 확인·문의로 찾은 문제 {len(rows)}줄: 잡을 시험 있음 {sum(1 for x, _ in rows if x.get('test'))}, "
+              f"왜 못 잡았나 있음 {sum(1 for x, _ in rows if x.get('miss'))}")
+        for x, w in rows:
+            print(f"- {x.get('track') or x.get('id')} ({'·'.join(w[:3])}) {x.get('status')}: 시험 {x.get('test') or '없음'}"
+                  + (f" / 왜 못 잡았나: {x['miss']}" if x.get("miss") else ""))
+        return 0
     if a.cmd == "build":
         BUILT_FILE.write_text(built_text(items), encoding="utf-8")
         print(f"{BUILT_FILE.relative_to(ROOT)} 만듦")
@@ -298,7 +457,9 @@ def main(argv=None):
             print(f"# {want} PC 확인 목록 (개발 상태 파일에서)\n")
             for _, x in mine:
                 if x.get("check") and x.get("status") in ("check", "done"):
-                    print(f"- [ ] {x.get('track') or x.get('id')} {x.get('title', '')}: {x['check']}")
+                    # [RVR-26] 잡을 시험이 있으면 같이: PC에서 본 것이 시험과 다르면 그 시험이 틀린 거예요.
+                    print(f"- [ ] {x.get('track') or x.get('id')} {x.get('title', '')}: {x['check']}"
+                          + (f" (잡을 시험: {x['test']})" if x.get("test") else ""))
         if unknown:
             print(f"판을 모르는 줄 {len(unknown)}개(추적 번호 없음): " + ", ".join(map(str, unknown[:10])), file=sys.stderr)
     return 0

@@ -38,7 +38,9 @@ test("[CARE] off until the rules change: no 안내, and the admin app cannot war
   assert.deepEqual((await standing(2)).data, {});
   const list = (await call("GET", "/api/admin/care", undefined, h)).data;
   assert.equal(list.on, false);
-  assert.equal((await call("POST", "/api/admin/care/warn", { post: id, reason: "spam" }, h)).status, 409);
+  // 2.0.0 [RVN-15] 검토 SVC-101: '꺼 둔 기능'(off)이 아니라 마을 돌봄이 아직 꺼졌다는 말(care_off).
+  const off = await call("POST", "/api/admin/care/warn", { post: id, reason: "spam" }, h);
+  assert.deepEqual([off.status, off.data.error], [409, "care_off"]);
 });
 
 test("[CARE-01][CARE-06] only what the operator confirmed counts: 1 안내, 2 경고, 3 a limit, then each one steps up", async (t) => {

@@ -3,7 +3,7 @@
 // and the small numbers stay small.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import worker, { readsForget, scamMaskText, renderIcs, vtimezone, tiredShown, LIMITS } from "../src/index.js";
+import worker, { readsForget, scamMaskText, renderIcs, vtimezone, tiredShown, LIMITS, policy314, POLICY_314_FROM } from "../src/index.js";
 
 function kv() {
   const map = new Map();
@@ -26,6 +26,8 @@ const next = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMon
 const month = next.toISOString().slice(0, 7);
 const days = new Date(Date.UTC(next.getUTCFullYear(), next.getUTCMonth() + 1, 0)).getUTCDate();
 const row = (l) => Array.from({ length: days }, (_, i) => (i === 6 ? l : "O"));
+// 처리방침 3.14가 시행된 서버(확인했어요·피곤해요 휴대폰 수가 켜짐). 끈 서버는 아래 [POLICY-314] 시험이 봐요.
+const ON = { POLICY_314_FROM: "2026-01-01" };
 
 test("[RVQ-19] SVC-03·T22-01·T22-03: a HEAD, a preview robot or a link checker does not set 열어 봄 on a contract, a call, a swap or an ask; a person does", async () => {
   readsForget();
@@ -67,7 +69,7 @@ test("[RVQ-19] SVC-03·T22-01·T22-03: a HEAD, a preview robot or a link checker
 
 test("[RVQ-19] U22-01·I22b-01: a link the leader watches asks 확인했어요 once per change, from the page or the app; the leader reads it apart from 열어 봄", async () => {
   readsForget();
-  const env = { SHARES: kv() };
+  const env = { SHARES: kv(), ...ON };
   const m = await (await call(env, "/api/share", post(schedule()))).json();
   const seen = () => call(env, `/api/share/${m.id}/seen`, { headers: { "x-delete-token": m.deleteToken } }).then((r) => r.json());
   // Not watched yet: no button, and a press does nothing.
@@ -189,7 +191,7 @@ test("[RVQ-20] SVC-13: two Workers together hold one network to the hour's count
 
 test("[RVQ-21] SVC-14·T22-04: two links pressed from one phone count once, and a team where all but one pressed shows no number", async () => {
   readsForget();
-  const env = { SHARES: kv() };
+  const env = { SHARES: kv(), ...ON };
   const links = [];
   for (let i = 0; i < 6; i++) links.push(await (await call(env, "/api/share", post(schedule()))).json());
   const box = await (await call(env, "/api/tired", post({ team: "6병동" }))).json();
@@ -315,4 +317,59 @@ test("[RVQ-25] I22a-04: a swap page reads asks to me from the round's summary; a
   assert.match(seen.page, /리더가 승인했어요/);
   assert.equal((await call(env, `/api/swap/${made.id}`, { method: "DELETE", headers: { "x-delete-token": made.token } })).status, 204);
   assert.equal(env.SHARES.map.has(`swapx:${made.id}`), false);
+});
+
+test("[POLICY-314] 처리방침 3.14 전(스위치 꺼짐): 확인했어요 칸·저장·watch·okAt이 없고, 피곤해요는 누른 수로 세고 표시를 남기지 않아요", async () => {
+  readsForget();
+  // 저장소의 기본값은 꺼짐이에요(3.14 시행일이 정해지면 한 줄에 날짜를 적어요).
+  assert.equal(POLICY_314_FROM, "");
+  assert.equal(policy314({}), false);
+  assert.equal(policy314({ POLICY_314_FROM: "언젠가" }), false);
+  // 그날 0시(한국 시간)부터 켜져요.
+  const day = Date.parse("2026-12-14T00:00:00+09:00");
+  assert.equal(policy314({ POLICY_314_FROM: "2026-12-14" }, day - 1), false);
+  assert.equal(policy314({ POLICY_314_FROM: "2026-12-14" }, day), true);
+  // 날짜가 아직 오지 않은 서버도 꺼진 것과 같아요.
+  const env = { SHARES: kv(), POLICY_314_FROM: "2999-01-01" };
+  const m = await (await call(env, "/api/share", post(schedule()))).json();
+  const seen = () => call(env, `/api/share/${m.id}/seen`, { headers: { "x-delete-token": m.deleteToken } }).then((r) => r.json());
+  // 리더 앱이 물어봐도(열어 봄은 1.38부터 그대로) okAt은 내보내지 않아요: 리더 앱은 '열어 본 사람' 줄만 보여요.
+  const first = await seen();
+  assert.equal("okAt" in first, false);
+  await call(env, `/s/${m.id}`, { headers: PHONE });
+  assert.ok((await seen()).seenAt, "열어 봄은 그대로 적어요");
+  // 페이지에 확인 칸이 없고, 누르기는 저장하지 않아요(페이지 ?k=off, 앱 404 → 앱은 단추를 거둬요).
+  assert.doesNotMatch(await (await call(env, `/s/${m.id}`, { headers: PHONE })).text(), /확인했어요|다 봤으면 리더에게/);
+  const pressed = await call(env, `/s/${m.id}/ok`, form());
+  assert.equal(pressed.headers.get("location"), `/s/${m.id}?k=off`);
+  assert.equal((await call(env, `/api/share/${m.id}/ok`, { method: "POST" })).status, 404);
+  assert.equal(env.SHARES.map.has(`ok:${m.id}`), false);
+  assert.equal("okAt" in (await seen()), false);
+  // 팀원 앱도 watch를 모르고(단추를 띄우지 않아요), 켜지는 날 etag가 바뀌어 다시 받아요.
+  const off = await call(env, `/api/share/${m.id}`, { headers: { "x-bamnat-quiet": "1" } });
+  assert.equal((await off.json()).watch, undefined);
+  const onEnv = { SHARES: env.SHARES, ...ON };
+  const on = await call(onEnv, `/api/share/${m.id}`, { headers: { "x-bamnat-quiet": "1", "if-none-match": off.headers.get("etag") } });
+  assert.equal(on.status, 200, "켜진 날에는 304가 아니라 watch가 붙은 새 답이에요");
+  assert.equal((await on.json()).watch, true);
+
+  // 피곤해요: 지금 실서버처럼 누른 수로 세요. 휴대폰 표시(해시)·휴대폰 수를 남기지 않아요.
+  const links = [];
+  for (let i = 0; i < 6; i++) links.push(await (await call(env, "/api/share", post(schedule()))).json());
+  const box = await (await call(env, "/api/tired", post({ team: "6병동" }))).json();
+  for (const l of links) await call(env, `/api/share/${l.id}/tired`, { method: "PUT", body: JSON.stringify({ box: box.id }), headers: { "x-delete-token": l.deleteToken } });
+  const today = async () => (await (await call(env, `/api/tired/${box.id}`, { headers: { "x-delete-token": box.token } })).json()).days[0].n;
+  const press = (i, phone, ip) => call(env, `/api/share/${links[i].id}/tired`, { method: "POST", headers: { "user-agent": phone } }, ip);
+  await press(0, "Dalvik/2.1.0 (Linux; U; Android 14; leader)", "203.0.113.9");
+  await press(1, "Dalvik/2.1.0 (Linux; U; Android 14; leader)", "203.0.113.9");
+  await press(2, "Dalvik/2.1.0 (Linux; U; Android 13; member-a)", "198.51.100.20");
+  assert.equal(await today(), 3, "3.14 전에는 누른 수(링크 셋)로 세요");
+  // 새 정보 없이 지키는 보호는 그대로예요: 한 링크만 빼고 모두 누른 날은 숫자가 없어요.
+  await press(3, "b", "198.51.100.21");
+  await press(4, "c", "198.51.100.22");
+  assert.equal(await today(), null);
+  const kept = JSON.parse(env.SHARES.map.get(`tired:${box.id}`));
+  assert.equal(kept.marks, undefined, "휴대폰 표시를 남기지 않아요");
+  assert.equal(kept.people, undefined, "휴대폰 수를 남기지 않아요");
+  assert.equal(kept.links.length, 6);
 });

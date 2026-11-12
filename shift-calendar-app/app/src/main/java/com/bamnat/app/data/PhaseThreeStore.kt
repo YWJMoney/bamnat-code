@@ -388,15 +388,17 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         fun encodeShifts(l: List<TeamShift>): String = JSONArray().apply {
             l.forEach { s ->
+                // 2.0.0 [RVJ-29] "brk": the team's own 휴게(분); left out while the law's is taken, as every team before 2.0.0 reads.
                 put(JSONObject().put("id", s.id).put("label", s.label).put("name", s.name).put("color", s.colorArgb).put("off", s.isOff)
-                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()))
+                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()).putOpt("brk", s.breakMinutes))
             }
         }.toString()
 
         fun decodeShifts(text: String): List<TeamShift> = runCatching {
             JSONArray(text).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.map { o ->
                 TeamShift(o.getLong("id"), o.optString("label"), o.optString("name"), o.optLong("color"), o.optBoolean("off"),
-                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse))
+                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
+                    if (o.has("brk") && !o.isNull("brk")) o.optInt("brk").coerceIn(0, com.bamnat.core.team.TeamTimes.MAX_BREAK) else null)
             }
         }.getOrDefault(emptyList())
 
@@ -447,12 +449,12 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
             weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
-            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract),
+            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract), overtimeInPay = decodeOvertimeInPay(weekly),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
-            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
+            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves, overtimeInPay), memberId, sort, clockId, clockToken,
             encodeContract(contract),
         )
 
@@ -502,7 +504,12 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */
         /** 1.38: the 요일별 시급 ("r1".."r7") and 휴직 기간 ("leaves": [[start, end|null]] epoch days) ride in the same column, so no new table. */
-        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList()) = JSONObject().apply {
+        // [RVJ-42] The 월급's answer for the hours past 40 rides in the same column (no new DB 판; backups carry the column as it is).
+        fun decodeOvertimeInPay(t: String): Boolean? = runCatching { JSONObject(t).let { o -> if (o.has("otIn")) o.getBoolean("otIn") else null } }.getOrNull()
+
+        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList(),
+                         overtimeInPay: Boolean? = null) = JSONObject().apply {
+            overtimeInPay?.let { put("otIn", it) }
             m.forEach { (d, s) -> put(d.value.toString(), JSONArray().put(s.start.hour * 60 + s.start.minute).put(s.end.hour * 60 + s.end.minute)) }
             rates.forEach { (d, r) -> put("r${d.value}", r) }
             if (leaves.isNotEmpty()) put("leaves", JSONArray().apply { leaves.forEach { put(JSONArray().put(it.start.toEpochDay()).put(it.end?.toEpochDay() ?: JSONObject.NULL)) } })

@@ -44,9 +44,10 @@ internal fun PaceCard(
         Text("오늘까지 ${Fmt.won(pace.spent)} · 이대로면 월말 ${Fmt.won(pace.projected)}", style = MaterialTheme.typography.titleSmall)
         pace.budget?.let { b ->
             val over = pace.projected - b
-            Text(if (over > 0) "예산보다 ${Fmt.won(over)} 넘을 것 같아요" else "예산 안에서 끝날 것 같아요 (${Fmt.won(-over)} 남음)",
-                style = MaterialTheme.typography.bodySmall,
-                color = if (over > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            // 2.0.0 [RVK-30] (검토 HQ-45, 조건 6) Heading over the budget is 주의, the same line and colour as the summary card's.
+            com.bamnat.app.ui.components.ToneLine(
+                if (over > 0) "예산보다 ${Fmt.won(over)} 넘을 것 같아요" else "예산 안에서 끝날 것 같아요 (${Fmt.won(-over)} 남음)",
+                tone = if (over > 0) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Good)
         }
         if (sayToday) pace.todayLeft?.let { Text("오늘 쓸 수 있는 돈 ${Fmt.won(it)} (남은 ${pace.daysLeft}일)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp)) }
             ?: Text("예산을 정하면 오늘 쓸 수 있는 돈을 알려 드려요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -102,8 +103,8 @@ internal fun CardGaugeCard(book: MoneyBook, today: LocalDate, yearGross: Long?) 
         Text("신용카드 ${Fmt.won(gauge.credit)} · 체크카드·현금·페이 ${Fmt.won(gauge.debitAndCash)}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(Fmt.hide(gauge.tip), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
-        Text("통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-29] (검토 HQ-44 같은 모양) Said in full once, then one line with ⓘ ([Explain]).
+        com.bamnat.app.ui.components.Explain("money.cardGauge", "통장·카드에 카드 종류를 넣으면 더 정확해요. 전통시장·대중교통·문화비는 공제율이 더 높아요(40~80%).")
     }
 }
 

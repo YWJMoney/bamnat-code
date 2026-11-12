@@ -1182,7 +1182,8 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
 
 @Composable
 private fun FlagDialog(onDismiss: () -> Unit, onFlag: (InquiryFlag) -> Unit) {
-    var reason by remember { mutableStateOf(InquiryFlag.ABUSE) }
+    // 2.0.0 [RVN-13] HQ-39 (같은 신고 창): nothing picked first, so 신고 never goes with a reason the user did not read.
+    var reason by remember { mutableStateOf<InquiryFlag?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("이 문의를 신고할까요?") },
@@ -1203,7 +1204,7 @@ private fun FlagDialog(onDismiss: () -> Unit, onFlag: (InquiryFlag) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { onFlag(reason) }) { Text("신고") } },
+        confirmButton = { TextButton(onClick = { reason?.let(onFlag) }, enabled = reason != null) { Text("신고") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }

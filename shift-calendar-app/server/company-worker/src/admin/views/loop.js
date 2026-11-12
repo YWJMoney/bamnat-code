@@ -201,10 +201,13 @@ export function loopViews(A) {
   function decideView() {
     const d = S.data.loopDecide;
     if (!d) return skeleton(2);
-    const asks = d.asks.length ? `<ul class="rows">${d.asks.map((x) => `<li><div class="row"><span class="row-main"><a href="${href("inquiries", x.id)}"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b></a>
-        <small>${esc(x.why)}${x.late ? " · 기한 넘김" : ""}</small>${x.draft ? `<small class="answer">Claude 초안: ${esc(x.draft.text)}</small>${x.draft.why ? `<small>이유: ${esc(x.draft.why)}</small>` : ""}` : '<small class="meta">초안 없음</small>'}</span>
-        ${x.draft && can("inquiries", "edit") ? `<button class="btn small primary" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button>` : ""}
-        <a class="btn small" href="${href("inquiries", x.id)}">열기</a></div></li>`).join("")}</ul>`
+    // 2.0.0 [RVA-25] 검토 T24-04·T24-20·U24-04: 급함 문의와 같은 줄 틀(줄 전체가 문의를 열고, 왜 걸렸는지는 오른쪽 낱말 하나). '열기' 단추를 빼
+    // 380에서 제목과 겹치지 않고 1440에서 멀리 떨어지지 않아요. Claude 초안과 '초안 보내기'는 줄 아래 한 칸(채운 단추는 화면에 하나라 글자 단추).
+    const asks = d.asks.length ? `<ul class="rows decide-rows">${d.asks.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b>
+        <small>${x.draft ? "Claude 초안 있음" : "초안 없음"}${x.late ? " · 기한 넘김" : ""}</small></span>
+        <span class="row-side">${x.why ? `<span class="pill ${x.late ? "bad" : "warn"}">${esc(x.why)}</span>` : ""}</span>${icon(P.chevron)}</a>
+        ${x.draft ? `<div class="draft-line"><p class="answer">${esc(x.draft.text)}</p>${x.draft.why ? `<small class="meta">이유: ${esc(x.draft.why)}</small>` : ""}
+          ${can("inquiries", "edit") ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button></div>` : ""}</div>` : ""}</li>`).join("")}</ul>`
       : empty("최고 관리자가 볼 문의가 없어요", "환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관·처리방침 질문은 여기에 모여요.");
     const tiers = owner() ? (d.tiers.length ? `<ul class="rows">${d.tiers.map((x) => `<li><a class="row" href="${href("tiers")}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}문의 ${x.asks}건${x.ask ? ` · Claude 제안: ${esc(x.askName)}` : ""}${x.later ? " · 더 논의 중" : ""}</small>${x.why ? `<small>${esc(x.why)}</small>` : ""}</span>
@@ -223,9 +226,9 @@ export function loopViews(A) {
       ${back.length ? `<ul class="rows">${back.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
-    return `${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
+    return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
       <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
-        <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section>`;
+        <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section></div>`;
   }
 
   // ---- 숫자 › 요금 판단 ----

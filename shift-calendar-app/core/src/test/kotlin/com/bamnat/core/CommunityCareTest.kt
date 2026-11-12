@@ -56,6 +56,25 @@ class CommunityCareTest {
         assertFalse(PostNudge.needed("불이 꺼져 있었어요"))
     }
 
+    /** 2.0.0 [RVN-13] COMP-50 everyday words that asked before; U10b-07 the window says the word it saw. */
+    @Test fun theNudgeLeavesEverydayWordsAndSaysWhichWordAsked() {
+        assertFalse(PostNudge.needed("근무 시 발생한 일은 바로 적어 주세요"))
+        assertFalse(PostNudge.needed("언니 미안 오늘 대타 못 가"))
+        assertFalse(PostNudge.needed("개새벽 출근이라 일찍 자요"))
+        assertFalse(PostNudge.needed("등신대 세워 둔 매장이에요"))
+        assertFalse(PostNudge.needed("어머니 미역국 끓였어요"))
+        // Still asked: inside a word, spread over words from start to end, with marks between.
+        assertEquals("병신", PostNudge.found("이 병신 같은 회사"))
+        assertEquals("씨발", PostNudge.found("씨 발 진짜"))
+        assertEquals("개새끼", PostNudge.found("저 개 새끼가"))
+        assertEquals("씨발", PostNudge.found("씨 발놈"))
+        assertEquals("씨발", PostNudge.found("씨.발"))
+        assertEquals("ㅅㅂ", PostNudge.found("ㅅㅂ 야간 또"))
+        assertNull(PostNudge.found("야간 끝나고 바로 자는 게 좋아요"))
+        assertTrue(PostNudge.text("병신").startsWith("‘병신’ 같은 말은"))
+        assertEquals(PostNudge.TEXT, PostNudge.text(null))
+    }
+
     @Test fun teamLinksSayWhyAContactWasRefused() {
         assertTrue(TeamLinkText.contact("account").contains("계좌번호"))
         assertTrue(TeamLinkText.contact(null).contains("사기"))
