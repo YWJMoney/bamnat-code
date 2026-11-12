@@ -915,6 +915,72 @@ dialog{border-radius:var(--r-lg)}
 .flow-head h2{font-size:1.3rem;font-weight:750}
 .flow-head .meta{max-width:38rem}
 .flow-state{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem}
+/* 2.0.0 [RVA-40] 검토 U23-02: 문의 옆 '이 휴대폰' 패널은 꼭 볼 것만 굵게, 나머지는 '자세히' 한 줄 */
+.person-alerts{list-style:none;margin:.2rem 0 .4rem;padding:0;display:grid;gap:.3rem}
+.person-alerts li{padding:.15rem 0 .15rem .6rem;border-left:3px solid var(--warn);font-size:.95rem;line-height:1.35}
+.person-alerts li.bad{border-left-color:var(--bad)}
+.person-calm{margin:.2rem 0 .3rem;color:var(--muted);font-size:.9rem}
+details.person-more{margin:.5rem 0 0;border-top:1px solid var(--line)}
+.billing-why{margin:.15rem 0 .35rem;font-size:.92rem;line-height:1.45}
+/* 2.0.0 [RVA-43] 검토 ADMX-22: 볼 숫자가 없는 기능은 접힌 한 줄 */
+/* 2.0.0 [RVA-45] 검토 U24-14: 내 계정 세 묶음(접힌 줄은 카드 한 줄 모양, 펴면 그 아래 카드들) */
+.acct-groups{display:grid;gap:.5rem;margin:.75rem 0}
+details.acct-group[open]>summary{margin-bottom:.6rem}
+.acct-group .lf-t b{font-size:.98rem}
+.acct-body{margin:0 0 .5rem}
+/* 2.0.0 [RVA-44] 검토 U24-13: 관리자 초대·권한 창의 영역별 권한은 접힌 한 줄 */
+.perm-sum{margin:.45rem 0 0;font-size:.9rem;font-weight:600}
+details.perm-areas{margin:.6rem 0 .25rem;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+details.perm-areas>summary,details.acct-group>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;padding:.45rem 0;list-style:none;cursor:pointer}
+details.perm-areas>summary::-webkit-details-marker,details.acct-group>summary::-webkit-details-marker{display:none}
+details.perm-areas>summary::after,details.acct-group>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.perm-areas[open]>summary::after,details.acct-group[open]>summary::after{transform:rotate(-135deg)}
+.perm-areas .lf-t,.acct-group .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.perm-areas .lf-t small,.acct-group .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.perm-areas .perm-table{margin:.25rem 0 .5rem}
+/* 2.0.0 [RVA-40][RVA-43][RVA-44][RVA-45] 새 접힌 줄은 기본 details·summary(파란 굵은 글, 위 선)를 쓰지 않아요 */
+details.acct-group,details.card.fx-blank{border-top:0;padding-top:0}
+details.acct-group{margin:0}
+details.acct-group>summary,details.person-more>summary,details.perm-areas>summary,details.card.fx-blank>summary{color:var(--fg);font-size:inherit;font-weight:inherit}
+details.acct-group>summary{padding:.6rem 1.1rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-height:3.25rem}
+details.card.fx-blank{margin:.75rem 0 0}
+details.card.fx-blank>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;list-style:none;cursor:pointer}
+details.card.fx-blank>summary::-webkit-details-marker{display:none}
+details.card.fx-blank>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.card.fx-blank[open]>summary::after{transform:rotate(-135deg)}
+.fx-blank .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.fx-blank .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.fx-names{list-style:none;margin:.6rem 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(min(14rem,100%),1fr));gap:.15rem 1rem}
+.fx-names li{min-width:0;border-top:1px solid var(--line)}
+.fx-names a,.fx-names span{display:flex;flex-direction:column;justify-content:center;min-height:2.75rem;padding:.35rem 0;color:var(--fg);text-decoration:none;overflow-wrap:anywhere}
+.fx-names b{font-weight:600}
+.fx-names small{color:var(--muted);font-size:min(.78rem,16px)}
+details.person-more>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem;padding:.5rem 0 .2rem;cursor:pointer;list-style:none}
+details.person-more>summary::-webkit-details-marker{display:none}
+details.person-more>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
+details.person-more[open]>summary::after{transform:rotate(-135deg)}
+.person-more .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.person-more .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+/* 2.0.0 [RVA-38] 검토 U23-04: 자동 순환 맨 위 한 줄 상태와 다음 한 걸음, 그 아래 접힌 줄 */
+.loop-now{margin:.25rem 0 .75rem}
+.loop-now .loop-state{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .9rem;font-size:1.05rem;font-weight:600;margin:0}
+.loop-now .loop-state b{font-weight:750}
+.loop-now>.meta{margin:.35rem 0 0}
+.loop-next{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem .9rem;margin:.7rem 0 0;padding:.65rem .75rem;border-radius:var(--r-sm);background:var(--accent-soft)}
+.loop-next p{margin:0;flex:1 1 16rem;min-width:0}
+.loop-next p b{margin-right:.35rem}
+.loop-now .calm{margin:.6rem 0 0}
+.loop-now .hint{margin:.6rem 0 0}
+.loop-folds{gap:.5rem}
+details.card.loop-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:2.75rem}
+details.card.loop-fold>summary::after{flex:none;margin:0 .2rem}
+.loop-fold .lf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
+.loop-fold .lf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted)}
+.loop-fold .lf-t small.warn{color:var(--warn);font-weight:700}
+.loop-next .btn{max-width:100%;white-space:normal;text-align:center;line-height:1.25}
+details.card.loop-fold[open]>summary{margin-bottom:.6rem}
+.check-seen.just b{color:var(--ok)}
+.row-main .changed{color:var(--fg);font-weight:600}
 .next-bar{display:flex;align-items:center;gap:.7rem;padding:.7rem .75rem .7rem 1rem;margin:0 0 .9rem;border-radius:var(--r);background:var(--accent-soft);
 border:1px solid color-mix(in srgb,var(--accent) 22%,transparent)}
 .next-bar>svg{flex:none;width:1.1rem;height:1.1rem;color:var(--accent)}

@@ -622,7 +622,7 @@ export function obsGaps(b) {
   const add = (key, title, need, how, policy = false, state = "todo") => out.push({ key, title, need, how, policy, state });
   const now = b.at ?? Date.now();
   const r = b.play;
-  if (r?.state === "off") add("play-account", "Play 숫자를 아직 못 읽어요", "Play 서비스 계정(PLAY_SERVICE_ACCOUNT)", "관리 › 서버 상태의 설정 칸을 따라 넣어요");
+  if (r?.state === "off") add("play-account", "Play 숫자를 아직 못 읽어요", "Play 연결 열쇠(서비스 계정)", "관리 › 서버 상태의 설정 칸을 따라 넣어요");
   else if (r?.state === "nobucket") add("play-bucket", "설치·삭제·스토어 전환·출처가 비어 있어요", "Play 보고서 저장소 이름(PLAY_REPORTS_BUCKET)",
     "Play Console › 보고서 다운로드 › 통계에서 'Cloud Storage URI 복사' → 서버 변수 PLAY_REPORTS_BUCKET, 서비스 계정에 '앱 정보 보기 및 대량 보고서 다운로드' 권한");
   else if (r?.state === "denied") {

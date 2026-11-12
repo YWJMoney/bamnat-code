@@ -2108,6 +2108,8 @@ function adminApp(L, BUILD, M) {
     if (e.action === "inquiry_hide") return `${by}님이 모두의 문의에서 숨겼어요`;
     if (e.action === "inquiry_show") return `${by}님이 다시 보이게 했어요`;
     if (e.action === "inquiry_billing") return `${by}님이 결제·환불 기록${e.detail === "on" ? "으로 정했어요(3년 보관)" : "에서 뺐어요"}`;
+    // 2.0.0 [RVA-41] 자동 판정이 틀렸다는 기록(결제·환불 기록 또는 사람이 보내야 함), 걸린 말과 함께.
+    if (e.action === "ask_miss") return `${by}님이 자동 판정이 틀렸다고 적었어요${/'(.+)'/.test(e.detail ?? "") ? `(‘${e.detail.match(/'(.+)'/)[1]}’)` : ""}`;
     if (e.action === "dev_link") return `${by}님이 개발사항 "${e.detail}"에 연결했어요`;
     // 1.38 [DESK-09] Claude 답 10분 보류.
     if (e.action === "inquiry_reply_held") return `${by}가 답을 썼어요(${e.detail || "10분 보류"} 뒤 보내요)`;
@@ -2149,8 +2151,8 @@ function adminApp(L, BUILD, M) {
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "bad"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
-            <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? "<b>사람이 보내야 해요</b>(환불·법·개인정보·화남·약관·회사 방식은 저절로 가지 않아요)" : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
-            <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>` : ""}</span>`).join("")}</div>
+            <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
+            <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
           ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
             `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
@@ -2201,10 +2203,23 @@ function adminApp(L, BUILD, M) {
    */
   function billingCard(q, editable) {
     const day = (iso) => (iso ? new Date(iso).toLocaleDateString("ko-KR") : "");
-    return `<section class="card"><h2>결제·환불 기록</h2>
-      <p class="meta">${q.billing ? `법에 따라 ${esc(day(q.billing.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
+    // 2.0.0 [RVA-41] 검토 U24-05·I24a-05: 왜 결제·환불 기록인지 한 줄('‘해지’라는 말 때문에')과, 말 때문에 잘못 잡혔으면 '아니에요'로 바로 빼기.
+    const b = q.billing;
+    const why = !b ? "" : b.by === "admin" ? `${b.who ? `${esc(b.who)}님이` : "관리자가"} 손으로 정했어요.` : b.word ? `보낸 분 글의 <b>‘${esc(b.word)}’</b>라는 말 때문에 저절로 잡혔어요.` : "보낸 분 글의 결제 말 때문에 저절로 잡혔어요.";
+    const words = b && b.by !== "admin";
+    return `<section class="card billing-card"><h2>결제·환불 기록</h2>
+      ${b ? `<p class="billing-why">${why}</p>` : ""}
+      <p class="meta">${b ? `법에 따라 ${esc(day(b.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
         ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
-      ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${q.billing ? "" : "1"}">${q.billing ? "기록에서 빼기" : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
+      ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${b ? "" : "1"}"${words ? ' data-miss="1"' : ""}>${b ? (words ? "아니에요 · 기록에서 빼기" : "기록에서 빼기") : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
+  }
+
+  /** 2.0.0 [RVA-41] 사람이 보내야 하는 답의 까닭: 답 글의 표현이면 그 이름, 아니면 문의 글에서 걸린 말과 기준. */
+  function heldWhyText(h) {
+    const w = h.why;
+    if (!w) return "(환불·법·개인정보·화남·약관·회사 방식은 저절로 가지 않아요)";
+    if (w.reply) return ` · ${esc(w.name)}이 있어 고친 뒤 보내 주세요`;
+    return ` · ${w.word ? `보낸 분 글의 <b>‘${esc(w.word)}’</b> 때문에` : ""}(${esc(w.name)})`;
   }
 
   /**
@@ -3005,12 +3020,35 @@ function adminApp(L, BUILD, M) {
       <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">저장</button></div></form>`);
   }
 
-  /** Area by area: nothing, a look, or changes too; presets fill the table in one tap. */
+  /**
+   * 2.0.0 [RVA-44] 검토 U24-13: 지금 권한을 한 줄로(어느 역할 그대로인지, 고치기·보기·없음 몇 영역). 역할 칩은 그 역할과 같을 때 눌린 채.
+   */
+  function permSummary(perms, d) {
+    const areas = Object.keys(d.areas);
+    const same = Object.entries(d.presets ?? {}).find(([, p]) => areas.every((a) => (p.perms[a] ?? "none") === (perms[a] ?? "none")));
+    const n = (l) => areas.filter((a) => (perms[a] ?? "none") === l).length;
+    return { key: same?.[0] ?? "", text: `${same ? `${same[1].name} 그대로` : "직접 고름"} · 고치기 ${n("edit")} · 보기 ${n("view")} · 없음 ${n("none")}` };
+  }
+  function refreshPermSum(form) {
+    const d = S.data.admins;
+    if (!form || !d) return;
+    const sum = permSummary(readPermForm(form, d), d);
+    const line = form.querySelector("#perm-sum");
+    if (line) line.textContent = sum.text;
+    form.querySelectorAll('[data-act="preset"]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.key === sum.key)));
+  }
+
+  /**
+   * Area by area: nothing, a look, or changes too; presets fill the table in one tap.
+   * 2.0.0 [RVA-44] 검토 U24-13: 빠르게 고르기만 먼저, 영역별 15줄 × 단추 셋은 접힌 한 줄 뒤로(전에는 한 창에 길게). 고른 결과는 한 줄로 늘 보여요.
+   */
   function permEditor(perms, d) {
     const presets = Object.entries(d.presets ?? {});
-    return `<p class="label">빠르게 고르기</p>
-      <div class="chips" role="group" aria-label="역할">${presets.map(([key, p]) => `<button type="button" class="chip pick" data-act="preset" data-key="${key}">${esc(p.name)}</button>`).join("")}</div>
-      <p class="label">영역별 권한</p>
+    const sum = permSummary(perms, d);
+    return `<p class="label" id="perm-quick">빠르게 고르기</p>
+      <div class="chips" role="group" aria-labelledby="perm-quick">${presets.map(([key, p]) => `<button type="button" class="chip pick" data-act="preset" data-key="${key}" aria-pressed="${sum.key === key}">${esc(p.name)}</button>`).join("")}</div>
+      <p class="perm-sum" id="perm-sum" aria-live="polite">${esc(sum.text)}</p>
+      <details class="perm-areas" data-key="perm-areas"><summary><span class="lf-t"><b>영역별 권한 ${Object.keys(d.areas).length}개</b><small>빠르게 고르기로 모자랄 때만 하나씩 바꿔요</small></span></summary>
       <div class="perm-table">${Object.entries(d.areas).map(([area, label]) => {
         const yesNo = (d.toggles ?? toggles()).includes(area);
         const levels = yesNo ? ["none", "edit"] : ["none", "view", "edit"];
@@ -3021,7 +3059,7 @@ function adminApp(L, BUILD, M) {
           data-level="${l}" role="radio" aria-checked="${cur === l}" aria-pressed="${cur === l}" tabindex="${cur === l ? 0 : -1}"${l === "edit" && d.viewOnly?.includes(area) ? " disabled" : ""}>${yesNo ? (l === "edit" ? "줌" : "없음") : LEVEL_NAMES[l]}</button>`).join("")}</span>
         <input type="hidden" name="perm-${area}" value="${cur}"></div>`;
       }).join("")}</div>
-      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 개발사항 처리는 개발중·완료·반려를 정하고 여러 항목을 한 번에 처리하는 권한이에요. 기능 관리 고치기는 법적이 아닌 기능의 조건을 바꾸고 확인하는 권한, 기능 강제로 끄기는 사고 때 기능을 바로 끄는 예/아니요 권한이에요(처음에는 최고 관리자만). 강제로 켜기와 결제·광고 같은 법적 확인은 최고 관리자만 해요. 관리자 관리는 최고 관리자만 해요.</p>`;
+      <p class="help">보기는 화면을 보기만 하고, 고치기는 채택·답하기 같은 바꾸는 일까지 해요. 개발사항 처리는 개발중·완료·반려를 정하고 여러 항목을 한 번에 처리하는 권한이에요. 기능 관리 고치기는 법적이 아닌 기능의 조건을 바꾸고 확인하는 권한, 기능 강제로 끄기는 사고 때 기능을 바로 끄는 예/아니요 권한이에요(처음에는 최고 관리자만). 강제로 켜기와 결제·광고 같은 법적 확인은 최고 관리자만 해요. 관리자 관리는 최고 관리자만 해요.</p></details>`;
   }
 
   const readPermForm = (form, d) => Object.fromEntries(Object.keys(d.areas).map((a) => [a, form.elements[`perm-${a}`]?.value ?? "none"]));
@@ -3984,19 +4022,42 @@ function adminApp(L, BUILD, M) {
       <button class="icon-btn" data-act="${act}" data-key="${key}" data-d="1" aria-label="${label} 늘리기"${edit ? "" : " disabled"}>+</button></div></div>`;
   }
 
+  /**
+   * 2.0.0 [RVA-45] 검토 U24-14: 내 계정은 이름·권한과 로그아웃만 펴 두고, 나머지는 '로그인·보안' / '이 기기' / '가족·휴대폰' 세 묶음의 접힌 줄로
+   * (전에는 패스키·두 번째 확인·가족 이용권·이 기기 설정이 한 화면에 4,400px). 묶음마다 지금 상태를 한 줄로 보여 줘서 펴지 않고도 알아요.
+   */
+  function accountGroup(key, title, meta, cards) {
+    return `<details class="acct-group" data-key="acct-${key}" id="acct-${key}"${S.opened.get(`acct-${key}`) ? " open" : ""}>
+      <summary><span class="lf-t"><b>${esc(title)}</b><small>${esc(meta)}</small></span></summary><div class="grid two acct-body">${cards}</div></details>`;
+  }
+
   function accountView() {
     const m = S.me;
     if (!m) return skeleton();
     const done = S.data.today?.doneToday ?? 0;
-    return `<div class="grid two">
+    const keys = S.data.passkeys?.items?.length ?? 0;
+    const second = S.data.second;
+    const places = S.data.sessions?.items?.length ?? 0;
+    const pushOn = Boolean(S.data.push?.subscriptions?.some((x) => x.id === S.pushId));
+    const fam = S.data.family?.phones?.filter((d) => !d.paused).length ?? 0;
+    const phones = S.data.myPhones?.phones?.filter((d) => d.mine).length ?? 0;
+    const THEME = { system: "기기 설정 색", light: "밝은 화면", dark: "어두운 화면" };
+    const SIZE = { small: "작은 글자", normal: "보통 글자", large: "큰 글자", xlarge: "아주 큰 글자" };
+    const security = [keys ? `패스키 ${keys}개` : "패스키 없음", second ? (second.on ? "두 번째 확인 켜짐" : "두 번째 확인 꺼짐") : "", places ? `로그인 ${places}곳` : ""].filter(Boolean).join(" · ");
+    const device = [pushOn ? "알림 켜짐" : "알림 꺼짐", THEME[S.prefs.theme] ?? "", SIZE[S.prefs.size] ?? "", S.installed ? "앱으로 설치됨" : ""].filter(Boolean).join(" · ");
+    const family = [phones ? `내 휴대폰 ${phones}대 연결` : "내 휴대폰 연결 없음", m.owner ? `가족 ${fam}대` : "", S.data.myPhones?.phones?.length ? "미리 보기" : ""].filter(Boolean).join(" · ");
+    return `<div class="grid two acct-top">
       <section class="card"><div class="card-head"><h2>${esc(m.name)}</h2>${m.owner ? '<span class="pill gold">최고 관리자</span>' : ""}</div>
         ${m.owner ? '<p class="hint">Cloudflare의 ADMIN_PASSWORD로 로그인했어요. 모든 화면을 쓰고 관리자를 초대·승인해요.</p>'
           : `<dl class="kv"><dt>메일</dt><dd>${esc(m.email)}</dd></dl><p class="label">권한</p><div class="perm-sum">${permPills(m.perms, m.areas ?? {})}</div>`}
+        <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button></div>
       </section>
-      ${V.passkeyCard()}
       ${can("audit") ? `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p>
         <div class="actions start"><a class="btn" href="${L.routeHash("audit", null, { actor: "me" })}">내 활동 기록 보기</a></div></section>`
         : `<section class="card"><h2>내가 한 일</h2><p class="hint">오늘 ${done}건 처리했어요(로그인은 빼고).</p></section>`}
+      </div>
+      <div class="acct-groups">
+      ${accountGroup("security", "로그인·보안", security, `${V.passkeyCard()}
       ${m.owner ? `<section class="card"><h2>비밀번호</h2><p class="hint">최고 관리자 비밀번호는 Cloudflare 대시보드의 ADMIN_PASSWORD에서 바꿔요. 바꾸면 이 기기도 다시 로그인해요.</p></section>`
         : `<form class="card" data-form="password"><h2>비밀번호 바꾸기</h2>
           <div class="fieldset"><label for="pw-now">지금 비밀번호</label>${pwInput("pw-now", "current", "current-password")}</div>
@@ -4005,28 +4066,27 @@ function adminApp(L, BUILD, M) {
             <span class="help">10자 이상. 바꾸면 다른 기기의 로그인은 끝나요.</span></div>
           <div class="actions"><button class="btn primary" type="submit">바꾸기</button></div></form>`}
       ${secondCard()}
-      <section class="card"><h2>내 휴대폰 밤낮 연결</h2>
-        <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
-        <div class="actions start"><button class="btn" data-act="link-code">연결 코드 만들기</button></div></section>
-      ${m.owner ? familyCard() : ""}
-      ${previewCard()}
       <section class="card"><div class="card-head"><h2>로그인</h2>${S.data.sessions?.items?.length ? `<span class="pill">${S.data.sessions.items.length}곳</span>` : ""}</div>
         ${sessionRows()}
         <details class="tip" data-key="session-how"><summary>7일 안 쓰면 끝나요</summary>
           <p class="hint">쓰는 동안 저절로 이어지고 7일 동안 안 쓰면 끝나요(길어도 30일). ${m.owner ? "Cloudflare에서 ADMIN_PASSWORD를 바꾸면" : "비밀번호를 바꾸면"} 그 전의 로그인은 모두 끊겨요.</p></details>
-        <div class="actions start"><button class="btn" data-act="logout">${icon(P.logout)}로그아웃</button>
-          <button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
+        <div class="actions start"><button class="btn danger" data-act="logout-all">모든 기기에서 로그아웃</button></div>
         ${m.owner ? lockLine() : ""}
         <p class="hint">이 기기는 연결이 끊겨도 보이게 목록과 숫자만 24시간까지 남겨요(문의 글·사람·돈은 남기지 않아요). 다른 사람과 함께 쓰는 기기면 지워 주세요.</p>
-        <div class="actions start"><button class="btn" data-act="forget-device">이 기기에 남은 화면 지우기</button></div></section>
-      ${pushCard()}
+        <div class="actions start"><button class="btn" data-act="forget-device">이 기기에 남은 화면 지우기</button></div></section>`)}
+      ${accountGroup("device", "이 기기", device, `${pushCard()}
       ${prefsCard()}
       <section class="card"><h2>앱으로 설치</h2>
         <p class="hint">${S.installed ? "이 기기에는 앱으로 설치돼 있어요." : "홈 화면에 두면 앱처럼 바로 열리고, 주소창 없이 넓게 보여요."}</p>
         <div class="actions start">${S.installPrompt ? `<button class="btn primary" data-act="install">${icon(P.install)}지금 설치</button>` : ""}
           <a class="btn" href="/admin/install">설치 방법 보기</a></div></section>
       <section class="card"><h2>단축키</h2><p class="hint">키보드가 있으면 <span class="kbd">1</span>~<span class="kbd">${L.HUBS.length}</span>로 허브를, <span class="kbd">[</span> <span class="kbd">]</span>로 허브 안 탭을 옮기고, <span class="kbd">?</span>로 단축키를, <span class="kbd">Ctrl</span>+<span class="kbd">K</span>로 찾기·이동을 열어요.</p>
-        <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>
+        <div class="actions start"><button class="btn" data-act="shortcuts">단축키 보기</button></div></section>`)}
+      ${accountGroup("phones", "가족·휴대폰", family, `<section class="card"><h2>내 휴대폰 밤낮 연결</h2>
+        <p class="hint">관리자 휴대폰은 프로를 무료로 써요. 코드를 만들어 밤낮 앱 › 설정 › 프로 › '관리자 연결'에 10분 안에 넣어요${m.owner ? "" : ". 최고 관리자가 승인하면 시작돼요"}. 한 사람당 2대까지예요.</p>
+        <div class="actions start"><button class="btn" data-act="link-code">연결 코드 만들기</button></div></section>
+      ${m.owner ? familyCard() : ""}
+      ${previewCard()}`)}
       </div>`;
   }
 
@@ -5208,22 +5268,28 @@ function adminApp(L, BUILD, M) {
     const up = (a, b) => (b > a ? ' <span class="pill warn">늘었어요</span>' : "");
     const line = (r) => {
       const c = r.compare;
-      const share = r.onShare !== null && r.onShare !== undefined ? `휴대폰 ${r.onShare}%에서 켜짐` : "켜진 휴대폰 수 모름";
+      const share = r.onShare !== null && r.onShare !== undefined ? ` · 휴대폰 ${r.onShare}%에서 켜짐` : "";
       // AU 1.29 [NXT-07]: the same reports split by whether the flag was on for the phone (문의 시각·앱 판으로만).
       const sp = c?.split;
       const split = sp ? ` · 켜진 휴대폰 ${sp.on}${sp.maybe ? `(+휴대폰마다 다름 ${sp.maybe})` : ""} / 꺼진 휴대폰 ${sp.off}${sp.unknown + sp.unseen ? ` / 모름 ${sp.unknown + sp.unseen}` : ""}` : "";
-      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)}${split} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>`
-        : '<span class="preview">서버가 아직 켜짐·꺼짐을 보지 않았어요</span>';
-      const inner = `<span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)} · ${share}</small>${nums}</span><span class="row-side pills">${statePill(r)}${riskPill(r)}</span>`;
+      const nums = c ? `<span class="preview">${esc(moment(c.pivot))} 앞뒤 ${c.days}일 · 문제 신고 ${c.bugsBefore} → ${c.bugsAfter}${up(c.bugsBefore, c.bugsAfter)}${split} · 서버 오류 ${c.errorsBefore} → ${c.errorsAfter}${up(c.errorsBefore, c.errorsAfter)}</span>` : "";
+      const inner = `<span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)}${share}</small>${nums}</span><span class="row-side pills">${statePill(r)}${riskPill(r)}</span>`;
       return `<li>${d.flagsReach ? `<a class="row" href="${flagLink(r.key)}">${inner}${icon(P.chevron)}</a>` : `<div class="row">${inner}</div>`}</li>`;
     };
     const measured = rows.filter((r) => r.compare);
-    const rest = rows.filter((r) => !r.compare);
-    return `<p class="hint">기능마다 켜진 휴대폰 비율(지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰${d.statsPhones ? ` ${d.statsPhones}대` : ""} 기준, 휴대폰 구별 없음)과
-        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 문제 신고는 보낸 시각과 앱 판으로 그 기능이 켜진 휴대폰·꺼진 휴대폰으로도 나눠요(동의·근무 유형처럼 휴대폰만 아는 조건은 '휴대폰마다 다름').${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p>
+    // 2.0.0 [RVA-43] 검토 ADMX-22·T24-10: 볼 숫자가 하나도 없는 기능(켜짐·꺼짐을 본 적 없고 켜진 비율도 모름)은 줄마다 같은 문장을
+    // 되풀이하지 않고 접힌 한 줄 '아직 볼 숫자가 없는 기능 N개'로(380에서 쪽 5,388px). 켜진 비율만 있는 기능은 줄로 남겨요.
+    const rest = rows.filter((r) => !r.compare && r.onShare !== null && r.onShare !== undefined);
+    const blank = rows.filter((r) => !r.compare && (r.onShare === null || r.onShare === undefined));
+    const blankFold = blank.length ? `<details class="card fx-blank" data-key="fx-blank"${S.opened.get("fx-blank") ? " open" : ""}><summary><span class="lf-t"><b>아직 볼 숫자가 없는 기능 ${blank.length}개</b>
+        <small>서버가 켜짐·꺼짐을 본 적 없고, 켜진 휴대폰 수도 아직 몰라요</small></span></summary>
+        <ul class="fx-names">${blank.map((r) => { const t = `<b>${esc(r.name)}</b><small class="mono">${esc(r.key)}</small>`; return `<li>${d.flagsReach ? `<a href="${flagLink(r.key)}">${t}</a>` : `<span>${t}</span>`}</li>`; }).join("")}</ul></details>` : "";
+    // 2.0.0 [RVA-43] 설명은 펴는 한 줄로(조건 4).
+    return `<details class="tip" data-key="fx-how"${S.opened.get("fx-how") ? " open" : ""}><summary>기능마다 켜진 비율과 켜고 끈 앞뒤 7일의 문제 신고·서버 오류</summary><p class="hint">켜진 휴대폰 비율은 지난 7일 '사용 통계 더 보내기'를 보낸 휴대폰${d.statsPhones ? ` ${d.statsPhones}대` : ""} 기준이에요(휴대폰 구별 없음).
+        서버가 켜짐·꺼짐을 본 때 앞뒤 7일의 문제 신고·서버 오류를 나란히 봐요. 문제 신고는 보낸 시각과 앱 판으로 그 기능이 켜진 휴대폰·꺼진 휴대폰으로도 나눠요(동의·근무 유형처럼 휴대폰만 아는 조건은 '휴대폰마다 다름').${d.flagsReach ? " 줄을 누르면 그 기능의 자세한 기록이 열려요." : ""}</p></details>
       ${d.statsPhones ? "" : '<p class="note">아직 켜진 기능 목록을 보낸 휴대폰이 없어요. 처리방침 3.2가 시행되고 동의한 휴대폰부터 와요.</p>'}
       ${measured.length ? `<h2 class="day-head">켜짐·꺼짐을 본 기능</h2><ul class="rows">${measured.map(line).join("")}</ul>` : ""}
-      ${rest.length ? `<h2 class="day-head">아직 바뀐 적 없는 기능</h2><ul class="rows">${rest.map(line).join("")}</ul>` : ""}`;
+      ${rest.length ? `<h2 class="day-head">켜진 비율만 있는 기능</h2><ul class="rows">${rest.map(line).join("")}</ul>` : ""}${blankFold}`;
   }
 
   const FLAG_ACTIONS = {
@@ -5440,6 +5506,11 @@ function adminApp(L, BUILD, M) {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     }, "primary"),
+    // 2.0.0 [RVA-41] 검토 I24a-05: 판정이 틀렸다는 기록만(답은 그대로 '지금 보내기'로 보내요).
+    "held-miss": async ({ id }) => {
+      const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { miss: true }), "틀렸다고 적었어요. 판정을 다듬는 데 써요. 답은 '지금 보내기'로 보내요");
+      if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
+    },
     "held-cancel": ({ id }) => confirmBox("이 답을 보내지 않을까요?", "보낸 분께 가지 않고, 기록에 취소로 남아요.", "보내지 않기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
@@ -6217,10 +6288,10 @@ function adminApp(L, BUILD, M) {
       if (q) S.data.inquiry = q;
       load();
     },
-    "inquiry-billing": async ({ on }) => {
+    "inquiry-billing": async ({ on, miss }) => {
       const save = async () => {
         const left = S.data.inquiry?.leftByAsker;
-        const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1" }),
+        const q = await act(() => api(`/inquiries/${S.route.id}/billing`, "POST", { on: on === "1", ...(miss === "1" ? { miss: true } : {}) }),
           on === "1" ? "결제·환불 기록으로 정했어요. 3년 동안 보관해요" : left ? "기록에서 빼고, 보낸 분이 지운 대로 지웠어요" : "결제·환불 기록에서 뺐어요");
         if (q?.deleted) return go("inquiries");
         if (q) S.data.inquiry = q;
@@ -6228,7 +6299,8 @@ function adminApp(L, BUILD, M) {
       };
       // 1.36 [INQ-07] Taking one out of the law's three years asks first; putting one in does not.
       if (on === "1") return save();
-      confirmBox("결제·환불 기록에서 뺄까요?", `결제·구독·환불과 관계없는 문의일 때만 빼 주세요. ${S.data.inquiry?.leftByAsker ? "보낸 분이 앱에서 지운 문의라 빼면 바로 지워져요." : "빼면 마지막 글부터 180일 뒤에 지워져요."} 누가 뺐는지는 활동 기록에 남아요.`, "빼기", save);
+      const word = S.data.inquiry?.billing?.word;
+      confirmBox("결제·환불 기록에서 뺄까요?", `결제·구독·환불과 관계없는 문의일 때만 빼 주세요. ${S.data.inquiry?.leftByAsker ? "보낸 분이 앱에서 지운 문의라 빼면 바로 지워져요." : "빼면 마지막 글부터 180일 뒤에 지워져요."} 누가 뺐는지는 활동 기록에 남아요.${miss === "1" && word ? ` 잘못 잡은 말 ‘${word}’도 기록해 판정을 다듬는 데 써요.` : ""}`, "빼기", save);
     },
     "inquiry-show": async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/visibility`, "POST", { action: "show" }), "다시 보이게 했어요. 신고로는 더 가려지지 않아요");
@@ -6275,8 +6347,12 @@ function adminApp(L, BUILD, M) {
     preset: ({ key }) => {
       const p = S.data.admins.presets[key];
       for (const [area, level] of Object.entries(p.perms)) setLevel(area, level);
+      refreshPermSum(dialog.querySelector("form"));
     },
-    level: ({ area, level }) => setLevel(area, level),
+    level: ({ area, level }) => {
+      setLevel(area, level);
+      refreshPermSum(dialog.querySelector("form"));
+    },
     "admin-approve": ({ id }) => openAdminEdit(id, true),
     // [MON-09]
     phone: async ({ id, key }) => {

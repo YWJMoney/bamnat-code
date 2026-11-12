@@ -413,7 +413,7 @@ export function requiredSetup(env) {
     { key: "RATE_SALT", need: "must", ok: has("RATE_SALT"), what: "요청 한도용 소금 값", lose: "네트워크 한도가 약해져요" },
     { key: "VAPID_PUBLIC_KEY·VAPID_PRIVATE_KEY", need: "must", ok: has("VAPID_PUBLIC_KEY") && has("VAPID_PRIVATE_KEY"), what: "관리자 휴대폰 알림",
       lose: "새 문의·주의·사고·아침 요약 알림이 오지 않아 앱을 열어야만 알아요" },
-    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 서비스 계정(결제 확인·비정상 종료·ANR·스토어 리뷰)",
+    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 연결 열쇠(서비스 계정: 결제 확인·비정상 종료·ANR·스토어 리뷰)",
       lose: "결제를 Play와 맞춰 보지 못하고, 판 건강·스토어 리뷰가 비어요" },
     { key: "FCM_SERVICE_ACCOUNT", need: "nice", ok: has("FCM_SERVICE_ACCOUNT"), what: "앱 사용자에게 보내는 푸시(문의 답 알림)", lose: "문의 답이 앱을 열 때만 보여요" },
     { key: "BACKUP(R2)", need: "nice", ok: Boolean(env.BACKUP && typeof env.BACKUP.put === "function"), what: "하루 백업을 둘 R2 저장소", lose: "D1 되돌리기(Time Travel)만 쓸 수 있어요" },

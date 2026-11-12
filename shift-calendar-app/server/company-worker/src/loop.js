@@ -1014,6 +1014,12 @@ export async function instantOk(env, pile, kind, text) {
 const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
   : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""})`);
 
+/** 2.0.0 [RVA-38] 검토 ADM-14·T23-06: 점검 줄의 때는 한국 시간 '11. 12. 15:04'로(전에는 2026-11-12T06:04:00.000Z). */
+const kstAt = (ms) => {
+  const t = new Date(Number(ms) + 9 * HOUR);
+  return `${t.getUTCMonth() + 1}. ${t.getUTCDate()}. ${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+};
+
 /**
  * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요
  * (편집을 열고 읽고 지움, 확정하지 않음). 값(열쇠·비밀값)은 보이지 않고 있는지만.
@@ -1029,7 +1035,7 @@ export async function loopCheck(env, now, { play = false } = {}) {
   ]);
   const lines = [];
   const line = (key, name, state, text, fix = "") => lines.push({ key, name, state, text, ...(fix ? { fix } : {}) });
-  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "서버 비밀값 PLAY_SERVICE_ACCOUNT가 없어요", "사용자 할 일 G10 1장: 서비스 계정에 '앱 정보 보기' 권한");
+  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "Play 연결 열쇠가 서버에 없어요", "Play Console의 서비스 계정('앱 정보 보기' 권한)을 서버 설정에 넣어요 · 넣는 곳은 관리 › 서버 상태");
   else if (play) {
     try {
       const r = await readProduction(env, now);
@@ -1040,29 +1046,29 @@ export async function loopCheck(env, now, { play = false } = {}) {
       // [LOOP-32] 읽은 것은 남겨요(새로 고쳐도 '한 번도 읽지 않았어요'로 돌아가지 않게). 보류 안내는 매시 작업만 세워요.
       if (r) await saveSetting(env, "play_track", { ...r, ...(seen ? { seen } : {}) });
     } catch (e) {
-      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 서비스 계정 권한을 봐요");
+      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 그 열쇠(서비스 계정)의 권한을 봐요");
     }
-  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
+  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${kstAt(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
   else line("play", "Play 출시 읽기", "warn", "아직 한 번도 읽지 않았어요", "'Play까지 점검'을 눌러 한 번 읽어 봐요");
   if (playReady(env) && job?.fail_at && job.fail_at > (job.ok_at ?? 0)) {
-    line("playJob", "매시 Play 읽기", "bad", `${iso(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업 'play'를 봐요");
+    line("playJob", "매시 Play 읽기", "bad", `${kstAt(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업에서 Play 읽기 줄을 봐요");
   }
   line("autoShip", "스스로 출시 안내", sw.autoShip ? "ok" : "warn", sw.autoShip ? "켜짐 · 100% 출시를 보면 1시간 보류 뒤 안내" : "꺼짐 · '나간 판 저장'을 사람이 눌러요");
-  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${iso(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
-    syncKey ? "" : "아래 저장소 동기화 › 동기화 열쇠 만들기 → GitHub Secret BAMNAT_SYNC_KEY");
+  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${kstAt(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
+    syncKey ? "" : "아래 저장소 동기화의 '동기화 열쇠 만들기'를 누르고 그 창의 안내대로 GitHub에 넣어요");
   if (!sw.sync) line("sync", "저장소 동기화", "warn", "받기가 꺼져 있어요");
-  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "GitHub Secret BAMNAT_SYNC_KEY·Variable BAMNAT_API를 넣고 main에 합치면 와요");
+  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "동기화 열쇠를 GitHub에 넣으면, 개발한 것이 다음에 합쳐질 때 와요");
   else {
     const r = JSON.parse(sync.result || "{}");
-    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${iso(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
-      r.errors ? "GitHub › Actions › dev-status 로그와 dev-status.jsonl 줄을 봐요" : "");
+    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${kstAt(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
+      r.errors ? "GitHub › Actions의 개발 상태 보내기 기록에서 틀린 줄을 봐요" : "");
   }
   line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다`);
   line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
-    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 정기 기준 versionCode를 넣어요");
-  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "VAPID 비밀값이 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정");
-  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${iso(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
-    opsKey ? "" : "사용자 할 일 G10 3장");
+    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 멈춤 스위치 › 인앱 업데이트에 정기 기준 판 번호를 넣어요");
+  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "폰 알림 열쇠가 서버에 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정에서 넣어요");
+  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${kstAt(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
+    opsKey ? "" : "관리 › Claude 열쇠에서 만들어요");
   const worst = lines.some((x) => x.state === "bad") ? "bad" : lines.some((x) => x.state === "warn") ? "warn" : "ok";
   return { at: iso(now), state: worst, lines, played: Boolean(play && playReady(env)) };
 }

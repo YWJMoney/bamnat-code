@@ -3039,3 +3039,157 @@ test("[RVA-37] 오늘: 서버가 읽지 못해 빼 둔 줄을 원인·[그 줄 �
   assert.ok(u.$('#main .card.stuck a[href^="#/dev/"]'), "the card now points at the 개발사항");
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음 출시·내가 할 것)와 다음 한 걸음 하나, 카드 열 장은 접힌 줄, 개발자 말 없음", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-now .loop-state"), /(저절로 도는 중|일부만 저절로)\s*다음 출시 \d{1,2}\. \d{1,2}\. \(.\)\s*내가 할 것 \d+/);
+  const folds = u.$$("#main details.loop-fold");
+  assert.ok(folds.length >= 8, "the other cards are folded lines");
+  assert.ok(folds.every((d) => !d.open), "closed at first");
+  for (const d of folds) assert.ok(d.querySelector(":scope > summary .lf-t b"), "each line says what it is");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1, "one filled button at most: the next step");
+  if (u.$("#main .loop-next")) assert.equal(u.$$("#main .loop-next .btn.primary").length, 1);
+  assert.doesNotMatch(u.text("#main"), /PLAY_SERVICE_ACCOUNT|VAPID|versionCode|\(409\)|G10 \d장|ops\/dev-status|main에 합쳐지면/);
+  // An urgent question comes first (the world has '알람 소리가 안 나요'): the step goes to 결정함.
+  const d = await u.api("GET", "/api/admin/loop");
+  if (d.urgentWaiting) assert.equal(u.$("#main .loop-next .btn.primary").getAttribute("href"), "#/decide");
+  // With it closed, the local server's missing Play key is the step, and it opens the 연결 점검 line in place.
+  for (const q of (await u.api("GET", "/api/admin/inquiries")).inquiries) await u.api("POST", `/api/admin/inquiries/${q.id}/status`, { status: "closed" });
+  await u.go("#/home");
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-next"), /빠진 설정 \d+개: Play 출시 읽기/);
+  await u.click('#main .loop-next [data-act="loop-open"][data-key="loop-check"]');
+  assert.ok(u.$("#loop-check").open, "연결 점검 opened where it is");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  // Something changes on the server after the page was read: 스스로 출시 안내 is turned off.
+  await u.api("POST", "/api/admin/loop/switches", { autoShip: false });
+  await u.click('#loop-check [data-act="loop-check"]');
+  await u.settle(20);
+  assert.ok(u.$("#loop-check").open, "stays open to show what it saw");
+  assert.match(u.text("#main .check-seen"), /방금 다시 봤어요 · .+ · 바뀐 줄 1개/);
+  assert.match(u.text("#loop-check"), /스스로 출시 안내[\s\S]*방금 됨 → 확인/);
+  assert.match(u.text("#toast"), /다시 봤어요 · 확인할 것 \d+개 · 바뀐 줄 1개/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-40] 문의 상세 '이 휴대폰': 꼭 볼 것(결제·환불 문의 N번)만 굵게, 숫자·결제·이전 문의는 '자세히' 한 줄", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000011", kind: "other", text: "환불해 주세요", info: { app: "2.0.0 (54)" } }, from(11));
+  const u = await asOwner(env, t);
+  const list = (await u.api("GET", "/api/admin/inquiries?status=all")).inquiries;
+  const id = list.find((q) => /알람 소리/.test(JSON.stringify(q))).id;
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const panel = u.$("#main aside.person");
+  assert.ok(panel, "the phone panel");
+  assert.match(u.text("#main .person-alerts"), /결제·환불 문의 1번/);
+  const more = panel.querySelector("details.person-more");
+  assert.ok(more && !more.open, "the rest is one folded line");
+  assert.match(more.querySelector("summary").textContent, /자세히[\s\S]*문의 2 · 제보 \d+[\s\S]*이전 문의 1건/);
+  assert.ok(more.querySelector("dl.lines"), "the numbers are inside");
+  assert.ok(more.querySelector('a.row[href^="#/inquiries/"]'), "the other question is inside");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-41] 문의 상세 › 결제·환불 기록: 걸린 말('영수증')을 보여 주고 '아니에요 · 기록에서 빼기', 기록에 그 말", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000021", kind: "question", text: "영수증 어디서 봐요?", info: { app: "2.0.0 (54)" } }, from(21))).data.id;
+  const u = await asOwner(env, t);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  assert.match(u.text("#main .billing-why"), /‘영수증’라는 말 때문에 저절로 잡혔어요/);
+  await u.click('#main [data-act="inquiry-billing"][data-miss="1"]');
+  assert.match(u.text("dialog"), /잘못 잡은 말 ‘영수증’도 기록해/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.ok(!u.$("#main .billing-why"), "out of the record");
+  assert.match(u.text("#main .billing-card"), /아니에요\. 마지막 글부터 180일/);
+  assert.match(u.text("#main .timeline"), /자동 판정이 틀렸다고 적었어요\(‘영수증’\)/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-42] 숫자 › 한눈에: 개선 신호는 '긴 흐름' 신호라고 말하고, 위에 바로 볼 것이 있으면 그 칩으로 이어 줘요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  assert.match(u.text("#main .ob-signals .hint"), /며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요\(위 정상도는 지금 이 순간의 숫자\)/);
+  const empty = u.$("#main .ob-signals .empty-line");
+  if (empty) {
+    assert.match(empty.textContent, /^긴 흐름에서는 찾은 문제가 없어요\./);
+    const hero = u.$("#main .gl-hero");
+    if (!hero.classList.contains("ok") && u.$$("#main .gl-signals li").length) assert.match(empty.textContent, /위 '.+' \d+개는 지금 숫자라 위 칩에서 바로 열어요/);
+  }
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-43] 숫자 › 기능별 효과: 볼 숫자가 없는 기능은 같은 문장을 되풀이하지 않고 접힌 한 줄, 설명은 펴는 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/effects");
+  await u.settle(30);
+  assert.doesNotMatch(u.text("#main"), /서버가 아직 켜짐·꺼짐을 보지 않았어요|켜진 휴대폰 수 모름/);
+  const blank = u.$('#main details.fx-blank[data-key="fx-blank"]');
+  assert.ok(blank && !blank.open, "one folded line");
+  const n = Number(blank.querySelector("summary b").textContent.match(/(\d+)개/)[1]);
+  assert.equal(blank.querySelectorAll(".fx-names li").length, n, "every such flag is in it, by name");
+  assert.ok(u.$('#main details.tip[data-key="fx-how"]'), "the long explanation folds");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-44] 관리자 초대: '빠르게 고르기'만 먼저, 영역별 권한은 접힌 한 줄, 고른 결과는 한 줄로", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/admins");
+  await u.settle(20);
+  await u.click('#main [data-act="invite"]');
+  const areas = u.$("dialog details.perm-areas");
+  assert.ok(areas && !areas.open, "the 15 areas are folded");
+  assert.match(u.text("dialog #perm-sum"), /^검토 담당 그대로 · 고치기 \d+ · 보기 \d+ · 없음 \d+$/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "reviewer");
+  await u.click('dialog [data-act="preset"][data-key="support"]');
+  assert.match(u.text("dialog #perm-sum"), /^문의 담당 그대로/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "support");
+  // One area changed by hand: the line says so and no role chip stays pressed.
+  await u.click('dialog [data-act="level"][data-area="audit"][data-level="view"]');
+  assert.match(u.text("dialog #perm-sum"), /^직접 고름 · /);
+  assert.equal(u.$$('dialog [data-act="preset"][aria-pressed="true"]').length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-45] 내 계정: 이름·권한·로그아웃만 펴고, '로그인·보안' / '이 기기' / '가족·휴대폰' 세 묶음은 상태 한 줄과 함께 접혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  await u.settle(30);
+  const groups = u.$$("#main details.acct-group").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(groups, [["acct-security", false], ["acct-device", false], ["acct-phones", false]]);
+  assert.match(u.text('#main details[data-key="acct-security"] > summary'), /로그인·보안[\s\S]*(패스키 \d+개|패스키 없음)/);
+  assert.match(u.text('#main details[data-key="acct-device"] > summary'), /이 기기[\s\S]*알림 (켜짐|꺼짐)/);
+  assert.ok(u.$('#main .acct-top [data-act="logout"]'), "로그아웃 stays one tap away");
+  assert.ok(u.$('#main details[data-key="acct-security"] [data-act="logout-all"]'), "모든 기기에서 로그아웃 is in 로그인·보안");
+  assert.ok(u.$('#main details[data-key="acct-device"] .prefs'), "이 기기 settings are in 이 기기");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1);
+  assert.deepEqual(u.errors, []);
+});

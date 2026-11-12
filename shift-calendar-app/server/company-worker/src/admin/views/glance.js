@@ -36,7 +36,7 @@ export function glanceViews(A) {
     const count = h.signals.length;
     const v = h.vitals;
     const sv = h.server;
-    const vNote = v?.error === "denied" ? "Play 권한 필요" : v ? (v.crash === null ? "Play 숫자 없음(사용자 적음)" : `기준 1.09% · ${v.day ?? ""}`) : "Play 서비스 계정 없음";
+    const vNote = v?.error === "denied" ? "Play 권한 필요" : v ? (v.crash === null ? "Play 숫자 없음(사용자 적음)" : `기준 1.09% · ${v.day ?? ""}`) : "Play 연결 열쇠 없음";
     return `<section class="gl-hero ${h.tone}" aria-labelledby="gl-title">
       <div class="gl-hero-top"><span class="gl-pulse" aria-hidden="true"><span></span></span>
         <div class="gl-hero-text"><p class="gl-eyebrow">앱 정상도 · ${esc(clock(d.at))} 기준</p><h2 id="gl-title">${esc(title)}${count && h.tone !== "ok" ? ` <span class="gl-count">${count}</span>` : ""}</h2>
@@ -119,7 +119,7 @@ export function glanceViews(A) {
 
   // ---- 1.39 [OBS2-01~05] 관측: 전체 사용자(Play·서버), 개선 신호, 관측 빈틈 ----
 
-  const PLAY_STATE = { off: "Play 서비스 계정 없음", nobucket: "Play 보고서 저장소 연결 필요", denied: "Play 보고서 권한 필요", unreachable: "Play에 닿지 못했어요" };
+  const PLAY_STATE = { off: "Play 연결 열쇠 없음", nobucket: "Play 보고서 저장소 연결 필요", denied: "Play 보고서 권한 필요", unreachable: "Play에 닿지 못했어요" };
   const SOURCE_NAMES = { "utm:bamnat_web": "웹 계산기·달력", "utm:bamnat_share": "받은 근무표 링크", "utm:bamnat_invite": "친구 초대" };
   const sourceName = (s) => SOURCE_NAMES[s] ?? (/search/i.test(s) ? "Play 검색" : /explore|browse/i.test(s) ? "Play 둘러보기"
     : /referr|third/i.test(s) ? "외부 링크" : s.startsWith("utm:") ? `링크 ${s.slice(4)}` : s);
@@ -220,11 +220,16 @@ export function glanceViews(A) {
     return values.length >= 2 ? L.spark(values, { name: s.title }) : "";
   }
 
-  /** [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인. */
-  function signalsCard(o) {
+  /**
+   * [OBS2-04] 개선 신호: 숫자에서 찾은 문제 → 개발사항 → 고친 뒤 숫자로 확인.
+   * 2.0.0 [RVA-42] 검토 ADMX-21: 위 정상도는 '지금 이 순간'(바로 볼 것 N개), 개선 신호는 '며칠 쌓인 흐름'이라 서로 다르게 셀 수 있어요.
+   * 그래서 설명에 그 차이를 적고, 위에 바로 볼 것이 있는데 여기가 비면 '위 칩에서 열어요'로 이어 줘요(전에는 '찾은 문제가 없어요'만).
+   */
+  function signalsCard(o, d) {
     const list = o.signals ?? [];
     const open = list.filter((s) => !s.cleared && s.state !== "dismiss");
     const better = list.filter((s) => s.cleared);
+    const now = d?.health && d.health.tone !== "ok" ? d.health.signals.length : 0;
     const devOk = can("dev", "edit");
     // 2.0.0 [RVN-15] 디자인 품질 조건 2: 채운 '개발사항으로'는 맨 위 신호 하나만, 나머지는 테두리 단추.
     const first = open.find((s) => s.state !== "dev");
@@ -244,8 +249,8 @@ export function glanceViews(A) {
     const done = better.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>좋아진 신호 ${better.length}개</summary><ul>${better.map((s) =>
       `<li><b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 ` : ""}${esc(String(s.value ?? "—"))}${esc(s.unit ?? "")} → ${esc(String(s.after ?? "—"))}${esc(s.unit ?? "")}</small></li>`).join("")}</ul></details>` : "";
     return `<section class="card ob-signals" aria-labelledby="ob-sig-title"><div class="card-head"><h2 id="ob-sig-title">개선 신호</h2>${open.length ? `<span class="pill warn">${open.length}</span>` : ""}</div>
-      <p class="hint">숫자에서 찾은 문제예요. 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 그 숫자가 돌아오면 '좋아진 신호'로 옮겨요.</p>
-      ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">지금 찾은 문제가 없어요. 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
+      <p class="hint">한 시간마다 며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요(위 정상도는 지금 이 순간의 숫자). 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 그 숫자가 돌아오면 '좋아진 신호'로 옮겨요.</p>
+      ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">긴 흐름에서는 찾은 문제가 없어요.${now ? ` 위 '${esc(TONE[d.health.tone]?.[0] ?? "")}' ${now}개는 지금 숫자라 위 칩에서 바로 열어요.` : ""} 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
       ${done}</section>`;
   }
 
@@ -338,7 +343,7 @@ export function glanceViews(A) {
     const o = S.data.observe;
     if (!d) return `<div class="gl-hero skeleton"></div>${skeleton(2)}`;
     return `<div class="glance">${hero(d)}<div class="ob-cols"><div class="ob-main">${o ? everyone(o) : skeleton(1)}${flow(d)}${o ? kindsCard(o) + keepCard(o) : ""}</div>
-      <div class="ob-side">${o ? signalsCard(o) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
+      <div class="ob-side">${o ? signalsCard(o, d) : ""}${early(d)}${o ? gapsCard(o) : ""}</div></div>${more()}</div>`;
   }
 
   const loads = { glance: () => [["/glance", "glance"], ["/observe", "observe"]] };

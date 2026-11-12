@@ -400,9 +400,14 @@ async function link(env, item, id, now, by) {
  * (환불·결제·보상, 법·안전, 개인정보, 크게 화남, 약관, 회사 방식 = 결정함 '최고 관리자 확인'과 같은 기준). 그 이름, 아니면 null.
  */
 export async function needsPerson(env, id) {
+  return (await needsPersonWhy(env, id))?.name ?? null;
+}
+
+/** 2.0.0 [RVA-41] 같은 판단을 걸린 말과 함께: { key, name, word } 또는 null. */
+export async function needsPersonWhy(env, id) {
   const q = await one(env, `SELECT i.kind, (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words
     FROM inquiries i WHERE i.id = ?`, id).catch(() => null);
-  return q ? askOwner(q.kind, q.words ?? "")?.name ?? null : null;
+  return q ? askOwner(q.kind, q.words ?? "") : null;
 }
 
 /** An answer on question [id] by [by], the question then 답함 (taken by whoever answered when nobody held it). */

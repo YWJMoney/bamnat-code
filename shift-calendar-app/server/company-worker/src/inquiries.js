@@ -1,8 +1,8 @@
 import { FLAGS, LIMITS, PHOTO, Refuse, admin, all, audit, authorKey, authorToken, batch, can, deviceHash, deviceId, dropInquiries, hiddenAuthors, history, iso, item, json, list, me, network, networkCheck, notifyAdmins, one, overLimit, personal, photoFile, queue, randomId, readJson, readPhotos, refuse, run, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, version } from "./inbox.js";
+import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, needsPersonWhy, version } from "./inbox.js";
 import { replyRisk } from "./ledger.js";
-import { isBillingRecord } from "./ask-check.js";
+import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, isOut, shippedVersion } from "./desk.js";
@@ -600,6 +600,11 @@ export async function adminInquiries(request, env, url, path, now) {
     // cleared when they matched by chance; the activity log keeps who did which.
     if (typeof body.on !== "boolean") refuse("on", "on");
     await audit(env, now, "inquiry_billing", row.id, body.on ? "on" : "off");
+    // 2.0.0 [RVA-41] 검토 I24a-05: 말 때문에 잘못 잡힌 것을 '아니에요'로 빼면 그 말을 남겨 판정 식을 다듬는 근거로 써요.
+    if (!body.on && body.miss === true && row.billing_at) {
+      const words = (await all(env, "SELECT text FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'user'", row.id)).map((m) => m.text).join(" ");
+      await audit(env, now, "ask_miss", row.id, `billing '${billingWordOf(words) ?? ""}'`);
+    }
     // Its asker already deleted it, and it is no record the law keeps: it goes now, as they asked.
     if (!body.on && String(row.device).startsWith("gone")) {
       await batch(env, dropInquiries(env, "id = ?", row.id));
@@ -689,6 +694,28 @@ export async function holdReply(env, row, text, body, now) {
 }
 
 /** 1.38 [DESK-09] The answers held for [id], for the admin view: each with when it goes. */
+/**
+ * 2.0.0 [RVA-41] 결제·환불 기록이 된 까닭: 마지막으로 손으로 켠 기록이 있으면 관리자, 아니면 보낸 분 글에서 걸린 말.
+ * 그 말이 틀렸으면 관리자가 '아니에요'로 빼고, 그 기록(ask_miss)이 판정 식을 다듬는 근거가 돼요(I24c-03).
+ */
+function billingWhy(events, messages) {
+  const hand = [...events].reverse().find((e) => e.action === "inquiry_billing");
+  if (hand?.detail === "on") return { by: "admin", who: plainActor(hand.actor) };
+  const words = (messages ?? []).filter((m) => m.from === "user").map((m) => m.text).join(" ");
+  return { by: "words", word: billingWordOf(words) };
+}
+
+/** 2.0.0 [RVA-41] 사람이 보내야 하는 보류 답마다 까닭: 답 글의 표현(AI·보안)이 먼저, 아니면 문의 글에서 걸린 말. */
+async function heldWhy(env, row, held) {
+  if (!held.some((h) => h.person)) return held;
+  const ask = await needsPersonWhy(env, row.id);
+  return held.map((h) => {
+    if (!h.person) return h;
+    const risk = replyRiskOf(h.text);
+    return { ...h, why: risk ? { name: risk, reply: true } : ask ? { name: ask.name, word: ask.word, key: ask.key } : null };
+  });
+}
+
 export async function heldOf(env, id) {
   const rows = await all(env, "SELECT id, text, by, close, until FROM held_replies WHERE inquiry_id = ? ORDER BY id", id).catch(() => []);
   // 1.39 [LOOP-37] person: 사람이 봐야 할 문의라 누가 보내기를 눌러야 가요.
@@ -726,6 +753,13 @@ export async function heldChange(env, inquiryId, heldId, body, now) {
   if (env.actor?.key) throw new Refuse("no_permission", "held", 403);
   const h = await one(env, "SELECT * FROM held_replies WHERE id = ? AND inquiry_id = ?", heldId, inquiryId);
   if (!h) return json({ error: "gone" }, 404);
+  // 2.0.0 [RVA-41] 검토 I24a-05: '판정이 틀렸어요'는 기록만 남겨요(답은 그대로 사람이 보내요). 판정 식을 다듬는 근거(I24c-03).
+  if (body.miss === true) {
+    if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
+    const why = await needsPersonWhy(env, inquiryId);
+    await audit(env, now, "ask_miss", inquiryId, why ? `owner:${why.key} '${why.word ?? ""}'` : "owner");
+    return null;
+  }
   // 1.39 [LOOP-37] 사람이 보내야 하는 답(또는 기다리는 답)을 지금 보내요.
   if (body.send === true) {
     if (!can(env.actor, "inquiries", "edit")) throw new Refuse("no_permission", "held", 403);
@@ -825,21 +859,22 @@ export async function adminInquiryView(env, row) {
   const now = Date.now();
   const [events, links, typing] = (await batch(env, [
     stmt(env, `SELECT at, action, detail, actor FROM audit WHERE target = ? AND action IN ('inquiry_assign', 'inquiry_status', 'inquiry_reply',
-      'inquiry_hide', 'inquiry_show', 'inquiry_billing', 'inquiry_reply_held', 'inquiry_reply_sent', 'inquiry_reply_cancel') ORDER BY id LIMIT 200`, row.id),
+      'inquiry_hide', 'inquiry_show', 'inquiry_billing', 'inquiry_reply_held', 'inquiry_reply_sent', 'inquiry_reply_cancel', 'ask_miss') ORDER BY id LIMIT 200`, row.id),
     stmt(env, "SELECT l.at, l.by, d.id, d.title FROM dev_links l JOIN dev_items d ON d.id = l.item_id WHERE l.inquiry_id = ? ORDER BY l.at", row.id),
     stmt(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${row.id}|%`, now),
   ])).map((r) => r.results);
   const out = {
     ...view,
-    // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것.
-    held: await heldOf(env, row.id),
+    // 1.38 [DESK-09] Claude 답 중 아직 가지 않은 것. 2.0.0 [RVA-41] 사람이 보내야 하는 답에는 왜 그런지(걸린 말)를 같이.
+    held: await heldWhy(env, row, await heldOf(env, row.id)),
     events: timeline(events, links),
     typing: typingByInquiry(typing, env.actor?.id ?? "")[row.id] ?? [],
     // AT 1.29 [ADMCP-03][ADMCP-06] 복사함, the phone's short mark and how many other questions it sent.
     ...copyFields(row),
     sameSender: (await one(env, "SELECT COUNT(*) AS n FROM inquiries WHERE device = ? AND id != ?", row.device, row.id)).n,
     // 1.36 [INQ-07] A 결제·환불 record: since when, until when it is kept, and whether the asker deleted it.
-    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs) } : null,
+    // 2.0.0 [RVA-41] 검토 U24-05·I24a-05: 왜 결제·환불 기록인지(관리자가 정했는지, 어떤 말 때문인지).
+    billing: row.billing_at ? { since: iso(row.billing_at), keepUntil: iso(row.updated_at + INQUIRY.billingKeepMs), ...billingWhy(events, view.messages) } : null,
     leftByAsker: String(row.device).startsWith("gone"),
     // 1.39 [CARE-10] 마을 경고·쉬기에 대한 해명이면: 무엇에 대한 것인지와 결정.
     appeal: await careAppealOf({ one, all, run, batch, stmt, randomId }, env, row.id, now),

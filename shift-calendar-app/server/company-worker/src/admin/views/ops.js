@@ -132,7 +132,7 @@ export function opsViews(A) {
     const owner = Boolean(S.me?.owner);
     const top = `<div class="tiles core">${tile("30일 평균", m.avg ?? "—", `${m.total}개`)}${tile("답 기다림", d.waiting, "", d.waiting ? "hot" : "")}
       ${[1, 2].map((s) => tile(`별 ${s}개`, m.byStars[s] ?? 0, "30일", m.byStars[s] ? "hot" : "")).join("")}</div>`;
-    const off = d.ready ? "" : `<section class="card setup-card"><h2>Play 서비스 계정이 없어요</h2><p class="hint">서버에 PLAY_SERVICE_ACCOUNT를 넣고 Play Console › 사용자 및 권한에서 그 계정에 '리뷰 보기·답하기'를 주면 매시 새 리뷰를 가져와요.</p></section>`;
+    const off = d.ready ? "" : `<section class="card setup-card"><h2>Play 연결 열쇠가 없어요</h2><p class="hint">Play 연결 열쇠(서비스 계정)를 서버 설정에 넣고 Play Console › 사용자 및 권한에서 그 계정에 '리뷰 보기·답하기'를 주면 매시 새 리뷰를 가져와요. 넣는 곳은 관리 › 서버 상태예요.</p></section>`;
     const fetchBtn = owner && d.ready ? '<button class="btn small" type="button" data-act="reviews-fetch">지금 가져오기</button>' : "";
     const list = d.items.length ? `<ul class="rows review-list">${d.items.map((r) => `<li><div class="card review-card${r.stars <= 2 && r.status !== "replied" ? " low" : ""}">
         <div class="card-head">${stars(r.stars)}<span class="meta">${esc(dayOf(r.at))}${r.app ? ` · ${esc(r.app)}` : ""}${r.lang ? ` · ${esc(r.lang)}` : ""}</span>
@@ -262,7 +262,7 @@ export function opsViews(A) {
     const marks = S.data.changes?.marks ?? [];
     const v = d.vitals && !d.vitals.error ? d.vitals : null;
     const tiles = `<div class="tiles core">${tile("가장 새 판", d.latest ?? "—", d.prev ? `앞 판 ${d.prev}` : "")}${tile("서버 오류", d.serverErrors, `${d.days}일 합${d.groupedErrors !== undefined && d.groupedErrors < d.serverErrors ? ` · 오류 묶음에 ${d.groupedErrors}` : ""}`, d.serverErrors ? "hot" : "", href("errors"))}
-      ${tile("비정상 종료", v?.crash != null ? `${(v.crash * 100).toFixed(2)}%` : "—", v ? "Play 기준 1.09%" : "Play 서비스 계정 필요", v?.crash >= 0.0109 ? "hot" : "")}
+      ${tile("비정상 종료", v?.crash != null ? `${(v.crash * 100).toFixed(2)}%` : "—", v ? "Play 기준 1.09%" : "Play 연결 열쇠 필요", v?.crash >= 0.0109 ? "hot" : "")}
       ${tile("ANR", v?.anr != null ? `${(v.anr * 100).toFixed(2)}%` : "—", v ? "Play 기준 0.47%" : "", v?.anr >= 0.0047 ? "hot" : "")}</div>`;
     const worse = d.worse.length ? `<section class="card alerts"><ul class="alert-list">${d.worse.map((w) => `<li class="bad"><span><b>${esc(w)}</b></span></li>`).join("")}</ul></section>` : "";
     const table = `<section class="card">${head("판마다", `지난 ${d.days}일 · 휴대폰-날 1000당`)}${segs("health-days", [["7", "7일"], ["14", "14일"], ["28", "28일"]], String(S.healthDays ?? 14))}
@@ -392,17 +392,25 @@ export function opsViews(A) {
     const c = d.counts;
     const m = d.money;
     const n = (o) => Object.values(o ?? {}).reduce((a, b) => a + b, 0);
+    // 2.0.0 [RVA-40] 검토 U23-02: 답하기 전에 꼭 볼 것(쓰기 제한·마을 쉬기·결제·환불 문의 N번·Play 확인 안 됨)만 맨 위에 굵게,
+    // 판·유형·프로는 한 줄, 숫자·결제·이전 문의는 '자세히' 한 줄에 접어요(전에는 알약·표·목록이 한 패널에 길게 이어져 안 읽혔어요).
+    const heavy = d.flags.filter((f) => f.tone === "bad" || f.tone === "warn");
+    const light = d.flags.filter((f) => !heavy.includes(f)).map((f) => f.text);
+    const others = d.inquiries.filter((q) => q.id !== S.route.id);
+    const sum = [`문의 ${d.inquiries.length}`, `제보 ${n(c.reports)}`, n(c.posts) ? `글 ${n(c.posts)}` : "", others.length ? `이전 문의 ${others.length}건` : "", m && (m.subs.length || m.passes.length) ? "결제 기록 있음" : ""].filter(Boolean).join(" · ");
     return `<aside class="card person" aria-label="이 휴대폰"><div class="card-head"><h2>이 휴대폰 <span class="mono">${esc(d.mark)}</span></h2></div>
-      <p class="meta">${[d.app ? `앱 ${d.app}` : "", d.type ? `유형 ${L.WORK_NAMES[d.type] ?? d.type}` : ""].filter(Boolean).map(esc).join(" · ") || "판·유형 모름"}</p>
-      ${d.flags.length ? `<div class="chips">${d.flags.map((f) => `<span class="pill ${f.tone}">${esc(f.text)}</span>`).join("")}</div>` : ""}
+      ${heavy.length ? `<ul class="person-alerts">${heavy.map((f) => `<li class="${f.tone}"><b>${esc(f.text)}</b></li>`).join("")}</ul>`
+        : '<p class="person-calm">쓰기 제한·결제·환불 문의 없음</p>'}
+      <p class="meta">${[d.app ? `앱 ${d.app}` : "", d.type ? `유형 ${L.WORK_NAMES[d.type] ?? d.type}` : "", ...light].filter(Boolean).map(esc).join(" · ") || "판·유형 모름"}</p>
+      <details class="person-more" data-key="person-more"${S.opened.get("person-more") ? " open" : ""}><summary><span class="lf-t"><b>자세히</b><small>${esc(sum)}</small></span></summary>
       <dl class="lines"><div><dt>문의</dt><dd>${d.inquiries.length}</dd></div><div><dt>제보</dt><dd>${n(c.reports)}</dd></div><div><dt>글 · 신고 받음</dt><dd>${n(c.posts)} · ${c.postFlags}</dd></div>
         <div><dt>레시피 · 신고 받음</dt><dd>${n(c.recipes)} · ${c.recipeFlags}</dd></div><div><dt>회사</dt><dd>${c.companies}</dd></div><div><dt>초대</dt><dd>${n(c.invited)}</dd></div></dl>
       ${m ? `<h3>결제</h3><p>${m.pro ? `${esc(m.pro.by)}${m.pro.trial ? "(체험)" : ""} · ${esc(dayOf(m.pro.until))}까지${m.pro.renews === false ? " · 해지 예약" : ""}` : "프로 아님"}</p>
         ${m.subs.length || m.passes.length ? `<ul class="mini">${m.subs.map((s) => `<li>${esc(s.product)} ${esc(s.plan ?? "")} · ${esc(s.state)} · ${esc(dayOf(s.at))}</li>`).join("")}${m.passes.map((p) => `<li>${esc(p.product)} · ${esc(p.state)} · ${esc(dayOf(p.at))}</li>`).join("")}</ul>` : ""}
         ${m.rewards.length ? `<p class="meta">보상 ${m.rewards.map((r) => `${esc(r.kind)} ${r.days}일`).join(" · ")}</p>` : ""}${m.consents.length ? `<p class="meta">동의 ${m.consents.map((x) => `${esc(x.kind)} ${esc(dayOf(x.at))}`).join(" · ")}</p>` : ""}` : ""}
-      ${d.inquiries.length > 1 ? `<h3>이전 문의</h3><ul class="rows">${d.inquiries.filter((q) => q.id !== S.route.id).slice(0, 8).map((q) => `<li><a class="row" href="${L.routeHash("inquiries", q.id, {})}"><span class="row-main"><b>${esc(q.first || "(글 없음)")}</b>
+      ${others.length ? `<h3>이전 문의</h3><ul class="rows">${others.slice(0, 8).map((q) => `<li><a class="row" href="${L.routeHash("inquiries", q.id, {})}"><span class="row-main"><b>${esc(q.first || "(글 없음)")}</b>
         <small>${esc(KIND[q.kind] ?? q.kind)} · ${esc(dayOf(q.at))}${q.billing ? " · 결제" : ""}</small></span></a></li>`).join("")}</ul>` : ""}
-      ${S.me?.owner ? `<div class="actions start"><button class="btn small" type="button" data-act="request-from" data-id="${esc(S.route.id ?? "")}">데이터 요청으로 적기</button></div>` : ""}</aside>`;
+      ${S.me?.owner ? `<div class="actions start"><button class="btn small" type="button" data-act="request-from" data-id="${esc(S.route.id ?? "")}">데이터 요청으로 적기</button></div>` : ""}</details></aside>`;
   }
 
   // ---- [ADM3-34] 개발사항 이야기 ----
@@ -575,7 +583,7 @@ export function opsViews(A) {
     }),
     "reviews-show": ({ key }) => { S.reviewsShow = key; reload("storeReviews"); },
     "reviews-fetch": async () => {
-      const r = await act(() => api("/reviews/fetch", "POST", {}), (x) => (x.skipped ? "Play 서비스 계정이 없어요" : `새 리뷰 ${x.fresh ?? 0}개`));
+      const r = await act(() => api("/reviews/fetch", "POST", {}), (x) => (x.skipped ? "Play 연결 열쇠가 없어요" : `새 리뷰 ${x.fresh ?? 0}개`));
       if (r) reload("storeReviews");
     },
     "review-seen": async ({ id }) => {

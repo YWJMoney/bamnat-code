@@ -21,8 +21,8 @@ async function member(call, owner, perms, email, ip) {
 const ask = (call, n, text, kind = "bug") =>
   call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info: { app: "1.39.0 (53)", model: "samsung SM-S921N" } }).then((r) => r.data.id);
 
-test("[RVA-37] 못 읽는 문의 한 줄은 그 줄만 빠지고 장부·정리함·오늘·문의 목록은 그대로, 오류 묶음에 원인 줄, [개발사항으로] 한 번", async () => {
-  const { call, DB } = server();
+test("[RVA-37] 못 읽는 문의 한 줄은 그 줄만 빠지고 장부·정리함·오늘·문의 목록은 그대로, 오류 묶음에 원인 줄, [개발사항으로] 한 번", async (t) => {
+  const { call, DB } = server({ t });
   const admin = await signIn(call);
   const good = await ask(call, 1, "잠금 화면에서 알람 소리가 안 나요");
   const bad = await ask(call, 2, "달력 글씨가 너무 작아요", "idea");
@@ -78,8 +78,8 @@ test("[RVA-37] 못 읽는 문의 한 줄은 그 줄만 빠지고 장부·정리�
   assert.match(after.note, new RegExp(`^개발사항 ${made.data.dev}`));
 });
 
-test("[RVA-37] 읽지 못한 줄은 그 줄을 볼 권한이 있는 관리자에게만, [개발사항으로]는 최고 관리자만", async () => {
-  const { call, DB } = server();
+test("[RVA-37] 읽지 못한 줄은 그 줄을 볼 권한이 있는 관리자에게만, [개발사항으로]는 최고 관리자만", async (t) => {
+  const { call, DB } = server({ t });
   const owner = await signIn(call);
   const bad = await ask(call, 3, "알람이 늦게 울려요");
   DB.db.prepare("UPDATE inquiries SET info = ? WHERE id = ?").run("not json", bad);

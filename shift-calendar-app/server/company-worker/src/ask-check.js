@@ -113,14 +113,18 @@ function acForeign(spaced) {
 // "보상 휴가는 어디에 적나요? 보상을 받았는데…". 그 글에서는 '보상'만 빼고 견줘요(환불·결제 같은 다른 돈 말은 그대로 잡아요).
 const AC_LABOR_COMP = /보상\s*(휴가|휴무|시간|근무|휴일)/;
 
-/** 문의 글이 사람이 먼저 봐야 하는지: { key, name } 또는 null. */
+/** 2.0.0 [RVA-41] 검토 U24-05·I24a-05: 무슨 말 때문에 걸렸는지 한 마디(관리자 화면의 "'해지'라는 말 때문에"). */
+const acWord = (m) => (m ? m[0].trim().replace(/\s+/g, " ").slice(0, 24) || null : null);
+
+/** 문의 글이 사람이 먼저 봐야 하는지: { key, name, word } 또는 null. word는 걸린 말(관리자에게 이유로 보여요). */
 export function askOwnerOf(text) {
   const raw = String(text ?? "");
   const { spaced, tight } = plainAsk(raw);
   const labor = AC_LABOR_COMP.test(spaced);
   for (const [key, name, re] of AC_RULES) {
     const s = key === "money" && labor ? spaced.replace(/보상/g, " ") : spaced;
-    if (re.test(s) || AC_TIGHT[key]?.test(tight)) return { key, name };
+    const m = re.exec(s) ?? AC_TIGHT[key]?.exec(tight);
+    if (m) return { key, name, word: acWord(m) };
   }
   // 낱말 사이에 다른 글자(폭 없는 글자·전각)가 아닌 다른 문자(일본어 등)만 있으면 spaced가 비어요.
   if (acForeign(spaced) || (!spaced && raw.replace(/\s+/g, "").length >= 4)) return { key: "foreign", name: "한국어가 아닌 문의" };
@@ -131,6 +135,12 @@ export function askOwnerOf(text) {
 export function isBillingRecord(text) {
   const { spaced, tight } = plainAsk(text);
   return AC_BILLING.test(spaced) || AC_TIGHT.money.test(tight);
+}
+
+/** 2.0.0 [RVA-41] 결제·환불 기록으로 잡은 말(없으면 null). */
+export function billingWordOf(text) {
+  const { spaced, tight } = plainAsk(text);
+  return acWord(AC_BILLING.exec(spaced)) ?? acWord(AC_TIGHT.money.exec(tight));
 }
 const AC_BILLING = new RegExp([
   "환불", "결제", "청약\\s*철회", "구독\\s*(료|비|취소|해지|결제|환불|끊)", "(프로|이용권|정기)\\s*(구독|결제|해지|취소|환불)", "이용권", "구매", "주문\\s*번호", "영수증",
