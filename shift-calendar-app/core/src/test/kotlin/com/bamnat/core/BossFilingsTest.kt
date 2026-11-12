@@ -38,8 +38,8 @@ class BossFilingsTest {
         val settle = due.single { it.kind == BossFilings.Kind.SETTLE }
         assertEquals(LocalDate.of(2026, 11, 14), settle.date)
         assertTrue("1년 넘게 일함", settle.detail.contains("퇴직금"))
-        assertEquals("산재보험 상실 신고 · 최사아", due.single { it.key.startsWith("out-rest:b") }.title)
-        assertEquals(LocalDate.of(2026, 12, 15), due.single { it.key.startsWith("out-rest:b") }.date)
+        // 2.0.0 [RVJ-14] 검토 BOSS-59: 3.3%(사업소득)로 주는 최사아는 근로자 4대보험·산재 신고가 없어요.
+        assertTrue(due.none { it.key.startsWith("out-rest:b") })
         assertTrue(due.none { it.key.startsWith("out-health:b") })
         assertEquals(due.sortedBy { it.date }, due)
     }

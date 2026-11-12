@@ -186,12 +186,9 @@ object TaxLearner {
      * 제47조 제2항, 제129조 제1항 제4호) less 55% 세액공제 (제59조 제3항); under 1,000원 none is held back (제86조);
      * 지방소득세 a tenth more.
      */
-    fun dailyWithheld(dailyPay: Long): Long {
-        val tax = ((dailyPay - DAILY_DEDUCTION).coerceAtLeast(0) * 6 / 100) * 45 / 100
-        if (tax < 1_000) return 0
-        val t = tax / 10 * 10
-        return t + t / 10 / 10 * 10
-    }
+    fun dailyWithheld(dailyPay: Long): Long =
+        // 2.0.0 [RVJ-11] 검토 PAYC-10: one function with the 현장 도구, so the same 일당 shows the same tax everywhere.
+        com.bamnat.core.money.DailyWorkerTax.paidTogether(listOf(dailyPay)).total
 
     const val DAILY_DEDUCTION = 150_000L
 

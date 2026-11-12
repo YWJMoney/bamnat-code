@@ -37,6 +37,23 @@ data class Rates(
      * 보험료징수 등에 관한 법률 시행령 제12조 제1항 제2호 1천분의 18 (2025-12-23 시행본 확인).
      */
     val unemploymentRate: Double = 0.018,
+    /**
+     * 2.0.0 [RVJ-04] 검토 PAYC-04: values that change on 1 January by 고시 or 세법 and used to be code constants, so a signed rates
+     * file can carry them too; null = the last year that had one (see [RateTable.latest]).
+     * One side's (근로자 or 사업주) monthly 건강보험료 cap, 보건복지부고시 '월별 건강보험료액의 상한과 하한'.
+     */
+    val healthCapShare: Long? = null,
+    /** [RVJ-04] 검토 PAYC-14: one side's monthly 건강보험료 floor from the same 고시; null = 보수월액 하한 28만 원 basis. */
+    val healthMinShare: Long? = null,
+    /** [RVJ-04] 식대 등 비과세 월 한도 (소득세법 시행령 제17조의2). */
+    val mealFreeLimit: Long? = null,
+    /** [RVJ-04] 두루누리 지원 보수 기준 (미만), only for a year whose 공고 was read. */
+    val durunuriUnder: Long? = null,
+    /** [RVJ-04] 산재보험 사업종류별 요율 (‰) that replace the built-in ones from this year, by [com.bamnat.core.boss.AccidentRates.Kind.code]. */
+    val accidentPermille: Map<String, Double> = emptyMap(),
+    val commutePermille: Double? = null,
+    val wageClaimPermille: Double? = null,
+    val asbestosPermille: Double? = null,
 )
 
 /** [REMOTE-02] 국민연금 기준소득월액 하한·상한 from [from] (보건복지부 고시, 7월~이듬해 6월). */
@@ -108,11 +125,42 @@ object RateTable {
     fun on(date: LocalDate, table: List<Rates> = current): Rates =
         table.filter { !it.effectiveFrom.isAfter(date) }.maxByOrNull { it.effectiveFrom }
             ?: table.minBy { it.effectiveFrom }
+
+    /**
+     * 2.0.0 [RVJ-04] The value [pick] gives from the latest year at or before [date] that has one, and that year's table:
+     * a 1 January without a new 고시 keeps last year's value, and the screen can say so ([staleYear]).
+     */
+    fun <T : Any> latest(date: LocalDate, table: List<Rates> = current, pick: (Rates) -> T?): Pair<T, Rates>? =
+        table.filter { !it.effectiveFrom.isAfter(date) }.sortedByDescending { it.effectiveFrom }
+            .firstNotNullOfOrNull { r -> pick(r)?.let { it to r } }
+
+    /**
+     * 2.0.0 [RVJ-05] 검토 PAYC-20·U04-05: the year whose rates stand in for [date]'s year when the app has none for it yet
+     * (2028-01 with only 2027.1 known → 2027); null when the year is in.
+     */
+    fun staleYear(date: LocalDate, table: List<Rates> = current): Int? =
+        on(date, table).effectiveFrom.year.takeIf { it < date.year }
+
+    /**
+     * 2.0.0 [RVJ-05] 국민연금 보험료율 the law already fixes year by year: 국민연금법 제88조 (2025-03-20 개정, 2026-01-01 시행) 9%에서 2026년부터
+     * 해마다 0.5%p씩 올려 2033년 13%. Used only for a year the rates have no row for yet.
+     */
+    val LAW_PENSION: Map<Int, Double> = mapOf(2028 to 0.105, 2029 to 0.11, 2030 to 0.115, 2031 to 0.12, 2032 to 0.125, 2033 to 0.13)
+
+    /** [RVJ-05] 국민연금 합계 보험료율 on [date]: the year's row, else the law's schedule for a year not in yet. */
+    fun pensionRateOn(date: LocalDate, table: List<Rates> = current): Double? {
+        val r = on(date, table)
+        if (r.effectiveFrom.year >= date.year) return r.pensionRate
+        // 2033년 13%에 닿은 뒤로는 13%를 이어 가요.
+        return LAW_PENSION.filterKeys { it <= date.year }.maxByOrNull { it.key }?.value?.coerceAtLeast(r.pensionRate ?: 0.0) ?: r.pensionRate
+    }
 }
 
 /**
  * [REMOTE-02] `remote/v1/rates.json` data: `rates[]` (`from`, `version`, `source`, `minimumHourlyWage`,
- * `pensionRate`, `healthRate`, `longTermCareRate`, `unemploymentRate`; null = 아직 결정 전) and `pensionBases[]`
+ * `pensionRate`, `healthRate`, `longTermCareRate`, `unemploymentRate`; null = 아직 결정 전; 2.0.0 [RVJ-04] optional `healthCapShare`,
+ * `healthMinShare`, `mealFreeLimit`, `durunuriUnder`, `accidentPermille` {code: ‰}, `commutePermille`, `wageClaimPermille`,
+ * `asbestosPermille`) and `pensionBases[]`
  * (`from`, `min`, `max`). Premiums and hours are the 근로기준법 ones unless a year gives them.
  */
 object RateFile {
@@ -124,6 +172,9 @@ object RateFile {
             throw com.bamnat.core.remote.RemoteFileException("date $s")
         }
         fun share(v: Double?, k: String) = v?.also { if (it < 0 || it > 0.3) throw com.bamnat.core.remote.RemoteFileException(k) }
+        fun permille(v: Double?, k: String) = v?.also { if (it < 0 || it > 10) throw com.bamnat.core.remote.RemoteFileException(k) }
+        fun won(o: com.bamnat.core.remote.JsonObj, k: String, min: Long, max: Long): Long? =
+            if (!o.has(k)) null else o.long(k).also { if (it < min || it > max) throw com.bamnat.core.remote.RemoteFileException("$k $it") }
         val d = Rates(LocalDate.MIN, "", "", minimumHourlyWage = 0)
         val rates = f.data.objs("rates").map { o ->
             val wage = o.int("minimumHourlyWage")
@@ -139,6 +190,17 @@ object RateFile {
                 healthRate = share(o.doubleOrNull("healthRate"), "healthRate"),
                 longTermCareRate = share(o.doubleOrNull("longTermCareRate"), "longTermCareRate"),
                 unemploymentRate = share(o.doubleOrNull("unemploymentRate"), "unemploymentRate") ?: d.unemploymentRate,
+                // [RVJ-04] Optional yearly values; a file without them keeps the built-in ones.
+                healthCapShare = won(o, "healthCapShare", 100_000L, 50_000_000L),
+                healthMinShare = won(o, "healthMinShare", 1_000L, 100_000L),
+                mealFreeLimit = won(o, "mealFreeLimit", 50_000L, 1_000_000L),
+                durunuriUnder = won(o, "durunuriUnder", 1_000_000L, 10_000_000L),
+                accidentPermille = if (o.has("accidentPermille")) o.obj("accidentPermille").map.keys.associateWith { k ->
+                    o.obj("accidentPermille").double(k).also { if (it <= 0 || it > 300) throw com.bamnat.core.remote.RemoteFileException("accidentPermille $k") }
+                } else emptyMap(),
+                commutePermille = permille(o.doubleOrNull("commutePermille"), "commutePermille"),
+                wageClaimPermille = permille(o.doubleOrNull("wageClaimPermille"), "wageClaimPermille"),
+                asbestosPermille = permille(o.doubleOrNull("asbestosPermille"), "asbestosPermille"),
             )
         }
         val bases = f.data.objs("pensionBases").map { o ->

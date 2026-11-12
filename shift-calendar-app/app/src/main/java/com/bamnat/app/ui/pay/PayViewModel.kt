@@ -382,11 +382,18 @@ class PayViewModel(
         )
     }
 
-    /** What the change does to the next months, before it is applied [PAYX-03]. */
+    /**
+     * What the change does to the next months, before it is applied [PAYX-03]. 2.0.0 [RVJ-08] 검토 PAYU-07: also the months
+     * before [from] that hold the value (up to 12), so the screen can say "지난 n개월도 바뀌어요".
+     */
     fun planEdit(p: PayProfile, snapshot: ScheduleSnapshot, target: ValueTarget, value: Long, scope: EditScope, from: YearMonth): EditPlan =
         BulkEditPlanner.plan(
             timelineOf(p, target), value, scope,
-            preview = (0L until 12L).map { from.plusMonths(it) },
+            preview = run {
+                val first = timelineOf(p, target).entries.minOfOrNull { it.from }?.let { YearMonth.from(it) } ?: from
+                val back = maxOf(first, from.minusMonths(12))
+                generateSequence(back) { it.plusMonths(1) }.takeWhile { it < from }.toList() + (0L until 12L).map { from.plusMonths(it) }
+            },
             totalFor = { t, m -> calculate(p.withTimeline(target, t), snapshot, m).total },
             isLocked = { it in closed.value },
         )

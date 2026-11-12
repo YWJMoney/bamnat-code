@@ -149,4 +149,36 @@ class PhaseThreeBackupTest {
         assertEquals("남아 있는 바꾸기 열쇠도 그대로", "stok", store.teamList.first().single().swap?.token)
         assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
+
+    /**
+     * 2.0.0 [RVJ-09]·[RVJ-10]·[RVJ-16]·[RVJ-17]: 당월 지급일, 대표자·주소, 비과세 수당, 가족 수, 외국인, '직원에게 줬어요' are kept in
+     * the columns there were (payday 100+일, calls 칸의 묶음, 수당·보험·계약 JSON), so no DB 판 is needed and they come back as saved.
+     */
+    @Test fun rvjFieldsComeBackAsSaved() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val call = com.bamnat.core.team.TeamCall("B1", "btok", com.bamnat.core.team.TeamCover.Gap("s1", month.atDay(7), 0), listOf("s1"), listOf("https://s.example/v/V2"))
+        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = true, payday = 25, payNextMonth = false, owner = "김사장", address = "서울 어딘가 1", calls = listOf(call)))
+        val back = store.workplaceNow("w1")!!
+        assertEquals(25, back.payday)
+        assertFalse(back.payNextMonth)
+        assertEquals("김사장", back.owner)
+        assertEquals("서울 어딘가 1", back.address)
+        assertEquals(listOf("B1"), back.calls.map { it.id })
+        assertEquals(java.time.LocalDate.of(2026, 11, 25), back.payDate(month))
+        // A place saved before 2.0.0 (plain payday, calls as a list) reads as the next month with no 대표자.
+        store.saveWorkplace(Workplace("w2", "옛가게", fivePlus = false, payday = 10))
+        assertTrue(store.workplaceNow("w2")!!.payNextMonth)
+        store.saveStaff(StaffMember("s1", "박마바", base = 10_320,
+            allowances = listOf(com.bamnat.core.boss.StaffAllowance("식대", 200_000), com.bamnat.core.boss.StaffAllowance("교통비", 50_000, taxFree = false)),
+            insurance = com.bamnat.core.boss.Insurance.ALL.copy(family = 3, children = 1, foreign = true)), "w1")
+        val s = store.staff("w1").first().single()
+        assertEquals(listOf(true, false), s.allowances.map { it.taxFree })
+        assertEquals(3, s.insurance.family)
+        assertEquals(1, s.insurance.children)
+        assertTrue(s.insurance.foreign)
+        val sent = com.bamnat.core.boss.StaffContract.Sent("근로계약서", emptyList(), 1L, signedAt = 2L, signedName = "박마바", paper = true, givenAt = 5L)
+        store.updateContract("s1") { sent }
+        assertEquals(5L, store.staff("w1").first().single().contract?.givenAt)
+    }
+
 }
