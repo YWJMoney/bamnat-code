@@ -29,6 +29,9 @@ jobs:
       # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.
       - run: npm ci && npm run test:ui
         working-directory: shift-calendar-app/server/company-worker
+      # [RVR-03] 공개 사이트(bamnat.app): 임시 폴더에 만들어 공개 파일 목록·금지 글자·지난해 숫자를 보고, 웹 계산기를 앱과 같은 사례로 시험해요.
+      - run: pip install --quiet openpyxl==3.1.5 && python3 tools/site/build.py --check
+        working-directory: shift-calendar-app
   core:
     runs-on: ubuntu-latest
     timeout-minutes: 20

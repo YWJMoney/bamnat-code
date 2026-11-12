@@ -1,0 +1,65 @@
+{
+  "_": "공개 웹 계산기(calc/calc.js)와 앱(core)이 같은 답을 내는지 함께 보는 사례 [WEB-23]. tools/site/test/calc.test.mjs(웹)와 core WebCalcParityTest(앱)가 같은 기대값으로 맞춰 봐요. 요율·세액표는 저장소 remote/v1의 서명 자료 그대로. 값은 원.",
+  "takeHome": [
+    { "name": "300만·비과세 20만·1명 (2026-11, 검토 영역 50 대조값)", "day": "2026-11-01", "gross": 3000000, "free": 200000, "family": 1, "kids": 0,
+      "expect": { "pension": 133000, "health": 100660, "care": 13220, "employment": 25200, "tax": 56800, "local": 5680, "net": 2665440 } },
+    { "name": "같은 월급 2027-01 (국민연금 5%, 장기요양 0.9994%)", "day": "2027-01-01", "gross": 3000000, "free": 200000, "family": 1, "kids": 0,
+      "expect": { "pension": 140000, "health": 100660, "care": 13990, "employment": 25200, "tax": 56800, "local": 5680, "net": 2657670 } },
+    { "name": "2028-03은 자료 없이 법정 10.5%", "day": "2028-03-01", "gross": 3000000, "free": 200000, "family": 1, "kids": 0,
+      "expect": { "pension": 147000 } },
+    { "name": "가족 4명·자녀 2명", "day": "2026-11-01", "gross": 4500000, "free": 200000, "family": 4, "kids": 2,
+      "expect": { "pension": 204250, "health": 154580, "care": 20310, "employment": 38700 } },
+    { "name": "비과세가 월급보다 큼 (멈추지 않고 0)", "day": "2026-11-01", "gross": 150000, "free": 200000, "family": 1, "kids": 0,
+      "expect": { "pension": 0, "health": 0, "care": 0, "employment": 0, "tax": 0, "local": 0, "net": 150000 } },
+    { "name": "건강보험 보수 하한 28만 원", "day": "2026-11-01", "gross": 200000, "free": 0, "family": 1, "kids": 0,
+      "expect": { "health": 10060, "employment": 1800 } },
+    { "name": "건강보험 월 상한 (보건복지부고시 제2025-222호)", "day": "2026-11-01", "gross": 150000000, "free": 0, "family": 1, "kids": 0,
+      "expect": { "health": 4591740, "pension": 313020 } },
+    { "name": "간이세액표 1,000만 원 넘는 구간", "day": "2026-11-01", "gross": 12000000, "free": 200000, "family": 2, "kids": 1,
+      "expect": { "pension": 313020, "health": 424210, "care": 55740, "employment": 106200, "tax": 2053140, "local": 205310, "net": 8842380 } },
+    { "name": "10원 미만 오차 (3,000,000 × 0.9%)", "day": "2026-11-01", "gross": 3000000, "free": 0, "family": 1, "kids": 0,
+      "expect": { "employment": 27000 } }
+  ],
+  "withholding": [
+    { "amount": 1300320, "expect": { "income": 39000, "local": 3900 } },
+    { "amount": 2156880, "expect": { "income": 64700, "local": 6470 } },
+    { "amount": 333, "expect": { "income": 0, "local": 0 } },
+    { "amount": 0, "expect": { "income": 0, "local": 0 } }
+  ],
+  "daily": [
+    { "name": "18만 원 × 20일 한꺼번에", "pay": 180000, "days": 20, "paid": "together", "expect": { "income": 16200, "local": 1620 } },
+    { "name": "18만 원 × 20일 날마다 (하루 810원이라 0)", "pay": 180000, "days": 20, "paid": "daily", "expect": { "income": 0, "local": 0 } },
+    { "name": "20만 원 × 20일 날마다", "pay": 200000, "days": 20, "paid": "daily", "expect": { "income": 27000, "local": 2700 } },
+    { "name": "18만 원 하루만 한꺼번에", "pay": 180000, "days": 1, "paid": "together", "expect": { "income": 0, "local": 0 } },
+    { "name": "18만 원 × 2일 한꺼번에", "pay": 180000, "days": 2, "paid": "together", "expect": { "income": 1620, "local": 162 } },
+    { "name": "25만 원 × 3일 날마다", "pay": 250000, "days": 3, "paid": "daily", "expect": { "income": 8100, "local": 810 } }
+  ],
+  "juhyu": [
+    { "week": 900, "expect": { "holMin": 180 } },
+    { "week": 899, "expect": { "holMin": 0 } },
+    { "week": 1200, "expect": { "holMin": 240 } },
+    { "week": 2400, "expect": { "holMin": 480 } },
+    { "week": 3000, "expect": { "holMin": 480 } },
+    { "week": 906, "expect": { "holMin": 181 } }
+  ],
+  "severance": [
+    { "name": "보통", "hire": "2022-03-02", "last": "2026-11-12", "threeMonthPay": 9000000, "expect": { "eligible": true, "averageDaily": 97826, "amount": 13805527 } },
+    { "name": "만 1년 하루 전", "hire": "2025-03-02", "last": "2026-02-28", "threeMonthPay": 9000000, "expect": { "eligible": false, "amount": 0 } },
+    { "name": "만 1년 (마지막 근무일 3-1)", "hire": "2025-03-02", "last": "2026-03-01", "threeMonthPay": 9000000, "expect": { "eligible": true } },
+    { "name": "2월 29일 입사, 다음 해 2월 27일까지", "hire": "2024-02-29", "last": "2025-02-27", "threeMonthPay": 9000000, "expect": { "eligible": true } },
+    { "name": "2월 29일 입사, 다음 해 2월 26일까지", "hire": "2024-02-29", "last": "2025-02-26", "threeMonthPay": 9000000, "expect": { "eligible": false } },
+    { "name": "5월 31일 퇴직 (3개월은 3-1~5-31)", "hire": "2020-06-01", "last": "2026-05-31", "threeMonthPay": 9200000, "expect": { "eligible": true, "averageDaily": 100000 } }
+  ],
+  "leave": [
+    { "name": "1월 31일 입사", "hire": "2026-01-31", "until": "2027-03-01", "basis": "hire",
+      "expect": [["month", 1, "2026-03-01"], ["month", 1, "2026-03-31"], ["month", 1, "2026-05-01"], ["month", 1, "2026-05-31"], ["month", 1, "2026-07-01"], ["month", 1, "2026-07-31"], ["month", 1, "2026-08-31"], ["month", 1, "2026-10-01"], ["month", 1, "2026-10-31"], ["month", 1, "2026-12-01"], ["month", 1, "2026-12-31"], ["year", 15, "2027-01-31"]] },
+    { "name": "2월 29일 입사, 3년", "hire": "2024-02-29", "until": "2027-03-02", "basis": "hire", "only": "year",
+      "expect": [["year", 15, "2025-03-01"], ["year", 15, "2026-03-01"], ["year", 16, "2027-03-01"]] },
+    { "name": "3월 2일 입사, 21년", "hire": "2005-03-02", "until": "2026-03-02", "basis": "hire", "only": "year", "last": true,
+      "expect": [["year", 25, "2026-03-02"]] },
+    { "name": "회계연도(1월 1일) 기준, 7월 1일 입사", "hire": "2025-07-01", "until": "2027-01-01", "basis": "fiscal", "fiscalMonth": 1, "only": "fiscal",
+      "expect": [["part", 7.56, "2026-01-01"], ["year", 15, "2027-01-01"]] },
+    { "name": "회계연도(1월 1일) 기준, 1월 1일 입사", "hire": "2025-01-01", "until": "2027-01-01", "basis": "fiscal", "fiscalMonth": 1, "only": "fiscal",
+      "expect": [["year", 15, "2026-01-01"], ["year", 15, "2027-01-01"]] }
+  ]
+}
