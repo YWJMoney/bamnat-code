@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -175,7 +176,8 @@ internal fun PlazaTagScopeDialog(c: AppContainer, room: String?, onDismiss: () -
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Text(if (c.settingsRepository.current.plazaNews) "밤낮 소식 알림 하나로 와요. 자는 시간·근무 중에는 모아 두었다 알려요."
-                    else "설정 › 알림 › 밤낮 소식이 꺼져 있어 지금은 오지 않아요.",
+                    // 2.0.0 [RVN-21] the page's own name (it said 알림, the page is 알림과 잠).
+                    else "${settingsWay("plaza.news", c.settingsRepository.current.workStyle)}이 꺼져 있어 지금은 오지 않아요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
@@ -363,8 +365,11 @@ internal fun PlazaFeed(
     val menu = FeedMenu(onFlag = { flagging = it }, onHide = { hiding = it }, onDelete = { deleting = it }, room = plan.room, roomName = plan.roomTitle)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         talk?.pulse?.checkin?.let { CheckinRow(plan.room, it, vm.todayShift.collectAsStateWithLifecycle().value, vm::checkin) }
+        // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03: a quiet plaza has a week's topic even when the 운영팀 put none (theirs always wins).
+        val quiet = talk != null && (talk.posts + older).distinctBy { it.id }.count { it.parent == null } < STARTER_POSTS
         PlazaComposer(vm.timeLine.collectAsStateWithLifecycle().value?.first ?: plan.hint.ifBlank { "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" },
-            topic = talk?.topic, onWrite = { vm.openTalk() })
+            topic = talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet },
+            onWrite = { vm.openTalk() })
         // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
         // 2.0.0 [RVN-13] COMP-17·T10a-07 …only when the lounge has something to read (LOUNGE_OPENS posts): a quiet night opened on an
         // empty room every time. With fewer it opens on 전체, the 🌙 chip first in the row.
@@ -415,9 +420,14 @@ internal fun PlazaFeed(
                             onOpen = { vm.openTalk(q.id) }, onVote = { ok -> vm.vote(q.id, ok) }, onReply = { vm.openTalk(q.id, reply = true) })
                     }
                 }
-                if (tops.isEmpty()) Text("아직 글이 없어요. 처음 이야기를 꺼내 주세요.", style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(vertical = 16.dp))
-                else if (shown.isEmpty() && lifted == null) Text(when (lens) {
+                // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03 A quiet plaza is not a dead one: what to write, one tap each (오늘 근무 한 줄·질문·투표),
+                // and on an empty one 말랑 칸이 with the 운영팀's welcome; at night, how many are at work now (before: one line of text).
+                if (lens == Lens.ALL && tops.size < STARTER_POSTS) PlazaStarter(
+                    empty = tops.isEmpty(), roomName = plan.roomTitle,
+                    workingNow = talk.pulse?.working?.takeIf { mine?.now == PlazaTag.Now.NIGHT && it > 0 },
+                    onStart = { s -> vm.openStarter(s) },
+                )
+                if (tops.isNotEmpty() && shown.isEmpty() && lifted == null) Text(when (lens) {
                     Lens.WAITING -> "답을 기다리는 질문이 없어요"
                     Lens.LOUNGE -> "오늘 밤 라운지는 아직 조용해요. 야간 중인 분들께 먼저 한 줄 남겨 보세요"
                     else -> "이렇게 고른 글이 아직 없어요"
@@ -448,6 +458,45 @@ internal fun PlazaFeed(
     }
 }
 
+/** 2.0.0 [RVN-20] Fewer top posts than this, and the plaza shows what to write ([PlazaStarter]). */
+internal const val STARTER_POSTS = 3
+
+/** 2.0.0 [RVN-20] U10a-02 What a plaza's first posts can be, each opening the box ready for it. */
+internal enum class Starter(val label: String) {
+    TODAY("📅 오늘 근무 한 줄"),
+    QUESTION("🙋 궁금한 것 묻기"),
+    POLL("📊 투표 만들기"),
+}
+
+/**
+ * 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03 (빈 광장 시작 꾸러미): on a plaza with few posts, three ways to start, each one tap into the box
+ * ready for it; on an empty one, 말랑 칸이 with the 운영팀's welcome first (조건 7·16: the empty screen's own part, one warm line). The
+ * week's topic is on the box above ([com.bamnat.core.plaza.StarterTopics] when the 운영팀 put none). [workingNow]: at night, how many
+ * are at work now (from the plaza's own count).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+internal fun PlazaStarter(empty: Boolean, roomName: String, workingNow: Int?, onStart: (Starter) -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (empty) com.bamnat.app.ui.components.EmptyState(
+            "아직 첫 이야기를 기다리고 있어요",
+            "밤낮 운영팀: ${roomName.ifBlank { "이 광장" }}에 오신 걸 반가워요. 근무 이야기, 궁금한 것, 해 보니 좋았던 것을 편하게 나눠 주세요",
+            mood = com.bamnat.app.ui.components.KaniMood.Basic,
+        )
+        workingNow?.let {
+            Text("🌙 지금 근무 중인 분 ${it}명이 이 광장에 있어요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Text("이렇게 시작해 보세요", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { heading() })
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Starter.entries.forEach { st ->
+                androidx.compose.material3.AssistChip(onClick = { onStart(st) }, label = { Text(st.label) },
+                    modifier = Modifier.heightIn(min = 48.dp))
+            }
+        }
+    }
+}
+
 /** 2.0.0 [RVN-06] What a card's ⋮ does; [room]/[roomName] keep a post (간직하기) as the sheet does. */
 internal class FeedMenu(val onFlag: (TalkPost) -> Unit, val onHide: (TalkPost) -> Unit, val onDelete: (TalkPost) -> Unit,
     val room: String?, val roomName: String)
@@ -470,6 +519,10 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
         Column(Modifier.fillMaxWidth().clickable(onClickLabel = if (folded) "신고된 글 펼쳐 보기" else "이 글 보기") { if (folded) reveal = true else onOpen() }
             .padding(start = 16.dp, top = 6.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // 2.0.0 [RVN-20] 검토 U10a-03 A person, not only letters: the writer's first letter in a circle (as 회사 찾기's rows show a
+                // company), in the color of their 근무 태그 (the tag line under says it in words, 조건 14).
+                WriterInitial(p, name)
+                Spacer(Modifier.width(12.dp))
                 // 2.0.0 [RVN-06] COMP-08: name and time share what is left, so the ⋮ stands at the same end on every card.
                 // 1.39 [PLZC-40] the name in its mark's color, a tap to the 프로필.
                 NameAndTime(p, name, Modifier.weight(1f))
@@ -526,6 +579,35 @@ internal fun FeedCard(p: TalkPost, answers: List<TalkPost>, menu: FeedMenu, onOp
                     modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button) { if (answers.isEmpty()) onReply() else onOpen() }
                         .padding(vertical = 12.dp, horizontal = 8.dp))
             }
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-20] U10a-03 The writer's first letter in a circle: a 마을 이름's first letter, a 참여자's number, 나 for my own. Its color goes
+ * with the 근무 태그's 근무형태 (one of the theme's three container colors, so 4조2교대 writers look alike at a glance); without a tag, the
+ * plain one. Read out with the name beside it, so it says nothing itself.
+ */
+@Composable
+internal fun WriterInitial(p: TalkPost, name: String) {
+    val letter = when {
+        p.mine -> "나"
+        p.nick != null -> p.nick.trim().take(1)
+        p.who > 0 -> p.who.toString().take(2)
+        else -> name.take(1)
+    }
+    val scheme = MaterialTheme.colorScheme
+    val (back, fore) = when (p.tag?.form?.ordinal?.rem(3)) {
+        0 -> scheme.primaryContainer to scheme.onPrimaryContainer
+        1 -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        else -> scheme.secondaryContainer to scheme.onSecondaryContainer
+    }
+    // The circle grows with the letter (글자 200%: 28sp in 36dp would be cut, 조건 12), up to 1.6x.
+    val side = 36.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.6f)
+    androidx.compose.material3.Surface(shape = androidx.compose.foundation.shape.CircleShape, color = back,
+        modifier = Modifier.size(side).clearAndSetSemantics { }) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(letter, style = MaterialTheme.typography.titleSmall, color = fore, maxLines = 1)
         }
     }
 }
@@ -646,18 +728,28 @@ internal fun PlazaComposer(prompt: String, topic: String?, onWrite: () -> Unit) 
         modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics(mergeDescendants = true) {
             contentDescription = "글 쓰기. $prompt" + (topic?.let { ". 이번 주 주제 $it" } ?: "")
         }) {
-        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(prompt, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2, overflow = TextOverflow.Ellipsis)
-                topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis) }
-            }
-            Spacer(Modifier.width(8.dp))
+        // 2.0.0 [RVN-20] With big letters the box's words take the whole width and 글 쓰기 goes under them: beside it the week's topic
+        // (on a quiet plaza, what to write about) was cut to '이번 주 주제 · 쉬…'.
+        val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM
+        val words: @Composable () -> Unit = {
+            Text(prompt, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (big) 3 else 2, overflow = TextOverflow.Ellipsis)
+            topic?.let { Text("이번 주 주제 · $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis) }
+        }
+        val write: @Composable () -> Unit = {
             androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.primary, shape = MaterialTheme.shapes.large) {
                 Text("글 쓰기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
             }
+        }
+        if (big) Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.padding(end = 8.dp)) { words() }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) { write() }
+        } else Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { words() }
+            Spacer(Modifier.width(8.dp))
+            write()
         }
     }
 }

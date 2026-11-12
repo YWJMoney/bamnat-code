@@ -692,10 +692,13 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // 2.0.0 [RVN-19] HQ-51 알림함 '내가 알린 규칙에 반응이 왔어요': that company's screen, on that rule set's card.
             NoticeLinks.Target.COMPANY_SETUP -> {
-                val p = NoticeLinks.payload.value?.split('/')?.takeIf { it.size == 2 && Regex("[A-Za-z0-9]{12}").matches(it[0]) && it[1].isNotBlank() }
+                // "<company>/<setup>" opens on that rule set; [RVN-20] "<company>" alone (a 광장 소식 row: 채택·새 판) on the company.
+                val p = NoticeLinks.payload.value?.split('/')?.takeIf {
+                    it.size in 1..2 && Regex("[A-Za-z0-9]{12}").matches(it[0]) && it.getOrNull(1)?.isNotBlank() != false
+                }
                 if (p != null) {
                     com.bamnat.app.ui.company.TalkSheets.closeAll()
-                    container.pendingCompanySetup = p[0] to p[1]
+                    container.pendingCompanySetup = p.getOrNull(1)?.let { p[0] to it }
                     nav.navigate(Routes.company(p[0], setup = false, weekdays = false)) { launchSingleTop = true }
                 }
                 NoticeLinks.consume(target)

@@ -42,7 +42,7 @@ class LServerAlarmTest {
         assertEquals("밤낮 소식 5개", many.title)
         assertEquals("문의에 답이 2개 왔어요.", many.lines.first())
         assertEquals("11/3 주간 → 야간", many.lines[1])
-        assertTrue(many.lines.contains("신고한 글이 가려졌어요. 고마워요."))
+        assertTrue(many.lines.contains("신고해 주신 글을 가렸어요. 알려 주셔서 고마워요."))
         assertEquals("공지: 점검 안내", many.lines.last())
         assertFalse(many.onlyAnswers)
 
@@ -52,8 +52,8 @@ class LServerAlarmTest {
     }
 
     @Test fun reportOutcomesHaveTheirOwnWordsAndUnknownOnesAreSkipped() {
-        assertEquals("신고한 글을 운영자가 지웠어요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "deleted")))
-        assertEquals("신고한 글은 운영자가 확인하고 그대로 두었어요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "kept")))
+        assertEquals("신고해 주신 글을 운영팀이 지웠어요. 알려 주셔서 고마워요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "deleted")))
+        assertTrue(PlazaNews.line(PlazaNewsItem("flag_result", result = "kept"))!!.startsWith("신고해 주신 글은 운영팀이 살펴보고 운영 원칙에 맞아 그대로 두었어요."))
         assertEquals("가려졌던 내 글이 다시 보여요.", PlazaNews.line(PlazaNewsItem("post_result", result = "shown")))
         assertTrue(PlazaNews.line(PlazaNewsItem("post_result", result = "hidden"))!!.contains("이의 제기"))
         assertNull(PlazaNews.line(PlazaNewsItem("flag_result", result = "later")))

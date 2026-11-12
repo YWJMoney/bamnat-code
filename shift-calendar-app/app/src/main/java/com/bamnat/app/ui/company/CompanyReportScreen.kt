@@ -178,11 +178,14 @@ fun CompanyReportScreen(
                         // phone knows that it may mean ('이 이름으로' takes its name, and a 사업장 written after it goes below).
                         if (!topic) {
                             val used = remember { vm.usedCompany?.let(com.bamnat.app.company.CompanyText::norm) }
-                            val likes = rememberNameLikes(company).takeIf { com.bamnat.app.company.CompanyText.norm(company) != used }.orEmpty()
+                            // A 사업장 typed after the name ('얘시정밀 당진공장') is not part of the name looked for; it goes below.
+                            val split = remember(company) { com.bamnat.core.plaza.CompanyNames.split(company) }
+                            val likes = rememberNameLikes(split?.first ?: company).takeIf { com.bamnat.app.company.CompanyText.norm(company) != used }.orEmpty()
                                 .filter { it.why != com.bamnat.core.plaza.CompanyNames.Why.SAME }
                             NameLikeList(likes, "이 이름으로", onPick = { l ->
                                 company = l.name.take(40)
-                                if (l.site.isNotEmpty()) dept = l.site.take(SITE_MAX)
+                                val site = l.site.ifEmpty { split?.second.orEmpty() }
+                                if (site.isNotEmpty() && (l.site.isNotEmpty() || dept.isBlank())) dept = site.take(SITE_MAX)
                             })
                         }
                         OutlinedTextField(

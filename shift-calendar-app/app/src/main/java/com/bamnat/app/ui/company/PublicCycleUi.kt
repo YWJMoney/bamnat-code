@@ -391,6 +391,16 @@ fun PublicApplySheet(
     val weekly = cycle.weekly || (cycle.formKey in CycleOrders.WEEKLY_FORMS && codes.length == 7)
     val needsToday = !weekly && codes.isNotEmpty() && pick == null && !upOnly
     val ready = (codes.any { it in PublicCycle.WORK } || cycle.roster) && (!needsToday || today != null)
+    // 2.0.0 [RVN-20] 검토 I10aa-02 the common '넣기 전 요약 + 되돌리기' (as 회사 찾기's 이 설정 쓰기): what this order changes on the
+    // calendar, the kinds whose times move and the kinds added, before 달력에 넣기; 되돌리기 follows when it goes over an order.
+    var changes by remember { mutableStateOf<com.bamnat.app.data.CompanyShare.Preview?>(null) }
+    var replacing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(cycle, codes, calendar, upOnly, pick == null) {
+        if (codes.isEmpty() || upOnly || pick != null) { changes = null; return@LaunchedEffect }
+        val share = c.companyOf(calendar).share
+        replacing = runCatching { share.before().hadOrder }.getOrDefault(false)
+        changes = runCatching { share.preview(PublicCycleFiles.text(cycle, codes)) }.getOrNull()
+    }
 
     // 2.0.0 [RVN-18] 검토 COMP-22-3: kept up while it is putting the cycle in (before, a drag hid it and it still held the screen).
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = { if (!busy) onDismiss() }, sheetState = busySheetState(busy)) {
@@ -441,9 +451,13 @@ fun PublicApplySheet(
                 }
                 if (codes.isNotEmpty() && weekly) Text("월요일부터 이 요일대로 넣어요.", style = MaterialTheme.typography.bodySmall)
             }
+            if (pick == null && !upOnly && codes.isNotEmpty()) {
+                com.bamnat.app.ui.components.ChangeSummary(changeLines(changes, replacing), undo = replacing)
+            }
             Text(when {
                     pick != null -> "시간은 다음 화면에서 고칠 수 있어요. 급여 금액은 넣지도 가져오지도 않아요."
                     upOnly -> "근무 이름·시간·순서만 올려요. 내 달력은 그대로예요. 회사 찾기에서 같은 회사 분께 바로 보이고, 공개 근무주기 목록에는 검토 뒤(최대 7일)에 올라가요."
+                    replacing && codes.isNotEmpty() -> "급여 금액은 넣지도 가져오지도 않아요."
                     else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요. 급여 금액은 넣지도 가져오지도 않아요."
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

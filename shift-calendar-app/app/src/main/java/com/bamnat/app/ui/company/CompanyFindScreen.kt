@@ -334,7 +334,7 @@ private fun Offline(code: String, onRetry: () -> Unit, onByHand: () -> Unit) {
                 Text(if (code == "offline") "인터넷에 연결되지 않아 찾지 못했어요" else companyProblem(code),
                     style = MaterialTheme.typography.titleSmall)
             }
-            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 설정 > 회사 찾기에서 다시 찾을 수 있어요.",
+            Text("연결한 뒤 다시 찾거나, 지금은 직접 설정해도 돼요. 나중에 ${companyFindWay(androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle)}에서 다시 찾을 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onRetry) { Text("다시 찾기") }
@@ -675,28 +675,23 @@ fun CompanyDetailScreen(
 
 /**
  * 2.0.0 [RVN-08] COMP-11 What goes in before it does: the kinds of day whose times change, the kinds added, and that the order
- * changes from today; 되돌리기 follows on the app's snackbar.
+ * changes from today; 되돌리기 follows on the app's snackbar. [RVN-20] I10aa-02 drawn by the common [ChangeSummary] (공개 근무주기 too).
  */
 @Composable
-private fun SetupChanges(changes: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean) {
-    val lines = buildList {
-        changes?.changed?.forEach { add(it) }
-        changes?.added?.forEach { add("새 근무 · $it") }
-        if (replacing) add(
-            when {
-                changes?.cycle != null -> "오늘부터 ${changes.cycle}일 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
-                changes?.weekly == true -> "오늘부터 요일마다 정한 근무로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
-                else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
-            },
-        )
-    }
-    if (lines.isEmpty()) return
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("바뀌는 것", style = MaterialTheme.typography.titleSmall)
-        lines.forEach { Text("· $it", style = MaterialTheme.typography.bodyMedium) }
-        if (replacing) Text("넣은 뒤 화면 아래 ‘되돌리기’로 넣기 전으로 돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+private fun SetupChanges(changes: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean) =
+    com.bamnat.app.ui.components.ChangeSummary(changeLines(changes, replacing), undo = replacing)
+
+/** 2.0.0 [RVN-20] I10aa-02 The lines of [p] for [com.bamnat.app.ui.components.ChangeSummary]; [replacing]: over an order the calendar has. */
+internal fun changeLines(p: com.bamnat.app.data.CompanyShare.Preview?, replacing: Boolean): List<String> = buildList {
+    p?.changed?.forEach { add(it) }
+    p?.added?.forEach { add("새 근무 · $it") }
+    if (replacing) add(
+        when {
+            p?.cycle != null -> "오늘부터 ${p.cycle}일 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+            p?.weekly == true -> "오늘부터 요일마다 정한 근무로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+            else -> "오늘부터 이 순서로 바뀌어요. 지난 날짜와 직접 바꾼 날은 그대로예요."
+        },
+    )
 }
 
 /** COMP-11 이 설정 쓰기 with no row to pick, over a calendar that has its own order: one look at what changes, then 넣기. */
@@ -1080,13 +1075,14 @@ internal fun WithPayDialog(company: String, setup: SharedSetup, onAnswer: (Boole
 internal fun TrialBeforeAfter(trial: Trial?) {
     val t = trial?.takeIf { it.note == null && !it.loading && (it.now > 0 || it.then > 0) } ?: return
     val d = t.diff
-    Text("이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
-        if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
-        style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
-    t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }.take(3).forEach { l ->
-        Text("· ${l.label} ${com.bamnat.app.ui.pay.won(l.now)} → ${com.bamnat.app.ui.pay.won(l.then)}",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
+    // 2.0.0 [RVN-20] I10aa-02 the common '넣기 전 요약' (one look the same as 회사 설정's and 공개 근무주기's).
+    com.bamnat.app.ui.components.ChangeSummary(
+        t.lines.filter { it.now != it.then }.sortedByDescending { kotlin.math.abs(it.then - it.now) }
+            .map { l -> com.bamnat.app.ui.components.changeLine(l.label, com.bamnat.app.ui.pay.won(l.now), com.bamnat.app.ui.pay.won(l.then)) },
+        title = "이번 달 예상 세전 ${com.bamnat.app.ui.pay.won(t.now)} → ${com.bamnat.app.ui.pay.won(t.then)}" +
+            if (d == 0L) " (같아요)" else " (${if (d > 0) "+" else "−"}${com.bamnat.app.ui.pay.won(kotlin.math.abs(d))})",
+        titleColor = MaterialTheme.colorScheme.primary, max = 3,
+    )
 }
 
 /**

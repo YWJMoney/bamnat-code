@@ -237,6 +237,10 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
     var fixing by rememberSaveable { mutableStateOf(false) }
     var said by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    // 2.0.0 [RVN-20] 검토 U10a-15 명세서 사진에서 읽어 채우기 (before, the total and each line were typed by hand): the photo is read on
+    // the phone as the pay screen reads it, nothing is sent; while it is open the form waits, so one filled button shows (조건 2).
+    var scanning by rememberSaveable { mutableStateOf(false) }
+    var readNote by rememberSaveable { mutableStateOf<String?>(null) }
     val r = result
     if (fixing && r != null) {
         FixRequestSheet(vm, onDismiss = { fixing = false; onDismiss() }, initial = r.fixFields,
@@ -249,6 +253,30 @@ private fun SharedSlipCheckSheet(vm: PayWayViewModel, month: com.bamnat.core.pay
             Text(SharedPayWords.CHECK_TITLE, style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
             Text("${month.month.monthValue}월 명세서의 숫자를 넣으면 이 방식과 맞는지만 알려 드려요. 계산 방식은 그대로 보이지 않아요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (scanning) {
+                Text("명세서 사진으로 채우기", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                com.bamnat.app.ui.pay.ScanButtons(onText = { text ->
+                    val read = com.bamnat.core.pay.PayslipReader.read(text)
+                    val (g, ps) = com.bamnat.core.pay.SlipGlance.fromSlip(read)
+                    g?.let { total = it }
+                    if (ps.isNotEmpty()) { parts.clear(); parts.putAll(ps) }
+                    result = null
+                    scanning = false
+                    val readMonth = read.month
+                    readNote = when {
+                        g == null && ps.isEmpty() -> "사진에서 금액을 찾지 못했어요. 명세서의 숫자를 직접 적어 주세요."
+                        readMonth != null && readMonth != month.month ->
+                            "${readMonth.monthValue}월 명세서로 읽혔어요. ${month.month.monthValue}월 것이 맞는지 보고, 숫자가 다르면 고쳐 주세요."
+                        else -> "명세서에서 읽었어요. 숫자가 맞는지 보고 다르면 고쳐 주세요."
+                    }
+                }, onEmpty = { scanning = false; readNote = "사진에서 글자를 읽지 못했어요. 명세서의 숫자를 직접 적어 주세요." })
+                TextButton(onClick = { scanning = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("직접 적을게요") }
+                return@Column
+            }
+            if (r == null) OutlinedButton(onClick = { scanning = true; readNote = null }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text("📷 명세서 사진으로 채우기")
+            }
+            readNote?.let { com.bamnat.app.ui.components.ToneLine(it, tone = com.bamnat.app.ui.theme.Tone.Plain) }
             com.bamnat.app.ui.pay.MoneyField("지급 총액 (세전)", total, onChange = { total = it; result = null },
                 placeholder = "명세서의 ‘지급 합계’ 또는 ‘총 지급액’")
             Text("있으면 더 정확해요 (선택)", style = MaterialTheme.typography.titleSmall)

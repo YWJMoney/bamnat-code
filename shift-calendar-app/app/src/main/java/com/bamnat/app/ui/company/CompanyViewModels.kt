@@ -802,6 +802,10 @@ class TalkHolder(
      * is opened anew.
      */
     val draft = androidx.compose.runtime.mutableStateOf("")
+    /** 2.0.0 [RVN-20] U10a-02 '투표 만들기': the next question opens with its two choices out (taken once by the sheet). */
+    val pollStart = androidx.compose.runtime.mutableStateOf(false)
+    /** 2.0.0 [RVN-20] I10aa-01 The box takes the keys as the sheet comes up ('답 남기기' on a card, a way to start a plaza). */
+    val typeNow = androidx.compose.runtime.mutableStateOf(false)
     val replyId = androidx.compose.runtime.mutableStateOf<String?>(null)
     val kind = androidx.compose.runtime.mutableStateOf("talk")
     /** PC 확인 41e73582: the post just sent, so the sheet shows it and says so (보낸 답이 안 보여 두 번 보냈어요). */

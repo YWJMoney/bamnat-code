@@ -76,8 +76,7 @@ class PlazaNewsJob : JobService() {
         fun wanted(c: AppContainer): Boolean {
             val s = c.settingsRepository.current
             return (s.plazaNews && (takesPart(c) || c.inquiryStore.asked || c.received.calendars.value.isNotEmpty() || c.recipes.on.value)) ||
-                // 2.0.0 [RVN-19] HQ-51 the 알림함's 사람들 반응, with or without 소식 알림.
-                takesPart(c) || s.phoneCalendars.isNotEmpty() || s.alarmsEnabled
+                s.phoneCalendars.isNotEmpty() || s.alarmsEnabled
         }
 
         fun schedule(context: Context) {
@@ -101,14 +100,9 @@ class PlazaNewsJob : JobService() {
         suspend fun check(c: AppContainer) {
             c.telemetry.event(DiagEvents.ALIVE)
             calendarPermission(c)
-            // 2.0.0 [RVN-19] HQ-51 The 알림함's 사람들 반응 come with the same daily ask, whether or not 소식 알림 is on (it only says
-            // whether a notice goes up too).
-            val news = c.settingsRepository.current.plazaNews
-            if (!news && !takesPart(c)) return
-            if (!news) {
-                runCatching { digest(c) }.getOrNull()?.let { d -> runCatching { inbox(c, d) } }
-                return
-            }
+            // 2.0.0 [RVN-19] HQ-51 The 알림함's 사람들 반응 come with the same daily ask. With 밤낮 소식 off nothing is asked (처리방침
+            // 1-4항 '끄면 묻지 않습니다'); the answers under my posts still come on opening the app and with the 답 push ([VillageReplies]).
+            if (!c.settingsRepository.current.plazaNews) return
             var posts: List<MyPost>? = null
             // 1.36 [VIL-05] 마을 V5 소식 하나로: 밤낮 소식 and 마을 장터 소식 in one notice, held through sleep and work.
             val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
@@ -170,9 +164,12 @@ class PlazaNewsJob : JobService() {
          * as 마을 › 내 글 does), so the bell says the same number as that screen; the server's count of those when they cannot be read.
          */
         private suspend fun inbox(c: AppContainer, d: Digest): List<MyPost>? {
-            val posts = if (takesPart(c)) runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
+            // My posts are read only when there are answers to count, as before (the 소식's 새 답 line).
+            val answers = d.plaza.any { it.kind == "replies" } || d.reactions.any(com.bamnat.core.plaza.Reactions::roomAnswer)
+            val posts = if (answers && takesPart(c)) runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
             if (posts != null) PlazaInbox.answers(c, posts, VillageReplies.fresh(c.appContext, posts))
             PlazaInbox.fromDigest(c, d.reactions, answersCounted = posts != null)
+            PlazaInbox.news(c, d.plaza)
             return posts
         }
 

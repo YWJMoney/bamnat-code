@@ -43,7 +43,8 @@ class Rvn5Test : ScreenshotBase() {
         // The 사업장 typed after the name is in its own box; the name's box keeps what was typed, to fix or keep.
         assertTrue(appears("당진공장", exact = true))
         assertTrue(appears("얘시정밀", exact = true))
-        assertTrue(appears("‘얘시정밀’ 근무주기 넣기", exact = true))
+        // Below the names it may mean, on a folded phone below the fold.
+        reveal("‘얘시정밀’ 근무주기 넣기", exact = true)
         // The company it meant opens instead of a new one.
         tapText("(주)예시정밀", exact = true)
         assertEquals(listOf("c1"), opened)
@@ -67,6 +68,7 @@ class Rvn5Test : ScreenshotBase() {
         tapText("이 이름으로", exact = false)
         // The known spelling, and the 사업장 that was in the name below it.
         assertTrue(appears("(주)예시정밀", exact = true))
+        assertTrue(appears("당진공장", exact = true))
         assertTrue(gone("혹시 이 회사인가요?", exact = true))
     }
 
@@ -99,6 +101,8 @@ class Rvn5Test : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(c, "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
         settle()
+        // The rule set has its pay way: asked first (PAYF-03), then the order.
+        tapText("근무주기만 넣을게요", exact = true)
         assertTrue(appears("오늘 근무를 누르면 맞는 줄만 남아요.", exact = false))
         // The button is on screen before anything is scrolled.
         assertTrue(shows("이 순서로 쓸게요", exact = true))
@@ -162,12 +166,14 @@ class Rvn5Test : ScreenshotBase() {
         val c = companyOn()
         com.bamnat.app.inbox.Inbox.reset()
         val inbox = com.bamnat.app.inbox.Inbox.get(c.appContext)
+        // The 알림함 keeps 30 days, so the times are today's.
+        val t = com.bamnat.core.time.Today.millis() - 10_000
         val post = "pAbCdEfGhIjKlMnO"
         com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
-            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 2, 1_000, room = "style-shift", setup = "room", up = 2),
-            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, 1_000, up = 1),
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 2, t, room = "style-shift", setup = "room", up = 2),
+            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, t, up = 1),
             // The server's count of answers under my room post is left to the phone's own.
-            com.bamnat.core.plaza.Reaction("answer", post, "교대 광장", 5, 1_000, room = "style-shift", setup = "room"),
+            com.bamnat.core.plaza.Reaction("answer", post, "교대 광장", 5, t, room = "style-shift", setup = "room"),
         ), answersCounted = true)
         val row = inbox.rows.value.single { it.key == "plaza.post:$post" }
         assertEquals(com.bamnat.app.inbox.InboxSection.PEOPLE, row.section)
@@ -186,19 +192,56 @@ class Rvn5Test : ScreenshotBase() {
         assertEquals("교대 광장 · 답 3 · 나도요 2", inbox.rows.value.single { it.key == row.key }.line)
         // While the row is there what comes next adds to it; once it was opened, it starts again.
         com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
-            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, 2_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, t + 2_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
         assertEquals("교대 광장 · 답 3 · 나도요 3", inbox.rows.value.single { it.key == row.key }.line)
         inbox.remove(row.key)
         com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
-            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, 3_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
+            com.bamnat.core.plaza.Reaction("agree", post, "교대 광장", 1, t + 3_000, room = "style-shift", setup = "room", up = 1)), answersCounted = true)
         assertEquals("교대 광장 · 나도요 1", inbox.rows.value.single { it.key == row.key }.line)
         // Turned off ('다시 보지 않기' on its row, or 설정 › 알림): nothing of that kind comes.
         inbox.remove(board.key)
         inbox.mute("board.reaction", com.bamnat.core.plaza.Reactions.offLabel(com.bamnat.core.plaza.Reactions.Group.BOARD))
         com.bamnat.app.company.PlazaInbox.fromDigest(c, listOf(
-            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, 4_000, down = 1)), answersCounted = true)
+            com.bamnat.core.plaza.Reaction("report_vote", "c1aaaaaaaaaa/s1", "가나다화학", 1, t + 4_000, down = 1)), answersCounted = true)
         assertTrue(inbox.rows.value.none { it.key == board.key })
         // A payload of three parts (1.39's 보완 요청 notice) still opens, on the top of the talk.
         assertNull(com.bamnat.app.NoticeLinks.FixTalk.of("c1aaaaaaaaaa|0123456789abcdef|%EA%B0%80")!!.focus)
+    }
+
+    /** 2.0.0 [RVN-20] 총괄 11-12 (채택도 알림함으로): the day's 광장 소식 as rows, each with its own place; 새 답·돌봄 are not here. */
+    @Test fun plazaNewsAreRowsThatOpenTheirOwnPlace() {
+        val c = companyOn()
+        com.bamnat.app.inbox.Inbox.reset()
+        val inbox = com.bamnat.app.inbox.Inbox.get(c.appContext)
+        val t = com.bamnat.core.time.Today.millis() - 10_000
+        fun item(kind: String, result: String? = null, count: Int = 0, setup: String? = null, post: String? = null) =
+            com.bamnat.core.plaza.PlazaNewsItem(kind, company = "가나다화학", result = result, count = count, companyId = "c1aaaaaaaaaa",
+                setup = setup, post = post, atMillis = t)
+        com.bamnat.app.company.PlazaInbox.news(c, listOf(
+            item("adopted"), item("flag_result", result = "kept", post = "pAbCdEfGhIjKlMnO"), item("fix", count = 2, setup = "0123456789abcdef"),
+            item("replies", count = 3), item("care", result = "warn"), item("post_result", result = "hidden", post = "pZyXwVuTsRqPoNmL"),
+        ))
+        val rows = inbox.rows.value
+        val adopted = rows.single { it.kind == "plaza.news.adopted" }
+        assertEquals(com.bamnat.app.inbox.InboxSection.PEOPLE, adopted.section)
+        assertEquals("규칙 채택", adopted.title)
+        assertEquals("보낸 가나다화학 규칙이 채택됐어요.", adopted.line)
+        assertEquals(com.bamnat.app.NoticeLinks.Target.COMPANY_SETUP, adopted.target)
+        assertEquals("c1aaaaaaaaaa", adopted.payload)
+        val flag = rows.single { it.kind == "plaza.news.flag_result" }
+        assertEquals(com.bamnat.app.inbox.InboxSection.NOTICE, flag.section)
+        assertTrue(flag.line, flag.line.startsWith("신고해 주신 글은 운영팀이 살펴보고"))
+        val fix = rows.single { it.kind == "plaza.news.fix" }
+        assertEquals(com.bamnat.app.NoticeLinks.Target.FIX_TALK, fix.target)
+        assertEquals("0123456789abcdef", com.bamnat.app.NoticeLinks.FixTalk.of(fix.payload)!!.setup)
+        assertEquals(com.bamnat.app.NoticeLinks.Target.VILLAGE_POSTS, rows.single { it.kind == "plaza.news.post_result" }.target)
+        // 새 답 come counted on this phone ([PlazaInbox.answers]); 마을 돌봄 has its own card that cannot be turned off.
+        assertTrue(rows.none { it.kind == "plaza.news.replies" || it.kind == "plaza.news.care" })
+        // The same news again is the same row; a kind turned off does not come.
+        com.bamnat.app.company.PlazaInbox.news(c, listOf(item("adopted")))
+        assertEquals(1, inbox.rows.value.count { it.kind == "plaza.news.adopted" })
+        inbox.mute("plaza.news.adopted", adopted.title)
+        com.bamnat.app.company.PlazaInbox.news(c, listOf(item("adopted")))
+        assertTrue(inbox.rows.value.none { it.kind == "plaza.news.adopted" })
     }
 }

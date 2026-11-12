@@ -159,12 +159,29 @@ fun PointsBar(points: Int, threshold: Int, modifier: Modifier = Modifier) {
 /** A label and its text, one per line of a setup in plain words. */
 @Composable
 fun SetupLine(label: String, text: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.labelWidth(92.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    // 2.0.0 [RVN-20] 총괄 HQ-90 (사진 검토 11-13): the 근무 row's shifts one a line (a shift is not cut in two at a line's end), and with
+    // big letters or a narrow card the name above and the value under it, all the width (beside a grown name the value stood in a
+    // narrow column, a word or two a line).
+    val parts = if (label in SHIFT_LIST_LABELS) text.split(" · ").filter { it.isNotBlank() }.ifEmpty { listOf(text) } else listOf(text)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val below = androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM ||
+            maxWidth < SETUP_LINE_BESIDE_MIN
+        if (below) Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            parts.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        } else Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.labelWidth(92.dp))
+            Column(Modifier.weight(1f)) { parts.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) } }
+        }
     }
 }
+
+/** The rows whose value is a list of shifts (the server's `근무`: "주간 08:00~20:00 휴게 60분 · 야간 …", and 잔업·특근·대근). */
+private val SHIFT_LIST_LABELS = setOf("근무", "연장·휴무일 근무")
+
+/** Narrower than this, a [SetupLine]'s value goes under its name. */
+private val SETUP_LINE_BESIDE_MIN = 280.dp
 
 /** A round icon on a tinted circle, for the top of a step. */
 @Composable

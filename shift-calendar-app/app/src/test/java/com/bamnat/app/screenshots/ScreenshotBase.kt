@@ -1857,7 +1857,10 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
         null,
     )
 
-    override suspend fun talk(device: String, company: String, setup: String) = com.bamnat.app.company.Talk(listOf(
+    /** 2.0.0 [RVN-20] The posts [talk] hands out instead of the usual five (empty: a plaza nobody wrote in yet). */
+    var talkPosts: List<com.bamnat.app.company.TalkPost>? = null
+
+    override suspend fun talk(device: String, company: String, setup: String) = talkPosts?.let { com.bamnat.app.company.Talk(it) } ?: com.bamnat.app.company.Talk(listOf(
         com.bamnat.app.company.TalkPost("p1", 1, "sender", true, "저희 품질팀은 이렇게 돌아요. 10월 명세서랑 맞춰 봤어요.", now.minus(java.time.Duration.ofHours(20)), false),
         com.bamnat.app.company.TalkPost("p2", 2, "ok", false, "저도 같은 팀인데 맞아요. 격주 토요일은 특근으로 넣고 있어요.", now.minus(java.time.Duration.ofHours(6)), false),
         com.bamnat.app.company.TalkPost("p3", 3, "bad", false, "올해부터 야간 시작이 18:30으로 바뀌었어요. 확인해 주세요!", now.minus(java.time.Duration.ofHours(2)), false),

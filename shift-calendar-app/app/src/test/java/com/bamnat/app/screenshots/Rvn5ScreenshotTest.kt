@@ -45,6 +45,9 @@ class Rvn5ScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(c, "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = true, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, openPhasesFor = "s1") }
         settle()
+        // The rule set has its pay way: asked first (PAYF-03), then the order.
+        tapText("근무주기만 넣을게요", exact = true)
+        appears("오늘 근무를 누르면 맞는 줄만 남아요.", exact = false)
     }
 
     /** A company's 판 card as it first shows (U10a-08). */
@@ -65,7 +68,8 @@ class Rvn5ScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(c, "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
-        if (shows("이 판 더 보기", exact = true)) tapText("이 판 더 보기", exact = true)
+        // The card's other buttons are behind '이 판 더 보기' (U10a-08), which can be below the fold at 200%: scrolled to, then opened.
+        if (!shows("우리는 달라요 · 다른 점 말하기", exact = true)) tapText("이 판 더 보기", exact = true)
         tapText("우리는 달라요 · 다른 점 말하기", exact = true)
         reveal("요일을 누르면 다음 근무로 바뀌어요", exact = true)
     }

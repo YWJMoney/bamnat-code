@@ -81,7 +81,7 @@ fun LeadShareDialog(step: Step, lead: LeadShare, onOpen: (String) -> Unit) {
                         Text("근무 이름·시간·순서만 나눠요. 급여 금액, 이름, 연락처, 사진은 보내지 않아요.",
                             style = MaterialTheme.typography.bodyMedium)
                         // 2.0.0 [RVN-11] COMP-44 What the yes goes on doing, in the words it is given for: the cycle only.
-                        Text("앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 계산 방식은 그때마다 따로 물어요. 설정 › 개인정보·앱 정보에서 바꿀 수 있어요.",
+                        Text("앞으로 근무주기를 바꾸면 하루 한 번 저절로 고쳐 올려요. 급여 계산 방식은 그때마다 따로 물어요. ${settingsWay("plaza.autoShare", c.settingsRepository.current.workStyle)}에서 바꿀 수 있어요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     is Step.Working -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {

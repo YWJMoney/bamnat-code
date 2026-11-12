@@ -6,6 +6,8 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.inbox.Inbox
 import com.bamnat.app.inbox.InboxRow
 import com.bamnat.app.inbox.InboxSection
+import com.bamnat.core.plaza.PlazaNews
+import com.bamnat.core.plaza.PlazaNewsItem
 import com.bamnat.core.plaza.Reaction
 import com.bamnat.core.plaza.Reactions
 import org.json.JSONArray
@@ -43,6 +45,45 @@ object PlazaInbox {
         update(c) { kept -> Reactions.withAnswers(kept, list) }
     }
 
+    /**
+     * 2.0.0 [RVN-20] (총괄 11-12 "광장·회사에서 생기는 알림(답, 맞아요, 채택)은 이제 알림함으로"): the day's 광장 소식 as rows too, each
+     * opening its own place (the one 소식 notice could open only one): 채택·제안 반영·임금표·보완 요청·고마워요 are what people did
+     * ([InboxSection.PEOPLE]), a newer 판·신고 결과·내 글 결과 are 안내. 새 답 is left to [answers] (counted on this phone), 마을 돌봄
+     * and 쓰기 제한 끝 to their own card in 마을 (they cannot be turned off).
+     */
+    fun news(c: AppContainer, items: List<PlazaNewsItem>) {
+        val inbox = Inbox.get(c.appContext)
+        items.mapNotNull(::newsRow).distinctBy { it.key }.forEach { inbox.post(it) }
+    }
+
+    internal fun newsRow(i: PlazaNewsItem): InboxRow? {
+        val line = PlazaNews.line(i) ?: return null
+        // The title is what happened in a word or two; the line under it says where ('보낸 가나다화학 규칙이 채택됐어요'), not twice.
+        val company = i.companyId?.takeIf { Regex("[A-Za-z0-9]{12}").matches(it) }
+        val companyPage = company?.let { NoticeLinks.Target.COMPANY_SETUP to it } ?: (NoticeLinks.Target.PLAZA to null)
+        val pay = NoticeLinks.Target.PAY to null
+        val (section, title, place) = when (i.kind) {
+            "adopted" -> Triple(InboxSection.PEOPLE, "규칙 채택", companyPage)
+            "proposal" -> Triple(InboxSection.PEOPLE, "고치자 제안 반영", companyPage)
+            "rate" -> Triple(InboxSection.PEOPLE, "임금표 시세", NoticeLinks.Target.RATES to null)
+            "fix" -> Triple(InboxSection.PEOPLE, "보완 요청 ${i.count.coerceAtLeast(1)}",
+                PlazaNewsJob.fixTalk(listOf(i))?.let { NoticeLinks.Target.FIX_TALK to it } ?: companyPage)
+            "fix_answer" -> Triple(InboxSection.PEOPLE, "보완 요청에 답", pay)
+            "thanks" -> Triple(InboxSection.PEOPLE, "내 급여 방식 ${i.count.coerceAtLeast(1)}명", pay)
+            "changed" -> Triple(InboxSection.NOTICE, "규칙 새 판", companyPage)
+            "room" -> Triple(InboxSection.NOTICE, "다르게 쓰는 판", companyPage)
+            "room_posts" -> Triple(InboxSection.NOTICE, "정보 광장 새 글", companyPage)
+            "newer" -> Triple(InboxSection.NOTICE, "급여 방식 새 판", pay)
+            "flag_result" -> Triple(InboxSection.NOTICE, "신고 결과", NoticeLinks.Target.PLAZA to null)
+            "post_result" -> Triple(InboxSection.NOTICE, "내 글", NoticeLinks.Target.VILLAGE_POSTS to null)
+            else -> return null
+        }
+        val about = listOfNotNull(i.companyId, i.setup, i.post, i.trade).joinToString("/")
+        return InboxRow(key = "plaza.news:${i.kind}:$about", kind = "plaza.news.${i.kind}", section = section, title = title, line = line,
+            target = place.first, payload = place.second, at = i.atMillis.takeIf { it > 0 } ?: com.bamnat.core.time.Today.millis(),
+            count = i.count.coerceAtLeast(1))
+    }
+
     /** The reactions behind the rows still in the 알림함, changed by [change], and the rows put again. */
     @Synchronized
     private fun update(c: AppContainer, change: (List<Reaction>) -> List<Reaction>) {
@@ -74,7 +115,7 @@ object PlazaInbox {
             Reactions.Group.CONTEST -> NoticeLinks.Target.RECIPE to r.target
         }
         return InboxRow(key = r.key, kind = r.group.kind, section = InboxSection.PEOPLE, title = r.title, line = r.line,
-            target = target, payload = payload, at = r.atMillis, count = r.count)
+            target = target, payload = payload, at = r.atMillis.takeIf { it > 0 } ?: com.bamnat.core.time.Today.millis(), count = r.count)
     }
 
     /** The talk's name on the sheet: the room's or company's name. */
