@@ -84,7 +84,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
+import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteCodeShown, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
@@ -6478,6 +6478,9 @@ function auditDetail(r) {
   if (r.action === "reject" || r.action === "reject_undo") return REASONS[r.detail] ?? (r.detail ? r.detail : "");
   if (r.action === "adopt" || r.action === "post_autohide") return /^[A-Za-z0-9/_-]{12,}$/.test(r.detail ?? "") ? "" : r.detail;
   if (r.action === "invite" || r.action === "admin_update") return permWords(r.detail);
+  // 2.0.0 [RVQ-49] PC-159: 옛 줄은 초대한 폰 표시 앞 8자였어요(내부 번호라 보이지 않게). 새 줄은 '친구 3명 · 코드 … · 1개월 …'.
+  if (r.action === "invite_credit" || r.action === "invite_capped") return /^[0-9a-f]{8}$/.test(r.detail ?? "") ? "" : r.detail;
+  if (r.action === "invite_refused") return { phone: "이미 초대로 들어온 폰", self: "자기 코드" }[r.detail] ?? r.detail;
   if (r.action !== "company_update") return r.detail;
   try {
     const b = JSON.parse(r.detail);
@@ -6514,6 +6517,9 @@ function auditAbout(r) {
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
   // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
   if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
+  // 2.0.0 [RVQ-49] PC-159: 친구 초대 줄은 보상 id·코드 글자 대신 이름으로, 누르면 보상 화면.
+  if (r.action === "invite_credit" || r.action === "invite_capped") return { label: "친구 초대 보상", link: "#/rewards" };
+  if (r.action === "invite_refused" || r.action === "invite_burst") return { label: `초대 코드 ${inviteCodeShown(r.target)}`, link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
     const review = ["adopt", "reject", "reject_undo", "answer"].includes(r.action);
     const post = r.action.startsWith("post_");
