@@ -204,7 +204,7 @@ class RvjBossTest {
 
     /**
      * 2.0.0 [RVJ-72] (PC-177) 일급 20만 원, 월·수·금 13일 + 주휴: the line is '일용근로 소득세' (not the 간이세액표's), and 주휴수당 goes to
-     * the days of the week that earned it (국세청 서면-2022-소득관리-4916), so a day whose week earned none keeps its own 20만 원.
+     * the days of the week that earned it (국세청 서면-2022-소득관리-4916, 확인 필요: 원문 못 봄, 2차 자료만), so a day whose week earned none keeps its own 20만 원.
      */
     @Test fun dailyWorkersHolidayPayGoesToItsOwnWeek() {
         // 11월 1일부터: 11/2~11/29의 네 주가 주휴 12만 원씩(48만 원), 11/30(월)은 다음 달에 끝나는 주라 주휴가 없어요.

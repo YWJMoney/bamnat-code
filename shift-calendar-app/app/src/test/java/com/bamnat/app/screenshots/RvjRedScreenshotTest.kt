@@ -4,6 +4,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.company.PayWay
 import com.bamnat.app.data.PersonalCalendar
@@ -57,9 +59,9 @@ class RvjRedScreenshotTest : ScreenshotBase() {
 
     @Test fun theSetupSaysTheWayToo() = shoot("rvj_192_pay_setup_way_folded", FOLDED) {
         withWay().invoke(this)
-        tapText("급여 설정 고치기", exact = true)
-        settle()
-        tapText("자세히 고치기 (하나씩 묻기)", exact = true)
+        tapText("급여 설정 고치기", exact = true, scrolls = 0)
+        // The menu is a popup of its own, outside the window the screen reads: found through the compose rule (as BAScreenshotTest).
+        compose.onNodeWithText("자세히 고치기 (하나씩 묻기)").performClick()
         repeat(2) { settle() }
         assertTrue(shows("지금 ‘가나다화학’ 급여 방식으로 계산하고 있어요", exact = true))
     }

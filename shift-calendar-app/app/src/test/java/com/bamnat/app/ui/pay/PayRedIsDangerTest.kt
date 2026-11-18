@@ -47,7 +47,7 @@ class PayRedIsDangerTest {
         val files = (ui.resolve("pay").walkTopDown() + ui.resolve("team").walkTopDown() + ui.resolve("stats").walkTopDown() +
             work.map { ui.resolve("work/$it") }.asSequence()).filter { it.isFile && it.extension == "kt" }.toList()
         assert(files.size > 40) { "급여·팀·사장님 화면 파일을 못 찾았어요(${files.size})" }
-        val found = files.associate { f -> f.relativeTo(ui).invariantSeparatersPath to f.readLines().count { red.containsMatchIn(it) } }
+        val found = files.associate { f -> f.relativeTo(ui).invariantSeparatorsPath to f.readLines().count { red.containsMatchIn(it) } }
             .filterValues { it > 0 }
         assertEquals(
             "빨강은 위험만(조건 6). 챙길 일은 MaterialTheme.bamnat.caution으로, 정말 위험이면 까닭을 이 시험의 allowed에 적어요",

@@ -87,7 +87,7 @@ data class Payslip(
 
         /** 2.0.0 [RVJ-72] (PC-177) What the 일용근로 소득세 line is, for its ⓘ. */
         const val DAILY_TAX_HOW = "일용근로자는 간이세액표가 아니라 일한 날마다 따로 셈해요: 그날 받은 돈에서 15만 원을 빼고 6%, 거기서 55%를 덜어요" +
-            "(소득세법 제47조 제2항·제129조 제1항 제4호·제59조 제3항). 주휴수당은 그 주에 일한 날에 나눠 넣어요(국세청 서면-2022-소득관리-4916). " +
+            "(소득세법 제47조 제2항·제129조 제1항 제4호·제59조 제3항). 주휴수당은 그 주에 일한 날에 나눠 넣어요. " +
             "한 번에 주는 돈의 세금이 1,000원 미만이면 떼지 않고(제86조), 10원 미만은 버려요. 지방소득세는 그 10%예요. 이 세금으로 끝나 연말정산·종합소득 신고에 넣지 않아요."
 
         /**
@@ -142,7 +142,9 @@ data class Payslip(
         /**
          * 2.0.0 [RVJ-72] (PC-177) Each working day's 일급여 for the 일용 tax. 주휴수당 goes to the working days of the week that earned
          * it (국세청 서면-2022-소득관리-4916, 2023-01-05: 일용근로자의 주휴수당은 "당해 법령에서 정한 기간의 근로일수에 배분하여
-         * 원천징수"; 원천세과-240, 2012-05-02: 일괄 지급해도 과세표준은 "근로를 제공한 날별로"), so a week without 주휴 takes none of it;
+         * 원천징수"; 원천세과-240, 2012-05-02: 일괄 지급해도 과세표준은 "근로를 제공한 날별로" — 확인 필요: 두 해석은 검색으로 찾은
+         * 2차 자료로만 보았고 국세법령정보시스템 원문은 열어 보지 못했어요(2026-11-13), 그래서 사용자 글 [DAILY_TAX_HOW]에는 번호를
+         * 적지 않아요), so a week without 주휴 takes none of it;
          * the rest of the month's taxable pay (수당·가산, 비과세 빼고) by what each day earned, as before. A 주휴 whose week has no day
          * in this payment (a week that began last month, its days paid then) joins the rest: 확인 필요, the 해석 says only "그 기간의
          * 근로일수", and those days' tax was held back already.

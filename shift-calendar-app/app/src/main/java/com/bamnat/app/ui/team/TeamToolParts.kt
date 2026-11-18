@@ -104,6 +104,7 @@ internal fun TeamToolBar(stage: TeamStage, tools: TeamTools) {
 }
 
 /** '더 보기': every tool of the month in its group, one 48dp row each; a row closes the sheet and does its job. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 private fun TeamToolSheet(groups: List<Pair<String, List<TeamTool>>>, onDismiss: () -> Unit) {
     AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {

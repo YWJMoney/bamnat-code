@@ -24,7 +24,7 @@ import java.time.YearMonth
  * 2.0.0 갈래 J [RVJ-68]·[RVJ-69] (총괄 HQ-107·HQ-108, 디자인 품질 조건 2·6·8, Q1 사진 `계획/2.0.0-화면사진/Q1/3b/뒤-01`): 팀 근무표의
  * '확인할 것' (28줄이 모두 빨간 ⚠였던 카드: 같은 것은 한 줄로 묶고, 주 52시간만 빨강 표시, 규칙·부족은 주황 표시, 숫자만 굵게)과 이달 도구
  * (채운 단추 하나와 테두리 단추 아홉: 단계마다 채운 단추 하나, 글자 단추 둘, 나머지 '더 보기'), [RVJ-70] 빈칸 자동 채우기의 안마다 '이 안으로
- * 채우기'(PC-178), [RVJ-73] 안 짠 달은 팀·가게 관리에서 조용히(PC-176). Light·dark × 글자 100%·200% × 접은·편 폭.
+ * 채우기'(PC-178), [RVJ-73] 안 짠 달은 팀·가게 관리에서 조용히(PC-176), [RVJ-74] 링크 본 사람 줄은 이달 도구 바로 아래(PC-184). Light·dark × 글자 100%·200% × 접은·편 폭.
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -36,7 +36,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
      * 7병동, eight people on a seven-day turn (D D E E N N O: every night pair is followed by one day off and a D, 나오데), 서연 on
      * 12-hour days through the month's first full week (over 52 hours), painted to the [painted]th, so the rest is short.
      */
-    private fun seed(painted: Int = 24, confirmed: Boolean = false): Team = runBlocking {
+    private fun seedTeam(painted: Int = 24, confirmed: Boolean = false, links: Boolean = false): Team = runBlocking {
         val store = app.container.phaseThree
         val shifts = listOf(
             TeamShift(1, "D", "데이", 0xFF4F8BD6, false, LocalTime.of(7, 0), LocalTime.of(15, 0)),
@@ -48,7 +48,8 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
         val team = Team("t1", "7병동", "민지", shifts, 1L, need = mapOf(1L to 2, 2L to 2, 3L to 1))
         store.saveTeam(team)
         val names = listOf("민지", "준호", "서연", "지훈", "하은", "도윤", "수아", "예준")
-        val members = names.mapIndexed { i, n -> TeamMember("m$i", "t1", n, skill = if (i < 2) Skill.CHARGE else if (i == 7) Skill.NEW else Skill.REG, sort = i) }
+        val members = names.mapIndexed { i, n -> TeamMember("m$i", "t1", n, skill = if (i < 2) Skill.CHARGE else if (i == 7) Skill.NEW else Skill.REG, sort = i,
+            linkId = if (links) "l$i" else null, linkToken = if (links) "k$i" else null) }
         store.saveMembers(members)
         val turn = listOf(1L, 1L, 2L, 2L, 3L, 3L, 4L)
         val monday = (1..7).map { month.atDay(it) }.first { it.dayOfWeek == DayOfWeek.MONDAY }
@@ -75,7 +76,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
 
     // ---- 확인할 것 (HQ-107) ----
     private fun check(): Screen.() -> Unit = {
-        seed()
+        seedTeam()
         open().invoke(this)
         reveal("확인할 것")
         assertTrue("같은 것은 한 줄: 나오데 여러 건", shows("N-O-D(나오데) · 야간 뒤 2일째 근무"))
@@ -100,7 +101,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
 
     // ---- 이달 도구 (HQ-108) ----
     private fun tools(painted: Int = 24, confirmed: Boolean = false): Screen.() -> Unit = {
-        seed(painted, confirmed)
+        seedTeam(painted, confirmed)
         open().invoke(this)
         reveal("알림이에요. 그대로 확정해도 돼요")
     }
@@ -144,6 +145,22 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
         assertTrue(shows("바꾸기 요청 받기", exact = true))
     }
 
+    /**
+     * [RVJ-74] (총괄 PC-184, PC 4차 r4-133) Sent, links out: the 'n판 링크를 본 사람' line and its '안 본 n명에게만 보내기'·'다시 보기' sit
+     * right under the tools' 링크 다시 보내기, not five swipes down under the three switches.
+     */
+    private fun seenUnderTools(): Screen.() -> Unit = {
+        app.container.shareApi = shares
+        seedTeam(painted = 31, confirmed = true, links = true)
+        open().invoke(this)
+        reveal("링크 다시 보내기", exact = true)
+        assertTrue("본 사람 줄이 이달 도구 바로 아래", appears("판 링크를 본 사람"))
+        assertTrue(shows("다시 보기", exact = true))
+    }
+
+    @Test fun seenLineUnderTheTools() = shoot("rvj_218_team_seen_under_tools_folded", FOLDED, seenUnderTools())
+    @Test fun seenLineUnderTheToolsDarkBig() = shoot("rvj_219_team_seen_under_tools_folded_dark_200", DARK, 2f, seenUnderTools())
+
     // ---- 빈칸 자동 채우기의 안 (PC-178) ----
     /** Each 안 says what pressing it does: '이 안으로 채우기', not only the window's 닫기. */
     private fun plans(): Screen.() -> Unit = {
@@ -159,7 +176,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
     // ---- 안 짠 달 (PC-176) ----
     /** Only next month painted and confirmed: this month is '아직 안 짬', without 오늘 출근 0명 · 빈자리, 빈칸 or 모자란 날. */
     private fun unpainted(): Screen.() -> Unit = {
-        seed(painted = 31, confirmed = true)
+        seedTeam(painted = 31, confirmed = true)
         content { com.bamnat.app.ui.work.ManageScreen("main", onBack = {}, showAll = true) }
         repeat(2) { settle() }
         assertTrue(scrolledTo("아직 안 짬", exact = true))

@@ -783,6 +783,43 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 }, enabled = busy == null, onClick = confirm),
             ))
             busy?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            // 1.38 [P3-L-15] 봤어요: who opened their link since this 확정, and a resend to the others only.
+            // 2.0.0 [RVJ-74] (총괄 PC-184, 조건 1) Right under the month's tools and their 링크 다시 보내기: after 확정 it is the line the leader
+            // looks at most, and it sat at the bottom under the three switches, about five swipes down.
+            if (state.state == MonthState.CONFIRMED && active.any { it.linkId != null }) {
+                // 1.39 G2 (PC a483ca15): read with the members as saved now, and again whenever a link changes, so a link 확정 has just
+                // made anew is never asked by its old address; not while 확정 is still making the links.
+                suspend fun readSeen() = com.bamnat.app.team.TeamReceiveSync.seen(c, store.boardNow(team.id, month).members.filter { it.active })
+                val linkKey = active.joinToString(",") { it.linkId.orEmpty() }
+                LaunchedEffect(team.id, monthText, state.version, linkKey, busy == null) { if (busy == null) seen = readSeen() }
+                seen?.let { got ->
+                    val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
+                    // 2.0.0 [RVP-13] (검토 UIX-15 '위험이 아닌 아직 안 연 사람이 빨강') Not yet opened is grey words with a 주의 mark.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (line.gone.isNotEmpty()) Icon(Icons.Outlined.WarningAmber, null, tint = com.bamnat.app.ui.theme.Tone.Caution.color(),
+                            modifier = Modifier.padding(end = 6.dp).size(18.dp))
+                        Text(line.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
+                            scope.launch {
+                                busy = "새 링크를 만들고 있어요…"
+                                val now = store.boardNow(team.id, month)
+                                val goneIds = line.gone.map { it.id }.toSet()
+                                runCatching { links(c, team, b, now.members.filter { it.active && it.id in goneIds }) }
+                                    .onSuccess { l -> freshIds = l.list.map { it.first.id }.toSet(); linksFor = l.list }
+                                    .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "새 링크는 인터넷이 될 때 다시 눌러 주세요." }
+                                busy = null
+                            }
+                        }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
+                        if (line.notSeen.isNotEmpty()) OutlinedButton(onClick = {
+                            send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
+                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
+                        }) { Text("안 본 ${line.notSeen.size}명에게만 보내기") }
+                        TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
+                    }
+                }
+            }
             if (linksFor == null) com.bamnat.app.ui.pro.PeerInviteCard(com.bamnat.core.guide.Peer.TEAM)
             Text("팀원은 앱이 없어도 링크로 자기 근무를 봐요. 앱이 있으면 내 달력에 넣을 수 있어요. 고친 뒤 다시 확정하면 같은 링크가 바뀌고, 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요(팀원이 직접 바꾼 날은 그대로).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -835,41 +872,6 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 }
                 Text(tired?.let { com.bamnat.app.team.TeamReceiveSync.tiredLine(it, Today.date()) }?.let { "최근 7일 피곤해요: $it" }
                     ?: "최근 7일 피곤해요: 아직 없어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            // 1.38 [P3-L-15] 봤어요: who opened their link since this 확정, and a resend to the others only.
-            if (state.state == MonthState.CONFIRMED && active.any { it.linkId != null }) {
-                // 1.39 G2 (PC a483ca15): read with the members as saved now, and again whenever a link changes, so a link 확정 has just
-                // made anew is never asked by its old address; not while 확정 is still making the links.
-                suspend fun readSeen() = com.bamnat.app.team.TeamReceiveSync.seen(c, store.boardNow(team.id, month).members.filter { it.active })
-                val linkKey = active.joinToString(",") { it.linkId.orEmpty() }
-                LaunchedEffect(team.id, monthText, state.version, linkKey, busy == null) { if (busy == null) seen = readSeen() }
-                seen?.let { got ->
-                    val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
-                    // 2.0.0 [RVP-13] (검토 UIX-15 '위험이 아닌 아직 안 연 사람이 빨강') Not yet opened is grey words with a 주의 mark.
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (line.gone.isNotEmpty()) Icon(Icons.Outlined.WarningAmber, null, tint = com.bamnat.app.ui.theme.Tone.Caution.color(),
-                            modifier = Modifier.padding(end = 6.dp).size(18.dp))
-                        Text(line.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                    }
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
-                            scope.launch {
-                                busy = "새 링크를 만들고 있어요…"
-                                val now = store.boardNow(team.id, month)
-                                val goneIds = line.gone.map { it.id }.toSet()
-                                runCatching { links(c, team, b, now.members.filter { it.active && it.id in goneIds }) }
-                                    .onSuccess { l -> freshIds = l.list.map { it.first.id }.toSet(); linksFor = l.list }
-                                    .onFailure { e -> dialog = com.bamnat.app.share.linkProblem(e) ?: "새 링크는 인터넷이 될 때 다시 눌러 주세요." }
-                                busy = null
-                            }
-                        }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
-                        if (line.notSeen.isNotEmpty()) OutlinedButton(onClick = {
-                            send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
-                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
-                        }) { Text("안 본 ${line.notSeen.size}명에게만 보내기") }
-                        TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
-                    }
-                }
             }
             Spacer(Modifier.heightIn(min = 24.dp))
         }

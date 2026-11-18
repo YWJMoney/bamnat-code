@@ -18,7 +18,7 @@ class HaeyoToneTest {
                 val t = line.trim()
                 if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*") || "Regex(" in line) null
                 else literal.findAll(line).map { it.value }.firstOrNull { formal.containsMatchIn(it) }
-                    ?.let { "${f.relativeTo(src).invariantSeparatersPath}:${i + 1} $it" }
+                    ?.let { "${f.relativeTo(src).invariantSeparatorsPath}:${i + 1} $it" }
             }.asSequence()
         }.toList()
         assert(src.walkTopDown().count { it.extension == "kt" } > 500) { "앱 코드를 못 찾았어요" }
