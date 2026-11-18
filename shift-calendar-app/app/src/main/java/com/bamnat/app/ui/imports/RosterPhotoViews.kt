@@ -96,7 +96,12 @@ internal fun preview(r: RosterRow, byId: Map<Long, ShiftType>): String {
         d.getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.KOREAN) + " " + short(c, byId) }
     if (r.timed) return r.cells.toSortedMap().entries.filter { it.value != DutyCell.Off }.take(4).joinToString(" · ") { (d, c) -> "${d}일 ${short(c, byId)}" }
     val first = r.cells.keys.minOrNull() ?: return ""
-    return "${first}일부터 " + (first until first + 10).mapNotNull { d -> r.cells[d]?.let { short(it, byId) } }.joinToString(" ")
+    val last = minOf(first + 9, r.cells.keys.max())
+    // 2.0.0 [PC-185] (통합 4차 PC) Each day in its place, as the photo wrote it: a blank keeps its place with '·' (the line read on one
+    // day to the left of the photo before), and a word is the photo's own ('O' on every line, not 'ㅇ' on one and '휴' on another).
+    return "${first}일부터 " + (first..last).joinToString(" ") { d ->
+        r.raw[d]?.trim()?.takeIf { it.isNotEmpty() } ?: r.cells[d]?.let { short(it, byId) } ?: "·"
+    }
 }
 
 private fun short(c: DutyCell, byId: Map<Long, ShiftType>): String = when (c) {

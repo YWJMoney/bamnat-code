@@ -119,11 +119,12 @@ internal fun SameAsPhotoCard(
                     TextButton(onClick = { onFix(pointed) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
                 }
             }
-            // The screen's one filled button is '넣기' under the month (조건 2): the card's answer is outlined, the other a text button,
-            // and while a cell is pointed at its own two answers are the only ones.
+            // 2.0.0 [PC-183] (통합 4차 PC, 조건 2) While this is asked it is the screen's one filled button, and '○월에 N일 넣기' under the
+            // month waits outlined until it is answered ([DutyRosterViewModel.Ui.asking]); the other is a text button, and while a cell is
+            // pointed at its own two answers are the only ones.
             if (same == null) { if (pointed == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [PHOTO-29]'s order for the roster: yellow cells get their own answers, not one '같아요' for all.
-                OutlinedButton(onClick = { if (yellow.isEmpty()) onAnswer(true) else reviewing = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Button(onClick = { if (yellow.isEmpty()) onAnswer(true) else reviewing = true }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(if (yellow.isEmpty()) "네, 같아요" else "노란 ${yellow.size}칸 확인하기")
                 }
                 TextButton(onClick = { reviewing = false; onAnswer(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 곳이 있어요") }

@@ -233,6 +233,12 @@ class DutyRosterViewModel(
                 edits.forEach { (d, c) -> if (c == null) base.remove(d) else base[d] = c }
                 return base.filterKeys { it <= days }
             }
+        /**
+         * 2.0.0 [PC-183] '사진과 내용이 같은가요?' is being asked (a photo's line, not answered yet): its answer is the one filled button and
+         * '○월에 N일 넣기' waits outlined (still one press for a user who skips it, 조건 8).
+         */
+        val asking: Boolean get() = from == RosterFrom.PHOTO && scan != null && row != null && same == null && !reading
+
         /** Cells that will be written: everything but those still unknown. */
         val writable: Map<Int, DutyCell> get() = cells.filterValues { it !is DutyCell.Unknown }
         /** [READ-30] The roster's days outside [month] (10/26~31 of a "11월" 4주 듀티), as answered. */
@@ -1120,6 +1126,9 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                         Icon(Icons.Filled.TouchApp, null, Modifier.size(18.dp)); Text(" $TAP_PHOTO")
                     }
                     TextButton(onClick = { seeing = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("무엇을 읽었는지 보기") }
+                    // [PHOTO-09] 1.29: '사진이 달라요' on every photo's result. 2.0.0 [PC-183] Here with the photo's other two, above the
+                    // month, where it was half under the keys at the bottom of the screen.
+                    if (ui.from == RosterFrom.PHOTO) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.ROSTER)
                 }
             }
             val rows = ui.rows.orEmpty()
@@ -1146,8 +1155,6 @@ fun DutyRosterScreen(vm: DutyRosterViewModel, onBack: () -> Unit) {
                 scanned, mine, ui.picked, ui.cells, ui.doubtful, types, ui.month.lengthOfMonth(), ui.same,
                 onAnswer = vm::sameAsPhoto, onFix = { d -> vm.tap(d); editing = d }, onAgain = vm::askSameAgain, onRight = vm::rightAsRead,
             )
-            // [PHOTO-09] 1.29: '사진이 달라요' on every photo's result.
-            if (ui.from == RosterFrom.PHOTO && !ui.reading && failed == null) com.bamnat.app.ui.components.PhotoWrongButton(com.bamnat.core.stats.PhotoScreen.ROSTER)
             ui.asks.firstOrNull()?.let { ask -> AskCard(ask, types, vm.leaveKeys, onAnswer = { vm.answer(ask.raw, it) }, onNewKind = { newKindFor = ask.raw }) }
             WeekdayCard(ui, onMonth = vm::weekdayMonth, onRight = vm::heardWeekdays)
             Notices(ui, snap, vm::keepOutside, vm::keepMine)
@@ -1489,17 +1496,19 @@ private fun Keypad(
                 if (snap == null || ui.row == null || ui.writable.size < DutyRoster.MIN_DAYS || ui.outside.isNotEmpty()) null
                 else DutyRosterViewModel.changes(ui, snap).size.takeIf { it < ui.writable.size }
             }
-            Button(onClick = vm::apply, enabled = n > 0 && ui.applied == null && ui.chosen && again != 0,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)) {
-                Text(when {
-                    ui.applied != null -> "넣었어요"
-                    !ui.chosen -> "먼저 내 줄을 골라 주세요"
-                    n == 0 -> "키를 눌러 하루씩 넣어요"
-                    again == 0 -> "지금 달력과 같아요"
-                    again != null -> "바뀐 ${again}일 고치기"
-                    else -> "${ui.month.monthValue}월에 ${n}일 넣기"
-                }, maxLines = 1)
+            val label = when {
+                ui.applied != null -> "넣었어요"
+                !ui.chosen -> "먼저 내 줄을 골라 주세요"
+                n == 0 -> "키를 눌러 하루씩 넣어요"
+                again == 0 -> "지금 달력과 같아요"
+                again != null -> "바뀐 ${again}일 고치기"
+                else -> "${ui.month.monthValue}월에 ${n}일 넣기"
             }
+            val enabled = n > 0 && ui.applied == null && ui.chosen && again != 0
+            val put = Modifier.fillMaxWidth().padding(horizontal = 16.dp).heightIn(min = 52.dp)
+            // 2.0.0 [PC-183] (조건 2) Outlined while '사진과 내용이 같은가요?' is the one filled button above.
+            if (ui.asking) OutlinedButton(onClick = vm::apply, enabled = enabled, modifier = put) { Text(label, maxLines = 1) }
+            else Button(onClick = vm::apply, enabled = enabled, modifier = put) { Text(label, maxLines = 1) }
         }
     }
 }

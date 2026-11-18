@@ -160,4 +160,23 @@ class RosterFormLearnTest {
             assertTrue(i.soft, i.soft.length <= 40)
         }
     }
+
+    /** 2.0.0 [PC-185] '어느 줄(조)이 내 것인가요?': each day in its place ('·' for a blank), in the photo's own words. */
+    @Test fun theLinePreviewKeepsItsPlacesAndThePhotosWords() {
+        val row = com.bamnat.core.imports.RosterRow("2조", mapOf(1 to com.bamnat.core.imports.DutyCell.Off, 2 to com.bamnat.core.imports.DutyCell.Off,
+            4 to com.bamnat.core.imports.DutyCell.Off), raw = mapOf(1 to "O", 2 to "O", 4 to "O"))
+        assertEquals("1일부터 O O · O", com.bamnat.app.ui.imports.preview(row, emptyMap()))
+    }
+
+    /** 2.0.0 [PC-183] While '사진과 내용이 같은가요?' waits, its answer is the filled one; once answered, '넣기' is. */
+    @Test fun theQuestionIsTheOneFilledButtonUntilAnswered() = runBlocking {
+        RosterScanner.fake = { roster(1.0) }
+        val vm = DutyRosterViewModel(c, PersonalCalendar.MAIN, nov)
+        vm.readPhoto(Uri.parse("content://test/nov.jpg"))
+        idleUntil("the photo read") { vm.ui.value.rows != null && !vm.ui.value.reading }
+        vm.pick(0)
+        assertTrue(vm.ui.value.asking)
+        vm.sameAsPhoto(true)
+        assertEquals(false, vm.ui.value.asking)
+    }
 }
