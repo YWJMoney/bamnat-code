@@ -66,7 +66,6 @@ import com.bamnat.app.ui.components.DatePickerDialog
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -106,6 +105,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -859,13 +859,17 @@ private fun OwedCard(o: Owed, today: LocalDate, modifier: Modifier = Modifier, o
         modifier = modifier.fillMaxWidth(),
     ) {
         Column(Modifier.heightIn(min = 72.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
+            // 2.0.0 [RVK-46] (총괄 사진 검토, 조건 12): with large text, or a name that does not fit one line beside the
+            // amount, the amount and its chip go to their own line under the name, and the name may take two lines.
+            val stacked = LocalDensity.current.fontScale >= 1.3f
+            val amountText = Fmt.won(if (finished) r!!.amount else o.left)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.size(40.dp).clip(CircleShape).background(tone), contentAlignment = Alignment.Center) {
                     Icon(o.icon(), null, tint = onTone, modifier = Modifier.size(20.dp))
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(o.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(o.name, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(
                         listOfNotNull(o.who.trim().takeIf { it.isNotBlank() && it != o.name }, if (o is Owed.FromJob) "일감 잔금" else r?.kind?.label,
                             if (!finished) dueText(o, today) else (r?.lastPaid ?: r?.closedOn)?.let { Fmt.shortDate(it) }).joinToString(" · "),
@@ -873,11 +877,21 @@ private fun OwedCard(o: Owed, today: LocalDate, modifier: Modifier = Modifier, o
                         maxLines = 2, overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Spacer(Modifier.width(8.dp))
-                Column(horizontalAlignment = Alignment.End) {
-                    Text(Fmt.won(if (finished) r!!.amount else o.left), style = MaterialTheme.typography.titleMedium.merge(NumberStyle),
-                        fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(2.dp))
+                if (!stacked) {
+                    Spacer(Modifier.width(8.dp))
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(amountText, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(2.dp))
+                        StatusChip(status)
+                    }
+                }
+            }
+            if (stacked) {
+                Spacer(Modifier.height(8.dp))
+                FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically) {
+                    Text(amountText, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(end = 8.dp))
                     StatusChip(status)
                 }
             }
@@ -1018,7 +1032,8 @@ private fun ReceivableSheet(
             }
             HorizontalDivider()
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (r.left > 0 && !r.toPay) FilledTonalButton(onClick = onRemind) {
+                // 2.0.0 [RVK-46] (총괄 사진 검토, 조건 2): the sheet's one filled button is '받았어요'; this is a side action.
+                if (r.left > 0 && !r.toPay) OutlinedButton(onClick = onRemind) {
                     Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("알림 문자")
                 }
                 OutlinedButton(onClick = onEdit) { Text("고치기") }
@@ -1087,7 +1102,7 @@ private fun JobOwedSheet(
             Text("받았다고 하면 그 일감의 돈 받음이 켜지고, 가계부 탭 들어온 돈에 더해져요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             JobPayments.deposit(job)?.let { after ->
-                FilledTonalButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReceive(after) },
+                OutlinedButton(onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReceive(after) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("선금 ${Fmt.won(job.deposit.coerceAtMost(job.payable))} 받았어요") }
             }
             Button(onClick = { haptics.performHapticFeedback(HapticFeedbackType.Confirm); onReceive(JobPayments.all(job)) },
@@ -1124,11 +1139,12 @@ private fun JobOwedSheet(
                 }
             }
             HorizontalDivider()
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilledTonalButton(onClick = onRemind) {
+            // 2.0.0 [RVK-46] (총괄 사진 검토, 조건 2): '다 받았어요' is the one filled button; these two share a line when it fits.
+            FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onRemind, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Send, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("알림 문자")
                 }
-                OutlinedButton(onClick = onEdit) { Text("일감 고치기") }
+                OutlinedButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp)) { Text("일감 고치기") }
             }
         }
     }

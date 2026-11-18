@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -1134,6 +1135,11 @@ private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("아이콘", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // 2.0.0 [RVK-46] (총괄 사진 검토, 조건 2): '기본' is the first choice, so the dialog keeps two buttons below.
+                    LookDefault(selected = pickedIcon.isEmpty(), what = "아이콘", onClick = { pickedIcon = "" }) {
+                        Icon(usualCategoryIcon(name), null, tint = if (pickedIcon.isEmpty()) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(24.dp))
+                    }
                     com.bamnat.core.money.CategoryLook.ICONS.forEach { key ->
                         val on = pickedIcon == key
                         val tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -1148,6 +1154,9 @@ private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss
                 }
                 Text("색", style = MaterialTheme.typography.labelLarge)
                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    LookDefault(selected = pickedColor == 0, what = "색", onClick = { pickedColor = 0 }) {
+                        Box(Modifier.fillMaxSize().background(usualCategoryColor(name)))
+                    }
                     (1..com.bamnat.core.money.CategoryLook.COLORS).forEach { place ->
                         val on = pickedColor == place
                         val c = lookColor(place)
@@ -1163,13 +1172,24 @@ private fun CategoryLookDialog(name: String, icon: String, color: Int, onDismiss
             }
         },
         confirmButton = { TextButton(onClick = { onPick(pickedIcon, pickedColor) }) { Text("고르기") } },
-        dismissButton = {
-            Row {
-                if (pickedIcon.isNotEmpty() || pickedColor != 0) TextButton(onClick = { pickedIcon = ""; pickedColor = 0 }) { Text("원래대로") }
-                TextButton(onClick = onDismiss) { Text("취소") }
-            }
-        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
+}
+
+/** The first choice of a row in [CategoryLookDialog]: the category's usual icon or color, with '기본' under it. */
+@Composable
+private fun LookDefault(selected: Boolean, what: String, onClick: () -> Unit, picture: @Composable () -> Unit) {
+    Column(
+        Modifier.widthIn(min = 56.dp).heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+            .selectable(selected = selected, role = androidx.compose.ui.semantics.Role.RadioButton, onClick = onClick)
+            .semantics(mergeDescendants = true) { contentDescription = "기본 $what" + if (selected) ", 고름" else "" },
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+    ) {
+        Box(Modifier.padding(horizontal = 8.dp).size(24.dp).clip(CircleShape), contentAlignment = Alignment.Center) { picture() }
+        Text("기본", style = MaterialTheme.typography.labelSmall, maxLines = 1,
+            color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }
 
 /** What each picture is called when read out. */
