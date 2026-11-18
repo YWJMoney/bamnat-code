@@ -41,7 +41,9 @@ import com.bamnat.core.time.Today
  * In the alarm check's 등급 미리 보기 no ad is ever loaded: the button shows, cannot be pressed and says why.
  */
 @Composable
-fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {}) {
+fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: Modifier = Modifier, onOpened: () -> Unit = {},
+    /** 2.0.0 [RVO-25] (PC-186) False leaves the grey note out; the 프로 lock card says it under its ⓘ ([leaseNote]). */
+    withNote: Boolean = true) {
     if (feature == null || gate.tier >= Tier.PRO) return
     val small = MaterialTheme.typography.labelSmall
     val dim = MaterialTheme.colorScheme.onSurfaceVariant
@@ -52,11 +54,11 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
         return
     }
     val label = "광고 보고 ${bundle.label} 7일 열기"
-    val note = "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요(밤 12시에 다시 세요)."
+    val note = if (withNote) adNote(bundle) else ""
     if (gate.preview) {
         Column(modifier) {
             OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(label) }
-            Text("$note 미리 보기에서는 광고가 나오지 않아요.", style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            if (withNote) Text("$note $PREVIEW_NO_AD", style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
     }
@@ -79,8 +81,7 @@ fun LeaseAdOption(feature: com.bamnat.app.tier.Feature?, gate: Gate, modifier: M
                     onOpened()
                 }
             }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("처음 7일 무료로 열기") }
-            Text("${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요.",
-                style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+            if (withNote) Text(firstWeekNote(bundle), style = small, color = dim, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
         }
         return
     }
@@ -241,7 +242,7 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
             com.bamnat.app.ui.components.SideOrBelow(Modifier.fillMaxWidth(), minStart = 140.dp,
                 start = { Text(AD_LATE_WORDS, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) },
                 end = { androidx.compose.material3.TextButton(onClick = { cancel?.invoke() }) { Text("그만두기") } })
-        } else Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
+        } else if (note.isNotEmpty()) Text(note, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             modifier = Modifier.fillMaxWidth())
     }
 }
@@ -258,3 +259,25 @@ internal const val AD_LATE_WORDS = "광고가 늦어요. 조금만요"
  * watched. Followed by when it comes back.
  */
 internal const val CAPPED_WORDS = "오늘은 광고로 두 번 열었어요."
+
+private const val PREVIEW_NO_AD = "미리 보기에서는 광고가 나오지 않아요."
+
+private fun adNote(bundle: com.bamnat.core.tier.FeatureLease.Bundle): String =
+    "광고 한 편을 끝까지 보면 7일 열려요(${bundle.gives}). 광고가 안 와도 그냥 열려요. 하루 두 편까지예요(밤 12시에 다시 세요)."
+
+private fun firstWeekNote(bundle: com.bamnat.core.tier.FeatureLease.Bundle): String =
+    "${bundle.label} 묶음(${bundle.gives})을 처음 쓰는 날부터 7일 광고 없이 써요. 그 뒤에는 광고 한 편으로 7일씩 열려요."
+
+/**
+ * 2.0.0 [RVO-25] (PC-186) The grey words [LeaseAdOption] says under its button, for a card that keeps them under ⓘ
+ * (withNote = false): the free first week's, else the ad's (with the preview's line). Null when there is no button to explain.
+ */
+fun leaseNote(feature: com.bamnat.app.tier.Feature, gate: Gate): String? {
+    if (gate.tier >= Tier.PRO) return null
+    val bundle = gate.bundle(feature) ?: return null
+    return when {
+        gate.canTry(feature) -> firstWeekNote(bundle)
+        gate.preview -> "${adNote(bundle)} $PREVIEW_NO_AD"
+        else -> adNote(bundle)
+    }
+}

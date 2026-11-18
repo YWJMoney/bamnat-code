@@ -13,6 +13,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalTime
@@ -37,6 +38,7 @@ class ReviewOShotsTest : ScreenshotBase() {
     @After fun back() {
         app.container.calendars.setActive(PersonalCalendar.MAIN)
         app.container.settingsRepository.update { it.copy(previewTier = null, phoneCalendars = emptyList()) }
+        com.bamnat.app.ui.settings.RecentSettings.clear()
         released(false)
         app.getSharedPreferences("forget_all", android.content.Context.MODE_PRIVATE).edit().clear().commit()
         com.bamnat.core.time.Today.fix(SHOT_TIME)
@@ -190,6 +192,77 @@ class ReviewOShotsTest : ScreenshotBase() {
                 com.bamnat.app.ui.settings.BackupPlace.Recent(android.net.Uri.parse("content://com.example.gone/2"), "밤낮-백업-2026-11-03.bamnat", at.minusDays(7)),
             ), onPick = {}, onOther = {}, onDismiss = {})
         }
+    }
+
+    // ---- 3·4차 PR ----
+
+    // RVO-21 (SET-08·U11a-18·19): 설정 › 화면과 글자, 맨 위 묶음 칩과 네 접힌 묶음(한 줄 요약).
+    @Test fun displayGroups() = all("15_display_groups") {
+        open(FeatureRoute(Place.SETTINGS_CALENDAR))
+    }
+
+    // RVO-21 (I11aa-03): 설정 첫 화면 '방금 바꾼 것' 세 줄과 되돌리기(설정 화면의 저장 한 곳이 적는 것과 같게).
+    @Test fun recentChanges() = all("16_recent_changes") {
+        val store = app.container.settingsRepository
+        com.bamnat.app.ui.settings.RecentSettings.clear()
+        fun change(f: (com.bamnat.app.data.AppSettings) -> com.bamnat.app.data.AppSettings) =
+            store.update { s -> f(s).also { com.bamnat.app.ui.settings.RecentSettings.note(store, s, it) } }
+        change { it.copy(compact = !it.compact) }
+        change { it.copy(themeMode = com.bamnat.app.data.ThemeMode.DARK) }
+        change { it.copy(textStep = it.textStep + 1) }
+        com.bamnat.app.ui.settings.SettingsLinks.home()
+        settle()
+        reveal("방금 바꾼 것", exact = true, across = 0.2f)
+    }
+
+    // RVO-22 (SET-04·U11a-05·06): 설정 › 알림과 잠, 펼친 '알림 한눈에'와 '잠' 묶음, 아래 '자세히'.
+    @Test fun noticesBoard() = all("17_notices_board") {
+        open(FeatureRoute(Place.SETTINGS_NOTICES))
+    }
+
+    // RVO-25 (PC-146): 프로 맨 아래 받은 코드 칸에 8자리를 넣은 모습(고르기·넣기가 칸 바로 아래).
+    @Test fun codeTyped() = all("18_code_typed") {
+        app.container.tierApi = com.bamnat.app.tier.FakeTierApi(configAnswer = null)
+        app.container.inviteApi = com.bamnat.app.tier.FakeInviteApi()
+        launched().invoke(this)
+        open(FeatureRoute(Place.PRO))
+        repeat(16) { scrollUp(500, across = 0.5f) }
+        if (appears("코드를 받으셨나요?", exact = true)) tapText("코드를 받으셨나요?", exact = true)
+        typeInto("받은 코드", "ABCD2345")
+        reveal("넣기", exact = true)
+    }
+
+    // RVO-25 (PC-186): 프로가 아닌 폰의 가계부 › 통계. 잠금 카드의 채운 단추와 바로 아래 친구 초대가 처음 화면에서 아래 막대 위에 있어요
+    // (글자 200%는 그 카드까지 내렸을 때 카드 전체가 한 화면에).
+    @Test fun lockOnTheFirstScreen() {
+        val missed = mutableListOf<String>()
+        all("19_lock_stats") {
+            invites()
+            // Robolectric draws no blur: the cover Android 11 and older get, as 379_folded_money_stats_locked.
+            org.robolectric.util.ReflectionHelpers.setStaticField(android.os.Build.VERSION::class.java, "SDK_INT", 30)
+            launched().invoke(this)
+            open(FeatureRoute(Place.MONEY, "report"))
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            val big = app.resources.configuration.fontScale > 1.5f
+            // At 글자 200% the free 'N월 한눈에' card above already fills the first screen (조건 1 keeps it first): there the whole lock
+            // card, lock to 친구 초대, is on one screen once it is reached.
+            if (big) {
+                reveal("가계부 통계", exact = true, across = 0.5f)
+                repeat(12) { if (!appears(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true, ms = 0)) scrollUp(120, across = 0.5f) }
+            }
+            if (!appears(com.bamnat.app.ui.pro.INVITE_FREE_TITLE, exact = true)) { missed += "$look: 친구 초대가 첫 화면에 없음"; return@all }
+            if (!appears("가계부 통계", exact = true, ms = 0)) missed += "$look: 잠금 카드가 한 화면에 다 들어오지 않음"
+            val all = nodes(merged = true)
+            fun textOf(n: androidx.compose.ui.semantics.SemanticsNode) =
+                n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }?.joinToString { it.text }
+            val invite = all.first { textOf(it) == com.bamnat.app.ui.pro.INVITE_FREE_TITLE }.boundsInWindow
+            val bar = all.filter { it.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Role) { null } ==
+                androidx.compose.ui.semantics.Role.Tab }.map { it.boundsInWindow }
+            // The phone's bar is along the bottom, its tabs in one row (the open fold's is a rail on the side).
+            val tops = bar.map { it.top }.distinct()
+            if (tops.size == 1 && invite.bottom > tops[0]) missed += "$look: 친구 초대 $invite, 막대 ${tops[0]}"
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
     }
 
     // HQ-46: 배포판, 11-13, 서버 답 전, 10-27 전에 깔고 3.1에 동의하지 않은 폰(바탕은 '정식 출시 전이라 모든 기능이 무료예요').
