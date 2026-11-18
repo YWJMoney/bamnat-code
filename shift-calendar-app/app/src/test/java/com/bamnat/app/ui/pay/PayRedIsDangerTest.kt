@@ -30,7 +30,7 @@ class PayRedIsDangerTest {
         // [RVJ-68] (HQ-107) The team's 기준 (휴식·연속) are 주의 now; only 주 52시간 (근로기준법 제53조) is red, told in one place.
         "team/LeaderTeamScreen.kt" to listOf("팀원 그래도 지우기", "같은 이름(저장을 막음)"),
         "team/TeamSignParts.kt" to listOf("주 52시간(근로기준법 제53조)을 넘은 줄의 표시: 확인할 것·칸·맞바꾸기·바꾸기 요청·자동 채우기 모두 이 한 곳"),
-        "work/CommuteScreen.kt" to listOf("위치 권한이 없어 켜지 못함(출퇴근이 기록되지 않음)", "켠 뒤 '항상 허용'이 아니라 앱을 닫으면 기록되지 않음(앞 줄과 함께 뜨지 않음)"),
+        // work/CommuteScreen.kt: 위치 권한 띠 둘은 RVP-13부터 주의(WarningBanner 기본) — 설정에서 바로 고칠 수 있는 일이라 빨강이 아니에요.
         "work/FieldTools.kt" to listOf("견적서 지우기"),
         "work/KeepRecordsDialog.kt" to listOf("기록을 지우고 새로 시작"),
         "work/ManageScreen.kt" to listOf("할 일 가운데 팀의 주 52시간 넘김 한 줄(법)"),
