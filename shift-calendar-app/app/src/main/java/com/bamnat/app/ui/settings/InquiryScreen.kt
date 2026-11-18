@@ -686,6 +686,13 @@ private fun InquiryForm(
                 Text("메일로 보내기")
             }
         }
+        // 2.0.0 [RVL-84] (HQ-118) About the app stopping: said right above 보내기 whether the stop's record goes with it.
+        if (stop) Text(
+            if (withCheck) "멈춤 기록이 함께 가요" else "멈춤 기록은 가지 않아요. 위 ‘점검 기록도 보내기’를 켜면 함께 가요",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (withCheck) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
         val ready = kind != null && body.isNotEmpty() && problem == null && !busy
         Button(
             onClick = {

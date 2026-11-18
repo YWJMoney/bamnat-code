@@ -114,7 +114,12 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
      */
     fun stopFirst(): DiagReport {
         val first = sections.filter { it.first == STOP_SECTION || it.first == STOP_TRAIL_SECTION }
-        return copy(sections = first + (sections - first.toSet()))
+        // 2.0.0 [RVL-84] (HQ-118) Within 앱 멈춤, the newest stop's own record first: a long count of stops never pushes it past the cut.
+        val newestFirst = first.map { (title, lines) ->
+            val at = lines.indexOf(NEWEST_STOP)
+            title to if (title != STOP_SECTION || at <= 0) lines else lines.subList(at, lines.size) + lines.subList(0, at)
+        }
+        return copy(sections = newestFirst + (sections - first.toSet()))
     }
 
     companion object {
@@ -131,6 +136,8 @@ const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
 const val STOP_SECTION = "앱 멈춤"
 /** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
+/** 2.0.0 [RVL-84] The line before the newest stop's own record in [STOP_SECTION] ([com.bamnat.app.diag.CrashLog.reportLines]). */
+const val NEWEST_STOP = "가장 최근 기록:"
 
 /**
  * 2.0.0 [RVO-16] 검토 SET-02·U11a-02 ('알람 준비'를 네 곳이 서로 다른 기준으로 말해요): one verdict from [alarmChecks] for every place that

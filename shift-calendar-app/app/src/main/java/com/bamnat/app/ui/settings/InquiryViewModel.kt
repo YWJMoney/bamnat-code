@@ -16,6 +16,8 @@ import com.bamnat.app.company.KnownIssue
 import com.bamnat.app.company.PublicPage
 import com.bamnat.app.company.PublicThread
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
+import com.bamnat.app.ui.diag.DiagReport
+import com.bamnat.app.ui.diag.STOP_SECTION
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -208,12 +210,27 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
      * '기능 상태' rows, which 처리방침 3.2 §1-3 does not list for an inquiry (the screen and its own copy keep them).
      */
     suspend fun alarmCheck(context: Context, stop: Boolean = false): String = withContext(Dispatchers.IO) {
-        val diag = DiagnosticsViewModel(c)
-        var report = diag.report(context, diag.events()).withoutFlags()
-        // 1.32.1 [STAB-10] 멈춤 관찰 기록 only once 처리방침 3.6 lists it; [STAB-14] a stop's inquiry starts with the stop.
-        if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.DIAG_OBSERVE)) report = report.withoutObserve()
-        if (stop) report = report.stopFirst()
-        report.asText().take(InquiryClient.DIAG_MAX)
+        // 2.0.0 [RVL-84] (HQ-118) Never nothing and never a closed form: a part of the check this phone cannot read (a new Android's
+        // permission or service) leaves the stop's record to go on its own, with what could not be read named.
+        runCatching {
+            checkFails?.let { throw it }
+            val diag = DiagnosticsViewModel(c)
+            var report = diag.report(context, diag.events()).withoutFlags()
+            // 1.32.1 [STAB-10] 멈춤 관찰 기록 only once 처리방침 3.6 lists it; [STAB-14] a stop's inquiry starts with the stop.
+            if (!c.flags.on(com.bamnat.core.flags.FlagCatalog.DIAG_OBSERVE)) report = report.withoutObserve()
+            if (stop) report = report.stopFirst()
+            report.asText().take(InquiryClient.DIAG_MAX)
+        }.getOrElse { e -> if (e is kotlinx.coroutines.CancellationException) throw e else stopOnly(e) }
+    }
+
+    /** 2.0.0 [RVL-84] The 앱 멈춤 lines alone, and what kept the rest of the check from being read (its kind and where; no message). */
+    private fun stopOnly(e: Throwable): String {
+        // Lines the developer app reads as 'not read', never as a stop: they start with [UNREAD] (HQ-118, Q2 crash-repeat.js).
+        val stops = runCatching { com.bamnat.app.diag.CrashLog.reportLines(c.appContext) }
+            .getOrElse { listOf("$UNREAD 멈춤 기록: ${com.bamnat.app.diag.CrashLog.signature(it)}") }
+        val newest = DiagReport(listOf(STOP_SECTION to stops)).stopFirst().sections
+        return DiagReport(newest + (CHECK_UNREAD_SECTION to listOf("$UNREAD 나머지 점검: ${com.bamnat.app.diag.CrashLog.signature(e)}")))
+            .asText().take(InquiryClient.DIAG_MAX)
     }
 
     /** Why [text] cannot go yet, in words; null when it can. */
@@ -350,6 +367,15 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     companion object {
         /** [INQ-05] What [send] says when the question waits to be sent. */
         const val QUEUED = "인터넷이 연결되면 저절로 보내요. 내 문의 맨 위 ‘보내기 대기’에서 볼 수 있어요"
+
+        /** 2.0.0 [RVL-84] The start of a line saying what the check could not read on this phone (kind and place, no message). */
+        const val UNREAD = "(못 읽음)"
+        /** 2.0.0 [RVL-84] The section after 앱 멈춤 that says so, when the rest of the check failed. */
+        const val CHECK_UNREAD_SECTION = "점검 못 읽음"
+
+        /** 2.0.0 [RVL-84] Tests only: the whole check failing as a new Android's service might, to see the stop's record still go. */
+        @androidx.annotation.VisibleForTesting
+        @Volatile internal var checkFails: Throwable? = null
     }
 
     private fun failure(e: Throwable): String = when ((e as? CompanyException)?.code) {

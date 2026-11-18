@@ -189,7 +189,7 @@ object CrashLog {
         grouped(context).takeIf { it.isNotEmpty() }?.let { add("멈춘 곳별:"); addAll(it.map { l -> "  $l" }) }
         MainStall.lines(context).takeIf { it.isNotEmpty() }?.let { add("화면이 잠깐 멈춘 때:"); addAll(it) }
         add("남은 기록: ${notes.size}개")
-        notes.firstOrNull()?.let { add("가장 최근 기록:"); addAll(it.readLines().take(12)) }
+        notes.firstOrNull()?.let { add(com.bamnat.app.ui.diag.NEWEST_STOP); addAll(it.readLines().take(12)) }
     }
 
     private fun notice(context: Context, times: Int) {
