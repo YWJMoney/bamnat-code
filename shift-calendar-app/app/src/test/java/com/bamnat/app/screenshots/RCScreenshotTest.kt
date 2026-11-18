@@ -167,7 +167,9 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         val applied = runBlocking { c.recipes.applied.first() }
         assertEquals(1, applied.size)
-        assertEquals(1, api.applied)
+        // 2.0.0 [QA-11] 쓰는 분 is sent after the record is kept: the insert ends on Room's thread and the rest comes back to the
+        // main looper, which has not run it yet when the read above already sees the row (#450 CI, line 170). Wait for it.
+        assertTrue("쓰는 분을 한 번 세요: ${api.applied}", waitUntil { api.applied == 1 })
         assertTrue(c.recipes.canUndo(applied.first()))
         assertTrue(runBlocking { c.recipes.undo(applied.first().id) })
         // 보안 점검 M9 (PC 확인 7525ccff): put on again after 되돌리기, this phone is not counted a second time in 쓰는 분.
@@ -250,7 +252,7 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         tapText("넣기", exact = true)
         settle()
-        assertTrue(vm.state.value.appliedAt != null)
+        assertTrue(waitUntil { vm.state.value.appliedAt != null }) // [QA-11] the put-on ends off the main thread
         // PC 확인 보안 7차 (넣었는데 쓰는 분 0명): this phone is one of them now (the count read again, or this phone's share added).
         assertEquals(120 + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
         // The 넣었어요 line with its own 되돌리기 goes after its ten seconds; then back to the top, where the line sits.
@@ -348,7 +350,8 @@ class RCScreenshotTest : ScreenshotBase() {
         vm.apply { }
         settle()
         settle()
-        assertTrue("달력 탭이 테마 위에 얹혔어요", c.wardrobe.overlays.value.any { it.code == code })
+        assertTrue("달력 탭이 테마 위에 얹혔어요", waitUntil { c.wardrobe.overlays.value.any { it.code == code } }) // [QA-11]
+        assertTrue(waitUntil { vm.state.value.undoable.size == 2 }) // [QA-11] said once the put-on has come back to the main looper
         assertEquals(2, vm.state.value.undoable.size)
         // Its line (with 되돌리기 now, as the tab comes off here too) goes after ten seconds; then the card's.
         compose.mainClock.advanceTimeBy(12_000)
@@ -381,7 +384,8 @@ class RCScreenshotTest : ScreenshotBase() {
         settle()
         settle()
         assertTrue(c.wardrobe.overlays.value.any { it.code == code })
-        assertEquals(1, api.applied)
+        assertTrue("쓰는 분을 한 번 세요: ${api.applied}", waitUntil { api.applied == 1 }) // [QA-11]
+        assertTrue(waitUntil { vm.state.value.doc!!.item.users + vm.state.value.usersPlus == 120 - i + 1 })
         assertEquals(120 - i + 1, vm.state.value.doc!!.item.users + vm.state.value.usersPlus)
         // Once a phone: laid on again, not counted again.
         vm.apply { }
@@ -634,6 +638,7 @@ class RCScreenshotTest : ScreenshotBase() {
         vm.setValue(PieceKind.CAL_VIEW, "size", "tall")
         vm.putOnMine()
         settle()
+        assertTrue("내 앱에 들어갔어요", waitUntil { vm.state.value.putMine != null }) // [QA-11] the put-on ends off the main thread
         val put = vm.state.value.putMine
         assertTrue("내 앱에 들어갔어요", put != null && put > 0)
         assertEquals("올리지 않아요", 0, api.sent)

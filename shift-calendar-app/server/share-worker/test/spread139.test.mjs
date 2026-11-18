@@ -204,7 +204,9 @@ test("a link taken down for what it held keeps only its own words", async () => 
 const ogOf = (page) => [...page.matchAll(/<meta (?:property|name)="((?:og|twitter):[a-z_]+|description)" content="([^"]*)">/g)]
   .map((m) => [m[1], m[2]]);
 
-test("every receive page has a preview that names the kind of page and nothing of the people in it", async () => {
+test("every receive page has a preview that names the kind of page and nothing of the people in it", async (t) => {
+  // [RVD-01] The board's month (2026-12) is a near month only on a clock near it; from 2027-03 the real clock refused it.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T03:00:00Z") });
   readsForget();
   const env = { SHARES: kv() };
   // Everything private these links carry: names, team and workplace, shifts and times, the request's words.

@@ -14,19 +14,22 @@ export function d1(path = ":memory:") {
     return p;
     });
   };
+  // [RVD-01] SQLite's 'now' is the machine's clock, not the test's (t.mock.timers or tools/fake-date.mjs). On the
+  // real server both are the same clock, so here 'now' is the JS clock at the moment the statement runs.
+  const clocked = (sql) => (sql.includes("'now'") ? sql.replaceAll("'now'", `'${new Date(Date.now()).toISOString().replace("T", " ").replace("Z", "")}'`) : sql);
   const statement = (sql, params = []) => ({
     sql,
     bind: (...values) => statement(sql, check(values)),
     async first(column) {
-      const row = db.prepare(sql).get(...params);
+      const row = db.prepare(clocked(sql)).get(...params);
       if (row === undefined) return null;
       return column ? row[column] : { ...row };
     },
     async all() {
-      return { success: true, results: db.prepare(sql).all(...params).map((r) => ({ ...r })), meta: {} };
+      return { success: true, results: db.prepare(clocked(sql)).all(...params).map((r) => ({ ...r })), meta: {} };
     },
     async run() {
-      const r = db.prepare(sql).run(...params);
+      const r = db.prepare(clocked(sql)).run(...params);
       if (Number(r.changes)) writes++;
       return { success: true, results: [], meta: { changes: Number(r.changes), last_row_id: Number(r.lastInsertRowid) } };
     },
