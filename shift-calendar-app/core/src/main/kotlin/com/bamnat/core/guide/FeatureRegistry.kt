@@ -152,12 +152,12 @@ object FeatureRegistry {
     private val EVERYTHING: List<AppFeature> = listOf(
         // The guide itself [GUIDE-02][GUIDE-03].
         f("guide.checklist", "GUIDE-02", "이 달력으로 할 수 있는 것", "새 달력이나 일하는 방식을 바꾼 달력에서 처음 며칠 쓸 만한 기능을 골라 보여 줘요",
-            ALL, "달력 맨 위 카드", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
-        f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 한 줄로 알려 줘요",
-            ALL, "달력 맨 위 한 줄", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
+            ALL, "알림함(종)", at(Place.FEATURES), "처음", "시작", "체크리스트", "안내 카드", "할 수 있는 것", off = Off.APP),
+        f("guide.tips", "GUIDE-03", "알맞은 때 한 줄 안내", "급여일·첫 하루 마감처럼 알맞은 때 쓸 만한 기능을 하루 한 번까지 알림함(종)에 한 줄로 알려 줘요",
+            ALL, "알림함(종)", at(Place.FEATURES), "팁", "안내", "알려 주기", "추천", off = Off.APP),
         // 1.40 [DISC-04] 안 써 본 기능 가끔 알려 주기 (사용자 2026-11-11): the calendar's one card about a feature not tried yet.
-        f("guide.discover", "DISC-04", "안 써 본 기능 알려 주기", "오래 안 써 본 기능 가운데 내 일에 맞는 것 하나를 가끔(7일에 한 장까지) 달력 위 카드로 알려 줘요. 안 눌러 주면 점점 뜸해져요",
-            ALL, "달력 맨 위 카드", at(Place.FEATURES), "이런 기능", "모르는 기능", "기능 소개", "알려 주기", off = Off.APP),
+        f("guide.discover", "DISC-04", "안 써 본 기능 알려 주기", "오래 안 써 본 기능 가운데 내 일에 맞는 것 하나를 가끔(7일에 한 장까지) 알림함(종)에 한 장으로 알려 줘요. 안 눌러 주면 점점 뜸해져요",
+            ALL, "알림함(종)", at(Place.FEATURES), "이런 기능", "모르는 기능", "기능 소개", "알려 주기", off = Off.APP),
         // [ONBOARD-03][ONBOARD-04] The recommended features and what they need, on one screen.
         f("settings.recommended", "ONBOARD-04", "추천 기능 한 번에 켜기", "켜 둬도 괜찮은 알림과 필요한 허용을 한 화면에서 켜고, 끄는 곳을 알려 줘요",
             ALL, "설정 › 기능 켜고 끄기 › 추천 기능 한 번에 켜기", at(Place.RECOMMENDED),
@@ -564,7 +564,7 @@ object FeatureRegistry {
         f("calendar.quickText", "CAL-43", "메모 한 줄로 넣기", "날짜 시트 메모에 ‘내일 야간 대근 7시’, ‘다음주 월화 연차’처럼 적으면 근무·추가 근무·연차로 넣을지 물어요",
             WORKERS, "$DAY_SHEET › 빠른 메모", at(Place.CALENDAR), "빠른 입력", "말로 입력", "메모로 넣기", "자연어", "한 줄 입력"),
         f("calendar.monthRecap", "CAL-46", "한 달 마감 카드", "달이 끝나면 그달 일한 날·시간·야간과 지난달과의 차이를 한 장으로 보여 주고 달력 사진으로 보내요",
-            PAID, "달력 맨 위 카드 (달이 바뀐 뒤)", at(Place.CALENDAR, "month"), "월말", "한 달 정리", "마감", "달력 사진", "지난달 비교"),
+            PAID, "알림함(종) (달이 바뀐 뒤)", at(Place.CALENDAR, "month"), "월말", "한 달 정리", "마감", "달력 사진", "지난달 비교"),
         f("data.openFile", "CAL-47", "받은 파일 바로 열기", "카톡·파일 앱에서 받은 백업이나 회사 근무표 파일을 누르면 밤낮이 열려 읽어요",
             ALL, "파일 앱·메신저 › 파일 누르기 › 밤낮으로 열기", at(Place.SETTINGS_DATA, "파일 불러오기"), "파일 열기", "카톡 파일", "백업 열기", "공유 받기",
             under = "data.backup"),
@@ -720,8 +720,8 @@ object FeatureRegistry {
             setOf(FIELD, SHOP, HOURLY, INVEST), "마을 › 광장", at(Place.PLAZA), "현장 광장", "가게 광장", "알바 광장", "투자 이야기", "단가", "일당", "매출 팁"),
         // AI 1.27 끝
         // AG 1.27 시작 (계획/1.27-AG-개발계획.md 434·435, 결정 AG-D6)
-        f("invite.nudge", "INVITE-11", "달력의 친구 초대 카드", "설치 사흘 뒤부터 2주에 한 번, 그날만 달력 위에 친구 초대 카드를 보여요. 닫거나 끌 수 있어요",
-            ALL, "달력 맨 위 카드", at(Place.FEATURES), "초대 카드", "친구 초대 알림", "초대 권유", off = Off.APP),
+        f("invite.nudge", "INVITE-11", "친구 초대 카드", "설치 사흘 뒤부터 2주에 한 번, 그날만 알림함(종)에 친구 초대 카드를 넣어요. 닫거나 끌 수 있어요",
+            ALL, "알림함(종)", at(Place.FEATURES), "초대 카드", "친구 초대 알림", "초대 권유", off = Off.APP),
         f("grow.card", "INVITE-12", "함께 만들어요 카드", "설정 맨 위에서 친구 초대와 ‘불편한 점 알려 주기’를 바로 해요. 보낸 문의에는 개발자가 답을 드려요",
             ALL, "설정 맨 위", at(Place.FEATURES), "불편한 점", "버그 신고", "오류 신고", "개선 제안", "건의", "함께 만들어요", off = Off.APP),
         // AG 1.27 끝
@@ -854,9 +854,9 @@ object FeatureRegistry {
             setOf(SHIFT, DAY, HOURLY, FIELD, SHOP), "설정 › 화면과 글자 › 큰 지출을 근무 시간으로", at(Place.SETTINGS_CALENDAR, "큰 지출을 근무 시간으로"), "근무 시간 환산", "몇 시간 일한 돈", "시급으로", "공수", "매출 대비", off = Off.ELSEWHERE),
         f("money.dayClose", "LEDH-09", "퇴근 뒤 가계부 정리 알림", "근무가 끝나고 30분 뒤(야간이면 다음 날 아침, 쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요",
             setOf(SHIFT, DAY, HOURLY, FIELD), "설정 › 알림과 잠 › 퇴근 뒤 가계부 정리 알림", at(Place.SETTINGS_NOTICES, "퇴근 뒤 가계부 정리 알림"), "하루 마감", "가계부 알림", "지출 적기 알림", "퇴근 뒤", off = Off.ELSEWHERE),
-        f("pro.moments", "PROX-02", "프로 제안 카드", "같은 묶음을 광고로 두 번 열었을 때, 이번 달 두 묶음을 열었을 때, 일주일에 닷새 쓸 때만 달력 위에 한 장 보여요. 한 달 만에 오면 많이 쓴 묶음을 7일 열어 드려요. 7일에 한 번까지예요",
-            ALL, "달력 맨 위 카드", at(Place.FEATURES), "프로 제안", "보상 장부", "프로 권유", "광고 보고 열기", off = Off.APP, flag = "billing"),
-        f("backup.nudge", "STAB-08", "백업 안 한 지 30일 알림", "매일 자동 백업을 쓰지 않을 때 마지막 백업이 30일 지나면 달력 위에 한 줄로 알려 줘요. 데이터 화면에 마지막 백업 날도 보여요",
+        f("pro.moments", "PROX-02", "프로 제안 카드", "같은 묶음을 광고로 두 번 열었을 때, 이번 달 두 묶음을 열었을 때, 일주일에 닷새 쓸 때만 알림함(종)에 한 장 넣어요. 한 달 만에 오면 많이 쓴 묶음을 7일 열어 드려요. 7일에 한 번까지예요",
+            ALL, "알림함(종)", at(Place.FEATURES), "프로 제안", "보상 장부", "프로 권유", "광고 보고 열기", off = Off.APP, flag = "billing"),
+        f("backup.nudge", "STAB-08", "백업 안 한 지 30일 알림", "매일 자동 백업을 쓰지 않을 때 마지막 백업이 30일 지나면 알림함(종)에 한 줄로 알려 줘요. 데이터 화면에 마지막 백업 날도 보여요",
             ALL, "설정 › 데이터 › 백업 안 한 지 30일 알림", at(Place.SETTINGS_DATA, "백업 안 한 지 30일 알림"), "백업 알림", "마지막 백업", "기록 잃어버림", "백업 언제", off = Off.ELSEWHERE),
         f("stats.range", "CALX-06", "통계 기간 고르기", "통계를 1일~말일, 급여 기간, 주, 직접 고른 날로 세고, 달력 위에 이번 급여 기간이 끝나는 날을 한 줄로 보여 줘요",
             PAID, "근무·급여 › 기간 칩", at(Place.STATS), "기간", "급여 기간", "주별", "직접 기간", "마감일", "주급"),

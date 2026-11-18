@@ -134,6 +134,7 @@ internal fun NoticeStack(
         if (state.answered.isNotEmpty()) state.answered.filter { (state.heights[it] ?: 0) == 0 }.takeIf { it.isNotEmpty() }?.let { state.answered = state.answered - it.toSet() }
         state.bandKey = band?.key
         if (!state.settled || band == null || band.keep) state.slotOpen = band != null
+        if (state.settled && state.partsUnder == null) state.partsUnder = band != null
         // The bell's number is what its sheet holds (the band's notice too), so '3' on the bell is '알림 3' when it opens.
         state.inBell = rows.size + postedRows.size
         state.present = present.map { it.key }
@@ -460,6 +461,11 @@ internal class NoticeStackState(sheet: Boolean = false, snoozed: Set<String> = e
     /** PC-81: Whether the band's place is open; fixed once [settled]. */
     internal var slotOpen by mutableStateOf(false)
     internal var settled by mutableStateOf(false)
+    /**
+     * 검토 PC-153 (조건 11): whether the calendar's own parts (오늘의 흐름 …) stand under the month because a band was up when it settled.
+     * Fixed then for the visit, so a band that goes (되돌리기, ✕, its time up) or comes later does not swap them over the month.
+     */
+    internal var partsUnder: Boolean? by mutableStateOf(null)
     internal var snoozed: Set<String> by mutableStateOf(snoozed)
     /** Notices answered or closed inside the sheet, until the calendar's own copy says nothing too. */
     internal var answered: Set<String> by mutableStateOf(emptySet())

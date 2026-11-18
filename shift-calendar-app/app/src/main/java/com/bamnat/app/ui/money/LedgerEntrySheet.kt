@@ -700,7 +700,8 @@ private fun SplitEditor(main: String, categories: List<String>, amount: Long, pa
         Text(
             if (left < 0) "나눈 금액이 전체보다 ${Fmt.won(-left)} 많아요" else "나머지 ${Fmt.won(left)}은 $main",
             style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold,
-            color = if (left < 0) Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant,
+            // 갈래 K [RVK-45]: it cannot be saved as it is, so it is the one red here (조건 6).
+            color = if (left < 0) Tone.Danger.color() else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

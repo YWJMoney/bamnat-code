@@ -1732,7 +1732,8 @@ fun CalendarScreen(
         val partsOver = when {
             holding -> emptyList()
             // One week and its whole day ([CAL-03]) has no place under a month: the parts keep their place over it.
-            notices.bandKey != null && !(weekOnly && !wide) -> emptyList()
+            // 검토 PC-153 (조건 11): decided as the calendar settles and kept, so the month does not move when the band goes or comes.
+            (notices.partsUnder ?: (notices.bandKey != null)) && !(weekOnly && !wide) -> emptyList()
             low -> overParts.filter { it.part == CalendarPart.TODAY_FLOW }
             else -> overParts
         }

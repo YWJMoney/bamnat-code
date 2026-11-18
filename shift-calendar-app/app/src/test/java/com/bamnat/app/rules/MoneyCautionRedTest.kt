@@ -20,7 +20,8 @@ class MoneyCautionRedTest {
     )
 
     @Test fun redInTheLedgerIsOnlyForWhatCannotBeSaved() {
-        val red = Regex("""\.warning\b(?!Container)""")
+        // 갈래 P 5: the shared Tone.Danger (ToneLine, StatTile) is the same red.
+        val red = Regex("""\.warning\b(?!Container)|Tone\.Danger\b""")
         val found = money.walkTopDown().filter { it.extension == "kt" }.flatMap { f ->
             val lines = f.readLines()
             lines.indices.filter { red.containsMatchIn(lines[it]) }.map { i ->
