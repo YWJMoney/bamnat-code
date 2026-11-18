@@ -203,10 +203,10 @@ export function glanceViews(A) {
 
   const SIGNAL_STATE = { new: ["새 신호", "warn"], watch: ["지켜보는 중", "info"], dev: ["개발사항", "ok"], dismiss: ["아님", ""] };
   /**
-   * 2.0.0 [RVQ-35] 검토 U22-07: 판정 셋(돌아옴·새 기준으로 굳음·자료 없음)과, 판정이 없는 옛 줄(사흘 안 보이면 '좋아짐'이던 때).
+   * 2.0.0 [RVQ-35] 검토 U22-07: 판정 셋(돌아옴·새 기준으로 굳음·자료 없음)과 HQ-117의 부풀었다 돌아옴(앞 구간이 시험 등으로 부풀었던 것뿐), 판정이 없는 옛 줄(사흘 안 보이면 '좋아짐'이던 때).
    * 빨강은 쓰지 않아요(조건 6): 굳음만 주황, 나머지는 초록·회색.
    */
-  const SIGNAL_OUTCOME = { back: ["돌아옴", "ok"], settled: ["새 기준으로 굳음", "warn"], nodata: ["자료 없음", ""], old: ["옛 판정", ""] };
+  const SIGNAL_OUTCOME = { back: ["돌아옴", "ok"], settled: ["새 기준으로 굳음", "warn"], nodata: ["자료 없음", ""], puffed: ["부풀었다 돌아옴", ""], old: ["옛 판정", ""] };
   const sigNum = (v, unit) => (v === null || v === undefined || v === "" ? "—" : `${esc(String(v))}${esc(unit ?? "")}`);
 
   /**
@@ -259,7 +259,10 @@ export function glanceViews(A) {
     const sum = Object.keys(SIGNAL_OUTCOME).filter((k) => count(k)).map((k) => `${SIGNAL_OUTCOME[k][0]} ${count(k)}`).join(" · ");
     const done = judged.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>판정한 신호 ${judged.length}개 <small>${esc(sum)}</small></summary><ul>${judged.map((s) => {
       const [name, tone] = SIGNAL_OUTCOME[s.outcome] ?? SIGNAL_OUTCOME.old;
-      const why = s.outcome === "nodata" ? "안 보인 뒤로 이 숫자를 읽지 못했어요" : s.outcome ? `처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}` : "사흘 안 보여서 닫았어요(처음 기준과 견주기 전)";
+      // 2.0.0 [HQ-117] 부풀었다 돌아옴: 부푼 날과, 그날을 뺀 기준(처음 기준은 부푼 숫자라 보이지 않아요).
+      const md = (d) => `${Number(String(d).slice(5, 7))}월 ${Number(String(d).slice(8, 10))}일`;
+      const why = s.outcome === "puffed" ? `${(s.puffed ?? []).map(md).join("·") || "앞 구간"}이 부풀었던 것뿐 · 그날을 빼면 기준 ${sigNum(s.base, s.unit)}`
+        : s.outcome === "nodata" ? "안 보인 뒤로 이 숫자를 읽지 못했어요" : s.outcome ? `처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}` : "사흘 안 보여서 닫았어요(처음 기준과 견주기 전)";
       return `<li data-outcome="${esc(s.outcome ?? "old")}"><span class="pill ${tone}">${esc(name)}</span> <b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 · ` : ""}${sigNum(s.value, s.unit)} → ${sigNum(s.after, s.unit)} · ${why}</small></li>`;
     }).join("")}</ul></details>` : "";
     return `<section class="card ob-signals" aria-labelledby="ob-sig-title"><div class="card-head"><h2 id="ob-sig-title">개선 신호</h2>${open.length ? `<span class="pill warn">${open.length}</span>` : ""}</div>

@@ -72,6 +72,14 @@ export const OBS = {
    */
   backShare: 0.9,
   readFreshMs: DAY,
+  /**
+   * 2.0.0 [HQ-117] 총괄: 서버가 센 숫자(꾸밀 수 있음)의 앞 구간에 평소(그 숫자의 0 아닌 날 가운데값)의 이 배 넘게 부푼 날이 있으면
+   * (시험이 실서버를 부른 11-12·11-13처럼) 그날을 빼고 견줘요. 부푼 날을 빼면 문제 선이 아니면 '부풀었다 돌아옴'으로 따로 닫아요.
+   */
+  puffTimes: 10,
+  puffMin: 50,
+  /** 부푼 날을 빼고도 줄었다고 할 때, 남은 앞 날 가운데 평소의 이 배 넘는 날은 신호 설명에 따로 적어요(총괄 11-19). */
+  puffHigh: 3,
   /** 출처 순위 칸 수, 기능 쓰임·찾았는데 없던 말 신호 수. */
   sources: 8,
   featureSignals: 3,
@@ -357,6 +365,23 @@ function obsWindow(series, a, b) {
   return { now: obsAvg(s.slice(-a)), before: obsAvg(s.slice(-(a + b), -a)), n: s.length };
 }
 
+/**
+ * 2.0.0 [HQ-117] [obsWindow]와 같지만, 앞 [b]일 가운데 평소의 [OBS.puffTimes]배(적어도 [OBS.puffMin]) 넘게 부푼 날을 빼고 평균을 내요.
+ * [rows]는 { day, n }. 돌려주는 raw는 빼기 전 앞 평균, puffed는 뺀 날(앞 구간 안에서만, 최근 [a]일은 그대로 둬요).
+ */
+export function obsWindowPuffed(rows, a, b) {
+  const s = (rows ?? []).filter((r) => r.n !== null && r.n !== undefined);
+  const pos = s.map((r) => r.n).filter((v) => v > 0).sort((x, y) => x - y);
+  const mid = pos.length ? (pos[(pos.length - 1) >> 1] + pos[pos.length >> 1]) / 2 : 0;
+  const cut = Math.max(OBS.puffMin, mid * OBS.puffTimes);
+  const prev = s.slice(-(a + b), -a);
+  const kept = pos.length >= 5 ? prev.filter((r) => r.n < cut) : prev;
+  return { now: obsAvg(s.slice(-a).map((r) => r.n)), before: obsAvg(kept.map((r) => r.n)), raw: obsAvg(prev.map((r) => r.n)),
+    puffed: prev.filter((r) => !kept.includes(r)).map((r) => r.day),
+    // 뺀 날이 있을 때, 남은 앞 날 가운데 평소의 [OBS.puffHigh]배 넘는 날(출시 직후·시험일 수 있어 사람이 봐요).
+    high: pos.length >= 5 && kept.length < prev.length ? kept.filter((r) => r.n >= mid * OBS.puffHigh).map((r) => ({ day: r.day, n: r.n })) : [], n: s.length };
+}
+
 /** 워치 판 번호가 시작하는 곳(`wear/build.gradle.kts`: 폰 판 번호 + 100000). */
 export const WATCH_CODE = 100_000;
 
@@ -461,11 +486,16 @@ export function obsRules(b) {
     }
   }
   if (a?.config?.length) {
-    const w = obsWindow(a.config.map((d) => d.n), 3, 10);
+    // 2.0.0 [HQ-117] 앞 구간에 부푼 날(시험이 실서버를 부른 날 등)이 있으면 빼고 견줘요(puffed). 빼고 나서도 줄었을 때만 신호예요.
+    const w = obsWindowPuffed(a.config, 3, 10);
     if (w.n >= 10) {
+      const md = (d) => `${Number(d.slice(5, 7))}월 ${Number(d.slice(8, 10))}일`;
+      const high = w.high.length ? `남은 앞 날 가운데 ${w.high.map((r) => `${md(r.day)}(${r.n}번)`).join("·")}은 평소의 ${OBS.puffHigh}배가 넘어요. 출시 직후나 시험이었다면 정말 준 것이 아닐 수 있어요. ` : "";
+      const puffed = w.puffed.length ? `그 앞의 ${w.puffed.map(md).join("·")}은 평소의 ${OBS.puffTimes}배 넘게 부풀어(시험·몰림) 빼고 견줬어요. ${high}` : "";
       push({ kind: "config-drop", src: "server", value: obsRound1(w.now), base: obsRound1(w.before), better: "up", unit: "번/일",
         on: w.before >= 30 * t("config-drop") && w.now <= w.before * 0.6, tone: "bad", sample: Math.round(w.before),
-        caveat: "앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요.",
+        ...(w.puffed.length ? { puffed: w.puffed, raw: obsRound1(w.raw) } : {}),
+        caveat: `${puffed}앱이 받아 둔 것을 쓰면 요청이 줄어도 사용자는 그대로일 수 있어요.`,
         title: `앱이 서버에 오는 횟수가 하루 ${obsRound1(w.now)}번으로 줄었어요(그 전 ${obsRound1(w.before)}번)`,
         why: "늦지 않는 숫자라 오늘 일어난 일을 먼저 보여요. 앱이 서버에 닿지 못하는지(오류·주소)도 봐요.",
         dev: "앱 → 서버 요청 감소 원인 찾기(연결·판·사용자)", to: "#/server" });
@@ -575,7 +605,7 @@ function humanCheck(f, first, now) {
 }
 
 /** 2.0.0 [RVQ-35] 판정 이름(관리자 앱 숫자 › 개선 신호). 판정이 없는 옛 줄은 '옛 판정'(사흘 안 보이면 좋아짐이던 때)이에요. */
-export const OBS_OUTCOMES = { back: "돌아옴", settled: "새 기준으로 굳음", nodata: "자료 없음", old: "옛 판정" };
+export const OBS_OUTCOMES = { back: "돌아옴", settled: "새 기준으로 굳음", nodata: "자료 없음", puffed: "부풀었다 돌아옴", old: "옛 판정" };
 
 /**
  * 2.0.0 [RVQ-35] 지금 값(now)이 처음 기준(base0)의 [OBS.backShare] 안으로 돌아왔는지. 기준이나 값을 모르면 null.
@@ -609,12 +639,19 @@ export function obsMerge(stored, found, now, { reach = null } = {}) {
     const s = list.find((x) => x.kind === f.kind && x.subject === f.subject && (open(x) || (x.state === "dismiss" && now - x.at < OBS.signalDoneDays * DAY)));
     if (!f.on) {
       if (s && open(s)) Object.assign(s, { now: f.value, read: now, ...(f.sample !== undefined ? { sample: f.sample } : {}) });
+      // 2.0.0 [HQ-117] 앞 구간이 부풀었던 것뿐이면(부푼 날을 빼면 문제 선이 아님) '돌아옴'·'굳음'과 따로 '부풀었다 돌아옴'으로 바로 닫아요.
+      // 개발사항이 달린 신호는 고침의 판정(아래)을 그대로 따라요.
+      if (s && open(s) && f.puffed?.length && !(s.state === "dev" && s.devId)) {
+        Object.assign(s, { cleared: now, after: f.value ?? null, outcome: "puffed", puffed: f.puffed, base: f.base, caveat: f.caveat ?? s.caveat ?? "" });
+      }
       continue;
     }
     if (s) {
       if (s.state === "dismiss") continue;
+      // 2.0.0 [HQ-117] 처음 기준이 부푼 날로 잡혔으면(그 뒤 부푼 날을 빼게 됨) 뺀 기준으로 낮춰요. 그래야 '돌아옴'이 부푼 숫자를 기다리지 않아요.
+      const base0 = f.puffed?.length && s.base0 != null && f.base != null && s.base0 > f.base ? f.base : s.base0 ?? f.base;
       Object.assign(s, { tone: f.tone, title: f.title, why: f.why, value: f.value, base: f.base, unit: f.unit, better: f.better, last: now, now: f.value, read: now,
-        base0: s.base0 ?? f.base, sample: f.sample ?? null, caveat: f.caveat ?? "", ...humanCheck(f, s.first ?? now, now) });
+        base0, sample: f.sample ?? null, caveat: f.caveat ?? "", ...(f.puffed?.length ? { puffed: f.puffed } : {}), ...humanCheck(f, s.first ?? now, now) });
       continue;
     }
     // 판정한 뒤 다시 나타나면 그 기록을 이어요(다시 나타남). 처음 기준(base0)은 그대로예요.

@@ -46,7 +46,7 @@ test("[RVQ-35] SVC-18 처음 기준(base0)을 지키고, 꺼진 뒤 읽은 값�
   // 사흘이 안 됐으면 아직 판정하지 않아요.
   assert.equal(one(obsMerge(list, [off(37)], last + OBS.clearMs - HOUR)).cleared, undefined);
   // 판정 이름은 관리자 앱과 같은 낱말이에요.
-  assert.deepEqual(OBS_OUTCOMES, { back: "돌아옴", settled: "새 기준으로 굳음", nodata: "자료 없음", old: "옛 판정" });
+  assert.deepEqual(OBS_OUTCOMES, { back: "돌아옴", settled: "새 기준으로 굳음", nodata: "자료 없음", puffed: "부풀었다 돌아옴", old: "옛 판정" });
 });
 
 test("[RVQ-35] SVC-18 방향: 줄면 좋은 숫자는 기준보다 10%까지 높아도, 늘면 좋은 숫자는 10%까지 낮아도 돌아온 거예요", () => {
@@ -161,4 +161,53 @@ test("[RVQ-35] 매시 작업: 개발 중인 신호는 기다리고, 서버로 �
   const reopen = await call("POST", "/api/admin/observe/signals", { key: done.key, act: "reopen" }, me);
   assert.equal(reopen.status, 200, reopen.text);
   assert.deepEqual([reopen.data.signal.cleared, reopen.data.signal.outcome, reopen.data.signal.last], [null, null, T0 + 7 * DAY + 2 * HOUR]);
+});
+
+// 2.0.0 [HQ-117] 총괄: 11-12·11-13에 시험이 실서버를 불러 '앱이 서버에 오는 횟수'가 평소의 수십 배로 부풀었고, 그 뒤 평소로 돌아온 것을
+// '줄었어요'로 띄웠어요. 앞 구간의 부푼 날은 빼고 견주고, 빼면 문제 선이 아니면 '부풀었다 돌아옴'으로 따로 닫아요.
+test("[HQ-117] 앞 구간이 부풀었던 것뿐이면 줄었다고 하지 않고 '부풀었다 돌아옴'으로 닫아요", async () => {
+  const { obsWindowPuffed } = await import("../src/observe.js");
+  // 실서버 관측 판의 모양 그대로(11-05~11-18).
+  const ns = [0, 0, 146, 385, 93, 28, 24, 2226, 1712, 10, 5, 7, 5, 5];
+  const config = ns.map((n, i) => ({ day: `2026-11-${String(5 + i).padStart(2, "0")}`, n }));
+  const w = obsWindowPuffed(config, 3, 10);
+  assert.deepEqual(w.puffed, ["2026-11-08", "2026-11-12", "2026-11-13"], "평소(0 아닌 날 가운데값 26)의 10배인 260 넘는 날만");
+  assert.ok(w.raw > 400 && w.before < 50, `뺀 앞 평균 ${w.before}, 빼기 전 ${w.raw}`);
+  const [cfg] = obsRules({ active: { config } }).filter((f) => f.kind === "config-drop");
+  assert.equal(cfg.base, Math.round(w.before * 10) / 10, "보이는 기준도 뺀 값");
+  assert.deepEqual(cfg.puffed, w.puffed);
+  assert.match(cfg.caveat, /11월 8일·11월 12일·11월 13일은 평소의 10배 넘게 부풀어/);
+  // 총괄 11-19: 빼고도 '줄었어요'로 남으면, 남은 앞 날 가운데 평소의 3배 넘는 날(출시 직후 11-07·11-09)을 한 줄로 알려요.
+  assert.deepEqual(w.high, [{ day: "2026-11-07", n: 146 }, { day: "2026-11-09", n: 93 }]);
+  assert.match(cfg.caveat, /남은 앞 날 가운데 11월 7일\(146번\)·11월 9일\(93번\)은 평소의 3배가 넘어요\. 출시 직후나 시험이었다면/);
+
+  // 부푼 날 말고는 평소와 같아요: 줄지 않았어요 → 신호가 아니고, 부푼 기준으로 이미 떠 있던 신호는 '부풀었다 돌아옴'으로 닫혀요.
+  const flat = [20, 22, 25, 24, 21, 2400, 2100, 23, 25, 22, 24, 21, 23, 22].map((n, i) => ({ day: `2026-11-${String(5 + i).padStart(2, "0")}`, n }));
+  const [calm] = obsRules({ active: { config: flat } }).filter((f) => f.kind === "config-drop");
+  assert.equal(calm.on, false);
+  assert.deepEqual(calm.puffed, ["2026-11-10", "2026-11-11"]);
+  const opened = obsMerge([], [{ ...calm, on: true, base: 462.9, value: 5.7 }], T0);
+  assert.equal(opened[0].base0, 462.9);
+  const closed = obsMerge(opened, [calm], T0 + HOUR);
+  assert.equal(closed[0].outcome, "puffed");
+  assert.ok(closed[0].cleared, "사흘을 기다리지 않고 바로");
+  assert.equal(OBS_OUTCOMES.puffed, "부풀었다 돌아옴");
+
+  // 개발사항이 달린 신호는 고침의 판정을 따라요(부풀었다고 저절로 닫지 않음).
+  const linked = obsMerge([{ ...opened[0], state: "dev", devId: "dAAAAAAAAAAAAAAA" }], [calm], T0 + HOUR);
+  assert.equal(linked[0].outcome ?? null, null);
+
+  // 부푼 날을 빼고도 정말 줄었으면 신호는 그대로 켜지고, 처음 기준은 뺀 기준으로 낮아져요.
+  const drop = [30, 32, 35, 34, 31, 2400, 2100, 33, 35, 32, 34, 4, 3, 5].map((n, i) => ({ day: `2026-11-${String(5 + i).padStart(2, "0")}`, n }));
+  const [real] = obsRules({ active: { config: drop } }).filter((f) => f.kind === "config-drop");
+  assert.equal(real.on, true);
+  assert.ok(real.base < 40);
+  const kept = obsMerge(opened, [real], T0 + HOUR);
+  assert.equal(kept[0].base0, real.base, "부푼 기준 462.9가 아니라 뺀 기준");
+  assert.equal(kept[0].outcome ?? null, null);
+
+  // 부푼 날이 없으면 예전과 같아요.
+  const plain = obsWindowPuffed(drop.slice(7), 3, 4);
+  assert.deepEqual(plain.puffed, []);
+  assert.deepEqual(plain.high, []);
 });
