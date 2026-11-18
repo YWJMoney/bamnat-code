@@ -37,6 +37,12 @@ class YearRecapShotsTest : ScreenshotBase() {
         for ((look, q, scale) in looks) shoot("yr_${name}_$look", q, scale, style(WorkStyle.SHIFT) { go() })
     }
 
+    /**
+     * 총괄 #433 검토 (앞 사진 하나의 미리보기가 비어 있었어요): the picture is drawn off the main thread, so a shot of a sheet waits
+     * until it is on screen (its words are the Image's).
+     */
+    private fun Screen.drawn(preview: String) = assertTrue("미리보기가 그려져요", appears(preview, exact = true, ms = PICTURE_MS))
+
     /** The bell beside 공유, then the 결산's row in the 알림함's 안내. */
     private fun Screen.recapRow() {
         tapText("알림 ", prefix = true, scrolls = 0)
@@ -55,7 +61,7 @@ class YearRecapShotsTest : ScreenshotBase() {
         recapRow()
         tapText(ROW, exact = true)
         settle()
-        assertTrue("결산 창이 열려요", appears("결산 사진 미리보기", exact = false) || appears("밤낮 표시", exact = true))
+        drawn("결산 사진 미리보기")
         // 조건 7: a failure or a save is said in the sheet, never a toast under it.
         assertFalse(appears("저장하지 못했어요", exact = false, ms = 0))
     }
@@ -65,6 +71,7 @@ class YearRecapShotsTest : ScreenshotBase() {
         recapRow()
         tapText(ROW, exact = true)
         settle()
+        drawn("결산 사진 미리보기")
         reveal("보내기", exact = true)
         assertTrue(appears("보내기", exact = true))
     }
@@ -75,11 +82,13 @@ class YearRecapShotsTest : ScreenshotBase() {
         content { com.bamnat.app.ui.calendar.ImageShareSheet(snap, Today.month(), java.time.DayOfWeek.SUNDAY, emptyList(), {}, {},
             yearRecap = ROW to {}) }
         settle()
+        drawn("보낼 사진 미리보기")
         assertTrue(appears("$ROW 사진도 만들 수 있어요", exact = false))
     }
 
     companion object {
         const val ROW = "2026년 내 근무 결산"
+        const val PICTURE_MS = 15_000L
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_NIGHT = "w707dp-h823dp-port-night-420dpi"
     }

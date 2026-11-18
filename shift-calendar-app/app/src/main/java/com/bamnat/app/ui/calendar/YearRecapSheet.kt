@@ -72,7 +72,10 @@ fun YearRecapSheet(recap: YearRecap?, onSent: () -> Unit, onDismiss: () -> Unit)
     val hideAmounts = remember { settingsRepo.current.hideAmounts }
     var money by remember { mutableStateOf(false) }
     var mark by remember { mutableStateOf(settingsRepo.current.exportMark) }
-    var busy by remember { mutableStateOf(false) }
+    // 총괄 #433 검토: one each, so only the button pressed says it is at work ('보내기' said '만드는 중…' while saving); both wait.
+    var saving by remember { mutableStateOf(false) }
+    var sending by remember { mutableStateOf(false) }
+    val busy = saving || sending
     /** What the last save or send came to, said by the buttons. */
     var said by remember { mutableStateOf<Pair<Tone, String>?>(null) }
     val look = YearRecapImage.Look(money = money && !hideAmounts, mark = mark)
@@ -125,11 +128,11 @@ fun YearRecapSheet(recap: YearRecap?, onSent: () -> Unit, onDismiss: () -> Unit)
             said?.let { (tone, words) -> ToneLine(words, Modifier.padding(top = 4.dp), tone = tone, style = MaterialTheme.typography.bodyMedium) }
             val save: @Composable (Modifier) -> Unit = { m ->
                 OutlinedButton(onClick = {
-                    busy = true
+                    saving = true
                     said = null
                     scope.launch {
                         val saved = YearRecapImage.save(context, recap, look)
-                        busy = false
+                        saving = false
                         said = if (saved != null) Tone.Good to "사진 앱의 ‘밤낮’ 앨범에 저장했어요"
                             else Tone.Caution to "저장하지 못했어요. 보내기에서 저장할 곳을 고를 수 있어요"
                         if (saved != null) onSent()
@@ -142,19 +145,19 @@ fun YearRecapSheet(recap: YearRecap?, onSent: () -> Unit, onDismiss: () -> Unit)
             }
             val send: @Composable (Modifier) -> Unit = { m ->
                 Button(onClick = {
-                    busy = true
+                    sending = true
                     said = null
                     // The sheet closes once the share window is asked for, not at the tap (its scope draws the picture, ImageShareSheet PC 5차).
                     scope.launch {
                         val sent = runCatching { YearRecapImage.share(context, recap, look) }
-                        busy = false
+                        sending = false
                         if (sent.isSuccess) { onSent(); onDismiss() }
                         else said = Tone.Caution to "사진을 만들지 못했어요. 다시 눌러 주세요"
                     }
                 }, enabled = !busy, modifier = m.heightIn(min = 56.dp)) {
                     Icon(Icons.Outlined.Share, null, Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (busy) "만드는 중…" else "보내기")
+                    Text(if (sending) "만드는 중…" else "보내기")
                 }
             }
             // 조건 12: side by side while '사진에 저장' fits on one line in half the row (less a button's 24dp sides and its icon);
