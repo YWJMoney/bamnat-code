@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.studio
 
 import com.bamnat.core.recipe.widgetDraws
+import com.bamnat.app.ui.components.scrollEdges
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -1028,7 +1029,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             TextButton(onClick = { panel = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
                         }
                         HorizontalDivider()
-                        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 10.dp),
+                        // 2.0.0 [RVS-17] 총괄 #520 사진(200% 접은 폭, 맨 아래 줄이 판 끝에서 반쯤 잘림): the shared 'more below' line while it scrolls on.
+                        val panelScroll = rememberScrollState()
+                        Column(Modifier.fillMaxWidth().weight(1f).scrollEdges(panelScroll).verticalScroll(panelScroll).padding(horizontal = 16.dp, vertical = 10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             when (panelMode) {
                                 PanelMode.CARDS -> {

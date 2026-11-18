@@ -203,7 +203,7 @@ class S3ScreenshotTest : ScreenshotBase() {
     }
 
     /** RVS-03 (검토 U09a-06): the studio's '편 화면' shows the example at a Fold's open width, laid out as it is there. */
-    @Test fun theStudioShowsTheOpenFold() = shoot("s3/u09a06_studio_open_fold_light_100_folded", FOLDED) {
+    @Test fun theStudioShowsTheOpenFold() = fourLooks("u09a06_studio_open_fold") {
         tapText("도구")
         tapText("카드 배치", exact = true)
         settle()
@@ -212,8 +212,14 @@ class S3ScreenshotTest : ScreenshotBase() {
         tapText("편 화면", exact = true)
         settle()
         val ex = nodes(merged = true).first { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.any { d -> d == "예시 앱 화면" } == true }
-        // Drawn smaller to fit, but 673 × 560: wider than tall (a folded phone's example is 340 × 560).
-        assertTrue("편 화면 예시가 가로로 넓어요: ${ex.size}", ex.size.width > ex.size.height)
+        // 673 × 560 made smaller to fit: what is seen of it (cut by the frames around it) is the whole phone, wider than tall. 총괄 #520:
+        // the frame was a folded phone's (340) with the open one's middle cut out, which the laid-out size alone did not catch.
+        val seen = ex.boundsInRoot
+        when {
+            ex.size.width <= ex.size.height -> "편 화면 예시가 가로로 넓지 않아요: ${ex.size}"
+            seen.width <= seen.height -> "편 화면 예시가 잘려 보여요: 보이는 곳 $seen, 크기 ${ex.size}"
+            else -> null
+        }
     }
 
     /** RVS-18 (SI-04): the studio's top line has one chip with 작품 크기 and the oldest app that opens it; a tap says it in words. */
