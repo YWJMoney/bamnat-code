@@ -68,6 +68,8 @@ class Inbox private constructor(context: Context) {
     private val _rows = MutableStateFlow(read())
     private val _muted = MutableStateFlow(mutedPrefs.getStringSet(K_KINDS, emptySet()).orEmpty().toSet())
     private val _suggestOff = MutableStateFlow(mutedPrefs.getBoolean(K_SUGGEST_OFF, false))
+    private val restPrefs = app.getSharedPreferences(REST_FILE, Context.MODE_PRIVATE)
+    private val _resting = MutableStateFlow(readResting())
 
     /** The rows, the newest first within each section, people first. */
     val rows: StateFlow<List<InboxRow>> = _rows.asStateFlow()
@@ -76,6 +78,36 @@ class Inbox private constructor(context: Context) {
     /** 권유 끄기: no suggestion rows at all (설정 › 기능 켜고 끄기, beside '안 써 본 기능 알려 주기'). */
     val suggestOff: StateFlow<Boolean> = _suggestOff.asStateFlow()
 
+    /**
+     * 2.0.0 갈래 P 5 검토 PC-180 (✕로 닫은 '회사 규칙으로 올리기'가 다음 날 다시 옴; 사용자 '거부하면 되풀이해 보여 주지 마'): the 권유 keys
+     * closed with ✕ (or 전체 지움) and still resting: [SUGGEST_REST_DAYS] days for every kind of 권유, the calendar's and the posted ones
+     * alike (친구 초대의 2주와 같아요). '다시 보지 않기' stays for good ([mute]).
+     */
+    val resting: StateFlow<Set<String>> = _resting.asStateFlow()
+
+    /** PC-180: the 권유 [key] was closed: it rests [SUGGEST_REST_DAYS] days from [day]. */
+    fun rest(key: String, day: java.time.LocalDate = Today.date()) {
+        restPrefs.edit {
+            // What finished resting goes, so the file stays small.
+            restPrefs.all.filter { (_, v) -> (v as? Long)?.let { day.toEpochDay() - it >= SUGGEST_REST_DAYS } != false }.keys.forEach { remove(it) }
+            putLong(key, day.toEpochDay())
+        }
+        _resting.value = readResting(day)
+    }
+
+    /** PC-180: read again for a new visit, so a 권유 whose two weeks are over may come (the calendar does it as it opens). */
+    fun refreshResting() { _resting.value = readResting() }
+
+    /** PC-180: 되돌리기 of a close. */
+    fun unrest(key: String) {
+        restPrefs.edit { remove(key) }
+        _resting.value = _resting.value - key
+    }
+
+    /** The resting keys as of [day] (read again when the app comes back on a later day). */
+    fun readResting(day: java.time.LocalDate = Today.date()): Set<String> =
+        restPrefs.all.filter { (_, v) -> (v as? Long)?.let { day.toEpochDay() - it in 0L until SUGGEST_REST_DAYS } == true }.keys
+
     /** Whether a row of [kind] in [section] may come in. */
     fun allowed(kind: String, section: InboxSection): Boolean =
         kind !in _muted.value && !(section == InboxSection.SUGGEST && _suggestOff.value)
@@ -83,6 +115,7 @@ class Inbox private constructor(context: Context) {
     /** Puts [row] in; false (and nothing put) when its kind is turned off. A 권유 takes the place of the one before it. */
     fun post(row: InboxRow): Boolean {
         if (!allowed(row.kind, row.section)) return false
+        if (row.section == InboxSection.SUGGEST && row.key in readResting()) return false
         edit { list ->
             val rest = list.filter { it.key != row.key && !(row.section == InboxSection.SUGGEST && it.section == InboxSection.SUGGEST) }
             listOf(row) + rest
@@ -179,6 +212,10 @@ class Inbox private constructor(context: Context) {
         private const val K_ROWS = "rows"
         private const val K_KINDS = "kinds"
         private const val K_SUGGEST_OFF = "suggest_off"
+        /** PC-180: the 권유 resting after ✕, on this phone only (a day count). */
+        private const val REST_FILE = "inbox_rest"
+        /** PC-180: how long a closed 권유 rests, as long as 친구 초대 ([com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS]). */
+        const val SUGGEST_REST_DAYS = com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS
         private const val K_LABEL = "label:"
         /**
          * [RVM-36] HQ-52 How 기능 켜고 끄기 names a kind whose rows each say something different (a row's title names one work, but

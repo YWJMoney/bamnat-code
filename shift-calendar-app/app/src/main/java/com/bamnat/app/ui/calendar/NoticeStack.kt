@@ -102,13 +102,17 @@ internal fun NoticeStack(
     val inbox = remember { Inbox.get(context) }
     val muted by inbox.muted.collectAsStateWithLifecycle()
     val suggestOff by inbox.suggestOff.collectAsStateWithLifecycle()
+    val resting by inbox.resting.collectAsStateWithLifecycle()
+    // PC-180: each visit reads what still rests (two weeks over, the 권유 may come again).
+    remember(state) { inbox.refreshResting() }
     val posted by inbox.rows.collectAsStateWithLifecycle()
     LaunchedEffect(state) {
         delay(SETTLE_MS)
         state.settled = true
     }
     // HQ-50: What the user said no to for good, and every 권유 while 권유 끄기 is on, is not even composed.
-    val allowed = notices.filter { n -> n.urgent || (n.kind !in muted && !(n.section == InboxSection.SUGGEST && suggestOff)) }
+    // PC-180: a 권유 closed with ✕ rests two weeks, whichever kind it is.
+    val allowed = notices.filter { n -> n.urgent || (n.kind !in muted && !(n.section == InboxSection.SUGGEST && (suggestOff || n.key in resting))) }
     // Which notices said something the last time they were measured, in order; the band is the first urgent one the user did not put away.
     val present = allowed.filter { (state.heights[it.key] ?: 0) > 0 }
     // PC-139: a notice to [Notice.keep] stays in the bell when put away; only its band goes.
@@ -185,7 +189,8 @@ private fun NoticeBand(n: Notice, state: NoticeStackState) {
         detail = n.detail,
         action = if (n.button) n.action ?: "보기" else null,
         onAction = n.onAction ?: { state.openSheet(n.key) },
-        onClose = n.onClose ?: if (n.keep) ({ state.snooze(context, n.key, said = "알림함(종)에 넣어 뒀어요. 고칠 때까지 거기 있어요", persist = false) })
+        onClose = if (n.section == InboxSection.SUGGEST) ({ closeSuggestion(n, Inbox.get(context), state) })
+            else n.onClose ?: if (n.keep) ({ state.snooze(context, n.key, said = "알림함(종)에 넣어 뒀어요. 고칠 때까지 거기 있어요", persist = false) })
             else ({ state.snooze(context, n.key) }),
         closeLabel = if (n.onClose == null) "알림함에 넣기" else "이 안내 닫기",
         onClick = { state.openSheet(n.key) },
@@ -219,6 +224,10 @@ private fun NoticeSheet(notices: List<Notice>, posted: List<InboxRow>, state: No
                 val shut = cleared.map { it.key }
                 shut.forEach { NoticeSnooze.put(context, it) }
                 state.snoozed = state.snoozed + shut
+                // PC-180: every 권유 cleared rests two weeks, as its ✕ does.
+                val rested = cleared.filter { it.section == InboxSection.SUGGEST }.map { it.key } +
+                    gone.filter { it.section == InboxSection.SUGGEST }.map { it.key }
+                rested.forEach { inbox.rest(it) }
                 // 조건 10: taken back once; 조건 16: what stays, in a person's words.
                 state.say(if (notices.any { it.keep }) "알림을 지웠어요. 알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요"
                     else "알림을 모두 지웠어요. 글·작품에 달린 댓글은 그대로예요",
@@ -226,6 +235,7 @@ private fun NoticeSheet(notices: List<Notice>, posted: List<InboxRow>, state: No
                     // way its own X does (a 권유 rests two weeks, not one day), once 되돌리기 is no longer offered.
                     done = { cleared.forEach { it.onClose?.invoke() } }) {
                     inbox.putBack(gone)
+                    rested.forEach { inbox.unrest(it) }
                     shut.forEach { NoticeSnooze.remove(context, it) }
                     state.snoozed = state.snoozed - shut.toSet()
                 }
@@ -299,7 +309,11 @@ private fun PostedRow(r: InboxRow, inbox: Inbox, state: NoticeStackState) {
         onClick = { state.sheetOpen = false; r.open(); inbox.remove(r.key) },
         onClose = {
             inbox.remove(r.key)
-            state.say("알림을 지웠어요") { inbox.putBack(listOf(r)) }
+            // PC-180: a 권유 rests two weeks, whoever put it.
+            if (r.section == InboxSection.SUGGEST) {
+                inbox.rest(r.key)
+                state.say(SUGGEST_RESTS) { inbox.unrest(r.key); inbox.putBack(listOf(r)) }
+            } else state.say("알림을 지웠어요") { inbox.putBack(listOf(r)) }
         },
         onMute = {
             inbox.mute(r.kind, r.title)
@@ -322,7 +336,7 @@ private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: Not
             },
             tint = if (n.tone == Tone.Plain) MaterialTheme.colorScheme.primary else n.tone.color(),
             // Open, the notice says its words itself under the row (the line was said twice, 갈래 L 카드 사진).
-            title = n.label ?: n.line.orEmpty(), line = n.line?.takeIf { it != n.label && !(opened && expandable) },
+            title = n.label ?: n.line.orEmpty(), line = n.line?.let { sheetLine(it, n.label) }?.takeIf { !(opened && expandable) },
             onClick = {
                 val go = n.onAction
                 if (go != null && n.button) { state.sheetOpen = false; go() } else onOpen()
@@ -330,7 +344,8 @@ private fun NoticeRow(n: Notice, opened: Boolean, onOpen: () -> Unit, state: Not
             // PC-139: what keeps an alarm from working stays until it is fixed: no X.
             onClose = if (n.keep) null else ({
                 val answer = n.onClose
-                if (answer != null) answer() else state.snooze(context, n.key, said = "닫았어요. 내일 다시 볼 수 있어요")
+                if (n.section == InboxSection.SUGGEST) closeSuggestion(n, inbox, state)
+                else if (answer != null) answer() else state.snooze(context, n.key, said = "닫았어요. 내일 다시 볼 수 있어요")
             }),
             // An alarm that may not ring, an agreement the app waits for: never turned off from here.
             onMute = if (n.urgent) null else ({
@@ -530,6 +545,30 @@ internal fun rememberNoticeStackState(): NoticeStackState {
 
 /** [CAL-50] True inside a notice measured for the band and the bell, not seen whole (the sheet shows it whole). */
 internal val LocalNoticeFolded = compositionLocalOf { false }
+
+/**
+ * 총괄 #512 사진 (알림함 줄의 제목과 아래 글이 둘 다 '오늘 알람 끔'): under its title a row says only what the title does not ('밤 12시까지'),
+ * nothing when the line is the title again.
+ */
+internal fun sheetLine(line: String, label: String?): String? = when {
+    label == null -> line
+    line == label -> null
+    line.startsWith(label) -> line.removePrefix(label).trimStart(' ', '\u00A0', '·').ifBlank { null }
+    else -> line
+}
+
+/** PC-180: what closing a 권유 says (조건 16: where it went and for how long, in a person's words). */
+internal const val SUGGEST_RESTS = "닫았어요. 2주 동안 다시 권하지 않을게요"
+
+/**
+ * 2.0.0 갈래 P 5 검토 PC-180 (사용자 '거부를 하면 여러 번 반복해서 알림으로 보여 주지 마'): one rule for every 권유 of the calendar, closed
+ * with ✕ in the band or the 알림함: it rests [Inbox.SUGGEST_REST_DAYS] days ([Inbox.rest]), whatever its own close did before (a day for
+ * most). Its own close still runs once 되돌리기 is gone (친구 초대's own two weeks, 공유 안내's 'done').
+ */
+internal fun closeSuggestion(n: Notice, inbox: Inbox, state: NoticeStackState) {
+    inbox.rest(n.key)
+    state.say(SUGGEST_RESTS, done = { n.onClose?.invoke() }) { inbox.unrest(n.key) }
+}
 
 /** PC-81: How long the calendar has to settle which band it shows, from opening. */
 internal const val SETTLE_MS = 700L

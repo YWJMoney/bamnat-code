@@ -190,6 +190,8 @@ class ReviewP3ShotsTest : ScreenshotBase() {
         assertTrue("되돌리기는 알림함 안", appears("되돌리기", exact = true))
         assertTrue("남긴 까닭", appears("알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요", exact = false))
         assertTrue("알람 경고는 남아요", appears("오늘 알람 끔", exact = false))
+        // 총괄 #512 사진: under its title the row says only what the title does not.
+        assertTrue("알림함 줄 아래 글은 시각만", appears("밤 12시까지", exact = true))
         assertTrue("반응은 지워져요", gone("내 작품 ‘밤바다’", exact = false))
     }
 
