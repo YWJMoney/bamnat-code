@@ -202,6 +202,9 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                 if (!allowed || activity == null || c.ads.consent.value == false) { onNoAd("not_ready"); return@OutlinedButton }
                 loading = true
                 if (c.ads.ready.value) { play(activity); return@OutlinedButton }
+                // 2.0.0 [RVN-23] (PC-187): the ads SDK starts only now, on this press (it is a module Google Play services loads into
+                // the app, and a phone that never asks for an ad should not carry it).
+                c.ads.prepare(activity)
                 // 1.35 [J135-18] Tapped right after the app opened, the ads SDK may still be starting: wait for it (as long as a slow ad
                 // may take) instead of giving the days with no ad at once. Only a phone that may not have ads at all skips the wait.
                 scope.launch {

@@ -81,6 +81,33 @@ class NetEngineTest {
         }
     }
 
+    /**
+     * The other modules Google Play services loads into the app (DynamiteModule in the libraries, 2.0.0 총괄 ②): the ads SDK's
+     * (com.google.android.gms.ads.dynamite, with its measurement module) and ML Kit's Korean text reading
+     * (com.google.mlkit.dynamite.text.korean, only while a photo is read). Location, wearable, FCM, billing and Play's review,
+     * update and integrity talk to another app instead and load nothing. A new Play services library is added here on purpose.
+     */
+    @Test fun theGoogleModulesInTheAppAreKnown() {
+        val gms = Regex("\"com\\.google\\.android\\.gms:([a-z0-9-]+):").findAll(File("build.gradle.kts").readText()).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("play-services-ads", "play-services-mlkit-text-recognition-korean", "play-services-mlkit-document-scanner",
+            "play-services-location", "play-services-wearable"), gms)
+    }
+
+    /** The ads module comes only with a press on an ad's button, never when the app opens. */
+    @Test fun theAdsSdkStartsOnlyWithAPress() {
+        val ads = File("src/main/java/com/bamnat/app/ads/Ads.kt").readText()
+        val start = ads.substringAfter("fun start(activity: Activity)").substringBefore("fun prepare(")
+        assertFalse(start, start.contains("startSdk(") || start.contains("MobileAds."))
+        assertEquals(1, Regex("MobileAds\\.initialize\\(").findAll(ads).count())
+        assertTrue(ads.substringAfter("private fun settled(").substringBefore("private fun startSdk(").contains("&& wanted"))
+        assertTrue(ads.substringAfter("fun showPrivacyOptions(").substringBefore("private fun settled(").contains("if (wanted) startSdk("))
+        val callers = File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { it.readText().contains("ads.prepare(") }.map { it.name }.toList()
+        assertEquals(listOf("RewardedAds.kt"), callers)
+        val press = File("src/main/java/com/bamnat/app/ads/RewardedAds.kt").readText().substringAfter("OutlinedButton(\n            onClick = {")
+        assertTrue(press.substringBefore("enabled = !loading").contains("c.ads.prepare(activity)"))
+    }
+
     @Test fun theSelfCheckSaysWhichWay() {
         assertEquals("연결 방식: 휴대폰에 든 빠른 연결", SpeedCheck.way(fast = true, available = true))
         assertEquals("연결 방식: 기본 연결", SpeedCheck.way(fast = false, available = true))
