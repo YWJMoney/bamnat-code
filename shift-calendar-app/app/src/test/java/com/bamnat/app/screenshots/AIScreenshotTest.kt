@@ -30,6 +30,7 @@ import com.bamnat.app.ui.company.PlazaHomeScreen
 import com.bamnat.app.ui.company.PlazaHomeViewModel
 import com.bamnat.app.ui.company.PlazaRoomLine
 import com.bamnat.app.ui.settings.AutoShareRow
+import com.bamnat.core.plaza.ShareWay
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.Occupation
@@ -370,7 +371,7 @@ class AIScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
         assertTrue(appears("• 야간 50% → 60%", exact = true))
-        assertTrue(appears("다음부터 묻지 않고 저절로 나누기 (하루 한 번)", exact = true))
+        assertTrue(appears("다음부터 묻지 않고 저절로 나누기 (다음 날 오전, 그 전에 취소할 수 있어요)", exact = true))
         assertTrue(appears("다시 묻지 않기", exact = true))
         // The same values saved again ask nothing.
         tapText("이번엔 안 할게요", exact = true)
@@ -397,10 +398,14 @@ class AIScreenshotTest : ScreenshotBase() {
         }
         runBlocking { c.autoShare.check() }
         settle()
-        assertTrue(appears("(주)예시정밀 광장에 내일 나눠요(하루 한 번) · 야간 50% → 60%", exact = true))
+        // 2.0.0 [RVN-22] I10bc-03 Held on the phone until the next morning; 취소 drops it there (nothing reached the server).
+        assertTrue(appears("내일 오전에 (주)예시정밀 광장에 나눠요 · 야간 50% → 60%", exact = true))
         assertTrue(c.autoShare.waiting)
-        tapText("되돌리기", exact = true)
+        tapText("취소", exact = true)
         settle()
+        assertFalse(c.autoShare.waiting)
+        // The same values saved again are not held again.
+        runBlocking { c.autoShare.check() }
         assertFalse(c.autoShare.waiting)
     }
     /**
@@ -422,19 +427,26 @@ class AIScreenshotTest : ScreenshotBase() {
         settle()
         assertFalse(c.autoShare.waiting)
         assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
+        // 2.0.0 [RVN-22] I10bc-03 It names the one part it is about.
+        assertTrue(appears("(주)예시정밀 광장의 급여 계산 방식을 이렇게 고쳐 올려요.", exact = true))
         assertTrue(appears("• 야간 50% → 60%", exact = true))
     }
+    /** 2.0.0 [RVN-22] 검토 I10bc-03: one way for each part (저절로·묻기·안 함), each chip read with its part. */
     @Test fun theSettingAsksOrSharesOrNot() = shoot("1138_ai_setting", SMALL_PHONE) {
         companyOn()
         member()
         c.companyStore.setAutoShare(false)
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { AutoShareRow() } }
         settle()
-        assertTrue(appears("‘다시 묻지 않기’로 두셨어요", exact = false))
-        tapText("바꿀 때마다 묻기로 되돌리기", exact = true)
+        assertTrue(appears("회사 광장에 나누기", exact = true))
+        assertTrue(appears("바꾼 것을 (주)예시정밀 광장에 어떻게 나눌지 부분마다 골라요", exact = false))
+        assertEquals(com.bamnat.core.plaza.ShareWays(ShareWay.NEVER, ShareWay.NEVER, ShareWay.NEVER), c.companyStore.shareWays.value)
+        tapText("근무 시간 묻기", exact = true)
         settle()
-        assertNull(c.companyStore.autoShare.value)
-        assertTrue(appears("바꿀 때마다 ‘(주)예시정밀 광장에 나눌까요?’ 하고 물어요", exact = false))
+        tapText("근무주기 저절로", exact = true)
+        settle()
+        assertEquals(com.bamnat.core.plaza.ShareWays(ShareWay.AUTO, ShareWay.ASK, ShareWay.NEVER), c.companyStore.shareWays.value)
+        assertTrue(appears("저절로: 다음 날 오전에 나눠요. 그 전에 취소할 수 있어요", exact = true))
     }
 
     /** The company server on Node (server/company-worker), as PlazaAIAppTest runs it. */

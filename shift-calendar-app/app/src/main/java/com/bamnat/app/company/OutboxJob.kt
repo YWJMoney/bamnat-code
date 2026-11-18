@@ -38,6 +38,12 @@ class OutboxJob : JobService() {
                 }
             }.getOrDefault(false)
             jobFinished(params, !done)
+            // 2.0.0 [RVN-22] I10bc-03 A change held for a later morning than this run's (it was held again, or 취소 then held anew):
+            // its job again, now that this one is finished (a running job is still 'pending' and could not be replaced from inside).
+            if (done && params.jobId != FORGET_ID && params.jobId != ID) runCatching {
+                (if (params.jobId == SHARE_ID) c.autoShare else cal?.let { c.companyOf(it).takeIf { s -> s.calendarId == it }?.autoShare })
+                    ?.takeIf { it.waiting }?.reschedule()
+            }
         }
         return true
     }
@@ -71,14 +77,15 @@ class OutboxJob : JobService() {
         }
 
         /**
-         * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (a day after the last). A
-         * one-off job like the rest, only while a change waits, so nothing runs at start.
+         * [PLAZA-07] The work order and pay way to share by themselves, not before [delayMs] (2.0.0 [RVN-22] the morning the change
+         * is held until). A one-off job like the rest, only while a change waits, so nothing runs at start.
          */
-        fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
+        fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN, replace: Boolean = false) {
             val jobs = context.getSystemService(JobScheduler::class.java) ?: return
             val main = cal == com.bamnat.app.data.PersonalCalendar.MAIN
             val id = if (main) SHARE_ID else shareId(context, cal)
-            if (jobs.getPendingJob(id) != null) return
+            // 2.0.0 [RVN-22] I10bc-03 A new hold names its own morning (never from inside the job, which would stop itself).
+            if (replace) jobs.cancel(id) else if (jobs.getPendingJob(id) != null) return
             jobs.schedule(
                 JobInfo.Builder(id, ComponentName(context, OutboxJob::class.java))
                     .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)

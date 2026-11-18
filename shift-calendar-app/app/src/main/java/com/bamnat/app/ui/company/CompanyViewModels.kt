@@ -1815,7 +1815,8 @@ class CompanyReportViewModel(
                 // [PLAZA-07] Sending a company's setup joins it (결정 D79).
                 status.member?.takeIf { it.joined }?.let { store.setMember(status.companyId, status.company) }
                 // [PLAZA-34] 1.27 AI: what went is what the plaza has of this calendar; the same values saved again ask nothing.
-                if (!topic) store.autoBase = setup.toString()
+                // 2.0.0 [RVN-22] I10bc-03 and the file the parts not sent by themselves later are taken from.
+                if (!topic) store.markShared(setup.toString())
                 _statuses.value = _statuses.value + (status.id to status)
                 store.setDraft(null)
                 // [SPAT-05] The way on from a public row ends here; the plaza page it went to opens next.
@@ -1927,7 +1928,8 @@ class CompanyReportViewModel(
 suspend fun forgetEverythingSent(c: AppContainer): com.bamnat.app.company.ForgetCounts? {
     val counts = runCatching { c.companyApi.forgetMineCounts(c.companyStore.device) }.getOrNull() ?: return null
     // 2.0.0 [RVN-09] COMP-43 저절로 나누기 goes back to 묻기 with the rest (CompanyStore.forgetSent), said in the result.
-    val autoWas = c.companyStore.autoShare.value == true
+    // [RVN-22] I10bc-03 any part that went by itself.
+    val autoWas = c.companyStore.shareWays.value.of(com.bamnat.core.plaza.ShareWay.AUTO).isNotEmpty()
     // [CALI-08] The server forgot everything this phone sent, from every calendar.
     c.forgetSentEverywhere()
     // [SPD-13] and 내 활동 kept on the phone with it; 2.0.0 COMP-43 with the company pages, boards and talks it kept.

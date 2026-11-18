@@ -131,19 +131,24 @@ class AFScreenshotTest : ScreenshotBase() {
         assertTrue(gone("급여 계산 방식 보기", exact = false))
         assertTrue(gone("우리 회사 광장", exact = true))
     }
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-03: what goes by itself waits for the next morning, said under the three parts with 취소; 안 함 for every
+     * part leaves nothing held.
+     */
     @Test fun theSwitchStopsIt() = shoot("1061_af_switch", SMALL_PHONE) {
         members()
         c.companyStore.setMember("c1", "(주)예시정밀")
         c.autoShare.set(true)
+        runBlocking { c.autoShare.check(askToo = false) }
         assertTrue(c.autoShare.waiting)
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { AutoShareRow() } }
         settle()
-        assertTrue(appears("(주)예시정밀 광장에 고쳐 올려요", exact = false))
-        tapText("회사 광장에 저절로 나누기", exact = true)
+        assertTrue(appears("내일 오전에 (주)예시정밀 광장에 나눠요", exact = false))
+        com.bamnat.core.plaza.SharePart.entries.forEach { tapText("${it.label} 안 함", exact = true) }
         settle()
-        // [PLAZA-34] 1.27 AI: off is 바꿀 때마다 묻기 again, not never.
-        assertNull(c.companyStore.autoShare.value)
+        assertEquals(false, c.companyStore.autoShare.value)
         assertFalse(c.autoShare.waiting)
+        assertTrue(gone("내일 오전에 (주)예시정밀 광장에 나눠요", exact = false))
     }
 
     // ---- [PLAZA-07] 적용 = 참여 ----

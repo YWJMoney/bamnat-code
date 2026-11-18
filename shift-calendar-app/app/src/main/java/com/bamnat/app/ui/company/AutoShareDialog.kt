@@ -34,7 +34,8 @@ import com.bamnat.app.company.AutoShare
 /**
  * [PLAZA-07] 결정 D79 and [PLAZA-34] 1.27 AI: the ask when a cycle or pay way of a known company changed, with what changed;
  * the first time yes opens the company's 광장. With 저절로 나누기 on, one line ([snackbar]) says it went, with 되돌리기.
- * 설정 › 개인정보·앱 정보 changes the way later.
+ * 설정 › 개인정보·앱 정보 changes the way later. 2.0.0 [RVN-22] I10bc-03 A part that goes by itself is held until the next morning,
+ * and its line has 취소 ([HeldShareLine] keeps it on 광장 and 설정 until then).
  */
 @Composable
 fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarHostState? = null) {
@@ -55,7 +56,8 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
             c.autoShare.sharedDone()
             return@LaunchedEffect
         }
-        val r = bar.showSnackbar(sharedLine(s), actionLabel = "되돌리기", duration = SnackbarDuration.Long)
+        // 2.0.0 [RVN-22] I10bc-03 What is held on the phone (the morning, or a connection) is 취소; what went is 되돌리기.
+        val r = bar.showSnackbar(sharedLine(s), actionLabel = if (s.queued) "취소" else "되돌리기", duration = SnackbarDuration.Long)
         if (r == SnackbarResult.ActionPerformed) {
             // 2.0.0 [RVN-10] COMP-46 Said as it went: 거뒀어요 only when it came off; offline it waits and 다시 하기 tries now.
             when (c.autoShare.undo()) {
@@ -81,13 +83,27 @@ fun AutoShareHost(c: AppContainer, onOpen: (String) -> Unit, snackbar: SnackbarH
 
 /**
  * [PLAZA-34] "나눴어요 · 야간 50% → 60%", or the day's wait. 2.0.0 [RVN-13] COMP-47 Or that it waits for a connection, or why the server
- * would not take it.
+ * would not take it. [RVN-22] I10bc-03 A held one says the morning it goes ([heldWhen]).
  */
 internal fun sharedLine(s: AutoShare.Shared): String = when {
     s.refused != null -> "${s.company} 광장에 나누지 못했어요 · ${companyProblem(s.refused)}"
-    s.offline -> "인터넷이 연결되면 ${s.company} 광장에 나눠요 · ${s.line}"
-    s.queued -> "${s.company} 광장에 내일 나눠요(하루 한 번) · ${s.line}"
+    s.offline && s.until == 0L -> "인터넷이 연결되면 ${s.company} 광장에 나눠요 · ${s.line}"
+    s.queued -> "${heldWhen(s.until)} ${s.company} 광장에 나눠요 · ${s.line}"
     else -> "${s.company} 광장에 나눴어요 · ${s.line}"
+}
+
+/**
+ * 2.0.0 [RVN-22] I10bc-03 "내일 오전에" for a change held until [until] (the next morning, [AutoShare.MORNING_HOUR]): "오늘 오전에" when
+ * that morning is today (held last night), the date when further.
+ */
+internal fun heldWhen(until: Long, now: java.time.ZonedDateTime = com.bamnat.core.time.Today.zoned()): String {
+    val day = java.time.Instant.ofEpochMilli(until).atZone(now.zone).toLocalDate()
+    val today = now.toLocalDate()
+    return when {
+        !day.isAfter(today) -> "오늘 오전에"
+        day == today.plusDays(1) -> "내일 오전에"
+        else -> "${com.bamnat.app.ui.Fmt.monthDay(day)} 오전에"
+    }
 }
 
 @Composable
@@ -99,11 +115,13 @@ fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Un
         text = {
             // At 200% text the words scroll inside the dialog rather than push its buttons away.
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // 2.0.0 [RVN-22] I10bc-03 It names the parts it is about: a yes sends those and no other (설정 chooses each).
+                val what = ask.partWords
                 if (ask.first) {
-                    Text("같은 $place 사람들이 쓰게 근무 순서·계산 방식(내 급여 금액·이름 빼고)을 나눌까요?", style = MaterialTheme.typography.bodyLarge)
+                    Text("같은 $place 사람들이 쓰게 $what${com.bamnat.app.ui.Fmt.obj(what)} 나눌까요? (내 급여 금액·이름 빼고)", style = MaterialTheme.typography.bodyLarge)
                     Text("${ask.company} 광장에 나눠요.", style = MaterialTheme.typography.bodyMedium)
                 } else {
-                    Text("${ask.company} 광장에 이렇게 고쳐 올려요.", style = MaterialTheme.typography.bodyMedium)
+                    Text("${ask.company} 광장의 $what${com.bamnat.app.ui.Fmt.obj(what)} 이렇게 고쳐 올려요.", style = MaterialTheme.typography.bodyMedium)
                     ask.lines.forEach { Text("• $it", style = MaterialTheme.typography.bodyLarge) }
                     if (ask.more > 0) Text("그 밖에 ${ask.more}가지", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -120,7 +138,7 @@ fun AutoShareDialog(ask: AutoShare.Ask, onYes: (Boolean) -> Unit, onNo: () -> Un
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Checkbox(checked = always, onCheckedChange = null)
-                    Text("다음부터 묻지 않고 저절로 나누기 (하루 한 번)", style = MaterialTheme.typography.bodyMedium,
+                    Text("다음부터 묻지 않고 저절로 나누기 (다음 날 오전, 그 전에 취소할 수 있어요)", style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.padding(start = 8.dp))
                 }
                 TextButton(onClick = onNever, modifier = Modifier.align(Alignment.End)) { Text("다시 묻지 않기") }

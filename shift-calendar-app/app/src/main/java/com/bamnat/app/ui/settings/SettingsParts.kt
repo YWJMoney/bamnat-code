@@ -222,16 +222,20 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
     }
 }
 
-/** [SET-01] One choice out of a few, as chips under a title. */
+/**
+ * [SET-01] One choice out of a few, as chips under a title. 2.0.0 [RVN-22] [group]: chips that read the same in rows one under another
+ * ('저절로·묻기·안 함' for each part) are read with it ('근무 시간 묻기'), so TalkBack says which row a chip is in.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+internal fun <T> ChoiceRow(title: String, subtitle: String?, options: List<Pair<T, String>>, selected: T, group: String? = null, onSelect: (T) -> Unit) {
     Column(Modifier.focusMark(title).fillMaxWidth().padding(vertical = 6.dp)) {
         Text(said(title), style = MaterialTheme.typography.bodyLarge)
         subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             for ((value, label) in options) {
-                FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(label) })
+                FilterChip(selected = value == selected, onClick = { onSelect(value) }, label = { Text(label) },
+                    modifier = group?.let { g -> Modifier.semantics { contentDescription = "$g $label" } } ?: Modifier)
             }
         }
     }

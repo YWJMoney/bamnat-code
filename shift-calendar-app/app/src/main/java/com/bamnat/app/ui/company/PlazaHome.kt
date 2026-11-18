@@ -494,6 +494,8 @@ fun PlazaHomeScreen(
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
                 // 2.0.0 [RVN-22] I10bb-01 What was pressed without a connection and waits to go, one line.
                 WaitingSendsLine(vm.container)
+                // 2.0.0 [RVN-22] I10bc-03 What goes to the 광장 by itself tomorrow morning, with 취소.
+                HeldShareLine(vm.container)
                 header?.invoke()
                 vm.note?.let { n ->
                     SoftCard(highlighted = true) {

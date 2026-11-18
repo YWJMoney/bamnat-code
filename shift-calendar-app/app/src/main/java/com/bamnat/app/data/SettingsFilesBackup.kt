@@ -301,6 +301,12 @@ class SettingsFilesBackup(
             // 2.0.0 [RVN-10][RVN-11][RVN-13] COMP-44·46·47: this phone's yes and what waits for its connection.
             "company:auto_pay" to "저절로 나누기에 계산 방식도 넣을지, 이 휴대폰에서 답한 것(새 휴대폰에서 다시 물어요)",
             "company:auto_once" to "인터넷이 없을 때 누른 '나눌게요', 연결되면 한 번 보내는 이 휴대폰의 대기",
+            // 2.0.0 [RVN-22] 검토 I10bc-03: the way for each part and what is held for the morning, this phone's (asked again on a new phone).
+            "company:share_ways" to "근무주기·근무 시간·급여 계산 방식을 저절로·묻기·안 함 가운데 어떻게 나눌지, 이 휴대폰에서 고른 것(새 휴대폰에서 다시 물어요)",
+            "company:plaza_has" to "광장에 마지막으로 나눈 설정(금액 없음), 한 부분만 나눌 때 나머지를 채우는 이 휴대폰의 것",
+            "company:held_parts" to "다음 날 오전에 나눌 부분, 이 휴대폰의 보내기 대기",
+            "company:held_line" to "다음 날 오전에 나눌 바뀐 것의 한 줄, 이 휴대폰의 보내기 대기",
+            "company:held_until" to "다음 날 오전에 나눌 때, 이 휴대폰의 보내기 대기",
             "company:take_back_later" to "인터넷이 없을 때 누른 되돌리기, 연결되면 거두는 이 휴대폰의 대기",
             "company:kept_calls" to "인터넷이 없을 때 누른 쓰고 있어요·맞아요·회사 빼기, 연결되면 보내는 이 휴대폰의 대기",
             "company:member" to "참여한 회사는 이 휴대폰의 설치 번호로 서버에 있어요",

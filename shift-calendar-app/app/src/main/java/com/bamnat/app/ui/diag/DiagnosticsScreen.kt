@@ -677,7 +677,8 @@ internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagE
         }
         if (w.missed.isNotEmpty()) OutlinedButton(onClick = {
             InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))
-        }) { Text("놓친 알람 문의로 보내기") }
+        // 2.0.0 [RVN-22] 검토 PC-27: it opens with the check ticked, so it says the check goes with it.
+        }) { Text("놓친 알람을 점검 내용과 함께 문의") }
     }
 }
 

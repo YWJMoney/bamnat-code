@@ -20,6 +20,9 @@ import com.bamnat.core.pay.PayProfile
 import com.bamnat.core.pay.ValueTimeline
 import com.bamnat.core.pay.WageType
 import com.bamnat.core.plaza.RoomCards
+import com.bamnat.core.plaza.SharePart
+import com.bamnat.core.plaza.ShareWay
+import com.bamnat.core.plaza.ShareWays
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -169,6 +172,7 @@ class PlazaAFAppTest {
         c.companyStore.setDraft(CompanyDraft("자동나눔상사", "총무팀"))
         c.companyStore.setAutoShare(null)
         c.companyStore.autoBase = null
+        c.companyStore.plazaHas = null
         c.payStore.save(PayProfile(Occupation.MANUFACTURING, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(today, 3_000_000))),
             rules = CompanyRules(nightPremium = 0.5)), keepUndo = false)
         val before = c.companyApi
@@ -195,12 +199,15 @@ class PlazaAFAppTest {
                 assertFalse(c.autoShare.waiting)
                 assertNull(c.autoShare.shared.value)
                 // A real change waits for its day, with one line and 되돌리기; flushing sends nothing yet.
+                // 2.0.0 [RVN-22] I10bc-03 held on the phone until the next morning, the line says when.
                 c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false)
                 c.autoShare.check()
                 assertTrue(c.autoShare.waiting)
                 val line = c.autoShare.shared.value!!
                 assertTrue(line.queued)
                 assertEquals("야간 50% → 60%", line.line)
+                assertEquals(AutoShare.nextMorning(), line.until)
+                assertEquals(setOf(SharePart.PAY), c.companyStore.heldParts)
                 assertTrue(c.autoShare.flush())
                 assertTrue(c.autoShare.waiting)
                 assertTrue(OutboxJob.waiting(c) >= 1)
@@ -211,6 +218,40 @@ class PlazaAFAppTest {
                 c.autoShare.check()
                 assertFalse(c.autoShare.waiting)
                 assertNull(c.autoShare.shared.value)
+                // 2.0.0 [RVN-22] 검토 I10bc-03: each part its own way. 근무 시간 저절로 while 급여 계산 방식 is asked: a change of both holds
+                // the hours for the morning and asks about the pay way alone, and its yes sends the pay way and no hours.
+                val has = c.companyStore.plazaHas!!
+                c.autoShare.setWay(SharePart.PAY, ShareWay.ASK)
+                assertEquals(ShareWays(ShareWay.AUTO, ShareWay.AUTO, ShareWay.ASK), c.companyStore.shareWays.value)
+                val day = c.scheduleRepository.snapshot.first().shiftTypes.first { it.name == "주간" }
+                c.scheduleRepository.saveShiftType(day.copy(start = java.time.LocalTime.of(8, 0), end = java.time.LocalTime.of(20, 0)))
+                c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.7)), keepUndo = false)
+                c.autoShare.check()
+                assertEquals(setOf(SharePart.TIMES), c.companyStore.heldParts)
+                val ask = c.autoShare.ask.value!!
+                assertEquals(setOf(SharePart.PAY), ask.parts)
+                assertEquals(listOf("야간 60% → 70%"), ask.lines)
+                c.autoShare.approve()
+                withTimeout(15_000) { while (c.companyStore.plazaHas == has) delay(20) }
+                val sent = JSONObject(c.companyStore.plazaHas!!)
+                assertEquals(0.7, sent.getJSONObject("pay").getJSONObject("rules").getDouble("night"), 0.0)
+                val sentDay = (0 until sent.getJSONArray("shiftTypes").length()).map { sent.getJSONArray("shiftTypes").getJSONObject(it) }.first { it.getString("name") == "주간" }
+                assertEquals(JSONObject(has).getJSONArray("shiftTypes").let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.first { it.getString("name") == "주간" }.getString("start"),
+                    sentDay.getString("start"))
+                // The hours still wait for their morning; 취소 drops them on the phone, and they are not held again.
+                assertEquals(setOf(SharePart.TIMES), c.companyStore.heldParts)
+                c.autoShare.cancel()
+                assertFalse(c.autoShare.waiting)
+                c.autoShare.check()
+                assertFalse(c.autoShare.waiting)
+                assertNull(c.autoShare.ask.value)
+                // 안 함: a change of that part is neither held nor asked about.
+                c.autoShare.setWay(SharePart.TIMES, ShareWay.NEVER)
+                c.scheduleRepository.saveShiftType(day.copy(start = java.time.LocalTime.of(9, 0), end = java.time.LocalTime.of(21, 0)))
+                c.autoShare.check()
+                assertFalse(c.autoShare.waiting)
+                assertNull(c.autoShare.ask.value)
+                c.autoShare.sharedDone()
                 // 설정's switch off asks again each time; 다시 묻지 않기 stops it.
                 c.autoShare.set(null)
                 assertTrue(c.autoShare.saved())
@@ -223,6 +264,8 @@ class PlazaAFAppTest {
                 c.companyStore.setMember(null)
                 c.companyStore.setAutoShare(null)
                 c.companyStore.autoBase = null
+                c.companyStore.plazaHas = null
+                c.companyStore.dropHeld()
                 c.autoShare.sharedDone()
                 c.payStore.save(null)
             }

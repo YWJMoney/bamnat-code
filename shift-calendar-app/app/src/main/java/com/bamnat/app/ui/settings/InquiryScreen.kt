@@ -549,8 +549,10 @@ private fun InquiryForm(
         }
     }
     val problem = if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text)
-    // The alarm check helps most when the app misbehaves, so it is offered ticked there.
-    LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
+    // 2.0.0 [RVN-22] 검토 PC-27: the alarm check goes only when the user picks it (처리방침 3.6 '점검 기록도 보내기'를 고르고 보낼 때만).
+    // Before, choosing 앱 오류 ticked it by itself; now it is ticked only by a button that says so (점검 내용과 함께 문의하기,
+    // 멈춤 기록과 함께 알려 주기), and 앱 오류 says in one line that it helps.
+    val checkHelps = kind == InquiryKind.BUG && !withCheck
     // 1.32.1 [STAB-14] About the app stopping (from its notice or card, or the words say so): the record starts with 앱 멈춤.
     val stop = com.bamnat.core.diag.StopTrail.aboutStop(start?.about, text)
     LaunchedEffect(withCheck, showCheck, stop) { if (withCheck || showCheck) check = vm.alarmCheck(context, stop) }
@@ -651,8 +653,10 @@ private fun InquiryForm(
                 }
                 Spacer(Modifier.height(4.dp))
                 // 1.32.1 [STAB-13] Named for what it holds: an app that stopped is not an alarm problem.
-                CheckRow("점검 기록도 보내기", if (stop) "앱이 멈춘 곳과 그때의 화면·메모리 상태, 권한 상태가 먼저 들어 있어요. 적은 글·금액은 없어요"
-                    else "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람·앱 멈춤 기록이 들어 있어요",
+                CheckRow("점검 기록도 보내기", (if (stop) "앱이 멈춘 곳과 그때의 화면·메모리 상태, 권한 상태가 먼저 들어 있어요. 적은 글·금액은 없어요"
+                    else "다음 알람 시각과 근무 이름, 권한 상태, 최근 알람·앱 멈춤 기록이 들어 있어요") +
+                    // PC-27 Offered, not ticked: an 오류 제보 says why one might.
+                    (if (checkHelps) ". 오류는 이 기록이 있으면 더 빨리 찾아요" else ""),
                     checked = withCheck, onChange = { withCheck = it })
                 TextButton(onClick = { showCheck = !showCheck }) {
                     Text(if (showCheck) "기록 접기" else "보낼 기록 보기")

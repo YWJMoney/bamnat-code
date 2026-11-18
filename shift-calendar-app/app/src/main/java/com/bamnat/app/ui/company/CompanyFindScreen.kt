@@ -484,16 +484,16 @@ fun CompanyDetailScreen(
                     RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
                     // 2.0.0 [RVN-22] I10bb-01 맞아요·쓰고 있어요·회사 빼기 pressed without a connection, waiting to go.
                     WaitingSendsLine(app)
+                    // 2.0.0 [RVN-22] I10bc-03 and what goes to its 광장 by itself tomorrow morning, with 취소.
+                    HeldShareLine(app, names = listOf(p.name) + p.aliases)
                     if (p.aliases.isNotEmpty()) {
                         Text("다른 이름: ${p.aliases.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(Icons.Outlined.Info, null, Modifier.size(18.dp).padding(top = 2.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.width(8.dp))
-                        Text("같은 회사 분들이 알려 준 정보예요. 회사가 낸 공식 정보는 아니어서, 첫 명세서와 한 번 맞춰 봐 주세요.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    // 2.0.0 [RVN-22] HQ-113 (조건 1·4): one line with ⓘ for the rest, so the 판 cards start higher.
+                    com.bamnat.app.ui.components.Explain("company.unofficial",
+                        "같은 회사 분들이 알려 준 정보예요. 회사가 낸 공식 정보는 아니어서, 첫 명세서와 한 번 맞춰 봐 주세요.",
+                        iconOnly = false, firstInFull = false)
                     if (p.setups.isEmpty()) {
                         Text("아직 볼 수 있는 설정이 없어요.", style = MaterialTheme.typography.bodyLarge)
                     }

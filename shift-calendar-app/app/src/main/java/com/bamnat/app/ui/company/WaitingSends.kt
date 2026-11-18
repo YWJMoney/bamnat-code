@@ -1,6 +1,10 @@
 package com.bamnat.app.ui.company
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,3 +51,34 @@ fun WaitingSendsLine(c: AppContainer, modifier: Modifier = Modifier) {
 
 /** The line's words for [n] things waiting. */
 internal fun waitingLine(n: Int) = "인터넷이 연결되면 보낼게요 · ${n}개"
+
+/**
+ * 2.0.0 [RVN-22] 검토 I10bc-03 (COMP-46): what goes to a 광장 by itself is held on the phone until the next morning; until then one line
+ * on 광장, 회사 and 설정 says what and when, with 취소, which drops it on the phone (nothing reached the server, nothing to take back).
+ * One line for each calendar holding something ([names]: only those going to that company); none holds: no line.
+ */
+@Composable
+fun HeldShareLine(c: AppContainer, modifier: Modifier = Modifier, names: List<String>? = null) {
+    val main by c.companyStore.held.collectAsState()
+    var held by remember { mutableStateOf(heldNow(c)) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(main) { held = heldNow(c) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { held = heldNow(c) }
+    // A company's own page says only what goes to it.
+    val mine = names?.map(com.bamnat.app.company.CompanyText::norm)?.toSet()
+    held.filter { mine == null || com.bamnat.app.company.CompanyText.norm(it.company) in mine }.forEach { h ->
+        OfflineLine(modifier, text = heldLine(h), action = "취소", icon = Icons.Outlined.Schedule, onRetry = {
+            scope.launch {
+                withContext(Dispatchers.IO) { runCatching { c.companyOf(h.cal).autoShare.cancel() } }
+                held = heldNow(c)
+                AppSnack.show("나누지 않을게요")
+            }
+        })
+    }
+}
+
+private fun heldNow(c: AppContainer): List<com.bamnat.app.company.AutoShare.Held> =
+    runCatching { c.companyScopes().mapNotNull { it.autoShare.held() } }.getOrDefault(emptyList())
+
+/** "내일 오전에 OO 광장에 나눠요 · 야간 50% → 60%" */
+internal fun heldLine(h: com.bamnat.app.company.AutoShare.Held) = "${heldWhen(h.until)} ${h.company} 광장에 나눠요 · ${h.line}"

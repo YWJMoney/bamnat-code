@@ -525,6 +525,16 @@ abstract class ScreenshotBase {
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
 
+        /**
+         * 2.0.0 [RVN-22] HQ-115 Whether what shows [text] is whole where it is: its part on screen (cut by what holds it: a row that slides,
+         * the window) is as big as it is. False when it is not shown.
+         */
+        fun whole(text: String, exact: Boolean = false): Boolean {
+            val n = find(text, exact, prefix = false) ?: return false
+            val b = n.boundsInWindow
+            return b.width >= n.size.width - 1f && b.height >= n.size.height - 1f
+        }
+
         /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
         fun enabled(text: String): Boolean =
             find(text, exact = true, prefix = false)?.let { !it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.Disabled) } == true
