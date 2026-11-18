@@ -137,7 +137,8 @@ jobs:
       # the test SDK rather than all of build.gradle.kts, and saved even when tests fail (a red shard used to throw its download
       # away, so every run fetched again and Maven Central answered 429). A shard whose download failed does not save.
       - id: robover
-        run: echo "v=$(grep -o 'org.robolectric:robolectric:[0-9.]*' app/build.gradle.kts | cut -d: -f3)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "v=$(grep -o 'org.robolectric:robolectric:[0-9.]*' app/build.gradle.kts | cut -d: -f3)" >> "$GITHUB_OUTPUT"
       - id: robo
         uses: actions/cache/restore@v4
         with:
