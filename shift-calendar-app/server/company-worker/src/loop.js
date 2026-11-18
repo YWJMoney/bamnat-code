@@ -290,9 +290,10 @@ async function holdShip(env, v, now, why) {
   const r = await run(env, "UPDATE loop_ships SET status = 'waiting', until = ? WHERE version = ? AND status = 'review'", now + LOOP.shipHold, v);
   if (!r.meta.changes) return false;
   const dry = await shipNow(env, v, { dry: true }, now);
-  await audit(env, now, "loop_ship_seen", v, `${why} · 문의 ${dry.answers}건 · 공지 ${dry.notice ? 1 : 0}`);
+  await audit(env, now, "loop_ship_seen", v, `${why} · 문의 ${dry.answers}건 · 공지 ${dry.notice ? 1 : 0} · 장터 작품 ${dry.market}개`);
+  const goes = [`문의 ${dry.answers}건 안내`, dry.notice && "업데이트 소식 공지", dry.market && `장터 작품 ${dry.market}개 공개`].filter(Boolean);
   await notifyAdmins(env, "inquiry", { title: `${v} 출시를 확인했어요`,
-    body: `${why}. 1시간 뒤 문의 ${dry.answers}건 안내${dry.notice ? "와 업데이트 소식 공지" : ""}가 나가요. 멈추려면 눌러 주세요`, url: "/admin/#/loop" }, now, { ignoreQuiet: true });
+    body: `${why}. 1시간 뒤 ${goes.join(", ")}가 나가요. 멈추려면 눌러 주세요`, url: "/admin/#/loop" }, now, { ignoreQuiet: true });
   return true;
 }
 

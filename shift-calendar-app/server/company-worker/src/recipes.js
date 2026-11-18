@@ -2333,7 +2333,7 @@ export async function forgetRecipes(d, env, dev) {
  * 1.36 [MKS-01] 출시 대기 → 장터: the waiting rows [where] picks, at once, each logged. They come up as new (updated_at now) so 새로 순
  * shows them on the day; their min_app still keeps them from older apps.
  */
-async function releaseWaiting(d, env, now, where, args, actor) {
+export async function releaseWaiting(d, env, now, where, args, actor) {
   const rows = await d.all(env, `SELECT code FROM recipes WHERE ${where} LIMIT 400`, ...args);
   if (!rows.length) return 0;
   await d.batch(env, rows.flatMap((r) => [

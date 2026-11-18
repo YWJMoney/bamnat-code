@@ -909,6 +909,23 @@ abstract class ScreenshotBase {
         shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ms))
         settle()
     }
+
+    /**
+     * 2.0.0 [QA-11] Waits for work that ends off the main thread, such as 회사 설정 적용, which saves on IO and then says
+     * `done`. [waitFor] only moves the main looper's clock and does not wait in real time, so on a slow runner the IO part
+     * had not ended when the next line checked it (BBScreenshotTest 120, #446 CI). This returns as soon as [ok] holds, so a
+     * passing check costs nothing; only a real miss waits the whole [ms].
+     */
+    internal fun waitUntil(ms: Long = 5_000L, ok: () -> Boolean): Boolean {
+        val end = System.nanoTime() + ms * 1_000_000L
+        while (true) {
+            settle()
+            if (ok()) return true
+            if (System.nanoTime() > end) return false
+            Thread.sleep(20)
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(20))
+        }
+    }
     internal fun votePay(): Screen.() -> Unit = {
         val c = companyOn()
         c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("c1", "(주)예시정밀", "생산팀", "s1", 2, true, Today.instant()))

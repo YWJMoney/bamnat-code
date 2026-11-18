@@ -131,7 +131,9 @@ test("[DESK-03] 끝낼 이유는 하나, 되돌리기, 할 일함과 같은 기�
   assert.equal(r.sort.back, true);
 });
 
-test("[DESK-02] summary, CSV, and the Claude key: its own lines only, and it can close what it handled", async () => {
+test("[DESK-02] summary, CSV, and the Claude key: its own lines only, and it can close what it handled", async (t) => {
+  // [RVD-01] A month with 이달 할 일: in February there is none, so on a real February clock the owner's line below broke.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T03:00:00Z") });
   const { call } = server();
   const owner = await signIn(call);
   const q = await ask(call, 1, "=HYPERLINK(\"x\") 알람 시간이 이상해요, 쉼표도 있어요");

@@ -186,3 +186,33 @@ test("1.39 판 정리 belowApp: 그 판 미만 옛 앱의 장터에는 계속 �
   await call("POST", "/api/admin/recipes/show-titles", { titles: ["옛 테마 하나", "옛 테마 둘"] }, admin);
   assert.equal(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")).length, 2);
 });
+
+test("[MKS-05] 나간 판 저장이 그 판 앱부터 읽는 출시 대기 작품을 함께 공개해요 (예약·다음 판·minApp 없는 것은 그대로)", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, env } = server({ plaza: true });
+  const admin = await signIn(call);
+  const put = (title, extra) => call("POST", "/api/admin/recipes", { recipe: recipe(title), hold: true, ...extra }, admin);
+  await put("1.39 정상급 테마", { batch: "1.39 정상급 작품", minApp: 53 });
+  await put("1.38 남은 작품", { batch: "옛 묶음", minApp: 52 });
+  await put("1.40 작품", { batch: "1.40", minApp: 54 });
+  await put("판 없는 작품", { batch: "아무 판" });
+  await put("예약한 작품", { batch: "예약", minApp: 53 });
+  const at = new Date(AFTER + 30 * 86400_000).toISOString();
+  assert.equal((await call("POST", "/api/admin/recipes/release", { batch: "예약", at }, admin)).data.scheduled, 1);
+  // 판 번호를 모르면(옛 표에도, Play 트랙에도 없으면) 아무것도 공개하지 않아요.
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.39.0", dry: true }, admin)).data.market, 0);
+  // Play 트랙에서 읽은 판 번호(워치 100053은 빼고 53)로 셈해요.
+  await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('play_track', ?)").bind(JSON.stringify({ done: "1.39.0", doneCodes: [100053, 53] })).run();
+  const dry = (await call("POST", "/api/admin/desk/ship", { version: "1.39.0", dry: true }, admin)).data;
+  assert.deepEqual([dry.code, dry.market], [53, 2]);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53")), []);
+  const shipped = (await call("POST", "/api/admin/desk/ship", { version: "1.39.0" }, admin)).data;
+  assert.equal(shipped.market, 2);
+  assert.deepEqual(new Set(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=53"))), new Set(["1.39 정상급 테마", "1.38 남은 작품"]));
+  // 1.38 앱에는 53 작품이 여전히 안 보여요.
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=52")), ["1.38 남은 작품"]);
+  const left = (await call("GET", "/api/admin/recipes/release", undefined, admin)).data.items.map((b) => b.batch).sort();
+  assert.deepEqual(left, ["1.40", "아무 판", "예약"]);
+  // 관리자가 판 번호를 직접 주면 그 번호로.
+  assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.40.0", code: 54 }, admin)).data.market, 1);
+});
