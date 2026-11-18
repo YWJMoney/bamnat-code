@@ -49,8 +49,13 @@ class NetEngineTest {
         val conn = NetEngine.open(URL("http://127.0.0.1:9/api/hello"))
         assertTrue(conn is HttpURLConnection)
         assertFalse(conn.javaClass.name, conn.javaClass.name.contains("chromium", ignoreCase = true))
-        assertFalse("before Android 14 there is none", NetEngine.available(33))
-        assertTrue(NetEngine.available(34))
+        assertFalse("before Android 14 there is none without S Extensions 7", NetEngine.available(33, sExtensions = 6))
+        assertTrue(NetEngine.available(34, sExtensions = 0))
+        // HQ-126 Android 12·13 with S Extensions 7 (a Google Play system update) have it too; 11 has no S Extensions.
+        assertTrue(NetEngine.available(31, sExtensions = 7))
+        assertTrue(NetEngine.available(33, sExtensions = 12))
+        assertFalse(NetEngine.available(30, sExtensions = 7))
+        assertEquals(7, NetEngine.S_EXTENSIONS)
     }
 
     @Test fun aTimeRunningOutIsSaidAsSlowEitherWay() {
@@ -111,6 +116,7 @@ class NetEngineTest {
     @Test fun theSelfCheckSaysWhichWay() {
         assertEquals("연결 방식: 휴대폰에 든 빠른 연결", SpeedCheck.way(fast = true, available = true))
         assertEquals("연결 방식: 기본 연결", SpeedCheck.way(fast = false, available = true))
-        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터", SpeedCheck.way(fast = false, available = false))
+        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터", SpeedCheck.way(fast = false, available = false, sdk = 30))
+        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 Google Play 시스템 업데이트 뒤에", SpeedCheck.way(fast = false, available = false, sdk = 32))
     }
 }
