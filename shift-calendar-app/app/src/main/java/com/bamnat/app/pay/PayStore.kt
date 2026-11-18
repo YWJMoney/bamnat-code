@@ -424,6 +424,11 @@ object PayCodec {
         .apply { if (p.productionWorker) put("production", true) }
         .putOpt("previousYearPay", p.previousYearPay)
         .apply { if (p.ledgerTakeHome) put("ledgerNet", true) }
+        // 2.0.0 [RVJ-77] 호봉표, left out when none so older files stay the same.
+        .putOpt("payScale", p.payScale?.let { sc ->
+            JSONObject().put("steps", JSONObject().apply { sc.steps.forEach { (n, v) -> put(n.toString(), v) } })
+                .put("month", sc.stepMonth).put("step", sc.step).put("since", sc.since.toString())
+        })
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -478,6 +483,16 @@ object PayCodec {
         productionWorker = o.optBoolean("production", false),
         previousYearPay = if (o.has("previousYearPay") && !o.isNull("previousYearPay")) o.optLong("previousYearPay").coerceAtLeast(0) else null,
         ledgerTakeHome = o.optBoolean("ledgerNet", false),
+        // 2.0.0 [RVJ-77] A table that does not read (no steps, a month out of 1~12) is dropped rather than failing the file.
+        payScale = o.optJSONObject("payScale")?.let { sc ->
+            runCatching {
+                val steps = sc.getJSONObject("steps").let { st ->
+                    st.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.takeIf { it in 1..99 }?.let { it to st.getLong(k) } }
+                        .filter { it.second > 0 }.toMap()
+                }
+                com.bamnat.core.pay.PayScale(steps, sc.getInt("month"), sc.getInt("step"), LocalDate.parse(sc.getString("since")))
+            }.getOrNull()
+        },
     )
 
     /** [PAYS-06] One of the user's own rules. */

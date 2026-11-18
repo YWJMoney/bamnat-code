@@ -350,6 +350,11 @@ data class PayProfile(
      * 고용보험). The user picks them (the app has no 생년월일); [TakeHome] leaves them out of 예상 실수령 and says why.
      */
     val insuranceOff: Set<InsuranceLine> = emptySet(),
+    /**
+     * 2.0.0 [RVJ-77] 검토 PAYU-46·T05b-05·I05ba-01: the 호봉표 last put in (단계별 기본급·승급 달·그때 호봉), so opening it again starts
+     * from it and a year's raise is one line instead of 20~30 typed again. The [base] it made is what is calculated; this is the table.
+     */
+    val payScale: PayScale? = null,
 ) {
     /** [HRLY-07] The weekday 주휴 weeks start on. */
     val holidayWeekFrom: DayOfWeek get() = holidayWeekStart ?: weekStart

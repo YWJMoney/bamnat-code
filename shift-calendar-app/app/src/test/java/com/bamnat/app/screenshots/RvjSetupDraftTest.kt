@@ -67,7 +67,7 @@ class RvjSetupDraftTest : ScreenshotBase() {
         val initial = vm.sampleProfile()
         val a = QuickDraft.Answers(
             form = WorkForm.OFFICE, fiveOrMore = true, formTapped = true, amount = 3_100_000, hours = 209,
-            holiday = HolidayWork.SUBSTITUTE, tax = TaxMode.INSURANCE_4, fixedOt = 20, fixedOtPay = 300_000, lump = false,
+            holiday = HolidayWork.SUBSTITUTE, tax = TaxMode.INSURANCE_4, fixedOtMinutes = 1_350, fixedOtPay = 300_000, lump = false,
             fromSlip = null, step = "amount", foundCycle = null,
         )
         val raw = QuickDraft.encode(initial, a)
@@ -79,7 +79,7 @@ class RvjSetupDraftTest : ScreenshotBase() {
         assertEquals(209, back.hours)
         assertEquals(HolidayWork.SUBSTITUTE, back.holiday)
         assertEquals(TaxMode.INSURANCE_4, back.tax)
-        assertEquals(20, back.fixedOt)
+        assertEquals(1_350, back.fixedOtMinutes)
         assertEquals(300_000L, back.fixedOtPay)
         assertEquals("amount", back.step)
         // Kept for another setup (the pay changed since), or not a draft at all: nothing comes back.

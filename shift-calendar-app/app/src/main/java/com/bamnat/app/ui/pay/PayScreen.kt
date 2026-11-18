@@ -890,7 +890,7 @@ private fun PayResult(
                     return@forEach
                 }
                 ValueRow(
-                    title = "${item.name} · " + if (item.isFixedOvertime) "고정 연장 ${item.fixedOvertimeMinutes / 60}시간분" else item.cadence.label,
+                    title = "${item.name} · " + if (item.isFixedOvertime) "고정 연장 ${FixedOtHoursRules.text(item.fixedOvertimeMinutes)}시간분" else item.cadence.label,
                     value = item.amount.on(month),
                     raise = item.amount.raise?.describe(),
                     estimated = item.id in profile.estimatedFields,
