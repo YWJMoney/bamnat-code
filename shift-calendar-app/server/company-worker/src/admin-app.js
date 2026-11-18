@@ -5887,7 +5887,22 @@ function adminApp(L, BUILD, M) {
         async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });
       load();
     },
-    "recipe-request": async ({ id, key }) => { await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), key === "hide" ? "가렸어요" : "다시 보이게 했어요"); load(); },
+    "recipe-request": async ({ id, key }) => {
+      // 2.0.0 [RVQ-44] I22bb-01: 스튜디오 요구로 올라온 요청의 '완성'은 운영자가 맞는지 봐요.
+      const said = { hide: "가렸어요", show: "다시 보이게 했어요", "check-ok": "완성으로 닫았어요. 부탁한 분들께 알려요", "check-no": "다시 기다리는 요청으로 열었어요" }[key];
+      await act(() => api(`/recipes/requests/${id}/${key}`, "POST", {}), said);
+      load();
+    },
+    // 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: 보류된 표를 세기·버리기(네트워크 묶음 하나 또는 작품 전체).
+    "recipe-held": ({ id, key, group }) => {
+      const go = async () => {
+        await act(() => api(`/recipes/votes/${key === "drop" ? "drop" : "release"}`, "POST", { code: id, ...(group ? { group } : {}) }),
+          (r) => (key === "drop" ? `${r?.dropped ?? 0}표를 버렸어요` : `${r?.released ?? 0}표를 셌어요`));
+        load();
+      };
+      if (key !== "drop") return go();
+      danger({ title: group ? "이 묶음의 표를 버릴까요?" : "이 작품의 보류된 표를 모두 버릴까요?", text: "버린 표는 어디에도 세지 않고 되돌릴 수 없어요. 그 폰들은 다시 누를 수 있어요.", label: "버리기", run: go });
+    },
     "recipe-helper": ({ id }) => confirmBox("이 만든 분께 도우미 배지를 줄까요?", "다른 분의 질문에 성실히 답해 온 분께 드려요. 만든 분 페이지에 배지가 보여요.", "배지 주기", async () => {
       await act(() => api(`/recipes/makers/${id}/helper`, "POST", { on: true }), "도우미 배지를 드렸어요");
       load();
@@ -6246,7 +6261,18 @@ function adminApp(L, BUILD, M) {
         // 클라우드 관리자 앱 확인: how many go up, on the box and after.
         const n = Number(form.dataset.n) || 0;
         confirmBox(n ? `${batch || "이 묶음"} ${n}개를 지금 장터에 공개할까요?` : "이 묶음을 지금 장터에 공개할까요?", "공개하면 바로 장터 ‘새로’ 맨 위에 보여요. ‘이 판부터’를 적은 작품은 그 판 이상 앱에만 보여요.", "지금 공개", async () => {
-          await act(() => api("/recipes/release", "POST", body), (r) => `${r?.released ?? 0}개를 공개했어요`);
+          // 2.0.0 [RVQ-39] 검토 SVC-57: 서버가 한 번에 400개씩 공개하고 남은 수(left)를 알려 줘요. 다 나갈 때까지 이어서 눌러요.
+          await act(async () => {
+            let released = 0;
+            let left = 0;
+            for (let i = 0; i < 20; i++) {
+              const r = await api("/recipes/release", "POST", body);
+              released += r?.released ?? 0;
+              left = r?.left ?? 0;
+              if (!left || !r?.released) break;
+            }
+            return { released, left };
+          }, (r) => (r?.left ? `${r.released}개를 공개했어요. 아직 ${r.left}개가 남아 다시 눌러 주세요` : `${r?.released ?? 0}개를 공개했어요`));
           S.data.recipes = null; load();
         });
         return;

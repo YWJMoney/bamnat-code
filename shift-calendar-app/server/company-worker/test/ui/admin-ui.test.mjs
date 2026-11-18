@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
 import { SERVER_VERSION } from "../../src/version.js";
-import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { server, signIn, report, setup, device, from, neighbour, ORIGIN, PASSWORD } from "../helpers.mjs";
 import { adminLib } from "../../src/admin-lib.js";
 
 const APP_JS = await adminFile("/admin/app.js").text();
@@ -3694,5 +3694,76 @@ test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 �
   pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
   await u.settle(30);
   assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-39] 검토 SVC-53·U22b-02: 장터 › 보류된 표. 탭에 수, 묶음마다 '11월 30일 12시 · 묶음 1'과 세기·버리기(버리기는 한 번 물어요), 다른 보기엔 한 줄.
+test("[RVQ-39] 장터 › 보류된 표: 묶음 이름(해시 없이)과 세기·버리기, 다른 보기에서도 한 줄로 알려요", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const recipe = { format: "bamnat-recipe", v: 1, title: "병동 3교대 달력", summary: "야간이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe, scope: "public" }, from(1))).data.code;
+  for (let n = 100; n < 133; n++) await call("POST", `/api/recipes/${code}/vote`, { device: device(n), value: 1 }, from(7));
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.idle();
+  assert.match(u.text('#main [data-act="recipe-tab"][data-key="votes"]'), /보류된 표 3/);
+  assert.match(u.text("#main .list-note"), /보류된 표 3개 · 작품 1개/);
+  await u.click('#main [data-act="recipe-tab"][data-key="votes"]');
+  await u.idle();
+  const group = u.$("#main .held-group");
+  assert.ok(group, "묶음 한 줄");
+  assert.match(group.textContent, /11월 30일 12시 · 묶음 1 · 좋아요 3 · 안좋아요 0/);
+  assert.doesNotMatch(group.textContent, /[0-9a-f]{8}/, "네트워크 해시가 보이지 않아요");
+  assert.match(group.querySelector('[data-key="release"]').getAttribute("aria-label"), /묶음 1의 3표 세기/);
+  // 버리기는 한 번 물어요.
+  group.querySelector('[data-key="drop"]').click();
+  await u.settle(20);
+  assert.match(u.text('dialog form[data-form="confirm"] h2'), /이 묶음의 표를 버릴까요/);
+  u.$('dialog form[data-form="confirm"] [data-act="close"]').click();
+  await u.settle(20);
+  u.$('#main .held-group [data-key="release"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT COUNT(*) AS n FROM recipe_votes WHERE held = 1").get().n, 0);
+  assert.equal(env.DB.db.prepare("SELECT likes FROM recipes WHERE code = ?").get(code).likes, 33);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-44] 검토 SVC-29·SVC-62·I22bb-01: 장터 › 요청에서 스튜디오 요구의 완성 확인(맞아요·아니에요)과 만드는 중 며칠째.
+test("[RVQ-44] 장터 › 요청: 스튜디오 요구의 완성은 운영자가 맞아요로 닫고, 만드는 중은 D+n과 다시 열리는 날", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  await call("GET", "/api/recipes/requests?style=SHIFT");
+  const now = Date.now();
+  const add = env.DB.db.prepare("INSERT INTO recipe_requests (id, device, style, body, state, created_at, updated_at) VALUES (?, ?, 'ALL', ?, 'waiting', ?, ?)");
+  add.run("qAAAAAAAAAAAA", "operator", "달력 칸 가운데 정렬", now, now);
+  add.run("qBBBBBBBBBBBB", "operator", "주간 근무 색 바꾸기", now, now);
+  await neighbour(env.DB, 4);
+  const recipe = { format: "bamnat-recipe", v: 1, title: "가운데 달력", summary: "칸 글이 가운데예요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] };
+  const code = (await call("POST", "/api/recipes", { device: device(4), recipe, scope: "public" }, from(4))).data.code;
+  const act = (q, what, body = {}) => call("POST", `/api/recipes/requests/${q}/${what}`, { device: device(4), ...body }, from(4));
+  await act("qAAAAAAAAAAAA", "take");
+  await act("qAAAAAAAAAAAA", "done", { code });
+  await act("qBBBBBBBBBBBB", "take");
+  t.mock.timers.tick(2 * 24 * 3600e3);
+  const u = await asOwner(env, t);
+  await u.go("#/recipes");
+  await u.idle();
+  await u.click('#main [data-act="recipe-tab"][data-key="requests"]');
+  await u.idle();
+  assert.match(u.text("#main .list-note"), /완성 확인을 기다려요/);
+  const rows = u.$$("#main ul.rows>li");
+  const check = rows.find((li) => /달력 칸 가운데/.test(li.textContent));
+  const making = rows.find((li) => /주간 근무 색/.test(li.textContent));
+  assert.match(check.textContent, /완성 확인 기다림 · 운영자가 확인해요/);
+  assert.match(making.textContent, /만드는 중 · D\+\d+ · 12월 14일에 다시 열려요/, "화면은 브라우저 시계로 며칠째를 세요");
+  assert.ok(check.querySelector(`[data-act="recipe-open"][data-id="${code}"]`), "완성한 작품을 바로 열어요");
+  check.querySelector('[data-key="check-ok"]').click();
+  await u.settle(40);
+  assert.deepEqual({ ...env.DB.db.prepare("SELECT state, checked FROM recipe_requests WHERE id = 'qAAAAAAAAAAAA'").get() }, { state: "done", checked: 1 });
   assert.deepEqual(u.errors, []);
 });
