@@ -30,7 +30,16 @@ class YearRecapShotsTest : ScreenshotBase() {
     )
 
     /** The 결산 shows from 12월 20일: the shots are taken on 12월 22일, the seeded 교대 calendar running since 7월. */
-    @Before fun december() = Today.fix(java.time.ZonedDateTime.of(2026, 12, 22, 10, 30, 0, 0, SEOUL))
+    @Before fun december() {
+        Today.fix(java.time.ZonedDateTime.of(2026, 12, 22, 10, 30, 0, 0, SEOUL))
+        // 총괄 (통합 시험 b18): GuideStore is one per JVM, so after another class's tests it remembers what was switched on at their
+        // clock. On 12월 22일 the features a date turned on since then brought '새로 생긴 것' over the calendar and the bell could not
+        // be reached (alone the class passed). These shots are of a phone already told.
+        com.bamnat.app.data.GuideStore.get(app).let { g ->
+            g.whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            g.switchedSeen(com.bamnat.core.guide.WhatsNew.switched.map { it.first })
+        }
+    }
     @After fun clockBack() = Today.fix(SHOT_TIME)
 
     private fun all(name: String, go: Screen.() -> Unit) {
