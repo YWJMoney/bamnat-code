@@ -26,6 +26,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
@@ -39,6 +40,10 @@ import com.bamnat.app.ui.theme.color
  * 보여 줘요: 글은 조용한 색(위험만 본문 색)이라 한 화면에 여러 줄이 있어도 주황·빨강 글이 줄지어 서지 않고, 작은 글자의 대비도
  * 지켜져요. 화면 읽기는 '주의, …'로 한 번에 읽어요. 위험([Tone.Danger])은 법을 어겼거나 되돌릴 수 없는 것에만 쓰고, 미리 알리는
  * 것·권하는 것은 [Tone.Caution]이에요. [onClick]이 있으면 줄 전체가 48dp로 눌려요.
+ *
+ * 2.0.0 [RVJ-79] (총괄 HQ-125) 눌리는 줄은 가는 곳 낱말([action], '입사일 넣기'·'고르기')을 글 끝에 ' · '로 이어 알림함 줄·안내 카드의
+ * 낱말과 같은 파란 글자·굵기로 보여 줘요. 회색 글뿐이면 읽는 글로 보여 누르지 않았어요. 화면 읽기는 줄 전체를 단추 하나로, 누르면
+ * '[action]'으로 읽어요(색만으로 전하지 않아요, 조건 14).
  */
 @Composable
 fun ToneLine(
@@ -47,7 +52,8 @@ fun ToneLine(
     tone: Tone = Tone.Caution,
     style: TextStyle = MaterialTheme.typography.bodySmall,
     onClick: (() -> Unit)? = null,
-) = ToneLine(AnnotatedString(text), modifier, tone, style, onClick)
+    action: String? = null,
+) = ToneLine(AnnotatedString(text), modifier, tone, style, onClick, action = action)
 
 /**
  * 2.0.0 [RVJ-68] (총괄 HQ-107) The same line with words that carry their own weight (the numbers bold: [boldNumbers]) and, at the end,
@@ -62,6 +68,7 @@ fun ToneLine(
     onClick: (() -> Unit)? = null,
     onClickLabel: String? = null,
     trailing: (@Composable () -> Unit)? = null,
+    action: String? = null,
 ) {
     val tint = if (tone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else tone.color()
     val said = when (tone) { Tone.Caution -> "주의"; Tone.Danger -> "위험"; else -> null }
@@ -71,9 +78,19 @@ fun ToneLine(
     // '주의' and too small to see.
     val firstLine = with(density) { (if (style.lineHeight.isSpecified) style.lineHeight else style.fontSize * 1.4f).toDp() }
     val mark = with(density) { 16.sp.toDp() }
+    // [RVJ-79] The place it goes, in the words' own line: the colour and weight of the inbox row's and the card's word (labelLarge's
+    // weight at the line's size, so it does not stand taller than the words it ends).
+    val go = action?.takeIf { onClick != null && it.isNotBlank() }
+    val goColor = MaterialTheme.colorScheme.primary
+    val goWeight = MaterialTheme.typography.labelLarge.fontWeight
+    val words = if (go == null) text else buildAnnotatedString {
+        append(text)
+        append(" · ")
+        withStyle(SpanStyle(color = goColor, fontWeight = goWeight)) { append(go) }
+    }
     Row(
         modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = onClickLabel ?: go, onClick = onClick) else Modifier)
             .semantics(mergeDescendants = true) {},
         verticalAlignment = if (onClick != null) Alignment.CenterVertically else Alignment.Top,
     ) {
@@ -85,7 +102,7 @@ fun ToneLine(
             }, said, Modifier.size(mark), tint = tint)
         }
         Spacer(Modifier.width(6.dp))
-        Text(text, style = style, modifier = Modifier.weight(1f),
+        Text(words, style = style, modifier = Modifier.weight(1f),
             color = if (tone == Tone.Danger) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
         trailing?.invoke()
     }

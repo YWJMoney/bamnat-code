@@ -34,7 +34,7 @@ import com.bamnat.app.ui.theme.Tone
 fun NotesLine(summary: String, title: String, notes: List<String>, modifier: Modifier = Modifier) {
     if (notes.isEmpty()) return
     var open by rememberSaveable { mutableStateOf(false) }
-    ToneLine(summary, modifier, tone = Tone.Plain, onClick = { open = true })
+    ToneLine(summary, modifier, tone = Tone.Plain, onClick = { open = true }, action = "자세히") // [RVJ-79] HQ-125
     // Opened all the way: at 글자 200% the sentences are longer than half a screen, and a half-open sheet hid the last of them.
     if (open) AppSheet(onDismissRequest = { open = false }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(

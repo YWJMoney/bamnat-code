@@ -702,7 +702,8 @@ private fun PayResult(
             }
             later?.takeIf { due == null }?.let { java.time.YearMonth.parse(it) }?.let { m ->
                 com.bamnat.app.ui.components.ToneLine("${m.monthValue}월 마감은 도구 › ${m.monthValue}월 마감에서 할 수 있어요",
-                    tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null })
+                    tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null },
+                    action = "열기") // [RVJ-79] HQ-125
             }
         }
         if (noBase) guides()

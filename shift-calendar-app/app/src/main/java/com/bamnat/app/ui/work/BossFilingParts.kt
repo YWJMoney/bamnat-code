@@ -92,7 +92,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
     var opened by rememberSaveable { mutableStateOf(emptyList<String>()) }
     SectionCard(title = "다가올 신고·지급" + if (open.isNotEmpty()) " ${open.size}" else " ✓") {
         // [RVJ-39] Which month's work a '○월 지급분' is, while it is worked out from the default pay day (a fact: ⓘ, not 주의).
-        if (place.payday == null) ToneLine("급여 주는 날을 안 골라 일한 달의 다음 달 1일에 준 것으로 셌어요 · 급여 주는 날 고르기", tone = Tone.Plain, onClick = onPayDay)
+        if (place.payday == null) ToneLine("급여 주는 날을 안 골라 일한 달의 다음 달 1일에 준 것으로 셌어요", tone = Tone.Plain, onClick = onPayDay, action = "급여 주는 날 고르기")
         val first = open.take(4)
         val shown = if (all) due else first
         shown.forEach { d ->
@@ -109,7 +109,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
                     FilterChip(selected = ticked, onClick = { Filed.set(context, d.key, !ticked); done = Filed.all(context) }, label = { Text(if (ticked) "했어요 ✓" else "했어요") })
                 }
                 // Who is left out stays said even on the short list: it changes what is filed.
-                d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }) }
+                d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }, action = "입사일 넣기") }
                 return@forEach
             }
             // [RVJ-38] Only the date and the title share their line with 했어요; what follows takes the card's width (at 200% on the
@@ -124,7 +124,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
             }
             Column(Modifier.fillMaxWidth()) {
                 // [RVJ-38] Right by the amount: who it leaves out, what it comes to with them, and a press to put the 입사일 in.
-                d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }) }
+                d.missing?.let { m -> ToneLine(m.line(d.amount), onClick = whoMissing?.let { s -> { onEditStaff(s) } }, action = "입사일 넣기") }
                 Hint(d.detail + if (d.where.isNotEmpty()) " · ${d.where}" else "")
                 if (d.kind == BossFilings.Kind.WITHHOLD) d.worked?.let { worked ->
                     // [RVJ-38] The month the line is about (a same-month pay day is one month before the 10일, not two), and the same people
@@ -150,7 +150,7 @@ internal fun FilingsCard(place: Workplace, staff: List<StaffMember>, work: List<
         }
         // Said on the lines themselves now ([RVJ-38]); this one line is left for when none of the shown lines carries it.
         BossFilings.noHireDate(staff, today).takeIf { it.isNotEmpty() && shown.none { d -> d.missing != null } }?.let { l ->
-            ToneLine("입사일이 없는 ${l.joinToString(", ") { it.name.ifBlank { "직원" } }}님은 지난달 신고에서 뺐어요 · 입사일 넣기", onClick = { onEditStaff(l.first()) })
+            ToneLine("입사일이 없는 ${l.joinToString(", ") { it.name.ifBlank { "직원" } }}님은 지난달 신고에서 뺐어요", onClick = { onEditStaff(l.first()) }, action = "입사일 넣기")
         }
         Hint("금액은 대장과 같은 계산이고 참고예요. 반기별 납부·일용근로자는 따로 확인해요. 주민등록번호는 앱에 없어 신고할 때 넣어요.")
     }

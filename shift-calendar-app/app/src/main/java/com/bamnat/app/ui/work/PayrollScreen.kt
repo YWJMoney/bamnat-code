@@ -196,7 +196,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             // 2.0.0 [RVJ-19] 검토 조건 6 (#444 총괄 검토·HQ-12): 고르라고 권하는 줄·미리 알리는 줄은 빨강 글이 아니라 주의 아이콘 한 줄
             // ([ToneLine])이에요. 빨강은 법을 어긴 것(최저임금 미달, 대장의 ⚠ 표시)에만 남겨요.
             if (unticked.isNotEmpty() && !isClosed) ToneLine("4대보험을 고르지 않았어요: " + unticked.joinToString(", ") { it.name } + " · 고르면 사장님 몫까지 맞게 나와요",
-                onClick = { editing = unticked.first() })
+                onClick = { editing = unticked.first() }, action = "고르기") // [RVJ-79] HQ-125
             // 1.39 G2 PC 5066b027 (상): 최저임금·두루누리·산재 lines stacked over ten lines above the people. They fold into one
             // '알아 둘 것 N' row that names each; what needs fixing (새 최저임금보다 적은 사람) stays in the warning colour on that row.
             val law = remember(place, staff) { com.bamnat.core.boss.LawChange.next(place, staff, Today.date()) }
@@ -212,8 +212,8 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                 }
                 law?.takeIf { it.under.isNotEmpty() }?.let { n ->
                     ToneLine("새 최저임금보다 적어요: " + n.under.joinToString(", ") { (m, h) -> "${m.name.ifBlank { "이름 없음" }}(시간당 ${Fmt.won(h)})" } +
-                        (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else "") + " · 눌러서 고쳐요",
-                        onClick = { editing = n.under.first().first })
+                        (if (n.raise > 0) " · 맞춰 올리면 ${n.from.monthValue}월 인건비 +${Fmt.won(n.raise)}" else ""),
+                        onClick = { editing = n.under.first().first }, action = "시급 고치기") // [RVJ-79] HQ-125
                 }
                 if (open) {
                     // G2-M1·I3: the weeks before a new 최저임금·요율 day, what changes (core LawChange, 출처는 거기).
@@ -347,7 +347,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         }
         OutlinedButton(onClick = pickList, enabled = !isClosed) { Text("명단 파일·사진에서 가져오기") }
         // 2.0.0 [RVJ-40] 검토 PC-102: the columns read, before the file is picked, and a file that has them all.
-        if (!isClosed) ToneLine("읽는 칸: ${com.bamnat.core.imports.StaffSheets.READS} · 예시 파일 받기", tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = {
+        if (!isClosed) ToneLine("읽는 칸: ${com.bamnat.core.imports.StaffSheets.READS}", tone = com.bamnat.app.ui.theme.Tone.Plain, action = "예시 파일 받기", onClick = {
             scope.launch {
                 com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.csv(context, "\uFEFF" + com.bamnat.core.imports.StaffSheets.EXAMPLE_CSV, "직원-명단-예시.csv", "직원 명단 예시") }
             }
@@ -451,10 +451,10 @@ private fun LedgerLineCard(l: LedgerLine, place: Workplace, month: YearMonth, wo
         }
         // 1.38 PC 12차 (6): saved with no usual week and nothing written for the month, the line read '0원' with no why.
         if (l.gross == 0L && l.staff.weekly.isEmpty() && !closed)
-            ToneLine("일하는 요일이 없어서 0원이에요 · '직원 정보'에서 평소 요일을 고르거나, 근거 보기에서 일한 날을 하루씩 넣으면 계산돼요", onClick = onEdit)
+            ToneLine("일하는 요일이 없어서 0원이에요 · 평소 요일을 고르거나, 근거 보기에서 일한 날을 하루씩 넣으면 계산돼요", onClick = onEdit, action = "요일 고르기")
         // 1.38 [P3-X-06] 계약서 없음: 근로계약서는 써서 한 부 줘야 해요(근로기준법 제17조, 어기면 제114조 500만 원 이하 벌금).
         if (com.bamnat.core.boss.StaffContract.lacking(l.staff, minOf(Today.date(), month.atEndOfMonth())) && l.staff.contract?.waiting(Today.millis()) != true)
-            ToneLine("계약서 없음 · '계약서'를 누르면 직원 정보로 채워 링크로 서명받아요", onClick = onContract)
+            ToneLine("계약서 없음 · 직원 정보로 채워 링크로 서명받아요", onClick = onContract, action = "계약서 쓰기")
         // 1.38 [P3-X-05] 연차 남은 날, from the hire date (제60조), less the 연차 days marked here.
         leaveLeft?.let { lf ->
             Hint("연차 남은 ${com.bamnat.core.leave.LeaveAccrual.days(lf.left)} (생긴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.made)} · 쓴 ${com.bamnat.core.leave.LeaveAccrual.days(lf.used)})" +

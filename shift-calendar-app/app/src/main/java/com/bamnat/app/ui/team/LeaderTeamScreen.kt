@@ -631,6 +631,8 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     ToneLine(boldNumbers(if (opens) l.head + (if (l.tip.isNotEmpty()) " · ${l.tip}" else "") else l.text), tone = tone,
                         onClick = if (opens) ({ open = if (isOpen) open - i else open + i }) else l.items.singleOrNull()?.let { one -> { goTo(one) } },
                         onClickLabel = if (opens) (if (isOpen) "접기" else "날짜 펼치기") else "그 칸으로",
+                        // [RVJ-79] HQ-125: a line of one goes to its cell, said in the blue word; a line of more opens (the arrow says it).
+                        action = if (opens) null else "그 칸 보기",
                         trailing = if (opens) ({
                             Icon(if (isOpen) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant)

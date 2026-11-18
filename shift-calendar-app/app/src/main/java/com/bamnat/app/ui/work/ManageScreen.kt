@@ -258,7 +258,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
                 caption = place.payDate(last)?.let { "지급일 ${Fmt.monthDay(it)}" } ?: "지급일 미정")
         }
         // [RVJ-50] The one thing to look at here, as the 주의 line every card uses (it was red text).
-        if (place.fivePlus == null) com.bamnat.app.ui.components.ToneLine("5인 이상인지 아직 안 골랐어요", Modifier.padding(top = 6.dp), onClick = onOpen)
+        if (place.fivePlus == null) com.bamnat.app.ui.components.ToneLine("5인 이상인지 아직 안 골랐어요", Modifier.padding(top = 6.dp), onClick = onOpen, action = "고르기")
     }
 }
 
