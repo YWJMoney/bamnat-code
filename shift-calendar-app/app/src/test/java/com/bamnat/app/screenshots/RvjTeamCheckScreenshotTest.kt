@@ -146,7 +146,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
     }
 
     /**
-     * [RVJ-74] (총괄 PC-184, PC 4차 r4-133) Sent, links out: the 'n판 링크를 본 사람' line and its '안 본 n명에게만 보내기'·'다시 보기' sit
+     * [RVJ-74] (총괄 PC-184, PC 4차 r4-133) Sent, links out: the 'n판 링크를 열어 본 사람' line and its '안 연 n명에게만 보내기'·'다시 보기' sit
      * right under the tools' 링크 다시 보내기, not five swipes down under the three switches.
      */
     private fun seenUnderTools(): Screen.() -> Unit = {
@@ -154,7 +154,7 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
         seedTeam(painted = 31, confirmed = true, links = true)
         open().invoke(this)
         reveal("링크 다시 보내기", exact = true)
-        assertTrue("본 사람 줄이 이달 도구 바로 아래", appears("판 링크를 본 사람"))
+        assertTrue("본 사람 줄이 이달 도구 바로 아래", appears("판 링크를 열어 본 사람"))
         assertTrue(shows("다시 보기", exact = true))
     }
 

@@ -171,6 +171,71 @@ class RvgPc3ScreenshotTest : ScreenshotBase() {
     @Test fun shopArrivesFoldLight() = shoot("rvg35_first_shop_link_fold_light_100", FOLDED, shopArrives())
     @Test fun shopArrivesFoldDarkHuge() = shoot("rvg35_first_shop_link_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, shopArrives())
 
+    // ---- 갈래 G 9차 [RVG-38] 검토 HQ-64 B안 (D RVD-32): the sender's word, from 처리방침 3.14 ----
+
+    /** 민지's shop link with its days only (no 매출), as a 2.0.0 app sends it from 3.14 ([said] 영업일) or before ([said] null). */
+    private val daysId = "Sd4dEfGh5JkLmNoPqRsTuv"
+    private fun shopDaysShare(said: String?): ReceivedShare {
+        val open = ShiftType(1, "영업", "영", 0xFFEF6C00, LocalTime.of(10, 0), LocalTime.of(22, 0))
+        val off = ShiftType(2, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+        val from = today.withDayOfMonth(1)
+        val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(open, off), WorkPattern.Rotation(from, listOf(1L, 1L, 1L, 1L, 1L, 1L, 2L)), emptyList())
+        val body = ShareLinkPayload.build(snap, from, "민지", 30, ShareOptions(), word = said)
+        body.remove("ttlDays")
+        return ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
+    }
+
+    /**
+     * PC-170 in the app: a shop that sent its days only was 민지의 근무표 (the link could not tell); with the word its app sends from 3.14
+     * it is 민지의 영업일 everywhere, as the web page says. Without it (a link from before, an old server) it stays 근무표, unchanged.
+     */
+    private fun shopDaysReceived(said: String?): Screen.() -> Unit = {
+        com.bamnat.app.ui.components.ExplainSeen.reset(c.appContext)
+        val cc = receivedOn(minji = false)
+        shares.links[daysId] = shopDaysShare(said)
+        cc.received.put(daysId, shares.links.getValue(daysId))
+        settle()
+        val word = said ?: "근무표"
+        val cal = cc.received.get(daysId)!!
+        assertEquals("민지의 $word", cal.fullName)
+        assertEquals("‘민지’ $word", cal.roster)
+        cc.received.view(daysId)
+        settle()
+        reveal("일 내 달력에 넣기", exact = false, across = 0.5f)
+        assertTrue(scrolledTo("이 $word 신고하기", exact = true))
+    }
+    @Test fun shopDaysWordFoldLight() = shoot("rvg38_received_shop_days_word_fold_light_100", FOLDED, shopDaysReceived("영업일"))
+    @Test fun shopDaysWordFoldDarkHuge() = shoot("rvg38_received_shop_days_word_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, shopDaysReceived("영업일"))
+    @Test fun shopDaysOldFoldLight() = shoot("rvg38_received_shop_days_old_fold_light_100", FOLDED, shopDaysReceived(null))
+    @Test fun shopDaysOldFoldDarkHuge() = shoot("rvg38_received_shop_days_old_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, shopDaysReceived(null))
+
+    /**
+     * An investor's link (its app says 달력 from 3.14): the card before it is kept reads 민지의 달력, what came 달력만, and its change line
+     * too. Without the word ([said] null: a link from before) it reads as it did, 민지의 근무표 and 근무와 휴가만.
+     */
+    private val investId = "Iv4dEfGh5JkLmNoPqRsTuv"
+    private fun investPreview(said: String? = "달력"): Screen.() -> Unit = {
+        val cc = receivedOn(minji = false)
+        val buy = ShiftType(1, "매수", "매", 0xFF3D7DD8, null, null)
+        val from = today.withDayOfMonth(1)
+        val snap = com.bamnat.app.data.ScheduleSnapshot(listOf(buy), WorkPattern.Rotation(from, listOf(1L, null, null, 1L, null, null, null)), emptyList())
+        val body = ShareLinkPayload.build(snap, from, "민지", 30, ShareOptions(), word = said).apply { remove("ttlDays") }
+        shares.links[investId] = ReceivedShare(body, Today.instant().plus(java.time.Duration.ofDays(30)), Today.instant())
+        val vm = com.bamnat.app.ui.calendar.ReceivedViewModel(cc)
+        content { com.bamnat.app.ui.calendar.AddReceivedSheet(vm, investId, Today.date(), {}, {}) }
+        settle()
+        val word = said ?: "근무표"
+        assertTrue(appears("민지의 $word 받기", exact = true))
+        // (조건 13) what came, in the link's word: not 근무와 휴가 for an investor's 달력.
+        assertTrue(appears(if (said == null) "근무와 휴가만 받았어요" else "달력만 받았어요", exact = true))
+        reveal("읽기 전용이에요.", exact = false)
+        assertTrue(appears("보낸 분이 $word${com.bamnat.app.ui.Fmt.obj(word)} 고치면 열 때마다 새로 받아요.", exact = false))
+    }
+    @Test fun investPreviewFoldLight() = shoot("rvg38_received_invest_preview_fold_light_100", FOLDED, investPreview())
+    @Test fun investPreviewFoldDarkHuge() = shoot("rvg38_received_invest_preview_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, investPreview())
+    @Test fun investPreviewOldFoldLight() = shoot("rvg38_received_invest_preview_old_fold_light_100", FOLDED, investPreview(null))
+    @Test fun investPreviewOldFoldDarkHuge() = shoot("rvg38_received_invest_preview_old_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, investPreview(null))
+
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"

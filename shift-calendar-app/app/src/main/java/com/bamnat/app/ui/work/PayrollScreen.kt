@@ -23,7 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -80,7 +80,7 @@ import java.time.LocalTime
 import java.time.YearMonth
 import androidx.compose.ui.text.font.FontWeight
 import java.util.UUID
-import com.bamnat.app.ui.theme.bamnat
+import com.bamnat.app.ui.theme.Tone
 
 /**
  * 1.38 [P3-03][BOSS-01..07] 사장님 급여 대장 (순번 501·502, 설계 2-2), behind `boss.payroll`. The 직원 인건비 card's roster comes in
@@ -1003,7 +1003,7 @@ private fun PayslipDialog(place: Workplace, l: LedgerLine, month: YearMonth, onD
         Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             slip.checks.forEach { c ->
                 Text((if (c.ok) "✓ " else "✕ ") + c.name + if (!c.ok && c.fix.isNotBlank()) " · ${c.fix}" else "", style = MaterialTheme.typography.bodySmall,
-                    color = if (c.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 보내기 전에 채울 줄(✕): 주의
+                    color = if (c.ok) MaterialTheme.colorScheme.onSurface else Tone.Caution.color())
             }
             HorizontalDivider(Modifier.padding(vertical = 4.dp))
             ValueLine("지급 합계", Fmt.won(slip.gross))

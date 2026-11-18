@@ -43,6 +43,8 @@ class XScreenshotTest : ScreenshotBase() {
     private companion object {
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"
         const val DIFF = "우리는 달라요 · 다른 점 말하기"
+        /** 2.0.0 [RVN-19] U10a-08 The card's other buttons are behind this. */
+        const val MORE = "이 판 더 보기"
     }
 
     private fun Screen.detail(setup: Boolean = false, prepare: () -> Unit = {}): CompanyDetailViewModel {
@@ -68,6 +70,7 @@ class XScreenshotTest : ScreenshotBase() {
     // ---- 386 [PLAZA-02] 다른 점 말하기 ----
     @Test fun diffEditorOpensOnTheCompanysValues() = shoot("870_x_diff_editor", FOLDED) {
         detail()
+        tapText(MORE, exact = true)
         tapText(DIFF, exact = true)
         assertTrue(appears("이 회사 값으로 채워 두었어요", exact = false))
         assertTrue(appears("아직 바꾼 곳이 없어요", exact = true))
@@ -77,6 +80,7 @@ class XScreenshotTest : ScreenshotBase() {
     }
     @Test fun aChangedBreakIsSentAsAProposal() = shoot("871_x_diff_sent", FOLDED) {
         detail()
+        tapText(MORE, exact = true)
         tapText(DIFF, exact = true)
         tapText("주간 휴게 10분 늘리기", exact = true)
         assertTrue(appears("바꾼 곳 1가지", exact = true))
@@ -92,6 +96,7 @@ class XScreenshotTest : ScreenshotBase() {
     }
     @Test fun diffEditorHugeText() = shoot("872_x_diff_editor_huge_text", PHONE, fontScale = 2f) {
         detail()
+        tapText(MORE, exact = true)
         tapText(DIFF, exact = true)
         // A tall button at twice the size: bring it up before the tap so its middle is on screen.
         reveal(DIFF, exact = true)
@@ -104,6 +109,7 @@ class XScreenshotTest : ScreenshotBase() {
     }
     @Test fun anOrderChangeIsAnOrderLineDark() = shoot("873_x_diff_order_dark", FOLDED_NIGHT) {
         detail()
+        tapText(MORE, exact = true)
         tapText(DIFF, exact = true)
         // The first day of 주간 주간 야간 야간 휴무 becomes the next shift in the file's own order.
         tapText("1일 주간", exact = true)
@@ -120,6 +126,7 @@ class XScreenshotTest : ScreenshotBase() {
     @Test fun mineFillsTheEditorLandscape() = shoot("874_x_diff_mine_landscape", PHONE_LANDSCAPE) {
         // The company's 주간 starts at 07:00; this phone's own starts at 08:00.
         detail { company.file = SetupEdit.of(company.file)!!.shiftTime("주간", "07:00", "20:00", 60).text }
+        tapText(MORE, exact = true)
         tapText(DIFF, exact = true)
         assertTrue(appears("아직 바꾼 곳이 없어요", exact = true))
         // 내 설정으로 채우기 reads this phone's own (amounts left out) as the starting point.
@@ -150,6 +157,7 @@ class XScreenshotTest : ScreenshotBase() {
         val vm = CompanyDetailViewModel(c, "c1")
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
+        tapText(MORE, exact = true)
         tapText("바뀐 기록", exact = true)
         // The line starts with the day it came in.
         reveal("같은 부서의 다른 판을 더 많은 분이 써서 대표 판이 됐어요", exact = false)

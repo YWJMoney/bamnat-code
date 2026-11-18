@@ -32,17 +32,17 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.outlined.Lock
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -103,6 +103,7 @@ import java.time.YearMonth
 import java.util.UUID
 import androidx.compose.ui.semantics.Role
 import com.bamnat.app.ui.theme.bamnat
+import com.bamnat.app.ui.theme.container
 
 /**
  * 1.38 [P3-02][P3-04] 리더 팀 근무표 (Phase 3 M24, 설계 2-1), behind `team.leader`: the leader makes a team (names pasted at once),
@@ -525,7 +526,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                             Text(if (small) "${d.dayOfMonth}" else "${d.dayOfMonth}\n${Fmt.dayOfWeekShort(d.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                 color = dayColor, fontSize = if (small) 10.sp /* [RVP-11] */ else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
                                 modifier = Modifier.width(cellDp.dp)
-                                    .background(if (lack) MaterialTheme.bamnat.caution.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(4.dp)) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 모자란 날: 주의
+                                    .background(if (lack) Tone.Caution.container() else Color.Transparent, RoundedCornerShape(4.dp)) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 모자란 날: 주의
                                     .clickable(role = Role.Button, enabled = short.isNotEmpty()) { signsWho = true; signsShown = Fmt.monthDay(d) to short })
                             Box(Modifier.width(cellDp.dp).height(4.dp), contentAlignment = Alignment.Center) {
                                 if (short.isNotEmpty() && !lack) Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)))
@@ -551,7 +552,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                                     // 2.0.0 [RVJ-68] (HQ-107, 조건 6) A cell with a sign is outlined in 주의 like a cell to check: the red of 주 52시간 is
                                     // said once, on the 확인할 것 card, not on every cell of the weeks over it.
                                     .then(if (marked) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
-                                        else if (warn != null || toCheck) Modifier.border(2.dp, MaterialTheme.bamnat.caution, RoundedCornerShape(4.dp)) else Modifier)
+                                        else if (warn != null || toCheck) Modifier.border(2.dp, Tone.Caution.color(), RoundedCornerShape(4.dp)) else Modifier)
                                     .clickable(role = Role.Button) {
                                         val from = swapFrom
                                         if (from != null && from.second == d && from.first != m.id) {
@@ -585,7 +586,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
             TeamHoursLine(team, apart.isNotEmpty()) { settingTimes = true }
             // 1.38 가져오기 ③: the cells read without being sure, or with a code not paired, one after another.
             if (checkCells.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.bamnat.caution, // [RVJ-66]
+                Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = Tone.Caution.color(),
                     fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { checkCells = emptyList() }) { Text("다 봤어요") }
                 Button(onClick = {
@@ -795,10 +796,13 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 seen?.let { got ->
                     val line = com.bamnat.app.team.TeamReceiveSync.seenLine(state.version, active, got)
                     // 2.0.0 [RVP-13] (검토 UIX-15 '위험이 아닌 아직 안 연 사람이 빨강') Not yet opened is grey words with a 주의 mark.
+                    // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인 (pressed) big, 열어 봄 (opened, never a messenger's preview) beside it small.
+                    line.big?.let { Text(it, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (line.gone.isNotEmpty()) Icon(Icons.Outlined.WarningAmber, null, tint = com.bamnat.app.ui.theme.Tone.Caution.color(),
                             modifier = Modifier.padding(end = 6.dp).size(18.dp))
-                        Text(line.text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text(line.rest, style = if (line.big != null) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+                            color = if (line.big != null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface)
                     }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (line.gone.isNotEmpty()) Button(enabled = busy == null, onClick = {
@@ -814,8 +818,8 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                         }) { Text("새 링크 ${line.gone.size}개 만들어 보내기") }
                         if (line.notSeen.isNotEmpty()) OutlinedButton(onClick = {
                             send(context, "${team.name} ${Fmt.month(month)} 근무표가 나왔어요(바뀐 날은 그 날에 적혀 있어요).\n" +
-                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 본 사람에게 보내기")
-                        }) { Text("안 본 ${line.notSeen.size}명에게만 보내기") }
+                                line.notSeen.mapNotNull { m -> com.bamnat.app.team.TeamReceiveSync.url(m)?.let { "${m.name}: $it" } }.joinToString("\n"), "안 연 사람에게 보내기")
+                        }) { Text("안 연 ${line.notSeen.size}명에게만 보내기") }
                         TextButton(enabled = busy == null, onClick = { scope.launch { seen = readSeen() } }) { Text("다시 보기") }
                     }
                 }
@@ -992,7 +996,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 else if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
+                    style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
                 list.forEachIndexed { i, p ->
                     // 2.0.0 [RVJ-70] (PC-178) The whole 안 is the button, and it says so: '이 안으로 채우기' under its numbers, so '닫기' is
                     // not the only button one sees. The words are the 안's own (onSurface); only the action is in the button colour.
@@ -1012,7 +1016,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     }
                 }
                 if (team.need.isEmpty()) Text("‘근무별 인원’을 정하면 그 수만큼 채워요. 정하지 않으면 쉬는 날로만 채워요.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
+                    style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
             }
         }, confirmButton = { TextButton(onClick = { plans = null }) { Text("닫기") } })
     }
@@ -1229,7 +1233,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                     Row {
                         Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
                         Text("${r.nights}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                            color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) MaterialTheme.bamnat.caution else Color.Unspecified) // [RVJ-66] 고르지 않음: 주의
+                            color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) Tone.Caution.color() else Color.Unspecified)
                         Text("${r.weekends}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text("${r.offs}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text("${r.minutes / 60}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -1251,7 +1255,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                         Row {
                             Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
                             Text(avg(r.nights), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                                color = if (hi - lo >= 1.5 && r.months > 0 && (n == hi || n == lo)) MaterialTheme.bamnat.caution else Color.Unspecified) // [RVJ-66]
+                                color = if (hi - lo >= 1.5 && r.months > 0 && (n == hi || n == lo)) Tone.Caution.color() else Color.Unspecified)
                             Text(avg(r.weekends), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Text(avg(r.holidays), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Text(r.keptPercent?.let { "$it%" } ?: "-", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -1404,11 +1408,8 @@ internal fun teamKinds(types: List<com.bamnat.core.model.ShiftType>, folded: Set
 /** 1.39 G6 [SETUP-18] The kinds of work still without times, and what they are for. */
 @Composable
 private fun TeamTimesCard(missing: List<TeamShift>, onSet: () -> Unit) {
-    // 2.0.0 [RVJ-66] (HQ-103, 조건 3·6) A red card asked for the times; it is the app's one guide card, its mark in the caution colour.
-    com.bamnat.app.ui.components.NudgeCard(
-        "근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}",
-        tone = com.bamnat.app.ui.theme.Tone.Caution,
+    // 2.0.0 [RVP-13] (HQ-54, 조건 3) A thing to set before confirming: the one notice-card shape with the 주의 mark.
+    com.bamnat.app.ui.components.NudgeCard("근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}", tone = Tone.Caution,
         detail = "팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 확정하기 전에 정해 주세요.",
-        action = "정하기", onAction = onSet, onClick = onSet,
-    )
+        action = "정하기", onAction = onSet, onClick = onSet)
 }

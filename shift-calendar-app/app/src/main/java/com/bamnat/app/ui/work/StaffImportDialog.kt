@@ -27,6 +27,7 @@ import com.bamnat.app.ui.theme.Tone
 import com.bamnat.core.boss.StaffImport
 import com.bamnat.core.boss.StaffTax
 import com.bamnat.core.boss.WageForm
+import com.bamnat.app.ui.theme.color
 
 /**
  * 1.38 가져오기 (사용자 2026-11-05 "어떤 형식이든"): the staff list read from a file or photo, one line a person with what was read

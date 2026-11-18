@@ -310,7 +310,7 @@ class FlagEvalTest {
                 // 1.39 PAYP-05, CARE-01, PLZC-10, G5-N4, SETUP-20: the rows tied to 처리방침 3.12.
                 else if (f.key in setOf(FlagCatalog.PLAZA_FIX_REQUEST, FlagCatalog.COMMUNITY_CARE, FlagCatalog.PLAZA_PEOPLE, FlagCatalog.SLEEP_PLAN_SHARE, FlagCatalog.STATS_SETUP, FlagCatalog.STATS_LIFE, FlagCatalog.STATS_KIND, FlagCatalog.STATS_KEEP)) "1.39.0"
                 else if (f.key == FlagCatalog.STATS_DISC) "1.40.0" /* 1.40 DISC-06, 처리방침 3.13 */
-                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED || f.key == FlagCatalog.CARD_FONTS) "2.0.0" /* 2.0.0 RVD-18, RVM-21 */
+                else if (f.key == FlagCatalog.COMMUNITY_CONFIRMED || f.key == FlagCatalog.CARD_FONTS || f.key == FlagCatalog.SHARE_WORD) "2.0.0" /* 2.0.0 RVD-18, RVM-21, RVG-38 */
                 else if (f.group == FlagGroup.PHASE3) "1.38.0" /* 1.38 P3-01 */ else "1.28.0"))
             // 1.38 사용자 C안: a Phase 3 row opens on 정식 출시일 (the launch policy's day), never earlier.
             if (f.group == FlagGroup.PHASE3) assertTrue(f.key, !f.default && f.conditions.any { it == Condition.Date(policy = FlagCatalog.PHASE3_POLICY) } && f.conditions.any { it == Condition.Policy(FlagCatalog.PHASE3_POLICY) } && FlagCatalog.PHASE3_POLICY == "3.11")
@@ -361,6 +361,24 @@ class FlagEvalTest {
             calendar = PolicyCalendar.SEED.merged(emptyList())).on)
         assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(fonts, phone(kst(2026, 12, 31), server = null), calendar = cal).on)
         assertTrue(fonts.whyOff, fonts.whyOff.contains("${day.monthValue}월 ${day.dayOfMonth}일"))
+    }
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (총괄 11-13): the link's word waits for 처리방침 3.14, which the server calendar does not have yet, so
+     * the row is off now, also when the server's clock is far ahead; it turns on by itself on 3.14's day once the admin app sets it.
+     */
+    @Test fun theLinksWordWaitsFor314() {
+        val word = FlagCatalog.of(FlagCatalog.SHARE_WORD)!!
+        assertEquals("3.14", FlagCatalog.SHARE_WORD_POLICY)
+        assertEquals(Risk.LEGAL, word.risk)
+        assertFalse(word.default)
+        assertTrue(word.conditions.contains(Condition.Date(policy = "3.14")) && word.conditions.contains(Condition.Policy("3.14")))
+        assertFalse("3.14 is in no calendar yet", FlagEval.state(word, phone(kst(2027, 6, 1)), calendar = PolicyCalendar.SEED.merged(emptyList())).on)
+        // The admin app gives 3.14 a day (an example; the real one is the 범위 카드's): off the evening before, on from that day.
+        val cal = PolicyCalendar.SEED.merged(listOf(PolicyVersion("3.14", LocalDate.of(2026, 12, 7), LocalDate.of(2026, 12, 14))))
+        assertFalse(FlagEval.state(word, phone(kst(2026, 12, 13, 23, 59)), calendar = cal).on)
+        assertTrue(FlagEval.state(word, phone(kst(2026, 12, 14, 0, 1)), calendar = cal).on)
+        assertFalse("서버 시각을 모르면 꺼져요", FlagEval.state(word, phone(kst(2026, 12, 20), server = null), calendar = cal).on)
     }
 
     @Test fun unknownKeysAreIgnoredAndFreeRowsAreReadByName() {
