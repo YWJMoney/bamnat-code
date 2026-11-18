@@ -43,6 +43,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,15 +82,18 @@ internal fun MarketFlip(
                     IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
                     Text("크게 넘겨 보기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     // Where in the list, and a way back by one (a finger may not reach the far side of a fold).
-                    if (pager.currentPage > 0) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage - 1) } }) { Text("◀ 이전") }
+                    // [RVM-35] HQ-66: a quick second tap counts from the work it is going to (targetPage), not the one still under the finger.
+                    if (pager.currentPage > 0) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage((pager.targetPage - 1).coerceAtLeast(0)) } }) { Text("◀ 이전") }
                     Text("${pager.currentPage + 1} / ${items.size}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 6.dp))
-                    if (pager.currentPage < items.lastIndex) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }) { Text("다음 ▶") }
+                    if (pager.currentPage < items.lastIndex) androidx.compose.material3.TextButton(onClick = { scope.launch { pager.animateScrollToPage((pager.targetPage + 1).coerceAtMost(items.lastIndex)) } }) { Text("다음 ▶") }
                 }
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
                     val wide = maxWidth >= 600.dp
-                    HorizontalPager(pager, Modifier.fillMaxSize(), pageSize = if (wide) PageSize.Fixed(maxWidth / 2) else PageSize.Fill,
-                        key = { items[it].code }, beyondViewportPageCount = 1) { i ->
+                    // 2.0.0 [RVM-35] 총괄 HQ-66 (갈래 H PC-88과 같은 구조): a quick swipe made while a work is still turning counts from the
+                    // work it is going to, so three quick swipes turn three works (before: two). The calendar's fling, as it is.
+                    HorizontalPager(pager, Modifier.fillMaxSize().testTag(FLIP_WORKS_TAG), pageSize = if (wide) PageSize.Fixed(maxWidth / 2) else PageSize.Fill,
+                        key = { items[it].code }, beyondViewportPageCount = 1, flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(pager)) { i ->
                         FlipPage(items[i], style, onOpen = { onOpen(items[i].code) }, onTry = { onTry(items[i]) })
                     }
                 }
@@ -99,6 +103,9 @@ internal fun MarketFlip(
         }
     }
 }
+
+/** The works' pager in [MarketFlip], for tests. */
+internal const val FLIP_WORKS_TAG = "market-flip-works"
 
 /** One work: its screens one above the other, its name and what it is, and the two ways on. */
 @Composable
@@ -124,7 +131,8 @@ private fun FlipPage(item: RecipeItem, style: WorkStyle?, onOpen: () -> Unit, on
                 r == null -> CircularProgressIndicator()
                 faces.size <= 1 -> WorkFace(r, faces.firstOrNull() ?: MarketShots.faceOf(item, r), w, shown, onClick = onTry)
                 else -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    VerticalPager(v, Modifier.weight(1f, fill = false).size(w, w * (MarketShots.PHONE_H / MarketShots.PHONE_W)), key = { it }) { p ->
+                    VerticalPager(v, Modifier.weight(1f, fill = false).size(w, w * (MarketShots.PHONE_H / MarketShots.PHONE_W)), key = { it },
+                        flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(v)) { p ->
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { WorkFace(r, faces[p], w, shown, onClick = onTry) }
                     }
                     // Dots on the side: where in this work's screens.
@@ -144,10 +152,13 @@ private fun FlipPage(item: RecipeItem, style: WorkStyle?, onOpen: () -> Unit, on
                 if (item.fx.isNotEmpty()) FxBadge(locked = !com.bamnat.app.logic.FxAccess.pro(c))
             }
             sectionLine(item, shown, long = true)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-            fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.tertiary) }
-            Text("♥ ${item.likes} · 넣은 분 ${item.users}" + (item.kept?.takeIf { it >= 60 }?.let { " · 오래 써요 $it%" } ?: "") +
- " · " + MarketMaker.line(item),
-                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            fxLine(item)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // [RVM-34] HQ-72: the numbers and who made it, within two lines at 200% (at large text the maker has a line of its own).
+            if (androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) {
+                MarketNumbersText(item)
+                Text(MarketMaker.line(item), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+            } else MarketNumbersText(item, tail = MarketMaker.line(item))
             Spacer(Modifier.size(6.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onTry, enabled = recipe != null, modifier = Modifier.weight(1f).heightIn(min = 52.dp)) {

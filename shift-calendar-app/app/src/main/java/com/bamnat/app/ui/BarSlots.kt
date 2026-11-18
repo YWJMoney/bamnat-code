@@ -51,15 +51,18 @@ internal data class MeState(
 
 internal val LocalMe = compositionLocalOf { MeState() }
 
-/** [NAV2-02] The round 나 at the end of a tab's top row; nothing when the bar already holds every tab. */
+/** [NAV2-02] The round 나 at the end of a tab's top row; nothing when the bar already holds every tab (and 잠, 2.0.0 [RVIB-16]). */
 @Composable
 internal fun MeButton(rail: Boolean = false) {
     val me = LocalMe.current
     if (!me.show || me.inRail != rail) return
     var open by remember { mutableStateOf(false) }
+    val marks = me.unread
     Box {
         IconButton(onClick = { open = true }) {
-            if (me.unread > 0) BadgedBox(badge = { IconCountBadge(me.unread, "문의에 새 답 ${me.unread}개", cap = 9) }) {
+            if (marks > 0) BadgedBox(badge = {
+                IconCountBadge(marks, "문의에 새 답 ${me.unread}개", cap = 9)
+            }) {
                 Icon(Icons.Outlined.AccountCircle, ME_BUTTON)
             } else Icon(Icons.Outlined.AccountCircle, ME_BUTTON)
         }

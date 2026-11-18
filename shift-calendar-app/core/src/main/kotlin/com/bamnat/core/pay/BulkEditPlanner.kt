@@ -6,8 +6,13 @@ import java.time.YearMonth
 sealed interface EditScope {
     /** "이 달만": the month, then back to what it would have been. */
     data class OnlyMonth(val month: YearMonth) : EditScope
-    /** "이 달부터 계속": from the month on; later entered values are replaced. */
-    data class FromMonth(val month: YearMonth) : EditScope
+    /**
+     * "이 달부터 계속": from the month on; later entered values are replaced. 2.0.0 [RVJ-03] 검토 U04-04: [start] is the day the
+     * month's pay period starts (12/21 for a period closing on the 20th), so '1월 급여부터' covers 12/21~12/31 too.
+     */
+    data class FromMonth(val month: YearMonth, val start: java.time.LocalDate = month.atDay(1)) : EditScope
+    /** 2.0.0 [RVJ-03] 검토 U04-04·PAYC-03 "이 날짜부터": a 시급·일당 that changes on a day (1월 1일부터 10,700원). */
+    data class FromDate(val date: java.time.LocalDate) : EditScope
     /** "기간 지정": the months from [from] to [to], then back. */
     data class Range(val from: YearMonth, val to: YearMonth) : EditScope
     /**
@@ -56,9 +61,11 @@ object BulkEditPlanner {
 
     fun apply(timeline: ValueTimeline, newValue: Long, scope: EditScope): ValueTimeline = when (scope) {
         is EditScope.FromMonth -> {
-            val start = scope.month.atDay(1)
+            val start = minOf(scope.start, scope.month.atDay(1))
             timeline.copy(entries = timeline.entries.filter { it.from.isBefore(start) } + DatedValue(start, newValue))
         }
+        is EditScope.FromDate ->
+            timeline.copy(entries = timeline.entries.filter { it.from.isBefore(scope.date) } + DatedValue(scope.date, newValue))
         is EditScope.OnlyMonth -> applyRange(timeline, newValue, scope.month, scope.month)
         is EditScope.Range -> applyRange(timeline, newValue, scope.from, scope.to)
         // [PAYIN-03] 1.37 PC: an entry dated from a pay period's first day (the 21st) left that month 0원 even after '모든 달 같게',

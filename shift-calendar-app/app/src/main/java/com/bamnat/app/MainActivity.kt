@@ -94,7 +94,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             container.telemetry.event(DiagEvents.APP_OPEN)
             openLink(intent)
-            NoticeLinks.read(intent)
+            NoticeLinks.read(this, intent)
+            com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
             if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
         }
@@ -124,9 +125,19 @@ class MainActivity : ComponentActivity() {
             AppLock.secure(window, settings.appLock)
             onDispose { }
         }
+        // 2.0.0 [RVL-09] (검토 DATA-11) 금액 가리기 keeps the recents list from showing the app's amounts too.
+        DisposableEffect(settings.hideAmounts, settings.appLock) {
+            AppLock.hideRecents(this@MainActivity, settings.hideAmounts && !settings.appLock)
+            onDispose { }
+        }
         // Status bar icons follow the app theme, not only the system one.
-        DisposableEffect(dark) {
-            enableEdgeToEdge(
+        // 2.0.0 [RVIB-15] (PC-123) While the night screen (or the sleep page's night look) is up, dark bars with no pale scrim.
+        val nightBars = com.bamnat.app.ui.components.DarkSystemBars.held > 0
+        DisposableEffect(dark, nightBars) {
+            if (nightBars) enableEdgeToEdge(
+                statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+                navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
+            ) else enableEdgeToEdge(
                 statusBarStyle = SystemBarStyle.auto(Color.TRANSPARENT, Color.TRANSPARENT) { dark },
                 navigationBarStyle = SystemBarStyle.auto(LIGHT_SCRIM, DARK_SCRIM) { dark },
             )
@@ -138,6 +149,9 @@ class MainActivity : ComponentActivity() {
         // Its state is made in onCreate, outside any snapshot (1.38 PC 12차 충돌).
         com.bamnat.app.ui.Fmt.masked = settings.hideAmounts
         val photoLook = androidx.compose.runtime.remember(settings.photoLook) { com.bamnat.core.recipe.PhotoLook.decode(settings.photoLook) }
+        // [R200-01] 근무 그림 belong to one calendar's kinds of day: the shown calendar's are drawn.
+        val shownCalendar by container.calendars.active.collectAsStateWithLifecycle()
+        val shiftIcons = androidx.compose.runtime.remember(photoLook, shownCalendar) { com.bamnat.core.model.ShiftRef.of(photoLook.icons, shownCalendar) }
         // [STU-37] 1.36 근무에 따라 바뀌는 모양: 야간 근무 중·쉬는 날의 화면 색과 달력 색 over the usual ones.
         val shiftLooks = androidx.compose.runtime.remember(settings.shiftLooks) { com.bamnat.core.recipe.ShiftLooks.decode(settings.shiftLooks) }
         val shiftMode = com.bamnat.app.ui.theme.rememberShiftLookMode(shiftLooks, container)
@@ -152,6 +166,18 @@ class MainActivity : ComponentActivity() {
         val motion = androidx.compose.runtime.remember(settings.motion) {
             com.bamnat.core.recipe.Motion.decode(settings.motion).effective(com.bamnat.app.ui.theme.systemAnimationsOff(this))
         }
+        // 2.0.0 [RVM-21] MKT-32 (사용자 2026-11-12 'Google 요청은 글꼴을 고를 때만'): a theme tried on the real app draws its open fonts as card
+        // fonts from our public files (or the phone's closest), never the whole font from Google Fonts; that comes with 입기.
+        val trial by com.bamnat.app.ui.recipe.LiveTryOn.trial.collectAsStateWithLifecycle()
+        val trialFonts = androidx.compose.runtime.remember(trial) {
+            trial?.takeIf { it.showing && it.hasLook }?.let { t -> com.bamnat.app.ui.recipe.MarketFonts.ids(t.look.values.joinToString("|")) }
+        }
+        val trialCards = trialFonts?.let { ids ->
+            androidx.compose.runtime.produceState(emptyMap<String, androidx.compose.ui.text.font.FontFamily>(), ids) {
+                value = com.bamnat.app.ui.recipe.MarketFonts.ready(applicationContext, ids)
+            }.value
+        }
+        androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.theme.LocalCardFonts provides trialCards) {
         BamnatTheme(themeMode = themeMode, dynamicColor = settings.dynamicColor, textStep = settings.textStep, compact = settings.compact,
             corners = photoLook.corners, accent = settings.accentColor, night = night,
             parts = androidx.compose.runtime.remember(settings.parts, partsResting) {
@@ -163,7 +189,7 @@ class MainActivity : ComponentActivity() {
                 com.bamnat.app.ui.theme.CalendarLook.of(com.bamnat.core.recipe.CalendarTheme.decode(calNow), darkSurface)
             }
             androidx.compose.runtime.CompositionLocalProvider(com.bamnat.app.ui.calendar.LocalExtraKinds provides settings.extraKinds,
-                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook,
+                com.bamnat.app.ui.theme.LocalCalendarLook provides look, com.bamnat.app.ui.theme.LocalPhotoLook provides photoLook, com.bamnat.app.ui.theme.LocalShiftIcons provides shiftIcons,
                 // [CVW-01][CVW-09] 1.35 달력 모양 and 날짜를 길게 누르면.
                 com.bamnat.app.ui.calendar.LocalCalendarView provides androidx.compose.runtime.remember(settings.calView) { com.bamnat.core.recipe.CalendarView.decode(settings.calView) },
                 com.bamnat.app.ui.calendar.LocalDayHold provides settings.longPress,
@@ -179,7 +205,7 @@ class MainActivity : ComponentActivity() {
                 },
                 // [LAY-11] 꾸밈 단추: a decoration that names a 규칙 단추 presses it (갈래 D's engine through DecorTap).
                 com.bamnat.app.ui.decor.LocalDecorTap provides androidx.compose.runtime.remember(container) {
-                    { id: String, date: java.time.LocalDate? -> com.bamnat.app.ui.decor.DecorTap.press(container, id, date ?: com.bamnat.core.time.Today.date()); Unit }
+                    { id: String, date: java.time.LocalDate? -> com.bamnat.app.ui.decor.DecorTap.press(container, id, date ?: com.bamnat.core.time.Today.date()) }
                 },
                 // [MAT-07] 1.36 움직임, stopped by 움직임 끄기 or the phone's own 'remove animations'.
                 com.bamnat.app.ui.theme.LocalMotion provides motion, com.bamnat.app.ui.theme.LocalMotionOff provides motion.off,
@@ -188,7 +214,8 @@ class MainActivity : ComponentActivity() {
                 val ground = androidx.compose.runtime.remember(screensNow) { com.bamnat.core.recipe.ScreenLooks.decode(screensNow).of(com.bamnat.core.recipe.ScreenLooks.ALL).ground }
                     ?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.MaterialTheme.colorScheme.background
                 com.bamnat.app.ui.theme.WearTransition(screensNow, ground, motion) {
-                    androidx.compose.runtime.key(settings.clock12) { AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container) }
+                    // 2.0.0 [RVP-21] No key on 오전/오후 any more: Fmt.clock12 is state, so only the times redraw.
+                    AppRoot(windowSizeClass = calculateWindowSizeClass(this), container = container)
                 }
                 // U 1.32 [UX132-05] 처음 시작할 때 글자 크기를 골라요 (설정 › 화면과 글자에서 바꿔요).
                 // A new phone picks it on the first screen; a phone updated to 1.32 is asked once over its calendar.
@@ -199,12 +226,15 @@ class MainActivity : ComponentActivity() {
                 }
                 val consent by container.consentStore.seen.collectAsStateWithLifecycle()
                 // [J133-87] A size already picked (settings, or the first screen of 1.32) is an answer too.
-                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
+                // 2.0.0 [RVP-22] With the other opening windows, one at a time (OpenAsk).
+                if (!settings.textAsked && settings.textStep == com.bamnat.app.data.AppSettings().textStep && updated && consent != null && settings.setupDone &&
+                    com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.TEXT_SIZE)) com.bamnat.app.ui.settings.TextSizeFirstAsk(settings.textStep,
                     onPick = { step -> container.settingsRepository.update { it.copy(textStep = step) } },
                     onDone = { container.settingsRepository.update { it.copy(textAsked = true) } })
                 // 1.39 [LOOP-13] The update downloaded behind the app: 다시 시작 when the user wants, never by itself.
                 val updateReady by com.bamnat.app.review.InAppUpdate.ready.collectAsStateWithLifecycle()
-                if (updateReady) com.bamnat.app.ui.components.AlertDialog(
+                // 2.0.0 [RVP-22] (검토 U13b-08) Never over a sheet being filled in, and one opening window at a time (OpenAsk).
+                if (updateReady && com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.UPDATE_READY)) com.bamnat.app.ui.components.AlertDialog(
                     onDismissRequest = { com.bamnat.app.review.InAppUpdate.later() },
                     title = { androidx.compose.material3.Text("새 버전을 받았어요") },
                     text = { androidx.compose.material3.Text("다시 시작하면 바로 새 버전으로 열려요. 몇 초면 끝나고, 기록은 그대로예요.") },
@@ -215,6 +245,7 @@ class MainActivity : ComponentActivity() {
                 val locked by AppLock.locked.collectAsStateWithLifecycle()
                 if (locked) com.bamnat.app.ui.LockCover { AppLock.ask(this, confirmLock::launch) }
             }
+        }
         }
     }
 
@@ -230,9 +261,12 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         openLink(intent)
-        IncomingRoster.read(intent) // [ROST-09] shared while the app was open
+        // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
+        // open came here and was never read (the app only came forward); it is offered now as on a first open.
+        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
-        if (NoticeLinks.read(intent)) HomeRequests.followingLink()
+        if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
+        com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]
     }
 
     /** [SHR-02] A shared calendar link tapped in a message or on the shared page: the calendar offers it. */
@@ -331,6 +365,12 @@ class MainActivity : ComponentActivity() {
                 c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) c.ads.start(this)
     }
 
+    override fun onResume() {
+        super.onResume()
+        // 2.0.0 [RVL-09] (검토 DATA-11) A screen's result came in just before this: the lock that waited for it closes now.
+        AppLock.onResume()
+    }
+
     override fun onStop() {
         super.onStop()
         com.bamnat.app.diag.MainStall.stop()
@@ -341,6 +381,9 @@ class MainActivity : ComponentActivity() {
         startDone = false
         HomeRequests.onStop(isChangingConfigurations)
         AppLock.onStop(isChangingConfigurations)
+        // 2.0.0 [RVL-05] (검토 DATA-02) What Android's own backup takes is written as the app goes to the background: its backup runs
+        // while the phone rests, so a setting changed today is in it.
+        if (!isChangingConfigurations) appContainer.let { c -> c.appScope.launch { runCatching { c.phoneMove.keep() } } }
     }
 
     private companion object {

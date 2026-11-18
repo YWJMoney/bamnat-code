@@ -119,19 +119,24 @@ data class ProState(
         return (subs + passes).filter { now < it }.maxOrNull()
     }
 
-    /** [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). */
-    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean, now: Instant = com.bamnat.core.time.Today.instant()): ProSources = ProSources(
+    /**
+     * [FLAG-08] [live] is the `billing` row on this phone (the retired 정식 출시 switch). 2.0.0 [RVO-12] [heldUntil] the day 처리방침 3.1's hold
+     * ends when that is what keeps it off; the 출시 moment and 감사 months fall back to [com.bamnat.core.flags.Released] in a release build.
+     */
+    fun sources(config: LaunchConfig, installedAt: Instant?, zone: ZoneId, live: Boolean, now: Instant = com.bamnat.core.time.Today.instant(),
+                heldUntil: Instant? = null): ProSources = ProSources(
         billingLive = live,
         subscription = sub?.play(),
         passUntil = passes?.until,
         admin = passes?.admin?.let { AdminLink(it.approved, passes.checkedAt) },
         installedAt = installedAt,
-        launchedAt = config.launchedAt,
-        thanksMonths = config.thanksMonths,
+        launchedAt = config.launchAt(),
+        thanksMonths = config.thanks(),
         dayPassUntil = dayPass?.let { AdRules.dayPassUntil(it, zone) },
         sharedUntil = passes?.sharedUntil,
         yearPassUntil = yearPassUntil,
         workUntil = workUntil(now),
+        heldUntil = heldUntil,
     )
 
     /** [MON-06] Consent to the paid month after the trial: the server's record, or the answer given here. */
@@ -175,7 +180,15 @@ class ProStore(context: Context) {
     fun removeWorkPass(order: String) { if (order in current.workPasses) edit { it.copy(workPasses = it.workPasses - order) } }
 
     /** [MON-08] For the backup: the recovery code and what was already shown, never the purchase. */
-    fun toBackup(): JSONObject = JSONObject().put("code", current.code ?: JSONObject.NULL).put("thanksSeen", current.thanksSeen)
+    /**
+     * 2.0.0 [RVL-03] (검토 DATA-04) [withCode] false for a backup saved without a password: the recovery code moves the passes, so it goes
+     * only in a sealed file. A restore without it keeps this phone's own code ([fromBackup]).
+     */
+    fun toBackup(withCode: Boolean = true): JSONObject =
+        JSONObject().put("code", current.code?.takeIf { withCode } ?: JSONObject.NULL).put("thanksSeen", current.thanksSeen)
+
+    /** 2.0.0 [RVL-13] Whether there is a recovery code a plain backup would leave out (said in the save dialog). */
+    val hasCode: Boolean get() = !current.code.isNullOrBlank()
 
     /** A backup's code moves its passes here at the next sync, unless it is this phone's own. */
     fun fromBackup(o: JSONObject) {
@@ -224,6 +237,7 @@ class ProStore(context: Context) {
                     .put("deferred", p.deferred).put("code", p.hasCode).put("checkedAt", p.checkedAt.toString())
                     .put("shared", p.sharedUntil?.let { JSONObject().put("until", it.toString()) } ?: JSONObject.NULL)
                     .put("waitingDays", p.waitingDays).put("familyPaused", p.familyPaused)
+                    .put("pending", JSONArray(p.pending.map { JSONObject().put("months", it.months).put("why", it.why).put("what", it.what) }))
                     .put("earned", JSONArray(p.earned.map { JSONObject().put("days", it.days).put("at", it.at.toString()).put("why", it.why) }))
                     .put("admin", p.admin?.let { JSONObject().put("status", it.status).put("name", it.name).put("owner", it.owner)
                         .put("previews", org.json.JSONArray(it.previews)).put("family", it.family) } ?: JSONObject.NULL)

@@ -96,12 +96,14 @@ class StatsViewModel(
     val payProfile: StateFlow<PayProfile?> = scope.pay.profile
     private val payCalculator = PayCalculator()
 
+    // 2.0.0 [RVJ-18] 검토 PAYU-06 굳은 달: a closed month is its closed value here too (통계 탭과 급여 화면이 같은 수).
     fun payTotal(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): Long =
-        payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
+        scope.pay.closed.value[month]?.total ?: payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve).total
 
     /** [PROV-02] A month's pay with its minutes, for the comparison cards; null when it cannot be worked out. */
     fun monthPay(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth): com.bamnat.core.pay.MonthPay? =
         runCatching { payCalculator.calculate(profile.hourlyWeek(settings.value), month, snapshot.resolver::resolve, checks = false) }.getOrNull()
+            ?.let { fresh -> scope.pay.closed.value[month]?.frozen(fresh) ?: fresh }
 
     /** [PROV-02] Whether the comparison cards are open. */
     val gate: StateFlow<com.bamnat.app.tier.Gate> = container.featureGate.state
@@ -119,6 +121,9 @@ class StatsViewModel(
         // [TAX-01] The line is 월급 관측 at once, so 세금 예측 learns from it without waiting for 돈 to open.
         runCatching { com.bamnat.app.tax.SalaryWatch.check(container, calendarId) }
     }
+
+    /** 2.0.0 [RVJ-36] PC-87: whether [month] is closed (급여 › 결과 › 마감), said on the pay card here as it is there. */
+    fun closedPay(month: YearMonth): com.bamnat.core.pay.CalcSnapshot? = scope.pay.closed.value[month]
 
     /** [TAX-02] 1.25 W: the 세후 the records taught (pro), for 월급날 비교's 예상; null when locked or nothing to go on. */
     suspend fun takeHome(gross: Long, month: YearMonth): com.bamnat.core.tax.TaxLearner.Forecast? =
@@ -149,8 +154,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     // PC f42b2eba·e1ca9e5b (근무·급여 한 화면에 주 52시간과 64시간이 섞임; 급여를 안 정한 일근은 '한 주 근무 경고' 값이어야 함):
     // one week limit for every week line on this screen, the 다음 주 예상 too: the law's for the pay setup (52, 64 under
     // 탄력적 근로시간제, the exception's), else the user's own 한 주 근무 경고 (no setup yet, 5인 미만, a non-wage calendar).
+    // 2.0.0 [RVJ-23] 검토 PC-51 (일근, 급여 설정 전에 '64시간 · 내가 정한 한 주 근무 경고'): 64 was the setting's default, never chosen.
+    // A wage calendar with no pay setup reads the law's 52 until the user sets a 한 주 근무 경고 of their own; after the setup
+    // it is the setup's (52, 64 under 탄력제, the exception's), as before.
     val employee = style?.usesPayEngine != false
-    val weekLimit = (if (employee) payProfile?.let(::legalWeekHours) else null) ?: settings.limits.weeklyLimitHours
+    val weekLimit = weekLimitFor(employee, payProfile, settings.limits.weeklyLimitHours)
     // PC 736fb7a6 (선택적·감시단속은 '한도 없음'인데 '주 64시간 기준'): no weekly limit in law; the user's own warning shows instead.
     val noWeekLaw = employee && payProfile?.fiveOrMoreEmployees == true && legalWeekHours(payProfile) == null
     val calc = remember(snap, settings.limits, weekLimit) {
@@ -334,9 +342,13 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         // each value people come to change, each straight to its tab and value.
         if (pays && shown(StatsPart.PAY)) {
             val total = payTotal
+            // [RVJ-36] PC-87: a closed month says so here as on the pay screen, with the 세후 kept when it was closed.
+            val closedSnap = remember(month, total) { vm.closedPay(month) }
             PayEntryCard(
                 month = month,
                 total = total,
+                closed = closedSnap != null,
+                today = today,
                 hasProfile = payProfile != null,
                 style = style,
                 onClick = onOpenPay,
@@ -344,7 +356,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             )
             // [HRLY-04] 예상 실수령 next to the pay before tax. [J133-01] 1.33 (보고서 A3): for every kind of pay, the same 세후
             // 가계부 shows, or the tax way asked right here when it never was.
-            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree) }
+            if (total != null) payProfile?.let { p -> NetPayLine(vm, p, total, month, payFree, kept = closedSnap?.takeHome) }
         }
         // [SHFT-02][DAYW-02] A shift or day worker's first card.
         WorkTypeFirstCard(style, vm.calendarId, snap, month, summary, payTotal, payProfile, columns, payFree, weekLimitHours = weekLimit,
@@ -521,7 +533,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 }
                 StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate, period)
                 StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
-                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period)
+                    onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period, weekLimit = weekLimit)
                 else -> Unit
             }
         }
@@ -545,7 +557,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
 private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen: () -> Unit) {
     val cal = LocalCalendarColors.current
     val hours = week.totalMinutes / 60.0
-    Column(Modifier.clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
+    Column(Modifier.heightIn(min = 48.dp).clickable(onClickLabel = "달력에서 이 주 보기", onClick = onOpen).padding(vertical = 2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 "${Fmt.shortDate(week.start)}–${Fmt.shortDate(week.end)}",
@@ -616,17 +628,19 @@ private fun MonthTrend(values: List<Pair<YearMonth, Long>>, label: (Long) -> Str
 /** Entry to 급여 계산 [PAYX-06]: the month's estimate when set up and unlocked, otherwise an invitation. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null) {
+private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, style: WorkStyle? = null, onClick: () -> Unit, onFocus: ((String) -> Unit)? = null,
+    closed: Boolean = false, today: java.time.LocalDate = com.bamnat.core.time.Today.date()) {
     Surface(
         onClick = onClick,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("${month.monthValue}월 예상 급여 (세전)", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                // 2.0.0 [RVJ-36] 검토 PAYU-17·PC-87: '예상' only for a month still to be paid, '마감' on a closed one.
+                Text(com.bamnat.app.ui.pay.payMonthTitle(month, YearMonth.from(today), closed), style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     when {
                         total != null -> Fmt.won(total)
@@ -634,7 +648,7 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                         else -> "근무표로 급여 계산하기"
                     },
                     style = MaterialTheme.typography.titleLarge,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
                     if (hasProfile) "누르면 항목별 계산 풀이를 볼 수 있어요"
@@ -642,10 +656,10 @@ private fun PayEntryCard(month: YearMonth, total: Long?, hasProfile: Boolean, st
                     else if (style == WorkStyle.HOURLY) "시급만 넣으면 주휴수당까지 계산해요"
                     else "직군을 고르고 기본급만 넣으면 연장·야간·휴일까지 계산해요",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
         }
     }
     // U 1.32 [UX132-02] 고치기: 기본급 · 수당 · 근무시간 · 월급날·정산 · 회사 규칙, one tap each.
@@ -693,7 +707,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
         // 1.37 PC (달력 요약과 같이): 번 돈은 끝난 일감만, 아직 할 일감은 '할 일'로 따로.
         { md -> StatTile("번 돈", Fmt.won(m.jobEarned), md, caption = listOfNotNull(m.jobReceived.takeIf { it > 0 }?.let { "받음 ${wonBrief(it)}" },
             m.jobAhead.takeIf { it > 0 }?.let { "할 일 ${wonBrief(it)}" }).joinToString(" · ").ifEmpty { null }) },
-        { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, warning = m.jobOwed > 0) },
+        { md -> StatTile("받을 돈", Fmt.won(m.jobOwed), md, caution = m.jobOwed > 0) },
         { md -> StatTile("남은 돈", Fmt.won(m.jobProfit), md, caption = m.jobCosts.takeIf { it > 0 }?.let { "경비 ${wonBrief(it)}" }) },
     )
     TileGrid(tiles, columns)
@@ -705,7 +719,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
     if (clients.isNotEmpty()) {
         SectionCard(title = "거래처별") {
             clients.take(8).forEach { c ->
-                Row(Modifier.fillMaxWidth().clickable(onClickLabel = "거래내역서 보내기") { statement = c.client }.padding(vertical = 4.dp),
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(onClickLabel = "거래내역서 보내기") { statement = c.client }.padding(vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(c.client, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
@@ -744,7 +758,7 @@ private fun SalesFigures(book: MoneyBook, month: YearMonth, columns: Int, firstD
     val tiles: List<@Composable (Modifier) -> Unit> = listOf(
         { md -> StatTile("${month.monthValue}월 매출", Fmt.won(m.sales), md, caption = "${m.salesDays}일 적음") },
         { md -> StatTile("경비", Fmt.won(m.salesCosts), md) },
-        { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, warning = m.salesNet < 0) },
+        { md -> StatTile("남은 돈", Fmt.won(m.salesNet), md, caution = m.salesNet < 0) },
         { md -> StatTile("영업일 평균", Fmt.won(shop.perOpenDay), md,
             caption = shop.best?.let { "최고 ${it.date.monthValue}/${it.date.dayOfMonth} ${wonBrief(it.sales)}" }) },
         // [J133-77] 휴무 up to today; a month with no 영업일 set and nothing sold yet says how to set them instead.
@@ -935,16 +949,18 @@ private fun StatsRangePicker(range: com.bamnat.core.hours.StatsRange.Range, onPi
 
 /** [J133-01][J133-02] 세후 under the pay card: [com.bamnat.app.tax.TaxWay.net], or the three ways to pick when none is. */
 @Composable
-private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?) {
+private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfile, gross: Long, month: YearMonth, nonTaxable: Long?,
+    /** 2.0.0 [RVJ-36] The 세후 a closed month kept (그때 표·그때 기록), as the pay screen shows it. */
+    kept: com.bamnat.core.tax.TaxLearner.Forecast? = null) {
     val learned by produceState<com.bamnat.core.tax.TaxLearner.Forecast?>(null, gross, month, profile) {
         value = runCatching { vm.takeHome(gross, month) }.getOrNull()
     }
-    val net = com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
+    val net = kept?.net ?: com.bamnat.app.tax.TaxWay.net(profile, gross, month, nonTaxable, learned)
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     Column(Modifier.padding(start = 4.dp, top = 2.dp, bottom = 4.dp)) {
         if (net != null) {
-            Text("세후 예상 ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
+            Text("${if (kept != null) "세후(마감 때)" else "세후 예상"} ${com.bamnat.app.ui.Fmt.won(net)} · 떼는 돈 ${com.bamnat.app.ui.Fmt.won(gross - net)}",
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         } else {
             Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -959,6 +975,18 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
  * The week's legal limit for [profile] (근로기준법 제53조): the 52시간 exception's own, 64 under 탄력적 근로시간제, else 52; null when
  * the law sets none (5인 미만, or an exception with no weekly cap). One value for every week line on the screen.
  */
+/**
+ * 2.0.0 [RVJ-23] 검토 PC-51: the one week limit of the 근무·급여 screen. A wage calendar ([employee]) with a pay setup has the law's
+ * ([legalWeekHours]); with no setup yet it has the law's 52 too, unless the user set a 한 주 근무 경고 of their own ([own] moved
+ * off the default). Anything else (5인 미만, 한도 없는 제도, 자영업·현장·투자) is the user's own warning.
+ */
+internal fun weekLimitFor(employee: Boolean, profile: com.bamnat.core.pay.PayProfile?, own: Int): Int = when {
+    !employee -> own
+    profile != null -> legalWeekHours(profile) ?: own
+    own != com.bamnat.core.hours.HourLimits().weeklyLimitHours -> own
+    else -> legalWeekHours(null) ?: own
+}
+
 internal fun legalWeekHours(profile: com.bamnat.core.pay.PayProfile?): Int? {
     if (profile?.fiveOrMoreEmployees == false) return null
     val exception = profile?.rules?.hoursException ?: com.bamnat.core.hours.HoursException.NONE

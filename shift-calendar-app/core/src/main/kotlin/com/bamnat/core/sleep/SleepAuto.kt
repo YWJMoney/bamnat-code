@@ -54,6 +54,16 @@ object SleepAuto {
             .toList()
     }
 
+    /**
+     * 2.0.0 [RVI-96] (검토 I03c-01) 누르지 않는 수면 기록, with no permission at all: put on the charger near bedtime ([chargedAt]),
+     * then left still with the screen off long enough for the phone to call itself idle ([stillAt]), until the alarm turned off
+     * ([alarmOff]). That night is offered like a piece Play services saw; null when the phone was never still in between.
+     */
+    fun phoneNight(chargedAt: LocalDateTime?, stillAt: LocalDateTime?, alarmOff: LocalDateTime): Segment? {
+        if (chargedAt == null || stillAt == null || stillAt.isBefore(chargedAt) || !stillAt.isBefore(alarmOff)) return null
+        return Segment(chargedAt, alarmOff).takeIf { it.minutes in MIN_MINUTES..SleepDebt.MAX_SLEEP_MINUTES }
+    }
+
     internal fun merge(segments: List<Segment>): List<Segment> {
         val sorted = segments.sortedBy { it.start }
         val out = ArrayList<Segment>()

@@ -143,6 +143,30 @@ class RosterFollowerTest {
         assertEquals(listOf(day.plusDays(1)), c.received.get(id)!!.note!!.kept)
     }
 
+    /**
+     * 2.0.0 [RVH-57] (갈래 K '자동으로 정리한 것', 뿌리 7): the day kept as I had changed it is listed with why, a day kept again is listed
+     * once with the link's newest value, and 근무표대로 puts the link's day in.
+     */
+    @Test fun aKeptDayIsListedAndCanBePutIn() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        c.scheduleRepository.setOverride(day.plusDays(1), ShiftOverride.Shift(night))
+        api.share = link("1", "null", "t2")
+        RosterFollower.refresh(c, id)
+        val listed = c.autoTidy.items.value.filter { it.kind == RosterFollower.KIND_KEPT }
+        assertEquals(listOf("12월 4일 · 근무표는 쉬는 날"), listed.map { it.title })
+        assertEquals(RosterFollower.TIDY_AREA, listed.single().area)
+        assertTrue(listed.single().why, listed.single().why.contains("직접 바꾼 날"))
+        // The 리더 changes 12/4 again, to 데이: still mine, listed once with what the link says now.
+        api.share = link("1", "1", "t3")
+        RosterFollower.refresh(c, id)
+        val again = c.autoTidy.items.value.filter { it.kind == RosterFollower.KIND_KEPT }
+        assertEquals(listOf("12월 4일 · 근무표는 데이"), again.map { it.title })
+        assertEquals(ShiftOverride.Shift(night), override(day.plusDays(1)))
+        assertTrue(c.autoTidy.restore(again.single().id))
+        assertEquals(ShiftOverride.Shift(day1), override(day.plusDays(1)))
+        assertTrue(c.autoTidy.items.value.none { it.kind == RosterFollower.KIND_KEPT })
+    }
+
     @Test fun offAndUnfollowedLinksChangeNothing() = runBlocking<Unit> {
         api.share = link("2", "1", "t2")
         RosterFollower.refresh(c, id) // neither the setup's link nor put in: only the copy moves
@@ -231,4 +255,51 @@ class RosterFollowerTest {
         assertEquals(2, note.lines.size)
     }
 
+    /** 2.0.0 [RVH-01] 검토 CAL-05: a later change with only a kept day does not take away the unanswered 넣기. */
+    @Test fun anUnansweredAskSurvivesAKeptOnlyChange() = runBlocking<Unit> {
+        c.received.markAdopted(id)
+        api.share = link("2", "1", "t2") // 12/3 → N: asked
+        RosterFollower.refresh(c, id)
+        // Before answering, the member makes 12/4 a 나이트 by hand, and the 리더 then makes 12/4 휴무.
+        c.scheduleRepository.setOverride(day.plusDays(1), ShiftOverride.Shift(night))
+        api.share = link("2", "null", "t3")
+        RosterFollower.refresh(c, id)
+        val note = c.received.get(id)!!.note!!
+        assertEquals(FollowNote.ASK, note.kind)
+        assertEquals(setOf(day), note.apply.keys)
+        assertEquals(listOf(day.plusDays(1)), note.kept)
+        RosterFollower.putIn(c, id)
+        assertEquals(ShiftOverride.Shift(night), override(day))
+    }
+
+    /** [RVH-01] Put in by itself, then a kept-only change: 되돌리기 is still there and takes the first change back. */
+    @Test fun aDoneChangeKeepsItsUndoThroughAKeptOnlyChange() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        RosterFollower.refresh(c, id)
+        c.scheduleRepository.setOverride(day.plusDays(1), ShiftOverride.Shift(night))
+        api.share = link("2", "null", "t3")
+        RosterFollower.refresh(c, id)
+        val note = c.received.get(id)!!.note!!
+        assertEquals(FollowNote.DONE, note.kind)
+        assertEquals(setOf(day), note.undo.keys)
+        RosterFollower.takeBack(c, id)
+        assertEquals(ShiftOverride.Shift(day1), override(day))
+    }
+
+    /** [RVH-01] Two changes put in one after the other: one 되돌리기 takes the days back to before the first. */
+    @Test fun twoDoneChangesTakeBackTogether() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        RosterFollower.refresh(c, id)
+        api.share = link("1", "2", "t3")
+        RosterFollower.refresh(c, id)
+        assertEquals(ShiftOverride.Shift(day1), override(day))
+        assertEquals(ShiftOverride.Shift(night), override(day.plusDays(1)))
+        val note = c.received.get(id)!!.note!!
+        assertEquals(2, note.lines.size)
+        RosterFollower.takeBack(c, id)
+        assertEquals(ShiftOverride.Shift(day1), override(day))
+        assertEquals(ShiftOverride.Shift(day1), override(day.plusDays(1)))
+    }
 }

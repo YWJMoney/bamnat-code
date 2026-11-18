@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.Canvas
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -100,6 +101,7 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.money.Reports
 import kotlin.math.abs
+import androidx.compose.ui.semantics.Role
 
 /** [LEDG-15] A picture for each built-in category, so a list reads at a glance; the user's own get a label. */
 fun categoryIcon(name: String): ImageVector = when (name) {
@@ -175,7 +177,7 @@ fun FitText(text: String, style: TextStyle, color: Color, modifier: Modifier = M
         text, modifier,
         style = style.merge(NumberStyle).copy(color = color, fontWeight = fontWeight ?: style.fontWeight),
         maxLines = 1,
-        autoSize = TextAutoSize.StepBased(minFontSize = 8.sp, maxFontSize = style.fontSize),
+        autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
     )
 }
 
@@ -255,11 +257,13 @@ fun wonBrief(amount: Long): String {
     val a = abs(amount)
     val sign = if (amount < 0) "-" else ""
     fun tenths(t: Long, unit: String) = "${t / 10}" + (if (t % 10 != 0L) ".${t % 10}" else "") + unit
+    // 2.0.0 [RVK-43] (검토 MONEY-23) Rounding that reaches the next unit says it in that unit: 9,980원 is "1만" (was "10천"),
+    // 99,996,000원 is "1억" (was "10000만").
     return sign + when {
         a >= 100_000_000 -> tenths((a + 5_000_000) / 10_000_000, "억")
-        a >= 1_000_000 -> "${(a + 5_000) / 10_000}만"
+        a >= 1_000_000 -> ((a + 5_000) / 10_000).let { if (it >= 10_000) "1억" else "${it}만" }
         a >= 10_000 -> tenths((a + 500) / 1_000, "만")
-        a >= 1_000 -> tenths((a + 50) / 100, "천")
+        a >= 1_000 -> ((a + 50) / 100).let { if (it >= 100) "1만" else tenths(it, "천") }
         else -> "$a"
     }
 }
@@ -336,7 +340,7 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
     val line = cal.expense
     val before = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
     val grid = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
-    val warn = cal.warning
+    val warn = MaterialTheme.bamnat.caution
     val top = maxOf(current.maxOrNull() ?: 0, previous.maxOrNull() ?: 0, budget ?: 0).coerceAtLeast(1)
     Column(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
         Row {
@@ -347,14 +351,16 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
             val h = size.height
             fun x(day: Int) = if (days <= 1) 0f else w * (day - 1) / (days - 1)
             fun y(v: Long) = h - h * (v.toFloat() / top)
-            for (k in 0..2) drawLine(grid, Offset(0f, h * k / 2), Offset(w, h * k / 2), strokeWidth = 1f)
+            // 2.0.0 [RVK-43] (검토 MONEY-24) Lines in dp: in px they were half as thick on a 폴드's screen as on a small phone.
+            for (k in 0..2) drawLine(grid, Offset(0f, h * k / 2), Offset(w, h * k / 2), strokeWidth = 0.5.dp.toPx())
             if (budget != null && budget > 0) {
-                drawLine(warn, Offset(0f, y(budget)), Offset(w, y(budget)), strokeWidth = 2f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f)))
+                drawLine(warn, Offset(0f, y(budget)), Offset(w, y(budget)), strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx())))
             }
             if (previous.size > 1) {
                 val p = Path()
                 previous.take(days).forEachIndexed { i, v -> if (i == 0) p.moveTo(x(1), y(v)) else p.lineTo(x(i + 1), y(v)) }
-                drawPath(p, before, style = Stroke(3f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f)), join = StrokeJoin.Round))
+                drawPath(p, before, style = Stroke(1.25.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 3.dp.toPx())), join = StrokeJoin.Round))
             }
             if (current.isNotEmpty()) {
                 val p = Path()
@@ -366,8 +372,8 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
                     close()
                 }
                 drawPath(area, line.copy(alpha = 0.12f))
-                drawPath(p, line, style = Stroke(5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-                drawCircle(line, 7f, Offset(x(current.size), y(current.last())))
+                drawPath(p, line, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawCircle(line, 3.dp.toPx(), Offset(x(current.size), y(current.last())))
             }
         }
         Row {
@@ -384,8 +390,8 @@ fun PaceChart(current: List<Long>, previous: List<Long>, days: Int, budget: Long
 fun LegendKey(color: Color, label: String, dashed: Boolean = false) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Canvas(Modifier.size(width = 16.dp, height = 8.dp)) {
-            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 5f,
-                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(6f, 5f)) else null)
+            drawLine(color, Offset(0f, size.height / 2), Offset(size.width, size.height / 2), strokeWidth = 2.dp.toPx(),
+                pathEffect = if (dashed) PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx())) else null)
         }
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -412,9 +418,9 @@ fun PairBars(
         labels.forEachIndexed { i, label ->
             val on = i == selected
             Column(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(6.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(MaterialTheme.shapes.extraSmall)
                     .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .clickable(role = Role.Button) { onSelect(i) }
                     .semantics(mergeDescendants = true) { contentDescription = descriptions.getOrElse(i) { label } },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -476,8 +482,8 @@ fun ShareRow(
     onClick: (() -> Unit)? = null,
 ) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(10.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier).padding(vertical = 6.dp),
+        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(MaterialTheme.shapes.small)
+            .then(if (onClick != null) Modifier.clickable(role = Role.Button, onClick = onClick) else Modifier).padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (leading != null) {

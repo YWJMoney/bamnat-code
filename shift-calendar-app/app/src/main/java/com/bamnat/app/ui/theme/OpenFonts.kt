@@ -62,19 +62,6 @@ object OpenFonts {
         "휴대폰 저장 공간이 모자라요"
     }
 
-    /**
-     * 1.39 [MKP-06] 장터 카드 글꼴: only [text]'s letters of [id] in [weight] (Google Fonts' `text=`), 0.2~0.3 MB instead of the whole
-     * family (2~14 MB), for a 장터 card that shows a few words in it. Null when it cannot be had (no such weight, offline).
-     */
-    fun subset(id: String, weight: Int, text: String): ByteArray? = runCatching {
-        val family = FontCatalog.byId(id)?.family ?: return null
-        val css = get(CSS + URLEncoder.encode(family, "UTF-8").replace("+", "%20") + ":wght@" + weight +
-            "&text=" + URLEncoder.encode(text, "UTF-8").replace("+", "%20"), 64 * 1024) ?: return null
-        val url = Regex("""url\((https://[^)]+)\)""").find(String(css, Charsets.UTF_8))?.groupValues?.get(1) ?: return null
-        if (URL(url).host !in HOSTS) return null
-        get(url, 2 * 1024 * 1024)?.takeIf { UserFonts.looksLikeFont(it) }
-    }.getOrNull()
-
     /** One weight's file, or null and why. */
     private fun fetchWeight(family: String, weight: Int, progress: (Long, Long) -> Unit = { _, _ -> }): Pair<ByteArray?, String?> {
         val css = get(CSS + URLEncoder.encode(family, "UTF-8").replace("+", "%20") + ":wght@" + weight, 64 * 1024)
@@ -87,9 +74,15 @@ object OpenFonts {
         return bytes to null
     }
 
+    /**
+     * 2.0.0 [RVM-21] MKT-32 How every Google Fonts address is opened; swapped in tests to count that only picking or wearing a font asks
+     * Google (장터 목록·작품 열기·입어 보기 never do).
+     */
+    @androidx.annotation.VisibleForTesting internal var open: (String) -> HttpURLConnection = { URL(it).openConnection() as HttpURLConnection }
+
     /** The body of a 200 answer at most [max] bytes long, null for any other answer; network trouble is thrown. */
     private fun get(url: String, max: Int, progress: (Long, Long) -> Unit = { _, _ -> }): ByteArray? {
-        val conn = URL(url).openConnection() as HttpURLConnection
+        val conn = open(url)
         conn.connectTimeout = 10_000
         conn.readTimeout = 20_000
         conn.setRequestProperty("User-Agent", AGENT)

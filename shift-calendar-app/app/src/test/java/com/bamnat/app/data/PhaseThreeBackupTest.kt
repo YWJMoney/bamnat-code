@@ -149,4 +149,61 @@ class PhaseThreeBackupTest {
         assertEquals("남아 있는 바꾸기 열쇠도 그대로", "stok", store.teamList.first().single().swap?.token)
         assertTrue(JSONObject(backups.exportSealed()).getJSONObject(PhaseThreeBackup.TEAMS).toString().contains("\"tok\""))
     }
+
+    /**
+     * 2.0.0 [RVJ-09]·[RVJ-10]·[RVJ-16]·[RVJ-17]: 당월 지급일, 대표자·주소, 비과세 수당, 가족 수, 외국인, '직원에게 줬어요' are kept in
+     * the columns there were (payday 100+일, calls 칸의 묶음, 수당·보험·계약 JSON), so no DB 판 is needed and they come back as saved.
+     */
+    @Test fun rvjFieldsComeBackAsSaved() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val call = com.bamnat.core.team.TeamCall("B1", "btok", com.bamnat.core.team.TeamCover.Gap("s1", month.atDay(7), 0), listOf("s1"), listOf("https://s.example/v/V2"))
+        store.saveWorkplace(Workplace("w1", "가나다카페", fivePlus = true, payday = 25, payNextMonth = false, owner = "김사장", address = "서울 어딘가 1", calls = listOf(call)))
+        val back = store.workplaceNow("w1")!!
+        assertEquals(25, back.payday)
+        assertFalse(back.payNextMonth)
+        assertEquals("김사장", back.owner)
+        assertEquals("서울 어딘가 1", back.address)
+        assertEquals(listOf("B1"), back.calls.map { it.id })
+        assertEquals(java.time.LocalDate.of(2026, 11, 25), back.payDate(month))
+        // A place saved before 2.0.0 (plain payday, calls as a list) reads as the next month with no 대표자.
+        store.saveWorkplace(Workplace("w2", "옛가게", fivePlus = false, payday = 10))
+        assertTrue(store.workplaceNow("w2")!!.payNextMonth)
+        store.saveStaff(StaffMember("s1", "박마바", base = 10_320,
+            allowances = listOf(com.bamnat.core.boss.StaffAllowance("식대", 200_000), com.bamnat.core.boss.StaffAllowance("교통비", 50_000, taxFree = false)),
+            insurance = com.bamnat.core.boss.Insurance.ALL.copy(family = 3, children = 1, foreign = true)), "w1")
+        val s = store.staff("w1").first().single()
+        assertEquals(listOf(true, false), s.allowances.map { it.taxFree })
+        assertEquals(3, s.insurance.family)
+        assertEquals(1, s.insurance.children)
+        assertTrue(s.insurance.foreign)
+        val sent = com.bamnat.core.boss.StaffContract.Sent("근로계약서", emptyList(), 1L, signedAt = 2L, signedName = "박마바", paper = true, givenAt = 5L)
+        store.updateContract("s1") { sent }
+        assertEquals(5L, store.staff("w1").first().single().contract?.givenAt)
+    }
+
+    /**
+     * 2.0.0 [RVJ-29] 팀 근무 종류의 휴게: kept in the shifts JSON the team had ("brk"), so no DB 판 is needed. A team's own 휴게 comes
+     * back as saved (0 too: "휴게 없음" is not the law's), one never set stays the law's, and so does every team saved before 2.0.0.
+     */
+    @Test fun teamBreakComesBackAsSaved() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val shifts = listOf(
+            TeamShift(1, "D", "데이", 0xFF2196F3, false, LocalTime.of(9, 0), LocalTime.of(18, 0), breakMinutes = 90),
+            TeamShift(2, "E", "이브닝", 0xFFE39B3B, false, LocalTime.of(14, 0), LocalTime.of(22, 0)),
+            TeamShift(3, "N", "나이트", 0xFF5E4AA8, false, LocalTime.of(22, 0), LocalTime.of(7, 0), breakMinutes = 0),
+            TeamShift(4, "O", "오프", 0xFF9E9E9E, true))
+        store.saveTeam(Team("t9", "5병동", "책임", shifts))
+        assertEquals(listOf(90, null, 0, null), store.teamNow("t9")!!.shifts.map { it.breakMinutes })
+        val other = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        try {
+            BackupManager(other, SettingsRepository(context)).restore(BackupManager(db, SettingsRepository(context)).exportSealed())
+            assertEquals(shifts, PhaseThreeStore(other).teamNow("t9")!!.shifts)
+        } finally {
+            other.close()
+        }
+        val old = """[{"id":1,"label":"D","name":"데이","color":4280391411,"off":false,"start":"09:00","end":"18:00"}]"""
+        assertEquals("2.0.0 전에 만든 팀은 법으로 정한 휴게", listOf<Int?>(null), PhaseThreeStore.decodeShifts(old).map { it.breakMinutes })
+        assertEquals("새로 적은 것이 없으면 옛 모양 그대로", false, PhaseThreeStore.encodeShifts(PhaseThreeStore.decodeShifts(old)).contains("brk"))
+    }
+
 }

@@ -384,6 +384,7 @@ class InquiryClient(
  * The questions themselves stay on the server, found by the random install id of [CompanyStore].
  */
 class InquiryStore(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.applicationContext.getSharedPreferences("inquiry", Context.MODE_PRIVATE)
 
     private val _unread = MutableStateFlow(prefs.getInt("unread", 0))
@@ -419,6 +420,8 @@ class InquiryStore(context: Context) {
         val n = list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }
         _unread.value = n
         prefs.edit().putInt("unread", n).apply()
+        // [RVF-02] What was read is no longer 'said': the next answer is told again.
+        InquiryReplyJob.lowerSaid(appContext, n)
     }
 
     /** The user opened [inquiry]: its answers so far are read. */

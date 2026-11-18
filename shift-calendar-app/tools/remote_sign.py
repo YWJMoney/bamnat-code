@@ -12,8 +12,13 @@ matches and 'check' says so (those apps keep the data they shipped with, nothing
 The private key is never in this repository. It lives in the project's private release-key/ folder and is
 passed by path, either with --key or the BAMNAT_REMOTE_KEY environment variable. This script never prints it.
 
+2.0.0 [RVR-09] (검토 TEST-17·U60-06): 'check' says which of 없음 / 깨짐 / 맞지 않음 each signature is (a .sig2 that does
+not match used to read "없음"), a key in RemoteKeys with '//' inside it is no longer cut at the '//', a file outside the
+repository is named by its path instead of failing after it was signed, and keygen can lock the key with a passphrase
+(BAMNAT_REMOTE_KEY_PASS, read from the environment only; sign and pub read it the same way). CI runs 'check --need-sig2'.
+
 Usage (from shift-calendar-app/):
-  python3 tools/remote_sign.py keygen --out /path/outside/repo/bamnat-remote-ed25519.pem
+  python3 tools/remote_sign.py keygen --out /path/outside/repo/bamnat-remote-ed25519.pem [--encrypt]
   python3 tools/remote_sign.py pub --key <pem>            # the base64 public key for RemoteKeys.TRUSTED
   python3 tools/remote_sign.py sign --key <pem> [files]   # default: every remote/v1/*.json -> <name>.json.sig2
   python3 tools/remote_sign.py check [--need-sig2] [files] # exit 1 when a signature is missing or wrong
@@ -56,8 +61,27 @@ def key_path(arg):
     return p
 
 
+def passphrase():
+    """[RVR-09] The key's passphrase, from the environment only (never an argument, never printed)."""
+    p = os.environ.get("BAMNAT_REMOTE_KEY_PASS")
+    return p.encode("utf-8") if p else None
+
+
 def load_private(path):
-    return serialization.load_pem_private_key(path.read_bytes(), password=None)
+    try:
+        return serialization.load_pem_private_key(path.read_bytes(), password=passphrase())
+    except TypeError:
+        fail("The key is locked: set BAMNAT_REMOTE_KEY_PASS to its passphrase (or the key is not locked and it is set).")
+    except ValueError:
+        fail("The key could not be opened: wrong passphrase in BAMNAT_REMOTE_KEY_PASS, or not an Ed25519 PEM.")
+
+
+def rel(p):
+    """[RVR-09] A file's name for the report: from the repository's top, or its full path when it is outside."""
+    try:
+        return str(p.relative_to(REPO))
+    except ValueError:
+        return str(p)
 
 
 def raw_public(pub):
@@ -68,24 +92,39 @@ def trusted_keys():
     text = KEYS_KT.read_text(encoding="utf-8")
     block = text[text.index("val TRUSTED"):]
     block = block[: block.index("\n    )")]
-    block = "\n".join(l.split("//")[0] for l in block.splitlines())
+    # [RVR-09] Drop comments but not a '//' inside a quoted key (base64 may hold one): strings are matched first.
+    block = "\n".join(re.sub(r'"[^"]*"|//.*', lambda m: m.group(0) if m.group(0).startswith('"') else "", l) for l in block.splitlines())
     return re.findall(r'"([A-Za-z0-9+/=]{40,})"', block)
 
 
-def verifies(sig_path, data, keys):
+# [RVR-09] What a signature file says about a file: 맞음, 없음 (no such file), 깨짐 (not a base64 Ed25519 signature) or
+# 맞지 않음 (a signature, but no trusted key signed these bytes: the file changed after it was signed, or the key is not in
+# RemoteKeys.TRUSTED).
+OK, MISSING, BROKEN, MISMATCH = "맞음", "없음", "깨짐", "맞지 않음"
+
+
+def verdict(sig_path, data, keys):
     if not sig_path.exists():
-        return None
+        return MISSING
     try:
         sig = base64.b64decode(sig_path.read_text(encoding="ascii").strip(), validate=True)
     except Exception:
-        return False
+        return BROKEN
+    if len(sig) != 64:
+        return BROKEN
     for k in keys:
         try:
             k.verify(sig, data)
-            return True
+            return OK
         except InvalidSignature:
             pass
-    return False
+    return MISMATCH
+
+
+def verifies(sig_path, data, keys):
+    """True, False or None (no file), as before 2.0.0."""
+    v = verdict(sig_path, data, keys)
+    return None if v == MISSING else v == OK
 
 
 def files(args):
@@ -105,6 +144,9 @@ def check_shape(path):
 
 def cmd_keygen(a):
     out = pathlib.Path(a.out).resolve()
+    lock = passphrase()
+    if a.encrypt and not lock:
+        fail("--encrypt needs the passphrase in BAMNAT_REMOTE_KEY_PASS.")
     try:
         out.relative_to(REPO)
         fail("Refusing to write a private key inside the repository.")
@@ -113,7 +155,8 @@ def cmd_keygen(a):
     if out.exists():
         fail(f"{out} exists; not overwriting a key.")
     key = Ed25519PrivateKey.generate()
-    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption())
+    enc = serialization.BestAvailableEncryption(lock) if a.encrypt else serialization.NoEncryption()
+    pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, enc)
     fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as f:
         f.write(pem)
@@ -133,7 +176,7 @@ def cmd_sign(a):
         check_shape(p)
         sig = base64.b64encode(key.sign(p.read_bytes())).decode()
         p.with_name(p.name + ".sig2").write_text(sig + "\n", encoding="ascii")
-        print("signed", p.relative_to(REPO))
+        print("signed", rel(p))
 
 
 def cmd_check(a):
@@ -142,16 +185,17 @@ def cmd_check(a):
     for p in files(a.files):
         check_shape(p)
         data = p.read_bytes()
-        new = verifies(p.with_name(p.name + ".sig2"), data, keys)
-        old = verifies(p.with_name(p.name + ".sig"), data, keys)
-        ok = bool(new) or (new is None and bool(old))
-        if a.need_sig2 and not new:
+        new = verdict(p.with_name(p.name + ".sig2"), data, keys)
+        old = verdict(p.with_name(p.name + ".sig"), data, keys)
+        ok = new == OK or (new == MISSING and old == OK)
+        if a.need_sig2 and new != OK:
             ok = False
-        note = {True: "old .sig ok (1.26 이하 앱도 받음)", False: "old .sig 맞지 않음 (1.26 이하 앱은 앱 안 값)", None: "old .sig 없음 (1.26 이하 앱은 앱 안 값)"}[old]
-        print(("ok   " if ok else "BAD  ") + str(p.relative_to(REPO)) + ("  .sig2 ok" if new else "  .sig2 없음") + "  · " + note)
+        later = "1.26 이하 앱도 받음" if old == OK else "1.26 이하 앱은 앱 안 값"
+        why = {MISMATCH: " (파일이 서명 뒤 바뀌었거나 RemoteKeys에 없는 열쇠)", BROKEN: " (서명 모양이 아님)"}.get(new, "")
+        print(("ok   " if ok else "BAD  ") + rel(p) + f"  .sig2 {new}{why}" + f"  · old .sig {old} ({later})")
         bad += 0 if ok else 1
     if bad:
-        fail(f"{bad} file(s) unsigned or signed by an unknown key: run 'sign' with the release key.")
+        fail(f"{bad} file(s) without a matching signature: run 'sign' with the release key (see each line for why).")
 
 
 def main():
@@ -159,6 +203,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("keygen")
     g.add_argument("--out", required=True)
+    g.add_argument("--encrypt", action="store_true", help="lock the key with the passphrase in BAMNAT_REMOTE_KEY_PASS")
     p = sub.add_parser("pub")
     p.add_argument("--key")
     s = sub.add_parser("sign")

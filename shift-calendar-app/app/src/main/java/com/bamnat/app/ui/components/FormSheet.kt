@@ -3,7 +3,8 @@ package com.bamnat.app.ui.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -27,7 +28,7 @@ import androidx.compose.ui.unit.dp
  * the whole width, the fields above the keyboard, the buttons where the thumb is (notes/1.22-285/E.md 5장 2번).
  * The same slots as AlertDialog, so a form moves over by its first word; [text] scrolls itself as before.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun FormSheet(
     onDismissRequest: () -> Unit,
@@ -44,13 +45,9 @@ fun FormSheet(
 ) {
     var asking by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val keep by androidx.compose.runtime.rememberUpdatedState(unsaved)
-    if (asking) com.bamnat.app.ui.components.AlertDialog(
-        onDismissRequest = { asking = false },
-        title = { androidx.compose.material3.Text("적은 내용을 버릴까요?") },
-        text = { androidx.compose.material3.Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-        confirmButton = { androidx.compose.material3.TextButton(onClick = { asking = false; onDismissRequest() }) { androidx.compose.material3.Text("버리기") } },
-        dismissButton = { androidx.compose.material3.TextButton(onClick = { asking = false }) { androidx.compose.material3.Text("계속 적기") } },
-    )
+    // 2.0.0 [RVP-24] 뿌리 고침 3: the app's one ask before typed words go (DiscardAsk); typed and unsaved counts as writing (Busy).
+    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismissRequest() })
+    Busy.Writing(unsaved)
     val state = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { v ->
         if (v == androidx.compose.material3.SheetValue.Hidden && keep) { asking = true; false } else true
     })
@@ -74,10 +71,13 @@ fun FormSheet(
                     ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text() }
                 }
             }
-            Row(
+            // 2.0.0 [RVJ-27] (#460 사진 검토, 조건 12): in one row a long word on the filled button ('근무표에 넣기') was squeezed by
+            // the button beside it at 글자 200% and broke into two lines. The buttons flow as a dialog's do: side by side while
+            // both fit (as before), each on its own line when they do not, the one that saves nearest the thumb.
+            FlowRow(
                 Modifier.fillMaxWidth().padding(top = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                verticalAlignment = Alignment.CenterVertically,
+                itemVerticalAlignment = Alignment.CenterVertically,
             ) {
                 dismissButton?.invoke()
                 confirmButton()

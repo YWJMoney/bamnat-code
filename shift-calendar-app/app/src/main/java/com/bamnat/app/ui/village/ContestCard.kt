@@ -37,6 +37,7 @@ import com.bamnat.app.company.Contest
 import com.bamnat.app.ui.company.SoftCard
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.36 [VIL-19] 마을 V19 이달의 주제 공모, in 공방: this month's theme for my kind of work with 내 작품 넣기, and last month's 이달의 테마
@@ -84,7 +85,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                     style = MaterialTheme.typography.labelLarge)
                 // PC 확인 13503764: one pick takes the card's width, its picture bigger and the title beside it.
                 if (k.picks.size == 1) k.picks.first().let { (code, title) ->
-                    Row(Modifier.fillMaxWidth().clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                         .clickable(onClickLabel = "입어 보기") { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }
                         .padding(4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         com.bamnat.app.ui.recipe.ThemeThumb(k.pickLooks[code]?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st), width = 148.dp)
@@ -98,7 +99,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                 // PC 확인 f39bcfbe: each pick as its small picture with the title under it, the whole a tap to try it on.
                 Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     k.picks.forEach { (code, title) ->
-                        Column(Modifier.width(112.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                        Column(Modifier.width(112.dp).clip(MaterialTheme.shapes.medium)
                             .clickable(onClickLabel = "입어 보기") { com.bamnat.app.recipe.RecipeLinks.tryNext = code; onRecipe(code) }
                             .padding(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             com.bamnat.app.ui.recipe.ThemeThumb(k.pickLooks[code]?.withDays(st) ?: com.bamnat.app.recipe.ThemeSwatch.example(st), width = 104.dp)
@@ -131,7 +132,7 @@ fun ContestCard(c: AppContainer, style: WorkStyle?, onRecipe: (String) -> Unit) 
                         else -> list.forEach { r ->
                             val code = r.code
                             // PC 확인 V25: each with a small picture, the whole row a tap.
-                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable { chosen = if (code in chosen) chosen - code else chosen + code },
+                            Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button) { chosen = if (code in chosen) chosen - code else chosen + code },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(code in chosen, onCheckedChange = { on -> chosen = if (on) chosen + code else chosen - code })
                                 // PC 확인 V25: one without a look of its own still shows the example week in plain colours.

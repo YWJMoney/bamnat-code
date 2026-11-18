@@ -49,6 +49,8 @@ class UsageStats(
     }
 
     fun record(event: UsageEvent) = synchronized(lock) {
+        // 1.40 [DISC-06] The card's four totals are not even counted before 처리방침 3.13 (깃발 stats.disc).
+        if (event in UsageEvent.POLICY_313 && !discAllowed()) return@synchronized
         val day = today()
         var book = book().record(event, day)
         val e = prefs.edit()
@@ -161,6 +163,8 @@ class UsageStats(
         @Volatile var kindAllowed: () -> Boolean = { false }
         /** 1.39 [OBS2-08] Set by [com.bamnat.app.AppContainer] to the `stats.keep` row; off until then. */
         @Volatile var keepAllowed: () -> Boolean = { false }
+        /** 1.40 [DISC-06] Set by [com.bamnat.app.AppContainer] to the `stats.disc` row (처리방침 3.13); off until then. */
+        @Volatile var discAllowed: () -> Boolean = { false }
 
         private fun installDayOf(context: Context, zone: ZoneId): Long? = runCatching {
             val c = context.applicationContext

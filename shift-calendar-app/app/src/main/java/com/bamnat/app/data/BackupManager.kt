@@ -40,6 +40,32 @@ data class BackupSummary(
 class BackupException(message: String) : Exception(message)
 
 /**
+ * 2.0.0 [RVL-13] (검토 DATA-13·T12-02·U12-01·I12a-02) What a file saved without a password leaves out on this phone: 사업장·직원·급여 대장,
+ * the keys that change the links the user made, the 프로 recovery code. The save dialog says it before (and the message after) saving,
+ * in the user's own words, so a 사장님 does not move to a new phone without the 대장.
+ */
+data class PlainLeavesOut(val workplaces: Int, val staff: Int, val links: Int, val proCode: Boolean) {
+    val isEmpty: Boolean get() = workplaces == 0 && links == 0 && !proCode
+
+    /** "직원 3명과 급여 대장, 공유 링크 2개를 고치는 열쇠, 프로 복구 코드". */
+    val words: String get() = listOfNotNull(
+        (if (staff > 0) "직원 ${staff}명과 급여 대장" else "사업장과 급여 대장").takeIf { workplaces > 0 },
+        "공유 링크 ${links}개를 고치는 열쇠".takeIf { links > 0 },
+        "프로 복구 코드".takeIf { proCode },
+    ).joinToString(", ")
+
+    /** The save dialog's line: "직원 3명과 급여 대장은 암호를 걸어야 들어가요". */
+    val line: String get() = words + topic(words) + " 암호를 걸어야 들어가요"
+
+    companion object {
+        val NONE = PlainLeavesOut(0, 0, 0, false)
+
+        /** 은 or 는 after [w], by its last syllable. */
+        fun topic(w: String): String = w.lastOrNull()?.takeIf { it in '가'..'힣' }?.let { if ((it - '가') % 28 != 0) "은" else "는" } ?: "은"
+    }
+}
+
+/**
  * Writes everything the user entered (shift types, pattern, changed days, memos including the
  * trash, settings) to one JSON document and reads it back. Used to move to a new phone or to
  * keep a copy before reinstalling.
@@ -78,21 +104,39 @@ class BackupManager(
     private val dutyCodes: () -> DutyCodeBook? = { null },
     /** [BAK-01] The settings kept in files of their own (회사 연결, 결제 알림 조정, 고정비 적은 날 …). */
     private val settingsFiles: () -> SettingsFilesBackup? = { null },
+    /** 2.0.0 [RVL-04] (검토 DATA-05) The night sounds' clips on this phone: a restore on the same phone joins its sounds to them again. */
+    private val sleepClips: java.io.File? = null,
+    /**
+     * 2.0.0 [RVL-02] (검토 DATA-08) Where the phone's data as it was waits while a restore writes (in no-backup storage): a restore the
+     * app was closed in the middle of is put back to it at the next start ([finishInterrupted]).
+     */
+    private val guard: java.io.File? = null,
 ) {
     /** The schedule tables of [source] (shifts, order, changed days, extra work) as a backup holds them. */
     private suspend fun putSchedule(source: AppDatabase, into: JSONObject) {
         val types = JSONArray()
         source.shiftTypeDao().getAll().forEach { t ->
+            // 2.0.0 [RVH-44] 하루 두 구간 (설계 4-4절): an app before 2.0.0 reads "break"·"breakStart" only, so they hold the break and the gap
+            // together from the gap's start (one stretch, the same minutes worked); "rest"·"restStart"·"gapStart"·"gap" hold them apart.
+            val gap = t.gapMinutes.takeIf { it > 0 && t.gapStartMinute != null }
             types.put(
                 JSONObject()
                     .put("id", t.id).put("name", t.name).put("label", t.label).put("color", t.colorArgb)
                     .putOpt("start", t.startMinute).putOpt("end", t.endMinute)
-                    .put("break", t.breakMinutes).put("off", t.isOff)
+                    .put("break", t.breakMinutes + (gap ?: 0)).put("off", t.isOff)
                     .put("alarm", t.alarmEnabled).put("alarmOffset", t.alarmOffsetMinutes)
                     .putOpt("sound", t.alarmSoundUri).put("order", t.sortOrder).put("alarms", t.alarmOffsets).putOpt("icon", t.icon)
-                    .putOpt("breakStart", t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
+                    .putOpt("breakStart", if (gap != null) t.gapStartMinute else t.breakStartMinute).putOpt("premium", t.premiumPercent.takeIf { it > 0 })
                     // [PAYX-32] Version 20; only when set.
-                    .putOpt("breakPaid", t.breakPaid),
+                    .putOpt("breakPaid", t.breakPaid)
+                    // 2.0.0 [RVH-33] 검토 WORK-19 Version 34: the times before a change '오늘부터만'; only when there are some.
+                    .putOpt("timeHistory", t.timeHistory.takeIf { it.isNotEmpty() })
+                    .apply {
+                        if (gap != null) {
+                            put("rest", t.breakMinutes).putOpt("restStart", t.breakStartMinute).put("gapStart", t.gapStartMinute).put("gap", gap)
+                            if (t.gapAlarm) put("gapAlarm", true)
+                        }
+                    },
             )
         }
         into.put("shiftTypes", types)
@@ -113,7 +157,11 @@ class BackupManager(
                     .putOpt("break", d.customBreakMinutes).put("skip", d.alarmSkipped)
                     .putOpt("alarms", d.customAlarms).put("leave", d.leave)
                     // [HRLY-01][SHFT-03] Version 17; older apps ignore them.
-                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null }),
+                    .putOpt("attendance", d.attendance.takeIf { it != 0 }).putOpt("swap", d.swapWith.ifEmpty { null })
+                    // 2.0.0 [RVH-44][RVH-45] Version 34: the day's own gap, and an hour's leave beside the "leave" code (which keeps the
+                    // nearest quarter of a day, so an older app reads part of a day, never a whole one). Only when set.
+                    .putOpt("gapStart", d.customGapStartMinute).putOpt("gap", d.customGapMinutes)
+                    .putOpt("leaveMinutes", d.leaveMinutes).putOpt("leaveAt", d.leaveAt),
             )
         }
         into.put("days", days)
@@ -261,6 +309,56 @@ class BackupManager(
 
     /** 1.38 [P3-01] The backup as it goes in a file sealed with a password: [export] plus the 사업장·직원 rows ([PhaseThreeBackup]). */
     suspend fun exportSealed(): String = db.withTransaction { exportNow(sealed = true).toString(1) }
+
+    /**
+     * 2.0.0 [RVL-01] (검토 DATA-01·DATA-08, T12-01·T12-03) Everything as it is, for taking an import back and for putting the phone back when
+     * a restore fails: [exportSealed] (사업장·직원·급여 대장, every link's key) marked [FULL]. It never leaves the app's no-backup storage, so
+     * it needs no password. A copy marked so empties what it does not have: a 대장 made after it goes when it is put back.
+     */
+    suspend fun exportFull(): String = db.withTransaction { exportNow(sealed = true).put(FULL, true).toString(1) }
+
+    /** 2.0.0 [RVL-13] (검토 DATA-13) What a file saved without a password would leave out on this phone now. */
+    suspend fun plainLeavesOut(): PlainLeavesOut {
+        val d = db.payrollDao()
+        val places = d.workplaces().size
+        return PlainLeavesOut(places, if (places > 0) d.staff().size else 0, shareLinks?.count() ?: 0, pro()?.hasCode == true)
+    }
+
+    /**
+     * 2.0.0 [RVL-05] (검토 DATA-02·T12-05·T12-06) What Android's own backup (구글 백업, 휴대폰 옮기기) does not take with the database and the
+     * files: the settings kept in preference files of their own (입사일, 모든 조, 근무 약어, 끈 기능, 회사·급여 방식, 희망 오프, 테마 옷장 …),
+     * as a backup file holds them. [PhoneMove] keeps it among the files, so it goes where they go. No key is in it ([carryKeys]).
+     */
+    fun carryOut(): JSONObject = JSONObject().apply {
+        guide?.let { put("featuresOff", it.exportOff()); put("featuresAdded", it.exportAdded()) }
+        teams?.let { t -> put("teams", JSONObject(t.export() as Map<*, *>)) }
+        dutyCodes()?.let { d -> put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
+        settingsFiles()?.let { put("settingsFiles", it.export()) }
+        pro()?.let { put("pro", it.toBackup(withCode = false)) }
+    }
+
+    /**
+     * 2.0.0 [RVL-05] The 프로 recovery code and the keys of the links the user made, kept apart from [carryOut]: [PhoneMove] puts them where
+     * Android takes them only sealed (a phone-to-phone move, or a cloud backup encrypted with the phone's lock).
+     */
+    fun carryKeys(): JSONObject = JSONObject().apply {
+        pro()?.takeIf { it.hasCode }?.let { put("pro", it.toBackup(withCode = true)) }
+        shareLinks?.let { put("shareLinks", it.export(withKeys = true)) }
+    }
+
+    /**
+     * 2.0.0 [RVL-05] Takes [carryOut] and [carryKeys] in on a phone the data came to, the way [restore] takes the same parts of a file
+     * (what one leaves out stays as the phone has it). Returns how many of the user's links came along.
+     */
+    fun carryIn(o: JSONObject): Int {
+        o.optJSONArray("featuresOff")?.let { a -> guide?.restoreOff(a) }
+        o.optJSONArray("featuresAdded")?.let { a -> guide?.restoreAdded(a) }
+        o.optJSONObject("teams")?.let { t -> teams?.import(t.keys().asSequence().associateWith { t.optString(it) }) }
+        o.optJSONObject("dutyCodes")?.let { d -> dutyCodes()?.import(d.keys().asSequence().associateWith { d.optString(it) }) }
+        o.optJSONObject("settingsFiles")?.let { settingsFiles()?.restore(it) }
+        o.optJSONObject("pro")?.let { p -> pro()?.fromBackup(p) }
+        return o.optJSONArray("shareLinks")?.let { a -> shareLinks?.restore(a) } ?: 0
+    }
 
     /** [REL-15] The backup and the photo files that go with it, read in one transaction. */
     private suspend fun exportWithPhotos(sealed: Boolean = false): Pair<String, List<BackupArchive.Photo>> = db.withTransaction {
@@ -428,24 +526,34 @@ class BackupManager(
     }
 
     /**
-     * [PROV-03][REL-15] 자동 백업's check that the file it wrote opens: the bytes read back, opened with [key],
-     * every sum checked. Its own folder, so a file waiting for a restore is left alone.
+     * The sealed file [AutoBackup] just wrote opens with [key] and every part of it checks out; returns its backup text.
+     * 2.0.0 [RVL-10] (검토 DATA-09) Read from [file] as it streams and opened into a file of its own: the file is never whole in memory
+     * three or four times over (a phone with 30MB of photos ran out of memory and the daily backup stopped without a word).
      */
-    fun verifyWithKey(bytes: ByteArray, key: ByteArray): String {
-        val end = bytes.indexOf('\n'.code.toByte()).takeIf { it > 0 } ?: throw BackupException("백업 파일이 손상됐어요")
-        val o = runCatching { JSONObject(bytes.copyOf(end).decodeToString()) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
-        val iv = Base64.getDecoder().decode(o.getString("iv"))
-        val plain = java.io.ByteArrayOutputStream()
-        try {
-            BackupCrypto.decrypt(java.io.ByteArrayInputStream(bytes, end + 1, bytes.size - end - 1), key, iv, plain)
-        } catch (e: BackupCrypto.WrongPassword) {
-            throw BackupException("백업 파일이 손상됐어요")
-        }
-        val dir = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+    fun verifyWithKey(file: java.io.File, key: ByteArray): String {
+        val work = java.io.File(staging ?: throw BackupException("백업 파일을 읽을 수 없어요"), "../backup-verify").canonicalFile
+        val plain = java.io.File(work.parentFile, "backup-verify.zip")
         return try {
-            BackupArchive.read(java.io.ByteArrayInputStream(plain.toByteArray()), dir).json
+            java.io.BufferedInputStream(java.io.FileInputStream(file), 64 * 1024).use { input ->
+                val head = java.io.ByteArrayOutputStream()
+                while (true) {
+                    val b = input.read()
+                    if (b < 0 || head.size() > HEAD_BYTES) throw BackupException("백업 파일이 손상됐어요")
+                    if (b == '\n'.code) break
+                    head.write(b)
+                }
+                val o = runCatching { JSONObject(head.toByteArray().decodeToString()) }.getOrNull() ?: throw BackupException("백업 파일이 손상됐어요")
+                val iv = Base64.getDecoder().decode(o.getString("iv"))
+                try {
+                    java.io.BufferedOutputStream(java.io.FileOutputStream(plain), 64 * 1024).use { out -> BackupCrypto.decrypt(input, key, iv, out) }
+                } catch (e: BackupCrypto.WrongPassword) {
+                    throw BackupException("백업 파일이 손상됐어요")
+                }
+            }
+            java.io.BufferedInputStream(java.io.FileInputStream(plain), 64 * 1024).use { BackupArchive.read(it, work).json }
         } finally {
-            dir.deleteRecursively()
+            work.deleteRecursively()
+            plain.delete()
         }
     }
 
@@ -492,7 +600,9 @@ class BackupManager(
                     // 1.38 DB 28판 이 날만 빼기. An older app ignores it and the memo comes back on those days too.
                     .putOpt("skips", m.skips.ifEmpty { null })
                     // 1.39 DB 33판 끝냄. An older app ignores them and the memo is not finished there.
-                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null }),
+                    .putOpt("doneAt", m.doneAt).putOpt("doneDays", m.doneDays.ifEmpty { null })
+                    // 2.0.0 DB 35판 근무에 붙는 알림 [RVIB-04]. An older app ignores it and tells the memo at its saved time.
+                    .putOpt("remindWork", m.remindWork),
             )
         }
         root.put("memos", memos)
@@ -515,7 +625,9 @@ class BackupManager(
         })
         root.put("sleepEvents", JSONArray().apply {
             db.sleepDao().allEvents().forEach { e ->
-                put(JSONObject().put("start", e.startMillis).put("end", e.endMillis).put("kind", e.kind).put("level", e.level.toDouble()))
+                put(JSONObject().put("start", e.startMillis).put("end", e.endMillis).put("kind", e.kind).put("level", e.level.toDouble())
+                    // 2.0.0 [RVL-04] (검토 DATA-05) The clip's name and 보관, so the same phone joins them again; a new phone has no such file.
+                    .putOpt("file", e.file).apply { if (e.keep) put("keep", true) })
             }
         })
         payStore?.let { putPay(it, root) }
@@ -528,8 +640,10 @@ class BackupManager(
         PhaseThreeBackup.putTeams(db, root, sealed)
         if (sealed) PhaseThreeBackup.putWorkplaces(db, root)
         dutyCodes()?.let { d -> root.put("dutyCodes", JSONObject(d.export() as Map<*, *>)) }
-        pro()?.let { root.put("pro", it.toBackup()) }
-        shareLinks?.let { root.put("shareLinks", it.export()) }
+        // 2.0.0 [RVL-03] (검토 DATA-04) The 프로 recovery code and the keys that change a link the user made go only in a file sealed with
+        // a password (and the app's own copies): whoever got a plain file could change or end the link, or move the passes away.
+        pro()?.let { root.put("pro", it.toBackup(withCode = sealed)) }
+        shareLinks?.let { root.put("shareLinks", it.export(withKeys = sealed)) }
         profiles()?.let { p -> root.put("profile", JSONObject(p.export() as Map<*, *>)) }
         settingsFiles()?.let { root.put("settingsFiles", it.export()) }
         val s = settings.current
@@ -546,9 +660,11 @@ class BackupManager(
                 .put("snooze", s.snoozeMinutes).put("ring", s.ringMinutes).put("alarmSoon", s.alarmSoonMinutes).put("alarmGuard", s.alarmGuard).put("alarmsOn", s.alarmsEnabled)
                 .putOpt("workStyle", s.workStyle?.name).put("setupLater", s.setupLater).put("rosterMonthly", s.rosterMonthly)
                 .put("extraKinds", s.extraKinds.encode()).put("memoFirst", s.memoInCells).put("calendarMemos", s.calendarMemos)
-                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
+                .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("payAutoClose", s.payAutoClose).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
+                // 2.0.0 [RVK-19] 요약의 큰 숫자를 바꿔 둔 것.
+                .put("moneyHero", s.moneyHero)
                 // 1.38 [LEDH-24]
                 .put("shiftPreview", s.shiftPreviewNotice).put("shiftPreviewHour", s.shiftPreviewHour).put("moneyChallenge", s.moneyChallenge)
                 .put("calendarLayout", s.calendarLayout).put("statsLayout", s.statsLayout).put("manageLayout", s.manageLayout).put("hideDayAlarmNotice", s.hideDayAlarmNotice).put("dayGroupOrder", s.dayGroupOrder.joinToString(","))
@@ -574,7 +690,7 @@ class BackupManager(
                 .put("strictRest", s.strictRest).put("restRules", s.restRules).put("sleepTips", s.sleepTips)
                 // 1.10 and before read one switch for all sleep notices.
                 .put("sleepReminders", s.briefing || s.commuteNotice)
-                .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice)
+                .put("briefing", s.briefing).put("commuteNotice", s.commuteNotice).put("bedtimeNotice", s.bedtimeNotice).put("recordOffer", s.recordOffer).put("sleepNoTap", s.sleepNoTap).put("memoHoldAtWork", s.memoHoldAtWork).put("memoRestCard", s.memoRestCard)
                 .put("todayShiftNotice", s.todayShiftNotice).put("afterAlarmCard", s.afterAlarmCard) // [ALRM-16] 1.31
                 .put("watchAlarm", s.watchAlarm).put("watchCalendar", s.watchCalendar) // [WEAR-04][WEAR-06] 1.31
                 .put("sleepingNotice", s.sleepingNotice).put("quietWhileAsleep", s.quietWhileAsleep)
@@ -584,6 +700,8 @@ class BackupManager(
                 // [STAT-01][COMM-08][COMM-09][COMM-10] Added in 1.22.
                 .put("usageStats", s.shareUsageStats).put("plazaNews", s.plazaNews).put("plazaHidden", s.plazaHidden)
                 .put("plazaRules", s.plazaRulesAgreed)
+                // 2.0.0 [RVN-14] HQ-51 알림함 반응 kinds turned off.
+                .put("reactionsOff", s.reactionsOff)
                 // [FLAG-16] 1.28 AL: the 3.2 extra yes, like 사용 통계's own (null: not asked yet).
                 .put("usageStatsMore", s.usageStatsMore ?: JSONObject.NULL)
                 // [STAT-08] 1.31: whether that yes named 조회 시간.
@@ -681,7 +799,17 @@ class BackupManager(
                 sortOrder = o.optInt("order"), alarmOffsets = o.optString("alarms", ""), icon = o.optStringOrNull("icon"),
                 breakStartMinute = o.optIntOrNull("breakStart"), premiumPercent = o.optInt("premium").coerceIn(0, 300),
                 breakPaid = if (o.has("breakPaid") && !o.isNull("breakPaid")) o.optBoolean("breakPaid") else null,
-            )
+                // 검토 WORK-19 A backup from before 2.0.0 has none: every day takes the times above, as it did.
+                timeHistory = o.optString("timeHistory", ""),
+            ).let { e ->
+                // 2.0.0 [RVH-44] With "gap", the break and the gap apart; without it (a backup from before 2.0.0, or a day of one part) the
+                // "break" is the break, never guessed to be a gap.
+                val gap = o.optIntOrNull("gap")?.takeIf { it in 1 until 24 * 60 }
+                val gapStart = o.optIntOrNull("gapStart")?.takeIf { it in 0 until 24 * 60 }
+                if (gap == null || gapStart == null) e
+                else e.copy(breakMinutes = o.optInt("rest").coerceIn(0, 24 * 60), breakStartMinute = o.optIntOrNull("restStart"),
+                    gapStartMinute = gapStart, gapMinutes = gap, gapAlarm = o.optBoolean("gapAlarm"))
+            }
         }
         val types = read.ifEmpty { if (orDefaults) DefaultShiftTypes.all().map { it.toEntity() } else emptyList() }
         if (types.isEmpty()) throw BackupException("근무 종류가 없는 백업 파일이에요")
@@ -707,6 +835,10 @@ class BackupManager(
                 customAlarms = o.optStringOrNull("alarms"), extraWork = o.optInt("extra"), leave = o.optInt("leave"),
                 secondShiftTypeId = if (o.has("second") && !o.isNull("second")) o.getLong("second") else null,
                 attendance = o.optInt("attendance"), swapWith = o.optString("swap"),
+                customGapStartMinute = o.optIntOrNull("gapStart")?.takeIf { it in 0 until 24 * 60 },
+                customGapMinutes = o.optIntOrNull("gap")?.takeIf { it in 0 until 24 * 60 },
+                leaveMinutes = o.optIntOrNull("leaveMinutes")?.takeIf { it in 1 until 24 * 60 },
+                leaveAt = o.optIntOrNull("leaveAt")?.takeIf { it in 0 until 24 * 60 },
             )
         }
         val extras = from.optJSONArray("extras")?.objects()?.map { o ->
@@ -917,16 +1049,74 @@ class BackupManager(
     suspend fun restore(json: String) {
         val root = parse(json)
         val waiting = stagedFor(json)
-        val before = runCatching { export() }.getOrNull()
+        // 2.0.0 [RVL-01] (검토 DATA-01) The whole of it (사업장·직원·대장 and the links' keys too), so a failure puts all of it back.
+        val before = runCatching { exportFull() }.getOrNull()
+        // [RVL-02] (검토 DATA-08) Kept in a file while writing: if the app is closed in the middle, the next start puts it back.
+        val kept = before?.let { b -> runCatching { keepGuard(b) }.getOrNull() }
         val writing = java.util.concurrent.atomic.AtomicBoolean(false)
         try {
             restore(root, waiting, writing)
         } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException || !writing.get()) throw e
+            if (e is kotlinx.coroutines.CancellationException || !writing.get()) {
+                kept?.delete()
+                throw e
+            }
             if (before != null) runCatching { restore(parse(before), null, java.util.concurrent.atomic.AtomicBoolean()) }
+            kept?.delete()
             throw BackupException("백업을 불러오지 못했어요. 지금 데이터는 그대로예요")
         }
+        kept?.delete()
         if (waiting != null) putAway()
+    }
+
+    /** [RVL-02] Writes [json] whole to the guard file (a part file renamed), so a half-written one never counts. */
+    private suspend fun keepGuard(json: String): java.io.File? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val dir = guard ?: return@withContext null
+        dir.mkdirs()
+        val part = java.io.File(dir, "$GUARD.part")
+        part.writeText(json)
+        val file = java.io.File(dir, GUARD)
+        if (!part.renameTo(file)) { file.writeText(json); part.delete() }
+        file
+    }
+
+    /**
+     * 2.0.0 [RVL-02] (검토 DATA-08) A restore the app was closed in the middle of (memory, power, the user): the phone's data as it was
+     * before goes back, whole, so it is never half the file's and half its own. Run once at start, before the screens read the data.
+     * A try that itself stopped the app is not tried again (it is moved aside first), so a broken copy cannot stop every start.
+     * Returns true when it put the data back.
+     */
+    suspend fun finishInterrupted(): Boolean {
+        val dir = guard ?: return false
+        val tried = java.io.File(dir, "$GUARD.tried")
+        if (tried.exists()) {
+            // The last start stopped while putting it back: given up rather than stopping again.
+            tried.delete()
+            return false
+        }
+        val file = java.io.File(dir, GUARD)
+        if (!file.isFile) { java.io.File(dir, "$GUARD.part").delete(); return false }
+        if (!file.renameTo(tried)) return false
+        return try {
+            val json = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { tried.readText() }
+            restore(parse(json), null, java.util.concurrent.atomic.AtomicBoolean())
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            tried.renameTo(file)
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("BackupManager", "putting back an interrupted restore", e)
+            false
+        } finally {
+            tried.delete()
+        }
+    }
+
+    /** [RVL-04] A clip [name] (a plain file name, never a path) that is still in this phone's clip folder. */
+    private fun clipHere(name: String): Boolean {
+        val dir = sleepClips ?: return false
+        if (name.isEmpty() || name != java.io.File(name).name || name.startsWith(".")) return false
+        return java.io.File(dir, name).isFile
     }
 
     private suspend fun restore(root: JSONObject, waiting: Staged?, writing: java.util.concurrent.atomic.AtomicBoolean) {
@@ -954,6 +1144,8 @@ class BackupManager(
                 skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("skips"))),
                 doneAt = if (o.isNull("doneAt") || !o.has("doneAt")) null else o.getLong("doneAt"),
                 doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(com.bamnat.core.memo.MemoRepeat.decodeSkips(o.optString("doneDays"))),
+                // 2.0.0 [RVIB-04] A backup of 1.39 (DB 33) or of 34 has none: told by the clock, as there.
+                remindWork = o.optStringOrNull("remindWork")?.takeIf { com.bamnat.core.memo.WorkAnchor.parse(it) != null },
             )
         }
         val sleep = root.optJSONArray("sleep")?.objects()?.map { o ->
@@ -967,8 +1159,10 @@ class BackupManager(
                 note = o.optStringOrNull("note"), atMillis = o.optLong("at"))
         }
         val sleepEvents = root.optJSONArray("sleepEvents")?.objects()?.map { o ->
+            // 2.0.0 [RVL-04] (검토 DATA-05) A clip still on this phone is joined again with its 보관; one that is not here stays out.
+            val clip = o.optStringOrNull("file")?.takeIf(::clipHere)
             com.bamnat.app.data.db.SleepEventEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"), kind = o.getString("kind"),
-                level = o.optDouble("level").toFloat())
+                level = o.optDouble("level").toFloat(), file = clip, keep = clip != null && o.optBoolean("keep"))
         }
         val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
@@ -980,8 +1174,10 @@ class BackupManager(
             calendars.calendars.value.filter { !it.isMain && it.id !in back }.forEach { cal -> runCatching { recordsTrash()?.beforeDelete(cal.id) } }
         }
         // 1.38 [P3-01] Read before anything changes; a backup without them leaves the phone's own.
-        val leaderTeams = PhaseThreeBackup.readTeams(root)
-        val workplaces = PhaseThreeBackup.readWorkplaces(root)
+        // 2.0.0 [RVL-01] (검토 DATA-01) The app's own whole copy ([exportFull]) had none: what came after it goes, so 되돌리기 is the phone as it was.
+        val full = root.optBoolean(FULL)
+        val leaderTeams = PhaseThreeBackup.readTeams(root) ?: PhaseThreeBackup.Teams.NONE.takeIf { full }
+        val workplaces = PhaseThreeBackup.readWorkplaces(root) ?: PhaseThreeBackup.Places.NONE.takeIf { full }
         writing.set(true)
         db.withTransaction {
             PhaseThreeBackup.write(db, leaderTeams, workplaces)
@@ -1103,11 +1299,13 @@ class BackupManager(
                     leaveTimeNotice = o.optBoolean("leaveTimeNotice", s.leaveTimeNotice),
                     stretchLimitHours = o.optInt("stretchLimit", s.stretchLimitHours).coerceIn(0, 48),
                     payDepositNotice = o.optBoolean("payDepositNotice", s.payDepositNotice),
+                    payAutoClose = o.optBoolean("payAutoClose", s.payAutoClose),
                     weekHoursNudge = o.optBoolean("weekHoursNudge", s.weekHoursNudge),
                     calendarOnly = o.optBoolean("calendarOnly", false),
                     viewAsked = true, // 1.39 [CALX-07] a restored backup brings its own view: not asked again
                     statsPeriod = StatsPeriod.read(o.optString("statsPeriod").ifEmpty { null }, o.optBoolean("statsPayPeriod", false)),
                     moneyByPayCycle = o.optBoolean("moneyPayCycle", s.moneyByPayCycle),
+                    moneyHero = o.optString("moneyHero", s.moneyHero),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
                     shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),
@@ -1164,6 +1362,10 @@ class BackupManager(
                     briefing = o.optBoolean("briefing", o.optBoolean("sleepReminders", s.briefing)),
                     commuteNotice = o.optBoolean("commuteNotice", o.optBoolean("sleepReminders", s.commuteNotice)),
                     bedtimeNotice = o.optBoolean("bedtimeNotice", s.bedtimeNotice),
+                    recordOffer = o.optBoolean("recordOffer", s.recordOffer),
+                    sleepNoTap = o.optBoolean("sleepNoTap", s.sleepNoTap),
+                    memoHoldAtWork = o.optBoolean("memoHoldAtWork", s.memoHoldAtWork), // 2.0.0 [RVIB-05]
+                    memoRestCard = o.optBoolean("memoRestCard", s.memoRestCard),
                     todayShiftNotice = o.optBoolean("todayShiftNotice", s.todayShiftNotice),
                     afterAlarmCard = o.optBoolean("afterAlarmCard", s.afterAlarmCard),
                     watchAlarm = o.optString("watchAlarm", s.watchAlarm).takeIf { it in AppSettings.WATCH_ALARMS } ?: s.watchAlarm,
@@ -1185,6 +1387,9 @@ class BackupManager(
                     plazaNews = o.optBoolean("plazaNews", s.plazaNews),
                     plazaHidden = o.optStringOrNull("plazaHidden")?.let { com.bamnat.core.plaza.HideList.decode(it).encode() } ?: s.plazaHidden,
                     plazaRulesAgreed = o.optInt("plazaRules", s.plazaRulesAgreed).coerceAtLeast(0),
+                    // 2.0.0 [RVN-14] HQ-51: only kinds this app knows; a backup before 2.0.0 keeps what this phone has.
+                    reactionsOff = o.optStringOrNull("reactionsOff")?.let { com.bamnat.core.plaza.Reactions.encodeOff(com.bamnat.core.plaza.Reactions.decodeOff(it)) }
+                        ?: s.reactionsOff,
                     // [FLAG-16] 1.28: a backup without it keeps what this phone has.
                     usageStatsMore = if (!o.has("usageStatsMore")) s.usageStatsMore else if (o.isNull("usageStatsMore")) null else o.optBoolean("usageStatsMore"),
                     // [STAT-08] 1.31: a backup from before keeps what this phone has.
@@ -1302,5 +1507,9 @@ class BackupManager(
         const val SEALED_ZIP = 3
         private const val HEAD_BYTES = 4096
         private const val LOCKED = "locked.bin"
+        /** [RVL-01] Marks the app's own whole copy ([exportFull]); a file the user saved never has it. */
+        const val FULL = "full"
+        /** [RVL-02] The guard file's name in [guard]. */
+        private const val GUARD = "before_restore.json"
     }
 }

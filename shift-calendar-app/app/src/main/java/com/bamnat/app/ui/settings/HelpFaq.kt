@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.settings
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.NoticeLinks
+import com.bamnat.app.appContainer
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.app.data.PersonalCalendar
 
@@ -34,10 +36,36 @@ data class HelpTopic(
     val withCheck: Boolean = false,
 )
 
+/**
+ * 2.0.0 [RVO-13] 통합 2차 PC-116: '친구를 초대하면 무엇을 받나요?' in the server's rules, the same numbers as the 친구 초대 card
+ * ([com.bamnat.core.tier.InviteRules.promise]); the year's cap only while the server counts it (처리방침 3.13, from 12-12). Before the
+ * rules were ever read, no numbers that could differ from the card: where to see them.
+ */
+internal fun inviteAnswer(t: com.bamnat.core.tier.InviteTerms?): String {
+    val rule = if (t == null) "친구 몇 명이 며칠 쓰면 몇 개월인지는 그 카드에 지금 규칙 그대로 나와요. 프로는 운영팀이 확인한 뒤 들어와요. "
+    else "친구 ${t.need}명이 각자 ${t.days}일 이상 쓸 때마다 프로 ${t.months}개월이고 운영팀이 확인한 뒤 들어와요" +
+        (if (t.capMonths > 0) "(보상은 1년에 모두 합쳐 ${t.capMonths}개월까지). " else ". ")
+    return "설정 › 프로의 친구 초대 카드에서 링크를 보내요. " + rule +
+        "링크 없이 깐 친구는 7일 안에 프로 맨 아래 ‘코드를 받으셨나요?’에 넣어요. 같은 휴대폰은 한 번. " +
+        "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’."
+}
+
+/** 2.0.0 [RVO-13] PC-116: the 친구 초대 rules the server last said, for [HelpFaq.topics]; null before any were read or without 친구 초대. */
+@androidx.compose.runtime.Composable
+internal fun rememberInviteTerms(): com.bamnat.core.tier.InviteTerms? {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    if (!c.inviteApi.enabled) return null
+    return c.invites.store.state.collectAsStateWithLifecycle().value.readRules
+}
+
 /** [UX-05] The answers 도움말 shows before a question is written, and the search over them. */
 internal object HelpFaq {
-    /** [share]: this build makes and takes links, so the answer about receiving one is offered. */
-    fun topics(share: Boolean = true): List<HelpTopic> = listOfNotNull(
+    /**
+     * [share]: this build makes and takes links, so the answer about receiving one is offered. 2.0.0 [RVO-13] PC-116: [invite] is the
+     * 친구 초대 rules the server last said ([com.bamnat.app.tier.InviteState.readRules]), so the answer says the card's numbers; null
+     * before they were ever read, and then no numbers ([inviteAnswer]).
+     */
+    fun topics(share: Boolean = true, invite: com.bamnat.core.tier.InviteTerms? = null): List<HelpTopic> = listOfNotNull(
         HelpTopic(
             "alarm", "알람", "알람이 안 울리거나 늦게 울려요",
             "‘알람 점검’을 열면 다음 알람 시각, 꺼진 권한, 배터리 최적화를 하나씩 확인하고 그 자리에서 고칠 수 있어요. " +
@@ -136,7 +164,7 @@ internal object HelpFaq {
         HelpTopic(
             "extra", "추가 근무", "잔업·특근·대근은 어떻게 적어요?",
             "날짜를 누르고 하루 화면의 ‘추가 근무’에서 종류와 시간을 적어요. 이름과 가산 방식은 설정 › 내 근무 › " +
-                "‘연장 휴무일 근무 지정’에서 회사에 맞게 바꿔요.",
+                "‘연장·휴무일 근무 지정’에서 회사에 맞게 바꿔요.",
             listOf("잔업", "특근", "대근", "연장", "추가 근무", "휴일 근무", "가산"),
             listOf("달력", "내 근무", "급여"),
             "연장·휴무일 근무 지정" to HelpAction.Go(SettingsGo.EXTRA_KINDS),
@@ -159,9 +187,9 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "backup", "백업", "휴대폰을 바꿔도 기록을 옮길 수 있나요?",
-            "기록은 이 휴대폰에만 있어요. 설정 › 데이터 › ‘백업 저장’으로 파일을 만들어 새 휴대폰에 옮긴 뒤 ‘파일 불러오기’로 열어요. " +
-                "근무, 메모, 돈 기록, 급여 설정이 모두 들어가고 암호를 걸 수 있어요. 내가 만든 근무표 링크도 들어가 새 휴대폰에서 같은 링크가 계속 바뀌어요. " +
-                "‘매일 자동 백업’은 고른 파일에 매일 덮어써요(프로).",
+            "기록은 이 휴대폰에만 있어요. 설정 › 데이터 › ‘백업 저장’으로 만든 파일을 새 휴대폰에서 ‘파일 불러오기’로 열어요. " +
+                "근무·메모·돈 기록·급여 설정이 다 들어가고, 암호를 걸면 직원·급여 대장과 근무표 링크 열쇠도 들어가요. " +
+                "구글 계정·휴대폰 옮기기로 옮겨도 설정이 이어져요. ‘매일 자동 백업’은 고른 파일에 매일 덮어써요(프로).",
             listOf("백업", "휴대폰 바꾸기", "기기 변경", "옮기기", "복원", "다시 설치", "지워졌"),
             listOf("데이터"),
             "백업 저장 열기" to HelpAction.Page(SettingsPage.DATA, "백업 저장"),
@@ -177,7 +205,7 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "widget", "위젯", "홈 화면에 근무표를 띄우고 싶어요",
-            "홈 화면 빈 곳을 길게 누르고 ‘위젯’에서 밤낮을 찾아요. ‘오늘 근무’, ‘주간 근무’, ‘월간 근무표’ 세 가지가 있어요. " +
+            "홈 화면 빈 곳을 길게 누르고 ‘위젯’에서 밤낮을 찾아요. ‘오늘’, ‘이번 주’, ‘한 달 달력’, ‘다음 일정까지’가 있고, 교대 근무표면 ‘오늘 모든 조’도 있어요. " +
                 "배달·대리 달력은 오늘 위젯의 ‘+1건’, 현장 일당 달력은 ‘오늘 1공’을 바로 눌러 적어요(기능 켜고 끄기 › 위젯 +1건·오늘 1공에서 꺼요).",
             listOf("위젯", "홈 화면", "바탕화면", "잠금 화면에"),
             listOf("달력"),
@@ -229,8 +257,8 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "memo", "메모", "메모에 알람을 넣고 싶어요",
-            "메모를 쓰고 ‘알람 맞추기’를 누르면 정한 날짜와 시각에 울리는 알람이나 알림 메시지로 알려 줘요. " +
-                "메모에 ‘내일 3시’처럼 시각을 적어도 일정으로 넣을지 물어봐요.",
+            "메모를 쓰고 ‘알림 넣기’를 누르면 정한 날짜와 시각에 울리는 알람이나 알림 메시지로 알려 줘요. " +
+                "메모에 ‘내일 3시’처럼 시각을 적어도 알림으로 넣을지 물어봐요.",
             listOf("메모", "일정", "할 일", "체크리스트", "메모 알람", "약속"),
             listOf("메모"),
             "메모 열기" to HelpAction.Tab(NoticeLinks.Target.MEMOS),
@@ -301,7 +329,7 @@ internal object HelpFaq {
         HelpTopic(
             "plaza", "광장", "광장에서 불쾌한 글을 봤어요. 그 사람 글을 안 보고 싶어요",
             "글 옆 ⋮에서 ‘신고’를 누르면 운영자가 확인하고, ‘이 사람 글 안 보기’를 누르면 그 사람 글이 이 휴대폰에서 바로 사라져요. " +
-                "가린 사람은 광장 › 내 활동 › ‘가린 사람’에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
+                "글을 안 보기로 한 사람은 마을 › 팔로잉 › 차단에서 다시 볼 수 있어요. 글을 처음 쓸 때 보는 운영 규칙은 언제든 웹에서도 볼 수 있어요.",
             listOf("광장", "차단", "가리기", "안 보기", "신고", "욕설", "운영 규칙"),
             listOf("광장", "회사 규칙 광장"),
             "밤낮 소식 알림 설정" to HelpAction.Page(SettingsPage.NOTICES, "밤낮 소식"),
@@ -351,12 +379,12 @@ internal object HelpFaq {
         // ---- 1.34 나눔 판 [RCP-38] ----
         HelpTopic(
             "recipe", "마을", "남이 꾸민 달력·알람 설정이나 테마를 받고 싶어요. 어디 있나요?",
-            "아래 ‘마을’ 탭의 ‘장터’ 칸을 누르세요(테마는 ‘테마’ 칸). 레시피를 열면 바뀌는 모습과 급여 차이를 먼저 보여 주고, " +
-                "고른 조각만 넣어요. 넣은 지 7일 안에는 레시피 화면이나 설정 › 장터·내 레시피에서 ‘되돌리기’로 그대로 돌아가요. " +
-                "링크는 누르면 열리고, 8글자 코드는 ‘코드로 받기’에 넣어요. 장터가 안 보이면 설정 › 장터·내 레시피에서 켜요.",
+            "아래 ‘마을’ 탭의 ‘장터’ 칸을 누르세요(테마는 ‘테마’ 칸). 작품을 열면 바뀌는 모습과 급여 차이를 먼저 보여 주고, " +
+                "고른 조각만 넣어요. 넣은 지 7일 안에는 작품 화면이나 설정 › 장터·내 작품에서 ‘되돌리기’로 그대로 돌아가요. " +
+                "링크는 누르면 열리고, 8글자 코드는 ‘코드로 받기’에 넣어요. 장터가 안 보이면 설정 › 장터·내 작품에서 켜요.",
             listOf("나눔 판", "장터", "마을", "레시피", "템플릿", "테마", "남의 설정", "설정 받기", "되돌리기", "코드", "링크"),
             listOf("마을", "장터"),
-            "장터·내 레시피 열기" to HelpAction.Go(SettingsGo.RECIPES),
+            "장터·내 작품 열기" to HelpAction.Go(SettingsGo.RECIPES),
         ),
         // 1.35 [J135-19] 꾸미기·테마 (마을 › 테마·공방).
         HelpTopic(
@@ -383,22 +411,22 @@ internal object HelpFaq {
         ),
         // ---- 1.35 나눔 판 완성 [RCX-20] ----
         HelpTopic(
-            "recipeUpdate", "마을", "넣은 레시피에 새 판이 나왔대요. 내가 고친 건 어떻게 되나요?",
-            "설정 › 장터·내 레시피의 받은 레시피에서 ‘새 판 보기’를 누르세요. 넣을 때 값, 지금 내 값, 새 판 값을 칸마다 견줘서 내가 고친 칸은 그대로 두고 " +
+            "recipeUpdate", "마을", "넣은 작품에 새 판이 나왔대요. 내가 고친 건 어떻게 되나요?",
+            "설정 › 장터·내 작품의 받은 작품에서 ‘새 판 보기’를 누르세요. 넣을 때 값, 지금 내 값, 새 판 값을 칸마다 견줘서 내가 고친 칸은 그대로 두고 " +
                 "새 판에서만 바뀐 칸을 골라 넣어요. 둘 다 고친 칸은 ‘부딪힘’으로 따로 보여 주고 고르지 않으면 내 값이 남아요. " +
-                "알림이 싫으면 같은 화면의 ‘새 판 알림’을 끄거나 레시피마다 ‘새 판 알림’을 꺼요.",
+                "알림이 싫으면 같은 화면의 ‘새 판 알림’을 끄거나 작품마다 ‘새 판 알림’을 꺼요.",
             listOf("새 판", "업데이트", "새 버전", "부딪힘", "내가 고친", "새 판 알림"),
             listOf("장터"),
-            "장터·내 레시피 열기" to HelpAction.Go(SettingsGo.RECIPES),
+            "장터·내 작품 열기" to HelpAction.Go(SettingsGo.RECIPES),
         ),
         HelpTopic(
-            "recipeCommunity", "마을", "원하는 레시피가 없어요. 만든 분을 따라갈 수도 있나요?",
+            "recipeCommunity", "마을", "원하는 작품이 없어요. 만든 분을 따라갈 수도 있나요?",
             "마을 › 공방의 ‘이런 거 있었으면’에 바라는 걸 적으면 다른 분이 ‘만들게요’를 누르고 완성해 드려요. 금액·연락처·링크는 적을 수 없어요. " +
-                "레시피 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·탭별 작품·모음을 보고 팔로우할 수 있어요. " +
-                "요청 판과 팔로우·답 알림은 설정 › 장터·내 레시피에서 따로 끌 수 있어요.",
+                "작품 아래 ‘○○ 프로필’을 누르면 그분이 공개한 테마·탭별 작품·모음을 보고 팔로우할 수 있어요. " +
+                "요청 판과 팔로우·답 알림은 설정 › 장터·내 작품에서 따로 끌 수 있어요.",
             listOf("요청", "부탁", "만든 사람", "제작자", "팔로우", "배지", "답 알림", "요청 판"),
             listOf("장터"),
-            "장터·내 레시피 열기" to HelpAction.Go(SettingsGo.RECIPES),
+            "장터·내 작품 열기" to HelpAction.Go(SettingsGo.RECIPES),
         ),
         // [PRF-01][PRF-05] 1.36 창작자 프로필.
         HelpTopic(
@@ -419,7 +447,7 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "recipeLook", "마을", "화면 배치·여러 설정을 한 번에 나누고 싶어요",
-            "카드 배치 아래 ‘이 설정 나누기’로 배치를 나눠요. 마을 › 공방의 만들기 ‘묶음’에 코드를 넣으면 여러 레시피를 한 번에, ‘테마 색’으로 같은 색을 한 이름으로 묶어요. " +
+            "카드 배치 아래 ‘이 설정 나누기’로 배치를 나눠요. 마을 › 공방의 만들기 ‘묶음’에 코드를 넣으면 여러 작품을 한 번에, ‘테마 색’으로 같은 색을 한 이름으로 묶어요. " +
                 "표지 사진은 운영자가 본 뒤 보이고, 마지막 단계에서 일 유형마다 예시 달력을 미리 봐요.",
             listOf("화면 배치", "카드 순서", "묶음", "테마 색", "표지 사진", "예시 달력", "레시피 묶음"),
             listOf("장터"),
@@ -428,8 +456,8 @@ internal object HelpFaq {
         HelpTopic(
             "roster", "한 달 근무", "한 달 근무표를 한 번에 넣고 싶어요",
             "설정 › 내 근무 › ‘한 달 근무 넣기’에서 근무표를 보며 키를 누르면 하루씩 들어가요. D D E E N N O O를 넣고 ‘이 순서 반복’을 누르면 " +
-                "달 끝까지 채워요. 듀티표 사진·엑셀·PDF나 카톡 ‘공유’도 같은 달력에 채워지니 노란 칸만 보면 돼요. 반차는 0.5일, 병가처럼 회사마다 다른 휴가는 한 번만 물어요.",
-            listOf("듀티표", "한 달 근무", "근무표 넣기", "키패드", "직접 입력", "이 순서 반복", "반차", "병가", "공유", "붙여 넣기", "사진으로"),
+                "달 끝까지 채워요. 근무표 사진·엑셀·PDF나 카톡 ‘공유’도 같은 달력에 채워지니 노란 칸만 보면 돼요. 반차는 0.5일, 병가처럼 회사마다 다른 휴가는 한 번만 물어요.",
+            listOf("듀티표", "한 달 근무", "근무표 넣기", "키패드", "직접 입력", "이 순서 반복", "반차", "병가", "공유", "붙여 넣기", "사진으로", "사진 고르기", "스캐너"),
             listOf("한 달 근무 넣기", "달력"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
         ),
@@ -470,10 +498,12 @@ internal object HelpFaq {
         ),
         // ---- 1.25 묶음 U: [READ-04][READ-05][READ-08][READ-11] ----
         HelpTopic(
-            "rosterPhoto", "한 달 근무", "듀티표 사진을 못 읽거나 다른 줄을 읽어요",
-            "줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 ‘사진 위에서 누르기’로 날짜 줄과 내 줄을 한 번씩 눌러 주세요. " +
-                "‘무엇을 읽었는지 보기’로 앱이 본 줄을 볼 수 있고, 넣은 뒤엔 달력 › 도구 ‘방금 넣은 것 되돌리기’(10분 안)로 되돌려요.",
-            listOf("사진", "못 읽어", "인식", "인식 안", "다른 줄", "어느 줄", "조", "기울", "누르기", "되돌리기", "전체 넣기", "이번 달 전부 넣기"),
+            "rosterPhoto", "한 달 근무", "근무표 사진을 못 읽거나 다른 줄을 읽어요",
+            "줄이 여러 개면 ‘어느 줄(조)이 내 것인가요?’를 묻고 기억해요. 못 읽으면 ‘사진에서 내 줄 알려 주기’로 날짜 줄과 내 줄을 한 번씩 눌러 주세요. " +
+                "‘무엇을 읽었는지 보기’로 앱이 본 줄을 볼 수 있고, 넣은 뒤엔 달력 › 도구 ‘방금 넣은 것 되돌리기’(10분 안)로 되돌려요. " +
+                "처음 한 번은 글자 읽기 준비물을 받으니 와이파이에서 해 주세요.",
+            listOf("사진", "듀티표", "못 읽어", "인식", "인식 안", "다른 줄", "어느 줄", "조", "기울", "누르기", "되돌리기", "전체 넣기", "이번 달 전부 넣기",
+                "준비물", "멈추기", "와이파이"),
             listOf("한 달 근무 넣기", "달력"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
         ),
@@ -566,7 +596,7 @@ internal object HelpFaq {
         HelpTopic(
             "proBadge", "프로", "어떤 기능이 프로인가요?",
             "프로 기능 옆에는 ‘프로’ 표시가 붙어 있어요. 설정 › 프로 › ‘프로 기능 모아보기’에서 모두 보고 누르면 그 기능으로 바로 가요. " +
-                "정식 출시 전에는 모두 무료이고, 출시 뒤에 쓸 수 없는 기능은 자물쇠가 함께 보여요. 설정 목록은 일(파랑)·알림(주황)·화면(보라)·데이터와 개인정보(초록) 색으로 묶여 있어요.",
+                "프로가 아닐 때 쓸 수 없는 기능에는 자물쇠가 함께 보여요. 설정 목록은 일(파랑)·알림(주황)·화면(보라)·데이터와 개인정보(초록) 색으로 묶여 있어요.",
             listOf("프로", "유료", "프로 표시", "모아보기", "잠김", "자물쇠", "색", "설정 색"),
             listOf("설정 › 프로"),
             "프로 기능 모아보기 열기" to HelpAction.Go(SettingsGo.PRO),
@@ -610,7 +640,7 @@ internal object HelpFaq {
         // ---- 1.39 [NAV2-01] ----
         HelpTopic(
             "tabSlots", "화면", "아래 메뉴에 자주 쓰는 기능을 두고 싶어요",
-            "아래 막대의 칸 5개에 원하는 화면을 둘 수 있어요. 설정 › 화면과 글자 › ‘$TAB_ORDER_ROW’에서 칸을 눌러 잠·연차·받을 돈·급여 같은 화면으로 바꾸고, " +
+            "아래 메뉴의 칸 5개에 원하는 화면을 둘 수 있어요. 설정 › 화면과 글자 › ‘$TAB_ORDER_ROW’에서 칸을 눌러 잠·연차·받을 돈·급여 같은 화면으로 바꾸고, " +
                 "⋮ › ‘화면 더해 묶음 만들기’로 한 칸에 여러 화면을 묶어요. 묶은 칸을 누르면 목록이 떠서 한 번에 가요. " +
                 "막대에 없는 탭과 설정은 화면 위 ‘나’ 단추(사람 모양)에 있어요.",
             listOf("아래 메뉴", "탭 채우기", "탭 바꾸기", "묶음", "모음", "중첩 탭", "탭 안에 탭", "설정 어디", "설정 탭", "나 단추", "자주 쓰는"),
@@ -630,9 +660,9 @@ internal object HelpFaq {
         HelpTopic(
             "invite", "프로", "친구를 초대하면 무엇을 받나요?",
             // AG 1.27 [INVITE-09][INVITE-10]: each five friends, not one friend's days; recognised by the link itself.
-            "설정 맨 위나 설정 › 프로 › ‘친구 초대’로 링크를 보내요. 친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월이에요. " +
-                "링크로 깐 친구는 앱이 저절로 알아봐요. 같은 휴대폰은 한 번, 링크 없이 깔았으면 7일 안에 ‘초대 코드 넣기’. " +
-                "끄는 법: 친구는 ‘알리지 않고 저장’, 달력 카드는 ‘그만 보기’.",
+            // 2.0.0 [RVD-14][RVD-15] 사용자 결정 2026-11-12: 운영팀이 확인한 뒤 들어오고, 보상은 1년에 모두 합쳐 12개월까지.
+            // 2.0.0 [RVO-06] 링크 없이 깐 친구가 코드를 넣는 곳은 프로 맨 아래 한 칸(답은 220자 안). [RVO-13] PC-116 숫자는 서버 규칙.
+            inviteAnswer(invite),
             listOf("초대", "친구 초대", "추천", "초대 코드", "초대 링크", "프로 한 달", "공짜", "보상"),
             listOf("설정 › 프로"),
             "친구 초대 열기" to HelpAction.Go(SettingsGo.PRO),
@@ -661,7 +691,7 @@ internal object HelpFaq {
             "investCaptureTrust", "투자", "캡처를 넣으면 저절로 들어가나요? / 넣기 전에 묻게 하려면",
             "네. 체결 내역 캡처에서 시각·수량·단가가 다 읽히고 금액과 맞는 체결은 바로 넣어요(되돌리기). " +
                 "이미 적은 건 시각과 수량으로 건너뛰고, 알림과 같으면 그 알림을 확정해요. 다르거나 흐린 것만 물어요. " +
-                "묻게 하려면 투자 탭 ⋮ › ‘캡처로 채우기: 넣기 전에 묻기’.",
+                "묻게 하려면 투자 탭 ⋮ › 체결 알림·캡처 설정 › ‘캡처로 채울 때 넣기 전에 묻기’.",
             listOf("묻지 않기", "바로 넣기", "자동 넣기", "자동 인식", "매번 확인", "캡처", "이미 있음", "고침", "중복", "두 번 들어감", "다시 묻기", "넣기 전에 묻기", "안 들어가요"),
             listOf("투자"),
             "투자 탭 열기" to HelpAction.Tab(NoticeLinks.Target.INVEST),
@@ -707,9 +737,10 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "proSheet", "프로", "프로 기능을 누르면 나오는 세 가지는 무엇인가요?",
-            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 7일 열기’, ‘친구 초대로 프로 이용권 받기’를 함께 보여요. " +
-                "급여·돈 통계·인쇄·알람 미션은 묶음마다 처음 쓰는 날부터 7일 무료이고, 그 뒤에는 광고 한 편으로 7일씩 열려요(하루 두 편까지). " +
-                "광고가 안 와도 그냥 열리고, 기간이 끝나도 만든 결과는 그대로예요. 정식 출시 전에는 모두 무료라 나오지 않아요.",
+            // 2.0.0 [RVO-13] HQ-46: 220자 안에(SettingsSearchTest), 3.1 동의 전 휴대폰만 빼고.
+            "프로가 아닐 때 프로 기능을 누르면 프로(무료 체험), ‘광고 보고 7일 열기’, ‘친구를 초대하면 무료로 써요’를 함께 보여요. " +
+                "급여·돈 통계·인쇄·알람 미션은 묶음마다 처음 7일 무료, 그 뒤에는 광고 한 편으로 7일씩 열려요(하루 두 편까지). " +
+                "광고가 안 와도 열리고 만든 결과는 남아요. 3.1 동의 전이라 모두 무료인 휴대폰에는 나오지 않아요.",
             listOf("광고 보기", "7일 열기", "묶음", "프로 이용권", "잠김", "자물쇠", "친구 초대"),
             listOf("설정 › 프로"),
             "프로 보기" to HelpAction.Go(SettingsGo.PRO),
@@ -752,7 +783,7 @@ internal object HelpFaq {
         HelpTopic(
             "photoCheck", "사진 인식", "사진을 잘못 읽었어요. 어떻게 고치나요?",
             "사진을 읽으면 읽은 칸·줄을 사진과 나란히 보여 주고 ‘사진과 내용이 같은가요?’를 물어요. ‘다른 곳이 있어요’를 누르고 다른 칸만 눌러 고쳐요. " +
-                "노란 칸은 읽은 결과가 갈린 곳이에요. 같은 글자를 두 번 같게 고치면 다음부터 그렇게 읽어요. 비스듬한 사진은 ‘스캐너로 반듯하게 찍기’를 써 보세요.",
+                "노란 칸은 읽은 결과가 갈린 곳이에요. 같은 글자를 두 번 같게 고치면 다음부터 그렇게 읽어요. 비스듬한 사진은 ‘스캐너로 찍기’를 써 보세요.",
             listOf("잘못 읽", "인식", "틀려", "다른 곳", "사진과 같", "노란 칸", "스캐너", "그림자", "비스듬", "고치기"),
             listOf("한 달 근무 넣기", "급여", "명세서"),
             "한 달 근무 넣기 열기" to HelpAction.Go(SettingsGo.DUTY_ROSTER),
@@ -834,7 +865,7 @@ internal object HelpFaq {
         ),
         HelpTopic(
             "unitRules", "공수", "끝난 시각으로 공수를 정하고 싶어요 (17시 1공, 19시 1.5공)",
-            "달력 고치기 › 일 세는 방법에서 ‘끝난 시각으로 공수 정하기’ 규칙과 날짜를 누르면 나오는 공수 버튼을 바꿔요. 날짜의 ‘끝난 시각으로’는 시각만 고르면 공수를 적어요.",
+            "달력 고치기 › 세는 방식에서 ‘끝난 시각으로 공수 정하기’ 규칙과 날짜를 누르면 나오는 공수 단추를 바꿔요. 날짜의 ‘끝난 시각으로’는 시각만 고르면 공수를 적어요.",
             listOf("공수", "끝난 시각", "1.5공", "야리끼리", "연장 공수", "공수 버튼", "일당"),
             listOf("달력", "일감·수입"),
         ),
@@ -1046,7 +1077,17 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     val first = HelpFaq.firstFor(style)
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
         .map { if (style == com.bamnat.core.work.WorkStyle.HOURLY) it.copy(question = workplaceWords(it.question), answer = workplaceWords(it.answer)) else it }
+        .map { if (style.usesCompany) it else companyFreeWords(it, style) }
 }
+
+/**
+ * 2.0.0 [RVH-53] HQ-27 (조건 13): where the work has no company the first setup asks no 회사 찾기, so its answer says what it does
+ * ask, as 설정 › 내 근무's row does ([J133-71]).
+ */
+private fun companyFreeWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic = t.copy(
+    answer = t.answer.replace("회사 찾기부터 근무·급여까지", if (style.usesPayEngine) "근무 시간과 요일, 알람, 급여까지" else "일하는 방식부터"),
+    keywords = t.keywords - "회사 찾기",
+)
 
 /**
  * [J133-87] 1.33 빌드 6 (알바 도움말에 '회사 계산 방법'·'회사 규칙'): 알바's pay tab is 근무지 규칙, so the answers say what the

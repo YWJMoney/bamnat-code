@@ -189,11 +189,21 @@ export async function careHold(d, env, dev, { scope, days, reason, note = null, 
   return { id, kind: scope, reason, days, until: isoOf(until) };
 }
 
-/** 풀기(쉬기) 또는 거두기(경고). 마을 쉬기가 넣은 `muted`도 빼요(다른 쉬기가 남아 있으면 그 끝으로). */
-export async function careLift(d, env, id, now) {
+/** 2.0.0 [RVA-03] 운영자가 건 지 이만큼 안이면 '되돌리기'로 기록과 소식까지 없던 일로 해요(관리자 앱 15초 되돌리기 + 늦은 응답 여유). */
+export const CARE_UNDO_MS = 60 * 1000;
+
+/**
+ * 풀기(쉬기) 또는 거두기(경고). 마을 쉬기가 넣은 `muted`도 빼요(다른 쉬기가 남아 있으면 그 끝으로).
+ * 2.0.0 [RVA-03] 검토 ADM-04·U23-03: [undo]면 운영자가 1분 안에 건 것만, 기록과 그때 넣은 밤낮 소식 한 줄을 지워 받은 분에게 '풀렸어요'도 가지 않아요.
+ */
+export async function careLift(d, env, id, now, { undo = false } = {}) {
   const r = typeof id === "string" && /^c[A-Za-z0-9]{15}$/.test(id) ? await d.one(env, "SELECT * FROM care_notes WHERE id = ?", id) : null;
   if (!r || r.lifted_at) return null;
-  const stmts = [d.stmt(env, "UPDATE care_notes SET lifted_at = ? WHERE id = ?", now, id)];
+  if (undo && (r.by !== "operator" || now - r.at > CARE_UNDO_MS)) return { error: "late" };
+  const stmts = undo
+    ? [d.stmt(env, "DELETE FROM care_notes WHERE id = ?", id),
+      d.stmt(env, "DELETE FROM plaza_results WHERE device = ? AND kind = 'care' AND result = ? AND at = ?", r.device, r.kind, r.at)]
+    : [d.stmt(env, "UPDATE care_notes SET lifted_at = ? WHERE id = ?", now, id)];
   if (r.kind === "community") {
     const other = await d.one(env, `SELECT MAX(until) AS until FROM care_notes WHERE device = ? AND kind = 'community' AND lifted_at IS NULL AND until > ? AND id != ?`,
       r.device, now, id);
@@ -201,9 +211,9 @@ export async function careLift(d, env, id, now) {
       ? d.stmt(env, "UPDATE muted SET until = ? WHERE device = ? AND reason = 'care'", other.until, r.device)
       : d.stmt(env, "DELETE FROM muted WHERE device = ? AND reason = 'care'", r.device));
   }
-  if (r.kind !== "warn" && (r.until ?? 0) > now) stmts.push(news(d, env, r.device, "lifted", now));
+  if (!undo && r.kind !== "warn" && (r.until ?? 0) > now) stmts.push(news(d, env, r.device, "lifted", now));
   await d.batch(env, stmts);
-  return { id, lifted: true, kind: r.kind };
+  return { id, lifted: true, kind: r.kind, ...(undo ? { undone: true } : {}) };
 }
 
 /** 날마다 정리: 끝난 의견 쉬기는 소식 한 번(마을 쉬기는 `muted`가 끝날 때 'unmuted'로 알려요), 끝난 지 180일 지난 기록은 지움. */
@@ -336,8 +346,11 @@ export async function careList(d, env, now) {
     d.one(env, "SELECT COUNT(*) AS n, MIN(at) AS oldest FROM write_strikes WHERE confirmed = 0 AND at > ?", now - 30 * DAY),
   ]);
   const HOUR = DAY / 24;
+  const on = await careOn(d, env, now);
   return {
-    on: await careOn(d, env, now),
+    on,
+    // 2.0.0 [RVD-18] 마을 돌봄 전(12-09)에도 처리방침 3.12 시행일부터 신고로 가려진 것은 확인을 기다려요.
+    confirmed: on || Boolean(d.legalOpen && (await d.legalOpen(env, "community.confirmed", now))),
     appeals: waiting.map((a) => ({ inquiry: a.inquiry_id, kind: a.target.startsWith("post:") ? "post" : a.target === "limit" ? "limit" : "note",
       at: isoOf(a.at), hoursLeft: Math.floor((a.at + APPEAL.answerHours * HOUR - now) / HOUR) })),
     unconfirmed: { n: open?.n ?? 0, ...(open?.oldest ? { daysLeft: Math.max(0, Math.ceil((open.oldest + 30 * DAY - now) / DAY)) } : {}) },

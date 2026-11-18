@@ -102,8 +102,14 @@ class AlarmActivity : ComponentActivity() {
         return super.onKeyUp(keyCode, event)
     }
 
+    // 2.0.0 [RVI-50] (검토 ALM-18) A turn or a fold mid-mission keeps the mission open (its own progress is saved in it).
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(K_SOLVING, solving.value)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
-        if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true) solving.value = true
+        if (intent?.getBooleanExtra(EXTRA_MISSION, false) == true || savedInstanceState?.getBoolean(K_SOLVING) == true) solving.value = true
         if (intent?.getBooleanExtra(EXTRA_ALL_OFF, false) == true) AlarmService.allOffAfterMission(true)
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
@@ -116,7 +122,12 @@ class AlarmActivity : ComponentActivity() {
             )
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        enableEdgeToEdge()
+        // 2.0.0 [RVIB-15] (PC-123) The ringing screen is always dark: on a light phone the default bars put a pale band under it.
+        // Dark bars with no scrim of their own; a light 알람 화면 look still turns the icons dark ([com.bamnat.app.ui.theme.ScreenSkin] bars).
+        enableEdgeToEdge(
+            statusBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = androidx.activity.SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
+        )
         val snoozeMinutes = BootAlarms.ringSettings(this).snoozeMinutes
         val buttons = BootAlarms.ringSettings(this).buttons
         // [ALRM-04] 증명 사진's fingerprints; none before the first unlock after a restart, and then it is sums.
@@ -164,9 +175,9 @@ class AlarmActivity : ComponentActivity() {
                     )
                 } else if (current != null) {
                     RingingScreen(
-                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.work(current.shiftName),
+                        title = if (current.recheck) current.title else current.label ?: if (current.shiftName.isBlank()) "알람" else com.bamnat.core.alarm.AlarmWords.work(current.shiftName, BootAlarms.ringSettings(this).style),
                         // 1.38 [SLEEP-08] "얕은 잠이라 12분 일찍 깨웠어요" under the same words when it came early.
-                        subtitle = listOfNotNull(AlarmService.describe(current), com.bamnat.app.sleep.SmartWake.earlyLine(this, current, AlarmService.ringStartedAt.takeIf { it > 0L } ?: Today.millis())).joinToString("\n"),
+                        subtitle = listOfNotNull(AlarmService.describe(current, BootAlarms.ringSettings(this).style), com.bamnat.app.sleep.SmartWake.earlyLine(this, current, AlarmService.ringStartedAt.takeIf { it > 0L } ?: Today.millis())).joinToString("\n"),
                         snoozeMinutes = snoozeMinutes,
                         dismissLabel = if (mission == AlarmMission.NONE) "알람 끄기" else "알람 끄기 · ${mission.label}",
                         onSnooze = { AlarmService.snooze(this@AlarmActivity) },
@@ -180,7 +191,7 @@ class AlarmActivity : ComponentActivity() {
                         },
                         hint = AlarmButtons.hint(buttons, mission != AlarmMission.NONE),
                         inCall = inCall,
-                        shift = ringShift(current, Today.date()),
+                        shift = ringShift(current, Today.date(), BootAlarms.ringSettings(this).style),
                         // [EASE-19] With a mission 끄기 opens the mission, so the shortcut is left out.
                         onToday = if (mission == AlarmMission.NONE) ({ dismissAndOpenToday() }) else null,
                         stage = stage,
@@ -199,7 +210,7 @@ class AlarmActivity : ComponentActivity() {
     private fun dismissAndOpenToday() {
         val open = {
             AlarmService.dismiss(this)
-            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY)) }
+            runCatching { startActivity(com.bamnat.app.NoticeLinks.intent(this, com.bamnat.app.NoticeLinks.Target.TODAY, payload = com.bamnat.app.NoticeLinks.TODAY_DAY)) }
             Unit
         }
         val keyguard = getSystemService(android.app.KeyguardManager::class.java)
@@ -211,6 +222,8 @@ class AlarmActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val K_SOLVING = "solving"
+
         /** [PROV-06] Open on the mission rather than the ringing screen. */
         const val EXTRA_MISSION = "com.bamnat.app.alarm.extra.MISSION"
         /** [ALRM-09] 오늘 모두 끄기 from the notice of a mission alarm: it waits for the mission. */

@@ -1,7 +1,8 @@
-import { all, deviceHash, deviceId, json, overLimit, readJson, run } from "./index.js";
+import { all, deviceHash, deviceId, json, overLimit, readJson, run, stmt } from "./index.js";
 import { fcmTellDevices } from "./fcm.js";
 import { PEOPLE_FORMS } from "./plaza-people.js";
 import { HOUR } from "./units.js";
+import { makerId } from "./recipes.js";
 
 // ---- 1.39 [PLZC-41] 광장 답 바로 알림 (사용자 결정 12번, 2026-11-07 19:21; 처리방침 3.12 ⑥) ----
 //
@@ -44,42 +45,58 @@ export async function plazaWatchRoute(request, env, on) {
   return json({ ok: true });
 }
 
-/** The phones of [devices] not told of [kind] within [gap], marked as told now. */
-async function plazaPushDue(env, devices, kind, gap, now) {
-  if (!devices.length) return [];
+/** The phones of [devices] told of [kind] within [gap] (2.0.0 [RVN-04][SVC-91] reading only: a phone is marked told once Google took it). */
+async function recentlyTold(env, devices, kind, gap, now) {
   const recent = new Set();
   for (let i = 0; i < devices.length; i += 90) {
     const part = devices.slice(i, i + 90);
     for (const r of await all(env, `SELECT device FROM plaza_pushed WHERE kind = ? AND at > ? AND device IN (${part.map(() => "?").join(",")})`,
       kind, now - gap, ...part)) recent.add(r.device);
   }
-  const due = devices.filter((d) => !recent.has(d));
-  for (const d of due) {
-    await run(env, `INSERT INTO plaza_pushed (device, kind, at) VALUES (?, ?, ?) ON CONFLICT (device, kind) DO UPDATE SET at = excluded.at`, d, kind, now);
-  }
-  return due;
+  return recent;
+}
+
+/**
+ * 2.0.0 [RVN-04][SVC-91] Tells [devices] of [kind] and marks as told only the phones Google took the message for, in one batch: before, every
+ * phone was marked first (one write each), so a failed send still kept it quiet for three hours.
+ */
+async function tellAndMark(env, devices, kind, now) {
+  if (!devices.length) return [];
+  const ok = new Set();
+  await fcmTellDevices(env, devices, kind, now, ok);
+  const told = devices.filter((d) => ok.has(d));
+  const mark = `INSERT INTO plaza_pushed (device, kind, at) VALUES (?, ?, ?) ON CONFLICT (device, kind) DO UPDATE SET at = excluded.at`;
+  if (told.length) await env.DB.batch(told.map((d) => stmt(env, mark, d, kind, now)));
+  return told;
 }
 
 /**
  * After a post in a kind of work's 광장 by [writer]: an answer tells the question's writer; a question with a 근무형태 tells those who
  * watch it there. Returns {kind, devices} told (for tests), never throws.
+ *
+ * 2.0.0 [RVN-04][SVC-92] Nobody hears of a writer they blocked (recipe_blocks holds the one-way maker id, the same one 광장 hides by).
+ * [SVC-91] The question's watchers are those not told within questionGap, longest waiting first (before: the newest 200 watchers, so a
+ * long-time watcher of a busy 근무형태 never heard), and only phones Google took the message for count as told.
  */
 export async function plazaPushAfter(env, { room, writer, parent, kind, form, on }, now = Date.now()) {
   if (!on) return null;
   try {
+    const maker = await makerId(writer);
     if (parent) {
       const q = (await all(env, "SELECT device, kind, status FROM posts WHERE id = ?", parent))[0];
       if (!q || q.kind !== "question" || q.status !== "shown" || q.device === writer) return null;
-      const due = await plazaPushDue(env, [q.device], "plaza_answer", PLAZA_PUSH.answerGap, now);
-      await fcmTellDevices(env, due, "plaza_answer", now);
-      return { kind: "plaza_answer", devices: due };
+      if ((await all(env, "SELECT 1 AS x FROM recipe_blocks WHERE device = ? AND maker = ?", q.device, maker)).length) return null;
+      if ((await recentlyTold(env, [q.device], "plaza_answer", PLAZA_PUSH.answerGap, now)).size) return { kind: "plaza_answer", devices: [] };
+      return { kind: "plaza_answer", devices: await tellAndMark(env, [q.device], "plaza_answer", now) };
     }
     if (kind !== "question" || !form || !PLAZA_PUSH_ROOMS[room]) return null;
-    const watchers = (await all(env, `SELECT device FROM plaza_watch WHERE room = ? AND form = ? AND device <> ? ORDER BY at DESC LIMIT ${PLAZA_PUSH.watchers}`,
-      room, form, writer)).map((r) => r.device);
-    const due = await plazaPushDue(env, watchers, "plaza_question", PLAZA_PUSH.questionGap, now);
-    await fcmTellDevices(env, due, "plaza_question", now);
-    return { kind: "plaza_question", devices: due };
+    const watchers = (await all(env, `SELECT w.device FROM plaza_watch w
+      LEFT JOIN plaza_pushed p ON p.device = w.device AND p.kind = 'plaza_question'
+      WHERE w.room = ? AND w.form = ? AND w.device <> ? AND (p.at IS NULL OR p.at <= ?)
+        AND NOT EXISTS (SELECT 1 FROM recipe_blocks b WHERE b.device = w.device AND b.maker = ?)
+      ORDER BY COALESCE(p.at, 0) ASC, w.at ASC LIMIT ${PLAZA_PUSH.watchers}`,
+    room, form, writer, now - PLAZA_PUSH.questionGap, maker)).map((r) => r.device);
+    return { kind: "plaza_question", devices: await tellAndMark(env, watchers, "plaza_question", now) };
   } catch (e) {
     console.error("plaza push", e && e.stack ? e.stack : String(e));
     return null;

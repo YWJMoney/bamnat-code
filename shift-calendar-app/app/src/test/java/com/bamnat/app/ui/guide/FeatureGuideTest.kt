@@ -18,7 +18,8 @@ class FeatureGuideTest {
     @Test
     fun everyRouteLeadsSomewhere() {
         val rows = SettingsIndex.entries().mapNotNull { it.place as? SettingPlace.Row }
-        for (f in FeatureRegistry.all) {
+        // 2.0.0 [RVP-75] (검토 REST-19) Also the features behind a flag (사장님, 결제, 레시피): their way is checked before they are on.
+        for (f in FeatureRegistry.everything) {
             val place = f.route.place
             if (place.isSettings) {
                 val page = place.settingsPage()
@@ -27,9 +28,11 @@ class FeatureGuideTest {
             } else if (place == Place.PAY && f.route.focus != null) {
                 // U 1.32 [UX132-02] The pay screen opens on the tab (and value) a focus names.
                 assertNotNull("${f.id}: ${f.route.focus}", com.bamnat.app.ui.pay.PayFocus.of(f.route.focus))
+            } else if (place == Place.CALENDAR && f.route.focus == "month") {
+                // [RVP-75] A card over the month: the calendar tab, not today's sheet.
             } else if (f.route.focus != null) {
                 assertTrue("${f.id}: ${f.route.focus}", f.route.focus in TOOL_KEYS)
-                assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus == "customize")
+                assertTrue(f.id, place == Place.STATS || place == Place.MONEY || place == Place.CALENDAR && f.route.focus in setOf("customize", "typeMonth"))
             }
         }
         // 기능 켜고 끄기 is found and opened from settings too.
@@ -39,7 +42,8 @@ class FeatureGuideTest {
     /** [GUIDE-05] A switch that was there before has its own branch; no feature copies one. */
     @Test
     fun everySwitchHasAHome() {
-        val linked = FeatureRegistry.all.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
+        // Every feature, also one behind a flag that is off here ([FeatureRegistry.everything]): its switch row is there all the same.
+        val linked = FeatureRegistry.everything.filter { it.off == Off.ELSEWHERE }.map { it.id }.toSet()
         assertEquals(linked, FeatureSwitches.LINKED)
         // Each kind of work has something to turn off, and the guide itself can always be turned off.
         for (style in listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD, WorkStyle.BUSINESS, WorkStyle.INVEST)) {

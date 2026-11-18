@@ -84,7 +84,7 @@ fun DayOfMonthPicker(day: Int, onPick: (Int) -> Unit, modifier: Modifier = Modif
                                 label,
                                 style = style.copy(color = androidx.compose.material3.LocalContentColor.current, textAlign = TextAlign.Center),
                                 maxLines = 1,
-                                autoSize = TextAutoSize.StepBased(minFontSize = 9.sp, maxFontSize = style.fontSize),
+                                autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = style.fontSize),
                             )
                         }
                     }
@@ -115,7 +115,8 @@ fun TimeField(
     presets: List<LocalTime> = DEFAULT_PRESETS,
 ) {
     var picking by remember { mutableStateOf(false) }
-    val shown = time?.let { "%02d:%02d".format(it.hour, it.minute) }
+    // 2.0.0 [RVP-27] (검토 UIX-50) In the clock the settings chose.
+    val shown = time?.let { com.bamnat.app.ui.Fmt.time(it) }
     Surface(
         onClick = { picking = true },
         shape = MaterialTheme.shapes.extraSmall,

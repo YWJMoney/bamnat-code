@@ -247,22 +247,31 @@ class CompanyScreenshotTest : ScreenshotBase() {
         settle()
         tapText("달력 바꾸기", prefix = true)
     }
+    /**
+     * 2.0.0 [RVP-45] 검토 U13-01: someone else's calendar from the calendar chip's list, as the head is one row now and the other
+     * calendars' faces wait in that list on a phone (the received calendar's own bar keeps '내 달력으로', one tap back).
+     */
+    private fun Screen.viewReceived(name: String) {
+        tapText("달력 바꾸기", prefix = true, scrolls = 0)
+        tapText(name, exact = true)
+    }
+
     @Test fun foldedReceivedCalendar() = shoot("134_folded_received_calendar", FOLDED) {
         receivedOn()
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
     }
     @Test fun foldedReceivedDay() = shoot("135_folded_received_day", FOLDED) {
         receivedOn()
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
         tapText(Fmt.dayTitle(restTogether()), prefix = true, scrolls = 0)
         reveal("둘 다 쉬는 날이에요")
     }
     @Test fun unfoldedReceivedCalendar() = shoot("136_unfolded_received_calendar", UNFOLDED) {
         receivedOn()
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
         tapText(Fmt.dayTitle(restTogether()), prefix = true, scrolls = 0)
     }
     @Test fun foldedReceivedLink() = shoot("137_folded_received_link", FOLDED) {
@@ -280,7 +289,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun foldedReceivedDark() = shoot("139_folded_received_dark", "w369dp-h905dp-port-night-420dpi") {
         receivedOn()
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
     }
 
     @Test fun foldedMyCalendarsSwitcher() = shoot("210_folded_my_calendars_switcher", FOLDED) {
@@ -304,12 +313,12 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun calReceivedJobs() = shoot("311_folded_received_jobs", FOLDED) {
         jobsLinkOn()
         settle()
-        tapText("준호의 근무표 보기", exact = true)
+        viewReceived("준호의 일정")
     }
     @Test fun calReceivedJobsDay() = shoot("312_unfolded_received_jobs", UNFOLDED) {
         jobsLinkOn()
         settle()
-        tapText("준호의 근무표 보기", exact = true)
+        viewReceived("준호의 일정")
         tapText(Fmt.dayTitle(today), prefix = true, scrolls = 0)
     }
 
@@ -334,8 +343,8 @@ class CompanyScreenshotTest : ScreenshotBase() {
 
     @Test fun phoneNoticeLine() = shoot("410_phone_notice_line", PHONE) { opsOn() }
     @Test fun phoneNoticeOpen() = shoot("411_phone_notice_open", PHONE) {
-        // [CAL-50] The notice waits folded under the alarm warning.
-        opsOn(); settle(); tapText("알림 1개 더 보기", prefix = true, scrolls = 0); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0)
+        // 2.0.0 [RVP-43] HQ-49: the notice is a row of the 알림함, opened in place there.
+        opsOn(); settle(); openNotice("공지"); tapText("오늘 밤 2시 30분 동안 점검해요", exact = true, scrolls = 0)
     }
     @Test fun phonePlazaRules() = shoot("412_phone_plaza_rules", PHONE) {
         app.container.settingsRepository.update { it.copy(plazaRulesAgreed = 0) }
@@ -356,7 +365,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
         vm.activity.show()
         settle()
-        reveal("가린 사람")
+        reveal("안 보는 사람")
     }
     @Test fun phonePlazaWritePaused() = shoot("415_phone_plaza_write_paused", PHONE) {
         opsOn(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)
@@ -383,7 +392,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
     @Test fun foldedReceivedReport() = shoot("419_folded_received_report", FOLDED) {
         receivedOn()
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
         tapText("이 근무표 신고하기", exact = true)
     }
     @Test fun phoneInquiryPhotos() {
@@ -519,7 +528,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         // 민지's 주주휴휴야야휴휴 is quiet under 기본 and 더 엄격하게; a ward that wants 3 days off after nights sees it.
         app.container.settingsRepository.update { it.copy(restRules = com.bamnat.core.schedule.RestRules(offsAfterNights = 3).encode()) }
         settle()
-        tapText("민지의 근무표 보기", exact = true)
+        viewReceived("민지의 근무표")
         reveal("님 근무표 점검")
     }
 }

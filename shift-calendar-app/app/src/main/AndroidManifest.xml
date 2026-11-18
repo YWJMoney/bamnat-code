@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 2.0.0 [RVI-97] 근무 중 잠금 화면 진행 막대를 상태 표시줄 칩으로(안드로이드 16, '오늘 근무' 알림을 켠 사람만). -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
     <!-- [MKT-09] Only for read-only schedule links the user makes; nothing else goes online. -->
     <!-- Android 12: exact alarms. Android 13+: USE_EXACT_ALARM, allowed for calendar/alarm apps. -->
     <uses-permission
@@ -47,6 +49,10 @@
 
     <queries>
         <package android:name="com.google.android.apps.healthdata" />
+        <!-- 2.0.0 [RVIB-01] 말로 적기: whether the phone has speech recognition to hand a line to. -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 
     <application
@@ -98,6 +104,8 @@
         </provider>
 
         <!-- resizeableActivity + configChanges keep state smooth when a Fold opens or closes.
+             2.0.0 [RVG-14] 검토 UIX-08: uiMode·fontScale too, so 어두운 모드 at dusk or a new 글자 크기 does not close an open
+             sheet (돈 적기 창 PC 9차 재현); Compose reads both from the configuration and the bars follow `dark`.
              singleTop: a shared calendar link tapped while the app is open comes to onNewIntent [SHR-02]. -->
         <activity
             android:name=".MainActivity"
@@ -105,7 +113,7 @@
             android:launchMode="singleTop"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize"
-            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboardHidden">
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|density|keyboardHidden|uiMode|fontScale">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -229,6 +237,18 @@
         <!-- 1.39 [TASK-39] 끝내기 on a memo's schedule notice: the memo is finished for real, in the list and on the 할 일 위젯. -->
         <receiver
             android:name=".memo.MemoDoneReceiver"
+            android:exported="false" />
+        <!-- 2.0.0 [RVI-99] 놓친 일정 한 장의 모두 끝내기·쉬는 날로. -->
+        <receiver
+            android:name=".memo.MemoMissedReceiver"
+            android:exported="false" />
+        <!-- 2.0.0 [RVIB-05] 지난 할 일 한 장: the day off's morning and its three answers. -->
+        <receiver
+            android:name=".memo.MemoRestCardReceiver"
+            android:exported="false" />
+        <!-- 2.0.0 [RVI-26] The memo notice swiped away: what it showed does not come back. -->
+        <receiver
+            android:name=".memo.MemoNoticeClearedReceiver"
             android:exported="false" />
 
         <!-- [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 알람 and 바로 기록 from its notice. -->
@@ -358,6 +378,18 @@
             android:isolatedProcess="true"
             android:process=":fontprobe" />
 
+        <!-- 2.0.0 [RVI-88] The today widget's alarm: a small window with 이번만 끄기 · 다시 켜기. Only the widget opens it. -->
+        <!-- 2.0.0 [RVI-97] 잠금 화면 '오늘 근무' 다시 그리기 (근무 중 진행 막대). -->
+        <receiver
+            android:name=".alarm.TodayShiftTickReceiver"
+            android:exported="false" />
+        <activity
+            android:name=".alarm.AlarmPeekActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Bamnat.Quick" />
+
         <!-- 1.39 [TASK-39] 다른 때… on a memo's schedule notice: a small window that asks when to tell again. Only our notice opens it. -->
         <activity
             android:name=".memo.MemoLaterActivity"
@@ -457,6 +489,27 @@
             android:name=".company.InquiryReplyJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 2.0.0 [RVI-89] 충전하면 소리 재기 묻기: runs once the phone charges around the time to sleep. -->
+        <service
+            android:name=".sleep.SleepRecordOfferJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- 2.0.0 [RVI-96] 충전하면 잠 잡기: the charger near bedtime, the stillness after, the morning's question. -->
+        <service
+            android:name=".sleep.SleepNoTapJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- [R200-03] 구독 끝 무렵 하루 한 번 결제 다시 읽기. -->
+        <service
+            android:name=".tier.ProRecheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 2.0.0 [RVN-13] COMP-51 What a push asked for (문의 답, 광장 답), run as an expedited job so Doze does not hold it back. -->
+        <service
+            android:name=".company.PushCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
 
         <!-- [SRV-07][INQ-05][SHR-13] What could not reach a server, sent once the phone is online. -->
         <service
@@ -476,6 +529,11 @@
                     android:scheme="wear" />
             </intent-filter>
         </service>
+
+        <!-- 2.0.0 [RVI-11] 되돌리기 on '워치에서 오늘 알람을 껐어요'. -->
+        <receiver
+            android:name=".watch.WatchAlarmUndoReceiver"
+            android:exported="false" />
 
         <receiver
             android:name=".alarm.SystemEventReceiver"

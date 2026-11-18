@@ -405,6 +405,9 @@ class PlayBilling(
             record = record.copy(
                 state = checked.state ?: record.state, expiry = checked.expiry ?: record.expiry, trial = checked.trial,
                 autoRenew = checked.autoRenew, verified = true, consentAt = checked.consentAt ?: record.consentAt, stoppedAt = checked.stoppedAt,
+                // 1.39.1 [R391-12] The plan as the server read it from Play, as for a 팀·직원 요금제: a purchase taken from the query
+                // (a new phone, the app closed while buying) had none, so the trial was asked about with the 월 요금.
+                basePlan = checked.basePlan ?: record.basePlan,
             )
         }
         store.setSub(record)

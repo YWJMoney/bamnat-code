@@ -77,6 +77,7 @@ object SetupDraftCodec {
         .put("alarmByType", JSONObject().apply { d.alarmByType.forEach { (id, m) -> put(id.toString(), m ?: -1) } })
         .putOpt("source", d.source?.let(::sourceJson))
         .put("later", d.later).put("committing", d.committing).put("linkTitle", d.linkTitle)
+        .putOpt("workAs", d.workAs?.name)
 
     fun decode(o: JSONObject): SetupDraft {
         val d = SetupDraft()
@@ -117,6 +118,8 @@ object SetupDraftCodec {
             later = o.optBoolean("later"),
             committing = o.optBoolean("committing"),
             linkTitle = o.optString("linkTitle"),
+            // [RVG-16] A draft from before has none: 교대, as it was.
+            workAs = o.optString("workAs").let { n -> WorkStyle.entries.firstOrNull { it.name == n } },
         )
     }
 

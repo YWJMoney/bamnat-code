@@ -112,8 +112,19 @@ internal fun InsuranceOffRow(off: Set<InsuranceLine>, onChange: (Set<InsuranceLi
         }
     }
     Text("국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
-        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 넘게 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
+        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+}
+
+/**
+ * 2.0.0 [RVJ-05] 검토 PAYC-20·U04-05: in a year whose 요율 are not in the app yet (2028-01 with 2027 known), says the 실수령 is
+ * worked out on last year's values (국민연금 follows the law's yearly step). Nothing once the year is in.
+ */
+@Composable
+fun StaleRatesNote(month: java.time.YearMonth, modifier: Modifier = Modifier) {
+    val y = com.bamnat.core.pay.RateTable.staleYear(month.atDay(1)) ?: return
+    Text("${month.year}년 요율 대기 중 · ${y}년 값으로 어림했어요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }
 
 /** [HRLY-04] "예상 실수령 1,784,750원 (4대보험)" under a pay before tax; nothing when no tax is taken. */
@@ -173,6 +184,7 @@ internal fun HourlyPayCard(
             Text("실수령 ${if (unlocked) won(r.net) else "●●●원"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary)
         }
+        StaleRatesNote(month)
         Text(
             when (profile.taxMode) {
                 TaxMode.NONE -> "가게에서 세금을 떼지 않으면 세전 금액이 그대로 들어와요."

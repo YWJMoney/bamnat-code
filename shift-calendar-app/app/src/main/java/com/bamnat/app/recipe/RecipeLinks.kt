@@ -25,7 +25,7 @@ object RecipeLinks {
     fun app(code: String) = "bamnat://r/$code"
 
     /** What 링크 보내기 sends: the title, the link and the code to type in. */
-    fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
+    fun shareText(title: String, code: String) = "‘$title’ 작품 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
 
     /**
      * [PRF-11] 1.36 프로필 링크: the company server's small public page of a maker (`/m/<id>`, which opens the app with
@@ -53,6 +53,12 @@ object RecipeLinks {
 
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
+
+    /** 2.0.0 [RVM-36] HQ-52: the work whose page opens at its 이야기 (an 알림함 row said a 글 came), taken once by the page. */
+    @Volatile var talkFocus: String? = null
+
+    /** Whether the page of [code] opens at its 이야기; asked once. */
+    fun takeTalkFocus(code: String): Boolean = (talkFocus == code).also { if (it) talkFocus = null }
 
     /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
     @Volatile var tryNext: String? = null

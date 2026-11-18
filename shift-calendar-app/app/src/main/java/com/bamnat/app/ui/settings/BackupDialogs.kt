@@ -3,8 +3,14 @@ package com.bamnat.app.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.WarningAmber
+import androidx.compose.material3.Icon
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -17,6 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.bamnat.app.ui.theme.color
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -39,6 +48,10 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
     val photos by androidx.compose.runtime.produceState<com.bamnat.app.data.BackupPhotos.Size?>(null) {
         value = c?.takeIf { it.settingsRepository.current.backupPhotos }?.let { runCatching { it.backupManager.photoSize() }.getOrNull() }
     }
+    // 2.0.0 [RVL-13] (검토 DATA-13·U12-01·T12-02) What a file without a password leaves out on this phone, said first and plainly.
+    val gaps by androidx.compose.runtime.produceState<com.bamnat.app.data.PlainLeavesOut?>(null) {
+        value = c?.let { runCatching { it.backupManager.plainLeavesOut() }.getOrNull() }
+    }
     var first by remember { mutableStateOf("") }
     var second by remember { mutableStateOf("") }
     val mismatch = second.isNotEmpty() && first != second
@@ -48,6 +61,13 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
         title = { Text("백업에 암호를 걸까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                gaps?.takeIf { !it.isEmpty }?.let { g ->
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Outlined.WarningAmber, contentDescription = null,
+                            tint = com.bamnat.app.ui.theme.Tone.Caution.color(), modifier = Modifier.size(18.dp))
+                        Text(g.line, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.semantics { contentDescription = "주의, ${g.line}" })
+                    }
+                }
                 Text(
                     "암호를 걸면 파일을 다른 사람이 열어 볼 수 없어요. 암호는 어디에도 저장하지 않아서 잊으면 이 백업을 열 수 없어요.",
                     style = MaterialTheme.typography.bodySmall,
@@ -64,8 +84,10 @@ fun ExportPasswordDialog(onDismiss: () -> Unit, onExport: (CharArray?) -> Unit) 
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
             }
         },
+        // 총괄 검토 #458 (조건 2, 같은 무게의 글자 단추 셋이 줄지어 있었어요): the one filled button is the safer save; 취소 and
+        // 암호 없이 stay text buttons.
         confirmButton = {
-            TextButton(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
+            com.bamnat.app.ui.components.Button(onClick = { onExport(first.toCharArray()) }, enabled = ok) { Text("암호 걸고 저장") }
         },
         dismissButton = {
             Row {
@@ -128,16 +150,29 @@ fun UnlockBackupDialog(locked: LockedBackup, onUnlock: (CharArray) -> Unit, onDi
     )
 }
 
+/**
+ * A password typed, hidden as it is typed. 2.0.0 [RVL-41] Shared with the locked PDF's window ([com.bamnat.app.ui.imports.PdfPasswordDialog]):
+ * the eye shows what was typed (a 생년월일 is easy to mistype with no one to see), and [onDone] is the keyboard's 완료.
+ */
 @Composable
-private fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null) {
+internal fun PasswordField(value: String, onChange: (String) -> Unit, label: String, error: String? = null, onDone: (() -> Unit)? = null, modifier: Modifier = Modifier) {
+    var shown by remember { mutableStateOf(false) }
+    // 총괄 검토 #458 (rvl13 200%: 칸이 글 폭보다 좁았어요): as wide as the window's words, in every window that asks for a password.
     OutlinedTextField(
+        modifier = modifier.fillMaxWidth(),
         value = value,
         onValueChange = { onChange(it.take(64)) },
         label = { Text(label) },
         singleLine = true,
         isError = error != null,
         supportingText = error?.let { { Text(it) } },
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        visualTransformation = if (shown) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, imeAction = if (onDone != null) androidx.compose.ui.text.input.ImeAction.Done else androidx.compose.ui.text.input.ImeAction.Default),
+        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = onDone?.let { { it() } }),
+        trailingIcon = {
+            androidx.compose.material3.IconButton(onClick = { shown = !shown }) {
+                Icon(if (shown) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, if (shown) "암호 숨기기" else "암호 보기")
+            }
+        },
     )
 }

@@ -61,7 +61,7 @@ import androidx.compose.material3.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -448,7 +448,7 @@ internal fun standing(list: List<Inquiry>, unread: (Inquiry) -> Boolean): String
 
 @Composable
 private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
-    SoftCard(Modifier.clickable(onClick = onClick), highlighted = unread) {
+    SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick), highlighted = unread) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(i.kind.label + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
@@ -592,7 +592,8 @@ private fun InquiryForm(
         val body = bodyOf(text)
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    val inviteTerms = rememberInviteTerms()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
         var notIt by remember { mutableStateOf(emptySet<String>()) }
         var helped by remember { mutableStateOf<String?>(null) }
         val tips = remember(body, kind) {
@@ -991,7 +992,7 @@ private fun RateAnswer(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {},
  */
 @Composable
 private fun FixedAsk(i: Inquiry, busy: Boolean, onMore: (String) -> Unit = {}, onAnswer: (Boolean) -> Unit) {
-    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             when (i.fixed) {
                 1 -> Text("해결됐다고 알려 주셨어요. 고마워요", style = MaterialTheme.typography.bodyMedium)
@@ -1081,7 +1082,7 @@ private fun PublicBoard(vm: InquiryViewModel, onNew: () -> Unit, onOpen: (Public
                 }
             }
             // [COMM-11] What this phone's 이 사람 글 안 보기 left out, and where to undo it.
-            if (p.hiddenByYou > 0) Text("가린 사람의 문의 ${p.hiddenByYou}개는 빼고 보여요. 회사 광장 › 내 활동에서 되돌릴 수 있어요.",
+            if (p.hiddenByYou > 0) Text("안 보는 사람의 문의 ${p.hiddenByYou}개는 빼고 보여요. 마을 › 팔로잉 › 차단에서 되돌릴 수 있어요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             p.items.forEach { i -> PublicCard(i) { onOpen(i) } }
             if (p.next != null) {
@@ -1095,7 +1096,7 @@ private fun PublicBoard(vm: InquiryViewModel, onNew: () -> Unit, onOpen: (Public
 
 @Composable
 private fun PublicCard(i: PublicInquiry, onClick: () -> Unit) {
-    SoftCard(Modifier.clickable(onClick = onClick)) {
+    SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("${i.kind.label} · ${i.topicName}" + if (i.mine) " · 내 문의" else "", style = MaterialTheme.typography.bodySmall,
@@ -1143,7 +1144,7 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
         }
         if (hiding) ConfirmDialog(
             title = "이 사람의 문의를 가릴까요?",
-            message = "모두의 문의와 회사 광장에서 이 사람의 글이 이 휴대폰에서만 안 보여요. 회사 광장 › 내 활동의 ‘가린 사람’에서 되돌릴 수 있어요.",
+            message = "모두의 문의와 회사 광장에서 이 사람의 글이 이 휴대폰에서만 안 보여요. 마을 › 팔로잉 › 차단에서 되돌릴 수 있어요.",
             confirmLabel = "가리기",
             onDismiss = { hiding = false },
             onConfirm = { hiding = false; t.author?.let(vm::hideWriter); onGone() },
@@ -1179,7 +1180,8 @@ private fun PublicThreadView(vm: InquiryViewModel, id: String, onGone: () -> Uni
 
 @Composable
 private fun FlagDialog(onDismiss: () -> Unit, onFlag: (InquiryFlag) -> Unit) {
-    var reason by remember { mutableStateOf(InquiryFlag.ABUSE) }
+    // 2.0.0 [RVN-13] HQ-39 (같은 신고 창): nothing picked first, so 신고 never goes with a reason the user did not read.
+    var reason by remember { mutableStateOf<InquiryFlag?>(null) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("이 문의를 신고할까요?") },
@@ -1200,7 +1202,7 @@ private fun FlagDialog(onDismiss: () -> Unit, onFlag: (InquiryFlag) -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = { onFlag(reason) }) { Text("신고") } },
+        confirmButton = { TextButton(onClick = { reason?.let(onFlag) }, enabled = reason != null) { Text("신고") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
 }
@@ -1244,7 +1246,7 @@ private fun KnownIssues(vm: InquiryViewModel) {
     if (known.isEmpty()) return
     var open by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("지금 알려진 문제", style = MaterialTheme.typography.titleSmall)
             Text("같은 일을 겪으면 ‘나도 겪어요’만 눌러 주세요. 고친 업데이트가 나오면 내 문의로 알려 드려요.",
@@ -1292,7 +1294,8 @@ private fun HelpHome(
 ) {
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
-    val topics = remember(hiddenKinds, screenStyle) { HelpFaq.topics(vm.shareOn).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    val inviteTerms = rememberInviteTerms()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }

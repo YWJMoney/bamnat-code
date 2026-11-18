@@ -12,7 +12,7 @@ const refuse = (field) => { throw new Error(field); };
 
 async function policyOn(call) {
   const h = await signIn(call);
-  const r = await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
 }
 const write = (call, n, place, body, tag, extra = {}) =>
@@ -105,8 +105,8 @@ test("[PLZC-03] 지난 글 더 보기: posts before a time, a page at a time, wi
 });
 
 test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자 on 장터 cards and 광장 posts, after 3.12, resting while held", async (t) => {
-  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs).
-  const LATER = Date.parse("2026-11-30T03:00:00Z");
+  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs); 2.0.0 [RVD-18] the hold below needs 마을 돌봄, from 2026-12-09.
+  const LATER = Date.parse("2026-12-10T03:00:00Z");
   t.mock.timers.enable({ apis: ["Date"], now: LATER });
   const { call } = server({ plaza: true });
   const h = await signIn(call);
@@ -128,7 +128,10 @@ test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자
   assert.deepEqual([card.followers, card.mark], [30, undefined]);
   await policyOn(call);
   await call("POST", "/api/admin/recipes/makers/month", { style: "ALL", makers: [ma] }, h);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: ⭐ counts followers that are 이웃 (3 days on the 나눔 판) or more.
   t.mock.timers.setTime(LATER + 60e3);
+  assert.equal((await call("GET", `/api/recipes/${b}`)).data.mark, undefined, "new installs' follows make no ⭐");
+  t.mock.timers.setTime(LATER + 3 * 86400e3 + 60e3);
   assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, "month");
   assert.deepEqual([(await call("GET", `/api/recipes/${b}`)).data.mark, (await call("GET", `/api/recipes/${b}`)).data.followers], ["popular", 30]);
   // On 광장, beside a 마을 이름.

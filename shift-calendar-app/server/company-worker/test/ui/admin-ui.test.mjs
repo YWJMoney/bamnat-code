@@ -5,13 +5,34 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Window } from "happy-dom";
+import { readFileSync } from "node:fs";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
+import { SERVER_VERSION } from "../../src/version.js";
 import { server, signIn, report, setup, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { adminLib } from "../../src/admin-lib.js";
 
 const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
 const BODY = HTML.slice(HTML.indexOf("<body>") + 6, HTML.indexOf("</body>"));
+
+/**
+ * 2.0.0 [RVA-57] 화면 묶음 파일(v/<묶음>.<해시>.js): happy-dom은 파일을 받지 않으니, 앱이 붙이는 <script src>를 그 창의 fetch(워커)로 받아
+ * 실행하고 load를 알려요. 진짜 브라우저처럼 그 화면을 열 때 받아요.
+ */
+function loadScripts(window) {
+  const head = window.document.head;
+  const append = head.appendChild.bind(head);
+  head.appendChild = (node) => {
+    if (node.tagName !== "SCRIPT" || !node.src) return append(node);
+    window.fetch(node.src).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      window.eval(await r.text());
+      node.onload?.(new window.Event("load"));
+    }).catch(() => node.onerror?.(new window.Event("error")));
+    return node;
+  };
+}
 
 const open = [];
 test.after(async () => {
@@ -19,12 +40,14 @@ test.after(async () => {
 });
 
 /** A browser tab on the developer app: its fetch goes to the worker, with the sign-in cookie kept like a browser does. */
-async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
-  const window = new Window({ url: `${ORIGIN}/admin/${hash}`, width: 1280, height: 900,
+async function tab(env, { hash = "", storage = null, cookie = null, width = 1280 } = {}) {
+  const window = new Window({ url: `${ORIGIN}/admin/${hash}`, width, height: 900,
     settings: { disableJavaScriptFileLoading: true, disableCSSFileLoading: true, disableIframePageLoading: true } });
   open.push(window);
   const jar = { cookie };
   const errors = [];
+  // 2.0.0 [RVA-11] 검토 I24b-01: 서버가 5xx로 답한 요청도 모아 둬요(연기 시험이 0인지 봐요).
+  const broken = [];
   window.addEventListener("error", (e) => errors.push(e.error ?? e.message));
   window.fetch = async (input, init = {}) => {
     const url = new URL(typeof input === "string" ? input : input.url, ORIGIN);
@@ -33,6 +56,7 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
     headers.set("cf-connecting-ip", "203.0.113.9");
     if (init.method && init.method !== "GET") headers.set("origin", ORIGIN);
     const res = await worker.fetch(new Request(url, { method: init.method ?? "GET", headers, body: init.body }), env);
+    if (res.status >= 500) broken.push(`${init.method ?? "GET"} ${url.pathname} ${res.status}`);
     const set = res.headers.get("set-cookie");
     if (set) jar.cookie = /Max-Age=0/.test(set) ? null : set.split(";")[0];
     const body = res.status === 304 ? null : await res.text();
@@ -41,9 +65,10 @@ async function tab(env, { hash = "", storage = null, cookie = null } = {}) {
   if (storage) for (const [k, v] of Object.entries(storage)) window.localStorage.setItem(k, v);
   window.structuredClone ??= structuredClone;
   window.document.body.innerHTML = BODY;
+  loadScripts(window);
   window.eval(APP_JS);
   const t = {
-    window, document: window.document, jar, errors,
+    window, document: window.document, jar, errors, broken,
     $: (s) => window.document.querySelector(s),
     $$: (s) => [...window.document.querySelectorAll(s)],
     text: (s) => window.document.querySelector(s)?.textContent.replace(/\s+/g, " ").trim() ?? "",
@@ -102,8 +127,8 @@ async function world(extra = {}) {
   return { ...s, env };
 }
 
-async function signedIn(env) {
-  const t = await tab(env);
+async function signedIn(env, opts = {}) {
+  const t = await tab(env, opts);
   assert.ok(t.$('form[data-form="login"]'), "the sign-in screen first");
   await t.click('[data-act="login-mode"][data-key="owner"]');
   t.$("#password").value = PASSWORD;
@@ -117,12 +142,8 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
   const { env } = await world();
   const t = await signedIn(env);
   // AN 1.28: the six hubs' tabs, and the 1.27 addresses that now lead to them (inbox, ops, settings).
-  for (const s of ["home", "desk", "inquiries", "dev", "templates", "sla", "review", "versions", "community", "companies", "shares", "adopt", "flags", "types", "notices", "chores",
-    "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "inbox", "ops", "settings", "more",
-    // 1.38 [ADM3] 새 화면들.
-    "flow", "cockpit", "incident", "reviews", "requests", "launch", "materials", "health", "money", "errors", "backup", "keys", "growth",
-    // 1.39 [LOOP] 자동 순환·결정함·요금 판단.
-    "loop", "decide", "tiers"]) {
+  // 2.0.0 [RVA-11] 검토 ADM-09·I24b-01: 손으로 적은 목록 대신 모든 화면(L.TABS)을 돌고, 서버 5xx도 0이어야 해요(연기 시험).
+  for (const s of [...Object.keys(adminLib().TABS), "inbox", "ops", "settings", "more"]) {
     await t.go(`#/${s}`);
     const main = t.$("#main");
     assert.ok(main.textContent.trim().length > 10, `${s} shows something`);
@@ -130,6 +151,7 @@ test("[ADMUX-01] every screen opens without an error and without a style attribu
     assert.equal(t.$$("#main [style]").length, 0, `${s}: no style attribute (CSP)`);
   }
   assert.deepEqual(t.errors, []);
+  assert.deepEqual(t.broken, [], "no screen asked something the server answered with 5xx");
 });
 
 test("[ADMUX-02] filters live in the address and come back from it", async () => {
@@ -161,7 +183,8 @@ test("[ADMUX-01] a typed answer survives a repaint, a reload and a lost sign-in"
   await t.type("#reply", "확인하고 있어요");
   await t.click('[data-act="refresh"]');
   assert.equal(t.$("#reply").value, "확인하고 있어요", "kept across a repaint");
-  const store = Object.fromEntries(Object.entries(t.window.localStorage).filter(([k]) => k.startsWith("bamnat-admin-draft:")));
+  // 2.0.0 [RVA-06] 초안은 관리자·화면마다 따로, 7일까지(열쇠 bamnat-admin-draft2:<관리자>:<화면>:<칸>).
+  const store = Object.fromEntries(Object.entries(t.window.localStorage).filter(([k]) => k.startsWith("bamnat-admin-draft2:")));
   const again = await tab(env, { hash: t.window.location.hash, storage: store, cookie: t.jar.cookie });
   assert.equal(again.$("#reply").value, "확인하고 있어요", "kept across a reload");
   // Signed out under way: a box over the screen, and the answer is still there after.
@@ -177,7 +200,7 @@ test("[ADMUX-01] a typed answer survives a repaint, a reload and a lost sign-in"
   again.$('form[data-form="reply"]').requestSubmit(again.$('form[data-form="reply"] .btn.primary'));
   await again.settle(30);
   assert.equal(again.$("#reply")?.value ?? "", "");
-  assert.ok(!Object.keys(again.window.localStorage).some((k) => k.startsWith("bamnat-admin-draft:")));
+  assert.ok(!Object.keys(again.window.localStorage).some((k) => k.startsWith("bamnat-admin-draft2:")));
 });
 
 test("[ADMIN-16] picked questions are taken at once, and a 닫기 can be taken back", async () => {
@@ -289,7 +312,7 @@ test("[ADMUX-07] a notice shows as the phone will show it, and lists go out as C
   await t.type("#nt-body", "새벽 2시에 <잠시> 멈춰요");
   assert.equal(t.text("#nt-preview b"), "점검 안내");
   assert.equal(t.$("#nt-preview span").innerHTML, "새벽 2시에 &lt;잠시&gt; 멈춰요", "escaped");
-  assert.match(t.text('form[data-form="notice"] .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
+  assert.match(t.text('form[data-form="notice"] details.fold-field .help'), /1\.22\.0\(번호 33\)/, "the newest app a question came from");
   t.$("dialog").close();
   await t.settle();
   await t.go("#/inquiries");
@@ -347,6 +370,14 @@ test("[ADMUX-04] the palette offers what was opened last, and home the saved vie
 // ---- 1.25 묶음 AA: 받은함, 여러 판, 지표 기간, 광장 일괄 (끝에서 끝: 화면의 단추 → 서버가 가진 것) ----
 
 /** Remote files and Play are not reachable from a test; the page must still draw. */
+/** 2.0.0 [RVA-48] 검토 ADM-23: 장부 줄은 펼칠 때 상세를 그려요. 시험도 사람처럼 줄을 펼친 뒤 그 안의 단추를 눌러요. */
+function openLines(t, sel = "#main .rows.ledger > li.lg-line > details:not([open])") {
+  for (const d of t.$$(sel)) {
+    d.open = true;
+    d.dispatchEvent(new t.window.Event("toggle"));
+  }
+}
+
 function offline(t) {
   const real = globalThis.fetch;
   globalThis.fetch = async () => new Response("", { status: 404 });
@@ -374,7 +405,7 @@ test("[ADMUX-17][ADMUX-33] 할 일 (받은함 on 오늘) lists what waits, 맡�
   const mine = (await u.api("GET", "/api/admin/inquiries?who=mine")).inquiries;
   assert.equal(mine.length, 1, "the server now holds the question as mine");
   const before = u.$$("#main .rows.inbox li").length;
-  await u.click('#main [data-act="inbox-snooze"]');
+  await u.click('#main .rows.inbox [data-act="inbox-snooze"]');
   assert.equal(u.$$("#main .rows.inbox li").length, before - 1);
   assert.match(u.window.localStorage.getItem("bamnat-admin-snooze"), /:/);
   await u.click("#toast [data-undo]");
@@ -501,7 +532,8 @@ test("[ADM3-43] 서버 상태: company counts and versions, an old share server 
   const u = await asOwner(env, t);
   await u.go("#/server");
   await u.settle(30);
-  assert.match(u.text("#main"), /회사 1 · 쓰는 규칙 \d+ · 서버 1\.39\.0 · 관리자 앱 빌드/);
+  // 2.0.0 [RVQ-14] 판은 맨 앞 '지금 판'으로 옮겼어요(검토 U21-02).
+  assert.match(u.text("#main .server-sum"), new RegExp(`^지금 판 ${SERVER_VERSION.replaceAll(".", "\\.")} · .* · 회사 1 · 쓰는 규칙 \\d+ · 관리자 앱 빌드`));
   const share = [...u.$$("#main .tile")].find((x) => /공유 서버/.test(x.textContent));
   assert.match(share.textContent, /살아 있음 · 판 다름/);
   assert.ok(!share.classList.contains("hot"));
@@ -546,6 +578,9 @@ test("[ADMUX-13] 지표: two dates ask the server for that period and the number
   const meta = () => u.$$("#main .meta").map((e) => e.textContent).join(" ");
   assert.match(meta(), /\(28일\)/);
   for (const sec of ["활성", "광장", "문의", "오류", "원격 갱신"]) assert.match(u.text("#main"), new RegExp(sec), `${sec} section`);
+  // 2.0.0 [RVA-24] 날짜 두 칸은 '날짜로'를 누를 때만(기간 막대 한 줄).
+  assert.equal(u.$("#mt-from"), null, "the dates fold behind 날짜로");
+  await u.click('#main [data-act="metric-dates"]');
   const to = u.$("#mt-to").value;
   const from = new Date(Date.parse(to) - 2 * 864e5).toISOString().slice(0, 10);
   const el = u.$("#mt-from");
@@ -630,10 +665,23 @@ test("[INVITE-06] 보상 shows 친구 초대: the month given and the summary", 
   await t.settle(30);
   const main = t.$("#main").textContent;
   assert.match(main, /친구 초대/);
-  assert.match(main, /보상 받음 1명/);
-  assert.match(main, /친구 1명이 각자 7일 이상 쓰면 프로 1개월, 1명 더 채울 때마다 또 1개월 · 상한 없음/);
+  // 2.0.0 [RVA-26] 통합 2차 PC Q31: 지급 전이면 '보상 받음'이 아니라 '조건 채움(지급 전)', 0인 칸('상한 넘음 0명')은 없어요.
+  assert.match(main, /조건 채움 1명\(지급 전 1명\)/);
+  assert.doesNotMatch(main, /보상 받음|상한 넘음|(^|\D)0명/);
+  // 2.0.0 [RVD-21] 처리방침 3.13이 일정에 없으면 모든 보상 합친 1년 12개월은 아직이에요(약관 1.3·처리방침 3.12는 상한 없음).
+  // [RVA-26] 친구가 1명이면 '각자'가 없어요.
+  assert.match(main, /친구 1명이 7일 이상 쓸 때마다 프로 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  assert.doesNotMatch(main, /각자/);
+  // [RVD-21] 접힌 한 줄도 같아요: 3.13 전에는 '한 분에 1년 12개월까지'라고 하지 않아요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 1년 12개월 상한은 처리방침 3.13 시행일부터");
+  assert.match(t.text('#main details[data-key="reward-how"] .hint'), /그 전에는 친구 초대 설정의 상한만 봐요/);
   assert.ok(main.includes(made.data.code), "the code most friends came by");
   assert.match(main, /최근 30일 몰림 1번/);
+  // [RVA-26] 지급하면 같은 친구가 '지급'으로 옮겨요.
+  DB.db.prepare("UPDATE rewards SET status = 'paid', paid_at = ? WHERE rule_id = 'invite'").run(Date.now());
+  await t.click('[data-act="refresh"]');
+  await t.settle(30);
+  assert.match(t.$("#main").textContent, /조건 채움 1명\(지급 1명\)/);
   assert.deepEqual(t.errors, []);
 });
 
@@ -644,8 +692,8 @@ test("[INVITE-08] 관리 › 보상 › 친구 초대 (1.27 설정): the develop
   await t.settle(30);
   const card = () => [...t.document.querySelectorAll("#main section.card")].find((c) => c.querySelector("h2")?.textContent === "친구 초대");
   assert.ok(card(), "the 친구 초대 card");
-  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음/);
-  assert.match(card().textContent, /1년 상한\s+−\s+없음/);
+  assert.match(card().textContent, /친구 5명이 각자 7일 이상 쓰면 프로 1개월, 5명 더 채울 때마다 또 1개월 · 상한 없음 · 모든 보상 합쳐 1년 12개월은 처리방침 3\.13 시행일부터/);
+  assert.match(card().textContent, /초대만의 1년 상한\s+−\s+없음/);
   const step = async (key, d) => {
     t.$(`[data-act="friend-step"][data-key="${key}"][data-d="${d}"]`).click();
     await t.settle();
@@ -825,11 +873,14 @@ test("[ADMUX-34] menu numbers: each thing counted once, 더 보기 only its own 
   assert.equal(side("today"), t.$$("#main .alert-list li").length, "오늘 counts only its 주의 필요");
   assert.match(t.text("#main .alert-list"), /꼭 필요한 설정/);
   assert.equal(badge("manage"), side("manage"));
-  // The strip on 문의 says what waits, and opens it filtered.
-  await t.go("#/inquiries");
-  const strip = t.$("#waiting a");
-  assert.match(strip.textContent, /답 대기\s*3/);
+  // 오늘's 할 일 says what waits in each hub, and opens it filtered.
+  const strip = t.$('#waiting a[href^="#/inquiries"]');
+  assert.match(strip.textContent, /사람과 글\s*4/);
   assert.equal(strip.getAttribute("href"), "#/inquiries?sort=sla");
+  // 2.0.0 [RVA-24] A list screen has no line of its own above the list (HQ-03): the hub tab carries the number.
+  await t.go("#/inquiries");
+  assert.equal(t.$("#waiting"), null, "no strip above 문의");
+  assert.equal(Number(t.text('[data-badge="tab:inquiries"]') || 0), 3, "the 문의 tab says 3");
   // An answer makes the number go down without waiting for the next poll.
   const id = (await s.call("GET", "/api/admin/inquiries", undefined, await signIn(s.call))).data.inquiries[0].id;
   await t.go(`#/inquiries/${id}`);
@@ -1471,7 +1522,7 @@ test("[ADMX-01][ADMX-11] 오늘: the four numbers with their week, 주의 필요
   assert.ok(u.$("#main .tiles.core .spark"), "a week's line under a number");
   assert.ok(u.$("#main .alerts") || u.$("#main .calm"), "주의 필요 says something either way");
   // The other numbers fold away; the activity never shows a code.
-  assert.ok(u.$('#main details.more-tiles[data-key="home:tiles"] .tiles a.tile'));
+  assert.ok(u.$('#main details.home-fold[data-key="home:tiles"] .tiles a.tile'));
   assert.ok(!/\b[a-z]+_[a-z_]+\b/.test(u.text("#main .feed")), "no activity codes");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
@@ -1659,7 +1710,8 @@ test("[ADMX-15] back to the tab while typing an answer: the menu numbers come ag
 
 test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a line opens in place with its answer, 넘길 글 is copied, 끝내기 asks why, 기록 undoes", async () => {
   const { call, env } = await world();
-  const t = await signedIn(env);
+  // 2.0.0 [RVA-49] 1280px부터는 줄이 오른쪽 칸에 열려요. 이 시험은 그 자리에서 펼치는 폭(1024)으로 봐요.
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/sort");
   assert.equal(t.window.location.hash, "#/desk?view=claude&group=ask", "정리함 lives in 운영 장부 now");
   assert.ok(t.$$("#main .rows.ledger > li").length >= 1, "the waiting questions are lines");
@@ -1667,6 +1719,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   assert.ok(t.$("#main .lg-head"), "a head row for the columns");
   assert.ok(t.$("#sort-tools .handoff-card"), "Claude에게 넘기기 is there");
   // A line's answer can be changed before it goes; what goes is what the box says.
+  openLines(t);
   const reply = t.$('#main [data-act="ledger-reply"]');
   const key = reply.dataset.key;
   const id = key.split(":")[1];
@@ -1677,6 +1730,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   const asked = (await call("GET", `/api/admin/inquiries/${id}`, undefined, await signIn(call))).data;
   assert.equal(asked.messages.at(-1).text, "확인했어요. 고마워요.");
   // 넘기기: a 개발사항 made from a line shows up to copy; copying marks it handed.
+  openLines(t);
   await t.click('#main [data-act="ledger-sort"]');
   await t.idle();
   let copied = null;
@@ -1691,7 +1745,8 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.idle();
   assert.match(t.text("#main .rows.ledger"), /Claude에게 넘김/);
   // 끝내기 asks why; with a reason the line goes to 닫힘, and 기록 can undo it.
-  const first = t.$("#main .rows.ledger > li").dataset.key;
+  const first = t.$("#main .rows.ledger > li.lg-line").dataset.key;
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-done"]`);
   assert.match(t.text("dialog"), /끝낸 이유를 꼭/);
   t.$('dialog input[name="reason"][value="duplicate"]').checked = true;
@@ -1701,6 +1756,7 @@ test("[DESK-02][DESK-03] 운영 장부: the old 정리함 address opens it; a li
   await t.click('[data-act="ledger-view"][data-key="closed"]');
   await t.idle();
   assert.match(t.text(`#main li[data-key="${first}"]`), /끝 · 중복/);
+  openLines(t);
   await t.click(`#main li[data-key="${first}"] [data-act="ledger-log"]`);
   await t.idle();
   assert.match(t.text("dialog"), /마지막 바꿈/);
@@ -1720,8 +1776,9 @@ test("[EASE-31] 운영 장부: a question a saved answer fits has '마을 Q&A로
   const list = (await call("POST", "/api/admin/templates", { label: "백업 옮기기", text: "설정 › 백업에서 파일로 내보낸 뒤 새 폰에서 가져오기를 눌러요", topic: "backup" }, owner)).data;
   const tpl = (list.templates ?? list).find((x) => x.label === "백업 옮기기");
   await call("POST", "/api/inquiries", { v: 1, device: device(21), kind: "question", text: "새 폰으로 옮기려면 백업을 어떻게 가져오기 하나요", info: { app: "1.37.0 (51)" } }, from(21));
-  const t = await signedIn(env);
+  const t = await signedIn(env, { width: 1024 });
   await t.go("#/desk?view=claude&group=ask");
+  openLines(t);
   const up = t.$('#main [data-act="template-edit"]');
   assert.ok(up, "the line of a question a saved answer fits offers 마을 Q&A로 올리기");
   assert.match(up.textContent, /마을 Q&A로 올리기/);
@@ -1810,7 +1867,7 @@ test("[GRW-12] 작품 열기: from 사진 검토 the recipe opens with the photo
   await t1.settle(20);
   assert.match(t1.text("#main"), /보러 온 사진.*보이게 했어요/);
   assert.ok(!t1.$(`[data-act="recipe-image"][data-id="${pic.id}"]`), "decided: the buttons go");
-  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.chip)');
+  const back = t1.$('[data-act="recipe-tab"][data-key="images"]:not(.seg)');
   assert.match(back.textContent, /돌아가기 · 사진 검토/);
   await t1.click(back);
   await t1.settle(20);
@@ -2006,7 +2063,7 @@ test("[ADM3-51] the top line says which server runs: local without a deploy, the
   const line = t.$("#deploy-line");
   assert.ok(line && !line.hidden, "shown");
   assert.match(t.text("#deploy-line"), /로컬 서버/);
-  assert.match(t.text("#deploy-line"), /회사 1\.39\.\d+ 로컬/);
+  assert.match(t.text("#deploy-line"), /회사 \d+\.\d+\.\d+ 로컬/);
   assert.equal(line.getAttribute("href"), "#/server");
   // 배포된 서버: 커밋과 배포 시각.
   const s2 = await world({ CF_VERSION_METADATA: { id: "1789720e-0000", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" } });
@@ -2079,4 +2136,1422 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.1
   assert.ok(!u.$$("#main .ob-gap-list li").some((li) => /유형\(교대/.test(li.textContent)), "by-type is answered");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
+});
+
+// 1.40 [RVD-06] 검토 ADM-01·ADMX-04: 목록에서 처음 여는 문의의 '이 휴대폰' 패널이 미리 데우기 때 '못 불러옴'으로 굳어 다시 안 읽혔어요.
+test("[RVD-06] an inquiry opened from the list reads its phone panel once, also when the screen was warmed first", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const id = (await s.call("GET", "/api/admin/inquiries", undefined, await signIn(s.call))).data.inquiries[0].id;
+  let reads = 0;
+  const fetch = t.window.fetch;
+  t.window.fetch = (input, init) => {
+    if (String(typeof input === "string" ? input : input.url).includes("/person?")) reads++;
+    return fetch(input, init);
+  };
+  await t.go("#/inquiries");
+  await t.go(`#/inquiries/${id}`);
+  await t.settle(30);
+  assert.equal(reads, 1);
+  assert.ok(t.$("aside.person h2"), t.text("aside.person"));
+  assert.doesNotMatch(t.text("aside.person"), /불러오지 못했어요/);
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVD-16] 사용자 결정 2026-11-12 '확인 뒤 지급 + 1년 상한': 친구 초대·만든 작품 보상도 드릴 보상에 쌓여요. 종류로 좁히고, 판단할 것과
+// 이분의 1년 12개월을 줄마다 보고, 상한 넘은 것을 골라 한 번에 취소해요.
+test("[RVD-16] 드릴 보상: kind chips, what to judge by, the year's cap, and picking several at once", async () => {
+  const { env, DB } = await world();
+  const put = (id, rule, device, months, status = "owed", paidAt = null, report = id) => DB.db.prepare(`INSERT INTO rewards (id, report_id, rule_id, device, months,
+    status, memo, created_at, paid_at, deferred) VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0)`).run(id, report, rule, device, months, status, Date.now(), paidAt);
+  // [RVD-21] 1년 12개월은 처리방침 3.13 게시 + 30일부터: 일정에 3.13을 한 달 반 전 게시로 넣어 상한이 걸린 때를 봐요.
+  DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)").run(JSON.stringify({ "3.13": { posted: "2026-10-01", effective: "2026-10-01", heldUntil: null } }));
+  put("wPAIDaaaaaaaaaaaaaaaaaa", "rule-x", "full", 12, "paid", Date.now());
+  put("iOVERaaaaaaaaaaaaaaaaa", "invite", "full", 1);
+  put("iFREEaaaaaaaaaaaaaaaaa", "invite", "free", 1);
+  put("mWORKaaaaaaaaaaaaaaaaa", "maker", "free", 1, "owed", null, "maker:tool:ABCD2345");
+  const t = await signedIn(env);
+  await t.go("#/rewards");
+  await t.settle(30);
+  const main = () => t.$("#main").textContent;
+  assert.match(main(), /친구 초대 2/);
+  assert.match(main(), /만든 작품 1/);
+  assert.match(main(), /이분의 1년 보상 12\/12개월/);
+  // 디자인 품질(총괄 11-12): 제목·'프로 1개월 · 날짜 · 종류'·근거 한 줄, '만든 작품'은 한 번만, 살펴볼 것은 주의 칩.
+  const work = [...t.document.querySelectorAll("#main ul.rows > li")].find((li) => li.textContent.includes("ABCD2345"));
+  assert.match(work.querySelector("b").textContent, /만든 작품 · ABCD2345/);
+  assert.match(work.textContent, /프로 1개월 · .+ · 모두의 도구/);
+  assert.match(work.textContent, /쓰는 분 0 · 7일 유지 0%/);
+  assert.equal(work.textContent.split("만든 작품").length - 1, 1, "만든 작품 once in a row");
+  assert.ok([...work.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "장터에 안 보여요"));
+  const over = t.$('#main ul.rows > li [data-id="iOVERaaaaaaaaaaaaaaaaa"]').closest("li");
+  assert.ok([...over.querySelectorAll(".row-tags .pill.warn")].some((x) => x.textContent === "상한"));
+  // 조건 2: 줄 안에는 채운 단추가 없고, 설명은 한 줄 + 펼치기, 규칙 문장은 아래 친구 초대 카드에 한 번만.
+  assert.equal(t.document.querySelectorAll("#main ul.rows .btn.primary").length, 0);
+  assert.equal(t.document.querySelectorAll("#main .btn.primary:not([disabled])").length, 0);
+  assert.ok(t.$("#main details.tip:not([open]) > summary"), "the how-to is one line that opens");
+  // [RVD-21] 3.13 + 30일이 지났으니 접힌 한 줄은 상한을 말해요.
+  assert.equal(t.text('#main details[data-key="reward-how"] > summary'), "확인 뒤 지급 · 한 분에 1년 12개월까지");
+  assert.equal(main().split("명이 각자").length - 1, 1, "the invite rule is said once");
+  // 조건 1(총괄 11-12 2차): 구간·찾기·종류·고르기·CSV는 목록 머리 한 줄, 그 바로 밑이 드릴 보상 목록. 한 줄 설명·Claude 줄은 목록 아래.
+  const order = [...t.$("#main").children].map((e) => e.matches(".list-head") ? "head" : e.matches("ul.rows") ? "rows" : e.matches(".list-foot") ? "foot" : e.matches("section.card") ? "card" : "?");
+  assert.deepEqual(order.slice(0, 4), ["head", "rows", "foot", "card"], order.join(","));
+  assert.ok(t.$("#main .list-head > .segmented") && t.$("#main .list-head #search") && t.$("#main .list-head #reward-kind"), "one head line");
+  assert.equal(t.$('#main .list-head [data-act="csv"]').getAttribute("aria-label"), "CSV로 받기");
+  assert.equal(t.$('#main .list-head [data-act="reward-pick"]').getAttribute("aria-label"), "여러 개 고르기");
+  assert.ok(t.$("#main .list-foot .claude-draft-empty") && t.$("#main .list-foot details.tip"));
+  // Play Integrity is off here (INTEGRITY_MODE), so '0명 확인' is not a warning, just said off.
+  assert.match(main(), /친구 0명 · Play 확인 꺼짐/);
+  assert.ok(!t.$('[data-act="reward"][data-status="paid"][data-id="iOVERaaaaaaaaaaaaaaaaa"]'), "no 지급하기 past the cap");
+  const kind = t.$("#reward-kind");
+  kind.value = "invite";
+  kind.dispatchEvent(new t.window.Event("change", { bubbles: true }));
+  await t.settle(30);
+  assert.ok(t.$("#main .list-more.busy"), "the head says a filter is on");
+  assert.equal(t.document.querySelectorAll("#main ul.rows > li").length, 2);
+  await t.click('[data-act="reward-pick"]');
+  await t.click('[data-act="reward-pick-cap"]');
+  assert.match(t.text(".bulkbar"), /1개 골랐어요/);
+  await t.click('[data-act="reward-bulk"][data-key="void"]');
+  await t.settle(30);
+  assert.deepEqual(DB.db.prepare("SELECT id, status FROM rewards WHERE rule_id = 'invite' ORDER BY id").all().map((r) => [r.id, r.status]),
+    [["iFREEaaaaaaaaaaaaaaaaa", "owed"], ["iOVERaaaaaaaaaaaaaaaaa", "void"]]);
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 날짜 창은 오늘보다 앞이나 알림 기간 안으로 옮길 때만 까닭 한 줄과 확인 칸을 보여요(평소에는 짧게).
+test("[RVQ-15] the policy dialog asks once more only when the date moves before today or inside the notice period", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  await t.go("#/flags");
+  await t.settle(20);
+  await t.click('#main [data-act="flag-view"][data-key="timeline"]');
+  await t.click('#main [data-act="flag-policy"]:not([data-version])');
+  const kst = (days) => new Date(Date.now() + 9 * 3600e3 + days * 86400e3).toISOString().slice(0, 10);
+  const row = () => t.$("dialog [data-policy-confirm]");
+  assert.ok(row()?.hidden, "새 판을 열면 확인 칸이 없어요");
+  await t.type("#fp-version", "3.30");
+  await t.type("#fp-posted", kst(0));
+  await t.type("#fp-effective", kst(10));
+  assert.ok(row().hidden, "알림 기간(7일)을 지키면 묻지 않아요");
+  await t.type("#fp-effective", kst(3));
+  assert.ok(!row().hidden);
+  assert.match(t.text("dialog [data-policy-why]"), /3일이에요.*7일/);
+  await t.type("#fp-posted", kst(-3));
+  await t.type("#fp-effective", kst(-1));
+  assert.match(t.text("dialog [data-policy-why]"), /오늘보다 앞/);
+  // 확인하지 않고 저장하면 서버가 409로 막고, 확인하면 저장돼요.
+  t.$("#fp-why").value = "시험";
+  t.$('dialog form[data-form="flag-policy"]').requestSubmit();
+  await t.settle(30);
+  assert.ok(t.$("dialog[open]") && !row().hidden, "막히면 창과 확인 칸이 그대로");
+  t.$('dialog input[name="confirm"]').checked = true;
+  t.$('dialog form[data-form="flag-policy"]').requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(s.call);
+  const pol = (await s.call("GET", "/api/admin/flags", undefined, owner)).data.policy;
+  assert.equal(pol.find((p) => p.version === "3.30")?.effective, kst(-1));
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVQ-14] 검토 U21-02: 서버 상태 맨 위 한 줄 앞머리에 지금 판·배포 번호·되돌릴 판, 아래에 깊은 점검 셋. 머리띠의 배포 줄과 이름이 겹치지 않아요.
+test("[RVQ-14] 서버 상태 starts with the running version, deploy, rollback version and three deep checks", async () => {
+  const s = await world({ CF_VERSION_METADATA: { id: "1789720e-0000-4000-8000-000000000000", tag: "9a99201a1b2c", timestamp: "2026-11-08T14:30:00.000Z" } });
+  const t = await signedIn(s.env);
+  s.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('server_prev', ?)").run("1.39.0 aaaabbbb");
+  await t.go("#/server");
+  await t.settle(30);
+  const sum = t.text("#main .server-sum");
+  assert.match(sum, /^지금 판 \d+\.\d+\.\d+ · 배포 1789720e/);
+  assert.match(sum, /되돌릴 판 1\.39\.0/);
+  assert.match(sum, /관리자 앱 빌드/);
+  assert.equal(t.$$("#main [data-deploy] li").length, 3);
+  assert.equal(t.$$("#main .deploy-line").length, 0, "머리띠의 배포 줄(#deploy-line)과 같은 이름을 쓰지 않아요");
+  assert.match(t.text("#main [data-budget]"), /요금제/);
+  assert.deepEqual(t.errors, []);
+});
+
+// 2.0.0 [RVQ-24] 검토 SVC-07·I22b-03: 정기 작업이 잰 공유 서버 KV 오늘 쓰기·읽기가 요금제 줄에 하루 몫의 %로, 80%를 넘으면 주의 색으로.
+test("[RVQ-26] SVC-52 장터 › 다시 올라온 것: 줄에 볼 일 둘(괜찮아요·다시 돌려주기), 가리기와 나머지는 ⋯ 안", async (t) => {
+  offline(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, env } = server({ plaza: true });
+  const body = (summary) => ({ format: "bamnat-recipe", v: 1, title: "봄꽃 교대 달력", summary, styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] });
+  const code = (await call("POST", "/api/recipes", { device: device(1), recipe: body("주간은 분홍"), scope: "public" }, from(1))).data.code;
+  const u = await asOwner(env, t);
+  await u.api("POST", `/api/admin/recipes/${code}/return`, { note: "연락처를 빼 주세요" });
+  t.mock.timers.tick(60e3);
+  await call("POST", `/api/recipes/${code}/versions`, { device: device(1), recipe: body("연락처를 뺐어요. 주간은 분홍") }, from(1));
+  await u.go("#/recipes");
+  await u.click('#main [data-act="recipe-tab"][data-key="again"]');
+  await u.idle();
+  const side = u.$("#main .recipe-rows .row-side");
+  assert.ok(side, "다시 올라온 작품 한 줄");
+  const shown = [...side.children].filter((e) => e.matches("button")).map((b) => b.textContent.trim());
+  assert.deepEqual(shown, ["괜찮아요", "다시 돌려주기"]);
+  // [RVA-35] 조건 2: 줄마다 채운 단추가 서면 목록 전체가 채운 단추 줄이 돼요. 줄 안 단추는 테두리예요.
+  assert.equal(u.window.document.querySelectorAll("#main .recipe-rows .btn.primary").length, 0, "줄 안 단추는 테두리");
+  const menu = [...side.querySelectorAll(".row-more .menu button")].map((b) => b.textContent.trim());
+  assert.equal(menu[0], "가리기");
+  assert.ok(menu.includes("지난 판 지우기") && menu.includes("지우기"), menu.join(","));
+  side.querySelector('[data-key="approve"]').click();
+  await u.settle(40);
+  assert.equal(env.DB.db.prepare("SELECT state FROM recipes WHERE code = ?").get(code).state, "visible");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-24] 서버 상태 shows the share server's KV writes and reads for today against the plan's day", async () => {
+  const s = await world();
+  const t = await signedIn(s.env);
+  const day = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+  const put = (v) => s.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('share_kv', ?)").run(JSON.stringify(v));
+  put({ day: "2020-01-01", writes: 30000, reads: 1, at: Date.now() });
+  await t.go("#/server");
+  await t.settle(30);
+  assert.doesNotMatch(t.text("#main [data-budget] + ul"), /공유 서버 KV/, "어제 것은 오늘 줄이 아니에요");
+  put({ day, writes: 1200, reads: 290000, at: Date.now() - 4 * 60e3 });
+  await t.go("#/today");
+  await t.settle(30);
+  await t.go("#/server");
+  await t.settle(30);
+  const line = t.$$("#main [data-budget] + ul li").find((li) => /공유 서버 KV/.test(li.textContent));
+  assert.ok(line, "공유 KV 줄");
+  assert.match(line.textContent, /공유 서버 KV 읽기 하루 몫의 8\d%\(290,000번\), 쓰기 \d%\(1,200번\)/, "몫을 더 쓴 읽기(약 33만의 87%)가 앞에");
+  assert.match(line.textContent, /분 전 기준/);
+  assert.equal(line.className, "todo", "80%를 넘으면 주의 색");
+  assert.match(t.text("#main [data-budget] ~ .hint"), /공유 KV는 새 링크부터/);
+  assert.deepEqual(t.errors, []);
+});
+
+// ---- 2.0.0 갈래 Q2 (검토 영역 23·24): 믿음·안전 ----
+
+test("[RVA-10] a question that is gone says so, with 목록으로, not '서버가 답하지 않아요'", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/inquiries/zzzzzzzzzzzzzzzzzzzzzz");
+  assert.match(t.text("#main .failed"), /지워졌거나 없는 문의예요/);
+  assert.equal(t.$("#main .failed a.btn.primary")?.getAttribute("href"), "#/inquiries");
+  assert.doesNotMatch(t.text("#main"), /서버가 잠시 답하지 않아요/);
+});
+
+test("[RVA-08][RVA-07] a key shown once asks before it closes, is wiped after, and the box's history step goes with it", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/keys");
+  await t.click('[data-act="key-make"]');
+  assert.equal(t.window.history.state?.dialog, true, "the box has a step of its own");
+  t.$('form[data-form="key-make"]').requestSubmit();
+  await t.settle(30);
+  assert.ok(t.$("dialog [data-secret] #key-once"), "the key is shown once");
+  // 닫기 before copying: asked once, still open.
+  await t.click('dialog [data-act="close"]');
+  assert.equal(t.$("dialog").open, true);
+  assert.match(t.text("dialog .secret-warn"), /아직 복사하지 않았어요/);
+  // The second time it closes, the key is gone from the page, and back is not spent on an empty step.
+  await t.click('dialog [data-act="close"]');
+  await t.settle(10);
+  assert.equal(t.$("dialog").open, false);
+  assert.equal(t.$("dialog").innerHTML, "");
+  assert.ok(!t.window.history.state?.dialog, "the box's step was taken back");
+});
+
+test("[RVA-05] 인앱 업데이트 기준: an empty box keeps the value, and a change is asked with what it reaches", async () => {
+  const { env, call } = await world();
+  const t = await signedIn(env);
+  await t.go("#/loop");
+  const form = t.$('form[data-form="loop-switches"]');
+  assert.ok(form, "the switches form");
+  assert.match(t.text('form[data-form="loop-switches"]'), /판 번호는 앱 설정/);
+  await t.type("#ls-urgent", "");
+  await t.type("#ls-flex", "40");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.match(t.text("dialog"), /인앱 업데이트 기준을 바꿀까요/);
+  assert.match(t.text("dialog .confirm-rows"), /0 → 40/);
+  assert.doesNotMatch(t.text("dialog .confirm-rows"), /긴급/, "the empty one is not changed");
+  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(call);
+  const sw = (await call("GET", "/api/admin/loop", undefined, owner)).data.switches;
+  assert.deepEqual([sw.urgentMin, sw.flexibleMin], [0, 40]);
+  // Letters in a box: said at the box, nothing sent.
+  await t.go("#/loop");
+  t.$("#ls-flex").setAttribute("type", "text");
+  await t.type("#ls-flex", "4o");
+  t.$('form[data-form="loop-switches"]').requestSubmit();
+  await t.settle(10);
+  assert.equal(t.$("#ls-flex").getAttribute("aria-invalid"), "true");
+  assert.match(t.text("#ls-flex-error"), /숫자/);
+});
+
+test("[RVA-02] no browser prompt or confirm is left: the app's own boxes ask instead", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  let asked = 0;
+  t.window.prompt = () => { asked++; return null; };
+  t.window.confirm = () => { asked++; return false; };
+  // A setting changed and not saved: the app asks in its own box, and the address stays.
+  await t.go("#/sla");
+  const step = t.$('[data-act="sla-step"]');
+  assert.ok(step, "a step button on 답 목표");
+  await t.click(step);
+  t.window.location.hash = "#/home";
+  await t.settle(20);
+  assert.match(t.text("dialog"), /저장하지 않은 설정이 있어요/);
+  assert.match(t.window.location.hash, /#\/sla/);
+  t.$('dialog form[data-form="confirm"]').requestSubmit();
+  await t.settle(30);
+  assert.match(t.window.location.hash, /#\/home/);
+  // 기능 조건 창의 '이 앱 판 이상만': 새 창 대신 같은 창 안에서 펴요. 적던 조건·이유는 그대로예요.
+  await t.go("#/flags/billing");
+  await t.click('[data-act="flag-cond"]');
+  t.$("#fc-why").value = "적던 이유";
+  await t.click('[data-act="flag-minapp"]');
+  assert.equal(t.$("#flag-minapp-row").hidden, false);
+  await t.type("#flag-minapp-n", "5o");
+  await t.click('[data-act="flag-minapp-put"]');
+  assert.equal(t.$("#flag-minapp-n").getAttribute("aria-invalid"), "true");
+  await t.type("#flag-minapp-n", "54");
+  await t.click('[data-act="flag-minapp-put"]');
+  assert.match(t.$("#flag-cond").value, /app >= 54/);
+  assert.ok(t.$('dialog form[data-form="flag-cond"]'), "still the conditions box");
+  assert.equal(t.$("#fc-why").value, "적던 이유");
+  assert.equal(asked, 0);
+  // The app file itself has none left.
+  assert.doesNotMatch(APP_JS, /window\.prompt\(|[^.\w]confirm\("/);
+});
+
+test("[RVA-01] the kept answers on the phone: only lists and numbers, not a question, money or an export, and not past a day", async () => {
+  const SW = await adminFile("/admin/sw.js").text();
+  const handlers = {};
+  const store = new Map();
+  const cache = {
+    put: async (req, res) => { store.set(req.url, res); },
+    match: async (req) => store.get(req.url) ?? null,
+    keys: async () => [...store.keys()].map((u) => new Request(u)),
+    delete: async (req) => store.delete(req.url ?? req),
+  };
+  const self = { location: { origin: ORIGIN }, addEventListener: (k, f) => { handlers[k] = f; }, clients: { claim: async () => {} }, skipWaiting: async () => {} };
+  const caches = { open: async () => cache, keys: async () => [], delete: async () => true, match: async () => null };
+  let online = true;
+  const fetch = async () => {
+    if (!online) throw new TypeError("offline");
+    return new Response("{\"ok\":1}", { status: 200, headers: { "content-type": "application/json" } });
+  };
+  new Function("self", "caches", "fetch", SW)(self, caches, fetch);
+  const ask = async (path) => {
+    let answer = null;
+    const waits = [];
+    handlers.fetch({ request: new Request(`${ORIGIN}${path}`), respondWith: (p) => { answer = p; }, waitUntil: (p) => waits.push(p) });
+    const res = answer ? await answer.catch(() => null) : null;
+    await Promise.all(waits);
+    return res;
+  };
+  for (const p of ["/api/admin/badges", "/api/admin/inquiries?status=open", "/api/admin/inquiries/abcdefghijklmnopqrstuv", "/api/admin/money",
+    "/api/admin/ledger/export.csv", "/api/admin/inquiries?status=open&q=%EC%95%8C%EB%9E%8C", "/api/admin/audit", "/api/admin/admins"]) await ask(p);
+  const kept = [...store.keys()].map((u) => new URL(u).pathname + new URL(u).search);
+  assert.deepEqual(kept.sort(), ["/api/admin/badges", "/api/admin/inquiries?status=open"]);
+  // Offline: the kept list answers, marked as the phone's copy; a day later it does not.
+  online = false;
+  const res = await ask("/api/admin/badges");
+  assert.equal(res?.headers.get("x-admin-cache"), "1");
+  const old = store.get(`${ORIGIN}/api/admin/badges`);
+  const headers = new Headers(old.headers);
+  headers.set("x-admin-kept", String(Date.now() - 25 * 3600e3));
+  store.set(`${ORIGIN}/api/admin/badges`, new Response("{}", { status: 200, headers }));
+  assert.equal(await ask("/api/admin/badges"), null, "older than a day is not shown");
+  assert.equal(await ask("/api/admin/money"), null, "never kept, never shown offline");
+});
+
+test("[RVA-03] 경고·쉬기: Enter in the line sends nothing, a warning asks with who·what·words first, and 되돌리기 takes it back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-12-10T03:00:00Z") });
+  const { env, call } = await world({ plaza: true });
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험", confirm: true }, owner);
+  const a = await call("POST", "/api/reports", report(2, { company: "마을화학" }), from(2));
+  const post = (await call("POST", "/api/posts", { device: device(3), company: a.data.company.id, setup: a.data.setup, body: "광고 글이에요 셋" }, from(3))).data.id;
+  const u = await signedIn(env);
+  await u.go("#/community?show=limits");
+  const find = u.$('form[data-form="care-find"]');
+  find.elements.q.value = post;
+  find.requestSubmit();
+  await u.settle(40);
+  await u.idle();
+  const form = u.$('form[data-form="care-act"]');
+  assert.ok(form, "the person and what to do next");
+  assert.equal(form.querySelectorAll("[type=submit]").length, 0, "no submit button: Enter cannot send a warning");
+  form.elements.reason.value = "spam";
+  form.elements.note.value = "광고는 쉬어 가요";
+  form.requestSubmit();
+  await u.settle(20);
+  const notes = () => call("GET", "/api/admin/care", undefined, owner).then((r) => r.data.warnings.length);
+  assert.equal(await notes(), 0, "Enter sent nothing");
+  await u.click('[data-act="care-do"][data-kind="warn"]');
+  assert.match(u.text("dialog h2"), /이 경고를 보낼까요/);
+  assert.match(u.text("dialog .confirm-rows"), /누구에게.*무엇을.*광고·도배.*앱에 보일 글.*광고는 쉬어 가요/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(await notes(), 1);
+  assert.ok(u.$(".toast [data-undo]"), "15초 되돌리기");
+  await u.click(".toast [data-undo]");
+  await u.settle(40);
+  assert.equal(await notes(), 0, "taken back: nothing went to the phone");
+  // The same reason again within the days asks plainly that it counts twice.
+  await call("POST", "/api/admin/care/warn", { post, reason: "spam" }, owner);
+  await u.go("#/home");
+  await u.go("#/community?show=limits");
+  await u.settle(40);
+  await u.idle();
+  const again = u.$('form[data-form="care-act"]');
+  again.elements.reason.value = "spam";
+  await u.click('[data-act="care-do"][data-kind="warn"]');
+  assert.match(u.text("dialog h2"), /같은 이유로 경고를 이미 보냈어요/);
+  assert.doesNotMatch(u.text("#main"), /post:/, "no inner names on the screen");
+});
+
+test("[RVA-11] 연기 시험: odd words in questions and a company with two versions leave every screen and every detail open", async () => {
+  const { env, call } = await world();
+  const owner = await signIn(call);
+  // 검토 ADMX-23: words that are names on every object, emoji, control characters, a long line.
+  const odd = ["constructor", "toString __proto__ valueOf", "급여 화면에서 \"is not a constructor\" 오류", "😀🌙 야간 근무 🙏", "줄\u0000바꿈\u0007소리‮거꾸로", "가".repeat(1900)];
+  for (const [i, text] of odd.entries()) {
+    await call("POST", "/api/inquiries", { v: 1, device: device(40 + i), kind: i % 2 ? "bug" : "idea", text, info: { app: "1.39.0 (53)" } }, from(40 + i));
+  }
+  // 검토 ADMX-03: '더해지는'의 '해지' 같은 평범한 말은 결제·환불 기록으로 잡히지 않아요.
+  await call("POST", "/api/inquiries", { v: 1, device: device(49), kind: "idea", text: "근무가 더해지는 날을 한눈에 보고 싶어요", info: { app: "1.39.0 (53)" } }, from(49));
+  await call("POST", "/api/admin/dev", { title: "급여 화면에서 \"is not a constructor\" 오류", body: "constructor" }, owner);
+  // 검토 ADMX-02(T24-21): one company with two versions from two departments.
+  const first = await call("POST", "/api/reports", report(5, { company: "두판정밀", dept: "1공장" }), from(5));
+  const other = { ...setup(), shiftTypes: setup().shiftTypes.map((s) => (s.name === "주간" ? { ...s, start: "08:00", end: "20:00" } : s)) };
+  const second = await call("POST", "/api/reports", report(6, { company: "두판정밀", dept: "2공장", setup: other }), from(6));
+  const company = first.data.company.id;
+  for (const r of [first, second]) assert.equal((await call("POST", `/api/admin/groups/${company}/${r.data.setup}/adopt`, {}, owner)).status, 200);
+  const t = await signedIn(env);
+  const inquiry = (await call("GET", "/api/admin/inquiries?status=open", undefined, owner)).data.items?.[0]?.id;
+  const dev = (await call("GET", "/api/admin/dev?status=all", undefined, owner)).data.items?.[0]?.id;
+  const screens = [...Object.keys(adminLib().TABS), `companies/${company}`, ...(inquiry ? [`inquiries/${inquiry}`] : []), ...(dev ? [`dev/${dev}`] : [])];
+  for (const s of screens) {
+    await t.go(`#/${s}`);
+    assert.ok(!t.$("#main .failed"), `${s} loaded`);
+    assert.ok(t.text("#main").length > 10, `${s} shows something`);
+  }
+  const billing = (await call("GET", "/api/admin/inquiries?status=open&billing=1", undefined, owner)).data;
+  assert.ok(!JSON.stringify(billing).includes("더해지는"), "an ordinary word is not a billing question");
+  await t.go(`#/companies/${company}`);
+  assert.match(t.text("#main"), /1공장/);
+  assert.match(t.text("#main"), /2공장/);
+  assert.deepEqual(t.errors, []);
+  assert.deepEqual(t.broken, []);
+});
+
+test("[RVA-23] 새 공지: 틀에서 시작하면 글·날짜·단추가 차고, 단추와 대상이 서버에 그대로 가요", async () => {
+  const { env, call } = await world();
+  const t = await signedIn(env);
+  await t.go("#/notices");
+  await t.click('[data-act="notice-new"]');
+  const form = t.$('form[data-form="notice"]');
+  assert.match(t.text("#nt-who-sum"), /모두에게/);
+  assert.ok(t.$("#nt-act-more").hidden, "no button yet: no button boxes");
+  assert.match(t.text("#nt-preview .np-acts"), /다시 보지 않기\s*확인/, "the phone's two buttons");
+  // 틀: 알람 점검 부탁 fills the words, the button and who it is for.
+  await t.click('[data-act="notice-template"][data-key="alarm"]');
+  assert.match(t.$("#nt-title").value, /알람이 잘 울리는지/);
+  assert.equal(t.$("#nt-act").value, "ALARM_CHECK");
+  assert.ok(!t.$("#nt-act-more").hidden, "the label box opens with a button");
+  assert.match(t.text("#nt-preview .np-acts .on"), /알람 점검 열기/, "the app's own words when the label is empty");
+  assert.match(t.text("#nt-who-sum"), /알람 쓰는 분/);
+  // Typed words are not thrown away by the next 틀 at once.
+  await t.type("#nt-title", "직접 쓴 제목");
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.equal(t.$("#nt-title").value, "직접 쓴 제목", "asked first");
+  assert.match(t.text(".tpl-ask"), /한 번 더 누르면/);
+  await t.click('[data-act="notice-template"][data-key="check"]');
+  assert.match(t.$("#nt-title").value, /서버 점검/);
+  // A web address: only https, said at the box.
+  t.$("#nt-act").value = "URL";
+  t.$("#nt-act").dispatchEvent(new t.window.Event("input", { bubbles: true }));
+  await t.settle();
+  assert.ok(!t.$("#nt-url-box").hidden, "the address box opens");
+  await t.type("#nt-url", "http://example.com/x");
+  await t.type("#nt-label", "자세히");
+  for (const b of t.$$('input[name="workTypes"]')) b.checked = ["SHIFT", "DAY"].includes(b.value);
+  await t.type("#nt-makers", "Samsung, google");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.equal(t.$("#nt-url").getAttribute("aria-invalid"), "true");
+  assert.match(t.text("#nt-url-error"), /https/);
+  await t.type("#nt-url", "https://example.com/x");
+  form.requestSubmit();
+  await t.settle(20);
+  assert.match(t.text(".sure"), /교대·일근 · samsung·google에 맞는 분/, "the ask says who");
+  form.requestSubmit();
+  await t.settle(30);
+  const owner = await signIn(call);
+  const n = (await call("GET", "/api/admin/notices", undefined, owner)).data.notices[0];
+  assert.deepEqual(n.action, { kind: "URL", url: "https://example.com/x", label: "자세히" });
+  assert.deepEqual(n.audience, { makers: ["samsung", "google"], workTypes: ["SHIFT", "DAY"] });
+  assert.match(t.text("#main"), /교대·일근 · samsung·google · 단추 '자세히'/, "the list says who and which button");
+  // 고치기 opens with them in place.
+  await t.click(`[data-act="notice-edit"][data-id="${n.id}"]`);
+  // (happy-dom keeps the last picked option of an earlier select with the same id; Chromium reads 'URL' here.)
+  assert.ok(t.$('#nt-act option[value="URL"]').hasAttribute("selected"));
+  assert.equal(t.$("#nt-url").value, "https://example.com/x");
+  assert.ok(t.$('input[name="workTypes"][value="SHIFT"]').checked);
+  assert.ok(t.$("details.fold-field").open, "who it is for is open when it is set");
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-19][RVA-21] 허브의 '모두' 창, 파일 고르기 단추, 폰 폭의 판 알약", async () => {
+  const { env } = await world();
+  const t = await signedIn(env);
+  await t.go("#/review");
+  await t.click("#hub-all");
+  assert.match(t.text("dialog h2"), /사람과 글의 모든 화면/);
+  assert.ok(t.$('dialog a.chip.pick[data-tab="review"][aria-current="page"]'), "here is marked");
+  await t.click('dialog [data-act="hub-go"][data-tab="community"]');
+  await t.settle(20);
+  assert.ok(!t.$("dialog").open, "the box closed");
+  assert.equal(t.window.location.hash.split("?")[0], "#/community");
+  // 레시피 › 출시 대기의 재료 파일: the app's button, not the browser's.
+  await t.go("#/recipes?tab=waiting");
+  const pick = t.$(".filepick");
+  if (pick) {
+    assert.match(pick.textContent, /파일 고르기/);
+    assert.match(pick.textContent, /아직 고르지 않았어요/);
+    assert.ok(pick.querySelector('input[type="file"]'), "still a file box for the form");
+  }
+  // The server's version is in the title bar too (shown on a phone instead of the thin line).
+  const mini = t.$("#dl-mini");
+  assert.ok(mini && !mini.hidden, "the pill is filled");
+  assert.match(mini.getAttribute("aria-label"), /로컬 서버|지금 도는 서버/);
+  assert.deepEqual(t.errors, []);
+});
+
+test("[RVA-18][RVA-20][RVA-22] 막대 배지는 한 줄, 대비 값, 마우스 올림은 마우스 화면에서만", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.badge\{white-space:nowrap;overflow-wrap:normal/, "two digits never break into two lines");
+  // Every :hover sits under (hover:hover): a tap leaves no hover colour on a phone (the 'dull' filled button in #465's photos).
+  const stack = [];
+  let bare = 0;
+  for (let i = 0, start = 0; i < css.length; i++) {
+    if (css[i] === "{") {
+      const head = css.slice(start, i);
+      if (head.includes(":hover") && !head.trim().startsWith("@") && !stack.some(Boolean)) bare++;
+      stack.push(head.includes("hover:hover"));
+      start = i + 1;
+    } else if (css[i] === "}") {
+      stack.pop();
+      start = i + 1;
+    } else if (css[i] === ";") start = i + 1;
+  }
+  assert.equal(stack.length, 0, "braces balance");
+  assert.equal(bare, 0, "no :hover outside (hover:hover)");
+  assert.match(css, /--on-bad:#2B0D0A/, "dark red badge words");
+  assert.doesNotMatch(css, /font-size:\.(6\d|7[0-4])rem/, "nothing under 12px");
+});
+
+// ---- 2.0.0 [RVQ-16·17·18] 검토 U21-07·U21-08·I21b-01·I21b-02: 백업 되살리기 연습, 데이터 요청 대행, 보안 한 장 ----
+
+/** R2 as the backup uses it (put·get·list·delete), in memory. */
+function memoryR2() {
+  const store = new Map();
+  return {
+    store,
+    async put(key, body) { store.set(key, typeof body === "string" ? new TextEncoder().encode(body) : new Uint8Array(body)); },
+    async get(key) {
+      const v = store.get(key);
+      return v ? { body: new Blob([v]).stream(), text: async () => new TextDecoder().decode(v) } : null;
+    },
+    async list({ prefix = "", delimiter } = {}) {
+      const keys = [...store.keys()].filter((k) => k.startsWith(prefix)).sort();
+      if (!delimiter) return { objects: keys.map((key) => ({ key })), truncated: false };
+      return { objects: [], truncated: false, delimitedPrefixes: [...new Set(keys.map((k) => prefix + k.slice(prefix.length).split(delimiter)[0] + delimiter))] };
+    },
+    async delete(keys) { for (const k of [].concat(keys)) store.delete(k); },
+  };
+}
+
+test("[RVQ-16] 검토 U21-08: 백업 shows what it seals, and 지금 연습하기 reads the last day back with rows beside today's", async (t) => {
+  offline(t);
+  const { env, call } = server({ BACKUP: memoryR2() });
+  const owner = await signIn(call);
+  for (let i = 0; i < 40; i++) {
+    const r = (await call("POST", "/api/admin/backup/run", {}, owner)).data;
+    if (r.skipped === "done" || r.done === r.of) break;
+  }
+  const u = await asOwner(env, t);
+  await u.go("#/backup");
+  const cards = [...u.$$("#main section.card")];
+  assert.match(cards[0].textContent, /비밀 칸은 서버 비밀값 RATE_SALT로 잠가요/);
+  assert.match(u.text('#main [data-key="backup-rules"] summary'), /잠그는 칸 \d+개 표 · 빼는 표 \d+개/);
+  const drill = cards.find((c) => /되살리기 연습/.test(c.querySelector("h2")?.textContent ?? ""));
+  assert.match(drill.textContent, /아직 안 함/);
+  await u.click('#main [data-act="backup-drill"]');
+  await u.idle();
+  const after = [...u.$$("#main section.card")].find((c) => /되살리기 연습/.test(c.querySelector("h2")?.textContent ?? ""));
+  assert.match(after.textContent, /되살릴 수 있음/);
+  assert.match(after.textContent, /마지막 연습 .* · 표 \d+개 · [\d,]+줄/);
+  assert.match(after.textContent, /백업을 다시 읽음 · (잠근 칸 \d+개를 지금 열쇠로 열어 봄|잠근 칸은 아직 없어요)/);
+  // 표가 아니라 줄바꿈 되는 목록(좁은 폭·큰 글자에서 머리글이 세로로 서지 않게).
+  const row = [...after.querySelectorAll(".drill-rows li")].find((li) => li.querySelector("b")?.textContent === "settings");
+  assert.match(row.querySelector("span").textContent, /^백업 \d+ · 오늘 \d+$/, "백업 · 오늘 DB(목록과 다를 때만 목록)");
+  assert.match(u.text("#main"), /R2 백업으로 되살리기: .*tools\/backup-open\.mjs/);
+  assert.ok(!u.text("#main").includes("test-salt"), "the secret's name, never its value");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-17] 검토 U21-07·I21b-02: 데이터 요청 › 대신 하기 exports, then forgets after one more ask, and the proof stays on the request", async (t) => {
+  offline(t);
+  const { env, call, DB } = server();
+  const me = device(31);
+  await call("POST", "/api/inquiries", { v: 1, device: me, kind: "other", text: "앱을 지웠어요. 제 자료를 모두 지워 주세요", info: { app: "2.0.0 (54)" } }, from(31));
+  await call("POST", "/api/inquiries", { v: 1, device: me, kind: "bug", text: "예전 문의예요", info: { app: "2.0.0 (54)" } }, from(31));
+  const ask = DB.db.prepare("SELECT q.id FROM inquiries q JOIN inquiry_messages m ON m.inquiry_id = q.id WHERE m.text LIKE '%모두 지워%'").get().id;
+  const owner = await signIn(call);
+  const made = (await call("POST", "/api/admin/data-requests", { kind: "correct", inquiry: ask, summary: "자료 삭제 요청" }, owner)).data.id;
+  const u = await asOwner(env, t);
+  await u.go("#/requests");
+  await u.click(`#main [data-act="request-run"][data-id="${made}"]`);
+  let form = u.$('dialog form[data-form="request-run"]');
+  assert.match(form.textContent, /이 요청에 묶인 문의를 보낸 설치의 자료로 해요/);
+  assert.ok(!form.querySelector('[name="code"]'), "no code asked: the question shows the install");
+  assert.equal(form.querySelector('[name="do"]:checked').value, "forget", "삭제 요청이면 지우기가 먼저");
+  // 열람 first: a file comes down.
+  let saved = null;
+  u.window.URL.createObjectURL = (blob) => { saved = blob; return "blob:x"; };
+  u.window.URL.revokeObjectURL = () => {};
+  form.querySelector('[name="do"][value="export"]').checked = true;
+  form.requestSubmit();
+  await u.idle();
+  const file = JSON.parse(await saved.text());
+  assert.equal(file.request, made);
+  assert.ok(file.data.inquiries.length >= 2);
+  assert.match(u.text("#main .proof"), /열람 파일 내보냄: \d+개 표 \d+줄/);
+  // 지우기 asks once more, saying what stays.
+  await u.click(`#main [data-act="request-run"][data-id="${made}"]`);
+  form = u.$('dialog form[data-form="request-run"]');
+  form.requestSubmit();
+  await u.settle();
+  const confirm = u.$('dialog form[data-form="confirm"]');
+  assert.match(confirm.textContent, /이 설치의 자료를 모두 지울까요\?/);
+  assert.match(confirm.textContent, /요청 문의 하나\(답을 보내려고\)/);
+  confirm.requestSubmit();
+  await u.idle();
+  const proof = u.text("#main .proof");
+  assert.match(proof, /지움: \d+개 표 \d+줄 · 남음 inquiries 1\(요청 문의\(답을 보내려고\)\)/);
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiries WHERE device = (SELECT device FROM inquiries WHERE id = ?)").get(ask).n, 1);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-18] 검토 I21b-01: 보안 한 장 puts what to fix first, each row with where to fix it, and never a secret's value", async (t) => {
+  offline(t);
+  const { env } = server({ INTEGRITY_MODE: "watch", ADMIN_2FA_RESET: "1" });
+  const u = await asOwner(env, t);
+  await u.go("#/security");
+  const rows = [...u.$$("#main .security-rows li")];
+  assert.ok(rows.length >= 9, `${rows.length} rows`);
+  const tones = rows.map((li) => li.className.replace("sec-", ""));
+  assert.deepEqual(tones, [...tones].sort((a, b) => ["bad", "warn", "ok"].indexOf(a) - ["bad", "warn", "ok"].indexOf(b)), "고치기 → 살펴보기 → 괜찮아요");
+  const byName = (re) => rows.find((li) => re.test(li.querySelector("b").textContent));
+  assert.match(byName(/최고 관리자 2단계/).textContent, /ADMIN_2FA_RESET이 켜져 있어/);
+  assert.match(byName(/최고 관리자 2단계/).querySelector(".pill").textContent, /고치기/);
+  assert.match(byName(/ADMIN_PASSWORD/).textContent, /처음 본 날 \d{4}-\d{2}-\d{2}부터 그대로/);
+  assert.match(byName(/SEAL_KEY/).textContent, /RATE_SALT로 잠가요/);
+  assert.match(byName(/Play 무결성/).textContent, /보기만 해요/);
+  assert.equal(byName(/하루 백업/).querySelector(".fix a").getAttribute("href"), "#/backup");
+  const text = u.text("#main");
+  for (const v of [PASSWORD, "test-salt"]) assert.ok(!text.includes(v), "no secret's value on the page");
+  assert.match(u.text("#main .card-head"), /고칠 것 \d+/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVR-20] 공모 다시 고르기: 저장 전 확인 창이 새로 생기는 보상과 빠지는 작품의 지급된 보상을 말하고, 고르기를 눌러야 저장돼요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { env, call } = await world({ plaza: true });
+  const owner = await signIn(call);
+  await call("POST", "/api/admin/village/contests", { style: "SHIFT", theme: "야간 근무용 어두운 테마" }, owner);
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "어두운 달력", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const a = await make(1, "야간 다크");
+  const b = await make(2, "밤 하늘");
+  for (const [n, code] of [[1, a], [2, b]]) await call("POST", "/api/village/contest/enter", { device: device(n), style: "SHIFT", code }, from(n));
+  await call("POST", "/api/admin/village/contests/pick", { month: "2026-11", style: "SHIFT", codes: [a] }, owner);
+  for (const w of (await call("GET", "/api/admin/rewards?status=owed&kind=maker", undefined, owner)).data.rewards) {
+    await call("POST", `/api/admin/rewards/${w.id}`, { status: "paid" }, owner);
+  }
+  t.mock.timers.setTime(Date.parse("2026-12-03T03:00:00Z")); // 12월: 11월 작품을 골라요
+  const u = await signedIn(env);
+  await u.go("#/community?show=village");
+  await u.idle();
+  const box = (code) => u.$(`input[data-pick="2026-11|SHIFT"][value="${code}"]`);
+  box(a).checked = false;
+  box(b).checked = true;
+  await u.click('[data-act="contest-pick"][data-id="2026-11|SHIFT"]');
+  await u.settle(30);
+  assert.match(u.text("dialog h2"), /이달의 테마로 고를까요/);
+  assert.match(u.text("dialog .confirm-rows"), /새로 생기는 보상.*밤 하늘/);
+  assert.match(u.text("dialog .confirm-rows"), /빠지는 작품의 지급된 보상.*야간 다크.*거두지 못해요/);
+  const picks = async () => (await call("GET", "/api/admin/village/contests", undefined, owner)).data.items.find((x) => x.month === "2026-11" && x.style === "SHIFT").picks;
+  assert.deepEqual(await picks(), [a], "nothing saved before 고르기");
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.deepEqual(await picks(), [b]);
+  assert.deepEqual(u.errors, []);
+  assert.deepEqual(u.broken, []);
+});
+
+test("[RVA-25] 장터: 줄마다 주 동작 하나와 ⋯ 메뉴, 50개씩 이어 받기, 이름으로 찾기", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const look = { kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] };
+  // 2.0.0 [RVA-48] 도약 42: 40개씩 그리던 것을 서버에서 50개씩 받아요.
+  for (let i = 1; i <= 55; i++) {
+    const recipe = { format: "bamnat-recipe", v: 1, title: `세트 ${String(i).padStart(2, "0")}`, summary: "야간이 잘 보여요", styles: ["SHIFT"],
+      cover: { a: 4282339765, b: 4288423856, dir: 1, emoji: "🌙" }, pieces: [look] };
+    const made = await s.call("POST", "/api/recipes", { device: device(100 + i), recipe, scope: "public" }, from(100 + i));
+    assert.equal(made.status, 201, `recipe ${i}: ${JSON.stringify(made.data)}`);
+  }
+  const u = await asOwner(s.env, t);
+  await u.go("#/recipes");
+  const rows = () => u.$$("#main ul.recipe-rows>li");
+  // Whichever tab holds them (공개 or 검토 대기), go there.
+  for (const key of ["visible", "pending"]) {
+    if (rows().length) break;
+    const tabBtn = u.$(`#main [data-act="recipe-tab"][data-key="${key}"]`);
+    if (tabBtn) {
+      await u.click(tabBtn);
+      await u.idle();
+    }
+  }
+  assert.equal(rows().length, 50, "50 at a time");
+  assert.match(u.text('#main [data-act="recipe-more"]'), /50\/55/);
+  for (const li of rows().slice(0, 3)) {
+    assert.ok(li.querySelector("details.row-more>summary[aria-label]"), "⋯ for the rest");
+    assert.ok(li.querySelector("details.row-more .menu .btn.danger"), "지우기 sits in the menu");
+    assert.ok(!li.querySelector(".btn.primary"), "no filled button on a row");
+    // 알약은 종류 하나만(탭 아홉 개를 붙인 605px 알약이 380·200%에서 카드 밖으로 잘렸어요), 탭은 아래 작은 글로.
+    for (const p of li.querySelectorAll(".row-main>.pill")) assert.doesNotMatch(p.textContent, /·/, p.textContent);
+  }
+  // 줄 가운데에서 연 ⋯ 메뉴는 열 때 재어 화면 안으로 옮겨요(--menu-dx).
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.row-more>\.menu\{[^}]*transform:translateX\(var\(--menu-dx,0\)\)/);
+  assert.match(await adminFile("/admin/app.js").text(), /setProperty\("--menu-dx"/);
+  await u.click('#main [data-act="recipe-more"]');
+  await u.settle();
+  assert.equal(rows().length, 55);
+  assert.ok(!u.$('#main [data-act="recipe-more"]'), "all shown");
+  await u.type("#search", "세트 07");
+  await new Promise((r) => setTimeout(r, 300));
+  await u.settle();
+  assert.equal(rows().length, 1, "found by title");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-24] 활동 기록 머리: 모든 사람·나 한 줄, 누가·종류·기간은 거르기 안, CSV는 단추 하나", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/audit");
+  assert.deepEqual(u.$$('#main .list-head [data-act="audit-who"]').map((b) => b.textContent.trim()), ["모든 사람", "나"]);
+  for (const id of ["au-actor", "au-kind", "au-from", "au-to"]) assert.ok(u.$(`#main .filter-panel #${id}`), `${id} behind 거르기`);
+  assert.ok(u.$('#main .list-head [data-act="audit-csv"][aria-label="CSV로 받기"]'));
+  await u.click('#main [data-act="audit-who"][data-key="me"]');
+  await u.idle();
+  assert.equal(u.$('#main [data-act="audit-who"][data-key="me"]').getAttribute("aria-pressed"), "true");
+  assert.match(u.window.location.hash, /actor=me/, "kept in the address");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-25] 토론 카드: 결정 단추는 왼쪽 한 줄, 쓰기 막기·경고·토론 전부·지우기는 ⋯", async (t) => {
+  offline(t);
+  const s = server({ plaza: true });
+  const a = await s.call("POST", "/api/reports", report(1), from(1));
+  await s.call("POST", "/api/posts", { device: device(2), company: a.data.company.id, setup: a.data.setup, body: "단추 줄을 볼 글" }, from(2));
+  const u = await asOwner(s.env, t);
+  await u.go("#/community?show=all");
+  const acts = u.$("#main article.card .actions.start.row-acts");
+  assert.ok(acts, "one left-aligned row");
+  assert.deepEqual([...acts.children].filter((c) => c.matches(".btn")).map((b) => b.textContent.trim()), ["가리기"]);
+  const menu = acts.querySelector("details.row-more .menu");
+  assert.deepEqual([...menu.querySelectorAll(".btn")].map((b) => b.textContent.trim()), ["30일 쓰기 막기", "경고·쉬기", "이 토론 전부", "지우기"]);
+  assert.ok(menu.querySelector('.btn.danger[data-act="post-delete"]'));
+  assert.ok(![...acts.querySelectorAll(".btn")].some((b) => b.matches(".primary")), "no filled button on a card");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-29] 원격 갱신: 휴대폰이 20대보다 적으면 비율 대신 'N대 중 M대'와 자료 부족", async (t) => {
+  const dir = new URL("../../../../../remote/v1/", import.meta.url);
+  const real = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const name = String(url).split("/").pop();
+    try {
+      return new Response(readFileSync(new URL(name, dir)));
+    } catch {
+      return new Response("", { status: 404 });
+    }
+  };
+  t.after(() => { globalThis.fetch = real; });
+  const { env, DB } = await world();
+  const day = (n) => new Date(Date.now() + 9 * 3600e3 - n * 86400e3).toISOString().slice(0, 10);
+  DB.db.prepare("INSERT INTO usage_days (day, app, phones) VALUES (?, '1.39.0', 2), (?, '9.9.9', 1)").run(day(1), day(1));
+  const u = await signedIn(env);
+  await u.go("#/gates");
+  await u.settle(40);
+  const card = u.$$("#main section.card").find((c) => /원격 갱신/.test(c.textContent));
+  assert.ok(card, "the card");
+  assert.match(card.textContent, /3대 중 \d대/);
+  assert.match(card.textContent, /자료 부족/);
+  assert.doesNotMatch(card.querySelector("ul.rows").textContent, /\d%/, "no share of three phones");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-30] 문의 상세: 1024보다 좁으면 목록 칸 없이 '‹ 이전 1/N 다음 ›', 주소로 바로 열어도", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const first = await signedIn(env);
+  await first.go("#/inquiries");
+  const id = first.$('#main a.row[href^="#/inquiries/"]').getAttribute("href").split("/").pop().split("?")[0];
+  const u = await signedIn(env, { width: 900 });
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(20);
+  assert.ok(!u.$("#main .split .pane-list"), "no list column at 900");
+  assert.match(u.text("#main .stepnav"), /이전 \d+\/3 ?다음/);
+  const wide = await signedIn(env, { width: 1100 });
+  await wide.go(`#/inquiries/${id}`);
+  assert.ok(wide.$("#main .split .pane-list"), "the list beside it from 1024");
+  assert.deepEqual([...u.errors, ...wide.errors], []);
+});
+
+test("[RVA-31] 오늘: 첫 문장은 아래 셋에 든 종류를 모두 말하고, 정할 판 칸은 그래프 대신 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env);
+  await u.go("#/home");
+  await u.settle(20);
+  const line = u.text("#today-hero-h");
+  const words = { bad: "바로 볼 것", warn: "살펴볼 것", todo: "할 일" };
+  for (const li of u.$$("#main .today-three>li")) {
+    const kind = Object.keys(words).find((k) => li.classList.contains(k));
+    assert.ok(line.includes(words[kind]), `"${line}" names ${words[kind]}`);
+  }
+  const tile = u.$$("#main .tile.kpi").find((x) => /정할 판/.test(x.textContent));
+  if (tile) assert.ok(tile.querySelector(".tile-go"), "a line where the chart would be");
+  // The account screen counts the hubs from the same list the menu uses.
+  await u.go("#/account");
+  assert.match(u.text("#main"), /1~5로 허브를/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-24][RVA-25][RVA-31] 380·큰 글자 모양: 보기 줄 한 줄 밀기, 기다리는 칩 둘씩, 카드 ⋯ 오른쪽으로, 큐 막대는 폰 아래, 미리 보기 칸 맞춤", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.list-head>\.segmented\{[^}]*flex-wrap:nowrap;overflow-x:auto/);
+  assert.match(css, /@container waiting \(width < 14rem\)\{[^}]*\.waiting b\{flex-basis:100%\}/);
+  assert.match(css, /\.actions\.start details\.row-more>\.menu\{left:0;right:auto\}/);
+  assert.match(css, /@media \(max-width:599\.98px\)\{\s*\.queue-bar\{position:fixed;top:auto/);
+  assert.match(css, /\.sim-grid>\.fieldset\{display:flex;flex-direction:column\}/);
+  // [RVQ-47] 검토 HQ-88: 840~1023은 두 칸을 나란히(격자 대신 감기는 줄: 글자 200%면 칸 폭이 모자라 위아래로).
+  assert.match(css, /@media \(min-width:840px\) and \(max-width:1023\.98px\)\{\s*\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.cols>:first-child\{flex:1\.6 1 18rem\}/);
+});
+
+test("[RVA-32] 숫자 표가 쪽을 옆으로 밀지 않아요: 표는 스크롤 상자 안, 숨긴 이름표도 그 상자를 기준으로", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-60: 광장 하루 글 표(폭 868)의 숨긴 이름표(.lab, position:absolute)가 상자 밖을 기준으로 놓여 840에서 쪽이 123px 밀렸어요.
+  assert.match(css, /\.table-wrap\{position:relative;max-width:100%\}/);
+  assert.match(css, /\.table-wrap \.lab\{left:0;top:0\}/);
+  // 상자 안 표 칸은 낱말을 지켜요('투자 이야기'가 '이야/기'로 갈라졌어요).
+  assert.match(css, /\.table-wrap table\.list th,\.table-wrap table\.list td\{overflow-wrap:break-word\}/);
+  // 380·200%: 칸 최소 폭이 화면보다 넓은 격자가 없어요(15rem = 480px).
+  assert.doesNotMatch(css, /repeat\(auto-(fit|fill),minmax\([0-9.]+rem,1fr\)\)/);
+  assert.match(css, /\.card-head>\.btn\{max-width:100%;white-space:normal/);
+  // Every number table in the app sits in a scroll box (마을 › 광장 효과, 숫자 › 요금제 구간, 회사 표…).
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env);
+  const seen = {};
+  for (const hash of ["#/community?show=village", "#/companies", "#/metrics"]) {
+    await u.go(hash);
+    await u.settle(20);
+    seen[hash] = 0;
+    for (const table of u.$$("#main table.list")) {
+      seen[hash]++;
+      assert.ok(table.closest(".table-wrap"), `${hash}: a table outside a scroll box`);
+    }
+  }
+  // 광장 하루 글(HQ-60)과 회사 표는 시험 자료로도 그려져요. 숫자 › 요금제 구간은 자료가 있을 때만.
+  assert.ok(seen["#/community?show=village"] > 0 && seen["#/companies"] > 0, JSON.stringify(seen));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-33] 오늘 '지금 기다리는 것': 숫자는 보통 색, 기한을 넘긴 칸에만 빨간 '넘김 N'을 글로", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-65(조건 6·14): 숫자마다 빨강이던 칩을 보통 색으로, 빨강은 넘김·오류를 말하는 글 한 조각에만.
+  assert.match(css, /\.waiting a \.n\{color:var\(--fg\)/);
+  assert.match(css, /\.waiting a \.late\{color:var\(--bad\)/);
+  // 380·200%에서도 칩은 둘씩(허브는 많아야 넷이라 두 줄 안).
+  assert.match(css, /\.waiting a\{[^}]*flex:1 1 calc\(50% - \.4rem\)/);
+  // 같은 화면의 할 일 줄: 좁은 목록에서 넓은 화면의 한 줄 규칙보다 세게, 단추 줄은 바뀌고 제목은 두 줄까지(840·200% '내일 볼게요' 잘림).
+  assert.match(css, /\.rows\.inbox \.row>\.row-side\{flex-wrap:wrap;justify-content:flex-start\}\.rows\.inbox \.row-main>b\{white-space:normal\}/);
+  const t0 = Date.parse("2026-11-12T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { env } = await world();
+  let u = await signedIn(env);
+  const ask = '#waiting a[href^="#/inquiries"]';
+  const release = '#waiting a[href^="#/launch"], #waiting a[href^="#/chores"], #waiting a[href^="#/flags"]';
+  assert.ok(u.$$("#waiting a").length <= 4, "one chip per other hub");
+  // 막 들어온 문의 셋·제보 하나는 기한 전: 숫자 4는 보통 색, 빨강 없음(서버가 보낸 '지금'으로 재요).
+  assert.match(u.text(`${ask} .n`), /^4$/);
+  assert.equal(u.$$("#waiting .late").length, 0, "nothing late yet: no red");
+  assert.ok(u.$(release), "출시 has a chip");
+  // 열흘 뒤: 문의 셋과 제보 하나가 모두 기한을 넘겨 '사람과 글'에만 '넘김 4'. 출시의 이달 운영은 달 끝이 기한이라 아직이에요.
+  t.mock.timers.setTime(t0 + 10 * 864e5);
+  u = await signedIn(env);
+  assert.ok(u.$(ask).classList.contains("hot"));
+  assert.match(u.text(`${ask} .n`), /^4$/);
+  assert.equal(u.text(`${ask} .late`), "넘김 4");
+  assert.equal(u.$(release).querySelector(".late"), null, "이달 운영 is not late: no red");
+  for (const a of u.$$("#waiting a:not(.hot)")) assert.equal(a.querySelector(".late"), null);
+  // 이 기기에서 '내일 볼게요'로 미룬 것은 빨강에서도 빠져요.
+  u.$('#main .rows.inbox [data-act="inbox-snooze"]').click();
+  await u.settle(20);
+  assert.equal(u.text(`${ask} .late`), "넘김 3");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-34] 채운 단추는 화면에 하나(조건 2): 줄·카드·고르기 줄에는 채운 단추가 없어요", async (t) => {
+  offline(t);
+  const { env } = await world({ plaza: true });
+  const u = await signedIn(env);
+  const filled = () => u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open]), dialog, [hidden]"));
+  // 앞: 오늘 11(할 일 줄마다 '보기'), 마을 12(주제 저장마다), 내 계정 4, 흐름·회사·공지·관리자 2.
+  for (const hash of ["#/home", "#/flow", "#/community?show=village", "#/companies", "#/notices", "#/admins", "#/account", "#/inquiries", "#/recipes"]) {
+    await u.go(hash);
+    await u.settle(20);
+    const got = filled().map((b) => b.textContent.trim());
+    assert.ok(got.length <= 1, `${hash}: ${got.length} filled (${got.join(" | ")})`);
+  }
+  // 옛 앱 급여 끊기의 지금 고른 것은 채운 단추가 아니라 고르기 줄의 눌린 칸이에요.
+  await u.go("#/notices");
+  await u.settle(20);
+  const pay = u.$('#main .segmented[aria-label="옛 앱 급여 끊기"]');
+  if (pay) assert.equal(pay.querySelectorAll('[aria-pressed="true"]').length, 1);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-35] 의미색(조건 6): 메뉴 숫자와 기다리는 일 칸은 파랑, 빨강은 오늘 답 목표를 넘긴 칸과 '바로 볼 것'에만", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // 메뉴·탭 숫자는 기다리는 일의 수라 파랑 바탕(그 위 글자색).
+  assert.match(css, /\.badge\{[^}]*background:var\(--accent\);color:var\(--on-accent\)/);
+  assert.match(css, /\.badge\{color:var\(--on-accent\)\}/);
+  // 기다리는 일 칸(hot)은 파란 점·보통 숫자, 빨강은 bad 칸에만, 어제보다 늚(▲)은 주황.
+  assert.match(css, /\.tile\.hot \.k::before\{[^}]*background:var\(--accent\)\}/);
+  assert.doesNotMatch(css, /\.tile\.hot \.v\{color:var\(--bad\)\}/);
+  assert.doesNotMatch(css, /\.tile\.hot \.spark polyline\{stroke:var\(--bad\)\}/);
+  assert.match(css, /\.tile\.bad \.v\{color:var\(--bad\)\}/);
+  assert.doesNotMatch(css, /\.delta\.up\{color:var\(--bad\)\}/);
+  // 시험 자료(KST 12시): 문제 신고 문의의 답 목표(8시간)가 오늘 안에 끝나 '오늘 목표 넘김' 1 → 그 칸만 빨강.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-12T03:00:00Z") });
+  const { env } = await world();
+  const u = await signedIn(env);
+  const late = u.$$("#main a.tile").find((a) => /오늘 목표 넘김/.test(a.textContent));
+  assert.ok(late.classList.contains("bad"), "an answer due today: red");
+  assert.deepEqual(u.$$("#main a.tile.bad"), [late], "only that tile is red");
+  // 답 대기·검토 대기처럼 기다리는 일이 있는 칸은 hot(파란 점)이지 빨강이 아니에요.
+  const waiting = u.$$("#main a.tile.kpi.hot");
+  assert.ok(waiting.length >= 2);
+  for (const a of waiting) assert.ok(!a.classList.contains("bad"), a.textContent);
+  assert.ok(!u.$("#main .alerts .card-head .pill.bad"), "the 주의 필요 count is a plain pill");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-36] 오늘은 한 손 화면: 내가 할 것 셋(옆에 내일 볼게요) + 저절로 끝난 일만 펴고, 나머지는 접힌 줄, 채운 단추는 '차례로 답하기' 하나", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/home");
+  const picks = u.$$("#main .today-three li");
+  assert.ok(picks.length >= 1 && picks.length <= 3, "three at most");
+  for (const li of picks) {
+    const later = li.querySelector('button.pick-later[data-act="inbox-snooze"]');
+    assert.ok(later, "each of the three can be put off");
+    assert.match(later.getAttribute("aria-label"), /^내일 볼게요: /);
+    assert.equal(later.dataset.key, li.dataset.swipe);
+  }
+  // Everything else is one folded line each, closed at first.
+  const folds = u.$$("#main details.home-fold").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(folds, [["home:todo", false], ["home:tiles", false], ["home:recent", false]]);
+  assert.match(u.text('#main details[data-key="home:todo"] > summary'), /할 일 모두/);
+  assert.match(u.text('#main details[data-key="home:tiles"] > summary'), /답 대기 \d+ · 검토 대기 \d+/);
+  // One filled button you can see: 차례로 답하기 (the queue), not the one in the to-do list any more.
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.deepEqual(seen.map((b) => b.dataset.act), ["queue-start"]);
+  assert.match(seen[0].textContent, /^문의 \d+건 차례로 답하기$/);
+  // 남은 N개 보기 opens the folded list.
+  await u.click('#main [data-act="home-fold"][data-key="home:todo"]');
+  assert.ok(u.$('#main details[data-key="home:todo"]').open);
+  assert.ok(u.$("#main details[data-key=\"home:todo\"] .rows.inbox li"), "the full list is inside");
+  // Putting the first one off brings the next one up; 되돌리기 brings it back.
+  const first = u.$("#main .today-three li").dataset.swipe;
+  await u.click("#main .today-three li .pick-later");
+  assert.match(u.text("#toast"), /내일 아침까지/);
+  assert.notEqual(u.$("#main .today-three li").dataset.swipe, first);
+  await u.click("#toast [data-undo]");
+  assert.equal(u.$("#main .today-three li").dataset.swipe, first);
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.today-three li\{[^}]*touch-action:pan-y/, "a sideways push does not fight the page scroll");
+  assert.match(css, /\.today-three \.t b\{[^}]*-webkit-line-clamp:2/, "titles show two lines on a phone (도약 43)");
+});
+
+test("[RVA-37] 오늘: 서버가 읽지 못해 빼 둔 줄을 원인·[그 줄 열기]·[개발사항으로] 한 장으로", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const id = DB.db.prepare("SELECT id FROM inquiries ORDER BY created_at LIMIT 1").get().id;
+  DB.db.prepare("UPDATE inquiries SET info = ? WHERE id = ?").run("{broken", id);
+  await u.go("#/desk");
+  const stub = u.$$("#main .lg-line").find((li) => /읽지 못한 문의/.test(li.textContent));
+  assert.ok(stub, "the ledger draws, with that one line marked");
+  assert.match(stub.textContent, /읽지 못함/);
+  await u.go("#/home");
+  const card = u.$("#main .card.stuck");
+  assert.ok(card, "오늘 says what was left out");
+  assert.match(card.textContent, /운영 장부·정리함의 문의 한 줄/, "one line per line left out, however many places read it");
+  assert.equal(card.querySelectorAll(".stuck-list > li").length, 1);
+  assert.equal(card.querySelector("a.btn").getAttribute("href"), `#/inquiries/${id}`);
+  await u.click('#main .card.stuck [data-act="stuck-dev"]');
+  assert.match(u.text("#toast"), /개발사항으로 넘겼어요/);
+  const devs = (await u.api("GET", "/api/admin/dev?status=all")).items;
+  assert.ok(devs.some((d) => /^읽지 못한 줄\(/.test(d.title)), "the 개발사항 is made");
+  assert.ok(u.$('#main .card.stuck a[href^="#/dev/"]'), "the card now points at the 개발사항");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음 출시·내가 할 것)와 다음 한 걸음 하나, 카드 열 장은 접힌 줄, 개발자 말 없음", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-now .loop-state"), /(저절로 도는 중|일부만 저절로)\s*다음 출시 \d{1,2}\. \d{1,2}\. \(.\)\s*내가 할 것 \d+/);
+  const folds = u.$$("#main details.loop-fold");
+  assert.ok(folds.length >= 8, "the other cards are folded lines");
+  assert.ok(folds.every((d) => !d.open), "closed at first");
+  for (const d of folds) assert.ok(d.querySelector(":scope > summary .lf-t b"), "each line says what it is");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1, "one filled button at most: the next step");
+  if (u.$("#main .loop-next")) assert.equal(u.$$("#main .loop-next .btn.primary").length, 1);
+  assert.doesNotMatch(u.text("#main"), /PLAY_SERVICE_ACCOUNT|VAPID|versionCode|\(409\)|G10 \d장|ops\/dev-status|main에 합쳐지면/);
+  // An urgent question comes first (the world has '알람 소리가 안 나요'): the step goes to 결정함.
+  const d = await u.api("GET", "/api/admin/loop");
+  if (d.urgentWaiting) assert.equal(u.$("#main .loop-next .btn.primary").getAttribute("href"), "#/decide");
+  // With it closed, the local server's missing Play key is the step, and it opens the 연결 점검 line in place.
+  for (const q of (await u.api("GET", "/api/admin/inquiries")).inquiries) await u.api("POST", `/api/admin/inquiries/${q.id}/status`, { status: "closed" });
+  await u.go("#/home");
+  await u.go("#/loop");
+  await u.settle(20);
+  assert.match(u.text("#main .loop-next"), /빠진 설정 \d+개: Play 출시 읽기/);
+  await u.click('#main .loop-next [data-act="loop-open"][data-key="loop-check"]');
+  assert.ok(u.$("#loop-check").open, "연결 점검 opened where it is");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/loop");
+  await u.settle(20);
+  // Something changes on the server after the page was read: 스스로 출시 안내 is turned off.
+  await u.api("POST", "/api/admin/loop/switches", { autoShip: false });
+  await u.click('#loop-check [data-act="loop-check"]');
+  await u.settle(20);
+  assert.ok(u.$("#loop-check").open, "stays open to show what it saw");
+  assert.match(u.text("#main .check-seen"), /방금 다시 봤어요 · .+ · 바뀐 줄 1개/);
+  assert.match(u.text("#loop-check"), /스스로 출시 안내[\s\S]*방금 됨 → 확인/);
+  assert.match(u.text("#toast"), /다시 봤어요 · 확인할 것 \d+개 · 바뀐 줄 1개/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-40] 문의 상세 '이 휴대폰': 꼭 볼 것(결제·환불 문의 N번)만 굵게, 숫자·결제·이전 문의는 '자세히' 한 줄", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000011", kind: "other", text: "환불해 주세요", info: { app: "2.0.0 (54)" } }, from(11));
+  const u = await asOwner(env, t);
+  const list = (await u.api("GET", "/api/admin/inquiries?status=all")).inquiries;
+  const id = list.find((q) => /알람 소리/.test(JSON.stringify(q))).id;
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const panel = u.$("#main aside.person");
+  assert.ok(panel, "the phone panel");
+  assert.match(u.text("#main .person-alerts"), /결제·환불 문의 1번/);
+  const more = panel.querySelector("details.person-more");
+  assert.ok(more && !more.open, "the rest is one folded line");
+  assert.match(more.querySelector("summary").textContent, /자세히[\s\S]*문의 2 · 제보 \d+[\s\S]*이전 문의 1건/);
+  assert.ok(more.querySelector("dl.lines"), "the numbers are inside");
+  assert.ok(more.querySelector('a.row[href^="#/inquiries/"]'), "the other question is inside");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-41] 문의 상세 › 결제·환불 기록: 걸린 말('영수증')을 보여 주고 '아니에요 · 기록에서 빼기', 기록에 그 말", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000021", kind: "question", text: "영수증 어디서 봐요?", info: { app: "2.0.0 (54)" } }, from(21))).data.id;
+  const u = await asOwner(env, t);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  assert.match(u.text("#main .billing-why"), /‘영수증’라는 말 때문에 저절로 잡혔어요/);
+  await u.click('#main [data-act="inquiry-billing"][data-miss="1"]');
+  assert.match(u.text("dialog"), /잘못 잡은 말 ‘영수증’도 기록해/);
+  u.$('dialog form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.ok(!u.$("#main .billing-why"), "out of the record");
+  assert.match(u.text("#main .billing-card"), /아니에요\. 마지막 글부터 180일/);
+  assert.match(u.text("#main .timeline"), /자동 판정이 틀렸다고 적었어요\(‘영수증’\)/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-42] 숫자 › 한눈에: 개선 신호는 '긴 흐름' 신호라고 말하고, 위에 바로 볼 것이 있으면 그 칩으로 이어 줘요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/glance");
+  await u.settle(30);
+  assert.match(u.text("#main .ob-signals .hint"), /며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요\(위 정상도는 지금 이 순간의 숫자\)/);
+  const empty = u.$("#main .ob-signals .empty-line");
+  if (empty) {
+    assert.match(empty.textContent, /^긴 흐름에서는 찾은 문제가 없어요\./);
+    const hero = u.$("#main .gl-hero");
+    if (!hero.classList.contains("ok") && u.$$("#main .gl-signals li").length) assert.match(empty.textContent, /위 '.+' \d+개는 지금 숫자라 위 칩에서 바로 열어요/);
+  }
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-43] 숫자 › 기능별 효과: 볼 숫자가 없는 기능은 같은 문장을 되풀이하지 않고 접힌 한 줄, 설명은 펴는 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/effects");
+  await u.settle(30);
+  assert.doesNotMatch(u.text("#main"), /서버가 아직 켜짐·꺼짐을 보지 않았어요|켜진 휴대폰 수 모름/);
+  const blank = u.$('#main details.fx-blank[data-key="fx-blank"]');
+  assert.ok(blank && !blank.open, "one folded line");
+  const n = Number(blank.querySelector("summary b").textContent.match(/(\d+)개/)[1]);
+  assert.equal(blank.querySelectorAll(".fx-names li").length, n, "every such flag is in it, by name");
+  assert.ok(u.$('#main details.tip[data-key="fx-how"]'), "the long explanation folds");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-44] 관리자 초대: '빠르게 고르기'만 먼저, 영역별 권한은 접힌 한 줄, 고른 결과는 한 줄로", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/admins");
+  await u.settle(20);
+  await u.click('#main [data-act="invite"]');
+  const areas = u.$("dialog details.perm-areas");
+  assert.ok(areas && !areas.open, "the 15 areas are folded");
+  assert.match(u.text("dialog #perm-sum"), /^검토 담당 그대로 · 고치기 \d+ · 보기 \d+ · 없음 \d+$/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "reviewer");
+  await u.click('dialog [data-act="preset"][data-key="support"]');
+  assert.match(u.text("dialog #perm-sum"), /^문의 담당 그대로/);
+  assert.equal(u.$('dialog [data-act="preset"][aria-pressed="true"]').dataset.key, "support");
+  // One area changed by hand: the line says so and no role chip stays pressed.
+  await u.click('dialog [data-act="level"][data-area="audit"][data-level="view"]');
+  assert.match(u.text("dialog #perm-sum"), /^직접 고름 · /);
+  assert.equal(u.$$('dialog [data-act="preset"][aria-pressed="true"]').length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-45] 내 계정: 이름·권한·로그아웃만 펴고, '로그인·보안' / '이 기기' / '가족·휴대폰' 세 묶음은 상태 한 줄과 함께 접혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/account");
+  await u.settle(30);
+  const groups = u.$$("#main details.acct-group").map((d) => [d.dataset.key, d.open]);
+  assert.deepEqual(groups, [["acct-security", false], ["acct-device", false], ["acct-phones", false]]);
+  assert.match(u.text('#main details[data-key="acct-security"] > summary'), /로그인·보안[\s\S]*(패스키 \d+개|패스키 없음)/);
+  assert.match(u.text('#main details[data-key="acct-device"] > summary'), /이 기기[\s\S]*알림 (켜짐|꺼짐)/);
+  assert.ok(u.$('#main .acct-top [data-act="logout"]'), "로그아웃 stays one tap away");
+  assert.ok(u.$('#main details[data-key="acct-security"] [data-act="logout-all"]'), "모든 기기에서 로그아웃 is in 로그인·보안");
+  assert.ok(u.$('#main details[data-key="acct-device"] .prefs'), "이 기기 settings are in 이 기기");
+  const seen = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+  assert.ok(seen.length <= 1);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-46] 운영 장부·결정함·문의 목록: 기한 넘긴 줄은 '기한 넘김 N' 머리 하나만 빨강, 줄의 칸은 굵은 보통 글자 '넘음'", async (t) => {
+  const css = await adminFile("/admin/app.css").text();
+  // HQ-69(조건 6·14): 줄마다 빨간 띠 + 빨간 칩이 한 화면에 열 번 나오던 것을 머리 하나로, '넘음'은 글로 남아요.
+  assert.doesNotMatch(css, /\.lg-line\.late \.lg-row\{box-shadow/);
+  assert.match(css, /\.pill\.late\{background:transparent;border-color:transparent;color:var\(--fg\);font-weight:800/);
+  const t0 = Date.parse("2026-11-12T03:00:00Z");
+  t.mock.timers.enable({ apis: ["Date"], now: t0 });
+  const { env } = await world();
+  t.mock.timers.setTime(t0 + 10 * 864e5);
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const list = u.$("#main .rows.ledger");
+  const lines = [...list.querySelectorAll(":scope > li.lg-line")];
+  const late = lines.filter((li) => li.classList.contains("late"));
+  assert.ok(late.length >= 2, "several lines are late");
+  const heads = [...list.querySelectorAll(":scope > li.lg-group")];
+  assert.match(heads[0].textContent, new RegExp(`기한 넘김 ${late.length}`));
+  assert.ok(heads[0].querySelector(".pill.bad"), "the one red mark");
+  assert.equal(list.firstElementChild, heads[0], "the head comes first");
+  for (const li of late) {
+    assert.match(li.querySelector(".c-due").textContent, /넘음/, "'넘음' stays as words");
+    assert.ok(li.querySelector(".c-due .pill.late"), "plain bold, not red");
+  }
+  const reds = [...list.querySelectorAll(".pill.bad")].filter((p) => p.textContent.trim() !== "급함");
+  assert.equal(reds.length, 1, "besides 급함 (danger), red only on the head");
+  if (lines.length > late.length) assert.match(heads[1].textContent, new RegExp(`그 밖에 ${lines.length - late.length}줄`));
+  // '기한 넘음' 보기는 모두 넘긴 줄이라 머리가 없어요.
+  await u.click('#main [data-act="ledger-view"][data-key="late"]');
+  await u.settle(30);
+  assert.equal(u.$$("#main .rows.ledger > li.lg-group").length, 0);
+  assert.equal(u.$$("#main .seg .n.hot").length, 1, "one red number in the bar: 기한 넘음");
+  // 사람과 글 › 문의: 목표를 넘긴 줄도 굵은 보통 글자.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  const sla = u.$$("#main .rows .row-side .pill.late");
+  assert.ok(sla.length >= 1 && sla.every((p) => /넘김$/.test(p.textContent)));
+  assert.equal(u.$$("#main .rows .pill.bad").filter((p) => p.textContent.trim() !== "급함").length, 0);
+  // 결정함: 급함은 머리 칩 하나, 줄마다 되풀이하지 않아요.
+  await u.go("#/decide");
+  await u.settle(30);
+  assert.ok(u.$$("#main .pill.bad").length <= 1, u.$$("#main .pill.bad").map((p) => p.textContent).join(","));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-48] 운영 장부: 50줄씩 이어 받기, 펼친 줄만 상세, 고르기는 그 줄만 다시 그리기, 칸마다 읽어 주는 이름", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  for (let n = 30; n < 92; n++) {
+    await call("POST", "/api/inquiries", { v: 1, device: `test-device-000000${n}`, kind: "question", text: `달력 색은 어디서 바꿔요 ${n}`, info: { app: "2.0.0 (54)" } }, from(n));
+  }
+  // 그 자리에서 펼치는 폭(1024)
+  const u = await signedIn(env, { width: 1024 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  const lines = () => u.$$("#main .rows.ledger > li.lg-line");
+  assert.equal(lines().length, 50, "50 lines first");
+  assert.match(u.text('#main [data-act="ledger-more"]'), /더 보기 50\/\d+/);
+  // ADM-23: 닫힌 줄은 상세를 그리지 않아요. 펼치면 그 자리에서 채워요.
+  assert.equal(u.$$("#main .rows.ledger .lg-detail").filter((x) => x.childElementCount).length, 0, "no detail drawn for closed lines");
+  const d0 = lines()[3].querySelector("details");
+  d0.open = true;
+  d0.dispatchEvent(new u.window.Event("toggle"));
+  assert.ok(d0.querySelector(".lg-detail [data-act=\"ledger-set\"], .lg-detail [data-act=\"ledger-done\"]"), "opened: its detail is there");
+  // ADM-29: 칸마다 읽어 주는 이름.
+  const li = lines()[0];
+  for (const [cell, name] of [["c-st", "단계"], ["c-who", "담당"], ["c-due", "기한"]]) assert.equal(li.querySelector(`.${cell} > .sr`).textContent.trim(), name);
+  // ADM-23: 고르기 하나는 그 줄과 고른 줄 막대만 다시 그려요(다른 줄은 같은 노드 그대로).
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  const keep = lines()[10];
+  await u.click(`#main li.lg-line[data-key="${lines()[2].dataset.key}"] input[data-act="ledger-pick"]`);
+  assert.match(u.text("#main .bulkbar"), /1개 골랐어요/);
+  assert.ok(keep.isConnected, "the other lines were not drawn again");
+  assert.ok(lines()[2].querySelector('input[data-act="ledger-pick"]').checked);
+  await u.click('#main [data-act="ledger-pick-mode"]');
+  // 더 보기: 다음 50줄을 이어 붙여요(겹치는 줄 없이).
+  await u.click('#main [data-act="ledger-more"]');
+  await u.settle(30);
+  const keys = lines().map((x) => x.dataset.key);
+  assert.ok(keys.length > 50);
+  assert.equal(new Set(keys).size, keys.length);
+  assert.ok(!u.$('#main [data-act="ledger-more"]'), "all here");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-49] 운영 장부(노트북 1280~): 줄을 누르면 오른쪽 칸에 상세, 목록은 제자리, 닫기·같은 줄 다시 누르기로 닫혀요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await signedIn(env, { width: 1440 });
+  await u.go("#/desk?view=open");
+  await u.settle(30);
+  assert.ok(!u.$("#lg-side"), "no empty side pane");
+  assert.equal(u.$$("#main .rows.ledger details").length, 0, "lines are buttons, not folds");
+  const row = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[1];
+  const key = row.dataset.key;
+  assert.equal(row.getAttribute("role"), "button");
+  await u.click(row);
+  await u.settle(10);
+  assert.ok(u.$("#main .lg-split.on #lg-side"), "the side pane opened");
+  assert.match(u.text("#lg-side .lg-side-head"), /K-\d{4}/);
+  assert.ok(u.$("#lg-side .lg-detail [data-act]"), "its buttons are there");
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "true");
+  assert.equal(u.$$("#main .rows.ledger > li.lg-line.on").length, 1);
+  // 다른 줄: 칸만 바뀌어요.
+  const other = u.$$("#main .rows.ledger > li.lg-line > .lg-row")[2];
+  await u.click(other);
+  assert.equal(u.$(`#main li.lg-line[data-key="${key}"] > .lg-row`).getAttribute("aria-expanded"), "false");
+  assert.match(u.text("#lg-side .lg-side-head"), new RegExp(u.$(`#main li.lg-line[data-key="${other.dataset.key}"] .c-no b`).textContent));
+  await u.click('#lg-side [data-act="ledger-close"]');
+  await u.settle(10);
+  assert.ok(!u.$("#lg-side"), "closed");
+  // 늦게 오는 답(흐름 띠 등)은 한 틀에 한 번만 다시 그려요(ADM-24): load 안의 다시 그리기는 마지막 하나뿐.
+  const js = await adminFile("/admin/app.js").text();
+  const load = js.slice(js.indexOf("async function load({ quiet = false } = {}) {"), js.indexOf("function renderSoon()"));
+  assert.equal(load.match(/render\(\{ keepScroll: true \}\)/g)?.length, 1, "only the final render; the late ones use renderSoon");
+  assert.ok((load.match(/renderSoon\(\)/g)?.length ?? 0) >= 5);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-50] 운영 장부: 스토어 리뷰 줄은 별 수와 답 초안을 보여 주고, 스토어 리뷰 화면에서 문의와 함께 보기로 이어져요", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-review-0001', 2, '위젯이 안 바뀌어요', '2.0.0', 'ko', ?1, '', NULL, '', '불편을 드려 죄송해요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/desk?view=open&group=ask");
+  await u.settle(30);
+  const line = u.$('#main li.lg-line[data-key="store_review:gp:ui-review-0001"]');
+  assert.ok(line, "the review is a ledger line");
+  assert.match(line.textContent, /별 2개 · 위젯이 안 바뀌어요/);
+  await u.click(line.querySelector(".lg-row"));
+  await u.settle(10);
+  assert.match(u.text("#main"), /답 초안/);
+  assert.match(u.text("#main"), /스토어 리뷰 화면에서 고쳐 Play로 보내요/);
+  await u.go("#/reviews");
+  await u.settle(30);
+  assert.ok(u.$('#main a[href="#/desk?view=open&group=ask"]'), "운영 장부에서 문의와 함께 보기");
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-52] 화면 자체가 시험: 관리자 앱이 알린 화면 오류는 오류 묶음에 '화면 오류 · 관리자 앱 <화면>'으로, 그리다 넘어진 화면은 '다시 그리기' 카드", async (t) => {
+  offline(t);
+  const { env, DB } = await world();
+  const u = await asOwner(env, t);
+  const count = async () => (await DB.prepare("SELECT COUNT(*) AS n FROM error_groups WHERE route LIKE 'screen/%'").first()).n;
+  const before = await count();
+  await u.api("POST", "/api/admin/screen-error", { screen: "glance", where: "paint", kind: "error", message: "TypeError: x is undefined" });
+  assert.equal(await count(), before + 1);
+  const js = await adminFile("/admin/app.js").text();
+  assert.match(js, /이 화면을 그리다 오류가 났어요/);
+  assert.match(js, /"screen-again": \(\) => load\(\)/);
+  await u.go("#/errors");
+  await u.settle(30);
+  assert.match(u.text("#main"), /화면 오류 · 관리자 앱 glance/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-56] 장터 › 장터 건강: 깨진 작품은 빨간 머리 하나 아래 줄로, 달라진 작품은 접힌 목록, 운영 장부 줄에서 #/recipes?tab=health로 바로 와요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /아직 장터 건강 결과가 없어요/);
+  assert.ok(u.$('#main form[data-form="market-health"] input[type="file"]'), "결과 올리기");
+  await u.api("POST", "/api/admin/recipes/health", { format: "bamnat-market-health", v: 1, build: "7f3a91c4", at: new Date().toISOString(), works: 516, listed: 498, opened: 497,
+    broken: [{ key: "market-139#7", title: "책장 넘기기 달력", kind: "old", why: "unknown motion", app: 52 }], changed: [{ key: "market-139#2", title: "봄 테마", d: 9.1 }], unchanged: [] });
+  await u.go("#/desk?view=open&group=report");
+  await u.settle(30);
+  assert.match(u.text('#main li.lg-line[data-key="market_broken:market-139.7"]'), /책장 넘기기 달력 · 옛 앱에서 안 열림/);
+  await u.go("#/recipes?tab=health");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "health");
+  assert.match(u.text("#main .mh-head"), /작품 516개를 넣어 봤어요/);
+  assert.equal(u.$$("#main .mh .pill.bad").length, 1, "빨강은 머리 하나");
+  assert.match(u.text("#main .mh-rows"), /깨진 작품 1.*책장 넘기기 달력.*옛 앱에서 안 열림.*market-139#7 · 옛 앱 52/);
+  assert.match(u.text('#main details[data-key="mh-달라진 작품"] summary'), /달라진 작품 1/);
+  // 다른 보기를 고르면 주소도 따라가요.
+  await u.click('#main [data-act="recipe-tab"][data-key="visible"]');
+  await u.settle(20);
+  assert.match(u.window.location.hash, /tab=visible/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-57] 묶음 나누기: 화면 묶음은 그 화면을 열 때 받고, 받지 못하면 '서버에 닿지 않아요'와 다시 불러오기, 다시 누르면 열려요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  const asked = [];
+  let block = true;
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const path = new URL(typeof input === "string" ? input : input.url, ORIGIN).pathname;
+    if (path.startsWith("/admin/v/")) {
+      asked.push(path.split("/").pop().split(".")[0]);
+      if (block && path.startsWith("/admin/v/flags.")) return new u.window.Response("", { status: 503 });
+    }
+    return real(input, init);
+  };
+  await u.go("#/flags");
+  await u.settle(30);
+  assert.ok(asked.includes("flags"), "기능 관리를 열 때 그 묶음을 받아요");
+  assert.match(u.text("#main .empty.failed"), /서버에 닿지 않아요/);
+  block = false;
+  await u.click('#main [data-act="refresh"]');
+  await u.settle(30);
+  assert.ok(!u.$("#main .empty.failed"), "다시 불러오면 열려요");
+  assert.ok(u.$("#main [data-act]"), "기능 관리 화면");
+  // 마을 장터는 장터 묶음과 기본 도구 후보(work) 묶음을 함께 기다려요.
+  await u.go("#/recipes?tab=tools");
+  await u.settle(30);
+  assert.ok(asked.includes("market"));
+  assert.ok(!u.$("#main .empty.failed"));
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-58] 개발사항이 저장소 계획 줄뿐이면 '지금'은 빈 화면과 할 일 단추 하나, 줄은 오른쪽 알약 없이 한 줄 모양, 요금 판단은 Claude 제안별 한 줄", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const add = env.DB.db.prepare(`INSERT INTO dev_items (id, title, body, status, track, size, route, tier_ask, tier_why, created_by, created_by_name, created_at, updated_at)
+    VALUES (?, ?, '저장소 줄', 'doing', ?, ?, 'app', ?, ?, 'sync', '저장소', ?, ?)`);
+  const at = Date.now();
+  for (let i = 0; i < 8; i++) add.run(`d${String(i).padStart(15, "0")}`, `계획 ${i}`, `RVI-${i + 1}`, "fix", "", "", at - i, at - i);
+  const u = await asOwner(env, t);
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.match(u.text("#main .empty"), /지금 손댈 개발사항은 없어요.*할 일 8개는 Claude가 개발하며/);
+  await u.click('#main .empty [data-act="dev-status"][data-key="open"]');
+  await u.settle(30);
+  assert.match(u.window.location.hash, /status=open/);
+  const rows = u.window.document.querySelectorAll("#main .dev-rows > li");
+  assert.equal(rows.length, 8);
+  assert.equal(rows[0].querySelectorAll(".pill").length, 0, "저장소 계획 줄에는 오른쪽 알약이 없어요");
+  assert.match(rows[0].querySelector("small").textContent, /^개발중 · 고침 · .*RVI-1/);
+  assert.ok(!/저장소|요금/.test(rows[0].querySelector("small").textContent), "만든 이 '저장소'와 '요금 무료(기존과 같음)'은 줄에서 빼요");
+  // 요금 정할 새 기능 둘: Claude 제안별로 묶어 한 줄씩, 누르면 단추가 펼쳐져요.
+  add.run("dnewfeature00001", "새 기능 하나", "RVK-1", "feature", "free", "투자 장부는 무료라서", at, at);
+  add.run("dnewfeature00002", "새 기능 둘", "RVK-2", "feature", "", "", at, at);
+  await u.go("#/tiers");
+  await u.settle(30);
+  const heads = [...u.window.document.querySelectorAll("#main h2.section")].map((h) => h.textContent.replace(/\s+/g, " ").trim());
+  assert.deepEqual(heads, ["Claude 제안 무료1", "제안 없음1"]);
+  assert.match(u.text("#main .tier-rows summary"), /새 기능 하나.*RVK-1 · 투자 장부는 무료라서/);
+  assert.ok(u.$('#main [data-act="loop-tier-copy"]'), "논의용으로 한 번에 복사");
+  assert.ok(u.$('#main .tier-rows [data-act="loop-tier"][data-tier="free"]'), "정하는 단추는 줄 안(펼치면 보여요)");
+  // 지금 칸에도 이 둘이 와요.
+  await u.go("#/dev");
+  await u.settle(30);
+  assert.equal(u.window.document.querySelectorAll("#main .dev-rows > li").length, 2);
+  assert.match(u.text("#main .dev-rows"), /요금 정할 것/);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-47] 검토 HQ-88·조건 12: 제목 + 알약 여럿인 머리와 두 칸 화면이 글자 200%의 840·1440에서 한 자씩 서지 않아요.
+test("[RVQ-47] 검토 HQ-88 큰 글자: 머리의 제목은 16rem을 지키고 알약 묶음은 함께 감기며, 두 칸은 칸 폭이 모자라면 위아래로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /\.card-head>:is\(h2,h3\)\{flex:1 1 16rem;min-width:0/);
+  assert.match(css, /\.head-pills\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /@media \(min-width:1024px\)\{\.cols\{display:flex;flex-wrap:wrap/);
+  assert.match(css, /\.home-grid\{display:flex;flex-wrap:wrap\}/);
+  assert.match(css, /\.flow-cols\{grid-template-columns:repeat\(auto-fit,minmax\(min\(100%,max\(22rem,calc\(50% - \.4rem\)\)\),1fr\)\)/);
+});
+
+// 2.0.0 [RVA-61] 총괄 Q1 사진(380·글자 200%, 조건 12): 좁은 막대는 판 알약을 점으로, 제목은 한 줄. 최근 활동은 좁으면 시각을 글 위로.
+test("[RVA-61] 좁은 막대(380·200%)에서 판 알약은 점, 제목은 한 줄 말줄임, 최근 활동 시각은 글 위로", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /@container bar \(width < 22rem\)\{\s*\.dl-pill:not\(\.warn,\.bad\)\{[^}]*font-size:0/);
+  assert.match(css, /@container bar \(width < 22rem\)\{[^@]*\.bar h1 \.t\{-webkit-line-clamp:1\}/);
+  assert.match(css, /\.feed\{container:feed\/inline-size\}/);
+  assert.match(css, /@container feed \(width < 22rem\)\{\.feed li\{grid-template-columns:1fr/);
 });

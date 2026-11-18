@@ -23,6 +23,8 @@ data class PlannedAlarm(
     val custom: Boolean = false,
     /** [EASE-20] The shift's colour (ARGB), for the ringing screen; 0 when the day has no shift. */
     val colorArgb: Long = 0,
+    /** [R200-01] The added calendar it comes from; null for the main calendar. */
+    val calendarId: String? = null,
 )
 
 /**

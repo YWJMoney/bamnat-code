@@ -1,11 +1,11 @@
-import { all, audit, batch, can, deviceHash, deviceId, iso, json, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
+import { all, audit, batch, can, deviceHash, deviceId, iso, json, network, networkCheck, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
 import { pushReady } from "./push.js";
 import { DAY, HOUR } from "./units.js";
 import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } from "./money.js";
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
 import { compareVersions, inboxAnswer, titleFrom, version } from "./inbox.js";
 import { askOwner } from "./ledger.js";
-import { DESK, isOut, markTold, shipNow, shippedVersion, shipText } from "./desk.js";
+import { DESK, broadcastRisk, isOut, markTold, resumeShip, shipNow, shippedVersion, shipText } from "./desk.js";
 import { versionHealth } from "./release-desk.js";
 import { flagStore, serverEval } from "./flags.js";
 import { kstDay } from "./usage.js";
@@ -50,6 +50,8 @@ export const LOOP = {
   knownTitle: 60,
   /** 한 폰이 하루에 누를 수 있는 '나도 겪어요'. */
   knownPerDay: 10,
+  /** 2.0.0 [RVQ-31] 검토 SVC-27: 한 네트워크가 하루에 누를 수 있는 '나도 겪어요'(가족·회사 와이파이를 생각해 폰 셋쯤). */
+  knownPerNetworkDay: 30,
   /** 믿을수록 더 맡기기: 한 종류에서 연속으로 손대지 않고 나간 Claude 답이 이만큼이면 '바로 보내기'를 제안해요. */
   streak: 20,
   /** 요금: 사람(최고 관리자)만 정해요. later = 더 논의. */
@@ -91,6 +93,9 @@ export const LOOP_SCHEMA = [
 ];
 
 export const LOOP_COLUMNS = [
+  // 2.0.0 [RVQ-31] 검토 SVC-27: '나도 겪어요'로 묶인 줄의 무리(무작위 이름). 그 개발사항에 그날 처음 누른 네트워크만 새 무리, 같은 네트워크의 다음 것은
+  // 'x'(세지 않음). 네트워크 해시는 줄에 남기지 않고 하루짜리 한도 칸으로만 봐요. 문의로 묶인 줄은 ''(문의 하나가 한 표).
+  "ALTER TABLE dev_links ADD COLUMN cluster TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE dev_items ADD COLUMN track TEXT NOT NULL DEFAULT ''",
   // PC 1.39 G10 확인 제안: 알려진 문제가 보일 근무 유형(빈칸 = 모두). 앱 WorkStyle 이름을 쉼표로.
   "ALTER TABLE dev_items ADD COLUMN styles TEXT NOT NULL DEFAULT ''",
@@ -234,7 +239,8 @@ export async function playTick(env, now = Date.now()) {
   }
   let advice = null;
   if (track.rolling && sw.halt) {
-    const h = await versionHealth(env, now, 14);
+    // 2.0.0 [RVN-15] 검토 SVC-103: 단계적 출시 중인 판을 그 앞 판과(시험판이 섞여도) 견줘요.
+    const h = await versionHealth(env, now, 14, null, { focus: track.rolling.v });
     if (h.latest === track.rolling.v && h.worse.length) {
       const said = await one(env, "SELECT id FROM audit WHERE action = 'loop_halt_advice' AND target = ?", track.rolling.v);
       if (!said) {
@@ -299,10 +305,13 @@ async function holdShip(env, v, now, why) {
 
 /** 5분마다·매시: 보류가 끝난 출시 안내를 보내요. 스스로 안내 스위치가 꺼져 있으면 보내지 않아요(사람이 '지금 보내기'). */
 export async function shipTick(env, now = Date.now(), answer) {
+  // 1.40 [RVD-11] 관리자 단추든 자동이든, 중간에 끊긴 나간 판 저장은 남은 안내부터 이어요.
+  await resumeShip(env, now, answer ?? autoReply).catch((e) => console.error(`resume ship: ${e?.message ?? e}`));
   if (!(await loopSwitches(env)).autoShip) return [];
   const rows = await all(env, "SELECT * FROM loop_ships WHERE status = 'waiting' AND until <= ?", now).catch(() => []);
   const out = [];
-  for (const r of rows) out.push(await sendShip(env, r.version, now, answer ?? autoReply, "자동"));
+  // 2.0.0 [RVQ-28] 열쇠로 요청한 판은 그 이름(예: 'Claude 요청')으로 남아요.
+  for (const r of rows) out.push(await sendShip(env, r.version, now, answer ?? autoReply, r.by || "자동"));
   return out;
 }
 
@@ -429,6 +438,13 @@ export async function fixedAnswer(request, env, row, now) {
 
 // ---- [LOOP-17] 알려진 문제판 ----
 
+/**
+ * 2.0.0 [RVQ-31] 검토 SVC-27: 개발사항에 묶인 목소리 수(SQL, 개발사항 별칭 d). 문의는 하나가 한 표, '나도 겪어요'는 서로 다른 네트워크마다 한 표
+ * (설치 번호만 바꿔 누른 것은 늘지 않아요). 알려진 문제판에 보일지와 개발 대기열 점수가 이것으로 정해져요.
+ */
+export const VOICES_SQL = `((SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id AND l.cluster = '')
+  + (SELECT COUNT(DISTINCT l.cluster) FROM dev_links l WHERE l.item_id = d.id AND l.cluster NOT IN ('', 'x')))`;
+
 const knownCache = new WeakMap();
 
 /** 앱 문의 화면 위 '지금 알려진 문제': 공개 제목이 있는 개발사항 중 여럿이 겪는 것, 고친 뒤 14일까지. */
@@ -437,7 +453,7 @@ export async function knownList(env, dev, now) {
   if (!base || base.until <= now) {
     const shipped = await shippedVersion(env);
     const rows = await all(env, `SELECT d.id, d.public_title, d.status, d.released_in, d.live_at, d.known, d.updated_at, d.styles,
-        (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
+        ${VOICES_SQL} AS asks,
         (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same
       FROM dev_items d WHERE d.deleted_at IS NULL AND d.public_title != '' AND d.known >= 0 AND d.status IN ('todo', 'doing', 'done')
       ORDER BY d.updated_at DESC LIMIT 200`).catch(() => []);
@@ -468,8 +484,13 @@ export async function knownMe(request, env, dev, id, now) {
   if (body.on === false) {
     if (had) await batch(env, forgetInquiries(env, "id = ?", had.id));
   } else if (!had) {
-    const hit = await overLimit(env, now, [["device", `known|${dev}`, LOOP.knownPerDay, DAY]]);
+    // 2.0.0 [RVQ-31] 검토 SVC-27: 폰 하루 한도에 네트워크 하루 한도와 새 설치 한도를 더해요.
+    const net = await network(request, env, now);
+    const hit = await overLimit(env, now, [["device", `known|${dev}`, LOOP.knownPerDay, DAY], ["network", `knownnet|${net.day}`, LOOP.knownPerNetworkDay, DAY],
+      ...(await networkCheck(env, dev, net, "known", LOOP.knownPerNetworkDay, now))]);
     if (hit) return hit;
+    // 같은 네트워크는 그날 그 개발사항에 한 표: 처음이면 새 무리, 아니면 'x'. 누른 분은 다른 분과 똑같이 고친 판 안내를 받아요.
+    const cluster = (await overLimit(env, now, [["network", `knownvote|${id}|${net.day}`, 1, DAY]])) ? "x" : `c${crypto.getRandomValues(new Uint8Array(8)).reduce((s, b) => s + b.toString(16).padStart(2, "0"), "")}`;
     const app = typeof body.app === "string" && /^[0-9. ()]{1,24}$/.test(body.app) ? body.app : undefined;
     const qid = crypto.getRandomValues(new Uint8Array(22)).reduce((s, b) => s + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[b % 62], "");
     const fixed = d.status === "done" && (d.live_at || d.released_in);
@@ -481,7 +502,7 @@ export async function knownMe(request, env, dev, id, now) {
         qid, dev, JSON.stringify(app ? { app } : {}), now, now),
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", qid, `[알려진 문제] ${d.public_title}`, now),
       stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'admin', ?, '자동 정리', ?)", qid, reply, now + 1),
-      stmt(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at) VALUES (?, ?, '알려진 문제판', ?)", id, qid, now),
+      stmt(env, "INSERT OR IGNORE INTO dev_links (item_id, inquiry_id, by, at, cluster) VALUES (?, ?, '알려진 문제판', ?, ?)", id, qid, now, cluster),
       devEvent(loopActor(env, "알려진 문제판"), id, now, "me_too", { inquiry: qid }),
     ]);
     if (fixed) await markTold(env, id, [qid], now);
@@ -514,7 +535,7 @@ export async function updatePolicy(env) {
 
 // ---- [LOOP-08] 영향도 점수 ----
 
-/** 개발사항 하나의 점수: 묶인 문의 3, 나도 겪어요·같아요 1, 급함 5, 걸린 판 1, 고친 뒤 다시 생김 6. */
+/** 개발사항 하나의 점수: 묶인 문의 3, 나도 겪어요·같아요 1, 급함 5, 걸린 판 1, 고친 뒤 다시 생김 6. [RVQ-31] asks는 목소리 수(VOICES_SQL)예요. */
 export function impact(d) {
   return (d.asks ?? 0) * 3 + (d.same ?? 0) + (d.urgent ?? 0) * 5 + (d.versions ?? 0) + (d.again ?? 0) * 6;
 }
@@ -522,17 +543,19 @@ export function impact(d) {
 /** Claude가 한 바퀴에 가져갈 순서: 끝나지 않은 개발사항을 점수 순으로. */
 export async function devQueue(env, limit = 60) {
   const rows = await all(env, `SELECT d.id, d.title, d.status, d.track, d.size, d.route, d.tier, d.basis, d.origin, d.handed_at, d.created_at, d.updated_at,
-      (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks,
+      ${VOICES_SQL} AS asks, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS linked,
       (SELECT COALESCE(SUM(i.same), 0) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id) AS same,
       (SELECT COUNT(DISTINCT json_extract(i.info, '$.app')) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND json_valid(i.info)) AS versions,
       (SELECT COUNT(*) FROM dev_history h WHERE h.item_id = d.id AND h.action = 'fixed_no') AS again,
       (SELECT GROUP_CONCAT(m.text, ' ') FROM dev_links l JOIN inquiry_messages m ON m.inquiry_id = l.inquiry_id AND m.sender = 'user' WHERE l.item_id = d.id) AS words
-    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') LIMIT 400`).catch(() => []);
+    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+    ORDER BY d.origin = 'admin' DESC, asks DESC, d.created_at LIMIT 1000`).catch(() => []);
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 순서 없이 400개로 자르면 1순위나 문의가 걸린 것이 빠질 수 있었어요: 그것부터 읽어요.
   // 급함 말(알람·앱 실행·데이터·결제)과 수면 긴급 넷(사용자 11-07 승인)은 문의 쪽(inquiries.js)과 같은 것을 써요.
   return rows.map((d) => {
     const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
     const x = { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status], track: d.track, size: d.size, route: d.route, tier: d.tier,
-      handed: Boolean(d.handed_at), asks: d.asks, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at),
+      handed: Boolean(d.handed_at), asks: d.asks, linked: d.linked, same: d.same, versions: d.versions, again: d.again, urgent, createdAt: iso(d.created_at),
       first: d.origin === "admin", basis: basisOf(d).key };
     return { ...x, score: impact(x) };
   // [LOOP-36] 사용자가 직접 넣은 것이 늘 먼저(점수와 상관없이), 그 안에서는 점수 순.
@@ -565,9 +588,9 @@ export async function syncDev(request, env, now, answer) {
     }
   }
   const summary = { made: results.filter((r) => r.made).length, changed: results.filter((r) => r.changed).length, told: results.reduce((n, r) => n + (r.told ?? 0), 0),
-    errors: results.filter((r) => r.error).length };
+    errors: results.filter((r) => r.error).length, held: results.filter((r) => r.held).length };
   await run(env, "INSERT INTO loop_syncs (at, sha, version, pr, n, result) VALUES (?, ?, ?, ?, ?, ?)", now, sha, ver ?? "", pr, items.length, JSON.stringify(summary));
-  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}`);
+  await audit(env, now, "loop_sync", `${items.length}줄`, `${sha.slice(0, 8)} ${ver ?? ""} · 새 ${summary.made} · 바뀜 ${summary.changed} · 답 ${summary.told}${summary.errors ? ` · 오류 ${summary.errors}` : ""}${summary.held ? ` · 글 검사로 뺀 줄 ${summary.held}` : ""}`);
   const live = await liveTick(env, now, answer);
   return json({ ...summary, live: live.live, results });
 }
@@ -627,8 +650,13 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
   if (status === "rejected") upd.reason = x.reason || "저장소에서 반려";
   const route = row.route;
   if (status === "done" && ["app", "hotfix", ""].includes(route) && ver && ver !== row.released_in) upd.releasedIn = ver;
-  if (x.news !== undefined) upd.news = x.news || null;
-  if (x.shipReply !== undefined) upd.shipReply = x.shipReply || null;
+  // 2.0.0 [RVQ-28] 검토 SVC-10: 글 검사에 걸린 공지 한 줄·출시 답은 그 칸만 빼고(상태·판은 그대로 반영) 결과에 적어요.
+  const held = [];
+  for (const k of ["news", "shipReply"]) {
+    if (x[k] === undefined) continue;
+    if (x[k] && broadcastRisk(x[k])) held.push(k);
+    else upd[k] = x[k] || null;
+  }
   let changed = made || fields.length > 0;
   if (Object.keys(upd).length) {
     const r = await devUpdate(env, row, upd, now);
@@ -644,7 +672,7 @@ async function syncOne(env, x, { ver, sha, pr }, now, answer) {
       told = await tellLater(env, row, route, now, answer);
     }
   }
-  return { id: row.id, track: row.track, made, changed, told };
+  return { id: row.id, track: row.track, made, changed, told, ...(held.length ? { held } : {}) };
 }
 
 /** 출시 전 답(DESK.later를 담아 판이 나갈 때 다시 알림): 기다리는 문의에만, 다음 정기 출발일과 함께. */
@@ -778,10 +806,11 @@ const tierView = (b, t) => (b.key === "new" ? (t.decided ? "decided" : "ask") : 
  * 끝난 지 오래된 것(완료 뒤 60일)은 빼요.
  */
 export async function tierBoard(env, now, params = new URLSearchParams()) {
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 300개로 자르면 정할 새 기능이 빠졌어요(로컬 583줄에서 22개 중 7개만): 정할 것을 먼저, 2000개까지.
   const view = Object.hasOwn(TIER_VIEWS, params.get("view") ?? "") ? params.get("view") : "ask";
   const rows = await all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
     WHERE d.deleted_at IS NULL AND d.status != 'rejected' AND (d.status != 'done' OR d.updated_at > ?)
-    ORDER BY d.origin = 'admin' DESC, (d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 300`, now - 60 * DAY).catch(() => []);
+    ORDER BY d.origin = 'admin' DESC, (${ASK_TIER_SQL} AND d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 2000`, now - 60 * DAY).catch(() => []);
   const store = await flagStore(env).catch(() => null);
   const counts = Object.fromEntries(Object.keys(TIER_VIEWS).map((k) => [k, 0]));
   const out = [];
@@ -999,7 +1028,7 @@ export async function instantOk(env, pile, kind, text) {
   if (!pile) return false;
   const sw = await loopSwitches(env);
   if (!sw.instant.includes(pile)) return false;
-  if (kind === "company" || BILLING_RECORD.test(String(text ?? ""))) return false;
+  if (kind === "company" || kind === "billing" || BILLING_RECORD.test(String(text ?? ""))) return false;
   return true;
 }
 
@@ -1010,6 +1039,12 @@ export async function instantOk(env, pile, kind, text) {
 /** [LOOP-32] 트랙 100% 판이 실제로 나갔는지 한 마디로. */
 const seenWords = (s) => (s.live ? `실제로 나감(휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
   : `검토 중이거나 아직 안 나갔을 수 있어요(이 판 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""})`);
+
+/** 2.0.0 [RVA-38] 검토 ADM-14·T23-06: 점검 줄의 때는 한국 시간 '11. 12. 15:04'로(전에는 2026-11-12T06:04:00.000Z). */
+const kstAt = (ms) => {
+  const t = new Date(Number(ms) + 9 * HOUR);
+  return `${t.getUTCMonth() + 1}. ${t.getUTCDate()}. ${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+};
 
 /**
  * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요
@@ -1026,7 +1061,7 @@ export async function loopCheck(env, now, { play = false } = {}) {
   ]);
   const lines = [];
   const line = (key, name, state, text, fix = "") => lines.push({ key, name, state, text, ...(fix ? { fix } : {}) });
-  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "서버 비밀값 PLAY_SERVICE_ACCOUNT가 없어요", "사용자 할 일 G10 1장: 서비스 계정에 '앱 정보 보기' 권한");
+  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "Play 연결 열쇠가 서버에 없어요", "Play Console의 서비스 계정('앱 정보 보기' 권한)을 서버 설정에 넣어요 · 넣는 곳은 관리 › 서버 상태");
   else if (play) {
     try {
       const r = await readProduction(env, now);
@@ -1037,29 +1072,29 @@ export async function loopCheck(env, now, { play = false } = {}) {
       // [LOOP-32] 읽은 것은 남겨요(새로 고쳐도 '한 번도 읽지 않았어요'로 돌아가지 않게). 보류 안내는 매시 작업만 세워요.
       if (r) await saveSetting(env, "play_track", { ...r, ...(seen ? { seen } : {}) });
     } catch (e) {
-      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 서비스 계정 권한을 봐요");
+      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 그 열쇠(서비스 계정)의 권한을 봐요");
     }
-  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
+  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${kstAt(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
   else line("play", "Play 출시 읽기", "warn", "아직 한 번도 읽지 않았어요", "'Play까지 점검'을 눌러 한 번 읽어 봐요");
   if (playReady(env) && job?.fail_at && job.fail_at > (job.ok_at ?? 0)) {
-    line("playJob", "매시 Play 읽기", "bad", `${iso(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업 'play'를 봐요");
+    line("playJob", "매시 Play 읽기", "bad", `${kstAt(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업에서 Play 읽기 줄을 봐요");
   }
   line("autoShip", "스스로 출시 안내", sw.autoShip ? "ok" : "warn", sw.autoShip ? "켜짐 · 100% 출시를 보면 1시간 보류 뒤 안내" : "꺼짐 · '나간 판 저장'을 사람이 눌러요");
-  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${iso(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
-    syncKey ? "" : "아래 저장소 동기화 › 동기화 열쇠 만들기 → GitHub Secret BAMNAT_SYNC_KEY");
+  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${kstAt(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
+    syncKey ? "" : "아래 저장소 동기화의 '동기화 열쇠 만들기'를 누르고 그 창의 안내대로 GitHub에 넣어요");
   if (!sw.sync) line("sync", "저장소 동기화", "warn", "받기가 꺼져 있어요");
-  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "GitHub Secret BAMNAT_SYNC_KEY·Variable BAMNAT_API를 넣고 main에 합치면 와요");
+  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "동기화 열쇠를 GitHub에 넣으면, 개발한 것이 다음에 합쳐질 때 와요");
   else {
     const r = JSON.parse(sync.result || "{}");
-    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${iso(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
-      r.errors ? "GitHub › Actions › dev-status 로그와 dev-status.jsonl 줄을 봐요" : "");
+    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${kstAt(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
+      r.errors ? "GitHub › Actions의 개발 상태 보내기 기록에서 틀린 줄을 봐요" : "");
   }
   line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다`);
   line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
-    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 정기 기준 versionCode를 넣어요");
-  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "VAPID 비밀값이 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정");
-  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${iso(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
-    opsKey ? "" : "사용자 할 일 G10 3장");
+    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 멈춤 스위치 › 인앱 업데이트에 정기 기준 판 번호를 넣어요");
+  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "폰 알림 열쇠가 서버에 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정에서 넣어요");
+  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${kstAt(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
+    opsKey ? "" : "관리 › Claude 열쇠에서 만들어요");
   const worst = lines.some((x) => x.state === "bad") ? "bad" : lines.some((x) => x.state === "warn") ? "warn" : "ok";
   return { at: iso(now), state: worst, lines, played: Boolean(play && playReady(env)) };
 }
@@ -1098,6 +1133,20 @@ export async function loopState(env, now) {
     all(env, "SELECT id, label, scope, last_at, expires_at, revoked_at FROM admin_keys WHERE scope = 'sync' ORDER BY created_at DESC LIMIT 3").catch(() => []),
     scoreCard(env), autonomy(env), rewardRules(env),
   ]);
+  // 2.0.0 [RVA-05] 검토 ADM-06: 인앱 업데이트 기준 칸 옆에 '지금 나간 번호'와 최근 7일 폰이 어느 번호에 있는지. 판 번호는 옛 표 + 문의가 실어 온
+  // '1.39.0 (53)' + Play 트랙에서 읽은 번호로 알아요(원격 파일 화면과 같은 방법). 모르는 판은 code null.
+  const [apps, learned] = await Promise.all([
+    all(env, "SELECT app, SUM(phones) AS phones FROM usage_days WHERE day >= ? GROUP BY app", kstDay(now - 7 * DAY)).catch(() => []),
+    all(env, "SELECT DISTINCT json_extract(info, '$.app') AS app FROM inquiries WHERE json_valid(info) AND created_at > ? LIMIT 200", now - 90 * DAY).catch(() => []),
+  ]);
+  const codes = { ...APP_CODES };
+  for (const { app } of learned) {
+    const m = /^(\d{1,2}\.\d{1,3}\.\d{1,3}) \((\d{1,6})\)$/.exec(app ?? "");
+    if (m) codes[m[1]] = Number(m[2]);
+  }
+  const liveCode = Math.min(...(track.doneCodes ?? []).map(Number).filter((c) => Number.isInteger(c) && c > 0 && c < 100_000));
+  const liveName = track.done ?? shipped?.v ?? null;
+  if (liveName && Number.isFinite(liveCode)) codes[liveName] = liveCode;
   return {
     now: iso(now), switches: sw, train: { ...train, next: nextTrain(train, now) }, play: { ready: Boolean(playReady(env)), ...track, at: track.at ? iso(track.at) : null },
     shipped, ships: ships.map((s) => ({ version: s.version, status: s.status, seenAt: iso(s.seen_at), until: iso(s.until), doneAt: s.done_at ? iso(s.done_at) : null, by: s.by, result: s.result })),
@@ -1105,6 +1154,7 @@ export async function loopState(env, now) {
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
     urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
+    live: { name: liveName, code: liveName ? codes[liveName] ?? null : null, phones: apps.map((a) => ({ app: a.app, code: codes[a.app] ?? null, phones: a.phones })) },
   };
 }
 

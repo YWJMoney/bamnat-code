@@ -98,10 +98,21 @@ object PublicCycleFiles {
         // pay (1.29 gave an added calendar the main calendar's pay, so its rules could land there), and it is remembered for
         // that calendar's pay and plaza steps as the main one's are.
         val scope = c.companyOf(calendar)
+        // 2.0.0 [RVN-08] COMP-11 Over an order the calendar had, 되돌리기 puts it back (as 회사 찾기's 이 설정 쓰기 does).
+        val was = scope.share.before()
+        val useBefore = scope.store.publicUse.value
         val r = scope.share.apply(text(cycle, codes), rotation = true, todayStep = todayStep)
         remember(scope.store, cycle, codes)
         c.telemetry.event("public_cycle_apply", if (cycle.id.isEmpty()) "provided" else cycle.orderState.name.lowercase())
-        return r
+        if (!was.hadOrder) return r
+        return r.copy(undo = {
+            runCatching {
+                scope.share.undo(was)
+                scope.store.setPublicUse(useBefore)
+                c.telemetry.event("public_cycle_apply", "undone")
+                true
+            }.getOrDefault(false)
+        })
     }
 
     /**

@@ -21,6 +21,7 @@ import com.bamnat.app.sleep.SleepingNotice
 import com.bamnat.core.money.MoneyAlerts
 import com.bamnat.core.notify.DayNotices
 import com.bamnat.core.sleep.SleepEntry
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -61,8 +62,10 @@ class M10NoticeTest {
         // [INV-08] 투자 알림 the twelfth, [MON-06] 구독 안내 (the trial's question) the thirteenth,
         // [PROV-03] 자동 백업 the fourteenth, [COMM-10] 광장 소식 the fifteenth, [RUL-04] 내 규칙 알림 the sixteenth, 1.36 문의 답 the seventeenth,
         // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내),
-        // 1.39 [SLEEP-06] 자는 중 the twentieth (하루 안내, silent but not folded), 자는 동안 온 알림 the twenty-first (PC 5차).
-        assertEquals(21, channels.size)
+        // 1.39 [SLEEP-06] 자는 중 the twentieth (하루 안내, silent but not folded), 자는 동안 온 알림 the twenty-first (PC 5차),
+        // 2.0.0 [RVM-24] STU-13 받은 작품의 규칙 알림 the twenty-second (하루 안내, 끄기 한 번).
+        assertEquals(22, channels.size)
+        assertEquals("받은 작품의 규칙 알림", nm.getNotificationChannel(Notifications.RECEIVED_RULES_CHANNEL_ID).name.toString())
         assertEquals(NotificationManager.IMPORTANCE_LOW, nm.getNotificationChannel(Notifications.NIGHT_QUIET_CHANNEL_ID).importance)
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).group }.name.toString())
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.ROSTER_CHANNEL_ID).group }.name.toString())
@@ -76,7 +79,7 @@ class M10NoticeTest {
 
     @Test fun aSnoozeWaitingShowsWhenItRingsAgainAndStopsFromTheNotice() {
         val scheduler = context.appContainer.alarmScheduler
-        val ring = RingRequest("주간", java.time.LocalDate.now(), LocalTime.of(7, 0), 60, null, System.currentTimeMillis())
+        val ring = RingRequest("주간", Today.date(), LocalTime.of(7, 0), 60, null, Today.millis())
         scheduler.scheduleSnooze(ring, 5)
         val waiting = posted(Notifications.SNOOZE_NOTIFICATION_ID)
         assertNotNull(waiting)
@@ -92,7 +95,7 @@ class M10NoticeTest {
     }
 
     @Test fun moneyDueTogetherComesAsOneNoticeAndOpensTheMoneyTab() {
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         JobReminderScheduler.postMoney(context, listOf(
             MoneyAlerts.Alert(now, "bill-1", "오늘 나갈 돈", "휴대폰 요금 55,000원"),
             MoneyAlerts.Alert(now, "bill-2", "오늘 나갈 돈", "월세 500,000원"),
@@ -101,22 +104,41 @@ class M10NoticeTest {
         assertEquals(1, money.size)
         assertEquals("오늘 나갈 돈 2건", money.single().extras.getString(Notification.EXTRA_TITLE))
         val open = shadowOf(money.single().contentIntent).savedIntent
-        assertTrue(NoticeLinks.read(open))
+        assertTrue(NoticeLinks.read(context, open))
         assertEquals(NoticeLinks.Target.MONEY, NoticeLinks.target.value)
     }
 
     @Test fun aNoticeOpenedAgainFromRecentsDoesNotJumpAgain() {
         val intent = NoticeLinks.intent(context, NoticeLinks.Target.LEAVE)
-        assertFalse(NoticeLinks.read(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)))
+        assertFalse(NoticeLinks.read(context, Intent(intent).addFlags(Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)))
         assertNull(NoticeLinks.target.value)
-        assertTrue(NoticeLinks.read(intent))
+        assertTrue(NoticeLinks.read(context, intent))
         // Followed once: the same intent handed back later says nothing.
         NoticeLinks.consume(NoticeLinks.Target.LEAVE)
-        assertFalse(NoticeLinks.read(intent))
+        assertFalse(NoticeLinks.read(context, intent))
+    }
+
+    /**
+     * 2.0.0 [RVL-08] (검토 DATA-03) Another app can start the launcher activity with the same extras a notice carries: without the value
+     * only this app knows, nothing is followed (no screen inside, no 밤 소리 측정).
+     */
+    @Test fun anIntentAnotherAppMadeIsNotFollowed() {
+        val own = NoticeLinks.intent(context, NoticeLinks.Target.SLEEP, payload = com.bamnat.app.sleep.SleepRecordService.FROM_NOTICE)
+        val forged = Intent(context, com.bamnat.app.MainActivity::class.java).putExtras(own.extras!!).apply { removeExtra("com.bamnat.app.extra.KEY") }
+        assertFalse(NoticeLinks.read(context, forged))
+        assertNull(NoticeLinks.target.value)
+        assertNull(NoticeLinks.payload.value)
+        val guessed = Intent(forged).putExtra("com.bamnat.app.extra.KEY", "0".repeat(32))
+        assertFalse(NoticeLinks.read(context, guessed))
+        assertNull(NoticeLinks.target.value)
+        // The app's own notice still opens where it says.
+        assertTrue(NoticeLinks.read(context, own))
+        assertEquals(NoticeLinks.Target.SLEEP, NoticeLinks.target.value)
+        NoticeLinks.consume(NoticeLinks.Target.SLEEP)
     }
 
     @Test fun onlyTheCommuteNoticeMakesASoundAndItShowsOnTheLockScreen() {
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         val briefing = DayNotices.Notice(DayNotices.Kind.BRIEFING, now, now.plusHours(3), "오늘 야간 19:00–07:00", "15:00–16:30 낮잠", "b")
         val commute = DayNotices.Notice(DayNotices.Kind.COMMUTE, now, now.plusHours(2), "야간 수고했어요", "졸리면 운전 전에 쉬어 가요", "c")
         DayNoticeScheduler.post(context, briefing, now)
@@ -135,7 +157,7 @@ class M10NoticeTest {
     }
 
     @Test fun whileAsleepTheNoticeStaysAndAfterwardsSaysHowLong() {
-        val now = LocalDateTime.now().withSecond(0).withNano(0)
+        val now = Today.dateTime().withSecond(0).withNano(0)
         SleepingNotice.show(context, SleepEntry(1, now.minusHours(2), null), now.plusHours(5), now)
         val sleeping = posted(Notifications.SLEEPING_ID)!!
         assertTrue(sleeping.flags and Notification.FLAG_ONGOING_EVENT != 0)
@@ -164,13 +186,13 @@ class M10NoticeTest {
     @Test fun moneyWaitsUntilHalfAnHourAfterWakingAndNotWhenTurnedOff() = runBlocking {
         val c = context.appContainer
         val asleep = c.sleepRepository.fellAsleep().entry
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         assertTrue(QuietHold.holdIfAsleep(context, QuietHold.Source.MONEY, now))
         val alarms = shadowOf(context.getSystemService(AlarmManager::class.java))
         val hold = alarms.scheduledAlarms.single { shadowOf(it.operation).savedIntent.component?.className == QuietHoldReceiver::class.java.name }
         // No shifts to plan from: the user's target sleep from when they lay down, and 30 minutes.
         val expected = asleep.start.plusMinutes(c.settingsRepository.current.sleepTargetMinutes + 30L)
-        assertEquals(expected.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli().toDouble(), hold.triggerAtTime.toDouble(), 60_000.0)
+        assertEquals(expected.atZone(Today.zone()).toInstant().toEpochMilli().toDouble(), hold.triggerAtTime.toDouble(), 60_000.0)
 
         c.settingsRepository.update { it.copy(quietWhileAsleep = false) }
         assertFalse(QuietHold.holdIfAsleep(context, QuietHold.Source.MONEY, now))
@@ -218,7 +240,7 @@ class M10NoticeTest {
         shadowOf(context).grantPermissions(android.Manifest.permission.POST_NOTIFICATIONS)
         fun roster(text: String) = androidx.core.app.NotificationCompat.Builder(context, Notifications.ROSTER_CHANNEL_ID)
             .setSmallIcon(com.bamnat.app.R.drawable.ic_notification).setContentTitle("근무표가 바뀌었어요").setContentText(text).build()
-        val now = LocalDateTime.now().withSecond(0).withNano(0)
+        val now = Today.dateTime().withSecond(0).withNano(0)
         // Before the sleep: as it was, with its sound.
         Notifications.post(context, Notifications.ROSTER_ID, roster("12/2 야간"), tag = "a")
         assertEquals(Notifications.ROSTER_CHANNEL_ID, shadowOf(nm).getNotification("a", Notifications.ROSTER_ID).channelId)

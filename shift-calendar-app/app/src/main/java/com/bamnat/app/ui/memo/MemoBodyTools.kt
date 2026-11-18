@@ -10,10 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Repeat
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AssistChip
-import com.bamnat.app.ui.components.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -90,43 +87,21 @@ internal fun MemoBodyToolbar(tools: MemoBodyTools) {
 internal fun MemoRepeatChip(
     date: LocalDate?,
     repeat: String,
-    onChange: (MemoRepeat.Kind) -> Unit,
+    onCode: (String) -> Unit,
     shiftTypes: List<com.bamnat.core.model.ShiftType> = emptyList(),
     dayShiftId: Long? = null,
     onShift: (Long) -> Unit = {},
 ) {
     var open by remember { mutableStateOf(false) }
     val names = remember(shiftTypes) { shiftTypes.associate { it.id to it.name } }
-    Box {
-        AssistChip(
-            onClick = { open = true },
-            label = { Text(MemoRepeat.label(repeat) { names[it] }.ifEmpty { "반복 없음" }, maxLines = 1) },
-            leadingIcon = { Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)) },
-        )
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            val from = date ?: com.bamnat.core.time.Today.date()
-            // 1.39 [CAL2-06] 매일 and 매년 음력 (제사·음력 생일) with the others.
-            // 1.39 [TASK-44] 평일, and 쉬는 날마다 where the calendar has a schedule.
-            listOfNotNull(MemoRepeat.Kind.NONE, MemoRepeat.Kind.DAY, MemoRepeat.Kind.WEEKDAYS, MemoRepeat.Kind.WEEK, MemoRepeat.Kind.MONTH, MemoRepeat.Kind.YEAR,
-                MemoRepeat.Kind.LUNAR, MemoRepeat.Kind.REST.takeIf { shiftTypes.isNotEmpty() }).forEach { kind ->
-                val code = MemoRepeat.code(kind, from)
-                if (kind != MemoRepeat.Kind.NONE && code.isEmpty()) return@forEach
-                val text = if (kind == MemoRepeat.Kind.NONE) "반복 없음" else MemoRepeat.label(code)
-                DropdownMenuItem(text = { Text(text) }, onClick = { open = false; onChange(kind) })
-            }
-            // [EASE-22] 근무마다: the day's own kind first, then the calendar's order.
-            val ordered = shiftTypes.sortedBy { if (it.id == dayShiftId) -1 else 0 }
-            if (ordered.isNotEmpty()) androidx.compose.material3.HorizontalDivider()
-            ordered.forEach { t ->
-                DropdownMenuItem(
-                    text = { Text("${t.name}마다") },
-                    leadingIcon = { com.bamnat.app.ui.components.ShiftBadge(t, size = 20.dp, outlined = t.isOff) },
-                    trailingIcon = { if (MemoRepeat.shiftIdOf(repeat) == t.id) Icon(Icons.Filled.Check, null) },
-                    onClick = { open = false; onShift(t.id) },
-                )
-            }
-        }
-    }
+    AssistChip(
+        onClick = { open = true },
+        label = { Text(MemoRepeat.label(repeat) { names[it] }.ifEmpty { "반복 없음" }, maxLines = 1) },
+        leadingIcon = { Icon(Icons.Filled.Repeat, null, Modifier.size(18.dp)) },
+    )
+    // 2.0.0 [RVI-73] (검토 U07a-07) The one repeat window, the same as the 일정 창's (it had another list).
+    if (open) RepeatSheet(repeat, date, onDismiss = { open = false }, onPick = onCode, shiftTypes = shiftTypes, dayShiftId = dayShiftId,
+        onShift = onShift)
 }
 
 /**

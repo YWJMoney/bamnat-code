@@ -62,6 +62,33 @@ class ReceivedCalendarsTest {
         assertEquals(gone, s.get("AAAAAAAAAAAAAAAA")?.fetchedAt)
     }
 
+    /**
+     * 2.0.0 [RVG-35] 검토 HQ-64 (조건 13): a link is called by what it carries, as the sender's hint and the web page say it:
+     * a shop's 매출 → 영업일, a field worker's 일감 → 일정, else 근무표; the words around it take their particles from that word.
+     */
+    @Test fun aLinkIsCalledByWhatItCarries() {
+        fun linked(title: String, extra: String) = ReceivedShare(
+            JSONObject("""{"v":1,"title":"$title","types":[{"id":1,"name":"영업","short":"영","color":"#1E88E5","time":"10:00-22:00","off":false}],
+                "days":[{"date":"2026-11-01","type":1}]$extra}"""),
+            now.plus(Duration.ofDays(30)), now,
+        )
+        val s = store()
+        val shop = s.put("SSSSSSSSSSSSSSSS", linked("민지", ""","shows":["pay"],"payKind":"sales","pay":[{"month":"2026-11","amount":9000000}]"""))
+        assertEquals("민지의 영업일", shop.fullName)
+        assertEquals("‘민지’ 영업일", shop.roster)
+        val ask = FollowNote(FollowNote.ASK, now, listOf("11/3 영업"))
+        assertEquals("‘민지’ 영업일이 바뀌었어요 · 내 달력에 넣을까요?", RosterFollower.words(shop, ask).first)
+        val field = s.put("FFFFFFFFFFFFFFFF", linked(" ", ""","shows":["jobs"]"""))
+        assertEquals("받은 일정", field.fullName)
+        assertEquals("받은 일정이 바뀌어 내 달력에 넣었어요", RosterFollower.words(field, FollowNote(FollowNote.DONE, now, listOf("11/3 현장"))).first)
+        // Money of a 일감 kind without the jobs themselves: still 일정.
+        assertEquals("일정", s.put("GGGGGGGGGGGGGGGG", linked("준호", ""","shows":["pay"],"payKind":"jobs"""")).word)
+        // A shop that sent the days only: the link cannot tell (HQ-64 비고), so 근무표, with 가 after it.
+        val days = s.put("HHHHHHHHHHHHHHHH", linked("민지", ""))
+        assertEquals("‘민지’ 근무표", days.roster)
+        assertEquals("‘민지’ 근무표가 바뀌었어요 · 내 달력에 넣을까요?", RosterFollower.words(days, ask).first)
+    }
+
     @Test fun keepsAndReloads() {
         val s = store()
         val a = s.put("AAAAAAAAAAAAAAAA", share("민지"))
@@ -70,8 +97,8 @@ class ReceivedCalendarsTest {
         assertEquals(ReceivedCalendar.COLORS[1], b.color)
         assertEquals("민지의 근무표", a.fullName)
         assertEquals("민", a.initial)
-        assertEquals("이름 없는 근무표", b.fullName)
-        assertEquals("?", b.initial)
+        assertEquals("받은 근무표", b.fullName) // [RVG-32] 검토 PC-93
+        assertEquals("받", b.initial) // [RVG-32] 검토 PC-93
 
         // A new start of the app reads the same list, on the user's own calendar.
         val again = store()

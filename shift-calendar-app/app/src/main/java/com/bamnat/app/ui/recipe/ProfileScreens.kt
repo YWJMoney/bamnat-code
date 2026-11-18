@@ -53,7 +53,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -109,6 +109,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import androidx.compose.ui.semantics.Role
 
 // ---- [PRF-01]..[PRF-12] 1.36 창작자 프로필 (사용자 2026-10-31 "인스타처럼 내가 만든 테마를 멋지게, 팔로워·최근 알림, 팔로우한 분 프로필에서 공개된 것") ----
 
@@ -349,7 +350,7 @@ fun MakerScreen(
             while (true) { kotlinx.coroutines.delay(60_000); vm.load() }
         }
     }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val context = LocalContext.current
     var picking by remember { mutableStateOf(false) }
     var coloring by remember { mutableStateOf(false) }
@@ -379,7 +380,7 @@ fun MakerScreen(
     val mine = p?.mine == true && !s.asOthers
     androidx.compose.runtime.CompositionLocalProvider(LocalViewerStyle provides viewerStyle(vm.c)) {
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(title = { Text(p?.nick ?: "프로필", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
@@ -450,7 +451,7 @@ fun MakerScreen(
                                     ". 기간이 지나면 저절로 풀려요") to null)
                             }
                         }
-                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
+                        if (lines.isNotEmpty()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.errorContainer).padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             if (lines.size > 1) Text("지금 내 프로필 상태", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                             lines.forEach { (line, fix) ->
@@ -474,7 +475,7 @@ fun MakerScreen(
                         }
                         s.inbox?.let { InboxCard(it, s.unseen, onOpen, onPeople = { onPeople("followers") }, onSeen = vm::seen) }
                         // 1.36 PC: my profile before the first work: what it is for and the next step, not three empty tabs.
-                        if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                        if (p.recipes.isEmpty() && !vm.c.recipes.profileCleared()) Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium)
                             .background(MaterialTheme.colorScheme.surfaceVariant).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("아직 작품이 없어요", style = MaterialTheme.typography.titleSmall)
                             Text("스튜디오에서 만든 테마나 탭별 작품을 장터에 올리면 여기 모이고, 다른 분이 팔로우할 수 있어요",
@@ -560,7 +561,7 @@ fun MakerScreen(
             text = {
                 Column {
                     PROFILE_FLAG_WORDS.forEach { (k, v) ->
-                        Row(Modifier.fillMaxWidth().clickable { why = k }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { why = k }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                             RadioButton(why == k, { why = k }); Text(v)
                         }
                     }
@@ -580,7 +581,7 @@ fun MakerScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("소개·얼굴·대표 작품·표지 그림과 모음 ${page.sets.size}개가 지워져요. 팔로워는 그대로예요." +
                         (page.nick?.let { " 이름 ‘$it’${com.bamnat.app.ui.Fmt.eun("‘$it’")} 광장·이야기에도 쓰여서 남아요." } ?: ""))
-                    if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (page.recipes.isNotEmpty()) Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { works = !works }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(works, { works = it })
                         Text("올린 작품 ${page.recipes.size}개도 장터에서 내리기")
                     }
@@ -643,7 +644,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             p.styleTag?.let { st ->
                 Spacer(Modifier.width(8.dp))
                 Text(RecipeDescribe.short(st), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSecondaryContainer,
-                    modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
+                    modifier = Modifier.clip(MaterialTheme.shapes.small).background(MaterialTheme.colorScheme.secondaryContainer).padding(horizontal = 8.dp, vertical = 2.dp))
             }
         }
         // 1.36 [V20] 보이는 믿음 단계: everyone sees the step; the maker alone sees the next one and a 쓰기 제한.
@@ -677,7 +678,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
             Count(p.tabRecipes.size, "탭별 작품")
             Count(p.followers, "팔로워", if (mine) ({ onPeople("followers") }) else null)
             Count(p.followingCount, "팔로잉", if (mine) ({ onPeople("following") }) else null)
-            Count(p.users, "넣은 분")
+            Count(p.users, "넣어 본 분")
         }
         if (!p.mine) {
             if (vm.canFollow) {
@@ -691,7 +692,7 @@ private fun Header(p: MakerPage, mine: Boolean, vm: MakerViewModel, onPeople: (S
 
 @Composable
 private fun Count(n: Int, label: String, onClick: (() -> Unit)? = null) {
-    Column(Modifier.clip(RoundedCornerShape(8.dp)).then(if (onClick != null) Modifier.clickable(onClickLabel = "$label 보기", onClick = onClick) else Modifier)
+    Column(Modifier.clip(MaterialTheme.shapes.small).then(if (onClick != null) Modifier.clickable(onClickLabel = "$label 보기", onClick = onClick) else Modifier)
         .padding(horizontal = 4.dp, vertical = 4.dp).semantics(mergeDescendants = true) {}, horizontalAlignment = Alignment.CenterHorizontally) {
         Text(compact(n), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -705,14 +706,22 @@ internal fun compact(n: Int): String = when {
     else -> n.toString()
 }
 
-/** Works in a 2-column grid: the theme drawn large, 📌 on 대표 작품. */
+/**
+ * Works in a grid: the theme drawn large, 📌 on 대표 작품. 2.0.0 [RVM-32] 총괄 HQ-43: as many to a row as 장터 takes at this width (two on a
+ * folded phone, four unfolded), not always two.
+ */
 @Composable
 private fun Grid(items: List<RecipeItem>, pins: List<String>, empty: String, onOpen: (String) -> Unit) {
     if (items.isEmpty()) { Text(empty, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); return }
-    items.chunked(2).forEach { row ->
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            row.forEach { r -> WorkTile(r, r.code in pins, Modifier.weight(1f)) { onOpen(r.code) } }
-            if (row.size == 1) Spacer(Modifier.weight(1f))
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val cols = marketCols(maxWidth.value.toInt(), small = false)
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            items.chunked(cols).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(MARKET_GAP.dp)) {
+                    row.forEach { r -> WorkTile(r, r.code in pins, Modifier.weight(1f)) { onOpen(r.code) } }
+                    repeat(cols - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
         }
     }
 }
@@ -728,10 +737,11 @@ internal fun WorkTile(item: RecipeItem, pinned: Boolean, modifier: Modifier = Mo
             }
             Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val viewer = LocalViewerStyle.current
-            Text(buildString {
-                if (item.scope == "tab") item.tabs.firstOrNull()?.let { append("🧩 ").append(marketTabLabel(it, viewer)).append(" · ") }
-                append("♥ ${item.likes} · 넣은 분 ${item.users}")
-            }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // [RVM-34] HQ-72: the same numbers line as 장터's tiles (two lines at most, read aloud in words).
+            val tab = item.tabs.firstOrNull()?.takeIf { item.scope == "tab" }?.let { "🧩 " + marketTabLabel(it, viewer) + " · " }.orEmpty()
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+            Text(tab + MarketNumbers.line(item, big), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.semantics { contentDescription = tab + MarketNumbers.spoken(item) })
         }
     }
 }
@@ -742,7 +752,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
     val lines = buildList<Pair<String, (() -> Unit)?>> {
         if (b.newFollowers > 0) add("👤 새 팔로워 ${b.newFollowers}명" + (b.followerFaces.firstOrNull()?.nick?.let { " ($it 님 등)" } ?: "") to onPeople)
         b.milestones.filter { it.key in unseen }.forEach { m ->
-            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣은 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
+            add((if (m.kind == "users") "🎉 ‘${m.title}’ 넣어 본 분 ${m.n}명 넘음" else "❤️ ‘${m.title}’ 좋아요 ${m.n}개 넘음") to { onOpen(m.code) })
         }
         b.questions.forEach { (code, title, body) -> add("❓ ‘$title’에 질문: $body" to { onOpen(code) }) }
         b.remixes.forEach { (code, title, parent) -> add("🔁 내 ‘$parent’${com.bamnat.app.ui.Fmt.obj("‘$parent’")} 고친 ‘$title’" to { onOpen(code) }) }
@@ -761,7 +771,7 @@ private fun InboxCard(b: ProfileInbox, unseen: Set<String>, onOpen: (String) -> 
             if (lines.isEmpty()) Text("지난 7일 동안 소식이 없어요. 새 팔로워·질문·고친 판이 오면 여기 떠요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (fresh || open) lines.take(8).forEach { (text, go) ->
                 Text(text, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).then(if (go != null) Modifier.clickable(onClick = go) else Modifier)
+                    modifier = Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).then(if (go != null) Modifier.clickable(role = Role.Button, onClick = go) else Modifier)
                         .heightIn(min = 40.dp).padding(vertical = 6.dp))
             } else Text("지난 소식 · " + lines.first().first, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -824,7 +834,7 @@ private fun SetEditDialog(set: MakerSet?, works: List<RecipeItem>, style: WorkSt
                 Text("테마 하나 + 탭별 작품 여러 개를 골라요 (${picked.size}/6)", style = MaterialTheme.typography.bodySmall)
                 works.forEach { r ->
                     val on = r.code in picked
-                    Row(Modifier.fillMaxWidth().clickable { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { picked = if (on) picked - r.code else picked + r.code }.heightIn(min = 48.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(on, { picked = if (on) picked - r.code else picked + r.code })
                         Column(Modifier.weight(1f)) {
@@ -922,7 +932,7 @@ private fun ProfileEditDialog(p: MakerPage, vm: MakerViewModel, pinMax: Int, onF
                 if (p.recipes.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 고를 수 있어요", style = MaterialTheme.typography.bodySmall)
                 p.recipes.forEach { r ->
                     val on = r.code in pins
-                    Row(Modifier.fillMaxWidth().clickable(enabled = on || pins.size < pinMax) { pins = if (on) pins - r.code else pins + r.code }.heightIn(min = 44.dp),
+                    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, enabled = on || pins.size < pinMax) { pins = if (on) pins - r.code else pins + r.code }.heightIn(min = 44.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(on, { pins = if (on) pins - r.code else pins + r.code }, enabled = on || pins.size < pinMax)
                         Text(r.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1025,10 +1035,10 @@ class PeopleViewModel(private val c: AppContainer) : ViewModel() {
 private fun HiddenWriters(vm: PeopleViewModel, onShown: (com.bamnat.core.plaza.HiddenWriter) -> Unit) {
     val list by vm.hidden.collectAsStateWithLifecycle()
     Spacer(Modifier.height(8.dp))
-    Text("광장에서 가린 분 ${list.writers.size}", style = MaterialTheme.typography.titleSmall)
-    Text("토론 글의 ⋮ › 이 사람 글 안 보기로 가린 분이에요. 이 휴대폰에만 남고 상대에게 알리지 않아요", style = MaterialTheme.typography.bodySmall,
+    Text("광장에서 안 보는 사람 ${list.writers.size}", style = MaterialTheme.typography.titleSmall)
+    Text("광장 글의 ⋮ › 이 사람 글 안 보기로 고른 분이에요. 이 휴대폰에만 남고 상대에게 알리지 않아요", style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant)
-    if (list.writers.isEmpty()) Text("가린 분이 없어요", style = MaterialTheme.typography.bodyMedium)
+    if (list.writers.isEmpty()) Text("안 보는 사람이 없어요", style = MaterialTheme.typography.bodyMedium)
     list.writers.forEach { w ->
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(w.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -1043,7 +1053,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
     val s by vm.state.collectAsStateWithLifecycle()
     val parts = listOf("new" to "새 작품", "following" to "팔로잉", "followers" to "팔로워", "blocked" to "차단")
     var part by rememberSaveable { mutableStateOf(parts.indexOfFirst { it.first == start }.coerceAtLeast(0)) }
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     val hiddenCount = vm.hidden.collectAsStateWithLifecycle().value.writers.size
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
@@ -1054,8 +1064,8 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
         if (snack.showSnackbar("차단을 풀었어요", actionLabel = "되돌리기", duration = SnackbarDuration.Short) == SnackbarResult.ActionPerformed) vm.reblock(id)
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
-        topBar = { TopAppBar(title = { Text(parts[part].second) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
+        topBar = { TopAppBar(title = { Text(parts[part].second, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             PrimaryTabRow(selectedTabIndex = part) {
@@ -1120,7 +1130,7 @@ fun PeopleScreen(vm: PeopleViewModel, start: String, onBack: () -> Unit, onMaker
 
 @Composable
 private fun PersonRow(m: MakerFaceItem, onClick: () -> Unit, actions: @Composable () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "프로필 보기", onClick = onClick).heightIn(min = 56.dp).padding(vertical = 4.dp),
+    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "프로필 보기", onClick = onClick).heightIn(min = 56.dp).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically) {
         MakerRing(m.face, m.color, m.nick, m.fresh, 40.dp)
         Spacer(Modifier.width(10.dp))
@@ -1199,7 +1209,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
             horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             s.me?.let { m -> StripFace(m.copy(nick = m.nick), "내 프로필", m.fresh) { onMaker(m.maker) } }
             (s.following.ifEmpty { s.month }).forEach { m -> StripFace(m, m.nick ?: "이름 없는 분", m.fresh) { onMaker(m.maker) } }
-            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
+            if (s.following.isNotEmpty()) Column(Modifier.width(72.dp).clip(MaterialTheme.shapes.medium).clickable(onClickLabel = if (s.following.isEmpty()) "마을에서 찾기" else "팔로잉 모두 보기",
                 // PC 확인 5c21f3bb: '🔍 찾아보기' opened the 팔로잉 새 작품 (empty with no one followed), not a search.
                 onClick = if (s.following.isEmpty()) onFind ?: onAll else onAll),
                 horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1213,7 +1223,7 @@ fun FollowingStrip(vm: FollowingStripViewModel, onMaker: (String) -> Unit, onAll
 
 @Composable
 private fun StripFace(m: MakerFaceItem, label: String, fresh: Boolean, onClick: () -> Unit) {
-    Column(Modifier.width(72.dp).clip(RoundedCornerShape(12.dp)).clickable(onClickLabel = "$label 프로필", onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.width(72.dp).clip(MaterialTheme.shapes.medium).clickable(onClickLabel = "$label 프로필", onClick = onClick), horizontalAlignment = Alignment.CenterHorizontally) {
         MakerRing(m.face, m.color, m.nick, fresh, 56.dp)
         Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
     }
@@ -1270,7 +1280,8 @@ fun SetScreen(vm: SetViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, on
                 Text("지금 내 화면에 테마와 탭을 모두 얹으면 이렇게 보여요. 아직 바뀐 건 없어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 s.worn?.let { r ->
-                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) }
+                    // 2.0.0 [RVM-21] MKT-32 Card fonts from our public files, not the whole fonts from Google Fonts.
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { MarketFontsOf(r) { ScaledPhone(r, vm.style, tab, { tab = it }, 0.62f) } }
                 } ?: Text("모습을 그리는 중이에요", style = MaterialTheme.typography.bodySmall)
                 Text("차례로 넣기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 Text("테마를 먼저 입고, 탭은 그 위에 얹어요. 하나씩 열어 입어 보고 넣으면 여기 ✓가 붙어요. 넣은 것은 7일 안에 되돌릴 수 있어요",
@@ -1315,13 +1326,13 @@ class StatsViewModel(private val c: AppContainer) : ViewModel() {
 fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onPro: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     Scaffold(topBar = {
-        TopAppBar(title = { Text("작품 통계") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
+        TopAppBar(title = { Text("작품 통계", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             val st = s.stats
             if (st == null) { Text(s.error ?: "불러오는 중이에요"); if (s.error != null) TextButton(onClick = vm::load) { Text("다시 해 보기") }; return@Column }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣은 분 모두"); Count(st.likes, "좋아요 모두")
+                Count(st.week, "이번 주 넣은 수"); Count(st.users, "넣어 본 분 모두"); Count(st.likes, "좋아요 모두")
             }
             Text("누가 썼는지는 서버도 몰라요. 작품과 날마다의 수만 세요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (st.items.isEmpty()) Text("장터에 공개로 올린 작품이 생기면 여기 보여요")
@@ -1329,7 +1340,7 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit
                 Card(Modifier.fillMaxWidth().clickable(onClickLabel = "작품 보기") { onOpen(i.code) }) {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(i.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("넣은 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
+                        Text("넣어 본 분 ${i.users} · 이번 주 ${i.week} · 좋아요 ${i.likes} · 안좋아요 ${i.dislikes}" + (i.kept?.let { " · 7일 뒤에도 $it%" } ?: ""),
                             style = MaterialTheme.typography.bodySmall)
                         if (vm.pro) Bars(i.days) else if (i === st.items.first()) TextButton(onClick = onPro) { Text("프로 꾸미기로 28일 날별 그래프 보기") }
                     }

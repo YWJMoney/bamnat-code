@@ -217,7 +217,8 @@ object SleepInsights {
      */
     fun sleptBefore(log: List<SleepEntry>, workStart: LocalDateTime, hours: Long = 24): Long {
         val from = workStart.minusHours(hours)
-        return log.filter { it.end != null && (it.minutes ?: 0) <= SleepDebt.MAX_SLEEP_MINUTES }.sumOf { e ->
+        // 2.0.0 [RVIB-14] (PC-124) A tap of a few minutes is not a sleep, here as in the averages.
+        return log.filter { it.end != null && (it.minutes ?: 0) in TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES }.sumOf { e ->
             val a = maxOf(e.start, from); val b = minOf(e.end!!, workStart)
             if (b.isAfter(a)) java.time.Duration.between(a, b).toMinutes() else 0L
         }
@@ -249,6 +250,18 @@ object SleepInsights {
     }
 
     fun clock(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
+
+    /**
+     * 2.0.0 [RVI-71] (검토 U03-05) What '깼어요' says, the same on the calendar, the sleep page and the night screen: a sleep under
+     * an hour said '0시간 잤어요' or nothing, and kept no 아침 한 장 without a word why.
+     */
+    fun wokeLine(minutes: Long): String = when {
+        minutes > SleepDebt.MAX_SLEEP_MINUTES -> "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
+        // 2.0.0 [RVIB-14] (PC-124) 잠들었어요 then 깼어요 within minutes is not a sleep: it is not kept (되돌리기 opens it again).
+        minutes < TodayFlow.MIN_LOGGED_MINUTES -> "${minutes.coerceAtLeast(1)}분 만에 깨서 잠으로 남기지 않았어요"
+        minutes < SleepMorning.MIN_MINUTES -> "${minutes.coerceAtLeast(1)}분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요"
+        else -> "${hours(minutes)} 잤어요"
+    }
 
     fun hours(m: Long): String = when {
         m < 60 -> "${m}분"

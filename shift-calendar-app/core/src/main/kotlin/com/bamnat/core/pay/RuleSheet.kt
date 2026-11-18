@@ -48,6 +48,11 @@ data class RuleCell(
     val from: CellFrom = CellFrom.HAND,
     /** For [RuleChange.Custom]'s words: the shift names its 근무 condition uses. */
     val shiftNames: Map<Long, String> = emptyMap(),
+    /**
+     * 2.0.0 [RVL-17] (검토 SCAN-30·U07b-12) What putting it in would change by much, said on the 칸 ("지금 기본급 2,508,000원 → 300,000원"):
+     * such a 칸 starts off, so a sentence read the wrong way never changes the pay by itself.
+     */
+    val caution: String? = null,
 ) {
     /** Read well enough to start ticked (as 1.27 has it). */
     val sure: Boolean get() = confidence >= SURE
@@ -260,16 +265,37 @@ data class RuleSheet(
          * other rule is a 칸 (ticked when read well), and the sentences not read are '직접 넣기' rows.
          */
         fun read(findings: List<RuleFinding>, unread: List<String> = emptyList(), from: CellFrom = CellFrom.PHOTO,
-                 shiftNames: Map<Long, String> = emptyMap()): RuleSheet {
+                 shiftNames: Map<Long, String> = emptyMap(), current: RuleChange.Base? = null): RuleSheet {
             val (common, cells) = findings.partition { CommonTerms.isCommon(it.change) }
             var terms = CommonTerms(offers = common)
             common.filter { it.confidence >= RuleCell.SURE }.forEach { terms = terms.take(it) }
             val made = cells.mapIndexed { i, f ->
-                RuleCell.of(f.change, on = f.confidence >= RuleCell.SURE, source = f.sourceLine, confidence = f.confidence,
+                val caution = caution(f.change, current)
+                RuleCell.of(f.change, on = f.confidence >= RuleCell.SURE && caution == null, source = f.sourceLine, confidence = f.confidence,
                     from = if (f.change is RuleChange.Premium && f.sourceLine.startsWith("명세서로 보면")) CellFrom.SLIP else from,
-                    shiftNames = shiftNames, salt = i)
+                    shiftNames = shiftNames, salt = i).copy(caution = caution)
             }
             return RuleSheet(terms, made, unread)
+        }
+
+        /** 2.0.0 [RVL-17] The pay [profile] has on [day], to hold a read one against ([caution]); null with none set. */
+        fun payNow(profile: PayProfile?, day: java.time.LocalDate): RuleChange.Base? =
+            profile?.let { p -> p.base.on(day).value.takeIf { it > 0 }?.let { RuleChange.Base(p.wageType, it) } }
+
+        /**
+         * 2.0.0 [RVL-17] (검토 SCAN-30·T07b-09·U07b-12) A pay read that would turn a 월급 into a 시급·일당, or cut it below half of [current]:
+         * the line that says so, and the 칸 starts off. Null when it changes nothing big (or there is no pay set yet).
+         */
+        fun caution(change: RuleChange, current: RuleChange.Base?): String? {
+            val c = change as? RuleChange.Base ?: return null
+            val now = current?.takeIf { it.amount > 0 } ?: return null
+            fun won(v: Long) = "%,d원".format(v)
+            fun word(t: WageType) = when (t) { WageType.MONTHLY -> "월급"; WageType.HOURLY -> "시급"; WageType.DAILY -> "일당" }
+            return when {
+                c.type != now.type -> "지금 ${word(now.type)} ${won(now.amount)} → ${word(c.type)} ${won(c.amount)}으로 바뀌어요. 맞을 때만 켜 주세요"
+                c.amount * 2 < now.amount -> "지금 ${word(now.type)} ${won(now.amount)} → ${won(c.amount)}으로 크게 줄어요. 맞을 때만 켜 주세요"
+                else -> null
+            }
         }
 
         /**

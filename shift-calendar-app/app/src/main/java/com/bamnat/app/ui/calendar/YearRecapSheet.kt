@@ -94,12 +94,12 @@ fun YearRecapSheet(recap: YearRecap?, onSent: () -> Unit, onDismiss: () -> Unit)
                 },
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview
                 if (bmp != null) Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
                     Image(bmp, "결산 사진 미리보기", contentScale = ContentScale.Fit,
                         modifier = Modifier.heightIn(max = 440.dp).aspectRatio(bmp.width.toFloat() / bmp.height, matchHeightConstraintsFirst = true)
-                            .clip(RoundedCornerShape(8.dp)))
+                            .clip(MaterialTheme.shapes.small))
                 } else Spacer(Modifier.fillMaxWidth().heightIn(min = 240.dp))
             }
             if (hasMoney) Pick(

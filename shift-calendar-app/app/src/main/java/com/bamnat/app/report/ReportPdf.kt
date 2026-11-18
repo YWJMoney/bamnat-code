@@ -23,6 +23,15 @@ object ReportPdf {
     const val A4_LONG = 842
     private const val MARGIN = 36f
 
+    /**
+     * 2.0.0 [RVJ-47] 검토 PC-111: a sentence breaks at its spaces, not between the letters of a word (the proof's last line put '밤'
+     * and '낮' on two lines). A word joiner (U+2060, drawn as nothing) sits between letters that have no space between them; a word
+     * wider than the whole line is still broken by the layout.
+     */
+    internal fun keepWords(s: String): String = buildString(s.length * 2) {
+        s.forEachIndexed { i, c -> if (i > 0 && !c.isWhitespace() && !s[i - 1].isWhitespace()) append('\u2060'); append(c) }
+    }
+
     /** Where pages go: a PDF file, or bitmaps in the tests. */
     interface Pages {
         fun begin(width: Int, height: Int): Canvas
@@ -32,20 +41,23 @@ object ReportPdf {
     /** Writes [doc] as a PDF to [out]; the number of pages. */
     fun write(doc: ReportDoc, out: OutputStream): Int {
         val pdf = PdfDocument()
+        var page: PdfDocument.Page? = null
         try {
-            var page: PdfDocument.Page? = null
             var number = 0
             val pages = draw(doc, object : Pages {
                 override fun begin(width: Int, height: Int): Canvas {
                     page = pdf.startPage(PdfDocument.PageInfo.Builder(width, height, ++number).create())
                     return page!!.canvas
                 }
-                override fun end() { pdf.finishPage(page) }
+                override fun end() { pdf.finishPage(page); page = null }
             })
             pdf.writeTo(out)
             return pages
         } finally {
-            pdf.close()
+            // 2.0.0 [RVP-69] (검토 REST-11) A drawing that failed mid-page leaves the page open, and close() then threw "page not finished",
+            // hiding the real reason; the page is ended first and close() never throws over it.
+            page?.let { p -> runCatching { pdf.finishPage(p) } }
+            runCatching { pdf.close() }
         }
     }
 
@@ -115,13 +127,13 @@ object ReportPdf {
         fun block(b: ReportDoc.Block) {
             when (b) {
                 is ReportDoc.Heading -> {
-                    val l = layout(b.text, text(12.5f, bold = true), inner)
+                    val l = layout(keepWords(b.text), text(12.5f, bold = true), inner)
                     room(l.height + 30f)
                     y += 8f
                     draw(l, MARGIN, y); y += l.height + 6f
                 }
                 is ReportDoc.Paragraph -> {
-                    val l = layout(b.text, if (b.small) text(8.5f, color = muted) else text(10f), inner)
+                    val l = layout(keepWords(b.text), if (b.small) text(8.5f, color = muted) else text(10f), inner)
                     room(l.height.toFloat())
                     draw(l, MARGIN, y); y += l.height + 6f
                 }
@@ -136,7 +148,7 @@ object ReportPdf {
         fun facts(b: ReportDoc.Facts) {
             val half = inner / 2
             b.rows.chunked(2).forEach { pair ->
-                val cells = pair.map { (k, v) -> layout(k, text(8f, color = muted), half - 8f) to layout(v, text(10f), half - 8f) }
+                val cells = pair.map { (k, v) -> layout(keepWords(k), text(8f, color = muted), half - 8f) to layout(keepWords(v), text(10f), half - 8f) }
                 val h = cells.maxOf { (k, v) -> k.height + v.height + 2f }
                 room(h)
                 cells.forEachIndexed { i, (k, v) ->
@@ -152,8 +164,9 @@ object ReportPdf {
             val sum = t.weights.sum()
             val widths = t.weights.map { inner * it / sum }
             val pad = 3f
+            // [RVJ-47] A cell breaks at its spaces too ('2시간 (시각 안 적음)' put '음)' alone on the next line of a narrow column).
             fun rowLayouts(cells: List<String>, p: TextPaint) = cells.mapIndexed { i, c ->
-                layout(c, p, widths[i] - 2 * pad, if (i in t.right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL)
+                layout(keepWords(c), p, widths[i] - 2 * pad, if (i in t.right) Layout.Alignment.ALIGN_OPPOSITE else Layout.Alignment.ALIGN_NORMAL)
             }
             fun drawRow(ls: List<StaticLayout>, background: Int?, ruleAbove: Boolean) {
                 val h = ls.maxOf { it.height } + 2 * pad

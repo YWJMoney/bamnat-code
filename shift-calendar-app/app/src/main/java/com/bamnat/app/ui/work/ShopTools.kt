@@ -2,7 +2,6 @@ package com.bamnat.app.ui.work
 
 import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.guide.FeatureCard
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -12,7 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AcUnit
 import androidx.compose.material.icons.outlined.Cloud
@@ -236,6 +234,20 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
     val payroll = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
     var ledgerOpen by rememberSaveable { mutableStateOf(false) }
+    // 2.0.0 [RVG-04] 검토 BOSS-61: once the 급여 대장 holds the staff (its first opening copies the 근무표 in once), the card reads the
+    // 대장 — the same people, 가산·산재·달라진 날 included — so the two screens never say two 인건비. The old 근무표 stays readable
+    // as '옮기기 전 근무표'; new staff and changes go in the 대장.
+    val phase = context.appContainer.phaseThree
+    val places by phase.workplaces.collectAsStateWithLifecycle(null)
+    val place = places?.firstOrNull()?.takeIf { payroll }
+    // [RVG-12] 검토 BOSS-69: the help search's '급여 대장' opens the 대장 here (it went to the 장부 tab).
+    com.bamnat.app.ui.guide.FocusedTool("payroll", "boss.payroll") { if (payroll) ledgerOpen = true }
+    if (place != null) {
+        LedgerCostCard(place, sales, month, hadRoster = roster.staff.isNotEmpty(), onLedger = { ledgerOpen = true }, onOld = { open = true })
+        if (open) StaffScreen(calendarId, month) { open = false }
+        if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
+        return
+    }
     SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = {
         Row {
             if (payroll) TextButton(onClick = { ledgerOpen = true }) { Text("급여 대장") }
@@ -268,6 +280,35 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
 }
 
+/** [RVG-04] The 직원 인건비 card once the 급여 대장 is in use: its month, its people, its 인건비율. */
+@Composable
+private fun LedgerCostCard(place: com.bamnat.core.boss.Workplace, sales: Long, month: YearMonth, hadRoster: Boolean, onLedger: () -> Unit, onOld: () -> Unit) {
+    val store = LocalContext.current.appContainer.phaseThree
+    val inputs by remember(place, month) { store.inputs(place, month) }.collectAsStateWithLifecycle(null)
+    val ledger = inputs?.takeIf { it.month == month }?.ledger
+    SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = { TextButton(onClick = onLedger) { Text("급여 대장") } }) {
+        if (ledger == null) return@SectionCard
+        if (ledger.lines.isEmpty()) {
+            Hint("급여 대장에 직원을 더하면 한 달 인건비와 매출 대비 인건비율이 여기에 보여요.")
+        } else {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatTile("인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${ledger.lines.size}명 · ${ledger.lines.sumOf { it.workMinutes } / 60}시간")
+                val ratio = if (sales > 0) (ledger.total * 100 / sales).toInt() else null
+                StatTile("인건비율", ratio?.let { "$it%" } ?: "-", Modifier.weight(1f), caption = if (sales > 0) "매출 ${wonBrief(sales)} 대비" else "매출을 적으면 나와요",
+                    warning = (ratio ?: 0) >= 35)
+            }
+            Column(Modifier.padding(top = 8.dp)) {
+                ledger.lines.forEach { l -> ValueLine(l.staff.name.ifBlank { "이름 없음" }, Fmt.won(l.employerTotal)) }
+                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                ValueLine("급여", Fmt.won(ledger.gross))
+                if (ledger.employerInsurance + ledger.accident > 0) ValueLine("4대보험·산재 (사장님 몫)", Fmt.won(ledger.employerInsurance + ledger.accident))
+            }
+            Hint("급여 대장과 같은 계산이에요(가산·산재·바꾼 날 포함). 직원을 더하거나 고치는 것도 급여 대장에서 해요.", Modifier.padding(top = 6.dp))
+        }
+        if (hadRoster) TextButton(onClick = onOld) { Text("옮기기 전 근무표 보기") }
+    }
+}
+
 private val DEFAULT_SHIFT = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))
 
 /**
@@ -280,12 +321,29 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
     val context = LocalContext.current
     val store = remember { WorkToolsStore.get(context) }
     var roster by remember { mutableStateOf(store.current(calendarId).roster) }
-    val minimum = RateTable.on(month.atDay(1)).minimumHourlyWage.toLong()
+    // 2.0.0 [RVJ-48] 검토 PC-117 같은 구조: the 최저임금 of the day a wage is paid from (wageOn), said with its year.
+    val wageDay = wageOn(month)
+    val minimum = RateTable.on(wageDay).minimumHourlyWage.toLong()
     fun save() { store.update(calendarId) { it.copy(roster = roster) }; onClose() }
     ToolScreen("직원 근무표", onClose, action = "저장", onAction = ::save) {
         if (roster.staff.isNotEmpty()) {
             SectionCard(title = "한 주 근무표") {
-                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                // 2.0.0 [RVJ-20] 검토 BOSS-62: the grid (64 + 56 × 7 = 456dp) only where it fits; a phone's width (접은 폴드 약 369dp)
+                // and big text get each day on its own line with who works when, so nothing is pushed off to the side.
+                androidx.compose.foundation.layout.BoxWithConstraints {
+                if (maxWidth < 456.dp || androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        DayOfWeek.entries.forEach { d ->
+                            val on = roster.staff.mapNotNull { s -> s.shifts[d]?.let { sh -> "${s.name.ifBlank { "이름 없음" }} ${short(sh.start)}-${short(sh.end)}" } }
+                            Row(verticalAlignment = Alignment.Top) {
+                                Text(Fmt.dayOfWeekShort(d), style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(32.dp))
+                                Text(on.joinToString(" · ").ifEmpty { "쉬어요" }, style = MaterialTheme.typography.bodySmall,
+                                    color = if (on.isEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                } else Row {
                     Column {
                         Text("", style = MaterialTheme.typography.labelMedium, modifier = Modifier.width(64.dp).padding(vertical = 4.dp))
                         roster.staff.forEach { s ->
@@ -305,12 +363,15 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                         }
                     }
                 }
+                }
             }
             val cost = LaborCost.month(roster, month)
             SectionCard(title = "${month.monthValue}월 인건비") {
                 cost.lines.forEach { l ->
                     ValueLine("${l.staff.name.ifBlank { "이름 없음" }} · ${l.workMinutes / 60}시간", Fmt.won(l.total))
-                    Hint("급여 ${Fmt.won(l.base)} + 주휴 ${Fmt.won(l.holidayPay)}" + if (l.insurance > 0) " + 4대보험 ${Fmt.won(l.insurance)}" else "")
+                    // [RVJ-54] A short week adds the 고용보험 share alone; the line names it.
+                    val ins = if (LaborCost.shortWeek(l.staff, roster.legalBreaks)) "고용보험" else "4대보험"
+                    Hint("급여 ${Fmt.won(l.base)} + 주휴 ${Fmt.won(l.holidayPay)}" + if (l.insurance > 0) " + $ins ${Fmt.won(l.insurance)}" else "")
                 }
                 ValueLine("합계", Fmt.won(cost.total), strong = true)
                 // G 1.32 [WTYP-03] 직원별 근무·급여 PDF (프로), to hand to each staff member.
@@ -321,7 +382,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
                         TextButton(onClick = {
                             if (gatePdf.locked(com.bamnat.app.tier.Feature.ROSTER_PDF) && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.ROSTER_PDF)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.ROSTER_PDF); return@TextButton }
                             scope.launch {
-                                runCatching { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
+                                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.StaffReport.doc(s, month, roster, "", com.bamnat.core.time.Today.date()),
                                     "bamnat-직원-${s.name.ifBlank { "직원" }}-$month.pdf") }
                             }
                         }) { Text("${s.name.ifBlank { "이름 없음" }} PDF") }
@@ -332,7 +393,7 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
         SwitchLine("휴게시간 빼고 세기", roster.legalBreaks, { roster = roster.copy(legalBreaks = it) }, "4시간이면 30분, 8시간이면 1시간을 빼요(근로기준법 제54조)")
         roster.staff.forEachIndexed { i, s ->
             key(s.id) {
-                StaffEditor(s, minimum, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
+                StaffEditor(s, minimum, wageDay.year, roster.legalBreaks, onChange = { n -> roster = roster.copy(staff = roster.staff.toMutableList().also { it[i] = n }) },
                     onRemove = { roster = roster.copy(staff = roster.staff.filterIndexed { k, _ -> k != i }) })
             }
         }
@@ -344,7 +405,8 @@ private fun StaffScreen(calendarId: String, month: YearMonth, onClose: () -> Uni
             roster = roster.copy(staff = roster.staff + Staff(UUID.randomUUID().toString(), "", minimum))
         }) { Text(if (com.bamnat.core.report.StaffReport.canAdd(roster, pro)) "직원 더하기" else "직원 더하기 (4명부터 프로)") }
         Hint("직원 ${com.bamnat.core.report.StaffReport.FREE_STAFF}명까지는 무료예요. 적어 둔 근무표는 언제든 볼 수 있어요.")
-        Hint("주휴수당은 한 주 15시간 이상이면 한 주 시간 ÷ 40 × 8시간만큼 줘요. 4대보험 사장님 몫은 국민연금 4.75%, 건강보험 3.595%, 장기요양, 고용보험 1.15%(150명 미만)로 셌어요.")
+        // 2.0.0 [RVJ-20] 검토 BOSS-62: the shares of the month on screen, not 2026's in words.
+        Hint("주휴수당은 한 주 15시간 이상이면 한 주 시간 ÷ 40 × 8시간만큼 줘요. 4대보험 사장님 몫은 ${com.bamnat.core.work.LaborCost.employerRatesText(month.atDay(1))}로 셌어요.")
     }
 }
 
@@ -352,15 +414,18 @@ private fun short(t: LocalTime): String = if (t.minute == 0) "${t.hour}" else "$
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun StaffEditor(s: Staff, minimum: Long, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
+private fun StaffEditor(s: Staff, minimum: Long, minYear: Int, breaks: Boolean, onChange: (Staff) -> Unit, onRemove: () -> Unit) {
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     SectionCard(title = s.name.ifBlank { "새 직원" }, trailing = { IconButton(onClick = onRemove) { Icon(Icons.Outlined.Delete, "직원 빼기") } }) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(s.name, { onChange(s.copy(name = it.take(12))) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             AmountField("시급", amountDigits(s.hourlyWage), { onChange(s.copy(hourlyWage = it.toAmount())) })
-            if (s.hourlyWage in 1 until minimum) Text("최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+            if (s.hourlyWage in 1 until minimum) Text("${minYear}년 최저임금 ${Fmt.won(minimum)}보다 적어요", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
             SwitchLine("주휴수당 주기", s.holidayPay, { onChange(s.copy(holidayPay = it)) }, "한 주 15시간이 안 되면 저절로 빠져요")
-            SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) }, "사장님이 내는 몫을 인건비에 더해요")
+            // 2.0.0 [RVJ-54]: under 15 hours a week only the 고용보험 share is counted ([LaborCost.shortWeek]); the line says so.
+            SwitchLine("4대보험 가입", s.insured, { onChange(s.copy(insured = it)) },
+                if (LaborCost.shortWeek(s, breaks)) "한 주 15시간 미만이라 고용보험 몫만 더해요"
+                else "사장님이 내는 몫을 인건비에 더해요")
             Text("일하는 요일", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 DayOfWeek.entries.forEach { d ->

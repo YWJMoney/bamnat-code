@@ -42,13 +42,13 @@ internal fun BaseNeededCard(
 ) {
     var base by rememberSaveable { mutableStateOf<Long?>(null) }
     var hours by rememberSaveable { mutableStateOf<Int?>(null) }
-    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.large, modifier = modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.large, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("${month.monthValue}월 예상 급여", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text("${month.monthValue}월 예상 급여", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
             Text("${profile.wageType.baseName()}만 넣으면 끝나요", style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.semantics { heading() })
+                color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.semantics { heading() })
             Text("계산 방식은 다 들어 있어요. ${profile.wageType.baseName()}을 넣으면 이번 달 예상 급여가 바로 보여요.",
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             Surface(color = MaterialTheme.colorScheme.surface, shape = MaterialTheme.shapes.medium) {
                 BaseFields(profile.wageType, base, { base = it }, hours, { hours = it }, profile, month, Modifier.padding(12.dp),
                     companyHours = companyHours, companyName = companyName, hideHours = LocalPayLocked.current)

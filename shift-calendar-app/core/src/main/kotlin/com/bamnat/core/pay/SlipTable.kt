@@ -140,6 +140,12 @@ object SlipNumber {
     private val COUNT_UNITS = setOf("일", "회", "%", "배", "개월", "년", "월", "개", "명", "호봉")
     private val UNIT = Regex("""(원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉)$""")
     private val OCR_DIGITS = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'l' to '1', 'I' to '1', '|' to '1', '!' to '1')
+    // 2.0.0 [RVL-31] (검토 SCAN-33·I07ba-06) Made once: parse runs for every word of every reading.
+    private val GROUPED = Regex("""\d{1,3}([,.]\d{3})+""")
+    private val PLAIN = Regex("""\d+""")
+    private val DECIMAL = Regex("""\d+\.\d{1,2}""")
+    private val LOST_COMMA = Regex("""\d{4,6}([,.]\d{3})+""")
+    private val CUT = Regex("""\d{1,3}(,\d{3})*,\d{1,2}""")
 
     fun parse(token: String): Num? {
         var t = token.trim().replace("₩", "").replace("￦", "").replace(" ", "")
@@ -158,25 +164,25 @@ object SlipNumber {
         val won = unit == "원" || unit == "윈" || unit == "웜"
         val sign = if (negative) -1 else 1
         return when {
-            Regex("""\d{1,3}([,.]\d{3})+""").matches(body) -> {
+            GROUPED.matches(body) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = unit.isEmpty() || won, fixed = fixed)
             }
-            Regex("""\d+""").matches(body) -> {
+            PLAIN.matches(body) -> {
                 val v = body.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = won || unit.isEmpty() && abs(v) >= 1_000, fixed = fixed)
             }
-            Regex("""\d+\.\d{1,2}""").matches(body) && !won -> {
+            DECIMAL.matches(body) && !won -> {
                 val d = body.toDouble() * sign
                 Num(d.toLong(), d, unit, money = false, fixed = fixed)
             }
             // [PHOTO-12] "2397,500": a comma lost (화학 공장 명세서 사진의 모아레); money, looked at.
-            Regex("""\d{4,6}([,.]\d{3})+""").matches(body) && (unit.isEmpty() || won) -> {
+            LOST_COMMA.matches(body) && (unit.isEmpty() || won) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = true, fixed = true)
             }
             // "2,856,0": the last digits off the photo; worked out by the sums, never taken as it is.
-            Regex("""\d{1,3}(,\d{3})*,\d{1,2}""").matches(body) -> {
+            CUT.matches(body) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), unit, money = true, fixed = true, cut = true)
             }
@@ -266,7 +272,7 @@ object SlipTable {
                     Kind.HEAD -> { open = null; formula = false }
                     Kind.TEXT -> {
                         val t = cell.text
-                        if (Regex("[×xX*]|곱").containsMatchIn(t) && t.length <= 3) formula = true
+                        if (TIMES.containsMatchIn(t) && t.length <= 3) formula = true
                         if ('=' in t) { formula = true; afterEquals = true }
                     }
                     Kind.PUNCT -> Unit
@@ -575,6 +581,19 @@ object SlipTable {
 
     private val LATIN_NAME = Regex("""[（(]\s*[A-Za-z][A-Za-z/&.\- ]{1,14}\s*[)）]""")
 
+    // 2.0.0 [RVL-31] (검토 SCAN-33·I07ba-06) Made once, not for every cell of every reading.
+    private val TIMES = Regex("[×xX*]|곱")
+    private val BRACKETED = Regex("""\([^()]*\)""")
+    private val LEAD_NUMBER = Regex("""^\d{1,2}(?=[가-힣])""")
+    private val HOUR_HEAD = Regex("(시간수|시간|시수)$")
+    private val ANY_HEAD = Regex("(시간수|시간|시수|일수)$")
+    private val THREE_DIGITS = Regex("""\d{3}(원|윈)?""")
+    private val AMOUNT_OPEN = Regex("""\d{1,7}([,.]\d{3})*[,.]""")
+    private val AMOUNT_REST = Regex("""\d{3}([,.]\d{3})*(원|윈)?""")
+    private val AMOUNT_HEAD = Regex("""\d{1,7}([,.]\d{3})*""")
+    private val COMMA_REST = Regex("""[,.]\d{3}([,.]\d{3})*(원|윈)?""")
+    private val AMOUNT_GROUPED = Regex("""\d{1,3}([,.]\d{3})+""")
+
     /** A cell that reads as a name of pay: a few words with two 한글 letters or more, no clock or sentence. */
     private fun nameLike(t: String): Boolean {
         // [READ-38] 1.38 사용자 사진: "축구회 (ABS/EP)" read as "(ABS/EP)" only: a club's name in Latin letters is a name too.
@@ -582,7 +601,7 @@ object SlipTable {
         val hangul = t.count { it in '가'..'힣' }
         if (hangul < 2 || t.length > 24 || t.count { it == ' ' } > 3) return false
         // [READ-41] Digits in a name's bracket or at its head ("볼링회 (1공장)", "1공장_사택관리비") are the name's.
-        val bare = t.replace(Regex("""\([^()]*\)"""), "").replace(Regex("""^\d{1,2}(?=[가-힣])"""), "")
+        val bare = t.replace(BRACKETED, "").replace(LEAD_NUMBER, "")
         if (bare.any { it.isDigit() } || ':' in t || t.endsWith("다") || t.endsWith("요")) return false
         return !PayslipReader.isHeader(PayslipReader.ocrFix(t.filter { it.isLetter() }))
     }
@@ -593,8 +612,8 @@ object SlipTable {
      * 시간수·근로·근무·수당 are taken off (휴일근로시간수 → 휴일 → 휴일근로수당, 휴일연장근로시간수 → 휴일연장 → 휴일연장수당).
      */
     private fun attendance(rows: List<List<Cell>>, lines: List<SlipLine>): List<SlipLine> {
-        val hourHead = Regex("(시간수|시간|시수)$")
-        val anyHead = Regex("(시간수|시간|시수|일수)$")
+        val hourHead = HOUR_HEAD
+        val anyHead = ANY_HEAD
         fun letters(t: String) = PayslipReader.ocrFix(t.filter { it.isLetter() })
         fun stem(t: String) = letters(t).replace(hourHead, "").replace("수당", "").replace("근로", "").replace("근무", "")
         val all = rows.flatten()
@@ -707,7 +726,7 @@ object SlipTable {
                 val lastNum = SlipNumber.parse(last.text)
                 val cNum = SlipNumber.parse(c.text)
                 val bothWords = lastNum == null && cNum == null && !punct(last.text) && !punct(c.text)
-                val digitsGroup = lastNum != null && cNum != null && lastNum.unit.isEmpty() && Regex("""\d{3}(원|윈)?""").matches(c.text) &&
+                val digitsGroup = lastNum != null && cNum != null && lastNum.unit.isEmpty() && THREE_DIGITS.matches(c.text) &&
                     !last.text.contains(',') && gap < 0.8 * h
                 val wonAfter = lastNum != null && c.text in setOf("원", "윈", "웜") && gap < 1.2 * h
                 val unitAfter = lastNum != null && lastNum.unit.isEmpty() && c.text in setOf("시간", "h", "H", "분", "일", "회", "%") && gap < 0.8 * h
@@ -720,9 +739,9 @@ object SlipTable {
                 // A 0 read as O ("2,397" ",50O") or a comma lost before the cut ("2397" ",500") is still a piece of the amount.
                 val a = digitish(last.text)
                 val b = digitish(c.text)
-                val amountCut = gap < 0.6 * h && (Regex("""\d{1,7}([,.]\d{3})*[,.]""").matches(a) && Regex("""\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
-                    Regex("""\d{1,7}([,.]\d{3})*""").matches(a) && Regex("""[,.]\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
-                    gap < 0.35 * h && Regex("""\d{1,3}([,.]\d{3})+""").matches(a) && Regex("""\d{3}(원|윈)?""").matches(b))
+                val amountCut = gap < 0.6 * h && (AMOUNT_OPEN.matches(a) && AMOUNT_REST.matches(b) ||
+                    AMOUNT_HEAD.matches(a) && COMMA_REST.matches(b) ||
+                    gap < 0.35 * h && AMOUNT_GROUPED.matches(a) && THREE_DIGITS.matches(b))
                 // [PHOTO-27] One word the reader cut in two that touch ("소급" "분(지급)", "남부_사택관" "리비"): one word, even when a
                 // piece looks like a name of its own; two names printed side by side have a space between them.
                 val touching = bothWords && gap <= 0.15 * h && !(SlipLexicon.of(last.text)?.distance == 0 && SlipLexicon.of(c.text)?.distance == 0 &&
@@ -976,6 +995,33 @@ object SlipReading {
         val flags = order.indices.filter { order[it] in unsure }.toSet()
         val fixed = SlipSums.repair(merged, flags)
         return SlipVote.Result(fixed.read, fixed.unsure, read.joinToString("\n") { it.text })
+    }
+
+    /**
+     * 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A file of several payslips (months, or people) taken apart: its pages, by index, in
+     * payslips. A page that reads as a payslip and names another month than the one before, or states another 실수령액 or
+     * 지급 총액, starts the next; a page with none of its own (the 공제 half of a long payslip, a page of notes) goes with the one
+     * before, as [pages] puts them together. 1.39 put every page in one payslip, lines of two months mixed with no word.
+     */
+    fun slips(results: List<SlipVote.Result>): List<List<Int>> {
+        val out = mutableListOf<MutableList<Int>>()
+        var month: java.time.YearMonth? = null
+        var net: Long? = null
+        var gross: Long? = null
+        for ((i, r) in results.withIndex()) {
+            val read = r.read
+            val slip = read.statedGross != null || read.lines.count { it.amount != null } >= 3
+            val m = read.month
+            val n = read.lines.firstOrNull { it.role == SlipRole.NET && it.amount != null }?.amount
+            val g = read.statedGross
+            val other = slip && (m != null && month != null && m != month || n != null && net != null && n != net || g != null && gross != null && g != gross)
+            if (out.isEmpty() || other) {
+                out += mutableListOf(i)
+                month = null; net = null; gross = null
+            } else out.last() += i
+            if (slip) { month = m ?: month; net = n ?: net; gross = g ?: gross }
+        }
+        return out
     }
 
     /** The better of the table and the text reading of one picture. */

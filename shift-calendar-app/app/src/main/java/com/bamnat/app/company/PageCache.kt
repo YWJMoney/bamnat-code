@@ -147,6 +147,20 @@ class PageCache(
         save()
     }
 
+    /**
+     * 2.0.0 [RVN-09] COMP-43 After 모두 지우기: the company pages read as a member (with their pay ways), the boards and talks
+     * with this phone's own posts in them, and 내 활동 go from the phone too; the next look reads them afresh.
+     */
+    fun forgetMine() {
+        synchronized(lock) {
+            bundles.map.clear()
+            boards.map.clear()
+            talks.map.clear()
+            activities.map.clear()
+        }
+        save()
+    }
+
     /** Whether [k] is newer than [ms]. */
     fun fresh(k: Kept<*>?, ms: Long): Boolean = k != null && now() - k.at in 0 until ms
 

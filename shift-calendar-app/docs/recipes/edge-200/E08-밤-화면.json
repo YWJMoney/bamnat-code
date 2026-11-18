@@ -1,0 +1,32 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E8 밤 화면",
+ "summary": "밤 화면 부품 꾸밈(1.39부터)",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "parts",
+   "parts": [
+    {
+     "id": "night.card",
+     "fill": 4280032286,
+     "r": 24
+    },
+    {
+     "id": "night.clock",
+     "ink": 4294956800,
+     "size": 64
+    }
+   ]
+  }
+ ]
+}

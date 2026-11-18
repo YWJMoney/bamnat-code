@@ -40,6 +40,7 @@ object TeamCover {
 
     fun candidates(
         team: Team, board: TeamBoard, gap: Gap, rules: RestRules = RestRules(), wishes: List<TeamWish> = emptyList(), prev: TeamBoard? = null,
+        next: TeamBoard? = null,
     ): List<Candidate> {
         val types = team.shifts.associateBy { it.id }
         val shift = types[gap.shiftId] ?: return emptyList()
@@ -47,17 +48,19 @@ object TeamCover {
         // The board as it will be: the one who cannot come is off that day (or empty if the team has no off day).
         val off = team.shifts.firstOrNull { it.isOff }
         val without = if (off != null) board.paint(gap.memberId, gap.date, off.id) else board.paint(gap.memberId, gap.date, null)
-        val before = TeamCheck.check(team, without, rules, prev).map { it.kind to it.text }.toSet()
+        val before = TeamCheck.check(team, without, rules, prev, next).map { it.kind to it.text }.toSet()
         val week = gap.date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)).let { m -> (0..6L).map(m::plusDays) }
         return board.members.filter { it.active && it.id != gap.memberId }.mapNotNull { m ->
             val now = without.cell(m.id, gap.date)?.shiftId?.let(types::get)
             if (now != null && !now.isOff) return@mapNotNull null // already working that day
             val trial = without.paint(m.id, gap.date, gap.shiftId)
             val why = ArrayList<String>()
-            TeamCheck.check(team, trial, rules, prev).filter { it.memberId == m.id && (it.kind to it.text) !in before }
+            TeamCheck.check(team, trial, rules, prev, next).filter { it.memberId == m.id && (it.kind to it.text) !in before }
                 .forEach { why += it.text.removePrefix("${m.name}: ") }
-            val weekMinutes = week.sumOf { d -> trial.cell(m.id, d)?.shiftId?.let(types::get)?.let(TeamCheck::minutesOf) ?: 0 }
-            if (weekMinutes > TeamCheck.WEEK_LIMIT_MINUTES && why.none { it.contains("52시간") }) why += "그 주 ${weekMinutes / 60}시간, 52시간을 넘어요"
+            // 2.0.0 [RVJ-29][RVJ-30][RVJ-31] Hours worked (휴게 off), the week read over the month's edge, and not for a 5인 미만 사업장.
+            val worked = week.mapNotNull { d -> TeamCheck.cellAt(trial, prev, next, m.id, d)?.shiftId?.let(types::get) }
+            if (rules.weekLimit && worked.sumOf(TeamCheck::minutesOf) > TeamCheck.WEEK_LIMIT_MINUTES && why.none { it.contains("52시간") })
+                why += "그 주 ${TeamCheck.overWords(worked)}"
             wish[m.id to gap.date]?.takeIf { it.kind.rests || (it.kind == WishKind.AVOID_NIGHT && DutyCheck.isNight(shift.asType())) }
                 ?.let { why += "${it.kind.short} 신청한 날이에요" }
             val minutes = board.days.sumOf { d -> without.cell(m.id, d)?.shiftId?.let(types::get)?.let(TeamCheck::minutesOf) ?: 0 }

@@ -14,9 +14,14 @@ object Fmt {
 
     /**
      * G 1.32 [WTYP-07] 609 설정 › 화면과 글자 › 오전/오후로 보기: "오후 3:05" instead of "15:05". Set from the settings when the
-     * app and the widgets start and when it is changed; the root redraws on a change.
+     * app and the widgets start and when it is changed; what wrote a time redraws on a change.
      */
-    @Volatile var clock12: Boolean = false
+    // 2.0.0 [RVP-21] (검토 UIX-42) As Compose state, like [masked]: the times on screen redraw where they are, instead of the whole
+    // app being made again (which closed 설정 and went back to the calendar).
+    private val clock12State = androidx.compose.runtime.mutableStateOf(false)
+    var clock12: Boolean
+        get() = clock12State.value
+        set(v) { if (clock12State.value != v) clock12State.value = v }
 
     /**
      * 1.37 [LEDH-22] 금액 가리기: every amount Fmt writes shows as dots, for opening the app on a bus or at work. Set from
@@ -89,7 +94,8 @@ object Fmt {
         val a = kotlin.math.abs(amount)
         val sign = if (amount < 0) "-" else ""
         return sign + when {
-            a >= 100_000_000 -> "%.1f억".format(a / 100_000_000.0).replace(".0억", "억")
+            // 2.0.0 [RVP-28] (검토 UIX-51) Cut down like 만, never up: 199,999,999 is 1.9억, not 2억.
+            a >= 100_000_000 -> "%.1f억".format(java.util.Locale.KOREA, (a / 10_000_000) / 10.0).replace(".0억", "억")
             a >= 1_000_000 -> "${a / 10_000}만"
             a >= 100_000 -> cut(a, 1_000, 10, "만")
             a >= 10_000 -> cut(a, 100, 100, "만")
@@ -131,12 +137,15 @@ object Fmt {
     /** The final consonant index of [word]'s last sound (0 for none), reading digits and a few letters as Korean says them. */
     private fun batchim(word: String): Int {
         // 1.36 U14: a name in quotes or brackets ("‘오전 알바’") is read by its last letter.
-        val c = word.trimEnd { it.isWhitespace() || it in "’'\")]}」』>" }.lastOrNull() ?: return 0
+        val t = word.trimEnd { it.isWhitespace() || it in "’'\")]}」』>" }
+        val c = t.lastOrNull() ?: return 0
         return when {
             c in '가'..'힣' -> (c - '가') % 28
             // 영 일 삼 육 칠 팔 end in a consonant; 이 사 오 구 do not.
             c.isDigit() -> when (c) { '0' -> 21; '1', '7', '8' -> RIEUL; '3' -> 16; '6' -> 1; else -> 0 }
             c in "LlRr" -> RIEUL
+            // 2.0.0 [RVP-28] (검토 UIX-51 'Evening를') -ng ends in ㅇ.
+            c in "Gg" && t.dropLast(1).lastOrNull()?.let { it in "Nn" } == true -> 21
             c in "MmNn" -> 4
             else -> 0
         }

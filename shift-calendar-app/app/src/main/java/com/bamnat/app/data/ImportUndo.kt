@@ -28,9 +28,13 @@ class ImportUndo(
         if (_savedAt.value == null) file.delete()
     }
 
-    /** Takes the copy, right before an import changes anything. */
+    /**
+     * Takes the copy, right before an import changes anything. 2.0.0 [RVL-01] (검토 DATA-01·T12-01·T12-03): the whole of it
+     * ([BackupManager.exportFull]: 사업장·직원·급여 대장 and every link's key too), so 되돌리기 brings back a 대장 the import replaced, and
+     * takes away one it brought.
+     */
     suspend fun save() {
-        val json = backups.export()
+        val json = backups.exportFull()
         withContext(Dispatchers.IO) {
             val part = File(file.parentFile, file.name + ".part")
             part.writeText(json)

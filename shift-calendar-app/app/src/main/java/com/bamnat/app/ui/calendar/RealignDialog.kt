@@ -28,6 +28,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
@@ -106,9 +108,12 @@ internal fun RealignDialog(
                     Text("${Fmt.monthDay(date)}부터 ${days}일 쉬고, 그다음 날 이 날 순서로 이어 가요. 쉬는 날은 비워 둬요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        TextButton(onClick = { days = (days - 1).coerceAtLeast(1) }) { Text("−") }
+                        // 2.0.0 [RVH-13] 검토 CAL-18: the screen reader says what the buttons do, not "빼기·더하기 기호".
+                        TextButton(onClick = { days = (days - 1).coerceAtLeast(1) },
+                            modifier = Modifier.semantics { contentDescription = "멈추는 날 하루 줄이기" }) { Text("−") }
                         Text("${days}일", style = MaterialTheme.typography.titleMedium)
-                        TextButton(onClick = { days = (days + 1).coerceAtMost(30) }) { Text("+") }
+                        TextButton(onClick = { days = (days + 1).coerceAtMost(30) },
+                            modifier = Modifier.semantics { contentDescription = "멈추는 날 하루 늘리기" }) { Text("+") }
                         Spacer(Modifier.weight(1f))
                         androidx.compose.material3.OutlinedButton(onClick = { onPause(days) }) { Text("멈추고 이어 가기") }
                     }

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -62,6 +63,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [FLD-11][FLD-13] A field calendar's extra cards on 일감·수입: 일용직 원천징수 for the month's day-rate
@@ -78,11 +80,30 @@ fun FieldToolCards(calendarId: String, book: MoneyBook, month: YearMonth, today:
  * [FLD-13] 일용직 세금: what the month's 일당 owe as 일용근로소득 — paid together (one 정산) and paid day by
  * day — apart from 3.3% 사업소득, with how it is worked out.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun DailyTaxCard(book: MoneyBook, month: YearMonth) {
     val m = remember(book, month) { DailyWorkerTax.month(month, book.jobs) }
-    if (m.days == 0) return
-    SectionCard(title = "일용직 세금 (${month.monthValue}월)") {
+    // 2.0.0 [PC-134] 기능 찾기 › 바로 가기 comes down to this card (it opened the top of the tab only), and when there is nothing to
+    // work out it says why in one line instead of not being there: 건별·플랫폼 일 has no 일당, so no 일용직 세금. A calendar that has
+    // never had a 공수 job keeps the tab as it was unless it came here on purpose.
+    var asked by rememberSaveable { mutableStateOf(false) }
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    com.bamnat.app.ui.guide.FocusedTool("dailyTax", "field.dailyTax") { asked = true }
+    androidx.compose.runtime.LaunchedEffect(asked) {
+        if (asked) { kotlinx.coroutines.delay(BRING_SETTLE_MS); runCatching { bring.bringIntoView() } }
+    }
+    val everDayRate = remember(book.jobs) { book.jobs.any { it.units != null && !it.cancelled } }
+    if (m.days == 0 && !asked && !everDayRate) return
+    val at = Modifier.bringIntoViewRequester(bring)
+    if (m.days == 0) {
+        SectionCard(title = "일용직 세금 (${month.monthValue}월)", modifier = at) {
+            Hint(if (everDayRate) "이번 달은 공수(일당)로 적은 일감이 없어 뗄 일용직 세금이 없어요."
+                else "일당(공수)으로 적은 날이 있으면 여기에 세금이 보여요. 일당으로 받으면 달력 고치기 › 세는 방식에서 바꿔요.")
+        }
+        return
+    }
+    SectionCard(title = "일용직 세금 (${month.monthValue}월)", modifier = at) {
         ValueLine("일당 ${m.days}일", Fmt.won(m.wages))
         ValueLine("한 번에 받을 때", if (m.together.total > 0) "${Fmt.won(m.together.total)} 떼요" else "안 떼요", strong = true)
         if (m.together.total > 0) Hint("소득세 ${Fmt.won(m.together.income)} + 지방소득세 ${Fmt.won(m.together.local)}")
@@ -112,7 +133,7 @@ private fun QuotesCard(calendarId: String, today: LocalDate) {
     }) {
         if (tools.quotes.isEmpty()) Hint("품목·수량·단가를 적으면 견적서 사진을 만들어 보낼 수 있어요. 손님이 좋다고 하면 일감으로 저장해요.")
         tools.quotes.sortedByDescending { it.date }.take(8).forEach { q ->
-            Row(Modifier.fillMaxWidth().clickable { editing = q }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { editing = q }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(listOf(q.client, q.title).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { "견적서" },
                         style = MaterialTheme.typography.bodyLarge, maxLines = 1)
@@ -131,6 +152,13 @@ private fun QuotesCard(calendarId: String, today: LocalDate) {
  * valid and a note; then 보내기 as an image, 저장, or 일감으로 저장 (a 가계약 job for the total).
  */
 @OptIn(ExperimentalLayoutApi::class)
+/**
+ * A new 견적's id: the time it was made, or one past the newest when the phone's clock was turned back (2.0.0 [RVR-19] 검토
+ * TEST-20 ⑥: with the time alone, the same millisecond could come again and the new 견적 wrote over an old one).
+ */
+internal fun newQuoteId(taken: Collection<Long>, now: Long = System.currentTimeMillis()): Long = // real clock: an id, not a time
+    maxOf(now, (taken.maxOrNull() ?: 0L) + 1)
+
 @Composable
 private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit) {
     val context = LocalContext.current
@@ -143,7 +171,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
     var deleting by remember { mutableStateOf(false) }
 
     fun persist(next: Quote = q): Quote {
-        val withId = if (next.id == 0L) next.copy(id = System.currentTimeMillis()) else next  // real clock: an id, not a time
+        val withId = if (next.id == 0L) next.copy(id = newQuoteId(store.current(calendarId).quotes.map { it.id })) else next
         // The job made from it is written in the background; its id is kept once it is there.
         val madeJob = store.current(calendarId).quotes.firstOrNull { it.id == withId.id }?.jobId?.takeIf { it > 0 }
         val saved = if (madeJob != null) withId.copy(jobId = madeJob) else withId
@@ -209,7 +237,7 @@ private fun QuoteScreen(calendarId: String, initial: Quote, onClose: () -> Unit)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(enabled = !q.isBlank, modifier = Modifier.weight(1f), onClick = {
                 val saved = persist()
-                scope.launch { runCatching { QuoteImage.share(context, saved, sender.trim()) } }
+                scope.launch { com.bamnat.app.report.ReportShare.orTell { QuoteImage.share(context, saved, sender.trim()) } } // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
             }) { Text("사진으로 보내기") }
         }
         SectionCard(title = "일감으로 저장") {
@@ -277,7 +305,7 @@ fun TradeWageDialog(onDismiss: () -> Unit, onPick: (Long) -> Unit) {
                 OutlinedTextField(query, { query = it.take(10) }, label = { Text("직종 찾기 (예: 타일)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 LazyColumn(Modifier.heightIn(max = 340.dp)) {
                     items(list, key = { it.name }) { t ->
-                        Row(Modifier.fillMaxWidth().clickable { onPick(t.daily) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onPick(t.daily) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                             Text(t.name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                             Text(Fmt.won(t.daily), style = MaterialTheme.typography.bodyLarge.merge(NumberStyle))
                         }
@@ -305,3 +333,6 @@ fun TradeWageLink(onPick: (Long) -> Unit) {
     TextButton(onClick = { open = true }) { Text("공종별 평균 일당 보기 (${TradeWages.SOURCE_SHORT})") }
     if (open) TradeWageDialog(onDismiss = { open = false }) { onPick(it); open = false }
 }
+
+/** 2.0.0 [PC-134] How long the tab gets to lay out before 바로 가기 brings a card into view. */
+private const val BRING_SETTLE_MS = 300L

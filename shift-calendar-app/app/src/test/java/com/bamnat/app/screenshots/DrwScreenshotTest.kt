@@ -7,8 +7,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -51,9 +49,8 @@ class DrwScreenshotTest : ScreenshotBase() {
 
     private fun Screen.drawer() {
         content {
-            val snack = remember { SnackbarHostState() }
-            PutOnNoticeHost(c, snack)
-            Scaffold(snackbarHost = { SnackbarHost(snack) }) { p ->
+            PutOnNoticeHost(c)
+            Scaffold(snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() }) { p ->
                 Column(Modifier.fillMaxSize().padding(p).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     ThemeDrawer(WorkStyle.SHIFT, onFind = {}, onFix = {}, onStudio = {}, onRecipe = {}, onUpload = {})
                 }

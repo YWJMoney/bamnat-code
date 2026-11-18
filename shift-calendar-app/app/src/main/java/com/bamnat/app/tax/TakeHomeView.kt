@@ -28,16 +28,20 @@ data class TakeHomeView(
     val typed: List<PayObservation> get() = records.filter { it.source != PayObservation.Source.DEPOSIT }
 
     companion object {
-        fun of(profile: PayProfile?, snapshot: ScheduleSnapshot?, records: List<PayObservation>, month: YearMonth): TakeHomeView {
+        fun of(
+            profile: PayProfile?, snapshot: ScheduleSnapshot?, records: List<PayObservation>, month: YearMonth,
+            closed: Map<YearMonth, com.bamnat.core.pay.CalcSnapshot> = emptyMap(),
+        ): TakeHomeView {
             val table = profile?.let(TaxLearner.Table::of) ?: TaxLearner.Table(com.bamnat.core.pay.TaxMode.NONE)
-            val gross = profile?.let { SalaryWatch.grossOf(it, snapshot) } ?: { null }
+            val gross = profile?.let { SalaryWatch.grossOf(it, snapshot, closed) } ?: { null }
             val fit = TaxLearner.fit(records, table, gross)
             val g = gross(month)
             val last = TaxLearner.perMonth(records).firstOrNull { it.payMonth < month }
             // [J133-01] Never the 세전 as 실수령: with no way picked (and none the records show), 세후 waits for the way.
             val unknown = profile != null && !profile.taxKnown && fit.mode == com.bamnat.core.pay.TaxMode.NONE
             return TakeHomeView(
-                month = month, gross = g, forecast = g?.takeIf { !unknown }?.let { TaxLearner.forecast(month, it, fit, table) },
+                // 2.0.0 [RVJ-18] 굳은 달: a closed month shows the 세후 kept when it was closed, as the pay screen does.
+                month = month, gross = g, forecast = closed[month]?.takeHome ?: g?.takeIf { !unknown }?.let { TaxLearner.forecast(month, it, fit, table) },
                 taxUnknown = unknown,
                 lastActual = last, fit = fit, year = TaxLearner.yearSoFar(month.year, fit, table),
                 records = records.sortedByDescending { it.payMonth },

@@ -117,7 +117,7 @@ test("[STAT2-05] the same version deployed again: a new Cloudflare version id le
   assert.equal(rows().length, 1, "the same deploy is one line however many isolates");
   await deploy("c0ffee11-0000-4000-8000-000000000002");
   assert.equal(rows().length, 2);
-  assert.match(rows()[1].detail, /1\.39\.\d+ · b8718f05 → 1\.39\.\d+ · c0ffee11/);
+  assert.match(rows()[1].detail, /\d+\.\d+\.\d+ · b8718f05 → \d+\.\d+\.\d+ · c0ffee11/);
   const { requiredSetup } = await import("../src/ops-watch.js");
   assert.equal(requiredSetup({}).items.find((i) => i.key === "CF_VERSION_METADATA").ok, false);
   assert.equal(requiredSetup({ CF_VERSION_METADATA: { id: "x" } }).items.find((i) => i.key === "CF_VERSION_METADATA").ok, true);

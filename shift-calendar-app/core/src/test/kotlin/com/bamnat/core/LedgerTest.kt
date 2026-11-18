@@ -123,7 +123,7 @@ class LedgerTest {
         val paid = UpcomingPayments.entry(up.single(), d(14))
         assertEquals(3L, paid.toAccountId)
         assertEquals(1L, paid.accountId)
-        assertTrue(CardCycle.paid(credit, nov, lines + paid))
+        assertTrue(CardCycle.paid(credit, nov, lines + paid, accounts))
         assertTrue(UpcomingPayments.within(listOf(old), lines + paid, d(10), 7, accounts).isEmpty())
         val alerts = MoneyAlerts.all(emptyList(), emptyList(), lines, d(10), accounts = accounts)
         assertEquals(listOf(LocalDateTime.of(2026, 11, 11, 9, 0), LocalDateTime.of(2026, 11, 14, 9, 0)),

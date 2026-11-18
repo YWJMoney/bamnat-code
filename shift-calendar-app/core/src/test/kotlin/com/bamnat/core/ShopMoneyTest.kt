@@ -198,4 +198,21 @@ class ShopMoneyTest {
         assertEquals(listOf("카드" to 100_000L, "외상" to 30_000L, "나누지 않음" to 20_000L), s.parts)
         assertEquals(150_000, s.total)
     }
+
+    /** [R200-04] (검토 MONEY-41 넘긴 일) 카드사마다 따로 들어온 입금이 합쳐 맞으면 그날 카드 매출이 확인돼요. */
+    @Test fun cardCompaniesPartsAddUpToADay() {
+        val sale = java.time.LocalDate.of(2026, 11, 2)
+        val pay = java.time.LocalDate.of(2026, 11, 4)
+        val expected = listOf(com.bamnat.core.work.CardSettlement.Expected(sale, pay, 200_000, 197_000, settled = false))
+        assertTrue("one part alone fits nothing", com.bamnat.core.work.CardSettlement.match(81_300, pay, expected).isEmpty())
+        val first = com.bamnat.core.work.CardSettlement.Part(1, pay, 81_300)
+        assertNull(com.bamnat.core.work.CardSettlement.matchParts(50_000, pay, listOf(first), expected))
+        val (days, used) = com.bamnat.core.work.CardSettlement.matchParts(115_700, pay, listOf(first), expected)!!
+        assertEquals(listOf(sale), days.map { it.saleDate })
+        assertEquals(listOf(first), used)
+        // A part from the day before counts too; one from a week before does not.
+        val yesterday = first.copy(date = pay.minusDays(1))
+        assertEquals(listOf(yesterday), com.bamnat.core.work.CardSettlement.matchParts(115_700, pay, listOf(yesterday), expected)!!.second)
+        assertNull(com.bamnat.core.work.CardSettlement.matchParts(115_700, pay, listOf(first.copy(date = pay.minusDays(7))), expected))
+    }
 }

@@ -76,6 +76,12 @@ fun PolicyPageHost() {
     val context = LocalContext.current
     var loading by remember(url) { mutableStateOf(true) }
     var failed by remember(url) { mutableStateOf(false) }
+    // 2.0.0 [RVP-33] (검토 UIX-56·U13b-13) Back goes back inside the page first, a server error says so with 다시 열기, the page
+    // follows a dark screen, and the view is let go when the window closes.
+    var web by remember(url) { mutableStateOf<WebView?>(null) }
+    var back by remember(url) { mutableStateOf(false) }
+    var serverDown by remember(url) { mutableStateOf(false) }
+    val dark = isDarkSurface()
     Dialog(onDismissRequest = PolicyPage::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Scaffold(topBar = {
             TopAppBar(
@@ -85,10 +91,12 @@ fun PolicyPageHost() {
             )
         }) { padding ->
             Box(Modifier.fillMaxSize().padding(padding)) {
+                androidx.activity.compose.BackHandler(enabled = back && !failed) { web?.goBack() }
                 if (failed) {
                     Column(Modifier.align(Alignment.Center).padding(24.dp)) {
-                        Text("인터넷에 연결되지 않아 열지 못했어요.", style = MaterialTheme.typography.bodyLarge)
-                        TextButton(onClick = { failed = false; loading = true }) { Text("다시 열기") }
+                        Text(if (serverDown) "지금은 이 쪽을 열 수 없어요. 잠시 뒤 다시 열어 주세요." else "인터넷에 연결되지 않아 열지 못했어요.",
+                            style = MaterialTheme.typography.bodyLarge)
+                        TextButton(onClick = { failed = false; serverDown = false; loading = true }) { Text("다시 열기") }
                     }
                 } else {
                     AndroidView(
@@ -99,6 +107,7 @@ fun PolicyPageHost() {
                                 settings.allowContentAccess = false
                                 settings.domStorageEnabled = false
                                 settings.textZoom = (ctx.resources.configuration.fontScale * 100).toInt().coerceIn(85, 200)
+                                if (dark) darkPage(this)
                                 webViewClient = object : WebViewClient() {
                                     override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                         val next = request.url.toString()
@@ -106,19 +115,34 @@ fun PolicyPageHost() {
                                         PolicyPage.browser(ctx, next)
                                         return true
                                     }
-                                    override fun onPageFinished(view: WebView, u: String?) { loading = false }
+                                    override fun onPageFinished(view: WebView, u: String?) { loading = false; back = view.canGoBack() }
+                                    override fun doUpdateVisitedHistory(view: WebView, u: String?, isReload: Boolean) { back = view.canGoBack() }
                                     override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
                                         if (request.isForMainFrame) { failed = true; loading = false }
                                     }
+                                    override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: android.webkit.WebResourceResponse) {
+                                        if (request.isForMainFrame && response.statusCode >= 400) { serverDown = true; failed = true; loading = false }
+                                    }
                                 }
                                 loadUrl(url)
+                                web = this
                             }
                         },
+                        onRelease = { it.stopLoading(); it.destroy(); web = null },
                         modifier = Modifier.fillMaxSize(),
                     )
                     if (loading) LinearProgressIndicator(Modifier.align(Alignment.TopCenter))
                 }
             }
         }
+    }
+}
+
+/** [RVP-33] A page made dark by the WebView itself when the app is dark (Android 10+), so it does not glare at night. */
+@Suppress("DEPRECATION")
+private fun darkPage(view: WebView) {
+    when {
+        android.os.Build.VERSION.SDK_INT >= 33 -> view.settings.isAlgorithmicDarkeningAllowed = true
+        android.os.Build.VERSION.SDK_INT >= 29 -> view.settings.forceDark = android.webkit.WebSettings.FORCE_DARK_ON
     }
 }

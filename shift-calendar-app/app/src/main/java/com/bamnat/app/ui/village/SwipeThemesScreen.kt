@@ -75,7 +75,8 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                     val pager = rememberPagerState { list.size }
                     Text("위로 넘기면 다음 테마 · ${pager.currentPage + 1}/${list.size}", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }) { i ->
+                    // 2.0.0 [RVM-35] HQ-66 (같은 구조): quick swipes up turn as many themes as swiped (the calendar's fling).
+                    VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }, flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(pager)) { i ->
                         val t = list[i]
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {
@@ -91,7 +92,7 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                             if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             t.nick?.let { Text("만든 분 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣은 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
+                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣어 본 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val on = t.code in liked.value

@@ -1,6 +1,13 @@
 package com.bamnat.app.company
 
+import android.app.job.JobInfo
+import android.app.job.JobParameters
+import android.app.job.JobScheduler
+import android.app.job.JobService
+import android.content.ComponentName
 import android.content.Context
+import android.os.Build
+import android.os.PersistableBundle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.appContainer
@@ -9,6 +16,7 @@ import com.google.firebase.FirebaseOptions
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -37,6 +45,18 @@ object PushPhone {
 
     private fun wanted(c: AppContainer): Boolean = configured && (
         (c.inquiryApi.enabled && c.inquiryStore.asked && c.settingsRepository.current.plazaNews) || PlazaPush.wanted(c))
+
+    /**
+     * 2.0.0 [RVN-09] COMP-42 After 모두 지우기 (the server forgot the token with the rest): the phone forgets that it sent one and asks
+     * Firebase for a new one, so the old token reaches nothing. True when a token had been given.
+     */
+    fun forget(c: AppContainer): Boolean {
+        val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val had = prefs.getString(K_SENT, null) != null
+        prefs.edit().remove(K_SENT).apply()
+        if (had && configured && app(c.appContext) != null) runCatching { FirebaseMessaging.getInstance().deleteToken() }
+        return had
+    }
 
     /** After a question went, the app opened, or 밤낮 소식 changed: the token goes to the server, or is taken back. */
     suspend fun sync(c: AppContainer, token: String? = null) {
@@ -75,14 +95,76 @@ class PushService : FirebaseMessagingService() {
         if (BuildConfig.DEBUG) android.util.Log.i("BamnatPush", "received ${message.data["kind"]}")
         // Only this project's server (or the operator's Firebase console test) can reach the token, so a message without a
         // kind is taken as "look now" too: the check itself asks our server and tells only what is really new.
-        val kind = message.data["kind"]
+        val kind = message.data["kind"] ?: PushCheckJob.INQUIRY
+        // 1.39 [PLZC-41] 광장 답 바로 알림 / 같은 근무 새 질문, and 문의 답.
+        if (kind != PlazaPush.ANSWER && kind != PlazaPush.QUESTION && kind != PushCheckJob.INQUIRY) return
+        PushCheckJob.run(applicationContext, kind)
+    }
+}
+
+/**
+ * 2.0.0 [RVN-13] 검토 COMP-51: what a push asks for runs as an expedited job (Android 12 and later), which the system lets reach the
+ * network and finish even while the phone sleeps (Doze), rather than in the few seconds a message's own handling is given, so an
+ * answer is not told late or lost. Before Android 12, or when the system has no expedited time left for the app, it runs at once
+ * as before (a high-priority message lets the app use the network for a short while).
+ */
+class PushCheckJob : JobService() {
+    private var running: Job? = null
+
+    override fun onStartJob(params: JobParameters): Boolean {
         val c = applicationContext.appContainer
-        // 1.39 [PLZC-41] 광장 답 바로 알림 / 같은 근무 새 질문.
-        if (kind == PlazaPush.ANSWER || kind == PlazaPush.QUESTION) {
-            c.appScope.launch { PlazaPush.handle(c, kind) }
-            return
+        val kind = params.extras.getString(K_KIND) ?: INQUIRY
+        running = c.appScope.launch {
+            try {
+                check(c, kind)
+            } finally {
+                jobFinished(params, false)
+            }
         }
-        if (kind != null && kind != "inquiry") return
-        c.appScope.launch { runCatching { InquiryReplyJob.check(c, fromPush = true) } }
+        return true
+    }
+
+    override fun onStopJob(params: JobParameters): Boolean {
+        running?.cancel()
+        // Stopped before it ended (out of time, the network went): asked again later, as an ordinary job.
+        return true
+    }
+
+    companion object {
+        internal const val INQUIRY = "inquiry"
+        private const val K_KIND = "kind"
+        /** One per kind, so an answer's push does not take the place of a question's. */
+        private fun id(kind: String) = when (kind) {
+            PlazaPush.ANSWER -> 4411
+            PlazaPush.QUESTION -> 4412
+            else -> 4410
+        }
+
+        /** What a push asked for: in an expedited job where the system allows one, else at once. */
+        fun run(context: Context, kind: String) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && expedite(context, kind)) return
+            val c = context.applicationContext.appContainer
+            c.appScope.launch { check(c, kind) }
+        }
+
+        @androidx.annotation.RequiresApi(Build.VERSION_CODES.S)
+        private fun expedite(context: Context, kind: String): Boolean = runCatching {
+            val jobs = context.getSystemService(JobScheduler::class.java) ?: return false
+            jobs.schedule(
+                JobInfo.Builder(id(kind), ComponentName(context, PushCheckJob::class.java))
+                    .setExpedited(true)
+                    .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+                    .setExtras(PersistableBundle().apply { putString(K_KIND, kind) })
+                    .build(),
+            ) == JobScheduler.RESULT_SUCCESS
+        }.getOrDefault(false)
+
+        /** The check itself; never throws. */
+        internal suspend fun check(c: AppContainer, kind: String) {
+            when (kind) {
+                PlazaPush.ANSWER, PlazaPush.QUESTION -> PlazaPush.handle(c, kind)
+                else -> runCatching { InquiryReplyJob.check(c, fromPush = true) }
+            }
+        }
     }
 }

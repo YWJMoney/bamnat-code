@@ -15,7 +15,8 @@ test("피곤해요: tied links add one a day, the leader sees counts from the mi
   readsForget();
   const env = { SHARES: kv() };
   const links = [];
-  for (let i = 0; i < 4; i++) links.push(await (await call(env, "/api/share", { method: "POST", body: schedule("2026-12-01"), headers: { "content-type": "application/json" } })).json());
+  // 2.0.0 [RVQ-21] Six members, so two who did not press stay (tiredQuiet), each pressing from a phone of their own.
+  for (let i = 0; i < 6; i++) links.push(await (await call(env, "/api/share", { method: "POST", body: schedule("2026-12-01"), headers: { "content-type": "application/json" } })).json());
   // Not tied yet: nothing to say, and the app is not told to offer it.
   assert.equal((await call(env, `/api/share/${links[0].id}/tired`, { method: "POST" })).status, 404);
   assert.equal((await (await call(env, `/api/share/${links[0].id}`)).json()).tired, undefined);
@@ -28,18 +29,19 @@ test("피곤해요: tied links add one a day, the leader sees counts from the mi
   const read = () => call(env, `/api/tired/${box.id}`, { headers: { "x-delete-token": box.token } }).then((r) => r.json());
   assert.equal((await call(env, `/api/tired/${box.id}`)).status, 403);
   // Two say it (one twice): still under the minimum, so no number.
-  for (const l of [links[0], links[0], links[1]]) assert.equal((await call(env, `/api/share/${l.id}/tired`, { method: "POST" })).status, 204);
+  const press = (i) => call(env, `/api/share/${links[i].id}/tired`, { method: "POST", headers: { "user-agent": `Dalvik/2.1.0 (Linux; U; Android 14; phone-${i})` } });
+  for (const i of [0, 0, 1]) assert.equal((await press(i)).status, 204);
   let got = await read();
   assert.equal(got.min, LIMITS.tiredMin);
   assert.equal(got.days.length, 7);
   assert.equal(got.days[0].n, null);
-  await call(env, `/api/share/${links[2].id}/tired`, { method: "POST" });
+  await press(2);
   got = await read();
   assert.equal(got.days[0].n, 3);
   assert.doesNotMatch(JSON.stringify(got), new RegExp(links.map((l) => l.id).join("|")));
   // Untied: the link no longer counts.
-  assert.equal((await call(env, `/api/share/${links[3].id}/tired`, { method: "PUT", body: JSON.stringify({ box: null }), headers: { "x-delete-token": links[3].deleteToken } })).status, 204);
-  assert.equal((await call(env, `/api/share/${links[3].id}/tired`, { method: "POST" })).status, 404);
+  assert.equal((await call(env, `/api/share/${links[5].id}/tired`, { method: "PUT", body: JSON.stringify({ box: null }), headers: { "x-delete-token": links[5].deleteToken } })).status, 204);
+  assert.equal((await call(env, `/api/share/${links[5].id}/tired`, { method: "POST" })).status, 404);
   // A schedule update keeps the tie.
   await call(env, `/api/share/${links[0].id}`, { method: "PUT", body: schedule("2026-12-02"), headers: { "content-type": "application/json", "x-delete-token": links[0].deleteToken } });
   assert.equal((await (await call(env, `/api/share/${links[0].id}`)).json()).tired, true);

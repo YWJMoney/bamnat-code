@@ -10,13 +10,34 @@ export function adminLib() {
    * server's source and fails when a code is missing here, so a new one is never shown as English.
    */
   const ERRORS = {
+    // 2.0.0 [RVQ-28] 검토 SVC-10: 판이 나갈 때 사람 확인 없이 나가는 글(공지 한 줄·출시 답), 열쇠로 저장하려던 판.
+    // 2.0.0 [RVQ-29] 검토 SVC-17: 스튜디오 요구를 장터 요청 판에 올리는 제목(요청 판 글과 같은 거름).
+    link: "링크·주소는 적을 수 없어요",
+    chat: "단톡방·오픈 채팅 안내는 적을 수 없어요",
+    title_first: "부탁 글 그대로는 올리지 않아요. 누구나 알아볼 짧은 제목으로 다듬어 주세요",
+    notice_risk: "판이 나갈 때 그대로 나가는 글이라 링크·전화번호·이메일, AI·자동 답이라는 말, 서버·주소 같은 보안 정보는 넣을 수 없어요",
+    version_unknown: "Play에서도 서버에서도 아직 못 본 판이에요. 판 번호를 다시 봐 주세요",
+    // 2.0.0 [RVD-15][RVD-16] 보상 1년 12달, 이미 바뀐 보상
+    cap: "이분은 1년에 받을 수 있는 보상 12개월을 넘어요. 남은 개월만 드리거나 취소해 주세요",
+    state: "그사이 다른 곳에서 바뀌었어요. 새로 고친 뒤 다시 해 주세요",
     // R131 1.31 [ADMX-16] 두 번째 확인
     code_needed: "인증 앱의 6자리 코드를 넣어 주세요",
     do: "할 수 없는 요청이에요. 새로 고친 뒤 다시 해 주세요",
     code_wrong: "코드가 맞지 않아요. 인증 앱의 지금 코드를 넣어 주세요",
+    // 2.0.0 [RVQ-16] 2단계 키를 잠근 서버 비밀값이 옛 값 없이 바뀌었어요.
+    code_reset: "2단계 확인을 다시 켜야 해요. 최고 관리자는 Cloudflare에서 ADMIN_2FA_RESET을 1로, 다른 관리자는 최고 관리자에게 2단계 풀기를 부탁해 주세요",
     second_on: "두 번째 확인이 이미 켜져 있어요",
     second_off: "두 번째 확인이 이미 꺼져 있어요",
     second_not_started: "먼저 '켜기'를 눌러 인증 앱에 등록해 주세요",
+    // 2.0.0 [RVQ-06][RVQ-07] 패스키 전 비밀번호 다시 확인, 로그인 목록
+    reauth: "비밀번호가 맞지 않아요. 한 시간에 5번까지 다시 넣을 수 있어요",
+    // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변은 사람이 넘겨요.
+    human_check: "사용 통계에서 갑자기 나온 신호라 사람이 확인한 뒤에 개발사항으로 넘겨요",
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 시행일을 앞당길 때.
+    policy_confirm: "시행일이 오늘보다 앞이거나 게시일에서 알림 기간(7일, 불리하면 30일)이 안 돼요. 정말 이대로면 '알림 기간 안으로 옮기는 걸 알아요'를 켜고 다시 저장해요",
+    // 2.0.0 [RVQ-13] 검토 SRV-23: workers.dev 주소의 관리자 길.
+    use_domain: "관리자 앱은 밤낮 도메인 주소에서 열어요. 예전 주소로는 열리지 않아요",
+    current: "지금 이 기기의 로그인은 '로그아웃'으로 끝내요",
     // AQ 1.29 [PHOTO-10]: the app's '사진이 달라요' counts (never sent by the developer app; ADMIN-18 lists every code).
     counts: "사진이 달라요 횟수가 비었거나 너무 많아요",
     screen: "사진이 달라요 화면 종류를 알 수 없어요",
@@ -78,7 +99,7 @@ export function adminLib() {
     label: "이름을 1~20자로 적어 주세요",
     level: "공지 종류를 골라 주세요",
     locked: "여러 번 틀려서 잠시 잠겼어요. 한 시간 뒤 다시 해 주세요",
-    login: "로그인이 끝났어요. 다시 로그인해 주세요",
+    login: "로그인 시간이 지났어요. 다시 로그인해 주세요",
     mail_failed: "메일을 보내지 못했어요. 잠시 뒤 다시 해 주세요",
     merge: "합칠 수 없는 회사예요",
     month: "달을 다시 골라 주세요",
@@ -87,7 +108,9 @@ export function adminLib() {
     // 1.39 [CARE-05] 마을 돌봄.
     ambiguous: "그 표시로 여러 사람이 찾아져요. 글 번호나 더 긴 표시로 찾아 주세요",
     warn_first: "먼저 경고를 보내 주세요. 불법·성적인 내용·개인 정보 노출만 바로 쉬게 할 수 있어요",
-    off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
+    // 2.0.0 [RVA-03] 1분이 지나 되돌리기 대신 거두기·풀기로
+    late: "되돌릴 시간이 지났어요. 그 줄의 거두기·풀기로 해 주세요",
+    care_off: "마을 돌봄이 아직 꺼져 있어요(운영 규칙·처리방침 시행일에 켜져요)",
     name: "이름을 1~30자로 적어 주세요",
     nick: "별명을 다시 확인해 주세요",
     no_database: "데이터베이스가 연결되지 않았어요",
@@ -99,6 +122,9 @@ export function adminLib() {
     note: "메모가 너무 길어요. 1000자까지예요",
     off: "꺼 둔 기능이에요",
     offline: "인터넷에 연결되지 않았어요",
+    // 2.0.0 [RVA-10] 검토 U24-15·조건 7: 연결 없음·서버 바쁨·시간 넘김을 나눠 말해요.
+    unreachable: "서버에 닿지 않아요(인터넷은 연결돼 있어요). 잠시 뒤 다시 해 주세요",
+    timeout: "서버가 답하는 데 시간이 너무 걸려요. 잠시 뒤 다시 해 주세요",
     ok: "값을 다시 골라 주세요",
     own: "내 항목에는 할 수 없어요",
     not_yours: "내가 쓴 질문에만 고를 수 있어요",
@@ -137,6 +163,9 @@ export function adminLib() {
     rewardCapDays: "상한을 세는 기간은 30~365일 사이로 정해 주세요",
     rewardCapMonths: "한 사람 상한은 1~24개월 사이로 정해 주세요",
     rewardMonths: "보상 개월은 0~24 사이로 정해 주세요",
+    // 2.0.0 [RVN-17] COMP-14 방 글에 금액 받기, COMP-12 잘못 고른 회사 풀기.
+    roomMoney: "방 글에 금액 받기는 켜기나 끄기로만 정해요",
+    undo_used: "잘못 고른 회사 풀기는 한 해에 한 번이에요",
     // 1.39 [LOOP] 자동 순환·보상 규칙.
     askMonths: "요청 반영 보상은 0~24개월 사이로 정해 주세요",
     tier: "무료·프로를 먼저 정해 주세요. 숫자 › 요금 판단에서 정한 뒤에 켤 수 있어요",
@@ -217,7 +246,8 @@ export function adminLib() {
   function slaText(minutes) {
     if (minutes === null || minutes === undefined) return null;
     const span = (m) => (m < 60 ? `${m}분` : m < 48 * 60 ? `${Math.floor(m / 60)}시간` : `${Math.floor(m / 1440)}일`);
-    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "bad" };
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6·14): 목록 줄마다 빨간 칩이 되풀이되지 않게, 넘긴 줄은 굵은 보통 글자('넘김'은 글로).
+    if (minutes < 0) return { text: `목표 ${span(-minutes)} 넘김`, tone: "late" };
     return { text: `${span(minutes)} 남음`, tone: minutes < 120 ? "warn" : "" };
   }
 
@@ -240,7 +270,7 @@ export function adminLib() {
   /** The filters each screen keeps in the address, with what they are when left out. */
   const FILTERS = {
     inquiries: { status: "open", who: "", topic: "", q: "", sort: "default", kind: "", copied: "", sender: "" /* AT 1.29 [ADMCP-02] */ },
-    dev: { status: "open", who: "", q: "", from: "" },
+    dev: { status: "now", who: "", q: "", from: "", kind: "", track: "" },
     review: { show: "all" },
     community: { show: "flagged", q: "" },
     rewards: { status: "owed", q: "" },
@@ -264,6 +294,8 @@ export function adminLib() {
     errors: { show: "open" },
     health: { days: "14" },
     money: { days: "28" },
+    // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health): 운영 장부 '깨진 작품' 줄과 출시 › 장터 작품 공개가 그 보기로 바로 열려요.
+    recipes: { tab: "flagged" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -323,7 +355,7 @@ export function adminLib() {
     { key: "ask", label: "사람과 글", icon: "inquiries", tabs: ["inquiries", "dev", "review", "community", "recipes", "reviews", "requests", "versions", "companies", "shares", "growth", "templates"] },
     { key: "release", label: "출시", icon: "release", tabs: ["launch", "flags", "materials", "types", "notices", "chores", "gates"] },
     { key: "insight", label: "숫자", icon: "metrics", tabs: ["glance", "metrics", "health", "money", "errors", "effects", "tiers"] },
-    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
+    { key: "manage", label: "관리", icon: "admins", tabs: ["server", "security", "backup", "admins", "keys", "rewards", "sla", "adopt", "audit", "account"] },
   ];
 
   /**
@@ -389,6 +421,8 @@ export function adminLib() {
     money: { label: "돈", owner: true, old: "돈 매출 구독 해지 이용권 환불 가격표 money revenue" },
     errors: { label: "오류 묶음", owner: true, badge: (o) => o.errorsNew ?? 0, strip: "새 오류", old: "오류 묶음 서버 오류 500 errors sentry" },
     backup: { label: "백업", owner: true, old: "백업 되돌리기 Time Travel R2 backup" },
+    // 2.0.0 [RVQ-18] 검토 I21b-01: 지금 안전한지 한 장.
+    security: { label: "보안 한 장", owner: true, old: "보안 2단계 패스키 비밀값 바꾼 날 운영 열쇠 로그인 무결성 백업 security" },
     account: { label: "내 계정·이 기기", old: "설정 이 기기 알림 화면 색 테마 글자 크기 아래 탭 소리 저장한 보기 앱 설치 단축키 비밀번호 로그아웃 account settings" },
   };
 
@@ -629,7 +663,7 @@ export function adminLib() {
     }).join("");
     const every = Math.max(1, Math.ceil(values.length / 7));
     const xs = labels.map((l, i) => (i % every === 0 ? `<text class="axis" x="${(left + i * w + w / 2).toFixed(1)}" y="${height - 4}" text-anchor="middle">${esc(l)}</text>` : "")).join("");
-    const table = `<table class="sr"><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? `<th>${esc(beforeName)}</th>` : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}${marked.filter((m) => m.i === i).map((m) => ` (${esc(m.label)})`).join("")}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table>`;
+    const table = `<div class="sr"><table><caption>${esc(name)}</caption><thead><tr><th>날짜</th><th>값</th>${before ? `<th>${esc(beforeName)}</th>` : ""}</tr></thead><tbody>${values.map((v, i) => `<tr><td>${esc(labels[i] ?? "")}</td><td>${v}${marked.filter((m) => m.i === i).map((m) => ` (${esc(m.label)})`).join("")}</td>${before ? `<td>${before[i] ?? ""}</td>` : ""}</tr>`).join("")}</tbody></table></div>`;
     return `<svg class="chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(name)}">${grid}${bars}${line}${pins}${xs}</svg>${table}`;
   }
 
@@ -682,16 +716,16 @@ export function adminLib() {
     return plain[key] ?? null;
   }
 
-  /** The list of keys for the ? screen, as [keys, what]. */
+  /** The list of keys for the ? screen, as [keys, what]. 2.0.0 [RVA-27] 검토 U23-12: 허브 수와 이름은 HUBS에서 읽어요. */
   const KEYS = [
     ["Ctrl+K", "찾기·이동(명령 팔레트)"], ["/", "검색칸으로"], ["j / k", "다음·이전 줄"], ["Enter", "고른 줄 열기"],
-    ["Esc · Backspace", "뒤로"], ["1~5", "허브: 오늘·사람과 글·출시·숫자·관리"], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
+    ["Esc · Backspace", "뒤로"], [`1~${HUBS.length}`, `허브: ${HUBS.map((h) => h.label).join("·")}`], ["[ / ]", "허브 안 이전·다음 탭 (문의를 연 동안은 이전·다음 문의)"],
     ["a", "문의 맡기 · 검토에서 채택"], ["r", "답 칸으로"], ["e", "문의 닫기"],
     ["1~9 (문의 답 칸)", "자주 쓰는 답 넣기"], ["Ctrl+Enter", "답 보내기(큐 모드면 보내고 다음)"], ["q", "큐 모드 시작·끝"],
-    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "할 일함·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
+    ["x · s", "검토에서 거절·다음 카드, 큐 모드에서 닫기·건너뛰기"], ["g h · g b", "오늘(할 일)로"], ["g k · g e", "운영 장부·스튜디오 요구로"], ["g i · g d", "문의·개발사항으로"],
     ["g r · g v · g t · g c · g p", "검토·여러 판·토론·회사·채택 규칙으로"], ["g f · g o · g n", "기능 관리·출시·앱 공지로"],
     ["g m · g l", "지표·활동 기록으로"], ["g a · g w · g u · g s", "관리자·보상·내 계정·옮긴 설정 목록으로"],
-    ["s · w · e · h (할 일함)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
+    ["s · w · e · h (운영 장부)", "보는 중 · 기다림 · 끝내기(이유 고르기) · 기록"], ["c", "문의 복사(연 문의, 고른 문의, 고른 줄)"], ["n", "다음 답 대기 문의로"], ["Space (검토)", "검토 줄 펼치기·접기"], ["Space · Shift+Space", "문의 줄 고르기 · 앞에 고른 줄부터 이어서 고르기"], ["?", "이 목록"],
   ];
 
   // ---- [ADMUX-04] the command palette ----
@@ -797,7 +831,8 @@ export function adminLib() {
    */
   function draftEmpty(items) {
     if (!items?.length || items.some((x) => x?.draft?.pick)) return "";
-    return '<p class="hint claude-draft-empty"><span class="pill">Claude 추천 없음</span> 아직 추천이 적히지 않았어요. 운영 장부 자동 처리(매일 08·20시)가 읽고 붙여요. 기다리지 않고 바로 정해도 돼요.</p>';
+    // 2.0.0 [RVD-16] 조건 1·4: 목록 위에서 한 줄로 끝나게.
+    return '<p class="hint claude-draft-empty"><span class="pill">Claude 추천 없음</span> 매일 08·20시에 붙어요</p>';
   }
 
   /** [ADMUX-09] Points all in and still waiting: why, in the app's words (core SetupDiff.waitReason). */
@@ -1012,6 +1047,37 @@ export function adminLib() {
     return false;
   }
 
+  /** 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발의 카탈로그 처리방침 조건 가운데 [given]에 없는 것. */
+  const isLegalCondition = (c) => c?.type === "policy" || (c?.type === "date" && Boolean(c.policy));
+  function legalKept(flag, given) {
+    if (flag?.risk !== "LEGAL") return [];
+    const have = new Set((given ?? []).map((c) => JSON.stringify(c)));
+    return (flag.conditions ?? []).filter((c) => isLegalCondition(c) && !have.has(JSON.stringify(c)));
+  }
+
+  /**
+   * 2.0.0 [RVQ-15] 검토 SRV-17: 처리방침 날짜를 이렇게 바꾸면 한 번 더 물어야 하는지(서버 flags.js setPolicy와 관리자 화면이 같은 규칙).
+   * [before]는 그 판의 지금 값(새 판이면 null), [today]는 한국 날짜("2026-11-12"). 날짜·불리함을 그대로 두면 묻지 않아요.
+   * 답: null, 또는 { why: "past"(시행일이 오늘보다 앞) | "notice"(게시일에서 알림 기간 7일·불리하면 30일 안), days, need }.
+   */
+  function policyEarly(before, next, today) {
+    const { posted, effective } = next ?? {};
+    if (!/^20\d\d-\d{2}-\d{2}$/.test(posted ?? "") || !/^20\d\d-\d{2}-\d{2}$/.test(effective ?? "")) return null;
+    const moved = !before || before.effective !== effective || before.posted !== posted || Boolean(before.unfavourable) !== Boolean(next.unfavourable);
+    if (!moved) return null;
+    const days = Math.round((Date.parse(`${effective}T00:00:00Z`) - Date.parse(`${posted}T00:00:00Z`)) / 86400e3);
+    const need = next.unfavourable ? 30 : 7;
+    const why = effective < today && effective !== before?.effective ? "past" : days < need ? "notice" : null;
+    return why ? { why, days, need } : null;
+  }
+
+  /** 2.0.0 [RVQ-15] [policyEarly]의 답을 관리자 화면 한 줄로. */
+  function policyEarlyText(e) {
+    if (!e) return "";
+    return e.why === "past" ? "시행일이 오늘보다 앞이에요. 지난 날로 시행하면 그동안 알리지 않고 켠 것이 돼요."
+      : `게시일에서 시행일까지 ${e.days}일이에요. 처리방침 9항의 알림 기간은 ${e.need}일이에요.`;
+  }
+
   /** 1.28 통합 [FLAG-36] An app versionCode range in words ("39~45", "39 이상", "45 이하", "모든 판"). */
   const appRange = (lo, hi) => (lo != null && hi != null ? `${lo}~${hi}` : lo != null ? `${lo} 이상` : hi != null ? `${hi} 이하` : "모든 판");
 
@@ -1026,7 +1092,9 @@ export function adminLib() {
   function evalFlag(flag, override, ctx) {
     const now = ctx.now ?? Date.now();
     const c2 = { ...ctx, now };
-    const conds = Array.isArray(override?.conditions) ? override.conditions : flag.conditions ?? [];
+    // 2.0.0 [RVQ-15] 검토 SRV-17: 법적 깃발은 카탈로그의 처리방침 조건(policy·처리방침 날짜)을 덮어쓴 조건과 늘 함께 봐요. 조건 고치기로 그 줄을
+    // 빼도 처리방침 시행 전에는 서버의 문(통계 항목 받기 등)이 열리지 않아요.
+    const conds = Array.isArray(override?.conditions) ? [...override.conditions, ...legalKept(flag, override.conditions)] : flag.conditions ?? [];
     const conditions = conds.map((c) => ({ c, label: conditionLabel(c, ctx.policy), met: conditionMet(c, c2) }));
     const dates = [];
     const walk = (c) => {
@@ -1070,7 +1138,7 @@ export function adminLib() {
     const words = left.map((x) => x.label).join(", ");
     if (flag.default) return { ...base, on: true, state: "on", source: "default", reason: `기본으로 켜져 있어요(남은 조건: ${words})` };
     const tail = left.every((x) => x.c.type === "manual") ? " 확인하면 바로 켜져요." : left.every((x) => x.c.type === "date") ? " 그날 저절로 켜져요." : "";
-    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. ${words}이(가) 남았어요.${tail}` };
+    return { ...base, on: false, state: "waiting", source: "conditions", reason: `대기 중이에요. 남은 조건: ${words}.${tail}` };
   }
 
   /** Whole days from [now] to the KST start of [day] ("15일 남음"), or null. */
@@ -1291,14 +1359,15 @@ export function adminLib() {
   const ACTION_NAMES = {
     login: "로그인", login_failed: "로그인 실패", login_unlock: "로그인 잠금 풀기", server_deployed: "서버 배포", logout_all: "모든 기기에서 로그아웃", password: "비밀번호 바꿈",
     second_on: "두 번째 확인 켬", second_off: "두 번째 확인 끔", // R131 1.31 [ADMX-16]
+    passkey_add: "패스키 만듦", passkey_remove: "패스키 지움", session_end: "로그인 하나 끊음", // 2.0.0 [RVQ-06][RVQ-07]
     invite: "관리자 초대", invite_remove: "초대 취소", join: "관리자 계정 만듦", admin_update: "관리자 권한·상태 바꿈", admin_remove: "관리자 삭제",
     adopt: "제보 채택", reject: "제보 거절", answer: "앱에 없는 방식에 답함", company_create: "회사 만듦", company_update: "회사 고침",
-    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
+    alias_add: "다른 이름 넣음", alias_remove: "다른 이름 지움", merge: "회사 합침", company_not_same: "다른 회사로 둠", claude_draft: "Claude 추천", claude_draft_done: "추천과 맞춰 봄", obs_signal: "개선 신호 처리", market_health: "장터 건강 결과 올림", rule_withdraw: "규칙 내림", rule_restore: "규칙 다시 올림", rule_promote: "이전 판을 다시 대표로",
     post_bulk: "토론 글 한 번에 처리", rate_bulk: "임금표 한 번에 처리",
     reward_paid: "보상 지급", reward_void: "보상 취소", reward_owed: "보상 대기로 되돌림", reward_auto: "보상 저절로 지급", settings: "채택 설정 바꿈",
-    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
+    post_autohide: "신고로 글이 가려짐", post_show: "글 다시 보이기", post_hide: "글 가림", post_delete: "글 지움", post_mute: "글쓴이 30일 쓰기 막음", write_limit_lift: "신고 누적 쓰기 제한 풀어 줌", care_warn: "마을 경고 보냄", care_opinion: "의견 쉬기 걸음", care_community: "마을 쉬기 걸음", care_lift: "마을 경고·쉬기 거둠", care_undo: "마을 경고·쉬기 되돌림(1분 안)", care_appeal_accept: "해명 받아들여 풀어 줌", care_appeal_keep: "해명 보고 그대로 둠", village_topic: "광장 이번 주 주제 바꿈", plaza_pick: "광장 답 모음 바꿈", village_contest: "이달의 주제 공모 바꿈",
     inquiry_reply: "문의에 답함", inquiry_status: "문의 상태 바꿈", inquiry_close: "문의 닫음", inquiry_open: "문의 다시 엶",
-    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈",
+    inquiry_hide: "모두의 문의 숨김", inquiry_show: "모두의 문의 다시 보이기", inquiry_assign: "문의 맡음", inquiry_autohide: "신고로 모두의 문의가 가려짐", inquiry_billing: "결제·환불 기록 바꿈", ask_miss: "자동 판정이 틀렸다고 적음",
     dev_create: "개발사항 만듦", dev_edit: "개발사항 고침", dev_status: "개발사항 처리", dev_bulk: "개발사항 한 번에 처리",
     dev_delete: "개발사항 지움", dev_restore: "개발사항 되살림", dev_link: "문의를 개발사항에 연결", dev_unlink: "개발사항에서 문의 뗌",
     dev_reply: "개발사항의 문의에 한 번에 답함", template_add: "자주 쓰는 답 추가", template_remove: "자주 쓰는 답 지움",
@@ -1317,6 +1386,22 @@ export function adminLib() {
     flag_expire: "강제 기한이 끝남", flag_migrate: "1.27 스위치를 기능 관리로 옮김", policy_edit: "처리방침 일정 고침",
     launch_recorded: "정식 출시일 기록", launch_thanks: "감사 보상 개월 바꿈", type_hide: "근무 유형 숨김", type_show: "근무 유형 다시 보임",
     auto_rest: "사용량이 많아 기능 자동 쉼", auto_resume: "자동 쉼 끝",
+    // 2.0.0 [RVN-15] 검토 SVC-100: 이름이 없어 영어 코드로 보이던 일들(자동으로 한 일, 사고, 열쇠, 보상, 출시).
+    error_state: "오류 묶음 상태 바꿈", error_dev: "오류 묶음을 개발사항으로", shipped_version: "나간 판 저장", ops_key_revoke: "운영 열쇠 끊음", inbox_apply: "운영 장부 한꺼번에 처리",
+    inquiry_auto_skip: "문의 자동 정리 건너뜀", inbox_auto: "자동 정리 켬·끔", inbox_auto_reply: "문의에 자동으로 답함", dev_handoff: "Claude에게 넘김",
+    dev_result: "개발 결과 붙여 넣기", dev_result_held: "개발 결과 답 보류", incident_open: "사고 시작", incident_close: "사고 끝",
+    inquiry_billing_rescan: "결제 문의 다시 가림", inquiry_reply_held: "문의 답 잠시 둠", inquiry_reply_approve: "문의 답 보내기 승인",
+    inquiry_reply_cancel: "문의 답 취소", inquiry_reply_edit: "문의 답 고침", data_request: "개인정보 요청 받음", data_request_close: "개인정보 요청 끝냄",
+    backup_run: "서버 백업", loop_halt_advice: "출시 멈춤 권함", loop_ship_seen: "출시 감지", loop_ship_sent: "출시 안내 보냄", loop_sync: "개발 기록 맞춤",
+    loop_basis: "요금 판단 기준 바꿈", loop_tier: "요금 판단 바꿈", dev_effect: "개발사항 효과 판정", loop_ship_cancel: "출시 안내 취소",
+    loop_switches: "자동 순환 스위치 바꿈", loop_train: "정기 출시 일정 바꿈", loop_rewards: "쓰면 쌓이는 날 바꿈", loop_draft: "자동 답 초안 처리",
+    maker_reward_owed: "제작자 보상 줄 것 생김", price_table: "가격표 바꿈", earned_days: "제보 보상 날 줌", pro_share_code: "프로 나눔 코드 만듦",
+    pro_share_claim: "프로 나눔 받음", link_guess: "친구 초대 링크 추측 막음", old_pay_cut: "옛 결제 정리", release_start: "출시 점검표 시작",
+    release_step: "출시 점검표 단계", review_reply: "스토어 리뷰에 답함", review_draft: "스토어 리뷰 답 초안",
+    material_add: "스튜디오 재료 올림", material_free: "스튜디오 재료 무료·광고 나눔", material_state: "스튜디오 재료 공개·숨김",
+    sync_key_make: "개발 기록 맞춤 열쇠 만듦", ops_key_make: "운영 열쇠 만듦", ops_key_ship: "운영 열쇠로 나간 판 저장(10분 보류)", need_ready: "꾸미기 부탁 올리기 전 확인에 옴", loop_fixed_yes: "문의한 분이 해결됐다고 함", loop_fixed_no: "문의한 분이 아직이라고 함",
+    // 2.0.0 갈래 Q1 #478의 보관 장부(keep.js): 백업 되살려 보기와 개인정보 요청 처리.
+    backup_drill: "백업 되살려 보기(저절로)", backup_drill_run: "백업 되살려 보기 지금 함", data_request_run: "개인정보 요청 처리함",
   };
   const ACTION_AREAS = { login: "로그인", admin: "관리자", invite: "친구 초대", reward: "보상", post: "토론 글", rate: "임금표", inquiry: "문의", dev: "개발사항",
     template: "자주 쓰는 답", device: "관리자 휴대폰", notice: "공지", ops: "이달 할 일", flag: "기능", rule: "규칙", company: "회사", alias: "다른 이름",
@@ -1440,13 +1525,38 @@ export function adminLib() {
       .map(cell).join(",");
   }
 
+  /**
+   * 2.0.0 [RVD-21] 이분의 1년 보상 in words: "이분의 1년 보상 3/12개월", or before the 1년 12개월 is in force (처리방침 3.13 게시 + 30일)
+   * "이분의 1년 보상 3개월 · 12개월 상한은 12월 12일부터".
+   */
+  function rewardYearWords(y) {
+    return y.cap != null ? `이분의 1년 보상 ${y.used}/${y.cap}개월` : `이분의 1년 보상 ${y.used}개월 · 12개월 상한은 ${capFromWords(y.from)}`;
+  }
+  /** 2.0.0 [RVD-21] From when the 1년 12개월 counts: "12월 12일부터", or "처리방침 3.13 시행일부터" while 3.13 is not in the calendar. */
+  function capFromWords(from) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(from ?? "") ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일부터` : "처리방침 3.13 시행일부터";
+  }
+
+  /**
+   * 2.0.0 [RVA-60] PC-147: "…이에요" or "…예요" by the last sound, for words put into a sentence ("시행일부터예요", "54예요", "53이에요").
+   * Closing ")"·quotes are skipped; a number ends in its last digit's sound (2·4·5·9 open; 0 is 십·백·영, closed).
+   */
+  function eyo(s) {
+    const t = String(s ?? "").replace(/[)\]'"’”\s]+$/u, "");
+    const c = t.at(-1) ?? "";
+    const code = c.charCodeAt(0);
+    const open = code >= 0xac00 && code <= 0xd7a3 ? (code - 0xac00) % 28 === 0 : "2459".includes(c) && c !== "";
+    return `${s}${open ? "예요" : "이에요"}`;
+  }
+
   return {
+    rewardYearWords, capFromWords, eyo,
     esc, ERRORS, errorText, ago, slaText, can, waited, maskPersonal, reviewCount, setupDiff, waitReason, draftNote, draftEmpty, DRAFT_WORDS, permSummary, FILTERS, parseRoute, routeHash, cleanFilters, likeFirst, words,
     HUBS, TABS, tabVisible, visibleHubs, hubOf, tabBadge, hubBadge, waiting, bottomHubs, redirect, migrateHash, migratePrefs,
     devCopyText, DEV_NAMES, strength, fillTemplate, sortTemplates, wordDiff, csv, ticks, barChart, contrast, keyAction, KEYS, GO,
     paletteFilter, sequencer, appVersion, undoPlace,
     // AM 1.28 [FLAG-21][ADMUX-23][ADMUX-24]
-    evalFlag, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
+    evalFlag, legalKept, policyEarly, policyEarlyText, checkConditions, parseConditions, conditionText, conditionLabel, conditionMet, versionCompare, daysLeft, noticeWarnings, forceOf, flagDay, dateFrom, appRange,
     WORK_TYPES, WORK_NAMES, CONSENT_NAMES, PROFILE_NAMES, MANUAL_NAMES,
     // AT 1.29 [ADMCP-01][ADMCP-02][ADMCP-03]
     inquiryCopyText, copyDevItem, copyTitle, sameGroups, kstTime, COPY_KINDS,

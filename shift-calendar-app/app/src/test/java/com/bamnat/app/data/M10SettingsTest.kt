@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.db.AppDatabase
+import com.bamnat.app.needs
 import com.bamnat.core.model.ShiftOverride
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -17,7 +18,6 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -105,7 +105,7 @@ class M10SettingsTest {
     /** [SET-01][OPS-13] The privacy policy says how long the copy before an import stays, in the app's number. */
     @Test fun thePrivacyPolicySaysHowLongTheCopyStays() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         // Later versions keep the 1.7 change note; the version itself is checked in ShareServerTest.
         assertTrue(text.contains("1.7에서 바뀐 점"))

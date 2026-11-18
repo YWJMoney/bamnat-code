@@ -31,6 +31,7 @@ import com.bamnat.core.setup.SetupStep
 import com.bamnat.core.setup.TodayQuestion
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -83,6 +84,47 @@ class SetupViewModel(
         // A draft kept from an older build, or cut short, can sit on a step it no longer has.
         val d = current
         if (d.step !in d.steps) store.save(d.copy(step = d.steps.firstOrNull { !d.canLeave(it) } ?: SetupStep.SUMMARY))
+    }
+
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has now. A shift of the same name keeps its alarms, color and
+     * sound when saved, and the summary says which times change. Empty for a first setup and a calendar being added.
+     */
+    val kept: StateFlow<List<ShiftType>> =
+        if (again) c.scheduleRepository.shiftTypes.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList()) else MutableStateFlow(emptyList<ShiftType>()).asStateFlow()
+
+    /** The shifts as they will be saved: the draft's, with what [kept] keeps ( 검토 WORK-04); the summary's month and alarm say these. */
+    fun typesToSave(d: SetupDraft): List<ShiftType> = if (again) d.typesToSave(kept.value, today) else d.typesToSave()
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31: the order periods the calendar has before this setup is saved, so the summary's month is filled as saving
+     * fills it ([previewSnapshot]). A calendar being added has none yet, and its database is not opened for them: #451 CI
+     * (PersonalCalendarsTest) caught the read, still running, making the file again after 그만두기 had deleted it.
+     */
+    val periods: StateFlow<List<com.bamnat.core.model.WorkPattern>> =
+        if (calendarId != null) MutableStateFlow(emptyList<com.bamnat.core.model.WorkPattern>()).asStateFlow()
+        else c.scheduleRepository.patterns.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * 2.0.0 [RVH-43] 검토 PC-31 (통합 1차 PC: '이대로 저장할까요?'의 달은 11/1~11/11이 비었는데 저장한 달력은 1일부터 차 있어서 '오늘부터만
+     * 채워지나?'로 읽혔어요): the month as [com.bamnat.app.data.ScheduleRepository.applySetup] will save it. A first setup's order
+     * fills the past too (two years back); a calendar being added starts today; a setup again keeps the days before today as they
+     * were and its new order from today. Null when nothing would be on the calendar.
+     */
+    fun previewSnapshot(d: SetupDraft, before: List<com.bamnat.core.model.WorkPattern> = periods.value): ScheduleSnapshot? {
+        val kept = kept.value
+        // The ids saving gives: a shift of the same name the calendar has keeps its id, a new one takes one after them.
+        val next = (kept.maxOfOrNull { it.id } ?: 0L) + 1
+        val ids = d.types.withIndex().associate { (i, t) -> t.id to (kept.firstOrNull { k -> k.name.trim() == t.name.trim() }?.id ?: (next + i)) }
+        val saved = if (kept.isEmpty()) d else d.remap(ids)
+        val types = typesToSave(saved).let { mine -> mine + kept.filter { k -> mine.none { it.id == k.id } } }
+        val order = saved.pattern(today)
+        val patterns = when {
+            order == null -> before
+            before.isEmpty() -> listOf(if (calendarId == null) com.bamnat.core.schedule.PatternTimeline.first(order, today) else order)
+            else -> com.bamnat.core.schedule.PatternTimeline.changeFrom(before, order, today)
+        }
+        return ScheduleSnapshot(types, patterns, saved.paintedEntries()).takeIf { !it.isEmpty }
     }
 
     /** The week as the calendar shows it, for the month previews. */
@@ -239,6 +281,41 @@ class SetupViewModel(
 
     // ---- 1. how the user works ----
 
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup filled from a 근무표 link asks on its summary how the user works (교대 · 일근 · 알바); the days stay
+     * the link's. Only these three: the link is a roster of shifts.
+     */
+    fun workAs(style: WorkStyle) = update { d ->
+        if (d.linkTitle.isBlank() || style !in LINK_WORK) d else d.copy(workAs = style.takeIf { it != d.style })
+    }
+
+    /**
+     * [RVG-19] 2.0.0 검토 HQ-09 (조건 10): '가족·동료 근무표였어요' on a link's summary, for '내 근무표예요' pressed by mistake (← only
+     * went to earlier questions). Nothing is in the calendar yet: the link stays beside as theirs (only seen, never put in), the setup
+     * goes, and the first screen says where the link went and asks the user's own work. The link's name for that line; null when this
+     * is not a setup started from a link.
+     */
+    fun notMine(): String? {
+        val d = current
+        if (d.linkTitle.isBlank() || calendarId != null || again) return null
+        c.received.mine()?.let { cal ->
+            c.received.notMine(cal.id)
+            com.bamnat.app.share.RosterFollower.close(c, cal.id)
+            com.bamnat.app.share.RosterFollower.sync(c.appContext, c)
+        }
+        c.telemetry.event("setup_link", "not_mine_summary")
+        store.clear()
+        return d.linkTitle
+    }
+
+    /**
+     * 2.0.0 [RVG-28] 검토 PC-94: the link this setup started from did not say its breaks (an app or share server before 2.0.0), so the
+     * 근무 came in with none and is an hour longer than the sender's. The summary says so while no break is set here.
+     */
+    fun linkRestUnknown(d: SetupDraft = current): Boolean =
+        d.linkTitle.isNotBlank() && d.workTypes.all { it.breakMinutes == 0 } &&
+            c.received.mine()?.schedule?.types?.any { it.restUnknown } == true
+
     fun pickStyle(style: WorkStyle, roster: Boolean = false) {
         val d = current
         when (style) {
@@ -332,6 +409,7 @@ class SetupViewModel(
             runCatching {
                 c.backupManager.restore(json)
                 c.telemetry.event("setup_restore")
+                com.bamnat.app.data.DiscoverStore.get(c.appContext).restored() // 1.40 [DISC-03]
                 // A backup from before the kind of work was asked, without a pattern: the setup goes on.
                 if (c.settingsRepository.current.setupDone) store.clear()
                 // [SETUP-16] 1.37 PC f42b2eba HIGH-2: a backup made while its first setup was put off goes on here, from its step, and says so.
@@ -579,6 +657,9 @@ class SetupViewModel(
     /** 1.36 PC W10: which reading of the photo is under way (n of m; m 0 while the first one runs), for the reading card. */
     private val _rosterStep = MutableStateFlow(0 to 0)
     val rosterStep: StateFlow<Pair<Int, Int>> = _rosterStep.asStateFlow()
+    /** 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down before the first reading: percent, -1 while unknown, null when not. */
+    private val _rosterPreparing = MutableStateFlow<Int?>(null)
+    val rosterPreparing: StateFlow<Int?> = _rosterPreparing.asStateFlow()
     private var rosterJob: kotlinx.coroutines.Job? = null
     /** Codes of the picked line the setup's kinds do not cover ("M", "교육"), with their days, one asked at a time. */
     private val _rosterAsks = MutableStateFlow<List<Pair<com.bamnat.core.imports.DutyCell.Unknown, List<LocalDate>>>>(emptyList())
@@ -597,10 +678,21 @@ class SetupViewModel(
     var rosterRank = 0
         private set
 
-    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes }
+    fun rosterSame(yes: Boolean?) { _rosterSame.value = yes; if (yes == null) _rosterLooked.value = emptySet() }
+
+    /** 2.0.0 [RVL-36] (검토 U07b-04) The yellow days looked at on the photo (said right, or fixed): no longer yellow on the card. */
+    private val _rosterLooked = MutableStateFlow<Set<Int>>(emptySet())
+    val rosterLooked: StateFlow<Set<Int>> = _rosterLooked.asStateFlow()
+
+    /** 2.0.0 [RVL-36] A yellow day right as read; the last one is the photo looked at. */
+    fun rosterRight(day: Int, yellow: Set<Int>) {
+        _rosterLooked.value = _rosterLooked.value + day
+        if ((yellow - _rosterLooked.value).isEmpty()) _rosterSame.value = true
+    }
 
     /** [READ-17] One day of the roster's month fixed from the photo card: painted, given leave, or left off (휴무). */
     fun fixRosterDay(date: LocalDate, cell: com.bamnat.core.imports.DutyCell?) {
+        _rosterLooked.value = _rosterLooked.value + date.dayOfMonth
         when (cell) {
             is com.bamnat.core.imports.DutyCell.Shift -> update { it.copy(painted = it.painted + (date to cell.shiftTypeId), leaves = it.leaves - date) }
             com.bamnat.core.imports.DutyCell.Off -> update { it.copy(painted = it.painted + (date to null), leaves = it.leaves - date) }
@@ -613,31 +705,119 @@ class SetupViewModel(
         rosterJob?.cancel()
         _rosterReading.value = true
         _rosterStep.value = 0 to 0
+        _rosterPreparing.value = null
         _rosterSame.value = null
+        _rosterLooked.value = emptySet()
         rosterRank = 0
         rosterJob = viewModelScope.launch {
             val started = System.nanoTime()
             // 1.36 PC W10 (사진을 고른 뒤 20초 넘게 아무 말 없음): a reading that takes too long ends with why and what to do.
-            val r = kotlinx.coroutines.withTimeoutOrNull(ROSTER_READ_LIMIT_MS) { how(rosterCodes()) }
-                ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
+            // 1.39.1 [R391-13] The last net: a reading that fails in a way the reader did not catch ends with why, not a closed app.
+            val r = try {
+                // 2.0.0 [RVL-26] (검토 SCAN-21) Read off the main thread: a long text or a tapped photo never freezes the setup.
+                // 2.0.0 [RVL-32] (검토 SCAN-04) The limit counts the reading, not the reading model coming down (that has its own wait
+                // and says why when it does not come), and what it stops is stopped (검토 SCAN-03).
+                val codes = rosterCodes()
+                rosterModelMs = 0
+                kotlinx.coroutines.coroutineScope {
+                    val work = async(kotlinx.coroutines.Dispatchers.Default) { how(codes) }
+                    var budget = ROSTER_READ_LIMIT_MS
+                    var result: com.bamnat.app.ui.imports.RosterResult? = null
+                    while (true) {
+                        result = kotlinx.coroutines.withTimeoutOrNull(budget) { work.await() }
+                        if (result != null) break
+                        // Still coming down, or came down meanwhile: that time is given back once.
+                        budget = when {
+                            _rosterPreparing.value != null -> ROSTER_READ_LIMIT_MS
+                            rosterModelMs > 0 -> rosterModelMs.also { rosterModelMs = 0 }
+                            else -> break
+                        }
+                    }
+                    if (result == null) work.cancel()
+                    result
+                }
+                    ?: com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.PHOTO, ROSTER_TOO_LONG)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // 2.0.0 [RVL-32] Said as every other failed reading is, with its one fix.
+                com.bamnat.app.ui.imports.RosterResult(emptyList(), null, com.bamnat.core.journal.RosterFrom.FILE,
+                    com.bamnat.app.pay.OcrModel.said(c.appContext, e), fix = com.bamnat.app.pay.OcrModel.fix(e))
+            }
             _rosterReading.value = false
+            _rosterPreparing.value = null
             // The steps of the reading, for 진단 (no words of the photo): how long, how many ways, words and lines found.
             runCatching {
                 val ms = (System.nanoTime() - started) / 1_000_000
                 c.telemetry.event("roster_read", "${r.from.name.lowercase()} ms=$ms ways=${r.scan?.ways ?: 0} words=${r.scan?.words?.size ?: 0} " +
                     "rows=${r.rows.size} problem=${r.scan?.read?.problem?.name?.lowercase() ?: "-"}${if (r.error != null && r.rows.isEmpty()) " fail" else ""}")
             }
+            // 2.0.0 [RVL-41] A locked PDF: its password window, and what was read before stays as it was.
+            _rosterLocked.value = r.locked
+            if (r.locked != null) return@launch
             val rows = r.rows.sortedBy { it.line }
             // A photo that read nothing keeps its picture, for 사진 위에서 누르기.
             _roster.value = r.copy(rows = rows, scan = r.scan ?: _roster.value?.scan.takeIf { r.from == com.bamnat.core.journal.RosterFrom.PHOTO })
             _rosterAsks.value = emptyList()
-            if (rows.size == 1) useRosterRow(0) else if (r.error != null) _message.value = r.error
+            // 2.0.0 [RVL-33] A reading that gave no line says why on its card (with the fix), not a second time at the bottom.
+            if (rows.size == 1) useRosterRow(0) else if (r.error != null && rows.isNotEmpty()) _message.value = r.error
         }
     }
 
-    fun readRosterPhoto(context: Context, uri: Uri) = readRoster {
-        com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today) { n, m -> _rosterStep.value = n to m }
+    fun readRosterPhoto(context: Context, uri: Uri) {
+        rosterAgain = { readRosterPhoto(c.appContext, uri) }
+        readRoster { com.bamnat.app.ui.imports.RosterReader.photo(context, uri, it, today, preparing = ::rosterPreparing, progress = ::rosterStepped) }
     }
+
+    /** 2.0.0 [RVL-32] (검토 U07b-01) The last photo or file, for '다시 읽기' when the reading model was slow or its fetch stopped. */
+    private var rosterAgain: (() -> Unit)? = null
+
+    fun readRosterAgain() { rosterAgain?.invoke() }
+
+    /** 2.0.0 [RVL-34] A roster photo taken with the camera here is read on the phone and not kept after the setup. */
+    override fun onCleared() {
+        runCatching { com.bamnat.app.ui.imports.rosterShot(c.appContext).delete() }
+        rosterPassword?.second?.fill('\u0000')
+        super.onCleared()
+    }
+
+    /** 2.0.0 [RVL-41] (검토 U07b-10) The roster file picked is a locked PDF: its password is asked on the setup page. */
+    private val _rosterLocked = MutableStateFlow<com.bamnat.app.imports.PdfLock?>(null)
+    val rosterLocked: StateFlow<com.bamnat.app.imports.PdfLock?> = _rosterLocked.asStateFlow()
+    /** The password typed for it: held while the setup is open (다시 읽기), never saved. */
+    private var rosterPassword: Pair<Uri, CharArray>? = null
+    private var rosterLockedUri: Uri? = null
+
+    /** 2.0.0 [RVL-41] '열기': the same file read again with the password. */
+    fun unlockRoster(typed: CharArray) {
+        val uri = rosterLockedUri ?: return
+        rosterPassword?.second?.fill('\u0000')
+        rosterPassword = uri to typed
+        readRosterFile(c.appContext, uri)
+    }
+
+    fun cancelRosterUnlock() { _rosterLocked.value = null }
+
+    /** 2.0.0 [RVL-32] How long the reading model took to come down in this reading, given back to its time limit. */
+    @Volatile private var rosterModelMs = 0L
+    @Volatile private var rosterModelFrom = 0L
+
+    private fun rosterPreparing(p: Int?) {
+        if (_rosterPreparing.value == null) rosterModelFrom = android.os.SystemClock.elapsedRealtime()
+        _rosterPreparing.value = p ?: -1
+    }
+
+    private fun rosterStepped(n: Int, m: Int) {
+        _rosterStep.value = n to m
+        if (_rosterPreparing.value != null) rosterModelMs += android.os.SystemClock.elapsedRealtime() - rosterModelFrom
+        _rosterPreparing.value = null
+    }
+
+    /**
+     * 2.0.0 [RVL-33] (검토 U07b-02) The X on a reading that gave nothing: the words put away, the photo kept for
+     * '사진에서 내 줄 알려 주기' and '무엇을 읽었는지 보기' below.
+     */
+    fun heardRosterError() { _roster.value = _roster.value?.copy(error = null, fix = null) }
 
     /**
      * [EASE-16] 1.38 "근무표 사진으로 한 번에" on the company page: without kinds of work yet the roster template's (데이·이브닝·나이트·
@@ -690,10 +870,16 @@ class SetupViewModel(
         rosterJob?.cancel()
         rosterJob = null
         _rosterReading.value = false
+        _rosterPreparing.value = null
         _message.value = "읽기를 멈췄어요. 다른 사진으로 하거나 ‘직접 칠하기’로 넣어 주세요."
     }
 
-    fun readRosterFile(context: Context, uri: Uri) = readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today) }
+    fun readRosterFile(context: Context, uri: Uri) {
+        rosterAgain = { readRosterFile(c.appContext, uri) }
+        rosterLockedUri = uri
+        val password = rosterPassword?.takeIf { it.first == uri }?.second
+        readRoster { com.bamnat.app.ui.imports.RosterReader.file(context, uri, it, today, password = password, preparing = ::rosterPreparing, progress = ::rosterStepped) }
+    }
 
     fun readRosterText(text: String) = readRoster { com.bamnat.app.ui.imports.RosterReader.text(text, it, today) }
 
@@ -739,6 +925,7 @@ class SetupViewModel(
         update { it.copy(painted = it.painted + days + leaveDays, leaves = it.leaves - days.keys + leaves) }
         _paintMonth.value = month
         if (r.rows.size > 1) rosterRank = i
+        _rosterLooked.value = emptySet()
         _roster.value = r.copy(rows = listOf(row))
         _rosterAsks.value = asks
         // [READ-36] The sheet's own letters (주·야·비·휴) the setup's kinds do not use: offered as the kinds, once.
@@ -868,13 +1055,13 @@ class SetupViewModel(
     /** The first alarm the saved setup will ring, for the summary. */
     fun firstAlarm(d: SetupDraft): PlannedAlarm? {
         val at = now()
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(at.toLocalDate()), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(at.toLocalDate()), d.paintedEntries())
         return AlarmPlanner.nextAlarm(snapshot.resolver, at)
     }
 
     /** 1.39 [FLOW-03] What the saved setup puts on the calendar from today, said in one line; null when no day works. */
     internal fun fillLine(d: SetupDraft): com.bamnat.core.setup.FillMoment.Line? {
-        val snapshot = ScheduleSnapshot(d.typesToSave(), d.pattern(today), d.paintedEntries())
+        val snapshot = ScheduleSnapshot(typesToSave(d), d.pattern(today), d.paintedEntries())
         if (snapshot.isEmpty) return null
         return com.bamnat.core.setup.FillMoment.of(snapshot.resolver.resolveRange(today, today.plusDays(70)), today, firstAlarm(d)?.triggerAt)
     }
@@ -888,10 +1075,15 @@ class SetupViewModel(
         _saving.value = true
         // The setup screen goes away as soon as the kind of work is saved, so the save outlives it.
         c.appScope.launch {
-            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d) }
+            runCatching { if (calendarId != null) saveCalendar(calendarId, d) else c.firstSetup.save(d, keep = again) }
                 .onSuccess {
                     // 1.39 [SETUP-20] The first setup of a new install is saved: its tap count waits for 사용 통계.
-                    if (calendarId == null && !again) c.setupTaps.finish(d.style)
+                    if (calendarId == null && !again) c.setupTaps.finish(d.savedStyle)
+                    // [RVG-18] 검토 PC-22 (도약 14): started from a link of next month's 근무표, the calendar opens on that month.
+                    if (d.linkTitle.isNotBlank()) d.openingMonth(today).takeIf { it != java.time.YearMonth.from(today) }?.let(c.shownMonth::show)
+                    // [RVG-16] Started from a link as 일근·알바: that kind of work's notices, not the 교대 ones turned on with the link.
+                    if (calendarId == null && d.workAs != null && d.workAs != d.style)
+                        c.settingsRepository.update { com.bamnat.app.data.RecommendedSettings.apply(it, com.bamnat.core.consent.RecommendedPlan.forStyle(d.workAs).start) }
                     // 1.39 사용자 2026-11-08: 잠 in the place picked on the summary ([sleepSlot]).
                     if (offersSleepBar && sleepSlot.value >= 0) runCatching { putSleepOnBar(sleepSlot.value) }
                         .onFailure { android.util.Log.w("Setup", "sleep on the bar", it) }
@@ -919,7 +1111,7 @@ class SetupViewModel(
                             firstGiven = s.id.isNullOrEmpty()), shareCycle.value)
                     }
                     c.telemetry.event("setup_done", buildString {
-                        append(d.style?.name)
+                        append(d.savedStyle?.name)
                         d.source?.let { append('_').append(it.kind.name) }
                     })
                 }
@@ -969,6 +1161,8 @@ class SetupViewModel(
 
     companion object {
         const val MAX_STEPS = 62
+        /** [RVG-16] How a member started from a 근무표 link may work: the link is a roster of shifts. */
+        val LINK_WORK = listOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.HOURLY)
         /** Colors for shifts the user adds, after the bundle's. */
         private val NEW_COLORS = listOf(0xFF00A88F, 0xFFE0A100, 0xFFD6457A, 0xFF27AE60, 0xFF8E44AD, 0xFF2D9CDB)
     }

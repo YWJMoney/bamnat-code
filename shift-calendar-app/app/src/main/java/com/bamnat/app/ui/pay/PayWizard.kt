@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.pay
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.material3.ButtonDefaults
@@ -738,16 +740,16 @@ private fun WageStep(s: PaySetupState, onSlip: () -> Unit, onPick: (Wage) -> Uni
     Surface(
         onClick = onSlip,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("명세서로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("명세서로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text("가장 쉬워요. 명세서 사진이나 캡처 한 장으로 기본급과 수당을 채워요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -1160,7 +1162,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
     val pay = range.base
     val checks = range.effects.size
     Column(Modifier.fillMaxWidth().animateContentSize()) {
-        Row(Modifier.fillMaxWidth().clickable { open = !open }, verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open = !open }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${pay.month.monthValue}월 예상 (세전)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(rangeText(range.low, range.high), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold))
@@ -1194,7 +1196,7 @@ internal fun PayslipPreview(range: PayRange, expandedByDefault: Boolean = false)
 
 @Composable
 private fun PreviewBar(range: PayRange?, busy: Boolean, draft: PayProfile) {
-    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)) {
+    Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, shape = MaterialTheme.shapes.large.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize)) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
             if (range == null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1283,7 +1285,7 @@ internal fun FlexPicker(
 
 @Composable
 private fun RuleToggle(title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onChange(!checked) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

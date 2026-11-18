@@ -225,7 +225,7 @@ class AHScreenshotTest : ScreenshotBase() {
         content { CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}) }
         settle()
         reveal("맞아요 4 · 달라요 1 (순서 1)", exact = true)
-        assertTrue(appears("맞았어요 ✓", exact = true))
+        assertTrue(appears("맞아요 ✓", exact = true))
         tapText("달라요", exact = true)
         assertTrue(appears("근무 순서가 달라요", exact = true))
         assertTrue(appears("근무 시간이 달라요", exact = true))
@@ -252,8 +252,9 @@ class AHScreenshotTest : ScreenshotBase() {
         c.companyStore.setMember("c1", "(주)예시정밀")
         settingsPage("내 근무")
         tapText("근무 주기", exact = true)
-        tapText("패턴 삭제", exact = true)
-        tapText("삭제", exact = true)
+        // 2.0.0 [RVH-29] 검토 WORK-05: the button says the kind's own word ('근무 주기 지우기'), not 패턴 삭제.
+        tapText("근무 주기 지우기", exact = true)
+        tapText("지우기", exact = true)
         assertTrue(appears("근무주기를 지웠어요", exact = true))
         assertTrue(appears("회사 이름으로 근무주기 찾기", exact = true))
         assertNull(c.companyStore.applied.value)

@@ -326,4 +326,46 @@ class PayCodecTest {
         assertEquals(100_000L, back.rules.holidayShiftPay(3))
         assertEquals(true, back.rules.holidayByShiftStart)
     }
+
+    /** 2.0.0 [RVJ-18] 굳은 달: 마감한 달의 날짜별 금액과 세후가 저장·백업에서 그대로 오고, 2.0.0 전 마감 기록도 읽혀요. */
+    @Test fun closedMonthKeepsItsDaysAndTakeHome() {
+        val d = LocalDate.of(2026, 11, 2)
+        val parts = listOf(com.bamnat.core.pay.DayPart(com.bamnat.core.pay.LineKind.NIGHT, "야간", 24_000, "2시간 × 12,000원 × 0.5"))
+        val snap = com.bamnat.core.pay.CalcSnapshot(
+            java.time.YearMonth.of(2026, 11), 2_532_000,
+            listOf(com.bamnat.core.pay.PayLine(com.bamnat.core.pay.LineKind.BASE, "기본급", 2_508_000, "월급"),
+                com.bamnat.core.pay.PayLine(com.bamnat.core.pay.LineKind.NIGHT, "야간", 24_000, "2시간")),
+            "2026.1", 1_000L,
+            days = listOf(com.bamnat.core.pay.FrozenDay(d, "야간", null, listOf("야간 대근"), parts)),
+            net = 2_210_000, tableNet = 2_215_000, netBasis = "LEARNED",
+        )
+        val back = SnapshotCodec.decode(JSONObject(SnapshotCodec.encode(snap).toString()))
+        assertEquals(snap, back)
+        assertEquals(2_210_000L, back.takeHome?.net)
+        assertEquals(com.bamnat.core.tax.TaxLearner.Basis.LEARNED, back.takeHome?.basis)
+        // 2.0.0 전에 쓴 기록: days·net이 없어도 읽히고, 날짜별은 다시 센 것이라고 말해요.
+        val old = JSONObject(SnapshotCodec.encode(snap).toString()).apply { remove("days"); remove("net"); remove("tableNet"); remove("netBasis") }
+        val oldBack = SnapshotCodec.decode(old)
+        assertEquals(snap.lines, oldBack.lines)
+        assertEquals(false, oldBack.hasDays)
+        assertNull(oldBack.takeHome)
+    }
+
+    /**
+     * 2.0.0 [RVK-38] (검토 MONEY-79) '쉬는 날이면' comes back from a save and a backup (both are [PayCodec.encode]); a save from
+     * before 2.0.0 has no key and reads as 앞당겨 (most payrolls), and an older app reading a new save skips the key it does not know.
+     */
+    @Test fun payDayOffComesBackAndOldSavesPayTheDayBefore() {
+        val p = PayProfile(
+            occupation = Occupation.CUSTOM, wageType = WageType.MONTHLY, base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_800_000))),
+            period = com.bamnat.core.pay.PayPeriod(payDay = 25, payDayOff = com.bamnat.core.pay.PayDayOff.AFTER),
+        )
+        val json = PayCodec.encode(p)
+        assertEquals(com.bamnat.core.pay.PayDayOff.AFTER, PayCodec.decode(JSONObject(json.toString())).period.payDayOff)
+        assertEquals(25, PayCodec.decode(JSONObject(json.toString())).period.payDay)
+        val old = JSONObject(json.toString()).also { it.getJSONObject("period").remove("payDayOff") }
+        assertEquals(com.bamnat.core.pay.PayDayOff.BEFORE, PayCodec.decode(old).period.payDayOff)
+        val odd = JSONObject(json.toString()).also { it.getJSONObject("period").put("payDayOff", "LATER") }
+        assertEquals(com.bamnat.core.pay.PayDayOff.BEFORE, PayCodec.decode(odd).period.payDayOff)
+    }
 }

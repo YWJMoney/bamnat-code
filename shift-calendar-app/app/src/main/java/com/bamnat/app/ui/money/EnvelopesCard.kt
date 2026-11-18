@@ -2,6 +2,7 @@ package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.SectionCard
@@ -39,6 +41,7 @@ import com.bamnat.core.money.MoneyEntry
 import com.bamnat.core.money.MoneyKind
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
+import androidx.compose.ui.semantics.Role
 
 /** 1.37 [LEDH-11][LEDH-13] What the envelopes card does, given by the money tab. */
 internal interface EnvelopeActions {
@@ -68,8 +71,9 @@ internal fun EnvelopesCard(
     perShift: Long?, pro: Boolean, actions: EnvelopeActions,
 ) {
     val rows = remember(envelopes, moves, today) { Envelopes.status(envelopes, moves, today) }
-    var editing by remember { mutableStateOf<Envelope?>(null) }
-    var putting by remember { mutableStateOf<EnvelopeStatus?>(null) }
+    // 2.0.0 [RVK-03] (MONEY-01 같은 구조): an envelope being edited or filled comes back after a rebuilt screen.
+    var editing by rememberOpenLine<Envelope>({ it.id }) { id -> envelopes.firstOrNull { it.id == id } }
+    var putting by rememberOpenLine<EnvelopeStatus>({ it.envelope.id }) { id -> rows.firstOrNull { it.envelope.id == id } }
     val canAdd = Envelopes.canAdd(envelopes, pro)
     val taxSuggest = Envelopes.taxShareFor(style).takeIf { it > 0 && envelopes.none { e -> e.kind == EnvelopeKind.TAX && !e.closed } }
     SectionCard(title = "모으기 봉투", trailing = {
@@ -119,11 +123,13 @@ internal fun EnvelopesCard(
 @Composable
 private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, onPut: () -> Unit, onEdit: () -> Unit) {
     val e = s.envelope
-    Column(Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(vertical = 6.dp)
+    Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onEdit).padding(vertical = 6.dp)
         .semantics { contentDescription = "${e.name} 봉투, ${Fmt.won(s.saved)}" + if (e.target > 0) " / ${Fmt.won(e.target)}" else "" }) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVK-23]·HQ-30 the envelope's name whole at large text, its amount and 넣기 under it when they do not fit beside it.
+        NameAndAmount({
             Text((e.emoji.ifBlank { if (e.kind == EnvelopeKind.TAX) "🧾" else "✉️" }) + " " + e.name, style = MaterialTheme.typography.bodyLarge,
-                fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1)
+                fontWeight = FontWeight.Medium)
+        }) {
             Text(Fmt.won(s.saved) + if (e.target > 0) " / ${Fmt.wonShort(e.target)}" else "", style = MaterialTheme.typography.bodyMedium)
             TextButton(onClick = onPut) { Text("넣기") }
         }
@@ -133,12 +139,13 @@ private fun EnvelopeRow(s: EnvelopeStatus, today: LocalDate, perShift: Long?, on
             e.kind == EnvelopeKind.TAX -> "들어온 돈의 ${e.sharePercent}%를 떼어 둬요. 세무 조언이 아니라 미리 모아 두는 돈이에요."
             else -> listOfNotNull(
                 s.eta?.let { "이대로면 ${Fmt.monthDay(it)}" },
-                s.neededPerMonth?.let { "${e.due?.let(Fmt::monthDay)}까지 매달 ${Fmt.won(it)}" },
+                s.neededPerMonth?.let { "${e.due?.let(::envelopeDue)}까지 매달 ${Fmt.won(it)}" },
                 Envelopes.shiftsFor(s.left, perShift)?.let { "근무 ${it}번이면 채워요" },
             ).joinToString(" · ").ifBlank { if (e.target > 0) "넣기를 누르거나 월급이 들어올 때 나눠 보세요" else "" }
         }
         if (words.isNotBlank()) Text(words, style = MaterialTheme.typography.bodySmall,
-            color = if (s.late) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVK-43] (검토 MONEY-24, 조건 6) Behind pace is worth a look, not a danger: the caution ink, not error red.
+            color = if (s.late) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -177,8 +184,12 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
     var due by rememberSaveable { mutableStateOf(e.due?.toString().orEmpty()) }
     var picking by remember { mutableStateOf(false) }
     val isNew = e.id == 0L
-    AlertDialog(
+    // 2.0.0 [RVK-07] (검토 MONEY-09 같은 구조): asks before what was typed goes.
+    val unsaved = name != e.name || target != amountDigits(e.target) || share != e.sharePercent.takeIf { it > 0 }?.toString().orEmpty() ||
+        due != e.due?.toString().orEmpty()
+    com.bamnat.app.ui.components.FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = unsaved,
         title = { Text(if (isNew) "봉투 만들기" else "봉투 고치기") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -186,7 +197,7 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
                 if (e.kind == EnvelopeKind.GOAL) {
                     AmountField("모을 금액 (비워도 돼요)", target, { target = it })
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(due.takeIf { it.isNotBlank() }?.let { "${Fmt.monthDay(LocalDate.parse(it))}까지" } ?: "날짜 없음", modifier = Modifier.weight(1f))
+                        Text(due.takeIf { it.isNotBlank() }?.let { "${envelopeDue(LocalDate.parse(it))}까지" } ?: "날짜 없음", modifier = Modifier.weight(1f))
                         TextButton(onClick = { picking = true }) { Text("날짜 고르기") }
                         if (due.isNotBlank()) TextButton(onClick = { due = "" }) { Text("빼기") }
                     }
@@ -198,7 +209,7 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
             }
         },
         confirmButton = {
-            TextButton(enabled = name.isNotBlank(), onClick = {
+            com.bamnat.app.ui.components.Button(enabled = name.isNotBlank(), onClick = {
                 onSave(e.copy(name = name.trim(), target = target.toAmount(), due = due.takeIf { it.isNotBlank() }?.let(LocalDate::parse),
                     sharePercent = (share.toIntOrNull() ?: 0).coerceIn(0, 100)))
             }) { Text("저장") }
@@ -220,3 +231,10 @@ private fun EnvelopeEditor(e: Envelope, style: WorkStyle?, onSave: (Envelope) ->
         ) { androidx.compose.material3.DatePicker(state, showModeToggle = false) }
     }
 }
+
+/**
+ * 2.0.0 [RVK-43] (검토 U06a-25) A goal's day with its year when it is not this year's: '3월 1일까지' read as this March for a
+ * goal set for next year.
+ */
+internal fun envelopeDue(d: LocalDate, today: LocalDate = com.bamnat.core.time.Today.date()): String =
+    if (d.year != today.year) "${d.year}년 ${Fmt.monthDay(d)}" else Fmt.monthDay(d)

@@ -164,7 +164,9 @@ android {
         // api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
-        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
+        // 2.0.0 [RVO-09] SearchShortcutScreenTest types every way in for six kinds of work (about 6 minutes in one JVM): it goes with
+        // the shorter shard, so shots-b does not run near the job's 45 minutes.
+        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" } + "$shots.SearchShortcutScreenTest"
         // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
         // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
         // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.
@@ -177,10 +179,21 @@ android {
             // request that changes nothing the tests read (the fingerprints themselves, a tool) came back
             // FROM-CACHE with no screenshots folder and the key-screenshot check crashed (PR #107).
             it.outputs.dir(layout.buildDirectory.dir("screenshots"))
+            // 2.0.0 [RVR-21] MarketWorksShotsTest's fingerprints, for tools/market_shots.py (same reason).
+            it.outputs.dir(layout.buildDirectory.dir("market-shots"))
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.
             (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
+            // 2.0.0 [RVR-21] -Pbamnat.marketShots=all: MarketWorksShotsTest puts on every 장터 작품 and keeps a fingerprint of each calendar.
+            (findProperty("bamnat.marketShots") as String?)?.let { v -> it.systemProperty("bamnat.marketShots", v) }
+            // 2.0.0 [I60b-01] 시간 여행: Today의 시스템 시계를 이만큼 앞으로(core와 같은 속성, date-watch.yml).
+            (findProperty("bamnat.todayShift") as String?)?.let { v -> it.systemProperty("bamnat.todayShift", v) }
+            // 2.0.0 [RVR-22] -Pbamnat.outsideBodies=all: OutsideBodiesTest writes the bodies of every 장터 작품 worn (SD-09).
+            (findProperty("bamnat.outsideBodies") as String?)?.let { v -> it.systemProperty("bamnat.outsideBodies", v) }
+            it.outputs.dir(layout.buildDirectory.dir("outside-bodies"))
+            // 2.0.0 [RVH-24] TypeWordsScreenTest writes what it found, to make its list anew.
+            (findProperty("bamnat.typeWordsDump") as String?)?.let { v -> it.systemProperty("bamnat.typeWordsDump", v) }
             when (testSet) {
                 "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
                 "unit" -> {

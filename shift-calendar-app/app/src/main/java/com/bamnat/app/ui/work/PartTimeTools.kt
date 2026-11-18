@@ -97,6 +97,7 @@ import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [HRLY-09][HRLY-10][HRLY-11] 알바 도구 on a part-time calendar's 통계: 두 알바 비교, 근로계약서 and
@@ -365,7 +366,7 @@ private fun ContractScreen(calendarId: String, profile: PayProfile?, today: Loca
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 draft.photos.forEach { name ->
                     val thumb by produceState<ImageBitmap?>(null, name) { value = ContractPhotos.load(store.photo(calendarId, name), 200) }
-                    Box(Modifier.size(96.dp).clip(MaterialTheme.shapes.small).clickable { viewing = name }) {
+                    Box(Modifier.size(96.dp).clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { viewing = name }) {
                         thumb?.let { Image(it, "계약서 사진", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
                     }
                 }

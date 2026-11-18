@@ -97,7 +97,12 @@ class OnboardingScheduleTest {
     fun thePhraseAndTheKeyNameWhatWasFound() {
         val found = MemoTime.find(Memo(title = "치과", checklist = listOf(ChecklistItem("내일 오후 3시"))), now)!!
         assertEquals("내일 오후 3시", found.phrase)
-        assertEquals("2026-10-19T15:00", found.key)
+        // 2.0.0 [RVI-25] (검토 MEMO-07) The answer is kept by the words, so '메모로 둘게요' on them is not asked again tomorrow;
+        // an answer kept before 2.0.0 (by the time) still answers it.
+        assertEquals("w:내일 오후 3시", found.key)
+        assertTrue(found.answeredBy("2026-10-19T15:00"))
+        assertTrue(found.answeredBy("w:내일 오후 3시"))
+        assertFalse(found.answeredBy("w:모레 오후 3시"))
     }
 
     @Test

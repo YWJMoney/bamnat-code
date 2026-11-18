@@ -9,6 +9,7 @@ import com.bamnat.app.StartupTrace.Sample
 import com.bamnat.app.appContainer
 import com.bamnat.core.stats.UsageBook
 import com.bamnat.core.stats.UsageEvent
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -90,7 +91,7 @@ class StartupStatsTest {
     }
 
     @Test fun theUsageBundleCarriesItOnlyWhenAllowed() = runBlocking {
-        val today = LocalDate.now(zone).toEpochDay()
+        val today = Today.date(zone).toEpochDay()
         val prefs = context.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
         prefs.edit().putString("book", UsageBook().record(UsageEvent.OPEN, today - 1).encode()).commit()
         val s = stats()

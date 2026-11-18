@@ -33,8 +33,12 @@ object ShiftEvents {
                 val end = day.end
                 val notes = day.extras.filter { it.from == null }.map { "${it.kind.name} ${hours(it.minutes)}" }
                 if (start != null && end != null) {
-                    val endAt = if (end.isAfter(start)) day.date.atTime(end) else day.date.plusDays(1).atTime(end)
-                    add(ShiftEvent("${day.date}", type.name, day.date.atTime(start), endAt, day.date, notes.joinToString(", ").ifEmpty { null }))
+                    // [RVH-44] 설계 4-5절: a day of two parts is two events of the same name (the second keyed "-p2"), so the phone's
+                    // calendar, the widget's '근무 중' and its next change leave the gap free.
+                    day.segments.forEachIndexed { i, p ->
+                        add(ShiftEvent(if (i == 0) "${day.date}" else "${day.date}-p${i + 1}", type.name, p.start, p.endInclusive, day.date,
+                            notes.joinToString(", ").ifEmpty { null }.takeIf { i == 0 }))
+                    }
                 } else {
                     add(ShiftEvent("${day.date}", type.name, null, null, day.date, notes.joinToString(", ").ifEmpty { null }))
                 }

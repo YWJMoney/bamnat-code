@@ -56,7 +56,7 @@ private fun OneWidget(kind: WidgetPreviews.Kind, key: Any) {
         value = runCatching { WidgetPreviews.views(context, kind) }.getOrNull()
     }
     Column {
-        Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHighest,
             modifier = Modifier.size(kind.size.width, kind.size.height).semantics { contentDescription = "${kind.label} 위젯 미리보기" }) {
             views?.let { v ->
                 AndroidView(factory = { FrameLayout(it) }, update = { frame ->
@@ -77,10 +77,11 @@ private fun OneWidget(kind: WidgetPreviews.Kind, key: Any) {
 internal fun LockNoticePreview(modifier: Modifier = Modifier) {
     val c = LocalContext.current.appContainer
     val snapshot by c.scheduleRepository.snapshot.collectAsState(null)
-    val lines = remember(snapshot) {
-        snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.app.alarm.TodayShiftNotice.lines(it.resolver, Today.date()) }
+    val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+    val lines = remember(snapshot, style) {
+        snapshot?.takeIf { !it.isEmpty }?.let { com.bamnat.app.alarm.TodayShiftNotice.lines(it.resolver, Today.date(), style) }
     } ?: return
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh,
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
             .semantics(mergeDescendants = true) { contentDescription = "잠금 화면 미리보기: ${lines.first}, ${lines.second}" }) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {

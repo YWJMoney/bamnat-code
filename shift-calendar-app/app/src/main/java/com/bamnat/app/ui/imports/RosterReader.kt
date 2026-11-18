@@ -24,6 +24,10 @@ data class RosterResult(
     val scan: RosterScanner.Scan? = null,
     /** [READ-14] 1.27: the photo read, but poorly: "사진이 흐려요. …" (yellow cells are likely). */
     val advice: String? = null,
+    /** 2.0.0 [RVL-32] (검토 U07b-01) A reading that failed: the one thing its cause asks for (와이파이, 저장 공간, Play 서비스, 다시). */
+    val fix: com.bamnat.app.pay.OcrModel.Fix? = null,
+    /** 2.0.0 [RVL-41] (검토 U07b-10) A locked PDF: its password is asked where the file was picked ([PdfPasswordDialog]). */
+    val locked: com.bamnat.app.imports.PdfLock? = null,
 )
 
 object RosterReader {
@@ -44,37 +48,42 @@ object RosterReader {
 
     const val NOTHING = "날짜 줄(1 2 3 …)과 근무 줄을 찾지 못했어요. 표 전체가 반듯하게 나오게 다시 찍어 보세요."
 
-    suspend fun photo(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
-        val scan = runCatching { RosterScanner.scan(context, uri, codes, progress) }
-        val error = scan.exceptionOrNull()?.let { e ->
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            // 1.36 PC W10: the reason in words and the cause chain, as the payslip photo says it.
-            (e as? com.bamnat.app.pay.OcrModel.NotReady)?.message
-                ?: (com.bamnat.app.pay.OcrModel.why(e).text + " (오류: ${com.bamnat.app.pay.OcrModel.detail(e)})")
-        }
+    suspend fun photo(
+        context: Context, uri: Uri, codes: DutyCodes, near: LocalDate,
+        /** 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down before the first reading (percent, null while unknown). */
+        preparing: (Int?) -> Unit = {},
+        progress: (Int, Int) -> Unit = { _, _ -> },
+    ): RosterResult {
+        val scan = runCatching { RosterScanner.scan(context, uri, codes, preparing, progress) }
+        val failed = scan.exceptionOrNull()
+        if (failed is kotlinx.coroutines.CancellationException) throw failed
+        // 1.36 PC W10: the reason in words and the cause chain, as the payslip photo says it. 2.0.0 [RVL-32] with its one fix.
+        val error = failed?.let { com.bamnat.app.pay.OcrModel.said(context, it) }
         val s = scan.getOrNull()
         val list = s?.words.orEmpty()
-        val rows = s?.read?.rows.orEmpty()
         // [ROST-04] "10월 근무표" over the table, as it reads from the photo.
         val month = DutyRoster.monthIn(list.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
+        // 2.0.0 [RVL-24] (검토 SCAN-10) A 4주 듀티's days of the month before, as dates, beside the file's (함께 넣기·빼기).
+        val rows = s?.read?.rows.orEmpty().map { it.placed(month ?: YearMonth.from(near)) }
         // [READ-14] A photo too dark, blurred or small to read well says so, with what to do, even when it read something.
         val retake = s?.quality?.takeIf { it.retake }?.line
         return RosterResult(rows, month, RosterFrom.PHOTO, error ?: problem(s?.read?.problem).takeIf { rows.isEmpty() }?.let { p -> retake?.let { "$p $it" } ?: p }, s,
-            advice = retake.takeIf { rows.isNotEmpty() })
+            advice = retake.takeIf { rows.isNotEmpty() }, fix = failed?.let { com.bamnat.app.pay.OcrModel.fix(it) })
     }
 
     /** [READ-04] The photo read again along the lines the user tapped: the row of dates (if any) and their own line. */
     fun tapped(scan: RosterScanner.Scan, codes: DutyCodes, hint: RosterHint, near: LocalDate): RosterResult {
-        val rows = DutyRoster.read(scan.words, codes, hint)
         val month = DutyRoster.monthIn(scan.words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
+        val rows = DutyRoster.read(scan.words, codes, hint).map { it.placed(month ?: YearMonth.from(near)) }
         return RosterResult(rows, month, RosterFrom.PHOTO, TAPPED_NOTHING.takeIf { rows.isEmpty() }, scan)
     }
 
     /** [READ-05] Why a photo gave nothing, and what to do next. */
     fun problem(p: RosterPhotoRead.Problem?): String = when (p) {
-        RosterPhotoRead.Problem.NO_TEXT -> "사진에서 글자를 찾지 못했어요. 표가 화면 가득, 밝은 곳에서 찍힌 사진을 골라 주세요."
-        RosterPhotoRead.Problem.NO_DAYS -> "날짜 줄(1 2 3 …)을 찾지 못했어요. ‘사진 위에서 누르기’로 날짜 줄과 내 줄을 눌러 주면 그 줄을 읽어요."
-        RosterPhotoRead.Problem.NO_DUTIES -> "날짜는 찾았는데 근무 줄을 찾지 못했어요. ‘사진 위에서 누르기’로 내 줄을 눌러 주세요."
+        RosterPhotoRead.Problem.NO_TEXT -> "사진에서 글자를 못 찾았어요. 표가 화면 가득, 밝은 곳에서 찍힌 사진을 골라 주세요."
+        // 2.0.0 [RVL-33] (검토 SCAN-20·U07b-14) By the name of the button right under it.
+        RosterPhotoRead.Problem.NO_DAYS -> "날짜 줄(1 2 3 …)을 찾지 못했어요. 아래 ‘$TAP_PHOTO’로 날짜 줄과 내 줄을 눌러 주면 그 줄을 읽어요."
+        RosterPhotoRead.Problem.NO_DUTIES -> "날짜는 찾았는데 근무 줄을 찾지 못했어요. 아래 ‘$TAP_PHOTO’로 내 줄을 눌러 주세요."
         null -> NOTHING
     }
 
@@ -84,17 +93,52 @@ object RosterReader {
      * [IMPORT-03][READ-30] A roster file: [AnyFile] tells a table (.xlsx·.xls·.ods·HTML·CSV), a PDF (its text read as the table,
      * or a scanned one read page by page as photos) and a picture apart, whatever the file's name says.
      */
-    suspend fun file(context: Context, uri: Uri, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit = { _, _ -> }): RosterResult {
-        val opened = runCatching { com.bamnat.app.imports.AnyFile.open(context, uri) }
+    suspend fun file(
+        context: Context, uri: Uri, codes: DutyCodes, near: LocalDate,
+        /** 2.0.0 [RVL-41] The password typed for a locked PDF, for this reading only. */
+        password: CharArray? = null,
+        preparing: (Int?) -> Unit = {},
+        progress: (Int, Int) -> Unit = { _, _ -> },
+    ): RosterResult {
+        val opened = runCatching { com.bamnat.app.imports.AnyFile.open(context, uri, password) }
         opened.exceptionOrNull()?.let { e ->
             if (e is kotlinx.coroutines.CancellationException) throw e
             return RosterResult(emptyList(), null, RosterFrom.FILE, (e as? Sheets.SheetException)?.message ?: FILE_FAILED)
         }
         return when (val o = opened.getOrThrow()) {
-            is com.bamnat.app.imports.AnyFile.Opened.Picture -> photo(context, o.uri, codes, near, progress)
-            is com.bamnat.app.imports.AnyFile.Opened.Pages -> pages(context, o.pages, codes, near, progress)
-            is com.bamnat.app.imports.AnyFile.Opened.Table -> table(o.sheets, codes, near, o.fromPdf)
+            is com.bamnat.app.imports.AnyFile.Opened.Picture -> photo(context, o.uri, codes, near, preparing, progress)
+            is com.bamnat.app.imports.AnyFile.Opened.Pages -> pdfPages(context, o.pdf, codes, near, preparing, progress)
+            is com.bamnat.app.imports.AnyFile.Opened.Table -> {
+                val read = table(o.sheets, codes, near, o.fromPdf)
+                // 2.0.0 [RVL-42] (검토 SCAN-15) A PDF whose text held no roster (a table drawn as lines and letters placed one by
+                // one, a font read wrongly) is drawn and read as pictures before it says it found nothing.
+                if (read.rows.isEmpty() && read.error != PAYSLIP_HERE && o.pdf != null) {
+                    val photo = pdfPages(context, o.pdf, codes, near, preparing, progress)
+                    if (photo.rows.isNotEmpty()) return photo
+                }
+                read.copy(advice = read.advice ?: o.cut.takeIf { read.rows.isNotEmpty() })
+            }
+            is com.bamnat.app.imports.AnyFile.Opened.Locked -> RosterResult(emptyList(), null, RosterFrom.FILE,
+                if (o.lock == com.bamnat.app.imports.PdfLock.WRONG) PASSWORD_WRONG else LOCKED, locked = o.lock)
         }
+    }
+
+    const val LOCKED = "암호가 걸린 PDF예요. 암호를 넣으면 이 휴대폰 안에서 열어요."
+    const val PASSWORD_WRONG = "암호가 맞지 않아요. 다시 넣어 주세요."
+
+    /** 2.0.0 [RVL-43] (검토 SCAN-18·U07b-09) A scanned PDF drawn and read a page at a time; more pages than are read are said. */
+    private suspend fun pdfPages(
+        context: Context, pdf: com.bamnat.app.imports.AnyFile.Pdf, codes: DutyCodes, near: LocalDate,
+        preparing: (Int?) -> Unit, progress: (Int, Int) -> Unit,
+    ): RosterResult {
+        val source = try {
+            com.bamnat.app.imports.AnyFile.pages(context, pdf)
+        } catch (e: Sheets.SheetException) {
+            return RosterResult(emptyList(), null, RosterFrom.FILE, e.message ?: FILE_FAILED)
+        }
+        val cut = com.bamnat.app.imports.AnyFile.cutLine(source.total, source.count)
+        val r = pages(context, source, codes, near, preparing, progress)
+        return if (cut != null && r.rows.isNotEmpty()) r.copy(advice = listOfNotNull(r.advice, cut).joinToString(" ")) else r
     }
 
     /** [READ-30] Sheets read as a roster: the sheet that holds it, the month most of its days are in. */
@@ -119,18 +163,43 @@ object RosterReader {
     }
 
     /** [READ-32] A scanned PDF: each page read as a photo, the lines of all pages together (a name on two pages once). */
-    private suspend fun pages(context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate, progress: (Int, Int) -> Unit): RosterResult {
+    internal suspend fun pages(
+        context: Context, pages: List<android.graphics.Bitmap>, codes: DutyCodes, near: LocalDate,
+        preparing: (Int?) -> Unit = {}, progress: (Int, Int) -> Unit,
+    ): RosterResult = pages(context, com.bamnat.app.imports.AnyFile.Drawn(pages), codes, near, preparing, progress)
+
+    /** 2.0.0 [RVL-43] (검토 SCAN-18) Each page drawn, read and let go before the next is drawn. */
+    internal suspend fun pages(
+        context: Context, source: com.bamnat.app.imports.AnyFile.PageSource, codes: DutyCodes, near: LocalDate,
+        preparing: (Int?) -> Unit = {}, progress: (Int, Int) -> Unit,
+    ): RosterResult {
         val scans = mutableListOf<RosterScanner.Scan>()
         try {
-            for ((i, page) in pages.withIndex()) {
-                scans += RosterScanner.scanPicture(context, page, codes) { n, m -> progress(i * 10 + n, pages.size * 10) }
+            for (i in 0 until source.count) {
+                // 2.0.0 [RVL-32] (검토 U07b-01) Page by page: "3번 중 2번째" is the page being read.
+                progress(i + 1, source.count)
+                val page = source.page(i)
+                try {
+                    scans += RosterScanner.scanPicture(context, page, codes, preparing)
+                } finally {
+                    page.recycle()
+                }
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // 1.39.1 [R391-13] (검토 SCAN-01) A scanned PDF whose reading failed (글자 인식 준비물 not there yet, Play 서비스 old or
+            // offline) closed the app: it says why, as a photo does.
+            return RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.said(context, e), fix = com.bamnat.app.pay.OcrModel.fix(e))
+        } catch (e: OutOfMemoryError) {
+            return RosterResult(emptyList(), null, RosterFrom.FILE, com.bamnat.app.pay.OcrModel.said(context, e))
         } finally {
-            pages.forEach { if (!it.isRecycled) it.recycle() }
+            source.close()
         }
         val words = scans.flatMap { it.words }
         val month = DutyRoster.monthIn(words.sortedWith(compareBy({ it.top }, { it.left })).joinToString(" ") { it.text }, near)
-        val rows = scans.flatMap { it.read.rows }.distinctBy { DutyCodes.norm(it.label).ifEmpty { it.hashCode().toString() } }
+        // 2.0.0 [RVL-16] (검토 SCAN-08) A name on two pages (1~15일, 16~31일) is one line with both halves, not the first page's half.
+        val rows = DutyRoster.joinPages(scans.flatMap { it.read.rows }).map { it.placed(month ?: YearMonth.from(near)) }
         // [READ-32] 1.38 PC: a scan read thinly says what reads every cell instead.
         val days = (month ?: YearMonth.from(near)).lengthOfMonth()
         val thin = rows.isNotEmpty() && rows.maxOf { it.cells.size } < days * 0.8
@@ -138,7 +207,7 @@ object RosterReader {
             advice = if (thin) "스캔한 PDF라 다 읽지 못했어요. 원래 엑셀 파일이나 엑셀에서 'PDF로 저장'한 파일을 주시면 모든 칸을 정확히 읽어요." else null)
     }
 
-    private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·사진 파일을 골라 주세요."
+    private const val FILE_FAILED = "이 파일은 읽지 못했어요. 엑셀·CSV·PDF·한글(.hwpx)·워드(.docx)·사진 파일을 골라 주세요."
 
     fun text(text: String, codes: DutyCodes, near: LocalDate): RosterResult {
         val rows = DutyRoster.readText(text, codes)

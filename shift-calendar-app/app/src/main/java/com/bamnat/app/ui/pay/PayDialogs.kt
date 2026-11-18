@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.pay
 
+import com.bamnat.app.ui.theme.color
 import androidx.compose.material.icons.filled.Close
 import com.bamnat.core.pay.Unknowns
 import java.time.LocalDate
@@ -56,6 +57,7 @@ import com.bamnat.core.pay.Rounding
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /** A won amount typed as digits; shows the grouped value underneath so long numbers stay readable. */
 @Composable
@@ -233,7 +235,9 @@ fun LineDetailDialog(
 }
 
 // A 1.32 [FIX132-03] 모든 달 first and picked: 1.31's '이 달부터' left the months before on the old value.
-private enum class ScopeKind(val label: String) { ALL("모든 달 같게"), FROM("이 달부터 계속"), ONLY("이 달만"), RANGE("기간 지정") }
+// 2.0.0 [RVJ-08] 검토 PAYU-07·U05-02: with months already paid at the old value, '이 달부터' is picked first (a raise), and
+// '모든 달' is for a first value put in wrong. [RVJ-03] 검토 U04-04: 시급·일당 can also change on a day.
+private enum class ScopeKind(val label: String) { FROM("이 달부터 계속"), DATE("이 날짜부터"), ALL("모든 달 같게"), ONLY("이 달만"), RANGE("기간 지정") }
 
 /**
  * Changes a value with a scope and shows what it does to the next 12 months before applying
@@ -252,13 +256,21 @@ fun EditValueDialog(
 ) {
     val timeline = remember(profile, target) { vm.timelineOf(profile, target) }
     val current = timeline.on(month).value
-    var value by remember { mutableStateOf<Long?>(current) }
-    var scope by remember { mutableStateOf(ScopeKind.ALL) }
-    var until by remember { mutableStateOf(month.plusMonths(2)) }
+    // [RVJ-08] 검토 PAYU-04: kept when the app is sent away and back.
+    var value by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Long?>(current) }
+    // [RVJ-08] Months before this one already use the value: a change is most likely a raise from this month.
+    val hasPast = remember(timeline, month) { timeline.entries.any { it.from.isBefore(month.atDay(1)) } }
+    var scope by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(if (hasPast) ScopeKind.FROM else ScopeKind.ALL) }
+    var until by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(month.plusMonths(2)) }
+    val periodStart = remember(profile, month) { profile.period.start(month) }
+    // [RVJ-03] '이 날짜부터' for a 시급·일당 only: a 월급 is read for the month as a whole.
+    val byDay = target == ValueTarget.Base && profile.wageType != com.bamnat.core.pay.WageType.MONTHLY
+    var date by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(month.atDay(1)) }
     val editScope = when (scope) {
         ScopeKind.ALL -> EditScope.AllMonths
         ScopeKind.ONLY -> EditScope.OnlyMonth(month)
-        ScopeKind.FROM -> EditScope.FromMonth(month)
+        ScopeKind.FROM -> EditScope.FromMonth(month, periodStart)
+        ScopeKind.DATE -> EditScope.FromDate(date)
         ScopeKind.RANGE -> EditScope.Range(month, maxOf(month, until))
     }
     val v = value
@@ -282,20 +294,24 @@ fun EditValueDialog(
                 Text("${month.monthValue}월 지금 값: ${won(current)}", style = MaterialTheme.typography.bodyMedium)
                 MoneyField("새 금액", value, { value = it }, Modifier.padding(top = 8.dp))
                 Text("어디에 적용할까요?", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))
-                ScopeKind.entries.forEach { k ->
+                ScopeKind.entries.filter { it != ScopeKind.DATE || byDay }.forEach { k ->
                     val locked = k == ScopeKind.RANGE && !rangeOpen
                     val pick = { if (locked) { onDismiss(); com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_BULK_EDIT) } else scope = k }
-                    Row(Modifier.fillMaxWidth().clickable(onClick = pick), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClick = pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = scope == k, onClick = pick)
-                        Text(
-                            when (k) {
-                                ScopeKind.ALL -> "모든 달 같게 (지난달·다음 달 모두, 추천)"
-                                ScopeKind.ONLY -> "${month.monthValue}월만 (다음 달부터는 원래대로)"
-                                ScopeKind.FROM -> "${month.monthValue}월부터 계속 (오른 달처럼 그 전 달은 예전 값 그대로)"
-                                ScopeKind.RANGE -> "기간 지정"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+                        // 2.0.0 [RVJ-08] 품질 조건 4 (#444 사진 08: 200%에서 고르기 글이 줄마다 세 줄): 고르는 말 한 줄 + 작은 설명 한 줄.
+                        val (say, more) = when (k) {
+                            ScopeKind.ALL -> "모든 달 같게" to (if (hasPast) "처음 값을 잘못 넣었을 때 · 지난달도 바뀌어요" else "지난달·다음 달 모두")
+                            ScopeKind.ONLY -> "${month.monthValue}월만" to "다음 달부터는 원래대로"
+                            ScopeKind.FROM -> "${month.monthValue}월 급여부터 계속" to ("그 전 달은 예전 값 그대로" +
+                                (if (periodStart != month.atDay(1)) " · ${periodStart.monthValue}/${periodStart.dayOfMonth} 근무부터" else ""))
+                            ScopeKind.DATE -> "이 날짜부터" to "1월 1일에 오른 최저임금처럼 그날 근무부터"
+                            ScopeKind.RANGE -> "기간 지정" to null
+                        }
+                        Column(Modifier.weight(1f, fill = false).padding(vertical = 4.dp)) {
+                            Text(say, style = MaterialTheme.typography.bodyMedium)
+                            more?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
                         if (k == ScopeKind.RANGE) com.bamnat.app.ui.money.ProPill(Modifier.padding(start = 8.dp), locked = locked) // [TIER-06]
                     }
                 }
@@ -303,23 +319,40 @@ fun EditValueDialog(
                     Text("언제까지", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(start = 12.dp))
                     MonthStepper(maxOf(month, until), { until = it }, Modifier.padding(start = 12.dp))
                 }
+                if (scope == ScopeKind.DATE) com.bamnat.app.ui.work.DateField("바뀌는 날", date, { it?.let { d -> date = d } }, clearable = false,
+                    modifier = Modifier.padding(start = 12.dp))
                 plan?.let { p ->
                     HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                    val changed = p.changedMonths
-                    Text(
+                    // [RVJ-08] 검토 PAYU-07: the months before this one that change, said first.
+                    val past = p.changedMonths.filter { it.month < month }
+                    if (past.isNotEmpty()) Text("지난 ${past.size}개월도 바뀌어요 · 합계 ${signed(past.filterNot { it.locked }.sumOf { it.delta })}",
+                        // 주의(주황): 빨강은 위험에만 (디자인 품질 조건 6).
+                        style = MaterialTheme.typography.titleSmall, color = com.bamnat.app.ui.theme.Tone.Caution.color())
+                    val changed = p.changedMonths.filter { it.month >= month }
+                    val same = v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1
+                    // 2.0.0 [RVJ-46] 검토 PC-110: with the amount not changed yet nothing moves, and the window said '합계는 그대로예요 ·
+                    // … 마감한 달이에요' as if something had been tried. It says what this place will show once the amount is changed.
+                    val untouched = v == current && changed.isEmpty() && past.isEmpty()
+                    if (untouched) Text("금액을 바꾸면 달마다 얼마가 달라지는지 여기에 보여 드려요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Text(
                         // PC 3e347ec6: '그대로예요' under a new amount read as if it had not been taken.
-                        if (v == current && scope == ScopeKind.ALL && timeline.entries.size <= 1) "지금 값과 같아요"
-                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요 (이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요)"
-                        else "${changed.size}개월이 바뀌어요 · 합계 ${signed(p.totalDelta)}",
+                        if (same) "지금 값과 같아요"
+                        else if (changed.isEmpty()) "앞으로 12개월 합계는 그대로예요"
+                        else "앞으로 ${changed.size}개월이 바뀌어요 · 합계 ${signed(changed.filterNot { it.locked }.sumOf { it.delta })}",
                         style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary,
                     )
+                    // 2.0.0 품질 조건 4: 까닭은 작은 줄로 (200%에서 제목 글이 네 줄이던 것).
+                    if (!untouched && !same && changed.isEmpty()) Text("이 값이 쓰이는 근무가 없는 달이거나 마감한 달이에요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Column(Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
-                        changed.forEach { d ->
+                        (past + changed).forEach { d ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                                 Text("${d.month.year % 100}.${d.month.monthValue}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.labelWidth(44.dp))
                                 Text("${won(d.before)} → ${won(d.after)}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                 Text(if (d.locked) "마감" else signed(d.delta), style = MaterialTheme.typography.bodySmall,
-                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                                    // [RVJ-46] A lower month is not a danger: the '−' says it, in the plain ink (조건 6, 빨강은 위험만).
+                                    color = if (d.delta >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                             }
                         }
                     }
@@ -441,7 +474,8 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
                 MonthStepper(from, { from = it })
-                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true) { changes ->
+                RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true,
+                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date())) { changes ->
                     vm.applyRuleChanges(changes, from)
                     onDismiss()
                 }
@@ -544,7 +578,7 @@ fun AddBonusDialog(
                             label = { Text("${m}월") })
                     }
                 }
-                Row(Modifier.fillMaxWidth().clickable { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { ordinary = !ordinary }, verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("통상임금에 포함", style = MaterialTheme.typography.bodyLarge)
                         Text("정해진 조건으로 정기적으로 받는 상여는 재직 조건이 있어도 통상임금이에요(대법원 2024.12.19. 판결). 성과에 따라 달라지면 꺼 주세요. " +

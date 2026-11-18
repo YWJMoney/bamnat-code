@@ -67,6 +67,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -133,7 +137,7 @@ internal fun RecipeStudio(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel,
 @Composable
 internal fun MiniPhone(r: Recipe, style: WorkStyle?, tab: String, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val scale = 0.42f
-    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clip(RoundedCornerShape(14.dp))
+    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clip(MaterialTheme.shapes.medium)
         .clickable(onClickLabel = "예시 앱 크게 보기", onClick = onOpen).semantics(mergeDescendants = true) { contentDescription = "작은 예시 앱. 누르면 크게 봐요" },
         contentAlignment = Alignment.Center) {
         Box(Modifier.requiredSize(340.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
@@ -516,18 +520,16 @@ private fun MockMonth(days: List<Map<String, Any?>>, theme: Map<String, Any?>, v
             memos[i % memos.size], hours = if (d["role"] == "off" || style == WorkStyle.INVEST) null else "8h", off = d["role"] == "off", role = d["role"] as? String)
     }
     Column(Modifier.partSpot("cal"), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too.
-        // [BLU-09] The example's title is the 달력 머리 and 달 이름, drawn as the parts say and found by a tap in the 부품 도구.
+        // [LAY-03] The 꾸밈 층's 달력 머리 on the example's title, too. [BLU-09] Found by a tap in the 부품 도구.
+        // [RVM-18] PC-46 (미리 그림은 큰 제목 옆에 '집중 시작'이 나란한데, 넣으면 머리 줄 위에 겹쳐요): the calendar's own 머리 is drawn here, so a
+        // 꾸밈 on it sits where it will sit. A tap on it does nothing here (the 부품 도구 still picks its parts, before this).
         val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-        val headScope = com.bamnat.app.logic.scopeOn(com.bamnat.core.time.Today.date())
-        val head = bp.style("cal.head", scope = headScope)
-        val title = bp.style("cal.head.title", scope = headScope)
-        // PC 10차 사용성 제안 (점선이 글자만 감싸 범위가 헷갈림): the head is the whole row, as on the calendar.
-        Box(Modifier.fillMaxWidth().partSpot("cal.head").decor(com.bamnat.core.recipe.Decor.HEAD).then(com.bamnat.app.ui.parts.PartMods.box(head.copy(ink = null), RoundedCornerShape(0.dp)))) {
-            if (title.hide != true) Box(Modifier.partSpot("cal.head.title").then(com.bamnat.app.ui.parts.PartMods.box(title.copy(ink = null), RoundedCornerShape(0.dp)))) {
-                com.bamnat.app.ui.parts.PartText(if (real != null) "${today.monthValue}월 · 내 달력" else "예시 달력", title,
-                    MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold))
-            }
+        val month = java.time.YearMonth.from(if (real != null) today else exFirst)
+        Box(Modifier.fillMaxWidth().clearAndSetSemantics { contentDescription = "${month.monthValue}월 달력 머리 미리 그림" }) {
+            com.bamnat.app.ui.calendar.CalendarHeader(month, onPrev = {}, onNext = {}, onToday = {}, onPickMonth = {}, onOpenPattern = {}, atToday = true, style = style)
+            Box(Modifier.matchParentSize().pointerInput(Unit) {
+                awaitEachGesture { awaitFirstDown(requireUnconsumed = false).consume() }
+            })
         }
         // F-92: a cell design or pattern is drawn by the month's own cell, as 자세히 and the phone do (the plain sample has neither).
         // U15 1.36 (빌드 확인: 누르고 있으면 전 모양이 다른 예시 날로 바뀜): with no own calendar both ways draw the same example — the
@@ -641,6 +643,15 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkSt
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
+            // 2.0.0 [RVI-77] The memo tab's '오늘' 묶음 as it starts: today's to-dos and the line to write one.
+            MemoPart.TODAY -> Column(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("할 일 2개 남았어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("○ 우유 사기   ○ 치과 · 15:00", style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
+                    Text("+ 한 줄로 적기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)).background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -683,7 +694,7 @@ private fun lookLine(v: Map<String, Any?>): String = v.entries.mapNotNull { (k, 
 @Composable
 private fun MockSettings(resolved: Map<PieceKind, Map<String, Any?>>) {
     val w = resolved[PieceKind.WIDGET]
-    MockNote("설정", "아래 탭 순서, 위젯 모양, 모서리를 여기서 바꿔요")
+    MockNote("설정", "아래 메뉴 순서, 위젯 모양, 모서리를 여기서 바꿔요")
     if (w != null) {
         val alpha = ((w["alpha"] as? Number)?.toInt() ?: 100).coerceIn(30, 100)
         val dark = w["theme"] == "dark"
@@ -759,7 +770,7 @@ private fun StudioEditors(r: Recipe, vm: RecipeMakeViewModel, tab: String) {
 @Composable
 internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boolean>>, line: String?, note: String? = null, onChange: (String?) -> Unit) {
     val placed = PageLayout.decode(line).arrange(parts) { it.first }
-    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 레시피에 들어가요" else "바꾼 순서와 숨김이 레시피에 들어가요",
+    StudioCard(title, note ?: if (line == null) "처음 모양이에요. 바꾸면 작품에 들어가요" else "바꾼 순서와 숨김이 작품에 들어가요",
         onReset = line?.let { { onChange(null) } }) {
         placed.forEachIndexed { i, p ->
             val (id, label, movable) = p.part
@@ -784,7 +795,7 @@ internal fun PartsEditor(title: String, parts: List<Triple<String, String, Boole
 @Composable
 internal fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<String>?) -> Unit) {
     val order = TabOrder.of(saved)
-    StudioCard("아래 탭 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
+    StudioCard("아래 메뉴 순서", "맨 앞 탭이 앱을 열면 처음 보이는 화면이에요", onReset = saved.takeIf { it.isNotEmpty() }?.let { { onChange(null) } }) {
         order.forEachIndexed { i, key ->
             val t = TopLevel.entries.firstOrNull { it.route == key } ?: return@forEachIndexed
             Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -801,7 +812,7 @@ internal fun TabsEditor(saved: List<String>, style: WorkStyle?, onChange: (List<
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CornersEditor(corners: String?, onChange: (String?) -> Unit) {
-    StudioCard("모서리", "카드와 버튼의 둥근 정도예요", onReset = corners?.let { { onChange(null) } }) {
+    StudioCard("모서리", "카드와 단추의 둥근 정도예요", onReset = corners?.let { { onChange(null) } }) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf("round" to "둥글게", "soft" to "보통", "square" to "각지게").forEach { (k, label) ->
                 FilterChip(corners == k, { onChange(k) }, label = { Text(label) }, shape = shapesFor(k).small)

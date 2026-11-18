@@ -98,7 +98,10 @@ private class Premium(val title: String) {
 }
 
 /** An allowance on the payslip with no allowance of the same name in the app. */
-private class OtherLine {
+private class OtherLine(
+    /** [RVJ-26] Read from the payslip; only the ones added by hand count toward [MAX_OTHERS]. */
+    val fromSlip: Boolean = false,
+) {
     var name by mutableStateOf("")
     var amount by mutableStateOf<Long?>(null)
 }
@@ -136,12 +139,11 @@ private class SlipForm {
         }
         items.clear()
         others.clear()
-        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
-        read.allowances.forEach { (name, amount) ->
-            val item = profile.items.firstOrNull { norm(it.name) == norm(name) }
-            if (item != null) items[item.id] = amount
-            else if (others.size < MAX_OTHERS) others += OtherLine().also { it.name = name.take(20); it.amount = amount }
-        }
+        // [RVJ-26] 검토 PAYU-52: every allowance read goes in. The seventh and on were dropped without a word, and the match then
+        // aimed at a 지급 총액 holding money no line explained ('차이 n원', or a setting changed to make up for it).
+        val places = read.places(profile.items.map { it.id to it.name }, NAME_MAX)
+        places.known.forEach { (id, amount) -> items[id] = amount }
+        places.others.forEach { (name, amount) -> others += OtherLine(fromSlip = true).also { it.name = name; it.amount = amount } }
     }
 
     fun payslip(profile: PayProfile): Payslip = Payslip(
@@ -150,9 +152,10 @@ private class SlipForm {
         overtimePay = overtime.amount, overtimeMinutes = overtime.minutes,
         nightPay = night.amount, nightMinutes = night.minutes,
         holidayPay = holiday.amount, holidayMinutes = holiday.minutes,
+        // [RVJ-26] Two lines of one name add up (a second '소급분' wrote over the first).
         allowances = buildMap {
-            profile.items.forEach { i -> items[i.id]?.let { put(i.name, it) } }
-            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) put(o.name.trim(), a) } }
+            profile.items.forEach { i -> items[i.id]?.let { merge(i.name, it, Long::plus) } }
+            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) merge(o.name.trim(), a, Long::plus) } }
         },
     )
 }
@@ -211,23 +214,34 @@ fun PayslipMatchDialog(
     val appTotal by produceState<Long?>(null, chosen) { value = null; value = vm.calculateOff(profile, snapshot, chosen).total }
     // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
     var scanning by remember { mutableStateOf(false) }
+    // 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A PDF of several payslips picked a little while ago: the ones not yet looked at wait on
+    // the first step, so the next month is one tap (then the roster question) away instead of finding the file again.
+    var waiting by remember { mutableStateOf(PdfSlips.get()) }
+    var picked by remember { mutableStateOf<com.bamnat.app.pay.PayslipScanner.Scan?>(null) }
+    var pickedLabel by remember { mutableStateOf("") }
+    var opening by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     var filled by remember { mutableStateOf<String?>(null) }
     // [READ-08] With the company's way of counting as a second photo: its ticked rules go into the pay setup from that month.
     val payAppSettings by vm.settings.collectAsState()
-    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false },
+    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false; picked = null }, initialScan = picked,
         rules = RuleTarget(payAppSettings.extraKinds.kinds, snapshot.shiftTypes, profile.fiveOrMoreEmployees) { changes, m ->
             vm.applyRuleChanges(changes, m ?: chosen)
             filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
         }) { read ->
         // [PAYIN-03] Only the company's rules came (no payslip line): the figures typed here stay as they are.
+        picked = null
         if (read.lines.isEmpty()) { scanning = false; return@PayslipFillDialog }
         form.fill(read, profile)
         vm.observePayslip(read, chosen) // [TAX-04] 세금 예측도 이 명세서로 맞춰요
         more = true
         val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
         moved?.let { chosen = it }
-        filled = "명세서에서 ${read.lines.count { it.isEarning || it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL }}줄을 채웠어요" +
-            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요."
+        // [RVJ-26] 검토 PAYU-52: the lines put in, not the lines read; what has no field of its own is named.
+        val noField = read.unplaced.map { it.name }.distinct()
+        filled = "명세서에서 ${read.placedLines}줄을 채웠어요" +
+            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요." +
+            (if (noField.isEmpty()) "" else " ${noField.take(3).joinToString(", ")}${if (noField.size > 3) " 등 ${noField.size}줄" else " 줄"}은 따로 넣는 칸이 없어 지급 총액으로만 맞춰 봐요.")
         scanning = false
     }
 
@@ -340,10 +354,32 @@ fun PayslipMatchDialog(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             when (s) {
-                                MatchStage.MONTH -> MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
-                                    stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                MatchStage.MONTH -> {
+                                    waiting?.let { held ->
+                                        PdfSlipsChooser(held, again = true, enabled = !opening, onPick = { i ->
+                                            opening = true
+                                            scope.launch {
+                                                val scan = try { com.bamnat.app.pay.PayslipScanner.shown(context, held.read, i) }
+                                                    catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                                                opening = false
+                                                if (scan != null) {
+                                                    PdfSlips.looked(held.id, i)
+                                                    waiting = PdfSlips.get()
+                                                    picked = scan
+                                                    pickedLabel = PdfSlips.labels(held.read.scans).getOrElse(i) { "${i + 1}번째 명세서" }
+                                                    scan.slip.read.month?.takeIf { !it.isAfter(latest) }?.let { chosen = it }
+                                                }
+                                            }
+                                        }, onForget = { PdfSlips.forget(); waiting = null })
+                                    }
+                                    picked?.let { p -> PickedLine(pickedLabel, PdfSlips.amount(p)) }
+                                    MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
+                                        stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                        // The payslip picked above goes on as soon as the amounts are asked for.
+                                        if (same && picked != null) scanning = true
+                                    }
                                 }
-                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS })
+                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS; if (picked != null) scanning = true })
                                 MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
@@ -401,6 +437,17 @@ private fun ColumnScope.MonthStage(
     AnswerCard("아니요, 달라요", "달력을 먼저 고치면 더 정확해요", false) { onRoster(false) }
 }
 
+/** 2.0.0 [RVL-44] The payslip picked from the waiting list: it fills the amounts once the roster question is answered. */
+@Composable
+private fun PickedLine(label: String, amount: String?) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(listOfNotNull("$label 골랐어요", amount).joinToString(" · ") + ". 아래 물음에 답하면 바로 채워요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
 @Composable
 private fun RosterStage(onFix: () -> Unit, onAnyway: () -> Unit) {
     StepTitle("먼저 달력을 고쳐 주세요", "근무표가 실제와 다르면 맞춰 본 결과도 어긋나요. 달력 탭에서 그 달 근무와 잔업·특근·대근을 고친 뒤 다시 와 주세요.")
@@ -424,16 +471,16 @@ private fun ColumnScope.AmountsStage(
     Surface(
         onClick = onScan,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("명세서 사진으로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text("명세서 사진으로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text("사진이나 캡처 한 장이면 아래 칸을 앱이 채워요. 휴대폰 안에서만 읽어요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -507,7 +554,7 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = line.name,
-                onValueChange = { line.name = it.take(20) },
+                onValueChange = { line.name = it.take(NAME_MAX) },
                 label = { Text("이름") },
                 placeholder = { Text("예: 자격수당") },
                 singleLine = true,
@@ -517,12 +564,14 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
             IconButton(onClick = { form.others.removeAt(i) }, modifier = Modifier.padding(top = 8.dp)) { Icon(Icons.Filled.Close, "이 줄 지우기") }
         }
     }
-    if (form.others.size < MAX_OTHERS) {
+    // [RVJ-26] The six are the ones typed by hand; what the payslip itself listed is all there, however many.
+    if (form.others.count { !it.fromSlip } < MAX_OTHERS) {
         com.bamnat.app.ui.components.AddButton("수당 넣기", onClick = { form.others += OtherLine() })
     }
 }
 
 private const val MAX_OTHERS = 6
+private const val NAME_MAX = 20
 
 /** A gap of this share of the payslip or more points at the roster or an allowance first. */
 private const val FAR_PERCENT = 5.0
@@ -661,8 +710,9 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
     SectionCard(title = "줄마다 맞춰 보기", trailing = {
         TextButton(onClick = {
             ui.launch {
-                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
-                    "bamnat-명세서대조-${m.month}.pdf")
+                // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
+                    "bamnat-명세서대조-${m.month}.pdf") }
             }
         }) { Text("PDF") }
     }) {

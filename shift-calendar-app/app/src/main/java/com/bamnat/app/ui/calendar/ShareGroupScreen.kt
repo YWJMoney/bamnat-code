@@ -165,7 +165,7 @@ class ShareGroupViewModel(private val c: AppContainer, private val today: () -> 
             } catch (e: ShareLinkException) {
                 _ui.value = _ui.value.copy(message = words(e.message))
             } catch (e: IOException) {
-                _ui.value = _ui.value.copy(message = "인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요.")
+                _ui.value = _ui.value.copy(message = com.bamnat.app.share.netWords(e, "모임을 불러오지 못했어요."))
             } finally {
                 _ui.value = _ui.value.copy(busy = false)
             }
@@ -183,7 +183,8 @@ class ShareGroupViewModel(private val c: AppContainer, private val today: () -> 
             "rate_limited" -> com.bamnat.app.company.RateLimits.text("모임 코드 쓰기", 3_600, "device")
             "no_link" -> "먼저 근무표 공유에서 내 링크를 만들어 주세요."
             "unsupported" -> "이 판에서는 모임 코드를 쓸 수 없어요."
-            else -> "모임을 불러오지 못했어요 ($code). 잠시 뒤 다시 해 주세요."
+            // 2.0.0 [RVG-24] 검토 PC-92: the server's code stays off the screen.
+            else -> "모임을 불러오지 못했어요. ${com.bamnat.app.ui.components.NetWords.BUSY}"
         }
     }
 }

@@ -115,7 +115,7 @@ class RequestsViewModel(private val c: AppContainer, val calendar: String = Pers
                 .onSuccess {
                     load()
                     _state.value = _state.value.copy(message = when (what) {
-                        "take" -> if (on) "만들기로 했어요. 다 만들면 ‘완성’을 눌러 레시피를 이어 주세요" else "만들기를 내려놨어요"
+                        "take" -> if (on) "만들기로 했어요. 다 만들면 ‘완성’을 눌러 작품을 이어 주세요" else "만들기를 내려놨어요"
                         "done" -> "완성했어요. 요청한 분이 바로 볼 수 있어요"
                         "delete" -> "지웠어요"
                         else -> null
@@ -148,7 +148,7 @@ private fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done
 @Composable
 fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -> Unit, onMake: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
-    val snack = remember { SnackbarHostState() }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     // 1.36 [VIL-15] Opened from a plaza question: 요청 쓰기 starts with its words.
     val draft = remember { RequestDraft.text.also { RequestDraft.text = null } }
     var writing by remember { mutableStateOf(draft != null && vm.canWrite) }
@@ -163,16 +163,16 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     // PC 확인 20ab0254: cleared after it was shown; cleared first, the key changed and took the snackbar down at once.
     LaunchedEffect(s.message) { s.message?.let { snack.showSnackbar(it); vm.shown() } }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
-            TopAppBar(title = { Text("요청 판" + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: "")) },
+            TopAppBar(title = { Text("요청 판" + (vm.style?.let { " · " + RecipeDescribe.short(it) } ?: ""), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally) {
             Column(Modifier.widthIn(max = 640.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("‘이런 레시피 있었으면’을 적으면 좋아요가 모이고, 만들 분이 ‘만들게요’를 눌러 완성하면 그 레시피로 이어져요",
+                Text("‘이런 작품 있었으면’을 적으면 좋아요가 모이고, 만들 분이 ‘만들게요’를 눌러 완성하면 그 작품으로 이어져요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (vm.canWrite) Button(onClick = { writing = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("요청 쓰기") }
                 else Text("요청 쓰기·좋아요는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall)
@@ -180,7 +180,7 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                 when {
                     items == null && s.error != null -> { Text(s.error!!); TextButton(onClick = vm::load) { Text("다시 해 보기") } }
                     items == null -> Text("불러오는 중이에요")
-                    items.isEmpty() -> Text("아직 요청이 없어요. 바라는 레시피를 처음 적어 주세요", style = MaterialTheme.typography.bodyMedium)
+                    items.isEmpty() -> Text("아직 요청이 없어요. 바라는 작품을 처음 적어 주세요", style = MaterialTheme.typography.bodyMedium)
                     else -> items.forEach { q ->
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -189,11 +189,11 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 // 1.36 누락 점검 N14 (1차 사용성 제안): 14일 동안 아무도 못 만든 요청은 이유와 다음 일을 말해요.
                                 if (q.told && q.state == "waiting") Text("스튜디오로 아직 못 만드는 것일 수 있어요. 개발자에게 알렸어요. 만들 수 있게 되면 이 요청에 알려 드려요",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
-                                        q.state == "done" && q.code != null -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 레시피 보기") }
+                                        q.state == "done" && q.code != null -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 작품 보기") }
                                         q.taking && q.state == "making" -> {
                                             TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
                                             TextButton(onClick = { vm.loadMine(); finishing = q.id }) { Text("완성") }
@@ -236,10 +236,10 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
         // 1.39 발굴(마을 돌봄): 요청 글도 거친 말이면 올리기 전에 한 번 물어요(막지 않아요).
         var nudge by remember { mutableStateOf(false) }
         val go = { vm.write(text) { ok -> if (ok) writing = false } }
-        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(onEdit = { nudge = false }, onSend = { nudge = false; go() })
+        if (nudge) com.bamnat.app.ui.hub.NudgeDialog(text, onEdit = { nudge = false }, onSend = { nudge = false; go() })
         AlertDialog(
             onDismissRequest = { writing = false },
-            title = { Text("이런 레시피 있었으면") },
+            title = { Text("이런 작품 있었으면") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     OutlinedTextField(text, { if (it.length <= 200) text = it }, label = { Text("예: 간호사 3교대 근무별 알람 세트") }, minLines = 2)
@@ -270,10 +270,10 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
     finishing?.let { id ->
         AlertDialog(
             onDismissRequest = { finishing = null },
-            title = { Text("어떤 레시피로 완성했나요?") },
+            title = { Text("어떤 작품으로 완성했나요?") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (s.mine.isEmpty()) Text("올린 레시피가 아직 없어요. 먼저 만들어 올려 주세요")
+                    if (s.mine.isEmpty()) Text("올린 작품이 아직 없어요. 먼저 만들어 올려 주세요")
                     s.mine.forEach { r -> TextButton(onClick = { finishing = null; s.items.orEmpty().firstOrNull { it.id == id }?.let { q -> confirming = q to r } }) { Text(r.title) } }
                 }
             },

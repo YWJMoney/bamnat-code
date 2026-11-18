@@ -29,10 +29,44 @@ object QuoteImage {
     /** 1.39 [SPREAD-05][SPREAD-11] The line that names the app, also shown beside the send window's switch. */
     const val MARK_LINE = "밤낮 달력에서 만든 견적서예요."
 
+    /** 2.0.0 [RVP-64] An item's name takes two lines at most; a note, all of its 200 letters. */
+    private const val NAME_LINES = 2
+    private const val NOTE_LINES = 12
+    private const val LINE = 40f
+    private const val NOTE_LINE = 44f
+
+    /**
+     * 2.0.0 [RVP-64] (검토 REST-05) What the picture says, line by line, before it is drawn: a long note (계좌, 조건) and an item's
+     * long name ('욕실 타일 철거 및 방수 공사') wrap instead of being cut with '…' where the customer never sees the rest, and the
+     * picture grows to hold them. Read by the test too.
+     */
+    internal class Lines(val sub: List<String>, val names: List<List<String>>, val note: List<String>)
+
+    internal fun lines(q: Quote, sender: String): Lines {
+        val text = Paint(Paint.ANTI_ALIAS_FLAG)
+        text.textSize = 36f
+        val sub = listOfNotNull(q.title.takeIf { it.isNotBlank() }, sender.takeIf { it.isNotBlank() }?.let { "보낸 사람 $it" }).joinToString(" · ")
+        val subLines = if (sub.isEmpty()) emptyList() else wrap(sub, text, WIDTH - 2 * PAD, 2)
+        text.textSize = 32f
+        val names = items(q).map { wrap(it.name.ifBlank { "품목" }, text, NAME_WIDTH, NAME_LINES) }
+        text.textSize = 30f
+        val note = q.note.trim().lines().filter { it.isNotBlank() }.flatMap { wrap(it.trim(), text, WIDTH - 2 * PAD, NOTE_LINES) }.let { all ->
+            if (all.size <= NOTE_LINES) all else all.take(NOTE_LINES - 1) + ellipsize(all.drop(NOTE_LINES - 1).joinToString(" "), text, WIDTH - 2 * PAD)
+        }
+        return Lines(subLines, names, note)
+    }
+
+    private fun items(q: Quote) = q.items.filter { it.name.isNotBlank() || it.unitPrice > 0 }
+
+    private val xQty = WIDTH - PAD - 520f
+    private val NAME_WIDTH = xQty - 150f - PAD
+
     fun render(q: Quote, sender: String, mark: Boolean = true): Bitmap {
-        val items = q.items.filter { it.name.isNotBlank() || it.unitPrice > 0 }
-        val noteLines = q.note.trim().lines().filter { it.isNotBlank() }.take(4)
-        val height = (380f + (items.size + 1) * ROW + 4 * 64f + 80f + noteLines.size * 44f + 140f).toInt()
+        val items = items(q)
+        val laid = lines(q, sender)
+        val itemsHeight = laid.names.sumOf { (ROW + (it.size - 1) * LINE).toDouble() }.toFloat()
+        val subExtra = (laid.sub.size - 1).coerceAtLeast(0) * 48f
+        val height = (380f + subExtra + ROW + itemsHeight + 4 * 64f + 80f + laid.note.size * NOTE_LINE + 140f).toInt()
         val bmp = Bitmap.createBitmap(WIDTH, height, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         c.drawColor(0xFFFFFFFF.toInt())
@@ -44,14 +78,12 @@ object QuoteImage {
         c.drawText("견적서", PAD, 120f, text)
         text.textSize = 36f; text.typeface = Typeface.DEFAULT; text.color = MUTED
         c.drawText("${q.date.year}.${q.date.monthValue}.${q.date.dayOfMonth}" + (q.client.takeIf { it.isNotBlank() }?.let { " · $it 귀하" } ?: ""), PAD, 180f, text)
-        val sub = listOfNotNull(q.title.takeIf { it.isNotBlank() }, sender.takeIf { it.isNotBlank() }?.let { "보낸 사람 $it" }).joinToString(" · ")
-        if (sub.isNotEmpty()) c.drawText(ellipsize(sub, text, WIDTH - 2 * PAD), PAD, 228f, text)
+        laid.sub.forEachIndexed { i, s -> c.drawText(s, PAD, 228f + i * 48f, text) }
 
         val xName = PAD
-        val xQty = WIDTH - PAD - 520f
         val xPrice = WIDTH - PAD - 260f
         val xAmount = WIDTH - PAD
-        var y = 310f
+        var y = 310f + subExtra
         text.textSize = 30f; text.color = MUTED; text.typeface = bold
         c.drawText("품목", xName, y, text)
         text.textAlign = Paint.Align.RIGHT
@@ -61,14 +93,17 @@ object QuoteImage {
         text.textAlign = Paint.Align.LEFT
         y += 24f
         c.drawLine(PAD, y, WIDTH - PAD, y, line)
-        for (it in items) {
-            y += ROW
+        for ((at, it) in items.withIndex()) {
+            val name = laid.names[at]
+            val top = y
+            y += ROW + (name.size - 1) * LINE
             text.typeface = Typeface.DEFAULT; text.textSize = 32f; text.color = INK
-            c.drawText(ellipsize(it.name.ifBlank { "품목" }, text, xQty - 150f - xName), xName, y - 24f, text)
+            // The numbers stand on the first line of the name; the name's second line goes under it.
+            name.forEachIndexed { i, s -> c.drawText(s, xName, top + ROW - 24f + i * LINE, text) }
             text.textAlign = Paint.Align.RIGHT
-            c.drawText(DayRate.trim(it.quantity) + it.unit, xQty, y - 24f, text)
-            c.drawText(won.format(it.unitPrice), xPrice, y - 24f, text)
-            c.drawText(won.format(it.amount), xAmount, y - 24f, text)
+            c.drawText(DayRate.trim(it.quantity) + it.unit, xQty, top + ROW - 24f, text)
+            c.drawText(won.format(it.unitPrice), xPrice, top + ROW - 24f, text)
+            c.drawText(won.format(it.amount), xAmount, top + ROW - 24f, text)
             text.textAlign = Paint.Align.LEFT
             c.drawLine(PAD, y, WIDTH - PAD, y, line)
         }
@@ -95,14 +130,34 @@ object QuoteImage {
         text.textSize = 30f; text.typeface = Typeface.DEFAULT; text.color = MUTED
         c.drawText("유효기간 ${q.validUntil.year}.${q.validUntil.monthValue}.${q.validUntil.dayOfMonth}까지" +
             if (q.vat == QuoteVat.NONE) " · 부가세 없음" else "", PAD, y, text)
-        for (n in noteLines) {
-            y += 44f
-            c.drawText(ellipsize(n, text, WIDTH - 2 * PAD), PAD, y, text)
+        for (n in laid.note) {
+            y += NOTE_LINE
+            c.drawText(n, PAD, y, text)
         }
         text.textSize = 26f
         // 1.39 [SPREAD-05] The line that names the app goes only while 설정 › 데이터 › '보내는 사진에 밤낮 표시' is on.
         if (mark) c.drawText(MARK_LINE, PAD, height - 48f, text)
         return bmp
+    }
+
+    /**
+     * 2.0.0 [RVP-64] [s] in lines no wider than [width], broken at a space where one is near and anywhere in a long run (한글 has
+     * no spaces in a long word, and an account number has none); past [max] lines the last ends in '…'.
+     */
+    internal fun wrap(s: String, paint: Paint, width: Float, max: Int): List<String> {
+        val out = mutableListOf<String>()
+        var rest = s.trim()
+        while (rest.isNotEmpty()) {
+            if (out.size == max - 1) { out += ellipsize(rest, paint, width); break }
+            if (paint.measureText(rest) <= width) { out += rest; break }
+            var n = paint.breakText(rest, true, width, null).coerceAtLeast(1)
+            // Back to a space in the last third of the line, so a word is not split when it need not be.
+            val space = rest.lastIndexOf(' ', n - 1)
+            if (space > n * 2 / 3) n = space
+            out += rest.substring(0, n).trimEnd()
+            rest = rest.substring(n).trimStart()
+        }
+        return out
     }
 
     private fun ellipsize(s: String, paint: Paint, width: Float): String {

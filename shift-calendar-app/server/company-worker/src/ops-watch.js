@@ -24,6 +24,8 @@ export const WATCH = {
   sample: 900,
   /** 한 시간 동안 메모리에 모을 주소 수(그 밖은 '기타'). */
   routes: 120,
+  /** 2.0.0 [RVQ-03] 판마다 센 요청(카나리 비교)은 이틀만. */
+  keepVerDays: 2,
 };
 
 export const WATCH_SCHEMA = [
@@ -39,16 +41,31 @@ export const WATCH_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS req_stats (hour TEXT NOT NULL, route TEXT NOT NULL, n INTEGER NOT NULL, err INTEGER NOT NULL, ms_sum INTEGER NOT NULL,
     ms_max INTEGER NOT NULL, b0 INTEGER NOT NULL DEFAULT 0, b1 INTEGER NOT NULL DEFAULT 0, b2 INTEGER NOT NULL DEFAULT 0, b3 INTEGER NOT NULL DEFAULT 0,
     b4 INTEGER NOT NULL DEFAULT 0, b5 INTEGER NOT NULL DEFAULT 0, b6 INTEGER NOT NULL DEFAULT 0, b7 INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (hour, route))`,
+  // 2.0.0 [RVQ-03] 검토 I21c-02: 판(Cloudflare 배포 번호 앞 8자)·분마다 요청·5xx·걸린 시간. 카나리 동안 새 판과 앞 판을 견줘요.
+  // req_stats에 칸을 더하면 판이 둘일 때 같은 시간·주소가 두 줄이 되어 숫자 화면이 겹쳐 세서, 따로 둬요. 휴대폰·사람 값은 없어요.
+  `CREATE TABLE IF NOT EXISTS ver_stats (minute TEXT NOT NULL, ver TEXT NOT NULL, n INTEGER NOT NULL, err INTEGER NOT NULL, ms_sum INTEGER NOT NULL,
+    PRIMARY KEY (minute, ver))`,
 ];
 
 const kst = (ms) => new Date(ms + 9 * HOUR).toISOString();
 export const watchHour = (ms) => kst(ms).slice(0, 13);
 export const watchDay = (ms) => kst(ms).slice(0, 10);
 
-/** 주소에서 번호·글자 덩어리(휴대폰·문의·회사 번호)를 :id로. 같은 주소의 요청이 한 줄로 모여요. */
+/**
+ * 주소에서 번호·글자 덩어리(휴대폰·문의·회사 번호)를 :id로. 같은 주소의 요청이 한 줄로 모여요.
+ * 2.0.0 [RVN-15] 검토 SVC-104: 번호는 57글자(대·소문자·숫자, index.js ID_CHARS)에서 뽑아 숫자가 없는 번호도 있어요. 그런 번호가 그대로 남아
+ * 같은 주소가 번호마다 갈라지고, 문의·글 번호가 통계 표에 14~90일 남았어요. 이제 8자 이상이면서 대문자나 숫자가 든 조각도 :id예요(주소의 낱말은
+ * 소문자뿐이라 'companies'·'reactions'는 그대로). '%'가 든 조각(찾은 말 같은 글)은 :text.
+ */
 export function routeOf(path) {
   const p = String(path ?? "").split("?")[0].slice(0, 200);
-  return p.split("/").map((s) => (s.length >= 6 && /\d/.test(s) && /^[A-Za-z0-9_.~-]+$/.test(s)) || s.length > 24 || /^\d+$/.test(s) ? ":id" : s).join("/") || "/";
+  return p.split("/").map((s) => {
+    if (s.includes("%")) return ":text";
+    const plain = /^[A-Za-z0-9_.~-]+$/.test(s);
+    if ((s.length >= 6 && /\d/.test(s) && plain) || s.length > 24 || /^\d+$/.test(s)) return ":id";
+    if (s.length >= 8 && plain && /[A-Z0-9]/.test(s)) return ":id";
+    return s;
+  }).join("/") || "/";
 }
 
 /** 걸린 시간이 들어갈 칸(0..7). */
@@ -78,7 +95,7 @@ function bufferOf(env) {
   if (!key) return null;
   let b = buffers.get(key);
   if (!b) {
-    b = { rows: new Map(), at: Date.now() };
+    b = { rows: new Map(), vers: new Map(), at: Date.now() };
     buffers.set(key, b);
   }
   return b;
@@ -96,20 +113,42 @@ export function recordRequest(env, path, status, ms, now = Date.now()) {
   const r = b.rows.get(k) ?? { hour, route, n: 0, err: 0, sum: 0, max: 0, b: new Array(WATCH.edges.length + 1).fill(0) };
   const t = Math.max(0, Math.round(Number(ms) || 0));
   r.n += 1;
-  if (status >= 500) r.err += 1;
+  // 2.0.0 [RVN-03] 500만 오류로 세요(SVC-84): 일부러 쉬게 한 기능의 503과 Play·공유 서버가 안 닿을 때의 502·504는 서버가 망가진 것이 아니에요.
+  if (status === 500) r.err += 1;
   r.sum += t;
   r.max = Math.max(r.max, t);
   r.b[bucketOf(t)] += 1;
   b.rows.set(k, r);
+  // 2.0.0 [RVQ-03] 판마다(배포 도구의 health·카나리 읽기는 빼요: 새 판에 직접 보내는 확인이 새 판 숫자를 좋게 보이게 하지 않게).
+  const ver = String(env.CF_VERSION_METADATA?.id ?? "").slice(0, 8);
+  if (ver && !String(path).startsWith("/api/admin/health")) {
+    const vk = `${verMinute(now)}|${ver}`;
+    const v = b.vers.get(vk) ?? { minute: verMinute(now), ver, n: 0, err: 0, sum: 0 };
+    v.n += 1;
+    if (status >= 500) v.err += 1;
+    v.sum += t;
+    b.vers.set(vk, v);
+  }
 }
+
+/** 2.0.0 [RVQ-03] UTC 분('2026-11-12T09:41'). */
+export const verMinute = (ms) => new Date(ms).toISOString().slice(0, 16);
 
 /** 모은 것을 더해요: 1분이 지났거나 [force](정기 작업). */
 export async function flushWatch(env, now = Date.now(), force = false) {
   const b = bufferOf(env);
-  if (!b || !b.rows.size || (!force && now - b.at < WATCH.flushMs)) return 0;
+  if (!b || (!b.rows.size && !b.vers.size) || (!force && now - b.at < WATCH.flushMs)) return 0;
   const rows = [...b.rows.values()];
+  const vers = [...b.vers.values()];
   b.rows = new Map();
+  b.vers = new Map();
   b.at = now;
+  if (vers.length) {
+    const vsql = `INSERT INTO ver_stats (minute, ver, n, err, ms_sum) VALUES (?1, ?2, ?3, ?4, ?5)
+      ON CONFLICT (minute, ver) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5`;
+    await env.DB.batch(vers.map((v) => env.DB.prepare(vsql).bind(v.minute, v.ver, v.n, v.err, v.sum)));
+  }
+  if (!rows.length) return 0;
   const sql = `INSERT INTO req_stats (hour, route, n, err, ms_sum, ms_max, b0, b1, b2, b3, b4, b5, b6, b7) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
     ON CONFLICT (hour, route) DO UPDATE SET n = n + ?3, err = err + ?4, ms_sum = ms_sum + ?5, ms_max = MAX(ms_max, ?6), b0 = b0 + ?7, b1 = b1 + ?8,
     b2 = b2 + ?9, b3 = b3 + ?10, b4 = b4 + ?11, b5 = b5 + ?12, b6 = b6 + ?13, b7 = b7 + ?14`;
@@ -131,10 +170,76 @@ const sigOf = (route, line) => {
   return h.toString(36);
 };
 
+/**
+ * 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶기 실패(errfail)와 정기 작업 실패(joberr)를 날마다 세요(30일). 오류 묶음 화면이 '묶이지 않은 오류'를
+ * 묶기 전·묶기 실패·정기 작업 세 갈래로 나눠 보여요. 세기도 실패하면 조용히 넘어가요(요청·작업은 그대로).
+ */
+export async function countFailure(env, kind, now = Date.now()) {
+  if (!env?.DB) return;
+  await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2) ON CONFLICT (key) DO UPDATE SET count = count + 1`)
+    .bind(`${kind}|${watchDay(now)}`, now + 30 * DAY).run().catch(() => {});
+}
+
 /** 500 하나를 묶음에 더해요. [app]은 앱이 보낸 판(있으면). */
 export async function recordError(env, path, e, now = Date.now(), app = "") {
   if (!env?.DB) return;
-  const route = routeOf(path);
+  await addError(env, routeOf(path), e, now, app);
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24b-02 독이 든 한 줄 격리: 문의·개발사항 한 줄을 읽다 난 오류는 그 줄만 빼고(장부·정리함·오늘은 계속 돌아요)
+ * 그 줄을 오류 묶음의 주소 칸에 `row/<어디>/<종류>:<번호>`로 적어요. 같은 줄의 같은 오류는 한 묶음이라 몇 번 열어도 한 줄이에요.
+ * 번호는 관리자 앱 안의 줄 번호(문의·개발사항 id)뿐이고, 글·휴대폰 값은 적지 않아요(오류 첫 줄은 errorLine이 따옴표 안을 지워요).
+ */
+export const ROW_WHERE = { ledger: "운영 장부", sort: "정리함", today: "오늘", inquiries: "문의 목록" };
+
+export async function recordRowError(env, where, key, e, now = Date.now()) {
+  if (!env?.DB || !Object.hasOwn(ROW_WHERE, where)) return;
+  console.error(`row ${where} ${key}: ${e?.stack ?? e}`);
+  await addError(env, `row/${where}/${String(key).replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, 80)}`, e, now).catch(() => countFailure(env, "errfail", now));
+}
+
+/** 여러 줄을 한꺼번에(오류 하나가 다른 줄 기록을 막지 않아요). */
+export async function recordRowErrors(env, where, bad, now = Date.now()) {
+  if (!bad?.length) return;
+  await Promise.all(bad.slice(0, 20).map((b) => recordRowError(env, where, b.key, b.e, now)));
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24c-01 '무엇 때문에 멈췄나': 지난 사흘 안에 읽지 못한 줄(아직 고치지 않은 것). 오늘 화면이 원인 줄·우회·넘기기를 한 장으로 보여요.
+ */
+export const rowTroubleQuery = (now) => [`SELECT sig, route, message, total, first_at, last_at, status, note FROM error_groups
+    WHERE route LIKE 'row/%' AND status IN ('new', 'again', 'seen') AND last_at > ? ORDER BY last_at DESC LIMIT 5`, now - 3 * DAY];
+
+export async function rowTrouble(env, now = Date.now()) {
+  return rowTroubleRows(await all(env, ...rowTroubleQuery(now)).catch(() => []));
+}
+
+export function rowTroubleRows(rows) {
+  return (rows ?? []).map((r) => {
+    const [, where = "", key = ""] = String(r.route).split("/");
+    const [type = "", id = ""] = key.split(":");
+    return { sig: r.sig, where, whereName: ROW_WHERE[where] ?? where, type, id, message: r.message, total: r.total,
+      firstAt: r.first_at, lastAt: r.last_at, status: r.status, note: r.note ?? "" };
+  });
+}
+
+/**
+ * 2.0.0 [RVA-52] 검토 I24c-02 '화면 자체가 시험': 관리자 앱이 화면 오류(그리다 난 오류·잡히지 않은 오류)와 빈 화면(본문 글자 0)을 스스로 알려요.
+ * 오류 묶음의 주소 칸 `screen/<화면>`. 남기는 것은 화면 이름(경로 이름)·어디(줄 그리기 등)·관리자 앱 빌드·오류 첫 줄뿐이에요(errorLine이 따옴표 안·긴 숫자를 지워요).
+ * 화면의 글·사람 정보는 보내지도 남기지도 않아요. ADMX-02 같은 빈 화면은 서버 오류가 아니라 전에는 아무 데도 안 잡혔어요.
+ */
+export const SCREEN_ERROR = { perHour: 30, where: /^[a-z][a-z0-9-]{0,29}$/ };
+
+export async function recordScreenError(env, { screen, where = "", kind = "error", message = "" }, now = Date.now(), build = "") {
+  if (!env?.DB) return;
+  const name = SCREEN_ERROR.where.test(screen ?? "") ? screen : "unknown";
+  const at = SCREEN_ERROR.where.test(where ?? "") ? where : "";
+  const line = kind === "blank" ? "빈 화면(본문 글자 0)" : String(message || "오류");
+  await addError(env, `screen/${name}`, { message: `${at ? `[${at}] ` : ""}${line}`, stack: "" }, now, String(build ?? "").slice(0, 20));
+}
+
+async function addError(env, route, e, now, app = "") {
   const line = errorLine(e);
   const sig = sigOf(route, line);
   const stack = String(e?.stack ?? "").split("\n").slice(1, 6).map((s) => s.trim()).join("\n").replace(/https?:\/\/\S+/g, "").slice(0, WATCH.sample);
@@ -161,6 +266,7 @@ export async function runJob(env, step, fn, now = Date.now()) {
     return v;
   } catch (e) {
     console.error(`job ${step}: ${e?.stack ?? e}`);
+    await countFailure(env, "joberr", now);
     await run(env, `INSERT INTO job_runs (step, fail_at, error, ms, runs, fails, last_at, ver) VALUES (?1, ?2, ?3, ?4, 1, 1, ?2, ?5)
       ON CONFLICT (step) DO UPDATE SET fail_at = ?2, error = ?3, ms = ?4, runs = runs + 1, fails = fails + 1, last_at = ?2, ver = ?5`,
     step, now, errorLine(e), Date.now() - t0, SERVER_VERSION).catch(() => {});
@@ -181,7 +287,22 @@ export async function pruneWatch(env, now = Date.now()) {
     env.DB.prepare("DELETE FROM req_stats WHERE hour < ?").bind(watchHour(now - WATCH.keepStatsDays * DAY)),
     env.DB.prepare("DELETE FROM error_days WHERE day < ?").bind(watchDay(now - WATCH.keepErrorDays * DAY)),
     env.DB.prepare("DELETE FROM error_groups WHERE last_at < ?").bind(now - WATCH.keepErrorDays * DAY),
+    env.DB.prepare("DELETE FROM ver_stats WHERE minute < ?").bind(verMinute(now - WATCH.keepVerDays * DAY)),
   ]);
+}
+
+/**
+ * 2.0.0 [RVQ-03] 검토 I21c-02: 카나리 비교. [ids]는 배포 도구가 아는 두 판의 배포 번호 앞 8자(새 판·앞 판). 지난 [minutes]분 동안
+ * 판마다 {n, err, ms}. 번호를 모르면 아무것도 받지 못해요(공개 길이라 다른 판·전체 숫자는 내보내지 않아요).
+ */
+export async function canaryStats(env, ids, minutes, now = Date.now()) {
+  const want = ids.filter((x) => /^[0-9a-f]{8}$/.test(x ?? ""));
+  if (!env?.DB || !want.length) return {};
+  await flushWatch(env, now, true).catch(() => {});
+  const from = verMinute(now - Math.min(30, Math.max(1, minutes || 10)) * 60 * 1000);
+  const rows = await all(env, `SELECT ver, SUM(n) AS n, SUM(err) AS err, SUM(ms_sum) AS ms FROM ver_stats WHERE minute >= ? AND ver IN (${want.map(() => "?").join(", ")}) GROUP BY ver`,
+    from, ...want);
+  return Object.fromEntries(rows.map((r) => [r.ver, { n: Number(r.n), err: Number(r.err), ms: Number(r.ms) }]));
 }
 
 // ---- 관리자 앱에 보이는 것 ----
@@ -192,6 +313,11 @@ export const JOB_NAMES = {
   flags: "기능 날짜·출시 알림", alerts: "주의 알림 보내기", digest: "아침·저녁 요약 알림", growth: "스튜디오 요구 정리", held: "보류 끝난 Claude 답 보내기",
   play: "Play 출시 트랙 읽기", ship: "자동 출시 안내 보내기", live: "업데이트 없이 고친 것 닿음 보기", effect: "출시 2주 뒤 효과 판정",
   watch: "응답 속도 모으기·정리", reviews: "스토어 리뷰 가져오기", backup: "하루 백업", incident: "사고 살피기", requests: "데이터 요청 기한 알림",
+  // 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업도 단계마다.
+  held5: "보류 끝난 답 보내기(5분)", ship5: "출시 안내 보내기(5분)", surge: "광장 글 급증 살피기(5분)",
+  // 1.39 [OBS2-01] 이름이 없어 서버 상태에 'observe'로 보였어요.
+  observe: "Play 보고서·개선 신호 합치기",
+  five: "5분 작업(보류 끝난 답·자동 출시 안내)", // 2.0.0 [RVN-02]
 };
 
 /**
@@ -260,8 +386,12 @@ export async function errorState(env, now = Date.now(), { status = "open" } = {}
   const counted = new Map((await all(env, "SELECT key, count FROM counters WHERE key >= ? AND key LIKE 'errors|%'", `errors|${from}`).catch(() => []))
     .map((r) => [String(r.key).slice(7), r.count]));
   const loose = list.reduce((n, day, i) => n + Math.max(0, (counted.get(day) ?? 0) - daily[i]), 0);
+  // 2.0.0 [RVQ-13] 검토 SRV-18·U21-06: 묶이지 않은 것을 묶기 실패와 그 밖(묶기 전·표 준비 전)으로, 정기 작업 실패는 따로.
+  const sum = async (kind) => (await all(env, "SELECT COALESCE(SUM(count), 0) AS n FROM counters WHERE key >= ? AND key LIKE ?", `${kind}|${from}`, `${kind}|%`)
+    .catch(() => [{ n: 0 }]))[0]?.n ?? 0;
+  const [failed, jobs] = [Math.min(loose, Number(await sum("errfail"))), Number(await sum("joberr"))];
   return {
-    days: list, daily, loose,
+    days: list, daily, loose, split: { before: loose - failed, failed, jobs },
     groups: groups.map((g) => ({ sig: g.sig, route: g.route, message: g.message, sample: g.sample, app: g.app, firstAt: g.first_at, lastAt: g.last_at,
       total: g.total, status: g.status, note: g.note, fresh: now - g.first_at < DAY, trend: list.map((day) => per.get(g.sig)?.get(day) ?? 0) })),
     counts: Object.fromEntries((await all(env, "SELECT status, COUNT(*) AS n FROM error_groups GROUP BY status")).map((r) => [r.status, r.n])),
@@ -298,7 +428,7 @@ export function requiredSetup(env) {
     { key: "RATE_SALT", need: "must", ok: has("RATE_SALT"), what: "요청 한도용 소금 값", lose: "네트워크 한도가 약해져요" },
     { key: "VAPID_PUBLIC_KEY·VAPID_PRIVATE_KEY", need: "must", ok: has("VAPID_PUBLIC_KEY") && has("VAPID_PRIVATE_KEY"), what: "관리자 휴대폰 알림",
       lose: "새 문의·주의·사고·아침 요약 알림이 오지 않아 앱을 열어야만 알아요" },
-    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 서비스 계정(결제 확인·비정상 종료·ANR·스토어 리뷰)",
+    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 연결 열쇠(서비스 계정: 결제 확인·비정상 종료·ANR·스토어 리뷰)",
       lose: "결제를 Play와 맞춰 보지 못하고, 판 건강·스토어 리뷰가 비어요" },
     { key: "FCM_SERVICE_ACCOUNT", need: "nice", ok: has("FCM_SERVICE_ACCOUNT"), what: "앱 사용자에게 보내는 푸시(문의 답 알림)", lose: "문의 답이 앱을 열 때만 보여요" },
     { key: "BACKUP(R2)", need: "nice", ok: Boolean(env.BACKUP && typeof env.BACKUP.put === "function"), what: "하루 백업을 둘 R2 저장소", lose: "D1 되돌리기(Time Travel)만 쓸 수 있어요" },
@@ -309,7 +439,9 @@ export function requiredSetup(env) {
     { key: "PLAY_REPORTS_BUCKET", need: "nice", ok: has("PLAY_REPORTS_BUCKET"), what: "Play 보고서(설치·삭제·스토어 전환·출처)", lose: "숫자 › 한눈에의 전체 사용자 칸이 비어요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
-  return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };
+  const must = items.filter((i) => i.need === "must" && !i.ok);
+  // 2.0.0 [RVA-38] 검토 ADM-14 같은 구조(오늘 › 주의 필요): 주인이 읽는 줄에는 환경 변수 이름 대신 하는 일 이름(names). 변수 이름은 넣는 곳(서버 상태)에만.
+  return { items, missing: must.map((i) => i.key), names: must.map((i) => i.what.replace(/\s*\(.*?\)/g, "").trim()) };
 }
 
 /** 공유 서버가 살아 있는지(있을 때만): 걸린 시간과 답. */

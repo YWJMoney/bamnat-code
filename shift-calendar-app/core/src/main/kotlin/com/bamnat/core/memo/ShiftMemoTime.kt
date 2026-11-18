@@ -27,22 +27,23 @@ object ShiftMemoTime {
      */
     val AFTER_NIGHT: LocalTime = LocalTime.of(14, 0)
     const val SLEEP_HOURS = 7L
-    /** A shift that ends before this the next morning (00:30 마감) leaves the morning as it was. */
-    private val SLEPT_BY: LocalTime = LocalTime.of(5, 0)
 
-    /** The 야간 that ends on [date]'s morning, as [before] (the day before) says, or null. */
-    private fun nightEnd(date: LocalDate, before: Day?): LocalTime? {
+    /** When the sleep after the 야간 that ends on [date]'s morning ends, as [before] (the day before) says, or null ([ShiftClash.sleptUntil]). */
+    private fun sleptUntil(date: LocalDate, before: Day?): LocalTime? {
         if (before == null || !before.work || before.date != date.minusDays(1)) return null
         val start = before.start ?: return null
         val end = before.end ?: return null
-        return end.takeIf { it < start && it > SLEPT_BY }
+        return ShiftClash.sleptUntil(start, end)
     }
 
-    /** When to tell on the day off [date]: its morning, or the afternoon after a 야간 ([AFTER_NIGHT]). */
+    /**
+     * When to tell on the day off [date]: its morning, or the afternoon after a 야간 ([AFTER_NIGHT]). 2.0.0 [RVI-42] (검토 MEMO-21)
+     * By the same sleep as the 겹침 경고: a night whose sleep runs past the morning (03~05시 퇴근 too) moves it to the afternoon; one
+     * that leaves the morning (00:30 마감) keeps it.
+     */
     fun offTime(date: LocalDate, before: Day?): LocalDateTime {
-        val end = nightEnd(date, before) ?: return date.atTime(OFF_TIME)
-        val woke = end.plusHours(SLEEP_HOURS)
-        return date.atTime(if (woke < end || woke < AFTER_NIGHT) AFTER_NIGHT else woke)
+        val woke = sleptUntil(date, before)?.takeIf { it.isAfter(OFF_TIME) } ?: return date.atTime(OFF_TIME)
+        return date.atTime(maxOf(woke, AFTER_NIGHT))
     }
 
     /** When to tell about [day]: an hour before its start, or the morning (the afternoon after a 야간, [before] the day before). */
@@ -76,6 +77,8 @@ object ShiftMemoTime {
     fun shiftOf(resolver: com.bamnat.core.schedule.ScheduleResolver): MemoRepeat.ShiftOf = object : MemoRepeat.ShiftOf {
         override fun on(date: LocalDate): Long? = resolver.shiftIdOn(date)
         override fun rest(date: LocalDate): Boolean = isRest(resolver.resolve(date))
+        override fun hours(date: LocalDate): Pair<java.time.LocalTime, java.time.LocalTime>? =
+            resolver.resolve(date).takeIf { it.isWorkDay }?.let { r -> r.start?.let { s -> r.end?.let { e -> s to e } } }
     }
 
     /** [r] as a [Day] for the times above: its kind of day, or [REST_NAME] for a planned day off with none; null for nothing planned. */
@@ -94,6 +97,12 @@ object ShiftMemoTime {
         return { d -> byDate[d.date.minusDays(1)] }
     }
 
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) The next time [anchor] is told after [now] over [days] (the work days among them), or null. */
+    fun workNext(days: List<Day>, anchor: WorkAnchor, now: LocalDateTime): LocalDateTime? = days.asSequence()
+        .filter { it.work && it.start != null && it.end != null }
+        .mapNotNull { anchor.on(it.date, it.start!! to it.end!!) }
+        .filter { it.isAfter(now) }.minOrNull()
+
     /** For the dialog: the next of each kind of shift ahead, and the next day off, soonest first, at most [max]. */
     fun suggestions(days: List<Day>, now: LocalDateTime, max: Int = 4): List<Suggestion> {
         val seen = HashSet<String>()
@@ -111,6 +120,9 @@ object ShiftMemoTime {
         return out.sortedBy { it.at }
     }
 
+    /** 2.0.0 [RVI-53] (검토 MEMO-19) Each kind of day's pattern, made once: [find] runs as one types. */
+    private val byName = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
     private val OFF_WORDS = listOf("쉬는 날", "쉬는날", "휴무 날", "휴무날", "휴무일", "비번 날", "비번날", "휴일에", "쉴 때")
     private val SUFFIX = "(?:\\s*근무)?\\s*(?:때|날|출근|들어가기\\s*전|전에|전|하는\\s*날|에)"
 
@@ -118,14 +130,20 @@ object ShiftMemoTime {
      * The time [text] means by a shift ("다음 야간 때", "야간 출근 전", "주간 날", "쉬는 날"), on [days] ahead; null when
      * it names none, or the shift is not on the calendar ahead. "다다음 야간" is the one after.
      */
-    fun find(text: String, now: LocalDateTime, days: List<Day>): MemoTime.Found? {
+    fun find(text: String, now: LocalDateTime, days: List<Day>): MemoTime.Found? = match(text, now, days)?.found
+
+    /** 2.0.0 [RVI-76] (검토 U07a-11) What [find] found and where in [text] its words are, so a 한 줄 can take them out of its title. */
+    data class Match(val found: MemoTime.Found, val range: IntRange)
+
+    /** [find] with the words it read. */
+    fun match(text: String, now: LocalDateTime, days: List<Day>): Match? {
         val before = beforeOf(days)
         val ahead = days.sortedBy { it.date }.filter { timeFor(it, before(it)).isAfter(now) }
         if (ahead.isEmpty()) return null
-        var best: Pair<Int, MemoTime.Found>? = null
+        var best: Pair<IntRange, MemoTime.Found>? = null
         val names = ahead.filter { it.name.isNotBlank() }.map { it.name }.distinct().sortedByDescending { it.length }
         for (name in names) {
-            val re = Regex("(다다음|다음|담|이번)?\\s*${Regex.escape(name)}$SUFFIX")
+            val re = byName.getOrPut(name) { Regex("(다다음|다음|담|이번)?\\s*${Regex.escape(name)}$SUFFIX") }
             val m = re.find(text) ?: continue
             // A bare name with no "다음" and no suffix is not asked ("야간 수당" is just a word); the regex needs the suffix.
             val second = m.groupValues[1] == "다다음"
@@ -133,16 +151,16 @@ object ShiftMemoTime {
             val day = (if (second) list.getOrNull(1) else list.firstOrNull()) ?: continue
             val at = timeFor(day, before(day))
             val found = MemoTime.Found(at, label(day, at).replaceFirst("다음 ", if (second) "다다음 " else "다음 "))
-            if (best == null || m.range.first < best.first) best = m.range.first to found
+            if (best == null || m.range.first < best.first.first) best = m.range to found
         }
         if (best == null) {
-            val i = OFF_WORDS.mapNotNull { w -> text.indexOf(w).takeIf { it >= 0 } }.minOrNull()
-            if (i != null) ahead.firstOrNull { !it.work }?.let { d ->
+            val word = OFF_WORDS.mapNotNull { w -> text.indexOf(w).takeIf { it >= 0 }?.let { it until it + w.length } }.minByOrNull { it.first }
+            if (word != null) ahead.firstOrNull { !it.work }?.let { d ->
                 val at = timeFor(d, before(d))
-                best = i to MemoTime.Found(at, "다음 쉬는 날(${md(d.date)}) ${partOf(at)}")
+                best = word to MemoTime.Found(at, "다음 쉬는 날(${md(d.date)}) ${partOf(at)}")
             }
         }
-        return best?.second
+        return best?.let { (range, found) -> Match(found, range) }
     }
 
     /**

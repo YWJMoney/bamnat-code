@@ -59,6 +59,9 @@ object AppFonts {
             "hand" -> FontFamily.Cursive
             else -> FontCatalog.byId(id)?.takeIf { it.family != null }?.let { f ->
                 // An open font: its files once they are down, else the closest phone font (not kept, so the files are used once there).
+                // 2.0.0 [RVP-19] (검토 UIX-57) While it is still coming down, its stand-in is drawn without looking for the file
+                // again on every letter; the check comes back once the download has ended (READY, FAILED or none).
+                if (loads[id] == Load.LOADING || loads[id] == Load.WAITING) return standIn(f)
                 val regular = context?.let { OpenFonts.file(it, id, bold = false) }
                 if (regular == null) return standIn(f)
                 val bold = OpenFonts.file(context, id, bold = true)

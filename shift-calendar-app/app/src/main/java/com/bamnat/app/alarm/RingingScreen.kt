@@ -242,13 +242,15 @@ internal fun allOffLabel(asking: Boolean) =
 data class RingShift(val day: String, val name: String, val color: Color)
 
 /** [EASE-20] The shift [ring] is for, said from [today]: 오늘, 내일 (an alarm the evening before), 어제 (a nap after a 야간). */
-internal fun ringShift(ring: RingRequest, today: java.time.LocalDate): RingShift? {
-    if (ring.shiftName.isBlank() || ring.label != null || ring.recheck) return null
+internal fun ringShift(ring: RingRequest, today: java.time.LocalDate, style: com.bamnat.core.work.WorkStyle? = null): RingShift? {
+    if (ring.shiftName.isBlank() || ring.label != null || ring.recheck || ring.nap) return null // 2.0.0 [RVI-17] a nap is not the shift
+    // 2.0.0 [RVG-09] 검토 TYPE-01: '오늘 영업' on a shop's day. [RVH-41] T30-75: '오늘 일정' for a field worker or an investor.
+    val noun = com.bamnat.core.alarm.AlarmWords.noun(ring.shiftName, style)
     val day = when (ring.shiftDate) {
-        today -> "오늘 근무"
-        today.plusDays(1) -> "내일 근무"
-        today.minusDays(1) -> "어제 시작한 근무"
-        else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 근무"
+        today -> "오늘 $noun"
+        today.plusDays(1) -> "내일 $noun"
+        today.minusDays(1) -> "어제 시작한 $noun"
+        else -> "${ring.shiftDate.monthValue}월 ${ring.shiftDate.dayOfMonth}일 $noun"
     }
     val color = if (ring.shiftColor == 0L) Color(0xFF3D5AFE) else Color(ring.shiftColor.toInt()).copy(alpha = 1f)
     return RingShift(day, ring.shiftName, color)
@@ -261,7 +263,7 @@ private fun ShiftBlock(shift: RingShift) {
     Surface(
         color = shift.color,
         contentColor = ink,
-        shape = RoundedCornerShape(28.dp),
+        shape = MaterialTheme.shapes.extraLarge,
         modifier = Modifier.widthIn(min = 200.dp, max = 420.dp).fillMaxWidth()
             .semantics(mergeDescendants = true) {},
     ) {
@@ -332,11 +334,11 @@ private fun SlideToAnswer(snoozeMinutes: Int, dismissLabel: String, onSnooze: ()
             f < 0f -> lerp(Color.White.copy(alpha = 0.12f), Calm.copy(alpha = 0.45f), -f)
             else -> Color.White.copy(alpha = 0.12f)
         }
-        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(40.dp)).background(track))
+        Box(Modifier.fillMaxSize().clip(RoundedCornerShape(50)).background(track))
         // Each end is a target too: a tap does what the slide would.
         Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
             Row(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topStart = 40.dp, bottomStart = 40.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topStartPercent = 50, bottomStartPercent = 50))
                     .clickable(onClickLabel = "${snoozeMinutes}분 뒤 다시 울림") { if (!done) { done = true; onSnooze() } }
                     .padding(start = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -347,7 +349,7 @@ private fun SlideToAnswer(snoozeMinutes: Int, dismissLabel: String, onSnooze: ()
             }
             Spacer(Modifier.size(thumb))
             Row(
-                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topEnd = 40.dp, bottomEnd = 40.dp))
+                Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(topEndPercent = 50, bottomEndPercent = 50))
                     .clickable(onClickLabel = dismissLabel) { if (!done) { done = true; onDismiss() } }
                     .padding(end = 18.dp),
                 verticalAlignment = Alignment.CenterVertically,

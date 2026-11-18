@@ -82,6 +82,9 @@ import com.bamnat.core.formula.Parsed
 import com.bamnat.core.formula.RuleTrigger
 import com.bamnat.core.formula.pro
 import java.time.LocalDate
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.Delete
 
 /**
  * [RUL-06] 1.36 886 수식·규칙 편집기 (사용자 2026-11-01 "다중 조건식도 가능하게, 다만 사용자가 편하게"): one condition in two views that
@@ -158,9 +161,9 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
                 TextButton(onClick = onRemove, modifier = Modifier.semantics { contentDescription = "이 조건 빼기" }) { Text("빼기") }
             }
             if (c.op.needsValue) {
-                val choices = CHOICES[c.name]
+                val choices = choicesFor(c.name, LocalContext.current.appContainer.settingsRepository.current.workStyle, c.value)
                 if (choices != null) Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    choices.forEach { v -> FilterChip(selected = c.value == v, onClick = { onChange(c.copy(value = v)) }, label = { Text(v) }) }
+                    choices.forEach { (v, w) -> FilterChip(selected = c.value == v, onClick = { onChange(c.copy(value = v)) }, label = { Text(w) }) }
                 } else OutlinedTextField(
                     c.value, { onChange(c.copy(value = it)) }, Modifier.fillMaxWidth(), singleLine = true,
                     label = { Text(if (type == FormulaName.Type.NUM) "숫자" else "글") },
@@ -179,9 +182,12 @@ private fun CondRow(c: EasyCond, onChange: (EasyCond) -> Unit, onRemove: () -> U
 @Composable
 private fun QuickConds(value: String, onChange: (String) -> Unit) {
     val fx = LocalFxLogic.current
-    val picks = remember(fx.values) {
-        listOf("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"", "주말" to FormulaName.WEEKEND.ko, "쉬는 날" to FormulaName.OFF.ko,
-            "일하는 날" to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
+    // 2.0.0 [RVS-10] 검토 STU-27: '야간인 날' only where there are nights; a day off and a working day in the work's own words.
+    val style = LocalContext.current.appContainer.settingsRepository.current.workStyle
+    val picks = remember(fx.values, style) {
+        listOfNotNull(("야간인 날" to "${FormulaName.ROLE.ko} = \"야간\"").takeIf { "night" in com.bamnat.core.work.TypeWords.roles(style) },
+            "주말" to FormulaName.WEEKEND.ko, (com.bamnat.core.work.TypeWords.roleWord(style, "off") ?: "쉬는 날") to FormulaName.OFF.ko,
+            (com.bamnat.core.work.TypeWords.roleWord(style, "day") ?: "일하는 날") to "아님 ${FormulaName.OFF.ko}", "공휴일" to FormulaName.HOLIDAY.ko) +
             fx.values.filter { it.goal != null && it.kind == com.bamnat.core.formula.ValueKind.NUM }.flatMap { v ->
                 val g = com.bamnat.core.formula.Formula.numText(v.goal!!)
                 listOf("${v.name} 목표 못 채움 ✦" to "값(\"${v.name}\") < $g", "${v.name} 3번 연속 ✦" to "연속(\"${v.name}\") >= 3")
@@ -192,6 +198,18 @@ private fun QuickConds(value: String, onChange: (String) -> Unit) {
             AssistChip(onClick = { onChange(if (value.isBlank()) f else if (f in value) value else "$value 그리고 $f") }, label = { Text(label) })
         }
     }
+}
+
+/**
+ * 2.0.0 [RVS-10] 검토 STU-27: [CHOICES] as (값, 칩 글) for [style]: 근무종류 offers only the kinds of 근무 of that work, said in its words
+ * (가게는 '영업일' 칩이 "주간"을 넣어요, 값은 수식의 말 그대로), and keeps [keep] (a work made elsewhere) so it can still be seen.
+ */
+internal fun choicesFor(name: String, style: com.bamnat.core.work.WorkStyle?, keep: String? = null): List<Pair<String, String>>? {
+    val all = CHOICES[name] ?: return null
+    if (name != FormulaName.ROLE.ko) return all.map { it to it }
+    val roles = com.bamnat.core.work.TypeWords.roles(style)
+    return com.bamnat.core.formula.DayFactsBook.ROLE_WORDS.filter { (k, v) -> k in roles || v == keep }
+        .map { (k, v) -> v to (com.bamnat.core.work.TypeWords.roleWord(style, k) ?: v) }
 }
 
 /** Values a name usually takes, as chips (no typing). */
@@ -438,7 +456,7 @@ private fun StepsEditor(title: String, hint: String, steps: List<LogicAct>, max:
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("${i + 1}. ${a.say()}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Text("${i + 1}. ${com.bamnat.core.formula.FormulaText.blanks(a.say())}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     TextButton(onClick = { onChange(steps.filterIndexed { j, _ -> j != i }) }, modifier = Modifier.semantics { contentDescription = "이 동작 빼기" }) { Text("빼기") }
                 }
                 ActEditor(a, { n -> onChange(steps.toMutableList().also { it[i] = n }) }, scope, title = null)
@@ -472,7 +490,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
     // 1.37 PC 4차: 뒤로 가기로 만들던 규칙이 말없이 사라졌어요. 바꾼 게 있으면 먼저 물어요.
     val first = remember { r }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (r != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "규칙 만들기" else "규칙 고치기") },
@@ -487,10 +505,14 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 when (r.on) {
                     RuleTrigger.START, RuleTrigger.END -> {
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FilterChip(selected = r.role == null, onClick = { r = followWords(r, r.copy(role = null)) }, label = { Text("모든 근무") })
-                            LogicRule.ROLE_WORDS.filterKeys { it != "off" }.forEach { (k, w) ->
-                                FilterChip(selected = r.role == k, onClick = { r = followWords(r, r.copy(role = k)) }, label = { Text(w) })
-                            }
+                            // 2.0.0 [RVS-10] 검토 STU-27: only the kinds of 근무 of this work (가게·투자·현장은 '모든 근무' 하나), in its words.
+                            FilterChip(selected = r.role == null, onClick = { r = followWords(r, r.copy(role = null)) },
+                                label = { Text(com.bamnat.core.work.TypeWords.say(style, "모든 근무")) })
+                            LogicRule.ROLE_WORDS.filterKeys { it != "off" && (it in com.bamnat.core.work.TypeWords.roles(style) || it == r.role) }
+                                .takeIf { it.size > 1 || r.role != null }?.forEach { (k, w) ->
+                                    FilterChip(selected = r.role == k, onClick = { r = followWords(r, r.copy(role = k)) },
+                                        label = { Text(com.bamnat.core.work.TypeWords.roleWord(style, k) ?: w) })
+                                }
                         }
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             // PC D7 (사용성 중): 근무 끝은 '끝날 때'부터, 시작은 '시작할 때'를 바로 앞에.
@@ -553,7 +575,7 @@ fun RuleDialog(start: LogicRule?, scope: FormulaScope, onDone: (LogicRule) -> Un
                 StepsEditor("그리고 이어서", "한 번에 여러 일을 해요(예: 알림 + 값 +1 + 메모 한 줄)", r.more, MAX_MORE, { r = r.copy(more = it) }, scope)
                 if (r.cond.isNotEmpty()) StepsEditor("조건이 아니면", "조건이 맞지 않는 날에 할 일(비우면 아무것도 안 해요)", r.otherwise, MAX_ELSE, { r = r.copy(otherwise = it) }, scope)
                 // PC D10 (낮): '7시'를 넣는 즉시 요약은 07:00으로. 1.37 PC 4차: 요약이 위에서 늘면 아래 칸이 밀려 맨 아래로 옮겼어요.
-                Text(ruleDone(r).say(), style = MaterialTheme.typography.bodyMedium,
+                Text(com.bamnat.core.formula.FormulaText.blanks(ruleDone(r).say()), style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
@@ -586,7 +608,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
     // 1.37 PC 4차: 규칙 창과 같은 구조라 같이 (뒤로 가기 전에 묻기, 요약은 맨 아래).
     val first = remember { b }
     var asking by remember { mutableStateOf(false) }
-    if (asking) DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
+    if (asking) com.bamnat.app.ui.components.DiscardAsk(onKeep = { asking = false }, onDiscard = { asking = false; onDismiss() })
     AlertDialog(
         onDismissRequest = { if (b != first) asking = true else onDismiss() },
         title = { Text(if (start == null) "단추 만들기" else "단추 고치기") },
@@ -642,7 +664,7 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
                     ConditionEditor(b.cond, { b = b.copy(cond = it) }, scope, empty = "조건을 넣어요")
                     StepsEditor("조건이 아니면", "조건이 맞지 않을 때 할 일(비우면 아무것도 안 해요)", b.otherwise, MAX_ELSE, { b = b.copy(otherwise = it) }, scope)
                 }
-                Text(b.say(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                Text(com.bamnat.core.formula.FormulaText.blanks(b.say()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
             }
         },
         confirmButton = {
@@ -653,16 +675,6 @@ fun ButtonDialog(start: LogicButton?, scope: FormulaScope, onDone: (LogicButton)
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
-
-/** 1.37 PC 4차: 만들던 규칙·단추를 뒤로 가기로 닫을 때 한 번 물어요. */
-@Composable
-private fun DiscardAsk(onKeep: () -> Unit, onDiscard: () -> Unit) = AlertDialog(
-    onDismissRequest = onKeep,
-    title = { Text("적은 내용을 버릴까요?") },
-    text = { Text("저장하지 않고 닫으면 지금 적은 것이 사라져요.") },
-    confirmButton = { TextButton(onClick = onDiscard) { Text("버리기") } },
-    dismissButton = { TextButton(onClick = onKeep) { Text("계속 적기") } },
-)
 
 /** Which half of the editor a studio tool shows. */
 enum class LogicShow { ALL, RULES, BUTTONS }
@@ -872,7 +884,9 @@ fun LogicEditor(
         logic.buttons.forEachIndexed { i, b ->
             val sameB = remember(bump, b.id) { store.sameButton(b.id)?.let { "받은 ‘$it’${com.bamnat.app.ui.Fmt.wa(it)} 같음" } }
             val shows = remember(bump, b.show, facts, day) { showLine(b, facts, day) }
-            LineCard(plain(b.say()), listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null }, null, null,
+            // [RVM-20] PC-61: the 단추 by its name and place, then what a press does in a few words.
+            LineCard(listOfNotNull(b.emoji, b.label).joinToString(" ") + " · " + b.place.label, plain(b.brief()),
+                null, null, more = listOfNotNull(shows, sameB, if (phone) "지난 7일 ${store.runs(b.label)}번" else null).joinToString(" · ").ifEmpty { null },
                 onEdit = if (readOnly) onOpen else ({ editButton = i }), onRemove = { onChange(logic.copy(buttons = logic.buttons.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly })
         }
         if (!readOnly && logic.buttons.size < Logic.MAX_BUTTONS) TextButton(onClick = { editButton = -1 }) { Text("+ 단추 만들기") }
@@ -880,7 +894,15 @@ fun LogicEditor(
 
         if (show != LogicShow.BUTTONS) {
         Text("규칙", style = MaterialTheme.typography.titleSmall)
-        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: 야간 근무 1시간 전에 알림, 날짜를 누르면 그날 메모 틀 열기",
+        // 2.0.0 [RVH-41] 검토 T30-84: the example in the kind's words (an investor has no 근무 to go by).
+        val style = com.bamnat.app.ui.flags.rememberScreenStyle()
+        if (logic.rules.isEmpty()) Text("‘언제 → 이럴 때만 → 무엇을’로 저절로 돌게 해요. 예: " + when (style) {
+                com.bamnat.core.work.WorkStyle.INVEST -> ""
+                com.bamnat.core.work.WorkStyle.BUSINESS -> "영업 시작 1시간 전에 알림, "
+                com.bamnat.core.work.WorkStyle.FIELD -> "일정 시작 1시간 전에 알림, "
+                null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 근무 1시간 전에 알림, "
+                else -> "근무 1시간 전에 알림, "
+            } + "날짜를 누르면 그날 메모 틀 열기",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         logic.rules.forEachIndexed { i, r ->
             val on = remember(bump, r.key) { !store.isOff(r.key) }
@@ -904,11 +926,13 @@ fun LogicEditor(
             }
             // PC D10: rules made before names were kept apart show which is which.
             val nth = logic.rules.take(i).count { it.name == r.name }
-            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}: ${plain(r.say())}", note,
+            // [RVM-20] PC-61 (기계 말투, '켜기' 글 단추와 스위치가 둘 다): the name on one line, what it does in a few words on the next, and
+            // on and off by the switch alone (a 받은 규칙 asks first there).
+            LineCard("${r.name}${if (nth > 0) " (${nth + 1})" else ""}", plain(r.brief()),
                 if (phone) on else null, { v -> if (v && came) askOn = r else { store.setOff(r.key, !v); bump++; LogicRunner.schedule(c); if (v) saidOn(r) } },
+                more = note,
                 onEdit = if (readOnly) onOpen else ({ editRule = i }), onRemove = { onChange(logic.copy(rules = logic.rules.filterIndexed { j, _ -> j != i })) }.takeIf { !readOnly },
                 action = when {
-                    phone && !on && came -> "켜기" to { askOn = r }
                     // PC D12 (사용성 중): 놓친 규칙은 그 자리에서 한 번 해요.
                     phone && on && missed -> "지금 한 번 하기" to { c.appScope.launch { LogicRunner.runNow(c, r); bump++ } }
                     else -> null
@@ -938,7 +962,8 @@ fun LogicEditor(
         askOn?.let { r ->
             AlertDialog(onDismissRequest = { askOn = null },
                 title = { Text("받은 규칙을 켤까요?") },
-                text = { Text("‘${r.name}’${com.bamnat.app.ui.Fmt.eun(r.name)} ${r.sayWhen()} ${r.act.say()}를 해요. 메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요.") },
+                // [RVM-23] STU-23: every step and its condition (not the first step alone), and the 쓰기 line only when a step writes.
+                text = { Text("‘${r.name}’: ${com.bamnat.core.formula.FormulaText.blanks(r.say())}\n\n" + (if (r.acts.any { it.verb.writes }) "메모나 가계부를 바꾸는 규칙이에요. 바뀐 것은 아래 '규칙이 쓴 것'에서 되돌릴 수 있어요." else "켜면 바로 움직여요. 끄면 멈춰요.")) },
                 confirmButton = { TextButton(onClick = { store.setOff(r.key, false); askOn = null; bump++; LogicRunner.schedule(c); saidOn(r) }) { Text("켜기") } },
                 dismissButton = { TextButton(onClick = { askOn = null }) { Text("그대로 두기") } })
         }
@@ -1089,7 +1114,8 @@ fun FxDoor(logic: Logic, key: String = com.bamnat.core.formula.FxTaste.OWN) {
     val running = remember(taste) { taste?.running(now) }
     Card(Modifier.fillMaxWidth(), colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("✦ 프로 기능 장치: ${com.bamnat.core.formula.FxPro.say(parts)}", style = MaterialTheme.typography.titleSmall)
+            // 2.0.0 [RVM-12] PC-59·61: the 프로 문 in the words of the one who uses it (설정 › 수식·규칙·버튼 too); each ✦ part is told on its button or rule.
+            Text("✦ 프로 기능 · ${com.bamnat.core.formula.FxPro.plain(parts)}", style = MaterialTheme.typography.titleSmall)
             Text(when {
                 pro -> "프로라 이 기능이 모두 돌아요"
                 running != null -> "하루 써 보기 중이에요 · ${fxUntil(running.second)}까지 모두 돌아요"
@@ -1200,19 +1226,31 @@ private fun ValueDialog(start: com.bamnat.core.formula.LogicValue?, taken: Set<S
 }
 
 @Composable
-private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)?, onRemove: (() -> Unit)?,
-    /** PC D8: one more thing to do on the line (받은 규칙 '켜기'). */
-    action: Pair<String, () -> Unit>? = null) {
+private fun LineCard(text: String, note: String?, on: Boolean?, onSwitch: ((Boolean) -> Unit)?, onEdit: (() -> Unit)? = null, onRemove: (() -> Unit)? = null,
+    /** PC D8: one more thing to do on the line (놓친 규칙 '지금 한 번 하기'). */
+    action: Pair<String, () -> Unit>? = null,
+    /** [RVM-20] PC-61: when it comes next, what happened last time, 지난 7일 (smaller, under what it does). */
+    more: String? = null) {
     Card(Modifier.fillMaxWidth().then(if (onEdit != null) Modifier.clickable(onClickLabel = "고치기", onClick = onEdit) else Modifier)) {
         Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(text, style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                action?.let { (w, go) -> TextButton(onClick = go, modifier = Modifier.heightIn(min = 48.dp)) { Text(w) } }
+                more?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // [RVM-20] 총괄 #462 (줄마다 '고치기' 글자 단추가 줄지어 8개, 조건 2): the line's one more thing is a small chip, not a 글자 단추.
+                action?.let { (w, go) ->
+                    androidx.compose.material3.AssistChip(onClick = go, label = { Text(w) }, modifier = Modifier.padding(top = 2.dp))
+                }
             }
             if (on != null && onSwitch != null) Switch(on, onSwitch, Modifier.semantics { contentDescription = if (on) "규칙 켜짐" else "규칙 꺼짐" })
-            onEdit?.let { TextButton(onClick = it) { Text("고치기") } }
-            onRemove?.let { TextButton(onClick = it) { Text("빼기") } }
+            // The whole line opens it (the card's click, 'onClickLabel 고치기'); the arrow only says so.
+            if (onEdit != null) androidx.compose.material3.Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 8.dp))
+            onRemove?.let {
+                androidx.compose.material3.IconButton(onClick = it) {
+                    androidx.compose.material3.Icon(Icons.Outlined.Delete, contentDescription = "빼기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }

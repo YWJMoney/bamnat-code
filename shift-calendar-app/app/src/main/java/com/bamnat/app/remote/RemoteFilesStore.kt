@@ -145,6 +145,12 @@ class RemoteFilesStore(
     companion object {
         val EVERY: Duration = Duration.ofDays(1)
 
+        /**
+         * 2.0.0 [RVH-14] 검토 CAL-19: [com.bamnat.core.holiday.KoreanHolidays.revision] as a flow. Every calendar's snapshot carries it, so a
+         * 임시공휴일 that comes while the app is open redraws the open month and plans the alarms again (a calendar resting on 공휴일).
+         */
+        val holidays = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.holiday.KoreanHolidays.revision)
+
         /** Hands a checked file to the part of core that uses it. */
         fun apply(f: RemoteFile) {
             when (f.kind) {
@@ -153,7 +159,7 @@ class RemoteFilesStore(
                 RemoteFiles.WAGES -> TradeWages.use(f)
                 RemoteFiles.TAXTABLE -> WithholdingTable.use(f)
                 RemoteFiles.PUBLICPAY -> com.bamnat.core.pay.PublicPayTable.use(f)
-                RemoteFiles.HOLIDAYS -> com.bamnat.core.holiday.KoreanHolidays.use(f)
+                RemoteFiles.HOLIDAYS -> { com.bamnat.core.holiday.KoreanHolidays.use(f); holidays.value = com.bamnat.core.holiday.KoreanHolidays.revision }
                 RemoteFiles.TAXES -> com.bamnat.core.invest.InvestTaxes.use(f)
                 RemoteFiles.ALARM_GUIDE -> com.bamnat.core.remote.AlarmGuides.use(f)
                 RemoteFiles.CYCLES -> com.bamnat.core.plaza.PublicCycles.use(f)

@@ -59,8 +59,15 @@ class CalendarImporter(
             )
         }
 
-    /** What [apply] changed, to put back. */
-    data class Done(val days: Map<LocalDate, DayEntry?>, val memoIds: List<Long>, val keys: List<String>) {
+    /**
+     * What [apply] changed, to put back. 2.0.0 [RVL-18] (검토 SCAN-13) With how it left each day ([after]) and memo ([memoAt]) and the
+     * date of each event ([keyDates]): an undo leaves alone what the user changed since, and those events stay brought in.
+     */
+    data class Done(
+        val days: Map<LocalDate, DayEntry?>, val memoIds: List<Long>, val keys: List<String>,
+        val after: Map<LocalDate, DayEntry?> = emptyMap(), val memoAt: Map<Long, Long> = emptyMap(), val keyDates: Map<String, LocalDate> = emptyMap(),
+        val keyMemos: Map<String, Long> = emptyMap(),
+    ) {
         val shifts: Int get() = days.size
         val memos: Int get() = memoIds.size
     }
@@ -68,7 +75,10 @@ class CalendarImporter(
     suspend fun apply(proposals: List<CalendarImport.Proposal>): Done = withContext(Dispatchers.IO) {
         val days = LinkedHashMap<LocalDate, DayEntry?>()
         val memoIds = ArrayList<Long>()
+        val memoAt = HashMap<Long, Long>()
         val keys = ArrayList<String>()
+        val keyDates = HashMap<String, LocalDate>()
+        val keyMemos = HashMap<String, Long>()
         for (p in proposals) {
             var memoId: Long? = null
             when (p.kind) {
@@ -77,25 +87,43 @@ class CalendarImporter(
                     val before = schedule.setOverride(p.date, override)
                     if (p.date !in days) days[p.date] = before
                 }
+                // 2.0.0 [RVL-30] (검토 SCAN-26·T07b-08) 연차·반차 as leave on its day, as 근무 넣기 puts it.
+                CalendarImport.As.LEAVE -> {
+                    val before = schedule.setLeave(p.date, p.leave ?: com.bamnat.core.model.Leave())
+                    if (p.date !in days) days[p.date] = before
+                }
                 CalendarImport.As.MEMO -> {
                     val text = CalendarImport.memoText(p.event)
                     val title = text.substringBefore('\n')
                     val body = text.substringAfter('\n', "")
-                    memoId = memos.save(Memo(date = p.date, title = title, body = body, calendars = setOf(com.bamnat.app.data.PersonalCalendar.MAIN))).id // [MEMO-01] onto 내 달력, as its days
-                    memoIds += memoId
+                    val saved = memos.save(Memo(date = p.date, title = title, body = body, calendars = setOf(com.bamnat.app.data.PersonalCalendar.MAIN))) // [MEMO-01] onto 내 달력, as its days
+                    memoId = saved.id
+                    memoIds += saved.id
+                    memoAt[saved.id] = saved.updatedAtMillis
                 }
             }
-            imported.upsert(ImportedEventEntity(p.event.key, p.date.toEpochDay(), memoId, clock()))
-            keys += p.event.key
+            imported.upsert(ImportedEventEntity(p.key, p.date.toEpochDay(), memoId, clock()))
+            keys += p.key
+            if (p.kind != CalendarImport.As.MEMO) keyDates[p.key] = p.date
+            memoId?.let { keyMemos[p.key] = it }
         }
-        Done(days, memoIds, keys)
+        Done(days, memoIds, keys, after = schedule.daysNow(days.keys), memoAt = memoAt, keyDates = keyDates, keyMemos = keyMemos)
     }
 
-    /** Puts the days and memos back as they were before [done], and forgets that those events came in. */
-    suspend fun undo(done: Done) = withContext(Dispatchers.IO) {
-        done.days.forEach { (date, entry) -> schedule.restoreDay(date, entry) }
-        done.memoIds.forEach { id -> memos.get(id)?.let { memos.delete(it, offerUndo = false) } }
-        imported.delete(done.keys)
+    /**
+     * Puts the days and memos back as they were before [done], and forgets that those events came in. 2.0.0 [RVL-18] A day or memo
+     * changed since stays as it is now, and its event stays brought in; returns how many were left so.
+     */
+    suspend fun undo(done: Done): Int = withContext(Dispatchers.IO) {
+        val keptDays = schedule.undoFill(ScheduleRepository.Fill(done.days, done.after.ifEmpty { schedule.daysNow(done.days.keys) }))
+        val keptMemos = HashSet<Long>()
+        done.memoIds.forEach { id ->
+            memos.get(id)?.let { m ->
+                if (done.memoAt[id]?.let { it != m.updatedAtMillis } == true) keptMemos += id else memos.delete(m, offerUndo = false)
+            }
+        }
+        imported.delete(done.keys.filter { k -> done.keyDates[k] !in keptDays && done.keyMemos[k] !in keptMemos })
+        keptDays.size + keptMemos.size
     }
 
     /** [IMPORT-02] New events since the last look, for the offer when the app opens; 0 when not set up. */

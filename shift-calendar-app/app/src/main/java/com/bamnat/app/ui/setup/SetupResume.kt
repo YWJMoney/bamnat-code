@@ -30,9 +30,9 @@ fun SetupResumeCard(modifier: Modifier = Modifier) {
     val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
     val d = draft?.takeIf { it.later && !settings.setupDone } ?: return
     val left = d.steps.size - d.position
-    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer) {
+    Surface(modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(16.dp)) {
-            Text("근무 설정 마저 하기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+            Text("근무 설정 마저 하기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.semantics { heading() })
             Text(
                 when {
@@ -40,7 +40,7 @@ fun SetupResumeCard(modifier: Modifier = Modifier) {
                     left <= 0 -> "마지막 확인만 남았어요. 고른 답은 그대로 있어요."
                     else -> "${left}단계 남았어요. 고른 답은 그대로 있어요."
                 },
-                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = { container.setupDrafts.save(d.copy(later = false)) }, modifier = Modifier.heightIn(min = 48.dp)) {

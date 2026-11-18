@@ -26,7 +26,7 @@ import com.bamnat.core.work.WorkStyle
 internal fun WorkStyleLine(data: WidgetData) {
     // [GUIDE-05] 위젯 근무 유형 줄 can be turned off in 기능 켜고 끄기.
     if (styleLinesOff()) return
-    val style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp)
+    val style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12))
     when (data.style) {
         WorkStyle.HOURLY -> data.hourlyWeek?.let { w ->
             Column(GlanceModifier.fillMaxWidth()) {
@@ -35,7 +35,7 @@ internal fun WorkStyleLine(data: WidgetData) {
                     "이번 주 ${HoursFormat.korean(w.minutes)} · " +
                         if (w.reached) "주휴 15시간 채웠어요" else "주휴까지 ${HoursFormat.korean(w.left)}",
                     style = TextStyle(color = if (w.reached) GlanceTheme.colors.primary else GlanceTheme.colors.onSurfaceVariant,
-                        fontSize = 12.sp, fontWeight = FontWeight.Medium),
+                        fontSize = wsp(12), fontWeight = FontWeight.Medium),
                     maxLines = 1,
                 )
                 Spacer(GlanceModifier.height(3.dp))
@@ -68,7 +68,7 @@ internal fun ShopDaysLine(data: WidgetData) {
     if (styleLinesOff()) return
     val d = data.shopDays ?: return
     Spacer(GlanceModifier.height(6.dp))
-    Text("이번 달 영업 ${d.open}일 · 휴무 ${d.closed}일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp), maxLines = 1)
+    Text("이번 달 영업 ${d.open}일 · 휴무 ${d.closed}일", style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)), maxLines = 1)
 }
 
 /**
@@ -85,7 +85,7 @@ internal fun FieldWeekLine(data: WidgetData) {
     Text(
         "이번 주 " + (w.units?.let { WidgetFigures.units(it) } ?: "${w.days}일") +
             if (w.unpaid > 0) " · 받을 돈 있어요" else " · 받을 돈 없음",
-        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 12.sp),
+        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = wsp(12)),
         maxLines = 1,
     )
 }

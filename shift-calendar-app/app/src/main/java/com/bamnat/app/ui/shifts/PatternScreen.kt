@@ -4,7 +4,6 @@ import com.bamnat.core.hours.HoursFormat
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,9 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import com.bamnat.app.ui.components.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -70,6 +66,7 @@ import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.work.words
 import com.bamnat.core.schedule.PatternPresets
 import com.bamnat.core.schedule.PatternTimeline
 import com.bamnat.core.schedule.ScheduleResolver
@@ -78,6 +75,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.temporal.ChronoUnit
+import androidx.compose.ui.semantics.Role
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -118,7 +116,9 @@ fun PatternScreen(
         // 1.37 PC 70710298 (접은 뒤 알바 '출근 요일'이 교대 8일 순서로 열리고, '끝나는 날(11/5) 뒤라 적용할 수 없어요'): an 알바's or
         // 일근's days of the week never start from a shift order, and a schedule stopped by 접어 두기 lends its days but not its end.
         val style = vm.style
-        val weekdaysWork = startWeekdays || style == com.bamnat.core.work.WorkStyle.DAY || style == com.bamnat.core.work.WorkStyle.HOURLY
+        // [RVH-29] 검토 WORK-05 현장's 되풀이되는 일정 is a weekly class or site visit: it opens on the days of the week too.
+        val weekdaysWork = startWeekdays || style == com.bamnat.core.work.WorkStyle.DAY || style == com.bamnat.core.work.WorkStyle.HOURLY ||
+            style == com.bamnat.core.work.WorkStyle.FIELD
         val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
         // [SETUP-16] 1.37 사용자 (③ 알바 요일은 빈칸으로, 직접 고르게): an 알바's days start empty unless its own days are going on;
         // days another work left (stopped by 접어 두기) are not lent.
@@ -178,6 +178,10 @@ fun PatternScreen(
         }
     }
 
+    // [RVH-29] 검토 WORK-05 검토 U02-04 One name for this screen in the user's own words (설정's row: 근무 주기, 일하는 요일, 출근 요일,
+    // 되풀이되는 일정) and no 조 변경·교대 주기·패턴 for those who have no 조.
+    val name = vm.style.words().pattern
+    val shiftWork = vm.style == null || vm.style == com.bamnat.core.work.WorkStyle.SHIFT
     // 1.37 PC LOW (근무 주기 '취소' 뒤 '뒤로'면 묻지 않고 버림): like 영업일 and 근무 수정, a changed order is not dropped silently.
     var leaving by remember { mutableStateOf(false) }
     val unsaved = existing != null && valid && !askWhen
@@ -185,7 +189,7 @@ fun PatternScreen(
     androidx.activity.compose.BackHandler(enabled = unsaved) { leaving = true }
     if (leaving) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { leaving = false },
-        title = { Text("바꾼 근무 주기를 저장할까요?") },
+        title = { Text("바꾼 $name${Fmt.obj(name)} 저장할까요?") },
         text = { Text("저장하지 않고 나가면 이번에 바꾼 순서가 사라지고 달력은 그대로예요.") },
         confirmButton = { TextButton(onClick = { leaving = false; save() }) { Text("저장") } },
         dismissButton = { TextButton(onClick = { leaving = false; onBack() }) { Text("저장 안 함") } },
@@ -194,7 +198,7 @@ fun PatternScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { CalendarTitle(if (setup) "1/2 근무 주기" else "근무 주기", vm) },
+                title = { CalendarTitle(if (setup) "1/2 $name" else name, vm) },
                 navigationIcon = { IconButton(onClick = leave) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 actions = {
                     TextButton(onClick = save, enabled = valid) { Text(if (setup && existing == null) "다음" else "저장") }
@@ -213,26 +217,24 @@ fun PatternScreen(
             if (setup && existing == null) {
                 // [PAYX-13] The first setup runs kind of work → cycle → pay without a detour.
                 Text(
-                    "근무 주기를 고르고 ‘다음’을 누르면 급여 계산 설정(2/2)으로 이어져요. 급여는 나중에 해도 돼요.",
+                    "$name${Fmt.obj(name)} 고르고 ‘다음’을 누르면 급여 계산 설정(2/2)으로 이어져요. 급여는 나중에 해도 돼요.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = kind == PatternKind.ROTATION,
-                    onClick = { kind = PatternKind.ROTATION },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text("순서대로 돌아요", maxLines = 1) }
-                SegmentedButton(
-                    selected = kind == PatternKind.WEEKLY,
-                    onClick = { kind = PatternKind.WEEKLY },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text("요일마다 같아요", maxLines = 1) }
-            }
+            // [RVH-46] Two lines or one under the other at a large font, never cut to '순서대로'.
+            com.bamnat.app.ui.components.ChoiceRow(
+                listOf("순서대로 돌아요", "요일마다 같아요"),
+                selected = if (kind == PatternKind.WEEKLY) 1 else 0,
+                onSelect = { kind = if (it == 1) PatternKind.WEEKLY else PatternKind.ROTATION },
+            )
             Text(
                 // [SETUP-09] What each choice means, with an example, instead of 교대 순환·요일 고정.
-                if (kind == PatternKind.ROTATION) "교대 근무예요. 주주야야비휴처럼 정한 순서가 며칠마다 다시 돌아요."
+                if (kind == PatternKind.ROTATION) when (vm.style) {
+                    null, com.bamnat.core.work.WorkStyle.SHIFT -> "교대 근무예요. 주주야야비휴처럼 정한 순서가 며칠마다 다시 돌아요."
+                    com.bamnat.core.work.WorkStyle.FIELD -> "이틀 일하고 하루 쉬는 일정처럼, 정한 순서가 며칠마다 다시 돌아요."
+                    else -> "이틀 출근하고 하루 쉬는 것처럼, 정한 순서가 며칠마다 다시 돌아요."
+                }
                 // 1.37 PC 978d10f1 LOW-3: the example in the user's own work (일근 has its own 일근 now).
                 else when (vm.style) {
                     com.bamnat.core.work.WorkStyle.HOURLY -> "토·일 오전처럼 요일마다 근무가 같아요. 일하는 요일만 골라요."
@@ -336,7 +338,7 @@ fun PatternScreen(
                             OutlinedButton(onClick = { put(null) }) { Text("쉬는 날") }
                         }
                     }
-                    TextButton(onClick = onOpenShiftTypes) { Text("근무 종류 추가·수정") }
+                    TextButton(onClick = onOpenShiftTypes) { Text("근무 종류 더하기·고치기") }
                 }
 
                 // Right under the input so each tap shows its effect on the calendar at once.
@@ -345,14 +347,15 @@ fun PatternScreen(
                         PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
-                        PatternCheck(speed, issues)
+                        PatternCheck(speed, issues, vm.style)
                     }
                 }
 
                 if (rotation.isNotEmpty()) {
                     SectionCard(title = "오늘(${Fmt.shortDate(today)})은 몇 번째 날인가요?") {
                         val todayIndex = Math.floorMod(ChronoUnit.DAYS.between(startDate, today), rotation.size.toLong()).toInt()
-                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        // [RVH-29] 검토 WORK-06 검토 U02-05 Every step at once, seven to a row, instead of a row of up to 62 to slide.
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), maxItemsInEachRow = 7) {
                             rotation.forEachIndexed { i, id ->
                                 FilterChip(
                                     selected = !today.isBefore(startDate) && todayIndex == i,
@@ -363,7 +366,9 @@ fun PatternScreen(
                             }
                         }
                         Text(
-                            "누르면 시작일이 자동으로 맞춰져요. 순서의 첫날: ${Fmt.fullDate(startDate)}",
+                            // 검토 WORK-07 A start after today picks no step for today: said, not left looking unpicked.
+                            if (startDate.isAfter(today)) "${Fmt.monthDay(startDate)}이 순서의 첫째 날이에요. 오늘부터 맞추려면 오늘의 자리를 눌러요."
+                            else "누르면 시작일이 자동으로 맞춰져요. 순서의 첫날: ${Fmt.fullDate(startDate)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(top = 8.dp),
@@ -408,7 +413,8 @@ fun PatternScreen(
                                 },
                                 modifier = Modifier.width(32.dp),
                             )
-                            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            // 검토 WORK-06 A day's choices wrap under it instead of sliding sideways.
+                            FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 FilterChip(
                                     selected = weekly[dow.ordinal] == null,
                                     onClick = { weekly[dow.ordinal] = null },
@@ -463,7 +469,7 @@ fun PatternScreen(
                         PatternPreview(types = types, pattern = draft, today = today, weekStart = weekStart)
                         // [REST-02][REST-03] The new order read with the 근무표 점검 before it is saved.
                         val (speed, issues) = remember(types, draft) { vm.previewIssues(types, draft, today) }
-                        PatternCheck(speed, issues)
+                        PatternCheck(speed, issues, vm.style)
                     }
                 }
             }
@@ -486,7 +492,8 @@ fun PatternScreen(
                     if (existing == null) {
                         "처음 저장하면 지난 2년도 같은 순서로 채워져요. 직접 바꾼 날짜는 그대로 남아요."
                     } else {
-                        "저장할 때 조 변경으로 언제부터 바꿀지 고를 수 있어요. 그 전날까지의 근무와 잔업·특근·메모는 그대로 남아요."
+                        if (shiftWork) "저장할 때 조 변경으로 언제부터 바꿀지 고를 수 있어요. 그 전날까지의 근무와 잔업·특근·메모는 그대로 남아요."
+                        else "저장할 때 언제부터 바꿀지 고를 수 있어요. 그 전날까지의 기록과 메모는 그대로 남아요."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -495,7 +502,7 @@ fun PatternScreen(
             }
 
             if (history.size > 1) {
-                SectionCard(title = "교대 주기 기록") {
+                SectionCard(title = if (shiftWork) "교대 주기 기록" else "$name 바뀐 기록") {
                     for (p in history.asReversed()) {
                         PatternHistoryRow(p, typesById, today)
                     }
@@ -506,10 +513,10 @@ fun PatternScreen(
                 onClick = save,
                 enabled = valid,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-            ) { Text(if (existing == null) "저장하고 달력에 적용" else "저장 (조 변경 / 수정)") }
+            ) { Text(if (existing == null) "저장하고 달력에 적용" else if (shiftWork) "저장 (조 바꾸기 / 고치기)" else "저장 (오늘부터 바꾸기 / 처음부터 고치기)") }
             if (existing != null) {
                 TextButton(onClick = { confirmClear = true }, modifier = Modifier.fillMaxWidth()) {
-                    Text("패턴 삭제", color = MaterialTheme.colorScheme.error)
+                    Text("$name 지우기", color = MaterialTheme.colorScheme.error)
                 }
             }
         }
@@ -546,6 +553,7 @@ fun PatternScreen(
             // a schedule that has stopped, is not a team change.
             fresh = existing == null || existing.javaClass != draft.javaClass || existing.endDate?.isAfter(today) == false,
             moved = moved,
+            shiftWork = shiftWork,
             onDismiss = { askWhen = false },
             onChangeFrom = { pattern, from ->
                 askWhen = false
@@ -560,9 +568,9 @@ fun PatternScreen(
 
     if (confirmClear) {
         ConfirmDialog(
-            title = "패턴을 삭제할까요?",
+            title = "$name${Fmt.obj(name)} 지울까요?",
             message = "달력의 자동 표시가 사라져요. 직접 바꾼 날짜와 메모는 그대로 남아요.",
-            confirmLabel = "삭제",
+            confirmLabel = "지우기",
             destructive = true,
             onDismiss = { confirmClear = false },
             onConfirm = {
@@ -630,6 +638,8 @@ private fun ChangeFromDialog(
     onChangeFrom: (WorkPattern, LocalDate) -> Unit,
     onFix: () -> Unit,
     fresh: Boolean = false,
+    /** 검토 WORK-05 교대 (or a calendar from before kinds of work): says 조 변경; others start a new order from a day. */
+    shiftWork: Boolean = true,
 ) {
     val nextMonth = today.withDayOfMonth(1).plusMonths(1)
     var from by remember { mutableStateOf(if (fresh) today.plusDays(1) else nextMonth) }
@@ -647,7 +657,8 @@ private fun ChangeFromDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     if (fresh) "새 일정을 시작할 날을 골라 주세요. 그 전날까지의 기록과 메모는 그대로 남아요."
-                    else "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요.",
+                    else if (shiftWork) "조가 바뀌었다면 새 순서를 시작할 날을 골라 주세요. 그 전날까지의 근무와 잔업·특근·대근, 메모는 그대로 남아요."
+                    else "새 순서를 시작할 날을 골라 주세요. 그 전날까지의 기록과 메모는 그대로 남아요.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -665,7 +676,8 @@ private fun ChangeFromDialog(
                     color = MaterialTheme.colorScheme.primary)
                 if (rotation != null) {
                     Text("${Fmt.dayTitle(from)}은 순서의 몇 번째 날인가요?", style = MaterialTheme.typography.bodyMedium)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    // 검토 WORK-06 Seven to a row, all at once.
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), maxItemsInEachRow = 7) {
                         rotation.steps.forEachIndexed { i, id ->
                             FilterChip(
                                 selected = firstStep == i,
@@ -684,13 +696,15 @@ private fun ChangeFromDialog(
                     Text(
                         "지금 순서를 고치면 기록이 있는 지난 ${moved.size}일의 근무도 바뀌어요: " +
                             moved.take(4).joinToString { Fmt.monthDay(it) } + (if (moved.size > 4) " 외" else "") +
-                            ". 연차·잔업·특근 기록은 남지만 그날 근무 시간이 달라져 급여가 바뀔 수 있어요.",
+                            // 2.0.0 [RVH-53] (조건 13): 잔업·특근 are a 교대's words; the others keep '기록' as the other lines here.
+                            (if (shiftWork) ". 연차·잔업·특근 기록은 남지만 그날 근무 시간이 달라져 급여가 바뀔 수 있어요."
+                            else ". 적어 둔 기록은 남지만 그날 시간이 달라져 계산이 바뀔 수 있어요."),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
                 if (!fresh) TextButton(onClick = onFix, modifier = Modifier.fillMaxWidth()) {
-                    Text(if (moved.isEmpty()) "조 변경이 아니에요. 지금 순서를 고쳐요" else "그래도 지난 날까지 고쳐요")
+                    Text(if (moved.isNotEmpty()) "그래도 지난 날까지 고쳐요" else if (shiftWork) "조 변경이 아니에요. 지금 순서를 고쳐요" else "처음부터 고치기")
                 }
             }
         },
@@ -730,7 +744,7 @@ private fun StepCell(index: Int, type: ShiftType?, selected: Boolean, onClick: (
             .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clip(MaterialTheme.shapes.small)
             .then(if (selected) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -745,7 +759,7 @@ private fun DateRow(label: String, date: LocalDate, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -785,19 +799,26 @@ internal fun PatternPreview(types: List<ShiftType>, pattern: WorkPattern, today:
  * and the first few signs over two cycles. Only a hint; saving is never stopped.
  */
 @Composable
-private fun PatternCheck(speed: com.bamnat.core.schedule.RotationSpeed, issues: List<com.bamnat.core.schedule.RestCheck.Issue>) {
+private fun PatternCheck(
+    speed: com.bamnat.core.schedule.RotationSpeed,
+    issues: List<com.bamnat.core.schedule.RestCheck.Issue>,
+    /** 2.0.0 [RVH-53] (조건 13): 현장's is 일정 점검, not 근무표 점검. */
+    style: com.bamnat.core.work.WorkStyle?,
+) {
     if (speed == com.bamnat.core.schedule.RotationSpeed.NONE) return
     Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text("이 순서: ${speed.label}", style = MaterialTheme.typography.labelLarge)
         if (issues.isEmpty()) {
-            Text("근무표 점검에 걸리는 날이 없어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(com.bamnat.core.work.TypeWords.say(style, "근무표 점검에 걸리는 날이 없어요."), style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             val kinds = issues.groupBy { it.kind }
             kinds.entries.take(4).forEach { (kind, list) ->
                 Text("· ${kind.label} ${list.size}번 — ${list.first().text}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error, maxLines = 2)
             }
-            Text("두 바퀴를 내 근무표 점검 기준으로 본 참고예요. 저장은 그대로 할 수 있어요.", style = MaterialTheme.typography.labelSmall,
+            Text(com.bamnat.core.work.TypeWords.say(style, "두 바퀴를 내 근무표 점검 기준으로 본 참고예요. 저장은 그대로 할 수 있어요."),
+                style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

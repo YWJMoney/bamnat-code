@@ -196,7 +196,9 @@ fun PayslipFillDialog(
             // [PHOTO-30] 1.30 AW: the 기준 시간·통상시급 go on the 통상시급 card, the rest are 칸.
             val findings = photos.rules + com.bamnat.core.pay.SlipHourly.findings(taught, photos.rules)
             val from = if (scan != null || scanSecond != null) CellFrom.PHOTO else CellFrom.TEXT
-            sheet.reset(com.bamnat.core.pay.RuleSheet.read(findings, photos.unread, from, rules.shiftTypes.associate { it.id to it.name }))
+            // 2.0.0 [RVL-17] (검토 SCAN-30) A pay read that changes the pay by much starts off, with the line that says so.
+            sheet.reset(com.bamnat.core.pay.RuleSheet.read(findings, photos.unread, from, rules.shiftTypes.associate { it.id to it.name },
+                current = com.bamnat.core.pay.RuleSheet.payNow(rules.profile, com.bamnat.core.time.Today.date())))
         }
     }
     // [PHOTO-01] A photo with no words found, or one that failed to read, opens the lines to fill by hand, never a dead end.
@@ -318,13 +320,9 @@ private fun PickDialog(
     // W9: one big way first (the payslip's photo); the rules' photo, 칸 and pasting under '다른 방법'.
     var others by remember { mutableStateOf(false) }
     val othersOpen = others || typing || second.isNotBlank()
-    if (askDrop) AlertDialog(
-        onDismissRequest = { askDrop = false },
-        title = { Text("적은 내용을 버릴까요?") },
-        text = { Text("읽은 명세서와 붙여 넣은 글이 사라져요.") },
-        confirmButton = { TextButton(onClick = { askDrop = false; onDismiss() }) { Text("버리기") } },
-        dismissButton = { TextButton(onClick = { askDrop = false }) { Text("계속 쓰기") } },
-    )
+    // 뿌리 고침 3: the app's one 버릴까요 (계속 적기 / 버리기), in this sheet's words.
+    if (askDrop) com.bamnat.app.ui.components.DiscardAsk(onKeep = { askDrop = false }, onDiscard = { askDrop = false; onDismiss() },
+        what = "읽은 명세서와 붙여 넣은 글이 사라져요.")
     AlertDialog(
         onDismissRequest = leave,
         properties = androidx.compose.ui.window.DialogProperties(dismissOnClickOutside = false),
@@ -345,7 +343,7 @@ private fun PickDialog(
                         rulesOnly -> "1. 명세서 (없으면 건너뛰어도 돼요)"
                         else -> "1. 명세서"
                     }, style = MaterialTheme.typography.titleSmall)
-                    ScanButtons(onScan = onScan, onEmpty = onEmpty)
+                    ScanButtons(onScan = onScan, onEmpty = onEmpty, keepSlips = true)
                     notice?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                     // [INPUT-04] A payslip copied from the company's app or a message: one tap.
                     com.bamnat.app.ui.components.ClipboardHint("명세서", fits = { PayslipReader.read(it).lines.isNotEmpty() }, onPaste = onPaste)
@@ -358,7 +356,8 @@ private fun PickDialog(
                             rulesOnly -> "2. 회사 계산 방법 (명세서가 없으면 이것만으로도 계산해요)"
                             else -> "2. 회사 계산 방법 (없으면 건너뛰어도 돼요)"
                         }, style = MaterialTheme.typography.titleSmall)
-                        ScanButtons(onScan = onScanSecond, onEmpty = onEmpty)
+                        // 2.0.0 [RVL-41] A 회사 계산 방법 PDF is no 명세서: its button and its password sheet say so.
+                        ScanButtons(onScan = onScanSecond, onEmpty = onEmpty, pdfLabel = "PDF로 받은 회사 계산 방법 고르기")
                         // [RULE-ED-01] 1.30 AW (사용자 "사진 촬영 금지 회사"): the rules as 칸, with common allowances to pick.
                         OutlinedButton(onClick = onByHand, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("사진 없이 칸으로 적기") }
                     }
@@ -388,6 +387,8 @@ internal fun RuleSentenceBox(
     kinds: List<ExtraKind>,
     shiftTypes: List<ShiftType>,
     fiveOrMore: Boolean,
+    /** 2.0.0 [RVL-17] (검토 SCAN-30) The pay as set now: a sentence read as a much different pay starts off and says so. */
+    current: RuleChange.Base? = null,
     onApply: (List<RuleChange>) -> Unit,
 ) {
     var text by remember { mutableStateOf("") }
@@ -425,7 +426,7 @@ internal fun RuleSentenceBox(
                 onClick = {
                     sheet.reset(com.bamnat.core.pay.RuleSheet.read(
                         RuleText.read(all, kinds, shiftTypes, fiveOrMore), RuleText.unread(all, kinds, shiftTypes, fiveOrMore),
-                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames))
+                        if (fromPhoto) CellFrom.PHOTO else CellFrom.TEXT, host.shiftNames, current = current))
                     read = true
                 },
                 enabled = all.isNotBlank(),

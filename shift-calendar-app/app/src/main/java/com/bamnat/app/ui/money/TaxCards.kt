@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -143,6 +144,12 @@ private fun BusinessTaxLines(y: BusinessTax.Year?) {
         Muted("매출·일감·경비를 적으면 올해 낼 세금과 내는 날을 어림해 드려요.")
         return
     }
+    if (y.dayLabourOnly) {
+        // 2.0.0 [PC-136] A phone of 공수 alone (no 3.3%) is a 일용근로자's: no 부가세 (부가가치세법 제12조 제3항) and nothing for 종합소득세
+        // (소득세법 제14조 제3항 제2호). Said in a line, not a 부가세 number.
+        Muted("일당(공수)은 일용근로소득이라 부가가치세가 없고 종합소득세에도 합치지 않아요. 일당에서 떼는 세금은 일감·수입 › 일용직 세금에서 봐요.")
+        return
+    }
     TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
     TaxLine("  종합소득세 · ${y.best.method.label}", Fmt.won(y.incomeTaxDue.coerceAtLeast(0)), muted = true)
     TaxLine("  부가가치세", if (y.vatExempt) "면제" else Fmt.won(y.vat.coerceAtLeast(0)), muted = true)
@@ -237,14 +244,15 @@ private fun RecordRow(o: PayObservation, onDelete: (PayObservation) -> Unit, onN
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit, onDismiss: () -> Unit) {
-    var kind by remember { mutableStateOf(IncomeKind.SALARY) }
-    var month by remember { mutableStateOf(start) }
-    var gross by remember { mutableStateOf("") }
-    var net by remember { mutableStateOf("") }
-    var hours by remember { mutableStateOf("") }
-    var rate by remember { mutableStateOf("") }
-    var days by remember { mutableStateOf("") }
-    var source by remember { mutableStateOf(PayObservation.Source.TYPED) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) What is typed stays through a rebuilt screen, and back or a swipe asks before it goes.
+    var kind by rememberSaveable { mutableStateOf(IncomeKind.SALARY) }
+    var month by rememberSaveable { mutableStateOf(start) }
+    var gross by rememberSaveable { mutableStateOf("") }
+    var net by rememberSaveable { mutableStateOf("") }
+    var hours by rememberSaveable { mutableStateOf("") }
+    var rate by rememberSaveable { mutableStateOf("") }
+    var days by rememberSaveable { mutableStateOf("") }
+    var source by rememberSaveable { mutableStateOf(PayObservation.Source.TYPED) }
     var read by remember { mutableStateOf<String?>(null) }
     val texts = remember { mutableStateListOf<String>() }
     val g: Long? = when (kind) {
@@ -261,6 +269,7 @@ internal fun PayRecordDialog(start: YearMonth, onSave: (PayObservation) -> Unit,
     val n = net.toLongOrNull() ?: lawNet
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = listOf(gross, net, hours, rate, days).any { it.isNotBlank() } || texts.isNotEmpty(),
         title = { Text("지난 월급 적기") },
         confirmButton = {
             TextButton(enabled = n != null && n > 0, onClick = {
@@ -330,10 +339,11 @@ internal fun BusinessTaxSheet(
     onDismiss: () -> Unit,
 ) {
     var p by remember { mutableStateOf(start) }
-    var simple by remember { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
-    var standard by remember { mutableStateOf(start.standardRate?.toString().orEmpty()) }
-    var lastIncome by remember { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
-    var lastTax by remember { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
+    // 2.0.0 [RVK-42] (검토 U06a-23) The typed numbers stay through a rebuilt screen, and closing asks before they go.
+    var simple by rememberSaveable { mutableStateOf(start.simpleRate?.toString().orEmpty()) }
+    var standard by rememberSaveable { mutableStateOf(start.standardRate?.toString().orEmpty()) }
+    var lastIncome by rememberSaveable { mutableStateOf(start.lastYearIncome?.toString().orEmpty()) }
+    var lastTax by rememberSaveable { mutableStateOf(start.lastYearTax?.toString().orEmpty()) }
     val draft = p.copy(
         simpleRate = simple.toDoubleOrNull()?.takeIf { it in 0.0..100.0 }, standardRate = standard.toDoubleOrNull()?.takeIf { it in 0.0..100.0 },
         lastYearIncome = lastIncome.toLongOrNull(), lastYearTax = lastTax.toLongOrNull(),
@@ -341,6 +351,7 @@ internal fun BusinessTaxSheet(
     val y = remember(draft) { yearOf(draft) }
     FormSheet(
         onDismissRequest = onDismiss,
+        unsaved = draft != start,
         title = { Text("사업자 세금 예상") },
         confirmButton = { TextButton(onClick = { onSave(draft) }) { Text("저장") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
@@ -348,6 +359,8 @@ internal fun BusinessTaxSheet(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 TaxLine("${y.year}년 낼 세금 예상", Fmt.won(y.total), strong = true)
                 Muted("${Fmt.monthDay(y.until)}까지 적은 매출 ${Fmt.won(y.sales)} · 경비 ${Fmt.won(y.costs)} (증빙 ${Fmt.won(y.proved)})를 한 해로 늘려 계산했어요.")
+                // 2.0.0 [PC-136] Where the 일당 went: not in the 매출 above.
+                if (y.dayWages > 0) Muted("공수(일당)로 받은 ${Fmt.won(y.dayWages)}은 일용근로소득이라 넣지 않았어요(부가세 없음, 종합소득에 안 합침).")
                 y.options.forEach { o ->
                     TaxLine((if (o == y.best) "✓ " else "") + o.method.label, if (o.allowed) Fmt.won(o.tax) else "못 써요", muted = o != y.best)
                     if (o.why.isNotBlank()) Muted("  " + o.why)

@@ -16,7 +16,8 @@ Usage
     --version 1.22.0 list only open lines planned for that version
     --fail-open      exit code 1 while any (listed) open line remains: a stage cannot end with one
     --quiet          counts only, no list of open lines
-Exit code 1 also when the table on top does not match the boxes.
+Exit code 1 also when the table on top does not match the boxes, or when a box has a mark the checklist does not
+know (2.0.0 [RVR-19] 검토 TEST-20 ③: `- [~]` or `- [?]` was skipped without a word, so the line was neither open nor done).
 """
 import pathlib
 import re
@@ -28,6 +29,7 @@ CHAPTER_RE = re.compile(r"^##\s+(?P<title>.+?)\s*$")
 WHO_RE = re.compile(r"(?<![A-Za-z])([CUE])(?![A-Za-z])")
 VERSION_RE = re.compile(r"\b\d+\.\d+\.\d+\b")
 TABLE_ROW_RE = re.compile(r"^\|(?P<cells>.+)\|\s*$")
+UNKNOWN_MARK_RE = re.compile(r"[~?!*/\-+.vVoO✓✔✗½]{1,2}")
 
 
 def kind_of(mark):
@@ -61,6 +63,7 @@ def parse(text):
     """Chapters in order, each with its boxes; and the rows of the 지금 숫자 table if there is one."""
     chapters = [{"title": "(장 없음)", "boxes": []}]
     table = []
+    unknown = []
     in_numbers = False
     for no, line in enumerate(text.splitlines(), start=1):
         ch = CHAPTER_RE.match(line)
@@ -82,6 +85,10 @@ def parse(text):
             continue
         kind = kind_of(box.group("mark"))
         if kind is None:
+            # A mark like ~ ? / - v o ✓ (not a link's [text](…), not a label such as [부품]): a box nobody can count.
+            mark = box.group("mark").strip()
+            if UNKNOWN_MARK_RE.fullmatch(mark) and not line[line.index("]") + 1:].startswith("("):
+                unknown.append({"line": no, "mark": mark})
             continue
         rest = box.group("text")
         num = NUM_RE.search(rest)
@@ -95,7 +102,7 @@ def parse(text):
             "who": sorted(set(WHO_RE.findall(paren))),
             "versions": VERSION_RE.findall(paren),
         })
-    return [c for c in chapters if c["boxes"] or c["title"] != "(장 없음)"], table
+    return [c for c in chapters if c["boxes"] or c["title"] != "(장 없음)"], table, unknown
 
 
 def counts(boxes):
@@ -143,7 +150,7 @@ def main(argv):
         print(__doc__)
         return 2
     path = pathlib.Path(paths[0])
-    chapters, table = parse(path.read_text(encoding="utf-8"))
+    chapters, table, unknown = parse(path.read_text(encoding="utf-8"))
     every = [b for c in chapters for b in c["boxes"]]
     total = counts(every)
     print(f"{path.name}: 끝남 {total['done']}, 옮김 {total['moved']}, 남음 {total['open']} (체크 칸 {len(every)}줄)")
@@ -163,6 +170,7 @@ def main(argv):
             print(f"  {b['line']:4}행 {label}  {re.sub(r'[*`]', '', b['text'])[:90]}")
 
     problems = check_table(table, chapters)
+    problems += [f"{u['line']}행 모르는 표시 [{u['mark']}]: 끝남 [x], 남음 [ ], 옮김 [→ 순번] 가운데 하나로 적어요" for u in unknown]
     for p in problems:
         print("오류:", p)
     if problems:

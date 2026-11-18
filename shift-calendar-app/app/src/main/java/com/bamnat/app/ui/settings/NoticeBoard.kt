@@ -36,6 +36,9 @@ import com.bamnat.core.formula.LogicRule
 import com.bamnat.core.formula.LogicVerb
 import com.bamnat.core.formula.NoticeOverlap
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 
 /**
  * 1.39 [NTC-04] 알림 한눈에 (사용자 2026-11-08 "줄이거나 추가를 할 수 있게 가지고 있거나 넣을 수 있는 것들 리스트들도 보여 줬으면"):
@@ -83,7 +86,8 @@ object NoticeBoard {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
+fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
+                    /** 9차 PC 확인(하): inside a card already titled '알림 한눈에' the line says only the counts. */ titled: Boolean = true) {
     val c = LocalContext.current.appContainer
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     var tick by remember { mutableIntStateOf(0) }
@@ -112,13 +116,17 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
     Column(modifier.focusMark("알림 한눈에").fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { open = !open }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("알림 한눈에", style = MaterialTheme.typography.titleSmall)
+                if (titled) Text("알림 한눈에", style = MaterialTheme.typography.titleSmall)
                 Text(listOfNotNull("켜 둔 ${onOwn.size + onRules.size}개", "더 켤 수 있는 ${offOwn.size + offRules.size}개",
                     "겹침 ${overlaps.size}".takeIf { overlaps.isNotEmpty() }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = if (overlaps.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Text(if (open) "접기" else "펼치기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+            // [RVM-13] 총괄 #462 (넣기 창에 글자 단추가 넷: '펼치기'도 단추처럼 읽혀요): the whole row opens it; a chevron says which way.
+            androidx.compose.material3.Icon(
+                if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = if (open) "알림 한눈에 접기" else "알림 한눈에 펼치기", tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         if (!open) return@Column
         Text("켜 둔 알림", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
@@ -132,7 +140,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
         }
         onRules.forEach { r ->
             val h = overlapOf(r)
-            SwitchRow("규칙 ‘${r.name}’", r.say() + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
+            SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()) + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
                 warning = h?.let { if (it.builtIn == NoticeOverlap.BuiltIn.TODAY) null else "같은 때 같은 것을 알려요. 하나를 끄면 깔끔해요" }) {
                 NoticeBoard.setRule(c, r, it); tick++
             }
@@ -140,7 +148,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier) {
         Text("더 켤 수 있는 알림", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
         if (offOwn.isEmpty() && offRules.isEmpty()) Text("모두 켜 두었어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         offOwn.forEach { o -> SwitchRow(o.label(style), o.does, false) { turn(o, it) } }
-        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", r.say(), false) { NoticeBoard.setRule(c, r, it); tick++ } }
+        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()), false) { NoticeBoard.setRule(c, r, it); tick++ } }
         Text("새 알림 규칙은 마을 › 장터 › 도구 › 자동 규칙에서 더 고를 수 있어요. 규칙은 스튜디오 › 규칙·단추에서 고치거나 지워요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
@@ -190,7 +198,8 @@ fun OverlapAsk(overlaps: List<NoticeOverlap.Hit>, mode: RecipePieces.Mode, onMod
     if (overlaps.isEmpty()) return
     val today = overlaps.any { it.builtIn == NoticeOverlap.BuiltIn.TODAY }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text("기존 설정을 바꿀까요?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
+        // [RVM-13] 조건 6: a question, not a danger (넣기 창의 바뀌는 것 요약 아래).
+        Text("기존 설정을 바꿀까요?", style = MaterialTheme.typography.labelLarge)
         overlaps.forEach { Text("• " + it.say(), style = MaterialTheme.typography.bodySmall) }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             com.bamnat.app.ui.components.FilterChip(mode == RecipePieces.Mode.REPLACE, { onMode(RecipePieces.Mode.REPLACE) }, label = { Text("기존 것 끄고 이걸로") })

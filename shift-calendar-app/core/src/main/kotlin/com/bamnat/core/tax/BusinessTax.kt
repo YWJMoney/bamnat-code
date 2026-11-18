@@ -102,7 +102,12 @@ object BusinessTax {
         val cardCredit: Long = 0,
         /** F 1.32 [TAXP-07] Said when the year's pace crosses the 간이과세 line, or comes near it. */
         val lineNote: String? = null,
+        /** 2.0.0 [PC-136] 일당 paid as 일용근로 so far this year, left out of [sales] (no 부가세, not 종합소득). */
+        val dayWages: Long = 0,
     ) {
+        /** 2.0.0 [PC-136] Only 일용근로 this year: there is no 사업자 세금 to work out. */
+        val dayLabourOnly: Boolean get() = sales == 0L && dayWages > 0
+
         val total: Long get() = incomeTaxDue.coerceAtLeast(0) + vat.coerceAtLeast(0)
         /** What to put aside each month of the year for both. */
         val perMonth: Long get() = (total / 12) / 100 * 100
@@ -149,7 +154,11 @@ object BusinessTax {
      */
     fun year(year: Int, today: LocalDate, profile: Profile, jobs: List<Job>, sales: List<DailySales>, entries: List<MoneyEntry>): Year {
         val until = if (today.year > year) LocalDate.of(year, 12, 31) else today
-        val j = jobs.filter { it.date.year == year && !it.cancelled && !it.date.isAfter(until) }
+        val all = jobs.filter { it.date.year == year && !it.cancelled && !it.date.isAfter(until) }
+        // 2.0.0 [PC-136] A 공수 day with no 3.3% taken is 일용근로: work under employment is no 용역 공급 for 부가세 (부가가치세법 제12조
+        // 제3항), and a 일용근로자's pay is not added to 종합소득 (소득세법 제14조 제3항 제2호; its tax is held back on the day, 통계 › 일용직
+        // 세금). So it is out of both here, with its costs; a 공수 day paid with 3.3% stays as 인적용역 below.
+        val (day, j) = all.partition(::isDayLabour)
         val s = sales.filter { it.date.year == year && !it.date.isAfter(until) }
         val spent = entries.filter { it.date.year == year && it.kind == MoneyKind.EXPENSE && !it.date.isAfter(until) }
         val income = j.sumOf { it.amount } + s.sumOf { it.sales }
@@ -160,7 +169,11 @@ object BusinessTax {
         // (부가가치세법 제26조 제1항 제15호), whatever the user's 과세 type says for the rest.
         val vatFree = j.filter { it.withheld > 0 }.sumOf { it.amount }
         return of(year, until, profile, income, costs, proved, withheld, cardSales = s.sumOf { it.card + it.delivery }, vatFree = vatFree)
+            .copy(dayWages = day.sumOf { it.amount })
     }
+
+    /** 2.0.0 [PC-136] A 공수(일당) job paid without 3.3%: 일용근로, not a 사업자's 매출. */
+    fun isDayLabour(job: Job): Boolean = job.units != null && !job.withholding
 
     /** The year from totals so far; projected to the year's end at the pace of the days gone. */
     fun of(year: Int, until: LocalDate, profile0: Profile, sales: Long, costs: Long, proved: Long, withheld: Long, cardSales: Long = 0, vatFree: Long = 0): Year {

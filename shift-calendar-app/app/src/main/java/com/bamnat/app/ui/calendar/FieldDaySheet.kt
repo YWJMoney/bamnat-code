@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
@@ -44,7 +43,7 @@ import java.time.LocalDate
  * writes the day's job (or changes the one there) with 일당 × 공수 for the last 업체; a second tap on
  * the chosen one takes it off. Before the first 일당 is known, 직접 opens to ask for it.
  */
-internal fun LazyListScope.dayRateChips(
+internal fun ChipScope.dayRateChips(
     date: LocalDate,
     book: MoneyBook,
     rules: FieldRules,
@@ -162,7 +161,8 @@ internal fun DayRateDialog(date: LocalDate, units: Double, rules: FieldRules, ex
         },
         confirmButton = {
             TextButton(enabled = u != null, onClick = {
-                val base = if (fromHere) rules.withRateFrom(date, rate.toAmount()) else rules.copy(dayRate = rules.dayRate.takeIf { rules.rateFrom.isNotEmpty() } ?: rate.toAmount())
+                // [RVH-23] 검토 CAL-28: without the tick, this day only.
+                val base = rules.afterDayRate(date, rate.toAmount(), fromHere)
                 val r = base.copy(lastClient = client.trim())
                 val job = DayRate.job(date, u!!, rate.toAmount(), r.lastClient, existing).let { if (existing != null) it.copy(client = client.trim()) else it }
                 if (fromHere) onReprice(DayRate.repriceFrom(date, rate.toAmount(), jobs).filter { it.id != existing?.id })
@@ -184,7 +184,7 @@ internal fun FieldModePrompt(onPick: (FieldMode) -> Unit) {
         title = { Text("일을 어떻게 세요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("고르는 대로 날짜를 눌렀을 때 나오는 버튼이 달라져요. 나중에 달력 고치기에서 바꿀 수 있어요.",
+                Text("고르는 대로 날짜를 눌렀을 때 나오는 단추가 달라져요. 나중에 달력 고치기에서 바꿀 수 있어요.",
                     style = MaterialTheme.typography.bodyMedium)
                 FieldMode.entries.forEach { m ->
                     OutlinedButton(onClick = { onPick(m) }, modifier = Modifier.fillMaxWidth()) {
@@ -207,14 +207,15 @@ internal fun FieldModeSetting(calendar: com.bamnat.app.data.PersonalCalendar) {
     val calendars = androidx.compose.ui.platform.LocalContext.current.appContainer.calendars
     val mode = calendar.field?.mode ?: FieldMode.PER_JOB
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("일 세는 방법", style = MaterialTheme.typography.titleSmall)
+        // 2.0.0 [RVP-65] (검토 REST-20) One name everywhere (기능 찾기·도움말·레시피): 세는 방식.
+        Text("세는 방식", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FieldMode.entries.forEach { m ->
                 FilterChip(selected = mode == m, onClick = { calendars.updateField(calendar.id) { it.copy(mode = m) } }, label = { Text(m.label) })
             }
         }
         Text(mode.hint + when (mode) {
-            FieldMode.DAY_RATE -> ". 날짜를 누르면 1공·0.5·1.5 버튼이 나와요"
+            FieldMode.DAY_RATE -> ". 날짜를 누르면 1공·0.5·1.5 단추가 나와요"
             FieldMode.PLATFORM -> ". 날짜를 누르면 플랫폼마다 건수를 적어요"
             else -> ". 날짜를 누르면 일감 적기가 나와요"
         },

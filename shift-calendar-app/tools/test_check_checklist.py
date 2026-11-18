@@ -52,7 +52,7 @@ def run(text, *args):
 
 class CheckChecklistTest(unittest.TestCase):
     def test_counts_each_chapter_and_the_table_matches(self):
-        chapters, table = cc.parse(DOC)
+        chapters, table, _ = cc.parse(DOC)
         by_title = {c["title"]: cc.counts(c["boxes"]) for c in chapters}
         self.assertEqual({"done": 1, "moved": 1, "open": 2}, by_title["2. Phase 0: 신뢰성"])
         self.assertEqual({"done": 0, "moved": 0, "open": 1}, by_title["5. 상시 운영 (M27)"])
@@ -62,7 +62,7 @@ class CheckChecklistTest(unittest.TestCase):
         self.assertIn("끝남 1, 옮김 1, 남음 3", out)
 
     def test_reads_who_and_version_from_the_first_brackets(self):
-        chapters, _ = cc.parse(DOC)
+        chapters, _, _ = cc.parse(DOC)
         box = {b["num"]: b for c in chapters for b in c["boxes"]}
         self.assertEqual(["C"], box["25"]["who"])
         self.assertEqual(["1.22.0"], box["25"]["versions"])
@@ -95,6 +95,13 @@ class CheckChecklistTest(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("끝남 1, 옮김 0, 남음 1", out)
         self.assertNotIn("남은 줄", out.split("\n", 2)[-1])
+
+    def test_a_mark_it_does_not_know_fails_but_a_link_does_not(self):
+        """2.0.0 [RVR-19] (검토 TEST-20 ③) '- [~]' was skipped without a word; a link '- [계획](…)' is not a box."""
+        code, out = run("## 1단계\n\n- [x] **1** 고침\n- [~] **2** 반쯤\n- [계획](plan.md) 읽기\n", "--quiet")
+        self.assertEqual(1, code)
+        self.assertIn("4행 모르는 표시 [~]", out)
+        self.assertNotIn("[계획]", out)
 
 
 if __name__ == "__main__":

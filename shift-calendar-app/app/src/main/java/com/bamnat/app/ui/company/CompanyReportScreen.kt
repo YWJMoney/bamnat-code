@@ -71,10 +71,14 @@ import com.bamnat.app.ui.components.ConfirmDialog
 import java.time.ZoneId
 import com.bamnat.core.time.Today
 
-/** [COMM-02] What the report screen and the privacy policy say about what goes to the company server. */
+/**
+ * [COMM-02] What the report screen and the privacy policy say about what goes to the company server. 2.0.0 [RVN-18] 검토 COMP-22-11:
+ * as the policy's 1-2항 says it, the network check the server keeps for two hours too (before, "무작위 번호뿐").
+ */
 internal const val COMPANY_SEND_NOTICE =
-    "보내면 위 내용이 회사 찾기에 올라가요. 함께 가는 건 이 휴대폰에서 만든 무작위 번호뿐이라 누가 보냈는지 알 수 없어요. " +
-        "‘내가 보낸 정보’에서 언제든 거두거나 모두 지울 수 있어요."
+    "보내면 위 내용이 회사 찾기에 올라가요. 이름·연락처 없이 이 휴대폰에서 만든 무작위 번호로 보내 누가 보냈는지 알 수 없어요. " +
+        "한 사람이 여러 번 세어지지 않게 보는 네트워크 값은 2시간 뒤 지워요. " +
+        "‘내가 보낸 정보’에서 언제든 거두거나 모두 지울 수 있어요. 채택된 뒤에는 같은 회사 분들이 쓰고 있어 설정은 남고, 나와의 연결만 지워져요."
 
 /**
  * [COMM-02] 내 설정 나누기: the user's setup without amounts goes to coworkers. What goes and what
@@ -285,7 +289,7 @@ internal fun HowAdopted(threshold: Int, reward: String?) {
         Column(Modifier.padding(16.dp)) {
             Text("이렇게 채택돼요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 6.dp))
             HowStep(1, "회사 찾기에 ‘확인 중’으로 올라가요", "같은 회사 분들은 바로 써 볼 수 있어요")
-            HowStep(2, "같은 회사 분들이 확인해요", "같은 설정을 보내거나 ‘맞았어요’를 누를 때마다 점수가 쌓여요")
+            HowStep(2, "같은 회사 분들이 확인해요", "같은 설정을 보내거나 ‘맞아요’를 누를 때마다 점수가 쌓여요")
             HowStep(3, "${threshold}점이 되면 채택돼요", "두 사람 이상이 맞다고 해야 하고, 개발자가 한 번 더 볼 때도 있어요")
             reward?.let { RewardPill(it, Modifier.padding(top = 8.dp)) }
         }
@@ -420,7 +424,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                         HeroIcon(Icons.Outlined.Inbox)
                         Text("나눈 회사 설정은 아직 없어요", style = MaterialTheme.typography.titleMedium)
                         // 1.36 PC 확인: 레시피·프로필만 올린 분(알바 등)도 여기서 모두 지워요; 이 화면은 회사 설정만 줄로 보여요.
-                        Text("마을에 올린 레시피·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
+                        Text("마을에 올린 작품·프로필·팔로우·차단, 광장 글과 앱 문의는 아래 ‘모두 지우기’로 한 번에 지울 수 있어요.",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
                         if (vm.companyFits) OutlinedButton(onClick = onShare) { Text("내 설정 나누기") }
                     }
@@ -428,7 +432,7 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                 sent.forEach { r ->
                     SentCard(r, statuses[r.id], statuses.containsKey(r.id), onTakeBack = { takingBack = r },
                         // Already gone from the server: only the line here is left to drop.
-                        onDrop = { vm.takeBack(r.id) {} })
+                        onDrop = { vm.takeBack(r.id) { _, _ -> } })
                 }
                 TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
                     Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
@@ -441,13 +445,22 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
     takingBack?.let { r ->
         ConfirmDialog(
             title = "이 정보를 거둘까요?",
-            message = if (r.ask) "개발자에게 보낸 내용이 지워져요." else "회사 찾기에서 빠지고, 받기로 한 보상도 없어져요. 같은 회사 분들이 쓰던 설정은 그대로예요.",
+            // 2.0.0 [RVN-07] COMP-13 An adopted setup stays in 회사 찾기 (others use it): said before, and the server's words after.
+            message = when {
+                r.ask -> "개발자에게 보낸 내용이 지워져요."
+                statuses[r.id]?.status == "adopted" -> "채택된 설정은 같은 회사 분들이 쓰고 있어 회사 찾기에 남아요. 나와의 연결과 받기로 한 보상만 지워요."
+                statuses.containsKey(r.id) -> "회사 찾기에서 빠지고, 받기로 한 보상도 없어져요. 같은 회사 분들이 쓰던 설정은 그대로예요."
+                else -> "채택 전이면 회사 찾기에서 빠지고, 채택된 설정이면 같은 회사 분들이 쓰고 있어 남아요. 어느 쪽이든 나와의 연결과 받기로 한 보상은 지워요."
+            },
             confirmLabel = "거두기",
             destructive = true,
             onDismiss = { takingBack = null },
             onConfirm = {
                 takingBack = null
-                vm.takeBack(r.id) { ok -> message = if (ok) "거뒀어요" else "인터넷에 연결한 뒤 다시 해 주세요" }
+                // The card that was tapped may be far down the list: the result goes on the app's snackbar, not the line at its top.
+                vm.takeBack(r.id) { ok, said ->
+                    com.bamnat.app.ui.PutOnNotice.say(if (!ok) "거두지 못했어요 · 인터넷에 연결한 뒤 다시 해 주세요" else said ?: "거뒀어요 · 회사 찾기에서 빠졌어요")
+                }
             },
         )
     }
@@ -524,6 +537,10 @@ private fun PlazaPicker(job: String, region: String, topic: Boolean, onJob: (Str
             }
         } else {
             Text("어떤 일인가요? (선택)", style = MaterialTheme.typography.titleSmall)
+            // 2.0.0 [RVN-18] 검토 T10a-05: 일근 is 사무직 as much as 공무원·제조, so no job is guessed for it; the likely ones come first and
+            // the line says where it goes left empty.
+            if (job.isEmpty()) Text("고르지 않으면 모든 광장에 올라가요", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 com.bamnat.app.ui.company.rememberJobs().forEach { (key, name) ->
                     com.bamnat.app.ui.components.FilterChip(selected = job == key, onClick = { onJob(if (job == key) "" else key) }, label = { Text(name) })

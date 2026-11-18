@@ -105,6 +105,11 @@ fun ShareWayCard(
     /** Some of [ways] are rules made by hand, which the setup file cannot carry yet (plan item 60). */
     notInFile: Boolean = false,
     onClosed: () -> Unit = {},
+    /**
+     * 2.0.0 [RVJ-34] 검토 PC-85 (조건 2·3): under the pay values the card is the one 안내 카드 shape, [com.bamnat.app.ui.components.NudgeCard]:
+     * the title, one line of why, the one way that fits and X (다음에, the same spacing), instead of four buttons over the values.
+     */
+    compact: Boolean = false,
 ) {
     val context = LocalContext.current
     val container = context.appContainer
@@ -124,8 +129,24 @@ fun ShareWayCard(
     val calendar = LocalCompanyCalendar.current
     val shop = remember(calendar) { runCatching { container.scopeOf(calendar).currentSettings().workStyle }.getOrNull() == com.bamnat.core.work.WorkStyle.HOURLY }
     val place = if (shop) "가게" else "회사"
+    // The way that carries what was just made goes first: items made by hand only travel in words for now.
+    val askFirst = askOn && (notInFile || !canShare)
 
-    SoftCard(highlighted = true, modifier = modifier) {
+    if (compact) {
+        val title = moment.titleFor(shop)
+        com.bamnat.app.ui.components.NudgeCard(
+            text = title,
+            detail = (if (companyOn) "같은 $place 동료는 고르기만 하면 맞는 급여를 봐요" else "말로 알려 주시면 개발자가 보고 앱에 넣어요") +
+                // The 고친 방식 title already says no amount goes.
+                if ("금액" in title) "" else " · 금액·이름은 보내지 않아요",
+            icon = Icons.Filled.Groups,
+            action = if (askFirst) "말로 알려 주기" else "$place 설정 보내기",
+            onAction = { if (askFirst) asking = true else { close(memory::later); onShare?.invoke() } },
+            onClose = { close(memory::later) },
+            closeLabel = "다음에 볼게요",
+            modifier = modifier,
+        )
+    } else SoftCard(highlighted = true, modifier = modifier) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Groups, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
@@ -154,8 +175,6 @@ fun ShareWayCard(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            // The way that carries what was just made goes first: items made by hand only travel in words for now.
-            val askFirst = askOn && (notInFile || !canShare)
             val share: @Composable (Boolean) -> Unit = { primary ->
                 val onClick = { close(memory::later); onShare?.invoke(); Unit }
                 if (primary) Button(onClick = onClick, modifier = Modifier.heightIn(min = 48.dp)) { Text("$place 설정 보내기") }

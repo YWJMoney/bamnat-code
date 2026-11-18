@@ -14,7 +14,7 @@ object RecipeDescribe {
     )
     private val MISSIONS = mapOf("none" to "미션 없음", "math" to "계산 미션", "shake" to "흔들기 미션")
     private val CELLS = mapOf("fill" to "칸 채우기", "tint" to "옅게 칠하기", "dot" to "점만")
-    private val MARK_NAMES = mapOf("big" to "큰 표시", "small" to "작은 표시", "line" to "글자 줄", "dot" to "점 표시", "fill" to "근무 색 꽉 채우기", "none" to "표시 없음")
+    private val MARK_NAMES = mapOf("big" to "큰 표시", "small" to "작은 표시", "line" to "색 띠", "dot" to "점 표시", "fill" to "근무 색 꽉 채우기", "none" to "표시 없음")
     private val MODES = mapOf("DAY_RATE" to "일당(공수)형", "PER_JOB" to "건별형", "PLATFORM" to "플랫폼형")
     private val BREAKS = mapOf("UNPAID" to "휴게 무급", "PAID" to "휴게 유급", "AS_WORK" to "휴게도 근무시간")
     private val TAXES = mapOf("NONE" to "세금 없이", "WITHHOLDING_3_3" to "3.3% 떼기", "INSURANCE_4" to "4대보험")
@@ -48,6 +48,10 @@ object RecipeDescribe {
             listOfNotNull(
                 "알람 ${n}개 더하기".takeIf { n > 0 },
                 (p.values["snooze"] as? Long)?.let { "다시 울림 ${it}분" },
+                // 2.0.0 [RVM-22] RCP-05: 울림 길이·진동·점점 크게 are said too (진동이 켜진 채·처음부터 큰 소리는 보통이라 말하지 않아요).
+                (p.values["ring"] as? Number)?.let { "울림 ${it.toLong()}분" },
+                (p.values["vibrate"] as? Boolean)?.takeIf { !it }?.let { "진동 끔" },
+                (p.values["gradual"] as? Boolean)?.takeIf { it }?.let { "점점 크게" },
                 (p.values["mission"] as? String)?.let { MISSIONS[it] },
             ).joinToString(" · ").ifEmpty { "알람 설정" }
         }
@@ -74,7 +78,7 @@ object RecipeDescribe {
         ).joinToString(" · ")
         PieceKind.INVEST -> "원칙 ${items(p, "rules").size}개" + texts(p, "journal").takeIf { it.isNotEmpty() }?.let { " · 일지 칸 ${it.size}개" }.orEmpty()
         PieceKind.COMPANY -> "근무 주기와 급여 방식 (회사 설정 파일)"
-        PieceKind.BUNDLE -> "레시피 ${items(p, "items").size}개 묶음"
+        PieceKind.BUNDLE -> "작품 ${items(p, "items").size}개 묶음"
         PieceKind.LAYOUT -> listOfNotNull(
             texts(p, "tabs").takeIf { it.isNotEmpty() }?.let { t -> "탭 순서 " + t.joinToString("·") { tabName(it, style) } },
             (p.values["calendar"] as? String)?.let { "달력 화면 카드 ${parts(it)}" },
@@ -115,7 +119,7 @@ object RecipeDescribe {
         // [FREE-04]
         PieceKind.MEMO_LOOK -> listOfNotNull(
             (p.values["layout"] as? String)?.let { FREE_NAMES["layout.$it"] }, (p.values["card"] as? String)?.let { FREE_NAMES["card.$it"] },
-            (p.values["font"] as? String)?.let { FREE_NAMES["font.$it"] }, (p.values["lines"] as? Number)?.let { "${it.toInt()}줄 보기" },
+            (p.values["font"] as? String)?.let { fontName(it) }, (p.values["lines"] as? Number)?.let { "${it.toInt()}줄 보기" },
             "배경색".takeIf { p.values["bg"] != null },
         ).joinToString(" · ").ifEmpty { "메모장 모양" }
         // [FREE-06]
@@ -133,7 +137,8 @@ object RecipeDescribe {
             "그림 있음".takeIf { ScreenLooks.decode(p.values["screens"] as? String).images.isNotEmpty() },
         ).joinToString(" · ").ifEmpty { "화면 색·배경" }
         // [BLU-01] 1.36 부품 꾸미기: which parts, by the names the studio shows.
-        PieceKind.PARTS -> items(p, "parts").map { it["id"] as String }.distinct().let { ids ->
+        // 2.0.0 [RVP-72] (검토 REST-14) A part without a name (a recipe made elsewhere) is passed over, not a crash of the summary.
+        PieceKind.PARTS -> items(p, "parts").mapNotNull { it["id"] as? String }.distinct().let { ids ->
             "부품 ${ids.size}개 꾸밈: " + ids.take(4).joinToString("·") { BlueprintParts.LABELS[it] ?: it } + (if (ids.size > 4) " 외" else "") +
                 items(p, "parts").count { it["when"] != null }.let { n -> if (n > 0) " · 조건부 꾸미기 ${n}줄" else "" }
         }
@@ -197,11 +202,18 @@ object RecipeDescribe {
         "amount.l" to "금액 크게", "dayHead.line" to "날짜 줄", "dayHead.band" to "날짜 띠", "dayHead.big" to "날짜 크게",
     )
 
-    /** [FREE-05] The screens a 화면 색·배경 piece can colour. */
+    /**
+     * [FREE-05] The screens a 화면 색·배경 piece can colour.
+     * 2.0.0 [RVP-65] (검토 REST-06) By the names the studio's 화면 꾸미기 shows (마을, 통계, 메모장, 결제·처리방침): 광장 was the old
+     * name of the tab, and a summary called the same screen something else than the editor.
+     */
     val SCREEN_NAMES = mapOf(
-        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모", "stats" to "근무·급여", "pay" to "급여", "plaza" to "광장",
-        "settings" to "설정", "alarm" to "알람", "guarded" to "결제·약관",
+        "all" to "앱 전체", "calendar" to "달력", "money" to "가계부", "memo" to "메모장", "stats" to "통계", "pay" to "급여", "plaza" to "마을",
+        "settings" to "설정", "alarm" to "알람", "guarded" to "결제·처리방침",
     )
+
+    /** [RVP-65] A font by the name the font picker shows (글꼴 모음의 것도), the four old ones by theirs. */
+    fun fontName(id: String): String? = FREE_NAMES["font.$id"] ?: FontCatalog.byId(id)?.name?.let { "$it 글꼴" }
 
     val CORNER_NAMES = mapOf("round" to "모서리 둥글게", "soft" to "모서리 보통", "square" to "모서리 각지게")
 

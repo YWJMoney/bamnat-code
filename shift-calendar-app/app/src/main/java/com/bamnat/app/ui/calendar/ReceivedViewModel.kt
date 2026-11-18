@@ -131,10 +131,11 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Preview.Failed(
                     if (e.removedReason != null) "운영자가 이 링크를 내렸어요. 이유: ${e.removedReason}"
                     else if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
-                    else "근무표를 받지 못했어요 (${e.message}). 잠시 뒤 다시 해 주세요.",
+                    // 2.0.0 [RVG-24] 검토 PC-92: in people's words, not the server's code.
+                    else com.bamnat.app.share.linkProblem(e) ?: com.bamnat.app.share.netWords(e, "근무표를 받지 못했어요."),
                 )
             } catch (e: IOException) {
-                Preview.Failed("인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요.")
+                Preview.Failed(com.bamnat.app.share.netWords(e, "근무표를 받지 못했어요."))
             }
         }
     }

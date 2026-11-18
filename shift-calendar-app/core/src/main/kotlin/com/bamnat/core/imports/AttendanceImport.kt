@@ -17,6 +17,8 @@ enum class AttendanceField(val label: String) {
     HOURS("근무시간"),
     OVERTIME("연장·야근"),
     KIND("구분·휴가"),
+    /** 2.0.0 [RVL-26] (검토 SCAN-14·T07b-06) Whose row it is (이름·성명·사번): a file of many people is read for one. */
+    NAME("이름"),
 }
 
 /** [DAYW-06] Which row is the header and which column holds what. */
@@ -54,6 +56,7 @@ object AttendanceImport {
         AttendanceField.OVERTIME to listOf("연장근무", "연장근로", "연장", "초과근무", "초과", "시간외", "야근", "OVERTIME", "OT"),
         AttendanceField.HOURS to listOf("총근무시간", "실근무시간", "근무시간", "근로시간", "총근무", "인정시간", "WORKHOURS", "HOURS"),
         AttendanceField.KIND to listOf("근태구분", "근태", "휴가구분", "휴가", "구분", "유형", "상태", "비고", "TYPE", "STATUS"),
+        AttendanceField.NAME to listOf("성명", "이름", "사원명", "직원명", "사원", "직원", "사번", "사원번호", "NAME", "EMPLOYEE"),
     )
 
     /** The header row and its columns, from the first rows; null when no row names a date column. */
@@ -61,14 +64,15 @@ object AttendanceImport {
         for ((i, row) in rows.take(15).withIndex()) {
             val cols = LinkedHashMap<AttendanceField, Int>()
             // Fields with longer words first, so 출근일 is the date and not the start.
-            val order = listOf(AttendanceField.DATE, AttendanceField.OVERTIME, AttendanceField.HOURS, AttendanceField.START, AttendanceField.END, AttendanceField.KIND)
+            val order = listOf(AttendanceField.DATE, AttendanceField.OVERTIME, AttendanceField.HOURS, AttendanceField.START, AttendanceField.END, AttendanceField.KIND,
+                AttendanceField.NAME)
             for (f in order) {
                 val col = row.indices.firstOrNull { c ->
                     c !in cols.values && WORDS.getValue(f).any { w -> norm(row[c]).let { it == w || (w.length >= 2 && it.contains(w)) } }
                 } ?: continue
                 cols[f] = col
             }
-            if (AttendanceField.DATE in cols && cols.size >= 2) return ColumnMap(i, cols)
+            if (AttendanceField.DATE in cols && cols.size - (if (AttendanceField.NAME in cols) 1 else 0) >= 2) return ColumnMap(i, cols)
         }
         // No header: the first column with dates in it.
         val col = (0 until (rows.maxOfOrNull { it.size } ?: 0)).firstOrNull { c -> rows.take(10).count { parseDate(it.getOrNull(c).orEmpty(), 2000) != null } >= 3 }
@@ -76,20 +80,31 @@ object AttendanceImport {
     }
 
     /**
-     * The days of [rows] under [map]; rows without a date are left out, and the last row of a date wins.
-     * A date written without its year takes [defaultYear], or with [near] the year that puts it nearest that
-     * day and not more than a month after it (December's export read in January is last year's).
+     * 2.0.0 [RVL-26] (검토 SCAN-14·T07b-06) The people a file of many holds (its 이름 column), in their order; empty when it names
+     * none or only one.
      */
-    fun read(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null): List<AttendanceRow> {
+    fun people(rows: List<List<String>>, map: ColumnMap): List<String> {
+        val col = map.columns[AttendanceField.NAME] ?: return emptyList()
+        return rows.drop(map.headerRow + 1).mapNotNull { it.getOrNull(col)?.trim()?.takeIf(String::isNotEmpty) }.distinct().takeIf { it.size > 1 }.orEmpty()
+    }
+
+    /**
+     * The days of [rows] under [map]; rows without a date are left out. A date written without its year takes [defaultYear],
+     * or with [near] the year that puts it nearest that day and not more than a month after it (December's export read in
+     * January is last year's). 2.0.0 [RVL-26] (검토 SCAN-14) Only [who]'s rows when the file names people; a day of several rows
+     * (외출·복귀, 오전·오후) is one: its earliest 출근 and latest 퇴근, the hours and overtime of its rows added up.
+     */
+    fun read(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null, who: String? = null): List<AttendanceRow> {
         fun cell(row: List<String>, f: AttendanceField) = map.columns[f]?.let { row.getOrNull(it) }.orEmpty().trim()
-        val out = LinkedHashMap<LocalDate, AttendanceRow>()
+        val out = LinkedHashMap<LocalDate, MutableList<AttendanceRow>>()
         rows.drop(map.headerRow + 1).forEach { row ->
+            if (who != null && AttendanceField.NAME in map.columns && cell(row, AttendanceField.NAME) != who) return@forEach
             val date = parseDate(cell(row, AttendanceField.DATE), defaultYear, near) ?: return@forEach
             val kind = cell(row, AttendanceField.KIND)
             val k = kindOf(kind)
             val rawStart = cell(row, AttendanceField.START)
             val rawEnd = cell(row, AttendanceField.END)
-            out[date] = AttendanceRow(
+            out.getOrPut(date) { mutableListOf() } += AttendanceRow(
                 date = date,
                 start = parseTime(rawStart),
                 end = parseTime(rawEnd),
@@ -100,8 +115,37 @@ object AttendanceImport {
                 kind = kind,
             )
         }
-        return out.values.sortedBy { it.date }
+        return out.values.map(::oneDay).sortedBy { it.date }
     }
+
+    /** 2.0.0 [RVL-26] A day's rows as one: a row repeated is once; the day starts at its earliest 출근 (a day begins at 05시). */
+    internal fun oneDay(parts: List<AttendanceRow>): AttendanceRow {
+        val rows = parts.distinct()
+        if (rows.size == 1) return rows[0]
+        fun since(a: LocalTime, b: LocalTime) = Math.floorMod(b.toSecondOfDay() - a.toSecondOfDay(), 86_400)
+        val start = rows.mapNotNull { it.start }.minByOrNull { since(DAY_BEGINS, it) }
+        val end = start?.let { s -> rows.mapNotNull { it.end }.maxByOrNull { since(s, it) } } ?: rows.lastNotNullOrNull { it.end }
+        fun sum(f: (AttendanceRow) -> Int?) = rows.mapNotNull(f).takeIf { it.isNotEmpty() }?.sum()
+        return AttendanceRow(
+            date = rows[0].date, start = start, end = end, workMinutes = sum { it.workMinutes }, overtimeMinutes = sum { it.overtimeMinutes },
+            leave = rows.firstNotNullOfOrNull { it.leave }, absent = rows.all { it.absent },
+            kind = rows.map { it.kind }.filter { it.isNotEmpty() }.distinct().joinToString(" · "),
+        )
+    }
+
+    private val DAY_BEGINS = LocalTime.of(5, 0)
+    private inline fun <T, R : Any> List<T>.lastNotNullOrNull(f: (T) -> R?): R? = asReversed().firstNotNullOfOrNull(f)
+
+    /** 2.0.0 [RVL-26] How many days of [who] the file gives several rows: over [MANY_ROWS], said at the top. */
+    fun sharedDays(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null, who: String? = null): Int {
+        fun cell(row: List<String>, f: AttendanceField) = map.columns[f]?.let { row.getOrNull(it) }.orEmpty().trim()
+        return rows.drop(map.headerRow + 1)
+            .filter { who == null || AttendanceField.NAME !in map.columns || cell(it, AttendanceField.NAME) == who }
+            .mapNotNull { parseDate(cell(it, AttendanceField.DATE), defaultYear, near) }.groupingBy { it }.eachCount().count { it.value > 1 }
+    }
+
+    /** 2.0.0 [RVL-26] Days of several rows past which the file is said at the top to hold more than one person's or 외출 rows. */
+    const val MANY_ROWS = 3
 
     /** [IMPORT-05] A cell [read] could not use: the sheet's row (1 = the first), the column's field, what it held, and why. */
     data class Problem(val row: Int, val field: AttendanceField, val cell: String, val reason: String)
@@ -110,12 +154,13 @@ object AttendanceImport {
      * [IMPORT-05] Why rows were left out or cells not read, row by row, so the user can fix the file or the columns
      * instead of guessing from a count. Empty rows are not problems; a later row of the same date wins and says so.
      */
-    fun problems(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null): List<Problem> {
+    fun problems(rows: List<List<String>>, map: ColumnMap, defaultYear: Int, near: LocalDate? = null, who: String? = null): List<Problem> {
         fun cell(row: List<String>, f: AttendanceField) = map.columns[f]?.let { row.getOrNull(it) }.orEmpty().trim()
         val out = ArrayList<Problem>()
         val seen = HashMap<LocalDate, Int>()
         rows.withIndex().drop(map.headerRow + 1).forEach { (i, row) ->
             if (row.all { it.isBlank() }) return@forEach
+            if (who != null && AttendanceField.NAME in map.columns && cell(row, AttendanceField.NAME) != who) return@forEach
             val n = i + 1
             val rawDate = cell(row, AttendanceField.DATE)
             val date = parseDate(rawDate, defaultYear, near)
@@ -123,7 +168,7 @@ object AttendanceImport {
                 out += Problem(n, AttendanceField.DATE, rawDate, if (rawDate.isEmpty()) "날짜가 비어 있어 이 줄을 건너뛰었어요" else "날짜로 읽지 못해 이 줄을 건너뛰었어요")
                 return@forEach
             }
-            seen.put(date, n)?.let { first -> out += Problem(n, AttendanceField.DATE, rawDate, "${first}번째 줄과 같은 날이라 이 줄로 바꿨어요") }
+            seen.putIfAbsent(date, n)?.let { first -> out += Problem(n, AttendanceField.DATE, rawDate, "${first}번째 줄과 같은 날이라 한 날로 묶었어요(이른 출근·늦은 퇴근)") }
             for (f in listOf(AttendanceField.START, AttendanceField.END)) {
                 val v = cell(row, f)
                 if (v.isNotEmpty() && parseTime(v) == null && kindOf(v).leave == null) out += Problem(n, f, v, "시각으로 읽지 못했어요 (예: 09:00, 18:30)")
@@ -163,8 +208,13 @@ object AttendanceImport {
         }
     }
 
-    /** A date as 근태 exports write it: 2026-10-01, 2026.10.01(수), 2026/10/1, 10/01, 10월 1일, 20261001, or Excel's day number. */
-    fun parseDate(text: String, defaultYear: Int, near: LocalDate? = null): LocalDate? {
+    /**
+     * A date as 근태 exports write it: 2026-10-01, 2026.10.01(수), 2026/10/1, 10/01, 10월 1일, 20261001, or Excel's day number.
+     * A date without its year is the one nearest [near]: for 근태 (days gone by) never more than a month after it; 2.0.0 [RVL-15] (검토
+     * SCAN-02) with [ahead], for a 근무표 (days to come), the nearest either way: on 11월 10일 a December roster's 12/2~12/31 are this
+     * December, not last year's.
+     */
+    fun parseDate(text: String, defaultYear: Int, near: LocalDate? = null, ahead: Boolean = false): LocalDate? {
         val s = text.trim().replace(Regex("""\([^)]*\)"""), " ").trim()
         if (s.isEmpty()) return null
         Regex("""^(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})""").find(s)?.let { m ->
@@ -181,7 +231,7 @@ object AttendanceImport {
             val day = m.groupValues[2].toInt()
             if (near == null) return date(defaultYear, month, day)
             return listOf(near.year - 1, near.year, near.year + 1).mapNotNull { date(it, month, day) }
-                .filter { !it.isAfter(near.plusMonths(1)) }
+                .filter { ahead || !it.isAfter(near.plusMonths(1)) }
                 .minByOrNull { kotlin.math.abs(it.toEpochDay() - near.toEpochDay()) }
         }
         // Excel keeps a date as days since 1899-12-30; 30000..60000 is 1982..2064.

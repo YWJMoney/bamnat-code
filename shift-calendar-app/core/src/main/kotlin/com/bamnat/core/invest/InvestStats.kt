@@ -65,7 +65,9 @@ data class PeriodStats(
 object InvestStats {
     fun period(book: InvestBook, result: PortfolioResult, from: LocalDate, to: LocalDate): PeriodStats {
         val inRange = { d: LocalDate -> !d.isBefore(from) && !d.isAfter(to) }
-        val trades = book.trades.filter { inRange(it.date) }
+        // 2.0.0 [RVK-27] 수량 바뀜 (split, 입고·출고) is no trade to count; a fee paid on it still counts.
+        val records = book.trades.filter { inRange(it.date) }
+        val trades = records.filter { it.side.trade }
         val cash = book.cash.filter { inRange(it.date) }
         val sales = result.realizations.filter { inRange(it.date) }
         val wins = sales.filter { it.win }
@@ -97,8 +99,8 @@ object InvestStats {
             realized = sales.sumOf { it.pnlWon }.roundToLong(),
             income = cash.filter { it.kind.isIncome }.sumOf { it.amount - it.tax },
             otherCosts = cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
-            fees = (trades.sumOf { it.fee * it.fxRate }).roundToLong() + cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
-            taxes = (trades.sumOf { it.tax * it.fxRate }).roundToLong() + cash.filter { it.kind.isIncome }.sumOf { it.tax },
+            fees = (records.sumOf { it.fee * it.fxRate }).roundToLong() + cash.filter { it.kind == CashKind.FEE }.sumOf { it.amount },
+            taxes = (records.sumOf { it.tax * it.fxRate }).roundToLong() + cash.filter { it.kind.isIncome }.sumOf { it.tax },
             bought = trades.filter { it.side == Side.BUY }.sumOf { it.grossWon }.roundToLong(),
             sold = trades.filter { it.side == Side.SELL }.sumOf { it.grossWon }.roundToLong(),
             deposits = cash.filter { it.kind == CashKind.DEPOSIT }.sumOf { it.amount },
@@ -172,7 +174,7 @@ object InvestMonthSummary {
             }
         }
 
-        private fun won(v: Long) = "%,d원".format(v)
+        private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
     }
 
     /** The trades dated in [month] and the realised result of its sells, in won. */

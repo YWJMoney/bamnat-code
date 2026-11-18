@@ -51,6 +51,20 @@ object TrialNotice {
     fun nameOf(product: String): String =
         com.bamnat.core.tier.WorkPlanKind.entries.firstOrNull { it.product == product }?.title ?: "밤낮 프로"
 
+    /**
+     * 2.0.0 [RVO-07] (검토 PRO-13 '체험 마지막 알림 제목이 늘 "3일 뒤"') 마지막 알림은 3일 전에 맞춰 두지만 휴대폰이 늦게 깨우거나 앱을 늦게
+     * 열면 더 가까워요: 남은 날을 세어 "내일", "2일 뒤", "3일 뒤", 그날이면 "오늘".
+     */
+    fun finalTitle(name: String, day: java.time.LocalDate, today: java.time.LocalDate): String {
+        val left = java.time.temporal.ChronoUnit.DAYS.between(today, day)
+        val words = when {
+            left <= 0 -> "오늘"
+            left == 1L -> "내일"
+            else -> "${left}일 뒤"
+        }
+        return "$name 무료 체험이 $words(${day.monthValue}월 ${day.dayOfMonth}일) 끝나요"
+    }
+
     fun post(context: Context, end: Instant, product: String = com.bamnat.app.billing.ProductIds.PRO, final: Boolean = false, zone: ZoneId = Today.zone()) {
         val day = end.atZone(zone).toLocalDate()
         val name = nameOf(product)
@@ -60,7 +74,7 @@ object TrialNotice {
         val notification = NotificationCompat.Builder(context, Notifications.PRO_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setContentTitle(if (final) "$name 무료 체험이 3일 뒤(${day.monthValue}월 ${day.dayOfMonth}일) 끝나요" else "$name 무료 체험이 ${day.monthValue}월 ${day.dayOfMonth}일에 끝나요")
+            .setContentTitle(if (final) finalTitle(name, day, Today.date()) else "$name 무료 체험이 ${day.monthValue}월 ${day.dayOfMonth}일에 끝나요")
             .setContentText(if (final) "그날부터 결제돼요. 그만두려면 ‘구독 관리·해지’에서 바로 해지할 수 있어요." else "그날부터 결제돼요. 앱을 열어 계속 쓸지 알려 주세요. 해지는 ‘구독 관리·해지’에서 바로 돼요.")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
                 (if (final) "그날부터 결제돼요. 그만두려면 ‘구독 관리·해지’에서 바로 해지할 수 있어요." else "그날부터 결제돼요. 앱을 열어 계속 쓸지 알려 주세요. 해지는 ‘구독 관리·해지’에서 바로 돼요.") +
@@ -127,6 +141,20 @@ object EndNotice {
         return if (pass) "1년 이용권이 ${day}에 끝나요" to "자동 결제가 없어서 그날 그냥 끝나요. 이어 쓰려면 프로 화면에서 다시 사면 이어져요."
         else "프로 연 요금제가 ${day}에 갱신돼요" to
             ((if (found > 0) "올해 밤낮이 찾아 준 돈 %,d원 · 광고 0편. ".format(found) else "올해 광고 0편으로 썼어요. ") + "해지는 Play 스토어에서 언제든 해요.")
+    }
+
+    /**
+     * 2.0.0 [RVO-07] (검토 PRO-13 '체험 마지막 알림 제목이 늘 "3일 뒤"') 마지막 알림은 3일 전에 맞춰 두지만 휴대폰이 늦게 깨우거나 앱을 늦게
+     * 열면 더 가까워요: 남은 날을 세어 "내일", "2일 뒤", "3일 뒤", 그날이면 "오늘".
+     */
+    fun finalTitle(name: String, day: java.time.LocalDate, today: java.time.LocalDate): String {
+        val left = java.time.temporal.ChronoUnit.DAYS.between(today, day)
+        val words = when {
+            left <= 0 -> "오늘"
+            left == 1L -> "내일"
+            else -> "${left}일 뒤"
+        }
+        return "$name 무료 체험이 $words(${day.monthValue}월 ${day.dayOfMonth}일) 끝나요"
     }
 
     fun post(context: Context, end: Instant, pass: Boolean, found: Long) {

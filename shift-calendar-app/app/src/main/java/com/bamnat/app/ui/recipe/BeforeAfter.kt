@@ -50,7 +50,7 @@ internal fun BeforeAfter(sides: List<RecipePieces.Side>, modifier: Modifier = Mo
     // What changes first, then what stays, so a folded table shows the changes.
     val ordered = sides.sortedBy { if (it.changed) 0 else 1 }
     val shown = if (open || ordered.size <= fold + 1) ordered else ordered.take(fold)
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh)
+    Column(modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceContainerHigh)
         .padding(horizontal = 12.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (title) Text(if (changed == 0) "넣어도 지금과 같아요" else "지금 ↔ 넣으면 · 바뀌는 곳 ${changed}곳", style = MaterialTheme.typography.labelLarge,
             modifier = Modifier.semantics { heading() })

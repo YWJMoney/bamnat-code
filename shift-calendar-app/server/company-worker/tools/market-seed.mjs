@@ -51,6 +51,9 @@ export const SETS = {
     goals: { theme: 28, "tab:calendar": 25, "tab:memo": 18, "tab:money": 17, "tab:pay": 19, "tab:widget": 17, "tab:alarm": 14, part: 19, logic: 10,
       // 1.39 [FLOW-21] 장터 새 탭 '밤 화면'의 첫 작품(밤 화면·아침 한 장 부품, G8).
       "tab:night": 6 } },
+  // 2.0.0 [RVS-01] 스튜디오 가장자리 시험 작품 E1~E12(조사 보고서 9장): PC 확인용으로 로컬 서버에만 넣어요(`--set edge --post <로컬> --open`).
+  // 실서버 장터에는 내지 않아요. 앱 시험(EdgeWorksTest·PartMotionTapTest)도 같은 파일을 읽어요.
+  edge: { dir: join(ROOT, "edge-200"), out: join(ROOT, "edge-200.json"), batch: "2.0.0 가장자리 시험 작품", minApp: 54, goals: {} },
 };
 
 export function sectionKey(text) {
@@ -154,7 +157,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1
     process.exit(0);
   }
   const set = SETS[args.includes("--set") ? args[args.indexOf("--set") + 1] : 136];
-  if (!set) throw new Error("--set 은 136, 138, 138s, 138r, 139 중 하나예요");
+  if (!set) throw new Error("--set 은 136, 138, 138s, 138r, 139, edge 중 하나예요");
   const { entries, refused, count, short } = await build(readWorks(set.dir), set);
   console.log(`작품 ${entries.length}개 · 구간 ${Object.entries(count).map(([k, n]) => `${k} ${n}`).join(", ")}`);
   for (const r of refused) console.log(`거절: ${r}`);

@@ -3,7 +3,6 @@ package com.bamnat.app.ui.calendar
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,6 +62,7 @@ import java.time.DayOfWeek
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * [NURS-01][NURS-02] A month's duty from the roster sheet, typed like a keypad: a code goes into the
@@ -201,8 +201,10 @@ fun DutyTypingPanel(
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.tertiary)
             }
             MonthCells(month, cursor, typed.keys, ::shiftOf, warnings.map { it.date }.toSet(), toCheck.toSet(), weekStart) { pad = pad.tap(it) }
-            // [ROST-08] Sideways, so three buttons never squeeze under a big font.
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            // [ROST-08] Three buttons never squeeze under a big font. 2.0.0 [RVL-34] (HQ-61 ④, same structure as 한 달 근무 넣기): they wrap
+            // under each other instead of going sideways out of sight at the folded width (조건 12).
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
                 if (lastMonth.isNotEmpty()) OutlinedButton(onClick = {
                     pad = pad.putAll(lastMonth.mapKeys { it.key.dayOfMonth })
                 }, modifier = Modifier.heightIn(min = 48.dp)) {
@@ -217,7 +219,6 @@ fun DutyTypingPanel(
                     Icon(Icons.Filled.Repeat, null)
                     Text(" 이 순서 반복", maxLines = 1)
                 }
-                Spacer(Modifier.width(4.dp))
                 TextButton(onClick = { pad = pad.undo() }, enabled = pad.canUndo, modifier = Modifier.heightIn(min = 48.dp)) {
                     Icon(Icons.AutoMirrored.Filled.Undo, null)
                     Text(" 되돌리기")
@@ -260,7 +261,7 @@ fun DutyTypingPanel(
                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (warnings.isNotEmpty()) {
-                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(12.dp)).padding(12.dp),
+                Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.errorContainer, MaterialTheme.shapes.medium).padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("확인해 보세요 ${warnings.size}건", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onErrorContainer)
                     warnings.take(8).forEach { w -> Text("· ${w.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer) }
@@ -346,10 +347,10 @@ private fun MonthCells(
                                         date in doubtful -> MaterialTheme.colorScheme.tertiaryContainer
                                         typed.contains(date) -> MaterialTheme.colorScheme.secondaryContainer
                                         else -> MaterialTheme.colorScheme.surfaceContainer
-                                    }, RoundedCornerShape(8.dp))
+                                    }, MaterialTheme.shapes.small)
                                     .border(if (here) 2.dp else if (date in warned) 1.dp else 0.dp,
-                                        if (here) MaterialTheme.colorScheme.primary else if (date in warned) MaterialTheme.colorScheme.error else Color.Transparent, RoundedCornerShape(8.dp))
-                                    .clickable { onPick(day) }
+                                        if (here) MaterialTheme.colorScheme.primary else if (date in warned) MaterialTheme.colorScheme.error else Color.Transparent, MaterialTheme.shapes.small)
+                                    .clickable(role = Role.Button) { onPick(day) }
                                     .semantics {
                                         contentDescription = "${month.monthValue}월 ${day}일 ${t?.name ?: "비어 있음"}" +
                                             (if (date in doubtful) ", 확인할 칸" else "") + if (here) ", 지금 넣을 날" else ""
@@ -363,7 +364,7 @@ private fun MonthCells(
                                 if (t != null && color != null) Text(
                                     t.label, style = MaterialTheme.typography.titleSmall, color = contentColorOn(color),
                                     fontWeight = FontWeight.Bold, maxLines = 1,
-                                    modifier = Modifier.background(color, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp),
+                                    modifier = Modifier.background(color, MaterialTheme.shapes.extraSmall).padding(horizontal = 6.dp),
                                 ) else Text("·", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }

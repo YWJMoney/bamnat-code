@@ -104,6 +104,15 @@ class InvestAppTest {
         assertNull(fresh.goalAmount)
         assertFalse(fresh.hideAmounts)
         assertEquals(4, fresh.principles.size)
+        assertTrue(fresh.etfTaxed.isEmpty())
+    }
+
+    @Test fun eachEtfKeepsItsKind() = runBlocking {
+        // 2.0.0 [RVK-31] (검토 MONEY-66) An ETF's kind, picked once, is there the next time; a broken line is left out, not misread.
+        repo.saveSettings { it.copy(etfTaxed = mapOf("360750" to true, "069500" to false)) }
+        assertEquals(mapOf("360750" to true, "069500" to false), repo.now().settings.etfTaxed)
+        val odd = InvestRepository.SettingsCodec.decode(mapOf(InvestRepository.SettingsCodec.ETF_KINDS to "360750\t1\n\t1\n069500\t2\nabc"))
+        assertEquals(mapOf("360750" to true), odd.etfTaxed)
     }
 
     @Test fun anEmptyJournalIsRemoved() = runBlocking {
@@ -185,6 +194,38 @@ class InvestAppTest {
         assertEquals(before.settings, after.settings)
     }
 
+    /**
+     * 2.0.0 [RVK-27] (검토 MONEY-64) A split and shares moved in or out come back from the backup, under their own key: an app from
+     * before 2.0.0 read a side it did not know as 매수, so in "trades" a 1:5 split would have come back as five shares bought for 0원.
+     */
+    @Test fun quantityChangesComeBackAndAnOlderAppSkipsThem() = runBlocking {
+        ScheduleRepository(db).ensureDefaults()
+        val acc = repo.ensureAccount()
+        fun t(side: Side, q: Double, p: Double, days: Long) =
+            Trade(accountId = acc, date = day.plusDays(days), symbol = "005930", name = "삼성전자", side = side, quantity = q, price = p)
+        repo.saveTrade(t(Side.BUY, 10.0, 70_000.0, 0))
+        repo.saveTrade(t(Side.SPLIT, 5.0, 0.0, 1))
+        repo.saveTrade(t(Side.IN, 2.0, 0.0, 2))
+        repo.saveTrade(t(Side.OUT, 12.0, 0.0, 3))
+        val before = repo.now()
+        val backups = BackupManager(db, SettingsRepository(context))
+        val json = backups.export()
+        val invest = org.json.JSONObject(json).getJSONObject("invest")
+        assertEquals(listOf("BUY"), (0 until invest.getJSONArray("trades").length()).map { invest.getJSONArray("trades").getJSONObject(it).getString("side") })
+        assertEquals(listOf("SPLIT", "IN", "OUT"),
+            (0 until invest.getJSONArray("quantityChanges").length()).map { invest.getJSONArray("quantityChanges").getJSONObject(it).getString("side") })
+
+        db.investDao().clearTrades()
+        backups.restore(json)
+        assertEquals(before.trades.map { it.copy(createdAt = 0) }, repo.now().trades.map { it.copy(createdAt = 0) })
+        assertEquals(40.0, Portfolio.build(repo.now()).holdings.single().quantity, 1e-9)
+
+        // What an older app restores: "trades" only, so 10주 at 70,000원 and nothing bought for 0원.
+        val older = org.json.JSONObject(json).apply { getJSONObject("invest").remove("quantityChanges") }
+        backups.restore(older.toString())
+        assertEquals(listOf(Side.BUY), repo.now().trades.map { it.side })
+    }
+
     @Test fun anOlderBackupWithoutInvestorRecordsLeavesThePhonesOwn() = runBlocking {
         ScheduleRepository(db).ensureDefaults()
         val backups = BackupManager(db, SettingsRepository(context))
@@ -215,7 +256,7 @@ class InvestAppTest {
     @Test fun theNoticeOpensItsTradeAndAPlanIsSavedInOneTap() = runBlocking {
         // 매매 기록 on the notice: the target, its calendar and the alarm reach the screen.
         val intent = com.bamnat.app.NoticeLinks.intent(context, com.bamnat.app.NoticeLinks.Target.INVEST_TRADE, PersonalCalendar.MAIN, payload = "42")
-        assertTrue(com.bamnat.app.NoticeLinks.read(intent))
+        assertTrue(com.bamnat.app.NoticeLinks.read(context, intent))
         assertEquals(com.bamnat.app.NoticeLinks.Target.INVEST_TRADE, com.bamnat.app.NoticeLinks.target.value)
         assertEquals("42", com.bamnat.app.NoticeLinks.payload.value)
         assertEquals(PersonalCalendar.MAIN, com.bamnat.app.NoticeLinks.calendar.value)
@@ -263,9 +304,16 @@ class InvestAppTest {
         val alert = com.bamnat.core.invest.TradeAlertParser.parse("[체결통보] 매수 삼성전자(005930) 10주 체결 단가 71,500원", "com.truefriend.neosmarta")!!
         val p = com.bamnat.core.invest.TradeAlerts.of(alert, "한국투자", 1_000_000L)
         assertTrue(repo.addAlert(p))
-        assertFalse(repo.addAlert(p.copy(at = 1_060_000L)))
-        assertEquals(1, repo.pendingAlerts.first().size)
-        val t = repo.confirmAlert(p)
+        // 2.0.0 [RVK-14] (MONEY-62): the very same notification again, or the same fill told by another app, is one line.
+        assertFalse(repo.addAlert(p))
+        assertFalse(repo.addAlert(p.copy(app = "한국투자 알림톡", at = 1_030_000L)))
+        // The same app's next notification a minute later is another fill of the order (50주 + 50주), put with it.
+        assertTrue(repo.addAlert(p.copy(at = 1_060_000L)))
+        val waiting = repo.pendingAlerts.first().single()
+        assertEquals(20.0, waiting.quantity, 0.0)
+        assertEquals(2, waiting.parts)
+        val t = repo.confirmAlert(waiting)
+        assertEquals(20.0, t.quantity, 0.0)
         assertEquals(listOf("알림:한국투자"), t.tags)
         assertTrue(t.fee > 0)
         assertEquals(t.id, repo.now().trades.single().id)

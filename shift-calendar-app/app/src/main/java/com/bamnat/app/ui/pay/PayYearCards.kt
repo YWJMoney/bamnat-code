@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -47,7 +48,9 @@ import com.bamnat.core.time.Today
  * result; the weekly 다시 계산 알림 is for a subscription.
  */
 @Composable
-internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, calendarId: String? = null) {
+internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month: YearMonth, calendarId: String? = null,
+                         /** 2.0.0 [RVJ-06] 검토 PAYU-48: closed months' kept totals, so this card and the year report agree. */
+                         closed: Map<YearMonth, Long> = emptyMap()) {
     val c = LocalContext.current.appContainer
     // [J133-31] 1.33 (실사용 테스트 "안내는 '연말정산은 도구에'인데 도구에 없어요"): the card is always here; a pay without
     // 4대보험 says why it cannot be worked out, with the way to change it.
@@ -70,14 +73,18 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
     var open by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     val typed = settings?.yearEndFor(month.year) ?: YearEndPreview.Extras()
-    val r by produceState<YearEndPreview.Result?>(null, open, profile, snapshot, month, typed, pro) {
+    // [RVJ-06] 검토 U05b-04: worked out off the screen with a short wait shown (twelve months of the calendar).
+    var working by remember { mutableStateOf(false) }
+    val r by produceState<YearEndPreview.Result?>(null, open, profile, snapshot, month, typed, pro, closed) {
+        if (open) working = true
         if (open) value = withContext(Dispatchers.Default) {
             val extras = if (pro && calendarId != null) {
                 val money = c.calendars.money(calendarId)
                 YearEndPreview.extrasFrom(money.allEntries(), money.allAccounts(), month.year, Today.date(), typed)
             } else YearEndPreview.Extras()
-            runCatching { YearEndPreview.ofYear(profile, month, snapshot.resolver::resolve, extras = extras) }.getOrNull()
+            runCatching { YearEndPreview.ofYear(profile, month, snapshot.resolver::resolve, extras = extras, closed = { closed[it] }) }.getOrNull()
         }
+        working = false
     }
     SectionCard(title = "${month.year}년 연말정산 미리보기", trailing = { if (!open) TextButton(onClick = { open = true }) { Text("계산하기") } }) {
         if (!open) {
@@ -85,7 +92,13 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             return@SectionCard
         }
-        val x = r ?: return@SectionCard
+        val x = r ?: run {
+            if (working) Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.CircularProgressIndicator(Modifier.padding(end = 8.dp).size(18.dp), strokeWidth = 2.dp)
+                Text("열두 달을 계산하고 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            return@SectionCard
+        }
         Text(
             if (x.refund >= 0) "약 ${won(x.refund)} 돌려받아요" else "약 ${won(-x.refund)} 더 내요",
             style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
@@ -95,7 +108,13 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
             Text("지난 계산(${settings?.yearEndLastAt?.let { "${it.monthValue}/${it.dayOfMonth}" }})보다 ${won(kotlin.math.abs(x.refund - last))} " +
                 if (x.refund > last) "늘었어요" else "줄었어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Line("총급여 (한 해로 어림, ${x.months}개월 기준)", won(x.salary))
+        // [RVJ-06] 검토 PAYC-05·PAYU-48: the months so far plus the calendar's months ahead, not the months so far run on.
+        Line("총급여 (한 해)", won(x.salary))
+        Text(if (x.projectedMonths > 0) "1~${month.monthValue}월은 근무 기록, ${x.projectedMonths}달은 근무표대로 셌어요"
+            else "1~${month.monthValue}월 근무 기록으로 셌어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (profile.insuranceOff.isNotEmpty()) Text("떼지 않는 ${profile.insuranceOff.joinToString("·") { it.label }}은 공제에서 뺐어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Line("근로소득공제", "−" + won(x.earnedDeduction))
         if (x.cardDeduction > 0) Line("신용카드 등 소득공제", "−" + won(x.cardDeduction))
         if (x.extras.hasHometax) Text("카드는 홈택스 1~9월 숫자에 10월부터 가계부를 더했어요", style = MaterialTheme.typography.bodySmall,

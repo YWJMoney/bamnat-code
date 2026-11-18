@@ -56,6 +56,9 @@ object WatchStore {
     /** Asks the tile and the complication to draw again, and wakes them at the next midnight (the complication also has its timeline). */
     fun changed(context: Context) {
         runCatching { TileService.getUpdater(context).requestUpdate(ShiftTileService::class.java) }
+        // 2.0.0 [RVI-94][RVI-95] 잠 and 오늘 할 일 read the same copy.
+        runCatching { TileService.getUpdater(context).requestUpdate(SleepTileService::class.java) }
+        runCatching { TileService.getUpdater(context).requestUpdate(TaskTileService::class.java) }
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, TodayComplicationService::class.java)).requestUpdateAll()
         }
@@ -66,6 +69,8 @@ object WatchStore {
         runCatching {
             ComplicationDataSourceUpdateRequester.create(context, ComponentName(context, NextShiftComplicationService::class.java)).requestUpdateAll()
         }
+        // 2.0.0 [RVI-90] The watch's own alarm a minute after the phone's next one, planned again with each new copy.
+        runCatching { BackupRing.plan(context, load(context)) }
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         val zone = Today.zone()
         val midnight = Today.date(zone).plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() + 5_000
@@ -93,8 +98,12 @@ object WatchStore {
         return nodes.isNotEmpty()
     }
 
+    /** 2.0.0 [RVI-11] For the screen shots of what came of 오늘 알람 끄기 (껐어요·못 껐어요) without a phone; always null on a watch. */
+    @androidx.annotation.VisibleForTesting @Volatile internal var sendForTest: ((path: String, text: String) -> Boolean)? = null
+
     /** [WEAR-03] Tells the phone to do something (turn today's alarm off, write 출근·퇴근); it sends fresh days back. */
     suspend fun send(context: Context, path: String, text: String): Boolean {
+        sendForTest?.let { return it(path, text) }
         val nodes = await(Wearable.getNodeClient(context).connectedNodes).orEmpty()
         var sent = false
         nodes.forEach { node -> if (await(Wearable.getMessageClient(context).sendMessage(node.id, path, text.toByteArray())) != null) sent = true }

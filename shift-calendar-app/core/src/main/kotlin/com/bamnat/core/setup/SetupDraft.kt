@@ -11,6 +11,7 @@ import com.bamnat.core.schedule.ShiftRole
 import com.bamnat.core.work.WorkStyle
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 
 /** [SETUP-01] The steps of the first setup, in order. Only the ones that apply are shown. */
 enum class SetupStep { STYLE, COMPANY, BUNDLE, TIMES, ORDER, TODAY, ALARM, SUMMARY }
@@ -91,7 +92,27 @@ data class SetupDraft(
      * title; the summary names it and starts with one press. Empty for any other setup.
      */
     val linkTitle: String = "",
+    /**
+     * [RVG-16] 검토 TYPE-21: a setup filled from a 근무표 link ([linkTitle]) was always 교대. Its days stay the link's painted roster
+     * (the setup's steps are 교대's), and the summary asks how the user works: 일근 or 알바 here makes the saved phone that kind of
+     * work ([savedStyle]). Null: the draft's own [style].
+     */
+    val workAs: WorkStyle? = null,
 ) {
+    /** [RVG-16] The kind of work the saved setup gives the phone. */
+    val savedStyle: WorkStyle? get() = workAs ?: style
+
+    /**
+     * [RVG-18] 검토 PC-22 (도약 14): the month a painted roster is first seen on. A 팀 리더 confirms next month's 근무표, so a member
+     * started from it saw an empty this month on the summary and on the calendar after it: this month when it has a working day,
+     * else the first later month that has one.
+     */
+    fun openingMonth(today: LocalDate): YearMonth {
+        val now = YearMonth.from(today)
+        val months = painted.filterValues { !isOff(it) }.keys.map(YearMonth::from).filter { it >= now }
+        return if (months.isEmpty() || now in months) now else months.min()
+    }
+
     val workTypes: List<ShiftType> get() = types.filter { !it.isOff && it.hasTimes }
 
     fun type(id: Long?): ShiftType? = id?.let { i -> types.firstOrNull { it.id == i } }
@@ -208,6 +229,44 @@ data class SetupDraft(
     fun typesToSave(): List<ShiftType> = types.map { t ->
         val minutes = if (t.isOff || !t.hasTimes) null else alarmFor(t)
         t.copy(alarmEnabled = minutes != null, alarms = listOf(AlarmSpec(minutes ?: DEFAULT_ALARM_MINUTES)))
+    }
+
+    /**
+     * [RVH-28] 검토 WORK-04 처음 설정 다시 받기 over the shifts the calendar has ([kept]): a shift of the same name keeps what the user
+     * made of it (its alarms, on or off, color, sound, icon, own extra pay and paid break); the draft gives its times. The
+     * alarm chosen on the summary is for the shifts that are new. Before 2.0.0 every one came back with one alarm, quietly.
+     * 검토 WORK-19 With [from], new hours count from that day only, as the setup again says ("오늘부터, 지난 날은 그대로").
+     */
+    fun typesToSave(kept: List<ShiftType>, from: LocalDate? = null): List<ShiftType> {
+        val byName = kept.associateBy { it.name.trim() }
+        return typesToSave().map { t ->
+            val mine = byName[t.name.trim()] ?: return@map t
+            val merged = t.copy(
+                colorArgb = mine.colorArgb, alarms = mine.alarms, alarmEnabled = mine.alarmEnabled, alarmSoundUri = mine.alarmSoundUri,
+                icon = mine.icon ?: t.icon, premiumPercent = if (t.premiumPercent == 0) mine.premiumPercent else t.premiumPercent,
+                breakPaid = t.breakPaid ?: mine.breakPaid,
+            )
+            if (from != null && !mine.isOff && !merged.isOff) mine.withTimesFrom(merged, from) else merged.copy(timeHistory = mine.timeHistory)
+        }
+    }
+
+    /** 검토 WORK-04 The work shifts of this draft that [kept] has by name, whose alarms stay as they are. */
+    fun keptWork(kept: List<ShiftType>): List<ShiftType> {
+        val names = kept.map { it.name.trim() }.toSet()
+        return workTypes.filter { it.name.trim() in names }
+    }
+
+    /**
+     * 검토 WORK-04 The shifts whose times this setup changes, said on the summary before saving ("주간 07:00~16:00 → 08:00~17:00"):
+     * the one of [kept] and the draft's, by name, when the start, end or break differ.
+     */
+    fun timeChanges(kept: List<ShiftType>): List<Pair<ShiftType, ShiftType>> {
+        val byName = kept.associateBy { it.name.trim() }
+        return types.mapNotNull { t ->
+            val mine = byName[t.name.trim()] ?: return@mapNotNull null
+            val same = mine.isOff == t.isOff && mine.start == t.start && mine.end == t.end && mine.breakMinutes == t.breakMinutes
+            if (same) null else mine to t
+        }
     }
 
     /** Starts the draft's shifts from a bundle (or the weekday, part-time or custom set). */

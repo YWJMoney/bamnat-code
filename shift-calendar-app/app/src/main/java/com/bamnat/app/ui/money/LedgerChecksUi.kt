@@ -56,6 +56,7 @@ import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.money.MoneyEntry
 import java.time.LocalDate
 import java.time.YearMonth
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.32 [LEDX-16][LEDX-19] 확인할 것: what the phone could not decide alone and asks once. A refund whose payment it
@@ -74,7 +75,7 @@ internal fun LedgerAsksCard(book: MoneyBook, today: LocalDate, vm: MoneyViewMode
     var picking by remember { mutableStateOf<MoneyEntry?>(null) }
     SectionCard(title = "확인할 것 ${refunds.size + cards.size.coerceAtMost(2)}건") {
         refunds.take(5).forEach { r ->
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = r }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = r }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("환불 받은 돈 ${Fmt.won(-r.amount)} · ${r.title}", style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Muted("${Fmt.shortDate(r.date)} · 원래 결제를 골라 주시면 남은 금액까지 맞춰요")
@@ -126,7 +127,7 @@ internal fun RefundPickDialog(refund: MoneyEntry, entries: List<MoneyEntry>, onP
                 if (options.isEmpty()) Muted("90일 안에 이만큼 쓴 결제가 없어요. 그냥 환불로 두셔도 돼요")
                 options.forEach { e ->
                     val back = LedgerChecks.refundedBefore(e, entries, except = refund.id)
-                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { onPick(e) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { onPick(e) }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Muted(listOfNotNull(Fmt.shortDate(e.date), e.category, back.takeIf { it > 0 }?.let { "이미 ${Fmt.won(it)} 돌려받음" }).joinToString(" · "))
@@ -155,7 +156,7 @@ internal fun InstallmentPlanCard(book: MoneyBook, today: LocalDate) {
         Text("남은 할부 ${Fmt.won(owed)}" + if (fees > 0) " · 수수료 ${Fmt.won(fees)}" else "", style = MaterialTheme.typography.titleSmall)
         plan.filter { it.rows.isNotEmpty() }.forEach { b ->
             val key = b.month.toString()
-            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable { open = if (open == key) null else key }.padding(vertical = 2.dp),
+            Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).clickable(role = Role.Button) { open = if (open == key) null else key }.padding(vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically) {
                 Text(Fmt.monthShort(b.month) + " 청구", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Text(Fmt.won(b.total), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
@@ -181,7 +182,7 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val prefs by c.autoRecordPrefs.state.collectAsStateWithLifecycle()
     var names by rememberSaveable { mutableStateOf(prefs.myNames.joinToString(", ")) }
-    var fee by rememberSaveable { mutableStateOf("%.2f".format(prefs.abroadFee * 100).trimEnd('0').trimEnd('.')) }
+    var fee by rememberSaveable { mutableStateOf(com.bamnat.core.text.Numbers.plain(prefs.abroadFee * 100, 2)) }
     var cur by rememberSaveable { mutableStateOf("") }
     var rate by rememberSaveable { mutableStateOf("") }
     AlertDialog(
@@ -194,21 +195,21 @@ internal fun CaptureTuneDialog(onDismiss: () -> Unit) {
                 Muted("이 이름으로 들어온 돈은 수입이 아니라 내 계좌끼리 옮긴 돈으로 적어요. 홍*동처럼 가려 와도 알아봐요. 휴대폰에만 있어요")
                 HorizontalDivider()
                 Text("해외 결제", style = MaterialTheme.typography.titleSmall)
-                OutlinedTextField(fee, { fee = it.filter { ch -> ch.isDigit() || ch == '.' }.take(5) }, label = { Text("해외 이용 수수료 (%)") }, singleLine = true,
+                OutlinedTextField(fee, { fee = com.bamnat.core.text.Numbers.cleanRate(it) }, label = { Text("해외 이용 수수료 (%)") }, singleLine = true,
                     visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth())
                 Muted("카드사 안내문의 ‘해외 이용 수수료’예요. 보통 브랜드 1% + 해외 서비스 0.18~0.25%예요")
                 if (prefs.rates.isNotEmpty()) {
                     Text("내 환율", style = MaterialTheme.typography.labelLarge)
                     prefs.rates.entries.sortedBy { it.key }.forEach { (k, v) ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("$k 1 = ${"%,.2f".format(v)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                            Text("$k 1 = ${"%,.2f".format(java.util.Locale.ROOT, v)}원", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                             IconButton(onClick = { c.autoRecordPrefs.setRate(k, null) }) { Icon(Icons.Filled.Close, "$k 환율 지우기") }
                         }
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(cur, { cur = it.filter { ch -> ch.isLetter() }.uppercase().take(3) }, label = { Text("통화") }, singleLine = true, modifier = Modifier.weight(1f))
-                    OutlinedTextField(rate, { rate = it.filter { ch -> ch.isDigit() || ch == '.' }.take(9) }, label = { Text("1단위 원") }, singleLine = true,
+                    OutlinedTextField(rate, { rate = com.bamnat.app.ui.invest.cleanDecimal(it).take(9) }, label = { Text("1단위 원") }, singleLine = true,
                         visualTransformation = com.bamnat.app.ui.components.GroupedNumber, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1.4f))
                     TextButton(enabled = cur.length == 3 && (rate.toDoubleOrNull() ?: 0.0) > 0, onClick = {
                         c.autoRecordPrefs.setRate(cur, rate.toDoubleOrNull()); cur = ""; rate = ""

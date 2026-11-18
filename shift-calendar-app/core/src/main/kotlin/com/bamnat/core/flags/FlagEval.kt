@@ -31,6 +31,13 @@ data class PhoneFacts(
     val owner: Boolean = false,
     /** [FLAG-15] Rows this admin phone previews (step 3); ignored on a phone that is not an admin's. */
     val previews: Set<String> = emptySet(),
+    /**
+     * 2.0.0 [RVO-12] (HQ-46) A day a release build knows has come ([Released.DAY]): a LEGAL row never reads an earlier date, and with no
+     * server clock a date up to it counts as past. Null in debug builds and tests (모든 기능이 열린 채로).
+     */
+    val knownDay: LocalDate? = null,
+    /** 2.0.0 [RVO-12] (HQ-46) Manual facts a release build knows ([Released.CHECKS]), read only while the server has said nothing of a row. */
+    val knownChecks: Map<String, Instant> = emptyMap(),
 ) {
     val today: LocalDate get() = now.atZone(KST).toLocalDate()
     val serverToday: LocalDate? get() = serverNow?.atZone(KST)?.toLocalDate()
@@ -58,6 +65,11 @@ data class FlagState(
     val source: FlagSource,
     val reason: String,
     val checks: List<Check>,
+    /**
+     * 2.0.0 [RVO-12] (HQ-46) Off by its own conditions while a 처리방침 hold keeps this phone back: the day the hold ends ([PolicyVersion.holdEnds]),
+     * so a screen can say why ('처리방침 3.1 동의 전이라 11월 23일까지'). Null when on, or off for another reason.
+     */
+    val heldUntil: LocalDate? = null,
 )
 
 /**
@@ -68,6 +80,15 @@ data class FlagState(
  */
 object FlagEval {
     fun state(flag: Flag, phone: PhoneFacts, override: FlagOverride? = null, calendar: PolicyCalendar = PolicyCalendar.SEED): FlagState {
+        val s = decide(flag, phone, override, calendar)
+        if (s.on || s.source != FlagSource.CONDITIONS) return s
+        // 2.0.0 [RVO-12] A row its policy hold keeps off says until when.
+        val held = (override?.conditions ?: flag.conditions).policyOnly().filterIsInstance<Condition.Policy>()
+            .firstOrNull { check(it, flag, phone, override, calendar).status == Check.Status.UNMET }
+        return held?.let { calendar.of(it.version)?.holdEnds }?.let { s.copy(heldUntil = it) } ?: s
+    }
+
+    private fun decide(flag: Flag, phone: PhoneFacts, override: FlagOverride?, calendar: PolicyCalendar): FlagState {
         val legal = flag.risk == Risk.LEGAL
         val conditions = override?.conditions ?: flag.conditions
         val checks = conditions.map { check(it, flag, phone, override, calendar) }
@@ -121,7 +142,13 @@ object FlagEval {
     /** [FLAG-04] The instant a row reads: the server's for a LEGAL row (null when not known), the phone's otherwise. */
     private fun clock(phone: PhoneFacts, legal: Boolean): Instant? = if (legal) phone.serverNow else phone.now
 
-    private fun dateOf(phone: PhoneFacts, legal: Boolean): LocalDate? = if (legal) phone.serverToday else phone.today
+    /** 2.0.0 [RVO-12] A LEGAL row's date is never before [PhoneFacts.knownDay] (a release build knows that day has come). */
+    private fun dateOf(phone: PhoneFacts, legal: Boolean): LocalDate? {
+        if (!legal) return phone.today
+        val d = phone.serverToday ?: return null
+        val k = phone.knownDay ?: return d
+        return if (d < k) k else d
+    }
 
     /** A consent not asked yet that [Condition.Consent.unknownMeets] counts as given. */
     private fun counts(c: Condition, k: Check): Boolean =
@@ -143,7 +170,10 @@ object FlagEval {
                 val from = c.from ?: calendar.of(c.policy!!)?.effective
                 val label = if (c.policy != null) "처리방침 ${c.policy} 시행일" + (from?.let { "(${day(it)})" } ?: "") + "부터$serverNote"
                     else "${day(from!!)}부터$serverNote"
+                // 2.0.0 [RVO-12] No server clock yet: a day a release build knows has come is past all the same.
+                val known = legal && date == null && from != null && phone.knownDay?.let { from <= it } == true
                 when {
+                    known -> Check(label, Check.Status.MET, "정식 출시 뒤의 앱이라 지난 날이에요")
                     from == null || date == null -> Check(label, Check.Status.UNKNOWN, if (date == null) "서버 시각을 아직 몰라요" else "처리방침 일정에 없어요")
                     date >= from -> Check(label, Check.Status.MET)
                     else -> Check(label, Check.Status.UNMET, "${java.time.temporal.ChronoUnit.DAYS.between(date, from)}일 남음")
@@ -152,7 +182,10 @@ object FlagEval {
             is Condition.Policy -> {
                 val v = calendar.of(c.version)
                 val label = "처리방침 ${c.version}에 동의했거나 " + (v?.let { "${day(it.holdEnds)}이 지남" } ?: "보류가 끝남")
-                val held = if (date == null) null else calendar.holds(c.version, phone.installed, phone.agreed, date)
+                // 2.0.0 [RVO-12] No server clock yet: only a hold that surely does not apply from [PhoneFacts.knownDay] on counts as over.
+                val held = if (date != null) calendar.holds(c.version, phone.installed, phone.agreed, date)
+                    else if (legal) phone.knownDay?.let { calendar.over(c.version, phone.installed, phone.agreed, it) }?.let { over -> if (over) false else null }
+                    else null
                 when (held) {
                     null -> Check(label, Check.Status.UNKNOWN, if (v == null) "처리방침 일정에 없어요" else "서버 시각을 아직 몰라요")
                     false -> Check(label, Check.Status.MET)
@@ -193,6 +226,9 @@ object FlagEval {
             is Condition.Manual -> {
                 val label = (MANUAL[c.key] ?: c.key) + "(관리자가 확인)"
                 when {
+                    // 2.0.0 [RVO-12] (HQ-46) A release build knows Play's two checks were done before it shipped.
+                    override == null && c.key in phone.knownChecks ->
+                        Check(label, Check.Status.MET, "확인 ${day(phone.knownChecks.getValue(c.key).atZone(KST).toLocalDate())} · 출시한 앱이 알아요")
                     override == null -> Check(label, Check.Status.UNKNOWN, "서버 답을 아직 못 받았어요")
                     c.key in override.confirmed -> Check(label, Check.Status.MET, override.confirmed[c.key]?.let { "확인 ${day(it.atZone(KST).toLocalDate())}" })
                     else -> Check(label, Check.Status.UNMET)

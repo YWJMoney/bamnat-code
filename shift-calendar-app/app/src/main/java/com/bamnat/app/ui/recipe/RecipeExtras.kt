@@ -183,7 +183,7 @@ private fun ExampleWeek(r: Recipe, style: WorkStyle) {
             } ?: MaterialTheme.colorScheme.onSurfaceVariant
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(d, style = MaterialTheme.typography.labelSmall, color = dayColor)
-                Box(Modifier.fillMaxWidth().aspectRatio(1f).background(bg, RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) {
+                Box(Modifier.fillMaxWidth().aspectRatio(1f).background(bg, MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
                     Text(real?.label ?: (item?.get("emoji") as? String)?.takeIf { it.isNotEmpty() } ?: (item?.get("label") as? String).orEmpty(),
                         color = contentColorOn(bg), style = MaterialTheme.typography.labelLarge)
                 }
@@ -338,7 +338,7 @@ internal fun ScreenPreview(r: Recipe,
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             @Suppress("UNCHECKED_CAST")
             (layout?.get("tabs") as? List<String>)?.takeIf { it.isNotEmpty() }?.let { tabs ->
-                Text("아래 탭 순서", style = MaterialTheme.typography.labelLarge)
+                Text("아래 메뉴 순서", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                     com.bamnat.core.layout.TabOrder.of(tabs).forEach { key ->
                         val t = com.bamnat.app.ui.TopLevel.entries.firstOrNull { it.route == key } ?: return@forEach
@@ -360,8 +360,8 @@ internal fun ScreenPreview(r: Recipe,
                 Text("위젯", style = MaterialTheme.typography.labelLarge)
                 Box(Modifier.fillMaxWidth().height(64.dp).background(
                     androidx.compose.ui.graphics.Brush.linearGradient(listOf(androidx.compose.ui.graphics.Color(0xFF5C6BC0), androidx.compose.ui.graphics.Color(0xFF26A69A))),
-                    RoundedCornerShape(12.dp)).padding(10.dp)) {
-                    Column(Modifier.fillMaxWidth().height(44.dp).background(bg.copy(alpha = alpha / 100f), RoundedCornerShape(10.dp)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    MaterialTheme.shapes.medium).padding(10.dp)) {
+                    Column(Modifier.fillMaxWidth().height(44.dp).background(bg.copy(alpha = alpha / 100f), MaterialTheme.shapes.small).padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalArrangement = Arrangement.Center) {
                         Text("오늘 · 주간 07:00", style = MaterialTheme.typography.labelMedium, color = if (dark) androidx.compose.ui.graphics.Color.White else androidx.compose.ui.graphics.Color(0xFF1B1B1F))
                         if (w["memo"] == true) Text("메모 한 줄도 보여요", style = MaterialTheme.typography.labelSmall,
@@ -403,7 +403,7 @@ private fun PartsPreview(title: String, line: String, labels: Map<String, String
                 Text(if (hidden) "–" else "${i + 1 - parts.take(i).count { it in l.hidden }}", style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(22.dp))
                 Box(Modifier.weight(1f).background(
-                    if (hidden) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp, vertical = 6.dp)) {
+                    if (hidden) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.shapes.small).padding(horizontal = 10.dp, vertical = 6.dp)) {
                     Text(labels.getValue(id) + if (hidden) " · 숨김" else "", style = MaterialTheme.typography.bodySmall,
                         color = if (hidden) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSecondaryContainer,
                         textDecoration = if (hidden) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
@@ -436,7 +436,7 @@ private fun PartCloseUp(unit: String, content: @Composable () -> Unit) {
         rings = boxes
         lift = if (boxes.isEmpty()) 0f else (with(density) { 24.dp.toPx() } - boxes.minOf { it.top }).coerceAtMost(0f)
     }
-    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(RoundedCornerShape(12.dp))) {
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(460.dp).clip(MaterialTheme.shapes.medium)) {
         androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(660.dp)
             .onRootAt { if (lift == null) inner = it }
             .graphicsLayer { translationY = lift ?: 0f }

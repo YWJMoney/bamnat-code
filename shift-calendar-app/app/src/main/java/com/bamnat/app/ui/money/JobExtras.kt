@@ -38,6 +38,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import com.bamnat.core.time.Today
+import androidx.compose.ui.semantics.Role
 
 /**
  * [FLD-02] The client (업체·고객) field: names from the calendar's past jobs drop down as the user
@@ -91,12 +92,44 @@ fun JobStatusRow(status: JobStatus, paid: Boolean, onChange: (JobStatus) -> Unit
     }
 }
 
+/**
+ * 2.0.0 [RVK-42] (검토 T06a-02·U06a-22) The day a job starts, changed in the job itself: work pushed back by rain or 자재 moves with its
+ * period, its 입금 약속일 and 알림 (it had to be deleted and written again on the new day).
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun JobDateRow(start: LocalDate, days: Int, onChange: (LocalDate) -> Unit) {
+    var picking by remember { mutableStateOf(false) }
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = "작업 날짜 바꾸기") { picking = true },
+        verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("작업 날짜", style = MaterialTheme.typography.bodyLarge)
+            Text(if (days <= 1) Fmt.dayTitle(start) else "${Fmt.shortDate(start)} ~ ${Fmt.shortDate(start.plusDays(days - 1L))}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Text("바꾸기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+    }
+    if (picking) {
+        val state = rememberDatePickerState(initialSelectedDateMillis = start.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli())
+        DatePickerDialog(
+            onDismissRequest = { picking = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.selectedDateMillis?.let { onChange(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
+                    picking = false
+                }) { Text("확인") }
+            },
+            dismissButton = { TextButton(onClick = { picking = false }) { Text("취소") } },
+        ) { DatePicker(state, showModeToggle = false) }
+    }
+}
+
 /** [FLD-09] 입금 약속일: when the client said they would pay; the 받을 돈 알림 follows it. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DueRow(due: LocalDate?, opensOn: LocalDate? = null, onChange: (LocalDate?) -> Unit) {
     var picking by remember { mutableStateOf(false) }
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { picking = true }, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { picking = true }, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("입금 약속일 (선택)", style = MaterialTheme.typography.bodyLarge)
             Text(due?.let { "${Fmt.dayTitle(it)} · 다음 날까지 안 들어오면 알려 드려요" } ?: "정하면 그 다음 날 받을 돈을 알려 드려요",

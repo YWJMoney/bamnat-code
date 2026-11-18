@@ -56,6 +56,11 @@ enum class UsageEvent(val key: String) {
     LIFE_D30("life_d30"),
     LIFE_BACK7("life_back7"),
     LIFE_BACK30("life_back30"),
+    // 1.40 [DISC-06] 안 써 본 기능 카드 (깃발 stats.disc, 처리방침 3.13): shown, opened, 나중에, 그만 보기 — never which feature.
+    DISC_SHOWN("disc_shown"),
+    DISC_TRY("disc_try"),
+    DISC_LATER("disc_later"),
+    DISC_OFF("disc_off"),
     ;
 
     companion object {
@@ -66,6 +71,9 @@ enum class UsageEvent(val key: String) {
          * phone keeps these off until the flag is on and the server drops them before it, so 3.11 stays true until 3.12 says 42.
          */
         val POLICY_312: Set<UsageEvent> = setOf(LIFE_NEW, LIFE_D1, LIFE_D7, LIFE_D30, LIFE_BACK7, LIFE_BACK30)
+
+        /** 1.40 [DISC-06] The names that come with 처리방침 3.13 (깃발 stats.disc): off on the phone and dropped by the server before it. */
+        val POLICY_313: Set<UsageEvent> = setOf(DISC_SHOWN, DISC_TRY, DISC_LATER, DISC_OFF)
 
         fun of(key: String): UsageEvent? = byKey[key]
 

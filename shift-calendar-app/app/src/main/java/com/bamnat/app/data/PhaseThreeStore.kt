@@ -33,6 +33,7 @@ import com.bamnat.core.team.TeamShift
 import com.bamnat.core.work.StaffShift
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -148,6 +149,33 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     fun work(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
         pay.observeWork(placeId, month.atDay(1).toEpochDay(), month.atEndOfMonth().toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
 
+    /**
+     * 2.0.0 [RVG-02] 검토 PAYU-02: the days a month's ledger needs. The pay engine reads the whole week that holds the 1st and gives
+     * 주휴 to the week that ends in the month, so a 결근 on 9/29 belongs to October's 9/28 week; the 6 days on either side come too.
+     * Lists of the month's own days filter by date ([MonthDays] does).
+     */
+    fun workAround(placeId: String, month: YearMonth): Flow<List<StaffWork>> =
+        pay.observeWork(placeId, month.atDay(1).minusDays(EDGE_DAYS).toEpochDay(), month.atEndOfMonth().plusDays(EDGE_DAYS).toEpochDay()).map { l -> l.mapNotNull { it.toModel() } }
+
+    /** What a month's ledger is worked out from; [frozen] when it is a closed month read back as it was closed ([close]). */
+    data class MonthInputs(val place: Workplace, val staff: List<StaffMember>, val work: List<StaffWork>, val month: YearMonth, val frozen: Boolean) {
+        val ledger: com.bamnat.core.boss.Ledger by lazy { com.bamnat.core.boss.PayrollLedger.month(place, staff, month, work) }
+    }
+
+    /**
+     * 2.0.0 [RVG-01] 검토 PAYU-01: a closed month stays as it was closed. The 대장, 임금대장 CSV, 명세서 and '지난달과 비교' all read
+     * these, so raising a 시급 in November no longer moves a closed October. A month closed before 2.0.0 kept no inputs and is worked
+     * out from today's rows as before.
+     */
+    fun inputs(place: Workplace, month: YearMonth): Flow<MonthInputs> = combine(
+        staff(place.id), workAround(place.id, month), pay.observeMonth(place.id, month.toString()), pay.observeLines(place.id, month.toString()),
+    ) { staff, work, m, lines ->
+        (if (m?.state == "CLOSED") frozen(place, lines, month) else null) ?: MonthInputs(place, staff, work, month, false)
+    }
+
+    /** One go of [inputs] (신고 달력, 관리 첫 화면). */
+    suspend fun ledgerOf(place: Workplace, month: YearMonth): com.bamnat.core.boss.Ledger = inputs(place, month).first().ledger
+
     /** 1.38 [P3-X-05] Every 연차 day each staff member took, for 연차 남은 날. */
     fun leaveDays(placeId: String): Flow<Map<String, Map<LocalDate, Double>>> =
         pay.observeWork(placeId, Long.MIN_VALUE, Long.MAX_VALUE).map { l ->
@@ -203,14 +231,18 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         if (work == null) pay.deleteWork(staffId, date.toEpochDay()) else pay.upsertWork(work.toEntity())
     }
 
-    /** [BOSS-04] 대장 닫기: each line as it is now (the 임금대장 row), kept even when the rules move on. */
-    suspend fun close(placeId: String, month: YearMonth, lines: List<LedgerLine>, rateVersion: String) = pay.close(
-        PayrollMonthEntity(placeId, month.toString(), "CLOSED", rateVersion, clock()),
+    /**
+     * [BOSS-04] 대장 닫기: each line as it is now (the 임금대장 row), kept even when the rules move on.
+     * 2.0.0 [RVG-01]: each line also keeps what it was worked out from (사업장 계산 칸, the staff member, their days around the month)
+     * in `deduct`, a column no screen used, so [inputs] reads a closed month back without a new table.
+     */
+    suspend fun close(place: Workplace, month: YearMonth, lines: List<LedgerLine>, rateVersion: String, work: Collection<StaffWork> = emptyList()) = pay.close(
+        PayrollMonthEntity(place.id, month.toString(), "CLOSED", rateVersion, clock()),
         lines.map { l ->
-            PayrollLineEntity(placeId, month.toString(), l.staff.id, l.gross,
+            PayrollLineEntity(place.id, month.toString(), l.staff.id, l.gross,
                 items = JSONArray(LedgerCsv.cells(l)).toString(),
                 method = JSONArray().apply { l.lines.forEach { put(JSONObject().put("label", it.label).put("amount", it.amount).put("formula", it.formula)) } }.toString(),
-                deduct = "", net = null, paidAt = null, slipSentAt = null)
+                deduct = snapshot(place, l.staff, work.filter { it.staffId == l.staff.id }), net = null, paidAt = null, slipSentAt = null)
         },
     )
 
@@ -239,6 +271,32 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     }
 
     companion object {
+        /** [RVG-02] Days read on either side of a month: a week is 7 days, so 6 reach every week that holds the 1st or the last day. */
+        const val EDGE_DAYS = 6L
+
+        /** [RVG-01] What a closed line was worked out from, as JSON; no 출퇴근 열쇠 or 계약서 (not needed to count, and kept out of copies). */
+        fun snapshot(place: Workplace, s: StaffMember, work: List<StaffWork>): String = JSONObject().put("v", 1)
+            .put("place", PhaseThreeBackup.placeJson(place.toEntity(0)))
+            .put("staff", PhaseThreeBackup.staffJson(s.copy(clockToken = null, contract = null).toEntity(place.id, 0)))
+            .put("work", JSONArray().apply { work.sortedBy { it.date }.forEach { put(PhaseThreeBackup.workJson(it.toEntity())) } })
+            .toString()
+
+        /**
+         * [RVG-01] A closed month's inputs read back from its lines; null when any line has none (closed before 2.0.0). The 사업장's
+         * name, 대타 요청 and team stay as they are now: only the fields that count are the closed ones.
+         */
+        fun frozen(live: Workplace, lines: List<PayrollLineEntity>, month: YearMonth): MonthInputs? {
+            if (lines.isEmpty()) return null
+            val got = lines.map { l -> runCatching { JSONObject(l.deduct).takeIf { it.optInt("v") >= 1 } }.getOrNull() ?: return null }
+            val p = runCatching { PhaseThreeBackup.placeFrom(got.first().getJSONObject("place")).toModel() }.getOrNull() ?: return null
+            val place = live.copy(fivePlus = p.fivePlus, payday = p.payday, legalBreaks = p.legalBreaks, weekStart = p.weekStart, minuteUnit = p.minuteUnit, industry = p.industry)
+            val staff = got.mapNotNull { o -> runCatching { PhaseThreeBackup.staffFrom(o.getJSONObject("staff")).toModel() }.getOrNull() }
+            if (staff.size != lines.size) return null
+            val work = got.flatMap { o -> o.optJSONArray("work")?.let { a -> (0 until a.length()).mapNotNull { a.optJSONArray(it) } }.orEmpty() }
+                .mapNotNull { runCatching { PhaseThreeBackup.workFrom(it).toModel() }.getOrNull() }
+            return MonthInputs(place, staff, work, month, true)
+        }
+
         // ---- 팀 rows ----
 
         const val VIA_LINK = "LINK"
@@ -258,7 +316,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         }.toString()
 
         fun decodeCalls(t: String): List<com.bamnat.core.team.TeamCall> = if (t.isBlank()) emptyList() else runCatching {
-            val a = JSONArray(t)
+            // [RVJ-17] the object form keeps the list under "calls".
+            val a = if (t.trimStart().startsWith("{")) JSONObject(t).optJSONArray("calls") ?: JSONArray() else JSONArray(t)
             fun strings(x: JSONArray?) = x?.let { y -> (0 until y.length()).map { y.getString(it) } }.orEmpty()
             (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { o ->
                 val g = o.getJSONObject("gap")
@@ -329,15 +388,17 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         fun encodeShifts(l: List<TeamShift>): String = JSONArray().apply {
             l.forEach { s ->
+                // 2.0.0 [RVJ-29] "brk": the team's own 휴게(분); left out while the law's is taken, as every team before 2.0.0 reads.
                 put(JSONObject().put("id", s.id).put("label", s.label).put("name", s.name).put("color", s.colorArgb).put("off", s.isOff)
-                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()))
+                    .putOpt("start", s.start?.toString()).putOpt("end", s.end?.toString()).putOpt("brk", s.breakMinutes))
             }
         }.toString()
 
         fun decodeShifts(text: String): List<TeamShift> = runCatching {
             JSONArray(text).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }.map { o ->
                 TeamShift(o.getLong("id"), o.optString("label"), o.optString("name"), o.optLong("color"), o.optBoolean("off"),
-                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse))
+                    o.optString("start").takeIf { it.isNotEmpty() }?.let(LocalTime::parse), o.optString("end").takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
+                    if (o.has("brk") && !o.isNull("brk")) o.optInt("brk").coerceIn(0, com.bamnat.core.team.TeamTimes.MAX_BREAK) else null)
             }
         }.getOrDefault(emptyList())
 
@@ -361,27 +422,46 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
         // ---- 사업장 rows ----
 
-        fun WorkplaceEntity.toModel() = Workplace(id, name, fivePlus, payday, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls), industry)
-        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, payday, legalBreaks, weekStart.value, teamId, createdAt, minuteUnit, encodeCalls(calls), industry)
+        // 2.0.0 [RVJ-09] 'payday' holds 100 + day for a place that pays the same month; [RVJ-17] 'calls' becomes {"calls":[…],"owner","address"}
+        // when the place has a 대표자·주소, so neither needs a new column (an old row reads as before).
+        fun WorkplaceEntity.toModel(): Workplace {
+            val (day, next) = Workplace.decodePayday(payday)
+            val extra = decodePlaceExtra(calls)
+            return Workplace(id, name, fivePlus, day, legalBreaks, DayOfWeek.of(weekStart.coerceIn(1, 7)), teamId, minuteUnit.coerceIn(1, 60), decodeCalls(calls), industry,
+                payNextMonth = next, owner = extra.first, address = extra.second)
+        }
+        fun Workplace.toEntity(createdAt: Long) = WorkplaceEntity(id, name, fivePlus, Workplace.encodePayday(payday, payNextMonth), legalBreaks, weekStart.value, teamId, createdAt,
+            minuteUnit, encodePlaceCalls(calls, owner, address), industry)
+
+        /** [RVJ-17] The 'calls' column: the old list, or an object with the list and the place's 대표자·주소. */
+        fun encodePlaceCalls(calls: List<com.bamnat.core.team.TeamCall>, owner: String, address: String, withToken: Boolean = true): String {
+            val list = encodeCalls(calls, withToken)
+            if (owner.isBlank() && address.isBlank()) return list
+            return JSONObject().put("calls", if (list.isBlank()) JSONArray() else JSONArray(list)).put("owner", owner).put("address", address).toString()
+        }
+
+        fun decodePlaceExtra(t: String): Pair<String, String> = if (!t.trimStart().startsWith("{")) "" to "" else runCatching {
+            JSONObject(t).let { it.optString("owner") to it.optString("address") }
+        }.getOrDefault("" to "")
 
         fun StaffEntity.toModel() = StaffMember(
             id = id, name = name, form = runCatching { WageForm.valueOf(form) }.getOrDefault(WageForm.HOUR), base = base,
             allowances = decodeAllowances(allowances), hiredOn = hiredOn?.let(LocalDate::ofEpochDay), leftOn = leftOn?.let(LocalDate::ofEpochDay),
             birth = birth?.let(LocalDate::ofEpochDay), job = job, insurance = decodeInsurance(insurance), weeklyHolidayPay = weeklyHolidayPay,
             weekly = decodeWeekly(weekly), memberId = memberId, dayRates = decodeDayRates(weekly), leaves = decodeLeaves(weekly),
-            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract),
+            clockId = clockId, clockToken = clockToken, contract = decodeContract(contract), overtimeInPay = decodeOvertimeInPay(weekly),
         )
 
         fun StaffMember.toEntity(placeId: String, sort: Int) = StaffEntity(
             id, placeId, name, form.name, base, encodeAllowances(allowances), hiredOn?.toEpochDay(), leftOn?.toEpochDay(), birth?.toEpochDay(),
-            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves), memberId, sort, clockId, clockToken,
+            job, encodeInsurance(insurance), weeklyHolidayPay, encodeWeekly(weekly, dayRates, leaves, overtimeInPay), memberId, sort, clockId, clockToken,
             encodeContract(contract),
         )
 
         fun encodeContract(c: StaffContract.Sent?): String = c?.let {
             JSONObject().put("title", it.title).put("items", JSONArray().apply { it.items.forEach { i -> put(JSONObject().put("t", i.title).put("b", i.body)) } })
                 .put("sent", it.sentAt).putOpt("id", it.linkId).putOpt("token", it.token).putOpt("url", it.url).putOpt("expires", it.expiresAt)
-                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper)
+                .putOpt("seen", it.seenAt).putOpt("name", it.signedName).putOpt("signed", it.signedAt).put("paper", it.paper).putOpt("given", it.givenAt)
                 .apply { if (it.past.isNotEmpty()) put("past", JSONArray().apply { it.past.forEach { p -> put(JSONObject(encodeContract(p))) } }) }.toString()
         }.orEmpty()
 
@@ -391,7 +471,7 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             fun num(k: String) = if (o.has(k) && !o.isNull(k)) o.getLong(k) else null
             val a = o.optJSONArray("items") ?: JSONArray()
             StaffContract.Sent(o.optString("title"), (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map { StaffContract.Item(it.optString("t"), it.optString("b")) },
-                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"),
+                o.optLong("sent"), str("id"), str("token"), str("url"), num("expires"), num("seen"), str("name"), num("signed"), o.optBoolean("paper"), num("given"),
                 o.optJSONArray("past")?.let { p -> (0 until p.length()).mapNotNull { p.optJSONObject(it)?.let { x -> decodeContract(x.toString()) } } }.orEmpty())
         }.getOrNull()
 
@@ -403,23 +483,33 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
         fun StaffWork.toEntity() = StaffWorkEntity(staffId, date.toEpochDay(), kind.name, start?.let { it.hour * 60 + it.minute }, end?.let { it.hour * 60 + it.minute })
 
         fun encodeAllowances(l: List<StaffAllowance>) = JSONArray().apply {
-            l.forEach { put(JSONObject().put("name", it.name).put("amount", it.amount).put("perDay", it.perDay)) }
+            l.forEach { put(JSONObject().put("name", it.name).put("amount", it.amount).put("perDay", it.perDay).put("free", it.taxFree)) }
         }.toString()
 
         fun decodeAllowances(t: String): List<StaffAllowance> = runCatching {
             JSONArray(t).let { a -> (0 until a.length()).map { a.getJSONObject(it) } }
-                .map { StaffAllowance(it.optString("name"), it.optLong("amount").coerceAtLeast(0), it.optBoolean("perDay")) }
+                .map { StaffAllowance(it.optString("name"), it.optLong("amount").coerceAtLeast(0), it.optBoolean("perDay"),
+                    // [RVJ-10] older rows had no switch: 식대 reads as 비과세, as a new one starts.
+                    if (it.has("free")) it.optBoolean("free") else StaffAllowance.looksTaxFree(it.optString("name"))) }
         }.getOrDefault(emptyList())
 
-        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).put("tax", i.tax.name).toString()
+        fun encodeInsurance(i: Insurance) = JSONObject().put("pension", i.pension).put("health", i.health).put("employment", i.employment).put("tax", i.tax.name)
+            .put("family", i.family).put("children", i.children).apply { if (i.foreign) put("foreign", true) }.toString()
         fun decodeInsurance(t: String): Insurance = runCatching {
             JSONObject(t).let { Insurance(it.optBoolean("pension"), it.optBoolean("health"), it.optBoolean("employment"),
-                runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE)) }
+                runCatching { com.bamnat.core.boss.StaffTax.valueOf(it.optString("tax", "WAGE")) }.getOrDefault(com.bamnat.core.boss.StaffTax.WAGE),
+                // [RVJ-10] 가족 수 (1~11) and 8~20세 자녀.
+                it.optInt("family", 1).coerceIn(1, 11), it.optInt("children", 0).coerceIn(0, 10), it.optBoolean("foreign", false)) }
         }.getOrDefault(Insurance())
 
         /** The week as "1".."7" → [start, end] minutes, and 1.38 요일별 시급 as "r1".."r7" → won beside it (no DB change). */
         /** 1.38: the 요일별 시급 ("r1".."r7") and 휴직 기간 ("leaves": [[start, end|null]] epoch days) ride in the same column, so no new table. */
-        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList()) = JSONObject().apply {
+        // [RVJ-42] The 월급's answer for the hours past 40 rides in the same column (no new DB 판; backups carry the column as it is).
+        fun decodeOvertimeInPay(t: String): Boolean? = runCatching { JSONObject(t).let { o -> if (o.has("otIn")) o.getBoolean("otIn") else null } }.getOrNull()
+
+        fun encodeWeekly(m: Map<DayOfWeek, StaffShift>, rates: Map<DayOfWeek, Long> = emptyMap(), leaves: List<com.bamnat.core.boss.StaffLeave> = emptyList(),
+                         overtimeInPay: Boolean? = null) = JSONObject().apply {
+            overtimeInPay?.let { put("otIn", it) }
             m.forEach { (d, s) -> put(d.value.toString(), JSONArray().put(s.start.hour * 60 + s.start.minute).put(s.end.hour * 60 + s.end.minute)) }
             rates.forEach { (d, r) -> put("r${d.value}", r) }
             if (leaves.isNotEmpty()) put("leaves", JSONArray().apply { leaves.forEach { put(JSONArray().put(it.start.toEpochDay()).put(it.end?.toEpochDay() ?: JSONObject.NULL)) } })

@@ -373,7 +373,7 @@ class CompanyShare(
             val mine = existing.firstOrNull { it.name == incoming.name }
             ids[incoming.name] = if (mine != null) {
                 schedule.saveShiftType(mine.copy(start = incoming.start, end = incoming.end, breakMinutes = incoming.breakMinutes,
-                    breakStart = incoming.breakStart, isOff = incoming.isOff))
+                    breakStart = incoming.breakStart, isOff = incoming.isOff, gapStart = incoming.gapStart, gapMinutes = incoming.gapMinutes))
             } else {
                 added++
                 schedule.saveShiftType(incoming)
@@ -403,7 +403,86 @@ class CompanyShare(
         return Applied(added, cycle, rules, pendingPay)
     }
 
-    data class Applied(val addedTypes: Int, val cycleDays: Int?, val rules: Boolean, val pendingPay: Boolean)
+    data class Applied(
+        val addedTypes: Int,
+        val cycleDays: Int?,
+        val rules: Boolean,
+        val pendingPay: Boolean,
+        /** 2.0.0 [RVN-08] COMP-11 Puts the calendar back as it was, when this went over an order it had; says whether it could. */
+        val undo: (suspend () -> Boolean)? = null,
+        /**
+         * 2.0.0 [RVN-17] 검토 COMP-12·I10ab-02 The order went in alone while the calendar is held by another company ([heldBy]): the
+         * company, its plaza and the pay stay that company's.
+         */
+        val heldBy: String? = null,
+    )
+
+    /**
+     * 2.0.0 [RVN-08] COMP-11 What [apply] would change, said before it goes in: a kind of day the calendar has whose times differ
+     * ("주간 07:00~15:00 → 06:00~14:00"), the kinds it would add, and the order from today (its days, or 요일 고정).
+     */
+    data class Preview(val changed: List<String>, val added: List<String>, val cycle: Int?, val weekly: Boolean) {
+        val nothing: Boolean get() = changed.isEmpty() && added.isEmpty() && cycle == null && !weekly
+    }
+
+    suspend fun preview(text: String): Preview {
+        val root = parse(text)
+        check(root)
+        val existing = schedule.snapshot.first().shiftTypes
+        val changed = mutableListOf<String>()
+        val added = mutableListOf<String>()
+        for (o in root.optJSONArray("shiftTypes").objects()) {
+            val incoming = type(o)
+            val mine = existing.firstOrNull { it.name == incoming.name }
+            if (mine == null) added += "${incoming.name} ${timesOf(incoming)}"
+            else if (mine.start != incoming.start || mine.end != incoming.end || mine.breakMinutes != incoming.breakMinutes || mine.isOff != incoming.isOff) {
+                changed += "${incoming.name} ${timesOf(mine)} → ${timesOf(incoming)}"
+            }
+        }
+        val cycle = root.optJSONObject("rotation")?.optJSONArray("steps")?.length()?.takeIf { it > 0 }
+        val weekly = cycle == null && weeklyOf(root).isNotEmpty()
+        return Preview(changed, added, cycle, weekly)
+    }
+
+    private fun timesOf(t: ShiftType): String = when {
+        t.isOff -> "쉬는 날"
+        t.start == null || t.end == null -> "시간 없음"
+        else -> "${t.start}~${t.end}" + (if (t.breakMinutes > 0) " (휴게 ${t.breakMinutes}분)" else "")
+    }
+
+    /** COMP-11 The calendar as it was before [apply], to put back with [undo]. */
+    class Before internal constructor(
+        internal val types: List<ShiftType>,
+        internal val patterns: List<WorkPattern>,
+        internal val kinds: ExtraKinds,
+    ) {
+        /** The calendar had an order of its own, so putting a setup in replaces something. */
+        val hadOrder: Boolean get() = patterns.isNotEmpty()
+    }
+
+    suspend fun before(): Before = schedule.snapshot.first().let { Before(it.shiftTypes, it.patterns, settings.current.extraKinds) }
+
+    /**
+     * COMP-11 되돌리기 after 이 설정 쓰기: the order periods as they were, each kind of day back to its own times (its alarms and colours
+     * were never changed), the kinds [apply] added gone when no day was put on them since, and the kinds of extra work as they were.
+     * The pay is not touched here: a pay way waits for its 기본급 on the pay screen ([com.bamnat.app.company.PendingWay]).
+     */
+    suspend fun undo(b: Before) {
+        schedule.restorePatterns(b.patterns)
+        val now = schedule.snapshot.first().shiftTypes
+        for (t in now) {
+            val was = b.types.firstOrNull { it.id == t.id }
+            if (was != null) {
+                if (was.start != t.start || was.end != t.end || was.breakMinutes != t.breakMinutes || was.breakStart != t.breakStart || was.isOff != t.isOff) {
+                    schedule.saveShiftType(t.copy(start = was.start, end = was.end, breakMinutes = was.breakMinutes, breakStart = was.breakStart, isOff = was.isOff))
+                }
+            } else {
+                val use = schedule.shiftTypeUse(t.id)
+                if (use.days == 0 && !use.inPattern) schedule.deleteShiftType(t.id)
+            }
+        }
+        if (settings.current.extraKinds != b.kinds) settings.update { it.copy(extraKinds = b.kinds) }
+    }
 
     /**
      * [PLAZA-09] 이 값 쓰기 (결정 D79): the one item [key] of [theirs] in place of the user's own, everything else as it was
@@ -473,6 +552,33 @@ class CompanyShare(
             }.toMap()
         }.orEmpty()
         return merge(profile, JSONObject(pay.toString()), ids, kindIds)
+    }
+
+    /**
+     * [PAYP-18] 1.40 명세서로 가장 맞는 판 고르기: [text]'s pay way on this calendar's pay as [applyRulesWith] would put it in with
+     * [base] from [month], nothing saved (kinds of extra work the user does not have keep their ids). A user with no pay yet starts
+     * from a monthly pay; what the way leaves to each person is 금액 모름 until the payslip names it ([com.bamnat.core.pay.WayPick.filled]).
+     */
+    suspend fun tryWay(text: String, base: Long, month: java.time.YearMonth): PayProfile? {
+        val root = parse(text)
+        check(root)
+        val pay = root.optJSONObject("pay") ?: return null
+        val ids = schedule.snapshot.first().shiftTypes.associate { it.name to it.id }
+        val mine = settings.current.extraKinds
+        val kindIds = root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
+            ExtraKinds.decode(encoded).kinds.mapNotNull { k ->
+                val id = if (k.isBuiltIn) k.id else mine.kinds.firstOrNull { !it.isBuiltIn && it.name == k.name }?.id
+                id?.let { k.id to it }
+            }.toMap()
+        }.orEmpty()
+        val had = payStore.profile.value
+        val start = had ?: PayProfile(com.bamnat.core.pay.Occupation.CUSTOM, com.bamnat.core.pay.WageType.MONTHLY,
+            ValueTimeline(listOf(com.bamnat.core.pay.DatedValue(month.atDay(1), base))))
+        val merged = merge(start, JSONObject(pay.toString()), ids, kindIds)
+        val marked = merged.copy(estimatedFields = merged.estimatedFields +
+            merged.items.filter { it.amount.entries.isEmpty() && !it.isPercent && !it.isCompanyFixed &&
+                !(it.cadence == com.bamnat.core.pay.Cadence.BONUS && it.percentOfBase != null) }.map { Unknowns.item(it.id) })
+        return com.bamnat.core.pay.BaseAsk.apply(marked, base, month)
     }
 
     /** [PROP-02] [p]'s allowances as the proposal [pay] has them, against the version [base] it changes. */
@@ -641,26 +747,46 @@ class CompanyShare(
             items = p.items + items,
             // The user's own leave days stay theirs.
             rules = merged?.copy(annualLeaveDays = p.rules.annualLeaveDays, annualLeaveCarry = p.rules.annualLeaveCarry,
-                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears)) ?: p.rules,
+                leave = merged.leave.copy(auto = p.rules.leave.auto, lowAttendanceYears = p.rules.leave.lowAttendanceYears,
+                    // 2.0.0 [RVH-45] Whether the company lets leave go by the hour is the company's; the 1일 기준 is the user's own.
+                    dayMinutes = p.rules.leave.dayMinutes)) ?: p.rules,
         )
     }
 
+    /**
+     * 2.0.0 [RVH-44] 하루 두 구간 (설계 4-4절, 갈래 D HQ-08·HQ-13과 맞춘 키): the file stays v4. "break"·"breakStart" are what an app before
+     * 2.0.0 reads, so with a gap they hold the break and the gap together from the gap's start; "rest"·"restStart"·"gapStart"·"gap" hold
+     * them apart, always with rest + gap = break (the server turns a file away otherwise). Times as "HH:mm", lengths in minutes.
+     */
     private fun typeJson(t: ShiftType): JSONObject = JSONObject()
         .put("name", t.name).put("label", t.label).put("color", t.colorArgb)
         .putOpt("start", t.start?.toString()).putOpt("end", t.end?.toString())
-        .put("break", t.breakMinutes).putOpt("breakStart", t.breakStart?.toString())
+        .put("break", t.breakMinutes + if (t.hasGap) t.gapMinutes else 0)
+        .putOpt("breakStart", (if (t.hasGap) t.gapStart else t.breakStart)?.toString())
         .put("off", t.isOff).putOpt("icon", t.icon)
+        .apply {
+            if (t.hasGap) put("rest", t.breakMinutes).putOpt("restStart", t.breakStart?.toString())
+                .put("gapStart", t.gapStart.toString()).put("gap", t.gapMinutes)
+        }
 
-    private fun type(o: JSONObject): ShiftType = ShiftType(
-        id = 0,
-        name = o.getString("name").take(MAX_NAME),
-        label = o.optString("label"),
-        colorArgb = o.optLong("color", 0xFF5C6BC0),
-        start = o.optTime("start"), end = o.optTime("end"),
-        breakMinutes = o.optInt("break"), breakStart = o.optTime("breakStart"),
-        isOff = o.optBoolean("off"),
-        icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
-    )
+    private fun type(o: JSONObject): ShiftType {
+        val plain = ShiftType(
+            id = 0,
+            name = o.getString("name").take(MAX_NAME),
+            label = o.optString("label"),
+            colorArgb = o.optLong("color", 0xFF5C6BC0),
+            start = o.optTime("start"), end = o.optTime("end"),
+            breakMinutes = o.optInt("break"), breakStart = o.optTime("breakStart"),
+            isOff = o.optBoolean("off"),
+            icon = if (o.has("icon") && !o.isNull("icon")) o.getString("icon") else null,
+        )
+        // [RVH-44] With a gap that fits, the break and the gap apart; else (a file from before 2.0.0) the "break" is the break.
+        val gapStart = o.optTime("gapStart")
+        val gap = o.optInt("gap", 0)
+        val split = plain.copy(breakMinutes = o.optInt("rest").coerceIn(0, 24 * 60), breakStart = o.optTime("restStart"), gapStart = gapStart,
+            gapMinutes = gap)
+        return if (o.has("gap") && split.hasGap) split else plain
+    }
 
     private fun rekey(o: JSONObject, key: (String) -> String?): JSONObject = JSONObject().apply {
         o.keys().forEach { kind ->

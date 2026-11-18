@@ -22,8 +22,11 @@ object LedgerSmarts {
      * a deposit into one account and a withdrawal (or transfer) of the same amount from another, within [TRANSFER_DAYS].
      * Both must be known accounts and differ. 1.31 counted the deposit as 수입, so moving 100만 원 to the 생활비 통장
      * read as 100만 원 earned.
+     *
+     * 2.0.0 [RVK-12] (검토 MONEY-60): with the user's own names known ([myNames], 결제 알림 › 더 정확하게 적기), two lines that
+     * each name someone, neither of them the user, are two people's money (a friend's 50만 원 in, the rent out) and stay apart.
      */
-    fun ownTransfer(new: MoneyEntry, recent: List<MoneyEntry>): MoneyEntry? {
+    fun ownTransfer(new: MoneyEntry, recent: List<MoneyEntry>, myNames: Collection<String> = emptyList()): MoneyEntry? {
         val from = new.accountId ?: return null
         val wantKind = when (new.kind) {
             MoneyKind.INCOME -> MoneyKind.TRANSFER
@@ -33,8 +36,15 @@ object LedgerSmarts {
         return recent.filter { e ->
             e.id != new.id && e.kind == wantKind && abs(e.amount) == abs(new.amount) && e.accountId != null && e.accountId != from &&
                 abs(ChronoUnit.DAYS.between(e.date, new.date)) <= TRANSFER_DAYS && e.toAccountId == null &&
-                e.shareOf(MoneyCategories.SALARY) == 0L
+                e.shareOf(MoneyCategories.SALARY) == 0L && !othersApart(e, new, myNames)
         }.minByOrNull { abs(ChronoUnit.MINUTES.between(it.date.atTime(it.time ?: java.time.LocalTime.NOON), new.date.atTime(new.time ?: java.time.LocalTime.NOON))) }
+    }
+
+    /** [RVK-12] Both lines name someone, the names differ and neither is the user: money of two other people. */
+    private fun othersApart(a: MoneyEntry, b: MoneyEntry, myNames: Collection<String>): Boolean {
+        if (myNames.isEmpty() || a.merchant.isBlank() || b.merchant.isBlank()) return false
+        if (LedgerChecks.isMine(a.merchant, myNames) || LedgerChecks.isMine(b.merchant, myNames)) return false
+        return !placeSame(a.merchant, b.merchant)
     }
 
     /** [LEDX-01] The one line a pair becomes: the withdrawal, now a transfer to the deposit's account. */
@@ -69,6 +79,13 @@ object LedgerSmarts {
                 val card = listOf(e, new).first { it.kind == MoneyKind.EXPENSE }
                 "체크" in w.merchant || "카드" in w.merchant || placeSame(w.merchant, card.merchant) || (w.cardLast4.isNotEmpty() && w.cardLast4 == card.cardLast4)
             }
+        // 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 now read as spending, beside the 체크카드's approval of the same payment.
+        val bankSpend = e.kind == MoneyKind.EXPENSE && new.kind == MoneyKind.EXPENSE && (fromWithdraw(e) != fromWithdraw(new)) &&
+            listOf(e, new).first { fromWithdraw(it) }.let { w ->
+                val card = listOf(e, new).first { !fromWithdraw(it) }
+                "체크" in w.merchant || "카드" in w.merchant || placeSame(w.merchant, card.merchant) || (w.cardLast4.isNotEmpty() && w.cardLast4 == card.cardLast4)
+            }
+        if (bankSpend) return@firstOrNull true
         val payAndCard = e.kind == MoneyKind.EXPENSE && new.kind == MoneyKind.EXPENSE &&
             (isPayApp(e) != isPayApp(new)) && (placeSame(e.merchant, new.merchant) || isPayApp(e) && e.merchant.isBlank() || isPayApp(new) && new.merchant.isBlank() ||
                 PAY_APPS.any { it in e.merchant || it in new.merchant })
@@ -79,10 +96,34 @@ object LedgerSmarts {
     fun keepOf(a: MoneyEntry, b: MoneyEntry): MoneyEntry = when {
         a.kind == MoneyKind.EXPENSE && b.kind != MoneyKind.EXPENSE -> a
         b.kind == MoneyKind.EXPENSE && a.kind != MoneyKind.EXPENSE -> b
+        fromWithdraw(a) && !fromWithdraw(b) -> b
+        fromWithdraw(b) && !fromWithdraw(a) -> a
         isPayApp(a) && !isPayApp(b) -> b
         isPayApp(b) && !isPayApp(a) -> a
         else -> a
     }
+
+    /** 2.0.0 [RVK-39] A line written from a bank 출금 read as spending ([PaymentParser.WITHDRAW_NOTE]). */
+    fun fromWithdraw(e: MoneyEntry): Boolean = e.note.split(" · ").contains(PaymentParser.WITHDRAW_NOTE)
+
+    /**
+     * 2.0.0 [RVK-39] (검토 MONEY-42) A bank 출금 to someone else the app could not tell (not one of the user's own [myNames], no rule
+     * for the receiver yet): it may be 월세 to a landlord or a 송금 to a friend as much as the user's own money moving, so 확인 대기함
+     * and 새로 들어온 기록 ask '쓴 돈 / 내 계좌로 옮김' once, and the answer is kept as the receiver's rule.
+     */
+    fun spentOrMoved(e: MoneyEntry, myNames: Collection<String>, rules: Map<String, String>): Boolean =
+        e.kind == MoneyKind.TRANSFER && e.source == MoneySource.NOTIFICATION && e.toAccountId == null && e.category == MOVE_CATEGORY &&
+            e.merchant.isNotBlank() && "체크" !in e.merchant && "카드" !in e.merchant && !LedgerChecks.isMine(e.merchant, myNames) &&
+            PaymentParser.ruleFor(e.merchant, rules) == null
+
+    /** What a bank 출금 is when the user says it was spending: 지출 in [category], marked as read from the bank ([fromWithdraw]). */
+    fun asSpending(e: MoneyEntry, category: String): MoneyEntry = e.copy(
+        kind = MoneyKind.EXPENSE, category = category, toAccountId = null,
+        note = (e.note.split(" · ").filter { it.isNotBlank() && it != PaymentParser.WITHDRAW_NOTE } + PaymentParser.WITHDRAW_NOTE).joinToString(" · "),
+    )
+
+    /** The category a bank 출금 read as a move gets ([PaymentParser]), and the rule a receiver told to be a move keeps. */
+    const val MOVE_CATEGORY = "내 계좌"
 
     fun isPayApp(e: MoneyEntry): Boolean = PAY_APPS.any { e.note.contains(it) || e.merchant.startsWith(it) }
 
@@ -122,27 +163,47 @@ object LedgerSmarts {
 
     // ---- [LEDX-04] 584: 할부 ----
 
-    /** [LEDX-04] The 회차 of an [e] paid over months that falls in [month] (1-based), or null when none does. */
-    fun installmentOf(e: MoneyEntry, month: YearMonth): Int? {
+    /**
+     * 2.0.0 [RVK-37] (검토 MONEY-48) The month [e]'s first 회차 is billed: by its card's 결제일 when the card is known
+     * ([CardCycle.billMonth]), else the month after the payment, the same as 청구 기준 보기 ([LedgerChecks.installmentPlan]).
+     */
+    fun installmentFirst(e: MoneyEntry, accounts: List<MoneyAccount> = emptyList()): YearMonth {
+        val card = accounts.firstOrNull { it.id == MoneyAccounts.of(e, accounts) }?.takeIf { it.hasBill }
+        return card?.let { CardCycle.billMonth(it, e.date) } ?: YearMonth.from(e.date).plusMonths(1)
+    }
+
+    /** [LEDX-04] The 회차 of an [e] paid over months that falls in [month] (1-based, by the bill), or null when none does. */
+    fun installmentOf(e: MoneyEntry, month: YearMonth, accounts: List<MoneyAccount> = emptyList()): Int? {
         if (e.installments <= 1 || e.kind != MoneyKind.EXPENSE) return null
-        val n = ChronoUnit.MONTHS.between(YearMonth.from(e.date), month).toInt() + 1
+        val n = ChronoUnit.MONTHS.between(installmentFirst(e, accounts), month).toInt() + 1
         return n.takeIf { it in 1..e.installments }
     }
 
-    /** [LEDX-04] "3개월 할부 · 2/3회 · 남은 2회 24,000원" for [today]. */
-    fun installmentText(e: MoneyEntry, today: LocalDate): String? {
-        if (e.installments <= 1) return null
-        val at = (installmentOf(e, YearMonth.from(today)) ?: if (YearMonth.from(today) > YearMonth.from(e.date)) e.installments else 1)
-        val each = e.amount / e.installments
-        val left = e.installments - at
-        return "${e.installments}개월 할부 · $at/${e.installments}회" + if (left > 0) " · 남은 ${left}회 ${won(each * left)}" else " · 다 갚았어요"
+    /** What of [e] is billed from [month] on, by the bill (the first 회차 keeps the rest of the division, as [CardCycle.portion]). */
+    private fun installmentFrom(e: MoneyEntry, month: YearMonth, accounts: List<MoneyAccount>): Long {
+        val first = installmentFirst(e, accounts)
+        return (0 until e.installments.coerceIn(1, 60)).map { first.plusMonths(it.toLong()) }.filter { it >= month }
+            .sumOf { CardCycle.portion(e, first, it) }
     }
 
-    /** [LEDX-04] What 할부 still owes in all, from [today]'s 회차 on (this month's included). */
-    fun installmentsLeft(entries: List<MoneyEntry>, today: LocalDate): Long = entries.filter { it.installments > 1 && it.kind == MoneyKind.EXPENSE }.sumOf { e ->
-        val at = installmentOf(e, YearMonth.from(today)) ?: return@sumOf 0L
-        e.amount / e.installments * (e.installments - at + 1)
+    /**
+     * [LEDX-04] "3개월 할부 · 2/3회 · 남은 2회 24,000원" for [today]. 2.0.0 [RVK-37] (검토 MONEY-48) The 회차 by the bill, the same
+     * as 청구 기준 보기: "다 갚았어요" only once the last 회차's bill came, and before the first "12월부터 청구".
+     */
+    fun installmentText(e: MoneyEntry, today: LocalDate, accounts: List<MoneyAccount> = emptyList()): String? {
+        if (e.installments <= 1) return null
+        val month = YearMonth.from(today)
+        val first = installmentFirst(e, accounts)
+        if (month < first) return "${e.installments}개월 할부 · ${first.monthValue}월부터 청구 · ${won(e.amount)}"
+        val at = installmentOf(e, month, accounts) ?: e.installments
+        val left = e.installments - at
+        return "${e.installments}개월 할부 · $at/${e.installments}회" +
+            if (left > 0) " · 남은 ${left}회 ${won(installmentFrom(e, month.plusMonths(1), accounts))}" else " · 다 갚았어요"
     }
+
+    /** [LEDX-04] What 할부 still owes in all, from [today]'s 회차 on (this month's bill included, and those not billed yet). */
+    fun installmentsLeft(entries: List<MoneyEntry>, today: LocalDate, accounts: List<MoneyAccount> = emptyList()): Long =
+        entries.filter { it.installments > 1 && it.kind == MoneyKind.EXPENSE && it.amount > 0 }.sumOf { installmentFrom(it, YearMonth.from(today), accounts) }
 
     // ---- [LEDX-05] 585: categories learned on the phone ----
 
@@ -157,12 +218,14 @@ object LedgerSmarts {
     ) {
         data class Guess(val category: String, val share: Double)
 
+        // 2.0.0 [RVK-43] (검토 MONEY-61) Counted once when taught, not again for every line guessed.
+        private val vocab = counts.values.flatMap { it.keys }.toSet().size.coerceAtLeast(1)
+        private val all = docs.values.sum().toDouble()
+
         fun guess(e: MoneyEntry, top: Int = 2): List<Guess> {
             if (docs.isEmpty()) return emptyList()
             val words = features(e, dayLabel)
             if (words.isEmpty()) return emptyList()
-            val vocab = counts.values.flatMap { it.keys }.toSet().size.coerceAtLeast(1)
-            val all = docs.values.sum().toDouble()
             val scores = docs.keys.associateWith { c ->
                 val n = totals[c] ?: 0
                 ln(docs.getValue(c) / all) + words.sumOf { w -> ln(((counts[c]?.get(w) ?: 0) + 1.0) / (n + vocab)) }
@@ -285,8 +348,8 @@ object LedgerSmarts {
         val rate = own ?: ROUGH_WON[cur] ?: return null
         val won = (amount * rate).roundToLong()
         val charge = (won * fee.coerceIn(0.0, MAX_ABROAD_FEE)).roundToLong()
-        val how = if (own != null) "내 환율 ${"%,.2f".format(own)}원" else "대략 환율"
-        return Abroad(won + charge, charge, "임시 원화 · $currency ${"%,.2f".format(amount)} · $how · 수수료 약 ${won(charge)} 포함. 카드 청구서 금액으로 고쳐 주세요")
+        val how = if (own != null) "내 환율 ${"%,.2f".format(java.util.Locale.ROOT, own)}원" else "대략 환율"
+        return Abroad(won + charge, charge, "임시 원화 · $currency ${"%,.2f".format(java.util.Locale.ROOT, amount)} · $how · 수수료 약 ${won(charge)} 포함. 카드 청구서 금액으로 고쳐 주세요")
     }
 
     /** [LEDX-18] No Korean card charges 5% for using it abroad; more is a slip. */
@@ -307,8 +370,9 @@ object LedgerSmarts {
 
     /** [LEDX-18] The currency and amount of a line written down at a rough rate ("임시 원화 · USD 12.30 · …"), or null. */
     fun abroadOf(e: MoneyEntry): Pair<String, Double>? {
-        val m = Regex("임시 원화 · ([A-Z]{3}) ([\\d,]+(?:\\.\\d+)?)").find(e.note) ?: return null
-        return m.groupValues[1] to (m.groupValues[2].replace(",", "").toDoubleOrNull() ?: return null)
+        // 2.0.0 [RVK-33] (검토 MONEY-55) A note written on a phone in another language says '12,30' or '1.234,56'.
+        val m = ABROAD.find(e.note) ?: return null
+        return m.groupValues[1] to (com.bamnat.core.text.Numbers.readWritten(m.groupValues[2]) ?: return null)
     }
 
     /**
@@ -316,13 +380,18 @@ object LedgerSmarts {
      * "USD 12.30 · 청구서 금액", so it no longer asks to be fixed.
      */
     fun settledAbroad(note: String): String =
-        note.replace(Regex("임시 원화 · ([A-Z]{3} [\\d,]+(?:\\.\\d+)?) · [^·]*· 수수료 약 [\\d,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요"), "$1 · 청구서 금액")
+        note.replace(ABROAD_ASK, "$1 · 청구서 금액")
 
     /**
      * [LEDX-08] 원화 결제(DCC): a payment abroad charged in won costs 3~8% more than in the local money. Said when a text
      * from abroad (해외, a foreign place) carries a won amount.
      */
-    fun looksDcc(text: String): Boolean = ("해외" in text || "국외" in text) && Regex("KRW|원화").containsMatchIn(text)
+    fun looksDcc(text: String): Boolean = ("해외" in text || "국외" in text) && WON_ABROAD.containsMatchIn(text)
+
+    // 2.0.0 [RVK-43] (검토 MONEY-61) Made once; [abroadOf] runs for every line a list or a sum looks at.
+    private val ABROAD = Regex("임시 원화 · ([A-Z]{3}) (\\d[\\d.,]*\\d|\\d)")
+    private val ABROAD_ASK = Regex("임시 원화 · ([A-Z]{3} \\d[\\d.,]*\\d?) · [^·]*· 수수료 약 [\\d.,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요")
+    private val WON_ABROAD = Regex("KRW|원화")
 
     const val DCC_NOTE = "해외에서 원화로 결제했어요(DCC). 현지 돈으로 결제하면 보통 3~8% 덜 나와요. 다음엔 ‘현지 통화로’를 골라 주세요"
 
@@ -437,5 +506,5 @@ object LedgerSmarts {
             .map { it.id }.toSet()
     }
 
-    private fun won(v: Long) = "%,d원".format(v)
+    private fun won(v: Long) = "%,d원".format(java.util.Locale.ROOT, v)
 }

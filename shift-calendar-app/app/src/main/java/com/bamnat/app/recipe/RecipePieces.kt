@@ -43,7 +43,13 @@ import java.time.LocalTime
 class RecipePieces(private val c: AppContainer) {
 
     /** One line of what a piece changes; [skipped] lines say what it could not use here. */
-    data class Change(val text: String, val skipped: Boolean = false)
+    /** [weak] 2.0.0 [RVM-22] RCP-05: it makes the alarm weaker than the phone's now (someone else's work asks before it goes in). */
+    data class Change(val text: String, val skipped: Boolean = false, val weak: Boolean = false)
+
+    /** 2.0.0 [RVM-22] RCP-05 The phone's alarm now, to tell what a received 알람 묶음 would make weaker. */
+    fun alarmNow(): com.bamnat.core.recipe.AlarmStrength.Now = c.settingsRepository.current.let {
+        com.bamnat.core.recipe.AlarmStrength.Now(it.ringMinutes, it.vibrate, it.gradualVolume)
+    }
 
     // ---- 1.39 [NTC-03] 겹치는 알림: 넣기 전에 '기존 설정을 바꿀까요?' ----
 
@@ -73,7 +79,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun export(kind: PieceKind, cal: String, from: com.bamnat.app.data.AppSettings = c.settingsRepository.current): Map<String, Any?>? = when (kind) {
         PieceKind.SHIFT_LOOK -> types(cal).takeIf { it.isNotEmpty() }?.take(12)?.let { list ->
             mapOf("items" to list.map { t ->
-                mapOf("name" to t.name.take(20), "role" to role(t).key, "label" to t.label.ifEmpty { t.name.take(1) },
+                // 2.0.0 [RVM-29] SN-16: name and 근무 글자 cut at a letter by ShiftRules (the piece's own check), never half an emoji.
+                mapOf("name" to com.bamnat.core.model.ShiftRules.fitName(t.name), "role" to role(t).key,
+                    "label" to com.bamnat.core.model.ShiftRules.fitLabel(t.label).ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS) },
                     "color" to (t.colorArgb or 0xFF000000L), "emoji" to ShiftIcon.emoji(t.icon))
             })
         }
@@ -214,7 +222,7 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.PHOTO_LOOK -> com.bamnat.core.recipe.PhotoLook.decode(from.photoLook).takeIf { !it.isDefault }?.let { l ->
             val ctx = c.appContext
             val mine = types(cal).associateBy { it.id }
-            val icons = l.icons.mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
+            val icons = com.bamnat.core.model.ShiftRef.of(l.icons, cal).mapNotNull { (t, id) -> mine[t]?.let { role(it).key to id } }.filter { LookImages.has(ctx, it.second) }
                 .distinctBy { it.first }.take(6).map { (r, id) -> mapOf("role" to r, "image" to id) }
             mapOf("bg" to l.bg?.takeIf { LookImages.has(ctx, it) }, "dim" to l.dim.toLong(), "head" to l.head?.takeIf { LookImages.has(ctx, it) },
                 "widget" to l.widget?.takeIf { LookImages.has(ctx, it) }, "corners" to l.corners, "icons" to icons.ifEmpty { null },
@@ -259,9 +267,17 @@ class RecipePieces(private val c: AppContainer) {
                     .takeIf { it.isNotEmpty() }?.let { list -> Change(list.joinToString(", ") { (t, a) -> "${t.name} ${a.joinToString("·") { "${it}분 전" }} 알람 더하기" }) }
             }
             val mission = (values["mission"] as? String)?.takeIf { it != "none" }
+            // 2.0.0 [RVM-22] RCP-05 (진동·점점 크게도 바꾸는데 요약 줄에 없었어요): every alarm setting the piece changes, as 지금 → 바뀐 값;
+            // one it leaves as it is says nothing.
+            val cur = c.settingsRepository.current
+            val weak = com.bamnat.core.recipe.AlarmStrength.weaker(values, alarmNow()).map { it.key }.toSet()
             lines + listOfNotNull(
-                values["snooze"]?.let { Change("다시 울림 ${(it as Number).toInt()}분") },
-                values["ring"]?.let { Change("울림 길이 ${(it as Number).toInt()}분") },
+                (values["snooze"] as? Number)?.toInt()?.takeIf { it != cur.snoozeMinutes }?.let { Change("다시 울림 ${cur.snoozeMinutes}분 → ${it}분") },
+                (values["ring"] as? Number)?.toInt()?.takeIf { it != cur.ringMinutes }?.let { Change("울림 길이 ${cur.ringMinutes}분 → ${it}분", weak = "ring" in weak) },
+                (values["gradual"] as? Boolean)?.takeIf { it != cur.gradualVolume }?.let {
+                    Change(if (it) "알람이 작게 시작해 점점 커져요" else "알람이 처음부터 큰 소리로 울려요(점점 크게 끔)", weak = "gradual" in weak)
+                },
+                (values["vibrate"] as? Boolean)?.takeIf { it != cur.vibrate }?.let { Change(if (it) "알람에 진동도 울려요" else "알람 진동을 꺼요", weak = "vibrate" in weak) },
                 mission?.let { Change("끄기 미션: ${AlarmMission.of(it).label}") },
                 (values["mission"] == "none").takeIf { it }?.let { Change("미션은 지금 것을 그대로 둬요", skipped = true) },
             )
@@ -306,7 +322,7 @@ class RecipePieces(private val c: AppContainer) {
                 // 1.37 [SHR-32] A 근무표 링크's 근무 주기 has no pay part: it says so.
                 "근무 ${s.shiftTypes.size}가지와 순서" + if (s.hasRules || s.items.isNotEmpty()) ", 급여 규칙" else "" } }
                 .getOrDefault("근무 주기와 급여 규칙")))
-        PieceKind.BUNDLE -> listOf(Change("묶음 안 레시피 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
+        PieceKind.BUNDLE -> listOf(Change("묶음 안 작품 ${items(values, "items").size}개는 아래에서 하나씩 열어 골라 넣어요", skipped = true))
         PieceKind.LEDGER -> listOfNotNull(
             texts(values, "costs").takeIf { it.isNotEmpty() }?.let { Change("지출 분류 ${it.size}개 (없는 것만 더하기)") },
             texts(values, "incomes").takeIf { it.isNotEmpty() }?.let { Change("수입 분류 ${it.size}개 (없는 것만 더하기)") },
@@ -330,8 +346,9 @@ class RecipePieces(private val c: AppContainer) {
         // [RUL-04] 켜기 전 한 줄 요약 (사용성 제안): each button and rule as it will act; one that writes data says so first.
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
             val l = raw.received()
-            (l.buttons.map { Change((if (it.act.verb.writes) "⚠ " else "") + it.say()) } +
-                l.rules.map { Change((if (it.act.verb.writes) "⚠ " else "") + "규칙 ‘${it.name}’: " + it.say() + if (it.act.verb.writes) " (꺼진 채로 들어와요)" else "") } +
+            // [RVM-23] STU-23: a step after the first that writes (more·otherwise) is marked too, not the first step alone.
+            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + com.bamnat.core.formula.FormulaText.blanks(b.say())) } +
+                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + com.bamnat.core.formula.FormulaText.blanks(r.say()) + if (w) " (꺼진 채로 들어와요)" else "") } +
                 // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
@@ -565,6 +582,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
                       /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // 2.0.0 [RVS-12] A 부품 piece this app cannot read is said by 넣기 ([RecipeRepository.lastMissed]), not taken for 'nothing changed'.
+        if (kind == PieceKind.PARTS) (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.takeIf { it.isNotEmpty() }
+            ?.let { com.bamnat.core.recipe.Blueprint.clean(it) }
         // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
         if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
         // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
@@ -1034,7 +1054,14 @@ class RecipePieces(private val c: AppContainer) {
                                       cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
-                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
+                // 2.0.0 [RVS-09] 검토 SN-12(3): 탭 순서 is one's own (the first tab is where the app opens). A work always carries one, so its
+                // usual order said nothing and put a phone's own order back to the usual; now only an order the maker changed is put on,
+                // and the phone's own first tab stays first.
+                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.layout.TabOrder.of(it) }
+                    ?.takeIf { it != com.bamnat.core.layout.TabOrder.DEFAULT }?.let { theirs ->
+                        val home = com.bamnat.core.layout.TabOrder.home(cur.tabOrder)
+                        "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(com.bamnat.core.layout.TabOrder.move(theirs, home, 0)).joinToString(",")
+                    },
                 (values["calendar"] as? String)?.let { "calendarLayout" to it },
             ).toMap()
             PieceKind.CARDS -> listOfNotNull(
@@ -1058,7 +1085,7 @@ class RecipePieces(private val c: AppContainer) {
                 val l = com.bamnat.core.recipe.PhotoLook.decode(cur.photoLook)
                 fun pic(k: String) = (values[k] as? String)?.takeIf { LookImages.has(ctx, it) }
                 val byRole = items(values, "icons").mapNotNull { i -> (i["image"] as? String)?.takeIf { LookImages.has(ctx, it) }?.let { (i["role"] as? String) to it } }.toMap()
-                val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { t.id to it } }
+                val icons = if (byRole.isEmpty()) l.icons else l.icons + types(cal).mapNotNull { t -> byRole[role(t).key]?.let { com.bamnat.core.model.ShiftRef.key(cal, t.id) to it } }
                 val after = l.copy(bg = pic("bg") ?: l.bg, head = pic("head") ?: l.head, widget = pic("widget") ?: l.widget,
                     dim = (values["dim"] as? Number)?.toInt()?.coerceIn(0, 80) ?: l.dim,
                     corners = (values["corners"] as? String)?.takeIf { it in com.bamnat.core.recipe.PhotoLook.CORNERS } ?: l.corners, icons = icons,

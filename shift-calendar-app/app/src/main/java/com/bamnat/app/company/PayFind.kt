@@ -38,7 +38,8 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
         val store = s.store
         // [PAYG-09] SP1: the join answers with the page as a member reads it (one round trip less); an older server does not.
         val (m, joined) = api.joinWithPage(store.device, id, s.serverCal)
-        if (!m.joined) throw CompanyException(m.error ?: "member")
+        // 2.0.0 [RVN-17] COMP-12 With the wait's company and whether '잘못 골랐어요' can free the calendar ([undo]).
+        if (!m.joined) throw CompanyException(m.error ?: "member", until = m.until?.toString(), undo = m.undo, held = m.held)
         val page = joined ?: api.company(id)
         runCatching { c.companySearch.keepPage(page) }
         // The server keeps a join for 30 days whatever happens next, so the phone says it truly (결정 D79: members see the way).
@@ -53,6 +54,25 @@ class PayFind(private val c: AppContainer, val calendar: String = PersonalCalend
         val way = PendingWay(page.id, page.name, setup.dept, setup.id, text, source)
         s.pendingWays.offer(way)
         return Used.Ready(way)
+    }
+
+    /**
+     * 2.0.0 [RVN-17] 검토 COMP-12 (고르기 전에 알리고): whether this calendar is held by a company other than [id], asked before
+     * 이 급여 방식 쓰기 (nothing is joined). Null when it is free, already [id]'s, or the look itself failed (the use says it then).
+     */
+    suspend fun held(id: String): Membership? {
+        val s = scope
+        val held = s.store.member.value?.first
+        if (held == null || held == id) return null
+        return runCatching { c.companyApi.joinCheck(s.store.device, id, s.serverCal) }.getOrNull()?.takeIf { it.error != null }
+    }
+
+    /** 2.0.0 [RVN-17] 검토 COMP-12 '잘못 골랐어요': this calendar leaves the company it holds, once a year; [use] goes on after it. */
+    suspend fun undo() {
+        val s = scope
+        c.companyApi.undoJoin(s.store.device, s.serverCal)
+        s.store.setMember(null)
+        c.telemetry.event("company_undo", "pay_find")
     }
 
     /** None found: the easy setup under [company]'s name; saving it asks the one-time plaza question (AutoShare). */

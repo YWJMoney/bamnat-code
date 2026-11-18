@@ -46,6 +46,8 @@ class RosterFollowTest {
         val p = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver(DayEntry(d2, ShiftOverride.Shift(5)))::resolve)
         assertTrue(p.apply.isEmpty())
         assertEquals(listOf(d2), p.kept)
+        // 2.0.0 [RVH-57] What the link would have put in, for '자동으로 정리한 것'.
+        assertEquals(mapOf(d2 to ShiftOverride.Shift(3)), p.keptTo)
     }
 
     @Test fun onlyDaysTheLinkChangedAreLookedAt() {
@@ -76,5 +78,29 @@ class RosterFollowTest {
         val new = mapOf(d1 to Their.Shift(11), d1.plusDays(1) to Their.Shift(10))
         val p = RosterFollow.plan(null, new, pairs, Fixtures.all, resolver()::resolve)
         assertEquals(mapOf(d1 to ShiftOverride.Shift(3)), p.apply)
+    }
+
+    /** 2.0.0 [RVH-02] 검토 CAL-06: a day new on the link, which the member had written by hand, is kept and said. */
+    @Test fun aNewDayWrittenByHandIsKept() {
+        val d9 = d1.plusDays(8)
+        val old = mapOf(d1 to Their.Shift(10))
+        val new = mapOf(d1 to Their.Shift(10), d9 to Their.Shift(11))
+        val p = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver(DayEntry(d9, ShiftOverride.Off))::resolve)
+        assertTrue(p.apply.isEmpty())
+        assertEquals(listOf(d9), p.kept)
+        assertEquals(mapOf(d9 to ShiftOverride.Shift(3)), p.keptTo)
+        // Not written by hand: it goes in.
+        val q = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver()::resolve)
+        assertEquals(mapOf(d9 to ShiftOverride.Shift(3)), q.apply)
+    }
+
+    /** [RVH-02] A new day with extra work written on it (대근) would count twice under the link's shift: kept. */
+    @Test fun aNewDayWithExtraWorkIsKept() {
+        val d6 = d1.plusDays(5) // 일요일: 휴무 by the weekly order
+        val old = mapOf(d1 to Their.Shift(10))
+        val new = mapOf(d1 to Their.Shift(10), d6 to Their.Shift(10))
+        val extra = DayEntry(d6, extras = listOf(com.bamnat.core.model.ExtraEntry(kindId = 1, minutes = 480)))
+        val p = RosterFollow.plan(old, new, pairs, Fixtures.all, resolver(extra)::resolve)
+        assertEquals(listOf(d6), p.kept)
     }
 }

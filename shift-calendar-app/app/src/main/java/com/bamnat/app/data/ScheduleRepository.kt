@@ -58,6 +58,11 @@ data class ScheduleSnapshot(
      * the calendar draws from such a snapshot, and only inside it ([covers]).
      */
     val window: ClosedRange<LocalDate>? = null,
+    /**
+     * 2.0.0 [RVH-14] 검토 CAL-19: the 공휴일 table this was worked out with ([com.bamnat.app.remote.RemoteFilesStore.holidays]). A new
+     * table makes a snapshot unequal to the last, so what is remembered from it (the month's cells, the next alarm) is worked out again.
+     */
+    val holidays: Int = 0,
 ) {
     constructor(shiftTypes: List<ShiftType>, pattern: WorkPattern?, entries: List<DayEntry>, kinds: ExtraKinds = ExtraKinds()) :
         this(shiftTypes, listOfNotNull(pattern), entries, kinds)
@@ -145,7 +150,9 @@ class ScheduleRepository(
      * days it was long enough, on every edit and for every screen watching, to make taps stop answering.
      */
     val snapshot: Flow<ScheduleSnapshot> =
-        combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged()) { t, p, e, k -> ScheduleSnapshot(t, p, e, k) }
+        combine(shiftTypes, patterns, entries, kinds.distinctUntilChanged(), com.bamnat.app.remote.RemoteFilesStore.holidays) { t, p, e, k, h ->
+            ScheduleSnapshot(t, p, e, k, holidays = h)
+        }
             .flowOn(Dispatchers.Default)
             .onEach { lastSnapshot = it }
 
@@ -197,7 +204,8 @@ class ScheduleRepository(
         val extras = extraDao.inRange(from, to)
         val k = kinds.first()
         return kotlinx.coroutines.withContext(Dispatchers.Default) {
-            ScheduleSnapshot(types.map { it.toModel() }, periods.mapNotNull { it.toModel() }, assembleDays(rows, extras), k, window = window)
+            ScheduleSnapshot(types.map { it.toModel() }, periods.mapNotNull { it.toModel() }, assembleDays(rows, extras), k, window = window,
+                holidays = com.bamnat.app.remote.RemoteFilesStore.holidays.value)
         }
     }
 
@@ -372,8 +380,10 @@ class ScheduleRepository(
          * the day it was made, so nothing before it counts as worked there.
          */
         backfill: Boolean = true,
+        /** [RVH-28] 검토 WORK-04 처음 설정 다시 받기: shifts of the same name keep their alarms, color and sound ([SetupDraft.typesToSave]). */
+        keep: Boolean = false,
     ): SetupDraft = db.withTransaction {
-        val saved = draft.remap(putSetupTypes(draft))
+        val saved = draft.remap(putSetupTypes(draft, if (keep) today else null))
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
@@ -400,10 +410,11 @@ class ScheduleRepository(
     }
 
     /** [applySetup]'s shifts part, inside its transaction: the draft's ids to the saved ones. */
-    private suspend fun putSetupTypes(draft: SetupDraft): Map<Long, Long> {
+    private suspend fun putSetupTypes(draft: SetupDraft, keepFrom: LocalDate? = null): Map<Long, Long> {
         val existing = shiftTypeDao.getAll().map { it.toModel() }
         val ids = LinkedHashMap<Long, Long>()
-        for (t in draft.typesToSave().sortedBy { it.sortOrder }) {
+        // [RVH-28] 검토 WORK-04 검토 WORK-19 처음 설정 다시 받기 keeps what the user made of a shift, and its new hours count from today.
+        for (t in (if (keepFrom != null) draft.typesToSave(existing, keepFrom) else draft.typesToSave()).sortedBy { it.sortOrder }) {
             val mine = existing.firstOrNull { it.name == t.name.trim() }
             val icon = t.icon ?: mine?.icon ?: ShiftIcon.suggest(t)?.key
             ids[t.id] = saveShiftType(t.copy(id = mine?.id ?: 0, icon = icon, alarmSoundUri = mine?.alarmSoundUri))
@@ -480,6 +491,9 @@ class ScheduleRepository(
     }
 
     /** One day as stored, with its extra work; null when the day follows the pattern untouched. */
+    /** 2.0.0 [RVH-08] The day as stored now (not as the last snapshot had it). */
+    suspend fun entryNow(date: LocalDate): DayEntry? = readDay(date.toEpochDay())
+
     private suspend fun readDay(epochDay: Long): DayEntry? {
         val row = dayEntryDao.get(epochDay)
         val extras = extraDao.onDay(epochDay).map { it.toModel() }
@@ -513,6 +527,38 @@ class ScheduleRepository(
     /** [CAL-01] Several days changed in one write, e.g. quick input dragged over them; returns each as it was. */
     suspend fun updateDays(dates: List<LocalDate>, transform: (DayEntry) -> DayEntry): Map<LocalDate, DayEntry?> =
         db.withTransaction { dates.associateWith { updateDay(it, transform) } }
+
+    /**
+     * 2.0.0 [RVL-18] (검토 SCAN-13·I07ba-04, 조건 10) What one fill did (한 달 근무 넣기, 근태·캘린더 가져오기): each day as it was and
+     * as the fill left it, so taking it back leaves alone a day the user changed again since.
+     */
+    class Fill(val before: Map<LocalDate, DayEntry?>, val after: Map<LocalDate, DayEntry?>) {
+        val size: Int get() = before.size
+    }
+
+    /** [updateDays], keeping how each day was left ([Fill]). */
+    suspend fun fillDays(dates: List<LocalDate>, transform: (DayEntry) -> DayEntry): Fill = db.withTransaction {
+        val before = LinkedHashMap<LocalDate, DayEntry?>()
+        val after = LinkedHashMap<LocalDate, DayEntry?>()
+        for (d in dates) {
+            before[d] = updateDay(d, transform)
+            after[d] = readDay(d.toEpochDay())
+        }
+        Fill(before, after)
+    }
+
+    /** 2.0.0 [RVL-18] The days as they are now, for a [Fill] made of single writes (캘린더 가져오기). */
+    suspend fun daysNow(dates: Collection<LocalDate>): Map<LocalDate, DayEntry?> =
+        db.withTransaction { dates.associateWith { readDay(it.toEpochDay()) } }
+
+    /** 2.0.0 [RVL-18] Puts back the days [fill] changed that are still as it left them; returns the days changed since, and kept. */
+    suspend fun undoFill(fill: Fill): Set<LocalDate> = db.withTransaction {
+        val kept = LinkedHashSet<LocalDate>()
+        for ((d, was) in fill.before) {
+            if (readDay(d.toEpochDay()) == fill.after[d]) writeDay(was?.copy(date = d) ?: DayEntry(d)) else kept += d
+        }
+        kept
+    }
 
     /** A piece of extra work within what one day can hold. */
     private fun clean(e: ExtraEntry): ExtraEntry {
@@ -576,13 +622,48 @@ class ScheduleRepository(
     suspend fun setDayAlarms(date: LocalDate, alarms: List<DayAlarm>?) =
         updateDay(date) { entry ->
             entry.copy(
-                customAlarms = alarms?.distinctBy { it.time }?.sortedBy { it.time }?.take(MAX_ALARMS),
+                // 2.0.0 [RVI-17] By when each rings: 전날 23:00 and 23:00, or 다음날 14:00 and 14:00, are two alarms.
+                customAlarms = alarms?.distinctBy { it.at(date) }?.sortedBy { it.at(date) }?.take(MAX_ALARMS),
                 // Choosing alarms for a day means the user wants that day to ring.
                 alarmSkipped = if (alarms != null) false else entry.alarmSkipped,
             )
         }
 
     suspend fun resetDay(date: LocalDate) = updateDay(date) { DayEntry(date) }
+
+    /** 2.0.0 [RVH-51] PC-72 The days changed by hand from [fromMillis] until [untilMillis], with when (최근 바꾼 기록). */
+    suspend fun changedDays(fromMillis: Long, untilMillis: Long): List<Pair<LocalDate, Long>> =
+        changeDao.between(fromMillis, untilMillis).map { LocalDate.ofEpochDay(it.epochDay) to it.atMillis }
+
+    /** [RVH-51] PC-72 Two days as they were before [moveDay], for 되돌리기. */
+    data class DayMove(val from: LocalDate, val fromWas: DayEntry?, val to: LocalDate, val toWas: DayEntry?)
+
+    /**
+     * 2.0.0 [RVH-51] PC-72 What [from] holds (근무·시간·잔업·연차·지각·알람) moved to [to], in place of what [to] held, and [from] back to its
+     * 근무 주기: a day the month turn of 1.36.1~1.39.0 put a month on. Both days say so in 최근 바꾼 기록.
+     */
+    suspend fun moveDay(from: LocalDate, to: LocalDate): DayMove = db.withTransaction {
+        val fromWas = readDay(from.toEpochDay())
+        val toWas = readDay(to.toEpochDay())
+        val moved = (fromWas ?: DayEntry(from)).copy(date = to)
+        writeDay(moved)
+        writeDay(DayEntry(from))
+        val now = clock()
+        changeDao.insert(DayChangeEntity(epochDay = to.toEpochDay(), atMillis = now, text = "${md(from)}에서 옮김 (지난 판 확인)"))
+        changeDao.insert(DayChangeEntity(epochDay = from.toEpochDay(), atMillis = now, text = "${md(to)}로 옮김 (지난 판 확인)"))
+        DayMove(from, fromWas, to, toWas)
+    }
+
+    /** [RVH-51] PC-72 [moveDay] undone: both days exactly as they were, and 최근 바꾼 기록 says so. */
+    suspend fun undoMove(m: DayMove) = db.withTransaction {
+        writeDay(m.fromWas?.copy(date = m.from) ?: DayEntry(m.from))
+        writeDay(m.toWas?.copy(date = m.to) ?: DayEntry(m.to))
+        val now = clock()
+        changeDao.insert(DayChangeEntity(epochDay = m.from.toEpochDay(), atMillis = now, text = "옮긴 것 되돌림 (지난 판 확인)"))
+        changeDao.insert(DayChangeEntity(epochDay = m.to.toEpochDay(), atMillis = now, text = "옮긴 것 되돌림 (지난 판 확인)"))
+    }
+
+    private fun md(d: LocalDate) = "${d.monthValue}월 ${d.dayOfMonth}일"
 
     companion object {
         const val MAX_LABEL_LENGTH = 2

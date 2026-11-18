@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -49,6 +51,7 @@ import androidx.compose.foundation.rememberScrollState
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import androidx.compose.ui.semantics.Role
 
 /**
  * 1.36 [VIL-06] 마을 V6 검색 하나: one box for 장터 작품, 광장 글 and 요청, each in its own group (동물의 숲에 검색이 없어 생긴 불편에서 착안,
@@ -110,7 +113,8 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
     Scaffold(topBar = {
         TopAppBar(title = { Text("마을에서 찾기") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } })
     }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
+        // 2.0.0 [RVO-09] Same as 설정 찾기 (PC-82): the results end above the keyboard, so the last ones can be reached while typing.
+        Column(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(), horizontalAlignment = Alignment.CenterHorizontally) {
             OutlinedTextField(
                 value = field, onValueChange = { v ->
                     // PC 확인 V13: the tap that focuses the box sends a cursor right after; it must not undo 전체 선택.
@@ -180,7 +184,7 @@ fun VillageSearchScreen(c: AppContainer, onBack: () -> Unit, onRecipe: (String) 
                         if (rs.isNotEmpty()) {
                             item { Group("장터 작품 ${rs.size}") }
                             items(rs.take(10), key = { "r" + it.code }) { r ->
-                                Row(r.title, styleTag(r.styles) + r.summary.ifBlank { "좋아요 ${r.likes} · 넣은 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
+                                Row(r.title, styleTag(r.styles) + r.summary.ifBlank { "좋아요 ${r.likes} · 넣어 본 분 ${r.users}" }) { keep(words); onRecipe(r.code) }
                             }
                         }
                         if (ps.isNotEmpty()) {
@@ -225,7 +229,7 @@ private fun Hint(text: String) {
 
 @Composable
 private fun Row(title: String, line: String, onClick: () -> Unit) {
-    SoftCard(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+    SoftCard(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(line, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)

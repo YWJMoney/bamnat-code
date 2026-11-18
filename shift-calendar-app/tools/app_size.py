@@ -19,7 +19,17 @@ import zipfile
 # 1.36.0 (2026-11-04, 출시 때 다시 정함 — 1.37-인계 278줄): 1.35.0 APK 10.35MB에서 이미 넘었고, 1.36(스튜디오·장터·FCM)으로
 # APK 11.73MB, AAB 11.82MB가 됐어요. 늘어난 몫은 거의 dex라 지금 크기 + 약 7%로 잡고, 1.37에서 줄일 곳을 찾아요.
 BUDGETS = {".apk": 12_500_000, ".aab": 12_500_000}
+# 2.0.0 [RVR-19] (검토 TEST-20 ②) The watch's AAB has its own: under the phone's 12.5 MB it could double unnoticed. 1.39.0's was
+# 1.78 MB without BUNDLE-METADATA (3.83 MB whole), so about 20 % more. A file with 'wear' in its name is the watch's.
+WATCH_BUDGET = 2_200_000
 NOT_SHIPPED = "BUNDLE-METADATA/"
+
+
+def budget_of(path):
+    """The budget for [path]: the watch's for a wear file, else by its kind (.apk, .aab); None for anything else."""
+    if "wear" in os.path.basename(path).lower():
+        return WATCH_BUDGET
+    return BUDGETS.get(os.path.splitext(path)[1])
 
 
 def entries(path):
@@ -54,7 +64,7 @@ def main(argv):
     over, report = [], {}
     for f in files:
         size, size_counted = os.path.getsize(f), counted(f)
-        budget = BUDGETS.get(os.path.splitext(f)[1])
+        budget = budget_of(f)
         report[os.path.basename(f)] = size
         mark = "" if budget is None or size_counted <= budget else " **over budget**"
         shipped = f", {size_counted / 1e6:.2f} MB without {NOT_SHIPPED}" if size_counted != size else ""

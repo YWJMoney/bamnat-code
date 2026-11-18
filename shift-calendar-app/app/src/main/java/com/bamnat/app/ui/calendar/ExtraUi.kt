@@ -171,6 +171,9 @@ object ExtraText {
     fun kindName(kind: ExtraKind, style: com.bamnat.core.work.WorkStyle?): String = word(kind.name, kind.id, style)
 
     /** [text] with 잔업 said "야근" when it is the built-in 잔업 of a weekday worker ([J133-27]). */
+    /** [EASE-11]·2.0.0 [RVH-07] 검토 CAL-11: what a shift on a day off is called: 대타 on an 알바 calendar, else 대근 ([J133B-01]). */
+    fun coverWord(style: com.bamnat.core.work.WorkStyle?): String = if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"
+
     fun word(text: String, kindId: Long, style: com.bamnat.core.work.WorkStyle?): String =
         if (style == com.bamnat.core.work.WorkStyle.DAY && kindId == ExtraKind.OVERTIME_ID) text.replace("잔업", "야근") else text
 
