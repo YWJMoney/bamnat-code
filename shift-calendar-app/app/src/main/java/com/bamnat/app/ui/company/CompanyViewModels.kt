@@ -164,6 +164,21 @@ class CompanyFindViewModel(
 /** One choice of where today falls in a shared rotation: the next week from it. */
 data class Phase(val step: Int, val days: List<ShiftType?>)
 
+/** 2.0.0 [RVN-19] 검토 U10a-09 A day of a row as the user says it: its work's name, or 휴무 for none. */
+fun phaseKind(t: ShiftType?): String = t?.name ?: "휴무"
+
+/** 2.0.0 [RVN-19] The rows left once the user said what some days are ([said]: a day of the week grid → its [phaseKind]). */
+fun Phases.left(said: Map<Int, String>): List<Phase> =
+    options.filter { o -> said.all { (d, k) -> phaseKind(o.days.getOrNull(d)) == k } }
+
+/** 2.0.0 [RVN-19] The day to ask about next: the first not said yet on which the rows left differ; null with one row (or none) left. */
+fun Phases.nextAsk(said: Map<Int, String>): Int? {
+    val left = left(said)
+    if (left.size <= 1) return null
+    val days = left.maxOf { it.days.size }
+    return (0 until days).firstOrNull { d -> d !in said && left.map { phaseKind(it.days.getOrNull(d)) }.distinct().size > 1 }
+}
+
 /**
  * A shared rotation and today's place in it, for "오늘은 어떤 근무예요?". [current] is the row the
  * calendar already shows; [sent] the row of whoever sent the file, with their [team] when they wrote it.
@@ -276,6 +291,21 @@ class CompanyDetailViewModel(
     fun closeWait() { _wait.value = null }
 
     /**
+     * 2.0.0 [RVN-17] 검토 PC-155 This calendar is held by another company, looked up as the page opens (nothing joined), so the line
+     * above says '…까지 A로 정해져 있어요 · 근무주기만 넣을 수 있어요' instead of what joining would hold. Null when free or unknown.
+     */
+    private val _heldNow = MutableStateFlow<MemberWait?>(null)
+    val heldNow: StateFlow<MemberWait?> = _heldNow.asStateFlow()
+
+    fun lookHeld(page: CompanyPage) {
+        val heldBy = scope.store.member.value?.first
+        if (page.member || heldBy == null || heldBy == page.id) { _heldNow.value = null; return }
+        viewModelScope.launch {
+            _heldNow.value = runCatching { c.companyApi.joinCheck(scope.store.device, page.id, scope.serverCal) }.getOrNull()?.let(MemberWait::of)
+        }
+    }
+
+    /**
      * 2.0.0 [RVN-17] 검토 COMP-12 (보고서 11장 결정 10 '고르기 전에 알리고'): before an order is picked, a calendar held by another
      * company asks the server whether it could take [page] (nothing joined). [held] gets the wait (the screen asks: 근무주기만 넣기 or
      * '잘못 골랐어요'); [go] runs when it could, or when the look itself failed (offline: the end of the way still says it, as before).
@@ -303,6 +333,7 @@ class CompanyDetailViewModel(
                 scope.store.setMember(null)
                 c.telemetry.event("company_undo", "detail")
                 _wait.value = null
+                _heldNow.value = null
                 then()
             } catch (e: com.bamnat.app.company.CompanyException) {
                 _wait.value = _wait.value?.failed(e)
@@ -787,6 +818,10 @@ class TalkHolder(
      * is opened anew.
      */
     val draft = androidx.compose.runtime.mutableStateOf("")
+    /** 2.0.0 [RVN-20] U10a-02 '투표 만들기': the next question opens with its two choices out (taken once by the sheet). */
+    val pollStart = androidx.compose.runtime.mutableStateOf(false)
+    /** 2.0.0 [RVN-20] I10aa-01 The box takes the keys as the sheet comes up ('답 남기기' on a card, a way to start a plaza). */
+    val typeNow = androidx.compose.runtime.mutableStateOf(false)
     val replyId = androidx.compose.runtime.mutableStateOf<String?>(null)
     val kind = androidx.compose.runtime.mutableStateOf("talk")
     /** PC 확인 41e73582: the post just sent, so the sheet shows it and says so (보낸 답이 안 보여 두 번 보냈어요). */
@@ -1729,6 +1764,9 @@ class CompanyReportViewModel(
     val start: CompanyDraft? = scope.store.draft.value
         ?: scope.store.applied.value?.let { CompanyDraft(it.company, it.dept) }
         ?: publicUse?.let { u -> CompanyDraft(u.company, u.cycle?.site.orEmpty().take(20)) }
+
+    /** 2.0.0 [RVN-19] The company this calendar uses, whose own name is not second-guessed. */
+    val usedCompany: String? get() = scope.store.applied.value?.company
 
     /** [SPAT-05] The note a setup from a public row starts with; the user may add to it. */
     val startNote: String = publicUse?.let { PublicSetup.note(it.cycle, it.codes, it.picked) }.orEmpty()

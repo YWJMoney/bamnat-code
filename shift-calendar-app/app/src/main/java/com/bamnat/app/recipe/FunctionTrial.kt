@@ -35,7 +35,15 @@ class FunctionTrial(private val c: AppContainer) {
     }
 
     /** How a trial ended: what the rules and buttons did (taken back), and what was written ([kept] or taken back). */
-    data class Ended(val code: String, val title: String, val ran: Int, val made: Made, val kept: Boolean)
+    data class Ended(val code: String, val title: String, val ran: Int, val made: Made, val kept: Boolean,
+                     /** 2.0.0 [RVM-54] 검토 U09b-04: the pieces put back ("단추·규칙", "메모 틀"), in the work's order. */
+                     val back: List<String> = emptyList(),
+                     /** [RVM-54] The tried work's own 단추·규칙, taken out. */
+                     val removed: List<String> = emptyList(),
+                     /** [RVM-54] What I changed myself while trying, left as it was ([RecipePieces.kept]). */
+                     val keptMine: Int = 0,
+                     /** [RVM-54] I had 단추·규칙 of my own before: what they wrote was not touched. */
+                     val mineRules: Boolean = false)
 
     /**
      * Puts [kinds] of [r] on calendar [cal] for a trial, each with its [modes] (as 넣기 would), and switches on its rules that write
@@ -54,7 +62,7 @@ class FunctionTrial(private val c: AppContainer) {
         write(journal)
         val filled = RecipeResolve.answers(r, answers)
         val done = ArrayList<PieceKind>()
-        val trialCode = code.ifEmpty { "t" + at.toString(36) }
+        val trialCode = codeOf(journal)
         for (piece in wanted) {
             val values = RecipeResolve.piece(r, piece, filled)
             val snap = runCatching { c.recipes.pieces.apply(piece.kind, values, cal, trialCode, modes[piece.kind] ?: RecipePieces.Mode.REPLACE, trial = true) }
@@ -86,11 +94,36 @@ class FunctionTrial(private val c: AppContainer) {
     /** At the app's start: a trial the app stopped in the middle of is put back (what the user wrote stays). */
     suspend fun recover(): Ended? = if (!busy(c.appContext)) null else finish(keepMine = true)
 
+    /** 2.0.0 [RVM-46] The names of the rules and buttons the trial added (not one of mine from before), or null for every write. */
+    private fun triedNames(j: JSONObject): ((String) -> Boolean)? {
+        val tried = tried(j)
+        return { it in tried }
+    }
+
+    /** [RVM-46][RVM-54] The trial's own 단추·규칙 names, in the order the work has them. */
+    private fun tried(j: JSONObject): List<String> {
+        val pair = logicPair(j) ?: return emptyList()
+        val before = com.bamnat.core.formula.Logic.decode(pair.optString(0))
+        val after = com.bamnat.core.formula.Logic.decode(pair.optString(1))
+        val mine = before.buttons.map { it.label }.toSet() + before.rules.map { it.name }
+        return (after.buttons.map { it.label } + after.rules.map { it.name }).distinct() - mine
+    }
+
+    private fun logicPair(j: JSONObject): JSONArray? =
+        j.optJSONObject("before")?.optJSONObject(PieceKind.LOGIC.key)?.optJSONObject("settings")?.optJSONArray("logic")
+
+    /** [RVM-54] 단추·규칙 of mine are on the phone (once the trial's went: from before it, or made while trying). */
+    private fun haveMine(): Boolean = runCatching {
+        com.bamnat.core.formula.Logic.decode(c.settingsRepository.current.logic).let { it.buttons.isNotEmpty() || it.rules.isNotEmpty() }
+    }.getOrDefault(false)
+
     private suspend fun finishNow(keepMine: Boolean): Ended? {
         val j = read() ?: return null
         val at = j.optLong("at")
         val cal = j.optString("cal")
-        val ran = runCatching { com.bamnat.app.logic.LogicRunner.takeBackSince(c, at) }.getOrDefault(0)
+        // 2.0.0 [RVM-46] 검토 RCP-20: what the tried work's own rules and buttons wrote goes; what my own rules wrote meanwhile stays
+        // (a name I already had before the trial is mine, so its writes stay too).
+        val ran = runCatching { com.bamnat.app.logic.LogicRunner.takeBackSince(c, at, triedNames(j)) }.getOrDefault(0)
         val made = runCatching { madeBy(j) }.getOrDefault(Made(0, 0))
         if (!keepMine) runCatching {
             // Gone, not to the 휴지통: they were only ever a try.
@@ -100,11 +133,17 @@ class FunctionTrial(private val c: AppContainer) {
         }
         val before = j.optJSONObject("before") ?: JSONObject()
         val order = j.optJSONArray("order") ?: JSONArray()
+        // [RVM-54] U09b-04: what went back, said in the card that follows; mine read before the pieces go back.
+        val names = tried(j)
+        val back = ArrayList<String>()
+        c.recipes.pieces.kept = 0
         for (i in order.length() - 1 downTo 0) {
             val kind = PieceKind.of(order.optString(i)) ?: continue
             val snap = before.optJSONObject(kind.key) ?: continue
-            runCatching { c.recipes.pieces.restore(kind, snap, cal) }
+            if (runCatching { c.recipes.pieces.restore(kind, snap, cal) }.isSuccess) back.add(0, kind.label)
         }
+        val keptMine = c.recipes.pieces.kept
+        val mineRules = haveMine()
         val on = j.optJSONArray("on") ?: JSONArray()
         if (on.length() > 0) {
             val store = com.bamnat.app.logic.LogicStore(c.appContext)
@@ -112,7 +151,7 @@ class FunctionTrial(private val c: AppContainer) {
         }
         if (order.length() > 0) runCatching { com.bamnat.app.logic.LogicRunner.rulesChanged(c) }
         drop()
-        return Ended(j.optString("code"), j.optString("title"), ran, made, keepMine)
+        return Ended(j.optString("code"), j.optString("title"), ran, made, keepMine, back, names.takeIf { PieceKind.LOGIC.label in back }.orEmpty(), keptMine, mineRules)
     }
 
     private suspend fun madeBy(j: JSONObject): Made = Made(mineMemos(j.optLong("at")).size, mineMoney(j).size)
@@ -176,5 +215,24 @@ class FunctionTrial(private val c: AppContainer) {
 
         /** Whether a work's 기능 are on for a trial now (or were when the app stopped). */
         fun busy(ctx: android.content.Context): Boolean = file(ctx).exists()
+
+        @Volatile private var codeKept: Triple<Long, Long, String>? = null
+
+        /**
+         * 2.0.0 [RVM-53] 검토 RCP-21 ③: the code the tried work's rules and buttons are marked with ([com.bamnat.app.logic.LogicStore.fromRule]),
+         * null with none on. Read from the trial's file once (rules ask often).
+         */
+        fun codeNow(ctx: android.content.Context): String? {
+            val f = file(ctx)
+            if (!f.exists()) return null
+            val m = f.lastModified()
+            val n = f.length()
+            codeKept?.takeIf { it.first == m && it.second == n }?.let { return it.third }
+            val j = runCatching { JSONObject(f.readText()) }.getOrNull() ?: return null
+            return codeOf(j).also { codeKept = Triple(m, n, it) }
+        }
+
+        /** The code [start] marks the trial's pieces with: the work's own, or one made from when it began. */
+        internal fun codeOf(j: JSONObject): String = j.optString("code").ifEmpty { "t" + j.optLong("at").toString(36) }
     }
 }

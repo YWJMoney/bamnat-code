@@ -43,7 +43,7 @@ export function workViews(A) {
     if (!d.items.length) return `${segs}${hint}${empty("아직 없어요", "장터 작품이 많이 쓰이면 저절로 올라와요.")}`;
     return `${segs}${hint}<ul class="rows">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.title)}</b>
       <small>${x.users}명이 씀 · 7일 유지 ${x.kept}% · 좋아요 ${x.likes} · 신고 ${x.flags}${x.fromNeeds ? ` · 스튜디오 요구에서 ${x.fromNeeds}` : ""} · 만든 분 ${esc(x.nick ?? x.maker ?? "운영자")} · ${esc(x.code)}${x.version ? ` · ${esc(x.version)} 판 채택` : ""}</small></span>
-      ${edit ? `<span class="row-side">${x.tier === 3 && t !== "later" ? `<button class="btn small primary" data-act="tool-adopt" data-id="${x.code}">기본 도구로 채택</button><button class="btn small" data-act="tool" data-id="${x.code}" data-key="later">다음에</button>` : ""}
+      ${edit ? `<span class="row-side">${x.tier === 3 && t !== "later" ? `<button class="btn small" data-act="tool-adopt" data-id="${x.code}">기본 도구로 채택</button><button class="btn small" data-act="tool" data-id="${x.code}" data-key="later">다음에</button>` : ""}
         ${x.tier === 4 || t === "later" ? `<button class="btn small" data-act="tool" data-id="${x.code}" data-key="undo">되돌리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
   }
 
