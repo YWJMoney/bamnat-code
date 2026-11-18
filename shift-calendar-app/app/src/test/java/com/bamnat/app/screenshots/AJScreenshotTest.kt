@@ -150,8 +150,7 @@ class AJScreenshotTest : ScreenshotBase() {
         tapText("다른 곳이 있어요")
         settle()
         // [PAYIN-01] The photo is pinned over the lines (a drag on it moves the photo): folded so the drag moves the lines.
-        // Its buttons step aside after a moment; '단추 보기' brings them back.
-        if (!shows("접기", exact = true)) { tapText("단추 보기", exact = true); settle() }
+        // 2.0.0 (HQ-102): its buttons sit in a band under it, always there.
         tapText("접기", exact = true)
         settle()
         scrollDown(500)

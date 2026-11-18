@@ -111,7 +111,7 @@ export function plazaViews(A) {
           <span class="score mini" title="채택 점수"><meter min="0" max="${g.threshold}" value="${Math.min(g.points, g.threshold)}" aria-label="채택 점수"></meter><b>${g.points}/${g.threshold}</b></span>
           ${g.bad ? `<span class="pill bad">달라요 ${g.bad}</span>` : ""}
           ${editable ? `<span class="row-acts"><button class="btn small" data-act="reject" data-company="${g.company.id}" data-setup="${g.setup}"${g.draft?.reason ? ` data-reason="${esc(g.draft.reason)}"` : ""}>거절</button>
-          <button class="btn small primary" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button></span>` : ""}</span></summary>
+          <button class="btn small" data-act="adopt" data-company="${g.company.id}" data-setup="${g.setup}">채택</button></span>` : ""}</span></summary>
       <div class="rv-body">
         ${L.draftNote(g.draft, g.draft?.reason ? S.overview?.reasons?.[g.draft.reason] ?? "" : "")}
         ${why ? `<p class="meta wait">${esc(why)}</p>` : ""}
@@ -132,7 +132,7 @@ export function plazaViews(A) {
     const key = `a:${a.id}`;
     return `<li><details data-key="${key}" data-review="ask"${S.opened.get(key) ? " open" : ""}>
       <summary class="row"><span class="row-main"><b>${name(a.company, a.dept)}</b><small><span class="gist">${esc([...String(a.note ?? "")].slice(0, 80).join(""))}</span> · ${a.verified ? "명세서 확인 · " : ""}${moment(a.at)}</small></span>
-        <span class="row-side inline"><span class="pill warn">앱에 없는 방식</span>${editable ? `<button class="btn small primary" data-act="answer" data-id="${a.id}">답하기</button>` : ""}</span></summary>
+        <span class="row-side inline"><span class="pill warn">앱에 없는 방식</span>${editable ? `<button class="btn small" data-act="answer" data-id="${a.id}">답하기</button>` : ""}</span></summary>
       <div class="rv-body"><blockquote>${esc(a.note)}</blockquote><details><summary>보낸 분이 맞춰 둔 설정</summary>${lines(a.lines)}</details></div></details></li>`;
   }
 
@@ -206,7 +206,7 @@ export function plazaViews(A) {
       const against = c.against ? `${VERSION_STATE[c.against.state]?.[1] ?? ""}${c.against.version ? ` v${c.against.version}` : ""}` : "쓰는 판";
       return `<li><span class="pill ${VERSION_STATE[c.state]?.[0] ?? ""}">${esc(stateName(c))}</span> <span>${esc(against)}와 다른 점: <b>${esc(c.changes.summary)}</b></span></li>`;
     }).filter(Boolean);
-    const actions = list.map((c, i) => `<td class="acts${best(i)}">${c.state === "pending" && editReview ? `<button class="btn small primary" data-act="adopt" data-company="${v.company.id}" data-setup="${c.setup}">이 판으로 채택</button>` : ""}
+    const actions = list.map((c, i) => `<td class="acts${best(i)}">${c.state === "pending" && editReview ? `<button class="btn small" data-act="adopt" data-company="${v.company.id}" data-setup="${c.setup}">이 판으로 채택</button>` : ""}
       ${c.state === "previous" && editRules ? `<button class="btn small" data-act="version-promote" data-id="${c.rule}" data-version="${c.version}">다시 대표로</button>` : ""}
       ${c.state === "active" && editRules ? `<button class="btn small danger" data-act="withdraw-rule" data-id="${c.rule}">내리기</button>` : ""}</td>`).join("");
     const key = `${v.company.id}:${v.dept ?? ""}`;
@@ -229,11 +229,22 @@ export function plazaViews(A) {
 
   const COMPANY_COLS = [["name", "회사"], ["rules", "규칙"], ["pending", "대기"], ["reports", "제보"], ["members", "참여"], ["uses", "30일 적용"], ["bad", "달라요"]];
 
+  /**
+   * 2.0.0 [RVA-62] PC-158(조건 1): 좁은 폭(600 아래)에서는 표 머리(정렬 단추 줄)를 숨기고 찾기 옆 고르기 칸 하나로 정렬해요. 글자 200%에서도 잘리지 않게 이름은 짧게(최신순·참여순).
+   * 회사 줄이 카드 모양이라 머리 줄이 한 줄을 더 먹어 첫 회사가 30.9%에서 시작했어요.
+   */
+  function sortPick() {
+    const sort = S.companySort || "new";
+    const opts = [["new", "최신순"], ...COMPANY_COLS.map(([k, l]) => [k, `${k === "name" ? "이름" : k === "uses" ? "적용" : l}순`])];
+    return `<label class="sr" for="co-sort">정렬</label><select id="co-sort" class="sort-pick" data-change="company-sort">${opts.map(([k, l]) =>
+      `<option value="${k}"${sort === k ? " selected" : ""}>${esc(l)}</option>`).join("")}</select>`;
+  }
+
   function companiesView() {
     const edit = can("companies", "edit");
     // 2.0.0 [RVA-24] 검토 HQ-03(조건 1): 찾기·고르기·회사 만들기 한 줄(좁은 폭은 아이콘), '같은 회사일까요?'는 목록 아래.
-    return `<div class="toolbar list-top company-top"><input id="search" type="search" placeholder="회사 이름이나 다른 이름" value="${esc(S.query)}" autocomplete="off"
-        enterkeyhint="search" aria-label="회사 찾기">${edit ? `${S.companyPick ? '<button class="btn" data-act="company-pick-mode" aria-pressed="true">선택 마침</button>'
+    return `<div class="toolbar list-top company-top"><input id="search" type="search" placeholder="회사 찾기" aria-label="회사 이름이나 다른 이름으로 찾기" value="${esc(S.query)}" autocomplete="off"
+        enterkeyhint="search">${sortPick()}${edit ? `${S.companyPick ? '<button class="btn" data-act="company-pick-mode" aria-pressed="true">선택 마침</button>'
           : `<button class="btn icon-only" data-act="company-pick-mode" aria-pressed="false" aria-label="여러 개 고르기" title="여러 개 고르기">${icon(P.picks)}</button>`}
         <button class="btn primary" data-act="new-company" aria-label="회사 만들기">${icon(P.plus)}<span class="lbl">회사 만들기</span></button>` : ""}</div>
       <div id="company-list">${companyRows()}</div>${edit && !S.query ? similarCard() : ""}`;
@@ -263,7 +274,8 @@ export function plazaViews(A) {
     const picking = Boolean(S.companyPick) && can("companies", "edit");
     const badShare = (c) => (c.ok + c.bad ? Math.round((c.bad / (c.ok + c.bad)) * 100) : null);
     const th = ([key, label]) => `<th scope="col"${sort === key ? ' aria-sort="descending"' : ""}><button class="sort" data-act="company-sort" data-key="${key}" aria-pressed="${sort === key}">${label}${sort === key ? " ▾" : ""}</button></th>`;
-    const num = (label, v, hot = false) => `<td class="n${hot && v ? " hot" : ""}"><span class="lab">${label}</span> ${v ?? 0}</td>`;
+    // 2.0.0 [RVA-62] 조건 6: 대기는 위험이 아니라 할 일이라 빨강 대신 보통 색 굵게(.due). 빨강(.hot)은 '달라요'가 많을 때만.
+    const num = (label, v, due = false) => `<td class="n${due && v ? " due" : ""}"><span class="lab">${label}</span> ${v ?? 0}</td>`;
     const n = picking ? S.companyPick.size : 0;
     const bar = picking ? `<div class="bulkbar" role="toolbar" aria-label="고른 회사"><b>${n}개 골랐어요</b>
         <button class="btn small" data-act="company-bulk" data-key="hide"${n ? "" : " disabled"}>회사 찾기에서 숨기기</button>

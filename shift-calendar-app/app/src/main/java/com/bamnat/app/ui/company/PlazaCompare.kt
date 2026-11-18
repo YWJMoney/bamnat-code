@@ -320,10 +320,13 @@ internal fun SetupEditor(
         when {
             rotation != null -> {
                 Text("한 칸을 누르면 다음 근무로 바뀌어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVN-19] An order of whole weeks from a Monday (격주) says each day as '2주 토', not '13일'.
+                val weeks = e.orderWeeks
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     rotation.forEachIndexed { i, step ->
+                        val day = if (weeks > 0) "${i / 7 + 1}주 ${WEEK_DAYS[i % 7]}" else "${i + 1}일"
                         FilterChip(selected = step != null, onClick = { onChange(e.rotation(rotation.toMutableList().also { it[i] = next(names, step) })) },
-                            label = { Text("${i + 1}일 ${step ?: "쉼"}") })
+                            label = { Text("$day ${step ?: "쉼"}") })
                     }
                 }
                 Row {
@@ -335,10 +338,14 @@ internal fun SetupEditor(
             weekly != null -> {
                 Text("요일을 누르면 다음 근무로 바뀌어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, d ->
+                    WEEK_DAYS.forEachIndexed { i, d ->
                         FilterChip(selected = weekly[i] != null, onClick = { onChange(e.weekly(weekly.toMutableList().also { it[i] = next(names, weekly[i]) })) },
                             label = { Text("$d ${weekly[i] ?: "쉼"}") })
                     }
+                }
+                // 2.0.0 [RVN-19] 검토 T10a-10: 격주 토요일 근무, a day off every other week — two weeks, day by day.
+                TextButton(onClick = { onChange(e.weeksAsOrder()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("격주로 달라요 · 2주 순서로 바꾸기")
                 }
             }
             else -> Text("매달 근무표로 일해요. 순서는 없어요.", style = MaterialTheme.typography.bodyMedium)
@@ -556,3 +563,6 @@ internal fun next(names: List<String>, now: String?): String? {
 private fun time(s: String): LocalTime? = runCatching { LocalTime.parse(s) }.getOrNull()
 
 private fun hhmm(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+
+/** The days of a week as the editor says them, Monday first. */
+private val WEEK_DAYS = listOf("월", "화", "수", "목", "금", "토", "일")

@@ -462,6 +462,11 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
             TextButton(onClick = { menu = true }) { Text(PAY_PAPERS) }
             // The app's menu (AppDialogsTest): keeps the app's text size and is not built while closed.
             com.bamnat.app.ui.components.DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                // 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 straight from where it was paid, as its own kind (나만 보기, 사람이 먼저 봐요).
+                androidx.compose.material3.DropdownMenuItem(text = { Text("결제·환불 문의") }, onClick = {
+                    menu = false
+                    com.bamnat.app.ui.settings.InquiryLinks.ask(com.bamnat.app.ui.settings.InquiryStart(about = "프로·결제", kind = com.bamnat.app.company.InquiryKind.BILLING))
+                })
                 androidx.compose.material3.DropdownMenuItem(text = { Text("이용약관") }, onClick = {
                     menu = false; com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
                 })
@@ -475,7 +480,8 @@ private fun PayLinks(c: AppContainer, manage: Boolean, onMessage: (String) -> Un
     }
 }
 
-internal const val PAY_PAPERS = "약관·사업자 정보"
+// 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불 문의 is the menu's first line, so its button says so.
+internal const val PAY_PAPERS = "결제 문의·약관"
 
 /** [MON-08] Reward passes and the recovery code that moves them to a new phone. */
 @Composable

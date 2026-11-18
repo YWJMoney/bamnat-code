@@ -432,7 +432,9 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                         asking = Triple("되돌릴까요?", "‘${e.title}’${Fmt.iga(e.title)} 바꾼 것만 넣기 전으로 돌아가요. 넣은 뒤 내가 직접 바꾼 것과 근무 기록·가계부·메모는 그대로예요") {
                             c.appScope.launch {
                                 val ok = c.recipes.undo(e.id)
-                                PutOnNotice.say(if (ok) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요" else "되돌릴 수 없어요. 넣은 지 7일이 지났어요")
+                                // 2.0.0 [RVM-45] RCP-02: what stayed as the user made it (or failed) is said, not a plain 되돌렸어요.
+                                PutOnNotice.say(if (ok && c.recipes.lastUndo == com.bamnat.app.recipe.RecipeRepository.UndoReport()) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요"
+                                    else c.recipes.undoSay(ok))
                             }
                             onDismiss()
                         }

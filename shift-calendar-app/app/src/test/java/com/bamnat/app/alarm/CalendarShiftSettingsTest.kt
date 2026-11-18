@@ -89,6 +89,8 @@ class CalendarShiftSettingsTest {
     }.toString()
 
     @Test fun anOldBackupComesBackAsTheMainCalendars() = runBlocking {
+        // The app seeds its shifts on its own start, in the background; a backup made before that has none and is refused (CI ad651efb).
+        c.scheduleRepository.ensureDefaults()
         val added = c.calendars.begin("알바").also { c.calendars.finishSetup(it, WorkStyle.HOURLY) }
         try {
             val old = withOldSettings(c.backupManager.export())
@@ -107,6 +109,7 @@ class CalendarShiftSettingsTest {
     }
 
     @Test fun aNewBackupGoesRoundWithEachCalendarsOwn() = runBlocking {
+        c.scheduleRepository.ensureDefaults()
         val added = c.calendars.begin("알바").also { c.calendars.finishSetup(it, WorkStyle.HOURLY) }
         try {
             val missions = mapOf("3" to "shake", ShiftRef.key(added, 3) to "math")

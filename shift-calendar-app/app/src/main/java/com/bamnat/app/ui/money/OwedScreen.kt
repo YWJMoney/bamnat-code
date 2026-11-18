@@ -1045,7 +1045,7 @@ private fun ReceivableDialog(
                 AmountField("얼마", amount, { amount = it })
                 if (amount.toAmount() in 1 until minAmount) {
                     // It cannot be saved as it is: red (갈래 K [RVK-45]).
-                    com.bamnat.app.ui.components.ToneLine("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.", tone = com.bamnat.app.ui.theme.Tone.Danger)
+                    com.bamnat.app.ui.components.ToneLine("이미 ${Fmt.won(minAmount)} 받았어요. 그보다 적게 할 수 없어요.")
                 }
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
                     label = { Text("무슨 돈 (예: 10월 납품, 3일치 일당)") }, modifier = Modifier.fillMaxWidth())
@@ -1073,7 +1073,7 @@ private fun ReceivableDialog(
                 }
                 if (dueDate != null && dueDate.isBefore(start)) {
                     // It cannot be saved as it is: red (갈래 K [RVK-45]).
-                    com.bamnat.app.ui.components.ToneLine("약속일이 생긴 날보다 앞이에요.", tone = com.bamnat.app.ui.theme.Tone.Danger)
+                    com.bamnat.app.ui.components.ToneLine("약속일이 생긴 날보다 앞이에요.")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("생긴 날", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

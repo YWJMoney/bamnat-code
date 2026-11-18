@@ -1642,6 +1642,7 @@ internal const val NIGHT_LOOK_ROW = "밤 색"
  */
 @Composable
 private fun ReactionSwitches(settings: AppSettings, onChange: (String) -> Unit) {
+    val context = LocalContext.current
     val style = settings.workStyle
     val groups = com.bamnat.core.plaza.Reactions.Group.entries.filter { g ->
         when (g) {
@@ -1650,7 +1651,11 @@ private fun ReactionSwitches(settings: AppSettings, onChange: (String) -> Unit) 
             else -> true
         }
     }
-    val off = com.bamnat.core.plaza.Reactions.decodeOff(settings.reactionsOff)
+    // 2.0.0 [RVN-19] One off for each kind: '다시 보지 않기' on its row in the 알림함 turns it off here too, and this switch turns it
+    // back on there (before, the two were apart and a kind turned off in one place still came through the other).
+    val inbox = androidx.compose.runtime.remember { com.bamnat.app.inbox.Inbox.get(context) }
+    val muted by inbox.muted.collectAsStateWithLifecycle()
+    val off = com.bamnat.core.plaza.Reactions.decodeOff(settings.reactionsOff) + muted
     val offHere = groups.count { it.kind in off }
     var open by rememberSaveable { mutableStateOf(false) }
     Row(
@@ -1670,6 +1675,7 @@ private fun ReactionSwitches(settings: AppSettings, onChange: (String) -> Unit) 
     if (!open) return
     groups.forEach { g ->
         SwitchRow(g.label, g.about, g.kind !in off) { on ->
+            if (on) inbox.unmute(g.kind) else inbox.mute(g.kind, com.bamnat.core.plaza.Reactions.offLabel(g))
             onChange(com.bamnat.core.plaza.Reactions.encodeOff(if (on) off - g.kind else off + g.kind))
         }
     }

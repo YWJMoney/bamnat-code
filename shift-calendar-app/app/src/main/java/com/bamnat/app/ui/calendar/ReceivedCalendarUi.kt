@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.LinkOff
@@ -228,7 +229,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             // sender, not who it was meant for. [J133-79] Before a link is read, no one is called 동료.
             val sender = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.title?.trim().orEmpty()
             // 2.0.0 [RVG-35] 검토 HQ-64: once read, in the link's word (민지의 영업일 받기), as its card under it says.
-            val word = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
+            val word = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.word ?: "근무표"
             Text(if (sender.isNotEmpty()) "${sender}의 $word 받기" else "$word 받기", style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -288,7 +289,7 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         // [SHR-20] 1.33 (계획 693): a friend's link leads on to the receiver's own calendar; nothing of the friend's setup goes.
                         if (p.schedule.audience == com.bamnat.app.share.ShareAudience.FRIEND) FriendStart()
                         // [RVG-35] 검토 HQ-64: the link's own word (보낸 분이 영업일을 고치면).
-                        val word = com.bamnat.core.work.linkWord(p.schedule.shows, p.schedule.payKind)
+                        val word = p.schedule.word
                         Text("읽기 전용이에요. 보낸 분이 $word${com.bamnat.app.ui.Fmt.obj(word)} 고치면 열 때마다 새로 받아요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -422,7 +423,7 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     // [RVG-35] 검토 HQ-64: in the link's word, as the list and the web page say it.
-                    val word = com.bamnat.core.work.linkWord(s.shows, s.payKind)
+                    val word = s.word
                     Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "받은 $word", style = MaterialTheme.typography.titleMedium)
                     if (s.first != null && s.last != null) {
                         // [RVG-35] 조건 12: each date stays whole at 200% (was '12월' / '31일' on two lines).
@@ -450,7 +451,8 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
                     }
                 }
             }
-            Text(s.showsText()?.let { "함께 받은 것: $it" } ?: "근무와 휴가만 받았어요",
+            // 2.0.0 [RVG-38] (조건 13) the days in the link's word: 영업일과 쉬는 날만, 달력만 (was 근무와 휴가만 for every link).
+            Text(s.showsText()?.let { "함께 받은 것: $it" } ?: "${com.bamnat.core.work.linkDaysWord(s.word)}만 받았어요",
                 style = MaterialTheme.typography.bodySmall)
             Text("${expiry(expiresAt)}까지 볼 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -677,6 +679,9 @@ fun ReceivedCalendarView(
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this was looked through. Under the month (the month comes
+            // first), one card with 확인했어요 until pressed for the version here now, then one quiet line; a changed link asks again.
+            if (cal.watch) OkCard(vm, cal)
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
             // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
             (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
@@ -722,6 +727,43 @@ fun ReceivedCalendarView(
             detailPart(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
         }
     }
+}
+
+/**
+ * 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인했어요 for a link the leader watches. The leader's line reads '확인 3/8명 · 열어 봄 5/8명':
+ * opening is not reading, so the member says it once per change. Pressed, the card is one quiet line with when.
+ */
+@Composable
+private fun OkCard(vm: ReceivedViewModel, cal: ReceivedCalendar) {
+    var sending by remember(cal.id) { mutableStateOf(false) }
+    var said by remember(cal.id, cal.updatedAt) { mutableStateOf<String?>(null) }
+    val okAt = cal.okAt
+    if (okAt != null && cal.okFor == cal.updatedAt) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("${okWhen(okAt)} 확인했다고 알렸어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    com.bamnat.app.ui.components.NudgeCard(
+        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨으면 다시 알려 주세요" else "보낸 분이 이 근무표를 다 보셨는지 궁금해해요",
+        detail = said ?: "누르면 보낸 분에게 '확인'이 가요. 열어 보기만 한 것과 따로 보여요",
+        icon = Icons.Outlined.CheckCircle,
+        action = if (sending) "보내는 중…" else "확인했어요",
+        onAction = {
+            if (!sending) {
+                sending = true
+                vm.okPress(cal.id) { s -> sending = false; said = s }
+            }
+        },
+    )
+}
+
+private fun okWhen(at: Instant, now: Instant = Today.instant()): String {
+    val local = at.atZone(Today.zone())
+    return if (local.toLocalDate() == now.atZone(Today.zone()).toLocalDate()) "오늘 ${Fmt.time(local.toLocalTime())}에"
+    else "${Fmt.monthDay(local.toLocalDate())}에"
 }
 
 /** The received month's head before 2.0.0 [RVP-45] HQ-62, kept for a screen that gives no [ReceivedHead]: the chip's row, then the month's. */

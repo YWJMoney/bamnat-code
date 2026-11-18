@@ -276,9 +276,9 @@ internal fun CompanyStep(
             Text("우리 회사 근무표 올리기")
         }
         if (uploading) {
-            com.bamnat.app.ui.company.UploadCycleDialog(name.trim(), onDismiss = { uploading = false }) { n, formKey ->
+            com.bamnat.app.ui.company.UploadCycleDialog(name.trim(), onDismiss = { uploading = false }) { n, site, formKey ->
                 uploading = false
-                orderFor = com.bamnat.core.plaza.PublicCycles.provided(n, formKey)
+                orderFor = com.bamnat.core.plaza.PublicCycles.provided(n, formKey, site)
             }
         }
     }
