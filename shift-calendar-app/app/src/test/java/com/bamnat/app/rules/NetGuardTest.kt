@@ -61,6 +61,22 @@ class NetGuardTest {
         }
     }
 
+    /**
+     * Robolectric downloads the Android jars a test asks for (sdk=35's android-all-instrumented on a fresh GitHub runner)
+     * from Maven Central, which sends it on to a mirror (gcp.mirrors.maven.org): those stay open, or every screenshot test fails.
+     */
+    @Test fun robolectricStillGetsItsAndroidJars() {
+        for (host in listOf("repo1.maven.org", "gcp.mirrors.maven.org", "repo.maven.apache.org", "maven.google.com", "dl.google.com")) {
+            ProxySelector.getDefault().select(java.net.URI("https://$host/maven2/org/robolectric/"))
+        }
+        try {
+            ProxySelector.getDefault().select(java.net.URI("https://maven.org.example.com/"))
+            fail("a look-alike of maven.org was let through")
+        } catch (e: ConnectException) {
+            assertTrue(e.message, e.message.orEmpty().startsWith("bamnat net guard"))
+        }
+    }
+
     /** The server tests (tools/server_app_tests.py) run a server on this computer: that stays open. */
     @Test fun aServerOnThisComputerStillAnswers() {
         ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress()).use { server ->
