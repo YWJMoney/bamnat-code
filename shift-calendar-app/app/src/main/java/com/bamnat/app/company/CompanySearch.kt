@@ -318,6 +318,18 @@ class CompanySearch(
         }
     }
 
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-01: the list's two tags as the day's digest said them. The same as the list kept here: it is as good as
+     * checked now (the next [warm] does not ask for [ALL_FRESH_MS]). True then; false when one moved (the list is taken at the next warm).
+     */
+    suspend fun tagsSaid(names: String, counts: String): Boolean {
+        load()
+        val w = whole ?: return false
+        if (w.etag != names + LIST_TAG_SEP + counts) return false
+        w.checked = now()
+        return true
+    }
+
     @Volatile private var warming: kotlinx.coroutines.Job? = null
     @Volatile private var warmedAt = Long.MIN_VALUE / 2
 

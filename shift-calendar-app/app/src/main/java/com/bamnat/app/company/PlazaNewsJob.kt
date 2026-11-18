@@ -169,7 +169,7 @@ class PlazaNewsJob : JobService() {
         private suspend fun inbox(c: AppContainer, d: Digest): List<MyPost>? {
             // My posts are read only when there are answers to count, as before (the 소식's 새 답 line).
             val answers = d.plaza.any { it.kind == "replies" } || d.reactions.any(com.bamnat.core.plaza.Reactions::roomAnswer)
-            val posts = if (answers && takesPart(c)) runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
+            val posts = if (answers && takesPart(c)) d.posts ?: runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
             if (posts != null) PlazaInbox.answers(c, posts, VillageReplies.fresh(c.appContext, posts))
             PlazaInbox.fromDigest(c, d.reactions, answersCounted = posts != null)
             PlazaInbox.news(c, d.plaza)
@@ -245,7 +245,9 @@ class PlazaNewsJob : JobService() {
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */
         data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>,
             /** 2.0.0 [RVN-14] HQ-51 What others did to what this phone put out, for the 알림함 (empty from a server before 2.0.0). */
-            val reactions: List<com.bamnat.core.plaza.Reaction> = emptyList())
+            val reactions: List<com.bamnat.core.plaza.Reaction> = emptyList(),
+            /** 2.0.0 [RVN-22] I10bc-01 My room posts, carried when one of them was answered; null when not carried (asked apart then). */
+            val posts: List<MyPost>? = null)
 
         /**
          * [SRV-10] One ask for the day. Only a phone that took part in the plaza or sent a question asks;
@@ -257,17 +259,29 @@ class PlazaNewsJob : JobService() {
             if (!plazaOn && !c.inquiryStore.asked) return null
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val since = prefs.getString(K_SINCE, null)
+            // 2.0.0 [RVN-22] 검토 I10bc-01 변화분만 받는 한 번의 동기: what was asked apart after this (내 문의 전체, 내 방 글, 마을 돌봄, 회사
+            // 목록) comes in the same answer, only what changed. A server before 2.0.0 leaves the parts out and they are asked as before.
+            val parts = digestParts(c, plazaOn)
+            val query = listOfNotNull(since?.let { "since=" + URLEncoder.encode(it, "UTF-8") }, parts.takeIf { it.isNotEmpty() }?.let { "with=" + it.joinToString(",") })
             val o = serverCall {
-                serverRequest(BuildConfig.COMPANY_BASE_URL, "GET", "/api/digest" + (since?.let { "?since=" + URLEncoder.encode(it, "UTF-8") } ?: ""),
-                    device = c.companyStore.device)
+                serverRequest(BuildConfig.COMPANY_BASE_URL, "GET", "/api/digest" + query.joinToString("&").let { if (it.isEmpty()) "" else "?$it" },
+                    // The app's version goes only with 내 문의, as /api/inquiries has always taken it (1.39 LOOP-15): nothing new is sent.
+                    device = c.companyStore.device, headers = if ("inquiries" in parts) mapOf("X-App" to InquiryClient.APP) else emptyMap())
             }
             o.optStringOrNull("now")?.let { prefs.edit().putString(K_SINCE, it).apply() }
+            o.optJSONObject("standing")?.let { runCatching { CareKept.keep(c.companyApi, careStandingOf(it)) } }
+            o.optJSONObject("companies")?.let { t ->
+                val names = t.optStringOrNull("names")
+                val counts = t.optStringOrNull("counts")
+                if (names != null && counts != null) runCatching { c.companySearch.tagsSaid(names, counts) }
+            }
             val written = o.optJSONArray("answers").objects().sumOf { it.optInt("count") }
             // [J133-24] Answers the reply job already said at once are not said again. 2.0.0 [RVN-22] I10ba-03: counted per question
             // (opened or told), and what this line says is told from now on. The 설정 tab's badge is right the next time the app opens.
             val answers = if (written > 0 && c.inquiryStore.asked) runCatching {
-                val list = c.inquiryApi.mine(c.companyStore.device)
-                c.inquiryStore.update(list)
+                // I10bc-01 The answered questions came with the digest: no second ask for the whole list.
+                val carried = o.optJSONArray("inquiries")?.takeIf { c.inquiryStore.merges }?.objects()?.mapNotNull(c.inquiryApi::parse)?.takeIf { it.isNotEmpty() }
+                val list = carried?.also(c.inquiryStore::merge) ?: c.inquiryApi.mine(c.companyStore.device).also(c.inquiryStore::update)
                 c.inquiryStore.startTelling(list, InquiryReplyJob.said(c.appContext))
                 val fresh = c.inquiryStore.untold(list)
                 fresh.sumOf(c.inquiryStore::fresh).also { c.inquiryStore.tell(fresh) }
@@ -277,7 +291,18 @@ class PlazaNewsJob : JobService() {
                 answers = answers,
                 notices = o.optJSONArray("notices").objects().map { it.optString("title") }.filter { it.isNotBlank() },
                 reactions = o.optJSONArray("reactions").rows(::reaction),
+                posts = o.optJSONArray("posts")?.let { runCatching { myPostsOf(JSONObject().put("items", it)) }.getOrNull() },
             )
+        }
+
+        /**
+         * 2.0.0 [RVN-22] I10bc-01 What this phone asks the digest to carry: 내 문의 when it sent one, 내 방 글 and 마을 돌봄 when it takes part
+         * in the plaza, the company list's tags when a calendar of it uses a company (알바·가게·투자만이면 묻지 않아요, T10b-05).
+         */
+        internal fun digestParts(c: AppContainer, plazaOn: Boolean): List<String> = buildList {
+            if (c.inquiryStore.asked) add("inquiries")
+            if (plazaOn) { add("posts"); add("standing") }
+            if (runCatching { c.companyCalendars() }.getOrDefault(false)) add("companies")
         }
 
         /** 2.0.0 [RVN-14] HQ-51 One line of `reactions`; a line it cannot read is left out (COMP-49). */

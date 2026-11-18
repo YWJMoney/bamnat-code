@@ -180,6 +180,9 @@ interface InquiryApi {
 
     /** 1.39 [LOOP-17] '나도 겪어요'(on) 또는 되돌리기: 그 뒤의 목록. 누르면 그 문제에 묶인 짧은 문의가 내 문의에 생겨요. */
     suspend fun knownMe(device: String, id: String, on: Boolean): List<KnownIssue> = known(device)
+
+    /** 2.0.0 [RVN-22] 검토 I10bc-01: one question as the server writes it (the day's /api/digest carries the answered ones); null when unread. */
+    fun parse(o: org.json.JSONObject): Inquiry? = null
 }
 
 /**
@@ -343,6 +346,8 @@ class InquiryClient(
         InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
     }
 
+    override fun parse(o: JSONObject): Inquiry? = runCatching { inquiry(o) }.getOrNull()
+
     private fun inquiry(o: JSONObject) = Inquiry(
         id = o.getString("id"),
         kind = InquiryKind.of(o.optString("kind")),
@@ -446,8 +451,32 @@ class InquiryStore(context: Context) {
     fun update(list: List<Inquiry>) {
         val n = list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }
         _unread.value = n
-        prefs.edit().putInt("unread", n).apply()
+        // 2.0.0 [RVN-22] I10bc-01: each question's answers kept too, so the digest's few questions ([merge]) count with the rest.
+        prefs.edit {
+            putInt("unread", n)
+            putStringSet("ids", list.map { it.id }.toSet())
+            list.forEach { putInt("answers_${it.id}", it.answers) }
+        }
         // [RVF-02]'s one 'said' count is gone (2.0.0 [RVN-22] I10ba-03): each question keeps its own ([told]).
+    }
+
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-01: whether the day's digest may stand in for a whole list ([merge]): every question is known here
+     * (one whole list was read since 2.0.0) and the counts per question have started ([startTelling]).
+     */
+    val merges: Boolean get() = prefs.getBoolean("told_v", false) && prefs.contains("ids")
+
+    /** 2.0.0 [RVN-22] I10bc-01: the questions the day's digest carried (those with a new answer), counted with the rest known here. */
+    fun merge(rows: List<Inquiry>) {
+        if (rows.isEmpty()) return
+        val ids = prefs.getStringSet("ids", emptySet()).orEmpty() + rows.map { it.id }
+        prefs.edit {
+            putStringSet("ids", ids)
+            rows.forEach { putInt("answers_${it.id}", it.answers) }
+        }
+        val n = ids.sumOf { (prefs.getInt("answers_$it", 0) - seen(it)).coerceAtLeast(0) }
+        _unread.value = n
+        prefs.edit().putInt("unread", n).apply()
     }
 
     /** The user opened [inquiry]: its answers so far are read. */
@@ -461,6 +490,8 @@ class InquiryStore(context: Context) {
             remove("seen_$id")
             remove("told_$id")
             remove("reply_$id")
+            remove("answers_$id")
+            putStringSet("ids", prefs.getStringSet("ids", emptySet()).orEmpty() - id)
         }
     }
 

@@ -340,6 +340,8 @@ class SettingsFilesBackup(
             "plaza_inbox" to "알림함 ‘사람들 반응’ 줄에 더해 갈 반응 수, 이 휴대폰의 알림함 것",
             // 2.0.0 [RVN-22] (검토 COMP-60) 달력마다 저절로 나누기 작업 번호: 이 휴대폰의 예약 작업 번호라 옮기지 않아요.
             "outbox_ids" to "달력마다 저절로 나누기 예약 작업의 번호, 이 휴대폰의 예약 작업 것",
+            // 2.0.0 [RVN-22] (검토 I10bc-02) 앱을 연 30분 칸(14일): 이 휴대폰을 쓰는 버릇이라 옮기지 않고, 서버로도 가지 않아요.
+            "open_times" to "앱을 주로 여는 30분 칸(최근 14일), 미리 받기 시각을 고르려고 이 휴대폰에만",
             "app_state" to "앱을 마지막으로 연 때(화면 되살리기)",
             // [INVITE-02] 1.26 AE: tied to this install on the company server; the months move with the recovery code.
             "invite" to "친구 초대: 이 설치에 묶인 초대 코드와 받은 초대(이용권은 복구 코드로 옮겨요)",

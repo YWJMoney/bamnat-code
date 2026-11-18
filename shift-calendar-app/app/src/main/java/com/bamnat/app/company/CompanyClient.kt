@@ -1446,7 +1446,7 @@ class CompanyClient(
 
         /** The whole list keeps its own tags ([allCompanies]); a search changes with each letter. */
         val UNTAGGED = listOf("/api/companies/all", "/api/companies/counts", "/api/companies?")
-        const val TAG_SEP = "\u241f"
+        const val TAG_SEP = LIST_TAG_SEP
         /** [SRV-08] What the server takes once per X-Request-Id: posts, replies, 신고 and reports. */
         val ONCE = listOf(Regex("/api/posts"), Regex("/api/posts/[^/]+/flag"), Regex("/api/reports"), Regex("/api/rates"), Regex("/api/members"))
     }
@@ -1919,6 +1919,9 @@ object ReadAhead : kotlin.coroutines.AbstractCoroutineContextElement(ReadAheadKe
 
 /** [ReadAhead]'s key: its own object, since an object cannot hand itself to its own constructor. */
 object ReadAheadKey : kotlin.coroutines.CoroutineContext.Key<ReadAhead>
+
+/** [SPD-21] The company list's two tags as one ("names␟counts"); 2.0.0 [RVN-22] I10bc-01 the digest's two tags are read with it. */
+internal const val LIST_TAG_SEP = "\u241f"
 
 /**
  * [COMM-01][COMM-02] The server's own rules for names and typed text, checked on the phone first so

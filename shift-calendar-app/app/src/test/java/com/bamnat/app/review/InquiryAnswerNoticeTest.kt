@@ -83,6 +83,24 @@ class InquiryAnswerNoticeTest {
         assertEquals("전에 알린 수가 모자라면 지금 안 읽은 답을 알려요", listOf("q1"), check(fresh, q(2), saidBefore = 1))
     }
 
+    /** I10bc-01: the day's digest carries only the answered questions; they count with the rest known here. */
+    @Test fun theDigestsFewQuestionsCountWithTheRest() {
+        val store = InquiryStore(app)
+        assertEquals("한 번 목록 전체를 읽기 전에는 합치지 않아요", false, store.merges)
+        check(store, q(1), q(0, "q2"))
+        assertEquals(true, store.merges)
+        store.read(q(1), listOf(q(1), q(0, "q2")))
+        assertEquals(0, store.unread.value)
+        store.merge(listOf(q(1, "q2")))
+        assertEquals("q2의 새 답 하나, 읽은 q1은 그대로", 1, store.unread.value)
+        assertEquals(listOf("q2"), store.untold(listOf(q(1, "q2"))).also(store::tell).map { it.id })
+        store.merge(listOf(q(2), q(1, "q3")))
+        assertEquals("새로 생긴 q3도 함께 세요", 3, store.unread.value)
+        store.forget("q3")
+        store.merge(listOf(q(2)))
+        assertEquals("지운 문의는 세지 않아요", 2, store.unread.value)
+    }
+
     @Test fun howOftenALookComes() {
         val day = Duration.ofDays(1)
         assertEquals("보낸 첫날은 15분", TimeUnit.MINUTES.toMillis(15), InquiryReplyJob.every(false, Duration.ofHours(3)))

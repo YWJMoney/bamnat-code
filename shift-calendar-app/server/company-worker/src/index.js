@@ -84,7 +84,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 // R131 1.31 [SRV-20] I6: parts of this file in their own files (the bundle puts them back in one).
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
-import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, inquiryView, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
@@ -8346,8 +8346,45 @@ async function digest(request, env, url) {
     ...(plaza ? {} : { plazaPaused: true }),
     answers: answers.map((a) => ({ inquiry: a.id, count: a.n, at: iso(a.at) })),
     notices: ops.notices.filter((n) => n.from > since && n.from <= now && now < n.until).map(noticeView),
+    ...(await digestMore(request, env, url, dev, since, now, answers.map((a) => a.id))),
     now: iso(now),
   });
+}
+
+/** 2.0.0 [RVN-22] 검토 I10bc-01: what the app may ask /api/digest to carry (`with=inquiries,posts,standing,companies`). */
+export const DIGEST_PARTS = ["inquiries", "posts", "standing", "companies"];
+
+/**
+ * 2.0.0 [RVN-22] 검토 I10bc-01 변화분만 받는 한 번의 동기: what the app asked for apart after the day's digest (내 문의 전체, 내 방 글,
+ * 마을 돌봄, 회사 목록) in the same answer, and only what changed since: the questions with a new answer (as /api/inquiries shows them),
+ * my room posts when one of them was answered (as /api/posts/mine), the 마을 돌봄 standing, and the company list's two tags (the app takes
+ * the list again only when one moved). A part the app did not ask for is left out, so an app before 2.0.0 gets what it always got.
+ * Nothing new is kept: these are the same rows those asks read.
+ */
+async function digestMore(request, env, url, dev, since, now, answered) {
+  const want = new Set((url.searchParams.get("with") ?? "").split(",").filter((k) => DIGEST_PARTS.includes(k)));
+  if (!want.size) return {};
+  const out = {};
+  if (want.has("inquiries")) {
+    const ids = answered.slice(0, 10);
+    const rows = ids.length ? await all(env, `SELECT i.*, (SELECT COUNT(*) FROM inquiry_photos p WHERE p.inquiry_id = i.id) AS photos
+      FROM inquiries i WHERE i.device = ? AND i.id IN (${ids.map(() => "?").join(",")}) ORDER BY i.updated_at DESC`, dev, ...ids) : [];
+    const app = request.headers.get("x-app");
+    out.inquiries = [];
+    for (const r of rows) out.inquiries.push(await inquiryView(env, r, false, app));
+  }
+  if (want.has("posts")) {
+    const answeredPost = await one(env, `SELECT 1 AS y FROM posts r JOIN posts p ON r.parent = p.id
+      WHERE p.device = ? AND p.grp = ? AND r.status = 'shown' AND r.device != p.device AND r.created_at > ? AND r.created_at <= ? LIMIT 1`,
+    dev, ROOM, since, now);
+    if (answeredPost) out.posts = await myPostItems(env, dev);
+  }
+  if (want.has("standing")) out.standing = await standingOf(env, dev, now);
+  if (want.has("companies")) {
+    const kept = await allKept(env).catch(() => null);
+    if (kept) out.companies = { names: kept.namesTag, counts: kept.countsTag };
+  }
+  return out;
 }
 
 /** 1.39 발굴 3-5: the fewest other phones on a version for its sender to hear of them once a month. */
