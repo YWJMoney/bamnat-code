@@ -32,7 +32,9 @@ test("봤어요: once asked, the link keeps when it was opened after each change
   assert.ok((await ask()).seenAt);
 });
 
-test("병동 전체 보기: the table and each day's count, changed in place and taken down", async () => {
+test("병동 전체 보기: the table and each day's count, changed in place and taken down", async (t) => {
+  // [RVD-01] The board's month (2026-12) is a near month only on a clock near it; from 2027-03 the real clock refused it.
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-20T03:00:00Z") });
   readsForget();
   const env = { SHARES: kv() };
   const days = 31;

@@ -89,7 +89,7 @@ class J133ScreenshotTest : ScreenshotBase() {
         withPay()
         c.companyStore.setPublicUse(com.bamnat.app.company.PublicUse("hyundai", "현대제철", "4-2", "DDOONNOO", true, Today.millis()))
         c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("AAAAAAAAAAAA", "GS칼텍스", "", "0123456789abcdef", null, false,
-            java.time.Instant.now()))
+            Today.instant()))
         assertNull("the public cycle of another company ends with the setup put in", c.companyStore.publicUse.value)
         val vm = com.bamnat.app.ui.company.CompanyReportViewModel(c)
         content { com.bamnat.app.ui.company.CompanyReportScreen(vm, onBack = {}, onDone = {}, onOpenSent = {}) }
@@ -106,7 +106,7 @@ class J133ScreenshotTest : ScreenshotBase() {
         val c = companyOn()
         withPay()
         c.companyStore.setApplied(com.bamnat.app.company.AppliedSetup("AAAAAAAAAAAA", "GS칼텍스", "", "0123456789abcdef", null, false,
-            java.time.Instant.now()))
+            Today.instant()))
         val vm = com.bamnat.app.ui.pay.PayViewModel(c)
         content { com.bamnat.app.ui.pay.PayScreen(vm = vm, onBack = {}) }
         settle()
