@@ -133,11 +133,19 @@ jobs:
         with:
           cache-read-only: false
       # Robolectric's Android jars (100 MB and more) come from Maven Central once, then from this cache.
-      - uses: actions/cache@v4
+      # 2.0.0 [RVR-43]: one cache per shard (each needs the same Android versions every run), keyed on the Robolectric version and
+      # the test SDK rather than all of build.gradle.kts, and saved even when tests fail (a red shard used to throw its download
+      # away, so every run fetched again and Maven Central answered 429). A shard whose download failed does not save.
+      - id: robover
+        run: echo "v=$(grep -o 'org.robolectric:robolectric:[0-9.]*' app/build.gradle.kts | cut -d: -f3)" >> "$GITHUB_OUTPUT"
+      - id: robo
+        uses: actions/cache/restore@v4
         with:
           path: ~/.m2/repository/org/robolectric
-          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
-          restore-keys: robolectric-
+          key: robolectric-${{ matrix.set }}-${{ steps.robover.outputs.v }}-${{ hashFiles('shift-calendar-app/app/src/test/resources/robolectric.properties') }}
+          restore-keys: |
+            robolectric-${{ matrix.set }}-
+            robolectric-
       # [RVR-12] (검토 TEST-13) Node 22 before Gradle: the app tests that start server/company-worker (node:sqlite) need it, and
       # in CI (CI=true) a test that cannot find Node or the privacy page fails instead of being skipped (app test CiNeed.kt).
       - uses: actions/setup-node@v4
@@ -158,6 +166,18 @@ jobs:
           exit $rc
       # 2.0.0 [RVR-42] (총괄 HQ-116): the tests never reach a server outside the runner (tools/net-guard, NetGuardTest). What
       # they tried and were refused is listed here, so a test that leans on the network shows up without touching the live server.
+      - name: Robolectric 캐시 저장 준비
+        id: robosave
+        if: always() && steps.robo.outputs.cache-hit != 'true'
+        run: |
+          ls ~/.m2/repository/org/robolectric/android-all*/*/*.jar >/dev/null 2>&1 || exit 0
+          grep -rlqE "Failed to fetch maven artifact|HTTP response code: 4[0-9][0-9]" app/build/test-results 2>/dev/null && { echo "Robolectric jar를 다 받지 못해 캐시를 저장하지 않아요"; exit 0; }
+          echo "save=1" >> "$GITHUB_OUTPUT"
+      - if: always() && steps.robosave.outputs.save == '1'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: ${{ steps.robo.outputs.cache-primary-key }}
       - name: 바깥 연결 막은 것
         if: always()
         run: |
