@@ -16,6 +16,8 @@ data class Reaction(
     val atMillis: Long,
     /** A post's room (style-shift …, or a company's id), for opening it. */
     val room: String? = null,
+    /** A post's talk in [room]: "room" for a 광장 or a company's room, a rule set's id for its talk (null from a server before 2.0.0). */
+    val setup: String? = null,
     /** A post's kind when not plain talk (question, tip, proposal …). */
     val postKind: String? = null,
     val up: Int = 0,
@@ -41,7 +43,9 @@ object Reactions {
 
     /** A row for the 알림함: [key] is the same for the same thing, so a newer count replaces the older row. */
     data class Row(val key: String, val group: Group, val title: String, val line: String, val target: String, val atMillis: Long,
-        val room: String? = null)
+        val room: String? = null, val setup: String? = null, val count: Int = 1,
+        /** The 광장's, company's or trade's name the row starts with (null when the server sent none). */
+        val place: String? = null)
 
     fun group(kind: String): Group? = when (kind) {
         "answer", "thread", "agree" -> Group.PLAZA
@@ -83,7 +87,8 @@ object Reactions {
         }
         val place = same.firstNotNullOfOrNull { it.title.takeIf(String::isNotBlank) }
         val line = listOfNotNull(place, words.ifEmpty { null }).joinToString(" · ")
-        return Row(key, g, title, line, first.target, first.atMillis, same.firstNotNullOfOrNull { it.room })
+        return Row(key, g, title, line, first.target, first.atMillis, same.firstNotNullOfOrNull { it.room },
+            same.firstNotNullOfOrNull { it.setup }, same.sumOf { it.count }.coerceAtLeast(1), place)
     }
 
     private fun order(kind: String) = listOf("answer", "thread", "agree", "report_vote", "rate_vote", "request_like", "request_take", "contest_pick")
@@ -103,6 +108,51 @@ object Reactions {
         "request_like" -> listOf("좋아요 ${r.count}")
         "contest_pick" -> listOfNotNull(r.theme?.takeIf { it.isNotBlank() })
         else -> emptyList()
+    }
+
+    /** How '다시 보지 않기' and 설정 › 알림 name [g] when it is off (기능 켜고 끄기 lists it by this). */
+    fun offLabel(g: Group): String = when (g) {
+        Group.PLAZA -> "광장의 내 글에 온 답·나도요·공감"
+        Group.BOARD -> "내가 알린 회사 규칙의 맞아요·달라요"
+        Group.RATE -> "내가 보낸 시세의 맞아요·달라요"
+        Group.REQUEST -> "내 부탁의 좋아요·만들기 시작"
+        Group.CONTEST -> "이달의 공모에 뽑힘"
+    }
+
+    /**
+     * 2.0.0 [RVN-19] HQ-51 What a row still in the 알림함 ([kept], not opened yet) says with [new] since added: the same thing's same
+     * kind summed (답 2 then 답 1 is 답 3), the newest time and words kept. A row that was opened or wiped starts again from [new].
+     */
+    fun merge(kept: List<Reaction>, new: List<Reaction>): List<Reaction> {
+        val out = LinkedHashMap<Pair<String, String>, Reaction>()
+        for (r in kept + new) {
+            val k = (key(r) ?: continue) to r.kind
+            val was = out[k]
+            out[k] = if (was == null) r else r.copy(count = was.count + r.count, up = was.up + r.up, down = was.down + r.down,
+                atMillis = maxOf(was.atMillis, r.atMillis), title = r.title.ifBlank { was.title }, room = r.room ?: was.room,
+                setup = r.setup ?: was.setup, postKind = r.postKind ?: was.postKind, theme = r.theme ?: was.theme)
+        }
+        return out.values.toList()
+    }
+
+    /**
+     * An answer under my post in a 광장 or a company's room: the phone counts these itself (answers it has not seen, VillageReplies),
+     * so the server's count of them is not added on top.
+     */
+    fun roomAnswer(r: Reaction): Boolean = r.kind == "answer" && (r.setup == null || r.setup == "room")
+
+    /**
+     * [kept] with the answers under my room posts as this phone counts them ([answers]: not seen yet, so a count, not an addition):
+     * the larger of the two, its time moved only when it grew. A post whose answers were all read keeps what its row said.
+     */
+    fun withAnswers(kept: List<Reaction>, answers: List<Reaction>): List<Reaction> {
+        val now = answers.filter { it.kind == "answer" && it.count > 0 }.associateBy { key(it) }
+        val rest = kept.filter { !(it.kind == "answer" && key(it) in now) }
+        val set = now.values.map { a ->
+            val was = kept.firstOrNull { it.kind == "answer" && key(it) == key(a) }
+            if (was == null || a.count > was.count) a.copy(room = a.room ?: was?.room, setup = a.setup ?: was?.setup) else was
+        }
+        return rest + set
     }
 
     /** The kinds turned off, as 설정 keeps them ("plaza.rate,village.contest"). */

@@ -158,4 +158,18 @@ object CloseAsk {
         val from = listOfNotNull((payDate ?: month.plusMonths(1).atDay(1)).plusDays(1), paidOn).min()
         return !today.isBefore(from) && !today.isAfter(from.plusDays(WINDOW_DAYS - 1))
     }
+
+    /**
+     * 2.0.0 [RVJ-57] 검토 PC-144: the months before a first pay setup not to ask about. A phone set up today was asked '10월 급여, 이대로
+     * 마감할까요?' for a month nothing was written in; the months [due] can reach back to (two) stay quiet unless work was [written] in
+     * them or the setup came from that month's payslip ([slip]).
+     */
+    fun quietAtSetup(today: LocalDate, written: (YearMonth) -> Boolean, slip: YearMonth? = null): List<YearMonth> =
+        (1L..2L).map { YearMonth.from(today).minusMonths(it) }.filter { it != slip && !written(it) }
+
+    /**
+     * 2.0.0 [RVJ-58] 검토 PC-145: '이 달 마감하기' before the month's work is over asks once ("아직 11월 근무가 남았어요"); a month whose
+     * pay period has ended closes at once as before.
+     */
+    fun early(periodEnd: LocalDate, today: LocalDate): Boolean = !today.isAfter(periodEnd)
 }

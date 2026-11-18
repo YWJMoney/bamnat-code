@@ -48,9 +48,9 @@ object TeamReceiveSync {
     /** 1.39 [PRIV-06] 모두 지우기 cut the table link on the server: the phone forgets it (병동 전체 보기 then reads off). */
     fun forgetBoard(c: Context, teamId: String) = keep(c, teamId, null)
 
-    /** 1.39 G2: what one member's link says about 봤어요. */
+    /** 1.39 G2: what one member's link says about 봤어요. 2.0.0 [RVQ-32] [ok]: the member pressed 확인했어요; [asks]: the server says 확인 at all. */
     sealed interface LinkSeen {
-        data class At(val at: Instant) : LinkSeen
+        data class At(val at: Instant, val ok: Instant? = null, val asks: Boolean = false) : LinkSeen
         data object Not : LinkSeen
         /** The server has no such link (ran out, cut, taken down, or the server lost it) or it is not this phone's to read. */
         data object Gone : LinkSeen
@@ -66,7 +66,7 @@ object TeamReceiveSync {
         val id = m.linkId ?: return@mapNotNull null
         val token = m.linkToken ?: return@mapNotNull null
         m.id to try {
-            app.shareApi.seen(id, token)?.let { LinkSeen.At(it) } ?: LinkSeen.Not
+            app.shareApi.seenOk(id, token).let { s -> s.seenAt?.let { LinkSeen.At(it, s.okAt, s.okKnown) } ?: LinkSeen.Not }
         } catch (e: com.bamnat.app.share.ShareLinkException) {
             if (e.message == "not_found" || e.message == "forbidden") LinkSeen.Gone else LinkSeen.Unknown
         } catch (e: kotlinx.coroutines.CancellationException) {
@@ -77,25 +77,40 @@ object TeamReceiveSync {
     }.toMap()
 
     /** The 봤어요 line under the board, and who each button is for. */
-    data class SeenLine(val text: String, val notSeen: List<TeamMember>, val gone: List<TeamMember>, val unread: Int)
+    data class SeenLine(val text: String, val notSeen: List<TeamMember>, val gone: List<TeamMember>, val unread: Int,
+        /** 2.0.0 [RVQ-32] I22b-01 '앱은 확인만 크게': '4판 확인 3/8명', shown big above [rest]; null where the server does not say 확인. */
+        val big: String? = null) {
+        val rest: String get() = big?.let { text.removePrefix(it).removePrefix(" · ") } ?: text
+    }
 
+    /**
+     * 2.0.0 [RVQ-32] 검토 U22-01: '확인 3/8명 · 열어 봄 5/8명'. 열어 봄 is a person opening the link (a messenger's preview is not, since the
+     * share server's [RVQ-19]); 확인 is the member pressing 확인했어요 on the page or in their app. A server that does not say 확인 yet keeps
+     * the 열어 봄 line alone.
+     */
     fun seenLine(version: Int, members: List<TeamMember>, got: Map<String, LinkSeen>): SeenLine {
         val asked = members.filter { it.id in got }
         val gone = asked.filter { got[it.id] == LinkSeen.Gone }
         val read = asked.filter { got[it.id] is LinkSeen.At || got[it.id] == LinkSeen.Not }
         val notSeen = read.filter { got[it.id] == LinkSeen.Not }
         val unread = asked.count { got[it.id] == LinkSeen.Unknown }
+        val asks = read.any { (got[it.id] as? LinkSeen.At)?.asks == true }
+        val ok = read.count { (got[it.id] as? LinkSeen.At)?.ok != null }
+        val opened = read.size - notSeen.size
+        val big = if (asks && read.isNotEmpty()) "${version}판 확인 $ok/${read.size}명" else null
         val parts = ArrayList<String>()
         if (read.isNotEmpty()) {
-            parts += "${version}판 링크를 본 사람 ${read.size - notSeen.size}/${read.size}명" + when {
-                notSeen.isNotEmpty() -> " · 아직: " + notSeen.joinToString(", ") { it.name }
-                gone.isEmpty() && unread == 0 -> " · 모두 봤어요"
-                else -> ""
+            parts += (if (big != null) "$big · 열어 봄 $opened/${read.size}명" else "${version}판 링크를 열어 본 사람 $opened/${read.size}명") + when {
+                notSeen.isNotEmpty() -> " · 아직 안 연 사람: " + notSeen.joinToString(", ") { it.name }
+                gone.isNotEmpty() || unread > 0 -> ""
+                asks && ok == read.size -> " · 모두 확인했어요"
+                asks -> ""
+                else -> " · 모두 열어 봤어요"
             }
         }
         if (gone.isNotEmpty()) parts += "링크가 없어요: " + gone.joinToString(", ") { it.name } + " · 기간이 지났거나 지워졌어요. 새 링크를 보내 주세요"
-        if (unread > 0) parts += if (read.isEmpty() && gone.isEmpty()) "본 사람을 읽지 못했어요. 인터넷이 될 때 '다시 보기'를 눌러 주세요" else "못 읽은 ${unread}명"
-        return SeenLine(parts.joinToString("\n"), notSeen, gone, unread)
+        if (unread > 0) parts += if (read.isEmpty() && gone.isEmpty()) "열어 본 사람을 읽지 못했어요. 인터넷이 될 때 '다시 보기'를 눌러 주세요" else "못 읽은 ${unread}명"
+        return SeenLine(parts.joinToString("\n"), notSeen, gone, unread, big)
     }
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }

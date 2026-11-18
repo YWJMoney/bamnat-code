@@ -240,6 +240,14 @@ class AIScreenshotTest : ScreenshotBase() {
         reveal("글 보기·쓰기", exact = true)
         assertTrue(appears("댓글 1개", exact = true))
     }
+    /** 2.0.0 [RVN-20] HQ-90: the room's 근무·급여 정보 at 200% on the folded width, one shift a line under its label. */
+    @Test fun theCompanysRoomBig() = shoot("rvn_94_plaza_info_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f) {
+        ownPay()
+        rooms()
+        member()
+        home()
+        reveal("근무·급여 정보", exact = true)
+    }
     @Test fun theRoomsTalk() = shoot("1128_ai_room_talk", PHONE) {
         val r = rooms()
         member()

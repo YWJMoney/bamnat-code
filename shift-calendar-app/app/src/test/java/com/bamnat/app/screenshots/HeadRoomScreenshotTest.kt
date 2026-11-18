@@ -56,9 +56,10 @@ class HeadRoomScreenshotTest : ScreenshotBase() {
         @androidx.compose.runtime.Composable {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PlazaHead(title = plan.title, plan = plan, today = 4, picks = picks, onPicks = {}, onCompany = {}, onShare = {}, onRates = {},
+                    PlazaHead(title = plan.title, today = 4, model = com.bamnat.app.ui.company.plazaHeadModel(plan, picks = picks, onPicks = {},
+                        onCompany = {}, onShare = {}, onRates = {},
                         onAll = {}.takeIf { plan.room == StylePlaza.SHIFT || plan.top == StylePlaza.Top.COMPANY_ROOM }, onFind = {}.takeIf { plan.room == StylePlaza.SHIFT },
-                        onTag = onTag)
+                        onTag = onTag))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         PlazaComposer(prompt, topic, onWrite = {})
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

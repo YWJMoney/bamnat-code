@@ -218,4 +218,36 @@ class WorkKitTest {
         assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), sales))
         assertEquals("근무표", com.bamnat.core.work.linkWord(emptySet(), null))
     }
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (D RVD-32, the share server's linkWord): from 처리방침 3.14 a link may say what the sender's app calls it,
+     * which names a link that carries no money or jobs (a shop's days only → 영업일, an investor's → 달력). What the link carries still
+     * comes first, and a link without the word, or with any other value, is named exactly as before.
+     */
+    @Test
+    fun linkWordTakesTheSendersWordAfterWhatTheLinkCarries() {
+        val sales = com.bamnat.core.work.MoneyShare.SALES
+        val jobs = com.bamnat.core.work.MoneyShare.JOBS
+        val pay = com.bamnat.core.work.MoneyShare.PAY
+        // The days only: the sender's word.
+        assertEquals("영업일", com.bamnat.core.work.linkWord(emptySet(), sales, "영업일"))
+        assertEquals("달력", com.bamnat.core.work.linkWord(emptySet(), pay, "달력"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("memos"), null, "일정"))
+        assertEquals("근무표", com.bamnat.core.work.linkWord(setOf("leaveKinds"), pay, "근무표"))
+        // What the link carries comes first, as on the server.
+        assertEquals("영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales, "달력"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("jobs"), jobs, "근무표"))
+        assertEquals("일정", com.bamnat.core.work.linkWord(setOf("pay"), jobs, "영업일"))
+        // No word (an old link, an old server, before 3.14) or one not in the list: as before 2.0.0.
+        for (said in listOf(null, "", "월급", "Calendar", " 영업일")) {
+            assertEquals("$said", "근무표", com.bamnat.core.work.linkWord(emptySet(), sales, said))
+            assertEquals("$said", "영업일", com.bamnat.core.work.linkWord(setOf("pay"), sales, said))
+        }
+        // What such a link holds, said in its word (the receiving card's '…만 받았어요'), as the sender's own app says it (daysWord).
+        for (style in com.bamnat.core.work.WorkStyle.entries)
+            assertEquals("$style", com.bamnat.core.work.daysWord(style), com.bamnat.core.work.linkDaysWord(com.bamnat.core.work.scheduleWord(style)))
+        // The words a sender's app may say are exactly what scheduleWord gives for each kind of work.
+        assertEquals(com.bamnat.core.work.LINK_WORDS.toSet(),
+            (com.bamnat.core.work.WorkStyle.entries.map { com.bamnat.core.work.scheduleWord(it) } + com.bamnat.core.work.scheduleWord(null)).toSet())
+    }
 }

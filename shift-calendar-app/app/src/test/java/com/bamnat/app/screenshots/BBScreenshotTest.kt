@@ -178,6 +178,9 @@ class BBScreenshotTest : ScreenshotBase() {
     @Test fun theChipsOnASmallPhone() = shoot("1326_bb_chips_small_big_text", SMALL_PHONE, 2f) {
         val b = twoCompanies()
         board(b)
+        // 2.0.0 [RVN-18] 검토 U10a-04: the chips are one line with 펼치기 at its end (before, a row pushed sideways), so a calendar
+        // that does not fit on a small phone at 200% is one tap away, all of them at once.
+        if (!shows("편의점 알바 · (주)예시정밀", exact = true)) tapText("달력 칩 모두 펼쳐 보기", exact = true)
         assertTrue(appears("편의점 알바 · (주)예시정밀", exact = true))
     }
 }

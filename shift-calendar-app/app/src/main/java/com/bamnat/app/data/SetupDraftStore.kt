@@ -149,7 +149,7 @@ object SetupDraftCodec {
     private fun sourceJson(s: SetupSource): JSONObject = JSONObject()
         .put("kind", s.kind.name).put("text", s.text).putOpt("id", s.id).putOpt("setupId", s.setupId)
         .put("name", s.name).put("dept", s.dept).putOpt("version", s.version).put("adopted", s.adopted)
-        .putOpt("team", s.team).putOpt("anchor", s.anchor?.toString())
+        .putOpt("team", s.team).putOpt("anchor", s.anchor?.toString()).putOpt("site", s.site.takeIf { it.isNotEmpty() })
 
     private fun source(o: JSONObject): SetupSource? {
         val kind = SetupSource.Kind.entries.firstOrNull { it.name == o.optString("kind") } ?: return null
@@ -159,6 +159,7 @@ object SetupDraftCodec {
             version = if (o.has("version") && !o.isNull("version")) o.getInt("version") else null,
             adopted = o.optBoolean("adopted"), team = o.optStringOrNull("team"),
             anchor = o.optStringOrNull("anchor")?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+            site = o.optString("site"),
         )
     }
 

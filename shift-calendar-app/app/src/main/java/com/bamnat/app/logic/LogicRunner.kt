@@ -169,14 +169,15 @@ object LogicRunner {
                 val base = Memo(calendars = setOf(c.calendars.active.value))
                 val memo = t?.start(date, Today.date(), base) ?: base.copy(date = date, title = words.ifBlank { act.arg }.take(60))
                 val saved = c.memoRepository.save(fillMemo(c, memo))
-                store.wrote(who, JSONObject().put("memo", saved.id).put("say", FormulaText.said(act.say(), scope)))
+                store.wrote(who, JSONObject().put("memo", saved.id).put("made", madePrint(saved)).put("say", FormulaText.said(act.say(), scope)))
             }
             LogicVerb.CHECK_RESET -> {
                 val memos = c.memoRepository.memos.first().filter { it.date == date && !it.inTrash && it.isChecklist && (act.arg.isEmpty() || it.title.contains(act.arg)) }
                 val before = JSONArray()
                 memos.forEach { m ->
                     if (m.checklist.none { it.checked }) return@forEach
-                    before.put(JSONObject().put("id", m.id).put("checked", JSONArray(m.checklist.map { it.checked })))
+                    // 2.0.0 [RVM-47] STU-14 ③: with each item's words, so 되돌리기 finds the item even after one was added or moved.
+                    before.put(JSONObject().put("id", m.id).put("checked", JSONArray(m.checklist.map { it.checked })).put("texts", JSONArray(m.checklist.map { it.text })))
                     c.memoRepository.save(m.copy(checklist = m.checklist.map { it.copy(checked = false) }))
                 }
                 if (before.length() > 0) store.wrote(who, JSONObject().put("checks", before).put("say", FormulaText.said(act.say(), scope)))
@@ -213,7 +214,7 @@ object LogicRunner {
                 } else {
                     val saved = c.memoRepository.save(Memo(date = date, title = line.take(60), body = if (line.length > 60) line else "",
                         calendars = setOf(c.calendars.active.value)))
-                    store.wrote(who, JSONObject().put("memo", saved.id).put("say", FormulaText.said(act.say(), scope)))
+                    store.wrote(who, JSONObject().put("memo", saved.id).put("made", madePrint(saved)).put("say", FormulaText.said(act.say(), scope)))
                 }
             }
         }
@@ -411,7 +412,9 @@ object LogicRunner {
         store.undo = null
         store.clearWritten()
         var n = 0
-        for (o in all.asReversed()) if (runCatching { takeBack(c, o) }.isSuccess) n++
+        var kept = 0
+        for (o in all.asReversed()) runCatching { takeBack(c, o) }.onSuccess { if (it) n++ else kept++ }
+        lastKept = kept
         return n
     }
 
@@ -419,28 +422,47 @@ object LogicRunner {
      * [TRY-06] 1.39 기능까지 써 보기: everything the rules and buttons wrote from [since] on, taken back newest first (and gone from
      * '규칙이 쓴 것' and 되돌리기). Answers how many.
      */
-    suspend fun takeBackSince(c: AppContainer, since: Long): Int {
+    suspend fun takeBackSince(c: AppContainer, since: Long, by: ((String) -> Boolean)? = null): Int {
         val store = LogicStore(c.appContext)
         val all = store.written()
-        val mine = all.filter { it.optLong("at", -1L) >= since }
+        // 2.0.0 [RVM-46] 검토 RCP-20: with [by], only what those rules and buttons (by name) wrote; my own rules' writes meanwhile stay.
+        fun taken(o: JSONObject) = o.optLong("at", -1L) >= since && (by == null || by(o.optString("who")))
+        val mine = all.filter(::taken)
         if (mine.isEmpty()) return 0
-        store.keepWritten(all.filter { it.optLong("at", -1L) < since })
+        store.keepWritten(all.filterNot(::taken))
         if (store.undo?.let { runCatching { JSONObject(it).optLong("at", -1L) }.getOrNull() }?.let { it >= since } == true) store.undo = null
         var n = 0
-        for (o in mine.asReversed()) if (runCatching { takeBack(c, o) }.isSuccess) n++
+        var kept = 0
+        for (o in mine.asReversed()) runCatching { takeBack(c, o) }.onSuccess { if (it) n++ else kept++ }
+        lastKept = kept
         return n
     }
 
-    private suspend fun takeBack(c: AppContainer, o: JSONObject) {
+    /** 2.0.0 [RVM-47] How many things the last [undoAll] / [takeBackSince] left as the user made them (a line they changed, a memo they filled). */
+    @Volatile var lastKept: Int = 0
+        private set
+
+    /** 2.0.0 [RVM-47] A memo as a rule made it, to see later whether the user has written in it since. */
+    private fun madePrint(m: Memo): String =
+        listOf(m.title, m.body, m.checklist.joinToString("\u0001") { it.text + "\u0002" + it.checked }).joinToString("\u0000").hashCode().toString(36)
+
+    /** What a rule wrote, taken back; false when the user has changed it since, so it is left as they made it. */
+    private suspend fun takeBack(c: AppContainer, o: JSONObject): Boolean {
         when {
-            // 1.36 [SEC-12] Only the line the rule added comes out (what was written after it stays), and the words before if it is not found.
+            // 1.36 [SEC-12] Only the line the rule added comes out (what was written after it stays).
+            // 2.0.0 [RVM-47] 검토 STU-14 ①: a line the user changed since (or one of several lines) was not found and the whole memo went
+            // back to its words before the rule, wiping what was written since. Now the words are looked for as a block of lines; not
+            // there, the memo is left as it is.
             o.has("line") -> c.memoRepository.get(o.getLong("line"))?.let { m ->
                 val text = o.optString("text")
-                val lines = m.body.lines()
-                val i = if (text.isEmpty()) -1 else lines.lastIndexOf(text)
-                c.memoRepository.save(m.copy(body = if (i >= 0) lines.filterIndexed { j, _ -> j != i }.joinToString("\n") else o.optString("body")))
+                val body = cutLines(m.body, text) ?: return false
+                c.memoRepository.save(m.copy(body = body))
             }
-            o.has("memo") -> c.memoRepository.get(o.getLong("memo"))?.let { c.memoRepository.delete(it, offerUndo = false) }
+            // ② A memo a rule made that the user has written in since is theirs (one from before 2.0.0 has no print: as before).
+            o.has("memo") -> c.memoRepository.get(o.getLong("memo"))?.let { m ->
+                if (o.has("made") && madePrint(m) != o.optString("made")) return false
+                c.memoRepository.delete(m, offerUndo = false)
+            }
             o.has("money") -> c.scopeOf(o.optString("cal", c.calendars.active.value)).money.book.first().entries
                 .firstOrNull { it.id == o.getLong("money") }?.let { c.scopeOf(o.optString("cal")).money.delete(it) }
             // 1.39 [FX-03] 값 칸: back to the number before (none kept before: its start, by forgetting the period).
@@ -458,10 +480,29 @@ object LogicRunner {
                     val x = a.getJSONObject(i)
                     val m = c.memoRepository.get(x.getLong("id")) ?: continue
                     val checked = x.getJSONArray("checked")
-                    c.memoRepository.save(m.copy(checklist = m.checklist.mapIndexed { j, it -> it.copy(checked = j < checked.length() && checked.getBoolean(j)) }))
+                    // 2.0.0 [RVM-47] STU-14 ③: by each item's words when kept (an item added or moved since no longer ticks the wrong one);
+                    // an item the user ticked since stays ticked.
+                    val texts = x.optJSONArray("texts")
+                    val was = if (texts == null) null else (0 until minOf(texts.length(), checked.length())).associate { texts.getString(it) to checked.getBoolean(it) }
+                    c.memoRepository.save(m.copy(checklist = m.checklist.mapIndexed { j, it ->
+                        if (was != null) it.copy(checked = it.checked || was[it.text] == true)
+                        else it.copy(checked = j < checked.length() && checked.getBoolean(j))
+                    }))
                 }
             }
         }
+        return true
+    }
+
+    /** [body] without the block of lines [text] (the last one), or null when it is not there as whole lines. */
+    internal fun cutLines(body: String, text: String): String? {
+        if (text.isEmpty()) return null
+        val lines = body.lines()
+        val want = text.lines()
+        for (i in lines.size - want.size downTo 0) {
+            if (lines.subList(i, i + want.size) == want) return (lines.subList(0, i) + lines.subList(i + want.size, lines.size)).joinToString("\n")
+        }
+        return null
     }
 
     /**

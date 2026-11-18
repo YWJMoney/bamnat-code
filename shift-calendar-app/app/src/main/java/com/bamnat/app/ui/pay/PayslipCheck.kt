@@ -23,7 +23,7 @@ import com.bamnat.app.ui.components.Button
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -50,6 +50,9 @@ import androidx.compose.ui.window.DialogProperties
 import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.SlipLine
 import com.bamnat.core.pay.SlipRole
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.container
+import com.bamnat.app.ui.theme.color
 
 /** [READ-18] The photo read, small; a tap shows it whole to compare line by line. In memory only. */
 @Composable
@@ -63,10 +66,12 @@ internal fun PhotoThumb(photo: Bitmap, modifier: Modifier = Modifier.fillMaxWidt
     if (big) Dialog(onDismissRequest = { big = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize().padding(12.dp)) {
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    Image(image, contentDescription = "읽은 사진", contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
-                }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = { big = false }) { Text("닫기") } }
+                // 2.0.0 [RVJ-61] HQ-81 같은 구조: the whole photo opened to compare was a page to scroll with no zoom; it is the pinned
+                // photo's own (two fingers, double tap, ⊖ ⊕, read-aloud actions), one finger moving a long payslip up and down.
+                // (HQ-102) ⊖ ⊕ in the 닫기 row under it, never on the photo (they hid its last line).
+                val zoom = rememberPhotoZoom(photo)
+                ZoomablePhoto(photo, Modifier.weight(1f).fillMaxWidth(), zoom)
+                PhotoBand(zoom, close = BandAction("닫기") { big = false })
             }
         }
     }
@@ -155,7 +160,7 @@ internal fun SlipCheck(
         Column(
             Modifier.fillMaxWidth()
                 // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour.
-                .then(if (doubt) Modifier.background(com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f), MaterialTheme.shapes.extraSmall) else Modifier)
+                .then(if (doubt) Modifier.background(Tone.Caution.container(), MaterialTheme.shapes.extraSmall) else Modifier)
                 .then(if (editing == i) Modifier.background(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.shapes.extraSmall) else Modifier)
                 // [PHOTO-31] 1.30 AW: any line opens on a tap, not only after '다른 곳이 있어요'.
                 .clickable(role = Role.Button, onClickLabel = "이 줄 고치기") { preset = null; editing = if (editing == i) null else i }
@@ -251,7 +256,7 @@ internal fun SlipCheck(
             Text(
                 if (read.consistent) "항목을 더하면 지급 총액 ${won(g)}과 맞아요" else "항목 합 ${won(read.earningsSum)} · 지급 총액 ${won(g)}. 빠지거나 잘못 읽은 줄을 고쳐 주세요",
                 style = MaterialTheme.typography.bodySmall,
-                color = if (read.consistent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                color = if (read.consistent) MaterialTheme.colorScheme.primary else Tone.Caution.color(), // 2.0.0 [RVP-13] (UIX-15) 주황은 주의 하나
                 modifier = Modifier.padding(top = 4.dp),
             )
         }
@@ -329,7 +334,7 @@ internal fun SlipSums(read: PayslipRead) {
             when {
                 worked != null && stated != null && kotlin.math.abs(worked - stated) > com.bamnat.core.pay.PayslipMatch.tolerance(worked) ->
                     Text("명세서의 실수령 ${won(stated)}과 ${won(kotlin.math.abs(worked - stated))} 달라요. 빠진 공제 줄이 있는지 봐 주세요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                        style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
                 worked != null && stated != null -> Text("명세서의 실수령과 맞아요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 pay == null -> Text("왼쪽에 지급 줄을 넣으면 합계가 바로 나와요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 ded == null -> Text("오른쪽에 공제 줄을 넣으면 실수령이 나와요 (급여 계산에는 지급 줄만 써요)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
