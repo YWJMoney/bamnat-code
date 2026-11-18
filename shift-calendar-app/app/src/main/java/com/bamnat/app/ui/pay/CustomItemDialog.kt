@@ -1079,6 +1079,15 @@ private fun EffectBar(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution,
                     )
                 }
+                // 2.0.0 [RVJ-76] (사진 rvj_250: 고정연장수당 400,000원에 '+0원'만 보여 틀린 줄 알았어요) A 고정 연장수당 pays the month's
+                // 연장수당 ahead (PayCalculator.coverPremiums), so the part this month's 연장수당 already pays is not added again: said here.
+                val fixedAmount = draft.amount
+                if (effect != null && draft.kind == ItemKind.MONTHLY && draft.fixedOtMinutes > 0 && fixedAmount != null && effect.amount < fixedAmount)
+                    Text(
+                        if (effect.amount <= 0) "이달 연장수당이 이 금액 이상이라 합계는 그대로예요. 고정 연장수당은 연장수당을 미리 주는 거라 겹쳐 더하지 않아요"
+                        else "이달 연장수당과 겹치는 ${won(fixedAmount - effect.amount)}은 더하지 않아요. 고정 연장수당은 연장수당을 미리 주는 거예요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 if (gap != null && effect != null) {
                     val left = gap - effect.amount
                     val closed = abs(left) <= 1_000

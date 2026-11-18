@@ -56,6 +56,8 @@ class RvjFixedOtScaleScreenshotTest : ScreenshotBase() {
         itemDirect("22.5").invoke(this)
         assertTrue(shows("22.5"))
         assertFalse(shows("0.5시간 단위로", exact = false))
+        // The month's 연장수당 already pays it, so '+0원' says why (it is not added twice).
+        assertTrue(shows("연장수당을 미리 주는 거", exact = false))
     }
 
     @Test fun theAllowanceTakesHalfHoursDarkBig() = shoot("rvj_251_item_ot_direct_folded_dark_200", DARK, 2f) {
