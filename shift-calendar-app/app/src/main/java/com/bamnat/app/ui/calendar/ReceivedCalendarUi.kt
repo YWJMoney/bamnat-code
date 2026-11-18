@@ -754,8 +754,10 @@ private fun OkCard(vm: ReceivedViewModel, cal: ReceivedCalendar) {
         }
         return
     }
+    // [RVG-41] 검토 HQ-110 (조건 4·12): the question in a few words, so the right pane at 200% gives it two lines, not four
+    // ('보낸 분이 이 근무표를 다 보셨는지 궁금해해요' beside the card's icon); what pressing does stays in the line under it.
     com.bamnat.app.ui.components.NudgeCard(
-        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨으면 다시 알려 주세요" else "보낸 분이 이 근무표를 다 보셨는지 궁금해해요",
+        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨나요?" else "보낸 분이 다 보셨는지 물어요",
         detail = said ?: "누르면 보낸 분에게 '확인'이 가요. 열어 보기만 한 것과 따로 보여요",
         icon = Icons.Outlined.CheckCircle,
         action = if (sending) "보내는 중…" else "확인했어요",

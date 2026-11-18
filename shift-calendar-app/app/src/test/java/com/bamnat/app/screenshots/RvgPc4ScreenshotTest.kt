@@ -25,6 +25,7 @@ import java.time.YearMonth
  * - [RVG-39] PC-174: a shop's 영업일 link is no roster, so no 근무표 점검 card reads it as one.
  * - [RVG-40] PC-175: a shop's 달력 › 도구 and share sheet in its own words.
  * - [RVG-41] HQ-110: the received day card from 150%: face and mark on top, the time whole under them.
+ *   The leader's 확인했어요 card above it asks in a few words, two lines at 200% in that pane.
  *
  * [AFTER] false takes the same screens on the code before these changes (the '앞' photos); the checks of what changed are left out then.
  */
@@ -49,6 +50,22 @@ class RvgPc4ScreenshotTest : ScreenshotBase() {
     @Test fun dayFoldLightHuge() = shoot("rvg41_received_day_fold_light_200", FOLDED, fontScale = 2f, dayCard(wide = false))
     @Test fun dayFoldDarkMid() = shoot("rvg41_received_day_fold_dark_150", FOLDED_NIGHT, fontScale = 1.5f, dayCard(wide = false))
     @Test fun dayFoldLight() = shoot("rvg41_received_day_fold_light_100", FOLDED, dayCard(wide = false))
+
+    /** HQ-110: the leader's 확인했어요 question at the top of the same pane (Q1's '뒤-02' photo had its title in four lines). */
+    private fun okCard(wide: Boolean): Screen.() -> Unit = {
+        val cc = receivedOn(minji = false)
+        val share = Rvq3b.watched(minjiShare())
+        shares.links[minjiId] = share
+        cc.received.put(minjiId, share)
+        settle()
+        cc.received.view(minjiId)
+        settle()
+        reveal("확인했어요", exact = true, across = if (wide) 0.75f else 0.5f)
+        if (AFTER) assertTrue(appears("보낸 분이 다 보셨는지 물어요", exact = true))
+    }
+    @Test fun okOpenLightHuge() = shoot("rvg41_received_ok_open_light_200", UNFOLDED, fontScale = 2f, okCard(wide = true))
+    @Test fun okOpenDarkHuge() = shoot("rvg41_received_ok_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, okCard(wide = true))
+    @Test fun okFoldLight() = shoot("rvg41_received_ok_fold_light_100", FOLDED, okCard(wide = false))
 
     /** HQ-110's other way, for comparing only: the unfolded screen at 200% in one column (the day card under the month). */
     @Test fun dayOneColumnOpenLightHuge() = shoot("rvg41_compare_one_column_open_light_200", UNFOLDED, fontScale = 2f) {
