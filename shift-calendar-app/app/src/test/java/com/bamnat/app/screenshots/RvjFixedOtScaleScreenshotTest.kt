@@ -68,6 +68,16 @@ class RvjFixedOtScaleScreenshotTest : ScreenshotBase() {
     @Test fun offTheHalfHourIsSaid() = shoot("rvj_252_item_ot_off_grid_folded", FOLDED) {
         itemDirect("22.3").invoke(this)
         assertTrue(appears("0.5시간 단위로 200시간까지 넣어 주세요", exact = false))
+        // Saved now it would be a plain 수당 the month's 연장수당 does not cover: 만들기 waits for hours it can use.
+        assertFalse(enabled("만들기"))
+    }
+
+    @Test fun theHoursPutRightLetItBeMade() = shoot("rvj_266_item_ot_put_right_folded", FOLDED) {
+        itemDirect("22.3").invoke(this)
+        typeInto("고정 연장 시간 (한 달)", "22.5")
+        repeat(2) { settle() }
+        assertFalse(shows("0.5시간 단위로", exact = false))
+        assertTrue(enabled("만들기"))
     }
 
     // ── [RVJ-76] 급여 마법사의 연봉 ──

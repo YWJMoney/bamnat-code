@@ -241,6 +241,8 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
      * from the old '수당 추가' window, now one with this builder. 2.0.0 [RVJ-76] (검토 PAYU-49) In minutes, so a contract's 22.5시간 fits.
      */
     var fixedOtMinutes by mutableStateOf(0)
+    /** [RVJ-76] '직접' is picked with no hours in use yet: 만들기 waits (the picker says what to put). */
+    var fixedOtPending by mutableStateOf(false)
     /** [PAYX-50] 비과세 as the item had it when changed; null guesses from the name (식대·차량유지비). */
     var taxable by mutableStateOf<Boolean?>(null)
     /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
@@ -588,7 +590,8 @@ internal fun CustomItemDialog(
                 },
                 bottomBar = {
                     if (draft.kind != null) {
-                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
+                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap,
+                            enabled = made != null && !full && !(draft.asksFixedOt && draft.fixedOtPending),
                             shut = month.takeIf { it != landsIn },
                             label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
                             unknown = made != null && draft.made(start) == null,
@@ -840,7 +843,8 @@ internal fun ColumnScope.FormStep(
 @Composable
 private fun FixedOtChips(draft: ItemDraft) {
     Label("연장수당을 미리 주는 고정 수당인가요?")
-    FixedOtHours(draft.fixedOtMinutes, { m -> draft.fixedOtMinutes = m; if (m > 0) draft.ordinary = false }, none = "아니요")
+    FixedOtHours(draft.fixedOtMinutes, { m -> draft.fixedOtMinutes = m; if (m > 0) draft.ordinary = false }, none = "아니요",
+        onPending = { draft.fixedOtPending = it })
     if (draft.fixedOtMinutes > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
 }
 
