@@ -53,6 +53,8 @@ import com.bamnat.core.money.MoneySource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** What the day sections may change; the calendar's view model implements it. */
 interface MoneyActions {

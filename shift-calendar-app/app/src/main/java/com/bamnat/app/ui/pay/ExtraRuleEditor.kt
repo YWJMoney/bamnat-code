@@ -27,7 +27,7 @@ import androidx.compose.material3.IconButton
 import com.bamnat.app.ui.components.CountStepper
 import com.bamnat.app.ui.components.StepperRow
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch

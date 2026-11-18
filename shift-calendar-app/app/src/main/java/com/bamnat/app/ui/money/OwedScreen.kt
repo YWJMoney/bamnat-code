@@ -73,7 +73,7 @@ import androidx.compose.material.icons.outlined.FileDownload
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -84,7 +84,7 @@ import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -153,6 +153,9 @@ import java.time.temporal.ChronoUnit
 import kotlin.math.roundToLong
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** [RECV-01][RECV-02][RECV-05] 받을 돈: everything owed to the user, written down here or left on a job. */
 class OwedViewModel(
@@ -1215,8 +1218,7 @@ private fun ReceivableDialog(
                 }
                 AmountField("얼마", amount, { amount = it })
                 if (amount.toAmount() in 1 until minAmount) {
-                    Text("이미 ${Fmt.won(minAmount)} ${words.did}. 그보다 적게 할 수 없어요.", style = MaterialTheme.typography.bodySmall,
-                        color = LocalCalendarColors.current.warning)
+                    com.bamnat.app.ui.components.ToneLine("이미 ${Fmt.won(minAmount)} ${words.did}. 그보다 적게 할 수 없어요.")
                 }
                 OutlinedTextField(value = title, onValueChange = { title = it.take(40) }, singleLine = true,
                     label = { Text(words.what) }, modifier = Modifier.fillMaxWidth())
@@ -1243,7 +1245,7 @@ private fun ReceivableDialog(
                     FilterChip(selected = other, onClick = { picking = "due" }, label = { Text(if (other) Fmt.shortDate(dueDate!!) else "날짜 고르기") })
                 }
                 if (dueDate != null && dueDate.isBefore(start)) {
-                    Text("약속일이 생긴 날보다 앞이에요.", style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                    com.bamnat.app.ui.components.ToneLine("약속일이 생긴 날보다 앞이에요.")
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("생긴 날", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

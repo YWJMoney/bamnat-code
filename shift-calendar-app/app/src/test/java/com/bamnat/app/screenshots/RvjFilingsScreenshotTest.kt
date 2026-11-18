@@ -72,6 +72,12 @@ class RvjFilingsScreenshotTest : ScreenshotBase() {
         assertTrue("누르면 그 직원 정보", appears("하는 일 (예: 홀, 주방)"))
     }
 
+    /** [RVJ-59] J-488 ★14 (PC 3차 T3): the amount with them in counts them from the 1st, so it is said as about. */
+    @Test fun theAmountWithThemInIsAbout() = shoot("rvj_164_filings_about_folded", FOLDED) {
+        card().invoke(this)
+        assertTrue(scrolledTo("(넣으면 약 "))
+    }
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
     }

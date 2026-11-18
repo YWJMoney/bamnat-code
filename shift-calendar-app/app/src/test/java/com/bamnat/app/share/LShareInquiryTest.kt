@@ -40,6 +40,8 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class LShareInquiryTest {
+    // (HQ-93) No line an earlier test left on the app's one snackbar (it covered a button and took the press): ComposeMainReset.
+    @get:org.junit.Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val c get() = app.container
     private val today = LocalDate.of(2026, 11, 3)

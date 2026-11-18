@@ -11,10 +11,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -131,7 +131,7 @@ internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMem
         call.people.forEach { id ->
             val a = call.answers[id]
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                Text("${name(id)}: " + when { a == true -> "들어갈 수 있어요"; a == false -> "어려워요"; id in call.seen -> "봤어요, 아직 답 없음"; else -> "아직 안 봤어요" },
+                Text("${name(id)}: " + when { a == true -> "들어갈 수 있어요"; a == false -> "어려워요"; id in call.seen -> "열어 봤어요, 아직 답 없음"; else -> "아직 안 열어 봤어요" },
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
                     color = if (a == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 if (a == true) Button(enabled = !busy, onClick = {

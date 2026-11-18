@@ -158,6 +158,9 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
         val looks = r.copy(pieces = r.pieces.filter { it.kind in BuiltInThemes.LOOK_KINDS }).let { if (own) it else it.keepMyCellContent() }
         if (looks.pieces.isEmpty()) return false
         beforeWear()
+        // 2.0.0 [RVM-52] 검토 STU-05: the studio's day-long '입히기 전 모양으로' (calendar band and studio) is for the look it put on; a
+        // theme worn after it takes its place, so that 되돌리기 never jumps back past this theme.
+        com.bamnat.app.data.LookUndo.clear(c.appContext)
         val picks = looks.pieces.map { RecipeRepository.Pick(it.kind, RecipePieces.Mode.REPLACE) }
         // A mix made in the studio is mine to look at: no 받은 레시피 row under the code its parts came from (no 새 판 알림 for it).
         lastApplied = c.recipes.apply(looks, code.takeIf { !it.startsWith("builtin:") && !isMix(r.title) }.orEmpty(), ver, PersonalCalendar.MAIN, picks, emptyMap())
@@ -219,6 +222,7 @@ class ThemeWardrobe(private val c: AppContainer, context: Context) {
      */
     suspend fun takeOff() {
         val worn = _lease.value.worn ?: return
+        com.bamnat.app.data.LookUndo.clear(c.appContext) // [RVM-52] STU-05, as in [wear]
         val now = c.recipes.pieces.lookSnapshot()
         val after = readMap(K_WORN_LOOK)
         var l = keepMix(_lease.value)

@@ -51,6 +51,9 @@ class ReviewP3ShotsTest : ScreenshotBase() {
     }
 
     /** What people did with the user's things, as 장터 and 광장 put it in the 알림함 (HQ-51·52). */
+    /** The alarms turned off for today in [clearAllKeepsTheAlarmWarning] are on again for the next test. */
+    @org.junit.After fun alarmsBack() = com.bamnat.app.alarm.AlarmsOff.turnOn(app)
+
     private fun reactions() {
         Inbox.post(app, InboxRow("market.work:1", "market.reaction", InboxSection.PEOPLE, "내 작품 ‘밤바다’", "댓글 2개 · 좋아요 5개",
             target = NoticeLinks.Target.MONEY, at = Today.millis() - 20 * 60_000L, count = 7))
@@ -168,6 +171,26 @@ class ReviewP3ShotsTest : ScreenshotBase() {
             settle()
             assertTrue("알림함이 열려요", appears("사람들 반응", exact = true))
         })
+    }
+
+    /**
+     * 검토 PC-139 (높음) with PC-140·HQ-91·HQ-92: with the alarms turned off for today (one of the alarm lines that stay until fixed),
+     * 종 › 전체 지움 leaves '오늘 알람 끔' in the bell (no X, no ⋮), takes the rest, and offers 되돌리기 inside the 알림함; the sheet
+     * opens whole at 200% too.
+     */
+    @Test fun clearAllKeepsTheAlarmWarning() = all("10_clear_all_keeps_alarm", WorkStyle.SHIFT) {
+        reactions()
+        com.bamnat.app.alarm.AlarmsOff.turnOff(app, null)
+        settle()
+        assertTrue("띠", appears("오늘 알람 끔", exact = false))
+        tapText("알림 ", prefix = true, scrolls = 0)
+        settle()
+        tapText("전체 지움", exact = true, scrolls = 0)
+        settle()
+        assertTrue("되돌리기는 알림함 안", appears("되돌리기", exact = true))
+        assertTrue("남긴 까닭", appears("알람에 꼭 필요한 것은 고칠 때까지 남겨 둬요", exact = false))
+        assertTrue("알람 경고는 남아요", appears("오늘 알람 끔", exact = false))
+        assertTrue("반응은 지워져요", gone("내 작품 ‘밤바다’", exact = false))
     }
 
     /** 총괄 HQ-49: the bell beside 공유 (사용자 11-13 00:35 KST 카드 '공유 옆에 따로'), 380 폭 100%·200%, 편 폭. */
