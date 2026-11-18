@@ -42,6 +42,27 @@ if (providers.gradleProperty("bamnat.composeReports").isPresent) {
     }
 }
 
+// 2.0.0 [RVR-42] (총괄 HQ-116): the app's tests never reach a server outside this computer. The debug build carries the real
+// addresses, so tests that build the app's container called the live servers (tens of thousands of requests a day in its
+// statistics). tools/net-guard/NetGuard.java goes into every test JVM as a Java agent and refuses any host that is not
+// 127.0.0.1/localhost (or a Maven repository for Robolectric's Android jars) before a connection is made; what it refused is
+// written to build/net-guard/blocked. NetGuardTest fails if it is not on.
+val netGuardClasses = tasks.register<JavaCompile>("compileNetGuard") {
+    source = fileTree("../tools/net-guard") { include("**/*.java") }
+    classpath = files()
+    destinationDirectory.set(layout.buildDirectory.dir("net-guard/classes"))
+    options.release.set(17)
+}
+val netGuardJar = tasks.register<Jar>("netGuardJar") {
+    from(netGuardClasses)
+    archiveFileName.set("net-guard.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("net-guard"))
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    manifest { attributes("Premain-Class" to "bamnat.netguard.NetGuard") }
+}
+val netGuardBlocked = layout.buildDirectory.dir("net-guard/blocked").get().asFile
+
 android {
     namespace = "com.bamnat.app"
     compileSdk = 36
@@ -173,6 +194,12 @@ android {
         val apiLevels = listOf("ApiLevelSmokeTest", "AlarmMatrixTest").map { "com.bamnat.app.rules.$it" }
         unitTests.all {
             it.maxHeapSize = "2g"
+            // 2.0.0 [RVR-42] (총괄 HQ-116): no outside network in any test JVM (see netGuardJar above).
+            it.inputs.files(netGuardJar).withPropertyName("netGuard")
+            // Paths relative to the test JVM's folder (this module), so the build cache key is the same on every machine.
+            it.jvmArgs("-javaagent:build/net-guard/net-guard.jar")
+            it.systemProperty("bamnat.netGuard.log", "build/net-guard/blocked")
+            it.doFirst { netGuardBlocked.deleteRecursively() }
             it.maxParallelForks = forks
             // [QA-06] The screenshots (ScreenshotBase writes build/screenshots) are an output of the test task, so a
             // run Gradle takes from the build cache still has them for tools/shot_hashes.py; without this, a pull
