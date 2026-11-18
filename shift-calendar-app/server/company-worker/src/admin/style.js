@@ -1584,6 +1584,11 @@ details.card.home-fold{margin:0;padding:0}
 .stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
 /* 2.0.0 [RVA-62] 좁은 폭(또는 큰 글자)에서는 굵은 제목 뒤에 작은 글이 이어 붙지 않고 아래 줄로. */
 .stuck-list{container:stuck/inline-size}@container stuck (width < 30rem){.stuck-list p>small{display:block;margin-top:.15rem}}
+/* 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'(안내 카드 한 모양, 접으면 한 줄)와 문의 상세의 멈춤 기록 줄. */
+details.card.crash-card{margin:0 0 .75rem}.crash-card>summary .hf-t small{white-space:normal;overflow-wrap:anywhere}.crash-card .crash-lines{margin:.1rem 0 0}.crash-card .hint{margin:.6rem 0 0}
+.crash-lines a.chip{text-decoration:none;color:var(--fg);min-height:min(2.75rem,48px);display:inline-flex;align-items:center}
+.crash-note{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;color:var(--fg);overflow-wrap:anywhere}.crash-note>span:not(.pill){flex:1 1 14rem;min-width:0}
+.crash-note .btn{flex:0 1 auto;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}
