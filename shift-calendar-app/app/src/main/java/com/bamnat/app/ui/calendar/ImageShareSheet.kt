@@ -69,8 +69,8 @@ fun ImageShareSheet(
     onDismiss: () -> Unit,
     /** The name the calendar's link went out with, if any: the picture's title can say whose it is. */
     startName: String = "",
-    /** 1.40 [SPREAD-37] In 12-20~1-10, the year whose 결산 picture can be made instead, and how to open it. */
-    yearRecap: Pair<Int, () -> Unit>? = null,
+    /** 1.40 [SPREAD-37] In 12-20~1-10, the 결산 whose picture can be made instead ("2026년 내 근무 결산"), and how to open it. */
+    yearRecap: Pair<String, () -> Unit>? = null,
     /** 2.0.0 [RVH-20] 검토 CAL-25: the calendar's kind, for the picture's title and its 이름표 in its words. */
     style: com.bamnat.core.work.WorkStyle? = null,
 ) {
@@ -103,10 +103,10 @@ fun ImageShareSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("${month.monthValue}월 사진으로 보내기", style = MaterialTheme.typography.titleLarge)
-            yearRecap?.let { (y, open) ->
-                androidx.compose.material3.OutlinedButton(onClick = open, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                    Text("${y}년 근무 결산 사진 만들기")
-                }
+            // 2.0.0 (조건 1·2): one quiet line that goes there, not a button over this sheet's own picture.
+            yearRecap?.let { (title, open) ->
+                com.bamnat.app.ui.components.ToneLine("$title 사진도 만들 수 있어요 · 만들기", tone = com.bamnat.app.ui.theme.Tone.Plain,
+                    style = MaterialTheme.typography.bodyMedium, onClick = open)
             }
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview
