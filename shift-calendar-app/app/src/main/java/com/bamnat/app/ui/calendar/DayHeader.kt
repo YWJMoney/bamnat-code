@@ -435,16 +435,20 @@ private fun ShiftChips(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calenda
     // 100% a second line pushed the day's groups under it).
     val lines = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f) 2 else 1
     ChipRow(modifier, start = 12.dp, end = endSpace, lines = lines) {
-        for (t in types) item(key = "shift-${t.id}", pin = t.isOff || !fullLeave && day.shiftType?.id == t.id) {
+        for (t in types) {
             val on = !fullLeave && day.shiftType?.id == t.id
-            FilterChip(
-                selected = on,
-                onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
-                label = { ChipText(t.name) },
-                leadingIcon = { ShiftBadge(t, size = 18.dp, outlined = t.isOff) },
-                // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
-                modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
-            )
+            // 2.0.0 [RVH-71] Without its badge when the row is tight: the name says the same, and the chip is 18dp narrower.
+            val shiftChip: @Composable (Boolean) -> Unit = { badge ->
+                FilterChip(
+                    selected = on,
+                    onClick = { if (day.shiftType?.id != t.id) vm.assignQuick(day, com.bamnat.core.model.ShiftOverride.Shift(t.id), snapshot) },
+                    label = { ChipText(t.name) },
+                    leadingIcon = if (badge) ({ ShiftBadge(t, size = 18.dp, outlined = t.isOff) }) else null,
+                    // 1.39 PC 5차 (가게 유형 TalkBack '영업, 지금 근무'): said without '근무', which a shop's or a field day's chip is not.
+                    modifier = Modifier.semantics { contentDescription = if (on) "${t.name}, 이날 골라 둔 것" else "${t.name}${Fmt.ro(t.name)} 바꾸기" },
+                )
+            }
+            item(key = "shift-${t.id}", pin = t.isOff || on, narrow = { shiftChip(false) }) { shiftChip(true) }
         }
         if (snapshot.shiftTypes.none { it.isOff }) item(key = "shift-off", pin = true) {
             FilterChip(
@@ -780,8 +784,11 @@ internal class ChipScope {
     internal val items = mutableListOf<Pair<Any?, @Composable () -> Unit>>()
     /** 2.0.0 [RVH-71] Chips that never go into "+n" (the day's 쉬는 날: 검토 HQ-87). */
     internal val pinned = mutableSetOf<Int>()
-    fun item(key: Any? = null, pin: Boolean = false, content: @Composable () -> Unit) {
+    /** 2.0.0 [RVH-71] A narrower look of a chip (its badge left out), taken when the chips do not all fit as they are. */
+    internal val compact = mutableMapOf<Int, @Composable () -> Unit>()
+    fun item(key: Any? = null, pin: Boolean = false, narrow: (@Composable () -> Unit)? = null, content: @Composable () -> Unit) {
         if (pin) pinned += items.size
+        narrow?.let { compact[items.size] = it }
         items += key to content
     }
 }
@@ -824,6 +831,7 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: I
     var open by rememberSaveable { mutableStateOf(false) }
     // A slot made for a chip of the day before (more chips) can be drawn once more before it goes: it then draws nothing.
     val chip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { c() } } }
+    val narrowChip: @Composable (Int) -> Unit = { i -> chips.getOrNull(i)?.let { (k, c) -> key(k ?: "chip#$i") { (scope.compact[i] ?: c)() } } }
     if (open) {
         FlowRow(
             modifier.fillMaxWidth().padding(start = start, end = maxOf(end, 4.dp)),
@@ -846,15 +854,23 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: I
         // An item may say nothing (a chip shown only on some days): it takes no place.
         // Measured in copies that are not there for TalkBack or touch (#451 a11y: chips measured but left out of the row were
         // still read and counted, with no place on screen); only the chips placed below are composed for real.
-        val sizes = chips.indices.map { i ->
-            subcompose("size#$i") { androidx.compose.foundation.layout.Box(Modifier.clearAndSetSemantics { }) { chip(i) } }.map { it.measure(loose) }
-        }
-        val widths = sizes.map { p -> if (p.isEmpty()) 0 else p.sumOf { it.width } + gap * (p.size - 1) }
+        fun widthsOf(tag: String, c: @Composable (Int) -> Unit) = chips.indices.map { i ->
+            subcompose("$tag#$i") { androidx.compose.foundation.layout.Box(Modifier.clearAndSetSemantics { }) { c(i) } }.map { it.measure(loose) }
+        }.map { p -> if (p.isEmpty()) 0 else p.sumOf { it.width } + gap * (p.size - 1) }
+        var widths = widthsOf("size", chip)
         val shown = widths.indices.filter { widths[it] > 0 }
         // 2.0.0 [RVH-71] 검토 HQ-87 (접은 폭 200%에서 '휴무'가 '+2' 안): the chips take up to [lines] lines before any folds into
         // "+n", and a pinned chip (the 쉬는 날) stays out of it, in its own place among the ones shown.
         var place: List<Int> = shown
         var at: List<Int>? = chipLines(shown.map { widths[it] }, room, gap, lines)
+        // When they do not fit as they are, the chips that have a narrower look take it, so fewer (often none) go into "+n":
+        // 접은 폭 알바의 '오전·오후 알바·쉬는 날' stay one tap away (조건 8), where their badges had pushed '오후 알바' in.
+        val narrow = at == null && scope.compact.isNotEmpty()
+        if (narrow) {
+            widths = widthsOf("narrow", narrowChip)
+            at = chipLines(shown.map { widths[it] }, room, gap, lines)
+        }
+        val draw = if (narrow) narrowChip else chip
         var more: androidx.compose.ui.layout.Placeable? = null
         if (at == null) {
             val hiddenMost = shown.size
@@ -871,7 +887,7 @@ internal fun ChipRow(modifier: Modifier = Modifier, start: Dp, end: Dp, lines: I
             val hidden = shown.size - place.size
             more = subcompose("more") { MoreButton("+$hidden", "${hidden}개 더 보기") { open = true } }.first().measure(Constraints())
         }
-        val real = place.associateWith { i -> subcompose("chip#$i") { chip(i) }.map { it.measure(loose) } }
+        val real = place.associateWith { i -> subcompose(if (narrow) "nchip#$i" else "chip#$i") { draw(i) }.map { it.measure(loose) } }
         val rows = (at.maxOrNull() ?: 0) + 1
         val rowHeight = IntArray(rows)
         place.forEachIndexed { n, i -> rowHeight[at[n]] = maxOf(rowHeight[at[n]], real.getValue(i).maxOfOrNull { it.height } ?: 0) }
