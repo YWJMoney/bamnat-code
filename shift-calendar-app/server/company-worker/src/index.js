@@ -4226,6 +4226,10 @@ async function talk(request, env, companyId, grp) {
   return json(r.body, r.status);
 }
 
+/** 2.0.0 [RVN-23] SVC-90 The top posts of a kind of work's plaza read before a time (?1 room, ?2 grp, ?3 before), as talkData pages them. */
+const PAGE_TOPS = `SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 AND parent IS NULL AND created_at < ?3
+  ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}`;
+
 /**
  * The talk as {status, body}. SP1 1.30 [SPD-01] Three rounds whatever the number of posts: where the talk is, who asks and
  * whether it is open; then its posts with everything said about their writers; then the states of the proposals among them
@@ -4269,37 +4273,57 @@ async function talkData(request, env, companyId, grp, known = null) {
   const now = Date.now();
   // [COMM-09] Writers this phone chose not to see, from its own list (X-Hide); the server keeps no list.
   const sealed = authorKey(env).then(async (key) => ({ key, hidden: await hiddenAuthors(key, request.headers.get("x-hide")) }));
-  const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, { adoptPoints }, reviewRows, proposalRows, muted, used, { key, hidden }] = await Promise.all([
+  // 2.0.0 [RVN-23] 검토 SVC-90: the posts this answer shows (the page), as SQL over ?1 company and ?2 grp, so what is said about
+  // their writers (마을 이름, 프로필, 신고 표시, 내 표) reads the page and not every post the room ever had.
+  const pageSql = room && style && before !== null
+    ? `SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id IN (${PAGE_TOPS}) OR parent IN (${PAGE_TOPS}))`
+    : thread ? "SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id = ?3 OR parent = ?3)"
+    : room ? `SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown}`
+    : "SELECT id FROM posts WHERE company_id = ?1 AND grp = ?2 ORDER BY created_at, rowid LIMIT 500";
+  const pageArgs = [c.id, grp, ...(room && style && before !== null ? [before] : thread ? [thread] : [])];
+  const meArg = pageArgs.length + 1;
+  // SVC-90 The reads that need nothing but where the talk is go to the database as one batch (one round, one subrequest), the
+  // rest beside it. A list that is not there yet in an older database reads as empty, as before.
+  const reads = [
     // 1.39 [PLZC-03] 더 불러오기: a kind of work's plaza read before a time (?before=), a page at a time.
     room && style && before !== null
-      ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? AND parent IS NULL AND created_at < ?
+      ? stmt(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? AND parent IS NULL AND created_at < ?
           ORDER BY created_at DESC, rowid DESC LIMIT ${PEOPLE_LIMITS.page}) ORDER BY created_at, r`, c.id, grp, before)
       : thread
-      ? all(env, `SELECT *, rowid AS r FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id = ?3 OR parent = ?3) ORDER BY created_at, rowid`, c.id, grp, thread)
+      ? stmt(env, `SELECT *, rowid AS r FROM posts WHERE company_id = ?1 AND grp = ?2 AND (id = ?3 OR parent = ?3) ORDER BY created_at, rowid`, c.id, grp, thread)
       : room
-      ? all(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
+      ? stmt(env, `SELECT * FROM (SELECT *, rowid AS r FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at DESC, rowid DESC LIMIT ${ROOM_LIMITS.shown})
           ORDER BY created_at, r`, c.id, grp)
-      : all(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp),
-    all(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`, c.id, grp),
-    all(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp),
-    all(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp),
-    // [PLZ-01][PLZ-08] My votes on these posts, and the names writers chose to be shown by.
-    me ? all(env, `SELECT v.post_id, v.ok FROM post_votes v JOIN posts p ON p.id = v.post_id
-      WHERE v.device = ? AND p.company_id = ? AND p.grp = ?`, me, c.id, grp) : [],
-    all(env, `SELECT n.device, n.nick FROM nicks n WHERE n.device IN
-      (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp),
-    settings(env),
-    // [COMM-11] A post someone flagged as 개인 정보 shows dimmed with 확인 중 until the developer looks.
-    all(env, `SELECT DISTINCT f.post_id FROM post_flags f JOIN posts p ON p.id = f.post_id
-      WHERE p.company_id = ? AND p.grp = ? AND p.kept = 0 AND f.reason = 'personal'`, c.id, grp),
+      : stmt(env, "SELECT * FROM posts WHERE company_id = ? AND grp = ? ORDER BY created_at, rowid LIMIT 500", c.id, grp),
+    stmt(env, `SELECT device FROM reports WHERE company_id = ? AND grp = ? AND status IN ('pending', 'adopted')`, c.id, grp),
+    stmt(env, "SELECT device, ok, verified FROM votes WHERE company_id = ? AND grp = ?", c.id, grp),
+    stmt(env, "SELECT device FROM reports WHERE company_id = ? AND grp = ? AND verified = 1", c.id, grp),
+    // [PLZ-01][PLZ-08] My votes on these posts, and the names writers chose to be shown by (SVC-90: of this page's writers).
+    me ? stmt(env, `SELECT post_id, ok FROM post_votes WHERE device = ?${meArg} AND post_id IN (${pageSql})`, ...pageArgs, me) : null,
+    stmt(env, `SELECT device, nick FROM nicks WHERE device IN (SELECT device FROM posts WHERE id IN (${pageSql}))`, ...pageArgs),
+    stmt(env, `SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`),
+    // [COMM-11] A post someone flagged as 개인 정보 shows dimmed with 확인 중 until the developer looks (SVC-90: this page's posts).
+    stmt(env, `SELECT DISTINCT f.post_id FROM post_flags f JOIN posts p ON p.id = f.post_id
+      WHERE f.post_id IN (${pageSql}) AND p.kept = 0 AND f.reason = 'personal'`, ...pageArgs),
     // [SRV-08] The proposals' setups in one read, not one per post.
-    all(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
+    stmt(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
       (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp),
-    me ? one(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
+    me ? stmt(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
+  ];
+  // 2.0.0 SVC-90: the flags are read once for this answer, beside the batch (before, plaza.people was read three times one after
+  // another: for 근무 태그·머리 숫자, for the 제작자 표식 and for 마을 돌봄).
+  const flagsOnce = style ? flagStore(env) : null;
+  const [read, used, { key, hidden }] = await Promise.all([
+    batch(env, reads.filter(Boolean)),
     // [COMM-11] 1.36 [LIM-10] How many more posts today, only while strikes restrict this install.
     me ? writeLeft(recipeDeps, env, me, room ? "room" : "post", now) : null,
     sealed,
   ]);
+  let at = 0;
+  const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, settingRows, reviewRows, proposalRows, mutedRows] =
+    reads.map((r) => (r ? read[at++].results : []));
+  const { adoptPoints } = readSettings(settingRows);
+  const muted = mutedRows[0] ?? null;
   // 1.39 [PLZC-03] An older page carries the answers under its posts too.
   const pageTops = before !== null ? rows.length : 0;
   if (before !== null && rows.length) {
@@ -4307,32 +4331,41 @@ async function talkData(request, env, companyId, grp, known = null) {
     rows.push(...(await all(env, `SELECT * FROM posts WHERE parent IN (${ids.map(() => "?").join(",")}) ORDER BY created_at, rowid`, ...ids)));
   }
   // 1.39 [PLZC] 근무 태그·머리 숫자, on a kind of work's plaza once plaza.people is on.
-  const people = style && (await peopleOn(env, now));
-  const pulse = people && before === null && !thread ? await peoplePulse(one, env, c.id, now, grp) : null;
-  // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
-  const checkin = pulse ? await plazaCheckins(env, c.id, me, now) : null;
-  if (checkin) pulse.checkin = checkin;
-  // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
-  const writerFacts = people ? await peopleFacts(all, env, rows.map((p) => p.device)) : null;
-  // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
-  // this phone blocked in 장터·프로필 are left out too, as the writers it hid here.
-  if (style && me) await addBlockedWriters(env, me, rows, hidden);
-  // 1.36 [VIL-11] 이번 주 이야기 주제, on a kind of work's plaza.
-  const topic = style ? await topicOf(recipeDeps, env, c.id, now) : null;
-  // 1.36 [VIL-10] The polls' counts and this phone's choice, in one read each.
+  const d = style ? { ...recipeDeps, legalOpen: async (_env, k, at) => serverEval(await flagsOnce, k, at).on } : recipeDeps;
+  const people = style && serverEval(await flagsOnce, "plaza.people", now).on;
   const polled = room ? rows.filter((p) => p.poll).map((p) => p.id) : [];
-  const [pollCounts, myPolls] = polled.length ? await Promise.all([
-    all(env, `SELECT post_id, choice, COUNT(*) AS n FROM poll_votes WHERE post_id IN (${polled.map(() => "?").join(",")}) GROUP BY post_id, choice`, ...polled),
-    me ? all(env, `SELECT post_id, choice FROM poll_votes WHERE device = ? AND post_id IN (${polled.map(() => "?").join(",")})`, me, ...polled) : [],
-  ]) : [[], []];
   // 1.36 [VIL-16] The recipes 자랑 posts carry, while they are still up and public.
   const attached = room ? [...new Set(rows.filter((p) => p.attach).map((p) => p.attach))] : [];
-  // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
-  const cards = new Map(attached.length ? (await all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
-    AND code IN (${attached.map(() => "?").join(",")})`, ...attached)).map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]) : []);
-  // 1.39 [PLZC-31] 근무형태별 투표 결과, on a kind of work's plaza once plaza.people is on.
-  const splits = people && polled.length
-    ? await pollByForm(all, env, polled, new Map(rows.filter((p) => p.poll).map((p) => [p.id, JSON.parse(p.poll).length]))) : new Map();
+  const writers = [...new Set(rows.map((p) => p.device))];
+  // SVC-90 What is said about the page, read side by side (before, ten reads one after another).
+  const [pulse, checkin, writerFacts, , topic, [pollCounts, myPolls], cardRows, splits, makerRows] = await Promise.all([
+    people && before === null && !thread ? peoplePulse(one, env, c.id, now, grp) : null,
+    // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
+    people && before === null && !thread ? plazaCheckins(env, c.id, me, now) : null,
+    // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
+    people ? peopleFacts(all, env, writers) : null,
+    // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
+    // this phone blocked in 장터·프로필 are left out too, as the writers it hid here.
+    style && me ? addBlockedWriters(env, me, rows, hidden) : null,
+    // 1.36 [VIL-11] 이번 주 이야기 주제, on a kind of work's plaza.
+    style ? topicOf(recipeDeps, env, c.id, now) : null,
+    // 1.36 [VIL-10] The polls' counts and this phone's choice, in one read each.
+    polled.length ? Promise.all([
+      all(env, `SELECT post_id, choice, COUNT(*) AS n FROM poll_votes WHERE post_id IN (${polled.map(() => "?").join(",")}) GROUP BY post_id, choice`, ...polled),
+      me ? all(env, `SELECT post_id, choice FROM poll_votes WHERE device = ? AND post_id IN (${polled.map(() => "?").join(",")})`, me, ...polled) : [],
+    ]) : [[], []],
+    // PC 확인 V27: the card carries the recipe's look, so the 자랑 shows a small picture of it.
+    attached.length ? all(env, `SELECT code, title, body FROM recipes WHERE state = 'visible' AND scope = 'public'
+      AND code IN (${attached.map(() => "?").join(",")})`, ...attached) : [],
+    // 1.39 [PLZC-31] 근무형태별 투표 결과, on a kind of work's plaza once plaza.people is on.
+    people && polled.length
+      ? pollByForm(all, env, polled, new Map(rows.filter((p) => p.poll).map((p) => [p.id, JSON.parse(p.poll).length]))) : new Map(),
+    // 1.36 [V3] In a kind of work's 광장, a writer with a 프로필 (not hidden or closed) leads to it. SVC-90: this page's writers only.
+    style && writers.length ? all(env, `SELECT device, maker, hidden, closed FROM recipe_makers WHERE device IN (SELECT value FROM json_each(?))`,
+      JSON.stringify(writers)) : [],
+  ]);
+  if (checkin) pulse.checkin = checkin;
+  const cards = new Map(cardRows.map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]));
   const pollOfRow = (p) => {
     const options = JSON.parse(p.poll);
     const counts = options.map((_, i) => pollCounts.find((r) => r.post_id === p.id && r.choice === i)?.n ?? 0);
@@ -4349,29 +4382,27 @@ async function talkData(request, env, companyId, grp, known = null) {
   const posts = [];
   const myVotes = new Map(myVoteRows.map((v) => [v.post_id, v.ok === 1]));
   const nicks = new Map(nickRows.map((n) => [n.device, n.nick]));
-  // 1.36 [V3] In a kind of work's 광장, a writer with a 프로필 (not hidden or closed) leads to it.
   // 1.38 PC 11차 LOW (작품이 없는 분은 팔로우할 길이 없어요): a writer who chose a 마을 이름 has the 프로필 that name already stands for,
   // works or not, so it is made here the first time (an empty page with 팔로우; a hidden or closed one stays out). A writer without a
   // name stays 참여자 N with no way to their other posts.
-  const makerRows = style ? await all(env, `SELECT device, maker, hidden, closed FROM recipe_makers WHERE device IN
-    (SELECT device FROM posts WHERE company_id = ? AND grp = ?)`, c.id, grp) : [];
   if (style) {
     const known = new Set(makerRows.map((m) => m.device));
-    const named = [...new Set(rows.map((p) => p.device))].filter((dv) => !known.has(dv) && nicks.has(dv)).slice(0, 40);
+    const named = writers.filter((dv) => !known.has(dv) && nicks.has(dv)).slice(0, 40);
     if (named.length) {
-      const now = Date.now();
       const made = await Promise.all(named.map(async (dv) => ({ device: dv, maker: await makerId(dv), hidden: 0, closed: 0 })));
       await batch(env, made.map((m) => stmt(env, "INSERT OR IGNORE INTO recipe_makers (device, maker, at) VALUES (?, ?, ?)", m.device, m.maker, now)));
       makerRows.push(...made);
     }
   }
   const makers = new Map(makerRows.filter((m) => !m.hidden && !m.closed).map((m) => [m.device, m.maker]));
-  // 1.39 [PLZC-40] 🏅·⭐ 제작자 표식 beside a name (the same as on 장터's cards), once plaza.people is on.
-  const marks = people && makers.size ? await makerMarks(recipeDeps, env, [...makers.values()], now) : null;
   const review = new Set(reviewRows.map((r) => r.post_id));
   const proposals = new Map(proposalRows.map((r) => [r.id, r]));
-  // [PLZ-02] Where each proposal's setup stands, every one in one round.
-  const facts = proposals.size ? await readStates(env, [...proposals.values()].map((r) => ({ company: c.id, grp: r.grp }))) : null;
+  // 1.39 [PLZC-40] 🏅·⭐ 제작자 표식 beside a name (the same as on 장터's cards), once plaza.people is on; and [PLZ-02] where each
+  // proposal's setup stands, every one in one round; both at once.
+  const [marks, facts] = await Promise.all([
+    people && makers.size ? makerMarks(d, env, [...makers.values()], now) : null,
+    proposals.size ? readStates(env, [...proposals.values()].map((r) => ({ company: c.id, grp: r.grp }))) : null,
+  ]);
   const states = new Map();
   for (const p of rows) {
     if (!numbers.has(p.device)) numbers.set(p.device, numbers.size + 1);
