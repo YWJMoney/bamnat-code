@@ -61,7 +61,6 @@ import com.bamnat.core.pay.ExtraMinutes
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ResolvedExtra
 import java.time.LocalTime
-import com.bamnat.app.ui.theme.Tone
 
 /**
  * [EXTRA-01][EXTRA-02][EXTRA-05] The day's extra work: each piece with its hours, what the law makes

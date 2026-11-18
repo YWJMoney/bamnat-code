@@ -1366,7 +1366,8 @@ fun CalendarScreen(
         // 2.0.0 [RVG-27] 검토 SN-13: this calendar's link went out without a part the server would not take (an emoji 근무 그림);
         // said once over the month, so the sender knows without opening the share sheet (before, it said nothing and never went).
         val shareLeftOut = com.bamnat.app.share.ShareLinkKey.all(activeCalendar.id).map { k -> k to c31.shareLinksOf(k).dropped.collectAsStateWithLifecycle().value }
-        NoticeStack(state = notices, open = if (sideways) 0 else 1, notices = buildList {
+        val slipLooked by TurnSlipAsk.loaded.collectAsStateWithLifecycle()
+        NoticeStack(state = notices, open = if (sideways) 0 else 1, waiting = !slipLooked && slipRisky, notices = buildList {
             if (fillLine != null) fillMine?.let { m ->
                 add(Notice("setupFill", "채워진 달력", line = fillLine.head,
                     button = false, onClose = SetupFill::close, kani = com.bamnat.app.ui.components.KaniMood.Done, urgent = true) {
@@ -3666,4 +3667,5 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
 }
 
 /** 2.0.0 [RVH-64] The 지난 판 확인 band's one line, short enough for 접은 폭 100% (총괄 사진 검토 11-13). */
-internal fun turnSlipLine(count: Int): String = "최근에 넣은 ${count}개, 날짜를 한 번 봐 주세요"
+/** [RVH-64] 총괄 #507 다시 찍기: 16자 안팎이라 접은 폭 100%의 띠(아이콘·확인·X 옆)에서도 한 줄이에요(전에는 두 줄로 감김). */
+internal fun turnSlipLine(count: Int): String = "넣은 ${count}개, 날짜를 봐 주세요"

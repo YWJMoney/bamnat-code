@@ -1,5 +1,7 @@
 package com.bamnat.app.screenshots
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.data.TurnSlipCheck
@@ -95,8 +97,47 @@ class ReviewH6ShotsTest : ScreenshotBase() {
         TurnSlipAsk.putForTest(TurnSlipAsk.Ask(TurnSlipAsk.rows(c, out, today), folded = false), told)
     }
 
-    /** The card over the calendar: one line, the 주의 mark, 확인 and X (조건 3). */
-    @Test fun card() = all("36_slip_card") { found(five = true); settle() }
+    /**
+     * The card over the calendar: one line, the 주의 mark, 확인 and X (조건 3). 총괄 (#507 다시 찍기): the band is one line (56dp) and the
+     * calendar's first row starts in the screen's top 25% (조건 1, as [CalendarStartScreenshotTest] measures it) at the usual size;
+     * the numbers of all four looks go to build/reports/rvh6-calendar-top.txt for the PR.
+     */
+    @Test fun card() {
+        // [clean]: the phone's alarm permissions given, so the band is this one and not '잠금 화면에 알람 화면이 안 떠요' (which, being
+        // about alarms, comes first when Robolectric's full-screen permission is off).
+        // The lines are there before the calendar opens, as on the phone (looked for at start; the band's place waits for them).
+        for ((look, q, scale) in looks) { style(WorkStyle.SHIFT); found(five = true); shoot("rvh6_36_slip_card_$look", q, scale, clean {
+            settle()
+            val m = app.resources.displayMetrics
+            val first = com.bamnat.app.ui.Fmt.dayTitle(today.withDayOfMonth(1))
+            val cell = nodes().filter { n ->
+                val r = n.boundsInWindow
+                r.height > 1f && r.top >= 0f && r.bottom <= m.heightPixels + 1f &&
+                    n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().any { it.startsWith(first) }
+            }.minByOrNull { it.boundsInWindow.top }
+            val top = Math.round(100 * (cell?.boundsInWindow?.top ?: m.heightPixels.toFloat()) / m.heightPixels)
+            val band = (nodes().firstOrNull { n ->
+                n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { "날짜를 봐 주세요" in it.text }
+            } ?: error("$look: 달력 위 띠가 없어요: " + nodes().flatMap { n -> n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } }.take(12))).boundsInWindow
+            val bandDp = Math.round(band.height / m.density)
+            // The words on one line: the text's own line count, as laid out.
+            val lines = nodes().firstNotNullOfOrNull { n ->
+                if (n.config.getOrNull(SemanticsProperties.Text).orEmpty().any { "날짜를 봐 주세요" in it.text }) {
+                    val out = mutableListOf<androidx.compose.ui.text.TextLayoutResult>()
+                    n.config.getOrNull(androidx.compose.ui.semantics.SemanticsActions.GetTextLayoutResult)?.action?.invoke(out)
+                    out.firstOrNull()?.lineCount
+                } else null
+            } ?: 0
+            val f = java.io.File("build/reports/rvh6-calendar-top.txt").apply { parentFile?.mkdirs() }
+            val old = if (f.exists()) f.readLines().filterNot { it.startsWith("$look:") } else emptyList()
+            f.writeText((old + "$look: 달력 첫 줄 $top% · 띠 높이 ${bandDp}dp · 띠 글 ${lines}줄").sorted().joinToString("\n") + "\n")
+            if (scale == 1f) {
+                org.junit.Assert.assertTrue("$look: 달력이 화면 위 $top%에서 시작해요(조건 1, 25%)", top <= 25)
+                org.junit.Assert.assertTrue("$look: 띠가 한 줄 높이예요(${bandDp}dp, 56dp)", bandDp <= 58)
+                org.junit.Assert.assertEquals("$look: 띠 글이 한 줄이에요", 1, lines)
+            }
+        }) }
+    }
 
     /** The update notice: the line first, with 확인. A look each: the notice is shown once a visit, and a test is one visit. */
     private val news: Screen.() -> Unit = { found(five = true, told = false); settle() }
