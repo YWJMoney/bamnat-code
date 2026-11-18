@@ -246,15 +246,20 @@ fun PayQuickSetup(
     }
 
     // 2.0.0 [RVJ-75] The answers as they are now, for [QuickDraft]; a 5인 이상 the 국민연금 record picked by itself is no change of the user's.
-    fun answers(at: String) = QuickDraft.encode(initial, QuickDraft.Answers(
-        form, if (fiveFrom != null) initial?.fiveOrMoreEmployees else fiveOrMore, formTapped, amount, hours,
+    // Whether anything changed is told against the setup it opened on; what is kept is tied to the setup as it is now, so a setup
+    // changed underneath (1.21 연차 moved to the ledger at start, a company's way synced) still finds its answers again.
+    val openedInitial = remember { initial }
+    val nowInitial by androidx.compose.runtime.rememberUpdatedState(initial)
+    fun answers(at: String, from: PayProfile? = nowInitial) = QuickDraft.encode(from, QuickDraft.Answers(
+        form, if (fiveFrom != null) openedInitial?.fiveOrMoreEmployees else fiveOrMore, formTapped, amount, hours,
         holiday, taxPicked, fixedOt, fixedOtPay, lump, fromSlip, at, foundCycle?.id,
     ))
     // The setup as it opened, before anything was brought back, so answers brought back ask before leaving too.
     val openedText = remember {
-        QuickDraft.encode(initial, QuickDraft.Answers(form0, initial?.fiveOrMoreEmployees, false, amount0, null, initial?.rules?.holidayWork,
+        QuickDraft.encode(openedInitial, QuickDraft.Answers(form0, initial?.fiveOrMoreEmployees, false, amount0, null, initial?.rules?.holidayWork,
             initial?.takeIf { it.taxKnown }?.taxMode, fixedOt0, fixedOtPay0, false, null, "", null))
     }
+    fun changed() = answers("", openedInitial) != openedText
     var finished by remember { mutableStateOf(false) }
     fun forget() { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY) }
     val done: (PayProfile, Boolean) -> Unit = { p, slip -> forget(); onDone(p, slip) }
@@ -266,7 +271,7 @@ fun PayQuickSetup(
         androidx.compose.runtime.snapshotFlow { answers(step) }.collectLatest { text ->
             delay(250)
             if (finished) return@collectLatest
-            if (answers("") != openedText) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, text)
+            if (changed()) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, text)
             else com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY)
         }
     }
@@ -274,13 +279,13 @@ fun PayQuickSetup(
     androidx.compose.runtime.DisposableEffect(Unit) {
         onDispose {
             if (finished || startAt != null || startForm != null) return@onDispose
-            if (answers("") != openedText) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, answers(step))
+            if (changed()) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, answers(step))
             else com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY)
         }
     }
     // 취소, ← and back on the first step: with something changed, asked once (조건 10); nothing changed closes at once.
     var askingLeave by remember { mutableStateOf(false) }
-    val leave: () -> Unit = { if (answers("") != openedText) askingLeave = true else cancel() }
+    val leave: () -> Unit = { if (changed()) askingLeave = true else cancel() }
     val leaveAskAtOpen = remember { leaveAsk }
     LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
     if (askingLeave) com.bamnat.app.ui.components.DiscardAsk(onKeep = { askingLeave = false }, onDiscard = { askingLeave = false; cancel() })

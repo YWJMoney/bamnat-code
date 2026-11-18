@@ -581,7 +581,11 @@ fun PayWizard(
     var fresh by remember { mutableIntStateOf(0) }
     var restored by remember { mutableStateOf(kept != null) }
     val s = remember(fresh) { newState().also { st -> if (fresh == 0 && kept != null) WizardDraft.fill(kept.raw, st) } }
-    val openedText = remember { WizardDraft.encode(newState(), "", initial) }
+    // [RVJ-75] The setup it opened on tells whether anything changed; the setup as it is now is what a kept draft is tied to, so a
+    // setup changed underneath (1.21 연차 moved to the ledger at start, a company's way synced) still finds its draft again.
+    val openedInitial = remember { initial }
+    val nowInitial by rememberUpdatedState(initial)
+    val openedText = remember { WizardDraft.encode(newState(), "", openedInitial) }
     var finished by remember { mutableStateOf(false) }
     fun forget() { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY) }
     val done: (PayProfile) -> Unit = { p -> forget(); onDone(p) }
@@ -611,10 +615,10 @@ fun PayWizard(
     val leave: () -> Unit = { if (draft != opened) askingLeave = true else cancel() }
     // [RVJ-75] Kept a beat after each change, and only while something differs from how it opened.
     LaunchedEffect(s) {
-        androidx.compose.runtime.snapshotFlow { WizardDraft.encode(s, step, initial) }.collectLatest { text ->
+        androidx.compose.runtime.snapshotFlow { WizardDraft.encode(s, step, nowInitial) }.collectLatest { text ->
             delay(250)
             if (finished) return@collectLatest
-            if (WizardDraft.encode(s, "", initial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, text)
+            if (WizardDraft.encode(s, "", openedInitial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, text)
             else com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY)
         }
     }
@@ -624,7 +628,7 @@ fun PayWizard(
         onDispose {
             if (finished) return@onDispose
             val st = nowState
-            if (WizardDraft.encode(st, "", initial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, WizardDraft.encode(st, step, initial))
+            if (WizardDraft.encode(st, "", openedInitial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, WizardDraft.encode(st, step, nowInitial))
             else com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY)
         }
     }
