@@ -72,6 +72,7 @@ import com.bamnat.core.pay.RateTable
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.StaffRoster
 import com.bamnat.core.work.StaffShift
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
@@ -122,6 +123,14 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         val last by remember(place, ym) { store.inputs(place, ym.minusMonths(1)) }.collectAsStateWithLifecycle(null)
         val closed by store.payrollMonth(place.id, ym).collectAsStateWithLifecycle(null)
         val got = now?.takeIf { it.month == ym } ?: run { Hint("계산하고 있어요…"); return@ToolScreen }
+        // 2.0.0 [RVJ-75] 검토 PAYU-04: 직원 정보 that was being typed when its window went (the screen made again, Android closing the
+        // app in the background) opens again here on the same person ([StaffDraft]); a person taken out since is let go.
+        LaunchedEffect(place.id) {
+            if (editing != null) return@LaunchedEffect
+            val k = StaffDraft.decode(com.bamnat.app.ui.components.DraftStore.read(context, StaffDraft.KEY))?.takeIf { it.place == place.id } ?: return@LaunchedEffect
+            editing = store.staff(place.id).first().firstOrNull { it.id == k.start.id } ?: k.start.takeIf { it.name.isBlank() }
+                ?: run { com.bamnat.app.ui.components.DraftStore.clear(context, StaffDraft.KEY); null }
+        }
         val work = got.work
         val ledger = got.ledger
         val isClosed = closed?.state == "CLOSED"
@@ -604,7 +613,21 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, plac
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDate, onDismiss: () -> Unit, onSave: (StaffMember) -> Unit, onRemove: () -> Unit, onRehire: (LocalDate) -> Unit = {}) {
-    var s by remember { mutableStateOf(start) }
+    // 2.0.0 [RVJ-75] 검토 PAYU-04 (조건 10): what was being typed for this same person comes back ([StaffDraft]), '처음부터' beside it.
+    val context = LocalContext.current.applicationContext
+    val placeId = place?.id.orEmpty()
+    val kept = remember {
+        StaffDraft.decode(com.bamnat.app.ui.components.DraftStore.read(context, StaffDraft.KEY))?.takeIf { it.place == placeId && it.start.id == start.id }
+            ?.now?.copy(clockId = start.clockId, clockToken = start.clockToken, contract = start.contract)?.takeIf { it != start }
+    }
+    var s by remember { mutableStateOf(kept ?: start) }
+    var restored by remember { mutableStateOf(kept != null) }
+    var finished by remember { mutableStateOf(false) }
+    fun forget() { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, StaffDraft.KEY) }
+    val dismiss: () -> Unit = { forget(); onDismiss() }
+    val save: (StaffMember) -> Unit = { m -> forget(); onSave(m) }
+    val remove: () -> Unit = { forget(); onRemove() }
+    val rehire: (LocalDate) -> Unit = { d -> forget(); onRehire(d) }
     var picking by remember { mutableStateOf<Pair<DayOfWeek, Boolean>?>(null) }
     var hirePick by remember { mutableStateOf(false) }
     var birthPick by remember { mutableStateOf(false) }
@@ -619,12 +642,32 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDat
     val minYear = "${wageDay.year}년 최저임금"
     // 1.38 PC 8차: 뒤로·닫기 asks before what was typed is thrown away.
     var quitAsk by remember { mutableStateOf(false) }
-    val close = { if (s != start) quitAsk = true else onDismiss() }
     // 1.39 G2 (PC f7f61818, 상): a new staff member's 4대보험 follow the law (월급 or 주 15시간 이상 → 모두) until the boss ticks a chip.
     val breaks = place?.legalBreaks ?: true
-    var insTouched by remember { mutableStateOf(start.name.isNotBlank() || start.insurance.any) }
+    var insTouched by remember { mutableStateOf(start.name.isNotBlank() || start.insurance.any || kept != null) }
     LaunchedEffect(s.form, s.weekly, s.birth) { if (!insTouched) s = s.copy(insurance = com.bamnat.core.boss.InsuranceRules.defaultFor(s, breaks, Today.date())) }
-    ToolScreen(s.name.ifBlank { "새 직원" }, close, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { onSave(s) }) {
+    // [RVJ-75] Changed by the boss: the 4대보험 the law picked by itself for a new person is not (it asked 'save?' with nothing typed).
+    fun typed() = s.copy(insurance = start.insurance) != start || (insTouched && s.insurance != start.insurance)
+    val close = { if (typed()) quitAsk = true else dismiss() }
+    // [RVJ-75] Kept a beat after each change, and once more as the window goes without 저장·나가기.
+    LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { s to typed() }.collectLatest { (now, changed) ->
+            kotlinx.coroutines.delay(250)
+            if (finished) return@collectLatest
+            if (changed) com.bamnat.app.ui.components.DraftStore.write(context, StaffDraft.KEY, StaffDraft.encode(placeId, start, now))
+            else com.bamnat.app.ui.components.DraftStore.clear(context, StaffDraft.KEY)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (!finished && typed()) com.bamnat.app.ui.components.DraftStore.write(context, StaffDraft.KEY, StaffDraft.encode(placeId, start, s))
+        }
+    }
+    ToolScreen(s.name.ifBlank { "새 직원" }, close, action = "저장", actionEnabled = s.name.isNotBlank(), onAction = { save(s) }) {
+        if (restored) com.bamnat.app.ui.pay.DraftResumeLine("넣던 직원 정보를 이어서 적어요") {
+            restored = false; s = start; insTouched = start.name.isNotBlank() || start.insurance.any
+            com.bamnat.app.ui.components.DraftStore.clear(context, StaffDraft.KEY)
+        }
         OutlinedTextField(s.name, { s = s.copy(name = it.take(20)) }, label = { Text("이름") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             WageForm.entries.forEach { f ->
@@ -806,14 +849,14 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDat
     if (leftPick) DayPick(s.leftOn ?: Today.date(), onDismiss = { leftPick = false }) { s = s.copy(leftOn = it); leftPick = false }
     if (rehirePick) {
         val first = start.leftOn?.plusDays(1)?.let { maxOf(it, Today.date()) } ?: Today.date()
-        DayPick(first, onDismiss = { rehirePick = false }, after = start.leftOn) { rehirePick = false; onRehire(it) }
+        DayPick(first, onDismiss = { rehirePick = false }, after = start.leftOn) { rehirePick = false; rehire(it) }
     }
     if (quitAsk) com.bamnat.app.ui.components.AlertDialog(onDismissRequest = { quitAsk = false }, title = { Text("저장하지 않고 나갈까요?") }, text = {
         Text("넣던 내용이 사라져요.", style = MaterialTheme.typography.bodyMedium)
     }, confirmButton = {
-        TextButton(onClick = { quitAsk = false; onSave(s) }, enabled = s.name.isNotBlank()) { Text("저장") }
+        TextButton(onClick = { quitAsk = false; save(s) }, enabled = s.name.isNotBlank()) { Text("저장") }
     }, dismissButton = {
-        TextButton(onClick = { quitAsk = false; onDismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) }
+        TextButton(onClick = { quitAsk = false; dismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) }
     })
     leavePick?.let { (i, isStart) ->
         val l = s.leaves.getOrNull(i)
@@ -831,9 +874,9 @@ private fun StaffDialog(start: StaffMember, place: Workplace?, wageDay: LocalDat
         Text("임금대장은 3년 보관해야 해요(근로기준법 제42조). 지우면 이 사람의 근무·급여 기록이 지난달까지 모두 사라져요. 그만둔 거라면 '퇴사 처리'로 두면 기록은 남고 다음 달부터 인원에서 빠져요.",
             style = MaterialTheme.typography.bodyMedium)
     }, confirmButton = {
-        TextButton(onClick = { removeAsk = false; onSave(s.copy(leftOn = s.leftOn ?: Today.date())) }) { Text("퇴사 처리") }
+        TextButton(onClick = { removeAsk = false; save(s.copy(leftOn = s.leftOn ?: Today.date())) }) { Text("퇴사 처리") }
     }, dismissButton = {
-        TextButton(onClick = { removeAsk = false; onRemove() }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
+        TextButton(onClick = { removeAsk = false; remove() }) { Text("그래도 지우기", color = MaterialTheme.colorScheme.error) }
     })
 }
 

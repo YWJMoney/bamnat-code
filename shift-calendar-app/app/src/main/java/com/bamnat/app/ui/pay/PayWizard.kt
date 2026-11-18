@@ -109,6 +109,7 @@ import com.bamnat.core.pay.WageType
 import com.bamnat.core.schedule.PatternTimeline
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
@@ -209,7 +210,7 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
     var bonusAnnual by mutableStateOf<Int?>(null)
     var bonusMonths by mutableStateOf(setOf(2, 4, 6, 8, 10, 12))
     var bonusOrdinary by mutableStateOf(true)
-    private val bonusId = "bonus-" + System.currentTimeMillis()  // real clock: an id, not a time
+    var bonusId = "bonus-" + System.currentTimeMillis()  // real clock: an id, not a time; [RVJ-75] kept with the draft
 
     var fiveOrMore by mutableStateOf(initial?.fiveOrMoreEmployees ?: true)
     var supervisory by mutableStateOf(initial?.rules?.supervisoryApproved ?: false)
@@ -425,6 +426,115 @@ private class PaySetupState(val initial: PayProfile?, val thisMonth: YearMonth, 
 }
 
 /**
+ * 2.0.0 [RVJ-75] 검토 PAYU-04 (조건 10 '적던 것은 사라지지 않아요'): every answer of the question-by-question setup, kept on this
+ * phone while it is being put in ([com.bamnat.app.ui.components.DraftStore], device only, gone by itself after 7 days), so a look at
+ * a payslip in another app, a turn to the dark theme or Android closing the app in the background no longer empties it. It holds
+ * the setup it began from ([initial], the same as the backup file writes) and comes back only onto that same setup. A field of a
+ * newer version is left out rather than failing.
+ */
+internal object WizardDraft {
+    const val KEY = "pay.wizard"
+    const val HEAD = "wiz1"
+    const val SEP = "\u001F"
+
+    /** What was kept: the setup it began from (null for a new one), as written, and the text to fill a state with. */
+    class Kept(val initial: PayProfile?, val initialText: String, val raw: String)
+
+    fun initialText(initial: PayProfile?): String = initial?.let { com.bamnat.app.pay.PayCodec.encode(it).toString() }.orEmpty()
+
+    fun read(raw: String): Kept? {
+        val lines = raw.lines()
+        if (lines.firstOrNull() != HEAD) return null
+        val text = lines.firstOrNull { it.startsWith("i\t") }?.removePrefix("i\t") ?: return null
+        val initial = text.takeIf { it.isNotEmpty() }?.let { runCatching { com.bamnat.app.pay.PayCodec.decode(org.json.JSONObject(it)) }.getOrNull() ?: return null }
+        return Kept(initial, text, raw)
+    }
+}
+
+private fun WizardDraft.encode(s: PaySetupState, step: String, initial: PayProfile?): String = buildString {
+    fun line(k: String, v: Any?) { append(k).append('\t').append(v?.toString().orEmpty().replace('\t', ' ').replace('\n', ' ')).append('\n') }
+    fun flag(b: Boolean) = if (b) "1" else "0"
+    append(HEAD).append('\n')
+    line("i", initialText(initial))
+    line("st", step)
+    line("w", s.wage.name); line("wc", flag(s.wageChosen)); line("a", s.amount); line("r", flag(s.rough)); line("si", s.since)
+    line("dh", s.dailyHours); line("y", s.yearly); line("s13", flag(s.split13)); line("ao", s.annualOt); line("aoh", s.annualOtHours)
+    line("ab", s.annualBonus); line("abm", s.annualBonusMonths.joinToString(",")); line("aot", s.annualOther)
+    line("oc", s.occupation?.name); line("ba", s.bonusAnnual); line("bm", s.bonusMonths.joinToString(",")); line("bo", flag(s.bonusOrdinary))
+    if (s.bonusAnnual != null) line("bid", s.bonusId)
+    line("f5", flag(s.fiveOrMore)); line("sv", flag(s.supervisory)); line("sr", flag(s.scheduleRegular)); line("fp", s.flexPeriod?.name)
+    line("hw", s.holidayWork.name); line("hu", flag(s.holidaysUnderFive)); line("rd", s.restDayWork.name); line("bp", s.breakPay.name)
+    line("mh", s.monthlyHours)
+    line("un", s.unknown.joinToString(SEP)); line("an", s.answered.joinToString(SEP))
+    s.rows.forEach { r ->
+        line("row", listOf(r.id, r.name, r.cadence.name, flag(r.ordinary), r.hint, r.suggested, flag(r.checked), r.amount ?: "",
+            r.fixedOvertimeMinutes, flag(r.guessed)).joinToString(SEP))
+    }
+    s.covers.forEach { (id, kinds) -> line("cv", id + SEP + (kinds?.joinToString(",") { it.name } ?: "-")) }
+    if (s.made.isNotEmpty()) line("md", com.bamnat.app.pay.PayCodec.encode(PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(),
+        items = s.made.filterIsInstance<MadeItem.Item>().map { it.item },
+        customRules = s.made.filterIsInstance<MadeItem.Rule>().map { it.rule })).toString())
+}
+
+/** Fills [s] from [raw] and gives the step it was on; null when the text is not a draft. */
+private fun WizardDraft.fill(raw: String, s: PaySetupState): String? {
+    val lines = raw.lines()
+    if (lines.firstOrNull() != HEAD) return null
+    var step: String? = null
+    fun months(v: String) = v.split(',').mapNotNull { it.toIntOrNull()?.takeIf { m -> m in 1..12 } }.toSet()
+    val rows = mutableListOf<ItemRow>()
+    lines.drop(1).forEach { l ->
+        val k = l.substringBefore('\t'); val v = l.substringAfter('\t', "")
+        runCatching {
+            when (k) {
+                "st" -> step = v
+                "w" -> s.wage = Wage.valueOf(v)
+                "wc" -> s.wageChosen = v == "1"
+                "a" -> s.amount = v.toLongOrNull()
+                "r" -> s.rough = v == "1"
+                "si" -> s.since = YearMonth.parse(v)
+                "dh" -> s.dailyHours = v.toInt()
+                "y" -> s.yearly = v.toLongOrNull()
+                "s13" -> s.split13 = v == "1"
+                "ao" -> s.annualOt = v.toLongOrNull()
+                "aoh" -> s.annualOtHours = v.toInt()
+                "ab" -> s.annualBonus = v.toLongOrNull()
+                "abm" -> s.annualBonusMonths = months(v)
+                "aot" -> s.annualOther = v.toLongOrNull()
+                "oc" -> s.occupation = v.takeIf { it.isNotEmpty() }?.let(Occupation::valueOf)
+                "ba" -> s.bonusAnnual = v.toIntOrNull()
+                "bm" -> s.bonusMonths = months(v)
+                "bo" -> s.bonusOrdinary = v == "1"
+                "bid" -> if (v.isNotEmpty()) s.bonusId = v
+                "f5" -> s.fiveOrMore = v == "1"
+                "sv" -> s.supervisory = v == "1"
+                "sr" -> s.scheduleRegular = v == "1"
+                "fp" -> s.flexPeriod = v.takeIf { it.isNotEmpty() }?.let(FlexPeriod::valueOf)
+                "hw" -> s.holidayWork = HolidayWork.valueOf(v)
+                "hu" -> s.holidaysUnderFive = v == "1"
+                "rd" -> s.restDayWork = RestDayWork.valueOf(v)
+                "bp" -> s.breakPay = BreakPay.valueOf(v)
+                "mh" -> s.monthlyHours = v.toInt()
+                "un" -> s.unknown = v.split(SEP).filter { it.isNotEmpty() }.toSet()
+                "an" -> s.answered = v.split(SEP).filter { it.isNotEmpty() }.toSet()
+                "row" -> v.split(SEP).takeIf { it.size >= 10 }?.let { f ->
+                    val original = s.initial?.items?.firstOrNull { it.id == f[0] }
+                    rows += ItemRow(f[0], f[1], Cadence.valueOf(f[2]), f[3] == "1", f[4], f[5].toLong(), f[6] == "1", f[7].toLongOrNull(),
+                        original = original, fixedOvertimeMinutes = f[8].toInt()).also { it.guessed = f[9] == "1" }
+                }
+                "cv" -> { val id = v.substringBefore(SEP); val kinds = v.substringAfter(SEP, "-")
+                    s.covers[id] = if (kinds == "-") null else kinds.split(',').filter { it.isNotEmpty() }.map(LineKind::valueOf).toSet() }
+                "md" -> com.bamnat.app.pay.PayCodec.decode(org.json.JSONObject(v)).let { c ->
+                    s.made.clear(); s.made += c.items.map { MadeItem.Item(it) } + c.customRules.map { MadeItem.Rule(it) }
+                }
+            }
+        }
+    }
+    s.rows.clear(); s.rows += rows
+    return step ?: ""
+}
+
+/**
  * [PAYS-01][PAYX-01] The pay setup as questions: how the pay comes, how much and since when, the
  * allowances, then only the questions that can change this person's month, each answerable with
  * 모르겠어요. The month so far is shown under every step. Running it again keeps the history of values
@@ -462,9 +572,20 @@ fun PayWizard(
     effectOf: (suspend (PayProfile, ScheduleSnapshot, YearMonth, MadeItem) -> ItemEffect?)? = null,
 ) {
     val today = remember { Today.date() }
-    val s = remember {
-        PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    fun newState() = PaySetupState(initial, YearMonth.from(today), suggestedWage).also { st -> if (initial == null) suggestedOccupation?.let(st::choose) }
+    // 2.0.0 [RVJ-75] 검토 PAYU-04: what was being put in last time on this same setup comes back ([WizardDraft]), with '처음부터' beside it.
+    val kept = remember {
+        WizardDraft.read(com.bamnat.app.ui.components.DraftStore.read(context, WizardDraft.KEY))?.takeIf { it.initialText == WizardDraft.initialText(initial) }
     }
+    var fresh by remember { mutableIntStateOf(0) }
+    var restored by remember { mutableStateOf(kept != null) }
+    val s = remember(fresh) { newState().also { st -> if (fresh == 0 && kept != null) WizardDraft.fill(kept.raw, st) } }
+    val openedText = remember { WizardDraft.encode(newState(), "", initial) }
+    var finished by remember { mutableStateOf(false) }
+    fun forget() { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY) }
+    val done: (PayProfile) -> Unit = { p -> forget(); onDone(p) }
+    val cancel: () -> Unit = { forget(); onCancel?.invoke() }
     val scope = rememberCoroutineScope()
     // [PAYG-05] 1.30 BA: 자세히 고치기 on a pay that is there opens on its questions, never jumping to a company's way.
     val payFind = if (companyFind) com.bamnat.app.ui.company.rememberPayFindState(autoStart = initial == null) else null
@@ -478,23 +599,44 @@ fun PayWizard(
     val questions = remember(raw, snapshot) { PaySetupQuestions.applicable(raw, snapshot?.shiftTypes.orEmpty(), pattern) }
     val draft = remember(raw, questions, s.unknown, rosterHours) { s.build(raw, questions, rosterHours) }
     val steps = listOf(WAGE, AMOUNT, ITEMS) + questions.map { it.key } + SUMMARY
-    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: steps[startStep.coerceIn(0, steps.lastIndex)]) }
+    val keptStep = remember { kept?.raw?.lines()?.firstOrNull { it.startsWith("st\t") }?.removePrefix("st\t") }
+    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: keptStep?.takeIf { it in steps } ?: steps[startStep.coerceIn(0, steps.lastIndex)]) }
     val index = steps.indexOf(step).takeIf { it >= 0 } ?: steps.lastIndex
     var advancing by remember { mutableStateOf(false) }
     val latestSteps by rememberUpdatedState(steps)
     // 1.36 PC X4 (값을 바꾸고 ←를 누르면 묻지 않고 버림): the setup as it opened, to tell whether anything changed.
-    val opened = remember { draft }
+    // [RVJ-75] The setup as it was before anything was brought back, so a draft brought back asks too.
+    val opened = remember { newState().let { st -> st.raw().let { r -> st.build(r, PaySetupQuestions.applicable(r, snapshot?.shiftTypes.orEmpty(), pattern), rosterHours) } } }
     var askingLeave by remember { mutableStateOf(false) }
-    val leave: () -> Unit = { if (draft != opened) askingLeave = true else onCancel?.invoke() }
+    val leave: () -> Unit = { if (draft != opened) askingLeave = true else cancel() }
+    // [RVJ-75] Kept a beat after each change, and only while something differs from how it opened.
+    LaunchedEffect(s) {
+        androidx.compose.runtime.snapshotFlow { WizardDraft.encode(s, step, initial) }.collectLatest { text ->
+            delay(250)
+            if (finished) return@collectLatest
+            if (WizardDraft.encode(s, "", initial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, text)
+            else com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY)
+        }
+    }
+    // [RVJ-75] And once more as it goes without 저장·버리기 (the screen made again, Android closing the app), so the last beat is not lost.
+    val nowState by rememberUpdatedState(s)
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (finished) return@onDispose
+            val st = nowState
+            if (WizardDraft.encode(st, "", initial) != openedText) com.bamnat.app.ui.components.DraftStore.write(context, WizardDraft.KEY, WizardDraft.encode(st, step, initial))
+            else com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY)
+        }
+    }
     val leaveAskAtOpen = remember { leaveAsk }
     androidx.compose.runtime.LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
     if (askingLeave) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { askingLeave = false },
         title = { Text("바꾼 내용을 저장할까요?") },
         text = { Text("저장하지 않으면 이번에 고친 값은 사라지고 전 설정 그대로 남아요.") },
-        confirmButton = { TextButton(onClick = { askingLeave = false; onDone(draft) }) { Text("저장") } },
+        confirmButton = { TextButton(onClick = { askingLeave = false; done(draft) }) { Text("저장") } },
         dismissButton = { Row {
-            TextButton(onClick = { askingLeave = false; onCancel?.invoke() }) { Text("버리기") }
+            TextButton(onClick = { askingLeave = false; cancel() }) { Text("버리기") }
             TextButton(onClick = { askingLeave = false }) { Text("계속 고치기") }
         } },
     )
@@ -577,6 +719,11 @@ fun PayWizard(
                 .padding(horizontal = 20.dp, vertical = 16.dp).widthIn(max = 640.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // [RVJ-75] One line says the answers are last time's, with the way to start over beside it.
+            if (restored) DraftResumeLine("넣던 급여 설정을 이어서 해요") {
+                restored = false; fresh++; step = WAGE
+                com.bamnat.app.ui.components.DraftStore.clear(context, WizardDraft.KEY)
+            }
             WizardProgress(
                 part = when (step) { WAGE, AMOUNT, ITEMS -> 0; SUMMARY -> 2; else -> 1 },
                 left = (steps.lastIndex - index - 1).coerceAtLeast(0),
@@ -598,7 +745,7 @@ fun PayWizard(
                                 payFind,
                                 onByHand = { _, _ -> payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
                                 onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME },
-                                onSaved = { p -> onDone(p) },
+                                onSaved = { p -> done(p) },
                                 byHandHere = false,
                             )
                             if (payFind == null || payFind.step == com.bamnat.app.ui.company.PayFindStep.NAME) {
@@ -655,7 +802,7 @@ fun PayWizard(
                 if (ready) tried = false
                 Button(onClick = {
                     if (!ready) tried = true
-                    else if (last) { filledFromSlip(slipNote != null); onDone(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) }
+                    else if (last) { filledFromSlip(slipNote != null); done(com.bamnat.core.pay.RuleText.apply(draft, photoRules.first, photoRules.second)) }
                     else next()
                 }, colors = if (ready) ButtonDefaults.buttonColors() else ButtonDefaults.buttonColors(
                     containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f), contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))) {

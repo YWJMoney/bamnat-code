@@ -47,6 +47,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.collectLatest
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -109,20 +110,39 @@ fun CompanyRulesEditor(
 ) {
     val hourly = style == com.bamnat.core.work.WorkStyle.HOURLY
     fun say(t: String) = if (!hourly) t else t.replace("회사", "근무지").replace("월급날", "급여날").replace("월급이에요", "주급 아니에요")
-    var draft by remember { mutableStateOf(saved) }
+    // 2.0.0 [RVJ-75] 검토 PAYU-50 (조건 10): the rules being changed come back on this same setup ([RulesDraft]) after the screen is
+    // made again or Android closes the app in the background, with '처음부터' beside them.
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val kept = remember { RulesDraft.read(context, saved) }
+    var draft by remember { mutableStateOf(kept ?: saved) }
+    var restored by remember { mutableStateOf(kept != null) }
+    var finished by remember { mutableStateOf(false) }
+    val close: () -> Unit = { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, RulesDraft.KEY); onClose() }
+    val nowSaved by androidx.compose.runtime.rememberUpdatedState(saved)
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { draft to nowSaved }.collectLatest { (d, base) ->
+            kotlinx.coroutines.delay(250)
+            if (finished) return@collectLatest
+            if (d != base) com.bamnat.app.ui.components.DraftStore.write(context, RulesDraft.KEY, RulesDraft.encode(base, d))
+            else com.bamnat.app.ui.components.DraftStore.clear(context, RulesDraft.KEY)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (!finished && draft != nowSaved) com.bamnat.app.ui.components.DraftStore.write(context, RulesDraft.KEY, RulesDraft.encode(nowSaved, draft)) }
+    }
     var asking by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(leaveAsk) {
         if (leaveAsk == 0) return@LaunchedEffect
-        if (draft != saved) asking = true else onClose()
+        if (draft != saved) asking = true else close()
     }
     if (asking) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { asking = false },
         title = { Text("바꾼 규칙을 저장할까요?") },
         text = { Text("저장하지 않고 나가면 이번에 바꾼 것은 사라져요.") },
-        confirmButton = { TextButton(onClick = { asking = false; vm.update { draft }; onClose() }) { Text("저장하고 나가기") } },
+        confirmButton = { TextButton(onClick = { asking = false; vm.update { draft }; close() }) { Text("저장하고 나가기") } },
         dismissButton = {
             Row {
-                TextButton(onClick = { asking = false; onClose() }) { Text("버리고 나가기") }
+                TextButton(onClick = { asking = false; close() }) { Text("버리고 나가기") }
                 TextButton(onClick = { asking = false }) { Text("계속 고치기") }
             }
         },
@@ -215,6 +235,11 @@ fun CompanyRulesEditor(
             Modifier.weight(1f).verticalScroll(scroll).padding(horizontal = 16.dp, vertical = 12.dp).widthIn(max = 720.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            // [RVJ-75] One line says these are the changes from last time, with the way to start over beside it.
+            if (restored) DraftResumeLine(say("고치던 회사 규칙을 이어서 고쳐요")) {
+                restored = false; draft = saved
+                com.bamnat.app.ui.components.DraftStore.clear(context, RulesDraft.KEY)
+            }
             Text(say("취업규칙·근로계약서·급여명세서를 보고 회사 방식에 맞춰 주세요. 고르지 않은 것은 법정 기준으로 계산해요."),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
@@ -745,8 +770,8 @@ fun CompanyRulesEditor(
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
                     // 2.0.0 [RVJ-63] 검토 U05b-05: '취소' asks as ← and 뒤로 do when a rule was changed (it shut at once before).
-                    OutlinedButton(onClick = { if (draft != saved) asking = true else onClose() }) { Text("취소") }
-                    com.bamnat.app.ui.components.SaveButton(onClick = { vm.update { draft }; onClose() }, enabled = draft != saved) { Text("저장") }
+                    OutlinedButton(onClick = { if (draft != saved) asking = true else close() }) { Text("취소") }
+                    com.bamnat.app.ui.components.SaveButton(onClick = { vm.update { draft }; close() }, enabled = draft != saved) { Text("저장") }
                 }
             }
         }
@@ -899,4 +924,26 @@ private fun FoldSection(title: String, content: @Composable androidx.compose.fou
     }) {
         if (open) content()
     }
+}
+
+/**
+ * 2.0.0 [RVJ-75] 검토 PAYU-50 (조건 10): the company rules being changed in [CompanyRulesEditor], kept on this phone
+ * ([com.bamnat.app.ui.components.DraftStore], device only, 7 days) as the setup is saved ([com.bamnat.app.pay.PayCodec]), tied to the
+ * setup they were changed from so they never land on another.
+ */
+internal object RulesDraft {
+    const val KEY = "pay.rules"
+    private const val HEAD = "rules1"
+
+    fun encode(saved: PayProfile, draft: PayProfile): String = org.json.JSONObject().put("h", HEAD)
+        .put("s", com.bamnat.app.pay.PayCodec.encode(saved).toString()).put("d", com.bamnat.app.pay.PayCodec.encode(draft)).toString()
+
+    /** The rules kept for [saved] as it is now; null when there are none, they were for another setup, or cannot be read. */
+    fun decode(raw: String, saved: PayProfile): PayProfile? = if (raw.isBlank()) null else runCatching {
+        val o = org.json.JSONObject(raw)
+        if (o.optString("h") != HEAD || o.optString("s") != com.bamnat.app.pay.PayCodec.encode(saved).toString()) return@runCatching null
+        com.bamnat.app.pay.PayCodec.decode(o.getJSONObject("d")).takeIf { it != saved }
+    }.getOrNull()
+
+    fun read(context: android.content.Context, saved: PayProfile): PayProfile? = decode(com.bamnat.app.ui.components.DraftStore.read(context, KEY), saved)
 }

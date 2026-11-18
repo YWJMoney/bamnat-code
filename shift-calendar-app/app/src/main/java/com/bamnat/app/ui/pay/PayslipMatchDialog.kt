@@ -585,11 +585,7 @@ private fun ColumnScope.AmountsStage(
     onScan: () -> Unit,
 ) {
     // [RVJ-64] 검토 U05-03: one line says the figures are last time's, with the way to start over beside it.
-    if (restored != null) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text("넣던 ${restored.monthValue}월 명세서를 이어서 적어요", style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        TextButton(onClick = onFresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음부터") }
-    }
+    if (restored != null) DraftResumeLine("넣던 ${restored.monthValue}월 명세서를 이어서 적어요", onFresh)
     // [PAYS-04][PAYS-05] The easiest way first: one photo fills every field below.
     Surface(
         onClick = onScan,
@@ -948,4 +944,16 @@ private fun ColumnScope.DoneStage(changed: Boolean) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.align(Alignment.CenterHorizontally),
     )
+}
+
+/**
+ * 2.0.0 [RVJ-64][RVJ-75] The one line over a form brought back from last time ([SlipDraft], [WizardDraft], the quick setup's): what
+ * it is, and '처음부터' beside it to empty it.
+ */
+@Composable
+internal fun DraftResumeLine(text: String, onFresh: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        TextButton(onClick = onFresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음부터") }
+    }
 }
