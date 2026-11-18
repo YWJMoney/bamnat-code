@@ -29,6 +29,11 @@ class LeadShare(private val c: AppContainer) {
          * the public list only after the review, which the dialog says apart.
          */
         val firstGiven: Boolean = false,
+        /**
+         * 2.0.0 [RVN-19] 검토 T10a-10: the 사업장 a first provider typed in its own box: it goes under it at once ('회사 · 사업장'),
+         * not asked again.
+         */
+        val site: String = "",
     )
 
     sealed interface Step {
@@ -174,9 +179,11 @@ class LeadShare(private val c: AppContainer) {
 
     private var quiet = false
 
-    private fun go(pick: Pick, site: String?) {
+    private fun go(pick: Pick, asked: String?) {
         quiet = false
         _step.value = Step.Working(pick)
+        // 2.0.0 [RVN-19] The 사업장 typed with the name, unless one was just told.
+        val site = asked ?: pick.site.trim().takeIf { CompanyText.norm(it).isNotEmpty() }
         c.appScope.launch {
             val next = try {
                 decide(pick, site)

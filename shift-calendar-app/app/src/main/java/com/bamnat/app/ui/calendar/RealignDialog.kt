@@ -73,9 +73,9 @@ internal fun RealignDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // [EASE-25] The two most common fixes, a tap each; tapped again they go a day further.
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    androidx.compose.material3.OutlinedButton(onClick = { step = Math.floorMod(step + 1, rotation.steps.size) },
+                    com.bamnat.app.ui.components.OutlinedButton(onClick = { step = Math.floorMod(step + 1, rotation.steps.size) },
                         modifier = Modifier.weight(1f)) { Text("‹ 하루 당기기", maxLines = 1) }
-                    androidx.compose.material3.FilledTonalButton(onClick = { step = Math.floorMod(step - 1, rotation.steps.size) },
+                    com.bamnat.app.ui.components.FilledTonalButton(onClick = { step = Math.floorMod(step - 1, rotation.steps.size) },
                         modifier = Modifier.weight(1f)) { Text("하루 밀기 ›", maxLines = 1) }
                 }
                 WeekAhead(date, snap, rotation, original, step, clear)
@@ -115,7 +115,7 @@ internal fun RealignDialog(
                         TextButton(onClick = { days = (days + 1).coerceAtMost(30) },
                             modifier = Modifier.semantics { contentDescription = "멈추는 날 하루 늘리기" }) { Text("+") }
                         Spacer(Modifier.weight(1f))
-                        androidx.compose.material3.OutlinedButton(onClick = { onPause(days) }) { Text("멈추고 이어 가기") }
+                        com.bamnat.app.ui.components.OutlinedButton(onClick = { onPause(days) }) { Text("멈추고 이어 가기") }
                     }
                 }
                 if (handChanged.isNotEmpty()) {

@@ -64,7 +64,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
@@ -141,6 +141,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.app.ui.calendar.DayGroupKey as G
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [DAY-02] Which of the day's groups are open: the user's own choice per group, kept from day to day. */
 @Stable
@@ -387,7 +389,7 @@ private fun DayGroups(
                                 day.extras.size == 1 && ExtraText.namesHours(day.extras[0]) -> names[0]
                                 else -> names.joinToString(" · ") + " · ${HoursFormat.korean(day.extraMinutes)}"
                             },
-                            summaryColor = if (review) cal.warning else if (names.isNotEmpty()) cal.holidayWork else null,
+                            summaryColor = if (review) Tone.Caution.color() else if (names.isNotEmpty()) cal.holidayWork else null,
                             open = groups.isOpen(key, day.hasExtraWork), onToggle = { groups.toggle(key, day.hasExtraWork) },
                         ) {
                             ExtrasContent(day, snapshot, vm, insight, showAmounts = profile != null, onOpenExtraKinds = onOpenExtraKinds)
@@ -524,7 +526,7 @@ private fun DayGroups(
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
-                            summaryColor = if (rest.isNotEmpty()) cal.warning else null,
+                            summaryColor = if (rest.isNotEmpty()) Tone.Caution.color() else null,
                             open = bodyOpen, onToggle = { groups.toggle(key, rest.isNotEmpty()) },
                             trailing = sleepButton,
                         ) {
