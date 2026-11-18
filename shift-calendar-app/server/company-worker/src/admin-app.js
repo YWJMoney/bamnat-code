@@ -2135,7 +2135,7 @@ function adminApp(L, BUILD, M) {
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${slaPill(q.slaLeft)}
         ${compact ? "" : `${q.count > 1 ? `<span class="pill">${q.count}</span>` : ""}${publicPills(q)}
         ${q.rating ? `<span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "도움 됐어요" : "아쉬워요"}</span>` : ""}
-        ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}${copyPill(q) /* AT 1.29 */}`}
+        ${q.dev ? '<span class="pill ok">개발사항</span>' : ""}${q.notes ? `<span class="pill gold">메모 ${q.notes}</span>` : ""}${copyPill(q) /* AT 1.29 */}${crashPill(q.crash)}`}
         ${q.assignee ? `<span class="pill${q.assignee.id === S.me.id ? " info" : ""}">${q.assignee.id === S.me.id ? "내가 맡음" : esc(q.assignee.name)}</span>` : ""}</span>`;
     if (picking) {
       const on = S.inquiryPick.has(q.id);
@@ -2266,6 +2266,28 @@ function adminApp(L, BUILD, M) {
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
 
+  /**
+   * 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록(있음은 파랑, 없음·안 옴은 보통 색: 빨강은 위험에만, 조건 6). 같은 모양을 운영 장부 줄도 써요.
+   */
+  function crashPill(c) {
+    if (!c) return "";
+    return `<span class="pill${c.record === "has" ? " info" : ""}" title="함께 온 점검 기록의 '앱 멈춤' 칸">${esc(c.recordName)}</span>`;
+  }
+
+  /** [RVA-63] 문의 상세: 멈춤 기록과 같은 보낸 분의 되풀이(몇 번째·첫 날~마지막 날), 기록이 없으면 '기록 부탁 답 넣기'. */
+  function crashNote(q, editable) {
+    const c = q.crash;
+    if (!c) return "";
+    const r = c.repeat;
+    const day = (t) => new Date(Date.parse(t) + 9 * 3600e3).toISOString().slice(5, 10).replace("-", ".");
+    // 조건 4: 한 줄. 기록 상태는 앞 표식이 말하니 글은 되풀이(몇 번째·날)나 할 일만.
+    const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
+    const ask = c.record === "has" ? "함께 온 정보의 '앱 멈춤' 칸을 봐요." : "알람 점검 › 보고서 복사로 받아 봐요.";
+    const can_ = editable && q.status !== "closed" && c.record !== "has";
+    return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${can_
+      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="알람 점검 › 보고서 복사를 부탁하는 답을 답 칸에 넣어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+  }
+
   function inquiryDetail(q) {
     const editable = can("inquiries", "edit");
     const ctx = Object.entries(q.context ?? q.info ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== "");
@@ -2288,6 +2310,7 @@ function adminApp(L, BUILD, M) {
         <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
+          ${crashNote(q, editable)}
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
             <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
             <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
@@ -5364,6 +5387,16 @@ function adminApp(L, BUILD, M) {
       if (t.id > 0) box.form.elements.template.value = String(t.id);
       box.dispatchEvent(new Event("input", { bubbles: true }));
       box.focus();
+    },
+    // 2.0.0 [RVA-63] HQ-124: 멈춤 기록 부탁 답(서버가 준 글)을 답 칸에. 적던 답이 있으면 지우지 않고 뒤에 붙여요(조건 10).
+    "crash-draft": ({ target }) => {
+      const box = document.getElementById(target || "reply");
+      const text = S.data.inquiry?.crash?.draft ?? S.data.ledger?.crashDraft;
+      if (!box || !text) return;
+      box.value = (box.value.trim() ? `${box.value.trimEnd()}\n\n` : "") + text;
+      box.dispatchEvent(new Event("input", { bubbles: true }));
+      box.focus();
+      toast("기록 부탁 답을 넣었어요. 읽어 보고 보내 주세요.");
     },
     "inquiry-clear": () => {
       S.inquiryQuery = "";

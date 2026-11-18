@@ -3696,3 +3696,60 @@ test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 �
   assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카드(접히면 한 줄), 줄과 문의에 멈춤 기록 표식, '기록 부탁 답 넣기'는 적던 답을 지우지 않아요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.card\.crash-card\{/);
+  // 총괄(#526): 펼친 접는 카드의 꺾쇠에 공통 '▴' 글자가 겹쳐 그려지지 않게.
+  assert.match(css, /\.home-fold\[open\]>summary::after\{content:"";transform:rotate\(-135deg\)\}/);
+  const { call, env } = await world();
+  // 지어낸 값: 같은 보낸 분이 닫힘 문의 둘(멈춤 기록 없음).
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n기록 없음" };
+  const ids = [];
+  for (const text of ["앱이 갑자기 닫혀요", "또 앱이 저절로 꺼졌어요"]) {
+    ids.push((await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000071", kind: "bug", text, info }, from(71))).data.id);
+  }
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const card = u.$("#main .ledger-view > details.crash-card");
+  assert.ok(card, "the card is on the ledger");
+  // 조건 1: 처음에는 접힌 한 줄(장부 첫 줄이 밀리지 않게), 그 한 줄에 건수·기기·날짜·기록 없음.
+  assert.equal(card.open, false, "folded to one line at first");
+  assert.match(card.querySelector("summary").textContent, /닫힘 되풀이 2건 · 같은 보낸 분Test Fold 9 · 안드로이드 17 · 1\.39\.0 · \d\d\.\d\d~\d\d\.\d\d · 멈춤 기록 없음 2건/);
+  card.querySelector("summary").click();
+  await u.settle(5);
+  assert.equal(card.open, true);
+  // 조건 4: 묶음이 하나면 머리가 이미 말하니 묶음 제목 없이 줄 번호 칩만.
+  assert.equal(card.querySelectorAll(".crash-g").length, 0);
+  const chips = [...card.querySelectorAll(".crash-lines a.chip")];
+  assert.deepEqual(chips.map((a) => a.textContent.replace(/K-\d{4}/, "K")), ["K · 1번째", "K · 2번째"]);
+  assert.ok(chips[0].getAttribute("href").endsWith(ids[0]));
+  // 조건 2·6: 채운 단추를 더하지 않고, 빨강을 더하지 않아요.
+  assert.equal(card.querySelectorAll(".btn.primary, .pill.bad").length, 0);
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => /되풀이 2\/2/.test(p.textContent)));
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  // 펼친 것은 다시 그려도 남고, 접으면 한 줄로 돌아가요.
+  await u.click('#main [data-act="ledger-view"][data-key="open"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, true);
+  u.$("#main details.crash-card summary").click();
+  await u.settle(5);
+  await u.click('#main [data-act="ledger-view"][data-key="today"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, false);
+  // 문의 화면: 줄 표식, 상세의 몇 번째와 '기록 부탁 답 넣기'.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  assert.ok(u.$$("#main .rows .row-side .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  await u.go(`#/inquiries/${ids[1]}`);
+  await u.settle(30);
+  assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  await u.type("#reply", "안녕하세요.");
+  await u.click('#main [data-act="crash-draft"]');
+  const v = u.$("#reply").value;
+  assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
+  assert.match(v, /보고서 복사/);
+  assert.match(v, /밤낮 운영팀$/);
+  assert.deepEqual(u.errors, []);
+});
