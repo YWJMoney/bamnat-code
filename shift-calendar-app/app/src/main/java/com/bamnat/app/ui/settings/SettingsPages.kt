@@ -496,7 +496,7 @@ private fun RestPage(vm: SettingsViewModel, settings: AppSettings) {
         // Only 교대·일근 reach this card ([RVH-41] above: 현장·가게·투자 return early, 알바 has no card), so one sentence, in the tab's own name.
         Text("건강을 위해 내가 정하는 경고예요. 법 한도(보통 한 주 52시간, 근로기준법 제53조)는 급여 설정에 맞춰 ${settings.workStyle.words().tab} 화면에 따로 보여요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 빨갛게 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
+        LimitRow("한 주 근무 경고", "한 주가 이 시간을 넘으면 달력에 주황 막대로 표시해요", settings.weeklyLimitHours) { h -> vm.update { it.copy(weeklyLimitHours = h) } }
         LimitRow("최근 3개월 한 주 평균 경고", "최근 3개월의 한 주 평균이 이 시간을 넘으면 표시해요", settings.averageLimitHours) { h ->
             vm.update { it.copy(averageLimitHours = h) }
         }

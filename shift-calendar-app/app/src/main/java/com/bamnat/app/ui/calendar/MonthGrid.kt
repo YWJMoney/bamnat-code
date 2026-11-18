@@ -247,7 +247,7 @@ internal class MonthMoneyCells(
     companion object {
         val EMPTY = MonthMoneyCells(emptyMap(), emptyMap(), emptyMap(), emptyMap(), 0)
 
-        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate, today: LocalDate = LocalDate.now()): MonthMoneyCells {
+        fun of(money: MoneyBook, months: List<YearMonth>, from: LocalDate, to: LocalDate, today: LocalDate): MonthMoneyCells {
             if (money.jobs.isEmpty() && money.sales.isEmpty() && money.entries.isEmpty()) return EMPTY
             val days = months.distinct().fold(emptyMap<LocalDate, DayMoney>()) { acc, m -> acc + money.days(m) }
             val spans = HashMap<LocalDate, JobSpan>()

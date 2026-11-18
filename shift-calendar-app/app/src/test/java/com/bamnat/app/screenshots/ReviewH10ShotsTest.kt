@@ -91,15 +91,15 @@ class ReviewH10ShotsTest : ScreenshotBase() {
         app.container.consentStore.availableForTest = setOf(com.bamnat.core.consent.ConsentItem.CALENDAR)
         app.container.setupDrafts.clear()
         shoot("rvh10_53_short_summary", SHORT, 1f, fresh(null) {
-        setupToToday(); tapText("회사 근무표와 같아요")
-        assertTrue(appears("이대로 저장할까요?"))
-        val tall = nodes(false).maxOf { it.boundsInWindow.bottom }
-        val save = nodes(false).first { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
-            ?.any { it.text == "저장하고 달력 보기" } == true }.boundsInWindow
-        val card = nodes(false).firstOrNull { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
-            ?.any { it.text.startsWith("앱을 고치는 데 도움을") } == true }?.boundsInWindow
-        assertFalse("통계 카드가 저장 단추 바로 위 고정 띠에: 카드 $card, 단추 $save", card != null && card.top >= 0f && card.bottom <= save.top && card.top > tall / 3)
-        assertTrue("저장 단추가 화면 아래에: $save / $tall", save.top > tall / 2)
+            setupToToday(); tapText("회사 근무표와 같아요")
+            assertTrue(appears("이대로 저장할까요?"))
+            val tall = nodes(false).maxOf { it.boundsInWindow.bottom }
+            val save = nodes(false).first { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+                ?.any { it.text == "저장하고 달력 보기" } == true }.boundsInWindow
+            val card = nodes(false).firstOrNull { n -> n.config.getOrElseNullable(androidx.compose.ui.semantics.SemanticsProperties.Text) { null }
+                ?.any { it.text.startsWith("앱을 고치는 데 도움을") } == true }?.boundsInWindow
+            assertFalse("통계 카드가 저장 단추 바로 위 고정 띠에: 카드 $card, 단추 $save", card != null && card.top >= 0f && card.bottom <= save.top && card.top > tall / 3)
+            assertTrue("저장 단추가 화면 아래에: $save / $tall", save.top > tall / 2)
         })
     }
 
