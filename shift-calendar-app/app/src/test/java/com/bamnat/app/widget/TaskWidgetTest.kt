@@ -96,7 +96,8 @@ class TaskWidgetTest {
             Memo(id = 4, date = today, title = "운동"),
             Memo(id = 5, date = today, title = "빨래"),
         ), today)
-        val split = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three) } } }
+        // (HQ-123) The clock is given: read from the real one, this said '21:00 늦음' and failed whenever it ran after 21:00 (06~09시 KST in CI).
+        val split = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(12, 0)) } } }
         texts.clear()
         walk(split.remoteViews.apply(context, android.widget.FrameLayout(context)))
         assertTrue("title alone: $texts", "우유 사기" in texts)

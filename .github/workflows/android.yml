@@ -144,6 +144,15 @@ jobs:
         with:
           node-version: 22
       - run: sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=${{ matrix.set }} --continue
+      # 2.0.0 [RVR-42] (총괄 HQ-116): the tests never reach a server outside the runner (tools/net-guard, NetGuardTest). What
+      # they tried and were refused is listed here, so a test that leans on the network shows up without touching the live server.
+      - name: 바깥 연결 막은 것
+        if: always()
+        run: |
+          f=$(ls app/build/net-guard/blocked/*.txt 2>/dev/null || true)
+          if [ -z "$f" ]; then echo "### 바깥 연결: 시험이 바깥 서버를 부르지 않았어요" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          { echo "### 바깥 연결: 시험이 부르려다 막힌 곳 $(cat $f | wc -l)번 (실서버에는 가지 않았어요)"; echo '```';
+            cat $f | sed -E 's#^([a-z]+://[^/]+)(/[^/?]*(/[^/?]*)?).*#\1\2#' | sort | uniq -c | sort -rn | head -20; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       # Room writes the schema of each database version it builds. A new version has to be committed with its migration.
       - name: Room schema committed
         if: matrix.set == 'unit'

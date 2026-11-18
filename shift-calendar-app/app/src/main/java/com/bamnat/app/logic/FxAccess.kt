@@ -79,9 +79,11 @@ object FxAccess {
 
     /** What runs of [full] now. */
     fun runnable(c: AppContainer, full: Logic, now: Instant = Today.instant()): Logic {
-        if (pro(c) || com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return full
+        if (pro(c)) return full
         // 1.39 [FX-23] 작품마다: a try opens the 규칙·단추 that came from that work (내가 만든 것·표시 없는 것은 OWN의 써 보기로).
-        val open = load(c.appContext).openKeys(now)
+        // 2.0.0 [RVM-53] 검토 RCP-21 ③: 기능까지 써 보기 opened every 규칙·단추 on the phone while it lasted; now, as a 하루 써 보기 does, only
+        // the work being tried (its pieces are marked with the trial's code).
+        val open = load(c.appContext).openKeys(now) + listOfNotNull(com.bamnat.app.recipe.FunctionTrial.codeNow(c.appContext))
         if (open.isEmpty()) return FxPro.free(full)
         val store = LogicStore(c.appContext)
         return FxPro.free(full, { (store.fromButton(it.id) ?: FxTaste.OWN) in open }, { (store.fromRule(it.key) ?: FxTaste.OWN) in open })

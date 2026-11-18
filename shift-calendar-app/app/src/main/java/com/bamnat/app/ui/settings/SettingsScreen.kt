@@ -149,6 +149,9 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.ZoneId
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /**
  * [SET-01] The settings in groups, in the order people look for them, under the alarm's state.
@@ -371,9 +374,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             return
         }
         viewModelScope.launch {
+            // 2.0.0 [RVM-53] 검토 RCP-21 ②: a work only being tried (기능까지 써 보기) went into a backup saved by hand, and came back as if
+            // put in when it was opened. It ends first, as for the auto backup and a real 넣기; what I wrote while trying stays.
+            val tried = endTrial()
             // 2.0.0 [RVL-13] (검토 DATA-13) What a file without a password left out, said after saving too.
             val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
-            _message.value = SettingsMessage(runCatching {
+            _message.value = SettingsMessage(tried + runCatching {
                 // [REL-15] A file of format 3: the photos stream from their files, sealed as they go when there is a password.
                 withContext(Dispatchers.IO) {
                     context.contentResolver.openOutputStream(uri, "wt")!!.use { container.backupManager.exportFile(it, password) }
@@ -590,6 +596,13 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** [RVM-53] Ends a 기능까지 써 보기 still on and says so in front of what follows ("" with none). */
+    private suspend fun endTrial(): String {
+        if (!com.bamnat.app.recipe.FunctionTrial.busy(container.appContext)) return ""
+        val e = com.bamnat.app.ui.recipe.LiveTryOn.settled(container, snack = false) ?: return ""
+        return "‘${e.title}’ 써 보기는 끝냈어요 · "
+    }
+
     fun cancelRestore() {
         _pendingRestore.value = null
         _locked.value = null
@@ -600,6 +613,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         val json = _pendingRestore.value?.first ?: return
         _pendingRestore.value = null
         container.appScope.launch {
+            // 2.0.0 [RVM-53] 검토 RCP-21 ②: a trial on would put its 'before' back over what the backup brings, and the copy kept for
+            // 되돌리기 would hold the tried work. It ends first.
+            val tried = endTrial()
             _message.value = runCatching {
                 // [SET-01] Kept first: without the copy nothing is replaced.
                 container.importUndo.save()
@@ -610,7 +626,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 // [J133-87] 1.33 빌드 6 (복원 뒤 완료 알림이 안 보여요): the restored settings (12시간 보기, 글자 크기) draw the app's root
                 // again, and a message shown at once went with the old one. Said once the new screen is up.
                 kotlinx.coroutines.delay(RESTORED_SAY_MS)
-                SettingsMessage("백업을 불러왔어요", undo = true)
+                SettingsMessage(tried + "백업을 불러왔어요", undo = true)
             }.getOrElse { e -> SettingsMessage((e as? BackupException)?.message ?: "백업을 불러오지 못했어요. 지금 데이터는 그대로예요") }
         }
     }
@@ -1268,13 +1284,13 @@ private fun AlarmReadyCard(
     val next = upcoming
     val (icon, headline, tint) = when {
         !settings.alarmsEnabled -> Triple(Icons.Filled.AlarmOff, "알람이 모두 꺼져 있어요", MaterialTheme.colorScheme.error)
-        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", cal.warning)
+        fixes.isNotEmpty() -> Triple(Icons.Filled.WarningAmber, "알람 확인이 필요해요", Tone.Danger.color()) // 2.0.0 [RVP-13] (HQ-54) 울리지 않을 수 있는 알람: 위험
         next == null -> Triple(Icons.Outlined.Alarm, "울릴 알람이 없어요", MaterialTheme.colorScheme.onSurfaceVariant)
         else -> Triple(Icons.Filled.CheckCircle, "알람 준비 완료", MaterialTheme.colorScheme.secondary)
     }
     Surface(
         shape = MaterialTheme.shapes.large,
-        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLow,
+        color = if (fixes.isNotEmpty() || !settings.alarmsEnabled) Tone.Danger.container() else MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp)) {
@@ -1313,7 +1329,7 @@ private fun AlarmReadyCard(
                             }
                         }.getOrNull()
                     }
-                    nudge?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = cal.warning) }
+                    nudge?.let { com.bamnat.app.ui.components.ToneLine(it) } // 쉬는 시간은 주의
                 }
             } }, end = {
                 when {

@@ -108,6 +108,30 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         }
     }
 
+    /**
+     * 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인했어요 to the leader for the version here now. [done] gets what to tell the user, or null
+     * when it went (the card turns into its quiet line). A link the leader no longer asks about stops asking here too.
+     */
+    fun okPress(id: String, done: (String?) -> Unit) {
+        viewModelScope.launch {
+            val said = try {
+                c.shareApi.okPress(id)
+                c.received.setOk(id, clock())
+                c.telemetry.event("share_ok")
+                null
+            } catch (e: ShareLinkException) {
+                when (e.message) {
+                    "not_found" -> { c.received.setWatch(id, false); null }
+                    "rate_limited" -> com.bamnat.app.company.RateLimits.text("확인", 3_600, "device")
+                    else -> "확인을 보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.BUSY
+                }
+            } catch (e: IOException) {
+                "확인을 보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.OFFLINE
+            }
+            done(said)
+        }
+    }
+
     /** Reads the link in [text] for a look before it is added. */
     fun preview(text: String) {
         val id = ShareLinkId.find(text.trim())

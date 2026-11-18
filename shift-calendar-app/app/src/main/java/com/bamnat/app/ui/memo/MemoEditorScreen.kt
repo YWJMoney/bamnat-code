@@ -93,7 +93,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -1314,7 +1314,7 @@ private fun LastShiftDialog(label: String, memos: List<Memo>, carry: List<String
         },
         // [RVI-85] 안 끝낸 줄 가져오기 is the one thing to do here when there are such lines; 닫기 beside it.
         confirmButton = {
-            if (carry.isNotEmpty()) androidx.compose.material3.Button(onClick = onCarry) { Text("안 끝낸 ${carry.size}줄 가져오기") }
+            if (carry.isNotEmpty()) com.bamnat.app.ui.components.Button(onClick = onCarry) { Text("안 끝낸 ${carry.size}줄 가져오기") }
             else TextButton(onClick = onDismiss) { Text("닫기") }
         },
         dismissButton = if (carry.isNotEmpty()) ({ TextButton(onClick = onDismiss) { Text("닫기") } }) else null,

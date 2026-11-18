@@ -79,7 +79,15 @@ data class SharedSchedule(
     val sleepNow: SleepNow? = null,
     /** 1.39 G5-N4 The sender's planned sleeps, when they ticked 계획한 잠 시간. */
     val sleepPlan: List<SleepPlanWindow> = emptyList(),
+    /**
+     * 2.0.0 [RVG-38] What the sender's app calls the link ([com.bamnat.core.work.LINK_WORDS]), sent only from 처리방침 3.14; null for a link
+     * without it or with any other value, which is named as before ([com.bamnat.core.work.linkWord]).
+     */
+    val saidWord: String? = null,
 ) {
+    /** 2.0.0 [RVG-35][RVG-38] This link's one name: 매출 → 영업일, 일감 → 일정, else what the sender's app said, else 근무표. */
+    val word: String get() = com.bamnat.core.work.linkWord(shows, payKind, saidWord)
+
     private val byId = types.associateBy { it.id }
     fun type(id: Long?): SharedType? = id?.let(byId::get)
 
@@ -138,7 +146,9 @@ data class SharedSchedule(
                 ShareAudience.of(o.str("audience")), setup,
                 // 1.37 [SHR-31][SHR-32] Read as any recipe: what the codec refuses, or a kit's pay, is left out.
                 com.bamnat.core.recipe.ShareKit.readLook(o.str("look")), com.bamnat.core.recipe.ShareKit.readKit(o.str("kit")),
-                SleepNow.of(o.optJSONObject("sleepNow")), SleepPlanWindow.list(o.optJSONArray("sleepPlan")))
+                SleepNow.of(o.optJSONObject("sleepNow")), SleepPlanWindow.list(o.optJSONArray("sleepPlan")),
+                // 2.0.0 [RVG-38] Only one of the four words; anything else is left out, as the share server does.
+                o.str("word")?.takeIf { it in com.bamnat.core.work.LINK_WORDS })
         }
 
         private fun JSONArray?.objects(): List<JSONObject> =
@@ -176,6 +186,11 @@ data class ReceivedCalendar(
     val note: FollowNote? = null,
     /** 1.39 [SLEEP-15][P3-L-18] The leader asked for 피곤해요 합계 on this link ([ReceivedShare.tired]): the sleep screen offers the button. */
     val tired: Boolean = false,
+    /** 2.0.0 [RVQ-32] 검토 U22-01: the leader asks for 확인했어요 on this link ([ReceivedShare.watch]). */
+    val watch: Boolean = false,
+    /** 2.0.0 [RVQ-32] When this phone pressed 확인했어요, and for which [updatedAt] (a changed link asks again). */
+    val okAt: Instant? = null,
+    val okFor: Instant? = null,
     /**
      * 1.39 [TEAM-22] PC a483ca15: the link's schedule my own days were last matched to. Whatever updates [raw] (opening the link
      * again, the setup's own read, a 모임 copy), [RosterFollower] compares this with [raw], so no change slips by unseen.
@@ -202,7 +217,7 @@ data class ReceivedCalendar(
 
     /** [RVH-20] What the link holds, as far as it says: 매출 sent → 영업일, 일감 → 일정, else 근무표. */
     /** 2.0.0 [RVG-35] 검토 HQ-64: the one rule the sender's hint and the web page use too ([com.bamnat.core.work.linkWord]). */
-    val word: String get() = schedule?.let { s -> com.bamnat.core.work.linkWord(s.shows, s.payKind) } ?: "근무표"
+    val word: String get() = schedule?.word ?: "근무표"
     /** The letter in its avatar. */
     // [J133-79] A name like "[테스트] 민수" starts its face with 테, not "[".
     /** [RVG-32] 검토 PC-93: a link without a name shows 받 (as in 받은 표), not a question mark. */
@@ -320,6 +335,7 @@ class ReceivedCalendarStore(
         val color = old?.color ?: ReceivedCalendar.COLORS[_calendars.value.size % ReceivedCalendar.COLORS.size]
         val cal = ReceivedCalendar(id, title, color, old?.addedAt ?: now, now, share.updatedAt, share.expiresAt, share.schedule, share.etag,
             mine = mine || old?.mine == true, adopted = old?.adopted == true, follow = old?.follow, note = old?.note, tired = share.tired,
+            watch = share.watch, okAt = old?.okAt, okFor = old?.okFor,
             // A new link starts from what is seen now (or what the setup filled the days from); a kept one keeps the last matched copy.
             basis = basis ?: old?.basis ?: old?.raw ?: share.schedule)
         write(if (old == null) _calendars.value + cal else _calendars.value.map { if (it.id == id) cal else it })
@@ -329,6 +345,15 @@ class ReceivedCalendarStore(
     /** 1.39 [SLEEP-15] The leader turned 피곤해요 off (the server says not_found to a press): no button for this link until it comes back. */
     fun setTired(id: String, on: Boolean) {
         if (get(id)?.tired != on) write(_calendars.value.map { if (it.id == id) it.copy(tired = on) else it })
+    }
+
+    /** 2.0.0 [RVQ-32] 확인했어요 went to the leader for the version here now; or the leader no longer asks ([on] false). */
+    fun setOk(id: String, at: Instant) {
+        write(_calendars.value.map { if (it.id == id) it.copy(okAt = at, okFor = it.updatedAt) else it })
+    }
+
+    fun setWatch(id: String, on: Boolean) {
+        if (get(id)?.watch != on) write(_calendars.value.map { if (it.id == id) it.copy(watch = on) else it })
     }
 
     /** [SHR-12] Asked and nothing changed: the copy here is current as of now. */
@@ -459,6 +484,9 @@ class ReceivedCalendarStore(
         follow?.let { put("follow", it) }
         note?.let { put("note", it.toJson()) }
         if (tired) put("tired", true)
+        if (watch) put("watch", true)
+        okAt?.let { put("okAt", it.toString()) }
+        okFor?.let { put("okFor", it.toString()) }
         basis?.let { put("basis", it) }
     }
 
@@ -470,6 +498,7 @@ class ReceivedCalendarStore(
             o.optString("etag").takeIf { it.isNotEmpty() }, o.optString("removedReason").takeIf { it.isNotEmpty() }, o.optBoolean("mine", false),
             adopted = o.optBoolean("adopted", false), follow = o.optString("follow").takeIf { it.isNotEmpty() },
             note = FollowNote.fromJson(o.optJSONObject("note")), tired = o.optBoolean("tired", false),
+            watch = o.optBoolean("watch", false), okAt = time("okAt"), okFor = time("okFor"),
             basis = o.optJSONObject("basis"))
     }
 

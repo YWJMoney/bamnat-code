@@ -34,6 +34,8 @@ data class SetupSource(
     val adopted: Boolean = false,
     val team: String? = null,
     val anchor: LocalDate? = null,
+    /** 2.0.0 [RVN-19] 검토 T10a-10: PUBLIC with no row ([id] ""): the 사업장 the first provider typed in its own box. */
+    val site: String = "",
 ) {
     /** [SPAT-03] PUBLIC: a row of the public shift cycles ([id] is the row's, "" for a first provider's own company). */
     enum class Kind { TEMPLATE, SERVER, FILE, PUBLIC }

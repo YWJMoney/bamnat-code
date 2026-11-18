@@ -237,6 +237,20 @@ class CompanySearch(
         synchronized(lock) { answers.remove(key(q)) }
     }
 
+    /**
+     * 2.0.0 [RVN-19] 검토 COMP-20·I10ab-01: the companies the phone knows that [typed] may mean, before it becomes a new one —
+     * from the whole list of companies when it was read ([SPD-11]), else the most used and the answers kept; the most used
+     * first among equals ([com.bamnat.core.plaza.CompanyNames.similar]). Nothing is asked of the server.
+     */
+    fun similar(typed: String, max: Int = com.bamnat.core.plaza.CompanyNames.MAX): List<com.bamnat.core.plaza.CompanyNames.Like<CompanyHit>> {
+        val known: List<Pair<CompanyHit, List<String>>> = synchronized(lock) {
+            whole?.list?.map { it.hit to it.names }
+                ?: (top?.hits.orEmpty() + answers.values.flatMap { it.hits }).distinctBy { it.id }.map { it to listOfNotNull(it.name, it.alias) }
+        }
+        return com.bamnat.core.plaza.CompanyNames.similar(typed, known.sortedByDescending { it.first.users }, { it.second }, max)
+            .map { com.bamnat.core.plaza.CompanyNames.Like(it.item.first, it.name, it.why, it.site, it.distance) }
+    }
+
     private fun keep(k: String, hits: List<CompanyHit>) {
         synchronized(lock) { answers[k] = Kept(hits, now()) }
         save()

@@ -58,6 +58,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [LEDG-10] What the 분석 tab draws: the month looked at closely and its year. */
 data class LedgerAnalysis(val month: MonthMoney, val report: MonthReport, val year: YearReport)
