@@ -1000,7 +1000,8 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 list.forEachIndexed { i, p ->
                     // 2.0.0 [RVJ-70] (PC-178) The whole 안 is the button, and it says so: '이 안으로 채우기' under its numbers, so '닫기' is
                     // not the only button one sees. The words are the 안's own (onSurface); only the action is in the button colour.
-                    OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth()) {
+                    // Four lines in a pill read as an oval with the words at its curve: the 안 takes the card corners (조건 5·12).
+                    OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth()) {
                             Text("${i + 1}안 · ${p.filled}칸 · " + (if (p.shortPeople > 0) "부족 ${p.shortPeople}명·${p.short.size}일" else "부족 없음"),
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
