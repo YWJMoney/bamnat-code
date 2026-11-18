@@ -778,6 +778,32 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun tryOnFolded() = shoot("rvm_88_tryon_folded", FOLDED, tryOn("야간 회복 스테이션"))
     @Test fun tryOnFoldedBig() = shoot("rvm_89_tryon_folded_200", FOLDED, 2f, tryOn("야간 회복 스테이션"))
 
+    /**
+     * 2.0.0 [RVM-54] 검토 U09b-04: 기능까지 써 보기를 끝낸 카드는 'N건 되돌렸어요'만 말했어요. 이제 한 줄은 그대로이고, '되돌린 것 보기'를 누르면
+     * 원래대로 돌린 조각, 뺀 단추·규칙, 내가 바꾼 것을 둔 것, 내 단추·규칙이 적은 것은 건드리지 않았다는 줄이 보여요.
+     */
+    private fun triedCard(): Screen.() -> Unit = {
+        val e = com.bamnat.app.recipe.FunctionTrial.Ended("FN234567", "야식 관리판", 2, com.bamnat.app.recipe.FunctionTrial.Made(1, 0), kept = true,
+            back = listOf("수식·규칙·버튼", "메모 틀"), removed = listOf("야식 기록", "야간 끝 수당"), keptMine = 1, mineRules = true)
+        content {
+            androidx.compose.foundation.layout.Column(androidx.compose.ui.Modifier.padding(16.dp)) {
+                com.bamnat.app.ui.recipe.TriedCard(com.bamnat.app.ui.recipe.LiveTryOn.say(e), com.bamnat.app.ui.recipe.LiveTryOn.details(e)) {}
+            }
+        }
+        settle()
+        check(!appears("뺀 단추·규칙", exact = false, ms = 300)) { "처음에는 한 줄만" }
+        tapText("되돌린 것 보기", exact = true)
+        settle()
+        check(appears("원래대로 돌린 것: 수식·규칙·버튼, 메모 틀", exact = false))
+        check(appears("뺀 단추·규칙: 야식 기록, 야간 끝 수당", exact = false))
+        check(appears("써 보는 동안 직접 바꾼 1곳은 그대로 뒀어요", exact = false))
+        check(appears("내 단추·규칙이 적은 것은 건드리지 않았어요", exact = false))
+        check(appears("접기", exact = true) && appears("닫기", exact = true))
+    }
+    @Test fun triedCardFolded() = shoot("rvm_90_tried_card_folded", FOLDED, triedCard())
+    @Test fun triedCardFoldedDarkBig() = shoot("rvm_91_tried_card_folded_dark_200", DARK, 2f, triedCard())
+    @Test fun triedCardUnfolded() = shoot("rvm_92_tried_card_unfolded", UNFOLDED, triedCard())
+
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"
         const val UNFOLDED_DARK = "w707dp-h823dp-port-night-420dpi"

@@ -40,4 +40,37 @@ class StudioWearUndoTest {
         vm.undo()
         assertEquals("한 단계 뒤로도 가요", "sun=FF1565C0", vm.state.value.draft.calTheme)
     }
+
+    /**
+     * 2.0.0 [RVM-52] 검토 STU-05 (조건 10): 내가 꾸민 모양을 입힌 뒤(되돌리기 A) 내 테마를 그대로 입히면, 되돌리기가 그 테마 바로 전이 아니라
+     * 처음 꾸미기 전 모양 A로 두 단계 돌아갔어요. 이제 마지막 입히기만 되돌리고, 그 전에 입힌 내 모양은 남아요.
+     */
+    @Test fun takingBackAThemeWornAfterMyLookGoesBackOneStep() {
+        val start = c.settingsRepository.current.calTheme
+        // 내 테마 '파랑' (서랍에 내 것으로).
+        c.settingsRepository.update { it.copy(calTheme = "sun=FF1565C0") }
+        val blue = kotlinx.coroutines.runBlocking { c.wardrobe.myLookRecipe("파랑") }
+        assertTrue(c.wardrobe.saveLook(blue))
+        c.settingsRepository.update { it.copy(calTheme = start) }
+        val vm = StudioViewModel(c)
+        idle()
+        // ① 내가 꾸민 모양(초록)을 입혀요.
+        vm.change { it.copy(calTheme = "sun=FF2E7D32") }
+        vm.wear()
+        settle { vm.state.value.wornNow }
+        assertEquals("sun=FF2E7D32", c.settingsRepository.current.calTheme)
+        // ② 되돌리지 않고 내 테마 '파랑'을 그대로 입혀요.
+        vm.startFrom(c.wardrobe.lease.value.history.first { it.own && it.title == "파랑" })
+        settle { vm.state.value.draft.calTheme == "sun=FF1565C0" }
+        vm.wear()
+        settle { vm.state.value.wornNow }
+        assertEquals("sun=FF1565C0", c.settingsRepository.current.calTheme)
+        assertEquals("파랑", c.wardrobe.wornTitle())
+        assertTrue("되돌리기는 마지막 입히기 것", vm.state.value.canUndoWear)
+        assertEquals("달력의 '입히기 전 모양으로'도 ① 것은 남지 않아요", null, com.bamnat.app.data.LookUndo.read(c.appContext))
+        vm.undoWear()
+        settle { !vm.state.value.wornNow && c.settingsRepository.current.calTheme != "sun=FF1565C0" }
+        assertEquals("① 바로 뒤 모양(초록)으로, 처음 모양까지 두 단계가 아니에요", "sun=FF2E7D32", c.settingsRepository.current.calTheme)
+        assertEquals("서랍도 '파랑'을 입은 중이 아니에요", null, c.wardrobe.wornTitle())
+    }
 }
