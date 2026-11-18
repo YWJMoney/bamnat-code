@@ -88,12 +88,46 @@ class Inbox private constructor(context: Context) {
     /** PC-180: the 권유 [key] was closed: it rests [SUGGEST_REST_DAYS] days from [day]. */
     fun rest(key: String, day: java.time.LocalDate = Today.date()) {
         restPrefs.edit {
-            // What finished resting goes, so the file stays small.
-            restPrefs.all.filter { (_, v) -> (v as? Long)?.let { day.toEpochDay() - it >= SUGGEST_REST_DAYS } != false }.keys.forEach { remove(it) }
+            // What finished resting goes, so the file stays small (the kinds closed once stay).
+            restPrefs.all.filter { (k, v) -> k != K_CLOSED_ONCE && (v as? Long)?.let { day.toEpochDay() - it >= SUGGEST_REST_DAYS } != false }
+                .keys.forEach { remove(it) }
             putLong(key, day.toEpochDay())
         }
         _resting.value = readResting(day)
     }
+
+    /**
+     * PC-180 (총괄 11-19: 쉬었다 다시 와도 되풀이로 느낄 수 있어요): a 권유 closed with its ✕. The first time its kind rests
+     * [SUGGEST_REST_DAYS] days; the second time the same kind is turned off for good, as '다시 보지 않기' does ([mute], in the backup, turned
+     * back on in 기능 켜고 끄기). True when it was turned off. [reopen] takes it back (되돌리기).
+     */
+    fun close(key: String, kind: String, label: String, day: java.time.LocalDate = Today.date()): Boolean {
+        val once = closedOnce()
+        if (kind in once) {
+            mute(kind, label)
+            return true
+        }
+        restPrefs.edit { putStringSet(K_CLOSED_ONCE, once + kind) }
+        rest(key, day)
+        return false
+    }
+
+    /** PC-180: 되돌리기 of [close]: as it was before. */
+    fun reopen(key: String, kind: String, turnedOff: Boolean) {
+        if (turnedOff) unmute(kind)
+        else {
+            restPrefs.edit { putStringSet(K_CLOSED_ONCE, closedOnce() - kind) }
+            unrest(key)
+        }
+    }
+
+    /** 기능 켜고 끄기 › 다시 보기: the kind comes again, and a later ✕ rests it two weeks first, as the first time. */
+    fun turnBackOn(kind: String) {
+        unmute(kind)
+        restPrefs.edit { putStringSet(K_CLOSED_ONCE, closedOnce() - kind) }
+    }
+
+    private fun closedOnce(): Set<String> = restPrefs.getStringSet(K_CLOSED_ONCE, emptySet()).orEmpty().toSet()
 
     /** PC-180: read again for a new visit, so a 권유 whose two weeks are over may come (the calendar does it as it opens). */
     fun refreshResting() { _resting.value = readResting() }
@@ -214,6 +248,8 @@ class Inbox private constructor(context: Context) {
         private const val K_SUGGEST_OFF = "suggest_off"
         /** PC-180: the 권유 resting after ✕, on this phone only (a day count). */
         private const val REST_FILE = "inbox_rest"
+        /** PC-180: the 권유 kinds closed with ✕ once; the next ✕ turns the kind off. */
+        private const val K_CLOSED_ONCE = "closed_once"
         /** PC-180: how long a closed 권유 rests, as long as 친구 초대 ([com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS]). */
         const val SUGGEST_REST_DAYS = com.bamnat.core.guide.GrowNudges.INVITE_EVERY_DAYS
         private const val K_LABEL = "label:"

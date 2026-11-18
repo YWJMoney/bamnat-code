@@ -216,7 +216,8 @@ class ReviewPNoticeBellTest {
     /**
      * 2.0.0 갈래 P 5 검토 PC-180 (PC 4차: ✕로 닫은 '회사 규칙으로 올리기'가 다음 날 권유 맨 앞에 다시 옴): every kind of 권유 the calendar
      * has, closed with its ✕ in the 알림함 (most have no close of their own), does not come the next day, nor a week on; two weeks on
-     * it may. One rule in one place ([closeSuggestion], [Inbox.rest]).
+     * it may. One rule in one place ([closeSuggestion], [Inbox.close]). 총괄 11-19: closed with ✕ a second time, the kind is off for good
+     * (as ⋮ 다시 보지 않기), until 기능 켜고 끄기 brings it back.
      */
     @Test fun aSuggestionClosedWithItsXDoesNotComeTheNextDay() {
         val kinds = listOf(
@@ -251,15 +252,53 @@ class ReviewPNoticeBellTest {
                     compose.waitForIdle()
                     assertEquals("${days}일 뒤", if (back) 1 else 0, state.inBell)
                 }
+                // 총괄 11-19: the same kind closed with ✕ a second time is off for good, as 다시 보지 않기.
+                for ((_, label) in kinds) {
+                    state.openSheet(null)
+                    compose.waitForIdle()
+                    compose.onNodeWithContentDescription("닫기: $label").performClick()
+                    compose.waitForIdle()
+                    compose.onNodeWithText(SUGGEST_OFF).assertExists()
+                    state.sheetOpen = false
+                    state.settle()
+                    compose.waitForIdle()
+                }
+                assertTrue(Inbox.get(app).muted.value.containsAll(kinds.map { "calendar.${it.first}" }))
+                for (days in listOf(15L, 28L, 60L)) {
+                    com.bamnat.core.time.Today.fix(start.plusDays(days))
+                    state = NoticeStackState()
+                    compose.waitForIdle()
+                    assertEquals("두 번 닫은 뒤 ${days}일", 0, state.inBell)
+                }
+                // 기능 켜고 끄기 › 다시 보기 brings it back; its next ✕ rests two weeks again, as the first time.
+                Inbox.get(app).turnBackOn("calendar.plazaShare")
+                state = NoticeStackState()
+                compose.waitForIdle()
+                assertEquals(1, state.inBell)
+                state.openSheet(null)
+                compose.waitForIdle()
+                compose.onNodeWithContentDescription("닫기: 회사 규칙으로 올리기").performClick()
+                compose.waitForIdle()
+                compose.onNodeWithText(SUGGEST_RESTS).assertExists()
             }
-            // A 권유 another feature put: closed, it is not put again within two weeks.
+            // A 권유 another feature put: closed, it is not put again within two weeks; closed again, its kind is off.
             com.bamnat.core.time.Today.fix(start)
             val inbox = Inbox.get(app)
             val row = InboxRow("suggest.companyRule:1", "suggest.companyRule", InboxSection.SUGGEST, "회사 규칙으로 올리기", "동료와 나눠 볼까요?")
             assertTrue(inbox.post(row))
-            inbox.remove(row.key); inbox.rest(row.key)
+            inbox.remove(row.key)
+            assertEquals(false, inbox.close(row.key, row.kind, row.title))
             com.bamnat.core.time.Today.fix(start.plusDays(1))
             assertEquals("다음 날 다시 넣지 않아요", false, inbox.post(row))
+            com.bamnat.core.time.Today.fix(start.plusDays(14))
+            assertTrue("2주 뒤 한 번 더", inbox.post(row))
+            inbox.remove(row.key)
+            assertEquals(true, inbox.close(row.key, row.kind, row.title))
+            com.bamnat.core.time.Today.fix(start.plusDays(60))
+            assertEquals("두 번 닫으면 끝까지", false, inbox.post(row))
+            // 되돌리기 of the second ✕: as it was.
+            inbox.reopen(row.key, row.kind, turnedOff = true)
+            assertTrue(inbox.post(row))
         } finally {
             com.bamnat.core.time.Today.reset()
         }

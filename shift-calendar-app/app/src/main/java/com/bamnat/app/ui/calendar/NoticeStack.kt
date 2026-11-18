@@ -311,8 +311,8 @@ private fun PostedRow(r: InboxRow, inbox: Inbox, state: NoticeStackState) {
             inbox.remove(r.key)
             // PC-180: a 권유 rests two weeks, whoever put it.
             if (r.section == InboxSection.SUGGEST) {
-                inbox.rest(r.key)
-                state.say(SUGGEST_RESTS) { inbox.unrest(r.key); inbox.putBack(listOf(r)) }
+                val off = inbox.close(r.key, r.kind, r.title)
+                state.say(if (off) SUGGEST_OFF else SUGGEST_RESTS) { inbox.reopen(r.key, r.kind, off); inbox.putBack(listOf(r)) }
             } else state.say("알림을 지웠어요") { inbox.putBack(listOf(r)) }
         },
         onMute = {
@@ -559,15 +559,18 @@ internal fun sheetLine(line: String, label: String?): String? = when {
 
 /** PC-180: what closing a 권유 says (조건 16: where it went and for how long, in a person's words). */
 internal const val SUGGEST_RESTS = "닫았어요. 2주 동안 다시 권하지 않을게요"
+/** PC-180: the same kind closed with ✕ a second time: off for good, as 다시 보지 않기. */
+internal const val SUGGEST_OFF = "다시 권하지 않을게요. 기능 켜고 끄기에서 다시 켤 수 있어요"
 
 /**
  * 2.0.0 갈래 P 5 검토 PC-180 (사용자 '거부를 하면 여러 번 반복해서 알림으로 보여 주지 마'): one rule for every 권유 of the calendar, closed
  * with ✕ in the band or the 알림함: it rests [Inbox.SUGGEST_REST_DAYS] days ([Inbox.rest]), whatever its own close did before (a day for
- * most). Its own close still runs once 되돌리기 is gone (친구 초대's own two weeks, 공유 안내's 'done').
+ * most). Its own close still runs once 되돌리기 is gone (친구 초대's own two weeks, 공유 안내's 'done'). 총괄 11-19: the second ✕ on the same
+ * kind turns it off for good, as ⋮ 다시 보지 않기 ([Inbox.close]); 기능 켜고 끄기 brings it back.
  */
 internal fun closeSuggestion(n: Notice, inbox: Inbox, state: NoticeStackState) {
-    inbox.rest(n.key)
-    state.say(SUGGEST_RESTS, done = { n.onClose?.invoke() }) { inbox.unrest(n.key) }
+    val off = inbox.close(n.key, n.kind, n.label ?: n.line.orEmpty())
+    state.say(if (off) SUGGEST_OFF else SUGGEST_RESTS, done = { n.onClose?.invoke() }) { inbox.reopen(n.key, n.kind, off) }
 }
 
 /** PC-81: How long the calendar has to settle which band it shows, from opening. */
