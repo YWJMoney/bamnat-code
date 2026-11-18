@@ -218,8 +218,9 @@ object LookImages {
      */
     suspend fun held(context: Context): Set<String> = withContext(Dispatchers.IO) {
         val texts = ArrayList<String>()
-        for (name in listOf("theme_wardrobe", "look_undo")) runCatching {
-            context.getSharedPreferences(name, Context.MODE_PRIVATE).all.values.forEach { v ->
+        // Named one by one, so the backup check (ZFullBackupTest) reads them: both are already in the backup or kept on purpose.
+        for (prefs in listOf(context.getSharedPreferences("theme_wardrobe", Context.MODE_PRIVATE), context.getSharedPreferences("look_undo", Context.MODE_PRIVATE))) runCatching {
+            prefs.all.values.forEach { v ->
                 when (v) { is String -> texts += v; is Set<*> -> v.forEach { texts += it.toString() } }
             }
         }
