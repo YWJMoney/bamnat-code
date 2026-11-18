@@ -722,9 +722,16 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         val leased = leasedFrom()
         val mine = myTheme
         val done = runCatching {
+            // 2.0.0 [RVM-52] 검토 STU-05 (조건 10): only the last 입히기 is taken back. A 되돌리기 kept from an earlier 입히기 (내가 꾸민 모양)
+            // stayed through a theme worn after it, so 되돌리기 went two steps back, past that theme, while 서랍 still said it was worn.
+            beforeWear = null
+            beforeLogic = null
+            wearMark = null
+            com.bamnat.app.data.LookUndo.clear(c.appContext)
             when {
-                leased != null && !ownMake() -> c.wardrobe.wear(recipe(if (s.sources.isEmpty()) leased.second else "조합 · ${s.origin.title}"), leased.first, own = false)
-                mine != null && !s.changed -> c.wardrobe.wear(recipe(mine.title), "", own = true, ver = mine.ver)
+                // A theme goes on through 서랍: its own 되돌리기 (look, the theme worn, its days, the tabs laid on) is what the snackbar does.
+                leased != null && !ownMake() -> { wearMark = c.wardrobe.mark(); c.wardrobe.wear(recipe(if (s.sources.isEmpty()) leased.second else "조합 · ${s.origin.title}"), leased.first, own = false) }
+                mine != null && !s.changed -> { wearMark = c.wardrobe.mark(); c.wardrobe.wear(recipe(mine.title), "", own = true, ver = mine.ver) }
                 else -> {
                     beforeWear = c.recipes.pieces.lookSnapshot()
                     beforeWear?.let { com.bamnat.app.data.LookUndo.keep(c.appContext, it) }
@@ -740,7 +747,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         // itself is the new start, not a read of them).
         // 2.0.0 [RVM-48] 검토 STU-03: 입히기 emptied the 50 steps (지난 단계), so nothing made before it could be gone back to; they stay.
         _state.value = _state.value.copy(busy = false, said = if (done) "내 앱에 입혔어요. 기록은 그대로예요" + logicSaid.orEmpty() else "입히지 못했어요. 다시 해 주세요",
-            canUndoWear = done && beforeWear != null, base = if (done) s.draft else _state.value.base, wornNow = done)
+            canUndoWear = done && (beforeWear != null || wearMark != null), base = if (done) s.draft else _state.value.base, wornNow = done)
         if (done) refresh(both = true)
     }
 
@@ -772,6 +779,21 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
     /** The rules and buttons before the last 입히기, for 되돌리기. */
     private var beforeLogic: String? = null
 
+    /** [RVM-52] STU-05: the last 입히기 put a theme on through 서랍; 되돌리기 is 서랍's own, back to just before it. */
+    private var wearMark: com.bamnat.app.recipe.ThemeWardrobe.Mark? = null
+
+    private fun undoTheme(m: com.bamnat.app.recipe.ThemeWardrobe.Mark) = viewModelScope.launch {
+        wearMark = null
+        beforeLogic?.let { l -> c.settingsRepository.update { it.copy(logic = l) } }
+        beforeLogic = null
+        c.wardrobe.undoTo(m)
+        val now = c.settingsRepository.current
+        val s = _state.value
+        _state.value = s.copy(draft = s.draft.copy(logic = now.logic), base = now, said = "내 앱은 입히기 전 모양으로 돌렸어요. 만들던 모양은 그대로예요",
+            canUndoWear = false, wornNow = false, keptWear = false)
+        refresh(both = true)
+    }
+
     /** Puts the draft's 규칙·단추 on (they stay with the phone, not a theme) and says what is on now: " · 규칙 2개·단추 1개가 켜졌어요". */
     private fun wearLogic(draft: String): String? {
         val now = c.settingsRepository.current.logic
@@ -791,6 +813,7 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
      * Now only the phone goes back; the draft stays as made (바꾼 곳 count from the phone again), so it can be changed a little and worn.
      */
     fun undoWear() {
+        wearMark?.let { m -> undoTheme(m); return }
         val before = beforeWear ?: return
         beforeLogic?.let { l -> c.settingsRepository.update { it.copy(logic = l) } }
         beforeLogic = null
