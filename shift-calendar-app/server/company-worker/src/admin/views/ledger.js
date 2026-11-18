@@ -240,6 +240,7 @@ export function ledgerViews(A) {
    * 2.0.0 [RVA-63] HQ-124: 장부 맨 위 '같은 판에서 닫힘 되풀이'. 같은 보낸 분, 또는 같은 기기·안드로이드·앱 판에서 7일 안 닫힘 문의가 2건 넘으면
    * 한 묶음(몇 건·첫 날~마지막 날·멈춤 기록 없는 건수)과 그 줄 번호. 안내 카드 한 모양(왼쪽 띠 주의, 조건 3).
    * 처음에는 접힌 한 줄(가장 최근 묶음의 건수·기기·날짜)이라 장부 첫 줄이 아래로 밀리지 않아요(조건 1). 펼침은 기기에 남아요.
+   * 펼친 몸은 묶음이 하나면 줄 번호 칩만(머리가 같은 말을 해요), 둘 넘으면 묶음마다 보통 굵기 한 줄 제목(조건 4, 총괄 #526).
    */
   function crashCard(d) {
     const gs = d.crashRepeats ?? [];
@@ -251,7 +252,7 @@ export function ledgerViews(A) {
     const open = S.opened.get(key) === true;
     return `<details class="card home-fold stuck crash-card" data-key="${key}"${open ? " open" : ""}><summary><span class="hf-t"><b>닫힘 되풀이 ${top.n}건 · ${top.by === "same" ? "같은 보낸 분" : `보낸 분 ${top.people}명`}</b><small>${esc([top.model, top.android ? `안드로이드 ${top.android}` : "", top.app,
         `${day(top.first)}~${day(top.last)}`, top.noRecord ? `멈춤 기록 없음 ${top.noRecord}건` : "", gs.length > 1 ? `묶음 ${gs.length}개` : ""].filter(Boolean).join(" · "))}</small></span></summary>
-      <div class="hf-body"><ul class="stuck-list">${gs.map((g) => `<li><p><b>${esc(g.label)}</b> <small>${g.n}건 · ${esc(day(g.first))}~${esc(day(g.last))}${g.noRecord ? ` · 멈춤 기록 없음 ${g.noRecord}건` : " · 멈춤 기록 모두 있음"}</small></p>
+      <div class="hf-body"><ul class="stuck-list">${gs.map((g) => `<li>${gs.length > 1 ? `<p class="crash-g">${esc(g.label)} · ${g.n}건 · ${esc(day(g.first))}~${esc(day(g.last))}${g.noRecord ? ` · 멈춤 기록 없음 ${g.noRecord}건` : ""}</p>` : ""}
         <div class="chips crash-lines" role="list">${g.lines.map((l, i) => `<a class="chip" role="listitem" href="${href("inquiries", l.key.slice("inquiry:".length))}">${esc(l.no ?? "문의")} · ${i + 1}번째</a>`).join("")}</div></li>`).join("")}</ul>
       <p class="hint">한 건씩 오면 되풀이가 안 보여요. 멈춤 기록이 없는 문의는 열어서 '기록 부탁 답 넣기'로 받아요. 숫자 › 개선 신호에도 올라가요.</p></div></details>`;
   }
