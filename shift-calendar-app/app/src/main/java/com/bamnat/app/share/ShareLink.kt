@@ -1273,7 +1273,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     }
 
     private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?, quiet: Boolean = false): Reply {
-        // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
+        // [SPD-26][SPD-27] 1.31: as the company server's requests, through the faster engine when there (2.0.0 [RVN-23] the phone's
+        // HttpEngine, no longer Play services' Cronet) and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
         try {
@@ -1354,7 +1355,8 @@ fun linkProblem(e: Throwable): String? = (e as? ShareLinkException)?.friendly
  * app has no words for ([linkProblem] null) is said as the server not taking it now; its code goes only into a question ([code]).
  */
 fun netWords(e: Throwable, first: String): String = "$first " + when {
-    e is java.net.SocketTimeoutException -> com.bamnat.app.ui.components.NetWords.SLOW
+    // 2.0.0 [RVN-23] (PC-187) from the old connection or the phone's HttpEngine alike.
+    com.bamnat.app.company.NetEngine.timedOut(e) -> com.bamnat.app.ui.components.NetWords.SLOW
     e is ShareLinkException -> com.bamnat.app.ui.components.NetWords.BUSY
     else -> com.bamnat.app.ui.components.NetWords.OFFLINE
 }
