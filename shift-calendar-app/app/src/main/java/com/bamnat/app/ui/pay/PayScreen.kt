@@ -513,7 +513,8 @@ private fun PayResult(
     var editTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var raiseTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var importing by remember { mutableStateOf(false) }
-    var matching by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-64] 검토 PAYU-04: open again after the screen is made again (dark theme, '활동 유지 안 함'), its figures with it.
+    var matching by rememberSaveable { mutableStateOf(false) }
     // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 from the plaza form opens the match once, as its button here would.
     androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(com.bamnat.app.tier.Feature.PAYSLIP_MATCH) } }
     var slipRules by remember { mutableStateOf(false) }

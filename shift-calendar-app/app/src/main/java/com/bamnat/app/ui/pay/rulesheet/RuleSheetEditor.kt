@@ -72,13 +72,16 @@ fun RuleSheetEditor(
     showHourly: Boolean = true,
 ) {
     val shown = rememberSheetPreview(state.sheet, preview)
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // 2.0.0 [RVJ-63] 검토 PAYU-45: 고친 칸은 뒤로·닫기 한 번에 사라지지 않고 한 번 물어요.
+    val opened = androidx.compose.runtime.remember { state.sheet }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = state.sheet != opened, onLeave = onDismiss)
+    Dialog(onDismissRequest = guard::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
                 topBar = {
                     TopAppBar(
                         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        navigationIcon = { IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") } },
+                        navigationIcon = { IconButton(onClick = guard::close) { Icon(Icons.Filled.Close, "닫기") } },
                     )
                 },
                 bottomBar = {

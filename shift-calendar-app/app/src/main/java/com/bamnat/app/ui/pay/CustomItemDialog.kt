@@ -184,6 +184,9 @@ data class ItemEffect(val amount: Long, val times: Int,
 @Stable
 internal class ItemDraft(kind: ItemKind?, private val id: String) {
     var kind by mutableStateOf(kind)
+
+    /** 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: what the user puts in, to ask before closing throws it away (a kind picked alone is not). */
+    fun typed(): List<Any?> = listOf(name.trim(), amount, percent, shifts, days, window, from, to, overHours, minYears, maxYears)
     var name by mutableStateOf("")
     /**
      * [PAYX-53] 1.38 PC 12.4.1: the names already in the pay setup, so an item put in with no name gets a number of its own
@@ -563,9 +566,13 @@ internal fun CustomItemDialog(
     val huge = rememberHugeCheck()
     // [PAYX-50] One window has no list of kinds to go back to.
     val pickBack = draft.kind != null && !isEdit && !oneWindow
-    fun back() { if (pickBack) draft.kind = null else onDismiss() }
+    // 2.0.0 [RVJ-63] 검토 PAYU-05·U05-13: ✕ and 뒤로 threw what was typed away in one tap; with something typed they ask once
+    // ('적은 내용을 버릴까요?', the app's one way, [com.bamnat.app.ui.components.rememberCloseGuard]).
+    val opened = remember { draft.typed() }
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(unsaved = draft.typed() != opened, onLeave = onDismiss)
+    fun back() { if (pickBack) draft.kind = null else guard.close() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = guard::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler(enabled = pickBack) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
@@ -574,7 +581,7 @@ internal fun CustomItemDialog(
                         title = { Text(if (isEdit) "항목 고치기" else if (oneWindow) "수당 추가" else "우리 $place 항목 만들기", maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = {
                             if (pickBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "종류 다시 고르기") }
-                            else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+                            else IconButton(onClick = guard::close) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
                 },
