@@ -35,7 +35,8 @@ test("IOS-02: a link with its calendar address on offers 내 캘린더에 넣기
   const ios = await (await call(env, `/s/${id}`)).text();
   assert.match(ios, new RegExp(`href="webcal://s\\.bamnat\\.app/s/${id}\\.ics"`));
   assert.match(ios, /아이폰 캘린더에 넣기/);
-  assert.match(ios, /출근 알람은 아니에요/);
+  // 2.0.0 [RVD-32] PC-170 A link that does not say it is a 근무표 (no word, not a 팀원 링크) is not told about 출근.
+  assert.match(ios, /바뀌어요\. 알람은 아니에요/);
   assert.match(ios, /Safari로 열기/);
   assert.match(ios, new RegExp(`https://s\\.bamnat\\.app/s/${id}\\.ics`), "the address for other calendar apps, in the page's own scheme");
   assert.doesNotMatch(ios, /<script/i);

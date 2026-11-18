@@ -489,6 +489,7 @@ async function create(request, env, url) {
   if (!(await allowCreate(request, env))) return json({ error: "rate_limited" }, 429);
   const parsed = await readSchedule(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
+  if (!policy314(env)) delete parsed.schedule.word;
   // 1.39 [CARE-09] 7차 PC: a schedule link's title and shift names take no phone·link·account·messenger either (the title is the
   // page's headline and preview). Memos, extras and pay labels are the sharer's own notes to the people they chose, left as they are.
   const scam = scamRefusal(request, personalHead(parsed.schedule));
@@ -511,6 +512,8 @@ async function update(request, env, url, id) {
   if (record instanceof Response) return record;
   const parsed = await readSchedule(request);
   if (parsed.error) return json({ error: parsed.error }, 400);
+  // [RVD-32] The sender's word for the link is kept only from 처리방침 3.14.
+  if (!policy314(env)) delete parsed.schedule.word;
   // Only a changed title or shift name is checked: a link made before 1.39 with a number in its title keeps updating by itself.
   const head = personalHead(parsed.schedule);
   const scam = JSON.stringify(head) === JSON.stringify(personalHead(record.schedule)) ? null : scamRefusal(request, head);
@@ -555,7 +558,8 @@ async function view(request, env, id) {
     // [RVD-30] HQ-64 An expired link still kept is named as its page was (이 영업일 링크는 …).
     const word = record?.schedule && !record.schedule.team ? linkWord(record.schedule) : "근무표";
     return html(page("링크가 없어요", `<p class="empty">이 ${word} 링크는 만료되었거나 공유한 사람이 끊었어요.</p>${goneNext(record?.schedule?.team
-      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule", word)}`), 404);
+      ? "최신 근무표는 리더에게 새 링크를 부탁해 주세요." : `최신 ${WORD_FORMS[word].subj} 필요하면 보낸 분께 새 링크를 부탁해 주세요.`, record?.schedule ? scheduleKind(record.schedule) : "schedule",
+      record?.schedule ? cardWord(record.schedule) : word)}`), 404);
   }
   const phone = platformOf(request.headers.get("user-agent") || "");
   if (request.method === "GET") {
@@ -2433,6 +2437,9 @@ export function validate(body) {
       schedule.payKind = payKind;
     }
   }
+  // 2.0.0 [RVD-32] PC-170 The sender's own word for the link (core scheduleWord); a word not in the list is dropped, not refused.
+  // create·update keep it only from 처리방침 3.14 ([policy314]).
+  if (SCHEDULE_WORDS.includes(body.word)) schedule.word = body.word;
   // [SHR-20] Who the link is for; a link with no audience is one made before 1.33.
   if (body.audience != null) {
     if (!AUDIENCES.includes(body.audience)) return { error: "audience" };
@@ -2803,7 +2810,7 @@ function storeHref(kind, ua) {
     `S.browser_fallback_url=${encodeURIComponent(store)};end`;
 }
 
-const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?(?::(영업일|일정))?-->/;
+const SPREAD_MARK = /<!--spread:([a-z]+)(:gone)?(?::(영업일|일정|달력|근무표))?-->/;
 const SPREAD_COOKIE = "bn_spread=off";
 const SPREAD_HIDE = "/spread/hide";
 /** The pages a card may go back to once closed: only this server's own receive pages, never another address. */
@@ -2814,7 +2821,8 @@ const SPREAD_BACK = /^\/(s\/[A-Za-z0-9]{16,32}|[cavwkb]\/[A-Za-z0-9]{22})$/;
  * (영업일·일정, linkWord), so a shop's page does not end on '가족 근무 … 이 근무표'. The store link stays the family one.
  */
 function spreadSlot(kind, gone = false, word = null) {
-  const said = kind === "family" && (word === "영업일" || word === "일정") ? `:${word}` : "";
+  // [RVD-32] PC-170 '근무표' asks for the middle words; a 가족 근무 (cardWord "가족") is the card as it was.
+  const said = kind === "family" && ["영업일", "일정", "달력", "근무표"].includes(word) ? `:${word}` : "";
   return SPREAD_KINDS[kind] ? `<!--spread:${kind}${gone ? ":gone" : ""}${said}-->` : "";
 }
 
@@ -2837,6 +2845,7 @@ export const OG_TEXT = {
   // 2.0.0 [RVD-30] HQ-64 A 근무표 링크 named by what came with it (linkWord), still only the kind of page.
   familySales: { title: "영업일이 왔어요", line: "보낸 분의 영업일을 달력으로 볼 수 있어요." },
   familyJobs: { title: "일정이 왔어요", line: "보낸 분의 일정을 달력으로 볼 수 있어요." },
+  familyCal: { title: "달력이 왔어요", line: "보낸 분의 달력을 볼 수 있어요." },
   team: { title: "확정된 근무표가 왔어요", line: "내 근무를 달력으로 확인해 주세요." },
   board: { title: "팀 전체 근무표가 왔어요", line: "이번 달 팀 근무표를 볼 수 있어요." },
   request: { title: "근무 신청 링크가 왔어요", line: "원하는 날을 골라 신청해 주세요." },
@@ -2870,9 +2879,11 @@ function appleUa(ua) {
 export function spreadCard(kind, ua, back, gone = false, word = null) {
   const base = SPREAD_KINDS[kind];
   if (!base) return "";
-  // [RVD-30] HQ-64 A shop's 영업일 or a freelancer's 일정 is not a 가족 근무.
-  const k = kind === "family" && (word === "영업일" || word === "일정")
-    ? { ...base, title: `${word === "영업일" ? "가게 영업일" : "보낸 분의 일정"}을 내 달력 옆에서 바로`, line: base.line.replace("이 근무표를", `이 ${word}을`) }
+  // [RVD-30] HQ-64 A shop's 영업일 or a freelancer's 일정 is not a 가족 근무. [RVD-32] PC-170 Nor is a 근무표 whose sender did not say
+  // it was one for family: '보낸 분의 근무표를'.
+  const head = { 영업일: "가게 영업일을", 일정: "보낸 분의 일정을", 달력: "보낸 분의 달력을", 근무표: "보낸 분의 근무표를" }[word];
+  const k = kind === "family" && head
+    ? { ...base, title: `${head} 내 ${word === "달력" ? "것" : "달력"} 옆에서 바로`, line: base.line.replace("이 근무표를", `이 ${word}${word === "근무표" ? "를" : "을"}`) }
     : base;
   const android = /Android/i.test(ua);
   const apple = !android && appleUa(ua);
@@ -2987,7 +2998,31 @@ export function linkWord(schedule) {
   const pay = shows.includes("pay") ? schedule.payKind ?? "pay" : null;
   if (pay === "sales") return "영업일";
   if (shows.includes("jobs") || pay === "jobs") return "일정";
+  // 2.0.0 [RVD-32] PC-170: what the sender's app says it is (core scheduleWord), kept only from 처리방침 3.14 ([policy314]).
+  if (SCHEDULE_WORDS.includes(schedule?.word)) return schedule.word;
   return "근무표";
+}
+
+/**
+ * 2.0.0 [RVD-32] PC-170 The words a sender's app may name its link with (core scheduleWord: 교대·일근·알바 근무표, 가게 영업일, 현장 일정,
+ * 투자 달력). Anything else is dropped, not refused, and the field is kept only from 처리방침 3.14 ([policy314]).
+ */
+export const SCHEDULE_WORDS = ["근무표", "영업일", "일정", "달력"];
+
+/**
+ * 2.0.0 [RVD-32] PC-170 What a schedule page's card speaks of. A 근무표 is a 가족 근무 only when the sender's app said 근무표 and
+ * chose 가족·연인; a link that does not say (before 2.0.0 or 3.14, or a shop's link with its days only) gets the middle words
+ * ('보낸 분의 근무표를 …', no 출근).
+ */
+export function cardWord(schedule) {
+  const word = linkWord(schedule);
+  if (word !== "근무표") return word;
+  return saidShift(schedule) && schedule?.audience === "family" ? "가족" : "근무표";
+}
+
+/** [RVD-32] A 근무표 known to be one (출근 is the right word): a leader's 팀원 링크, or the sender's app said 근무표 (from 3.14). */
+function saidShift(schedule) {
+  return linkWord(schedule) === "근무표" && (schedule?.team === true || schedule?.word === "근무표");
 }
 
 /**
@@ -2998,6 +3033,8 @@ const WORD_FORMS = {
   근무표: { is: "근무표예요", subj: "근무표가", days: "근무", daysSubj: "근무가", daysTopic: "근무는", with: "근무와 함께 보낸 것", og: "family" },
   영업일: { is: "영업일이에요", subj: "영업일이", days: "영업일", daysSubj: "영업일이", daysTopic: "영업일은", with: "영업일과 함께 보낸 것", og: "familySales" },
   일정: { is: "일정이에요", subj: "일정이", days: "일정", daysSubj: "일정이", daysTopic: "일정은", with: "함께 보낸 것", og: "familyJobs" },
+  // [RVD-32] An investor's app says 달력 (core scheduleWord).
+  달력: { is: "달력이에요", subj: "달력이", days: "달력", daysSubj: "달력이", daysTopic: "달력은", with: "달력과 함께 보낸 것", og: "familyCal" },
 };
 
 /**
@@ -3084,7 +3121,7 @@ export function renderSchedule(schedule, expiresAt, appId = null, reportId = nul
     : "";
   return page(title, `<h1>${esc(title)}</h1>${has}${setupLine}${app}${feedButton(schedule, opts.feed, opts.phone, opts.scheme, !app)}${tiredPanel(reportId, opts.tired, opts.said)}` +
     `${monthList(widestWord(schedule.types.filter((t) => used.has(t.id)).map((t) => t.short)))}${grids.join("")}<ul class="legend">${legend}</ul>${okPanel(reportId, opts.ok)}${pay}` +
-    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind, false, word) + (reportId ? reportForm(reportId) : ""),
+    `<p class="muted foot">밤낮 앱에서 공유한 읽기 전용 ${WORD_FORMS[word].is}. <span class="nm">${until}까지</span> 열려요.</p>${ios ? homeHint() : ""}` + spreadSlot(kind, false, cardWord(schedule)) + (reportId ? reportForm(reportId) : ""),
   word, kind === "family" ? WORD_FORMS[word].og : kind);
 }
 
@@ -3100,8 +3137,9 @@ export function feedButton(schedule, feed, phone, scheme = "https", primary = tr
   const label = phone === "ios" ? "아이폰 캘린더에 넣기" : "구글 캘린더에 넣기";
   const word = linkWord(schedule);
   return `<div class="panel feed"><p class="feed-t"><a class="get${primary ? "" : " line"}" href="${esc(href)}">${label}</a></p>` +
-    // [RVD-30] HQ-64 '영업일이 바뀔 때'·'일정이 바뀔 때' for a shop's or a freelancer's link.
-    `<p class="muted small">한 번 넣어 두면 ${WORD_FORMS[word].daysSubj} 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. ${word === "근무표" ? "출근 " : ""}알람은 아니에요.` +
+    // [RVD-30] HQ-64 '영업일이 바뀔 때'·'일정이 바뀔 때' for a shop's or a freelancer's link. [RVD-32] PC-170 '출근' only where the
+    // link is known to be a 근무표 (a shop that sent its days only is not told about 출근).
+    `<p class="muted small">한 번 넣어 두면 ${WORD_FORMS[word].daysSubj} 바뀔 때 캘린더도 몇 시간 안에 따라 바뀌어요. ${saidShift(schedule) ? "출근 " : ""}알람은 아니에요.` +
     (phone === "ios" ? ` 카카오톡 안에서 안 열리면 오른쪽 아래 메뉴에서 'Safari로 열기' 뒤 다시 눌러 주세요.` : "") +
     `</p><p class="muted small">다른 캘린더 앱: <span class="addr">${esc(scheme)}://${esc(feed)}</span></p></div>`;
 }
@@ -3319,7 +3357,7 @@ main{max-width:720px;margin:0 auto;padding:24px 16px 48px}h1{font-size:22px;marg
 .pay ul{list-style:none;padding:0;margin:0;background:var(--card);border:1px solid var(--line);border-radius:12px}.pay li{display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 12px;padding:12px 14px;border-top:1px solid var(--line)}.pay li b{white-space:nowrap;margin-left:auto}.pay li:first-child{border-top:none}
 .dow{display:none}.cal{container-type:inline-size}.cal .grid{grid-template-columns:repeat(7,minmax(0,1fr))}.cal .chip{word-break:keep-all}
 .legend{list-style:none;padding:0;margin:20px 0 0;display:flex;flex-wrap:wrap;gap:8px 16px}
-.legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer}.report label{display:block;padding:4px 0}.report button{margin-top:8px;padding:8px 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg)}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
+.legend li{display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}.nm{white-space:nowrap}.report{margin-top:16px;font-size:13px}.report summary{color:var(--muted);cursor:pointer;padding:10px 0;min-height:44px;box-sizing:border-box}.report label{display:block;padding:10px 0;min-height:44px;box-sizing:border-box}.report label input{margin:0 8px 0 2px;vertical-align:middle}.report button{margin-top:8px;min-height:44px;box-sizing:border-box;padding:10px 18px;border-radius:999px;border:1px solid var(--muted);background:var(--card);color:var(--fg);font-size:15px}.muted{color:var(--muted)}.foot{margin-top:24px;font-size:13px;word-break:keep-all}.empty{margin-top:40px}
 .buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,9.5em),1fr));gap:12px;margin:16px 0}.buttons form{margin:0}.buttons button{width:100%;min-height:96px;border-radius:20px;border:none;font-size:24px;font-weight:800;color:#fff;cursor:pointer}
 .buttons .in{background:#2f7d5b}.buttons .out{background:#3b5bdb}.buttons .other{opacity:.45;min-height:64px;font-size:18px}.buttons .picked{outline:4px solid var(--today);outline-offset:2px}.done{background:var(--card);border:2px solid var(--today);border-radius:12px;padding:12px 14px;font-weight:700}
 .cell.picked{outline:2px solid var(--sat)}a.cell{color:inherit;text-decoration:none}.full{color:var(--sun);font-weight:700}

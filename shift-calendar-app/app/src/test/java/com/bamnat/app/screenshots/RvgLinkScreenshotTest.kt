@@ -150,7 +150,9 @@ class RvgLinkScreenshotTest : ScreenshotBase() {
         mineByMistake().invoke(this)
         assertTrue(appears("오늘", exact = true))
         assertTrue(appears("내 달력으로", exact = true))
-        if (!big) assertTrue("there is room: the words, not the icon", appears("2026년 10월", exact = false))
+        // 2.0.0 [RVP-45] HQ-62: the received month has the calendar's one-row head; on a folded phone this year's month is the month
+        // alone ('10월', never cut), as on the user's own calendar.
+        if (!big) assertTrue("the month whole", appears("10월", exact = false) && gone("10…", exact = false))
     }
     @Test fun receivedHeadFoldLight() = shoot("rvg22_received_head_fold_light_100", FOLDED, receivedHead(big = false))
     @Test fun receivedHeadFoldDarkHuge() = shoot("rvg22_received_head_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, receivedHead(big = true))

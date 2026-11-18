@@ -235,6 +235,40 @@ data class StaffWork(val staffId: String, val date: LocalDate, val kind: WorkKin
 }
 
 /**
+ * 2.0.0 [RVJ-60] 검토 J-488 ★13 (PC 3차 4절·T4): a 월급 that holds the usual 연장 ([StaffMember.overtimeInPay]) read in four lines, one of
+ * them minus ('고정 연장수당으로 이미 받은 몫 −328,192원'), and its 기본급 said '입력한 월 기본급' though the boss put in 2,500,000원. It is
+ * said as the 계약서 says it: 기본급 (월급 − 고정 연장근로수당), the 고정 연장근로수당 with the month's 연장 hours (임금명세서의 계산방법은 연장
+ * 시간 수를 담아요, 근로기준법 시행령 제27조의2 제5호), and a '연장근로 차액' line only in a month with more 연장 than it pays (대법원
+ * 2008다6052). The total is the same.
+ */
+internal fun foldFixedOvertime(staff: StaffMember, lines: List<PayLine>): List<PayLine> {
+    if (staff.overtimeInPay != true) return lines
+    val fixed = lines.indexOfFirst { it.label == PayrollLedger.FIXED_OT }.takeIf { it >= 0 } ?: return lines
+    val earned = lines.indices.filter { lines[it].kind == LineKind.OVERTIME && lines[it].amount > 0 }
+    val cover = lines.indices.filter { lines[it].kind == LineKind.OVERTIME && lines[it].amount < 0 }
+    val minutes = earned.sumOf { lines[it].minutes }
+    val earnedWon = earned.sumOf { lines[it].amount }
+    val over = earnedWon + cover.sumOf { lines[it].amount }
+    val f = lines[fixed]
+    val won = { v: Long -> "%,d원".format(v) }
+    val out = mutableListOf<PayLine>()
+    lines.forEachIndexed { i, l ->
+        when {
+            i in earned || i in cover -> Unit
+            i == fixed -> {
+                out += l.copy(formula = "40시간을 넘는 평소 근무를 미리 줘요" +
+                    if (minutes > 0) " · 이번 달 연장근로 ${PayCalculator.hours(minutes)}" + (if (over > 0) "" else "은 이 안이에요") else "")
+                if (over > 0) out += PayLine(LineKind.OVERTIME, "연장근로 차액", over,
+                    formula = "연장근로 ${PayCalculator.hours(minutes)} ${won(earnedWon)} − 고정 연장근로수당 ${won(f.amount)}", minutes = minutes)
+            }
+            l.kind == LineKind.BASE -> out += l.copy(formula = l.formula.replace("입력한 월 기본급", "월급 ${won(staff.base)} − 고정 연장근로수당 ${won(f.amount)}"))
+            else -> out += l
+        }
+    }
+    return out
+}
+
+/**
  * [BOSS-04] One person's month in the 임금대장: what [PayCalculator] gives (each line with its formula, the 계산 방법 of
  * 시행령 제27조의2 제5호), the hours the ledger lists (제27조 제1항 제6~8호), and what the boss pays on top (사업주 4대보험,
  * [LaborCost.employerInsurance]). 공제 (제10호) is the next 판's 공제 미리보기 (B2, 순번 504).
@@ -258,7 +292,7 @@ data class LedgerLine(
      */
     val weekMinutes: List<Int> = emptyList(),
 ) {
-    val lines: List<PayLine> get() = pay?.lines.orEmpty().filter { it.amount != 0L }
+    val lines: List<PayLine> get() = foldFixedOvertime(staff, pay?.lines.orEmpty().filter { it.amount != 0L })
     val gross: Long get() = lines.sumOf { it.amount }
     val employerTotal: Long get() = gross + employerInsurance + accident
     /** Pay lines grouped by what the ledger calls them: 기본급, 주휴수당, 연장·야간·휴일, 수당. */

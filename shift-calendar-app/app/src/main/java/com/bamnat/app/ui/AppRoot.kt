@@ -421,7 +421,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 2.0.0 [RVG-35] 검토 HQ-64: the link in its own word, as the web page that opened it said (‘민지’ 영업일).
-                    val waitingWord = waitingSchedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
+                    val waitingWord = waitingSchedule?.word ?: "근무표"
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }

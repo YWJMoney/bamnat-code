@@ -18,6 +18,8 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.team.TeamToday
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * 1.39 [FLOW-23] 팀 오늘 판 머리 (흐름 디자인 3-11 '한 숫자 머리, 이야기 줄'): "오늘 출근 **12명** · 빈자리 1", and under it the day's
@@ -27,7 +29,7 @@ import com.bamnat.core.team.TeamToday
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TeamTodayHead(day: TeamToday.Day, modifier: Modifier = Modifier, word: String = "오늘") {
-    val warn = LocalCalendarColors.current.warning
+    val warn = Tone.Caution.color() // 2.0.0 [RVP-13] (HQ-54) 빈자리는 채울 것(주의)
     val head = day.head(word)
     Column(modifier.semantics(mergeDescendants = true) { contentDescription = head + ". " + day.steps.joinToString(", ") { stepWords(it) } },
         verticalArrangement = Arrangement.spacedBy(2.dp)) {
