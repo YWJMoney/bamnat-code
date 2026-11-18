@@ -841,7 +841,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
                 " · 넣기 전으로 되돌릴 수 있어요") { askingBack = true }
             HorizontalDivider()
         }
-        if (askingBack) androidx.compose.material3.AlertDialog(
+        if (askingBack) com.bamnat.app.ui.components.AlertDialog(
             onDismissRequest = { askingBack = false },
             title = { Text("넣기 전 설정으로 되돌릴까요?") },
             text = {
