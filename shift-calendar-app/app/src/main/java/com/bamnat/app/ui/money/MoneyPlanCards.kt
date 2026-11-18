@@ -483,7 +483,7 @@ fun FirstFillCard(book: com.bamnat.core.money.MoneyBook, calendarId: String, onF
     com.bamnat.app.ui.components.SectionCard(title = "첫날부터 채워진 가계부") {
         Text("카드·은행 결제 문자를 여러 개 골라 한 번에 붙여 넣으면 지난 한 달이 바로 채워져요. 처음 보는 카드와 매달 나가는 돈은 그다음에 물어볼게요.",
             style = MaterialTheme.typography.bodyMedium)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
             androidx.compose.material3.TextButton(onClick = onFill) { Text("문자로 채우기") }
             androidx.compose.material3.TextButton(onClick = { skipped = true; prefs.edit().putBoolean(calendarId, true).apply() }) { Text("넘기기") }
         }

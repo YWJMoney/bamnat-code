@@ -1226,7 +1226,8 @@ internal fun IncomeCard(m: MonthMoney, style: WorkStyle?, profile: PayProfile?, 
             }
             // [LEDG-29] 세전 of the month's work, or the 실수령 that lands on the pay day (통장에 찍히는 돈).
             // 25f2364b PC 확인 (세전·실수령 칩이 세금·실수령 카드와 겹쳐요): with that card on, the choice is in it.
-            if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (hasProfile && !taxSays && (m.payRecorded == 0L || m.payObserved)) androidx.compose.foundation.layout.FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !net, onClick = { onTakeHome(false) }, label = { Text("그달 일한 세전") })
                 FilterChip(selected = net, onClick = { onTakeHome(true) }, label = { Text("지급일 실수령") })
             }

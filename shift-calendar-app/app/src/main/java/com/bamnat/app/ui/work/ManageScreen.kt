@@ -44,6 +44,7 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.manage.ManageDesk
@@ -213,7 +214,7 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
         // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
         if (today != null && members > 0) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else "짜는 중", Modifier.weight(1f),
                 caption = if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움", caution = !g.confirmed && members > 0 && g.painted > 0)
             StatTile("${now.plusMonths(1).monthValue}월", if (g.nextConfirmed) "확정 ${nm?.version ?: 0}판" else "짜는 중", Modifier.weight(1f),
@@ -241,7 +242,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     SectionCard(title = place.name, trailing = { TextButton(onClick = onOpen) { Text("급여 대장") } }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             // 2.0.0 [RVJ-50] 검토 PC-118: a month not closed yet is a to-do (할 일 says it with the 지급일), not a danger: the tile
             // was red. It is a plain tile whose caption says '닫기 전' (조건 6, 빨강은 위험만).
             StatTile("${last.monthValue}월 인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${staff.size}명 · " + if (isClosed) "닫음" else "닫기 전")

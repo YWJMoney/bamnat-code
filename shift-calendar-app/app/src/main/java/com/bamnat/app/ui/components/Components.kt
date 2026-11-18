@@ -262,6 +262,21 @@ fun SectionCard(
     }
 }
 
+/**
+ * 2.0.0 [RVK-55] (총괄 HQ-120, 조건 12) [StatTile]s side by side, and at a big font (150% and up) one under another: two half-width
+ * tiles at 200% broke '1,234,567원' in the middle of the number. Below 150% it is the same Row as before.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+fun StatTiles(modifier: Modifier = Modifier, content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) {
+        androidx.compose.foundation.layout.FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp), maxItemsInEachRow = 1) { content() }
+    } else {
+        Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) { content() }
+    }
+}
+
 /** Number tile for hour totals. */
 @Composable
 fun StatTile(

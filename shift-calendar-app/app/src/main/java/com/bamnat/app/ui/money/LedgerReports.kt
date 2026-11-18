@@ -44,6 +44,7 @@ import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.theme.LedgerColors
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
@@ -163,7 +164,7 @@ fun LedgerReportsPane(
 @Composable
 private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
     SectionCard(title = "${m.label} 한눈에") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             // [J133-62] 1.33 (중간 빌드 확인): the pay still to come is not money that came in; it is said under the tile.
             StatTile("들어온 돈", Fmt.won(m.received), Modifier.weight(1f),
                 caption = m.payExpected?.let { "들어올 급여(예상) ${wonBrief(it)} 별도" }
@@ -330,7 +331,7 @@ private fun YearCard(y: YearReport, shown: YearMonth) {
     val months = y.months
     if (y.activeMonths == 0) return
     SectionCard(title = "${y.year}년 흐름", trailing = { ProPill() }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("올해 들어온 돈", Fmt.won(y.income), Modifier.weight(1f), caption = "한 달 평균 ${wonBrief(y.averageIncome)}")
             StatTile("올해 나간 돈", Fmt.won(y.spent), Modifier.weight(1f), caption = "한 달 평균 ${wonBrief(y.averageSpent)}")
         }

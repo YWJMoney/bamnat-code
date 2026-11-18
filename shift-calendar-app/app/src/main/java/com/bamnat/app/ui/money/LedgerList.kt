@@ -869,7 +869,7 @@ private fun ExportDialog(shown: List<MoneyEntry>, book: MoneyBook, range: Pair<L
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = shown.isNotEmpty(), onClick = { runCatching { save.launch(name) }.onFailure { onMessage("파일을 저장할 곳을 열지 못했어요"); onDismiss() } }) {
                     Text("파일로 저장")
                 }

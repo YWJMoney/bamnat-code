@@ -65,6 +65,7 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.money.LedgerExport
 import com.bamnat.app.ui.theme.NumberStyle
@@ -361,7 +362,7 @@ private fun SummaryCard(vm: InvestViewModel, state: InvestState, open: (InvestSh
             style = MaterialTheme.typography.titleMedium.merge(NumberStyle), color = rateColor(rate), fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("원금", InvestFmt.short(s.principal, hide), Modifier.weight(1f), caption = "입금 − 출금",
                 onClick = { open(InvestSheet.CashEdit(CashKind.DEPOSIT)) })
             StatTile("현금", InvestFmt.short(s.cash, hide), Modifier.weight(1f), caution = s.cashShort)
@@ -379,7 +380,7 @@ private fun SummaryCard(vm: InvestViewModel, state: InvestState, open: (InvestSh
                 onClick = if (state.result.held.isNotEmpty()) ({ open(InvestSheet.Quotes) }) else null)
         }
         Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("실현손익", InvestFmt.signedShort(s.realized, hide), Modifier.weight(1f))
             StatTile("배당·이자", InvestFmt.short(s.income, hide), Modifier.weight(1f), caption = "세후")
             StatTile("수수료·세금", InvestFmt.short(s.fees + s.taxes, hide), Modifier.weight(1f))
