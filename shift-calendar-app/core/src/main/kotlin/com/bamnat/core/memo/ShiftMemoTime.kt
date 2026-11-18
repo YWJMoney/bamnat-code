@@ -97,6 +97,12 @@ object ShiftMemoTime {
         return { d -> byDate[d.date.minusDays(1)] }
     }
 
+    /** 2.0.0 [RVIB-04] (검토 I07ac-01) The next time [anchor] is told after [now] over [days] (the work days among them), or null. */
+    fun workNext(days: List<Day>, anchor: WorkAnchor, now: LocalDateTime): LocalDateTime? = days.asSequence()
+        .filter { it.work && it.start != null && it.end != null }
+        .mapNotNull { anchor.on(it.date, it.start!! to it.end!!) }
+        .filter { it.isAfter(now) }.minOrNull()
+
     /** For the dialog: the next of each kind of shift ahead, and the next day off, soonest first, at most [max]. */
     fun suggestions(days: List<Day>, now: LocalDateTime, max: Int = 4): List<Suggestion> {
         val seen = HashSet<String>()
@@ -124,11 +130,17 @@ object ShiftMemoTime {
      * The time [text] means by a shift ("다음 야간 때", "야간 출근 전", "주간 날", "쉬는 날"), on [days] ahead; null when
      * it names none, or the shift is not on the calendar ahead. "다다음 야간" is the one after.
      */
-    fun find(text: String, now: LocalDateTime, days: List<Day>): MemoTime.Found? {
+    fun find(text: String, now: LocalDateTime, days: List<Day>): MemoTime.Found? = match(text, now, days)?.found
+
+    /** 2.0.0 [RVI-76] (검토 U07a-11) What [find] found and where in [text] its words are, so a 한 줄 can take them out of its title. */
+    data class Match(val found: MemoTime.Found, val range: IntRange)
+
+    /** [find] with the words it read. */
+    fun match(text: String, now: LocalDateTime, days: List<Day>): Match? {
         val before = beforeOf(days)
         val ahead = days.sortedBy { it.date }.filter { timeFor(it, before(it)).isAfter(now) }
         if (ahead.isEmpty()) return null
-        var best: Pair<Int, MemoTime.Found>? = null
+        var best: Pair<IntRange, MemoTime.Found>? = null
         val names = ahead.filter { it.name.isNotBlank() }.map { it.name }.distinct().sortedByDescending { it.length }
         for (name in names) {
             val re = byName.getOrPut(name) { Regex("(다다음|다음|담|이번)?\\s*${Regex.escape(name)}$SUFFIX") }
@@ -139,16 +151,16 @@ object ShiftMemoTime {
             val day = (if (second) list.getOrNull(1) else list.firstOrNull()) ?: continue
             val at = timeFor(day, before(day))
             val found = MemoTime.Found(at, label(day, at).replaceFirst("다음 ", if (second) "다다음 " else "다음 "))
-            if (best == null || m.range.first < best.first) best = m.range.first to found
+            if (best == null || m.range.first < best.first.first) best = m.range to found
         }
         if (best == null) {
-            val i = OFF_WORDS.mapNotNull { w -> text.indexOf(w).takeIf { it >= 0 } }.minOrNull()
-            if (i != null) ahead.firstOrNull { !it.work }?.let { d ->
+            val word = OFF_WORDS.mapNotNull { w -> text.indexOf(w).takeIf { it >= 0 }?.let { it until it + w.length } }.minByOrNull { it.first }
+            if (word != null) ahead.firstOrNull { !it.work }?.let { d ->
                 val at = timeFor(d, before(d))
-                best = i to MemoTime.Found(at, "다음 쉬는 날(${md(d.date)}) ${partOf(at)}")
+                best = word to MemoTime.Found(at, "다음 쉬는 날(${md(d.date)}) ${partOf(at)}")
             }
         }
-        return best?.second
+        return best?.let { (range, found) -> Match(found, range) }
     }
 
     /**

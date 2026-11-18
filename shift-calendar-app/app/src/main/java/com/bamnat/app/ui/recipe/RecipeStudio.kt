@@ -43,12 +43,12 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -231,7 +231,9 @@ internal fun MockPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String
         shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), blueprint)) {
       // [RUL-02] 조건부 꾸미기 in the example too: the phone's own days decide which lines hold.
       val facts = com.bamnat.app.logic.LocalDayFacts.current ?: if (blueprint.hasFormulas) com.bamnat.app.logic.rememberAppDayFacts() else null
-      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.logic.LocalDayFacts provides facts, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts) {
+      // 2.0.0 [RVP-05] PC-128: the example's buttons and pills take its 모서리 too.
+      CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides blueprint, com.bamnat.app.logic.LocalDayFacts provides facts, com.bamnat.app.ui.parts.LocalBlueprintRaw provides rawParts,
+          com.bamnat.app.ui.theme.LocalPill provides com.bamnat.app.ui.theme.pillFor(corners, MaterialTheme.shapes)) {
         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
             Column(
                 Modifier.widthIn(max = 340.dp).fillMaxWidth().height(560.dp)
@@ -643,6 +645,15 @@ private fun MockMemos(resolved: Map<PieceKind, Map<String, Any?>>, style: WorkSt
     val placed = PageLayout.decode(resolved[PieceKind.CARDS]?.get("memo") as? String).arrange(MemoPart.entries.toList()) { it.id }.filter { it.shown }
     placed.forEach { p ->
         when (p.part) {
+            // 2.0.0 [RVI-77] The memo tab's '오늘' 묶음 as it starts: today's to-dos and the line to write one.
+            MemoPart.TODAY -> Column(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)),
+                verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("할 일 2개 남았어요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text("○ 우유 사기   ○ 치과 · 15:00", style = MaterialTheme.typography.bodySmall)
+                Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
+                    Text("+ 한 줄로 적기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             MemoPart.SEARCH -> Box(Modifier.fillMaxWidth().partSpot(com.bamnat.app.ui.studio.StudioEdit.cardId(TabOrder.MEMOS, p.part.id)).background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.extraLarge).padding(10.dp)) {
                 Text("🔍 제목·내용·#태그 찾기", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

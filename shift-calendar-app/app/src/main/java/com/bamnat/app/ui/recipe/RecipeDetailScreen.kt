@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -45,7 +46,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import com.bamnat.app.ui.company.SoftCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -56,7 +57,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -188,6 +189,8 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(r.title, style = MaterialTheme.typography.titleLarge)
                     if (r.summary.isNotEmpty()) Text(r.summary, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVM-42] 총괄 HQ-100: a work for another kind of work says so under its name, and what that means for 넣기.
+                    otherKindLine(r, vm.style)?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 // [RCX-05][PRF-01] 만든 분: 표식 · 팔로워, 누르면 프로필.
                 MakerLine(doc.item, onMaker.takeIf { doc.item.maker != null })
@@ -247,7 +250,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                 // [TRY-06] 1.39 기능까지 써 보기: the 기능 switched on, put on the real app for a while and taken back whole.
                 val tryFns = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.app.recipe.FunctionTrial.KINDS }
                 val ended by LiveTryOn.ended.collectAsStateWithLifecycle()
-                ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e)) { LiveTryOn.forget() } }
+                ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e), LiveTryOn.details(e)) { LiveTryOn.forget() } }
                 var liveNote by remember(r) { mutableStateOf<String?>(null) }
                 var tasting by remember { mutableStateOf(false) }
                 var tasteRefused by remember { mutableStateOf(false) }
@@ -381,7 +384,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                                 val unit = remember(r) { com.bamnat.core.recipe.LookParts.partUnit(r) }
                                 if (unit != null) {
                                     var keptLine by remember(r) { mutableStateOf<String?>(null) }
-                                    androidx.compose.material3.OutlinedButton(onClick = {
+                                    com.bamnat.app.ui.components.OutlinedButton(onClick = {
                                         keptLine = if (vm.keep(setOf(unit))) "✓ 보관함에 담았어요. 스튜디오 › 보관함에서 꺼내 얹어요"
                                             else "보관함이 꽉 찼어요. 스튜디오 › 보관함에서 하나를 빼고 다시 담아 주세요"
                                     }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("이 부품 보관함에 담기") }
@@ -530,6 +533,10 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
     if (disliking) DislikeDialog(onSend = { reason, opinion -> vm.vote(-1, reason, opinion); disliking = false }, onDismiss = { disliking = false })
 }
 
+/** 2.0.0 [RVM-42] 총괄 HQ-100: "일근용 작품이에요 · 교대에 맞는 조각만 들어가요"; null for a work that is for [mine] (or every kind). */
+internal fun otherKindLine(r: com.bamnat.core.recipe.Recipe, mine: com.bamnat.core.work.WorkStyle?): String? =
+    RecipeDescribe.otherKind(r.styles, mine)?.let { "$it 작품이에요 · ${RecipeDescribe.short(mine!!)}에 맞는 조각만 들어가요" }
+
 /** [RVM-13] PC-59·60·34 · 총괄 #462 The 넣기 창: short lines first, '바뀌는 것 모두 보기' as a row, '넣기' its one filled button and '닫기'. */
 @Composable
 private fun PutDialog(
@@ -543,6 +550,8 @@ private fun PutDialog(
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [RVM-13] PC-59·60·34: four short lines first (모양·단추·알람·그 밖에), the 알람 line's switch '알람도 넣기', and the full list folded.
                 val fxOn = com.bamnat.app.logic.FxAccess.on(LocalContext.current.appContainer)
+                // [RVM-42] HQ-100: said first in the 넣기 창 too.
+                s.recipe?.let { otherKindLine(it, vm.style) }?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 PutBrief(putBrief(s, fxOn), onLetters = vm::letters, onWeaker = vm::alarmWeaker) { vm.toggle(PieceKind.ALARMS, it) }
                 // 1.39 [NTC-03] 겹치는 알림: '기존 설정을 바꿀까요?' asked here too, right before 넣기 (사용자 2026-11-08).
                 s.pieces.firstOrNull { it.kind == PieceKind.LOGIC && it.on && it.fits && it.overlaps.isNotEmpty() }?.let { p ->
@@ -618,7 +627,7 @@ private fun PutDialog(
                 onQuit = { onAdNote("광고를 끝까지 봐야 넣을 수 있어요") },
                 onOffline = { onAdNote("인터넷에 연결되면 다시 해 주세요") },
                 onNoAd = onNoAd,
-            ) else androidx.compose.material3.Button(onClick = onPut, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
+            ) else com.bamnat.app.ui.components.Button(onClick = onPut, modifier = Modifier.heightIn(min = 48.dp)) { Text("넣기") }
         },
         dismissButton = { TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") } },
     )
@@ -821,7 +830,19 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     var kind by remember { mutableStateOf("question") }
     var replyTo by remember { mutableStateOf<RecipePost?>(null) }
     var disliking by remember { mutableStateOf<RecipePost?>(null) }
-    Text("이야기", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+    // 2.0.0 [RVM-36] 검토 HQ-52: opened from the 알림함's '내 작품 ‘…’ · 질문: …' row, the page goes to 이야기 once its 글 are in (the
+    // heading at the top: a rect taller than the screen is brought to its start).
+    val toTalk = remember(vm.code) { RecipeLinks.takeTalkFocus(vm.code) }
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    val loaded = s.talk != null
+    LaunchedEffect(toTalk, loaded) {
+        if (toTalk && loaded) {
+            kotlinx.coroutines.delay(TALK_SETTLE_MS)
+            runCatching { bring.bringIntoView(androidx.compose.ui.geometry.Rect(0f, 0f, 1f, 100_000f)) }
+        }
+    }
+    Text("이야기", style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.bringIntoViewRequester(bring).semantics { heading() })
     val talk = s.talk
     if (talk == null) { Text("불러오는 중이에요", style = MaterialTheme.typography.bodySmall); return }
     if (talk.posts.isEmpty()) Text("아직 이야기가 없어요. 써 본 후기나 궁금한 점을 남겨 주세요", style = MaterialTheme.typography.bodySmall,
@@ -868,6 +889,9 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
     }
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }
 }
+
+/** [RVM-36] How long the page settles (its 글 laid out) before it goes to 이야기. */
+private const val TALK_SETTLE_MS = 200L
 
 /** [RVF-03] 광장 글 신고와 같은 이유(server FLAGS). */
 internal val TALK_FLAG_REASONS = linkedMapOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "spam" to "광고·도배", "false" to "일부러 틀린 정보")
@@ -1053,7 +1077,7 @@ internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start:
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf<String?>(null) }
-    androidx.compose.material3.FilledTonalButton(onClick = {
+    com.bamnat.app.ui.components.FilledTonalButton(onClick = {
         if (busy) return@FilledTonalButton
         busy = true
         note = null
@@ -1074,12 +1098,26 @@ internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start:
 
 /** [TRY-06] What the 기능 did while tried, on the page they were tried from (until closed). */
 @Composable
-internal fun TriedCard(line: String, onClose: () -> Unit) {
+internal fun TriedCard(line: String, details: List<String> = emptyList(), onClose: () -> Unit) {
+    // 2.0.0 [RVM-54] 검토 U09b-04: what went back is one tap away under the line (folded, so the card stays one line until asked).
+    var open by androidx.compose.runtime.saveable.rememberSaveable(line) { mutableStateOf(false) }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+        Column(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+            }
+            if (details.isNotEmpty()) {
+                if (open) details.forEach { d ->
+                    Text("· $d", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(end = 10.dp, bottom = 2.dp))
+                }
+                TextButton(onClick = { open = !open }, modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
+                    Text(if (open) "접기" else "되돌린 것 보기")
+                }
+            }
         }
     }
 }

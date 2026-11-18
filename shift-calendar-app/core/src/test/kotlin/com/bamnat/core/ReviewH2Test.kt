@@ -136,4 +136,24 @@ class ReviewH2Test {
         assertEquals("영업", a.noun("오전", WorkStyle.BUSINESS))
         assertEquals("일정", a.noun("장 시작", WorkStyle.INVEST))
     }
+
+    /**
+     * 2.0.0 검토 PC-28·PC-160: 2.0.0의 새로 생긴 것은 날짜 문제를 고친 줄이 맨 앞이고(모든 유형이 먼저 보는 다섯 줄 안), 그 줄은
+     * '최근에 넣은 …을 한 번 봐 주세요'를 그 유형 말로 해요. 2.0.0 줄도 그 유형에서 보일 때 그 유형 말이에요(낱말 검사).
+     */
+    @Test fun whatsNew200SaysTheDateFixFirstInEachKindsOwnWords() {
+        val r = WhatsNew.releases.first()
+        assertEquals(54, r.versionCode)
+        assertTrue("최근에 넣은 근무를 한 번 봐 주세요" in r.lines.first().text)
+        for (style in WorkStyle.entries) {
+            val split = WhatsNew.forStyle(listOf(r), style)
+            val first = split.mine.first().lines.first()
+            assertTrue("$style", first === r.lines.first() && "4주 뒤" in first.said(style) && first.said(style).endsWith("한 번 봐 주세요"))
+            assertTrue("$style", split.mine.sumOf { it.lines.size } <= WhatsNew.MINE)
+            (split.mine.flatMap { it.lines } + split.moreMine).forEach { line ->
+                line.said(style).let { assertEquals("$style: $it", emptyList<String>(), TypeWords.leaks(style, it)) }
+            }
+        }
+        assertTrue("근무" !in r.lines.first().said(WorkStyle.INVEST))
+    }
 }

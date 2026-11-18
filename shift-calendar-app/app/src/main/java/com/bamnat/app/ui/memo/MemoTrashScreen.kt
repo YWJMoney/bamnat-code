@@ -28,7 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -133,7 +133,7 @@ fun MemoTrashScreen(vm: MemoTrashViewModel, onBack: () -> Unit, now: () -> Long 
                     memo.date?.let { Text(Fmt.dayTitle(it), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                     if (memo.body.isNotBlank()) Text(memo.body, style = MaterialTheme.typography.bodyMedium)
                     memo.checklist.forEach { item ->
-                        Text((if (item.checked) "☑ " else "☐ ") + item.text, style = MaterialTheme.typography.bodyMedium)
+                        Text(com.bamnat.core.memo.ChecklistEdit.shared(item), style = MaterialTheme.typography.bodyMedium)
                     }
                     if (memo.body.isBlank() && memo.checklist.isEmpty()) Text("(내용 없음)", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }

@@ -1,5 +1,7 @@
 import { all, audit, batch, can, deviceHash, deviceId, iso, json, network, networkCheck, notifyAdmins, one, overLimit, readJson, refuse, run, stmt, remoteState, APP_CODES } from "./index.js";
 import { pushReady } from "./push.js";
+import { DATES } from "./dates-built.js";
+import { datesNow } from "./dates.js";
 import { DAY, HOUR } from "./units.js";
 import { PLAY, playReady, playToken, rewardRules, REWARD_RULES, REWARD_MOST } from "./money.js";
 import { DEV, actorName, cut, devEvent, devUpdate, forgetInquiries, plainText, inquiryText, INQUIRY, BILLING_RECORD, SLEEP_URGENT, URGENT, triage } from "./inquiries.js";
@@ -154,10 +156,14 @@ export const LOOP_COLUMNS = [
 const loopActor = (env, name = "자동") => (env.actor ? env : Object.assign(Object.create(env), { actor: { id: "", name, owner: false, perms: {}, auto: true } }));
 /** 사람·열쇠가 없는 자리의 답: 1.35 자동 대응처럼 '자동 정리'로(앱에는 보통 답으로 보여요). */
 export const autoReply = (env, id, text, now) => inboxAnswer(env, id, text, now, "자동 정리");
-/** 답 하나가 실패해도(하루 한도 등) 바퀴는 계속 돌아요. */
+/**
+ * 답 하나가 실패해도(하루 한도 등) 바퀴는 계속 돌아요. 2.0.0 [RVQ-34] 검토 SVC-08: 보내는 문(RVA-51)에 걸려 사람이 보낼 답으로 멈춘 것("held")은
+ * 간 것이 아니라 '알렸음'으로 세지 않아요.
+ */
 const tryAnswer = async (answer, env, id, text, now) => {
   try {
-    return await answer(env, id, text, now);
+    const r = await answer(env, id, text, now);
+    return r === "held" ? false : r;
   } catch {
     return false;
   }
@@ -596,7 +602,9 @@ export async function devQueue(env, limit = 60) {
       (SELECT COUNT(DISTINCT json_extract(i.info, '$.app')) FROM dev_links l JOIN inquiries i ON i.id = l.inquiry_id WHERE l.item_id = d.id AND json_valid(i.info)) AS versions,
       (SELECT COUNT(*) FROM dev_history h WHERE h.item_id = d.id AND h.action = 'fixed_no') AS again,
       (SELECT GROUP_CONCAT(m.text, ' ') FROM dev_links l JOIN inquiry_messages m ON m.inquiry_id = l.inquiry_id AND m.sender = 'user' WHERE l.item_id = d.id) AS words
-    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing') LIMIT 400`).catch(() => []);
+    FROM dev_items d WHERE d.deleted_at IS NULL AND d.status IN ('todo', 'doing')
+    ORDER BY d.origin = 'admin' DESC, asks DESC, d.created_at LIMIT 1000`).catch(() => []);
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 순서 없이 400개로 자르면 1순위나 문의가 걸린 것이 빠질 수 있었어요: 그것부터 읽어요.
   // 급함 말(알람·앱 실행·데이터·결제)과 수면 긴급 넷(사용자 11-07 승인)은 문의 쪽(inquiries.js)과 같은 것을 써요.
   return rows.map((d) => {
     const urgent = URGENT.test(d.words ?? "") || SLEEP_URGENT.test(d.words ?? "") ? 1 : 0;
@@ -867,10 +875,11 @@ const tierView = (b, t) => (b.key === "new" ? (t.decided ? "decided" : "ask") : 
  * 끝난 지 오래된 것(완료 뒤 60일)은 빼요.
  */
 export async function tierBoard(env, now, params = new URLSearchParams()) {
+  // 2.0.0 [RVA-58] 저장소 줄이 500개를 넘어(LOOP-41) 300개로 자르면 정할 새 기능이 빠졌어요(로컬 583줄에서 22개 중 7개만): 정할 것을 먼저, 2000개까지.
   const view = Object.hasOwn(TIER_VIEWS, params.get("view") ?? "") ? params.get("view") : "ask";
   const rows = await all(env, `SELECT d.*, (SELECT COUNT(*) FROM dev_links l WHERE l.item_id = d.id) AS asks FROM dev_items d
     WHERE d.deleted_at IS NULL AND d.status != 'rejected' AND (d.status != 'done' OR d.updated_at > ?)
-    ORDER BY d.origin = 'admin' DESC, (d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 300`, now - 60 * DAY).catch(() => []);
+    ORDER BY d.origin = 'admin' DESC, (${ASK_TIER_SQL} AND d.tier IN ('', 'later')) DESC, d.updated_at DESC LIMIT 2000`, now - 60 * DAY).catch(() => []);
   const store = await flagStore(env).catch(() => null);
   const counts = Object.fromEntries(Object.keys(TIER_VIEWS).map((k) => [k, 0]));
   const out = [];
@@ -1144,6 +1153,12 @@ export async function instantOk(env, pile, kind, text) {
 const seenWords = (s) => (s.live ? `실제로 나감(100% 뒤 늘어난 휴대폰 ${s.phones}대${s.play !== undefined ? ` · Play 보고서 ${s.play}대` : ""})`
   : `검토 중이거나 아직 안 나갔을 수 있어요(100% 뒤 늘어난 휴대폰 ${s.phones}/${s.need}대${s.play !== undefined ? ` · Play 보고서 ${s.play}/${s.playNeed}대` : ""}${s.testers ? ` · 테스터 ${s.testers}대보다 많아야 해요` : ""})`);
 
+/** 2.0.0 [RVA-38] 검토 ADM-14·T23-06: 점검 줄의 때는 한국 시간 '11. 12. 15:04'로(전에는 2026-11-12T06:04:00.000Z). */
+const kstAt = (ms) => {
+  const t = new Date(Number(ms) + 9 * HOUR);
+  return `${t.getUTCMonth() + 1}. ${t.getUTCDate()}. ${String(t.getUTCHours()).padStart(2, "0")}:${String(t.getUTCMinutes()).padStart(2, "0")}`;
+};
+
 /**
  * 실제 Play·GitHub에 처음 붙기 전에 한 화면에서: 무엇이 됐고 무엇이 빠졌는지 한 줄씩. play가 참이면 Play 트랙을 한 번 읽어 봐요
  * (편집을 열고 읽고 지움, 확정하지 않음). 값(열쇠·비밀값)은 보이지 않고 있는지만.
@@ -1159,7 +1174,7 @@ export async function loopCheck(env, now, { play = false } = {}) {
   ]);
   const lines = [];
   const line = (key, name, state, text, fix = "") => lines.push({ key, name, state, text, ...(fix ? { fix } : {}) });
-  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "서버 비밀값 PLAY_SERVICE_ACCOUNT가 없어요", "사용자 할 일 G10 1장: 서비스 계정에 '앱 정보 보기' 권한");
+  if (!playReady(env)) line("play", "Play 출시 읽기", "bad", "Play 연결 열쇠가 서버에 없어요", "Play Console의 서비스 계정('앱 정보 보기' 권한)을 서버 설정에 넣어요 · 넣는 곳은 관리 › 서버 상태");
   else if (play) {
     try {
       const r = await readProduction(env, now);
@@ -1170,29 +1185,29 @@ export async function loopCheck(env, now, { play = false } = {}) {
       // [LOOP-32] 읽은 것은 남겨요(새로 고쳐도 '한 번도 읽지 않았어요'로 돌아가지 않게). 보류 안내는 매시 작업만 세워요.
       if (r) await saveSetting(env, "play_track", { ...r, ...(seen ? { seen } : {}) });
     } catch (e) {
-      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 서비스 계정 권한을 봐요");
+      line("play", "Play 출시 읽기", "bad", String(e?.message ?? e).slice(0, 200), "Play Console › 사용자 및 권한에서 그 열쇠(서비스 계정)의 권한을 봐요");
     }
-  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${iso(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
+  } else if (track.at) line("play", "Play 출시 읽기", "ok", `마지막으로 읽음 ${kstAt(track.at)} · Play 트랙 100% ${track.done ?? "없음"}${track.seen ? ` · ${seenWords(track.seen)}` : ""}`);
   else line("play", "Play 출시 읽기", "warn", "아직 한 번도 읽지 않았어요", "'Play까지 점검'을 눌러 한 번 읽어 봐요");
   if (playReady(env) && job?.fail_at && job.fail_at > (job.ok_at ?? 0)) {
-    line("playJob", "매시 Play 읽기", "bad", `${iso(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업 'play'를 봐요");
+    line("playJob", "매시 Play 읽기", "bad", `${kstAt(job.fail_at)}에 실패했어요 · ${String(job.error || "").slice(0, 160)}`, "관리 › 서버 상태의 정기 작업에서 Play 읽기 줄을 봐요");
   }
   line("autoShip", "스스로 출시 안내", sw.autoShip ? "ok" : "warn", sw.autoShip ? "켜짐 · 100% 출시를 보면 1시간 보류 뒤 안내" : "꺼짐 · '나간 판 저장'을 사람이 눌러요");
-  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${iso(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
-    syncKey ? "" : "아래 저장소 동기화 › 동기화 열쇠 만들기 → GitHub Secret BAMNAT_SYNC_KEY");
+  line("syncKey", "동기화 열쇠", syncKey ? "ok" : "bad", syncKey ? (syncKey.last_at ? `있음 · 마지막 사용 ${kstAt(syncKey.last_at)}` : "있음 · 아직 안 씀") : "없어요",
+    syncKey ? "" : "아래 저장소 동기화의 '동기화 열쇠 만들기'를 누르고 그 창의 안내대로 GitHub에 넣어요");
   if (!sw.sync) line("sync", "저장소 동기화", "warn", "받기가 꺼져 있어요");
-  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "GitHub Secret BAMNAT_SYNC_KEY·Variable BAMNAT_API를 넣고 main에 합치면 와요");
+  else if (!sync) line("sync", "저장소 동기화", "warn", "아직 한 번도 안 왔어요", "동기화 열쇠를 GitHub에 넣으면, 개발한 것이 다음에 합쳐질 때 와요");
   else {
     const r = JSON.parse(sync.result || "{}");
-    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${iso(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
-      r.errors ? "GitHub › Actions › dev-status 로그와 dev-status.jsonl 줄을 봐요" : "");
+    line("sync", "저장소 동기화", r.errors ? "warn" : "ok", `마지막 ${kstAt(sync.at)}${sync.pr ? ` · PR #${sync.pr}` : ""}${sync.version ? ` · ${sync.version}` : ""} · ${sync.n}줄${r.errors ? ` · 오류 ${r.errors}` : ""}`,
+      r.errors ? "GitHub › Actions의 개발 상태 보내기 기록에서 틀린 줄을 봐요" : "");
   }
   line("train", "정기 출시 열차", "ok", `다음 출발 ${nextTrain(train, now)} · ${train.days}일마다${train.outside?.length ? ` · 열차 밖(끝나는 즉시) ${train.outside.join("·")}` : ""}`);
   line("update", "인앱 업데이트 기준", sw.urgentMin || sw.flexibleMin ? "ok" : "warn",
-    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 정기 기준 versionCode를 넣어요");
-  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "VAPID 비밀값이 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정");
-  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${iso(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
-    opsKey ? "" : "사용자 할 일 G10 3장");
+    sw.urgentMin || sw.flexibleMin ? `긴급 ${sw.urgentMin || "—"} · 정기 ${sw.flexibleMin || "—"}` : "0이라 업데이트를 권하지 않아요", sw.urgentMin || sw.flexibleMin ? "" : "새 판을 낼 때 멈춤 스위치 › 인앱 업데이트에 정기 기준 판 번호를 넣어요");
+  line("push", "관리자 폰 알림", pushReady(env) ? "ok" : "bad", pushReady(env) ? "됨 · 급함 문의는 조용한 시간에도 와요" : "폰 알림 열쇠가 서버에 없어 급함 문의 알림이 폰에 안 와요", pushReady(env) ? "" : "관리 › 서버 상태의 빠진 설정에서 넣어요");
+  line("ops", "Claude 운영 열쇠", opsKey ? "ok" : "warn", opsKey ? (opsKey.last_at ? `있음 · 마지막 장부 읽기 ${kstAt(opsKey.last_at)}` : "있음 · 아직 안 씀") : "없어요 · Claude가 장부를 스스로 읽지 못해요",
+    opsKey ? "" : "관리 › Claude 열쇠에서 만들어요");
   const worst = lines.some((x) => x.state === "bad") ? "bad" : lines.some((x) => x.state === "warn") ? "warn" : "ok";
   return { at: iso(now), state: worst, lines, played: Boolean(play && playReady(env)) };
 }
@@ -1256,6 +1271,8 @@ export async function loopState(env, now) {
     waitingLive: notLive.map((d) => ({ id: d.id, title: d.title, route: d.route, routeName: LOOP.routes[d.route], want: d.route === "remote" ? d.remote : d.route === "flag" ? d.flag : "다음 서버 배포" })),
     syncKeys: keys.map((k) => ({ id: k.id, label: k.label, lastAt: k.last_at ? iso(k.last_at) : null, alive: !k.revoked_at && k.expires_at > now })),
     urgentWaiting: urgent?.n ?? 0, scores, autonomy: auto, rewards, routes: LOOP.routes, sizes: LOOP.sizes,
+    // 2.0.0 [RVA-59] 날짜 약속 장부(RVR-38)의 남은 날과 빈틈.
+    dates: datesNow(DATES, now),
     live: { name: liveName, code: liveName ? codes[liveName] ?? null : null, phones: apps.map((a) => ({ app: a.app, code: codes[a.app] ?? null, phones: a.phones })) },
   };
 }

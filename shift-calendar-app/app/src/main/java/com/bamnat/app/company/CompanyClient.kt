@@ -133,11 +133,14 @@ data class Membership(
     /** 2.0.0 [RVN-17] COMP-12 With member_wait: '잘못 골랐어요' can free the calendar now ([held] is the company holding it). */
     val undo: Boolean = false,
     val held: String? = null,
+    /** 2.0.0 [RVN-17] PC-155 With member_wait after this year's undo: when it opens again (so the wait says why there is none). */
+    val undoAgain: Instant? = null,
 ) {
     companion object {
         /** A join the server refused with [e] (member_wait, member_limit), with what it said about the wait. */
         fun refused(company: String, e: CompanyException) =
-            Membership(false, company, e.code, until = e.untilMillis?.let(Instant::ofEpochMilli), undo = e.undo, held = e.held)
+            Membership(false, company, e.code, until = e.untilMillis?.let(Instant::ofEpochMilli), undo = e.undo, held = e.held,
+                undoAgain = e.undoAgain?.let { runCatching { Instant.parse(it) }.getOrNull() })
     }
 }
 
@@ -517,6 +520,8 @@ object Plaza {
      */
     fun jobsFor(style: com.bamnat.core.work.WorkStyle?): List<Pair<String, String>> {
         val first = when (style) {
+            // 2.0.0 [RVN-18] 검토 T10a-06: 교대 starts at the jobs that work in turns (before, the plaza's own order).
+            com.bamnat.core.work.WorkStyle.SHIFT -> listOf("shift", "factory", "nurse", "police", "fire", "security", "care", "transport")
             com.bamnat.core.work.WorkStyle.DAY -> listOf("public", "factory", "care", "security", "transport", "nurse")
             com.bamnat.core.work.WorkStyle.HOURLY -> listOf("hourly", "shop", "care")
             com.bamnat.core.work.WorkStyle.FIELD -> listOf("construction", "field", "transport")
@@ -587,6 +592,8 @@ class CompanyException(
     /** 2.0.0 [RVN-17] COMP-12 With "member_wait": whether '잘못 골랐어요' can free the calendar now, and the company holding it. */
     val undo: Boolean = false,
     val held: String? = null,
+    /** 2.0.0 [RVN-17] PC-155 With "member_wait" when the undo was used this year: the day it opens again (ISO); null otherwise. */
+    val undoAgain: String? = null,
     /** 2.0.0 [RVM-30] SN-15: with rate_limited, the day's number when the server says it (장터 사진: 12, or 48 for a trusted phone). */
     val limit: Int? = null,
 ) : IOException(code) {
@@ -674,6 +681,9 @@ interface CompanyApi {
     /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
     suspend fun forgetMineCounts(device: String): ForgetCounts = ForgetCounts(reports = forgetMine(device))
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
+
+    /** 2.0.0 [RVN-18] 검토 COMP-22-1: this phone's 맞아요·달라요 on [setup] taken back (✓ pressed again); the counts without it. */
+    suspend fun unvote(device: String, company: String, setup: String): VoteResult = throw CompanyException("not_yet")
 
     /**
      * [COMM-07] Every company's rule sets: [adopted] ones anyone can use, or ones still being voted on.
@@ -1260,6 +1270,13 @@ class CompanyClient(
                 o.optInt("trust"), o.optInt("agree"))
         }
 
+    override suspend fun unvote(device: String, company: String, setup: String): VoteResult =
+        serverCall {
+            val o = request("POST", "/api/votes", JSONObject().put("device", device).put("company", company).put("setup", setup).put("ok", JSONObject.NULL))
+            VoteResult(o.optInt("points"), o.optInt("persons"), o.optInt("bad"), o.optInt("threshold", 3), o.optString("status") == "adopted",
+                o.optInt("trust"), o.optInt("agree"))
+        }
+
     /** [PLAZA-30] 1.27 AI: a tick goes with its matched month, or not at all; never a bare tick. */
     private fun proofOf(verified: Boolean, body: JSONObject) {
         val p = if (verified) proof()?.takeIf { it.counts } else null
@@ -1746,6 +1763,7 @@ private fun exchangeOnce(
             throw CompanyException(err?.optString("error")?.takeIf { it.isNotEmpty() } ?: "http_$code", err?.optStringOrNull("field"),
                 retry, err?.optStringOrNull("why"), err?.optStringOrNull("until"), undo = err?.optBoolean("undo") == true,
                 held = err?.optJSONObject("held")?.optString("name")?.takeIf { it.isNotBlank() },
+                undoAgain = err?.optStringOrNull("undoAgain"),
                 limit = err?.optInt("limit")?.takeIf { it > 0 })
         }
         result = NetTimings.Result.OK

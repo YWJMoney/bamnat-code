@@ -179,7 +179,8 @@ async function fillOutbox(env, v, targets, now) {
 async function outboxSkip(env, o, now) {
   const q = await one(env, "SELECT status FROM inquiries WHERE id = ?", o.inquiry_id);
   if (!q) return { state: "gone", why: "문의가 지워졌어요" };
-  const held = await one(env, "SELECT until FROM held_replies WHERE inquiry_id = ? AND text = ?", o.inquiry_id, o.text);
+  const held = await one(env, "SELECT id, until, ship_item FROM held_replies WHERE inquiry_id = ? AND text = ?", o.inquiry_id, o.text);
+  if (held && held.until >= HELD_FOR_PERSON && !held.ship_item) await run(env, "UPDATE held_replies SET ship_item = ? WHERE id = ?", o.item_id, held.id);
   if (held) return held.until >= HELD_FOR_PERSON ? { state: "person", why: "사람 확인 대기" } : { state: "sent", why: "보류 중인 같은 답" };
   if (await one(env, "SELECT 1 AS x FROM inquiry_messages WHERE inquiry_id = ? AND sender = 'admin' AND text = ?", o.inquiry_id, o.text)) return { state: "sent", why: "같은 답이 이미 감" };
   if (q.status === "closed") return { state: "gone", why: "문의가 닫혔어요" };
@@ -198,7 +199,9 @@ async function drainOutbox(env, v, now, answer) {
   for (const o of rows) {
     let got;
     try {
-      got = (await answer(env, o.inquiry_id, o.text, now)) ? { state: "sent", why: "" } : await outboxSkip(env, o, now);
+      // [RVA-51] 보내는 문에 걸려 멈춘 답("held")은 간 것이 아니에요: 사람 확인 대기로(그 보류 답에 이 개발사항을 이어요).
+      const said = await answer(env, o.inquiry_id, o.text, now);
+      got = said === true ? { state: "sent", why: "" } : await outboxSkip(env, o, now);
     } catch (e) {
       const tries = o.tries + 1;
       const why = String(e?.message ?? e).slice(0, 120);

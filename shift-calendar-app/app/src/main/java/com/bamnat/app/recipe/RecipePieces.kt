@@ -347,8 +347,8 @@ class RecipePieces(private val c: AppContainer) {
         PieceKind.LOGIC -> com.bamnat.core.formula.Logic.from(values).let { raw ->
             val l = raw.received()
             // [RVM-23] STU-23: a step after the first that writes (more·otherwise) is marked too, not the first step alone.
-            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + b.say()) } +
-                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + r.say() + if (w) " (꺼진 채로 들어와요)" else "") } +
+            (l.buttons.map { b -> val w = b.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + com.bamnat.core.formula.FormulaText.blanks(b.say())) } +
+                l.rules.map { r -> val w = r.acts.any { it.verb.writes }; Change((if (w) "⚠ " else "") + "규칙 ‘${r.name}’: " + com.bamnat.core.formula.FormulaText.blanks(r.say()) + if (w) " (꺼진 채로 들어와요)" else "") } +
                 // 1.36 [SEC-12] 보안 점검 M4: said before 넣기.
                 listOfNotNull(
                     Change("메모·가계부를 바꾸는 규칙은 꺼진 채로 들어와요. 설정 › 알람 › 수식·규칙·버튼에서 하나씩 켜요").takeIf { l.writingRules.isNotEmpty() },
@@ -582,6 +582,9 @@ class RecipePieces(private val c: AppContainer) {
     suspend fun apply(kind: PieceKind, values: Map<String, Any?>, cal: String, code: String, mode: Mode = Mode.REPLACE,
                       /** [TRY-06] Put on by [FunctionTrial] itself. */ trial: Boolean = false): JSONObject? {
         if (mode == Mode.SKIP) return null
+        // 2.0.0 [RVS-12] A 부품 piece this app cannot read is said by 넣기 ([RecipeRepository.lastMissed]), not taken for 'nothing changed'.
+        if (kind == PieceKind.PARTS) (values["parts"] as? List<*>)?.filterIsInstance<Map<String, Any?>>()?.takeIf { it.isNotEmpty() }
+            ?.let { com.bamnat.core.recipe.Blueprint.clean(it) }
         // [TRY-06] Anything put on for real ends a work's 기능 only being tried first (put back whole), so the two never mix.
         if (!trial && FunctionTrial.busy(c.appContext)) com.bamnat.app.ui.recipe.LiveTryOn.settle(c)
         // [TRY-05] A look put on for real ends a theme only being tried on, so what is put on shows.
@@ -617,13 +620,18 @@ class RecipePieces(private val c: AppContainer) {
                 val repo = c.scopeOf(cal).schedule
                 val mine = types(cal).filter { !it.isOff }
                 val changed = JSONArray()
+                // 2.0.0 [RVM-50] 검토 RCP-04: what each shift had before and what this work wants, so 되돌리기 leaves an alarm another work
+                // also wants and keeps the alarm on when alarms of mine are left.
+                val also = JSONArray()
                 for (r in items(values, "byRole")) {
                     val role = ShiftRole.of(r["role"] as? String)
                     for (t in mine.filter { role(it) == role }) {
-                        val add = nums(r["before"]).filter { m -> t.alarms.none { it.offsetMinutes == m } }
-                        if (add.isEmpty() && t.alarmEnabled) continue
+                        val want = nums(r["before"])
+                        val add = want.filter { m -> t.alarms.none { it.offsetMinutes == m } }
+                        if (add.isEmpty() && t.alarmEnabled) { if (want.isNotEmpty()) also.put(JSONObject().put("id", t.id).put("wanted", JSONArray(want))); continue }
                         repo.saveShiftType(t.copy(alarms = t.alarms + add.map { AlarmSpec(it) }, alarmEnabled = true))
-                        changed.put(JSONObject().put("id", t.id).put("added", JSONArray(add)).put("wasOn", t.alarmEnabled))
+                        changed.put(JSONObject().put("id", t.id).put("added", JSONArray(add)).put("wasOn", t.alarmEnabled)
+                            .put("had", JSONArray(t.alarms.map { it.offsetMinutes })).put("wanted", JSONArray(want)))
                     }
                 }
                 val s = c.settingsRepository.current
@@ -639,8 +647,9 @@ class RecipePieces(private val c: AppContainer) {
                     mission?.let { v -> sets.put("mission", JSONArray().put(cur.alarmMission).put(v)); n = n.copy(alarmMission = v) }
                     n
                 }
-                if (s == c.settingsRepository.current && changed.length() == 0) null
-                else JSONObject().put("types", changed).put("settings", sets)
+                // [RVM-50] Nothing to change but alarms it also wants: kept as a record of that, so another work's 되돌리기 leaves them.
+                if (s == c.settingsRepository.current && changed.length() == 0 && also.length() == 0) null
+                else JSONObject().put("types", changed).put("settings", sets).apply { if (also.length() > 0) put("also", also) }
             }
             PieceKind.MEMO_TEMPLATES -> {
                 val ids = JSONArray()
@@ -731,12 +740,17 @@ class RecipePieces(private val c: AppContainer) {
                 val patterns = schedule.snapshot.first().patterns
                 val profile = c.payStore.profile.value
                 c.companyShare.apply(values["setup"] as String)
-                val now = schedule.snapshot.first().shiftTypes
+                val after = schedule.snapshot.first()
+                val now = after.shiftTypes
+                // 2.0.0 [RVM-44] 검토 RCP-03: what it left too, so 되돌리기 takes back only what it changed (not what the user changed since).
                 JSONObject()
                     .put("types", JSONArray(types.map { t -> typeTimes(t) }))
                     .put("added", JSONArray(now.filter { n -> types.none { it.id == n.id } }.map { it.id }))
                     .put("patterns", JSONArray(patterns.map { p -> patternJson(p) }))
                     .put("profile", profile?.let(PayCodec::encode) ?: JSONObject.NULL)
+                    .put("typesAfter", JSONArray(now.map { t -> typeTimes(t) }))
+                    .put("patternsAfter", JSONArray(after.patterns.map { p -> patternJson(p) }))
+                    .put("profileAfter", c.payStore.profile.value?.let(PayCodec::encode) ?: JSONObject.NULL)
             }
             PieceKind.BUNDLE -> null
             PieceKind.LEDGER -> {
@@ -886,6 +900,18 @@ class RecipePieces(private val c: AppContainer) {
 
     // ---- restore (7일 되돌리기) ----
 
+    /**
+     * 2.0.0 [RVM-45] 검토 RCP-02: how many places the last [restore]s left as the user made them since (counted while
+     * [RecipeRepository.undo] runs, so 되돌리기 can say "직접 바꾼 N곳은 그대로 뒀어요" rather than a plain 되돌렸어요).
+     */
+    @Volatile var kept: Int = 0
+
+    /** 2.0.0 [RVM-50] RCP-04: the shifts whose alarms the last [restore]s switched off, for 되돌리기 to say. */
+    val alarmsOff: MutableList<String> = java.util.Collections.synchronizedList(ArrayList())
+
+    /** 2.0.0 [RVM-50] The record being taken back, so another work's alarms are told apart from its own. */
+    @Volatile var undoing: Long? = null
+
     /** Puts back what [apply] replaced; a value the user changed since is left as they made it. */
     suspend fun restore(kind: PieceKind, before: JSONObject, cal: String) {
         when (kind) {
@@ -902,16 +928,31 @@ class RecipePieces(private val c: AppContainer) {
                 }
             }
             PieceKind.CAL_THEME -> c.settingsRepository.update { s ->
-                if (s.calTheme == before.optString("after")) s.copy(calTheme = before.optString("before")) else s
+                // 2.0.0 [RVM-45] RCP-02: colour by colour (a 일요일 colour put on later by another work stays).
+                val back = SettingBack.of("calTheme", s.calTheme, before.optString("before"), before.optString("after"))
+                kept += back.kept
+                if (back.text != s.calTheme) s.copy(calTheme = back.text) else s
             }
             PieceKind.ALARMS -> {
                 val repo = c.scopeOf(cal).schedule
                 val mine = types(cal).associateBy { it.id }
+                // 2.0.0 [RVM-50] 검토 RCP-04: an alarm another work on this phone also wants stays, and a shift whose alarms were off before
+                // is switched off again only when none is left but those it had (an alarm I added since keeps it on). One switched off is said.
+                val others = c.recipes.alarmsWanted(except = undoing)
                 before.optJSONArray("types")?.objects()?.forEach { o ->
                     val t = mine[o.getLong("id")] ?: return@forEach
-                    val added = o.optJSONArray("added")?.let { a -> (0 until a.length()).map { a.getInt(it) } }.orEmpty().toSet()
-                    repo.saveShiftType(t.copy(alarms = t.alarms.filter { it.offsetMinutes !in added },
-                        alarmEnabled = if (o.optBoolean("wasOn")) t.alarmEnabled else false))
+                    fun ints(k: String) = o.optJSONArray(k)?.let { a -> (0 until a.length()).map { a.getInt(it) } }
+                    val keep = others[t.id].orEmpty()
+                    val added = ints("added").orEmpty().toSet() - keep
+                    val left = t.alarms.filter { it.offsetMinutes !in added }
+                    val had = ints("had")?.toSet()
+                    val on = when {
+                        o.optBoolean("wasOn") -> t.alarmEnabled
+                        had == null -> keep.isNotEmpty() && t.alarmEnabled
+                        else -> t.alarmEnabled && left.any { it.offsetMinutes !in had }
+                    }
+                    if (t.alarmEnabled && !on) alarmsOff += t.name
+                    repo.saveShiftType(t.copy(alarms = left, alarmEnabled = on))
                 }
                 val sets = before.optJSONObject("settings") ?: JSONObject()
                 c.settingsRepository.update { s ->
@@ -997,15 +1038,55 @@ class RecipePieces(private val c: AppContainer) {
             PieceKind.COMPANY -> {
                 if (cal != PersonalCalendar.MAIN) return
                 val schedule = c.scheduleRepository
-                before.optJSONArray("patterns")?.let { a -> schedule.restorePatterns(a.objects().mapNotNull(::patternFrom)) }
+                // 2.0.0 [RVM-44] 검토 RCP-03·T09b-05 (조건 10): only what this put on goes back. A work order, a shift's hours or a pay
+                // setting the user changed since stays, and a shift it added stays while a day, a 대근 or a work order uses it (a 교대
+                // worker's own 교육·대근 days are not wiped). A record from before 2.0.0 has no "…After" and is taken back as it was.
+                before.optJSONArray("patterns")?.let { a ->
+                    val after = before.optJSONArray("patternsAfter")
+                    val now = JSONArray(schedule.snapshot.first().patterns.map { p -> patternJson(p) })
+                    if (after == null || UndoMerge.same(now, after)) schedule.restorePatterns(a.objects().mapNotNull(::patternFrom))
+                    else if (!UndoMerge.same(a, after)) kept++
+                }
                 val mine = schedule.snapshot.first().shiftTypes.associateBy { it.id }
+                val typesAfter = before.optJSONArray("typesAfter")?.objects()?.associateBy { it.getLong("id") }
                 before.optJSONArray("types")?.objects()?.forEach { o ->
                     val t = mine[o.getLong("id")] ?: return@forEach
-                    schedule.saveShiftType(t.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse), end = o.optStringOrNull("end")?.let(LocalTime::parse),
-                        breakMinutes = o.optInt("break"), breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse), isOff = o.optBoolean("off")))
+                    val a = typesAfter?.get(t.id)
+                    val cur = typeTimes(t)
+                    fun untouched(key: String) = (a == null || UndoMerge.same(cur.opt(key), a.opt(key))).also { same ->
+                        if (!same && !UndoMerge.same(o.opt(key), a?.opt(key))) kept++
+                    }
+                    var n = t
+                    if (untouched("start")) n = n.copy(start = o.optStringOrNull("start")?.let(LocalTime::parse))
+                    if (untouched("end")) n = n.copy(end = o.optStringOrNull("end")?.let(LocalTime::parse))
+                    if (untouched("break")) n = n.copy(breakMinutes = o.optInt("break"))
+                    if (untouched("breakStart")) n = n.copy(breakStart = o.optStringOrNull("breakStart")?.let(LocalTime::parse))
+                    if (untouched("off")) n = n.copy(isOff = o.optBoolean("off"))
+                    if (n != t) schedule.saveShiftType(n)
                 }
-                before.optJSONArray("added")?.let { a -> (0 until a.length()).forEach { runCatching { schedule.deleteShiftTypeUndoable(a.getLong(it)) } } }
-                before.optJSONObject("profile")?.let { p -> runCatching { c.payStore.save(PayCodec.decode(p)) } }
+                before.optJSONArray("added")?.let { a ->
+                    (0 until a.length()).forEach { i ->
+                        val id = a.getLong(i)
+                        runCatching {
+                            val t = mine[id] ?: return@runCatching
+                            val changed = typesAfter?.get(id)?.let { !UndoMerge.same(typeTimes(t), it) } ?: false
+                            if (typesAfter != null && (changed || schedule.shiftTypeUse(id).let { u -> u.days > 0 || u.inPattern || u.covers > 0 })) { kept++; return@runCatching }
+                            schedule.deleteShiftTypeUndoable(id)
+                        }
+                    }
+                }
+                before.optJSONObject("profile")?.let { p ->
+                    runCatching {
+                        val a = before.optJSONObject("profileAfter")
+                        val now = c.payStore.profile.value
+                        if (a == null && !before.has("typesAfter")) c.payStore.save(PayCodec.decode(p))
+                        else if (a != null && now != null) {
+                            val back = UndoMerge.back(PayCodec.encode(now), p, a)
+                            if (!UndoMerge.same(back, p)) kept++
+                            PayCodec.decode(back).takeIf { it != now }?.let { c.payStore.save(it) }
+                        }
+                    }
+                }
             }
             PieceKind.BUNDLE -> {}
             PieceKind.LEDGER -> {
@@ -1034,12 +1115,20 @@ class RecipePieces(private val c: AppContainer) {
                     com.bamnat.app.logic.LogicRunner.rulesChanged(c)
                 }
                 val sets = before.optJSONObject("settings") ?: return
+                // 2.0.0 [RVM-45] 검토 RCP-02 (조건 10): a setting went back only when its whole text was still as the work left it, so one
+                // button of my own (or the widget's 투명도 alone) kept every rule and look the work put on, while 되돌리기 said 되돌렸어요.
+                // Now part by part: the rules and buttons the work added (and nothing I made or changed), each 'key=value' of a look.
+                var keptHere = 0
                 c.settingsRepository.update { cur ->
+                    keptHere = 0
                     sets.keys().asSequence().fold(cur) { acc, k ->
                         val pair = sets.getJSONArray(k)
-                        if (settingOf(acc, k) == pair.getString(1)) withSetting(acc, k, pair.getString(0)) else acc
+                        val back = SettingBack.of(k, settingOf(acc, k), pair.getString(0), pair.getString(1))
+                        keptHere += back.kept
+                        if (back.text != settingOf(acc, k)) withSetting(acc, k, back.text) else acc
                     }
                 }
+                kept += keptHere
             }
         }
     }
@@ -1051,7 +1140,14 @@ class RecipePieces(private val c: AppContainer) {
                                       cur: com.bamnat.app.data.AppSettings = c.settingsRepository.current, mode: Mode = Mode.BOTH): Map<String, String> {
         return when (kind) {
             PieceKind.LAYOUT -> listOfNotNull(
-                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(it).joinToString(",") },
+                // 2.0.0 [RVS-09] 검토 SN-12(3): 탭 순서 is one's own (the first tab is where the app opens). A work always carries one, so its
+                // usual order said nothing and put a phone's own order back to the usual; now only an order the maker changed is put on,
+                // and the phone's own first tab stays first.
+                texts(values, "tabs").takeIf { it.isNotEmpty() }?.let { com.bamnat.core.layout.TabOrder.of(it) }
+                    ?.takeIf { it != com.bamnat.core.layout.TabOrder.DEFAULT }?.let { theirs ->
+                        val home = com.bamnat.core.layout.TabOrder.home(cur.tabOrder)
+                        "tabOrder" to com.bamnat.core.layout.TabOrder.toSave(com.bamnat.core.layout.TabOrder.move(theirs, home, 0)).joinToString(",")
+                    },
                 (values["calendar"] as? String)?.let { "calendarLayout" to it },
             ).toMap()
             PieceKind.CARDS -> listOfNotNull(

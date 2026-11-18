@@ -80,7 +80,7 @@ object AlarmSoon {
 
     /** [ring] was turned off ahead of time; it stays quiet even if it was registered before. */
     fun silences(context: Context, ring: RingRequest): Boolean =
-        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && isSkipped(context, ring.triggerAtMillis)
+        !ring.isSnooze && !ring.recheck && ring.label != AlarmScheduler.TEST_NAME && !ShiftNap.isNap(ring) && isSkipped(context, ring.triggerAtMillis)
 
     private fun fireIntent(context: Context, at: Long, text: String?): PendingIntent = PendingIntent.getBroadcast(
         context, REQ_FIRE,

@@ -218,12 +218,14 @@ object LedgerSmarts {
     ) {
         data class Guess(val category: String, val share: Double)
 
+        // 2.0.0 [RVK-43] (검토 MONEY-61) Counted once when taught, not again for every line guessed.
+        private val vocab = counts.values.flatMap { it.keys }.toSet().size.coerceAtLeast(1)
+        private val all = docs.values.sum().toDouble()
+
         fun guess(e: MoneyEntry, top: Int = 2): List<Guess> {
             if (docs.isEmpty()) return emptyList()
             val words = features(e, dayLabel)
             if (words.isEmpty()) return emptyList()
-            val vocab = counts.values.flatMap { it.keys }.toSet().size.coerceAtLeast(1)
-            val all = docs.values.sum().toDouble()
             val scores = docs.keys.associateWith { c ->
                 val n = totals[c] ?: 0
                 ln(docs.getValue(c) / all) + words.sumOf { w -> ln(((counts[c]?.get(w) ?: 0) + 1.0) / (n + vocab)) }
@@ -369,7 +371,7 @@ object LedgerSmarts {
     /** [LEDX-18] The currency and amount of a line written down at a rough rate ("임시 원화 · USD 12.30 · …"), or null. */
     fun abroadOf(e: MoneyEntry): Pair<String, Double>? {
         // 2.0.0 [RVK-33] (검토 MONEY-55) A note written on a phone in another language says '12,30' or '1.234,56'.
-        val m = Regex("임시 원화 · ([A-Z]{3}) (\\d[\\d.,]*\\d|\\d)").find(e.note) ?: return null
+        val m = ABROAD.find(e.note) ?: return null
         return m.groupValues[1] to (com.bamnat.core.text.Numbers.readWritten(m.groupValues[2]) ?: return null)
     }
 
@@ -378,13 +380,18 @@ object LedgerSmarts {
      * "USD 12.30 · 청구서 금액", so it no longer asks to be fixed.
      */
     fun settledAbroad(note: String): String =
-        note.replace(Regex("임시 원화 · ([A-Z]{3} \\d[\\d.,]*\\d?) · [^·]*· 수수료 약 [\\d.,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요"), "$1 · 청구서 금액")
+        note.replace(ABROAD_ASK, "$1 · 청구서 금액")
 
     /**
      * [LEDX-08] 원화 결제(DCC): a payment abroad charged in won costs 3~8% more than in the local money. Said when a text
      * from abroad (해외, a foreign place) carries a won amount.
      */
-    fun looksDcc(text: String): Boolean = ("해외" in text || "국외" in text) && Regex("KRW|원화").containsMatchIn(text)
+    fun looksDcc(text: String): Boolean = ("해외" in text || "국외" in text) && WON_ABROAD.containsMatchIn(text)
+
+    // 2.0.0 [RVK-43] (검토 MONEY-61) Made once; [abroadOf] runs for every line a list or a sum looks at.
+    private val ABROAD = Regex("임시 원화 · ([A-Z]{3}) (\\d[\\d.,]*\\d|\\d)")
+    private val ABROAD_ASK = Regex("임시 원화 · ([A-Z]{3} \\d[\\d.,]*\\d?) · [^·]*· 수수료 약 [\\d.,]+원 포함\\. 카드 청구서 금액으로 고쳐 주세요")
+    private val WON_ABROAD = Regex("KRW|원화")
 
     const val DCC_NOTE = "해외에서 원화로 결제했어요(DCC). 현지 돈으로 결제하면 보통 3~8% 덜 나와요. 다음엔 ‘현지 통화로’를 골라 주세요"
 

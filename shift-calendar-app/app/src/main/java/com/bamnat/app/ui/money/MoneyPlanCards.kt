@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import android.content.ActivityNotFoundException
+import com.bamnat.app.ui.theme.bamnat
 import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.clickable
@@ -55,7 +56,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -93,6 +94,8 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import com.bamnat.core.time.Today
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [LEDG-02] Lines the app wrote down from notifications, waiting for a glance, and texts it kept
@@ -563,10 +566,10 @@ fun PasteDialog(
                             if (e != null) {
                                 EntryRow(e, showDate = true) { if (i in skipped) skipped.remove(i) else skipped.add(i) }
                                 if (r.duplicate) Text("이미 적힌 결제 같아요", style = MaterialTheme.typography.labelSmall,
-                                    color = LocalCalendarColors.current.warning)
+                                    color = MaterialTheme.bamnat.caution)
                             } else {
                                 Text(r.chunk.replace('\n', ' '), style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(r.reason.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                Text(r.reason.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.bamnat.caution)
                             }
                         }
                     }
@@ -636,7 +639,7 @@ fun UpcomingCard(
                         listOfNotNull(if (u.daysLeft == 0) "오늘" else "D-${u.daysLeft}", Fmt.shortDate(u.date),
                             if (c.auto) "저절로 적어요" else null).joinToString(" · "),
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (u.daysLeft <= 1 && !income) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = if (u.daysLeft <= 1 && !income) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 Column(horizontalAlignment = Alignment.End) {

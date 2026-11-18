@@ -298,7 +298,7 @@ class BDScreenshotTest : ScreenshotBase() {
         on()
         company.twins = true
         detail()
-        assertTrue(appears("대표 판 v2", exact = true))
+        assertTrue(appears("대표 판 · 2판", exact = true))
         reveal("같은 부서 다른 판 2개 보기", exact = true)
         // The others are folded: no second 생산팀 card until asked.
         assertTrue(gone("대표 판과 비교", exact = true))
@@ -329,6 +329,8 @@ class BDScreenshotTest : ScreenshotBase() {
         on()
         plaza.historyChanges = moved
         detail()
+        // 2.0.0 [RVN-19] U10a-08: the card's other buttons are behind '이 판 더 보기'.
+        tapText("이 판 더 보기", exact = true)
         tapText("바뀐 기록", exact = true)
         reveal("주간 08:00~20:00 → 08:00~19:00", exact = true)
     }

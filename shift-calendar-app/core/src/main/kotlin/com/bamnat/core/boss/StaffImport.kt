@@ -31,7 +31,7 @@ object StaffImport {
                 // [RVJ-40] Said as it is, the cell itself when there was one: no guess at the 최저시급.
                 if (noAmount) add(if (r.unreadCells.isEmpty()) "금액이 없어요 · 적어 주세요" else "금액을 못 읽었어요 · 적어 주세요")
                 else if ("base" in r.doubtful) add("금액")
-                if (!noAmount && form == WageForm.HOUR && r.base!! < minimum) add("최저시급 ${"%,d원".format(minimum)}보다 적어요")
+                if (!noAmount && form == WageForm.HOUR && r.base!! < minimum) add("${on.year}년 최저시급 ${"%,d원".format(minimum)}보다 적어요")
                 if (r.form == null || "form" in r.doubtful) add("시급·월급·일급")
                 if (r.weekly.isEmpty() || "weekly" in r.doubtful) add(if (r.weekly.isEmpty()) "근무 요일·시간이 없어요" else "근무 요일·시간")
                 if ("tax" in r.doubtful) add("소득세 떼는 법")

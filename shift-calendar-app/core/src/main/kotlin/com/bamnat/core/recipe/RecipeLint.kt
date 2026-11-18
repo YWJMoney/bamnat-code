@@ -41,7 +41,7 @@ object RecipeLint {
         read.exceptionOrNull()?.let { e ->
             val code = (e as? RecipeException)?.code ?: "format"
             val path = (e as? RecipeException)?.path ?: ""
-            out += Line("read", Level.ERROR, readProblem(code, path), stepOf(path))
+            out += Line("read", Level.ERROR, readProblem(code, path, r), stepOf(path))
         }
         // [STU-25] 1.36 빌드 7: the studio's starting words and an empty 틀 채우기 are not the maker's own words yet.
         out += if (r.summary.isBlank()) Line("summary", Level.WARN, "한 줄 설명을 적으면 목록에서 더 잘 보여요", 4)
@@ -89,7 +89,7 @@ object RecipeLint {
         else -> 4
     }
 
-    private fun readProblem(code: String, path: String): String {
+    private fun readProblem(code: String, path: String, r: Recipe): String {
         val where = when {
             path.startsWith("title") -> "이름"
             path.startsWith("summary") -> "한 줄 설명"
@@ -101,9 +101,14 @@ object RecipeLint {
         }
         return when (code) {
             "text" -> "$where 글자 수를 맞춰 주세요"
-            "too_big" -> "작품이 너무 커요. 조각을 줄여 주세요"
+            // 2.0.0 [RVS-07] SD-04 ③: by case (용량·조각 수·없음), with how far over, not one line for all.
+            "too_big" -> WorkSize.of(r).overLine ?: "작품이 너무 커요. 조각을 줄여 주세요"
             "range" -> "$where 값이 범위를 넘었어요"
-            "pieces" -> "조각을 하나 이상 골라 주세요"
+            "pieces" -> when {
+                r.pieces.isEmpty() -> "조각을 하나 이상 골라 주세요"
+                r.pieces.size > RecipeCodec.MAX_PIECES -> WorkSize.of(r).overLine!!
+                else -> "같은 조각이 두 번 들어 있어요. 하나만 남겨 주세요"
+            }
             "styles" -> "맞는 일 유형을 골라 주세요"
             "emoji" -> "$where 이모지를 다시 골라 주세요"
             else -> "$where: " + RecipeText.problemText(code)

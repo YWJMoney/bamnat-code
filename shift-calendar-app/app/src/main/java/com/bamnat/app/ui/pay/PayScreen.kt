@@ -67,12 +67,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -513,7 +513,8 @@ private fun PayResult(
     var editTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var raiseTarget by remember { mutableStateOf<ValueTarget?>(null) }
     var importing by remember { mutableStateOf(false) }
-    var matching by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-64] 검토 PAYU-04: open again after the screen is made again (dark theme, '활동 유지 안 함'), its figures with it.
+    var matching by rememberSaveable { mutableStateOf(false) }
     // [PLAZA-30] 1.27 AI: 명세서로 맞춰 보기 from the plaza form opens the match once, as its button here would.
     androidx.compose.runtime.LaunchedEffect(startMatching) { if (startMatching) { if (tryFeature(Feature.PAYSLIP_MATCH)) matching = true else openPro(com.bamnat.app.tier.Feature.PAYSLIP_MATCH) } }
     var slipRules by remember { mutableStateOf(false) }
@@ -530,6 +531,8 @@ private fun PayResult(
     var editingRule by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
     var monthAmountFor by remember { mutableStateOf<com.bamnat.core.pay.CustomRule?>(null) }
     var justMade by remember { mutableStateOf<MadeItem?>(null) }
+    // 2.0.0 [RVJ-56] PC-137: made while a closed month was on screen, the month it first counts in.
+    var madeLands by remember { mutableStateOf<YearMonth?>(null) }
     // [PAYS-11] A 추정 badge tapped: what to put in so it goes away.
     var estimate by remember { mutableStateOf<EstimateHint?>(null) }
     val shiftNames = remember(snapshot) { snapshot.shiftTypes.associate { it.id to it.name } }
@@ -663,10 +666,20 @@ private fun PayResult(
             val due = remember(profile, closed, asked, paid) { vm.closeDue(profile, paid) }
             val auto = settings.payAutoClose
             androidx.compose.runtime.LaunchedEffect(due, auto) { if (due != null && auto) vm.closeMonthOf(profile, snapshot, due) }
+            // 2.0.0 [RVJ-49] 검토 PC-121: the card asks about 11월 while the big number above is 12월; it shows the 11월 amount it would
+            // keep, and after '나중에' one line says where the 마감 still is (누르면 그 달의 도구).
+            var later by rememberSaveable { mutableStateOf<String?>(null) }
             if (!auto) due?.let { m ->
-                CloseAskCard(m, deposited = vm.paidOn(paid, m) != null,
-                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m) },
+                val amount by androidx.compose.runtime.produceState<Long?>(null, profile, snapshot, m) {
+                    value = if (m == month) shown.total else runCatching { vm.calculateOff(profile, snapshot, m).total }.getOrNull()
+                }
+                CloseAskCard(m, amount, deposited = vm.paidOn(paid, m) != null,
+                    onClose = { vm.closeMonthOf(profile, snapshot, m) }, onLater = { vm.closeAskLater(m); later = m.toString() },
                     onAlways = { vm.setAutoClose(true); vm.closeMonthOf(profile, snapshot, m) })
+            }
+            later?.takeIf { due == null }?.let { java.time.YearMonth.parse(it) }?.let { m ->
+                com.bamnat.app.ui.components.ToneLine("${m.monthValue}월 마감은 도구 › ${m.monthValue}월 마감에서 할 수 있어요",
+                    tone = com.bamnat.app.ui.theme.Tone.Plain, onClick = { vm.showMonth(m); payTab = PayTab.TOOLS; later = null })
             }
         }
         if (noBase) guides()
@@ -785,7 +798,7 @@ private fun PayResult(
         }
 
         if (unlocked && !month.isAfter(Today.month())) {
-            CloseMonthCard(vm, result, closedSnap, autoClose = settings.payAutoClose)
+            CloseMonthCard(vm, result, closedSnap, autoClose = settings.payAutoClose, periodEnd = profile.period.end(result.month))
         }
 
         // [PROV-01] The month or its year as a PDF or CSV (프로).
@@ -829,7 +842,7 @@ private fun PayResult(
 
         SectionCard(title = "내 급여 값") {
             // [PAYS-07] What was just made, with 되돌리기, where the values start.
-            justMade?.let { made -> MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null) }
+            justMade?.let { made -> MadeNotice(made, onUndo = if (undo != null) ({ vm.undo(); justMade = null }) else null, lands = madeLands) }
             ValueRow(
                 title = profile.wageType.baseName() + if (profile.wageType == WageType.DAILY) " (하루 ${PayCalculator.hours(profile.dailyHours)})" else "",
                 value = profile.base.on(month),
@@ -935,7 +948,7 @@ private fun PayResult(
         if (payTab == PayTab.RULES && locked) {
             SectionCard(title = PayTab.RULES.labelFor(settings.workStyle), trailing = { TextButton(onClick = onEditRules) { Text("열기") } }) {
                 Text(com.bamnat.app.ui.company.SharedPayWords.TITLE, style = MaterialTheme.typography.bodyLarge)
-                Text(com.bamnat.app.ui.company.SharedPayWords.HIDDEN, style = MaterialTheme.typography.bodySmall,
+                Text(com.bamnat.app.ui.company.SharedPayWords.hidden(profile.wageType), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(com.bamnat.app.ui.company.SharedPayWords.ASK, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 4.dp))
             }
@@ -1040,7 +1053,8 @@ private fun PayResult(
     if (building || editingRule != null) CustomItemDialog(
         vm, profile, snapshot, month,
         onDismiss = { building = false; editingRule = null },
-        onSave = { made -> vm.saveMade(made); if (editingRule == null) justMade = made; building = false; editingRule = null },
+        onSave = { made -> vm.saveMade(made); if (editingRule == null) { justMade = made; madeLands = landsIn(month, closed.keys).takeIf { it != month } }
+            building = false; editingRule = null },
         editing = editingRule,
         // [PAYX-50] 1.38: '수당 추가' is this one window, its kinds as chips; changing a rule stays as it was.
         oneWindow = editingRule == null,
@@ -1846,8 +1860,10 @@ private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: Sched
  * it away for that month (the 도구 탭's 마감 is still there).
  */
 @Composable
-private fun CloseAskCard(month: YearMonth, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
+private fun CloseAskCard(month: YearMonth, amount: Long?, deposited: Boolean, onClose: () -> Unit, onLater: () -> Unit, onAlways: () -> Unit) {
     SectionCard(title = if (deposited) "${month.monthValue}월 급여가 들어왔어요. 이대로 마감할까요?" else "${month.monthValue}월 급여, 이대로 마감할까요?") {
+        // [RVJ-49] 검토 PC-121: the amount being kept, of that month.
+        amount?.let { Text("${month.monthValue}월 급여 (세전) ${won(it)}", style = MaterialTheme.typography.titleMedium) }
         Text("마감하면 규칙·요율이 바뀌어도 이 달 금액·날짜별·세후가 그대로예요", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
@@ -1861,12 +1877,23 @@ private fun CloseAskCard(month: YearMonth, deposited: Boolean, onClose: () -> Un
 
 /** 마감 [PAYX-03]: keeps a month's result fixed once the pay slip is in, with a way to compare and redo. */
 @Composable
-private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?, autoClose: Boolean) {
+private fun CloseMonthCard(vm: PayViewModel, result: MonthPay, closed: CalcSnapshot?, autoClose: Boolean, periodEnd: java.time.LocalDate) {
+    // 2.0.0 [RVJ-58] 검토 PC-145: one tap closed a month still under way (11월 12일에 11월); before its work is over it asks once.
+    var asking by remember { mutableStateOf(false) }
+    if (asking) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { asking = false },
+        title = { Text("아직 ${result.month.monthValue}월 근무가 남았어요") },
+        text = { Text("${periodEnd.monthValue}월 ${periodEnd.dayOfMonth}일까지가 ${result.month.monthValue}월 급여예요. 지금 마감하면 그 뒤에 넣는 근무는 " +
+            "이 달 금액에 들어가지 않아요. 마감은 언제든 풀 수 있어요.") },
+        confirmButton = { TextButton(onClick = { asking = false; vm.closeMonth(result) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 마감") } },
+        dismissButton = { TextButton(onClick = { asking = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("취소") } },
+    )
     SectionCard(title = "${result.month.monthValue}월 마감") {
         if (closed == null) {
             Text("급여를 받은 달은 마감해 두세요. 나중에 규칙이나 요율이 바뀌어도 이 달 결과는 그대로 남아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            OutlinedButton(onClick = { vm.closeMonth(result) }, modifier = Modifier.padding(top = 6.dp)) {
+            OutlinedButton(onClick = { if (com.bamnat.core.pay.CloseAsk.early(periodEnd, Today.date())) asking = true else vm.closeMonth(result) },
+                modifier = Modifier.padding(top = 6.dp)) {
                 Icon(Icons.Filled.Lock, null); Text(" 이 달 마감하기")
             }
         } else {

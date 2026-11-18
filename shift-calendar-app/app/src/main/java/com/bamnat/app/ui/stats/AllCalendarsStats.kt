@@ -34,7 +34,7 @@ import com.bamnat.core.money.byType
 import java.time.YearMonth
 
 /**
- * [COMN-03] 통계's 전체: whatever kind of work each calendar is, only 총수입 · 총지출 · 순저축 for the
+ * [COMN-03] 통계's 전체: whatever kind of work each calendar is, only 들어온 돈 · 나간 돈 · 남은 돈 for the
  * month over every calendar, and each calendar's days and hours of work. False with fewer than two
  * calendars, for the screen to show the calendar's own figures instead.
  */

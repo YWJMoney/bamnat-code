@@ -38,23 +38,24 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -363,7 +364,7 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                         SearchBox(state.query, vm::query, if (big) "작품 찾기" else "이름·설명·초성으로 찾기",
                             Modifier.weight(1f), colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(), onSearch = { vm.load() })
                         Spacer(Modifier.width(8.dp))
-                        androidx.compose.material3.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(48.dp)
+                        com.bamnat.app.ui.components.FilledTonalIconButton(onClick = onMake, modifier = Modifier.size(48.dp)
                             .semantics { contentDescription = "스튜디오에서 만들기" }) { Icon(Icons.Filled.Add, null) }
                     }
                     // PC 확인 1.36 (코드로 찾으면 어느 구간에도 안 나옴): a code typed in the box opens that work, whatever its 구간.
@@ -408,10 +409,8 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
                 if (state.items.isNotEmpty() && state.loadedAt > 0L) com.bamnat.app.ui.company.RefreshLine(refreshing = false, stale = true,
                     onRetry = { vm.load() }, seenAt = java.time.Instant.ofEpochMilli(state.loadedAt).atZone(com.bamnat.core.time.Today.zone())
                         .toLocalTime().let { "%d:%02d".format(it.hour, it.minute) })
-                else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-                    Text(e, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { vm.load() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 시도") }
-                }
+                // 2.0.0 [RVP-13] 검토 UIX-15 (조건 6·7): a market that cannot be read is not a danger: the one offline line, quiet, with 다시 하기.
+                else com.bamnat.app.ui.components.OfflineLine(Modifier.padding(start = 8.dp), text = e, onRetry = { vm.load() })
             } }
             if (!state.loading && state.error == null && state.items.isEmpty()) item {
                 // [R136-05] 1.36 (리뷰 R-11): an empty list can be read again (다시 불러오기). [RVM-09] PC-64 (찾기 결과 없음에 칸이가 없고
@@ -496,6 +495,7 @@ private fun ChipRows(
         val to = if (focus == null || spot.x < 0) 0 else (spot.x - hint).coerceAtLeast(0)
         if (scroll.value != to) scroll.animateScrollTo(to.coerceAtMost(scroll.maxValue.takeIf { it < Int.MAX_VALUE } ?: to))
     }
+    if (spot != null) androidx.compose.runtime.LaunchedEffect(spot.home) { if (spot.home > 0 && scroll.value != 0) scroll.animateScrollTo(0) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         lead?.let { it(); Spacer(Modifier.width(6.dp)) }
         Row(Modifier.weight(1f).horizontalScroll(scroll), horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -504,8 +504,14 @@ private fun ChipRows(
     }
 }
 
-/** [RVM-31] Where the chip a row slides to sits in that row (-1: not laid out yet). */
-private class RowSpot { var x by androidx.compose.runtime.mutableIntStateOf(-1) }
+/**
+ * [RVM-31] Where the chip a row slides to sits in that row (-1: not laid out yet). [RVM-41] PC-152: [home] goes up each time the 구간
+ * picked is tapped again, and the row slides back to its start, where the other two 구간 are.
+ */
+private class RowSpot {
+    var x by androidx.compose.runtime.mutableIntStateOf(-1)
+    var home by androidx.compose.runtime.mutableIntStateOf(0)
+}
 
 /** [RVM-31] Which of the three 구간 [MarketHalves] draws: the one picked (leading the row) or the other two (in the row). */
 private enum class Halves { PICKED, OTHERS }
@@ -516,19 +522,21 @@ private enum class Halves { PICKED, OTHERS }
  * and a name never breaks (a chip of one line; before, at 200% a squeezed one kept only its picture).
  */
 @Composable
-private fun MarketHalves(kind: String?, vm: RecipeListViewModel, which: Halves) {
+private fun MarketHalves(kind: String?, vm: RecipeListViewModel, which: Halves,
+    /** [RVM-41] PC-152: the 구간 picked, tapped again (the row slides back to where the other two are). */
+    onAgain: () -> Unit = {}) {
     val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     val tools = kind.isTool()
     val featured = kind?.startsWith(RecipeClient.SCOPE_TAB) == true
     listOf(
-        Triple("🎨 테마", "테마", !featured && !tools) to { vm.kind(RecipeClient.SCOPE_THEME) },
-        Triple("🗂 탭별 작품", "탭별 작품", featured) to { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) },
-        Triple("🧰 도구", "도구", tools) to { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) },
+        Triple("🎨 테마", "테마", !featured && !tools) to { vm.kind(RecipeClient.SCOPE_THEME); if (!featured && !tools) onAgain() },
+        Triple("🗂 탭별 작품", "탭별 작품", featured) to { if (!featured) vm.kind(RecipeClient.SCOPE_TAB) else onAgain() },
+        Triple("🧰 도구", "도구", tools) to { if (!tools) vm.kind(RecipeClient.SCOPE_TOOL) else onAgain() },
     ).forEach { (half, go) ->
         val (label, name, on) = half
         if (which == Halves.PICKED && !on || which == Halves.OTHERS && on) return@forEach
         FilterChip(selected = on, onClick = go, label = { Text(if (big) name else label, maxLines = 1, softWrap = false) },
-            modifier = Modifier.semantics { stateDescription = (if (on) "고름. " else "") + about(name) })
+            modifier = Modifier.semantics { stateDescription = (if (on) "고름. 다시 누르면 다른 구간이 보여요. " else "") + about(name) })
     }
 }
 
@@ -548,13 +556,24 @@ private fun MarketChips(
     val featured = state.kind?.startsWith(RecipeClient.SCOPE_TAB) == true
     val hint = RecipeClient.wordKind(state.query, state.kind)?.takeIf { state.query.isNotBlank() }
     val elsewhere = if (state.query.isNotBlank()) state.elsewhere else emptyMap()
-    val finding = hint != null || elsewhere.isNotEmpty()
+    val otherStyles = if (state.query.isNotBlank()) state.otherStyles else emptyMap()
+    val finding = hint != null || elsewhere.isNotEmpty() || otherStyles.isNotEmpty()
     val spot = remember { RowSpot() }
     val divider: @Composable () -> Unit = { androidx.compose.material3.VerticalDivider(Modifier.height(24.dp).padding(horizontal = 2.dp)) }
     // The 구간 picked leads the row and stays in sight (지금 자리); picking 탭별 작품 or 도구 slides the rest of the row to that 구간's own
     // chips (탭 · 종류), the end of the 구간 before them showing that there is more to the left. 테마 keeps the other two in sight.
     ChipRows(fold = true, focus = if (finding || !(featured || tools)) null else if (featured) "tab" else "tool", spot = spot,
-        lead = { MarketHalves(state.kind, vm, Halves.PICKED) }) { open ->
+        lead = {
+            MarketHalves(state.kind, vm, Halves.PICKED) { spot.home++ }
+            // 2.0.0 [RVM-42] 총괄 HQ-100 (조건 7·13): with 다른 유형도 on (by '다른 유형 작품 보기' too) it stays in sight at the start, picked,
+            // with ✕: one tap back to my kind of work's works. (Off, it is at the end of the row as before.)
+            if (state.allStyles && vm.style != null) {
+                Spacer(Modifier.width(6.dp))
+                FilterChip(selected = true, onClick = { vm.allStyles(false) }, label = { Text("다른 유형도", maxLines = 1, softWrap = false) },
+                    trailingIcon = { Icon(Icons.Filled.Close, null, Modifier.size(18.dp)) },
+                    modifier = Modifier.semantics { stateDescription = "다른 유형 작품도 보는 중. 누르면 ${RecipeDescribe.short(vm.style!!)} 작품만 봐요" })
+            }
+        }) { open ->
         // 1.39 [MKD-03] '값 칸'·'위젯'·'프로'처럼 장치·종류 이름으로 찾으면 그 칩으로 가는 칩을 맨 앞에. PC D14·D10: 다른 칸에 있는 것도 맨 앞에.
         hint?.let { (k, name) -> androidx.compose.material3.AssistChip(onClick = { vm.query(""); vm.kind(k) }, label = { Text("$name 보기") }) }
         elsewhere.forEach { (h, n) ->
@@ -562,6 +581,14 @@ private fun MarketChips(
             androidx.compose.material3.AssistChip(onClick = { vm.jump(h) },
                 label = { Text(if (here) "‘새로’에 $n" else "${RecipeListViewModel.halfName(h)}에 $n") },
                 modifier = Modifier.semantics { contentDescription = "다른 칸에도 있어요: ${if (here) "새로" else RecipeListViewModel.halfName(h)}에 $n" })
+        }
+        // [RVM-40] PC-149: found only in another kind of work's: one chip to them.
+        // (One chip whatever 구간 they are in; how many and where is the empty screen's line.)
+        (otherStyles.keys.firstOrNull { it == vm.halfNow() } ?: otherStyles.keys.firstOrNull())?.let { h ->
+            androidx.compose.material3.AssistChip(onClick = { vm.otherStyles(h) }, label = { Text("다른 유형 보기") },
+                modifier = Modifier.semantics {
+                    contentDescription = "다른 유형 작품에 있어요: " + otherStyles.entries.joinToString(", ") { (k, n) -> "${RecipeListViewModel.halfName(k)}에 $n" }
+                })
         }
         if (finding) divider()
         MarketHalves(state.kind, vm, Halves.OTHERS)
@@ -637,9 +664,9 @@ private fun MarketChips(
                 FreeChip(free) { vm.kind(RecipeClient.withFree(RecipeClient.SCOPE_THEME, !free)) }
             }
         }
-        if (vm.style != null) {
+        if (vm.style != null && !state.allStyles) {
             divider()
-            FilterChip(selected = state.allStyles, onClick = { vm.allStyles(!state.allStyles) }, label = { Text("다른 유형도") })
+            FilterChip(selected = false, onClick = { vm.allStyles(true) }, label = { Text("다른 유형도") })
         }
         // 1.39 [MKF-03] 작게 보기 (한 화면에 더 많이), 이 폰에 기억해요.
         divider()
@@ -698,12 +725,21 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
             MarketShot(item, 64.dp, style, onClick)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                // 2.0.0 [RVM-37] 총괄 HQ-83: at large text the marks beside the name cut it ('야간 회복 …'); there the name has the line
+                // (two lines) and the marks go on the line under it.
+                val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
+                val marks: @Composable () -> Unit = {
                     // [R136-17] 1.36 (리뷰 R-12): 보여주기 is the operator's word; people read 추천.
                     if (item.showcase) Badge("추천")
                     else if (item.official) Badge(if (item.publicData) "공개 자료" else "시작")
                     if (item.fx.isNotEmpty()) FxBadge(locked = fxLocked)
+                }
+                if (big) {
+                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (item.showcase || item.official || item.fx.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) { marks() }
+                } else Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                    marks()
                 }
                 if (item.summary.isNotEmpty()) Text(item.summary, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -725,18 +761,29 @@ fun RecipeRow(item: RecipeItem, modifier: Modifier = Modifier,
 @Composable
 private fun ThemeTile(item: RecipeItem, style: WorkStyle?, modifier: Modifier = Modifier, small: Boolean = false, onPicture: (() -> Unit)? = null, onClick: () -> Unit) {
     val fxLocked = item.fx.isNotEmpty() && !com.bamnat.app.logic.FxAccess.pro(androidx.compose.ui.platform.LocalContext.current.appContainer)
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale > 1.3f
     Card(modifier.clickable(onClickLabel = when (item.scope) { "tab" -> "작품 보기"; "part", "logic" -> "도구 보기"; else -> "테마 보기" }, onClick = onClick)) {
         Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 // 1.39 [MKF-01] The picture opens 크게 넘겨 보기 (the name and lines under it, the work's page).
                 MarketShot(item, maxWidth, style, onPicture ?: onClick)
-                // 1.39 [MKD-01] 프로 표는 그림 위 모서리에 (이름 자리를 뺏지 않게).
-                if (item.fx.isNotEmpty()) Box(Modifier.align(Alignment.TopEnd).padding(6.dp)) { FxBadge(locked = fxLocked) }
+                // 1.39 [MKD-01] 프로 표는 그림 위 모서리에 (이름 자리를 뺏지 않게). 2.0.0 [RVM-37] HQ-83: at large text 추천 joins it
+                // there, above 프로, so the name has the whole width.
+                val corner = item.fx.isNotEmpty() || (big && item.showcase)
+                if (corner) Column(Modifier.align(Alignment.TopEnd).padding(6.dp), horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (big && item.showcase) Badge("추천")
+                    if (item.fx.isNotEmpty()) FxBadge(locked = fxLocked)
+                }
             }
             // PC 확인 e50bb622: 추천 by the name, not over the picture's own title. 총괄 #462 (글자 200%에서 이름이 '야간 …'): two lines.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(item.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                if (item.showcase) Badge("추천")
+                if (!big && item.showcase) Badge("추천")
+            }
+            // [RVM-42] HQ-100: a work for another kind of work says whose ('일근용 작품'), seen with 다른 유형도 on.
+            RecipeDescribe.otherKind(item.styles, style)?.let {
+                Text("$it 작품", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             sectionLine(item, style, long = false)?.let {
                 Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -952,6 +999,16 @@ private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewMode
                     val first = found.keys.first()
                     action = "${RecipeListViewModel.halfName(first)}에서 보기" to { vm.jump(first) }
                     found.keys.drop(1).take(2).forEach { h -> more += "${RecipeListViewModel.halfName(h)}에서 보기" to { vm.jump(h) } }
+                }
+                // 2.0.0 [RVM-40] PC-149: not for my kind of work, but another kind has it: where, and the way there in one tap.
+                state.otherStyles.isNotEmpty() -> {
+                    title = "‘$q’에 맞는 작품이 내 유형에는 없어요"
+                    detail = "다른 유형 작품: " + state.otherStyles.entries.joinToString(", ") { (h, n) -> "${RecipeListViewModel.halfName(h)}에 $n" }
+                    mood = com.bamnat.app.ui.components.KaniMood.Basic
+                    // The 구간 open first when it has some, so the list stays where the word was typed.
+                    val first = state.otherStyles.keys.firstOrNull { it == vm.halfNow() } ?: state.otherStyles.keys.first()
+                    action = "다른 유형 작품 보기" to { vm.otherStyles(first) }
+                    more += "스튜디오에서 만들기" to onMake
                 }
                 else -> {
                     title = "‘$q’에 맞는 작품이 없어요"

@@ -32,17 +32,17 @@ import androidx.compose.material.icons.automirrored.filled.Redo
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.outlined.Lock
 import com.bamnat.app.ui.components.AlertDialog
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -96,6 +96,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.container
 
 /**
  * 1.38 [P3-02][P3-04] 리더 팀 근무표 (Phase 3 M24, 설계 2-1), behind `team.leader`: the leader makes a team (names pasted at once),
@@ -181,20 +183,28 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     // 1.39 G6 [SETUP-18]: with the first setup put off, the calendar's times are the app's samples, not the team's.
     val appSettings by c.settingsRepository.settings.collectAsStateWithLifecycle()
     val ownTimes = appSettings.setupDone || calendarId != com.bamnat.app.data.PersonalCalendar.MAIN
-    val pickFile = rememberAnyFilePicker { uri ->
+    // 2.0.0 [RVL-41] (검토 U07b-10) A locked roster PDF asks for its password here and is read again with it.
+    var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
+    fun readRoster(uri: android.net.Uri, password: CharArray? = null) {
         scope.launch {
             reading = "파일을 읽고 있어요…"
             val shifts = kinds.map(com.bamnat.core.team.TeamTimes::of)
-            when (val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date())) {
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, YearMonth.from(Today.date()).plusMonths(1), shifts, Today.date(), password = password)
+            if (got !is com.bamnat.app.imports.ManageImport.Got.Locked) unlock?.done()
+            when (got) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     from = got.value to got.fromPhoto
                     names = got.value.rows.joinToString("\n") { r -> r.name + (r.role?.let { " $it" } ?: "") }.take(3000)
-                    reading = null
+                    // 2.0.0 [RVL-43] A file of more pages than were read says so.
+                    reading = got.note
                 }
                 is com.bamnat.app.imports.ManageImport.Got.Failed -> reading = got.why
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> { reading = null; unlock?.ask(uri, got.lock) }
             }
         }
     }
+    unlock = com.bamnat.app.ui.imports.rememberPdfUnlock { uri, pw -> readRoster(uri, pw) }
+    val pickFile = rememberAnyFilePicker { uri -> readRoster(uri) }
     // 1.38 PC 1차 (ESC·뒤로에 명단이 사라짐): with something typed, a tap outside or 뒤로 does not close it; 닫기 does.
     val typed = name.isNotBlank() || names.isNotBlank()
     AlertDialog(onDismissRequest = { if (!typed) onDismiss() }, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = !typed, dismissOnClickOutside = !typed),
@@ -241,7 +251,17 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     val store = c.phaseThree
     val scope = rememberCoroutineScope()
     val settings by c.settingsRepository.settings.collectAsStateWithLifecycle()
-    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(Today.date()).plusMonths(1).toString()) }
+    // 2.0.0 [RVJ-53] 검토 PC-130: the board always opened on next month, so a team made on 11-12 opened on '2026년 12월 · 빈칸 31'.
+    // It opens on this month, and on next month only once next month's board has been started (the leader planning ahead).
+    var monthText by rememberSaveable { mutableStateOf(YearMonth.from(Today.date()).toString()) }
+    var opened by rememberSaveable(team.id) { mutableStateOf(false) }
+    LaunchedEffect(team.id) {
+        if (opened) return@LaunchedEffect
+        opened = true
+        val now = YearMonth.from(Today.date())
+        if (startImport == null && monthText == now.toString() && store.board(team.id, now.plusMonths(1)).first().cells.isNotEmpty())
+            monthText = now.plusMonths(1).toString()
+    }
     val month = YearMonth.parse(monthText)
     val saved by store.board(team.id, month).collectAsStateWithLifecycle(null)
     val confirmed by store.month(team.id, month).collectAsStateWithLifecycle(null)
@@ -301,26 +321,35 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     var checkCells by remember(team.id, month) { mutableStateOf<List<Pair<String, LocalDate>>>(emptyList()) }
     // 2.0.0 [RVL-33] (검토 T07b-07) A team roster that could not be read: why, and the ways on (the fix, another file, the keypad).
     var readFailed by remember { mutableStateOf<com.bamnat.app.imports.ManageImport.Got.Failed?>(null) }
-    val pickFile = rememberAnyFilePicker { uri ->
+    var importNote by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVL-41] (검토 U07b-10) A locked roster PDF asks for its password here and is read again with it.
+    var unlock: com.bamnat.app.ui.imports.PdfUnlock? = null
+    fun readRoster(uri: android.net.Uri, password: CharArray? = null) {
         scope.launch {
             busy = "파일을 읽고 있어요…"
             // 2.0.0 [RVL-32] (검토 SCAN-04) The reading model coming down is said, with how far it got.
-            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date()) { p ->
+            val got = com.bamnat.app.imports.ManageImport.roster(context, uri, month, team.shifts, Today.date(), password = password) { p ->
                 busy = "글자 읽기 준비물 받는 중" + (if (p != null) " · $p%" else "") + " (처음 한 번만)"
             }
             busy = null
+            if (got !is com.bamnat.app.imports.ManageImport.Got.Locked) unlock?.done()
             when (got) {
                 is com.bamnat.app.imports.ManageImport.Got.Read -> {
                     if (got.value.month != month) monthText = got.value.month.toString()
                     importing = got.value to got.fromPhoto
+                    // 2.0.0 [RVL-43] A file of more pages than were read says so in the import window.
+                    importNote = got.note
                 }
                 is com.bamnat.app.imports.ManageImport.Got.Failed -> {
                     c.telemetry.event(com.bamnat.core.stats.UsageEvent.MANAGE_ERROR.key, "import")
                     readFailed = got
                 }
+                is com.bamnat.app.imports.ManageImport.Got.Locked -> unlock?.ask(uri, got.lock)
             }
         }
     }
+    unlock = com.bamnat.app.ui.imports.rememberPdfUnlock { uri, pw -> readRoster(uri, pw) }
+    val pickFile = rememberAnyFilePicker { uri -> readRoster(uri) }
     val b = board
     fun change(f: (TeamBoard) -> TeamBoard) { val e = editor ?: return; board = e.apply(f) }
     // 2.0.0 [RVJ-27] 검토 PAYU-57 ③: the board as the last 가져오기 left it and the members it added; 되돌리기 from that board asks
@@ -488,7 +517,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                             Text(if (small) "${d.dayOfMonth}" else "${d.dayOfMonth}\n${Fmt.dayOfWeekShort(d.dayOfWeek)}", style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                 color = dayColor, fontSize = if (small) 10.sp /* [RVP-11] */ else androidx.compose.ui.unit.TextUnit.Unspecified, maxLines = if (small) 1 else 2,
                                 modifier = Modifier.width(cellDp.dp)
-                                    .background(if (lack) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning.copy(alpha = 0.22f) else Color.Transparent, RoundedCornerShape(4.dp))
+                                    .background(if (lack) Tone.Caution.container() else Color.Transparent, RoundedCornerShape(4.dp))
                                     .clickable(role = Role.Button, enabled = short.isNotEmpty()) { dialog = short.joinToString("\n") { "${Fmt.monthDay(d)} ${it.text}" } })
                             Box(Modifier.width(cellDp.dp).height(4.dp), contentAlignment = Alignment.Center) {
                                 if (short.isNotEmpty() && !lack) Box(Modifier.size(3.dp).background(MaterialTheme.colorScheme.outline, RoundedCornerShape(2.dp)))
@@ -513,7 +542,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                                     .background(t?.let { Color(it.colorArgb).copy(alpha = 0.85f) } ?: MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp))
                                     .then(if (marked) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(4.dp))
                                         else if (warn != null) Modifier.border(2.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(4.dp))
-                                        else if (toCheck) Modifier.border(2.dp, com.bamnat.app.ui.theme.LocalCalendarColors.current.warning, RoundedCornerShape(4.dp)) else Modifier)
+                                        else if (toCheck) Modifier.border(2.dp, Tone.Caution.color(), RoundedCornerShape(4.dp)) else Modifier)
                                     .clickable(role = Role.Button) {
                                         val from = swapFrom
                                         if (from != null && from.second == d && from.first != m.id) {
@@ -547,7 +576,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
             TeamHoursLine(team, apart.isNotEmpty()) { settingTimes = true }
             // 1.38 가져오기 ③: the cells read without being sure, or with a code not paired, one after another.
             if (checkCells.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning,
+                Text("확인할 칸 ${checkCells.size}개", style = MaterialTheme.typography.bodyMedium, color = Tone.Caution.color(),
                     fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                 TextButton(onClick = { checkCells = emptyList() }) { Text("다 봤어요") }
                 Button(onClick = {
@@ -875,7 +904,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
     // Shown once the board of the file's month is there, so ① matches the names against this team as it is now.
     importing?.let { (grid, photo) ->
         val now = board
-        if (now != null && now.month == grid.month) TeamImportDialog(grid, photo, now.members, team.shifts, onDismiss = { importing = null }) { choice ->
+        if (now != null && now.month == grid.month) TeamImportDialog(grid, photo, now.members, team.shifts, onDismiss = { importing = null }, note = importNote) { choice ->
             importing = null
             scope.launch {
                 val rows = com.bamnat.core.team.TeamGridImport.rows(grid)
@@ -916,7 +945,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                 else if (asks > TeamCheck.WEEK_LIMIT_MINUTES / 60.0) Text("이 인원으로 근무별 인원을 다 채우면 한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 주 52시간을 지킬 수 없어요. 사람을 더하거나 근무별 인원을 줄여 주세요.",
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
-                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                    style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
                 list.forEachIndexed { i, p ->
                     OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth()) {
                         Column(Modifier.fillMaxWidth()) {
@@ -930,7 +959,7 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     }
                 }
                 if (team.need.isEmpty()) Text("‘근무별 인원’을 정하면 그 수만큼 채워요. 정하지 않으면 쉬는 날로만 채워요.",
-                    style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+                    style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
             }
         }, confirmButton = { TextButton(onClick = { plans = null }) { Text("닫기") } })
     }
@@ -1147,7 +1176,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                     Row {
                         Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
                         Text("${r.nights}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                            color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else Color.Unspecified)
+                            color = if (maxN - minN >= 2 && (r.nights == maxN || r.nights == minN)) Tone.Caution.color() else Color.Unspecified)
                         Text("${r.weekends}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text("${r.offs}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         Text("${r.minutes / 60}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -1169,7 +1198,7 @@ private fun FairDialog(team: Team, b: TeamBoard, month: YearMonth, onDismiss: ()
                         Row {
                             Text(r.member.name, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f), maxLines = 1)
                             Text(avg(r.nights), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
-                                color = if (hi - lo >= 1.5 && r.months > 0 && (n == hi || n == lo)) com.bamnat.app.ui.theme.LocalCalendarColors.current.warning else Color.Unspecified)
+                                color = if (hi - lo >= 1.5 && r.months > 0 && (n == hi || n == lo)) Tone.Caution.color() else Color.Unspecified)
                             Text(avg(r.weekends), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Text(avg(r.holidays), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                             Text(r.keptPercent?.let { "$it%" } ?: "-", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
@@ -1322,14 +1351,8 @@ internal fun teamKinds(types: List<com.bamnat.core.model.ShiftType>, folded: Set
 /** 1.39 G6 [SETUP-18] The kinds of work still without times, and what they are for. */
 @Composable
 private fun TeamTimesCard(missing: List<TeamShift>, onSet: () -> Unit) {
-    val cal = com.bamnat.app.ui.theme.LocalCalendarColors.current
-    androidx.compose.material3.Surface(onClick = onSet, shape = MaterialTheme.shapes.medium, color = cal.warningContainer, modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}", style = MaterialTheme.typography.titleSmall)
-                Text("팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 확정하기 전에 정해 주세요.", style = MaterialTheme.typography.bodySmall)
-            }
-            TextButton(onClick = onSet, modifier = Modifier.heightIn(min = 48.dp)) { Text("정하기") }
-        }
-    }
+    // 2.0.0 [RVP-13] (HQ-54, 조건 3) A thing to set before confirming: the one notice-card shape with the 주의 mark.
+    com.bamnat.app.ui.components.NudgeCard("근무 시간이 비어 있어요: ${missing.joinToString(" ") { it.label }}", tone = Tone.Caution,
+        detail = "팀원 링크의 알람과 오늘 출근 시각이 이 시간으로 나가요. 확정하기 전에 정해 주세요.",
+        action = "정하기", onAction = onSet, onClick = onSet)
 }

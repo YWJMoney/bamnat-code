@@ -1,12 +1,12 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.layout.Arrangement
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -40,6 +40,8 @@ import com.bamnat.core.work.CashDrawer
 import com.bamnat.core.work.ShopMoney
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [SHOP-01][SHOP-03][SHOP-06] 하루 마감: the day's sales by how they were paid (카드·현금·계좌이체·
@@ -220,7 +222,7 @@ private fun CashCheck(day: DailySales, rules: ShopMoney, book: MoneyBook, counte
                 else -> "${Fmt.won(-diff)} 모자라요"
             },
             style = MaterialTheme.typography.titleSmall,
-            color = if (diff == 0L) cal.income else cal.warning,
+            color = if (diff == 0L) cal.income else MaterialTheme.bamnat.caution,
         )
     }
 }

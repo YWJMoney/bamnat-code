@@ -279,7 +279,10 @@ class CalendarScreenshotTest : ScreenshotBase() {
     @Test fun smallPhoneCalendar() = shoot("161_small_phone_calendar", SMALL_PHONE)
     @Test fun smallPhoneDaySheet() = shoot("162_small_phone_day_sheet", SMALL_PHONE) { openDayBelow(dayCell) }
     @Test fun phoneCalendarSmallText() = shoot("163_phone_calendar_small_text", PHONE, fontScale = 0.85f)
-    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f)
+    // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9): the floating button does not stand on the '월 ▾' row under the month.
+    @Test fun phoneCalendarHugeText() = shoot("164_phone_calendar_huge_text", PHONE, fontScale = 2f) {
+        LayoutCheck.underFab(nodes(merged = false)).let { check(it.isEmpty()) { "the floating button covers $it" } }
+    }
     @Test fun phoneDaySheetHugeText() = shoot("165_phone_day_sheet_huge_text", PHONE, fontScale = 2f) { openDayBelow(dayCell) }
     @Test fun unfoldedCalendarHugeText() = shoot("172_unfolded_calendar_huge_text", UNFOLDED, fontScale = 2f)
     @Test fun phoneLandscapeCalendar() = shoot("173_phone_landscape_calendar", PHONE_LANDSCAPE)

@@ -370,6 +370,23 @@ test("맞았어요 adds a coworker; 달라요 takes theirs away", async () => {
   assert.equal((await call("POST", "/api/votes", { ...body(5, { ok: true }), device: "short" }, from(5))).data.error, "device");
 });
 
+test("2.0.0 COMP-22-1: pressing ✓ 맞아요 again takes this phone's vote back", async () => {
+  const { call } = server();
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  const body = (n, extra) => ({ device: device(n), company: a.data.company.id, setup: a.data.setup, ...extra });
+  let v = await call("POST", "/api/votes", body(2, { ok: true }), from(2));
+  assert.deepEqual([v.data.persons, v.data.points], [2, 2]);
+  v = await call("POST", "/api/votes", body(2, { ok: null }), from(2));
+  assert.equal(v.status, 200);
+  assert.deepEqual([v.data.status, v.data.persons, v.data.points], ["pending", 1, 1]);
+  // Only this phone's: another's 달라요 stays, and taking back twice is the same.
+  await call("POST", "/api/votes", body(3, { ok: false, why: "old" }), from(3));
+  v = await call("POST", "/api/votes", body(2, { ok: null }), from(2));
+  assert.deepEqual([v.data.persons, v.data.bad], [1, 1]);
+  // Not a 맞아요 by another name: anything but true, false or null is still refused.
+  assert.equal((await call("POST", "/api/votes", body(2, { ok: "back" }), from(2))).data.error, "ok");
+});
+
 test("a sender takes a report back, with its reward", async () => {
   const { call, DB } = server();
   const a = await call("POST", "/api/reports", report(1, { verified: true }), from(1));

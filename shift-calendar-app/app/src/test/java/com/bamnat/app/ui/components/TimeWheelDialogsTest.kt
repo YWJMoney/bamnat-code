@@ -35,6 +35,8 @@ import org.junit.runner.RunWith
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
 class TimeWheelDialogsTest {
+    // HQ-93: no line, window turn or open count left by an earlier test in this JVM (and none left for the next).
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     private var wasClock12 = false

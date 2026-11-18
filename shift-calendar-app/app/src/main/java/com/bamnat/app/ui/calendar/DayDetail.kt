@@ -64,7 +64,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
@@ -141,6 +141,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.app.ui.calendar.DayGroupKey as G
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [DAY-02] Which of the day's groups are open: the user's own choice per group, kept from day to day. */
 @Stable
@@ -387,7 +389,7 @@ private fun DayGroups(
                                 day.extras.size == 1 && ExtraText.namesHours(day.extras[0]) -> names[0]
                                 else -> names.joinToString(" · ") + " · ${HoursFormat.korean(day.extraMinutes)}"
                             },
-                            summaryColor = if (review) cal.warning else if (names.isNotEmpty()) cal.holidayWork else null,
+                            summaryColor = if (review) Tone.Caution.color() else if (names.isNotEmpty()) cal.holidayWork else null,
                             open = groups.isOpen(key, day.hasExtraWork), onToggle = { groups.toggle(key, day.hasExtraWork) },
                         ) {
                             ExtrasContent(day, snapshot, vm, insight, showAmounts = profile != null, onOpenExtraKinds = onOpenExtraKinds)
@@ -524,7 +526,7 @@ private fun DayGroups(
                         DayGroup(
                             title = "몸", icon = Icons.Outlined.Bedtime,
                             summary = rest.firstOrNull()?.kind?.label ?: flow?.line ?: tipSummary(tips, date) ?: "수면 기록",
-                            summaryColor = if (rest.isNotEmpty()) cal.warning else null,
+                            summaryColor = if (rest.isNotEmpty()) Tone.Caution.color() else null,
                             open = bodyOpen, onToggle = { groups.toggle(key, rest.isNotEmpty()) },
                             trailing = sleepButton,
                         ) {
@@ -737,7 +739,9 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
     day.coveredShift?.let { DayNoteField(day.date, "${it.name} ${if (style == com.bamnat.core.work.WorkStyle.HOURLY) "대타" else "대근"}", vm) }
     if (day.source == DaySource.OVERRIDE) {
         val patternType = snapshot.resolver.patternShiftIdOn(day.date)?.let { snapshot.typesById[it] }
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // 2.0.0 [RVIB-12] (디자인 품질 12, 갈래 I 2묶음 사진) With the line squeezed by weight beside the button, '근무 주기는 주간 ·
+        // 지금은 휴무' stood one letter a line in the unfolded day pane at 200%: the button goes under it when it has no room.
+        com.bamnat.app.ui.components.SideOrBelow(start = {
             Text(
                 // [RVH-05] 검토 CAL-13·사용성 U01-05: "근무 주기는 주간 · 지금은 야간 · 되돌리기" in one line.
                 if (snapshot.hasPattern) "${snapshot.cycleWord}${Fmt.eun(snapshot.cycleWord)} ${patternType?.name ?: "쉬는 날"} · 지금은 ${day.shiftType?.name ?: "쉬는 날"}"
@@ -745,14 +749,14 @@ private fun WorkContent(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Calend
                 style = MaterialTheme.typography.bodySmall,
                 // 2.0.0 [RVP-13] (검토 UIX-15·U13-06) A neutral explanation is grey; orange stays for 주의.
                 color = com.bamnat.app.ui.components.QuietInk,
-                modifier = Modifier.weight(1f),
             )
+        }, end = {
             TextButton(onClick = { vm.assign(day.date, ShiftOverride.None) }) {
                 Icon(Icons.Filled.Autorenew, contentDescription = null, Modifier.size(18.dp))
                 Spacer(Modifier.width(4.dp))
                 Text(snapshot.backWord)
             }
-        }
+        })
     }
     if (day.isWorkDay) WorkTimeContent(day, snapshot, vm)
     // [SHFT-03] On a shift calendar, who the shift was swapped with.

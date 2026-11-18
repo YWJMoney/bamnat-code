@@ -28,7 +28,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.takeOrElse
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -313,15 +315,34 @@ fun PartStyle.fillColorOr(default: Color): Color = fillColor ?: default
 object PartTheme {
     private fun on(c: Color): Color = if (c.luminance() > 0.45f) Color.Black else Color.White
 
+    private fun Color.argb(): Long = toArgb().toLong() and 0xFFFFFFFFL
+
+    /**
+     * 2.0.0 [RVS-06] SN-05: a look's 앱 바탕 brings every colour a screen draws on it (보조 글자, 테두리, 입력 칸, 카드 층), made from that
+     * ground and its letters ([com.bamnat.core.recipe.PartFloor.roles]), each kept readable; before, only the ground and its letters
+     * changed and the app's light-grey lines and helper text stayed, unread on a dark ground. A 단추's letters read on its fill.
+     */
     fun colors(c: androidx.compose.material3.ColorScheme, bp: Blueprint): androidx.compose.material3.ColorScheme {
         if (bp.isEmpty) return c
         val app = bp.own("app")
         val button = bp.own("app.button")
         val card = bp.own("app.card")
         var s = c
-        app.fillColor?.let { s = s.copy(background = it, surface = it, onBackground = on(it), onSurface = on(it)) }
-        app.ink?.partColor()?.let { s = s.copy(onBackground = it, onSurface = it) }
-        button.fillColor?.let { s = s.copy(primary = it, onPrimary = button.ink?.partColor() ?: on(it)) }
+        val ground = app.fillColor?.compositeOver(c.background)
+        if (ground != null || app.ink != null) {
+            val r = com.bamnat.core.recipe.PartFloor.roles((ground ?: c.background).argb(), app.ink)
+            s = s.copy(onBackground = Color(r.on), onSurface = Color(r.on), onSurfaceVariant = Color(r.onVariant))
+            if (ground != null) s = s.copy(
+                background = ground, surface = ground, surfaceContainerLowest = ground, surfaceBright = ground, surfaceDim = ground,
+                surfaceContainerLow = Color(r.sunk), surfaceContainer = Color(r.raised), surfaceContainerHigh = Color(r.raised),
+                surfaceContainerHighest = Color(r.field), surfaceVariant = Color(r.field),
+                outline = Color(r.outline), outlineVariant = Color(r.outlineVariant),
+            )
+        }
+        button.fillColor?.let { f ->
+            val fill = f.compositeOver(s.background)
+            s = s.copy(primary = fill, onPrimary = Color(com.bamnat.core.recipe.PartFloor.readable((button.ink?.partColor() ?: on(fill)).argb(), fill.argb(), com.bamnat.core.recipe.PartFloor.BODY)))
+        }
         card.fillColor?.let { s = s.copy(surfaceContainerLow = it, surfaceContainer = it, surfaceContainerHigh = it) }
         return s
     }

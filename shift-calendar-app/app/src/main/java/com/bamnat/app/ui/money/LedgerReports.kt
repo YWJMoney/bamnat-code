@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -57,6 +58,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [LEDG-10] What the 분석 tab draws: the month looked at closely and its year. */
 data class LedgerAnalysis(val month: MonthMoney, val report: MonthReport, val year: YearReport)
@@ -85,6 +88,8 @@ fun LedgerReportsPane(
     onMessage: (String) -> Unit = {},
     /** 1.39 [FLOW-18] The shown month's category budgets, for the 잘 쓴 곳·많이 쓴 곳 chips. */
     budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
+    /** 2.0.0 [RVK-43] (검토 U06a-27) 예산 정하기 opened on a category. */
+    onBudget: ((String) -> Unit)? = null,
 ) {
     if (analysis == null) {
         // 2.0.0 [RVK-42] (검토 MONEY-20·U06a-16) The first count of a long book takes a moment: grey rows the shape of the cards and one
@@ -103,7 +108,7 @@ fun LedgerReportsPane(
         // [MON-04] Locked, the user's own analysis shows blurred under the lock.
         com.bamnat.app.ui.pro.ProLock(Feature.MONEY_STATS, gate) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today)
+                if (r.categories.isNotEmpty()) CategoriesCard(r, onCategory, budgetLines, today, onBudget)
                 PaceCard(r, budget, today)
                 InOutCard(m, style)
             }
@@ -169,7 +174,7 @@ private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
         // the same sum as the two tiles above; the pay still to come is said beside it, never counted as in.
         val left = m.received - m.spent
         val saved = if (m.received > 0) (left * 100 / m.received).toInt() else null
-        StatTile("남은 돈", Fmt.won(left), Modifier.fillMaxWidth(), warning = left < 0,
+        StatTile("남은 돈", Fmt.won(left), Modifier.fillMaxWidth(), caution = left < 0,
             caption = m.payExpected?.let { "급여(예상 ${wonBrief(it)})가 들어오면 ${wonBrief(left + it)}" }
                 ?: saved?.let { if (it >= 0) "들어온 돈의 $it%를 남겼어요" else "들어온 돈보다 더 썼어요" })
         if (r.daysCounted > 0) {
@@ -196,7 +201,7 @@ private fun ProNote() {
 /** [LEDG-10] Where the money went, as a ring and a list; a tap shows that category's lines. */
 @Composable
 private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetLines: List<com.bamnat.core.money.BudgetLine> = emptyList(),
-    today: LocalDate = com.bamnat.core.time.Today.date()) {
+    today: LocalDate = com.bamnat.core.time.Today.date(), onBudget: ((String) -> Unit)? = null) {
     val cal = LocalCalendarColors.current
     val shown = r.categories.take(7)
     val rest = r.categories.drop(7)
@@ -214,6 +219,13 @@ private fun CategoriesCard(r: MonthReport, onCategory: (String) -> Unit, budgetL
             )
             com.bamnat.app.ui.components.ToneChipNote(
                 if (r.holds(today)) "예산이 있으면 예산과, 없으면 ${r.earlier} 같은 때까지와 견줘요." else "예산이 있으면 예산과, 없으면 ${r.earlierWith} 견줘요.")
+            // 2.0.0 [RVK-43] (검토 U06a-27) Seen that 카페 went up, the next step is one tap away.
+            val toBudget = chips.toBudget
+            if (toBudget != null && onBudget != null) {
+                androidx.compose.material3.TextButton(onClick = { onBudget(toBudget) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("‘${Fmt.hideShort(toBudget)}’ 예산 정하기")
+                }
+            }
             Spacer(Modifier.height(12.dp))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -264,7 +276,7 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
             LegendKey(cal.expense, r.thisOne)
             LegendKey(MaterialTheme.colorScheme.onSurfaceVariant, r.earlier, dashed = true)
-            if (budget != null && budget > 0) LegendKey(cal.warning, "예산 ${wonBrief(budget)}", dashed = true)
+            if (budget != null && budget > 0) LegendKey(MaterialTheme.bamnat.caution, "예산 ${wonBrief(budget)}", dashed = true)
         }
     }
 }

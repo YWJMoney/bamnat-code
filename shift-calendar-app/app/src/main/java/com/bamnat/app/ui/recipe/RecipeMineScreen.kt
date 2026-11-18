@@ -26,7 +26,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,6 +61,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
     val mine by vm.mine.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { vm.shownAgain() }
+    val missedParts by vm.missedParts.collectAsStateWithLifecycle()
+    LaunchedEffect(applied.size) { vm.loadMissedParts() }
     val newer by vm.newer.collectAsStateWithLifecycle()
     val update by vm.update.collectAsStateWithLifecycle()
     val me by vm.me.collectAsStateWithLifecycle()
@@ -116,6 +118,11 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     Switch(sub, { sub = it; vm.subscribe(e.code, it) })
                                 }
                             }
+                            // 2.0.0 [RVS-12] HQ-57 ②: its 부품 꾸미기 did not go on before (1.36~1.39); put on only when asked, so nothing changes by itself.
+                            if (e.id in missedParts) {
+                                Muted("이 작품의 부품 꾸미기는 아직 안 들어갔어요 · 넣어도 7일 안에 되돌릴 수 있어요")
+                                TextButton(onClick = { vm.putMissedParts(e) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("부품 꾸미기 넣기") }
+                            }
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
                                 e.replacedAt == com.bamnat.app.data.RecipeBackup.RESTORED -> Muted("백업에서 돌아왔어요 · 되돌리기는 넣은 휴대폰에서만 돼요")
@@ -157,7 +164,8 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                                     var more by remember(item.code) { mutableStateOf(false) }
                                     androidx.compose.foundation.layout.Box {
                                         IconButton(onClick = { more = true }) { Icon(Icons.Filled.MoreVert, "‘${item.title}’ 더 보기") }
-                                        androidx.compose.material3.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
+                                        // The app's own menu (AppDialogs), so the menu keeps the app's 글자 크기 and is not built while closed.
+                                        com.bamnat.app.ui.components.DropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                                             if (past > 0) androidx.compose.material3.DropdownMenuItem(text = { Text("지난 판 ${past}개 지우기") }, onClick = {
                                                 more = false
                                                 asking = "지난 판 ${past}개를 서버에서 지울까요? 지금 판(v${item.version})만 남아요. 지난 판은 원래 나만 열 수 있어요" to { vm.dropPast(item.code) }

@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,6 +53,8 @@ import com.bamnat.core.money.MoneySource
 import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import androidx.compose.ui.semantics.Role
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** What the day sections may change; the calendar's view model implements it. */
 interface MoneyActions {
@@ -120,7 +123,7 @@ fun JobRow(job: Job, showDate: Boolean = false, onClick: () -> Unit) {
                 job.cancelled || job.status == com.bamnat.core.money.JobStatus.TENTATIVE -> JobStatusTag(job)
                 job.amount == 0L -> Unit
                 job.unpaid == 0L -> Text("다 받음", style = MaterialTheme.typography.labelSmall, color = cal.income)
-                else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall, color = cal.warning)
+                else -> Text("받을 돈 ${Fmt.won(job.unpaid)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.bamnat.caution)
             }
         }
     })

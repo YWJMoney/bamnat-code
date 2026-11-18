@@ -298,6 +298,11 @@ class RvjBossTest {
             assertEquals("$five ${l.lines.map { it.label to it.amount }}", 2_500_000L, l.gross)
             assertTrue(l.lines.any { it.label.contains(PayrollLedger.FIXED_OT) && it.amount == sp.fixed })
             assertTrue(l.warnings.none { it.key == "monthly-ot" })
+            // [RVJ-60] J-488 ★13: 근거는 계약서처럼 두 줄(기본급 + 고정 연장근로수당). 음수 줄·연장 줄이 없고, 기본급은 넣은 월급에서 나와요.
+            assertEquals("$five ${l.lines.map { it.label }}", listOf("기본급", PayrollLedger.FIXED_OT), l.lines.map { it.label })
+            assertTrue(l.lines.none { it.amount < 0 })
+            assertTrue(l.lines[0].formula, l.lines[0].formula.startsWith("월급 2,500,000원 − 고정 연장근로수당 ${"%,d원".format(sp.fixed)}"))
+            assertTrue(l.lines[1].formula, l.lines[1].formula.contains("이번 달 연장근로 32시간은 이 안이에요"))
             val pay = StaffContract.of(p, inPay).items.first { it.title == "임금" }.body
             assertTrue(pay, pay.contains("월급 2,500,000원 (기본급 ${"%,d원".format(sp.base)} + 고정 연장근로수당 ${"%,d원".format(sp.fixed)})"))
             assertTrue(pay, pay.contains("실제 연장근로가 더 많은 달은 차액을 더 줘요"))
@@ -305,6 +310,11 @@ class RvjBossTest {
             val late = (9..14).map { d -> com.bamnat.core.boss.StaffWork("m", LocalDate.of(2026, 11, d), com.bamnat.core.boss.WorkKind.NORMAL, LocalTime.of(9, 0), LocalTime.of(22, 0)) }
             val more2 = PayrollLedger.month(p, listOf(inPay), nov, late).lines.single()
             assertTrue("$five ${more2.gross}", more2.gross > 2_500_000)
+            // [RVJ-60] 더 일한 달에만 차액 한 줄.
+            val gap = more2.lines.single { it.label == "연장근로 차액" }
+            assertEquals(more2.gross - 2_500_000, gap.amount)
+            assertTrue(gap.formula, gap.formula.endsWith("− 고정 연장근로수당 ${"%,d원".format(sp.fixed)}"))
+            assertEquals(listOf("기본급", PayrollLedger.FIXED_OT, "연장근로 차액"), more2.lines.map { it.label })
         }
         // 40시간 안이면 묻지 않아요.
         assertEquals(null, com.bamnat.core.boss.MonthlyOvertime.of(place, m.copy(weekly = week)))

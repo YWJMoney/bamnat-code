@@ -23,14 +23,32 @@ concurrency:
 env:
   GRADLE_FLAGS: --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
 jobs:
+  # 2.0.0 [RVR-38] 검토 I60c-01: 날짜 장부(ops/dates.json)에서 10일 안에 켜지는 날(처리방침 시행·보류 끝, 마을 쉬기, 출시 열차,
+  # 새해 요율 등)이 있으면 그날·다음 날도 서버 시험에 더해요(보통 0~4개, 한 번에 6분쯤 더). 요약 맨 위에 '다가오는 날짜' 60일.
+  # 장부를 못 읽어도 날짜 시험은 기본 5날짜로 돌아요.
+  plan:
+    if: github.event.schedule != '47 21 * * 0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      days: ${{ steps.p.outputs.days }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: p
+        working-directory: shift-calendar-app
+        run: |
+          days=$(python3 tools/dates_ledger.py shifts --days 10 2>/dev/null) || days='[0, 7, 30, 90, 365]'
+          echo "days=$days" >> "$GITHUB_OUTPUT"
+          python3 tools/dates_ledger.py list --days 60 >> "$GITHUB_STEP_SUMMARY" || echo "날짜 장부를 읽지 못했어요(python3 tools/dates_ledger.py check)." >> "$GITHUB_STEP_SUMMARY"
   servers:
+    needs: plan
     if: github.event.schedule != '47 21 * * 0'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        days: [0, 7, 30, 90, 365]
+        days: ${{ fromJSON(needs.plan.outputs.days || '[0, 7, 30, 90, 365]') }}
     env:
       DAYS: ${{ matrix.days }}
     steps:

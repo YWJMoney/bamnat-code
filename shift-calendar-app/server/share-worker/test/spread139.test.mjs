@@ -40,7 +40,8 @@ test("a family link: the card comes after the month and the 앱에서 보기 sto
   assert.doesNotMatch(page, /<!--spread:/, "the slot is always filled or emptied");
   const card = page.indexOf('class="spread"');
   assert.ok(card > page.indexOf("읽기 전용 근무표예요"), "after the schedule and its foot");
-  assert.match(page, /가족 근무를 내 달력 옆에서 바로/);
+  // 2.0.0 [RVD-32] PC-170 A link that does not say it is a 가족's 근무표 gets the middle words (rvd32 shows the 가족 근무 card).
+  assert.match(page, /보낸 분의 근무표를 내 달력 옆에서 바로/);
   assert.match(page, /설치한 뒤 이 링크를 다시 누르면 앱에서 열려요/);
   const fallback = decodeURIComponent(page.match(/S\.browser_fallback_url=([^;]+);end/)[1].replace(/&amp;/g, "&"));
   assert.match(decodeURIComponent(fallback), /utm_source=bamnat_share&utm_medium=family&utm_campaign=family/);
@@ -219,6 +220,9 @@ test("every receive page has a preview that names the kind of page and nothing o
     pay: [{ month: "2026-11", amount: 18450000, label: "매출" }] }))).json()).id}`;
   made.familyJobs = `/s/${(await (await call(env, "/api/share", json({ ...sample, v: 2, title: "준호", shows: ["jobs"],
     days: [{ date: "2026-11-03", jobs: [{ name: "욕실 시공", time: "09:00-17:00" }] }] }))).json()).id}`;
+  // 2.0.0 [RVD-32] PC-170 An investor's app says 달력 (kept from 처리방침 3.14).
+  env.POLICY_314_FROM = "2026-11-01";
+  made.familyCal = `/s/${(await (await call(env, "/api/share", json({ ...sample, word: "달력" }))).json()).id}`;
   const team = { ...sample, title: "민지", days: [{ date: "2026-11-01", type: 1, memo: "바뀜: 휴→주" }] };
   made.team = `/s/${(await (await call(env, "/api/share", json({ ...team, v: 2, shows: ["memos"] }))).json()).id}`;
   made.clock = `/c/${(await (await call(env, "/api/clock", json({ name: "박마바", place: "가나다카페" }))).json()).id}`;

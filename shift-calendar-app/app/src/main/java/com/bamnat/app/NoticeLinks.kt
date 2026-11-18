@@ -37,6 +37,11 @@ object NoticeLinks {
         SHARE,
         /** [UX-03] The calendar with the sheet that takes a received link open. */
         RECEIVE,
+        /**
+         * 2.0.0 [RVG-34] 내 달력 with the calendar chip's list (달력 이름 ▾) open, from the 알림함's '팀 근무표' line: on a phone the 팀 리더's
+         * link waits there, not beside the chip.
+         */
+        CALENDARS,
         /** [SHFT-06] 듀티표 사진으로 넣기, for the calendar on screen. */
         DUTY_ROSTER,
         /** [SHFT-07] 연간 건강 지표. */
@@ -100,16 +105,26 @@ object NoticeLinks {
         MONEY_ADD,
         /** 1.39 발굴 (마을 돌봄 스레드 요청): the talk of the version in [payload] ([FixTalk]), from '보완 요청이 n개 왔어요'. */
         FIX_TALK,
+        /** 2.0.0 [RVN-19] HQ-51 A company's screen on the rule set in [payload] ("<company>/<setup>"), from the 알림함's 맞아요·달라요 row. */
+        COMPANY_SETUP,
+        /** 2.0.0 [RVN-19] HQ-51 광장 › 시세 (임금표), from the 알림함's row about a rate I sent. */
+        RATES,
+        /** 2.0.0 [RVN-19] HQ-51 장터 › 요청 판, from the 알림함's row about my 부탁. */
+        REQUESTS,
     }
 
-    /** 1.39 발굴: which version's talk [Target.FIX_TALK] opens, carried as one string (ids are plain; the title is encoded). */
-    data class FixTalk(val company: String, val setup: String, val title: String) {
-        val payload: String get() = "$company|$setup|" + java.net.URLEncoder.encode(title, "UTF-8")
+    /**
+     * 1.39 발굴: which version's talk [Target.FIX_TALK] opens, carried as one string (ids are plain; the title is encoded). 2.0.0
+     * [RVN-19] HQ-51 [focus]: the post to open it on (the 알림함's row about answers to my post), a fourth part an older one lacks.
+     */
+    data class FixTalk(val company: String, val setup: String, val title: String, val focus: String? = null) {
+        val payload: String get() = "$company|$setup|" + java.net.URLEncoder.encode(title, "UTF-8") + (focus?.let { "|$it" } ?: "")
 
         companion object {
             fun of(payload: String?): FixTalk? {
-                val p = payload?.split('|', limit = 3)?.takeIf { it.size == 3 && it[0].isNotBlank() && it[1].isNotBlank() } ?: return null
-                return FixTalk(p[0], p[1], runCatching { java.net.URLDecoder.decode(p[2], "UTF-8") }.getOrDefault(p[2]))
+                val p = payload?.split('|', limit = 4)?.takeIf { it.size >= 3 && it[0].isNotBlank() && it[1].isNotBlank() } ?: return null
+                return FixTalk(p[0], p[1], runCatching { java.net.URLDecoder.decode(p[2], "UTF-8") }.getOrDefault(p[2]),
+                    p.getOrNull(3)?.takeIf { Regex("p[A-Za-z0-9]{8,30}").matches(it) })
             }
         }
     }
@@ -204,6 +219,12 @@ object NoticeLinks {
 
     /** [J133-87] A [payload] for SHARE: the calendar on screen, not 내 달력 (a notice names its own calendar or means 내 달력). */
     const val ON_SCREEN = "on_screen"
+
+    /**
+     * 2.0.0 [RVIB-19] (PC-150) A [payload] for TODAY from an alarm ('끄고 오늘 보기', the card after an alarm): where 오늘의 흐름 is not on the
+     * page (달력만 크게 보기), today's own day opens. Other ways to today (도움말 '달력 열기', 받은 근무표 알림) keep the calendar as it is.
+     */
+    const val TODAY_DAY = "today_day"
 
     /** 2.0.0 [RVL-08] An intent's value against this phone's, compared in constant time. */
     internal fun follows(carried: String?, own: String): Boolean =

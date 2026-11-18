@@ -1,11 +1,9 @@
 package com.bamnat.app.ui.company
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ProvidableCompositionLocal
@@ -53,20 +51,21 @@ fun PlazaCalendarChips(c: AppContainer, selected: String, onPick: (String) -> Un
     val all by c.calendars.calendars.collectAsStateWithLifecycle()
     val list = companyCalendars(all)
     if (list.size < 2) return
-    Row(
-        modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // 2.0.0 [RVN-18] 검토 U10a-04: one line, every calendar with 펼치기.
+    com.bamnat.app.ui.components.FoldRow("plaza.calendars", modifier.padding(vertical = 4.dp), spacing = 8.dp, what = "달력 칩") {
         for (cal in list) {
             val company = c.companyOf(cal.id).companyName()
             val label = cal.name + (company?.let { " · $it" } ?: "")
-            FilterChip(
-                selected = cal.id == selected,
-                onClick = { if (cal.id != selected) onPick(cal.id) },
-                label = { Text(label, maxLines = 1) },
-                modifier = Modifier.semantics { contentDescription = "${cal.name} 달력의 광장" + (company?.let { ", $it" } ?: "") },
-            )
+            // 2.0.0 (조건 12): folded on a small phone at 200%, the picked calendar's chip slides into view (RVS-16's KeepInView),
+            // so the 광장 shown always says whose it is.
+            com.bamnat.app.ui.components.KeepInView(cal.id == selected) {
+                FilterChip(
+                    selected = cal.id == selected,
+                    onClick = { if (cal.id != selected) onPick(cal.id) },
+                    label = { Text(label, maxLines = 1) },
+                    modifier = Modifier.semantics { contentDescription = "${cal.name} 달력의 광장" + (company?.let { ", $it" } ?: "") },
+                )
+            }
         }
     }
 }

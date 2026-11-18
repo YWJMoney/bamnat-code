@@ -249,18 +249,19 @@ internal fun PartBar(
         Trail(StudioEdit.trail(sel).map { it to (BlueprintParts.LABELS[it] ?: it) }, onSel)
         com.bamnat.app.ui.components.FoldRow("studio.partbar", what = "꾸미기 도구", over = true) {
             // 언제 고치나: 언제나, the part's own states, its conditions.
-            val states = statesFor(sel)
+            val style = studioStyle()
+            val states = statesFor(sel, style, keep = on)
             val conds = remember(parts, sel, on) { StudioEdit.conditions(parts, sel, on) }
             if (states.isNotEmpty() || BlueprintParts.dated(sel)) Box {
                 var open by remember { mutableStateOf(false) }
                 val hold = com.bamnat.app.ui.components.LocalFoldHold.current
                 FilterChip(selected = on != null || whenF != null, onClick = { hold(); open = true },
-                    label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it) }, whenF?.let { w ->
+                    label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it, style) }, whenF?.let { w ->
                         "만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(12) }).ifEmpty { listOf("언제나") }.joinToString(" · ") + " ▾",
                         maxLines = 1) })
                 com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
                     (listOf<String?>(null) + states).forEach { st ->
-                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(sel, st)) }, onClick = { open = false; onOn(st, null) })
+                        androidx.compose.material3.DropdownMenuItem(text = { Text(stateWord(sel, st, style)) }, onClick = { open = false; onOn(st, null) })
                     }
                     conds.forEach { w ->
                         androidx.compose.material3.DropdownMenuItem(text = { Text("만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(24)) },
@@ -271,7 +272,10 @@ internal fun PartBar(
                 }
             }
             StudioEdit.tools(sel).forEach { q ->
-                FilterChip(selected = quick == q, onClick = { onQuick(if (quick == q) null else q) }, label = { Text(q.label) })
+                // 2.0.0 [RVS-16] The open tool's chip is kept in view of the folded row.
+                com.bamnat.app.ui.components.KeepInView(quick == q) {
+                    FilterChip(selected = quick == q, onClick = { onQuick(if (quick == q) null else q) }, label = { Text(q.label) })
+                }
             }
             FilterChip(selected = false, onClick = onMore, label = { Text("더 보기 ›") })
             // PC 확인 1.37 A10 (펼친 줄에서 잘못 눌려 메모 제목이 숨겨짐): 숨기기 last, after the tools, away from where the next tap goes.
@@ -293,13 +297,10 @@ private fun QuickEditor(q: Quick, id: String, line: Map<String, Any?>, set: (Arr
     fun one(k: String, v: Any?) = set(arrayOf(k to v))
     fun num(k: String): Float? = (line[k] as? Number)?.toFloat()
     fun col(k: String): Long? = line[k] as? Long
+    // 2.0.0 [RVS-16] (총괄 #495, 조건 12) 처음대로 in the slider's own line (beside it, the slider and its name were squeezed at 200%).
     @Composable fun slider(label: String, k: String, start: Float, range: ClosedFloatingPointRange<Float>, unit: String, step: Int = 1) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.weight(1f)) {
-                LabeledSlider(label, num(k) ?: start, range, unit, unset = if (line[k] == null) "처음대로" else null, step = step) { one(k, Math.round(it).toLong()) }
-            }
-            if (line[k] != null) TextButton(onClick = { one(k, null) }) { Text("처음대로") }
-        }
+        LabeledSlider(label, num(k) ?: start, range, unit, unset = if (line[k] == null) "처음대로" else null, step = step,
+            onReset = if (line[k] != null) ({ one(k, null) }) else null) { one(k, Math.round(it).toLong()) }
     }
     when (q) {
         Quick.FILL -> {
@@ -349,10 +350,14 @@ internal fun CardBar(
         // PC 확인 1.37 A1: 고르기 끝 and the page's name both let the card go (Trail gives null for them).
         Trail(listOf("" to page, "card" to label)) { onSel(null) }
         com.bamnat.app.ui.components.FoldRow("studio.cardbar", what = "카드 도구", over = true) {
-            FilterChip(selected = false, onClick = { onMove(-1) }, enabled = canUp, label = { Text("▲ 위로") })
-            FilterChip(selected = false, onClick = { onMove(1) }, enabled = canDown, label = { Text("▼ 아래로") })
+            // 2.0.0 [RVS-16] ▲·▼ alone (said 위로·아래로) and 달력 위로·아래로 short, so the three moves are whole in the folded row on a
+            // 360dp phone (the row shows only whole chips now; 달력 위로 올리기 was past ‘펼치기’).
+            FilterChip(selected = false, onClick = { onMove(-1) }, enabled = canUp, label = { Text("▲") },
+                modifier = Modifier.semantics { contentDescription = "위로" })
+            FilterChip(selected = false, onClick = { onMove(1) }, enabled = canDown, label = { Text("▼") },
+                modifier = Modifier.semantics { contentDescription = "아래로" })
             if (above != null && onAcross != null) FilterChip(selected = false, onClick = onAcross,
-                label = { Text(if (above) "달력 아래로 보내기" else "달력 위로 올리기") })
+                label = { Text(if (above) "달력 아래로" else "달력 위로") })
             FilterChip(selected = false, onClick = onHide, label = { Text("숨기기") })
             FilterChip(selected = false, onClick = onLook, label = { Text("카드 모양 (모든 카드)") })
         }

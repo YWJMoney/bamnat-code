@@ -33,15 +33,17 @@ object PlazaNews {
     fun line(i: PlazaNewsItem): String? {
         val where = listOfNotNull(i.company, i.dept?.takeIf { it.isNotBlank() }).joinToString(" ")
         return when (i.kind) {
-            "changed" -> "$where 규칙이 ${i.version?.let { "v$it" } ?: "새 버전"}으로 바뀌었어요. 눌러서 바꿀지 골라요."
+            "changed" -> "$where 규칙이 ${i.version?.let { PlazaWords.edition(it) } ?: "새 판"}으로 바뀌었어요. 눌러서 바꿀지 골라요."
             "adopted" -> "보낸 $where 규칙이 채택됐어요."
             "proposal" -> "$where 규칙에 낸 고치자 제안이 반영됐어요."
             "rate" -> "올린 ${i.trade ?: ""} 임금표가 시세에 들어갔어요.".replace("  ", " ")
             // [COMM-11] What became of a post this phone flagged, of its own hidden post, and the end of 쓰기 막기.
+            // 2.0.0 [RVN-20] 검토 I10ab-05·K-결정-09 (마을돌봄 C1) 신고 뒤 돌봄: what became of it, a thank-you, and on 그대로 what is left
+            // to do. The result itself is told since 1.23 (처리방침 1-4항 밤낮 소식, nothing new kept).
             "flag_result" -> when (i.result) {
-                "hidden" -> "신고한 글이 가려졌어요. 고마워요."
-                "deleted" -> "신고한 글을 운영자가 지웠어요."
-                "kept" -> "신고한 글은 운영자가 확인하고 그대로 두었어요."
+                "hidden" -> "신고해 주신 글을 가렸어요. 알려 주셔서 고마워요."
+                "deleted" -> "신고해 주신 글을 운영팀이 지웠어요. 알려 주셔서 고마워요."
+                "kept" -> "신고해 주신 글은 운영팀이 살펴보고 운영 원칙에 맞아 그대로 두었어요. 보기 싫으면 글의 ⋮에서 이 사람 글 안 보기를 할 수 있어요."
                 else -> null
             }
             "post_result" -> when (i.result) {

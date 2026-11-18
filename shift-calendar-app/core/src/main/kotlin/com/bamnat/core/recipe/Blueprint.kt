@@ -284,7 +284,7 @@ data class PartStyle(
  * [BLU-01][BLU-02] A whole blueprint: the cleaned lines of a [PieceKind.PARTS] piece. [style] answers "how is this part drawn in these
  * states", resolved once per part and set of states and kept, so a month of cells costs a lookup each (drawn on one thread).
  */
-class Blueprint(val lines: List<Map<String, Any?>>) {
+class Blueprint(val lines: List<Map<String, Any?>>, private val screen: Long? = null) {
     /** [RUL-02] Lines that change by the day: a `when` formula, or a style value that is a formula (`{"fx":…}`). */
     private val changing: List<Map<String, Any?>> = lines.filter { l -> l["when"] != null || l.values.any { it is Ref.Formula } }
 
@@ -352,18 +352,77 @@ class Blueprint(val lines: List<Map<String, Any?>>) {
         return s
     }
 
+    /**
+     * 2.0.0 [RVS-06] These lines as a screen of colour [screen] draws them: each part's [style] kept to [PartFloor]'s floors (글자 대비·크기,
+     * 누르는 부품 보이기, 움직임 예산). The lines themselves are not changed (the maker's values are kept as set); call it last.
+     */
+    fun floored(screen: Long): Blueprint = if (lines.isEmpty()) this else Blueprint(lines, screen or 0xFF000000L)
+
+    /** 2.0.0 [RVS-06] What [floored] changes of [id] in [states], for the studio's '바꿔 그려요' (SI-02); empty when nothing. */
+    fun fixes(id: String, states: Set<String> = emptySet()): Set<PartFloor.Fix> {
+        val screen = screen ?: return emptySet()
+        val f = PartFloor.floor(id, raw(id, states, null), groundOf(id, states, null), states, screen)
+        val above = above?.takeIf { id in PartFloor.ABOVE && it.apply(id, f.style) != f.style }
+        return if (above != null) f.fixes + PartFloor.Fix.ABOVE else f.fixes
+    }
+
+    /**
+     * 2.0.0 [RVS-14] 첫 줄 먼저 (HQ-56): how many dp this work's 달력 머리·요일 줄 would push the month's first row down past the app's
+     * own, as set (before [PartFloor.ABOVE_DP] keeps it), for the studio's line beside 작품 크기. 0 when they add nothing.
+     */
+    fun abovePush(): Int = if (PartFloor.ABOVE.none { touches(it) }) 0
+        else PartFloor.abovePush(PartFloor.ABOVE.associateWith { raw(it, emptySet(), null) })
+
+    /** [PartFloor.above] on these lines as drawn without it; null when they fit (or nothing is floored). */
+    private val above: PartFloor.Above? by lazy {
+        val screen = screen ?: return@lazy null
+        if (PartFloor.ABOVE.none { touches(it) }) return@lazy null
+        val drawn = PartFloor.ABOVE.associateWith { id -> PartFloor.floor(id, raw(id, emptySet(), null), groundOf(id, emptySet(), null), emptySet(), screen).style }
+        // The 요일 글자 on 토·일 too, whichever pushes most.
+        val sat = drawn + ("cal.week.day" to raw("cal.week.day", setOf("sat"), null))
+        val sun = drawn + ("cal.week.day" to raw("cal.week.day", setOf("sun"), null))
+        listOf(drawn, sat, sun).maxBy { PartFloor.abovePush(it) }.let { PartFloor.above(it) }
+    }
+
+    /** The colour under [id] as these lines paint it: the fills of the parts above it laid over [screen]; null when none of them fills. */
+    private fun groundOf(id: String, states: Set<String>, scope: com.bamnat.core.formula.FormulaScope?): Long? {
+        val chain = ArrayList<String>()
+        var p = BlueprintParts.parentOf(id)
+        while (p != null) { chain += p; p = BlueprintParts.parentOf(p) }
+        var g: Long? = null
+        for (a in chain.asReversed()) {
+            val own = own(a, states, scope)
+            if (own.fill != null || own.paint != null) g = PartFloor.groundOf(own, g ?: screen ?: com.bamnat.core.layout.Contrast.WHITE)
+        }
+        return g
+    }
+
     /** How [id] is drawn in [states] (on the day [scope] describes, when given): its own lines over the letters its parents give it. */
     fun style(id: String, states: Set<String> = emptySet(), scope: com.bamnat.core.formula.FormulaScope? = null): PartStyle {
+        val screen = screen ?: return raw(id, states, scope)
+        if (scope != null && dynamic.isNotEmpty() && byDay(id)) return kept(id, PartFloor.floor(id, raw(id, states, scope), groundOf(id, states, scope), states, screen).style)
+        val key = id + "|" + states.sorted().joinToString(",")
+        floorCache[key]?.let { return it }
+        return kept(id, PartFloor.floor(id, raw(id, states, null), groundOf(id, states, null), states, screen).style).also { floorCache[key] = it }
+    }
+
+    /** [s] with [PartFloor.ABOVE_DP] kept, for a part above the first row. */
+    private fun kept(id: String, s: PartStyle): PartStyle = if (id in PartFloor.ABOVE) above?.apply(id, s) ?: s else s
+
+    private val floorCache = HashMap<String, PartStyle>()
+
+    /** [style] as the lines say it, before any floor. */
+    private fun raw(id: String, states: Set<String>, scope: com.bamnat.core.formula.FormulaScope?): PartStyle {
         if (lines.isEmpty()) return PartStyle.NONE
         if (scope != null && dynamic.isNotEmpty() && byDay(id)) {
             val parent = BlueprintParts.parentOf(id)
-            val inherited = parent?.let { style(it, states, scope).letters() } ?: PartStyle.NONE
+            val inherited = parent?.let { raw(it, states, scope).letters() } ?: PartStyle.NONE
             return inherited.over(own(id, states, scope))
         }
         val key = id + "|" + states.sorted().joinToString(",")
         cache[key]?.let { return it }
         val parent = BlueprintParts.parentOf(id)
-        val inherited = parent?.let { style(it, states).letters() } ?: PartStyle.NONE
+        val inherited = parent?.let { raw(it, states, null).letters() } ?: PartStyle.NONE
         val s = inherited.over(own(id, states))
         cache[key] = s
         return s

@@ -184,4 +184,93 @@ class RvjPayTest {
         assertTrue(second.extraUntimed)
         assertNotNull(days)
     }
+
+    // ── [RVJ-47] PC-111 ──
+    @Test fun workProofSaysADayOffWorkedAsItWasPutIn() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val sat = LocalDate.of(2026, 11, 7)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), listOf(
+            // 휴무일 특근 09~15, 휴게 30분.
+            DayEntry(sat, extras = listOf(ExtraEntry(ExtraKind.SPECIAL_ID, start = t(9), end = t(15), breakMinutes = 30))),
+            // 시각 없이 2시간만 적은 잔업.
+            DayEntry(mon, extras = listOf(ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 120))),
+        ))
+        val days = WorkProof.days(mon, sat, r::resolve)
+        val worked = days.single { it.date == sat }
+        assertEquals("휴무일 특근의 시작·끝은 넣은 대로", t(9) to t(15), worked.start to worked.end)
+        assertEquals(30, worked.breakMinutes)
+        assertEquals(330, worked.extraMinutes)
+        // 근무가 있는 날은 근무 시각 그대로.
+        assertEquals(t(9) to t(18), days.single { it.date == mon }.let { it.start to it.end })
+        val text = WorkProof.doc("제조·생산 교대", mon, sat, days, sat).text()
+        assertTrue("직업은 직업 칸에: $text", text.contains("직업") && text.contains("제조·생산 교대"))
+        assertTrue("이름 칸에 직업이 들어가지 않아요", !Regex("이름[^\\n]*제조").containsMatchIn(text))
+        assertTrue("시각이 없는 줄은 말로", text.contains("2시간 (시각 안 적음)") && !text.contains("시각 없음"))
+    }
+
+    /** [RVJ-52] PC-120: 말일 마감에 월급날 10일은 다음 달 10일; 25일(당월 지급이 흔한 날)은 그대로, 손으로 끈 '다음 달'은 안 켜요. */
+    @Test fun anEarlyPayDayIsTheNextMonths() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val ten = PayPeriod().withPayDay(10)
+        assertTrue(ten.payNextMonth)
+        assertEquals(LocalDate.of(2026, 12, 10), ten.payDate(nov))
+        assertEquals("25일은 그달에 주는 곳이 많아 그대로", false, PayPeriod().withPayDay(25).payNextMonth)
+        assertTrue("20일 마감 · 10일 지급", PayPeriod(endDay = 20).withPayDay(10).payNextMonth)
+        assertEquals("20일 마감 · 25일은 마감 뒤라 그달", false, PayPeriod(endDay = 20).withPayDay(25).payNextMonth)
+        // 손으로 '이번 달'로 돌린 뒤 10일 → 11일로 옮겨도 다시 켜지 않아요.
+        assertEquals(false, ten.copy(payNextMonth = false).withPayDay(11).payNextMonth)
+        // 25일에서 21일로 내려와 이른 날이 되면 그때 켜요.
+        assertTrue(PayPeriod(payDay = 25).withPayDay(21).payNextMonth)
+    }
+
+    /** [RVJ-47] PC-111 같은 틀: the 연간 교대 리포트 put the 직업 under '이름' too; the 현장 일한 날 증빙 has a 이름 칸 to write in. */
+    @Test fun theOtherReportsOnTheSameFrameNameTheJob() {
+        val mon = LocalDate.of(2026, 11, 2)
+        val r = ScheduleResolver(listOf(day, off), WorkPattern.Rotation(mon, List(5) { day.id } + listOf(off.id, off.id)), emptyList())
+        val months = com.bamnat.core.report.YearShiftReport.months(2026, LocalDate.of(2026, 11, 30), r::resolve) { null }
+        val year = com.bamnat.core.report.YearShiftReport.doc(2026, "제조·생산 교대", months, mon).text()
+        assertTrue(year, year.contains("직업: 제조·생산 교대") && !Regex("이름[^\\n]*제조").containsMatchIn(year))
+        val field = com.bamnat.core.report.FieldDaysProof.doc("", mon, mon, emptyList(), mon).text()
+        assertTrue(field, field.contains("이름: "))
+    }
+
+    /** [RVJ-55] PC-138: 마감한 11월(2,500,000원)은 미리 보기에서 그 금액 그대로, 바뀌는 달 수와 합계에서는 빠져요. */
+    @Test fun aClosedMonthStaysAtItsClosedTotalInThePreview() {
+        val nov = java.time.YearMonth.of(2026, 11)
+        val t = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_700_000)))
+        val months = (0L until 12L).map { nov.plusMonths(it) }
+        val plan = com.bamnat.core.pay.BulkEditPlanner.plan(
+            t, 2_800_000, com.bamnat.core.pay.EditScope.FromMonth(nov), months,
+            totalFor = { tl, m -> tl.on(m).value },
+            isLocked = { it == nov },
+            kept = { if (it == nov) 2_500_000L else null },
+        )
+        val first = plan.changedMonths.first()
+        assertEquals(nov, first.month)
+        assertTrue(first.locked)
+        assertEquals(2_500_000L, first.kept)
+        assertEquals(11, plan.movingMonths.size)
+        assertEquals(11 * 100_000L, plan.totalDelta)
+        assertNull("열린 달에는 그대로 둘 금액이 없어요", plan.movingMonths.first().kept)
+    }
+
+    /** [RVJ-57] PC-144: 오늘(11/12) 처음 만든 급여 설정은 9·10월 마감을 묻지 않아요. 근무를 적은 달과 명세서로 만든 달은 물어요. */
+    @Test fun aFirstSetupDoesNotAskAboutTheEmptyMonthsBeforeIt() {
+        val today = LocalDate.of(2026, 11, 12)
+        val oct = java.time.YearMonth.of(2026, 10)
+        val sep = java.time.YearMonth.of(2026, 9)
+        val close = com.bamnat.core.pay.CloseAsk
+        assertEquals(listOf(oct, sep), close.quietAtSetup(today, { false }))
+        assertEquals("10월에 근무를 적어 둔 사람은 10월을 물어요", listOf(sep), close.quietAtSetup(today, { it == oct }))
+        assertEquals("10월 명세서로 만든 설정은 10월을 물어요", listOf(sep), close.quietAtSetup(today, { false }, slip = oct))
+    }
+
+    /** [RVJ-58] PC-145: 말일 마감 11월은 11/30까지 '아직 남았어요', 12/1부터 바로 마감. */
+    @Test fun closingBeforeTheMonthIsOverAsksFirst() {
+        val end = LocalDate.of(2026, 11, 30)
+        val close = com.bamnat.core.pay.CloseAsk
+        assertTrue(close.early(end, LocalDate.of(2026, 11, 12)))
+        assertTrue("마지막 날도 아직 근무가 남은 날", close.early(end, end))
+        assertEquals(false, close.early(end, LocalDate.of(2026, 12, 1)))
+    }
 }

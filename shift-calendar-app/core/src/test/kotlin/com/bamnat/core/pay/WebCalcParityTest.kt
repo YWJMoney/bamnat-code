@@ -7,10 +7,20 @@ import com.bamnat.core.leave.LotKind
 import com.bamnat.core.money.DailyWorkerTax
 import com.bamnat.core.money.Withholding
 import com.bamnat.core.remote.Json
+import com.bamnat.core.schedule.DaySource
+import com.bamnat.core.schedule.LegalBreak
+import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.work.HourlyWeek
+import com.bamnat.core.work.LaborCost
 import com.bamnat.core.work.QuitCheck
+import com.bamnat.core.work.Staff
+import com.bamnat.core.work.StaffShift
 import java.io.File
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
+import java.time.YearMonth
+import java.time.temporal.ChronoUnit
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -92,6 +102,49 @@ class WebCalcParityTest {
             if (c["last"] == true) lots = lots.takeLast(1)
             val want = (c["expect"] as List<List<Any?>>).map { Triple(it[0] as String, (it[1] as Number).toDouble(), it[2] as String) }
             assertEquals(c.name(), want, lots)
+        }
+    }
+
+    /** 2.0.0 [I50b-01·T50-09] 사장님 인건비 (`calc/boss/`, F.labor): the app's [LaborCost.line] for one member of staff. */
+    @Test fun labor() {
+        for (c in list("labor")) {
+            val shifts = (c["days"] as List<List<Any?>>).associate { d ->
+                DayOfWeek.of((d[0] as Number).toInt()) to StaffShift(LocalTime.parse(d[1] as String), LocalTime.parse(d[2] as String))
+            }
+            val staff = Staff("s", "직원", hourlyWage = c.long("wage"), holidayPay = true, insured = c["insured"] as Boolean, shifts = shifts)
+            val line = LaborCost.line(staff, YearMonth.parse(c["month"] as String), c["breaks"] as Boolean)
+            val got = mapOf("minutes" to line.workMinutes.toLong(), "base" to line.base, "holiday" to line.holidayPay, "insurance" to line.insurance, "total" to line.total)
+            for ((k, v) in c.expect()) assertEquals("${c.name()} $k", (v as Number).toLong(), got.getValue(k))
+        }
+    }
+
+    /**
+     * 2.0.0 [I50b-03] 한 주 연장·야간·휴일 (`calc/week/`, F.week): the app's [MinuteClassifier] with its default options (하루 8시간·주 40시간,
+     * 휴일 근로도 40시간을 채움, 휴일은 그날 0~24시), one week from Monday with no break start (taken out evenly).
+     */
+    @Test fun week() {
+        val monday = LocalDate.of(2026, 11, 9)
+        val classifier = MinuteClassifier({ RateTable.on(it) })
+        for (c in list("week")) {
+            val holiday = (c["holidays"] as List<Any?>).map { (it as Number).toInt() == 1 }
+            val days = (c["days"] as List<Any?>).mapIndexedNotNull { i, d ->
+                val row = d as List<Any?>? ?: return@mapIndexedNotNull null
+                val start = LocalTime.parse(row[0] as String)
+                val end = LocalTime.parse(row[1] as String)
+                val span = StaffShift(start, end).spanMinutes
+                val rest = (row.getOrNull(2) as Number?)?.toInt() ?: LegalBreak.minutesFor(span)
+                ResolvedDay(
+                    date = monday.plusDays(i.toLong()), shiftType = null, source = DaySource.OVERRIDE, start = start, end = end,
+                    breakMinutes = rest, scheduledMinutes = span - rest, alarmSkipped = false, entry = null,
+                )
+            }
+            val sum = classifier.classify(days) { d -> ChronoUnit.DAYS.between(monday, d).toInt().let { it in 0..6 && holiday[it] } }
+                .fold(WorkMinutes()) { a, d -> a + d.total }
+            val got = mapOf(
+                "regular" to sum.regular, "overtime" to sum.overtime, "hWithin" to sum.holidayWithin8h, "hOver" to sum.holidayOver8h,
+                "night" to sum.night, "worked" to sum.worked,
+            )
+            for ((k, v) in c.expect()) assertEquals("${c.name()} $k", (v as Number).toInt(), got.getValue(k))
         }
     }
 }

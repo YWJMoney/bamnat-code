@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.components
 
+import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.core.model.ShiftIcon
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,7 +28,6 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.WarningAmber
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -58,12 +58,12 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
-import com.bamnat.app.ui.theme.LocalCalendarColors
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 import com.bamnat.app.ui.theme.MemoPaletteDark
 import com.bamnat.app.ui.theme.MemoPaletteLight
 import com.bamnat.app.ui.theme.NumberStyle
-import com.bamnat.app.ui.theme.Tone
-import com.bamnat.app.ui.theme.color
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import java.time.LocalTime
@@ -272,31 +272,36 @@ fun StatTile(
     warning: Boolean = false,
     onClick: (() -> Unit)? = null,
     // 2.0.0 [RVK-25] (검토 MONEY-69, 조건 6) A caption that asks for care ('9일 전 가격') is written in the caution colour while
-    // the tile and its number keep their own colours: [warning] is red, kept for danger.
+    // the tile and its number keep their own colours.
     captionTone: Tone = Tone.Plain,
+    // 2.0.0 [RVK-45] (조건 6) A tile that asks for care (약속일 지남, 아직 받을 돈, 남은 돈이 모자람, 현금 부족) in the caution colour,
+    // the same shape as [warning]; [warning] stays for danger.
+    caution: Boolean = false,
 ) {
-    val cal = LocalCalendarColors.current
-    val bg = if (warning) cal.warningContainer else MaterialTheme.colorScheme.surfaceContainerLowest
+    // 2.0.0 [RVP-13] (HQ-54, 조건 6) 위험 is the app's danger colour, not the calendar's Sunday red under another name.
+    val careInk = Tone.Caution.color()
+    val ink = when { warning -> Tone.Danger.color(); caution -> careInk; else -> null }
+    val bg = when { warning -> Tone.Danger.container(); caution -> careInk.copy(alpha = 0.12f); else -> MaterialTheme.colorScheme.surfaceContainerLowest }
     Surface(
         modifier = modifier.then(if (onClick != null) Modifier.clip(MaterialTheme.shapes.medium).clickable(role = Role.Button, onClick = onClick) else Modifier),
         shape = MaterialTheme.shapes.medium,
-        color = bg,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
-            if (warning) cal.warning.copy(alpha = 0.5f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+            ink?.copy(alpha = 0.5f) ?: MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
         ),
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (warning) {
-                    Icon(Icons.Filled.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(14.dp))
+                if (ink != null) {
+                    Icon(Icons.Filled.WarningAmber, if (warning) "위험" else "주의", tint = ink, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))
                 }
                 // Three tiles share the narrow folded screen, so text shrinks instead of being cut off.
                 BasicText(
                     label,
                     style = MaterialTheme.typography.labelMedium.copy(
-                        color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = ink ?: MaterialTheme.colorScheme.onSurfaceVariant,
                     ),
                     maxLines = 2,
                     autoSize = TextAutoSize.StepBased(minFontSize = 10.sp, maxFontSize = 12.sp),
@@ -308,7 +313,7 @@ fun StatTile(
             BasicText(
                 value,
                 style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(
-                    color = if (warning) cal.warning else MaterialTheme.colorScheme.onSurface,
+                    color = ink ?: MaterialTheme.colorScheme.onSurface,
                 ),
                 maxLines = if (big) 2 else 1,
                 autoSize = TextAutoSize.StepBased(minFontSize = if (big) 16.sp else 12.sp, maxFontSize = 22.sp),
@@ -330,6 +335,11 @@ fun StatTile(
     }
 }
 
+/**
+ * A thing on this screen that needs the user: the one notice-card shape ([NudgeCard], 조건 3) with its mark in [tone]'s colour.
+ * 2.0.0 [RVP-13] (검토 HQ-54): [Tone.Caution] for a thing to set or check (권한, 알림, 시세 없음); [Tone.Danger] only when something
+ * has gone wrong (상한 넘김, 법 위반, 울리지 않을 알람).
+ */
 @Composable
 fun WarningBanner(
     title: String,
@@ -338,24 +348,9 @@ fun WarningBanner(
     /** [SLP-15] One button that fixes it, at the end of the banner. */
     action: String? = null,
     onAction: () -> Unit = {},
+    tone: Tone = Tone.Caution,
 ) {
-    val cal = LocalCalendarColors.current
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(MaterialTheme.shapes.medium)
-            .background(cal.warningContainer)
-            .padding(start = 14.dp, end = if (action != null) 4.dp else 14.dp, top = 12.dp, bottom = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(Icons.Filled.WarningAmber, contentDescription = null, tint = cal.warning)
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, color = cal.warning)
-            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface)
-        }
-        if (action != null) TextButton(onClick = onAction) { Text(action) }
-    }
+    NudgeCard(title, modifier, tone = tone, detail = message, action = action, onAction = onAction)
 }
 
 /**

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -21,7 +22,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Remove
 import com.bamnat.app.ui.components.Button
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -231,14 +232,14 @@ fun DiffEditorSheet(
                     label = { Text("왜 다른지 (선택)") }, placeholder = { Text("예: 10월부터 주간이 한 시간 줄었어요") },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 버전이 돼요.",
+                Text("보내면 토론에 ‘고치자는 제안’으로 올라가요. 같은 부서 분들이 맞아요를 누르면 이 설정이 다음 판이 돼요.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 6.dp)) }
             // [PROP-03] 1.30 BC: the user's own pay follows what they said, sent or not (a refused post never blocks the pay).
             if (alsoMine && changed.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().clickable(role = androidx.compose.ui.semantics.Role.Checkbox) { takeMine = !takeMine }.padding(top = 4.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = androidx.compose.ui.semantics.Role.Checkbox) { takeMine = !takeMine }.padding(top = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.Checkbox(checked = takeMine, onCheckedChange = { takeMine = it })
@@ -249,7 +250,8 @@ fun DiffEditorSheet(
                 onClick = {
                     if (alsoMine && takeMine) {
                         val text = e.text
-                        scope.launch {
+                        // 2.0.0 [RVN-18] COMP-22-7 saved on the app's own scope: closing the sheet does not cut it.
+                        c.appScope.launch {
                             val n = runCatching { mineScope.share.takeEdited(base, text) }.getOrDefault(0)
                             c.telemetry.event("plaza_diff", if (n > 0) "mine_taken" else "mine_same")
                         }
@@ -318,10 +320,13 @@ internal fun SetupEditor(
         when {
             rotation != null -> {
                 Text("한 칸을 누르면 다음 근무로 바뀌어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // 2.0.0 [RVN-19] An order of whole weeks from a Monday (격주) says each day as '2주 토', not '13일'.
+                val weeks = e.orderWeeks
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     rotation.forEachIndexed { i, step ->
+                        val day = if (weeks > 0) "${i / 7 + 1}주 ${WEEK_DAYS[i % 7]}" else "${i + 1}일"
                         FilterChip(selected = step != null, onClick = { onChange(e.rotation(rotation.toMutableList().also { it[i] = next(names, step) })) },
-                            label = { Text("${i + 1}일 ${step ?: "쉼"}") })
+                            label = { Text("$day ${step ?: "쉼"}") })
                     }
                 }
                 Row {
@@ -333,10 +338,14 @@ internal fun SetupEditor(
             weekly != null -> {
                 Text("요일을 누르면 다음 근무로 바뀌어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("월", "화", "수", "목", "금", "토", "일").forEachIndexed { i, d ->
+                    WEEK_DAYS.forEachIndexed { i, d ->
                         FilterChip(selected = weekly[i] != null, onClick = { onChange(e.weekly(weekly.toMutableList().also { it[i] = next(names, weekly[i]) })) },
                             label = { Text("$d ${weekly[i] ?: "쉼"}") })
                     }
+                }
+                // 2.0.0 [RVN-19] 검토 T10a-10: 격주 토요일 근무, a day off every other week — two weeks, day by day.
+                TextButton(onClick = { onChange(e.weeksAsOrder()) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                    Text("격주로 달라요 · 2주 순서로 바꾸기")
                 }
             }
             else -> Text("매달 근무표로 일해요. 순서는 없어요.", style = MaterialTheme.typography.bodyMedium)
@@ -504,8 +513,11 @@ private fun AllowanceEditor(e: SetupEdit, a: SetupEdit.Allowance, amounts: Boole
     }
 }
 
-/** [ITEM-10] The usual allowance names, a tap each; anything else is typed. */
-private val USUAL_ITEMS = listOf("식대", "교통비", "근속수당", "자격수당", "직책수당", "위험수당", "교대수당", "기본급2", "위험예지")
+/**
+ * [ITEM-10] The usual allowance names, a tap each; anything else is typed. 2.0.0 [RVN-18] 검토 COMP-22-8: names any workplace has
+ * (before, "기본급2" and "위험예지" were one company's own).
+ */
+private val USUAL_ITEMS = listOf("식대", "교통비", "근속수당", "자격수당", "직책수당", "위험수당", "교대수당", "가족수당", "야간근무수당")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -551,3 +563,6 @@ internal fun next(names: List<String>, now: String?): String? {
 private fun time(s: String): LocalTime? = runCatching { LocalTime.parse(s) }.getOrNull()
 
 private fun hhmm(t: LocalTime): String = "%02d:%02d".format(t.hour, t.minute)
+
+/** The days of a week as the editor says them, Monday first. */
+private val WEEK_DAYS = listOf("월", "화", "수", "목", "금", "토", "일")

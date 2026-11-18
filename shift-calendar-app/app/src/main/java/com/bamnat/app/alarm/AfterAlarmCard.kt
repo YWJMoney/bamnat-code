@@ -54,9 +54,9 @@ object AfterAlarmCard {
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n$OFF_HINT"))
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3316))
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3316, payload = NoticeLinks.TODAY_DAY))
             // [EASE-19] Turning the alarm off opened nothing; the day is one tap away here.
-            .addAction(0, "오늘 보기", Notifications.open(context, NoticeLinks.Target.TODAY, 3317))
+            .addAction(0, "오늘 보기", Notifications.open(context, NoticeLinks.Target.TODAY, 3317, payload = NoticeLinks.TODAY_DAY))
             // 1.39 [FLOW-16] 아침 한 장 in the same card: last night's sleep not yet answered opens the morning card on the sleep screen.
             .apply { if (morningAsk(c)) addAction(0, "잘 잤어요?", Notifications.open(context, NoticeLinks.Target.SLEEP, 3318)) }
             .build()

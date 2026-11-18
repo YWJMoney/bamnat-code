@@ -201,6 +201,8 @@ class CompanyScreenshotTest : ScreenshotBase() {
         val vm = com.bamnat.app.ui.company.CompanyDetailViewModel(companyOn(), "c1")
         content { com.bamnat.app.ui.company.CompanyDetailScreen(vm, setup = false, onBack = {}, onApplied = { _, _ -> }, onByHand = {}, ready = true) }
         settle()
+        // 2.0.0 [RVN-19] U10a-08: the card's other buttons are behind '이 판 더 보기'.
+        tapText("이 판 더 보기", exact = true)
         tapText("바뀐 기록", exact = true)
     }
     @Test fun foldedCompanyVoteAnySetup() = shoot("194_folded_company_vote_any", FOLDED) {
@@ -365,7 +367,7 @@ class CompanyScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.company.CompanyBoardScreen(vm, onBack = {}, onOpen = {}, onShare = {}, onRates = {}) }
         vm.activity.show()
         settle()
-        reveal("가린 사람")
+        reveal("안 보는 사람")
     }
     @Test fun phonePlazaWritePaused() = shoot("415_phone_plaza_write_paused", PHONE) {
         opsOn(com.bamnat.core.ops.ServerSwitch.PLAZA_WRITE)

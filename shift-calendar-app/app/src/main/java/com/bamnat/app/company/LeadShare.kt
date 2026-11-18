@@ -29,6 +29,11 @@ class LeadShare(private val c: AppContainer) {
          * the public list only after the review, which the dialog says apart.
          */
         val firstGiven: Boolean = false,
+        /**
+         * 2.0.0 [RVN-19] 검토 T10a-10: the 사업장 a first provider typed in its own box: it goes under it at once ('회사 · 사업장'),
+         * not asked again.
+         */
+        val site: String = "",
     )
 
     sealed interface Step {
@@ -161,17 +166,47 @@ class LeadShare(private val c: AppContainer) {
         _step.value = null
     }
 
-    private fun go(pick: Pick, site: String?) {
+    /**
+     * 2.0.0 [RVN-18] 검토 COMP-22-4: '나누는 중이에요' had no button and back was held, so a slow connection could only be waited out.
+     * Now it has 뒤에서 계속하기: the dialog goes, the sending goes on, and what came of it is one line at the bottom (a 사업장 still
+     * to tell, or a failure, opens the dialog again: those need the user).
+     */
+    fun later() {
+        if (_step.value !is Step.Working) return
+        quiet = true
+        _step.value = null
+    }
+
+    private var quiet = false
+
+    private fun go(pick: Pick, asked: String?) {
+        quiet = false
         _step.value = Step.Working(pick)
+        // 2.0.0 [RVN-19] The 사업장 typed with the name, unless one was just told.
+        val site = asked ?: pick.site.trim().takeIf { CompanyText.norm(it).isNotEmpty() }
         c.appScope.launch {
-            _step.value = try {
+            val next = try {
                 decide(pick, site)
             } catch (e: CompanyException) {
                 Step.Failed(pick, com.bamnat.app.ui.company.companyProblem(e), site)
             } catch (e: org.json.JSONException) {
                 Step.Failed(pick, "이 근무주기는 나누지 못했어요", site)
             }
+            val line = if (quiet) doneLine(next) else null
+            quiet = false
+            if (line != null) {
+                _step.value = null
+                com.bamnat.app.ui.components.AppSnack.show(line)
+            } else _step.value = next
         }
+    }
+
+    /** What a finished share says on one line once its dialog was let go; null when the user still has something to answer. */
+    private fun doneLine(s: Step): String? = when (s) {
+        is Step.Made -> if (s.pick.firstGiven) "‘${s.name}’ 근무표를 올렸어요" else "‘${s.name}’의 대표 주기가 됐어요"
+        is Step.Agreed -> "‘${s.name}’에 같은 주기가 있어 맞아요 한 표를 더했어요"
+        is Step.Waiting -> "‘${s.name}’에 나눴어요 · 맞아요가 모이면 대표가 돼요"
+        else -> null
     }
 
     /** Where the pick goes, as AH-D4·D5 say; one report or one vote at most. */

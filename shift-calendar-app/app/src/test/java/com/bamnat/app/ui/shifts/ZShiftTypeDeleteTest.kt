@@ -50,7 +50,8 @@ class ZShiftTypeDeleteTest {
         val evening = t.getValue("오후")
         val dayShift = t.getValue("주간")
         val before = repo.snapshot.first()
-        assertEquals(ScheduleRepository.ShiftTypeUse(days = 2, inPattern = true), repo.shiftTypeUse(evening))
+        // [RVM-44] covers: the 대근 day seeded on it counts too (a work's 되돌리기 keeps a type that one covers).
+        assertEquals(ScheduleRepository.ShiftTypeUse(days = 2, inPattern = true, covers = 1), repo.shiftTypeUse(evening))
 
         val removal = repo.deleteShiftTypeUndoable(evening, replaceWith = dayShift)!!
         assertEquals("오후", removal.name)

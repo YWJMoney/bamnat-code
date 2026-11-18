@@ -132,6 +132,57 @@ class RecipeFuzzTest {
         assertTrue(r.pieces[0].values.keys.none { it == "fieldFromANewerApp" })
     }
 
+    /**
+     * 2.0.0 [RVS-07] SN-08·SD-04: a draft with every kind of piece (more than 올리기 takes) opens as a draft, comes back the same, and
+     * the studio can say how far over it is and which pieces to take out first (one just as the app has it, then the biggest).
+     */
+    /**
+     * 2.0.0 [RVS-12] (갈래 R SD-07): parts already read (a formula held as [Ref.Formula], as RecipeResolve hands them to 넣기) clean again
+     * to the same lines. Before, the cleaner threw on the formula and 넣기 dropped the whole 부품 piece of 144 market works.
+     */
+    @Test fun partsAlreadyReadCleanAgain() {
+        var seen = 0
+        for (w in works) {
+            val r = runCatching { RecipeCodec.clean(w) }.getOrNull() ?: continue
+            val piece = r.pieces.firstOrNull { it.kind == PieceKind.PARTS } ?: continue
+            // As 넣기 has them: inputs answered and tokens made colours, a formula kept as it is.
+            @Suppress("UNCHECKED_CAST")
+            val lines = RecipeResolve.piece(r, piece, RecipeResolve.answers(r, emptyMap()))["parts"] as? List<Map<String, Any?>> ?: continue
+            if (lines.none { l -> l.values.any { it is Ref.Formula } }) continue
+            seen++
+            assertEquals(r.title, lines, Blueprint.clean(lines))
+        }
+        assertTrue("수식이 든 부품 작품 $seen", seen > 100)
+    }
+
+    @Test fun aDraftPastTheLimitsStillOpens() {
+        val gen = Gen(Random(11), Mode.LEAST)
+        val all = PieceKind.entries.mapNotNull { k -> gen.piece(k)?.let { k to it } }
+        assertTrue("조각 종류가 ${RecipeCodec.MAX_PIECES}개보다 많아야 해요: ${all.size}", all.size > RecipeCodec.MAX_PIECES)
+        val text = recipe(all)
+        try { RecipeCodec.read(text); fail("올리기 읽기는 한도를 지켜요") } catch (e: RecipeException) { assertEquals("pieces", e.code) }
+        val draft = RecipeCodec.readDraft(text)
+        assertEquals(all.size, draft.pieces.size)
+        val written = RecipeCodec.write(draft)
+        assertEquals(written, RecipeCodec.write(RecipeCodec.readDraft(written)))
+
+        val size = WorkSize.of(draft)
+        assertTrue(size.over)
+        assertTrue(size.overLine!!, size.overLine!!.contains("${all.size}개"))
+        // The app's own one goes first, then as many as it takes; without them the work fits.
+        val plain = listOf(draft.pieces.last())
+        val out = WorkSize.takeOut(draft, plain)
+        assertEquals(plain[0].kind, out.first())
+        assertEquals(all.size - RecipeCodec.MAX_PIECES, out.size)
+        assertTrue(!WorkSize.of(draft.copy(pieces = draft.pieces.filter { it.kind !in out })).over)
+        // 올리기 검사 says the same, not "조각을 하나 이상 골라 주세요".
+        val line = RecipeLint.check(draft).first { it.code == "read" }
+        assertEquals(size.overLine, line.text)
+        // A draft past even [RecipeCodec.DRAFT_BYTES] is refused, by its size.
+        try { RecipeCodec.readDraft("{\"t\":\"" + "가".repeat(RecipeCodec.DRAFT_BYTES / 3 + 1) + "\"}"); fail() } catch (e: RecipeException) { assertEquals("too_big", e.code) }
+        assertTrue(WorkSize.of(draft.copy(pieces = draft.pieces.take(3))).let { !it.over && it.line.startsWith("조각 3/16 · 용량 ") })
+    }
+
     private fun assertRoundTrip(name: String, written: String) {
         val again = try { RecipeCodec.read(written) } catch (e: Exception) { fail("$name: 쓴 것을 다시 못 읽어요: ${e.message}"); return }
         assertEquals("$name: 다시 쓰면 같아야 해요", written, RecipeCodec.write(again))
