@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -187,11 +187,15 @@ object LiveTryOn {
     }
 
     /** [TRY-06] Ends whatever is being tried, waiting for its 기능 to be put back (what the user wrote stays). */
-    suspend fun settle(c: AppContainer, snack: Boolean = true) {
+    suspend fun settle(c: AppContainer, snack: Boolean = true) { settled(c, snack) }
+
+    /** [settle], and how it ended (null with none on): 2.0.0 [RVM-53] a backup saved or opened says the trial it ended. */
+    suspend fun settled(c: AppContainer, snack: Boolean = true): com.bamnat.app.recipe.FunctionTrial.Ended? {
         away?.cancel()
         val e = runCatching { com.bamnat.app.recipe.FunctionTrial(c).finish(keepMine = true) }.getOrNull()
         lookOff(c)
         tell(e, snack)
+        return e
     }
 
     private fun lookOff(c: AppContainer) {
@@ -222,6 +226,17 @@ object LiveTryOn {
             else -> "써 보며 적은 ${mine}을 지웠어요"
         }
         return "‘${e.title}’ 써 보기를 끝냈어요. $rest"
+    }
+
+    /**
+     * 2.0.0 [RVM-54] 검토 U09b-04: what 써 보기 put back, under the card's line when opened — the pieces back, its 단추·규칙 taken out,
+     * what I changed myself left, and that my own 단추·규칙's writes were not touched (what they did is in the line above).
+     */
+    fun details(e: com.bamnat.app.recipe.FunctionTrial.Ended): List<String> = buildList {
+        if (e.back.isNotEmpty()) add("원래대로 돌린 것: " + e.back.joinToString(", "))
+        if (e.removed.isNotEmpty()) add("뺀 단추·규칙: " + e.removed.take(3).joinToString(", ") + (if (e.removed.size > 3) " 외 ${e.removed.size - 3}개" else ""))
+        if (e.keptMine > 0) add("써 보는 동안 직접 바꾼 ${e.keptMine}곳은 그대로 뒀어요")
+        if (e.mineRules) add("내 단추·규칙이 적은 것은 건드리지 않았어요")
     }
 
     @Volatile private var away: kotlinx.coroutines.Job? = null
@@ -304,13 +319,13 @@ fun LiveTryOnBand(c: AppContainer) {
                 }
             }
             val buttons: @Composable () -> Unit = {
-                if (trial.hasLook) androidx.compose.material3.OutlinedButton(onClick = { LiveTryOn.show(c, !trial.showing) }, enabled = !ending,
+                if (trial.hasLook) com.bamnat.app.ui.components.OutlinedButton(onClick = { LiveTryOn.show(c, !trial.showing) }, enabled = !ending,
                     modifier = Modifier.heightIn(min = 40.dp),
                     colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.inverseOnSurface),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)) {
                     Text(if (trial.showing) "지금 모습" else "입은 모습", style = MaterialTheme.typography.labelMedium)
                 }
-                androidx.compose.material3.OutlinedButton(onClick = {
+                com.bamnat.app.ui.components.OutlinedButton(onClick = {
                     if (!fn) LiveTryOn.end(c)
                     else scope.launch {
                         val made = runCatching { com.bamnat.app.recipe.FunctionTrial(c).made() }.getOrNull()

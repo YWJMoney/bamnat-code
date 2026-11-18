@@ -175,6 +175,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import com.bamnat.app.data.PhoneDayView
 import com.bamnat.core.time.Today
 import androidx.compose.material.icons.filled.Today
+import com.bamnat.app.ui.theme.Tone
 
 internal const val PAGE_COUNT = 2400
 /** [CAL-01] Alarm warnings show while an alarm is due within this many days. */
@@ -853,6 +854,10 @@ fun CalendarScreen(
     // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
     var gridTop by remember { mutableFloatStateOf(Float.NaN) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
+    // 2.0.0 [RVP-01] 검토 HQ-76: the top of the area the FAB floats in, and of the room left for it under the month (after the
+    // 모든 조·횟수·보기 row and the notes under it).
+    var fabAreaTop by remember { mutableFloatStateOf(Float.NaN) }
+    var fabRoomTop by remember { mutableFloatStateOf(Float.NaN) }
     // How far down the month the FAB may not go: the rows with this month's days where the FAB rests (the right side).
     var ownRowsPx by remember { mutableFloatStateOf(Float.NaN) }
     // 1.39 [CALX-07] (사용자 2026-11-08 "달력만 보기인데 밑에 더 이상 내용이 없는데 스크롤이 돼"): how tall what stands under the month is
@@ -868,12 +873,23 @@ fun CalendarScreen(
     val fabTarget: () -> Float = {
         if (!docking || gridBottom.isNaN() || fabAreaBottom.isNaN()) 0f
         else {
-            // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
-            // it rides under the month only when the whole month shows at the page's top. A longer page keeps it in its usual
-            // place all the way, so it never hides below the edge and does not jump while scrolling.
-            val ride = gridBottom + dockGap - (fabAreaBottom - fabLift)
-            // PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than its own area's bottom.
-            if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
+            // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9, 큰 글자에서 단추가 달 아래 '월 ▾'를 덮음): it rides in the room left for it under the month,
+            // under the row of 모든 조·횟수·보기, not right under the last week.
+            val room = if (fabRoomTop.isNaN()) gridBottom else maxOf(gridBottom, fabRoomTop)
+            val ride = room + dockGap - (fabAreaBottom - fabLift)
+            when {
+                // 1.37 PC 736fb7a6 (첫 근무를 칠하면 위에 카드가 생겨 달력이 내려가고, '빠른 입력'이 화면 아래로 숨어 끝까지 내려야 보임):
+                // while that room is below where the FAB rests, it drops into it only when the whole month shows at the page's top, so it
+                // never hides below the edge. PC 8eae2521 (달력만 보기에서 달력 아래에 붙은 단추가 아래 탭을 반쯤 가림): it never goes lower than
+                // its own area's bottom.
+                ride >= 0f -> if (ride + pageScroll.value >= fabLift - 1f) 0f else ride.coerceIn(0f, fabLift - fabHeight)
+                // At the page's end it rests in the page's own end room.
+                !pageScroll.canScrollForward -> 0f
+                // 2.0.0 [RVP-01] 검토 HQ-76 (조건 9, 가게 접은 폭: 쉬던 자리의 단추가 달 아래 요약 카드의 '하루 평균'을 가림): a page longer than
+                // the screen has its cards where the FAB rests, so it stays in its room under the month and goes up with it; once that
+                // room has left the screen it is gone until the page's end.
+                else -> ride
+            }
         }
     }
     val fabDrop = remember { androidx.compose.animation.core.Animatable(0f) }
@@ -887,7 +903,7 @@ fun CalendarScreen(
     // so what it would cover stays readable and in reach; at the page's end there is room for its label.
     // [CAL-15] It says "빠른 입력" at the top of the page and while it rides under the month, so the
     // first look tells what it is.
-    val fabExpanded by remember { derivedStateOf { fabDrop.value > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
+    val fabExpanded by remember { derivedStateOf { kotlin.math.abs(fabDrop.value) > 0.5f || pageScroll.value == 0 || !pageScroll.canScrollForward } }
     // Below the screen's edge with the month, it is not there for TalkBack either.
     // 12.1 화면 사진(오늘의 흐름 한 줄이 달력 위로 오며 달력이 내려감, 큰 글씨에서 '빠른 입력'이 21~24일을 가림): where the
     // month is longer than the room above the FAB, it steps aside while it would sit on this month's own days, and comes back
@@ -897,11 +913,17 @@ fun CalendarScreen(
             if (!docking || ownRowsPx.isNaN() || gridTop.isNaN() || fabAreaBottom.isNaN()) false
             else {
                 val top = fabAreaBottom - fabLift + fabDrop.value
-                top < gridTop + ownRowsPx && top + fabHeight > gridTop
+                // 2.0.0 [RVP-01] 검토 HQ-76: nor on the row under the month (모든 조·횟수·'월 ▾'), when its room is not on the screen yet.
+                val onRow = !gridBottom.isNaN() && !fabRoomTop.isNaN() && top < fabRoomTop && top + fabHeight > gridBottom
+                top < gridTop + ownRowsPx && top + fabHeight > gridTop || onRow
             }
         }
     }
-    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays } }
+    // 2.0.0 [RVP-01] 검토 HQ-76: gone, too, once it has gone up with the room under the month past the top of its area.
+    val fabUp by remember(fabLift) {
+        derivedStateOf { !fabAreaTop.isNaN() && !fabAreaBottom.isNaN() && fabAreaBottom - fabLift + fabDrop.value < fabAreaTop }
+    }
+    val fabGone by remember(fabLift) { derivedStateOf { fabDrop.value >= fabLift - 1f || fabOnDays || fabUp } }
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
@@ -1058,7 +1080,7 @@ fun CalendarScreen(
                 Text(
                     "이 주 ${glance.text}",
                     style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                    color = if (glance.leftToLegal < 0) LocalCalendarColors.current.warning else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (glance.leftToLegal < 0) Tone.Danger.color() else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
@@ -1185,32 +1207,33 @@ fun CalendarScreen(
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
             alarmsOffUntil != null -> AlarmNote("오늘 알람 끔",
                 "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지",
-                "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution)
+                "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution, keep = "today")
             !alarmSoon -> null
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
             // [EASY-01] The example never rings, so it has nothing to turn on.
             !calendarAlarmsOn -> if (activeCalendar.isExample) null else AlarmNote("‘${activeCalendar.name}’ 알람이 꺼져 있어요",
-                "‘${activeCalendar.name}’ 달력은 알람이 꺼져 있어요", "켜기", { vm.setCalendarAlarms(true) }, com.bamnat.app.ui.theme.Tone.Caution)
+                "‘${activeCalendar.name}’ 달력은 알람이 꺼져 있어요", "켜기", { vm.setCalendarAlarms(true) }, com.bamnat.app.ui.theme.Tone.Caution,
+                keep = "calendar:${activeCalendar.id}")
             // [SET-01] With the master switch off nothing rings: said where the user looks first.
             !settings.alarmsEnabled -> AlarmNote("알람이 모두 꺼져 있어요", "알람이 모두 꺼져 있어요", "켜기", { vm.setAlarmsEnabled(true) },
-                com.bamnat.app.ui.theme.Tone.Caution)
+                com.bamnat.app.ui.theme.Tone.Caution, keep = "all")
             // [REL-11][SLP-15] Without notifications an alarm still sounds, but nothing on the lock
             // screen stops it. Asked here, where it is needed, instead of on the first start.
             // 1.38 PC 9차: the app's window that said why (화면이 안 뜨고 소리만) is gone, so the line says it.
             !notificationsAllowed -> AlarmNote(NOTICE_OFF_LINE, NOTICE_OFF_LINE, "허용", askNotifications, com.bamnat.app.ui.theme.Tone.Danger,
-                picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM)
+                picture = com.bamnat.app.ui.components.PermissionResult.LOCK_ALARM, keep = "notifications")
             // [REL-12] Android 14+ can block the full-screen alarm; then only a small notification shows.
             !fullScreenAllowed -> AlarmNote("잠금 화면에 알람 화면이 안 떠요", "잠금 화면에 알람 화면이 안 떠요", "허용", {
                 if (android.os.Build.VERSION.SDK_INT >= 34) SystemSettings.open(context,
                     android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
                         android.net.Uri.parse("package:${context.packageName}")))
-            }, com.bamnat.app.ui.theme.Tone.Danger)
+            }, com.bamnat.app.ui.theme.Tone.Danger, keep = "fullScreen")
             // [ALRM-07] The 근무 알람 notice turned down to 조용히 or hidden: the ringing screen cannot show either.
             alarmChannelTrouble != null -> AlarmNote(alarmChannelTrouble!!, alarmChannelTrouble!!, "고치기", {
                 SystemSettings.open(context, android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
                     .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)
                     .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, Notifications.ALARM_CHANNEL_ID))
-            }, com.bamnat.app.ui.theme.Tone.Danger)
+            }, com.bamnat.app.ui.theme.Tone.Danger, keep = "alarmChannel")
             else -> null
         }
         // [CUST-01] The user's parts above the month (화면 꾸미기), by part: the name the 알림 line gives it, and the part.
@@ -1452,7 +1475,9 @@ fun CalendarScreen(
             })
             // 1.36 U7: the first day painted brings the next alarm into being; its line waits until quick input closes.
             if (paint == null) alarmLine?.let { a ->
-                add(Notice("alarm", a.label, line = a.text, tone = a.tone, action = a.action, onAction = a.onAction, urgent = true) {
+                // PC-139: what keeps an alarm from working has a key of its own (fixed and broken again, it says so again) and stays until fixed.
+                add(Notice(a.keep?.let { "alarm:$it" } ?: "alarm", a.label, line = a.text, tone = a.tone, action = a.action, onAction = a.onAction,
+                    urgent = true, keep = a.keep != null) {
                     AlarmWarningLine(a.text, a.action, a.onAction, linePlace, picture = a.picture, tone = a.tone)
                 })
             }
@@ -1982,7 +2007,7 @@ fun CalendarScreen(
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
-            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp))
+            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             Column(Modifier.fillMaxWidth().onSizeChanged { belowPx = it.height }) {
@@ -2029,7 +2054,7 @@ fun CalendarScreen(
     val pageEnd = if (paint == null && settled && belowPx == 0) 0.dp else bottomSpace
     val fab: @Composable BoxScope.() -> Unit = {
         // [CAL-15] Where the FAB rests: the bottom of the area it floats in.
-        Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaBottom = c.positionInWindow().y + c.size.height })
+        Spacer(Modifier.matchParentSize().onGloballyPositioned { c -> fabAreaTop = c.positionInWindow().y; fabAreaBottom = fabAreaTop + c.size.height })
         val style = settings.workStyle
         val place = Modifier.align(Alignment.BottomEnd).padding(FAB_MARGIN).offset { IntOffset(0, fabDrop.value.roundToInt()) }
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
@@ -2066,6 +2091,24 @@ fun CalendarScreen(
                 identityBar = identityBar,
                 rules = settings.rules,
                 onSay = vm::say,
+                // 2.0.0 [RVP-45] 검토 HQ-62: the same one-row head as the user's own calendar (whose calendar at its start, the month,
+                // 오늘 and 도구, folding by HeadRoom); the tools that change the user's own calendar wait there, greyed with why.
+                head = { h ->
+                    CalendarHeader(
+                        month = h.month, onPrev = h.onPrev, onNext = h.onNext, onToday = h.onToday, onPickMonth = h.onPickMonth,
+                        atToday = h.atToday, onShare = shareCalendar, onOpenPattern = onOpenPattern, onAddCalendar = onAddCalendar,
+                        onReceive = if (received.enabled) ({ adding = "" }) else null,
+                        calendarName = activeCalendar.name, calendarId = activeCalendar.id, onOpenTeams = openTeams,
+                        style = settings.workStyle,
+                        toolFit = ToolFit(teams = settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT, receive = received.enabled,
+                            viewingReceived = true, hasShiftTypes = snap.shiftTypes.isNotEmpty(), teamsReady = true,
+                            leader = context.appContainer.flags.byKey.collectAsStateWithLifecycle().value[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true),
+                        onPushToday = { realigning = today },
+                        chip = HeadChip(rows = calendarRows, current = currentRow, onOpenSwitcher = { switching = true }, onPick = pickCalendar,
+                            home = calendarRows.firstOrNull { it.key == com.bamnat.app.data.CalendarKey.Mine(activeCalendar.id) } ?: CalendarRow.Mine(activeCalendar, null),
+                            homeWords = homeWordsOf(activeCalendar)),
+                    )
+                },
             )
         }
     } else Box(Modifier.fillMaxSize().clipToBounds()) {
@@ -2412,27 +2455,35 @@ internal fun CalendarHeader(
     val sideRoom = if (small) 2 * ((headBox.out ?: 0) + (headBox.padH ?: 0)) else headSides.toInt()
     val navTint = navPart.ink?.let { androidx.compose.ui.graphics.Color(it.toInt()) } ?: androidx.compose.material3.LocalContentColor.current
     // [CAL-52] A tablet or a phone on its side has the room for a bigger month.
-    val baseTitle = when {
-        narrow -> MaterialTheme.typography.titleMedium
-        wideTitle -> MaterialTheme.typography.headlineSmall
-        else -> MaterialTheme.typography.titleLarge
-    }
-    val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
-    val monthDp = remember(shortMonth, workTitle, density) {
+    val narrowTitle = MaterialTheme.typography.titleMedium
+    val roomyTitle = if (wideTitle) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge
+    // [RVH-52] Measured in the work's letters at the least size (the size is set here, so which of the two titles does not matter).
+    val leastTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, narrowTitle) }
+    val monthDp = remember(shortMonth, leastTitle, density) {
         with(density) {
-            monthMeasurer.measure(shortMonth, workTitle.copy(fontSize = (MONTH_TITLE_MIN_SP / density.fontScale).sp), maxLines = 1,
+            monthMeasurer.measure(shortMonth, leastTitle.copy(fontSize = (MONTH_TITLE_MIN_SP / density.fontScale).sp), maxLines = 1,
                 softWrap = false).size.width.toDp().value
         }
     }
     val otherRows = chip?.rows?.filter { it.key != chip.current.key }.orEmpty()
     val others = otherRows.size
+    // 2.0.0 [RVP-45] HQ-62 While someone else's calendar is on screen, the way back to the user's own stays longest (HeadRoom.home).
+    val homeRow = chip?.home
     // 2.0.0 [RVG-34] A 팀 리더's link goes first among the faces, and stays longest (HeadRoom.team).
-    val teamRow = otherRows.firstOrNull { (it as? CalendarRow.Got)?.cal?.fromLeader == true }
+    val teamRow = otherRows.firstOrNull { it !== homeRow && (it as? CalendarRow.Got)?.cal?.fromLeader == true }
     fun roomFor(sp: Float) = HeadRoom.of(
         maxWidth.value, fontScale, sp, reserved = sideRoom.toFloat(), monthDp = monthDp, quick = quick.size, bell = bell != null, me = me, others = others,
         together = chip?.onTogether != null, share = chip?.onShare != null, nameChars = chip?.current?.title?.length ?: 0,
-        team = teamRow != null,
+        team = teamRow != null, homeChars = if (homeRow != null) chip?.homeWords?.length ?: 0 else 0,
     ).let { if (chip == null) it.copy(name = false) else it }
+    // 검토 PC-141 (통합 4차 PC: 접은 폭 100%에서 '11월'이 보통 폭보다 작고 가늘었어요, 자리가 남는데도): a narrow row has the phone's
+    // own month size too when that folds nothing more than the smaller one would; else the smaller one.
+    val baseTitle = if (!narrow) roomyTitle else {
+        val big = roomFor(roomyTitle.fontSize.value)
+        val small = roomFor(narrowTitle.fontSize.value)
+        if (!big.stepDown && big.copy(quick = small.quick) == small) roomyTitle else narrowTitle
+    }
+    val workTitle = with(com.bamnat.app.ui.parts.PartMods) { text(titlePart, baseTitle) }
     val titleSp = workTitle.fontSize.takeIf { it.isSp }?.value ?: baseTitle.fontSize.value
     // 검토 HQ-22 (큰 달 제목 26~30의 작품을 입으면 접은 폭에서 달 제목이 '2026'으로 아주 작게 줄어요, 조건 12): the month is never shrunk
     // to fit; when even the folded row has no room for the work's big month, it steps down to the screen's own size.
@@ -2463,11 +2514,12 @@ internal fun CalendarHeader(
         // [RVP-45] Whose calendar: its face (and its name where there is room), the list of calendars a tap away.
         chip?.let { c ->
             CalendarChip(c.current, name = room.name, onOpen = c.onOpenSwitcher)
+            homeRow?.let { h -> if (room.home != 0) HomeChip(h, c.homeWords, inWords = room.home == HeadRoom.WORDS) { c.onPick(h) } }
             teamRow?.let { t ->
                 if (room.team == HeadRoom.WORDS) CalendarFace(t, c.onPick)
                 else if (room.team == HeadRoom.ICON) CalendarFaceOnly(t, c.onPick)
             }
-            if (room.faces > 0) CalendarFaces(otherRows.filter { it !== teamRow || room.team == 0 }, room.faces, c.onPick)
+            if (room.faces > 0) CalendarFaces(otherRows.filter { (it !== teamRow || room.team == 0) && (it !== homeRow || room.home == 0) }, room.faces, c.onPick)
             if (room.together && c.onTogether != null) TogetherChip(c.onTogether, shop = c.togetherShop, field = c.togetherField, words = true)
         }
         if (room.arrows && navPart.hide != true) IconButton(onClick = onPrev, modifier = with(com.bamnat.app.ui.parts.PartMods) { box(navPart.copy(ink = null), androidx.compose.foundation.shape.CircleShape) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, if (byWeek) "이전 주" else "이전 달", tint = navTint) }
@@ -2533,11 +2585,11 @@ internal fun CalendarHeader(
         // [CAL-23] A button with its name instead of ⋮: people did not know three dots held the tools.
         // [A11Y-03] Where the word does not fit, a round icon button takes its place, and TalkBack still reads its name.
         if (!room.toolsWords) {
-            androidx.compose.material3.FilledTonalIconButton(onClick = { menu = true }) {
+            com.bamnat.app.ui.components.FilledTonalIconButton(onClick = { menu = true }) {
                 Icon(Icons.Outlined.Apps, "도구", Modifier.size(20.dp))
             }
         } else {
-            androidx.compose.material3.FilledTonalButton(
+            com.bamnat.app.ui.components.FilledTonalButton(
                 onClick = { menu = true },
                 contentPadding = PaddingValues(horizontal = 12.dp),
                 modifier = Modifier.heightIn(min = 40.dp).padding(end = 4.dp),
@@ -2875,14 +2927,14 @@ private fun HoursLine(
         Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
             FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 HoursPart("이 주", HoursFormat.korean(week.totalMinutes),
-                    limits.weeklyLimitHours.takeIf { week.overLimit }, cal.warning)
+                    limits.weeklyLimitHours.takeIf { week.overLimit }, Tone.Danger.color())
                 if (split != week.totalMinutes) {
                     Text("자정에 나눠 세면 ${HoursFormat.korean(split)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 // Its own limit (52), not the week's (64), so the number it is over is said.
                 HoursPart("3개월 주평균", HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
-                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, cal.warning)
+                    limits.threeMonthAverageLimitHours.takeIf { three.overLimit }, Tone.Danger.color())
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "$tabName 열기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -2914,6 +2966,12 @@ internal class AlarmNote(
     val onAction: () -> Unit,
     val tone: com.bamnat.app.ui.theme.Tone,
     val picture: com.bamnat.app.ui.components.PermissionResult? = null,
+    /**
+     * 2.0.0 검토 PC-139: what keeps the alarm from working, by name, for a notice that stays until it is fixed (전체 지움 and 다시 보지
+     * 않기 leave it). Every alarm line has one (PC 2nd record 03:04 KST: '알람이 모두 꺼져 있어요 · 켜기' went with 전체 지움 too): an
+     * alarm due within a week that will not ring is what the top of the calendar is for.
+     */
+    val keep: String? = null,
 )
 
 /**
@@ -2992,7 +3050,7 @@ private fun PaintBar(
             // [ROST-07] The whole month from a keypad, on its own line above the stamps and filled, so it is seen first
             // (리뷰 개선 가) without pushing the kinds of work along the row.
             onTypeMonth?.let { open ->
-                androidx.compose.material3.FilledTonalButton(
+                com.bamnat.app.ui.components.FilledTonalButton(
                     onClick = open,
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 12.dp),
                     modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = if (large) 56.dp else 40.dp),
@@ -3464,7 +3522,7 @@ internal fun SwipeMonthBadge(pager: androidx.compose.foundation.pager.PagerState
     ) {
         // [J133-25] 1.33 (실사용 테스트 "달 넘김 상자가 격자 가운데 1초 가려요"): a slim pill over the first row, not a box over the days.
         androidx.compose.material3.Surface(
-            shape = androidx.compose.foundation.shape.CircleShape,
+            shape = com.bamnat.app.ui.theme.LocalPill.current,
             color = MaterialTheme.colorScheme.inverseSurface.copy(alpha = 0.85f),
             contentColor = MaterialTheme.colorScheme.inverseOnSurface,
             modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },

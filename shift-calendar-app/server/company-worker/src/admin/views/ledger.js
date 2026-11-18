@@ -165,7 +165,7 @@ export function ledgerViews(A) {
     parts.push(`<div class="actions start lg-acts">
       ${r.state === "new" && !r.closed ? `<button class="btn small" data-act="ledger-set" data-key="${esc(r.key)}" data-state="seeing" title="s">보는 중</button>` : ""}
       ${r.state !== "waiting" && r.state !== "done" && !r.closed ? `<button class="btn small ghost" data-act="ledger-wait" data-key="${esc(r.key)}" title="w">기다림</button>` : ""}
-      ${r.state !== "done" && !r.closed ? `<button class="btn small primary" data-act="ledger-done" data-key="${esc(r.key)}" title="e">끝내기</button>` : ""}
+      ${r.state !== "done" && !r.closed ? `<button class="btn small" data-act="ledger-done" data-key="${esc(r.key)}" title="e">끝내기</button>` : ""}
       ${r.state === "done" || r.state === "waiting" || r.state === "seeing" ? `<button class="btn small" data-act="ledger-set" data-key="${esc(r.key)}" data-state="new">다시 열기</button>` : ""}
       <button class="btn small ghost" data-act="ledger-summary" data-key="${esc(r.key)}">요약 ${r.summary ? "고치기" : "쓰기"}</button>
       <button class="btn small ghost" data-act="ledger-log" data-key="${esc(r.key)}" title="h">기록·되돌리기</button>

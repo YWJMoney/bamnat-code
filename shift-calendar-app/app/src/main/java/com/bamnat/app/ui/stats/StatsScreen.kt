@@ -80,7 +80,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import com.bamnat.app.ui.theme.bamnat
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 class StatsViewModel(
     private val container: AppContainer,
@@ -423,6 +424,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
             if (broken.isNotEmpty()) WarningBanner(
                 broken.joinToString(" · ") { it.first.removeSuffix(" 있어요") }.let { if (broken.size == 1) broken[0].first else "$it 있어요" },
                 (if (broken.size == 1) broken[0].second else broken.joinToString("\n") { "${it.first}: ${it.second}" }) + " 참고용이에요.",
+                tone = Tone.Danger, // 2.0.0 [RVP-13] (HQ-54) 법 한도를 넘은 것: 위험, 이 화면의 빨강은 이 띠 하나
             )
         }
 
@@ -475,9 +477,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     if (employee && three.overLimit) {
                         Spacer(Modifier.height(10.dp))
                         // 2.0.0 [RVJ-66] (HQ-103): 내가 정한 3개월 평균 기준을 넘음은 챙길 일(주의), 법을 넘은 주의 빨간 띠와 겹치지 않게.
-                        com.bamnat.app.ui.components.NudgeCard(
-                            "3개월 평균 주 ${settings.averageLimitHours}시간 초과", tone = com.bamnat.app.ui.theme.Tone.Caution,
-                            detail = "평균 주 ${HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt())}이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                        WarningBanner(
+                            "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
+                            "평균 주 ${HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt())}이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
+                            tone = Tone.Caution,
                         )
                     }
                 }
@@ -508,8 +511,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     }
                     if (long.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
-                        Text("연속 근무 ${settings.stretchLimitHours}시간 넘은 때 ${long.size}번", style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.bamnat.caution) // [RVJ-66]
+                        com.bamnat.app.ui.components.ToneLine("연속 근무 ${settings.stretchLimitHours}시간 넘은 때 ${long.size}번", style = MaterialTheme.typography.titleSmall)
                         long.take(5).forEach { Text(com.bamnat.core.hours.Stretches.line(it, settings.stretchLimitHours), style = MaterialTheme.typography.bodySmall) }
                     }
                     // [CAL-40] I 리뷰 I19: the coming week read from the roster, so 52시간 is seen before it is passed.
@@ -518,7 +520,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         Text(
                             "다음 주(${Fmt.shortDate(next.start)}~) 예상 ${next.text}",
                             style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
-                            color = if (next.leftToLegal < 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface, // [RVJ-66] 다음 주 예상: 주의
+                            color = if (next.leftToLegal < 0) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface, // 미리 알림: 주의
                             modifier = Modifier.padding(top = 12.dp),
                         )
                     }
@@ -587,7 +589,7 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
             Text(
                 HoursFormat.korean(week.totalMinutes),
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                color = if (week.totalMinutes > limitHours * 60) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurface, // [RVJ-66] 주별 막대: 주의
+                color = if (week.totalMinutes > limitHours * 60) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface, // [RVJ-66] 주별 막대: 주의
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -612,7 +614,7 @@ private fun LimitBar(value: Double, limit: Double, max: Double) {
             Modifier
                 .fillMaxHeight()
                 .width(maxWidth * fraction)
-                .background(if (over) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.primary),
+                .background(if (over) Tone.Caution.color() else MaterialTheme.colorScheme.primary),
         )
         val limitFraction = (limit / safeMax).coerceIn(0.0, 1.0).toFloat()
         Box(
@@ -737,7 +739,7 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
                         Text(c.client, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                         Text("${c.jobs}건" + (if (c.owed > 0) " · 받을 돈 ${wonBrief(c.owed)}" else ""),
                             style = MaterialTheme.typography.bodySmall,
-                            color = if (c.owed > 0) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.onSurfaceVariant) // [RVJ-66]
+                            color = if (c.owed > 0) Tone.Caution.color() else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Text(Fmt.won(c.earned), style = MaterialTheme.typography.titleSmall.merge(NumberStyle))
                 }
@@ -839,7 +841,7 @@ private fun HolidayPayWeeks(weeks: List<HourlyWeek>, month: YearMonth) {
                         else -> "${HoursFormat.korean(w.shortBy)} 모자람"
                     },
                     style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                    color = if (w.holidayPay) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution.takeIf { w.minutes > 0 } ?: Color.Unspecified, // [RVJ-66]
+                    color = if (w.holidayPay) MaterialTheme.colorScheme.primary else Tone.Caution.color().takeIf { w.minutes > 0 } ?: Color.Unspecified,
                 )
             }
         }

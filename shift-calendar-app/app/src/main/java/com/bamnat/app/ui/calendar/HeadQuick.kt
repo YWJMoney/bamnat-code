@@ -4,8 +4,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
+import com.bamnat.app.ui.components.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalIconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -183,6 +183,12 @@ internal data class HeadRoom(
      * calendar's name have folded; on a phone it is the first line of the calendar chip's list.
      */
     val team: Int = 0,
+    /**
+     * 2.0.0 [RVP-45] 검토 HQ-62: while someone else's calendar is on screen, the way back to the user's own: [WORDS] ('내 달력으로'),
+     * [ICON] (its face, read by the words) or 0. On every width (a phone too: it is the one way back in sight): its words go after
+     * 오늘's and 도구's, and it stays after the arrows.
+     */
+    val home: Int = 0,
 ) {
     companion object {
         const val WORDS = 2
@@ -204,22 +210,27 @@ internal data class HeadRoom(
             widthDp: Float, fontScale: Float, titleSp: Float, quick: Int = 0, bell: Boolean = false, me: Boolean = true,
             others: Int = 0, together: Boolean = false, share: Boolean = true, nameChars: Int = 3, team: Boolean = false,
             reserved: Float = 0f, monthDp: Float = 0f,
+            /** Letters in the way back's words ([home]); 0 while the user's own calendar is on screen. */
+            homeChars: Int = 0,
         ): HeadRoom {
             val fs = fontScale.coerceAtMost(2f)
             val wide = widthDp >= 600f
             val room = widthDp - reserved
-            val teamNow = wide && team && others > 0
+            val homeNow = homeChars > 0
+            val teamNow = wide && team && others > (if (homeNow) 1 else 0)
+            val beside = others - (if (teamNow) 1 else 0) - (if (homeNow) 1 else 0)
             var r = HeadRoom(
-                name = wide, faces = if (wide) minOf(others - (if (teamNow) 1 else 0), if (teamNow) 1 else 2) else 0,
+                name = wide, faces = if (wide) minOf(beside, if (teamNow || homeNow) 1 else 2).coerceAtLeast(0) else 0,
                 together = wide && together && others == 0,
                 share = if (share) WORDS else 0, todayWords = true, toolsWords = true, shortTitle = false, arrows = true, quick = HeadQuickRoom.NONE,
-                team = if (teamNow) WORDS else 0,
+                team = if (teamNow) WORDS else 0, home = if (homeNow) WORDS else 0,
             )
             fun need(x: HeadRoom, sp: Float = titleSp): Float {
                 var w = PAD
                 w += 52f + (if (x.name) 6f + 14f * fs * nameChars else 0f) // the chip: face, name, ▾
                 w += x.faces * (42f + 48f * fs)
                 w += when (x.team) { WORDS -> 42f + 56f * fs; ICON -> BUTTON; else -> 0f } // '팀 근무표'
+                w += when (x.home) { WORDS -> 52f + 14f * fs * homeChars; ICON -> BUTTON; else -> 0f } // '내 달력으로'
                 if (x.together) w += 44f + 56f * fs
                 if (x.arrows) w += 2 * BUTTON
                 w += sp * fs * (if (x.shortTitle) 2.15f else 4.65f) + 32f // the month and ▾
@@ -233,8 +244,12 @@ internal data class HeadRoom(
             val steps: List<(HeadRoom) -> HeadRoom> = listOf(
                 { it.copy(faces = 0) }, { it.copy(together = false) }, { it.copy(share = minOf(it.share, ICON)) }, { it.copy(name = false) },
                 { it.copy(team = minOf(it.team, ICON)) },
-                { it.copy(shortTitle = true) }, { it.copy(share = 0) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
-                { it.copy(team = 0) }, { it.copy(arrows = false) },
+                { it.copy(shortTitle = true) }, { it.copy(todayWords = false) }, { it.copy(toolsWords = false) },
+                // [RVP-45] HQ-62: the way home keeps its words longest, and outlasts the arrows (밀어 넘기기 and TalkBack still step).
+                { it.copy(home = minOf(it.home, ICON)) },
+                // 검토 PC-143 (사용자 11-13 '종은 공유 옆에 따로', 사용자 폰은 폴드): 공유 stays beside the bell as its icon after the arrows go
+                // (the month still steps by 밀어 넘기기 and TalkBack); only a row too narrow even then puts it in 도구.
+                { it.copy(team = 0) }, { it.copy(arrows = false) }, { it.copy(share = 0) }, { it.copy(home = 0) },
             )
             // [RVH-42] PC-29: the work's own buttons with their words are worth more than the other calendars' faces, 같이 보기, 공유's
             // word and the calendar's name; when one fits with its words once those are folded, the row stops there.

@@ -181,7 +181,7 @@ fun CalcAmountField(
         if (calcOpen || sum) Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val keys = listOf(calc.PLUS to "더하기", calc.MINUS to "빼기", calc.TIMES to "곱하기", calc.DIVIDE to "나누기")
             keys.forEach { (op, said) ->
-                androidx.compose.material3.OutlinedButton(
+                com.bamnat.app.ui.components.OutlinedButton(
                     onClick = { if (shown.text.isNotEmpty()) put(shown.text + op) },
                     enabled = shown.text.isNotEmpty(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
@@ -189,7 +189,7 @@ fun CalcAmountField(
                         .semantics { contentDescription = said },
                 ) { Text(op.toString(), style = MaterialTheme.typography.titleLarge) }
             }
-            androidx.compose.material3.OutlinedButton(
+            com.bamnat.app.ui.components.OutlinedButton(
                 onClick = { settle(); calcOpen = false },
                 enabled = sum,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp),
