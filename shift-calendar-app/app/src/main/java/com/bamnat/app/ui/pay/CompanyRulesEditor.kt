@@ -42,7 +42,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -744,7 +744,8 @@ fun CompanyRulesEditor(
                     }
                 }
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-                    OutlinedButton(onClick = onClose) { Text("취소") }
+                    // 2.0.0 [RVJ-63] 검토 U05b-05: '취소' asks as ← and 뒤로 do when a rule was changed (it shut at once before).
+                    OutlinedButton(onClick = { if (draft != saved) asking = true else onClose() }) { Text("취소") }
                     com.bamnat.app.ui.components.SaveButton(onClick = { vm.update { draft }; onClose() }, enabled = draft != saved) { Text("저장") }
                 }
             }

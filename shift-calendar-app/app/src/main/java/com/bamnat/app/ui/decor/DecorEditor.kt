@@ -42,7 +42,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -259,7 +259,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
             if (stageOpen) Text("꾸밈 층: 도형·아이콘·이모지·글상자를 마음대로 놓아요. 날짜와 근무는 가리지 않아요", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
             else Text("아이콘·사진을 골라 넣어요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            androidx.compose.material3.FilledTonalButton(onClick = { pane = Pane.ADD; stageOpen = false; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
+            com.bamnat.app.ui.components.FilledTonalButton(onClick = { pane = Pane.ADD; stageOpen = false; addJump++ }, modifier = Modifier.heightIn(min = 44.dp)) { Text("＋ 넣기") }
         }
         com.bamnat.app.ui.components.FoldRow("decor.1") {
             places.forEach { a ->
@@ -271,7 +271,7 @@ fun DecorTool(decor: Decor, places: List<String>, onChange: (String?, Decor) -> 
         // 8차 통합 e690bef6 PC (접기가 판 밑이라 두 번 내려야 보이고, 접으면 펼치기 줄이 화면 밖으로): one 접기·펼치기 line above the 판, so it
         // stays under the finger whichever way it goes; nothing above it changes height.
         val shown = items.count { it.at == place }
-        androidx.compose.material3.OutlinedButton(onClick = { stageOpen = !stageOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
+        com.bamnat.app.ui.components.OutlinedButton(onClick = { stageOpen = !stageOpen }, modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp)) {
             Text(if (stageOpen) "꾸밈 판 접기 ▲" else "꾸밈 판 펼치기 ▼" + if (shown > 0) " (${shown}개)" else "")
         }
         if (stageOpen) Stage(items, place, picked, advanced, magnet, loupe,

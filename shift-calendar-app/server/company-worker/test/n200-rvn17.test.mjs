@@ -36,6 +36,11 @@ test("[RVN-17] COMP-12 a calendar held by a company picked by mistake is freed o
   // Once a year: the next wait offers no undo, and asking anyway says when it opens again.
   const again = await join(ids[2].company.id);
   assert.deepEqual([again.data.error, again.data.undo], ["member_wait", undefined]);
+  // PC-155 …and says why: the day the undo opens again (a look before choosing says the same).
+  assert.equal(Date.parse(again.data.undoAgain), at + 365 * DAY);
+  const lookAgain = await call("POST", "/api/members", { device: device(9), company: ids[2].company.id, cal: "app", dry: true }, from(9));
+  assert.deepEqual([lookAgain.data.undo, Date.parse(lookAgain.data.undoAgain)], [undefined, at + 365 * DAY]);
+  assert.equal(wait.data.undoAgain, undefined, "while the undo is open, no day is said");
   const used = await undo();
   assert.deepEqual([used.status, used.data.error], [409, "undo_used"]);
   assert.equal(Date.parse(used.data.again), at + 365 * DAY);

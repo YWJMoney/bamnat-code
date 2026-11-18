@@ -66,7 +66,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Surface
@@ -144,6 +144,8 @@ import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.app.ui.calendar.DayGroupKey as G
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** [DAY-02] Which of the day's groups are open: the user's own choice per group, kept from day to day. */
 @Stable

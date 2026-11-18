@@ -22,6 +22,7 @@ import androidx.compose.ui.unit.Dp
 import com.bamnat.app.ui.parts.LocalBlueprint
 import com.bamnat.app.ui.parts.shape
 import com.bamnat.app.ui.theme.fillWith
+import com.bamnat.app.ui.theme.pill
 import com.bamnat.core.recipe.Fill
 
 /**
@@ -35,8 +36,8 @@ fun Button(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    // 갈래 A가 부탁: 단추 부품의 모서리도 앱의 단추가 따라요.
-    shape: Shape = LocalBlueprint.current.let { bp -> if (bp.isEmpty) ButtonDefaults.shape else bp.own("app.button").shape(ButtonDefaults.shape) },
+    // 갈래 A가 부탁: 단추 부품의 모서리도 앱의 단추가 따라요. 2.0.0 [RVP-05] PC-128: 모서리 '각지게'도 ([pill]).
+    shape: Shape = LocalBlueprint.current.let { bp -> if (bp.isEmpty) MaterialTheme.pill else bp.own("app.button").shape(MaterialTheme.pill) },
     colors: ButtonColors? = null,
     elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
     border: BorderStroke? = null,

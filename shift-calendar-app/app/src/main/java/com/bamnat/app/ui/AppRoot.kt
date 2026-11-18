@@ -421,7 +421,7 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                     val waitingSchedule = remember(waitingRaw) { waitingRaw?.let { runCatching { com.bamnat.app.share.SharedSchedule.parse(it) }.getOrNull() } }
                     val waitingTitle = waitingSchedule?.title?.takeIf { it.isNotBlank() }?.take(40)
                     // 2.0.0 [RVG-35] 검토 HQ-64: the link in its own word, as the web page that opened it said (‘민지’ 영업일).
-                    val waitingWord = waitingSchedule?.let { com.bamnat.core.work.linkWord(it.shows, it.payKind) } ?: "근무표"
+                    val waitingWord = waitingSchedule?.word ?: "근무표"
                     // 1.38 PC 12.1 (직원·팀원이 링크로 시작해도 회사·근무·시간·근무표를 다 다시 물음): the setup filled from the link.
                     val linkDraft = remember(waitingSchedule) { waitingSchedule?.let { com.bamnat.app.ui.setup.LinkStart.draft(it, Today.date()) } }
                     var theirsLater by rememberSaveable { mutableStateOf(false) }
@@ -697,6 +697,21 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 nav.navigate(Routes.villagePosts(mine = true)) { launchSingleTop = true }; NoticeLinks.consume(target)
             }
             NoticeLinks.Target.COMPANY_FIND -> { nav.navigate(Routes.companyFind()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            // 2.0.0 [RVN-19] HQ-51 알림함 '내가 알린 규칙에 반응이 왔어요': that company's screen, on that rule set's card.
+            NoticeLinks.Target.COMPANY_SETUP -> {
+                // "<company>/<setup>" opens on that rule set; [RVN-20] "<company>" alone (a 광장 소식 row: 채택·새 판) on the company.
+                val p = NoticeLinks.payload.value?.split('/')?.takeIf {
+                    it.size in 1..2 && Regex("[A-Za-z0-9]{12}").matches(it[0]) && it.getOrNull(1)?.isNotBlank() != false
+                }
+                if (p != null) {
+                    com.bamnat.app.ui.company.TalkSheets.closeAll()
+                    container.pendingCompanySetup = p.getOrNull(1)?.let { p[0] to it }
+                    nav.navigate(Routes.company(p[0], setup = false, weekdays = false)) { launchSingleTop = true }
+                }
+                NoticeLinks.consume(target)
+            }
+            NoticeLinks.Target.RATES -> { nav.navigate(Routes.plazaRates()) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.REQUESTS -> { nav.navigate(Routes.recipeRequests()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.COMPANY_REPORT -> { nav.navigate(Routes.companyReport()) { launchSingleTop = true }; NoticeLinks.consume(target) }
             // [CALI-04] 1.30 BB: a company notice's 급여 is the pay of the calendar on screen (내 달력 when it is the only one).
             NoticeLinks.Target.PAY -> { nav.navigate(Routes.pay(companyCalendarOf(container, null))) { launchSingleTop = true }; NoticeLinks.consume(target) }
@@ -2106,7 +2121,7 @@ private fun AppNavHost(
                         val pay = company.pay.profile.value != null
                         // 2.0.0 [RVN-17] 검토 I10ab-02 The order alone, on a calendar held by another company: said as what it was.
                         val done = applied.heldBy?.let { h ->
-                            "‘$name’ 근무 순서를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
+                            "‘$name’ 근무주기를 넣었어요" + (h.takeIf { it.isNotBlank() }?.let { " · 회사는 ‘$it’ 그대로예요" } ?: "")
                         } ?: ("‘$name’ 설정을 넣었어요" + (applied.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                         // 2.0.0 [RVN-08] COMP-11 Put over the calendar's own order: 되돌리기 on the app's snackbar, whichever screen is next.
                         applied.undo?.let { com.bamnat.app.ui.PutOnNotice.say(done, it) }

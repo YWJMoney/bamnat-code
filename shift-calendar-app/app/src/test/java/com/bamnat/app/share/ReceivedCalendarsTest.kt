@@ -89,6 +89,40 @@ class ReceivedCalendarsTest {
         assertEquals("‘민지’ 근무표가 바뀌었어요 · 내 달력에 넣을까요?", RosterFollower.words(days, ask).first)
     }
 
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (D RVD-32 #514): from 처리방침 3.14 the share server keeps and sends back the word the sender's app
+     * calls the link (`word`). A shop's days-only link is then 영업일 and an investor's 달력, with their particles. A link from before
+     * (no `word`, an old server) or with a value outside the four reads exactly as it did, and what the link carries still comes first.
+     */
+    @Test fun theSendersWordNamesALinkThatCarriesNoMoney() {
+        fun linked(extra: String, title: String = "민지") = ReceivedShare(
+            JSONObject("""{"v":1,"title":"$title","types":[{"id":1,"name":"영업","short":"영","color":"#1E88E5","time":"10:00-22:00","off":false}],
+                "days":[{"date":"2026-11-01","type":1}]$extra}"""),
+            now.plus(Duration.ofDays(30)), now,
+        )
+        val s = store()
+        val ask = FollowNote(FollowNote.ASK, now, listOf("11/3 영업"))
+        val shop = s.put("SSSSSSSSSSSSSSSS", linked(""","word":"영업일""""))
+        assertEquals("영업일", shop.schedule!!.saidWord)
+        assertEquals("민지의 영업일", shop.fullName)
+        assertEquals("‘민지’ 영업일이 바뀌었어요 · 내 달력에 넣을까요?", RosterFollower.words(shop, ask).first)
+        val invest = s.put("IIIIIIIIIIIIIIII", linked(""","word":"달력"""", title = " "))
+        assertEquals("받은 달력", invest.fullName)
+        assertEquals("받은 달력이 바뀌어 내 달력에 넣었어요", RosterFollower.words(invest, FollowNote(FollowNote.DONE, now, listOf("11/3 매수"))).first)
+        // What it carries first: 일감 says 일정 whatever the word.
+        assertEquals("일정", s.put("FFFFFFFFFFFFFFFF", linked(""","shows":["jobs"],"word":"근무표"""")).word)
+        // The link as an older app or server leaves it, and a word outside the four: named as before, nothing kept.
+        for ((id, extra) in listOf("AAAAAAAAAAAAAAAA" to "", "BBBBBBBBBBBBBBBB" to ""","word":"월급"""", "CCCCCCCCCCCCCCCC" to ""","word":7""",
+                "DDDDDDDDDDDDDDDD" to ""","word":null""")) {
+            val old = s.put(id, linked(extra))
+            assertNull(extra, old.schedule!!.saidWord)
+            assertEquals(extra, "‘민지’ 근무표", old.roster)
+            assertEquals(extra, "‘민지’ 근무표가 바뀌었어요 · 내 달력에 넣을까요?", RosterFollower.words(old, ask).first)
+        }
+        // It stays with the calendar after the app starts again.
+        assertEquals("영업일", store().get("SSSSSSSSSSSSSSSS")!!.word)
+    }
+
     @Test fun keepsAndReloads() {
         val s = store()
         val a = s.put("AAAAAAAAAAAAAAAA", share("민지"))
