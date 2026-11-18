@@ -37,10 +37,21 @@ object TradeAlertParser {
     /** Securities apps (MTS), so a notification from them is looked at for a trade. */
     val STOCK_APPS = setOf(
         "com.kiwoom.heromts", "com.kiwoom.smartopen", "com.miraeasset.trade", "com.samsungpop.android.mpop", "com.wooriwm.txsmart",
-        "com.nh.mobilenh", "com.truefriend.neosmarta", "com.truefriend.ministock", "viva.republica.toss", "com.kbsec.mts.iplustar",
-        "com.shinhaninvest.nsmts", "com.hanabank.ebk.channel.android.hananbank", "com.hanaw.hanaw", "com.daishin.cybos", "com.kakaopay.securities",
+        "com.nh.mobilenh", "com.truefriend.neosmarta", "com.truefriend.ministock", "com.kbsec.mts.iplustar",
+        "com.shinhaninvest.nsmts", "com.hanaw.hanaw", "com.daishin.cybos", "com.kakaopay.securities",
         "com.ebestsec.mts", "com.meritzsec.mts",
     )
+
+    /**
+     * 2.0.0 [RVK-50] (검토 MONEY-74): apps that trade shares but also pay and shop (토스, a bank's app). Their '2개 구매 완료'
+     * is a purchase, so a text from them is a trade only when it says 체결 or counts 주.
+     */
+    val MIXED_APPS = setOf("viva.republica.toss", "com.hanabank.ebk.channel.android.hananbank")
+
+    private val SHARES_OR_FILL = Regex("체결|\\d\\s*주(?![가-힣])|\\d\\s*주(?:를|을|씩)")
+
+    /** True when a text from a [MIXED_APPS] app reads as a trade at all (체결, or a count of 주). */
+    fun tradeWords(text: String): Boolean = SHARES_OR_FILL.containsMatchIn(text)
 
     // [INVA-04] 1.29: '구매했어요·판매했어요'(토스), '샀어요·팔았어요'(카카오페이) are fills too.
     private val FILLED = Regex("체결|매매\\s*완료|거래\\s*완료|주문\\s*완료|구매\\s*완료|판매\\s*완료|구매했|판매했|샀어요|샀습니다|팔았어요|팔았습니다|filled", RegexOption.IGNORE_CASE)
@@ -85,6 +96,7 @@ object TradeAlertParser {
         val sell = SELL.containsMatchIn(t)
         if (buy == sell) return null
         val coinApp = pkg in COIN_APPS
+        if (pkg in MIXED_APPS && !tradeWords(t)) return null
         var unitWord: String? = null
         val qty = QTY.firstNotNullOfOrNull { re ->
             re.find(t)?.let { m ->
@@ -113,7 +125,9 @@ object TradeAlertParser {
                 ?.takeIf { coinApp || it in KNOWN_COINS }
         val usd = (priceUnit ?: amountUnit.takeIf { price == 0.0 })?.let { it.equals("USD", true) || it == "달러" || it == "$" } == true
         val market = when {
-            coinApp || coinCode != null || unitWord == "개" -> Market.CRYPTO
+            coinApp || coinCode != null -> Market.CRYPTO
+            // [RVK-50] 'N개' with no coin named and from no exchange is a purchase ('2개 구매 완료'), not a coin.
+            unitWord == "개" -> return null
             usd -> Market.US_STOCK
             else -> Market.KR_STOCK
         }

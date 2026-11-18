@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -413,7 +414,8 @@ private fun BiggestCard(r: MonthReport, onOpen: (MoneyEntry) -> Unit) {
                     .semantics(mergeDescendants = true) { contentDescription = "${i + 1}위 ${e.title} ${Fmt.won(e.amount)}, ${Fmt.dayTitle(e.date)}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.width(22.dp))
+                Text("${i + 1}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, softWrap = false,
+                    modifier = Modifier.widthIn(min = 22.dp))
                 CategoryAvatar(e.category, size = 32.dp)
                 Spacer(Modifier.width(10.dp))
                 Column(Modifier.weight(1f)) {

@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -62,7 +62,7 @@ import com.bamnat.app.ui.theme.bamnat
 @Composable
 internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
-    val realized = state.result.realizations.firstOrNull { it.tradeId == t.id }
+    val realized = state.realizedByTrade[t.id]
     val unit = t.market.unit
     Row(
         Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
@@ -75,7 +75,8 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
                 Side.SELL -> com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
-            modifier = Modifier.width(36.dp))
+            // 2.0.0 [RVK-54] (조건 12): at 200% '매수' kept to one line and grows, not '매/수' down the side.
+            maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = 36.dp).padding(end = 4.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // [INV-31] Coin or share at a glance.
@@ -85,10 +86,10 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
             Text(
                 listOfNotNull(
                     when (t.side) {
-                        Side.BUY, Side.SELL -> "${InvestFmt.quantity(t.quantity)}$unit × ${InvestFmt.price(t.price, t.market)}"
+                        Side.BUY, Side.SELL -> "${InvestFmt.quantity(t.quantity, hide)}$unit × ${InvestFmt.price(t.price, t.market, hide)}"
                         Side.SPLIT -> ratioParts(t.quantity).let { (a, b) -> "${a}$unit → ${b}$unit" }
-                        Side.IN -> "${InvestFmt.quantity(t.quantity)}$unit " + if (t.price > 0) "× ${InvestFmt.price(t.price, t.market)}" else "무상"
-                        Side.OUT -> "${InvestFmt.quantity(t.quantity)}$unit 옮김"
+                        Side.IN -> "${InvestFmt.quantity(t.quantity, hide)}$unit " + if (t.price > 0) "× ${InvestFmt.price(t.price, t.market, hide)}" else "무상"
+                        Side.OUT -> "${InvestFmt.quantity(t.quantity, hide)}$unit 옮김"
                     },
                     t.minute?.let { minuteText(it) },
                     // [INV-31] A trade from a notification says which app it came from.
@@ -128,9 +129,9 @@ internal fun MarketBadge(text: String, market: Market) {
 internal fun CashLine(c: CashFlow, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
     Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(c.kind.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.width(36.dp),
+        Text(c.kind.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 36.dp).padding(end = 4.dp),
             color = if (c.kind == CashKind.WITHDRAW || c.kind == CashKind.FEE) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
-            maxLines = 1)
+            maxLines = 1, softWrap = false)
         Column(Modifier.weight(1f)) {
             Text(listOf(c.symbol, c.memo).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { state.full.account(c.accountId)?.name ?: c.kind.label },
                 style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -184,7 +185,7 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(h.title, style = MaterialTheme.typography.titleSmall)
-                Text("${InvestFmt.quantity(h.quantity)}$unit · 평균 ${InvestFmt.average(h.averagePrice, h.market)} · 비중 ${"%.0f".format(java.util.Locale.ROOT, weight * 100)}%",
+                Text("${InvestFmt.quantity(h.quantity, hide)}$unit · 평균 ${InvestFmt.average(h.averagePrice, h.market, hide)} · 비중 ${"%.0f".format(java.util.Locale.ROOT, weight * 100)}%",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 // 2.0.0 [RVK-25] (검토 MONEY-69) A price from an earlier day says so on the folded card, in the caution colour after a week.
                 h.quote?.date?.takeIf { it.isBefore(state.today) }?.let { d ->
@@ -203,7 +204,7 @@ private fun HoldingCard(h: Holding, state: InvestState, weight: Double, open: (I
         if (expanded) {
             Spacer(Modifier.height(8.dp))
             val lines = listOfNotNull(
-                h.quote?.let { "현재가 ${InvestFmt.priceWithWon(it.price, h.market, fx)} (${Fmt.shortDate(it.date)} 적음)" },
+                h.quote?.let { "현재가 ${InvestFmt.priceWithWon(it.price, h.market, fx, hide)} (${Fmt.shortDate(it.date)} 적음)" },
                 "매입금액 ${InvestFmt.won(h.costWon.roundToLong(), hide)}",
                 h.realizedWon.takeIf { kotlin.math.abs(it) > 0.5 }?.let { "실현손익 ${InvestFmt.signed(it.roundToLong(), hide)}" },
                 h.dividendsWon.takeIf { it > 0 }?.let { "받은 배당 ${InvestFmt.won(it, hide)}" },
@@ -244,13 +245,22 @@ internal fun RecordsTab(state: InvestState, open: (InvestSheet) -> Unit, month: 
     days.forEach { d -> DayRecords(d, state, open) }
 }
 
+/** 2.0.0 [RVK-54] Trade lines a day shows before '나머지 N건 보기'. */
+private const val DAY_LINES = 30
+
 @Composable
 internal fun DayRecords(d: LocalDate, state: InvestState, open: (InvestSheet) -> Unit) {
     val pnl = state.daily[d]
     SectionCard(title = Fmt.dayTitle(d), trailing = pnl?.let { p ->
         { Text(InvestFmt.signed(p, state.hide), color = pnlColor(p), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
     }) {
-        state.tradesOn(d).forEach { t -> TradeLine(t, state) { open(InvestSheet.TradeEdit(editing = t)) } }
+        // 2.0.0 [RVK-54] (검토 MONEY-76): a day of hundreds of 단타 draws thirty lines and '나머지 N건 보기', not all at once.
+        val trades = state.tradesOn(d)
+        var all by rememberSaveable(d) { mutableStateOf(false) }
+        (if (all) trades else trades.take(DAY_LINES)).forEach { t -> TradeLine(t, state) { open(InvestSheet.TradeEdit(editing = t)) } }
+        if (!all && trades.size > DAY_LINES) TextButton(onClick = { all = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text("나머지 ${trades.size - DAY_LINES}건 보기")
+        }
         state.cashOn(d).forEach { c -> CashLine(c, state) { open(InvestSheet.CashEdit(editing = c)) } }
         state.full.journalOn(d)?.takeIf { !it.isEmpty }?.let { j ->
             HorizontalDivider()
@@ -287,7 +297,9 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
     }
     if (entries.isEmpty()) Text("매매가 없는 날에도 시장 메모와 복기를 적어 두면, 나중에 같은 실수를 덜 해요.",
         style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    entries.take(60).forEach { j ->
+    // 2.0.0 [RVK-54] (검토 MONEY-76): thirty days at a time, and '지난 일지 N일 더 보기' (it stopped at sixty before, the rest unreachable).
+    var shown by rememberSaveable { mutableStateOf(DAY_LINES) }
+    entries.take(shown).forEach { j ->
         val pnl = state.daily[j.date]
         SectionCard(title = Fmt.dayTitle(j.date), trailing = {
             Text(listOfNotNull(j.grade?.label, pnl?.let { InvestFmt.signedShort(it, state.hide) }).joinToString(" · "),
@@ -300,6 +312,9 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
+    }
+    if (entries.size > shown) TextButton(onClick = { shown += DAY_LINES }, modifier = Modifier.heightIn(min = 48.dp)) {
+        Text("지난 일지 ${minOf(DAY_LINES, entries.size - shown)}일 더 보기")
     }
 }
 
@@ -367,7 +382,8 @@ internal fun AlarmsTab(vm: InvestViewModel, state: InvestState, open: (InvestShe
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     events.forEach { e ->
         Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.EventEdit(editing = e)) }.padding(vertical = 8.dp)) {
-            Text(Fmt.shortDate(e.date), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), modifier = Modifier.width(48.dp))
+            Text(Fmt.shortDate(e.date), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), maxLines = 1, softWrap = false,
+                modifier = Modifier.widthIn(min = 48.dp).padding(end = 4.dp))
             Column(Modifier.weight(1f)) {
                 Text("${e.kind.label} · ${e.label}", style = MaterialTheme.typography.bodyLarge)
                 if (e.memo.isNotBlank()) Text(e.memo, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

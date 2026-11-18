@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -217,7 +217,8 @@ private fun Behaviour(s: PeriodStats, hide: Boolean) {
 @Composable
 private fun TagRow(t: TagPnl, hide: Boolean) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(t.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(96.dp))
+        Text(t.label, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.widthIn(min = 96.dp, max = 200.dp).padding(end = 4.dp))
         Text("${t.sells}번 · 승률 ${t.winRate?.let { "%.0f%%".format(java.util.Locale.ROOT, it * 100) } ?: "–"}", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(InvestFmt.signed(t.pnl, hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), color = pnlColor(t.pnl))

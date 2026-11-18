@@ -74,6 +74,9 @@ data class InvestState(
     val hide: Boolean get() = full.settings.hideAmounts
 
     fun tradesOn(d: LocalDate): List<Trade> = trades[d].orEmpty()
+
+    /** 2.0.0 [RVK-54] (검토 MONEY-76): a sale's realization by its trade, looked up once instead of a walk for every line. */
+    val realizedByTrade: Map<Long, com.bamnat.core.invest.Realization> by lazy { result.realizations.associateBy { it.tradeId } }
     fun cashOn(d: LocalDate): List<CashFlow> = cash[d].orEmpty()
 
     /** [INV-15] Every account together: the calendar's cells, month bar and day sheet do not follow the 투자 tab's filter. */
@@ -112,7 +115,12 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     private val _period = MutableStateFlow(ReturnPeriod.ALL)
     val period: StateFlow<ReturnPeriod> = _period.asStateFlow()
 
-    val state: StateFlow<InvestState> = combine(repo.book, _account, today) { b, acc, t -> InvestState.of(b, acc, t) }
+    // 2.0.0 [RVK-53] (검토 MONEY-71): 금액 가리기 is one switch; the app's own hides the investor calendar too.
+    private val appHide = container.settingsRepository.settings.map { it.hideAmounts }.distinctUntilChanged()
+
+    val state: StateFlow<InvestState> = combine(repo.book, appHide, _account, today) { b, hideAll, acc, t ->
+        InvestState.of(if (hideAll && !b.settings.hideAmounts) b.copy(settings = b.settings.copy(hideAmounts = true)) else b, acc, t)
+    }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, InvestState.LOADING)
 
@@ -493,6 +501,17 @@ class InvestViewModel(private val container: AppContainer, val calendarId: Strin
     /** 2.0.0 [RVK-31] (검토 MONEY-66) A 국내 ETF's kind: [taxed] for 해외지수·채권·원자재 등, false for 국내주식형. */
     fun setEtfKind(key: String, taxed: Boolean) = viewModelScope.launch {
         if (key.isNotEmpty()) repo.saveSettings { it.copy(etfTaxed = it.etfTaxed + (key to taxed)) }
+    }
+
+    /**
+     * 2.0.0 [RVK-53] (검토 MONEY-71): the 투자 눈 단추 turns the one 금액 가리기 (the app's) on or off, and clears the investor
+     * calendar's own old switch, so the two never disagree again ('가리기가 안 풀려요').
+     */
+    fun flipHide() = viewModelScope.launch {
+        val hide = !state.value.hide
+        if (repo.now().settings.hideAmounts) repo.saveSettings { it.copy(hideAmounts = false) }
+        container.settingsRepository.update { it.copy(hideAmounts = hide) }
+        changed()
     }
 
     fun saveSettings(change: (InvestSettings) -> InvestSettings) = viewModelScope.launch {

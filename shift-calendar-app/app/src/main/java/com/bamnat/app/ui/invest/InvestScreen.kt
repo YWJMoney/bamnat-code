@@ -250,7 +250,7 @@ private fun InvestHeader(vm: InvestViewModel, state: InvestState, open: (InvestS
     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Text("투자·수익", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f).semantics { heading() })
         // [INV-17] Amounts behind dots, for looking at it on the bus.
-        IconButton(onClick = { vm.saveSettings { it.copy(hideAmounts = !it.hideAmounts) } }) {
+        IconButton(onClick = { vm.flipHide() }) {
             Icon(if (state.hide) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, if (state.hide) "금액 보이기" else "금액 가리기")
         }
         Box {
@@ -458,8 +458,10 @@ private fun TodayCard(state: InvestState, open: (InvestSheet) -> Unit) {
         Text(if (trades.isEmpty() && pnl == 0L) "오늘은 아직 매매가 없어요" else "오늘 손익 ${InvestFmt.signed(pnl, state.hide)} · 매매 ${trades.size}건",
             style = MaterialTheme.typography.bodyLarge, color = pnlColor(pnl))
         trades.take(4).forEach { t -> TradeLine(t, state, onClick = { open(InvestSheet.TradeEdit(editing = t)) }) }
-        if (InvestAlarms.marketClosed(today)) Text("오늘은 국내 증시가 쉬는 날이에요", style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVK-52] (검토 T06b-10): 국내·미국 by what this investor trades; nothing for coins only.
+        com.bamnat.core.invest.MarketDays.closedLine(today, state.full.venues)?.let { line ->
+            Text(line, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
 
