@@ -4994,12 +4994,25 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     "save-friend": async () => {
-      const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
-      if (r) {
-        S.data.inviteSettings = r;
-        S.inviteDraft = null;
+      const save = async () => {
+        const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
+        if (r) {
+          S.data.inviteSettings = r;
+          S.inviteDraft = null;
+        }
+        render({ keepScroll: true });
+      };
+      // 2.0.0 [RVQ-49] 검토 U22b-11·SVC-73: 저장하는 순간 조건을 채운 분께 드릴 보상이 생겨요. 생기는 것이 있으면 몇 분께 몇 달인지 먼저 한 번 물어요.
+      let pv = null;
+      try {
+        pv = (await api("/settings/invite", "POST", { ...S.inviteDraft, dry: true }))?.preview ?? null;
+      } catch {
+        pv = null;
       }
-      render({ keepScroll: true });
+      if (!pv?.rewards) return save();
+      danger({ title: "이 규칙으로 저장할까요?", text: "저장하면 바로 아래 보상이 '드릴 보상'에 올라가요. 지급은 보상 목록에서 확인한 뒤예요.",
+        rows: [["드릴 보상", `${pv.rewards}건 · ${pv.inviters}${pv.more ? "분 넘게" : "분"}`], ["모두", `${pv.months}개월`],
+          ["상한에 걸려 달 없이 세는 것", pv.capped ? `${pv.capped}건` : ""]], label: "저장", tone: "primary", run: save });
     },
     "sla-undo": () => {
       S.slaDraft = null;
