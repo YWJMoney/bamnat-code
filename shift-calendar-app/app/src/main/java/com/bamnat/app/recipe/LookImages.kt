@@ -218,8 +218,13 @@ object LookImages {
      */
     suspend fun held(context: Context): Set<String> = withContext(Dispatchers.IO) {
         val texts = ArrayList<String>()
-        for (name in listOf("theme_wardrobe", "look_undo")) runCatching {
-            context.getSharedPreferences(name, Context.MODE_PRIVATE).all.values.forEach { v ->
+        // Each file by its own name, so ZFullBackupTest's reading of every settings file still sees which ones are opened here.
+        val stores = listOf(
+            { context.getSharedPreferences("theme_wardrobe", Context.MODE_PRIVATE) },
+            { context.getSharedPreferences("look_undo", Context.MODE_PRIVATE) },
+        )
+        for (open in stores) runCatching {
+            open().all.values.forEach { v ->
                 when (v) { is String -> texts += v; is Set<*> -> v.forEach { texts += it.toString() } }
             }
         }
