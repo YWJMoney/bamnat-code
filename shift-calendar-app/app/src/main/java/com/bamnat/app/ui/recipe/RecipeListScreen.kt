@@ -1,6 +1,9 @@
 package com.bamnat.app.ui.recipe
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -42,7 +45,6 @@ import androidx.compose.material.icons.filled.Close
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.FilledTonalButton
@@ -285,6 +287,14 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
         }
     }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // 2.0.0 [RVQ-36] 검토 U22-04: the next page (30) starts when the end of the list is two rows away.
+    val nearEnd by remember { derivedStateOf {
+        val info = listState.layoutInfo
+        info.totalItemsCount > 0 && (info.visibleItemsInfo.lastOrNull()?.index ?: 0) >= info.totalItemsCount - 3
+    } }
+    androidx.compose.runtime.LaunchedEffect(nearEnd, state.next, state.loading) {
+        if (nearEnd && state.next != null && !state.loading && state.error == null && state.items.isNotEmpty()) vm.load(more = true)
+    }
     // 사용자 2026-11-03 (마을 › 장터 스크롤): in 마을 the tab row already says 장터 and whose; the list starts right under it.
     val hubHeader = if (onBack == null) com.bamnat.app.ui.hub.LocalHubHeader.current else null
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
@@ -438,8 +448,12 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
             // screen; above them it put the first work at about 36% of a folded phone. It scrolls away with the list as before.
             hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
             items(rows.drop(1), key = { row -> row.first().code + "|" + cols }) { row -> cardRow(row) }
-            if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
-            else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
+            // 2.0.0 [RVQ-36] 검토 U22-04 (조건 7): while a page comes, grey cards the shape of the cards to come (two rows on an empty
+            // list, one under a list), not a lone spinner; the next 30 come by themselves near the end, 더 보기 stays for a screen reader.
+            if (state.loading) item(key = "skeleton") { MarketSkeleton(cols, small, rows = if (state.items.isEmpty()) 2 else 1) }
+            else if (state.next != null) item(key = "more") {
+                TextButton(onClick = { vm.load(more = true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("더 보기") }
+            }
         }
     }
     if (codeAsk) CodeDialog(onCode = { codeAsk = false; onOpen(it) }, onDismiss = { codeAsk = false })
@@ -708,6 +722,30 @@ internal fun marketCols(widthDp: Int, small: Boolean): Int {
 internal const val MARKET_CARD = 160
 internal const val MARKET_CARD_SMALL = 104
 internal const val MARKET_GAP = 8
+
+/** 2.0.0 [RVQ-36] 검토 U22-04: [rows] rows of [cols] grey cards the shape of a 장터 card (picture, then a title line), breathing unless 움직임 끄기. */
+@Composable
+internal fun MarketSkeleton(cols: Int, small: Boolean, rows: Int) {
+    val still = com.bamnat.app.ui.theme.LocalMotionOff.current
+    val glow = if (still) null else androidx.compose.animation.core.rememberInfiniteTransition(label = "market-skeleton").animateFloat(
+        0.55f, 1f, androidx.compose.animation.core.infiniteRepeatable(androidx.compose.animation.core.tween(900,
+            easing = androidx.compose.animation.core.LinearEasing), androidx.compose.animation.core.RepeatMode.Reverse), label = "glow")
+    val grey = MaterialTheme.colorScheme.surfaceContainerHighest
+    val gap = if (small) MARKET_GAP_SMALL.dp else MARKET_GAP.dp
+    Column(Modifier.fillMaxWidth().semantics { contentDescription = "작품을 불러오는 중" }.graphicsLayer { alpha = glow?.value ?: 1f },
+        verticalArrangement = Arrangement.spacedBy(gap)) {
+        repeat(rows) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap)) {
+                repeat(cols) {
+                    Column(Modifier.weight(1f).padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.fillMaxWidth().aspectRatio(0.62f).clip(MaterialTheme.shapes.medium).background(grey))
+                        Box(Modifier.fillMaxWidth(0.7f).height(14.dp).clip(MaterialTheme.shapes.extraSmall).background(grey))
+                    }
+                }
+            }
+        }
+    }
+}
 internal const val MARKET_GAP_SMALL = 6
 
 private const val VIEW_PREFS = "market_view"
@@ -987,6 +1025,11 @@ private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewMode
             action = "스튜디오에서 만들기" to onMake
             more += "다시 불러오기" to { vm.load() }
         }
+        // 2.0.0 [RVQ-37] 검토 U22b-06: '!!!' or '...' has nothing to find by (the server says ask: "words"); said as it is, not 'none'.
+        q.isNotEmpty() && !searchable(q) -> {
+            title = "찾는 말을 글자로 적어 주세요"
+            detail = "작품 이름이나 ‘교대 가계부’, ‘밤 근무 알람’처럼 적으면 찾아요"
+        }
         // 1.39.1 [P391-01]: a search looks in all three 구간 and says where it is ('테마에 1개'), with a way there, before saying none.
         q.isNotEmpty() -> {
             val here = if (state.kind == RecipeClient.SCOPE_THEME) "테마에" else "이 구간에"
@@ -1039,3 +1082,7 @@ private fun MarketEmpty(state: RecipeListViewModel.State, vm: RecipeListViewMode
         }
     }
 }
+
+/** 2.0.0 [RVQ-37] 검토 U22b-06: a search the server can look by: a letter, a digit or a 표지 emoji (as the server's searchWords). */
+internal fun searchable(q: String): Boolean = q.any { it.isLetterOrDigit() } ||
+    q.codePoints().anyMatch { it >= 0x1F000 || it in 0x2600..0x27BF }

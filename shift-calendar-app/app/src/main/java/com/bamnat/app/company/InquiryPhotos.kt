@@ -15,6 +15,12 @@ import java.io.ByteArrayOutputStream
  */
 object InquiryPhotos {
     const val MAX = 2
+
+    /** 2.0.0 [RVQ-50] 검토 U22b-01: all of one question's photos, with those sent later on it (the server's INQUIRY.photosTotal). */
+    const val TOTAL = 4
+
+    /** How many more photos [photos] already on a question leave room for in one more message. */
+    fun left(photos: Int): Int = (TOTAL - photos).coerceIn(0, MAX)
     const val LONG_SIDE = 1600
     const val MAX_BYTES = 700 * 1024
 

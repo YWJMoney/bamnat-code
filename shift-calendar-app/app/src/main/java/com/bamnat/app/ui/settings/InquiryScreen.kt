@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -92,6 +93,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -468,6 +470,8 @@ private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
 /** Where a question stands, in a few words and a tone. */
 private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     unread -> "새 답이 왔어요" to Tone.GOOD
+    // 2.0.0 [RVQ-50] 검토 U22b-01: written to again after the answer, so it is the developer's turn again.
+    reopened && waiting -> "다시 물었어요" to Tone.WAIT
     status == "answered" -> "답했어요" to Tone.GOOD
     status == "closed" -> "끝났어요" to Tone.QUIET
     else -> "답을 기다려요" to Tone.WAIT
@@ -856,6 +860,25 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
     var error by remember { mutableStateOf<String?>(null) }
     val problem = vm.problem(text)
     LaunchedEffect(i.id, text) { vm.saveReply(i.id, text) }
+    // 2.0.0 [RVQ-50] 검토 U22b-01·T22b-05: more to say can bring photos too (a question takes four in all), made small and stripped
+    // on the phone like a new question's; the developer's switch can pause them.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var photos by remember(i.id) { mutableStateOf<List<ByteArray>>(emptyList()) }
+    val room = com.bamnat.app.company.InquiryPhotos.left(i.photos)
+    val photosOpen = room > 0 && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
+    val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(com.bamnat.app.company.InquiryPhotos.MAX),
+    ) { uris ->
+        scope.launch {
+            val made = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.mapNotNull { com.bamnat.app.company.InquiryPhotos.prepare(context, it) }
+            }
+            photos = (photos + made).take(room)
+            if (made.size < uris.size) error = "열 수 없는 사진은 빼고 붙였어요"
+        }
+    }
+    val fixFlow = i.askFixed || i.fixed != 0
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -873,6 +896,14 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProgressSteps(i)
+            // 2.0.0 [RVQ-50] 검토 U22-08: which version fixed it, while this phone is still on an older one (after updating,
+            // 해결됐나요 takes its place).
+            if (i.fixedLine != null && !fixFlow) com.bamnat.app.ui.components.NudgeCard(
+                text = i.fixedLine,
+                tone = com.bamnat.app.ui.theme.Tone.Good,
+                action = "업데이트하기",
+                onAction = { com.bamnat.app.review.PlayPage.open(context) },
+            )
             // [INQ-05] I8: what came of it is in the update; its lines open from here.
             if (i.stage == "released") TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.WHATS_NEW) }) {
                 Text("새 기능 안내 보기")
@@ -884,7 +915,6 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             }
             // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
             // PC 1.39 G10 확인: 해결됐나요와 '답이 도움이 됐나요'가 나란히 있으면 헷갈려요. 고친 판 안내를 받은 문의는 해결됐나요만.
-            val fixFlow = i.askFixed || i.fixed != 0
             if (fixFlow) FixedAsk(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
@@ -901,7 +931,16 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
                 }
+                if (photos.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("사진 ${photos.size}장을 함께 보내요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { photos = emptyList() }) { Text("사진 빼기") }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (photosOpen && photos.size < room) IconButton(onClick = {
+                        pickPhotos.launch(androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) { Icon(Icons.Outlined.AddPhotoAlternate, "사진 붙이기, ${room - photos.size}장 더 붙일 수 있어요") }
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.take(InquiryClient.TEXT_MAX + 50) },
@@ -915,7 +954,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     IconButton(
                         onClick = {
                             error = null
-                            vm.more(i.id, text) { sent, why -> if (sent != null) { text = "" } else { error = why } }
+                            vm.more(i.id, text, photos) { sent, why -> if (sent != null) { text = ""; photos = emptyList() } else { error = why } }
                         },
                         enabled = text.isNotBlank() && problem == null && !busy,
                     ) { Icon(Icons.AutoMirrored.Outlined.Send, "보내기") }
@@ -934,22 +973,38 @@ private fun ProgressSteps(i: Inquiry) {
     val steps = inquirySteps(i)
     val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
-    Row(
+    // Q1 3c (조건 12): when a step's name would be cut ('확…', '만…' on a folded phone at 200%), the names under the bars
+    // give way to one line naming where the question stands, instead of a row of half words.
+    val conf = LocalConfiguration.current
+    var cramped by remember(steps, conf.screenWidthDp, conf.fontScale) { mutableStateOf(false) }
+    Column(
         Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "진행 상황: ${steps[at].second}" },
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        steps.forEachIndexed { n, (_, name) ->
-            val done = n <= at
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
-                Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
-                    fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            steps.forEachIndexed { n, (_, name) ->
+                val done = n <= at
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                    if (!cramped) {
+                        Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
+                            fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp),
+                            onTextLayout = { if (it.hasVisualOverflow) cramped = true })
+                    }
+                }
+                if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
             }
-            if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
+        }
+        if (cramped) {
+            Text(stepLine(steps, at), style = MaterialTheme.typography.labelMedium, color = scheme.primary,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
+
+/** The one line a narrow screen shows in place of the step names: '2.0.0 반영 · 6단계 중 6단계'. */
+internal fun stepLine(steps: List<Pair<String, String>>, at: Int): String =
+    "${steps[at].second} · ${steps.size}단계 중 ${at + 1}단계"
 
 /**
  * [INQ-02][INQ-05] I8: the steps of a question. A bug or an idea can become work, so it shows all six,

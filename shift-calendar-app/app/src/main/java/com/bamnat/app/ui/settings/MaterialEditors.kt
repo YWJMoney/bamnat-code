@@ -567,7 +567,8 @@ fun FontPickerDialog(value: String?, numbersOnly: Boolean = false, onDismiss: ()
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (f.received) {
                                     // [MAT-06] A font that came with a recipe: its sender said it is open; 신고 if it is not.
-                                    Text("작품과 함께 받은 글꼴", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                                    // 2.0.0 [RVQ-46] 검토 U22b-10: '만든 곳 · 써도 되는 범위' beside 신고.
+                                    Text(listOfNotNull("작품과 함께 받은 글꼴", f.credit).joinToString(" · "), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                                     TextButton(onClick = { reportOf = f }) { Text("신고") }
                                 } else if (f.sold) {
                                     // PC 확인 6차: told when it goes in, not only after 올리기.

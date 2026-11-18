@@ -1604,6 +1604,15 @@ async function okPress(request, env, id, app = false) {
 // fewer than LIMITS.tiredMin is shown without its number, so one tired person cannot be picked out.
 
 const tiredKey = (id) => `tired:${id}`;
+/** 2.0.0 [RVQ-21] The day's phone marks of box [id] (salted hashes), gone by themselves two days on: only their number stays. */
+const tiredMarksKey = (id, day) => `tiredm:${id}:${day}`;
+/** [RVQ-21] A box's counts without the days older than LIMITS.tiredDays (and no phone marks of an older server). */
+function tiredPruned(box) {
+  const keep = kstDay(new Date(Date.now() - LIMITS.tiredDays * 86400 * 1000).toISOString());
+  const recent = (o) => o && Object.fromEntries(Object.entries(o).filter(([d]) => d > keep));
+  const { marks: _m, ...rest } = box;
+  return { ...rest, days: recent(box.days) ?? {}, ...(box.people ? { people: recent(box.people) } : {}) };
+}
 
 async function tiredCreate(request, env) {
   if (await env.SHARES.get(CREATE_OFF)) return json({ error: "paused" }, 503);
@@ -1630,7 +1639,10 @@ async function tiredRead(request, env, id) {
   const record = await tiredOwned(request, env, id);
   if (record instanceof Response) return record;
   // Reading keeps the box alive while the leader uses it.
-  if (Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...record, expiresAt: expiry(LIMITS.tiredBoxDays) });
+  // [RVQ-21] Reading it keeps the box (120 days) and drops what is older than 30 days, even with no press since.
+  const pruned = tiredPruned(record);
+  const stale = JSON.stringify(pruned.days) !== JSON.stringify(record.days ?? {}) || JSON.stringify(pruned.people) !== JSON.stringify(record.people) || record.marks;
+  if (stale || Date.parse(record.expiresAt) - Date.now() < (LIMITS.tiredBoxDays - 7) * 86400 * 1000) await put(env, tiredKey(id), { ...pruned, expiresAt: expiry(LIMITS.tiredBoxDays) });
   const days = Array.from({ length: 7 }, (_, i) => kstDay(new Date(Date.now() - i * 86400 * 1000).toISOString())).map((d) => ({ d, n: tiredShown(record, d) }));
   return json({ min: LIMITS.tiredMin, days });
 }
@@ -1638,7 +1650,10 @@ async function tiredRead(request, env, id) {
 async function tiredDelete(request, env, id) {
   const record = await tiredOwned(request, env, id);
   if (record instanceof Response) return record;
-  await kvDel(env, tiredKey(id));
+  // [RVQ-21] The day's phone marks go with the box at once (today's and yesterday's are the only ones still there).
+  const today = kstDay(new Date().toISOString());
+  const yesterday = kstDay(new Date(Date.now() - 86400 * 1000).toISOString());
+  await Promise.all([kvDel(env, tiredKey(id)), kvDel(env, tiredMarksKey(id, today)), kvDel(env, tiredMarksKey(id, yesterday))]);
   return new Response(null, { status: 204 });
 }
 
@@ -1722,12 +1737,17 @@ async function tiredAdd(request, env, id) {
     count(env, "tired");
     return "ok";
   }
+  // 2.0.0 [RVQ-21] 갈래 O 3.14 문장표 확인(11-12): the day's marks live in a key of their own that goes by itself two days on
+  // ([tiredMarksKey]), not in the box until another day's press; the box keeps only the day's number.
   const mark = (await sha256(`${env.RATE_SALT || "bamnat"}:tp:${day}:${netOf(request.headers.get("cf-connecting-ip"))}:${request.headers.get("user-agent") || ""}`)).slice(0, 10);
-  const marks = box.marks?.day === day ? new Set(box.marks.list) : new Set();
+  const marksKey = tiredMarksKey(record.tired, day);
+  const marks = new Set((await env.SHARES.get(marksKey, "json")) ?? []);
   marks.add(mark);
+  await kvPut(env, marksKey, JSON.stringify([...marks].slice(-LIMITS.askMembers * 2)), { expirationTtl: 2 * 86400 });
   const people = Object.fromEntries(Object.entries(box.people ?? {}).filter(([d]) => d > keep));
   people[day] = marks.size;
-  await put(env, tiredKey(record.tired), { ...box, days, people, marks: { day, list: [...marks].slice(-LIMITS.askMembers * 2) } });
+  const { marks: _old, ...kept } = box;
+  await put(env, tiredKey(record.tired), { ...kept, days, people });
   count(env, "tired");
   return "ok";
 }

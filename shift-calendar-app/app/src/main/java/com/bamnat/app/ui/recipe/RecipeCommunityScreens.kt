@@ -1,5 +1,6 @@
 package com.bamnat.app.ui.recipe
 
+import com.bamnat.core.time.Today
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -116,7 +117,9 @@ class RequestsViewModel(private val c: AppContainer, val calendar: String = Pers
                     load()
                     _state.value = _state.value.copy(message = when (what) {
                         "take" -> if (on) "만들기로 했어요. 다 만들면 ‘완성’을 눌러 작품을 이어 주세요" else "만들기를 내려놨어요"
-                        "done" -> "완성했어요. 요청한 분이 바로 볼 수 있어요"
+                        // 2.0.0 [RVQ-44] U22b-08: 완성 waits for the one who asked.
+                        "done" -> "완성했어요. 요청한 분이 ‘맞아요’를 누르면 끝나요(7일 동안 답이 없으면 저절로)"
+                        "check" -> if (on) "고마워요. 완성으로 닫았어요" else "다시 열었어요. 다른 분이 맡을 수 있어요"
                         "delete" -> "지웠어요"
                         else -> null
                     })
@@ -142,7 +145,22 @@ object RequestDraft {
     @Volatile var text: String? = null
 }
 
-private fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done" -> "완성"; else -> "기다림" }
+internal fun stateWord(s: String) = when (s) { "making" -> "만드는 중"; "done" -> "완성"; else -> "기다림" }
+
+/**
+ * 2.0.0 [RVQ-44] 검토 U22-06·U22b-08: the state as the line says it: '만드는 중 D+5 · 12월 14일에 다시 열려요', '완성 확인 기다림',
+ * '완성 · 요청한 분이 확인했어요'. D+n is counted by this phone's calendar.
+ */
+internal fun requestState(q: com.bamnat.app.recipe.RecipeRequest, today: java.time.LocalDate = Today.date()): String = when {
+    q.state == "making" && q.makingSince != null -> {
+        val since = q.makingSince.atZone(Today.zone()).toLocalDate()
+        "만드는 중 D+${java.time.temporal.ChronoUnit.DAYS.between(since, today).coerceAtLeast(0)}" +
+            (q.reopenAt?.let { " · ${com.bamnat.app.ui.Fmt.monthDay(it.atZone(Today.zone()).toLocalDate())}에 다시 열려요" } ?: "")
+    }
+    q.checking -> "완성 확인 기다림"
+    q.state == "done" && q.confirmed -> "완성 · 요청한 분이 확인했어요"
+    else -> stateWord(q.state)
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -185,15 +203,32 @@ fun RequestsScreen(vm: RequestsViewModel, onBack: () -> Unit, onOpen: (String) -
                         Card(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(q.body, style = MaterialTheme.typography.bodyLarge)
-                                Text("${stateWord(q.state)}" + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) (if (q.state == "done") " · 내가 만든 작품" else " · 내가 만드는 중") else ""),
+                                Text(requestState(q) + (if (q.askers > 0) " · 스튜디오에서 ${q.askers}명이 부탁" else "") + " · 좋아요 ${q.likes}" + (if (q.mine) " · 내 요청" else "") + (if (q.taking) (if (q.state == "done") " · 내가 만든 작품" else " · 내가 만드는 중") else ""),
                                     style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 // 1.36 누락 점검 N14 (1차 사용성 제안): 14일 동안 아무도 못 만든 요청은 이유와 다음 일을 말해요.
                                 if (q.told && q.state == "waiting") Text("스튜디오로 아직 못 만드는 것일 수 있어요. 개발자에게 알렸어요. 만들 수 있게 되면 이 요청에 알려 드려요",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                // 2.0.0 [RVQ-44] 검토 U22b-08: the one who asked is asked once whether the work answers it.
+                                // 2.0.0 [RVQ-44] 검토 U22b-08: asked once, inside the request's own card (no card in a card, 조건 3):
+                                // the question, when it closes by itself, and 맞아요 · 아니에요 · 작품 보기 in one row.
+                                if (q.askCheck && q.code != null) Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("이 작품이 바라던 것이 맞나요?", style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
+                                    Text(listOfNotNull("아니에요면 다시 열려요",
+                                        q.checkBy?.let { "${com.bamnat.app.ui.Fmt.monthDay(it.atZone(Today.zone()).toLocalDate())}까지 답이 없으면 완성으로 닫혀요" })
+                                        .joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        // 조건 2: 이 화면의 채운 단추는 '요청 쓰기' 하나라 테두리·글자 단추예요.
+                                        OutlinedButton(onClick = { vm.act(q.id, "check", true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("맞아요") }
+                                        TextButton(onClick = { vm.act(q.id, "check", false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("아니에요") }
+                                        TextButton(onClick = { onOpen(q.code) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("작품 보기") }
+                                    }
+                                }
                                 androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     if (!q.mine && vm.canWrite) FilterChip(q.liked, onClick = { vm.act(q.id, "like", !q.liked) }, label = { Text("👍 나도 바라요") })
                                     when {
-                                        q.state == "done" && q.code != null -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 작품 보기") }
+                                        q.state == "done" && q.code != null && !q.askCheck -> TextButton(onClick = { onOpen(q.code) }) { Text("완성된 작품 보기") }
                                         q.taking && q.state == "making" -> {
                                             TextButton(onClick = onMake) { Text("스튜디오에서 만들기") }
                                             TextButton(onClick = { vm.loadMine(); finishing = q.id }) { Text("완성") }
