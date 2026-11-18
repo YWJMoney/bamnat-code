@@ -7,7 +7,7 @@ import java.io.File
 /**
  * 2.0.0 [RVJ-66] 총괄 HQ-103 (조건 6 '의미색을 아껴요': 빨강은 위험만, 주황은 주의만), 갈래 K의 가계부 주의색 정리(RVK-45)와 같은 일을
  * 급여·팀·사장님·통계 화면에. 빨강(`colorScheme.error`, 달력의 `warning`·`warningContainer`, `bamnat.danger`, `Tone.Danger`, StatTile의
- * `warning =`, 빨간 `WarningBanner`)은 아래 자리에만 남아요: 되돌릴 수 없는 지우기·나가기, 저장·다음을 막는 잘못된 값, 법·규칙을 어긴 근무, 기록이 안 되는 고장.
+ * `warning =`)은 아래 자리에만 남아요(`WarningBanner`는 2.0.0 RVP-13부터 기본이 주의이고, 빨간 띠는 `tone = Tone.Danger`로 세요): 되돌릴 수 없는 지우기·나가기, 저장·다음을 막는 잘못된 값, 법·규칙을 어긴 근무, 기록이 안 되는 고장.
  * 확인할 일·차이·기준에 가까움·못 읽음·빈자리처럼 챙길 일은 `MaterialTheme.bamnat.caution`(주의)이에요. 새 빨강은 까닭을 여기에 적어야 해요.
  */
 class PayRedIsDangerTest {
@@ -34,13 +34,13 @@ class PayRedIsDangerTest {
         "work/FieldTools.kt" to listOf("견적서 지우기"),
         "work/KeepRecordsDialog.kt" to listOf("기록을 지우고 새로 시작"),
         "work/ManageScreen.kt" to listOf("할 일 가운데 팀의 주 52시간 넘김 한 줄(법)"),
-        "work/PartTimeTools.kt" to listOf("지우기"),
+        "work/PartTimeTools.kt" to listOf("최저임금보다 적은 시급(법 위반, RVP-13)", "지우기"),
         "work/PayrollScreen.kt" to listOf("저장하지 않고 나가기", "직원 그래도 지우기", "저장하지 않고 나가기(직원 창)"),
         "work/StaffCostBars.kt" to listOf("주 52시간을 넘은 직원의 막대"),
     )
 
     private val red = Regex(
-        """colorScheme\.error\b|LocalCalendarColors\.current\.warning\b|\bcal\.warning\b|\.warningContainer\b|bamnat\.danger\b|Tone\.Danger\b|\bwarning = [^t]|\bWarningBanner\(""",
+        """colorScheme\.error\b|LocalCalendarColors\.current\.warning\b|\bcal\.warning\b|\.warningContainer\b|bamnat\.danger\b|Tone\.Danger\b|\bwarning = [^t]""",
     )
 
     @Test fun redIsOnlyForDanger() {
