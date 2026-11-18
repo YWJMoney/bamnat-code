@@ -44,6 +44,7 @@ import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.StepperRow
+import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.guide.FeatureCard
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.holiday.KoreanHolidays
