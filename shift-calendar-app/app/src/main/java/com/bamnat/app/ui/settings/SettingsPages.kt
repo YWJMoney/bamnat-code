@@ -647,7 +647,8 @@ private fun NoticesPage(
         // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 7번) 둘째 구간 알림: only where a 근무 종류 has a 브레이크 타임·비는 시간 (or it was turned off).
         val hasGap = rememberHasGap()
         if (hasGap) SwitchRow(GAP_ROW,
-            "${com.bamnat.core.sleep.TodayFlow.WorkTalk.of(settings.workStyle).gap}이 있는 날, 다시 시작하기 10분 전에 소리 없이 한 줄로 알려 줘요. 그때 자는 분은 근무 종류에서 ‘둘째 구간도 알람’을 켜면 알람이 울려요",
+            // (HQ 사진 검토, 조건 4) The first sentence is the one line said from the second visit on, so it is the whole point, short.
+            "다시 시작 10분 전에 소리 없이 알려 줘요. ${com.bamnat.core.sleep.TodayFlow.WorkTalk.of(settings.workStyle).gap}이 있는 날만이에요. 그때 자는 분은 근무 종류에서 ‘둘째 구간도 알람’을 켜면 알람이 울려요",
             settings.gapNotice, warning = warning(settings.gapNotice, Notifications.GAP_CHANNEL_ID), onFix = fix(Notifications.GAP_CHANNEL_ID)) { on ->
             set(on) { it.copy(gapNotice = on) }
         }

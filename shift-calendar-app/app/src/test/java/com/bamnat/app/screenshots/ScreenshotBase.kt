@@ -332,10 +332,11 @@ abstract class ScreenshotBase {
             return null
         }
 
+        // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it.
         private fun SemanticsNode.words(): List<String> =
-            config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            (config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
                 config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
-                listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)
+                listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)).map { it.replace('\u00A0', ' ') }
 
         /** The first node on screen showing [text] (whole words with [exact], the start with [prefix]): clickable ones first. */
         private fun find(text: String, exact: Boolean, prefix: Boolean): SemanticsNode? {

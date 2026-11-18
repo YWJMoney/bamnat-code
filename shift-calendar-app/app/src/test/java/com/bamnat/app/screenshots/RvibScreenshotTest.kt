@@ -225,6 +225,22 @@ class RvibScreenshotTest : ScreenshotBase() {
         c.settingsRepository.update { it.copy(sleepTips = true, calendarOnly = false, viewAsked = true, todayShiftNotice = true) }
     }
 
+    /**
+     * [RVIB-21] 오늘의 흐름 opened, as a person looks in: what is left until 다시 시작 and the nap that wakes 30 minutes before it.
+     * Folded once, the card says [line]; it stays open for the looks after the first, as it does for a person.
+     */
+    private fun Screen.openFlow(line: String) {
+        if (!shows("다시 시작까지")) {
+            org.junit.Assert.assertTrue(appears(line, exact = true))
+            tapText(line, exact = true)
+            settle()
+        }
+        org.junit.Assert.assertTrue(appears("다시 시작까지"))
+        // Up from under 빠른 입력, as a person scrolls to read it.
+        reveal("다시 시작까지", across = 0.2f)
+        settle()
+    }
+
     // [RVIB-21] (결정 19) 비는 시간: 오늘의 흐름이 '근무 중' 대신 '비는 시간 · 17:00 다시 시작', 낮잠만.
     @Test fun twoPartFlow() = try {
         eight("two_part_flow") { wide ->
@@ -233,7 +249,19 @@ class RvibScreenshotTest : ScreenshotBase() {
             tab(2, wide)
             tab(0, wide)
             settle()
-            org.junit.Assert.assertTrue(appears("비는 시간 · 17:00 다시 시작"))
+            openFlow("비는 시간 · 17:00 다시 시작")
+        }
+    } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
+
+    // [RVIB-21] (결정 19) 알바·가게는 같은 사이를 '브레이크 타임'이라고 해요.
+    @Test fun twoPartFlowBreak() = try {
+        eight("two_part_flow_break") { wide ->
+            twoPartsAtTheStop()
+            runBlocking { c.settingsRepository.update { it.copy(workStyle = WorkStyle.HOURLY) } }
+            tab(2, wide)
+            tab(0, wide)
+            settle()
+            openFlow("브레이크 타임 · 17:00 다시 시작")
         }
     } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
 
@@ -241,8 +269,16 @@ class RvibScreenshotTest : ScreenshotBase() {
     @Test fun twoPartSettings() = try {
         eight("two_part_settings") { wide ->
             twoPartsAtTheStop()
+            // The look of every day after the first: the first visit says each line in full once ([RVP-08]), the next says its
+            // first sentence with ⓘ. The test's app never closes, so the second visit is made by hand (the order of tests
+            // otherwise decides which rows have been seen).
+            com.bamnat.app.ui.components.ExplainSeen.reset(app)
+            settingsPage("알림과 잠", wide)
+            back()
+            com.bamnat.app.ui.components.ExplainSeen.newVisit()
             settingsPage("알림과 잠", wide)
             reveal("둘째 구간 시작 알림", exact = true, across = if (wide) 0.75f else 0.5f)
+            org.junit.Assert.assertTrue(appears("다시 시작 10분 전에 소리 없이 알려 줘요.", exact = true))
         }
     } finally { com.bamnat.core.time.Today.fix(SHOT_TIME) }
 
