@@ -20,8 +20,9 @@ const CLOSE_KINDS = new Set(["bug", "question", "other"]);
 /** 앱이 점검 기록에 쓰는 칸 이름(DiagnosticsScreen.kt STOP_SECTION)과 비었을 때의 말. */
 const STOP_SECTION = "[앱 멈춤]";
 const EMPTY = "기록 없음";
+const UNREAD = "(못 읽음)";
 
-export const CRASH_RECORD_NAMES = { has: "멈춤 기록 있음", none: "멈춤 기록 없음", unsent: "점검 기록 없이 옴" };
+export const CRASH_RECORD_NAMES = { has: "멈춤 기록 있음", none: "멈춤 기록 없음", unread: "멈춤 기록 못 읽음", unsent: "점검 기록 없이 옴" };
 
 /** 닫힘 문의인지: 오류 종류이고, 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 둔 점검 기록을 붙였을 때. */
 export function isCloseAsk(kind, text, info) {
@@ -30,7 +31,7 @@ export function isCloseAsk(kind, text, info) {
 }
 
 /**
- * 점검 기록의 '앱 멈춤' 칸: has(멈춘 줄이 있음) · none(앱이 '기록 없음'이라고 적음) · unsent(점검 기록을 안 보냈거나 그 칸이 없음).
+ * 점검 기록의 '앱 멈춤' 칸: has(멈춘 기록이 있음) · none(멈춤 없음) · unread(앱이 그 칸을 읽지 못함) · unsent(점검 기록을 안 보냈거나 그 칸이 없음).
  * 칸은 `[제목]` 줄로 시작해 빈 줄에서 끝나요.
  */
 export function crashRecord(diag) {
@@ -38,8 +39,19 @@ export function crashRecord(diag) {
   const at = d.startsWith(STOP_SECTION) ? 0 : d.indexOf(`\n${STOP_SECTION}`);
   if (at < 0) return "unsent";
   const body = d.slice(d.indexOf(STOP_SECTION, at) + STOP_SECTION.length).split(/\n\s*\n/)[0];
-  const lines = body.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return "unsent";
+  const all_ = body.split("\n").map((l) => l.trim()).filter(Boolean);
+  // 2.0.0 L [RVL-84]: 앱이 읽지 못한 것은 '(못 읽음) '으로 시작해요. 멈춘 줄로 세지 않아요.
+  const lines = all_.filter((l) => !l.startsWith(UNREAD));
+  if (!lines.length) return all_.length ? "unread" : "unsent";
+  // 2.0.0 모양: '가장 최근 기록:' 덩어리(있으면 맨 앞), '남은 기록: N개', 안드로이드 11 이상은 '최근 30일: 멈춤 N회 · …'가 늘 있어요.
+  // 멈춤이 없다는 것은 '가장 최근 기록:'이 없고 남은 기록이 0개이며 최근 30일 숫자가 모두 0일 때예요.
+  const left = lines.find((l) => /^남은 기록:/.test(l));
+  if (left !== undefined || lines.some((l) => /^가장 최근 기록:/.test(l))) {
+    const counts = lines.filter((l) => /^최근 \d+일:/.test(l)).flatMap((l) => [...l.slice(l.indexOf(":") + 1).matchAll(/(\d+)\s*(?:회|번)/g)].map((m) => Number(m[1])));
+    const kept = Number(left?.match(/(\d+)/)?.[1] ?? 0);
+    return lines.some((l) => /^가장 최근 기록:/.test(l)) || kept > 0 || counts.some((n) => n > 0) ? "has" : "none";
+  }
+  // 1.39까지의 모양: 멈춘 줄들이거나 '기록 없음' 한 줄.
   return lines.every((l) => l === EMPTY) ? "none" : "has";
 }
 

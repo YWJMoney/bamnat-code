@@ -382,6 +382,15 @@ test("[RVA-63] 멈춤 기록 읽기: '앱 멈춤' 칸에 줄이 있으면 있음
   assert.equal(crashRecord("[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음"), "none", "칸이 뒤에 있어도");
   assert.equal(crashRecord("[알람]\n다음 알람 07:00"), "unsent");
   assert.equal(crashRecord(undefined), "unsent");
+  // 2.0.0 모양(갈래 L RVL-84): '가장 최근 기록:'이 맨 앞, '남은 기록: N개'와 '최근 30일: …'은 늘 있어요. '(못 읽음)' 줄은 멈춘 줄이 아니에요.
+  const v2 = (body, more = "") => `[앱 멈춤]\n${body}${more}`;
+  assert.equal(crashRecord(v2("가장 최근 기록:\n11/18 21:04 IllegalStateException@a.b:3\n최근 30일: 멈춤 1회 · 응답 없음(ANR) 0회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 1개",
+    "\n\n[점검 못 읽음]\n(못 읽음) 나머지 점검: SecurityException@a.b.c:12")), "has");
+  assert.equal(crashRecord(v2("최근 30일: 멈춤 0회 · 응답 없음(ANR) 0회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 0개")), "none", "30일·남은 기록 모두 0");
+  assert.equal(crashRecord(v2("남은 기록: 0개")), "none", "안드로이드 10 아래");
+  assert.equal(crashRecord(v2("최근 30일: 멈춤 0회 · 응답 없음(ANR) 2회 · 기기 쪽 멈춤 0회 · 메모리 부족 0회\n남은 기록: 0개")), "has", "ANR도 멈춤");
+  assert.equal(crashRecord(v2("(못 읽음) 멈춤 기록: SecurityException@a.b:1")), "unread");
+  assert.equal(crashOf("bug", "앱이 닫혀요", { diag: v2("(못 읽음) 멈춤 기록: SecurityException@a.b:1") }).recordName, "멈춤 기록 못 읽음");
   // 닫힘 문의만: 오류 종류이고 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 붙였을 때. 느려요·아이디어는 아니에요.
   assert.equal(crashOf("bug", "앱이 갑자기 닫혀요", {}).recordName, "점검 기록 없이 옴");
   assert.equal(crashOf("question", "쓰다가 자꾸 꺼져요", { diag: "[앱 멈춤]\n기록 없음" }).record, "none");
