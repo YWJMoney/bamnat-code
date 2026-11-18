@@ -703,10 +703,17 @@ fun TalkSheet(holder: TalkHolder) {
                         modifier = Modifier.padding(top = 2.dp))
                 }
                 }
+                // 2.0.0 [RVN-22] 검토 I10bb-03 보내기 전 폰 안 검사: what the server would not take (메일·전화·계좌번호, 방 글에 금액 받기가
+                // 꺼져 있으면 금액도) is marked in the box and said under it while typing, from the server's own table, and 보내기 waits.
+                val stopHere = remember(text, o.room, o.company) { com.bamnat.app.company.CompanyText.postHit(text, o.room, holder.roomMoney(o)) }
+                val stopPoll = if (o.room && kind == "question" && replyTo == null) remember(pollDraft, o.company) {
+                    pollDraft.firstNotNullOfOrNull { com.bamnat.app.company.CompanyText.postHit(it, o.room, holder.roomMoney(o)) }
+                } else null
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it.take(500); error = null },
+                        visualTransformation = com.bamnat.app.ui.components.rememberMarkLetters(stopHere?.range),
                         placeholder = { if (big) Text(when {
                             // HQ-38: one line at big letters (the chip above already says which kind).
                             replyTo != null -> "답글을 적어요"
@@ -767,18 +774,21 @@ fun TalkSheet(holder: TalkHolder) {
                               if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = go else go()
                             }
                         },
-                        enabled = !busy && text.trim().length >= 2,
+                        enabled = !busy && text.trim().length >= 2 && stopHere == null && stopPoll == null,
                     ) {
                         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.AutoMirrored.Filled.Send, "보내기")
                     }
                 }
+                com.bamnat.app.ui.components.TextStopLine((stopHere ?: stopPoll)?.let { h ->
+                    com.bamnat.app.company.CompanyText.stopLine(h, ::talkProblem) + if (stopHere == null) " (투표 보기)" else ""
+                }, Modifier.padding(top = 4.dp))
             }
             Spacer(Modifier.height(8.dp))
         }
     }
     // 2.0.0 [RVN-06] COMP-09[U10a-06] 신고 결과는 앱 띠로(오류 칸이 아니라, 쓰기 막힘·지난 판 토론에서도 보이게).
     FlagPostDialog(flagging, invest = o.company == com.bamnat.core.plaza.StylePlaza.INVEST, onDismiss = { flagging = null }) { p, reason ->
-        holder.flag(p.id, reason) { e -> note = (e ?: FLAGGED) to (e == null) }
+        holder.flag(p.id, reason) { e -> note = (e ?: FLAGGED) to (e == null || e == com.bamnat.app.company.SmallSends.FLAG_LINE) }
     }
 }
 

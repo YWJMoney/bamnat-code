@@ -40,13 +40,23 @@ data class CompanyDraft(val company: String, val dept: String = "", val fix: Boo
  * calendar's is a file in its own folder ([CompanyScopeStorage]) and asks [phone] (the main one) for what is the phone's
  * and not a calendar's: the install id and how sharing by itself was chosen (설정 › 개인정보·앱 정보).
  */
+/** 2.0.0 [RVN-22] COMP-60-1 One lock for making the install id (every store of the phone shares its prefs file). */
+private val DEVICE_LOCK = Any()
+
 class CompanyStore internal constructor(private val prefs: SharedPreferences, private val phone: CompanyStore?) {
     constructor(context: Context) : this(context.applicationContext.getSharedPreferences("company", Context.MODE_PRIVATE), null)
 
     /** Random and made here, so the server can count one phone once without knowing whose it is. */
     val device: String
-        get() = phone?.device
-            ?: prefs.getString("device", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("device", it).apply() }
+        get() = phone?.device ?: prefs.getString("device", null) ?: made()
+
+    /**
+     * 2.0.0 [RVN-22] 검토 COMP-60-1: made once even when the first run's reads ask at the same moment (two ids, one of them kept
+     * by no request a 모두 지우기 could reach).
+     */
+    private fun made(): String = synchronized(DEVICE_LOCK) {
+        prefs.getString("device", null) ?: UUID.randomUUID().toString().also { prefs.edit().putString("device", it).commit() }
+    }
 
     private val _sent = MutableStateFlow(readSent())
     val sent: StateFlow<List<SentReport>> = _sent.asStateFlow()

@@ -41,10 +41,12 @@ fun companyProblem(e: com.bamnat.app.company.CompanyException): String = when (e
 fun companyProblem(code: String, field: String? = null): String = when (code) {
     "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.text()
-    "amount", "phone", "email" -> when (field) {
+    "amount", "phone", "email", "account" -> when (field) {
         "note" -> when (code) {
             "amount" -> "한마디에 금액은 빼 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
             "phone" -> "한마디에 전화번호는 빼 주세요"
+            // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①.
+            "account" -> "한마디에 계좌번호는 빼 주세요"
             else -> "한마디에 메일 주소는 빼 주세요"
         }
         "dept" -> "부서 이름에 숫자나 연락처처럼 보이는 글자를 빼 주세요"

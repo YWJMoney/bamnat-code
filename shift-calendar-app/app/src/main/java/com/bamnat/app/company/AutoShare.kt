@@ -167,7 +167,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
         // 2.0.0 [RVN-13] COMP-47 A refusal is said as one (it said 내일 나눠요 before, for something that would never go); no connection
         // on its day waits for one.
         var failed: Exception? = null
-        val id = if (Today.millis() - sentAt >= DAY) try { send(force = false) } catch (e: Exception) { failed = e; null } else null
+        val id = if (dayCame(sentAt)) try { send(force = false) } catch (e: Exception) { failed = e; null } else null
         if (id == null && store.autoDirty) schedule()
         val refused = (failed as? CompanyException)?.takeIf { !it.retryable }
         _shared.value = Shared(name, ChangeAsk.line(change) ?: "근무 순서·계산 방식", queued = id == null && refused == null,
@@ -313,7 +313,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
 
     /** [CALI-02] Each calendar's change waits for its own day, in a job of its own. */
     private fun schedule() {
-        val wait = (store.autoSentAt + DAY - Today.millis()).coerceAtLeast(0)
+        val wait = if (dayCame(store.autoSentAt)) 0L else (store.autoSentAt + DAY - Today.millis()).coerceAtLeast(0)
         OutboxJob.scheduleShare(c.appContext, wait, cal)
     }
 
@@ -332,7 +332,7 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
             if (!e.retryable) store.autoOnce = false
             !e.retryable
         }
-        if (Today.millis() - store.autoSentAt < DAY) {
+        if (!dayCame(store.autoSentAt)) {
             schedule()
             return true
         }
@@ -393,5 +393,11 @@ class AutoShare(private val c: AppContainer, val cal: String = com.bamnat.app.da
          */
         const val CAL = com.bamnat.app.data.PersonalCalendar.MAIN
         const val DAY = 24 * 60 * 60 * 1000L
+
+        /**
+         * A day has passed since [sentAt]. 2.0.0 [RVN-22] 검토 COMP-60-3: a [sentAt] after now (sent with the phone's clock set ahead,
+         * then put back) counts as long ago, so the share does not stop at 대기 중 for as long as the clock was ahead.
+         */
+        internal fun dayCame(sentAt: Long, now: Long = Today.millis()): Boolean = sentAt > now || now - sentAt >= DAY
     }
 }

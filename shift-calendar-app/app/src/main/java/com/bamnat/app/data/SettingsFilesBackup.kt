@@ -338,6 +338,8 @@ class SettingsFilesBackup(
             "plaza_news" to "이 휴대폰이 받은 광장 소식",
             // 2.0.0 [RVN-14] 알림함 '사람들 반응' 줄에 아직 더해 갈 반응 수: 이 휴대폰의 알림함 줄이라 옮기지 않아요.
             "plaza_inbox" to "알림함 ‘사람들 반응’ 줄에 더해 갈 반응 수, 이 휴대폰의 알림함 것",
+            // 2.0.0 [RVN-22] (검토 COMP-60) 달력마다 저절로 나누기 작업 번호: 이 휴대폰의 예약 작업 번호라 옮기지 않아요.
+            "outbox_ids" to "달력마다 저절로 나누기 예약 작업의 번호, 이 휴대폰의 예약 작업 것",
             "app_state" to "앱을 마지막으로 연 때(화면 되살리기)",
             // [INVITE-02] 1.26 AE: tied to this install on the company server; the months move with the recovery code.
             "invite" to "친구 초대: 이 설치에 묶인 초대 코드와 받은 초대(이용권은 복구 코드로 옮겨요)",

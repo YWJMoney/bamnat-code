@@ -482,6 +482,8 @@ fun CompanyDetailScreen(
                     val heldHere = heldNow?.takeIf { !p.member }
                     // [SPD-13] 1.30 AP1: the page kept from before is on screen while it is read again.
                     RefreshLine(vm.refreshing.collectAsStateWithLifecycle().value, vm.stale.collectAsStateWithLifecycle().value, onRetry = vm::load)
+                    // 2.0.0 [RVN-22] I10bb-01 맞아요·쓰고 있어요·회사 빼기 pressed without a connection, waiting to go.
+                    WaitingSendsLine(app)
                     if (p.aliases.isNotEmpty()) {
                         Text("다른 이름: ${p.aliases.joinToString(", ")}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)

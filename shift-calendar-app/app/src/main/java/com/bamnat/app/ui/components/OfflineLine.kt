@@ -46,6 +46,8 @@ fun OfflineLine(
     modifier: Modifier = Modifier,
     text: String = NetWords.OFFLINE,
     onRetry: (() -> Unit)? = null,
+    /** 2.0.0 [RVN-22] I10bb-01 The button's word ('지금 보내기' for what waits to be sent). */
+    action: String = "다시 하기",
 ) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp).padding(vertical = 4.dp).semantics { liveRegion = LiveRegionMode.Polite },
@@ -54,6 +56,6 @@ fun OfflineLine(
         Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(10.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
-        if (onRetry != null) TextButton(onClick = onRetry) { Text("다시 하기") }
+        if (onRetry != null) TextButton(onClick = onRetry) { Text(action) }
     }
 }

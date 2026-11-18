@@ -38,6 +38,14 @@ data class WorkCard(val days: Int, val work: Int, val nights: Int, val streak: I
             return WorkCard(month.size.coerceAtMost(31), work, nights, best, month.count { it.first == false })
         }
 
+        /**
+         * The card of resolved days. 2.0.0 [RVN-22] 검토 T10b-03: a day with nothing on it (알바·현장 not written yet, a calendar with
+         * no order there) is neither work nor a rest; only a day marked off counts as 쉬는 날.
+         */
+        fun ofDays(days: List<com.bamnat.core.schedule.ResolvedDay>): WorkCard? = of(days.map { d ->
+            (if (d.shiftType == null && !d.isWorkDay && d.leave == null) null else d.isWorkDay) to d.shiftFrom?.hour
+        })
+
         fun of(get: (String) -> Any?): WorkCard? = runCatching {
             fun n(k: String) = (get(k) as? Number)?.toInt()?.takeIf { it in 0..31 } ?: error(k)
             WorkCard(n("d"), n("w"), n("n"), n("s"), n("o")).takeIf { it.days >= 1 && it.work + it.off <= it.days && it.nights <= it.work }

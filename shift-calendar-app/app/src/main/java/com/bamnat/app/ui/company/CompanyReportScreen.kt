@@ -58,6 +58,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -450,6 +452,8 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
                         // Already gone from the server: only the line here is left to drop.
                         onDrop = { vm.takeBack(r.id) { _, _ -> } })
                 }
+                // 2.0.0 [RVN-22] 검토 I10bb-02: what the server has of this phone, kind by kind, before and after 모두 지우기.
+                MineOnServer(vm)
                 TextButton(onClick = { forgetting = true }, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)) {
                     Text("이 휴대폰이 보낸 정보 모두 지우기", color = MaterialTheme.colorScheme.error)
                 }
@@ -498,6 +502,69 @@ fun CompanySentScreen(vm: CompanyReportViewModel, onBack: () -> Unit, onShare: (
             },
         )
     }
+}
+
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-02 서버에 있는 내 정보: how many of each kind the server has of this phone, the ones that can be looked at
+ * and taken off one by one with where (내 글, 내 문의, 알림), and after 모두 지우기 what stays and why (법으로 정한 결제·동의 기록, 끝날 때까지의
+ * 제한). Only numbers come; nothing new is sent.
+ */
+@Composable
+private fun MineOnServer(vm: CompanyReportViewModel) {
+    val rows by vm.mine.collectAsStateWithLifecycle()
+    val failed by vm.mineFailed.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.loadMine() }
+    SoftCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("서버에 있는 내 정보", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            val list = rows
+            when {
+                failed -> com.bamnat.app.ui.components.OfflineLine(text = com.bamnat.app.ui.components.NetWords.BUSY, onRetry = vm::loadMine)
+                list == null -> com.bamnat.app.ui.components.SkeletonRows(count = 3, dot = false)
+                list.none { it.n > 0 } -> Text("서버에 남은 내 정보가 없어요", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> {
+                    list.filter { it.n > 0 }.forEach { r -> MineRow(r) }
+                    if (list.any { it.n > 0 && it.stays == null }) Text("하나씩은 ‘보기’에서, 모두는 아래에서 지워요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+    }
+}
+
+/** One kind's line: its name, how many, and where it is looked at and taken off one by one (none for those only 모두 지우기 takes). */
+@Composable
+private fun MineRow(r: com.bamnat.app.company.MineRows) {
+    val (name, go) = mineWords(r.key)
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(name, style = MaterialTheme.typography.bodyMedium)
+            when (r.stays) {
+                "law" -> Text("법으로 정한 기간 남아요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                "until" -> Text("끝나는 날 저절로 지워져요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Text("${r.n}개", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 8.dp))
+        if (go != null) TextButton(onClick = { com.bamnat.app.NoticeLinks.open(go) }) { Text("보기") }
+    }
+}
+
+/** A kind's words and where its rows are looked at one by one. */
+internal fun mineWords(key: String): Pair<String, com.bamnat.app.NoticeLinks.Target?> = when (key) {
+    "settings" -> "보낸 회사 근무·급여 설정" to null
+    "posts" -> "광장 글·답·오늘 출근" to com.bamnat.app.NoticeLinks.Target.VILLAGE_POSTS
+    "votes" -> "맞아요·달라요·투표·좋아요" to null
+    "flags" -> "신고" to null
+    "inquiries" -> "문의" to com.bamnat.app.NoticeLinks.Target.INQUIRY
+    "companies" -> "회사 참여·쓰고 있어요·별명" to null
+    "rates" -> "보낸 시세" to null
+    "alerts" -> "바로 알림 등록" to null
+    "works" -> "마을 작품·프로필·글꼴" to null
+    "rewards" -> "보상·초대·프로 나눔" to null
+    "law" -> "결제·동의 기록" to null
+    "limits" -> "진행 중인 쓰기 제한" to null
+    else -> "그 밖의 기록(확인·횟수)" to null
 }
 
 @Composable

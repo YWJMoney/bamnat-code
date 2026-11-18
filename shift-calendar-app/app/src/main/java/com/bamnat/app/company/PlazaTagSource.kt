@@ -86,8 +86,8 @@ class PlazaTagSource(private val c: AppContainer) {
         val calendar = calendarFor(style) ?: return null
         val today = Today.date()
         val snap = c.calendars.repository(calendar).windowSnapshot(java.time.YearMonth.from(today))
-        val days = snap.resolver.resolveRange(today.withDayOfMonth(1), today).map { d -> d.isWorkDay to d.shiftFrom?.hour }
-        return com.bamnat.core.plaza.WorkCard.of(days)
+        // 2.0.0 [RVN-22] T10b-03: days not written yet are not 쉬는 날 ([com.bamnat.core.plaza.WorkCard.ofDays]).
+        return com.bamnat.core.plaza.WorkCard.ofDays(snap.resolver.resolveRange(today.withDayOfMonth(1), today))
     }
 
     /** [PLZC-20] The room whose next top post takes my 근무 카드 (set by the writing box just before 보내기, taken once). */

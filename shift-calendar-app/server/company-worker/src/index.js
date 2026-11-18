@@ -119,6 +119,7 @@ import { PASSKEY_SCHEMA, passkeyCheck, passkeyMine, passkeyStart } from "./passk
 import { canaryStats, countFailure, deployInfo, flushWatch, jobRow, pruneWatch, recordError, recordRequest, recordRowErrors, rowTroubleQuery, rowTroubleRows, runJobs, serverVersions } from "./ops-watch.js";
 import { FIVE_STEPS, hourlyAgo, hourlyWatch } from "./incident.js";
 import { RETENTION, deviceColumns, forgetSweep, retentionPrune } from "./retention.js";
+import { TEXT_RULES } from "./text-rules.js";
 import { sealLegacyTotp, totpOf, totpSealed } from "./seal.js";
 import { GROWTH_COLUMNS, GROWTH_SCHEMA, growthAdmin, growthRoute, growthTick, needSolved } from "./growth.js";
 export { INQUIRY_TOPICS, addMonths, inviteCodeOf, playIntent, readSub, recheckLapsed, stack, stopUnconsentedTrials, storeLink, EVENTS, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, lookupRows, setupRows, SETUP_TAP_BUCKETS, readAction, readAudience, startupRows, FLAG_CATALOG, FLAG_KEYS, flagOverview, flagTick };
@@ -599,6 +600,7 @@ async function routeOnce(request, env, url, ctx) {
   if (m && method === "GET") return reportStatus(env, m[1]);
   if (m && method === "DELETE") return takeBack(request, env, m[1]);
   if (path === "/api/mine" && method === "DELETE") return forgetMine(request, env);
+  if (path === "/api/mine" && method === "GET") return mineRows(request, env);
   if (path === "/api/votes" && method === "POST") return vote(request, env);
   // SP1 1.30 [SPD-04] the same list for everyone (no X-Device), kept a short while.
   if (path === "/api/board" && method === "GET") {
@@ -1593,29 +1595,34 @@ export function normName(s) {
     .replace(/[^\p{L}\p{N}]/gu, "");
 }
 
-const PERSONAL = [
-  ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
-  ["phone", /(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}/],
-  ["amount", /\d[\d,.]*\s*(원|만\s*원|천\s*원|억\s*원|won\b|krw\b)|[일이삼사오육칠팔구십백천]+\s*만\s*원|\d{1,3}(,\d{3})+|\d{5,}/i],
-];
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-03: what typed text may not hold, from the one table core TextRules writes (text-rules.js), so the
+ * phone's check before sending and the server's are the same. personal() is the ordinary check (메일·계좌번호·전화번호·금액);
+ * [RVN-17] COMP-14 contact() a room's post once 방 글에 금액 받기 is on: amounts go, a way to reach someone or to send money does not
+ * (계좌번호: 처리방침 3.14 N몫 ①, roomMoney를 켜기 전에 더함).
+ */
+const compileRules = (rules) => rules.map((r) => ({ code: r.code, re: new RegExp(r.source, `${r.flags}g`), digits: r.digits }));
+const PERSONAL = compileRules(TEXT_RULES.personal);
+const CONTACT = compileRules(TEXT_RULES.contact);
 
-/** Why a text cannot be shared: it holds an email, a phone number or an amount of money. */
-export function personal(text) {
-  for (const [code, re] of PERSONAL) if (re.test(text)) return code;
+function firstRule(rules, text) {
+  const s = String(text ?? "");
+  for (const r of rules) {
+    for (const m of s.matchAll(r.re)) {
+      const d = (m[0].match(/\d/g) ?? []).length;
+      if (!r.digits || (d >= r.digits[0] && d <= r.digits[1])) return r.code;
+    }
+  }
   return null;
 }
 
-/**
- * 2.0.0 [RVN-17] 검토 COMP-14: a room's post (회사 방·유형별 방) with amounts taken, only a way to reach someone held back. The phone number
- * is a real one's shape (휴대폰 010·011…, 지역 02·031…, +82), not any run of digits, so '3억 = 300000000원' is not a phone number.
- */
-const CONTACT = [
-  ["email", /[^\s@]+@[^\s@]+\.[a-z]{2,}/i],
-  ["phone", /(?<!\d)(\+?82[\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\s.-]?\d{3,4}[\s.-]?\d{4}(?!\d)/],
-];
+/** Why a text cannot be shared: it holds an email, an account number, a phone number or an amount of money. */
+export function personal(text) {
+  return firstRule(PERSONAL, text);
+}
+
 export function contact(text) {
-  for (const [code, re] of CONTACT) if (re.test(text)) return code;
-  return null;
+  return firstRule(CONTACT, text);
 }
 
 // ---- a setup: what a report may hold (company-setup.js, 2.0.0 [RVD-25]) ----
@@ -2735,7 +2742,11 @@ async function roomPost(request, env, body, ctx) {
 async function myPosts(request, env) {
   const device = deviceId(request.headers.get("x-device"));
   if (!device) return json({ error: "device", field: "device" }, 400);
-  const dev = await deviceHash(device);
+  return json({ items: await myPostItems(env, await deviceHash(device)) });
+}
+
+/** The posts this phone wrote in rooms (내 글), with their 답 수; also what /api/digest carries when it is asked for (I10bc-01). */
+async function myPostItems(env, dev) {
   const rows = await all(env, `SELECT p.id, p.company_id, c.name, p.body, p.kind, p.parent, p.status, p.created_at,
       (SELECT COUNT(*) FROM posts r WHERE r.parent = p.id AND r.status = 'shown') AS replies
     FROM posts p LEFT JOIN companies c ON c.id = p.company_id
@@ -2752,9 +2763,9 @@ async function myPosts(request, env) {
       }
     }
   }
-  return json({ items: rows.map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id] ?? p.name ?? "", body: p.body,
+  return rows.map((p) => ({ id: p.id, room: p.company_id, name: STYLE_ROOMS[p.company_id] ?? p.name ?? "", body: p.body,
     kind: p.kind ?? "talk", ...(p.parent ? { parent: p.parent } : {}), replies: p.replies, at: iso(p.created_at),
-    ...(p.status === "shown" ? {} : { hidden: true }) })) });
+    ...(p.status === "shown" ? {} : { hidden: true }) }));
 }
 
 /**
@@ -2816,8 +2827,13 @@ async function communityStanding(request, env) {
   if (!device) return json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   const dev = await deviceHash(device);
+  return json(await standingOf(env, dev, now), 200, { "cache-control": "no-store" });
+}
+
+/** 1.39 [CARE-03] 마을 돌봄 상태 하나(경고·쉬기·쓰기 제한); also what /api/digest carries when it is asked for (I10bc-01). */
+async function standingOf(env, dev, now) {
   const [standing, a] = await Promise.all([careStanding(recipeDeps, env, dev, now), writeAllowance(recipeDeps, env, dev, now)]);
-  return json({ ...standing, ...(a ? { limit: limitJson(a) } : {}) }, 200, { "cache-control": "no-store" });
+  return { ...standing, ...(a ? { limit: limitJson(a) } : {}) };
 }
 
 /**
@@ -2832,7 +2848,9 @@ async function communityAppeal(request, env) {
   const dev = await deviceHash(device);
   const net = await network(request, env, now);
   const make = async (text) => {
-    if (personal(text) === "email" || personal(text) === "phone") return { error: personal(text), status: 400 };
+    // [RVN-22] 해명에는 금액은 적어도 되고, 메일·전화번호·계좌번호는 받지 않아요.
+    const why = personal(text);
+    if (why === "email" || why === "phone" || why === "account") return { error: why, status: 400 };
     const hit = await overLimit(env, now, [["device", `inquiry|${dev}`, 5, DAY], ...(await networkCheck(env, dev, net, "inquiry", 200, now))]);
     if (hit) return { error: "rate_limited", status: 429 };
     const id = randomId(22);
@@ -3974,6 +3992,45 @@ export async function forgetDevice(env, dev, { keepInquiry = null, count = false
       left: Object.fromEntries(Object.entries(after).filter(([, n]) => n > 0)) };
   }
   return out;
+}
+
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-02 '서버에 있는 내 정보': 이 휴대폰의 설치 해시가 든 줄을 이용자의 말로 묶은 것. 앱이 모두 지우기 앞뒤로 보여 줘요
+ * (지우면 0, 법으로 남는 결제·동의와 끝날 때까지 남는 제한만 [stays]로). 표 이름은 보내지 않고 묶음 열쇠와 수만.
+ */
+export const MINE_GROUPS = [
+  { key: "settings", tables: ["reports"] },
+  { key: "posts", tables: ["posts", "plaza_checkin", "village_entries"] },
+  { key: "votes", tables: ["votes", "post_votes", "poll_votes", "rate_votes", "recipe_votes", "recipe_request_likes"] },
+  { key: "flags", tables: ["post_flags", "recipe_flags", "recipe_image_flags", "recipe_maker_flags", "recipe_font_reports"] },
+  { key: "inquiries", tables: ["inquiries", "inquiry_marks", "studio_need_links"] },
+  { key: "companies", tables: ["members", "uses", "nicks"] },
+  { key: "rates", tables: ["rates"] },
+  { key: "alerts", tables: ["push_phones", "plaza_watch", "plaza_pushed"] },
+  { key: "works", tables: ["recipes", "recipe_makers", "recipe_sets", "recipe_images", "recipe_fonts", "recipe_follows", "recipe_requests",
+    "recipe_blocks", "recipe_trust"] },
+  { key: "rewards", tables: ["rewards", "day_rewards", "invite_codes", "invite_uses", "pro_shares", "pass_codes"] },
+  { key: "law", tables: ["subs", "year_passes", "consents"], stays: "law" },
+  { key: "limits", tables: ["muted", "write_limits", "write_strikes", "care_appeals", "care_notes"], stays: "until" },
+];
+
+/** [rows] (표마다 수) as [MINE_GROUPS]' counts, the tables no group names as "other". */
+export function mineGroups(rows) {
+  const named = new Set(MINE_GROUPS.flatMap((g) => g.tables));
+  const sum = (tables) => tables.reduce((n, t) => n + (rows[t] ?? 0), 0);
+  const other = Object.entries(rows).filter(([t]) => !named.has(t)).reduce((n, [, v]) => n + v, 0);
+  return [...MINE_GROUPS.map((g) => ({ key: g.key, n: sum(g.tables), ...(g.stays ? { stays: g.stays } : {}) })), { key: "other", n: other }];
+}
+
+async function mineRows(request, env) {
+  const device = deviceId(request.headers.get("x-device"));
+  if (!device) return json({ error: "device", field: "device" }, 400);
+  const now = Date.now();
+  // The network's hour, not the phone's: a counter keyed by this install would itself be a row of it.
+  const net = await network(request, env, now);
+  const limitHit = await overLimit(env, now, [["network", `mine|${net.now}|${Math.floor(now / HOUR)}`, 120, HOUR]]);
+  if (limitHit) return limitHit;
+  return json({ groups: mineGroups(await deviceRows(env, await deviceHash(device))) });
 }
 
 /** 2.0.0 [RVQ-16] 보관 장부에서 설치 해시 열이 있는 표마다 [dev]가 든 줄 수(0은 빼요). */

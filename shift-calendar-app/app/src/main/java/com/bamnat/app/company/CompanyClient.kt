@@ -367,6 +367,13 @@ internal fun plazaPicksOf(o: JSONObject): List<PlazaPick> = o.optJSONArray("item
         ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"))
 }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
 
+/**
+ * 2.0.0 [RVN-22] 검토 I10bb-02 One kind of what the server has of this phone ([key]: settings, posts, votes, flags, inquiries,
+ * companies, rates, alerts, works, rewards, law, limits, other) and how many rows; [stays] "law" (결제·동의, 법으로 정한 기간) or
+ * "until" (진행 중인 제한, 끝날 때까지) when 모두 지우기 leaves it.
+ */
+data class MineRows(val key: String, val n: Int, val stays: String? = null)
+
 /** 1.39 [PLZC-21] 오늘 출근: today's taps by kind (day·night in 교대, go·rain in 현장) and this phone's own. */
 data class Checkin(val counts: Map<String, Int>, val mine: String? = null)
 
@@ -680,6 +687,9 @@ interface CompanyApi {
 
     /** [INQ-05] I28: what [forgetMine] deleted, kind by kind, for "글 3·문의 1을 지웠어요". */
     suspend fun forgetMineCounts(device: String): ForgetCounts = ForgetCounts(reports = forgetMine(device))
+
+    /** 2.0.0 [RVN-22] 검토 I10bb-02 서버에 있는 내 정보: how many rows of this phone the server has, kind by kind ([MineRows]). */
+    suspend fun mineRows(device: String): List<MineRows> = throw CompanyException("not_yet")
     suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean = false, why: String? = null): VoteResult
 
     /** 2.0.0 [RVN-18] 검토 COMP-22-1: this phone's 맞아요·달라요 on [setup] taken back (✓ pressed again); the counts without it. */
@@ -1313,6 +1323,12 @@ class CompanyClient(
             adoptedKept = o.optInt("adoptedKept"), ratesKept = o.optInt("ratesKept"))
     }
 
+    override suspend fun mineRows(device: String): List<MineRows> = readCall {
+        request("GET", "/api/mine", device = device).optJSONArray("groups").rows { g ->
+            MineRows(g.getString("key"), g.optInt("n").coerceAtLeast(0), g.optString("stays").ifEmpty { null })
+        }
+    }
+
     /** 맞았어요 ([ok]) or 달라요 with what was wrong: order, time, pay (1.27 AH-D9), or wrong, old or name. */
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?): VoteResult =
         serverCall {
@@ -1911,39 +1927,42 @@ object ReadAheadKey : kotlin.coroutines.CoroutineContext.Key<ReadAhead>
 object CompanyText {
     private val forms = Regex("\\((주|株|유|사|재|합)\\)|주식회사|유한회사|유한책임회사|합자회사|합명회사|사단법인|재단법인|\\b(co|ltd|inc|corp|llc)\\b\\.?")
     private val marks = Regex("[^\\p{L}\\p{N}]")
-    private val personal = listOf(
-        "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
-        "phone" to Regex("(\\+?82[\\s.-]?0?|0)\\d{1,2}[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}"),
-        "amount" to Regex(
-            "\\d[\\d,.]*\\s*(원|만\\s*원|천\\s*원|억\\s*원|won\\b|krw\\b)|[일이삼사오육칠팔구십백천]+\\s*만\\s*원|\\d{1,3}(,\\d{3})+|\\d{5,}",
-            RegexOption.IGNORE_CASE,
-        ),
-    )
-
     /** A name as search sees it: no spaces, marks or company forms such as (주), 주식회사, Co., Ltd. */
     fun norm(name: String): String =
         Normalizer.normalize(name, Normalizer.Form.NFKC).lowercase().replace(forms, "").replace(marks, "")
 
-    /** Why [text] cannot be shared: email, phone or amount; null when it can. */
-    fun personal(text: String): String? = personal.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bb-03: why [text] cannot be shared (메일·계좌번호·전화번호·금액), null when it can. The rules are core
+     * [com.bamnat.core.plaza.TextRules], the very table the company server reads (text-rules.js), so the phone and the server never part.
+     */
+    fun personal(text: String): String? = com.bamnat.core.plaza.TextRules.personal(text)
 
-    // 2.0.0 [RVN-17] 검토 COMP-14: the server's CONTACT. A real phone number's shape (010·02·031… then 3~4 and 4 digits, not inside a longer
-    // run), so "연봉 300000000원" is not taken for one.
-    private val contacts = listOf(
-        "email" to Regex("[^\\s@]+@[^\\s@]+\\.[a-z]{2,}", RegexOption.IGNORE_CASE),
-        "phone" to Regex("(?<!\\d)(\\+?82[\\s.-]?0?|0)(1[016789]|2|[3-6][1-5]|70)[\\s.-]?\\d{3,4}[\\s.-]?\\d{4}(?!\\d)"),
-    )
-
-    /** 2.0.0 [RVN-17] COMP-14 Why a room's post cannot go once 방 글에 금액 받기 is on: only a way to reach someone (email, phone). */
-    fun contact(text: String): String? = contacts.firstOrNull { (_, re) -> re.containsMatchIn(text) }?.first
+    /** 2.0.0 [RVN-17] COMP-14 Why a room's post cannot go once 방 글에 금액 받기 is on: a way to reach someone or to send money. */
+    fun contact(text: String): String? = com.bamnat.core.plaza.TextRules.contact(text)
 
     /** 2.0.0 [RVN-17] COMP-14 The check for a post: in a room with [roomMoney] on, contacts only; anywhere else, [personal]. */
-    fun post(text: String, room: Boolean, roomMoney: Boolean): String? = if (room && roomMoney) contact(text) else personal(text)
+    fun post(text: String, room: Boolean, roomMoney: Boolean): String? = postHit(text, room, roomMoney)?.code
+
+    /** 2.0.0 [RVN-22] I10bb-03 [personal] with where: the very letters, to mark in the box before sending. */
+    fun personalHit(text: String): com.bamnat.core.plaza.TextRules.Hit? =
+        com.bamnat.core.plaza.TextRules.find(text, com.bamnat.core.plaza.TextRules.personalRules)
+
+    /** 2.0.0 [RVN-22] I10bb-03 [post] with where. */
+    fun postHit(text: String, room: Boolean, roomMoney: Boolean): com.bamnat.core.plaza.TextRules.Hit? =
+        com.bamnat.core.plaza.TextRules.post(text, room, roomMoney)
+
+    /** 2.0.0 [RVN-22] I10bb-03 The line under a box: "‘010-1234-5678’ · 전화번호는 빼 주세요" (long letters cut to 24). */
+    fun stopLine(hit: com.bamnat.core.plaza.TextRules.Hit, words: (String) -> String): String {
+        val t = hit.text.trim().replace('\n', ' ')
+        return "‘${if (t.length > 24) t.take(23) + "…" else t}’ · ${words(hit.code)}"
+    }
 
     /** What to tell the user about a refused text or field. */
     fun problem(code: String): String = when (code) {
         "email" -> "메일 주소는 적지 말아 주세요"
         "phone" -> "전화번호는 적지 말아 주세요"
+        // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①: 은행 계좌·카드 번호처럼 보이는 숫자.
+        "account" -> "계좌번호는 적지 말아 주세요"
         "amount" -> "금액은 적지 말아 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
         else -> "보낼 수 없는 내용이 있어요"
     }

@@ -149,12 +149,15 @@ class PlazaNewsJob : JobService() {
             replacing: String? = null) {
             if (lines.isEmpty()) return
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            // What waits is the notice as written now (the server's news is read once), added to any still waiting.
-            val held = heldOf(prefs)
-            val apart = held != null && (held.target != target || held.payload != payload)
-            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
-                if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
-            keep(prefs, all)
+            // What waits is the notice as written now (the server's news is read once), added to any still waiting. 2.0.0 [RVN-22] 검토
+            // COMP-60-5: read and written under one lock, so a push and the day's 소식 at the same moment do not lose a line.
+            synchronized(HELD_LOCK) {
+                val held = heldOf(prefs)
+                val apart = held != null && (held.target != target || held.payload != payload)
+                val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
+                    if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
+                keep(prefs, all)
+            }
             if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return
             postHeld(c.appContext)
         }
@@ -201,6 +204,7 @@ class PlazaNewsJob : JobService() {
         /** 1.36 [VIL-05] One 소식 notice at most: what [check] wrote, posted now or when the user is off work and awake. */
         private data class Held(val title: String, val lines: List<String>, val target: NoticeLinks.Target, val payload: String? = null)
         private const val K_HELD = "held"
+        private val HELD_LOCK = Any()
         private const val MAX_LINES = 7
 
         private fun heldOf(prefs: android.content.SharedPreferences): Held? = prefs.getString(K_HELD, null)?.let { raw ->
@@ -219,8 +223,7 @@ class PlazaNewsJob : JobService() {
         /** Posts the 소식 waiting, if any (from [check] at once, or from [com.bamnat.app.sleep.QuietHold] after work or sleep). */
         fun postHeld(context: Context) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val h = heldOf(prefs) ?: return
-            prefs.edit().remove(K_HELD).apply()
+            val h = synchronized(HELD_LOCK) { heldOf(prefs)?.also { prefs.edit().remove(K_HELD).apply() } } ?: return
             if (h.lines.isEmpty()) return
             val n = NotificationCompat.Builder(context, Notifications.PLAZA_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)

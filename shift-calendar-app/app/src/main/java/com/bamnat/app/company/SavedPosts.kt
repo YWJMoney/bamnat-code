@@ -38,13 +38,17 @@ class SavedPosts private constructor(context: Context) {
         _items.value = list
     }
 
-    private fun read(): List<Saved> = runCatching {
-        val a = JSONArray(prefs.getString(KEY, "[]"))
-        (0 until a.length()).map { a.getJSONObject(it) }.map {
-            Saved(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
-                Instant.parse(it.getString("at")), Instant.parse(it.getString("saved")))
+    /** 2.0.0 [RVN-22] 검토 COMP-60-4: row by row, so one row broken loses that row only (the next keep wrote over an empty list). */
+    private fun read(): List<Saved> {
+        val a = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrNull() ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            runCatching {
+                val it = a.getJSONObject(i)
+                Saved(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
+                    Instant.parse(it.getString("at")), Instant.parse(it.getString("saved")))
+            }.getOrNull()
         }
-    }.getOrDefault(emptyList())
+    }
 
     companion object {
         const val MAX = 200

@@ -968,9 +968,10 @@ class TalkHolder(
         // 2.0.0 [RVN-17] 검토 COMP-14: a room's post (and its poll) may say an amount once the server's 방 글에 금액 받기 is on; a rule's talk
         // keeps the amounts out, as the server does.
         val money = roomMoney(o)
-        poll.firstNotNullOfOrNull { CompanyText.post(it, o.room, money) }?.let { return done(talkProblem(it)) }
-        CompanyText.post(text, o.room, money)?.let { return done(talkProblem(it)) }
-        change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personal)?.let { return done(talkProblem(it)) }
+        // 2.0.0 [RVN-22] 검토 I10bb-03: said with the very letters ("‘010-1234-5678’ · 전화번호는 빼 주세요"), from the server's own table.
+        poll.firstNotNullOfOrNull { CompanyText.postHit(it, o.room, money) }?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
+        CompanyText.postHit(text, o.room, money)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
+        change.flatMap { listOf(it.now, it.want, it.why) }.firstNotNullOfOrNull(CompanyText::personalHit)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         // [COMM-13] 같은 글 되풀이 is held back here, before the server's own limits.
         val talkKey = "${o.company}/${o.setup}"
         val now = com.bamnat.core.time.Today.instant()
@@ -1108,8 +1109,14 @@ class TalkHolder(
             val error = try {
                 c.companyApi.flag(c.companyStore.device, id, reason)
                 null
-            } catch (e: CompanyException) {
-                talkProblem(e)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                // 2.0.0 [RVN-22] 검토 I10bb-01: no connection keeps the 신고 on the phone; it goes once online.
+                // [done] gets its line ([com.bamnat.app.company.SmallSends.FLAG_LINE], not an error) to say instead of 신고했어요.
+                if (com.bamnat.app.company.SmallSends.waits(e)) {
+                    com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.flag(id, reason))
+                    com.bamnat.app.company.SmallSends.FLAG_LINE
+                } else talkProblem(e as? CompanyException ?: CompanyException("server"))
             }
             done(error)
             reload()
@@ -1130,6 +1137,8 @@ fun talkProblem(code: String): String = when (code) {
     "amount" -> "금액은 빼 주세요. ‘기본급의 10%’, ‘1.5배’처럼 비율로 적으면 돼요"
     "phone" -> "전화번호는 빼 주세요"
     "email" -> "메일 주소는 빼 주세요"
+    // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①: 방 글에 금액 받기를 켜도 계좌번호는 받지 않아요.
+    "account" -> "계좌번호는 빼 주세요"
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
     "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(null)
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
@@ -1372,7 +1381,7 @@ class ActivityHolder(
     fun setNick(nick: String, done: (String?) -> Unit) {
         val t = nick.trim()
         if (t.isNotEmpty() && (t.length < 2 || t.length > 12)) return done("마을 이름은 2~12자로 정해 주세요")
-        CompanyText.personal(t)?.let { return done(talkProblem(it)) }
+        CompanyText.personalHit(t)?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         scope.launch {
             val error = try {
                 val saved = c.companyApi.nick(c.companyStore.device, t)
@@ -1442,8 +1451,7 @@ class RatesViewModel(
         val u = com.bamnat.app.company.Plaza.RATE_UNITS[unit] ?: return done("일당·시급·월급 가운데 골라 주세요")
         if (trade.trim().length < 2) return done("직종을 두 글자 이상 적어 주세요 (예: 형틀목수)")
         if (amount !in u.min..u.max) return done("${u.name}은 ${won(u.min)}~${won(u.max)} 사이로 적어 주세요")
-        CompanyText.personal(trade)?.let { return done(talkProblem(it)) }
-        CompanyText.personal(note)?.let { return done(talkProblem(it)) }
+        (CompanyText.personalHit(trade) ?: CompanyText.personalHit(note))?.let { return done(CompanyText.stopLine(it, ::talkProblem)) }
         viewModelScope.launch {
             val error = try {
                 c.companyApi.addRate(c.companyStore.device, f.job, f.region, trade, unit, amount, note)
@@ -1890,6 +1898,24 @@ class CompanyReportViewModel(
             val counts = forgetEverythingSent(c)
             if (counts != null) _statuses.value = emptyMap()
             done(counts != null, counts?.words())
+            // 2.0.0 [RVN-22] I10bb-02 What is left on the server, read again: 0 but what stays by law or until it ends.
+            if (counts != null) loadMine()
+        }
+    }
+
+    /** 2.0.0 [RVN-22] 검토 I10bb-02 서버에 있는 내 정보, kind by kind; null while reading, [mineFailed] when it could not be read. */
+    private val _mine = MutableStateFlow<List<com.bamnat.app.company.MineRows>?>(null)
+    val mine: StateFlow<List<com.bamnat.app.company.MineRows>?> = _mine.asStateFlow()
+    private val _mineFailed = MutableStateFlow(false)
+    val mineFailed: StateFlow<Boolean> = _mineFailed.asStateFlow()
+
+    fun loadMine() {
+        if (!c.companyApi.enabled) return
+        _mineFailed.value = false
+        _mine.value = null
+        viewModelScope.launch {
+            runCatching { c.companyApi.mineRows(c.companyStore.device) }
+                .onSuccess { _mine.value = it }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; _mineFailed.value = true }
         }
     }
 }

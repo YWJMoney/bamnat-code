@@ -219,7 +219,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** Why [text] cannot go yet, in words; null when it can. */
     fun problem(text: String): String? = when {
         text.length > InquiryClient.TEXT_MAX -> "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요"
-        else -> CompanyText.personal(text)?.let(::personalProblem)
+        // 2.0.0 [RVN-22] 검토 I10bb-03: the very letters too ("‘010-1234-5678’ · 전화번호는 적지 말아 주세요"), from the server's own table.
+        else -> CompanyText.personalHit(text)?.let { CompanyText.stopLine(it, ::personalProblem) }
     }
 
     /** [INQ-05] Questions waiting to be sent, shown at the top of 내 문의. */
@@ -356,7 +357,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 보내 주세요"
         "rate_limited" -> com.bamnat.app.company.RateLimits.of(e as CompanyException, "문의 보내기", "급하면 메일로 보내 주세요.")
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
-        "email", "phone", "amount" -> personalProblem(e.message ?: "")
+        "email", "phone", "account", "amount" -> personalProblem(e.message ?: "")
         "not_found" -> "이 문의는 지워졌거나 가려졌어요"
         else -> "보내지 못했어요. 잠시 뒤 다시 해 주세요"
     }

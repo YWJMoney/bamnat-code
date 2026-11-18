@@ -1865,7 +1865,14 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
     override suspend fun takeBack(device: String, id: String) = Unit
-    override suspend fun forgetMine(device: String) = mine.size
+    override suspend fun forgetMine(device: String) = mine.size.also { forgot = true }
+    /** 2.0.0 [RVN-22] I10bb-02 서버에 있는 내 정보 as a phone that wrote, voted and asked has it (after 모두 지우기 the law's only). */
+    private var forgot = false
+    override suspend fun mineRows(device: String) = if (forgot) listOf(com.bamnat.app.company.MineRows("law", 1, "law")) else listOf(
+        com.bamnat.app.company.MineRows("settings", 1), com.bamnat.app.company.MineRows("posts", 4), com.bamnat.app.company.MineRows("votes", 12),
+        com.bamnat.app.company.MineRows("inquiries", 2), com.bamnat.app.company.MineRows("companies", 2), com.bamnat.app.company.MineRows("alerts", 1),
+        com.bamnat.app.company.MineRows("law", 1, "law"), com.bamnat.app.company.MineRows("other", 3), com.bamnat.app.company.MineRows("flags", 0),
+    )
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
     /** 2.0.0 [RVN-18] COMP-22-1 What a second tap on ✓ 맞아요 took back. */

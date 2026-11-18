@@ -492,6 +492,8 @@ fun PlazaHomeScreen(
                 if (people) PlazaHead(title = homeTitle.takeIf { onBack == null }, today = state.talk?.pulse?.today, model = head,
                     menuInBar = onBack != null, mainInBar = mainInBar)
                 RefreshLine(state.refreshing, state.stale, onRetry = vm::load)
+                // 2.0.0 [RVN-22] I10bb-01 What was pressed without a connection and waits to go, one line.
+                WaitingSendsLine(vm.container)
                 header?.invoke()
                 vm.note?.let { n ->
                     SoftCard(highlighted = true) {

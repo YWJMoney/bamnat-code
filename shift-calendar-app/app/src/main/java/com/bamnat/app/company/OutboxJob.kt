@@ -55,6 +55,7 @@ class OutboxJob : JobService() {
         private const val FORGET_ID = 4408
         private const val SHARE_BASE = 4_410_000
         private const val CAL = "cal"
+        private const val IDS = "outbox_ids"
         private val BACKOFF = TimeUnit.MINUTES.toMillis(15)
 
         fun schedule(context: Context) {
@@ -76,7 +77,7 @@ class OutboxJob : JobService() {
         fun scheduleShare(context: Context, delayMs: Long, cal: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
             val jobs = context.getSystemService(JobScheduler::class.java) ?: return
             val main = cal == com.bamnat.app.data.PersonalCalendar.MAIN
-            val id = if (main) SHARE_ID else shareId(cal)
+            val id = if (main) SHARE_ID else shareId(context, cal)
             if (jobs.getPendingJob(id) != null) return
             jobs.schedule(
                 JobInfo.Builder(id, ComponentName(context, OutboxJob::class.java))
@@ -89,8 +90,21 @@ class OutboxJob : JobService() {
             )
         }
 
-        /** [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). */
-        internal fun shareId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
+        /**
+         * [CALI-02] An added calendar's share job, away from the app's other jobs (4401~4404). 2.0.0 [RVN-22] 검토 COMP-60-2: a
+         * number of its own given once (two calendars whose names hashed alike shared a job, and one's share took the other's place).
+         */
+        @Synchronized
+        internal fun shareId(context: Context, cal: String): Int {
+            val prefs = context.getSharedPreferences(IDS, Context.MODE_PRIVATE)
+            prefs.getInt("share_$cal", -1).takeIf { it >= 0 }?.let { return SHARE_BASE + it }
+            val n = prefs.getInt("next", 0)
+            prefs.edit().putInt("share_$cal", n).putInt("next", n + 1).commit()
+            return SHARE_BASE + n
+        }
+
+        /** Before 2.0.0 the number came from the name; a job made then is cancelled with it. */
+        private fun hashedId(cal: String): Int = SHARE_BASE + (cal.hashCode() and 0xFFFF)
 
         /** 1.39 [PRIV-06] 발굴 1-1: the links a 모두 지우기 left, cut once online even with the app closed. */
         fun scheduleForget(context: Context) {
@@ -108,7 +122,11 @@ class OutboxJob : JobService() {
         /** [CALI-07] A calendar that went takes its waiting share with it. */
         fun cancelShare(context: Context, cal: String) {
             if (cal == com.bamnat.app.data.PersonalCalendar.MAIN) return
-            context.getSystemService(JobScheduler::class.java)?.cancel(shareId(cal))
+            val jobs = context.getSystemService(JobScheduler::class.java) ?: return
+            val prefs = context.getSharedPreferences(IDS, Context.MODE_PRIVATE)
+            prefs.getInt("share_$cal", -1).takeIf { it >= 0 }?.let { jobs.cancel(SHARE_BASE + it) }
+            jobs.cancel(hashedId(cal))
+            prefs.edit().remove("share_$cal").apply()
         }
 
         /** How many things wait to be sent, for 서버 연결 점검. */
