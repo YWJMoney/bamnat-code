@@ -51,7 +51,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -61,7 +61,7 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -606,14 +606,8 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                 val feelLine = vm.feelNow?.takeIf { it.first == s.origin.title && s.changed &&
                     vm.feelStart?.takeIf { f -> f.first == s.origin.title }?.second?.label != it.second }
                 // 2.0.0 [RVS-16] (총괄 #495 사진, 조건 12: 글자 200%에서 제목 ‘지금 …’의 아래가 잘렸어요) The bar is as tall as its lines at this
-                // text size (스튜디오 · the start's name · 지금: …), never under the app bar's own height.
-                val typo = MaterialTheme.typography
-                val barHeight = with(androidx.compose.ui.platform.LocalDensity.current) {
-                    fun lh(t: androidx.compose.ui.text.TextStyle) = (if (t.lineHeight.isSpecified) t.lineHeight else t.fontSize * 1.4f).toDp()
-                    lh(typo.labelMedium) + lh(typo.titleMedium) + (if (feelLine != null) lh(typo.labelSmall) else 0.dp) + 16.dp
-                }.coerceAtLeast(androidx.compose.material3.TopAppBarDefaults.TopAppBarExpandedHeight)
+                // text size (스튜디오 · the start's name · 지금: …): the app's one top bar grows to its title ([RVP-85] HQ-53).
                 TopAppBar(
-                    expandedHeight = barHeight,
                     navigationIcon = { IconButton(onClick = { if (s.changed && !s.kept) leaving = true else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                     title = {
                         var menu by remember { mutableStateOf(false) }
@@ -1022,7 +1016,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                     OutlinedTextField(frameName, { frameName = it.take(24) }, label = { Text("틀 이름") }, singleLine = true,
                                         placeholder = { Text("내 틀") }, modifier = Modifier.fillMaxWidth())
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        androidx.compose.material3.Button(onClick = { vm.keepFrame(frameName) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 틀로 담기") }
+                                        com.bamnat.app.ui.components.Button(onClick = { vm.keepFrame(frameName) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 틀로 담기") }
                                         if (onMarket != null) OutlinedButton(onClick = {
                                             val body = vm.frameBody(frameName)
                                             if (body == null) openedLine = "아직 옮기거나 숨긴 카드가 없어 올릴 틀이 없어요"
@@ -1152,15 +1146,17 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
 
     if (wish) StudioWish(where = "${area.label} › ${tool.label}", style = vm.style, onDismiss = { wish = false }) { sent ->
         wish = false
+        // 2.0.0 [RVQ-29] 검토 SVC-17·T22-07: 'N명' counts different people (one internet connection is one), and once enough have
+        // asked the operator words it shortly before it goes up to 장터 '만들어 주세요' (it no longer goes up by itself).
         val gathered = sent?.takeIf { it.studioGoal > 0 }?.let { q ->
-            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 장터 '만들어 주세요'에 올라가요"
-            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 장터 '만들어 주세요'에 올라가고, 모이지 않아도 운영자가 함께 봐요"
+            if (q.studioAskers >= q.studioGoal) "같은 부탁이 ${q.studioAskers}명 모였어요. 운영자가 짧게 다듬어 장터 '만들어 주세요'에 올려요"
+            else "같은 부탁 ${q.studioAskers}/${q.studioGoal}명 모였어요. ${q.studioGoal}명이 되면 운영자가 다듬어 장터 '만들어 주세요'에 올리고, 모이지 않아도 운영자가 함께 봐요"
         }
         scope.launch {
             snack.showSnackbar(when {
-                sent == null -> "보내지 못했어요. 인터넷을 확인하고 다시 눌러 주세요"
+                sent == null -> "보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.BUSY
                 gathered != null -> "보냈어요. $gathered. 풀리면 알림과 '내 문의'로 알려 드려요"
-                else -> "보냈어요. 같은 부탁이 모이면 장터 '만들어 주세요'에 올라가고, 풀리면 알려 드려요"
+                else -> "보냈어요. 같은 부탁이 모이면 운영자가 다듬어 장터 '만들어 주세요'에 올리고, 풀리면 알려 드려요"
             })
         }
     }
@@ -1321,7 +1317,7 @@ private fun StudioWish(where: String, style: WorkStyle?, onDismiss: () -> Unit, 
         title = { Text("원하는 꾸미기 부탁하기") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요",
+                Text("[$where]에서 무엇을 하고 싶은지 적어 주세요. 같은 부탁이 모이면 다른 분이 만들어 주거나 기본 도구가 돼요. 적은 글은 운영자만 봐요",
                     style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(value = text, onValueChange = { text = it.take(500) }, minLines = 3, modifier = Modifier.fillMaxWidth(),
                     placeholder = { Text("예: 야간 근무 칸에 달 모양을 넣고 싶어요") })

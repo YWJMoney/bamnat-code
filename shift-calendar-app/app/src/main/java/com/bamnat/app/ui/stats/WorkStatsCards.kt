@@ -98,7 +98,7 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
         val scope = rememberCoroutineScope()
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
         val locked = gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)
-        androidx.compose.material3.OutlinedButton(onClick = {
+        com.bamnat.app.ui.components.OutlinedButton(onClick = {
             if (locked && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
             scope.launch {
                 com.bamnat.app.report.ReportShare.orTell { // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
@@ -329,7 +329,7 @@ fun PendingSalesCard(calendarId: String) {
             }
         }
         if (pending.size > 1) {
-            androidx.compose.material3.FilledTonalButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, pending) } },
+            com.bamnat.app.ui.components.FilledTonalButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, pending) } },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("모두 적기") }
         }
     }

@@ -16,6 +16,9 @@ import java.io.File
  * - 조건 7: 토스트·화면 코드 속 색 값은 늘지 않아요 ([toastsAndRawColoursOnlyGoDown])
  * - 조건 7·10: 알림 줄은 앱에 하나(AppSnack), 화면이 따로 만들지 않아요 ([oneLineForTheWholeApp])
  * - 조건 3·5: 카드 바탕은 조용한 면, primaryContainer는 고른 것·채운 단추에만 ([cardsStandOnTheQuietGround])
+ * - 조건 6: 주의는 Tone.Caution, 위험은 Tone.Danger. 일요일 빨강인 달력 색 warning은 화면이 쓰지 않아요 ([cautionIsNotSundaysRed])
+ * - 조건 5: 바탕이 있는 단추는 앱의 것, 모서리 '각지게'를 따라요 ([buttonsFollowTheCorners])
+ * - 조건 12: 위 막대는 앱의 것 하나, 큰 글자에서 제목이 잘리지 않아요 ([oneTopBarThatHoldsItsTitle])
  * - 조건 1: 달력 시작 높이는 화면 사진 시험 `CalendarStartScreenshotTest`가 봐요.
  *
  * 실패하면 무엇을 써야 하는지 메시지가 알려 줘요. 정말 예외라면(그림 속 휴대폰 틀처럼) 이 파일의 예외 목록에 까닭과 함께 넣어요.
@@ -111,9 +114,6 @@ class DesignRulesTest {
 
     /** No text under 10sp, nor a text that may shrink under 10sp (autoSize minimum), in the app or on the watch. */
     @Test fun noTextUnderTenSp() {
-        // The two in-bar labels of a 현장 calendar cell: they live inside a 10dp bar (8.5dp letters). They go to 10sp with the
-        // bar at 12dp in the calendar-head PR (갈래 P, RVP-45); the list may only get shorter.
-        val waiting = setOf("ui/calendar/WorkCells.kt")
         val small = Regex("""(?<![\d.])(\d(?:\.\d+)?)\.sp\b""")
         val bad = (screens + sources(wear).map { Src("wear/" + it.path, it.text) }).flatMap { s ->
             s.joined.flatMap { (n, l) ->
@@ -123,10 +123,9 @@ class DesignRulesTest {
                 }.map { "${s.path}:$n ${it.value}" }.toList()
             }
         }
-        val waitingNow = bad.filter { it.substringBefore(':') in waiting }
-        assertTrue("현장 칸 막대 글자 두 곳만 기다려요: $waitingNow", waitingNow.size <= 2)
+        // 2.0.0 P 4/4 (UIX-11): the 현장 칸 막대 글자, the last two waiting, are 10sp now; none is left to wait.
         assertEquals("8~9sp 글자는 쓰지 않아요: 10sp 이상, 줄일 땐 한 단계 낮은 글자 모양(MaterialTheme.typography)",
-            emptyList<String>(), bad - waitingNow.toSet())
+            emptyList<String>(), bad)
     }
 
     // ---- 조건 9: 누르는 곳 ----
@@ -198,9 +197,10 @@ class DesignRulesTest {
      * strong blue, and a card on it read as one big button (G #447 사진 08). A ground that is `primaryContainer` only while picked is fine.
      */
     @Test fun cardsStandOnTheQuietGround() {
+        // A chip or button in the pill shape (CircleShape, or [MaterialTheme.pill] that follows the corner setting, PC-128) is not a card.
         val ground = Regex("""(?<![A-Za-z])(color|containerColor) = MaterialTheme\.colorScheme\.primaryContainer(?!\.copy)""")
         val bad = screens.flatMap { s ->
-            s.text.split('\n').mapIndexedNotNull { i, l -> if (ground.containsMatchIn(l) && !l.contains("if (") && !l.contains("CircleShape")) "${s.path}:${i + 1}" else null }
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (ground.containsMatchIn(l) && !l.contains("if (") && !l.contains("CircleShape") && !l.contains("MaterialTheme.pill")) "${s.path}:${i + 1}" else null }
         }
         report("카드 바탕 primaryContainer", bad.size, 0, 0)
         assertEquals("카드 바탕은 surfaceContainerLow(조용한 면)예요. primaryContainer는 고른 것·채운 단추에만(docs/design/공통-부품.md 2절)", emptyList<String>(), bad)
@@ -217,6 +217,52 @@ class DesignRulesTest {
             s.text.split('\n').mapIndexedNotNull { i, l -> if (own.containsMatchIn(l)) "${s.path}:${i + 1}" else null }
         }
         assertEquals("화면이 따로 만든 알림 줄: AppSnack.rememberLane()과 AppSnackHost()를 써요(docs/design/공통-부품.md 9절)", emptyList<String>(), bad)
+    }
+
+    /**
+     * 2.0.0 [RVP-13] (검토 HQ-54·UIX-15, 조건 6) The calendar colours' `warning`·`warningContainer` are Sunday's red under another name:
+     * screens that wrote '확인할 것' in them painted a thing to check as a danger, and one screen had red four or five times. A screen says
+     * 주의 with `Tone.Caution` and 위험 (넘김·밀림·법 위반·울리지 않을 알람) with `Tone.Danger` (`Tone.color()`, `Tone.container()`, or the
+     * one alert line [com.bamnat.app.ui.components.ToneLine]).
+     */
+    @Test fun cautionIsNotSundaysRed() {
+        val read = Regex("""(?<![A-Za-z0-9_])(\w+)\.warning(Container)?\b(?!\s*=[^=])""")
+        val notColours = setOf("standing") // 마을 돌봄의 경고(서버가 보낸 글)
+        val bad = screens.filter { !it.path.startsWith("ui/theme/") }.flatMap { s ->
+            s.joined.flatMap { (n, l) -> read.findAll(l).filter { it.groupValues[1] !in notColours }.map { "${s.path}:$n" }.toList() }
+        }
+        report("화면이 쓴 달력 색 warning(일요일 빨강)", bad.size, 0, 0)
+        assertEquals("주의는 Tone.Caution.color()·ToneLine, 위험(넘김·밀림·법 위반)은 Tone.Danger. 바탕은 Tone.container() (docs/design/공통-부품.md 4절)",
+            emptyList<String>(), bad)
+    }
+
+    /**
+     * 2.0.0 [RVP-85] 검토 HQ-53 (조건 12): the app has one top bar, [com.bamnat.app.ui.components.TopAppBar]. Material's own is 64dp
+     * whatever its title, so a title that took two lines at 글자 200% or on a folded screen lost its second line under the bar's edge.
+     */
+    @Test fun oneTopBarThatHoldsItsTitle() {
+        val material = Regex("""import androidx\.compose\.material3\.(TopAppBar|CenterAlignedTopAppBar|MediumTopAppBar|LargeTopAppBar)$|androidx\.compose\.material3\.(?:CenterAligned|Medium|Large)?TopAppBar\(""")
+        val bad = screens.filter { it.path != "ui/components/TopBar.kt" }.flatMap { s ->
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (material.containsMatchIn(l.trim())) "${s.path}:${i + 1}" else null }
+        }
+        assertEquals("위 막대는 com.bamnat.app.ui.components.TopAppBar 하나예요(큰 글자에서 제목이 잘리지 않아요, docs/design/공통-부품.md)",
+            emptyList<String>(), bad)
+    }
+
+    /**
+     * 2.0.0 [RVP-05] 검토 PC-128 (조건 5): buttons with a ground follow 모서리 too. Material's are round whatever the theme, so with '각지게'
+     * the cards and chips went square and the buttons beside them stayed round. The app's own ([com.bamnat.app.ui.components.Button],
+     * `FilledTonalButton`, `OutlinedButton`, `FilledTonalIconButton`, `OutlinedIconButton`) take `MaterialTheme.pill`.
+     */
+    @Test fun buttonsFollowTheCorners() {
+        val kinds = "Button|OutlinedButton|FilledTonalButton|ElevatedButton|FilledIconButton|FilledTonalIconButton|OutlinedIconButton"
+        val material = Regex("""^import androidx\.compose\.material3\.($kinds)$|androidx\.compose\.material3\.($kinds)\(""")
+        val own = setOf("ui/components/AppButton.kt", "ui/components/Buttons.kt")
+        val bad = screens.filter { it.path !in own }.flatMap { s ->
+            s.text.split('\n').mapIndexedNotNull { i, l -> if (material.containsMatchIn(l.trim())) "${s.path}:${i + 1}" else null }
+        }
+        assertEquals("바탕이 있는 단추는 com.bamnat.app.ui.components의 것을 써요(모서리 '각지게'를 따라요, docs/design/공통-부품.md)",
+            emptyList<String>(), bad)
     }
 
     /** The numbers for the PR (도약 숫자): build/reports/design-rules.txt. */

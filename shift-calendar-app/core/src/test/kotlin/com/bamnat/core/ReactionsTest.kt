@@ -4,6 +4,8 @@ import com.bamnat.core.plaza.Reaction
 import com.bamnat.core.plaza.Reactions
 import org.junit.Test
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 
 /** 2.0.0 [RVN-14] 검토 HQ-51: the 알림함 rows of what others did to what this phone put out. */
 class ReactionsTest {
@@ -45,5 +47,30 @@ class ReactionsTest {
         assertEquals("plaza.rate,village.contest", Reactions.encodeOff(off))
         assertEquals(setOf("plaza.rate", "village.contest"), Reactions.decodeOff(Reactions.encodeOff(off)))
         assertEquals(emptySet<String>(), Reactions.decodeOff(""))
+    }
+    /** 2.0.0 [RVN-19] HQ-51 A row still in the 알림함 adds what came since; the phone's own count of answers is not added on top. */
+    @Test
+    fun aRowStillThereAddsWhatCameAndTheAnswersCountedHereAreNotAddedTwice() {
+        val day1 = listOf(Reaction("agree", "p1", "교대 광장", 2, 1_000, room = "style-shift", setup = "room", up = 2),
+            Reaction("report_vote", "c1/s1", "가나다화학", 1, 1_000, up = 1))
+        val day2 = listOf(Reaction("agree", "p1", "교대 광장", 1, 2_000, room = "style-shift", setup = "room", up = 1),
+            Reaction("report_vote", "c1/s1", "가나다화학", 1, 2_000, down = 1))
+        val both = Reactions.rows(Reactions.merge(day1, day2))
+        assertEquals(listOf("교대 광장 · 나도요 3", "가나다화학 · 맞아요 1 · 달라요 1"), both.map { it.line })
+        assertEquals(2_000L, both[0].atMillis)
+        assertEquals("room", both[0].setup)
+        assertEquals("교대 광장", both[0].place)
+        // Answers under my room post: the phone's count (unseen) sets the number; the larger stays, its time only moves when it grew.
+        val kept = Reactions.withAnswers(emptyList(), listOf(Reaction("answer", "p1", "교대 광장", 2, 3_000, room = "style-shift", setup = "room")))
+        val same = Reactions.withAnswers(kept, listOf(Reaction("answer", "p1", "교대 광장", 2, 4_000, room = "style-shift")))
+        assertEquals(3_000L, same.single().atMillis)
+        val grew = Reactions.withAnswers(same, listOf(Reaction("answer", "p1", "교대 광장", 3, 5_000, room = "style-shift")))
+        assertEquals(3, grew.single().count)
+        assertEquals("room", grew.single().setup)
+        // The server's answers under a room post are the phone's to count; under a rule's talk they are the server's.
+        assertTrue(Reactions.roomAnswer(Reaction("answer", "p1", "", 1, 1, room = "style-shift", setup = "room")))
+        assertTrue(Reactions.roomAnswer(Reaction("answer", "p1", "", 1, 1, room = "style-shift")))
+        assertFalse(Reactions.roomAnswer(Reaction("answer", "p9", "", 1, 1, room = "c123456789ab", setup = "0123456789abcdef")))
+        assertFalse(Reactions.roomAnswer(Reaction("thread", "p1", "", 1, 1, room = "style-shift", setup = "room")))
     }
 }

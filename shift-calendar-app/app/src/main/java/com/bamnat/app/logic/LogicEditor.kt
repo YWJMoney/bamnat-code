@@ -24,7 +24,7 @@ import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import com.bamnat.app.ui.components.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -1010,7 +1010,9 @@ fun LogicEditor(
                 onDismissRequest = { asking = false },
                 title = { Text("규칙이 쓴 것을 모두 되돌릴까요?") },
                 text = { Text("최근 7일 동안 규칙과 단추가 만든 메모·메모 줄·가계부 ${written.size}개를 지우고, 비운 체크는 다시 채워요. 직접 쓴 것은 그대로예요") },
-                confirmButton = { TextButton(onClick = { asking = false; c.appScope.launch { val n = LogicRunner.undoAll(c); bump++; LogicRunner.say("${n}개를 되돌렸어요") } }) { Text("모두 되돌리기") } },
+                confirmButton = { TextButton(onClick = { asking = false; c.appScope.launch { val n = LogicRunner.undoAll(c); bump++
+                    // 2.0.0 [RVM-47] STU-14: what was left because I changed it since is said too.
+                    LogicRunner.say("${n}개를 되돌렸어요" + LogicRunner.lastKept.takeIf { it > 0 }?.let { " · 그 뒤에 직접 고친 ${it}개는 그대로 뒀어요" }.orEmpty()) } }) { Text("모두 되돌리기") } },
                 dismissButton = { TextButton(onClick = { asking = false }) { Text("닫기") } },
             )
         }
@@ -1122,7 +1124,7 @@ fun FxDoor(logic: Logic, key: String = com.bamnat.core.formula.FxTaste.OWN) {
                 else -> "만들기와 미리 보기는 무료예요. 내 앱에서 돌리고 장터에 올리는 건 프로예요. 그동안 ✦ 없는 단추·규칙은 그대로 돌아요"
             }, style = MaterialTheme.typography.bodySmall)
             if (!pro && running == null) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (status is com.bamnat.core.formula.FxTaste.Status.Ready) androidx.compose.material3.Button(onClick = {
+                if (status is com.bamnat.core.formula.FxTaste.Status.Ready) com.bamnat.app.ui.components.Button(onClick = {
                     if (FxAccess.start(c, key)) LogicRunner.say("하루 동안 프로 기능 장치를 써 봐요. 끝나면 한 일을 알려 드려요")
                 }) { Text("하루 써 보기") }
                 OutlinedButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.PRO) }) { Text("프로 보기") }

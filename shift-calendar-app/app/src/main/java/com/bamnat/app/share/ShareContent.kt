@@ -43,23 +43,34 @@ object ShareContent {
             // 2.0.0 [RVH-45] The 1일 기준 an hour's leave is told against, for an older receiver (설계 4-4절).
             val leaveDay = runCatching { c.calendars.pay(calendar).profile.value?.rules?.leave?.dayMinutes }.getOrNull()
                 ?: com.bamnat.core.model.Leave.DAY_MINUTES
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan, leaveDay)
+            // 2.0.0 [RVG-38] The link's word in the calendar's own kind of work, only once 처리방침 3.14 names it.
+            val word = if (g.word) com.bamnat.core.work.scheduleWord(c.scopeOf(calendar).currentSettings().workStyle) else null
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan, leaveDay, word)
         }
 
     /**
      * 2.0.0 [RVR-22] The flags that decide which parts a link may carry: the company setup ([setupInLink], `share.setup`) and the
      * 테마·근무 설정 ([lookInLink], `share.look`). They decide whether a part goes, never its shape.
+     * 2.0.0 [RVG-38] And the link's word ([wordInLink], `share.word`, 처리방침 3.14).
      */
-    data class Gates(val setup: Boolean, val look: Boolean) {
+    data class Gates(val setup: Boolean, val look: Boolean, val word: Boolean = false) {
         companion object {
             fun of(c: AppContainer) = Gates(
                 setup = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP) }.getOrDefault(false),
                 look = lookInLink(c),
+                word = wordInLink(c),
             )
             /** Every part the phone has, as if every flag were on. */
-            val ALL = Gates(setup = true, look = true)
+            val ALL = Gates(setup = true, look = true, word = true)
         }
     }
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안: a link may say what the sender's app calls it (근무표·영업일·일정·달력) only from 처리방침 3.14's date
+     * (`share.word`, LEGAL); until the admin app gives 3.14 a day it is off and no link carries it.
+     */
+    fun wordInLink(c: AppContainer): Boolean =
+        runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_WORD) }.getOrDefault(false)
 
     /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
     fun sleepInLink(c: AppContainer): Boolean =
