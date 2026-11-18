@@ -41,6 +41,8 @@ import org.robolectric.annotation.GraphicsMode
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w360dp-h640dp")
 class MonthTurnDrawTest {
+    // HQ-93: no line, window turn or open count left by an earlier test in this JVM (and none left for the next).
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     private val here = Color(0xFFFF0000)

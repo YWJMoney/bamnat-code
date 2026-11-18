@@ -183,7 +183,63 @@ export async function countFailure(env, kind, now = Date.now()) {
 /** 500 하나를 묶음에 더해요. [app]은 앱이 보낸 판(있으면). */
 export async function recordError(env, path, e, now = Date.now(), app = "") {
   if (!env?.DB) return;
-  const route = routeOf(path);
+  await addError(env, routeOf(path), e, now, app);
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24b-02 독이 든 한 줄 격리: 문의·개발사항 한 줄을 읽다 난 오류는 그 줄만 빼고(장부·정리함·오늘은 계속 돌아요)
+ * 그 줄을 오류 묶음의 주소 칸에 `row/<어디>/<종류>:<번호>`로 적어요. 같은 줄의 같은 오류는 한 묶음이라 몇 번 열어도 한 줄이에요.
+ * 번호는 관리자 앱 안의 줄 번호(문의·개발사항 id)뿐이고, 글·휴대폰 값은 적지 않아요(오류 첫 줄은 errorLine이 따옴표 안을 지워요).
+ */
+export const ROW_WHERE = { ledger: "운영 장부", sort: "정리함", today: "오늘", inquiries: "문의 목록" };
+
+export async function recordRowError(env, where, key, e, now = Date.now()) {
+  if (!env?.DB || !Object.hasOwn(ROW_WHERE, where)) return;
+  console.error(`row ${where} ${key}: ${e?.stack ?? e}`);
+  await addError(env, `row/${where}/${String(key).replace(/[^A-Za-z0-9_:.-]/g, "").slice(0, 80)}`, e, now).catch(() => countFailure(env, "errfail", now));
+}
+
+/** 여러 줄을 한꺼번에(오류 하나가 다른 줄 기록을 막지 않아요). */
+export async function recordRowErrors(env, where, bad, now = Date.now()) {
+  if (!bad?.length) return;
+  await Promise.all(bad.slice(0, 20).map((b) => recordRowError(env, where, b.key, b.e, now)));
+}
+
+/**
+ * 2.0.0 [RVA-37] 검토 I24c-01 '무엇 때문에 멈췄나': 지난 사흘 안에 읽지 못한 줄(아직 고치지 않은 것). 오늘 화면이 원인 줄·우회·넘기기를 한 장으로 보여요.
+ */
+export const rowTroubleQuery = (now) => [`SELECT sig, route, message, total, first_at, last_at, status, note FROM error_groups
+    WHERE route LIKE 'row/%' AND status IN ('new', 'again', 'seen') AND last_at > ? ORDER BY last_at DESC LIMIT 5`, now - 3 * DAY];
+
+export async function rowTrouble(env, now = Date.now()) {
+  return rowTroubleRows(await all(env, ...rowTroubleQuery(now)).catch(() => []));
+}
+
+export function rowTroubleRows(rows) {
+  return (rows ?? []).map((r) => {
+    const [, where = "", key = ""] = String(r.route).split("/");
+    const [type = "", id = ""] = key.split(":");
+    return { sig: r.sig, where, whereName: ROW_WHERE[where] ?? where, type, id, message: r.message, total: r.total,
+      firstAt: r.first_at, lastAt: r.last_at, status: r.status, note: r.note ?? "" };
+  });
+}
+
+/**
+ * 2.0.0 [RVA-52] 검토 I24c-02 '화면 자체가 시험': 관리자 앱이 화면 오류(그리다 난 오류·잡히지 않은 오류)와 빈 화면(본문 글자 0)을 스스로 알려요.
+ * 오류 묶음의 주소 칸 `screen/<화면>`. 남기는 것은 화면 이름(경로 이름)·어디(줄 그리기 등)·관리자 앱 빌드·오류 첫 줄뿐이에요(errorLine이 따옴표 안·긴 숫자를 지워요).
+ * 화면의 글·사람 정보는 보내지도 남기지도 않아요. ADMX-02 같은 빈 화면은 서버 오류가 아니라 전에는 아무 데도 안 잡혔어요.
+ */
+export const SCREEN_ERROR = { perHour: 30, where: /^[a-z][a-z0-9-]{0,29}$/ };
+
+export async function recordScreenError(env, { screen, where = "", kind = "error", message = "" }, now = Date.now(), build = "") {
+  if (!env?.DB) return;
+  const name = SCREEN_ERROR.where.test(screen ?? "") ? screen : "unknown";
+  const at = SCREEN_ERROR.where.test(where ?? "") ? where : "";
+  const line = kind === "blank" ? "빈 화면(본문 글자 0)" : String(message || "오류");
+  await addError(env, `screen/${name}`, { message: `${at ? `[${at}] ` : ""}${line}`, stack: "" }, now, String(build ?? "").slice(0, 20));
+}
+
+async function addError(env, route, e, now, app = "") {
   const line = errorLine(e);
   const sig = sigOf(route, line);
   const stack = String(e?.stack ?? "").split("\n").slice(1, 6).map((s) => s.trim()).join("\n").replace(/https?:\/\/\S+/g, "").slice(0, WATCH.sample);
@@ -372,7 +428,7 @@ export function requiredSetup(env) {
     { key: "RATE_SALT", need: "must", ok: has("RATE_SALT"), what: "요청 한도용 소금 값", lose: "네트워크 한도가 약해져요" },
     { key: "VAPID_PUBLIC_KEY·VAPID_PRIVATE_KEY", need: "must", ok: has("VAPID_PUBLIC_KEY") && has("VAPID_PRIVATE_KEY"), what: "관리자 휴대폰 알림",
       lose: "새 문의·주의·사고·아침 요약 알림이 오지 않아 앱을 열어야만 알아요" },
-    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 서비스 계정(결제 확인·비정상 종료·ANR·스토어 리뷰)",
+    { key: "PLAY_SERVICE_ACCOUNT", need: "must", ok: has("PLAY_SERVICE_ACCOUNT"), what: "Play 연결 열쇠(서비스 계정: 결제 확인·비정상 종료·ANR·스토어 리뷰)",
       lose: "결제를 Play와 맞춰 보지 못하고, 판 건강·스토어 리뷰가 비어요" },
     { key: "FCM_SERVICE_ACCOUNT", need: "nice", ok: has("FCM_SERVICE_ACCOUNT"), what: "앱 사용자에게 보내는 푸시(문의 답 알림)", lose: "문의 답이 앱을 열 때만 보여요" },
     { key: "BACKUP(R2)", need: "nice", ok: Boolean(env.BACKUP && typeof env.BACKUP.put === "function"), what: "하루 백업을 둘 R2 저장소", lose: "D1 되돌리기(Time Travel)만 쓸 수 있어요" },
@@ -383,7 +439,9 @@ export function requiredSetup(env) {
     { key: "PLAY_REPORTS_BUCKET", need: "nice", ok: has("PLAY_REPORTS_BUCKET"), what: "Play 보고서(설치·삭제·스토어 전환·출처)", lose: "숫자 › 한눈에의 전체 사용자 칸이 비어요" },
     { key: "SHARE_BASE_URL·SHARE_ADMIN_TOKEN", need: "nice", ok: has("SHARE_BASE_URL") && has("SHARE_ADMIN_TOKEN"), what: "공유 서버 신고·상태 보기", lose: "공유 링크 신고와 공유 서버 상태를 못 봐요" },
   ];
-  return { items, missing: items.filter((i) => i.need === "must" && !i.ok).map((i) => i.key) };
+  const must = items.filter((i) => i.need === "must" && !i.ok);
+  // 2.0.0 [RVA-38] 검토 ADM-14 같은 구조(오늘 › 주의 필요): 주인이 읽는 줄에는 환경 변수 이름 대신 하는 일 이름(names). 변수 이름은 넣는 곳(서버 상태)에만.
+  return { items, missing: must.map((i) => i.key), names: must.map((i) => i.what.replace(/\s*\(.*?\)/g, "").trim()) };
 }
 
 /** 공유 서버가 살아 있는지(있을 때만): 걸린 시간과 답. */

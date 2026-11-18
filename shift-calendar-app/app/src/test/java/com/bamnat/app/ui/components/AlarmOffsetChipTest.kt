@@ -27,6 +27,8 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(qualifiers = "w411dp-h891dp")
 class AlarmOffsetChipTest {
+    // HQ-93: no line, window turn or open count left by an earlier test in this JVM (and none left for the next).
+    @get:Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     @get:Rule val compose = createEmptyComposeRule()
 
     @Test fun aShortcutMovesTheLineAndTheWheels() {

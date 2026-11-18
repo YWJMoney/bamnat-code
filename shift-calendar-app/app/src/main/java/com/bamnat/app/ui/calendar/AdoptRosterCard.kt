@@ -81,8 +81,11 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     var undo by remember(schedule, month) { mutableStateOf<com.bamnat.app.share.PutIn.Undo?>(null) }
     if (days.isEmpty() || (all.isEmpty() && undo == null)) return
     // The pay the user's own setup makes of the month, now and with the link's days (참고, 닫은 달이 아니어도).
-    val pay = remember(changes, profile, mine, settings.extraKinds) {
-        val p = profile?.named(settings.extraKinds) ?: return@remember null
+    // 2.0.0 [RVG-36] 검토 HQ-74 (조건 13): only for work paid by the hour or the month (교대·일근·알바); a 가게·현장·투자 calendar has no
+    // 급여 to say, nor a 급여 설정 to point to.
+    val paid = settings.workStyle?.usesPayEngine != false
+    val pay = remember(changes, profile, mine, settings.extraKinds, paid) {
+        val p = profile?.takeIf { paid }?.named(settings.extraKinds) ?: return@remember null
         val byDate = mine.entries.associateBy { it.date }
         val merged = mine.entries.filter { it.date !in changes } + changes.map { (d, o) -> (byDate[d] ?: DayEntry(d)).copy(override = o) }
         runCatching {
@@ -93,10 +96,17 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
     val missing = theirs.filter { pairs[it.id] == null && days.values.any { d -> d == it.id } }
     // 2.0.0 [RVG-33] 검토 HQ-55 (조건 4): what happens after 넣기 is one line with ⓘ (the common [Explain]); the rest of the old
     // paragraph (the pay note, how a later change comes) is behind ⓘ, and '이 근무표가 바뀌면' just below says it in full anyway.
-    val afterNote = onceNote(cal?.fromLeader == true, cal?.word ?: "근무표") + " " + if (pay != null) "예상 급여는 야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고)."
-        else (cal?.word ?: "근무표").let { w -> "급여 설정을 하면 이 $w${Fmt.ro(w)} 이번 달 월급이 얼마인지도 바로 보여요." }
+    // [RVG-36] 검토 HQ-74 (조건 13): '이번 달 급여', not '월급' (알바 is paid by the hour), and nothing about pay where there is none.
+    val payNote = when {
+        pay != null -> "예상 급여는 야간·휴일·연장 수당까지 급여 화면과 같은 계산이에요(참고)."
+        paid -> (cal?.word ?: "근무표").let { w -> "급여 설정을 하면 이 $w${Fmt.ro(w)} 이번 달 급여가 얼마인지도 바로 보여요." }
+        else -> null
+    }
+    val afterNote = listOfNotNull(onceNote(cal?.fromLeader == true, cal?.word ?: "근무표"), payNote).joinToString(" ")
+    // [RVG-36] 검토 HQ-74 (조건 4): at 글자 200% the first look was ten grey lines (four sentences) in the card. One line + ⓘ from the
+    // first look, the rest behind ⓘ; once the days are in, '이 근무표가 바뀌면' under the card says it in full, with its choice.
     val followLine = @Composable {
-        com.bamnat.app.ui.components.Explain("adopt:after", afterNote, summary = "바뀌면 다시 받아요", iconOnly = false)
+        com.bamnat.app.ui.components.Explain("adopt:after", afterNote, summary = "바뀌면 다시 받아요", iconOnly = false, firstInFull = false)
     }
     SectionCard(title = "내 달력에 넣기") {
         if (undo != null && (changes.isEmpty() || all.isEmpty())) {
@@ -122,8 +132,10 @@ internal fun AdoptRosterCard(id: String, schedule: SharedSchedule, month: YearMo
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = { withHand = !withHand }) { Text(if (withHand) "직접 바꾼 날은 빼기" else "직접 바꾼 날도 넣기") }
         }
-        if (missing.isNotEmpty()) Text("내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
-            style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.LocalCalendarColors.current.warning)
+        // [RVG-36] 검토 HQ-74 (조건 6): not red (red is for danger only); the common in-card line, its mark saying 주의.
+        if (missing.isNotEmpty()) com.bamnat.app.ui.components.ToneLine(
+            "내 근무에 없는 ${missing.joinToString(", ") { "'${it.name}'" }}이 있는 날은 그대로 둬요. 설정 › 근무 종류에서 만들면 같이 넣어요.",
+            tone = com.bamnat.app.ui.theme.Tone.Caution)
         followLine()
         val putIn = {
             val todo = changes

@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.EventAvailable
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.AddToPhotos
 import androidx.compose.material.icons.outlined.AccountBalanceWallet
@@ -164,6 +165,14 @@ fun MemoListScreen(
     val filterOn = state.tag != null || state.shift != null ||
         (if (state.tab == MemoTab.CALENDAR) state.calendarFilter != CalendarFilter.ALL else state.generalFilter != GeneralFilter.ALL)
     val fold = parts.any { it.part == MemoPart.FOLD && it.shown }
+    // 2.0.0 [RVIB-20] HQ-86 (조건 1·4·12): the search box waits behind the 🔍 on the head's row; it opens with the keyboard on it and
+    // stays while there are words in it. At 200% on a folded phone the box was a row of its own over the 오늘 묶음 and the tabs, and the
+    // memos began at the bottom of the screen.
+    val searchPart = parts.any { it.part == MemoPart.SEARCH && it.shown }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    val searchShown = searchOpen || query.isNotEmpty()
+    // Back clears the words and folds the box in one go (Z 1.25 U4: back clears a search before leaving the tab).
+    BackHandler(enabled = !state.selecting && (searchOpen || query.isNotEmpty())) { vm.setQuery(""); searchOpen = false; filtersOpen = false }
     val today = Today.date()
     var undo by remember { mutableStateOf<UndoBar?>(null) }
     val open: (Memo) -> Unit = { memo -> if (state.selecting) vm.toggleSelected(memo.id) else onOpen(memo.id) }
@@ -220,7 +229,8 @@ fun MemoListScreen(
                     onShare = if (state.manyCalendars) ({ sharing = true }) else null,
                 )
             } else {
-                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) })
+                Header(state, onSort = vm::setSort, onOpenTrash = onOpenTrash, onArrange = { com.bamnat.app.ui.settings.SettingsLinks.go(com.bamnat.app.ui.settings.SettingsGo.STUDIO_MEMO) },
+                    onSearch = if (searchPart && !searchShown) ({ searchOpen = true }) else null, filterOn = filterOn)
             }
             for (p in parts) {
                 if (!p.shown) continue
@@ -242,28 +252,33 @@ fun MemoListScreen(
                         onOld = { MemoLinks.old.value = true },
                     )
                     MemoPart.NOTEBOOKS -> NotebookBar(state, vm::setNotebook)
-                    MemoPart.SEARCH -> OutlinedTextField(
-                        value = query,
-                        onValueChange = vm::setQuery,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                        // 2.0.0 [RVI-64] (디자인 품질 1·12) In the list pane at 200% the hint stood in four lines and pushed the
-                        // memos to the bottom half: it keeps one line (TalkBack still reads all of it).
-                        placeholder = { Text("제목, 내용, #태그 검색", maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
-                        trailingIcon = {
-                            Row {
-                                if (state.query.isNotEmpty()) {
-                                    IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
+                    MemoPart.SEARCH -> if (searchShown) {
+                        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                        // Opened from the 🔍: the keyboard comes up on it, so searching is still one tap and the words.
+                        androidx.compose.runtime.LaunchedEffect(Unit) { if (query.isEmpty()) runCatching { focus.requestFocus() } }
+                        OutlinedTextField(
+                            value = query,
+                            onValueChange = vm::setQuery,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).focusRequester(focus),
+                            // 2.0.0 [RVI-64] (디자인 품질 1·12) In the list pane at 200% the hint stood in four lines and pushed the
+                            // memos to the bottom half: it keeps one line (TalkBack still reads all of it).
+                            placeholder = { Text("제목, 내용, #태그 검색", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) }, colors = com.bamnat.app.ui.theme.PhotoGround.fieldColors(),
+                            trailingIcon = {
+                                Row {
+                                    if (state.query.isNotEmpty()) {
+                                        IconButton(onClick = { vm.setQuery("") }) { Icon(Icons.Filled.Close, "검색어 지우기") }
+                                    } else IconButton(onClick = { searchOpen = false; filtersOpen = false }) { Icon(Icons.Filled.Close, "검색 닫기") }
+                                    if (fold) IconButton(onClick = { filtersOpen = !filtersOpen }) {
+                                        Icon(Icons.Filled.FilterList, if (filtersOpen) "필터 접기" else "필터 펼치기",
+                                            tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
+                                    }
                                 }
-                                if (fold) IconButton(onClick = { filtersOpen = !filtersOpen }) {
-                                    Icon(Icons.Filled.FilterList, if (filtersOpen) "필터 접기" else "필터 펼치기",
-                                        tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
-                                }
-                            }
-                        },
-                        singleLine = true,
-                        shape = MaterialTheme.shapes.extraLarge,
-                    )
+                            },
+                            singleLine = true,
+                            shape = MaterialTheme.shapes.extraLarge,
+                        )
+                    }
                     MemoPart.FOLD, MemoPart.WEEK -> Unit
                 }
             }
@@ -278,7 +293,7 @@ fun MemoListScreen(
                 }
             }
             // With the search box hidden there is no icon to unfold them, so they stay open.
-            if (!fold || filtersOpen || filterOn || parts.none { it.part == MemoPart.SEARCH && it.shown }) FilterRow(state, vm)
+            if (!fold || filtersOpen || filterOn || !searchPart) FilterRow(state, vm)
             // [TAB-02] 1.36 메모장 보기: the memos on screen (after the tab, notebook, search and filters) as a list, board, table or gallery.
             val tabViews = remember(appSettings.tabViews) { com.bamnat.core.layout.TabViews.decode(appSettings.tabViews) }
             val memoView = tabViews.memo
@@ -484,7 +499,10 @@ internal class CardActions(
 )
 
 @Composable
-private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {}) {
+private fun Header(
+    state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash: () -> Unit, onArrange: () -> Unit = {},
+    onSearch: (() -> Unit)? = null, filterOn: Boolean = false,
+) {
     var sortMenu by remember { mutableStateOf(false) }
     // [BLU-05] 1.36 부품 '메모장 머리'(memo.head).
     val head = com.bamnat.app.ui.parts.partStyle("memo.head")
@@ -512,6 +530,11 @@ private fun Header(state: MemoListState, onSort: (MemoSort) -> Unit, onOpenTrash
                     }
                 }
             }
+        }
+        // 2.0.0 [RVIB-20] HQ-86 The search box, folded here; a filter on shows on the 🔍 too.
+        if (onSearch != null) IconButton(onClick = onSearch) {
+            Icon(Icons.Filled.Search, contentDescription = if (filterOn) "메모 검색 · 필터 켜짐" else "메모 검색",
+                tint = if (filterOn) MaterialTheme.colorScheme.primary else LocalContentColor.current)
         }
         // [DAILY-15] 화면 꾸미기, as on 달력 and 근무·급여.
         IconButton(onClick = onArrange) { Icon(Icons.Outlined.Dashboard, contentDescription = "카드 배치") }

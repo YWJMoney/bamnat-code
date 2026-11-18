@@ -72,6 +72,28 @@ class RvkNineScreenshotTest : ScreenshotBase() {
         reveal("일용근로소득", exact = false)
     }
 
+    /**
+     * [HQ-75] 요약 at big letters read on down to 이번 달 예산 by finger: the floating button steps aside, so the amounts' ends show.
+     * The title '10월 들어온 돈 − 나간 돈' breaks between the words, not inside '들어온 돈'.
+     */
+    private fun summaryReadOn(): Screen.() -> Unit = style(WorkStyle.DAY) {
+        ledgerPage(null)()
+        settle()
+        readOn(260)
+        settle()
+    }
+
+    @Test fun summaryReadOnDarkBig() = shoot("rvk9_09_summary_budget_folded_dark_200", DARK, 2f, summaryReadOn().let { s -> {
+        s()
+        assertTrue("예산 줄이 보임", appears("이번 달 예산", exact = false))
+        assertFalse("읽어 내려가는 동안 떠 있는 단추는 비켜 있음", shows("돈 적기", exact = true))
+    } })
+    @Test fun summaryTopDarkBig() = shoot("rvk9_10_summary_top_folded_dark_200", DARK, 2f, style(WorkStyle.DAY) {
+        ledgerPage(null)()
+        settle()
+        assertTrue("맨 위에서는 단추가 있음", shows("돈 적기", exact = true))
+    })
+
     @Test fun platformLight() = shoot("rvk9_01_platform_folded", FOLDED, platform {
         assertTrue("쓴 돈의 뜻은 아래 한 줄", appears("유류비·정비·보험", exact = true))
     })
