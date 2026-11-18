@@ -328,7 +328,11 @@ box-shadow:var(--shadow);text-decoration:none;color:inherit;min-height:6.5rem;tr
 .bubble-meta.admin{align-self:flex-end}
 .composer{position:sticky;bottom:calc(4.4rem + env(safe-area-inset-bottom));background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);
 padding:.75rem;box-shadow:var(--shadow)}
-@media (min-width:600px){.composer{bottom:1rem}}
+@media (min-width:600px){.composer{bottom:1rem}
+  /* 2.0.0 [RVQ-50] 4e 사진(840·1440 글자 200%): 떠 있는 답 칸이 화면을 다 덮어 문의 글이 보이지 않았어요. 높이를 화면의 절반 남짓으로 막고
+     넘치면 칸 안에서 굴러요. 보내기 줄은 칸 아래에 붙어 있어요. 글자 100%에서는 칸이 그보다 작아 그대로예요. */
+  .composer{max-height:48dvh;overflow:auto;overscroll-behavior:contain}
+  .composer .actions{position:sticky;bottom:-.75rem;z-index:2;background:var(--surface);margin:.5rem -.75rem -.75rem;padding:.6rem .75rem;border-top:1px solid var(--line)}}
 /* [J133-40] 순번 720 (1.32 실사용 테스트, 관리자 휴대폰 화면): on a phone the reply box stays in the page, under the talk, instead of
    floating over the last bubbles; the actions under it are never behind the bottom tabs. */
 @media (max-width:599px){.composer{position:static;margin-bottom:1rem}

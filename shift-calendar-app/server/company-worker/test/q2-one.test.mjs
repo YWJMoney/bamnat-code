@@ -253,12 +253,16 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
   assert.equal(line.due, new Date(TEST_NOW - HOUR + 48 * HOUR).toISOString(), "다음 출시를 막아요: 이틀 안");
   assert.equal(line.group, "report");
   assert.equal(line.turn, "claude");
+  // 2.0.0 [RVQ-52] 줄 번호로만 보는 장부 문(상태·기록)도 깨진 작품 줄을 찾아요(장부 전체를 다시 만들지 않아도).
+  assert.equal((await call("POST", "/api/admin/ledger/state", { keys: [line.key], state: "seeing" }, owner)).status, 200);
+  assert.equal((await call("GET", `/api/admin/ledger/log?key=${encodeURIComponent(line.key)}`, undefined, owner)).status, 200);
 
   // 1:1 문의만 보는 사람: 올리지 못하고, 장부에도 깨진 작품 줄이 없어요.
   const helper = await member(call, owner);
   assert.equal((await call("POST", "/api/admin/recipes/health", report(bad), helper)).status, 403);
   const theirs = (await call("GET", "/api/admin/ledger?view=open", undefined, helper)).data.items ?? [];
   assert.equal(theirs.filter((r) => r.type === "market_broken").length, 0);
+  assert.equal((await call("GET", `/api/admin/ledger/log?key=${encodeURIComponent(line.key)}`, undefined, helper)).status, 404, "볼 수 없는 줄의 기록도 없어요");
 
   // 다음 빌드에서 나으면 그 줄은 사라지고, 지난 결과 숫자는 남아요.
   assert.equal((await call("POST", "/api/admin/recipes/health", { ...report([]), build: "fed9876" }, owner)).status, 201);

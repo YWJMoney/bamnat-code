@@ -85,7 +85,7 @@ import { totpSecret, totpCheck, totpUri } from "./totp.js";
 import { DAY, HOUR } from "./units.js";
 import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
-import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
+import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteCodeShown, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink, syncVoided } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
 import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
@@ -105,7 +105,7 @@ import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
 // 2.0.0 [RVD-25] SN-17 회사 설정 파일 검사(장터 서버도 같은 함수로).
 import { Refuse, refuse, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, given, object, list, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, cleanSetup, usesNewer, period, kindRef, rules, extraRule, tiers, premium, item } from "./company-setup.js";
-import { FCM_SCHEMA, fcmRoute, stillHere } from "./fcm.js";
+import { FCM_SCHEMA, fcmRoute, pushRetry, stillHere } from "./fcm.js";
 import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
@@ -312,6 +312,8 @@ export const fiveMinuteSteps = (env) => [
   ["held5", () => releaseHeld(env, Date.now())],
   ["ship5", () => shipTick(env, Date.now(), loopAnswer)], // 1.39 [LOOP-02] 1시간 보류가 끝난 자동 출시 안내
   ["surge", () => plazaSurge(env, Date.now())],
+  // 2.0.0 [RVQ-51] 검토 SVC-71·I22bb-04: 구글이 바빠 못 간 문의 답 알림을 5분·30분·2시간 뒤 다시.
+  ["push5", () => pushRetry(env, Date.now())],
 ];
 
 /**
@@ -424,7 +426,8 @@ export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
     // 2.0.0 [RVQ-16] 보내려고 잠깐 둔 답도 문의와 함께(문의가 없으면 보낼 곳도 없어요).
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies", "ship_outbox"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    // 2.0.0 [RVQ-51] 못 간 알림 기록(push_fails)도.
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies", "ship_outbox", "push_fails"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -1068,10 +1071,19 @@ const COLUMNS = [
   "ALTER TABLE admin_passkeys ADD COLUMN last_ua TEXT NOT NULL DEFAULT ''",
   // 2.0.0 [RVQ-17] 검토 U21-07·I21b-02: 데이터 요청을 대신 한 증빙(JSON 배열: 지운 표·줄 수, 남은 것, 내보낸 표·줄 수).
   "ALTER TABLE data_requests ADD COLUMN proof TEXT",
+  // 2.0.0 [RVQ-50] 검토 SVC-70·I22bb-02·U22b-01: 앱이 만든 요청 번호(같은 번호면 한 건), 답한 뒤·닫힌 뒤 이어 써 다시 열린 때.
+  "ALTER TABLE inquiries ADD COLUMN ask_key TEXT",
+  "ALTER TABLE inquiries ADD COLUMN reopened_at INTEGER",
+  "ALTER TABLE inquiry_messages ADD COLUMN ask_key TEXT",
+  // 2.0.0 [RVQ-52] 검토 SVC-67: 밤낮 Q&A에 공개한 글(공개할 때 검사하고 따로 저장, 답을 고쳐도 그대로).
+  "ALTER TABLE reply_templates ADD COLUMN public_a TEXT NOT NULL DEFAULT ''",
 ];
 
 /** Indexes on columns COLUMNS adds, so they are made after it. */
 const LATE_INDEXES = [
+  // 2.0.0 [RVQ-50] 검토 I22bb-02: 같은 폰·같은 요청 번호는 한 문의, 같은 문의·같은 번호는 한 글.
+  "CREATE UNIQUE INDEX IF NOT EXISTS inquiries_ask_key ON inquiries (device, ask_key) WHERE ask_key IS NOT NULL",
+  "CREATE UNIQUE INDEX IF NOT EXISTS inquiry_messages_ask_key ON inquiry_messages (inquiry_id, ask_key) WHERE ask_key IS NOT NULL",
   // H 1.23 시작
   "CREATE INDEX IF NOT EXISTS inquiries_assignee ON inquiries (assignee, status)",
   "CREATE INDEX IF NOT EXISTS audit_actor ON audit (actor_id, at)",
@@ -6484,6 +6496,9 @@ function auditDetail(r) {
   if (r.action === "reject" || r.action === "reject_undo") return REASONS[r.detail] ?? (r.detail ? r.detail : "");
   if (r.action === "adopt" || r.action === "post_autohide") return /^[A-Za-z0-9/_-]{12,}$/.test(r.detail ?? "") ? "" : r.detail;
   if (r.action === "invite" || r.action === "admin_update") return permWords(r.detail);
+  // 2.0.0 [RVQ-49] PC-159: 옛 줄은 초대한 폰 표시 앞 8자였어요(내부 번호라 보이지 않게). 새 줄은 '친구 3명 · 코드 … · 1개월 …'.
+  if (r.action === "invite_credit" || r.action === "invite_capped") return /^[0-9a-f]{8}$/.test(r.detail ?? "") ? "" : r.detail;
+  if (r.action === "invite_refused") return { phone: "이미 초대로 들어온 폰", self: "자기 코드" }[r.detail] ?? r.detail;
   if (r.action !== "company_update") return r.detail;
   try {
     const b = JSON.parse(r.detail);
@@ -6520,6 +6535,9 @@ function auditAbout(r) {
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
   // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
   if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
+  // 2.0.0 [RVQ-49] PC-159: 친구 초대 줄은 보상 id·코드 글자 대신 이름으로, 누르면 보상 화면.
+  if (r.action === "invite_credit" || r.action === "invite_capped") return { label: "친구 초대 보상", link: "#/rewards" };
+  if (r.action === "invite_refused" || r.action === "invite_burst") return { label: `초대 코드 ${inviteCodeShown(r.target)}`, link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
     const review = ["adopt", "reject", "reject_undo", "answer"].includes(r.action);
     const post = r.action.startsWith("post_");
