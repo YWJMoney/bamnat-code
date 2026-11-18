@@ -93,6 +93,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -972,22 +973,38 @@ private fun ProgressSteps(i: Inquiry) {
     val steps = inquirySteps(i)
     val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
-    Row(
+    // Q1 3c (조건 12): when a step's name would be cut ('확…', '만…' on a folded phone at 200%), the names under the bars
+    // give way to one line naming where the question stands, instead of a row of half words.
+    val conf = LocalConfiguration.current
+    var cramped by remember(steps, conf.screenWidthDp, conf.fontScale) { mutableStateOf(false) }
+    Column(
         Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "진행 상황: ${steps[at].second}" },
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        steps.forEachIndexed { n, (_, name) ->
-            val done = n <= at
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
-                Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
-                    fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            steps.forEachIndexed { n, (_, name) ->
+                val done = n <= at
+                Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                    if (!cramped) {
+                        Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
+                            fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp),
+                            onTextLayout = { if (it.hasVisualOverflow) cramped = true })
+                    }
+                }
+                if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
             }
-            if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
+        }
+        if (cramped) {
+            Text(stepLine(steps, at), style = MaterialTheme.typography.labelMedium, color = scheme.primary,
+                fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
+
+/** The one line a narrow screen shows in place of the step names: '2.0.0 반영 · 6단계 중 6단계'. */
+internal fun stepLine(steps: List<Pair<String, String>>, at: Int): String =
+    "${steps[at].second} · ${steps.size}단계 중 ${at + 1}단계"
 
 /**
  * [INQ-02][INQ-05] I8: the steps of a question. A bug or an idea can become work, so it shows all six,

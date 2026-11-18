@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.recipe
 
 import com.bamnat.app.company.InquiryPhotos
+import com.bamnat.app.ui.settings.stepLine
 import com.bamnat.app.recipe.FontAbout
 import com.bamnat.app.recipe.RecipePost
 import com.bamnat.app.recipe.RecipeRequest
@@ -67,6 +68,24 @@ class Rvq3cTest {
         assertEquals(1, InquiryPhotos.left(3))
         assertEquals(0, InquiryPhotos.left(4))
         assertEquals(0, InquiryPhotos.left(9))
+    }
+
+    // 조건 12: 접은 폭·글자 200%에서 단계 이름이 잘리면 한 줄로 '어디까지 왔는지'를 말해요.
+    @Test fun aCrampedStepRowSaysWhereItStands() {
+        val steps = listOf("received" to "접수", "checking" to "확인 중", "answered" to "답변",
+            "planned" to "개발 목록", "building" to "만드는 중", "released" to "2.0.0 반영")
+        assertEquals("2.0.0 반영 · 6단계 중 6단계", stepLine(steps, 5))
+        assertEquals("확인 중 · 6단계 중 2단계", stepLine(steps, 1))
+    }
+
+    // PC 4차(시험 폰 GMT): 피곤해요 합계의 '오늘'은 서버가 세는 날(KST)이에요. 폰 날짜가 하루 늦어도 '오늘 3명 미만 · 11/13 3명'으로 갈리지 않아요.
+    @Test fun tiredTodayIsTheServersDay() {
+        val kst = LocalDate.of(2026, 11, 13)
+        val got = com.bamnat.app.share.TiredGot(3, (0L until 7L).map { kst.minusDays(it) to (if (it == 0L) 3 else null) })
+        assertEquals("오늘 3명", com.bamnat.app.team.TeamReceiveSync.tiredLine(got, kst.minusDays(1)))
+        assertEquals("오늘 3명", com.bamnat.app.team.TeamReceiveSync.tiredLine(got, kst))
+        val quiet = com.bamnat.app.share.TiredGot(3, (0L until 7L).map { kst.minusDays(it) to (if (it == 1L) 4 else null) })
+        assertEquals("오늘 3명 미만 · 어제 4명", com.bamnat.app.team.TeamReceiveSync.tiredLine(quiet, kst.minusDays(1)))
     }
 
     // [RVQ-46] U22b-10·I22bb-05: 글꼴을 받는 분께 '만든 곳 · 써도 되는 범위'.
