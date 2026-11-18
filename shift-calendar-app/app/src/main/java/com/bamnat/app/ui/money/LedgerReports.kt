@@ -325,6 +325,7 @@ private fun InOutCard(m: MonthMoney, style: WorkStyle?) {
 }
 
 /** [LEDG-10] The year month by month; a tap on a month says its numbers. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun YearCard(y: YearReport, shown: YearMonth) {
     var picked by rememberSaveable(y.year) { mutableIntStateOf((shown.monthValue - 1).coerceIn(0, 11)) }
@@ -344,13 +345,14 @@ private fun YearCard(y: YearReport, shown: YearMonth) {
         )
         months.getOrNull(picked)?.let { pm ->
             val cal = LocalCalendarColors.current
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("${pm.month.monthValue}월", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
-                Text("+${wonBrief(pm.income)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income)
-                Spacer(Modifier.width(10.dp))
-                Text("-${wonBrief(pm.spent)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.expense)
-                Spacer(Modifier.width(10.dp))
-                Text("= ${wonBrief(pm.balance)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), fontWeight = FontWeight.Bold)
+            // 2.0.0 [RVK-55] (HQ-120, 조건 12) Each amount stays whole; where the line is too narrow (200% on half a wide screen)
+            // they go to the next line instead of '1/0/월' and '+518만' drawn over each other.
+            androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(10.dp),
+                itemVerticalAlignment = Alignment.CenterVertically) {
+                Text("${pm.month.monthValue}월", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, modifier = Modifier.weight(1f))
+                Text("+${wonBrief(pm.income)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.income, softWrap = false)
+                Text("-${wonBrief(pm.spent)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), color = cal.expense, softWrap = false)
+                Text("= ${wonBrief(pm.balance)}", style = MaterialTheme.typography.labelLarge.merge(NumberStyle), fontWeight = FontWeight.Bold, softWrap = false)
             }
         }
         y.savingRate?.let { rate ->

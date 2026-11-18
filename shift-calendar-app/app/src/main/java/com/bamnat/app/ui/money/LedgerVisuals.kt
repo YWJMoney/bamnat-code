@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
@@ -491,12 +492,19 @@ fun PairBars(
 ) {
     val cal = LocalCalendarColors.current
     val top = maxOf(income.maxOrNull() ?: 0, spent.maxOrNull() ?: 0).coerceAtLeast(1)
-    Row(modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
+    // 2.0.0 [RVK-55] (HQ-120, 조건 12) Twelve columns on half a wide screen at 200% left '10'·'11'·'12' cut to '1': where two
+    // digits do not fit a column, every third month and the picked one say their number, drawn whole over the next columns.
+    val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+    val column = (maxWidth - 2.dp * (labels.size - 1).coerceAtLeast(0)) / labels.size.coerceAtLeast(1)
+    val every = if (labels.any { it.length > 1 } && column < 16.dp * fontScale) 3 else 1
+    Row(Modifier.fillMaxWidth().height(150.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.Bottom) {
         labels.forEachIndexed { i, label ->
             val on = i == selected
             Column(
-                Modifier.weight(1f).fillMaxHeight().clip(MaterialTheme.shapes.extraSmall)
-                    .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent)
+                // Not clipped: a month's number may be drawn wider than its column (above).
+                Modifier.weight(1f).fillMaxHeight()
+                    .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent, MaterialTheme.shapes.extraSmall)
                     .clickable(role = Role.Button) { onSelect(i) }
                     .semantics(mergeDescendants = true) { contentDescription = descriptions.getOrElse(i) { label } },
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -512,11 +520,13 @@ fun PairBars(
                         )
                     }
                 }
-                Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                Text(if (every == 1 || i % every == 0 || on) label else "", style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false,
                     color = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(vertical = 4.dp))
+                    fontWeight = if (on) FontWeight.Bold else FontWeight.Normal,
+                    modifier = Modifier.wrapContentWidth(unbounded = true).padding(vertical = 4.dp))
             }
         }
+    }
     }
 }
 
