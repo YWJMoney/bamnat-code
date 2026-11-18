@@ -103,13 +103,33 @@ class RvgPc3ScreenshotTest : ScreenshotBase() {
         settle()
         val across = if (wide) 0.75f else 0.5f
         reveal("일 내 달력에 넣기", exact = false, across = across)
-        assertTrue(appears("넣은 뒤 보낸 분이 영업일을 고치면", exact = false))
-        assertTrue(appears("이 영업일이 바뀌면", exact = false))
+        // [RVG-36] 검토 HQ-74 (조건 4): what happens after 넣기 is one line + ⓘ from the first look (at 200% it was ten grey lines); the
+        // words behind ⓘ keep the link's word ([shopNote]). (조건 6) The 영업 the user has no 근무 for is a 주의 line, not red words.
+        assertTrue(appears("바뀌면 다시 받아요", exact = true))
+        assertTrue(gone("넣은 뒤 보낸 분이", exact = false))
+        assertTrue(appears("내 근무에 없는 '영업'이 있는 날은 그대로 둬요", exact = false))
         assertTrue(scrolledTo("이 영업일 신고하기", exact = true))
     }
     @Test fun shopReceivedFoldLight() = shoot("rvg35_received_shop_fold_light_100", FOLDED, shopReceived())
     @Test fun shopReceivedFoldDarkHuge() = shoot("rvg35_received_shop_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, shopReceived())
     @Test fun shopReceivedOpenLight() = shoot("rvg35_received_shop_open_light_100", UNFOLDED, shopReceived(wide = true))
+
+    /**
+     * [RVG-36] 검토 HQ-74 (조건 13): ⓘ opened, the words say the link's 영업일 and, to someone paid by the hour or the month, 이번 달
+     * 급여 (not 월급: 알바 is paid by the hour); to a 가게, nothing of pay (a 가게 has no 급여 설정 to point to).
+     */
+    private fun shopNote(style: WorkStyle): Screen.() -> Unit = {
+        c.settingsRepository.update { it.copy(workStyle = style) }
+        shopReceived().invoke(this)
+        tapText("설명 보기", exact = true)
+        assertTrue(appears("넣은 뒤 보낸 분이 영업일을 고치면", exact = false))
+        assertTrue(appears("이 영업일이 바뀌면", exact = false))
+        assertTrue(gone("월급", exact = false))
+        if (style.usesPayEngine) assertTrue(appears("이번 달 급여가 얼마인지", exact = false))
+        else assertTrue(gone("급여가 얼마인지", exact = false) && gone("급여 설정", exact = false))
+    }
+    @Test fun shopNoteHourlyFoldLight() = shoot("rvg36_received_shop_note_hourly_fold_light_100", FOLDED, shopNote(WorkStyle.HOURLY))
+    @Test fun shopNoteOwnerFoldDarkHuge() = shoot("rvg36_received_shop_note_owner_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, shopNote(WorkStyle.BUSINESS))
 
     /** The list the calendar's name ▾ opens: the face is read out as 민지의 영업일. */
     @Test fun shopSwitcherFoldDarkHuge() = shoot("rvg35_received_shop_switcher_fold_dark_200", FOLDED_NIGHT, fontScale = 2f) {

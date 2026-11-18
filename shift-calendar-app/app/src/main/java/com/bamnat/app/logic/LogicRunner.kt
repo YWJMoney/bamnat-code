@@ -109,8 +109,8 @@ object LogicRunner {
             // 2.0.0 [RVM-23] STU-12: the chain it is part of goes with it, so a wait does not start the count again.
             later(c, act, date, who, depth = depth)
             done?.set(0, true)
-            store.log(who, "${LogicAct.afterWords(m)} 뒤에 ‘${act.now().say()}’를 해요")
-            if (!quiet || onScreen) _message.value = "${LogicAct.afterWords(m)} 뒤에 ${act.now().say()}를 해요"
+            store.log(who, "${LogicAct.afterWords(m)} 뒤에 ‘${FormulaText.blanks(act.now().say())}’를 해요")
+            if (!quiet || onScreen) _message.value = "${LogicAct.afterWords(m)} 뒤에 ${FormulaText.blanks(act.now().say())}를 해요"
             return
         }
         if (act.verb.pro || act.then.isNotEmpty()) FxAccess.note(c, act.verb)
@@ -154,7 +154,7 @@ object LogicRunner {
                 // press stopped before the rest of its 동작 줄 (커피 → 가계부 카페 줄) and its count. Nothing kept is now "no v" ([takeBack]
                 // reads a missing v as NaN: back to its start).
                 store.wrote(who, JSONObject().put("val", act.arg).apply { if (before != null && before.v.isFinite()) put("v", before.v) }
-                    .put("p", before?.period.orEmpty()).put("t", before?.t.orEmpty()).put("say", act.say()))
+                    .put("p", before?.period.orEmpty()).put("t", before?.t.orEmpty()).put("say", FormulaText.said(act.say(), scope)))
                 valueAfter = FxValues.show(c, act.arg)
                 FxOutside.changed(c)
                 changed = Triple(act.arg, was, after)
@@ -169,7 +169,7 @@ object LogicRunner {
                 val base = Memo(calendars = setOf(c.calendars.active.value))
                 val memo = t?.start(date, Today.date(), base) ?: base.copy(date = date, title = words.ifBlank { act.arg }.take(60))
                 val saved = c.memoRepository.save(fillMemo(c, memo))
-                store.wrote(who, JSONObject().put("memo", saved.id).put("say", act.say()))
+                store.wrote(who, JSONObject().put("memo", saved.id).put("say", FormulaText.said(act.say(), scope)))
             }
             LogicVerb.CHECK_RESET -> {
                 val memos = c.memoRepository.memos.first().filter { it.date == date && !it.inTrash && it.isChecklist && (act.arg.isEmpty() || it.title.contains(act.arg)) }
@@ -179,7 +179,7 @@ object LogicRunner {
                     before.put(JSONObject().put("id", m.id).put("checked", JSONArray(m.checklist.map { it.checked })))
                     c.memoRepository.save(m.copy(checklist = m.checklist.map { it.copy(checked = false) }))
                 }
-                if (before.length() > 0) store.wrote(who, JSONObject().put("checks", before).put("say", act.say()))
+                if (before.length() > 0) store.wrote(who, JSONObject().put("checks", before).put("say", FormulaText.said(act.say(), scope)))
             }
             LogicVerb.ADD_MONEY, LogicVerb.ADD_INCOME -> {
                 val amount = act.amount ?: return
@@ -189,7 +189,7 @@ object LogicRunner {
                         // small #단추 or #규칙 says who wrote it (and can be picked in 거르기).
                         category = act.arg.ifBlank { "기타" }, tags = listOf(writerTag(c, who))),
                 )
-                store.wrote(who, JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", act.say()))
+                store.wrote(who, JSONObject().put("money", entry.id).put("cal", c.calendars.active.value).put("say", FormulaText.said(act.say(), scope)))
             }
             // 1.37 [LEDH-12] 봉투에 넣기: the envelope by name, or the first open one; none, nothing happens (said in the message).
             LogicVerb.ENVELOPE -> {
@@ -201,7 +201,7 @@ object LogicRunner {
                 if (e == null) { store.log(who, "열린 봉투가 없어 못 했어요"); if (!quiet || onScreen) _message.value = "열린 봉투가 없어 넣지 못했어요. 가계부 › 봉투에서 하나 만들어요"; return }
                 envName = e.name
                 val id = money.moveEnvelope(com.bamnat.core.money.EnvelopeMove(envelopeId = e.id, date = date, amount = amount))
-                store.wrote(who, JSONObject().put("envMove", id).put("cal", cal).put("say", act.say()))
+                store.wrote(who, JSONObject().put("envMove", id).put("cal", cal).put("say", FormulaText.said(act.say(), scope)))
             }
             // 사용자 2026-11-01 "메모와 달력을 연동": the day's first memo gets a line made from its values; none, a new one.
             LogicVerb.MEMO_LINE -> {
@@ -209,20 +209,20 @@ object LogicRunner {
                 val m = c.memoRepository.memos.first().firstOrNull { it.date == date && !it.inTrash && !it.isChecklist && it.showsOn(c.calendars.active.value) }
                 if (m != null) {
                     c.memoRepository.save(m.copy(body = listOf(m.body, line).filter { it.isNotEmpty() }.joinToString("\n")))
-                    store.wrote(who, JSONObject().put("line", m.id).put("body", m.body).put("text", line).put("say", act.say()))
+                    store.wrote(who, JSONObject().put("line", m.id).put("body", m.body).put("text", line).put("say", FormulaText.said(act.say(), scope)))
                 } else {
                     val saved = c.memoRepository.save(Memo(date = date, title = line.take(60), body = if (line.length > 60) line else "",
                         calendars = setOf(c.calendars.active.value)))
-                    store.wrote(who, JSONObject().put("memo", saved.id).put("say", act.say()))
+                    store.wrote(who, JSONObject().put("memo", saved.id).put("say", FormulaText.said(act.say(), scope)))
                 }
             }
         }
         if (done == null) store.ran(who) else done[0] = true
-        store.log(who, "${act.say()}를 했어요")
+        store.log(who, "${FormulaText.said(act.say(), scope)}를 했어요")
         // 1.36 [SEC-12] 보안 점검 M4: a rule that wrote while nobody looked says so in a quiet notice (one per rule, the last).
         // 1.37 PC 4차: 시각 규칙은 늘 조용히 돌아 앱을 보고 있어도 되돌리기가 안 나왔어요. 화면이 보이면 쓴 것은 되돌리기 줄로 말해요.
         val seen = !quiet || (act.verb.writes && onScreen)
-        if (quiet && act.verb.writes && !seen) wroteQuietly(ctx, who, act)
+        if (quiet && act.verb.writes && !seen) wroteQuietly(ctx, who, FormulaText.said(act.say(), scope))
         if (seen && act.verb != LogicVerb.SCREEN && act.verb != LogicVerb.MEMO_TEMPLATE) {
             _message.value = when (act.verb) {
                 LogicVerb.NOTIFY -> com.bamnat.core.formula.NoticeOverlap.tidy(words).ifBlank { who }
@@ -233,7 +233,7 @@ object LogicRunner {
                 LogicVerb.MEMO_LINE -> "그날 메모에 ‘${words.take(20)}’ 줄을 더했어요"
                 LogicVerb.ENVELOPE -> "‘${envName ?: act.arg}’ 봉투에 ${"%,d".format(act.amount ?: 0L)}원을 넣었어요"
                 LogicVerb.VAL_ADD, LogicVerb.VAL_SET, LogicVerb.VAL_STAMP, LogicVerb.VAL_TEXT -> "‘${act.arg}’ ${valueAfter ?: ""}"
-                else -> act.say()
+                else -> FormulaText.said(act.say(), scope)
             }
         }
         changed?.let { (name, was, now) -> valueChanged(c, name, was, now, date, depth) }
@@ -745,7 +745,7 @@ object LogicRunner {
             for (o in dueLater) {
                 val who = o.optString("who")
                 val act = actOf(o) ?: continue
-                if (o.optLong("at") < nowMs - LATE_MINUTES * 60_000L) { store.log(who, "‘${act.now().say()}’ 시각을 놓쳤어요 (꺼짐·시계 바뀜)"); continue }
+                if (o.optLong("at") < nowMs - LATE_MINUTES * 60_000L) { store.log(who, "‘${FormulaText.blanks(act.now().say())}’ 시각을 놓쳤어요 (꺼짐·시계 바뀜)"); continue }
                 val day = runCatching { LocalDate.parse(o.optString("date")) }.getOrNull() ?: Today.date()
                 // The gate looks at the act as the rule or button holds it (with its wait); a '다시 알림' was let through when it was asked.
                 val trusted = o.optBoolean("again")
@@ -903,8 +903,8 @@ object LogicRunner {
     internal fun receivedTitle(name: String): String = "받은 규칙 · ‘${name.take(30)}’"
 
     /** 1.36 [SEC-12] "규칙 ‘월급날 저축’: 가계부에 ‘저축 100,000원’ 넣기를 했어요" without a sound, with where to take it back. */
-    private fun wroteQuietly(ctx: Context, who: String, act: LogicAct) =
-        notify(ctx, "규칙 ‘$who’", "${act.say()}를 했어요. 설정 › 알람 › 수식·규칙·버튼의 ‘규칙이 쓴 것’에서 되돌릴 수 있어요", quietly = true)
+    private fun wroteQuietly(ctx: Context, who: String, did: String) =
+        notify(ctx, "규칙 ‘$who’", "${did}를 했어요. 설정 › 알람 › 수식·규칙·버튼의 ‘규칙이 쓴 것’에서 되돌릴 수 있어요", quietly = true)
 
     private const val REQ = 2601
     private const val NOTICE_ID = 7601

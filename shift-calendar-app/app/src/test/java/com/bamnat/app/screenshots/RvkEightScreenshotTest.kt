@@ -145,7 +145,7 @@ class RvkEightScreenshotTest : ScreenshotBase() {
     }
 
     @Test fun heroLight() = shoot("rvk8_01_hero_words_folded", FOLDED, hero().then {
-        assertTrue("가계부 낱말", appears("들어온 돈 − 나간 돈", exact = false))
+        assertTrue("가계부 낱말", appears(com.bamnat.app.ui.money.IN_LESS_OUT, exact = false))
     })
     @Test fun heroDarkBig() = shoot("rvk8_02_hero_words_folded_dark_200", DARK, 2f, hero())
     @Test fun heroWide() = shoot("rvk8_03_hero_words_unfolded", UNFOLDED, hero(wide = true))

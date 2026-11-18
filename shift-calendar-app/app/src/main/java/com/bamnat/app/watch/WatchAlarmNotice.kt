@@ -33,7 +33,7 @@ object WatchAlarmNotice {
             .setSilent(true)
             .setContentTitle("워치에서 오늘 알람을 껐어요")
             .setContentText("오늘 남은 근무 알람이 울리지 않아요")
-            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 2112))
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 2112, payload = NoticeLinks.TODAY_DAY))
             .addAction(NotificationCompat.Action.Builder(0, "되돌리기", undo).setAuthenticationRequired(false).build())
             .setAutoCancel(true)
             .setGroup(Notifications.GROUP_STATUS + "_watch").setGroupSummary(true)

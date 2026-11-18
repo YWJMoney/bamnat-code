@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.money
 
 import androidx.compose.foundation.clickable
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -171,7 +172,7 @@ private fun OverviewCard(m: MonthMoney, r: MonthReport, today: LocalDate) {
         // the same sum as the two tiles above; the pay still to come is said beside it, never counted as in.
         val left = m.received - m.spent
         val saved = if (m.received > 0) (left * 100 / m.received).toInt() else null
-        StatTile("남은 돈", Fmt.won(left), Modifier.fillMaxWidth(), warning = left < 0,
+        StatTile("남은 돈", Fmt.won(left), Modifier.fillMaxWidth(), caution = left < 0,
             caption = m.payExpected?.let { "급여(예상 ${wonBrief(it)})가 들어오면 ${wonBrief(left + it)}" }
                 ?: saved?.let { if (it >= 0) "들어온 돈의 $it%를 남겼어요" else "들어온 돈보다 더 썼어요" })
         if (r.daysCounted > 0) {
@@ -273,7 +274,7 @@ private fun PaceCard(r: MonthReport, budget: Long?, today: LocalDate) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(14.dp), modifier = Modifier.padding(top = 6.dp)) {
             LegendKey(cal.expense, r.thisOne)
             LegendKey(MaterialTheme.colorScheme.onSurfaceVariant, r.earlier, dashed = true)
-            if (budget != null && budget > 0) LegendKey(cal.warning, "예산 ${wonBrief(budget)}", dashed = true)
+            if (budget != null && budget > 0) LegendKey(MaterialTheme.bamnat.caution, "예산 ${wonBrief(budget)}", dashed = true)
         }
     }
 }

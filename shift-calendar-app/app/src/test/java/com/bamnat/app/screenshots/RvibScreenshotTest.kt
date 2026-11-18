@@ -47,12 +47,18 @@ class RvibScreenshotTest : ScreenshotBase() {
      * search box holds the same word, and a card's middle can be a checklist line that ticks).
      */
     private fun Screen.openMemo(search: String, line: String, @Suppress("UNUSED_PARAMETER") wide: Boolean) {
-        typeInto("제목, 내용, #태그 검색", search)
+        memoSearch(search)
         tapLowest(line, merged = false)
     }
 
     // [RVI-77] 맨 위 '오늘' 묶음, [RVI-74] 카드 왼쪽 동그라미로 끝내기, [RVI-80] '오래된 할 일 N개' 한 줄.
-    @Test fun memoTab() = eight("memo_tab") { wide -> tab(2, wide) }
+    // [RVIB-20] HQ-86: the search box waits behind the 🔍 (no row of its own over the memos), and the views are never cut at the edge.
+    @Test fun memoTab() = eight("memo_tab") { wide ->
+        tab(2, wide)
+        org.junit.Assert.assertFalse(shows(MEMO_SEARCH_HINT, exact = true))
+        org.junit.Assert.assertTrue(shows("메모 검색", exact = true))
+        org.junit.Assert.assertTrue(shows("보기 목록") || shows("갤러리", exact = true))
+    }
 
     // [RVIB-02] 체크리스트 줄을 누르면 '별표 달고 위로'·'시각'·'메모', 별표 단 줄은 맨 위로.
     @Test fun checklistLine() = eight("checklist_line") { wide ->
@@ -185,6 +191,26 @@ class RvibScreenshotTest : ScreenshotBase() {
         content { com.bamnat.app.ui.sleep.SleepScreen(vm, wide = wide, onBack = {}) }
         settle()
         org.junit.Assert.assertTrue(appears("아직 잠 기록이 없어요"))
+    }
+
+    // [RVIB-19] (PC-150) 달력만 크게 보기(새 폰 기본값)에서 알람의 '끄고 오늘 보기': 달력만 열리지 않고 오늘 날이 열려요(근무·남은 알람·메모).
+    @Test fun todayLinkCalendarOnly() = eight("today_link_calendar_only") { _ ->
+        runBlocking { c.settingsRepository.update { it.copy(calendarOnly = true, viewAsked = true) } }
+        settle()
+        val title = com.bamnat.app.ui.Fmt.dayTitle(com.bamnat.core.time.Today.date())
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TODAY, payload = com.bamnat.app.NoticeLinks.TODAY_DAY)
+        settle()
+        // The day window's own title (the month's cells only say it inside a longer description).
+        org.junit.Assert.assertTrue(appears(title, exact = true))
+    }
+
+    // [RVIB-19] Other ways to today (도움말 '달력 열기', 받은 근무표 알림) keep the calendar as it is: no day window over it.
+    @Test fun todayLinkElseKeepsCalendar() = shoot("rvib_today_link_else_l100f", FOLDED) {
+        runBlocking { c.settingsRepository.update { it.copy(calendarOnly = true, viewAsked = true) } }
+        settle()
+        com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.TODAY)
+        settle()
+        org.junit.Assert.assertFalse(shows(com.bamnat.app.ui.Fmt.dayTitle(com.bamnat.core.time.Today.date()), exact = true))
     }
 
     // [RVIB-16] (PC-125) 가게: 아래 막대에 없는 '잠'이 '나'에.

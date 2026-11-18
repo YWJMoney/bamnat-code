@@ -140,7 +140,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
         }
         onRules.forEach { r ->
             val h = overlapOf(r)
-            SwitchRow("규칙 ‘${r.name}’", r.say() + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
+            SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()) + (h?.let { " · 겹침: " + (it.builtIn?.label ?: "‘${it.other?.name}’") } ?: ""), true,
                 warning = h?.let { if (it.builtIn == NoticeOverlap.BuiltIn.TODAY) null else "같은 때 같은 것을 알려요. 하나를 끄면 깔끔해요" }) {
                 NoticeBoard.setRule(c, r, it); tick++
             }
@@ -148,7 +148,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
         Text("더 켤 수 있는 알림", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
         if (offOwn.isEmpty() && offRules.isEmpty()) Text("모두 켜 두었어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         offOwn.forEach { o -> SwitchRow(o.label(style), o.does, false) { turn(o, it) } }
-        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", r.say(), false) { NoticeBoard.setRule(c, r, it); tick++ } }
+        offRules.forEach { r -> SwitchRow("규칙 ‘${r.name}’", com.bamnat.core.formula.FormulaText.blanks(r.say()), false) { NoticeBoard.setRule(c, r, it); tick++ } }
         Text("새 알림 규칙은 마을 › 장터 › 도구 › 자동 규칙에서 더 고를 수 있어요. 규칙은 스튜디오 › 규칙·단추에서 고치거나 지워요",
             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
     }
