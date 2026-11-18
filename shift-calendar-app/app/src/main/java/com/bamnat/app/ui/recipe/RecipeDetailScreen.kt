@@ -250,7 +250,7 @@ private fun RecipeDetailPage(vm: RecipeDetailViewModel, onBack: () -> Unit, onRe
                 // [TRY-06] 1.39 기능까지 써 보기: the 기능 switched on, put on the real app for a while and taken back whole.
                 val tryFns = s.pieces.filter { it.on && it.fits && it.kind in com.bamnat.app.recipe.FunctionTrial.KINDS }
                 val ended by LiveTryOn.ended.collectAsStateWithLifecycle()
-                ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e)) { LiveTryOn.forget() } }
+                ended?.takeIf { it.code == vm.code }?.let { e -> TriedCard(LiveTryOn.say(e), LiveTryOn.details(e)) { LiveTryOn.forget() } }
                 var liveNote by remember(r) { mutableStateOf<String?>(null) }
                 var tasting by remember { mutableStateOf(false) }
                 var tasteRefused by remember { mutableStateOf(false) }
@@ -1098,12 +1098,26 @@ internal fun TryFunctionsButton(kinds: List<PieceKind>, enabled: Boolean, start:
 
 /** [TRY-06] What the 기능 did while tried, on the page they were tried from (until closed). */
 @Composable
-internal fun TriedCard(line: String, onClose: () -> Unit) {
+internal fun TriedCard(line: String, details: List<String> = emptyList(), onClose: () -> Unit) {
+    // 2.0.0 [RVM-54] 검토 U09b-04: what went back is one tap away under the line (folded, so the card stays one line until asked).
+    var open by androidx.compose.runtime.saveable.rememberSaveable(line) { mutableStateOf(false) }
     androidx.compose.material3.Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium,
         modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-            TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+        Column(Modifier.padding(start = 14.dp, top = 6.dp, bottom = 6.dp, end = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(line, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                TextButton(onClick = onClose, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+            }
+            if (details.isNotEmpty()) {
+                if (open) details.forEach { d ->
+                    Text("· $d", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(end = 10.dp, bottom = 2.dp))
+                }
+                TextButton(onClick = { open = !open }, modifier = Modifier.heightIn(min = 48.dp),
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp)) {
+                    Text(if (open) "접기" else "되돌린 것 보기")
+                }
+            }
         }
     }
 }
