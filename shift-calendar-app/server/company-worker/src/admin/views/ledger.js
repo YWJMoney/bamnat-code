@@ -149,8 +149,8 @@ export function ledgerViews(A) {
     // [RVA-63] HQ-124, [RVA-67] PC-201: 멈춤 기록이 없으면 점검 기록을 켠 새 문의를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
     if (r.crash && r.crash.record !== "has" && !r.closed) {
       const box = r.sort && editAsk ? `lg-reply-${r.id}` : null;
-      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.</span>
-        ${box ? `<button type="button" class="btn small" data-act="crash-draft" data-target="${esc(box)}">기록 부탁 답 넣기</button>`
+      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}${r.crash.reply ? ". 답장의 '점검 기록도 보내기'로 받아 봐요." : ". 점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요."}</span>
+        ${box ? `<button type="button" class="btn small" data-act="crash-draft" data-target="${esc(box)}"${r.crash.reply ? ' data-reply="1"' : ""}>기록 부탁 답 넣기</button>`
           : `<a class="btn small" href="${href("inquiries", r.id)}">문의에서 답하기</a>`}</p>`);
     }
     if (r.answer?.key === "owner") parts.push(`<p class="note warn">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
