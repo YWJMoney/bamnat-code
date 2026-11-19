@@ -438,7 +438,7 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
                 Text("보내기 대기 ${outbox.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 TextButton(enabled = !sending, onClick = {
                     sending = true
-                    vm.sendQueued { ok -> sending = false; said = if (ok) "보냈어요" else "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요" }
+                    vm.sendQueued { ok -> sending = false; said = if (ok) "보냈어요" else InquiryViewModel.stillWaiting(com.bamnat.app.company.InquiryOutbox.limited) }
                 }) { Text("지금 보내기") }
             }
             Text("인터넷이 연결되면 앱을 닫아 두어도 저절로 보내요. 사진은 함께 가지 않아요.", style = MaterialTheme.typography.bodySmall,

@@ -41,19 +41,17 @@ import com.bamnat.core.money.MoneyEntry
 
 /**
  * [COMN-04] A line in 확인 대기함: swiped right it is confirmed and counts from then on, swiped left
- * it is thrown away once asked [SWIPE-01] (with undo). Tapped it opens to fix, and saving it confirms it too.
+ * it is thrown away at once (2.0.0 [RVK-61], with undo; it asked first before). Tapped it opens to fix, and saving it confirms it too.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PendingRow(e: MoneyEntry, onOpen: () -> Unit, onConfirm: () -> Unit, onDelete: () -> Unit) {
     val haptics = LocalHapticFeedback.current
-    // [SWIPE-01] Slid left it springs back and asks before throwing the line away.
-    var asking by remember { mutableStateOf(false) }
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = { v ->
             if (v == SwipeToDismissBoxValue.EndToStart) {
                 haptics.performHapticFeedback(HapticFeedbackType.Reject)
-                asking = true
+                onDelete()
                 false
             } else true
         },
@@ -66,7 +64,6 @@ internal fun PendingRow(e: MoneyEntry, onOpen: () -> Unit, onConfirm: () -> Unit
             SwipeToDismissBoxValue.Settled -> Unit
         }
     }
-    if (asking) DeleteLineDialog(e, onDismiss = { asking = false }, onConfirm = { asking = false; onDelete() })
     SwipeToDismissBox(
         state = state,
         backgroundContent = {

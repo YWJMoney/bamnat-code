@@ -153,8 +153,10 @@ internal object SettingsIndex {
                 /** 1.38 [SLEEP-19] `sleep.auto` and `sleep.sound` open: their switches and cards are found. */
                 sleepAuto: Boolean = true, sleepSound: Boolean = true,
                 /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
-                flowAdded: Boolean = false): List<SettingEntry> =
-        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
+                flowAdded: Boolean = false,
+                /** 2.0.0 [RVIB-21] A 근무 종류 of the calendar has two parts: 둘째 구간 알림 is on the page ([NoticeBoard.shown]). */
+                gap: Boolean = false): List<SettingEntry> =
+        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) && (it.title != GAP_ROW || gap) }.map { inWords(it, style) }
 
     /**
      * 2.0.0 [RVO-10] (검토 U11a-04·SET-03: 설정 찾기가 유형의 말을 몰라요): an entry reads as its row does on that kind of work's page.
@@ -302,6 +304,8 @@ internal object SettingsIndex {
         row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
         // 1.32 [WTYP-16]
         row(N, "퇴근 시각 알림", "지금 퇴근", "퇴근 버튼", "잔업 기록", "야근 기록", "퇴근 알림"),
+        // 2.0.0 [RVIB-21]
+        row(N, "둘째 구간 시작 알림", "브레이크 타임", "비는 시간", "다시 시작", "두 구간", "브레이크 알림"),
         row(N, "퇴근 뒤 가계부 정리 알림", "하루 마감", "가계부 알림", "지출 적기 알림", "오늘 쓴 돈", "정리 알림"),
         row(N, "근무 전 한 줄 예고", "근무 전날 알림", "내일 돈 예고", "근무 날 지출", "야간 지출 예고"),
         // 1.32 [WTYP-12]
