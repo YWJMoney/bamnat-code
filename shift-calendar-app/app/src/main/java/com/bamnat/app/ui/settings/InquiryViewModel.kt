@@ -16,6 +16,7 @@ import com.bamnat.app.company.KnownIssue
 import com.bamnat.app.company.PublicPage
 import com.bamnat.app.company.PublicThread
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
+import com.bamnat.app.ui.guide.guideCalendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,19 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** [UX-05] New answers first, then questions still waiting, then the rest, newest first. */
     fun ordered(list: List<Inquiry>): List<Inquiry> =
         list.sortedWith(compareByDescending<Inquiry> { unreadIn(it) }.thenByDescending { it.waiting }.thenByDescending { it.updatedAt })
+
+    private val _picks = MutableStateFlow<List<com.bamnat.app.company.PlazaPick>>(emptyList())
+    /** 2.0.0 [RVN-24] 검토 I22cb-02: my kind of work's 답 모음 picks that name a subject, for '같은 근무 분들의 답' under 도움말. */
+    val picks: StateFlow<List<com.bamnat.app.company.PlazaPick>> = _picks.asStateFlow()
+
+    /** [I22cb-02] Read once a screen: only while the plaza's tags are on, from the room of the calendar's kind of work. */
+    fun loadPicks() {
+        if (!online || !c.plazaTags.on) return
+        val room = com.bamnat.core.plaza.StylePlaza.styleRoom(c.guideCalendar().second) ?: return
+        viewModelScope.launch {
+            _picks.value = runCatching { c.companyApi.plazaPicks(room) }.getOrDefault(emptyList()).filter { it.topic != null }
+        }
+    }
 
     private val _board = MutableStateFlow<PublicPage?>(null)
     /** 모두의 문의 as far as it is loaded; null until the first page comes back. */

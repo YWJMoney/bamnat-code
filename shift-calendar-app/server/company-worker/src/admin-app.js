@@ -1832,21 +1832,27 @@ function adminApp(L, BUILD, M) {
   function picksView(edit) {
     const d = S.data.picks;
     if (!d) return skeleton(1);
+    // 2.0.0 [RVN-24] 검토 I22cb-02: what a pick is about, so 앱 도움말 on that subject shows it ('같은 근무 분들의 답').
+    const topics = d.topics ?? {};
+    const topicSelect = (id, now) => `<select id="pick-topic-${esc(id)}" aria-label="도움말 주제"><option value="">도움말 주제 없음</option>${
+      Object.entries(topics).map(([k, v]) => `<option value="${esc(k)}"${now === k ? " selected" : ""}>도움말 · ${esc(v)}</option>`).join("")}</select>`;
     const card = (x) => `<article class="card">
       <div class="head"><h3>${esc(x.name)}</h3><span class="pill${x.picks.length ? " ok" : ""}">모음 ${x.picks.length}</span>
         <span class="pill${x.candidates.length ? " info" : ""}">후보 ${x.candidates.length}</span></div>
       ${x.picks.length ? `<ul class="plain">${x.picks.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.title)}</b>
-        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
+        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${p.topic && topics[p.topic] ? `도움말 ${esc(topics[p.topic])} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
+        ${edit ? `<span class="row-side">${p.gone ? "" : `${topicSelect(p.answerId, p.topic)}<button class="btn small ghost" data-act="pick-topic" data-id="${esc(p.answerId)}"
+          data-title="${esc(p.title)}">주제 저장</button>`}<button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
         : '<p class="meta">아직 고른 답이 없어요</p>'}
       ${x.candidates.length ? `<h4>넣을 만한 답</h4><ul class="plain">${x.candidates.map((c) => `<li>
         <p class="meta">Q. ${esc(cut(c.question, 80))}${c.form ? ` · ${esc(FORM_NAMES[c.form] ?? c.form)}` : ""}</p>
         <p>A. ${esc(cut(c.body, 160))} <span class="meta">${c.chosen ? "질문한 분이 도움 됐어요 · " : ""}나도요 ${c.agree}</span></p>
         ${edit ? `<div class="actions"><input id="pick-title-${esc(c.answer)}" type="text" maxlength="40" placeholder="모음 제목 (예: 야간 뒤 바로 잠드는 법)">
-          <button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
+          ${topicSelect(c.answer, null)}<button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
     </article>`;
     return `<h3>광장 답 모음</h3><p class="hint">도움이 된 답을 골라 제목을 붙이면 앱 그 유형 광장 맨 위 ‘📚 선배 답 모음’에 보여요.
-      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
+      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 도움말 주제를 고르면 앱 도움말의 그 주제 답 아래 ‘같은 근무 분들의 답’에도 보여요.
+      답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
       <div class="grid">${d.items.map(card).join("")}</div>`;
   }
 
@@ -5282,7 +5288,15 @@ function adminApp(L, BUILD, M) {
     "pick-add": async ({ id }) => {
       const title = document.getElementById(`pick-title-${id}`)?.value?.trim() ?? "";
       if (!title) return toast("모음 제목을 적어 주세요");
-      await act(() => api("/plaza/picks", "POST", { answer: id, title }), `‘${title}’을 답 모음에 넣었어요. 앱 광장에 보여요`);
+      const topic = document.getElementById(`pick-topic-${id}`)?.value || null;
+      await act(() => api("/plaza/picks", "POST", { answer: id, title, topic }), `‘${title}’을 답 모음에 넣었어요. 앱 광장${topic ? "과 도움말" : ""}에 보여요`);
+      S.data.picks = null;
+      load();
+    },
+    // 2.0.0 [RVN-24] 검토 I22cb-02: a pick's 도움말 주제 (its title stays).
+    "pick-topic": async ({ id, title }) => {
+      const topic = document.getElementById(`pick-topic-${id}`)?.value || null;
+      await act(() => api("/plaza/picks", "POST", { answer: id, title, topic }), topic ? "도움말 주제를 저장했어요. 앱 도움말의 그 주제 답 아래에 보여요" : "도움말 주제를 뺐어요");
       S.data.picks = null;
       load();
     },

@@ -367,14 +367,42 @@ data class Talk(val posts: List<TalkPost>, val mutedUntil: Instant? = null, val 
 /** 1.39 [PLZC-12] 머리 숫자 of a kind of work's plaza; [checkin] [PLZC-21] 오늘 출근 where the room has it. */
 data class Pulse(val today: Int, val waiting: Int, val working: Int, val checkin: Checkin? = null)
 
-/** 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one. */
-data class PlazaPick(val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String)
+/**
+ * 1.39 [PLZC-22] 선배 답 모음: an answer the operator picked, with its question; [form] the question's 근무형태 when it had one.
+ * 2.0.0 [RVN-24] 검토 I22cb-02: [topic] what it is about (the server's PICK_TOPICS key: alarm, pay, leave, sleep, roster, money,
+ * health), so 도움말 on that subject shows it as '같은 근무 분들의 답'.
+ */
+data class PlazaPick(
+    val id: String, val title: String, val form: com.bamnat.core.pay.WorkForm?, val question: String, val answer: String,
+    val topic: String? = null,
+)
 
 internal fun plazaPicksOf(o: JSONObject): List<PlazaPick> = o.optJSONArray("items").objects().mapNotNull { p ->
     val id = p.optString("id").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
     PlazaPick(id, p.optString("title"), p.optString("form").takeIf { it.isNotEmpty() }
-        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"))
+        ?.let { f -> com.bamnat.core.pay.WorkForm.entries.firstOrNull { it.name == f } }, p.optString("question"), p.optString("answer"),
+        p.optString("topic").takeIf { it in PlazaPickTopics.KEYS })
 }.filter { it.title.isNotBlank() && it.answer.isNotBlank() }
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cb-02: which 답 모음 subject a 도움말 answer is about, by its tag ("알람", "급여" …). The keys are the
+ * server's PICK_TOPICS (plaza-picks.js); a subject the app does not know is left out.
+ */
+object PlazaPickTopics {
+    val KEYS = setOf("alarm", "pay", "leave", "sleep", "roster", "money", "health")
+
+    private val BY_TAG = mapOf(
+        "알람" to "alarm",
+        "급여" to "pay", "추가 근무" to "pay", "실수령" to "pay", "선택근무" to "pay", "공무원 급여" to "pay", "공수" to "pay",
+        "연차" to "leave", "희망 오프" to "leave",
+        "수면" to "sleep",
+        "근무 주기" to "roster", "한 달 근무" to "roster", "연속 근무" to "roster", "근무표 점검" to "roster",
+        "가계부" to "money", "돈" to "money", "영수증" to "money", "연말정산" to "money", "소득 종류" to "money",
+    )
+
+    /** The subject of a 도움말 answer tagged [tag]; null when no 답 모음 subject fits. */
+    fun of(tag: String): String? = BY_TAG[tag]
+}
 
 /**
  * 2.0.0 [RVN-22] 검토 I10bb-02 One kind of what the server has of this phone ([key]: settings, posts, votes, flags, inquiries,

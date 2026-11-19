@@ -206,7 +206,7 @@ private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
     // [INQ-07] Read again whenever the screen comes back (from the notice of an answer, another app, the lock
     // screen), so an answer that came while it stayed open shows without leaving help (점검 보고서 하 '문의').
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
-    LaunchedEffect(Unit) { vm.loadBoard() }
+    LaunchedEffect(Unit) { vm.loadBoard(); vm.loadPicks() }
     // Another screen's 문의 while this one is open (it stays on top) is taken here.
     val pending by InquiryLinks.pending.collectAsStateWithLifecycle()
     LaunchedEffect(pending) {
@@ -1325,6 +1325,8 @@ private fun HelpHome(
     val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
+    // 2.0.0 [RVN-24] 검토 I22cb-02: 같은 근무 분들의 답 under an answer on the same subject.
+    val picks by vm.picks.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val toggle: (HelpTopic) -> Unit = { t -> expanded = if (expanded == t.id) null else t.id }
     Column(
@@ -1364,10 +1366,10 @@ private fun HelpHome(
             val here = remember(about, topics) { HelpFaq.about(about, topics).take(4) }
             if (here.isNotEmpty()) {
                 SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
-                here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+                here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }, picks = picks) }
             }
             SectionLabel("자주 묻는 질문")
-            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            (topics - here.toSet()).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }, picks = picks) }
         } else {
             val found = remember(query, topics) { HelpFaq.search(query, topics) }
             val settings = remember(query) {
@@ -1390,7 +1392,7 @@ private fun HelpHome(
                 features.forEach { f -> com.bamnat.app.ui.guide.FeatureHelpRow(f) }
             }
             if (found.isNotEmpty() && features.isNotEmpty()) SectionLabel("자주 묻는 질문에서")
-            found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
+            found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }, picks = picks) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
                 settings.forEach { e -> HelpSettingRow(e) }
@@ -1418,8 +1420,14 @@ private fun SectionLabel(text: String) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, onAsk: (() -> Unit)? = null) {
+private fun FaqCard(
+    topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, onAsk: (() -> Unit)? = null,
+    picks: List<com.bamnat.app.company.PlazaPick> = emptyList(),
+) {
     val scheme = MaterialTheme.colorScheme
+    val same = remember(picks, topic.tag) {
+        com.bamnat.app.company.PlazaPickTopics.of(topic.tag)?.let { k -> picks.filter { it.topic == k } }.orEmpty().take(2)
+    }
     Surface(
         shape = MaterialTheme.shapes.large,
         color = if (expanded) scheme.surfaceContainer else scheme.surfaceContainerLow,
@@ -1451,9 +1459,36 @@ private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, o
                             }
                         }
                     }
+                    if (same.isNotEmpty()) {
+                        Text("같은 근무 분들의 답", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                        same.forEach { PickLine(it) }
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cb-02: one answer from my kind of work's 답 모음 on the subject of the help answer above it: its title, and the
+ * answer in two lines that open in full on a tap (the question with it).
+ */
+@Composable
+private fun PickLine(p: com.bamnat.app.company.PlazaPick) {
+    var open by rememberSaveable(p.id) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
+            .clickable(role = Role.Button, onClickLabel = if (open) "답 접기" else "답 모두 보기") { open = !open }
+            .semantics { stateDescription = if (open) "펼침" else "접힘" }
+            .padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text("💬 ${p.title}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurface)
+        if (open) Text("물음: ${p.question}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        Text(p.answer, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
+            maxLines = if (open) Int.MAX_VALUE else 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 
