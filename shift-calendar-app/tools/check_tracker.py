@@ -20,8 +20,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = ROOT / "docs" / "tracker.csv"
 STATUSES = {"대기", "진행 중", "완료", "조건부", "보류", "하지 않음", "이관"}
 # [MEMO-SEL-01] 1.30: an ID may have a two-part name (MEMO-SEL-01, RULE-ED-01).
-ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2}$")
-TAG_RE = re.compile(r"\[((?:[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})(?:,\s*[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})*)\]")
+# 두 자리 번호가 원칙이에요. 갈래 H(RVH)만 99를 넘겨 RVH-100부터 세 자리를 써요(2.0.0 마무리).
+_ONE = r"(?:[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2}|RVH-\d{3})"
+ID_RE = re.compile(r"^" + _ONE + r"$")
+TAG_RE = re.compile(r"\[(" + _ONE + r"(?:,\s*" + _ONE + r")*)\]")
 SOURCE_GLOBS = ("app/src/**/*.kt", "core/src/**/*.kt", "app/src/**/*.xml", "*.kts", "app/*.kts")
 
 
