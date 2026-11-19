@@ -34,9 +34,16 @@ object SetupLater {
         data class Finish(val style: WorkStyle) : Step
     }
 
-    fun step(s: AppSettings, d: SetupDraft?): Step {
+    /**
+     * [settingsMoved] false: only the draft changed since the last look. That is the setup's own answer ('어떤 일을 하고 계신가요?'
+     * picked again, [com.bamnat.app.ui.setup.SetupViewModel.pickStyle] saves the draft and then the settings), and the settings
+     * follow it, never the other way round. 2.0.0 [RVH-66] (총괄, SetupFlowTest 255줄 'expected SHIFT but was DAY' in a whole run):
+     * the watch woke between the two writes, read the settings still on the old kind of work and put the draft back on it.
+     */
+    fun step(s: AppSettings, d: SetupDraft?, settingsMoved: Boolean = true): Step {
         val style = s.workStyle
         if (!s.setupLater || style == null || d?.committing == true || d?.style == style) return Step.Nothing
+        if (!settingsMoved && d != null) return Step.Nothing
         if (!style.asksMore) return Step.Finish(style)
         return Step.Draft(fresh(style, company = d?.companyName.orEmpty()).copy(later = d?.later ?: true))
     }
@@ -46,10 +53,13 @@ object SetupLater {
 
     /** Keeps the waiting setup in step with the settings, for as long as the app runs. */
     suspend fun follow(settings: SettingsRepository, drafts: SetupDraftStore, setup: FirstSetup) {
-        combine(settings.settings.map { it.workStyle to it.setupLater }.distinctUntilChanged(), drafts.draft) { _, _ -> Unit }
-            .collect {
+        var seen: Pair<WorkStyle?, Boolean>? = null
+        combine(settings.settings.map { it.workStyle to it.setupLater }.distinctUntilChanged(), drafts.draft) { s, _ -> s }
+            .collect { s ->
+                val moved = s != seen
+                seen = s
                 // Read now, not as it came: a screen may have saved the next draft meanwhile.
-                when (val step = step(settings.current, drafts.draft.value)) {
+                when (val step = step(settings.current, drafts.draft.value, settingsMoved = moved)) {
                     Step.Nothing -> Unit
                     is Step.Draft -> drafts.save(step.draft)
                     is Step.Finish -> runCatching { setup.save(SetupDraft(style = step.style), quiet = true) }

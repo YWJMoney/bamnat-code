@@ -23,6 +23,8 @@ object NoticeLinks {
         LEAVE,
         /** Where the alarm's permissions are checked and fixed. */
         ALARM_CHECK,
+        /** 2.0.0 [RVO-14] 설정 › 알람, where 확실하게 깨우기 (끄기 미션) is, from the notice that its 7 days end. */
+        SURE_ALARM,
         /** [SCHED-01] The memos, from a memo schedule's notice. */
         MEMOS,
         /** [SLP-16] The sleep log and what it says. */

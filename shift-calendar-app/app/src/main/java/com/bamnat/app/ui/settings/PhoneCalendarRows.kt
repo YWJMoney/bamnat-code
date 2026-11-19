@@ -25,6 +25,9 @@ import kotlinx.coroutines.launch
 /** [ALRM-01] The row the permission notice opens. */
 const val PHONE_CALENDAR_ROW = "휴대폰 캘린더에 근무 쓰기"
 
+/** 2.0.0 [RVO-14] What the row says once 프로 ended: the app's events went, the app's own shifts stay, and 프로 writes them again. */
+const val PHONE_CALENDAR_PAUSED = "프로가 아니라 휴대폰 캘린더의 근무 일정을 지웠어요. 앱 안 근무는 그대로고, 다시 프로가 되면 다시 써요."
+
 /**
  * [FEAT-07] 휴대폰 캘린더에 근무 쓰기 (프로): a switch for each of the user's calendars. The calendar
  * permission is asked when one is turned on, not before; turning it off deletes the phone's copy.
@@ -73,7 +76,10 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
             }
         }
     }
-    val line = if (refused) "캘린더 권한을 허용해야 쓸 수 있어요. 휴대폰 설정 › 애플리케이션 › 밤낮 › 권한에서 바꿀 수 있어요." else when (val s = status) {
+    // 2.0.0 [RVO-14] (총괄 11-12 #481): 프로가 끝나 지운 뒤에도 무엇이 남고 언제 다시 쓰는지 말해요(고른 달력은 설정에 남아요).
+    val paused = !open && settings.phoneCalendars.isNotEmpty()
+    val line = if (refused) "캘린더 권한을 허용해야 쓸 수 있어요. 휴대폰 설정 › 애플리케이션 › 밤낮 › 권한에서 바꿀 수 있어요."
+    else if (paused) PHONE_CALENDAR_PAUSED else when (val s = status) {
         is PhoneCalendarSync.Status.Written -> "일정 ${s.events}개를 썼어요. 캘린더 앱에 안 보이면 그 앱의 캘린더 목록에서 '${PhoneCalendar.ACCOUNT}'을 켜 주세요."
         // [ALRM-01] R9: the phone's calendar may still show old shifts, which this app cannot remove without the permission.
         PhoneCalendarSync.Status.NeedsPermission -> "캘린더 권한이 꺼져 멈췄어요. 휴대폰 캘린더의 근무가 옛것일 수 있어요. 스위치를 껐다 켜면 다시 물어요."
@@ -81,7 +87,8 @@ internal fun PhoneCalendarRows(vm: SettingsViewModel) {
         PhoneCalendarSync.Status.Off -> null
     }
     if (line != null && (refused || settings.phoneCalendars.isNotEmpty())) {
-        val warn = refused || status == PhoneCalendarSync.Status.NeedsPermission
+        // Paused is not a fault: without 프로 nothing is written, so a missing permission does not matter now.
+        val warn = refused || (!paused && status == PhoneCalendarSync.Status.NeedsPermission)
         Text(line, style = MaterialTheme.typography.bodySmall,
             color = if (warn) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
     }

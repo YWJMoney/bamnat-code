@@ -134,7 +134,9 @@ fun RecipeMineScreen(vm: RecipeMineViewModel, onBack: () -> Unit, onOpen: (Strin
                             when {
                                 e.undoneAt != null -> Muted("되돌렸어요")
                                 e.replacedAt == com.bamnat.app.data.RecipeBackup.RESTORED -> Muted("백업에서 돌아왔어요 · 되돌리기는 넣은 휴대폰에서만 돼요")
-                                e.replacedAt != null -> Muted("다른 작품이 그 자리에 들어갔어요")
+                                // 2.0.0 [RVM-59] 검토 U09b-03: which work took its place, and where its pieces are seen one by one.
+                                e.replacedAt != null -> Muted(com.bamnat.app.recipe.RecipeRepository.coveredBy(e)?.let { "‘$it’${com.bamnat.app.ui.Fmt.iga(it)} 그 자리에 들어갔어요 · 조각별로는 마을 › 테마(내 서랍)에서 봐요" }
+                                    ?: "다른 작품이 그 자리에 들어갔어요")
                                 vm.canUndo(e) -> TextButton(onClick = { undoing = e.title to { vm.undo(e.id) } }) { Text("되돌리기 (넣은 지 7일 안)") }
                                 else -> Muted("7일이 지나 그대로 쓰고 있어요")
                             }

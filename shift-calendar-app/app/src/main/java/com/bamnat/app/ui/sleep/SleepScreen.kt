@@ -129,20 +129,24 @@ class SleepViewModel(private val container: AppContainer) : ViewModel() {
         /** 1.39 [FLOW-11] The calendar's work, for a picked day's 잠 이야기 줄. */
         val resolver: com.bamnat.core.schedule.ScheduleResolver? = null)
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val state: StateFlow<State?> = combine(
         container.sleepRepository.recent(days = SleepInsights.WINDOW_DAYS + SleepDebt.WINDOW_DAYS),
         container.healthSleep.sleeps,
         // [SRCH-13] 1.29 AS: the shared reading (live), not a whole-history read of its own.
         container.scheduleRepository.live,
-        settings,
+        // 2.0.0 [RVH-74] 검토 TYPE-07: a 현장 day with a job is a day of work for the averages, though it has no shift.
+        combine(settings, container.calendars.active.flatMapLatest { container.calendars.money(it).book }) { s, book ->
+            s to if (s.workStyle == com.bamnat.core.work.WorkStyle.FIELD) book.jobs.filter { !it.cancelled }.flatMap { j -> (0 until j.days).map { j.date.plusDays(it.toLong()) } }.toSet() else emptySet()
+        },
         container.flags.byKey,
-    ) { manual, measured, snapshot, s, flags ->
+    ) { manual, measured, snapshot, (s, jobDays), flags ->
         val log = SleepMerge.merge(manual, measured)
         val today = Today.date()
         val compare = if (flags[com.bamnat.core.flags.FlagCatalog.HEALTH_COMPARE]?.on != true) null else com.bamnat.core.sleep.PlanVsActual.summary(
             com.bamnat.core.sleep.PlanVsActual.nights(log, snapshot.resolver, today.minusDays(com.bamnat.core.sleep.PlanVsActual.WINDOW_DAYS - 1), today,
                 s.alarmsEnabled, s.sleepTargetMinutes, s.commuteMinutes))
-        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes, s.workStyle), today, compare, snapshot.resolver)
+        State(log, SleepInsights.report(log, snapshot.resolver, today, s.sleepTargetMinutes, s.workStyle, jobDays), today, compare, snapshot.resolver)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val health = container.healthSleep.state
@@ -495,7 +499,8 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
                 // [UX-06] Where the target and the watch are set, and help, from the screen that uses them.
                 actions = {
-                    IconButton(onClick = { SettingsLinks.open(SettingsPage.NOTICES, "목표 수면 시간") }) {
+                    // 2.0.0 [RVO-22] 검토 U11a-06: the gear opens 알림과 잠's one group '잠', at its top.
+                    IconButton(onClick = { SettingsLinks.open(SettingsPage.NOTICES, com.bamnat.app.ui.settings.SLEEP_GROUP) }) {
                         Icon(Icons.Outlined.Tune, "수면 설정")
                     }
                     IconButton(onClick = { InquiryLinks.ask(InquiryStart(about = "수면 기록", help = true)) }) {
@@ -756,7 +761,8 @@ private fun HowItWorks(style: com.bamnat.core.work.WorkStyle?) {
             when (style) {
                 null, com.bamnat.core.work.WorkStyle.SHIFT -> "기록이 쌓이면 야간 뒤·아침 출근 전·쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
                 com.bamnat.core.work.WorkStyle.INVEST -> "기록이 쌓이면 평일과 쉬는 날 평균을 따로 보여 줘요."
-                else -> "기록이 쌓이면 일하는 날과 쉬는 날 평균을 따로 보여 주고, 퇴근길 카드가 내 평균으로 알려 줘요."
+                // 2.0.0 [RVH-73] 검토 T30-93: 퇴근길 카드 speaks after night work only (a 교대 worker's), so the others are not promised it.
+                else -> "기록이 쌓이면 일하는 날과 쉬는 날 평균을 따로 보여 줘요."
             },
         ).forEachIndexed { i, line ->
             Row(Modifier.padding(vertical = 3.dp)) {
@@ -801,7 +807,7 @@ private fun Groups(r: SleepInsights.Report, target: Int, style: com.bamnat.core.
     // 2.0.0 [RVI-40] (검토 ALM-25·T03-07) A shop or an investor has no 근무: '날 종류별 평균'.
     SectionCard(title = groupsTitle(style)) {
         val bars = r.groups.map { g ->
-            com.bamnat.app.ui.components.ChartBar(g.context.label, g.averageMinutes.toDouble(), tone = when {
+            com.bamnat.app.ui.components.ChartBar(g.context.label(style), g.averageMinutes.toDouble(), tone = when {
                 target - g.averageMinutes >= SleepInsights.SHORT_MINUTES -> com.bamnat.app.ui.theme.Tone.Caution
                 g.averageMinutes >= target -> com.bamnat.app.ui.theme.Tone.Good
                 else -> com.bamnat.app.ui.theme.Tone.Plain
@@ -811,7 +817,7 @@ private fun Groups(r: SleepInsights.Report, target: Int, style: com.bamnat.core.
             "점선 목표 ${SleepInsights.hours(target.toLong())}"), height = 96.dp, values = true)
         r.groups.forEach { g ->
             Text(
-                "${g.context.label} ${g.count}번 · 보통 ${g.averageBedtime?.let(SleepInsights::clock) ?: "--:--"}에 잠들어요" +
+                "${g.context.label(style)} ${g.count}번 · 보통 ${g.averageBedtime?.let(SleepInsights::clock) ?: "--:--"}에 잠들어요" +
                     if (!g.enough) " · 기록이 더 있으면 정확해져요" else "",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp),

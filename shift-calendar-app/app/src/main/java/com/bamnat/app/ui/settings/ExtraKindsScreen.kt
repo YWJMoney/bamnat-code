@@ -174,6 +174,59 @@ data class KindEdit(val original: KindDraft, val draft: KindDraft, val isNew: Bo
     val canSave: Boolean get() = draft.valid && (isNew || changed)
 }
 
+/**
+ * 2.0.0 [RVO-20] 검토 SET-15: the kind open in the editor, kept on the phone as it is typed, so a long pay rule half put in comes back
+ * when the app was closed under it (a call, the system) and the screen is opened again. Gone once saved or let go.
+ */
+internal object KindDraftCodec {
+    fun encode(e: KindEdit): String =
+        org.json.JSONObject().put("new", e.isNew).put("original", draft(e.original)).put("draft", draft(e.draft)).toString()
+
+    fun decode(text: String?): KindEdit? = runCatching {
+        val o = org.json.JSONObject(text!!)
+        KindEdit(draft(o.getJSONObject("original")), draft(o.getJSONObject("draft")), o.getBoolean("new"))
+    }.getOrNull()
+
+    // The kind goes through its own line format, which drops a nameless kind and a 0-minute one: the name, mark and minutes being
+    // typed ride beside it, so a half-written kind comes back as it was left.
+    private fun draft(d: KindDraft): org.json.JSONObject = org.json.JSONObject()
+        .put("kind", ExtraKinds(listOf(d.kind.copy(name = "x", short = "x", timing = whole(d.kind.timing)))).encode())
+        .put("name", d.kind.name).put("short", d.kind.short).put("minutes", minutes(d.kind.timing) ?: -1)
+        .put("rule", com.bamnat.app.pay.PayCodec.extraRuleJson(d.rule))
+        .put("byShift", org.json.JSONObject().apply { d.byShift.forEach { (k, v) -> put(k.toString(), com.bamnat.app.pay.PayCodec.extraRuleJson(v)) } })
+
+    private fun minutes(t: ExtraTiming): Int? = when (t) {
+        is ExtraTiming.AfterShift -> t.minutes
+        is ExtraTiming.BeforeShift -> t.minutes
+        else -> null
+    }
+
+    private fun whole(t: ExtraTiming): ExtraTiming = when (t) {
+        is ExtraTiming.AfterShift -> t.copy(minutes = t.minutes.coerceAtLeast(1))
+        is ExtraTiming.BeforeShift -> t.copy(minutes = t.minutes.coerceAtLeast(1))
+        else -> t
+    }
+
+    private fun draft(o: org.json.JSONObject): KindDraft {
+        val read = ExtraKinds.decode(o.getString("kind")).kinds.single()
+        val typed = o.optInt("minutes", -1)
+        val timing = when (val t = read.timing) {
+            is ExtraTiming.AfterShift -> if (typed >= 0) t.copy(minutes = typed) else t
+            is ExtraTiming.BeforeShift -> if (typed >= 0) t.copy(minutes = typed) else t
+            else -> t
+        }
+        val kind = read.copy(name = o.getString("name"), short = o.getString("short"), timing = timing)
+        val byShift = o.getJSONObject("byShift").let { b -> b.keys().asSequence().associate { it.toLong() to com.bamnat.app.pay.PayCodec.extraRuleFrom(b.getJSONObject(it)) } }
+        return KindDraft(kind, com.bamnat.app.pay.PayCodec.extraRuleFrom(o.getJSONObject("rule")), byShift)
+    }
+}
+
+/** 2.0.0 [RVO-20] 검토 SET-15: why a changed kind cannot be saved yet, in a line. */
+internal fun unsavedWhy(draft: KindDraft): String = when {
+    draft.kind.name.isBlank() -> "이름을 넣어야 저장돼요."
+    else -> "시간을 1분 넘게 넣어야 저장돼요."
+}
+
 /** [EXTRA-04] One piece of a kind on a real coming day, priced by the rules being edited. */
 data class KindPreview(
     val date: LocalDate,
@@ -206,9 +259,24 @@ class ExtraKindsViewModel(
     private val _messages = MutableSharedFlow<UndoMessage>(extraBufferCapacity = 4)
     val messages: SharedFlow<UndoMessage> = _messages.asSharedFlow()
 
-    private val _editing = MutableStateFlow<KindEdit?>(null)
+    // 2.0.0 [RVO-20] 검토 SET-15: the open kind is kept on the phone as it changes (KindDraftCodec) and comes back on the next open.
+    private val drafts = container.appContext.getSharedPreferences(DRAFTS, android.content.Context.MODE_PRIVATE)
+    private val draftKey = "kind_$calendarId"
+    private val _editing = MutableStateFlow(KindDraftCodec.decode(drafts.getString(draftKey, null)))
     val editing: StateFlow<KindEdit?> = _editing.asStateFlow()
 
+    init {
+        viewModelScope.launch {
+            _editing.collect { e ->
+                if (e == null) drafts.edit().remove(draftKey).apply() else drafts.edit().putString(draftKey, KindDraftCodec.encode(e)).apply()
+            }
+        }
+    }
+
+    private companion object {
+        /** Kept apart from the app's settings and out of the backup: an unsaved kind is this phone's, not the calendar's. */
+        const val DRAFTS = "extra_kind_draft"
+    }
 
     fun open(kind: ExtraKind) {
         val rules = profile.value?.rules ?: CompanyRules()
@@ -667,7 +735,24 @@ private fun KindEditor(
     val kind = draft.kind
     fun setKind(k: ExtraKind) = vm.edit { it.copy(kind = k) }
     fun setTiming(t: ExtraTiming) = setKind(kind.copy(timing = t))
-    val close: () -> Unit = { if (edit.changed && draft.valid) vm.saveEditing() else vm.close() }
+    // 2.0.0 [RVO-20] 검토 SET-15: 닫기·뒤로 saves what changed, as before; what cannot be saved (no name, no hours) is asked about
+    // once instead of quietly thrown away, so a kind typed in full and closed before its name keeps its work.
+    var unsaved by rememberSaveable { mutableStateOf(false) }
+    val close: () -> Unit = {
+        when {
+            edit.changed && draft.valid -> vm.saveEditing()
+            edit.changed -> unsaved = true
+            else -> vm.close()
+        }
+    }
+    if (unsaved) ConfirmDialog(
+        title = "저장하지 않고 닫을까요?",
+        message = unsavedWhy(draft) + " 닫으면 넣은 것이 사라져요.",
+        confirmLabel = "버리고 닫기",
+        onDismiss = { unsaved = false },
+        onConfirm = { unsaved = false; vm.close() },
+        destructive = true,
+    )
     var picking by remember { mutableStateOf<String?>(null) }
     var reporting by rememberSaveable { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
@@ -918,8 +1003,7 @@ private fun TimingContent(
                 TimeBox(label = "끝", time = t.end, onClick = { onPick("end") }, modifier = Modifier.weight(1f))
             }
             val span = WorkTime.spanMinutes(t.start, t.end)
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow("휴게 시간", Modifier.padding(top = 4.dp)) { // [RVH-81] HQ-98
                 MinutesStepper(
                     minutes = t.breakMinutes,
                     onChange = { b -> onTiming(t.copy(breakMinutes = b, breakStart = if (b == 0) null else t.breakStart)) },
@@ -946,8 +1030,7 @@ private fun TimingContent(
         }
         is ExtraTiming.AfterShift, is ExtraTiming.BeforeShift -> {
             val minutes = (t as? ExtraTiming.AfterShift)?.minutes ?: (t as ExtraTiming.BeforeShift).minutes
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                Text(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow(if (t is ExtraTiming.AfterShift) "근무 끝나고" else "근무 시작 전", Modifier.padding(top = 8.dp)) { // [RVH-81]
                 MinutesStepper(
                     minutes = minutes,
                     onChange = { m -> onTiming(if (t is ExtraTiming.AfterShift) ExtraTiming.AfterShift(m.coerceAtLeast(10)) else ExtraTiming.BeforeShift(m.coerceAtLeast(10))) },
@@ -1135,7 +1218,8 @@ private fun ReportDialog(draft: KindDraft, snapshot: ScheduleSnapshot, profile: 
     var how by rememberSaveable { mutableStateOf("") }
     var example by rememberSaveable { mutableStateOf("") }
     // [INPUT-03] Put together by taps, starting from this kind; the words below are only for what they cannot say.
-    var built by remember { mutableStateOf(emptyList<String>()) }
+    // 2.0.0 [RVO-20] 검토 SET-15: the rules picked so far stay through a turn of the phone or the dark mode.
+    var built by rememberSaveable { mutableStateOf(emptyList<String>()) }
     val start = when (draft.kind.id) {
         ExtraKind.SPECIAL_ID -> RuleDraft.Target.SPECIAL
         ExtraKind.OVERTIME_ID -> RuleDraft.Target.OVERTIME_WORK

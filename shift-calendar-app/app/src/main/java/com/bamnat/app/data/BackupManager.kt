@@ -222,6 +222,13 @@ class BackupManager(
                     .put("status", j.status).putOpt("units", j.units).putOpt("due", j.dueEpochDay))
             }
         })
+        // 2.0.0 [RVK-46] (DB 36) A job's payments besides 선금·잔금. Older apps ignore the key (the job then shows only 선금·잔금 as received).
+        into.put("jobPaid", JSONArray().apply {
+            money.allJobPayments().forEach { p ->
+                put(JSONObject().put("id", p.id).put("job", p.jobId).put("day", p.epochDay).put("amount", p.amount)
+                    .putOpt("label", p.label.ifEmpty { null }).putOpt("note", p.note.ifEmpty { null }))
+            }
+        })
         into.put("sales", JSONArray().apply {
             money.allSales().forEach { d ->
                 put(JSONObject().put("day", d.epochDay).put("sales", d.sales).put("costs", d.costs).put("note", d.note)
@@ -239,7 +246,9 @@ class BackupManager(
                     .put("category", f.category).put("remind", f.remind)
                     // [LEDG-09] Version 15.
                     .put("repeat", f.repeat).put("monthOfYear", f.monthOfYear).putOpt("account", f.accountId).put("auto", f.auto)
-                    .putOpt("start", f.startEpochDay).putOpt("end", f.endEpochDay))
+                    .putOpt("start", f.startEpochDay).putOpt("end", f.endEpochDay)
+                    // 2.0.0 [RVK-46] (DB 36) A repeating 이체's '어디로'. Older apps ignore it.
+                    .putOpt("toAccount", f.toAccountId))
             }
         })
         // [LEDG-08][LEDG-06][LEDG-14] Accounts, budgets and the user's categories (version 15). Older apps ignore these keys.
@@ -252,8 +261,14 @@ class BackupManager(
                     .put("rate", a.rate).put("monthlyPay", a.monthlyPay).put("perfTiers", a.perfTiers).put("perfSkip", a.perfSkip))
             }
         })
+        // 2.0.0 [RVK-46] (DB 36) Every month's budgets stay under "budgets"; one month's ('이 달만') go under a key of their own, so an older
+        // app never takes a month's budget for every month's.
+        val allBudgets = money.allBudgets()
         into.put("budgets", JSONArray().apply {
-            money.allBudgets().forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount)) }
+            allBudgets.filter { it.month == 0 }.forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount)) }
+        })
+        into.put("monthBudgets", JSONArray().apply {
+            allBudgets.filter { it.month != 0 }.forEach { b -> put(JSONObject().put("category", b.category).put("amount", b.amount).put("month", b.month)) }
         })
         // 1.37 [LEDH-11][LEDH-13] 봉투 and the money moved into them. Older apps ignore this key.
         into.put("envelopes", JSONObject()
@@ -270,26 +285,36 @@ class BackupManager(
             }))
         into.put("categories", JSONArray().apply {
             money.allCategories().forEach { c ->
-                put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden))
+                put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden)
+                    // 2.0.0 [RVK-46] (DB 36). Older apps ignore them.
+                    .putOpt("icon", c.icon.ifEmpty { null }).putOpt("color", c.color.takeIf { it != 0 }))
             }
         })
         into.put("rules", JSONArray().apply {
             money.allRules().forEach { r -> put(JSONObject().put("merchant", r.merchant).put("category", r.category)) }
         })
         // [RECV-01] Money others owe, with what came back (version 13). Older apps ignore these keys.
+        // 2.0.0 [RVK-46] (DB 36) 줄 돈 goes under keys of its own, so an older app never takes money the user owes for money owed to them.
         val owed = source.receivableDao()
-        into.put("owed", JSONArray().apply {
-            owed.all().forEach { r ->
+        val owedRows = owed.all()
+        val owedPayments = owed.allPayments()
+        fun owedArray(toPay: Boolean) = JSONArray().apply {
+            owedRows.filter { (it.direction == 1) == toPay }.forEach { r ->
                 put(JSONObject().put("id", r.id).put("who", r.who).put("title", r.title).put("amount", r.amount).put("day", r.epochDay)
                     .putOpt("due", r.dueEpochDay).put("kind", r.kind).put("note", r.note).put("income", r.countAsIncome)
                     .putOpt("closed", r.closedEpochDay).put("created", r.createdAt))
             }
-        })
-        into.put("owedPaid", JSONArray().apply {
-            owed.allPayments().forEach { p ->
+        }
+        fun paidArray(toPay: Boolean) = JSONArray().apply {
+            val ids = owedRows.filter { (it.direction == 1) == toPay }.map { it.id }.toSet()
+            owedPayments.filter { it.receivableId in ids }.forEach { p ->
                 put(JSONObject().put("id", p.id).put("owed", p.receivableId).put("day", p.epochDay).put("amount", p.amount).putOpt("entry", p.entryId))
             }
-        })
+        }
+        into.put("owed", owedArray(false))
+        into.put("owedPaid", paidArray(false))
+        into.put("owedOut", owedArray(true))
+        into.put("owedOutPaid", paidArray(true))
         // [INV-10] An investor calendar's accounts, trades, deposits, journal, alarms and settings (version 18).
         into.put("invest", InvestBackup.put(source))
         // [TAX-07] 월급 관측 and tax answers (version 21). Older apps ignore the key.
@@ -606,6 +631,14 @@ class BackupManager(
             )
         }
         root.put("memos", memos)
+        // 2.0.0 [RVL-53] (검토 DATA-15) The events brought in from the phone's calendar and the memo each became: a restored phone does
+        // not bring them in a second time. A key is the phone calendar's event number and start: on the same phone (a backup put back
+        // after a mistake, the app installed again) they match; on a new phone they match nothing and pass nothing over.
+        root.put(IMPORTED_EVENTS, JSONArray().apply {
+            db.importedEventDao().all().forEach { e ->
+                put(JSONObject().put("key", e.eventKey).put("day", e.epochDay).putOpt("memo", e.memoId).put("at", e.importedAt))
+            }
+        })
         memoSharing?.let { root.put("memoSharing", MemoSharingStore.toJson(it.state.value)) }
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
@@ -750,6 +783,16 @@ class BackupManager(
         return p.size(receipts, contracts, memoNames)
     }
 
+    /**
+     * 2.0.0 [RVL-50] (검토 U12-04) The same counts for what the app holds now, so 불러오기 can say first what gets fewer
+     * ([RestoreDiff]). 사업장·직원 too, as a sealed file has them; photos as [photoSize] counts them.
+     */
+    suspend fun currentSummary(): BackupSummary {
+        val now = summarize(exportSealed())
+        val p = photoSize()
+        return now.copy(photos = p.count, photoBytes = p.bytes)
+    }
+
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
     fun summarize(json: String): BackupSummary {
         val root = parse(json)
@@ -761,7 +804,7 @@ class BackupManager(
             exportedAtMillis = root.optLong("exportedAt"),
             moneyLines = (root.optJSONArray("money")?.length() ?: 0) + (root.optJSONArray("jobs")?.length() ?: 0) +
                 (root.optJSONArray("sales")?.length() ?: 0) + (root.optJSONArray("fixed")?.length() ?: 0) +
-                (root.optJSONArray("owed")?.length() ?: 0) +
+                (root.optJSONArray("owed")?.length() ?: 0) + (root.optJSONArray("owedOut")?.length() ?: 0) +
                 // [INV-10] The main calendar's trades and deposits.
                 (root.optJSONObject("invest")?.let { (it.optJSONArray("trades")?.length() ?: 0) + (it.optJSONArray("cash")?.length() ?: 0) } ?: 0),
             sleeps = root.optJSONArray("sleep")?.length() ?: 0,
@@ -918,6 +961,8 @@ class BackupManager(
         val recipes: RecipeBackup.Rows? = null,
         /** 1.37 [LEDH-11] Null for a backup without "envelopes" (before 1.37): the phone's then stay. */
         val envelopes: Pair<List<com.bamnat.app.data.db.EnvelopeEntity>, List<com.bamnat.app.data.db.EnvelopeMoveEntity>>? = null,
+        /** 2.0.0 [RVK-46] (DB 36) A job's payments besides 선금·잔금; none in a backup from before (its jobs had none). */
+        val jobPaid: List<com.bamnat.app.data.db.JobPaymentEntity> = emptyList(),
     )
 
     private fun readMoney(from: JSONObject): MoneyRows {
@@ -939,6 +984,7 @@ class BackupManager(
                 kind = o.optString("kind", "EXPENSE"), category = o.optString("category"), remind = o.optBoolean("remind", true),
                 repeat = o.optString("repeat", "MONTH"), monthOfYear = o.optInt("monthOfYear", 1), accountId = o.optLongOrNull("account"),
                 auto = o.optBoolean("auto"), startEpochDay = o.optLongOrNull("start"), endEpochDay = o.optLongOrNull("end"),
+                toAccountId = o.optLongOrNull("toAccount"),
             )
         }
         val accounts = from.optJSONArray("accounts")?.objects()?.map { o ->
@@ -951,9 +997,15 @@ class BackupManager(
                 perfTiers = o.optString("perfTiers"), perfSkip = o.optString("perfSkip"),
             )
         }
+        // 2.0.0 [RVK-46] (DB 36) One month's budgets come from their own key; a backup from before has every month's only.
         val budgets = from.optJSONArray("budgets")?.objects()?.map { o -> MoneyBudgetEntity(o.optString("category"), o.optLong("amount")) }
+            ?.plus(from.optJSONArray("monthBudgets")?.objects().orEmpty().mapNotNull { o ->
+                val month = o.optInt("month").takeIf { com.bamnat.core.money.MoneyBudget.monthOf(it) != null } ?: return@mapNotNull null
+                MoneyBudgetEntity(o.optString("category"), o.optLong("amount").coerceAtLeast(0), month)
+            })
         val categories = from.optJSONArray("categories")?.objects()?.map { o ->
-            MoneyCategoryEntity(o.optString("kind", "EXPENSE"), o.getString("name"), o.optInt("position"), o.optBoolean("hidden"))
+            MoneyCategoryEntity(o.optString("kind", "EXPENSE"), o.getString("name"), o.optInt("position"), o.optBoolean("hidden"),
+                icon = o.optString("icon"), color = o.optInt("color"))
         }
         val rules = from.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
         val jobs = from.optJSONArray("jobs")?.objects()?.map { o ->
@@ -968,18 +1020,24 @@ class BackupManager(
                 dueEpochDay = o.optLongOrNull("due"),
             )
         }
-        val owed = from.optJSONArray("owed")?.objects()?.map { o ->
+        fun owedRows(key: String, direction: Int) = from.optJSONArray(key)?.objects()?.map { o ->
             com.bamnat.app.data.db.ReceivableEntity(
                 id = o.getLong("id"), who = o.optString("who"), title = o.optString("title"), amount = o.optLong("amount"),
                 epochDay = o.getLong("day"), dueEpochDay = if (o.has("due") && !o.isNull("due")) o.getLong("due") else null,
                 kind = o.optString("kind", "OTHER"), note = o.optString("note"), countAsIncome = o.optBoolean("income"),
                 closedEpochDay = if (o.has("closed") && !o.isNull("closed")) o.getLong("closed") else null, createdAt = o.optLong("created"),
+                direction = direction,
             )
         }
-        val owedPaid = from.optJSONArray("owedPaid")?.objects()?.map { o ->
+        fun paidRows(key: String) = from.optJSONArray(key)?.objects()?.map { o ->
             com.bamnat.app.data.db.ReceivablePaymentEntity(o.getLong("id"), o.getLong("owed"), o.getLong("day"), o.optLong("amount"),
                 if (o.has("entry") && !o.isNull("entry")) o.getLong("entry") else null)
         }
+        // 2.0.0 [RVK-46] (DB 36) 줄 돈 from its own keys joins the same table; a backup from before has none.
+        val owedIn = owedRows("owed", 0)
+        val owedOut = owedRows("owedOut", 1).orEmpty()
+        val owed = owedIn?.let { list -> list + owedOut.filter { o -> list.none { it.id == o.id } } } ?: owedOut.takeIf { it.isNotEmpty() }
+        val owedPaid = owed?.let { paidRows("owedPaid").orEmpty() + paidRows("owedOutPaid").orEmpty() }
         val sales = from.optJSONArray("sales")?.objects()?.map { o ->
             DailySalesEntity(
                 o.getLong("day"), o.optLong("sales"), o.optLong("costs"), o.optString("note"),
@@ -1004,7 +1062,12 @@ class BackupManager(
             }.orEmpty().filter { it.envelopeId in ids }
             list to moves
         }
-        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes, envelopes)
+        val jobIds = jobs.orEmpty().map { it.id }.toSet()
+        val jobPaid = from.optJSONArray("jobPaid")?.objects()?.mapNotNull { o ->
+            com.bamnat.app.data.db.JobPaymentEntity(o.getLong("id"), o.optLong("job"), o.optLong("day"), o.optLong("amount").coerceAtLeast(0),
+                o.optString("label").take(com.bamnat.core.money.JobPayment.MAX_LABEL), o.optString("note")).takeIf { it.jobId in jobIds }
+        }.orEmpty()
+        return MoneyRows(entries, jobs, sales, fixed, rules, accounts, budgets, categories, owed, owedPaid, invest, tax, recipes, envelopes, jobPaid)
     }
 
     /** [MCAL-06] Replaces a calendar's money with a backup's, part by part; call inside its transaction. */
@@ -1012,7 +1075,11 @@ class BackupManager(
         // Backups from before version 7 carry no money; what is on the phone then stays.
         val money = target.moneyDao()
         rows.entries?.let { list -> money.clearEntries(); list.forEach { money.restoreEntry(it) } }
-        rows.jobs?.let { list -> money.clearJobs(); list.forEach { money.restoreJob(it) } }
+        rows.jobs?.let { list ->
+            money.clearJobPayments(); money.clearJobs(); list.forEach { money.restoreJob(it) }
+            // 2.0.0 [RVK-46] (DB 36) With the jobs, their payments.
+            rows.jobPaid.forEach { money.restoreJobPayment(it) }
+        }
         rows.sales?.let { list -> money.clearSales(); list.forEach { money.upsertSales(it) } }
         rows.fixed?.let { list -> money.clearFixed(); list.forEach { money.restoreFixed(it) } }
         rows.rules?.let { list -> money.clearRules(); list.forEach { money.upsertRule(it) } }
@@ -1164,6 +1231,11 @@ class BackupManager(
             com.bamnat.app.data.db.SleepEventEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"), kind = o.getString("kind"),
                 level = o.optDouble("level").toFloat(), file = clip, keep = clip != null && o.optBoolean("keep"))
         }
+        // 2.0.0 [RVL-53] (검토 DATA-15) A backup from before 2.0.0 has none: what this phone brought in no longer matches the days and memos
+        // put back, so the list is emptied and the next 캘린더 가져오기 offers those events again rather than passing them over.
+        val importedEvents = root.optJSONArray(IMPORTED_EVENTS)?.objects()?.map { o ->
+            com.bamnat.app.data.db.ImportedEventEntity(o.getString("key"), o.getLong("day"), o.optLongOrNull("memo"), o.optLong("at"))
+        }.orEmpty()
         val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
         val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
@@ -1189,6 +1261,8 @@ class BackupManager(
             db.memoDao().clear()
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
+            db.importedEventDao().clear()
+            importedEvents.forEach { db.importedEventDao().upsert(it) }
         }
         // [MEMO-02] An older backup has no sharing: the phone's own choice stays.
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
@@ -1497,6 +1571,8 @@ class BackupManager(
          * saved as a `.bamnat` file of this type; files saved before (.json) open as before.
          */
         const val FILE_MIME = "application/octet-stream"
+        /** 2.0.0 [RVL-53] The events brought in from the phone's calendar. */
+        internal const val IMPORTED_EVENTS = "importedEvents"
         const val EXTENSION = "bamnat"
         const val SEALED_FORMAT = "bamnat-enc"
         /** [SLP-14] The longest way home a backup may set. */

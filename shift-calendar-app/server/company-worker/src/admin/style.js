@@ -867,7 +867,7 @@ button.tile{font:inherit;text-align:left;cursor:pointer;color:inherit}button.til
 /* PC 확인 8d290ec3: 휴대폰 폭에서 상태는 두 줄로 다 보이고, 단추는 제목 아래 한 줄에 같은 폭으로. */
 hr.split{border:0;border-top:2px dashed var(--line);margin:1.5rem 0}
 .linkish{background:none;border:0;padding:0;color:var(--accent,#2b6cb0);text-decoration:underline;cursor:pointer;font:inherit}
-li.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
+li.flash,.kv dd.flash{outline:2px solid var(--accent,#2b6cb0);outline-offset:2px;transition:outline-color .3s}
 img.photo-big{display:block;width:100%;max-width:512px;height:auto;margin:0 auto;image-rendering:auto;border-radius:8px}
 @media (max-width:640px){.rows.work .row{flex-wrap:wrap}.rows.work .row-side{width:100%;max-width:none;flex-direction:column;align-items:stretch;gap:.4rem}
 .rows.work .row-acts{flex-wrap:nowrap}.rows.work .row-acts .btn{flex:1 1 0;min-width:0;padding-left:.3rem;padding-right:.3rem}
@@ -1219,6 +1219,19 @@ form[data-form="dev-ship-note"] textarea{min-height:5rem}
 .grid-table thead th{font-size:.75rem;color:var(--muted);font-weight:800}
 .grid-table tr.bad th,.grid-table tr.bad td{color:var(--bad)}
 .grid-table input{width:6.5rem;min-height:2.5rem;text-align:right}
+/* 2.0.0 [RVQ-48] 검토 U22b-12: 돈 › 상품마다 표(9열)는 칸이 좁으면(380 폭, 글자 200%) 옆으로 밀지 않고 상품마다 작은 칸 묶음으로 펼쳐요. */
+.prod-wrap{container:prods/inline-size}
+@container prods (width < 30rem){
+  .prod-table thead{display:none}
+  .prod-table,.prod-table tbody{display:block}
+  .prod-table tr{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(4.5rem,100%),1fr));gap:.25rem .5rem;padding:.6rem 0;border-bottom:1px solid var(--line)}
+  .prod-table tr:last-child{border-bottom:0}
+  .prod-table th,.prod-table td{border-bottom:0;padding:.15rem 0;text-align:left;white-space:normal;position:static}
+  .prod-table tbody th{grid-column:1/-1;font-weight:800}
+  .prod-table td{display:flex;flex-direction:column;gap:.05rem}
+  .prod-table td::before{content:attr(data-label);font-size:.75rem;font-weight:700;color:var(--muted);word-break:keep-all}
+  .prod-table td.amt{grid-column:1/-1}
+}
 .stars{color:var(--gold);letter-spacing:.05em;font-size:1rem}
 .stars .off{color:var(--line-strong)}
 .review-list{display:grid;gap:.75rem}
@@ -1644,6 +1657,8 @@ details.row-more>.menu .btn{justify-content:flex-start;width:100%;border-color:t
 /* 2.0.0 [RVA-25] 검토 U24-07: 카드의 왼쪽 맞춤 단추 줄에서는 ⋯가 왼쪽에 있어 메뉴를 오른쪽으로 펴요(화면 밖으로 나가지 않게). */
 .actions.start details.row-more>.menu{left:0;right:auto}
 .list-note{margin:.5rem 0 .75rem}
+/* 2.0.0 [RVQ-39] 보류된 표의 묶음 줄: 세기·버리기는 한 묶음으로 글 옆이나 그 아래 줄에 함께 놓여요(하나만 다음 줄로 떨어지지 않게). */
+.held-group{display:flex;flex-wrap:wrap;align-items:center;gap:.25rem .5rem}.held-acts{display:inline-flex;gap:.35rem}
 .list-head .lg-bar{display:flex;flex:1 1 8rem;min-width:min(8rem,100%);margin:0}.list-head .lg-bar input[type=search]{flex:1 1 auto;min-width:0}
 .seg .n.hot{color:var(--bad)}
 .ledger-view>.stage-strip{margin:.75rem 0}

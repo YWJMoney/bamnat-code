@@ -52,6 +52,7 @@ import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.components.TimePickerDialog
 import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.money.AmountField
@@ -176,7 +177,7 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)
             // PC 4bd5d745: '+504,062원' set 민수's last month against 민수 and 지영 this month. Only the same people are set side by side.
             lastHead(ledger, lastLedger)?.let { Hint(it) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 6.dp)) {
+            StatTiles(Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
                 StatTile(if (place.industry != null) "사장님 4대보험·산재" else "사장님 4대보험", Fmt.won(ledger.employerInsurance + ledger.accident), Modifier.weight(1f),

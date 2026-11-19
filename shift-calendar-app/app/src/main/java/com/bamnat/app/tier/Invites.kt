@@ -163,6 +163,33 @@ object PlayReferrer : ReferrerSource {
 }
 
 /**
+ * 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): Play's referrer read once for this install and kept on the phone, so 친구 초대 ([Invites]) and
+ * 웹에서 이어 받기 ([com.bamnat.app.data.WebStart]) read the same answer and Play is asked once, as it asks. Whatever [source] said is
+ * kept, nothing too. Its own file, not in any backup (data_extraction_rules.xml takes settings.xml only): a new phone is its own install.
+ */
+class ReferrerOnce(private val context: Context, private val source: () -> ReferrerSource) : ReferrerSource {
+    private val prefs by lazy { context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    private val lock = Mutex()
+    /** The source this run read; a test that puts another in its place ([com.bamnat.app.AppContainer.referrerSource]) is read again. */
+    @Volatile private var readFrom: ReferrerSource? = null
+
+    override suspend fun read(context: Context): String? = lock.withLock {
+        val now = source()
+        if (prefs.getBoolean(K_READ, false) && (readFrom == null || readFrom === now)) return@withLock prefs.getString(K_RAW, null)
+        val raw = runCatching { now.read(this.context) }.getOrNull()
+        readFrom = now
+        prefs.edit().putBoolean(K_READ, true).putString(K_RAW, raw).apply()
+        raw
+    }
+
+    private companion object {
+        const val PREFS = "install_referrer"
+        const val K_READ = "read"
+        const val K_RAW = "raw"
+    }
+}
+
+/**
  * [INVITE-02][INVITE-03] What this phone keeps about invites: the server's last view of its own code, the code
  * Play's referrer brought (read once), and how this phone's own report stands. Not in the backup: it is tied to
  * this install on the server, and the months move with the recovery code (company-worker claim moves the code too).

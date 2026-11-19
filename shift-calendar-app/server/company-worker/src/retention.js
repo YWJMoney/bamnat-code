@@ -312,6 +312,14 @@ export const RETENTION = [
     backup: { seal: ["order_id"] },
   },
   {
+    table: "money_events",
+    what: "**2.0.0** [RVQ-48] 돈 화면의 갱신·체험 뒤 첫 결제·환불: 무엇·상품·요금제·때",
+    why: "수익 지표(갱신·환불을 따로)",
+    keep: "400일",
+    link: "**아니요**(설치 ID·토큰·주문 번호 없음)",
+    prune: { where: "at < ?", days: 400 },
+  },
+  {
     table: "day_rewards",
     what: "쓰면 쌓이는 날(문제 신고가 고쳐져 받은 날: 휴대폰 해시·날 수·받은 때)",
     why: "프로 열기(월 14일까지)",
@@ -808,6 +816,16 @@ export const RETENTION = [
     none: "그만 따라가거나 모두 지우기",
   },
   {
+    // 2.0.0 [RVQ-46] 검토 I22bc-02: 같은 글꼴 파일을 보낸 여러 설치. 처음 보낸 분이 모두 지우기를 해도 다른 분의 작품에서 글꼴이 남아요.
+    table: "recipe_font_owners",
+    what: "**2.0.0** 같은 글꼴 파일을 나눈 설치: 글꼴·설치 해시·때",
+    why: "여러 분이 같은 글꼴을 나눌 때 한 분이 지워도 다른 분의 글꼴이 남게",
+    keep: "모두 지우기(남은 분이 있으면 그분 것으로 넘어가요)",
+    link: "예",
+    device: { device: "delete" },
+    none: "모두 지우기",
+  },
+  {
     table: "recipe_font_parts",
     what: "**1.36** 나눈 글꼴 파일 조각",
     why: "글꼴 내려받기",
@@ -898,7 +916,7 @@ export const RETENTION = [
   },
   {
     table: "recipe_requests",
-    what: "**1.35** 요청 판 글: 설치 해시·유형·글·좋아요 수·상태·만드는 분·완성 작품",
+    what: "**1.35** 요청 판 글: 설치 해시·유형·글·좋아요 수·상태·만드는 분·완성 작품, **2.0.0** 맡은 때·완성한 때·확인(맞아요·저절로)",
     why: "만들어 줄 사람 찾기",
     keep: "지우거나 모두 지우기",
     link: "예",
@@ -942,9 +960,9 @@ export const RETENTION = [
   },
   {
     table: "recipe_votes",
-    what: "**1.34** 작품 좋아요·싫어요·의견: 작품·설치 해시·값·무게·까닭·의견·`net`",
+    what: "**1.34** 작품 좋아요·싫어요·의견: 작품·설치 해시·값·무게·까닭·의견·`net`, **2.0.0** 보류된 표의 묶음 이름(`cluster`, 시간·순번만)",
     why: "작품 순서와 신뢰",
-    keep: "거두거나 작품과 함께, 모두 지우기",
+    keep: "거두거나 작품과 함께, 모두 지우기. `net` 2시간",
     link: "예",
     device: { device: "delete" },
     prune: "recipes.js",

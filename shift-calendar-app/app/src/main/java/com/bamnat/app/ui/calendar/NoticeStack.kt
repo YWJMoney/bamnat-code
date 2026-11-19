@@ -66,6 +66,7 @@ import com.bamnat.app.ui.theme.Tone
 import com.bamnat.app.ui.theme.color
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 
 /**
  * [CAL-50] 상-4: what the calendar has to say above the month (a question, an alarm that will not ring, records to check, 공휴일 근무,
@@ -97,8 +98,14 @@ internal fun NoticeStack(
     /** How many bands may be open: 1, or 0 on a phone on its side where only the bell fits. */
     open: Int = 1,
     state: NoticeStackState = rememberNoticeStackState(),
+    /**
+     * 2.0.0 [RVH-64] A notice still being looked for that may need the band (지난 판 확인, read once at start): the place is not fixed
+     * ([NoticeStackState.settled]) until it is known, at most [WAIT_MS], so it does not land in the bell for having come late.
+     */
+    waiting: Boolean = false,
 ) {
     val context = LocalContext.current
+    val stillWaiting by androidx.compose.runtime.rememberUpdatedState(waiting)
     val inbox = remember { Inbox.get(context) }
     val muted by inbox.muted.collectAsStateWithLifecycle()
     val suggestOff by inbox.suggestOff.collectAsStateWithLifecycle()
@@ -109,6 +116,7 @@ internal fun NoticeStack(
     remember(state) { inbox.refreshResting() }
     val posted by inbox.rows.collectAsStateWithLifecycle()
     LaunchedEffect(state) {
+        kotlinx.coroutines.withTimeoutOrNull(WAIT_MS) { androidx.compose.runtime.snapshotFlow { stillWaiting }.first { !it } }
         delay(SETTLE_MS)
         state.settled = true
     }
@@ -605,6 +613,8 @@ internal fun closeSuggestion(n: Notice, inbox: Inbox, state: NoticeStackState) {
 
 /** PC-81: How long the calendar has to settle which band it shows, from opening. */
 internal const val SETTLE_MS = 700L
+/** 2.0.0 [RVH-64] The longest a notice being looked for holds the band's place open ([NoticeStack] `waiting`). */
+internal const val WAIT_MS = 3_000L
 
 /** [RVP-43] Notices put away with their X, until the end of the day (kept on the phone only). */
 internal object NoticeSnooze {

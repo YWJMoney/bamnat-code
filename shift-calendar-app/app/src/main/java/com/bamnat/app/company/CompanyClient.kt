@@ -1396,6 +1396,13 @@ data class ForgetCounts(val reports: Int = 0, val votes: Int = 0, val posts: Int
         return (if (parts.isEmpty()) "서버에 지울 것이 없었어요" else parts.joinToString("·") + "${com.bamnat.app.ui.Fmt.obj(parts.last())} 지웠어요" + kept) +
             stayLine + left + offLine
     }
+
+    /** 2.0.0 [RVO-16] 검토 SET-09: how the last request went, in a few words under the row ([com.bamnat.app.ui.company.ForgetLog]). */
+    fun short(): String = when {
+        linksLeft > 0 -> "공유 링크 ${linksLeft}개는 연결되면 마저 지워요"
+        !profile && listOf(reports, votes, posts, inquiries, recipes, sets, follows, links).all { it == 0 } -> "서버에 지울 것이 없었어요"
+        else -> "지웠어요"
+    }
 }
 
 internal suspend fun <T> serverCall(block: suspend CoroutineScope.() -> T): T = withContext(Dispatchers.IO) {

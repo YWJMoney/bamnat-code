@@ -12,7 +12,9 @@ export const DRAFT_GATE = { least: 20, agree: 90 };
 
 const KINDS = {
   group: { area: "review", re: /^group:[A-Za-z0-9]{12}:[0-9a-f]{16}$/, picks: ["adopt", "reject"] },
-  reward: { area: "rewards", re: /^reward:w[A-Za-z0-9]{22}$/, picks: ["paid", "void"] },
+  // 2.0.0 [RVQ-49] 검토 I22b-02: 제보·평가 보상(w…)만이 아니라 친구 초대(i…)·모두의 도구(m…) 보상도 Claude가 근거를 적고 사람이 한 번 눌러요.
+  // randomId는 고른 글자만 남겨 길이가 조금 짧을 수 있어요.
+  reward: { area: "rewards", re: /^reward:(?:w[A-Za-z0-9]{8,23}|[im][A-Za-z0-9]{8,21})$/, picks: ["paid", "void"] },
   merge: { area: "companies", re: /^merge:[A-Za-z0-9]{12}:[A-Za-z0-9]{12}$/, picks: ["merge", "skip"] },
 };
 const REJECT_REASONS = ["different", "unclear", "wrong", "duplicate", "inappropriate"];
