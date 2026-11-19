@@ -127,7 +127,8 @@ internal fun InviteProgressLines(c: AppContainer) {
     if (view.code == null) return
     // 2.0.0 [RVO-25] PC-151: one line that reads ('친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요'), not '3/5명' over '다음 프로까지 2명'.
     // At the year's cap the card says so instead ([InviteRules.capped]).
-    if (!view.capReached) Text(InviteRules.next(view.progress, view.waiting, view.terms), style = MaterialTheme.typography.titleMedium)
+    // 2.0.0 [RVO-29] HQ-152: at 글자 200% its parts go one a line rather than leave a dot alone.
+    if (!view.capReached) com.bamnat.app.ui.components.DotText(InviteRules.next(view.progress, view.waiting, view.terms), style = MaterialTheme.typography.titleMedium)
 }
 
 /** 2.0.0 [RVO-13] (HQ-48) The name of the way to 프로 without paying, the same on 프로, the locked feature's sheet and the paywall. */
@@ -155,7 +156,7 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
         if (short) {
             Text(InviteRules.promise(terms), style = MaterialTheme.typography.titleMedium)
             view?.let { v -> InviteRules.status(v.given, v.pending, v.waiting) }?.let {
-                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                com.bamnat.app.ui.components.DotText(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
             }
             // PC-114: at the year's cap the promise above is not a promise any more; said here too, not only behind '자세히'.
             if (view?.capReached == true && !more) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
@@ -163,7 +164,7 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
         // 2.0.0 [RVO-27] HQ-144 (조건 4): the buyer's card says the one-line promise and keeps how a friend counts behind ⓘ (it was six lines).
         if (!short) com.bamnat.app.ui.components.Explain(key = "invite_rules", text = InviteRules.details(terms),
-            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false)
+            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false, summaryLines = 3)
         else if (more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
             // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
@@ -171,7 +172,7 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
             if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodyMedium)
             else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             InviteProgressLines(c)
-            Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
+            com.bamnat.app.ui.components.DotText(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
             // [RVO-27] HQ-144 (조건 5): the app's own type; the code reads in groups (ABCD 2345) without a typewriter face.
             Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium)
         }

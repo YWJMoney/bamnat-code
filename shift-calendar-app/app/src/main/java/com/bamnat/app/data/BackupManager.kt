@@ -211,7 +211,9 @@ class BackupManager(
                     .putOpt("parts", e.parts.ifEmpty { null }).putOpt("installments", e.installments.takeIf { it > 1 })
                     .putOpt("proof", e.proof.ifEmpty { null }).putOpt("receipt", e.receipt.ifEmpty { null })
                     // [LEDX-17] Version 22.
-                    .putOpt("instRate", e.installmentRate.takeIf { it > 0 }))
+                    .putOpt("instRate", e.installmentRate.takeIf { it > 0 })
+                    // 2.0.0 [RVK-60] (DB 37) The category's fixed id and the split parts' ids. Older apps ignore them.
+                    .putOpt("categoryId", e.categoryId.ifEmpty { null }).putOpt("partIds", e.partIds.ifEmpty { null }))
             }
         })
         into.put("jobs", JSONArray().apply {
@@ -250,7 +252,9 @@ class BackupManager(
                     .put("repeat", f.repeat).put("monthOfYear", f.monthOfYear).putOpt("account", f.accountId).put("auto", f.auto)
                     .putOpt("start", f.startEpochDay).putOpt("end", f.endEpochDay)
                     // 2.0.0 [RVK-46] (DB 36) A repeating 이체's '어디로'. Older apps ignore it.
-                    .putOpt("toAccount", f.toAccountId))
+                    .putOpt("toAccount", f.toAccountId)
+                    // 2.0.0 [RVK-60] (DB 37).
+                    .putOpt("categoryId", f.categoryId.ifEmpty { null }))
             }
         })
         // [LEDG-08][LEDG-06][LEDG-14] Accounts, budgets and the user's categories (version 15). Older apps ignore these keys.
@@ -289,7 +293,10 @@ class BackupManager(
             money.allCategories().forEach { c ->
                 put(JSONObject().put("kind", c.kind).put("name", c.name).put("position", c.position).put("hidden", c.hidden)
                     // 2.0.0 [RVK-46] (DB 36). Older apps ignore them.
-                    .putOpt("icon", c.icon.ifEmpty { null }).putOpt("color", c.color.takeIf { it != 0 }))
+                    .putOpt("icon", c.icon.ifEmpty { null }).putOpt("color", c.color.takeIf { it != 0 })
+                    // 2.0.0 [RVK-60] (DB 37) Its fixed id, what the sums read it as, 집·일 and 표준 묶음.
+                    .putOpt("uid", c.uid.ifEmpty { null }).putOpt("role", c.role.ifEmpty { null }).putOpt("scope", c.scope.takeIf { it != 0 })
+                    .putOpt("std", c.std.ifEmpty { null }))
             }
         })
         into.put("rules", JSONArray().apply {
@@ -983,6 +990,8 @@ class BackupManager(
                 tags = o.optString("tags"), parts = o.optString("parts"), installments = o.optInt("installments", 1).coerceIn(1, 60),
                 fixedId = o.optLongOrNull("fixedId"), proof = o.optString("proof"), receipt = o.optString("receipt"),
                 installmentRate = o.optDouble("instRate", 0.0).takeIf { !it.isNaN() }?.coerceIn(0.0, com.bamnat.core.money.MoneyEntry.MAX_INSTALLMENT_RATE) ?: 0.0,
+                // 2.0.0 [RVK-60] A backup from before 37 has none: [writeMoney] gives them after.
+                categoryId = o.optString("categoryId"), partIds = o.optString("partIds"),
             )
         }
         val fixed = from.optJSONArray("fixed")?.objects()?.map { o ->
@@ -992,6 +1001,7 @@ class BackupManager(
                 repeat = o.optString("repeat", "MONTH"), monthOfYear = o.optInt("monthOfYear", 1), accountId = o.optLongOrNull("account"),
                 auto = o.optBoolean("auto"), startEpochDay = o.optLongOrNull("start"), endEpochDay = o.optLongOrNull("end"),
                 toAccountId = o.optLongOrNull("toAccount"),
+                categoryId = o.optString("categoryId"),
             )
         }
         val accounts = from.optJSONArray("accounts")?.objects()?.map { o ->
@@ -1012,7 +1022,8 @@ class BackupManager(
             })
         val categories = from.optJSONArray("categories")?.objects()?.map { o ->
             MoneyCategoryEntity(o.optString("kind", "EXPENSE"), o.getString("name"), o.optInt("position"), o.optBoolean("hidden"),
-                icon = o.optString("icon"), color = o.optInt("color"))
+                icon = o.optString("icon"), color = o.optInt("color"),
+                uid = o.optString("uid"), role = o.optString("role"), scope = o.optInt("scope").coerceIn(0, 2), std = o.optString("std"))
         }
         val rules = from.optJSONArray("rules")?.objects()?.map { o -> CategoryRuleEntity(o.getString("merchant"), o.optString("category")) }
         val jobs = from.optJSONArray("jobs")?.objects()?.map { o ->
@@ -1100,6 +1111,8 @@ class BackupManager(
             moves.forEach { money.insertEnvelopeMove(it) }
         }
         rows.categories?.let { list -> money.clearAllCategories(); money.insertCategories(list) }
+        // 2.0.0 [RVK-60] (DB 37) A backup from before 37 (or a line it left without one) gets the fixed ids its names stand for.
+        com.bamnat.app.data.db.CategoryIdFill.fill(target.openHelper.writableDatabase)
         // Backups from before version 13 carry no receivables; the ones on the phone then stay.
         rows.owed?.let { list ->
             val dao = target.receivableDao()

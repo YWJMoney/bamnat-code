@@ -547,6 +547,20 @@ abstract class ScreenshotBase {
         }
 
         /**
+         * 2.0.0 [RVH-86] Closes an open menu as the phone's back key does: the key goes to the popup's own window, which the
+         * activity's back ([back]) does not reach.
+         */
+        fun closePopups() {
+            scenario.onActivity { activity ->
+                shownPopups(activity).forEach { p ->
+                    p.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_BACK))
+                    p.dispatchKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_BACK))
+                }
+            }
+            settle()
+        }
+
+        /**
          * [J133-45] Whether [text] comes on screen, waiting while it has not yet: a sheet, a saved row or
          * data from a fake server can land a few frames after the tap on a busy test machine. Returns as
          * soon as it shows, so a passing check costs nothing; only a real miss waits the whole [ms].
@@ -1401,6 +1415,12 @@ abstract class ScreenshotBase {
         override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
             com.bamnat.app.company.Inquiry("q3", kind, "open", now, now, listOf(com.bamnat.app.company.InquiryMessage(false, text, now)), public = kind.public)
                 .also { mine.add(0, it) }
+        /** 2.0.0 [RVO-30] (PC-214): a 결제·환불 question as the server keeps it, for the 운영팀 only, the day after it was sent. */
+        fun addBilling() {
+            mine.add(0, com.bamnat.app.company.Inquiry("q9", com.bamnat.app.company.InquiryKind.BILLING, "open", ago(5), ago(5), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "어제 프로 1년을 결제했는데 아직 안 열려요.", ago(5)),
+            ), public = false, stage = "open"))
+        }
         override suspend fun mine(device: String) = mine.toList()
         override suspend fun more(device: String, id: String, text: String) = mine.first { it.id == id }
         override suspend fun delete(device: String, id: String) = Unit
@@ -1746,7 +1766,7 @@ abstract class ScreenshotBase {
     // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
     internal fun restRules(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         content {
-            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, {})
+            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, onSave = {})
         }
         settle()
     }

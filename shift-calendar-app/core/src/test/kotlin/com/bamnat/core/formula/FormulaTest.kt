@@ -69,4 +69,13 @@ class FormulaTest {
         assertEquals("이번 주 야간 9.5시간 {끝}", FormulaText.render("이번 주 야간 {근무시간}시간 {{끝}}", day))
         assertEquals("brace", FormulaText.problem("야간 {근무"))
     }
+
+    /** 2.0.0 [RVM-67] 검토 RCP-06: -0 is not below 0 (the server's `<` says so); the app said it was. */
+    @Test
+    fun minusZeroIsNotLessThanZero() {
+        assertEquals("거짓", v("0 * -1 < 0"))
+        assertEquals("참", v("0 * -1 = 0"))
+        assertEquals("참", v("0 * -1 >= 0"))
+        assertEquals("참", v("-1 < 0"))
+    }
 }

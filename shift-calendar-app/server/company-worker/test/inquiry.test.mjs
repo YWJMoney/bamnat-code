@@ -66,6 +66,18 @@ test("contacts and amounts are refused with the field; so is anything it does no
   assert.equal(ok.status, 201);
 });
 
+test("2.0.0 [RVO-29] (PC-204) a 결제·환불 question may carry its Play order number, still not an amount", async () => {
+  const { call } = server();
+  for (const text of ["어제 프로 1년을 결제했는데 안 열려요. Play 주문 번호는 GPA.3312-4459-2207-48812예요", "gpa.3312-4459-2207-48812..0 환불돼요?"]) {
+    const res = await call("POST", "/api/inquiries", question(1, { kind: "billing", text }));
+    assert.equal(res.status, 201, text);
+  }
+  for (const text of ["GPA.3312-4459-2207-48812 결제한 13,900원 환불해 주세요", "주문 번호 3312-4459-2207-48812", "GPA.3312-4459-2207-488123"]) {
+    const res = await call("POST", "/api/inquiries", question(2, { kind: "billing", text }));
+    assert.equal(res.status, 400, text);
+  }
+});
+
 test("the developer answers in the developer app and the phone sees the answer", async () => {
   const { call } = server();
   const q = (await call("POST", "/api/inquiries", question(1, { info: { app: "1.12.0 (18)", diag: "놓쳤을 수 있는 알람: 없음" } }), from(1))).data;

@@ -1039,7 +1039,10 @@ private fun ReceivedDayCell(
             // 2.0.0 [RVP-11][RVH-11] 10sp at least (검토 UIX-11), and capped so that at 200% it stays inside the cell (CAL-16).
             val memoSp = with(density) { minOf(10.sp.toDp(), 11.dp).toSp() }
             val markSp = with(density) { minOf(10.sp.toDp(), 10.dp).toSp() }
-            Box(Modifier.fillMaxWidth().height(20.dp)) {
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(20.dp)) {
+                // 2.0.0 [RVH-88] 검토 HQ-135 (편 폭·글자 200%에서 오늘 '14'의 4 위에 '잔'): where the date takes the top row (a cell under
+                // 50dp, or text at 150% and more) the extra work is a dot in the corner, as the month view's corner marks are (CornerMark).
+                val dot = maxWidth < 50.dp || density.fontScale >= 1.5f
                 Box(
                     Modifier.align(Alignment.Center).size(20.dp).clip(CircleShape).background(if (isToday) scheme.primary else Color.Transparent),
                     contentAlignment = Alignment.Center,
@@ -1060,7 +1063,8 @@ private fun ReceivedDayCell(
                     Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.align(Alignment.TopStart).size(11.dp))
                 }
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
-                    Box(
+                    if (dot) Box(Modifier.align(Alignment.TopEnd).padding(1.dp).size(5.dp).clip(CircleShape).background(scheme.secondary))
+                    else Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
                     ) {
                         // [RVG-22] 검토 HQ-20: at 200% its letter grew over today's date (the '14' under a green box); capped as the

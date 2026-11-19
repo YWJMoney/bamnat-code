@@ -440,7 +440,9 @@ fun PlazaHomeScreen(
     // 사용자 2026-11-03: in 마을 the 광장 tab pressed again goes back to the top.
     val page = rememberScrollState()
     val reselect = com.bamnat.app.ui.hub.LocalHubReselect.current
-    LaunchedEffect(reselect) { if (reselect > 0) { page.animateScrollTo(0); vm.refreshIfStale() } }
+    // 2.0.0 [RVO-31] PRO-21: only a tap on the tab (or a 소식) after this part opened goes to the top, not every coming in.
+    val reselectAt = remember { reselect }
+    LaunchedEffect(reselect) { if (reselect > reselectAt) { page.animateScrollTo(0); vm.refreshIfStale() } }
     // PC 4차 c0ca3d9f: back to 광장 (마을's tabs, another screen, the app to the front) reads it again when it is old.
     LaunchedEffect(Unit) { vm.refreshIfStale() }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refreshIfStale() }

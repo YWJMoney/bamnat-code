@@ -10,6 +10,7 @@
   python3 tools/deploy_worker.py --phase probe --worker both              # 0. 토큰(main 도구만): 지금 판을 올린 커밋(<worker>_prev=)
   python3 tools/deploy_worker.py --phase build --worker both --out <폴더> [--prev <앞 판 server/>]  # 1. 토큰 없이: 시험·번들·스키마 호환·판 이름
   python3 tools/deploy_worker.py --phase ship --worker both --from <폴더> --mode check|deploy --sha <커밋> --reason <글> [--allow-older]
+  python3 tools/deploy_worker.py --phase ship --worker share --from <폴더> --mode migrate-check|migrate ...   # 2.0.0 [RVD-33] DO 첫 배포(한 서버씩)
 
 ship 순서 (한 단계라도 어긋나면 손님을 받기 전에 멈춰요)
   1. 지금 100%로 도는 판(앞 판)과 그 판의 바인딩(DB·KV·변수·비밀값 이름)을 읽어요. 두 판이 나눠 돌고 있으면 멈춰요.
@@ -41,6 +42,29 @@ tools/test_deploy_flow.py가 가짜 wrangler로 끝까지 돌려 봐요.
 2.0.0 [RVR-25] (검토 U60-02) 시험에서 멈추면 build가 실패한 시험 이름·줄을 fail/<서버>-fail.json으로 넘기고, workflow의 explain 일이
 어제 main의 날짜 시험(+0일, date-watch.yml) 결과와 견줘 '어제 main에서도 깨짐 → 이 브랜치 탓이 아님 / 어제 main에서는 통과 → 이 브랜치의
 바뀜을 먼저'를 요약에 적어요(tools/date_watch.py explain).
+
+2.0.0 [RVD-33] Durable Object 첫 배포 (--mode migrate-check|migrate, 한 Worker씩, ship 일에서만)
+  Durable Object 클래스를 새로 만드는(지우는·옮기는) migration이 든 판은 `versions upload`로 못 올려요(wrangler 4.150.0:
+  "pending Durable Object migration … must be applied with wrangler deploy"). Cloudflare 문서: 그런 판은 `wrangler deploy`로 올리고
+  (…/versions-and-deployments/gradual-deployments/#durable-objects), 올린 뒤에는 그 앞 판으로 되돌리기를 막아요
+  (…/versions-and-deployments/rollbacks/, 주소 앞은 https://developers.cloudflare.com/workers/configuration).
+  그래서 보통 check·deploy는 설정에 실서버보다 새 migration이 있으면 올리기 전에 멈추고, 아래 순서로만 올려요. 카나리(10%)도 없어요:
+  migration이 든 판은 한 번에 100%로만 올라가요. build(시험·번들·스키마 호환)는 보통 때와 같아요.
+  1~4. 보통 ship과 같아요(앞 판·설정 칸·배포용 설정·판 이름).
+  5. 실서버 migration 태그(wrangler가 보는 /workers/services/<이름>)와 설정을 맞춰 적용할 migration을 고르고, 멈출 까닭을 봐요:
+     적용할 것이 없음, 실서버 태그가 설정에 없음, 지우기·이름 바꾸기·옮기기(데이터가 사라지거나 옮겨짐, 사람이 정해요),
+     바인딩 클래스를 만드는 migration 없음, 앞 판 바인딩이 설정에 없어 사라짐, 설정 이름이 비밀값을 덮어씀.
+  6. 지금 붙은 연결(사용자 도메인·route·workers.dev·미리보기 URL)을 읽어 남기고, workers.dev·미리보기 URL은 그 값으로 배포용 설정에
+     적어요(wrangler deploy가 매번 보내는 값). route·사용자 도메인은 설정에 없으면 wrangler deploy가 건드리지 않아요
+     (4.150.0 triggersDeploy: 설정에 있을 때만 PUT). `wrangler deploy --dry-run`. migrate-check는 여기까지(손님은 앞 판 그대로).
+  7. `wrangler deploy --keep-vars`(앞 판 일반 변수는 --var로 값까지 넘겨요). 새 판이 100%가 되고 이 판이 새 되돌리기 바닥이에요.
+  8. 배포 상태 새 판 100%, 바인딩 대조(앞 판 것 모두 + DO 바인딩), 실서버 migration 태그가 설정 마지막 태그, 붙은 연결이 6과 같음,
+     정기 작업, health 5번.
+     실패해도 앞 판으로 되돌리지 않아요(Cloudflare가 막아요). 크게 알리고 실패로 끝나요: 고친 판을 보통 ship으로 올려요.
+  토큰 권한은 그대로예요. Durable Object 전용 권한은 없고 'Workers Scripts 편집'에 들어 있어요
+  (https://developers.cloudflare.com/api/resources/durable_objects/subresources/namespaces/methods/list/).
+  공유 서버 묶음은 이 첫 배포(바닥 판) 뒤에도 같은 클래스 이름·바인딩·migration 태그를 설정에 가져가야 해요. 없으면 보통 ship이
+  '새 판에 앞 판 바인딩이 빠져요'로 멈춰요.
 
 열쇠: 환경 변수 CLOUDFLARE_API_TOKEN(GitHub Secret, ship 일에만). 출력하지 않아요. 계정 번호는 CLOUDFLARE_ACCOUNT_ID가 없으면 토큰이
 닿는 계정이 하나일 때 그 계정을 써요.
@@ -198,10 +222,22 @@ def crons_of(config_text: str) -> list[str] | None:
 
 # 2.0.0 [RVQ-01] 검토 SRV-02: build가 넘긴 설정에서 받는 칸. 그 밖의 칸(특히 [build]처럼 명령을 돌리는 칸, [site]·[assets]처럼 폴더를
 # 올리는 칸)이 있으면 ship이 멈춰요. 토큰이 있는 곳에서 고른 브랜치의 무엇도 '실행'되지 않게.
+# 2.0.0 [RVD-33] durable_objects·migrations: 공유 서버의 앱 없는 팀원 방(TeamRound, Q1 4h). 명령을 돌리거나 폴더를 올리는 칸이
+# 아니라 바인딩과 클래스 생애 선언이에요. 클래스를 새로 만드는 첫 판은 versions upload가 못 올려 mode migrate로 따로 올리고
+# (그 판이 되돌리기 바닥), 그 뒤 판은 같은 설정으로 이 도구가 보통대로 올려요.
 CONFIG_KEYS = {
     "name", "main", "compatibility_date", "compatibility_flags", "workers_dev", "keep_vars", "placement", "triggers",
     "version_metadata", "d1_databases", "kv_namespaces", "vars", "observability", "limits", "upload_source_maps",
+    "durable_objects", "migrations",
 }
+
+DO_PENDING_NEXT = ("아직 적용되지 않은 Durable Object migration이 있어요. versions upload로는 못 올려요: 배포 도구 mode "
+                   "migrate-check → migrate로 이 Worker만 따로 올린 뒤(그 판이 새 되돌리기 바닥) 다시 돌려요(손님은 앞 판 그대로)")
+
+
+def upload_hint(output: str) -> str | None:
+    """2.0.0 [RVD-33] versions upload 실패 글이 적용 안 된 DO migration 때문이면 다음에 할 일."""
+    return DO_PENDING_NEXT if "pending Durable Object migration" in output else None
 
 
 def config_problems(text: str, worker: str) -> list[str]:
@@ -214,6 +250,169 @@ def config_problems(text: str, worker: str) -> list[str]:
     if cfg.get("name") != WORKERS[worker]["name"]:
         out.append(f"이름이 {WORKERS[worker]['name']}이 아니에요({cfg.get('name')!r})")
     return out
+
+
+# ---------- 2.0.0 [RVD-33] Durable Object 첫 배포 (순수 함수) ----------
+
+# --keep-vars로 올리면 설정에 없어도 남는 바인딩 종류(비밀값은 원래 남고, 일반 변수는 --keep-vars로 남아요).
+KEPT_TYPES = {"secret_text", "secret_key", "plain_text", "json"}
+# 데이터를 지우거나 다른 클래스·Worker로 옮기는 migration 단계. 이 도구는 하지 않아요(사람이 정해요).
+DESTRUCTIVE_STEPS = ("deleted_classes", "renamed_classes", "transferred_classes")
+
+
+def do_lifecycle(config_text: str) -> dict:
+    """설정의 Durable Object 바인딩(이름 → 클래스, 이 Worker의 것만)과 migration 목록·태그."""
+    c = tomllib.loads(config_text)
+    binds = {}
+    for b in (c.get("durable_objects") or {}).get("bindings") or []:
+        if isinstance(b, dict) and b.get("name") and not b.get("script_name"):
+            binds[str(b["name"])] = str(b.get("class_name", ""))
+    migs = [m for m in c.get("migrations") or [] if isinstance(m, dict)]
+    return {"bindings": binds, "migrations": migs, "tags": [str(m.get("tag", "")) for m in migs]}
+
+
+def script_migration_tag(service) -> str | None:
+    """`GET /accounts/<계정>/workers/services/<이름>`의 지금 migration 태그(wrangler 4.150.0이 보는 곳과 같아요). 없으면 None.
+
+    모양이 다르면 ValueError: 태그가 없는 것과 못 읽은 것을 섞지 않아요.
+    """
+    try:
+        script = service["result"]["default_environment"]["script"]
+    except (KeyError, TypeError) as e:
+        raise ValueError("services 응답에 default_environment.script가 없어요") from e
+    if not isinstance(script, dict):
+        raise ValueError("services 응답의 script가 객체가 아니에요")
+    return script.get("migration_tag") or None
+
+
+def pending_migrations(lc: dict, live_tag: str | None) -> list[dict] | None:
+    """실서버에 아직 적용되지 않은 migration(wrangler가 올릴 것과 같은 규칙). 실서버 태그가 설정에 없으면 None."""
+    if not live_tag:
+        return list(lc["migrations"])
+    if live_tag not in lc["tags"]:
+        return None
+    return lc["migrations"][lc["tags"].index(live_tag) + 1:]
+
+
+def config_binding_names(config_text: str) -> set[str]:
+    """설정이 직접 만드는 바인딩 이름."""
+    c = tomllib.loads(config_text)
+    names = set((c.get("vars") or {}).keys())
+    for key in ("kv_namespaces", "d1_databases", "r2_buckets", "services", "analytics_engine_datasets", "hyperdrive",
+                "vectorize", "mtls_certificates", "dispatch_namespaces", "workflows", "send_email"):
+        for b in c.get(key) or []:
+            if isinstance(b, dict):
+                names.add(b.get("binding") or b.get("name"))
+    for key in ("version_metadata", "ai", "browser", "images", "assets"):
+        b = c.get(key)
+        if isinstance(b, dict):
+            names.add(b.get("binding"))
+    for b in (c.get("durable_objects") or {}).get("bindings") or []:
+        if isinstance(b, dict):
+            names.add(b.get("name"))
+    for b in (c.get("queues") or {}).get("producers") or []:
+        if isinstance(b, dict):
+            names.add(b.get("binding"))
+    names.discard(None)
+    return {str(n) for n in names}
+
+
+def migrate_problems(config_text: str, old: list[dict], pending: list[dict] | None) -> list[str]:
+    """DO 첫 배포(wrangler deploy)를 하기 전에 멈출 까닭. 올린 뒤 앞 판으로 되돌릴 수 없어서 미리 다 봐요."""
+    lc = do_lifecycle(config_text)
+    out = []
+    if not lc["migrations"]:
+        out.append("설정에 [[migrations]]가 없어요(보통 deploy로 올려요)")
+    elif pending is None:
+        out.append("실서버의 migration 태그가 설정에 없어요(무엇이 다시 적용될지 몰라요)")
+    elif not pending:
+        out.append("실서버에 설정의 migration이 이미 모두 적용돼 있어요(보통 deploy로 올려요)")
+    for m in pending or []:
+        for k in DESTRUCTIVE_STEPS:
+            if m.get(k):
+                out.append(f"migration {m.get('tag')}의 {k}는 데이터를 지우거나 옮겨요(이 도구로 하지 않아요)")
+    made: set[str] = set()
+    for m in lc["migrations"]:
+        made |= set(m.get("new_classes") or []) | set(m.get("new_sqlite_classes") or [])
+        made -= set(m.get("deleted_classes") or [])
+    for name, cls in sorted(lc["bindings"].items()):
+        if cls not in made:
+            out.append(f"바인딩 {name}의 클래스 {cls or '(없음)'}를 만드는 migration이 없어요")
+    have = config_binding_names(config_text)
+    for b in old:
+        n, t = b.get("name"), str(b.get("type", ""))
+        if n and n not in have and t not in KEPT_TYPES:
+            out.append(f"앞 판 바인딩 {n}({t})이 설정에 없어 사라져요")
+    clash = sorted(have & {str(b.get("name")) for b in old if b.get("type") in ("secret_text", "secret_key")})
+    if clash:
+        out.append(f"설정의 이름이 비밀값을 덮어써요: {', '.join(clash)}")
+    return out
+
+
+def pin_subdomain(config_text: str, workers_dev: bool, previews: bool) -> str:
+    """배포용 설정의 workers.dev·미리보기 URL을 지금 실서버 값으로 못 박아요.
+
+    `wrangler deploy`는 versions upload와 달리 매번 `POST …/subdomain {enabled: workers_dev, previews_enabled: preview_urls}`를
+    보내요(wrangler 4.150.0 subdomainDeploy). preview_urls가 설정에 없으면 그 칸을 빼고 보내는데, 그때 Cloudflare가 무엇으로
+    두는지 API 문서에 없어요. 되돌릴 수 없는 배포라 지금 상태를 그대로 적어 보내요.
+    """
+    out, top = [], True
+    for line in config_text.split("\n"):
+        s = line.strip()
+        if s.startswith("["):
+            top = False
+        if top and re.match(r"(workers_dev|preview_urls)\s*=", s):
+            continue
+        out.append(line)
+    text = (f"# 2.0.0 [RVD-33] 배포 도구가 지금 실서버 값으로 적음\nworkers_dev = {str(bool(workers_dev)).lower()}\n"
+            f"preview_urls = {str(bool(previews)).lower()}\n" + "\n".join(out))
+    c = tomllib.loads(text)
+    if c.get("workers_dev") is not bool(workers_dev) or c.get("preview_urls") is not bool(previews):
+        raise Stop("workers.dev·미리보기 URL 값을 배포용 설정에 적지 못했어요")
+    return text
+
+
+def attachment_state(subdomain, domains, routes, name: str) -> dict:
+    """Worker에 붙은 것: workers.dev·미리보기 URL(`GET …/scripts/<이름>/subdomain`), 사용자 도메인(`GET …/workers/domains?service=`),
+    route(읽지 못하면 None). 모양이 다르면 ValueError."""
+    if not isinstance(subdomain, dict) or not isinstance(subdomain.get("enabled"), bool):
+        raise ValueError("subdomain 응답에 enabled가 없어요")
+    if not isinstance(domains, list):
+        raise ValueError("domains 응답이 목록이 아니에요")
+    doms = sorted(f"{d.get('hostname')}{'' if d.get('enabled', True) else '(꺼짐)'}"
+                  for d in domains if isinstance(d, dict) and d.get("service", name) == name)
+    return {"workers_dev": subdomain["enabled"], "previews": bool(subdomain.get("previews_enabled", False)),
+            "domains": doms, "routes": None if routes is None else sorted(str(r) for r in routes)}
+
+
+def attachment_line(a: dict) -> str:
+    routes = "읽지 못함" if a["routes"] is None else (", ".join(a["routes"]) or "없음")
+    return (f"사용자 도메인 {', '.join(a['domains']) or '없음'} · workers.dev {'켜짐' if a['workers_dev'] else '꺼짐'} · "
+            f"미리보기 URL {'켜짐' if a['previews'] else '꺼짐'} · route {routes}")
+
+
+def attachment_diff(before: dict, after: dict) -> list[str]:
+    """배포 앞뒤로 Worker에 붙은 것이 달라졌으면 그 줄들. route는 앞뒤 모두 읽었을 때만 견줘요."""
+    out = []
+    for k, label in (("domains", "사용자 도메인"), ("workers_dev", "workers.dev"), ("previews", "미리보기 URL")):
+        if before[k] != after[k]:
+            out.append(f"{label}: {before[k]} → {after[k]}")
+    if before["routes"] is not None and after["routes"] is not None and before["routes"] != after["routes"]:
+        out.append(f"route: {before['routes']} → {after['routes']}")
+    return out
+
+
+def deploy_version_id(ndjson: str, text: str) -> str | None:
+    """`wrangler deploy`가 올려 100%로 돌린 판 번호."""
+    for line in ndjson.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") == "deploy" and e.get("version_id"):
+            return e["version_id"]
+    m = re.search(r"Current Version ID:\s*(" + UUID.pattern + ")", text)
+    return m.group(1) if m else None
 
 
 TEST_FAIL = (re.compile(r"^\s*not ok \d+ - (.+?)\s*(?:#.*)?$"), re.compile(r"^\s*✖\s+(.+?)(?:\s+\([\d.]+m?s\))?\s*$"))
@@ -339,6 +538,8 @@ NEXT_STEP = {
     "바인딩": "빠진 바인딩을 wrangler.toml에 옮긴 뒤 다시 돌려요",
     "카나리": "새 판이 앞 판보다 오류가 많았어요. 관리자 앱 › 오류 묶음에서 새 판 오류를 보고 고쳐요",
     "확인": "앞 판으로 되돌렸어요. 관리자 앱 › 오류 묶음·로그를 보고 고쳐요",
+    "DO 첫 배포": "멈춘 까닭을 고친 뒤 mode migrate-check부터 다시 돌려요(손님은 앞 판 그대로)",
+    "DO 첫 배포 확인": "**되돌릴 수 없어요**(Cloudflare가 migration 앞 판으로 되돌리기를 막아요). 문제를 보고 고친 판을 보통 deploy로 올려요. 붙은 연결이 달라졌으면 Cloudflare 대시보드 › Workers › 설정 › 도메인·경로에서 다시 붙여요",
     "되돌리기": "**사람이 바로**: Cloudflare 대시보드 › Deployments에서 앞 판을 100%로 두고 정기 작업을 맞춰요",
 }
 
@@ -674,7 +875,15 @@ class Ready:
         self.deployed = False
 
 
-def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allow_older: bool) -> Ready:
+class Prep:
+    """올리기 앞 단계(앞 판·설정·배포용 설정·판 이름)의 결과. 보통 ship(stage_upload)과 DO 첫 배포(stage_migrate)가 같이 써요."""
+
+    def __init__(self, w, base, name, old_id, old_view, old, config_text, new_ver, live_ver):
+        self.w, self.base, self.name, self.old_id, self.old_view, self.old = w, base, name, old_id, old_view, old
+        self.config_text, self.new_ver, self.live_ver = config_text, new_ver, live_ver
+
+
+def prepare(worker: str, src: Path, work: Path, allow_older: bool) -> Prep:
     w = WORKERS[worker]
     base = (os.environ.get(w["health_env"]) or w["health_base"]).rstrip("/")
     name = ["--name", w["name"]]
@@ -707,6 +916,23 @@ def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allo
     if why:
         raise Stop(why, stage="판 이름")
     say(f"- 판 이름 {new_ver} (지금 {live_ver or '알 수 없음'}{', --allow-older' if allow_older else ''})")
+    return Prep(w, base, name, old_id, old_view, old, config_text, new_ver, live_ver)
+
+
+def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allow_older: bool) -> Ready:
+    p = prepare(worker, src, work, allow_older)
+    w, name, old_id, old, config_text, new_ver, live_ver = p.w, p.name, p.old_id, p.old, p.config_text, p.new_ver, p.live_ver
+    # 2.0.0 [RVD-33] 적용 안 된 Durable Object migration이 있으면 versions upload가 못 올려요: 올리기 전에 migrate로 보내요.
+    lc = do_lifecycle(config_text)
+    if lc["migrations"]:
+        try:
+            pending = pending_migrations(lc, live_migration_tag(w))
+        except Exception as e:  # noqa: BLE001 - 못 읽으면 wrangler versions upload가 직접 막아요(upload_hint)
+            say(f"- 실서버 migration 태그를 못 읽었어요({type(e).__name__}). wrangler가 올릴 때 확인해요")
+            pending = []
+        if pending is None or pending:
+            tags = "설정에 없는 실서버 태그" if pending is None else ", ".join(str(m.get("tag")) for m in pending)
+            raise Stop(f"아직 적용되지 않은 Durable Object migration({tags})이 있어 versions upload로 못 올려요", stage="올리기", next_step=DO_PENDING_NEXT)
 
     # 5·6. 올리기와 바인딩 대조
     def upload(extra_vars: dict[str, str]) -> tuple[str, list[dict]]:
@@ -716,7 +942,13 @@ def stage_upload(worker: str, src: Path, work: Path, sha: str, reason: str, allo
                           "--tag", sha[:12], "--message", f"{new_ver} {sha[:8]} {reason}"[:100]]
         for k, v in extra_vars.items():
             cmd += ["--var", f"{k}:{v}"]
-        p = run(cmd, work, {"WRANGLER_OUTPUT_FILE_PATH": str(out)}, stage="올리기")
+        try:
+            p = run(cmd, work, {"WRANGLER_OUTPUT_FILE_PATH": str(out)}, stage="올리기")
+        except Stop as e:
+            hint = upload_hint(str(e))
+            if hint:
+                raise Stop(str(e), stage="올리기", next_step=hint) from e
+            raise
         vid = upload_version_id(out.read_text(encoding="utf-8") if out.exists() else "", p.stdout + p.stderr)
         if not vid:
             raise Stop("올린 판 번호를 읽지 못했어요", stage="올리기")
@@ -741,6 +973,128 @@ def schedules(worker: str, crons: list[str] | None = None) -> list[str]:
     if crons is not None:
         cf("PUT", path, [{"cron": c} for c in crons])
     return sorted(s.get("cron") for s in (cf("GET", path).get("result") or {}).get("schedules", []))
+
+
+def attachments(w: dict) -> dict:
+    """지금 Worker에 붙은 연결(workers.dev·미리보기 URL·사용자 도메인·route). route는 wrangler가 읽는 곳에서 읽고, 못 읽으면 None."""
+    acc = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+    n = w["name"]
+    sub = cf("GET", f"/accounts/{acc}/workers/scripts/{n}/subdomain").get("result")
+    doms = cf("GET", f"/accounts/{acc}/workers/domains?service={n}").get("result") or []
+    try:
+        rs = cf("GET", f"/accounts/{acc}/workers/services/{n}/environments/production/routes").get("result") or []
+        routes = [r.get("pattern") for r in rs if isinstance(r, dict)]
+    except Exception:  # noqa: BLE001 - route는 zone 권한이 없으면 못 읽어요(wrangler deploy는 설정에 route가 없으면 건드리지 않아요)
+        routes = None
+    return attachment_state(sub, doms, routes, n)
+
+
+def live_migration_tag(w: dict) -> str | None:
+    acc = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+    return script_migration_tag(cf("GET", f"/accounts/{acc}/workers/services/{w['name']}"))
+
+
+def stage_migrate(worker: str, src: Path, work: Path, sha: str, reason: str, allow_older: bool, mode: str) -> None:
+    """2.0.0 [RVD-33] Durable Object 첫 배포: `wrangler deploy` + 확인. 올린 뒤에는 앞 판으로 되돌리지 않아요(Cloudflare가 막아요).
+    migrate-check는 dry-run까지(손님은 앞 판 그대로). 순서는 맨 위 설명의 'Durable Object 첫 배포'."""
+    p = prepare(worker, src, work, allow_older)
+    w, base, name, old_id, old, config_text, new_ver = p.w, p.base, p.name, p.old_id, p.old, p.config_text, p.new_ver
+    message = f"{new_ver} {sha[:8]} {reason}"[:100]
+    lc = do_lifecycle(config_text)
+    try:
+        live_tag = live_migration_tag(w)
+    except Exception as e:  # noqa: BLE001 - 되돌릴 수 없는 배포라 모르면 멈춰요
+        raise Stop(f"실서버 migration 태그를 읽지 못했어요({type(e).__name__}: {e}). 되돌릴 수 없는 배포라 멈춰요", stage="DO 첫 배포") from e
+    pending = pending_migrations(lc, live_tag)
+    problems = migrate_problems(config_text, old, pending)
+    if problems:
+        raise Stop("Durable Object 첫 배포를 하지 않아요: " + " / ".join(problems), stage="DO 첫 배포")
+    tags = ", ".join(str(m.get("tag")) for m in pending or [])
+    classes = sorted({c for m in pending or [] for c in (m.get("new_classes") or []) + (m.get("new_sqlite_classes") or [])})
+    binds = ", ".join(f"{n}→{c}" for n, c in sorted(lc["bindings"].items()))
+    # wrangler deploy는 트리거도 맞춰요. 설정에 route·사용자 도메인이 없으면 대시보드의 것을 건드리지 않지만(4.150.0 triggersDeploy:
+    # routes·custom domains는 설정에 있을 때만 PUT), workers.dev·미리보기 URL은 매번 보내요. 그래서 지금 연결을 읽어 남기고,
+    # 그 두 값은 지금 값으로 못 박고, 올린 뒤 같은지 견줘요.
+    try:
+        before = attachments(w)
+    except Exception as e:  # noqa: BLE001 - 지금 연결을 모르면 견줄 수 없어 멈춰요
+        raise Stop(f"지금 붙은 연결(workers.dev·사용자 도메인)을 읽지 못했어요({type(e).__name__}: {e}). 되돌릴 수 없는 배포라 멈춰요",
+                   stage="DO 첫 배포") from e
+    config_text = pin_subdomain(config_text, before["workers_dev"], before["previews"])
+    (work / "wrangler.deploy.toml").write_text(config_text, encoding="utf-8")
+    say(f"- 지금 연결: {attachment_line(before)}. workers.dev·미리보기 URL은 이 값으로 적어 올려요")
+    run(WRANGLER + ["deploy", "worker.js", "--config", "wrangler.deploy.toml", "--no-bundle", "--dry-run", "--outdir", ".deploy-dry"], work,
+        stage="DO 첫 배포")
+    say(f"- 적용할 migration {tags} (실서버 지금 {live_tag or '없음'}): 새 클래스 {', '.join(classes)}, 바인딩 {binds}. "
+        f"`wrangler deploy --dry-run` 통과")
+    if mode == "migrate-check":
+        say(f"- migrate-check: 여기서 멈춰요(손님은 앞 판 그대로). migrate로 올리면 그 판이 새 되돌리기 바닥이 되고 "
+            f"앞 판 `{old_id[:8]}`과 그 앞으로는 Cloudflare가 되돌리기를 막아요")
+        return
+
+    # 7. wrangler deploy. 앞 판의 일반 변수는 --keep-vars로 남지만, 되돌릴 수 없어 값까지 --var로 넘겨요(설정에 있는 이름은 빼요).
+    keep = {n for n, t in binding_names(old).items() if t == "plain_text"} - config_binding_names(config_text)
+    out = work / ".deploy-out.ndjson"
+    out.unlink(missing_ok=True)
+    cmd = WRANGLER + ["deploy", "worker.js", "--config", "wrangler.deploy.toml", "--no-bundle", "--keep-vars",
+                      "--tag", sha[:12], "--message", message]
+    for k, v in plain_vars(old, keep).items():
+        cmd += ["--var", f"{k}:{v}"]
+    say(f"- **되돌릴 수 없는 배포 시작**: migration {tags}")
+    pr = run(cmd, work, {"WRANGLER_OUTPUT_FILE_PATH": str(out)}, check=False)
+    new_id = deploy_version_id(out.read_text(encoding="utf-8") if out.exists() else "", pr.stdout + pr.stderr)
+    problems = []
+    if pr.returncode != 0:
+        problems.append(f"`wrangler deploy` 코드 {pr.returncode}\n```\n{(pr.stdout + pr.stderr)[-1500:]}\n```")
+    try:
+        serving = current_versions(wrangler_json(["deployments", "status"] + name, work))
+    except Stop as e:
+        serving = []
+        problems.append(f"배포 상태를 읽지 못했어요: {e}")
+    if serving == [(old_id, 100.0)] and pr.returncode != 0:
+        raise Stop("`wrangler deploy`가 새 판을 올리지 못했어요(손님은 앞 판 그대로). " + " / ".join(problems), stage="DO 첫 배포")
+    new_id = new_id or (serving[0][0] if len(serving) == 1 else "")
+
+    # 8. 확인. 실패해도 되돌리지 않아요.
+    try:
+        if not new_id or new_id == old_id:
+            problems.append(f"새 판 번호를 알 수 없어요(배포 상태 {serving})")
+        else:
+            new = find_bindings(wrangler_json(["versions", "view", new_id] + name, work))
+            lost = missing_bindings(old, new)
+            if lost:
+                problems.append(f"앞 판 바인딩이 빠졌어요: {lost}")
+            no_do = sorted(set(lc["bindings"]) - set(binding_names(new)))
+            if no_do:
+                problems.append(f"새 판에 DO 바인딩이 없어요: {no_do}")
+        tag_now = live_migration_tag(w)
+        if tag_now != lc["tags"][-1]:
+            problems.append(f"실서버 migration 태그가 {tag_now}예요(바라는 것 {lc['tags'][-1]})")
+        moved = attachment_diff(before, attachments(w))
+        if moved:
+            problems.append("붙은 연결이 달라졌어요(사람이 Cloudflare 대시보드 › Workers › 설정 › 도메인·경로에서 다시 붙여요): " + " / ".join(moved))
+        want = crons_of(config_text)
+        if want is not None:
+            have = schedules(worker)
+            if have != sorted(want):
+                now = schedules(worker, want)
+                say(f"- 정기 작업 맞춤: {have} → {now}")
+        if new_id and new_id != old_id:
+            for i in range(5):
+                time.sleep(10)
+                ok, note = healthy(worker, base, new_ver)
+                if not ok:
+                    problems.append(f"{i + 1}번째: {note}")
+            serving = current_versions(wrangler_json(["deployments", "status"] + name, work))
+            if serving != [(new_id, 100.0)]:
+                problems.append(f"배포 상태가 새 판 100%가 아니에요: {serving}")
+    except Exception as e:  # noqa: BLE001 - 무엇이 어긋나도 크게 알리고 끝내요
+        problems.append(f"확인 중 오류: {e}")
+    if problems:
+        raise Stop(f"Cloudflare가 migration 앞 판(`{old_id[:8]}`)으로 되돌리기를 막아서 되돌리지 않아요. 지금 손님은 `{(new_id or '?')[:8]}`이 받아요. "
+                   "문제: " + " / ".join(problems), stage="DO 첫 배포 확인")
+    say(f"- **Durable Object 첫 배포 끝**: {w['name']} {new_ver} `{new_id[:8]}`, migration {lc['tags'][-1]} 적용, health 5번 모두 맞음. "
+        f"새 되돌리기 바닥 `{new_id[:8]}`(그 앞 `{old_id[:8]}`로는 못 돌아가요)")
 
 
 def canary_stats(worker: str, base: str, new_id: str, old_id: str) -> tuple[dict, dict] | None:
@@ -854,6 +1208,17 @@ def undo(r: Ready, work: Path, why: str) -> None:
 
 def ship(workers: list[str], src: Path, mode: str, sha: str, reason: str, allow_older: bool) -> None:
     """올리기·대조는 모든 Worker 먼저(손님 안 받음), 그다음 차례로 배포. 뒤의 것이 실패하면 앞에서 배포한 것도 되돌려요(RVQ-02 (라))."""
+    if mode.startswith("migrate"):
+        # 2.0.0 [RVD-33] Durable Object 첫 배포는 되돌릴 수 없어서 한 서버씩, 카나리·되돌리기 없이.
+        if len(workers) != 1:
+            raise Stop("DO 첫 배포(migrate)는 한 서버씩: target을 company나 share로 골라요", stage="DO 첫 배포")
+        account()
+        with tempfile.TemporaryDirectory(prefix="bamnat-ship-") as tmp:
+            work = Path(tmp) / workers[0]
+            work.mkdir()
+            say(f"#### {WORKERS[workers[0]]['name']}")
+            stage_migrate(workers[0], src / workers[0], work, sha, reason, allow_older, mode)
+        return
     account()
     with tempfile.TemporaryDirectory(prefix="bamnat-ship-") as tmp:
         ready = []
@@ -888,7 +1253,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path)
     ap.add_argument("--from", dest="src", type=Path)
     ap.add_argument("--prev", type=Path, help="앞 판 커밋의 server/ 폴더(스키마 호환 확인)")
-    ap.add_argument("--mode", choices=["check", "deploy"], default="check")
+    ap.add_argument("--mode", choices=["check", "deploy", "migrate-check", "migrate"], default="check")
     ap.add_argument("--sha", default=os.environ.get("GITHUB_SHA", "local"))
     ap.add_argument("--reason", default="")
     ap.add_argument("--allow-older", action="store_true")

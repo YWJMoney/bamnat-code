@@ -154,6 +154,13 @@ object CommunityCare {
         }
     }
 
+    /**
+     * 2.0.0 [RVO-31] PRO-23·U11b-19: what the 해명 box holds after [typed] (a paste may be longer than [APPEAL_MAX]): the text cut at the
+     * limit, and whether it was cut (the box then says so, instead of leaving the paste out without a word).
+     */
+    fun fitAppeal(typed: String): Pair<String, Boolean> =
+        if (typed.length > APPEAL_MAX) typed.take(APPEAL_MAX) to true else typed to false
+
     /** 해명을 보낸 뒤의 말. */
     fun appealSent(answerHours: Int = ANSWER_HOURS): String =
         "해명을 보냈어요. ${answerHours}시간 안에 운영자가 읽고 내 문의로 답해요. 그동안 쉬기는 그대로예요."

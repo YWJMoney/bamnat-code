@@ -312,6 +312,14 @@ export const RETENTION = [
     backup: { seal: ["order_id"] },
   },
   {
+    table: "money_events",
+    what: "**2.0.0** [RVQ-48] 돈 화면의 갱신·체험 뒤 첫 결제·환불: 무엇·상품·요금제·때",
+    why: "수익 지표(갱신·환불을 따로)",
+    keep: "400일",
+    link: "**아니요**(설치 ID·토큰·주문 번호 없음)",
+    prune: { where: "at < ?", days: 400 },
+  },
+  {
     table: "day_rewards",
     what: "쓰면 쌓이는 날(문제 신고가 고쳐져 받은 날: 휴대폰 해시·날 수·받은 때)",
     why: "프로 열기(월 14일까지)",

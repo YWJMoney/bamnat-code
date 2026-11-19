@@ -452,8 +452,8 @@ private fun SubscribedCard(c: AppContainer, plans: List<Plan>, onMessage: (Strin
 @Composable
 internal fun PayNotice(plans: List<Plan>, pass: String?) {
     var open by rememberSaveable { mutableStateOf(false) }
-    Text(payNoticeLine(plans, pass), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    com.bamnat.app.ui.components.FoldButton(if (open) "결제 안내 접기 ▴" else "결제 안내 모두 보기 ▾",
+    com.bamnat.app.ui.components.DotText(payNoticeLine(plans, pass), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    com.bamnat.app.ui.components.FoldButton(if (open) "결제 안내 접기\u00A0▴" else "결제 안내 모두 보기\u00A0▾",
         if (open) "결제 안내 접기" else "결제 안내 모두 펼쳐 보기") { open = !open }
     if (open) proDisclosures(plans, Today.date(), pass).forEach {
         Text("• $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -502,21 +502,30 @@ internal fun PolicyLinks(modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var seller by remember { mutableStateOf(false) }
     val color = MaterialTheme.colorScheme.onSurfaceVariant
-    FlowRow(modifier, verticalArrangement = Arrangement.Center) {
-        POLICY_LINK_WORDS.forEachIndexed { i, word ->
-            if (i > 0) Text(" · ", style = MaterialTheme.typography.bodySmall, color = color,
-                modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically).clearAndSetSemantics { })
-            Text(word, style = MaterialTheme.typography.bodySmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
-                color = color,
-                modifier = Modifier.heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClickLabel = "$word 열기") {
-                        when (i) {
-                            0 -> com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
-                            1 -> com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
-                            else -> seller = true
+    val style = MaterialTheme.typography.bodySmall
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // 2.0.0 [RVO-29] HQ-152: the dots only while the three fit on one line; once it wraps, a gap between them and no dot to be left alone.
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier) {
+        val padding = with(density) { (8.dp * POLICY_LINK_WORDS.size).roundToPx() }
+        val oneLine = measurer.measure(POLICY_LINK_WORDS.joinToString(" · "), style, maxLines = 1, softWrap = false).size.width + padding <=
+            constraints.maxWidth
+        FlowRow(verticalArrangement = Arrangement.Center, horizontalArrangement = Arrangement.spacedBy(if (oneLine) 0.dp else 12.dp)) {
+            POLICY_LINK_WORDS.forEachIndexed { i, word ->
+                if (i > 0 && oneLine) Text(" · ", style = MaterialTheme.typography.bodySmall, color = color,
+                    modifier = Modifier.heightIn(min = 48.dp).wrapContentHeight(Alignment.CenterVertically).clearAndSetSemantics { })
+                Text(word, style = MaterialTheme.typography.bodySmall.copy(textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline),
+                    color = color,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                        .clickable(role = Role.Button, onClickLabel = "$word 열기") {
+                            when (i) {
+                                0 -> com.bamnat.app.ui.components.PolicyPage.open(context, TERMS_URL, "이용약관")
+                                1 -> com.bamnat.app.ui.components.PolicyPage.open(context, PRIVACY_URL, "개인정보 처리방침")
+                                else -> seller = true
+                            }
                         }
-                    }
-                    .padding(horizontal = 4.dp).wrapContentHeight(Alignment.CenterVertically))
+                        .padding(horizontal = 4.dp).wrapContentHeight(Alignment.CenterVertically))
+            }
         }
     }
     if (seller) com.bamnat.app.ui.settings.SellerInfoDialog { seller = false }

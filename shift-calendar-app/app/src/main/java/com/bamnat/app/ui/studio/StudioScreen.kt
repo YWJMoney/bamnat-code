@@ -2,6 +2,7 @@ package com.bamnat.app.ui.studio
 
 import com.bamnat.core.recipe.widgetDraws
 import com.bamnat.app.ui.components.scrollEdges
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -580,7 +581,9 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
     // Ask first when the draft has things the phone does not.
     fun guarded(then: () -> Unit) { if (s.changed) startAsk = then else then() }
     // [STU-12] 조합 자동 점검 before it goes anywhere.
-    fun checked(then: () -> Unit) { if (vm.hardToRead().isNotEmpty()) inkAsk = then else then() }
+    // 2.0.0 [RVS-06] STU-11: read on the screen as it is now (a dark phone, or the example turned dark), as the screen skin draws it.
+    val inkDark = seeDark || MaterialTheme.colorScheme.background.luminance() < 0.5f
+    fun checked(then: () -> Unit) { if (vm.hardToRead(inkDark).isNotEmpty()) inkAsk = then else then() }
 
     LaunchedEffect(s.said) {
         val said = s.said ?: return@LaunchedEffect
@@ -645,7 +648,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                // 2.0.0 [RVS-21] (총괄 #520 사진, 조건 12: 글자 200%·접은 폭에서 '지금 …'으로 잘림) With big text the name takes two
+                                // lines (the bar grows to them, RVS-16) rather than two letters and '…'.
+                                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = if (bigText) 2 else 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
@@ -805,7 +811,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)} ▾") })
+                            FilterChip(selected = true, onClick = { hold(); open = true }, label = { Text("화면: ${area.labelFor(vm.style)}\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 // PC 확인 8d0cddf6 (투자 스튜디오에 '급여' 칩): 급여 has no place for 자영업·투자, as on their bottom tabs.
                                 val manageOn = com.bamnat.app.ui.work.rememberManageOn()
@@ -854,7 +860,7 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         if (area != Area.ALL) Box {
                             var open by remember { mutableStateOf(false) }
                             val hold = com.bamnat.app.ui.components.LocalFoldHold.current
-                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체 ▾") })
+                            FilterChip(selected = false, onClick = { hold(); open = true }, label = { Text("앱 전체\u00A0▾") })
                             DropdownMenu(open, { open = false }) {
                                 Area.ALL.tools.filter { it != Tool.SHIFT || shiftModes(vm.style).isNotEmpty() }.forEach { t ->
                                     DropdownMenuItem({ Text(t.label) }, onClick = { open = false; openTool(Area.ALL, t) })
@@ -958,10 +964,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                     // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
-                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // 2.0.0 HQ-139 (총괄 #520 사진, 조건 9·12): the hint keeps clear of the 배율 chip folded beside it at the top (its end was
+                    // under '🔍 105%'); it wraps onto a second line where the two do not fit side by side.
+                    var zoomChipW by remember { mutableStateOf(0) }
+                    val zoomRoom = with(androidx.compose.ui.platform.LocalDensity.current) { if (zoom.controlsOpen) 0.dp else zoomChipW.toDp() + 8.dp }
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 8.dp, end = 4.dp + zoomRoom))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
+                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).onSizeChanged { zoomChipW = it.width }))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {
@@ -981,11 +991,11 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                             if (!(panel && area == Area.ALL && tool == Tool.SEED)) TextButton(onClick = { openSeed() }) { Text("한 색 열기") }
                         }
                     // [STU-36] With a condition on, what does not read is said under the example.
-                    if (seeDark || seeBig || seeCvd) vm.hardToRead().takeIf { it.isNotEmpty() }?.let { bad ->
+                    if (seeDark || seeBig || seeCvd) vm.hardToRead(inkDark).takeIf { it.isNotEmpty() }?.let { bad ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("글자가 잘 안 보일 수 있는 화면 ${bad.size}곳", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.weight(1f))
-                            TextButton(onClick = { vm.fixInk() }) { Text("글자색 고치기") }
+                            TextButton(onClick = { vm.fixInk(inkDark) }) { Text("글자색 고치기") }
                         }
                     }
                     if (comparing) Text("고치기 전 모양이에요", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
@@ -1235,12 +1245,12 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
         )
     }
     inkAsk?.let { go ->
-        val bad = vm.hardToRead().map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
+        val bad = vm.hardToRead(inkDark).map { k -> Area.entries.firstOrNull { it.target?.keyFor(payStyle) == k }?.label ?: if (k.startsWith("pay.")) "급여" else k }
         AlertDialog(
             onDismissRequest = { inkAsk = null },
             title = { Text("글자가 잘 안 보일 수 있어요") },
             text = { Text("${bad.joinToString(", ")} 화면의 글자색이 바탕과 비슷해요. 고치면 그 화면 글자는 바탕에 맞춰 검정이나 흰색으로 보여요") },
-            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(); go() }) { Text("글자색 고치고 계속") } },
+            confirmButton = { TextButton(onClick = { inkAsk = null; vm.fixInk(inkDark); go() }) { Text("글자색 고치고 계속") } },
             dismissButton = { TextButton(onClick = { inkAsk = null; go() }) { Text("그대로 계속") } },
         )
     }

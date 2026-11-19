@@ -404,7 +404,9 @@ class ScheduleRepository(
         saved.pattern(today)?.let { pattern ->
             val periods = patternDao.getAll().mapNotNull { it.toModel() }
             when {
-                periods.isEmpty() -> if (backfill) setFirstPattern(pattern, today) else replacePatterns(listOf(pattern))
+                // 2.0.0 [RVH-90] 검토 PC-12: an 알바's first order fills this month only (PatternTimeline.firstFor).
+                periods.isEmpty() -> if (backfill) replacePatterns(listOf(PatternTimeline.firstFor(draft.savedStyle, pattern, today)))
+                    else replacePatterns(listOf(pattern))
                 // A save cut short and finished on the next start: the order is already there.
                 PatternTimeline.on(periods, today)?.withRange(pattern.startDate, pattern.endDate) == pattern -> Unit
                 else -> changePatternFrom(pattern, today)

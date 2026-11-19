@@ -2285,11 +2285,13 @@ function adminApp(L, BUILD, M) {
     const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
     // 2.0.0 [RVA-66] PC-195: 화면에 보이는 칸 이름으로('함께 온 정보 › 알람 점검'의 [앱 멈춤] 줄), 누르면 그 줄로 가요.
     const has = c.record === "has" && q.context?.["알람 점검"];
-    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
+    // [RVA-69] 2.0.0부터는 답장에 기록이 실려요(c.reply). 그 전 판은 새 문의로.
+    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요."
+      : c.reply ? "답장의 '점검 기록도 보내기'로 받아 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
     const can_ = editable && q.status !== "closed" && c.record !== "has";
     return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${has
       ? ' <button type="button" class="btn small" data-act="crash-diag">멈춤 줄 보기</button>' : ""}${can_
-      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+      ? ` <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="${c.reply ? "답장에 점검 기록을 켜서 보내 달라는 답을 답 칸에 넣어요" : "점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요"}">기록 부탁 답 넣기</button>` : ""}</div>`;
   }
 
   function inquiryDetail(q) {
@@ -2298,7 +2300,9 @@ function adminApp(L, BUILD, M) {
     const thread = q.messages.map((m) => {
       const mine = m.from !== "user";
       return `<div class="bubble ${mine ? "admin" : "user"}">${esc(m.text)}</div>
-        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}</span>`;
+        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}${
+          /* [RVA-69] HQ-150: 2.0.0 앱이 답장과 함께 보낸 점검 기록(함께 온 정보 › 알람 점검이 이 기록으로 바뀌어요) */
+          !mine && m.diag ? ' · <button type="button" class="link" data-act="crash-diag">점검 기록 함께 옴</button>' : ""}</span>`;
     }).join("");
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
     // [INQ-02] What the asker's app shows as the stage, so the admin answers with it in mind.
@@ -2324,6 +2328,7 @@ function adminApp(L, BUILD, M) {
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
+          ${sendAskLine(q)}
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
@@ -2345,7 +2350,7 @@ function adminApp(L, BUILD, M) {
         ${copiedCard(q) /* AT 1.29 */}
         ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
-          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${k === "알람 점검" && q.diagAt ? `<small class="meta ctx-at">답장과 함께 받음 · ${esc(moment(q.diagAt))}</small>` : ""}${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
           <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
           <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
@@ -2377,6 +2382,18 @@ function adminApp(L, BUILD, M) {
       <p class="meta">${b ? `법에 따라 ${esc(day(b.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
         ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
       ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${b ? "" : "1"}"${words ? ' data-miss="1"' : ""}>${b ? (words ? "아니에요 · 기록에서 빼기" : "기록에서 빼기") : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-70] PC-205: 사람이 봐야 하는 문의면 답 칸 바로 위에 한 줄(조건 10·16: 보내고 나서 멈춘 것을 알기 전에).
+   * 최고 관리자가 여기서 직접 쓴 답은 확인한 것으로 보고 바로 가요(sendGate typed). 다른 관리자의 답은 한 번 멈추고 읽은 뒤 '지금 보내기'로 가요.
+   * 답 글에 AI·보안 표현이 있으면 누구든 멈춰요(이 줄과 따로).
+   */
+  function sendAskLine(q) {
+    const a = q.sendAsk;
+    if (!a) return "";
+    const what = `${esc(a.name)} 문의예요${a.word ? `(보낸 분 글의 ‘${esc(a.word)}’)` : ""}`;
+    return `<p class="meta send-ask" role="note">${what}. ${S.me?.owner ? "여기서 직접 쓴 답은 바로 가요." : "보내면 한 번 멈추고, 읽은 뒤 '지금 보내기'로 보내요."}</p>`;
   }
 
   /** 2.0.0 [RVA-41] 사람이 보내야 하는 답의 까닭: 답 글의 표현이면 그 이름, 아니면 문의 글에서 걸린 말과 기준. */
@@ -4745,7 +4762,13 @@ function adminApp(L, BUILD, M) {
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
     // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
-    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+    // 2.0.0 [RVA-70] PC-205: 사람이 보내야 해서 멈춘 답이면 확인 창에서 걸린 까닭과 말을 한 번 더 말해요(조건 10).
+    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", (() => {
+      const h = S.data.inquiry?.held?.find((x) => String(x.id) === String(id));
+      const w = h?.person ? h.why : null;
+      const why = !w ? "" : w.reply ? `${w.name}이 있어 멈췄어요. 고친 뒤 보내는 게 좋아요. ` : `${w.name} 문의라 멈췄어요${w.word ? `(보낸 분 글의 ‘${w.word}’)` : ""}. `;
+      return `${why}보낸 분 앱에 바로 보이고 알림이 가요.`;
+    })(), "지금 보내기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     }, "primary"),
@@ -5034,12 +5057,25 @@ function adminApp(L, BUILD, M) {
       render({ keepScroll: true });
     },
     "save-friend": async () => {
-      const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
-      if (r) {
-        S.data.inviteSettings = r;
-        S.inviteDraft = null;
+      const save = async () => {
+        const r = await act(() => api("/settings/invite", "POST", S.inviteDraft), "친구 초대 규칙을 저장했어요. 서버가 바로 따라요");
+        if (r) {
+          S.data.inviteSettings = r;
+          S.inviteDraft = null;
+        }
+        render({ keepScroll: true });
+      };
+      // 2.0.0 [RVQ-49] 검토 U22b-11·SVC-73: 저장하는 순간 조건을 채운 분께 드릴 보상이 생겨요. 생기는 것이 있으면 몇 분께 몇 달인지 먼저 한 번 물어요.
+      let pv = null;
+      try {
+        pv = (await api("/settings/invite", "POST", { ...S.inviteDraft, dry: true }))?.preview ?? null;
+      } catch {
+        pv = null;
       }
-      render({ keepScroll: true });
+      if (!pv?.rewards) return save();
+      danger({ title: "이 규칙으로 저장할까요?", text: "저장하면 바로 아래 보상이 '드릴 보상'에 올라가요. 지급은 보상 목록에서 확인한 뒤예요.",
+        rows: [["드릴 보상", `${pv.rewards}건 · ${pv.inviters}${pv.more ? "분 넘게" : "분"}`], ["모두", `${pv.months}개월`],
+          ["상한에 걸려 달 없이 세는 것", pv.capped ? `${pv.capped}건` : ""]], label: "저장", tone: "primary", run: save });
     },
     "sla-undo": () => {
       S.slaDraft = null;
@@ -5406,9 +5442,12 @@ function adminApp(L, BUILD, M) {
       box.focus();
     },
     // 2.0.0 [RVA-63] HQ-124: 멈춤 기록 부탁 답(서버가 준 글)을 답 칸에. 적던 답이 있으면 지우지 않고 뒤에 붙여요(조건 10).
-    "crash-draft": ({ target }) => {
+    "crash-draft": ({ target, reply }) => {
       const box = document.getElementById(target || "reply");
-      const text = S.data.inquiry?.crash?.draft ?? S.data.ledger?.crashDraft;
+      // [RVA-69] 문의 상세는 서버가 판에 맞춰 고른 답, 운영 장부 줄은 그 줄의 판(data-reply)에 맞는 답.
+      const led = S.data.ledger;
+      const text = (!target || target === "reply") && S.data.inquiry?.crash?.draft ? S.data.inquiry.crash.draft
+        : reply ? led?.crashDraftReply ?? led?.crashDraft : led?.crashDraft;
       if (!box || !text) return;
       box.value = (box.value.trim() ? `${box.value.trimEnd()}\n\n` : "") + text;
       box.dispatchEvent(new Event("input", { bubbles: true }));

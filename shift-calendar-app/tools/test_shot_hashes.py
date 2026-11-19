@@ -100,6 +100,24 @@ class ShotHashesTest(unittest.TestCase):
         self.assertEqual(0, code, out)
         self.assertIn("1 key shots belong to the other shard", out)
 
+    def test_a_shard_with_no_key_shot_of_its_own_passes(self):
+        # [RVR-45] shots-a after the split into five: its classes draw no key shot, the other shards compare them.
+        self.source("OneScreenshotTest", "1_one", "2_two")
+        self.source("TwoScreenshotTest", "3_three", "4_four")
+        self.golden(**{"3_three": 200})
+        self.picture("1_one", 200)
+        self.ran("OneScreenshotTest")
+        code, out = self.check("--results", str(self.results))
+        self.assertEqual(0, code, out)
+        self.assertIn("No key shot is drawn by this shard", out)
+
+    def test_no_key_shot_at_all_without_results_still_fails(self):
+        self.source("OneScreenshotTest", "1_one", "2_two")
+        self.golden(**{"1_one": 200})
+        code, out = self.check()
+        self.assertEqual(1, code, out)
+        self.assertIn("none of the key screenshots was found", out)
+
     def test_a_changed_picture_fails_and_a_same_one_passes(self):
         self.source("OneScreenshotTest", "1_one", "2_two")
         self.golden(**{"1_one": 200, "2_two": 200})

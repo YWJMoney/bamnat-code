@@ -82,7 +82,10 @@ internal object MarketShots {
     private val shots = object : android.util.LruCache<String, ImageBitmap>(24 * 1024 * 1024) {
         override fun sizeOf(key: String, value: ImageBitmap): Int = value.width * value.height * 4
     }
-    private val failed = java.util.Collections.synchronizedSet(HashSet<String>())
+    /** 2.0.0 [RVM-67] 검토 MKT-29 (한 번 못 받으면 앱을 끌 때까지 다시 받지 않아요): a card that could not be had is asked for again after [RETRY_MS]. */
+    private val failed = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    const val RETRY_MS = 60_000L
+    private fun gave(k: String): Boolean { val at = failed[k] ?: return false; return if (System.currentTimeMillis() - at < RETRY_MS) true else { failed.remove(k); false } }
     /** A few at a time, so a page of cards does not hold the network for the one that was tapped. */
     private val gate = Semaphore(3)
 
@@ -109,7 +112,7 @@ internal object MarketShots {
     suspend fun recipe(c: AppContainer, item: RecipeItem): Recipe? {
         val k = key(item)
         recipes.get(k)?.let { return it }
-        if (k in failed) return null
+        if (gave(k)) return null
         // 1.39 [MKP-01][MKP-02] The written form that came with the list, or the one kept on the phone, before asking for it alone.
         (raws.get(k) ?: MarketDisk.body(c.appContext, k)?.also { raws.put(k, it) })?.let { (hash, body) ->
             read(hash, body)?.let { r -> recipes.put(k, r); return r }
@@ -122,7 +125,7 @@ internal object MarketShots {
                 }
             }
         }
-        if (got == null) failed.add(k) else recipes.put(k, got)
+        if (got == null) failed[k] = System.currentTimeMillis() else { failed.remove(k); recipes.put(k, got) }
         return got
     }
 
@@ -183,7 +186,7 @@ internal object MarketShots {
     fun body(key: String): String? = raws.get(key)?.second
 
     /** Whether this card's work could not be had (offline, gone): it keeps its small picture for good. */
-    fun gaveUp(item: RecipeItem): Boolean = key(item) in failed
+    fun gaveUp(item: RecipeItem): Boolean = gave(key(item))
 
     /** What a card shows: the tab the work changes, or one of the pictures that are not a tab. */
     sealed interface Face {

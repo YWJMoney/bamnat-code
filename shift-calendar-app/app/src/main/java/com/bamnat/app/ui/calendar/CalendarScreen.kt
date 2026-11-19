@@ -229,6 +229,11 @@ internal fun fabKeepRows(month: YearMonth, weekStart: java.time.DayOfWeek): Int 
     val row = index / 7
     return if (index % 7 < 4) row else row + 1
 }
+/** 검토 PC-199: which week of [day]'s month (from 0) holds it, the weeks starting on [weekStart]. */
+internal fun weekRowOf(day: LocalDate, weekStart: java.time.DayOfWeek): Int {
+    val first = day.withDayOfMonth(1).with(java.time.temporal.TemporalAdjusters.previousOrSame(weekStart))
+    return (java.time.temporal.ChronoUnit.DAYS.between(first, day) / 7).toInt()
+}
 private val FAB_MARGIN = 16.dp
 /** [CAL-15] Between the month's last row and the button riding under it. */
 private val FAB_DOCK_GAP = 8.dp
@@ -620,7 +625,8 @@ fun CalendarScreen(
     LaunchedEffect(pagerState, baseMonth) {
         androidx.compose.runtime.snapshotFlow { pagerState.settledPage }.collect { page ->
             val m = pageToMonth(baseMonth, page)
-            vm.showMonth(m)
+            // 2.0.0 [RVH-91] 검토 HQ-114: only a month turned to; settling where it opened keeps 돈·근무·급여 on theirs (ShownMonth.others).
+            if (m != vm.shownMonth.value) vm.showMonth(m)
             val sel = vm.selected.value
             if (YearMonth.from(sel) != m) {
                 val now = Today.date()
@@ -881,6 +887,8 @@ fun CalendarScreen(
     var gridBottom by remember { mutableFloatStateOf(Float.NaN) }
     // [DAILY-09] Where the month starts in the window, so the half above a fold's hinge can open on it.
     var gridTop by remember { mutableFloatStateOf(Float.NaN) }
+    // 검토 PC-199: where each week of the month ends, from its top, so the half above the hinge can hold today's week whole.
+    var weekEnds by remember { mutableStateOf<List<Float>>(emptyList()) }
     var fabAreaBottom by remember { mutableFloatStateOf(Float.NaN) }
     // 2.0.0 [RVP-01] 검토 HQ-76: the top of the area the FAB floats in, and of the room left for it under the month (after the
     // 모든 조·횟수·보기 row and the notes under it).
@@ -955,6 +963,18 @@ fun CalendarScreen(
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
+    // 2.0.0 [RVH-84] 검토 HQ-129 (보기 줄 밑이 100px쯤 빔): the room under the month is the button's own place while it rides in it,
+    // so it is kept only while the page is longer than the screen with it (the button goes up into it then). A page that fits, the
+    // empty calendar's start card (its own button is the way in) and painting leave the usual 12dp. One line for both ways: out
+    // while the page is no longer than the room past the screen, back once it is longer than that without the room (the room out
+    // only shortens the page or, where the month fills the screen, leaves it as it was, so it never flips back and forth).
+    val roomExtra = with(density) { (FAB_ROOM - 12.dp).toPx() }
+    var fabRoomShown by remember { mutableStateOf(true) }
+    LaunchedEffect(docking, roomExtra) {
+        androidx.compose.runtime.snapshotFlow {
+            docking && !startCardShown && pageScroll.maxValue.toFloat() > roomExtra + fabJump
+        }.collect { fabRoomShown = it }
+    }
 
     // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
@@ -1393,9 +1413,11 @@ fun CalendarScreen(
                 CalendarStartCard(start = startWords, onAction = startAction, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             })
             if (!settings.viewAsked && paint == null && viewingReceived == null && !startCardUp && !fillingNow) add(Notice("viewAsk", "보기 고르기", line = calendarViewAskWords(settings.calendarOnly).title,
-                onClose = {
+                // HQ-145 (같은 구조): said where it is closed, and taken back once (조건 10).
+                closing = Closing("나중에 달력 › 도구나 설정 › 달력에서 바꿀 수 있어요") {
                     vm.updateSettings { it.copy(viewAsked = true) }
-                    com.bamnat.app.ui.components.AppSnack.show("나중에 달력 › 도구나 설정 › 달력에서 바꿀 수 있어요")
+                    val undo: () -> Unit = { vm.updateSettings { it.copy(viewAsked = false) } }
+                    undo
                 }) {
                 CalendarViewAsk(settings.calendarOnly, onAnswer = { only -> vm.updateSettings { it.copy(calendarOnly = only, viewAsked = true) } },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
@@ -1597,15 +1619,17 @@ fun CalendarScreen(
                 }
                 recapNow?.takeIf { it.worthShowing }?.let { r ->
                     val openRecap = { yearRecapOpen = recapDue }
-                    val closeRecap = {
+                    // 검토 HQ-145 (조건 10·16): its words and 되돌리기 said by the 알림함 it is closed in (they were on a line behind it, and
+                    // twice after 전체 지움).
+                    val recapClosing = Closing("결산 안내를 닫았어요. 공유 › 사진으로 보내기에서 다시 만들 수 있어요") {
                         val before = vm.closeYearRecap(today)
-                        com.bamnat.app.ui.components.AppSnack.show("결산 안내를 닫았어요. 공유 › 사진으로 보내기에서 다시 만들 수 있어요",
-                            undo = { vm.reopenYearRecap(before) })
+                        val undo: () -> Unit = { vm.reopenYearRecap(before) }
+                        undo
                     }
                     add(Notice("yearRecap", r.title, line = r.brief, kani = com.bamnat.app.ui.components.KaniMood.Done, action = "결산 보기",
-                        onAction = openRecap, onClose = closeRecap) {
+                        onAction = openRecap, closing = recapClosing) {
                         com.bamnat.app.ui.components.NudgeCard("${r.title}이 나왔어요", Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                            detail = r.brief, action = "결산 보기", onAction = openRecap, onClose = closeRecap, closeLabel = "결산 안내 닫기",
+                            detail = r.brief, action = "결산 보기", onAction = openRecap, onClose = { recapClosing.close() }, closeLabel = "결산 안내 닫기",
                             kani = com.bamnat.app.ui.components.KaniMood.Done)
                     })
                 }
@@ -1953,7 +1977,11 @@ fun CalendarScreen(
                 val cellHeight = (if (tall) maxOf(calView.cellHeight(maxWidth, sideways), listCellHeight(maxWidth)) else calView.cellHeight(maxWidth, sideways)) + cellTextGrowth()
                 val coverRows = fabKeepRows(visibleMonth, settings.weekStart)
                 val ownPx = if (showList) Float.NaN else with(density) { cellHeight.toPx() } * coverRows
-                androidx.compose.runtime.SideEffect { ownRowsPx = ownPx }
+                val ends = gridWeekEnds(cellHeight)
+                androidx.compose.runtime.SideEffect {
+                    ownRowsPx = ownPx
+                    weekEnds = if (showList) emptyList() else with(density) { ends.map { it.toPx() } }
+                }
                 // [CAL-09] With something to stamp, a drag paints and a long press starts a range.
                 val stamping = mark != null || (paint != null && paint != PaintTool.Pick)
                 val memoCounts = remember(datedMemos) { datedMemos.groupingBy { it.date!! }.eachCount() }
@@ -2075,7 +2103,7 @@ fun CalendarScreen(
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
-            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
+            Spacer(Modifier.height(if (paint == null && fabRoomShown) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             Column(Modifier.fillMaxWidth().onSizeChanged { belowPx = it.height }) {
@@ -2128,6 +2156,9 @@ fun CalendarScreen(
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
             .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
         if (startCardShown && paint == null) Unit
+        // 2.0.0 [RVH-84] 검토 PC-52 (주 보기로 연 날 아래쪽 '야근 2시간 빼기'·추가 근무 줄을 단추가 덮음): while a day is open under its week
+        // (보기 › 주), that day is what the page is for, as in its sheet; 빠른 입력 is back with the month.
+        else if (weekOnly && !wide && paint == null) Unit
         else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
@@ -2185,15 +2216,29 @@ fun CalendarScreen(
         if (tabletop != null) {
             // [DAILY-09] The month above the hinge, the day panel below it; nothing sits on the fold itself.
             var areaTop by remember { mutableIntStateOf(0) }
-            // The month, not the cards above it, is what the half above the hinge is for: it opens there once.
-            LaunchedEffect(tabletop, gridTop.isNaN()) {
-                if (!gridTop.isNaN()) {
-                    val room = with(density) { MONTH_ROW_ROOM.toPx() }
-                    pageScroll.scrollTo((pageScroll.value + gridTop - areaTop - room).roundToInt().coerceAtLeast(0))
-                }
-            }
             BoxWithConstraints(Modifier.fillMaxSize().onGloballyPositioned { areaTop = it.positionInWindow().y.roundToInt() }) {
-                val upper = with(density) { tabletop.upperHeight(areaTop, constraints.maxHeight).toDp() }
+                val upperPx = tabletop.upperHeight(areaTop, constraints.maxHeight)
+                val upper = with(density) { upperPx.toDp() }
+                // The month, not the cards above it, is what the half above the hinge is for: it opens there once (and on each month).
+                // 검토 PC-199 (통합 5차 PC a17-86: 위쪽에 3주만 보이고 오늘이 든 주가 접힌 선에 반쯤 걸렸어요): the week of the day shown
+                // (today in its month) is whole above the hinge: when it would reach the fold, that week ends at the fold and the weeks
+                // before it go up under the top (the fold never cuts a week).
+                // Where the month starts in the page (not on screen: a scroll does not move it); it moves when what is over it settles
+                // (the cards above come in after the first frame), and the half follows it.
+                val monthAt by remember { androidx.compose.runtime.derivedStateOf {
+                    if (gridTop.isNaN()) null else (pageScroll.value + gridTop - areaTop).roundToInt()
+                } }
+                LaunchedEffect(tabletop, monthAt, weekEnds, upperPx, visibleMonth) {
+                    val monthTop = monthAt?.toFloat()
+                    if (monthTop != null) {
+                        val room = with(density) { MONTH_ROW_ROOM.toPx() }
+                        val day = selected?.takeIf { YearMonth.from(it) == visibleMonth } ?: today.takeIf { YearMonth.from(it) == visibleMonth }
+                        // Where the week of [day] ends, from the month's top; null when it is whole under the month's title row.
+                        val weekEnd: Float? = day?.let { weekEnds.getOrNull(weekRowOf(it, settings.weekStart)) }?.takeIf { room + it > upperPx }
+                        val target = if (weekEnd == null) monthTop - room else monthTop + weekEnd - upperPx
+                        pageScroll.scrollTo(target.roundToInt().coerceAtLeast(0))
+                    }
+                }
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxWidth().height(upper).clipToBounds()) {
                         Column(
@@ -2282,7 +2327,8 @@ fun CalendarScreen(
             rules = vm.rulesFor(snap, m.atDay(1), settings.rules), onRules = { rulesOpen = true }, weekStart = settings.weekStart)
     }
     if (rulesOpen) {
-        RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false }) { r ->
+        RestRulesSheet(settings.rules, vm.rotation(snap, visibleMonth.atDay(1)), onDismiss = { rulesOpen = false },
+            nights = settings.workStyle == null || settings.workStyle == com.bamnat.core.work.WorkStyle.SHIFT) { r ->
             vm.setRestRules(r); rulesOpen = false
         }
     }

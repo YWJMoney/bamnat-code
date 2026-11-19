@@ -17,6 +17,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.recipe.MyRecipes
 import com.bamnat.app.recipe.RecipeApi
+import com.bamnat.app.recipe.RecipeClient
 import com.bamnat.app.recipe.RecipeDoc
 import com.bamnat.app.recipe.RecipeItem
 import com.bamnat.app.recipe.RecipePage
@@ -73,6 +74,10 @@ class RvmScreenshotTest : ScreenshotBase() {
         private val posts: List<com.bamnat.app.recipe.RecipePost> = emptyList(),
         /** [RVM-40] Lists only the works for the kind of work asked (as the server does), all of them with none. */
         private val byStyle: Boolean = false,
+        /** [RVM-63] The first [paged] works as page one, and the next page failing (null: one page, as before). */
+        private val paged: Int? = null,
+        /** [RVM-64] Works in the three 구간 by their names (단추·알림 도구, 칸·머리·탭 탭별 작품, the rest 테마), each 구간 listing its own. */
+        private val scoped: Boolean = false,
     ) : RecipeApi {
         private val codes = works.indices.associateBy { "MKT" + (10000 + it) }
         fun code(title: String) = codes.entries.first { works[it.value].title == title }.key
@@ -80,12 +85,21 @@ class RvmScreenshotTest : ScreenshotBase() {
             val logic = r.pieces.firstOrNull { it.kind == PieceKind.LOGIC }?.let { Logic.from(it.values) }
             val fx = logic?.let { l -> (l.buttons.flatMap { FxPro.parts(l, it) } + l.rules.flatMap { FxPro.parts(l, it) }).map { it.key }.distinct() }.orEmpty()
             RecipeItem(codes.entries.first { it.value == i }.key, r.title, r.summary, r.styles, r.cover, "밤낮", 1, likes = 38, dislikes = 1, users = 214,
-                kept = 81, official = true, publicData = false, parent = null, at = Instant.parse("2026-11-09T00:00:00Z"), showcase = true, scope = "theme", fx = fx)
+                kept = 81, official = true, publicData = false, parent = null, at = Instant.parse("2026-11-09T00:00:00Z"), showcase = true, scope = scopeOf(i), fx = fx,
+                tabs = if (scoped) listOf("calendar") else emptyList())
+        }
+        private fun scopeOf(i: Int): String = if (!scoped) "theme" else works[i].title.let { t ->
+            when { "단추" in t || "알림" in t -> "logic"; "칸" in t || "머리" in t || "탭" in t -> "tab"; else -> "theme" }
+        }
+        private fun inHalf(i: Int, kind: String?): Boolean = !scoped || RecipeClient.plain(kind).orEmpty().let { k ->
+            when { k.startsWith(RecipeClient.SCOPE_TOOL) -> scopeOf(i) == "logic"; k.startsWith(RecipeClient.SCOPE_TAB) -> scopeOf(i) == "tab"; else -> scopeOf(i) == "theme" }
         }
         override val enabled = true
-        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
-            RecipePage(works.indices.filter { (q.isBlank() || q in works[it].title) && (!byStyle || style == null || style in works[it].styles) }
-                .take(12).map(::item), null)
+        override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?): RecipePage {
+            if (paged != null && cursor > 0) throw java.io.IOException("down")
+            return RecipePage(works.indices.filter { (q.isBlank() || q in works[it].title) && (!byStyle || style == null || style in works[it].styles) && inHalf(it, kind) }
+                .take(paged ?: 12).map(::item), paged)
+        }
         override suspend fun show(code: String, device: String?, version: Int?): RecipeDoc {
             val i = codes.getValue(code)
             return RecipeDoc(item(i), RecipeCodec.hash(works[i]), RecipeCodec.write(works[i]), "public", mine = false)
@@ -119,7 +133,15 @@ class RvmScreenshotTest : ScreenshotBase() {
             tapText("이 테마 입기", exact = true)
             settle()
             appears("이렇게 바뀌어요", exact = true)
-            sees?.let { check(appears(it)) { "넣기 창에 '$it'이 없어요" } }
+            // HQ-159: 17 classes at once slow the wall clock, and at 200% the line can sit below the fold — wait longer, then scroll down to it
+            // (and back up, so the shot is the same as ever).
+            sees?.let {
+                if (!appears(it, ms = 8000)) {
+                    check(scrolledTo(it)) { "넣기 창에 '$it'이 없어요" }
+                    scrollUp(2400)
+                    settle()
+                }
+            }
         }
     }
 
@@ -206,30 +228,29 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
-     * [RVM-31] HQ-42: picking 탭별 작품 slides the row so its 탭 are in sight (모든 탭 · 근무·급여 …), the 구간 picked first; picking 도구 brings
-     * its own chips (전체 · ✦ 프로 기능 · 무료 · 종류). The 정렬 chip opens its menu of six; the open row (▾) lays the six out.
+     * [RVM-31] HQ-42 → 2.0.0 [RVM-64] 검토 U08a-01: a 구간 tab picked, 거르기 has that 구간's own (탭별 작품: 탭 · 만든 것, 도구: 종류 ·
+     * 쓰는 화면) with 정렬, 값, 유형 and 보기; nothing of it crowds the top. The six orders are in the sheet, not on the list.
      */
     @Test fun aHalfPickedBringsItsChips() {
         shoot("rvm_52_market_tabs_folded", FOLDED) {
             market()(this)
-            tapText("🗂 탭별 작품", exact = true)
+            tapText("탭별 작품", exact = true)
             settle()
-            check(appears("모든 탭", exact = true)) { "탭별 작품을 골라도 탭 칩이 화면 밖이에요" }
+            tapText("거르기·정렬", exact = true)
+            check(appears("모든 탭", exact = true) && appears("🎨 꾸미기", exact = true)) { "탭별 작품의 거르기에 탭·만든 것이 없어요" }
         }
         shoot("rvm_53_market_tools_folded_dark", DARK) {
             market()(this)
-            tapText("🧰 도구", exact = true)
+            tapText("도구", exact = true)
             settle()
-            // 도구's own chips start in sight (전체 · ✦ 프로 기능 first, [MKC-04]); its 종류 follow them.
-            check(appears("전체", exact = true) && appears("✦ 프로 기능", exact = true)) { "도구를 골라도 도구 칩이 화면 밖이에요" }
+            tapText("거르기·정렬", exact = true)
+            check(appears("🧱 부품", exact = true) && scrolledTo("모든 화면", exact = true) && scrolledTo("✦ 프로 기능", exact = true)) { "도구의 거르기에 종류·값·쓰는 화면이 없어요" }
         }
-        // 정렬 is one chip with a menu in the closed row; opened with ▾ the six orders lie in the row, so another order is two taps either way.
         shoot("rvm_58_market_open_row_phone", PHONE) {
             market()(this)
-            check(!appears("좋은 순", exact = true)) { "닫힌 줄에 정렬 여섯 칩이 보여요" }
-            tapText("칩 모두 펼쳐 보기", exact = true)
-            settle()
-            check(appears("좋은 순", exact = true) && appears("요즘 뜨는", exact = true)) { "펼친 줄에 정렬 여섯 칩이 없어요" }
+            check(!appears("좋은 순", exact = true, ms = 0)) { "목록 위에 정렬 여섯 칩이 보여요" }
+            tapText("거르기·정렬", exact = true)
+            check(appears("좋은 순", exact = true) && appears("요즘 뜨는", exact = true)) { "거르기에 정렬 여섯이 없어요" }
         }
     }
 
@@ -499,7 +520,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         shoot("rvm_82_market_other_kind_on_folded", FOLDED, on)
         shoot("rvm_83_market_other_kind_off_again_folded", FOLDED) {
             on(this)
-            tapText("다른 유형도", exact = true)
+            // [RVM-64]: what is picked is a chip under the top, taken off with its X.
+            tapText("다른 유형도 빼기", exact = true)
             settle()
             check(appears("내 유형에는 없어요")) { "다른 유형도를 끄면 내 유형 찾기로 돌아가야 해요" }
         }
@@ -507,18 +529,18 @@ class RvmScreenshotTest : ScreenshotBase() {
     }
 
     /**
-     * 2.0.0 [RVM-41] PC-152 (조건 8·11): with 탭별 작품 picked the row slides to its 탭, the other 구간 out of sight; the 구간 picked,
-     * tapped again, slides it back so 테마 is one tap (before: ▾ or a swipe to the left).
+     * 2.0.0 [RVM-41] PC-152 (조건 8·11) → [RVM-64]: the three 구간 are tabs that are always in sight, so 테마 is one tap from 탭별 작품
+     * (no row to slide back); the 구간 picked, tapped again, takes the list to its top.
      */
     @Test fun thePickedHalfTappedAgainShowsTheOthers() = shoot("rvm_77_market_halves_again_folded", FOLDED) {
         market()(this)
-        tapText("🗂 탭별 작품", exact = true)
+        tapText("탭별 작품", exact = true)
         settle()
-        check(appears("모든 탭", exact = true)) { "탭별 작품을 골라도 탭 칩이 화면 밖이에요" }
-        check(!appears("🎨 테마", exact = true, ms = 0)) { "탭 칩으로 밀린 줄에 테마가 그대로 보여요(시험이 보는 것이 없어요)" }
-        tapText("🗂 탭별 작품", exact = true)
+        check(appears("테마", exact = true) && appears("도구", exact = true)) { "탭별 작품을 골라도 다른 구간이 한눈에 안 보여요" }
+        tapText("테마", exact = true)
         settle()
-        check(appears("🎨 테마", exact = true)) { "고른 구간을 다시 눌러도 테마가 안 보여요" }
+        check(nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "테마" } &&
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Selected) == true }) { "테마를 눌러도 고른 구간이 그대로예요" }
     }
 
     private fun Screen.atTalk() {
@@ -845,6 +867,8 @@ class RvmScreenshotTest : ScreenshotBase() {
         settle()
         check(took == 1) { "돌리기를 눌러야 돌려요" }
         check(appears("넣기 전으로 돌렸어요", exact = true))
+        // [RVM-66] 총괄 HQ-137: the title counts what is left, and how many went back.
+        check(appears("그대로 둔 것 2개 · 1개는 돌렸어요", exact = true)) { "하나를 돌린 뒤에도 제목 숫자가 그대로예요" }
         // At 200% on the folded width the third line is under the fold of the sheet: reached by scrolling it, as a person would.
         check(scrolledTo("근무 설정에서 지울 수 있어요")) { "쓰는 날이 있는 근무는 어디서 지우는지 말해요" }
         scrollUp(400)
@@ -852,6 +876,17 @@ class RvmScreenshotTest : ScreenshotBase() {
     @Test fun undoLeftFolded() = shoot("rvm_93_undo_left_folded", FOLDED, undoLeft())
     @Test fun undoLeftFoldedDarkBig() = shoot("rvm_94_undo_left_folded_dark_200", DARK, 2f, undoLeft())
     @Test fun undoLeftUnfolded() = shoot("rvm_95_undo_left_unfolded", UNFOLDED, undoLeft())
+    /** [RVM-66] HQ-137: every place taken back says so in the title, with 닫기. */
+    @Test fun undoLeftAllBack() = shoot("rvm_125_undo_left_all_back_folded", FOLDED) {
+        val items = listOf(com.bamnat.app.recipe.RecipePieces.Kept("근무 순서", com.bamnat.app.recipe.RecipePieces.MINE) {})
+        content { com.bamnat.app.ui.recipe.UndoLeftSheet(c, items) {} }
+        settle()
+        tapText("이것도 되돌리기", exact = true)
+        settle()
+        tapText("돌리기", exact = true)
+        settle()
+        check(appears("모두 넣기 전으로 돌렸어요", exact = true) && appears("닫기", exact = true)) { "모두 돌린 뒤 제목·닫기가 없어요" }
+    }
 
     /**
      * 2.0.0 [RVM-59] 검토 U09b-03: 내 서랍 › 받은 것's sheet for a work one piece of which a later work covered — each piece with 쓰는 중
@@ -902,6 +937,146 @@ class RvmScreenshotTest : ScreenshotBase() {
         val h = app.resources.displayMetrics.heightPixels
         check(n.boundsInWindow.height >= n.size.height - 1 && n.boundsInWindow.bottom <= h) { "마지막 줄이 잘려요: ${n.boundsInWindow} / 높이 $h" }
     }
+
+    /** The top of a node showing [text] (whole words), in the window. */
+    private fun Screen.topOf(text: String): Float = nodes().first { n ->
+        (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { it.text } +
+            n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription).orEmpty()).any { it == text }
+    }.boundsInWindow.top
+
+    /**
+     * 2.0.0 [RVM-64] 검토 U08a-01·U08a-05·MKT-03: 장터's top is two rows (찾기 · 거르기 · 만들기, then the 구간 tabs) that stay put while
+     * the list goes under them: the same place and height scrolled or not, 찾기 and 만들기 always one tap.
+     */
+    private fun topStays(): Screen.() -> Unit = {
+        market()(this)
+        val box = topOf("거르기·정렬")
+        val tabs = topOf("탭별 작품")
+        repeat(4) { scrollUp(400, across = 0.5f); settle() }
+        check(kotlin.math.abs(topOf("거르기·정렬") - box) < 1f && kotlin.math.abs(topOf("탭별 작품") - tabs) < 1f) { "내리면 위 두 줄이 움직여요" }
+        check(appears("스튜디오에서 만들기", exact = true) && appears("작품 찾기", exact = false) || appears("이름·설명·초성으로 찾기", exact = true)) { "내리면 찾기·만들기가 사라져요" }
+        check(gone("좋은 순", exact = true)) { "목록 위에 정렬 칩이 줄지어 있어요" }
+    }
+    @Test fun topStaysFolded() = shoot("rvm_110_market_top_stays_folded", FOLDED, topStays())
+    @Test fun topStaysFoldedDarkBig() = shoot("rvm_111_market_top_stays_folded_dark_200", DARK, 2f, topStays())
+    @Test fun topStaysUnfolded() = shoot("rvm_112_market_top_stays_unfolded", UNFOLDED, topStays())
+
+    /** [RVM-64] 거르기: one sheet with 정렬, the 구간's own, 값, 유형, 보기; a pick shows in the list at once and as a chip with X. */
+    private fun filterSheet(half: String): Screen.() -> Unit = {
+        market()(this)
+        if (half != "테마") { tapText(half, exact = true); settle() }
+        tapText("거르기·정렬", exact = true)
+        check(appears("정렬", exact = true) && scrolledTo("값", exact = true) && scrolledTo("교대 작품만", exact = true) && scrolledTo("작게 보기", exact = true)) {
+            "거르기 시트에 무리가 빠졌어요: ${shownWords()}"
+        }
+    }
+    @Test fun filterSheetTabsFolded() = shoot("rvm_113_market_filter_tabs_folded", FOLDED, filterSheet("탭별 작품"))
+    @Test fun filterSheetToolsFoldedDarkBig() = shoot("rvm_114_market_filter_tools_folded_dark_200", DARK, 2f, filterSheet("도구"))
+    @Test fun filterSheetThemesUnfolded() = shoot("rvm_115_market_filter_themes_unfolded", UNFOLDED, filterSheet("테마"))
+
+    /** [RVM-64] What 거르기 picked: chips under the top, each with its X; 모두 지우기 with two or more. */
+    private fun picked(): Screen.() -> Unit = {
+        Market().also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        vm.kind(RecipeClient.withFx(RecipeClient.tabKind("calendar", "look"), true)); vm.tab(RecipeListViewModel.Tab.NEW)
+        settle()
+        // With big letters, one chip says how many (the four would fill the first screen); each with its X otherwise.
+        if (app.resources.configuration.fontScale > 1.3f) check(appears("4개 고름", exact = true)) { "200%에서 고른 것을 한 칩으로 줄이지 않았어요" }
+        else check(appears("🎨 꾸미기 빼기", exact = true) && appears("새로 빼기", exact = true) && appears("✦ 프로 기능 빼기", exact = true)) { "고른 것이 칩으로 안 보여요: ${shownWords()}" }
+        worksStartHigh("장터, 넷을 고른 뒤", share = 0.4f)
+        check(appears("모두 지우기", exact = true)) { "둘 넘게 골랐는데 모두 지우기가 없어요" }
+    }
+    @Test fun pickedFolded() = shoot("rvm_116_market_picked_folded", FOLDED, picked())
+    @Test fun pickedFoldedDarkBig() = shoot("rvm_117_market_picked_folded_dark_200", DARK, 2f, picked())
+    @Test fun pickedClearAll() = shoot("rvm_118_market_picked_cleared_folded", FOLDED) {
+        picked()(this)
+        tapText("모두 지우기", exact = true)
+        settle()
+        check(gone("새로 빼기", exact = true) && gone("모두 지우기", exact = true)) { "모두 지우기 뒤에도 칩이 남아요" }
+    }
+
+    /**
+     * 2.0.0 [RVM-64] 검토 U08a-03·MKT-04: a word found in all three 구간 shows as one list under each 구간's head (테마 · 탭별 작품 · 도구),
+     * each tab saying how many; '없어요' never comes while a 구간 is still being looked in.
+     */
+    private fun oneList(): Screen.() -> Unit = {
+        Market(scoped = true).also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        vm.query("라"); vm.load()
+        settle()
+        check(vm.state.value.found.keys.size == 3 && vm.state.value.found.values.none { it.loading }) { "세 구간을 다 찾지 않았어요" }
+        check(appears("테마 · 7개", exact = true)) { "찾은 목록에 테마 머리가 없어요" }
+        check(appears("탭별 작품 1", exact = true) && appears("도구 1", exact = true)) { "구간 탭에 찾은 수가 없어요" }
+        check(scrolledTo("탭별 작품 · 1개", exact = true) && scrolledTo("도구 · 1개", exact = true)) { "찾은 목록에 탭별 작품·도구 머리가 없어요" }
+        repeat(8) { scrollDown(400) }
+        settle()
+    }
+    @Test fun oneListFolded() = shoot("rvm_119_market_find_one_list_folded", FOLDED, oneList())
+    @Test fun oneListFoldedDarkBig() = shoot("rvm_120_market_find_one_list_folded_dark_200", DARK, 2f, oneList())
+    @Test fun oneListUnfolded() = shoot("rvm_121_market_find_one_list_unfolded", UNFOLDED, oneList())
+
+    /** [RVM-64] MKT-04: with 도구 still being looked in, the others answered empty: grey cards, not '없어요'. */
+    @Test fun noNoneWhileLooking() = shoot("rvm_122_market_find_waiting_folded", FOLDED) {
+        val m = Market(scoped = true)
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        c.recipeApi = object : RecipeApi by m {
+            override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?): RecipePage {
+                if (q.isNotBlank() && kind.orEmpty().startsWith(RecipeClient.SCOPE_TOOL)) gate.await()
+                return m.list(style, sort, q, cursor, kind)
+            }
+        }
+        style(WorkStyle.SHIFT)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        vm.query("낮잠"); vm.load()
+        settle()
+        check(gone("맞는 작품이 없어요", exact = false)) { "도구를 찾는 중인데 '없어요'가 먼저 나왔어요" }
+        check(appears("불러오는 중", exact = true)) { "찾는 중인 구간에 뼈대 카드가 없어요" }
+        gate.complete(Unit)
+        settle()
+        check(appears("도구 · 1개", exact = true)) { "도구에서 찾은 것이 안 보여요" }
+    }
+
+    /** [RVM-64] 검토 U08a-04: the first page on its way is grey phone-shaped cards, not one spinner. */
+    private fun waiting(): Screen.() -> Unit = {
+        val m = Market()
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        c.recipeApi = object : RecipeApi by m {
+            override suspend fun list(style: WorkStyle?, sort: String, q: String, cursor: Int, kind: String?): RecipePage { gate.await(); return m.list(style, sort, q, cursor, kind) }
+        }
+        // A kind of work no other test here opens 장터 with, so no list kept from one comes first.
+        style(WorkStyle.INVEST)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        check(appears("불러오는 중", exact = true)) { "기다리는 동안 뼈대 카드가 없어요" }
+    }
+    @Test fun waitingFolded() = shoot("rvm_123_market_skeleton_folded", FOLDED, waiting())
+    @Test fun waitingFoldedDarkBig() = shoot("rvm_124_market_skeleton_folded_dark_200", DARK, 2f, waiting())
+
+    /** 2.0.0 [RVM-63] 검토 U08a-02·MKT-02: near the end the next page is read by itself; failing, it says so there with 다시 하기. */
+    private fun pagingFails(): Screen.() -> Unit = {
+        Market(paged = 4).also { c.recipeApi = it }
+        style(WorkStyle.SHIFT)
+        val vm = RecipeListViewModel(c)
+        content { RecipeListScreen(vm, onBack = {}, onOpen = {}, onMake = {}, onMine = {}) }
+        settle()
+        repeat(6) { scrollUp(400, across = 0.5f); settle() }
+        check(vm.state.value.moreError != null) { "끝 가까이에서 다음 쪽을 저절로 읽지 않았어요" }
+        check(vm.state.value.error == null) { "다음 쪽 실패가 맨 위 오류로 갔어요" }
+        check(appears("잠시 뒤 다시 해 주세요")) { "목록 끝에 실패 줄이 없어요" }
+        check(gone("더 보기", exact = true)) { "실패했는데 '더 보기'가 그대로예요" }
+    }
+    @Test fun pagingFailsFolded() = shoot("rvm_107_market_more_failed_folded", FOLDED, pagingFails())
+    @Test fun pagingFailsFoldedDarkBig() = shoot("rvm_108_market_more_failed_folded_dark_200", DARK, 2f, pagingFails())
+    @Test fun pagingFailsUnfolded() = shoot("rvm_109_market_more_failed_unfolded", UNFOLDED, pagingFails())
 
     /** 2.0.0 [RVM-60] RCP-14 / [RVM-61] HQ-148: a theme worn before, opened from 내 서랍 in the first days after install. */
     private fun quietWear(): Screen.() -> Unit = {

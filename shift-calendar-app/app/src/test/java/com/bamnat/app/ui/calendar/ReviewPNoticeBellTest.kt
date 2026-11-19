@@ -214,6 +214,63 @@ class ReviewPNoticeBellTest {
     }
 
     /**
+     * 2.0.0 갈래 P 6 검토 PC-193 (통합 5차 PC r5-008: 전체 지움 직후 권유에 '공유 안내'가 새로 올라와 '알림 2'가 됐어요): the day of a 전체 지움
+     * no 권유 takes the place of the one cleared, nor comes from another feature; 되돌리기 brings back what was there; the next day the next
+     * 권유 may come.
+     */
+    @Test fun noNewSuggestionTheDayOfAClearAll() {
+        val start = java.time.ZonedDateTime.of(2026, 11, 19, 9, 0, 0, 0, java.time.ZoneId.of("Asia/Seoul"))
+        com.bamnat.core.time.Today.fix(start)
+        try {
+            val inbox = Inbox.get(app)
+            var state by mutableStateOf(NoticeStackState())
+            show({
+                Column {
+                    NoticeStack(listOf(
+                        Notice("plazaShare", "회사 규칙으로 올리기", line = "회사 규칙으로 올리기 한 줄", section = InboxSection.SUGGEST) { box() },
+                        Notice("shareHint", "공유 안내", line = "‘공유’로 근무표를 보낼 수 있어요", section = InboxSection.SUGGEST) { box() },
+                    ), state = state)
+                    NoticeBell(state)
+                }
+            }) {
+                state.openSheet(null)
+                compose.waitForIdle()
+                compose.onNodeWithText("회사 규칙으로 올리기").assertIsDisplayed()
+                compose.onNodeWithText("전체 지움").performClick()
+                compose.waitForIdle()
+                compose.onNodeWithText("공유 안내").assertDoesNotExist()
+                assertEquals("지운 날 새 권유 없음", 0, state.inBell)
+                assertEquals("다른 기능의 권유도 오늘은 들지 않아요", false,
+                    inbox.post(InboxRow("suggest.companyRule:9", "suggest.companyRule", InboxSection.SUGGEST, "규칙 올리기", "한 줄")))
+                // 되돌리기: what was there comes back (the first 권유), and a 권유 may come in again.
+                compose.onNodeWithText("되돌리기").performClick()
+                compose.waitForIdle()
+                compose.onNodeWithText("회사 규칙으로 올리기").assertIsDisplayed()
+                assertEquals(false, inbox.hushed.value)
+                // Cleared for good, the sheet closed; the same day, a new visit: still nothing.
+                compose.onNodeWithText("전체 지움").performClick()
+                compose.waitForIdle()
+                state.sheetOpen = false
+                state.settle()
+                compose.waitForIdle()
+                state = NoticeStackState()
+                compose.waitForIdle()
+                assertEquals("같은 날 다시 열어도", 0, state.inBell)
+                // The next day the next 권유 may come (the one cleared rests its two weeks).
+                com.bamnat.core.time.Today.fix(start.plusDays(1))
+                state = NoticeStackState()
+                compose.waitForIdle()
+                assertEquals("다음 날 다음 권유", 1, state.inBell)
+                state.openSheet(null)
+                compose.waitForIdle()
+                compose.onNodeWithText("공유 안내").assertIsDisplayed()
+            }
+        } finally {
+            com.bamnat.core.time.Today.reset()
+        }
+    }
+
+    /**
      * 2.0.0 갈래 P 5 검토 PC-180 (PC 4차: ✕로 닫은 '회사 규칙으로 올리기'가 다음 날 권유 맨 앞에 다시 옴): every kind of 권유 the calendar
      * has, closed with its ✕ in the 알림함 (most have no close of their own), does not come the next day, nor a week on; two weeks on
      * it may. One rule in one place ([closeSuggestion], [Inbox.close]). 총괄 11-19: closed with ✕ a second time, the kind is off for good

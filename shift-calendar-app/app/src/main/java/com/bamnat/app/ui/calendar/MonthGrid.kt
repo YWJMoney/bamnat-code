@@ -128,6 +128,20 @@ import com.bamnat.app.ui.theme.container
 const val GRID_ROWS = 6
 
 /**
+ * 2.0.0 갈래 P 6 검토 PC-199: where each of the [GRID_ROWS] weeks ends, from the grid's top, as [MonthGrid] lays them out in
+ * [cellHeight] × rows (the 칸 판's insets and gaps come out of the rows), so a fold's upper half can end at a week's end.
+ */
+@Composable
+internal fun gridWeekEnds(cellHeight: Dp): List<Dp> {
+    val grid = partStyle("cal.grid")
+    val gap = (grid.gap ?: 0).dp
+    val inset = ((grid.out ?: 0) + (grid.padV ?: 0)).dp
+    val rowHeight = if (grid.isEmpty) cellHeight else ((cellHeight * GRID_ROWS) - gap * (GRID_ROWS - 1) - inset * 2) / GRID_ROWS
+    val top = if (grid.isEmpty) 0.dp else inset
+    return List(GRID_ROWS) { r -> top + rowHeight * (r + 1) + gap * r }
+}
+
+/**
  * 2.0.0 [RVH-67] 검토 CAL-01: how many day cells were drawn, counted only while a test asks ([MonthGridRedrawTest]): picking a day or
  * the month turning must draw again the cells that changed, not all 42. Off, it costs one read of a field per cell.
  */
@@ -1176,7 +1190,10 @@ private fun DayCell(
                 }
             }
             HorizontalDivider()
-            if (day.isWorkDay || day.coveredShift != null || day.alarmSkipped) {
+            // 2.0.0 [RVH-86] 검토 PC-168 (가게: 알람이 없는 날에 '이 날 알람 끄기'): only a day that rings (or was turned off) offers it,
+            // as the day sheet's own 알람 끄기 chip does ([plannedAlarms]).
+            val rings = remember(snapshot, day) { plannedAlarms(snapshot, day).isNotEmpty() }
+            if (rings || day.alarmSkipped) {
                 DropdownMenuItem(
                     text = { Text(if (day.alarmSkipped) "이 날 알람 켜기" else "이 날 알람 끄기") },
                     leadingIcon = { Icon(if (day.alarmSkipped) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null) },

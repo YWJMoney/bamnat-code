@@ -236,7 +236,7 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** Why [text] cannot go yet, in words; null when it can. */
     fun problem(text: String): String? = when {
         text.length > InquiryClient.TEXT_MAX -> "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요"
-        else -> CompanyText.personal(text)?.let(::personalProblem)
+        else -> CompanyText.personal(InquiryClient.withoutOrder(text))?.let(::personalProblem)
     }
 
     /** [INQ-05] Questions waiting to be sent, shown at the top of 내 문의. */

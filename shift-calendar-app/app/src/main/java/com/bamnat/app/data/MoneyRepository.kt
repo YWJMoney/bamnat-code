@@ -10,6 +10,8 @@ import com.bamnat.app.data.db.encodeParts
 import com.bamnat.app.data.db.toEntity
 import com.bamnat.app.data.db.toModel
 import com.bamnat.core.money.CategoryEdit
+import com.bamnat.core.money.CategoryIds
+import com.bamnat.app.data.db.CategoryIdFill
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.FixedCost
 import com.bamnat.core.money.LedgerChecks
@@ -121,8 +123,9 @@ class MoneyRepository(
      * Inserts a new line or replaces the one with the same id; returns it with its id. When the user
      * moves a place to another category, that place keeps the new category from now on [LEDG-04].
      */
-    suspend fun save(entry: MoneyEntry): MoneyEntry {
+    suspend fun save(line: MoneyEntry): MoneyEntry {
         saves++
+        val entry = settled(line)
         if (entry.id == 0L) return entry.copy(id = dao.insertEntry(entry.toEntity(clock())))
         // 2.0.0 [RVL-66] (검토 DATA-18) The learned place and the line are one write: a stop between them kept the rule only.
         return db.withTransaction {
@@ -160,8 +163,34 @@ class MoneyRepository(
 
     /** [LEDG-07] Several lines changed at once (고르기), saved as they are. */
     suspend fun saveAll(list: List<MoneyEntry>) {
-        if (list.isNotEmpty()) dao.restoreEntries(list.map { it.toEntity(clock()) })
+        if (list.isEmpty()) return
+        val edits = allCategories()
+        dao.restoreEntries(list.map { settle(it, edits).toEntity(clock()) })
     }
+
+    /**
+     * 2.0.0 [RVK-60] (검토 I06ab-01) [line] with the fixed id of its category and of each split part, and the name the user gives that
+     * category now: a line read as 급여 lands on the user's 월급 when they renamed it, and a line moved to another category in the sheet
+     * takes that one's id ([CategoryIds.settle]).
+     */
+    private suspend fun settled(line: MoneyEntry): MoneyEntry = settle(line, allCategories())
+
+    private fun settle(line: MoneyEntry, edits: List<CategoryEdit>): MoneyEntry {
+        val id = CategoryIds.settle(line.kind, line.category, line.categoryId, edits)
+        val parts = line.parts.map { p ->
+            val pid = CategoryIds.settle(line.kind, p.category, p.id, edits)
+            p.copy(id = pid, category = CategoryIds.nameOf(line.kind, pid, edits) ?: p.category)
+        }
+        return line.copy(categoryId = id, category = CategoryIds.nameOf(line.kind, id, edits) ?: line.category, parts = parts)
+    }
+
+    private fun settle(cost: FixedCost, edits: List<CategoryEdit>): FixedCost {
+        val id = CategoryIds.settle(cost.kind, cost.category, cost.categoryId, edits)
+        return cost.copy(categoryId = id, category = CategoryIds.nameOf(cost.kind, id, edits) ?: cost.category)
+    }
+
+    /** 2.0.0 [RVK-60] After a backup from before 37 came in: every row without a fixed id gets the one its name stands for. */
+    suspend fun fillCategoryIds() = db.withTransaction { CategoryIdFill.fill(db.openHelper.writableDatabase) }
 
     /** [LEDG-07] Several lines removed at once; [saveAll] with the same lines puts them back. */
     suspend fun deleteAll(list: List<MoneyEntry>) {
@@ -236,8 +265,30 @@ class MoneyRepository(
     /** [LEDG-14] Saves the user's categories for [kind] in their order; null names are dropped. */
     suspend fun saveCategories(kind: MoneyKind, list: List<CategoryEdit>) = db.withTransaction {
         // 2.0.0 [RVL-66] (검토 DATA-18) Cleared and written as one: a stop between the two left the user with no categories.
+        // 2.0.0 [RVK-60] (검토 I06ab-01) Each keeps its fixed id: one given none takes the id its name had here, else its name's, else
+        // (a name taken by another id) a new one. Lines under an id follow its name, so a rename by id never leaves a line behind.
+        val had = dao.allCategories().filter { it.kind == kind.name }
+        val used = list.mapNotNull { it.id.takeIf(String::isNotEmpty) }.toMutableSet()
+        val rows = list.filter { it.kind == kind && it.name.isNotBlank() }.map { e ->
+            if (e.id.isNotEmpty()) return@map e
+            val id = had.firstOrNull { it.name == e.name && it.uid.isNotEmpty() && it.uid !in used }?.uid
+                ?: CategoryIds.of(kind, e.name).takeIf { it !in used && had.none { h -> h.uid == it && h.name != e.name } }
+                ?: CategoryIds.own()
+            used += id
+            e.copy(id = id)
+        }.distinctBy { it.id }
         dao.clearCategories(kind.name)
-        dao.insertCategories(list.filter { it.kind == kind && it.name.isNotBlank() }.map { it.toEntity() })
+        dao.insertCategories(rows.map { it.toEntity() })
+        rows.forEach { r ->
+            dao.nameLinesOf(kind.name, r.id, r.name)
+            dao.nameFixedOf(kind.name, r.id, r.name)
+            val split = dao.entriesWithPartId(kind.name, r.id).mapNotNull { e ->
+                val parts = decodeParts(e.parts, e.partIds)
+                if (parts.none { it.id == r.id && it.category != r.name }) null
+                else e.copy(parts = encodeParts(parts.map { if (it.id == r.id) it.copy(category = r.name) else it }))
+            }
+            if (split.isNotEmpty()) dao.restoreEntries(split)
+        }
     }
 
     /**
@@ -267,6 +318,10 @@ class MoneyRepository(
         dao.renameInFixed(kind.name, from, name)
         if (kind == MoneyKind.EXPENSE) {
             dao.renameInRules(from, name)
+            // 2.0.0 [RVK-60] A card's 실적에서 빼는 분류 follow the name too.
+            dao.allAccounts().filter { a -> a.perfSkip.split(',').any { it.trim() == from } }.forEach { a ->
+                dao.restoreAccount(a.copy(perfSkip = a.perfSkip.split(',').map { it.trim() }.map { if (it == from) name else it }.distinct().joinToString(",")))
+            }
             // 2.0.0 [RVK-46] Each month's budget goes along too; where the new name already has one for that month, that one stays.
             val budgets = dao.allBudgets()
             budgets.filter { it.category == from }.forEach { b ->
@@ -431,7 +486,8 @@ class MoneyRepository(
 
     suspend fun clearSales(date: LocalDate) = dao.deleteSales(date.toEpochDay())
 
-    suspend fun save(cost: FixedCost): FixedCost {
+    suspend fun save(item: FixedCost): FixedCost {
+        val cost = settle(item, allCategories())
         val saved = if (cost.id == 0L) cost.copy(id = dao.insertFixed(cost.toEntity())) else cost.also { dao.restoreFixed(it.toEntity()) }
         // [LEDG-09] A new line (its id may be a deleted one's) catches up from its first day; an older one
         // set to write itself, from its first day or today, once.
