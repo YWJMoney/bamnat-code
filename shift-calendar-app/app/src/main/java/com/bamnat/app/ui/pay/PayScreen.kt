@@ -122,6 +122,7 @@ import com.bamnat.core.pay.ValueSource
 import com.bamnat.core.pay.WageType
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
 
 /** 1.37 PC 5차: through Fmt, so 금액 가리기 hides 세전·세후·세금·실수령 too. */
 internal fun won(v: Long): String = com.bamnat.app.ui.Fmt.won(v)
@@ -355,6 +356,11 @@ fun PayScreen(
                     val emptied = history.firstOrNull()?.takeIf { profile == null && it.why == com.bamnat.app.pay.PayStore.RESTART && it.before != null }
                     Column(Modifier.fillMaxSize()) {
                     emptied?.let { c -> RestoreBand(c, onRestore = { vm.restore(c) }, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) }
+                    // 2.0.0 [RVJ-67] (PC-156): the setup being changed says whose way it is, as the pay screen's head does.
+                    if (profile != null) sharedWay?.company?.takeIf { it.isNotBlank() }?.let { c ->
+                        Text("지금 ‘$c’ 급여 방식으로 계산하고 있어요", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
                     // [EASE-03] 1.38: the company's pay from the first setup is asked here, not over the first calendar.
                     if (profile == null && detailed == null) com.bamnat.app.ui.setup.CompanyPayWaiting(vm.calendarId, Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                     Box(Modifier.weight(1f)) {
@@ -576,8 +582,10 @@ private fun PayResult(
         // [BLU-11] 1.36 누락 점검 N3: 급여 머리 (일 이름과 달 넘기기) as a part.
         // [FXR-03] With a day of the pay month shown, so 조건부 꾸미기 (만약 이달급여 > 3000000 …) works here too.
         val headPart = com.bamnat.app.logic.partStyleOn("pay.head", payDayOf(result))
+        // 2.0.0 [RVJ-67] (PC-156): the company's way by its name, not '직접 설정'.
+        val way by vm.sharedWay.collectAsStateWithLifecycle()
         val who: @Composable (Modifier) -> Unit = { m ->
-            if (headPart.hide != true) com.bamnat.app.ui.parts.PartText("${profile.occupation.label} · ${profile.wageLabel()}", headPart, MaterialTheme.typography.titleMedium,
+            if (headPart.hide != true) com.bamnat.app.ui.parts.PartText(profile.whoLabel(way), headPart, MaterialTheme.typography.titleMedium,
                 modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
             else Spacer(m)
         }
@@ -1571,7 +1579,7 @@ private fun DayLedger(result: MonthPay, unlocked: Boolean, keptDays: Boolean? = 
                 .padding(horizontal = (part.padH ?: 0).dp, vertical = (part.padV ?: 6).dp)) {
                 val dateText: @Composable (Modifier) -> Unit = { m ->
                     Text("${d.date.monthValue}/${d.date.dayOfMonth} (${Fmt.dayOfWeekShort(d.date.dayOfWeek)})", style = MaterialTheme.typography.labelLarge,
-                        color = if (d.holidayName != null) MaterialTheme.colorScheme.error else ink ?: MaterialTheme.colorScheme.onSurface, modifier = m)
+                        color = if (d.holidayName != null) com.bamnat.app.ui.theme.LocalCalendarColors.current.sunday else ink ?: MaterialTheme.colorScheme.onSurface, modifier = m) // [RVJ-66] 빨간날은 달력의 일요일 색
                 }
                 val kinds: @Composable (Modifier) -> Unit = { m ->
                     Column(m) {
@@ -1843,7 +1851,7 @@ private fun FitMonthsCard(vm: PayViewModel, profile: PayProfile, snapshot: Sched
                     Text("${row.month.monthValue}월", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text((if (was != null && was.total != row.total) "${won(was.gap)} → " else "") + if (row.matched) "일치" else "차이 ${won(row.gap)}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (row.matched) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                        color = if (row.matched) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution) // [RVJ-66] 차이는 주의
                 }
             }
             Text("${r.rows.size}달 중 ${r.matchedMonths}달이 맞아요", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp))

@@ -15,13 +15,17 @@ import kotlinx.coroutines.launch
  * once (입어 보기), so the line is the app's own, over the bottom bar.
  */
 object PutOnNotice {
-    class Note(val text: String, val undo: (suspend () -> Boolean)?)
+    /** 2.0.0 [RVM-55] U09b-02: [see] is the line's 보기 (with no [undo]), what a 되돌리기 left as I made it. */
+    class Note(val text: String, val undo: (suspend () -> Boolean)?, val see: (() -> Unit)? = null)
 
     private val _notes = MutableSharedFlow<Note>(extraBufferCapacity = 4)
     val notes: SharedFlow<Note> = _notes.asSharedFlow()
 
     /** Says [text]; [undo] (when there is one) takes it back and says whether it could. */
     fun say(text: String, undo: (suspend () -> Boolean)? = null) { _notes.tryEmit(Note(text, undo)) }
+
+    /** 2.0.0 [RVM-55] Says [text] with 보기, which [see] answers (null: as [say]). */
+    fun sayWithSee(text: String, see: (() -> Unit)?) { _notes.tryEmit(Note(text, null, see)) }
 }
 
 /**
@@ -35,6 +39,8 @@ fun PutOnNoticeHost(c: AppContainer) {
         PutOnNotice.notes.collect { n ->
             launch {
                 val undo = n.undo
+                val see = n.see
+                if (undo == null && see != null) { if (AppSnack.ask(n.text, com.bamnat.app.ui.recipe.UndoLeft.SEE)) see(); return@launch }
                 if (undo == null) { AppSnack.show(n.text); return@launch }
                 if (AppSnack.ask(n.text, "되돌리기")) {
                     val ok = runCatching { kotlinx.coroutines.withContext(c.appScope.coroutineContext) { undo() } }.getOrDefault(false)

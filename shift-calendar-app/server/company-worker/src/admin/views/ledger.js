@@ -39,6 +39,8 @@ export function ledgerViews(A) {
     if (!a) return '<span class="meta">—</span>';
     if (a.key === "sent") return `<span class="pill ok" title="${esc(a.text)}">보냄${a.byKind === "claude" ? " · Claude" : a.byKind === "auto" ? " · 자동" : ""}</span>`;
     if (a.key === "owner") return `<span class="pill warn" title="${esc(a.why)}">확인 필요</span>`;
+    // 2.0.0 [RVQ-34] 검토 U22-03: 적어 둔 답이 사람 확인을 기다려요.
+    if (a.key === "person") return `<span class="pill warn" title="${esc(a.why)}">사람 확인 대기</span>`;
     return `<span class="pill">${esc(a.name)}</span>`;
   }
 
@@ -92,7 +94,10 @@ export function ledgerViews(A) {
       r.state === "seeing" || r.state === "waiting" ? `<span class="pill">${esc(r.stateName)}${r.stateReasonName ? ` · ${esc(r.stateReasonName)}` : ""}</span>` : "",
       r.state === "done" ? `<span class="pill">끝 · ${esc(r.stateReasonName)}</span>` : "",
       // 2.0.0 [RVA-37] 검토 I24b-02: 서버가 읽지 못해 빼 둔 줄(장부는 계속 돌아요).
-      r.unreadable ? '<span class="pill warn">읽지 못함</span>' : ""].join("");
+      r.unreadable ? '<span class="pill warn">읽지 못함</span>' : "",
+      // 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록과 되풀이(몇 번째). 기록 없음은 보통 색, 되풀이는 주의(조건 6).
+      r.repeat ? `<span class="pill warn" title="7일 안 같은 묶음의 닫힘 문의">되풀이 ${r.repeat.nth}/${r.repeat.n}</span>` : "",
+      r.crash ? `<span class="pill${r.crash.record === "has" ? " info" : ""}">${esc(r.crash.recordName)}</span>` : ""].join("");
     const title = r.summary || r.title || "(내용 없음)";
     const pick = picking ? `<label class="lg-pick"><input type="checkbox" data-act="ledger-pick" data-key="${esc(r.key)}"${picking.has(r.key) ? " checked" : ""}><span class="sr">고르기</span></label>` : "";
     const side = sidePane();
@@ -141,9 +146,23 @@ export function ledgerViews(A) {
     if (r.bundle && r.type === "inquiry") {
       parts.push(`<p class="lg-block"><b>묶음</b> <a href="${href("dev", r.bundle.id)}">${esc(r.bundle.title)}</a> · ${esc(r.bundle.statusName)}${r.bundle.releasedIn ? ` ${esc(r.bundle.releasedIn)}${r.bundle.out ? " (나감)" : " (출시 전)"}` : ""} · 묶인 문의 ${r.bundle.asks}건${r.bundle.told ? " · 나왔다고 알림" : ""}</p>`);
     }
+    // [RVA-63] HQ-124: 멈춤 기록이 없으면 '알람 점검 › 보고서 복사'를 부탁하는 답(정리함 답 칸이 있으면 거기, 없으면 문의 화면에서).
+    if (r.crash && r.crash.record !== "has" && !r.closed) {
+      const box = r.sort && editAsk ? `lg-reply-${r.id}` : null;
+      parts.push(`<p class="note crash-note"><span>${esc(r.crash.recordName)}${r.repeat ? ` · 7일 안 같은 묶음 ${r.repeat.n}건 중 ${r.repeat.nth}번째` : ""}. 앱의 알람 점검 › 보고서 복사로 받아 봐요.</span>
+        ${box ? `<button type="button" class="btn small" data-act="crash-draft" data-target="${esc(box)}">기록 부탁 답 넣기</button>`
+          : `<a class="btn small" href="${href("inquiries", r.id)}">문의에서 답하기</a>`}</p>`);
+    }
     if (r.answer?.key === "owner") parts.push(`<p class="note warn">${esc(r.answer.why)}: Claude가 혼자 답하지 않아요. 최고 관리자가 정해 주세요.</p>`);
+    // 2.0.0 [RVQ-34] 검토 U22-03: 서버가 멈춘 답은 무엇 때문인지와 그 답, '지금 보내기'·'고치기'·'보내지 않기'를 장부에서 바로.
+    if (r.answer?.key === "person") {
+      parts.push(`<div class="lg-block lg-held"><p class="note warn">사람 확인 대기 · ${esc(r.answer.why)}${r.answer.ship ? " · 출시 안내" : ""}: 저절로 가지 않아요. 읽어 보고 보내 주세요.</p>
+        <p><b>적어 둔 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
+        ${editAsk ? `<div class="actions start"><button class="btn small primary" type="button" data-act="ledger-held-send" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">지금 보내기</button>
+          <a class="btn small" href="${href("inquiries", r.id)}">고치기</a>
+          <button class="btn small ghost" type="button" data-act="ledger-held-cancel" data-inquiry="${esc(r.id)}" data-id="${r.answer.held}">보내지 않기</button></div>` : ""}</div>`);
     // 2.0.0 [RVA-50] 스토어 리뷰: 초안은 여기서 보이고, Play로 보내기는 최고 관리자가 스토어 리뷰 화면에서 해요.
-    if (r.answer?.key === "draft") {
+    } else if (r.answer?.key === "draft") {
       parts.push(`<p class="lg-block"><b>답 초안</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text)}</p>
         <p class="meta">${S.me?.owner ? "스토어 리뷰 화면에서 고쳐 Play로 보내요." : "Play로 보내기는 최고 관리자가 해요."}</p>`);
     } else if (r.answer?.text || r.answer?.before) parts.push(`<p class="lg-block"><b>보낸 답</b>${r.answer.by ? ` <small>${esc(r.answer.by)}</small>` : ""}<br>${esc(r.answer.text ?? r.answer.before)}</p>`);
@@ -226,6 +245,27 @@ export function ledgerViews(A) {
         <button class="btn small" data-act="ledger-sort-many"${sortable(picking).length ? "" : " disabled"} title="정리함이 미리 써 둔(또는 고친) 답을 고른 줄마다 보내요">적힌 답 보내기 ${sortable(picking).length || ""}</button></div>` : "";
   }
 
+  /**
+   * 2.0.0 [RVA-63] HQ-124: 장부 맨 위 '같은 판에서 닫힘 되풀이'. 같은 보낸 분, 또는 같은 기기·안드로이드·앱 판에서 7일 안 닫힘 문의가 2건 넘으면
+   * 한 묶음(몇 건·첫 날~마지막 날·멈춤 기록 없는 건수)과 그 줄 번호. 안내 카드 한 모양(왼쪽 띠 주의, 조건 3).
+   * 처음에는 접힌 한 줄(가장 최근 묶음의 건수·기기·날짜)이라 장부 첫 줄이 아래로 밀리지 않아요(조건 1). 펼침은 기기에 남아요.
+   * 펼친 몸은 묶음이 하나면 줄 번호 칩만(머리가 같은 말을 해요), 둘 넘으면 묶음마다 보통 굵기 한 줄 제목(조건 4, 총괄 #526).
+   */
+  function crashCard(d) {
+    const gs = d.crashRepeats ?? [];
+    if (!gs.length) return "";
+    // 날짜는 한국 시각으로(자정 넘어 온 문의가 전날로 보이지 않게).
+    const day = (t) => new Date(Date.parse(t) + 9 * 3600e3).toISOString().slice(5, 10).replace("-", ".");
+    const top = gs[0];
+    const key = "lg-crash";
+    const open = S.opened.get(key) === true;
+    return `<details class="card home-fold stuck crash-card" data-key="${key}"${open ? " open" : ""}><summary><span class="hf-t"><b>닫힘 되풀이 ${top.n}건 · ${top.by === "same" ? "같은 보낸 분" : `보낸 분 ${top.people}명`}</b><small>${esc([top.model, top.android ? `안드로이드 ${top.android}` : "", top.app,
+        `${day(top.first)}~${day(top.last)}`, top.noRecord ? `멈춤 기록 없음 ${top.noRecord}건` : "", gs.length > 1 ? `묶음 ${gs.length}개` : ""].filter(Boolean).join(" · "))}</small></span></summary>
+      <div class="hf-body"><ul class="stuck-list">${gs.map((g) => `<li>${gs.length > 1 ? `<p class="crash-g">${esc(g.label)} · ${g.n}건 · ${esc(day(g.first))}~${esc(day(g.last))}${g.noRecord ? ` · 멈춤 기록 없음 ${g.noRecord}건` : ""}</p>` : ""}
+        <div class="chips crash-lines" role="list">${g.lines.map((l, i) => `<a class="chip" role="listitem" href="${href("inquiries", l.key.slice("inquiry:".length))}">${esc(l.no ?? "문의")} · ${i + 1}번째</a>`).join("")}</div></li>`).join("")}</ul>
+      <p class="hint">한 건씩 오면 되풀이가 안 보여요. 멈춤 기록이 없는 문의는 열어서 '기록 부탁 답 넣기'로 받아요. 숫자 › 개선 신호에도 올라가요.</p></div></details>`;
+  }
+
   function ledgerView(strip = "") {
     const d = S.data.ledger;
     if (!d) return `<div class="tiles core">${'<div class="tile skeleton"></div>'.repeat(5)}</div>${skeleton(3)}`;
@@ -267,7 +307,7 @@ export function ledgerViews(A) {
         ${d.more ? `<div class="more"><button class="btn" data-act="ledger-more">더 보기 <span class="meta">${d.items.length}/${d.total}</span></button></div>` : ""}`
       : empty(view === "closed" ? "끝낸 줄이 없어요" : S.deskQuery ? "찾는 줄이 없어요" : "이 보기에는 할 일이 없어요",
         view === "today" ? "새로 들어오면 여기 와요. 열린 것 모두는 위 '열린 것 모두'에서 봐요." : "");
-    return `<div class="ledger-view">${top}${bulk}${list}${hint}${strip}${tools(d)}</div>`;
+    return `<div class="ledger-view">${top}${crashCard(d)}${bulk}${list}${hint}${strip}${tools(d)}</div>`;
   }
 
   // ---- 바꾸기 ----
@@ -369,6 +409,13 @@ export function ledgerViews(A) {
   }
 
   const actions = {
+    // 2.0.0 [RVQ-34] 검토 U22-03: 사람 확인을 기다리는 답을 장부에서 바로.
+    "ledger-held-send": ({ inquiry, id }) => A.confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { send: true }), "보냈어요")) load();
+    }, "primary"),
+    "ledger-held-cancel": ({ inquiry, id }) => A.confirmBox("이 답을 보내지 않을까요?", "적어 둔 답만 지워요. 문의는 그대로 남아 다시 답할 수 있어요.", "보내지 않기", async () => {
+      if (await act(() => api(`/inquiries/${inquiry}/held/${id}`, "POST", { cancel: true }), "보내지 않았어요")) load();
+    }),
     "ledger-view": ({ key }) => { S.deskView = key; refilter(); },
     "ledger-group": ({ key }) => { S.deskGroup = key; refilter(); },
     "ledger-pick-mode": () => { S.ledgerPick = S.ledgerPick ? null : new Set(); render({ keepScroll: true }); },

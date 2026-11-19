@@ -202,6 +202,12 @@ export function glanceViews(A) {
   }
 
   const SIGNAL_STATE = { new: ["새 신호", "warn"], watch: ["지켜보는 중", "info"], dev: ["개발사항", "ok"], dismiss: ["아님", ""] };
+  /**
+   * 2.0.0 [RVQ-35] 검토 U22-07: 판정 셋(돌아옴·새 기준으로 굳음·자료 없음)과 HQ-117의 부풀었다 돌아옴(앞 구간이 시험 등으로 부풀었던 것뿐), 판정이 없는 옛 줄(사흘 안 보이면 '좋아짐'이던 때).
+   * 빨강은 쓰지 않아요(조건 6): 굳음만 주황, 나머지는 초록·회색.
+   */
+  const SIGNAL_OUTCOME = { back: ["돌아옴", "ok"], settled: ["새 기준으로 굳음", "warn"], nodata: ["자료 없음", ""], puffed: ["부풀었다 돌아옴", ""], old: ["옛 판정", ""] };
+  const sigNum = (v, unit) => (v === null || v === undefined || v === "" ? "—" : `${esc(String(v))}${esc(unit ?? "")}`);
 
   /**
    * 2.0.0 [RVN-15] 검토 U22c-03: 신호가 선 숫자의 날마다 줄(관측 판에 있는 것만). 사용 통계 신호처럼 판에 줄이 없는 것은 빈 글.
@@ -228,7 +234,7 @@ export function glanceViews(A) {
   function signalsCard(o, d) {
     const list = o.signals ?? [];
     const open = list.filter((s) => !s.cleared && s.state !== "dismiss");
-    const better = list.filter((s) => s.cleared);
+    const judged = list.filter((s) => s.cleared);
     const now = d?.health && d.health.tone !== "ok" ? d.health.signals.length : 0;
     const devOk = can("dev", "edit");
     // 2.0.0 [RVN-15] 디자인 품질 조건 2: 채운 '개발사항으로'는 맨 위 신호 하나만, 나머지는 테두리 단추.
@@ -240,16 +246,27 @@ export function glanceViews(A) {
         : `${devOk ? `<button class="btn small${s === first ? " primary" : ""}" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dev">개발사항으로</button>` : ""}
            ${s.state === "watch" ? "" : `<button class="btn small" data-act="obs-signal" data-key="${esc(s.key)}" data-do="watch">지켜보기</button>`}
            <button class="btn small ghost" data-act="obs-signal" data-key="${esc(s.key)}" data-do="dismiss">아님</button>`;
-      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${tone}">${esc(label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}${s.stuck && !s.devId ? `<span class="pill warn">고쳤는데 그대로</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
-        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${esc(String(s.now ?? s.value ?? "—"))}${esc(s.unit ?? "")}</b> · 기준 ${esc(String(s.base ?? "—"))}${esc(s.unit ?? "")}${s.sample === null || s.sample === undefined ? "" : ` · 표본 ${esc(String(s.sample))}`}${s.state === "dev" ? ` · 고치면 사흘 뒤 '좋아짐'으로 옮겨요` : ""}</p>
+      // 2.0.0 [RVQ-35] 고친 뒤에도 처음 기준까지 돌아오지 않아 대기열로 되돌아온 신호는 그 개발사항과 함께 한 줄로 알려요.
+      const stuck = s.stuck && !s.devId ? `<p class="meta" data-stuck>개발사항 ${s.devWas ?? s.prevDev ? `<a href="${href("dev", s.devWas ?? s.prevDev)}">${esc(s.devWas ?? s.prevDev)}</a>` : ""}을 고친 뒤에도 처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}까지 돌아오지 않았어요(새 기준으로 굳음). 다시 개발사항으로 넘기거나 지켜보기·아님을 골라요.</p>` : "";
+      const base0 = s.base0 !== undefined && s.base0 !== null && s.base0 !== s.base ? ` · 처음 기준 ${sigNum(s.base0, s.unit)}` : "";
+      return `<li class="ob-signal ${esc(s.tone)}"><div class="ob-signal-head"><span class="pill ${s.stuck && !s.devId ? "warn" : tone}">${esc(s.stuck && !s.devId ? "고쳤는데 그대로" : label)}</span>${s.back ? `<span class="pill bad">다시 나타남 ${s.back}</span>` : ""}<a href="${esc(s.to ?? "#/glance")}">${esc(s.title)}</a></div>
+        <p>${esc(s.why)}</p><p class="ob-metric">지금 <b>${sigNum(s.now ?? s.value, s.unit)}</b> · 기준 ${sigNum(s.base, s.unit)}${base0}${s.state === "dev" ? ` · 고침이 닿은 뒤 사흘 동안 안 보이면 처음 기준과 견줘 판정해요` : ""}${s.sample === null || s.sample === undefined ? "" : ` · 표본 ${esc(String(s.sample))}`}</p>${stuck}
         ${signalLine(s, o)}${A.stepsLine(s.steps)}${s.caveat ? `<p class="meta">틀릴 수 있는 까닭: ${esc(s.caveat)}</p>` : ""}
         ${s.human && s.state !== "dev" ? `<p class="meta" data-human-check>사람 확인 필요 · ${esc(s.src === "server" ? "서버가 센 요청" : "사용 통계")}에서 나온 숫자라 꾸밀 수 있어요${s.play === null || s.play === undefined ? " · Play 숫자가 아직 없어요" : ` · 같은 주 Play 하루 사용자 ${s.play > 0 ? "+" : ""}${esc(String(s.play))}%`}</p>` : ""}
         <div class="actions start">${btns}</div></li>`;
     };
-    const done = better.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>좋아진 신호 ${better.length}개</summary><ul>${better.map((s) =>
-      `<li><b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 ` : ""}${esc(String(s.value ?? "—"))}${esc(s.unit ?? "")} → ${esc(String(s.after ?? "—"))}${esc(s.unit ?? "")}</small></li>`).join("")}</ul></details>` : "";
+    const count = (k) => judged.filter((s) => (s.outcome ?? "old") === k).length;
+    const sum = Object.keys(SIGNAL_OUTCOME).filter((k) => count(k)).map((k) => `${SIGNAL_OUTCOME[k][0]} ${count(k)}`).join(" · ");
+    const done = judged.length ? `<details class="ob-better" data-key="obs:better"${S.opened.get("obs:better") ? " open" : ""}><summary>판정한 신호 ${judged.length}개 <small>${esc(sum)}</small></summary><ul>${judged.map((s) => {
+      const [name, tone] = SIGNAL_OUTCOME[s.outcome] ?? SIGNAL_OUTCOME.old;
+      // 2.0.0 [HQ-117] 부풀었다 돌아옴: 부푼 날과, 그날을 뺀 기준(처음 기준은 부푼 숫자라 보이지 않아요).
+      const md = (d) => `${Number(String(d).slice(5, 7))}월 ${Number(String(d).slice(8, 10))}일`;
+      const why = s.outcome === "puffed" ? `${(s.puffed ?? []).map(md).join("·") || "앞 구간"}이 부풀었던 것뿐 · 그날을 빼면 기준 ${sigNum(s.base, s.unit)}`
+        : s.outcome === "nodata" ? "안 보인 뒤로 이 숫자를 읽지 못했어요" : s.outcome ? `처음 기준 ${sigNum(s.base0 ?? s.base, s.unit)}` : "사흘 안 보여서 닫았어요(처음 기준과 견주기 전)";
+      return `<li data-outcome="${esc(s.outcome ?? "old")}"><span class="pill ${tone}">${esc(name)}</span> <b>${esc(s.title)}</b><small>${s.devId ? `개발사항 ${esc(s.devId)} 뒤 · ` : ""}${sigNum(s.value, s.unit)} → ${sigNum(s.after, s.unit)} · ${why}</small></li>`;
+    }).join("")}</ul></details>` : "";
     return `<section class="card ob-signals" aria-labelledby="ob-sig-title"><div class="card-head"><h2 id="ob-sig-title">개선 신호</h2>${open.length ? `<span class="pill warn">${open.length}</span>` : ""}</div>
-      <p class="hint">한 시간마다 며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요(위 정상도는 지금 이 순간의 숫자). 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 그 숫자가 돌아오면 '좋아진 신호'로 옮겨요.</p>
+      <p class="hint">한 시간마다 며칠 쌓인 숫자를 기준과 견줘 찾은 긴 흐름 문제예요(위 정상도는 지금 이 순간의 숫자). 개발사항으로 넘기면 운영 장부·자동 순환으로 이어지고, 고친 뒤 처음 기준까지 돌아오면 '돌아옴', 못 돌아오면 다시 여기로 와요.</p>
       ${open.length ? `<ul class="ob-signal-list">${open.map(row).join("")}</ul>` : `<p class="empty-line">긴 흐름에서는 찾은 문제가 없어요.${now ? ` 위 '${esc(TONE[d.health.tone]?.[0] ?? "")}' ${now}개는 지금 숫자라 위 칩에서 바로 열어요.` : ""} 매시 ${o.found?.length ?? 0}가지 숫자를 기준과 견줘요${o.play.state === "ok" ? "" : "(Play 보고서가 연결되면 늘어요)"}.</p>`}
       ${done}</section>`;
   }
