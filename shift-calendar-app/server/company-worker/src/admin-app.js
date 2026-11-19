@@ -1806,14 +1806,17 @@ function adminApp(L, BUILD, M) {
     const d = S.data.plazaEffect;
     if (!d) return skeleton(1);
     const n = (v, unit = "") => (v === null || v === undefined ? "–" : `${v}${unit}`);
+    // 2.0.0 [RVN-24] 검토 SVC-95: a share of fewer than d.few is '아직 적음' (null from the server), '–' when there is nothing at all.
+    const pct = (v, sample) => (v === null || v === undefined ? (sample > 0 ? "아직 적음" : "–") : `${v}%`);
     const mins = (m) => (m === null ? "–" : m < 60 ? `${m}분` : `${Math.round(m / 6) / 10}시간`);
-    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 오늘 처음 쓴 분은 ${d.back}일 뒤부터 들어가요.</p>
+    return `<h3>광장 효과</h3><p class="hint">지난 ${d.days}일 합계예요(사람 하나하나는 보지 않아요). ‘전’은 그 앞 ${d.days}일이에요. 보이는 글만 세고, 신고·도배로 가려진 글은 ‘가려짐’에 따로 세요. ‘처음 쓴 분 · 다시 씀’은 처음 쓴 지 ${d.back}일이 지난 분(${d.back}~${d.back + d.days}일 전 처음 쓴 분)만 세요. 비율은 ${d.few ?? 10}건이 모여야 보여요.</p>
       <div class="table-wrap"><table class="list nums"><thead><tr><th scope="col">광장</th><th scope="col">하루 글 (전)</th><th scope="col">질문 · 답 받음</th><th scope="col">첫 답까지</th><th scope="col">답</th><th scope="col">태그 붙은 글</th>
-        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th></tr></thead><tbody>
+        <th scope="col">나도요</th><th scope="col">근무 카드</th><th scope="col">쓴 분</th><th scope="col">처음 쓴 분 · 다시 씀</th><th scope="col">오늘 출근</th><th scope="col">가려짐</th></tr></thead><tbody>
       ${d.items.map((x) => {
-        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${n(x.answeredPct, "%")}`],
-          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", n(x.tagged, "%")], ["나도요", x.metoo], ["근무 카드", x.cards],
-          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${n(x.cameBackPct, "%")}`], ["오늘 출근", x.checkinToday]];
+        const cells = [["하루 글 (전)", `${n(x.postsPerDay)} (${n(x.postsPerDayBefore)})`], ["질문 · 답 받음", `${x.questions} · ${pct(x.answeredPct, x.questions)}`],
+          ["첫 답까지", mins(x.firstAnswerMin)], ["답", x.answers], ["태그 붙은 글", pct(x.tagged, x.posts)], ["나도요", x.metoo], ["근무 카드", x.cards],
+          ["쓴 분", x.writers], ["처음 쓴 분 · 다시 씀", `${x.newWriters} · ${pct(x.cameBackPct, x.newWriters)}`], ["오늘 출근", x.checkinToday],
+          ["가려짐", x.hidden ?? 0]];
         return `<tr><td class="name">${esc(x.name)}</td>${cells.map(([l, v]) => `<td class="n"><span class="lab">${l} </span>${v}</td>`).join("")}</tr>`;
       }).join("")}
       </tbody></table></div>`;
@@ -1830,21 +1833,27 @@ function adminApp(L, BUILD, M) {
   function picksView(edit) {
     const d = S.data.picks;
     if (!d) return skeleton(1);
+    // 2.0.0 [RVN-24] 검토 I22cb-02: what a pick is about, so 앱 도움말 on that subject shows it ('같은 근무 분들의 답').
+    const topics = d.topics ?? {};
+    const topicSelect = (id, now) => `<select id="pick-topic-${esc(id)}" aria-label="도움말 주제"><option value="">도움말 주제 없음</option>${
+      Object.entries(topics).map(([k, v]) => `<option value="${esc(k)}"${now === k ? " selected" : ""}>도움말 · ${esc(v)}</option>`).join("")}</select>`;
     const card = (x) => `<article class="card">
       <div class="head"><h3>${esc(x.name)}</h3><span class="pill${x.picks.length ? " ok" : ""}">모음 ${x.picks.length}</span>
         <span class="pill${x.candidates.length ? " info" : ""}">후보 ${x.candidates.length}</span></div>
       ${x.picks.length ? `<ul class="plain">${x.picks.map((p) => `<li><div class="row"><span class="row-main"><b>${esc(p.title)}</b>
-        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
-        ${edit ? `<span class="row-side"><button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
+        <small>${p.form ? `${esc(FORM_NAMES[p.form] ?? p.form)} · ` : ""}${p.topic && topics[p.topic] ? `도움말 ${esc(topics[p.topic])} · ` : ""}${esc(cut(p.answer, 60))}${p.gone ? " · 답이 내려가 앱에는 안 보여요" : ""}</small></span>
+        ${edit ? `<span class="row-side">${p.gone ? "" : `${topicSelect(p.answerId, p.topic)}<button class="btn small ghost" data-act="pick-topic" data-id="${esc(p.answerId)}"
+          data-title="${esc(p.title)}">주제 저장</button>`}<button class="btn small ghost" data-act="pick-remove" data-id="${esc(p.id)}">빼기</button></span>` : ""}</div></li>`).join("")}</ul>`
         : '<p class="meta">아직 고른 답이 없어요</p>'}
       ${x.candidates.length ? `<h4>넣을 만한 답</h4><ul class="plain">${x.candidates.map((c) => `<li>
         <p class="meta">Q. ${esc(cut(c.question, 80))}${c.form ? ` · ${esc(FORM_NAMES[c.form] ?? c.form)}` : ""}</p>
         <p>A. ${esc(cut(c.body, 160))} <span class="meta">${c.chosen ? "질문한 분이 도움 됐어요 · " : ""}나도요 ${c.agree}</span></p>
         ${edit ? `<div class="actions"><input id="pick-title-${esc(c.answer)}" type="text" maxlength="40" placeholder="모음 제목 (예: 야간 뒤 바로 잠드는 법)">
-          <button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
+          ${topicSelect(c.answer, null)}<button class="btn primary" data-act="pick-add" data-id="${esc(c.answer)}">답 모음에 넣기</button></div>` : ""}</li>`).join("")}</ul>` : ""}
     </article>`;
     return `<h3>광장 답 모음</h3><p class="hint">도움이 된 답을 골라 제목을 붙이면 앱 그 유형 광장 맨 위 ‘📚 선배 답 모음’에 보여요.
-      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
+      질문의 근무형태가 있으면 그 근무형태 분께 먼저 보여요. 도움말 주제를 고르면 앱 도움말의 그 주제 답 아래 ‘같은 근무 분들의 답’에도 보여요.
+      답이나 질문이 내려가면 앱에서도 저절로 빠져요. 광장마다 30개까지.</p>
       <div class="grid">${d.items.map(card).join("")}</div>`;
   }
 
@@ -1948,10 +1957,20 @@ function adminApp(L, BUILD, M) {
     const u = c.unconfirmed ?? { n: 0 };
     const unconfirmed = (c.on || c.confirmed) && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
       <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    // 2.0.0 [RVN-24] K-결정-10: 공개 운영 규칙 페이지 맨 아래에 나가는 달마다의 합계(나가기 전에도 운영자가 먼저 봐요).
+    const nums = c.numbers;
+    const numLine = (m) => `가린 글 ${m.hidden} · 안내·경고 ${m.warned} · 쉬기 ${m.held} · 해명 받아들임 ${m.appeals.accepted}/${m.appeals.answered}`;
+    const monthName = (m) => `${Number(m.month.slice(5))}월${m.since.endsWith("-01") ? "" : `(${Number(m.since.slice(8))}일부터)`}`;
+    const numbers = nums ? `<details><summary>공개 페이지의 마을 돌봄 숫자${nums.shown ? "" : ` · ${esc(day(nums.from))}부터 보여요`}</summary>
+      <p class="hint">운영 규칙 페이지 맨 아래에 지난달 합계만 나가요. 사람을 가리키는 값은 없어요.</p><ul class="rows">
+      ${nums.now ? `<li class="item"><span class="row-main">이번 달 지금까지 · ${numLine(nums.now)}</span></li>` : ""}
+      ${nums.months.map((m) => `<li class="item"><span class="row-main">${monthName(m)} · ${numLine(m)}</span>${nums.shown && m === nums.months[0] ? '<span class="pill ok">페이지에 보임</span>' : ""}</li>`).join("")}
+      </ul></details>` : "";
     return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
       ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
-      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
+      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
+      ${numbers}`;
   }
 
   /** 1.39 [CARE-10] 문의 하나가 해명이면: 무엇에 대한 해명인지와 받아들이기·그대로 두기. 답은 아래 답 칸으로 따로 가요. */
@@ -2130,7 +2149,7 @@ function adminApp(L, BUILD, M) {
   /** One question in a list; [compact] for the list beside an open question. */
   function inquiryRow(q, { compact = false, picking = false } = {}) {
     const current = S.route.id === q.id;
-    const inner = `<span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${!compact && q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
+    const inner = `<span class="row-main"><b>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${q.reopened ? '<span class="pill warn">다시 열림</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}${!compact && q.appVersion ? ` <span class="meta">앱 ${esc(q.appVersion)}</span>` : ""}</b>
         <span class="preview">${esc(q.preview)}</span>
         ${q.typing?.length ? `<span class="typing">${esc(q.typing.join(", "))}님이 답 쓰는 중</span>` : ""}</span>
       <span class="row-side"><span>${esc(ago(q.updatedAt ?? q.createdAt))}</span>${slaPill(q.slaLeft)}
@@ -2267,6 +2286,14 @@ function adminApp(L, BUILD, M) {
       ${moreButton(S.data.inquiries.next, "inquiries-more", S.data.inquiries.total, list.length)}</nav><div class="pane-main">${detail}</div></div>`;
   }
 
+  /** [RVQ-51] 답 알림이 못 갔을 때의 한 줄. */
+  function pushLine(p) {
+    const tail = "보낸 분이 앱을 열면 답은 보여요.";
+    if (p.why === "gone") return `알림을 보낼 수 없어요(앱을 지웠거나 알림을 껐어요). ${tail}`;
+    if (p.why === "busy" && p.retry) return `구글이 바빠 답 알림이 아직 못 갔어요. ${moment(p.retry)}에 다시 보내요. ${tail}`;
+    return `답 알림이 못 갔어요. ${tail}`;
+  }
+
   /**
    * 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록(있음은 파랑, 없음·안 옴은 보통 색: 빨강은 위험에만, 조건 6). 같은 모양을 운영 장부 줄도 써요.
    */
@@ -2315,15 +2342,16 @@ function adminApp(L, BUILD, M) {
       <span>Ctrl+Enter 보내고 다음 · s 건너뛰기 · e 닫고 다음</span><button class="btn small" data-act="queue-skip">건너뛰기</button><button class="btn small ghost" data-act="queue-stop">끝내기</button></div>` : "";
     return `${queueBar}${step}<div class="cols">
       <section>
-        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${status[1]}</span>
+        <div class="card"><div class="card-head"><h2>${q.urgency === "urgent" ? '<span class="pill bad">급함</span> ' : ""}${esc(KIND_NAMES[q.kind] ?? "문의")}${q.topicName ? ` · ${esc(q.topicName)}` : ""}</h2><span class="pill ${status[0]}">${q.reopened ? "다시 열림" : status[1]}</span>
           <button class="btn small" data-act="inquiry-copy" data-id="${q.id}" title="개발할 때 붙여 넣을 글로 복사 (c)">${icon(P.copy)}복사</button></div>
           <p class="meta">보낸 분 앱에는 <b>${esc(stage)}</b>${q.progress?.version ? ` (${esc(q.progress.version)})` : ""}${roSuffix(stage)} 보여요.${APP_KIND_NAMES[q.kind] ? ` 앱에서 고른 종류: ${esc(APP_KIND_NAMES[q.kind])}.` : ""} ${waitPill(q)}${slaPill(q.slaLeft)}${q.rating ? ` <span class="pill ${q.rating > 0 ? "ok" : "warn"}">${q.rating > 0 ? "답이 도움 됐대요" : "답이 아쉬웠대요"}</span>` : ""}</p>
           ${crashNote(q, editable)}
           <div class="thread">${thread}${(q.held ?? []).map((h) => `<div class="bubble admin held">${esc(h.text)}</div>
             <span class="bubble-meta admin">${esc(h.by)} · ${h.person ? `<b>사람이 보내야 해요</b>${heldWhyText(h)}` : `<b>보류 중</b>, ${Math.max(1, Math.ceil((Date.parse(h.until) - Date.now()) / 60000))}분 뒤 보내져요`}${h.close ? " · 보내면 닫혀요" : ""}${editable ? `
             <button class="btn small${h.person ? " primary" : " ghost"}" data-act="held-send" data-id="${h.id}">지금 보내기</button><button class="btn small ghost" data-act="held-edit" data-id="${h.id}">고치기</button><button class="btn small ghost" data-act="held-cancel" data-id="${h.id}">보내지 않기</button>${h.person && h.why && !h.why.reply ? `<button class="linkish" type="button" data-act="held-miss" data-id="${h.id}">판정이 틀렸어요</button>` : ""}` : ""}</span>`).join("")}</div>
-          ${q.photos ? `<div class="photos">${Array.from({ length: q.photos }, (_, i) =>
-            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${i + 1}" alt="보낸 분이 붙인 사진 ${i + 1}" loading="lazy"></a>`).join("")}</div>
+          ${q.push ? `<p class="meta" role="status"><span class="pill warn">알림 못 감</span> ${esc(pushLine(q.push))}</p>` : ""}
+          ${q.photos ? `<div class="photos">${(q.photoList ?? []).map((p) =>
+            `<a href="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" target="_blank" rel="noopener"><img src="/api/admin/inquiries/${esc(q.id)}/photos/${p.n}" alt="보낸 분이 붙인 사진 ${p.n}${p.at !== q.createdAt ? " · 이어 쓴 글과 함께" : ""}" loading="lazy"></a>`).join("")}</div>
             <p class="meta">사진은 위치 정보를 지운 채로 받았어요. ${q.billing ? "결제·환불 기록이라 문의와 함께 3년 동안 둬요." : "문의를 닫고 90일 뒤에 지워져요."}</p>` : ""}</div>
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
@@ -2651,6 +2679,7 @@ function adminApp(L, BUILD, M) {
         <label for="dev-known">알려진 문제판에</label><select id="dev-known" name="known">${[["0", "여럿이 겪을 때만 보이기"], ["1", "늘 보이기"], ["-1", "보이지 않기"]].map(([k, v]) =>
           `<option value="${k}"${String(d.known ?? 0) === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <div class="actions"><button class="btn small" type="submit">저장</button></div></form>` : ""}
+      ${d.bundle ? bundleCard(d.bundle) : ""}
       <section class="card"><div class="card-head"><h2>연결된 문의</h2><span class="pill">${d.links}</span></div>
         ${d.inquiries.length ? `<ul class="rows">${d.inquiries.map((q) => `<li class="item"><a class="row-main" href="${href("inquiries", q.id)}">
             <b>${esc(KIND_NAMES[q.kind] ?? "문의")} <span class="pill ${q.status === "open" ? "warn" : q.status === "answered" ? "ok" : ""}">${STATUS_NAMES[q.status] ?? q.status}</span></b>
@@ -2665,6 +2694,23 @@ function adminApp(L, BUILD, M) {
       <section class="card"><h2>기록</h2><p class="hint">누가 언제 무엇을 바꿨는지 모두 남아요.</p>
         <ul class="history">${d.history.map(historyItem).join("")}</ul></section>
     </aside></div>`;
+  }
+
+  /**
+   * 2.0.0 [RVN-24] 검토 I22cc-01: 신호가 개발사항이 될 때 서버가 모은 사건 꾸러미. 한 줄 요약에 숫자, 펼치면 바꾼 것·판별 숫자·문의·리뷰·오류 묶음.
+   * 원인 후보는 자동 장부 처리가 이 꾸러미를 읽고 메모로 적어요.
+   */
+  function bundleCard(b) {
+    const list = (items, line) => (items?.length ? `<ul class="rows">${items.map((x) => `<li><small>${line(x)}</small></li>`).join("")}</ul>` : '<p class="hint">없어요</p>');
+    const v = b.versions;
+    const part = (title, n, body) => `<details><summary>${title} ${n}</summary>${body}</details>`;
+    return `<section class="card"><div class="card-head"><h2>사건 꾸러미</h2><span class="pill">${esc(moment(new Date(b.at).toISOString()))}</span></div>
+      <p class="hint">${esc(b.signal?.title ?? "")} · ${esc(String(b.signal?.now ?? "—"))}${esc(b.signal?.unit ?? "")} (기준 ${esc(String(b.signal?.base ?? "—"))}${esc(b.signal?.unit ?? "")})</p>
+      ${part("그 사이 바꾼 것", b.changes?.length ?? 0, list(b.changes, (c) => `${esc(moment(new Date(c.at).toISOString()))} · ${esc(c.text)}`))}
+      ${v ? part("판별 숫자", v.rows?.length ?? 0, `${v.worse?.length ? `<p class="meta">${v.worse.map(esc).join(" · ")}</p>` : ""}${list(v.rows, (r) => `${esc(r.app)} · 휴대폰-날 ${r.phoneDays} · 문의 ${r.inquiries} · 문제 신고 ${r.bugs}`)}`) : ""}
+      ${part("문의 첫 줄", b.inquiries?.length ?? 0, list(b.inquiries, (q) => `${esc(KIND_NAMES[q.kind] ?? "문의")} · ${esc(q.app || "판 모름")}${q.line ? ` · ${esc(q.line)}` : ""}${can("inquiries") && q.id ? ` <a href="${href("inquiries", q.id)}">열기</a>` : ""}`))}
+      ${part("리뷰 첫 줄", b.reviews?.length ?? 0, list(b.reviews, (r) => `별 ${r.stars} · ${esc(r.app || "판 모름")} · ${esc(r.line)}`))}
+      ${part("서버 오류 묶음", b.errors?.length ?? 0, list(b.errors, (e) => `${e.n}번 · ${esc(e.route)} · ${esc(e.message)}`))}</section>`;
   }
 
   /** One line of an item's history, in words, with what it was before. */
@@ -2700,6 +2746,8 @@ function adminApp(L, BUILD, M) {
       effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", unknown: "아직 몰라요", none: "잴 숫자가 없어요", skip: "잴 수 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
       basis: () => `요금 기준: ${was({ new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[0]] ?? "자동", { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[1]] ?? "자동")}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
       tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
+      // 2.0.0 [RVN-24] I22cc-01
+      bundle: () => `사건 꾸러미를 붙였어요 <span class="meta">(바꾼 것 ${x.changes?.length ?? 0} · 문의 ${x.inquiries?.length ?? 0} · 리뷰 ${x.reviews?.length ?? 0} · 오류 ${x.errors?.length ?? 0})</span>`,
     }[h.action]?.() ?? "바뀐 것이 있어요";
     if (h.action === "status" && x.why) return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}<blockquote>${esc(x.why)}</blockquote></span></li>`;
     return `<li><span class="who">${esc(h.actor || "관리자")}</span><span class="when">${esc(moment(h.at))}</span><span class="what">${what}</span></li>`;
@@ -3333,8 +3381,10 @@ function adminApp(L, BUILD, M) {
       }
       const about = e.label ? (e.link ? ` <a class="meta" href="${esc(e.link)}">${esc(e.label)}</a>` : ` <span class="meta">${esc(e.label)}</span>`)
         : e.target ? ` <span class="meta">${esc(e.target)}</span>` : "";
+      // 2.0.0 [RVN-24] 검토 U22c-02: what no admin did says who did: an app user, or the server by itself ('자동').
       const who = e.actorId ? `<button class="who link" data-act="audit-who" data-id="${esc(e.actorId)}" title="이 사람이 한 일만 보기">${esc(e.actor || "관리자")}</button>`
-        : `<span class="who">${esc(e.actor || "앱 사용자·시스템")}</span>`;
+        : e.actor ? `<span class="who">${esc(e.actor)}</span>`
+        : L.origin(e.action) === "app" ? '<span class="who">앱 사용자</span>' : '<span class="who"><span class="pill info" title="사람이 누르지 않고 서버가 저절로 한 일이에요">자동</span></span>';
       // 1.38 [ADM3-07] 되돌릴 수 있는 일은 그 화면으로 한 번에.
       const undo = L.undoPlace(e.action, e.target);
       out.push(`<li><span class="when">${esc(clock(e.at))}</span><span><b>${esc(L.actionName(e.action))}</b>${about}
@@ -5325,7 +5375,15 @@ function adminApp(L, BUILD, M) {
     "pick-add": async ({ id }) => {
       const title = document.getElementById(`pick-title-${id}`)?.value?.trim() ?? "";
       if (!title) return toast("모음 제목을 적어 주세요");
-      await act(() => api("/plaza/picks", "POST", { answer: id, title }), `‘${title}’을 답 모음에 넣었어요. 앱 광장에 보여요`);
+      const topic = document.getElementById(`pick-topic-${id}`)?.value || null;
+      await act(() => api("/plaza/picks", "POST", { answer: id, title, topic }), `‘${title}’을 답 모음에 넣었어요. 앱 광장${topic ? "과 도움말" : ""}에 보여요`);
+      S.data.picks = null;
+      load();
+    },
+    // 2.0.0 [RVN-24] 검토 I22cb-02: a pick's 도움말 주제 (its title stays).
+    "pick-topic": async ({ id, title }) => {
+      const topic = document.getElementById(`pick-topic-${id}`)?.value || null;
+      await act(() => api("/plaza/picks", "POST", { answer: id, title, topic }), topic ? "도움말 주제를 저장했어요. 앱 도움말의 그 주제 답 아래에 보여요" : "도움말 주제를 뺐어요");
       S.data.picks = null;
       load();
     },
@@ -5979,7 +6037,9 @@ function adminApp(L, BUILD, M) {
     },
     // 2.0.0 [RVQ-27] 검토 SVC-59: 후보 셋을 그대로 이달의 제작자로.
     "recipe-month-take": async ({ key }) => {
-      const makers = (S.data.recipes?.candidates?.[key] ?? []).map((c) => c.maker);
+      // 2.0.0 [RVN-24] SVC-107: 이달 후보가 없으면(달 초) 화면에 보인 지난달 후보를.
+      const r = S.data.recipes ?? {};
+      const makers = ((r.candidates?.[key] ?? []).length ? r.candidates[key] : r.last?.[key] ?? []).map((c) => c.maker);
       if (!makers.length) return;
       await act(() => api("/recipes/makers/month", "POST", { style: key, makers }), `${makers.length}명 골랐어요`,
         async () => { await act(() => api("/recipes/makers/month", "POST", { style: key, makers: [] }), "되돌렸어요"); load(); });
@@ -6007,15 +6067,19 @@ function adminApp(L, BUILD, M) {
     }),
     // 1.38 [STM-10] 밤낮 재료 묶음: 공개·숨기기, 무료·광고 나누기.
     // 2.0.0 [RVA-04] 검토 ADM-05: 공개는 모든 사용자 스튜디오에 가니 한 번 묻고, 공개·숨기기 모두 15초 되돌리기.
+    // 2.0.0 [RVN-24] 검토 U22c-05: 되돌리기는 반대 상태로 바꾸기가 아니라 바꾸기 전 모습으로(출시 대기였던 재료는 대기로).
     "material-state": ({ id, key }) => {
       const go = async () => {
         await act(() => api("/recipes/materials/state", "POST", { state: key, pack: id }), key === "ok" ? `‘${id}’ 묶음을 공개했어요` : `‘${id}’ 묶음을 숨겼어요`,
-          async () => { await act(() => api("/recipes/materials/state", "POST", { state: key === "ok" ? "hidden" : "ok", pack: id }), "되돌렸어요"); load(); });
+          async (r) => { if (r?.log) await act(() => api("/recipes/materials/undo", "POST", { log: r.log }), "되돌렸어요"); load(); });
         load();
       };
       if (key !== "ok") return go();
       danger({ title: `‘${id}’ 묶음을 공개할까요?`, text: "모든 사용자의 스튜디오 재료에 바로 보여요. 15초 안에는 되돌릴 수 있어요.", label: "공개", tone: "primary", run: go });
     },
+    // U22c-05: 묶음 줄의 '되돌리기'(마지막 바꿈만). 그 뒤에 또 바꿨으면 서버가 받지 않아요.
+    "material-undo": ({ id, key }) => danger({ title: `‘${key}’의 마지막 바꿈을 되돌릴까요?`, text: "그때 바꾼 재료만 바꾸기 전 모습으로 돌아가요. 공개를 되돌리면 사용자 스튜디오에서 바로 빠져요.",
+      label: "되돌리기", tone: "primary", run: async () => { await act(() => api("/recipes/materials/undo", "POST", { log: Number(id) }), "되돌렸어요"); load(); } }),
     // 2.0.0 [RVA-04] 검토 ADM-05·ADMX-09: 가리기는 쓰기 제한 1번으로 세니 한 번 묻고 15초 되돌리기, 공식 표시는 15초 되돌리기와 '공식 빼기'.
     "recipe-do": async ({ id, key }) => {
       const run = (k, body = {}) => api(`/recipes/${id}/${k}`, "POST", body);
@@ -6307,7 +6371,8 @@ function adminApp(L, BUILD, M) {
     // 1.38 [STM-10] 밤낮 재료 묶음의 무료·광고 나누기.
     "material-free": async (form) => {
       const mode = String(new FormData(form).get("mode") ?? "");
-      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`);
+      await act(() => api("/recipes/materials/free", "POST", { pack: form.dataset.key, mode }), (r) => `무료 ${r?.free ?? 0} · 광고·프로 ${r?.paid ?? 0}`,
+        async (r) => { if (r?.log) await act(() => api("/recipes/materials/undo", "POST", { log: r.log }), "되돌렸어요"); load(); });
       load();
     },
     // 1.39 E11 재료 파일 올리기: 25개씩(서버 한 번에 받는 수) 나눠, 몇 개째인지 단추에 보이며 넣어요.
@@ -6549,7 +6614,7 @@ function adminApp(L, BUILD, M) {
         <span class="row-main"><b>${esc(c.name)}</b><small>규칙 ${c.rules} · 제보 ${c.reports}</small></span><span class="pill">여기로 합치기</span></button></li>`).join("")}</ul>`
         : '<p class="meta">찾는 회사가 없어요.</p>';
     },
-    reply: async (form, submitter) => {
+    reply: async (form, submitter, again = false) => {
       const text = form.elements.text.value.trim();
       if (!text) return toast(ERRORS.text);
       const close = submitter?.dataset.close === "1";
@@ -6560,8 +6625,15 @@ function adminApp(L, BUILD, M) {
       // 1.39 [ADM3-40] 큐 모드: the same answer to the alike ones ahead, which then leave the queue.
       const alike = form.elements.alike?.checked ? queueAhead(id) : [];
       S.sending = (S.sending ?? 0) + 1;
+      // [RVQ-50] 본 글 수(seen)를 보내요: 그사이 달라졌으면 409, 적던 답은 둔 채 한 번 물어요.
+      const seen = S.data.inquiry?.id === id ? S.data.inquiry.messages?.length : undefined;
+      let changed = null;
       const q = await act(async () => {
-        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}) });
+        const first = await api(`/inquiries/${id}/reply`, "POST", { text, ...(close ? { close: true } : {}), ...(template ? { template } : {}),
+          ...(Number.isInteger(seen) ? { seen } : {}), ...(again ? { again: true } : {}) }).catch((e) => {
+          if (e?.status === 409 && e.data?.error === "changed") changed = e.data;
+          throw changed ? Object.assign(new Error("changed"), { quiet: true, data: {} }) : e;
+        });
         const sent = [];
         for (const o of alike) await api(`/inquiries/${o}/reply`, "POST", { text, ...(close ? { close: true } : {}) }).then(() => sent.push(o), () => {});
         if (S.queue && sent.length) Object.assign(S.queue, { ids: S.queue.ids.filter((x) => !sent.includes(x)), extra: (S.queue.extra ?? 0) + sent.length });
@@ -6569,6 +6641,18 @@ function adminApp(L, BUILD, M) {
       }, (r) => (r.first?.gated ? gateWords(1, r.first.gated)
         : `${r.sent ? `${r.sent + 1}건에 ` : ""}${close ? "답하고 닫았어요" : "답했어요"}. 보낸 분 앱에 보여요${r.missed ? ` (${r.missed}건은 못 보내 큐에 남겨 뒀어요)` : ""}`))
         .then((r) => r?.first).finally(() => { S.sending--; });
+      if (changed) {
+        const who = changed.answered?.length ? `${changed.answered.map((n) => (n === "admin" ? "다른 관리자" : `${n}님`)).join(", ")}이 방금 답했어요` : "";
+        const more = changed.asked ? `보낸 분이 글을 ${changed.asked}개 더 썼어요` : "";
+        if (changed.view && S.route.name === "inquiries" && S.route.id === id) {
+          // 적던 답은 초안으로 남겨요.
+          writeDraft("reply", text, route);
+          S.data.inquiry = changed.view;
+          render();
+        }
+        return confirmBox(who ? "방금 다른 답이 갔어요" : "새 글이 왔어요", [who, more].filter(Boolean).join(". ") + ". 새 글을 읽고 정해요.",
+          "그래도 보내기", () => FORMS.reply(document.querySelector('form[data-form="reply"]') ?? form, submitter, true), "primary");
+      }
       if (!q) return;
       // [RVA-06] 보낸 글은 화면이 그사이 새로 그려졌어도 초안·답 칸에서 지워요(다시 열어도 보낸 글이 초안으로 뜨지 않게).
       writeDraft("reply", "", route);
@@ -6613,7 +6697,29 @@ function adminApp(L, BUILD, M) {
     },
     "template-add": async (form) => {
       const id = form.dataset.id;
-      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: form.elements.publicQ?.value ?? "" };
+      const body = { label: form.elements.label.value, text: form.elements.text.value, topic: form.elements.topic.value, publicQ: (form.elements.publicQ?.value ?? "").trim() };
+      // [RVQ-52] 공개 글은 같은 창 안 미리 보기 뒤 '올리기'로 저장.
+      const was = id ? (S.templates ?? []).find((x) => x.id === Number(id)) : null;
+      const goesPublic = body.publicQ && (!was || was.publicQ !== body.publicQ || was.text !== body.text || (was.topic ?? "") !== body.topic);
+      if (goesPublic && !form.dataset.sure) {
+        const pv = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", { ...body, dry: true }));
+        if (!pv) return;
+        form.querySelector(".public-preview")?.remove();
+        form.querySelector('[name="publicQ"]')?.closest(".fieldset")?.insertAdjacentHTML("afterend", `<div class="public-preview" role="status">
+          <p class="label">밤낮 Q&A에 이렇게 보여요(누구나 봐요)</p>
+          <dl class="lines confirm-rows"><div><dt>묻는 말</dt><dd>${esc(body.publicQ)}</dd></div><div><dt>답</dt><dd>${esc(pv.publicA ?? "")}</dd></div></dl></div>`);
+        const go = form.querySelector('button[type="submit"]');
+        if (go) go.textContent = "올리기";
+        form.dataset.sure = "1";
+        form.addEventListener("input", () => {
+          delete form.dataset.sure;
+          form.querySelector(".public-preview")?.remove();
+          if (go) go.textContent = id ? "저장" : "넣기";
+        }, { once: true });
+        form.querySelector(".public-preview")?.scrollIntoView?.({ block: "nearest" });
+        return;
+      }
+      delete form.dataset.sure;
       const r = await act(() => api(id ? `/templates/${id}` : "/templates", "POST", body), id ? "고쳤어요" : "넣었어요. 답 칸 아래에서 바로 써요");
       if (!r) return;
       S.templates = r.templates;

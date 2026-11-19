@@ -68,15 +68,18 @@ class PlazaRulesGate internal constructor(private val agreed: () -> Boolean, pri
 /** 1.39 [CARE-12] Whether the rules in force are 2판 (마을 돌봄 on, from the 3.12 effective date). */
 internal fun rulesCare(c: com.bamnat.app.AppContainer): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)
 
+/** 2.0.0 [RVN-22] Whether the rules in force are 3판 (방 글 금액, from the day the server takes amounts, [PlazaRules.money]). */
+internal fun rulesMoney(c: com.bamnat.app.AppContainer): Boolean = c.termsNow()?.roomMoney == true
+
 @Composable
 fun rememberPlazaRules(): PlazaRulesGate {
     val c = LocalContext.current.appContainer
     val gate = remember {
         PlazaRulesGate(
             // 1.39 [CARE-12] 운영 규칙 2판은 community.care가 켜진 뒤에만(3.12 시행일).
-            agreed = { PlazaRules.agreed(c.settingsRepository.current.plazaRulesAgreed, rulesCare(c)) },
+            agreed = { PlazaRules.agreed(c.settingsRepository.current.plazaRulesAgreed, rulesCare(c), rulesMoney(c)) },
             agree = {
-                val v = PlazaRules.version(rulesCare(c))
+                val v = PlazaRules.version(rulesCare(c), rulesMoney(c))
                 c.settingsRepository.update { it.copy(plazaRulesAgreed = v) }
                 c.telemetry.event("plaza_rules_agree", "v$v")
             },
@@ -97,11 +100,12 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // [COMM-11] I6: after a change, what changed is marked, and the rest is the same as agreed.
                 val care = rulesCare(context.appContainer)
-                val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care)
+                val money = rulesMoney(context.appContainer) // 2.0.0 [RVN-22] 3판: 방 글 금액 줄이 바뀜으로 보여요
+                val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care, money)
                 Text(if (changed.isEmpty()) "처음 글을 쓰기 전에 한 번만 봐 주세요. 모두가 편하게 쓰는 광장을 위한 약속이에요."
                     else "운영 규칙이 바뀌었어요. 바뀐 줄(${changed.size}개)을 보고 다시 동의해 주세요.",
                     style = MaterialTheme.typography.bodyMedium)
-                PlazaRules.lines(care).forEachIndexed { i, line ->
+                PlazaRules.lines(care, money).forEachIndexed { i, line ->
                     if (i in changed) Text("${i + 1}. $line (바뀜)", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     else Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall)
@@ -125,7 +129,7 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
 fun PlazaRulesCard(gate: PlazaRulesGate, onAgreed: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val care = rulesCare(context.appContainer)
-    val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care)
+    val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care, rulesMoney(context.appContainer))
     SoftCard(modifier.fillMaxWidth(), highlighted = true) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (changed.isEmpty()) "처음 쓰기 전에 광장 운영 규칙에 동의해 주세요" else "운영 규칙이 바뀌었어요 (${changed.size}줄). 다시 동의해 주세요",
@@ -188,7 +192,7 @@ fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFl
         text = {
             // At 200% text the reasons scroll inside the dialog rather than push its buttons away.
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                FLAG_REASONS.filter { (key, _) -> key != "advice" || invest }.forEach { (key, label) ->
+                FLAG_REASONS.filter { (key, _) -> (key != "advice" || invest) && (key != "tag" || p.tag != null) }.forEach { (key, label) ->
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = reason == key, role = Role.RadioButton) { reason = key },
                         verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.RadioButton(selected = reason == key, onClick = null)
@@ -207,9 +211,12 @@ fun FlagPostDialog(post: TalkPost?, invest: Boolean, onDismiss: () -> Unit, onFl
     )
 }
 
-/** The reasons a post can be reported for, as the server keeps them (FLAGS). */
+/**
+ * The reasons a post can be reported for, as the server keeps them (FLAGS). 2.0.0 [RVN-24] 검토 SVC-93: 근무 태그가 사실과 달라요 on a post
+ * that carries one (소방·병원·4조 2교대 …, what the writer's calendar says, not proof).
+ */
 internal val FLAG_REASONS = listOf("abuse" to "욕설·비방", "personal" to "개인 정보가 있어요", "sexual" to "성적인 내용", "illegal" to "불법·위험한 내용",
-    "spam" to "광고·도배", "false" to "일부러 틀린 정보", "advice" to "종목 추천·리딩")
+    "spam" to "광고·도배", "false" to "일부러 틀린 정보", "tag" to "근무 태그가 사실과 달라요", "advice" to "종목 추천·리딩")
 
 /**
  * [VIL-02] 1.36 마을 V2 차단 하나로: opens 마을 › 팔로잉 › 차단, where 광장에서 가린 분 and 장터·프로필에서 차단한 분 are one list.

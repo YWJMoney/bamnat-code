@@ -54,6 +54,17 @@ object Fmt {
     fun timeRangeShort(start: LocalTime, end: LocalTime): String =
         "${time(start)}–${time(end)}" + if (WorkTime.isOvernight(start, end)) "(+1)" else ""
 
+    /**
+     * 2.0.0 [RVIB-21] (결정 19) A work day's hours as [timeRangeShort] says them, each part of a day of two parts:
+     * "11:00–15:00, 17:00–21:00". Null without times.
+     */
+    fun dayHours(day: com.bamnat.core.schedule.ResolvedDay): String? {
+        if (day.split) return day.segments.joinToString(", ") { timeRangeShort(it.start.toLocalTime(), it.endInclusive.toLocalTime()) }
+        val start = day.start ?: return null
+        val end = day.end ?: return null
+        return timeRangeShort(start, end)
+    }
+
     fun month(m: YearMonth): String = "${m.year}년 ${m.monthValue}월"
 
     fun monthShort(m: YearMonth): String = "${m.monthValue}월"

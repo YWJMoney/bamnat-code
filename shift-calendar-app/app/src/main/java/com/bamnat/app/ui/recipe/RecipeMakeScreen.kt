@@ -481,7 +481,9 @@ class RecipeMakeViewModel(
                     if (key == null) note = "내 테마 칸이 꽉 차서 이 테마를 내 테마로 두지 못했어요. 마을 › 테마에서 한 벌을 빼고 다시 올리면 광고 없이 입어요"
                     key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
                 }
-                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
+                // 2.0.0 [RVQ-42] 검토 I22bb-06: which apps see it, said once when it goes up.
+                val seen = if (sent.scope == "public") seenFromLine(sent.minApp) else null
+                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts), seen).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
             } catch (e: PictureLimit) {
                 // 2.0.0 [RVM-30] SN-15: how far the pictures got, and that 다시 올리기 goes on from there (the draft stays as it is).

@@ -141,7 +141,7 @@ export function opsViews(A) {
         ${r.reply ? `<p class="bubble admin">${esc(r.reply)}<small> · ${esc(r.repliedBy || "Play")} ${esc(dayOf(r.replyAt))}</small></p>` : ""}
         ${r.status !== "replied" ? `<form data-form="review-draft" data-id="${esc(r.id)}"><label class="sr" for="rv-${esc(r.id)}">답 초안</label>
           <textarea id="rv-${esc(r.id)}" name="text" rows="3" maxlength="${d.replyMax}" placeholder="답 초안(${d.replyMax}자 안). Claude가 적어 두기도 해요">${esc(r.draft)}</textarea>
-          ${r.draft ? `<p class="meta">초안 · ${esc(r.draftBy)}</p>` : ""}
+          ${r.draft ? `<p class="meta">초안 · ${esc(r.draftBy)}${r.draftRisk ? ` <span class="pill warn">${esc(r.draftRisk)}</span> 보내기 전에 고쳐 주세요` : ""}</p>` : ""}
           <div class="actions start"><button class="btn small" type="submit">초안 저장</button>
           ${owner && d.ready ? `<button class="btn small primary" type="submit" name="send" value="1">Play로 보내기</button>` : ""}
           ${r.status === "new" ? `<button class="btn small ghost" type="button" data-act="review-seen" data-id="${esc(r.id)}">봤어요</button>` : ""}</div></form>` : ""}
@@ -170,7 +170,7 @@ export function opsViews(A) {
     const make = `<details class="card" data-key="req-new"${S.opened.get("req-new") ? " open" : ""}><summary><b>요청 적기</b><span class="meta">문의 번호나 기기 표시(6자리)로</span></summary>
       <form data-form="request-new"><div class="fieldset"><label for="rq-kind">종류</label><select id="rq-kind" name="kind">${kinds.map(([k, v]) => `<option value="${k}">${esc(v.name)} · ${v.days}일</option>`).join("")}</select></div>
       <div class="fieldset"><label for="rq-inq">문의 번호(선택)</label><input id="rq-inq" name="inquiry" maxlength="32" autocomplete="off" value="${esc(S.requestFrom ?? "")}"></div>
-      <div class="fieldset"><label for="rq-mark">기기 표시(선택)</label><input id="rq-mark" name="mark" maxlength="6" pattern="[0-9a-f]{6}" autocomplete="off"></div>
+      <div class="fieldset"><label for="rq-mark">기기 표시(선택)</label><input id="rq-mark" name="mark" maxlength="8" pattern="[0-9a-f]{6,8}" autocomplete="off"></div>
       <div class="fieldset"><label for="rq-sum">무엇을 바라는지</label><textarea id="rq-sum" name="summary" maxlength="300" rows="2" required></textarea></div>
       <div class="fieldset"><label for="rq-at">받은 날(선택, 비우면 지금)</label><input id="rq-at" name="openedAt" type="date"></div>
       <div class="actions"><button class="btn primary" type="submit">적기</button></div></form></details>`;
@@ -245,15 +245,17 @@ export function opsViews(A) {
     const edit = can("ops", "edit");
     const start = edit ? `<form data-form="launch-start" class="toolbar"><label class="sr" for="ls-v">판</label><input id="ls-v" name="version" required pattern="\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}" placeholder="${esc(serverVersion() || "2.0.0")}" inputmode="decimal">
       <button class="btn primary small" type="submit">${icon(P.plus)}새 점검표</button></form>` : "";
-    const others = d.items.length > 1 ? `<div class="chips">${d.items.map((r) => `<a class="chip${r.version === run?.version ? " on" : ""}" href="${L.routeHash("launch", r.version, {})}">${esc(r.version)}${r.doneAt ? " ✓" : ` · ${r.left}`}</a>`).join("")}</div>` : "";
+    const others = d.items.length > 1 ? `<div class="chips">${d.items.map((r) => `<a class="chip${r.version === run?.version ? " on" : ""}" href="${L.routeHash("launch", r.version, {})}">${esc(r.version)}${r.doneAt ? " ✓" : ` · ${r.left}${r.bad ? " · 나빠짐" : ""}`}</a>`).join("")}</div>` : "";
     if (!run) return `${start}${empty("점검표가 없어요", "Play에 올릴 판을 적으면 할 일이 순서대로 나와요.")}`;
     const steps = `<ol class="launch-steps">${run.steps.map((s, i) => `<li class="${s.done ? "done" : s.skipped ? "skipped" : run.next === s.key ? "next" : ""}">
-        <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
-        <p>${esc(s.what)}</p>${s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
+        <span class="step-no">${s.done ? "✓" : i + 1}</span><div class="step-main"><b>${esc(s.name)}</b>${s.autoDone ? ' <span class="pill ok">저절로 확인</span>' : ""}${s.bad ? ' <span class="pill bad">나빠짐</span>' : ""}${s.skipped ? ' <span class="pill">건너뜀</span>' : ""}
+        <p>${esc(s.what)}</p>${s.seenAt ? `<p class="meta">${esc(when(s.seenAt))} 확인 · ${esc(s.evidence || s.hint)}</p>` : s.hint ? `<p class="meta">${esc(s.hint)}</p>` : ""}${s.doneAt ? `<p class="meta">${esc(s.by)} · ${esc(when(s.doneAt))}</p>` : ""}${s.note ? `<p class="meta">메모: ${esc(s.note)}</p>` : ""}
         <div class="actions start">${s.to ? `<a class="btn small" href="${esc(s.to)}">열기</a>` : ""}${edit ? (s.done && !s.autoDone ? `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="undo">되돌리기</button>`
-          : s.done ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button><button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
+          // 2.0.0 [RVN-24] 검토 SVC-102: 판 건강은 나간 지 하루가 지나기 전에는 '했어요'가 없어요(남은 시간은 바로 위 한 줄에).
+          // I22cc-03·U22c-04: 저절로 끝난 단계는 '언제 확인 · 무엇을 봤는지'를, 나빠짐이 뜬 단계는 그 까닭을 한 줄로 보여 줘요.
+          : s.done ? "" : `${s.ready === false ? "" : `<button class="btn small" type="button" data-act="launch-step" data-key="${s.key}" data-do="done">했어요</button>`}<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="skip">건너뛰기</button>`)
           + `<button class="btn small ghost" type="button" data-act="launch-step" data-key="${s.key}" data-do="note">메모</button>` : ""}</div></div></li>`).join("")}</ol>`;
-    return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
+    return `${start}${others}<section class="card">${head(`${run.version} 출시 날`, run.doneAt ? `끝남 ${when(run.doneAt)}` : `남은 일 ${run.left}${run.bad ? ` · 나빠짐 ${run.bad}` : ""}`, run.doneAt ? '<span class="pill ok">끝</span>' : "")}${steps}</section>`;
   }
 
   // ---- [ADM3-15][ADM3-33] 판 건강 ----
@@ -270,7 +272,9 @@ export function opsViews(A) {
     const table = `<section class="card">${head("판마다", `지난 ${d.days}일 · 휴대폰-날 1000당`)}${segs("health-days", [["7", "7일"], ["14", "14일"], ["28", "28일"]], String(S.healthDays ?? 14))}
       <div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">판</th><th scope="col">휴대폰-날</th><th scope="col">문의</th><th scope="col">문제 신고</th><th scope="col">신고 비율</th><th scope="col">문의 비율</th></tr></thead>
       <tbody>${d.versions.map((r) => `<tr class="${r.app === d.latest && d.worse.length ? "bad" : ""}"><th scope="row">${esc(r.app)}</th><td>${r.phoneDays}</td><td>${r.inquiries}</td><td>${r.bugs}</td><td>${r.bugRate ?? "—"}</td><td>${r.inquiryRate ?? "—"}</td></tr>`).join("")}</tbody></table></div></section>`;
-    const chg = `<section class="card">${head("바꾼 것", "판·기능·공지·가격·사고")}${marks.length ? `<ul class="rows">${marks.slice(-30).reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>` : '<p class="hint">이 기간에 바꾼 것이 없어요.</p>'}</section>`;
+    // 2.0.0 [RVN-24] 검토 SVC-105: 서버가 스스로 모르는 바뀜(사이트 서버·remote/ 파일·공개 페이지)은 한 줄 적어 두면 여기와 사고 타임라인에 나와요.
+    const note = can("ops", "edit") ? '<button class="btn small" type="button" data-act="change-note">적어 두기</button>' : "";
+    const chg = `<section class="card">${head("바꾼 것", "판·기능·공지·가격·사고", note)}${marks.length ? `<ul class="rows">${marks.slice(-30).reverse().map((m) => `<li><div class="row"><span class="row-main"><b>${esc(m.text)}</b><small>${esc(when(m.at))}</small></span></div></li>`).join("")}</ul>` : '<p class="hint">이 기간에 바꾼 것이 없어요.</p>'}</section>`;
     return `${tiles}${worse}${table}${chg}`;
   }
 
@@ -389,7 +393,7 @@ export function opsViews(A) {
     const used = d.dbBytes ? d.dbBytes / d.dbLimit : 0;
     const tiles = `<div class="tiles core">${tile("응답 중간", t.n ? `${t.p50}ms` : "—", `24시간 ${t.n}번`)}${tile("느린 5%", t.n ? `${t.p95}ms` : "—", `가장 느림 ${t.max}ms`, t.p95 > 1500 ? "hot" : "")}
       ${tile("서버 오류", t.err, t.n ? `${Math.round((t.err / t.n) * 1000) / 10}%` : "", t.err ? "hot" : "", href("errors"))}
-      ${tile("DB 크기", d.dbBytes ? bytes(d.dbBytes) : "—", d.dbBytes ? `한도의 ${Math.round(used * 100)}%` : "", used > 0.7 ? "hot" : "")}
+      ${tile("DB 크기", d.dbBytes ? bytes(d.dbBytes) : "—", d.dbBytes ? `${d.plan ? `${esc(d.plan)} ` : ""}한도 ${bytes(d.dbLimit)}의 ${Math.round(used * 100)}%` : "", used > 0.7 ? "hot" : "")}
       ${shareTile(d)}</div>`;
     const slow = d.speed.routes.length ? `<details class="data-table" data-key="slow-routes"><summary>느린 길 ${d.speed.routes.length}개</summary><div class="table-wrap"><table class="grid-table"><thead><tr><th scope="col">길</th><th scope="col">번</th><th scope="col">중간</th><th scope="col">느린 5%</th><th scope="col">오류</th></tr></thead>
       <tbody>${d.speed.routes.map((r) => `<tr><th scope="row" class="mono">${esc(r.key)}</th><td>${r.n}</td><td>${r.p50}ms</td><td>${r.p95}ms</td><td>${r.err}</td></tr>`).join("")}</tbody></table></div></details>` : "";
@@ -488,7 +492,8 @@ export function opsViews(A) {
   function incidentBanner() {
     const n = S.overview?.incidentOpen ?? 0;
     if (!n || !S.me?.owner || S.route.name === "incident") return "";
-    return `<a class="banner bad incident-band" role="alert" href="${href("incident")}">${icon(P.help)}<span><b>사고가 열려 있어요</b> 무엇이 늘었는지·바꾼 것·끌 스위치를 한 화면에서 봐요</span>${icon(P.chevron)}</a>`;
+    // 2.0.0 [RVN-24] PC-207: 두 줄까지(380 폭·글자 2배에서 다섯 줄, 화면의 36%였어요). 무엇이 있는지는 사고 화면 안에서 말해요.
+    return `<a class="banner bad incident-band" role="alert" href="${href("incident")}" title="무엇이 늘었는지·바꾼 것·끌 스위치를 한 화면에서 봐요">${icon(P.help)}<span><b>사고가 열려 있어요</b></span>${icon(P.chevron)}</a>`;
   }
 
   // ---- 읽을 길과 다 왔는지 ----
@@ -655,6 +660,11 @@ export function opsViews(A) {
       }
       if (await act(() => api(`/release/${run.version}`, "POST", body), what === "done" ? "했어요" : what === "skip" ? "건너뛰었어요" : what === "undo" ? "되돌렸어요" : "적었어요")) reload("launch", "launchOne");
     },
+    "change-note": () => openDialog(`<form data-form="change-note"><h2>바뀐 것 적어 두기</h2><p class="hint">서버가 스스로 모르는 바뀜을 적어 두면 바꾼 것과 사고 타임라인에 나와요.</p>
+      <div class="fieldset"><label for="cn-kind">무엇이</label><select id="cn-kind" name="kind"><option value="site">사이트 서버 배포</option><option value="remote">remote/ 파일 바꿈</option>
+        <option value="pages">공개 페이지 바꿈</option><option value="company">회사 서버 배포</option><option value="share">공유 서버 배포</option><option value="other" selected>그 밖의 바뀜</option></select></div>
+      <div class="fieldset"><label for="cn-text">한 줄</label><input id="cn-text" name="text" maxlength="120" required data-keep="change-note" placeholder="예: 사이트 2판 올림, remote/v1/cycles.json 새로"></div>
+      <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">적어 두기</button></div></form>`),
     "health-days": ({ key }) => { S.healthDays = Number(key); reload("health", "changes"); },
     "money-days": ({ key }) => { S.moneyDays = Number(key); reload("money", "changes"); },
     "errors-show": ({ key }) => { S.errorsShow = key; reload("errors"); },
@@ -691,12 +701,24 @@ export function opsViews(A) {
       const text = String(new FormData(form).get("text") ?? "").trim();
       const id = form.dataset.id;
       if (submitter?.name === "send") {
-        confirmBox("Play로 보낼까요?", "보내면 스토어에 공개로 보여요. 고치려면 Play Console에서 해요.", "보내기", async () => {
-          if (await act(() => api(`/reviews/${encodeURIComponent(id)}/reply`, "POST", { text }), "Play로 보냈어요")) reload("storeReviews");
-        }, "primary");
+        // 2.0.0 [RVQ-55] 검토 SVC-38: 서버가 답 글 검사(AI·자동 답 표현, 보안 정보)에 걸린 것을 알려 주면, 까닭을 보이고 한 번 더 물어요.
+        const send = async (confirm) => {
+          try {
+            await api(`/reviews/${encodeURIComponent(id)}/reply`, "POST", { text, ...(confirm ? { confirm: true } : {}) });
+            toast("Play로 보냈어요");
+            reload("storeReviews");
+          } catch (e) {
+            if (e.message !== "reply_risk" || confirm) return act(() => Promise.reject(e));
+            danger({ title: "이 답은 사람이 한 번 더 봐야 해요", text: "스토어 답은 누구나 봐요. 문의 답과 같은 검사에 걸렸어요. 고치려면 '취소'를 누르고 초안을 고쳐 주세요.",
+              rows: [["걸린 것", e.data?.risk ?? ""]], label: "그래도 보내기", run: () => send(true) });
+          }
+        };
+        confirmBox("Play로 보낼까요?", "보내면 스토어에 공개로 보여요. 고치려면 Play Console에서 해요.", "보내기", () => send(false), "primary");
         return;
       }
-      if (await act(() => api(`/reviews/${encodeURIComponent(id)}/draft`, "POST", { text }), "초안을 저장했어요")) reload("storeReviews");
+      const saved = await act(() => api(`/reviews/${encodeURIComponent(id)}/draft`, "POST", { text }),
+        (r) => (r?.risk ? `초안을 저장했어요. 걸린 것(${r.risk})은 보내기 전에 고쳐 주세요` : "초안을 저장했어요"));
+      if (saved) reload("storeReviews");
     },
     "request-new": async (form) => {
       const f = new FormData(form);
@@ -755,6 +777,11 @@ export function opsViews(A) {
       const f = new FormData(form);
       dialog.close();
       if (await act(() => api(`/data-requests/${form.dataset.id}`, "POST", { status: f.get("status"), note: f.get("note") }), "끝냈어요")) reload("requests");
+    },
+    "change-note": async (form) => {
+      const f = new FormData(form);
+      dialog.close();
+      if (await act(() => api("/changes", "POST", { kind: f.get("kind"), text: f.get("text") }), "적어 뒀어요")) reload("changes");
     },
     "launch-start": async (form) => {
       const v = String(new FormData(form).get("version") ?? "").trim();

@@ -1,4 +1,4 @@
-import { SWITCH_FLAGS, flagDef, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
+import { SWITCH_FLAGS, flagDef, flagOn, flagStore, migrateFlags, serverEval, setFlagForce, switchOff } from "./flags.js";
 import { all, allow, appVersions, audit, batch, given, inquiryStats, iso, item, json, list, metricRange, network, one, overLimit, playVitals, randomId, readJson, refuse, run, sha256, shareStats, sharedCount, stmt, versions } from "./index.js";
 import { SLA_SQL, plainText, readSla } from "./inquiries.js";
 import { DAY, HOUR } from "./units.js";
@@ -392,8 +392,11 @@ export async function usage(request, env) {
   const style = kindOf(body.style);
   const keep = keepRows(body.keep, now);
   const obsStore = style || keep.length ? await store() : null;
+  // 2.0.0 [RVQ-56] 검토 T21-02: 처리방침 3.14(깃발 stats.kind_use)부터는 그날 쓴 기능도 유형별로 세요(날짜·판·유형·기능별 휴대폰 수만).
+  const kindUse = Boolean(style) && flagOn(obsStore, "stats.kind_use", now);
   const kindRowsIn = style && serverEval(obsStore, "stats.kind", now).on
-    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_"))).map((r) => [r[0], style, r[1]]) : [];
+    ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_") || (kindUse && !r[1].startsWith("disc_"))))
+      .map((r) => [r[0], style, r[1]]) : [];
   const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
   // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수(stats.crash): 처리방침 3.14의 30일 줄 시행일 전에 온 것은 버려요.
   const crash = crashMarkRows(body.crash, now);

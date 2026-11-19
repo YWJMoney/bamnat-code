@@ -42,7 +42,12 @@ object DayStoryItems {
                 r.scheduledMinutes.takeIf { it > 0 }?.let { "일하는 시간 ${hours(it.toLong())}" },
                 r.leave?.label,
             ).joinToString(" · ").ifEmpty { null }
-            out += StoryItem(from, to, StoryKind.Shift, name, detail, id = "shift@$d")
+            // 2.0.0 [RVIB-21] (결정 19) A day of two parts is two lines on the day's story, so "지금 근무 중" is never said in the
+            // 브레이크 타임·비는 시간 between them; the hours of work are on the first.
+            if (r.split) r.segments.forEachIndexed { i, p ->
+                out += StoryItem(p.start, p.endInclusive, StoryKind.Shift, name, detail.takeIf { i == 0 } ?: "다시 시작",
+                    id = if (i == 0) "shift@$d" else "shift@$d#${i + 1}")
+            } else out += StoryItem(from, to, StoryKind.Shift, name, detail, id = "shift@$d")
         }
         alarms.forEach { a ->
             out += StoryItem(a.triggerAt, null, StoryKind.Alarm, if (a.shiftTypeId != 0L) "출근 알람" else "알람", id = "alarm@${a.triggerAt}")

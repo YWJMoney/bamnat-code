@@ -174,6 +174,13 @@ class PayFindState(name: String) {
     var auto by mutableStateOf(false)
     /** [PAYG-06] The company the user works for, on the 광장 without a pay way (or not there at all): 직접 만들기 is the main button. */
     var byHand by mutableStateOf<PayFindRows.Row?>(null)
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-01: a payslip read with 명세서로 찾기: its company filled the box, and once a way is chosen it picks
+     * the version that fits it ([WayPickSheet] opens with it).
+     */
+    var slip by mutableStateOf<com.bamnat.core.pay.PayslipRead?>(null)
+    /** What 명세서로 찾기 found: the company's name as the payslip prints it, or "" when it names none. */
+    var slipCompany by mutableStateOf<String?>(null)
 }
 
 /**
@@ -348,9 +355,43 @@ fun PayFindFlow(
             PayFindStep.DONE -> {
                 val way = (state.used as? PayFind.Used.Ready)?.way
                 if (way == null) LaunchedEffect(Unit) { state.step = PayFindStep.NAME }
-                else PendingDone(c, company, way, onDone, onSaved)
+                else PendingDone(c, company, way, onDone, onSaved, slip = state.slip)
             }
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 I10ac-01 명세서 한 장으로 회사와 판을 저절로 맞추기: 명세서로 찾기 reads a payslip on the phone, puts the company
+ * it names in the box (so the rows come as if it were typed), and keeps the payslip for the pick once a way is chosen. Only for a
+ * monthly pay ([wayPickFits]: 교대·일반 직장인); the payslip's numbers never leave the phone, only the name searched as typed.
+ */
+@Composable
+private fun SlipFind(state: PayFindState) {
+    val c = LocalContext.current.appContainer
+    val company = companyScope(c)
+    val profile by company.pay.profile.collectAsStateWithLifecycle()
+    if (!c.companyApi.enabled || !wayPickFits(true, profile?.wageType, true)) return
+    var reading by rememberSaveable { mutableStateOf(false) }
+    val found = state.slipCompany
+    if (found == null || state.slip == null) {
+        TextButton(onClick = { reading = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("명세서로 찾기 (회사와 판을 한 번에)") }
+    } else {
+        Text(
+            if (found.isNotEmpty()) "명세서에서 ‘$found’를 읽었어요. 회사를 고르면 명세서로 가장 가까운 판까지 맞춰 봐요."
+            else "명세서에 회사 이름이 보이지 않아요. 이름을 쳐 주세요. 명세서는 판을 고를 때 써요.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+    if (reading) com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서로 찾기", onDismiss = { reading = false },
+        keep = com.bamnat.app.ui.pay.PayslipWorks.WAY) { read ->
+        reading = false
+        state.slip = read
+        val name = read.company?.take(40)
+        state.slipCompany = name.orEmpty()
+        if (name != null) state.name = name
+        c.telemetry.event("pay_pick", if (name != null) "slip_company" else "slip_no_company")
     }
 }
 
@@ -407,6 +448,7 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
         keyboardActions = KeyboardActions(onSearch = {}),
         modifier = Modifier.fillMaxWidth(),
     )
+    SlipFind(state)
     val q = state.name.trim()
     val ready = PayFindRows.ready(q)
     val known = remember(c) { find.knownAll() }
@@ -475,6 +517,8 @@ internal fun PendingDone(
     intro: String? = null,
     /** [PAYG-03] "급여 방식은 넣지 않을게요": nothing goes in, said as a choice rather than by closing. */
     onSkip: (() -> Unit)? = null,
+    /** 2.0.0 [RVN-24] I10ac-01: a payslip read with 명세서로 찾기, so the pick opens with it at once. */
+    slip: com.bamnat.core.pay.PayslipRead? = null,
 ) {
     val scope = rememberCoroutineScope()
     val month = remember { Today.month() }
@@ -509,8 +553,14 @@ internal fun PendingDone(
     TrialBeforeAfter(trial)
     // [PAYP-18] 1.40: the payslip picks the company's version that fits it best and brings its own 기본급, in place of typing it.
     var picking by rememberSaveable { mutableStateOf(false) }
-    if (wayPickFits(shared, had?.wageType, c.companyApi.enabled)) WayPickCard(onOpen = { picking = true; c.telemetry.event("pay_pick", "open") })
-    if (picking) WayPickSheet(c, company, way, onDismiss = { picking = false }, onUse = { o, slip ->
+    val fits = wayPickFits(shared, had?.wageType, c.companyApi.enabled)
+    if (fits) WayPickCard(onOpen = { picking = true; c.telemetry.event("pay_pick", "open") })
+    // 2.0.0 [RVN-24] I10ac-01: found by its payslip, the pick opens by itself once (closing it leaves the card, as before).
+    var slipOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(slip, fits) {
+        if (slip != null && fits && !slipOpened) { slipOpened = true; picking = true }
+    }
+    if (picking) WayPickSheet(c, company, way, initial = slip.takeIf { slipOpened }, onDismiss = { picking = false }, onUse = { o, slip, agree ->
         picking = false
         busy = true
         error = null
@@ -529,6 +579,13 @@ internal fun PendingDone(
                 return@launch
             }
             c.telemetry.event("pay_pick", if (o.way.setup == way.setup) "use_same" else "use_other")
+            // 2.0.0 [RVN-24] I10ac-01: '맞아요' with it, the payslip having matched it whole (the month is kept as checked).
+            if (agree) when (val sent = com.bamnat.app.company.PickAgree.send(c, company, use.companyId, use.setup, slip, o.tried.month.total)) {
+                com.bamnat.app.company.PickAgree.Sent.Done -> com.bamnat.app.ui.components.AppSnack.show("‘맞아요’도 보냈어요. 같은 회사 분들께 큰 힘이 돼요")
+                com.bamnat.app.company.PickAgree.Sent.Waits -> com.bamnat.app.ui.components.AppSnack.show(com.bamnat.app.company.SmallSends.waitsLine(true))
+                is com.bamnat.app.company.PickAgree.Sent.Failed -> com.bamnat.app.ui.components.AppSnack.show(
+                    "방식은 넣었어요. ‘맞아요’는 보내지 못했어요 · ${sent.why}", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+            }
             company.pay.profile.value?.let { onSaved?.invoke(it) }
             onDone()
         }

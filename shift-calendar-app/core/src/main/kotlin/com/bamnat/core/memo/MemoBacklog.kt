@@ -24,6 +24,14 @@ object MemoBacklog {
      * The end of the work [at] falls in, from each day's hours ([hours]; that day's and the day before's, for a night past midnight),
      * or null when [at] is not at work.
      */
+    /**
+     * 2.0.0 [RVIB-21] (결정 19) The end of the part of work [at] falls in, from each day's parts on the clock ([parts]: one, or two around
+     * a 브레이크 타임); null outside work. A memo due in the first part comes at its end, in the 브레이크 타임, not after the second.
+     */
+    fun partEnd(at: LocalDateTime, parts: (LocalDate) -> List<ClosedRange<LocalDateTime>>): LocalDateTime? =
+        listOf(at.toLocalDate().minusDays(1), at.toLocalDate()).flatMap(parts)
+            .firstOrNull { !at.isBefore(it.start) && at.isBefore(it.endInclusive) }?.endInclusive
+
     fun workEnd(at: LocalDateTime, hours: (LocalDate) -> Pair<LocalTime, LocalTime>?): LocalDateTime? {
         for (d in listOf(at.toLocalDate().minusDays(1), at.toLocalDate())) {
             val (start, end) = hours(d) ?: continue

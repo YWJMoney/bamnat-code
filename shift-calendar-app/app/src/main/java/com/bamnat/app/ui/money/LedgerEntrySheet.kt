@@ -258,16 +258,9 @@ fun EntryDialog(
                     IconButton(onClick = { onDuplicate(initial!!) }) { Icon(Icons.Outlined.ContentCopy, "오늘 날짜로 복사") }
                 }
                 if (!isNew && onDelete != null) {
-                    // PC 확인 5c21f3bb (지우기가 확인 없이 바로, 되돌리기 띠는 금방 사라짐): asks first, as a slide to the left does [SWIPE-01].
-                    var askDelete by remember { mutableStateOf(false) }
-                    IconButton(onClick = { askDelete = true }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
-                    if (askDelete) com.bamnat.app.ui.components.AlertDialog(
-                        onDismissRequest = { askDelete = false },
-                        title = { Text("이 기록을 지울까요?") },
-                        text = { Text("‘${initial!!.title}’ ${Fmt.won(initial.amount)}. 지운 뒤 나오는 ‘되돌리기’나, 30일 동안 가계부 메뉴 › 최근 지운 기록에서 살릴 수 있어요.") },
-                        confirmButton = { TextButton(onClick = { askDelete = false; onDelete(initial!!) }) { Text("지우기", color = MaterialTheme.colorScheme.error) } },
-                        dismissButton = { TextButton(onClick = { askDelete = false }) { Text("취소") } },
-                    )
+                    // PC 확인 5c21f3bb asked first because the 되돌리기 bar went quickly; 2.0.0 [RVK-61] (총괄 HQ-111 묶음) it goes at once: the bar
+                    // stays longer and says 30일 in 최근 지운 기록, so a slip is one tap back.
+                    IconButton(onClick = { onDelete(initial!!) }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
                 }
                 IconButton(onClick = close) { Icon(Icons.Filled.Close, "닫기") }
             }

@@ -1433,7 +1433,7 @@ test("[ADMCP-06] a question shows the other questions from its phone, one tap to
   const got = clipboard(u);
   const bug = (await u.api("GET", "/api/admin/inquiries?status=open&kind=bug")).inquiries[0];
   await u.go(`#/inquiries/${bug.id}`);
-  assert.match(u.text("#main"), /이 기기\(#[0-9a-f]{6}\)에서 온 다른 문의 1건/);
+  assert.match(u.text("#main"), /이 기기\(#[0-9a-f]{8}\)에서 온 다른 문의 1건/);
   await u.click('#main [data-act="inquiry-sender"]');
   await u.idle();
   assert.match(u.window.location.hash, new RegExp(`sender=${bug.sender}`));
@@ -2210,6 +2210,30 @@ test("[OBS2-08] 유형별 흐름 and 기능과 머묾 show once 처리방침 3.1
   assert.match(u.text("#main .ob-keep"), /50%/, "기준: everyone that day");
   assert.match(u.text("#main .ob-keep"), /\+25%p/, "급여 보기 75% against 50%");
   assert.ok(!u.$$("#main .ob-gap-list li").some((li) => /유형\(교대/.test(li.textContent)), "by-type is answered");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-56] 검토 T21-02: 처리방침 3.14(stats.kind_use) 뒤에는 유형별 흐름 아래에 유형마다 덜 쓰는 기능이 보여요.
+test("[RVQ-56] 유형별로 덜 쓰는 기능 shows under 유형별 흐름 once 처리방침 3.14 is in force", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .run(JSON.stringify({ "3.12": { posted: "2025-01-01", effective: "2025-01-02", heldUntil: null, unfavourable: false },
+      "3.14": { posted: "2025-01-01", effective: "2025-01-31", heldUntil: null, unfavourable: false } }));
+  const day = (n) => new Date(Date.now() + 9 * 3600000 - n * 86400000).toISOString().slice(0, 10);
+  const kind = db.prepare("INSERT INTO usage_kinds (day, app, style, event, phones) VALUES (?, '2.0.0', ?, ?, ?)");
+  kind.run(day(3), "SHIFT", "open", 40); kind.run(day(3), "SHIFT", "pay_view", 30);
+  kind.run(day(3), "BUSINESS", "open", 30); kind.run(day(3), "BUSINESS", "pay_view", 2);
+  await u.go("#/glance");
+  await u.settle(40);
+  const card = u.text("#main .ob-kinds");
+  assert.match(card, /유형별로 덜 쓰는 기능/);
+  assert.match(card, /자영업.*6\.7%.*전체 45\.7%/s, card);
+  assert.match(card, /교대.*전체와 비슷하게 써요/s);
+  assert.ok(!u.$$("#main .ob-gap-list li").some((li) => li.textContent.includes("3.14")), "nothing waits for 3.14");
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
@@ -3235,6 +3259,21 @@ test("[RVA-38] 자동 순환: 맨 위 한 줄 상태(저절로 도는지·다음
   assert.deepEqual(u.errors, []);
 });
 
+test("[RVQ-60] PC-213 자동 순환 › Play 출시 감지: 보류 줄은 나가는 시각과 남은 시간을 함께", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT INTO loop_ships (version, seen_at, until, status, by) VALUES ('2.0.0', ?, ?, 'waiting', 'Claude 요청')")
+    .run(Date.now(), Date.now() + 9 * 60000 + 20000);
+  await u.go("#/loop");
+  await u.settle(20);
+  const line = u.text("#loop-play");
+  assert.match(line, /2\.0\.0 안내 (오전|오후) \d{1,2}:\d{2}에 · 9분 남음/, "the folded line: when and how long");
+  assert.match(line, /Claude 요청 · (오전|오후) \d{1,2}:\d{2}에 문의 안내·업데이트 소식이 나가요 · 9분 남음/, "the held line itself");
+  assert.doesNotMatch(line, /분 뒤 문의 안내/);
+  assert.deepEqual(u.errors, []);
+});
+
 test("[RVA-39] 자동 순환 › 연결 점검: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄은 '방금 됨 → 확인'", async (t) => {
   offline(t);
   const { env } = await world();
@@ -3765,6 +3804,98 @@ test("[RVQ-44] 장터 › 요청: 스튜디오 요구의 완성은 운영자가 
   check.querySelector('[data-key="check-ok"]').click();
   await u.settle(40);
   assert.deepEqual({ ...env.DB.db.prepare("SELECT state, checked FROM recipe_requests WHERE id = 'qAAAAAAAAAAAA'").get() }, { state: "done", checked: 1 });
+  assert.deepEqual(u.errors, []);
+});
+
+// 2.0.0 [RVQ-50][RVQ-51][RVQ-52] 검토 U22b-01·U22b-04·I22bb-04·SVC-67: 문의 상세의 '다시 열림'·이어 쓴 사진·'알림 못 감',
+// 두 관리자가 같은 문의에 답할 때 한 번 묻기, 자주 쓰는 답을 밤낮 Q&A에 올리기 전 공개 글 미리 보기.
+function tinyJpeg() {
+  const seg = (marker, body) => [0xff, marker, ((body.length + 2) >> 8) & 0xff, (body.length + 2) & 0xff, ...body];
+  const text = (s) => [...new TextEncoder().encode(s)];
+  return Buffer.from(Uint8Array.from([0xff, 0xd8, ...seg(0xe0, text("JFIF\0\x01\x01\0\0\x01\0\x01\0\0")), ...seg(0xdb, Array(65).fill(1)),
+    ...seg(0xc0, [8, 0, 1, 0, 1, 1, 1, 0x11, 0]), ...seg(0xda, [1, 1, 0, 0, 0x3f, 0]), 0x12, 0x34, 0x56, 0xff, 0xd9])).toString("base64");
+}
+
+test("[RVQ-50][RVQ-51] 문의 상세: 다시 열린 문의는 '다시 열림', 이어 쓴 사진, 못 간 알림 한 줄, 그사이 다른 답이 가면 한 번 묻기", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  const owner = await signIn(call);
+  const mine = { ...from(31), "x-device": device(31) };
+  const q = (await call("POST", "/api/inquiries", { v: 1, device: device(31), kind: "bug", text: "알람이 안 울려요 다시 놓아도 그래요", info: { app: "1.39.0 (53)" } }, from(31))).data;
+  await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "알람을 한 번 껐다 켜 주세요. 밤낮 운영팀" }, owner);
+  await call("POST", `/api/inquiries/${q.id}/messages`, { text: "껐다 켜도 그대로예요", photos: [tinyJpeg(), tinyJpeg()] }, mine);
+  env.DB.db.prepare("INSERT INTO push_fails (inquiry_id, why, tries, next_at, at) VALUES (?, 'busy', 1, ?, ?)").run(q.id, Date.now() + 30 * 60e3, Date.now());
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${q.id}`);
+  await u.idle();
+  assert.match(u.text("#main .card-head"), /다시 열림/);
+  assert.match(u.text("#main"), /알림 못 감 구글이 바빠 답 알림이 아직 못 갔어요\. .+에 다시 보내요\. 보낸 분이 앱을 열면 답은 보여요\./);
+  assert.equal(u.$$("#main .photos img").length, 2);
+  assert.match(u.$("#main .photos img").getAttribute("alt"), /이어 쓴 글과 함께/);
+  // 이 화면을 연 뒤 다른 관리자가 먼저 답했어요.
+  await call("POST", `/api/admin/inquiries/${q.id}/reply`, { text: "확인했어요. 고쳐서 알려 드릴게요. 밤낮 운영팀" }, owner);
+  const count = () => env.DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id = ?").get(q.id).n;
+  const before = count();
+  u.$("#reply").value = "다시 설치해 주세요. 밤낮 운영팀";
+  u.$('form[data-form="reply"]').requestSubmit();
+  await u.settle(40);
+  assert.ok(u.$('dialog[open] form[data-form="confirm"]'), "보내지 않고 한 번 물어요");
+  assert.match(u.text("dialog[open]"), /방금 다른 답이 갔어요/);
+  assert.equal(count(), before, "아직 안 갔어요");
+  assert.match(u.text("#main .thread"), /고쳐서 알려 드릴게요/, "새 답이 보이게 다시 그렸어요");
+  assert.equal(u.$("#reply").value, "다시 설치해 주세요. 밤낮 운영팀", "적던 답은 그대로");
+  u.$('dialog[open] form[data-form="confirm"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(count(), before + 1, "그래도 보내기면 가요");
+  assert.deepEqual([...u.errors, ...u.broken], []);
+});
+
+test("[RVQ-52] 자주 쓰는 답을 밤낮 Q&A에 올릴 때: 같은 창 안에 서버가 검사한 공개 글을 먼저 보여 주고 '올리기'로 저장", async (t) => {
+  offline(t);
+  const { call, env } = server();
+  await call("POST", "/api/inquiries", { v: 1, device: device(32), kind: "question", text: "위젯 날짜가 안 바뀌어요 왜 그래요", info: { app: "1.39.0 (53)" } }, from(32));
+  const u = await signedIn(env);
+  await u.go("#/templates");
+  await u.idle();
+  await u.click('#main [data-act="templates"]');
+  await u.idle();
+  u.$("#tpl-label").value = "위젯";
+  u.$("#tpl-text").value = "{앱버전}에서 고쳤어요. 위젯을 다시 놓아 주세요";
+  u.$("#tpl-q").value = "위젯 날짜가 안 바뀌어요";
+  u.$('dialog form[data-form="template-add"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("dialog .public-preview"), /밤낮 Q&A에 이렇게 보여요.+묻는 말 ?위젯 날짜가 안 바뀌어요 ?답 ?최신 버전에서 고쳤어요/);
+  assert.equal(u.text('dialog form[data-form="template-add"] button[type="submit"]'), "올리기");
+  assert.equal(env.DB.db.prepare("SELECT COUNT(*) AS n FROM reply_templates WHERE label = '위젯'").get().n, 0, "미리 보기만으론 저장 안 해요");
+  u.$('dialog form[data-form="template-add"]').requestSubmit();
+  await u.settle(30);
+  assert.equal(env.DB.db.prepare("SELECT public_a FROM reply_templates WHERE label = '위젯'").get().public_a, "최신 버전에서 고쳤어요. 위젯을 다시 놓아 주세요");
+  assert.deepEqual([...u.errors, ...u.broken], []);
+});
+
+// 2.0.0 [RVQ-55] 검토 SVC-38: 스토어 리뷰 답도 문의 답과 같은 검사. 초안에 걸린 까닭을 알약으로, 보내기에서 걸리면 까닭을 보이고 한 번 더 물어요.
+test("[RVQ-55] 스토어 리뷰: 초안의 AI 표현은 알약으로 알리고, Play로 보내기에서 걸리면 '그래도 보내기'를 한 번 더 물어요", async (t) => {
+  offline(t);
+  const { env, DB } = await world({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: "bamnat@example.iam.gserviceaccount.com", private_key: "test" }) });
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-rvq55-0001', 2, '알람이 늦게 울려요', '2.0.0', 'ko', ?1, '', NULL, '', '저는 AI 상담원이라 자세한 건 몰라요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/reviews");
+  await u.settle(30);
+  const form = u.$('#main form[data-form="review-draft"]');
+  assert.match(form.textContent, /답에 AI·자동 답 표현/);
+  assert.match(form.textContent, /보내기 전에 고쳐 주세요/);
+  form.requestSubmit(form.querySelector('[name="send"]'));
+  await u.settle(10);
+  u.$('dialog[open] form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("dialog[open]"), /이 답은 사람이 한 번 더 봐야 해요/);
+  assert.match(u.text("dialog[open]"), /걸린 것\s*답에 AI·자동 답 표현/);
+  assert.match(u.text("dialog[open]"), /그래도 보내기/);
+  assert.equal((await DB.prepare("SELECT status FROM store_reviews WHERE id = 'gp:ui-rvq55-0001'").first()).status, "seen", "확인 전에는 보내지 않아요");
+  u.$('dialog[open] [data-act="close"]').click();
+  await u.settle(10);
+  assert.ok(!u.$("dialog[open]"));
   assert.deepEqual(u.errors, []);
 });
 

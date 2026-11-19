@@ -24,6 +24,7 @@ object PlazaPush {
     private const val K_ANSWERS = "push_answers"
     private const val K_SAME = "push_same"
     private const val K_WATCHED = "push_watched"
+    private const val K_QUIET = "push_quiet"
     private const val ANSWER_LINE = "내 질문에 새 답"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -51,6 +52,7 @@ object PlazaPush {
      * Asks the server only when that changed. Never throws.
      */
     suspend fun syncWatch(c: AppContainer) {
+        syncQuiet(c)
         runCatching {
             val room = watchRoom(c)
             val form = if (room != null && open(c) && same(c.appContext)) c.plazaTags.tagFor(room)?.form?.name else null
@@ -68,12 +70,31 @@ object PlazaPush {
     }
 
     /**
+     * 2.0.0 [RVN-24] 검토 I22ca-03·U22c-07: '내 질문에 답이 오면 바로 알림'이 꺼져 있고 이 폰이 알림 토큰을 서버에 두었으면(문의 답 알림),
+     * 서버에도 알려(끈 것만 한 줄) 답이 와도 이 폰을 깨우지 않게 해요(배터리). 다시 켜거나 토큰을 거두면 그 줄을 지워요. 바뀌었을 때만 묻고,
+     * 안 닿으면 다음 때 다시. Never throws.
+     */
+    suspend fun syncQuiet(c: AppContainer, tokenGiven: Boolean = PushPhone.given(c.appContext)) {
+        runCatching {
+            val device = c.companyStore.device
+            val off = !answers(c.appContext) && tokenGiven
+            val want = if (off) "$device|off" else ""
+            val was = prefs(c.appContext).getString(K_QUIET, "") ?: ""
+            if (want == was) return
+            if (off) c.companyApi.plazaQuiet(device, true)
+            else if (was.startsWith("$device|")) c.companyApi.plazaQuiet(device, false)
+            prefs(c.appContext).edit().putString(K_QUIET, want).apply()
+        }
+    }
+
+    /**
      * 2.0.0 [RVN-09] COMP-42 After 모두 지우기 (the server forgot what this phone watched and its token): 광장 바로 알림 goes off on
      * the phone too, so nothing is given to the server again by itself. True when it was on; 설정 › 알림 turns it back on.
      */
     fun forget(c: AppContainer): Boolean {
         val was = wanted(c)
-        prefs(c.appContext).edit().apply { if (was) putBoolean(K_ANSWERS, false).putBoolean(K_SAME, false) }.remove(K_WATCHED).apply()
+        // [RVN-24] I22ca-03: the server forgot its 끔 line with the token; it is told again only once a token is given again.
+        prefs(c.appContext).edit().apply { if (was) putBoolean(K_ANSWERS, false).putBoolean(K_SAME, false) }.remove(K_WATCHED).remove(K_QUIET).apply()
         return was
     }
 
@@ -83,6 +104,16 @@ object PlazaPush {
     /** The line a push becomes, or null when there is nothing (left) to tell. */
     internal fun answerLine(fresh: Int): String? = if (fresh <= 0) null else "$ANSWER_LINE ${fresh}개가 왔어요"
     internal const val QUESTION_LINE = "나와 같은 근무의 새 질문이 올라왔어요"
+
+    /** 2.0.0 [RVN-24] 검토 I22cc-02: on a day off (or the morning after a night), the same news as a gentle ask. */
+    internal const val ASK_LINE = "같은 근무 분이 질문을 올렸어요. 시간 되실 때 답해 주실래요?"
+
+    /** The payload of a question's notice: 광장 opens on '답 기다리는 질문'. */
+    const val WAITING = "waiting"
+
+    /** I22cc-02: which line a new question becomes, from my day by my own calendar (null when the calendar says nothing). */
+    internal fun questionLine(day: PlazaTagSource.MyDay?): String =
+        if (day != null && (day.dayOff || day.offAfterNight)) ASK_LINE else QUESTION_LINE
 
     /** A push came: the server is asked what is new and the 소식 notice tells it. Never throws. */
     suspend fun handle(c: AppContainer, kind: String) {
@@ -101,8 +132,12 @@ object PlazaPush {
                     PlazaNewsJob.tell(c, "광장 소식", listOf(line), NoticeLinks.Target.VILLAGE_POSTS, replacing = ANSWER_LINE)
                 }
                 QUESTION -> {
-                    if (!same(c.appContext) || watchRoom(c) == null) return
-                    PlazaNewsJob.tell(c, "광장 소식", listOf(QUESTION_LINE), NoticeLinks.Target.PLAZA)
+                    val room = watchRoom(c)
+                    if (!same(c.appContext) || room == null) return
+                    // 2.0.0 [RVN-24] I22cc-02: the server asks those whose answers helped first; this phone words it as an ask when I'm off
+                    // today (held through sleep and work as before), and the tap opens 광장 on the questions still waiting.
+                    val day = runCatching { c.plazaTags.dayFor(room) }.getOrNull()
+                    PlazaNewsJob.tell(c, "광장 소식", listOf(questionLine(day)), NoticeLinks.Target.PLAZA, payload = WAITING)
                 }
             }
         }

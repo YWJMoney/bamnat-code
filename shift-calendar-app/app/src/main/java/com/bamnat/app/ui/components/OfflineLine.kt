@@ -46,6 +46,10 @@ fun OfflineLine(
     modifier: Modifier = Modifier,
     text: String = NetWords.OFFLINE,
     onRetry: (() -> Unit)? = null,
+    /** 2.0.0 [RVN-22] I10bb-01 The button's word ('지금 보내기' for what waits to be sent). */
+    action: String = "다시 하기",
+    /** 2.0.0 [RVN-22] I10bc-03 A clock for what is held for a time on purpose (not for want of a connection). */
+    icon: androidx.compose.ui.graphics.vector.ImageVector = Icons.Outlined.CloudOff,
 ) {
     // 2.0.0 [RVP-13] (조건 4·12, 장터를 못 읽은 360dp 폰 글자 200%: '장터는 아직 / 열리지 / 않았어요' 세 줄 옆에 '다시 하기'가 떨어져
     // 있었어요): where the words beside '다시 하기' would take more than two lines, '다시 하기' goes under them (as the nudge card does).
@@ -55,22 +59,22 @@ fun OfflineLine(
         val button = MaterialTheme.typography.labelLarge
         val density = androidx.compose.ui.platform.LocalDensity.current
         val stacked = onRetry != null && with(density) {
-            val room = maxWidth - LEAD - (measurer.measure("다시 하기", button).size.width.toDp() + 24.dp)
+            val room = maxWidth - LEAD - (measurer.measure(action, button).size.width.toDp() + 24.dp)
             room <= 0.dp || measurer.measure(text, style, constraints = androidx.compose.ui.unit.Constraints(maxWidth = room.roundToPx())).lineCount > 2
         }
         val words: @Composable (Modifier) -> Unit = { m ->
             Row(m, verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(text, style = style, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         if (stacked) androidx.compose.foundation.layout.Column(Modifier.fillMaxWidth()) {
             words(Modifier.fillMaxWidth().heightIn(min = 48.dp))
-            TextButton(onClick = onRetry!!, modifier = Modifier.padding(start = LEAD - 12.dp).heightIn(min = 48.dp)) { Text("다시 하기") }
+            TextButton(onClick = onRetry!!, modifier = Modifier.padding(start = LEAD - 12.dp).heightIn(min = 48.dp)) { Text(action) }
         } else Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
             words(Modifier.weight(1f))
-            if (onRetry != null) TextButton(onClick = onRetry) { Text("다시 하기") }
+            if (onRetry != null) TextButton(onClick = onRetry) { Text(action) }
         }
     }
 }

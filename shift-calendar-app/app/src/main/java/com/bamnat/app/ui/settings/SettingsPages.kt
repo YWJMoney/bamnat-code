@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -1244,30 +1246,39 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
     }
 }
 
-/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 저절로 나누기. */
-internal const val AUTO_SHARE_ROW = "회사 광장에 저절로 나누기"
+/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 나누기 (2.0.0 [RVN-22] I10bc-03: one way for each part, no longer one switch). */
+internal const val AUTO_SHARE_ROW = "회사 광장에 나누기"
 
+/**
+ * 2.0.0 [RVN-22] 검토 I10bc-03 (COMP-44): each part that can go to the company's 광장, with its own way (저절로·묻기·안 함), so the
+ * consent says exactly what it reaches. 저절로 goes the next morning and can be cancelled until then ([HeldShareLine], under it).
+ */
 @Composable
 internal fun AutoShareRow() {
     val c = LocalContext.current.appContainer
-    val on by c.companyStore.autoShare.collectAsStateWithLifecycle()
-    // 2.0.0 [RVN-11] COMP-44 A yes for the cycle only (근무주기 나누기) says so: the pay way is asked each time.
-    val payToo by c.companyStore.autoPay.collectAsStateWithLifecycle()
+    val ways by c.companyStore.shareWays.collectAsStateWithLifecycle()
     val member by c.companyStore.member.collectAsStateWithLifecycle()
     val place = member?.second?.ifEmpty { null } ?: "다니는 회사"
-    // [PLAZA-34] 1.27 AI: on is 저절로 나누기; off asks each time a change is saved, unless 다시 묻지 않기 was chosen.
-    SwitchRow(
-        AUTO_SHARE_ROW,
-        when (on) {
-            true -> if (payToo) "근무 순서와 계산 방식을 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요."
-                else "근무 순서를 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요. 계산 방식은 바꿀 때마다 물어요."
-            null -> "꺼 두면 바꿀 때마다 ‘$place 광장에 나눌까요?’ 하고 물어요."
-            false -> "‘다시 묻지 않기’로 두셨어요. 바꿔도 묻지 않고 나누지 않아요."
-        } + " 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요",
-        on == true,
-        onChange = { c.autoShare.set(if (it) true else null) },
-    )
-    if (on == false) TextButton(onClick = { c.autoShare.set(null) }) { Text("바꿀 때마다 묻기로 되돌리기") }
+    Column(Modifier.focusMark(AUTO_SHARE_ROW).fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(said(AUTO_SHARE_ROW), style = MaterialTheme.typography.bodyLarge)
+        Text(said("바꾼 것을 $place 광장에 어떻게 나눌지 부분마다 골라요. 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요"),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.bamnat.core.plaza.SharePart.entries.forEach { part ->
+            ChoiceRow(part.label, sharePartHint(part), com.bamnat.core.plaza.ShareWay.entries.map { it to it.label }, ways[part], group = part.label) { way ->
+                c.autoShare.setWay(part, way)
+            }
+        }
+        Text("저절로: 다음 날 오전에 나눠요. 그 전에 취소할 수 있어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        com.bamnat.app.ui.company.HeldShareLine(c)
+    }
+}
+
+/** What each part is, under its name. */
+internal fun sharePartHint(part: com.bamnat.core.plaza.SharePart): String = when (part) {
+    com.bamnat.core.plaza.SharePart.CYCLE -> "근무 이름과 순서(교대 순서·요일별 근무·근무표)"
+    com.bamnat.core.plaza.SharePart.TIMES -> "근무마다 시작·끝·휴게 시간"
+    com.bamnat.core.plaza.SharePart.PAY -> "가산율·수당·휴일 같은 계산하는 법(금액은 빼고)"
 }
 
 @Composable
@@ -1669,6 +1680,16 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-21] 둘째 구간 알림's row, for 설정 찾기. */
+internal const val GAP_ROW = "둘째 구간 시작 알림"
+
+/** 2.0.0 [RVIB-21] Some 근무 종류 of the open calendar has a 브레이크 타임·비는 시간 between two parts. */
+@Composable
+internal fun rememberHasGap(): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val flow = remember(c) { c.scheduleRepository.snapshot.map { s -> s.shiftTypes.any { it.hasGap } }.distinctUntilChanged() }
+    return flow.collectAsStateWithLifecycle(false).value
+}
 /** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
 internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
 internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
@@ -1790,7 +1811,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)
-    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onSelect = onPick)
 }
 
 internal const val NIGHT_LOOK_ROW = "밤 색"

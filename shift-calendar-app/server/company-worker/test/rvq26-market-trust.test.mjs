@@ -287,12 +287,14 @@ test("[RVQ-27] SVC-59 ⭐는 이웃 이상 팔로워만, 한 네트워크의 하
   assert.equal((await card()).mark, "popular");
   // 쓰는 분이 가장 많아도 🏅는 운영자가 고른 뒤에만.
   for (let n = 10; n < 14; n++) await call("POST", `/api/recipes/${w.data.code}/applied`, { kind: "applied" }, from(n));
+  // 2.0.0 [RVN-24] SVC-107: 후보는 그달 쓰는 분 30명부터.
+  DB.db.prepare("UPDATE recipe_counts SET applied = 30 WHERE code = ?").run(w.data.code);
   assert.deepEqual((await call("GET", "/api/recipes/makers/month")).data.items, []);
   const adminMonth = (await call("GET", "/api/admin/recipes/makers/month", undefined, admin)).data;
   assert.deepEqual(adminMonth.candidates.ALL.map((c) => c.maker), [m]);
   await call("POST", "/api/admin/recipes/makers/month", { style: "ALL", makers: [m] }, admin);
   const picked = (await call("GET", "/api/recipes/makers/month")).data.items;
-  assert.deepEqual(picked.map((x) => [x.maker, x.picked, x.users]), [[m, true, 4]]);
+  assert.deepEqual(picked.map((x) => [x.maker, x.picked, x.users]), [[m, true, 30]]);
   const log = (await call("GET", "/api/admin/recipes/actions", undefined, admin)).data.items.find((a) => a.target === "month");
   assert.equal(log.reason, m);
 });

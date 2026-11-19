@@ -194,6 +194,22 @@ class MakerViewModel(val c: AppContainer, val id: String) : ViewModel() {
         }
     }
 
+    /** 2.0.0 [RVQ-44] 검토 U22b-07: the next 60 works under those shown (a maker with hundreds, like the operator). */
+    fun more() {
+        val p = _state.value.page ?: return
+        if (!p.more || loadingMore) return
+        loadingMore = true
+        viewModelScope.launch {
+            runCatching { c.recipeApi.maker(device, id, p.pageNo + 1) }.onSuccess { n ->
+                val have = p.recipes.map { it.code }.toSet()
+                _state.value.page?.let { now -> _state.value = _state.value.copy(page = now.copy(recipes = now.recipes + n.recipes.filter { it.code !in have },
+                    more = n.more, pageNo = n.pageNo)) }
+            }
+            loadingMore = false
+        }
+    }
+    private var loadingMore = false
+
     private fun loadInbox() {
         viewModelScope.launch {
             // Since the last 다 봤어요 (7 days at first), so what was seen does not come back as new.
@@ -508,8 +524,9 @@ fun MakerScreen(
                 }
                 // 테마 | 기능별 탭 | 모음
                 PrimaryTabRow(selectedTabIndex = part) {
-                    Tab(part == 0, { part = 0 }, text = { Text("테마 ${p.themes.size}") })
-                    Tab(part == 1, { part = 1 }, text = { Text("탭별 작품 ${p.tabRecipes.size}") })
+                    // 2.0.0 [RVQ-44] U22b-07: the whole numbers, not only the first page's.
+                    Tab(part == 0, { part = 0 }, text = { Text("테마 ${p.themeTotal ?: p.themes.size}") })
+                    Tab(part == 1, { part = 1 }, text = { Text("탭별 작품 ${p.tabTotal ?: p.tabRecipes.size}") })
                     Tab(part == 2, { part = 2 }, text = { Text("모음 ${p.sets.size}") })
                 }
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -535,6 +552,11 @@ fun MakerScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             p.sets.forEach { set -> SetCard(set, p.recipes, mine, onOpen = { onSet(set.id) }, onEdit = { setEdit = set }, onDelete = { vm.deleteSet(set) }) }
                         }
+                    }
+                    // 2.0.0 [RVQ-44] 검토 U22b-07: more works than the first 60 are under one 더 보기 (테마·탭별 작품).
+                    if (part != 2 && p.more) OutlinedButton(onClick = vm::more, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        val all = p.themeTotal?.let { it + (p.tabTotal ?: 0) }
+                        Text("작품 더 보기" + (all?.let { " (${p.recipes.size}/$it)" } ?: ""))
                     }
                 }
                 if (p.badges.isNotEmpty()) Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {

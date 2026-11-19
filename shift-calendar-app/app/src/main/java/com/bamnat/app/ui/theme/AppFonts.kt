@@ -222,7 +222,9 @@ object UserFonts {
         /** PC 확인 7차: false when it has no 한글 (its 한글 is drawn in [fallback]). */
         val hangul: Boolean = true,
         /** PC 확인 7차: the user already said to use it though it has no 한글 (asked once). */
-        val hangulOk: Boolean = false)
+        val hangulOk: Boolean = false,
+        /** 2.0.0 [RVQ-46] 검토 U22b-10·I22bb-05: a received font's '만든 곳 · 써도 되는 범위', as its server said when it came. */
+        val credit: String? = null)
 
     sealed interface Result {
         data class Added(val font: Mine) : Result
@@ -255,7 +257,8 @@ object UserFonts {
                 f.writeText(o.toString())
             }
             Mine(id, o.optString("name", "내 글꼴"), o.optString("fallback", "sans"), o.optBoolean("open"), ttf.length(), o.optBoolean("received"),
-                o.optBoolean("sold"), o.optBoolean("hangul", true), o.optBoolean("hangulOk"))
+                o.optBoolean("sold"), o.optBoolean("hangul", true), o.optBoolean("hangulOk"),
+                o.optString("credit").takeIf { it.isNotBlank() })
         }.getOrNull()?.takeIf { file(c, it.id) != null }
     }.sortedBy { it.name }
 
@@ -343,6 +346,8 @@ object UserFonts {
     /** Whether [id] was already sent to the server (so it is not sent again). */
     fun sent(c: Context, id: String): Boolean = runCatching { JSONObject(File(dir(c), "$id.json").readText()).optBoolean("sent") }.getOrDefault(false)
     fun markSent(c: Context, id: String) = edit(c, id) { it.put("sent", true) }
+    /** [RVQ-46] U22b-10: keeps a received font's credit line beside it (shown in 내 글꼴 next to 신고). */
+    fun setCredit(c: Context, id: String, credit: String) = edit(c, id) { it.put("credit", credit) }
 
     /** Whether the maker lets others use it (OFL·공개 글꼴), as the user says; only such a font may be shared. */
     fun setOpen(c: Context, id: String, open: Boolean) = edit(c, id) { it.put("open", open && !it.optBoolean("sold")) }

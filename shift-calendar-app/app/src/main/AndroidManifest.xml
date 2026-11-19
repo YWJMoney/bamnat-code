@@ -268,6 +268,21 @@
             android:name=".alarm.LeaveTimeReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVN-24] I10ac-03: '오늘 야간 어땠어요?' after a shift, and the line written on it. -->
+        <receiver
+            android:name=".company.PlazaAfterShiftReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVN-22] I10bb-04: '해결됐어요' on the notice of an answer. -->
+        <receiver
+            android:name=".company.InquiryFixedReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVIB-21] 둘째 구간 알림 (17:00 다시 시작). -->
+        <receiver
+            android:name=".alarm.GapNoticeReceiver"
+            android:exported="false" />
+
         <!-- 1.38 [LEDH-24] 근무 전 한 줄 예고. -->
         <receiver
             android:name=".money.ShiftPreviewReceiver"
@@ -519,6 +534,12 @@
         <!-- 2.0.0 [RVN-13] COMP-51 What a push asked for (문의 답, 광장 답), run as an expedited job so Doze does not hold it back. -->
         <service
             android:name=".company.PushCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
+        <!-- 2.0.0 [RVN-22] I10bc-02 회사·광장 read a little before a likely open, on Wi-Fi: only the system's job scheduler binds it. -->
+        <service
+            android:name=".company.ReadAheadJob"
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 

@@ -47,7 +47,8 @@ fun CommunityCareBar(c: AppContainer) {
     if (!c.companyApi.enabled || agreed <= 0) return
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var standing by remember { mutableStateOf(CareStanding()) }
+    // 2.0.0 [RVN-22] I10bc-01: what was read last (the day's digest or the last visit) shows at once; asked again when older.
+    var standing by remember { mutableStateOf(com.bamnat.app.company.CareKept.of(c.companyApi) ?: CareStanding()) }
     var looks by remember { mutableIntStateOf(0) }
     // 이번에 연 동안 한 번만: 닫아도 다음에 마을을 열면 '확인했어요' 전까지 다시 보여요.
     var warningShown by rememberSaveable { mutableStateOf<String?>(null) }
@@ -56,7 +57,9 @@ fun CommunityCareBar(c: AppContainer) {
     var said by remember { mutableStateOf<String?>(null) }
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { looks++ }
     androidx.compose.runtime.LaunchedEffect(looks) {
-        standing = try { c.companyApi.careStanding(c.companyStore.device) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+        if (com.bamnat.app.company.CareKept.fresh(c.companyApi)) { standing = com.bamnat.app.company.CareKept.of(c.companyApi) ?: standing; return@LaunchedEffect }
+        standing = try { c.companyApi.careStanding(c.companyStore.device).also { com.bamnat.app.company.CareKept.keep(c.companyApi, it) } }
+            catch (e: kotlinx.coroutines.CancellationException) { throw e }
             catch (e: Exception) { if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatCare", "standing failed: $e"); return@LaunchedEffect }
         if (com.bamnat.app.BuildConfig.DEBUG) android.util.Log.i("BamnatCare", "standing=$standing")
     }
@@ -71,7 +74,7 @@ fun CommunityCareBar(c: AppContainer) {
                     warningShown = warning.id
                     scope.launch {
                         runCatching { c.companyApi.careSeen(c.companyStore.device, warning.id) }
-                        standing = standing.copy(warning = null)
+                        standing = standing.copy(warning = null).also { com.bamnat.app.company.CareKept.keep(c.companyApi, it) }
                     }
                 }) { Text("확인했어요") }
             },

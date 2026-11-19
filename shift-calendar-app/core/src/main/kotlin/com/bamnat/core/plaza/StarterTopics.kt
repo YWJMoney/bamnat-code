@@ -1,5 +1,6 @@
 package com.bamnat.core.plaza
 
+import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
@@ -22,9 +23,21 @@ object StarterTopics {
 
     private val MONDAY_ZERO: LocalDate = LocalDate.of(2024, 1, 1) // a Monday
 
-    /** The topic of the week [date] is in. */
-    fun of(date: LocalDate): String {
+    /**
+     * The topic of the week [date] is in, said for [style]'s plaza. 2.0.0 [RVN-24] 검토 PC-211·조건 13: '출근길·퇴근길에 듣는 것' was every
+     * plaza's, though a 현장 has no 출근, a shop's 사장님 no 출근·쉬는 날 and an investor no 출근 ([com.bamnat.core.work.TypeWords] forbids them; StarterTopicsTest checks every kind); each kind's
+     * own plaza gets the same topic in its own words. 교대·일근·알바 keep ALL as it is.
+     */
+    fun of(date: LocalDate, style: WorkStyle? = null): String {
         val weeks = Math.floorDiv(ChronoUnit.DAYS.between(MONDAY_ZERO, date), 7L)
-        return ALL[Math.floorMod(weeks, ALL.size.toLong()).toInt()]
+        return forKind(ALL[Math.floorMod(weeks, ALL.size.toLong()).toInt()], style)
+    }
+
+    /** [topic] of [ALL] in the words of [style]; the same one when its words are already right. */
+    fun forKind(topic: String, style: WorkStyle?): String = when (style) {
+        WorkStyle.FIELD -> topic.replace("출근길·퇴근길에", "현장 오가는 길에")
+        WorkStyle.BUSINESS -> topic.replace("출근길·퇴근길에", "가게 오가는 길에").replace("쉬는 날", "휴무일에")
+        WorkStyle.INVEST -> topic.replace("출근길·퇴근길에", "오가는 길에")
+        else -> topic
     }
 }

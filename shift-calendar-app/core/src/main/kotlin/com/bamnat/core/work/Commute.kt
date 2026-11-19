@@ -85,6 +85,8 @@ object Commute {
         // On a 반차 day which half was taken is not known, so a late arrival may be the planned one.
         if (partialLeave(day)) return Write.None
         val t = if (rounding) DayWork.round(at) else at
+        // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) Coming back for the second part of a day of two parts is not a second, late arrival.
+        if (inSecondHalf(day, t)) return Write.None
         return if (Duration.between(from, t).toMinutes() > SLACK_MINUTES && t.isBefore(to)) Write.Late(t.toLocalTime(), to.toLocalTime()) else Write.None
     }
 
@@ -103,6 +105,8 @@ object Commute {
             // Against the planned end, never an end written earlier (a lunch walk's 퇴근 12:00).
             val to = plannedTo(day)
             val past = Duration.between(to, t).toMinutes()
+            // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) Going out in the 브레이크 타임·비는 시간 between two parts is not 퇴근.
+            if (inStop(day, t)) return Write.None
             return when {
                 past > overtimeSlack.coerceAtLeast(SLACK_MINUTES) -> {
                     val minutes = past.toInt().coerceAtMost(16 * 60)
@@ -130,6 +134,21 @@ object Commute {
         is Write.Overtime -> entry.copy(extras = replace(entry.extras, write.entry), customEnd = entry.customEnd?.let { write.entry.start ?: it })
         is Write.RestDayWork -> entry.copy(extras = replace(entry.extras, write.entry))
         Write.None -> entry
+    }
+
+    /**
+     * [RVIB-21] [t] is in a stop between two parts of [day] (or within [SLACK_MINUTES] before it, the walk out), and before the last
+     * part starts: leaving then is going out for the gap, not 퇴근.
+     */
+    fun inStop(day: ResolvedDay, t: LocalDateTime): Boolean {
+        val parts = day.segments.takeIf { it.size > 1 } ?: return false
+        return parts.zipWithNext().any { (a, b) -> !t.isBefore(a.endInclusive.minusMinutes(SLACK_MINUTES.toLong())) && t.isBefore(b.start) }
+    }
+
+    /** [RVIB-21] [t] is at or after the end of the first of two parts of [day] (less [SLACK_MINUTES]): an arrival then is coming back. */
+    fun inSecondHalf(day: ResolvedDay, t: LocalDateTime): Boolean {
+        val parts = day.segments.takeIf { it.size > 1 } ?: return false
+        return !t.isBefore(parts.first().endInclusive.minusMinutes(SLACK_MINUTES.toLong()))
     }
 
     /** [day] with the start [entry] now has, for deciding the end after a late start. */

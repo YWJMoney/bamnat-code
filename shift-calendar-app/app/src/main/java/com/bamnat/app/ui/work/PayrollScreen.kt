@@ -153,7 +153,9 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
             }
         }
 
-        Text(PayrollLedger.NOTICE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVP-52] (검토 U13-18·T13-02, 조건 1·4) The two grey paragraphs over the month were most of the first screen: said in full the first
+        // time, then one line each with ⓘ, so the month's 인건비 starts high on the page.
+        com.bamnat.app.ui.components.Explain("payroll.notice", PayrollLedger.NOTICE, summary = "참고용 계산이에요. 최종 지급액은 사장님이 확인해요", iconOnly = false)
         // The month: ◀ 2026년 11월 ▶
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { month = ym.minusMonths(1).toString() }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "지난달") }
@@ -162,13 +164,20 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         }
         // 1.39 G2 (PC f7f61818 '오늘이 11월인데 10월로 열려요'): the month worked, paid the month after; said once above the card.
         val thisMonth = YearMonth.from(Today.date())
-        Hint(when {
+        val monthSaid = when {
             ym == thisMonth.minusMonths(1) -> "${ym.monthValue}월에 일한 몫을 정산하는 대장이에요" + (place.payDate(ym)?.let { " · 지급일 ${Fmt.monthDay(it)}" } ?: "") +
                 ". 이번 달(${thisMonth.monthValue}월)은 ▶로 넘겨 미리 봐요."
             ym == thisMonth -> "${ym.monthValue}월에 일하는 중인 몫이에요. 평소 근무와 바꾼 날로 한 달을 미리 계산해요."
             else -> "${ym.monthValue}월에 일한 몫이에요."
-        })
+        }
+        com.bamnat.app.ui.components.Explain("payroll.month", monthSaid, summary = com.bamnat.app.ui.components.firstSentence(monthSaid), iconOnly = false)
         SectionCard(title = place.name, trailing = { TextButton(onClick = { settings = true }) { Text("사업장 설정") } }) {
+            // 2.0.0 [RVP-52] (U13-18) The month's 인건비 is first of the card, above the 주의 줄 and the 5인 question (1.39 [FLOW-24]: one number first, then each person's bar against last month).
+            Text("${ym.monthValue}월 인건비", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp))
+            Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)
+            // PC 4bd5d745: '+504,062원' set 민수's last month against 민수 and 지영 this month. Only the same people are set side by side.
+            lastHead(ledger, lastLedger)?.let { Hint(it) }
             // [RVJ-19] The same 주의 줄 as the others on this card (it was orange words, the only ones).
             ledger.note?.let { if (place.fivePlus == null) ToneLine(it) else Hint(it) }
             // PC 1차 제안: not answered yet → ask right here in one tap, not behind 사업장 설정. The safe side (가산 넣기) stays until then.
@@ -180,12 +189,6 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
                     FilterChip(selected = false, onClick = { scope.launch { store.updateWorkplace(place.id) { it.copy(fivePlus = false) } } }, label = { Text("5명 미만") })
                 }
             }
-            // 1.39 [FLOW-24] one number first: the month's 인건비, then each person's bar against last month.
-            Text("${ym.monthValue}월 인건비", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(top = 6.dp))
-            Text(Fmt.won(ledger.total), style = MaterialTheme.typography.headlineSmall)
-            // PC 4bd5d745: '+504,062원' set 민수's last month against 민수 and 지영 this month. Only the same people are set side by side.
-            lastHead(ledger, lastLedger)?.let { Hint(it) }
             StatTiles(Modifier.padding(top = 6.dp)) {
                 StatTile("급여 합계", Fmt.won(ledger.gross), Modifier.weight(1f), caption = "${ledger.lines.size}명")
                 // 1.39 [BOSS-12] 산재보험 (사업주만) with the 4대보험 once the 업종 is picked.
