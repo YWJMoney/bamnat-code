@@ -133,7 +133,7 @@ object TodayShiftNotice {
     /**
      * The notice's title and text at [now]. 2.0.0 [RVIB-30] (PC-198, 통합 5차: 자정 넘어 야간 근무 중에 제목은 '퇴근까지 6시간 49분'인데
      * 본문은 '오늘 휴무 · 내일 휴무') Work begun yesterday and still going is told as now's work, "지금 야간 근무 중 · 07:00 퇴근", and
-     * what comes after it from there ('퇴근 뒤 휴무', or today's later shift), never today's 휴무 beside a running shift. [going] is the
+     * what comes after it from there ('퇴근 뒤 쉬는 날', or today's later shift), never today's 휴무 beside a running shift. [going] is the
      * bar's work (Android 16 and later); older phones read the same words without the bar.
      */
     internal fun words(

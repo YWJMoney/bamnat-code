@@ -25,7 +25,6 @@ import org.robolectric.annotation.Config
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
-import java.time.ZoneId
 
 /**
  * 2.0.0 [RVIB-28] (PC-188) 울리던 알람이 앱 프로세스가 죽으면 그대로 끝났어요(안드로이드 17 폴드, 구글 플레이 서비스 갱신 중, 53초 동안
@@ -39,7 +38,7 @@ class RingKeeperTest {
     private val c get() = app.container
     private val am get() = shadowOf(app.getSystemService(AlarmManager::class.java))
     private var running: ServiceController<AlarmService>? = null
-    private val zone = ZoneId.systemDefault()
+    private val zone get() = Today.zone()
     private val day = LocalDate.of(2026, 11, 19)
 
     private fun millis(t: LocalDateTime) = t.atZone(zone).toInstant().toEpochMilli()
