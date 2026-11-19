@@ -211,11 +211,13 @@ export function stackDays(until, rows, launchedAt) {
 /** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
 export async function giveDays(env, kind, source, dev, days, now) {
   const cap = (await rewardRules(env)).monthCap;
-  const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
-  const give = Math.min(days, cap - (got?.n ?? 0));
-  if (give <= 0) return 0;
-  const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
-  return r.meta.changes ? give : 0;
+  if (days <= 0) return 0;
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 이달 받은 날을 읽고 따로 넣으면, 두 보상이 겹칠 때 둘 다 같은 남은 날을 보고 상한을 넘겼어요. 읽기와 넣기를
+  // 한 문장으로(같은 휴대폰의 이달 합을 그 자리에서 세어 남은 만큼만).
+  const r = await one(env, `INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at)
+    SELECT ?1, ?2, ?3, MIN(?4, ?5 - n), ?6 FROM (SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ?2 AND given_at >= ?7) WHERE ?5 - n > 0
+    RETURNING days`, source, dev, kind, days, cap, now, kstMonthStart(now));
+  return r?.days ?? 0;
 }
 
 /**

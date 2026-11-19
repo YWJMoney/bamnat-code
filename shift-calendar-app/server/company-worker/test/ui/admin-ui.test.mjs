@@ -3834,3 +3834,29 @@ test("[RVQ-52] 자주 쓰는 답을 밤낮 Q&A에 올릴 때: 같은 창 안에 
   assert.equal(env.DB.db.prepare("SELECT public_a FROM reply_templates WHERE label = '위젯'").get().public_a, "최신 버전에서 고쳤어요. 위젯을 다시 놓아 주세요");
   assert.deepEqual([...u.errors, ...u.broken], []);
 });
+
+// 2.0.0 [RVQ-55] 검토 SVC-38: 스토어 리뷰 답도 문의 답과 같은 검사. 초안에 걸린 까닭을 알약으로, 보내기에서 걸리면 까닭을 보이고 한 번 더 물어요.
+test("[RVQ-55] 스토어 리뷰: 초안의 AI 표현은 알약으로 알리고, Play로 보내기에서 걸리면 '그래도 보내기'를 한 번 더 물어요", async (t) => {
+  offline(t);
+  const { env, DB } = await world({ PLAY_SERVICE_ACCOUNT: JSON.stringify({ client_email: "bamnat@example.iam.gserviceaccount.com", private_key: "test" }) });
+  await DB.prepare(`INSERT INTO store_reviews (id, stars, text, app, lang, at, reply, reply_at, replied_by, draft, draft_by, status, fetched_at)
+    VALUES ('gp:ui-rvq55-0001', 2, '알람이 늦게 울려요', '2.0.0', 'ko', ?1, '', NULL, '', '저는 AI 상담원이라 자세한 건 몰라요. 밤낮 운영팀', 'Claude', 'seen', ?1)`).bind(Date.now() - 3600e3).run();
+  const u = await asOwner(env, t);
+  await u.go("#/reviews");
+  await u.settle(30);
+  const form = u.$('#main form[data-form="review-draft"]');
+  assert.match(form.textContent, /답에 AI·자동 답 표현/);
+  assert.match(form.textContent, /보내기 전에 고쳐 주세요/);
+  form.requestSubmit(form.querySelector('[name="send"]'));
+  await u.settle(10);
+  u.$('dialog[open] form[data-form="confirm"]').requestSubmit();
+  await u.settle(30);
+  assert.match(u.text("dialog[open]"), /이 답은 사람이 한 번 더 봐야 해요/);
+  assert.match(u.text("dialog[open]"), /걸린 것\s*답에 AI·자동 답 표현/);
+  assert.match(u.text("dialog[open]"), /그래도 보내기/);
+  assert.equal((await DB.prepare("SELECT status FROM store_reviews WHERE id = 'gp:ui-rvq55-0001'").first()).status, "seen", "확인 전에는 보내지 않아요");
+  u.$('dialog[open] [data-act="close"]').click();
+  await u.settle(10);
+  assert.ok(!u.$("dialog[open]"));
+  assert.deepEqual(u.errors, []);
+});

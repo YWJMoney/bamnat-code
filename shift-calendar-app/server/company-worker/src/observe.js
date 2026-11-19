@@ -708,7 +708,29 @@ async function obsStored(env) {
     return [];
   }
 }
-const obsSave = (env, list) => run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)", JSON.stringify({ list }));
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-37: 'obs_signals'는 한 줄 JSON이라 매시 작업이 오래 읽는 사이 관리자가 누른 것('개발로'·'아님')을 덮어써
+ * 사라졌어요. 읽은 글자 그대로일 때만 쓰고, 그 사이 바뀌었으면 새로 읽어 [change]를 다시 해요(세 번까지). [change]는 읽은 목록을
+ * 고치거나 새 목록을 돌려줘요. 쓴 목록.
+ */
+export async function obsUpdate(env, change) {
+  for (let i = 0; i < 3; i++) {
+    const row = await one(env, "SELECT value FROM settings WHERE key = 'obs_signals'").catch(() => null);
+    let list = [];
+    try {
+      list = row ? JSON.parse(row.value).list ?? [] : [];
+    } catch {
+      list = [];
+    }
+    const out = (await change(list)) ?? list;
+    const next = JSON.stringify({ list: out });
+    const r = row
+      ? await run(env, "UPDATE settings SET value = ? WHERE key = 'obs_signals' AND value = ?", next, row.value)
+      : await run(env, "INSERT OR IGNORE INTO settings (key, value) VALUES ('obs_signals', ?)", next);
+    if (r?.meta?.changes) return out;
+  }
+  throw new Error("obs_busy");
+}
 
 /** 배지: 아직 아무도 보지 않은 신호 수(index.js BADGE_SQL, 숫자 권한). */
 export const OBS_BADGE_SQL = {
@@ -1143,10 +1165,14 @@ export async function obsStuck(env, list, now) {
 export async function observeTick(env, now = Date.now()) {
   const b = await observe(env, now);
   const before = new Set(b.signals.map((s) => s.key));
-  const list = obsMerge(b.signals, b.found, now, { reach: await obsReach(env, b.signals) });
-  // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
-  await obsStuck(env, list, now);
-  await obsSave(env, list);
+  const reach = await obsReach(env, b.signals);
+  // [RVQ-55] SVC-37: 오래 읽는 사이 관리자가 누른 것이 있으면 그 목록에 다시 합쳐요.
+  const list = await obsUpdate(env, async (stored) => {
+    const merged = obsMerge(stored, b.found, now, { reach });
+    // 2.0.0 [RVA-54] 닿고 2주가 지나도 그대로인 신호는 다시 대기열에.
+    await obsStuck(env, merged, now);
+    return merged;
+  });
   return list.filter((s) => !before.has(s.key)).length;
 }
 
@@ -1183,6 +1209,10 @@ export async function observeRoute(request, env, path, method, now) {
   // 보기만 하는 관리자는 상태를 못 바꿔요: 숫자 고치기나 개발사항 고치기 권한.
   if (!can(actor, "metrics", "edit") && !can(actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
   const note = body.note === undefined ? "" : plainText(body.note, 300, "note");
+  // [RVQ-55] 검토 SVC-37: 바꿀 것을 먼저 정하고, 저장할 때 새로 읽은 목록의 그 신호에 다시 붙여요(매시 작업과 겹쳐도 누른 것이 남게).
+  let patch;
+  let dropWrong = false;
+  let dev = null;
   if (act === "dev") {
     if (!can(actor, "dev", "edit")) return json({ error: "no_permission", area: "dev" }, 403);
     // 2.0.0 [RVQ-15] 검토 SRV-20: 꾸밀 수 있는 숫자의 급변·Play와 다른 신호는 사람만 개발사항으로 넘겨요(운영 열쇠는 '지켜보기'까지).
@@ -1190,27 +1220,45 @@ export async function observeRoute(request, env, path, method, now) {
     if (s.devId) return json({ error: "already", dev: s.devId }, 409);
     const title = plainText(body.title ?? s.dev ?? s.title, DEV.title, "title", true);
     const text = plainText(`관측 신호 ${s.key}\n${s.title}\n${s.why}\n지금 ${s.now ?? s.value}${s.unit} · 기준 ${s.base}${s.unit}${note ? `\n${note}` : ""}`, DEV.body, "body");
-    const id = `d${randomId(15)}`;
-    await batch(env, [
-      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
-        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, id, title, text, actor.id, actorName(env), now, now),
-      devEvent(env, id, now, "create", { title, from: "관측 신호" }),
-    ]);
-    Object.assign(s, { state: "dev", devId: id, stuck: null, by: actorName(env), at: now });
+    dev = { id: `d${randomId(15)}`, title, text };
+    patch = { state: "dev", devId: dev.id, stuck: null, by: actorName(env), at: now };
   } else if (act === "reopen") {
     // 2.0.0 [RVQ-35] 다시 열면 판정을 지우고 사흘을 새로 세요(바로 다시 닫히지 않게).
-    Object.assign(s, { state: s.devId ? "dev" : "new", cleared: null, after: null, outcome: null, stuck: null, last: now, by: actorName(env), at: now });
-  } else Object.assign(s, { state: act, stuck: null, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) });
+    patch = { state: s.devId ? "dev" : "new", cleared: null, after: null, outcome: null, stuck: null, last: now, by: actorName(env), at: now };
+  } else patch = { state: act, stuck: null, by: actorName(env), at: now, ...(note ? { note } : {}), ...(act === "dismiss" && body.wrong === true ? { wrong: true } : {}) };
   // 2.0.0 [RVN-15] 검토 U22c-03: '거짓이었어요'(아님 + wrong)는 그 규칙의 표본 기준을 올려요(세 번까지, 1.5배씩). 다시 열면 하나 내려요.
   let tuned = null;
   if ((act === "dismiss" && body.wrong === true) || (act === "reopen" && s.wrong)) {
     const tune = await obsTune(env);
     tune[s.kind] = Math.min(3, Math.max(0, (Number(tune[s.kind]) || 0) + (act === "dismiss" ? 1 : -1)));
-    if (act === "reopen") delete s.wrong;
+    if (act === "reopen") dropWrong = true;
     tuned = tune[s.kind];
     await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_tune', ?)", JSON.stringify(tune));
   }
-  await obsSave(env, list);
-  await audit(env, now, "obs_signal", s.title.slice(0, 80), `${OBS_ACTS[act]}${s.devId && act === "dev" ? ` ${s.devId}` : ""}${tuned !== null ? ` · 기준 ×${1 + 0.5 * tuned}` : ""}${note ? ` · ${note}` : ""}`);
-  return json({ signal: s, ...(tuned !== null ? { tune: { kind: s.kind, step: tuned } } : {}) });
+  let taken = null;
+  const saved = await obsUpdate(env, (fresh) => {
+    taken = null;
+    const t = fresh.find((x) => x.key === body.key);
+    if (!t) return fresh;
+    // 그 사이 다른 분이 개발사항으로 넘겼으면 하나 더 만들지 않아요.
+    if (dev && t.devId) {
+      taken = t.devId;
+      return fresh;
+    }
+    if (act === "reopen") patch.state = t.devId ? "dev" : "new";
+    Object.assign(t, patch);
+    if (dropWrong) delete t.wrong;
+    return fresh;
+  });
+  if (taken) return json({ error: "already", dev: taken }, 409);
+  if (dev) {
+    await batch(env, [
+      stmt(env, `INSERT INTO dev_items (id, title, body, status, reason, created_by, created_by_name, assignee, assignee_name, created_at, updated_at, deleted_at)
+        VALUES (?, ?, ?, 'todo', '', ?, ?, NULL, NULL, ?, ?, NULL)`, dev.id, dev.title, dev.text, actor.id, actorName(env), now, now),
+      devEvent(env, dev.id, now, "create", { title: dev.title, from: "관측 신호" }),
+    ]);
+  }
+  const out = saved.find((x) => x.key === body.key) ?? { ...s, ...patch };
+  await audit(env, now, "obs_signal", out.title.slice(0, 80), `${OBS_ACTS[act]}${out.devId && act === "dev" ? ` ${out.devId}` : ""}${tuned !== null ? ` · 기준 ×${1 + 0.5 * tuned}` : ""}${note ? ` · ${note}` : ""}`);
+  return json({ signal: out, ...(tuned !== null ? { tune: { kind: out.kind, step: tuned } } : {}) });
 }

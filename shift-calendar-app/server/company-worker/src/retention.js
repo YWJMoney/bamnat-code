@@ -162,6 +162,15 @@ export const RETENTION = [
     prune: "index.js",
   },
   {
+    table: "muted_kept",
+    what: "**2.0.0** 마을 쉬기·신고 누적 쓰기 막기가 덮어쓴 운영자 글쓰기 막기(설치 해시·이유·끝나는 날)",
+    why: "쉬기를 풀 때 그 글쓰기 막기를 되살리기",
+    keep: "끝나는 날",
+    link: "예",
+    device: { device: "sanction" },
+    prune: "index.js",
+  },
+  {
     table: "plaza_results",
     what: "1.23.0 [COMM-11]: 신고한 글·쓴 글이 어떻게 됐는지(가려짐·그대로 둠·지움), 글쓰기 막기 끝남. 설치 번호 해시·글 id·결과·회사 id·시각",
     why: "광장 소식으로 신고한 사람과 쓴 사람에게 알림",

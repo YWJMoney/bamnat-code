@@ -2208,12 +2208,7 @@ async function recipeVote(d, env, request, code) {
     cluster = same?.cluster
       ?? `${hour}·${((await d.one(env, "SELECT COUNT(DISTINCT cluster) AS n FROM recipe_votes WHERE code = ? AND cluster LIKE ?", code, `${hour}·%`))?.n ?? 0) + 1}`;
   }
-  const before = await d.one(env, "SELECT value, weight, held FROM recipe_votes WHERE code = ? AND device = ?", code, dev);
   const stmts = [];
-  if (before && !before.held) {
-    stmts.push(d.stmt(env, before.value === 1 ? "UPDATE recipes SET likes = likes - 1, wlikes = wlikes - ? WHERE code = ?"
-      : "UPDATE recipes SET dislikes = dislikes - 1, wdislikes = wdislikes - ? WHERE code = ?", before.weight, code));
-  }
   if (body.value === null) {
     stmts.push(d.stmt(env, "DELETE FROM recipe_votes WHERE code = ? AND device = ?", code, dev));
   } else {
@@ -2221,11 +2216,15 @@ async function recipeVote(d, env, request, code) {
       ON CONFLICT (code, device) DO UPDATE SET value = excluded.value, weight = excluded.weight, reason = excluded.reason, opinion = excluded.opinion,
         held = excluded.held, net = excluded.net, cluster = excluded.cluster, at = excluded.at`, code, dev, body.value, trust.weight, reason?.reason ?? null, reason?.opinion ?? null,
     held, net.now, cluster, now));
-    if (!held) {
-      stmts.push(d.stmt(env, body.value === 1 ? "UPDATE recipes SET likes = likes + 1, wlikes = wlikes + ? WHERE code = ?"
-        : "UPDATE recipes SET dislikes = dislikes + 1, wdislikes = wdislikes + ? WHERE code = ?", trust.weight, code));
-    }
   }
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 같은 휴대폰이 거의 동시에 두 번 누르면 둘 다 '전에 없음'을 읽고 +1을 두 번 했어요(줄은 하나인데 좋아요 +2).
+  // 더하고 빼지 않고, 같은 batch 안에서 이 작품의 (기다리지 않는) 표를 다시 세요(좋아요 수는 늘 표에서 나와요).
+  stmts.push(d.stmt(env, `UPDATE recipes SET
+      likes = (SELECT COUNT(*) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = 1),
+      wlikes = (SELECT COALESCE(SUM(weight), 0) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = 1),
+      dislikes = (SELECT COUNT(*) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = -1),
+      wdislikes = (SELECT COALESCE(SUM(weight), 0) FROM recipe_votes WHERE code = ?1 AND held = 0 AND value = -1)
+    WHERE code = ?1`, code));
   await d.batch(env, stmts);
   const after = await d.one(env, "SELECT likes, dislikes FROM recipes WHERE code = ?", code);
   return d.json({ likes: after.likes, dislikes: after.dislikes, myVote: body.value, ...(held ? { held: true } : {}) });
