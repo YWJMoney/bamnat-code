@@ -49,6 +49,33 @@ class StaffContractTest {
         assertTrue(full.getValue("연차 유급휴가").startsWith("근로기준법 제60조에 따라"))
     }
 
+    /**
+     * 2.0.0 [RVJ-89] 검토 BOSS-75 ②: the clauses that change with the person. A 주 8시간 week has no 주휴수당 line and says why its 주휴일
+     * and 연차 are not paid (제18조 제3항); a 만 16세 gets the 제66~70조 line, warned only when the week breaks it; a 주 7일 week is asked
+     * for its 주휴일 first and the contract leaves the day blank.
+     */
+    @Test fun theClausesFollowThePerson() {
+        val four = StaffShift(LocalTime.of(10, 0), LocalTime.of(14, 0))
+        val eight = s.copy(weekly = mapOf(DayOfWeek.SATURDAY to four, DayOfWeek.SUNDAY to four))
+        val e = StaffContract.of(place.copy(fivePlus = true), eight).items.associate { it.title to it.body }
+        assertFalse("주 15시간 미만은 주휴수당 줄 없음", e.getValue("임금").contains("주휴수당"))
+        assertTrue(e.getValue("휴일"), e.getValue("휴일").startsWith("매주 월요일 (한 주 15시간 미만이라 주휴일은 유급이 아니에요"))
+        assertTrue(e.getValue("연차 유급휴가").startsWith("한 주 15시간 미만이라"))
+
+        // 만 16세 (2010-05-01생, 2026-11-02 시작): 서류·대리 금지·시간 줄이 붙고, 하루 4시간 주 2일은 경고가 없어요.
+        val sixteen = eight.copy(birth = LocalDate.of(2010, 5, 1))
+        val y = StaffContract.of(place, sixteen)
+        assertEquals(StaffContract.YOUNG, y.items.single { it.title == "18세 미만 근로자" }.body)
+        assertTrue(y.warn.toString(), y.warn.isEmpty())
+        assertTrue("하루 7.5시간이면 제69조 경고", StaffContract.of(place, sixteen.copy(weekly = s.weekly)).warn.any { it.contains("하루 7시간") })
+        assertTrue("시작하는 날 18세가 되면 그 줄이 없어요", StaffContract.of(place, s.copy(birth = LocalDate.of(2008, 11, 2))).items.none { it.title == "18세 미만 근로자" })
+
+        // 주 7일: 주휴일을 먼저 묻고, 계약서에는 빈칸.
+        val c7 = StaffContract.of(place, s.copy(weekly = DayOfWeek.entries.associateWith { four }))
+        assertTrue(c7.missing.toString(), c7.missing.contains("주휴일(한 주에 쉬는 날, 평소 근무에서 하루를 빼 주세요)"))
+        assertTrue(c7.items.single { it.title == "휴일" }.body.startsWith("매주 _요일"))
+    }
+
     @Test fun saysWhatIsMissing() {
         val c = StaffContract.of(place.copy(payday = null), s.copy(job = "", hiredOn = null, weekly = emptyMap()))
         assertEquals(listOf("입사일(근로 시작일)", "하는 일(업무)", "평소 근무 요일·시간", "급여 지급일(사업장 설정)"), c.missing)

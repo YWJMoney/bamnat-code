@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -42,6 +48,7 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.JobStatement
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.work.SalesSplit
+import com.bamnat.core.work.SimpleVatTrade
 import com.bamnat.core.work.SalesTarget
 import com.bamnat.core.work.ShopMoney
 import com.bamnat.core.work.VatEstimate
@@ -235,7 +242,8 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
         TargetCard(rules, book, month, today, isOpen) { t -> c.calendars.updateShopMoney(calendarId) { it.copy(monthlyTarget = t) } }
     }
     FeatureCard("shop.vat", calendarId) {
-        VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1)) { simple ->
+        VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1),
+            onTrade = { t -> c.calendars.updateShopMoney(calendarId) { it.withTrade(t) } }) { simple ->
             c.calendars.updateShopMoney(calendarId) { it.copy(simpleTax = simple) }
         }
     }
@@ -279,13 +287,24 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
 }
 
 /** [SHOP-04] 부가세 예상: the half year's sales and costs and a rough VAT, 일반 or 간이. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple: (Boolean) -> Unit) {
+private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onTrade: (SimpleVatTrade) -> Unit, onSimple: (Boolean) -> Unit) {
     val half = remember(book, date, rules) { VatEstimate.of(date, book.sales, book.entries, rules) }
+    var picking by rememberSaveable { mutableStateOf(false) }
     SectionCard(title = "부가세 예상 (${half.year}년 ${when (half.half) { 1 -> "1~6월"; 2 -> "7~12월"; else -> "1~12월" }})") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !rules.simpleTax, onClick = { onSimple(false) }, label = { Text("일반과세") })
             FilterChip(selected = rules.simpleTax, onClick = { onSimple(true) }, label = { Text("간이과세") })
+        }
+        // 2.0.0 [RVJ-84] 검토 BOSS-63·T05c-07: 간이과세 counts by the trade's 부가가치율 (15~40%), so the trade is chosen here; until it
+        // is, the line says the rate it counted with instead of passing 15% off as the shop's.
+        // At 글자 200% the words and the button do not share a line: the button goes under them, not the words one per line.
+        if (rules.simpleTax) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, itemVerticalAlignment = Alignment.CenterVertically) {
+            Text(rules.tradeChosen?.let { "업종 ${it.label} · 부가가치율 ${it.percent}%" } ?: "부가가치율 ${rules.valueAddedPercent}%로 셌어요",
+                style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { picking = true }) { Text(if (rules.tradeChosen == null) "업종 고르기" else "바꾸기") }
         }
         YearLine("매출", Fmt.won(half.sales))
         YearLine("경비", Fmt.won(half.expenses))
@@ -300,6 +319,40 @@ private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple
             modifier = Modifier.padding(top = 8.dp),
         )
     }
+    if (picking) VatTradeDialog(rules.tradeShown, onPick = { onTrade(it); picking = false }, onDismiss = { picking = false })
+}
+
+/**
+ * 2.0.0 [RVJ-84] The 간이과세 trades of 부가가치세법 시행령 제111조 제2항 with their rates: one press picks one and closes, as the rate
+ * is all the card needs. A shop of several trades is counted by its main one (the law counts each trade's own sales).
+ */
+@Composable
+internal fun VatTradeDialog(current: SimpleVatTrade?, onPick: (SimpleVatTrade) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("간이과세 업종") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SimpleVatTrade.entries.forEach { t ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(selected = t == current, role = Role.RadioButton) { onPick(t) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RadioButton(selected = t == current, onClick = null)
+                        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            Text("${t.label} · ${t.percent}%", style = MaterialTheme.typography.titleSmall)
+                            Text(t.rows, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Text("여러 업종을 함께 하면 업종마다 따로 세요. 여기서는 매출이 가장 많은 업종 하나로 어림해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /**

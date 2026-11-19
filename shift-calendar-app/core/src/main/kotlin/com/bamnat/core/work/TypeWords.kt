@@ -42,6 +42,8 @@ object TypeWords {
             "주휴수당", "주휴·연장·야간", "근무표 짜기",
             // [RVJ-44] The 직원 급여's 야간 가산 (근로기준법 제56조 제3항) is the 사장님's to pay, as 직원 연차 is; the 광장's name stays.
             "회사 규칙 광장", "야간·휴일 가산", "야간 가산",
+            // 2.0.0 [RVJ-88] 검토 BOSS-68: the 직원's 출퇴근 the 사장님 keeps (급여 대장 › 출퇴근 기록), as 직원 출근 is.
+            "출퇴근 기록", "출퇴근 링크",
         )
         WorkStyle.INVEST -> listOf("회사 규칙 광장", "회사 정보")
         else -> emptyList()

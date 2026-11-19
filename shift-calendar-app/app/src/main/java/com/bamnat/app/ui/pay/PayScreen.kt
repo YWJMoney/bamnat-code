@@ -600,7 +600,8 @@ private fun PayResult(
         // 2.0.0 [RVJ-67] (PC-156): the company's way by its name, not '직접 설정'.
         val way by vm.sharedWay.collectAsStateWithLifecycle()
         val who: @Composable (Modifier) -> Unit = { m ->
-            if (headPart.hide != true) com.bamnat.app.ui.parts.PartText(profile.whoLabel(way), headPart, MaterialTheme.typography.titleMedium,
+            // 2.0.0 [RVJ-91] (HQ-134) '가나다화학 방식' never breaks in two; '월급제' goes under it when the line is short.
+            if (headPart.hide != true) PayWhoLine(profile.whoName(way), profile.wageLabel(), headPart, MaterialTheme.typography.titleMedium,
                 modifier = m.then(com.bamnat.app.ui.parts.partSpotModifier("pay.head")))
             else Spacer(m)
         }

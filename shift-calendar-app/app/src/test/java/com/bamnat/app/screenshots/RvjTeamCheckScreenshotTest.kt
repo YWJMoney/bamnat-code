@@ -190,10 +190,16 @@ class RvjTeamCheckScreenshotTest : ScreenshotBase() {
         tapText("빈칸 자동 채우기", exact = true, scrolls = 0)
         settle()
         assertTrue(appears("이 안으로 채우기", exact = true))
+        // [RVJ-90] (HQ-133) What all 안 share is said once on top, not again in every 안.
+        val words = shownWords()
+        assertTrue(words.joinToString(" | "), words.any { it.startsWith("어느 안으로 채워도") || it.startsWith("모든 안이 같아요") })
+        val repeated = words.filter { it.startsWith("주 52시간 넘김") || it.startsWith("기준 넘김") }.groupingBy { it }.eachCount().filterValues { it > 1 }
+        assertTrue("같은 넘김 줄을 안마다 되풀이하지 않아요: $repeated", repeated.isEmpty())
     }
 
     @Test fun plansLight() = shoot("rvj_212_team_autofill_plans_folded", FOLDED, plans())
     @Test fun plansDarkBig() = shoot("rvj_213_team_autofill_plans_folded_dark_200", DARK, 2f, plans())
+    @Test fun plansWide() = shoot("rvj_321_team_autofill_plans_unfolded", UNFOLDED, plans())
 
     // ---- 안 짠 달 (PC-176) ----
     /** Only next month painted and confirmed: this month is '아직 안 짬', without 오늘 출근 0명 · 빈자리, 빈칸 or 모자란 날. */

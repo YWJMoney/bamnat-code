@@ -1,6 +1,6 @@
 package com.bamnat.app.ui.work
 
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,7 +76,16 @@ object ShopKeeper {
     const val OPEN_NAME = "영업"
     const val SHORT_NAME = "단축영업"
 
-    fun openType(types: List<ShiftType>): ShiftType? = types.firstOrNull { !it.isOff && it.name == OPEN_NAME }
+    /**
+     * 2.0.0 [RVJ-86] 검토 BOSS-65: the 영업 kind the shop days made, by its id ([ShopRules.openTypeId]) so a renamed one is still it; by name
+     * for shop days saved before 2.0.0.
+     */
+    fun openType(types: List<ShiftType>, rules: ShopRules? = null): ShiftType? =
+        rules?.openTypeId?.let { id -> types.firstOrNull { it.id == id && !it.isOff } } ?: types.firstOrNull { !it.isOff && it.name == OPEN_NAME }
+
+    /** [RVJ-86] The 단축영업 kind, the same way. */
+    fun shortType(types: List<ShiftType>, rules: ShopRules? = null): ShiftType? =
+        rules?.shortTypeId?.let { id -> types.firstOrNull { it.id == id && !it.isOff } } ?: types.firstOrNull { !it.isOff && it.name == SHORT_NAME }
 
     /** Whether the break of [rules] falls inside a day from [start] to [end] (a short day may end before it). */
     internal fun fits(rules: ShopRules, start: LocalTime?, end: LocalTime?): Boolean {
@@ -95,7 +104,7 @@ object ShopKeeper {
         val schedule = c.calendars.repository(id)
         val types = schedule.shiftTypes.first()
         val before = c.calendars.get(id)?.shop
-        val open = openType(types)
+        val open = openType(types, before)
         // [RVH-36] 검토 TYPE-23 브레이크 타임 goes onto the day kinds (hours and pay leave it out); a break set by hand on 영업
         // stays until the shop days set or take one away.
         val keepBreak = rules.breakEnd == null && before?.breakEnd == null
@@ -112,11 +121,14 @@ object ShopKeeper {
         )
         // [RVH-36] 검토 WORK-23 단축영업 with the hours the shop days set, counting past midnight; a kind made by hand keeps its hours
         // until the shop days name some.
-        val short = types.firstOrNull { !it.isOff && it.name == SHORT_NAME }
+        val short = shortType(types, before)
         val (shortStart, shortEnd) = rules.shortHours
+        // [RVJ-86] 검토 BOSS-65: a 단축영업 never set by hand (its hours still the ones the old shop hours made) follows the new hours too.
+        val untouched = short != null && rules.shortOpen == null && (before == null || (short.start to short.end) == before.shortHours)
         val shortId = when {
             short == null -> schedule.saveShiftType(ShiftType(0, SHORT_NAME, "단", 0xFFE0A100, shortStart, shortEnd, sortOrder = -1, icon = "store").withBreak())
-            rules.shortOpen != null || rules.shortWeekdays.isNotEmpty() -> schedule.saveShiftType(short.changedTo(short.copy(start = shortStart, end = shortEnd).withBreak()))
+            rules.shortOpen != null || rules.shortWeekdays.isNotEmpty() || untouched ->
+                schedule.saveShiftType(short.changedTo(short.copy(start = shortStart, end = shortEnd).withBreak()))
             else -> short.id
         }
         val weekly = WorkPattern.Weekly(today, DayOfWeek.entries.associateWith { d ->
@@ -143,6 +155,7 @@ object ShopKeeper {
         c.calendars.setShop(id, rules.copy(
             checkedUntil = before?.checkedUntil ?: today.minusDays(1),
             autoClosedDays = before?.autoClosedDays.orEmpty(),
+            openTypeId = openId, shortTypeId = shortId,
         ))
     }
 
@@ -203,11 +216,14 @@ class ShopDaysViewModel(private val c: AppContainer, val calendarId: String) : V
         // [RVH-36] Shop days saved before 2.0.0 hold no short hours or break: show the ones the day kinds already have.
         viewModelScope.launch {
             val types = c.calendars.repository(calendarId).shiftTypes.first()
-            val short = types.firstOrNull { !it.isOff && it.name == ShopKeeper.SHORT_NAME }
-            val open = ShopKeeper.openType(types)
+            val saved = c.calendars.get(calendarId)?.shop
+            val short = ShopKeeper.shortType(types, saved)
+            val open = ShopKeeper.openType(types, saved)
             fun ShopRules.known(): ShopRules {
                 var r = this
-                if (r.shortOpen == null && short?.start != null && short.end != null) r = r.copy(shortOpen = short.start, shortClose = short.end)
+                // [RVJ-86] 검토 BOSS-65: only hours set by hand are written down; ones the shop hours made keep following them.
+                if (r.shortOpen == null && short?.start != null && short.end != null && (short.start to short.end) != r.shortHours)
+                    r = r.copy(shortOpen = short.start, shortClose = short.end)
                 if (r.breakStart == null && open?.breakStart != null && open.breakMinutes > 0) r = r.copy(breakStart = open.breakStart, breakMinutes = open.breakMinutes)
                 return r
             }
@@ -453,7 +469,8 @@ private fun MonthlyPicker(rules: ShopRules, onChange: (List<NthWeekday>) -> Unit
 @Composable
 private fun SwitchLine(title: String, detail: String, on: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Switch) { onChange(!on) },
+        // 2.0.0 [RVJ-87] 검토 BOSS-66: one focus that says 켜짐·꺼짐 (the switch alone was a second one).
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).toggleable(value = on, role = Role.Switch, onValueChange = onChange),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -461,6 +478,6 @@ private fun SwitchLine(title: String, detail: String, on: Boolean, onChange: (Bo
             Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = on, onCheckedChange = onChange)
+        Switch(checked = on, onCheckedChange = null)
     }
 }

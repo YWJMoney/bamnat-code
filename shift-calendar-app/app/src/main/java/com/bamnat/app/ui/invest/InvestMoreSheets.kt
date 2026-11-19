@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.invest
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -197,7 +199,8 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
 @Composable
 internal fun SwitchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Switch) { onChange(!checked) }.padding(vertical = 4.dp),
+        // 2.0.0 [RVJ-87] 검토 BOSS-66 같은 모양: one focus that says 켜짐·꺼짐.
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

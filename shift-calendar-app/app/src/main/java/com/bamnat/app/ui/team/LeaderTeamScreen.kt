@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -1006,20 +1007,43 @@ private fun TeamBoardScreen(team: Team, calendarId: String, onBack: () -> Unit, 
                     style = MaterialTheme.typography.bodySmall, color = com.bamnat.app.ui.theme.Tone.Caution.color()) // [RVP-13] 주의
                 else if (asks > 48) Text("한 사람이 평균 주 ${"%.0f".format(asks)}시간이라 빠듯해요. 52시간과 휴식을 지키느라 부족한 날이 생길 수 있어요.",
                     style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
+                // 2.0.0 [RVJ-68] (HQ-107) The 확인할 것 card's words and marks: 주 52시간 위험, the team's 기준 주의, none ✓.
+                fun sideTone(s: com.bamnat.core.team.PlanSides.Say) = when { s.law -> TeamCheck.Kind.WEEK_HOURS.tone(); s.rule -> Tone.Caution; else -> Tone.Good }
+                // 2.0.0 [RVJ-90] (총괄 HQ-133, 조건 6·4) What every 안 shares is said once above them (one mark for the window, not one
+                // red line per 안), and each 안 below says only where it differs, its best values in bold.
+                com.bamnat.core.team.PlanSides.shared(list)?.let { s -> ToneLine(boldNumbers(s.words), tone = sideTone(s)) }
+                val facets = com.bamnat.core.team.PlanSides.facets(list)
+                val differ = facets.filterNot { com.bamnat.core.team.PlanSides.same(list, it) }
+                facets.filter { com.bamnat.core.team.PlanSides.same(list, it) }.takeIf { it.isNotEmpty() }?.let { same ->
+                    Text(boldNumbers("모든 안이 같아요 · " + same.joinToString(" · ") { it.words(list[0]) }),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 list.forEachIndexed { i, p ->
                     // 2.0.0 [RVJ-70] (PC-178) The whole 안 is the button, and it says so: '이 안으로 채우기' under its numbers, so '닫기' is
                     // not the only button one sees. The words are the 안's own (onSurface); only the action is in the button colour.
                     // Four lines in a pill read as an oval with the words at its curve: the 안 takes the card corners (조건 5·12).
                     OutlinedButton(onClick = { change { p.board }; plans = null }, modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium) {
                         Column(Modifier.fillMaxWidth()) {
-                            Text("${i + 1}안 · ${p.filled}칸 · " + (if (p.shortPeople > 0) "부족 ${p.shortPeople}명·${p.short.size}일" else "부족 없음"),
+                            // One 안 alone: its numbers bold, as before. More: the best of each value that differs, the whole value bold in the
+                            // 안's own ink; the rest plain (labelSmall's Medium digits read as bold, so the line below is bodySmall).
+                            val bestInk = MaterialTheme.colorScheme.onSurface
+                            fun androidx.compose.ui.text.AnnotatedString.Builder.say(fs: List<com.bamnat.core.team.PlanSides.Facet>) = fs.forEach { f ->
+                                append(" · ")
+                                val w = f.words(p)
+                                when {
+                                    list.size < 2 -> append(boldNumbers(w))
+                                    com.bamnat.core.team.PlanSides.best(list, f, p) -> withStyle(androidx.compose.ui.text.SpanStyle(
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = bestInk)) { append(w) }
+                                    else -> append(w)
+                                }
+                            }
+                            val head = differ.filter { it == com.bamnat.core.team.PlanSides.Facet.FILL || it == com.bamnat.core.team.PlanSides.Facet.SHORT }
+                            Text(androidx.compose.ui.text.buildAnnotatedString { append("${i + 1}안"); say(head) },
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                            // 2.0.0 [RVJ-68] (HQ-107) The 확인할 것 card's words and marks: 주 52시간 위험, the team's 기준 주의, none ✓.
-                            ToneLine(boldNumbers(if (p.danger > 0) listOfNotNull(p.overWeeks.takeIf { it > 0 }?.let { "주 52시간 넘김 ${it}건" },
-                                p.ruleSigns.takeIf { it > 0 }?.let { "기준 넘김 ${it}건" }).joinToString(" · ") else "넘는 것 없음"),
-                                tone = when { p.overWeeks > 0 -> TeamCheck.Kind.WEEK_HOURS.tone(); p.ruleSigns > 0 -> Tone.Caution; else -> Tone.Good })
-                            Text(boldNumbers("최대 연속 ${p.maxRun}일 · 시간 차이 ${p.hourSpread}시간 · 희망 ${p.wishesKept}/${p.wishesKept + p.wishesMissed} · 야간 차이 ${p.spread}번"),
-                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            com.bamnat.core.team.PlanSides.own(list, p)?.let { s -> ToneLine(boldNumbers(s.words), tone = sideTone(s)) }
+                            val rest = differ - head.toSet()
+                            if (rest.isNotEmpty()) Text(androidx.compose.ui.text.buildAnnotatedString { say(rest) }.let { it.subSequence(3, it.length) },
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("이 안으로 채우기", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.align(Alignment.End).padding(top = 4.dp))
                         }

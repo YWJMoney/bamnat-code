@@ -110,6 +110,12 @@ data class ShopRules(
     /** [RVH-36] 검토 I02b-03 격주 휴무: these weekdays close every other week, the week of [everyOtherFrom] closed. */
     val everyOther: Set<DayOfWeek> = emptySet(),
     val everyOtherFrom: LocalDate? = null,
+    /**
+     * 2.0.0 [RVJ-86] 검토 BOSS-65: the day kinds the shop days made for 영업 and 단축영업, so a kind renamed on the 근무 종류 page is still
+     * the one they change (by name, '영업' renamed made a second '영업'). Null for shop days saved before 2.0.0: found by name once.
+     */
+    val openTypeId: Long? = null,
+    val shortTypeId: Long? = null,
 ) {
     /**
      * [RVH-36] 검토 WORK-23 The short day's hours: as set, or from opening to halfway to closing, at least an hour. A shop

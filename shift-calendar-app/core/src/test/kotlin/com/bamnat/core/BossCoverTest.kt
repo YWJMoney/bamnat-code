@@ -54,4 +54,33 @@ class BossCoverTest {
         assertEquals("평소 근무 요일이면 그날 시간 바꿈으로", WorkKind.NORMAL, BossCover.cover(listOf(absent, offThatDay), emptyList(), "a", sat, "e")?.kind)
         assertTrue("결근·연차인 사람은 묻지 않아요", BossCover.candidates(place, listOf(absent, small), listOf(StaffWork("b", sat, WorkKind.LEAVE)), "a", sat).isEmpty())
     }
+
+    /**
+     * 2.0.0 [RVJ-85] 검토 BOSS-64: a day whose hours were changed (15~23) or a 대근 on a day off, then turned to 결근, asks the 대타
+     * for that day's hours: not the usual week's 10~18, and not '평소 근무 시간이 없어요'. 지각 hours are when they came, so the
+     * usual week holds that day; a row that is the usual week keeps no hours.
+     */
+    @Test fun aDayWithItsOwnHoursKeepsThemWhenItTurnsToAbsent() {
+        val late = StaffShift(LocalTime.of(15, 0), LocalTime.of(23, 0))
+        val changed = StaffWork("a", sat, WorkKind.NORMAL, late.start, late.end)
+        val absentRow = BossCover.keep(absent, sat, WorkKind.ABSENT, changed)
+        assertEquals(WorkKind.ABSENT, absentRow.kind)
+        assertEquals(late, BossCover.gapShift(listOf(absent, small), listOf(absentRow), "a", sat))
+        assertEquals(late.start, BossCover.cover(listOf(absent, small), listOf(absentRow), "a", sat, "b")?.start)
+        assertEquals("the ledger still reads a 결근", BossCover.candidates(place, listOf(absent, small), listOf(absentRow), "a", sat).single().staff.id, "b")
+
+        // A 대근 on a Sunday (no usual hours) turned to 결근: still that day's hours.
+        val sun = sat.plusDays(1)
+        val cover = StaffWork("a", sun, WorkKind.COVER, shift.start, shift.end)
+        assertEquals(shift, BossCover.gapShift(listOf(absent), listOf(BossCover.keep(absent, sun, WorkKind.ABSENT, cover)), "a", sun))
+        assertEquals("before: no row hours, no usual week", null, BossCover.gapShift(listOf(absent), listOf(StaffWork("a", sun, WorkKind.ABSENT)), "a", sun))
+
+        // 지각 (came at 11) turned to 결근: the usual 10~18, and nothing kept.
+        val came = StaffWork("a", sat, WorkKind.LATE, LocalTime.of(11, 0), shift.end)
+        val fromLate = BossCover.keep(absent, sat, WorkKind.ABSENT, came)
+        assertEquals(null, fromLate.start)
+        assertEquals(shift, BossCover.gapShift(listOf(absent), listOf(fromLate), "a", sat))
+        assertEquals("the usual week keeps nothing", null, BossCover.keep(absent, sat, WorkKind.LEAVE, StaffWork("a", sat, WorkKind.NORMAL, shift.start, shift.end)).start)
+        assertEquals(null, BossCover.keep(absent, sat, WorkKind.OFF, null).start)
+    }
 }

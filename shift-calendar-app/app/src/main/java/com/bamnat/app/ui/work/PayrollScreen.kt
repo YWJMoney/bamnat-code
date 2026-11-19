@@ -581,16 +581,17 @@ private fun WorkDayDialog(s: StaffMember, date: LocalDate, now: StaffWork?, plac
                     }
                 }
                 // 1.38 [P3-X-01] 대타 찾기: a day this person was to work and now won't; saved first, then who could come and what it costs.
+                // 2.0.0 [RVJ-85] 검토 BOSS-64: the day's own hours (시간 바꿈·대근) stay on the 결근 row, so the ask is for those hours.
                 val gap = kind == WorkKind.ABSENT || kind == WorkKind.LEAVE || kind == WorkKind.OFF
-                if (gap && (usual != null || now?.kind in StaffWork.TIMED)) OutlinedButton(onClick = {
-                    app.appScope.launch { store.setWork(s.id, date, StaffWork(s.id, date, kind)); }
+                if (gap && (usual != null || now?.start != null)) OutlinedButton(onClick = {
+                    app.appScope.launch { store.setWork(s.id, date, com.bamnat.core.boss.BossCover.keep(s, date, kind, now)) }
                     onFind()
                 }) { Text("저장하고 대신 일할 사람 찾기") }
             }
         },
         confirmButton = {
             TextButton(onClick = {
-                val w = if (kind in StaffWork.TIMED) StaffWork(s.id, date, kind, start, end) else StaffWork(s.id, date, kind)
+                val w = if (kind in StaffWork.TIMED) StaffWork(s.id, date, kind, start, end) else com.bamnat.core.boss.BossCover.keep(s, date, kind, now)
                 // 1.38 PC 5차(같은 구조): the dialog's own scope ends when it closes and could drop the save; the app's does not.
                 app.appScope.launch { store.setWork(s.id, date, w) }; onDismiss()
             }, enabled = kind !in StaffWork.TIMED || start != end) { Text("저장") }

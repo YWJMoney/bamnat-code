@@ -1010,6 +1010,20 @@ object FeatureRegistry {
         f("boss.staff", "GROW-06", "직원 요금제", "직원 3명까지는 무료예요. 넷째부터 인원 구간(5·10·20·50명)으로 급여 대장과 명세서를 써요. 개인 프로 기능도 들어 있어요",
             setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 더하기", at(Place.STATS, "payroll"), "직원 요금제", "직원 추가", "직원 4명", "사장님 결제",
             under = "boss.payroll", flag = "boss.payroll"),
+        // 2.0.0 [RVJ-88] 검토 BOSS-68: the boss's own tools inside 급여 대장 are found by the words a boss uses ('근로계약서', '대타',
+        // '원천세'), ahead of the 알바's 근로계약서 보관 and 대타 (another kind's feature counts half in 기능 찾기).
+        f("boss.contract", "P3-X-06", "직원 근로계약서", "직원 정보로 근로계약서를 채워 링크로 서명받고, 서명본을 PDF로 남겨요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 줄 › 계약서 쓰기", at(Place.STATS, "payroll"), "근로계약서", "계약서", "계약서 쓰기",
+            "계약서 서명", "전자 서명", "알바 계약서", "직원 계약서", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.cover", "P3-X-01", "대타 찾기", "직원이 못 오는 날, 그날 일이 없는 직원을 더 드는 인건비가 적은 순으로 보여 주고 고른 사람에게 요청 링크를 보내요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 줄의 날짜 › 결근 › 저장하고 대신 일할 사람 찾기", at(Place.STATS, "payroll"), "대타",
+            "대타 찾기", "대타 요청", "대신 일할 사람", "결원", "대근", "땜빵", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.filings", "P3-X-08", "신고·지급 기한", "급여 지급일, 원천세 신고, 간이지급명세서, 4대보험 취득·상실 신고를 날짜순으로 알려 주고 신고 표(CSV)를 만들어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 다가올 신고·지급", at(Place.STATS, "payroll"), "원천세", "원천세 신고", "신고 기한",
+            "간이지급명세서", "지급명세서", "4대보험 신고", "취득 신고", "상실 신고", "근로내용확인신고", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.clock", "P3-B-11", "직원 출퇴근 기록", "위치 없이 누르는 출퇴근 링크를 직원에게 보내고, 누른 시각이 평소와 다른 날만 골라 급여 대장에 넣어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 출퇴근 기록", at(Place.STATS, "payroll"), "출퇴근 기록", "출근 체크", "출퇴근 링크", "근태",
+            "지각 기록", under = "boss.payroll", flag = "boss.payroll"),
     )
 
     private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }

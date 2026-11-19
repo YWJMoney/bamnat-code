@@ -32,11 +32,26 @@ object BossCover {
     fun row(s: StaffMember, d: LocalDate, shift: StaffShift): StaffWork =
         StaffWork(s.id, d, if (s.weekly[d.dayOfWeek] != null) WorkKind.NORMAL else WorkKind.COVER, shift.start, shift.end)
 
-    /** The hours to fill: what the absent person was to work that day (a time the boss had set, else the usual week). */
+    /**
+     * The hours to fill: what the absent person was to work that day (a time the boss had set, else the usual week).
+     * 2.0.0 [RVJ-85] 검토 BOSS-64: a day with changed hours or a 대근 turned to 결근·연차·쉬는 날 keeps those hours on its row
+     * ([keep]), so the 대타 is asked for 15~23 and not the usual week's hours (or '평소 근무 시간이 없어요' on a 대근 day). The
+     * ledger never reads hours on those kinds.
+     */
     fun gapShift(staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate): StaffShift? {
         val absent = staff.firstOrNull { it.id == absentId } ?: return null
-        return work.firstOrNull { it.staffId == absentId && it.date == date }?.takeIf { it.kind in StaffWork.TIMED }?.let { StaffShift(it.start!!, it.end!!) }
-            ?: absent.weekly[date.dayOfWeek]
+        val row = work.firstOrNull { it.staffId == absentId && it.date == date }
+        return row?.takeIf { it.start != null && it.end != null }?.let { StaffShift(it.start!!, it.end!!) } ?: absent.weekly[date.dayOfWeek]
+    }
+
+    /**
+     * 2.0.0 [RVJ-85] The row that marks [s] away on [date] ([kind]: 결근·연차·쉬는 날), holding the hours the day had before
+     * ([was], the row it replaces) when they were not the usual week's, so [gapShift] still finds them.
+     */
+    fun keep(s: StaffMember, date: LocalDate, kind: WorkKind, was: StaffWork?): StaffWork {
+        // 지각·조퇴 hours are when they came, not the day's: the usual week holds that day.
+        val hours = was?.takeIf { it.start != null && it.end != null && it.kind != WorkKind.LATE && it.kind != WorkKind.EARLY }?.let { StaffShift(it.start!!, it.end!!) }
+        return if (hours == null || hours == s.weekly[date.dayOfWeek]) StaffWork(s.id, date, kind) else StaffWork(s.id, date, kind, hours.start, hours.end)
     }
 
     fun candidates(place: Workplace, staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate): List<Candidate> {

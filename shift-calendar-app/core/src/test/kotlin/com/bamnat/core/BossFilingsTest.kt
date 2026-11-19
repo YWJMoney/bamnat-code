@@ -80,4 +80,25 @@ class BossFilingsTest {
         val line = pay.missing!!.line(pay.amount)
         assertTrue(line, line.startsWith("입사일 없는 민수님 빼고예요 · 그 달에 일했으면 입사일을 넣어요(넣으면 약 "))
     }
+
+    /**
+     * 2.0.0 [RVJ-89] 검토 BOSS-75 ①: a 기한 on a 일요일 (2027-01-10 원천세) or in 설 연휴 (2027-02-09 대체공휴일) is the next working day,
+     * and the card says why (국세기본법 제5조 제1항, 민법 제161조). 11-15(일) 상실 신고는 RvjBossTest가 봐요.
+     */
+    @Test fun aDueDayOnASundayOrInSeollalMovesOn() {
+        val one = listOf(a)
+        val due = BossFilings.upcoming(place, one, LocalDate.of(2027, 1, 5), ledgerOf = { m -> PayrollLedger.month(place, one, m, emptyList()) })
+        val tax = due.single { it.kind == BossFilings.Kind.WITHHOLD && it.key.endsWith(":2026-12") }
+        assertEquals(LocalDate.of(2027, 1, 11), tax.date)
+        assertTrue(tax.detail, tax.detail.contains("(10일이 일요일이라 1월 11일까지)"))
+
+        val c = StaffMember("c", "설입사", base = 10_320, hiredOn = LocalDate.of(2027, 1, 26), weekly = week, insurance = Insurance(true, true, true))
+        val two = listOf(c)
+        val health = BossFilings.upcoming(place, two, LocalDate.of(2027, 2, 1), ledgerOf = { m -> PayrollLedger.month(place, two, m, emptyList()) })
+            .single { it.key.startsWith("in-health:c") }
+        assertEquals("1/26 + 14일 = 2/9(대체공휴일), 설 연휴 다음 날", LocalDate.of(2027, 2, 10), health.date)
+        assertTrue(health.detail, health.detail.contains("(9일이 공휴일이라 2월 10일까지)"))
+        assertEquals(LocalDate.of(2027, 2, 10), BossFilings.deadline(LocalDate.of(2027, 2, 6)))
+        assertEquals("평일 기한은 그대로", LocalDate.of(2027, 2, 10), BossFilings.deadline(LocalDate.of(2027, 2, 10)))
+    }
 }
