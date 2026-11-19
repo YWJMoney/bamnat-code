@@ -32,6 +32,9 @@ object TestState {
         com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
         // [RVS-15] A studio example an earlier test took for 올리기's 표지 (kept ten minutes in memory).
         com.bamnat.app.ui.studio.StudioShot.last = null
+        // H's 지난 판 다른 날 확인 (RVH-64) and the 새 판 첫 방문 별점 쉬기 (RVH-61), kept for the app's run.
+        com.bamnat.app.ui.calendar.TurnSlipAsk.resetForTest()
+        com.bamnat.app.review.InAppReview.resetForTest()
         com.bamnat.app.ui.RecentFill.reset()
         com.bamnat.app.ui.pro.ProOffer.close()
         com.bamnat.app.ui.settings.InquiryLinks.take()
