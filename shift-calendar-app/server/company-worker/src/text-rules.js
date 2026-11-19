@@ -15,7 +15,7 @@ export const TEXT_RULE_SAMPLES = [
   {"text":"\uc774\ubc88 \ub2ec \uc57c\uac04 \uc218\ub2f9 32\ub9cc \uc6d0 \ubc1b\uc558\uc5b4\uc694","personal":"amount","contact":null},
   {"text":"\uc5f0\ubd09 300000000\uc6d0","personal":"amount","contact":null},
   {"text":"3\uc5b5 = 300000000\uc6d0","personal":"amount","contact":null},
-  {"text":"\uc2dc\uae09 10,030\uc6d0","personal":"amount","contact":null},
+  {"text":"\uc2dc\uae09 12,500\uc6d0","personal":"amount","contact":null},
   {"text":"\ubb38\uc758\ub294 010-1234-5678\ub85c","personal":"phone","contact":"phone"},
   {"text":"02 123 4567\ub85c \uc804\ud654 \uc8fc\uc138\uc694","personal":"phone","contact":"phone"},
   {"text":"+82 10 1234 5678","personal":"phone","contact":"phone"},
