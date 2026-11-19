@@ -23,7 +23,12 @@ import zipfile
 # stayed inside. Without it the 1.30.0 AAB is 9.31 MB, so its budget is 11 MB.
 # 1.36.0 (2026-11-04, 출시 때 다시 정함 — 1.37-인계 278줄): 1.35.0 APK 10.35MB에서 이미 넘었고, 1.36(스튜디오·장터·FCM)으로
 # APK 11.73MB, AAB 11.82MB가 됐어요. 늘어난 몫은 거의 dex라 지금 크기 + 약 7%로 잡고, 1.37에서 줄일 곳을 찾아요.
-BUDGETS = {".apk": 12_500_000, ".aab": 12_500_000}
+# 2.0.0 (2026-11-19, 출시 후보에서 다시 정함 — 1.39.0 점검 '예산 다시 정하기는 1.40', 검토 TEST-20): 1.38 12.9MB, 1.39.0 APK 13.41MB로
+# 12.5MB를 두 판째 넘은 채였고, 2.0.0은 APK 14.72MB, AAB 14.73MB예요. 1.39.0에서 늘어난 1.31MB는 모두 dex(classes3 3,374 → 4,648KB,
+# 2.0.0의 검토 고침과 새 화면)이고 그림·자료·라이브러리 파일은 그대로예요. 그래서 예산을 지금 크기 + 약 2%인 15MB로 잡아요:
+# 다음 판이 조금만 늘어도 경고가 뜨고, 16.5MB(HARD)를 넘으면 멈춰요. 가장 큰 덩어리는 com.google.android.gms.internal 4.3MB(광고·Play
+# 서비스)와 ui.calendar 2.0MB라, 줄일 곳은 2.1에서 여기부터 봐요.
+BUDGETS = {".apk": 15_000_000, ".aab": 15_000_000}
 # 2.0.0 [RVR-19] (검토 TEST-20 ②) The watch's AAB has its own: under the phone's 12.5 MB it could double unnoticed. 1.39.0's was
 # 1.78 MB without BUNDLE-METADATA (3.83 MB whole), so about 20 % more. A file with 'wear' in its name is the watch's.
 WATCH_BUDGET = 2_200_000
