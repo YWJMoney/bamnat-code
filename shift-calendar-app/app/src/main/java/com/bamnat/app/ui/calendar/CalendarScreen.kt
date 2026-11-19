@@ -805,7 +805,8 @@ fun CalendarScreen(
             startName = remember(activeCalendar.id) { context.appContainer.shareLinksOf(com.bamnat.app.share.ShareLinkKey.of(activeCalendar.id, 1)).link.value?.title.orEmpty() },
             onSent = { vm.logShare() },
             onDismiss = { imageMonth = null },
-            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y -> y to { imageMonth = null; yearRecapOpen = y } },
+            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y ->
+                "${y}년 ${com.bamnat.core.work.YearRecap.headingOf(focus)}" to { imageMonth = null; yearRecapOpen = y } },
             style = settings.workStyle,
         )
     }
@@ -1580,17 +1581,29 @@ fun CalendarScreen(
                 }
             })
             // 1.40 [SPREAD-37] 연말 근무 결산, 12-20~1-10: once in 12월 (the year so far), once more in 1월 (the whole year).
-            if (paint == null && recapHere) add(Notice("yearRecap", "연말 결산", line = "올해 근무 결산이 나왔어요", kani = com.bamnat.app.ui.components.KaniMood.Done) {
-                val due = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
-                due?.let { y ->
-                    val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
-                        value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
-                    }
-                    recap?.takeIf { it.worthShowing }?.let { r ->
-                        YearRecapCard(r, onOpen = { yearRecapOpen = y }, onClose = { vm.closeYearRecap(today) })
-                    }
+            // 2.0.0 (디자인 품질 조건 3·5·8): a row of the 알림함's 안내 in the one shape every notice has, not a card in colours of its
+            // own: it says the year's numbers (never the money), a tap goes straight to the 결산 (was: open the row, then its card's
+            // 결산 보기), and X puts it away until 1월's whole year, taken back once, saying where it is still made.
+            val recapDue = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
+            if (paint == null && recapHere && recapDue != null) {
+                val recapNow by produceState<com.bamnat.core.work.YearRecap?>(null, recapDue, snap, focus, moneyBook, payProfile) {
+                    value = runCatching { vm.yearRecap(recapDue, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
                 }
-            })
+                recapNow?.takeIf { it.worthShowing }?.let { r ->
+                    val openRecap = { yearRecapOpen = recapDue }
+                    val closeRecap = {
+                        val before = vm.closeYearRecap(today)
+                        com.bamnat.app.ui.components.AppSnack.show("결산 안내를 닫았어요. 공유 › 사진으로 보내기에서 다시 만들 수 있어요",
+                            undo = { vm.reopenYearRecap(before) })
+                    }
+                    add(Notice("yearRecap", r.title, line = r.brief, kani = com.bamnat.app.ui.components.KaniMood.Done, action = "결산 보기",
+                        onAction = openRecap, onClose = closeRecap) {
+                        com.bamnat.app.ui.components.NudgeCard("${r.title}이 나왔어요", Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            detail = r.brief, action = "결산 보기", onAction = openRecap, onClose = closeRecap, closeLabel = "결산 안내 닫기",
+                            kani = com.bamnat.app.ui.components.KaniMood.Done)
+                    })
+                }
+            }
             // [CAL-46] I 리뷰 N9: once the month's last shift is done, the month in one line and its picture to share.
             if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && viewingReceived == null) add(Notice("recap", "지난달 정리", line = "지난달 근무를 한 줄로 정리했어요", kani = com.bamnat.app.ui.components.KaniMood.Done) {
                 val recapMonth = remember(snap, today, settings.monthRecapSeen) {
@@ -2875,28 +2888,6 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }
-        }
-    }
-}
-
-/** 1.40 [SPREAD-37] "2026년 내 근무 결산이 나왔어요": a few of the year's numbers (never the money), 결산 보기 and 닫기. */
-@Composable
-internal fun YearRecapCard(recap: com.bamnat.core.work.YearRecap, onOpen: () -> Unit, onClose: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.large,
-        color = androidx.compose.ui.graphics.Color(0xFF1E2447),
-        onClick = onOpen,
-    ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
-            Text("${recap.year}년 내 근무 결산이 나왔어요", style = MaterialTheme.typography.titleSmall,
-                color = androidx.compose.ui.graphics.Color(0xFFF2C46D))
-            Text(recap.line, style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFF6F1E7),
-                modifier = Modifier.padding(end = 8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onClose, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFA9AFCB))) { Text("닫기") }
-                TextButton(onClick = onOpen, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFF2C46D))) { Text("결산 보기") }
-            }
         }
     }
 }

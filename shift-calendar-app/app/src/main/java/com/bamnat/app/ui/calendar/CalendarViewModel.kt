@@ -1258,10 +1258,20 @@ class CalendarViewModel(private val container: AppContainer) : ViewModel(), Mone
         )
     }
 
-    /** 1.40 [SPREAD-37] The 연말 결산 card is closed for this part of the window (12월, then once more in 1월). */
-    fun closeYearRecap(today: LocalDate) {
+    /**
+     * 1.40 [SPREAD-37] The 연말 결산 notice is closed for this part of the window (12월, then once more in 1월); the mark it had before,
+     * for [reopenYearRecap].
+     */
+    fun closeYearRecap(today: LocalDate): Int {
+        val before = container.settingsRepository.current.yearRecapSeen
         val key = com.bamnat.core.work.YearRecap.key(today)
         container.settingsRepository.update { s -> if (s.yearRecapSeen >= key) s else s.copy(yearRecapSeen = key) }
+        return before
+    }
+
+    /** 2.0.0 (조건 10): the 결산 notice's X taken back. */
+    fun reopenYearRecap(before: Int) {
+        container.settingsRepository.update { it.copy(yearRecapSeen = before) }
     }
 
     /** [CAL-46] The month's "내 기록" card is not shown again. */
