@@ -92,6 +92,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.repeatOnLifecycle
@@ -451,7 +452,7 @@ private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, tod
                     }
                 }
             }
-            // 2.0.0 [RVG-38] (조건 13) the days in the link's word: 영업일과 쉬는 날만, 달력만 (was 근무와 휴가만 for every link).
+            // 2.0.0 [RVG-38] (조건 13) the days in the link's word: 영업일과 휴무만, 달력만 (was 근무와 휴가만 for every link).
             Text(s.showsText()?.let { "함께 받은 것: $it" } ?: "${com.bamnat.core.work.linkDaysWord(s.word)}만 받았어요",
                 style = MaterialTheme.typography.bodySmall)
             Text("${expiry(expiresAt)}까지 볼 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -499,8 +500,11 @@ private fun ExtraChip(name: String, count: Int, size: Dp) {
             .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
+        // [RVG-41] (같은 구조, 조건 12) the line keeps its normal-size height, as the badge's [VIS-02]: the theme's line grew with large
+        // text and pushed the letter out of the bottom of the chip ('일감·추가 근무' in the key at 150% showed half a '일').
         Text(name.take(2) + if (count > 1) "+" else "", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold,
-            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }, maxLines = 1)
+            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }, lineHeight = (CHIP_LINE / (size * 0.46f)).em,
+            maxLines = 1)
     }
 }
 
@@ -512,9 +516,13 @@ private fun LeaveChip(label: String, size: Dp) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label.take(3), color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold,
-            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.48f).toSp() }, maxLines = 1)
+            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.48f).toSp() }, lineHeight = (CHIP_LINE / (size * 0.48f)).em,
+            maxLines = 1)
     }
 }
+
+/** [RVG-41] A chip's line: the theme's body line at the normal text size, which does not grow with large text (as [ShiftBadge]'s). */
+private val CHIP_LINE = 24.dp
 
 private fun expiry(at: Instant): String = Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())
 
@@ -746,8 +754,10 @@ private fun OkCard(vm: ReceivedViewModel, cal: ReceivedCalendar) {
         }
         return
     }
+    // [RVG-41] 검토 HQ-110 (조건 4·12): the question in a few words, so the right pane at 200% gives it two lines, not four
+    // ('보낸 분이 이 근무표를 다 보셨는지 궁금해해요' beside the card's icon); what pressing does stays in the line under it.
     com.bamnat.app.ui.components.NudgeCard(
-        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨으면 다시 알려 주세요" else "보낸 분이 이 근무표를 다 보셨는지 궁금해해요",
+        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨나요?" else "보낸 분이 다 보셨는지 물어요",
         detail = said ?: "누르면 보낸 분에게 '확인'이 가요. 열어 보기만 한 것과 따로 보여요",
         icon = Icons.Outlined.CheckCircle,
         action = if (sending) "보내는 중…" else "확인했어요",
@@ -1052,7 +1062,7 @@ private fun Legend(schedule: SharedSchedule, month: YearMonth, modifier: Modifie
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ShiftBadge(type = t.asShiftType(), size = 18.dp, outlined = t.off, showIcon = false)
                 Spacer(Modifier.width(4.dp))
-                Text(t.name + (t.time?.takeIf { !t.off }?.let { " " + it.replace("-", "~") } ?: ""),
+                Text(t.name + (t.time?.takeIf { !t.off }?.let { " " + wholeTime(it) } ?: ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -1072,38 +1082,55 @@ private fun ReceivedDayCard(
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(Fmt.dayTitle(date) + if (date == today) " · 오늘" else "", style = MaterialTheme.typography.titleMedium)
             val day = schedule.days[date]
-            Row(verticalAlignment = Alignment.Top) {
+            // 2.0.0 [RVG-41] 검토 HQ-110 (조건 12): from 150% the face and the day's mark stand on the top line with the name, and the
+            // time and what follows take the card's whole width under them. Beside the face at 200% in the unfolded pane the time had
+            // a few letters' room and broke in the middle of a number ('07:00~19:0 / 0').
+            val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= STACK_FONT
+            val covered = schedule.covers(date)
+            val type = schedule.type(day?.type)
+            val second = schedule.type(day?.second)
+            // A 대근 on a day with no shift of its own is that day's work.
+            val main = type ?: second
+            val shifts = remember(schedule) { schedule.usesShifts() }
+            // [CAL-12] A day with only jobs lists them below instead of saying "근무 없음".
+            val headline = covered && (main != null || day?.extras.isNullOrEmpty())
+            val name = when {
+                main == null -> if (shifts) "근무 없음" else "일정 없음"
+                main.off -> main.name
+                else -> main.name
+            }
+            val time = main?.takeIf { !it.off }?.time?.let(::wholeTime)
+            val badge: @Composable () -> Unit = {
+                DayBadge(schedule, day, size = 22.dp, shifts = shifts)
+                if (main != null || shifts || day?.leave != null) Spacer(Modifier.width(8.dp))
+            }
+            if (stack && headline) Row(verticalAlignment = Alignment.CenterVertically) {
                 cal.Avatar(size = 32.dp)
                 Spacer(Modifier.width(12.dp))
+                badge()
+                Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.Top) {
+                if (!stack || !headline) {
+                    cal.Avatar(size = 32.dp)
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (!schedule.covers(date)) {
+                    if (!covered) {
                         Text("이 날은 받은 근무표에 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        val type = schedule.type(day?.type)
-                        val second = schedule.type(day?.second)
-                        // A 대근 on a day with no shift of its own is that day's work.
-                        val main = type ?: second
-                        val shifts = remember(schedule) { schedule.usesShifts() }
-                        // [CAL-12] A day with only jobs lists them below instead of saying "근무 없음".
-                        if (main != null || day?.extras.isNullOrEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                            DayBadge(schedule, day, size = 22.dp, shifts = shifts)
-                            if (main != null || shifts || day?.leave != null) Spacer(Modifier.width(8.dp))
-                            Text(
-                                when {
-                                    main == null -> if (shifts) "근무 없음" else "일정 없음"
-                                    main.off -> main.name
-                                    else -> main.name + (main.time?.let { " " + it.replace("-", "~") } ?: "")
-                                },
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
+                        if (stack) time?.takeIf { headline }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                        else if (headline) Row(verticalAlignment = Alignment.CenterVertically) {
+                            badge()
+                            Text(name + (time?.let { " $it" } ?: ""), style = MaterialTheme.typography.bodyLarge)
                         }
                         second?.takeIf { type != null }?.let { s ->
-                            Text("${s.name} 더 해요" + (s.time?.let { " (${it.replace("-", "~")})" } ?: ""), style = MaterialTheme.typography.bodyMedium)
+                            Text("${s.name} 더 해요" + (s.time?.let { " (${wholeTime(it)})" } ?: ""), style = MaterialTheme.typography.bodyMedium)
                         }
                         day?.leave?.let { Text("휴가: $it", style = MaterialTheme.typography.bodyMedium) }
                         day?.extras?.forEach { e ->
                             Text(
-                                e.name + (e.time?.let { " " + it.replace("-", "~") } ?: "") +
+                                e.name + (e.time?.let { " " + wholeTime(it) } ?: "") +
                                     (e.minutes?.let { " (${com.bamnat.core.hours.HoursFormat.korean(it)})" } ?: ""),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
@@ -1118,27 +1145,35 @@ private fun ReceivedDayCard(
             }
             if (mine != null) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val mineType = mine.shiftType
+                val leave = mine.leave
+                val mineName = when {
+                    leave?.isFullDay == true -> leave.label
+                    mineType == null || !mine.isWorkDay -> mineType?.name ?: "쉬는 날"
+                    else -> mineType.name
+                }
+                // [RVG-41] HQ-110: '08:00 – 14:00' stays one piece ('주간 08:00 – / 14:00' broke it at the dash).
+                val mineTime = mineType?.takeIf { leave?.isFullDay != true && mine.isWorkDay && mine.start != null && mine.end != null }
+                    ?.let { wholeTime(Fmt.timeRange(mine.start!!, mine.end!!)) }
+                val rest = (leave?.takeIf { !it.isFullDay }?.let { listOf(it.label) }.orEmpty() + mine.extras.map { ExtraText.name(it) })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MyAvatar(size = 32.dp)
                     Spacer(Modifier.width(12.dp))
-                    val type = mine.shiftType
-                    val leave = mine.leave
                     when {
                         leave?.isFullDay == true -> LeaveChip(leave.label, 22.dp)
-                        type != null -> ShiftBadge(type = type, size = 22.dp, outlined = type.isOff)
+                        mineType != null -> ShiftBadge(type = mineType, size = 22.dp, outlined = mineType.isOff)
                         else -> ShiftBadge(type = null, text = "휴", size = 22.dp, outlined = true)
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        when {
-                            leave?.isFullDay == true -> leave.label
-                            type == null || !mine.isWorkDay -> type?.name ?: "쉬는 날"
-                            mine.start != null && mine.end != null -> "${type.name} ${Fmt.timeRange(mine.start!!, mine.end!!)}"
-                            else -> type.name
-                        } + (leave?.takeIf { !it.isFullDay }?.let { " · ${it.label}" } ?: "") +
-                            mine.extras.joinToString("") { " · ${ExtraText.name(it)}" },
-                        style = MaterialTheme.typography.bodyLarge,
+                        if (stack) mineName else (listOf(listOfNotNull(mineName, mineTime).joinToString(" ")) + rest).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
                     )
+                }
+                // The time, then the half day and extra work; where they do not fit, the next one starts the line with its '·' ('08:00 –
+                // 14:00 ·' at a line's end with '반차' alone under it read as two things).
+                if (stack && (mineTime != null || rest.isNotEmpty())) {
+                    Text((listOfNotNull(mineTime) + rest).joinToString(" ·\u00A0"), style = MaterialTheme.typography.bodyLarge)
                 }
             }
             if (together) {
@@ -1155,14 +1190,19 @@ private fun ReceivedDayCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, kind: com.bamnat.core.work.MoneyShare) {
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(cal.title.trim().takeIf { it.isNotEmpty() }?.let { "$it 님이 함께 보낸 ${kind.label}" } ?: "함께 받은 ${kind.label}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text("${pay.month.monthValue}월", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            // [RVG-41] 검토 HQ-110 (같은 구조, 조건 12): at 200% in the unfolded pane the amount left the month a sliver ('10 / 월'); where both
+            // do not fit, the amount goes whole to the line under the month (neither is made smaller).
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment = Alignment.Bottom) {
+                Text("${pay.month.monthValue}월", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(end = 12.dp))
+                Spacer(Modifier.weight(1f))
                 Text(Fmt.won(pay.amount), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold)
             }
             // [SHR-11] Pay is the sender's estimate; job income and sales are what the sender wrote down.
@@ -1171,6 +1211,15 @@ private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, 
         }
     }
 }
+
+/** [RVG-41] 검토 HQ-110: from this text size the day card puts the face and mark above, and the time under them at full width. */
+private const val STACK_FONT = 1.5f
+
+/**
+ * [RVG-41] 검토 HQ-110 (조건 12): a time range read as one piece: '07:00-19:00' with its ~, and '08:00 – 14:00' with no break at its
+ * spaces or after its ~, so a narrow line moves it whole to the next one instead of cutting a number.
+ */
+internal fun wholeTime(range: String): String = range.replace("-", "~").replace(" – ", "\u00A0–\u2060\u00A0").replace("~", "\u2060~\u2060")
 
 /**
  * [NURS-06] The shared roster read with the user's own 근무표 점검 기준: "알려 주기" only, so someone who cares can

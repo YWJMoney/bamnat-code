@@ -70,12 +70,10 @@ import com.bamnat.app.ui.components.CountStepper
 import com.bamnat.app.ui.components.MinutesStepper
 import com.bamnat.app.ui.components.StepperRow
 import kotlin.math.roundToInt
-import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
 import com.bamnat.app.ui.pay.label
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoReminder
 import com.bamnat.core.pay.PayProfile
@@ -118,9 +116,11 @@ fun HourlyToolsCard(calendarId: String, profile: PayProfile?, snapshot: Schedule
     LaunchedEffect(open) { open?.let { com.bamnat.app.data.GuideStore.get(context).used("hourly.$it") } }
     val contract = tools.contract
     contract.daysLeft(today)?.takeIf { contract.endingSoon(today) }?.let { left ->
-        WarningBanner(
+        // 2.0.0 [RVJ-66] (HQ-103): 계약이 끝나 감은 챙길 일(주의).
+        com.bamnat.app.ui.components.NudgeCard(
             if (left >= 0) "근로계약이 ${if (left == 0L) "오늘" else "${left}일 뒤"} 끝나요" else "근로계약이 끝났어요",
-            "${Fmt.fullDate(contract.end!!)}까지예요. 계속 일한다면 새 계약서를 받아 두세요.",
+            tone = com.bamnat.app.ui.theme.Tone.Caution,
+            detail = "${Fmt.fullDate(contract.end!!)}까지예요. 계속 일한다면 새 계약서를 받아 두세요.",
             action = "계약서", onAction = { open = "contract" },
         )
     }

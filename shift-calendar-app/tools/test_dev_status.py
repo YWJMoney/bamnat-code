@@ -144,6 +144,24 @@ class DevStatusTest(unittest.TestCase):
             finally:
                 ds.STATUS_FILE, ds.TRACKER = keep
 
+    def test_reopen_is_only_for_a_line_opened_again(self):
+        # 2.0.0 [HQ-78] 서버는 동기화로 상태를 뒤로 돌리지 않아요. 다시 연 줄만 reopen: true로 알려요.
+        self.assertEqual(errors({**GOOD, "status": "doing", "reopen": True}), [])
+        self.assertTrue(errors({**GOOD, "reopen": True}))
+        self.assertTrue(errors({**GOOD, "status": "doing", "reopen": "yes"}))
+
+    def test_the_workflow_sends_from_the_integration_branch_named_in_claude_md(self):
+        # 2.0.0 [HQ-78] 통합 브랜치 이름이 바뀌면 workflow의 branches 줄도 바꿔야 해요.
+        with tempfile.TemporaryDirectory() as d:
+            rules, flow = pathlib.Path(d, "CLAUDE.md"), pathlib.Path(d, "dev-status.yml")
+            rules.write_text("- 통합 브랜치 `claude/project-thread-new123`(PR #9 → main)\n- 통합 브랜치 `claude/project-thread-old999`\n", encoding="utf-8")
+            flow.write_text('on:\n  push:\n    branches: [main, "claude/project-thread-old999"]\n', encoding="utf-8")
+            self.assertEqual(len(ds.workflow_branch_problems(rules, flow)), 1)
+            flow.write_text('on:\n  push:\n    branches: [main, "claude/project-thread-new123"]\n', encoding="utf-8")
+            self.assertEqual(ds.workflow_branch_problems(rules, flow), [])
+        # 이 저장소는 맞아요.
+        self.assertEqual(ds.workflow_branch_problems(), [])
+
     def test_repository_file_is_clean(self):
         items, errs = ds.read()
         self.assertEqual(errs + ds.check_all(items), [])

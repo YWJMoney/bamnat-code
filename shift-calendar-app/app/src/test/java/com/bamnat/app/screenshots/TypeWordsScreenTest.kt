@@ -52,6 +52,11 @@ class TypeWordsScreenTest : ScreenshotBase() {
     ) + listOfNotNull(
         // 2.0.0 [RVH-53] HQ-27: 근무 주기 (출근 요일·일정 순서) of the kinds that have one.
         ("근무 주기" to pattern).takeIf { style in setOf(WorkStyle.DAY, WorkStyle.HOURLY, WorkStyle.FIELD) },
+    ) + listOf<Pair<String, Screen.() -> Unit>>(
+        // 2.0.0 [RVG-40] 검토 PC-175: the calendar's 도구 ('동료 근무표 받기'), and from its 공유 the share sheet's 자세히 정하기 (캘린더 구독 주소
+        // '이 링크의 근무가'). Last, as a user goes: the tools sheet closes when the share sheet opens.
+        "달력 › 도구" to { open(Place.CALENDAR); tapText("도구") },
+        "공유 › 자세히 정하기" to { tapText(com.bamnat.core.work.shareTitle(style), exact = true); tapText("자세히 정하기", prefix = true) },
     )
 
     private val pattern: Screen.() -> Unit = { open(Place.PATTERN) }

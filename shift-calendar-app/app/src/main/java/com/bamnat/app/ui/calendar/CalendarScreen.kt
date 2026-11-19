@@ -1897,6 +1897,9 @@ fun CalendarScreen(
                         switch()
                     }
                     if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                    // 2.0.0 [RVS-03] 검토 SN-10: a worn look's 칸 꾸밈 shows on the 월 판 only; on another 판 that is said once (per look),
+                    // and a tap goes to 월.
+                    if (board != com.bamnat.core.layout.CalendarBoard.MONTH) CellLookOnMonth { pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) }
                 } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
                     // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
@@ -2685,7 +2688,7 @@ internal fun CalendarHeader(
                 CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
                 // 2.0.0 [RVH-60] 검토 PC-127 (가게 도구 창에 '동료 근무표 받기'): the T01-11 words here too, and 근무 주기 as that work's page
                 // calls it (가게 '영업일·정기휴무', 투자 '투자 알람', 현장 '되풀이되는 일정'), also under 더 보기.
-                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style)
+                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style) // 2.0.0 [RVG-40] 검토 PC-175
                 CalendarToolSlots.PATTERN -> "${style.words().pattern} 설정"
                 else -> slot.label
             }
@@ -2740,8 +2743,6 @@ internal fun CalendarHeader(
     }
 }
 
-/** [RVH-65] A tool tile's width for each step of 글자 크기 over 130%: at 200% a tile is 200dp or more. */
-private val TOOL_TILE_PER_SCALE = 100.dp
 
 /** 2.0.0 [RVP-45] 검토 HQ-22: the head's month is never drawn smaller than this, whatever the work's title or the room (조건 12). */
 private const val MONTH_TITLE_MIN_SP = 14f
@@ -2809,11 +2810,11 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
         Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            // 2.0.0 [RVH-65] 조건 12: with big letters a name was cut at two lines ('동료 근무표', '최근 바꾼', '오늘부터 하루' on a
-            // folded phone at 200%). Fewer tiles to a row then, each as tall as its row's longest name, never a name cut.
-            val scale = androidx.compose.ui.platform.LocalDensity.current.fontScale
-            val usual = if (maxWidth >= 480.dp) 4 else 3
-            val perRow = if (scale <= 1.3f) usual else minOf(usual, (maxWidth / (TOOL_TILE_PER_SCALE * scale)).toInt().coerceAtLeast(2))
+            // 2.0.0 [RVG-40] 검토 PC-175 (조건 12): the room a tile has is counted in the letters' size, so at 150%·200% on the folded
+            // screen two tiles share a row; three to a row left a name three letters a line, cut at two lines ('동료 / 근무표', '다른 /
+            // 사람'). The names are never cut now, and the tiles of a row stand as tall as the tallest.
+            val room = maxWidth / LocalDensity.current.fontScale.coerceAtLeast(1f)
+            val perRow = if (room >= 480.dp) 4 else if (room >= 300.dp) 3 else 2
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 tools.filter { !it.away }.chunked(perRow).forEach { row ->
                     Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2824,7 +2825,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 84.dp)
+                                modifier = Modifier.weight(1f).heightIn(min = 84.dp).fillMaxHeight()
                                     .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
@@ -3657,6 +3658,27 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     com.bamnat.core.guide.OpenAsk.REVIEW -> null
 }
 
-/** 2.0.0 [RVH-64] The 지난 판 확인 band's one line, short enough for 접은 폭 100% (총괄 사진 검토 11-13). */
-/** [RVH-64] 총괄 #507 다시 찍기: 16자 안팎이라 접은 폭 100%의 띠(아이콘·확인·X 옆)에서도 한 줄이에요(전에는 두 줄로 감김). */
+/** 2.0.0 [RVH-64] The 지난 판 확인 band's one line. 총괄 #507 다시 찍기: 16자 안팎이라 접은 폭 100%의 띠(아이콘·확인·X 옆)에서도 한 줄이에요(전에는 두 줄로 감김). */
 internal fun turnSlipLine(count: Int): String = "넣은 ${count}개, 날짜를 봐 주세요"
+/**
+ * 2.0.0 [RVS-03] 검토 SN-10 (칸 꾸밈은 '월' 판에서만 보이는데 다른 판에서는 말이 없어요): with a look whose 칸 (cal.cell 부품 or 칸 꾸밈) is
+ * worn, one quiet line on another 판 says where it shows; a tap goes to 월 and either way it is not said again for this look.
+ */
+@Composable
+private fun CellLookOnMonth(onMonth: () -> Unit) {
+    val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
+    val decor = com.bamnat.app.ui.decor.LocalDecor.current
+    val cellLook = raw.touches("cal.cell") || decor.has(com.bamnat.core.recipe.Decor.CELL)
+    if (!cellLook) return
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("calendar_hints", android.content.Context.MODE_PRIVATE) }
+    val key = remember(raw, decor) { (raw.hashCode() * 31 + decor.hashCode()).toString() }
+    var seen by remember(key) { mutableStateOf(runCatching { prefs.getString("cellLookOnMonth", null) == key }.getOrDefault(false)) }
+    if (seen) return
+    fun done() { seen = true; runCatching { prefs.edit().putString("cellLookOnMonth", key).apply() } }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.ToneLine("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", Modifier.weight(1f),
+            tone = com.bamnat.app.ui.theme.Tone.Plain) { done(); onMonth() }
+        IconButton(onClick = { done() }) { Icon(Icons.Filled.Close, "이 안내 닫기") }
+    }
+}

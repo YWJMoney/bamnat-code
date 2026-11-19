@@ -72,6 +72,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import com.bamnat.core.pay.taxKnown
+import com.bamnat.app.ui.theme.bamnat
 
 private const val COMPANY = "company"
 private const val FORM = "form"
@@ -670,7 +671,7 @@ internal fun SlipRulesDialog(
             text = {
                 Text(if (r.lines.isEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍거나 ‘칸 더하기’로 넣어 주세요."
                     else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 못 찾았어요: 다시 찍을 일
             },
             confirmButton = { TextButton(onClick = { failed = null }) { Text("확인") } },
         )
@@ -712,7 +713,7 @@ internal fun SlipRulesSummary(res: SlipRulesResult) {
         if (res.close) "거의 같아요(차이 ${won(kotlin.math.abs(res.gap))}). 이 방식으로 다음 달도 계산해요."
         else "아직 ${won(kotlin.math.abs(res.gap))} 차이 나요. 적용한 뒤 ‘자세히 고치기’나 ‘회사 규칙’에서 더 맞출 수 있어요.",
         style = MaterialTheme.typography.bodyMedium,
-        color = if (res.close) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        color = if (res.close) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution, // [RVJ-66] 남은 차이는 주의
         fontWeight = FontWeight.Medium,
     )
     if (res.changes.isEmpty()) Text("바꿀 것이 없어요. 지금 설정이 명세서와 같아요.")
