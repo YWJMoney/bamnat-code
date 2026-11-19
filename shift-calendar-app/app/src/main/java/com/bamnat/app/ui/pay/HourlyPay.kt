@@ -138,11 +138,12 @@ internal fun InsuranceOffRow(profile: PayProfile, month: YearMonth, onChange: ((
             }
         }
     }
-    Text(if (ageOn) "생년을 적으면 만 60세 국민연금(국민연금법 제6조)과 65세 이후 새로 일한 곳의 고용보험(고용보험법 제10조)을 저절로 빼요. " +
+    // 2.0.0 [RVJ-81] (조건 4) The law behind the chips is one line + ⓘ: the 생년 lines above already say what was left out and why.
+    com.bamnat.app.ui.components.Explain(if (ageOn) "pay.insuranceOff.age" else "pay.insuranceOff", if (ageOn) "생년을 적으면 만 60세 국민연금(국민연금법 제6조)과 65세 이후 새로 일한 곳의 고용보험(고용보험법 제10조)을 저절로 빼요. " +
         "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요."
         else "국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
         "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        summary = "명세서에 없는 보험 줄은 골라 주세요", firstInFull = false)
 }
 
 /**

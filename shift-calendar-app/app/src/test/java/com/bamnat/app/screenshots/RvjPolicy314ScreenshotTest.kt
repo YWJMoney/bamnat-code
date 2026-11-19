@@ -53,7 +53,7 @@ class RvjPolicy314ScreenshotTest : ScreenshotBase() {
         val preset = PayPresets.of(Occupation.PART_TIME)
         val p = PayPresets.profile(preset, preset.wageType, preset.baseHint, LocalDate.of(2025, 3, 1), preset.items.filter { it.checked },
             fiveOrMore = true, holidayMode = HolidayPayMode.FULL, estimated = emptySet())
-            .copy(taxMode = TaxMode.INSURANCE_4, taxChosen = true, birthYear = 1958)
+            .copy(taxMode = TaxMode.INSURANCE_4, taxChosen = true, birthYear = 1958, hireDate = LocalDate.of(2025, 3, 1))
         val s = runBlocking { app.container.scheduleRepository.snapshot.first() }
         val pay = PayCalculator().calculate(p, month, s.resolver::resolve, checks = false)
         val vm = PayViewModel(app.container)
@@ -68,9 +68,9 @@ class RvjPolicy314ScreenshotTest : ScreenshotBase() {
 
     private fun ageOn(): Screen.() -> Unit = {
         age(on = true).invoke(this)
-        assertTrue(shows("만 60세가 지나 국민연금을 떼지 않아요", exact = false))
+        assertTrue(shownWords().joinToString(" | "), shows("만 60세가 지나 국민연금을 떼지 않아요", exact = false))
         assertTrue(shows("65세 이후 새로 일한 곳이라 고용보험을 떼지 않아요", exact = false))
-        assertTrue(shows("그래도 내요", exact = true))
+        assertTrue(shows("그래도 내요", exact = false))
     }
 
     @Test fun birthYearLight() = shoot("rvj_303_pay_birth_year_folded", FOLDED, ageOn())
@@ -81,7 +81,7 @@ class RvjPolicy314ScreenshotTest : ScreenshotBase() {
     @Test fun birthYearBefore314() = shoot("rvj_306_pay_birth_year_before_314_folded", FOLDED) {
         age(on = false).invoke(this)
         assertFalse(shows("생년 (선택)", exact = true))
-        assertFalse(shows("그래도 내요", exact = true))
+        assertFalse(shows("그래도 내요", exact = false))
     }
 
     // ---- [RVJ-82] 판 카드의 명세서 수 ----

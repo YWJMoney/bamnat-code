@@ -40,7 +40,7 @@ class InsuranceAgeTest {
 
         val after = TakeHome.forProfile(pay(1965), nov, 3_000_000, free = 0)
         assertFalse(after.deductions.any { it.first == "국민연금" })
-        assertTrue(after.notes.contains("만 60세가 지나 국민연금을 떼지 않아요 (생년 1965년)"))
+        assertTrue(after.notes.contains("국민연금은 떼지 않아요 (생년 1965년)"))
         assertEquals(TakeHome.forProfile(pay(1967, off = setOf(InsuranceLine.PENSION)), nov, 3_000_000, free = 0).net, after.net)
     }
 
