@@ -380,6 +380,10 @@ data class Slice(val label: String, val amount: Long, val color: Color)
  */
 @Composable
 fun Donut(slices: List<Slice>, center: String, caption: String, modifier: Modifier = Modifier, size: Dp = 168.dp) {
+    // 2.0.0 [RVK-59] (HQ-151 사진, 조건 12): at 150% and up the ring grows with the letters and the amount is one step down with '원' under
+    // it, so '2,438,582원' is whole, not '2,438,…'.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    @Suppress("NAME_SHADOWING") val size = if (big) size * 1.5f else size
     val total = slices.sumOf { it.amount.coerceAtLeast(0) }.coerceAtLeast(1)
     val track = MaterialTheme.colorScheme.surfaceContainerHighest
     val said = slices.take(4).joinToString(", ") { "${it.label} ${(it.amount * 100 / total)}%" }
@@ -402,7 +406,11 @@ fun Donut(slices: List<Slice>, center: String, caption: String, modifier: Modifi
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.widthIn(max = size * 0.66f)) {
             Text(caption, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-            Text(center, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
+            if (big && center.endsWith("원")) {
+                Text(center.dropLast(1), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
+                    softWrap = false)
+                Text("원", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            } else Text(center, style = MaterialTheme.typography.titleMedium.merge(NumberStyle), fontWeight = FontWeight.Bold, maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
         }
     }
@@ -578,22 +586,37 @@ fun ShareRow(
             Spacer(Modifier.width(12.dp))
         }
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                    Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                    if (caption != null) {
-                        Text("  $caption", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            // 2.0.0 [RVK-59] (총괄 HQ-151, 조건 12): the name keeps its whole width and the amount sits beside it while both fit, else
+            // under it at the right. At 200% on a folded phone the name, %, amount and '새로' shared one line and the name went first
+            // ('일감…', '장보…').
+            val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+            // At a big font the % goes with the amount, so a long name ('장보기·생활용품') is not broken in the middle to make room for it.
+            val share: @Composable () -> Unit = {
+                if (caption != null) Text("$caption  ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1, softWrap = false)
+            }
+            com.bamnat.app.ui.components.TextThenAmount(start = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, style = MaterialTheme.typography.bodyMedium, maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false))
+                    if (caption != null && !big) {
+                        Text("  $caption", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                            softWrap = false)
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.SemiBold, maxLines = 1)
-            }
+            }, end = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (big) share()
+                    Text(Fmt.won(amount), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle), fontWeight = FontWeight.SemiBold, maxLines = 1,
+                        softWrap = false)
+                }
+            })
             Spacer(Modifier.height(5.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 LedgerTrack(fraction, color, Modifier.weight(1f), height = 6.dp)
                 if (trailingNote != null) {
                     Text(trailingNote, style = MaterialTheme.typography.labelSmall.merge(NumberStyle), color = trailingColor,
-                        modifier = Modifier.padding(start = 8.dp), maxLines = 1)
+                        modifier = Modifier.padding(start = 8.dp), maxLines = 1, softWrap = false)
                 }
             }
         }
