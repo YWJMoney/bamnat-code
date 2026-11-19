@@ -107,7 +107,8 @@ class ReviewH11ShotsTest : ScreenshotBase() {
         val quiet = month.first { com.bamnat.app.ui.calendar.plannedAlarms(snap, it).isEmpty() }.date
         longPressText(com.bamnat.app.ui.Fmt.dayTitle(rings), prefix = true)
         assertTrue("알람이 울리는 ${rings}에는 '이 날 알람 끄기'가 있어요", inPopup("이 날 알람 끄기"))
-        back(); settle()
+        closePopups()
+        assertTrue("첫 메뉴가 닫혀요", !inPopup("자세히 열기", ms = 300))
         // Last, so the photo is the quiet day's menu.
         longPressText(com.bamnat.app.ui.Fmt.dayTitle(quiet), prefix = true)
         assertTrue("길게 누른 메뉴가 떠요", inPopup("자세히 열기"))

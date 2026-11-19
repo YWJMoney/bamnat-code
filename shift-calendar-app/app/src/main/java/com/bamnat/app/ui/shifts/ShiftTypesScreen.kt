@@ -669,7 +669,8 @@ fun ShiftTypeEditorDialog(
                         OutlinedTextField(
                             value = draft.name,
                             onValueChange = { v -> draft = draft.copy(name = v.take(10)) },
-                            label = { Text("이름 (예: 주간, 야간, 오픈)") },
+                            // 2.0.0 [RVH-89] 검토 PC-12: a shop's examples are its own (a 가게 has no 야간 to name).
+                            label = { Text(if (shop) "이름 (예: 점심 영업, 저녁 영업)" else "이름 (예: 주간, 야간, 오픈)") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
@@ -689,8 +690,8 @@ fun ShiftTypeEditorDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 // [SETUP-08] Said as the user would: is this a day without work?
-                                Text("일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
-                                Text("휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
+                                Text(if (shop) "영업하지 않는 날이에요" else "일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (shop) "정기 휴무처럼 문을 닫는 날이면 켜요" else "휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
@@ -787,7 +788,7 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Text(
-                                "실제 근무 ${HoursFormat.korean(timed.workMinutes)}" +
+                                (if (shop) "실제 영업 " else "실제 근무 ") + HoursFormat.korean(timed.workMinutes) +
                                     if (!end.isAfter(start)) " · 다음날 ${Fmt.time(end)}에 끝나요" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
