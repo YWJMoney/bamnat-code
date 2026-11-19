@@ -856,7 +856,8 @@ export function adminLib() {
   const flagDay = (ms) => new Date(ms + FLAG_KST).toISOString().slice(0, 10);
   const FLAG_DATE = /^20\d\d-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
   const WORK_TYPES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
-  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "시급", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
+  // 2.0.0 [RVN-24] T22c-06: '알바' like 관측·개발사항·자동 순환 (core FlagEval.TYPE_WORDS).
+  const WORK_NAMES = { SHIFT: "교대", DAY: "일근", HOURLY: "알바", FIELD: "현장", BUSINESS: "자영업", INVEST: "투자" };
   /** What a 동의 (consent) condition can name, and how the screens say it (core FlagEval.CONSENTS). */
   const CONSENT_NAMES = { ads: "광고 동의(Google 동의 화면)", usage: "사용 통계 보내기 동의", "usage.stats.more": "사용 통계 더 보내기 동의(켜진 기능 목록·앱 시작 시간)",
     "usage.stats.lookup": "사용 통계 더 보내기 동의(조회 시간, 1.31부터)" };

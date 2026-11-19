@@ -528,3 +528,14 @@ test("[RVN-24] SVC-112 관측 규칙마다 켜지는 입력: active-drop, config
   assert.ok(kinds.length >= 17, kinds.join(","));
   assert.deepEqual(kinds.filter((k) => !tests.includes(`"${k}"`)), []);
 });
+
+test("[RVN-24] T22c-06 the admin app calls one kind of work by one name: 관측, 기능 조건, 플래그 장부, 자동 순환", async () => {
+  const { adminLib } = await import("../src/admin-lib.js");
+  const { OBS_STYLE_NAMES } = await import("../src/observe.js");
+  const { CORE_NAMES, CORE_FLAGS } = await import("../src/flag-catalog.js");
+  const L = adminLib();
+  assert.deepEqual(L.WORK_NAMES, OBS_STYLE_NAMES);
+  assert.deepEqual(CORE_NAMES.work, OBS_STYLE_NAMES);
+  assert.equal(OBS_STYLE_NAMES.HOURLY, "알바");
+  assert.equal(CORE_FLAGS.find((f) => f.key === "type.hourly").name, "알바 근무 유형");
+});

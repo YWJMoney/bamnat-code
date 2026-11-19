@@ -94,8 +94,10 @@ object FlagCatalog {
     const val FREE_WHY = "프로 기능이라 정식 출시 뒤에는 구독한 휴대폰만 쓰는 게 기본이에요."
     const val TYPE_PREFIX = "type."
 
+    // 2.0.0 [RVN-24] 검토 T22c-06: the admin app calls 아르바이트·시급 '알바' everywhere (관측 유형별 흐름, 개발사항, 자동 순환), so the
+    // flag names and conditions too (was '시급' here and in FlagEval.TYPE_WORDS: one kind of work under two names).
     private val TYPE_NAMES = mapOf(
-        WorkStyle.SHIFT to "교대", WorkStyle.DAY to "일근", WorkStyle.HOURLY to "시급",
+        WorkStyle.SHIFT to "교대", WorkStyle.DAY to "일근", WorkStyle.HOURLY to "알바",
         WorkStyle.FIELD to "현장", WorkStyle.BUSINESS to "자영업", WorkStyle.INVEST to "투자",
     )
 
