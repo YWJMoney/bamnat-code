@@ -17,8 +17,9 @@ region = "aws:ap-northeast-2"
 
 # Clears network hashes, spent limits and old questions on time even when nobody sends anything.
 [triggers]
-# 1.38 [DESK-09] */5: 보류가 끝난 Claude 답 보내기만.
-crons = ["17 * * * *", "*/5 * * * *"]
+# 1.38 [DESK-09] */5: 보류가 끝난 Claude 답 보내기만. 2.0.0 [RVQ-12] 검토 SVC-07: 매시 작업을 17분과 47분으로 나눴어요(src/index.js CRONS·SECOND_HALF).
+# 5분 작업은 광장 글 급증 살피기도(SRV-13).
+crons = ["17 * * * *", "47 * * * *", "*/5 * * * *"]
 
 # 1.39 실서버(11-08): 배포마다 바뀌는 번호. 판 이름(1.39.0)이 같아도 다시 배포하면 사고 › 바꾼 것에 '서버 배포' 한 줄이 남아요.
 # 대시보드 배포라면 Settings > Bindings > 바인딩 추가 > 버전 메타데이터(Version metadata), 변수 이름 CF_VERSION_METADATA.
@@ -36,3 +37,10 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 # [[r2_buckets]]
 # binding = "BACKUP"
 # bucket_name = "bamnat-backup"
+
+# 2.0.0 [RVQ-55] 검토 SVC-25: 나눈 글꼴 파일(8MB까지)을 D1 대신 R2에. 버킷을 만든 뒤(`npx wrangler r2 bucket create bamnat-assets`) 아래 세 줄의
+# # 를 지워요(대시보드면 R2 bucket, 이름 ASSETS). 백업 버킷(14일 뒤 지움)과 따로 둬요. 묶지 않아도 지금처럼 D1에 두고, 묶으면 매시 정리 때
+# 옛 글꼴도 몇 개씩 옮겨요.
+# [[r2_buckets]]
+# binding = "ASSETS"
+# bucket_name = "bamnat-assets"

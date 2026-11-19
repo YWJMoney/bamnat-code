@@ -125,9 +125,9 @@ class PayScreenshotTest : ScreenshotBase() {
     @Test fun foldedExtraReviewDialog() = shoot("102b_folded_extra_review_dialog", FOLDED) {
         runBlocking { app.container.scheduleRepository.addExtra(today.minusDays(5), ExtraEntry(ExtraKind.OVERTIME_ID, minutes = 90, needsReview = true)) }
         settle()
-        // [CAL-50] Under the alarm warning the review card waits folded in "알림 1개 더 보기".
-        tapText("알림 1개 더 보기", prefix = true, scrolls = 0)
-        tapText("확인하기", exact = true, scrolls = 0)
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함; a tap on it does what its button says (확인하기).
+        tapText("알림 ", prefix = true, scrolls = 0)
+        tapText("추가 근무 1건 확인", exact = true, scrolls = 0)
         check(shownDialogs().isNotEmpty()) { "확인 창이 열리지 않았어요" }
     }
     @Test fun foldedKindReport() = shoot("103_folded_kind_report", FOLDED) {
@@ -154,9 +154,9 @@ class PayScreenshotTest : ScreenshotBase() {
     }
     @Test fun foldedExtraKinds() = shoot("76_folded_extra_kinds", FOLDED) {
         settingsPage("내 근무")
-        tapText("연장 휴무일 근무 지정", exact = true)
+        tapText("연장·휴무일 근무 지정", exact = true)
     }
-    // ---- [EXTRA-07][EXTRA-08] 연장 휴무일 근무 지정 ----
+    // ---- [EXTRA-07][EXTRA-08] 연장·휴무일 근무 지정 ----
     @Test fun foldedKindPremiums() = shoot("108_folded_kind_premiums", FOLDED) {
         kindsScreen().invoke(this)
         tapText("대근", exact = true)
@@ -399,7 +399,7 @@ class PayScreenshotTest : ScreenshotBase() {
         // 1.27 AJ's two cards under the total too.
         openPayGuides()
         reveal("계산 방식 찾기", exact = true)
-        reveal("상담용 묶음 (급여·근무시간·연차)", exact = true)
+        reveal("다른 리포트", exact = true)
         reveal("공무원 봉급표", exact = true)
         reveal("교대·현업 근무", exact = true)
     }

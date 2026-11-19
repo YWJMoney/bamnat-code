@@ -88,7 +88,7 @@ class LiveTryOnScreenshotTest : ScreenshotBase() {
         if (tour) { LiveTryOn.next(); settle(); settle() }
         LiveTryOn.end(c)
         settle(); settle()
-        assertTrue("the page again", appears("레시피", exact = true))
+        assertTrue("the page again", appears("작품", exact = true))
         back()
         assertTrue("back is 마을", appears("장터", exact = true))
         tab(1, wide = false)

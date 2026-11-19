@@ -19,7 +19,8 @@ import android.widget.Toast
 import com.bamnat.app.data.ScheduleRepository
 import com.bamnat.core.model.AlarmSpec
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.runtime.produceState
+import com.bamnat.app.ui.components.OutlinedButton
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material.icons.filled.Close
@@ -64,7 +65,6 @@ import androidx.compose.material.icons.filled.ExpandMore
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
@@ -81,9 +81,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.LaunchedEffect
@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -125,11 +126,12 @@ import java.time.LocalTime
 @Composable
 fun ShiftTypesScreen(
     vm: ShiftsViewModel, onBack: () -> Unit, editId: Long = 0L,
-    /** [PAYX-51] To '교육' and its 시수 in 연장 휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
+    /** [PAYX-51] To '교육' and its 시수 in 연장·휴무일 근무 지정, from the editor of a day named 교육·연수·LMS. */
     onOpenSchooling: (() -> Unit)? = null,
 ) {
     val types by vm.shiftTypes.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<ShiftType?>(null) }
+    // [RVH-30] 검토 WORK-08 The shift being edited outlives the screen being made again (the app put away and brought back).
+    var editing by rememberSaveable(stateSaver = EditingSaver) { mutableStateOf<ShiftType?>(null) }
     // [DAILY-08] Opened for one shift type: its editor first, once.
     var editOpened by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(types, editId) {
@@ -139,17 +141,28 @@ fun ShiftTypesScreen(
     var deleting by remember { mutableStateOf<ShiftType?>(null) }
     var addingSet by remember { mutableStateOf<ShiftTypeSet?>(null) }
     // [SHFT-09] 1.25 Z (U25-가): a delete says what it changed and offers 되돌리기.
-    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     LaunchedEffect(vm) {
         vm.removed.collect { removal ->
-            val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 삭제했어요", actionLabel = "되돌리기",
+            val r = snackbar.showSnackbar("‘${removal.name}’ 근무를 지웠어요", actionLabel = "되돌리기",
                 duration = androidx.compose.material3.SnackbarDuration.Long)
             if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.restore(removal)
         }
     }
 
+    // 2.0.0 [RVP-06] The add button shrinks to its icon while the page scrolls down (검토 UIX-19 떠 있는 단추 규칙).
+    val fab = com.bamnat.app.ui.components.rememberFabOpen()
+    val dockAdd = com.bamnat.app.ui.components.addDocks()
+    val addType = {
+        editing = ShiftType(
+            id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
+            start = LocalTime.of(9, 0), end = LocalTime.of(18, 0), breakMinutes = 60,
+            alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
+        )
+    }
     Scaffold(
-        snackbarHost = { androidx.compose.material3.SnackbarHost(snackbar) },
+        modifier = Modifier.nestedScroll(fab.connection),
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = {
             TopAppBar(
                 // 1.36 PC 재검토 (현장은 설정 줄이 '일정 종류'인데 제목은 '근무 종류와 시간'): the same words as the row that opened it.
@@ -158,17 +171,11 @@ fun ShiftTypesScreen(
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
-                onClick = {
-                    editing = ShiftType(
-                        id = 0, name = "", label = "", colorArgb = ShiftPalette[(types?.size ?: 0) % ShiftPalette.size],
-                        start = LocalTime.of(9, 0), end = LocalTime.of(18, 0), breakMinutes = 60,
-                        alarmEnabled = true, alarms = listOf(AlarmSpec(60)),
-                    )
-                },
-                icon = { Icon(Icons.Filled.Add, "${dayKindNoun(vm.workStyle)} 추가") },
-                text = { Text("${dayKindNoun(vm.workStyle)} 추가") },
-            )
+            if (!dockAdd) com.bamnat.app.ui.components.AddFab("${dayKindNoun(vm.workStyle)} 추가", onClick = addType, open = fab.open)
+        },
+        bottomBar = {
+            // 2.0.0 갈래 P 5 (HQ-75·HQ-111·조건 9): the add button is the bar under the page, never over a line ([com.bamnat.app.ui.components.addDocks]).
+            if (dockAdd) com.bamnat.app.ui.components.AddDock("${dayKindNoun(vm.workStyle)} 추가", onClick = addType)
         },
     ) { padding ->
         val list = types
@@ -276,8 +283,11 @@ fun ShiftTypesScreen(
     }
 
     editing?.let { type ->
+        // 검토 WORK-19 How many past days this kind is worked, for "오늘부터만 / 지난 날도".
+        val pastDays by produceState(0, type.id) { value = if (type.id == 0L) 0 else vm.pastDaysOf(type.id) }
         ShiftTypeEditorDialog(
             initial = type,
+            pastDays = pastDays,
             showPremium = vm.isShiftCalendar,
             noun = dayKindNoun(vm.workStyle),
             onOpenSchooling = onOpenSchooling?.let { go -> { editing = null; go() } },
@@ -412,7 +422,7 @@ private fun ShiftTypeRow(
             // [SHFT-09] 1.25 Z (U25-가): deleting was only at the bottom of the editor, where people did not find it.
             if (onDelete != null) {
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Outlined.DeleteOutline, "${type.name} 삭제", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Icon(Icons.Outlined.DeleteOutline, "${type.name} 지우기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             // [DAILY-08] Drag the handle up or down: one place for each row's height passed.
@@ -463,7 +473,7 @@ private fun DeleteShiftTypeDialog(
     val inUse = u != null && (u.days > 0 || u.inPattern)
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("‘${type.name}’ 근무를 삭제할까요?") },
+        title = { Text("‘${type.name}’ 근무를 지울까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -492,11 +502,11 @@ private fun DeleteShiftTypeDialog(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text("삭제한 뒤에도 바로 되돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("지운 뒤에도 바로 되돌릴 수 있어요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
         confirmButton = {
-            TextButton(onClick = { onDelete(replaceWith) }, enabled = u != null) { Text("삭제", color = MaterialTheme.colorScheme.error) }
+            TextButton(onClick = { onDelete(replaceWith) }, enabled = u != null) { Text("지우기", color = MaterialTheme.colorScheme.error) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
     )
@@ -569,7 +579,7 @@ private fun OffsetPickerDialog(
     )
 }
 
-/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장 휴무일 근무 지정. */
+/** [PAYX-49] Names of a kind of day that is training, where the editor points to the 시수 of 연장·휴무일 근무 지정. */
 private val SCHOOLING = Regex("교육|연수|LMS", RegexOption.IGNORE_CASE)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -587,9 +597,23 @@ fun ShiftTypeEditorDialog(
     noun: String = "근무",
     /** [PAYX-51] The 교육 시수 note's button; null leaves only the note. */
     onOpenSchooling: (() -> Unit)? = null,
+    /**
+     * [RVH-33] 검토 WORK-19 The past days worked as [initial] (on its own times): when the hours change and there are some, the editor
+     * asks "오늘부터만 / 지난 날도" under the hours, 오늘부터만 already picked. 0 asks nothing (a new kind, the first setup).
+     */
+    pastDays: Int = 0,
 ) {
     // [CAL-30] I 리뷰 P14: what is being typed survives a fold or a turn of the phone.
     var draft by rememberSaveable(initial, stateSaver = ShiftTypeSaver) { mutableStateOf(initial) }
+    // 2.0.0 [RVH-89] 검토 PC-12 (가게 영업 고치기에 '근무 시간'·'근로기준법 휴게'): a shop's 영업 reads as 영업, and the 근로기준법
+    // break line and the 야간 가산 break start are a worker's, so a shop owner's kind leaves them out.
+    val shop = noun == "영업"
+    // 검토 WORK-19 From when the new hours count; kept like the rest of what is typed.
+    var since by rememberSaveable(initial) { mutableStateOf(com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) }
+    val today = com.bamnat.app.ui.calendar.rememberToday()
+    val asksSince = com.bamnat.core.schedule.SinceChoice.asks(initial, draft, pastDays)
+    /** What is saved: the hours from today only, or on every day, as picked. */
+    fun saved(): ShiftType = if (asksSince) com.bamnat.core.schedule.SinceChoice.apply(initial, draft, since, today) else draft
     // [DAYW-11] Start, end and break in one window (J's shared dialog).
     var pickTimes by rememberSaveable { mutableStateOf(false) }
     // [TIME-03] Which button opened the time window, so '종료' opens on the end time.
@@ -604,15 +628,22 @@ fun ShiftTypeEditorDialog(
     var canPost by remember { mutableStateOf(Notifications.canPost(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { canPost = Notifications.canPost(context) }
 
-    // Leaving with changes keeps them: alarms added or times picked are never lost to a back press.
-    val close: () -> Unit = {
-        if (draft != initial && draft.name.isNotBlank()) {
-            onSave(draft)
-            Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show()
-        } else {
-            onDismiss()
-        }
-    }
+    // 2.0.0 [RVH-100] 검토 PC-216 (조건 10): 바꾼 것이 있는데 X·뒤로·바깥으로 나가면 말없이 저장하지 않고 한 번 물어요(저장 / 나가기 / 계속 고치기는
+    // 바깥·뒤로). 알람 시각 창에서 고른 값도 이 창의 '저장'을 눌러야 저장돼요. Before, leaving saved it with only a Toast.
+    var quitAsk by rememberSaveable { mutableStateOf(false) }
+    val changed = draft != initial
+    com.bamnat.app.ui.components.Busy.Writing(changed)
+    val close: () -> Unit = { if (changed) quitAsk = true else onDismiss() }
+    if (quitAsk) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { quitAsk = false },
+        title = { Text("저장하지 않고 나갈까요?") },
+        text = { Text("바꾼 내용이 사라져요.", style = MaterialTheme.typography.bodyMedium) },
+        confirmButton = {
+            TextButton(onClick = { quitAsk = false; onSave(saved()); Toast.makeText(context, "저장했어요", Toast.LENGTH_SHORT).show() },
+                enabled = draft.name.isNotBlank()) { Text("저장") }
+        },
+        dismissButton = { TextButton(onClick = { quitAsk = false; onDismiss() }) { Text("나가기", color = MaterialTheme.colorScheme.error) } },
+    )
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -621,10 +652,10 @@ fun ShiftTypeEditorDialog(
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 수정") },
+                        title = { Text(if (initial.id == 0L || initial.name.isBlank()) "$noun 추가" else "$noun 고치기") },
                         navigationIcon = { IconButton(onClick = close) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "닫기") } },
                         actions = {
-                            TextButton(onClick = { onSave(draft) }, enabled = draft.name.isNotBlank()) { Text("저장") }
+                            TextButton(onClick = { onSave(saved()) }, enabled = draft.name.isNotBlank()) { Text("저장") }
                         },
                     )
                 },
@@ -639,23 +670,27 @@ fun ShiftTypeEditorDialog(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ShiftBadge(draft.copy(label = draft.label.ifBlank { draft.name.take(1).ifBlank { "?" } }), size = 44.dp,
+                        ShiftBadge(draft.copy(label = draft.label.ifBlank { com.bamnat.core.model.ShiftRules.cut(draft.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS).ifBlank { "?" } }), size = 44.dp,
                             outlined = draft.isOff)
                         Spacer(Modifier.width(12.dp))
                         OutlinedTextField(
                             value = draft.name,
                             onValueChange = { v -> draft = draft.copy(name = v.take(10)) },
-                            label = { Text("이름 (예: 주간, 야간, 오픈)") },
+                            // 2.0.0 [RVH-89] 검토 PC-12: a shop's examples are its own (a 가게 has no 야간 to name).
+                            label = { Text(if (shop) "이름 (예: 점심, 저녁)" else "이름 (예: 주간, 야간, 오픈)") },
                             singleLine = true,
                             modifier = Modifier.weight(1f),
                         )
                         Spacer(Modifier.width(8.dp))
                         OutlinedTextField(
                             value = draft.label,
-                            onValueChange = { v -> draft = draft.copy(label = v.take(2)) },
-                            label = { Text("표시") },
+                            // 2.0.0 [RVM-29] SN-16: two letters as a person counts them (👩‍⚕️ is one), never half an emoji (ShiftRules).
+                            onValueChange = { v -> draft = draft.copy(label = com.bamnat.core.model.ShiftRules.cut(v,
+                                com.bamnat.core.model.ShiftRules.LABEL_LETTERS, com.bamnat.core.model.ShiftRules.LABEL_UNITS)) },
+                            label = { Text("표시", maxLines = 1, softWrap = false) },
                             singleLine = true,
-                            modifier = Modifier.width(76.dp),
+                            // 2.0.0 [RVH-89] 사진 (조건 12): at 200% the 76dp box stood '표시' up letter by letter; it grows with the letters.
+                            modifier = Modifier.width(76.dp * androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceIn(1f, 1.4f)),
                         )
                     }
 
@@ -663,8 +698,8 @@ fun ShiftTypeEditorDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 // [SETUP-08] Said as the user would: is this a day without work?
-                                Text("일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
-                                Text("휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
+                                Text(if (shop) "영업하지 않는 날이에요" else "일하지 않는 날이에요", style = MaterialTheme.typography.bodyLarge)
+                                Text(if (shop) "정기 휴무처럼 문을 닫는 날이면 켜요" else "휴무·비번처럼 근무가 없는 날이면 켜요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             Spacer(Modifier.width(12.dp))
@@ -686,7 +721,7 @@ fun ShiftTypeEditorDialog(
                         val start = draft.start ?: LocalTime.of(9, 0)
                         val end = draft.end ?: LocalTime.of(18, 0)
                         val timed = draft.copy(start = start, end = end)
-                        SectionCard(title = "근무 시간") {
+                        SectionCard(title = "$noun 시간") {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 TimeButton("시작", start, Modifier.weight(1f)) { pickEnd = false; pickTimes = true }
                                 TimeButton(
@@ -698,7 +733,7 @@ fun ShiftTypeEditorDialog(
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("근무 길이", style = MaterialTheme.typography.bodyLarge)
+                                    Text("$noun 길이", style = MaterialTheme.typography.bodyLarge)
                                     Text("시작부터 끝까지", style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
@@ -707,7 +742,7 @@ fun ShiftTypeEditorDialog(
                                     onChange = { draft = timed.withDuration(it) },
                                     step = 30,
                                     max = 24 * 60,
-                                    dialogTitle = "근무 길이",
+                                    dialogTitle = "$noun 길이",
                                 )
                             }
                             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -720,20 +755,19 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Spacer(Modifier.height(4.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            com.bamnat.app.ui.components.LabelControlRow(if (shop) "쉬는 시간" else "휴게 시간") { // [RVH-81] HQ-98
                                 MinutesStepper(
                                     minutes = draft.breakMinutes,
                                     onChange = { draft = draft.copy(breakMinutes = it) },
                                     step = 10,
                                     max = 12 * 60,
-                                    dialogTitle = "휴게 시간",
+                                    dialogTitle = if (shop) "쉬는 시간" else "휴게 시간",
                                     format = com.bamnat.core.hours.HoursFormat::breakText,
                                 )
                             }
                             // 순번 285: 근로기준법 제54조 asks for 30 minutes from 4 hours and an hour from 8; say so, never block.
                             val legalBreak = LegalBreak.minutesFor(timed.durationMinutes)
-                            if (draft.breakMinutes < legalBreak) {
+                            if (!shop && draft.breakMinutes < legalBreak) {
                                 Text(
                                     "${HoursFormat.korean(timed.durationMinutes)} 근무는 휴게가 ${legalBreak}분 이상이어야 해요(근로기준법 제54조). " +
                                         "휴게 없이 모두 일한 시간으로 쳐 주는 회사라면 그대로 두세요.",
@@ -741,7 +775,7 @@ fun ShiftTypeEditorDialog(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
-                            if (draft.breakMinutes > 0) {
+                            if (draft.breakMinutes > 0 && !shop) {
                                 // [PAY-01] Where the break falls decides how much of the shift is night work.
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
@@ -762,11 +796,28 @@ fun ShiftTypeEditorDialog(
                                 }
                             }
                             Text(
-                                "실제 근무 ${HoursFormat.korean(timed.workMinutes)}" +
+                                (if (shop) "실제 영업 " else "실제 근무 ") + HoursFormat.korean(timed.workMinutes) +
                                     if (!end.isAfter(start)) " · 다음날 ${Fmt.time(end)}에 끝나요" else "",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                            // [RVH-33] 검토 WORK-19·U02-06 Hours changed on a kind already worked: from when they count, said where they are
+                            // set. Before 2.0.0 every past day took the new hours, and last month's hours, stats and pay moved with no word.
+                            if (asksSince) {
+                                HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                                Text("바뀐 시간은 언제부터예요?", style = MaterialTheme.typography.bodyLarge)
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    for (w in com.bamnat.core.schedule.SinceChoice.Way.entries) {
+                                        FilterChip(selected = since == w, onClick = { since = w }, label = { Text(w.label) })
+                                    }
+                                }
+                                Text(
+                                    if (since == com.bamnat.core.schedule.SinceChoice.Way.FROM_TODAY) "지난 날 ${pastDays}일은 ${hoursText(initial)} 그대로예요"
+                                    else com.bamnat.core.schedule.SinceChoice.line(pastDays, if (shop) "영업한 시간·통계" else "근무시간·통계·예상 급여"),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
 
                         // [SHFT-01] This kind of day's own premium, a line of its own in 급여 계산.
@@ -776,7 +827,7 @@ fun ShiftTypeEditorDialog(
                         // whose 시수 is set with its pay; a kind of day only names the day. Said where the user looks for it.
                         if (SCHOOLING.containsMatchIn(draft.name)) {
                             Text(
-                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장 휴무일 근무 지정에서 '교육'을 더해 " +
+                                "교육처럼 시수(통상시급을 나누는 시간)가 다른 일은 설정 › 연장·휴무일 근무 지정에서 '교육'을 더해 " +
                                     "급여와 가산 › 시수를 정해요. 근무 종류에는 시수 칸이 없어요.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -789,7 +840,7 @@ fun ShiftTypeEditorDialog(
                         if (showAlarms) SectionCard(title = "알람") {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("근무 전 알람", style = MaterialTheme.typography.bodyLarge)
+                                    Text("$noun 전 알람", style = MaterialTheme.typography.bodyLarge)
                                     Text(
                                         "여러 개를 추가할 수 있어요",
                                         style = MaterialTheme.typography.bodySmall,
@@ -861,7 +912,7 @@ fun ShiftTypeEditorDialog(
                                 Text("지금 모양 그대로 써도 돼요", style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            ShiftBadge(draft.copy(label = draft.label.ifBlank { draft.name.take(1).ifBlank { "?" } }), size = 32.dp,
+                            ShiftBadge(draft.copy(label = draft.label.ifBlank { com.bamnat.core.model.ShiftRules.cut(draft.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS).ifBlank { "?" } }), size = 32.dp,
                                 outlined = draft.isOff)
                             Spacer(Modifier.width(8.dp))
                             Icon(if (styling) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null)
@@ -931,7 +982,7 @@ fun ShiftTypeEditorDialog(
                     ) { Text("저장") }
                     if (onDelete != null) {
                         TextButton(onClick = onDelete, modifier = Modifier.fillMaxWidth()) {
-                            Text("이 근무 종류 삭제", color = MaterialTheme.colorScheme.error)
+                            Text("이 근무 종류 지우기", color = MaterialTheme.colorScheme.error)
                         }
                     }
                 }
@@ -991,7 +1042,7 @@ private fun TimeButton(label: String, time: LocalTime, modifier: Modifier = Modi
         modifier
             .clip(MaterialTheme.shapes.medium)
             .background(MaterialTheme.colorScheme.surfaceContainer)
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1033,13 +1084,25 @@ private fun shiftSpan(t: ShiftType): String {
 }
 
 /** [CAL-30] Keeps an unsaved [ShiftType] across a fold: the fields as text, the alarms in [AlarmCodec]'s form. */
-private val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
+/** 검토 WORK-08 The shift being edited, or none: kept with [ShiftTypeSaver]. */
+internal val EditingSaver: Saver<ShiftType?, Any> = Saver(
+    save = { t -> t?.let { with(ShiftTypeSaver) { save(it) } } },
+    restore = { ShiftTypeSaver.restore(it) },
+)
+
+internal val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
     save = { t ->
         listOf(
             t.id.toString(), t.name, t.label, t.colorArgb.toString(), t.start?.toString().orEmpty(), t.end?.toString().orEmpty(),
             t.breakMinutes.toString(), t.breakStart?.toString().orEmpty(), t.isOff.toString(), t.alarmEnabled.toString(),
             com.bamnat.core.alarm.AlarmCodec.encodeSpecs(t.alarms), t.alarmSoundUri.orEmpty(), t.sortOrder.toString(),
             t.icon.orEmpty(), t.premiumPercent.toString(),
+            // 검토 WORK-08 유급 휴게 (PAYX-32) was left out: a window made again lost it.
+            t.breakPaid?.toString().orEmpty(),
+            // 검토 WORK-19 The hours it had before: a window made again must not let them go on saving.
+            com.bamnat.core.model.TimeVersion.encode(t.timeHistory),
+            // 2.0.0 [RVH-44] The gap between two parts, kept across a fold like the rest.
+            t.gapStart?.toString().orEmpty(), t.gapMinutes.toString(), t.gapAlarm.toString(),
         )
     },
     restore = { v ->
@@ -1049,6 +1112,15 @@ private val ShiftTypeSaver: Saver<ShiftType, Any> = listSaver(
             breakMinutes = v[6].toInt(), breakStart = time(7), isOff = v[8].toBoolean(), alarmEnabled = v[9].toBoolean(),
             alarms = com.bamnat.core.alarm.AlarmCodec.decodeSpecs(v[10]) ?: emptyList(), alarmSoundUri = v[11].ifEmpty { null },
             sortOrder = v[12].toInt(), icon = v[13].ifEmpty { null }, premiumPercent = v[14].toInt(),
+            breakPaid = v.getOrNull(15)?.takeIf { it.isNotEmpty() }?.toBoolean(),
+            timeHistory = com.bamnat.core.model.TimeVersion.decode(v.getOrNull(16)),
+            gapStart = v.getOrNull(17)?.takeIf { it.isNotEmpty() }?.let(LocalTime::parse),
+            gapMinutes = v.getOrNull(18)?.toIntOrNull() ?: 0,
+            gapAlarm = v.getOrNull(19)?.toBoolean() ?: false,
         )
     },
 )
+
+/** 검토 WORK-19 "07:00~19:00": a kind of day's hours as the editor says them. */
+private fun hoursText(t: ShiftType): String =
+    if (!t.hasTimes) "시간 없이" else "${Fmt.time(t.start!!)}~${Fmt.time(t.end!!)}"

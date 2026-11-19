@@ -59,6 +59,12 @@ data class MoneyEntryEntity(
     @ColumnInfo(defaultValue = "''") val receipt: String = "",
     /** Version 22 [LEDX-17]: 유이자 할부's yearly fee in percent; 0 for 무이자. */
     @ColumnInfo(defaultValue = "0") val installmentRate: Double = 0.0,
+    /**
+     * Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the category's fixed id ([com.bamnat.core.money.CategoryIds]); [category] is its name as
+     * shown. [partIds]: each split part's id, one a line in [parts]' order, kept apart so an older app reading [parts] sees what it knew.
+     */
+    @ColumnInfo(defaultValue = "''") val categoryId: String = "",
+    @ColumnInfo(defaultValue = "''") val partIds: String = "",
 )
 
 /** [LEDG-05] Money leaving on a set day each month; version 9. [LEDG-09] Any repeating line since version 15. */
@@ -78,6 +84,10 @@ data class FixedCostEntity(
     @ColumnInfo(defaultValue = "0") val auto: Boolean = false,
     @ColumnInfo(defaultValue = "NULL") val startEpochDay: Long? = null,
     @ColumnInfo(defaultValue = "NULL") val endEpochDay: Long? = null,
+    /** Version 36 (2.0.0 [RVK-46] 검토 MONEY-07): where a repeating 이체 goes (적금·대출 상환·내 다른 계좌); null for spending or income. */
+    @ColumnInfo(defaultValue = "NULL") val toAccountId: Long? = null,
+    /** Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the category's fixed id; [category] is its name. */
+    @ColumnInfo(defaultValue = "''") val categoryId: String = "",
 )
 
 /** [LEDG-08] Cash, bank accounts, cards and pay balances; version 15. */
@@ -104,11 +114,15 @@ data class MoneyAccountEntity(
     @ColumnInfo(defaultValue = "''") val perfSkip: String = "",
 )
 
-/** [LEDG-06] Monthly budgets; "" is the whole month's. Version 15. */
-@Entity(tableName = "money_budgets")
+/**
+ * [LEDG-06] Monthly budgets; "" is the whole month's. Version 15. Version 36 (2.0.0 [RVK-46] 검토 I06aa-05): [month] as yyyyMM for a
+ * budget of that month only ('이 달만'), 0 for every month (every budget of 35 is every month's, as it was).
+ */
+@Entity(tableName = "money_budgets", primaryKeys = ["category", "month"])
 data class MoneyBudgetEntity(
-    @PrimaryKey val category: String,
+    val category: String,
     val amount: Long,
+    @ColumnInfo(defaultValue = "0") val month: Int = 0,
 )
 
 /** 1.37 [LEDH-11][LEDH-13] 모으기·세금 봉투. Version 25. */
@@ -144,6 +158,17 @@ data class MoneyCategoryEntity(
     val name: String,
     val position: Int,
     val hidden: Boolean,
+    /** Version 36 (2.0.0 [RVK-46] 검토 U06a-15·I06aa-09): the icon and color the user picked ([com.bamnat.core.money.CategoryEdit]); "" and 0 for the usual. */
+    @ColumnInfo(defaultValue = "''") val icon: String = "",
+    @ColumnInfo(defaultValue = "0") val color: Int = 0,
+    /**
+     * Version 37 (2.0.0 [RVK-60] 검토 I06ab-01): the fixed id lines point at ([com.bamnat.core.money.CategoryIds]), what the sums read it
+     * as ([com.bamnat.core.money.CategoryRole.name], "" for none), 집·일 ([com.bamnat.core.money.CategoryScope.code]) and its 표준 묶음.
+     */
+    @ColumnInfo(defaultValue = "''") val uid: String = "",
+    @ColumnInfo(defaultValue = "''") val role: String = "",
+    @ColumnInfo(defaultValue = "0") val scope: Int = 0,
+    @ColumnInfo(defaultValue = "''") val std: String = "",
 )
 
 /** [LEDG-04] The category the user gave a place; it wins over the built-in dictionary. Version 9. */
@@ -177,6 +202,21 @@ data class JobEntity(
     @ColumnInfo(defaultValue = "1") val status: Int = 1,
     @ColumnInfo(defaultValue = "NULL") val units: Double? = null,
     @ColumnInfo(defaultValue = "NULL") val dueEpochDay: Long? = null,
+)
+
+/**
+ * Version 36 (2.0.0 [RVK-46] 검토 MONEY-29·T06a-01·I06ab-04): money that came in for a job besides 선금·잔금 — 계약금·중도금·나눠 받은 돈 —
+ * each with its day. Every job of 35 has none: what it received is its 선금·잔금 as before.
+ */
+@Entity(tableName = "job_payments", indices = [Index("jobId")])
+data class JobPaymentEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val jobId: Long,
+    val epochDay: Long,
+    val amount: Long,
+    /** What it was ('계약금', '중도금', ''). */
+    val label: String,
+    val note: String,
 )
 
 /** [WORK-03] One row per day a shop recorded; version 7. */
@@ -234,6 +274,31 @@ interface MoneyDao {
     @Query("DELETE FROM jobs WHERE id = :id")
     suspend fun deleteJob(id: Long)
 
+    // 2.0.0 [RVK-46] (DB 36) A job's payments besides 선금·잔금.
+    @Query("SELECT * FROM job_payments ORDER BY epochDay, id")
+    fun observeJobPayments(): Flow<List<JobPaymentEntity>>
+
+    @Query("SELECT * FROM job_payments ORDER BY epochDay, id")
+    suspend fun allJobPayments(): List<JobPaymentEntity>
+
+    @Query("SELECT * FROM job_payments WHERE jobId = :jobId ORDER BY epochDay, id")
+    suspend fun jobPaymentsOf(jobId: Long): List<JobPaymentEntity>
+
+    @Insert
+    suspend fun insertJobPayment(e: JobPaymentEntity): Long
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun restoreJobPayment(e: JobPaymentEntity)
+
+    @Query("DELETE FROM job_payments WHERE id = :id")
+    suspend fun deleteJobPayment(id: Long)
+
+    @Query("DELETE FROM job_payments WHERE jobId = :jobId")
+    suspend fun deleteJobPaymentsOf(jobId: Long)
+
+    @Query("DELETE FROM job_payments")
+    suspend fun clearJobPayments()
+
     @Query("SELECT * FROM daily_sales ORDER BY epochDay")
     fun observeSales(): Flow<List<DailySalesEntity>>
 
@@ -260,6 +325,10 @@ interface MoneyDao {
 
     @Query("SELECT * FROM money_entries WHERE epochDay >= :fromDay")
     suspend fun entriesFrom(fromDay: Long): List<MoneyEntryEntity>
+
+    /** 2.0.0 [RVL-66] (검토 DATA-18) Lines from [fromDay] on, and every 할부 line whatever its day: what a card bill can hold. */
+    @Query("SELECT * FROM money_entries WHERE epochDay >= :fromDay OR installments > 1")
+    suspend fun billLines(fromDay: Long): List<MoneyEntryEntity>
 
     @Query("UPDATE money_entries SET reviewed = 1 WHERE reviewed = 0")
     suspend fun markAllReviewed()
@@ -330,6 +399,10 @@ interface MoneyDao {
     @Query("UPDATE fixed_costs SET accountId = NULL WHERE accountId = :id")
     suspend fun unlinkFixedFromAccount(id: Long)
 
+    /** 2.0.0 [RVK-46] A repeating 이체 into a removed account goes nowhere set, as before it had a '어디로'. */
+    @Query("UPDATE fixed_costs SET toAccountId = NULL WHERE toAccountId = :id")
+    suspend fun unlinkFixedToAccount(id: Long)
+
     // 1.37 [LEDH-11] 봉투.
     @Query("SELECT * FROM envelopes ORDER BY sortOrder, id")
     fun observeEnvelopes(): Flow<List<EnvelopeEntity>>
@@ -374,8 +447,13 @@ interface MoneyDao {
     @Upsert
     suspend fun upsertBudget(e: MoneyBudgetEntity)
 
+    /** Every month's and every '이 달만' budget of [category]. */
     @Query("DELETE FROM money_budgets WHERE category = :category")
     suspend fun deleteBudget(category: String)
+
+    /** 2.0.0 [RVK-46] One budget: every month's ([month] 0) or one month's (yyyyMM). */
+    @Query("DELETE FROM money_budgets WHERE category = :category AND month = :month")
+    suspend fun deleteBudget(category: String, month: Int)
 
     @Query("DELETE FROM money_budgets")
     suspend fun clearBudgets()
@@ -403,6 +481,17 @@ interface MoneyDao {
     @Query("UPDATE fixed_costs SET category = :to WHERE kind = :kind AND category = :from")
     suspend fun renameInFixed(kind: String, from: String, to: String)
 
+    /** 2.0.0 [RVK-60] Lines of category [id] show its name [name]. */
+    @Query("UPDATE money_entries SET category = :name WHERE kind = :kind AND categoryId = :id AND category != :name")
+    suspend fun nameLinesOf(kind: String, id: String, name: String)
+
+    @Query("UPDATE fixed_costs SET category = :name WHERE kind = :kind AND categoryId = :id AND category != :name")
+    suspend fun nameFixedOf(kind: String, id: String, name: String)
+
+    /** 2.0.0 [RVK-60] Lines with a split part that may be category [id]'s. */
+    @Query("SELECT * FROM money_entries WHERE kind = :kind AND partIds LIKE '%' || :id || '%'")
+    suspend fun entriesWithPartId(kind: String, id: String): List<MoneyEntryEntity>
+
     @Query("UPDATE category_rules SET category = :to WHERE category = :from")
     suspend fun renameInRules(from: String, to: String)
 
@@ -426,12 +515,13 @@ fun MoneyEntryEntity.toModel() = MoneyEntry(
     toAccountId = toAccountId,
     memo = memo,
     tags = tags.split(',').map { it.trim() }.filter { it.isNotEmpty() },
-    parts = decodeParts(parts),
+    parts = decodeParts(parts, partIds),
     installments = installments.coerceAtLeast(1),
     fixedId = fixedId,
     proof = proof,
     receipt = receipt,
     installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
+    categoryId = categoryId,
 )
 
 fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
@@ -441,17 +531,26 @@ fun MoneyEntry.toEntity(createdAt: Long = Today.millis()) = MoneyEntryEntity(
     accountId = accountId, toAccountId = toAccountId, memo = memo, tags = tags.joinToString(","),
     parts = encodeParts(parts), installments = installments.coerceAtLeast(1), fixedId = fixedId,
     proof = proof, receipt = receipt, installmentRate = installmentRate.coerceIn(0.0, MoneyEntry.MAX_INSTALLMENT_RATE),
+    categoryId = categoryId, partIds = encodePartIds(parts),
 )
 
 /** [LEDG-11] Split parts as "amount<TAB>category" lines; categories never hold a tab ([MoneyCategories.clean]). */
 fun encodeParts(parts: List<EntryPart>): String = parts.joinToString("\n") { "${it.amount}\t${it.category}" }
 
-fun decodeParts(text: String): List<EntryPart> = if (text.isBlank()) emptyList() else text.lines().mapNotNull { line ->
-    val tab = line.indexOf('\t')
-    if (tab <= 0) return@mapNotNull null
-    val amount = line.substring(0, tab).toLongOrNull() ?: return@mapNotNull null
-    val category = line.substring(tab + 1).trim()
-    if (category.isEmpty()) null else EntryPart(category, amount)
+/** 2.0.0 [RVK-60] The parts' ids, one a line in the same order; "" when none has one. */
+fun encodePartIds(parts: List<EntryPart>): String = if (parts.all { it.id.isEmpty() }) "" else parts.joinToString("\n") { it.id }
+
+/** [LEDG-11] [encodeParts] read back; 2.0.0 [RVK-60] with each part's id from [ids] ([encodePartIds]) where it has one. */
+fun decodeParts(text: String, ids: String = ""): List<EntryPart> {
+    if (text.isBlank()) return emptyList()
+    val idLines = if (ids.isEmpty()) emptyList() else ids.lines()
+    return text.lines().mapIndexedNotNull { i, line ->
+        val tab = line.indexOf('\t')
+        if (tab <= 0) return@mapIndexedNotNull null
+        val amount = line.substring(0, tab).toLongOrNull() ?: return@mapIndexedNotNull null
+        val category = line.substring(tab + 1).trim()
+        if (category.isEmpty()) null else EntryPart(category, amount, idLines.getOrNull(i)?.trim().orEmpty())
+    }
 }
 
 fun FixedCostEntity.toModel() = FixedCost(
@@ -460,12 +559,16 @@ fun FixedCostEntity.toModel() = FixedCost(
     repeat = runCatching { Repeat.valueOf(repeat) }.getOrDefault(Repeat.MONTH), monthOfYear = monthOfYear.coerceIn(1, 12),
     accountId = accountId, auto = auto,
     start = startEpochDay?.let(LocalDate::ofEpochDay), end = endEpochDay?.let(LocalDate::ofEpochDay),
+    toAccountId = toAccountId?.takeIf { kind == MoneyKind.TRANSFER.name && it != accountId },
+    categoryId = categoryId,
 )
 
 fun FixedCost.toEntity() = FixedCostEntity(
     id = id, name = name, amount = amount, day = day, kind = kind.name, category = category, remind = remind,
     repeat = repeat.name, monthOfYear = monthOfYear, accountId = accountId, auto = auto,
     startEpochDay = start?.toEpochDay(), endEpochDay = end?.toEpochDay(),
+    toAccountId = toAccountId?.takeIf { kind == MoneyKind.TRANSFER && it != accountId },
+    categoryId = categoryId,
 )
 
 fun MoneyAccountEntity.toModel() = MoneyAccount(
@@ -482,16 +585,24 @@ fun MoneyAccount.toEntity() = MoneyAccountEntity(
     perfTiers = perfTiers.joinToString(","), perfSkip = perfSkip.joinToString(","),
 )
 
-fun MoneyBudgetEntity.toModel() = MoneyBudget(category, amount)
+fun MoneyBudgetEntity.toModel() = MoneyBudget(category, amount, MoneyBudget.monthOf(month))
 
-fun MoneyBudget.toEntity() = MoneyBudgetEntity(category, amount)
+fun MoneyBudget.toEntity() = MoneyBudgetEntity(category, amount, MoneyBudget.code(month))
 
 fun MoneyCategoryEntity.toModel(): CategoryEdit? =
-    runCatching { MoneyKind.valueOf(kind) }.getOrNull()?.let { CategoryEdit(it, name, position, hidden) }
+    runCatching { MoneyKind.valueOf(kind) }.getOrNull()?.let {
+        CategoryEdit(it, name, position, hidden, icon, color, id = uid, scope = com.bamnat.core.money.CategoryScope.of(scope), standard = std)
+    }
 
-fun CategoryEdit.toEntity() = MoneyCategoryEntity(kind.name, name, position, hidden)
+/** 2.0.0 [RVK-60] A category without an id takes its name's ([com.bamnat.core.money.CategoryIds.of]); its role follows from the id. */
+fun CategoryEdit.toEntity(): MoneyCategoryEntity {
+    val uid = id.ifEmpty { com.bamnat.core.money.CategoryIds.of(kind, name) }
+    return MoneyCategoryEntity(kind.name, name, position, hidden, icon, color, uid = uid,
+        role = com.bamnat.core.money.CategoryIds.role(uid)?.name.orEmpty(), scope = scope.code,
+        std = standard.ifEmpty { com.bamnat.core.money.CategoryIds.standard(uid) })
+}
 
-fun JobEntity.toModel() = Job(
+fun JobEntity.toModel(payments: List<JobPaymentEntity> = emptyList()) = Job(
     id = id, date = LocalDate.ofEpochDay(epochDay), title = title, client = client, place = place,
     start = startMinute?.let { it.toLocalTime() }, end = endMinute?.let { it.toLocalTime() },
     amount = amount, deposit = deposit, depositPaid = depositPaid, balancePaid = balancePaid,
@@ -499,7 +610,13 @@ fun JobEntity.toModel() = Job(
     endDate = endEpochDay?.let(LocalDate::ofEpochDay), costs = costs, withholding = withholding,
     status = com.bamnat.core.money.JobStatus.fromCode(status), units = units?.takeIf { it > 0 },
     due = dueEpochDay?.let(LocalDate::ofEpochDay),
+    payments = payments.map { it.toModel() }.sortedWith(compareBy({ it.date }, { it.id })),
 )
+
+fun JobPaymentEntity.toModel() = com.bamnat.core.money.JobPayment(id, jobId, LocalDate.ofEpochDay(epochDay), amount, label, note)
+
+fun com.bamnat.core.money.JobPayment.toEntity() =
+    JobPaymentEntity(id, jobId, date.toEpochDay(), amount.coerceAtLeast(0), label.trim().take(com.bamnat.core.money.JobPayment.MAX_LABEL), note.trim())
 
 fun Job.toEntity() = JobEntity(
     id = id, epochDay = date.toEpochDay(), title = title, client = client, place = place,

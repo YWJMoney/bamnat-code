@@ -21,6 +21,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 
@@ -52,16 +53,29 @@ fun AlertDialog(
     textContentColor: Color = AlertDialogDefaults.textContentColor,
     tonalElevation: Dp = AlertDialogDefaults.TonalElevation,
     properties: DialogProperties = DialogProperties(),
+    /**
+     * 2.0.0 [RVH-69] 검토 PC-135: [text] holds fields to type in. It scrolls (a 1dp line where more is above or below), so with the
+     * keyboard up the field being typed stays in view and the buttons stay under it. Only for a [text] with no list or scroll of
+     * its own (a scroll inside a scroll cannot be measured).
+     */
+    fields: Boolean = false,
 ) {
     val d = LocalDensity.current
+    StaysUnderTheLock()
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismissRequest,
-        confirmButton = keep(d, confirmButton),
+        confirmButton = keep(d) { AboveTheKeyboard(); confirmButton() },
         modifier = modifier,
         dismissButton = dismissButton?.let { keep(d, it) },
         icon = icon?.let { keep(d, it) },
         title = title?.let { keep(d, it) },
-        text = text?.let { keep(d, it) },
+        text = text?.let { t ->
+            if (!fields) keep(d, t)
+            else keep(d) {
+                val s = rememberScrollState()
+                androidx.compose.foundation.layout.Column(Modifier.scrollEdges(s).verticalScroll(s)) { t() }
+            }
+        },
         shape = shape,
         containerColor = containerColor,
         iconContentColor = iconContentColor,
@@ -75,7 +89,46 @@ fun AlertDialog(
 @Composable
 fun Dialog(onDismissRequest: () -> Unit, properties: DialogProperties = DialogProperties(), content: @Composable () -> Unit) {
     val d = LocalDensity.current
-    androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d, content))
+    StaysUnderTheLock()
+    androidx.compose.ui.window.Dialog(onDismissRequest = onDismissRequest, properties = properties, content = keep(d) { AboveTheKeyboard(); content() })
+}
+
+/**
+ * 2.0.0 [RVH-69] 검토 PC-135 (통합 3차 PC: 현장 공수 창에서 일당을 적을 때 자판이 '저장'을 가려요): a 창's window is made smaller by
+ * the keyboard instead of sliding under it, so the 창 sits above the keyboard with its buttons in view (Material's 창 gives the
+ * text what is left after the title and the buttons). Every 창 of the app, the ones with a field to type in above all.
+ */
+@Composable
+internal fun AboveTheKeyboard() {
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.SideEffect {
+        @Suppress("DEPRECATION")
+        (view.parent as? androidx.compose.ui.window.DialogWindowProvider)?.window
+            ?.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+    }
+}
+
+/**
+ * 1.39.1 [R391-10] (검토 UIX-41) A 창 or 시트 is a window over the activity: drawn inside the activity, 앱 잠금's cover stayed under
+ * it, and 급여 대장 or 돈 적기 left open showed over the cover. The cover is a window of its own now ([LockWindow]); one opened
+ * while locked (a notice's 돈 적기) tells it to come back on top.
+ */
+@Composable
+internal fun StaysUnderTheLock() {
+    androidx.compose.runtime.LaunchedEffect(Unit) { com.bamnat.app.AppLock.windowOpened() }
+    // 2.0.0 [RVP-24] Open over the screen: the first tab and the opening windows wait for it (Busy).
+    Busy.Window()
+}
+
+/** 1.39.1 [R391-10] 앱 잠금's cover as a full-screen window over every 창 and 시트; [onBack] leaves the app. */
+@Composable
+fun LockWindow(onBack: () -> Unit, content: @Composable () -> Unit) {
+    val d = LocalDensity.current
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onBack,
+        properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false, decorFitsSystemWindows = false),
+        content = keep(d, content),
+    )
 }
 
 /** The current context with a Korean locale, for Material parts that word themselves (the date picker). */
@@ -106,6 +159,7 @@ fun DatePickerDialog(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val d = LocalDensity.current
+    StaysUnderTheLock()
     androidx.compose.material3.DatePickerDialog(
         onDismissRequest = onDismissRequest,
         confirmButton = keep(d, confirmButton),

@@ -21,12 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,10 +46,13 @@ import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.FilterChip
 import com.bamnat.app.ui.components.MinutesStepper
+import com.bamnat.app.ui.components.NudgeCard
 import com.bamnat.app.ui.components.ShiftBadge
 import com.bamnat.app.ui.components.TimePickerDialog
+import com.bamnat.app.ui.components.ToneLine
 import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
+import com.bamnat.app.ui.theme.Tone
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraTiming
@@ -77,24 +78,18 @@ internal fun ExtrasContent(
     onOpenExtraKinds: () -> Unit,
 ) {
     val extraStyle = ExtraText.styleHere()
-    val cal = LocalCalendarColors.current
     // The piece open for changes; a piece just added opens so its hours can be checked.
     var editing by rememberSaveable(day.date) { mutableStateOf<Int?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         if (day.extras.any { it.entry.needsReview }) {
-            Surface(color = cal.warningContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(start = 12.dp, top = 10.dp, bottom = 10.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("예전 기록에서 옮겨 온 추가 근무예요", style = MaterialTheme.typography.titleSmall, color = cal.warning)
-                        Text(
-                            "이제 추가 근무마다 시각이 있어요. 종류와 시간이 맞는지 보고, 틀리면 눌러서 고치거나 빼 주세요.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                    TextButton(onClick = { vm.markExtrasReviewed(day.date) }) { Text("맞아요") }
-                }
-            }
+            // 2.0.0 [RVH-58] (조건 3·6, PC-109와 같은 창): the one card shape, 주의 in the icon only; it was red words on a red ground.
+            NudgeCard(
+                "예전 기록에서 옮겨 온 추가 근무예요",
+                tone = Tone.Caution,
+                detail = "종류와 시간이 맞는지 보고, 틀리면 눌러서 고치거나 빼 주세요.",
+                action = "맞아요",
+                onAction = { vm.markExtrasReviewed(day.date) },
+            )
         }
 
         day.extras.forEachIndexed { i, e ->
@@ -107,14 +102,11 @@ internal fun ExtrasContent(
             )
         }
 
-        if (ExtraText.overlaps(day)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.WarningAmber, null, Modifier.size(18.dp), tint = cal.warning)
-                Spacer(Modifier.width(8.dp))
-                Text("시간이 겹치는 근무가 있어요. 겹친 시간도 따로따로 세니 시각을 확인해 주세요.",
-                    style = MaterialTheme.typography.bodySmall, color = cal.warning)
-            }
-        }
+        // 2.0.0 [RVH-58] 검토 PC-109: said only where the hours count twice, in one sentence of what was counted. Work inside the
+        // shift says on its own line that it adds no hours.
+        val workStyle = vm.settings.collectAsStateWithLifecycle().value.workStyle
+        // In the 안내 colour (ⓘ, words in the quiet colour), not red: it says what was counted, and nothing is wrong unless it was one piece.
+        ExtraText.twice(day)?.let { t -> ToneLine(ExtraText.twiceLine(t, workStyle), tone = Tone.Plain) }
 
         val folded = com.bamnat.app.ui.shifts.foldedHere()
         val choices = remember(snapshot, day, folded) {
@@ -144,7 +136,7 @@ internal fun ExtrasContent(
                 if (day.isRestDay) "쉬는 날 일했다면 여기서 넣어 주세요. 근무표는 그대로 두고 일한 시간만 더해져서 급여가 맞게 계산돼요."
                 else if (snapshot.kinds.visible().none { it.timing is com.bamnat.core.model.ExtraTiming.AsShift })
                     "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 특근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요."
-                else "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 같은 날 대근을 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.",
+                else "근무 뒤 ${if (extraStyle == com.bamnat.core.work.WorkStyle.DAY) "야근" else "잔업"}이나 같은 날 ${ExtraText.coverWord(extraStyle)}${Fmt.obj(ExtraText.coverWord(extraStyle))} 넣어 주세요. 넣은 뒤 눌러서 시각을 바꿀 수 있어요.", // [RVH-07]
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -152,7 +144,7 @@ internal fun ExtrasContent(
         TextButton(onClick = onOpenExtraKinds, modifier = Modifier.padding(start = 0.dp)) {
             Icon(Icons.Filled.Tune, null, Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("연장 휴무일 근무 지정")
+            Text("연장·휴무일 근무 지정")
         }
     }
 }
@@ -214,11 +206,11 @@ private fun ExtraRow(
             )
         }
         if (extra.estimated) {
-            Text(
+            // 2.0.0 [RVH-58] (조건 6, PC-109와 같은 창): 주의 in the icon, not red words; red is for what cannot be undone.
+            ToneLine(
                 "근무가 없는 날이라 시각을 몰라 야간 시간은 빼고 셌어요. 눌러서 시각을 적어 주세요.",
-                style = MaterialTheme.typography.bodySmall,
-                color = cal.warning,
-                modifier = Modifier.padding(start = 36.dp, end = 12.dp, top = 2.dp),
+                Modifier.padding(start = 36.dp, end = 12.dp, top = 2.dp),
+                tone = Tone.Caution,
             )
         }
         AnimatedVisibility(open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
@@ -270,8 +262,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 TimeBox(label = "끝", time = to, onClick = { picking = "end" }, modifier = Modifier.weight(1f))
             }
             val span = WorkTime.spanMinutes(from, to)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("휴게 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            com.bamnat.app.ui.components.LabelControlRow("휴게 시간") { // [RVH-81] HQ-98
                 MinutesStepper(
                     minutes = extra.breakMinutes,
                     onChange = { b -> update(e.copy(start = from, end = to, breakMinutes = b, breakStart = e.breakStart ?: extra.breakStart)) },
@@ -289,15 +280,12 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    when (extra.kind.timing) {
-                        is ExtraTiming.BeforeShift -> "근무 전 시간"
-                        else -> if (day.isWorkDay) "근무 뒤 시간" else "일한 시간"
-                    },
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.weight(1f),
-                )
+            com.bamnat.app.ui.components.LabelControlRow( // [RVH-81] HQ-98
+                when (extra.kind.timing) {
+                    is ExtraTiming.BeforeShift -> "근무 전 시간"
+                    else -> if (day.isWorkDay) "근무 뒤 시간" else "일한 시간"
+                },
+            ) {
                 MinutesStepper(
                     minutes = e.minutes,
                     onChange = { m -> update(e.copy(minutes = m)) },
@@ -340,8 +328,7 @@ private fun ExtraEditor(day: ResolvedDay, index: Int, extra: ResolvedExtra, snap
                 label = { Text("인정된 시간이 달라요") },
             )
             e.approvedMinutes?.let { ok ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("인정된 시간", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                com.bamnat.app.ui.components.LabelControlRow("인정된 시간") { // [RVH-81] HQ-98
                     MinutesStepper(minutes = ok.coerceAtMost(extra.minutes), onChange = { m -> update(e.copy(approvedMinutes = m.coerceIn(0, extra.minutes))) },
                         step = 30, max = extra.minutes, dialogTitle = "인정된 시간")
                 }

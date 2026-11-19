@@ -36,6 +36,11 @@ fun ShiftTypeEntity.toModel() = ShiftType(
     breakStart = if (isOff) null else breakStartMinute?.toLocalTime(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
     breakPaid = breakPaid,
+    timeHistory = if (isOff) emptyList() else com.bamnat.core.model.TimeVersion.decode(timeHistory),
+    // 2.0.0 [RVH-44] A gap is kept as saved; whether it fits the day's times is the model's to say (ShiftType.hasGap).
+    gapStart = if (isOff) null else gapStartMinute?.toLocalTime(),
+    gapMinutes = if (isOff || gapStartMinute == null) 0 else gapMinutes.coerceIn(0, 24 * 60 - 1),
+    gapAlarm = gapAlarm && !isOff,
 )
 
 fun ShiftType.toEntity() = ShiftTypeEntity(
@@ -57,6 +62,10 @@ fun ShiftType.toEntity() = ShiftTypeEntity(
     breakStartMinute = breakStart?.toMinuteOfDay(),
     premiumPercent = premiumPercent.coerceIn(0, 300),
     breakPaid = breakPaid,
+    timeHistory = com.bamnat.core.model.TimeVersion.encode(timeHistory),
+    gapStartMinute = gapStart?.takeIf { gapMinutes > 0 }?.toMinuteOfDay(),
+    gapMinutes = if (gapStart != null) gapMinutes.coerceIn(0, 24 * 60 - 1) else 0,
+    gapAlarm = gapAlarm,
 )
 
 fun encodeSteps(steps: List<Long?>): String = steps.joinToString(",") { it?.toString() ?: "" }
@@ -116,10 +125,12 @@ fun DayEntryEntity.toModel(extras: List<ExtraEntry> = emptyList()) = DayEntry(
     customBreakMinutes = customBreakMinutes,
     alarmSkipped = alarmSkipped,
     customAlarms = AlarmCodec.decodeDayAlarms(customAlarms),
-    leave = Leave.fromCode(leave),
+    leave = Leave.fromCode(leave)?.withHours(leaveMinutes, leaveAt),
     extras = extras,
     attendance = com.bamnat.core.model.Attendance.fromCode(attendance),
     swapWith = swapWith,
+    customGapStart = customGapStartMinute?.toLocalTime(),
+    customGapMinutes = customGapMinutes?.coerceIn(0, 24 * 60 - 1),
 )
 
 fun DayEntry.toEntity() = DayEntryEntity(
@@ -138,6 +149,10 @@ fun DayEntry.toEntity() = DayEntryEntity(
     leave = leave?.code ?: 0,
     attendance = attendance?.code ?: 0,
     swapWith = swapWith.trim(),
+    customGapStartMinute = customGapStart?.toMinuteOfDay(),
+    customGapMinutes = customGapMinutes,
+    leaveMinutes = leave?.minutes,
+    leaveAt = leave?.atMinute,
 )
 
 fun DayExtraEntity.toModel() = ExtraEntry(
@@ -192,7 +207,7 @@ fun MemoEntity.toModel() = Memo(
     createdAtMillis = createdAt,
     updatedAtMillis = updatedAt,
     deletedAtMillis = deletedAt,
-    reminder = memoReminder(remindAt, remindRing, remindNotify),
+    reminder = memoReminder(remindAt, remindRing, remindNotify, remindWork),
     reminderAsked = remindAsked,
     calendars = com.bamnat.core.memo.MemoCalendars.decode(calendars),
     repeat = repeat,
@@ -201,11 +216,14 @@ fun MemoEntity.toModel() = Memo(
     doneDays = com.bamnat.core.memo.MemoRepeat.decodeSkips(doneDays),
 )
 
-/** [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. */
-fun memoReminder(at: String?, ring: Boolean, notify: Boolean): MemoReminder? {
+/**
+ * [SCHED-01] A stored schedule, or null when it is unreadable or neither rings nor notifies. 2.0.0 [RVIB-04] (DB 35) [work]: told by
+ * the work; an unreadable one is told by its saved time, as a schedule of before.
+ */
+fun memoReminder(at: String?, ring: Boolean, notify: Boolean, work: String? = null): MemoReminder? {
     if (at == null || !(ring || notify)) return null
     val time = runCatching { LocalDateTime.parse(at) }.getOrNull() ?: return null
-    return MemoReminder(time, ring, notify)
+    return MemoReminder(time, ring, notify, com.bamnat.core.memo.WorkAnchor.parse(work))
 }
 
 fun Memo.toEntity() = MemoEntity(
@@ -229,4 +247,5 @@ fun Memo.toEntity() = MemoEntity(
     skips = com.bamnat.core.memo.MemoRepeat.encodeSkips(skips),
     doneAt = doneAtMillis,
     doneDays = com.bamnat.core.memo.MemoRepeat.encodeSkips(doneDays),
+    remindWork = reminder?.work?.code,
 )

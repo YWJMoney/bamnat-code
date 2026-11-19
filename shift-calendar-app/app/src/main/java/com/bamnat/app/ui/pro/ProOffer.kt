@@ -41,7 +41,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * AG 1.27 [MON-12][INVITE-11] What a tap on a locked 프로 feature opens (사용자 리뷰 2026-10-25: "프로가 아닌사람들이 프로기능을
  * 클릭항때 광보보기와 친구초대로 프로 사용권 얻기 보기를 보여줘서 초대를 권유해야해"): one sheet with the three ways, 프로 itself
- * (체험), '광고 보고 <묶음> 7일 열기' (839, the rewarded ad's own rules, RewardedAds.kt) and '친구 초대로 프로 이용권 받기'. Before
+ * (체험), '광고 보고 <묶음> 7일 열기' (839, the rewarded ad's own rules, RewardedAds.kt) and '친구를 초대하면 무료로 써요'. Before
  * the 정식 출시 switch nothing is locked, so it never opens; the alarm check's 등급 미리 보기 shows it.
  */
 object ProOffer {
@@ -95,11 +95,16 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        // 2.0.0 [RVO-29] HQ-152 (조건 12): the feature's name and '프로 기능이에요' on two lines with no dot between, so at 글자 200%
+        // a dot is never left at a line's end; read out as one heading.
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Filled.Lock, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(8.dp))
-            Text(feature?.let { "‘${it.label}’ · 프로 기능이에요" } ?: "프로 기능이에요", style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.semantics { heading() })
+            Column(Modifier.semantics(mergeDescendants = true) { heading() }) {
+                feature?.let { Text("‘${it.label}’", style = MaterialTheme.typography.titleLarge) }
+                Text("프로 기능이에요", style = if (feature == null) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
+                    color = if (feature == null) androidx.compose.ui.graphics.Color.Unspecified else MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         // 1.39 G2 PC ef175fbf: "이렇게 쓸 수 있어요." ended with nothing after it; the lines below are the ways to open it.
         Text("아래 방법으로 열 수 있어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -113,12 +118,16 @@ internal fun ProOfferContent(c: AppContainer, feature: Feature?, gate: Gate, onP
         }
         if (c.inviteApi.enabled) {
             HorizontalDivider()
-            Text("친구 초대로 프로 이용권 받기", style = MaterialTheme.typography.titleMedium)
-            Text("${state.rules.words()}. 링크로 깐 친구는 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
+            // 2.0.0 [RVO-13] (HQ-48) 프로 화면 맨 위 초대 카드와 같은 이름과 한 줄 약속.
+            Text(INVITE_FREE_TITLE, style = MaterialTheme.typography.titleMedium)
+            Text("${com.bamnat.core.tier.InviteRules.promise(state.rules)}. 링크로 깐 친구는 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            InviteProgressLines(c)
+            state.view?.let { v -> com.bamnat.core.tier.InviteRules.status(v.given, v.pending, v.waiting) }?.let {
+                com.bamnat.app.ui.components.DotText(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-            InviteShareAction(c, onMessage = { said = it }, makeLabel = "친구 초대 링크 만들기", tonal = true)
+            // 2.0.0 [RVO-13] 총괄 사진 검토 HQ-70: in the dark the 옅은 채움 weighed as much as '처음 7일 무료로 열기' (조건 2); a line here.
+            InviteShareAction(c, onMessage = { said = it }, makeLabel = "친구 초대 링크 만들기", outlined = true)
         }
         Spacer(Modifier.width(1.dp).padding(bottom = 12.dp))
     }

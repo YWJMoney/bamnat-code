@@ -30,12 +30,12 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -153,7 +153,8 @@ fun EasyStatusCard(modifier: Modifier = Modifier) {
     val key = asking
     val fact = key?.let { view?.facts?.get(it) }
     if (key != null && fact != null && view != null) {
-        FactEditSheet(c, calendar, fact, view.hasPay, onSaved = { tick++ }, onDismiss = { asking = null })
+        FactEditSheet(c, calendar, fact, view.hasPay, onSaved = { tick++ }, onDismiss = { asking = null },
+            daily = view.facts[FactKey.WAGE_TYPE]?.value == com.bamnat.core.pay.WageType.DAILY)
     }
 }
 
@@ -265,7 +266,8 @@ fun ProfileScreen(onBack: () -> Unit) {
     val key = editing
     val fact = key?.let { view?.facts?.get(it) }
     if (key != null && fact != null && view != null) {
-        FactEditSheet(c, calendar, fact, view.hasPay, onSaved = { tick++ }, onDismiss = { editing = null })
+        FactEditSheet(c, calendar, fact, view.hasPay, onSaved = { tick++ }, onDismiss = { editing = null },
+            daily = view.facts[FactKey.WAGE_TYPE]?.value == com.bamnat.core.pay.WageType.DAILY)
     }
     if (confirmReset) {
         FormSheet(
@@ -338,18 +340,20 @@ private fun LinkLine(label: String, route: FeatureRoute) {
  * [EASY-08] The question of [key] for fixing it from 내 정보. The same as the card's ([Questions.of]), except the
  * alarm once it is set: one answer would put every shift's alarms to one time, so its own screen opens.
  */
-internal fun editQuestion(key: FactKey, hasPay: Boolean, known: Boolean): Question =
+internal fun editQuestion(key: FactKey, hasPay: Boolean, known: Boolean, daily: Boolean = false): Question =
     if (key == FactKey.ALARM_LEAD && known) Question(key, "근무마다 알람을 따로 맞췄을 수 있어서 알람 화면에서 고쳐요", Answer.Open("alarm.moveAll", "알람 시간 고치기"))
-    else Questions.of(key, hasPay)
+    else Questions.of(key, hasPay, daily)
 
 /**
  * [EASY-08] Fixing one fact where it was tapped: what it is now and where it came from, what a change reaches,
  * and the same chips, number or date as the question card. 맞아요 makes a guess the user's own.
  */
 @Composable
-fun FactEditSheet(c: AppContainer, calendar: String, fact: Fact<*>, hasPay: Boolean, onSaved: () -> Unit, onDismiss: () -> Unit) {
+fun FactEditSheet(c: AppContainer, calendar: String, fact: Fact<*>, hasPay: Boolean, onSaved: () -> Unit, onDismiss: () -> Unit,
+                  /** 2.0.0 [RVJ-80] A 일당 setup: the tax question has 일용근로. */
+                  daily: Boolean = false) {
     val scope = rememberCoroutineScope()
-    val question = editQuestion(fact.key, hasPay, fact.known)
+    val question = editQuestion(fact.key, hasPay, fact.known, daily || fact.value == com.bamnat.core.pay.TaxMode.DAILY_WORKER)
     var failed by remember { mutableStateOf(false) }
     FormSheet(
         onDismissRequest = onDismiss,
@@ -367,7 +371,7 @@ fun FactEditSheet(c: AppContainer, calendar: String, fact: Fact<*>, hasPay: Bool
                             if (c.answers.answer(calendar, fact.key, value)) { onSaved(); onDismiss() } else failed = true
                         }
                     },
-                    onOpen = { feature -> onDismiss(); FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
+                    onOpen = { feature -> onDismiss(); FeatureLinks.openAnswer(feature) },
                     current = FactText.answerOf(fact),
                 )
                 if (failed) Text("저장하지 못했어요. 그 기능 화면에서 고쳐 주세요.", style = MaterialTheme.typography.bodySmall,

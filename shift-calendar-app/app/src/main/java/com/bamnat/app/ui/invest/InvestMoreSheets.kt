@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.invest
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +16,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import com.bamnat.app.ui.components.LongTextField
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -72,8 +74,12 @@ private fun repeatOf(a: InvestAlarm): Repeat = when {
  * on a shut day comes on the next open day.
  */
 @Composable
-internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKind, editing: InvestAlarm?, onDismiss: () -> Unit) {
-    val start = editing ?: InvestAlarms.default(kind0)
+internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKind, editing: InvestAlarm?, onDismiss: () -> Unit,
+                        from: com.bamnat.core.invest.TradeDraft? = null) {
+    // 2.0.0 [RVK-34] (검토 U06b-03) From a 종목 card: that 종목, market and account are already there.
+    val start = editing ?: InvestAlarms.default(kind0).let { a ->
+        from?.let { h -> a.copy(name = h.name, symbol = h.symbol, market = h.market, accountId = h.accountId ?: a.accountId) } ?: a
+    }
     var kind by rememberSaveable { mutableStateOf(start.kind) }
     var label by rememberSaveable { mutableStateOf(start.label) }
     var time by rememberSaveable { mutableStateOf(minuteText(start.minute)) }
@@ -117,6 +123,8 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
     InvestSheetFrame(
         title = if (editing == null) "투자 알람 추가" else "투자 알람 고치기",
         onDismiss = onDismiss, canSave = valid,
+        unsaved = changedSinceOpen(kind, label, time, repeat, monthDay, once, skip, name, symbol, market, side, accountId, byAmount, qty,
+            amount, target, ring),
         onSave = { vm.saveAlarm(build()); onDismiss() },
         actions = {
             if (editing != null) IconButton(onClick = { deleting = true }) { Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error) }
@@ -148,8 +156,15 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
             Repeat.ONCE -> OutlinedButton(onClick = { pickingOnce = true }) { Text(Fmt.dayTitle(runCatching { LocalDate.parse(once) }.getOrDefault(state.today))) }
             else -> Unit
         }
-        if (repeat != Repeat.ONCE) SwitchRow(
-            if (repeat == Repeat.MONTHLY) "휴장일이면 다음 장날에" else "주말·공휴일·휴장일은 건너뛰기", skip) { skip = it }
+        // 2.0.0 [RVK-52] (검토 MONEY-72): 코인 never shuts, so there is nothing to skip; 미국 주식 skips the NYSE's own days.
+        val venue = InvestAlarms.venue(preview)
+        if (repeat != Repeat.ONCE && venue != com.bamnat.core.invest.MarketDays.Venue.COIN) SwitchRow(
+            when {
+                repeat == Repeat.MONTHLY && venue == com.bamnat.core.invest.MarketDays.Venue.US -> "미국 증시 휴장일이면 다음 장날에"
+                repeat == Repeat.MONTHLY -> "휴장일이면 다음 장날에"
+                venue == com.bamnat.core.invest.MarketDays.Venue.US -> "주말·미국 증시 휴장일은 건너뛰기"
+                else -> "주말·공휴일·휴장일은 건너뛰기"
+            }, skip) { skip = it }
         if (needsHolding || kind == AlarmKind.CUSTOM) {
             FieldLabel("종목")
             val known = state.fullResult.byKey.take(8)
@@ -164,10 +179,10 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
         }
         if (kind == AlarmKind.PLAN) {
             AccountPicker(state.full.activeAccounts, accountId) { accountId = it }
-            ChoiceChips(Side.entries, { it == side }, { it.label }, { side = it })
+            ChoiceChips(Side.TRADES, { it == side }, { it.label }, { side = it })
             ChoiceChips(listOf(true, false), { it == byAmount }, { if (it) "금액으로" else "수량으로" }, { byAmount = it })
             if (byAmount) AmountField(label = "한 번에 얼마어치", digits = amount, onChange = { amount = it }, modifier = Modifier.fillMaxWidth())
-            else DecimalField("한 번에 몇 주", qty, { qty = it }, Modifier.fillMaxWidth(), suffix = if (market == Market.CRYPTO) "개" else "주")
+            else DecimalField("한 번에 몇 ${market.unit}", qty, { qty = it }, Modifier.fillMaxWidth(), suffix = market.unit)
             Text("알림에서 ‘매매 기록’을 누르면 이 내용이 채워진 기록 창이 열려요. 현재가를 적어 두면 ‘바로 기록’ 한 번으로 끝나요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -191,7 +206,8 @@ internal fun AlarmSheet(vm: InvestViewModel, state: InvestState, kind0: AlarmKin
 @Composable
 internal fun SwitchRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Switch) { onChange(!checked) }.padding(vertical = 4.dp),
+        // 2.0.0 [RVJ-87] 검토 BOSS-66 같은 모양: one focus that says 켜짐·꺼짐.
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(text, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
@@ -209,16 +225,19 @@ internal fun EventSheet(vm: InvestViewModel, date0: LocalDate, editing: InvestEv
     var memo by rememberSaveable { mutableStateOf(editing?.memo ?: "") }
     var remind by rememberSaveable { mutableStateOf(editing?.remind ?: true) }
     var picking by remember { mutableStateOf(false) }
+    // 2.0.0 [RVK-34] (검토 U06b-10) Asked first, as a 매매·알람·계좌 is: an 일정 alone went at one tap.
+    var deleting by remember { mutableStateOf(false) }
     val day = runCatching { LocalDate.parse(date) }.getOrDefault(date0)
     InvestSheetFrame(
         title = if (editing == null) "투자 일정 적기" else "투자 일정 고치기",
         onDismiss = onDismiss,
+        unsaved = changedSinceOpen(kind, date, symbol, title, memo, remind),
         onSave = {
             vm.saveEvent(InvestEvent(editing?.id ?: 0, day, kind, symbol.trim(), title.trim(), memo.trim(), remind))
             onDismiss()
         },
         actions = {
-            if (editing != null) IconButton(onClick = { vm.deleteEvent(editing); onDismiss() }) {
+            if (editing != null) IconButton(onClick = { deleting = true }) {
                 Icon(Icons.Outlined.Delete, "지우기", tint = MaterialTheme.colorScheme.error)
             }
         },
@@ -233,6 +252,11 @@ internal fun EventSheet(vm: InvestViewModel, date0: LocalDate, editing: InvestEv
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     if (picking) InvestDatePicker(day, { date = it.toString() }) { picking = false }
+    if (deleting && editing != null) com.bamnat.app.ui.components.ConfirmDialog(
+        title = "이 일정을 지울까요?", message = "‘${editing.label}’ 일정이 없어져요. 바로 되돌릴 수 있어요.",
+        confirmLabel = "지우기", destructive = true, onDismiss = { deleting = false },
+        onConfirm = { deleting = false; vm.deleteEvent(editing); onDismiss() },
+    )
 }
 
 /**
@@ -257,7 +281,8 @@ internal fun GoalSheet(vm: InvestViewModel, state: InvestState, onDismiss: () ->
     )
     val preview = InvestGoal.progress(settings(s0), state.fullResult.summary, state.today)
     val hide = state.hide
-    InvestSheetFrame(title = "목표와 수익률", onDismiss = onDismiss, onSave = { vm.saveSettings(::settings); onDismiss() }) {
+    InvestSheetFrame(title = "목표와 수익률", onDismiss = onDismiss, onSave = { vm.saveSettings(::settings); onDismiss() },
+        unsaved = changedSinceOpen(amount, rate, date, monthly, method, isa, monthSummary)) {
         AmountField(label = "모으고 싶은 총자산", digits = amount, onChange = { amount = it }, modifier = Modifier.fillMaxWidth())
         DecimalField("목표 수익률", rate, { rate = it }, Modifier.fillMaxWidth(), suffix = "%")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -269,8 +294,8 @@ internal fun GoalSheet(vm: InvestViewModel, state: InvestState, onDismiss: () ->
         AmountField(label = "매달 더 넣을 돈 (선택)", digits = monthly, onChange = { monthly = it }, modifier = Modifier.fillMaxWidth())
         if (preview.hasGoal) Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp)) {
-                preview.amountRatio?.let { Text("총자산 목표의 ${"%.0f".format(it * 100)}% · 남은 ${InvestFmt.short(preview.amountLeft ?: 0, hide)}") }
-                preview.returnRatio?.let { Text("수익률 목표의 ${"%.0f".format(it)}%") }
+                preview.amountRatio?.let { Text("총자산 목표의 ${"%.0f".format(java.util.Locale.ROOT, it * 100)}% · 남은 ${InvestFmt.short(preview.amountLeft ?: 0, hide)}") }
+                preview.returnRatio?.let { Text("수익률 목표의 ${"%.0f".format(java.util.Locale.ROOT, it)}%") }
                 preview.monthsLeft?.let { Text(if (it == 0) "벌써 닿았어요" else "매달 넣으면 약 ${it}개월 뒤 (수익 없이 계산)") }
                 preview.perMonthToDate?.let { Text("날짜까지 닿으려면 매달 ${InvestFmt.short(it, hide)}씩") }
             }
@@ -300,6 +325,7 @@ internal fun PrinciplesSheet(vm: InvestViewModel, state: InvestState, onDismiss:
     InvestSheetFrame(
         title = "내 투자 원칙",
         onDismiss = onDismiss,
+        unsaved = rules.toList() != state.settings.principles,
         onSave = { vm.saveSettings { it.copy(principles = rules.map { r -> r.trim() }.filter { r -> r.isNotEmpty() }) }; onDismiss() },
     ) {
         Text("매일 일지에서 체크해요. 지킨 날과 어긴 날의 손익을 통계에서 비교할 수 있어요.", style = MaterialTheme.typography.bodySmall,
@@ -333,6 +359,7 @@ internal fun JournalSheet(vm: InvestViewModel, state: InvestState, date: LocalDa
     InvestSheetFrame(
         title = "${Fmt.dayTitle(date)} 일지",
         onDismiss = onDismiss,
+        unsaved = changedSinceOpen(grade, market, review, checked.toList()),
         onSave = { vm.saveJournal(j0.copy(grade = grade, checked = (principles.filter { it in checked } + checked).toCollection(LinkedHashSet()),market = market.trim(), review = review.trim())); onDismiss() },
     ) {
         val trades = state.tradesOn(date)

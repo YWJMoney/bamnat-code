@@ -114,6 +114,11 @@ data class AppSettings(
     val plazaNews: Boolean = true,
     /** [COMM-09] Writers this user chose not to see in the plaza ([com.bamnat.core.plaza.HideList.encode]). */
     val plazaHidden: String = "",
+    /**
+     * 2.0.0 [RVN-14] 검토 HQ-51 The kinds of 내 것에 온 반응 the user turned off in 설정 › 알림 ([com.bamnat.core.plaza.Reactions.encodeOff]);
+     * "" is all on. Off, they do not come to the 알림함 nor count on its bell.
+     */
+    val reactionsOff: String = "",
     /** [COMM-08] The version of the community rules the user agreed to before posting; 0 is not yet. */
     val plazaRulesAgreed: Int = 0,
     /**
@@ -191,6 +196,14 @@ data class AppSettings(
     val healthSleep: Boolean = false,
     /** 1.38 [SLEEP-01] Let the phone notice sleep by itself (activity recognition); off until the user turns it on. */
     val sleepAuto: Boolean = false,
+    /** 2.0.0 [RVI-89] 충전하면 소리 재기 묻기 ([com.bamnat.app.sleep.SleepRecordOffer]). */
+    val recordOffer: Boolean = true,
+    /** 2.0.0 [RVI-96] 충전하면 잠 잡기 ([com.bamnat.app.sleep.SleepNoTap]). */
+    val sleepNoTap: Boolean = true,
+    /** 2.0.0 [RVIB-05] (검토 I07ac-02) 근무 중에 온 메모 알림(울리지 않는 것)을 모아 퇴근 때 한 장으로 ([com.bamnat.app.memo.MemoMissed]). */
+    val memoHoldAtWork: Boolean = true,
+    /** 2.0.0 [RVIB-05] 지난 할 일을 다음 쉬는 날 아침에 한 장으로 ([com.bamnat.app.memo.MemoRestCard]). */
+    val memoRestCard: Boolean = true,
     /** 1.38 [SLEEP-04] The last 잠드는 소리 mix ("brown:0.50,rain:0.35") and its timer in minutes (0: until stopped). */
     val noiseMix: String = "",
     val noiseTimerMinutes: Int = 30,
@@ -234,12 +247,18 @@ data class AppSettings(
     val spendHeat: Boolean = false,
     /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
     val backupNudge: Boolean = true,
+    /** 2.0.0 [RVL-71] 데이터 점검 by itself once a week ([com.bamnat.app.diag.DataSelfCheck]); on unless turned off. */
+    val dataSelfCheck: Boolean = true,
     /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
     val leaveTimeNotice: Boolean = false,
+    /** 2.0.0 [RVIB-21] (결정 19) 둘째 구간 알림: "17:00 다시 시작" 10분 전, quiet, on a day of two parts (on by default). In the backup. */
+    val gapNotice: Boolean = true,
     /** 1.32 [WTYP-12] 연속 근무 경고: a stretch of work (shifts and extras with under an hour between) longer than this; 0 is not checked. */
     val stretchLimitHours: Int = 0,
     /** D 1.32 [PAYA-05] A pay deposit just read from a notification is compared with the estimate in a notice. */
     val payDepositNotice: Boolean = true,
+    /** 2.0.0 [RVJ-18] 검토 I05a-02: the day after the 급여일 the month closes by itself instead of asking. Off by default. In the backup. */
+    val payAutoClose: Boolean = false,
     /** 1.39 [PAYX-62] 알바 주 15시간 경계 알림: 이번 주가 15시간 바로 아래·위면 급여 화면 알바 카드에 한 줄. In the backup. */
     val weekHoursNudge: Boolean = true,
     /** B 1.32 [CALX-04] 달력만 보기: every card above and under the month put away at once (화면 꾸미기 keeps its choices). */
@@ -259,6 +278,11 @@ data class AppSettings(
     val workTimeFrom: Long = com.bamnat.core.money.WorkTime.DEFAULT_FROM,
     /** 1.37 [LEDH-09] 퇴근 시각 하루 마감: the 가계부's look 30 minutes after work ends (else 21:00). Off by default. In the backup. */
     val dayCloseNotice: Boolean = false,
+    /**
+     * 2.0.0 [RVJ-96] 검토 U05c-05·I05ca-03 사장님 신고·지급 알림: a 신고·납부·급여 지급 day [com.bamnat.core.boss.BossFilings.REMIND_DAYS] days
+     * ahead, said once at 9시, for a phone with a 급여 대장. On by default (a missed 기한 costs a 가산세). In the backup.
+     */
+    val bossFilingNotice: Boolean = true,
     /** 1.38 [LEDH-24] 근무 전 한 줄 예고: the evening before a work day that spends on something more, at [shiftPreviewHour]. Off by default. In the backup. */
     val shiftPreviewNotice: Boolean = false,
     val shiftPreviewHour: Int = com.bamnat.core.money.ShiftPreview.DEFAULT_HOUR,
@@ -294,7 +318,7 @@ data class AppSettings(
     /** [PROV-06] What 끄기 asks for (프로), by [com.bamnat.core.alarm.AlarmMission.key]; none at first. */
     val alarmMission: String = "none",
     /** [PROV-06] A shift's own mission, by shift type id, in place of [alarmMission]. */
-    val shiftMissions: Map<Long, String> = emptyMap(),
+    val shiftMissions: Map<String, String> = emptyMap(),
     /** [PROV-07] Minutes after 끄기 that 일어났나요? asks (프로); 0 is off, as at first. */
     val wakeCheckMinutes: Int = 0,
     /** [ALRM-08] What 소리 줄이기·키우기·전원 버튼 do while an alarm rings (결정 D78): [com.bamnat.app.alarm.AlarmButtons.Action.key]. */
@@ -307,6 +331,11 @@ data class AppSettings(
     val moneyLayout: String = "",
     /** 1.37 [LEDH-20] 가계부 요약의 '점검' 묶음이 펼쳐져 있는지. */
     val moneyCheckOpen: Boolean = false,
+    /**
+     * 2.0.0 [RVK-19] (검토 U06a-06·MONEY-19) The big figure at the top of 요약: "" (저절로: 나간 돈 while nothing came in, else 수입 − 지출),
+     * "NET" or "SPENT" once the user swapped it. In the backup.
+     */
+    val moneyHero: String = "",
     /** 1.37 [LEDH-34] 예산 넘김: the categories whose budget left over (or gone over) carries to the next month, tab-separated. */
     val budgetRollover: String = "",
     /** [DAILY-15] 화면 꾸미기 of the 메모 page. */
@@ -353,6 +382,8 @@ data class AppSettings(
     val reviewAskedDay: Long = 0,
     /** [CAL-46] The last month (yyyymm) whose "이번 달 내 기록" card was shown and closed; kept on this phone only. */
     val monthRecapSeen: Int = 0,
+    /** 1.40 [SPREAD-37] The last 연말 결산 card closed (yyyy1 in 12월, yyyy2 in 1월, [com.bamnat.core.work.YearRecap.key]); this phone only. */
+    val yearRecapSeen: Int = 0,
     /** [ALRM-03] 알람 제안: a card with one suggestion for one shift's alarm; on by default (D42), in the backup. */
     val alarmSuggest: Boolean = true,
     /** [ALRM-03] What was answered ([com.bamnat.core.alarm.AlarmSuggest.Memory]); kept on this phone only, like [monthRecapSeen]. */
@@ -367,6 +398,12 @@ data class AppSettings(
     // a freelancer's 현장 jobs, investing.
     val limits: HourLimits get() = if (workStyle?.usesPayEngine == false) OWNER_HOURS
         else HourLimits(weeklyLimitHours, averageLimitHours)
+
+    /**
+     * 2.0.0 [RVH-72] 검토 TYPE-03·T30-11·T30-90 (가게 날짜 창에 '연속 근무·연속 야간'): rest signs are a worker's (근로기준법 휴식), so only
+     * where the pay engine counts work (교대·일근·알바); a 가게, 현장 or 투자 calendar shows none, whatever [restCheck] says.
+     */
+    val restSigns: Boolean get() = restCheck && workStyle?.usesPayEngine != false
 
     companion object {
         /** [CELL-01] What [AppSettings.cellList] can be. */
@@ -388,13 +425,19 @@ data class AppSettings(
 /** [DAY-04] "memo,work" back to its keys; blank parts are dropped. */
 fun decodeGroupOrder(text: String): List<String> = text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinct()
 
-/** [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. */
-fun decodeShiftMissions(text: String): Map<Long, String> = text.split(',').mapNotNull { part ->
+/**
+ * [PROV-06] "3=math,5=shake": each shift's own mission; anything unreadable is left out. [R200-01] A shift of an added
+ * calendar is written with it ("ab12cd:3=math", [com.bamnat.core.model.ShiftRef]); a plain id is the main calendar's, as
+ * every older phone and backup wrote it.
+ */
+fun decodeShiftMissions(text: String): Map<String, String> = text.split(',').mapNotNull { part ->
     val (id, key) = part.split('=').takeIf { it.size == 2 } ?: return@mapNotNull null
-    id.trim().toLongOrNull()?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
+    id.trim().takeIf(com.bamnat.core.model.ShiftRef::isKey)?.let { it to key.trim() }?.takeIf { it.second.isNotEmpty() }
 }.toMap()
 
-fun encodeShiftMissions(map: Map<Long, String>): String = map.entries.sortedBy { it.key }.joinToString(",") { "${it.key}=${it.value}" }
+fun encodeShiftMissions(map: Map<String, String>): String =
+    map.entries.sortedWith(compareBy({ com.bamnat.core.model.ShiftRef.calendarOf(it.key) != com.bamnat.core.model.ShiftRef.MAIN }, { it.key.length }, { it.key }))
+        .joinToString(",") { "${it.key}=${it.value}" }
 
 /**
  * Small settings store on SharedPreferences. Reads are synchronous so the very first frame
@@ -486,6 +529,7 @@ class SettingsRepository(context: Context) {
             shareUsageStats = prefs.getBoolean(K_SHARE_STATS, d.shareUsageStats),
             plazaNews = prefs.getBoolean(K_PLAZA_NEWS, d.plazaNews),
             plazaHidden = prefs.getString(K_PLAZA_HIDDEN, null) ?: d.plazaHidden,
+            reactionsOff = prefs.getString(K_REACTIONS_OFF, null) ?: d.reactionsOff,
             plazaRulesAgreed = prefs.getInt(K_PLAZA_RULES, d.plazaRulesAgreed),
             previewTier = Tier.parse(prefs.getString(K_PREVIEW_TIER, null)),
             usageStatsMore = if (prefs.contains(K_STATS_MORE)) prefs.getBoolean(K_STATS_MORE, false) else null,
@@ -517,6 +561,10 @@ class SettingsRepository(context: Context) {
             commuteMinutes = prefs.getInt(K_COMMUTE, d.commuteMinutes),
             healthSleep = prefs.getBoolean(K_HEALTH_SLEEP, d.healthSleep),
             sleepAuto = prefs.getBoolean(K_SLEEP_AUTO, d.sleepAuto),
+            recordOffer = prefs.getBoolean(K_RECORD_OFFER, d.recordOffer),
+            sleepNoTap = prefs.getBoolean(K_SLEEP_NO_TAP, d.sleepNoTap),
+            memoHoldAtWork = prefs.getBoolean(K_MEMO_HOLD_AT_WORK, d.memoHoldAtWork),
+            memoRestCard = prefs.getBoolean(K_MEMO_REST_CARD, d.memoRestCard),
             noiseMix = prefs.getString(K_NOISE_MIX, d.noiseMix) ?: d.noiseMix,
             noiseTimerMinutes = prefs.getInt(K_NOISE_TIMER, d.noiseTimerMinutes),
             nightLook = prefs.getString(K_NIGHT_LOOK, null)
@@ -538,9 +586,12 @@ class SettingsRepository(context: Context) {
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            dataSelfCheck = prefs.getBoolean(K_DATA_SELF_CHECK, d.dataSelfCheck),
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
+            gapNotice = prefs.getBoolean(K_GAP_NOTICE, d.gapNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
             payDepositNotice = prefs.getBoolean(K_PAY_DEPOSIT_NOTICE, d.payDepositNotice),
+            payAutoClose = prefs.getBoolean(K_PAY_AUTO_CLOSE, d.payAutoClose),
             weekHoursNudge = prefs.getBoolean(K_WEEK_HOURS_NUDGE, d.weekHoursNudge),
             calendarOnly = prefs.getBoolean(K_CAL_ONLY, d.calendarOnly),
             viewAsked = prefs.getBoolean(K_VIEW_ASKED, d.viewAsked),
@@ -548,6 +599,7 @@ class SettingsRepository(context: Context) {
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
+            bossFilingNotice = prefs.getBoolean(K_BOSS_FILING, d.bossFilingNotice),
             shiftPreviewNotice = prefs.getBoolean(K_SHIFT_PREVIEW, d.shiftPreviewNotice),
             shiftPreviewHour = prefs.getInt(K_SHIFT_PREVIEW_HOUR, d.shiftPreviewHour).coerceIn(0, 23),
             moneyChallenge = prefs.getString(K_MONEY_CHALLENGE, d.moneyChallenge).orEmpty(),
@@ -570,6 +622,7 @@ class SettingsRepository(context: Context) {
             backupPhotos = prefs.getBoolean(K_BACKUP_PHOTOS, d.backupPhotos),
             moneyLayout = prefs.getString(K_MONEY_LAYOUT, null) ?: d.moneyLayout,
             moneyCheckOpen = prefs.getBoolean(K_MONEY_CHECK_OPEN, d.moneyCheckOpen),
+            moneyHero = prefs.getString(K_MONEY_HERO, null) ?: d.moneyHero,
             budgetRollover = prefs.getString(K_BUDGET_ROLLOVER, null) ?: d.budgetRollover,
             calTheme = prefs.getString(K_CAL_THEME, null) ?: d.calTheme,
             widgetLook = prefs.getString(K_WIDGET_LOOK, null) ?: d.widgetLook,
@@ -594,14 +647,61 @@ class SettingsRepository(context: Context) {
             payReviewAsked = prefs.getBoolean(K_PAY_REVIEW_ASKED, false),
             reviewAskedDay = prefs.getLong(K_REVIEW_DAY, 0),
             monthRecapSeen = prefs.getInt(K_MONTH_RECAP, 0),
+            yearRecapSeen = prefs.getInt(K_YEAR_RECAP, 0),
             alarmSuggest = prefs.getBoolean(K_ALARM_SUGGEST, d.alarmSuggest),
             alarmSuggestMemory = prefs.getString(K_ALARM_SUGGEST_MEMORY, null) ?: "",
             exportMark = prefs.getBoolean(K_EXPORT_MARK, d.exportMark),
         )
     }
 
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) Only the keys whose value changed go to the file: every setting is laid out on a [Staged] editor
+     * first, then compared with what is saved. One switch used to put all of them again (the file is still written whole by
+     * SharedPreferences, but an update that changes nothing writes nothing, and listeners hear only the changed keys).
+     */
     private fun write(s: AppSettings) {
-        prefs.edit()
+        val staged = Staged()
+        stage(staged, s)
+        val now = prefs.all
+        val e = prefs.edit()
+        var any = false
+        for ((k, v) in staged.values) {
+            if (v == null) {
+                if (now.containsKey(k)) { e.remove(k); any = true }
+                continue
+            }
+            if (now[k] == v) continue
+            @Suppress("UNCHECKED_CAST")
+            when (v) {
+                is String -> e.putString(k, v)
+                is Int -> e.putInt(k, v)
+                is Long -> e.putLong(k, v)
+                is Boolean -> e.putBoolean(k, v)
+                is Float -> e.putFloat(k, v)
+                is Set<*> -> e.putStringSet(k, v as Set<String>)
+            }
+            any = true
+        }
+        if (any) e.apply()
+    }
+
+    /** [RVL-67] An editor that only keeps what was put (null: removed), for [write] to compare. */
+    private class Staged : SharedPreferences.Editor {
+        val values = LinkedHashMap<String, Any?>()
+        override fun putString(key: String, value: String?): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putStringSet(key: String, value: MutableSet<String>?): SharedPreferences.Editor { values[key] = value?.toSet(); return this }
+        override fun putInt(key: String, value: Int): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putLong(key: String, value: Long): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putFloat(key: String, value: Float): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putBoolean(key: String, value: Boolean): SharedPreferences.Editor { values[key] = value; return this }
+        override fun remove(key: String): SharedPreferences.Editor { values[key] = null; return this }
+        override fun clear(): SharedPreferences.Editor = throw UnsupportedOperationException("settings are never cleared whole")
+        override fun commit() = true
+        override fun apply() {}
+    }
+
+    private fun stage(into: SharedPreferences.Editor, s: AppSettings) {
+        into
             .putString(K_WEEK_START_V2, s.weekStart.name)
             .putInt(K_WEEKLY_LIMIT, s.weeklyLimitHours)
             .putInt(K_AVG_LIMIT, s.averageLimitHours)
@@ -629,6 +729,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SHARE_STATS, s.shareUsageStats)
             .putBoolean(K_PLAZA_NEWS, s.plazaNews)
             .putString(K_PLAZA_HIDDEN, s.plazaHidden)
+            .putString(K_REACTIONS_OFF, s.reactionsOff)
             .putInt(K_PLAZA_RULES, s.plazaRulesAgreed)
             .putString(K_PREVIEW_TIER, s.previewTier?.name)
             .apply { if (s.usageStatsMore == null) remove(K_STATS_MORE) else putBoolean(K_STATS_MORE, s.usageStatsMore) }
@@ -660,6 +761,10 @@ class SettingsRepository(context: Context) {
             .putInt(K_COMMUTE, s.commuteMinutes)
             .putBoolean(K_HEALTH_SLEEP, s.healthSleep)
             .putBoolean(K_SLEEP_AUTO, s.sleepAuto)
+            .putBoolean(K_RECORD_OFFER, s.recordOffer)
+            .putBoolean(K_SLEEP_NO_TAP, s.sleepNoTap)
+            .putBoolean(K_MEMO_HOLD_AT_WORK, s.memoHoldAtWork)
+            .putBoolean(K_MEMO_REST_CARD, s.memoRestCard)
             .putString(K_NOISE_MIX, s.noiseMix)
             .putInt(K_NOISE_TIMER, s.noiseTimerMinutes)
             .putString(K_NIGHT_LOOK, s.nightLook)
@@ -678,9 +783,12 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putBoolean(K_DATA_SELF_CHECK, s.dataSelfCheck)
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
+            .putBoolean(K_GAP_NOTICE, s.gapNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
             .putBoolean(K_PAY_DEPOSIT_NOTICE, s.payDepositNotice)
+            .putBoolean(K_PAY_AUTO_CLOSE, s.payAutoClose)
             .putBoolean(K_WEEK_HOURS_NUDGE, s.weekHoursNudge)
             .putBoolean(K_CAL_ONLY, s.calendarOnly)
             .putBoolean(K_VIEW_ASKED, s.viewAsked)
@@ -689,6 +797,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
+            .putBoolean(K_BOSS_FILING, s.bossFilingNotice)
             .putBoolean(K_SHIFT_PREVIEW, s.shiftPreviewNotice)
             .putInt(K_SHIFT_PREVIEW_HOUR, s.shiftPreviewHour)
             .putString(K_MONEY_CHALLENGE, s.moneyChallenge)
@@ -709,6 +818,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_BACKUP_PHOTOS, s.backupPhotos)
             .putString(K_MONEY_LAYOUT, s.moneyLayout)
             .putBoolean(K_MONEY_CHECK_OPEN, s.moneyCheckOpen)
+            .putString(K_MONEY_HERO, s.moneyHero)
             .putString(K_BUDGET_ROLLOVER, s.budgetRollover)
             .putString(K_CAL_THEME, s.calTheme)
             .putString(K_WIDGET_LOOK, s.widgetLook)
@@ -733,10 +843,10 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_PAY_REVIEW_ASKED, s.payReviewAsked)
             .putLong(K_REVIEW_DAY, s.reviewAskedDay)
             .putInt(K_MONTH_RECAP, s.monthRecapSeen)
+            .putInt(K_YEAR_RECAP, s.yearRecapSeen)
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .putBoolean(K_EXPORT_MARK, s.exportMark)
-            .apply()
     }
 
     private companion object {
@@ -752,9 +862,12 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_DATA_SELF_CHECK = "data_self_check"
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
+        const val K_GAP_NOTICE = "gap_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"
         const val K_PAY_DEPOSIT_NOTICE = "pay_deposit_notice"
+        const val K_PAY_AUTO_CLOSE = "pay_auto_close"
         const val K_WEEK_HOURS_NUDGE = "week_hours_nudge"
         const val K_CAL_ONLY = "calendar_only"
         const val K_VIEW_ASKED = "calendar_view_asked"
@@ -792,10 +905,12 @@ class SettingsRepository(context: Context) {
         const val K_BACKUP_PHOTOS = "backup_photos"
         const val K_MONEY_LAYOUT = "money_layout"
         const val K_MONEY_CHECK_OPEN = "money_check_open"
+        const val K_MONEY_HERO = "money_hero"
         const val K_BUDGET_ROLLOVER = "budget_rollover"
         const val K_MONEY_CYCLE = "money_pay_cycle"
         const val K_WORK_TIME = "work_time_from"
         const val K_DAY_CLOSE = "day_close_notice"
+        const val K_BOSS_FILING = "boss_filing_notice" // 2.0.0 [RVJ-96]
         const val K_SHIFT_PREVIEW = "shift_preview_notice"
         const val K_SHIFT_PREVIEW_HOUR = "shift_preview_hour"
         const val K_MONEY_CHALLENGE = "money_challenge"
@@ -807,6 +922,7 @@ class SettingsRepository(context: Context) {
         const val K_PAY_REVIEW_ASKED = "pay_review_asked"
         const val K_REVIEW_DAY = "review_asked_day"
         const val K_MONTH_RECAP = "month_recap_seen"
+        const val K_YEAR_RECAP = "year_recap_seen"
         const val K_ALARM_SUGGEST = "alarm_suggest"
         const val K_ALARM_SUGGEST_MEMORY = "alarm_suggest_memory"
         const val K_EXPORT_MARK = "export_mark"
@@ -836,6 +952,7 @@ class SettingsRepository(context: Context) {
         const val K_SHARE_STATS = "share_usage_stats"
         const val K_PLAZA_NEWS = "plaza_news"
         const val K_PLAZA_HIDDEN = "plaza_hidden"
+        const val K_REACTIONS_OFF = "reactions_off"
         const val K_PLAZA_RULES = "plaza_rules_agreed"
         const val K_OLD_TIER = "tier"
         const val K_PREVIEW_TIER = "tier_preview"
@@ -869,6 +986,10 @@ class SettingsRepository(context: Context) {
         const val K_COMMUTE = "commute_minutes"
         const val K_HEALTH_SLEEP = "health_sleep"
         const val K_SLEEP_AUTO = "sleep_auto"
+        const val K_RECORD_OFFER = "record_offer"
+        const val K_SLEEP_NO_TAP = "sleep_no_tap"
+        const val K_MEMO_HOLD_AT_WORK = "memo_hold_at_work"
+        const val K_MEMO_REST_CARD = "memo_rest_card"
         const val K_NOISE_MIX = "noise_mix"
         const val K_NOISE_TIMER = "noise_timer"
         /** 1.38 밤에는 어두운 색 (sleep screen only), read once into [K_NIGHT_LOOK]. */

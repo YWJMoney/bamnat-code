@@ -35,16 +35,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.core.schedule.RestRules
 import com.bamnat.core.schedule.RotationSpeed
+import androidx.compose.ui.semantics.Role
 
 /**
  * [REST-01][REST-02][REST-03] 근무표 점검 기준: one sheet for the calendar's 휴식 점검, the month typed at once and
  * received rosters. Opened from the check's own card (기준 바꾸기) and from 설정 › 알림과 잠, never a menu of its own.
  * A hospital's rules are a preset away, each limit can be moved one by one (0 is not checked), and the whole check
  * turns off here.
+ *
+ * 2.0.0 [RVH-92] 검토 PC-162: [nights] false (일근·알바, no 야간 in their week) keeps the two checks that reach them (근무 사이 휴식,
+ * 연속 근무); the 야간 limits, the presets made of them and the 간호 야간 source stay a 교대 worker's.
  */
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit, onSave: (RestRules) -> Unit) {
+fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit, nights: Boolean = true, onSave: (RestRules) -> Unit) {
     var draft by remember(rules) { mutableStateOf(rules) }
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(
@@ -52,10 +56,10 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("근무표 점검 기준", style = MaterialTheme.typography.titleLarge)
-            Text("병원·회사마다 기준이 달라요. 우리 기준으로 맞추면 달력, 이번 달 전부 넣기, 받은 근무표가 모두 이 기준으로 알려 줘요. " +
+            Text((if (nights) "병원·회사마다" else "회사마다") + " 기준이 달라요. 우리 기준으로 맞추면 달력, 이번 달 전부 넣기, 받은 근무표가 모두 이 기준으로 알려 줘요. " +
                 "알려만 주고 저장은 막지 않아요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { draft = draft.copy(on = !draft.on) }, verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { draft = draft.copy(on = !draft.on) }, verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("근무표 점검", style = MaterialTheme.typography.bodyLarge)
                     Text(if (draft.on) "켜 두면 휴식이 짧은 날을 미리 알 수 있어요" else "꺼져 있어요. 아무것도 알려 주지 않아요",
@@ -67,21 +71,26 @@ fun RestRulesSheet(rules: RestRules, speed: RotationSpeed, onDismiss: () -> Unit
                 if (speed != RotationSpeed.NONE && speed.note.isNotEmpty()) {
                     Text("내 근무: ${speed.label} · ${speed.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    RestRules.Preset.entries.forEach { p ->
-                        FilterChip(selected = draft.preset == p, onClick = { draft = p.rules }, label = { Text(p.label) })
+                if (nights) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RestRules.Preset.entries.forEach { p ->
+                            FilterChip(selected = draft.preset == p, onClick = { draft = p.rules }, label = { Text(p.label) })
+                        }
                     }
+                    draft.preset?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    HorizontalDivider()
                 }
-                draft.preset?.let { Text(it.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                HorizontalDivider()
                 Limit("근무 사이 휴식", "${draft.minRestHours}시간", draft.minRestHours, 0..16) { draft = draft.copy(minRestHours = it) }
-                Limit("야간 뒤 쉬는 날", days(draft.offsAfterNights), draft.offsAfterNights, 0..4) { draft = draft.copy(offsAfterNights = it) }
-                Limit("연속 야간", days(draft.maxNightsInRow, "까지"), draft.maxNightsInRow, 0..7) { draft = draft.copy(maxNightsInRow = it) }
+                if (nights) {
+                    Limit("야간 뒤 쉬는 날", days(draft.offsAfterNights), draft.offsAfterNights, 0..4) { draft = draft.copy(offsAfterNights = it) }
+                    Limit("연속 야간", days(draft.maxNightsInRow, "까지"), draft.maxNightsInRow, 0..7) { draft = draft.copy(maxNightsInRow = it) }
+                }
                 Limit("연속 근무", days(draft.maxWorkDaysInRow, "까지"), draft.maxWorkDaysInRow, 0..13) { draft = draft.copy(maxWorkDaysInRow = it) }
-                Limit("한 달 야간", if (draft.maxNightsPerMonth == 0) "안 봐요" else "${draft.maxNightsPerMonth}일까지", draft.maxNightsPerMonth, 0..22) {
+                if (nights) Limit("한 달 야간", if (draft.maxNightsPerMonth == 0) "안 봐요" else "${draft.maxNightsPerMonth}일까지", draft.maxNightsPerMonth, 0..22) {
                     draft = draft.copy(maxNightsPerMonth = it)
                 }
-                Text("0으로 두면 그 항목은 보지 않아요. 기본값의 근거: ${RestRules.Sources.REST}, ${RestRules.Sources.NIGHTS}, ${RestRules.Sources.WEEK}.",
+                Text("0으로 두면 그 항목은 보지 않아요. 기본값의 근거: ${RestRules.Sources.REST}, " +
+                    (if (nights) "${RestRules.Sources.NIGHTS}, " else "") + "${RestRules.Sources.WEEK}.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text("끄는 법: 이 화면 맨 위 '근무표 점검'을 끄거나 설정 › 알림과 잠 › 휴식 점검을 꺼요.",

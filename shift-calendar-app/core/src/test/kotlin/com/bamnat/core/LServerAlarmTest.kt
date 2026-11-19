@@ -42,7 +42,7 @@ class LServerAlarmTest {
         assertEquals("밤낮 소식 5개", many.title)
         assertEquals("문의에 답이 2개 왔어요.", many.lines.first())
         assertEquals("11/3 주간 → 야간", many.lines[1])
-        assertTrue(many.lines.contains("신고한 글이 가려졌어요. 고마워요."))
+        assertTrue(many.lines.contains("신고해 주신 글을 가렸어요. 알려 주셔서 고마워요."))
         assertEquals("공지: 점검 안내", many.lines.last())
         assertFalse(many.onlyAnswers)
 
@@ -52,8 +52,8 @@ class LServerAlarmTest {
     }
 
     @Test fun reportOutcomesHaveTheirOwnWordsAndUnknownOnesAreSkipped() {
-        assertEquals("신고한 글을 운영자가 지웠어요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "deleted")))
-        assertEquals("신고한 글은 운영자가 확인하고 그대로 두었어요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "kept")))
+        assertEquals("신고해 주신 글을 운영팀이 지웠어요. 알려 주셔서 고마워요.", PlazaNews.line(PlazaNewsItem("flag_result", result = "deleted")))
+        assertTrue(PlazaNews.line(PlazaNewsItem("flag_result", result = "kept"))!!.startsWith("신고해 주신 글은 운영팀이 살펴보고 운영 원칙에 맞아 그대로 두었어요."))
         assertEquals("가려졌던 내 글이 다시 보여요.", PlazaNews.line(PlazaNewsItem("post_result", result = "shown")))
         assertTrue(PlazaNews.line(PlazaNewsItem("post_result", result = "hidden"))!!.contains("이의 제기"))
         assertNull(PlazaNews.line(PlazaNewsItem("flag_result", result = "later")))
@@ -86,6 +86,49 @@ class LServerAlarmTest {
         assertNull(EventBook.lateSeconds("at=1"))
         assertTrue(EventBook.aliveBefore(listOf(DiagEvent(t3 - 3600_000, DiagEvents.ALIVE)), t3))
         assertFalse(EventBook.aliveBefore(listOf(DiagEvent(t3 - 2 * day, DiagEvents.ALIVE)), t3))
+        // 2.0.0 [RVI-86] (검토 I03a-06) The same week by its days, newest first: which one was late and which has no record.
+        val rows = EventBook.weekRows(events, now)
+        assertEquals(listOf(t3, t2, t1), rows.map { it.at })
+        assertEquals(listOf("기록 없음", "2분 늦게", "제때"), rows.map { it.said })
+        assertEquals(listOf(false, true, false), rows.map { it.late })
+        // The fallback rang it another way: no lateness to say.
+        val t4 = now - 4 * day
+        val fallback = events + DiagEvent(t4, DiagEvents.ALARM_FALLBACK, EventBook.triggerDetail(t4))
+        assertEquals("울림", EventBook.weekRows(fallback, now).first { it.at == t4 }.said)
+        assertEquals("지난 7일 알람 3번 중 1번 기록 없음", EventBook.trustLine(events, now))
+    }
+
+    @Test fun theDaytimeRehearsalsAndTheTestAlarmAreTimed() {
+        // 2.0.0 [RVI-91] (검토 I03c-02) Set, came on time, came four minutes late, never came.
+        val day = 24 * 60 * 60_000L
+        val now = 10 * day
+        val (r1, r2, r3) = listOf(now - 3 * day, now - 2 * day, now - day)
+        val events = listOf(
+            DiagEvent(r1 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r1)),
+            DiagEvent(r1 + 3000, DiagEvents.ALARM_REHEARSAL, EventBook.triggerDetail(r1, "late_s=3")),
+            DiagEvent(r2 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r2)),
+            DiagEvent(r2 + 240_000, DiagEvents.ALARM_REHEARSAL, EventBook.triggerDetail(r2, "late_s=240")),
+        )
+        val rows = EventBook.rehearsals(events, now)
+        assertEquals(listOf("4분 늦게", "제때"), rows.map { it.said })
+        assertEquals("낮 예행 2번 중 1번 늦게 · 가장 늦게 4분", EventBook.rehearsalLine(rows))
+        val missed = events + DiagEvent(r3 - day, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(r3))
+        assertEquals("낮 예행 1번이 오지 않았어요", EventBook.rehearsalLine(EventBook.rehearsals(missed, now)))
+        // One still ahead is not counted.
+        val ahead = events + DiagEvent(now, DiagEvents.ALARM_REHEARSAL_SET, EventBook.triggerDetail(now + 3600_000))
+        assertEquals(2, EventBook.rehearsals(ahead, now).size)
+        assertEquals("낮 예행 2번 중 1번 늦게 · 가장 늦게 4분", EventBook.trustLine(events, now))
+        assertNull(EventBook.rehearsalLine(emptyList()))
+
+        // 2.0.0 [RVI-92] (검토 I03b-04) The 1분 뒤 시험 알람 checked by the app.
+        val t = now - 600_000
+        val set = listOf(DiagEvent(t - 60_000, DiagEvents.ALARM_TEST_SET, EventBook.triggerDetail(t)))
+        assertNull(EventBook.lastTest(set, t + 60_000)) // still within its grace
+        assertTrue(EventBook.lastTest(set, now)!!.missed)
+        val came = set + DiagEvent(t + 2000, DiagEvents.ALARM_TEST_FIRED, EventBook.triggerDetail(t, "late_s=2"))
+        assertEquals("제때", EventBook.lastTest(came, now)!!.said)
+        val plain = came + DiagEvent(t + 2500, DiagEvents.ALARM_FALLBACK, EventBook.triggerDetail(t))
+        assertNull(EventBook.lastTest(plain, now)!!.lateSeconds)
     }
 
     @Test fun inquiryTopicsTakeTheMostMatchedWords() {
@@ -123,6 +166,29 @@ class LServerAlarmTest {
         assertTrue("agreed to this version: nothing changed", PlazaRules.changedSince(PlazaRules.VERSION).isEmpty())
     }
 
+    /** 2.0.0 [RVN-22] 운영 규칙 3판 (COMP-14 방 글 금액, 처리방침 3.14 게시일 + 7일): 4항 한 줄만 바뀌고, 2판 위에서만 서요. */
+    @Test fun moneyRulesAskAgainOnlyForTheAmountLineAndOnlyOverTheCareRules() {
+        // Before the server takes amounts nothing changes for anyone: 2판 stays the one in force.
+        assertEquals(PlazaRules.VERSION_CARE, PlazaRules.version(care = true, money = false))
+        assertTrue(PlazaRules.agreed(PlazaRules.VERSION_CARE, care = true, money = false))
+        // From that day 3판: someone who agreed to 2판 is asked again, with the one changed line (4항) marked.
+        assertEquals(PlazaRules.VERSION_MONEY, PlazaRules.version(care = true, money = true))
+        assertFalse(PlazaRules.agreed(PlazaRules.VERSION_CARE, care = true, money = true))
+        assertEquals(listOf(3), PlazaRules.changedSince(PlazaRules.VERSION_CARE, care = true, money = true))
+        assertTrue(PlazaRules.agreed(PlazaRules.VERSION_MONEY, care = true, money = true))
+        // Someone still on 1판 sees both the 2판 line and the 4항 line marked.
+        assertEquals(listOf(3, PlazaRules.LINES.lastIndex), PlazaRules.changedSince(PlazaRules.VERSION, care = true, money = true))
+        val lines = PlazaRules.lines(care = true, money = true)
+        assertEquals(PlazaRules.LINES.size, lines.size)
+        assertTrue(lines[3].contains("금액") && lines[3].contains("계좌번호") && lines[3].contains("50%"))
+        assertTrue("an amount is written as a rate in the rules, never as 원", lines.none { Regex("\\d+원").containsMatchIn(it) })
+        assertEquals(PlazaRules.lines(care = true).drop(4), lines.drop(4))
+        // A phone not yet under 2판 (community.care off) keeps 1판 even when the server takes amounts: the number never runs ahead.
+        assertFalse(PlazaRules.money(roomMoney = true, care = false))
+        assertEquals(PlazaRules.VERSION, PlazaRules.version(care = false, money = true))
+        assertEquals(PlazaRules.lines(care = false), PlazaRules.lines(care = false, money = true))
+    }
+
     @Test fun theRestNudgeSaysTheAlarmsWorkBreaksARule() {
         val n = Fixtures.night; val d = Fixtures.day; val o = Fixtures.off
         val monday = LocalDate.of(2026, 11, 2)
@@ -141,8 +207,9 @@ class LServerAlarmTest {
     @Test fun noticeOpenIsTheEighteenthUsageEvent() {
         // 1.35 added five theme_free_* after it ([FREE-10]); 1.38 thirteen 팀·가게 counts (Phase 3 분석판); 36 in all, as policy 1-9 lists.
         // 1.39 [STAT2-02] six life_* names come with 처리방침 3.12 (stats.life), so 42, and 3.11 still counts 36.
-        assertEquals(42, UsageEvent.entries.size)
-        assertEquals(36, UsageEvent.entries.size - UsageEvent.POLICY_312.size)
+        // 1.40 [DISC-06] four disc_* names come with 처리방침 3.13 (stats.disc), so 46.
+        assertEquals(46, UsageEvent.entries.size)
+        assertEquals(36, UsageEvent.entries.size - UsageEvent.POLICY_312.size - UsageEvent.POLICY_313.size)
         assertEquals(17, UsageEvent.entries.indexOfFirst { it.key == "notice_open" })
     }
 }

@@ -37,7 +37,8 @@ test("[ADM3-44] 오늘 reads them from the database: failed tries before the loc
   const alerts = (await call("GET", "/api/admin/today", undefined, owner)).data.alerts;
   assert.ok(alerts.some((a) => /로그인 실패가 연달아/.test(a.title)), JSON.stringify(alerts));
   assert.ok(alerts.some((a) => /드릴 보상 1개가 7일 넘게/.test(a.title)));
-  assert.ok(alerts.some((a) => /패스키가 없어요/.test(a.title)));
+  // 2.0.0 [RVQ-05] 검토 U21-05: 두 번째 확인도 패스키도 없으면 '패스키 없음' 대신 붉은 '비밀번호 하나로만' 줄이 맨 위에 와요.
+  assert.ok(alerts.some((a) => a.key === "owner:single" && a.tone === "bad"));
 });
 
 test("[ADM3-44] B10: Claude's reads with the key are counted apart from what it changed", async () => {

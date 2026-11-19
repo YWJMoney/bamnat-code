@@ -1,5 +1,7 @@
 package com.bamnat.core.work
 
+import com.bamnat.core.money.CategoryIds
+import com.bamnat.core.money.CategoryRole
 import com.bamnat.core.money.DailySales
 import com.bamnat.core.money.Job
 import com.bamnat.core.money.MoneyCategories
@@ -54,8 +56,8 @@ object MoneyShareFigures {
      */
     fun recordedPay(months: List<YearMonth>, entries: List<MoneyEntry>): List<MonthFigure> = months.mapNotNull { m ->
         val paid = entries.filter { it.kind == MoneyKind.INCOME && YearMonth.from(it.date) == m }
-            .flatMap { e -> e.shares().filter { isSalary(it.first) } }
-        if (paid.isEmpty()) null else MonthFigure(m, paid.sumOf { it.second }.coerceAtLeast(0), "받은 급여")
+            .flatMap { e -> e.pieces().filter { isSalary(it.category) || CategoryIds.matches(it.id, it.category, CategoryRole.SALARY) } }
+        if (paid.isEmpty()) null else MonthFigure(m, paid.sumOf { it.amount }.coerceAtLeast(0), "받은 급여")
     }
 
     // [SHR-11] 급여 (the built-in category, which 입금 알림 with 급여 also lands in) and the names people give

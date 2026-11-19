@@ -61,7 +61,18 @@ class JournalTest {
             assertTrue(Journal.text(JournalEntry(at(today, 1), k)).isNotBlank())
         }
         // The ten places of the design memo (with the failed backup as the backup's other line), 1.24's 한 달 근무 넣기
-        // and 1.25's 오늘 남은 알람 모두 끄기 (AB) and 월급 관측 [TAX-01].
-        assertEquals(14, JournalKind.entries.size)
+        // and 1.25's 오늘 남은 알람 모두 끄기 (AB) and 월급 관측 [TAX-01]; 2.0.0 [RVL-02][RVL-05] a restore put back, a phone brought back,
+        // [RVL-71] the weekly 데이터 점검.
+        assertEquals(17, JournalKind.entries.size)
+    }
+
+    /** 2.0.0 [RVL-71] The weekly 데이터 점검 says what it put right in numbers only, and "이상 없음" when it put nothing right. */
+    @Test fun `the weekly data check says what it did`() {
+        fun line(d: String?) = Journal.text(JournalEntry(at(today, 1), JournalKind.DATA_CHECK, 1, d))
+        assertEquals("데이터 점검 · 이상 없음", line(com.bamnat.core.journal.dataCheckDetail(0, 0, 0)))
+        assertEquals("데이터 점검 · 지운 근무를 가리키던 날 2개 근무표대로 · 쓰지 않는 사진 1장 치움", line(com.bamnat.core.journal.dataCheckDetail(2, 1, 0)))
+        assertEquals("데이터 점검 · 살펴볼 것 1개 알림", line(com.bamnat.core.journal.dataCheckDetail(0, 0, 1)))
+        assertEquals("데이터 점검", line(null))
+        assertEquals("the detail is kept as written", "2 1 0", Journal.safeDetail(com.bamnat.core.journal.dataCheckDetail(2, 1, 0)))
     }
 }

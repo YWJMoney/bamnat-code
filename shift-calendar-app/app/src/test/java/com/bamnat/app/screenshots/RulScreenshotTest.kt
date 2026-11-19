@@ -113,13 +113,13 @@ class RulScreenshotTest : ScreenshotBase() {
 
     @Test fun messageShowsEvenWhenSaidTwice() = shoot("887_rul_message", FOLDED) {
         // PC D16 (낮): 안전 모드에서 단추를 세 번 눌러도 '안전 모드라 … 쉬어요'가 안 나왔어요 (받자마자 비우면 스낵바가 취소됐어요).
-        val sb = androidx.compose.material3.SnackbarHostState()
         content {
             Surface { Column(Modifier.padding(16.dp)) {
-                com.bamnat.app.logic.LogicMessageHost(app.container, sb)
-                androidx.compose.material3.SnackbarHost(sb)
+                com.bamnat.app.logic.LogicMessageHost(app.container)
+                com.bamnat.app.ui.components.AppSnackHost()
             } }
         }
+        val sb = object { val currentSnackbarData get() = com.bamnat.app.ui.components.AppSnack.current }
         // The app's own screen (also a host) is gone before the line is said.
         settle()
         repeat(2) { n ->

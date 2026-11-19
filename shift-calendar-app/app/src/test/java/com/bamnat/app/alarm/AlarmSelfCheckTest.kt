@@ -1,5 +1,8 @@
 package com.bamnat.app.alarm
 
+import com.bamnat.app.TestClock
+import com.bamnat.core.time.Today
+import org.junit.After
 import android.app.AlarmManager
 import android.app.Application
 import android.content.Intent
@@ -28,20 +31,23 @@ import java.time.ZoneId
 /** [REL-13] The alarm self-check and the one-minute test alarm of 알람 점검. */
 @RunWith(AndroidJUnit4::class)
 class AlarmSelfCheckTest {
+    @After fun clockBack() = Today.reset()
+
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), alarmEnabled = true)
-    private val calendars = listOf(null to ScheduleSnapshot(listOf(day), WorkPattern.Rotation(LocalDate.now().minusDays(3), listOf(1L)), emptyList()))
+    private val calendars = listOf(com.bamnat.app.alarm.RingingCalendar(null, ScheduleSnapshot(listOf(day), WorkPattern.Rotation(Today.date().minusDays(3), listOf(1L)), emptyList())))
     private val alarmManager get() = context.getSystemService(AlarmManager::class.java)
     private lateinit var scheduler: AlarmScheduler
 
     @Before fun setUp() {
+        TestClock.at(10)  // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking), not the hour the run starts.
         // Let the app's own first planning run before this test plans its schedule.
         AppSettled.alarms(context as com.bamnat.app.BamnatApp)
         scheduler = AlarmScheduler(context, Telemetry(EventLog(context), SettingsRepository(context)))
     }
 
     @Test fun aLostAlarmIsRegisteredAgain() {
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         scheduler.reschedule(calendars, true, now)
         assertTrue(scheduler.systemHolds())
         assertFalse("nothing to repair", scheduler.verify(calendars, true, now))
@@ -63,7 +69,7 @@ class AlarmSelfCheckTest {
 
     /** Between an alarm ringing and its re-plan the alarm is not lost: no repair is logged then. */
     @Test fun anAlarmThatJustRangIsNotRepaired() {
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         scheduler.reschedule(calendars, true, now)
         scheduler.markFired(scheduler.upcoming.value!!.triggerAtMillis)
         assertFalse(scheduler.systemHolds())
@@ -76,7 +82,7 @@ class AlarmSelfCheckTest {
     }
 
     @Test fun theTestAlarmRingsInAMinuteAndLeavesTheShiftAlarm() {
-        val now = LocalDateTime.of(LocalDate.now(), LocalTime.of(12, 0, 10))
+        val now = LocalDateTime.of(Today.date(), LocalTime.of(12, 0, 10))
         scheduler.reschedule(calendars, true, now)
         val at = scheduler.scheduleTest(now)
         assertEquals(now.toLocalDate().atTime(12, 1).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), at)
@@ -95,7 +101,7 @@ class AlarmSelfCheckTest {
     }
 
     @Test fun aTestSetLateInAMinuteStillGivesHalfAMinute() {
-        val now = LocalDateTime.of(LocalDate.now(), LocalTime.of(12, 0, 45))
+        val now = LocalDateTime.of(Today.date(), LocalTime.of(12, 0, 45))
         val at = scheduler.scheduleTest(now)
         assertEquals(now.toLocalDate().atTime(12, 2).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), at)
         scheduler.cancelTest()
@@ -124,5 +130,22 @@ class AlarmSelfCheckTest {
         val today = TodayShiftNotice.lines(snapshot.resolver, start).first.removePrefix("오늘 ")
         assertTrue(today, today.startsWith("주간 ") && today.endsWith(" · 반차"))
         assertEquals("주간 07:00~19:00", TodayShiftNotice.lines(snapshot.resolver, start).second.removePrefix("내일 "))
+    }
+
+    /**
+     * 2.0.0 [RVI-66] (PC 통합 1차 N8) A 대근 on a day off is the day's work on the lock screen, not '휴무'; 잔업 on a work day goes
+     * beside the shift.
+     */
+    @Test fun aCoverOnADayOffIsTheDaysWork() {
+        val off = ShiftType(3, "휴무", "휴", 0xFF9E9E9E, null, null, isOff = true)
+        val start = LocalDate.of(2026, 11, 2)
+        val snapshot = ScheduleSnapshot(listOf(day, off), WorkPattern.Rotation(start, listOf(1L, 3L)), listOf(
+            com.bamnat.core.model.DayEntry(start, extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.OVERTIME_ID, minutes = 120))),
+            com.bamnat.core.model.DayEntry(start.plusDays(1), extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID,
+                LocalTime.of(7, 0), LocalTime.of(19, 0), coveredShiftId = 1L))),
+        ))
+        val (today, tomorrow) = TodayShiftNotice.lines(snapshot.resolver, start)
+        assertTrue(today, today.startsWith("오늘 주간 07:00~19:00 · 잔업"))
+        assertEquals("내일 주간 대근 07:00~19:00", tomorrow)
     }
 }

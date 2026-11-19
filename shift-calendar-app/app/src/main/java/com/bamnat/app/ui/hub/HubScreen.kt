@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,13 +23,13 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.foundation.background
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -94,6 +96,16 @@ fun firstSection(style: WorkStyle?, people: Boolean = false): HubSection = when 
 /** [HUB-01] The tab's name, kept in one place so the bottom bar, the guide and the search say the same. */
 const val HUB_NAME = "마을"
 
+/** 2.0.0 [RVP-45] HQ-67: a one-row 마을 head's tab, each side of its word (the four tabs share the row evenly). */
+private const val HUB_TAB_PAD = 4
+
+/**
+ * 2.0.0 [RVP-45] 검토 HQ-67: whether 마을's head is one row: with 150% letters or on a folded screen (under 392dp), when the four tabs
+ * ([widestDp] the widest word) fit evenly beside [icons] round buttons (찾기, 나). Else the name row stays over the tabs.
+ */
+internal fun hubOneRow(widthDp: Float, fontScale: Float, widestDp: Float, icons: Int): Boolean =
+    (fontScale >= 1.5f || widthDp < 392f) && HubSection.entries.size * (widestDp + 2 * HUB_TAB_PAD) + icons * 48f <= widthDp
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun HubScreen(
@@ -142,27 +154,57 @@ fun HubScreen(
             reselect++
         }
     }
+    // 사용자 2026-11-03: the 장터 tab pressed again while on it goes back to the top of its list.
+    val pick: (HubSection) -> Unit = { s -> if (s == HubSection.SHARE && section != s) shareKind = null; if (section == s) reselect++; section = s }
+    val search: @Composable () -> Unit = {
+        // 1.36 [VIL-06] 마을 V6: one search for 장터·광장·요청, at the top of 마을.
+        onSearch?.let {
+            androidx.compose.material3.IconButton(onClick = it) {
+                androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Search, "마을에서 찾기")
+            }
+        }
+    }
     Column(Modifier.fillMaxSize()) {
         Surface(color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.windowInsetsPadding(WindowInsets.statusBars)) {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.Bottom) {
-                    Text(HUB_NAME, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
-                    Spacer(Modifier.padding(start = 8.dp))
-                    style?.let { Text(RecipeDescribe.short(it) + " 분들과", style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp)) }
-                    // 1.36 [VIL-06] 마을 V6: one search for 장터·광장·요청, at the top of 마을.
-                    Spacer(Modifier.weight(1f))
-                    onSearch?.let {
-                        androidx.compose.material3.IconButton(onClick = it) {
-                            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.Search, "마을에서 찾기")
-                        }
-                    }
-                    com.bamnat.app.ui.MeButton() // [NAV2-02]
+            // 2.0.0 [RVP-45] 검토 HQ-67 (조건 1·12): at 글자 200% the name row and the tabs were 124dp, and 장터's first card began at 31% of
+            // the screen. With 150% letters or on a folded screen the head is one row, the four tabs with 찾기 and 나, wherever they fit
+            // ([hubOneRow], measured like the calendar's head); the bar below already says 마을. Nothing folds while a list scrolls (조건 11).
+            BoxWithConstraints(Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.statusBars)) {
+                val fontScale = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                val tabStyle = MaterialTheme.typography.titleSmall
+                val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+                val widest = with(androidx.compose.ui.platform.LocalDensity.current) {
+                    HubSection.entries.maxOf { measurer.measure(it.label, tabStyle, maxLines = 1, softWrap = false).size.width }.toDp()
                 }
-                PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)) {
-                    HubSection.entries.forEach { s ->
-                        // 사용자 2026-11-03: the 장터 tab pressed again while on it goes back to the top of its list.
-                        Tab(selected = section == s, onClick = { if (s == HubSection.SHARE && section != s) shareKind = null; if (section == s) reselect++; section = s }, text = { Text(s.label) })
+                val icons = (if (onSearch != null) 1 else 0) + (if (com.bamnat.app.ui.LocalMe.current.let { it.show && !it.inRail }) 1 else 0)
+                val tabsGround = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)
+                if (hubOneRow(maxWidth.value, fontScale, widest.value, icons)) Column {
+                    Row(Modifier.fillMaxWidth().semantics { paneTitle = HUB_NAME }, verticalAlignment = Alignment.CenterVertically) {
+                        // 총괄 #512 사진: the tabs' own line stopped short of 찾기·나; the head draws one line its whole width instead.
+                        PrimaryTabRow(selectedTabIndex = section.ordinal, modifier = Modifier.weight(1f), containerColor = tabsGround, divider = {}) {
+                            HubSection.entries.forEach { s ->
+                                Tab(selected = section == s, onClick = { pick(s) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                    Text(s.label, style = tabStyle, maxLines = 1, softWrap = false,
+                                        modifier = Modifier.padding(horizontal = HUB_TAB_PAD.dp, vertical = 12.dp))
+                                }
+                            }
+                        }
+                        search()
+                        com.bamnat.app.ui.MeButton() // [NAV2-02]
+                    }
+                    androidx.compose.material3.HorizontalDivider()
+                } else Column {
+                    Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.Bottom) {
+                        Text(HUB_NAME, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })
+                        Spacer(Modifier.padding(start = 8.dp))
+                        style?.let { Text(RecipeDescribe.together(it), style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(bottom = 3.dp)) }
+                        Spacer(Modifier.weight(1f))
+                        search()
+                        com.bamnat.app.ui.MeButton() // [NAV2-02]
+                    }
+                    PrimaryTabRow(selectedTabIndex = section.ordinal, containerColor = tabsGround) {
+                        HubSection.entries.forEach { s -> Tab(selected = section == s, onClick = { pick(s) }, text = { Text(s.label) }) }
                     }
                 }
             }
@@ -258,7 +300,7 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
     val accent = if (photo) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary
     val linkColors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = accent)
     Row(Modifier.fillMaxWidth().padding(horizontal = side, vertical = 2.dp)
-        .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), androidx.compose.foundation.shape.RoundedCornerShape(14.dp)).padding(horizontal = 8.dp) else Modifier)
+        .then(if (photo) Modifier.background(com.bamnat.app.ui.theme.PhotoGround.bar(), MaterialTheme.shapes.medium).padding(horizontal = 8.dp) else Modifier)
         .heightIn(min = 48.dp)
         .clickable(onClickLabel = "오늘의 하나 보기") { onRecipe(r.code) }, verticalAlignment = Alignment.CenterVertically) {
         // PC 확인 V18: a small picture of it and 입어 보기, so it says what it is before a tap.
@@ -287,7 +329,9 @@ private fun TodayOne(c: AppContainer, style: WorkStyle?, prefs: android.content.
 private fun Page(scroll: androidx.compose.foundation.ScrollState = rememberScrollState(), content: @Composable () -> Unit) {
     // 사용자 2026-11-03: tapping the tab you are on goes back to the top, on every 마을 page alike.
     val reselect = LocalHubReselect.current
-    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > 0) scroll.animateScrollTo(0) }
+    // 2.0.0 [RVO-31] PRO-21: only a tap on the tab (or a 소식) after this part opened goes to the top, not every coming in.
+    val reselectAt = remember { reselect }
+    androidx.compose.runtime.LaunchedEffect(reselect) { if (reselect > reselectAt) scroll.animateScrollTo(0) }
     // PC c6a6e361 (공방을 반쯤 내린 채 달력에 다녀오면 132px 위로 어긋남): the kept place was cut to the page's first, shorter
     // height (cards that load a moment later were not in yet). Keep where it was left and go back there once the page is that long.
     var left by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -372,9 +416,9 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
         // PC 재검토 C10 (꾸미기 시작점이 네 갈래로 흩어짐): every way to start, here — 지금 모양 고치기 above, 새로 만들기 (느낌·처음) and
         // 이어서 하기 under it.
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            androidx.compose.material3.OutlinedButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_FEEL) },
+            com.bamnat.app.ui.components.OutlinedButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_FEEL) },
                 modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("느낌으로 새로", maxLines = 1) }
-            androidx.compose.material3.OutlinedButton(onClick = { onStudio("plain") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+            com.bamnat.app.ui.components.OutlinedButton(onClick = { onStudio("plain") }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                 Text("처음 모양에서 새로", maxLines = 1)
             }
         }
@@ -386,7 +430,7 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
                     Text((if (d.step >= 2) "올리던 중" else "스튜디오에서 꾸미던 중") + " · ${com.bamnat.app.ui.studio.ago(d.updatedAt)}", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                androidx.compose.material3.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = { onStudio(com.bamnat.app.ui.studio.StudioViewModel.START_DRAFT + d.id) },
                     modifier = Modifier.heightIn(min = 48.dp)) { Text("이어서 하기") }
             }
         }
@@ -406,10 +450,10 @@ private fun MakeBody(c: AppContainer, style: WorkStyle?, onStudio: (String) -> U
             color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // [R136-13] 1.36 (리뷰 R-23·M6): 내 것 in one place — 올린 것·받은 것·만들던 것 — and 코드로 받기 only here.
-    Card("내 것", "올린 레시피의 좋아요·댓글, 받은 레시피(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
+    Card("내 것", "올린 작품의 좋아요·댓글, 받은 작품(7일 안 되돌리기), 만들던 판을 한곳에서 봐요", "열기", onMine)
     // 1.36 [VIL-13] 마을 V13: 간직한 글 · 내 글 · 내 답글 next to 내 것.
     Card("간직한 글 · 내 글", "광장에서 간직한 팁, 내가 쓴 글과 답글을 다시 봐요", "보기", onPosts)
-    Card("이런 거 있었으면", "필요한 레시피를 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
+    Card("이런 거 있었으면", "필요한 작품을 부탁하거나, 다른 분의 부탁을 ‘만들게요’로 받아 만들어요", "요청 보기", onRequests)
     OutlinedButton(onClick = onCode, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("코드·링크로 받기") }
 }
 
@@ -439,11 +483,11 @@ private fun DoneRequests(c: AppContainer, style: WorkStyle?, onRecipe: (String) 
     androidx.compose.runtime.LaunchedEffect(q.code) { onTop() }
     SoftCard(highlighted = true) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("🎁 부탁한 레시피가 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+            Text("🎁 부탁한 작품이 완성됐어요", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
             Text("‘${q.body.take(40)}’" + if (fresh.size > 1) " 외 ${fresh.size - 1}개" else "", style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                androidx.compose.material3.Button(onClick = {
+                com.bamnat.app.ui.components.Button(onClick = {
                     seen = seen + q.code!!
                     runCatching { prefs.edit().putStringSet("req_seen", seen).apply() }
                     onRecipe(q.code)

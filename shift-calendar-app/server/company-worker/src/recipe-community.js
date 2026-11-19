@@ -5,17 +5,26 @@
 // it, never the hash. 구독 is kept on the phone only: it asks for the newest version of the codes it took (no device sent), so
 // the server never learns who uses which recipe. Everything that sends (요청, 팔로우, 그림) waits for 처리방침 3.8 like the rest.
 import { autoCheck, autoCheckOn, firstState, flagImage, passedPhotos, PHOTO_GUARD, PHOTO_WHY } from "./photo-guard.js";
-import { CODE, cleanText, graphemes, investAdvice, listItem, makerId, oneEmoji, sha256hex, textProblem, trustLevel } from "./recipes.js";
+import { allIn, CODE, cleanText, graphemes, investAdvice, IX_READING, listItem, makerId, oneEmoji, oneVoice, openable, reservedName, RETIRED, sectionOf, sha256hex, textProblem, trustLevel } from "./recipes.js";
 import { DAY, HOUR } from "./units.js";
 import { careGate } from "./community-care.js";
-import { addStrike, confirmStrike, limitJson, operatorStrike, writeAllowance, writeLimitHit } from "./write-limits.js";
+import { addStrike, confirmStrike, limitJson, operatorStrike, strikeTakenBack, writeAllowance, writeLimitHit } from "./write-limits.js";
 
 const RC_STYLE_KEYS = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 // 1.35 [RCX-30] 그림 꾸미기 backgrounds (1080 px) fit in 160 KB; a whole look is up to 9 pictures.
-export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12, picks: 3, versionsAsk: 50,
+export const COMMUNITY_LIMITS = { requestText: [5, 200], requestsPerNetworkDay: 200, imageBytes: 160 * 1024, imagesPerDay: 12,
+  // 2.0.0 [RVD-27] SN-15: a phone past 새싹 whose pictures have already passed the operator (PHOTO_GUARD.lookFirst) may send a whole work
+  // a day (꾸밈 사진 up to 40 and the screen·head·widget·shift pictures); a new phone keeps 12. 갈래 M과 맞춤 11-12.
+  // 2.0.0 [RVQ-44] 검토 SVC-74: 넣은 작품이 50개를 넘어도 새 판 확인이 모두 닿게(90개씩 나눠 물어요).
+  imagesPerDaySure: 48, picks: 3, versionsAsk: 200,
+  // 2.0.0 [RVQ-44] 검토 SVC-29·SVC-62·U22-06·U22b-08: '만들게요'는 14일 뒤 다시 열리고 한 분이 동시에 셋까지, '완성'은 요청한 분이
+  // '맞아요'를 누르거나 7일 답이 없으면 끝나요. 요청 판·제작자 페이지는 쪽마다 60줄.
+  takeDays: 14, takesAtOnce: 3, checkDays: 7, page: 60,
   // [PRF-01..06] 1.36 창작자 프로필: 한 줄 소개, 대표 작품, 하루 팔로우, 차단, 신고 3번이면 소개 먼저 가림. 모음 쓰기는 [LIM-10] 신고 누적 제한만.
   bio: 40, pins: 6, followsPerDay: 60, setTitle: [2, 30], setSummary: 80, setCodes: [2, 6], sets: 20, setsPerNetworkDay: 400, follows: 200, blocks: 500,
-  flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40 };
+  flagsToHideBio: 3, flagsPerDay: 10, flagsPerNetworkDay: 40,
+  // 2.0.0 [RVQ-27] 검토 SVC-59: 한 네트워크의 하루 팔로우(병원·공장 와이파이도 넉넉히), SVC-24: 신고로 가려진 소개를 하루에 고치는 횟수.
+  followsPerNetworkDay: 300, bioEditsHidden: 3 };
 /** [PRF-03] 쓰는 분·좋아요가 이만큼 넘으면 내 프로필 최근 알림에 한 번 (폰이 본 것을 기억해요). */
 export const PROFILE_MILESTONES = [10, 50, 100, 500, 1000, 5000];
 export const PROFILE_FLAG_REASONS = ["impersonate", "bio", "spam", "other"];
@@ -75,7 +84,47 @@ export const COMMUNITY_COLUMNS = ["ALTER TABLE recipes ADD COLUMN maker TEXT",
   // [PRF-12] 1.36 프로 꾸미기: 프로필 표지 그림 (그림 올리기와 같은 검토를 거친 것만 보여요).
   "ALTER TABLE recipe_makers ADD COLUMN cover TEXT",
   // [PRF-04] 1.36 팔로우는 그대로, 이분의 새 작품 알림만 끄기.
-  "ALTER TABLE recipe_follows ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0"];
+  "ALTER TABLE recipe_follows ADD COLUMN quiet INTEGER NOT NULL DEFAULT 0",
+  // 2.0.0 [RVQ-27] 검토 SVC-58: 소개를 가릴 때 쓰인 신고는 '처리됨'(1)이라 다음 판정에 세지 않아요.
+  "ALTER TABLE recipe_maker_flags ADD COLUMN settled INTEGER NOT NULL DEFAULT 0",
+  // 2.0.0 [RVQ-27] 검토 SVC-61: 운영 조치 기록(recipe_actions)이 작품 말고 무엇에 대한 것인지(image·request·set·maker·font·pick·month).
+  "ALTER TABLE recipe_actions ADD COLUMN target TEXT NOT NULL DEFAULT 'recipe'",
+  // 2.0.0 [RVQ-44] 검토 SVC-29·SVC-62·I22bb-01: '만들게요'를 누른 때(14일 기한), '완성'을 누른 때(7일 확인), 확인 결과
+  // (1 요청한 분이 맞아요, 2 7일 답이 없어 저절로, NULL 아직).
+  "ALTER TABLE recipe_requests ADD COLUMN taken_at INTEGER",
+  "ALTER TABLE recipe_requests ADD COLUMN done_at INTEGER",
+  "ALTER TABLE recipe_requests ADD COLUMN checked INTEGER"];
+
+/**
+ * 2.0.0 [RVQ-27] 검토 SVC-61: one line of 운영 조치 기록 for something that is not a recipe, in the same table as the recipes' (임시 조치 기록,
+ * 정보통신망법 44조의2), with who did it, so a 해명 can be matched to what was hidden and why.
+ */
+export const actLine = (d, env, target, id, action, reason, actor, now) => d.stmt(env,
+  "INSERT INTO recipe_actions (code, action, reason, actor, at, target) VALUES (?, ?, ?, ?, ?, ?)",
+  String(id), action, String(reason ?? "").slice(0, 200), actor ?? "", now, target);
+
+/**
+ * 2.0.0 [RVQ-44] 검토 SVC-74·SVC-63: drop the edge copy of a public picture or font file [path] (kept a few minutes by edgeCached) when
+ * the operator or reports hide it. Best effort: without a cache (tests, local) nothing happens.
+ */
+export async function purgeAsset(request, path) {
+  try {
+    const cache = globalThis.caches?.default;
+    if (cache) await cache.delete(new Request(new URL(path, request.url).toString(), { method: "GET" }));
+  } catch {
+    // The copy runs out in minutes anyway.
+  }
+}
+
+/** The optional {note} an admin action carries (the reason, kept in the 기록); nothing when there is no body. */
+async function noteOf(d, request) {
+  try {
+    const b = await d.readJson(request, 2048);
+    return { body: b, note: typeof b.note === "string" ? b.note.trim().slice(0, 200) : "" };
+  } catch {
+    return { body: {}, note: "" };
+  }
+}
 
 /** The maker row of an install, made the first time it is needed. */
 async function rcMakerOf(d, env, dev, now) {
@@ -117,15 +166,17 @@ export function weekOf(ms) {
 /** GET /api/recipes/:code/lineage — the recipes it was made from (up to 10 back) and those made from it (public only). */
 async function rcLineage(d, env, code) {
   const now = Date.now();
-  const self = await d.one(env, "SELECT code, parent, state, scope FROM recipes WHERE code = ?", code);
-  if (!self || self.state !== "visible" || self.scope === "private") return d.json({ error: "not_found" }, 404);
+  // 2.0.0 [RVQ-44] 검토 SVC-74: a work the operator's 판 정리 took off the lists still opens for whoever has it (show does), so its
+  // 계보 does too.
+  const self = await d.one(env, "SELECT code, parent, state, scope, hidden_reason FROM recipes WHERE code = ?", code);
+  if (!self || !openable(self) || self.scope === "private") return d.json({ error: "not_found" }, 404);
   const up = [];
   let at = self.parent;
   const seen = new Set([code]);
   while (at && up.length < 10 && !seen.has(at)) {
     seen.add(at);
     const r = await d.one(env, "SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner WHERE r.code = ?", at);
-    if (!r || r.state !== "visible" || r.scope === "private") {
+    if (!r || !openable(r) || r.scope === "private") {
       up.push({ code: at, gone: true });
       break;
     }
@@ -167,21 +218,31 @@ export function pieceChanges(fromBody, toBody) {
 async function rcVersions(d, env, url) {
   const codes = [...new Set((url.searchParams.get("codes") ?? "").split(",").filter((c) => CODE.test(c)))].slice(0, COMMUNITY_LIMITS.versionsAsk);
   if (!codes.length) return d.json({ versions: {} });
-  const rows = await d.all(env, `SELECT code, version, hash, title, updated_at FROM recipes WHERE code IN (${codes.map(() => "?").join(",")})
-    AND state = 'visible' AND scope != 'private'`, ...codes);
+  // 2.0.0 [RVQ-44] 검토 SVC-74: up to 200 asked 90 at a time (D1 binds 100), and a retired work (판 정리) still tells its new 판, as show
+  // promises.
+  const rows = (await allIn(d, env, codes, (part, marks) => [`SELECT code, version, hash, title, updated_at, state, hidden_reason FROM recipes
+    WHERE code IN (${marks}) AND scope != 'private'`, ...part])).filter(openable);
   return d.json({ versions: Object.fromEntries(rows.map((r) => [r.code, { version: r.version, hash: r.hash, title: r.title, at: new Date(r.updated_at).toISOString() }])) });
 }
 
 // ---- [RCX-04] 요청 판 ----
 
 function rcRequestItem(q, dev, liked, told = false) {
+  const iso = (ms) => new Date(ms).toISOString();
+  const checking = q.state === "check";
   return {
-    id: q.id, style: q.style, body: q.body, likes: q.likes, state: q.state, code: q.code ?? null, at: new Date(q.created_at).toISOString(),
+    // 2.0.0 [RVQ-44] 'check' (완성을 눌러 요청한 분의 확인을 기다림) reads as done to an app before 2.0.0, with checking for a new one.
+    id: q.id, style: q.style, body: q.body, likes: q.likes, state: checking ? "done" : q.state, code: q.code ?? null, at: iso(q.created_at),
     mine: Boolean(dev && q.device === dev), taking: Boolean(dev && q.maker === dev), ...(liked ? { liked: true } : {}),
     // 1.36 [GRW-03] 스튜디오 요구가 모여 저절로 올라온 줄: 부탁한 분 수.
     ...(q.device === "operator" && q.askers > 0 ? { askers: q.askers } : {}),
     // 1.36 누락 점검 N14: 14일 동안 아무도 만들지 않아 스튜디오 요구로 넘어간 요청 (개발자에게 알림).
     ...(told && q.state === "waiting" ? { told: true } : {}),
+    // 2.0.0 [RVQ-44] 검토 U22-06: '만드는 중 D+5 · 14일 지나면 다시 열려요'.
+    ...(q.state === "making" ? { makingSince: iso(q.taken_at ?? q.updated_at), reopenAt: iso((q.taken_at ?? q.updated_at) + COMMUNITY_LIMITS.takeDays * DAY) } : {}),
+    // U22b-08: the one who asked is asked once '이 작품이 맞나요?' until [checkBy], when it counts as done by itself.
+    ...(checking ? { checking: true, ...(dev && q.device === dev ? { askCheck: true, checkBy: iso((q.done_at ?? q.updated_at) + COMMUNITY_LIMITS.checkDays * DAY) } : {}) } : {}),
+    ...(q.state === "done" && q.checked === 1 ? { confirmed: true } : {}),
   };
 }
 
@@ -189,13 +250,17 @@ async function rcRequestList(d, env, request, url) {
   const dev = await rcReadDev(d, request, null);
   const style = RC_STYLE_KEYS.includes(url.searchParams.get("style")) ? url.searchParams.get("style") : null;
   // 1.36 [GRW-03] style ALL: a group of 스튜디오 요구 that named no kind of work shows on every one.
-  const rows = await d.all(env, `SELECT * FROM recipe_requests WHERE hidden = 0 ${style ? "AND (style = ? OR style = 'ALL')" : ""}
-    ORDER BY CASE state WHEN 'done' THEN 1 ELSE 0 END, likes DESC, created_at DESC LIMIT 60`, ...(style ? [style] : []));
+  // 2.0.0 [RVQ-44] 검토 SVC-74: 더 보기 (page=1, 2, …), 60 a page; one past the page says there is more.
+  const page = Math.min(50, Math.max(0, Number.parseInt(url.searchParams.get("page") ?? "0", 10) || 0));
+  const size = COMMUNITY_LIMITS.page;
+  const got = await d.all(env, `SELECT * FROM recipe_requests WHERE hidden = 0 ${style ? "AND (style = ? OR style = 'ALL')" : ""}
+    ORDER BY CASE state WHEN 'done' THEN 1 WHEN 'check' THEN 1 ELSE 0 END, likes DESC, created_at DESC LIMIT ? OFFSET ?`, ...(style ? [style] : []), size + 1, page * size);
+  const rows = got.slice(0, size);
   const liked = dev && rows.length ? new Set((await d.all(env, `SELECT id FROM recipe_request_likes WHERE device = ? AND id IN (${rows.map(() => "?").join(",")})`,
     dev, ...rows.map((q) => q.id))).map((x) => x.id)) : new Set();
   const told = rows.length ? new Set((await d.all(env, `SELECT ref FROM studio_need_links WHERE src = 'req' AND ref IN (${rows.map(() => "?").join(",")})`,
     ...rows.map((q) => q.id))).map((x) => x.ref)) : new Set();
-  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id), told.has(q.id))) });
+  return d.json({ items: rows.map((q) => rcRequestItem(q, dev, liked.has(q.id), told.has(q.id))), page, more: got.length > size });
 }
 
 async function rcRequestPost(d, env, request) {
@@ -240,12 +305,22 @@ async function rcRequestAct(d, env, request, id, what) {
     return d.json({ id, deleted: true });
   }
   if (!(await d.legalOpen(env, "recipe.talk", now))) return d.json({ error: "not_yet", field: "recipe.talk" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 거두기(on: false)와 지우기는 그대로예요.
+  if (body.on !== false) {
+    const held = await careGate(d, env, dev, "community", now);
+    if (held) return held;
+  }
   if (what === "like") {
     if (q.device === dev) return d.json({ error: "own" }, 400);
     const on = body.on !== false;
     const had = await d.one(env, "SELECT 1 AS x FROM recipe_request_likes WHERE id = ? AND device = ?", id, dev);
-    if (on && !had) await d.batch(env, [d.stmt(env, "INSERT INTO recipe_request_likes (id, device, at) VALUES (?, ?, ?)", id, dev, now),
-      d.stmt(env, "UPDATE recipe_requests SET likes = likes + 1 WHERE id = ?", id)]);
+    if (on && !had) {
+      // 2.0.0 [RVQ-44] 검토 SVC-62·I22bc-02: the board is ordered by likes, so one network's day gives one request a few at most.
+      const capped = await oneVoice(d, env, request, "rqlike", id, now);
+      if (capped) return capped;
+      await d.batch(env, [d.stmt(env, "INSERT INTO recipe_request_likes (id, device, at) VALUES (?, ?, ?)", id, dev, now),
+        d.stmt(env, "UPDATE recipe_requests SET likes = likes + 1 WHERE id = ?", id)]);
+    }
     if (!on && had) await d.batch(env, [d.stmt(env, "DELETE FROM recipe_request_likes WHERE id = ? AND device = ?", id, dev),
       d.stmt(env, "UPDATE recipe_requests SET likes = likes - 1 WHERE id = ?", id)]);
     const after = await d.one(env, "SELECT likes FROM recipe_requests WHERE id = ?", id);
@@ -255,24 +330,65 @@ async function rcRequestAct(d, env, request, id, what) {
     // 만들게요: one maker at a time; the same phone can let it go again.
     if (body.on === false) {
       if (q.maker !== dev || q.state !== "making") return d.json({ error: "state" }, 409);
-      await d.run(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL, updated_at = ? WHERE id = ?", now, id);
+      await d.run(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL, taken_at = NULL, updated_at = ? WHERE id = ?", now, id);
       return d.json({ id, state: "waiting" });
     }
     if (q.state !== "waiting") return d.json({ error: "state" }, 409);
-    await d.run(env, "UPDATE recipe_requests SET state = 'making', maker = ?, updated_at = ? WHERE id = ?", dev, now, id);
-    return d.json({ id, state: "making" });
+    // 2.0.0 [RVQ-44] 검토 SVC-29: from 이웃 (3 days on the 나눔 판), three at a time, and it opens again by itself after 14 days.
+    const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+    if (trust.level < 1) return d.json({ error: "trust", days: Math.max(1, Math.ceil(3 - trust.days)) }, 403);
+    const busy = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_requests WHERE maker = ? AND state = 'making'", dev);
+    if (busy.n >= COMMUNITY_LIMITS.takesAtOnce) return d.json({ error: "taking", max: COMMUNITY_LIMITS.takesAtOnce }, 409);
+    const took = await d.run(env, "UPDATE recipe_requests SET state = 'making', maker = ?, taken_at = ?, updated_at = ? WHERE id = ? AND state = 'waiting'", dev, now, now, id);
+    if (took?.meta && !took.meta.changes) return d.json({ error: "state" }, 409);
+    return d.json({ id, state: "making", makingSince: new Date(now).toISOString(), reopenAt: new Date(now + COMMUNITY_LIMITS.takeDays * DAY).toISOString() });
   }
   if (what === "done") {
-    if (q.maker !== dev || q.state === "done") return d.json({ error: "state" }, 409);
+    if (q.maker !== dev || q.state !== "making") return d.json({ error: "state" }, 409);
     if (typeof body.code !== "string" || !CODE.test(body.code)) return d.json({ error: "code", field: "code" }, 400);
     const r = await d.one(env, "SELECT owner, state, scope FROM recipes WHERE code = ?", body.code);
     if (!r || r.owner !== dev || r.scope === "private" || r.state === "deleted") return d.json({ error: "code", field: "code" }, 400);
-    await d.run(env, "UPDATE recipe_requests SET state = 'done', code = ?, updated_at = ? WHERE id = ?", body.code, now, id);
-    // 1.36 [GRW-03] 사용자 부품으로 먼저 풀림: 이 요청이 온 스튜디오 요구 묶음과 부탁한 분들.
-    if (d.needSolved) await d.needSolved(env, id, body.code, now);
-    return d.json({ id, state: "done", code: body.code });
+    // 2.0.0 [RVQ-44] 검토 SVC-57(5): a work of mine that is hidden, given back or still waiting does not answer anyone yet.
+    if (r.state !== "visible") return d.json({ error: "not_visible", field: "code" }, 409);
+    // SVC-62·U22b-08·I22bb-01: '완성' waits for the one who asked ('맞아요', or 7 days with no answer); the operator answers for a
+    // 스튜디오 요구 that came up by itself.
+    await d.run(env, "UPDATE recipe_requests SET state = 'check', code = ?, done_at = ?, checked = NULL, updated_at = ? WHERE id = ?", body.code, now, now, id);
+    return d.json({ id, state: "done", checking: true, code: body.code, checkBy: new Date(now + COMMUNITY_LIMITS.checkDays * DAY).toISOString() });
+  }
+  if (what === "check") {
+    // 2.0.0 [RVQ-44] 검토 U22b-08: 이 작품이 맞나요? 맞아요 (done) / 아니에요 (open again for anyone, the maker too).
+    if (q.device !== dev) return d.json({ error: "not_yours" }, 403);
+    if (q.state !== "check") return d.json({ error: "state" }, 409);
+    if (typeof body.ok !== "boolean") return d.json({ error: "ok", field: "ok" }, 400);
+    return d.json(await rcRequestChecked(d, env, q, body.ok, 1, now));
   }
   return null;
+}
+
+/** [RVQ-44] Close a request in 'check': done (checked [how]: 1 맞아요, 2 저절로) with the 스튜디오 요구 told, or open again. */
+async function rcRequestChecked(d, env, q, ok, how, now) {
+  if (ok) {
+    const res = await d.run(env, "UPDATE recipe_requests SET state = 'done', checked = ?, updated_at = ? WHERE id = ? AND state = 'check'", how, now, q.id);
+    // 1.36 [GRW-03] 사용자 부품으로 먼저 풀림: 이 요청이 온 스튜디오 요구 묶음과 부탁한 분들.
+    if ((!res?.meta || res.meta.changes) && d.needSolved) await d.needSolved(env, q.id, q.code, now);
+    return { id: q.id, state: "done", code: q.code, confirmed: how === 1 };
+  }
+  await d.run(env, `UPDATE recipe_requests SET state = 'waiting', code = NULL, maker = NULL, taken_at = NULL, done_at = NULL, checked = NULL, updated_at = ?
+    WHERE id = ? AND state = 'check'`, now, q.id);
+  return { id: q.id, state: "waiting" };
+}
+
+/**
+ * 2.0.0 [RVQ-44] 검토 SVC-29·I22bb-01 (매시 정리): a '완성' nobody answered in 7 days counts as done, and a '만들게요' left 14 days opens
+ * again. Returns how many changed.
+ */
+export async function settleRequests(d, env, now) {
+  const due = await d.all(env, "SELECT id, code FROM recipe_requests WHERE state = 'check' AND COALESCE(done_at, updated_at) < ? LIMIT 200",
+    now - COMMUNITY_LIMITS.checkDays * DAY);
+  for (const q of due) await rcRequestChecked(d, env, q, true, 2, now);
+  const res = await d.run(env, `UPDATE recipe_requests SET state = 'waiting', maker = NULL, taken_at = NULL, updated_at = ?
+    WHERE state = 'making' AND COALESCE(taken_at, updated_at) < ?`, now, now - COMMUNITY_LIMITS.takeDays * DAY);
+  return due.length + (res?.meta?.changes ?? 0);
 }
 
 // ---- [RCX-05][RCX-06][RCX-07] 제작자 페이지·배지·팔로우 ----
@@ -283,7 +399,8 @@ async function rcBadgesOf(d, env, dev, m, sums) {
   if (sums.users >= 100) out.push("users100");
   const remix = await d.one(env, "SELECT COUNT(*) AS n FROM recipes WHERE owner = ? AND parent IS NOT NULL AND state = 'visible'", dev);
   if (remix.n >= 10) out.push("remix10");
-  const done = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_requests WHERE maker = ? AND state = 'done'", dev);
+  // 2.0.0 [RVQ-44] 검토 SVC-62: only the ones the asker said were right.
+  const done = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_requests WHERE maker = ? AND state = 'done' AND checked = 1", dev);
   if (done.n >= 5) out.push("requests5");
   if (m?.helper) out.push("helper");
   const tier = await d.one(env, "SELECT MAX(t.tier) AS t FROM recipe_tiers t JOIN recipes r ON r.code = t.code WHERE r.owner = ? AND r.state = 'visible'", dev);
@@ -313,7 +430,7 @@ const rcPinsOf = (m) => (m?.pins ? m.pins.split(",").filter((c) => CODE.test(c))
  * A hidden profile (by its maker or the operator) and one whose maker blocked this phone are not there; one this phone blocked shows
  * only that, so it can be undone.
  */
-async function rcMakerPage(d, env, request, id) {
+async function rcMakerPage(d, env, request, id, url) {
   const dev = await rcReadDev(d, request, null);
   const now = Date.now();
   const m = await d.one(env, "SELECT * FROM recipe_makers WHERE maker = ?", id);
@@ -326,14 +443,19 @@ async function rcMakerPage(d, env, request, id) {
   const nick = owner === "operator" ? "밤낮 운영" : (await d.one(env, "SELECT nick FROM nicks WHERE device = ?", owner))?.nick ?? null;
   if (block.mine) return d.json({ maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine: false, blocked: true, recipes: [], themes: 0, tabs: 0,
     likes: 0, users: 0, followers: 0, followingCount: 0, following: false, badges: [], pins: [] });
-  const rows = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
-    WHERE r.owner = ? AND r.state = 'visible' AND r.scope = 'public' ORDER BY r.likes DESC, r.updated_at DESC LIMIT 60`, owner);
-  const sums = { recipes: rows.length, likes: rows.reduce((s, r) => s + r.likes, 0), users: rows.reduce((s, r) => s + r.applied, 0) };
+  // 2.0.0 [RVQ-44] 검토 SVC-74·U22b-07: 더 보기 (page=1, 2, …) 60 a page, and the totals over every public work (the operator has hundreds).
+  const page = Math.min(50, Math.max(0, Number.parseInt(url?.searchParams.get("page") ?? "0", 10) || 0));
+  const size = COMMUNITY_LIMITS.page;
+  const got = await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
+    WHERE r.owner = ? AND r.state = 'visible' AND r.scope = 'public' ORDER BY r.likes DESC, r.updated_at DESC LIMIT ? OFFSET ?`, owner, size + 1, page * size);
+  const rows = got.slice(0, size);
+  const total = await rcMakerTotals(d, env, owner);
+  const sums = { recipes: total.recipes, likes: total.likes, users: total.users };
   const followers = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE maker = ?", id);
   const followingCount = owner === "operator" ? { n: 0 } : await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", owner);
   const follow = dev ? await d.one(env, "SELECT quiet FROM recipe_follows WHERE device = ? AND maker = ?", dev, id) : null;
   const items = await rcWithMaker(d, env, rows, now);
-  const codes = new Set(items.map((r) => r.code));
+  const codes = total.codes;
   const sets = await rcSetsOf(d, env, id, codes, mine);
   const cover = m?.cover ? await d.one(env, "SELECT id FROM recipe_images WHERE id = ? AND state = 'ok'", m.cover) : null;
   // 1.36 [V20] 보이는 믿음 단계 (새싹·이웃·단골) for everyone; how to reach the next and a restriction of 쓰기 for the maker alone.
@@ -347,18 +469,40 @@ async function rcMakerPage(d, env, request, id) {
     sets, ...(cover ? { cover: cover.id } : {}), ...(mine && m?.cover && !cover ? { coverPending: m.cover } : {}),
     maker: id, nick, face: m?.face ?? null, color: m?.color ?? null, mine,
     ...(m?.bio && !m.bio_hidden ? { bio: m.bio } : {}),
-    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true, bioHiddenBy: m.bio_hidden === 2 ? "operator" : "flags",
+    // 2.0.0 [RVQ-27] SVC-24: 3 = the operator had hidden it and the new 소개 waits for a look (bioChecking; an older app reads 'operator').
+    ...(mine && m?.bio && m.bio_hidden ? { bio: m.bio, bioHidden: true, bioHiddenBy: m.bio_hidden >= 2 ? "operator" : "flags",
+      ...(m.bio_hidden === 3 ? { bioChecking: true } : {}),
       // 1.36 PC 사용성 P10: the reason most reports gave, so the maker knows what to fix (never who).
       ...(m.bio_hidden === 1 ? { bioHiddenWhy: (await d.one(env, `SELECT reason, COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ?
         GROUP BY reason ORDER BY n DESC LIMIT 1`, id))?.reason ?? null } : {}) } : {}),
     ...(m?.style_tag ? { styleTag: m.style_tag } : {}),
     ...(mine ? { hidden: Boolean(m?.hidden), closed: Boolean(m?.closed) } : {}),
     pins: rcPinsOf(m).filter((c) => codes.has(c)),
-    recipes: items, themes: items.filter((r) => r.scope === "theme").length, tabs: items.filter((r) => r.scope === "tab").length,
+    recipes: items, themes: total.themes, tabs: total.tabs, total: total.recipes, page, more: got.length > size,
     likes: sums.likes, users: sums.users, followers: followers.n, followingCount: followingCount.n, following: Boolean(follow),
     ...(follow ? { quiet: follow.quiet === 1 } : {}),
     badges: await rcBadgesOf(d, env, owner, m, sums),
   });
+}
+
+/**
+ * 2.0.0 [RVQ-44] 검토 SVC-74·U22b-07: a maker's public works counted whole (작품·좋아요·쓰는 분·테마·탭), from the 장터 색인 (a row not
+ * measured yet is read from its body), and every code for the 대표 작품 and 모음 checks.
+ */
+async function rcMakerTotals(d, env, owner) {
+  const sum = await d.one(env, `SELECT COUNT(*) AS n, COALESCE(SUM(likes), 0) AS likes, COALESCE(SUM(applied), 0) AS users,
+    COALESCE(SUM(ix_v = ? AND ix_scope = 'theme'), 0) AS themes, COALESCE(SUM(ix_v = ? AND ix_scope = 'tab'), 0) AS tabs,
+    COALESCE(SUM(ix_v IS NOT ?), 0) AS loose FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public'`, IX_READING, IX_READING, IX_READING, owner);
+  let { themes, tabs } = sum;
+  if (sum.loose) {
+    for (const r of await d.all(env, "SELECT body FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public' AND ix_v IS NOT ? LIMIT 300", owner, IX_READING)) {
+      const sc = sectionOf(r.body).scope;
+      if (sc === "theme") themes++;
+      else if (sc === "tab") tabs++;
+    }
+  }
+  const codes = new Set((await d.all(env, "SELECT code FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public'", owner)).map((r) => r.code));
+  return { recipes: sum.n, likes: sum.likes, users: sum.users, themes, tabs, codes };
 }
 
 /**
@@ -376,8 +520,15 @@ async function rcMakerMe(d, env, request) {
   if (["bio", "pins", "styleTag", "cover"].some((k) => body[k] !== undefined) && !(await d.legalOpen(env, "recipe.publish", now))) {
     return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
   }
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 소개는 남이 읽는 글(의견), 얼굴·색·대표 작품·유형·표지는 그 밖의 마을 쓰기예요. 숨기기는 그대로예요.
+  {
+    const scope = body.bio !== undefined ? "opinion" : ["face", "color", "pins", "styleTag", "cover"].some((k) => body[k] !== undefined) ? "community" : null;
+    const held = scope ? await careGate(d, env, dev, scope, now) : null;
+    if (held) return held;
+  }
   const sets = [];
   const args = [];
+  let freshBio = false;
   if (body.face !== undefined) {
     const face = body.face === null ? null : oneEmoji(body.face);
     if (body.face !== null && !face) return d.json({ error: "emoji", field: "face" }, 400);
@@ -391,12 +542,18 @@ async function rcMakerMe(d, env, request) {
   if (body.bio !== undefined) {
     const bio = body.bio === null ? "" : cleanText(String(body.bio));
     if (graphemes(bio) > COMMUNITY_LIMITS.bio) return d.json({ error: "too_long", field: "bio" }, 400);
-    const why = bio ? textProblem(bio) ?? (investAdvice(bio) ? "invest_advice" : null) : null;
+    // 2.0.0 [RVQ-44] 검토 SVC-74: a 소개 claims no 공식·운영팀 either, as a work's title may not.
+    const why = bio ? textProblem(bio) ?? (investAdvice(bio) ? "invest_advice" : null) ?? (reservedName(bio) ? "name_taken" : null) : null;
     if (why) return d.json({ error: why, field: "bio" }, 400);
     // [PRF-06] A new 소개 is shown again (bio_hidden 1 = 신고 셋, 2 = 운영자) and the old 소개's reports go with it.
+    // 2.0.0 [RVQ-27] 검토 SVC-24: but one the operator hid (2) does not come back by changing a letter: the new 소개 waits for the
+    // operator (3, '고친 소개 확인 대기') and shows once they let it. One the reports hid is shown again, a few changes a day.
     if ((m?.bio ?? null) !== (bio || null)) {
-      sets.push("bio = ?", "bio_hidden = 0");
-      args.push(bio || null);
+      const was = m?.bio_hidden ?? 0;
+      if (was === 1 && bio && !(await d.allow(env, `bioedit|${dev}`, COMMUNITY_LIMITS.bioEditsHidden, DAY, now))) return d.tooMany("device", DAY - (now % DAY));
+      sets.push("bio = ?", "bio_hidden = ?");
+      args.push(bio || null, bio && was >= 2 ? 3 : 0);
+      freshBio = true;
     }
   }
   if (body.pins !== undefined) {
@@ -425,12 +582,13 @@ async function rcMakerMe(d, env, request) {
   }
   if (sets.length) {
     if (!m) await rcMakerOf(d, env, dev, now);
-    if (sets.includes("bio_hidden = 0")) await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ? AND reason = 'bio'", await makerId(dev));
+    if (freshBio) await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ? AND reason = 'bio'", await makerId(dev));
     await d.run(env, `UPDATE recipe_makers SET ${sets.join(", ")} WHERE device = ?`, ...args, dev);
     m = await d.one(env, "SELECT * FROM recipe_makers WHERE device = ?", dev);
   }
   if (!m) m = { maker: await makerId(dev) };
   return d.json({ maker: m.maker, closed: Boolean(m.closed), face: m.face ?? null, color: m.color ?? null, bio: m.bio ?? null, bioHidden: Boolean(m.bio_hidden),
+    ...(m.bio_hidden === 3 ? { bioChecking: true } : {}),
     pins: rcPinsOf(m), styleTag: m.style_tag ?? null, hidden: Boolean(m.hidden), cover: m.cover ?? null });
 }
 
@@ -444,6 +602,11 @@ async function rcFollow(d, env, request, id) {
   const m = id === "operator" ? { device: "operator" } : await d.one(env, "SELECT device, hidden, closed FROM recipe_makers WHERE maker = ?", id);
   if (!m) return d.json({ error: "not_found" }, 404);
   if (m.device === dev) return d.json({ error: "own" }, 400);
+  if (body.on !== false) {
+    // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 그만 따르기는 그대로예요.
+    const held = await careGate(d, env, dev, "community", now);
+    if (held) return held;
+  }
   if (body.on === false) {
     await d.run(env, "DELETE FROM recipe_follows WHERE device = ? AND maker = ?", dev, id);
     return d.json({ maker: id, following: false });
@@ -458,9 +621,14 @@ async function rcFollow(d, env, request, id) {
     if (block.mine) return d.json({ error: "blocked" }, 409);
     const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE device = ?", dev);
     if (n.n >= COMMUNITY_LIMITS.follows) return d.json({ error: "too_many" }, 400);
-    const hit = await d.overLimit(env, now, [["device", `follow|${dev}`, COMMUNITY_LIMITS.followsPerDay, DAY]]);
+    // 2.0.0 [RVQ-27] 검토 SVC-59: a network's day too (new installs on one line cannot make a ⭐), and the follower's time on the
+    // 나눔 판 starts here: a follow counts toward ⭐ only from an install that is 이웃 (3 days on) or more (maker-mark.js).
+    const net = await d.network(request, env, now);
+    const hit = await d.overLimit(env, now, [["device", `follow|${dev}`, COMMUNITY_LIMITS.followsPerDay, DAY],
+      ["network", `follownet|${net.day}`, COMMUNITY_LIMITS.followsPerNetworkDay, DAY]]);
     if (hit) return hit;
-    await d.run(env, "INSERT OR IGNORE INTO recipe_follows (device, maker, at, quiet) VALUES (?, ?, ?, ?)", dev, id, now, quiet);
+    await d.batch(env, [d.stmt(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now),
+      d.stmt(env, "INSERT OR IGNORE INTO recipe_follows (device, maker, at, quiet) VALUES (?, ?, ?, ?)", dev, id, now, quiet)]);
   } else await d.run(env, "UPDATE recipe_follows SET quiet = ? WHERE device = ? AND maker = ?", quiet, dev, id);
   return d.json({ maker: id, following: true, quiet: quiet === 1 });
 }
@@ -509,15 +677,24 @@ async function rcMakerFlag(d, env, request, id) {
   // does not count toward hiding the 소개 (as for recipes, pictures and fonts).
   await d.run(env, "INSERT OR IGNORE INTO recipe_trust (device, first_at) VALUES (?, ?)", dev, now);
   const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
-  const had = await d.one(env, "SELECT 1 AS x FROM recipe_maker_flags WHERE maker = ? AND device = ?", id, dev);
-  const counts = !had && trust.level >= 1 && (await d.allow(env, `mflagnet|${net.day}|${id}`, 1, DAY, now));
-  await d.run(env, "INSERT OR IGNORE INTO recipe_maker_flags (maker, device, reason, at, counted) VALUES (?, ?, ?, ?, ?)", id, dev, body.reason, now,
-    counts ? 1 : 0);
-  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ? AND counted = 1", id);
+  // 2.0.0 [RVQ-27] 검토 SVC-58: a phone whose report is still open is not counted again, and only a report that is really new (or new
+  // after the last ones were settled by hiding the 소개) and counts can hide it. Before, once three had counted, any press by anyone hid
+  // the next 소개 again and added a strike each time.
+  const had = await d.one(env, "SELECT settled FROM recipe_maker_flags WHERE maker = ? AND device = ?", id, dev);
+  if (had && !had.settled) return d.json({ maker: id, flagged: true, already: true });
+  const counts = trust.level >= 1 && (await d.allow(env, `mflagnet|${net.day}|${id}`, 1, DAY, now));
+  const put = await d.run(env, `INSERT INTO recipe_maker_flags (maker, device, reason, at, counted, settled) VALUES (?, ?, ?, ?, ?, 0)
+    ON CONFLICT (maker, device) DO UPDATE SET reason = excluded.reason, at = excluded.at, counted = excluded.counted, settled = 0
+    WHERE recipe_maker_flags.settled = 1`, id, dev, body.reason, now, counts ? 1 : 0);
+  if (!put?.meta?.changes || !counts) return d.json({ maker: id, flagged: true });
+  const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_maker_flags WHERE maker = ? AND counted = 1 AND settled = 0", id);
   if (n.n >= COMMUNITY_LIMITS.flagsToHideBio) {
     const r = await d.run(env, "UPDATE recipe_makers SET bio_hidden = 1 WHERE maker = ? AND bio IS NOT NULL AND bio_hidden = 0", id);
-    // 1.36 [LIM-10] A 소개 the reports hid is one strike for its maker.
-    if (r?.meta?.changes) await rcStrike(d, env, m.device, "bio", id, now);
+    // 1.36 [LIM-10] A 소개 the reports hid is one strike for its maker. SVC-58: the reports that hid it are settled now.
+    if (r?.meta?.changes) {
+      await d.run(env, "UPDATE recipe_maker_flags SET settled = 1 WHERE maker = ? AND settled = 0", id);
+      await rcStrike(d, env, m.device, "bio", id, now);
+    }
   }
   return d.json({ maker: id, flagged: true });
 }
@@ -575,7 +752,9 @@ async function rcFollowers(d, env, request) {
     LEFT JOIN recipe_makers m ON m.device = f.device LEFT JOIN nicks n ON n.device = f.device
     WHERE f.maker = ? ORDER BY f.at DESC LIMIT 500`, me);
   const named = rows.filter(rcNamed);
-  return d.json({ total: rows.length, items: named.map((r) => ({ ...rcFace(r), at: new Date(r.at).toISOString() })), unnamed: rows.length - named.length });
+  // 2.0.0 [RVQ-44] 검토 SVC-74: the count is all of them (the 500 newest are listed).
+  const total = rows.length < 500 ? rows.length : (await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE maker = ?", me)).n;
+  return d.json({ total, items: named.map((r) => ({ ...rcFace(r), at: new Date(r.at).toISOString() })), unnamed: total - named.length });
 }
 
 /**
@@ -612,6 +791,10 @@ async function rcInbox(d, env, request, url) {
     .map(([kind, n]) => ({ code: r.code, title: r.title, kind, n: reached(n) })));
   const sums = { recipes: own.length, likes: own.reduce((s, r) => s + r.likes, 0), users: own.reduce((s, r) => s + r.applied, 0) };
   const named = fresh.filter((r) => rcNamed(r) && !blocked.has(r.maker));
+  const reactions = await rcReactions(d, env, dev, since, kept);
+  // 2.0.0 [RVQ-27] 검토 U22b-09: the operator let my 소개 show again (after reports or a fix it looked at).
+  const bioBack = await d.one(env, `SELECT at FROM recipe_actions WHERE target = 'maker' AND code = ? AND action = 'bio-show' AND at > ?
+    ORDER BY id DESC LIMIT 1`, me.maker, since);
   // [at] is this server's time: the phone keeps it as the next [since] (its own clock may be off), and the newest follow
   // names the 새 팔로워 line, so 다 봤어요 stays seen until someone new follows.
   return d.json({
@@ -620,8 +803,53 @@ async function rcInbox(d, env, request, url) {
     questions: questions.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 80), at: new Date(x.created_at).toISOString() })),
     remixes: remixes.map((x) => ({ code: x.code, title: x.title, parentTitle: x.parent_title, at: new Date(x.created_at).toISOString() })),
     milestones,
+    ...(bioBack ? { bioBack: new Date(bioBack.at).toISOString() } : {}),
     badges: await rcBadgesOf(d, env, dev, me, sums),
+    ...reactions,
   });
+}
+
+/**
+ * 2.0.0 [HQ-52] What people did with this phone's works since [since], for the app's 알림함 (사용자 11-12 20:40 KST '사용자들과 상호작용하는
+ * 모든 알림은 알림함으로'). Every line has the 알림함's common fields {kind, target, title, count, at} (갈래 N's /api/digest reactions too),
+ * newest first. Read only from what the server already keeps for these works: the phone sends its device and since as before, and what
+ * it has seen stays on the phone, so nothing new is collected (처리방침 범위 그대로).
+ * - likes: one line a work, how many 좋아요 since and when the last came. A 안좋아요 is never told one by one (조건 16).
+ * - talk: each 후기·의견·아이디어('이렇게 고쳐 주세요'도 아이디어 글)·질문 someone else wrote under a work, with its post id so the line opens it.
+ * - uses: works put on since the day of [since] (counted by the day), with the whole number so the phone can say only the new ones.
+ * - decided: what the operator or reports decided: 공개됨, 돌려받음(그 까닭), 가려짐(신고·운영), 다시 보임. A report itself is never told.
+ */
+async function rcReactions(d, env, dev, since, kept) {
+  const iso = (ms) => new Date(ms).toISOString();
+  const likes = await d.all(env, `SELECT v.code, r.title, COUNT(*) AS n, MAX(v.at) AS at FROM recipe_votes v JOIN recipes r ON r.code = v.code
+    WHERE r.owner = ? AND r.state = 'visible' AND v.value > 0 AND v.held = 0 AND v.device != ? AND v.at > ?
+    GROUP BY v.code ORDER BY at DESC LIMIT 20`, dev, dev, since);
+  const talk = await kept(await d.all(env, `SELECT q.id, q.grp AS code, q.kind, q.body, q.created_at, q.device, NULL AS maker, r.title FROM posts q
+    JOIN recipes r ON r.code = q.grp
+    WHERE q.company_id = 'recipe' AND q.kind IN ('review', 'opinion', 'idea', 'question') AND q.parent IS NULL AND q.status = 'shown'
+      AND r.owner = ? AND q.device != ? AND q.created_at > ? ORDER BY q.created_at DESC, q.rowid DESC LIMIT 30`, dev, dev, since), (x) => x.device);
+  const kst = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 10);
+  const uses = await d.all(env, `SELECT c.code, r.title, r.applied AS total, SUM(c.applied) AS n, MAX(c.day) AS day FROM recipe_counts c
+    JOIN recipes r ON r.code = c.code
+    WHERE r.owner = ? AND r.state = 'visible' AND c.day >= ? AND c.applied > 0 GROUP BY c.code ORDER BY day DESC, n DESC LIMIT 20`, dev, kst(since));
+  const judged = await d.all(env, `SELECT code, title, state, note, hidden_reason AS why,
+      CASE WHEN state = 'hidden' THEN hidden_at ELSE decided_at END AS at FROM recipes
+    WHERE owner = ? AND ((state IN ('visible', 'returned') AND decided_at > ?) OR (state = 'hidden' AND COALESCE(hidden_reason, '') != ? AND hidden_at > ?))
+    ORDER BY at DESC LIMIT 20`, dev, since, RETIRED, since);
+  // Shown again after a hide (the operator's 다시 보이기 sets no decided_at; its record is in recipe_actions).
+  const shown = await d.all(env, `SELECT a.code, r.title, MAX(a.at) AS at FROM recipe_actions a JOIN recipes r ON r.code = a.code
+    WHERE r.owner = ? AND r.state = 'visible' AND a.action = 'show' AND a.at > ? GROUP BY a.code`, dev, since);
+  const decided = [...judged.map((x) => ({ kind: "decided", target: x.code, title: x.title, count: 1, at: iso(x.at), state: x.state,
+      ...(x.state === "hidden" ? { why: x.why === "flags" ? "flags" : "admin" } : {}), ...(x.note ? { note: x.note } : {}) })),
+    ...shown.map((x) => ({ kind: "decided", target: x.code, title: x.title, count: 1, at: iso(x.at), state: "visible", again: true }))]
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .filter((x, i, all) => all.findIndex((y) => y.target === x.target) === i); // the newest decision of a work only
+  return {
+    likes: likes.map((x) => ({ kind: "like", target: x.code, title: x.title, count: x.n, at: iso(x.at) })),
+    talk: talk.map((x) => ({ kind: x.kind, target: x.code, post: x.id, title: x.title, body: x.body.slice(0, 80), count: 1, at: iso(x.created_at) })),
+    uses: uses.map((x) => ({ kind: "use", target: x.code, title: x.title, count: x.n, total: x.total, at: iso(Date.parse(`${x.day}T00:00:00+09:00`)) })),
+    decided,
+  };
 }
 
 /** GET /api/recipes/news?since= — for this phone's 소식: new recipes of the makers it follows and the makers' answers to its questions. */
@@ -631,12 +859,12 @@ async function rcNews(d, env, request, url) {
   const now = Date.now();
   const since = Math.max(now - 30 * DAY, Date.parse(url.searchParams.get("since") ?? "") || now - 7 * DAY);
   // [PRF-04] 알림 끈 분은 빼요 (팔로우는 그대로).
-  const followed = await d.all(env, `SELECT f.maker FROM recipe_follows f LEFT JOIN recipe_makers m ON m.maker = f.maker
-    WHERE f.device = ? AND f.quiet = 0 AND COALESCE(m.hidden, 0) = 0 AND COALESCE(m.closed, 0) = 0`, dev);
-  const makers = followed.map((f) => f.maker);
-  const fresh = makers.length ? await d.all(env, `SELECT r.*, n.nick FROM recipes r LEFT JOIN nicks n ON n.device = r.owner
-    WHERE COALESCE(r.maker, CASE WHEN r.owner = 'operator' THEN 'operator' END) IN (${makers.map(() => "?").join(",")}) AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ?
-    ORDER BY r.created_at DESC LIMIT 20`, ...makers, since) : [];
+  // 2.0.0 [RVQ-44] 검토 SVC-60: joined with the follows (a list of 100+ followed makers in one IN failed on D1's 100 bound values).
+  const fresh = await d.all(env, `SELECT r.*, n.nick FROM recipes r
+    JOIN recipe_follows f ON f.device = ? AND f.quiet = 0 AND f.maker = COALESCE(r.maker, CASE WHEN r.owner = 'operator' THEN 'operator' END)
+    LEFT JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = r.owner
+    WHERE COALESCE(m.hidden, 0) = 0 AND COALESCE(m.closed, 0) = 0 AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ?
+    ORDER BY r.created_at DESC LIMIT 20`, dev, since);
   // [RCX-10] A maker's reply under a question this phone asked on the maker's recipe.
   const replies = await d.all(env, `SELECT a.grp AS code, a.body, a.created_at, r.title FROM posts q
     JOIN posts a ON a.parent = q.id AND a.company_id = 'recipe' AND a.status = 'shown'
@@ -647,10 +875,13 @@ async function rcNews(d, env, request, url) {
     LEFT JOIN nicks n ON n.device = r.owner
     WHERE p.owner = ? AND r.owner != ? AND r.state = 'visible' AND r.scope = 'public' AND r.created_at > ? ORDER BY r.created_at DESC LIMIT 20`, dev, dev, since);
   // 1.36 [VIL-15] 마을 V15: a request this phone wrote that someone finished, with the recipe that answers it.
-  const finished = await d.all(env, `SELECT q.body, q.code, r.title FROM recipe_requests q JOIN recipes r ON r.code = q.code
-    WHERE q.device = ? AND q.state = 'done' AND q.hidden = 0 AND q.updated_at > ? AND r.state = 'visible' ORDER BY q.updated_at DESC LIMIT 10`, dev, since);
+  // 2.0.0 [RVQ-44] U22b-08: and one waiting for my '맞아요' (check), first.
+  const finished = await d.all(env, `SELECT q.id, q.body, q.code, q.state, q.done_at, r.title FROM recipe_requests q JOIN recipes r ON r.code = q.code
+    WHERE q.device = ? AND q.state IN ('done', 'check') AND q.hidden = 0 AND (q.updated_at > ? OR q.state = 'check') AND r.state = 'visible'
+    ORDER BY CASE q.state WHEN 'check' THEN 0 ELSE 1 END, q.updated_at DESC LIMIT 10`, dev, since);
   return d.json({
-    requests: finished.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 60) })),
+    requests: finished.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 60),
+      ...(x.state === "check" ? { id: x.id, askCheck: true, checkBy: new Date((x.done_at ?? now) + COMMUNITY_LIMITS.checkDays * DAY).toISOString() } : {}) })),
     recipes: await rcWithMaker(d, env, fresh, now),
     replies: replies.map((x) => ({ code: x.code, title: x.title, body: x.body.slice(0, 80), at: new Date(x.created_at).toISOString() })),
     remixes: (await rcWithMaker(d, env, remixes, now)).map((x, i) => ({ ...x, parentTitle: remixes[i].parent_title })),
@@ -703,6 +934,8 @@ async function rcSetPost(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 묶음 이름·설명은 남이 읽는 글이에요.
+  { const held = await careGate(d, env, dev, "opinion", now); if (held) return held; }
   const set = await rcReadSet(d, env, dev, body);
   if (set.error) return d.json({ error: set.error, field: set.field ?? set.error }, 400);
   const n = await d.one(env, "SELECT COUNT(*) AS n FROM recipe_sets WHERE owner = ?", dev);
@@ -752,6 +985,8 @@ async function rcSetEdit(d, env, request, id, del) {
   if (await d.paused(env, "PLAZA_WRITE")) return d.json({ error: "paused" }, 503);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 묶음 지우기는 위에서 그대로예요.
+  { const held = await careGate(d, env, dev, "opinion", now); if (held) return held; }
   const hit = await writeLimitHit(d, env, dev, "rset", now);
   if (hit) return hit;
   // Only a new name: keep the recipes still up, so a 모음 that lost one can be renamed without picking again.
@@ -820,16 +1055,53 @@ const monthOf = (ms) => new Date(ms + 9 * HOUR).toISOString().slice(0, 7);
  * GET /api/recipes/makers/month?style= — three makers of the month for a kind of work: the operator's picks first, then by how many
  * phones put on their recipes of that kind this month. Never the operator's own, hidden profiles or those with nothing up.
  */
+/**
+ * 이달의 제작자 후보: the makers whose public works the most phones put on in a month.
+ * 2.0.0 [RVQ-27] 검토 SVC-59: only the admin app reads this now (이달의 제작자 후보); the public list and 🏅 are the operator's picks.
+ * 2.0.0 [RVN-24] 검토 SVC-107: a maker is a candidate only from [MONTH_FLOOR] 쓰는 분 of the month (on the 1st one put-on made the top three),
+ * and last month's finished count comes too ([monthCounts] with the month before), so the start of a month still has a sure list.
+ * One network counts a few a work a day (RECIPE_LIMITS.appliedPerRecipeNetworkDay); 쓰는 분 come with no phone (처리방침 3.8), so the
+ * maker's own put-ons cannot be told apart and are not left out here.
+ */
+export const MONTH_FLOOR = 30;
+
+/** The month (YYYY-MM, KST) [by] months before the one of [now]. */
+export function recipeMonthBefore(now, by = 1) {
+  const [y, m] = monthOf(now).split("-").map(Number);
+  const k = y * 12 + (m - 1) - by;
+  return `${Math.floor(k / 12)}-${String((k % 12) + 1).padStart(2, "0")}`;
+}
+
+const nextMonth = (month) => { const [y, m] = month.split("-").map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`; };
+
+/** Each maker's 쓰는 분 of [month] by the kinds of work of their works: [{maker, styles, n}], one read for every kind. */
+export async function monthCounts(d, env, month) {
+  return d.all(env, `SELECT r.maker, r.styles, SUM(c.applied) AS n FROM recipe_counts c JOIN recipes r ON r.code = c.code
+    WHERE c.day >= ? AND c.day < ? AND r.state = 'visible' AND r.scope = 'public' AND r.owner != 'operator' AND r.maker IS NOT NULL
+    GROUP BY r.maker, r.styles`, `${month}-01`, `${nextMonth(month)}-01`);
+}
+
+/** The top makers of [rows] (from [monthCounts]) for [style] (all kinds when null), from [floor] up: [{maker, n}]. */
+export function topMakers(rows, style, limit = 10, floor = MONTH_FLOOR) {
+  const by = new Map();
+  for (const r of rows) {
+    if (style && !(`,${r.styles ?? ""},`).includes(`,${style},`)) continue;
+    by.set(r.maker, (by.get(r.maker) ?? 0) + (r.n ?? 0));
+  }
+  return [...by].map(([maker, n]) => ({ maker, n })).filter((x) => x.n >= floor).sort((a, b) => b.n - a.n || a.maker.localeCompare(b.maker)).slice(0, limit);
+}
+
 async function rcMonthMakers(d, env, url) {
   const now = Date.now();
   const style = RC_STYLE_KEYS.includes(url.searchParams.get("style")) ? url.searchParams.get("style") : null;
   const month = monthOf(now);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: 이달의 제작자 are the ones the operator picked (counted ones could be bought with fake installs); their
+  // 쓰는 분 are summed for them alone, not the whole month for every open.
   const picked = await d.all(env, "SELECT maker FROM recipe_month_makers WHERE month = ? AND style = ? ORDER BY rank", month, style ?? "ALL");
-  const counted = await d.all(env, `SELECT r.maker, SUM(c.applied) AS n FROM recipe_counts c JOIN recipes r ON r.code = c.code
-    WHERE c.day >= ? AND r.state = 'visible' AND r.scope = 'public' AND r.owner != 'operator' AND r.maker IS NOT NULL
-      ${style ? "AND (',' || r.styles || ',') LIKE ?" : ""}
-    GROUP BY r.maker HAVING n > 0 ORDER BY n DESC LIMIT 10`, `${month}-01`, ...(style ? [`%,${style},%`] : []));
-  const ids = [...new Set([...picked.map((p) => p.maker), ...counted.map((c) => c.maker)])];
+  const ids = [...new Set(picked.map((p) => p.maker))];
+  const counted = ids.length ? await d.all(env, `SELECT r.maker, SUM(c.applied) AS n FROM recipe_counts c JOIN recipes r ON r.code = c.code
+    WHERE c.day >= ? AND r.state = 'visible' AND r.scope = 'public' AND r.maker IN (${ids.map(() => "?").join(",")})
+      ${style ? "AND (',' || r.styles || ',') LIKE ?" : ""} GROUP BY r.maker`, `${month}-01`, ...ids, ...(style ? [`%,${style},%`] : [])) : [];
   const out = [];
   for (const id of ids) {
     if (out.length >= 3) break;
@@ -871,11 +1143,14 @@ a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;b
   const owner = id === "operator" ? "operator" : m?.device;
   if (!owner || m?.hidden || m?.closed) return html("<h1>볼 수 없는 프로필이에요</h1><p>숨겼거나 없는 프로필이에요.</p>", 404);
   const nick = owner === "operator" ? "밤낮 운영" : (await d.one(env, "SELECT nick FROM nicks WHERE device = ?", owner))?.nick ?? "이름 없는 분";
-  const rows = await d.all(env, "SELECT code, title, cover, likes, applied, body FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public' ORDER BY likes DESC, updated_at DESC LIMIT 60", owner);
+  // 2.0.0 [RVQ-27] 검토 SVC-63: the page draws title, cover and counts only (it read 60 works' whole body for nothing).
+  const rows = await d.all(env, "SELECT code, title, cover, likes, applied FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public' ORDER BY likes DESC, updated_at DESC LIMIT 60", owner);
   const pins = rcPinsOf(m);
   rows.sort((a, b) => (pins.includes(b.code) ? 1 : 0) - (pins.includes(a.code) ? 1 : 0));
   const followers = (await d.one(env, "SELECT COUNT(*) AS n FROM recipe_follows WHERE maker = ?", id)).n;
-  const users = rows.reduce((s, r) => s + r.applied, 0);
+  // 2.0.0 [RVQ-44] 검토 SVC-74: counted over every public work, not the 60 read for the cards.
+  const all = await d.one(env, "SELECT COUNT(*) AS n, COALESCE(SUM(applied), 0) AS users FROM recipes WHERE owner = ? AND state = 'visible' AND scope = 'public'", owner);
+  const users = all.users;
   const works = rows.slice(0, 6).map((r) => {
     let cover = {};
     try { cover = JSON.parse(r.cover); } catch { /* the gradient's default */ }
@@ -886,7 +1161,7 @@ a.b{display:block;text-align:center;background:#3b5bdb;color:#fff;padding:14px;b
   const app = `bamnat://m/${id}`;
   return html(`<div class="face" style="background:${rcHex(m?.color) ?? "#dfe3f5"}">${rcEsc(m?.face ?? "🙂")}</div>
 <h1>${rcEsc(nick)}</h1>${m?.bio && !m.bio_hidden ? `<p>${rcEsc(m.bio)}</p>` : ""}
-<div class="n"><div><b>${rows.length}</b>작품</div><div><b>${followers}</b>팔로워</div><div><b>${users}</b>쓰는 분</div></div>
+<div class="n"><div><b>${all.n}</b>작품</div><div><b>${followers}</b>팔로워</div><div><b>${users}</b>쓰는 분</div></div>
 <div class="w">${works}</div><p><a class="b" href="${app}">밤낮 앱에서 보기</a></p>
 <p><small>밤낮 근무 달력의 마을에서 테마와 기능을 나누는 분이에요. 앱이 없으면 <a href="${MAKER_STORE}">Play 스토어에서 밤낮 받기</a>(Android 앱이에요). 이 페이지는 아무것도 저장하지 않아요.</small></p>`);
 }
@@ -929,6 +1204,9 @@ export function rcWebpSize(b) {
   }
   if (tag === "VP8X") {
     if (b[20] & 0x02) return null; // animation: the app never makes one
+    // 2.0.0 [RVQ-44] 검토 SVC-74: EXIF (0x08) or XMP (0x04) can carry where a photo was taken; the app sends neither, so the server
+    // takes none (it handed them back as they came).
+    if (b[20] & 0x0c) return null;
     return { w: (b[24] | (b[25] << 8) | (b[26] << 16)) + 1, h: (b[27] | (b[28] << 8) | (b[29] << 16)) + 1 };
   }
   return null;
@@ -956,25 +1234,49 @@ async function rcImagePost(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 사진을 풀기 전에요.
+  { const held = await careGate(d, env, dev, "community", now); if (held) return held; }
+  // 2.0.0 [RVQ-55] 검토 SVC-25: DB가 한도의 80%를 넘었으면 사진 올리기를 쉬어요(서버 전체 쓰기가 멈추기 전에).
+  if (await d.uploadsFull?.(env)) return d.json({ error: "paused", field: "space" }, 503);
   const bytes = typeof body.webp === "string" ? rcB64bytes(body.webp) : null;
   if (!bytes || !RC_WEBP(bytes)) return d.json({ error: "image", field: "webp" }, 400);
   if (bytes.length > COMMUNITY_LIMITS.imageBytes) return d.json({ error: "too_big", field: "webp" }, 413);
   { const size = rcWebpSize(bytes); if (!size || size.w < 1 || size.h < 1 || size.w > RC_IMAGE_SIDE || size.h > RC_IMAGE_SIDE) return d.json({ error: "image_size", field: "webp" }, 400); }
+  // 2.0.0 [RVD-27] SN-15 (스튜디오 제작 오류 조사): the same picture from the same phone again (a work sent again the next day, or 다시 시도) is
+  // the picture it already has, not one more of the day's: its id back, nothing counted. One the operator hid is sent as new.
+  const sum = (await sha256hex(body.webp)).slice(0, 32);
+  const same = await d.one(env, "SELECT id, state FROM recipe_images WHERE owner = ? AND sum = ? AND state != 'hidden' ORDER BY at LIMIT 1", dev, sum);
+  if (same) {
+    // 1.36 [SEC-11] Play Integrity all the same: nothing new goes up, but the answer still says a picture is there.
+    const gate = d.integrity ? await d.integrity(env, dev, now) : null;
+    return gate ?? d.json({ id: same.id, state: same.state === "ok" ? "ok" : "pending", again: true }, 200);
+  }
+  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
+  const passed = await passedPhotos(env, dev);
+  // [RVD-27] A phone past 새싹 with pictures the operator already passed: a whole work a day, and its network's count is not its to share.
+  const sure = trust.level >= 1 && passed >= PHOTO_GUARD.lookFirst;
+  const perDay = sure ? COMMUNITY_LIMITS.imagesPerDaySure : COMMUNITY_LIMITS.imagesPerDay;
   const net = await d.network(request, env, now);
   // 1.36 [SEC-07] 보안 점검 H1: a day's pictures per network and for everyone, not only per install (an id costs nothing to make).
-  const hit = await d.overLimit(env, now, [["device", `rimg|${dev}`, COMMUNITY_LIMITS.imagesPerDay, DAY],
-    ["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY], ["network", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]]);
-  if (hit) return hit;
+  const checks = [["device", `rimg|${dev}`, perDay, DAY], ...(sure ? [] : [["network", `rimgnet|${net.day}`, PHOTO_GUARD.perNetworkDay, DAY]]),
+    ["all", `rimgall|${Math.floor(now / DAY)}`, PHOTO_GUARD.allDay, DAY]];
+  const hit = await d.overLimit(env, now, checks);
+  if (hit) {
+    // [RVD-27] What the app says with (갈래 M): none left today, of how many, and when it opens again ('남은 사진은 내일 이어서 올라가요').
+    const said = await hit.clone().json();
+    const limit = said.why === "device" ? perDay : PHOTO_GUARD.perNetworkDay;
+    return d.json({ ...said, why: said.why === "all" ? "network" : said.why, left: 0, limit, retryAt: new Date(now + said.retryAfter * 1000).toISOString() }, 429,
+      { "retry-after": String(said.retryAfter) });
+  }
   // 1.36 [SEC-11] Play Integrity before a write others see (off until INTEGRITY_MODE is set).
   { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
 
   const id = (await sha256hex(`${dev}|${now}|${body.webp.length}|${d.randomId(8)}`)).slice(0, 16);
   // 1.36 [GRW-08] 세 겹: 자동 검사 → 믿음 단계(새싹 첫 사진만 운영자가) → 신고 즉시 가림. Before 1.36 every picture waited for the operator.
   const check = await autoCheck(env, body.webp);
-  const trust = trustLevel(await d.one(env, "SELECT * FROM recipe_trust WHERE device = ?", dev), now);
-  const first = firstState(check, trust.level, await passedPhotos(env, dev));
-  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at, state, checked, why, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", id, dev, body.webp,
-    bytes.length, now, first.state === "ok" ? "ok" : first.state, check, first.why, first.state === "ok" ? now : null);
+  const first = firstState(check, trust.level, passed);
+  await d.run(env, "INSERT INTO recipe_images (id, owner, data, bytes, at, state, checked, why, decided_at, sum) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, dev, body.webp,
+    bytes.length, now, first.state === "ok" ? "ok" : first.state, check, first.why, first.state === "ok" ? now : null, sum);
   // The phone hears ok or pending only; why it waits stays with the operator.
   return d.json({ id, state: first.state === "ok" ? "ok" : "pending" }, 201);
 }
@@ -987,7 +1289,9 @@ async function rcImageGet(d, env, request, id) {
     if (!dev || dev !== img.owner) return d.json({ error: "not_found", state: img.state === "pending" ? "pending" : undefined }, 404);
   }
   return new Response(rcB64bytes(img.data), {
-    headers: { "content-type": "image/webp", "cache-control": img.state === "ok" ? "public, max-age=86400" : "no-store", "x-content-type-options": "nosniff" },
+    // 2.0.0 [RVQ-44] 검토 SVC-74: an hour on the phone (a picture hidden after reports or by the operator went on showing a day), and
+    // the edge copy goes when it is hidden (purgeAsset).
+    headers: { "content-type": "image/webp", "cache-control": img.state === "ok" ? "public, max-age=3600" : "no-store", "x-content-type-options": "nosniff" },
   });
 }
 
@@ -1029,10 +1333,10 @@ export async function communityRoute(d, request, env, path, url) {
   if (path === "/api/recipes/feed" && method === "GET") return rcFeed(d, env, request, url);
   if (path === "/api/recipes/sets" && method === "POST") return rcSetPost(d, env, request);
   if (path === "/api/recipes/images" && method === "POST") return rcImagePost(d, env, request);
-  let m = path.match(/^\/api\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(like|take|done|delete)$/);
+  let m = path.match(/^\/api\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(like|take|done|check|delete)$/);
   if (m && method === "POST") return rcRequestAct(d, env, request, m[1], m[2]);
   m = path.match(/^\/api\/recipes\/makers\/([0-9a-f]{12}|operator)(\/follow|\/block|\/flag)?$/);
-  if (m && !m[2] && method === "GET") return rcMakerPage(d, env, request, m[1]);
+  if (m && !m[2] && method === "GET") return rcMakerPage(d, env, request, m[1], url);
   if (m && m[2] === "/follow" && method === "POST") return rcFollow(d, env, request, m[1]);
   if (m && m[2] === "/block" && method === "POST") return rcBlock(d, env, request, m[1]);
   if (m && m[2] === "/flag" && method === "POST") return rcMakerFlag(d, env, request, m[1]);
@@ -1048,7 +1352,7 @@ export async function communityRoute(d, request, env, path, url) {
 }
 
 /** 운영자 도구 (1.35): 이번 주 고른 것, 그림 검토, 요청 가리기, 공개 자료 정리 도움 배지. */
-export async function communityAdmin(d, request, env, path, url, now) {
+export async function communityAdmin(d, request, env, path, url, now, actor = "") {
   const method = request.method;
   if (path === "/recipes/picks" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_picks WHERE week = ? ORDER BY style, rank", weekOf(now));
@@ -1061,7 +1365,8 @@ export async function communityAdmin(d, request, env, path, url, now) {
     const codes = Array.isArray(body.codes) ? [...new Set(body.codes.filter((c) => typeof c === "string" && CODE.test(c)))].slice(0, COMMUNITY_LIMITS.picks) : [];
     const week = weekOf(now);
     await d.batch(env, [d.stmt(env, "DELETE FROM recipe_picks WHERE week = ? AND style = ?", week, style),
-      ...codes.map((c, i) => d.stmt(env, "INSERT INTO recipe_picks (week, style, rank, code) VALUES (?, ?, ?, ?)", week, style, i + 1, c))]);
+      ...codes.map((c, i) => d.stmt(env, "INSERT INTO recipe_picks (week, style, rank, code) VALUES (?, ?, ?, ?)", week, style, i + 1, c)),
+      actLine(d, env, "pick", `${week}:${style}`, "picks", codes.join(",") || "비움", actor, now)]);
     return d.json({ week, style, codes });
   }
   if (path === "/recipes/images" && method === "GET") {
@@ -1084,41 +1389,85 @@ export async function communityAdmin(d, request, env, path, url, now) {
   }
   let m = path.match(/^\/recipes\/images\/([0-9a-f]{16})\/(ok|hide)$/);
   if (m && method === "POST") {
-    const img = await d.one(env, "SELECT owner, state FROM recipe_images WHERE id = ?", m[1]);
+    const img = await d.one(env, "SELECT owner, state, why FROM recipe_images WHERE id = ?", m[1]);
     if (!img) return d.json({ error: "not_found" }, 404);
+    const { note } = await noteOf(d, request);
     // 1.36 [GRW-08] 괜찮아요: 신고를 비우고 다시 보여요. 가려요: 신고가 맞으면 쓰기 제한 한 번(V1 단계 규칙).
+    // 2.0.0 [RVQ-27] 검토 SVC-61: in the 운영 조치 기록 with who and why, and the strike is the operator's (as for a recipe, a 소개 or a 모음).
     await d.batch(env, [d.stmt(env, "UPDATE recipe_images SET state = ?, decided_at = ?, why = NULL, flags = ? WHERE id = ?", m[2] === "ok" ? "ok" : "hidden", now,
-      m[2] === "ok" ? 0 : 0, m[1]), ...(m[2] === "ok" ? [d.stmt(env, "DELETE FROM recipe_image_flags WHERE id = ?", m[1])] : [])]);
-    if (m[2] === "hide" && img.state !== "hidden") await rcStrike(d, env, img.owner, "image", m[1], now);
+      m[2] === "ok" ? 0 : 0, m[1]), ...(m[2] === "ok" ? [d.stmt(env, "DELETE FROM recipe_image_flags WHERE id = ?", m[1])] : []),
+    actLine(d, env, "image", m[1], m[2] === "ok" ? "image-ok" : "image-hide", note || (img.why ? `먼저 가린 까닭 ${img.why}` : ""), actor, now)]);
+    if (m[2] === "hide" && img.state !== "hidden") await rcStrike(d, env, img.owner, "image", m[1], now, true);
+    if (m[2] === "hide") await purgeAsset(request, `/api/recipes/images/${m[1]}`);
     return d.json({ id: m[1], state: m[2] === "ok" ? "ok" : "hidden" });
   }
   if (path === "/recipes/requests" && method === "GET") {
     // Newest first, hidden ones too, so the operator can put one back. Never who wrote it.
-    const rows = await d.all(env, "SELECT id, style, body, likes, state, code, hidden, askers, created_at FROM recipe_requests ORDER BY created_at DESC LIMIT 100");
-    return d.json({ items: rows.map((r) => ({ ...r, hidden: r.hidden === 1, at: new Date(r.created_at).toISOString() })) });
+    // 2.0.0 [RVQ-44]: a '완성' waiting for its asker shows as check, with the day it counts by itself; the operator answers for its own.
+    const rows = await d.all(env, `SELECT id, device, style, body, likes, state, code, hidden, askers, created_at, taken_at, done_at, checked FROM recipe_requests
+      ORDER BY CASE state WHEN 'check' THEN 0 ELSE 1 END, created_at DESC LIMIT 100`);
+    const iso = (ms) => (ms ? new Date(ms).toISOString() : null);
+    return d.json({ items: rows.map(({ device, taken_at: taken, done_at: doneAt, ...r }) => ({ ...r, hidden: r.hidden === 1, at: iso(r.created_at),
+      operator: device === "operator", ...(r.state === "making" ? { makingSince: iso(taken), reopenAt: iso((taken ?? r.created_at) + COMMUNITY_LIMITS.takeDays * DAY) } : {}),
+      ...(r.state === "check" ? { checkBy: iso((doneAt ?? now) + COMMUNITY_LIMITS.checkDays * DAY) } : {}) })) });
+  }
+  m = path.match(/^\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(check-ok|check-no)$/);
+  if (m && method === "POST") {
+    // 2.0.0 [RVQ-44] 검토 I22bb-01: 스튜디오 요구에서 올라온 요청(부탁한 분이 폰 하나가 아님)의 '완성'은 운영자가 맞는지 봐요.
+    const q = await d.one(env, "SELECT * FROM recipe_requests WHERE id = ?", m[1]);
+    if (!q) return d.json({ error: "not_found" }, 404);
+    if (q.state !== "check") return d.json({ error: "state" }, 409);
+    const { note } = await noteOf(d, request);
+    const out = await rcRequestChecked(d, env, q, m[2] === "check-ok", 1, now);
+    await d.batch(env, [actLine(d, env, "request", m[1], m[2] === "check-ok" ? "request-check-ok" : "request-check-no", note || q.code, actor, now)]);
+    return d.json(out);
   }
   m = path.match(/^\/recipes\/requests\/(q[A-Za-z0-9]{12})\/(hide|show)$/);
   if (m && method === "POST") {
-    await d.run(env, "UPDATE recipe_requests SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]);
+    const { note } = await noteOf(d, request);
+    await d.batch(env, [d.stmt(env, "UPDATE recipe_requests SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]),
+      actLine(d, env, "request", m[1], m[2] === "hide" ? "request-hide" : "request-show", note, actor, now)]);
     return d.json({ id: m[1], hidden: m[2] === "hide" });
   }
   // [PRF-06] 1.36 신고된 프로필: 소개와 이름, 신고 이유별 수 (who never); 소개만 가리기, 프로필 닫기, 되돌리기.
   if (path === "/recipes/makers/flagged" && method === "GET") {
-    const rows = await d.all(env, `SELECT m.maker, m.face, m.bio, m.bio_hidden, m.closed, n.nick, COUNT(f.device) AS flags, MAX(f.at) AS last,
-        GROUP_CONCAT(f.reason) AS reasons FROM recipe_maker_flags f JOIN recipe_makers m ON m.maker = f.maker LEFT JOIN nicks n ON n.device = m.device
-      GROUP BY m.maker ORDER BY last DESC LIMIT 100`);
+    // 2.0.0 [RVQ-27] 검토 SVC-24: and the 소개 the operator hid that its maker changed (3), waiting first. SVC-58: settled reports
+    // (the ones that hid it before) show apart from open ones.
+    const rows = await d.all(env, `SELECT m.maker, m.face, m.bio, m.bio_hidden, m.closed, n.nick, COUNT(f.device) AS flags,
+        SUM(CASE WHEN f.settled = 1 THEN 1 ELSE 0 END) AS settled, COALESCE(MAX(f.at), m.at) AS last,
+        GROUP_CONCAT(f.reason) AS reasons FROM recipe_makers m LEFT JOIN recipe_maker_flags f ON f.maker = m.maker LEFT JOIN nicks n ON n.device = m.device
+      WHERE f.maker IS NOT NULL OR m.bio_hidden = 3
+      GROUP BY m.maker ORDER BY (m.bio_hidden = 3) DESC, last DESC LIMIT 100`);
     return d.json({ items: rows.map((r) => {
       const tally = {};
       for (const x of (r.reasons ?? "").split(",").filter(Boolean)) tally[x] = (tally[x] ?? 0) + 1;
       return { maker: r.maker, nick: r.nick ?? null, face: r.face ?? null, bio: r.bio ?? null, bioHidden: r.bio_hidden > 0,
-        ...(r.bio_hidden > 0 ? { bioHiddenBy: r.bio_hidden === 2 ? "operator" : "flags" } : {}), closed: r.closed === 1,
-        flags: r.flags, reasons: tally, at: new Date(r.last).toISOString() };
+        ...(r.bio_hidden > 0 ? { bioHiddenBy: r.bio_hidden >= 2 ? "operator" : "flags" } : {}), ...(r.bio_hidden === 3 ? { bioChecking: true } : {}),
+        closed: r.closed === 1, flags: r.flags, settled: r.settled ?? 0, reasons: tally, at: new Date(r.last).toISOString() };
     }) });
   }
   // [PRF-10] 이달의 제작자 고르기 (빈 목록이면 센 순서로 돌아가요).
   if (path === "/recipes/makers/month" && method === "GET") {
     const rows = await d.all(env, "SELECT * FROM recipe_month_makers WHERE month = ? ORDER BY style, rank", monthOf(now));
-    return d.json({ month: monthOf(now), items: rows });
+    // 2.0.0 [RVQ-27] 검토 SVC-59: the counted ones are candidates here only (with their name), for the operator to pick.
+    // 2.0.0 [RVN-24] 검토 SVC-107: from MONTH_FLOOR 쓰는 분, this month's and last month's finished ones; two reads for every kind
+    // and one for the names (was two a kind).
+    const [thisRows, lastRows] = await Promise.all([monthCounts(d, env, monthOf(now)), monthCounts(d, env, recipeMonthBefore(now))]);
+    const styles = ["ALL", ...RC_STYLE_KEYS];
+    const top = (rows) => Object.fromEntries(styles.map((s) => [s, topMakers(rows, s === "ALL" ? null : s, 5)]));
+    const [nowTop, lastTop] = [top(thisRows), top(lastRows)];
+    const ids = [...new Set([...Object.values(nowTop), ...Object.values(lastTop)].flat().map((x) => x.maker))];
+    const named = [];
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90);
+      named.push(...await d.all(env, `SELECT m.maker, m.face, m.hidden, m.closed, n.nick FROM recipe_makers m LEFT JOIN nicks n ON n.device = m.device
+        WHERE m.maker IN (${part.map(() => "?").join(",")})`, ...part));
+    }
+    const face = (list) => list.map((x) => { const w = named.find((y) => y.maker === x.maker); return w && !w.hidden && !w.closed ? { maker: x.maker, nick: w.nick ?? null, face: w.face ?? null, users: x.n } : null; })
+      .filter(Boolean).slice(0, 3);
+    const candidates = Object.fromEntries(styles.map((s) => [s, face(nowTop[s])]));
+    const last = Object.fromEntries(styles.map((s) => [s, face(lastTop[s])]));
+    return d.json({ month: monthOf(now), items: rows, candidates, last, lastMonth: recipeMonthBefore(now), floor: MONTH_FLOOR });
   }
   if (path === "/recipes/makers/month" && method === "POST") {
     const body = await d.readJson(request, 2048);
@@ -1127,13 +1476,16 @@ export async function communityAdmin(d, request, env, path, url, now) {
     const makers = Array.isArray(body.makers) ? [...new Set(body.makers.filter((x) => typeof x === "string" && /^[0-9a-f]{12}$/.test(x)))].slice(0, 3) : [];
     const month = monthOf(now);
     await d.batch(env, [d.stmt(env, "DELETE FROM recipe_month_makers WHERE month = ? AND style = ?", month, style),
-      ...makers.map((x, i) => d.stmt(env, "INSERT INTO recipe_month_makers (month, style, rank, maker) VALUES (?, ?, ?, ?)", month, style, i + 1, x))]);
+      ...makers.map((x, i) => d.stmt(env, "INSERT INTO recipe_month_makers (month, style, rank, maker) VALUES (?, ?, ?, ?)", month, style, i + 1, x)),
+      actLine(d, env, "month", `${month}:${style}`, "month", makers.join(",") || "비움", actor, now)]);
     return d.json({ month, style, makers });
   }
   m = path.match(/^\/recipes\/sets\/(s[0-9a-f]{12})\/(hide|show)$/);
   if (m && method === "POST") {
     const set = await d.one(env, "SELECT owner, hidden FROM recipe_sets WHERE id = ?", m[1]);
-    await d.run(env, "UPDATE recipe_sets SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]);
+    const { note } = await noteOf(d, request);
+    await d.batch(env, [d.stmt(env, "UPDATE recipe_sets SET hidden = ? WHERE id = ?", m[2] === "hide" ? 1 : 0, m[1]),
+      actLine(d, env, "set", m[1], m[2] === "hide" ? "set-hide" : "set-show", note, actor, now)]);
     // 1.36 [LIM-10] The operator hiding a 모음 is one strike.
     if (set && m[2] === "hide" && !set.hidden) await rcStrike(d, env, set.owner, "set", m[1], Date.now(), true);
     return d.json({ id: m[1], hidden: m[2] === "hide" });
@@ -1141,23 +1493,34 @@ export async function communityAdmin(d, request, env, path, url, now) {
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/(bio-hide|bio-show|close|open|clear)$/);
   if (m && method === "POST") {
     const [, id, what] = m;
+    const { note } = await noteOf(d, request);
+    const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
     if (what === "clear") await d.run(env, "DELETE FROM recipe_maker_flags WHERE maker = ?", id);
-    else {
+    else if (what === "bio-show" && was && (was.bio_hidden === 1 || was.bio_hidden === 2)) {
+      // 2.0.0 [RVQ-27] 검토 SVC-58: shown again as it was, the hiding was wrong: its reports go and the strike it brought is taken back
+      // (as for a recipe shown again). A changed 소개 the operator let through (3) keeps the strike the old one earned.
+      await d.batch(env, [d.stmt(env, "DELETE FROM recipe_maker_flags WHERE maker = ?", id),
+        d.stmt(env, "DELETE FROM write_strikes WHERE device = ? AND kind = 'bio' AND ref = ?", was.device, id),
+        d.stmt(env, "UPDATE recipe_trust SET hidden = MAX(0, hidden - 1) WHERE device = ?", was.device)]);
+      await strikeTakenBack(d, env, was.device, now);
+    } else {
       // 1.36 [LIM-10] The operator hiding a 소개 (not one the reports already hid) or closing a profile is one strike.
-      const was = await d.one(env, "SELECT device, bio_hidden, closed FROM recipe_makers WHERE maker = ?", id);
       if (was && ((what === "bio-hide" && !was.bio_hidden) || (what === "close" && !was.closed))) await rcStrike(d, env, was.device, what === "close" ? "profile" : "bio", id, Date.now(), true);
       // 1.39 [CARE-06] A 소개 the reports hid (1), kept hidden by the operator: its waiting strike counts now.
       else if (was && what === "bio-hide" && was.bio_hidden === 1) await confirmStrike(d, env, id, Date.now());
     }
-    // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림.
+    // bio_hidden: 1 = 신고 셋으로 저절로, 2 = 운영자가 가림, 3 = 운영자가 가린 뒤 고친 소개가 확인을 기다림.
     if (what !== "clear") await d.run(env, `UPDATE recipe_makers SET ${what.startsWith("bio") ? "bio_hidden" : "closed"} = ? WHERE maker = ?`,
       what === "bio-hide" ? 2 : what === "close" ? 1 : 0, id);
+    // 2.0.0 [RVQ-27] 검토 SVC-61: who did what to a profile, and why.
+    await d.batch(env, [actLine(d, env, "maker", id, what, note || (what === "bio-show" && was?.bio_hidden === 3 ? "고친 소개를 보고 다시 보이게 함" : ""), actor, now)]);
     return d.json({ maker: id, done: what });
   }
   m = path.match(/^\/recipes\/makers\/([0-9a-f]{12})\/helper$/);
   if (m && method === "POST") {
     const body = await d.readJson(request, 256);
-    await d.run(env, "UPDATE recipe_makers SET helper = ? WHERE maker = ?", body.on === false ? 0 : 1, m[1]);
+    await d.batch(env, [d.stmt(env, "UPDATE recipe_makers SET helper = ? WHERE maker = ?", body.on === false ? 0 : 1, m[1]),
+      actLine(d, env, "maker", m[1], body.on === false ? "helper-off" : "helper", "", actor, now)]);
     return d.json({ maker: m[1], helper: body.on !== false });
   }
   return null;
@@ -1170,7 +1533,9 @@ export function forgetCommunity(d, env, dev) {
     d.stmt(env, "DELETE FROM recipe_request_likes WHERE device = ?", dev),
     d.stmt(env, "DELETE FROM recipe_request_likes WHERE id IN (SELECT id FROM recipe_requests WHERE device = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_requests WHERE device = ?", dev),
-    d.stmt(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL WHERE maker = ? AND state = 'making'", dev),
+    d.stmt(env, "UPDATE recipe_requests SET state = 'waiting', maker = NULL, taken_at = NULL WHERE maker = ? AND state = 'making'", dev),
+    // 2.0.0 [RVQ-16] 검토 SRV-09: 다 만든 요청에 남은 만든 분의 설치 해시도 끊어요(완성 작품 코드는 남아요).
+    d.stmt(env, "UPDATE recipe_requests SET maker = NULL WHERE maker = ?", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE device = ?", dev),
     d.stmt(env, "DELETE FROM recipe_follows WHERE maker IN (SELECT maker FROM recipe_makers WHERE device = ?)", dev),
     // [PRF-05][PRF-06] 1.36 이 폰이 한 차단·신고와 모음. Others' blocks of this phone and reports on its profile are theirs and stay

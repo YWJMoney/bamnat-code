@@ -30,7 +30,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -69,15 +69,63 @@ import com.bamnat.core.pay.WorkForms
 import com.bamnat.core.time.Today
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import com.bamnat.core.pay.taxKnown
+import com.bamnat.app.ui.theme.bamnat
 
 private const val COMPANY = "company"
 private const val FORM = "form"
 private const val AMOUNT = "amount"
 private const val HOLIDAY = "holiday"
 private const val CONFIRM = "confirm"
+
+/**
+ * 2.0.0 [RVJ-75] 검토 PAYU-04 (조건 10 '적던 것은 사라지지 않아요'): the easy setup's answers, kept on this phone while they are being
+ * put in ([com.bamnat.app.ui.components.DraftStore], device only, gone by itself after 7 days), so a look at a payslip in another app,
+ * a turn to the dark theme or Android closing the app in the background no longer empties them. Tied to the setup it began from
+ * ([WizardDraft.initialText]); a payslip's rules ([Answers.fromSlip]) go as the backup file writes a setup.
+ */
+internal object QuickDraft {
+    const val KEY = "pay.quick"
+    private const val HEAD = "quick1"
+
+    class Answers(
+        val form: WorkForm?, val fiveOrMore: Boolean?, val formTapped: Boolean, val amount: Long?, val hours: Int?,
+        val holiday: HolidayWork?, val tax: com.bamnat.core.pay.TaxMode?, val fixedOtMinutes: Int?, val fixedOtPay: Long?, val lump: Boolean,
+        val fromSlip: PayProfile?, val step: String, val foundCycle: String? = null,
+    )
+
+    fun encode(initial: PayProfile?, a: Answers): String = buildString {
+        fun line(k: String, v: Any?) { append(k).append('\t').append(v?.toString().orEmpty().replace('\t', ' ').replace('\n', ' ')).append('\n') }
+        append(HEAD).append('\n')
+        line("i", WizardDraft.initialText(initial))
+        line("st", a.step)
+        line("f", a.form?.name); line("5", a.fiveOrMore); line("ft", a.formTapped); line("a", a.amount); line("h", a.hours)
+        line("hw", a.holiday?.name); line("tx", a.tax?.name); line("om", a.fixedOtMinutes); line("op", a.fixedOtPay); line("l", a.lump)
+        line("sl", a.fromSlip?.let { com.bamnat.app.pay.PayCodec.encode(it).toString() })
+        line("fc", a.foundCycle)
+    }
+
+    /** What was kept for this same setup ([initial]); null when there is none, it was for another, or it cannot be read. */
+    fun decode(raw: String, initial: PayProfile?): Answers? = runCatching {
+        val lines = raw.lines()
+        if (lines.firstOrNull() != HEAD) return@runCatching null
+        val m = lines.drop(1).filter { '\t' in it }.associate { it.substringBefore('\t') to it.substringAfter('\t') }
+        if (m["i"].orEmpty() != WizardDraft.initialText(initial)) return@runCatching null
+        fun v(k: String) = m[k].orEmpty().takeIf { it.isNotEmpty() }
+        Answers(
+            form = v("f")?.let { runCatching { WorkForm.valueOf(it) }.getOrNull() }, fiveOrMore = v("5")?.toBooleanStrictOrNull(),
+            formTapped = v("ft") == "true", amount = v("a")?.toLongOrNull(), hours = v("h")?.toIntOrNull(),
+            holiday = v("hw")?.let { runCatching { HolidayWork.valueOf(it) }.getOrNull() },
+            tax = v("tx")?.let { runCatching { com.bamnat.core.pay.TaxMode.valueOf(it) }.getOrNull() },
+            fixedOtMinutes = v("om")?.toIntOrNull(), fixedOtPay = v("op")?.toLongOrNull(), lump = v("l") == "true",
+            fromSlip = v("sl")?.let { com.bamnat.app.pay.PayCodec.decode(org.json.JSONObject(it)) }, step = m["st"].orEmpty(),
+            foundCycle = v("fc"),
+        )
+    }.getOrNull()
+}
 
 /**
  * [PAYS-12] 급여 간편 설정 (U22): how the user works, how much, the 빨간날 question for shift work, then one page that says
@@ -119,9 +167,17 @@ fun PayQuickSetup(
     onApplied: () -> Unit = {},
     /** [J133-05] The calendar's kind of work: 알바 starts on 시급 파트타임, 직장인 on 주5일, whatever the shifts look like. */
     style: com.bamnat.core.work.WorkStyle? = null,
+    /** 2.0.0 [RVJ-75] Bumped by the screen's ← and back on the first step; with something changed it asks before leaving. */
+    leaveAsk: Int = 0,
+    /** 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): the 시급 typed on bamnat.app and taken on the first setup's card, for a first pay. */
+    webWage: Long? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
+    val context = LocalContext.current.applicationContext
+    // 2.0.0 [RVJ-75] 검토 PAYU-04: what was being put in last time on this same setup comes back ([QuickDraft]), with '처음부터' beside it.
+    val kept = remember { if (startAt != null || startForm != null) null else QuickDraft.decode(com.bamnat.app.ui.components.DraftStore.read(context, QuickDraft.KEY), initial) }
+    var restored by remember { mutableStateOf(kept != null) }
     val pattern = remember(snapshot) { PatternTimeline.current(snapshot.patterns, today) }
     val guessed = remember(snapshot, initial, style) {
         WorkForms.guess(snapshot.shiftTypes, pattern, initial).let { g ->
@@ -137,42 +193,55 @@ fun PayQuickSetup(
         }
     }
     // [PAYF-01] A public row picked in 급여 방식 찾기 with no pay way of its own starts the setup like a cycle put in from it.
-    var foundCycle by remember { mutableStateOf<PublicCycle?>(null) }
+    var foundCycle by remember { mutableStateOf(com.bamnat.core.plaza.PublicCycles.byId(kept?.foundCycle)) }
     val cycleStart = fromCycle?.takeIf { initial == null } ?: foundCycle?.takeIf { initial == null }?.let { it to it.codes }
     // [PAYG-12] 1.30 BA: 설정 고치기 too takes the form of a public row picked (only the form; the values the setup has stay).
     val cycleForm = cycleStart ?: foundCycle?.let { it to it.codes }
     // [J133-05] 1.33 (보고서 심각 4): the form the calendar points to is picked already, so '다음' is on from the start.
-    var form by remember { mutableStateOf(startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed) }
+    val form0 = startForm ?: cycleStart?.let { PublicPay.form(it.first, it.second) } ?: guessed
+    var form by remember { mutableStateOf(if (kept != null) kept.form else form0) }
     // [J133-04] 1.33 (보고서 C2): 5명 미만 회사 has no 연장·야간·휴일 가산 by law; asked of a part-timer, "모르면 아니요".
-    var fiveOrMore by remember { mutableStateOf(initial?.fiveOrMoreEmployees) }
+    // 2.0.0 [RVJ-104] 검토 U05-04·T05-08: a part-timer who has not said stays 모르겠어요 (확인 필요, the month shown as a range), not 5인 미만.
+    var fiveOrMore by remember { mutableStateOf(if (kept != null) kept.fiveOrMore else fiveOf(initial)) }
     // 1.36 PC X5 (빠른 설정 다시 뒤 제목이 '직접 설정' → '제조·생산 교대', 고른 적 없음): a form only shown picked is not the user's
     // choice of job; the job changes only when they tap a form.
-    var formTapped by remember { mutableStateOf(false) }
-    var amount by remember { mutableStateOf(initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }) }
+    var formTapped by remember { mutableStateOf(kept?.formTapped ?: false) }
+    val amount0 = initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 } ?: webWage?.takeIf { initial == null && form0?.wageType == WageType.HOURLY }
+    var amount by remember { mutableStateOf(if (kept != null) kept.amount else amount0) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
-    var hours by remember { mutableStateOf<Int?>(null) }
+    var hours by remember { mutableStateOf(kept?.hours) }
     // [PAYG-06] Opens on the company the user works for: "쓰고 있어요", its way at once, or 직접 만들기 when it has none.
     val payFind = com.bamnat.app.ui.company.rememberPayFindState(usingStep = initial != null)
-    var holiday by remember { mutableStateOf(initial?.rules?.holidayWork) }
+    var holiday by remember { mutableStateOf(if (kept != null) kept.holiday else initial?.rules?.holidayWork) }
     // [J133-01] 1.33 (보고서 A3, 사용자 승인 2026-10-29): the tax way on the last page, 4대보험·소득세 picked unless set before.
     // [J133-59] 1.33 (중간 빌드 확인): a part-timer starts on 떼지 않음 (주 15시간·월 60시간 미만은 4대보험을 떼지 않는 곳이 많아요)
     // until the user picks; a pick stays whatever form comes next.
-    var taxPicked by remember { mutableStateOf(initial?.takeIf { it.taxKnown }?.taxMode) }
-    val tax = taxPicked ?: if (form?.wageType == WageType.HOURLY) com.bamnat.core.pay.TaxMode.NONE else com.bamnat.core.pay.TaxMode.INSURANCE_4
+    var taxPicked by remember { mutableStateOf(if (kept != null) kept.tax else initial?.takeIf { it.taxKnown }?.taxMode) }
+    // 2.0.0 [RVJ-80] 검토 T04-05: a 일당 starts on 일용근로, the way a 현장 일당 is taxed.
+    // 2.0.0 [RVJ-104] 검토 PC-05: 주 15시간 이상 일하는 알바는 4대보험 대상이라, 이 달력의 주당 시간이 15시간 이상이면 떼지 않음으로 시작하지 않아요.
+    val weeklyMinutes = remember(snapshot, thisMonth) { com.bamnat.core.pay.StandardHours.averageWeekly(thisMonth.atDay(1), 8, snapshot.resolver::resolve) }
+    val tax = taxPicked ?: when (form?.wageType) {
+        WageType.HOURLY -> quickTaxDefault(WageType.HOURLY, weeklyMinutes)
+        WageType.DAILY -> com.bamnat.core.pay.TaxMode.DAILY_WORKER
+        else -> com.bamnat.core.pay.TaxMode.INSURANCE_4
+    }
     // A payslip's rules, kept over the form and amount the user picked; picking again starts from the form.
-    var fromSlip by remember { mutableStateOf<PayProfile?>(null) }
-    // 1.36 PC 급여 검토 E2·W2 (포괄임금을 넣는 길을 못 찾음): on the last page, "연장수당이 월급에 들어 있어요". [fixedOt] the hours the
+    var fromSlip by remember { mutableStateOf(kept?.fromSlip) }
+    // 1.36 PC 급여 검토 E2·W2 (포괄임금을 넣는 길을 못 찾음): on the last page, "연장수당이 월급에 들어 있어요". [fixedOtMinutes] the time the
     // contract says (null: not 포괄), [fixedOtPay] its 고정 연장수당 when written (null: 통상시급 × 1.5 × 시간), [lump] when the contract
     // names no amount (월급 한 덩어리, split as PayExamples.inclusiveSplit). One made before is read back.
     val madeOt = remember(initial) { initial?.items?.firstOrNull { it.id == FIXED_OT_ID } }
-    var fixedOt by remember { mutableStateOf(madeOt?.fixedOvertimeMinutes?.takeIf { it > 0 }?.div(60)) }
-    var fixedOtPay by remember { mutableStateOf(madeOt?.amount?.on(thisMonth)?.value) }
-    var lump by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-76] (검토 PAYU-49) In minutes, so a contract's 22.5시간 fits.
+    val fixedOtMinutes0 = madeOt?.fixedOvertimeMinutes?.takeIf { it > 0 }
+    val fixedOtPay0 = madeOt?.amount?.on(thisMonth)?.value
+    var fixedOtMinutes by remember { mutableStateOf(if (kept != null) kept.fixedOtMinutes else fixedOtMinutes0) }
+    var fixedOtPay by remember { mutableStateOf(if (kept != null) kept.fixedOtPay else fixedOtPay0) }
+    var lump by remember { mutableStateOf(kept?.lump ?: false) }
     // [PAYF-07] Opened from a public cycle just put in, the company was already looked up (CompanyPayOffer asked "급여 계산
     // 방식도 같이 넣을까요?" when it had one): not asked again. 설정 고치기 of a pay there is asks it first all the same.
     // [J133-71] 1.33: 알바·현장 and the rest look for no company; only 교대·일근 do.
     val steps = listOfNotNull(COMPANY.takeIf { companyFind && style?.usesCompany != false && (fromCycle == null || initial != null) }, FORM, AMOUNT, HOLIDAY.takeIf { form?.asksHoliday == true }, CONFIRM)
-    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: steps.first()) }
+    var step by remember { mutableStateOf(startAt?.takeIf { it in steps } ?: kept?.step?.takeIf { it in steps } ?: steps.first()) }
     val index = steps.indexOf(step).coerceAtLeast(0)
     val scope = rememberCoroutineScope()
     val container = LocalContext.current.appContainer
@@ -187,6 +256,51 @@ fun PayQuickSetup(
         if (fiveOrMore == null) { fiveOrMore = true; fiveFrom = firm }
     }
 
+    // 2.0.0 [RVJ-75] The answers as they are now, for [QuickDraft]; a 5인 이상 the 국민연금 record picked by itself is no change of the user's.
+    // Whether anything changed is told against the setup it opened on; what is kept is tied to the setup as it is now, so a setup
+    // changed underneath (1.21 연차 moved to the ledger at start, a company's way synced) still finds its answers again.
+    val openedInitial = remember { initial }
+    val nowInitial by androidx.compose.runtime.rememberUpdatedState(initial)
+    fun answers(at: String, from: PayProfile? = nowInitial) = QuickDraft.encode(from, QuickDraft.Answers(
+        form, if (fiveFrom != null) fiveOf(openedInitial) else fiveOrMore, formTapped, amount, hours,
+        holiday, taxPicked, fixedOtMinutes, fixedOtPay, lump, fromSlip, at, foundCycle?.id,
+    ))
+    // The setup as it opened, before anything was brought back, so answers brought back ask before leaving too.
+    val openedText = remember {
+        QuickDraft.encode(openedInitial, QuickDraft.Answers(form0, fiveOf(initial), false, amount0, null, initial?.rules?.holidayWork,
+            initial?.takeIf { it.taxKnown }?.taxMode, fixedOtMinutes0, fixedOtPay0, false, null, "", null))
+    }
+    fun changed() = answers("", openedInitial) != openedText
+    var finished by remember { mutableStateOf(false) }
+    fun forget() { finished = true; com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY) }
+    val done: (PayProfile, Boolean) -> Unit = { p, slip -> forget(); onDone(p, slip) }
+    val cancel: () -> Unit = { forget(); onCancel?.invoke() }
+    val applied: () -> Unit = { forget(); onApplied() }
+    // Kept a beat after each change, and only while something differs from how it opened (screenshots and tests keep nothing).
+    LaunchedEffect(Unit) {
+        if (startAt != null || startForm != null) return@LaunchedEffect
+        androidx.compose.runtime.snapshotFlow { answers(step) }.collectLatest { text ->
+            delay(250)
+            if (finished) return@collectLatest
+            if (changed()) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, text)
+            else com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY)
+        }
+    }
+    // And once more as it goes without 이대로 계산·취소 (the screen made again, Android closing the app, 자세히 고치기), so the last beat stays.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            if (finished || startAt != null || startForm != null) return@onDispose
+            if (changed()) com.bamnat.app.ui.components.DraftStore.write(context, QuickDraft.KEY, answers(step))
+            else com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY)
+        }
+    }
+    // 취소, ← and back on the first step: with something changed, asked once (조건 10); nothing changed closes at once.
+    var askingLeave by remember { mutableStateOf(false) }
+    val leave: () -> Unit = { if (changed()) askingLeave = true else cancel() }
+    val leaveAskAtOpen = remember { leaveAsk }
+    LaunchedEffect(leaveAsk) { if (leaveAsk != leaveAskAtOpen) leave() }
+    if (askingLeave) com.bamnat.app.ui.components.DiscardAsk(onKeep = { askingLeave = false }, onDiscard = { askingLeave = false; cancel() })
+
     val since = if (initial != null) thisMonth.atDay(1) else thisMonth.minusMonths(12).atDay(1)
     fun draftOf(f: WorkForm?, a: Long?, h: HolidayWork?): PayProfile? {
         fromSlip?.let { return it }
@@ -199,13 +313,19 @@ fun PayQuickSetup(
     // [J133-60] 1.33 (중간 빌드 확인: 가계부 '남은 돈'이 세전으로 셈해졌어요): a new setup counts the pay in the 가계부 as what reaches
     // the account on the pay day; one set up before keeps its pick (가계부 수입 내역의 '그달 일한 세전·지급일 실수령').
     val draft = draftOf(form, amount, holiday)?.copy(taxMode = tax, taxChosen = true, ledgerTakeHome = initial?.ledgerTakeHome ?: true)
-        ?.let { p -> if (form?.wageType == WageType.HOURLY) p.copy(fiveOrMoreEmployees = fiveOrMore ?: false) else p }
-        ?.let { p -> withFixedOvertime(p, since, fixedOt, fixedOtPay, lump) }
+        ?.let { p ->
+            if (form?.wageType != WageType.HOURLY) p
+            // 모르겠어요 is worked as 5인 미만 (no 가산, never more than the law gives) and listed as 확인 필요, so the pay screen says what 5인 이상 would add.
+            else p.copy(fiveOrMoreEmployees = fiveOrMore ?: false,
+                estimatedFields = if (fiveOrMore == null) p.estimatedFields + com.bamnat.core.pay.Unknowns.FIVE_OR_MORE else p.estimatedFields - com.bamnat.core.pay.Unknowns.FIVE_OR_MORE)
+        }
+        ?.let { p -> withFixedOvertime(p, since, fixedOtMinutes, fixedOtPay, lump) }
     // The rules as they stand, for the 빨간날 cards: a new setup's first-setup rules, or the ones it has.
     val holidayBase = remember(form, initial) { form?.let { WorkForms.apply(it, 0, since, initial).rules } }
 
-    var slipOpen by remember { mutableStateOf(false) }
-    var slipByHand by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-62] Open again after the screen is made again, the payslip being read with it ([PayslipWorks]).
+    var slipOpen by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var slipByHand by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     if (slipOpen) SlipRulesDialog(
         infer = { read, rules ->
             val f = form ?: guessed ?: WorkForm.OFFICE
@@ -249,6 +369,15 @@ fun PayQuickSetup(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp).widthIn(max = 640.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
+            // 2.0.0 [RVJ-75] One line says the answers are last time's, with the way to start over beside it.
+            if (restored) DraftResumeLine("넣던 급여 설정을 이어서 해요") {
+                restored = false
+                form = form0; fiveOrMore = fiveOf(initial); fiveFrom = null; formTapped = false; amount = amount0; hours = null
+                holiday = initial?.rules?.holidayWork; taxPicked = initial?.takeIf { it.taxKnown }?.taxMode; fromSlip = null
+                fixedOtMinutes = fixedOtMinutes0; fixedOtPay = fixedOtPay0; lump = false; foundCycle = null
+                step = steps.first()
+                com.bamnat.app.ui.components.DraftStore.clear(context, QuickDraft.KEY)
+            }
             when (step) {
                 // [PAYF-01] 1.29 AP: 우리 회사 급여 방식 찾기 is the first question, the box on it; 직접 만들게요 goes on to the forms.
                 COMPANY -> {
@@ -264,7 +393,7 @@ fun PayQuickSetup(
                             next()
                         },
                         // [PAYG-01] The way went in with its 기본급, all at once: the pay is kept already, the setup closes.
-                        onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME; onApplied() },
+                        onDone = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME; applied() },
                         byHandHere = false,
                         onDetailed = { onDetailed(initial) },
                     )
@@ -281,7 +410,8 @@ fun PayQuickSetup(
                     if (hourlyWork) StepTitle("시급으로 받나요, 일당으로 받나요?", "고르면 주휴수당·세금 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     else StepTitle("어떤 근무로 급여를 받나요?", "고르면 그 근무에서 흔한 수당과 계산 방식을 미리 넣어요. 다른 것은 마지막 한 장에서 고칠 수 있어요.")
                     cycleStart?.let { FromCycleNote(it.first, it.second) }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사",
+                        resume = PayslipWorks.waiting(PayslipWorks.QUICK)?.kept) { slipOpen = true }
                     // [SPAT-04] The form of the company's cycle first, when the setup starts from one.
                     val first = cycleForm?.let { PublicPay.form(it.first, it.second) } ?: guessed
                     val forms = if (hourlyWork) listOf(WorkForm.PART_TIME, WorkForm.DAILY) else WorkForm.entries
@@ -311,8 +441,9 @@ fun PayQuickSetup(
                         // [J133-80] 빌드 5: the keypad covered 다음, so its first tap only closed the keypad. 완료 goes on.
                         onDone = { if ((amount ?: 0) > 0) next() else tried = true },
                         missing = tried, focus = baseFocus)
-                    if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore ?: false, fiveFrom) { fromSlip = null; fiveFrom = null; fiveOrMore = it }
-                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사") { slipOpen = true }
+                    if (wage == WageType.HOURLY) FiveOrMoreRow(fiveOrMore, fiveFrom) { fromSlip = null; fiveFrom = null; fiveOrMore = it }
+                    SlipEntry(onByHand = { slipByHand = true; slipOpen = true }, employer = style?.employer ?: "회사",
+                        resume = PayslipWorks.waiting(PayslipWorks.QUICK)?.kept) { slipOpen = true }
                 }
                 HOLIDAY -> {
                     StepTitle("빨간날(공휴일)에 일하면 어떻게 받나요?", "회사마다 달라요. 모르면 ‘법대로’로 두고 명세서 사진으로 맞춰요.")
@@ -338,12 +469,12 @@ fun PayQuickSetup(
                             amount = b
                             fromSlip = fromSlip?.let { com.bamnat.core.pay.BaseAsk.apply(it, b, thisMonth, h) }
                         })
-                    } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, tab = style.words().tab, onSlip = { slipOpen = true },
+                    } else ConfirmPage(p, snapshot, thisMonth, preview, fromSlip != null, tab = style.words().tab, weeklyMinutes = weeklyMinutes, onSlip = { slipOpen = true },
                         onDetailed = { onDetailed(p) }, onTax = { taxPicked = it },
                         // E1: the calendar looks like one form and another was picked; said once with a way to take the calendar's.
                         otherForm = guessed?.takeIf { g -> form != null && g != form && fromSlip == null && g.wageType == form?.wageType },
                         pickedForm = form, onForm = { f -> form = f; formTapped = true },
-                        fixed = FixedOt(fixedOt, fixedOtPay, lump), onFixed = { f -> fixedOt = f.hours; fixedOtPay = f.pay; lump = f.lump })
+                        fixed = FixedOt(fixedOtMinutes, fixedOtPay, lump), onFixed = { f -> fixedOtMinutes = f.minutes; fixedOtPay = f.pay; lump = f.lump })
                 }
             }
         }
@@ -361,7 +492,7 @@ fun PayQuickSetup(
                     // [PAYF-01] Back inside 급여 방식 찾기 goes back to the box, never out of the setup by surprise.
                     finding -> OutlinedButton(onClick = { payFind.step = com.bamnat.app.ui.company.PayFindStep.NAME }) { Text("이전") }
                     index > 0 -> OutlinedButton(onClick = { go(steps[index - 1]) }) { Text("이전") }
-                    onCancel != null -> TextButton(onClick = onCancel) { Text("취소") }
+                    onCancel != null -> TextButton(onClick = leave) { Text("취소") }
                 }
                 Spacer(Modifier.weight(1f))
                 val ready = when (step) {
@@ -382,7 +513,7 @@ fun PayQuickSetup(
                     // [J133-56] The pay screen works the month out next; the button says so at once.
                     // [PAYIN-03] PC 5566ff20 ('이대로 계산'을 두 번 눌러도 반응 없음): with no 기본급 yet it answers in red over the card's
                     // field, as 다음 does (1.36 Y17), instead of being a grey button that does nothing.
-                    onClick = { if (ready) draft?.let { onDone(it, fromSlip != null) } else tried = true },
+                    onClick = { if (ready) draft?.let { done(it, fromSlip != null) } else tried = true },
                     enabled = draft != null,
                     busyText = "계산하는 중…",
                 ) { Text("이대로 계산") }
@@ -403,23 +534,37 @@ fun PayQuickSetup(
 /** [J133-04] 같이 일하는 사람이 5명 이상인가요? Two chips, 아니요 unless the user knows. */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun FiveOrMoreRow(yes: Boolean, from: com.bamnat.core.plaza.PublicFirm? = null, onChange: (Boolean) -> Unit) {
+private fun FiveOrMoreRow(yes: Boolean?, from: com.bamnat.core.plaza.PublicFirm? = null, onChange: (Boolean?) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text("같이 일하는 사람이 사장님 빼고 5명 이상인가요?", style = MaterialTheme.typography.titleSmall)
         androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            com.bamnat.app.ui.components.FilterChip(selected = !yes, onClick = { onChange(false) }, label = { Text("아니요 (모르면 이것)") })
-            com.bamnat.app.ui.components.FilterChip(selected = yes, onClick = { onChange(true) }, label = { Text("네, 5명 이상") })
+            com.bamnat.app.ui.components.FilterChip(selected = yes == null, onClick = { onChange(null) }, label = { Text("모르겠어요") })
+            com.bamnat.app.ui.components.FilterChip(selected = yes == false, onClick = { onChange(false) }, label = { Text("아니요") })
+            com.bamnat.app.ui.components.FilterChip(selected = yes == true, onClick = { onChange(true) }, label = { Text("네, 5명 이상") })
         }
         // [J133-88] Picked from the public record: which one, so the user can tell it is their workplace.
         from?.let { f ->
             Text("국민연금 공개 자료에 ‘${f.name}’ 가입자가 ${"%,d".format(f.members)}명이라 5명 이상으로 골라 뒀어요. 다른 곳이면 바꿔 주세요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
         }
-        Text(if (yes) "야간(밤 10시~아침 6시)·연장·휴일에 일하면 시급의 1.5배로 계산해요."
-            else "5명 미만 가게는 법으로 야간·연장·휴일 가산이 없어서 시급대로 계산해요. 주휴수당은 그대로 받아요.",
+        Text(when (yes) {
+            true -> "야간(밤 10시~아침 6시)·연장·휴일에 일하면 시급의 1.5배로 계산해요."
+            false -> "5명 미만 가게는 법으로 야간·연장·휴일 가산이 없어서 시급대로 계산해요. 주휴수당은 그대로 받아요."
+            null -> "모르면 가산 없이 시급대로 계산하고, 5명 이상이면 얼마나 더 받는지 ‘확인 필요’로 범위를 같이 보여 드려요. 주휴수당은 그대로 받아요."
+        },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+/**
+ * 2.0.0 [RVJ-104] 검토 PC-05: what a part-timer's tax way starts on before the user picks: 떼지 않음 under 주 15시간 (월 60시간: no 국민연금·건강보험,
+ * the line HourlyPay says), 4대보험 from 15시간 on. Nobody else is asked here.
+ */
+internal fun quickTaxDefault(wage: WageType?, weeklyMinutes: Int): com.bamnat.core.pay.TaxMode =
+    if (wage == WageType.HOURLY && weeklyMinutes < 15 * 60) com.bamnat.core.pay.TaxMode.NONE else com.bamnat.core.pay.TaxMode.INSURANCE_4
+
+/** 2.0.0 [RVJ-104] The 5인 answer a setup holds: none when it was listed 확인 필요 (모르겠어요), so it opens on that chip again. */
+private fun fiveOf(p: PayProfile?): Boolean? = p?.fiveOrMoreEmployees?.takeIf { com.bamnat.core.pay.Unknowns.FIVE_OR_MORE !in p.estimatedFields }
 
 /** [SPAT-04] Why a form is already picked: the company's cycle, and the allowances put in with it. */
 @Composable
@@ -437,27 +582,29 @@ private fun FromCycleNote(cycle: PublicCycle, codes: String) {
 
 /** 명세서 사진으로 한 번에: the way for a user who does not know the amounts or the company's rules. */
 @Composable
-private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사", onClick: () -> Unit) {
+private fun SlipEntry(onByHand: (() -> Unit)? = null, employer: String = "회사", resume: Int? = null, onClick: () -> Unit) {
     OutlinedButton(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Icon(Icons.Filled.ReceiptLong, null, Modifier.size(18.dp))
-        Text("  모르겠으면 명세서 사진으로 맞추기")
+        // 2.0.0 [RVJ-62] 검토 U05-03: what was read and fixed waits ([PayslipWorks]); this goes on with it.
+        Text(if (resume != null) "  넣던 명세서 이어서 · ${resume}줄" else "  모르겠으면 명세서 사진으로 맞추기")
     }
     // [RULE-ED-01] 1.30 통합: 촬영이 안 되는 회사 — the same 칸 without a photo, one tap from where the photo is offered.
-    onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
+    if (resume == null) onByHand?.let { TextButton(onClick = it, modifier = Modifier.fillMaxWidth()) { Text("사진을 찍을 수 없으면 ${employer} 규칙을 칸으로 적기") } }
 }
 
-/** 1.36 E2·W2: 포괄임금 on the first setup's last page. [hours] null when the salary has no 고정 연장. */
-internal data class FixedOt(val hours: Int? = null, val pay: Long? = null, val lump: Boolean = false)
+/** 1.36 E2·W2: 포괄임금 on the first setup's last page. [minutes] null when the salary has no 고정 연장 (2.0.0 [RVJ-76] minutes, not hours). */
+internal data class FixedOt(val minutes: Int? = null, val pay: Long? = null, val lump: Boolean = false)
 
 /** The id of the 고정 연장수당 the first setup makes ([com.bamnat.core.pay.PayExamples.apply]'s). */
 internal const val FIXED_OT_ID = "example-fixed-ot"
 
-/** [p] with the 포괄 the last page says: none, a 고정 연장수당 of [hours] (its [pay] or 통상시급 × 1.5), or the salary split ([lump]). */
-internal fun withFixedOvertime(p: PayProfile, from: java.time.LocalDate, hours: Int?, pay: Long?, lump: Boolean): PayProfile {
+/** [p] with the 포괄 the last page says: none, a 고정 연장수당 of [minutes] (its [pay] or 통상시급 × 1.5), or the salary split ([lump]). */
+internal fun withFixedOvertime(p: PayProfile, from: java.time.LocalDate, minutes: Int?, pay: Long?, lump: Boolean): PayProfile {
     val clean = p.copy(items = p.items.filterNot { it.id == FIXED_OT_ID })
-    if (hours == null || hours <= 0 || p.wageType != WageType.MONTHLY) return clean
-    return if (lump) com.bamnat.core.pay.PayExamples.inclusiveSplit(clean, from, hours)
-    else com.bamnat.core.pay.PayExamples.apply(com.bamnat.core.pay.PayExamples.Kind.FIXED_OVERTIME, clean, from, hours, pay?.takeIf { it > 0 })
+    if (minutes == null || minutes <= 0 || p.wageType != WageType.MONTHLY) return clean
+    return if (lump) com.bamnat.core.pay.PayExamples.inclusiveSplitMinutes(clean, from, minutes)
+    else com.bamnat.core.pay.PayExamples.apply(com.bamnat.core.pay.PayExamples.Kind.FIXED_OVERTIME, clean, from, amount = pay?.takeIf { it > 0 },
+        overtimeMinutes = minutes)
 }
 
 /**
@@ -468,48 +615,27 @@ internal fun withFixedOvertime(p: PayProfile, from: java.time.LocalDate, hours: 
 private fun FixedOvertimeCard(p: PayProfile, f: FixedOt, onChange: (FixedOt) -> Unit) {
     val other = p.items.firstOrNull { it.fixedOvertimeMinutes > 0 && it.id != FIXED_OT_ID && it.id != com.bamnat.core.pay.PayExamples.INCLUSIVE_ID }
     if (other != null) {
-        Text("포괄임금: ‘${other.name}’${com.bamnat.app.ui.Fmt.iga(other.name)} 연장 ${other.fixedOvertimeMinutes / 60}시간을 덮어요. 바꾸려면 자세히 고치기 › 수당에서 고쳐요.",
+        Text("포괄임금: ‘${other.name}’${com.bamnat.app.ui.Fmt.iga(other.name)} 연장 ${FixedOtHoursRules.text(other.fixedOvertimeMinutes)}시간을 덮어요. 바꾸려면 자세히 고치기 › 수당에서 고쳐요.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             // 1.36 PC X2: the words switch it too, not only the switch.
-            Row(Modifier.toggleable(value = f.hours != null, role = androidx.compose.ui.semantics.Role.Switch,
-                onValueChange = { on -> onChange(if (on) FixedOt(20) else FixedOt()) }), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.toggleable(value = f.minutes != null, role = androidx.compose.ui.semantics.Role.Switch,
+                onValueChange = { on -> onChange(if (on) FixedOt(20 * 60) else FixedOt()) }), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("연장수당이 월급에 들어 있어요 (포괄임금)", style = MaterialTheme.typography.titleSmall)
                     Text("계약서에 ‘고정 연장 20시간’처럼 적혀 있으면 켜요. 사무·영업직에 흔해요.", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = f.hours != null, onCheckedChange = null)
+                Switch(checked = f.minutes != null, onCheckedChange = null)
             }
-            if (f.hours != null) {
-                // 1.36 PC X1 ('20' 칸에 20을 치니 '202'): a tap selects the whole number, so typing replaces it; a value out of range
-                // is said in red and not used.
-                var text by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue(f.hours.toString())) }
-                // 03df48fb (전체 선택이 안 돼 '202'): the tap that focuses the field puts the cursor after focusing, so the select-all
-                // is applied to that tap's own cursor move, once.
-                var selectNext by remember { mutableStateOf(false) }
-                val bad = text.text.toIntOrNull()?.let { it !in 1..200 } ?: true
-                OutlinedTextField(text, { v ->
-                    val digits = v.text.filter(Char::isDigit).take(3)
-                    if (selectNext && digits == text.text) {
-                        selectNext = false
-                        text = text.copy(selection = androidx.compose.ui.text.TextRange(0, digits.length))
-                        return@OutlinedTextField
-                    }
-                    selectNext = false
-                    text = v.copy(text = digits, selection = if (digits == v.text) v.selection else androidx.compose.ui.text.TextRange(digits.length))
-                    digits.toIntOrNull()?.takeIf { it in 1..200 }?.let { onChange(f.copy(hours = it)) }
-                },
-                    label = { Text("고정 연장 시간 (한 달)") }, suffix = { Text("시간") }, singleLine = true, isError = bad,
-                    supportingText = if (bad) ({ Text("1~200시간 사이로 넣어 주세요. 지금은 ${f.hours}시간으로 계산해요") }) else null,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth().onFocusChanged { s ->
-                        if (s.isFocused) { selectNext = true; text = text.copy(selection = androidx.compose.ui.text.TextRange(0, text.text.length)) }
-                        else selectNext = false
-                    })
+            if (f.minutes != null) {
+                // 2.0.0 [RVJ-76] (검토 PAYU-49·T05b-02) The same picker as 수당 창·급여 마법사: the usual hours in one tap, '직접' for
+                // 12·22.5·45시간 (the 1.36 PC X1 select-all of the old 칸 goes with it).
+                Label("계약서에 적힌 한 달 연장 시간")
+                FixedOtHours(f.minutes, { m -> onChange(f.copy(minutes = m)) }, none = null)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = f.lump, onCheckedChange = { onChange(f.copy(lump = it, pay = null)) })
                     Text("계약서에 고정 연장수당 금액이 따로 없어요 (월급 한 덩어리)", style = MaterialTheme.typography.bodyMedium)
@@ -541,6 +667,8 @@ private fun ConfirmPage(
     onFixed: (FixedOt) -> Unit = {},
     /** PC 02d6dabf: the tab named as this calendar names it (알바 '출근·시급'). */
     tab: String = "근무·급여",
+    /** 2.0.0 [RVJ-104] The calendar's average week, for what a part-timer's 4대보험 start on. */
+    weeklyMinutes: Int = 0,
 ) {
     var range by remember { mutableStateOf<PayRange?>(null) }
     LaunchedEffect(p) {
@@ -586,16 +714,28 @@ private fun ConfirmPage(
         Text("통장에 들어올 돈 (세후 예상)", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(com.bamnat.app.ui.Fmt.won(net.net), style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary,
             fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
-        if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} (간이세액표·4대 보험 요율 참고값)",
+        if (net.deductions.isNotEmpty()) Text("떼는 돈 ${com.bamnat.app.ui.Fmt.won(r.total - net.net)} " +
+            (if (p.taxMode == com.bamnat.core.pay.TaxMode.DAILY_WORKER) "(일용근로 소득세·고용보험 참고값)" else "(간이세액표·4대 보험 요율 참고값)"),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
     // PC 8eae2521 (알바 설정 마지막 쪽에 '월급에서 떼는 돈'): 시급·일당 is 급여.
     Text(if (p.wageType == WageType.MONTHLY) "월급에서 떼는 돈" else "급여에서 떼는 돈", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
-    com.bamnat.app.tax.TaxWayChips(p.taxMode, onPick = onTax)
-    Text(if (p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE)
-        "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요."
-        else "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    com.bamnat.app.tax.TaxWayChips(p.taxMode, daily = p.wageType == WageType.DAILY, onPick = onTax)
+    // 2.0.0 [RVJ-80] (조건 4) What to pick, in one line + ⓘ: said in full the last page of the setup read like a page at 글자 200%.
+    val (taxKey, taxShort, taxWords) = when {
+        // 2.0.0 [RVJ-104] 검토 PC-05 (국민연금법 시행령·HourlyPay 의 주 15시간·월 60시간 기준과 같은 글): 15시간 이상이면 4대보험으로 시작해요.
+        p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.INSURANCE_4 && weeklyMinutes >= 15 * 60 -> Triple("pay.quick.tax.hourly15",
+            "주 ${com.bamnat.core.hours.HoursFormat.korean(weeklyMinutes)} 일하면 보통 4대보험을 떼요",
+            "달력에 주 ${com.bamnat.core.hours.HoursFormat.korean(weeklyMinutes)}쯤 일하는 것으로 나와 있어요. 주 15시간·월 60시간 이상이면 보통 4대보험을 떼서 ‘4대보험’으로 골라 뒀어요. 명세서에 3.3%가 있거나 4대보험이 없으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요.")
+        p.wageType == WageType.HOURLY && p.taxMode == com.bamnat.core.pay.TaxMode.NONE -> Triple("pay.quick.tax.hourly", "알바는 떼지 않는 곳이 많아요",
+            "알바는 주 15시간·월 60시간 미만이면 떼지 않는 곳이 많아 ‘떼지 않음’으로 골라 뒀어요. 명세서에 4대보험이나 3.3%가 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요.")
+        // 2.0.0 [RVJ-80] 검토 T04-05 (소득세법 제47조 제2항: 일용근로자 근로소득공제 하루 15만 원).
+        p.wageType == WageType.DAILY -> Triple("pay.quick.tax.daily", "일당은 대부분 ‘일용근로’로 떼요",
+            "일당은 대부분 ‘일용근로’로 떼요. 하루 15만 원까지는 소득세가 없고 고용보험만 떼요. 명세서에 3.3%나 4대보험이 있으면 바꿔 주세요. 나중에 ‘$tab’에서도 바꿀 수 있어요.")
+        else -> Triple("pay.quick.tax", "대부분 회사는 4대보험·소득세를 떼요",
+            "대부분 회사는 4대보험·소득세를 떼요. 프리랜서·알바 중 3.3%를 떼는 곳도 있어요. 나중에 ‘$tab’에서 바꿀 수 있어요.")
+    }
+    com.bamnat.app.ui.components.Explain(taxKey, taxWords, summary = taxShort, iconOnly = false, firstInFull = false)
     OutlinedButton(onClick = onSlip, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
         Text("명세서·회사 계산 방법 사진으로 맞추기")
     }
@@ -642,7 +782,7 @@ internal fun SlipRulesDialog(
     }
 
     // [PAYS-16] 1.27: the company's way of counting alone (no payslip) is enough to work the pay out.
-    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true,
+    PayslipFillDialog("회사 계산 방식 찾기", onDismiss = onDismiss, rulesOnly = true, keep = PayslipWorks.QUICK,
         rules = RuleTarget(kinds, shiftTypes, fiveOrMore, profile, snapshot, effectOf) { changes, _ -> ticked = changes },
         preview = { r, changes -> infer(r, changes)?.let(::sheetPreviewOf) },
         plaza = plaza, startByHand = byHand,
@@ -664,7 +804,7 @@ internal fun SlipRulesDialog(
             text = {
                 Text(if (r.lines.isEmpty()) "회사 계산 방법에서 넣을 규칙을 찾지 못했어요. ‘야간 50% 가산’처럼 무엇에 얼마인지 보이게 다시 찍거나 ‘칸 더하기’로 넣어 주세요."
                     else "명세서에서 지급 합계를 찾지 못했어요. ‘지급합계’ 줄이 보이게 다시 찍어 주세요.",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.bamnat.caution) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 못 찾았어요: 다시 찍을 일
             },
             confirmButton = { TextButton(onClick = { failed = null }) { Text("확인") } },
         )
@@ -706,7 +846,7 @@ internal fun SlipRulesSummary(res: SlipRulesResult) {
         if (res.close) "거의 같아요(차이 ${won(kotlin.math.abs(res.gap))}). 이 방식으로 다음 달도 계산해요."
         else "아직 ${won(kotlin.math.abs(res.gap))} 차이 나요. 적용한 뒤 ‘자세히 고치기’나 ‘회사 규칙’에서 더 맞출 수 있어요.",
         style = MaterialTheme.typography.bodyMedium,
-        color = if (res.close) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        color = if (res.close) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution, // [RVJ-66] 남은 차이는 주의
         fontWeight = FontWeight.Medium,
     )
     if (res.changes.isEmpty()) Text("바꿀 것이 없어요. 지금 설정이 명세서와 같아요.")

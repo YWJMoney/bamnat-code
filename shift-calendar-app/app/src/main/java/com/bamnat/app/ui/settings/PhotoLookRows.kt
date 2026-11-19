@@ -26,7 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -82,13 +82,14 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     val c = context.appContainer
     val scope = rememberCoroutineScope()
     // Which place the next picked photo is for: a slot, and for 근무 그림 the kind of day.
-    var target by remember { mutableStateOf<Pair<Slot, Long?>?>(null) }
-    var framing by remember { mutableStateOf<Uri?>(null) }
+    // 2.0.0 [RVO-21] 검토 SET-17: kept across the trip to the photo picker, which can end this process before the photo comes back.
+    var target by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Pair<Slot, String?>?>(null) }
+    var framing by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<Uri?>(null) }
     var problem by remember { mutableStateOf<String?>(null) }
     // [J135-07] F-67: 없애기·처음으로 ask first (a framed photo cannot be got back without framing it again).
     var asking by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> framing = uri; problem = null }
-    fun choose(slot: Slot, type: Long? = null) {
+    fun choose(slot: Slot, type: String? = null) {
         target = slot to type
         runCatching { pick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
     }
@@ -104,7 +105,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(PHOTO_LOOK_ROW, style = MaterialTheme.typography.bodyLarge)
-        Text("내 사진으로 달력 배경, 달력 위 그림, 근무 표시, 위젯 바탕을 꾸며요. 사진은 휴대폰 안에서 작게 줄여 위치·기기 정보 없이 저장해요",
+        Text("내 사진으로 달력 배경, 달력 위 그림, 칸 표시, 위젯 바탕을 꾸며요. 사진은 휴대폰 안에서 작게 줄여 위치·기기 정보 없이 저장해요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         problem?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
         PlaceRow(Slot.BG, look.bg, "글자가 잘 보이게 사진 위를 흐리게 덮어요", onPick = { choose(Slot.BG) }, onClear = { asking = "달력 배경 사진을 없앨까요?" to { save(look.copy(bg = null)) } })
@@ -121,24 +122,26 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
         val active by c.calendars.active.collectAsState()
         val snap by remember(active) { c.scopeOf(active).schedule.snapshot }.collectAsState(null)
         val types = snap?.shiftTypes.orEmpty()
+        // 2.0.0 [RVO-19] 검토 SET-06: named for that calendar's kinds of day (영업 그림, 일정 그림), as its kinds are called.
+        val dayNoun = com.bamnat.app.ui.shifts.lockNoun(c.calendars.styleOf(active, c.settingsRepository.current.workStyle))
         if (types.isNotEmpty()) {
-            Text("근무 그림", style = MaterialTheme.typography.bodyMedium)
-            Text("근무마다 동그란 사진이 달력 표시 앞에 붙어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("$dayNoun 그림", style = MaterialTheme.typography.bodyMedium)
+            Text("${dayNoun}마다 동그란 사진이 달력 표시 앞에 붙어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 types.forEach { t ->
-                    val has = look.icons[t.id] != null
-                    OutlinedButton(onClick = { choose(Slot.ICON, t.id) }) {
+                    val has = look.iconFor(active, t.id) != null
+                    OutlinedButton(onClick = { choose(Slot.ICON, com.bamnat.core.model.ShiftRef.key(active, t.id)) }) {
                         ShiftBadge(t)
                         Text(if (has) " 바꾸기" else " 사진", style = MaterialTheme.typography.labelMedium)
                     }
-                    if (has) TextButton(onClick = { asking = "${t.name} 그림을 없앨까요?" to { save(look.copy(icons = look.icons - t.id)) } }) { Text("${t.name} 그림 없애기") }
+                    if (has) TextButton(onClick = { asking = "${t.name} 그림을 없앨까요?" to { save(look.copy(icons = look.icons - com.bamnat.core.model.ShiftRef.key(active, t.id))) } }) { Text("${t.name} 그림 없애기") }
                 }
             }
         }
         // [MAT-03][MAT-04] 1.36 그림 조정(배경·머리 그림)과 틀 모양(근무 그림·머리 그림).
         if (look.bg != null || look.head != null) PhotoAdjustEditor(look.adjust) { save(look.copy(adjust = it)) }
-        if (look.head != null || look.icons.isNotEmpty()) PhotoFrameEditor("근무 그림·머리 그림 틀 모양", look.frame) { save(look.copy(frame = it)) }
-        ChoiceRow("모서리 모양", "카드·창·칩의 모서리를 고르면 앱 전체가 바뀌어요",
+        if (look.head != null || look.icons.isNotEmpty()) PhotoFrameEditor("$dayNoun 그림·머리 그림 틀 모양", look.frame) { save(look.copy(frame = it)) }
+        ChoiceRow("모서리 모양", "카드·창·칩·단추가 함께 바뀌어요", // 2.0.0 [RVP-05] PC-128: 단추·알약도 따라요
             listOf("round" to "둥글게", "soft" to "보통 (처음)", "square" to "각지게"), look.corners ?: "soft") { k ->
             save(look.copy(corners = k.takeIf { it != "soft" }))
         }
@@ -177,7 +180,7 @@ fun PhotoLookRows(encoded: String, onChange: (String) -> Unit) {
 @Composable
 private fun PlaceRow(slot: Slot, id: String?, help: String, onPick: () -> Unit, onClear: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        val shape = RoundedCornerShape(10.dp)
+        val shape = MaterialTheme.shapes.small
         val box = Modifier.width(if (slot == Slot.BG) 40.dp else 72.dp).aspectRatio(slot.w.toFloat() / slot.h).clip(shape)
         val picture = rememberLookPicture(id)
         if (picture != null) Image(picture.first, contentDescription = "${slot.label} 사진", contentScale = ContentScale.Crop, modifier = box)
@@ -220,7 +223,7 @@ private fun FrameDialog(uri: Uri, slot: Slot, onDismiss: () -> Unit, onDone: (Re
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("한 손가락으로 옮기고, 두 손가락으로 크게 해요. 네모 안이 그대로 쓰여요", style = MaterialTheme.typography.bodySmall)
-                val frameShape = if (slot == Slot.ICON) CircleShape else RoundedCornerShape(12.dp)
+                val frameShape = if (slot == Slot.ICON) CircleShape else MaterialTheme.shapes.medium
                 Box(
                     Modifier.fillMaxWidth().heightIn(max = 420.dp).aspectRatio(slot.w.toFloat() / slot.h, matchHeightConstraintsFirst = slot.h > slot.w)
                         .clip(frameShape).clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerHighest)

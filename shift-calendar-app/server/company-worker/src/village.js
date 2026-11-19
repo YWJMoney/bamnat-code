@@ -5,6 +5,8 @@ import { DAY, HOUR } from "./units.js";
 import { lookOf } from "./recipes.js";
 // 1.36 [GRW-09] 이달의 테마로 고르면 만든 분께 프로 한 달.
 import { rewardContestPicks } from "./maker-reward.js";
+// 2.0.0 [RVQ-55] SVC-16: 마을 쉬기 중에는 공모에 넣지 못해요(빼기는 돼요).
+import { careGate } from "./community-care.js";
 
 export const VILLAGE_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS plaza_topics (room TEXT NOT NULL, week TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL,
@@ -18,7 +20,9 @@ export const VILLAGE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS village_entries_device ON village_entries (device, month)",
 ];
 
-export const VILLAGE_LIMITS = { topic: 60, theme: 40, entriesPerMonth: 3, picks: 3 };
+export const VILLAGE_LIMITS = { topic: 60, theme: 40, entriesPerMonth: 3, picks: 3, entriesPerNetworkDay: 30 };
+/** [RVR-20] An entry whose work is still up and public (joined as r). */
+const SHOWN = "AND r.state = 'visible' AND r.scope = 'public'";
 /** The kinds of work a contest is for (the recipes' style keys). */
 export const CONTEST_STYLES = ["SHIFT", "DAY", "HOURLY", "FIELD", "BUSINESS", "INVEST"];
 
@@ -52,18 +56,21 @@ export async function villageRoute(d, request, env, path, url, now) {
     const last = monthBefore(month);
     const id = d.deviceId(request.headers.get("x-device"));
     const dev = id ? await d.deviceHash(id) : null;
+    // 2.0.0 [RVR-20] (검토 TEST-18 ②) Only works still up count: a hidden one was in 'mine' but not in 'mineTitles', could not be taken
+    // out (no name to tap) and kept a place of the month's three.
     const [here, before, mine, n] = await Promise.all([
       d.one(env, "SELECT theme FROM village_contests WHERE month = ? AND style = ?", month, style),
       d.one(env, "SELECT theme, picks FROM village_contests WHERE month = ? AND style = ?", last, style),
       dev ? d.all(env, "SELECT code FROM village_entries WHERE month = ? AND style = ? AND device = ?", month, style, dev) : [],
-      d.one(env, "SELECT COUNT(*) AS n FROM village_entries WHERE month = ? AND style = ?", month, style),
+      d.one(env, `SELECT COUNT(*) AS n FROM village_entries e JOIN recipes r ON r.code = e.code WHERE e.month = ? AND e.style = ? ${SHOWN}`, month, style),
     ]);
     const picks = before ? JSON.parse(before.picks) : [];
     const titles = await shownTitles(d, env, [...picks, ...mine.map((r) => r.code)]);
+    const shownMine = mine.filter((r) => titles.has(r.code));
     return d.json({
-      month, theme: here?.theme ?? null, entries: n?.n ?? 0, mine: mine.map((r) => r.code),
+      month, theme: here?.theme ?? null, entries: n?.n ?? 0, mine: shownMine.map((r) => r.code),
       // PC 확인 V26: what I put in, by name, for the card.
-      mineTitles: mine.filter((r) => titles.has(r.code)).map((r) => ({ code: r.code, title: titles.get(r.code).title })),
+      mineTitles: shownMine.map((r) => ({ code: r.code, title: titles.get(r.code).title })),
       ...(before && picks.length ? { last: { month: last, theme: before.theme, picks: picks.filter((c) => titles.has(c))
         // PC 확인 f39bcfbe: each pick with its look, drawn as a small picture on the card.
         .map((c) => ({ code: c, title: titles.get(c).title, ...(titles.get(c).look ? { look: titles.get(c).look } : {}) })) } } : {}),
@@ -81,10 +88,17 @@ export async function villageRoute(d, request, env, path, url, now) {
       await d.run(env, "DELETE FROM village_entries WHERE month = ? AND style = ? AND code = ? AND device = ?", month, body.style, String(body.code ?? ""), dev);
       return d.json({ month, code: body.code, entered: false });
     }
+    // 2.0.0 [RVQ-55] 검토 SVC-16: 넣는 것은 다른 분께 보이는 글이라 마을 쉬기를 따르고, 한 네트워크가 하루에 넣는 횟수도 막아요.
+    { const held = await careGate(d, env, dev, "community", now); if (held) return held; }
+    { const net = await d.network(request, env, now); const hit = await d.overLimit(env, now, [["network", `ventry|${net.day}`, VILLAGE_LIMITS.entriesPerNetworkDay, DAY]]); if (hit) return hit; }
     const r = typeof body.code === "string" ? await d.one(env, "SELECT owner, state, scope, styles FROM recipes WHERE code = ?", body.code) : null;
     if (!r || r.owner !== dev || r.state !== "visible" || r.scope !== "public") return d.json({ error: "code", field: "code" }, 400);
     if (r.styles && !`,${r.styles},`.includes(`,${body.style},`)) return d.json({ error: "style", field: "style" }, 400);
-    const n = await d.one(env, "SELECT COUNT(*) AS n FROM village_entries WHERE month = ? AND device = ?", month, dev);
+    // 2.0.0 [RVR-20] (검토 TEST-18 ③) Sent again (a retry after a lost answer) when the three are full: it is in, so 201, not too_many.
+    if (await d.one(env, "SELECT 1 AS x FROM village_entries WHERE month = ? AND style = ? AND code = ? AND device = ?", month, body.style, body.code, dev)) {
+      return d.json({ month, code: body.code, entered: true }, 201);
+    }
+    const n = await d.one(env, `SELECT COUNT(*) AS n FROM village_entries e JOIN recipes r ON r.code = e.code WHERE e.month = ? AND e.device = ? ${SHOWN}`, month, dev);
     if ((n?.n ?? 0) >= VILLAGE_LIMITS.entriesPerMonth) return d.json({ error: "too_many" }, 400);
     await d.run(env, "INSERT OR IGNORE INTO village_entries (month, style, code, device, at) VALUES (?, ?, ?, ?, ?)", month, body.style, body.code, dev, now);
     return d.json({ month, code: body.code, entered: true }, 201);
@@ -173,13 +187,35 @@ async function contestAdmin(d, request, env, path, now) {
   if (!m || !codes || codes.length > VILLAGE_LIMITS.picks) return d.json({ error: "codes", field: "codes" }, 400);
   const c = await d.one(env, "SELECT 1 AS x FROM village_contests WHERE month = ? AND style = ?", m, body.style);
   if (!c) return d.json({ error: "not_found" }, 404);
-  const ok = codes.length ? await d.all(env, `SELECT code FROM village_entries WHERE month = ? AND style = ? AND code IN (${codes.map(() => "?").join(",")})`,
-    m, body.style, ...codes) : [];
+  // 2.0.0 [RVR-20] (검토 TEST-18 ①) Only entries whose work is still up and public: a hidden work was picked and shown nowhere.
+  const ok = codes.length ? await d.all(env, `SELECT e.code FROM village_entries e JOIN recipes r ON r.code = e.code
+    WHERE e.month = ? AND e.style = ? ${SHOWN} AND e.code IN (${codes.map(() => "?").join(",")})`, m, body.style, ...codes) : [];
   if (ok.length !== codes.length) return d.json({ error: "codes", field: "codes" }, 400);
   const was = await d.one(env, "SELECT picks FROM village_contests WHERE month = ? AND style = ?", m, body.style);
+  const before = new Set(JSON.parse(was?.picks ?? "[]"));
+  const change = await pickChange(d, env, m, [...before], codes);
+  // [RVR-20] (검토 TEST-18 ①) {dry: true}: what saving would change, for the admin app's question before it (a new pick's reward, and
+  // a dropped pick's reward that waits (cancel it in 보상) or was paid (it cannot be taken back)).
+  if (body.dry === true) return d.json({ month: m, style: body.style, picks: codes, dry: true, ...change });
   await d.run(env, "UPDATE village_contests SET picks = ?, at = ? WHERE month = ? AND style = ?", JSON.stringify(codes), now, m, body.style);
   // 1.36 [GRW-09] 새로 고른 작품의 주인께 프로 한 달 (작품·달마다 한 번이라 되돌렸다가 다시 골라도 두 번 가지 않아요).
-  const before = new Set(JSON.parse(was?.picks ?? "[]"));
   const rewarded = await rewardContestPicks(env, codes.filter((x) => !before.has(x)), m, now);
-  return d.json({ month: m, style: body.style, picks: codes, rewarded: rewarded.filter((r) => r.given).length });
+  // 2.0.0 [RVD-13] 보상은 드릴 보상에 들어가 확인 뒤 나가요: rewarded counts the ones put there.
+  return d.json({ month: m, style: body.style, picks: codes, rewarded: rewarded.filter((r) => r.given || r.owed).length, dropped: change.dropped });
+}
+
+/**
+ * [RVR-20] What picking [codes] instead of [was] changes: the added works (with whether their maker gets a new reward: one per work and
+ * month, never twice) and the dropped ones with their reward's state ('owed' waits for an admin, 'paid' was given, 'void' or null none).
+ */
+async function pickChange(d, env, month, was, codes) {
+  const added = codes.filter((c) => !was.includes(c));
+  const dropped = was.filter((c) => !codes.includes(c));
+  const refs = [...added, ...dropped].map((c) => `maker:contest:${month}:${c}`);
+  const rows = refs.length ? await d.all(env, `SELECT report_id, status FROM rewards WHERE report_id IN (${refs.map(() => "?").join(",")})`, ...refs) : [];
+  const state = (c) => rows.find((r) => r.report_id === `maker:contest:${month}:${c}`)?.status ?? null;
+  return {
+    added: added.map((code) => ({ code, reward: state(code) ? "before" : "new" })),
+    dropped: dropped.map((code) => ({ code, reward: state(code) })),
+  };
 }

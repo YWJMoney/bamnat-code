@@ -40,7 +40,11 @@ class WorkToolsTest {
 
     @Test
     fun offerCountsHolidayPayAndAMonthOfWeeks() {
-        val a = OfferCompare.of(JobOffer(hourlyWage = 10_320, hoursPerWeek = 20.0, daysPerWeek = 5))
+        // 2.0.0 [I60b-01] 시간 여행 시험(+365일)이 찾은 새해 폭탄: 10,320원은 2026년 최저임금이라 2027-01-01부터(10,700원) 최저임금 밑이에요.
+        // 그 해 최저임금을 직접 주고, 해가 바뀌면 밑으로 잡히는 것도 따로 봐요.
+        val offer = JobOffer(hourlyWage = 10_320, hoursPerWeek = 20.0, daysPerWeek = 5)
+        val a = OfferCompare.of(offer, minimumWage = 10_320)
+        assertTrue("2027년 최저임금 10,700원 밑", OfferCompare.of(offer, minimumWage = 10_700).belowMinimum)
         assertEquals(206_400, a.weeklyBase)
         // 20시간 ÷ 40 × 8 = 4시간.
         assertEquals(41_280, a.weeklyHolidayPay)
@@ -158,12 +162,19 @@ class WorkToolsTest {
     @Test
     fun dailyWorkerTaxIsTwoPointSevenOverTheDeduction() {
         assertEquals(1_350, DailyWorkerTax.incomeTaxOfDay(200_000))
-        assertEquals(DailyWorkerTax.Tax(1_350, 135), DailyWorkerTax.paidTogether(listOf(200_000)))
+        // 2.0.0 [RVJ-37] 지방소득세 135원의 끝수 5원은 버려요 (국고금 관리법 제47조 제1항).
+        assertEquals(DailyWorkerTax.Tax(1_350, 130), DailyWorkerTax.paidTogether(listOf(200_000)))
+        // 국세청 '일용근로자 원천징수' 안내의 예시: 일당 20만 원 5일을 한 번에 → 소득세 6,750원, 지방소득세 670원.
+        assertEquals(DailyWorkerTax.Tax(6_750, 670), DailyWorkerTax.paidTogether(List(5) { 200_000L }))
+        // 소득세도 10원 미만을 버려요: 일당 215,555원 → 1,769원 → 1,760원, 지방소득세 176원 → 170원.
+        assertEquals(DailyWorkerTax.Tax(1_760, 170), DailyWorkerTax.paidTogether(listOf(215_555)))
+        // 날마다 받으면 그날그날이 한 번의 지급이라 끝수도 날마다 버려요.
+        assertEquals(DailyWorkerTax.Tax(3_520, 340), DailyWorkerTax.paidDaily(listOf(215_555, 215_555)))
         assertEquals(0, DailyWorkerTax.incomeTaxOfDay(150_000))
         // 18만 원 a day is 810원, not taken day by day, but taken when five days are paid together.
         val five = List(5) { 180_000L }
         assertEquals(0, DailyWorkerTax.paidDaily(five).total)
-        assertEquals(DailyWorkerTax.Tax(4_050, 405), DailyWorkerTax.paidTogether(five))
+        assertEquals(DailyWorkerTax.Tax(4_050, 400), DailyWorkerTax.paidTogether(five))
         assertEquals(187_037, DailyWorkerTax.TAX_FREE_UP_TO)
         assertEquals(999, DailyWorkerTax.incomeTaxOfDay(DailyWorkerTax.TAX_FREE_UP_TO))
     }
@@ -229,5 +240,35 @@ class WorkToolsTest {
         // 8 hours on the clock: 30 minutes off leaves 7½ hours, which needs no more.
         assertEquals(450, StaffShift(LocalTime.of(22, 0), LocalTime.of(6, 0)).paidMinutes(true))
         assertEquals(60 * 8, StaffShift(LocalTime.of(22, 0), LocalTime.of(7, 0)).paidMinutes(true))
+    }
+
+    /**
+     * 2.0.0 [RVJ-54]: under 15 hours a week (월 60시간) the shop counts the employer's 고용보험 alone, as the 급여 대장 and the web
+     * calculator do (국민연금법 시행령 제2조 제4호, 국민건강보험법 시행령 제9조 제1호, 고용보험법 시행령 제3조 제2항 제1호).
+     */
+    @Test
+    fun aShortWeekCountsTheEmploymentShareOnly() {
+        val four = StaffShift(LocalTime.of(9, 0), LocalTime.of(13, 0))
+        val s = Staff("b", "민지", 10_000, holidayPay = true, insured = true,
+            shifts = listOf(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY).associateWith { four })
+        val nov = YearMonth.of(2026, 11)
+        val line = LaborCost.month(StaffRoster(listOf(s), legalBreaks = false), nov).lines.single()
+        assertTrue(LaborCost.shortWeek(s, false))
+        // 2026-11: 월 5번, 화·수 4번씩 = 13일 × 4시간, 주휴 없음.
+        assertEquals(520_000, line.base)
+        assertEquals(0, line.holidayPay)
+        assertEquals("고용보험 1.15%만", 5_980, line.insurance)
+        assertEquals(LaborCost.employerEmployment(line.pay, nov.atDay(1)), line.insurance)
+        // Not insured: nothing, short week or not.
+        assertEquals(0, LaborCost.line(s.copy(insured = false), nov, false).insurance)
+        // 15 hours exactly is in all four.
+        val fifteen = s.copy(shifts = s.shifts + (DayOfWeek.THURSDAY to StaffShift(LocalTime.of(9, 0), LocalTime.of(12, 0))))
+        assertFalse(LaborCost.shortWeek(fifteen, false))
+        val full = LaborCost.line(fifteen, nov, false)
+        assertEquals(LaborCost.employerInsurance(full.pay, nov.atDay(1)), full.insurance)
+        // The legal break counts too: four 4-hour shifts are 16 hours on the clock but 14 paid with breaks.
+        val sixteen = s.copy(shifts = s.shifts + (DayOfWeek.THURSDAY to four))
+        assertFalse(LaborCost.shortWeek(sixteen, false))
+        assertTrue(LaborCost.shortWeek(sixteen, true))
     }
 }

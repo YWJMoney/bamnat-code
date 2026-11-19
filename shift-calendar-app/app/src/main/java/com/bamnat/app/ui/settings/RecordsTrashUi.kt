@@ -39,7 +39,11 @@ internal fun RecordsTrash.Entry.caption(now: Long): String {
  * something in the last 7 days, newest first, to put back. Putting back asks first, saying what it does.
  */
 @Composable
-internal fun RecordsTrashDialog(entries: List<RecordsTrash.Entry>, onRestore: (RecordsTrash.Entry) -> Unit, onDismiss: () -> Unit) {
+internal fun RecordsTrashDialog(
+    entries: List<RecordsTrash.Entry>, onRestore: (RecordsTrash.Entry) -> Unit, onDismiss: () -> Unit,
+    /** 2.0.0 [RVK-10] Opened from 가계부: only its removed lines, said in its words. */
+    linesOnly: Boolean = false,
+) {
     var asking by remember { mutableStateOf<RecordsTrash.Entry?>(null) }
     val now = Today.millis()
     AlertDialog(
@@ -48,13 +52,15 @@ internal fun RecordsTrashDialog(entries: List<RecordsTrash.Entry>, onRestore: (R
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "근무 형태를 바꾸거나 기록·달력을 지운 것을 7일 동안 되돌릴 수 있어요. 7일이 지나면 저절로 없어져요.",
+                    if (linesOnly) "지운 가계부 기록은 30일 동안 되살릴 수 있어요. 그 뒤에는 저절로 없어져요."
+                    else "근무 형태를 바꾸거나 기록·달력을 지운 것은 7일, 지운 가계부 기록은 30일 동안 되돌릴 수 있어요. 그 뒤에는 저절로 없어져요.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
                 if (entries.isEmpty()) {
-                    Text("최근 7일 동안 지운 기록이 없어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
+                    Text(if (linesOnly) "최근 30일 동안 지운 가계부 기록이 없어요" else "최근에 지운 기록이 없어요",
+                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 12.dp))
                 }
                 entries.forEachIndexed { i, e ->
                     if (i > 0) HorizontalDivider()
@@ -76,6 +82,7 @@ internal fun RecordsTrashDialog(entries: List<RecordsTrash.Entry>, onRestore: (R
             message = when (e.kind) {
                 RecordsTrash.Kind.STYLE -> "근무 형태를 바꾸기 전으로 돌려요. 그 뒤에 적은 기록은 그대로예요."
                 RecordsTrash.Kind.DELETED -> "지운 달력을 근무·돈 기록·급여 설정과 함께 다시 살려요. 공유 링크는 다시 만들어야 해요."
+                RecordsTrash.Kind.LINES -> "지운 가계부 기록(${e.detail})을 그 날짜에 다시 적어요. 지운 뒤에 적은 기록은 그대로예요."
                 else -> "지우기 전의 근무 기록·근무 순서·급여 설정·일감·매출·받을 돈과 메모로 돌아가요. 지운 뒤에 새로 적은 기록은 바뀌지만, 최근 지운 기록에 남아요."
             },
             confirmLabel = "되돌리기",

@@ -34,11 +34,12 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.bamnat
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
@@ -50,7 +51,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -286,8 +287,11 @@ class RecipeMakeViewModel(
         val s = _state.value
         val picks = s.recipe.pieces.filter { it.kind != PieceKind.BUNDLE }.map { com.bamnat.app.recipe.RecipeRepository.Pick(it.kind, if (it.kind == PieceKind.LOGIC) com.bamnat.app.recipe.RecipePieces.Mode.BOTH else com.bamnat.app.recipe.RecipePieces.Mode.REPLACE) }
         val answers = s.recipe.inputs.associate { it.id to it.default }
-        val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }.getOrNull()
-        _state.value = _state.value.copy(putMine = id ?: -1L)
+        // 2.0.0 [RVM-67] 검토 MKT-24 (실패해도 "바뀐 것이 없어요", 그리고 다시 못 눌러요): -1 = nothing changed, -2 = it did not go in (and can be pressed again).
+        var failed = false
+        val id = runCatching { c.recipes.apply(s.recipe.copy(title = s.recipe.title.ifBlank { "내가 만든 판" }), "", 0, calendar, picks, answers) }
+            .onFailure { failed = true; android.util.Log.w("RecipeMake", "putOnMine failed", it) }.getOrNull()
+        _state.value = _state.value.copy(putMine = id ?: if (failed) -2L else -1L)
         saveDraft()
     }
 
@@ -299,7 +303,7 @@ class RecipeMakeViewModel(
 
     /** A draft or a remade recipe read as far as it goes: a piece that does not pass alone is left out. */
     @Suppress("UNCHECKED_CAST")
-    private fun lenient(body: String): Recipe? = runCatching { RecipeCodec.read(body) }.getOrNull() ?: runCatching {
+    private fun lenient(body: String): Recipe? = runCatching { RecipeCodec.readDraft(body) }.getOrNull() ?: runCatching {
         val m = com.bamnat.core.remote.Json.parse(body) as Map<String, Any?>
         val pieces = (m["pieces"] as? List<Any?>).orEmpty().mapNotNull { p ->
             runCatching {
@@ -477,8 +481,13 @@ class RecipeMakeViewModel(
                     if (key == null) note = "내 테마 칸이 꽉 차서 이 테마를 내 테마로 두지 못했어요. 마을 › 테마에서 한 벌을 빼고 다시 올리면 광고 없이 입어요"
                     key?.let { c.wardrobe.markShared(it, sent.code, sent.version, s.bare) }
                 }
-                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts)).joinToString("\n").ifBlank { null }
+                // 2.0.0 [RVQ-42] 검토 I22bb-06: which apps see it, said once when it goes up.
+                val seen = if (sent.scope == "public") seenFromLine(sent.minApp) else null
+                note = listOfNotNull(note, com.bamnat.app.recipe.RecipeFonts.keptNote(fonts), seen).joinToString("\n").ifBlank { null }
                 _state.value = _state.value.copy(sending = false, sent = sent, ownNote = note)
+            } catch (e: PictureLimit) {
+                // 2.0.0 [RVM-30] SN-15: how far the pictures got, and that 다시 올리기 goes on from there (the draft stays as it is).
+                _state.value = _state.value.copy(sending = false, error = e.say(), errorCode = "photos_today")
             } catch (e: RecipeException) {
                 _state.value = _state.value.copy(sending = false, error = RecipeText.problemText(e.code), errorCode = e.code)
             } catch (e: Exception) {
@@ -503,16 +512,49 @@ class RecipeMakeViewModel(
 }
 
 
-/** [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id. */
+/**
+ * 2.0.0 [RVM-30] SN-15 (스튜디오 제작 오류 조사): the day's pictures ran out while a work's pictures went up. [sent] of [total] went up and
+ * stay on the server, which does not count the same picture from this phone again (D #471 RVD-27), so 다시 올리기 goes on from the
+ * rest; [limit] is the day's number when the server said it, [retryAfter] its seconds. Before 2.0.0 the words said 'N시간 뒤에 다시'
+ * and a work of 13 pictures or more never went up.
+ */
+class PictureLimit(val sent: Int, val total: Int, val limit: Int?, val retryAfter: Int?) : java.io.IOException("photos_today") {
+    /** What the person reads: how far it got, and that doing it [again] ('올리면', '저장하면') goes on from there. */
+    fun say(again: String = "올리면"): String {
+        val w = com.bamnat.app.company.RateLimits.wait(retryAfter ?: 86_400)
+        return (limit?.let { "오늘 올릴 수 있는 사진 ${it}장을 다 썼어요" } ?: "오늘 올릴 수 있는 사진을 다 썼어요") +
+            ". 사진 ${total}장 중 ${sent}장은 올라갔고, ${w}에 다시 $again 남은 사진부터 이어서 올라가요"
+    }
+}
+
+/**
+ * [RCX-30] 그림 꾸미기's pictures in [r] sent (small, no EXIF) and named by the server's id; one already sent keeps its id.
+ * 2.0.0 [RVM-30] SN-15: the day's limit met on the way is a [PictureLimit] that says how many of how many went.
+ */
 internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamnat.core.recipe.Recipe): com.bamnat.core.recipe.Recipe {
     if (r.pieces.none { it.kind == PieceKind.PHOTO_LOOK || it.kind == PieceKind.SCREEN_LOOK || it.kind == PieceKind.DECOR }) return r
-    val sent = mutableMapOf<String, String>()
-    suspend fun server(id: Any?): Any? {
-        val local = id as? String ?: return id
-        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return local
-        return sent.getOrPut(local) { com.bamnat.app.recipe.LookImages.upload(c, local) }
+    val mine = mutableSetOf<String>()
+    pictures(r) { id ->
+        (id as? String)?.takeIf { com.bamnat.app.recipe.LookImages.has(c.appContext, it) && !com.bamnat.app.recipe.StudioMaterials.isMaterial(c.appContext, it) }
+            ?.let(mine::add)
+        id
     }
-    return r.copy(pieces = r.pieces.map { p ->
+    val sent = mutableMapOf<String, String>()
+    return pictures(r) { id ->
+        val local = id as? String ?: return@pictures id
+        if (!com.bamnat.app.recipe.LookImages.has(c.appContext, local)) return@pictures local
+        sent[local] ?: try {
+            com.bamnat.app.recipe.LookImages.upload(c, local).also { sent[local] = it }
+        } catch (e: com.bamnat.app.company.CompanyException) {
+            if (e.code != "rate_limited") throw e
+            throw PictureLimit(sent.keys.count { it in mine }, mine.size, e.limit, e.retryAfter)
+        }
+    }
+}
+
+/** Each picture [r] names, in turn, as [server] gives it back. */
+private suspend fun pictures(r: com.bamnat.core.recipe.Recipe, server: suspend (Any?) -> Any?): com.bamnat.core.recipe.Recipe =
+    r.copy(pieces = r.pieces.map { p ->
         // [FREE-05] 화면 색·배경's pictures, each screen's in turn.
         if (p.kind == PieceKind.SCREEN_LOOK) (p.values["screens"] as? String)?.let { line ->
             val looks = com.bamnat.core.recipe.ScreenLooks.decode(line)
@@ -532,7 +574,6 @@ internal suspend fun serverPictures(c: com.bamnat.app.AppContainer, r: com.bamna
             p.copy(values = v)
         }
     })
-}
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -562,8 +603,8 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
     val titles = listOf("꾸미기", "받는 분이 넣을 값", "이름·표지", "설명", "마치기")
     val shift = if (finishOnly) 1 else 0
     Scaffold(topBar = {
-        TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "레시피 만들기") +
-            " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}") },
+        TopAppBar(title = { Text((if (finishOnly) "올리기" else if (vm.ownCode != null) "새 판 만들기" else "작품 만들기") +
+            " ${(s.step - shift).coerceAtLeast(1)}/${5 - shift} · ${titles[s.step - 1]}", maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
             navigationIcon = { IconButton(onClick = { if (s.step > 1 && s.sent == null) vm.go(s.step - 1) else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             // PC 확인 Z8 (올리기 위 ←는 한 단계 뒤로라 나가는 길이 1/4의 '스튜디오로'뿐): a way out on every step.
             actions = { if (finishOnly) androidx.compose.material3.TextButton(onClick = onBack) { Text("스튜디오로") } })
@@ -587,7 +628,7 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
                     s.step == 5 && !RecipeLint.ready(vm.lint) -> "${vm.lint.count { it.level == RecipeLint.Level.ERROR }.coerceAtLeast(1)}곳 고쳐야 올라가요 · 위 검사의 ✕"
                     else -> null
                 }?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = if (s.step == 5) androidx.compose.ui.text.font.FontWeight.SemiBold else null,
-                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.tertiary) }
+                    color = if (s.step == 5) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
                 // [TOWN-04] 1.37 (후보 3, PC 확인: 확인 스위치가 '올리기'와 떨어져 있어 찾기 어려워요): the check is in the bar itself, right above
                 // 올리기, so it is in sight with the button whatever the page shows.
                 if (s.step == 5 && s.scope != "private") Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -696,9 +737,9 @@ fun RecipeMakeScreen(vm: RecipeMakeViewModel, onBack: () -> Unit, onOpen: (Strin
         var miniOpen by rememberSaveable { mutableStateOf(wide) }
         if (s.step == 1 && s.sent == null && !mockShown) {
             if (miniOpen) Column(Modifier.align(Alignment.BottomEnd).padding(8.dp), horizontalAlignment = Alignment.End) {
-                MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, RoundedCornerShape(14.dp)))
-                androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
-            } else androidx.compose.material3.FilledTonalButton(onClick = { miniOpen = true },
+                MiniPhone(s.recipe, vm.style, tab, onOpen = { scope.launch { scroll.animateScrollTo(0) } }, Modifier.shadow(6.dp, MaterialTheme.shapes.medium))
+                com.bamnat.app.ui.components.FilledTonalButton(onClick = { miniOpen = false }, modifier = Modifier.padding(top = 4.dp).heightIn(min = 40.dp)) { Text("작은 예시 접기") }
+            } else com.bamnat.app.ui.components.FilledTonalButton(onClick = { miniOpen = true },
                 modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp).heightIn(min = 40.dp)) { Text("예시 보기") }
         }
         }
@@ -769,10 +810,10 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     var codes by remember { mutableStateOf(bundled.joinToString(" ")) }
     // 1.35 실사용 점검 F-36: what is picked is what the field holds, so one chip stays picked until a second makes the piece.
     val picked = remember(codes) { bundleCodes(codes) }
-    Text("레시피 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
+    Text("작품 묶기 (선택)", style = MaterialTheme.typography.titleSmall)
     // [RCX-11] Tap the ones I have rather than typing codes.
     if (s.bundleChoices.isNotEmpty()) {
-        Text("넣어 둔 레시피와 내가 올린 레시피에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("넣어 둔 작품과 내가 올린 작품에서 골라요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             s.bundleChoices.forEach { (k, title) ->
                 FilterChip(k in picked, {
@@ -783,11 +824,11 @@ private fun StepPick(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
         }
     }
     OutlinedTextField(codes, { t -> codes = t; vm.bundle(bundleCodes(t)) },
-        label = { Text("다른 레시피 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+        label = { Text("다른 작품 코드나 링크 2~8개") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
     Text(when {
         bundled.size >= 2 -> "묶음 ${bundled.size}개: 받는 분이 하나씩 열어 골라 넣어요"
         picked.size == 1 -> "하나 더 고르면 묶음이 돼요 (2~8개)"
-        else -> "예: 근무 색 레시피와 알람 레시피를 한 번에 나누기"
+        else -> "예: 근무 색 작품과 알람 작품을 한 번에 나누기"
     },
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
@@ -834,7 +875,7 @@ private fun StepInputs(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
                 if (i.kind == com.bamnat.core.recipe.InputKind.MONEY) {
                     var asking by remember { mutableStateOf(false) }
                     TextButton(onClick = { asking = true }) { Text("모두에게 같은 금액이에요") }
-                    if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 레시피에 그대로 둘까요?") },
+                    if (asking) AlertDialog(onDismissRequest = { asking = false }, title = { Text("이 금액을 작품에 그대로 둘까요?") },
                         // bc7e2d43 PC 확인 LOW-3: said for any amount (가계부 예산·봉투 목표 too), and how to give it when the field is empty.
                         text = { Text("받는 분 모두에게 같은 금액(회사 공통 정액 같은 것)일 때만 두세요. 내 시급·일당·예산처럼 나만의 금액이면 칸으로 두는 게 안전해요" +
                             (if (i.default !is Long) "\n\n그대로 두려면 위 칸에 금액을 먼저 넣어 주세요" else "")) },
@@ -902,7 +943,7 @@ private fun StepLook(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel) {
     }
     // [STU-41] 1.36 장터 표지 자동: the studio's example, as it looked when 올리기 opened.
     com.bamnat.app.ui.studio.StudioShot.last?.let { shot ->
-        OutlinedButton(onClick = { vm.coverPhoto(shot) }, enabled = vm.canPublish) { Text("스튜디오 미리 보기를 표지로") }
+        OutlinedButton(onClick = { vm.coverPhoto(shot); com.bamnat.app.ui.studio.StudioShot.last = null }, enabled = vm.canPublish) { Text("스튜디오 미리 보기를 표지로") }
     }
     Text(if (vm.canPublish) "사진은 작게 줄이고 위치·기기 정보를 지운 뒤 보내요. 운영자가 본 뒤 다른 분께 보여요"
         else "사진 표지는 정식 출시일부터 돼요", style = MaterialTheme.typography.bodySmall,
@@ -940,7 +981,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     lines.forEach { l ->
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(when (l.level) { RecipeLint.Level.OK -> "✓"; RecipeLint.Level.WARN -> "!"; RecipeLint.Level.ERROR -> "✕" },
-                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.colorScheme.tertiary; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
+                color = when (l.level) { RecipeLint.Level.OK -> MaterialTheme.colorScheme.primary; RecipeLint.Level.WARN -> MaterialTheme.bamnat.caution; RecipeLint.Level.ERROR -> MaterialTheme.colorScheme.error },
                 modifier = Modifier.width(24.dp))
             Text(l.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
             if (l.fix != null) TextButton(onClick = { vm.fix(l) }) { Text("고치기") }
@@ -954,7 +995,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     }
     fontLines.forEach { t ->
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("!", color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.width(24.dp))
+            Text("!", color = MaterialTheme.bamnat.caution, modifier = Modifier.width(24.dp))
             Text(t, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
         }
     }
@@ -1009,7 +1050,7 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     // PC 확인 W31 1.36: a '!' is advice — said so, and it never holds 올리기 back.
     val advice = lines.count { it.level == RecipeLint.Level.WARN }
     if (RecipeLint.ready(lines) && !needAgree && advice > 0) Text("! 권고 ${advice}개 · 이대로도 올라가요 · 보기", style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
+        color = MaterialTheme.bamnat.caution, modifier = Modifier.heightIn(min = 32.dp).clickable(onClickLabel = "권고 보기") { onTop() })
     // PC aacb5ce8: 올리기 단추 is in the bottom bar alone (같은 뜻 두 줄이 겹치던 것); here what holds it and what got refused.
     // [BLU-07] PC 7차 (나만 보기로 저장을 눌러도 아무 표시가 없음, 거절 뒤 단추가 없음): the refusal and what gets past it, right here.
     s.error?.let { e ->
@@ -1049,8 +1090,8 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
         }
     }
     s.keptNote?.let { n ->
-        Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-            Text("✓ $n", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+        Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+            Text("✓ $n", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
         }
     }
@@ -1059,17 +1100,17 @@ private fun StepCheck(s: RecipeMakeViewModel.State, vm: RecipeMakeViewModel, onT
     Text("올리지 않고 끝내기", style = MaterialTheme.typography.titleSmall)
     // 자유도 점검 F-47: what happened shows above the buttons, where the eye is, not under them off the screen.
     var kept by rememberSaveable { mutableStateOf(false) }
-    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요" }
-        ?: if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
-        ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 레시피에서 이어서 만들어요" else null
-    if (done != null) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-        Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onPrimaryContainer,
+    val done = s.putMine?.takeIf { it > 0 }?.let { "내 앱에 넣었어요. 7일 안에 마을 › 공방 › 내 것 › 받은 작품에서 되돌릴 수 있어요" }
+        ?: if (s.putMine == -2L) "넣지 못했어요 · 잠시 뒤 다시 눌러 주세요" else if (s.putMine == -1L) "지금 내 설정과 같아서 바뀐 것이 없어요" else null
+        ?: if (kept) "저장했어요. 마을 › 공방 › 내 것 › 만들던 작품에서 이어서 만들어요" else null
+    if (done != null) Surface(color = MaterialTheme.colorScheme.surfaceContainerLow, shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
+        Text("✓ $done", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.padding(12.dp).semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 마을 › 공방 › 내 것 › 받은 레시피에서 되돌릴 수 있어요",
+    } else Text("만들기만 하면 이 휴대폰에 저장만 돼요. 내 앱에만 넣으면 아무에게도 보이지 않고, 7일 안에 마을 › 공방 › 내 것 › 받은 작품에서 되돌릴 수 있어요",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(onClick = { vm.keepDraft(); kept = true }, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("만들기만 (저장)") }
-        OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
+        OutlinedButton(onClick = vm::putOnMine, enabled = s.putMine == null || s.putMine == -2L, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) { Text("내 앱에만 넣기") }
     }
 }
 
@@ -1095,9 +1136,9 @@ private fun SentCard(title: String, sent: Sent, onOpen: (String) -> Unit, onStud
                 // 나만 보기 has no one to send a link to.
                 if (sent.scope != "private") OutlinedButton(onClick = {
                     val send = Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, RecipeLinks.shareText(title, sent.code))
-                    runCatching { context.startActivity(Intent.createChooser(send, "레시피 링크 보내기")) }
+                    runCatching { context.startActivity(Intent.createChooser(send, "작품 링크 보내기")) }
                 }) { Text("링크 보내기") }
-                Button(onClick = { onOpen(sent.code) }) { Text("레시피 보기") }
+                Button(onClick = { onOpen(sent.code) }) { Text("작품 보기") }
             }
             // PC 확인 보안 7차 (끝 화면에 '스튜디오로'가 없어요): from the studio, back to it to go on making.
             onStudio?.let { TextButton(onClick = it, modifier = Modifier.heightIn(min = 48.dp)) { Text("스튜디오로") } }

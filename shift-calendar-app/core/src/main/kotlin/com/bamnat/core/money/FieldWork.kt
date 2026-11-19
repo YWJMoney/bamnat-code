@@ -58,6 +58,17 @@ data class FieldRules(
         return copy(rateFrom = list, dayRate = list.last().second)
     }
 
+    /**
+     * 2.0.0 [RVH-23] 검토 CAL-28: what one day's 일당 leaves behind. With '이 날부터 바꾸기' ([fromHere]) it is the 일당 from [from] on;
+     * without, that day only, and the remembered 일당 is set only when there was none yet (the first one written). Before, a calendar
+     * without changes yet took a one-off 일당 (a day with 특별 수당) as the 일당 of every day written after it.
+     */
+    fun afterDayRate(from: LocalDate, rate: Long, fromHere: Boolean): FieldRules = when {
+        fromHere -> withRateFrom(from, rate)
+        dayRate > 0 || rate <= 0 -> this
+        else -> copy(dayRate = rate)
+    }
+
     companion object {
         /** Lines remembered as 아니에요; older ones drop off. */
         const val KEEP_NOT_MATCHED = 50
@@ -90,7 +101,7 @@ object DayRate {
 
     /** G 1.32 [WTYP-27] "17:00까지 1공 · 19:00까지 1.5공". */
     fun rulesLine(rules: List<EndRule>): String =
-        rules.sortedBy { it.until }.joinToString(" · ") { "%02d:%02d까지 %s".format(it.until.hour, it.until.minute, label(it.units)) }
+        rules.sortedBy { it.until }.joinToString(" · ") { "%02d:%02d까지 %s".format(java.util.Locale.ROOT, it.until.hour, it.until.minute, label(it.units)) }
 
     /** G 1.32 [WTYP-27] Own chips, kept to [FieldRules.MAX_CHIPS] distinct values in 0..5. */
     fun cleanChips(list: List<Double>): List<Double> = list.filter { it > 0 && it <= 5 }.distinct().take(FieldRules.MAX_CHIPS)
@@ -102,7 +113,7 @@ object DayRate {
     fun cell(units: Double): String = if (units == 1.0) "1공" else trim(units)
 
     // G 1.32 [WTYP-04] 공수 to the third decimal (0.125공), as 건설 현장 쓰는 대로.
-    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.3f".format(units).trimEnd('0').trimEnd('.')
+    fun trim(units: Double): String = if (units == units.toLong().toDouble()) units.toLong().toString() else "%.3f".format(java.util.Locale.ROOT, units).trimEnd('0').trimEnd('.')
 
     /** G 1.32 [WTYP-04] A typed 공수 ("0.125", "1,5"), to three decimals; null when not a number in 0..5. */
     fun parse(text: String): Double? = text.trim().replace(',', '.').toDoubleOrNull()
@@ -299,7 +310,13 @@ object JobHours {
         val s = job.start ?: return 0
         val e = job.end ?: return 0
         val m = java.time.Duration.between(s, e).toMinutes().toInt()
-        return if (m <= 0) m + 24 * 60 else m
+        // 2.0.0 [RVK-43] (검토 T06b-06) The same start and end is no length (a time picked twice), not 24 hours: a field job is
+        // a day's work, and a night one still runs over midnight (end before start).
+        return when {
+            m == 0 -> 0
+            m < 0 -> m + 24 * 60
+            else -> m
+        }
     }
 
     /** The weeks starting on [weekStart] that touch [month], with the minutes worked on the month's own days. */

@@ -40,6 +40,15 @@ object FeatureLinks {
 
     fun open(feature: AppFeature) = open(feature.route)
 
+    /**
+     * 2.0.0 [RVG-11] What an answer button (내 정보·물어보기 카드) opens: the feature's place, except '회사 찾기', which is the
+     * 회사 찾기 screen itself rather than the 급여 page the feature lives on.
+     */
+    fun openAnswer(feature: String) {
+        if (feature == com.bamnat.core.profile.Questions.COMPANY_FIND) return com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.COMPANY_FIND)
+        com.bamnat.core.guide.FeatureRegistry.get(feature)?.let(::open)
+    }
+
     fun open(route: FeatureRoute) {
         _focus.value = route.focus.takeIf { !route.place.isSettings }
         _target.value = route
@@ -88,12 +97,18 @@ val TOOL_KEYS = setOf(
     // [GUIDE-01] The investor tab's sheets and tabs (InvestScreen).
     "invest.cash", "invest.dividend", "invest.trade", "invest.quotes", "invest.goal", "invest.journal", "invest.event",
     "invest.alarms", "invest.stats", "invest.records", "invest.overview",
-    // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen).
-    "customize",
+    // 2.0.0 [RVK-27]·[RVK-28] (검토 MONEY-64·U06b-04) 수량 바뀜 창과 종목 탭(기록 한 장은 카드에서 열어요).
+    "invest.quantity", "invest.holdings",
+    // [CUST-01] 화면 꾸미기 over the calendar (CalendarScreen); 2.0.0 [RVP-75] 이번 달 전부 넣기's keypad there too.
+    "customize", "typeMonth",
+    // [RVG-04] 사장님 급여 대장 from the 직원 인건비 card (ShopTools).
+    "payroll",
     // [TAX-02] 세금·실수령 card on the 돈 summary (MoneyScreen).
     "tax",
     // [PAYX-48] 월급날 비교 on the stats tab: the card comes into view and asks the amount (WorkTypeCards).
     "pay.gap",
+    // 2.0.0 [RVK-44] (PC-134) 일용직 세금 on the 일감·수입 tab: 바로 가기 brings the card into view (FieldTools).
+    "dailyTax",
     // [TIER-07] 1.25 묶음 Y: 가계부 탭의 월간 보고서(MoneyScreen), 프로 기능 모아보기에서 열어요.
     "report",
 )

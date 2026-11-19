@@ -2,6 +2,7 @@ package com.bamnat.core.team
 
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.DutyCheck
+import com.bamnat.core.schedule.LegalBreak
 import com.bamnat.core.schedule.RestRules
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -15,20 +16,55 @@ import java.time.temporal.TemporalAdjusters
 object TeamCheck {
     enum class Kind { RULE, SHORT, NO_CHARGE, WEEK_HOURS }
 
-    /** One sign: a member's cell ([memberId] set) or a whole day ([memberId] null). */
-    data class Sign(val kind: Kind, val date: LocalDate, val memberId: String?, val text: String)
+    /**
+     * One sign: a member's cell ([memberId] set) or a whole day ([memberId] null).
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) [topic] names the sort of sign so equal ones are told as one line ("야간 뒤 2일째 근무 6건"), [who] is the
+     * member's name and [detail] what is particular to this one; empty for a sign made without them, which keeps its own [text] line.
+     */
+    data class Sign(val kind: Kind, val date: LocalDate, val memberId: String?, val text: String,
+                    val topic: String = "", val who: String = "", val detail: String = "") {
+        /** 주 52시간 is the law (근로기준법 제53조, told only for a 5인 이상 사업장: [RestRules.weekLimit]); the rest are the team's 기준. */
+        val law: Boolean get() = kind == Kind.WEEK_HOURS
+    }
 
     /** 주 52시간: 40 + 12 (근로기준법 제50·53조). */
     const val WEEK_LIMIT_MINUTES = 52 * 60
 
-    fun TeamShift.asType(): ShiftType = ShiftType(id = id, name = name, label = label, colorArgb = colorArgb, start = start, end = end, isOff = isOff)
+    fun TeamShift.asType(): ShiftType = ShiftType(id = id, name = name, label = label, colorArgb = colorArgb, start = start, end = end,
+        breakMinutes = breakOf(this), isOff = isOff)
 
-    /** Minutes a kind of day takes, start to end (over midnight too); 0 for an off day or one without times. */
-    fun minutesOf(s: TeamShift): Int {
+    /** Minutes a kind of day takes on the clock, start to end (over midnight too); 0 for an off day or one without times. */
+    fun spanOf(s: TeamShift): Int {
         if (s.isOff || s.start == null || s.end == null) return 0
         val m = (s.end.toSecondOfDay() - s.start.toSecondOfDay()) / 60
         return if (m <= 0) m + 24 * 60 else m
     }
+
+    /**
+     * 2.0.0 [RVJ-29] (검토 T05-04·PAYU-03) The 휴게 inside a kind of day: the team's own ([TeamShift.breakMinutes]), else what the
+     * law asks for that long a day (근로기준법 제54조, [LegalBreak.minutesFor]), the way the 급여 대장 counts the same shop.
+     */
+    fun breakOf(s: TeamShift): Int = spanOf(s).let { span -> (s.breakMinutes ?: LegalBreak.minutesFor(span)).coerceIn(0, span) }
+
+    /**
+     * Minutes worked in a kind of day: start to end less the 휴게, which is not 근로시간 (제50조 제1항 "휴게시간을 제외하고"). A team
+     * on 09~18 six days is 48 hours, not 54 ([RVJ-29]: the 52시간 sign and the auto-fill read this).
+     */
+    fun minutesOf(s: TeamShift): Int = spanOf(s) - breakOf(s)
+
+    /**
+     * [RVJ-29] What a week past the limit is told with: "휴게 빼고 55시간, 52시간을 넘어요" ("휴게 빼고" only when some was taken
+     * off). To the minute ("52시간 30분"): a 30분 휴게 makes half hours common, and "52시간, 52시간을 넘어요" would read wrong.
+     */
+    fun overWords(week: List<TeamShift>): String =
+        (if (week.any { breakOf(it) > 0 }) "휴게 빼고 " else "") + "${com.bamnat.core.hours.HoursFormat.korean(week.sumOf(::minutesOf))}, 52시간을 넘어요"
+
+    /**
+     * 2.0.0 [RVJ-30] (검토 PAYU-08) The cell of [date] wherever it is drawn: this month's [board], else last month's or next month's.
+     * A week that lies over two months is one week to the law, so its hours are read from both.
+     */
+    fun cellAt(board: TeamBoard, prev: TeamBoard?, next: TeamBoard?, memberId: String, date: LocalDate): TeamCell? =
+        board.cell(memberId, date) ?: prev?.cell(memberId, date) ?: next?.cell(memberId, date)
 
     /** 1.38 병동 신청표 (사용자 2026-11-06): how many days of last month are read with this one, like the paper's "NN off" margin. */
     const val CARRY_DAYS = 7
@@ -59,20 +95,25 @@ object TeamCheck {
         }
     }
 
-    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null): List<Sign> {
+    fun check(team: Team, board: TeamBoard, rules: RestRules = RestRules(), prev: TeamBoard? = null, next: TeamBoard? = null): List<Sign> {
         val types = team.shifts.associateBy { it.id }
         val asTypes = types.mapValues { it.value.asType() }
         val out = ArrayList<Sign>()
         val active = board.members.filter { it.active }
         for (m in active) {
             val days = board.days.map { d -> d to board.cell(m.id, d)?.shiftId?.let(asTypes::get) }
-            withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w -> out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}") }
-            // 주 52시간, Monday weeks that start in the month.
-            board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
+            withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w ->
+                out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}", topic = w.topic, who = m.name, detail = w.detail)
+            }
+            // 주 52시간, each Monday week with a day in the month. [RVJ-30] The days of that week in last month and next month count
+            // too; [RVJ-31] a 5인 미만 사업장 is not told ([RestRules.weekLimit]).
+            if (rules.weekLimit) board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
                 val week = (0..6).map { mon.plusDays(it.toLong()) }
-                val minutes = week.sumOf { d -> board.cell(m.id, d)?.shiftId?.let(types::get)?.let(::minutesOf) ?: 0 }
-                if (minutes > WEEK_LIMIT_MINUTES) out += Sign(Kind.WEEK_HOURS, week.last().coerceAtMost(board.days.last()), m.id,
-                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${minutes / 60}시간, 52시간을 넘어요(근로기준법 제53조)")
+                val worked = week.mapNotNull { d -> cellAt(board, prev, next, m.id, d)?.shiftId?.let(types::get) }
+                if (worked.sumOf(::minutesOf) > WEEK_LIMIT_MINUTES) out += Sign(Kind.WEEK_HOURS, week.last().coerceAtMost(board.days.last()), m.id,
+                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked)}(근로기준법 제53조)",
+                    topic = "주 52시간 넘김", who = m.name,
+                    detail = "${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked).removeSuffix(", 52시간을 넘어요")}")
             }
         }
         board.short(team.need).forEach { (d, missing) ->
@@ -88,11 +129,21 @@ object TeamCheck {
         return out.sortedWith(compareBy({ it.date }, { it.kind }))
     }
 
-    /** One line of the 확인할 것 card: [count] signs of one kind told at once, the dangerous kinds first. */
-    data class Line(val kind: Kind, val text: String, val count: Int, val first: LocalDate)
+    /**
+     * One line of the 확인할 것 card: [count] signs of one kind told at once, the dangerous kinds first.
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) [head] is the line folded ("야간 뒤 2일째 근무 6건", "인원이 모자란 날 3일") and [items] the signs it
+     * opens to, each a day the leader can go to; [tip] says how the line gets shorter.
+     */
+    data class Line(val kind: Kind, val text: String, val count: Int, val first: LocalDate,
+                    val head: String = text, val items: List<Sign> = emptyList(), val tip: String = "") {
+        val law: Boolean get() = kind == Kind.WEEK_HOURS
+    }
 
-    /** Danger first: 규칙(역순·11시간·연속) and 주 52시간 are the leader's to fix; 부족 next; 책임자 없음 last, as one line. */
-    val ORDER = listOf(Kind.RULE, Kind.WEEK_HOURS, Kind.SHORT, Kind.NO_CHARGE)
+    /**
+     * Danger first: 규칙(역순·11시간·연속) and 주 52시간 are the leader's to fix; 부족 next; 책임자 없음 last, as one line.
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) 주 52시간, the one the law sets, comes before the team's own 기준.
+     */
+    val ORDER = listOf(Kind.WEEK_HOURS, Kind.RULE, Kind.SHORT, Kind.NO_CHARGE)
 
     /**
      * 1.38 PC 1차 (58 signs, most of them 책임자 없음, hid the N→D): the card's lines. Each RULE and WEEK_HOURS sign keeps its own line;
@@ -105,13 +156,23 @@ object TeamCheck {
             val list = byKind[k].orEmpty().sortedBy { it.date }
             when {
                 list.isEmpty() -> emptyList()
-                k == Kind.RULE || k == Kind.WEEK_HOURS -> list.map { Line(k, "${dayWords(it.date)} ${it.text}", 1, it.date) }
+                // 2.0.0 [RVJ-68] (총괄 HQ-107, 28줄이 모두 따로 서던 카드) Signs of one sort are one line, "야간 뒤 2일째 근무 6건", which opens to
+                // its days; one alone is told with its day and who. A sign made without a [Sign.topic] keeps its own line as before.
+                k == Kind.RULE || k == Kind.WEEK_HOURS -> list.groupBy { it.topic.ifEmpty { "\u0000" + it.text } }.values.map { same ->
+                    val one = same.first()
+                    if (same.size == 1 || one.topic.isEmpty()) {
+                        val text = if (one.topic.isEmpty()) "${dayWords(one.date)} ${one.text}"
+                            else "${dayWords(one.date)} ${one.who} · ${one.topic}" + (if (one.detail.isNotEmpty()) " · ${one.detail}" else "")
+                        Line(k, text, 1, one.date, items = same)
+                    } else "${one.topic} ${same.size}건".let { head -> Line(k, head, same.size, one.date, head = head, items = same) }
+                }
                 else -> {
                     val head = if (k == Kind.SHORT) "인원이 모자란 날 ${list.map { it.date }.distinct().size}일" else "책임자 없는 근무 ${list.size}번"
                     val some = list.take(4).joinToString(", ") { "${dayWords(it.date)} ${it.text.removeSuffix(" 책임자 없음")}" }
                     // 1.38 PC 8차: one 책임자 can't be on every shift, so the line says how it goes away.
-                    val tip = if (k == Kind.NO_CHARGE && charges == 1) " · 책임자를 한 명 더 정하면 줄어요" else ""
-                    listOf(Line(k, "$head · $some" + (if (list.size > 4) " …" else "") + tip, list.size, list.first().date))
+                    val tip = if (k == Kind.NO_CHARGE && charges == 1) "책임자를 한 명 더 정하면 줄어요" else ""
+                    listOf(Line(k, "$head · $some" + (if (list.size > 4) " …" else "") + (if (tip.isEmpty()) "" else " · $tip"), list.size, list.first().date,
+                        head = head, items = list, tip = tip))
                 }
             }
         }
@@ -138,8 +199,9 @@ object TeamCheck {
      * [TEAM-18] 교환 요청 검사 (순번 493, 출시 후 할 일 C2·C7): what trading [date] between [a] and [b] would break, as new signs only
      * (signs already there before the trade are left out), so the leader sees "이 맞바꾸기는 준호 N→D 11시간 미만" before saying yes.
      */
-    fun swapCheck(team: Team, board: TeamBoard, a: String, b: String, date: LocalDate, rules: RestRules = RestRules()): List<Sign> {
-        val before = check(team, board, rules).map { it.kind to it.text }.toSet()
-        return check(team, board.swap(a, b, date), rules).filter { (it.kind to it.text) !in before }
+    fun swapCheck(team: Team, board: TeamBoard, a: String, b: String, date: LocalDate, rules: RestRules = RestRules(),
+                  prev: TeamBoard? = null, next: TeamBoard? = null): List<Sign> {
+        val before = check(team, board, rules, prev, next).map { it.kind to it.text }.toSet()
+        return check(team, board.swap(a, b, date), rules, prev, next).filter { (it.kind to it.text) !in before }
     }
 }

@@ -11,6 +11,9 @@
 // is gone — the day's limits keep the operator's queue small); a day's fonts are counted per network and
 // for everyone, not only per install; and reports from new installs or a second one from the same network do not take it down.
 import { DAY } from "./units.js";
+import { cleanText, reservedName, textProblem } from "./recipes.js";
+import { purgeAsset } from "./recipe-community.js";
+import { careGate } from "./community-care.js";
 
 /** The level recipe_trust gives [t] (recipes.js recipeTrust), read without writing: 0 새싹, 1 이웃, 2 단골. */
 function rfTrust(t, now) {
@@ -21,11 +24,23 @@ function rfTrust(t, now) {
 
 export const FONT_LIMITS = { bytes: 8 * 1024 * 1024, perDay: 6, part: 1_500_000, reportsToHide: 3, name: 30,
   /** 1.36 [SEC-10] H1: fonts a network may send a day, and all phones together (8 MB each at most, so 320 MB a day at most). */
-  perNetworkDay: 3, allDay: 40 };
+  perNetworkDay: 3, allDay: 40,
+  /** 2.0.0 [RVQ-55] 검토 SVC-25: 운영자 확인을 기다리는 글꼴을 모두 합쳐 이만큼까지(넘으면 확인할 때까지 새 글꼴을 쉬어요). */
+  pendingBytes: 200 * 1024 * 1024 };
 /** What the user says its maker allows; only these may be shared. */
 export const FONT_LICENSES = ["ofl", "apache", "free"];
 /** 1.36 PC 9차: the app fonts that may stand in for a shared one (core FontCatalog's phone fonts). */
 export const FONT_FALLBACKS = ["sans", "serif", "mono", "hand", "round"];
+/**
+ * 2.0.0 [RVQ-55] 검토 SVC-25: 글꼴 파일(8MB까지)을 D1에 base64 조각으로 두면 DB가 크게 늘고 내려받기마다 조각을 모두 읽어요. R2 저장소
+ * (바인딩 ASSETS)가 묶여 있으면 새 글꼴은 그곳에 원래 크기로 두고(D1에는 parts = 0), 매시 정리 때 옛 조각도 몇 개씩 옮겨요. 묶지 않았으면
+ * 지금처럼 D1이에요. 지운 글꼴의 파일은 같은 정리 때 지워요.
+ */
+export const FONT_STORE = { movePerTick: 4, sweepPerTick: 200 };
+export const fontStore = (env) => (env?.ASSETS && typeof env.ASSETS.put === "function" && typeof env.ASSETS.get === "function" ? env.ASSETS : null);
+export const fontKey = (id) => `fonts/${id}.ttf`;
+const FONT_SWEEP_KEY = "font_store_cursor";
+
 export const FONT_LICENSE_NAMES = { ofl: "SIL 오픈 폰트 라이선스(OFL)", apache: "Apache 라이선스", free: "누구나 무료로 쓰게 공개" };
 
 export const FONT_SCHEMA = [
@@ -43,6 +58,10 @@ export const FONT_SCHEMA = [
   "ALTER TABLE recipe_fonts ADD COLUMN fallback TEXT",
   `CREATE TABLE IF NOT EXISTS recipe_font_parts (id TEXT NOT NULL, part INTEGER NOT NULL, data TEXT NOT NULL, PRIMARY KEY (id, part))`,
   `CREATE TABLE IF NOT EXISTS recipe_font_reports (id TEXT NOT NULL, device TEXT NOT NULL, why TEXT, at INTEGER NOT NULL, PRIMARY KEY (id, device))`,
+  // 2.0.0 [RVQ-46] 검토 SVC-64: everyone who sent the same file is its owner (recipe_fonts.owner is the first), so one of them deleting
+  // everything (모두 지우기) leaves the font for the others' works; it goes with the last.
+  `CREATE TABLE IF NOT EXISTS recipe_font_owners (id TEXT NOT NULL, device TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (id, device))`,
+  "CREATE INDEX IF NOT EXISTS recipe_font_owners_device ON recipe_font_owners (device)",
 ];
 
 const RF_ID = /^u[0-9a-f]{16}$/;
@@ -229,8 +248,38 @@ async function rfDev(d, request, body) {
 }
 
 function rfName(v) {
-  const s = typeof v === "string" ? v.replace(/[\u0000-\u001f\u007f<>]/g, "").trim() : "";
+  const s = typeof v === "string" ? cleanText(v.replace(/[\u0000-\u001f\u007f<>]/g, "")).trim() : "";
   return [...s].slice(0, FONT_LIMITS.name).join("") || "내 글꼴";
+}
+
+/**
+ * 2.0.0 [RVQ-46] 검토 SVC-64: a font's name is read by everyone who takes a work, so it passes what a work's title does (연락처·링크·
+ * 숨은 글자·말 못 하기, 공식·운영팀 사칭). The problem, or null.
+ */
+function rfNameProblem(name) {
+  return textProblem(name) ?? (reservedName(name) ? "name_taken" : null);
+}
+
+/** [RVQ-46] Whether [dev] is one of the font's owners (the first sender, or one who sent the same file later). */
+async function rfOwns(d, env, f, dev) {
+  if (!dev) return false;
+  if (f.owner === dev) return true;
+  return Boolean(await d.one(env, "SELECT 1 AS x FROM recipe_font_owners WHERE id = ? AND device = ?", f.id, dev));
+}
+
+const RF_LICENSE_HOSTS = /^https:\/\/(scripts\.sil\.org|openfontlicense\.org|www\.apache\.org|apache\.org|opensource\.org|fonts\.google\.com)(\/[\w./?=#%-]*)?$/i;
+
+/**
+ * 2.0.0 [RVQ-46] 검토 SVC-64·U22b-10·I22bb-05: '만든 곳 · 써도 되는 범위' for whoever gets the font, from its own name table (the words
+ * an OFL·Apache font must carry along): who made it, its copyright line and the licence's page, each only when it reads as plain words
+ * (no contact or link in a line others see; a licence page only on the licences' own sites).
+ */
+export function fontCredit(info) {
+  const plain = (v) => (typeof v === "string" && v.trim() && !textProblem(v) ? [...v.trim()].slice(0, 120).join("") : null);
+  const url = typeof info?.licenseUrl === "string" ? info.licenseUrl.trim().replace(/^http:/i, "https:") : "";
+  const out = { maker: plain(info?.maker) ?? plain(info?.designer), copyright: plain(info?.copyright), licenseUrl: RF_LICENSE_HOSTS.test(url) ? url : null,
+    says: fontLicenseSays(info ?? {}) };
+  return Object.fromEntries(Object.entries(out).filter(([, v]) => v));
 }
 
 /** POST /api/recipes/fonts — {device, name, license, ttf}: one open font, at most 8 MB. Answers its id (the same as the phone's). */
@@ -241,8 +290,21 @@ async function rfPost(d, env, request) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const now = Date.now();
   if (!(await d.legalOpen(env, "recipe.publish", now))) return d.json({ error: "not_yet", field: "recipe.publish" }, 403);
+  // 2.0.0 [RVQ-55] 검토 SVC-16: 마을 쉬기·의견 쉬기를 이 쓰기 길에서도 서버가 막아요(전에는 앱만 막았어요). 8MB를 풀기 전에요.
+  { const held = await careGate(d, env, dev, "community", now); if (held) return held; }
   if (!FONT_LICENSES.includes(body.license)) return d.json({ error: "license", field: "license" }, 400);
-  const bytes = typeof body.ttf === "string" ? rfBytes(body.ttf) : null;
+  const name = rfName(body.name);
+  { const why = rfNameProblem(name); if (why) return d.json({ error: why, field: "name" }, 400); }
+  // 2.0.0 [RVQ-27] 검토 SVC-63: the phone's, network's and whole day's 몫 and Play Integrity before the 8 MB is unpacked, checked and
+  // hashed (it was all done first, so a flood cost the CPU however it ended).
+  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
+  const net = await d.network(request, env, now);
+  const hit = await d.overLimit(env, now, [["device", `rfont|${dev}`, FONT_LIMITS.perDay, DAY],
+    ["network", `rfontnet|${net.day}`, FONT_LIMITS.perNetworkDay, DAY], ["network", `rfontall|${Math.floor(now / DAY)}`, FONT_LIMITS.allDay, DAY]]);
+  if (hit) return hit;
+  if (typeof body.ttf !== "string") return d.json({ error: "font", field: "ttf" }, 400);
+  if (body.ttf.length > Math.ceil(FONT_LIMITS.bytes * 4 / 3) + 8) return d.json({ error: "too_big", field: "ttf" }, 413);
+  const bytes = rfBytes(body.ttf);
   if (!bytes || !looksLikeFont(bytes)) return d.json({ error: "font", field: "ttf" }, 400);
   if (bytes.length > FONT_LIMITS.bytes) return d.json({ error: "too_big", field: "ttf" }, 413);
   // 1.36 [SEC-10] H3: a file that only begins like a font never reaches another phone's font engine.
@@ -250,26 +312,32 @@ async function rfPost(d, env, request) {
   const id = await rfIdOf(bytes);
   if (body.id != null && body.id !== id) return d.json({ error: "id", field: "id" }, 400);
   const had = await d.one(env, "SELECT id, state FROM recipe_fonts WHERE id = ?", id);
-  if (had) return d.json({ id, state: ["ok", "pending"].includes(had.state) ? had.state : "hidden", again: true }, 200);
+  if (had) {
+    // [RVQ-46] SVC-64: the second sender owns it too.
+    await d.run(env, "INSERT OR IGNORE INTO recipe_font_owners (id, device, at) VALUES (?, ?, ?)", id, dev, now);
+    return d.json({ id, state: ["ok", "pending"].includes(had.state) ? had.state : "hidden", again: true }, 200);
+  }
   // 1.36 [SEC-10] M7: a font its own words say a foundry sells is not shared, whatever the sender chose.
   const info = fontInfo(bytes);
   if (fontSold(info)) return d.json({ error: "sold", field: "license" }, 400);
-  // 1.36 Play Integrity (공통 보안 PR): a font others will get comes from the app from Play, when the server asks for it.
-  { const gate = d.integrity ? await d.integrity(env, dev, now) : null; if (gate) return gate; }
-  const net = await d.network(request, env, now);
-  const hit = await d.overLimit(env, now, [["device", `rfont|${dev}`, FONT_LIMITS.perDay, DAY],
-    ["network", `rfontnet|${net.day}`, FONT_LIMITS.perNetworkDay, DAY], ["network", `rfontall|${Math.floor(now / DAY)}`, FONT_LIMITS.allDay, DAY]]);
-  if (hit) return hit;
+  // 1.36 Play Integrity (공통 보안 PR): a font others will get comes from the app from Play, when the server asks for it (above, 2.0.0).
   // 1.36 [SEC-10] H3·M7·M8: others get it after the operator looked, always. The words of its name table are the sender's to
   // write, so they only help the operator (beside the font already shared that draws the same, fontAdmin).
   const state = "pending";
   const glyphs = await fontGlyphs(bytes);
+  // [RVQ-55] SVC-25: R2가 있으면 파일은 그곳에(실패하면 지금처럼 D1 조각으로). D1에 둘 때는 DB가 80%를 넘었거나 검토를 기다리는 글꼴이
+  // [FONT_LIMITS.pendingBytes]를 넘으면 쉬어요.
+  const store = fontStore(env);
+  if (!store && (await d.uploadsFull?.(env))) return d.json({ error: "paused", field: "space" }, 503);
+  { const w = await d.one(env, "SELECT COALESCE(SUM(bytes), 0) AS n FROM recipe_fonts WHERE state = 'pending'"); if ((w?.n ?? 0) + bytes.length > FONT_LIMITS.pendingBytes) return d.json({ error: "paused", field: "pending" }, 503); }
+  const stored = store ? await store.put(fontKey(id), bytes, { httpMetadata: { contentType: "font/ttf" } }).then(() => true, () => false) : false;
   const parts = [];
-  for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
+  if (!stored) for (let i = 0; i < body.ttf.length; i += FONT_LIMITS.part) parts.push(body.ttf.slice(i, i + FONT_LIMITS.part));
   await d.batch(env, [
     d.stmt(env, "INSERT INTO recipe_fonts (id, owner, name, license, bytes, parts, state, info, glyphs, fallback, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      id, dev, rfName(body.name), body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs,
+      id, dev, name, body.license, bytes.length, parts.length, state, JSON.stringify(info), glyphs,
       FONT_FALLBACKS.includes(body.fallback) ? body.fallback : null, now),
+    d.stmt(env, "INSERT OR IGNORE INTO recipe_font_owners (id, device, at) VALUES (?, ?, ?)", id, dev, now),
     ...parts.map((p, i) => d.stmt(env, "INSERT INTO recipe_font_parts (id, part, data) VALUES (?, ?, ?)", id, i, p)),
   ]);
   return d.json({ id, state }, 201);
@@ -277,10 +345,13 @@ async function rfPost(d, env, request) {
 
 /** GET /api/recipes/fonts/:id — its name, licence and size; a font taken down is gone for all but its owner. */
 async function rfMeta(d, env, request, id) {
-  const f = await d.one(env, "SELECT id, owner, name, license, bytes, state FROM recipe_fonts WHERE id = ?", id);
+  const f = await d.one(env, "SELECT id, owner, name, license, bytes, state, info FROM recipe_fonts WHERE id = ?", id);
   if (!f) return d.json({ error: "not_found" }, 404);
-  if (f.state !== "ok" && (await rfDev(d, request, null)) !== f.owner) return d.json({ error: "not_found", state: "hidden" }, 404);
-  return d.json({ id: f.id, name: f.name, license: f.license, licenseName: FONT_LICENSE_NAMES[f.license], bytes: f.bytes, state: f.state });
+  if (f.state !== "ok" && !(await rfOwns(d, env, f, await rfDev(d, request, null)))) return d.json({ error: "not_found", state: "hidden" }, 404);
+  let info = {};
+  try { info = JSON.parse(f.info ?? "{}") ?? {}; } catch { info = {}; }
+  // 2.0.0 [RVQ-46] U22b-10: '만든 곳 · 써도 되는 범위' (credit) beside the licence its sender chose.
+  return d.json({ id: f.id, name: f.name, license: f.license, licenseName: FONT_LICENSE_NAMES[f.license], bytes: f.bytes, state: f.state, credit: fontCredit(info) });
 }
 
 /**
@@ -297,13 +368,57 @@ async function rfLook(d, env, id) {
 async function rfFile(d, env, request, id) {
   const f = await d.one(env, "SELECT id, owner, state, parts FROM recipe_fonts WHERE id = ?", id);
   if (!f) return d.json({ error: "not_found" }, 404);
-  if (f.state !== "ok" && (await rfDev(d, request, null)) !== f.owner) return d.json({ error: "not_found" }, 404);
+  if (f.state !== "ok" && !(await rfOwns(d, env, f, await rfDev(d, request, null)))) return d.json({ error: "not_found" }, 404);
+  const headers = { "content-type": "font/ttf", "cache-control": f.state === "ok" ? "public, max-age=86400" : "no-store", "x-content-type-options": "nosniff" };
+  // [RVQ-55] SVC-25: R2에 둔 글꼴(parts 0)은 그곳에서 그대로 흘려보내요(8MB를 D1에서 읽어 잇지 않아요).
+  if (f.parts === 0) {
+    const obj = await fontStore(env)?.get(fontKey(id)).catch(() => null);
+    if (!obj) return d.json({ error: "not_found" }, 404);
+    return new Response(obj.body, { headers });
+  }
   const rows = await d.all(env, "SELECT data FROM recipe_font_parts WHERE id = ? ORDER BY part", id);
   if (rows.length !== f.parts) return d.json({ error: "not_found" }, 404);
   const bytes = rfBytes(rows.map((r) => r.data).join(""));
-  return new Response(bytes, {
-    headers: { "content-type": "font/ttf", "cache-control": f.state === "ok" ? "public, max-age=86400" : "no-store", "x-content-type-options": "nosniff" },
-  });
+  return new Response(bytes, { headers });
+}
+
+/**
+ * [RVQ-55] 검토 SVC-25 매시 정리(prune 단계): R2가 묶여 있으면 D1 조각으로 남은 옛 글꼴을 [FONT_STORE.movePerTick]개씩 R2로 옮기고,
+ * 글꼴 줄이 없어진 파일(나눈 분이 지움, 이 휴대폰 정보 지우기)을 [FONT_STORE.sweepPerTick]개씩 훑어 지워요. 묶지 않았으면 아무것도 안 해요.
+ */
+export async function fontStoreTick(d, env) {
+  const store = fontStore(env);
+  if (!store) return { moved: 0, swept: 0 };
+  let moved = 0;
+  const old = await d.all(env, "SELECT id, parts FROM recipe_fonts WHERE parts > 0 ORDER BY at LIMIT ?", FONT_STORE.movePerTick);
+  for (const f of old) {
+    const rows = await d.all(env, "SELECT data FROM recipe_font_parts WHERE id = ? ORDER BY part", f.id);
+    const bytes = rows.length === f.parts ? rfBytes(rows.map((r) => r.data).join("")) : null;
+    if (!bytes) continue;
+    await store.put(fontKey(f.id), bytes, { httpMetadata: { contentType: "font/ttf" } });
+    await d.batch(env, [
+      d.stmt(env, "UPDATE recipe_fonts SET parts = 0 WHERE id = ? AND parts = ?", f.id, f.parts),
+      d.stmt(env, "DELETE FROM recipe_font_parts WHERE id = ? AND NOT EXISTS (SELECT 1 FROM recipe_fonts WHERE id = ? AND parts > 0)", f.id, f.id),
+    ]);
+    moved++;
+  }
+  let swept = 0;
+  if (typeof store.list === "function" && typeof store.delete === "function") {
+    const at = await d.one(env, "SELECT value FROM settings WHERE key = ?", FONT_SWEEP_KEY).catch(() => null);
+    const page = await store.list({ prefix: "fonts/", limit: FONT_STORE.sweepPerTick, ...(at?.value ? { cursor: at.value } : {}) });
+    const ids = (page.objects ?? []).map((o) => ({ key: o.key, id: o.key.slice(6).replace(/\.ttf$/, "") }));
+    const kept = new Set();
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90).map((x) => x.id);
+      for (const r of await d.all(env, `SELECT id FROM recipe_fonts WHERE id IN (${part.map(() => "?").join(",")})`, ...part)) kept.add(r.id);
+    }
+    const gone = ids.filter((x) => !kept.has(x.id)).map((x) => x.key);
+    if (gone.length) await store.delete(gone);
+    swept = gone.length;
+    const next = page.truncated && page.cursor ? page.cursor : "";
+    await d.run(env, "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", FONT_SWEEP_KEY, next);
+  }
+  return { moved, swept };
 }
 
 /** POST /api/recipes/fonts/:id/report — {device, why}: once a phone; three phones take it down until the operator looks. */
@@ -313,7 +428,7 @@ async function rfReport(d, env, request, id) {
   if (!dev) return d.json({ error: "device", field: "device" }, 400);
   const f = await d.one(env, "SELECT id, owner, state, reports FROM recipe_fonts WHERE id = ?", id);
   if (!f) return d.json({ error: "not_found" }, 404);
-  if (f.owner === dev) return d.json({ error: "own" }, 400);
+  if (await rfOwns(d, env, f, dev)) return d.json({ error: "own" }, 400);
   const why = ["license", "broken", "bad"].includes(body.why) ? body.why : "license";
   const now = Date.now();
   const had = await d.one(env, "SELECT id FROM recipe_font_reports WHERE id = ? AND device = ?", id, dev);
@@ -348,20 +463,34 @@ export async function fontRoute(d, request, env, path) {
 }
 
 /** 운영자: 나눈 글꼴 (신고로 내려간 것 먼저), 다시 올리기·내리기. */
-export async function fontAdmin(d, request, env, path, url, now) {
+export async function fontAdmin(d, request, env, path, url, now, actor = "") {
   const method = request.method;
   if (path === "/recipes/fonts" && method === "GET") {
     const state = ["pending", "reported", "hidden", "ok"].includes(url.searchParams.get("state")) ? url.searchParams.get("state") : "pending";
     const rows = await d.all(env, "SELECT id, name, license, bytes, state, reports, info, glyphs, at FROM recipe_fonts WHERE state = ? ORDER BY reports DESC, at DESC LIMIT 100", state);
+    // 2.0.0 [RVQ-46] 검토 SVC-64·SVC-66: the list reads its reports, owners and look-alikes in a few queries for all rows (it asked two or
+    // three a row, and read 300 shared fonts' JSON for each waiting one).
+    const ids = rows.map((r) => r.id);
+    const inIds = async (sql) => {
+      const out = [];
+      for (let i = 0; i < ids.length; i += 90) {
+        const part = ids.slice(i, i + 90);
+        out.push(...(await d.all(env, sql(part.map(() => "?").join(",")), ...part)));
+      }
+      return out;
+    };
+    const whys = ids.length ? await inIds((m) => `SELECT id, why, COUNT(*) AS n FROM recipe_font_reports WHERE id IN (${m}) GROUP BY id, why`) : [];
+    const owners = ids.length ? await inIds((m) => `SELECT id, COUNT(*) AS n FROM recipe_font_owners WHERE id IN (${m}) GROUP BY id`) : [];
+    const shared = state === "ok" ? null : await fontShared(d, env);
     const items = [];
     for (const r of rows) {
-      const whys = await d.all(env, "SELECT why, COUNT(*) AS n FROM recipe_font_reports WHERE id = ? GROUP BY why", r.id);
       let info = {};
       try { info = JSON.parse(r.info ?? "{}") ?? {}; } catch {}
       const { glyphs, ...row } = r;
-      items.push({ ...row, info, says: fontLicenseSays(info), licenseName: FONT_LICENSE_NAMES[r.license],
-        like: r.state === "ok" ? [] : await fontLike(d, env, r, info),
-        whys: Object.fromEntries(whys.map((w) => [w.why, w.n])), at: new Date(r.at).toISOString() });
+      items.push({ ...row, info, says: fontLicenseSays(info), licenseName: FONT_LICENSE_NAMES[r.license], credit: fontCredit(info),
+        owners: Math.max(1, owners.find((o) => o.id === r.id)?.n ?? 1),
+        like: r.state === "ok" ? [] : fontLike(shared, r, info),
+        whys: Object.fromEntries(whys.filter((w) => w.id === r.id).map((w) => [w.why, w.n])), at: new Date(r.at).toISOString() });
     }
     const counts = await d.all(env, "SELECT state, COUNT(*) AS n FROM recipe_fonts GROUP BY state");
     return d.json({ state, items, counts: Object.fromEntries(counts.map((c) => [c.state, c.n])) });
@@ -369,10 +498,20 @@ export async function fontAdmin(d, request, env, path, url, now) {
   const m = path.match(/^\/recipes\/fonts\/(u[0-9a-f]{16})\/(ok|hide)$/);
   if (m && method === "POST") {
     const state = m[2] === "ok" ? "ok" : "hidden";
+    let note = "";
+    try { const b = await d.readJson(request, 2048); note = typeof b.note === "string" ? b.note.trim().slice(0, 200) : ""; } catch { /* no body */ }
+    const was = await d.one(env, "SELECT state, reports FROM recipe_fonts WHERE id = ?", m[1]);
+    // 2.0.0 [RVQ-46] 검토 SVC-64: a font that is not there is not 'done' (it answered ok and wrote nothing).
+    if (!was) return d.json({ error: "not_found" }, 404);
     await d.batch(env, [
       d.stmt(env, "UPDATE recipe_fonts SET state = ?, decided_at = ?, reports = CASE WHEN ? = 'ok' THEN 0 ELSE reports END WHERE id = ?", state, now, state, m[1]),
       ...(state === "ok" ? [d.stmt(env, "DELETE FROM recipe_font_reports WHERE id = ?", m[1])] : []),
+      // 2.0.0 [RVQ-27] 검토 SVC-61: in the 운영 조치 기록 with who and why.
+      d.stmt(env, "INSERT INTO recipe_actions (code, action, reason, actor, at, target) VALUES (?, ?, ?, ?, ?, 'font')", m[1], state === "ok" ? "font-ok" : "font-hide",
+        (note || (was ? `${was.state}${was.reports ? ` · 신고 ${was.reports}` : ""}` : "")).slice(0, 200), actor, now),
     ]);
+    // [RVQ-46] SVC-63·SVC-74: the edge copy of a hidden font goes too.
+    if (state === "hidden") await purgeAsset(request, `/api/recipes/fonts/${m[1]}/file`);
     return d.json({ id: m[1], state });
   }
   return null;
@@ -382,7 +521,17 @@ export async function fontAdmin(d, request, env, path, url, now) {
  * 1.36 [SEC-10] M8 (PC 7차): shared fonts like a waiting one, for the operator — one that draws the same (its glyphs), else one whose
  * name table names the same family or copyright — with how many bytes this one has more (+) or fewer (−). At most three.
  */
-async function fontLike(d, env, r, info) {
+/** [RVQ-46] The shared fonts fontLike compares with, read once for a list: id, name, bytes, glyphs and the words it carries. */
+async function fontShared(d, env) {
+  const rows = await d.all(env, "SELECT id, name, bytes, glyphs, info FROM recipe_fonts WHERE state = 'ok' ORDER BY at DESC LIMIT 300");
+  return rows.map((f) => {
+    let fi = {};
+    try { fi = JSON.parse(f.info ?? "{}") ?? {}; } catch {}
+    return { id: f.id, name: f.name, bytes: f.bytes, glyphs: f.glyphs, family: fi.family, copyright: fi.copyright };
+  });
+}
+
+function fontLike(shared, r, info) {
   const out = [];
   const seen = new Set([r.id]);
   const add = (f, why) => {
@@ -390,15 +539,11 @@ async function fontLike(d, env, r, info) {
     seen.add(f.id);
     out.push({ id: f.id, name: f.name, why, diff: r.bytes - f.bytes });
   };
-  if (r.glyphs) {
-    for (const f of await d.all(env, "SELECT id, name, bytes FROM recipe_fonts WHERE state = 'ok' AND glyphs = ? LIMIT 3", r.glyphs)) add(f, "glyphs");
-  }
+  if (r.glyphs) for (const f of shared.filter((x) => x.glyphs === r.glyphs)) add(f, "glyphs");
   const keys = [["family", info.family], ["copyright", info.copyright]].filter(([, v]) => v);
   if (keys.length && out.length < 3) {
-    for (const f of await d.all(env, "SELECT id, name, bytes, info FROM recipe_fonts WHERE state = 'ok' ORDER BY at DESC LIMIT 300")) {
-      let fi = {};
-      try { fi = JSON.parse(f.info ?? "{}") ?? {}; } catch {}
-      const hit = keys.find(([k, v]) => fi[k] === v);
+    for (const f of shared) {
+      const hit = keys.find(([k, v]) => f[k] === v);
       if (hit) add(f, hit[0]);
     }
   }
@@ -408,6 +553,10 @@ async function fontLike(d, env, r, info) {
 /** 이 휴대폰이 보낸 정보 모두 지우기: the fonts it shared and its reports. */
 export function forgetFonts(d, env, dev) {
   return [
+    // 2.0.0 [RVQ-46] 검토 SVC-64: a font another phone sent too stays theirs (the next owner takes it); only one nobody else sent goes.
+    d.stmt(env, "DELETE FROM recipe_font_owners WHERE device = ?", dev),
+    d.stmt(env, `UPDATE recipe_fonts SET owner = (SELECT o.device FROM recipe_font_owners o WHERE o.id = recipe_fonts.id ORDER BY o.at LIMIT 1)
+      WHERE owner = ? AND EXISTS (SELECT 1 FROM recipe_font_owners o WHERE o.id = recipe_fonts.id)`, dev),
     d.stmt(env, "DELETE FROM recipe_font_parts WHERE id IN (SELECT id FROM recipe_fonts WHERE owner = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_font_reports WHERE id IN (SELECT id FROM recipe_fonts WHERE owner = ?)", dev),
     d.stmt(env, "DELETE FROM recipe_fonts WHERE owner = ?", dev),

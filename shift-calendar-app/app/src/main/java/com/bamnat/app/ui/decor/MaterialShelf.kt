@@ -1,6 +1,7 @@
 package com.bamnat.app.ui.decor
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -136,7 +137,7 @@ private fun MaterialCell(m: StudioMaterial, usable: Boolean, busy: Boolean, onCl
         if (LookImages.fetch(c, m.shelf)) bmp = LookImages.bitmap(c.appContext, m.shelf)?.asImageBitmap()
     }
     val (w, h) = if (m.isIcon) 56.dp to 56.dp else 56.dp to 112.dp
-    val shape = RoundedCornerShape(10.dp)
+    val shape = MaterialTheme.shapes.small
     Box(Modifier.size(w, h).clip(shape).background(MaterialTheme.colorScheme.surfaceVariant)
         .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
         .clickable(onClickLabel = "${m.name} 넣기", onClick = onClick)
@@ -146,7 +147,7 @@ private fun MaterialCell(m: StudioMaterial, usable: Boolean, busy: Boolean, onCl
                 contentScale = if (m.isIcon) ContentScale.Fit else ContentScale.Crop)
         }
         if (busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-        if (!usable) Box(Modifier.align(Alignment.TopEnd).padding(3.dp).size(18.dp).clip(RoundedCornerShape(9.dp))
+        if (!usable) Box(Modifier.align(Alignment.TopEnd).padding(3.dp).size(18.dp).clip(CircleShape)
             .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
             Icon(Icons.Filled.Lock, null, Modifier.size(12.dp), tint = MaterialTheme.colorScheme.onSurface)
         }

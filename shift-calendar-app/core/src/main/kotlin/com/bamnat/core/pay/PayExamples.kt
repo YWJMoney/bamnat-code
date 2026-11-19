@@ -40,16 +40,20 @@ object PayExamples {
      * [PAYX-26] 금액 미분리 포괄 월급 T with N hours of 연장 in it: 기본급 B = T × H ÷ (H + 1.5N), H being 월 소정근로시간, so
      * B ÷ H × 1.5 × N is the rest. Both parts are marked 추정; a monthly salary only. The monthly salary is the base on [from].
      */
-    fun inclusiveSplit(profile: PayProfile, from: LocalDate, overtimeHours: Int): PayProfile {
-        if (profile.wageType != WageType.MONTHLY || overtimeHours <= 0) return profile
+    fun inclusiveSplit(profile: PayProfile, from: LocalDate, overtimeHours: Int): PayProfile =
+        inclusiveSplitMinutes(profile, from, overtimeHours * 60)
+
+    /** 2.0.0 [RVJ-76] (검토 PAYU-49) [inclusiveSplit] for a contract's hours off the whole hour (22.5시간 = 1,350분). */
+    fun inclusiveSplitMinutes(profile: PayProfile, from: LocalDate, overtimeMinutes: Int): PayProfile {
+        if (profile.wageType != WageType.MONTHLY || overtimeMinutes <= 0) return profile
         val total = profile.base.on(java.time.YearMonth.from(from)).value
         val h = profile.monthlyHours.coerceAtLeast(1).toDouble()
-        val base = (total * h / (h + 1.5 * overtimeHours)).roundToLong()
+        val base = (total * h / (h + 1.5 * (overtimeMinutes / 60.0))).roundToLong()
         return profile.copy(
             base = profile.base.copy(entries = profile.base.entries.filter { it.from.isBefore(from) } + DatedValue(from, base)),
             items = profile.items.filterNot { it.id == INCLUSIVE_ID } + PayItem(
                 INCLUSIVE_ID, "고정 연장수당 (포괄에서 나눔)", ValueTimeline(listOf(DatedValue(from, total - base))), Cadence.MONTHLY,
-                fixedOvertimeMinutes = overtimeHours * 60,
+                fixedOvertimeMinutes = overtimeMinutes,
             ),
             estimatedFields = profile.estimatedFields + Unknowns.BASE + INCLUSIVE_ID,
         )
@@ -59,9 +63,13 @@ object PayExamples {
 
     /**
      * [profile] with [kind] put in, from [from]. A 고정 연장수당 of [overtimeHours] hours is paid at 통상시급 × 150%
-     * when [amount] is not given; the user changes it to what the contract says.
+     * when [amount] is not given; the user changes it to what the contract says. 2.0.0 [RVJ-76] [overtimeMinutes] for hours off
+     * the whole hour (22.5시간), [overtimeHours] × 60 when not given.
      */
-    fun apply(kind: Kind, profile: PayProfile, from: LocalDate, overtimeHours: Int = 20, amount: Long? = null, flexStart: LocalDate? = null): PayProfile =
+    fun apply(
+        kind: Kind, profile: PayProfile, from: LocalDate, overtimeHours: Int = 20, amount: Long? = null, flexStart: LocalDate? = null,
+        overtimeMinutes: Int = overtimeHours * 60,
+    ): PayProfile =
         when (kind) {
             Kind.FIXED_OVERTIME -> {
                 val month = java.time.YearMonth.from(from)
@@ -70,14 +78,14 @@ object PayExamples {
                     WageType.HOURLY -> profile.base.on(month).value.toDouble()
                     WageType.DAILY -> profile.base.on(month).value * 60.0 / profile.dailyHours.coerceIn(1, 480)
                 }
-                val pay = amount ?: (hourly * 1.5 * overtimeHours).roundToLong() / 10 * 10
+                val pay = amount ?: (hourly * 1.5 * (overtimeMinutes / 60.0)).roundToLong() / 10 * 10
                 val id = "example-fixed-ot"
                 profile.copy(items = profile.items.filterNot { it.id == id } + PayItem(
                     id, "고정 연장수당", ValueTimeline(listOf(DatedValue(from, pay))), Cadence.MONTHLY,
-                    fixedOvertimeMinutes = overtimeHours * 60,
+                    fixedOvertimeMinutes = overtimeMinutes,
                 ))
             }
-            Kind.INCLUSIVE_TOTAL -> inclusiveSplit(profile, from, overtimeHours)
+            Kind.INCLUSIVE_TOTAL -> inclusiveSplitMinutes(profile, from, overtimeMinutes)
             Kind.FLEX_2W -> profile.copy(scheduleIsRegular = true, flexPeriod = FlexPeriod.TWO_WEEKS, flexStart = flexStart ?: from)
             Kind.FLEX_1M -> profile.copy(scheduleIsRegular = true, flexPeriod = FlexPeriod.MONTH)
             Kind.FLEX_3M -> profile.copy(scheduleIsRegular = true, flexPeriod = FlexPeriod.QUARTER)

@@ -1,0 +1,25 @@
+{
+ "format": "bamnat-recipe",
+ "v": 1,
+ "title": "시험 E5 앱 느낌",
+ "summary": "밝게, 글자 보통, 날짜를 누르면 다른 화면",
+ "desc": "2.0.0 스튜디오 가장자리 시험 작품(보고서 9장). PC 확인과 앱 시험이 함께 써요. 장터에 내지 않아요.",
+ "styles": [
+  "SHIFT",
+  "DAY",
+  "HOURLY",
+  "FIELD",
+  "BUSINESS",
+  "INVEST"
+ ],
+ "pieces": [
+  {
+   "kind": "appFeel",
+   "theme": "light",
+   "textStep": 1,
+   "tap": "week",
+   "hold": "open",
+   "accent": 4284364209
+  }
+ ]
+}

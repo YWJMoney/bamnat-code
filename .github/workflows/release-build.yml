@@ -9,6 +9,9 @@ on:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
+# 2.0.0 [RVL-61] (검토 DATA-27) Reads the code and uploads its files; nothing here writes to the repository.
+permissions:
+  contents: read
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -23,7 +26,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      - run: sh ./gradlew :app:bundleRelease :app:assembleRelease :wear:bundleRelease
+      # 2.0.0 (HQ, run 44472911980): compileReleaseKotlin ran out of memory with the repository's 4g heap. The same heap and in-process
+      # compiler the test workflow uses (android.yml, RVR-46), so the release build does not depend on a second daemon fitting in the runner.
+      - name: Gradle heap
+        run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
+      - run: sh ./gradlew :app:bundleRelease :app:assembleRelease :wear:bundleRelease --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
       # 16 KB page alignment of native libraries, required for API 35+ on Play.
       - run: |
           za=$(ls "$ANDROID_HOME"/build-tools/*/zipalign | sort -V | tail -1)
@@ -31,13 +38,19 @@ jobs:
           echo "16 KB aligned"
           # apksigner travels with the files so the APK can be signed where the key is, without an Android SDK.
           cp "$(dirname "$za")/lib/apksigner.jar" app/build/outputs/apk/release/
-      # [PERF-04] Sizes and their largest parts in the job summary; a file over its budget fails the build.
+      # 2.0.0 [RVO-01] The debug build's tier preview and example prices must be gone from the release dex (R8 drops them).
+      - name: No debug-only words
+        run: python3 tools/release_dex_check.py app/build/outputs/apk/release/app-release-unsigned.apk
+      # [PERF-04] Sizes and their largest parts in the job summary. 2.0.0 [RVL-60] (검토 DATA-21) Over the budget is a warning, over it
+      # by more than a tenth fails; the app's dex code by package (through this build's mapping) shows what grew.
       - name: Size
         run: |
           python3 tools/app_size.py app/build/outputs/apk/release/app-release-unsigned.apk \
             app/build/outputs/bundle/release/app-release.aab wear/build/outputs/bundle/release/wear-release.aab \
-            --json app/build/outputs/size.json >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+            --mapping app/build/outputs/mapping/release/mapping.txt --json app/build/outputs/size.json >> "$GITHUB_STEP_SUMMARY"
+      # 2.0.0 [RVL-60] Uploaded whatever a step before said: a release whose size failed still leaves its files and mapping to look at.
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: release-unsigned
           path: |

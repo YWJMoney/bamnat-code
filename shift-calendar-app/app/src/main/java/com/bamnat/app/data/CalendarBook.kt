@@ -97,12 +97,32 @@ sealed interface CalendarKey {
 /** Where added calendars keep their databases; tests use in-memory ones. */
 interface CalendarStorage {
     fun open(id: String): AppDatabase
+
+    /**
+     * 2.0.0 [RVL-65] (검토 DATA-16) The ids of the added calendars whose database files are on the phone (the example's is in no-backup
+     * storage and not among them), so a list that could not be read is made again from them.
+     */
+    fun found(): Set<String> = emptySet()
     /** [keepTools]: its work tools and contract photos stay, for a calendar a restore brings back. */
     fun delete(id: String, db: AppDatabase?, keepTools: Boolean = false)
 
     class Files(private val context: android.content.Context) : CalendarStorage {
-        override fun open(id: String): AppDatabase = AppDatabase.create(context, pathOf(context, id))
+        /** 2.0.0 [RVH-54] The doors of the databases opened for each calendar; [delete] shuts them all before its file goes. */
+        private val doors = java.util.concurrent.ConcurrentHashMap<String, MutableList<CalendarFileDoor>>()
+
+        override fun open(id: String): AppDatabase {
+            val door = CalendarFileDoor(afterClose = {
+                // A read under way at the delete may have reached the file once more; it goes now, unless the calendar is back.
+                if (doors[id].isNullOrEmpty()) context.deleteDatabase(pathOf(context, id))
+            })
+            doors.compute(id) { _, list -> (list ?: java.util.concurrent.CopyOnWriteArrayList()).apply { add(door) } }
+            return AppDatabase.create(context, pathOf(context, id), door)
+        }
+        override fun found(): Set<String> = context.databaseList().mapNotNull(::idOf).toSet()
+
         override fun delete(id: String, db: AppDatabase?, keepTools: Boolean) {
+            // 2.0.0 [RVH-54] Shut first: nothing that still holds this calendar opens its file again, before or after it goes.
+            doors.remove(id)?.forEach { it.shut() }
             db?.close()
             context.deleteDatabase(pathOf(context, id))
             // [MCAL-06] Its pay setup and closed months go with it.
@@ -116,6 +136,11 @@ interface CalendarStorage {
     companion object {
         /** In the databases folder beside the main one, so backups and phone transfers carry it [REL-04]. */
         fun fileName(id: String) = "calendar_$id.db"
+
+        /** 2.0.0 [RVL-65] The calendar id of a database file's name ([fileName]); null for any other file (journals, the main one). */
+        fun idOf(file: String): String? = file.removePrefix("calendar_").removeSuffix(".db")
+            .takeIf { file.startsWith("calendar_") && file.endsWith(".db") && it.isNotEmpty() && it.length <= 40 && it.all { c -> c.isLetterOrDigit() } }
+            ?.takeIf { it != PersonalCalendar.MAIN && it != PersonalCalendar.EXAMPLE }
 
         /**
          * [EASY-01] The database's name for Room: [fileName] in the databases folder, or for the example calendar a
@@ -159,8 +184,17 @@ class CalendarBook(
      * company connection stays), false when it is gone for good (the company it joined is let go).
      */
     private val onDelete: (id: String, kept: Boolean) -> Unit = { _, _ -> },
+    /** 2.0.0 [RVL-76] Told when an added calendar's database is opened (날짜별 되돌리기 starts keeping its moments). */
+    private val onOpen: (id: String, db: AppDatabase) -> Unit = { _, _ -> },
 ) {
     private data class State(val calendars: List<PersonalCalendar>, val order: List<String>, val active: String)
+
+    /**
+     * 2.0.0 [RVL-65] (검토 DATA-16) Added calendars found by their database files when the list could not be read (a broken or lost
+     * calendars.json), put back as '되찾은 달력 N' so they are not gone from the list; 알람 점검 › 데이터 점검 says so.
+     */
+    var recovered: List<String> = emptyList()
+        private set
 
     private val state = MutableStateFlow(load())
 
@@ -193,7 +227,14 @@ class CalendarBook(
     private val open = HashMap<String, Opened>()
     private val pays = HashMap<String, com.bamnat.app.pay.PayStore>()
 
-    private fun opened(id: String): Opened = open.getOrPut(id) { storage.open(id).let { db -> Opened(db, repositoryOf(db)) } }
+    /**
+     * 2.0.0 [RVH-54] The one place an added calendar's database is opened: only for a calendar that is here (listed or being set up).
+     * One that went is never opened again by its id; what still holds its old database is kept off the file by [CalendarFileDoor].
+     */
+    private fun opened(id: String): Opened {
+        check(id != PersonalCalendar.MAIN && get(id) != null) { "Not an added calendar: $id" }
+        return open.getOrPut(id) { storage.open(id).let { db -> runCatching { onOpen(id, db) }; Opened(db, repositoryOf(db)) } }
+    }
 
     /** The schedule of calendar [id]; the main one for an id that is not (or no longer) there. */
     @Synchronized
@@ -229,7 +270,11 @@ class CalendarBook(
     /** [MCAL-06] [everyMoney] read now, from a notice's receiver. */
     suspend fun everyMoneyNow(): com.bamnat.core.money.MoneyBook = merged(_calendars.value.map { cal ->
         val m = money(cal.id)
-        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = m.currentStyle())
+        val style = m.currentStyle()
+        // 2.0.0 [RVK-40] (검토 MONEY-50) A shop's 간이과세 picks its 부가세 deadlines.
+        val vat = if (style != com.bamnat.core.work.WorkStyle.BUSINESS) emptySet()
+            else setOf(if (cal.shopMoney?.simpleTax == true) com.bamnat.core.money.TaxDeadlines.Vat.SIMPLE else com.bamnat.core.money.TaxDeadlines.Vat.GENERAL)
+        com.bamnat.core.money.MoneyBook(m.allEntries(), m.allJobs(), emptyList(), m.allFixed(), m.allReceivables(), m.allAccounts(), style = style, vat = vat)
             .holdUnconfirmed(m.holdFrom())
     })
 
@@ -268,10 +313,10 @@ class CalendarBook(
      * [MCAL-01] Every calendar whose alarms ring, with the name an alarm from it is told by; the main
      * calendar has none, so its alarms read as before.
      */
-    val ringing: Flow<List<Pair<String?, ScheduleSnapshot>>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
+    val ringing: Flow<List<com.bamnat.app.alarm.RingingCalendar>> = _calendars.map { list -> list.filter { it.isMain || (it.alarms && !it.isExample) } }
         .flatMapLatest { list ->
             if (list.isEmpty()) flowOf(emptyList())
-            else combine(list.map { cal -> repository(cal.id).live.map { s -> (if (cal.isMain) null else cal.name) to s } }) { it.toList() }
+            else combine(list.map { cal -> repository(cal.id).live.map { s -> com.bamnat.app.alarm.RingingCalendar(if (cal.isMain) null else cal.name, s, cal.id) } }) { it.toList() }
         }
 
     @Synchronized
@@ -421,6 +466,9 @@ class CalendarBook(
      */
     fun added(): List<PersonalCalendar> = all.filter { !it.isMain && it.ready && !it.isExample }
 
+    /** 2.0.0 [RVL-65] Every calendar the list names, those still being set up too (their files are on the phone as well). */
+    fun ids(): Set<String> = all.map { it.id }.toSet()
+
     /**
      * [MCAL-05] A restore replaces the added calendars with the backup's, ids and order kept. One that
      * comes back keeps its work tools and contract photos, which the backup restores over or lacks.
@@ -492,8 +540,16 @@ class CalendarBook(
             val order = o.optJSONArray("order")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotEmpty() } }.orEmpty()
             State(list, order, o.optString("active", PersonalCalendar.MAIN))
         }.getOrNull()
+        // 2.0.0 [RVL-65] (검토 DATA-16) A list that could not be read lost every added calendar from sight, though their files stayed:
+        // they come back by their files, named so the person can tell them apart, and the broken file is kept beside for a look.
+        val back = if (read != null) emptyList() else runCatching { storage.found() }.getOrDefault(emptySet()).sorted()
+        if (back.isNotEmpty() && file.exists()) runCatching { file.copyTo(File(file.parentFile, file.name + ".broken"), overwrite = true) }
+        val found = back.mapIndexed { i, id ->
+            PersonalCalendar(id, "되찾은 달력 ${i + 1}", PersonalCalendar.COLORS[(i + 1) % PersonalCalendar.COLORS.size], createdAt = clock())
+        }
+        recovered = found.map { it.name }
         // [MCAL-01] The calendar the app always had becomes the first of the list as it is: nothing moves.
-        val list = read?.calendars.orEmpty().distinctBy { it.id }
+        val list = (read?.calendars.orEmpty() + found).distinctBy { it.id }
         val withMain = if (list.any { it.isMain }) list.sortedBy { if (it.isMain) 0 else 1 } else listOf(defaultMain()) + list
         val active = read?.active?.takeIf { a -> withMain.any { it.id == a && it.ready } } ?: PersonalCalendar.MAIN
         return State(withMain, read?.order.orEmpty(), active)
@@ -572,6 +628,7 @@ class CalendarBook(
         fun shopMoneyJson(r: com.bamnat.core.work.ShopMoney): JSONObject = JSONObject()
             .put("feeBp", r.cardFeeBp).put("settleDays", r.settleDays).put("opening", r.openingCash)
             .put("target", r.monthlyTarget).put("simpleTax", r.simpleTax).put("valueAdded", r.valueAddedPercent)
+            .apply { r.vatTrade?.let { put("vatTrade", it.name) } } // 2.0.0 [RVJ-84]
 
         fun shopMoneyOf(o: JSONObject): com.bamnat.core.work.ShopMoney {
             val d = com.bamnat.core.work.ShopMoney()
@@ -582,6 +639,8 @@ class CalendarBook(
                 monthlyTarget = o.optLong("target").coerceAtLeast(0),
                 simpleTax = o.optBoolean("simpleTax"),
                 valueAddedPercent = o.optInt("valueAdded", d.valueAddedPercent).coerceIn(0, 100),
+                vatTrade = o.optString("vatTrade").takeIf { it.isNotEmpty() }
+                    ?.let { n -> com.bamnat.core.work.SimpleVatTrade.entries.firstOrNull { it.name == n } },
             )
         }
 
@@ -593,18 +652,41 @@ class CalendarBook(
             .put("holidays", r.holidaysClosed).put("auto", r.autoClosed)
             .putOpt("checked", r.checkedUntil?.toString())
             .putOpt("autoDays", r.autoClosedDays.sorted().joinToString(",").ifEmpty { null })
+            // [RVH-36] 검토 TYPE-23 검토 I02b-03 단축영업 요일과 시간, 브레이크 타임, 격주 휴무.
+            .putOpt("short", r.shortWeekdays.joinToString(",") { it.name }.ifEmpty { null })
+            .putOpt("shortOpen", r.shortOpen?.toString()).putOpt("shortClose", r.shortClose?.toString())
+            .putOpt("break", r.breakStart?.takeIf { r.breakMinutes > 0 }?.toString())
+            .putOpt("breakMin", r.breakMinutes.takeIf { r.breakStart != null && it > 0 })
+            .putOpt("everyOther", r.everyOther.joinToString(",") { it.name }.ifEmpty { null })
+            .putOpt("everyOtherFrom", r.everyOtherFrom?.toString())
+            // 2.0.0 [RVJ-86] 검토 BOSS-65 the 영업·단축영업 kinds by id.
+            .putOpt("openType", r.openTypeId).putOpt("shortType", r.shortTypeId)
+
+        private fun weekdays(raw: String): Set<java.time.DayOfWeek> =
+            raw.split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet()
+
+        private fun time(raw: String): java.time.LocalTime? = raw.takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalTime.parse(it) }.getOrNull() }
 
         /** A shop entry that cannot be read is left unset rather than turned into default rules. */
         fun shopOf(o: JSONObject): com.bamnat.core.work.ShopRules? = runCatching {
             com.bamnat.core.work.ShopRules(
                 open = java.time.LocalTime.parse(o.optString("open", "10:00")),
                 close = java.time.LocalTime.parse(o.optString("close", "22:00")),
-                closedWeekdays = o.optString("closed").split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet(),
+                closedWeekdays = weekdays(o.optString("closed")),
                 monthly = com.bamnat.core.work.NthWeekday.decode(o.optString("monthly")),
                 holidaysClosed = o.optBoolean("holidays"),
                 autoClosed = o.optBoolean("auto", true),
                 checkedUntil = o.optString("checked").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
                 autoClosedDays = o.optString("autoDays").split(',').mapNotNull { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }.toSet(),
+                shortWeekdays = weekdays(o.optString("short")),
+                shortOpen = time(o.optString("shortOpen")),
+                shortClose = time(o.optString("shortClose")),
+                breakStart = time(o.optString("break")),
+                breakMinutes = o.optInt("breakMin", 0).coerceIn(0, 12 * 60),
+                everyOther = weekdays(o.optString("everyOther")),
+                everyOtherFrom = o.optString("everyOtherFrom").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                openTypeId = o.optLong("openType", 0L).takeIf { it > 0 },
+                shortTypeId = o.optLong("shortType", 0L).takeIf { it > 0 },
             )
         }.getOrNull()
     }

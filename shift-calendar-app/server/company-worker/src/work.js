@@ -38,6 +38,20 @@ export const WORK_TYPES = { inquiry: "문의", group: "제보 묶음", ask: "앱
 export const WORK_GROUPS = { ask: ["inquiry", "studio_need", "dev"], report: ["flagged_post", "hidden_post", "recipe_flag", "recipe_hidden", "photo", "maker_flag", "doubted"],
   review: ["group", "ask", "rate", "tool"], ops: ["rewards", "ops", "admin", "phone"] };
 export const WORK_GROUP_NAMES = { ask: "문의·요구", report: "신고·사진", review: "검토·후보", ops: "운영" };
+/**
+ * 2.0.0 [RVN-05][SVC-97] 종류마다 그 줄을 읽는 권한 칸(inboxQueries·villageItems와 같은 표). 목록에 지금 없는 줄의 상태·기록도 이 칸을 가진
+ * 사람만 바꾸고 봐요. "owner"는 주인만.
+ */
+export const WORK_AREAS = { inquiry: "inquiries", studio_need: "inquiries", group: "review", ask: "review", doubted: "review",
+  flagged_post: "community", hidden_post: "community", rate: "community", recipe_flag: "community", recipe_hidden: "community", photo: "community",
+  maker_flag: "community", tool: "community", dev: "dev", rewards: "rewards", ops: "ops", admin: "owner", phone: "owner" };
+
+/** [SVC-97] [actor] may see and change the 할 일함 line [key] (its type's area). An unknown type: nobody but the owner. */
+export function workAllowed(actor, key) {
+  const area = WORK_AREAS[String(key).split(":")[0]];
+  if (actor?.owner) return true;
+  return Boolean(area && area !== "owner" && can(actor, area));
+}
 
 export const WORK_SCHEMA = [
   `CREATE TABLE IF NOT EXISTS work_states (key TEXT PRIMARY KEY, state TEXT NOT NULL, reason TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
@@ -114,8 +128,11 @@ export async function workList(env, actor, now) {
     if (state === "done" && (last > s.at || (!WORK.stays.includes(x.type) && now - s.at > WORK.backDays * DAY))) {
       state = "new";
       reopened += 1;
-      back.push(stmt(env, "UPDATE work_states SET state = 'new', reopened = ?, at = ? WHERE key = ?", reopened, now, key),
-        stmt(env, "INSERT INTO work_log (key, action, before, reason, at) VALUES (?, 'reopen', 'done', ?, ?)", key, last > s.at ? "moved" : "left", now));
+      // 2.0.0 [RVN-05][SVC-97] Two lists read at once reopen it once: the log line and the change both hold only while the line is still the
+      // 'done' this read saw (the batch is one transaction, the log first).
+      back.push(stmt(env, `INSERT INTO work_log (key, action, before, reason, at) SELECT ?, 'reopen', 'done', ?, ?
+          WHERE EXISTS (SELECT 1 FROM work_states WHERE key = ? AND state = 'done' AND at = ?)`, key, last > s.at ? "moved" : "left", now, key, s.at),
+        stmt(env, "UPDATE work_states SET state = 'new', reopened = reopened + 1, at = ? WHERE key = ? AND state = 'done' AND at = ?", now, key, s.at));
     }
     const due = state === "waiting" ? s.at + WORK.backDays * DAY : x.due;
     return { key, type: x.type, typeName: WORK_TYPES[x.type] ?? x.type, id: x.id, title: x.title, n: x.n ?? 0, meta: x.meta ?? x.company ?? null,
@@ -137,6 +154,9 @@ export function workOrder(a, b) {
 function groupOf(type) {
   return Object.keys(WORK_GROUPS).find((g) => WORK_GROUPS[g].includes(type)) ?? "ops";
 }
+
+/** 2.0.0 [RVN-24] SVC-106: /work/count의 1분 기억(isolate 안). */
+const COUNT_MEMO = new Map();
 
 export async function workRoute(request, env, url, path, now) {
   const method = request.method;
@@ -167,6 +187,7 @@ export async function workRoute(request, env, url, path, now) {
       names: { states: WORK_STATE_NAMES, wait: WAIT_REASONS, done: DONE_REASONS, types: WORK_TYPES, groups: WORK_GROUP_NAMES }, rules: WORK });
   }
   if (path === "/work" && method === "POST") {
+    COUNT_MEMO.clear();
     // {keys: [...], state, reason, note}: one or many at once; each change goes to the log with what it was before.
     const body = await readJson(request, 16 * 1024);
     const keys = Array.isArray(body.keys) ? [...new Set(body.keys.filter((k) => typeof k === "string" && /^[a-z_]{2,20}:[A-Za-z0-9._-]{1,60}$/.test(k)))].slice(0, 100) : [];
@@ -176,11 +197,12 @@ export async function workRoute(request, env, url, path, now) {
     if (body.state === "done" && !DONE_REASONS[reason]) return json({ error: "reason", field: "reason" }, 400);
     if (body.state === "waiting" && !WAIT_REASONS[reason]) return json({ error: "reason", field: "reason" }, 400);
     const note = typeof body.note === "string" ? [...body.note.trim()].slice(0, 300).join("") : "";
-    // Only what this admin may see: a key whose type belongs to an area they lack is refused.
+    // Only what this admin may see: a key whose type belongs to an area they lack is refused. 2.0.0 [RVN-05][SVC-97] Before, any line that once
+    // had a state was open to anyone signed in; now a line no longer in the list needs its type's area too.
     const mine = new Set((await workList(env, actor, now)).map((x) => x.key));
     const known = await all(env, `SELECT key, state FROM work_states WHERE key IN (${keys.map(() => "?").join(",")})`, ...keys);
     const before = new Map(known.map((r) => [r.key, r.state]));
-    const ok = keys.filter((k) => mine.has(k) || before.has(k));
+    const ok = keys.filter((k) => mine.has(k) || (before.has(k) && workAllowed(actor, k)));
     if (!ok.length) return json({ error: "not_found" }, 404);
     const by = actor.name ?? "";
     await batch(env, ok.flatMap((k) => [
@@ -194,17 +216,27 @@ export async function workRoute(request, env, url, path, now) {
   }
   if (path === "/work/log" && method === "GET") {
     const key = url.searchParams.get("key");
+    // 2.0.0 [RVN-05][SVC-97] Only the lines of areas this admin has (before: every area's last 100 with notes, to anyone signed in).
+    if (key && !workAllowed(actor, key)) return json({ error: "not_found" }, 404);
     const rows = key ? await all(env, "SELECT * FROM work_log WHERE key = ? ORDER BY id DESC LIMIT 50", key)
-      : await all(env, "SELECT * FROM work_log ORDER BY id DESC LIMIT 100");
+      : (await all(env, "SELECT * FROM work_log ORDER BY id DESC LIMIT 400")).filter((r) => workAllowed(actor, r.key)).slice(0, 100);
     return json({ items: rows.map((r) => ({ key: r.key, action: r.action, actionName: r.action === "reopen" ? "다시 열림" : WORK_STATE_NAMES[r.action] ?? r.action,
       before: r.before, reason: r.reason, reasonName: r.action === "reopen" ? (r.reason === "moved" ? "끝낸 뒤 새 움직임" : `${WORK.backDays}일 지나도 남아 있음`)
         : DONE_REASONS[r.reason] ?? WAIT_REASONS[r.reason] ?? "", note: r.note, by: r.by_name, at: iso(r.at) })) });
   }
   // 할 일함 메뉴 숫자: 남은 일과 기한 넘김.
+  // 2.0.0 [RVN-24] 검토 SVC-106: 숫자 둘을 위해 목록 전체를 다시 만들어요. 같은 관리자가 1분 안에 다시 물으면 그 숫자를 그대로 줘요
+  // (목록을 바꾸는 POST /work는 그 관리자의 숫자를 지워요).
   if (path === "/work/count" && method === "GET") {
+    const key = `${actor?.id ?? "?"}|${JSON.stringify(actor?.perms ?? null)}|${Boolean(actor?.owner)}`;
+    const hit = COUNT_MEMO.get(key);
+    if (hit && now - hit.at < 60_000 && now >= hit.at) return json(hit.value);
     const list = await workList(env, actor, now);
     const open = list.filter((x) => x.state !== "done");
-    return json({ open: open.length, late: open.filter((x) => x.late).length });
+    const value = { open: open.length, late: open.filter((x) => x.late).length };
+    if (COUNT_MEMO.size > 50) COUNT_MEMO.clear();
+    COUNT_MEMO.set(key, { at: now, value });
+    return json(value);
   }
   return null;
 }

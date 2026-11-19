@@ -73,7 +73,9 @@ object CompanyTemplates {
         ), order = "DNOO"),
         CompanyTemplate("office", "평일 일근", setOf(WorkStyle.DAY), ShiftBundles.weekday),
         CompanyTemplate("parttime", "시급 아르바이트", setOf(WorkStyle.HOURLY), ShiftBundles.hourly, wage = "HOURLY"),
-        CompanyTemplate("daily", "일용직 일당", setOf(WorkStyle.HOURLY, WorkStyle.DAY),
+        // 2.0.0 [RVH-43] 검토 PC-67 (통합 1차 PC: 사무직을 고른 일근에게 '일용직 일당'이 함께 권해짐): 일근은 매일 같은 회사의 평일
+        // 근무라 일당 근무를 권하지 않아요. 일당은 알바 쪽에만(일용직이라고 친 사람은 현장 유형으로 가요, JobDictionary '건설 일용직').
+        CompanyTemplate("daily", "일용직 일당", setOf(WorkStyle.HOURLY),
             listOf(shift(ShiftRole.DAY, "일당 근무", "일", 0xFF00A88F, 8, 17, 60)), wage = "DAILY"),
     )
 

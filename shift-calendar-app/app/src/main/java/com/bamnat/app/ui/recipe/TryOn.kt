@@ -25,7 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,6 +39,7 @@ import androidx.compose.runtime.Composable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -46,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
@@ -71,13 +73,20 @@ import com.bamnat.core.recipe.LookParts
 import com.bamnat.core.recipe.Recipe
 import com.bamnat.core.recipe.keepMyCellContent
 import com.bamnat.core.work.WorkStyle
+import androidx.compose.ui.semantics.Role
+
+/** The example phone's width in dp: a folded phone's, or a Fold's open width with the studio's '편 화면' ([LocalMockWide]). */
+@Composable
+internal fun mockWidth(): Float = if (LocalMockWide.current) com.bamnat.app.ui.studio.WIDE_W.value else 340f
 
 /** The example app at [scale], drawn at its full size and shrunk (taps still land where they are seen). */
 @Composable
 internal fun ScaledPhone(r: Recipe, style: WorkStyle?, tab: String, onTab: (String) -> Unit, scale: Float, onPick: () -> Unit = {},
                          modifier: Modifier = Modifier, scroll: androidx.compose.foundation.ScrollState? = null) {
-    Box(modifier.size((340 * scale).dp, (560 * scale).dp).clipToBounds(), contentAlignment = Alignment.Center) {
-        Box(Modifier.requiredSize(340.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
+    // 2.0.0 [RVS-03] U09a-06 (총괄 #520 사진 확인): with '편 화면' the whole open phone is drawn and made smaller, not its middle cut out.
+    val mockW = mockWidth()
+    Box(modifier.size((mockW * scale).dp, (560 * scale).dp).clipToBounds(), contentAlignment = Alignment.Center) {
+        Box(Modifier.requiredSize(mockW.dp, 560.dp).graphicsLayer { scaleX = scale; scaleY = scale }) {
             MockPhone(r, style, tab, onTab, onPick, scroll)
         }
     }
@@ -103,7 +112,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
     val reading = diff || peek
     val framed = remember(before, after) { LookParts.frame(before, after) }
     val scroll = rememberScrollState()
-    val w = (340 * scale).dp
+    val w = (mockWidth() * scale).dp
     val h = (560 * scale).dp
     val shownSplit = if (reading) 1f else split
     val beforeLayer = androidx.compose.ui.graphics.rememberGraphicsLayer()
@@ -179,7 +188,7 @@ internal fun CompareCanvas(before: Recipe, after: Recipe, style: WorkStyle?, tab
                         androidx.compose.ui.semantics.CustomAccessibilityAction("선을 오른쪽으로") { onSplit((latest + 0.1f).coerceIn(0.05f, 0.95f)); true },
                     )
                 }, contentAlignment = Alignment.Center) {
-                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp)))
+                Box(Modifier.size(20.dp, 36.dp).background(MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small))
             }
         }
     }
@@ -344,7 +353,10 @@ fun TryOnScreen(
                 // [BIGTXT-01] 1.39 (사용자 사진: 글자를 크게 하면 '고를 모양' 목록이 0줄이 되어 사라짐) with a big font or a short screen the
                 // example and the list scroll as one, so nothing is squeezed out; a tall screen keeps the example still above the list.
                 val conf = androidx.compose.ui.platform.LocalConfiguration.current
-                val oneScroll = conf.fontScale > 1.15f || conf.screenHeightDp < 640
+                // 2.0.0 [RVM-43] MKT-07 (검토 높음): a phone 640~850dp tall (and the fold, 905) left '고를 모양' a line or none under the
+                // still example. The example's height is measured: when the list below would get less than LIST_ROOM, the two scroll as one.
+                var compareH by remember { mutableIntStateOf(0) }
+                val density = androidx.compose.ui.platform.LocalDensity.current
                 val compare: @Composable () -> Unit = {
                     // 지금 | 반반 | 입으면, and the line to slide.
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -386,7 +398,7 @@ fun TryOnScreen(
                         if (!onlyChanges) Slider(split, { split = it }, modifier = Modifier.fillMaxWidth(0.7f).semantics { contentDescription = "지금과 입으면 나눠 보기"; stateDescription = "입으면 ${(split * 100).toInt()}%" })
                         // [R136-06] 1.36 (리뷰 R-18): what the picture shows follows the slider.
                         Text(when {
-                            onlyChanges && changedBlocks == 0 && changedHere.isEmpty() -> "이 화면은 입어도 똑같아요. 아래 탭을 눌러 다른 화면을 봐요."
+                            onlyChanges && changedBlocks == 0 && changedHere.isEmpty() -> "이 화면은 입어도 똑같아요. 아래 메뉴를 눌러 다른 화면을 봐요."
                             // 빌드 6 확인: what changes but does not show on the example is said in words.
                             onlyChanges && changedBlocks == 0 -> "이 화면에서 바뀌는 것: ${changedHere.joinToString(" · ")}. 예시에는 잘 드러나지 않아요."
                             onlyChanges -> "밝은 곳이 바뀌어요" + (changedHere.takeIf { it.isNotEmpty() }?.let { ": " + it.joinToString(" · ") } ?: "") +
@@ -409,7 +421,7 @@ fun TryOnScreen(
                         parts.groupBy { it.tab }.forEach { (t, list) ->
                             val ids = list.map { it.id }.toSet()
                             val all = picked.containsAll(ids)
-                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
+                            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) { tab = if (t == LookParts.WIDGET) tab else t; picked = if (all) picked - ids else picked + ids },
                                 verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(all, { on -> picked = if (on) picked + ids else picked - ids })
                                 Text(LookParts.tabLabel(t) + " 전체", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
@@ -429,15 +441,24 @@ fun TryOnScreen(
                     }
                     extra?.invoke(this)
                                 }
-                if (oneScroll) Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState())) {
-                    compare()
-                    HorizontalDivider(Modifier.padding(top = 6.dp))
-                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
-                } else {
-                    compare()
-                    HorizontalDivider(Modifier.padding(top = 6.dp))
-                    Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                // The middle takes what the header and the buttons leave, so the buttons below are always whole.
+                androidx.compose.foundation.layout.BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val room = maxHeight
+                    val measured: @Composable () -> Unit = {
+                        Box(Modifier.fillMaxWidth().onSizeChanged { compareH = it.height }) { compare() }
+                    }
+                    val tall = with(density) { compareH.toDp() }
+                    val oneScroll = conf.fontScale > 1.15f || conf.screenHeightDp < 640 || (compareH > 0 && tall > room - LIST_ROOM)
+                    if (oneScroll) Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                        measured()
+                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                    } else Column(Modifier.fillMaxSize()) {
+                        measured()
+                        HorizontalDivider(Modifier.padding(top = 6.dp))
+                        Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)) { list() }
+                    }
                 }
                 Surface(tonalElevation = 3.dp) {
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -483,3 +504,6 @@ internal fun tryOnAfter(mine: Recipe, r: Recipe, picked: Set<String>, own: Boole
 
 /** The parts a box item ([com.bamnat.app.recipe.ThemeWardrobe.Kept]) holds, said in a line. */
 internal fun partsLine(ids: List<String>): String = ids.mapNotNull { LookParts.byId(it)?.label }.joinToString(" · ").ifEmpty { "전체" }
+
+/** [RVM-43] MKT-07 What '고를 모양' needs below a still example (its title, one tab, a row of parts); less and the two scroll as one. */
+private val LIST_ROOM = 200.dp

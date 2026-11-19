@@ -1,6 +1,5 @@
 package com.bamnat.app.ui.recipe
 
-import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -15,7 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -154,12 +153,20 @@ fun WornNow(onFix: (() -> Unit)?) {
 fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
                /** [TRY-05] Opened again after trying it on the real app: the parts ticked and the tab shown then. */
                again: LiveTryOn.Reopen? = null, onDismiss: () -> Unit) {
+    // 2.0.0 [RVM-21] MKT-32 입어 보기 draws the theme's open fonts as card fonts; the whole font comes with 입기.
+    MarketFontsOf(r) { ThemeSheetBody(r, code, style, ver, again, onDismiss) }
+}
+
+@Composable
+private fun ThemeSheetBody(r: Recipe, code: String, style: WorkStyle?, ver: Int, again: LiveTryOn.Reopen?, onDismiss: () -> Unit) {
     val c = LocalContext.current.appContainer
     val context = LocalContext.current
     var note by remember { mutableStateOf<String?>(null) }
     val own = code.isEmpty()
     // [THM-01] Mine kept to myself asks as others' do; mine in 장터 never.
     val needsAd = remember { c.wardrobe.needsAdFor(code, r.title) }
+    // 2.0.0 [RVM-60] RCP-14: the first days after install go on at once (no ad can come); one line says till when.
+    val quiet = remember { if (c.wardrobe.quietFor(code, r.title)) quietLine(c.wardrobe.quietDays()) else null }
     val all = remember(r) { com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet() }
     // [J135-15] Worn on the app's scope: the look changing redraws the screens under this sheet, and a coroutine of the sheet would be
     // cancelled half way (the look on, 입는 중 never written). [TRY-01] Only the parts ticked; the rest stays the user's own.
@@ -209,7 +216,11 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
             onQuit = { note = "광고를 끝까지 봐야 입을 수 있어요" },
             onOffline = { note = "인터넷에 연결되면 다시 해 주세요" },
             onNoAd = { reason -> wear(picked) { c.wardrobe.counted(reason) } },
-        ) else Button(onClick = { wear(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+        ) else {
+            Button(onClick = { wear(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+            quiet?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+        }
     }
 }
 
@@ -221,7 +232,6 @@ fun ThemeSheet(r: Recipe, code: String, style: WorkStyle?, ver: Int = 0,
 @Composable
 fun ThemeExpiryAsk() {
     val c = LocalContext.current.appContainer
-    val context = LocalContext.current
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val worn = lease.worn ?: return
     var shown by remember { mutableStateOf(true) }
@@ -229,17 +239,20 @@ fun ThemeExpiryAsk() {
     LaunchedEffect(worn.key, worn.until) {
         if (c.wardrobe.state() == ThemeLease.State.SOON && c.wardrobe.soonSaid() != "${worn.key}|${worn.until}") {
             c.wardrobe.saySoon("${worn.key}|${worn.until}")
-            Toast.makeText(context, "‘${worn.title}’ 테마가 ${lease.daysLeft(Today.date().toEpochDay())}일 뒤에 끝나요", Toast.LENGTH_LONG).show()
+            // 2.0.0 [RVP-23] On the app's line, not a toast (글자 크기·꾸미기를 따라요).
+            com.bamnat.app.ui.components.AppSnack.show("‘${worn.title}’ 테마가 ${lease.daysLeft(Today.date().toEpochDay())}일 뒤에 끝나요")
         }
     }
     if (!shown || !c.wardrobe.ask()) return
-    fun said(text: String) = Toast.makeText(context, text, Toast.LENGTH_LONG).show()
+    // 2.0.0 [RVP-22] One opening window at a time (OpenAsk).
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.THEME_EXPIRY)) return
+    fun said(text: String) = com.bamnat.app.ui.components.AppSnack.show(text, millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
     AlertDialog(
         onDismissRequest = { shown = false; c.wardrobe.later() },
         title = { Text("‘${worn.title}’ 기간이 끝났어요. 연장할까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("광고를 끝까지 보면 30일 더 입어요. 아니요를 누르면 내 모양으로 돌아가고, 입었던 테마에서 다시 입을 수 있어요. 기록은 그대로예요",
+                Text("광고를 끝까지 보면 30일 더 입어요. 아니요는 내 모양으로 돌아가고, 내 서랍에서 다시 입을 수 있어요",
                     style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 com.bamnat.app.ads.ThemeAdButton(
@@ -262,8 +275,12 @@ fun ThemeExpiryAsk() {
                 )
             }
         },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("아니요, 내 모양으로") } },
+        // 2.0.0 [RVM-62] 검토 MKT-12·U08a-11 (나중에는 창 밖을 눌러야만 됐어요): a visible 나중에, which says when it asks again.
+        confirmButton = {
+            TextButton(onClick = { shown = false; c.wardrobe.later(); said("내일 다시 물어볼게요. 그때까지 ‘${worn.title}’ 그대로예요") },
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에") }
+        },
+        dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("아니요, 내 모양으로") } },
     )
 }
 
@@ -276,7 +293,6 @@ fun ThemeExpiryAsk() {
 @Composable
 fun ThemeUpdateAsk() {
     val c = LocalContext.current.appContainer
-    val context = LocalContext.current
     val lease by c.wardrobe.lease.collectAsStateWithLifecycle()
     val worn = lease.worn ?: return
     var newer by remember(worn.key, worn.ver) { mutableStateOf<Pair<Recipe, Int>?>(null) }
@@ -290,11 +306,13 @@ fun ThemeUpdateAsk() {
     val (r, v) = newer ?: return
     fun update() = c.appScope.launch {
         val ok = c.wardrobe.updateWorn(r, v)
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-            Toast.makeText(context, if (ok) "‘${worn.title}’${com.bamnat.app.ui.Fmt.obj(worn.title)} 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
-                Toast.LENGTH_LONG).show()
-        }
+        com.bamnat.app.ui.components.AppSnack.show(
+            if (ok) "‘${worn.title}’${com.bamnat.app.ui.Fmt.obj(worn.title)} 새 판으로 바꿨어요. 7일 안에 이전 판으로 돌아갈 수 있어요" else "바꾸지 못했어요. 다시 해 주세요",
+            kind = if (ok) com.bamnat.app.ui.components.AppSnack.Kind.INFO else com.bamnat.app.ui.components.AppSnack.Kind.FAIL,
+            millis = com.bamnat.app.ui.components.AppSnack.LONG_MILLIS)
     }
+    // 2.0.0 [RVP-22] One opening window at a time (OpenAsk); 바뀐 모습 보기 keeps the turn.
+    if (!com.bamnat.app.ui.components.AskTurn.turn(com.bamnat.core.guide.OpenAsk.THEME_UPDATE)) return
     if (trying) TryOnScreen(r, c.settingsRepository.current.workStyle, onDismiss = { trying = false }, onKeep = null, own = worn.own) { _ ->
         Button(onClick = { trying = false; newer = null; update() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("새 판으로 바꾸기") }
     } else AlertDialog(

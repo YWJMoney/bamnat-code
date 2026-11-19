@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import com.bamnat.core.report.ReportDoc
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -31,6 +32,27 @@ object ReportShare {
 
     /** [doc] as PDF bytes, for a bundle. */
     fun pdfBytes(doc: ReportDoc): ByteArray = java.io.ByteArrayOutputStream().also { ReportPdf.write(doc, it) }.toByteArray()
+
+    /**
+     * 2.0.0 [RVP-69] (검토 REST-11·U14-08) Makes a file and opens 보내기, or says why it could not, the same way everywhere: some
+     * buttons crashed the app on a full phone and some said nothing. 다시 하기 runs [make] again. True when the share window opened.
+     */
+    suspend fun orTell(make: suspend () -> Unit): Boolean = try {
+        make(); true
+    } catch (e: kotlinx.coroutines.CancellationException) {
+        throw e
+    } catch (e: Throwable) {
+        com.bamnat.app.ui.components.AppSnack.show(failWords(e), kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL, action = "다시 하기",
+            onAction = { retry.launch { orTell(make) } })
+        false
+    }
+
+    /** What a failed file says: no app to send it to, or the file itself. */
+    internal fun failWords(e: Throwable): String =
+        if (e is android.content.ActivityNotFoundException) "보낼 수 있는 앱을 찾지 못했어요" else "파일을 만들지 못했어요. 저장 공간을 확인해 주세요"
+
+    /** Where 다시 하기 runs: the screen that asked may be gone by then. */
+    private val retry = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Main.immediate)
 
     /** The file for [name] in the app's cache, written by [write]; older reports are removed. */
     suspend fun file(context: Context, name: String, write: (File) -> Unit): File = withContext(Dispatchers.IO) {

@@ -20,8 +20,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = ROOT / "docs" / "tracker.csv"
 STATUSES = {"대기", "진행 중", "완료", "조건부", "보류", "하지 않음", "이관"}
 # [MEMO-SEL-01] 1.30: an ID may have a two-part name (MEMO-SEL-01, RULE-ED-01).
-ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2}$")
-TAG_RE = re.compile(r"\[((?:[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})(?:,\s*[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})*)\]")
+# 두 자리 번호가 원칙이에요. 99줄을 넘긴 갈래(H: RVH-100, J: RVJ-100·RVJ-101…)의 줄 번호는 세 자리도 받아요(2.0.0 마무리, [RVJ-100]).
+# 코드와 커밋 글의 꼬리표는 전처럼 두 자리를 읽고, 세 자리는 RVH만 읽어요(다른 세 자리 꼬리표 PC-…·RV…-…는 전부터 읽지 않았어요).
+_ONE = r"(?:[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2}|RVH-\d{3})"
+ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2,3}$")
+TAG_RE = re.compile(r"\[(" + _ONE + r"(?:,\s*" + _ONE + r")*)\]")
 SOURCE_GLOBS = ("app/src/**/*.kt", "core/src/**/*.kt", "app/src/**/*.xml", "*.kts", "app/*.kts")
 
 

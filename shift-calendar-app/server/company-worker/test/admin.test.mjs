@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { server, setup, report, from, device, signIn, ORIGIN, PASSWORD, adminHome } from "./helpers.mjs";
+import { SERVER_VERSION } from "../src/version.js";
 
 const APP = { "x-admin": "1", origin: ORIGIN };
 
@@ -99,14 +100,14 @@ test("without a password set, sign-in says what is missing", async () => {
   const { call } = server({ ADMIN_PASSWORD: "short", RATE_SALT: undefined });
   assert.deepEqual((await call("POST", "/api/admin/login", { password: "short" }, APP)).data, { error: "not_set" });
   assert.deepEqual((await call("GET", "/api/admin/health")).data,
-    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" } });
+    { database: true, password: false, salt: false, why: { password: "short", salt: "missing" }, version: SERVER_VERSION });
 });
 
 test("the setup screen says why a secret is not read, never what it is", async () => {
   // Typed under a slightly different name, and bound from the Secrets Store instead of set on the Worker.
   const { call } = server({ ADMIN_PASSWORD: undefined, " admin_password": "a-long-password", RATE_SALT: { get: async () => "x" } });
   const h = (await call("GET", "/api/admin/health")).data;
-  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" } });
+  assert.deepEqual(h, { database: true, password: false, salt: false, why: { password: "name", salt: "store" }, version: SERVER_VERSION });
   assert.equal(JSON.stringify(h).includes("a-long-password"), false);
 });
 
@@ -147,7 +148,7 @@ test("the developer adopts or turns down what coworkers sent", async () => {
   assert.deepEqual([o.pending, o.flagged, o.owed, o.companies, o.rules, o.reports], [0, 0, 1, 2, 1, 2]);
   // 1.39 [LOOP-14] askMonths(회사 방식 요청 반영 보상): 따로 정하기 전에는 채택 보상을 따라가요.
   assert.deepEqual(o.settings, { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
-    firstMonths: 0, firstCapYear: 3, askMonths: 3 });
+    firstMonths: 0, firstCapYear: 3, askMonths: 3, roomMoney: 0 });
   assert.equal(o.reasons.wrong, "실제와 다른 정보로 보여요");
 });
 
@@ -266,11 +267,11 @@ test("a lower bar adopts what already meets it", async () => {
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 25 }, h)).data.error, "rewardMonths");
   const saved = await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6 }, h);
   assert.deepEqual(saved.data, { adoptPoints: 2, rewardMonths: 6, adoptAgree: 75, adoptPersons: 2, amendPersons: 2, autoReward: 0, rewardCapMonths: 3, rewardCapDays: 90,
-    firstMonths: 0, firstCapYear: 3, askMonths: 6 });
+    firstMonths: 0, firstCapYear: 3, askMonths: 6, roomMoney: 0 });
   const mine = (await call("GET", `/api/reports/${a.data.id}`)).data;
   assert.deepEqual([mine.status, mine.threshold, mine.rewardMonths], ["adopted", 2, 6]);
   assert.deepEqual(mine.reward, { months: 6, status: "owed" });
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6, agree: 75, firstMonths: 0 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 2, rewardMonths: 6, agree: 75, firstMonths: 0, roomMoney: false });
   // [COMM-07] The agreement share it takes on its own, from half to everyone.
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 40 }, h)).data.error, "adoptAgree");
   assert.equal((await call("POST", "/api/admin/settings", { adoptPoints: 2, rewardMonths: 6, adoptAgree: 90 }, h)).data.adoptAgree, 90);
@@ -449,10 +450,19 @@ test("the developer app's files are served safely", async () => {
   for (const part of ["default-src 'none'", "script-src 'self'", "frame-ancestors 'none'", "form-action 'none'"]) assert.ok(csp.includes(part), part);
   assert.equal(page.headers.get("x-robots-tag"), "noindex, nofollow");
   assert.equal(page.headers.get("referrer-policy"), "no-referrer");
-  assert.match(page.text, /<script src="\/admin\/app\.js" defer><\/script>/);
+  // 2.0.0 [RVA-57] 검토 ADM-11·I23c-02: 첫 묶음과 화면 묶음은 내용의 해시가 든 이름이라 1년 동안 다시 묻지 않아요.
+  const appSrc = page.text.match(/<script src="(\/admin\/app\.[0-9a-z]+\.js)" defer><\/script>/)?.[1];
+  assert.ok(appSrc, "the first bundle by its hashed name");
+  const hashed = await call("GET", appSrc);
+  assert.equal(hashed.headers.get("cache-control"), "public, max-age=31536000, immutable");
+  assert.equal(hashed.text, (await call("GET", "/admin/app.js")).text);
+  assert.equal((await call("GET", "/admin/app.js")).headers.get("cache-control"), "no-cache");
   assert.ok(!/<script>|on(click|load|error)=/i.test(page.text), "no inline script");
 
-  for (const path of ["/admin/app.js", "/admin/sw.js"]) {
+  const { adminPrebuilt } = await import("../src/admin-app.js");
+  const groups = Object.keys(adminPrebuilt().files).filter((p) => p.startsWith("/admin/v/"));
+  assert.equal(groups.length, 11, "eleven screen groups");
+  for (const path of ["/admin/app.js", "/admin/sw.js", ...groups]) {
     const js = await call("GET", path);
     assert.match(js.headers.get("content-type"), /^text\/javascript/);
     assert.doesNotThrow(() => new Function(js.text), path);
@@ -462,7 +472,8 @@ test("the developer app's files are served safely", async () => {
   assert.match(css.headers.get("content-type"), /^text\/css/);
   // [MON-08][MON-09][MON-10] The phone link code, phone approval and reward months are on the page; AM 1.28 [FLAG-25] 정식 출시
   // is the billing flag in 기능 관리 (thank-you months there).
-  const app = (await call("GET", "/admin/app.js")).text;
+  // 2.0.0 [RVA-57] 기능 관리는 flags 묶음 파일에 있어요.
+  const app = (await call("GET", "/admin/app.js")).text + (await Promise.all(groups.map((p) => call("GET", p).then((r) => r.text)))).join("\n");
   for (const part of ['data-form="flag-thanks"', 'data-act="flag-force"', 'data-act="link-code"', 'data-act="phone"', "내 휴대폰 밤낮 연결", "프로 이용권"]) {
     assert.ok(app.includes(part), part);
   }
@@ -536,5 +547,10 @@ test("the app's files are not sent again when the phone already has them", async
   assert.equal(again.text, "");
   assert.equal((await call("GET", "/admin/app.js", undefined, { "if-none-match": '"other"' })).status, 200);
   // The phone keeps the files under a name that changes with the app.
-  assert.match((await call("GET", "/admin/sw.js")).text, /\)\("[0-9a-z]+"\);\n$/);
+  assert.match((await call("GET", "/admin/sw.js")).text, /\)\("[0-9a-z]+", \["\/admin\/app\.[0-9a-z]+\.js","\/admin\/app\.[0-9a-z]+\.css","\/admin\/v\/today\.[0-9a-z]+\.js",[^\]]*\]\);\n$/);
+  // 배포 사이에 옛 화면 틀이 부른 옛 해시 이름: 지금 첫 묶음으로, 오래 남기지 않게.
+  const stale = await call("GET", "/admin/app.zzzz0.js");
+  assert.equal(stale.status, 200);
+  assert.equal(stale.headers.get("cache-control"), "no-cache");
+  assert.equal((await call("GET", "/admin/v/today.zzzz0.js")).status, 404);
 });

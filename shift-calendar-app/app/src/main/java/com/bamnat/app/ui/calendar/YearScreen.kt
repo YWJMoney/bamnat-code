@@ -29,7 +29,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.runtime.Composable
@@ -74,6 +74,8 @@ import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.work.ShiftMonth
 import java.time.temporal.TemporalAdjusters
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [CAL-22] 1년 달력: the twelve months of a year in small, each day in its shift's colour, with the year's
@@ -83,6 +85,8 @@ class YearViewModel(private val container: AppContainer, val calendarId: String)
     val snapshot: StateFlow<ScheduleSnapshot?> = container.scopeOf(calendarId).schedule.snapshot
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
     val weekStart: DayOfWeek get() = container.settingsRepository.settings.value.weekStart
+    /** 2.0.0 [RVH-19] 검토 CAL-24: the calendar's kind, for its words (영업·일정·매매) and the 야간·휴식 view only for 교대. */
+    val style: com.bamnat.core.work.WorkStyle? get() = container.calendars.styleOf(calendarId, container.settingsRepository.settings.value.workStyle)
 
     fun openMonth(month: YearMonth) = container.shownMonth.show(month)
 }
@@ -118,12 +122,15 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
                 Text("${year}년", style = MaterialTheme.typography.titleLarge, modifier = Modifier.semantics { heading() })
                 IconButton(onClick = { year++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 해") }
             }
-            YearCounts(snap, days.values)
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val style = vm.style
+            YearCounts(snap, days.values, style)
+            // [RVH-19] 야간·휴식 (nights and short rests) is a 교대 view; another kind of calendar shows its days only.
+            val shifts = style == null || style == com.bamnat.core.work.WorkStyle.SHIFT
+            if (shifts) Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = !heatMap, onClick = { heatMap = false }, label = { Text("근무") })
                 FilterChip(selected = heatMap, onClick = { heatMap = true }, label = { Text("야간·휴식") })
             }
-            if (heatMap) HeatLegend(heat)
+            if (heatMap && shifts) HeatLegend(heat)
             BoxWithConstraints(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 24.dp)) {
                 // [VIS-05] Large text on a phone: one month a row, or two-digit days were cut to their first digit.
                 val big = LocalDensity.current.fontScale >= 1.5f
@@ -139,7 +146,7 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             row.forEach { m ->
                                 val month = YearMonth.of(year, m)
-                                MiniMonth(month, days, heat.takeIf { heatMap }, vm.weekStart, today, Modifier.weight(1f).align(Alignment.Top)) {
+                                MiniMonth(month, days, heat.takeIf { heatMap && shifts }, vm.weekStart, today, Modifier.weight(1f).align(Alignment.Top), style) {
                                     vm.openMonth(month)
                                     onBack()
                                 }
@@ -155,13 +162,14 @@ fun YearScreen(vm: YearViewModel, onBack: () -> Unit) {
 /** [CAL-22] How many of each shift the year holds, and the leave taken, in the badges the calendar uses. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
+internal fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>, style: com.bamnat.core.work.WorkStyle? = null) {
     // [STAT-07] The month's count, a year long: a day taken off whole with leave is 휴가, not its code.
     val counts = ShiftMonth.counts(days, snap.shiftTypes).associate { it.type.id to it.days }
     // [CAL-26] 반차 is half a day and 반반차 a quarter, as the leave ledger counts them (I 리뷰 P5).
     val leave = ShiftMonth.leaveDays(days)
     if (counts.isEmpty()) {
-        Text("이 해에는 넣은 근무가 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        val noun = DayGroupKey.workTitle(style)
+        Text("이 해에는 넣은 $noun${com.bamnat.app.ui.Fmt.iga(noun)} 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.fillMaxWidth().padding(8.dp), textAlign = TextAlign.Center)
         return
     }
@@ -178,28 +186,35 @@ internal fun YearCounts(snap: ScheduleSnapshot, days: Collection<ResolvedDay>) {
     }
 }
 
+/** [RVH-99] 검토 PC-40: a month's tile counts days as the calendar's month summary does (any minute of work, a 대근 on a rest day included). */
+internal fun yearWorkDays(month: YearMonth, days: Map<LocalDate, ResolvedDay>): Int =
+    (1..month.lengthOfMonth()).count { (days[month.atDay(it)]?.totalMinutes ?: 0) > 0 }
+
 @Composable
-internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier, onOpen: () -> Unit) {
+internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat: Map<LocalDate, Heat>?, weekStart: DayOfWeek, today: LocalDate, modifier: Modifier,
+    style: com.bamnat.core.work.WorkStyle? = null, onOpen: () -> Unit) {
+    // [RVH-19] 근무 N일, 출근 N일, 영업 N일, 일정 N일, 매매 N일.
+    val noun = yearDayWord(style)
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
     val first = month.atDay(1).with(TemporalAdjusters.previousOrSame(weekStart))
     val weeks = ((java.time.temporal.ChronoUnit.DAYS.between(first, month.atEndOfMonth()) / 7) + 1).toInt()
-    val work = (1..month.lengthOfMonth()).count { days[month.atDay(it)]?.isWorkDay == true }
+    val work = yearWorkDays(month, days)
     Surface(
         shape = MaterialTheme.shapes.medium,
         color = scheme.surface,
         modifier = modifier.border(1.dp, scheme.outlineVariant, MaterialTheme.shapes.medium).clickable(onClickLabel = "${month.monthValue}월 달력 열기", onClick = onOpen)
-            .semantics(mergeDescendants = true) { contentDescription = "${month.monthValue}월, 근무 ${work}일" },
+            .semantics(mergeDescendants = true) { contentDescription = "${month.monthValue}월, $noun ${work}일" },
     ) {
         Column(Modifier.padding(6.dp)) {
             Row(verticalAlignment = Alignment.Bottom) {
                 Text("${month.monthValue}월", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
                     color = if (YearMonth.from(today) == month) scheme.primary else scheme.onSurface)
-                Text("  근무 ${work}일", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
+                Text("  $noun ${work}일", style = MaterialTheme.typography.labelSmall, color = scheme.onSurfaceVariant)
             }
             val density = LocalDensity.current
             var cell by remember { mutableIntStateOf(0) }
-            val dayDigits = with(density) { if (cell == 0) 9.sp else minOf(9.sp.toPx(), cell * 0.42f).toSp() }
+            val dayDigits = with(density) { if (cell == 0) 10.sp else minOf(10.sp.toPx(), cell * 0.42f).toSp() /* [RVP-11] 8~9sp 없음 */ }
             repeat(weeks) { w ->
                 Row(Modifier.fillMaxWidth().onSizeChanged { cell = it.width / 7 }) {
                     repeat(7) { d ->
@@ -212,6 +227,8 @@ internal fun MiniMonth(month: YearMonth, days: Map<LocalDate, ResolvedDay>, heat
                             heat != null -> heatColor(heat[date] ?: Heat.REST)
                             day?.leave != null -> scheme.tertiaryContainer
                             type != null && day.isWorkDay -> type.colorArgb.asColor().copy(alpha = 0.85f)
+                            // [RVH-99] Work on a day with no shift (a 대근, 특근 on a rest day) is filled too, in the one extra-work colour.
+                            day != null && day.totalMinutes > 0 -> scheme.secondaryContainer
                             else -> Color.Transparent
                         }
                         val sunday = date.dayOfWeek == DayOfWeek.SUNDAY || KoreanHolidays.isHoliday(date)
@@ -253,7 +270,7 @@ private fun heatColor(h: Heat): Color {
         Heat.WORK -> scheme.surfaceContainerHighest
         Heat.NIGHT -> scheme.primary.copy(alpha = 0.55f)
         Heat.NIGHT_RUN -> scheme.primary
-        Heat.SHORT_REST -> cal.warning
+        Heat.SHORT_REST -> Tone.Caution.color()
     }
 }
 
@@ -270,4 +287,10 @@ private fun HeatLegend(heat: Map<LocalDate, Heat>) {
             }
         }
     }
+}
+
+/** 2.0.0 [RVH-19] 검토 CAL-24: what a year's day of work is called, short enough for a small month: 근무, 출근 (일근·알바), 영업, 일정, 매매. */
+internal fun yearDayWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
+    com.bamnat.core.work.WorkStyle.DAY, com.bamnat.core.work.WorkStyle.HOURLY -> "출근"
+    else -> DayGroupKey.workTitle(style)
 }

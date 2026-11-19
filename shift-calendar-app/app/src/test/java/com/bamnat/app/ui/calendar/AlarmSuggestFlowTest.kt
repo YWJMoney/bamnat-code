@@ -12,6 +12,7 @@ import com.bamnat.core.diag.DiagEvents
 import com.bamnat.core.model.AlarmSpec
 import com.bamnat.core.model.ShiftOverride
 import com.bamnat.core.model.ShiftType
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
@@ -39,7 +40,7 @@ import java.time.ZoneId
 class AlarmSuggestFlowTest {
     private val c get() = ApplicationProvider.getApplicationContext<BamnatApp>().container
     private val repo get() = c.scheduleRepository
-    private val today = LocalDate.now()
+    private val today = Today.date()
     private var day = 0L
     private var night = 0L
 
@@ -55,7 +56,7 @@ class AlarmSuggestFlowTest {
         }
     }
 
-    private fun millis(t: java.time.LocalDateTime) = t.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    private fun millis(t: java.time.LocalDateTime) = t.atZone(Today.zone()).toInstant().toEpochMilli()
 
     private suspend fun find(vm: CalendarViewModel) =
         vm.findAlarmSuggestion(repo.snapshot.first(), c.settingsRepository.current, emptyList(), today)

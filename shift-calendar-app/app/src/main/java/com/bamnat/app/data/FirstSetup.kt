@@ -58,19 +58,22 @@ class FirstSetup(
          * screen does not come up for the moment of the save. 1.37 PC 270fc15e: it did, and took the screen the user was on with it.
          */
         quiet: Boolean = false,
+        /** [RVH-28] 검토 WORK-04 처음 설정 다시 받기: the shifts the calendar has keep their alarms, color and sound by name. */
+        keep: Boolean = false,
     ): SetupDraft = lock.withLock {
-        val style = requireNotNull(draft.style) { "A setup without a kind of work" }
+        // [RVG-16] A setup filled from a 근무표 link saves the kind of work its summary was told.
+        val style = requireNotNull(draft.savedStyle) { "A setup without a kind of work" }
         val marked = draft.copy(committing = true, later = quiet)
         withContext(Dispatchers.IO) {
             drafts.save(marked)
             drafts.flush()
         }
-        val saved = schedule.applySetup(marked, today())
+        val saved = schedule.applySetup(marked, today(), keep = keep)
         keepCompany(company(), marked, used)
         settings.update {
             it.copy(workStyle = style, setupLater = false, rosterMonthly = marked.rosterMonthly && style == WorkStyle.SHIFT,
                 longPress = firstHold(it, style),
-                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장 휴무일 근무 지정.
+                // 1.39 PC eae4e024: 일근 starts with 대근 folded (잔업·특근 on the day sheet), turned on again in 연장·휴무일 근무 지정.
                 extraKinds = if (style == WorkStyle.DAY) it.extraKinds.forDayWork() else it.extraKinds)
         }
         drafts.clear()
@@ -137,9 +140,10 @@ class FirstSetup(
             } else if (source?.kind == SetupSource.Kind.PUBLIC) {
                 // [SPAT-03] From a public row: its own way on (pay, then the plaza as '공개 자료 확인·고침'), not the hand-made invite,
                 // so one card asks, not two. The order is the one saved, as the user may have changed it in the setup.
-                val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept)
+                val cycle = PublicCycles.byId(source.id.orEmpty()) ?: PublicCycles.provided(source.name, source.dept, source.site)
                 val codes = PublicCycleFiles.codesOf(cycle, marked)
-                store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis()))
+                store.setPublicUse(PublicUse(cycle.id, cycle.company, cycle.formKey, codes, PublicCycleFiles.picked(cycle, codes), Today.millis(),
+                    site = if (cycle.id.isEmpty()) cycle.site else ""))
                 store.setDraft(null)
                 store.setHandMade(false)
             } else if (marked.companyName.isNotBlank()) {

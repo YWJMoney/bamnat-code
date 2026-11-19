@@ -4,6 +4,7 @@ import com.bamnat.core.leave.HourlyLeave
 import com.bamnat.core.ops.PolicyConsent
 import com.bamnat.core.ops.ServerSwitch
 import com.bamnat.core.work.WorkStyle
+import java.time.LocalDate
 
 /**
  * [FLAG-05] The book: every dark-merged row the app knows, in the order the developer app and 진단 list them. The
@@ -33,16 +34,57 @@ object FlagCatalog {
     const val STATS_KIND = "stats.kind"
     /** 1.39 [OBS2-08]: which features were used on a day the phone came back to within 7·30 days, once 처리방침 3.12 names it. */
     const val STATS_KEEP = "stats.keep"
+    /** 1.40 [DISC-06]: the four daily totals of '안 써 본 기능 알려 주기' (보임·열어 봄·나중에·그만 보기, 기능 이름 없이), once 처리방침 3.13 names them. */
+    const val STATS_DISC = "stats.disc"
+    /** 2.0.0 [RVL-90] (검토 I12c-03, 처리방침 3.14 문장표 6): 앱이 멈춘 곳(밤낮 코드 위 다섯 줄·줄인 값·종류)의 하루 횟수, 사용 통계를 켠 분만. */
+    const val STATS_CRASH = "stats.crash"
+    /** 1.40 [DISC-06]: the 처리방침 판 that first names the four totals (사용자 결정 2026-11-11 '합계 4가지만'). */
+    const val DISCOVER_POLICY = "3.13"
+    /** 2.0.0 [RVQ-56] 검토 T21-02: 기능 횟수를 일하는 방식(유형)별로도, 처리방침 3.14(30일 줄 4줄)가 적은 날부터. */
+    const val STATS_KIND_USE = "stats.kind_use"
+    /** 2.0.0 [RVQ-56] 검토 SX-03: 장터 작품을 입은 뒤 30분 안에 뺐는지·글자 크기를 되돌렸는지의 작품별 하루 합계, 처리방침 3.14(30일 줄 7줄)부터. */
+    const val MARKET_WEAR = "market.wear"
+    /** 2.0.0 [RVQ-56] 위 둘을 처음 적는 처리방침 판(30일 줄이라 관리자 앱 일정의 3.14 시행일에 12-21을 넣어요, O 11-19). */
+    const val STATS_314_POLICY = "3.14"
+    /** 2.0.0 [RVQ-59] 검토 I22c-03: 장터 '쓰는 분·7일 유지'를 누구인지 모르는 하루 표로 한 사람 한 번만 세기(표 지문 30일), 처리방침 3.15부터. */
+    const val MARKET_FAIR_COUNT = "market.fair_count"
+    /** 위를 처음 적는 처리방침 판(사용자 11-19 카드, 2.0 범위 변경 뒤 2.1에서 마무리, 문장은 3.15 카드 답 뒤). 관리자 앱 일정에 3.15 날짜를 넣는 날부터예요. */
+    const val TEAM_315_POLICY = "3.15"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
     const val DIAG_OBSERVE = "diag.observe"
     /** 1.33 [SHR-20]: a coworker's 근무표 링크 carries the company setup (no amounts), once 처리방침 3.7 names it. */
     const val SHARE_SETUP = "share.setup"
     /** 1.37 [SHR-31][SHR-32] 묶음 E: a 근무표 링크 also carries the sharer's 테마 and 근무 설정 (no amounts), once 처리방침 3.11 names them. */
     const val SHARE_LOOK = "share.look"
+    /** 2.0.0 [RVG-38] HQ-64 B안: a 근무표 링크 says what it is in the sender's word (근무표·영업일·일정·달력), once 처리방침 3.14 names it. */
+    const val SHARE_WORD = "share.word"
+    /** 2.0.0 [RVG-38] The 처리방침 판 that would name the link's word (총괄 11-13: 3.14 범위 카드, 답이 '넣지 않기'면 보내는 쪽을 걷어 내요). */
+    const val SHARE_WORD_POLICY = "3.14"
+    /**
+     * 2.0.0 [RVL-80] 처리방침 3.14 문장표 9: '회사 설정 보내기' also carries the roster's codes as this calendar reads them (the code
+     * letters and the company's kind-of-work names, 20 at most; no person, no date), so a coworker's roster photo reads the same.
+     */
+    const val SHARE_DUTY_CODES = "share.duty_codes"
     /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
     const val RECIPE_PUBLISH = "recipe.publish"
+    /** 2.0.0 [RVM-21] MKT-32: the 장터 cards' small fonts come from our public files (GitHub Pages), once 처리방침 3.13 names it. */
+    const val CARD_FONTS = "market.cardfonts"
+    /** 2.0.0 [RVM-21] The 처리방침 판 whose 7-day line names where the card fonts come from (총괄 11-12: 게시일 + 7일). */
+    const val CARD_FONT_POLICY = "3.13"
+    /** 2.0.0 [RVJ-81] 결정 5: 급여 설정의 생년(선택, 휴대폰 안), once 처리방침 3.14's 7-day line names it. */
+    const val PAY_BIRTH_YEAR = "pay.birthyear"
+    /** 2.0.0 [RVJ-82] 결정 3: '명세서로 맞춰 본 분 n명' on a version's card, once 처리방침 3.14 names it among what a card shows. */
+    const val SLIP_COUNT = "company.slipcount"
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82][RVJ-83] The 처리방침 판 that names all three (O's 3.14 문장표 12·13·14번). 생년 and 명세서 수 are 7-day lines and
+     * wait for [PolicyConsent.REVISION14_EFFECTIVE] (게시일 + 7일, by the server's clock) alone, as 3.13's 7-day row does (3.14 asks no phone, so
+     * a 3.14 hold would keep every phone installed before the 게시일 off until the 30-day day); 앱으로 받는 팀원 수 is the 30-day line, the 판's own day.
+     */
+    const val PAY_314_POLICY = "3.14"
+    /** 2.0.0 [RVJ-83] SPREAD-38: '앱으로 받는 팀원 n명' for a 팀 리더 (3명부터, 숫자만), once 처리방침 3.14's 30-day line names the mark. */
+    const val TEAM_APP_COUNT = "team.app_count"
     /** 1.34 [RCP-37] 좋아요·안좋아요 (with a reason) on recipes and their talk, once 3.8 names it. */
     const val RECIPE_VOTE = "recipe.vote"
     /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
@@ -63,6 +105,11 @@ object FlagCatalog {
     const val PLAZA_FIX_REQUEST = "plaza.fix_request"
     /** 1.39 [CARE-01~06] 마을 돌봄(부드러운 경고 → 의견 쉬기·마을 쉬기, 확인한 것만 세는 단계), once 처리방침's next version names it. */
     const val COMMUNITY_CARE = "community.care"
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-02 (사용자 결정 2026-11-12): '운영자가 확인한 것만 센다'만 처리방침 3.12 시행일(11-09)부터, 경고·쉬기는
+     * [COMMUNITY_CARE]대로 12-09부터. 서버만 봐요(신고로 가려진 것은 운영자가 가린 채 둘 때 세요).
+     */
+    const val COMMUNITY_CONFIRMED = "community.confirmed"
     /** 1.39 [PLZC-01~16] 광장을 사람 먼저로: 이야기 흐름 첫 화면, 근무 태그(준 블라인드), 나도요, 렌즈 칩, once 처리방침 3.12 names the tag. */
     const val PLAZA_PEOPLE = "plaza.people"
     /** 1.39 G5-N4 가족 링크에 계획한 잠 시간(켜기 선택), once 처리방침 3.12 names it. */
@@ -76,8 +123,10 @@ object FlagCatalog {
     const val FREE_WHY = "프로 기능이라 정식 출시 뒤에는 구독한 휴대폰만 쓰는 게 기본이에요."
     const val TYPE_PREFIX = "type."
 
+    // 2.0.0 [RVN-24] 검토 T22c-06: the admin app calls 아르바이트·시급 '알바' everywhere (관측 유형별 흐름, 개발사항, 자동 순환), so the
+    // flag names and conditions too (was '시급' here and in FlagEval.TYPE_WORDS: one kind of work under two names).
     private val TYPE_NAMES = mapOf(
-        WorkStyle.SHIFT to "교대", WorkStyle.DAY to "일근", WorkStyle.HOURLY to "시급",
+        WorkStyle.SHIFT to "교대", WorkStyle.DAY to "일근", WorkStyle.HOURLY to "알바",
         WorkStyle.FIELD to "현장", WorkStyle.BUSINESS to "자영업", WorkStyle.INVEST to "투자",
     )
 
@@ -137,6 +186,11 @@ object FlagCatalog {
     const val FIX_REQUEST_POLICY = "3.12"
     /** 1.39 [CARE-01] The 처리방침 version 1.39 ships with (공유 급여 보완 요청과 한 판); its dates come from the 관리자 앱 일정. */
     const val CARE_POLICY = FIX_REQUEST_POLICY
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-03: 처리방침 9항과 광장 운영 규칙 머리말이 약속한 마을 쉬기 날(모든 이용자 2026-12-09). 실서버 덮어쓰기 한 줄이
+     * 아니라 코드 조건으로 지켜요(덮어쓰기를 지우거나 기본값으로 되돌려도 그 전에는 켜지지 않아요).
+     */
+    val CARE_FROM: LocalDate = LocalDate.of(2026, 12, 9)
     /** 1.39 [PLZC-10] 광장 근무 태그: the same 3.12 (1.39 총괄 11-07). */
     const val PEOPLE_POLICY = FIX_REQUEST_POLICY
 
@@ -281,6 +335,30 @@ object FlagCatalog {
     const val SHARE_LOOK_POLICY = PolicyConsent.SHARE_LOOK_VERSION
 
     /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안 (D RVD-32 #514, 총괄 11-13): a 근무표 링크 carries one more word, what the sender's own app calls
+     * it ([com.bamnat.core.work.scheduleWord]: 근무표·영업일·일정·달력), so a shop that sends its days only is 영업일 and an investor's 달력
+     * on the web page and in the receiving app. It is a new field the share server keeps, so it waits for 처리방침 3.14, which is not
+     * in the server calendar yet: the row stays off until the admin app gives 3.14 its day. Reading a link's word needs no flag.
+     */
+    val SHARE_WORD_FLAG = Flag(
+        SHARE_WORD, "링크에 보낸 사람 유형 낱말 담기",
+        what = "근무표 링크에 보낸 사람 앱이 부르는 이름 하나(근무표·영업일·일정·달력 가운데 하나)를 함께 담아요. 받는 웹 페이지와 받는 앱이 날짜만 보낸 가게 링크도 ‘영업일’, 투자 달력은 ‘달력’으로 불러요. 다른 정보는 담지 않아요.",
+        whyOff = "공유 서버에 새로 남는 칸이라 처리방침 3.14의 시행일부터 서버 시각으로 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣기 전에는 꺼져 있고 링크에 담지 않아요(받은 링크의 낱말을 읽는 것은 그 전에도 해요).",
+        basis = Basis(policy = SHARE_WORD_POLICY, requirement = "RVG-38", note = "2.0.0 검토 HQ-64 B안, 공유 서버 RVD-32"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    val SHARE_DUTY_CODES_FLAG = Flag(
+        SHARE_DUTY_CODES, "회사 설정 파일에 근무표 약어 담기",
+        what = "‘회사 설정 보내기’를 누를 때 이 달력이 근무표를 읽는 약어(약어 글자와 그 회사의 근무 이름, 20개까지)를 함께 담아요. 받은 동료의 근무표 사진이 첫 달부터 같은 약어로 읽혀요. 사람 이름·날짜는 담지 않아요.",
+        whyOff = "회사 설정 파일에 새로 담기는 칸이라 처리방침 3.14의 30일 줄 시행일부터 서버 시각으로 저절로 켜져요. 그 전에는 담지 않아요(받은 파일의 약어를 읽는 것은 그 전에도 해요).",
+        basis = Basis(policy = SHARE_WORD_POLICY, requirement = "RVL-80", note = "2.0.0 검토 I07bc-02, 처리방침 3.14 문장표 9"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
      * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
      * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
      * its reason, a post in a recipe's talk — waits for 처리방침 3.8 (게시 2026-10-30, 시행 2026-11-29, 1-4항).
@@ -291,6 +369,67 @@ object FlagCatalog {
         whyOff = "기본으로 켜 둬요. 레시피에 문제가 생기면 관리자가 잠시 강제로 끌 수 있고, 그동안 앱은 ‘잠시 쉬고 있어요’로 보여요.",
         basis = Basis(policy = "3.8 1-4항", decision = "D109", requirement = "RCP-21", note = "1.34 나눔 판"),
         conditions = emptyList(), default = true, since = "1.34.0", group = FlagGroup.SERVER,
+    )
+
+    /**
+     * 2.0.0 [RVM-21] MKT-32 (사용자 카드 11-12 '우리 쪽에서 글꼴 내주기'): the 장터 cards' small fonts (letters of the cards only) come
+     * from our public files, checked by sha256. Asking our GitHub Pages is a new place the phone reaches, named in 처리방침 3.13's 7-day
+     * line, so it waits for that line's day; until then the cards draw in the phone's fonts as before 2.0.0 (총괄 11-12).
+     * 총괄 11-12 (나): the day is [PolicyConsent.REVISION_EFFECTIVE] (게시일 + 7일, moved with it by `tools/legal_dates.py`), not the
+     * server calendar's 3.13 날짜, which is the 30-day line (12-12). 3.13 has no consent card, so no [Condition.Policy] hold either (its
+     * hold would end on the 30-day day too). Judged by the server's clock like every LEGAL row.
+     */
+    val CARD_FONTS_FLAG = Flag(
+        CARD_FONTS, "장터 카드 글꼴 받기",
+        what = "장터 목록·작품 상세·예시로 보기에서 작품 카드의 글꼴을 밤낮 공개 자료(GitHub Pages)에서 받아요. 카드 글자만 담은 작은 글꼴이고, 앱에 적힌 sha256과 같을 때만 써요. 한 번 받으면 휴대폰에 남아요.",
+        whyOff = "처리방침 3.13의 7일 줄 시행일(${PolicyConsent.REVISION_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 카드를 휴대폰 글꼴로 그리고 공개 자료에도 Google에도 묻지 않아요.",
+        basis = Basis(policy = "3.13", requirement = "RVM-21", note = "2.0.0 장터 카드 글꼴(MKT-32)"),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION_EFFECTIVE)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVJ-81] 결정 5 (G3-B5, 처리방침 3.14 13번 '생년(선택, 휴대폰 안)', 7일 줄): the pay setup asks a 생년 so 만 60세 국민연금 and 65세 이후
+     * 고용의 고용보험 come off 예상 실수령 by themselves ([com.bamnat.core.pay.InsuranceAge]). Nothing is sent; the field is shown from the day
+     * the 처리방침 names it. Until O's 3.14 constants are in (O 11-19: `PolicyConsent.REVISION14_EFFECTIVE`, 게시일 + 7일), it waits for the
+     * calendar's 3.14 day (the 30-day line), which is later, never earlier, than the page says.
+     */
+    val PAY_BIRTH_YEAR_FLAG = Flag(
+        PAY_BIRTH_YEAR, "급여 설정에 생년 적기",
+        what = "급여 설정의 ‘떼지 않는 보험’에 생년(선택)을 적으면 만 60세 국민연금과 65세 이후 새로 일한 곳의 고용보험을 예상 실수령에서 저절로 빼요. 생년은 휴대폰 안 급여 설정과 직접 만든 백업에만 있고 보내지 않아요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 지금처럼 ‘떼지 않는 보험’을 직접 골라요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-81", note = "2.0.0 결정 5, 3.14 문장표 13번"),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVJ-82] 결정 3 (공유급여 3-3, 처리방침 3.14 12번): a version's card in '지난달 명세서로 맞추기' says how many matched it on a payslip
+     * (the count the server keeps since 1.32 [PAYA-06], no amounts). Nothing new is sent; 3.14 names it among what a card shows (O 문장표: 7일 줄,
+     * J puts it behind the 3.14 day).
+     */
+    val SLIP_COUNT_FLAG = Flag(
+        SLIP_COUNT, "판 카드에 명세서로 맞춰 본 분 수",
+        what = "‘지난달 명세서로 맞추기’에서 판마다 ‘명세서로 맞춰 본 분 n명’을 보여요. 서버가 1.32부터 세는 명세서 확인 표시의 수이고 금액은 없어요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 판 카드에 맞아요 수만 보여요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-82", note = "2.0.0 결정 3, 3.14 문장표 12번"),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번, 30일 줄, 사용자 11-19 '16줄 모두'): a member's app that puts a 팀 리더's link into its own
+     * calendar by itself (자동 반영) leaves one mark on that link on the share server (the hash of a random word only that phone keeps; no
+     * name, nothing about the phone), and the leader reads how many of the team's links are read so: one number, only from 3. The share
+     * server keeps nothing before its own 3.14 switch ([RVQ-19] `POLICY_314_FROM`) either.
+     */
+    val TEAM_APP_COUNT_FLAG = Flag(
+        TEAM_APP_COUNT, "리더에게 앱으로 받는 팀원 수",
+        what = "팀원이 리더의 근무표 링크를 앱으로 받아 ‘바로 내 달력에 넣기’를 켜면 링크에 ‘앱으로 받음’ 표시 하나를 두고, 리더에게 앱으로 받는 팀원 수를 3명부터 숫자만 보여요. 이름·기기 정보는 없고 링크와 함께 지워져요.",
+        whyOff = "처리방침 3.14의 시행일(30일 줄)부터 서버 시각으로 저절로 켜져요. 그 전에는 표시를 남기지 않고 리더에게 숫자도 보이지 않아요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-83", note = "2.0.0 SPREAD-38, 3.14 문장표 14번"),
+        conditions = listOf(Condition.Date(policy = PAY_314_POLICY), Condition.Policy(PAY_314_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
     private fun recipeLegal(key: String, name: String, what: String, req: String) = Flag(
@@ -321,6 +460,9 @@ object FlagCatalog {
      * 1.38 [P3-01] Phase 3 (사용자 2026-11-05 "1.38에서 개발 시작", 결정 P3-D1 B: 꺼진 채 개발, 켜는 건 관문 뒤). Each row waits for a fact
      * only the developer confirms in the admin app (파일럿 시작, 워치 수면 확인); until then only an admin phone given 미리 보기 sees it.
      * None sends anything new to a server (설계 1-1 원칙 1): 팀 표·직원 정보·잠은 휴대폰 안, a member's link is today's 근무표 링크.
+     * 2.0.0 [RVL-63] (검토 DATA-19) Not quite: 팀원 근무 링크 carry the members' names, 출퇴근·서명 링크 a staff member's name, and
+     * 지금 자는 중 the sleep state, to the share server. Those three rows are [Risk.LEGAL] now, so a force-on in the admin app or a preview
+     * keeps 3.11's consent and reads the server's date, as the rule for rows that send something new says (shift-calendar-app/CLAUDE.md).
      */
     /**
      * 1.38 Phase 3 (사용자 2026-11-05 C안 "모든 기능을 해당 일에 푸는 거야, 내가 따로 지정하면 그날에"): every Phase 3 row opens on
@@ -340,16 +482,16 @@ object FlagCatalog {
         TEAM_LEADER, "리더 팀 근무표",
         what = "달력 › 도구 › ‘내 팀 근무표 짜기’(모든 조 위 막대에도 있어요)에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일, 관리자 앱 처리방침 날짜로 옮겨요)에 다른 기능과 함께 켜져요(사용자 2026-11-05 C안). 그 전에는 미리 보기를 받은 관리자 휴대폰에만 보여요.",
-        basis = Basis(decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     val BOSS_PAYROLL_FLAG = Flag(
         BOSS_PAYROLL, "사장님 급여 대장",
-        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있어요.",
+        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있고, 출퇴근·계약서 서명 링크를 만들 때만 그 직원 이름이 링크와 함께 공유 서버에 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일)에 자영업 달력에서 켜져요(사용자 2026-11-05 C안). 그 전에는 지금 ‘직원 인건비’ 그대로예요.",
-        basis = Basis(decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
-        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, since = "1.38.0",
+        basis = Basis(policy = "3.11", decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
+        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, risk = Risk.LEGAL, since = "1.38.0",
         group = FlagGroup.PHASE3,
     )
 
@@ -381,8 +523,8 @@ object FlagCatalog {
         SLEEP_SHARE, "지금 자는 중 나누기",
         what = "달력을 공유한 사람에게 ‘지금 자는 중 · 14:10쯤 깸’ 한 줄을 보여 줘요. 공유 링크마다 켜고 끌 수 있어요.",
         whyOff = "공유 서버로 잠 상태(자는 중·깰 시각)를 새로 보내니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
-        basis = Basis(requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     /**
@@ -468,6 +610,70 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 1.40 [DISC-06] (사용자 결정 2026-11-11 '측정은 합계 4가지만'): '안 써 본 기능 알려 주기' 카드가 그날 몇 번 보였는지·열어 봤는지·나중에를
+     * 눌렀는지·그만 보기를 눌렀는지를 이미 동의한 사용 통계에 날마다 횟수로만 실어요. 어떤 기능을 알렸는지와 휴대폰 구별은 보내지 않아요.
+     * 처리방침 3.13의 시행일에 저절로 켜지고, 그 전에는 세지도 보내지도 않아요(카드는 이것 없이도 휴대폰 안에서만 돌아요).
+     */
+    val STATS_DISC_FLAG = Flag(
+        STATS_DISC, "안 써 본 기능 카드 합계 보내기",
+        what = "사용 통계를 켠 휴대폰이 ‘안 써 본 기능 알려 주기’ 카드가 그날 보인 횟수·열어 본 횟수·나중에를 누른 횟수·그만 보기를 누른 횟수만 보내요. 관리자 앱이 그만 보기 비율로 빈도와 문구가 알맞은지 봐요. 어떤 기능을 알렸는지와 휴대폰 구별은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 4가지 늘어 처리방침 3.13의 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.13 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.13 1-9항", requirement = "DISC-06", note = "1.40 안 써 본 기능 알려 주기 (사용자 결정 2026-11-11 '합계 4가지만')"),
+        conditions = listOf(Condition.Date(policy = DISCOVER_POLICY), Condition.Policy(DISCOVER_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "1.40.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 2.0.0 [RVL-90] (검토 I12c-03 '멈춤 신호를 문의 없이 개발로', 처리방침 3.14 문장표 6, 1-9항 ⑩): 앱이 닫히거나 응답이 없었을 때 그 일이
+     * 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류, 그날 횟수(하루 5가지까지)를 사용 통계에 실어요. 오류 글·휴대폰 모델·설치 번호·
+     * 시각은 없어요. 3.14의 30일 줄 시행일에 서버 시각으로 저절로 켜지고, 그 전에는 세지도 보내지도 않아요.
+     */
+    val STATS_CRASH_FLAG = Flag(
+        STATS_CRASH, "앱이 멈춘 곳 횟수 보내기",
+        what = "사용 통계를 켠 휴대폰이 앱이 닫히거나 응답이 없었던 날, 그 일이 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류(닫힘·응답 없음), 그날 횟수를 하루 5가지까지 보내요. 관리자 앱 › 숫자 › 개선 신호에 새 판에서 생긴 멈춤이 떠요. 오류 글·휴대폰 모델·설치 번호·시각은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.14(1-9항 ⑩)의 30일 줄 시행일에 서버 시각으로 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "$SHARE_WORD_POLICY 1-9항", requirement = "RVL-90", note = "2.0.0 검토 I12c-03, 처리방침 3.14 문장표 6"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 2.0.0 [RVQ-56] 검토 T21-02 (처리방침 3.14 30일 줄 4줄, 사용자 '16줄 모두' 11-19): 사용 통계를 켠 휴대폰이 보내는 기능 횟수를 일하는
+     * 방식별로도 세요. 서버는 날짜·판·유형·기능마다 휴대폰 수만 더하고, 휴대폰을 구별하는 값은 남기지 않아요. 3.14 시행일 전에는 받지 않아요.
+     */
+    val STATS_KIND_USE_FLAG = Flag(
+        STATS_KIND_USE, "기능 횟수 유형별로 세기",
+        what = "사용 통계를 켠 휴대폰만, 기능 횟수를 일하는 방식(교대·일근·알바·현장·가게·투자)별로도 세요. 서버에는 날짜·판·유형·기능별 휴대폰 수만 남아요. 관리자 앱이 가게·투자 유형이 어느 기능에서 빠지는지 봐요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.14의 30일 줄 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 유형별 기능 횟수를 받지 않아요.",
+        basis = Basis(policy = "3.14 1-9항", requirement = "T21-02", note = "3.14 4줄"),
+        conditions = listOf(Condition.Date(policy = STATS_314_POLICY), Condition.Policy(STATS_314_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
+    /**
+     * 2.0.0 [RVQ-56] 검토 SX-03 (처리방침 3.14 30일 줄 7줄): 장터 작품을 입은 휴대폰이 30분 안에 다시 뺐는지, 글자 크기를 바로 되돌렸는지를
+     * 작품별·날마다 합계로만 보내요(휴대폰 구별 없음). 관리자 앱이 안 읽히는 작품을 개선 신호로 찾아요. 3.14 시행일 전에는 받지 않아요.
+     */
+    val MARKET_WEAR_FLAG = Flag(
+        MARKET_WEAR, "장터 입은 뒤 숫자 보내기",
+        what = "사용 통계를 켠 휴대폰만, 장터 작품을 입은 뒤 30분 안에 뺐는지·글자 크기를 되돌렸는지를 작품별·날마다 합계로 보내요. 휴대폰 구별은 없어요. 관리자 앱이 바로 벗는 작품을 찾아 만든 분과 함께 고쳐요.",
+        whyOff = "장터 숫자 항목이 늘어 처리방침 3.14의 30일 줄 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "3.14 1-9항", requirement = "SX-03", note = "3.14 7줄"),
+        conditions = listOf(Condition.Date(policy = STATS_314_POLICY), Condition.Policy(STATS_314_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
+    /** 2.0.0 [RVQ-59] 회사 서버가 하루 표를 서명해 주고, 앱이 그 표로 '쓰는 분'을 보내요. 켜지기 전에는 앱이 표를 받지도 보내지도 않아요. */
+    val MARKET_FAIR_COUNT_FLAG = Flag(
+        MARKET_FAIR_COUNT, "쓰는 분 한 사람 한 번만 세기",
+        what = "장터 작품의 '쓰는 분'·'7일 유지'를 보낼 때, 서버가 누구 것인지 모르게 서명한 하루 표를 함께 보내 한 사람을 한 번만 세요. 서버에는 표의 지문과 작품 번호·날짜만 30일 남고 휴대폰과 잇지 않아요.",
+        whyOff = "표의 지문을 30일 두는 것을 처리방침 3.15가 적은 뒤에 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.15 날짜를 넣으면 그날부터예요. 그 전에는 지금처럼 하루 합계와 네트워크 한도로 세요.",
+        basis = Basis(policy = "3.15 1-9항", requirement = "I22c-03", note = "사용자 11-19 카드 '둘 다 2.0.0에'"),
+        conditions = listOf(Condition.Date(policy = TEAM_315_POLICY), Condition.Policy(TEAM_315_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -477,10 +683,24 @@ object FlagCatalog {
     val COMMUNITY_CARE_FLAG = Flag(
         COMMUNITY_CARE, "마을 돌봄(경고·쉬기)",
         what = "마을에서 운영 원칙에 어긋난 글은 운영자가 확인한 것만 세고, 60일 안 1번은 안내, 2번은 경고, 3번부터 며칠 쓰는 횟수가 줄어요. 운영자는 경고를 먼저 보낸 뒤 1~30일 의견 쉬기·마을 쉬기를 걸 수 있어요. 앱은 마을을 열 때 안내를 한 번 보여 주고, 쉬는 동안 마을 맨 위에 한 줄로 알려요.",
-        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적고 그 시행일에 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번)이 그대로예요.",
-        basis = Basis(policy = "3.12 1-4항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07)"),
-        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Policy(CARE_POLICY)),
+        whyOff = "경고 기록과 운영자 쉬기를 처리방침 3.12(1-4항)와 광장 운영 규칙 다음 판(6항)에 적었고, 처리방침 9항대로 모든 이용자에게 2026년 12월 9일부터예요. 그 날짜는 코드에 있어 덮어쓰기를 지워도 그 전에는 켜지지 않아요. 그 전에는 신고 누적 쓰기 제한(30일 안 2번, 운영자가 확인한 것만)이 그대로예요.",
+        basis = Basis(policy = "3.12 1-4항·9항", requirement = "CARE-01", note = "1.39 마을 돌봄 (사용자 2026-11-07), 2.0.0 RVD-18 12-09 코드로 (사용자 2026-11-12)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY), Condition.Date(from = CARE_FROM), Condition.Policy(CARE_POLICY)),
         default = false, risk = Risk.LEGAL, since = "1.39.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVD-18] 검토 LEGAL-02 (사용자 결정 2026-11-12 03:50Z): 처리방침 3.12 1-4항 "앱 1.39.0부터(처리방침 3.12 시행일부터)는 운영자가 확인해
+     * 가린 것만 셉니다"를 그 시행일부터 지켜요. 신고로 먼저 가려진 것은 '확인 대기'로 두고, 운영자가 가린 채 두면 그때 세요. 이용자에게 유리한
+     * 쪽이라 미리 알릴 기간이 없어요. 경고·쉬기와 60일 3번 규칙은 [COMMUNITY_CARE_FLAG](12-09)를 따라요.
+     */
+    val COMMUNITY_CONFIRMED_FLAG = Flag(
+        COMMUNITY_CONFIRMED, "신고는 운영자가 확인한 것만 세기",
+        what = "마을에서 신고로 먼저 가려진 글·작품은 쓰기 제한 횟수에 바로 세지 않고, 운영자가 보고 가린 채 두었을 때만 세요. 운영자가 직접 가린 것은 그대로 세요.",
+        whyOff = "처리방침 3.12(1-4항)가 그 시행일부터 이렇게 센다고 적어 그날 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.12 날짜를 넣으면 그날부터예요. 그 전에는 신고로 가려진 것도 바로 셌어요.",
+        basis = Basis(policy = "3.12 1-4항", requirement = "RVD-18", note = "2.0.0 검토 LEGAL-02 (사용자 결정 2026-11-12)"),
+        conditions = listOf(Condition.Date(policy = CARE_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
     /**
@@ -507,9 +727,10 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
-        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG) +
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, SHARE_DUTY_CODES_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_CRASH_FLAG, STATS_KIND_USE_FLAG, MARKET_WEAR_FLAG, CARD_FONTS_FLAG,
+        MARKET_FAIR_COUNT_FLAG, PAY_BIRTH_YEAR_FLAG, SLIP_COUNT_FLAG, TEAM_APP_COUNT_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

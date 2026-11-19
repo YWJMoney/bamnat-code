@@ -49,15 +49,19 @@ object CommuteRecorder {
     private const val REQ_FENCE = 3101
     private const val REQ_FINISH = 3102
     private const val REQ_CHECK = 3103
+    private const val REQ_PLACE = 3104
     /** [DAYW-07] How often a check puts back a geofence lost while the app was not running. */
     const val CHECK_INTERVAL_MILLIS = 12 * 60 * 60 * 1000L
     // A lunch out of the fence runs about an hour; 90 minutes leaves room for it.
     const val LEAVE_WAIT_MINUTES = 90L
     const val CHANNEL_ID = "commute_record_v1"
     private const val NOTICE_ID = 7320
+    private const val PLACE_NOTICE_ID = 7321
     const val ACTION_FENCE = "com.bamnat.app.commute.FENCE"
     const val ACTION_FINISH_LEAVE = "com.bamnat.app.commute.FINISH_LEAVE"
     const val ACTION_CHECK = "com.bamnat.app.commute.CHECK"
+    /** [RVH-35] 검토 U02-09 The time to take the workplace for 다음 출근 때 정하기. */
+    const val ACTION_PLACE = "com.bamnat.app.commute.PLACE"
     /** Location turned back on (or providers changed): the system dropped the geofence, so it is put back. */
     const val ACTION_PROVIDERS_CHANGED = "android.location.PROVIDERS_CHANGED"
     const val ACTION_YES = "com.bamnat.app.commute.YES"
@@ -91,6 +95,8 @@ object CommuteRecorder {
         val s = prefs.current
         watchProviders(context, s.enabled)
         if (s.enabled && s.hasPlace) scheduleCheck(context) else cancelCheck(context)
+        // [RVH-35] 검토 U02-09 Waiting for the next shift to take the workplace.
+        if (s.enabled && !s.hasPlace && s.placeNext) context.appContainer.appScope.launch { schedulePlace(context) } else cancelPlace(context)
         val client = runCatching { LocationServices.getGeofencingClient(context) }.getOrNull() ?: return
         if (!s.enabled || !s.hasPlace || !hasForeground(context) || !hasBackground(context)) {
             runCatching { client.removeGeofences(fenceIntent(context)) }
@@ -161,6 +167,101 @@ object CommuteRecorder {
     fun checkScheduled(context: Context): Boolean = checkIntent(context, create = false) != null
 
     fun fenceKey(s: CommutePrefs.State): String = "${s.lat},${s.lng},${s.radius}"
+
+    private fun placeIntent(context: Context, create: Boolean): PendingIntent? = PendingIntent.getBroadcast(context, REQ_PLACE,
+        Intent(context, CommuteReceiver::class.java).setAction(ACTION_PLACE),
+        PendingIntent.FLAG_IMMUTABLE or if (create) PendingIntent.FLAG_UPDATE_CURRENT else PendingIntent.FLAG_NO_CREATE)
+
+    /** [RVH-35] 검토 U02-09 When the workplace will be taken, read off the calendar, or null with no shift in two weeks. */
+    suspend fun placeTime(context: Context, now: LocalDateTime = Today.dateTime()): LocalDateTime? {
+        val s = CommutePrefs.get(context).current
+        val c = context.appContainer
+        if (c.calendars.get(s.calendarId) == null) return null
+        val resolver = c.calendars.repository(s.calendarId).snapshot.first().resolver
+        return Commute.placeAt(now) { resolver.resolve(it) }
+    }
+
+    /** [RVH-35] 검토 U02-09 Wakes the phone [Commute.PLACE_AFTER_MINUTES] into the next shift; set again after each shift it missed. */
+    suspend fun schedulePlace(context: Context, now: LocalDateTime = Today.dateTime()) {
+        val at = placeTime(context, now) ?: return cancelPlace(context)
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        val pi = placeIntent(context, create = true) ?: return
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(Today.zone()).toInstant().toEpochMilli(), pi)
+    }
+
+    fun cancelPlace(context: Context) {
+        val pi = placeIntent(context, create = false) ?: return
+        context.getSystemService(AlarmManager::class.java)?.cancel(pi)
+        pi.cancel()
+    }
+
+    /** Where the phone is now, or null when it cannot be found (location off, no permission, no fix in time). */
+    @SuppressLint("MissingPermission")
+    suspend fun here(context: Context): android.location.Location? {
+        if (!hasForeground(context)) return null
+        return runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(30_000) {
+                val client = LocationServices.getFusedLocationProviderClient(context)
+                val token = com.google.android.gms.tasks.CancellationTokenSource()
+                kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                    client.getCurrentLocation(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, token.token)
+                        .addOnSuccessListener { cont.resumeWith(Result.success(it)) }
+                        .addOnFailureListener { cont.resumeWith(Result.success(null)) }
+                    cont.invokeOnCancellation { token.cancel() }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /** [RVH-35] 검토 WORK-16 The phone's last known place, cheap (no new fix), for the distance shown on the screen. */
+    @SuppressLint("MissingPermission")
+    suspend fun lastHere(context: Context): android.location.Location? {
+        if (!hasForeground(context)) return null
+        return runCatching {
+            kotlinx.coroutines.withTimeoutOrNull(5_000) {
+                kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+                    LocationServices.getFusedLocationProviderClient(context).lastLocation
+                        .addOnSuccessListener { cont.resumeWith(Result.success(it)) }
+                        .addOnFailureListener { cont.resumeWith(Result.success(null)) }
+                }
+            }
+        }.getOrNull()
+    }
+
+    /**
+     * [RVH-35] 검토 WORK-16·U02-09 The next shift has run [Commute.PLACE_AFTER_MINUTES]: where the phone is becomes the workplace and
+     * the user is told. The phone is already in, so that is this shift's arrival (not a late one at this minute); with no fix it
+     * waits for the shift after.
+     */
+    suspend fun takePlace(context: Context, now: LocalDateTime = Today.dateTime(), found: android.location.Location? = null) {
+        val prefs = CommutePrefs.get(context)
+        val s = prefs.current
+        if (!s.enabled || s.hasPlace || !s.placeNext) return
+        val loc = found ?: here(context)
+        if (loc == null) { schedulePlace(context, now.plusMinutes(1)); return }
+        prefs.setPlace(loc.latitude, loc.longitude)
+        if (openArrival(prefs.current, now) == null) prefs.arrived(now)
+        sync(context)
+        placeNotice(context)
+    }
+
+    private fun placeNotice(context: Context) {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return
+        channel(nm)
+        val text = "출근하고 ${Commute.PLACE_AFTER_MINUTES}분 뒤 있던 곳을 회사로 정했어요. 오늘 퇴근부터 적어요. 다른 곳이면 출퇴근 자동 기록에서 바꿔 주세요."
+        val b = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle("회사 위치를 정했어요")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, REQ_PLACE + 10))
+            .setAutoCancel(true)
+        Notifications.post(context, PLACE_NOTICE_ID, b.build())
+    }
+
+    private fun channel(nm: NotificationManager) = nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "출퇴근 자동 기록", NotificationManager.IMPORTANCE_DEFAULT).apply {
+        description = "회사 위치에 들어오고 나갈 때 출근·퇴근 시각을 적을지 물어봐요"
+    })
 
     /**
      * [DAYW-07] The one way to turn it off (출퇴근 화면, 기능 스위치): the workplace and the day's records go,
@@ -321,7 +422,7 @@ object CommuteRecorder {
         val s = CommutePrefs.get(context).current
         if (c.calendars.get(s.calendarId) == null) return null
         val day = c.calendars.repository(s.calendarId).snapshot.first().resolver.resolve(r.date)
-        return if (r.arrive) Commute.arrive(day, r.at) else Commute.leave(day, r.arrived, r.at)
+        return if (r.arrive) Commute.arrive(day, r.at) else Commute.leave(day, r.arrived, r.at, overtimeSlack = s.overtimeSlack)
     }
 
     private suspend fun propose(context: Context, arrive: Boolean, at: LocalDateTime) {
@@ -329,7 +430,10 @@ object CommuteRecorder {
         val write = plan(context, r) ?: return
         if (write == Commute.Write.None) return
         val s = CommutePrefs.get(context).current
-        if (s.auto) {
+        // [RVH-34] 검토 WORK-15 잔업 goes into the pay: never written when the user said so, and asked once even with 바로 적기.
+        if (write is Commute.Write.Overtime && s.overtime == Commute.OvertimeWay.NONE) return
+        val askOvertime = write is Commute.Write.Overtime && s.overtime == Commute.OvertimeWay.ASK
+        if (s.auto && !askOvertime) {
             apply(context, r.date, write)
             notify(context, "${what(write)} 적었어요", "${if (arrive) "회사에 도착" else "회사에서 나감"} ${Fmt.time(at.toLocalTime())}. 달력에서 언제든 고칠 수 있어요.", r, ask = false)
         } else {
@@ -384,9 +488,7 @@ object CommuteRecorder {
 
     private fun notify(context: Context, title: String, text: String, r: Record, ask: Boolean) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
-        nm.createNotificationChannel(NotificationChannel(CHANNEL_ID, "출퇴근 자동 기록", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "회사 위치에 들어오고 나갈 때 출근·퇴근 시각을 적을지 물어봐요"
-        })
+        channel(nm)
         val tag = tag(r.arrive, r.date)
         val b = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
@@ -447,6 +549,7 @@ class CommuteReceiver : BroadcastReceiver() {
                     }
                     CommuteRecorder.ACTION_FINISH_LEAVE -> CommuteRecorder.finishLeave(context)
                     CommuteRecorder.ACTION_CHECK -> runCatching { CommuteRecorder.catchUp(context) }
+                    CommuteRecorder.ACTION_PLACE -> runCatching { CommuteRecorder.takePlace(context) }
                     CommuteRecorder.ACTION_PROVIDERS_CHANGED -> {
                         // Only location coming back on needs the geofence put back.
                         if (CommuteRecorder.locationOn(context) && CommutePrefs.get(context).current.enabled) runCatching { CommuteRecorder.sync(context, force = true) }

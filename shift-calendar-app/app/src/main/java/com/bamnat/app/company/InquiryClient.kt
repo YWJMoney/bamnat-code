@@ -20,8 +20,16 @@ enum class InquiryKind(val code: String, val label: String, val hint: String, va
     IDEA("idea", "건의·제안", "있었으면 하는 기능이나 바뀌면 좋을 점"),
     COMPANY("company", "회사 방식 알려 주기", "회사의 수당·근무 계산 방식이 앱에 없을 때. 개발자만 봐요", public = false),
     OTHER("other", "그 밖의 이야기", "칭찬이나 불편한 점, 무엇이든"),
-    /** 1.36 [GRW-01] 스튜디오 "원하는 꾸미기가 없나요?": 비슷한 부탁끼리 묶여 셋이 모이면 장터 요청 판에 올라가요. */
-    STUDIO("studio", "원하는 꾸미기 부탁", "스튜디오에 없는 꾸미기·도구가 있을 때. 같은 부탁이 셋 모이면 장터에 올라가요", public = false),
+    /**
+     * 1.36 [GRW-01] 스튜디오 "원하는 꾸미기가 없나요?": 비슷한 부탁끼리 묶여요. 2.0.0 [RVQ-29] 검토 SVC-17: 서로 다른 세 분이 모이면 운영자가
+     * 짧게 다듬어 장터 요청 판에 올려요(저절로 올라가지 않아요).
+     */
+    STUDIO("studio", "원하는 꾸미기 부탁", "스튜디오에 없는 꾸미기·도구가 있을 때. 서로 다른 세 분이 같은 부탁을 하면 운영자가 다듬어 장터에 올려요", public = false),
+    /**
+     * 2.0.0 [RVQ-30] 검토 SVC-21: 결제·환불. 글이 무엇이든 결제 기록으로 남고 나만 봐요(모두의 문의에 나가지 않아요), 사람이 먼저 봐요.
+     * 프로·이용권 화면에서 바로 열어요.
+     */
+    BILLING("billing", "결제·환불", "프로·광고 제거권을 샀는데 안 열리거나, 돈이 나갔거나, 환불이 필요할 때. 나만 보고 운영자가 직접 답해요", public = false),
     ;
 
     companion object {
@@ -29,7 +37,9 @@ enum class InquiryKind(val code: String, val label: String, val hint: String, va
     }
 }
 
-data class InquiryMessage(val fromDeveloper: Boolean, val text: String, val at: Instant)
+data class InquiryMessage(val fromDeveloper: Boolean, val text: String, val at: Instant,
+    /** 2.0.0 [RVO-28] HQ-150: 이 답장과 함께 점검 기록이 갔어요(서버의 diag: true). */
+    val withCheck: Boolean = false)
 
 /**
  * One question and its answers [ADMIN-02]. [status]: open (waiting for the developer), answered or closed.
@@ -60,6 +70,13 @@ data class Inquiry(
     /** 1.39 [LOOP-16] 해결됐나요: 1 해결됐어요, -1 아직이에요, 0 아직 답하지 않음. [askFixed]면 두 단추를 보여요(고친 판 안내를 받은 뒤). */
     val fixed: Int = 0,
     val askFixed: Boolean = false,
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22-08: '2.0.0에서 고쳤어요. 앱을 2.0.0 이상으로 업데이트한 뒤 한 번 봐 주세요.' when the fixed version was
+     * told (or is out), so the asker knows which version to look for; null otherwise.
+     */
+    val fixedLine: String? = null,
+    /** 2.0.0 [RVQ-50] 검토 U22b-01: written to again after the answer, so it waits for the developer again. */
+    val reopened: Boolean = false,
 ) {
     val answers: Int get() = messages.count { it.fromDeveloper }
     val waiting: Boolean get() = status == "open"
@@ -166,6 +183,22 @@ interface InquiryApi {
 
     suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text)
 
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22b-01·T22b-05: more to say with photos (all of one question's photos together at most
+     * [InquiryPhotos.TOTAL]); a server before 2.0.0 takes the words only.
+     */
+    suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = more(device, id, text, requestId)
+
+    /**
+     * 2.0.0 [RVO-28] HQ-150 (PC-201): 답장과 함께 점검 기록([diag], 새 문의의 info.diag와 같은 것). 운영팀이 기록을 부탁한 답에
+     * 보고서를 글로 붙여 넣으면 2,000자를 넘어서, 새 문의처럼 '점검 기록도 보내기'로 따로 보내요.
+     */
+    suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): Inquiry = more(device, id, text, requestId)
+
+    /** Both at once: photos and a check record. A fake that knows only one of them gets that one. */
+    suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>, diag: String?): Inquiry =
+        if (photos.isEmpty()) more(device, id, text, requestId, diag) else more(device, id, text, requestId, photos)
+
     /** 1.36 [PUSH-01] This phone's FCM token for 문의 답 바로 알림, or null to forget it. True when the server can send now. */
     suspend fun pushPhone(device: String, token: String?): Boolean = false
 
@@ -180,6 +213,9 @@ interface InquiryApi {
 
     /** 1.39 [LOOP-17] '나도 겪어요'(on) 또는 되돌리기: 그 뒤의 목록. 누르면 그 문제에 묶인 짧은 문의가 내 문의에 생겨요. */
     suspend fun knownMe(device: String, id: String, on: Boolean): List<KnownIssue> = known(device)
+
+    /** 2.0.0 [RVN-22] 검토 I10bc-01: one question as the server writes it (the day's /api/digest carries the answered ones); null when unread. */
+    fun parse(o: org.json.JSONObject): Inquiry? = null
 }
 
 /**
@@ -220,6 +256,9 @@ class InquiryClient(
         if (info.photos.isNotEmpty()) {
             body.put("photos", org.json.JSONArray(info.photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
         }
+        // 2.0.0 [RVQ-50] 검토 I22bb-02: the same request number in the body too, so a retry whose first answer was too long to keep
+        // (or went to another Worker) is still one question.
+        body.put("key", requestId)
         inquiry(onceRequest(baseUrl, "/api/inquiries", body, requestId = requestId))
     }
 
@@ -259,8 +298,19 @@ class InquiryClient(
 
     override suspend fun more(device: String, id: String, text: String): Inquiry = more(device, id, text, newRequestId())
 
-    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = serverCall {
-        inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", JSONObject().put("text", text.trim()), device, requestId))
+    override suspend fun more(device: String, id: String, text: String, requestId: String): Inquiry = more(device, id, text, requestId, emptyList(), null)
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>): Inquiry = more(device, id, text, requestId, photos, null)
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, diag: String?): Inquiry = more(device, id, text, requestId, emptyList(), diag)
+
+    override suspend fun more(device: String, id: String, text: String, requestId: String, photos: List<ByteArray>, diag: String?): Inquiry = serverCall {
+        val body = JSONObject().put("text", text.trim()).put("key", requestId)
+        if (photos.isNotEmpty()) {
+            body.put("photos", org.json.JSONArray(photos.take(InquiryPhotos.MAX).map { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }))
+        }
+        diag?.takeIf { it.isNotBlank() }?.let { body.put("info", JSONObject().put("diag", it.take(DIAG_MAX))) }
+        inquiry(onceRequest(baseUrl, "/api/inquiries/$id/messages", body, device, requestId))
     }
 
     /** One already gone counts as deleted. */
@@ -340,8 +390,11 @@ class InquiryClient(
     }
 
     private fun messages(o: JSONObject) = o.optJSONArray("messages").objects().map {
-        InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")))
+        InquiryMessage(fromDeveloper = it.optString("from") == "admin", text = it.optString("text"), at = Instant.parse(it.getString("at")),
+            withCheck = it.optBoolean("diag"))
     }
+
+    override fun parse(o: JSONObject): Inquiry? = runCatching { inquiry(o) }.getOrNull()
 
     private fun inquiry(o: JSONObject) = Inquiry(
         id = o.getString("id"),
@@ -362,6 +415,8 @@ class InquiryClient(
         studioGoal = o.optJSONObject("studio")?.optInt("goal") ?: 0,
         fixed = o.optInt("fixed"),
         askFixed = o.optBoolean("askFixed"),
+        fixedLine = o.optStringOrNull("fixedLine"),
+        reopened = o.optBoolean("reopened"),
     )
 
     companion object {
@@ -376,6 +431,16 @@ class InquiryClient(
         const val DIAG_MAX = 6000
         const val PAY_MAX = 3000
         const val SETUP_MAX = 3000
+
+        /**
+         * 2.0.0 [RVO-29] (PC-204) A Google Play order number (GPA.3312-4459-2207-48812, a renewal's "..0" after it) is how a 결제·환불
+         * question is found, and the 결제·환불 example asks for it; it is not an amount, so the five-digit rule does not count it.
+         * The server's inquiryText (company-worker src/inquiries.js PLAY_ORDER) takes it the same way. Amounts still do not go (처리방침 1-3항).
+         */
+        val PLAY_ORDER = Regex("GPA\\.\\d{4}-\\d{4}-\\d{4}-\\d{5}(?:\\.\\.\\d{1,3})?(?!\\d)", RegexOption.IGNORE_CASE)
+
+        /** The text the email·phone·amount check reads: [PLAY_ORDER] taken out. */
+        fun withoutOrder(text: String): String = text.replace(PLAY_ORDER, " ")
     }
 }
 
@@ -396,6 +461,34 @@ class InquiryStore(context: Context) {
         set(v) = prefs.edit().putBoolean("asked", v).apply()
 
     fun seen(id: String): Int = prefs.getInt("seen_$id", 0)
+
+    /**
+     * 2.0.0 [RVN-22] I10ba-03: answers of question [id] already said in a notice, each question its own count (one count for
+     * all, as before, could be held up by another question's answers).
+     */
+    fun told(id: String): Int = prefs.getInt("told_$id", 0)
+
+    /** The answers of [i] neither opened nor said yet. */
+    fun fresh(i: Inquiry): Int = (i.answers - maxOf(seen(i.id), told(i.id))).coerceAtLeast(0)
+
+    /** The questions with an answer neither opened nor said yet ([told] and [seen] both below it). */
+    fun untold(list: List<Inquiry>): List<Inquiry> = list.filter { fresh(it) > 0 }
+
+    /** [list]'s answers so far are said. */
+    fun tell(list: List<Inquiry>) {
+        if (list.isEmpty()) return
+        prefs.edit { list.forEach { putInt("told_${it.id}", it.answers) } }
+    }
+
+    /**
+     * Once, when the counts per question start (2.0.0): what the one count said stays said, so an answer already told is not
+     * told again; when it held less than what is unread now, the rest is told as it comes.
+     */
+    fun startTelling(list: List<Inquiry>, saidBefore: Int) {
+        if (prefs.getBoolean("told_v", false)) return
+        if (saidBefore >= list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }) tell(list)
+        prefs.edit().putBoolean("told_v", true).apply()
+    }
 
     /** 1.38 [EASE-32] Questions already thanked for in 새로 생긴 것 ("보내 주신 의견으로 고쳤어요"), so each is said once. */
     fun thanked(id: String): Boolean = id in prefs.getStringSet("thanked", emptySet()).orEmpty()
@@ -418,6 +511,31 @@ class InquiryStore(context: Context) {
     fun update(list: List<Inquiry>) {
         val n = list.sumOf { (it.answers - seen(it.id)).coerceAtLeast(0) }
         _unread.value = n
+        // 2.0.0 [RVN-22] I10bc-01: each question's answers kept too, so the digest's few questions ([merge]) count with the rest.
+        prefs.edit {
+            putInt("unread", n)
+            putStringSet("ids", list.map { it.id }.toSet())
+            list.forEach { putInt("answers_${it.id}", it.answers) }
+        }
+        // [RVF-02]'s one 'said' count is gone (2.0.0 [RVN-22] I10ba-03): each question keeps its own ([told]).
+    }
+
+    /**
+     * 2.0.0 [RVN-22] 검토 I10bc-01: whether the day's digest may stand in for a whole list ([merge]): every question is known here
+     * (one whole list was read since 2.0.0) and the counts per question have started ([startTelling]).
+     */
+    val merges: Boolean get() = prefs.getBoolean("told_v", false) && prefs.contains("ids")
+
+    /** 2.0.0 [RVN-22] I10bc-01: the questions the day's digest carried (those with a new answer), counted with the rest known here. */
+    fun merge(rows: List<Inquiry>) {
+        if (rows.isEmpty()) return
+        val ids = prefs.getStringSet("ids", emptySet()).orEmpty() + rows.map { it.id }
+        prefs.edit {
+            putStringSet("ids", ids)
+            rows.forEach { putInt("answers_${it.id}", it.answers) }
+        }
+        val n = ids.sumOf { (prefs.getInt("answers_$it", 0) - seen(it)).coerceAtLeast(0) }
+        _unread.value = n
         prefs.edit().putInt("unread", n).apply()
     }
 
@@ -430,7 +548,10 @@ class InquiryStore(context: Context) {
     fun forget(id: String) {
         prefs.edit {
             remove("seen_$id")
+            remove("told_$id")
             remove("reply_$id")
+            remove("answers_$id")
+            putStringSet("ids", prefs.getStringSet("ids", emptySet()).orEmpty() - id)
         }
     }
 
@@ -519,6 +640,9 @@ data class QueuedInquiry(
             info.diag?.let { put("diag", it) }
             info.pay?.let { put("pay", it) }
             info.setup?.let { put("setup", it) }
+            // 2.0.0 [RVN-22] COMP-53: 스튜디오 요구's kind of work and place go with it after the app was closed (photos never
+            // wait on the phone: a question queued with photos goes without them, as the box says).
+            info.studio?.let { put("studio", it) }
             if (!info.public) put("public", false)
             refused?.let { put("refused", it) }
         }
@@ -529,7 +653,7 @@ data class QueuedInquiry(
                 requestId = o.getString("id"), kind = InquiryKind.of(o.optString("kind")), text = o.getString("text"),
                 info = InquiryInfo(o.optString("app"), o.optString("model"), o.optString("android"),
                     diag = o.optStringOrNull("diag"), pay = o.optStringOrNull("pay"), setup = o.optStringOrNull("setup"),
-                    public = o.optBoolean("public", true)),
+                    public = o.optBoolean("public", true), studio = o.optStringOrNull("studio")),
                 at = Instant.parse(o.getString("at")), refused = o.optStringOrNull("refused"),
             )
         }.getOrNull()

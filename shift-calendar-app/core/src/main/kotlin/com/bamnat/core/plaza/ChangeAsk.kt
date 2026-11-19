@@ -22,6 +22,11 @@ object ChangeAsk {
     fun of(base: String?, now: String): Result {
         if (base.isNullOrBlank()) return Result.First
         val rows = runCatching { SetupCompare.changes(base, now) }.getOrElse { return Result.First }
+        return of(rows)
+    }
+
+    /** 2.0.0 [RVN-22] I10bc-03 The differing [rows] (of one part or more, [ShareParts]) as the ask says them. */
+    fun of(rows: List<CompareRow>): Result {
         if (rows.isEmpty()) return Result.Same
         val lines = rows.map { r ->
             when {

@@ -116,8 +116,7 @@ class BBScreenshotTest : ScreenshotBase() {
         val page = runBlocking { c.companyApi.company("c1") }
         var done = false
         vm.apply(page, page.setups.first { it.id == "s1" }, null, withPay = true, done = { done = true }, failed = { error(it) })
-        waitFor(300)
-        assertTrue(done)
+        assertTrue(waitUntil { done }) // [QA-11] the apply ends off the main thread
         assertEquals("s1", c.companyOf(b).store.applied.value?.setup)
         // [PAYG-01] 1.30 BA: the second calendar's pay way waits for its 기본급; 내 달력's has nothing waiting.
         assertEquals("s1", c.companyOf(b).pendingWays.pending.value?.setup)
@@ -179,6 +178,15 @@ class BBScreenshotTest : ScreenshotBase() {
     @Test fun theChipsOnASmallPhone() = shoot("1326_bb_chips_small_big_text", SMALL_PHONE, 2f) {
         val b = twoCompanies()
         board(b)
+        // 2.0.0 [RVN-18] 검토 U10a-04: the chips are one line with 펼치기 at its end (before, a row pushed sideways), so a calendar
+        // that does not fit on a small phone at 200% is one tap away, all of them at once.
+        // 2.0.0 [RVN-22] HQ-115 (Q1이 찾음): the picked chip, wider than the row in one line, is whole where it rests (its calendar over its
+        // company), folded or open.
+        val chip = "편의점 알바 달력의 광장, (주)예시정밀"
+        assertTrue(appears(chip, exact = true))
+        assertTrue("고른 칩이 접힌 줄에서 잘려요", whole(chip, exact = true))
+        tapText("달력 칩 모두 펼쳐 보기", exact = true)
         assertTrue(appears("편의점 알바 · (주)예시정밀", exact = true))
+        assertTrue("고른 칩이 펼친 줄에서 잘려요", whole(chip, exact = true))
     }
 }

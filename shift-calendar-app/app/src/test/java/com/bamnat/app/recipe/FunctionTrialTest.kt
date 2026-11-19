@@ -165,4 +165,84 @@ class FunctionTrialTest {
         assertTrue(c.recipes.pieces.preview(PieceKind.LOGIC, logic, PersonalCalendar.MAIN).none { it.text.contains("하는 일이 같아") })
         assertNotNull("the page's card says it ended", LiveTryOn.ended.value)
     }
+
+    /** 2.0.0 [RVM-46] 검토 RCP-20: ending the trial takes back what the tried work wrote, not what my own buttons wrote meanwhile. */
+    @Test fun endingTheTrialLeavesWhatMyOwnButtonWrote() = runBlocking {
+        val mine = LogicButton("커피값", "☕", ButtonPlace.MONEY, LogicAct(LogicVerb.ADD_MONEY, "커피", 4500))
+        c.settingsRepository.update { it.copy(logic = Logic.encode(Logic(listOf(mine)))) }
+        assertTrue(tryIt())
+        press()
+        LogicRunner.run(c, mine.act, day, LogicRunner.facts(c).scope(day), mine.label)
+        assertEquals(2, money.book.first().entries.size)
+        LiveTryOn.finish(c, keepMine = true)
+        LiveTryOn.settle(c, snack = false)
+        val left = money.book.first().entries
+        assertEquals("내 단추가 적은 커피값은 남아요", listOf(4500L), left.map { it.amount })
+        assertTrue("써 본 단추의 야식은 빠져요", left.none { it.amount == 5000L })
+        assertEquals("내 단추도 그대로", listOf(mine.label), Logic.decode(c.settingsRepository.current.logic).buttons.map { it.label })
+    }
+
+    /**
+     * 2.0.0 [RVM-53] 검토 RCP-21 ① (조건 10): 써 보는 중에 내 규칙을 하나 만들면 `logic` 글이 달라져, 끝낼 때 써 본 단추·규칙이 빠지지 않고
+     * 남았어요. 이제 써 본 작품이 더한 것만 빠지고 그 사이 만든 내 규칙은 남아요.
+     */
+    @Test fun aRuleIMadeWhileTryingStaysAndTheTriedOnesGo() = runBlocking {
+        assertTrue(tryIt())
+        val mine = LogicRule("내 퇴근 메모", RuleTrigger.END, act = LogicAct(LogicVerb.NOTIFY, "수고했어요"))
+        c.settingsRepository.update { it.copy(logic = Logic.encode(Logic.decode(it.logic).let { l -> l.copy(rules = l.rules + mine) })) }
+        LiveTryOn.finish(c, keepMine = true)
+        val l = Logic.decode(c.settingsRepository.current.logic)
+        assertEquals("내가 만든 규칙은 남아요", listOf(mine.name), l.rules.map { it.name })
+        assertTrue("써 본 단추는 빠져요", l.buttons.none { it.label == add.label })
+        // [RVM-54] U09b-04: 끝낸 카드의 '되돌린 것 보기'가 이것을 말해요.
+        val e = LiveTryOn.ended.value!!
+        assertEquals(listOf("수식·규칙·버튼", "메모 틀"), e.back)
+        assertEquals(listOf(add.label, pay.name), e.removed)
+        assertTrue(e.mineRules)
+        assertEquals(listOf("원래대로 돌린 것: 수식·규칙·버튼, 메모 틀", "뺀 단추·규칙: 야식 기록, 야간 끝 수당", "내 단추·규칙이 적은 것은 건드리지 않았어요"),
+            LiveTryOn.details(e))
+    }
+
+    /**
+     * [RVM-53] RCP-21 ②: 써 보는 중에 설정 › 백업을 손으로 저장하면 써 보던 단추·규칙·메모 틀이 든 채 저장돼, 그 백업을 불러오면 넣은 것처럼
+     * 남았어요. 이제 저장 전에 써 보기를 끝내고(내가 적은 것은 남아요) 그렇다고 말해요.
+     */
+    @Test fun aBackupSavedWhileTryingHasNoneOfTheTriedWork() = runBlocking {
+        assertTrue(tryIt())
+        val vm = com.bamnat.app.ui.settings.SettingsViewModel(c)
+        val f = java.io.File(app.cacheDir, "trial-backup.bamnat").apply { delete() }
+        vm.exportTo(app, android.net.Uri.fromFile(f))
+        repeat(100) { if (vm.message.value == null) { org.robolectric.Shadows.shadowOf(android.os.Looper.getMainLooper()).idle(); Thread.sleep(50) } }
+        val said = vm.message.value?.text.orEmpty()
+        assertTrue(said, said.startsWith("‘야식 관리판’ 써 보기는 끝냈어요 · 백업 파일을 저장하고"))
+        assertFalse("써 보기는 끝났어요", FunctionTrial.busy(app))
+        val json = f.inputStream().use { c.backupManager.read(it) }
+        assertFalse("백업에 써 본 단추가 없어요", add.label in json)
+        assertFalse("써 본 메모 틀도 없어요", "야식 메모" in json)
+    }
+
+    /**
+     * [RVM-53] RCP-21 ③: 기능까지 써 보는 동안은 휴대폰의 모든 프로 단추·규칙이 돌았어요(무료인 내 다른 ✦ 단추도). 이제 하루 써 보기처럼
+     * 써 보는 작품 것만 돌아요.
+     */
+    @Test fun tryingAWorkRunsOnlyThatWorksProParts() = runBlocking {
+        c.settingsRepository.update { it.copy(previewTier = com.bamnat.app.tier.Tier.FREE) }
+        c.featureGate.state.first { !it.allows(com.bamnat.app.tier.Feature.FX_WORKS) }
+        try {
+            val cup = com.bamnat.core.formula.LogicValue("물 잔", com.bamnat.core.formula.ValueReset.DAY)
+            // 지금 시각 적기는 무료 맛보기(값 칸 하나 더하기)가 아닌 ✦ 장치예요.
+            val mine = LogicButton("내 물 한 잔", "💧", ButtonPlace.MONEY, LogicAct(LogicVerb.VAL_STAMP, "물 잔"))
+            c.settingsRepository.update { it.copy(logic = Logic.encode(Logic(listOf(mine), values = listOf(cup)))) }
+            val step = com.bamnat.core.formula.LogicValue("걸음", com.bamnat.core.formula.ValueReset.DAY)
+            val walk = LogicButton("만 보 걷기", "🚶", ButtonPlace.MONEY, LogicAct(LogicVerb.VAL_ADD, "걸음", 1000))
+            val pro = Recipe("걷기판", styles = WorkStyle.entries.toSet(), pieces = listOf(Piece(PieceKind.LOGIC, Logic(listOf(walk), values = listOf(step)).toValues())))
+            assertFalse("무료라 내 ✦ 단추는 쉬어요", com.bamnat.app.logic.FxAccess.runnable(c, Logic.decode(c.settingsRepository.current.logic)).buttons.any { it.label == mine.label })
+            assertTrue(tryIt(pro, fns = mapOf(PieceKind.LOGIC to RecipePieces.Mode.BOTH)))
+            val runs = com.bamnat.app.logic.FxAccess.runnable(c, Logic.decode(c.settingsRepository.current.logic)).buttons.map { it.label }
+            assertTrue("써 보는 작품의 ✦ 단추는 돌아요", walk.label in runs)
+            assertFalse("내 다른 ✦ 단추는 그대로 쉬어요", mine.label in runs)
+        } finally {
+            c.settingsRepository.update { it.copy(previewTier = null) }
+        }
+    }
 }

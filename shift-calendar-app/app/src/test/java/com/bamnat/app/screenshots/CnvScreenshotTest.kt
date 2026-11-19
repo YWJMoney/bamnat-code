@@ -22,10 +22,10 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("카드 배치", exact = true)
         tapText("255h", exact = true)
         // [EASE-01] 1.38: 요약 starts under the month, so its bar offers to take it up.
-        assertTrue("the card's bar", appears("달력 위로 올리기", exact = true))
+        assertTrue("the card's bar", appears("달력 위로", exact = true))
         tapText("고르기 끝", exact = true)
-        assertTrue("let go", appears("화면: 달력 ▾", exact = true))
-        assertTrue(gone("달력 위로 올리기", exact = true))
+        assertTrue("let go", appears("화면: 달력\u00A0▾", exact = true))
+        assertTrue(gone("달력 위로", exact = true))
     } }
 
     /** PC 확인 1.37 A1: 요약을 달력 아래로 보냈다 올리면 하루 카드가 말없이 숨겨졌어요. */
@@ -35,10 +35,10 @@ class CnvScreenshotTest : ScreenshotBase() {
         val chips = listOf("＋ 카드 넣기") + (1..5).map { "＋ 카드 넣기 $it" }
         val before = chips.firstOrNull { shows(it, exact = true) }
         tapText("255h", exact = true)
-        tapText("달력 위로 올리기", exact = true)
-        tapText("달력 아래로 보내기", exact = true)
+        tapText("달력 위로", exact = true)
+        tapText("달력 아래로", exact = true)
         tapText("고르기 끝", exact = true)
-        assertTrue("화면: 달력 ▾ again", appears("화면: 달력 ▾", exact = true))
+        assertTrue("화면: 달력 ▾ again", appears("화면: 달력\u00A0▾", exact = true))
         org.junit.Assert.assertEquals("no card hidden by the move", before, chips.firstOrNull { shows(it, exact = true) })
     } }
 
@@ -46,12 +46,12 @@ class CnvScreenshotTest : ScreenshotBase() {
     @Test fun eachPageOpensItsOwnScreen() { shift(); shoot("1502_cnv_page_own_screen", PHONE) {
         tab(2, wide = false)
         tapText("카드 배치", exact = true)
-        assertTrue(appears("화면: 메모 ▾", exact = true))
+        assertTrue(appears("화면: 메모\u00A0▾", exact = true))
         back()
         tab(0, wide = false)
         tapText("도구")
         tapText("카드 배치", exact = true)
-        assertTrue("달력, not 메모", appears("화면: 달력 ▾", exact = true))
+        assertTrue("달력, not 메모", appears("화면: 달력\u00A0▾", exact = true))
     } }
 
     /** [CNV-10] 빈 판에서 시작해 카드 하나를 넣고, 내 틀로 보관함에 담아요. */
@@ -94,12 +94,12 @@ class CnvScreenshotTest : ScreenshotBase() {
     @Test fun aSlidingRowOpensAndFolds() { shift(); shoot("1505_cnv_fold_row", PHONE) {
         tapText("도구")
         tapText("카드 배치", exact = true)
-        assertTrue("a row that does not fit offers 펼치기", appears("펼치기 ▾", exact = true))
+        assertTrue("a row that does not fit offers 펼치기", appears("펼치기\u00A0▾", exact = true))
         // PC 확인 1.37 A9: the bar's row opens over the example (nothing below moves), and a tap on an item does it and folds the row.
         tapText("도구 줄 모두 펼쳐 보기", exact = true)
-        assertTrue("open, it folds again", appears("접기 ▴", exact = true))
+        assertTrue("open, it folds again", appears("접기\u00A0▴", exact = true))
         tapText("부품 목록", exact = true)
-        assertTrue("folded after the tap", gone("접기 ▴", exact = true))
+        assertTrue("folded after the tap", gone("접기\u00A0▴", exact = true))
         assertTrue("and the tap did its work", appears("이름을 누르면 화면에서 그 부품을 골라요"))
     } }
 
@@ -108,7 +108,7 @@ class CnvScreenshotTest : ScreenshotBase() {
         tapText("도구")
         tapText("카드 배치", exact = true)
         tapText("도구 줄 모두 펼쳐 보기", exact = true)
-        assertTrue(appears("접기 ▴", exact = true))
+        assertTrue(appears("접기\u00A0▴", exact = true))
     } }
 
     /** PC 확인 1.37 A9: a memo part's condition starts from the memo's own values, not 근무. */

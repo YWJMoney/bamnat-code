@@ -24,21 +24,53 @@ object ShareContent {
         calendar: String = PersonalCalendar.MAIN,
         /** [FEAT-15] Whether the link serves a calendar feed; it does only with 프로. */
         feed: Boolean = false,
+        /** 2.0.0 [RVR-22] What the flags let a link carry now ([Gates.of]); the 바깥 길 시험 (SD-09) opens them all to send every part. */
+        gates: Gates? = null,
     ): JSONObject =
         withContext(Dispatchers.Default) {
+            val g = gates ?: Gates.of(c)
             val kind = kind(c, calendar)
             val memos = if (options.memos) memos(c, from, calendar) else emptyMap()
             val pay = if (options.pay) money(c, snapshot, from, kind, calendar) else emptyList()
             val jobs = if (options.jobs) jobs(c, from, calendar) else emptyMap()
             val zone = Today.zone().takeIf { feed && c.featureGate.allows(com.bamnat.app.tier.Feature.ICS_FEED) }
-            val setup = if (options.sendsSetup && setupInLink(c, calendar)) setupFile(c, calendar) else null
-            val open = lookInLink(c)
+            val setup = if (options.sendsSetup && c.companyFits(calendar, needsServer = false) && g.setup) setupFile(c, calendar) else null
+            val open = g.look
             val look = if (options.look && open) lookFile(c, title) else null
             val kit = if (options.kit && open) kitFile(c, calendar, title, withCycle = setup == null) else null
             val sleep = if (options.sleepNow && calendar == PersonalCalendar.MAIN) sleepNow(c) else null
             val plan = if (options.sleepPlan && calendar == PersonalCalendar.MAIN) sleepPlan(c, snapshot) else emptyList()
-            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan)
+            // 2.0.0 [RVH-45] The 1일 기준 an hour's leave is told against, for an older receiver (설계 4-4절).
+            val leaveDay = runCatching { c.calendars.pay(calendar).profile.value?.rules?.leave?.dayMinutes }.getOrNull()
+                ?: com.bamnat.core.model.Leave.DAY_MINUTES
+            // 2.0.0 [RVG-38] The link's word in the calendar's own kind of work, only once 처리방침 3.14 names it.
+            val word = if (g.word) com.bamnat.core.work.scheduleWord(c.scopeOf(calendar).currentSettings().workStyle) else null
+            ShareLinkPayload.build(snapshot, from, title, ttlDays, options, memos, pay, kind, jobs, zone, setup, look, kit, sleep, plan, leaveDay, word)
         }
+
+    /**
+     * 2.0.0 [RVR-22] The flags that decide which parts a link may carry: the company setup ([setupInLink], `share.setup`) and the
+     * 테마·근무 설정 ([lookInLink], `share.look`). They decide whether a part goes, never its shape.
+     * 2.0.0 [RVG-38] And the link's word ([wordInLink], `share.word`, 처리방침 3.14).
+     */
+    data class Gates(val setup: Boolean, val look: Boolean, val word: Boolean = false) {
+        companion object {
+            fun of(c: AppContainer) = Gates(
+                setup = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_SETUP) }.getOrDefault(false),
+                look = lookInLink(c),
+                word = wordInLink(c),
+            )
+            /** Every part the phone has, as if every flag were on. */
+            val ALL = Gates(setup = true, look = true, word = true)
+        }
+    }
+
+    /**
+     * 2.0.0 [RVG-38] 검토 HQ-64 B안: a link may say what the sender's app calls it (근무표·영업일·일정·달력) only from 처리방침 3.14's date
+     * (`share.word`, LEGAL); until the admin app gives 3.14 a day it is off and no link carries it.
+     */
+    fun wordInLink(c: AppContainer): Boolean =
+        runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_WORD) }.getOrDefault(false)
 
     /** 1.38 [SLEEP-11] Whether a link may say 지금 자는 중 (`sleep.share`, from the 처리방침 date). */
     fun sleepInLink(c: AppContainer): Boolean =
@@ -98,6 +130,11 @@ object ShareContent {
         val r = com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(name))
         ShareKit.lookText(r)
     }.getOrNull()
+
+    /** 2.0.0 [RVG-29] 검토 SN-14: the look on the phone is a theme too big for a link (it would go without it, saying nothing). */
+    suspend fun lookTooBig(c: AppContainer): Boolean = runCatching {
+        ShareKit.lookTooBig(com.bamnat.core.recipe.LookParts.withoutPhotos(c.wardrobe.myLookRecipe(c.wardrobe.wornTitle() ?: "테마")))
+    }.getOrDefault(false)
 
     /**
      * 1.37 [SHR-32] The calendar's 근무 설정 as a recipe ([ShareKit.KINDS]): 근무 이름·글자·색, the alarms before each kind of shift and,

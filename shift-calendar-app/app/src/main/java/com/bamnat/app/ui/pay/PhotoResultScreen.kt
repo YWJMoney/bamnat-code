@@ -26,11 +26,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -108,6 +108,15 @@ internal fun PhotoResultScreen(
     var askClose by remember { mutableStateOf(false) }
     val kept = read.lines.size + (sheet?.sheet?.toChanges()?.size ?: 0)
     val leave = { if (kept > 0) askClose = true else onDismiss() }
+    // 2.0.0 [RVJ-62] 검토 PAYU-41: '다시 하기' beside it threw the lines read and fixed away in one tap; it asks as × does.
+    var askRetake by remember { mutableStateOf(false) }
+    if (askRetake) com.bamnat.app.ui.components.AlertDialog(
+        onDismissRequest = { askRetake = false },
+        title = { Text("사진을 다시 고를까요?") },
+        text = { Text(if (read.lines.isNotEmpty()) "지금 읽은 ${read.lines.size}줄과 고친 것이 사라져요." else "채운 칸이 사라져요.") },
+        confirmButton = { TextButton(onClick = { askRetake = false; onRetake() }) { Text("다시 고르기") } },
+        dismissButton = { TextButton(onClick = { askRetake = false }) { Text("계속 보기") } },
+    )
     if (askClose) com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { askClose = false },
         title = { Text("읽은 내용을 버릴까요?") },
@@ -122,7 +131,7 @@ internal fun PhotoResultScreen(
                     TopAppBar(
                         title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         navigationIcon = { IconButton(onClick = leave) { Icon(Icons.Filled.Close, "닫기") } },
-                        actions = { TextButton(onClick = onRetake, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 하기") } },
+                        actions = { TextButton(onClick = { if (kept > 0) askRetake = true else onRetake() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다시 하기") } },
                     )
                 },
                 bottomBar = { SheetPreviewBar(preview, working, action, fallback = slipFallback(read)) },

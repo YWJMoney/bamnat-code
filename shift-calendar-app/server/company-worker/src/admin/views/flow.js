@@ -4,14 +4,15 @@
 //         다음 할 일 단추 하나, 30일 운영 숫자와 8주 추이, 'Play에 나간 판' 저장(묶음 답 미리 보기 뒤).
 //   운영 열쇠: 주인이 만드는 열쇠 하나 = 'Claude' 관리자 하나. 한 번만 보이고, 끊기·기한·하루 한도.
 export function flowViews(A) {
-  const { S, esc, can, href, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, confirmBox, ago } = A;
+  const { L, S, esc, can, href, skeleton, empty, icon, P, api, act, load, render, toast, openDialog, dialog, confirmBox, ago } = A;
 
   const waitText = (h) => (h < 1 ? "방금" : h < 48 ? `${h}시간` : `${Math.floor(h / 24)}일`);
   const num = (v, unit = "") => (v === null || v === undefined ? "—" : `${v}${unit}`);
 
   function stageCard(s, i, next) {
-    const go = s.act.route ? `<a class="btn small${s.key === next ? " primary" : ""}" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
-      : `<button class="btn small${s.key === next ? " primary" : ""}" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
+    // 2.0.0 [RVA-34] 조건 2: 다음 단계의 채운 단추는 위 '지금 할 일' 막대에 하나만(같은 단추가 두 번 채워졌어요).
+    const go = s.act.route ? `<a class="btn small" href="${href(s.act.route)}">${esc(s.act.label)}</a>`
+      : `<button class="btn small" type="button" data-act="${s.act.act}">${esc(s.act.label)}</button>`;
     return `<li class="pipe-step${s.stuck ? " stuck" : ""}${s.n ? "" : " zero"}${s.key === next ? " next" : ""}" data-stage="${s.key}">
       <div class="pipe-top"><span class="pipe-no">${i + 1}</span><b>${esc(s.name)}</b>${s.stuck ? '<span class="pill bad">막힘</span>' : ""}</div>
       <div class="pipe-n"><span class="v">${s.n}</span><span class="u">건</span></div>
@@ -88,12 +89,15 @@ export function flowViews(A) {
 
   // ---- 운영 열쇠 ----
 
+  // 2.0.0 [RVA-27] 검토 ADMX-15: 날짜는 한국 시간으로(UTC 앞 10자는 00~09시에 하루 전으로 보였어요).
+  const kst10 = (iso) => new Date(Date.parse(iso) + 9 * 3600e3).toISOString().slice(0, 10);
+
   function keysView() {
     const d = S.data.keys;
     if (!d) return skeleton(2);
     const alive = d.keys.filter((k) => k.alive);
     const rows = d.keys.length ? `<ul class="rows">${d.keys.map((k) => `<li><div class="row"><span class="row-main"><b>${esc(k.label)}</b>
-        <small>${esc(k.createdAt.slice(0, 10))} 만듦 · ${k.alive ? `${esc(k.expiresAt.slice(0, 10))}까지` : k.revokedAt ? "끊음" : "기한 지남"}${k.lastAt ? ` · 마지막 ${esc(ago(k.lastAt))}` : " · 아직 안 씀"}${k.today ? ` · 오늘 ${k.today}번` : ""}</small></span>
+        <small>${esc(kst10(k.createdAt))} 만듦 · ${k.alive ? `${esc(kst10(k.expiresAt))}까지` : k.revokedAt ? "끊음" : "기한 지남"}${k.lastAt ? ` · 마지막 ${esc(ago(k.lastAt))}` : " · 아직 안 씀"}${k.today ? ` · 오늘 ${k.today}번` : ""}</small></span>
         <span class="pill ${k.alive ? "ok" : ""}">${k.alive ? "쓰는 중" : "꺼짐"}</span>${k.alive ? `<button class="btn small danger" type="button" data-act="key-revoke" data-id="${k.id}">끊기</button>` : ""}</div></li>`).join("")}</ul>`
       : empty("아직 열쇠가 없어요", "열쇠를 만들어 Claude 프로젝트에 넣으면 \"처리해\" 한 마디로 Claude가 직접 처리해요.");
     return `<section class="card"><div class="card-head"><h2>Claude 운영 열쇠</h2>
@@ -116,7 +120,7 @@ export function flowViews(A) {
     const missing = fresh.filter((d) => d.asks && !d.shipReply).length;
     const noNews = fresh.filter((d) => !d.news).length;
     openDialog(`<form data-form="flow-ship-go" data-version="${esc(r.version)}"><h2>${esc(r.version)}을 나간 판으로 저장할까요?</h2>
-      <p>${r.was ? `지금은 ${esc(r.was)}이에요. ` : ""}${r.version} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
+      <p>${r.was ? `지금은 ${L.eyo(esc(r.was))}. ` : ""}${esc(r.version)} 이하로 고친 개발사항이 앱에 '반영'으로 보여요.</p>
       ${fresh.length ? `<h3>이번에 나가는 개발사항 ${fresh.length}개</h3><ul class="mini">${fresh.map((d) => `<li>${esc(d.title)} <small>${esc(d.releasedIn)} · 문의 ${d.asks}건</small>
           ${d.news ? `<small class="answer">공지: ${esc(d.news)}</small>` : ""}<span>${d.asks ? `<span class="pill ${d.shipReply ? "ok" : "warn"}">${d.shipReply ? "출시 답 준비됨" : "출시 답 없음(기본 답)"}</span>` : ""}
           <span class="pill ${d.news ? "ok" : "warn"}">${d.news ? "공지 한 줄 있음" : "공지 한 줄 없음"}</span></span></li>`).join("")}</ul>
@@ -145,7 +149,9 @@ export function flowViews(A) {
       const el = document.getElementById("key-once");
       try {
         await navigator.clipboard.writeText(el?.value ?? "");
-        toast("복사했어요. Claude 프로젝트 설정에 붙여 넣어 주세요");
+        // [RVA-08] 복사했으면 닫을 때 묻지 않아요.
+        dialog.dataset.copied = "1";
+        toast("복사했어요. 붙여 넣을 곳에 넣어 주세요");
       } catch {
         el?.select();
         toast("복사하지 못했어요. 칸을 길게 눌러 복사해요");
@@ -166,9 +172,9 @@ export function flowViews(A) {
     "key-make": async (form) => {
       const r = await act(() => api("/keys", "POST", { label: new FormData(form).get("label") }));
       if (!r) return;
-      openDialog(`<div class="key-once"><h2>열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> 지금 복사해서 Claude 프로젝트 설정 › 클라우드 환경 비밀값 BAMNAT_OPS_KEY에 넣어요.</p>
+      openDialog(`<div class="key-once" data-secret="key"><h2>열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> 지금 복사해서 Claude 프로젝트 설정 › 클라우드 환경 비밀값 BAMNAT_OPS_KEY에 넣어요.</p>
         <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono">
-        <p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
+        <p class="meta">${esc(kst10(r.expiresAt))}까지 써요.</p>
         <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);
       S.data.keys = null;
       load();

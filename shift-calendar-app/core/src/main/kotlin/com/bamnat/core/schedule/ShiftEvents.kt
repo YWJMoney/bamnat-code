@@ -33,8 +33,12 @@ object ShiftEvents {
                 val end = day.end
                 val notes = day.extras.filter { it.from == null }.map { "${it.kind.name} ${hours(it.minutes)}" }
                 if (start != null && end != null) {
-                    val endAt = if (end.isAfter(start)) day.date.atTime(end) else day.date.plusDays(1).atTime(end)
-                    add(ShiftEvent("${day.date}", type.name, day.date.atTime(start), endAt, day.date, notes.joinToString(", ").ifEmpty { null }))
+                    // [RVH-44] 설계 4-5절: a day of two parts is two events of the same name (the second keyed "-p2"), so the phone's
+                    // calendar, the widget's '근무 중' and its next change leave the gap free.
+                    day.segments.forEachIndexed { i, p ->
+                        add(ShiftEvent(if (i == 0) "${day.date}" else "${day.date}-p${i + 1}", type.name, p.start, p.endInclusive, day.date,
+                            notes.joinToString(", ").ifEmpty { null }.takeIf { i == 0 }))
+                    }
                 } else {
                     add(ShiftEvent("${day.date}", type.name, null, null, day.date, notes.joinToString(", ").ifEmpty { null }))
                 }
@@ -66,11 +70,59 @@ object ShiftEvents {
      * [WIDG-05] I 리뷰 N6(a): the countdown widget's line, "야간까지 3시간 20분 · 22:00" or, while working,
      * "근무 중 · 07:00에 끝나요 (2시간 10분 남음)". Null when nothing is booked in [days].
      */
-    fun countdown(days: List<ResolvedDay>, now: LocalDateTime): String? {
-        current(days, now)?.let { e -> return "${e.title} 중 · ${hm(e.end!!)}에 끝나요 (${left(now, e.end)} 남음)" }
+    fun countdown(days: List<ResolvedDay>, now: LocalDateTime, gap: String = "비는 시간"): String? {
+        val events = of(days)
+        // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the first part counts to the [gap] (가게·알바 '브레이크 타임', 일근·교대 '비는 시간'),
+        // not to an end of work that is not one, and in the gap the line says when work starts again.
+        fun laterPart(e: ShiftEvent) = events.any { it.date == e.date && it.key.startsWith("${e.date}-p") && it.start != null && !it.start.isBefore(e.end) }
+        current(days, now)?.let { e ->
+            return if (laterPart(e)) "${e.title} 중 · ${hm(e.end!!)}부터 $gap (${left(now, e.end)} 남음)"
+            else "${e.title} 중 · ${hm(e.end!!)}에 끝나요 (${left(now, e.end)} 남음)"
+        }
         val e = next(days, now) ?: return null
+        if (e.key.startsWith("${e.date}-p") && events.any { it.date == e.date && it.end != null && !it.end.isAfter(now) && it.key == "${e.date}" })
+            return "$gap · ${hm(e.start!!)} 다시 시작 (${left(now, e.start)} 뒤)"
         val day = if (e.start!!.toLocalDate() == now.toLocalDate()) "" else if (e.start.toLocalDate() == now.toLocalDate().plusDays(1)) "내일 " else "${e.start.monthValue}/${e.start.dayOfMonth} "
         return "${e.title}까지 ${left(now, e.start)} · $day${hm(e.start)}"
+    }
+
+    /**
+     * 2.0.0 [RVH-76] 검토 T30-04·T30-98: a field worker books 일감, not shifts, so their countdown counts the
+     * jobs: "OO 현장 중 · 17:00에 끝나요 (2시간 남음)", "OO 현장까지 3시간 20분 · 내일 08:00", and for a job
+     * without times "오늘 OO 현장", "내일 OO 현장", "11/20(목) OO 현장". Null with no job in the coming [days].
+     */
+    fun jobCountdown(jobs: List<com.bamnat.core.money.Job>, now: LocalDateTime, days: Long = 7): String? {
+        val today = now.toLocalDate()
+        val last = today.plusDays(days)
+        // From yesterday, so a job that ran overnight still counts down to its end.
+        val live = jobs.filter { !it.cancelled && !it.lastDate.isBefore(today.minusDays(1)) && !it.date.isAfter(last) }
+        fun name(j: com.bamnat.core.money.Job) = j.title.ifBlank { j.place.ifBlank { "일감" } }
+        // Each timed day of a job, so a three-day job counts down to each morning.
+        val timed = live.filter { it.start != null && it.end != null }.flatMap { j ->
+            generateSequence(maxOf(j.date, today.minusDays(1))) { it.plusDays(1) }.takeWhile { !it.isAfter(minOf(j.lastDate, last)) }
+                .map { d -> val s = d.atTime(j.start!!); Triple(s, if (j.end!!.isAfter(j.start)) d.atTime(j.end) else d.plusDays(1).atTime(j.end), j) }
+                .toList()
+        }
+        timed.firstOrNull { !it.first.isAfter(now) && it.second.isAfter(now) }?.let { (_, e, j) ->
+            return "${name(j)} 중 · ${hm(e)}에 끝나요 (${left(now, e)} 남음)"
+        }
+        val nextTimed = timed.filter { it.first.isAfter(now) }.minByOrNull { it.first }
+        val untimed = live.filter { (it.start == null || it.end == null) && !it.lastDate.isBefore(today) }
+        val untimedDay = untimed.map { j -> maxOf(j.date, today) to j }.minByOrNull { it.first }
+        fun dayWord(d: LocalDate) = when (d) {
+            today -> "오늘 "
+            today.plusDays(1) -> "내일 "
+            else -> "${d.monthValue}/${d.dayOfMonth}(${"월화수목금토일"[d.dayOfWeek.value - 1]}) "
+        }
+        return when {
+            nextTimed != null && (untimedDay == null || !untimedDay.first.isBefore(nextTimed.first.toLocalDate())) -> {
+                val (s, _, j) = nextTimed
+                val day = if (s.toLocalDate() == today) "" else dayWord(s.toLocalDate())
+                "${name(j)}까지 ${left(now, s)} · $day${hm(s)}"
+            }
+            untimedDay != null -> dayWord(untimedDay.first) + name(untimedDay.second)
+            else -> null
+        }
     }
 
     /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown: today off, the next off day in [days], or none in the week. */

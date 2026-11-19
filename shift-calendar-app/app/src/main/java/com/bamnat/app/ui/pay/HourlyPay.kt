@@ -25,7 +25,7 @@ import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.app.data.AppSettings
 import com.bamnat.app.data.ScheduleSnapshot
 import com.bamnat.app.ui.components.SectionCard
@@ -78,7 +79,13 @@ val TaxMode.label: String
         TaxMode.NONE -> "떼지 않음"
         TaxMode.WITHHOLDING_3_3 -> "3.3%"
         TaxMode.INSURANCE_4 -> "4대보험"
+        TaxMode.DAILY_WORKER -> com.bamnat.app.tax.TaxWay.DAILY_CHOICE
     }
+
+/**
+ * 2.0.0 [RVJ-80] 검토 T04-05: the 일용근로 way in one line (소득세법 제47조 제2항 하루 15만 원 공제, 제14조 제3항 제2호 분리과세).
+ */
+const val DAILY_WAY_NOTE = "일용근로는 하루 15만 원을 빼고 남은 금액에 소득세를 매겨요. 떼는 것으로 끝나 연말정산·5월 신고에 넣지 않아요."
 
 /**
  * 1.39 [PAYX-58][PAYX-59] Under a take-home's lines: why a 4대보험 line is missing or on the 28만 원 floor, and a 비과세 kind over its
@@ -94,13 +101,19 @@ internal fun TakeHomeNotes(r: com.bamnat.core.pay.TakeHomeResult, profile: PayPr
 }
 
 /**
- * 1.39 [PAYX-59] 공식 대조 G2·G3·G6: 4대보험 the worker is out of, picked here (the app does not ask a 생년월일): 만 60세 이상 국민연금,
- * 65세 이후 새로 일한 곳의 고용보험, 주 15시간 미만. Each chip on means that line is not taken off.
+ * 1.39 [PAYX-59] 공식 대조 G2·G3·G6: 4대보험 the worker is out of, picked here: 만 60세 이상 국민연금, 65세 이후 새로 일한 곳의 고용보험,
+ * 주 15시간 미만. Each chip on means that line is not taken off.
+ * 2.0.0 [RVJ-81] 결정 5 (처리방침 3.14 13번, `pay.birthyear`): with a 생년 (선택, 휴대폰 안) the age lines turn off by themselves
+ * ([com.bamnat.core.pay.InsuranceAge]) and their chips show it; pressing one of those is '그래도 내요' (임의계속가입, 65세 전부터 같은 곳).
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun InsuranceOffRow(off: Set<InsuranceLine>, onChange: (Set<InsuranceLine>) -> Unit) {
-    var open by remember { mutableStateOf(off.isNotEmpty()) }
+internal fun InsuranceOffRow(profile: PayProfile, month: YearMonth, onChange: ((PayProfile) -> PayProfile) -> Unit) {
+    val context = LocalContext.current
+    val ageOn = remember { runCatching { context.appContainer.flags.on(com.bamnat.core.flags.FlagCatalog.PAY_BIRTH_YEAR) }.getOrDefault(false) }
+    val age = remember(profile, month, ageOn) { if (ageOn) com.bamnat.core.pay.InsuranceAge.lines(profile, month) else emptyList() }
+    val off = profile.insuranceOff + age.filter { it.off && it.line !in profile.insuranceKeep }.map { it.line }
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(off.isNotEmpty() || profile.birthYear != null) }
     if (!open) {
         TextButton(onClick = { open = true }) { Text("떼지 않는 보험이 있어요 (만 60세 이상·주 15시간 미만 등)") }
         return
@@ -108,12 +121,66 @@ internal fun InsuranceOffRow(off: Set<InsuranceLine>, onChange: (Set<InsuranceLi
     Text("떼지 않는 보험", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 4.dp))
     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         InsuranceLine.entries.forEach { l ->
-            FilterChip(selected = l in off, onClick = { onChange(if (l in off) off - l else off + l) }, label = { Text("${l.label} 안 뗌") })
+            FilterChip(selected = l in off, onClick = { onChange { p -> com.bamnat.core.pay.InsuranceAge.toggle(p, l, month) } }, label = { Text("${l.label} 안 뗌") })
         }
     }
-    Text("국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
-        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 넘게 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
-        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (ageOn) {
+        BirthYearField(profile.birthYear, month.year) { y -> onChange { it.copy(birthYear = y) } }
+        // One line per age rule this month: off with '그래도 내요', kept with '빼기', or what the year alone cannot tell.
+        age.forEach { a ->
+            when {
+                a.off && a.line in profile.insuranceKeep -> com.bamnat.app.ui.components.ToneLine("${a.line.label}은 그래도 내는 것으로 셈해요",
+                    tone = com.bamnat.app.ui.theme.Tone.Plain, action = "빼기",
+                    onClick = { onChange { p -> p.copy(insuranceKeep = p.insuranceKeep - a.line) } })
+                a.off -> com.bamnat.app.ui.components.ToneLine(a.note, tone = com.bamnat.app.ui.theme.Tone.Plain, action = "그래도 내요",
+                    onClick = { onChange { p -> p.copy(insuranceKeep = p.insuranceKeep + a.line) } })
+                else -> Text("ⓘ ${a.note}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+    // 2.0.0 [RVJ-81] (조건 4) The law behind the chips is one line + ⓘ: the 생년 lines above already say what was left out and why.
+    com.bamnat.app.ui.components.Explain(if (ageOn) "pay.insuranceOff.age" else "pay.insuranceOff", if (ageOn) "생년을 적으면 만 60세 국민연금(국민연금법 제6조)과 65세 이후 새로 일한 곳의 고용보험(고용보험법 제10조)을 저절로 빼요. " +
+        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요."
+        else "국민연금: 만 60세가 되면 의무 가입이 끝나요(국민연금법 제6조). 고용보험: 65세 이후 새로 일한 곳은 떼지 않아요(고용보험법 제10조). " +
+        "주 15시간 미만이면 국민연금·건강보험 대상이 아니고, 고용보험은 3개월 이상 일하면 떼요. 명세서에 그 줄이 없으면 골라 주세요.",
+        summary = "명세서에 없는 보험 줄은 골라 주세요", firstInFull = false)
+}
+
+/**
+ * 2.0.0 [RVJ-81] 생년 (선택): four digits, kept when they make a year 14 to 100 years back; emptied, it is taken away. Said to stay on the phone.
+ */
+@Composable
+private fun BirthYearField(year: Int?, now: Int, onYear: (Int?) -> Unit) {
+    var text by androidx.compose.runtime.saveable.rememberSaveable(year) { mutableStateOf(year?.toString().orEmpty()) }
+    val typed = text.toIntOrNull()
+    val wrong = text.length == 4 && (typed == null || !com.bamnat.core.pay.InsuranceAge.valid(typed, now))
+    androidx.compose.material3.OutlinedTextField(
+        text,
+        { t ->
+            text = t.filter { it.isDigit() }.take(4)
+            val y = text.toIntOrNull()
+            when {
+                text.isEmpty() -> if (year != null) onYear(null)
+                text.length == 4 && y != null && com.bamnat.core.pay.InsuranceAge.valid(y, now) && y != year -> onYear(y)
+            }
+        },
+        singleLine = true, isError = wrong,
+        label = { Text("생년 (선택)") }, placeholder = { Text("예: 1965") }, suffix = { Text("년") },
+        supportingText = { Text(if (wrong) "${now - 100}~${now - 14}년 사이로 적어 주세요" else "휴대폰 안에만 둬요. 나이 기준 보험을 저절로 셈해요") },
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+    )
+}
+
+/**
+ * 2.0.0 [RVJ-05] 검토 PAYC-20·U04-05: in a year whose 요율 are not in the app yet (2028-01 with 2027 known), says the 실수령 is
+ * worked out on last year's values (국민연금 follows the law's yearly step). Nothing once the year is in.
+ */
+@Composable
+fun StaleRatesNote(month: java.time.YearMonth, modifier: Modifier = Modifier) {
+    val y = com.bamnat.core.pay.RateTable.staleYear(month.atDay(1)) ?: return
+    Text("${month.year}년 요율 대기 중 · ${y}년 값으로 어림했어요", style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }
 
 /** [HRLY-04] "예상 실수령 1,784,750원 (4대보험)" under a pay before tax; nothing when no tax is taken. */
@@ -140,7 +207,8 @@ internal fun HourlyPayCard(
     SectionCard(title = "예상 실수령") {
         Text("세금 떼는 방식", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TaxMode.entries.forEach { m ->
+            // 2.0.0 [RVJ-80] 일용근로 is a 일당's way: here only while it is the one picked.
+            TaxMode.entries.filter { it != TaxMode.DAILY_WORKER || profile.taxMode == it }.forEach { m ->
                 FilterChip(selected = profile.taxMode == m, onClick = { vm.update { it.copy(taxMode = m, taxChosen = true) } }, label = { Text(m.label) })
             }
         }
@@ -165,7 +233,7 @@ internal fun HourlyPayCard(
                     Text("국민연금·건강보험 떼지 않기")
                 }
             }
-            InsuranceOffRow(profile.insuranceOff) { off -> vm.update { it.copy(insuranceOff = off) } }
+            InsuranceOffRow(profile, month) { change -> vm.update(change) }
         }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("세전 ${if (unlocked) won(r.gross) else "●●●원"}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
@@ -173,6 +241,7 @@ internal fun HourlyPayCard(
             Text("실수령 ${if (unlocked) won(r.net) else "●●●원"}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary)
         }
+        StaleRatesNote(month)
         Text(
             when (profile.taxMode) {
                 TaxMode.NONE -> "가게에서 세금을 떼지 않으면 세전 금액이 그대로 들어와요."
@@ -180,6 +249,7 @@ internal fun HourlyPayCard(
                 TaxMode.INSURANCE_4 -> "4대보험은 그해 근로자 몫이에요. 소득세는 국세청 간이세액표(가족 ${profile.taxFamily}명" +
                     (if (profile.taxChildren > 0) ", 8~20세 자녀 ${profile.taxChildren}명" else "") +
                     ") 값이고, 실제는 회사 선택(80·100·120%)과 연말정산으로 정해져요. 가족 수는 통계 ‘○월 한눈에’에서 바꿔요. " + TakeHome.PENSION_NOTE
+                TaxMode.DAILY_WORKER -> DAILY_WAY_NOTE
             },
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
         )
@@ -189,7 +259,8 @@ internal fun HourlyPayCard(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("법정 휴게 자동 빼기", style = MaterialTheme.typography.bodyLarge)
-                Text("휴게를 안 적은 날, 4시간 넘게 일하면 30분·8시간이면 1시간을 빼요. 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVJ-71] (PC-179) The same words as the team's 근무 시간과 휴게: 시작~끝 4시간부터 30분, 8시간 30분부터 1시간.
+                Text("휴게를 안 적은 날, 시작~끝이 4시간부터 30분, 8시간 30분부터 1시간을 빼요(일한 시간 8시간에 1시간). 4시간 근무에 휴게를 안 쓰기로 했다면 그날 휴게를 0분으로 적어요", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(Modifier.width(12.dp))

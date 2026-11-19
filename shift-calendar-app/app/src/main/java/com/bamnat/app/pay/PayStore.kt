@@ -65,6 +65,31 @@ class PayStore(
     dir: File = File(context.filesDir, "pay"),
 ) {
     private val file = File(dir, "profile.json")
+    /** 2.0.0 [RVJ-25] The setup as it was before the last save, and a file that could not be read, kept aside (검토 PAYU-11·PAYC-21). */
+    private val bak = File(dir, "profile.json.bak")
+    private val bad = File(dir, "profile.json.bad")
+    /** Which of [Trouble.RESTORED]·[Trouble.LOST] has not been read yet: the line waits for the pay screen across a restart. */
+    private val mark = File(dir, "profile.trouble")
+    private val historyFile = File(dir, "history.json")
+
+    /**
+     * 2.0.0 [RVJ-25] 검토 PAYU-11·PAYC-21 (급여 설정 파일이 깨지면 '설정 없음'으로 보이고 다음 저장이 덮어씀, 저장 실패도 말이 없음): what
+     * went wrong with the file, for one line on the pay screen. [RESTORED]: the file could not be read and the setup came back from
+     * the copy before the last save (or the newest of the 7 days of changes), so the last change may be missing. [LOST]: nothing
+     * to bring it back from; the broken file is kept aside (`.bad`) so a new setup does not write over it. [NOT_SAVED]: the last
+     * change is on the screen but did not reach the phone's storage. The first two wait until they are read ([troubleSeen]) or,
+     * for [LOST], until a setup is saved; the third until a save goes through.
+     */
+    enum class Trouble { NONE, RESTORED, LOST, NOT_SAVED }
+
+    private val _trouble = MutableStateFlow(Trouble.NONE)
+    val trouble: StateFlow<Trouble> = _trouble.asStateFlow()
+
+    /** The line was read and closed (a failed save's line stays until a save goes through). */
+    fun troubleSeen() { if (_trouble.value != Trouble.NOT_SAVED) { _trouble.value = Trouble.NONE; mark.delete() } }
+
+    private fun marked(): Trouble = runCatching { if (mark.exists()) Trouble.valueOf(mark.readText().trim()) else Trouble.NONE }.getOrDefault(Trouble.NONE)
+
     private val _profile = MutableStateFlow(read())
     val profile: StateFlow<PayProfile?> = _profile.asStateFlow()
 
@@ -96,13 +121,33 @@ class PayStore(
         if (keepUndo) _undo.value = _profile.value
         // [PAYIN-06] 1.37 B6·B7: every change kept with what it was before, for 7 days ('고친 기록 · 되돌리기').
         if (keepUndo && was != profile) remember(was, why)
-        if (profile == null) file.delete() else {
-            file.parentFile?.mkdirs()
-            val tmp = File(file.parentFile, "profile.json.tmp")
-            tmp.writeText(PayCodec.encode(profile).toString())
-            tmp.renameTo(file)
-        }
+        // [RVJ-25] A save that does not reach the storage (full, or the rename refused) is said on the pay screen instead of
+        // thrown at whoever pressed 저장; the change stays on the screen and [retrySave] writes it again.
+        val saved = runCatching { store(profile, keepCopy = was != null) }.isSuccess
         _profile.value = profile
+        when {
+            !saved -> _trouble.value = Trouble.NOT_SAVED
+            // Saved: the failed save is over, and with a setup again '읽지 못했어요' has nothing left to say.
+            _trouble.value == Trouble.NOT_SAVED -> _trouble.value = marked()
+            _trouble.value == Trouble.LOST && profile != null -> { _trouble.value = Trouble.NONE; mark.delete() }
+        }
+    }
+
+    /** The file itself: a temp file renamed over it, the file as it was kept as `.bak` first ([keepCopy]: only one that was read). */
+    private fun store(profile: PayProfile?, keepCopy: Boolean) {
+        if (profile == null) { file.delete(); bak.delete(); return }
+        file.parentFile?.mkdirs()
+        val tmp = File(file.parentFile, "profile.json.tmp")
+        tmp.writeText(PayCodec.encode(profile).toString())
+        if (keepCopy && file.exists()) runCatching { file.copyTo(bak, overwrite = true) }
+        if (!tmp.renameTo(file)) { tmp.copyTo(file, overwrite = true); tmp.delete() }
+    }
+
+    /** [RVJ-25] '다시 저장': the setup on the screen written once more after a save that failed. */
+    suspend fun retrySave() = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            if (_trouble.value == Trouble.NOT_SAVED && runCatching { store(_profile.value, keepCopy = false) }.isSuccess) _trouble.value = marked()
+        }
     }
 
     suspend fun undo() {
@@ -111,8 +156,26 @@ class PayStore(
         _undo.value = null
     }
 
-    private fun read(): PayProfile? =
-        runCatching { if (file.exists()) PayCodec.decode(JSONObject(file.readText())) else null }.getOrNull()
+    /**
+     * [RVJ-25] A file that is there and cannot be read is not '설정 없음': it is kept aside as `.bad` (the next save would have
+     * written over it), and the setup comes back from the copy before the last save, then from the newest of the 7 days of
+     * changes. [trouble] says which, or that nothing could bring it back.
+     */
+    private fun read(): PayProfile? {
+        val good = if (file.exists()) decode(file) else null
+        if (good != null || !file.exists()) { _trouble.value = marked(); return good }
+        val aside = runCatching { file.copyTo(bad, overwrite = true) }.isSuccess
+        val back = decode(bak) ?: readHistory().firstOrNull()?.before
+        // Back in the file, so the next start reads it; with nothing to bring back the broken file leaves its place only once
+        // its copy is safe aside (the next start is then plainly '설정 없음', and the line still waits to be read).
+        if (back != null) runCatching { store(back, keepCopy = false) } else if (aside) file.delete()
+        val what = if (back != null) Trouble.RESTORED else Trouble.LOST
+        runCatching { mark.parentFile?.mkdirs(); mark.writeText(what.name) }
+        _trouble.value = what
+        return back
+    }
+
+    private fun decode(f: File): PayProfile? = runCatching { if (f.exists()) PayCodec.decode(JSONObject(f.readText())) else null }.getOrNull()
 
     // ---- [PAYIN-06] 1.37 B6·B7: the last 7 days of changes ----
 
@@ -122,7 +185,6 @@ class PayStore(
      */
     data class Change(val at: Long, val why: String, val before: PayProfile?)
 
-    private val historyFile = File(dir, "history.json")
     private val _history = MutableStateFlow(readHistory())
     /** Newest first. */
     val history: StateFlow<List<Change>> = _history.asStateFlow()
@@ -205,6 +267,24 @@ class PayStore(
         }
     }
 
+    /**
+     * 2.0.0 [RVJ-18] 검토 U05-01: months whose "이대로 굳힐까요?" was answered '나중에' (on this phone only; the card does not come back
+     * for them, and the month can still be closed by hand).
+     */
+    private val closeAskFile = File(dir, "close-asked.txt")
+    private val _closeAsked = MutableStateFlow(runCatching {
+        if (!closeAskFile.exists()) emptySet() else closeAskFile.readLines().mapNotNull { runCatching { YearMonth.parse(it.trim()) }.getOrNull() }.toSet()
+    }.getOrDefault(emptySet()))
+    val closeAsked: StateFlow<Set<YearMonth>> = _closeAsked.asStateFlow()
+
+    suspend fun closeAskLater(month: YearMonth) = withContext(Dispatchers.IO) {
+        synchronized(this@PayStore) {
+            val next = (_closeAsked.value + month).sorted().takeLast(36).toSet()
+            runCatching { closeAskFile.parentFile?.mkdirs(); closeAskFile.writeText(next.joinToString("\n")) }
+            _closeAsked.value = next
+        }
+    }
+
     /** All closed months at once, from a restored backup. */
     suspend fun replaceClosed(next: Map<YearMonth, CalcSnapshot>) = withContext(Dispatchers.IO) {
         synchronized(this@PayStore) {
@@ -236,6 +316,17 @@ object SnapshotCodec {
                 .put("estimated", l.estimated)
         }))
         .put("previous", JSONArray(s.previous.map(::encode)))
+        // 2.0.0 [RVJ-18] 굳은 달: the days and the 세후 as they were when closed.
+        .apply {
+            if (s.days.isNotEmpty()) put("days", JSONArray(s.days.map { d ->
+                JSONObject().put("date", d.date.toString()).put("label", d.label).putOpt("holiday", d.holidayName)
+                    .put("extras", JSONArray(d.extras))
+                    .put("parts", JSONArray(d.parts.map { p -> JSONObject().put("kind", p.kind.name).put("label", p.label).put("amount", p.amount).put("formula", p.formula) }))
+            }))
+            s.net?.let { put("net", it) }
+            s.tableNet?.let { put("tableNet", it) }
+            s.netBasis?.let { put("netBasis", it) }
+        }
 
     fun decode(o: JSONObject): CalcSnapshot {
         val lines = o.optJSONArray("lines")
@@ -255,6 +346,24 @@ object SnapshotCodec {
             ratesVersion = o.optString("rates"),
             closedAtMillis = o.optLong("at"),
             previous = (0 until (previous?.length() ?: 0)).map { decode(previous!!.getJSONObject(it)) },
+            days = o.optJSONArray("days")?.let { a ->
+                (0 until a.length()).mapNotNull { i ->
+                    val d = a.getJSONObject(i)
+                    val date = runCatching { java.time.LocalDate.parse(d.getString("date")) }.getOrNull() ?: return@mapNotNull null
+                    val ex = d.optJSONArray("extras")
+                    val ps = d.optJSONArray("parts")
+                    com.bamnat.core.pay.FrozenDay(date, d.optString("label"), d.optString("holiday").ifBlank { null },
+                        (0 until (ex?.length() ?: 0)).map { ex!!.getString(it) },
+                        (0 until (ps?.length() ?: 0)).map { j ->
+                            val p = ps!!.getJSONObject(j)
+                            com.bamnat.core.pay.DayPart(runCatching { LineKind.valueOf(p.getString("kind")) }.getOrDefault(LineKind.ALLOWANCE),
+                                p.optString("label"), p.optLong("amount"), p.optString("formula"))
+                        })
+                }
+            }.orEmpty(),
+            net = if (o.has("net")) o.getLong("net") else null,
+            tableNet = if (o.has("tableNet")) o.getLong("tableNet") else null,
+            netBasis = o.optString("netBasis").ifBlank { null },
         )
     }
 }
@@ -297,6 +406,9 @@ object PayCodec {
         .apply { if (p.taxChildren != 0) put("taxChildren", p.taxChildren) }
         // 1.39 [PAYX-59] 떼지 않는 4대보험, left out when none.
         .apply { if (p.insuranceOff.isNotEmpty()) put("insuranceOff", JSONArray(p.insuranceOff.map { it.name })) }
+        // 2.0.0 [RVJ-81] 생년 (휴대폰 안·백업에만)과 나이로 빠질 보험 가운데 그래도 내는 줄, left out when not set.
+        .apply { p.birthYear?.let { put("birthYear", it) } }
+        .apply { if (p.insuranceKeep.isNotEmpty()) put("insuranceKeep", JSONArray(p.insuranceKeep.map { it.name })) }
         // [PHOTO-11] 1.29: 명세서로 맞춘 통상시급 (원 아래 두 자리), left out when not set.
         .apply { p.ordinaryHourly?.let { put("ordinaryHourly", it) } }
         // [HOURLY-01] 1.30: where 통상시급 and 기준 시간 came from, left out when not known.
@@ -315,6 +427,11 @@ object PayCodec {
         .apply { if (p.productionWorker) put("production", true) }
         .putOpt("previousYearPay", p.previousYearPay)
         .apply { if (p.ledgerTakeHome) put("ledgerNet", true) }
+        // 2.0.0 [RVJ-77] 호봉표, left out when none so older files stay the same.
+        .putOpt("payScale", p.payScale?.let { sc ->
+            JSONObject().put("steps", JSONObject().apply { sc.steps.forEach { (n, v) -> put(n.toString(), v) } })
+                .put("month", sc.stepMonth).put("step", sc.step).put("since", sc.since.toString())
+        })
 
     fun decode(o: JSONObject): PayProfile = PayProfile(
         // [PAYS-03] A job or wage type from a newer version reads as 직접 설정 and 월급제 rather than failing the file.
@@ -347,6 +464,10 @@ object PayCodec {
         insuranceOff = o.optJSONArray("insuranceOff")?.let { a ->
             (0 until a.length()).mapNotNull { n -> com.bamnat.core.pay.InsuranceLine.entries.firstOrNull { it.name == a.optString(n) } }.toSet()
         }.orEmpty(),
+        birthYear = o.optInt("birthYear", 0).takeIf { it in 1900..2100 },
+        insuranceKeep = o.optJSONArray("insuranceKeep")?.let { a ->
+            (0 until a.length()).mapNotNull { n -> com.bamnat.core.pay.InsuranceLine.entries.firstOrNull { it.name == a.optString(n) } }.toSet()
+        }.orEmpty(),
         ordinaryHourly = o.optDouble("ordinaryHourly", Double.NaN).takeIf { it.isFinite() && it > 0 && it < 1_000_000 },
         ordinarySource = o.optString("ordinarySource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
         hoursSource = o.optString("hoursSource").let { n -> com.bamnat.core.pay.HourlySource.entries.firstOrNull { it.name == n } },
@@ -369,6 +490,16 @@ object PayCodec {
         productionWorker = o.optBoolean("production", false),
         previousYearPay = if (o.has("previousYearPay") && !o.isNull("previousYearPay")) o.optLong("previousYearPay").coerceAtLeast(0) else null,
         ledgerTakeHome = o.optBoolean("ledgerNet", false),
+        // 2.0.0 [RVJ-77] A table that does not read (no steps, a month out of 1~12) is dropped rather than failing the file.
+        payScale = o.optJSONObject("payScale")?.let { sc ->
+            runCatching {
+                val steps = sc.getJSONObject("steps").let { st ->
+                    st.keys().asSequence().mapNotNull { k -> k.toIntOrNull()?.takeIf { it in 1..99 }?.let { it to st.getLong(k) } }
+                        .filter { it.second > 0 }.toMap()
+                }
+                com.bamnat.core.pay.PayScale(steps, sc.getInt("month"), sc.getInt("step"), LocalDate.parse(sc.getString("since")))
+            }.getOrNull()
+        },
     )
 
     /** [PAYS-06] One of the user's own rules. */
@@ -489,13 +620,15 @@ object PayCodec {
     /** [PAYX-15] Pay period and pay day; values out of range fall back to the calendar month. */
     fun period(p: com.bamnat.core.pay.PayPeriod): JSONObject = JSONObject()
         .put("endDay", p.endDay ?: -1).put("payDay", p.payDay ?: -1).put("payNextMonth", p.payNextMonth)
-        .put("payWeekday", p.payWeekday?.name ?: "")
+        .put("payWeekday", p.payWeekday?.name ?: "").put("payDayOff", p.payDayOff.name)
 
     fun periodFrom(o: JSONObject): com.bamnat.core.pay.PayPeriod = com.bamnat.core.pay.PayPeriod(
         endDay = o.optInt("endDay", -1).takeIf { it in 1..30 },
         payDay = o.optInt("payDay", -1).takeIf { it in 1..31 },
         payNextMonth = o.optBoolean("payNextMonth", false),
         payWeekday = java.time.DayOfWeek.entries.firstOrNull { it.name == o.optString("payWeekday") },
+        // 2.0.0 [RVK-38] Older saves have none: the working day before, as most payrolls do.
+        payDayOff = com.bamnat.core.pay.PayDayOff.entries.firstOrNull { it.name == o.optString("payDayOff") } ?: com.bamnat.core.pay.PayDayOff.BEFORE,
     )
 
     private fun JSONObject.putRate(key: String, v: Double?) = put(key, v ?: JSONObject.NULL)
@@ -518,6 +651,8 @@ object PayCodec {
         // [LEAVE-02] How 연차 is counted; left out at its default so older files stay the same.
         .apply { if (r.leave != LeavePolicy()) put("leave", leavePolicy(r.leave)) }
         .put("holidayByStart", r.holidayByShiftStart)
+        // 2.0.0 [RVJ-01] Holiday hours left out of the week's 40 hours (회사 규칙).
+        .put("holidayOutWeek", r.holidayOutsideWeek)
         .putOpt("nightStart", r.nightStart?.toString()).putOpt("nightEnd", r.nightEnd?.toString())
         // [PAYS-03] 감시·단속 승인, 5인 미만 회사가 주는 공휴일, 휴게 처리.
         .put("supervisory", r.supervisoryApproved).put("holidaysU5", r.holidaysUnderFive).put("breakPay", r.breakPay.name)
@@ -559,6 +694,7 @@ object PayCodec {
         holidayLeaveFree = o.optBoolean("holidayLeaveFree", false),
         leave = o.optJSONObject("leave")?.let(::leavePolicyFrom) ?: LeavePolicy(),
         holidayByShiftStart = o.optBoolean("holidayByStart", false),
+        holidayOutsideWeek = o.optBoolean("holidayOutWeek", false),
         supervisoryApproved = o.optBoolean("supervisory", false),
         holidaysUnderFive = o.optBoolean("holidaysU5", false),
         breakPay = o.optString("breakPay").let { n -> BreakPay.entries.firstOrNull { it.name == n } } ?: BreakPay.UNPAID,
@@ -584,6 +720,11 @@ object PayCodec {
             }.toMap()
         } ?: emptyMap(),
     )
+
+    /** 2.0.0 [RVO-20] 검토 SET-15: one kind's pay rule as the profile file writes it, for the editor's draft kept across a closed app. */
+    fun extraRuleJson(e: ExtraRule): JSONObject = extraRule(e)
+
+    fun extraRuleFrom(e: JSONObject): ExtraRule = extraRule(e)
 
     private fun extraRule(e: ExtraRule): JSONObject = JSONObject().put("basis", e.basis.name).put("multiplier", e.multiplier).put("amount", e.amount)
         .put("min", e.minMinutes).put("night", e.nightPremium)
@@ -617,12 +758,17 @@ object PayCodec {
 
     private fun leavePolicy(l: LeavePolicy): JSONObject = JSONObject().put("auto", l.auto).put("basis", l.basis.name)
         .put("fiscalMonth", l.fiscalStartMonth).put("low", JSONArray(l.lowAttendanceYears.sorted()))
+        // 2.0.0 [RVH-45] 시간 단위 연차; only when set, so an older file reads as before.
+        .apply { if (l.byHours) put("byHours", true) }
+        .apply { if (l.dayMinutes != com.bamnat.core.model.Leave.DAY_MINUTES) put("dayMin", l.dayMinutes) }
 
     private fun leavePolicyFrom(o: JSONObject): LeavePolicy = LeavePolicy(
         auto = o.optBoolean("auto", true),
         basis = LeaveBasis.entries.firstOrNull { it.name == o.optString("basis") } ?: LeaveBasis.HIRE,
         fiscalStartMonth = o.optInt("fiscalMonth", 1).coerceIn(1, 12),
         lowAttendanceYears = o.optJSONArray("low")?.let { a -> (0 until a.length()).map { a.optInt(it) }.filter { it >= 1 }.toSet() }.orEmpty(),
+        byHours = o.optBoolean("byHours", false),
+        dayMinutes = o.optInt("dayMin", com.bamnat.core.model.Leave.DAY_MINUTES).takeIf { it in 60..24 * 60 } ?: com.bamnat.core.model.Leave.DAY_MINUTES,
     )
 
     private fun premiums(p: List<Premium>): JSONArray = JSONArray(p.map {
@@ -720,7 +866,8 @@ object PayCodec {
         } ?: JSONObject.NULL)
 
     private fun timeline(o: JSONObject): ValueTimeline = ValueTimeline(
-        entries = o.optJSONArray("entries").objects().map { DatedValue(LocalDate.parse(it.getString("from")), it.getLong("value")) },
+        // [RVJ-25] 검토 PAYC-21: one entry with a date that does not read is left out, not the whole setup with it.
+        entries = o.optJSONArray("entries").objects().mapNotNull { runCatching { DatedValue(LocalDate.parse(it.getString("from")), it.getLong("value")) }.getOrNull() },
         raise = o.optJSONObject("raise")?.let { r ->
             RaiseRule(
                 month = r.getInt("month"),

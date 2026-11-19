@@ -23,6 +23,17 @@ object FillMoment {
 
         /** [rest] as of [now]: without the first alarm once it is past. */
         fun restAt(now: LocalDateTime): String = if (alarm != null && !alarm.isAfter(now)) restWithoutAlarm else rest
+
+        /**
+         * 2.0.0 [RVI-67] (PC 통합 1차 N5·PC-36) [rest] with the alarm the phone has actually set ([set]; null while none is): the
+         * line worked its own guess out of the setup's answers and kept it, so it said '첫 알람 모레 06:00' over a 05:30 alarm and
+         * '오늘 08:00' over 07:40, and stayed so after a 작품 added an alarm.
+         */
+        fun restWith(set: LocalDateTime?, now: LocalDateTime): String {
+            val at = set?.takeIf { it.isAfter(now) } ?: return restWithoutAlarm
+            val said = "첫 알람 ${dayWord(at.toLocalDate(), now.toLocalDate())} ${"%02d:%02d".format(at.hour, at.minute)}"
+            return if (restWithoutAlarm.isEmpty()) said else "$restWithoutAlarm · $said"
+        }
     }
 
     fun of(days: List<ResolvedDay>, today: LocalDate, firstAlarm: LocalDateTime? = null): Line? {

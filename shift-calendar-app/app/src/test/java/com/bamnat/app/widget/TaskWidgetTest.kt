@@ -96,11 +96,13 @@ class TaskWidgetTest {
             Memo(id = 4, date = today, title = "운동"),
             Memo(id = 5, date = today, title = "빨래"),
         ), today)
-        val split = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three) } } }
+        // (HQ-123) The clock is given: read from the real one, this said '21:00 늦음' and failed whenever it ran after 21:00 (06~09시 KST in CI).
+        val split = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) { WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskLine(three, today.atTime(12, 0)) } } }
         texts.clear()
         walk(split.remoteViews.apply(context, android.widget.FrameLayout(context)))
         assertTrue("title alone: $texts", "우유 사기" in texts)
-        assertTrue("time under it: $texts", texts.any { it.endsWith("21:00") || it.endsWith("9:00") })
+        // After 21:00 on the test clock the same line reads "21:00 늦음" (the 늦음 check below), so the time is looked for before it.
+        assertTrue("time under it: $texts", texts.any { it.removeSuffix(" 늦음").let { t -> t.endsWith("21:00") || t.endsWith("9:00") } })
         assertTrue("how many left, by ＋: $texts", "3" in texts)
         // PC 6차: today's 9:21 gone by showed no 늦음 in either widget. Past its time it says 늦음 by the time, in both.
         val late = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) {
@@ -123,7 +125,7 @@ class TaskWidgetTest {
         walk(early.remoteViews.apply(context, android.widget.FrameLayout(context)))
         assertTrue("not yet: $texts", texts.none { "늦음" in it })
         val first = three.first { it.text == "우유 사기" }
-        assertTrue(note(first, TaskList.overdue(first, today.atTime(21, 30)))!!.startsWith("늦음 · "))
+        assertTrue(note(first, TaskList.overdue(first, today.atTime(21, 30)))!!.endsWith("늦음")) // [RVP-54] when first, 늦음 last
         assertEquals(null, note(three.first { it.text == "운동" }, false))
         assertNotNull(GlanceRemoteViews().compose(context, DpSize(250.dp, 180.dp)) {
             WidgetLookTheme { WidgetSurface(androidx.glance.GlanceModifier) { TaskContent(three, today, today.atTime(21, 30)) } }

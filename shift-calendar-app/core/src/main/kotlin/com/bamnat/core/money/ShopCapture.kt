@@ -56,6 +56,55 @@ object ShopCapture {
         return Sale(bucket, if (cancel) -amount else amount, appName.ifBlank { pkg })
     }
 
+    // ---- 2.0.0 [RVK-40] (검토 MONEY-52·T06b-03) 한 주문은 한 번 ----
+
+    private val ORDER_NO = Regex("주문\\s*번호\\s*[:：]?\\s*([A-Za-z0-9][A-Za-z0-9-]{3,19})|#\\s?([A-Za-z0-9][A-Za-z0-9-]{2,19})")
+    private val STAGE_NEW = Regex("접수|신규|새\\s*주문|들어왔|도착")
+    private val STAGE_LATER = Regex("수락|완료|조리|픽업|배달\\s*(?:시작|중|출발)")
+
+    /** A sale already counted from a delivery app: its 주문번호 when the text had one, its amount (− for a cancellation), when. */
+    data class Counted(val no: String?, val won: Long, val at: Long) {
+        fun encode(): String = listOf(no.orEmpty(), won.toString(), at.toString()).joinToString("\t")
+
+        companion object {
+            /** How many are kept; a day's orders at a busy shop fit. */
+            const val MAX = 300
+
+            fun decode(line: String): Counted? {
+                val p = line.split('\t')
+                if (p.size != 3) return null
+                return Counted(p[0].ifBlank { null }, p[1].toLongOrNull() ?: return null, p[2].toLongOrNull() ?: return null)
+            }
+        }
+    }
+
+    /** The 주문번호 in [text] ("주문번호 B1A2C3", "#1234"), or null. */
+    fun orderNo(text: String): String? = ORDER_NO.find(text)?.let { m -> (m.groups[1] ?: m.groups[2])?.value?.uppercase() }
+
+    /** What to remember of [sale] read from [text] at [at] (millis). */
+    fun counted(text: String, sale: Sale, at: Long) = Counted(orderNo(text), sale.amount, at)
+
+    /**
+     * Whether [sale] from [text] at [at] is an order already counted in [recent]. A delivery app tells one order several times
+     * (접수 · 수락 · 조리 완료 · 배달 완료), each with the amount: the same 주문번호 within [ORDER_HOURS] hours is once; without a number,
+     * a later step (수락·완료, no 접수·신규 in it) of an amount counted within [FOLLOW_UP_MINUTES] minutes is that order again. A new
+     * order (접수·신규) without a number always counts, so two orders of the same price both go in. Card terminals tell each payment once.
+     */
+    fun isRepeat(text: String, sale: Sale, at: Long, recent: List<Counted>): Boolean {
+        if (sale.bucket != Bucket.DELIVERY) return false
+        fun within(c: Counted, minutes: Long) = at - c.at in 0..minutes * 60_000
+        val no = orderNo(text)
+        if (no != null) return recent.any { it.no == no && (it.won < 0) == (sale.amount < 0) && within(it, ORDER_HOURS * 60) }
+        if (sale.amount > 0 && (STAGE_NEW.containsMatchIn(text) || !STAGE_LATER.containsMatchIn(text))) return false
+        return recent.any { it.won == sale.amount && within(it, FOLLOW_UP_MINUTES) }
+    }
+
+    /** [list] with [c] at the end, no more than [Counted.MAX]. */
+    fun remember(list: List<Counted>, c: Counted): List<Counted> = (list + c).takeLast(Counted.MAX)
+
+    const val ORDER_HOURS = 6L
+    const val FOLLOW_UP_MINUTES = 90L
+
     /**
      * [DAILY-13] 결정 D7-3: with 확인하고 적기 on, a sale read from a notice waits here until the user
      * says 적기 or 버리기, like a payment line in 확인 대기함. [key] is the notice it came from.
@@ -103,6 +152,9 @@ object ShopCapture {
      * [SHOP-08] The amount of a card company's deposit (e.g. "신한카드 입금 1,234,000원", "카드대금 정산"),
      * read by the payment parser as a deposit; null for any other text.
      */
+    /** 1.39.1 [R391-09] The 이체 line of a card company's deposit that fits no day's card sales. */
+    const val CARD_DEPOSIT = "카드 매출 입금"
+
     fun settlement(text: String, parsed: PaymentParser.Parsed?): Long? {
         if (parsed == null || parsed.type != PaymentParser.Type.DEPOSIT) return null
         val amount = parsed.amount?.takeIf { it > 0 } ?: return null

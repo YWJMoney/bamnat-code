@@ -13,16 +13,16 @@ import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
+import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,9 +51,11 @@ import kotlinx.coroutines.launch
 fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, onRecipe: (String) -> Unit) {
     var deck by remember { mutableStateOf<List<RecipeItem>?>(null) }
     var failed by remember { mutableStateOf(false) }
+    // 2.0.0 [RVO-31] PRO-25·U11b-21: '다시 하기' on the failure line reads the deck again.
+    var reload by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val liked = remember { mutableStateOf(setOf<String>()) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(style) {
+    LaunchedEffect(style, reload) {
         val got = runCatching {
             val first = c.recipeApi.list(style, "hot", kind = RecipeClient.SCOPE_THEME)
             val more = first.next?.let { runCatching { c.recipeApi.list(style, "hot", cursor = it, kind = RecipeClient.SCOPE_THEME).items }.getOrNull() }.orEmpty()
@@ -68,30 +70,42 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
         val list = deck
         Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
             when {
-                failed -> Text("인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 열어 주세요", Modifier.padding(16.dp))
+                failed -> com.bamnat.app.ui.components.OfflineLine(Modifier.padding(16.dp), com.bamnat.app.ui.components.NetWords.BUSY,
+                    onRetry = { failed = false; deck = null; reload++ })
                 list == null -> Text("테마를 모으는 중이에요", Modifier.padding(16.dp))
                 list.isEmpty() -> Text("아직 넘겨 볼 테마가 없어요", Modifier.padding(16.dp))
                 else -> {
                     val pager = rememberPagerState { list.size }
                     Text("위로 넘기면 다음 테마 · ${pager.currentPage + 1}/${list.size}", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    VerticalPager(pager, Modifier.weight(1f).fillMaxWidth(), key = { list[it].code }) { i ->
+                    // 2.0.0 [RVM-35] HQ-66 (같은 구조): quick swipes up turn as many themes as swiped (the calendar's fling).
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                    val paneH = maxHeight
+                    VerticalPager(pager, Modifier.fillMaxSize(), key = { list[it].code }, flingBehavior = com.bamnat.app.ui.calendar.queuedTurns(pager)) { i ->
                         val t = list[i]
+                        // 2.0.0 [RVO-31] PRO-25·U11b-21 (조건 12): the picture takes what is left above the lines and buttons (which grow with
+                        // 글자 크기), and the long explaining lines go when even the smallest picture would not fit with them.
+                        val fs = androidx.compose.ui.platform.LocalDensity.current.fontScale
+                        val room = paneH - 24.dp
+                        val core = SWIPE_CORE * fs
+                        val extras = SWIPE_EXTRAS * fs
+                        val showExtras = room - core - extras >= SWIPE_SHOT_MIN
+                        val shotMax = (room - core - (if (showExtras) extras else 0.dp)).coerceIn(SWIPE_SHOT_MIN, 260.dp)
                         Column(Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp, Alignment.Top)) {
                             // [MKV-01] 1.37: the theme as it really looks, as big as fits above its name and buttons.
-                            BoxWithConstraints(Modifier.widthIn(max = 260.dp).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            BoxWithConstraints(Modifier.widthIn(max = shotMax).fillMaxWidth(), contentAlignment = Alignment.Center) {
                                 com.bamnat.app.ui.recipe.MarketShot(t, maxWidth, style, onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = t.code; onRecipe(t.code) })
                             }
                             Text(t.title, style = MaterialTheme.typography.titleLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             // 1.36 [VIL-17] PC 확인 V9: say what wearing it changes, not just a picture.
-                            if (t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },
+                            if (showExtras && t.tabs.isNotEmpty()) Text("바뀌는 곳: " + t.tabs.joinToString(" · ") { com.bamnat.app.ui.recipe.marketTabLabel(it, style) },
                                 style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                             // PC 확인: the rest of the page says what it is, who made it and how to see it on one's own calendar.
-                            if (t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
+                            if (showExtras && t.summary.isNotBlank()) Text(t.summary, style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                             t.nick?.let { Text("만든 분 $it", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣은 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
+                            Text("♥ ${t.likes + if (t.code in liked.value) 1 else 0} · 넣어 본 분 ${t.users}" + if (t.newMaker) " · 새 창작자" else "",
                                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val on = t.code in liked.value
@@ -102,13 +116,20 @@ fun SwipeThemesScreen(c: AppContainer, style: WorkStyle?, onBack: () -> Unit, on
                                 Button(onClick = { com.bamnat.app.recipe.RecipeLinks.tryNext = t.code; onRecipe(t.code) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("입어 보기") }
                             }
                             if (i < list.size - 1) FilledTonalButton(onClick = { scope.launch { pager.animateScrollToPage(i + 1) } }) { Text("다음 테마") }
-                            Text("입어 보기를 누르면 내 달력에 먼저 입혀 보고, 마음에 드는 부분만 골라 넣어요. 넣은 뒤 7일 안에는 되돌릴 수 있어요",
+                            if (showExtras) Text("입어 보기를 누르면 내 달력에 먼저 입혀 보고, 마음에 드는 부분만 골라 넣어요. 넣은 뒤 7일 안에는 되돌릴 수 있어요",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
                         }
+                    }
                     }
                 }
             }
         }
     }
 }
+
+/** 2.0.0 [RVO-31] Height (at 글자 100%) of what stays under the picture on a page of 넘겨 보기: name, who, ♥ line, two buttons, next. */
+private val SWIPE_CORE = 250.dp
+/** The explaining lines that go first when the picture would be smaller than [SWIPE_SHOT_MIN]. */
+private val SWIPE_EXTRAS = 170.dp
+private val SWIPE_SHOT_MIN = 120.dp

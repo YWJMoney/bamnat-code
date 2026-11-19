@@ -21,6 +21,27 @@ object PatternTimeline {
     }
 
     /**
+     * 2.0.0 [RVH-90] 검토 PC-12 (알바에 지난 6개월 근무가 채워짐): a first 알바 order fills this month from its first day, not two
+     * years: a part-time job is often new, and months it never worked would count in its pay and hours. This month stays whole,
+     * so its pay and the month on screen are as before.
+     */
+    fun firstThisMonth(pattern: WorkPattern, today: LocalDate): WorkPattern =
+        pattern.withRange(minOf(pattern.startDate, today.withDayOfMonth(1)), pattern.endDate)
+
+    /** The first order as a first setup saves it: [firstThisMonth] for 알바, else [first]. */
+    fun firstFor(style: com.bamnat.core.work.WorkStyle?, pattern: WorkPattern, today: LocalDate): WorkPattern =
+        if (style == com.bamnat.core.work.WorkStyle.HOURLY) firstThisMonth(pattern, today) else first(pattern, today)
+
+    /**
+     * 2.0.0 [RVH-94] 검토 PC-212 (오늘 깐 교대에게 '지난달 10월 231시간'·'근무 216일 중 야간 108번'): the orders as they stand from
+     * [from] on, for figures told as facts. A first order is stretched back two years ([first]) so the calendar's past is not empty,
+     * but those days were never worked in the app: counted, they read as the user's own. Periods ending before [from] go; the anchor
+     * stays, so the days after [from] are the same.
+     */
+    fun since(patterns: List<WorkPattern>, from: LocalDate): List<WorkPattern> =
+        patterns.filter { it.endDate?.isBefore(from) != true }.map { if (it.startDate.isBefore(from)) it.withRange(from, it.endDate) else it }
+
+    /**
      * Applies [pattern] from [from] on. Earlier periods are kept as they are, cut short the day
      * before [from]; periods that would only start on or after [from] are replaced.
      */

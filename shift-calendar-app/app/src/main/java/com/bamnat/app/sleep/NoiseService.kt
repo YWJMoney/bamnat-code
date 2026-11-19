@@ -39,6 +39,7 @@ class NoiseService : Service() {
     @Volatile private var running = false
     private var thread: Thread? = null
     private var focus: AudioFocusRequest? = null
+    @Volatile private var paused = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -62,7 +63,15 @@ class NoiseService : Service() {
         val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
         if (Build.VERSION.SDK_INT >= 26) {
             focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
-                .setOnAudioFocusChangeListener { change -> if (change == AudioManager.AUDIOFOCUS_LOSS) stopAll() }
+                // 2.0.0 [RVI-51] (검토 ALM-26) A call or an alarm takes the sound for a while: it waits (it played on under them),
+                // and comes back after; a lasting loss stops it.
+                .setOnAudioFocusChangeListener { change ->
+                    when (change) {
+                        AudioManager.AUDIOFOCUS_LOSS -> stopAll()
+                        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT, AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> paused = true
+                        AudioManager.AUDIOFOCUS_GAIN -> paused = false
+                    }
+                }
                 .build().also { audio.requestAudioFocus(it) }
         }
         val rate = NoiseSynth.SAMPLE_RATE
@@ -85,6 +94,7 @@ class NoiseService : Service() {
             runCatching {
                 track.play()
                 while (running) {
+                    if (paused) { Thread.sleep(100); continue }
                     val elapsed = SystemClock.elapsedRealtime() - started
                     val g = NoiseTimer.gain(elapsed, total)
                     if (g <= 0f) break

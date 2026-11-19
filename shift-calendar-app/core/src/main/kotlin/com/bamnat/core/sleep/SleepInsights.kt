@@ -1,6 +1,7 @@
 package com.bamnat.core.sleep
 
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.work.WorkStyle
 import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.abs
@@ -20,7 +21,19 @@ object SleepInsights {
         AFTER_NIGHT("야간 뒤"),
         BEFORE_EARLY("아침 출근 전"),
         WORK_DAY("근무일"),
-        DAY_OFF("쉬는 날"),
+        DAY_OFF("쉬는 날");
+
+        /**
+         * 2.0.0 [RVH-74] 검토 TYPE-07·T30-15·T30-95 (투자·현장·가게에 '야간 뒤·근무일'): the kind of rest in the words of the work.
+         * 야간 is a 교대 worker's (사용자 2026-11-06); a shop's late night is its closing, a field worker's an evening job.
+         */
+        fun label(style: WorkStyle?): String = when (style) {
+            null, WorkStyle.SHIFT -> label
+            WorkStyle.INVEST -> when (this) { AFTER_NIGHT -> "늦게 잔 날"; BEFORE_EARLY -> "이른 아침 전"; WORK_DAY -> "평일"; DAY_OFF -> "쉬는 날" }
+            WorkStyle.BUSINESS -> when (this) { AFTER_NIGHT -> "늦게 닫은 뒤"; BEFORE_EARLY -> "일찍 여는 날 전"; WORK_DAY -> "영업한 날"; DAY_OFF -> "쉬는 날" }
+            WorkStyle.FIELD -> when (this) { AFTER_NIGHT -> "늦게 일한 뒤"; BEFORE_EARLY -> "이른 일정 전"; WORK_DAY -> "일한 날"; DAY_OFF -> "쉬는 날" }
+            WorkStyle.DAY, WorkStyle.HOURLY -> when (this) { AFTER_NIGHT -> "늦게 일한 뒤"; BEFORE_EARLY -> "아침 출근 전"; WORK_DAY -> "일한 날"; DAY_OFF -> "쉬는 날" }
+        }
     }
 
     /** One finished sleep with the work around it. */
@@ -90,7 +103,18 @@ object SleepInsights {
     fun nights(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long = WINDOW_DAYS): List<Night> =
         nightsAndWork(log, resolver, today, days).first
 
-    private fun nightsAndWork(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long): Pair<List<Night>, List<SleepSchedule.Work>> {
+    /**
+     * 2.0.0 [RVH-74] 검토 TYPE-07 (현장은 일감만 적으면 모든 잠이 '쉬는 날', 투자는 근무가 없어 늘 '쉬는 날'): a day with no shift that is
+     * still a day of work: a 현장 day with a job ([jobDays]), a 투자 weekday the market opens.
+     */
+    fun workDay(style: WorkStyle?, jobDays: Set<LocalDate> = emptySet()): (LocalDate) -> Boolean = when (style) {
+        WorkStyle.INVEST -> { d -> d.dayOfWeek.value <= 5 && !com.bamnat.core.holiday.KoreanHolidays.isHoliday(d) }
+        else -> if (jobDays.isEmpty()) NO_WORK_DAY else { d -> d in jobDays }
+    }
+    private val NO_WORK_DAY: (LocalDate) -> Boolean = { false }
+
+    private fun nightsAndWork(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, days: Long,
+                              workDay: (LocalDate) -> Boolean = NO_WORK_DAY): Pair<List<Night>, List<SleepSchedule.Work>> {
         val from = today.minusDays(days - 1)
         val done = log.filter { e ->
             e.end != null && (e.minutes ?: 0) in TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES &&
@@ -100,7 +124,7 @@ object SleepInsights {
         val first = done.minOf { it.start.toLocalDate() }.minusDays(1)
         val last = done.maxOf { it.end!!.toLocalDate() }.plusDays(1)
         val work = resolver.resolveRange(first, last).flatMap { SleepSchedule.work(it) }
-        return done.sortedByDescending { it.start }.map { e -> Night(e, contextOf(e.start, e.end!!, work)) } to work
+        return done.sortedByDescending { it.start }.map { e -> Night(e, contextOf(e.start, e.end!!, work, workDay)) } to work
     }
 
     /** 1.38 [SLEEP-02] Two sleeps further apart than this are two rests even with no work between them. */
@@ -119,13 +143,14 @@ object SleepInsights {
         return out.map { Block(it.sortedByDescending { n -> n.entry.start }) }.sortedByDescending { it.start }
     }
 
-    internal fun contextOf(start: LocalDateTime, end: LocalDateTime, work: List<SleepSchedule.Work>): Context {
+    internal fun contextOf(start: LocalDateTime, end: LocalDateTime, work: List<SleepSchedule.Work>,
+                           workDay: (LocalDate) -> Boolean = NO_WORK_DAY): Context {
         val before = work.filter { !it.to.isAfter(start.plusHours(1)) && it.to.isAfter(start.minusHours(AFTER_WORK_HOURS)) }
         if (before.any { it.night || it.overnight }) return Context.AFTER_NIGHT
         val after = work.firstOrNull { !it.from.isBefore(end.minusHours(1)) && it.from.isBefore(end.plusHours(BEFORE_WORK_HOURS)) }
         if (after != null && after.early) return Context.BEFORE_EARLY
         val day = end.toLocalDate()
-        return if (work.any { it.date == day } || before.isNotEmpty() || after != null) Context.WORK_DAY else Context.DAY_OFF
+        return if (work.any { it.date == day } || before.isNotEmpty() || after != null || workDay(day)) Context.WORK_DAY else Context.DAY_OFF
     }
 
     /**
@@ -135,12 +160,16 @@ object SleepInsights {
     fun groupsWord(style: com.bamnat.core.work.WorkStyle?): String = when (style) {
         null, com.bamnat.core.work.WorkStyle.SHIFT -> "야간 뒤·쉬는 날"
         com.bamnat.core.work.WorkStyle.INVEST -> "평일·쉬는 날"
+        // 2.0.0 [RVH-74] A shop's days are 영업한 날 ([Context.label]).
+        com.bamnat.core.work.WorkStyle.BUSINESS -> "영업한 날·쉬는 날"
         else -> "일한 날·쉬는 날"
     }
 
     fun report(log: List<SleepEntry>, resolver: ScheduleResolver, today: LocalDate, targetMinutes: Int,
-               style: com.bamnat.core.work.WorkStyle? = null): Report {
-        val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS)
+               style: com.bamnat.core.work.WorkStyle? = null,
+               /** 2.0.0 [RVH-74] 현장: the days with a job, which are days of work without a shift. */
+               jobDays: Set<LocalDate> = emptySet()): Report {
+        val (nights, work) = nightsAndWork(log, resolver, today, WINDOW_DAYS, workDay(style, jobDays))
         val blocks = blocks(nights, work)
         // [SLEEP-02] Averages are per rest: a split sleep counts whole, a nap on its own is left out.
         val mainRests = blocks.filterNot { it.nap }
@@ -160,30 +189,36 @@ object SleepInsights {
 
     private fun findings(r: Report, target: Int, style: com.bamnat.core.work.WorkStyle? = null): List<Finding> = buildList {
         if (r.isEmpty) return@buildList
+        // 2.0.0 [RVH-74] Each finding in the words of the work ([Context.label]); 야간·교대 only to a 교대 worker.
+        val shift = style == null || style == WorkStyle.SHIFT
         val night = r.group(Context.AFTER_NIGHT)
         if (night != null && night.enough && target - night.averageMinutes >= SHORT_MINUTES) {
-            add(Finding("after-night", Tone.WARN, "야간 뒤 잠이 짧아요",
-                "야간 뒤에는 평균 ${hours(night.averageMinutes)} 잤어요. 목표보다 ${hours(target - night.averageMinutes)} 적어요. " +
-                    "방을 어둡고 조용하게 해 두거나, 다음 야간 전에 낮잠을 넣어 나눠 자는 방법도 있어요."))
+            val said = Context.AFTER_NIGHT.label(style)
+            add(Finding("after-night", Tone.WARN, "$said 잠이 짧아요",
+                "${said}에는 평균 ${hours(night.averageMinutes)} 잤어요. 목표보다 ${hours(target - night.averageMinutes)} 적어요. " +
+                    "방을 어둡고 조용하게 해 두거나, " + (if (shift) "다음 야간 전에" else "늦게 일하는 날 전에") + " 낮잠을 넣어 나눠 자는 방법도 있어요."))
         }
         val early = r.group(Context.BEFORE_EARLY)
         if (early != null && early.enough && target - early.averageMinutes >= SHORT_MINUTES) {
-            add(Finding("before-early", Tone.WARN, "아침 출근 전 잠이 짧아요",
-                "아침 출근 전에는 평균 ${hours(early.averageMinutes)} 잤어요. 전날 잠드는 시각을 30분씩 당겨 보세요."))
+            val said = Context.BEFORE_EARLY.label(style)
+            add(Finding("before-early", Tone.WARN, "$said 잠이 짧아요",
+                "${said}에는 평균 ${hours(early.averageMinutes)} 잤어요. 전날 잠드는 시각을 30분씩 당겨 보세요."))
         }
         val off = r.group(Context.DAY_OFF)
         val work = listOfNotNull(r.group(Context.WORK_DAY), early, night).filter { it.enough }
         if (off != null && off.enough && work.isNotEmpty()) {
             val workAvg = work.sumOf { it.averageMinutes * it.count } / work.sumOf { it.count }
             if (off.averageMinutes - workAvg >= CATCH_UP_MINUTES) {
+                val workDay = Context.WORK_DAY.label(style)
                 add(Finding("catch-up", Tone.NOTE, "쉬는 날 몰아서 자요",
-                    "쉬는 날은 근무일보다 평균 ${hours(off.averageMinutes - workAvg)} 더 잤어요. 근무일에 모자란 잠을 채우는 모습이에요. " +
-                        "근무 사이 낮잠으로 조금씩 나눠 채워 보는 것도 방법이에요."))
+                    "쉬는 날은 ${workDay}보다 평균 ${hours(off.averageMinutes - workAvg)} 더 잤어요. ${workDay}에 모자란 잠을 채우는 모습이에요. " +
+                        (if (shift) "근무 사이" else "일하는 날") + " 낮잠으로 조금씩 나눠 채워 보는 것도 방법이에요."))
             }
         }
         r.bedtimeSpread?.takeIf { it >= SPREAD_MINUTES }?.let { s ->
             add(Finding("spread", Tone.NOTE, "잠드는 시각이 들쭉날쭉해요",
-                "야간 뒤를 빼고도 잠드는 시각이 보통 ±${hours(s)} 움직여요. 교대 근무라면 당연한 일이에요. 같은 근무 뒤에는 같은 시각에 눕는 것부터 맞춰 보세요."))
+                if (shift) "야간 뒤를 빼고도 잠드는 시각이 보통 ±${hours(s)} 움직여요. 교대 근무라면 당연한 일이에요. 같은 근무 뒤에는 같은 시각에 눕는 것부터 맞춰 보세요."
+                else "잠드는 시각이 보통 ±${hours(s)} 움직여요. 매일 같은 시각에 눕는 것부터 맞춰 보세요."))
         }
         if (r.week.days >= 3 && r.weekBefore.days >= 3) {
             val diff = r.week.averageMinutes - r.weekBefore.averageMinutes
@@ -197,7 +232,7 @@ object SleepInsights {
         }
         if (r.loggedDays < 5) {
             add(Finding("more-logs", Tone.NOTE, "기록이 쌓이면 더 알려 드려요",
-                "근무별로 2번 넘게 기록하면 ${groupsWord(style)} 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
+                "묶음마다 2번 넘게 기록하면 ${groupsWord(style)} 평균을 따로 보여 줘요. 지금 ${r.loggedDays}일 기록했어요."))
         }
     }
 
@@ -217,7 +252,8 @@ object SleepInsights {
      */
     fun sleptBefore(log: List<SleepEntry>, workStart: LocalDateTime, hours: Long = 24): Long {
         val from = workStart.minusHours(hours)
-        return log.filter { it.end != null && (it.minutes ?: 0) <= SleepDebt.MAX_SLEEP_MINUTES }.sumOf { e ->
+        // 2.0.0 [RVIB-14] (PC-124) A tap of a few minutes is not a sleep, here as in the averages.
+        return log.filter { it.end != null && (it.minutes ?: 0) in TodayFlow.MIN_LOGGED_MINUTES..SleepDebt.MAX_SLEEP_MINUTES }.sumOf { e ->
             val a = maxOf(e.start, from); val b = minOf(e.end!!, workStart)
             if (b.isAfter(a)) java.time.Duration.between(a, b).toMinutes() else 0L
         }
@@ -249,6 +285,18 @@ object SleepInsights {
     }
 
     fun clock(minutes: Int): String = "%02d:%02d".format(minutes / 60, minutes % 60)
+
+    /**
+     * 2.0.0 [RVI-71] (검토 U03-05) What '깼어요' says, the same on the calendar, the sleep page and the night screen: a sleep under
+     * an hour said '0시간 잤어요' or nothing, and kept no 아침 한 장 without a word why.
+     */
+    fun wokeLine(minutes: Long): String = when {
+        minutes > SleepDebt.MAX_SLEEP_MINUTES -> "16시간이 넘게 열려 있던 기록이라 수면 통계에서 뺐어요"
+        // 2.0.0 [RVIB-14] (PC-124) 잠들었어요 then 깼어요 within minutes is not a sleep: it is not kept (되돌리기 opens it again).
+        minutes < TodayFlow.MIN_LOGGED_MINUTES -> "${minutes.coerceAtLeast(1)}분 만에 깨서 잠으로 남기지 않았어요"
+        minutes < SleepMorning.MIN_MINUTES -> "${minutes.coerceAtLeast(1)}분 잤어요 · 짧아서 아침 한 장 없이 기록에만 남겨요"
+        else -> "${hours(minutes)} 잤어요"
+    }
 
     fun hours(m: Long): String = when {
         m < 60 -> "${m}분"

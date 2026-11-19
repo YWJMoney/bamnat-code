@@ -71,4 +71,15 @@ class NoticeOverlapTest {
         assertEquals("오늘 · 이달 쓴 돈", NoticeOverlap.tidy("오늘  ~ ·  · 이달 쓴 돈"))
         assertEquals("07:00 ~ 19:00 · 물 ~ 2잔", NoticeOverlap.tidy("07:00 ~ 19:00 · 물 ~ 2잔"))
     }
+
+    /** [RVM-03] PC-37: a rule saying how long I slept goes onto the app's own '몇 시간 잤어요' notice, with only its other words. */
+    @Test fun aSleptRuleKeepsOnlyItsOtherWords() {
+        assertTrue(NoticeOverlap.saysSlept("{지난시간(\"잠\")}시간 잤어요. 오늘 {근무}예요"))
+        assertTrue(NoticeOverlap.saysSlept("{지난시간(\"잠\")}시간밖에 못 잤어요. 오늘 {근무}, 무리하지 말아요"))
+        assertFalse(NoticeOverlap.saysSlept("오늘 현장 들어가기 전 안전 점검을 해요"))
+        assertEquals("오늘 주간이에요", NoticeOverlap.withoutSlept("36분 잤어요. 오늘 주간이에요"))
+        assertEquals("오늘 야간, 무리하지 말아요", NoticeOverlap.withoutSlept("5시간 10분밖에 못 잤어요. 오늘 야간, 무리하지 말아요"))
+        assertEquals("물 2잔", NoticeOverlap.withoutSlept("7시간 잤어요 · 물 2잔"))
+        assertEquals("", NoticeOverlap.withoutSlept("7시간 잤어요"))
+    }
 }

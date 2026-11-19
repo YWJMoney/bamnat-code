@@ -145,7 +145,7 @@ class SettingsScreenshotTest : ScreenshotBase() {
         val c = app.container
         val night = runBlocking { c.scheduleRepository.shiftTypes.first() }.firstOrNull { it.name.contains("야") }?.id
         c.settingsRepository.update { it.copy(alarmMission = "math", wakeCheckMinutes = 5,
-            shiftMissions = if (night != null) mapOf(night to "shake") else emptyMap()) }
+            shiftMissions = if (night != null) mapOf(night.toString() to "shake") else emptyMap()) }
         settingsPage("알람"); reveal("근무마다 다르게", exact = true); reveal("묻는 때", exact = false)
     }
     @Test fun phoneMissionMath() = shoot("394_phone_mission_math", PHONE) { mission(com.bamnat.core.alarm.AlarmMission.MATH, java.time.Duration.ofSeconds(40)) }

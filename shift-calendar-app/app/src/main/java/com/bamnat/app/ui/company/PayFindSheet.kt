@@ -29,7 +29,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -174,6 +174,13 @@ class PayFindState(name: String) {
     var auto by mutableStateOf(false)
     /** [PAYG-06] The company the user works for, on the 광장 without a pay way (or not there at all): 직접 만들기 is the main button. */
     var byHand by mutableStateOf<PayFindRows.Row?>(null)
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-01: a payslip read with 명세서로 찾기: its company filled the box, and once a way is chosen it picks
+     * the version that fits it ([WayPickSheet] opens with it).
+     */
+    var slip by mutableStateOf<com.bamnat.core.pay.PayslipRead?>(null)
+    /** What 명세서로 찾기 found: the company's name as the payslip prints it, or "" when it names none. */
+    var slipCompany by mutableStateOf<String?>(null)
 }
 
 /**
@@ -246,12 +253,16 @@ fun PayFindFlow(
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVN-17] 검토 COMP-12: the calendar held by another company, said before 이 급여 방식 쓰기 (and again if the use meets it).
+    var wait by remember { mutableStateOf<MemberWait?>(null) }
+    var freeing by remember { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         when (state.step) {
             PayFindStep.NAME -> NameStep(state, find, byHandHere, onByHand) { row ->
                 state.picked = row
                 state.auto = false
                 error = null
+                wait = null
                 state.step = if (row.pay) PayFindStep.CONFIRM else PayFindStep.NONE
             }
             PayFindStep.USING -> UsingStep(company, onDetailed) { state.step = PayFindStep.NAME }
@@ -279,26 +290,53 @@ fun PayFindFlow(
                 }
                 fit.first?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
                 fit.second?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
-                Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요.",
+                // 2.0.0 [RVN-17] 검토 COMP-12 고르기 전에 알리고: what joining holds.
+                // PC-155 While the calendar is held by another company the card below says so; this line does not promise '정해져요'.
+                if (wait == null) Text("쓰면 이 회사 광장에 참여되고, 수당과 계산 방식만 들어와요. 근무 순서는 그대로예요. 기본급은 바로 다음에 내 것만 넣어요. " +
+                    "이 달력은 30일 동안 ‘${row.name}’${com.bamnat.core.text.Josa.fit(row.name, "으로")} 정해져요.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                Button(onClick = {
-                    val id = row.serverId ?: return@Button
-                    busy = true
-                    scope.launch {
-                        try {
-                            val used = find.use(id, row.setup)
-                            state.used = used
-                            state.step = if (used is PayFind.Used.Ready) PayFindStep.DONE else PayFindStep.NONE
-                        } catch (e: CompanyException) {
-                            error = companyProblem(e)
+                LaunchedEffect(row.serverId) {
+                    val id = row.serverId ?: return@LaunchedEffect
+                    find.held(id)?.let(MemberWait::of)?.let { wait = it }
+                }
+                val use: () -> Unit = {
+                    row.serverId?.let { id ->
+                        busy = true
+                        error = null
+                        scope.launch {
+                            try {
+                                val used = find.use(id, row.setup)
+                                state.used = used
+                                state.step = if (used is PayFind.Used.Ready) PayFindStep.DONE else PayFindStep.NONE
+                            } catch (e: CompanyException) {
+                                // A held calendar is not a fault (조건 6): said on the wait card, not in red.
+                                MemberWait.of(e)?.let { wait = it } ?: run { error = companyProblem(e) }
+                            }
+                            busy = false
                         }
-                        busy = false
                     }
-                }, enabled = !busy, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                }
+                wait?.let { w ->
+                    MemberWaitCard(w, row.name, busy = freeing, onClose = { wait = null }, onUndo = {
+                        freeing = true
+                        scope.launch {
+                            try {
+                                find.undo()
+                                wait = null
+                                use()
+                            } catch (e: CompanyException) {
+                                wait = w.failed(e)
+                            }
+                            freeing = false
+                        }
+                    })
+                }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                // While the calendar is held, 이 급여 방식 쓰기 cannot take it: the card says why and what can be done.
+                Button(onClick = use, enabled = !busy && !freeing && wait == null, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text("이 급여 방식 쓰기")
                 }
-                TextButton(onClick = { state.auto = false; state.step = PayFindStep.NAME }, enabled = !busy) { Text("다른 회사 찾기") }
+                TextButton(onClick = { state.auto = false; wait = null; state.step = PayFindStep.NAME }, enabled = !busy && !freeing) { Text("다른 회사 찾기") }
             }
             PayFindStep.NONE -> {
                 val row = state.picked
@@ -317,9 +355,43 @@ fun PayFindFlow(
             PayFindStep.DONE -> {
                 val way = (state.used as? PayFind.Used.Ready)?.way
                 if (way == null) LaunchedEffect(Unit) { state.step = PayFindStep.NAME }
-                else PendingDone(c, company, way, onDone, onSaved)
+                else PendingDone(c, company, way, onDone, onSaved, slip = state.slip)
             }
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 I10ac-01 명세서 한 장으로 회사와 판을 저절로 맞추기: 명세서로 찾기 reads a payslip on the phone, puts the company
+ * it names in the box (so the rows come as if it were typed), and keeps the payslip for the pick once a way is chosen. Only for a
+ * monthly pay ([wayPickFits]: 교대·일반 직장인); the payslip's numbers never leave the phone, only the name searched as typed.
+ */
+@Composable
+private fun SlipFind(state: PayFindState) {
+    val c = LocalContext.current.appContainer
+    val company = companyScope(c)
+    val profile by company.pay.profile.collectAsStateWithLifecycle()
+    if (!c.companyApi.enabled || !wayPickFits(true, profile?.wageType, true)) return
+    var reading by rememberSaveable { mutableStateOf(false) }
+    val found = state.slipCompany
+    if (found == null || state.slip == null) {
+        TextButton(onClick = { reading = true }, modifier = Modifier.heightIn(min = 48.dp)) { Text("명세서로 찾기 (회사와 판을 한 번에)") }
+    } else {
+        Text(
+            if (found.isNotEmpty()) "명세서에서 ‘$found’를 읽었어요. 회사를 고르면 명세서로 가장 가까운 판까지 맞춰 봐요."
+            else "명세서에 회사 이름이 보이지 않아요. 이름을 쳐 주세요. 명세서는 판을 고를 때 써요.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
+    }
+    if (reading) com.bamnat.app.ui.pay.PayslipFillDialog(title = "명세서로 찾기", onDismiss = { reading = false },
+        keep = com.bamnat.app.ui.pay.PayslipWorks.WAY) { read ->
+        reading = false
+        state.slip = read
+        val name = read.company?.take(40)
+        state.slipCompany = name.orEmpty()
+        if (name != null) state.name = name
+        c.telemetry.event("pay_pick", if (name != null) "slip_company" else "slip_no_company")
     }
 }
 
@@ -376,6 +448,7 @@ private fun NameStep(state: PayFindState, find: PayFind, byHandHere: Boolean, on
         keyboardActions = KeyboardActions(onSearch = {}),
         modifier = Modifier.fillMaxWidth(),
     )
+    SlipFind(state)
     val q = state.name.trim()
     val ready = PayFindRows.ready(q)
     val known = remember(c) { find.knownAll() }
@@ -444,6 +517,8 @@ internal fun PendingDone(
     intro: String? = null,
     /** [PAYG-03] "급여 방식은 넣지 않을게요": nothing goes in, said as a choice rather than by closing. */
     onSkip: (() -> Unit)? = null,
+    /** 2.0.0 [RVN-24] I10ac-01: a payslip read with 명세서로 찾기, so the pick opens with it at once. */
+    slip: com.bamnat.core.pay.PayslipRead? = null,
 ) {
     val scope = rememberCoroutineScope()
     val month = remember { Today.month() }
@@ -476,6 +551,45 @@ internal fun PendingDone(
         value = if (had == null) null else runCatching { payTrial(c, way.text, way.setup, month, calendar) }.getOrNull()
     }
     TrialBeforeAfter(trial)
+    // [PAYP-18] 1.40: the payslip picks the company's version that fits it best and brings its own 기본급, in place of typing it.
+    var picking by rememberSaveable { mutableStateOf(false) }
+    val fits = wayPickFits(shared, had?.wageType, c.companyApi.enabled)
+    if (fits) WayPickCard(onOpen = { picking = true; c.telemetry.event("pay_pick", "open") })
+    // 2.0.0 [RVN-24] I10ac-01: found by its payslip, the pick opens by itself once (closing it leaves the card, as before).
+    var slipOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(slip, fits) {
+        if (slip != null && fits && !slipOpened) { slipOpened = true; picking = true }
+    }
+    if (picking) WayPickSheet(c, company, way, initial = slip.takeIf { slipOpened }, onDismiss = { picking = false }, onUse = { o, slip, agree ->
+        picking = false
+        busy = true
+        error = null
+        scope.launch(kotlinx.coroutines.NonCancellable) {
+            // Another version than the one waiting: it waits in its place, so closing after leaves no '넣지 않았어요' line for the first.
+            if (o.way.setup != way.setup) company.pendingWays.offer(o.way)
+            val use = if (o.way.setup == way.setup) way else o.way
+            val from = if (company.pay.profile.value == null) com.bamnat.core.pay.PaySince.start(month, null) else month
+            // The allowances the payslip named; commit() puts in only those the way brings with no amount yet.
+            val typed = o.profile.items.filter { it.amount.entries.isNotEmpty() }
+                .associate { it.name to it.amount.on(slip.month).value }.filterValues { it > 0 }
+            val ok = runCatching { company.commit(c, use, slip.base ?: 0, null, from, typed) }.getOrDefault(false)
+            busy = false
+            if (!ok) {
+                error = "급여 방식을 넣지 못했어요"
+                return@launch
+            }
+            c.telemetry.event("pay_pick", if (o.way.setup == way.setup) "use_same" else "use_other")
+            // 2.0.0 [RVN-24] I10ac-01: '맞아요' with it, the payslip having matched it whole (the month is kept as checked).
+            if (agree) when (val sent = com.bamnat.app.company.PickAgree.send(c, company, use.companyId, use.setup, slip, o.tried.month.total)) {
+                com.bamnat.app.company.PickAgree.Sent.Done -> com.bamnat.app.ui.components.AppSnack.show("‘맞아요’도 보냈어요. 같은 회사 분들께 큰 힘이 돼요")
+                com.bamnat.app.company.PickAgree.Sent.Waits -> com.bamnat.app.ui.components.AppSnack.show(com.bamnat.app.company.SmallSends.waitsLine(true))
+                is com.bamnat.app.company.PickAgree.Sent.Failed -> com.bamnat.app.ui.components.AppSnack.show(
+                    "방식은 넣었어요. ‘맞아요’는 보내지 못했어요 · ${sent.why}", kind = com.bamnat.app.ui.components.AppSnack.Kind.FAIL)
+            }
+            company.pay.profile.value?.let { onSaved?.invoke(it) }
+            onDone()
+        }
+    })
     val wage = had?.wageType ?: com.bamnat.core.pay.WageType.MONTHLY
     BaseFields(wage, base, { base = it }, hours, { hours = it }, had, month,
         companyHours = way.hours.takeIf { !shared }, companyName = way.title, keepBase = BaseAsk.keepChip(had, month), hideHours = shared)

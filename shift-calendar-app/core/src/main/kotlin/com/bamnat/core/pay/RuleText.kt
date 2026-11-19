@@ -72,6 +72,15 @@ sealed interface RuleChange {
     data class Raise(val month: Int, val percent: Double) : RuleChange {
         override val summary get() = "매년 ${month}월 ${"%.1f".format(percent).removeSuffix(".0")}% 인상"
     }
+    /**
+     * 2.0.0 [RVL-48] (검토 SCAN-32) "3.5% 인상" with no word that it comes every year (매년·해마다·정기·호봉): the pay raised once,
+     * from [month] (the next one) or the month the rules go in, never again by itself. 1.39 read every 인상 as a yearly raise,
+     * and the pay worked out for the years after grew by it each year.
+     */
+    data class RaiseOnce(val month: Int?, val percent: Double) : RuleChange {
+        // Beside 매년's "매년 3월 3.5% 인상", short enough for two lines at 200% in a fold (the × 1.035 form lost its % to the …).
+        override val summary get() = (month?.let { "${it}월 " } ?: "") + "한 번만 기본급 ${"%.1f".format(percent).removeSuffix(".0")}% 인상"
+    }
     data class Extra(val kind: Long, val kindName: String, val rule: ExtraRule) : RuleChange {
         override val summary get() = "$kindName: ${rule.describe()}"
     }
@@ -148,6 +157,12 @@ object RuleText {
         """(?:(오전|오후|밤|새벽|저녁)\s*)?(\d{1,2})(?::(\d{2})|\s*시(?:\s*(\d{1,2})\s*분)?)?\s*(?:~|-|–|부터|에서)\s*(?:(오전|오후|밤|새벽|저녁)\s*)?(\d{1,2})(?::(\d{2})|\s*시(?:\s*(\d{1,2})\s*분)?)\s*(?:까지)?""",
     )
     private val monthListRe = Regex("""(\d{1,2})\s*월""")
+
+    /** 2.0.0 [RVL-48] (검토 SCAN-32) Words that make an 인상 come every year. */
+    private val YEARLY_RAISE = Regex("매년|해마다|매해|년마다|연마다|정기|호봉|연례")
+
+    /** 2.0.0 [RVL-48] (검토 SCAN-32) 설 as a word of its own: 설, 설날, 설 명절, 설·추석, 설과 추석, 구정. */
+    private val SEOLLAL = Regex("""(?<![가-힣])(?:설날|구정|설(?![가-힣])|설(?=과|및|에|엔|때|추석|명절|상여|보너스|연휴))""")
 
     fun read(text: String, kinds: List<ExtraKind> = emptyList(), shiftTypes: List<ShiftType> = emptyList(), fiveOrMore: Boolean = true): List<RuleFinding> =
         sentences(tidy(text)).flatMap { readSentence(it, kinds, shiftTypes, fiveOrMore) } + listOfNotNull(taxFamily(text))
@@ -581,6 +596,12 @@ object RuleText {
         Regex("""(?<![\d.,])(\d{1,3}(?:,\d{3})+)(?![\d,]|\s*(?:%|배|시간|분|명|년|개월))""").find(clause)
             ?.groupValues?.get(1)?.replace(",", "")?.toLongOrNull()?.takeIf { it >= 1_000 }
 
+    /**
+     * 2.0.0 [RVL-17] The pay's name at the start and its amount next, with only words that say how it is counted between ("기본급은 월
+     * 2,500,000원", "시급: 10,320원", "시급은 최저임금 10,320원", "일당(1일) 150,000원").
+     */
+    private fun payHead(names: String) = Regex("""^(?:$names)(?:[은는이가:=()\[\]\-]|월|매월|1개월|시간당|1시간|1일|하루|최저임금|금액|으로|로|약|₩)*(?=\d)""")
+
     private fun readClause(line: String, clause: String, c: String, shiftTypes: List<ShiftType>): List<RuleFinding> {
         val amount = RuleImport.parseAmount(clause) ?: bareAmount(clause)
         val pct = percentRe.find(clause)?.groupValues?.get(1)?.toDouble()
@@ -589,12 +610,16 @@ object RuleText {
 
         // The pay itself.
         if ("연봉" in c && amount != null) return one(RuleChange.Annual(amount), 0.85)
-        if (Regex("^(기본급|기본월급|월급|기본임금)").containsMatchIn(c) && amount != null && pct == null) return one(RuleChange.Base(WageType.MONTHLY, amount), 0.9)
-        if (Regex("^(시급|기본시급)").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.HOURLY, amount), 0.9)
-        if (Regex("^(일당|일급)").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.DAILY, amount), 0.85)
+        // 2.0.0 [RVL-17] (검토 SCAN-30·T07b-09) Only with its amount right after its name: "기본급에는 고정연장수당 300,000원이 포함된다",
+        // "기본급 외에 식대 200,000원", "시급제 직원은 …", "일당직은 식대 5,000원" are about something else, and were read as the pay itself.
+        if (payHead("기본급|기본월급|월급|기본임금").containsMatchIn(c) && amount != null && pct == null) return one(RuleChange.Base(WageType.MONTHLY, amount), 0.9)
+        if (payHead("시급|기본시급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.HOURLY, amount), 0.9)
+        if (payHead("일당|일급").containsMatchIn(c) && amount != null) return one(RuleChange.Base(WageType.DAILY, amount), 0.85)
         if (("인상" in c || "상승" in c) && pct != null) {
-            val month = monthListRe.find(c)?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..12 } ?: 1
-            return one(RuleChange.Raise(month, pct), 0.8)
+            val month = monthListRe.find(c)?.groupValues?.get(1)?.toInt()?.takeIf { it in 1..12 }
+            // 2.0.0 [RVL-48] (검토 SCAN-32) Yearly only when the words say so; else once, offered unticked.
+            if (YEARLY_RAISE.containsMatchIn(c)) return one(RuleChange.Raise(month ?: 1, pct), 0.8)
+            return one(RuleChange.RaiseOnce(month, pct), 0.5)
         }
 
         // How the company counts.
@@ -653,7 +678,9 @@ object RuleText {
         // Bonuses: "상여금 800% 짝수달", "명절상여 50만원 설·추석".
         if (Regex("상여|보너스|명절").containsMatchIn(c) && (pct != null || amount != null)) {
             val festivals = buildSet {
-                if (Regex("설|명절").containsMatchIn(c)) add(Festival.SEOLLAL)
+                // 2.0.0 [RVL-48] (검토 SCAN-32) 설 as a word of its own, on the clause as written: 건설·시설·설비 hold the letter and
+                // are no 명절 (1.39 paid "시설관리팀 상여금 400%" only at 설).
+                if (SEOLLAL.containsMatchIn(clause) || "명절" in c) add(Festival.SEOLLAL)
                 if (Regex("추석|명절").containsMatchIn(c)) add(Festival.CHUSEOK)
             }
             val months = months(c)
@@ -920,7 +947,17 @@ object RuleText {
             }
             is RuleChange.Bonus -> {
                 val count = (change.months.size + change.festivals.size).coerceAtLeast(1)
-                p.copy(items = p.items + PayItem(newId("bonus", change.name, p), change.name, money(change.amount ?: 0), Cadence.BONUS,
+                // 2.0.0 [RVL-47] (검토 SCAN-31·PAYC-18) A 상여 of the same name is that one, changed (its months, 명절, % or amount), as
+                // an allowance is: the same rules read twice made two 상여 and the pay worked out twice the 상여.
+                val same = p.items.firstOrNull { it.cadence == Cadence.BONUS && it.name.replace(" ", "") == change.name.replace(" ", "") }
+                if (same != null) p.copy(items = p.items.map {
+                    if (it.id != same.id) it else it.copy(
+                        amount = if (same.amount.on(since).value == (change.amount ?: 0)) same.amount else BulkEditPlanner.apply(same.amount, change.amount ?: 0, EditScope.FromMonth(from)),
+                        months = change.months, festivals = change.festivals,
+                        percentOfBase = change.yearlyPercent?.let { y -> y / 100 / count }, bonusBasis = change.basis,
+                    )
+                }, estimatedFields = p.estimatedFields - same.id - Unknowns.item(same.id))
+                else p.copy(items = p.items + PayItem(newId("bonus", change.name, p), change.name, money(change.amount ?: 0), Cadence.BONUS,
                     ordinary = true, months = change.months, festivals = change.festivals,
                     percentOfBase = change.yearlyPercent?.let { it / 100 / count }, bonusBasis = change.basis))
             }
@@ -946,6 +983,13 @@ object RuleText {
             is RuleChange.ScheduleRegular -> p.copy(scheduleIsRegular = change.value).let { Unknowns.answered(it, Unknowns.SCHEDULE_IS_REGULAR) }
             is RuleChange.WeeklyHolidayDay -> p.withRules { it.copy(weeklyHoliday = WeeklyHoliday.Fixed(change.day)) }
             is RuleChange.Raise -> p.copy(base = p.base.copy(raise = RaiseRule(month = change.month, percent = change.percent, unit = 1_000)))
+            is RuleChange.RaiseOnce -> {
+                val start = change.month?.let { m -> YearMonth.of(from.year, m).let { if (it < from) it.plusYears(1) else it } } ?: from
+                val now = p.base.on(p.period.start(start)).value
+                if (now <= 0) p
+                else p.copy(base = BulkEditPlanner.apply(p.base, RaiseRule(start.monthValue, change.percent, unit = if (p.wageType == WageType.MONTHLY) 1_000 else 10).apply(now),
+                    EditScope.FromMonth(start)))
+            }
             is RuleChange.Extra -> p.withRules { it.copy(extra = it.extra + (change.kind to change.rule)) }
             is RuleChange.OrdinaryItems -> {
                 val wanted = change.names.map { it.replace(" ", "") }.toSet()
@@ -956,7 +1000,7 @@ object RuleText {
                 // [RULE-ED-01] By its id, else an allowance of the same name (its id kept, as [RuleChange.Allowance] does).
                 val i = p.items.indexOfFirst { it.id == change.item.id }.takeIf { it >= 0 }
                     ?: p.items.indexOfFirst { it.cadence != Cadence.BONUS && it.name.replace(" ", "") == change.item.name.replace(" ", "") }.takeIf { it >= 0 }
-                val item = i?.let { change.item.copy(id = p.items[it].id) } ?: change.item
+                val item = i?.let { kept(p.items[it], change.item, from) } ?: change.item
                 val key = Unknowns.item(item.id)
                 p.copy(
                     items = if (i == null) p.items + item else p.items.toMutableList().also { it[i] = item },
@@ -970,6 +1014,30 @@ object RuleText {
             is RuleChange.Custom -> p.copy(customRules = (p.customRules.filterNot { it.id == change.rule.id || it.source.isNotEmpty() && it.source == change.rule.source && it.name == change.rule.name } +
                 change.rule).takeLast(CustomRule.MAX))
         }
+    }
+
+    /**
+     * 1.39.1 [R391-07] (검토 PAYU-47) A 칸 of '우리 회사 항목' or '조건까지 자세히 고치기' changes an allowance already saved: it comes
+     * as one value from the month seen, which replaced the whole timeline, so every month before it paid 0원. The new value
+     * runs from [from] on and the months before keep theirs (as [RuleChange.Allowance] does), with the yearly raise; the
+     * conditions neither place can set (근무별 지정, 가산 대신, 회사 공통 금액) stay as they were.
+     */
+    private fun kept(old: PayItem, new: PayItem, from: YearMonth): PayItem {
+        val since = new.amount.entries.singleOrNull()
+        val amount = when {
+            new.amount.entries.size > 1 -> new.amount
+            since == null -> new.amount
+            old.amount.entries.isEmpty() -> new.amount
+            old.amount.on(since.from).value == since.value -> old.amount
+            else -> BulkEditPlanner.apply(old.amount, since.value, EditScope.FromMonth(from))
+        }
+        return new.copy(
+            id = old.id,
+            amount = if (amount.raise == null && old.amount.raise != null) amount.copy(raise = old.amount.raise) else amount,
+            shiftTypeIds = new.shiftTypeIds.ifEmpty { old.shiftTypeIds },
+            covers = new.covers ?: old.covers,
+            fixedAmount = new.fixedAmount ?: old.fixedAmount,
+        )
     }
 
     /** 식대·교통비 and the like: welfare paid to everyone, usually left out of 통상임금 by companies. */

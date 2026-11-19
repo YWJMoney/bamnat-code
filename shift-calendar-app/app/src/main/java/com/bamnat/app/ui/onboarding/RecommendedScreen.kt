@@ -249,7 +249,7 @@ fun RecommendedScreen(
 
                     val asks = RecommendedPlan.shown(available, watch)
                     if (asks.isNotEmpty()) Section("허용할 것") {
-                        Text(if (firstStart) "아래 버튼을 누르면 휴대폰이 차례로 물어요. 하나를 거절해도 다음으로 넘어가요."
+                        Text(if (firstStart) "아래 단추를 누르면 휴대폰이 차례로 물어요. 하나를 거절해도 다음으로 넘어가요."
                             else "꺼진 것만 휴대폰이 차례로 물어요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         asks.forEach { item -> PermissionLine(item, item in granted, asking = item == current) }

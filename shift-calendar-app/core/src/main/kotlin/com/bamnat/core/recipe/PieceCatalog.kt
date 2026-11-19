@@ -85,9 +85,11 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
             Field.Items(
                 "items", 12, min = 1,
                 fields = listOf(
-                    Field.Text("name", 20, min = 1),
+                    // 2.0.0 [RVD-28] SD-08: a name and a 근무 글자 by the 근무 종류 한 규칙표 (ShiftRules), as the servers read them.
+                    Field.Text("name", com.bamnat.core.model.ShiftRules.NAME_LETTERS, min = 1),
                     Field.Pick("role", ShiftRole.KEYS),
-                    Field.Text("label", 2, min = 1, check = { if (RecipeText.graphemes(it) > 2) "label" else null }),
+                    Field.Text("label", com.bamnat.core.model.ShiftRules.LABEL_LETTERS, min = 1,
+                        check = { if (RecipeText.graphemes(it) > com.bamnat.core.model.ShiftRules.LABEL_LETTERS) "label" else null }),
                     Field.Color("color"),
                     Field.Emoji("emoji"),
                 ),
@@ -216,7 +218,7 @@ enum class PieceKind(val key: String, val label: String, val styles: Set<WorkSty
 
     /** [RCX-11] 1.35 묶음: other recipes by their codes, put in one after another (each piece still chosen on its own). */
     BUNDLE(
-        "bundle", "레시피 묶음", WorkStyle.entries.toSet(),
+        "bundle", "작품 묶음", WorkStyle.entries.toSet(),
         listOf(
             Field.Items(
                 "items", 8, min = 2,
@@ -619,6 +621,26 @@ data class CalendarView(
     /** The lines under the mark in this view's order: the ones it names first, then the rest in the app's own order. */
     val lines: List<String> get() = (order.orEmpty().filter { it in LINES } + LINES).distinct()
 
+    /**
+     * 2.0.0 [RVP-61] (검토 REST-02) This view with look [i] taken out, as the editor says: the days that took it take look 1, and every
+     * other day keeps its own look. The pattern's numbers past [i] and [todayLook] move down by one; '몇 칸마다' takes no more than the
+     * looks left. Before, only the look went, so the days of look 3 became look 2 and 수요일's look 3 fell back to look 1.
+     */
+    fun withoutLook(i: Int): CalendarView {
+        if (i !in looks.indices) return this
+        val left = looks.filterIndexed { n, _ -> n != i }
+        fun moved(n: Int) = when { n == i -> 0; n > i -> n - 1; else -> n }
+        val p = when (pattern.mode) {
+            CellPattern.WEEK -> pattern.copy(week = pattern.week.map(::moved))
+            CellPattern.SHIFT -> pattern.copy(shift = pattern.shift.mapValues { moved(it.value) })
+            CellPattern.CYCLE -> if (left.size >= 2) pattern.copy(n = pattern.n.coerceAtMost(left.size).coerceAtLeast(2)) else CellPattern()
+            else -> pattern
+        }
+        val today = todayLook?.let { if (it == i) null else moved(it) }
+        return copy(looks = if (left.size <= 1 && left.firstOrNull()?.isDefault != false) emptyList() else left,
+            pattern = if (left.size <= 1) CellPattern() else p, todayLook = today?.takeIf { left.size > 1 })
+    }
+
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         size?.let { "size=$it" }, badge?.let { "badge=$it" }, date?.let { "date=$it" }, text?.let { "text=$it" }, grid?.let { "grid=$it" },
         memo?.let { "memo=$it" }, order?.takeIf { it.isNotEmpty() }?.let { "order=" + it.joinToString(",") },
@@ -695,6 +717,36 @@ object AppFeel {
 
     fun dayOrderProblem(s: String): String? =
         if (s.isEmpty() || s.split(',').let { l -> l.all { it in DAY_GROUPS } && l.size == l.distinct().size }) null else "dayOrder"
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05·SI-03 (사용자 2026-11-12 'A + B 혼합'): whose each choice of an 앱 동작 piece is, when someone
+     * else's work is put on. Before, all of it went over the receiver's own settings: 251 장터 works set 밝기, 8 set 글자 크기 back to
+     * 보통 (a 1.3배 reader's letters got smaller), and the 급여 기간·누르기·시계 went with them.
+     * - [Whose.LOOK] the work's 꾸밈 (강조색·움직임): goes on unless turned off, and comes off with the theme.
+     * - [Whose.BRIGHT] 밝기: the maker's suggestion ('어두운 화면에서 가장 예뻐요'), off until turned on.
+     * - [Whose.MINE] the receiver's own (글자 크기·촘촘하게·시계·누르기·하루 순서·오늘의 흐름·휴식 점검·급여 기간·휴대폰 색): shown,
+     *   off until turned on.
+     */
+    enum class Whose { LOOK, BRIGHT, MINE }
+
+    /** The piece's keys in the order the 넣기 창 says them: 꾸밈, 밝기, then the receiver's own. */
+    val ORDER = listOf("accent", "motion", "theme", "textStep", "compact", "clock12", "tap", "hold", "dayOrder", "flow", "rest", "payPeriod", "dynamic")
+
+    fun whose(key: String): Whose = when (key) {
+        "accent", "motion" -> Whose.LOOK
+        "theme" -> Whose.BRIGHT
+        else -> Whose.MINE
+    }
+
+    /** Whether [key] goes on before the receiver turns anything: only the 꾸밈, and 움직임 not over a receiver who turned it off. */
+    fun onAtFirst(key: String, motionOffNow: Boolean = false): Boolean = whose(key) == Whose.LOOK && !(key == "motion" && motionOffNow)
+
+    /** [values] with only the keys turned on ([on]); empty when none is. */
+    fun only(values: Map<String, Any?>, on: Set<String>): Map<String, Any?> = values.filterKeys { it in on }
+
+    /** [values] as a work goes on where nobody is asked (a shared look card, a team's look): its 꾸밈 only. */
+    fun lookOnly(values: Map<String, Any?>, motionOffNow: Boolean = false): Map<String, Any?> =
+        values.filterKeys { onAtFirst(it, motionOffNow) }
 }
 
 /** [RCP-16] The company file inside a recipe: the phone's own reader checks it whole when it is previewed. */
@@ -746,7 +798,8 @@ data class WidgetLook(
 /**
  * [RCX-30] 1.35 그림 꾸미기, as the settings keep it ("bg=…;dim=30;head=…;widget=…;corners=soft;icon.12=…"): pictures by id
  * (16 hex: a file the phone keeps under looks/, the server's id when it came in a recipe), the background's dimming (0..80 %)
- * and the corners. [icons] is by the kind of day's id on this phone. Empty is the app's own look.
+ * and the corners. [icons] is by the kind of day on this phone, keyed with its calendar ([R200-01] [com.bamnat.core.model.ShiftRef]).
+ * Empty is the app's own look.
  */
 data class PhotoLook(
     val bg: String? = null,
@@ -754,7 +807,7 @@ data class PhotoLook(
     val head: String? = null,
     val widget: String? = null,
     val corners: String? = null,
-    val icons: Map<Long, String> = emptyMap(),
+    val icons: Map<String, String> = emptyMap(),
     /** [MAT-03] 1.36 배경·머리 그림 조정. */
     val adjust: PhotoAdjust = PhotoAdjust(),
     /** [MAT-04] 1.36 근무 그림·머리 그림의 틀 모양 ([PhotoFrame]); null is the app's own (둥근 네모). */
@@ -765,10 +818,13 @@ data class PhotoLook(
     /** Every picture it uses, so the ones nothing uses can be let go. */
     val images: Set<String> get() = setOfNotNull(bg, head, widget) + icons.values
 
+    /** [R200-01] The picture of [calendarId]'s kind of day [shiftId] (null calendar: the main one). */
+    fun iconFor(calendarId: String?, shiftId: Long): String? = icons[com.bamnat.core.model.ShiftRef.key(calendarId, shiftId)]
+
     fun encode(): String = if (isDefault) "" else listOfNotNull(
         bg?.let { "bg=$it" }, "dim=$dim".takeIf { dim != DIM }, head?.let { "head=$it" }, widget?.let { "widget=$it" },
         corners?.let { "corners=$it" }, adjust.takeIf { !it.isDefault }?.let { "adjust=" + it.encode() }, frame?.let { "frame=$it" },
-    ).plus(icons.entries.sortedBy { it.key }.map { (t, id) -> "icon.$t=$id" }).joinToString(";")
+    ).plus(icons.entries.sortedWith(compareBy({ com.bamnat.core.model.ShiftRef.calendarOf(it.key) != com.bamnat.core.model.ShiftRef.MAIN }, { it.key.length }, { it.key })).map { (t, id) -> "icon.$t=$id" }).joinToString(";")
 
     companion object {
         const val DIM = 30
@@ -787,7 +843,7 @@ data class PhotoLook(
                 bg = one["bg"]?.takeIf(::isId), dim = one["dim"]?.toIntOrNull()?.coerceIn(0, 80) ?: DIM,
                 head = one["head"]?.takeIf(::isId), widget = one["widget"]?.takeIf(::isId),
                 corners = one["corners"]?.takeIf { it in CORNERS },
-                icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") }?.toLongOrNull()?.takeIf { isId(v) }?.let { it to v } }.toMap(),
+                icons = m.mapNotNull { (k, v) -> k.removePrefix("icon.").takeIf { k.startsWith("icon.") && com.bamnat.core.model.ShiftRef.isKey(it) && isId(v) }?.let { it to v } }.toMap(),
                 adjust = PhotoAdjust.decode(one["adjust"]), frame = one["frame"]?.takeIf { it.isNotEmpty() && PhotoFrame.problem(it) == null },
             )
         }

@@ -65,7 +65,7 @@ data class OfferResult(
  * as time spent, so a nearer job with a lower wage can come out ahead.
  */
 object OfferCompare {
-    fun of(offer: JobOffer, minimumWage: Long = 10_320): OfferResult {
+    fun of(offer: JobOffer, minimumWage: Long = com.bamnat.core.pay.RateTable.minimumWage()): OfferResult {
         val wage = offer.hourlyWage.coerceAtLeast(0)
         val hours = offer.hoursPerWeek.coerceIn(0.0, 7 * 24.0)
         val base = (hours * wage).roundToLong()
@@ -76,8 +76,9 @@ object OfferCompare {
             offer.nightHoursPerWeek.coerceIn(0.0, hours) + offer.holidayHoursPerWeek.coerceIn(0.0, hours) + (hours - 40).coerceAtLeast(0.0)
         val premium = (premiumHours * wage * 0.5).roundToLong()
         val gross = ((base + holiday + premium) * WEEKS_PER_MONTH).roundToLong()
-        val tax = TakeHome.estimate(gross, offer.taxMode)
         val days = offer.daysPerWeek.coerceIn(0, 7) * WEEKS_PER_MONTH
+        // 2.0.0 [RVJ-80] 일용근로: the month as that many days of its average pay.
+        val tax = TakeHome.estimate(gross, offer.taxMode, dayRate = days.takeIf { it > 0 }?.let { (gross / it).roundToLong() })
         val fares = (offer.commuteCost.coerceAtLeast(0) * days).roundToLong()
         return OfferResult(
             offer = offer,

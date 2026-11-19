@@ -42,6 +42,27 @@ if (providers.gradleProperty("bamnat.composeReports").isPresent) {
     }
 }
 
+// 2.0.0 [RVR-42] (총괄 HQ-116): the app's tests never reach a server outside this computer. The debug build carries the real
+// addresses, so tests that build the app's container called the live servers (tens of thousands of requests a day in its
+// statistics). tools/net-guard/NetGuard.java goes into every test JVM as a Java agent and refuses any host that is not
+// 127.0.0.1/localhost (or a Maven repository for Robolectric's Android jars) before a connection is made; what it refused is
+// written to build/net-guard/blocked. NetGuardTest fails if it is not on.
+val netGuardClasses = tasks.register<JavaCompile>("compileNetGuard") {
+    source = fileTree("../tools/net-guard") { include("**/*.java") }
+    classpath = files()
+    destinationDirectory.set(layout.buildDirectory.dir("net-guard/classes"))
+    options.release.set(17)
+}
+val netGuardJar = tasks.register<Jar>("netGuardJar") {
+    from(netGuardClasses)
+    archiveFileName.set("net-guard.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("net-guard"))
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    manifest { attributes("Premain-Class" to "bamnat.netguard.NetGuard") }
+}
+val netGuardBlocked = layout.buildDirectory.dir("net-guard/blocked").get().asFile
+
 android {
     namespace = "com.bamnat.app"
     compileSdk = 36
@@ -160,37 +181,82 @@ android {
         val forks = (findProperty("bamnat.testForks") as String?)?.toIntOrNull()
             ?: (Runtime.getRuntime().availableProcessors() / 2).coerceIn(1, 3)
         // [QA-05] CI runs the tests in shards side by side (-Pbamnat.testSet): unit = all but the screenshots,
-        // shots-a = the screenshot classes named below, shots-b = every other screenshot class (new ones too),
-        // api = the classes that run on several Android versions.
+        // shots-a … shots-e = the screenshot classes split by time (below), api = the classes that run on several Android versions.
         val testSet = findProperty("bamnat.testSet") as String?
         val shots = "com.bamnat.app.screenshots"
-        val shotsA = listOf("Calendar", "Pay", "MemoStats", "I", "K").map { "$shots.${it}ScreenshotTest" }
+        // 2.0.0 [RVR-43] (총괄 HQ-121): shots-b took every new screenshot class and went over the job's 45 minutes each time, and a
+        // cancelled shard hid its failures. Now four shards share the classes by the seconds each took in CI
+        // (tools/data/shot-seconds.tsv, `python3 tools/shot_shards.py update` from the tests-app-shots-* results): longest first, each
+        // to the shard with the least so far. A class the file does not know counts as 30 seconds, and the last shard also takes any
+        // screenshot class no shard named. tools/shot_shards.py show prints the same split.
+        // [RVR-45] Five since run 44433028533: the four came to about 26 minutes of tests each (shots-c ran 33 minutes, over
+        // the 30-minute warning) and the shots grow with every branch; five are about 21 each.
+        val shotShards = listOf("shots-a", "shots-b", "shots-c", "shots-d", "shots-e")
+        val shotSeconds = file("../tools/data/shot-seconds.tsv").takeIf { it.exists() }?.readLines(Charsets.UTF_8).orEmpty()
+            .filter { it.isNotBlank() && !it.startsWith("#") }
+            .associate { line -> line.split("\t").let { it[0] to it[1].toDouble() } }
+        val shotClasses = file("src/test/java/com/bamnat/app/screenshots").listFiles().orEmpty()
+            .map { it.name }.filter { it.endsWith("Test.kt") }.map { it.removeSuffix(".kt") }.sorted()
+        val shotPlan = List(shotShards.size) { mutableListOf<String>() }.also { bins ->
+            val sums = DoubleArray(shotShards.size)
+            shotClasses.sortedWith(compareBy({ -(shotSeconds[it] ?: 30.0) }, { it })).forEach { c ->
+                val b = sums.indices.minWith(compareBy({ sums[it] }, { it }))
+                sums[b] += shotSeconds[c] ?: 30.0
+                bins[b] += "$shots.$c"
+            }
+        }
         // [REL-14] The classes that run on Android 8, 11, 13 and 15 (@Config(sdk = [26, 30, 33, 35])) go in a JVM of
         // their own (api): sandboxes of several Android versions crash the native SQLite of the other tests in the
         // same JVM. Without -Pbamnat.testSet they are left out; run them with -Pbamnat.testSet=api.
         val apiLevels = listOf("ApiLevelSmokeTest", "AlarmMatrixTest").map { "com.bamnat.app.rules.$it" }
         unitTests.all {
             it.maxHeapSize = "2g"
+            // 2.0.0 [RVR-42] (총괄 HQ-116): no outside network in any test JVM (see netGuardJar above).
+            it.inputs.files(netGuardJar).withPropertyName("netGuard")
+            // Paths relative to the test JVM's folder (this module), so the build cache key is the same on every machine.
+            it.jvmArgs("-javaagent:build/net-guard/net-guard.jar")
+            it.systemProperty("bamnat.netGuard.log", "build/net-guard/blocked")
+            it.doFirst { netGuardBlocked.deleteRecursively() }
             it.maxParallelForks = forks
             // [QA-06] The screenshots (ScreenshotBase writes build/screenshots) are an output of the test task, so a
             // run Gradle takes from the build cache still has them for tools/shot_hashes.py; without this, a pull
             // request that changes nothing the tests read (the fingerprints themselves, a tool) came back
             // FROM-CACHE with no screenshots folder and the key-screenshot check crashed (PR #107).
             it.outputs.dir(layout.buildDirectory.dir("screenshots"))
+            // 2.0.0 [RVR-21] MarketWorksShotsTest's fingerprints, for tools/market_shots.py (same reason).
+            it.outputs.dir(layout.buildDirectory.dir("market-shots"))
+            // 2.0.0 [RVR-19] (검토 TEST-20 ④, 총괄 출시 마무리) ShareLinkTest's three payloads for the share server's tests ([SHR-01],
+            // BAMNAT_NEED_APP_PAYLOADS) are outputs for the same reason: a push that changed nothing the tests read (documents only)
+            // came back FROM-CACHE without them and the server half failed 'share-payload.json is missing' (run 44493609020).
+            listOf("share-payload.json", "share-payload-v2.json", "share-payload-field.json").forEach { f ->
+                it.outputs.file(layout.buildDirectory.file(f)).optional()
+            }
             // [REL-14] Where Robolectric fetches the Android jars of older versions (default Maven Central).
             (findProperty("bamnat.robolectricRepo") as String?)?.let { url -> it.systemProperty("robolectric.dependency.repo.url", url) }
             // 1.39 [MKP-06] -Pbamnat.marketChars=all: MarketCharsTest draws every 출시 작품 and writes the letters it saw.
             (findProperty("bamnat.marketChars") as String?)?.let { v -> it.systemProperty("bamnat.marketChars", v) }
+            // 2.0.0 [RVR-21] -Pbamnat.marketShots=all: MarketWorksShotsTest puts on every 장터 작품 and keeps a fingerprint of each calendar.
+            (findProperty("bamnat.marketShots") as String?)?.let { v -> it.systemProperty("bamnat.marketShots", v) }
+            // 2.0.0 [I60b-01] 시간 여행: Today의 시스템 시계를 이만큼 앞으로(core와 같은 속성, date-watch.yml).
+            (findProperty("bamnat.todayShift") as String?)?.let { v -> it.systemProperty("bamnat.todayShift", v) }
+            // 2.0.0 [RVR-22] -Pbamnat.outsideBodies=all: OutsideBodiesTest writes the bodies of every 장터 작품 worn (SD-09).
+            (findProperty("bamnat.outsideBodies") as String?)?.let { v -> it.systemProperty("bamnat.outsideBodies", v) }
+            it.outputs.dir(layout.buildDirectory.dir("outside-bodies"))
+            // 2.0.0 [RVH-24] TypeWordsScreenTest writes what it found, to make its list anew.
+            (findProperty("bamnat.typeWordsDump") as String?)?.let { v -> it.systemProperty("bamnat.typeWordsDump", v) }
             when (testSet) {
                 "api" -> apiLevels.forEach { c -> it.filter.includeTestsMatching(c) }
                 "unit" -> {
                     it.filter.excludeTestsMatching("$shots.*")
                     apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
                 }
-                "shots-a" -> shotsA.forEach { c -> it.filter.includeTestsMatching(c) }
-                "shots-b" -> {
-                    it.filter.includeTestsMatching("$shots.*")
-                    shotsA.forEach { c -> it.filter.excludeTestsMatching(c) }
+                in shotShards -> {
+                    val at = shotShards.indexOf(testSet)
+                    if (at < shotShards.lastIndex) shotPlan[at].forEach { c -> it.filter.includeTestsMatching(c) }
+                    else {
+                        it.filter.includeTestsMatching("$shots.*")
+                        shotPlan.take(at).flatten().forEach { c -> it.filter.excludeTestsMatching(c) }
+                    }
                 }
                 else -> apiLevels.forEach { c -> it.filter.excludeTestsMatching(c) }
             }
@@ -247,9 +313,9 @@ dependencies {
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // [SHFT-08] The Wear OS watch gets the days through the Wearable Data Layer, phone to watch.
     implementation("com.google.android.gms:play-services-wearable:19.0.0")
-    // [SPD-26] 1.31 I2: Cronet from Play services (HTTP/3·HTTP/2 to the servers); its network code comes with Play services,
-    // so the app grows by its small API only. Without Play services the requests go through HttpURLConnection as before.
-    implementation("com.google.android.gms:play-services-cronet:18.1.1")
+    // [SPD-26] 1.31 I2 had Cronet from Play services here (play-services-cronet). 2.0.0 [RVN-23] (PC-187): gone, since a Play
+    // services update of its module killed the app on screen; the phone's own android.net.http.HttpEngine (Android 14+) or
+    // HttpURLConnection carries the requests now (company/NetEngine.kt).
     // [MON-03] Play billing 9.1.0 (the Java API, so the Kotlin library stays as it is).
     implementation("com.android.billingclient:billing:9.1.0")
     // 1.36 [PUSH-01] 문의 답 바로 알림: data messages only ({kind: inquiry}, no words), started by hand only when the ids are set.

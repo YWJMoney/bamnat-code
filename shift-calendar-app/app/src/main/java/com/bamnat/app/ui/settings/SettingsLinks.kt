@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.getAndUpdate
  */
 enum class SettingsGo {
     WORK_STYLE, PATTERN, SHIFT_TYPES, EXTRA_KINDS, PAY, CALENDARS, DIAGNOSTICS, INQUIRY, BOARD,
+    /** 2.0.0 [RVO-06] 프로, with the '코드를 받으셨나요?' box open and in view. */
+    PRO_CODE,
     SHARE, RECEIVE, SLEEP, CALENDAR_IMPORT,
     /** [SHFT-06][SHFT-07][DAYW-06][DAYW-07] */
     DUTY_ROSTER, HEALTH_REPORT, ATTENDANCE_IMPORT, COMMUTE,
@@ -98,6 +100,7 @@ object SettingsLinks {
             SettingsGo.HEALTH_REPORT -> NoticeLinks.open(NoticeLinks.Target.HEALTH_REPORT)
             SettingsGo.ATTENDANCE_IMPORT -> NoticeLinks.open(NoticeLinks.Target.ATTENDANCE_IMPORT)
             SettingsGo.COMMUTE -> NoticeLinks.open(NoticeLinks.Target.COMMUTE)
+            SettingsGo.PRO_CODE -> { com.bamnat.app.ui.pro.ProCodeLink.ask(); _target.value = SettingsLink.Go(SettingsGo.PRO) }
             else -> _target.value = SettingsLink.Go(go)
         }
     }
@@ -135,6 +138,17 @@ object InquiryLinks {
 
     /** What the inquiry screen was asked to start with, once. */
     fun take(): InquiryStart? = _pending.getAndUpdate { null }
+
+    private val _mine = MutableStateFlow<String?>(null)
+    /**
+     * 2.0.0 [RVN-22] 검토 U10b-01: the one question a notice of its answer opens (its id; with
+     * [com.bamnat.app.company.InquiryReplyJob.STILL_MARK] after it, the notice's 아직이에요 was pressed).
+     */
+    val mine: StateFlow<String?> = _mine.asStateFlow()
+
+    fun openMine(link: String?) { _mine.value = link?.takeIf { it.isNotBlank() } }
+
+    fun takeMine(): String? = _mine.getAndUpdate { null }
 }
 
 /** U 1.32 [UX132-04] (조사 4.4) 어디서나 찾기: the same search as 설정's, from the top of every tab. */

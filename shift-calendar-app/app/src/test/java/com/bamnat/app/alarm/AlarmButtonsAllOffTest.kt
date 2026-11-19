@@ -76,6 +76,8 @@ class AlarmButtonsAllOffTest {
         WakeCheck.awake(app)
         AlarmsOff.turnOn(app)
         AlarmService.screenGone()
+        // The app's own first planning, at the real clock, is over before a test plans its days (CI 12차, AppSettled).
+        AppSettled.alarms(app)
     }
 
     @After fun tearDown() = runBlocking {
@@ -116,6 +118,10 @@ class AlarmButtonsAllOffTest {
         repo.setOverride(day, ShiftOverride.Shift(id))
         repo.setOverride(day.plusDays(1), ShiftOverride.Shift(id))
         c.settingsRepository.update { it.copy(alarmsEnabled = true, wakeCheckMinutes = 5) }
+        // 2.0.0 갈래 I (H #485 전체 시험에서 한 번 NPE, 혼자 돌리면 통과): the app plans these edits too, on its own thread 300 ms
+        // after the last one, and until then the calendar it reads may be the one from before them. On a busy machine that
+        // planning landed after this test's and left no next alarm for a moment. Let it finish first, as SmartWakeAlarmTest does.
+        AppSettled.quiet(app)
         c.rescheduleAlarms()
         assertEquals(millis(day.atTime(6, 0)), c.alarmScheduler.upcoming.value!!.triggerAtMillis)
 
@@ -329,7 +335,7 @@ class AlarmButtonsAllOffTest {
         assertNull(Notifications.alarmChannelTrouble(app))
         val manager = app.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(Notifications.ALARM_CHANNEL_ID, "근무 알람", NotificationManager.IMPORTANCE_LOW))
-        assertEquals("‘근무 알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요", Notifications.alarmChannelTrouble(app))
+        assertEquals("‘알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요", Notifications.alarmChannelTrouble(app))
         manager.deleteNotificationChannel(Notifications.ALARM_CHANNEL_ID)
         Notifications.createChannels(app)
         assertTrue(Notifications.makerLockScreenPermission("Xiaomi"))

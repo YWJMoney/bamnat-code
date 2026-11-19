@@ -222,8 +222,9 @@ internal fun CalendarEditSheet(
         OptionChips("한 주의 시작", listOf(java.time.DayOfWeek.SUNDAY to "일요일", java.time.DayOfWeek.MONDAY to "월요일"), settings.weekStart) { d ->
             update { it.copy(weekStart = d) }
         }
-        OptionChips("날짜를 누르면", listOf(com.bamnat.app.data.PhoneDayView.SHEET to "하루 화면", com.bamnat.app.data.PhoneDayView.WEEK to "그 주만"),
-            settings.phoneDayView) { v -> update { it.copy(phoneDayView = v) } }
+        // 2.0.0 [RVO-21] 검토 U11a-19: the same one choice as 설정 › 화면과 글자 › 누르기 (같은 구조), so the two never say different things.
+        OptionChips(com.bamnat.app.ui.settings.DAY_TAP_ROW, com.bamnat.app.ui.settings.DayTap.entries.map { it to it.label },
+            com.bamnat.app.ui.settings.DayTap.of(settings)) { t -> update { t.applied(it) } }
         OptionSwitch("날짜 칸에 근무 시간", settings.showHoursInCells) { on -> update { it.copy(showHoursInCells = on) } }
         OptionSwitch("음력 날짜", settings.showLunar) { on -> update { it.copy(showLunar = on) } }
         // E 1.32 [LEDX-07]
@@ -241,7 +242,7 @@ internal fun CalendarEditSheet(
         }
         androidx.compose.material3.HorizontalDivider(androidx.compose.ui.Modifier.padding(vertical = 8.dp))
         // [CVW-02] 1.35 달력 모양; 메모 줄 turns the cells' memo on with it.
-        CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v -> update { it.withCalendarView(v) } })
+        CalendarViewEditor(com.bamnat.core.recipe.CalendarView.decode(settings.calView), { v -> update { it.withCalendarView(v) } }, style = settings.workStyle)
         com.bamnat.app.ui.recipe.ShareThisSetting(com.bamnat.core.recipe.PieceKind.CAL_VIEW, androidx.compose.ui.Modifier.heightIn(min = 48.dp))
         },
     )

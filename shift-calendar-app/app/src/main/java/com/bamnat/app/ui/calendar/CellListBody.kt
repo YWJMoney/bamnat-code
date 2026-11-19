@@ -125,7 +125,8 @@ internal fun cellMemos(
     clashOf: ((java.time.LocalDateTime) -> String?)? = null,
 ): List<CellMemo> {
     fun time(m: com.bamnat.core.memo.Memo): java.time.LocalTime? =
-        m.reminder?.at?.takeIf { it.toLocalDate() == date || m.repeat.isNotBlank() }?.toLocalTime()
+        // 2.0.0 [RVIB-04] One told by the work (출근 1시간 전마다) has its time from each day's work: its own day's only.
+        m.reminder?.at?.takeIf { it.toLocalDate() == date || m.repeat.isNotBlank() && m.reminder?.work == null }?.toLocalTime()
     return memos.mapNotNull { m ->
         val title = m.title.ifBlank { m.preview }.trim().lineSequence().firstOrNull().orEmpty()
         if (title.isBlank()) null else Triple(m, time(m), title)

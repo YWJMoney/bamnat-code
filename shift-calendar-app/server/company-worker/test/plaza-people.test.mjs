@@ -12,7 +12,7 @@ const refuse = (field) => { throw new Error(field); };
 
 async function policyOn(call) {
   const h = await signIn(call);
-  const r = await call("POST", "/api/admin/policy", { version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
+  const r = await call("POST", "/api/admin/policy", { confirm: true, version: "3.12", posted: "2026-10-31", effective: "2026-11-07", heldUntil: "2026-11-07", why: "시험" }, h);
   assert.equal(r.status, 200, JSON.stringify(r.data));
 }
 const write = (call, n, place, body, tag, extra = {}) =>
@@ -105,8 +105,8 @@ test("[PLZC-03] 지난 글 더 보기: posts before a time, a page at a time, wi
 });
 
 test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자 on 장터 cards and 광장 posts, after 3.12, resting while held", async (t) => {
-  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs).
-  const LATER = Date.parse("2026-11-30T03:00:00Z");
+  // 장터 올리기 opens on 3.8's date (as in recipe-community.test.mjs); 2.0.0 [RVD-18] the hold below needs 마을 돌봄, from 2026-12-09.
+  const LATER = Date.parse("2026-12-10T03:00:00Z");
   t.mock.timers.enable({ apis: ["Date"], now: LATER });
   const { call } = server({ plaza: true });
   const h = await signIn(call);
@@ -128,7 +128,10 @@ test("[PLZC-40] 제작자 표식: 🏅 이달의 제작자·⭐ 인기 제작자
   assert.deepEqual([card.followers, card.mark], [30, undefined]);
   await policyOn(call);
   await call("POST", "/api/admin/recipes/makers/month", { style: "ALL", makers: [ma] }, h);
+  // 2.0.0 [RVQ-27] 검토 SVC-59: ⭐ counts followers that are 이웃 (3 days on the 나눔 판) or more.
   t.mock.timers.setTime(LATER + 60e3);
+  assert.equal((await call("GET", `/api/recipes/${b}`)).data.mark, undefined, "new installs' follows make no ⭐");
+  t.mock.timers.setTime(LATER + 3 * 86400e3 + 60e3);
   assert.equal((await call("GET", `/api/recipes/${a}`)).data.mark, "month");
   assert.deepEqual([(await call("GET", `/api/recipes/${b}`)).data.mark, (await call("GET", `/api/recipes/${b}`)).data.followers], ["popular", 30]);
   // On 광장, beside a 마을 이름.
@@ -246,7 +249,9 @@ test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work co
   for (const bad of [{ ...card, note: 1 }, { ...card, n: 9 }, { ...card, w: 7 }, { ...card, d: 0, w: 0, n: 0, s: 0, o: 0 }, { ...card, s: 40 }, "5"]) {
     assert.equal((await write(call, 2, "style-shift", "카드 시험 글이에요", null, { card: bad })).status, 400, JSON.stringify(bad));
   }
-  assert.equal((await write(call, 2, "style-shop", "가게는 근무 카드가 없어요", null, { card })).status, 400);
+  // 2.0.0 [RVN-24] T22c-03: 가게 takes one (the app calls it 영업 카드), 투자 has no days at work.
+  assert.equal((await write(call, 2, "style-invest", "투자는 근무 카드가 없어요", null, { card })).status, 400);
+  assert.equal((await write(call, 2, "style-shop", "이번 달 쉬는 날이 셋뿐이네요", null, { card })).status, 201);
   const posts = (await read(call, 3, "style-shift")).data.posts;
   assert.deepEqual(posts.find((p) => p.id === id).card, card);
   assert.equal(posts.find((p) => p.id === early).card, undefined, "before 3.12 nothing was kept");
@@ -297,11 +302,12 @@ test("[PLZC-33] 광장 효과: sums per plaza, answered share and first answer t
   assert.equal(r.status, 200);
   const s = r.data.items.find((x) => x.room === "style-shift");
   assert.equal(s.questions, 2);
-  assert.equal(s.answeredPct, 50);
+  // 2.0.0 [RVN-24] 검토 SVC-95: a share of fewer than 10 is null (관리자 앱 '아직 적음'); n200-rvn24 has the shares of a full sample.
+  assert.equal(s.answeredPct, null);
   assert.equal(s.firstAnswerMin, 30);
   assert.equal(s.metoo, 1);
   assert.equal(s.newWriters, 1, "the writer of 20 days ago");
-  assert.equal(s.cameBackPct, 100);
-  assert.ok(s.tagged > 0 && s.tagged < 100);
+  assert.equal(s.cameBackPct, null);
+  assert.equal(s.tagged, null);
   assert.equal(r.data.items.find((x) => x.room === "style-shop").posts, 0);
 });

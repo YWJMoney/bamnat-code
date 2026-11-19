@@ -19,6 +19,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -164,5 +165,66 @@ fun StepperRow(
     }
 }
 
+/**
+ * 2.0.0 [RVJ-106] 검토 PAYU-25·PAYU-51: the − + (or ‹ ›) of a stepper that is made by hand (a rule's end day, a month, a day): a 48dp
+ * target that TalkBack reads as [description] ("정산 마감일 줄이기"), where the bare glyph had no name and sat at 40dp.
+ */
+@Composable
+fun GlyphStepButton(
+    glyph: String,
+    description: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    outlined: Boolean = true,
+) {
+    val m = modifier.minimumInteractiveComponentSize().semantics { contentDescription = description }
+    if (outlined) OutlinedButton(onClick, m, enabled = enabled) { Text(glyph) } else TextButton(onClick, m, enabled = enabled) { Text(glyph) }
+}
+
 /** Narrower than this, the words and the stepper (about 200dp) cannot share a line with room for the words. */
 private val STACK_BELOW = 300.dp
+
+/**
+ * 2.0.0 [RVH-81] 검토 HQ-98 (총괄 사진 검토, 편 폭 707dp 글자 100%: 달력 옆 하루 칸의 '휴게 시간'이 한 글자씩 세로로 섰어요): a row's
+ * name and its control (− 1시간 +, a switch), on the shared [SideOrBelow] (BIGTXT-01). They share the line only while the whole name
+ * fits on it in one line; when the column is too narrow the name takes its own line and the control sits under it at the end, so no
+ * word is ever set one letter per line (조건 12).
+ */
+@Composable
+fun LabelControlRow(
+    label: String,
+    modifier: Modifier = Modifier,
+    style: androidx.compose.ui.text.TextStyle = MaterialTheme.typography.bodyLarge,
+    control: @Composable () -> Unit,
+) = SideOrBelow(modifier.fillMaxWidth(), minStart = WHOLE_NAME, start = { Text(label, style = style) }, end = control)
+
+/** As [SideOrBelow]'s minStart: more than any name, so the name keeps all of itself beside the control or goes above it. */
+private val WHOLE_NAME = 10_000.dp
+
+/**
+ * 2.0.0 [RVN-18] 검토 COMP-22-6·I10aa-05 (디자인 품질 12): two buttons side by side, one under the other with big letters (150% and up)
+ * or on a narrow screen, so neither breaks its words syllable by syllable. Each is given its [Modifier] (half the row, or the whole
+ * width); [second] null leaves [first] the row.
+ */
+@Composable
+fun PairRow(
+    modifier: Modifier = Modifier,
+    spacing: Dp = 8.dp,
+    first: @Composable (Modifier) -> Unit,
+    second: (@Composable (Modifier) -> Unit)?,
+) {
+    androidx.compose.foundation.layout.BoxWithConstraints(modifier.fillMaxWidth()) {
+        val stacked = second != null && (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f || maxWidth < PAIR_STACK_BELOW)
+        if (stacked) Column(Modifier.fillMaxWidth(), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(spacing)) {
+            first(Modifier.fillMaxWidth())
+            second?.invoke(Modifier.fillMaxWidth())
+        } else Row(Modifier.fillMaxWidth(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(spacing)) {
+            first(Modifier.weight(1f))
+            second?.invoke(Modifier.weight(1f))
+        }
+    }
+}
+
+/** Narrower than this, two buttons of a few words each cannot share a line. */
+private val PAIR_STACK_BELOW = 280.dp

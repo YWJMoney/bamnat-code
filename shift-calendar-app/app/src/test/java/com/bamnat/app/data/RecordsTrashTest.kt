@@ -102,6 +102,27 @@ class RecordsTrashTest {
         assertFalse(c.recordsTrash.restore(entry.id))
     }
 
+    /** 2.0.0 [RVK-10] (검토 MONEY-04·U06a-11): 가계부 lines removed come back for 30 days, with the same ids. */
+    @Test fun removedLedgerLinesComeBackFor30Days() = runBlocking {
+        val money = c.calendars.money(PersonalCalendar.MAIN)
+        val a = money.save(com.bamnat.core.money.MoneyEntry(date = day, kind = com.bamnat.core.money.MoneyKind.EXPENSE, amount = 4_500,
+            category = "카페", merchant = "동네 카페", receipt = "r1.jpg"))
+        val b = money.save(com.bamnat.core.money.MoneyEntry(date = day, kind = com.bamnat.core.money.MoneyKind.EXPENSE, amount = 9_000,
+            category = "식비", merchant = "김밥집", tags = listOf("점심")))
+        val kept = c.recordsTrash.keepLines(PersonalCalendar.MAIN, listOf(a.id, b.id), "2건 · 13,500원")!!
+        money.deleteAll(listOf(a, b))
+        assertTrue(money.allEntries().none { it.id == a.id || it.id == b.id })
+        assertEquals(RecordsTrash.Kind.LINES, kept.kind)
+        assertEquals(RecordsTrash.LINES_KEEP_DAYS.toInt(), kept.daysLeft(kept.at))
+        // The photo a kept line names is not cleared away meanwhile.
+        assertTrue("r1.jpg" in c.recordsTrash.keptReceipts())
+        assertTrue(c.recordsTrash.restore(kept.id))
+        val back = money.allEntries().filter { it.id == a.id || it.id == b.id }.sortedBy { it.id }
+        assertEquals(listOf("동네 카페" to 4_500L, "김밥집" to 9_000L), back.map { it.merchant to it.amount })
+        assertEquals(listOf("점심"), back.last().tags)
+        assertEquals("r1.jpg", back.first().receipt)
+    }
+
     @Test fun aChangedKindOfWorkCanBeTakenBackKeptOrCleared() = runBlocking {
         val (id, _) = filledCalendar("알바")
         val kept = c.recordsTrash.changeStyle(id, WorkStyle.HOURLY, clear = false, message = "")!!

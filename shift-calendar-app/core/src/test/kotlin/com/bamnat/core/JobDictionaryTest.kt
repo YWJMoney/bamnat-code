@@ -62,4 +62,14 @@ class JobDictionaryTest {
         assertEquals("ㄱㅎㅅ", JobDictionary.initials("간호사"))
         assertEquals(1, JobDictionary.distance("ㄱㅏㄴ", "ㄱㅏㅁ", 2))
     }
+
+    /** [TYPE-26·T30-29] Someone who works in a salon or a pharmacy is an employee (일근), the owner is 가게. */
+    @Test fun peopleWhoWorkInAShopAreNotSentToTheOwnerKind() {
+        for (w in listOf("미용사", "헤어디자이너", "미용실 직원", "네일 아티스트", "약국 직원", "저는 약국 직원이에요")) {
+            assertEquals(w, WorkStyle.DAY, best(w)!!.job.style)
+        }
+        for (w in listOf("미용실", "미용실 사장", "네일샵", "약국 운영", "개국약사")) {
+            assertEquals(w, WorkStyle.BUSINESS, best(w)!!.job.style)
+        }
+    }
 }

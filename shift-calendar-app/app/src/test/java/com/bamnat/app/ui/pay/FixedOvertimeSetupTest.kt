@@ -18,13 +18,13 @@ class FixedOvertimeSetupTest {
     private val salary = PayProfile(Occupation.CUSTOM, WageType.MONTHLY, ValueTimeline(listOf(DatedValue(since, 3_000_000))))
 
     @Test fun offLeavesNoFixedOvertime() {
-        val on = withFixedOvertime(salary, since, 20, 400_000, false)
+        val on = withFixedOvertime(salary, since, 20 * 60, 400_000, false)
         assertEquals(1, on.items.count { it.id == FIXED_OT_ID })
         assertTrue(withFixedOvertime(on, since, null, null, false).items.none { it.id == FIXED_OT_ID })
     }
 
     @Test fun hoursAndTheContractsAmountGoIn() {
-        val p = withFixedOvertime(salary, since, 20, 400_000, false)
+        val p = withFixedOvertime(salary, since, 20 * 60, 400_000, false)
         val item = p.items.single { it.id == FIXED_OT_ID }
         assertEquals(20 * 60, item.fixedOvertimeMinutes)
         assertEquals(400_000L, item.amount.on(YearMonth.of(2026, 10)).value)
@@ -32,7 +32,7 @@ class FixedOvertimeSetupTest {
     }
 
     @Test fun aSalaryInOneSumIsSplit() {
-        val p = withFixedOvertime(salary, since, 20, null, true)
+        val p = withFixedOvertime(salary, since, 20 * 60, null, true)
         val ot = p.items.single { it.id == PayExamples.INCLUSIVE_ID }
         val base = p.base.on(YearMonth.of(2026, 10)).value
         // 기본급 = 3,000,000 × 209 ÷ (209 + 30) and the rest is 고정 연장수당.
@@ -43,6 +43,6 @@ class FixedOvertimeSetupTest {
 
     @Test fun hourlyPayHasNoFixedOvertime() {
         val hourly = salary.copy(wageType = WageType.HOURLY)
-        assertTrue(withFixedOvertime(hourly, since, 20, null, false).items.isEmpty())
+        assertTrue(withFixedOvertime(hourly, since, 20 * 60, null, false).items.isEmpty())
     }
 }

@@ -97,7 +97,7 @@ internal fun OrderPreview(
                             val isToday = date == today
                             Column(
                                 Modifier.fillMaxWidth()
-                                    .then(if (isToday) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(6.dp)) else Modifier)
+                                    .then(if (isToday) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.extraSmall) else Modifier)
                                     .padding(vertical = 2.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {

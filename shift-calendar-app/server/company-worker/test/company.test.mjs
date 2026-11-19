@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { normName, personal, cleanSetup, readReport, fingerprint, describe as words, support } from "../src/index.js";
 import { server, setup, report, device, from, slipProof } from "./helpers.mjs";
+import { SERVER_VERSION } from "../src/version.js";
 
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
@@ -369,6 +370,23 @@ test("맞았어요 adds a coworker; 달라요 takes theirs away", async () => {
   assert.equal((await call("POST", "/api/votes", { ...body(5, { ok: true }), device: "short" }, from(5))).data.error, "device");
 });
 
+test("2.0.0 COMP-22-1: pressing ✓ 맞아요 again takes this phone's vote back", async () => {
+  const { call } = server();
+  const a = await call("POST", "/api/reports", report(1), from(1));
+  const body = (n, extra) => ({ device: device(n), company: a.data.company.id, setup: a.data.setup, ...extra });
+  let v = await call("POST", "/api/votes", body(2, { ok: true }), from(2));
+  assert.deepEqual([v.data.persons, v.data.points], [2, 2]);
+  v = await call("POST", "/api/votes", body(2, { ok: null }), from(2));
+  assert.equal(v.status, 200);
+  assert.deepEqual([v.data.status, v.data.persons, v.data.points], ["pending", 1, 1]);
+  // Only this phone's: another's 달라요 stays, and taking back twice is the same.
+  await call("POST", "/api/votes", body(3, { ok: false, why: "old" }), from(3));
+  v = await call("POST", "/api/votes", body(2, { ok: null }), from(2));
+  assert.deepEqual([v.data.persons, v.data.bad], [1, 1]);
+  // Not a 맞아요 by another name: anything but true, false or null is still refused.
+  assert.equal((await call("POST", "/api/votes", body(2, { ok: "back" }), from(2))).data.error, "ok");
+});
+
 test("a sender takes a report back, with its reward", async () => {
   const { call, DB } = server();
   const a = await call("POST", "/api/reports", report(1, { verified: true }), from(1));
@@ -400,6 +418,19 @@ test("everything one install sent can be deleted", async () => {
   assert.deepEqual(gone.data, { reports: 2, votes: 1, posts: 0, inquiries: 0 });
   assert.ok(!DB.dump().includes(sha(`device|${device(1)}`).slice(0, 40)));
   assert.equal((await call("GET", `/api/reports/${a.data.id}`)).status, 404);
+});
+
+test("2.0.0 U10b-04: deleting everything says which adopted rules stay for the people using them", async () => {
+  const { call } = server();
+  const first = await call("POST", "/api/reports", report(1, { company: "(주)예시정밀", verified: true }), from(1));
+  assert.equal((await call("POST", "/api/reports", report(2, { company: "예시 정밀" }), from(2))).data.status, "adopted");
+  await call("POST", "/api/reports", report(1, { company: "다른회사" }), from(1));
+  const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
+  assert.equal(gone.data.reports, 1);
+  assert.equal(gone.data.adoptedKept, 1);
+  assert.equal(gone.data.ratesKept, undefined);
+  // The rule stays as everyone's.
+  assert.equal((await call("GET", `/api/reports/${first.data.id}`)).data.status, "adopted");
 });
 
 test("contacts and amounts in what is typed are refused with the field", async () => {
@@ -457,7 +488,7 @@ test("a way the app cannot set yet goes to the developer only", async () => {
 
 test("the app can say what adoption takes and earns", async () => {
   const { call } = server();
-  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75, firstMonths: 0 });
+  assert.deepEqual((await call("GET", "/api/terms")).data, { threshold: 3, rewardMonths: 3, agree: 75, firstMonths: 0, roomMoney: false });
   assert.equal((await server({ plaza: true }).call("GET", "/api/terms")).data.firstMonths, 1);
 });
 
@@ -509,7 +540,7 @@ test("without a database the server says so", async () => {
   const { call } = server({ DB: undefined });
   assert.equal((await call("GET", "/api/companies?q=예시")).status, 503);
   const health = await call("GET", "/api/admin/health");
-  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null } });
+  assert.deepEqual(health.data, { database: false, password: true, salt: true, why: { password: null, salt: null }, version: SERVER_VERSION });
 });
 
 test("1.38 PAYX-49: a kind's own 시수 is kept and said, and changes the fingerprint", async () => {
