@@ -624,7 +624,7 @@ private fun TalkCard(plan: StylePlaza.Plan, state: PlazaHomeViewModel.State, see
             // and what to write, one tap each, in place of one line of text.
             val quiet = talk != null && talk.posts.count { it.parent == null && it.hidden == null } < STARTER_POSTS
             // 1.36 [VIL-11] 이번 주 이야기 주제: a door to the talk when there is nothing to say.
-            (talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet })?.let { t ->
+            (talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date(), style).takeIf { quiet })?.let { t ->
                 Text("이번 주 주제 · $t", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.clickable(onClickLabel = "주제로 글 쓰기", onClick = onOpen).padding(vertical = 4.dp))
             }

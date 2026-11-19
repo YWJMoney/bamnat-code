@@ -397,7 +397,7 @@ internal fun PlazaFeed(
         // 2.0.0 [RVN-20] 검토 U10a-02·I10ab-03: a quiet plaza has a week's topic even when the 운영팀 put none (theirs always wins).
         val quiet = talk != null && (talk.posts + older).distinctBy { it.id }.count { it.parent == null } < STARTER_POSTS
         PlazaComposer(vm.timeLine.collectAsStateWithLifecycle().value?.first ?: plan.hint.ifBlank { "이 광장 분들과 나누고 싶은 이야기를 적어 주세요" },
-            topic = talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date()).takeIf { quiet },
+            topic = talk?.topic ?: com.bamnat.core.plaza.StarterTopics.of(com.bamnat.core.time.Today.date(), vm.style).takeIf { quiet },
             onWrite = { vm.openTalk() })
         // [PLZC-32] On a night shift the plaza opens as 야간 라운지 once (a tap on 전체 stays).
         // 2.0.0 [RVN-13] COMP-17·T10a-07 …only when the lounge has something to read (LOUNGE_OPENS posts): a quiet night opened on an
@@ -502,6 +502,9 @@ internal enum class Starter(private val words: String) {
         this != TODAY -> words
         style == WorkStyle.INVEST -> "💬 오늘 한 줄"
         style == WorkStyle.BUSINESS -> "🏪 오늘 가게 한 줄"
+        // [RVN-24] 검토 PC-211: a 현장's day is the 현장 and an 알바's the 알바 ('근무' is the 교대·일근 word, and the 현장 has no 출근).
+        style == WorkStyle.FIELD -> "📅 오늘 현장 한 줄"
+        style == WorkStyle.HOURLY -> "📅 오늘 알바 한 줄"
         else -> words
     }
 
@@ -510,8 +513,10 @@ internal enum class Starter(private val words: String) {
         fun todayLine(style: WorkStyle?, now: PlazaTag.Now?): String = when {
             style == WorkStyle.INVEST -> "오늘은 "
             style == WorkStyle.BUSINESS -> "오늘 가게는 "
+            style == WorkStyle.FIELD -> "오늘 현장은 "
             now == PlazaTag.Now.NIGHT -> "오늘 야간이에요. "
             now == PlazaTag.Now.DAY -> "오늘 근무 중이에요. "
+            style == WorkStyle.HOURLY -> "오늘 알바는 "
             else -> "오늘 근무는 "
         }
 
@@ -519,6 +524,8 @@ internal enum class Starter(private val words: String) {
         fun talkOf(style: WorkStyle?): String = when (style) {
             WorkStyle.INVEST -> "투자 이야기"
             WorkStyle.BUSINESS -> "가게 이야기"
+            WorkStyle.FIELD -> "현장 이야기"
+            WorkStyle.HOURLY -> "알바 이야기"
             else -> "근무 이야기"
         }
     }
