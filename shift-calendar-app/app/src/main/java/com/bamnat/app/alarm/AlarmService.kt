@@ -265,8 +265,10 @@ class AlarmService : Service() {
         stopOutputs()
         phoneLater?.let(handler::removeCallbacks)
         phoneLater = null
-        // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it.
-        if (_ringing.value == null) _since.value = Today.millis()
+        // 2.0.0 [RVIB-28] (PC-188) Kept outside the app while it rings: a ring cut by the app dying rings again from where it was.
+        val firstRang = RingKeeper.started(this, ring)
+        // [PROV-06] The mission's 5 minutes count from the first ring, not from a ring that replaced it (nor one rung again).
+        if (_ringing.value == null) _since.value = firstRang
         // 1.38 [SLEEP-08] PC 12차: whether this ring came early is told by when it began, not by the clock while it is shown.
         ringStartedAt = Today.millis()
         _ringing.value = ring
@@ -303,9 +305,21 @@ class AlarmService : Service() {
         _stage.value = if (watchFirst) 1 else 0
         if (!watchFirst) phoneOutputs(ring)
         listenForPowerButton()
-        if (!inCallNow) handler.postDelayed(autoStop, settings.ringMinutes.coerceIn(1, 60) * 60_000L)
+        // [RVIB-28] 자동으로 끄기 counts from the first ring, so a ring rung again after a cut does not start the whole time over.
+        if (!inCallNow) handler.postDelayed(autoStop, (firstRang + settings.ringMinutes.coerceIn(1, 60) * 60_000L - Today.millis()).coerceAtLeast(1_000L))
+        handler.removeCallbacks(keepAlive)
+        handler.postDelayed(keepAlive, RingKeeper.PUSH_EVERY_MILLIS)
         handler.postDelayed(callWatch, CALL_CHECK_MILLIS)
         listenForCallEnd()
+    }
+
+    /** [RVIB-28] While it rings, the keeping alarm is pushed on, so it goes off only when this app is gone. */
+    private val keepAlive = object : Runnable {
+        override fun run() {
+            if (_ringing.value == null) return
+            RingKeeper.push(this@AlarmService)
+            handler.postDelayed(this, RingKeeper.PUSH_EVERY_MILLIS)
+        }
     }
 
     /** Stops a ring nobody answered after 자동으로 끄기. */
@@ -645,6 +659,9 @@ class AlarmService : Service() {
 
     private fun finish() {
         val rang = _ringing.value
+        // [RVIB-28] Ended as it should: nothing rings again.
+        handler.removeCallbacks(keepAlive)
+        RingKeeper.ended(this)
         stopOutputs()
         phoneLater?.let(handler::removeCallbacks)
         phoneLater = null
@@ -672,6 +689,8 @@ class AlarmService : Service() {
         // 1.40 [DISC-01] No '안 써 본 기능' card in the minutes right after an alarm.
         runCatching { com.bamnat.app.data.DiscoverStore.get(this).alarmEnded() }
         onScreen = null
+        // [RVIB-28] Gone while still ringing (not by finish): the keeping alarm stays set and rings it again.
+        handler.removeCallbacks(keepAlive)
         stopOutputs()
         stopListeningForCallEnd()
         _ringing.value = null

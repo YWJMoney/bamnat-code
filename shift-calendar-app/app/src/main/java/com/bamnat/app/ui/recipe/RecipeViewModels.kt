@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
@@ -71,12 +73,13 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
          * [RecipeClient.SCOPE_TAB] + a tab (기능별 탭).
          */
         val kind: String? = RecipeClient.SCOPE_THEME,
-        /** PC D10 (사용성 중): with a word to find, how many the other halves have ("규칙·단추에 1개"), so a search is not lost in the half open. */
-        val elsewhere: Map<String, String> = emptyMap(),
         /** PC 확인 38d63451: while this half is empty, how many the other half (테마 ↔ 기능별 탭) has for the same kind of work. */
         val other: Int = 0,
-        /** 1.39.1 9차 PC(장터가 지난번 구간에 머문 채 찾으면 '이 구간에 없어요'가 먼저): the other halves are still being looked in. */
-        val looking: Boolean = false,
+        /**
+         * 2.0.0 [RVM-64] 검토 U08a-03·MKT-04: with a word to find, what each of the three 구간 ([HALVES]) has, as one list under 구간 heads
+         * (before, the 구간 open was looked in first and said '없어요' while the others were counted into a chip in the folded row).
+         */
+        val found: Map<String, Found> = emptyMap(),
         /**
          * 2.0.0 [RVM-40] PC-149: a word found in none of the three 구간 for my kind of work, but in another kind's works: where and how
          * many ('테마에 1개'), so the way there is one tap and not ▾ › 다른 유형도.
@@ -85,7 +88,13 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         /** 1.38 (장터 그림 LOW): when the list shown was read, so an offline list says how old it is. */
         val loadedAt: Long = 0L,
         /** 2.0.0 [RVM-63] 검토 MKT-02·U08a-02: the next page could not be read; said at the end of the list, with 다시 해 보기. */
-        val moreError: String? = null)
+        val moreError: String? = null) {
+        /** [RVM-64] A word is being looked for: the list is [found], the three 구간 at once. */
+        val searching: Boolean get() = query.isNotBlank()
+    }
+
+    /** [RVM-64] One 구간's part of a search: its works, whether it has more ([next]), still coming, or why it could not be read. */
+    data class Found(val items: List<RecipeItem> = emptyList(), val next: Int? = null, val loading: Boolean = false, val error: String? = null)
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
@@ -114,14 +123,24 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     // 1.35's 테마·스킨 way in (테마 › 장터에서 새 테마 찾기) opens the 테마 구간. 1.39 [MKC-01]: 규칙·단추 opens 도구 › 자동 규칙·단추 (all tools).
     fun kind(k: String?) {
         val to = when (k) { "skin" -> RecipeClient.SCOPE_THEME; RecipeClient.SCOPE_LOGIC -> RecipeClient.SCOPE_TOOL; else -> k }
-        _state.value = _state.value.copy(kind = to); load()
+        val was = _state.value
+        _state.value = was.copy(kind = to)
+        // [RVM-64] A search looks in every 구간 with only 정렬·값·유형, so a 구간's own 탭·종류 picked meanwhile waits for the word to go.
+        if (was.searching && RecipeClient.price(to) == RecipeClient.price(was.kind)) return
+        load()
     }
 
-    /** PC D12: a '다른 구간에 N개' chip: that half, in 새로 (where it was counted). */
-    fun jump(half: String) { _state.value = _state.value.copy(kind = half, tab = Tab.NEW); load() }
+    /**
+     * 2.0.0 [RVM-64] 검토 U08a-01: a 구간 tab. The ✦ 프로 · 무료 picked stays (it is for every 구간); while a word is looked for, only the 구간
+     * the list goes back to when the word is gone.
+     */
+    fun half(h: String) = kind(RecipeClient.withPrice(h, RecipeClient.price(_state.value.kind)))
 
-    /** [RVM-40] PC-149: '다른 유형 작품 보기': 다른 유형도 on, in the 구간 they were counted in ([Tab.NEW]). */
-    fun otherStyles(half: String) { _state.value = _state.value.copy(allStyles = true, kind = half, tab = Tab.NEW); load() }
+    /** [RVM-64] 거르기 › 모두 지우기: the 구간 open with nothing picked, in 요즘 뜨는, my kind of work's. */
+    fun clearPicks() {
+        _state.value = _state.value.copy(kind = halfOf(_state.value.kind), tab = Tab.HOT, allStyles = false); load()
+    }
+
 
     /** The half [kind] is in. */
     fun halfNow(): String = halfOf(_state.value.kind)
@@ -139,6 +158,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     fun load(more: Boolean = false) {
         if (!enabled) { _state.value = _state.value.copy(error = "장터는 아직 열리지 않았어요"); return }
         val s = _state.value
+        if (s.searching) { if (!more) find(s); return }
         if (more && s.next == null) return
         if (more && loading?.isActive == true) return
         loading?.cancel()
@@ -147,7 +167,7 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
         val key = listOf(styleNow?.name, s.tab.key, s.query.trim(), s.kind).joinToString("|")
         val kept = if (more) null else synchronized(pages) { pages[key] }
         _state.value = if (kept != null) s.copy(items = kept.items, next = kept.next, loadedAt = kept.at, loading = true, error = null, moreError = null)
-            else s.copy(loading = true, error = if (more) s.error else null, moreError = null, items = if (more) s.items else emptyList())
+            else s.copy(loading = true, error = if (more) s.error else null, moreError = null, items = if (more) s.items else emptyList(), found = emptyMap())
         loading = viewModelScope.launch {
             try {
                 // 1.39 [MKP-07] 앱을 다시 켠 뒤 처음 여는 장터: the list this phone kept from last time, at once, while it is read again.
@@ -167,9 +187,8 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                 val at = com.bamnat.core.time.Today.millis()
                 if (!more) synchronized(pages) { pages[key] = Kept(items, page.next, at); while (pages.size > PAGES) pages.remove(pages.keys.first()) }
                 _state.value = _state.value.copy(items = items, next = page.next, loading = false, loadedAt = at,
-                    elsewhere = if (more) _state.value.elsewhere else emptyMap(), other = if (more) _state.value.other else 0,
-                    otherStyles = if (more) _state.value.otherStyles else emptyMap())
-                if (!more) count(s, styleNow, got.isEmpty(), items.isNotEmpty())
+                    other = if (more) _state.value.other else 0, otherStyles = if (more) _state.value.otherStyles else emptyMap())
+                if (!more) count(s, styleNow, items.isNotEmpty())
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -180,30 +199,55 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
     }
 
     /**
-     * PC D12 (사용성 낮): 다른 구간은 '새로'(모든 글)에서 세어요. 시작 레시피 칸처럼 좁은 칸에서 찾아도 길이 보이게, 지금 구간도 이 칸에 없으면
-     * '새로'에 몇 개인지. PC 확인 38d63451: an empty 테마 says the 기능별 탭 has some (and the other way round), not only "아직 없어요".
-     * 1.39 [MKP-01]: counted after the list is on the screen, the halves at the same time.
+     * PC 확인 38d63451: an empty 테마 says the 탭별 작품 has some (and the other way round), not only "아직 없어요". 1.39 [MKP-01]: counted
+     * after the list is on the screen.
      */
-    private fun count(s: State, styleNow: WorkStyle?, noneHere: Boolean, any: Boolean) {
+    private fun count(s: State, styleNow: WorkStyle?, any: Boolean) {
         val otherKind = when {
             s.kind == RecipeClient.SCOPE_THEME -> RecipeClient.SCOPE_TAB
             s.kind?.startsWith(RecipeClient.SCOPE_TAB) == true -> RecipeClient.SCOPE_THEME
             else -> null
         }
-        val wantOther = !any && otherKind != null && s.query.isBlank()
-        if (s.query.isBlank() && !wantOther) return
-        if (s.query.isNotBlank()) _state.value = _state.value.copy(looking = true)
+        if (any || otherKind == null) return
         counting = viewModelScope.launch {
-            val other = if (s.query.isBlank()) emptyMap() else HALVES.filter { h -> h != halfOf(s.kind) || (s.tab != Tab.NEW && noneHere) }.map { h ->
+            val n = runCatching {
+                c.recipeApi.list(styleNow, "hot", "", 0, otherKind).items.count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
+            }.getOrDefault(0)
+            _state.value = _state.value.copy(other = n)
+        }
+    }
+
+    /**
+     * 2.0.0 [RVM-64] 검토 U08a-03·MKT-04: a word is looked for in the three 구간 at once, in the order picked, with the ✦ 프로 · 무료 picked
+     * (a 구간's own 탭·종류 are for browsing it); each 구간 shows as soon as it comes, and nothing is said to be missing before all three
+     * have answered. Found nowhere for my kind of work, the other kinds' are counted ([State.otherStyles], PC-149).
+     */
+    private fun find(s: State) {
+        loading?.cancel()
+        counting?.cancel()
+        val styleNow = if (s.allStyles) null else style
+        val price = RecipeClient.price(s.kind)
+        _state.value = s.copy(loading = true, error = null, moreError = null, items = emptyList(), next = null, otherStyles = emptyMap(),
+            found = HALVES.associateWith { Found(loading = true) })
+        loading = viewModelScope.launch {
+            HALVES.map { h ->
                 async {
-                    runCatching { c.recipeApi.list(styleNow, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
-                        val n = p.items.count { RecipeClient.fits(it, h) }
-                        if (n == 0) null else h to (if (p.next != null) "${n}개 넘게" else "${n}개")
+                    val k = RecipeClient.withPrice(h, price)
+                    val f = try {
+                        val page = c.recipeApi.list(styleNow, s.tab.key, s.query, 0, k)
+                        MarketShots.feed(c, page)
+                        Found(page.items.filter { RecipeClient.fits(it, k) && !c.recipes.hides(it) }.distinctBy { it.code }, page.next)
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Found(error = RecipeClient.problem(e))
                     }
+                    _state.value = _state.value.copy(found = _state.value.found + (h to f))
                 }
-            }.awaitAll().filterNotNull().toMap()
-            // [RVM-40] PC-149 ('딥워크' on a 교대 phone: only '맞는 작품이 없어요'): nowhere for my kind of work, the other kinds' too.
-            val otherStyles = if (s.query.isBlank() || styleNow == null || !noneHere || other.isNotEmpty()) emptyMap() else HALVES.map { h ->
+            }.awaitAll()
+            val found = _state.value.found
+            val none = found.values.all { it.items.isEmpty() && it.error == null }
+            val otherStyles = if (!none || styleNow == null) emptyMap() else HALVES.map { h ->
                 async {
                     runCatching { c.recipeApi.list(null, Tab.NEW.key, s.query, 0, h) }.getOrNull()?.let { p ->
                         val n = p.items.count { RecipeClient.fits(it, h) && !c.recipes.hides(it) }
@@ -211,10 +255,30 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
                     }
                 }
             }.awaitAll().filterNotNull().toMap()
-            val otherCount = if (!wantOther) 0 else runCatching {
-                c.recipeApi.list(styleNow, "hot", "", 0, otherKind).items.count { RecipeClient.fits(it, otherKind) && !c.recipes.hides(it) }
-            }.getOrDefault(0)
-            _state.value = _state.value.copy(elsewhere = other, other = otherCount, otherStyles = otherStyles, looking = false)
+            val failed = found.values.all { it.error != null }
+            _state.value = _state.value.copy(loading = false, otherStyles = otherStyles, loadedAt = com.bamnat.core.time.Today.millis(),
+                error = if (failed) found.values.first().error else null)
+        }
+    }
+
+    /** [RVM-64] One 구간's next page of a search (its '더 보기' under the 구간's works). */
+    fun findMore(h: String) {
+        val s = _state.value
+        val f = s.found[h] ?: return
+        if (!s.searching || f.next == null || f.loading) return
+        val k = RecipeClient.withPrice(h, RecipeClient.price(s.kind))
+        _state.value = s.copy(found = s.found + (h to f.copy(loading = true, error = null)))
+        viewModelScope.launch {
+            val g = try {
+                val page = c.recipeApi.list(if (s.allStyles) null else style, s.tab.key, s.query, f.next, k)
+                MarketShots.feed(c, page)
+                f.copy(items = (f.items + page.items.filter { RecipeClient.fits(it, k) && !c.recipes.hides(it) }).distinctBy { it.code }, next = page.next)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                f.copy(error = RecipeClient.problem(e))
+            }
+            if (_state.value.query == s.query) _state.value = _state.value.copy(found = _state.value.found + (h to g.copy(loading = false)))
         }
     }
 
@@ -229,6 +293,27 @@ class RecipeListViewModel(private val c: AppContainer, val calendar: String = Pe
 }
 
 /** [RCP-23..27][RCP-31..35] One recipe: its pieces, 미리 보기 on my calendar, 골라 적용, votes, talk and 신고. */
+/** 2.0.0 [RVQ-42] 검토 U22b-05: what a work made for a newer app says (the server's 426 update, or a piece this app does not know). */
+internal const val NEEDS_UPDATE = "새 판 밤낮에서 만든 작품이라 이 앱에서는 열 수 없어요. 앱을 업데이트하면 열려요"
+
+/** 2.0.0 [RVQ-42] 검토 U22b-05·I22bb-06: the 판 a versionCode is, as people say it ('1.39'); null for one this app does not know. */
+internal fun appVersionName(code: Int?): String? = when (code) {
+    null -> null
+    in 1..49 -> null
+    50 -> "1.36"
+    51 -> "1.37"
+    52 -> "1.38"
+    53 -> "1.39"
+    54 -> "2.0"
+    else -> null
+}
+
+/**
+ * [RVQ-42] 검토 I22bb-06: told to its maker, so nobody wonders why some people do not find it — a work that needs [minApp] is left out
+ * of an older app's 장터. Null when every app reads it, or the 판 is newer than this app knows (the server keeps it from them anyway).
+ */
+internal fun seenFromLine(minApp: Int?): String? = appVersionName(minApp)?.let { "밤낮 ${it}부터 보여요 · 그보다 옛 앱의 장터에는 보이지 않아요" }
+
 class RecipeDetailViewModel(private val c: AppContainer, val code: String, val calendar: String = PersonalCalendar.MAIN) : ViewModel() {
     val style: WorkStyle? = c.calendars.styleOf(calendar, c.settingsRepository.current.workStyle)
     private val device get() = c.companyStore.device
@@ -247,6 +332,8 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
 
     data class State(
         val doc: RecipeDoc? = null, val recipe: Recipe? = null, val error: String? = null,
+        /** [RVQ-42] U22b-05: with [NEEDS_UPDATE], the 판 the server said it needs (null when it did not). */
+        val needsApp: Int? = null,
         val pieces: List<Piece> = emptyList(), val answers: Map<String, Any?> = emptyMap(),
         val votes: Votes? = null, val talk: RecipeTalk? = null, val message: String? = null,
         /** 2.0.0 [RVM-55] 검토 U09b-02: what the last 되돌리기 left as I made it; [message]'s line then has 보기. */
@@ -304,7 +391,18 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
     /** The last work's written form, to tell a newer app's work from one changed on the way. */
     private var newerBody: String? = null
 
-    init { load() }
+    init {
+        load()
+        // 2.0.0 [RVM-65] (R #540 CI shots-b, NtcScreenshotTest: 겹침 1건이 기다린 뒤 0건, 그때 설정은 다시 1건): what each piece would change
+        // and what it overlaps are worked out from my settings, so a change of them while the work is open (in another screen, by a
+        // rule, or a change that came and went while a preview was being worked out) works the preview out again. Only the saved
+        // settings count, not a theme being tried on over them.
+        viewModelScope.launch {
+            c.settingsRepository.settings.drop(1).map { c.settingsRepository.current }.distinctUntilChanged().collect {
+                if (_state.value.recipe != null) preview()
+            }
+        }
+    }
 
     fun load() {
         // 1.39 [MKP-03] 작품 바로 열기 (사용자 2026-11-07 "장터에서 테마 로딩이 너무 느린데"): a card tapped in the 장터 already brought the
@@ -356,8 +454,14 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                     a != null && (0 until a.length()).any { a.optJSONObject(it)?.optString("kind") !in keys }
                 }.getOrDefault(false) } == true
                 // 2.0.0 [RVS-05] 검토 U09b-12 ('오는 길에 바뀌었어요'는 누가 바꾼 것처럼 들려요): what happened and what to do, in plain words.
-                _state.value = _state.value.copy(error = if (newer) "새 판에서 만든 작품이에요 · 앱을 업데이트하면 열려요"
+                // A work from a newer app opens the update screen ([RVQ-42], same as the server's 426).
+                _state.value = _state.value.copy(error = if (newer) NEEDS_UPDATE
                     else "작품을 다 받지 못했어요 · 잠시 뒤 다시 열어 주세요")
+            } catch (e: com.bamnat.app.company.CompanyException) {
+                // 2.0.0 [RVQ-42] 검토 U22b-05·I22ba-01: the server does not send a work this app cannot read (426 update); only an update helps.
+                val text = if (e.code == "update") NEEDS_UPDATE else RecipeClient.problem(e)
+                _state.value = if (_state.value.doc != null && e.code != "update") _state.value.copy(message = text)
+                    else _state.value.copy(doc = null, recipe = null, error = text, needsApp = e.minApp)
             } catch (e: Exception) {
                 // 1.39 [MKP-03] Shown from the card already: it stays, and the problem is said once below.
                 _state.value = if (_state.value.doc != null) _state.value.copy(message = RecipeClient.problem(e)) else _state.value.copy(error = RecipeClient.problem(e))
@@ -559,8 +663,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }
             val counted = c.recipes.countedHere(code)
             val feelBefore = c.recipes.pieces.feelSnapshot()
-            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
-            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)
+            // 2.0.0 [RVM-67] 검토 MKT-11 (넣기가 실패해도 "바뀐 것이 없어요"라고 말해요): a put that threw is not a put that changed nothing.
+            var failed = false
+            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }
+                .onFailure { failed = true; android.util.Log.w("RecipeDetail", "apply failed", it) }.getOrNull()
+            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.onFailure { failed = true }.getOrDefault(false)
             // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
             // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)
@@ -584,6 +691,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 } ?: when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
+                    id == null && failed -> "넣지 못했어요 · 잠시 뒤 다시 해 주세요. 지금 설정은 그대로예요"
                     id == null -> "바뀐 것이 없어요"
                     else -> "넣었어요. 7일 안에 되돌릴 수 있어요"
                 })
@@ -647,6 +755,24 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         }
     }
 
+    /** 2.0.0 [RVQ-43] 검토 U22-05: the talk before the oldest one here, put under it (a busy work's talk is more than 300). */
+    fun loadOlderTalk() {
+        val now = _state.value.talk ?: return
+        if (!now.more || olderTalk) return
+        val oldest = now.posts.minOfOrNull { it.at } ?: return
+        olderTalk = true
+        viewModelScope.launch {
+            runCatching { c.recipeApi.talkBefore(device, code, oldest) }.onSuccess { older ->
+                val cur = _state.value.talk ?: return@onSuccess
+                val have = cur.posts.map { it.id }.toSet()
+                _state.value = _state.value.copy(talk = cur.copy(posts = (older.posts.filter { it.id !in have } + cur.posts).sortedBy { it.at },
+                    more = older.more && older.posts.any { it.id !in have }))
+            }.onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+            olderTalk = false
+        }
+    }
+    private var olderTalk = false
+
     /** How many days this phone has had the recipe on, for 쓰는 중 N일 next to a post. */
     private suspend fun usingDays(): Int? {
         val e = c.recipes.applied.first().firstOrNull { it.code == code && it.undoneAt == null } ?: return null
@@ -679,7 +805,13 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
         viewModelScope.launch {
             runCatching { c.companyApi.flag(device, post, reason) }
                 .onSuccess { _state.value = _state.value.copy(message = "신고했어요. 운영자가 살펴봐요") }
-                .onFailure { _state.value = _state.value.copy(message = RecipeClient.problem(it)) }
+                .onFailure {
+                    // 2.0.0 [RVN-22] 검토 I10bb-01: no connection keeps the 신고 on the phone; it goes once online.
+                    if (com.bamnat.app.company.SmallSends.waits(it)) {
+                        com.bamnat.app.company.SmallSends.later(c, c.companyStore, com.bamnat.app.company.SmallSends.flag(post, reason))
+                        _state.value = _state.value.copy(message = com.bamnat.app.company.SmallSends.FLAG_LINE)
+                    } else _state.value = _state.value.copy(message = RecipeClient.problem(it))
+                }
         }
     }
 

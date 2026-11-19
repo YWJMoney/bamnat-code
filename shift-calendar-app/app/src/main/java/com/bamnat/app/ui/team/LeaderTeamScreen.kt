@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -103,6 +104,7 @@ import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
 import com.bamnat.app.ui.theme.bamnat
 import com.bamnat.app.ui.theme.container
 
@@ -1147,12 +1149,18 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
         Text("${m.name} · ${Fmt.monthDay(month.atDay(cursor.coerceIn(1, days)))}", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             team.shifts.forEach { s ->
-                Button(onClick = {
+                // 2.0.0 [RVP-46] (UIX-03·T13-04, 조건 2) A key of the palette in the colour it paints, not a filled button: the month's one
+                // filled button is the stage's (확정·빈칸 채우기), so the keys no longer read as five more of them.
+                androidx.compose.material3.Surface(onClick = {
                     val p = pad().put(s.id)
                     change { it.paint(m.id, month.atDay(cursor), s.id) }
                     after(p, cursor == days)
-                }, colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Color(s.colorArgb)),
-                    modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${s.name} 칠하기" }) { Text(s.label, color = Color.White, fontWeight = FontWeight.Bold) }
+                }, color = Color(s.colorArgb), shape = MaterialTheme.shapes.small,
+                    modifier = Modifier.heightIn(min = 48.dp).widthIn(min = 48.dp).semantics { contentDescription = "${s.name} 칠하기"; role = Role.Button }) {
+                    Box(Modifier.padding(horizontal = 16.dp), contentAlignment = Alignment.Center) {
+                        Text(s.label, color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
             OutlinedButton(onClick = { change { it.paint(m.id, month.atDay(cursor), null) }; after(pad().erase(), cursor == days) },
                 // 갈래5 PaintPad와 같은 글자·같은 읽기 (TalkBack: "n월 d일 넣은 것 지우기", "d일 건너뛰기").
@@ -1160,7 +1168,8 @@ private fun Keypad(team: Team, b: TeamBoard, m: TeamMember, month: YearMonth, cu
             OutlinedButton(onClick = { after(pad().skip(), cursor == days) },
                 modifier = Modifier.heightIn(min = 48.dp).semantics { contentDescription = "${cursor}일 건너뛰기" }) { Text("» 건너뛰기") }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        // 2.0.0 [RVP-46] (조건 12) A row of three 글자 단추 at 글자 200% stood '결원 메우기' a letter to a line; they wrap now.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             val cell = b.cell(m.id, month.atDay(cursor))
             TextButton(onClick = { change { it.lock(m.id, month.atDay(cursor), cell?.locked != true) } }, enabled = cell != null) {
                 Text(if (cell?.locked == true) "잠금 풀기" else "이 칸 잠그기")

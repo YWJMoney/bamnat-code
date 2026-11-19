@@ -1093,9 +1093,11 @@ internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.
     val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
     val manage = rememberManageRow()?.title
     val ledger = rememberLedgerOn()
-    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage, ledger) {
+    // 2.0.0 [RVIB-21] 둘째 구간 알림 is found where the page draws it: with a 근무 종류 of two parts.
+    val gap = rememberHasGap()
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage, ledger, gap) {
         SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto,
-            sleepSound = sleepSound, manage = manage, ledger = ledger)
+            sleepSound = sleepSound, manage = manage, ledger = ledger, gap = gap)
     }
 }
 

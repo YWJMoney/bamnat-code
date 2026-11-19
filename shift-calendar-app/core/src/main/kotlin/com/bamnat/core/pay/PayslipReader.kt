@@ -76,6 +76,11 @@ data class PayslipRead(
     val lines: List<SlipLine>,
     /** The month the payslip says it is for, when it says. */
     val month: YearMonth? = null,
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-01: the company the payslip names ("회사명 ○○", "(주)○○", "○○ 급여명세서"), when it names one, so the
+     * company can be found on the phone without typing it ([PayslipReader.companyOf]). Never sent anywhere.
+     */
+    val company: String? = null,
 ) {
     val earnings: List<SlipLine> get() = lines.filter { it.isEarning }
 
@@ -390,8 +395,52 @@ object PayslipReader {
             // that were only hours stay as they are.
             if (li == lines.lastIndex) pending.clear()
         }
-        return PayslipRead(merge(out), month)
+        return PayslipRead(merge(out), month, companyOf(text))
     }
+
+    /** "회사명 : ○○", "사업장명 ○○", "상호 ○○", "회사 ○○" with what follows on the line ('주식회사' is not a label). */
+    private val companyLabelRe = Regex("""(?:회사명|(?<!주식|유한)회사|사업장명|사업장|사업체명|상호|업체명|법인명|근무처)\s*[:：]?\s*(.+)""")
+    /** "(주)○○", "㈜○○", "주식회사 ○○", "○○ 주식회사", "○○(주)", "(유)○○", "유한회사 ○○". */
+    private val companyFormRe = Regex("""(?:\(\s*[주유]\s*\)|㈜|주식회사|유한회사)\s*([가-힣A-Za-z0-9&·][가-힣A-Za-z0-9&·\s]{0,24})|([가-힣A-Za-z0-9&·][가-힣A-Za-z0-9&·\s]{0,24}?)\s*(?:\(\s*[주유]\s*\)|㈜|주식회사|유한회사)""")
+    /** "○○산업 2026년 10월 급여명세서": the name before the date or the title. */
+    private val companyTitleRe = Regex("""^\s*([가-힣A-Za-z][가-힣A-Za-z0-9&·\s]{1,24}?)\s*(?:20\d{2}\s*년.*)?(?:급여|임금)\s*명세서""")
+    /** Words that are never a company's name, only what sits around it on a payslip. */
+    private val notCompany = listOf("급여", "임금", "명세서", "성명", "이름", "사번", "부서", "직급", "직위", "지급", "공제", "귀속", "년", "월")
+
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-01: the company a payslip's text names, from its first lines: a 회사명·사업장 label, a legal form
+     * ((주)·주식회사), or the title "○○ 급여명세서". Null when none is clear; the app finds it among the companies the phone already
+     * has ([com.bamnat.core.plaza.CompanyNames]), so nothing read here is sent.
+     */
+    fun companyOf(text: String): String? {
+        val lines = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.take(COMPANY_LINES)
+        fun clean(raw: String?): String? {
+            val name = raw?.replace(Regex("""\s+"""), " ")?.trim()?.trim(':', '：', '-', '·', ',')?.trim()
+                ?.split(Regex("""\s{2,}|\t|\|"""))?.firstOrNull()?.trim() ?: return null
+            val letters = name.filter { it.isLetter() }
+            if (letters.length < 2 || name.length > 30) return null
+            // "홍길동님 급여명세서": a person, not the company.
+            if (name.endsWith("님") || name.endsWith("귀하")) return null
+            if (notCompany.any { it == letters || letters.startsWith(it) && letters.length <= it.length + 1 }) return null
+            if (numberRe.containsMatchIn(name) && name.count { it.isDigit() } > 3) return null
+            return name
+        }
+        for (l in lines) companyLabelRe.find(l)?.let { m -> clean(m.groupValues[1].substringBefore("  ").let { cut(it) })?.let { return it } }
+        for (l in lines) companyFormRe.find(l)?.let { m -> clean(m.groupValues[1].ifEmpty { m.groupValues[2] }.let { cut(it) })?.let { return it } }
+        for (l in lines) companyTitleRe.find(l)?.let { m -> clean(m.groupValues[1])?.let { return it } }
+        return null
+    }
+
+    /** What follows a company's name on its line: another label ("성명", "부서") or a date. */
+    private fun cut(s: String): String {
+        val stops = listOf("성명", "이름", "사번", "부서", "직급", "직위", "귀속", "지급일", "급여", "임금", "명세서", "대표")
+        val at = stops.mapNotNull { w -> s.indexOf(w).takeIf { it > 0 } }.minOrNull() ?: s.length
+        val date = Regex("""20\d{2}\s*[년./-]""").find(s)?.range?.first?.takeIf { it > 0 } ?: s.length
+        return s.substring(0, minOf(at, date))
+    }
+
+    /** A company is named at the top of a payslip. */
+    private const val COMPANY_LINES = 8
 
     /** "연장근로수당 16시간 × 12,000 × 1.5 = 288,000": the result after the last "=", the hours before it. */
     private fun formulaLine(line: String, eq: Int, raw: String, out: MutableList<SlipLine>): SlipLine? {

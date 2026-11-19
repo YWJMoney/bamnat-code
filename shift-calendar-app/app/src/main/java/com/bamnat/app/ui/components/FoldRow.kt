@@ -56,10 +56,10 @@ fun FoldRow(key: String, modifier: Modifier = Modifier, spacing: Dp = 6.dp, what
     if (open) {
         FlowRow(modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(spacing), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             content()
-            FoldButton("접기 ▴", "${what.ifEmpty { "이 줄" }} 한 줄로 접기") { set(false) }
+            FoldButton("접기\u00A0▴", "${what.ifEmpty { "이 줄" }} 한 줄로 접기") { set(false) }
         }
     } else {
-        FoldLine(modifier, spacing, rememberScrollState(), button = { FoldButton("펼치기 ▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") { set(true) } },
+        FoldLine(modifier, spacing, rememberScrollState(), button = { FoldButton("펼치기\u00A0▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") { set(true) } },
             content = content)
     }
 }
@@ -87,11 +87,17 @@ private fun FoldLine(modifier: Modifier, spacing: Dp, scroll: androidx.compose.f
         },
         modifier = modifier.fillMaxWidth(),
     ) { ms, c ->
+        // 2.0.0 [RVN-22] HQ-115 (Q1이 찾음, 조건 12: 작은 폰·글자 200%에서 '편의점 알바 · (주)예시정밀' 칩 하나가 줄보다 넓어 고른 칩도
+        // '편의점 알바|'에서 잘렸어요): no chip is wider than the part it rests in. A wider one is measured to that width, where its words
+        // go on two lines ([ChipEnds.cap]) or end in '…', so the chip slid into view is whole.
+        val bounded = c.hasBoundedWidth
+        val first = if (bounded) ms.getOrNull(1)?.measure(androidx.compose.ui.unit.Constraints(maxWidth = c.maxWidth, maxHeight = c.maxHeight)) else null
+        ends.cap = if (bounded) (c.maxWidth - (first?.width ?: 0)).coerceAtLeast(0) else 0
         val all = ms[0].maxIntrinsicWidth(androidx.compose.ui.unit.Constraints.Infinity)
-        val width = if (c.hasBoundedWidth) c.maxWidth else all
+        val width = if (bounded) c.maxWidth else all
         val needs = all > width
         if (needs != over) over = needs
-        val btn = ms.getOrNull(1)?.measure(androidx.compose.ui.unit.Constraints(maxWidth = width, maxHeight = c.maxHeight))
+        val btn = if (bounded) first else ms.getOrNull(1)?.measure(androidx.compose.ui.unit.Constraints(maxWidth = width, maxHeight = c.maxHeight))
         val slack = 1.dp.roundToPx()
         // At rest the part ends after the last chip that is whole from where the row is slid to; while it slides, the whole room.
         val view = (if (btn == null) minOf(all, width) else {
@@ -109,8 +115,11 @@ private fun FoldLine(modifier: Modifier, spacing: Dp, scroll: androidx.compose.f
     }
 }
 
-/** Where each chip of a [ChipLine] ends, from the start, as the row was last asked how wide it is. */
-private class ChipEnds { var at: IntArray = IntArray(0) }
+/**
+ * Where each chip of a [ChipLine] ends, from the start, as the row was last asked how wide it is; and 2.0.0 [RVN-22] HQ-115 the widest a
+ * chip may be ([cap], the part of the row the chips rest in; 0 for no limit).
+ */
+private class ChipEnds { var at: IntArray = IntArray(0); var cap: Int = 0 }
 
 /** The chips side by side, [spacing] apart, each as wide as it wants; asked how wide it is, it notes where each chip ends in [ends]. */
 @Composable
@@ -121,7 +130,8 @@ private fun ChipLine(spacing: Dp, ends: ChipEnds, content: @Composable () -> Uni
                 measurables: List<androidx.compose.ui.layout.Measurable>, constraints: androidx.compose.ui.unit.Constraints,
             ): androidx.compose.ui.layout.MeasureResult {
                 val gap = spacing.roundToPx()
-                val ps = measurables.map { it.measure(androidx.compose.ui.unit.Constraints(maxHeight = constraints.maxHeight)) }
+                val most = ends.cap.takeIf { it > 0 } ?: androidx.compose.ui.unit.Constraints.Infinity
+                val ps = measurables.map { it.measure(androidx.compose.ui.unit.Constraints(maxWidth = most, maxHeight = constraints.maxHeight)) }
                 val w = (ps.sumOf { it.width } + gap * (ps.size - 1).coerceAtLeast(0)).coerceIn(constraints.minWidth, constraints.maxWidth)
                 val h = (ps.maxOfOrNull { it.height } ?: 0).coerceIn(constraints.minHeight, constraints.maxHeight)
                 return layout(w, h) {
@@ -138,7 +148,8 @@ private fun ChipLine(spacing: Dp, ends: ChipEnds, content: @Composable () -> Uni
                 val thin = 12.dp.roundToPx()
                 var x = 0
                 val at = ArrayList<Int>(measurables.size)
-                measurables.forEachIndexed { i, m -> if (i > 0) x += gap; val w = m.maxIntrinsicWidth(height); x += w; if (w >= thin) at += x }
+                val most = ends.cap.takeIf { it > 0 } ?: Int.MAX_VALUE
+                measurables.forEachIndexed { i, m -> if (i > 0) x += gap; val w = minOf(m.maxIntrinsicWidth(height), most); x += w; if (w >= thin) at += x }
                 ends.at = at.toIntArray()
                 return x
             }
@@ -265,7 +276,7 @@ fun FoldOverlay(host: FoldHost) {
                 .padding(vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(o.spacing), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 o.content()
-                FoldButton("접기 ▴", "${o.what.ifEmpty { "이 줄" }} 한 줄로 접기") { fold() }
+                FoldButton("접기\u00A0▴", "${o.what.ifEmpty { "이 줄" }} 한 줄로 접기") { fold() }
             }
         }
     }
@@ -282,7 +293,7 @@ private fun FoldOver(modifier: Modifier, spacing: Dp, what: String, content: @Co
     val latest = androidx.compose.runtime.rememberUpdatedState(content)
     val isOpen = host != null && host.open != null && host.open === mine[0]
     FoldLine(modifier.onGloballyPositioned { coords = it }, spacing, scroll, keepButton = isOpen, button = {
-        FoldButton("펼치기 ▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") {
+        FoldButton("펼치기\u00A0▾", "${what.ifEmpty { "이 줄" }} 모두 펼쳐 보기") {
             val o = FoldOpen({ coords }, spacing, what) { latest.value() }
             mine[0] = o; host?.open = o
         }

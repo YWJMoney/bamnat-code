@@ -138,6 +138,17 @@ object InquiryLinks {
 
     /** What the inquiry screen was asked to start with, once. */
     fun take(): InquiryStart? = _pending.getAndUpdate { null }
+
+    private val _mine = MutableStateFlow<String?>(null)
+    /**
+     * 2.0.0 [RVN-22] 검토 U10b-01: the one question a notice of its answer opens (its id; with
+     * [com.bamnat.app.company.InquiryReplyJob.STILL_MARK] after it, the notice's 아직이에요 was pressed).
+     */
+    val mine: StateFlow<String?> = _mine.asStateFlow()
+
+    fun openMine(link: String?) { _mine.value = link?.takeIf { it.isNotBlank() } }
+
+    fun takeMine(): String? = _mine.getAndUpdate { null }
 }
 
 /** U 1.32 [UX132-04] (조사 4.4) 어디서나 찾기: the same search as 설정's, from the top of every tab. */

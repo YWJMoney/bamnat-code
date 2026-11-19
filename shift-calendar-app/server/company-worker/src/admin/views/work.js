@@ -38,13 +38,14 @@ export function workViews(A) {
     const rules = d.rules;
     const segs = `<div class="segmented" role="group" aria-label="단계">${seg("growth-tools", "candidates", t, "기본 도구 후보", c.candidates)}${seg("growth-tools", "tools", t, "모두의 도구", c.tools)}
       ${seg("growth-tools", "later", t, "다음에", c.later)}${seg("growth-tools", "adopted", t, "채택함", c.adopted)}</div>`;
-    const hint = `<p class="hint">표가 아니라 실제로 입힌 사람 수와 7일 뒤에도 쓰는 비율로 저절로 올라와요. 모두의 도구: ${rules.toolUsers}명·${rules.toolKept}% 이상, 기본 도구 후보: ${rules.candidateUsers}명·${rules.candidateKept}% 이상, 신고가 있으면 내려가요.
-      판마다 위쪽만 정식 손잡이로 만들고, 채택하면 출시 노트에 만든 분 이름이 들어가요.</p>`;
-    if (!d.items.length) return `${segs}${hint}${empty("아직 없어요", "장터 작품이 많이 쓰이면 저절로 올라와요.")}`;
-    return `${segs}${hint}<ul class="rows">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.title)}</b>
-      <small>${x.users}명이 씀 · 7일 유지 ${x.kept}% · 좋아요 ${x.likes} · 신고 ${x.flags}${x.fromNeeds ? ` · 스튜디오 요구에서 ${x.fromNeeds}` : ""} · 만든 분 ${esc(x.nick ?? x.maker ?? "운영자")} · ${esc(x.code)}${x.version ? ` · ${esc(x.version)} 판 채택` : ""}</small></span>
+    // 2.0.0 [RVA-72] PC-209(조건 1·4): 설명은 목록 아래 접힌 한 줄로(목록 첫 줄이 화면 위 25% 안에서 시작해요).
+    const hint = `<div class="list-foot"><details class="tip" data-key="growth-tools-how"><summary>표가 아니라 실제로 입힌 사람 수와 7일 뒤에도 쓰는 비율로 저절로 올라와요.</summary><p class="hint">모두의 도구: ${rules.toolUsers}명·${rules.toolKept}% 이상, 기본 도구 후보: ${rules.candidateUsers}명·${rules.candidateKept}% 이상, 신고가 있으면 내려가요.
+      판마다 위쪽만 정식 손잡이로 만들고, 채택하면 출시 노트에 만든 분 이름이 들어가요(프로필을 숨기거나 닫은 분은 이름 없이).</p></details></div>`;
+    if (!d.items.length) return `${segs}${empty("아직 없어요", "장터 작품이 많이 쓰이면 저절로 올라와요.")}${hint}`;
+    return `${segs}<ul class="rows">${d.items.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.title)}</b>
+      <small>${x.users}명이 씀 · 7일 유지 ${x.kept}% · 좋아요 ${x.likes} · 신고 ${x.flags}${x.fromNeeds ? ` · 스튜디오 요구에서 ${x.fromNeeds}` : ""} · 만든 분 ${esc(x.nick ?? x.maker ?? "운영자")}${x.tier >= 3 && x.named === false ? " (프로필을 숨겨 출시 노트엔 이름 없이)" : ""} · ${esc(x.code)}${x.version ? ` · ${esc(x.version)} 판 채택` : ""}</small></span>
       ${edit ? `<span class="row-side">${x.tier === 3 && t !== "later" ? `<button class="btn small" data-act="tool-adopt" data-id="${x.code}">기본 도구로 채택</button><button class="btn small" data-act="tool" data-id="${x.code}" data-key="later">다음에</button>` : ""}
-        ${x.tier === 4 || t === "later" ? `<button class="btn small" data-act="tool" data-id="${x.code}" data-key="undo">되돌리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>`;
+        ${x.tier === 4 || t === "later" ? `<button class="btn small" data-act="tool" data-id="${x.code}" data-key="undo">되돌리기</button>` : ""}</span>` : ""}</div></li>`).join("")}</ul>${hint}`;
   }
 
   function mapBlock(d) {

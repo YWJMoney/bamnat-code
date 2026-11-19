@@ -2,7 +2,7 @@ import { all, audit, forgetDevice, json, notifyAdmins, one, randomId, readJson, 
 import { passCodeHash } from "./money.js";
 import { RETENTION, RETENTION_OF, backupRule, deviceColumns, forgetWords } from "./retention.js";
 import { seal, sealFromSecret, unseal } from "./seal.js";
-import { DAY, HOUR } from "./units.js";
+import { DAY, HOUR, deviceMark } from "./units.js";
 import { kstDay } from "./usage.js";
 
 // ---- 1.38 [ADM3-16] 백업과 데이터 요청 ----
@@ -75,13 +75,13 @@ async function makeRequest(request, env, now) {
   const body = await readJson(request, 4096);
   const kind = KEEP.kinds[body?.kind] ? body.kind : null;
   if (!kind) refuse("kind", "kind");
-  let mark = /^[0-9a-f]{6}$/.test(body?.mark ?? "") ? body.mark : "";
+  let mark = /^[0-9a-f]{6,8}$/.test(body?.mark ?? "") ? body.mark : "";
   let inquiry = null;
   if (typeof body?.inquiry === "string" && /^[A-Za-z0-9]{8,32}$/.test(body.inquiry)) {
     const q = await one(env, "SELECT id, device FROM inquiries WHERE id = ?", body.inquiry);
     if (!q) refuse("inquiry", "inquiry");
     inquiry = q.id;
-    mark ||= String(q.device ?? "").slice(0, 6);
+    mark ||= deviceMark(q.device);
   }
   const id = `r${randomId(15)}`;
   const opened = Number.isFinite(Date.parse(body?.openedAt ?? "")) ? Math.min(now, Date.parse(body.openedAt)) : now;

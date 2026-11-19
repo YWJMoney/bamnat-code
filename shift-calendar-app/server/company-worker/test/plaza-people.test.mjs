@@ -249,7 +249,9 @@ test("[PLZC-20] 근무 카드: numbers only, on a top post where days at work co
   for (const bad of [{ ...card, note: 1 }, { ...card, n: 9 }, { ...card, w: 7 }, { ...card, d: 0, w: 0, n: 0, s: 0, o: 0 }, { ...card, s: 40 }, "5"]) {
     assert.equal((await write(call, 2, "style-shift", "카드 시험 글이에요", null, { card: bad })).status, 400, JSON.stringify(bad));
   }
-  assert.equal((await write(call, 2, "style-shop", "가게는 근무 카드가 없어요", null, { card })).status, 400);
+  // 2.0.0 [RVN-24] T22c-03: 가게 takes one (the app calls it 영업 카드), 투자 has no days at work.
+  assert.equal((await write(call, 2, "style-invest", "투자는 근무 카드가 없어요", null, { card })).status, 400);
+  assert.equal((await write(call, 2, "style-shop", "이번 달 쉬는 날이 셋뿐이네요", null, { card })).status, 201);
   const posts = (await read(call, 3, "style-shift")).data.posts;
   assert.deepEqual(posts.find((p) => p.id === id).card, card);
   assert.equal(posts.find((p) => p.id === early).card, undefined, "before 3.12 nothing was kept");
@@ -300,11 +302,12 @@ test("[PLZC-33] 광장 효과: sums per plaza, answered share and first answer t
   assert.equal(r.status, 200);
   const s = r.data.items.find((x) => x.room === "style-shift");
   assert.equal(s.questions, 2);
-  assert.equal(s.answeredPct, 50);
+  // 2.0.0 [RVN-24] 검토 SVC-95: a share of fewer than 10 is null (관리자 앱 '아직 적음'); n200-rvn24 has the shares of a full sample.
+  assert.equal(s.answeredPct, null);
   assert.equal(s.firstAnswerMin, 30);
   assert.equal(s.metoo, 1);
   assert.equal(s.newWriters, 1, "the writer of 20 days ago");
-  assert.equal(s.cameBackPct, 100);
-  assert.ok(s.tagged > 0 && s.tagged < 100);
+  assert.equal(s.cameBackPct, null);
+  assert.equal(s.tagged, null);
   assert.equal(r.data.items.find((x) => x.room === "style-shop").posts, 0);
 });

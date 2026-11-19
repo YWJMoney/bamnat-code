@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Apartment
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
@@ -79,6 +80,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -92,6 +94,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -118,6 +121,7 @@ import com.bamnat.app.ui.company.HeroIcon
 import com.bamnat.app.ui.company.SoftCard
 import com.bamnat.app.ui.company.StatusChip
 import com.bamnat.app.ui.company.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.components.ConfirmDialog
 import kotlinx.coroutines.launch
 import java.time.Instant
@@ -133,23 +137,43 @@ internal const val INQUIRY_KEEP_WORDS =
         "결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요(지우면 앱에서는 바로 사라져요). "
 
 /** [ADMIN-02] What the form and the privacy policy say about a question before it goes. */
-/** [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same. */
-internal const val INQUIRY_PRIVATE_NOTICE =
-    "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+private const val INQUIRY_RECORD_WORDS = "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
 
-internal const val INQUIRY_SEND_NOTICE =
-    "모두의 문의에 올라가요. 앱을 쓰는 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
-        "3번의 ‘함께 보내는 정보’는 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+/**
+ * 2.0.0 [RVO-29] (PC-204, 조건 4·13) The notice above 보내기, by the kind chosen: [lead] is said in full (who sees it and what not to
+ * write, in that kind's words: a 결제·환불 question is not told about 회사 방식, and is asked for its Play order number instead of an
+ * amount), [keep] (how long it stays) goes behind '보관 기간·지우기' ⓘ. Amounts still do not go anywhere (처리방침 1-3항).
+ */
+internal data class InquiryNotice(val lead: String, val keep: String)
 
-/** [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules. */
-internal const val INQUIRY_ONLY_DEVELOPER_NOTICE =
-    "모두의 문의에 올리지 않고 개발자만 봐요. 3번의 ‘함께 보내는 정보’도 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요. " +
-        INQUIRY_KEEP_WORDS +
-        "다만 운영자가 고칠 일(개발사항)로 옮겨 적거나 요약한 내용은 문의를 지운 뒤에도 앱 개선 기록으로 남아요."
+internal fun inquiryNotice(kind: InquiryKind?, share: Boolean): InquiryNotice = when {
+    kind == InquiryKind.BILLING -> InquiryNotice(
+        "결제·환불 문의는 나만 보고 운영팀이 직접 답해요. 금액 대신 Play 주문 번호(GPA.로 시작)를 적어 주시면 낸 금액까지 바로 찾아요. " +
+            "이름, 메일 주소, 전화번호는 적지 말아 주세요.",
+        "보낸 문의는 언제든 지울 수 있지만, 결제·환불 문의는 전자상거래법에 따라 마지막 글부터 3년 동안 운영자가 보관해요" +
+            "(지우면 앱에서는 바로 사라져요). " + INQUIRY_RECORD_WORDS,
+    )
+    // [INQ-01] A company way names the workplace, so it stays with the developer; the privacy policy 1-3항 says the same.
+    kind == InquiryKind.COMPANY -> InquiryNotice(
+        "회사 방식은 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 기본급·수당 금액은 적지 말아 주세요.",
+        INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    // [RVQ-29] 꾸미기 부탁 (and any kind added later that stays with the developer).
+    kind?.public == false -> InquiryNotice(
+        (if (kind == InquiryKind.STUDIO) "꾸미기 부탁은" else "이 문의는") + " 모두의 문의에 올라가지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    // [INQ-06] 모두의 문의에 올리기 off: the developer only, with the same keeping rules.
+    !share -> InquiryNotice(
+        "모두의 문의에 올리지 않고 개발자만 봐요. 이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        "3번의 ‘함께 보내는 정보’도 개발자만 봐요. " + INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+    else -> InquiryNotice(
+        "모두의 문의에 올라가요. 다른 분도 적은 글과 개발자 답을 볼 수 있고, 보낸 분이 누구인지는 보이지 않아요. " +
+            "이름, 메일 주소, 전화번호, 금액은 적지 말아 주세요.",
+        "3번의 ‘함께 보내는 정보’는 개발자만 봐요. " + INQUIRY_KEEP_WORDS + INQUIRY_RECORD_WORDS,
+    )
+}
 
 private const val LIST = "list"
 private const val NEW = "new"
@@ -203,7 +227,7 @@ private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
     // [INQ-07] Read again whenever the screen comes back (from the notice of an answer, another app, the lock
     // screen), so an answer that came while it stayed open shows without leaving help (점검 보고서 하 '문의').
     androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
-    LaunchedEffect(Unit) { vm.loadBoard() }
+    LaunchedEffect(Unit) { vm.loadBoard(); vm.loadPicks() }
     // Another screen's 문의 while this one is open (it stays on top) is taken here.
     val pending by InquiryLinks.pending.collectAsStateWithLifecycle()
     LaunchedEffect(pending) {
@@ -214,6 +238,19 @@ private fun InquiryScreenBody(vm: InquiryViewModel, onBack: () -> Unit) {
         formKey++
         if (s.help) { query = s.text; view = HELP } else view = NEW
     }
+    // 2.0.0 [RVN-22] 검토 U10b-01·I10bb-04: a notice of one question's answer opens that question (its 아직이에요 says it there,
+    // so the one line of what is still wrong is right under it). Gone from the list: 내 문의.
+    val mineLink by InquiryLinks.mine.collectAsStateWithLifecycle()
+    LaunchedEffect(mineLink, list) {
+        val loaded = list ?: return@LaunchedEffect
+        val link = InquiryLinks.takeMine() ?: return@LaunchedEffect
+        val id = link.removeSuffix(com.bamnat.app.company.InquiryReplyJob.STILL_MARK)
+        val q = loaded.firstOrNull { it.id == id }
+        message = null
+        view = q?.id ?: LIST
+        if (q != null && link != id && q.askFixed && q.fixed == 0) vm.fixed(q.id, false) { why -> if (why != null) message = why }
+    }
+    DisposableEffect(Unit) { onDispose { InquiryLinks.takeMine() } }
     val open = list?.firstOrNull { it.id == view }
     val publicId = view.removePrefix(PUB).takeIf { view.startsWith(PUB) }
     val home = view == HELP || view == LIST || view == BOARD
@@ -413,10 +450,15 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Outlined.CloudOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("보내기 대기 ${outbox.size}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                TextButton(enabled = !sending, onClick = {
+                // 2.0.0 [RVN-22] U10b-08: how many wait and how many the user has to fix, apart.
+                val toFix = outbox.count { it.refused != null }
+                Text("보내기 대기 ${outbox.size}" + (if (toFix > 0) " · 고칠 것 $toFix" else ""), style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f))
+                // Only what a try could send: a refused one waits for 고쳐서 다시 보내기.
+                if (toFix < outbox.size) TextButton(enabled = !sending, onClick = {
                     sending = true
-                    vm.sendQueued { ok -> sending = false; said = if (ok) "보냈어요" else "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요" }
+                    // 2.0.0 [RVN-22] COMP-54 what went and what waits; [PC-217] a day's limit says so in limit words, not in internet words.
+                    vm.sendQueued { r -> sending = false; said = if (r.waiting > 0) (if (r.sent > 0) "${r.sent}개를 보냈어요. " else "") + InquiryViewModel.stillWaiting(com.bamnat.app.company.InquiryOutbox.limited) else r.words }
                 }) { Text("지금 보내기") }
             }
             Text("인터넷이 연결되면 앱을 닫아 두어도 저절로 보내요. 사진은 함께 가지 않아요.", style = MaterialTheme.typography.bodySmall,
@@ -424,10 +466,11 @@ private fun OutboxCard(vm: InquiryViewModel, outbox: List<com.bamnat.app.company
             outbox.forEach { q ->
                 HorizontalDivider()
                 Text("${q.kind.label} · " + q.text.take(80), style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                q.refused?.let { Text("서버가 받지 않았어요: " + CompanyText.problem(it), style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error) }
+                // 2.0.0 [RVN-22] U10b-08: why it was not taken, in the caution color (not 빨강: nothing is lost), and the way on.
+                q.refused?.let { Text("보내지 못했어요 · " + CompanyText.problem(it), style = MaterialTheme.typography.bodySmall,
+                    color = com.bamnat.app.ui.theme.Tone.Caution.color()) }
                 Row {
-                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = true); onEdit() }) { Text("고치기") }
+                    TextButton(onClick = { vm.dropQueued(q.requestId, edit = true); onEdit() }) { Text(if (q.refused != null) "고쳐서 다시 보내기" else "고치기") }
                     TextButton(onClick = { vm.dropQueued(q.requestId, edit = false) }) { Text("지우기") }
                 }
             }
@@ -451,7 +494,8 @@ private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
     SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick), highlighted = unread) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(i.kind.label + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVO-30] (PC-214): a question only the 운영팀 reads says so on its row, as the thread does.
+                Text(i.kind.label + (if (i.public) "" else " · 나만 보기") + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 i.label(unread).let { (text, tone) -> StatusChip(text, tone) }
             }
@@ -467,6 +511,8 @@ private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
 /** Where a question stands, in a few words and a tone. */
 private fun Inquiry.label(unread: Boolean): Pair<String, Tone> = when {
     unread -> "새 답이 왔어요" to Tone.GOOD
+    // 2.0.0 [RVQ-50] 검토 U22b-01: written to again after the answer, so it is the developer's turn again.
+    reopened && waiting -> "다시 물었어요" to Tone.WAIT
     status == "answered" -> "답했어요" to Tone.GOOD
     status == "closed" -> "끝났어요" to Tone.QUIET
     else -> "답을 기다려요" to Tone.WAIT
@@ -533,8 +579,10 @@ private fun InquiryForm(
     // 2.0.0 [RVO-28] HQ-150 ②: 알람 점검 보고서를 글에 붙여 넣었으면 2,000자 말 대신 '점검 기록도 보내기'로 가자고 말해요.
     val pasted = com.bamnat.core.diag.PastedCheck.start(text) != null
     val problem = replyProblem(if (mail) text.takeIf { it.length > InquiryClient.TEXT_MAX }?.let { "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요" } else vm.problem(text), pasted)
-    // The alarm check helps most when the app misbehaves, so it is offered ticked there.
-    LaunchedEffect(kind) { if (kind == InquiryKind.BUG && pay == null && check == null) withCheck = true }
+    // 2.0.0 [RVN-22] 검토 PC-27: the alarm check goes only when the user picks it (처리방침 3.6 '점검 기록도 보내기'를 고르고 보낼 때만).
+    // Before, choosing 앱 오류 ticked it by itself; now it is ticked only by a button that says so (점검 내용과 함께 문의하기,
+    // 멈춤 기록과 함께 알려 주기, 붙여 넣은 보고서 빼고 켜기), and 앱 오류 says in one line that it helps.
+    val checkHelps = kind == InquiryKind.BUG && !withCheck
     // 1.32.1 [STAB-14] About the app stopping (from its notice or card, or the words say so): the record starts with 앱 멈춤.
     val stop = com.bamnat.core.diag.StopTrail.aboutStop(start?.about, text)
     LaunchedEffect(withCheck, showCheck, stop) { if (withCheck || showCheck) check = vm.alarmCheck(context, stop) }
@@ -639,7 +687,9 @@ private fun InquiryForm(
                 }
                 Spacer(Modifier.height(4.dp))
                 // 1.32.1 [STAB-13] Named for what it holds: an app that stopped is not an alarm problem.
-                CheckRow("점검 기록도 보내기", if (stop) STOP_RECORD_DETAIL else CHECK_RECORD_DETAIL,
+                CheckRow("점검 기록도 보내기", (if (stop) STOP_RECORD_DETAIL else CHECK_RECORD_DETAIL) +
+                    // PC-27 Offered, not ticked: an 오류 제보 says why one might.
+                    (if (checkHelps) ". 오류는 이 기록이 있으면 더 빨리 찾아요" else ""),
                     checked = withCheck, onChange = { withCheck = it })
                 TextButton(onClick = { showCheck = !showCheck }) {
                     Text(if (showCheck) "기록 접기" else "보낼 기록 보기")
@@ -669,15 +719,13 @@ private fun InquiryForm(
                 else "개발자만 봐요. 같은 일을 겪는 분이 답을 함께 볼 수는 없어요",
                 checked = share, onChange = { share = it })
         }
-        Text(
-            when {
-                mail -> "메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL"
-                kind?.public == false -> INQUIRY_PRIVATE_NOTICE
-                !share -> INQUIRY_ONLY_DEVELOPER_NOTICE
-                else -> INQUIRY_SEND_NOTICE
-            },
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (mail) Text("메일 앱이 열려요. 보내기 전에 한 번 더 보고 고칠 수 있어요. 받는 곳: $REPORT_EMAIL",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else {
+            val notice = inquiryNotice(kind, share)
+            Text(notice.lead, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.bamnat.app.ui.components.Explain("inquiry_keep", notice.keep, summary = "보관 기간·지우기", iconOnly = false, firstInFull = false)
+        }
         error?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
@@ -696,7 +744,7 @@ private fun InquiryForm(
                 if (mail) sendByMail()
                 else scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
-                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share) { sent, why ->
+                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share && kind?.public != false) { sent, why ->
                         if (sent != null) {
                             com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
                                 android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
@@ -909,7 +957,24 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
     val pasted = com.bamnat.core.diag.PastedCheck.start(text) != null
     val problem = replyProblem(vm.problem(text), pasted)
     LaunchedEffect(i.id, text) { vm.saveReply(i.id, text) }
+    // 2.0.0 [RVQ-50] 검토 U22b-01·T22b-05: more to say can bring photos too (a question takes four in all), made small and stripped
+    // on the phone like a new question's; the developer's switch can pause them.
     val scope = rememberCoroutineScope()
+    var photos by remember(i.id) { mutableStateOf<List<ByteArray>>(emptyList()) }
+    val room = com.bamnat.app.company.InquiryPhotos.left(i.photos)
+    val photosOpen = room > 0 && !context.appContainer.flags.paused(com.bamnat.core.ops.ServerSwitch.INQUIRY_PHOTOS)
+    val pickPhotos = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia(com.bamnat.app.company.InquiryPhotos.MAX),
+    ) { uris ->
+        scope.launch {
+            val made = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                uris.mapNotNull { com.bamnat.app.company.InquiryPhotos.prepare(context, it) }
+            }
+            photos = (photos + made).take(room)
+            if (made.size < uris.size) error = "열 수 없는 사진은 빼고 붙였어요"
+        }
+    }
+    val fixFlow = i.askFixed || i.fixed != 0
     Column(Modifier.fillMaxSize()) {
         Column(
             Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
@@ -923,10 +988,23 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             when {
                 i.hidden != null -> Text("모두의 문의에서 가려졌어요: ${i.hidden}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
-                i.public -> Text("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
+                // 2.0.0 [RVO-29] HQ-152: at 글자 200% the two go on two lines rather than leave the dot at a line's end.
+                // 2.0.0 [RVO-30] (PC-214): a 결제·환불 (or 회사 방식·꾸미기 부탁) question goes to the 운영팀 only whatever the switch said, and
+                // the thread says so instead of staying silent.
+                !i.public -> Text(if (i.kind == InquiryKind.BILLING) "나만 보기 · 운영팀이 직접 읽고 답해요" else "나만 보기 · 운영팀만 읽어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                i.public -> com.bamnat.app.ui.components.DotText("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ProgressSteps(i)
+            // 2.0.0 [RVQ-50] 검토 U22-08: which version fixed it, while this phone is still on an older one (after updating,
+            // 해결됐나요 takes its place).
+            if (i.fixedLine != null && !fixFlow) com.bamnat.app.ui.components.NudgeCard(
+                text = i.fixedLine,
+                tone = com.bamnat.app.ui.theme.Tone.Good,
+                action = "업데이트하기",
+                onAction = { com.bamnat.app.review.PlayPage.open(context) },
+            )
             // [INQ-05] I8: what came of it is in the update; its lines open from here.
             if (i.stage == "released") TextButton(onClick = { com.bamnat.app.NoticeLinks.open(com.bamnat.app.NoticeLinks.Target.WHATS_NEW) }) {
                 Text("새 기능 안내 보기")
@@ -938,7 +1016,6 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
             }
             // 1.39 [LOOP-16] 해결됐나요: after the fixed version reached this phone, two presses say if it worked.
             // PC 1.39 G10 확인: 해결됐나요와 '답이 도움이 됐나요'가 나란히 있으면 헷갈려요. 고친 판 안내를 받은 문의는 해결됐나요만.
-            val fixFlow = i.askFixed || i.fixed != 0
             if (fixFlow) FixedAsk(i, busy, onMore = { more ->
                 error = null
                 vm.more(i.id, more) { sent, why -> if (sent == null) error = why }
@@ -955,7 +1032,16 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                     Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive })
                 }
+                if (photos.isNotEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("사진 ${photos.size}장을 함께 보내요", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { photos = emptyList() }) { Text("사진 빼기") }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (photosOpen && photos.size < room) IconButton(onClick = {
+                        pickPhotos.launch(androidx.activity.result.PickVisualMediaRequest(
+                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }) { Icon(Icons.Outlined.AddPhotoAlternate, "사진 붙이기, ${room - photos.size}장 더 붙일 수 있어요") }
                     OutlinedTextField(
                         // 붙여 넣은 보고서는 6,000자까지 와요. 잘라 버리지 않아야 '붙여 넣은 기록 빼기'가 앞에 적은 말만 남겨요.
                         value = text,
@@ -974,7 +1060,7 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                             scope.launch {
                                 val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
                                 val words = text.ifBlank { if (diag != null) com.bamnat.core.diag.PastedCheck.ONLY_RECORD else text }
-                                vm.more(i.id, words, diag) { sent, why -> if (sent != null) { text = ""; withCheck = false; showCheck = false } else { error = why } }
+                                vm.more(i.id, words, photos, diag) { sent, why -> if (sent != null) { text = ""; photos = emptyList(); withCheck = false; showCheck = false } else { error = why } }
                             }
                         },
                         enabled = (text.isNotBlank() || withCheck) && problem == null && !busy,
@@ -999,22 +1085,42 @@ private fun ProgressSteps(i: Inquiry) {
     val steps = inquirySteps(i)
     val at = steps.indexOfFirst { it.first == i.stage }.coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
-    Row(
-        Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = "진행 상황: ${steps[at].second}" },
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        steps.forEachIndexed { n, (_, name) ->
-            val done = n <= at
-            Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
-                Text(name, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
-                    fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+    val label = MaterialTheme.typography.labelSmall
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        // 2.0.0 [RVO-29] HQ-154 (조건 12): when a step's name does not fit its share of the width (folded, 글자 200%), the bar keeps
+        // its steps and only the step it is at is named under it in full ('답변 · 3/6'); every name is still read aloud.
+        val gap = 4.dp
+        val share = with(density) { ((maxWidth - gap * (steps.size - 1)) / steps.size).roundToPx() }
+        val fits = steps.all { (_, name) ->
+            measurer.measure(name, label.copy(fontWeight = FontWeight.Bold), maxLines = 1, softWrap = false).size.width <= share
+        }
+        Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            contentDescription = "진행 상황: ${steps[at].second}, ${steps.size}단계 중 ${at + 1}단계" +
+                if (fits) "" else " (${steps.joinToString(", ") { it.second }})"
+        }) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                steps.forEachIndexed { n, (_, name) ->
+                    val done = n <= at
+                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(Modifier.fillMaxWidth().height(4.dp).background(if (done) scheme.primary else scheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                        if (fits) Text(name, style = label, maxLines = 1,
+                            color = if (n == at) scheme.primary else if (done) scheme.onSurface else scheme.onSurfaceVariant,
+                            fontWeight = if (n == at) FontWeight.Bold else FontWeight.Normal, modifier = Modifier.padding(top = 4.dp))
+                    }
+                    if (n < steps.lastIndex) Spacer(Modifier.width(gap))
+                }
             }
-            if (n < steps.lastIndex) Spacer(Modifier.width(4.dp))
+            if (!fits) Text("${steps[at].second} · ${at + 1}/${steps.size}", style = MaterialTheme.typography.labelLarge,
+                color = scheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }
+
+/** The one line a narrow screen shows in place of the step names: '2.0.0 반영 · 6단계 중 6단계'. */
+internal fun stepLine(steps: List<Pair<String, String>>, at: Int): String =
+    "${steps[at].second} · ${steps.size}단계 중 ${at + 1}단계"
 
 /**
  * [INQ-02][INQ-05] I8: the steps of a question. A bug or an idea can become work, so it shows all six,
@@ -1371,6 +1477,8 @@ private fun HelpHome(
     val topics = remember(hiddenKinds, screenStyle, inviteTerms, helpExtras) { HelpFaq.topics(vm.shareOn, inviteTerms, helpExtras).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
+    // 2.0.0 [RVN-24] 검토 I22cb-02: 같은 근무 분들의 답 under an answer on the same subject.
+    val picks by vm.picks.collectAsStateWithLifecycle()
     var expanded by rememberSaveable { mutableStateOf<String?>(null) }
     val toggle: (HelpTopic) -> Unit = { t -> expanded = if (expanded == t.id) null else t.id }
     Column(
@@ -1410,18 +1518,18 @@ private fun HelpHome(
             val here = remember(about, topics) { HelpFaq.about(about, topics).take(4) }
             if (here.isNotEmpty()) {
                 SectionLabel("‘${about.orEmpty().substringAfterLast("> ").trim()}’ 도움말")
-                here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+                here.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }, picks = picks) }
             }
             // 2.0.0 [RVO-21] 검토 U11a-13 (답 109개가 한 번에 그려졌어요): the five this kind of work asks most ([forStyle] puts them
             // first), then the rest only when asked for, twenty at a time.
             val rest = remember(topics, here) { topics - here.toSet() }
             SectionLabel("자주 묻는 질문")
-            rest.take(HELP_FIRST).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            rest.take(HELP_FIRST).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }, picks = picks) }
             var shown by rememberSaveable { mutableStateOf(0) }
             // An answer opened from a link stays in view even when it is past the first five.
             val open = rest.indexOfFirst { it.id == expanded }
             val upTo = maxOf(shown, if (open >= HELP_FIRST) open + 1 else 0).coerceAtMost(rest.size - HELP_FIRST).coerceAtLeast(0)
-            rest.drop(HELP_FIRST).take(upTo).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }) }
+            rest.drop(HELP_FIRST).take(upTo).forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk("", t) }, picks = picks) }
             val left = rest.size - HELP_FIRST - upTo
             if (left > 0) TextButton(onClick = { shown = upTo + HELP_PAGE }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(if (upTo == 0) "질문 모두 보기 (${left}개 더)" else "더 보기 (${left}개 남음)")
@@ -1450,7 +1558,7 @@ private fun HelpHome(
                 features.forEach { f -> com.bamnat.app.ui.guide.FeatureHelpRow(f) }
             }
             if (found.isNotEmpty() && features.isNotEmpty()) SectionLabel("자주 묻는 질문에서")
-            found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }) }
+            found.forEach { t -> FaqCard(t, expanded == t.id, { toggle(t) }, onAsk = { onAsk(query, t) }, picks = picks) }
             if (settings.isNotEmpty()) {
                 SectionLabel("설정에서 찾기")
                 settings.forEach { e -> HelpSettingRow(e, helpStyle) }
@@ -1478,8 +1586,14 @@ private fun SectionLabel(text: String) {
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, onAsk: (() -> Unit)? = null) {
+private fun FaqCard(
+    topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, onAsk: (() -> Unit)? = null,
+    picks: List<com.bamnat.app.company.PlazaPick> = emptyList(),
+) {
     val scheme = MaterialTheme.colorScheme
+    val same = remember(picks, topic.tag) {
+        com.bamnat.app.company.PlazaPickTopics.of(topic.tag)?.let { k -> picks.filter { it.topic == k } }.orEmpty().take(2)
+    }
     Surface(
         shape = MaterialTheme.shapes.large,
         color = if (expanded) scheme.surfaceContainer else scheme.surfaceContainerLow,
@@ -1511,9 +1625,36 @@ private fun FaqCard(topic: HelpTopic, expanded: Boolean, onToggle: () -> Unit, o
                             }
                         }
                     }
+                    if (same.isNotEmpty()) {
+                        Text("같은 근무 분들의 답", style = MaterialTheme.typography.labelLarge, color = scheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp).semantics { heading() })
+                        same.forEach { PickLine(it) }
+                    }
                 }
             }
         }
+    }
+}
+
+/**
+ * 2.0.0 [RVN-24] 검토 I22cb-02: one answer from my kind of work's 답 모음 on the subject of the help answer above it: its title, and the
+ * answer in two lines that open in full on a tap (the question with it).
+ */
+@Composable
+private fun PickLine(p: com.bamnat.app.company.PlazaPick) {
+    var open by rememberSaveable(p.id) { mutableStateOf(false) }
+    val scheme = MaterialTheme.colorScheme
+    Column(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).clip(MaterialTheme.shapes.medium)
+            .clickable(role = Role.Button, onClickLabel = if (open) "답 접기" else "답 모두 보기") { open = !open }
+            .semantics { stateDescription = if (open) "펼침" else "접힘" }
+            .padding(vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        Text("💬 ${p.title}", style = MaterialTheme.typography.bodyMedium, color = scheme.onSurface)
+        if (open) Text("물음: ${p.question}", style = MaterialTheme.typography.bodySmall, color = scheme.onSurfaceVariant)
+        Text(p.answer, style = MaterialTheme.typography.bodyMedium, color = scheme.onSurfaceVariant,
+            maxLines = if (open) Int.MAX_VALUE else 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
     }
 }
 

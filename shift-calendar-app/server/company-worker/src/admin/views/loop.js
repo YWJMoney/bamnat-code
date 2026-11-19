@@ -10,10 +10,16 @@ export function loopViews(A) {
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
   const when = (isoText) => (isoText ? new Date(isoText).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
+  // 2.0.0 [RVQ-60] PC-213: 보류 줄은 나가는 시각과 남은 시간을 함께('오전 11:49에 나가요 · 9분 남음'). 시각만 보면 몇 분 남았는지 셈해야 해요.
+  const clock = (isoText) => {
+    const t = Date.parse(isoText);
+    return t - Date.now() > 12 * 3600e3 ? when(isoText) : new Date(t).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  };
   const left = (isoText) => {
     const m = Math.round((Date.parse(isoText) - Date.now()) / 60000);
-    return m <= 0 ? "곧" : m < 60 ? `${m}분 뒤` : `${Math.floor(m / 60)}시간 ${m % 60}분 뒤`;
+    return m <= 0 ? "곧" : m < 60 ? `${m}분 남음` : `${Math.floor(m / 60)}시간 ${m % 60}분 남음`;
   };
+  const goes = (isoText) => (Date.parse(isoText) - Date.now() <= 30000 ? "곧" : `${clock(isoText)}에`);
   const reload = (...keys) => {
     for (const k of keys) S.data[k] = null;
     syncUrl();
@@ -48,14 +54,14 @@ export function loopViews(A) {
     // 2.0.0 [RVQ-28] 좁은 폭에서는 판 이름·설명이 한 줄을 다 쓰고 표·단추가 아래로(380에서 글자가 한 자씩 세로로 서던 것).
     const ships = d.ships.length ? `<ul class="rows side-wrap">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
         <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 그 뒤 이 판으로 쓰는 휴대폰이 테스터보다 많이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 늘어난 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
-          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(goes(s.until))} 문의 안내·업데이트 소식이 나가요 · ${esc(left(s.until))}${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
         ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
         ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
           <button class="btn small" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
     const waiting = d.ships.find((s) => s.status === "waiting");
-    const meta = waiting ? `${waiting.version} 안내 ${left(waiting.until)}` : [d.shipped ? `나간 판 ${d.shipped.v}` : "나간 판 없음", p.ready ? "Play 연결됨" : "Play 연결 열쇠 없음"].join(" · ");
+    const meta = waiting ? `${waiting.version} 안내 ${goes(waiting.until)} · ${left(waiting.until)}` : [d.shipped ? `나간 판 ${d.shipped.v}` : "나간 판 없음", p.ready ? "Play 연결됨" : "Play 연결 열쇠 없음"].join(" · ");
     return fold("play", "Play 출시 감지", meta, `<p>${pills}</p>${outboxLine(d)}${track}${ships}
       ${can("devStatus", "edit") && p.ready ? '<div class="actions start"><button class="btn small" type="button" data-act="loop-play">지금 읽기</button></div>' : ""}
       <p class="hint">판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'을 해요. Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p>`, waiting || !p.ready ? "warn" : "");
@@ -259,7 +265,7 @@ export function loopViews(A) {
     const todo = steps(d);
     const waiting = sw.autoShip ? d.ships.find((s) => s.status === "waiting") : null;
     const next = todo[0];
-    const calm = waiting ? `${waiting.version} 안내는 ${left(waiting.until)} 저절로 나가요(Play 출시 감지에서 멈출 수 있어요).` : "판이 나가면 1시간 뒤 묶인 문의에 저절로 답해요.";
+    const calm = waiting ? `${waiting.version} 안내는 ${goes(waiting.until)} 저절로 나가요(${left(waiting.until)}, Play 출시 감지에서 멈출 수 있어요).` : "판이 나가면 1시간 뒤 묶인 문의에 저절로 답해요.";
     return `<section class="card loop-now" aria-labelledby="loop-now-h">
       <h2 class="loop-state" id="loop-now-h"><span class="pill ${stopped.length ? "warn" : "ok"}">${stopped.length ? "일부만 저절로" : "저절로 도는 중"}</span>
         <span>다음 출시 <b>${esc(trainDay(d.train.next))}</b></span><span>내가 할 것 <b>${todo.length}</b></span></h2>
@@ -338,8 +344,27 @@ export function loopViews(A) {
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
     return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건${lateAsks ? ` · 기한 넘김 ${lateAsks}` : ""}`)}${asks}</section>
-      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
+      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${bulkTierLine(d.tiers, "decide")}${tiers}
         <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section></div>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-73] 사용자 11-19 '요금 판단 대기가 너무 많아요, 한 번에': Claude 제안(무료·프로·7일권·체험)이 있는 대기 줄이 둘 이상이면 맨 위에 한 줄과
+   * 단추 하나. 누르면 제목 목록(줄마다 빼기)과 확인 한 번을 거쳐 최고 관리자만 제안대로 정해요(제안이 저절로 적용되는 길은 없어요).
+   */
+  const ASK_ORDER = ["free", "pro", "pass", "trial"];
+  const askable = (xs) => (xs ?? []).filter((x) => ASK_ORDER.includes(x.ask) && !(x.tier && x.tier !== "later")).sort((m, n) => ASK_ORDER.indexOf(m.ask) - ASK_ORDER.indexOf(n.ask));
+  function bulkTierLine(xs, src) {
+    const list = askable(xs);
+    if (!owner() || list.length < 2) return "";
+    const by = [];
+    for (const x of list) {
+      const g = by.find((b) => b[0] === x.ask);
+      if (g) g[2]++;
+      else by.push([x.ask, x.askName ?? x.ask, 1]);
+    }
+    return `<div class="bulk-tier"><p class="bulk-line"><b>제안이 있는 ${list.length}건</b><span class="meta">(${by.map(([, name, n]) => `${esc(name.replace(/\(.*\)$/, ""))} ${n}`).join(" · ")})</span></p>
+      <div class="actions start"><button class="btn primary" type="button" data-act="loop-tier-all" data-src="${src}">제안대로 한 번에 정하기</button></div></div>`;
   }
 
   // ---- 숫자 › 요금 판단 ----
@@ -418,7 +443,7 @@ export function loopViews(A) {
       : [["*", d.items]];
     const title = (k, n) => k === "*" ? "" : `<h2 class="section">${k ? `Claude 제안 ${esc(d.tiers[k] ?? k)}` : "제안 없음"}<span class="count">${n}</span></h2>`;
     const copyBtn = view === "ask" && d.items.length > 1 ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-tier-copy">${icon(P.copy)}논의용으로 복사 (${d.items.length}개)</button></div>` : "";
-    return top + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
+    return top + (view === "ask" ? bulkTierLine(d.items, "tiers") : "") + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
   }
 
   // ---- 길·다 왔는지·단추 ----
@@ -493,6 +518,22 @@ export function loopViews(A) {
         <p class="hint">${tier === "later" ? "그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있지만, 무료로 연 것을 다시 잠그지는 않아요."}</p>
         <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    // 2.0.0 [RVA-73] 제안이 있는 대기 줄을 제안대로 한 번에: 제목 목록(줄마다 빼기)과 확인 한 번(최고 관리자만, 서버도 세션을 봐요).
+    "loop-tier-all": ({ src }) => {
+      const xs = askable(src === "decide" ? S.data.loopDecide?.tiers : S.data.loopTiers?.items);
+      if (!xs.length) return;
+      const groups = [];
+      for (const x of xs) {
+        const g = groups.find((b) => b.key === x.ask);
+        if (g) g.items.push(x);
+        else groups.push({ key: x.ask, name: x.askName ?? x.ask, items: [x] });
+      }
+      openDialog(`<form data-form="loop-tier-all"><h2>제안대로 ${xs.length}건을 정할까요?</h2>
+        <p class="hint">빼고 싶은 줄은 체크를 풀어요. 무료로 정한 기능은 나중에 잠그지 않아요.</p>
+        <div class="bulk-groups">${groups.map((g) => `<fieldset><legend>${esc(g.name)} ${g.items.length}</legend>${g.items.map((x) =>
+          `<label class="chk"><input type="checkbox" name="ids" value="${esc(x.id)}" checked><span>${esc(x.title)}</span></label>`).join("")}</fieldset>`).join("")}</div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">제안대로 정하기</button></div></form>`);
     },
     // 2.0.0 [RVA-58] 요금은 사용자와 논의한 뒤 정해요: 정할 새 기능과 Claude 제안·까닭을 한 번에 글로 복사해요.
     "loop-tier-copy": () => {
@@ -585,6 +626,13 @@ export function loopViews(A) {
       dialog.close();
       const f = new FormData(form);
       if (await act(() => api(`/loop/basis/${form.dataset.id}`, "POST", { basis: String(f.get("basis") ?? ""), note: String(f.get("note") ?? "") }), "기준을 바꿨어요")) reload("loopTiers", "loopDecide");
+    },
+    "loop-tier-all": async (form) => {
+      const ids = [...form.querySelectorAll('input[name="ids"]:checked')].map((i) => i.value);
+      dialog.close();
+      if (!ids.length) return toast("고른 줄이 없어서 바꾸지 않았어요");
+      const r = await act(() => api("/loop/tiers/apply", "POST", { ids }), (x) => `${x.decided}개를 제안대로 정했어요${x.skipped ? ` · 건너뜀 ${x.skipped}` : ""}`);
+      if (r) reload("loopTiers", "loopDecide");
     },
     "loop-tier": async (form) => {
       dialog.close();

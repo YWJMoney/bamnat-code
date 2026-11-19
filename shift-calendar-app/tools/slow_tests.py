@@ -125,6 +125,8 @@ def main(argv):
                 "failed": failed,
                 "sha": os.environ.get("GITHUB_SHA", ""),
                 "classes": {k.rsplit(".", 1)[-1]: round(v[0], 1) for k, v in classes.items()},
+                # 2.0.0 [RVR-46] (총괄) per class: how many tests ran, failed and were skipped, for tools/bundle_check.py's list of classes that passed.
+                "counts": {k.rsplit(".", 1)[-1]: [v[1], v[2], sum(1 for c, _, _ in skipped if c == k.rsplit(".", 1)[-1])] for k, v in classes.items()},
                 "slowest": [{"test": n, "class": c, "s": round(t, 1)} for t, c, n in sorted(cases, reverse=True)[:top]],
             }, f, ensure_ascii=False, indent=1)
     return 0

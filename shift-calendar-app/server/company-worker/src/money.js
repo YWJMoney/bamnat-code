@@ -211,11 +211,13 @@ export function stackDays(until, rows, launchedAt) {
 /** Gives [days] once for [source], within the month's cap; the days actually given (0 when none). */
 export async function giveDays(env, kind, source, dev, days, now) {
   const cap = (await rewardRules(env)).monthCap;
-  const got = await one(env, "SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ? AND given_at >= ?", dev, kstMonthStart(now));
-  const give = Math.min(days, cap - (got?.n ?? 0));
-  if (give <= 0) return 0;
-  const r = await run(env, "INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at) VALUES (?, ?, ?, ?, ?)", source, dev, kind, give, now);
-  return r.meta.changes ? give : 0;
+  if (days <= 0) return 0;
+  // 2.0.0 [RVQ-55] 검토 SVC-37: 이달 받은 날을 읽고 따로 넣으면, 두 보상이 겹칠 때 둘 다 같은 남은 날을 보고 상한을 넘겼어요. 읽기와 넣기를
+  // 한 문장으로(같은 휴대폰의 이달 합을 그 자리에서 세어 남은 만큼만).
+  const r = await one(env, `INSERT OR IGNORE INTO day_rewards (source, device, kind, days, given_at)
+    SELECT ?1, ?2, ?3, MIN(?4, ?5 - n), ?6 FROM (SELECT COALESCE(SUM(days), 0) AS n FROM day_rewards WHERE device = ?2 AND given_at >= ?7) WHERE ?5 - n > 0
+    RETURNING days`, source, dev, kind, days, cap, now, kstMonthStart(now));
+  return r?.days ?? 0;
 }
 
 /**
@@ -526,6 +528,8 @@ export const INVITE_CODE = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/;
 /** What the app sends as the phone mark: SHA-256 of the app-scoped Android ID, never the id itself. */
 export const PHONE_MARK = /^[0-9a-f]{64}$/;
 
+/** 2.0.0 [RVQ-49] PC-159: 활동 기록·관리자 화면에 보이는 초대 코드(AHC4-93YJ). */
+export const inviteCodeShown = (c) => (typeof c === "string" && c.length === 8 ? `${c.slice(0, 4)}-${c.slice(4)}` : String(c ?? ""));
 export const inviteCode = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => INVITE_CHARS[b % 32]).join("");
 
 /** A code as a person may type it: "abcd-2345" is ABCD2345. */
@@ -658,15 +662,18 @@ export async function settleInvites(env, inviter, set, now) {
       AND (SELECT COUNT(*) FROM invite_uses WHERE inviter = ? AND status = 'qualified') >= ?`,
       capped ? "capped" : "credited", id, inviter, set.friends, inviter, set.friends);
     if (!took.meta.changes) return;
+    // 2.0.0 [RVQ-49] PC-159: 활동 기록에 내부 번호(보상 id, 초대한 폰 표시 앞 8자) 대신 사람이 아는 말로. 대상은 보상 id(보상 화면으로 감).
+    const by = await one(env, "SELECT code FROM invite_uses WHERE batch = ? LIMIT 1", id);
+    const said = `친구 ${took.meta.changes}명${by?.code ? ` · 코드 ${inviteCodeShown(by.code)}` : ""}`;
     if (capped) {
-      await audit(env, now, "invite_capped", id, inviter.slice(0, 8));
+      await audit(env, now, "invite_capped", id, `${said} · 상한에 닿아 개월은 없음`);
       continue;
     }
     // 2.0.0 [RVD-14] 검토 SVC-06: the install id and the phone mark are what the app sent, so the months wait in 드릴 보상 for an
     // admin, who sees the friends' signals (Play 확인, 코드로 넣음, 몰림) and pays there (setReward; Play 결제 미룸 then).
     await run(env, `INSERT OR IGNORE INTO rewards (id, report_id, rule_id, device, months, status, memo, created_at, paid_at, deferred)
       VALUES (?, ?, 'invite', ?, ?, 'owed', ?, ?, NULL, 0)`, id, `invite:${id}`, inviter, set.months, `친구 초대 ${took.meta.changes}명`, now);
-    await audit(env, now, "invite_credit", id, inviter.slice(0, 8));
+    await audit(env, now, "invite_credit", id, `${said} · ${set.months}개월 드릴 보상으로`);
   }
 }
 

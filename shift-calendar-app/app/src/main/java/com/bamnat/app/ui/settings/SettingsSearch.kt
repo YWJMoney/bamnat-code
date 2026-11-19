@@ -199,9 +199,11 @@ internal object SettingsIndex {
                 /** 2.0.0 [RVJ-93] 검토 BOSS-68: 설정 › 더 보기's 관리 row's name ('가게 관리', '팀 관리') while it is there, else null. */
                 manage: String? = null,
                 /** 2.0.0 [RVJ-96] A 급여 대장 on this phone: its 신고·지급 기한 알림 is found ([rememberLedgerOn]). */
-                ledger: Boolean = false): List<SettingEntry> =
+                ledger: Boolean = false,
+                /** 2.0.0 [RVIB-21] A 근무 종류 of the calendar has two parts: 둘째 구간 알림 is on the page ([NoticeBoard.shown]). */
+                gap: Boolean = false): List<SettingEntry> =
         (all(board, share, company, sleepAuto, sleepSound) + listOfNotNull(manage?.let(::manageEntry), filingEntry.takeIf { ledger }))
-            .filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
+            .filter { fits(it, style, flowAdded) && (it.title != GAP_ROW || gap) }.map { inWords(it, style) }
 
     /**
      * 2.0.0 [RVJ-93] 검토 BOSS-68 (사장님·리더의 관리 화면이 찾기에 없어 '관리'를 찾으면 '결제 한눈에 보기'가 나왔어요): the 관리 screen by
@@ -360,6 +362,8 @@ internal object SettingsIndex {
         row(N, "최근 3개월 한 주 평균 경고", "평균", "3개월"),
         // 1.32 [WTYP-16]
         row(N, "퇴근 시각 알림", "지금 퇴근", "퇴근 버튼", "잔업 기록", "야근 기록", "퇴근 알림"),
+        // 2.0.0 [RVIB-21]
+        row(N, "둘째 구간 시작 알림", "브레이크 타임", "비는 시간", "다시 시작", "두 구간", "브레이크 알림"),
         row(N, "퇴근 뒤 가계부 정리 알림", "하루 마감", "가계부 알림", "지출 적기 알림", "오늘 쓴 돈", "정리 알림"),
         row(N, "근무 전 한 줄 예고", "근무 전날 알림", "내일 돈 예고", "근무 날 지출", "야간 지출 예고"),
         // 1.32 [WTYP-12]
@@ -477,7 +481,7 @@ internal object SettingsIndex {
         row(V, "잠금 화면에 알람 띄우기", "전체 화면", "권한", "잠금 화면"),
         row(V, "결제 알림 읽기", "카드 알림", "은행 알림", "문자", "자동 기록", "가계부"),
         row(V, "사용 통계 보내기", "통계", "사용 기록", "익명", "보낼 내용"), // [STAT-01]
-        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "계산 방식 공유", "광장 참여", "공유 끄기").takeIf { board && company }, // [PLAZA-07]
+        row(V, AUTO_SHARE_ROW, "회사 광장", "저절로 나누기", "자동 공유", "근무 순서 공유", "근무 시간 공유", "계산 방식 공유", "광장 참여", "공유 끄기", "나누기 취소").takeIf { board && company }, // [PLAZA-07]
         row(V, "광고 개인정보 선택", "광고", "맞춤 광고", "광고 ID", "동의", "GDPR", "광고 끄기"), // [MON-07]
         // [MON-04][MON-05] 프로 and what paying for it agrees to.
         screen("설정", "프로", SettingsGo.PRO, "구독", "결제", "광고 없애기", "광고 제거", "무료 체험", "이용권", "환불", "해지", "유료"),

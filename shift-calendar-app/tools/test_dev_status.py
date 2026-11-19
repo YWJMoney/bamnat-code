@@ -11,6 +11,8 @@ import dev_status as ds  # noqa: E402
 
 GOOD = {"track": "LOOP-17", "title": "알려진 문제판", "status": "done", "size": "feature", "route": "server",
         "news": "문의 화면에 '지금 알려진 문제'가 생겼어요", "shipReply": "말씀하신 문제를 고친 업데이트가 나왔어요."}
+# 2.0.0 [HQ-169] A new feature that reaches the app carries Claude's proposal and why.
+ASKED = {"tierAsk": "free", "tierWhy": "프로 기능을 거치지 않고 쓰는 기능"}
 
 
 def errors(*xs):
@@ -24,6 +26,19 @@ class DevStatusTest(unittest.TestCase):
     def test_tier_is_only_the_users(self):
         self.assertTrue(any("tier" in e for e in errors({**GOOD, "tier": "pro"})))
         self.assertEqual(errors({**GOOD, "tierAsk": "pro", "tierWhy": "새 기능이라 프로로 시작을 제안"}), [])
+
+    def test_a_new_feature_says_where_it_lands_and_what_tier_is_proposed(self):
+        # 2.0.0 [HQ-169]: a feature line that reaches the app carries Claude's proposal, so nothing waits in the admin app without one.
+        feat = {"track": "RVX-01", "title": "새 기능", "status": "doing", "size": "feature"}
+        self.assertTrue(any("route를 꼭" in e for e in errors(feat)))
+        self.assertTrue(any("tierAsk(제안)와 tierWhy(까닭)" in e for e in errors({**feat, "route": "app"})))
+        self.assertTrue(any("tierAsk(제안)와 tierWhy(까닭)" in e for e in errors({**feat, "route": "app", "tierAsk": "free"})))
+        self.assertEqual(errors({**feat, "route": "app", "tierAsk": "later", "tierWhy": "사용자가 직접 정할 것"}), [])
+        self.assertEqual(errors({**feat, "route": "server"}), [])
+        self.assertEqual(errors({**feat, "status": "todo"}), [])
+        self.assertEqual(errors({**feat, "size": "polish"}), [])
+        # The tier itself still never goes in the file.
+        self.assertTrue(any("tier(무료·프로)" in e for e in errors({**feat, "route": "app", "tier": "free"})))
 
     def test_done_needs_ship_reply_and_news(self):
         e = errors({k: v for k, v in GOOD.items() if k not in ("news", "shipReply")})
@@ -55,7 +70,7 @@ class DevStatusTest(unittest.TestCase):
 
     def test_route_needs_what_it_waits_for(self):
         self.assertTrue(errors({**GOOD, "route": "remote"}))
-        self.assertEqual(errors({**GOOD, "route": "remote", "remote": "cycles@12"}), [])
+        self.assertEqual(errors({**GOOD, **ASKED, "route": "remote", "remote": "cycles@12"}), [])
         self.assertTrue(errors({**GOOD, "route": "flag"}))
 
     def test_styles_are_work_types(self):
@@ -77,6 +92,15 @@ class DevStatusTest(unittest.TestCase):
         self.assertEqual(body["items"][0]["track"], "LOOP-17")
         with self.assertRaises(SystemExit):
             ds.payload([], "1.39", "", 0)
+
+    def test_a_title_is_no_longer_than_the_server_takes(self):
+        # 2.0.0 총괄 11-19: 서버는 새 줄의 제목을 DEV.title(100자)까지만 받아요. 그보다 길면 동기화가 '줄 오류'로 떨어져요.
+        import re
+        src = (ds.ROOT / "server" / "company-worker" / "src" / "inquiries.js").read_text(encoding="utf-8")
+        server = int(re.search(r"export const DEV = \{.*?\btitle: (\d+),", src, re.S).group(1))
+        self.assertEqual(ds.LIMITS["title"], server)
+        self.assertEqual(ds.check_item(1, {**GOOD, "title": "가" * server}), [])
+        self.assertTrue(any("title" in e for e in ds.check_item(1, {**GOOD, "title": "가" * (server + 1)})))
 
     def test_payloads_split_under_the_servers_limit(self):
         # 2.0.0 [HQ-77] 574줄을 한 덩어리로 보내면 서버가 통째로 거절해요(한 번에 200줄까지).
@@ -127,7 +151,7 @@ class DevStatusTest(unittest.TestCase):
         keep = ds.STATUS_FILE, ds.TRACKER
         with tempfile.TemporaryDirectory() as d:
             s, tr = pathlib.Path(d) / "s.jsonl", pathlib.Path(d) / "t.csv"
-            lines = [{**GOOD, "route": "app", "track": "OLD-1", "news": "옛 판 소식"}, {**GOOD, "route": "app", "track": "NEW-1", "news": "새 판 소식", "check": "새 판 확인"},
+            lines = [{**GOOD, **ASKED, "route": "app", "track": "OLD-1", "news": "옛 판 소식"}, {**GOOD, **ASKED, "route": "app", "track": "NEW-1", "news": "새 판 소식", "check": "새 판 확인"},
                      {**GOOD, "track": "NEW-2", "status": "check", "check": "새 판 PC"}]
             s.write_text("\n".join(json.dumps(x, ensure_ascii=False) for x in lines) + "\n", encoding="utf-8")
             tr.write_text("id,requirement,phase,status,gate,evidence\nOLD-1,x,1.39,완료,,\nNEW-1,x,1.40,완료,,\nNEW-2,x,2.0.0,진행 중,,\n", encoding="utf-8")

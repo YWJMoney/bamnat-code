@@ -43,7 +43,7 @@ class TaxRepository(private val db: AppDatabase, private val clock: () -> Long =
     suspend fun observeDeposit(entry: MoneyEntry, payMonth: YearMonth): PayObservation {
         val before = dao.observationForEntry(entry.id)?.toModel()
         val o = PayObservation(
-            id = before?.id ?: 0, payMonth = payMonth, net = entry.shareOf(MoneyCategories.SALARY).takeIf { it > 0 } ?: entry.amount,
+            id = before?.id ?: 0, payMonth = payMonth, net = entry.shareOf(com.bamnat.core.money.CategoryRole.SALARY).takeIf { it > 0 } ?: entry.amount,
             gross = before?.gross, date = entry.date, source = PayObservation.Source.DEPOSIT, entryId = entry.id,
             createdAt = before?.createdAt ?: clock(),
         )

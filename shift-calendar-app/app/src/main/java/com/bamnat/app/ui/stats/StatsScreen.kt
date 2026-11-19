@@ -147,11 +147,14 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
     val book by vm.book.collectAsStateWithLifecycle()
     val gate by vm.gate.collectAsStateWithLifecycle()
 
-    val snap = snapshot
-    if (snap == null) {
+    val raw = snapshot
+    if (raw == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
+    // 2.0.0 [RVH-94] 검토 PC-212: the months before this app was in use are not counted as worked ([FactsSince]).
+    val installed = androidx.compose.ui.platform.LocalContext.current.appContainer.installedAt
+    val snap = remember(raw, installed) { FactsSince.of(installed, raw) }
     // [WEEK-01] Monday to Sunday, whatever day the calendar's rows start on.
     // PC f42b2eba·e1ca9e5b (근무·급여 한 화면에 주 52시간과 64시간이 섞임; 급여를 안 정한 일근은 '한 주 근무 경고' 값이어야 함):
     // one week limit for every week line on this screen, the 다음 주 예상 too: the law's for the pay setup (52, 64 under
@@ -566,7 +569,7 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                 }
 
                 }
-                StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate, period)
+                StatsPart.COMPARE -> CompareCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate, period, style)
                 StatsPart.YEAR -> YearWorkCard(vm, calc, snap, month, payProfile?.takeIf { pays }, gate,
                     onOpenReport = payProfile?.let { { onOpenPayFocus(com.bamnat.app.ui.pay.PayFocus.REPORT.key) } }, period = period, weekLimit = weekLimit)
                 else -> Unit

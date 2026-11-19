@@ -280,7 +280,8 @@ object PublicCycles {
         if (norm(q).length < 2) return if (industry != null || form != null || group != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
         // [CYC-10] 1.38 순서로 찾기: "주야비휴", "당비비" typed as the order is said finds the rows with that very rotation
         // (any day first), so someone who knows only their order, not the company's name, still lands on it.
-        orderCodes(q)?.let { want -> return pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }
+        // 2.0.0 [RVN-22] 검토 COMP-56·U10b-09: a word that is also a name ('오비' of 오비맥주) keeps the name's rows after the order's.
+        val byOrder = orderCodes(q)?.let { want -> pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }.orEmpty()
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
         val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
@@ -310,9 +311,12 @@ object PublicCycles {
                 else -> 3
             }
         }
-        return pool.mapNotNull { e -> score(e)?.let { it to e } }
+        val byName = pool.mapNotNull { e -> score(e)?.let { it to e } }
             .sortedWith(compareBy<Pair<Int, Entry>> { it.first }.thenBy { it.second.c.weak }.thenBy { it.second.name }.thenBy { it.second.c.id })
             .map { it.second.c }
+        if (byOrder.isEmpty()) return byName
+        // Only rows whose name has the word: an order's words in another row's 근무형태 are the order's rows already.
+        return (byOrder + byName.filter { whole in norm(it.company) || whole in norm(it.display) }).distinctBy { it.id.ifEmpty { it.display } }
     }
 
     /**

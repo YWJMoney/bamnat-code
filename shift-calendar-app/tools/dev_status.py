@@ -20,6 +20,7 @@ news(앱 업데이트 소식 한 줄, 80자), shipReply(판이 나간 날 묶인
 miss(2.0.0 [RVR-26] 시험이 왜 못 잡았나, 200자: PC 확인·문의로 찾은 문제는 done 전에 test와 함께 꼭).
 test에 적은 시험(클래스·파일·'[번호] 이름'·test_함수)은 check가 저장소에 정말 있는지 봐요. 시험으로 못 잡는 것은 "PC: …".
 요금(tier)은 사용자만 관리자 앱에서 정해요. 이 파일에 tier를 적으면 검사가 막아요.
+새 기능(feature) 줄은 doing부터 route를 꼭, 앱에 닿으면(route가 server가 아니면) tierAsk·tierWhy도 꼭 적어요(2.0.0 [HQ-169]).
 """
 import argparse
 import csv
@@ -64,7 +65,9 @@ BROADCAST = [
     (re.compile(r"(\+?82[\s.-]?0?|0)\d{1,2}[\s.-]?\d{3,4}[\s.-]?\d{4}"), "전화번호"),
     (re.compile(r"오픈\s*채팅|단톡|카톡\s*방|텔레그램|디스코드|/api/|/admin|관리자\s*(페이지|화면|앱|계정)|서버\s*(주소|구조|코드)|소스\s*코드|깃허브|github|토큰|비밀\s*(값|키)|데이터\s*베이스", re.I), "보안 정보·단톡방"),
 ]
-LIMITS = {"title": 120, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300, "miss": 200}
+# title은 서버의 DEV.title(server/company-worker/src/inquiries.js, 100자)과 같아야 해요. 120이던 때 109자 제목의 새 줄(RVQ-57)이 여기 검사는
+# 지나고 서버 동기화(/dev/sync)에서 '줄 오류 1'로 떨어졌어요(2.0.0 총괄 11-19, 통합 PR의 sync 빨간 줄).
+LIMITS = {"title": 100, "publicTitle": 60, "news": 80, "shipReply": 600, "tierWhy": 600, "test": 200, "check": 1000, "reason": 300, "miss": 200}
 
 
 def read(path=None):
@@ -125,6 +128,13 @@ def check_item(n, x):
         say("good은 잴 이벤트(events)와 함께 적어요")
     if "tierAsk" in x and not one_of(x["tierAsk"], TIERS):
         say("tierAsk는 free·pro·pass·trial·later 중 하나예요")
+    # 2.0.0 [HQ-169] (사용자 2026-11-19 "대기가 너무 많다"): 새 기능 줄이 어디로 닿는지·요금 제안 없이 올라가 결정함 요금 판단에 빈 채로
+    # 쌓이지 않게. 요금은 여전히 사용자만 정해요(tier 칸은 위에서 막아요). 여기서 보는 것은 Claude의 제안(tierAsk)과 까닭(tierWhy)이 있는지뿐이에요.
+    if x.get("size") == "feature" and x.get("status") in ("doing", "check", "done"):
+        if "route" not in x:
+            say("새 기능(feature) 줄에는 route를 꼭 적어요(앱에 닿지 않는 공개 웹·운영·시험 도구는 server). 없으면 결정함 요금 판단에 물을 것으로 쌓여요")
+        elif x["route"] != "server" and not (x.get("tierAsk") and isinstance(x.get("tierWhy"), str) and x["tierWhy"].strip()):
+            say("앱에 닿는 새 기능 줄에는 tierAsk(제안)와 tierWhy(까닭)를 꼭 적어요: 프로 기능을 거쳐야 쓰는 것은 pro, 아니면 free, 사용자가 직접 정할 것은 later")
     if "styles" in x and not (isinstance(x["styles"], list) and all(one_of(v, STYLES) for v in x["styles"])):
         say("styles는 SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST 중에서 고른 목록이에요(빈 목록 = 모두)")
     # 2.0.0 [HQ-78] 서버는 동기화로 상태를 뒤로 돌리지 않아요(done → doing). 정말 다시 연 줄만 reopen: true.

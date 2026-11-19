@@ -1,4 +1,4 @@
-import { all, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
+import { all, allow, audit, batch, iso, json, one, overLimit, randomId, readJson, run, stmt } from "./index.js";
 import { DAY } from "./units.js";
 import { autoAnswerOrHold, grams, likeness, titleFrom } from "./inbox.js";
 import { grantMakerReward } from "./maker-reward.js";
@@ -176,15 +176,43 @@ export function toldText(need, how) {
  * Answers every asker of [need] not told yet; 문의는 '답함'이 되어 앱의 새 답 알림이 떠요.
  * 2.0.0 [RVQ-34] 검토 SVC-31: 전에는 문의 대화에 바로 넣어, 사람이 보려던 문의(돈·개인정보…)도 '답함'이 되고 말투도 달랐어요. 이제 문의 답
  * 규칙(inboxAnswer)을 거치고, 사람이 봐야 할 문의는 사람이 보낼 보류 답으로 올라가요. 앱 알림은 inboxAnswer가 보내요.
+ * 2.0.0 [RVN-24] 검토 SVC-109: 90 askers a batch, each batch marking only its own askers told, so a big group never makes one
+ * huge batch and an asker whose answer failed (a throw) is left for the next answer.
  */
 async function tellAskers(env, need, how, now) {
   const links = await all(env, "SELECT src, ref FROM studio_need_links WHERE need_id = ? AND told = 0 AND src = 'inq'", need.id);
   const text = toldText(need, how);
   let n = 0;
-  for (const l of links) if (await autoAnswerOrHold(env, l.ref, text, now).catch(() => false)) n++;
-  await run(env, "UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq'", need.id);
+  for (let i = 0; i < links.length; i += TELL_CHUNK) {
+    const done = [];
+    for (const l of links.slice(i, i + TELL_CHUNK)) {
+      try {
+        if (await autoAnswerOrHold(env, l.ref, text, now)) n++;
+        done.push(l.ref);
+      } catch { /* left for the next answer */ }
+    }
+    if (done.length) await run(env, `UPDATE studio_need_links SET told = 1 WHERE need_id = ? AND src = 'inq' AND ref IN (${done.map(() => "?").join(",")})`, need.id, ...done);
+  }
   return n;
 }
+
+export const TELL_CHUNK = 90;
+
+/**
+ * 2.0.0 [RVN-24] 검토 SVC-109: which state each 요구 action may start from. Outside it the action is 409, so an asker who heard '하지 않기로 함'
+ * never hears '나와요' next, and an ended group is opened again ('다시 열기') before it is built or shipped.
+ */
+export const NEED_MOVES = {
+  market: ["open", "ready"],
+  unmarket: ["market"],
+  build: ["open", "ready", "market", "building"],
+  official: ["open", "ready", "market", "building", "solved"],
+  decline: ["open", "ready", "market", "building"],
+  reopen: ["solved", "official", "declined"],
+  title: NEED_STATES,
+  merge: ["open", "ready", "market", "building", "solved", "official", "declined"],
+};
+const NEED_ENDED = { solved: "solved", official: "official", declined: "declined" };
 
 /** [GRW-03] A request on the 요청 판 got its 완성: the group it came from is 풀림, and its askers hear. */
 export async function needSolved(env, requestId, code, now) {
@@ -227,10 +255,13 @@ export async function growthTick(env, now) {
   await ladderTick(env, now);
 }
 
+/** The 요청 판 line of a need: '[영역 › 도구] 제목'. */
+export const marketBody = (n) => [...`${n.area ? `[${n.area}${n.tool ? ` › ${n.tool}` : ""}] ` : ""}${n.title}`].slice(0, 200).join("");
+
 async function toMarket(env, n, now) {
   // [RVQ-29] 다듬은 제목만 나가요(growthAdmin이 거름을 지난 제목을 n.title에 적은 뒤 불러요).
   const id = `q${randomId(12)}`;
-  const body = [...`${n.area ? `[${n.area}${n.tool ? ` › ${n.tool}` : ""}] ` : ""}${n.title}`].slice(0, 200).join("");
+  const body = marketBody(n);
   await batch(env, [
     // style ALL: every kind of work's 요청 판 shows it (rcRequestList), unless the asks said one kind.
     stmt(env, "INSERT INTO recipe_requests (id, device, style, body, askers, created_at, updated_at) VALUES (?, 'operator', ?, ?, ?, ?, ?)",
@@ -286,6 +317,10 @@ export async function growthRoute(request, env, path, url) {
     const place = Object.hasOwn(MISS_PLACES, body?.place) ? body.place : null;
     const word = missWord(body?.q);
     if (!place || !word) return json({ ok: true, counted: false });
+    // 2.0.0 [RVQ-55] 검토 SVC-30: 한 연결이 같은 말을 여러 번 보내 '찾았는데 없던 말' 신호(3번)를 혼자 만들 수 있었어요.
+    // 같은 연결·같은 말은 하루에 한 번만 세요. 기억하는 것은 연결·말·날을 섞은 해시뿐이고 하루 뒤 지워져요(누가 무엇을 찾았는지는 남기지 않아요).
+    const day = Math.floor(now / DAY);
+    if (!(await allow(env, `missone|${await sha(`${ip}|${place}|${word}|${day}`)}`, 1, DAY, now))) return json({ ok: true, counted: false });
     await run(env, `INSERT INTO search_misses (word, place, week, n) VALUES (?, ?, ?, 1)
       ON CONFLICT (word, place, week) DO UPDATE SET n = n + 1`, word, place, missWeek(now));
     return json({ ok: true, counted: true });
@@ -309,13 +344,36 @@ export async function missList(env, now) {
 // ---- the admin app's side (/api/admin/growth/…) ----
 
 async function needView(env, n) {
-  const links = await all(env, "SELECT src, ref, text, at FROM studio_need_links WHERE need_id = ? ORDER BY at LIMIT 5", n.id);
-  const total = await one(env, `SELECT COUNT(*) AS n, ${NETS_SQL.replace("l.need_id = n.id", "l.need_id = ?1")} AS nets FROM studio_need_links WHERE need_id = ?1`, n.id);
+  return (await needViews(env, [n]))[0];
+}
+
+/**
+ * The cards of [rows] (studio_needs). 2.0.0 [RVN-24] 검토 SVC-106: the first five asks and the totals of every row in two reads a
+ * 90 rows (was two reads a row, about 200 for the list of 100).
+ */
+async function needViews(env, rows) {
+  const samples = new Map();
+  const totals = new Map();
+  for (let i = 0; i < rows.length; i += 90) {
+    const ids = rows.slice(i, i + 90).map((n) => n.id);
+    const q = ids.map(() => "?").join(",");
+    const [first, sums] = await Promise.all([
+      all(env, `SELECT need_id, src, ref, text, at FROM (SELECT l.*, ROW_NUMBER() OVER (PARTITION BY l.need_id ORDER BY l.at) AS k
+        FROM studio_need_links l WHERE l.need_id IN (${q})) WHERE k <= 5 ORDER BY need_id, at`, ...ids),
+      all(env, `SELECT l.need_id, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN l.cluster = '' THEN 'd' || l.device WHEN l.cluster = 'x' THEN NULL ELSE l.cluster END) AS nets
+        FROM studio_need_links l WHERE l.need_id IN (${q}) GROUP BY l.need_id`, ...ids),
+    ]);
+    for (const l of first) samples.set(l.need_id, [...(samples.get(l.need_id) ?? []), l]);
+    for (const t of sums) totals.set(t.need_id, t);
+  }
   // [RVQ-29] 서로 다른 네트워크 수, 다듬은 제목인지, 지금 제목이 요청 판 거름에 걸리는지.
-  return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, nets: total.nets, titled: Boolean(n.titled),
-    problem: marketTitleProblem(n.title), state: n.state, stateName: NEED_STATE_NAMES[n.state],
-    request: n.request_id ?? null, code: n.code ?? null, note: n.note, version: n.version ?? null, at: iso(n.created_at), updated: iso(n.updated_at),
-    samples: links.map((l) => ({ src: l.src, ref: l.ref, text: l.text, at: iso(l.at) })) };
+  return rows.map((n) => {
+    const total = totals.get(n.id) ?? { n: 0, nets: 0 };
+    return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, nets: total.nets, titled: Boolean(n.titled),
+      problem: marketTitleProblem(n.title), state: n.state, stateName: NEED_STATE_NAMES[n.state],
+      request: n.request_id ?? null, code: n.code ?? null, note: n.note, version: n.version ?? null, at: iso(n.created_at), updated: iso(n.updated_at),
+      samples: (samples.get(n.id) ?? []).map((l) => ({ src: l.src, ref: l.ref, text: l.text, at: iso(l.at) })) };
+  });
 }
 
 /** [GRW-06] 손잡이 지도: 영역·도구마다 부탁한 분 수와 상태별 묶음 수, 많은 순. */
@@ -335,10 +393,15 @@ export async function handleMap(env) {
   return [...by.values()].sort((a, b) => b.waiting - a.waiting || b.askers - a.askers).slice(0, 50);
 }
 
-/** [GRW-06] 출시 노트 두 줄: 그 판에 나온 요구와 채택된 도구(만든 분 이름은 별명이 있으면 별명). */
+/**
+ * [GRW-06] 출시 노트 두 줄: 그 판에 나온 요구와 채택된 도구(만든 분 이름은 별명이 있으면 별명).
+ * 2.0.0 [RVN-24] 검토 SVC-108: the line is pasted into the public release notes, so the maker's name is only there while their maker profile
+ * is open to everyone (not hidden or closed): the same name the 장터 already shows on the work. A hidden profile's work goes in untitled by name.
+ */
 export async function releaseLines(env, version) {
   const needs = await all(env, "SELECT title, askers FROM studio_needs WHERE state = 'official' AND version = ? ORDER BY askers DESC", version);
-  const tools = await all(env, `SELECT r.title, n.nick FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks n ON n.device = r.owner
+  const tools = await all(env, `SELECT r.title, n.nick FROM recipe_tiers t JOIN recipes r ON r.code = t.code
+    LEFT JOIN recipe_makers m ON m.device = r.owner AND m.hidden = 0 AND m.closed = 0 LEFT JOIN nicks n ON n.device = m.device
     WHERE t.tier = 4 AND t.version = ?`, version);
   const lines = [];
   if (needs.length) lines.push(`여러분이 부탁해서 생긴 꾸미기: ${needs.map((n) => `${n.title}(${n.askers}명)`).join(", ")}`);
@@ -349,11 +412,14 @@ export async function releaseLines(env, version) {
 /** [GRW-05] 기본 도구 후보와 모두의 도구, 판단에 필요한 숫자(쓴 사람·7일 유지율·신고·요청에서 왔는지). */
 async function toolsAdmin(env, show) {
   const where = show === "tools" ? "t.tier = 2" : show === "adopted" ? "t.tier = 4" : show === "later" ? "t.tier = 3 AND t.later = 1" : "t.tier = 3 AND t.later = 0";
+  // 2.0.0 [RVN-24] SVC-108: named = the maker's profile is open, so the release-note line carries the name.
   const rows = await all(env, `SELECT r.code, r.title, r.styles, r.applied, r.kept7, r.flags, r.likes, r.maker, t.tier, t.since, t.version, t.note,
-      (SELECT COUNT(*) FROM studio_needs n WHERE n.code = r.code) AS needs, nk.nick
-    FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks nk ON nk.device = r.owner WHERE ${where} ORDER BY r.applied DESC LIMIT 100`);
+      (SELECT COUNT(*) FROM studio_needs n WHERE n.code = r.code) AS needs, nk.nick, (mk.device IS NOT NULL) AS named
+    FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks nk ON nk.device = r.owner
+      LEFT JOIN recipe_makers mk ON mk.device = r.owner AND mk.hidden = 0 AND mk.closed = 0
+    WHERE ${where} ORDER BY r.applied DESC LIMIT 100`);
   return rows.map((r) => ({ code: r.code, title: r.title, styles: r.styles.split(",").filter(Boolean), users: r.applied, kept: r.applied ? Math.trunc((100 * r.kept7) / r.applied) : 0,
-    flags: r.flags, likes: r.likes, maker: r.maker ?? null, nick: r.nick ?? null, tier: r.tier, tierName: TIER_NAMES[r.tier], since: iso(r.since), version: r.version ?? null,
+    flags: r.flags, likes: r.likes, maker: r.maker ?? null, nick: r.nick ?? null, named: r.named === 1, tier: r.tier, tierName: TIER_NAMES[r.tier], since: iso(r.since), version: r.version ?? null,
     note: r.note, fromNeeds: r.needs }));
 }
 
@@ -371,8 +437,7 @@ export async function growthAdmin(request, env, url, path, now) {
     const rows = await all(env, `SELECT * FROM studio_needs WHERE ${where} ORDER BY state = 'ready' DESC, askers DESC, updated_at DESC LIMIT 100`, ...args);
     const counts = Object.fromEntries((await all(env, "SELECT state, COUNT(*) AS n FROM studio_needs GROUP BY state")).map((r) => [r.state, r.n]));
     const unsolved = await one(env, "SELECT COUNT(*) AS n FROM studio_needs WHERE state = 'market' AND updated_at < ?", now - GROWTH.staleDays * DAY);
-    const items = [];
-    for (const n of rows) items.push(await needView(env, n));
+    const items = await needViews(env, rows);
     return json({ items, counts: { ...counts, unsolved: unsolved.n }, rules: GROWTH, states: NEED_STATE_NAMES });
   }
   let m = path.match(/^\/growth\/needs\/(n[A-Za-z0-9]{11})$/);
@@ -386,9 +451,10 @@ export async function growthAdmin(request, env, url, path, now) {
     let told = 0;
     // [RVQ-29] 장터에 올릴 제목: 새로 준 제목이나 이미 다듬은 제목. 요청 판 글과 같은 거름을 지나야 해요.
     const newTitle = typeof body.title === "string" ? [...body.title.replace(/\s+/g, " ").trim()].slice(0, 60).join("") : null;
+    // 2.0.0 [RVN-24] SVC-109: the move table first (409 names the state it is in).
+    if (NEED_MOVES[body.action] && !NEED_MOVES[body.action].includes(n.state)) return json({ error: "state", state: n.state, field: "action" }, 409);
     switch (body.action) {
       case "market": {
-        if (!["open", "ready"].includes(n.state)) return json({ error: "state" }, 409);
         if (newTitle !== null && newTitle.length < 2) return json({ error: "title", field: "title" }, 400);
         if (newTitle === null && !n.titled) return json({ error: "title_first", field: "title" }, 400);
         const t = newTitle ?? n.title;
@@ -407,7 +473,7 @@ export async function growthAdmin(request, env, url, path, now) {
       }
       case "unmarket":
         // 2.0.0 [RVA-04] 검토 ADM-05: '장터에 올리기'를 내려요. 요청 판 줄은 가리고 요구는 열린 채로(줄을 남겨 두어 매시간 저절로 다시 올라가지 않아요).
-        if (n.state !== "market" || !n.request_id) return json({ error: "state" }, 409);
+        if (!n.request_id) return json({ error: "state", state: n.state, field: "action" }, 409);
         await batch(env, [stmt(env, "UPDATE recipe_requests SET hidden = 1 WHERE id = ? AND device = 'operator'", n.request_id),
           stmt(env, "UPDATE studio_needs SET state = 'open', updated_at = ? WHERE id = ?", now, n.id)]);
         break;
@@ -437,19 +503,24 @@ export async function growthAdmin(request, env, url, path, now) {
         const why = marketTitleProblem(t);
         if (why) return json({ error: why, field: "title" }, 400);
         await run(env, "UPDATE studio_needs SET title = ?, titled = 1, updated_at = ? WHERE id = ?", t, now, n.id);
-        if (n.request_id) await run(env, "UPDATE recipe_requests SET body = ? WHERE id = ? AND device = 'operator'", t, n.request_id);
+        // 2.0.0 [RVN-24] SVC-109: the 요청 판 line keeps its '[영역 › 도구]' head, as 장터에 올리기 wrote it.
+        if (n.request_id) await run(env, "UPDATE recipe_requests SET body = ? WHERE id = ? AND device = 'operator'", marketBody({ ...n, title: t }), n.request_id);
         break;
       }
       case "merge": {
         // 같은 요구가 둘로 묶였으면 하나로: 부탁한 분은 휴대폰 기준으로 다시 세요.
         const into = typeof body.into === "string" ? await one(env, "SELECT * FROM studio_needs WHERE id = ?", body.into) : null;
         if (!into || into.id === n.id) return json({ error: "into", field: "into" }, 400);
+        // 2.0.0 [RVN-24] SVC-109: those asking in [n] who were not answered yet hear the answer [into] already gave, so nobody is buried
+        // unanswered in a group that ended.
+        const ended = NEED_ENDED[into.state];
         await batch(env, [
           stmt(env, "UPDATE studio_need_links SET need_id = ? WHERE need_id = ?", into.id, n.id),
           stmt(env, "UPDATE studio_needs SET askers = (SELECT COUNT(DISTINCT device) FROM studio_need_links WHERE need_id = ?), updated_at = ? WHERE id = ?", into.id, now, into.id),
           stmt(env, "DELETE FROM studio_needs WHERE id = ?", n.id),
           ...(n.request_id ? [stmt(env, "UPDATE recipe_requests SET hidden = 1 WHERE id = ? AND device = 'operator'", n.request_id)] : []),
         ]);
+        if (ended) told = await tellAskers(env, into, ended, now);
         break;
       }
       default:

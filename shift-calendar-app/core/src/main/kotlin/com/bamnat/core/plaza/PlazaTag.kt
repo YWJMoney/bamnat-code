@@ -19,7 +19,7 @@ data class PlazaTag(
     val style: WorkStyle,
     /** The 근무형태 the calendar runs ([WorkForms.guess]), when it is shown and the calendar says enough. */
     val form: WorkForm? = null,
-    /** An [IndustryGroups] key the writer chose to show; null when off. */
+    /** An [IndustryGroups] key (교대·일근) or a [StyleTrades] key (현장·알바·가게) the writer chose to show; null when off. */
     val industry: String? = null,
     /** Months since the server first saw this phone (0: this month); null when the writer hides it or the server sent none. */
     val months: Int? = null,
@@ -40,7 +40,7 @@ data class PlazaTag(
     fun words(): List<String> = listOfNotNull(
         PlazaTags.styleWord(style),
         form?.label,
-        industry?.let { IndustryGroups.byKey(it)?.name },
+        PlazaTags.industryName(style, industry),
         months?.let { if (it <= 0) "밤낮 처음" else "밤낮 ${it}개월" },
     )
 
@@ -62,7 +62,7 @@ data class PlazaTag(
         fun of(get: (String) -> Any?): PlazaTag? {
             val style = (get("s") as? String)?.let { s -> WorkStyle.entries.firstOrNull { it.name == s } } ?: return null
             val form = (get("f") as? String)?.let { f -> WorkForm.entries.firstOrNull { it.name == f } }?.takeIf { it in PlazaTags.formsFor(style) }
-            val industry = (get("i") as? String)?.takeIf { IndustryGroups.byKey(it) != null && style in PlazaTags.INDUSTRY_STYLES }
+            val industry = (get("i") as? String)?.takeIf { PlazaTags.industryName(style, it) != null }
             val months = (get("m") as? Number)?.toInt()?.takeIf { it in 0..600 }
             return PlazaTag(style, form, industry, months, Now.of(get("n") as? String)?.takeIf { style in PlazaTags.NOW_STYLES })
         }
@@ -78,6 +78,8 @@ object PlazaTags {
         val industry: String? = null,
         val months: Boolean = true,
         val now: Boolean = true,
+        /** 2.0.0 [RVN-24] T22c-04: the [StyleTrades] key to show for 현장·알바·가게, one a kind of work; none at first. */
+        val trades: Map<WorkStyle, String> = emptyMap(),
     )
 
     /** A calendar with no pattern needs this many worked days in the last [WINDOW_DAYS] before its 근무형태 is said. */
@@ -86,6 +88,17 @@ object PlazaTags {
 
     /** The kinds of work for which 업종 means something (a company's line of work). */
     val INDUSTRY_STYLES = setOf(WorkStyle.SHIFT, WorkStyle.DAY)
+
+    /** 2.0.0 [RVN-24] T22c-04: the 업종 무리 a tag of [style] may show by [key]: [IndustryGroups] for 교대·일근, [StyleTrades] for 현장·알바·가게. */
+    fun industryName(style: WorkStyle, key: String?): String? = when {
+        key == null -> null
+        style in INDUSTRY_STYLES -> IndustryGroups.byKey(key)?.takeIf { it.key != IndustryGroups.OTHER.key }?.name
+        else -> StyleTrades.name(style, key)
+    }
+
+    /** 2.0.0 [RVN-24] T22c-04: the 업종 a writer of [style] may pick, as (key, name); none for 투자. */
+    fun industryChoices(style: WorkStyle): List<Pair<String, String>> =
+        if (style in INDUSTRY_STYLES) industries().map { it.key to it.name } else StyleTrades.of(style).map { it.key to it.name }
 
     /** The kinds of work that are 'at work' at an hour (not 가게, whose day is its own, nor 투자). */
     val NOW_STYLES = setOf(WorkStyle.SHIFT, WorkStyle.DAY, WorkStyle.FIELD, WorkStyle.HOURLY)
@@ -123,7 +136,7 @@ object PlazaTags {
     ): PlazaTag {
         val enough = pattern != null || worked >= MIN_WORKED
         val form = if (scope.form && enough) WorkForms.guess(shiftTypes, pattern, profile)?.takeIf { it in formsFor(style) } else null
-        val industry = scope.industry?.takeIf { style in INDUSTRY_STYLES && IndustryGroups.byKey(it) != null && it != IndustryGroups.OTHER.key }
+        val industry = (if (style in INDUSTRY_STYLES) scope.industry else scope.trades[style])?.takeIf { industryName(style, it) != null }
         return PlazaTag(style, form, industry, null, now.takeIf { scope.now && style in NOW_STYLES })
     }
 

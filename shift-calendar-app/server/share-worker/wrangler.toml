@@ -15,3 +15,15 @@ binding = "CF_VERSION_METADATA"
 binding = "SHARES"
 # Filled in after `npx wrangler kv namespace create SHARES`.
 id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+# 2.0.0 [RVD-33] 앱 없는 팀원 방(Q1 4h)의 Durable Object 바닥. 이 판은 실서버 공유 코드에 클래스·바인딩·migration만 더해요.
+# 클래스를 새로 만드는 migration은 versions upload가 못 올려 배포 도구 mode migrate(wrangler deploy)로 따로 올리고,
+# 그 판이 되돌리기 바닥이에요(그 앞 판으로는 Cloudflare가 되돌리기를 막아요). 이름·태그는 Q1 4h와 같아야 해요.
+# 바인딩을 지우는 migration(deleted_classes)은 방 데이터를 지워요: 하지 않아요.
+[[durable_objects.bindings]]
+name = "TEAM_ROUND"
+class_name = "TeamRound"
+
+[[migrations]]
+tag = "v1-team-round"
+new_sqlite_classes = ["TeamRound"]

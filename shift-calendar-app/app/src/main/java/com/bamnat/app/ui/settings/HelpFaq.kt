@@ -712,11 +712,13 @@ internal object HelpFaq {
         HelpTopic(
             "plazaShare", "광장", "회사 광장에 무엇이 저절로 올라가나요? 끌 수 있나요?",
             // [PLAZA-34] 1.27 AI: asked at each change with what changed, unless 저절로 나누기 or 다시 묻지 않기 was chosen.
-            "근무 순서나 계산 방식을 바꿔 저장하면 ‘야간 50% → 60%’처럼 바뀐 것을 보여 주며 나눌지 물어요. 같은 값은 다시 묻지 않아요. " +
-                "‘저절로 나누기’면 하루 한 번 올리고 ‘되돌리기’ 한 줄로 알려요. 금액·이름·연락처·명세서·사진은 보내지 않아요. 설정 › 개인정보·앱 정보에서 바꿔요.",
-            listOf("저절로 나누기", "자동 공유", "회사 광장", "끄기", "보내는 것", "참여"),
+            // 2.0.0 [RVN-22] I10bc-03: 근무주기·근무 시간·급여 계산 방식 each its own way; 저절로 waits for the next morning with 취소.
+            "근무주기·근무 시간·급여 계산 방식마다 ‘저절로·묻기·안 함’을 골라요. ‘묻기’는 ‘야간 50% → 60%’처럼 바뀐 것을 보여 주며 묻고, " +
+                "‘저절로’는 다음 날 오전에 올려 그 전까지 ‘취소’할 수 있어요. 금액·이름·연락처·명세서·사진은 보내지 않아요. " +
+                "설정 › 개인정보·앱 정보 › 회사 광장에 나누기에서 바꿔요.",
+            listOf("저절로 나누기", "자동 공유", "회사 광장", "끄기", "보내는 것", "참여", "취소", "근무 시간"),
             listOf("광장", "회사 규칙 광장", "개인정보"),
-            "저절로 나누기 설정 열기" to HelpAction.Page(SettingsPage.PRIVACY, AUTO_SHARE_ROW),
+            "나누기 설정 열기" to HelpAction.Page(SettingsPage.PRIVACY, AUTO_SHARE_ROW),
         ),
         HelpTopic(
             "plazaMember", "광장", "다른 회사의 급여 방식이 왜 안 보이나요?",

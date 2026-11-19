@@ -28,6 +28,8 @@ import java.time.LocalTime
 class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceService() {
     /** 2.0.0 [RVI-09] What a working day is called on the calendar the phone sent. */
     private var noun = "근무"
+    /** 2.0.0 [RVIB-21] (결정 19) What the stop between two parts is called there (브레이크 타임, 비는 시간). */
+    private var gap = "비는 시간"
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
         val now = Today.dateTime()
         val d = WatchDay(now.toLocalDate().plusDays(1), "주간", "주", 0xFF2F80ED, LocalTime.of(9, 0), LocalTime.of(18, 0))
@@ -38,6 +40,7 @@ class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceSer
         val p = WatchStore.load(this) ?: return null
         val days = p.days
         noun = p.noun
+        gap = p.gap
         val zone = Today.zone()
         val list = WatchDays.countdowns(days, Today.dateTime())
         val first = list.firstOrNull() ?: return ComplicationDataTimeline(empty(request.complicationType) ?: return null, emptyList())
@@ -55,12 +58,28 @@ class NextShiftComplicationService : SuspendingTimelineComplicationDataSourceSer
         val count = TimeDifferenceComplicationText.Builder(TimeDifferenceStyle.SHORT_SINGLE_UNIT, CountDownTimeReference(at)).build()
         // 2.0.0 [RVI-09] 영업 중·다음 영업 on a 가게 calendar, 진행 중·다음 일정 on 현장·투자.
         val during = WatchText.during(noun)
-        val title = if (c.onShift) during else c.name.take(4)
-        val said = t(if (c.onShift) "${c.name} $during, 끝까지 남은 시간" else "다음 $noun ${c.name}까지 남은 시간")
+        // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the first part counts to the 브레이크 타임·비는 시간, the stop to 다시 시작.
+        val title = when {
+            c.resumes -> "다시 시작"
+            c.onShift -> during
+            else -> c.name.take(4)
+        }
+        val said = t(when {
+            c.onShift && c.pausesAtEnd -> "${c.name} $during, ${gap}까지 남은 시간"
+            c.onShift -> "${c.name} $during, 끝까지 남은 시간"
+            c.resumes -> "$gap, ${c.name} 다시 시작까지 남은 시간"
+            else -> "다음 $noun ${c.name}까지 남은 시간"
+        })
+        val long = when {
+            c.onShift && c.pausesAtEnd -> "${gap}까지"
+            c.onShift -> "${c.name} 끝까지"
+            c.resumes -> "$gap · 다시 시작까지"
+            else -> "다음 $noun ${c.name}까지"
+        }
         return when (type) {
             ComplicationType.SHORT_TEXT -> ShortTextComplicationData.Builder(count, said).setTitle(t(title)).setTapAction(tap).build()
             ComplicationType.LONG_TEXT -> LongTextComplicationData.Builder(count, said)
-                .setTitle(t(if (c.onShift) "${c.name} 끝까지" else "다음 $noun ${c.name}까지")).setTapAction(tap).build()
+                .setTitle(t(long)).setTapAction(tap).build()
             else -> null
         }
     }

@@ -171,7 +171,7 @@ test("three 신고 hide a post until the developer looks; the developer keeps, h
   assert.equal((await read(2)).data.posts[0].hidden.text, "욕설이나 비방이 있어요");
   list = (await call("GET", "/api/admin/posts?status=hidden", undefined, h)).data;
   assert.deepEqual(list.posts.map((p) => p.id), [bad]);
-  assert.equal(list.posts[0].writer.length, 6);
+  assert.equal(list.posts[0].writer.length, 8); // 2.0.0 [RVN-24] SVC-106
 
   // Muting: the writer cannot post for 30 days.
   const again = (await say(2, "또 왔어요")).data.id;

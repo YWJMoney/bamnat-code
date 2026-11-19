@@ -100,7 +100,9 @@ class N200CompanyTrustTest {
         val store = CompanyStore(prefs, null)
         store.setAutoShare(true)
         store.setAutoPay(true)
-        store.autoDirty = true
+        // 2.0.0 [RVN-22] I10bc-03 a change held on the phone for the morning.
+        store.hold(setOf(com.bamnat.core.plaza.SharePart.PAY), "야간 50% → 60%", 1L)
+        assertTrue(store.autoDirty)
         store.takeBackLater("r-1", waiting = true)
         store.forgetSent()
         assertNull(store.autoShare.value)

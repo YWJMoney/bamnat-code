@@ -38,6 +38,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -499,7 +501,7 @@ private fun SleepGroup(vm: SettingsViewModel, settings: AppSettings, refresh: In
         }
         // 1.38 [SLEEP-12] 자는 동안 방해 금지.
         val dndOk = remember(refresh) { com.bamnat.app.sleep.SleepDnd.permitted(context) }
-        SwitchRow(SLEEP_DND_ROW, "‘잠들었어요’부터 ‘깼어요’까지 휴대폰을 ‘중요한 알림만’으로 둬요. 근무 알람은 그대로 울리고, 휴대폰 방해 금지에서 고른 사람 전화도 와요".replace("근무 알람", "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람"),
+        SwitchRow(SLEEP_DND_ROW, "휴대폰을 ‘중요한 알림만’으로 둬요(‘잠들었어요’부터 ‘깼어요’까지). 근무 알람은 그대로 울리고, 휴대폰 방해 금지에서 고른 사람 전화도 와요".replace("근무 알람", "${com.bamnat.app.ui.shifts.alarmNoun(settings.workStyle)} 알람"),
             settings.sleepDnd, warning = if (settings.sleepDnd && !dndOk) "‘방해 금지 접근’을 허용해야 바뀌어요" else null, fixLabel = "허용",
             onFix = { runCatching { context.startActivity(com.bamnat.app.sleep.SleepDnd.accessIntent()) } }) { on ->
             vm.update { it.copy(sleepDnd = on) }
@@ -549,7 +551,7 @@ private fun RestChecks(vm: SettingsViewModel, settings: AppSettings) {
                 if (shifts) "연속 야간 ${r.maxNightsInRow}일, 한 달 야간 ${r.maxNightsPerMonth}일" else "연속 근무 ${r.maxWorkDaysInRow}일") {
                 rulesOpen = true
             }
-            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }) { n ->
+            if (rulesOpen) com.bamnat.app.ui.calendar.RestRulesSheet(r, com.bamnat.core.schedule.RotationSpeed.NONE, onDismiss = { rulesOpen = false }, nights = shifts) { n ->
                 vm.update { it.copy(restRules = n.copy(on = true).encode(), restCheck = n.on, strictRest = false) }
                 rulesOpen = false
             }
@@ -698,7 +700,7 @@ private fun PayPage(vm: SettingsViewModel, settings: AppSettings, files: Setting
         NavRow("연차", if (hourly) "주 15시간 이상, 5명 이상 일하는 곳이면 생겨요 · 남은 연차·입사일"
             else "남은 연차·없어지는 날·입사일 · 연차·반차는 달력에서 넣어요") { SettingsLinks.go(SettingsGo.LEAVE) }
         // [DAILY-16] 결정 D36: compared on the phone only; on by default, off here.
-        SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "광장에서 본 내 직군·내 지역 시세와 내 일당·시급·월급이 10% 넘게 다르면 급여 화면에 카드로 보여요. 내 급여는 어디로도 보내지 않아요"
+        SwitchRow("광장 시세와 내 단가 견주기", if (settings.rateHint) "내 급여가 시세와 10% 넘게 다르면 급여 화면에 카드로 보여요. 시세는 광장에서 본 내 직군·내 지역의 일당·시급·월급이고, 내 급여는 어디로도 보내지 않아요"
             else "급여 화면에 시세 비교 카드를 보이지 않아요", settings.rateHint) { on -> vm.update { it.copy(rateHint = on) } }
         if (settings.rateHint) RateRegionRow()
     }
@@ -803,7 +805,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
         // [CVW-08] 1.35 앱 강조색: buttons, the picked tab and what is selected, over the app's own blue.
         AccentRow(settings.accentColor) { c -> vm.update { it.copy(accentColor = c) } }
         // 1.38 [FLOW-26] 칸이: on by default; off leaves the words alone everywhere it would show.
-        SwitchRow("칸이 보이기", "첫 설정을 마칠 때, 빈 화면, 아침 카드, 밤 화면에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
+        SwitchRow("칸이 보이기", "빈 화면·아침 카드·밤 화면과 첫 설정 끝에 달력 칸 모양 친구 칸이가 나와요. 끄면 글자만 보여요",
             settings.showKani) { on -> vm.update { it.copy(showKani = on) } }
         // 2.0.0 [RVP-08] (검토 I13c-04) The explanations learned once are a line or ⓘ; this says them in full again.
         val explainContext = androidx.compose.ui.platform.LocalContext.current
@@ -861,7 +863,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             vm.update { it.copy(spendHeat = on) }
         }
         // 1.37 [LEDH-07] 근무 시간 환산 (결정 4: 5만 원 넘는 지출에만, 켜 둠). 투자 달력에는 보이지 않아요.
-        if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SwitchRow(WORK_TIME_ROW, "5만 원이 넘는 지출 옆에 '근무 6시간'처럼 내 실수령 시급으로 몇 시간 일한 돈인지 보여요. 현장은 공수, 자영업은 하루 매출 대비예요",
+        if (settings.workStyle != com.bamnat.core.work.WorkStyle.INVEST) SwitchRow(WORK_TIME_ROW, "큰 지출 옆에 몇 시간 일한 돈인지 보여요. 5만 원이 넘는 지출에 '근무 6시간'처럼 내 실수령 시급으로 세요. 현장은 공수, 자영업은 하루 매출 대비예요",
             settings.workTimeFrom > 0) { on -> vm.update { it.copy(workTimeFrom = if (on) com.bamnat.core.money.WorkTime.DEFAULT_FROM else 0L) } }
         // [FEAT-17][DAY-04] For people who keep their days in notes. Where 메모 sits in the day is the order below.
         val memo = when { settings.memoInCells -> MemoView.CELLS; settings.calendarMemos -> MemoView.BELOW; else -> MemoView.PLAIN }
@@ -893,7 +895,7 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
             else -> "근무 바꾸기·휴가·알람 끄기·메모가 있는 작은 메뉴가 떠요"
         }, listOf("menu" to "빠른 메뉴", "memo" to "바로 메모", "open" to "하루 열기"), settings.longPress) { v -> vm.update { it.copy(longPress = v) } }
         // B 1.32 [CALX-04] (사용자 2026-10-28 "달력 화면 요소 모두 켜고 끄기"): every card at once; 화면 꾸미기 picks them one by one.
-        SwitchRow("달력만 보기", "달력 위아래의 카드(요약·오늘의 흐름·근무시간 줄·메모 목록 등)를 모두 숨겨요. 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
+        SwitchRow("달력만 보기", "달력 위아래 카드를 모두 숨겨요(요약·오늘의 흐름·근무시간 줄·메모 목록 등). 하나씩 고르려면 달력 › 도구 › 화면 꾸미기",
             settings.calendarOnly) { on -> vm.update { it.copy(calendarOnly = on, viewAsked = true) } }
         // 1.38 [FLOW-08] 내 하루 이야기 줄.
         SwitchRow("하루 이야기 줄", "날짜를 열면 맨 위에 근무·잠·돈·메모가 시간 순서로 한 줄에 이어져요. 끄면 지금처럼 묶음 카드만 보여요. 달력 아래 카드로도 둘 수 있어요(날짜 화면의 ‘달력 아래에도 두기’ 또는 카드 배치 › ＋ 카드 넣기)",
@@ -1212,30 +1214,39 @@ internal fun UsageStatsRow(on: Boolean, onChange: (Boolean) -> Unit) {
     }
 }
 
-/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 저절로 나누기. */
-internal const val AUTO_SHARE_ROW = "회사 광장에 저절로 나누기"
+/** [PLAZA-07] 설정 › 개인정보: 회사 광장에 나누기 (2.0.0 [RVN-22] I10bc-03: one way for each part, no longer one switch). */
+internal const val AUTO_SHARE_ROW = "회사 광장에 나누기"
 
+/**
+ * 2.0.0 [RVN-22] 검토 I10bc-03 (COMP-44): each part that can go to the company's 광장, with its own way (저절로·묻기·안 함), so the
+ * consent says exactly what it reaches. 저절로 goes the next morning and can be cancelled until then ([HeldShareLine], under it).
+ */
 @Composable
 internal fun AutoShareRow() {
     val c = LocalContext.current.appContainer
-    val on by c.companyStore.autoShare.collectAsStateWithLifecycle()
-    // 2.0.0 [RVN-11] COMP-44 A yes for the cycle only (근무주기 나누기) says so: the pay way is asked each time.
-    val payToo by c.companyStore.autoPay.collectAsStateWithLifecycle()
+    val ways by c.companyStore.shareWays.collectAsStateWithLifecycle()
     val member by c.companyStore.member.collectAsStateWithLifecycle()
     val place = member?.second?.ifEmpty { null } ?: "다니는 회사"
-    // [PLAZA-34] 1.27 AI: on is 저절로 나누기; off asks each time a change is saved, unless 다시 묻지 않기 was chosen.
-    SwitchRow(
-        AUTO_SHARE_ROW,
-        when (on) {
-            true -> if (payToo) "근무 순서와 계산 방식을 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요."
-                else "근무 순서를 바꾸면 묻지 않고 하루 한 번 $place 광장에 고쳐 올려요. 계산 방식은 바꿀 때마다 물어요."
-            null -> "꺼 두면 바꿀 때마다 ‘$place 광장에 나눌까요?’ 하고 물어요."
-            false -> "‘다시 묻지 않기’로 두셨어요. 바꿔도 묻지 않고 나누지 않아요."
-        } + " 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요",
-        on == true,
-        onChange = { c.autoShare.set(if (it) true else null) },
-    )
-    if (on == false) TextButton(onClick = { c.autoShare.set(null) }) { Text("바꿀 때마다 묻기로 되돌리기") }
+    Column(Modifier.focusMark(AUTO_SHARE_ROW).fillMaxWidth().padding(vertical = 6.dp)) {
+        Text(said(AUTO_SHARE_ROW), style = MaterialTheme.typography.bodyLarge)
+        Text(said("바꾼 것을 $place 광장에 어떻게 나눌지 부분마다 골라요. 금액·이름·연락처·입사일·명세서·사진은 보내지 않아요"),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.bamnat.core.plaza.SharePart.entries.forEach { part ->
+            ChoiceRow(part.label, sharePartHint(part), com.bamnat.core.plaza.ShareWay.entries.map { it to it.label }, ways[part], group = part.label) { way ->
+                c.autoShare.setWay(part, way)
+            }
+        }
+        Text("저절로: 다음 날 오전에 나눠요. 그 전에 취소할 수 있어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        com.bamnat.app.ui.company.HeldShareLine(c)
+    }
+}
+
+/** What each part is, under its name. */
+internal fun sharePartHint(part: com.bamnat.core.plaza.SharePart): String = when (part) {
+    com.bamnat.core.plaza.SharePart.CYCLE -> "근무 이름과 순서(교대 순서·요일별 근무·근무표)"
+    com.bamnat.core.plaza.SharePart.TIMES -> "근무마다 시작·끝·휴게 시간"
+    com.bamnat.core.plaza.SharePart.PAY -> "가산율·수당·휴일 같은 계산하는 법(금액은 빼고)"
 }
 
 @Composable
@@ -1637,6 +1648,16 @@ internal const val BACKUP_NUDGE_ROW = "백업 안 한 지 30일 알림"
 internal const val STRETCH_ROW = "연속 근무 경고"
 /** 1.32 [WTYP-16] */
 internal const val LEAVE_TIME_ROW = "퇴근 시각 알림"
+/** 2.0.0 [RVIB-21] 둘째 구간 알림's row, for 설정 찾기. */
+internal const val GAP_ROW = "둘째 구간 시작 알림"
+
+/** 2.0.0 [RVIB-21] Some 근무 종류 of the open calendar has a 브레이크 타임·비는 시간 between two parts. */
+@Composable
+internal fun rememberHasGap(): Boolean {
+    val c = androidx.compose.ui.platform.LocalContext.current.appContainer
+    val flow = remember(c) { c.scheduleRepository.snapshot.map { s -> s.shiftTypes.any { it.hasGap } }.distinctUntilChanged() }
+    return flow.collectAsStateWithLifecycle(false).value
+}
 /** 2.0.0 [RVIB-05] 설정 › 알림 › 메모·할 일. */
 internal const val MEMO_HOLD_ROW = "근무 중 메모 알림 모으기"
 internal const val MEMO_REST_ROW = "쉬는 날 아침 지난 할 일"
@@ -1740,7 +1761,7 @@ internal fun MoveFromOtherApp(onDismiss: () -> Unit) {
 @Composable
 internal fun NightLookRow(key: String, onPick: (String) -> Unit) {
     val now = com.bamnat.core.design.NightLook.of(key)
-    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onPick)
+    ChoiceRow(NIGHT_LOOK_ROW, now.detail, com.bamnat.core.design.NightLook.entries.map { it.key to it.label }, now.key, onSelect = onPick)
 }
 
 internal const val NIGHT_LOOK_ROW = "밤 색"

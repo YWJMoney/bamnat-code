@@ -348,9 +348,13 @@ abstract class ScreenshotBase {
             var found: SemanticsNode? = null
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
+                // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it: either way
+                // on both sides.
+                val said = text.replace('\u00A0', ' ')
                 val shown = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).filter { n ->
                     val b = n.boundsInWindow
-                    b.width > 1f && b.height > 1f && n.words().any { w -> if (exact) w == text else if (prefix) w.startsWith(text) else text in w }
+                    b.width > 1f && b.height > 1f && n.words().any { raw -> val w = raw.replace('\u00A0', ' ')
+                        if (exact) w == said else if (prefix) w.startsWith(said) else said in w }
                 }
                 found = shown.firstOrNull { it.config.contains(SemanticsActions.OnClick) } ?: shown.firstOrNull()
             }
@@ -530,6 +534,16 @@ abstract class ScreenshotBase {
 
         /** Whether [text] is on screen now, without scrolling or waiting. */
         fun shows(text: String, exact: Boolean = false): Boolean = find(text, exact, prefix = false) != null
+
+        /**
+         * 2.0.0 [RVN-22] HQ-115 Whether what shows [text] is whole where it is: its part on screen (cut by what holds it: a row that slides,
+         * the window) is as big as it is. False when it is not shown.
+         */
+        fun whole(text: String, exact: Boolean = false): Boolean {
+            val n = find(text, exact, prefix = false) ?: return false
+            val b = n.boundsInWindow
+            return b.width >= n.size.width - 1f && b.height >= n.size.height - 1f
+        }
 
         /** [RVJ-40] A button with [text] on screen that can be pressed (false when it is there but greyed out, or not there). */
         fun enabled(text: String): Boolean =
@@ -1415,6 +1429,12 @@ abstract class ScreenshotBase {
         override suspend fun send(device: String, kind: com.bamnat.app.company.InquiryKind, text: String, info: com.bamnat.app.company.InquiryInfo) =
             com.bamnat.app.company.Inquiry("q3", kind, "open", now, now, listOf(com.bamnat.app.company.InquiryMessage(false, text, now)), public = kind.public)
                 .also { mine.add(0, it) }
+        /** 2.0.0 [RVO-30] (PC-214): a 결제·환불 question as the server keeps it, for the 운영팀 only, the day after it was sent. */
+        fun addBilling() {
+            mine.add(0, com.bamnat.app.company.Inquiry("q9", com.bamnat.app.company.InquiryKind.BILLING, "open", ago(5), ago(5), listOf(
+                com.bamnat.app.company.InquiryMessage(false, "어제 프로 1년을 결제했는데 아직 안 열려요.", ago(5)),
+            ), public = false, stage = "open"))
+        }
         override suspend fun mine(device: String) = mine.toList()
         override suspend fun more(device: String, id: String, text: String) = mine.first { it.id == id }
         override suspend fun delete(device: String, id: String) = Unit
@@ -1776,7 +1796,7 @@ abstract class ScreenshotBase {
     // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
     internal fun restRules(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         content {
-            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, {})
+            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, onSave = {})
         }
         settle()
     }
@@ -1931,7 +1951,14 @@ internal class FakeCompanyApi : com.bamnat.app.company.CompanyApi {
 
     override suspend fun status(id: String) = mine.firstOrNull { it.id == id }
     override suspend fun takeBack(device: String, id: String) = Unit
-    override suspend fun forgetMine(device: String) = mine.size
+    override suspend fun forgetMine(device: String) = mine.size.also { forgot = true }
+    /** 2.0.0 [RVN-22] I10bb-02 서버에 있는 내 정보 as a phone that wrote, voted and asked has it (after 모두 지우기 the law's only). */
+    private var forgot = false
+    override suspend fun mineRows(device: String) = if (forgot) listOf(com.bamnat.app.company.MineRows("law", 1, "law")) else listOf(
+        com.bamnat.app.company.MineRows("settings", 1), com.bamnat.app.company.MineRows("posts", 4), com.bamnat.app.company.MineRows("votes", 12),
+        com.bamnat.app.company.MineRows("inquiries", 2), com.bamnat.app.company.MineRows("companies", 2), com.bamnat.app.company.MineRows("alerts", 1),
+        com.bamnat.app.company.MineRows("law", 1, "law"), com.bamnat.app.company.MineRows("other", 3), com.bamnat.app.company.MineRows("flags", 0),
+    )
     override suspend fun vote(device: String, company: String, setup: String, ok: Boolean, verified: Boolean, why: String?) =
         com.bamnat.app.company.VoteResult(4, 3, 1, 3, true)
     /** 2.0.0 [RVN-18] COMP-22-1 What a second tap on ✓ 맞아요 took back. */

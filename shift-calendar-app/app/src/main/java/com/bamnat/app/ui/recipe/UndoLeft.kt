@@ -20,6 +20,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -66,8 +67,17 @@ internal fun UndoLeftSheet(c: AppContainer, items: List<RecipePieces.Kept>, onDi
     AppSheet(onDismissRequest = onDismiss, sheetState = androidx.compose.material3.rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 24.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("그대로 둔 것 ${items.size}개", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-            Text("넣은 뒤 직접 바꾼 곳이라 남겨 뒀어요. 작품을 넣기 전으로 돌리고 싶은 것만 골라요",
+            // 2.0.0 [RVM-66] 총괄 HQ-137 (조건 7: 하나를 돌린 뒤에도 제목이 '3개'라 세 곳이 남은 것처럼 읽혀요): the title counts what is
+            // still left, and says how many went back; all of them back, it says so in one line with 닫기.
+            val done = items.indices.count { rows[it] == Step.DONE }
+            val left = items.size - done
+            Text(when {
+                left == 0 -> "모두 넣기 전으로 돌렸어요"
+                done == 0 -> "그대로 둔 것 ${items.size}개"
+                else -> "그대로 둔 것 ${left}개 · ${done}개는 돌렸어요"
+            }, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading(); liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+            if (left == 0) TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") }
+            else Text("넣은 뒤 직접 바꾼 곳이라 남겨 뒀어요. 작품을 넣기 전으로 돌리고 싶은 것만 골라요",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             items.forEachIndexed { i, k ->
                 HorizontalDivider()

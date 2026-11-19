@@ -183,13 +183,20 @@ fun HeldDialog(wait: MemberWait, company: String, onCycleOnly: () -> Unit, onUnd
 fun HeldNotice(wait: MemberWait, company: String, payHidden: Boolean, freeing: Boolean, onUndo: () -> Unit) {
     var asking by remember { mutableStateOf(false) }
     if (asking) UndoDialog(wait, company, onDismiss = { asking = false }, onConfirm = { asking = false; onUndo() })
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(wait.shown + " · 근무주기만 넣을 수 있어요." + (if (payHidden) " 급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요." else ""),
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (!wait.undo) Text(wait.askLine() + ".", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+    // 2.0.0 [RVN-22] HQ-113 (총괄 rvn_97, 조건 1·4: 작은 글 세 덩어리와 '잘못 골랐어요' 한 줄이 쌓여 첫 판 카드가 화면 28%쯤에서
+    // 시작했어요): one line, what holds it and what can be done here, with the way out at its end (under it only where they do not fit
+    // side by side); why the pay way is not here and when it can change behind ⓘ ([com.bamnat.app.ui.components.Explain]).
+    Column {
+        com.bamnat.app.ui.components.SideOrBelow(start = {
+            Text(wait.shown + " · 근무주기만 넣을 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }, end = {
             if (wait.undo) TextButton(onClick = { asking = true }, enabled = !freeing) { Text(if (freeing) "푸는 중…" else "잘못 골랐어요") }
             else TextButton(onClick = { InquiryLinks.ask(InquiryStart(about = "회사 바꾸기", text = "${wait.line}. ")) }) { Text("문의하기") }
-        }
+        })
+        // With 잘못 골랐어요 beside it, '근무주기만' already says what this page is for: the pay way's why stays out, so the first 판
+        // card starts within the screen's top quarter (조건 1, rvn_97 7차 사진 25.7% → 아래). Without it, both behind ⓘ.
+        val more = if (wait.undo) emptyList() else listOfNotNull("급여 계산 방식은 이 회사 설정을 쓰는(참여한) 분께만 보여요.".takeIf { payHidden },
+            wait.askLine() + ".")
+        if (more.isNotEmpty()) com.bamnat.app.ui.components.Explain("company.held.more", more.joinToString(" "), firstInFull = false)
     }
 }

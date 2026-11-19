@@ -100,7 +100,7 @@ internal fun EnvelopesCard(
         val entry = remember(book, moves, today) { toSplit(book, moves, today) }
         val split = remember(entry, envelopes, moves) {
             entry?.let { e ->
-                val taxOnly = e.category != MoneyCategories.SALARY && style != WorkStyle.FIELD && style != WorkStyle.BUSINESS
+                val taxOnly = !e.isRole(com.bamnat.core.money.CategoryRole.SALARY) && style != WorkStyle.FIELD && style != WorkStyle.BUSINESS
                 Envelopes.split(e.amount, envelopes, moves, taxOnly = taxOnly && envelopes.none { it.kind == EnvelopeKind.GOAL && it.sharePercent > 0 })
             }.orEmpty()
         }

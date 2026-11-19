@@ -16,6 +16,7 @@ import com.bamnat.app.company.KnownIssue
 import com.bamnat.app.company.PublicPage
 import com.bamnat.app.company.PublicThread
 import com.bamnat.app.ui.diag.DiagnosticsViewModel
+import com.bamnat.app.ui.guide.guideCalendar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +77,19 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** [UX-05] New answers first, then questions still waiting, then the rest, newest first. */
     fun ordered(list: List<Inquiry>): List<Inquiry> =
         list.sortedWith(compareByDescending<Inquiry> { unreadIn(it) }.thenByDescending { it.waiting }.thenByDescending { it.updatedAt })
+
+    private val _picks = MutableStateFlow<List<com.bamnat.app.company.PlazaPick>>(emptyList())
+    /** 2.0.0 [RVN-24] 검토 I22cb-02: my kind of work's 답 모음 picks that name a subject, for '같은 근무 분들의 답' under 도움말. */
+    val picks: StateFlow<List<com.bamnat.app.company.PlazaPick>> = _picks.asStateFlow()
+
+    /** [I22cb-02] Read once a screen: only while the plaza's tags are on, from the room of the calendar's kind of work. */
+    fun loadPicks() {
+        if (!online || !c.plazaTags.on) return
+        val room = com.bamnat.core.plaza.StylePlaza.styleRoom(c.guideCalendar().second) ?: return
+        viewModelScope.launch {
+            _picks.value = runCatching { c.companyApi.plazaPicks(room) }.getOrDefault(emptyList()).filter { it.topic != null }
+        }
+    }
 
     private val _board = MutableStateFlow<PublicPage?>(null)
     /** 모두의 문의 as far as it is loaded; null until the first page comes back. */
@@ -219,7 +233,9 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     /** Why [text] cannot go yet, in words; null when it can. */
     fun problem(text: String): String? = when {
         text.length > InquiryClient.TEXT_MAX -> "${InquiryClient.TEXT_MAX}자까지 쓸 수 있어요"
-        else -> CompanyText.personal(text)?.let(::personalProblem)
+        // 2.0.0 [RVN-22] 검토 I10bb-03: the very letters too ("‘010-1234-5678’ · 전화번호는 적지 말아 주세요"), from the server's own table.
+        // The order number the app itself puts in an inquiry is not a phone number (InquiryClient.withoutOrder).
+        else -> CompanyText.personalHit(InquiryClient.withoutOrder(text))?.let { CompanyText.stopLine(it, ::personalProblem) }
     }
 
     /** [INQ-05] Questions waiting to be sent, shown at the top of 내 문의. */
@@ -235,7 +251,8 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         val full = info.copy(diag = diag, pay = pay, photos = photos, public = public,
             studio = if (kind == InquiryKind.STUDIO) c.settingsRepository.current.workStyle?.name else null)
         act({ sent, why -> done(sent, why) }, queueOn = { e ->
-            if (!e.retryable) return@act false
+            // 2.0.0 [PC-217] 하루 한도에 걸린 문의는 기다려도 같은 답이라 줄 세우지 않고, 한도의 말로 알려요(양식에 적은 글은 그대로).
+            if (!queues(e)) return@act false
             val queued = c.inquiryStore.queue(com.bamnat.app.company.QueuedInquiry(requestId, kind, text.trim(), full.copy(photos = emptyList()),
                 Today.instant()))
             if (queued) {
@@ -255,11 +272,12 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** [INQ-05] 지금 보내기 on the waiting questions. */
-    fun sendQueued(done: (Boolean) -> Unit) {
+    fun sendQueued(done: (com.bamnat.app.company.OutboxResult) -> Unit) {
         viewModelScope.launch {
-            val ok = com.bamnat.app.company.InquiryOutbox.flush(c)
-            if (ok) refresh()
-            done(ok)
+            // 2.0.0 [RVN-22] COMP-54: what went and what the user has to fix, said as it is (before, a refused one said 보냈어요).
+            val r = com.bamnat.app.company.InquiryOutbox.flushSaying(c)
+            if (r.sent > 0) refresh()
+            done(r)
         }
     }
 
@@ -270,9 +288,12 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
         if (edit) c.inquiryStore.saveDraft(q.kind, q.text)
     }
 
-    /** [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null. */
-    fun more(id: String, text: String, diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
-        (if (diag == null) c.inquiryApi.more(device, id, text) else c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), diag)).also { updated ->
+    /**
+     * 2.0.0 [RVQ-50] 검토 U22b-01: [photos] go with it (made small on the phone, at most [com.bamnat.app.company.InquiryPhotos.left]).
+     * [diag]: 2.0.0 [RVO-28] HQ-150 '점검 기록도 보내기'를 켠 답장의 기록, 끄면 null.
+     */
+    fun more(id: String, text: String, photos: List<ByteArray> = emptyList(), diag: String? = null, done: (Inquiry?, String?) -> Unit) = act(done) {
+        c.inquiryApi.more(device, id, text, InquiryClient.newRequestId(), photos, diag).also { updated ->
             c.inquiryStore.saveReply(id, "")
             _list.value = _list.value.orEmpty().map { if (it.id == id) updated else it }
         }
@@ -350,14 +371,27 @@ class InquiryViewModel(private val c: AppContainer) : ViewModel() {
     companion object {
         /** [INQ-05] What [send] says when the question waits to be sent. */
         const val QUEUED = "인터넷이 연결되면 저절로 보내요. 내 문의 맨 위 ‘보내기 대기’에서 볼 수 있어요"
+
+        /** 2.0.0 [PC-217] 인터넷·서버 문제만 보내기 대기로 가요. 한도(rate_limited)는 기다려도 같아서 대기에 넣지 않아요. */
+        fun queues(e: CompanyException): Boolean = e.retryable && e.code != "rate_limited"
+
+        /** 2.0.0 [PC-217] 한도에 걸린 문의 보내기의 말(인터넷 말이 아니라 한도의 말). */
+        fun limitText(e: CompanyException): String = com.bamnat.app.company.RateLimits.of(e, "문의 보내기", "급하면 메일로 보내 주세요.")
+
+        /** 2.0.0 [PC-217] '지금 보내기'가 안 됐을 때의 말: 한도에 걸렸으면 한도의 말, 아니면 인터넷 말. */
+        fun stillWaiting(limited: CompanyException?): String =
+            limited?.let { limitText(it) } ?: "아직 인터넷에 연결되지 않았어요. 연결되면 저절로 보내요"
     }
 
     private fun failure(e: Throwable): String = when ((e as? CompanyException)?.code) {
         "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 보내 주세요"
-        "rate_limited" -> com.bamnat.app.company.RateLimits.of(e as CompanyException, "문의 보내기", "급하면 메일로 보내 주세요.")
+        "rate_limited" -> limitText(e as CompanyException)
         "too_many" -> "이 문의에는 더 쓸 수 없어요. 새 문의로 보내 주세요"
-        "email", "phone", "amount" -> personalProblem(e.message ?: "")
+        "email", "phone", "account", "amount" -> personalProblem(e.message ?: "")
         "not_found" -> "이 문의는 지워졌거나 가려졌어요"
+        // 2.0.0 [RVQ-50] 검토 U22b-01: a question takes four photos in all.
+        "photos_full" -> "이 문의에는 사진을 ${com.bamnat.app.company.InquiryPhotos.TOTAL}장까지 붙일 수 있어요. 사진을 빼고 보내 주세요"
+        "photo", "photos", "too_large" -> "사진을 보내지 못했어요. 사진을 빼고 글만 보내 주세요"
         else -> "보내지 못했어요. 잠시 뒤 다시 해 주세요"
     }
 

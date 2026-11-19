@@ -49,8 +49,8 @@ object MemoRestCard {
         val c = context.appContainer
         if (!c.settingsRepository.current.memoHoldAtWork) return { null }
         val resolver = runCatching { c.calendars.repository(c.calendars.active.value).live.first().resolver }.getOrNull() ?: return { null }
-        val shift = ShiftMemoTime.shiftOf(resolver)
-        return { at -> MemoBacklog.workEnd(at, shift::hours) }
+        // 2.0.0 [RVIB-21] (결정 19) By the day's parts: a 브레이크 타임 is not work.
+        return { at -> MemoBacklog.partEnd(at) { d -> resolver.resolve(d).takeIf { it.isWorkDay }?.segments.orEmpty() } }
     }
 
     /** Sets the alarm for the next day off's morning on the calendar on screen, or takes it away (off, or no day off ahead). */

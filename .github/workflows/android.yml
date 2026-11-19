@@ -33,6 +33,10 @@ jobs:
         working-directory: shift-calendar-app/server/share-worker
       - run: npm test
         working-directory: shift-calendar-app/server/company-worker
+      # 2.0.0 [RVQ-55] 사이트 서버(bamnat.app 앞의 Worker): 없는 주소의 밤낮 404와 보안 머리. 전에는 CI에서 돌지 않았어요.
+      # [RVN-24] 검토 SVC-110의 질의·머리·HEAD 시험도 같은 파일이라 이 한 번으로 돌아요(N #548을 합치며 겹친 단계를 하나로).
+      - run: node --test test/site.test.mjs
+        working-directory: shift-calendar-app/server/site-worker
       # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.
       - run: npm ci && npm run test:ui
         working-directory: shift-calendar-app/server/company-worker
@@ -67,7 +71,7 @@ jobs:
       # [RVR-26] 개발 기록에 적힌 '잡을 시험'이 정말 있는지도: 시험 이름을 바꾸거나 지운 PR에서 바로 알아요.
       - run: python3 tools/test_dev_status.py && python3 tools/dev_status.py check
       # [I60b-01][U60-01] 날짜 시험 요약·PR 요약의 '처음 깨짐/기준에서도 깨짐' 도구
-      - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py
+      - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py && python3 tools/test_bundle_check.py
       # 2.0.0 [RVR-38] 날짜 장부(ops/dates.json)가 가리키는 코드 줄이 모두 하나씩 있는지
       - run: python3 tools/test_dates_ledger.py && python3 tools/dates_ledger.py check
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
@@ -132,6 +136,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # 2.0.0 [RVR-46] 앱을 처음부터 컴파일하면 Gradle 기본 4g 힙이 모자라 'Java heap space'로 떨어졌어요(11-19 묶음 확인 실행, shots-e·unit). 홈의 gradle.properties가 저장소 것보다 앞서요.
+      - run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       # Robolectric's Android jars (100 MB and more) come from Maven Central once, then from this cache.
       # 2.0.0 [RVR-43]: one cache per shard (each needs the same Android versions every run), keyed on the Robolectric version and
       # the test SDK rather than all of build.gradle.kts, and saved even when tests fail (a red shard used to throw its download
@@ -284,6 +290,37 @@ jobs:
             shift-calendar-app/app/build/screenshots
             shift-calendar-app/app/build/tests-${{ matrix.set }}.json
           retention-days: 7
+  # 2.0.0 [RVR-46] (총괄 11-19) '묶음 확인': after a hand-run (Actions › Android › Run workflow) on a bundle's commit, one file that says
+  # what the whole run passed: the verdict, one line per job, the failed and skipped tests by name, and the classes that passed
+  # (tools/bundle_check.py). The PC check cites it per line ('합친 나무 시험 통과': that commit and the class). It reads the
+  # tests-*.json each job wrote and GitHub's own result of each job, so a cancelled or missing shard is said, not passed over.
+  bundle-check:
+    needs: [core, servers, app, lint, market, admin-shots]
+    if: always() && github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tests-*
+          path: shift-calendar-app/build/tests-all
+        continue-on-error: true
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$NEEDS" > build/needs.json
+          python3 tools/bundle_check.py build/tests-all --needs build/needs.json --sha "$GITHUB_SHA" \
+            --run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --out build/bundle-check >> "$GITHUB_STEP_SUMMARY" || true
+          echo "묶음 확인 파일: 이 실행의 bundle-check 파일(묶음-확인.md)" >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundle-check
+          path: shift-calendar-app/build/bundle-check
+          retention-days: 30
   # 2.0.0 [RVR-43] (총괄 HQ-121): one line that says whether every app shard passed. A shard that was cancelled or timed out
   # counts as failed here (GitHub shows a cancelled job grey, and a check that waits for 'no failure' read it as passed).
   app-result:
@@ -324,6 +361,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      - if: steps.changed.outputs.server == '1'
+        run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       - if: steps.changed.outputs.server == '1'
         uses: actions/cache@v4
         with:
@@ -404,6 +443,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      - if: steps.changed.outputs.run == '1'
+        run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       - if: steps.changed.outputs.run == '1'
         uses: actions/cache@v4
         with:
@@ -540,6 +581,8 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           cache-read-only: false
+      # 2.0.0 [RVR-46] 앱을 처음부터 컴파일하면 Gradle 기본 4g 힙이 모자라 'Java heap space'로 떨어졌어요(11-19 묶음 확인 실행, shots-e·unit). 홈의 gradle.properties가 저장소 것보다 앞서요.
+      - run: mkdir -p "$HOME/.gradle" && echo 'org.gradle.jvmargs=-Xmx6g -Dfile.encoding=UTF-8' >> "$HOME/.gradle/gradle.properties"
       - run: sh ./gradlew $GRADLE_FLAGS :app:lintDebug --continue
       # [REL-09] The watch app builds and passes lint too. [RVR-12] (검토 TEST-13) and its unit tests run.
       - run: sh ./gradlew $GRADLE_FLAGS :wear:assembleDebug :wear:lintDebug :wear:testDebugUnitTest --continue

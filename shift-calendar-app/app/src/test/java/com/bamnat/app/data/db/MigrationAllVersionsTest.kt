@@ -210,7 +210,9 @@ class MigrationAllVersionsTest(private val from: Int) {
             "money_entries" to mapOf("id" to 1, "epochDay" to 20745, "kind" to "EXPENSE", "amount" to 4500, "category" to "카페", "note" to "",
                 "source" to "NOTIFICATION", "createdAt" to 1, "merchant" to "가나다카페", "minuteOfDay" to 485, "cardLast4" to "1234", "reviewed" to 0,
                 "accountId" to 1, "toAccountId" to null, "memo" to "민지랑", "tags" to "여행", "parts" to "", "installments" to 1, "fixedId" to null,
-                "proof" to "CARD", "receipt" to ""),
+                "proof" to "CARD", "receipt" to "",
+                // 2.0.0 [RVK-60] Version 37's fixed id: the step to 37 gives a 카페 line its built-in id.
+                "categoryId" to "b.x.카페"),
             "jobs" to mapOf("id" to 1, "epochDay" to 20741, "title" to "타일", "client" to "가나다", "place" to "현장", "startMinute" to 480,
                 "endMinute" to 1020, "amount" to 300000, "deposit" to 50000, "depositPaid" to 1, "balancePaid" to 0, "remindMinutes" to 60,
                 "note" to "", "endEpochDay" to 20742, "costs" to 20000, "withholding" to 1, "status" to 2, "units" to 1.5, "dueEpochDay" to 20760),
@@ -219,7 +221,8 @@ class MigrationAllVersionsTest(private val from: Int) {
             "daily_sales" to mapOf("epochDay" to 20742, "sales" to 500000, "costs" to 30000, "note" to "", "card" to 400000, "cash" to 100000,
                 "transfer" to 0, "delivery" to 0, "cashCounted" to 98000, "cardSettled" to 1),
             "fixed_costs" to mapOf("id" to 1, "name" to "월세", "amount" to 500000, "day" to 25, "kind" to "EXPENSE", "category" to "주거",
-                "remind" to 1, "repeat" to "MONTH", "monthOfYear" to 1, "accountId" to null, "auto" to 1, "startEpochDay" to 20000, "endEpochDay" to null),
+                "remind" to 1, "repeat" to "MONTH", "monthOfYear" to 1, "accountId" to null, "auto" to 1, "startEpochDay" to 20000, "endEpochDay" to null,
+                "categoryId" to "b.x.주거"),
             "category_rules" to mapOf("merchant" to "가나다카페", "category" to "카페"),
             "day_changes" to mapOf("id" to 1, "epochDay" to 20001, "atMillis" to 5, "text" to "야간으로 바꿈"),
             "sleep_logs" to mapOf("id" to 1, "startMillis" to 1000, "endMillis" to 9000),
@@ -235,7 +238,8 @@ class MigrationAllVersionsTest(private val from: Int) {
                 // 1.38 [LEDH-25][LEDH-27] Version 26's columns; older versions get their defaults.
                 "rate" to 0.0, "monthlyPay" to 0L, "perfTiers" to "", "perfSkip" to ""),
             "money_budgets" to mapOf("category" to "식비", "amount" to 300000),
-            "money_categories" to mapOf("kind" to "EXPENSE", "name" to "운동", "position" to 0, "hidden" to 0),
+            // 2.0.0 [RVK-60] 운동 is the user's own: its id is its name's.
+            "money_categories" to mapOf("kind" to "EXPENSE", "name" to "운동", "position" to 0, "hidden" to 0, "uid" to "n.x.운동"),
             "invest_accounts" to mapOf("id" to 1, "name" to "일반 계좌", "type" to "OTHER", "broker" to "", "feeRate" to 0.00015, "sortOrder" to 0, "hidden" to 0),
             "invest_trades" to mapOf("id" to 1, "accountId" to 1, "epochDay" to 20745, "minuteOfDay" to 600, "symbol" to "005930", "name" to "삼성전자",
                 "market" to "KR_STOCK", "side" to "BUY", "quantity" to 1.0, "price" to 70000.0, "currency" to "KRW", "fxRate" to 1.0, "fee" to 10.0,
@@ -291,7 +295,11 @@ class MigrationAllVersionsTest(private val from: Int) {
          * Columns a migration fills from older ones, by the version that first had them: version 1's single alarm
          * becomes the list of alarms (MIGRATION_1_2).
          */
-        val DERIVED: Map<Int, List<String>> = mapOf(2 to listOf("shift_types.alarmOffsets"))
+        val DERIVED: Map<Int, List<String>> = mapOf(
+            2 to listOf("shift_types.alarmOffsets"),
+            // 2.0.0 [RVK-60] (DB 37) The fixed ids the step to 37 works out from the names.
+            37 to listOf("money_entries.categoryId", "fixed_costs.categoryId", "money_categories.uid"),
+        )
 
         /**
          * Writes the rows [schema] has tables for, with the columns it had (and the [derived] "table.column"s a

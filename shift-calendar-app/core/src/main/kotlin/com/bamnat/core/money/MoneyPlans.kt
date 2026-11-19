@@ -41,6 +41,8 @@ data class FixedCost(
      * to this one, so the balances and 순자산 stay right instead of falling every month. Null for spending and income.
      */
     val toAccountId: Long? = null,
+    /** 2.0.0 [RVK-60] (검토 I06ab-01, DB 37) The category's fixed id; [category] is its name. Empty until saved, like [MoneyEntry.categoryId]. */
+    val categoryId: String = "",
 ) {
     fun dueIn(month: YearMonth): LocalDate = month.atDay(day.coerceIn(1, month.lengthOfMonth()))
 
@@ -116,7 +118,7 @@ object UpcomingPayments {
     /** The 카드값 line a card's bill is written as. */
     fun cardCost(card: MoneyAccount, amount: Long) = FixedCost(
         id = -card.id, name = card.name, amount = amount, day = card.payDay ?: 1, kind = MoneyKind.TRANSFER, category = CARD_BILL,
-        remind = card.remind, accountId = card.payFromId,
+        remind = card.remind, accountId = card.payFromId, categoryId = CategoryRole.CARD.id,
     )
 
     internal fun replacedByCard(c: FixedCost, accounts: List<MoneyAccount>) =
@@ -147,7 +149,7 @@ object UpcomingPayments {
 
     /** The ledger line for paying [cost] on [date]. */
     fun entry(cost: FixedCost, date: LocalDate) = MoneyEntry(
-        date = date, kind = cost.kind, amount = cost.amount, category = cost.category,
+        date = date, kind = cost.kind, amount = cost.amount, category = cost.category, categoryId = cost.categoryId,
         source = MoneySource.FIXED, merchant = cost.name, accountId = cost.accountId, fixedId = cost.id.takeIf { it > 0 },
         // 2.0.0 [RVK-46] (검토 MONEY-07) A repeating 이체 lands where it was set to go.
         toAccountId = cost.toAccountId.takeIf { cost.kind == MoneyKind.TRANSFER && it != cost.accountId },
