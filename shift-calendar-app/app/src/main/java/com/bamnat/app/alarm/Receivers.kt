@@ -178,6 +178,8 @@ class SystemEventReceiver : BroadcastReceiver() {
                 LeaveTimeNotice.reschedule(context)
                 com.bamnat.app.money.DayCloseNotice.reschedule(context)
                 com.bamnat.app.money.ShiftPreviewNotice.reschedule(context)
+                // 2.0.0 [RVJ-96] 신고·지급 기한 알림.
+                com.bamnat.app.boss.BossFilingNotice.reschedule(context)
                 // 1.32 [WTYP-11][WTYP-29] 희망 오프 마감, 코인 12월 31일.
                 com.bamnat.app.calendar.DateNoticeAlarm.reschedule(context, com.bamnat.app.calendar.DateNoticeAlarm.gather(container))
                 com.bamnat.app.sleep.DayNoticeScheduler.reschedule(context, container.scheduleRepository.snapshot.first(), settings)

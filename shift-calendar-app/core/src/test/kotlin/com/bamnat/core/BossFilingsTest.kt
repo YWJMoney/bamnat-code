@@ -101,4 +101,24 @@ class BossFilingsTest {
         assertEquals(LocalDate.of(2027, 2, 10), BossFilings.deadline(LocalDate.of(2027, 2, 6)))
         assertEquals("평일 기한은 그대로", LocalDate.of(2027, 2, 10), BossFilings.deadline(LocalDate.of(2027, 2, 10)))
     }
+
+    /** 2.0.0 [RVJ-96] 검토 U05c-05·I05ca-03: each line is said once, 3 days before its (moved) day, unless ticked 했어요. */
+    @Test fun aLineIsSaidOnceThreeDaysBefore() {
+        val today = LocalDate.of(2026, 11, 7)
+        val due = BossFilings.upcoming(place, staff, today, ::ledger)
+        val tax = due.single { it.kind == BossFilings.Kind.WITHHOLD && it.date == LocalDate.of(2026, 11, 10) }
+        val say = BossFilings.toRemind(due, emptySet(), emptySet(), today)
+        assertTrue("11/10 원천세는 3일 남음", tax in say)
+        assertTrue("지난 급여일(11/5)은 관리 할 일에, 알림은 아니에요", say.none { it.date.isBefore(today) })
+        assertTrue("4일 넘게 남은 것은 아직", say.all { it.daysFrom(today) in 0..3 })
+        assertEquals(say.sortedBy { it.date }, say)
+        assertTrue("했어요", tax !in BossFilings.toRemind(due, setOf(tax.key), emptySet(), today))
+        assertTrue("한 번 알린 것", tax !in BossFilings.toRemind(due, emptySet(), setOf(tax.key), today))
+        assertEquals("가나다카페: 원천세 신고·납부 (10월 지급분) 11월 10일까지(3일 남음)", BossFilings.remindTitle("가나다카페", listOf(tax), today))
+        assertEquals("오늘", "가나다카페: 원천세 신고·납부 (10월 지급분) 오늘까지", BossFilings.remindTitle("가나다카페", listOf(tax), tax.date))
+        val two = listOf(tax, tax.copy(key = "x", date = LocalDate.of(2026, 11, 9), title = "퇴사 정산 · 최사아"))
+        assertEquals("가나다카페: 신고·지급 2건 · 가장 이른 것 11월 9일까지(2일 남음)", BossFilings.remindTitle("가나다카페", two, today))
+        assertTrue(BossFilings.remindLine(tax), BossFilings.remindLine(tax).startsWith("11/10 원천세 신고·납부 (10월 지급분)"))
+    }
 }
+

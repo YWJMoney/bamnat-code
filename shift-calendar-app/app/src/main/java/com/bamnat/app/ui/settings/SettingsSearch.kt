@@ -197,14 +197,20 @@ internal object SettingsIndex {
                 /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
                 flowAdded: Boolean = false,
                 /** 2.0.0 [RVJ-93] 검토 BOSS-68: 설정 › 더 보기's 관리 row's name ('가게 관리', '팀 관리') while it is there, else null. */
-                manage: String? = null): List<SettingEntry> =
-        (all(board, share, company, sleepAuto, sleepSound) + listOfNotNull(manage?.let(::manageEntry)))
+                manage: String? = null,
+                /** 2.0.0 [RVJ-96] A 급여 대장 on this phone: its 신고·지급 기한 알림 is found ([rememberLedgerOn]). */
+                ledger: Boolean = false): List<SettingEntry> =
+        (all(board, share, company, sleepAuto, sleepSound) + listOfNotNull(manage?.let(::manageEntry), filingEntry.takeIf { ledger }))
             .filter { fits(it, style, flowAdded) }.map { inWords(it, style) }
 
     /**
      * 2.0.0 [RVJ-93] 검토 BOSS-68 (사장님·리더의 관리 화면이 찾기에 없어 '관리'를 찾으면 '결제 한눈에 보기'가 나왔어요): the 관리 screen by
      * the words a boss or a leader uses, under its name as 더 보기 shows it.
      */
+    /** 2.0.0 [RVJ-96] 검토 U05c-05: the 신고·지급 기한 알림, by a boss's words for it. */
+    private val filingEntry get() = row(SettingsPage.NOTICES, com.bamnat.app.boss.BossFilingNotice.ROW, "신고 알림", "신고 기한", "원천세 알림", "원천세 신고",
+        "4대보험 신고", "급여 지급일 알림", "지급명세서", "세금 신고 알림", "기한 알림")
+
     private fun manageEntry(title: String) = screen("더 보기", title, SettingsGo.MANAGE, "관리", "관리 화면", "사장님", "리더", "팀장", "직원",
         "직원 관리", "팀 관리", "가게 관리", "사업장 관리", "팀 근무표", "급여 대장", "직원 명세서", "할 일")
 

@@ -1092,9 +1092,10 @@ internal fun rememberSettingsEntries(board: Boolean, share: Boolean, style: com.
     val sleepAuto = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_AUTO) }.getOrDefault(false)
     val sleepSound = runCatching { c.flags.on(com.bamnat.core.flags.FlagCatalog.SLEEP_SOUND) }.getOrDefault(false)
     val manage = rememberManageRow()?.title
-    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage) {
+    val ledger = rememberLedgerOn()
+    return remember(board, share, company, style, flowAdded, sleepAuto, sleepSound, manage, ledger) {
         SettingsIndex.entries(board = board, share = share, company = company, style = style, flowAdded = flowAdded, sleepAuto = sleepAuto,
-            sleepSound = sleepSound, manage = manage)
+            sleepSound = sleepSound, manage = manage, ledger = ledger)
     }
 }
 

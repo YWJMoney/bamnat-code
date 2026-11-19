@@ -78,10 +78,17 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     var teamsList by rememberSaveable { mutableStateOf(false) }
     // 1.39 [READ-31]: a staff list shared from 카카오톡·갤러리 opens the 급여 대장, which reads it.
     var ledgerOpen by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.staffWaiting || com.bamnat.app.imports.SharedToManage.takeLedger()) }
+    // 2.0.0 [RVJ-95] What the 급여 대장 opens on ([PayrollScreen]'s focus) and its month: a 할 일 pressed, or the 신고·지급 알림 ([RVJ-96]).
+    var ledgerAt by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.takeLedgerFocus()) }
+    var ledgerMonth by rememberSaveable { mutableStateOf<String?>(null) }
     val ledgerAsked by com.bamnat.app.imports.SharedToManage.ledgerAsked.collectAsStateWithLifecycle()
     val staffShared by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(staffShared) { if (staffShared != null) { teamOpen = null; teamsList = false; ledgerOpen = true } }
-    androidx.compose.runtime.LaunchedEffect(ledgerAsked) { if (ledgerAsked && com.bamnat.app.imports.SharedToManage.takeLedger()) { teamOpen = null; teamsList = false; ledgerOpen = true } }
+    androidx.compose.runtime.LaunchedEffect(ledgerAsked) {
+        if (ledgerAsked && com.bamnat.app.imports.SharedToManage.takeLedger()) {
+            teamOpen = null; teamsList = false; ledgerAt = com.bamnat.app.imports.SharedToManage.takeLedgerFocus(); ledgerMonth = null; ledgerOpen = true
+        }
+    }
     if (teamOpen != null || teamsList) {
         BackHandler { teamOpen = null; teamsList = false }
         com.bamnat.app.ui.team.LeaderTeamScreen(calendarId, onBack = { teamOpen = null; teamsList = false }, startTeam = teamOpen)
@@ -124,7 +131,12 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                     // 2.0.0 [RVJ-50] 검토 PC-118 (조건 3·6): two or three to-dos with a date close stood in red; they are 주의 lines (the
                     // mark's colour says it), and only a team's 위험 (휴식·연속·주 52시간) is red.
                     Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable(role = Role.Button) {
-                        if (t.where == ManageDesk.Where.TEAM) teamOpen = t.id else ledgerOpen = true
+                        if (t.where == ManageDesk.Where.TEAM) teamOpen = t.id else {
+                            // 2.0.0 [RVJ-95] 검토 U05c-01: a 신고 기한, a 근로계약서 or a 대타 opens on its own card, not on the top of the 대장.
+                            ledgerAt = when (t.open) { ManageDesk.Open.PLACE -> null; ManageDesk.Open.FILINGS -> t.open.name; else -> "${t.open.name}|${t.ref}" }
+                            ledgerMonth = t.month?.toString()
+                            ledgerOpen = true
+                        }
                     }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (t.urgent) com.bamnat.app.ui.components.ToneLine(t.text, Modifier.weight(1f),
                             tone = if (t.danger) com.bamnat.app.ui.theme.Tone.Danger else com.bamnat.app.ui.theme.Tone.Caution,
@@ -149,8 +161,8 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
             }
             ManagePart.SHOPS -> if (bossOn) {
                 Text(ManagePart.SHOPS.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerOpen = true }) { shopGlances[p.id] = it } } }
-                if (livePlaces.isEmpty()) OutlinedButton(onClick = { ledgerOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("급여 대장 시작하기") }
+                livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerAt = null; ledgerMonth = null; ledgerOpen = true }) { shopGlances[p.id] = it } } }
+                if (livePlaces.isEmpty()) OutlinedButton(onClick = { ledgerAt = null; ledgerMonth = null; ledgerOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("급여 대장 시작하기") }
                 if (livePlaces.isEmpty()) Text("직원 명단이 엑셀·PDF·사진이어도 급여 대장에서 한 번에 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
@@ -175,7 +187,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     }
     if (ledgerOpen) {
         val roster = remember { WorkToolsStore.get(context).current(calendarId).roster }
-        PayrollScreen(roster) { ledgerOpen = false }
+        PayrollScreen(roster, ledgerMonth?.let(YearMonth::parse), ledgerAt) { ledgerOpen = false; ledgerAt = null; ledgerMonth = null }
     }
 }
 
@@ -248,8 +260,38 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     val ledger = inputs?.takeIf { it.month == last }?.ledger ?: PayrollLedger.month(place, emptyList(), last, emptyList())
     val isClosed = closed?.state == "CLOSED"
     val counted = if (isClosed) marks.size else ledger.lines.size
+    // 2.0.0 [RVJ-95] 검토 U05c-01·I05ca-03: what else waits on the boss, said in the 할 일 on top.
+    val context = LocalContext.current
+    val today = Today.date()
+    val filedTick by Filed.changes.collectAsStateWithLifecycle()
+    // The 신고·납부 of the coming week as the 급여 대장's 다가올 신고·지급 reads them (the same months, the same 했어요); the 지급일
+    // itself is the 닫기·지급 lines'.
+    val dues by androidx.compose.runtime.produceState(emptyList<ManageDesk.DueSoon>(), place, staff, filedTick, today) {
+        value = if (staff.isEmpty()) emptyList() else runCatching {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                val first = YearMonth.from(today).minusMonths(3)
+                val ledgers = (0..4).associate { i -> first.plusMonths(i.toLong()).let { m -> m to store.ledgerOf(place, m) } }
+                val done = Filed.all(context)
+                com.bamnat.core.boss.BossFilings.upcoming(place, staff, today) { m -> ledgers[m] ?: PayrollLedger.month(place, staff, m, emptyList()) }
+                    .filter { it.kind != com.bamnat.core.boss.BossFilings.Kind.PAY && it.key !in done }.map { ManageDesk.DueSoon(it.key, it.date, it.title) }
+            }
+        }.getOrDefault(emptyList())
+    }
+    val names = staff.associate { it.id to it.name.ifBlank { "직원" } }
+    // A 근로계약서 sent on its link and not signed (one marked 종이로 받았어요 is signed), for someone still working.
+    val unsigned = staff.filter { it.leftOn?.isBefore(today) != true }.mapNotNull { s ->
+        s.contract?.takeIf { !it.signed && it.linkId != null }?.let { k ->
+            ManageDesk.Unsigned(s.id, names.getValue(s.id), java.time.Instant.ofEpochMilli(k.sentAt).atZone(Today.zone()).toLocalDate(),
+                k.expiresAt?.let { Today.millis() >= it } == true)
+        }
+    }
+    // A 대타 ask someone said yes to, not settled yet; the names in the order they were asked.
+    val coverYes = place.calls.filter { k -> k.taken == null && k.answers.any { it.value } }.map { k ->
+        ManageDesk.CoverYes(k.id, k.gap.date, names[k.gap.memberId] ?: "직원", k.people.filter { k.answers[it] == true }.map { names[it] ?: "직원" })
+    }
     val g = ManageDesk.ShopGlance(place.id, place.name, staff.size, place.fivePlus != null, isClosed, counted,
-        marks.count { it.paidAt != null }, marks.count { it.slipSentAt != null }, place.payDate(last), ledger.lines.sumOf { it.warnings.size })
+        marks.count { it.paidAt != null }, marks.count { it.slipSentAt != null }, place.payDate(last), ledger.lines.sumOf { it.warnings.size },
+        dues = dues, unsigned = unsigned, coverYes = coverYes)
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     SectionCard(title = place.name, trailing = { TextButton(onClick = onOpen) { Text("급여 대장") } }) {

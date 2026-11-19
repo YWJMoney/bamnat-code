@@ -41,6 +41,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -92,7 +94,12 @@ import com.bamnat.app.ui.theme.Tone
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, onClose: () -> Unit) {
+internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null,
+                           /**
+                            * 2.0.0 [RVJ-95] 검토 U05c-01 What it opens on, from a 관리 화면 할 일 or the 신고·지급 알림: "FILINGS" (다가올 신고·지급),
+                            * "CONTRACT|<staff id>" (that person's 근로계약서), "COVER|<call id>" (that 대타 card of [startMonth]).
+                            */
+                           focus: String? = null, onClose: () -> Unit) {
     val context = LocalContext.current
     val store = context.appContainer.phaseThree
     val scope = rememberCoroutineScope()
@@ -114,6 +121,10 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
     var rehireAsk by remember { mutableStateOf<com.bamnat.core.tier.WorkPlanRules.Need?>(null) }
     var finding by remember { mutableStateOf<Pair<String, LocalDate>?>(null) }
     var contracting by remember { mutableStateOf<String?>(null) }
+    // [RVJ-95] Taken once: after it the screen is the boss's own (a month moved, a card closed stays so).
+    var aim by rememberSaveable { mutableStateOf(focus) }
+    val aimAt = aim?.substringBefore('|')
+    val aimRef = aim?.substringAfter('|', "")?.takeIf { it.isNotEmpty() }
     // 1.39 [CALX-08] 좌우로 밀어 달 넘기기.
     ToolScreen("급여 대장", onClose, bodyModifier = Modifier.monthSwipe(ym) { month = ym.plusMonths(it.toLong()).toString() }) {
         if (place == null) { Hint("사업장을 준비하고 있어요…"); return@ToolScreen }
@@ -260,9 +271,12 @@ internal fun PayrollScreen(roster: StaffRoster, startMonth: YearMonth? = null, o
         LaunchedEffect(calls.filter { it.taken == null }.map { it.id }) {
             calls.filter { it.taken == null && it.token != null }.forEach { k -> runCatching { com.bamnat.app.boss.BossCallSync.pull(context.appContainer, place.id, k.id) } }
         }
-        calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work) } }
+        calls.forEach { k -> key(k.id) { BossCallCard(place, k, staff, work, Modifier.bringOnce(aimAt == "COVER" && aimRef == k.id) { aim = null }) } }
         // 1.38 [P3-X-08] 다가올 신고·지급
-        if (staff.isNotEmpty()) FilingsCard(place, staff, work, onEditStaff = { editing = it }, onPayDay = { settings = true })
+        if (staff.isNotEmpty()) FilingsCard(place, staff, work, onEditStaff = { editing = it }, onPayDay = { settings = true },
+            modifier = Modifier.bringOnce(aimAt == "FILINGS") { aim = null })
+        // [RVJ-95] '근로계약서 서명을 기다려요' opens that person's 근로계약서.
+        LaunchedEffect(aim, staff) { if (aimAt == "CONTRACT" && staff.any { it.id == aimRef }) { contracting = aimRef; aim = null } }
         val leaves by store.leaveDays(place.id).collectAsStateWithLifecycle(emptyMap())
         // 1.38 [P3-X-06] 계약서 서명 기다림: read once when the ledger opens.
         // PC 10차: keyed on who is waiting (the first frame's list is empty, so a key on the place alone read nobody).
@@ -1220,4 +1234,16 @@ internal fun openMonth(place: Workplace, today: LocalDate): YearMonth {
     val last = YearMonth.from(today).minusMonths(1)
     val pay = place.payDate(last) ?: return last
     return if (today.isAfter(pay)) last.plusMonths(1) else last
+}
+
+/**
+ * 2.0.0 [RVJ-95] Brings what it is on into view once it is laid out with a height, while [on]; [done] then (so it is asked once).
+ * The 급여 대장 is one long scroll: a 할 일 pressed in 관리 lands on its card, not on the top of the page.
+ */
+@Composable
+private fun Modifier.bringOnce(on: Boolean, done: () -> Unit): Modifier {
+    val r = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var laid by remember { mutableStateOf(false) }
+    LaunchedEffect(on, laid) { if (on && laid) { androidx.compose.runtime.withFrameNanos { }; r.bringIntoView(); done() } }
+    return this.bringIntoViewRequester(r).onGloballyPositioned { if (it.size.height > 0) laid = true }
 }

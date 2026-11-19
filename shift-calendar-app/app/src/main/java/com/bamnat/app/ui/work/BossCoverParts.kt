@@ -111,7 +111,8 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
 /** 1.38 [P3-X-01] 대타 요청 ②: who has seen it, who said yes, and the first yes one press from the 대근 row. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMember>, work: List<StaffWork>) {
+internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMember>, work: List<StaffWork>,
+                          /** 2.0.0 [RVJ-95] The 관리 화면's 할 일 '대타: …님이 들어갈 수 있어요' brings the card into view with it. */ modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val app = context.appContainer
     val scope = rememberCoroutineScope()
@@ -120,7 +121,7 @@ internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMem
     val names = staff.associateBy { it.id }
     fun name(id: String) = names[id]?.name?.ifBlank { "직원" } ?: "?"
     val shift = BossCover.gapShift(staff, work, call.gap.memberId, call.gap.date)
-    SectionCard(title = "대타 ${Fmt.monthDay(call.gap.date)} · ${name(call.gap.memberId)}") {
+    SectionCard(title = "대타 ${Fmt.monthDay(call.gap.date)} · ${name(call.gap.memberId)}", modifier = modifier) {
         call.taken?.let { t ->
             Text("${name(t)}님이 들어가요. 급여 대장에 대근으로 넣었어요.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             TextButton(onClick = { scope.launch { BossCallSync.end(app, place.id, call.id) } }) { Text("이 카드 닫기") }

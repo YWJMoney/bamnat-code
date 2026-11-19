@@ -254,6 +254,27 @@ object BossFilings {
         return out
     }
 
+    /**
+     * 2.0.0 [RVJ-96] 검토 U05c-05·I05ca-03: 3일 전 알림 한 번. Of [dues], those [REMIND_DAYS] days away or nearer (today included, a
+     * day already past left to the 관리 화면's 할 일), not ticked 했어요 ([done]) and not told before ([told]): each is said once.
+     */
+    fun toRemind(dues: List<Due>, done: Set<String>, told: Set<String>, today: LocalDate): List<Due> =
+        dues.filter { d -> d.key !in done && d.key !in told && d.daysFrom(today) in 0..REMIND_DAYS }.sortedBy { it.date }
+
+    /** [RVJ-96] How many days before its day a 신고·지급 is said. */
+    const val REMIND_DAYS = 3L
+
+    /** [RVJ-96] The notice's title for [dues] (one or more) at [place], as of [today]. */
+    fun remindTitle(place: String, dues: List<Due>, today: LocalDate): String {
+        val first = dues.minBy { it.date }
+        val n = first.daysFrom(today)
+        val left = if (n == 0L) "오늘까지" else "${day(first.date)}까지(${n}일 남음)"
+        return if (dues.size == 1) "$place: ${first.title} $left" else "$place: 신고·지급 ${dues.size}건 · 가장 이른 것 $left"
+    }
+
+    /** [RVJ-96] One line a 신고·지급, its day (moved off a 휴일 already) and amount. */
+    fun remindLine(d: Due): String = "${d.date.monthValue}/${d.date.dayOfMonth} ${d.title}" + (d.amount?.takeIf { it > 0 }?.let { " ${won(it)}" } ?: "")
+
     /** Staff with no 입사일: the past months' 신고 leaves them out until it is put in. */
     fun noHireDate(staff: List<StaffMember>, today: LocalDate): List<StaffMember> = staff.filter { it.hiredOn == null && it.employedOn(today) }
 

@@ -696,6 +696,8 @@ class BackupManager(
                 .put("phoneDayView", s.phoneDayView.name).put("dayCard", s.showDayCard).put("tapFirst", s.tapSelectFirst).put("textAsked", s.textAsked).put("compact", s.compact).put("textStep", s.textStep).put("clock12", s.clock12).put("spendInCells", s.spendInCells).put("spendHeat", s.spendHeat).put("backupNudge", s.backupNudge).put("leaveTimeNotice", s.leaveTimeNotice).put("stretchLimit", s.stretchLimitHours).put("payDepositNotice", s.payDepositNotice).put("payAutoClose", s.payAutoClose).put("weekHoursNudge", s.weekHoursNudge).put("calendarOnly", s.calendarOnly).put("statsPayPeriod", s.statsPeriod == StatsPeriod.PAY).put("statsPeriod", s.statsPeriod.name).put("appLock", s.appLock)
                 // 1.37 [LEDH-06][LEDH-07] 근무가 보이는 가계부.
                 .put("moneyPayCycle", s.moneyByPayCycle).put("workTimeFrom", s.workTimeFrom).put("dayCloseNotice", s.dayCloseNotice)
+                // 2.0.0 [RVJ-96] 사장님 신고·지급 알림.
+                .put("bossFilingNotice", s.bossFilingNotice)
                 // 2.0.0 [RVK-19] 요약의 큰 숫자를 바꿔 둔 것.
                 .put("moneyHero", s.moneyHero)
                 // 1.38 [LEDH-24]
@@ -1382,6 +1384,7 @@ class BackupManager(
                     moneyHero = o.optString("moneyHero", s.moneyHero),
                     workTimeFrom = o.optLong("workTimeFrom", s.workTimeFrom).coerceAtLeast(0),
                     dayCloseNotice = o.optBoolean("dayCloseNotice", s.dayCloseNotice),
+                    bossFilingNotice = o.optBoolean("bossFilingNotice", s.bossFilingNotice),
                     shiftPreviewNotice = o.optBoolean("shiftPreview", s.shiftPreviewNotice),
                     shiftPreviewHour = o.optInt("shiftPreviewHour", s.shiftPreviewHour).coerceIn(0, 23),
                     moneyChallenge = o.optString("moneyChallenge", s.moneyChallenge).takeIf { it.isEmpty() || com.bamnat.core.money.Challenges.decode(it) != null }.orEmpty(),
