@@ -82,7 +82,8 @@ export async function rescanBilling2(env, now, limit = 300) {
       AND NOT EXISTS (SELECT 1 FROM audit a WHERE a.action = 'inquiry_billing' AND a.target = i.id) ORDER BY i.id LIMIT ?`, limit);
   const on = rows.filter((r) => !r.billing_at && billingRecordOf(r.kind, r.words ?? ""));
   const off = rows.filter((r) => r.billing_at && !billingRecordOf(r.kind, r.words ?? ""));
-  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", r.created_at, r.id)),
+  // PC 5차 Q1-500 13: 결제·환불 기록은 모두의 문의에 두지 않아요(돈·주문 이야기는 운영자만 봐요).
+  const stmts = [...on.map((r) => stmt(env, "UPDATE inquiries SET billing_at = ?, public = 0 WHERE id = ?", r.created_at, r.id)),
     ...off.map((r) => stmt(env, "UPDATE inquiries SET billing_at = NULL WHERE id = ?", r.id))];
   stmts.push(rows.length < limit
     ? stmt(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('billing_rescan2', ?)", String(now))
@@ -286,14 +287,16 @@ export async function ask(request, env) {
   if (limitHit) return limitHit;
   const photos = await readPhotos(env, body.photos);
   const id = randomId(22);
+  // 2.0.0 [RVQ-30] PC 5차 Q1-500 13: '프로 샀는데 광고가 나와요'처럼 글이 결제·환불 기록이면 '모두의 문의에 올리기'를 켜도 운영자만 봐요.
+  const billing = billingRecordOf(body.kind, text);
   await batch(env, [
     // [SRV-06] Photos stay with the developer even on a public question.
     ...photos.list.map((data, i) => stmt(env, "INSERT INTO inquiry_photos (inquiry_id, n, data, bytes, at) VALUES (?, ?, ?, ?, ?)",
       id, i + 1, data.base64, data.bytes, now)),
     // Only an app that says so on its form sends public: true; a question from an older app stays the developer's.
     stmt(env, "INSERT INTO inquiries (id, device, kind, info, status, public, created_at, updated_at, billing_at) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?)",
-      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) ? 1 : 0, now, now,
-      billingRecordOf(body.kind, text) ? now : null),
+      id, dev, body.kind, JSON.stringify(info), body.public === true && !PRIVATE_KINDS.includes(body.kind) && !billing ? 1 : 0, now, now,
+      billing ? now : null),
     stmt(env, "INSERT INTO inquiry_messages (inquiry_id, sender, text, by, at) VALUES (?, 'user', ?, NULL, ?)", id, text, now),
     // Threads with nothing new for half a year go, answers, notes and 개발사항 links and all (결제·환불: 3 years).
     ...dropInquiries(env, ...expiredInquiries(now)),
@@ -544,7 +547,7 @@ export async function publicList(env, params, device, hide) {
   const rows = cached && cached.until > Date.now() ? cached.rows : await all(env, `SELECT i.id, i.kind, i.status, i.info, i.same, i.device, i.created_at, i.updated_at,
       (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id LIMIT 1) AS first,
       (SELECT COUNT(*) FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin') AS answers
-    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL ORDER BY ${order} LIMIT 500`);
+    FROM inquiries i WHERE i.public = 1 AND i.hidden IS NULL AND i.billing_at IS NULL ORDER BY ${order} LIMIT 500`);
   if (!cached || cached.rows !== rows) {
     if (!publicRows.has(env.DB ?? env)) publicRows.set(env.DB ?? env, new Map());
     publicRows.get(env.DB ?? env).set(cacheKey, { rows, until: Date.now() + PUBLIC_CACHE_MS });
@@ -603,7 +606,7 @@ export async function inquiryMark(request, env, id, kind) {
     ["network", `vote|${net.now}`, LIMITS.votesPerNetworkHour, HOUR]]);
   if (limitHit) return limitHit;
   const dev = await deviceHash(device);
-  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL", id);
+  const row = await one(env, "SELECT * FROM inquiries WHERE id = ? AND public = 1 AND hidden IS NULL AND billing_at IS NULL", id);
   if (!row) return json({ error: "not_found" }, 404);
   if (row.device === dev) return json({ error: "own" }, 400);
   if (kind === "same") {
@@ -695,7 +698,8 @@ export async function adminInquiries(request, env, url, path, now) {
       await batch(env, dropInquiries(env, "id = ?", row.id));
       return json({ deleted: true });
     }
-    await run(env, "UPDATE inquiries SET billing_at = ? WHERE id = ?", body.on ? row.billing_at ?? now : null, row.id);
+    // PC 5차 Q1-500 13: 관리자가 결제·환불 기록으로 켜면 모두의 문의에서도 내려요(끌 때 다시 올리지는 않아요).
+    await run(env, `UPDATE inquiries SET billing_at = ?${body.on ? ", public = 0" : ""} WHERE id = ?`, body.on ? row.billing_at ?? now : null, row.id);
   } else if (m[2] === "/visibility") {
     // 모두의 문의: hide (with a reason the writer's app shows) or show again; either way 신고 no longer hides it.
     if (!row.public) refuse("public", "action");
