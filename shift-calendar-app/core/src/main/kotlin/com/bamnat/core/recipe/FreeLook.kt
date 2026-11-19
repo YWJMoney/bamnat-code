@@ -284,6 +284,14 @@ data class Palette(val bg: Long? = null, val card: Long? = null, val ink: Long? 
             return (hi + 0.05) / (lo + 0.05)
         }
 
+        /**
+         * 2.0.0 [RVS-06] STU-11 (글자색 대비 자동 점검이 실제 그리기와 다른 바탕으로 계산): the colours [look]'s letters stand on, as the screen
+         * skin draws them: the page (the look's own, else the app's [baseBackground] of the light or dark screen), and the two card colours
+         * (the look's, else the app's [baseCardLow] and [baseCardHigh]). The check and the drawing both read these, so they cannot differ.
+         */
+        fun groundsFor(look: ScreenLook, baseBackground: Long, baseCardLow: Long, baseCardHigh: Long): LongArray =
+            longArrayOf(look.ground ?: baseBackground, look.card ?: baseCardLow, look.card ?: baseCardHigh)
+
         /** [ink] when it reads on every one of [grounds] (4.5:1), else black or white, whichever reads better on them all. */
         fun inkOn(ink: Long?, vararg grounds: Long): Long {
             if (ink != null && grounds.all { contrast(ink, it) >= 4.5 }) return ink
