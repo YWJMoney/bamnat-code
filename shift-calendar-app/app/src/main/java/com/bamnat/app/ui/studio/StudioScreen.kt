@@ -1950,8 +1950,8 @@ object StudioShot {
     @Volatile private var shot: android.graphics.Bitmap? = null
     @Volatile private var at = 0L
     var last: android.graphics.Bitmap?
-        get() = shot?.takeIf { System.currentTimeMillis() - at in 0..FRESH_MS }
-        set(v) { shot = v; at = System.currentTimeMillis() }
+        get() = shot?.takeIf { com.bamnat.core.time.Today.millis() - at in 0..FRESH_MS }
+        set(v) { shot = v; at = com.bamnat.core.time.Today.millis() }
 }
 
 /**
