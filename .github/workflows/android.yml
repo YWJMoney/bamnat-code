@@ -31,6 +31,9 @@ jobs:
           node-version: 22
       - run: npm test
         working-directory: shift-calendar-app/server/share-worker
+      # 2.0.0 [RVN-24] 검토 SVC-110: 사이트 서버(bamnat.app)의 질의·머리·HEAD·404 시험도 CI에서.
+      - run: node --test test/site.test.mjs
+        working-directory: shift-calendar-app/server/site-worker
       - run: npm test
         working-directory: shift-calendar-app/server/company-worker
       # [ADMUX-08] The admin app's happy-dom screen tests need the devDependency from the lock file.
