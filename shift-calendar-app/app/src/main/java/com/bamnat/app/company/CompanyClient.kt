@@ -1725,7 +1725,8 @@ private fun exchangeOnce(
     session: ServerSession?,
 ): Answer {
     val conn = try {
-        // [SPD-26] 1.31 I2: through Cronet (HTTP/3·HTTP/2) when Google Play services has it, otherwise as before.
+        // [SPD-26] 1.31 I2: through HTTP/3·HTTP/2 when the phone has the engine (2.0.0 [RVN-23] PC-187: Android 14's own HttpEngine,
+        // no longer Play services' Cronet), otherwise as before.
         NetEngine.open(URL(baseUrl.trimEnd('/') + path))
     } catch (e: IOException) {
         if (ServerAddress.neverArrived(e)) throw e

@@ -10,13 +10,17 @@ import com.bamnat.core.formula.Logic
  *  - Anything else (an order, a switch): as a whole, back only when it is still as the work left it.
  */
 internal object SettingBack {
-    data class Back(val text: String, val kept: Int)
+    /**
+     * [text] what 되돌리기 leaves, [kept] the places left as the user made them. 2.0.0 [RVM-55] 검토 U09b-02: [force] is the text with
+     * those kept places taken back too, for 그대로 둔 것 › 이것도 되돌리기 (the user's own changes elsewhere still stay).
+     */
+    data class Back(val text: String, val kept: Int, val force: String = text)
 
     fun of(key: String, now: String, before: String, after: String): Back = when {
         now == after -> Back(before, 0)
         key == "logic" -> logic(now, before, after)
         pairs(now) != null && pairs(before) != null && pairs(after) != null -> pairs(now, before, after)
-        else -> Back(now, if (after != before) 1 else 0)
+        else -> if (after != before) Back(now, 1, before) else Back(now, 0)
     }
 
     private fun logic(now: String, before: String, after: String): Back {
@@ -31,7 +35,8 @@ internal object SettingBack {
         // A button the work added that the user changed since (its name or what it does) is theirs now.
         kept += addedButtons.count { x -> x !in n.buttons && n.buttons.any { it.id == x.id } }
         val values = n.values.filter { v -> addedValues.none { it.name == v.name } }
-        return Back(Logic.encode(Logic(buttons, rules, values)), kept)
+        val changed = addedButtons.map { it.id }.toSet()
+        return Back(Logic.encode(Logic(buttons, rules, values)), kept, Logic.encode(Logic(buttons.filter { it.id !in changed }, rules, values)))
     }
 
     /** `key=value` pieces split by ';' (an empty text is no pieces), or null when the text is not of that shape. */
@@ -49,12 +54,16 @@ internal object SettingBack {
     private fun pairs(now: String, before: String, after: String): Back {
         val n = pairs(now)!!; val b = pairs(before)!!; val a = pairs(after)!!
         val out = LinkedHashMap<String, String>()
+        val forced = LinkedHashMap<String, String>()
         var kept = 0
         // In the order the app writes them: before's, then what came since.
         for (k in (b.keys + a.keys + n.keys).distinct()) {
-            val v = if (n[k] == a[k]) b[k] else n[k].also { if (a[k] != b[k]) kept++ }
+            val mine = n[k] != a[k] && a[k] != b[k]
+            val v = if (n[k] == a[k]) b[k] else n[k].also { if (mine) kept++ }
             if (v != null) out[k] = v
+            (if (mine) b[k] else v)?.let { forced[k] = it }
         }
-        return Back(out.entries.joinToString(";") { "${it.key}=${it.value}" }, kept)
+        fun text(m: Map<String, String>) = m.entries.joinToString(";") { "${it.key}=${it.value}" }
+        return Back(text(out), kept, text(forced))
     }
 }

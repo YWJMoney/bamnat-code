@@ -297,7 +297,7 @@ export function adminLib() {
     health: { days: "14" },
     money: { days: "28" },
     // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health): 운영 장부 '깨진 작품' 줄과 출시 › 장터 작품 공개가 그 보기로 바로 열려요.
-    recipes: { tab: "flagged" },
+    recipes: { tab: "flagged", code: "" },
   };
 
   /** "#/inquiries/abc?status=open&q=알람" as { name, id, params }; params hold only known filters. */
@@ -342,6 +342,8 @@ export function adminLib() {
   function cleanFilters(name, params) {
     const p = { ...params };
     if (name === "inquiries" && p.who === "late") p.status = "open";
+    // 2.0.0 [RVA-65] 작품 코드는 '하나만 보기'에서만 주소에 남아요.
+    if (name === "recipes" && p.tab !== "one") p.code = "";
     return p;
   }
 

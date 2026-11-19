@@ -15,6 +15,7 @@ import com.bamnat.core.recipe.ScreenLooks
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.junit.Before
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -31,7 +32,15 @@ import org.junit.runner.RunWith
 class LiveTryOnTest {
     private val c get() = ApplicationProvider.getApplicationContext<BamnatApp>().container
 
-    @After fun letGo() = LiveTryOn.drop(c)
+    // 2.0.0 [RVM-58] (총괄 HQ: a full run across midnight stopped here twice for over 10 minutes, with no thread of the app running):
+    // what 입어 보기 keeps for the JVM is emptied before and after each test, and a test that does not end in a minute fails with
+    // where it waited (the coroutine's stack) instead of holding the whole run.
+    @Before fun fresh() = LiveTryOn.resetForTest()
+
+    @After fun letGo() { LiveTryOn.drop(c); LiveTryOn.resetForTest() }
+
+    private fun bounded(block: suspend kotlinx.coroutines.CoroutineScope.() -> Unit) =
+        runBlocking { kotlinx.coroutines.withTimeout(60_000, block) }
 
     /** What 입기 would leave, worked out without putting it on, against what it does leave. */
     private suspend fun sameAsWorn(r: Recipe, wear: suspend () -> Unit) {
@@ -42,13 +51,13 @@ class LiveTryOnTest {
         assertEquals(c.recipes.pieces.lookOf(c.settingsRepository.current), tried)
     }
 
-    @Test fun aWholeThemeTriedOnIsTheLookItLeavesWhenWorn() = runBlocking {
+    @Test fun aWholeThemeTriedOnIsTheLookItLeavesWhenWorn() = bounded {
         BuiltInThemes.of(WorkStyle.SHIFT).take(3).forEach { theme ->
             sameAsWorn(theme) { assertTrue(c.wardrobe.wear(theme, "builtin:${theme.title}", own = false)) }
         }
     }
 
-    @Test fun someOfItsPartsTriedOnAreThePartsWorn() = runBlocking {
+    @Test fun someOfItsPartsTriedOnAreThePartsWorn() = bounded {
         val theme = BuiltInThemes.of(WorkStyle.DAY)[1]
         val ids = LookParts.of(theme).map { it.id }
         val some = ids.take((ids.size / 2).coerceAtLeast(1)).toSet()
@@ -57,7 +66,7 @@ class LiveTryOnTest {
     }
 
     /** A tab laid on stays over the next theme ([ThemeWardrobe.keepOverlays]), and the trial shows it so too. */
-    @Test fun theTabsLaidOnStayOverTheThemeTriedOn() = runBlocking {
+    @Test fun theTabsLaidOnStayOverTheThemeTriedOn() = bounded {
         val money = Recipe("돈 탭", styles = WorkStyle.entries.toSet(), pieces = listOf(
             Piece(PieceKind.SCREEN_LOOK, mapOf("screens" to ScreenLooks().with("money", ScreenLook(bg = 0xFF102030)).encode()))))
         assertTrue(c.wardrobe.overlay(money, "ABCD2345"))
@@ -66,13 +75,13 @@ class LiveTryOnTest {
     }
 
     /** One tab's looks are laid on what is worn, as 장터's 넣기 does with them. */
-    @Test fun oneTabsLookTriedOnIsLaidOnAsWhenPutIn() = runBlocking {
+    @Test fun oneTabsLookTriedOnIsLaidOnAsWhenPutIn() = bounded {
         val memo = Recipe("메모 탭", styles = WorkStyle.entries.toSet(), pieces = listOf(
             Piece(PieceKind.SCREEN_LOOK, mapOf("screens" to ScreenLooks().with("memo", ScreenLook(bg = 0xFF203040)).encode()))))
         sameAsWorn(memo) { assertTrue(c.wardrobe.overlay(memo, "MEMO2345")) }
     }
 
-    @Test fun theTrialIsOnScreenOnlyAndNeverSaved() = runBlocking {
+    @Test fun theTrialIsOnScreenOnlyAndNeverSaved() = bounded {
         val repo = c.settingsRepository
         val saved = repo.current
         val theme = BuiltInThemes.of(WorkStyle.SHIFT)[1]
@@ -106,7 +115,7 @@ class LiveTryOnTest {
     }
 
     /** A look put on for real while trying one on ends the trial, so what was put on is what shows. */
-    @Test fun wearingForRealEndsTheTrial() = runBlocking {
+    @Test fun wearingForRealEndsTheTrial() = bounded {
         val tried = BuiltInThemes.of(WorkStyle.SHIFT)[1]
         assertTrue(LiveTryOn.start(c, tried, own = false, LookParts.of(tried).map { it.id }.toSet(), "calendar", LiveTryOn.From.Detail("X")))
         val worn = BuiltInThemes.of(WorkStyle.SHIFT)[2]
@@ -120,7 +129,7 @@ class LiveTryOnTest {
      * PC a483ca15 (사무직이 벚꽃 파스텔을 입어 보면 메모 줄이 보이는데, 입은 달력은 메모 점): the example's 입으면 draws the 달력 모양 입기
      * leaves — someone else's theme keeps my 메모 줄 수 and 줄 순서 — for every theme of every kind of work.
      */
-    @Test fun theExampleShowsTheCellsWearingLeaves() = runBlocking {
+    @Test fun theExampleShowsTheCellsWearingLeaves() = bounded {
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.DAY, memoInCells = false, calView = com.bamnat.core.recipe.CalendarView(memo = 0).encode()) }
         val start = c.recipes.pieces.lookSnapshot()
         WorkStyle.entries.flatMap { BuiltInThemes.of(it) }.distinctBy { it.title }.forEach { theme ->
@@ -137,7 +146,7 @@ class LiveTryOnTest {
         }
     }
 
-    @Test fun nothingToTryWhenTheLookIsAlreadyMine() = runBlocking {
+    @Test fun nothingToTryWhenTheLookIsAlreadyMine() = bounded {
         val theme = BuiltInThemes.of(WorkStyle.SHIFT)[0]
         assertTrue(c.wardrobe.wear(theme, "builtin:${theme.title}", own = false))
         assertFalse(LiveTryOn.start(c, theme, own = false, LookParts.of(theme).map { it.id }.toSet(), "calendar", LiveTryOn.From.Detail("X")))
@@ -145,7 +154,7 @@ class LiveTryOnTest {
     }
 
     /** [TRY-07] '바뀐 곳' on the band walks the tabs the look changes, the opened one first, and comes round again. */
-    @Test fun theBandWalksTheTabsTheLookChanges() = runBlocking {
+    @Test fun theBandWalksTheTabsTheLookChanges() = bounded {
         val theme = BuiltInThemes.of(WorkStyle.SHIFT)[1]
         val tabs = LookParts.of(theme).map { it.tab }.toSet()
         assertTrue(LiveTryOn.start(c, theme, own = false, LookParts.of(theme).map { it.id }.toSet(), "money", LiveTryOn.From.Detail("ABCD2345")))
@@ -158,7 +167,7 @@ class LiveTryOnTest {
     }
 
     /** [TRY-07] 입기 on the band: the trial ends unsaved and the page it came from is asked to put it on, with the same parts. */
-    @Test fun wearFromTheBandGoesBackToPutItOn() = runBlocking {
+    @Test fun wearFromTheBandGoesBackToPutItOn() = bounded {
         val saved = c.recipes.pieces.lookOf(c.settingsRepository.current)
         val theme = BuiltInThemes.of(WorkStyle.SHIFT)[1]
         val picked = LookParts.of(theme).map { it.id }.take(2).toSet()

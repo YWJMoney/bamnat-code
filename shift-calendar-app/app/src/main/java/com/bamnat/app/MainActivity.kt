@@ -351,9 +351,9 @@ class MainActivity : ComponentActivity() {
                 if (got.isNotEmpty()) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { com.bamnat.app.ui.calendar.FontArrivals.add(got) }
             }
         }
-        // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form and
-        // the ads SDK start only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
-        // [SRV-07] not in the first three days after install.
+        // [MON-02] The server's answer, passes and Play's purchases. [MON-07] Google's consent form
+        // starts only when an ad may show: [FLAG-09] with the `ads` row on, without 프로, with ad ids, and
+        // [SRV-07] not in the first three days after install. 2.0.0 [RVN-23] The ads SDK itself waits for an ad's button (Ads.prepare).
         // 1.36 PC 재검토: the first start of this process is an open afresh (the 정식 출시 switch is asked again sooner).
         c.syncPro(opened = !openedOnce).also { openedOnce = true }
         // 1.39 [LOOP-13] Play 인앱 업데이트, only after the first setup and as the server's numbers say.
