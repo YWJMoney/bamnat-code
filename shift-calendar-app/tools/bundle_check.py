@@ -73,6 +73,9 @@ def build(runs, needs, sha="", url=""):
             rows.append((name, "결과 없음", 0, 0, 0, 0.0))
             continue
         failed, skipped = run.get("failed", []), run.get("skipped", [])
+        # The matrix has one result for all shards, so a shard that ran and passed is not called a failure because another one failed.
+        if name != "core" and res not in ("?", "success"):
+            res = "failure" if failed else ("success" if run.get("tests", 0) else res)
         rows.append((name, res if res != "?" else "-", run.get("tests", 0), len(failed), len(skipped), round(run.get("seconds", 0) / 60, 1)))
         if failed:
             problems.append(f"{name}: 실패 {len(failed)}개: " + ", ".join(f"`{f['name']}`" for f in failed[:12]) + (" …" if len(failed) > 12 else ""))

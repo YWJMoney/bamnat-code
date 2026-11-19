@@ -32,6 +32,15 @@ class BundleCheckTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.dir)
 
+    def test_a_passing_shard_is_not_called_failed_because_another_shard_failed(self):
+        runs = all_runs()
+        runs["shots-e"] = run(10, failed=["RvjSetupDraftTest.theWizardKeptDarkBig"], counts={"RvjSetupDraftTest": [10, 1, 0]})
+        r = b.build(runs, {**GOOD, "app": {"result": "failure"}})
+        by = {row[0]: row[1] for row in r["jobs"]}
+        self.assertEqual("failure", by["shots-e"])
+        self.assertEqual("success", by["shots-a"])
+        self.assertEqual("통과하지 못함", r["verdict"])
+
     def test_everything_passed_says_so_and_lists_the_classes(self):
         r = b.build(all_runs(), GOOD, "abcdef1234567")
         self.assertEqual("모두 통과", r["verdict"], r["problems"])
