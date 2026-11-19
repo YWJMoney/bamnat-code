@@ -181,15 +181,74 @@ object FormulaText {
 
     fun problem(src: String): String? = (parse(src).exceptionOrNull() as? FormulaError)?.code
 
-    /** The text in [scope]; a formula that fails leaves its place empty. */
-    fun render(parts: List<Part>, scope: FormulaScope): String = parts.joinToString("") {
-        when (it) {
-            is Part.Plain -> it.text
-            is Part.Calc -> it.formula.run(scope)?.text.orEmpty()
+    /**
+     * The text in [scope]; a formula that fails leaves its place empty. [RVM-03] It reads as a person writes: a number in words has
+     * at most one decimal (PC-43 '7일 평균 0.2857번' → 0.3번) and a comma from 10,000, hours before '시간' under an hour are minutes
+     * (PC-37 '0.6시간 잤어요' → 36분 잤어요), and the 조사 after a formula fits its last sound ('주간예요' → 주간이에요).
+     */
+    fun render(parts: List<Part>, scope: FormulaScope): String = spell(parts, scope).take(Formula.MAX_TEXT)
+
+    private fun spell(parts: List<Part>, scope: FormulaScope): String {
+        val out = StringBuilder()
+        // The last formula's words and number, for the 조사 and '시간' that may follow it.
+        var said: String? = null
+        var hours: Double? = null
+        for (p in parts) when (p) {
+            is Part.Calc -> {
+                val v = p.formula.run(scope)
+                val t = if (v is Value.Num) words(v.v) else v?.text.orEmpty()
+                out.append(t)
+                said = t.takeIf { it.isNotEmpty() }
+                hours = (v as? Value.Num)?.v
+            }
+            is Part.Plain -> {
+                var text = p.text
+                val w = said
+                val h = hours
+                if (w != null && h != null && text.startsWith("시간") && h > 0 && h < 1) {
+                    // "{지난시간}시간" under an hour: 0.6시간 → 36분 (9.5시간 stays as 근무 hours are said).
+                    val hm = com.bamnat.core.hours.HoursFormat.korean(kotlin.math.round(h * 60).toInt())
+                    out.setLength(out.length - w.length)
+                    out.append(hm)
+                    text = com.bamnat.core.text.Josa.fit(hm, text.removePrefix("시간"))
+                } else if (w != null) text = com.bamnat.core.text.Josa.fit(w, text)
+                out.append(text)
+                said = null
+                hours = null
+            }
         }
-    }.take(Formula.MAX_TEXT)
+        return out.toString()
+    }
+
+    /** [RVM-03] A number as words write it: whole numbers plain (a comma from 10,000), the rest with one decimal. */
+    fun words(v: Double): String {
+        if (v.isNaN() || v.isInfinite()) return "0"
+        // One decimal (0.2857 → 0.3); a small rate keeps two (0.035 → 0.04) rather than reading 0.
+        val r = Formula.roundHalfAway(v, if (kotlin.math.abs(v) < 0.1) 2 else 1)
+        return if (r == kotlin.math.floor(r) && kotlin.math.abs(r) < 1e15) {
+            val n = r.toLong()
+            if (kotlin.math.abs(n) >= 10_000) "%,d".format(java.util.Locale.ROOT, n) else n.toString()
+        } else Formula.numText(r)
+    }
 
     fun render(src: String, scope: FormulaScope): String = parse(src).getOrNull()?.let { render(it, scope) } ?: src
+
+    /**
+     * 2.0.0 [RVM-39] PC-148 (조건 4·13): what a rule or 단추 will say, before it runs, with each {수식} place as ○ ('이달 야간 ○번째 · 물
+     * ○잔', '○시간 잤어요'), never the formula's own letters ({값("물 잔")}). Text that is not formulas as a whole (too many, or a brace
+     * left open) has each brace pair as ○ all the same.
+     */
+    fun blanks(src: String): String {
+        if ('{' !in src) return src
+        val parts = parse(src).getOrNull() ?: return src.replace(Regex("\\{[^{}]*\\}"), BLANK)
+        return parts.joinToString("") { p -> if (p is Part.Plain) p.text else BLANK }
+    }
+
+    /** [RVM-39] What a [blanks] place reads as. */
+    const val BLANK = "○"
+
+    /** [RVM-39] What a rule did, its {수식} worked out in [scope]; text that is not formulas as a whole reads as [blanks]. */
+    fun said(src: String, scope: FormulaScope): String = parse(src).getOrNull()?.let { render(it, scope) } ?: blanks(src)
 
     /**
      * 사용자 2026-11-01 "메모장 및 모든 곳에서": a memo template's words with {수식} worked out for the day it is used. Text with no '{',
@@ -199,6 +258,6 @@ object FormulaText {
         if ('{' !in src || src.length > Formula.MAX_LEN) return src
         val parts = parse(src).getOrNull() ?: return src
         if (parts.none { it is Part.Calc }) return src
-        return parts.joinToString("") { when (it) { is Part.Plain -> it.text; is Part.Calc -> it.formula.run(scope)?.text.orEmpty() } }
+        return spell(parts, scope)
     }
 }

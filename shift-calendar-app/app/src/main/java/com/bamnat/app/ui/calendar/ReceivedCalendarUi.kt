@@ -43,6 +43,8 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.LinkOff
@@ -56,7 +58,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -90,6 +92,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.lifecycle.repeatOnLifecycle
@@ -168,7 +171,8 @@ internal fun SwitchRow(
         Box(Modifier.alpha(if (dim) 0.45f else 1f)) { avatar() }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // 2.0.0 [RVG-34] 조건 12: at 200% on a folded phone a link's name was cut to '3병동 김간호의 근…'; it takes a second line first.
+            Text(title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
             detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2) }
         }
@@ -225,7 +229,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
             // PC 확인 8773e3ae (받기 창 제목에 가족·동료가 섞여요): '링크로 보내기' sends the same link to anyone, so the sheet names the
             // sender, not who it was meant for. [J133-79] Before a link is read, no one is called 동료.
             val sender = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.title?.trim().orEmpty()
-            Text(if (sender.isNotEmpty()) "${sender}의 근무표 받기" else "근무표 받기", style = MaterialTheme.typography.titleLarge)
+            // 2.0.0 [RVG-35] 검토 HQ-64: once read, in the link's word (민지의 영업일 받기), as its card under it says.
+            val word = (preview as? ReceivedViewModel.Preview.Ready)?.schedule?.word ?: "근무표"
+            Text(if (sender.isNotEmpty()) "${sender}의 $word 받기" else "$word 받기", style = MaterialTheme.typography.titleLarge)
             Text("받은 링크를 넣으면 내 달력과 바꿔 가며 볼 수 있어요. 같이 쉬는 날도 바로 보여요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (startId == null) {
@@ -283,7 +289,9 @@ fun AddReceivedSheet(vm: ReceivedViewModel, startId: String?, today: LocalDate, 
                         }
                         // [SHR-20] 1.33 (계획 693): a friend's link leads on to the receiver's own calendar; nothing of the friend's setup goes.
                         if (p.schedule.audience == com.bamnat.app.share.ShareAudience.FRIEND) FriendStart()
-                        Text("읽기 전용이에요. 보낸 분이 근무표를 고치면 열 때마다 새로 받아요.",
+                        // [RVG-35] 검토 HQ-64: the link's own word (보낸 분이 영업일을 고치면).
+                        val word = p.schedule.word
+                        Text("읽기 전용이에요. 보낸 분이 $word${com.bamnat.app.ui.Fmt.obj(word)} 고치면 열 때마다 새로 받아요.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
@@ -338,7 +346,7 @@ internal fun CoworkerSetupCard(sender: String, setup: String, onBefore: () -> Bo
             }
         }
     }
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val who = sender.trim().ifEmpty { "동료" }
             Text("$who 님이 ${company.ifEmpty { "회사" }} 근무표와 급여 계산 방식을 보냈어요.", style = MaterialTheme.typography.titleSmall)
@@ -385,7 +393,7 @@ internal fun FriendStart() {
 @Composable
 private fun NoLinkYet() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh) {
+    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
         Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text("링크가 아직 없나요?", style = MaterialTheme.typography.titleSmall)
             // PC 확인 20ab0254 (공유 말과 단추 이름이 섞여 있어요): the button is ‘링크로 보내기’ in both of 공유's views.
@@ -408,34 +416,44 @@ internal const val LINK_ASK = "근무표 같이 보고 싶어요! 밤낮 앱 달
 
 @Composable
 private fun PreviewCard(s: SharedSchedule, color: Color, expiresAt: Instant, today: LocalDate) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "?", color, size = 44.dp)
+                CalendarAvatar(s.title.firstOrNull { it.isLetterOrDigit() }?.toString() ?: "받", color, size = 44.dp)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 근무표" } ?: "이름 없는 근무표", style = MaterialTheme.typography.titleMedium)
+                    // [RVG-35] 검토 HQ-64: in the link's word, as the list and the web page say it.
+                    val word = s.word
+                    Text(s.title.trim().takeIf { it.isNotEmpty() }?.let { "${it}의 $word" } ?: "받은 $word", style = MaterialTheme.typography.titleMedium)
                     if (s.first != null && s.last != null) {
-                        Text("${Fmt.monthDay(s.first)} ~ ${Fmt.monthDay(s.last)}", style = MaterialTheme.typography.bodySmall,
+                        // [RVG-35] 조건 12: each date stays whole at 200% (was '12월' / '31일' on two lines).
+                        Text("${Fmt.monthDay(s.first).replace(' ', '\u00A0')} ~ ${Fmt.monthDay(s.last).replace(' ', '\u00A0')}", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
             // The next week at a glance, from today or from where the schedule starts.
             val from = s.first?.let { if (today.isBefore(it)) it else today } ?: today
+            // [RVG-35] 조건 12: at large text a seventh of the card has no room for '오늘' (it stood as 오/늘); today keeps its weekday
+            // there, in bold and the primary colour, and is read out as 오늘 (조건 14: not by colour alone).
+            val roomy = androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.3f
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
                 (0 until 7).forEach { i ->
                     val d = from.plusDays(i.toLong())
                     Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(if (d == today) "오늘" else Fmt.dayOfWeekShort(d.dayOfWeek), style = MaterialTheme.typography.labelSmall,
+                        Text(if (d == today && roomy) "오늘" else Fmt.dayOfWeekShort(d.dayOfWeek), style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1, softWrap = false,
+                            fontWeight = if (d == today) androidx.compose.ui.text.font.FontWeight.Bold else null,
+                            modifier = if (d == today && !roomy) Modifier.semantics { contentDescription = "오늘" } else Modifier,
                             color = if (d == today) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
                         DayBadge(s, s.days[d], size = 22.dp, inRange = s.covers(d))
                     }
                 }
             }
-            Text(s.showsText()?.let { "함께 받은 것: $it" } ?: "근무와 휴가만 받았어요",
+            // 2.0.0 [RVG-38] (조건 13) the days in the link's word: 영업일과 휴무만, 달력만 (was 근무와 휴가만 for every link).
+            Text(s.showsText()?.let { "함께 받은 것: $it" } ?: "${com.bamnat.core.work.linkDaysWord(s.word)}만 받았어요",
                 style = MaterialTheme.typography.bodySmall)
             Text("${expiry(expiresAt)}까지 볼 수 있어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -482,8 +500,11 @@ private fun ExtraChip(name: String, count: Int, size: Dp) {
             .padding(horizontal = 4.dp),
         contentAlignment = Alignment.Center,
     ) {
+        // [RVG-41] (같은 구조, 조건 12) the line keeps its normal-size height, as the badge's [VIS-02]: the theme's line grew with large
+        // text and pushed the letter out of the bottom of the chip ('일감·추가 근무' in the key at 150% showed half a '일').
         Text(name.take(2) + if (count > 1) "+" else "", color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold,
-            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }, maxLines = 1)
+            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.46f).toSp() }, lineHeight = (CHIP_LINE / (size * 0.46f)).em,
+            maxLines = 1)
     }
 }
 
@@ -495,9 +516,13 @@ private fun LeaveChip(label: String, size: Dp) {
         contentAlignment = Alignment.Center,
     ) {
         Text(label.take(3), color = MaterialTheme.colorScheme.onTertiaryContainer, fontWeight = FontWeight.Bold,
-            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.48f).toSp() }, maxLines = 1)
+            fontSize = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.48f).toSp() }, lineHeight = (CHIP_LINE / (size * 0.48f)).em,
+            maxLines = 1)
     }
 }
+
+/** [RVG-41] A chip's line: the theme's body line at the normal text size, which does not grow with large text (as [ShiftBadge]'s). */
+private val CHIP_LINE = 24.dp
 
 private fun expiry(at: Instant): String = Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())
 
@@ -519,6 +544,25 @@ private fun ResolvedDay.isRestForMe(): Boolean = (isOff || leave?.isFullDay == t
  * [SHR-02][SHR-04] Someone's shared calendar in place of the user's own: read only, with the days
  * both are off marked, the day picked compared with the user's own, and what else they sent.
  */
+/** [RVG-22] What the received month's head needs besides the month and '오늘': ‹ and › (48dp each), the month's 6dp sides, the text
+ * button's own 12dp sides and the row's 4dp ends. */
+private val HEAD_BUTTONS = 48.dp * 2 + 12.dp + 24.dp + 8.dp
+
+/**
+ * 2.0.0 [RVP-45] 검토 HQ-62 (조건 1): what the received month's one-row head needs. The calendar screen draws it with the same head as
+ * the user's own calendar (whose calendar, ‹ 11월 ▾ ›, 오늘, 도구 in one row that folds by [HeadRoom]); before, the received month had
+ * the calendar chip's row and a month row of its own, two rows above the days.
+ */
+class ReceivedHead(
+    val month: YearMonth,
+    val atToday: Boolean,
+    val onPrev: () -> Unit,
+    val onNext: () -> Unit,
+    val onToday: () -> Unit,
+    val onPickMonth: () -> Unit,
+)
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReceivedCalendarView(
     vm: ReceivedViewModel,
@@ -532,6 +576,10 @@ fun ReceivedCalendarView(
     modifier: Modifier = Modifier,
     /** [NURS-06] The user's own 근무표 점검 기준, to read their roster with. */
     rules: com.bamnat.core.schedule.RestRules = com.bamnat.core.schedule.RestRules(),
+    /** [RVG-20] Says what was done on this calendar, with 되돌리기 (the calendar screen's line at the bottom). */
+    onSay: ((com.bamnat.app.ui.UndoMessage) -> Unit)? = null,
+    /** 2.0.0 [RVP-45] HQ-62: the one-row head ([ReceivedHead]) in place of [identityBar] and the month's own row. */
+    head: (@Composable (ReceivedHead) -> Unit)? = null,
 ) {
     val refresh by vm.refresh.collectAsState()
     // Each time the app comes back too, so a link that ran out or changed meanwhile shows as it is now.
@@ -553,7 +601,7 @@ fun ReceivedCalendarView(
     if (schedule == null) {
         Column(modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             identityBar()
-            GoneCard(cal, onRemove = { vm.remove(cal.id) }, onMine = { vm.view(null) }, modifier = Modifier.padding(16.dp))
+            GoneCard(cal, today, onRemove = { vm.remove(cal.id) }, onMine = { vm.view(null) }, modifier = Modifier.padding(16.dp))
         }
         return
     }
@@ -574,19 +622,29 @@ fun ReceivedCalendarView(
     val restTogether: (LocalDate) -> Boolean = { d -> canCompare && schedule.isRest(d) == true && mine.resolver.resolve(d).isRestForMe() }
     val togetherCount = remember(schedule, mine, month) { (1..month.lengthOfMonth()).count { restTogether(month.atDay(it)) } }
     val goTo: (YearMonth) -> Unit = { m -> scope.launch { pager.animateScrollToPage(monthToPage(BASE_MONTH, m)) } }
+    // 2.0.0 [RVH-55] 검토 PC-88 (같은 구조): ‹ › counted from the month a turn is heading to, so quick taps each move a month, as on
+    // the calendar (its headingMonth); counted from the month under the turn, a second quick tap went to the same month again.
+    val heading = { pageToMonth(BASE_MONTH, pager.targetPage) }
     val loading = refresh == ReceivedViewModel.Refresh.Loading(cal.id)
     val offline = refresh == ReceivedViewModel.Refresh.Offline(cal.id)
 
+    var pickingMonth by remember(cal.id) { mutableStateOf(false) }
+    if (pickingMonth) MonthPickerDialog(
+        initial = month, onDismiss = { pickingMonth = false }, onPick = { m -> pickingMonth = false; goTo(m) }, selected = selected,
+        onPickDate = { d -> pickingMonth = false; selected = d; goTo(YearMonth.from(d)) },
+    )
     val calendarPart: @Composable () -> Unit = {
-        identityBar()
-        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { goTo(month.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
-            Text(Fmt.month(month), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(horizontal = 6.dp))
-            IconButton(onClick = { goTo(month.plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { selected = today; goTo(YearMonth.from(today)) }) { Text("오늘") }
-        }
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (head != null) head(ReceivedHead(
+            month = month,
+            atToday = selected == today && month == YearMonth.from(today),
+            onPrev = { goTo(heading().minusMonths(1)) },
+            onNext = { goTo(heading().plusMonths(1)) },
+            onToday = { selected = today; goTo(YearMonth.from(today)) },
+            onPickMonth = { pickingMonth = true },
+        )) else ReceivedMonthRow(month, identityBar, goTo = goTo, heading = heading, onToday = { selected = today; goTo(YearMonth.from(today)) })
+        // [RVG-22] 검토 HQ-20: at large text on a narrow column the chip took the row and '방금 받음 ↻' was cut to '방금'; now when both
+        // do not fit, the freshness goes whole to the line under the chip (the chip is never squeezed either).
+        FlowRow(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
             // [CAL-12] Only for a month the link covers: outside it there is nothing to compare.
             if (canCompare && schedule.covers(month)) {
                 FilterChip(
@@ -598,12 +656,13 @@ fun ReceivedCalendarView(
                 )
             }
             Spacer(Modifier.weight(1f))
-            Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) })
+            Row(verticalAlignment = Alignment.CenterVertically) { Freshness(cal, loading, offline, onRefresh = { vm.refresh(cal.id) }) }
         }
         WeekdayHeader(weekStart, Modifier.padding(horizontal = 8.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
             val cellHeight = LocalCalendarView.current.cellHeight(maxWidth) + cellTextGrowth()
-            HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS), beyondViewportPageCount = 1, key = { it }) { page ->
+            HorizontalPager(state = pager, modifier = Modifier.fillMaxWidth().height(cellHeight * GRID_ROWS), beyondViewportPageCount = 1, key = { it },
+                flingBehavior = queuedTurns(pager)) { page ->
                 ReceivedMonthGrid(
                     month = pageToMonth(BASE_MONTH, page),
                     schedule = schedule,
@@ -628,6 +687,12 @@ fun ReceivedCalendarView(
     }
     val detailPart: @Composable (Modifier) -> Unit = { m ->
         Column(m, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 2.0.0 [RVL-78] (검토 I12c-02) The link about to stop says so, with the message to the sender one press away (first: after
+            // it stops nothing more comes).
+            HealthCard(cal, today)
+            // 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this was looked through. Under the month (the month comes
+            // first), one card with 확인했어요 until pressed for the version here now, then one quiet line; a changed link asks again.
+            if (cal.watch) OkCard(vm, cal)
             // 1.38 [SLEEP-11] 지금 자는 중: one line while it is fresh, so a call can wait.
             // 1.39 G5-N4 계획한 잠 시간 when no 지금 자는 중 is said: what the plan says now or within a day.
             (schedule.sleepNow?.let { sn -> sleepNowLine(sn, com.bamnat.core.time.Today.millis()) } ?: sleepPlanLine(schedule.sleepPlan))?.let { line ->
@@ -639,10 +704,11 @@ fun ReceivedCalendarView(
             // 1.38 [P3-X-03]: the link's month as the user's own days, with what their pay setup makes of it.
             if (canCompare && schedule.covers(month) && schedule.usesShifts()) AdoptRosterCard(cal.id, schedule, month, mine)
             // 1.39 [TEAM-22] What happens when this link changes, for the link the user's days come from or were put in from.
-            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal)
+            if (com.bamnat.app.share.RosterFollower.followed(cal) || cal.mine || cal.adopted) FollowModeRow(cal, onSay)
             val duty = remember(schedule, month, rules) { com.bamnat.app.share.ReceivedDutyCheck.warnings(schedule, month, rules) }
             if (duty.isNotEmpty()) ReceivedDutyCard(cal, duty)
-            Text("${cal.expiresAt?.let(::expiry) ?: "기간 끝"}까지 볼 수 있어요 · 받은 달력은 이 휴대폰에만 있어요",
+            // 2.0.0 [RVL-78] When the sender last changed it, beside until when it stays.
+            Text(com.bamnat.app.share.LinkHealth.line(cal, today),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 4.dp))
             // 1.38 갈래6 (공유 남은 일: 받은 달력에서 테마 다시 입어 보기): the 테마·근무 설정 a link brought were offered only once,
@@ -658,7 +724,7 @@ fun ReceivedCalendarView(
                     }
                 }
             }
-            ReportLink(vm, cal.id)
+            ReportLink(vm, cal.id, cal.word)
         }
     }
     if (wide) {
@@ -675,22 +741,92 @@ fun ReceivedCalendarView(
     }
 }
 
+/**
+ * 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인했어요 for a link the leader watches. The leader's line reads '확인 3/8명 · 열어 봄 5/8명':
+ * opening is not reading, so the member says it once per change. Pressed, the card is one quiet line with when.
+ */
+@Composable
+private fun OkCard(vm: ReceivedViewModel, cal: ReceivedCalendar) {
+    var sending by remember(cal.id) { mutableStateOf(false) }
+    var said by remember(cal.id, cal.updatedAt) { mutableStateOf<String?>(null) }
+    val okAt = cal.okAt
+    if (okAt != null && cal.okFor == cal.updatedAt) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 32.dp).padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("${okWhen(okAt)} 확인했다고 알렸어요", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        return
+    }
+    // [RVG-41] 검토 HQ-110 (조건 4·12): the question in a few words, so the right pane at 200% gives it two lines, not four
+    // ('보낸 분이 이 근무표를 다 보셨는지 궁금해해요' beside the card's icon); what pressing does stays in the line under it.
+    com.bamnat.app.ui.components.NudgeCard(
+        text = if (okAt != null) "근무표가 바뀌었어요. 다 보셨나요?" else "보낸 분이 다 보셨는지 물어요",
+        detail = said ?: "누르면 보낸 분에게 '확인'이 가요. 열어 보기만 한 것과 따로 보여요",
+        icon = Icons.Outlined.CheckCircle,
+        action = if (sending) "보내는 중…" else "확인했어요",
+        onAction = {
+            if (!sending) {
+                sending = true
+                vm.okPress(cal.id) { s -> sending = false; said = s }
+            }
+        },
+    )
+}
+
+private fun okWhen(at: Instant, now: Instant = Today.instant()): String {
+    val local = at.atZone(Today.zone())
+    return if (local.toLocalDate() == now.atZone(Today.zone()).toLocalDate()) "오늘 ${Fmt.time(local.toLocalTime())}에"
+    else "${Fmt.monthDay(local.toLocalDate())}에"
+}
+
+/** The received month's head before 2.0.0 [RVP-45] HQ-62, kept for a screen that gives no [ReceivedHead]: the chip's row, then the month's. */
+@Composable
+private fun ReceivedMonthRow(month: YearMonth, identityBar: @Composable () -> Unit, goTo: (YearMonth) -> Unit, heading: () -> YearMonth, onToday: () -> Unit) {
+    identityBar()
+    // [RVG-22] 검토 HQ-20 (조건 12): on a narrow column at large text (편 폭 200%) the month took the room and '오늘' stood one letter
+    // a line. Where the month and '오늘' do not both fit, '오늘' is the calendar's 오늘 icon (read out as 오늘) and the month drops
+    // this year's number, as the month view's header does; the month itself shrinks last and never wraps.
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val monthStyle = MaterialTheme.typography.titleMedium
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        val todayStyle = MaterialTheme.typography.labelLarge
+        val roomy = with(androidx.compose.ui.platform.LocalDensity.current) {
+            (measurer.measure(Fmt.month(month), monthStyle).size.width + measurer.measure("오늘", todayStyle).size.width).toDp()
+        } + HEAD_BUTTONS <= maxWidth
+        Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { goTo(heading().minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, "이전 달") }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                com.bamnat.app.ui.FitText(
+                    if (roomy) androidx.compose.ui.text.AnnotatedString(Fmt.month(month)) else monthTitle(month, short = true),
+                    monthStyle, Modifier.weight(1f, fill = false).padding(horizontal = 6.dp),
+                )
+                IconButton(onClick = { goTo(heading().plusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 달") }
+            }
+            if (roomy) TextButton(onClick = onToday) { Text("오늘", maxLines = 1, softWrap = false) }
+            else IconButton(onClick = onToday) { Icon(Icons.Filled.Today, "오늘") }
+        }
+    }
+}
+
 /** [SRV-05] A received link that breaks the rules can be reported; the share server never learns by whom. */
 @Composable
-private fun ReportLink(vm: ReceivedViewModel, id: String) {
+private fun ReportLink(vm: ReceivedViewModel, id: String, word: String = "근무표") {
     var open by remember { mutableStateOf(false) }
     var said by remember(id) { mutableStateOf<String?>(null) }
     said?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 4.dp)) }
-    TextButton(onClick = { open = true }) { Text("이 근무표 신고하기") }
+    // 2.0.0 [RVG-35] 검토 HQ-64: in the link's word (이 영업일 신고하기).
+    TextButton(onClick = { open = true }) { Text("이 $word 신고하기") }
     if (!open) return
-    var reason by remember { mutableStateOf(com.bamnat.app.share.ShareReport.PERSONAL) }
+    // 2.0.0 [RVN-13] HQ-39 (같은 신고 창): nothing picked first, so 신고하기 never goes with a reason the user did not read.
+    var reason by remember { mutableStateOf<com.bamnat.app.share.ShareReport?>(null) }
     com.bamnat.app.ui.components.AlertDialog(
         onDismissRequest = { open = false },
-        title = { Text("이 근무표를 신고할까요?") },
+        title = { Text("이 $word${Fmt.obj(word)} 신고할까요?") },
         text = {
             Column {
                 com.bamnat.app.share.ShareReport.entries.forEach { r ->
-                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable { reason = r }.padding(vertical = 2.dp),
+                    Row(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.small).clickable(role = Role.Button) { reason = r }.padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.RadioButton(selected = reason == r, onClick = { reason = r })
                         Text(r.label, style = MaterialTheme.typography.bodyMedium)
@@ -698,7 +834,9 @@ private fun ReportLink(vm: ReceivedViewModel, id: String) {
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { open = false; vm.report(id, reason) { said = it } }) { Text("신고하기") } },
+        confirmButton = {
+            TextButton(onClick = { reason?.let { r -> open = false; vm.report(id, r) { said = it } } }, enabled = reason != null) { Text("신고하기") }
+        },
         dismissButton = { TextButton(onClick = { open = false }) { Text("취소") } },
     )
 }
@@ -726,9 +864,48 @@ private fun Freshness(cal: ReceivedCalendar, loading: Boolean, offline: Boolean,
     }
 }
 
+/** 2.0.0 [RVL-78] Opens the share sheet with [text] for the sender (nothing goes without the user picking where). */
+private fun askSender(context: android.content.Context, text: String) {
+    val ask = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    runCatching { context.startActivity(android.content.Intent.createChooser(ask, "보낸 분께 부탁하기")) }
+}
+
+/**
+ * 2.0.0 [RVL-78] (검토 I12c-02, 조건 3) The one card for a link about to stop (it ends soon, or its days run out with nothing after): the
+ * common card, its button opening the message to the sender, and an X that keeps it closed until the trouble changes (a new end date,
+ * a new last day).
+ */
 @Composable
-private fun GoneCard(cal: ReceivedCalendar, onRemove: () -> Unit, onMine: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(shape = RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
+private fun HealthCard(cal: ReceivedCalendar, today: LocalDate) {
+    val health = remember(cal.expiresAt, cal.raw, today) { com.bamnat.app.share.LinkHealth.of(cal, Today.instant(), today) }
+    val ask = health.ask ?: return
+    if (health.kind == com.bamnat.app.share.LinkHealth.Kind.GONE) return // the gone card says it
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { context.getSharedPreferences(HEALTH_PREFS, android.content.Context.MODE_PRIVATE) }
+    val key = "${cal.id}:${health.stamp}"
+    var closed by remember(key) { mutableStateOf(prefs.getBoolean(key, false)) }
+    if (closed) return
+    com.bamnat.app.ui.components.NudgeCard(
+        text = health.line.orEmpty(),
+        tone = com.bamnat.app.ui.theme.Tone.Caution,
+        action = health.action,
+        onAction = { askSender(context, ask) },
+        onClose = { closed = true; prefs.edit().putBoolean(key, true).apply() },
+    )
+}
+
+/** 2.0.0 [RVL-78] Which link-health cards were closed, on this phone only (a received link is not the user's to back up, SHR-02). */
+internal const val HEALTH_PREFS = "received_health"
+
+@Composable
+private fun GoneCard(cal: ReceivedCalendar, today: LocalDate, onRemove: () -> Unit, onMine: () -> Unit, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // 2.0.0 [RVL-78] (검토 I12c-02) A link the sender cut or that ran out: asking for a new one is the thing to do, one press away.
+    val ask = remember(cal) { com.bamnat.app.share.LinkHealth.of(cal, Today.instant(), today).ask }
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(56.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHighest), contentAlignment = Alignment.Center) {
                 Icon(Icons.Outlined.LinkOff, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -738,8 +915,12 @@ private fun GoneCard(cal: ReceivedCalendar, onRemove: () -> Unit, onMine: () -> 
                 "보낸 분이 링크를 끊었거나 기간이 지나 ${cal.fullName}${Fmt.obj(cal.fullName)} 이 휴대폰에서도 지웠어요. 다시 보려면 새 링크를 받아 넣어 주세요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center,
             )
-            Button(onClick = onMine, modifier = Modifier.fillMaxWidth()) { Text("내 달력으로") }
-            TextButton(onClick = onRemove) { Text("목록에서 빼기") }
+            // One filled button: '새 링크 부탁하기' when there is someone to ask, else '내 달력으로' (조건 2).
+            Button(onClick = { if (ask != null) askSender(context, ask) else onMine() }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                Text(if (ask != null) "새 링크 부탁하기" else "내 달력으로")
+            }
+            if (ask != null) TextButton(onClick = onMine, modifier = Modifier.heightIn(min = 48.dp)) { Text("내 달력으로") }
+            TextButton(onClick = onRemove, modifier = Modifier.heightIn(min = 48.dp)) { Text("목록에서 빼기") }
         }
     }
 }
@@ -758,11 +939,13 @@ private fun ReceivedMonthGrid(
     val firstDay = month.atDay(1)
     val start = firstDay.minusDays(((firstDay.dayOfWeek.value - weekStart.value + 7) % 7).toLong())
     val shifts = remember(schedule) { schedule.usesShifts() }
+    // 2.0.0 [RVH-67] 검토 CAL-01, as the own calendar's grid: the days made once a month, so a pick draws the two days it changes.
+    val dates = remember(start) { List(GRID_ROWS * 7) { start.plusDays(it.toLong()) } }
     Column(Modifier.fillMaxWidth()) {
         for (row in 0 until GRID_ROWS) {
             Row(Modifier.fillMaxWidth().height(cellHeight)) {
                 for (col in 0 until 7) {
-                    val date = start.plusDays((row * 7 + col).toLong())
+                    val date = dates[row * 7 + col]
                     ReceivedDayCell(
                         date = date,
                         day = schedule.days[date],
@@ -796,7 +979,7 @@ private fun ReceivedDayCell(
 ) {
     val cal = LocalCalendarColors.current
     val scheme = MaterialTheme.colorScheme
-    val shape = RoundedCornerShape(10.dp)
+    val shape = MaterialTheme.shapes.small
     val inRange = schedule.covers(date)
     // [CAL-12] The day's job or extra work is its badge when it has no shift; then no corner letter repeats it.
     val extraIsBadge = day != null && day.type == null && day.second == null && !day.fullLeave && day.extras.isNotEmpty()
@@ -849,7 +1032,17 @@ private fun ReceivedDayCell(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Box(Modifier.fillMaxWidth().height(20.dp)) {
+            // 2.0.0 [RVH-11] 검토 CAL-16: the date's size stops at what its 20dp circle holds (as the month view's cells do), so
+            // at 150~200% text it stays inside; the memo line likewise.
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val dateSp = with(density) { minOf(13.sp.toDp(), 14.dp).toSp() }
+            // 2.0.0 [RVP-11][RVH-11] 10sp at least (검토 UIX-11), and capped so that at 200% it stays inside the cell (CAL-16).
+            val memoSp = with(density) { minOf(10.sp.toDp(), 11.dp).toSp() }
+            val markSp = with(density) { minOf(10.sp.toDp(), 10.dp).toSp() }
+            androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().height(20.dp)) {
+                // 2.0.0 [RVH-88] 검토 HQ-135 (편 폭·글자 200%에서 오늘 '14'의 4 위에 '잔'): where the date takes the top row (a cell under
+                // 50dp, or text at 150% and more) the extra work is a dot in the corner, as the month view's corner marks are (CornerMark).
+                val dot = maxWidth < 50.dp || density.fontScale >= 1.5f
                 Box(
                     Modifier.align(Alignment.Center).size(20.dp).clip(CircleShape).background(if (isToday) scheme.primary else Color.Transparent),
                     contentAlignment = Alignment.Center,
@@ -859,24 +1052,34 @@ private fun ReceivedDayCell(
                         style = MaterialTheme.typography.labelLarge.merge(NumberStyle),
                         fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.SemiBold,
                         color = if (isToday) scheme.onPrimary else numberColor,
-                        fontSize = 13.sp,
+                        fontSize = dateSp,
+                        // [RVG-22] 검토 HQ-20: the style's own line (20sp, 40 at 200%) in a 20dp circle cut the number in half; the line
+                        // is the number's size, as the month view's cells have it.
+                        lineHeight = dateSp,
+                        maxLines = 1,
                     )
                 }
                 if (together) {
                     Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.align(Alignment.TopStart).size(11.dp))
                 }
                 day?.extras?.firstOrNull()?.takeIf { !extraIsBadge }?.let { e ->
-                    Box(
+                    if (dot) Box(Modifier.align(Alignment.TopEnd).padding(1.dp).size(5.dp).clip(CircleShape).background(scheme.secondary))
+                    else Box(
                         Modifier.align(Alignment.TopEnd).clip(RoundedCornerShape(4.dp)).background(scheme.secondaryContainer).padding(horizontal = 2.dp),
-                    ) { Text(e.name.take(1), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = scheme.onSecondaryContainer) }
+                    ) {
+                        // [RVG-22] 검토 HQ-20: at 200% its letter grew over today's date (the '14' under a green box); capped as the
+                        // month view's cell marks are (WorkCells), so the date stays seen.
+                        Text(e.name.take(1), fontSize = markSp /* [RVP-11] T13-07 */, lineHeight = markSp, fontWeight = FontWeight.Bold,
+                            color = scheme.onSecondaryContainer)
+                    }
                 }
             }
             if (inRange) DayBadge(schedule, day, size = 22.dp, shifts = shifts)
             // [CAL-12] Without a memo, a job's start time says when the day begins.
             Text(
                 day?.memo ?: day?.extras?.firstOrNull { it.time != null }?.time?.substringBefore("-").orEmpty(),
-                fontSize = 9.sp,
-                lineHeight = 10.sp,
+                fontSize = memoSp,
+                lineHeight = memoSp * 1.1f,
                 color = scheme.onSurfaceVariant,
                 maxLines = 1,
                 softWrap = false,
@@ -910,7 +1113,7 @@ private fun Legend(schedule: SharedSchedule, month: YearMonth, modifier: Modifie
             Row(verticalAlignment = Alignment.CenterVertically) {
                 ShiftBadge(type = t.asShiftType(), size = 18.dp, outlined = t.off, showIcon = false)
                 Spacer(Modifier.width(4.dp))
-                Text(t.name + (t.time?.takeIf { !t.off }?.let { " " + it.replace("-", "~") } ?: ""),
+                Text(t.name + (t.time?.takeIf { !t.off }?.let { " " + wholeTime(it) } ?: ""),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -926,48 +1129,65 @@ private fun ReceivedDayCard(
     mine: ResolvedDay?,
     together: Boolean,
 ) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(Fmt.dayTitle(date) + if (date == today) " · 오늘" else "", style = MaterialTheme.typography.titleMedium)
             val day = schedule.days[date]
-            Row(verticalAlignment = Alignment.Top) {
+            // 2.0.0 [RVG-41] 검토 HQ-110 (조건 12): from 150% the face and the day's mark stand on the top line with the name, and the
+            // time and what follows take the card's whole width under them. Beside the face at 200% in the unfolded pane the time had
+            // a few letters' room and broke in the middle of a number ('07:00~19:0 / 0').
+            val stack = androidx.compose.ui.platform.LocalDensity.current.fontScale >= STACK_FONT
+            val covered = schedule.covers(date)
+            val type = schedule.type(day?.type)
+            val second = schedule.type(day?.second)
+            // A 대근 on a day with no shift of its own is that day's work.
+            val main = type ?: second
+            val shifts = remember(schedule) { schedule.usesShifts() }
+            // [CAL-12] A day with only jobs lists them below instead of saying "근무 없음".
+            val headline = covered && (main != null || day?.extras.isNullOrEmpty())
+            val name = when {
+                main == null -> if (shifts) "근무 없음" else "일정 없음"
+                main.off -> main.name
+                else -> main.name
+            }
+            val time = main?.takeIf { !it.off }?.time?.let(::wholeTime)
+            val badge: @Composable () -> Unit = {
+                DayBadge(schedule, day, size = 22.dp, shifts = shifts)
+                if (main != null || shifts || day?.leave != null) Spacer(Modifier.width(8.dp))
+            }
+            if (stack && headline) Row(verticalAlignment = Alignment.CenterVertically) {
                 cal.Avatar(size = 32.dp)
                 Spacer(Modifier.width(12.dp))
+                badge()
+                Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            }
+            Row(verticalAlignment = Alignment.Top) {
+                if (!stack || !headline) {
+                    cal.Avatar(size = 32.dp)
+                    Spacer(Modifier.width(12.dp))
+                }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (!schedule.covers(date)) {
+                    if (!covered) {
                         Text("이 날은 받은 근무표에 없어요", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        val type = schedule.type(day?.type)
-                        val second = schedule.type(day?.second)
-                        // A 대근 on a day with no shift of its own is that day's work.
-                        val main = type ?: second
-                        val shifts = remember(schedule) { schedule.usesShifts() }
-                        // [CAL-12] A day with only jobs lists them below instead of saying "근무 없음".
-                        if (main != null || day?.extras.isNullOrEmpty()) Row(verticalAlignment = Alignment.CenterVertically) {
-                            DayBadge(schedule, day, size = 22.dp, shifts = shifts)
-                            if (main != null || shifts || day?.leave != null) Spacer(Modifier.width(8.dp))
-                            Text(
-                                when {
-                                    main == null -> if (shifts) "근무 없음" else "일정 없음"
-                                    main.off -> main.name
-                                    else -> main.name + (main.time?.let { " " + it.replace("-", "~") } ?: "")
-                                },
-                                style = MaterialTheme.typography.bodyLarge,
-                            )
+                        if (stack) time?.takeIf { headline }?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+                        else if (headline) Row(verticalAlignment = Alignment.CenterVertically) {
+                            badge()
+                            Text(name + (time?.let { " $it" } ?: ""), style = MaterialTheme.typography.bodyLarge)
                         }
                         second?.takeIf { type != null }?.let { s ->
-                            Text("${s.name} 더 해요" + (s.time?.let { " (${it.replace("-", "~")})" } ?: ""), style = MaterialTheme.typography.bodyMedium)
+                            Text("${s.name} 더 해요" + (s.time?.let { " (${wholeTime(it)})" } ?: ""), style = MaterialTheme.typography.bodyMedium)
                         }
                         day?.leave?.let { Text("휴가: $it", style = MaterialTheme.typography.bodyMedium) }
                         day?.extras?.forEach { e ->
                             Text(
-                                e.name + (e.time?.let { " " + it.replace("-", "~") } ?: "") +
+                                e.name + (e.time?.let { " " + wholeTime(it) } ?: "") +
                                     (e.minutes?.let { " (${com.bamnat.core.hours.HoursFormat.korean(it)})" } ?: ""),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         day?.memo?.let { m ->
-                            Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+                            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
                                 Text(m, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
                             }
                         }
@@ -976,32 +1196,40 @@ private fun ReceivedDayCard(
             }
             if (mine != null) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                val mineType = mine.shiftType
+                val leave = mine.leave
+                val mineName = when {
+                    leave?.isFullDay == true -> leave.label
+                    mineType == null || !mine.isWorkDay -> mineType?.name ?: "쉬는 날"
+                    else -> mineType.name
+                }
+                // [RVG-41] HQ-110: '08:00 – 14:00' stays one piece ('주간 08:00 – / 14:00' broke it at the dash).
+                val mineTime = mineType?.takeIf { leave?.isFullDay != true && mine.isWorkDay && mine.start != null && mine.end != null }
+                    ?.let { wholeTime(Fmt.timeRange(mine.start!!, mine.end!!)) }
+                val rest = (leave?.takeIf { !it.isFullDay }?.let { listOf(it.label) }.orEmpty() + mine.extras.map { ExtraText.name(it) })
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     MyAvatar(size = 32.dp)
                     Spacer(Modifier.width(12.dp))
-                    val type = mine.shiftType
-                    val leave = mine.leave
                     when {
                         leave?.isFullDay == true -> LeaveChip(leave.label, 22.dp)
-                        type != null -> ShiftBadge(type = type, size = 22.dp, outlined = type.isOff)
+                        mineType != null -> ShiftBadge(type = mineType, size = 22.dp, outlined = mineType.isOff)
                         else -> ShiftBadge(type = null, text = "휴", size = 22.dp, outlined = true)
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        when {
-                            leave?.isFullDay == true -> leave.label
-                            type == null || !mine.isWorkDay -> type?.name ?: "쉬는 날"
-                            mine.start != null && mine.end != null -> "${type.name} ${Fmt.timeRange(mine.start!!, mine.end!!)}"
-                            else -> type.name
-                        } + (leave?.takeIf { !it.isFullDay }?.let { " · ${it.label}" } ?: "") +
-                            mine.extras.joinToString("") { " · ${ExtraText.name(it)}" },
-                        style = MaterialTheme.typography.bodyLarge,
+                        if (stack) mineName else (listOf(listOfNotNull(mineName, mineTime).joinToString(" ")) + rest).joinToString(" · "),
+                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f, fill = false),
                     )
+                }
+                // The time, then the half day and extra work; where they do not fit, the next one starts the line with its '·' ('08:00 –
+                // 14:00 ·' at a line's end with '반차' alone under it read as two things).
+                if (stack && (mineTime != null || rest.isNotEmpty())) {
+                    Text((listOfNotNull(mineTime) + rest).joinToString(" ·\u00A0"), style = MaterialTheme.typography.bodyLarge)
                 }
             }
             if (together) {
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(TogetherColor.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp),
+                    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).background(TogetherColor.copy(alpha = 0.12f)).padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(Icons.Filled.Favorite, null, tint = TogetherColor, modifier = Modifier.size(18.dp))
@@ -1013,14 +1241,19 @@ private fun ReceivedDayCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, kind: com.bamnat.core.work.MoneyShare) {
-    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(cal.title.trim().takeIf { it.isNotEmpty() }?.let { "$it 님이 함께 보낸 ${kind.label}" } ?: "함께 받은 ${kind.label}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Row(verticalAlignment = Alignment.Bottom) {
-                Text("${pay.month.monthValue}월", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            // [RVG-41] 검토 HQ-110 (같은 구조, 조건 12): at 200% in the unfolded pane the amount left the month a sliver ('10 / 월'); where both
+            // do not fit, the amount goes whole to the line under the month (neither is made smaller).
+            FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment = Alignment.Bottom) {
+                Text("${pay.month.monthValue}월", style = MaterialTheme.typography.titleMedium, maxLines = 1, softWrap = false,
+                    modifier = Modifier.padding(end = 12.dp))
+                Spacer(Modifier.weight(1f))
                 Text(Fmt.won(pay.amount), style = MaterialTheme.typography.headlineSmall.merge(NumberStyle), fontWeight = FontWeight.Bold)
             }
             // [SHR-11] Pay is the sender's estimate; job income and sales are what the sender wrote down.
@@ -1029,6 +1262,15 @@ private fun PayCard(cal: ReceivedCalendar, pay: com.bamnat.app.share.SharedPay, 
         }
     }
 }
+
+/** [RVG-41] 검토 HQ-110: from this text size the day card puts the face and mark above, and the time under them at full width. */
+private const val STACK_FONT = 1.5f
+
+/**
+ * [RVG-41] 검토 HQ-110 (조건 12): a time range read as one piece: '07:00-19:00' with its ~, and '08:00 – 14:00' with no break at its
+ * spaces or after its ~, so a narrow line moves it whole to the next one instead of cutting a number.
+ */
+internal fun wholeTime(range: String): String = range.replace("-", "~").replace(" – ", "\u00A0–\u2060\u00A0").replace("~", "\u2060~\u2060")
 
 /**
  * [NURS-06] The shared roster read with the user's own 근무표 점검 기준: "알려 주기" only, so someone who cares can
@@ -1042,7 +1284,8 @@ private fun ReceivedDutyCard(cal: ReceivedCalendar, warnings: List<com.bamnat.co
         modifier = Modifier.fillMaxWidth(),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("${cal.name}님 근무표 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
+            // [RVG-32] 검토 PC-93: no '이름 없음님' for a link sent without a name.
+            Text((if (cal.title.isBlank()) "받은 근무표" else "${cal.name}님 근무표") + " 점검 ${warnings.size}건", style = MaterialTheme.typography.titleSmall)
             // [REST-02] The same sign over the month is one line: the first in full, then the other days.
             val groups = warnings.groupBy { it.kind to it.pattern }.values.toList()
             groups.take(5).forEach { same ->

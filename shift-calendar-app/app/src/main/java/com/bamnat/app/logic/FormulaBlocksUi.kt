@@ -1,5 +1,6 @@
 package com.bamnat.app.logic
 
+import com.bamnat.app.appContainer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -17,7 +18,7 @@ import androidx.compose.material3.AssistChip
 import com.bamnat.app.ui.components.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -120,9 +121,11 @@ private fun BlockView(b: Block, onSet: (Block) -> Unit, depth: Int) {
                             Leaf(b.a) { onSet(b.copy(a = it)) }
                             OpChip(b) { onSet(b.copy(op = it)) }
                             // PC D6 (사용성 중): 근무종류·요일·일 유형이면 오른쪽은 고르는 칩 (주간·야간·휴무 …).
-                            val choices = (b.a as? Block.Name)?.let { CHOICES[it.name] }
-                            if (choices != null && (b.b is Block.Text || b.b == Block.Hole)) choices.forEach { v ->
-                                com.bamnat.app.ui.components.FilterChip(selected = (b.b as? Block.Text)?.s == v, onClick = { onSet(b.copy(b = Block.Text(v))) }, label = { Text(v) })
+                            // 2.0.0 [RVS-10] 검토 STU-27: 근무종류 chips are the work's own kinds, in its words.
+                            val style = androidx.compose.ui.platform.LocalContext.current.appContainer.settingsRepository.current.workStyle
+                            val choices = (b.a as? Block.Name)?.let { choicesFor(it.name, style, (b.b as? Block.Text)?.s) }
+                            if (choices != null && (b.b is Block.Text || b.b == Block.Hole)) choices.forEach { (v, w) ->
+                                com.bamnat.app.ui.components.FilterChip(selected = (b.b as? Block.Text)?.s == v, onClick = { onSet(b.copy(b = Block.Text(v))) }, label = { Text(w) })
                             } else Leaf(b.b) { onSet(b.copy(b = it)) }
                         }
                         BlockMenu(b, onSet) { close ->
@@ -186,7 +189,7 @@ private fun Leaf(b: Block, onSet: (Block) -> Unit) {
 private fun OpChip(b: Block.Op, onPick: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     val family = if (b.op in FormulaBlocks.COMPARE) FormulaBlocks.COMPARE else FormulaBlocks.MATH
-    AssistChip(onClick = { open = true }, label = { Text(FormulaBlocks.opWord(b.op) + " ▾") })
+    AssistChip(onClick = { open = true }, label = { Text(FormulaBlocks.opWord(b.op) + "\u00A0▾") })
     DropdownMenu(open, { open = false }) {
         family.forEach { (k, w) -> DropdownMenuItem(text = { Text("$w ($k)") }, onClick = { open = false; onPick(k) }) }
     }

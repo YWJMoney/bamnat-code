@@ -116,11 +116,14 @@ class MKVScreenshotTest : ScreenshotBase() {
 
     @Test fun themesShowTheirCalendar() = market(RecipeClient.SCOPE_THEME, "1375_mkv_themes")
     @Test fun tabsShowTheirPage() = market(RecipeClient.SCOPE_TAB, "1376_mkv_tabs")
-    /** PC 확인 7b219467 MED-1: a work from a newer app (a kind of piece this app does not know) is still drawn with what it knows. */
+    /**
+     * PC 확인 7b219467 MED-1: a work from a newer app (a kind of piece this app does not know) is still drawn with what it knows
+     * (2.0.0 [RVS-05]: the market's pictures read it with RecipeCodec.readSoft, which took the place of MarketShots.known).
+     */
     @Test fun aNewerWorkIsDrawnWithThePiecesThisAppKnows() {
         val body = org.json.JSONObject(RecipeCodec.write(Market().recipes.first { r -> r.pieces.any { it.kind == PieceKind.SCREEN_LOOK } }))
         body.getJSONArray("pieces").put(org.json.JSONObject().put("kind", "ledgerFromTheFuture").put("costs", org.json.JSONArray().put("식비")))
-        val r = com.bamnat.app.ui.recipe.MarketShots.known(body.toString())
+        val r = RecipeCodec.readSoft(body.toString()).recipe
         assertTrue("아는 조각만으로 그려요", r != null && r.pieces.isNotEmpty() && r.pieces.none { it.kind.key == "ledgerFromTheFuture" })
     }
 
@@ -136,9 +139,11 @@ class MKVScreenshotTest : ScreenshotBase() {
         model.kind(RecipeClient.SCOPE_LOGIC)
         settle()
         assertTrue("규칙·단추는 도구로", model.state.value.kind == RecipeClient.SCOPE_TOOL)
+        // 2.0.0 [RVM-64] 검토 U08a-01: 도구's 종류 and 쓰는 화면 are in 거르기.
+        openChips()
         assertTrue(appears("🧱 부품", exact = true))
         assertTrue(appears("⚡ 자동 규칙", exact = true))
-        assertTrue("쓰는 화면 칩은 둘째 줄에 펼쳐져 있어요", appears("모든 화면", exact = true))
+        assertTrue("쓰는 화면도 거르기에", scrolledTo("모든 화면", exact = true))
     }
 
     /** 1.39 [MKC-01] 탭별 작품: 탭 칩 아래 꾸미기·기능 칩. */
@@ -150,10 +155,14 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_TAB)
         settle()
+        openChips()
         tapText("🎨 꾸미기", exact = true)
         settle()
         assertTrue(model.state.value.kind == RecipeClient.tabKind("", "look"))
+        closeChips()
+        // [RVM-64]: the 구간 picked is its tab; 꾸미기 shows as a chip under the top with its X.
         assertTrue(appears("탭별 작품", exact = true))
+        assertTrue(appears("🎨 꾸미기 빼기", exact = true))
     }
 
     /** 1.39 [MKC-02][MKC-03] 도구 전후 해 보기: 새 단추를 눌러 보면 무엇을 하는지, 규칙은 상황을 만들어 지금 ↔ 넣으면. */
@@ -235,7 +244,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         assertTrue(appears("1/2잔", exact = true))
         tapText("✨ 💧 물 한 잔", exact = true)
         settle()
-        assertTrue(appears("2/2잔", exact = true))
+        assertTrue("[RVM-05] 목표에 닿으면 '2잔 채움'", appears("2잔 채움", exact = true))
         assertTrue("목표에 닿으면 규칙이 따라 돌아요", appears("그러면 ‘다 마셨어요’ 규칙이 돌아요", exact = false))
         tapText("처음으로", exact = true)
         settle()
@@ -263,10 +272,14 @@ class MKVScreenshotTest : ScreenshotBase() {
         val code = m.code(i)
         // 30시간 전에 시작해 그동안 값을 한 번 더했고, 지금은 끝났어요.
         val now = com.bamnat.core.time.Today.zoned()
-        com.bamnat.core.time.Today.fix(now.minusHours(30))
-        assertTrue(com.bamnat.app.logic.FxAccess.start(c, code))
-        com.bamnat.app.logic.FxAccess.note(c, com.bamnat.core.formula.LogicVerb.VAL_ADD)
-        com.bamnat.core.time.Today.fix(now)
+        // 2.0.0 [RVR-19] (검토 TEST-20 ①) Put back even when this fails, so the class's other shots keep their day.
+        try {
+            com.bamnat.core.time.Today.fix(now.minusHours(30))
+            assertTrue(com.bamnat.app.logic.FxAccess.start(c, code))
+            com.bamnat.app.logic.FxAccess.note(c, com.bamnat.core.formula.LogicVerb.VAL_ADD)
+        } finally {
+            com.bamnat.core.time.Today.fix(now)
+        }
         assertTrue(com.bamnat.app.logic.FxAccess.status(c, code) is com.bamnat.core.formula.FxTaste.Status.Used)
         val vm = com.bamnat.app.ui.recipe.RecipeDetailViewModel(c, code, com.bamnat.app.data.PersonalCalendar.MAIN)
         content { com.bamnat.app.ui.recipe.RecipeDetailScreen(vm, onBack = {}, onRemake = {}, onMaker = {}) }
@@ -287,15 +300,23 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_TOOL)
         settle()
+        openChips()
         tapText("✦ 프로 기능", exact = true)
         settle()
         assertTrue(model.state.value.kind == RecipeClient.toolKind("", null, fx = true))
         assertTrue("프로 기능 작품만", model.state.value.items.isNotEmpty() && model.state.value.items.all { it.fx.isNotEmpty() })
-        assertTrue("무엇이 들었는지 한 줄", appears("✦ 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
-        // 다른 칩을 고르면 '✦ 프로 기능'은 풀려요.
+        closeChips()
+        // [RVM-12] 쓰는 사람 말: 값 칸·단추 위젯 → '홈 화면 단추 · 숫자 세기'.
+        assertTrue("무엇이 들었는지 한 줄", appears("✦ 홈 화면 단추 · 숫자 세기", exact = true))
+        // 2.0.0 [RVM-64]: 값 (✦ 프로 · 무료) is its own part of 거르기, so a 종류 picked keeps it; its X under the top takes it off.
+        openChips()
         tapText("🧱 부품", exact = true)
         settle()
-        assertTrue(!RecipeClient.fxOnly(model.state.value.kind))
+        assertTrue(RecipeClient.fxOnly(model.state.value.kind) && RecipeClient.toolOf(model.state.value.kind) == "part")
+        closeChips()
+        tapText("✦ 프로 기능 빼기", exact = true)
+        settle()
+        assertTrue(!RecipeClient.fxOnly(model.state.value.kind) && RecipeClient.toolOf(model.state.value.kind) == "part")
     }
 
     /** 1.39 [MKC-04] 무료 폰의 상세: 프로 기능 카드에 하루 써 보기·프로 보기, 시작하면 넣는 길로. */
@@ -313,7 +334,7 @@ class MKVScreenshotTest : ScreenshotBase() {
         }
         settle()
         assertTrue(appears("프로 기능이 든 작품", exact = true))
-        assertTrue(appears("✦ 들어 있는 것: 값 칸 · 단추 위젯·빠른 설정·바로가기", exact = true))
+        assertTrue(appears("✦ 들어 있는 것: 홈 화면 단추 · 숫자 세기", exact = true)) // [RVM-12]
         assertTrue("무료 작품은 무료라고", appears("무료 · 모두 무료로 넣고 쓸 수 있어요", exact = true))
         assertTrue(appears("프로 보기", exact = true))
         tapText("하루 써 보기", exact = true)
@@ -359,10 +380,11 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         model.kind(RecipeClient.SCOPE_THEME)
         settle()
-        // 1.39 [MKD-60] 칩 줄은 한 줄로 밀어 보고, 넘치면 ▾로 펼쳐요.
-        repeat(3) { if (shows("칩 모두 펼쳐 보기", exact = true)) { tapText("칩 모두 펼쳐 보기", exact = true); settle() } }
+        // 2.0.0 [RVM-64]: 작게 보기 is under 거르기 › 보기.
+        openChips()
         tapText("작게 보기", exact = true)
         settle()
+        closeChips()
         assertTrue("이 폰에 기억해요", app.getSharedPreferences("market_view", 0).getBoolean("small", false))
         scrollUp(300)
         assertTrue(appears("작품 모습", exact = true, ms = 5_000))
@@ -400,4 +422,8 @@ class MKVScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue("만든 분을 누르면 프로필로", maker == "mk1")
     }
+
+    /** 2.0.0 [RVM-64] 검토 U08a-01: what was a row of chips is 거르기, one sheet opened from beside the search box. */
+    private fun Screen.openChips() { tapText("거르기·정렬", exact = true); settle() }
+    private fun Screen.closeChips() { tapText("다 됐어요", exact = true); settle() }
 }

@@ -291,5 +291,10 @@ class Phase3CoreTest {
         val far = PlanVsActual.nights(listOf(SleepEntry(9, LocalDateTime.of(2026, 11, 1, 13, 0), LocalDateTime.of(2026, 11, 1, 14, 0))),
             r, nov.atDay(1), nov.atDay(1), alarmsOn = false).first { it.kind == PlanVsActual.Kind.AFTER_NIGHT }
         assertEquals(PlanVsActual.Verdict.NO_RECORD, far.verdict)
+        // 2.0.0 [RVIB-14] (PC-124) 잠들었어요 then 깼어요 at once is a tap, not a sleep 7시간 short of the plan.
+        val tap = SleepEntry(10, plan.planFrom, plan.planFrom.plusMinutes(2))
+        val tapped = PlanVsActual.of(com.bamnat.core.sleep.SleepSchedule.of(r, nov.atDay(1), nov.atDay(1), false), listOf(tap), nov.atDay(1), nov.atDay(1))
+            .first { it.kind == PlanVsActual.Kind.AFTER_NIGHT }
+        assertEquals(PlanVsActual.Verdict.NO_RECORD, tapped.verdict)
     }
 }

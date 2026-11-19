@@ -43,6 +43,8 @@ data class InviteView(
     val capReached: Boolean,
     val used: String?,
     val checkedAt: Instant,
+    /** 2.0.0 [RVD-14] Months from friends an admin has yet to look at: they come in after that. */
+    val pending: Int = 0,
 )
 
 /**
@@ -100,6 +102,7 @@ class InviteClient(private val baseUrl: String = BuildConfig.COMPANY_BASE_URL) :
             code = o.optStringOrNull("code"), link = o.optStringOrNull("link"), terms = readTerms(o), progress = o.optInt("progress"),
             waiting = o.optInt("waiting"), friends = o.optInt("friends"), given = o.optInt("given"), capReached = o.optBoolean("capReached"),
             used = o.optStringOrNull("used"), checkedAt = o.optStringOrNull("checkedAt")?.let(Instant::parse) ?: at,
+            pending = o.optInt("pending"),
         )
 
         fun readAnswer(o: JSONObject): InviteAnswer =
@@ -160,6 +163,33 @@ object PlayReferrer : ReferrerSource {
 }
 
 /**
+ * 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): Play's referrer read once for this install and kept on the phone, so 친구 초대 ([Invites]) and
+ * 웹에서 이어 받기 ([com.bamnat.app.data.WebStart]) read the same answer and Play is asked once, as it asks. Whatever [source] said is
+ * kept, nothing too. Its own file, not in any backup (data_extraction_rules.xml takes settings.xml only): a new phone is its own install.
+ */
+class ReferrerOnce(private val context: Context, private val source: () -> ReferrerSource) : ReferrerSource {
+    private val prefs by lazy { context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE) }
+    private val lock = Mutex()
+    /** The source this run read; a test that puts another in its place ([com.bamnat.app.AppContainer.referrerSource]) is read again. */
+    @Volatile private var readFrom: ReferrerSource? = null
+
+    override suspend fun read(context: Context): String? = lock.withLock {
+        val now = source()
+        if (prefs.getBoolean(K_READ, false) && (readFrom == null || readFrom === now)) return@withLock prefs.getString(K_RAW, null)
+        val raw = runCatching { now.read(this.context) }.getOrNull()
+        readFrom = now
+        prefs.edit().putBoolean(K_READ, true).putString(K_RAW, raw).apply()
+        raw
+    }
+
+    private companion object {
+        const val PREFS = "install_referrer"
+        const val K_READ = "read"
+        const val K_RAW = "raw"
+    }
+}
+
+/**
  * [INVITE-02][INVITE-03] What this phone keeps about invites: the server's last view of its own code, the code
  * Play's referrer brought (read once), and how this phone's own report stands. Not in the backup: it is tied to
  * this install on the server, and the months move with the recovery code (company-worker claim moves the code too).
@@ -191,7 +221,10 @@ data class InviteState(
     val waiting: Boolean get() = answer?.status == "waiting"
 
     /** The rules to say: the view's, then the last ones read, then the defaults. */
-    val rules: InviteTerms get() = view?.terms ?: terms ?: InviteTerms.DEFAULT
+    val rules: InviteTerms get() = readRules ?: InviteTerms.DEFAULT
+
+    /** 2.0.0 [RVO-13] PC-116: the rules as the server said them, or null when they were never read (도움말 says no numbers then). */
+    val readRules: InviteTerms? get() = view?.terms ?: terms
 }
 
 class InviteStore(context: Context, suffix: String = "") {
@@ -217,6 +250,7 @@ class InviteStore(context: Context, suffix: String = "") {
                 InviteClient.writeTerms(v.terms).put("code", v.code ?: JSONObject.NULL).put("link", v.link ?: JSONObject.NULL)
                     .put("progress", v.progress).put("waiting", v.waiting).put("friends", v.friends).put("given", v.given)
                     .put("capReached", v.capReached).put("used", v.used ?: JSONObject.NULL).put("checkedAt", v.checkedAt.toString())
+                    .put("pending", v.pending)
             } ?: JSONObject.NULL)
             .put("terms", s.terms?.let { InviteClient.writeTerms(it) } ?: JSONObject.NULL)
             .put("referrerRead", s.referrerRead).put("found", s.found ?: JSONObject.NULL).put("offerClosed", s.offerClosed)

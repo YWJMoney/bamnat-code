@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -35,17 +36,19 @@ class ZFullBackupTest {
         dynamicColor = true, showHoursInCells = false, showLunar = true, showKani = false, dayStory = false, dayDial = false, dayStartMinutes = 300, orgDayGroup = "fire", orgDaysOn = false, vibrate = false, gradualVolume = false,
         snoozeMinutes = 9, ringMinutes = 15, alarmSoonMinutes = 10, alarmGuard = false, photoLook = "dim=40;corners=square", alarmsEnabled = false, hideDayAlarmNotice = true, shareUsageStats = true, usageStatsMore = true,
         plazaNews = false, plazaHidden = com.bamnat.core.plaza.HideList().hide("w".repeat(64), "글쓴이", 1_000L).encode(), plazaRulesAgreed = 2,
+        // 2.0.0 [RVN-14] HQ-51.
+        reactionsOff = "plaza.rate",
         workStyle = WorkStyle.SHIFT, rosterMonthly = true,
         // 1.37 [SETUP-16] 첫 설정을 미뤄 둔 채 백업.
         setupLater = true,
         extraKinds = ExtraKinds(ExtraKinds.DEFAULTS.map { if (it.id == ExtraKind.COVER_ID) it.copy(name = "대신 근무") else it }),
         memoInCells = true, calendarMemos = false, restCheck = false, strictRest = true, restRules = "11h", sleepTips = false,
-        todayShiftNotice = true, briefing = true, commuteNotice = true, bedtimeNotice = true, sleepingNotice = false,
+        todayShiftNotice = true, gapNotice = false, briefing = true, commuteNotice = true, bedtimeNotice = true, recordOffer = false, sleepNoTap = false, memoHoldAtWork = false, memoRestCard = false, sleepingNotice = false,
         quietWhileAsleep = false, moneyNotices = false, leaveNotice = false, sleepTargetMinutes = 8 * 60, commuteMinutes = 40,
         restDayCompared = true, phoneDayView = PhoneDayView.WEEK, showDayCard = true, appLock = true,
         calendarLayout = "cards:a", statsLayout = "stats:b", manageLayout = "plan,-keep", dayGroupOrder = listOf("memo", "money"), phoneCalendars = listOf("3"),
-        alarmMission = "math", shiftMissions = mapOf(shiftId to "math"), wakeCheckMinutes = 10, widgetMemo = false,
-        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", cellList = "on", rateHint = false, alarmSuggest = false, exportMark = false,
+        alarmMission = "math", shiftMissions = mapOf(shiftId.toString() to "math"), wakeCheckMinutes = 10, widgetMemo = false,
+        backupPhotos = false, moneyLayout = "money:c", moneyCheckOpen = true, moneyHero = "SPENT", budgetRollover = "식비", memoLayout = "memo:d", tabViews = "cal=rota;money=board", calTheme = "sat=FF2F5BEA;cell=fill", widgetLook = "alpha=80;theme=dark", myColors = "FF112233,FFE91E63", shiftLooks = "night\tall~bg:FF101010\tsat=FF90CAF9", calView = "size=tall;memo=3", accentColor = 0xFF00857AL, longPress = "memo", cellList = "on", rateHint = false, alarmSuggest = false, exportMark = false,
         // 1.25 AB.
         alarmButtonAction = "snooze",
         // 1.35 [FREE-03..08] 꾸미기.
@@ -66,8 +69,8 @@ class ZFullBackupTest {
         // 1.31 [STAT-08][ALRM-16][WEAR-04][WEAR-06].
         usageStatsLookup = true, afterAlarmCard = false, watchAlarm = AppSettings.WATCH_ALARM_WATCH, watchCalendar = "side-job",
         // 1.32 [CALX-03][CALX-04][CALX-05][LEDX-07][PAYA-05][UX132-05][UX132-06].
-        tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false,
-        payDepositNotice = false, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
+        tapSelectFirst = true, textAsked = true, compact = false, textStep = 3, clock12 = true, spendInCells = true, spendHeat = true, backupNudge = false, dataSelfCheck = false,
+        payDepositNotice = false, payAutoClose = true, weekHoursNudge = false, calendarOnly = true, statsPeriod = StatsPeriod.MONTH, moneyByPayCycle = true, workTimeFrom = 0L, dayCloseNotice = true, bossFilingNotice = !s.bossFilingNotice, shiftPreviewNotice = !s.shiftPreviewNotice, shiftPreviewHour = 7, moneyChallenge = "NO_SPEND|20000",
         // 1.32 조사 대조 [WTYP-12][WTYP-16].
         stretchLimitHours = 24, leaveTimeNotice = true,
         // 1.38 [SLEEP-04] 잠드는 소리.
@@ -95,6 +98,8 @@ class ZFullBackupTest {
         val marks = RecurringMarks(marksFile)
         marks.put(mapOf(5L to LocalDate.of(2026, 10, 25)))
         val file = c.backupManager.export()
+        // 2.0.0 [RVL-77] (검토 I12b-03) The 우리 조 code lets anyone in the group see it: only a file with a password holds it.
+        val sealed = c.backupManager.exportSealed()
         assertTrue(JSONObject(file).has("settingsFiles"))
 
         // A new phone: nothing set, nothing in the files, its own install id and calendar choice.
@@ -121,14 +126,48 @@ class ZFullBackupTest {
         assertEquals(setOf("2026-10"), prefs("calendar_view").getStringSet("redWorked", null))
         assertEquals(123L, prefs("auto_record").getLong("since", 0))
         assertEquals(0.5f, prefs("auto_record").getFloat("weight", 0f))
-        assertEquals("A조", prefs("share_group").getString("group", null))
+        assertNull("암호 없는 파일에는 우리 조 코드가 없어요", prefs("share_group").getString("group", null))
         assertEquals("B조", prefs("duty_codes").getString("mine:main", null))
         assertEquals(true, prefs("calendar_import").getBoolean("auto", false))
         // What is this phone's own stays this phone's own.
+        c.backupManager.restore(sealed)
+        assertEquals("A조", prefs("share_group").getString("group", null))
         assertEquals("new-phone", prefs("company").getString("device", null))
         assertEquals("1", prefs("calendar_import").getString("chosen", null))
         // The repeating money lines know how far they were written, read again without restarting the app.
         assertEquals(mapOf(5L to LocalDate.of(2026, 10, 25)), marks.all())
+        c.settingsRepository.update { AppSettings() }
+    }
+
+    /**
+     * 2.0.0 [RVR-18] (검토 T60-02) Every kind of work, not only shift work: a phone of each kind with every setting changed (and the
+     * first setup put off, so its own next question waits) is backed up and restored onto a new phone, and comes back the same, with
+     * the main calendar's pay choices (세금 방식·연장 상한·소득 종류).
+     */
+    @Test fun everyKindOfWorkComesBackWithAllItsSettings() = runBlocking {
+        c.scheduleRepository.ensureDefaults()
+        val shiftId = c.scheduleRepository.shiftTypes.first().first().id
+        for (style in WorkStyle.entries) {
+            c.settingsRepository.update { sample(it, shiftId).copy(workStyle = style) }
+            val wanted = c.settingsRepository.current
+            val tax = com.bamnat.core.pay.TaxMode.entries[style.ordinal % com.bamnat.core.pay.TaxMode.entries.size].name
+            prefs("work_type_prefs").edit().putInt("cap_main", 40 + style.ordinal).putString("tax_main", tax).putString("income_main", style.name).commit()
+            val file = c.backupManager.export()
+
+            c.settingsRepository.update { AppSettings() }
+            for (p in SettingsFilesBackup.PARTS) prefs(p.name).edit().clear().commit()
+            c.backupManager.restore(file)
+
+            val back = c.settingsRepository.current
+            assertEquals(style, back.workStyle)
+            for (f in settingFields()) {
+                if (f.name in SettingsFilesBackup.SETTINGS_ON_PHONE) continue
+                assertEquals("$style: 설정 ${f.name}", f.get(wanted), f.get(back))
+            }
+            assertEquals("$style: 연장 상한", 40 + style.ordinal, prefs("work_type_prefs").getInt("cap_main", 0))
+            assertEquals("$style: 세금 방식", tax, prefs("work_type_prefs").getString("tax_main", null))
+            assertEquals("$style: 소득 종류", style.name, prefs("work_type_prefs").getString("income_main", null))
+        }
         c.settingsRepository.update { AppSettings() }
     }
 
@@ -211,6 +250,21 @@ class ZFullBackupTest {
         val missing = settingFields().filter { f -> f.name !in SettingsFilesBackup.SETTINGS_ON_PHONE && f.get(fresh) == f.get(sampled) }.map { it.name }
         assertEquals("백업에도 '휴대폰에만' 목록에도 없는 설정 칸", emptyList<String>(), missing)
         assertEquals("목록에만 있고 설정에는 없는 칸", emptySet<String>(), SettingsFilesBackup.SETTINGS_ON_PHONE.keys - names)
+    }
+
+    /**
+     * 2.0.0 [RVL-54] (검토 DATA-28) Guard: a file is moved or kept on this phone, never said to be both ("plaza_tag" was in both lists), and
+     * a key kept here ("file:key") belongs to a part that names only some keys and not that one.
+     */
+    @Test fun noFileIsBothMovedAndKeptOnThePhone() {
+        val whole = SettingsFilesBackup.DEVICE_ONLY.keys.filter { ':' !in it }.toSet()
+        assertEquals("옮기는 것과 이 휴대폰에만 둘 다", emptySet<String>(), SettingsFilesBackup.PARTS.map { it.name }.toSet() intersect whole)
+        SettingsFilesBackup.DEVICE_ONLY.keys.filter { ':' in it }.forEach { k ->
+            val (file, key) = k.split(':', limit = 2)
+            SettingsFilesBackup.PARTS.firstOrNull { it.name == file }?.let { p ->
+                assertTrue("$k: 옮기는 칸이라 이 휴대폰에만 둘 수 없어요", p.keys != null && key !in p.keys!!)
+            }
+        }
     }
 
     /** [BAK-01] Guard: every preferences file the app writes is backed up, carried in a part of its own, or kept here with a reason. */

@@ -23,7 +23,7 @@ object InvestCsv {
         line(sb, TRADES_HEADER)
         for (t in book.trades.filter { inRange(it.date, from, to) }.sortedWith(Portfolio.ORDER)) {
             line(sb, listOf(
-                t.date.toString(), t.minute?.let { "%02d:%02d".format(it / 60, it % 60) }.orEmpty(), text(book.account(t.accountId)?.name.orEmpty()),
+                t.date.toString(), t.minute?.let { "%02d:%02d".format(java.util.Locale.ROOT, it / 60, it % 60) }.orEmpty(), text(book.account(t.accountId)?.name.orEmpty()),
                 t.side.label, text(t.symbol), text(t.name), t.market.label, Portfolio.quantityText(t.quantity), number(t.price), t.currency,
                 if (t.currency == "KRW") "" else number(t.fxRate), t.grossWon.roundToLong().toString(), number(t.fee), number(t.tax),
                 pnl[t.id]?.roundToLong()?.toString().orEmpty(), text(t.reason), t.emotions.joinToString(" ") { it.label },
@@ -77,7 +77,9 @@ object InvestCsv {
     fun taxReport(book: InvestBook, result: PortfolioResult, year: Int): String {
         val skip = book.accounts.filter { it.type.taxDeferred || it.type == AccountType.ISA }.map { it.id }.toSet()
         val trades = book.trades.associateBy { it.id }
-        val sales = Portfolio.fifo(book.trades).filter { it.date.year == year && it.market.foreign && it.accountId !in skip }.sortedBy { it.date }
+        // 2.0.0 [RVK-32] (검토 MONEY-68) By the year of the 결제일, as the estimate below.
+        val sales = Portfolio.fifo(book.trades).filter { InvestTaxes.taxYear(it.date, it.market) == year && it.market.foreign && it.accountId !in skip }
+            .sortedBy { it.date }
         val sb = StringBuilder("\uFEFF")
         line(sb, listOf("${year}년 해외 주식 양도소득 (선입선출, 참고용)"))
         line(sb, TAX_HEADER)

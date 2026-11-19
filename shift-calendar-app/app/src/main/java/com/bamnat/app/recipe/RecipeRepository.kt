@@ -26,6 +26,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     private val dao = c.database.recipeDao()
     val pieces = RecipePieces(c)
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private val app: Context = context.applicationContext
 
     val applied: Flow<List<AppliedRecipeEntity>> = dao.observeApplied()
     val drafts: Flow<List<RecipeDraftEntity>> = dao.observeDrafts()
@@ -107,14 +108,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
      * Puts [r] on calendar [cal]: the [picks] in order, each with [answers] for its inputs. Records stay as they are. Returns the
      * id of the record that 되돌리기 reads, or null when nothing changed.
      */
+    /** 2.0.0 [RVS-12] The pieces the last [apply] could not put on (this app could not read or write them), for 넣기 to say. */
+    @Volatile var lastMissed: List<PieceKind> = emptyList()
+        private set
+
     suspend fun apply(r: Recipe, code: String, version: Int, cal: String, picks: List<Pick>, answers: Map<String, Any?>): Long? {
         val filled = RecipeResolve.answers(r, answers)
         val before = JSONObject()
         val done = ArrayList<String>()
+        val missed = ArrayList<PieceKind>()
+        lastMissed = emptyList()
         for (pick in picks) {
             val piece = r.pieces.firstOrNull { it.kind == pick.kind } ?: continue
-            val values = RecipeResolve.piece(r, piece, filled)
-            val snap = runCatching { pieces.apply(pick.kind, values, cal, code.ifEmpty { "x" + Today.millis().toString(36) }, pick.mode) }.getOrNull() ?: continue
+            // 2.0.0 [RVS-12] (갈래 R SD-07): a piece that could not be put on was let go without a word, the same as one already on.
+            val snap = runCatching {
+                val values = RecipeResolve.piece(r, piece, filled)
+                pieces.apply(pick.kind, values, cal, code.ifEmpty { "x" + Today.millis().toString(36) }, pick.mode)
+            }.onFailure { missed += pick.kind }.getOrNull()
+            lastMissed = missed.toList()
+            if (snap == null) continue
             before.put(pick.kind.key, snap)
             done += pick.kind.key
         }
@@ -128,9 +140,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             return null
         }
         // A later recipe on the same pieces takes the earlier one's place: it is no longer the one 되돌리기 offers.
+        // [RVF-06] 개발 전 검토 RCP-01: piece by piece. A piece that adds (메모 틀·알람·규칙·가계부·투자) takes nobody's place; one that
+        // replaces takes that piece only, the earlier work keeping its other pieces (되돌리기, 받는 칸 답, 새 판 알림). Only when nothing of it is
+        // left — or it is the same work put on again — is the earlier record 'replaced' as a whole.
         val now = Today.millis()
-        dao.applied().filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal && it.pieces.split(',').any { k -> k in done } }
-            .forEach { dao.upsertApplied(it.copy(replacedAt = now)) }
+        val takes = done.filter { k -> PieceKind.of(k) !in ADDS }.toSet()
+        dao.applied().filter { it.undoneAt == null && it.replacedAt == null && it.calendarId == cal }.forEach { e ->
+            val had = e.pieces.split(',')
+            val same = code.isNotEmpty() && e.code == code
+            if (same && had.any { it in done }) { dao.upsertApplied(e.copy(replacedAt = now)); return@forEach }
+            if (had.none { it in takes }) return@forEach
+            val left = had.filter { it !in takes }
+            // 2.0.0 [RVM-59] 검토 U09b-03: the earlier work keeps which of its pieces this one covered, so 받은 것 says ‘B’이 덮음 per
+            // piece instead of a bare 바뀜 (kept in its 'before', which every reader reads by piece key).
+            val b = runCatching { JSONObject(e.before) }.getOrNull() ?: JSONObject()
+            covered(b, had.filter { it in takes }, r.title, now)
+            takes.forEach { b.remove(it) }
+            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now, before = b.toString()))
+            else dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = b.toString()))
+        }
         val id = dao.insertApplied(AppliedRecipeEntity(
             code = code, version = version, hash = RecipeCodec.hash(r), title = r.title, calendarId = cal, body = RecipeCodec.write(r),
             inputs = JSONObject(filled.mapValues { (_, v) -> v }).toString(), pieces = done.joinToString(","), before = before.toString(),
@@ -163,6 +191,61 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     /** The recipes on this phone still in use, newest per code, that a new version could be for. */
     suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
+
+    /** 2.0.0 [RVS-15] One of my settings a work changed, what it was before ([before]) and is now ([now]), in words too. */
+    data class FeelBack(val key: String, val what: String, val before: String, val now: String, val beforeSaid: String, val nowSaid: String)
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05 (설정 › 화면과 글자 '작품이 바꾼 내 설정 되돌리기', 7일이 지나도): my own settings (밝기·글자 크기·
+     * 누르기·시계·하루 순서·급여 기간…) that works put on this phone changed and that are still as a work left them, each with what I had
+     * before the first of those works (a work put on over another one goes back through it). A setting I changed since is mine and is not
+     * offered; a work taken back already put its own back.
+     */
+    suspend fun feelChanged(): List<FeelBack> {
+        val chains = HashMap<String, MutableList<Pair<String, String>>>()
+        dao.applied().filter { it.undoneAt == null }.sortedBy { it.appliedAt }.forEach { e ->
+            val sets = runCatching { JSONObject(e.before).optJSONObject(PieceKind.APP_FEEL.key)?.optJSONObject("settings") }.getOrNull() ?: return@forEach
+            sets.keys().forEach { k ->
+                if (k !in RecipePieces.MY_FEEL_SETTINGS) return@forEach
+                val pair = sets.optJSONArray(k) ?: return@forEach
+                chains.getOrPut(k) { ArrayList() } += pair.optString(0) to pair.optString(1)
+            }
+        }
+        val now = pieces.feelSnapshot()
+        return chains.mapNotNull { (k, list) ->
+            val cur = now[k] ?: return@mapNotNull null
+            val last = list.indexOfLast { it.second == cur }.takeIf { it >= 0 } ?: return@mapNotNull null
+            var back = list[last].first
+            for (i in last - 1 downTo 0) if (list[i].second == back) back = list[i].first
+            if (back == cur) null
+            else FeelBack(k, RecipePieces.SETTING_NAMES[k] ?: k, back, cur, pieces.feelWords(k, back), pieces.feelWords(k, cur))
+        }.sortedBy { f -> RecipePieces.FEEL_SETTINGS.values.indexOf(f.key) }
+    }
+
+    /** 2.0.0 [RVS-15] Puts [list] back as it was before the works; how many went back. */
+    fun putFeelBack(list: List<FeelBack>): Int = pieces.putFeelBack(list.associate { it.key to (it.before to it.now) })
+
+    /**
+     * 2.0.0 [RVS-12] 총괄 HQ-57 ②: works put on in 1.36~1.39 whose 부품 꾸미기 has a formula (`{"fx"}`) went on without it (넣기 could
+     * not read its own formula back and let the piece go without a word, 장터 144개). Nothing is put back by itself, so no one's calendar
+     * changes on its own after the update: each such work still in use, on a calendar whose 부품 no later work holds, is offered once in
+     * 밤낮 소식 and stays offered in 공방 › 내 것 › 받은 작품 ([putMissedParts]).
+     */
+    suspend fun missedParts(): List<AppliedRecipeEntity> {
+        val all = dao.applied().filter { it.undoneAt == null && it.replacedAt == null }
+        return all.filter { e ->
+            "parts" !in e.pieces.split(',') && all.none { o -> o.calendarId == e.calendarId && o.appliedAt > e.appliedAt && "parts" in o.pieces.split(',') } &&
+                runCatching { RecipeCodec.readSoft(e.body).recipe }.getOrNull()?.pieces?.firstOrNull { it.kind == PieceKind.PARTS }
+                    ?.let { p -> (p.values["parts"] as? List<*>).orEmpty().any { l -> (l as? Map<*, *>)?.values?.any { it is com.bamnat.core.recipe.Ref.Formula } == true } } == true
+        }.groupBy { it.calendarId }.map { (_, list) -> list.maxBy { it.appliedAt } }
+    }
+
+    /** [missedParts]: [e]'s 부품 꾸미기 put on now, with the answers it was put on with; 7일 되돌리기 as any 넣기. */
+    suspend fun putMissedParts(e: AppliedRecipeEntity): Long? {
+        val r = RecipeCodec.readSoft(e.body).recipe
+        val answers = runCatching { JSONObject(e.inputs).let { j -> j.keys().asSequence().associateWith { j.opt(it).takeIf { v -> v != JSONObject.NULL } } } }.getOrDefault(emptyMap())
+        return apply(r, e.code, e.version, e.calendarId, listOf(Pick(PieceKind.PARTS, RecipePieces.Mode.REPLACE)), answers)
+    }
 
     /** [RCX-02] Codes with a newer version than the one put on, asked with the codes only (no device). */
     suspend fun newer(): Map<String, Int> {
@@ -241,11 +324,16 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             val titles = inUse().filter { it.code in newer }.map { it.title }
             lines += "‘${titles.first()}’" + (if (titles.size > 1) " 외 ${titles.size - 1}개" else "") + "에 새 판이 나왔어요"
         }
+        // 2.0.0 [RVS-12] HQ-57 ②: a work whose 부품 꾸미기 did not go on before, offered once.
+        missedParts().filter { !prefs.getBoolean("$K_PARTS_SAID${it.id}", false) }.takeIf { it.isNotEmpty() }?.let { list ->
+            lines += "‘${list.first().title}’" + (if (list.size > 1) " 외 ${list.size - 1}개" else "") + "에 빠져 있던 부품 꾸미기를 이제 넣을 수 있어요 (마을 › 공방 › 내 것 › 받은 작품)"
+            prefs.edit().apply { list.forEach { putBoolean("$K_PARTS_SAID${it.id}", true) } }.apply()
+        }
         // [RCX-24] 되돌리기 in 소식 too: once, on the last day it can still be taken back.
         val now = Today.millis()
         inUse().filter { canUndo(it, now) && now - it.appliedAt >= (UNDO_DAYS - 1) * DAY_MILLIS && !prefs.getBoolean("$K_UNDO_SAID${it.id}", false) }
             .forEach { e ->
-                lines += "‘${e.title}’${com.bamnat.app.ui.Fmt.eun(e.title)} 내일까지 되돌릴 수 있어요 (설정 › 장터·내 레시피)"
+                lines += "‘${e.title}’${com.bamnat.app.ui.Fmt.eun(e.title)} 내일까지 되돌릴 수 있어요 (설정 › 장터·내 작품)"
                 prefs.edit().putBoolean("$K_UNDO_SAID${e.id}", true).apply()
             }
         // [LIN-04] 1.35 A 수정판 of my recipe is news whether or not I follow anyone (the news call says it).
@@ -261,13 +349,18 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 val n = all.copy(recipes = all.recipes.filter { "r:${it.code}" !in told }, remixes = all.remixes.filter { "x:${it.first.code}" !in told })
                 prefs.edit().putString(K_NEWS_TOLD, keyListJson(keyList(K_NEWS_TOLD),
                     n.recipes.map { "r:${it.code}" } + n.remixes.map { "x:${it.first.code}" })).apply()
-                if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 레시피 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
+                if (followNews()) n.recipes.firstOrNull()?.let { r -> lines += "팔로우한 분의 새 작품 ‘${r.title}’" + if (n.recipes.size > 1) " 외 ${n.recipes.size - 1}개" else "" }
                 if (followNews()) n.replies.firstOrNull()?.let { (_, title, _) -> lines += "‘$title’에 만든 분이 답했어요" }
                 // [PRF-03] 1.36 My own profile's news, once: new followers and a milestone passed (the rest waits in 내 프로필).
                 // Asked only of a phone with recipes up (내 프로필 has something to say), with the same since as 소식.
                 if (followNews() && prefs.getBoolean(K_HAS_PROFILE, false)) runCatching { c.recipeApi.inbox(c.companyStore.device, since) }.getOrNull()?.let { box ->
                     val told = keyList(K_TOLD_LIST).toSet() + seenInbox()
                     if (box.newFollowers > 0) lines += "새 팔로워 ${box.newFollowers}명이 생겼어요 (마을 › 내 프로필)"
+                    // 2.0.0 [RVQ-27] 검토 U22b-09: once, when the operator let my 소개 show again.
+                    box.bioBack?.let { "s|$it" }?.takeIf { it !in told }?.let { key ->
+                        lines += "운영자가 확인해 내 소개가 다시 보여요 (마을 › 내 프로필)"
+                        prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(key))).apply()
+                    }
                     box.milestones.firstOrNull { it.key !in told }?.let { m ->
                         lines += "‘${m.title}’" + (if (m.kind == "users") "${com.bamnat.app.ui.Fmt.obj("‘${m.title}’")} 쓰는 분이 ${m.n}명을 넘었어요" else "에 좋아요가 ${m.n}개를 넘었어요")
                         prefs.edit().putString(K_TOLD_LIST, keyListJson(keyList(K_TOLD_LIST), listOf(m.key))).apply()
@@ -275,7 +368,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
                 }
                 // 1.36 [VIL-15] A request of mine someone finished is news whether or not I follow anyone.
                 n.requests.firstOrNull()?.let { (_, title, _) ->
-                    lines += "부탁한 레시피가 ‘$title’${com.bamnat.app.ui.Fmt.ro("‘$title’")} 완성됐어요 (마을 › 공방 › 요청)" +
+                    lines += "부탁한 작품이 ‘$title’${com.bamnat.app.ui.Fmt.ro("‘$title’")} 완성됐어요 (마을 › 공방 › 요청)" +
                         if (n.requests.size > 1) " 외 ${n.requests.size - 1}개" else ""
                 }
                 n.remixes.firstOrNull()?.let { (r, mine) -> lines += "내 판 ‘$mine’${com.bamnat.app.ui.Fmt.obj("‘$mine’")} 고친 수정판 ‘${r.title}’${com.bamnat.app.ui.Fmt.iga("‘${r.title}’")} 올라왔어요. 달라진 점을 보고 가져올 수 있어요" +
@@ -285,31 +378,149 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         return lines
     }
 
+    /**
+     * 2.0.0 [RVM-36] 검토 HQ-52: what people did with my works since the last round, as rows of the 알림함 ([MakerReactions]). Asked when
+     * the app comes back, at most every [REACT_EVERY_MS], only on a phone that has put a work up, and not at all when 나눔 판 is off or
+     * both kinds of rows were turned off ('다시 보지 않기'). It is the same call 내 프로필 makes, with its own since; nothing new is sent.
+     * Returns how many rows went in.
+     */
+    suspend fun reactions(now: Long = Today.millis()): Int {
+        if (!_on.value || !c.recipeApi.enabled) return 0
+        val made = hasProfile() || app.getSharedPreferences("maker", Context.MODE_PRIVATE).getBoolean("made", false)
+        if (!made) return 0
+        val inbox = com.bamnat.app.inbox.Inbox.get(app)
+        if (!inbox.allowed(MakerReactions.KIND, com.bamnat.app.inbox.InboxSection.PEOPLE) &&
+            !inbox.allowed(MakerReactions.KIND_DECIDED, com.bamnat.app.inbox.InboxSection.NOTICE)) return 0
+        val asked = prefs.getLong(K_REACT_ASKED, 0L)
+        if (now >= asked && now - asked < REACT_EVERY_MS) return 0
+        prefs.edit().putLong(K_REACT_ASKED, now).apply()
+        val since = prefs.getString(K_REACT_SINCE, null)?.let { runCatching { java.time.Instant.parse(it) }.getOrNull() }
+        val box = c.recipeApi.inbox(c.companyStore.device, since) ?: return 0
+        val round = MakerReactions.round(
+            box, inbox.rows.value.map { it.key }.toSet(), MakerReactions.decode(prefs.getString(K_REACT_TALLY, null)),
+            MakerReactions.decodeTotals(prefs.getString(K_REACT_TOTALS, null)), keyList(K_REACT_TOLD).toSet(),
+            prefs.getInt(K_REACT_FOLLOWERS, 0), now,
+        )
+        val put = round.rows.count { inbox.post(it) }
+        prefs.edit()
+            .putString(K_REACT_SINCE, (box.at ?: java.time.Instant.ofEpochMilli(now)).toString())
+            .putString(K_REACT_TALLY, MakerReactions.encode(round.tallies))
+            .putString(K_REACT_TOTALS, MakerReactions.encodeTotals(round.totals))
+            .putString(K_REACT_TOLD, keyListJson(keyList(K_REACT_TOLD), round.told))
+            .putInt(K_REACT_FOLLOWERS, round.followers)
+            .apply()
+        return put
+    }
+
     /** Whether [e] can still be taken back: on, and within [UNDO_DAYS] days. */
     fun canUndo(e: AppliedRecipeEntity, now: Long = Today.millis()): Boolean =
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
 
+    /** 2.0.0 [RVM-45] 검토 RCP-02: what the last [undo] / [undoAll] left as the user made it, and the pieces it could not take back. */
+    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList(),
+                          /** 2.0.0 [RVM-55] U09b-02: the pieces taken back, and what stayed as the user made it (그대로 둔 것 [보기]). */
+                          val back: Int = 0, val items: List<RecipePieces.Kept> = emptyList())
+
+    /**
+     * 2.0.0 [RVM-50] 검토 RCP-04: by shift, the alarm times (minutes before) the works still on this phone want, other than record
+     * [except]; 되돌리기 of one work leaves those on.
+     */
+    suspend fun alarmsWanted(except: Long?): Map<Long, Set<Int>> {
+        val out = HashMap<Long, MutableSet<Int>>()
+        for (e in dao.applied()) {
+            if (e.id == except || e.undoneAt != null || e.replacedAt != null || PieceKind.ALARMS.key !in e.pieces.split(',')) continue
+            val a = runCatching { JSONObject(e.before).optJSONObject(PieceKind.ALARMS.key) }.getOrNull() ?: continue
+            for (k in listOf("types", "also")) {
+                val list = a.optJSONArray(k) ?: continue
+                for (i in 0 until list.length()) {
+                    val o = list.optJSONObject(i) ?: continue
+                    val set = out.getOrPut(o.optLong("id")) { HashSet() }
+                    for (f in listOf("added", "wanted")) o.optJSONArray(f)?.let { n -> for (j in 0 until n.length()) set += n.getInt(j) }
+                }
+            }
+        }
+        return out
+    }
+
+    @Volatile var lastUndo = UndoReport()
+        private set
+
+    /** What 되돌리기 says after [undo] (or [undoAll]) gave [ok]: what is truly so, never a plain 되돌렸어요 over what stayed. */
+    fun undoSay(ok: Boolean): String = lastUndo.let { r ->
+        when {
+            r.failed.isNotEmpty() -> "되돌리지 못한 것이 있어요(" + r.failed.joinToString("·") { it.label } + "). 한 번 더 눌러 주세요"
+            !ok -> "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요"
+            // 2.0.0 [RVM-55] 검토 U09b-02: how much went back too, with 보기 (the line's action) for what stayed.
+            r.kept > 0 && r.back > 0 -> "되돌렸어요. 조각 ${r.back}개를 돌리고, 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
+            r.kept > 0 -> "되돌렸어요. 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
+            else -> "되돌렸어요. 그 사이 적은 기록은 그대로예요"
+        } + if (ok && r.alarmsOff.isNotEmpty()) " · " + r.alarmsOff.distinct().joinToString("·") { "‘$it’" } + " 알람이 꺼졌어요" else ""
+    }
+
     /** 되돌리기: every piece put back, last first; what the user changed since stays. */
-    suspend fun undo(id: Long): Boolean {
-        val e = dao.appliedById(id) ?: return false
-        if (!canUndo(e)) return false
-        val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false
-        for (key in e.pieces.split(',').reversed()) {
+    suspend fun undo(id: Long): Boolean = undoOne(id).also { lastUndo = it.second }.first
+
+    /**
+     * 2.0.0 [RVM-59] 검토 U09b-03 (내 서랍 › 받은 것, 조각별 되돌리기): only [keys] of the work put back, the rest of it left on and still
+     * its own (되돌리기 of the rest stays offered). The work is 되돌림 once nothing of it is left on. Said by [undoSay] as [undo] is.
+     */
+    suspend fun undoPieces(id: Long, keys: Set<String>): Boolean = undoOne(id, keys).also { lastUndo = it.second }.first
+
+    private fun covered(before: JSONObject, keys: List<String>, by: String, at: Long) {
+        if (keys.isEmpty()) return
+        val cov = before.optJSONObject(COVERED) ?: JSONObject().also { before.put(COVERED, it) }
+        keys.forEach { cov.put(it, JSONObject().put("by", by.take(30)).put("at", at)) }
+    }
+
+    private suspend fun undoOne(id: Long, only: Set<String>? = null): Pair<Boolean, UndoReport> {
+        val e = dao.appliedById(id) ?: return false to UndoReport()
+        if (!canUndo(e)) return false to UndoReport()
+        val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false to UndoReport()
+        val all = e.pieces.split(',').filter { it.isNotEmpty() }
+        val now = if (only == null) all else all.filter { it in only }
+        if (now.isEmpty()) return false to UndoReport()
+        // 2.0.0 [RVM-45] 검토 RCP-02: a piece that failed was swallowed and the whole record stamped 되돌림, so it could not be tried
+        // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
+        val failed = ArrayList<String>()
+        pieces.kept = 0
+        pieces.keptItems.clear()
+        pieces.alarmsOff.clear()
+        pieces.undoing = e.id
+        for (key in now.reversed()) {
             val kind = PieceKind.of(key) ?: continue
             val snap = before.optJSONObject(key) ?: continue
-            runCatching { pieces.restore(kind, snap, e.calendarId) }
+            runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
+        }
+        pieces.undoing = null
+        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList(),
+            now.count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
+        // [RVM-59] What stays on: the pieces not asked for, and those that failed (to be tried again).
+        val left = all.filter { it !in now || it in failed }
+        if (left.isNotEmpty()) {
+            (now - failed.toSet()).forEach { before.remove(it) }
+            dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = before.toString()))
+            return true to report
         }
         dao.upsertApplied(e.copy(undoneAt = Today.millis()))
         // [J135-16] A theme's looks taken back here (내 레시피 or the recipe's own page): 입는 중 goes back to what was worn before.
         if (e.code.isNotEmpty()) runCatching { c.wardrobe.forget(e.code) }
-        return true
+        return true to report
     }
 
     /**
      * 되돌리기 on a recipe's own page: every put-on of [code] that can still be taken back, newest first, so none of it is left
      * (PC 확인 8773e3ae: the same recipe put on twice, with other pieces or on another calendar, kept the older one's card). How many.
      */
-    suspend fun undoAll(code: String): Int = undoable(code).count { undo(it.id) }
+    suspend fun undoAll(code: String): Int {
+        var all = UndoReport()
+        val n = undoable(code).count { e ->
+            val (ok, r) = undoOne(e.id)
+            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff, all.back + r.back, all.items + r.items)
+            ok
+        }
+        lastUndo = all
+        return n
+    }
 
     /** Every put-on of [code] that can still be taken back, newest first (what 되돌리기 on its page takes back). */
     suspend fun undoable(code: String): List<AppliedRecipeEntity> {
@@ -351,6 +562,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_NEWS_NEW = "news_new"
         private const val K_NEWS_FOLLOW = "news_follow"
         private const val K_UNDO_SAID = "undo_said_"
+        private const val K_PARTS_SAID = "parts_missed_said_"
         private const val K_REQUESTS = "requests_on"
         private const val K_NEWS_SINCE = "news_since"
         /** [TOWN-14] The works and 수정판 소식 already said (so the two days asked again say nothing twice). */
@@ -366,7 +578,37 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         private const val K_KEPT_COUNTED = "counted_kept"
         private const val K_HAS_PROFILE = "has_profile"
         private const val K_PROFILE_CLEARED = "profile_cleared"
+        /** [RVM-36] HQ-52 The 알림함's reactions: since (the server's time), when last asked, and what the rows still up counted. */
+        private const val K_REACT_SINCE = "react_since"
+        private const val K_REACT_ASKED = "react_asked"
+        private const val K_REACT_TALLY = "react_tally"
+        private const val K_REACT_TOTALS = "react_totals"
+        private const val K_REACT_TOLD = "react_told"
+        private const val K_REACT_FOLLOWERS = "react_followers"
+        /** Asked at most this often when the app comes back. */
+        const val REACT_EVERY_MS = 10L * 60 * 1000
+        /** [RVF-06] Pieces that add to what is there (RecipePieces: 알람은 더하기만, 메모 틀·분류는 더하기, 규칙·단추는 내 것 뒤에). */
+        val ADDS: Set<PieceKind> = setOf(PieceKind.LOGIC, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.LEDGER, PieceKind.INVEST)
         const val UNDO_DAYS = 7L
+        /** 2.0.0 [RVM-59] U09b-03: in a record's 'before', the pieces a later work covered ({key: {by, at}}); never a piece key. */
+        const val COVERED = "_covered"
+
+        /** 2.0.0 [RVM-59] U09b-03: one piece of a received work, as 받은 것 shows it. */
+        data class PieceState(val key: String, val kind: PieceKind, val on: Boolean, val coveredBy: String? = null)
+
+        /** 2.0.0 [RVM-59] U09b-03: each piece of [e] — still on (its own) or covered by a later work, by name — in the order it went on. */
+        fun pieceStates(e: AppliedRecipeEntity): List<PieceState> {
+            val cov = runCatching { JSONObject(e.before).optJSONObject(COVERED) }.getOrNull()
+            val gone = cov?.keys()?.asSequence()?.toList().orEmpty()
+            // A work covered whole keeps its piece list (only its row is 'replaced'), so what is covered is taken out of it here.
+            val on = e.pieces.split(',').filter { it.isNotEmpty() && it !in gone }
+            return (on.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = true) } } +
+                gone.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = false, coveredBy = cov?.optJSONObject(k)?.optString("by")?.ifEmpty { null }) } })
+        }
+
+        /** 2.0.0 [RVM-59] U09b-03: the work that took the place of all of [e] (its pieces were all covered), if it says so. */
+        fun coveredBy(e: AppliedRecipeEntity): String? = pieceStates(e).filter { !it.on }.mapNotNull { it.coveredBy }.distinct().singleOrNull()
+
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
     }

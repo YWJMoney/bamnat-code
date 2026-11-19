@@ -41,13 +41,13 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -78,10 +78,14 @@ import com.bamnat.core.pay.PayslipRead
 import com.bamnat.core.pay.SlipRole
 import com.bamnat.core.pay.ValueTimeline
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.bamnat
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /** A month of hours, 31일 × 24시간: more than this cannot be one month's premium. */
 private const val MAX_MONTH_MINUTES = 744 * 60
@@ -89,7 +93,7 @@ private const val MAX_MONTH_MINUTES = 744 * 60
 private enum class MatchStage { MONTH, ROSTER, AMOUNTS, WORKING, RESULT, DONE }
 
 /** 연장·야간·휴일 pay as the payslip states it, with the hours behind it when it lists them (근로기준법 제48조 제2항). */
-private class Premium(val title: String) {
+internal class Premium(val title: String) {
     var amount by mutableStateOf<Long?>(null)
     /** [INPUT-02] The hours the payslip lists, stepped in minutes; 0 is "not given". */
     var stepped by mutableStateOf(0)
@@ -98,13 +102,16 @@ private class Premium(val title: String) {
 }
 
 /** An allowance on the payslip with no allowance of the same name in the app. */
-private class OtherLine {
+internal class OtherLine(
+    /** [RVJ-26] Read from the payslip; only the ones added by hand count toward [MAX_OTHERS]. */
+    val fromSlip: Boolean = false,
+) {
     var name by mutableStateOf("")
     var amount by mutableStateOf<Long?>(null)
 }
 
 /** What the user typed from the payslip; it never leaves this screen except as a [Payslip] to the matcher. */
-private class SlipForm {
+internal class SlipForm {
     var gross by mutableStateOf<Long?>(null)
     var base by mutableStateOf<Long?>(null)
     val overtime = Premium("연장근로수당")
@@ -117,6 +124,17 @@ private class SlipForm {
     var read by mutableStateOf<PayslipRead?>(null)
 
     val premiums: List<Premium> get() = listOf(overtime, night, holiday)
+
+    /** 2.0.0 [RVJ-64] Anything put in at all (a name with no amount yet counts): what a draft keeps and closing asks about. */
+    val typed: Boolean get() = gross != null || base != null || premiums.any { it.amount != null || it.stepped != 0 } ||
+        items.values.any { it != null } || others.any { it.name.isNotBlank() || it.amount != null }
+
+    /** [RVJ-64] 처음부터: every field empty again. */
+    fun clear() {
+        gross = null; base = null
+        premiums.forEach { it.amount = null; it.stepped = 0 }
+        items.clear(); others.clear(); read = null
+    }
 
     /** How many optional figures are filled in, for the folded section's title. */
     val extras: Int get() = listOfNotNull(base).size + premiums.count { it.amount != null } +
@@ -136,12 +154,11 @@ private class SlipForm {
         }
         items.clear()
         others.clear()
-        fun norm(n: String) = n.filterNot { it.isWhitespace() }.lowercase()
-        read.allowances.forEach { (name, amount) ->
-            val item = profile.items.firstOrNull { norm(it.name) == norm(name) }
-            if (item != null) items[item.id] = amount
-            else if (others.size < MAX_OTHERS) others += OtherLine().also { it.name = name.take(20); it.amount = amount }
-        }
+        // [RVJ-26] 검토 PAYU-52: every allowance read goes in. The seventh and on were dropped without a word, and the match then
+        // aimed at a 지급 총액 holding money no line explained ('차이 n원', or a setting changed to make up for it).
+        val places = read.places(profile.items.map { it.id to it.name }, NAME_MAX)
+        places.known.forEach { (id, amount) -> items[id] = amount }
+        places.others.forEach { (name, amount) -> others += OtherLine(fromSlip = true).also { it.name = name; it.amount = amount } }
     }
 
     fun payslip(profile: PayProfile): Payslip = Payslip(
@@ -150,11 +167,70 @@ private class SlipForm {
         overtimePay = overtime.amount, overtimeMinutes = overtime.minutes,
         nightPay = night.amount, nightMinutes = night.minutes,
         holidayPay = holiday.amount, holidayMinutes = holiday.minutes,
+        // [RVJ-26] Two lines of one name add up (a second '소급분' wrote over the first).
         allowances = buildMap {
-            profile.items.forEach { i -> items[i.id]?.let { put(i.name, it) } }
-            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) put(o.name.trim(), a) } }
+            profile.items.forEach { i -> items[i.id]?.let { merge(i.name, it, Long::plus) } }
+            others.forEach { o -> o.amount?.let { a -> if (o.name.isNotBlank()) merge(o.name.trim(), a, Long::plus) } }
         },
     )
+}
+
+/**
+ * 2.0.0 [RVJ-64] 검토 PAYU-04·U05-03 (조건 10 '적던 것은 사라지지 않아요'): what was put in from the payslip, kept on this phone
+ * while it is being put in ([com.bamnat.app.ui.components.DraftStore], device only, gone by itself after 7 days), so a look at the
+ * bank app, a turn to the dark theme or Android closing the app in the background no longer empties the fields. One line per figure;
+ * a name loses its tabs and line breaks. The photo itself and its 공제 lines are not kept.
+ */
+internal object SlipDraft {
+    const val KEY = "pay.match.slip"
+    private const val HEAD = "slip1"
+
+    fun encode(form: SlipForm, month: YearMonth): String {
+        if (!form.typed) return ""
+        return buildString {
+            append(HEAD).append('\n')
+            append("m\t").append(month).append('\n')
+            form.gross?.let { append("g\t").append(it).append('\n') }
+            form.base?.let { append("b\t").append(it).append('\n') }
+            form.premiums.forEachIndexed { i, p ->
+                if (p.amount != null || p.stepped != 0) append("p\t").append(i).append('\t').append(p.amount ?: "").append('\t').append(p.stepped).append('\n')
+            }
+            form.items.forEach { (id, v) -> if (v != null) append("i\t").append(clean(id)).append('\t').append(v).append('\n') }
+            form.others.forEach { o ->
+                if (o.name.isNotBlank() || o.amount != null)
+                    append("o\t").append(clean(o.name)).append('\t').append(o.amount ?: "").append('\t').append(if (o.fromSlip) 1 else 0).append('\n')
+            }
+        }
+    }
+
+    /**
+     * Fills [form] from [raw] and gives the month it was for; null when there is nothing to bring back. An allowance of the app
+     * that is gone since ([ids]) is left out.
+     */
+    fun decode(raw: String, form: SlipForm, ids: Set<String>): YearMonth? {
+        val lines = raw.lines()
+        if (lines.firstOrNull() != HEAD) return null
+        var month: YearMonth? = null
+        lines.drop(1).forEach { line ->
+            val f = line.split('\t')
+            when (f[0]) {
+                "m" -> month = f.getOrNull(1)?.let { runCatching { YearMonth.parse(it) }.getOrNull() }
+                "g" -> form.gross = f.getOrNull(1)?.toLongOrNull()
+                "b" -> form.base = f.getOrNull(1)?.toLongOrNull()
+                "p" -> f.getOrNull(1)?.toIntOrNull()?.let(form.premiums::getOrNull)?.let { p ->
+                    p.amount = f.getOrNull(2)?.toLongOrNull()
+                    p.stepped = f.getOrNull(3)?.toIntOrNull()?.coerceIn(0, MAX_MONTH_MINUTES) ?: 0
+                }
+                "i" -> if (f.size >= 3 && f[1] in ids) form.items[f[1]] = f[2].toLongOrNull()
+                "o" -> if (f.size >= 3) form.others += OtherLine(fromSlip = f.getOrNull(3) == "1").also {
+                    it.name = f[1].take(NAME_MAX); it.amount = f[2].toLongOrNull()
+                }
+            }
+        }
+        return month?.takeIf { form.typed }
+    }
+
+    private fun clean(s: String) = s.replace('\t', ' ').replace('\n', ' ')
 }
 
 /**
@@ -175,10 +251,32 @@ fun PayslipMatchDialog(
     onShareWay: (() -> Unit)? = null,
 ) {
     val latest = Today.month()
-    var chosen by remember { mutableStateOf(minOf(month, latest)) }
-    var stage by remember { mutableStateOf(MatchStage.MONTH) }
+    val context = androidx.compose.ui.platform.LocalContext.current.applicationContext
     val form = remember { SlipForm() }
-    var more by remember { mutableStateOf(false) }
+    // 2.0.0 [RVJ-64] 검토 U05-03 '넣던 명세서 이어서': what was being put in last time comes back, on its month and at the amounts.
+    var restored by remember {
+        mutableStateOf(SlipDraft.decode(com.bamnat.app.ui.components.DraftStore.read(context, SlipDraft.KEY), form,
+            profile.items.map { it.id }.toSet())?.let { minOf(it, latest) })
+    }
+    var chosen by remember { mutableStateOf(restored ?: minOf(month, latest)) }
+    var stage by remember { mutableStateOf(if (restored != null) MatchStage.AMOUNTS else MatchStage.MONTH) }
+    var more by remember { mutableStateOf(restored != null && form.extras > 0) }
+    // Once the match is put in, looked at and left, or thrown away, the draft is gone and nothing writes it back.
+    var finished by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        androidx.compose.runtime.snapshotFlow { SlipDraft.encode(form, chosen) }.collectLatest { t ->
+            kotlinx.coroutines.delay(400)
+            if (!finished) com.bamnat.app.ui.components.DraftStore.write(context, SlipDraft.KEY, t)
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose { if (!finished) com.bamnat.app.ui.components.DraftStore.write(context, SlipDraft.KEY, SlipDraft.encode(form, chosen)) }
+    }
+    fun finish() {
+        finished = true
+        com.bamnat.app.ui.components.DraftStore.clear(context, SlipDraft.KEY)
+        PayslipWorks.drop(PayslipWorks.MATCH)
+    }
     var match by remember { mutableStateOf<PayslipMatch?>(null) }
     // [PAYIN-03] PC 3e347ec6: each change is the user's to take or leave (a way of counting is not swept in with the amounts).
     // PC 6da49f0b: a way of counting (시간·연장·휴일) starts unticked; the user ticks it only when the company really does so.
@@ -210,24 +308,35 @@ fun PayslipMatchDialog(
     val scope = rememberCoroutineScope()
     val appTotal by produceState<Long?>(null, chosen) { value = null; value = vm.calculateOff(profile, snapshot, chosen).total }
     // [PAYS-05] 명세서 사진으로 채우기, and what it filled.
-    var scanning by remember { mutableStateOf(false) }
+    var scanning by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) } // [RVJ-62] the photo comes back with it
+    // 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A PDF of several payslips picked a little while ago: the ones not yet looked at wait on
+    // the first step, so the next month is one tap (then the roster question) away instead of finding the file again.
+    var waiting by remember { mutableStateOf(PdfSlips.get()) }
+    var picked by remember { mutableStateOf<com.bamnat.app.pay.PayslipScanner.Scan?>(null) }
+    var pickedLabel by remember { mutableStateOf("") }
+    var opening by remember { mutableStateOf(false) }
     var filled by remember { mutableStateOf<String?>(null) }
     // [READ-08] With the company's way of counting as a second photo: its ticked rules go into the pay setup from that month.
     val payAppSettings by vm.settings.collectAsState()
-    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false },
+    if (scanning) PayslipFillDialog("명세서 사진으로 채우기", onDismiss = { scanning = false; picked = null }, initialScan = picked,
+        keep = PayslipWorks.MATCH,
         rules = RuleTarget(payAppSettings.extraKinds.kinds, snapshot.shiftTypes, profile.fiveOrMoreEmployees) { changes, m ->
             vm.applyRuleChanges(changes, m ?: chosen)
             filled = "회사 규칙 ${changes.size}개를 급여 설정에 넣었어요"
         }) { read ->
         // [PAYIN-03] Only the company's rules came (no payslip line): the figures typed here stay as they are.
+        picked = null
         if (read.lines.isEmpty()) { scanning = false; return@PayslipFillDialog }
         form.fill(read, profile)
         vm.observePayslip(read, chosen) // [TAX-04] 세금 예측도 이 명세서로 맞춰요
         more = true
         val moved = read.month?.takeIf { !it.isAfter(latest) && it != chosen }
         moved?.let { chosen = it }
-        filled = "명세서에서 ${read.lines.count { it.isEarning || it.role == SlipRole.GROSS || it.role == SlipRole.TOTAL }}줄을 채웠어요" +
-            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요."
+        // [RVJ-26] 검토 PAYU-52: the lines put in, not the lines read; what has no field of its own is named.
+        val noField = read.unplaced.map { it.name }.distinct()
+        filled = "명세서에서 ${read.placedLines}줄을 채웠어요" +
+            (moved?.let { " · ${it.monthValue}월 명세서로 맞춰 볼게요" } ?: "") + ". 틀린 칸은 고쳐 주세요." +
+            (if (noField.isEmpty()) "" else " ${noField.take(3).joinToString(", ")}${if (noField.size > 3) " 등 ${noField.size}줄" else " 줄"}은 따로 넣는 칸이 없어 지급 총액으로만 맞춰 봐요.")
         scanning = false
     }
 
@@ -273,7 +382,13 @@ fun PayslipMatchDialog(
         )
     }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // 2.0.0 [RVJ-63] 검토 PAYU-05 (조건 10): 닫기·뒤로 한 번에 넣던 숫자를 버리지 않고 한 번 물어요. '닫고 달력 고치기' keeps them
+    // for when the user comes back ([SlipDraft]).
+    val guard = com.bamnat.app.ui.components.rememberCloseGuard(
+        unsaved = !finished && form.typed && stage != MatchStage.DONE,
+        onLeave = { finish(); onDismiss() },
+    )
+    Dialog(onDismissRequest = guard::close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BackHandler(enabled = canGoBack) { back() }
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
             Scaffold(
@@ -282,7 +397,7 @@ fun PayslipMatchDialog(
                         title = { Text("명세서로 맞춰 보기") },
                         navigationIcon = {
                             if (canGoBack) IconButton(onClick = ::back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "이전") }
-                            else IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "닫기") }
+                            else IconButton(onClick = guard::close) { Icon(Icons.Filled.Close, "닫기") }
                         },
                     )
                 },
@@ -305,10 +420,11 @@ fun PayslipMatchDialog(
                                 val nothingPicked = !nothingThere && keep.isEmpty() && adds.isEmpty() && added.isEmpty() && addedRules.isEmpty()
                                 Button(
                                     onClick = {
-                                        if (nothingPicked) onDismiss()
+                                        if (nothingPicked) { finish(); onDismiss() }
                                         else {
                                             val picked = m.unmatched.filterKeys { it in adds }.toList()
                                             vm.applyMatch(m, keep, newItems(picked), oneOffRules(picked))
+                                            finish()
                                             stage = MatchStage.DONE
                                         }
                                     },
@@ -340,11 +456,45 @@ fun PayslipMatchDialog(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             when (s) {
-                                MatchStage.MONTH -> MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
-                                    stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                MatchStage.MONTH -> {
+                                    waiting?.let { held ->
+                                        PdfSlipsChooser(held, again = true, enabled = !opening, onPick = { i ->
+                                            opening = true
+                                            scope.launch {
+                                                val scan = try { com.bamnat.app.pay.PayslipScanner.shown(context, held.read, i) }
+                                                    catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+                                                opening = false
+                                                if (scan != null) {
+                                                    PdfSlips.looked(held.id, i)
+                                                    waiting = PdfSlips.get()
+                                                    picked = scan
+                                                    // [RVJ-62] A payslip picked here is the one to read now, not one kept from before.
+                                                    PayslipWorks.drop(PayslipWorks.MATCH)
+                                                    pickedLabel = PdfSlips.labels(held.read.scans).getOrElse(i) { "${i + 1}번째 명세서" }
+                                                    scan.slip.read.month?.takeIf { !it.isAfter(latest) }?.let { chosen = it }
+                                                }
+                                            }
+                                        }, onForget = { PdfSlips.forget(); waiting = null })
+                                    }
+                                    picked?.let { p -> PickedLine(pickedLabel, PdfSlips.amount(p)) }
+                                    MonthStage(profile, chosen, latest, appTotal, { chosen = it }) { same ->
+                                        stage = if (same) MatchStage.AMOUNTS else MatchStage.ROSTER
+                                        // The payslip picked above goes on as soon as the amounts are asked for.
+                                        if (same && picked != null) scanning = true
+                                    }
                                 }
-                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS })
-                                MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled) { scanning = true }
+                                MatchStage.ROSTER -> RosterStage(onFix = onDismiss, onAnyway = { stage = MatchStage.AMOUNTS; if (picked != null) scanning = true })
+                                MatchStage.AMOUNTS -> AmountsStage(profile, chosen, form, appTotal, more, { more = it }, failed, filled,
+                                    resume = PayslipWorks.waiting(PayslipWorks.MATCH)?.kept,
+                                    restored = restored,
+                                    onFresh = {
+                                        // [RVJ-64] 처음부터: the kept figures go, and the month is asked again.
+                                        form.clear(); filled = null; more = false; restored = null
+                                        com.bamnat.app.ui.components.DraftStore.clear(context, SlipDraft.KEY)
+                                        PayslipWorks.drop(PayslipWorks.MATCH)
+                                        chosen = minOf(month, latest)
+                                        stage = MatchStage.MONTH
+                                    }) { scanning = true }
                                 MatchStage.WORKING -> Working()
                                 MatchStage.RESULT -> match?.let { m ->
                                     ResultStage(m, added, addedRules, keep, { k -> keep = if (k in keep) keep - k else keep + k },
@@ -401,6 +551,17 @@ private fun ColumnScope.MonthStage(
     AnswerCard("아니요, 달라요", "달력을 먼저 고치면 더 정확해요", false) { onRoster(false) }
 }
 
+/** 2.0.0 [RVL-44] The payslip picked from the waiting list: it fills the amounts once the roster question is answered. */
+@Composable
+private fun PickedLine(label: String, amount: String?) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(Icons.Filled.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(listOfNotNull("$label 골랐어요", amount).joinToString(" · ") + ". 아래 물음에 답하면 바로 채워요.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
+}
+
 @Composable
 private fun RosterStage(onFix: () -> Unit, onAnyway: () -> Unit) {
     StepTitle("먼저 달력을 고쳐 주세요", "근무표가 실제와 다르면 맞춰 본 결과도 어긋나요. 달력 탭에서 그 달 근무와 잔업·특근·대근을 고친 뒤 다시 와 주세요.")
@@ -418,22 +579,31 @@ private fun ColumnScope.AmountsStage(
     onMore: (Boolean) -> Unit,
     failed: Boolean,
     filled: String?,
+    /** 2.0.0 [RVJ-62] What a payslip being read holds (lines and 칸), when one waits to go on ([PayslipWorks]). */
+    resume: Int? = null,
+    /** 2.0.0 [RVJ-64] The month of the figures brought back from last time ([SlipDraft]); null when they were typed now. */
+    restored: YearMonth? = null,
+    onFresh: () -> Unit = {},
     onScan: () -> Unit,
 ) {
+    // [RVJ-64] 검토 U05-03: one line says the figures are last time's, with the way to start over beside it.
+    if (restored != null) DraftResumeLine("넣던 ${restored.monthValue}월 명세서를 이어서 적어요", onFresh)
     // [PAYS-04][PAYS-05] The easiest way first: one photo fills every field below.
     Surface(
         onClick = onScan,
         shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.primaryContainer,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+            Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("명세서 사진으로 한 번에 채우기", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Text("사진이나 캡처 한 장이면 아래 칸을 앱이 채워요. 휴대폰 안에서만 읽어요.", style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(if (resume != null) "넣던 명세서 이어서" else "명세서 사진으로 한 번에 채우기", style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface)
+                Text(if (resume != null) "읽고 고친 ${resume}줄이 그대로 있어요. 누르면 하던 데서 이어서 봐요."
+                    else "사진이나 캡처 한 장이면 아래 칸을 앱이 채워요. 휴대폰 안에서만 읽어요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -445,20 +615,20 @@ private fun ColumnScope.AmountsStage(
         Text(
             "앱 계산(${won(appTotal)})보다 많이 적어요. 실수령액을 넣으셨다면 공제 전 지급 총액으로 바꿔 주세요.",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.tertiary,
+            color = Tone.Caution.color(), // 2.0.0 [RVP-13] (UIX-15) 주황은 주의 하나
         )
         // [PAYX-23] A 실수령액 typed in: the pay before tax that leaves it, by the same 4대보험·간이세액표 the app uses.
         val mode = profile.taxMode.takeIf { it != com.bamnat.core.pay.TaxMode.NONE } ?: com.bamnat.core.pay.TaxMode.INSURANCE_4
         val before = remember(gross, profile, month) {
             // 1.39 [PAYX-56] 실수령액 is after 사택관리비·회비 too: they are added back before the tax is worked back.
             com.bamnat.core.pay.TakeHome.grossFromNet(gross + com.bamnat.core.pay.TakeHome.afterTax(profile, month).sumOf { it.second }, mode,
-                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOff)
+                profile.taxFamily, month.atDay(1), profile.taxChildren, com.bamnat.core.pay.TakeHome.nonTaxable(profile, month), profile.insuranceOffOn(month))
         }
         if (before > gross) TextButton(onClick = { form.gross = before }) {
             Text("실수령액이었다면: 공제 전 약 ${won(before)}으로 바꾸기")
         }
     }
-    if (failed) Text("맞춰 보지 못했어요. 한 번 더 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+    if (failed) Text("맞춰 보지 못했어요. 한 번 더 눌러 주세요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
 
     SectionCard(title = null) {
         Row(
@@ -507,7 +677,7 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
         Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = line.name,
-                onValueChange = { line.name = it.take(20) },
+                onValueChange = { line.name = it.take(NAME_MAX) },
                 label = { Text("이름") },
                 placeholder = { Text("예: 자격수당") },
                 singleLine = true,
@@ -517,12 +687,14 @@ private fun MoreFields(profile: PayProfile, month: YearMonth, form: SlipForm) {
             IconButton(onClick = { form.others.removeAt(i) }, modifier = Modifier.padding(top = 8.dp)) { Icon(Icons.Filled.Close, "이 줄 지우기") }
         }
     }
-    if (form.others.size < MAX_OTHERS) {
+    // [RVJ-26] The six are the ones typed by hand; what the payslip itself listed is all there, however many.
+    if (form.others.count { !it.fromSlip } < MAX_OTHERS) {
         com.bamnat.app.ui.components.AddButton("수당 넣기", onClick = { form.others += OtherLine() })
     }
 }
 
 private const val MAX_OTHERS = 6
+private const val NAME_MAX = 20
 
 /** A gap of this share of the payslip or more points at the roster or an allowance first. */
 private const val FAR_PERCENT = 5.0
@@ -573,7 +745,7 @@ private fun ResultStage(
                 // A gap this wide is more often a day or an allowance missing than a way of calculating.
                 if (!m.matched && abs(m.gapPercent) >= FAR_PERCENT) {
                     Text("차이가 커요. 그 달 근무와 수당이 실제와 같은지 먼저 봐 주세요.", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 4.dp))
+                        color = Tone.Caution.color(), modifier = Modifier.padding(top = 4.dp))
                 }
             }
         }
@@ -589,11 +761,11 @@ private fun ResultStage(
                 if (CustomRule.looksOneMonth(name)) "명세서에만 있는 소급분 · ${m.month.monthValue}월만 ${won(amount)}" else "명세서에만 있는 수당 · 매달 ${won(amount)}", name in adds) { onToggleAdd(name) } }
             if (ways.isNotEmpty()) {
                 Text("계산 방식 (회사가 정말 이렇게 계산하는지 알 때만)", style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(top = 8.dp))
+                    color = Tone.Caution.color(), modifier = Modifier.padding(top = 8.dp))
                 ways.forEach { c -> PickRow(c.label, "${c.from} → ${c.to}", c.key in keep) { onToggle(c.key) } }
             }
             if (keep.size < m.changes.size || adds.size < m.unmatched.size) Text("다 고르지 않으면 이 달 계산이 명세서와 다를 수 있어요.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+                style = MaterialTheme.typography.bodySmall, color = Tone.Caution.color())
             added.forEach { a ->
                 val now = m.profile.items.firstOrNull { it.id == a.id } ?: a
                 ChangeRow(now.name, "새 수당 · ${now.cadence.label} ${won(now.amount.on(m.month).value)} · 통상임금 ${if (now.ordinary) "포함" else "제외"}")
@@ -661,8 +833,9 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
     SectionCard(title = "줄마다 맞춰 보기", trailing = {
         TextButton(onClick = {
             ui.launch {
-                com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
-                    "bamnat-명세서대조-${m.month}.pdf")
+                // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.pay.SlipAudit.doc(m.month, m.gross, m.total, gaps, deductions, m.belowLaw, hours),
+                    "bamnat-명세서대조-${m.month}.pdf") }
             }
         }) { Text("PDF") }
     }) {
@@ -670,7 +843,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             val mine = gaps.filter { it.basket == b }
             if (mine.isEmpty()) return@forEach
             Text(b.label, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 4.dp),
-                color = if (b == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                color = if (b == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS) MaterialTheme.bamnat.caution else MaterialTheme.colorScheme.primary) // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 회사에 물어볼 일: 주의
             mine.forEach { g ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
                     Text(g.label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
@@ -687,7 +860,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
                     Text("${com.bamnat.core.pay.SlipAudit.hoursText(h.slipMinutes)} · ${com.bamnat.core.pay.SlipAudit.hoursText(h.appMinutes)}",
                         style = MaterialTheme.typography.bodySmall)
                     Text(" ${h.cause.label}", style = MaterialTheme.typography.labelMedium,
-                        color = if (h.cause == com.bamnat.core.pay.SlipAudit.Cause.SAME) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                        color = if (h.cause == com.bamnat.core.pay.SlipAudit.Cause.SAME) MaterialTheme.colorScheme.primary else MaterialTheme.bamnat.caution) // [RVJ-66]
                 }
             }
             com.bamnat.core.pay.SlipAudit.hoursVerdict(hours)?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -696,7 +869,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             }
         }
         if (gaps.any { it.basket == com.bamnat.core.pay.SlipAudit.Basket.COMPANY_LESS } || m.belowLaw != null) {
-            Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text(com.bamnat.core.pay.SlipAudit.ASK_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution) // [RVJ-66]
         }
         if (deductions.isNotEmpty()) {
             Text("공제 (명세서 · 앱 예상)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
@@ -705,7 +878,7 @@ internal fun SlipAuditCard(m: PayslipMatch, slip: Payslip, read: PayslipRead?, s
             deductions.forEach { d ->
                 Row(Modifier.fillMaxWidth().heightIn(min = 40.dp).clickable(onClickLabel = "${d.name} 설명") { open = if (open == d.name) null else d.name }
                     .padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(d.name + if (open == d.name) " ▴" else " ▾", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    Text(d.name + if (open == d.name) "\u00A0▴" else "\u00A0▾", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Text("${d.slip?.let(::won) ?: "없음"} · ${d.estimate?.let(::won) ?: "-"}", style = MaterialTheme.typography.bodySmall)
                 }
                 if (open == d.name) Text(com.bamnat.core.pay.SlipAudit.explain(d.name, m.gross, m.month), style = MaterialTheme.typography.bodySmall,
@@ -773,4 +946,21 @@ private fun ColumnScope.DoneStage(changed: Boolean) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.align(Alignment.CenterHorizontally),
     )
+}
+
+/**
+ * 2.0.0 [RVJ-64][RVJ-75] The one line over a form brought back from last time ([SlipDraft], [WizardDraft], the quick setup's): what
+ * it is, and '처음부터' beside it to empty it.
+ */
+@Composable
+internal fun DraftResumeLine(text: String, onFresh: () -> Unit) {
+    // 2.0.0 [RVJ-78] (총괄 J-518 사진: 어두운 200%에서 '넣던 10월 명세서를 이어서 적어요'가 세 줄) at a big font the words take the whole
+    // width and '처음부터' goes under them at the end, as [com.bamnat.app.ui.components.StepperRow] does.
+    if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) Column(Modifier.fillMaxWidth()) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        TextButton(onClick = onFresh, modifier = Modifier.align(Alignment.End).heightIn(min = 48.dp)) { Text("처음부터") }
+    } else Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        TextButton(onClick = onFresh, modifier = Modifier.heightIn(min = 48.dp)) { Text("처음부터") }
+    }
 }

@@ -7,6 +7,7 @@ import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.tier.Feature
 import com.bamnat.app.tier.Tier
 import com.bamnat.core.model.ShiftOverride
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -44,7 +45,7 @@ class ShareLinksProTest {
         override suspend fun update(state: ShareLinkState, payload: JSONObject): ShareLinkState {
             sent += payload
             val days = payload.optInt("ttlDays", 0)
-            return state.copy(expiresAt = if (days > 0) Instant.now().plus(Duration.ofDays(days.toLong())) else state.expiresAt,
+            return state.copy(expiresAt = if (days > 0) Today.instant().plus(Duration.ofDays(days.toLong())) else state.expiresAt,
                 ttlDays = if (days > 0) days else state.ttlDays)
         }
         override suspend fun delete(state: ShareLinkState) = Unit
@@ -52,7 +53,7 @@ class ShareLinksProTest {
     }
 
     private fun link(id: String, ttl: Int = 30) = ShareLinkState(id, "https://share.example/s/$id", "token",
-        Instant.now().plus(Duration.ofDays(20)), "민지", ttl, YearMonth.now())
+        Today.instant().plus(Duration.ofDays(20)), "민지", ttl, Today.month())
 
     /** The free tier as a phone without 프로 has it after the launch; the alarm check's preview stands in for it. */
     private fun free() = runBlocking {
@@ -66,7 +67,7 @@ class ShareLinksProTest {
         runBlocking {
             c.scheduleRepository.ensureDefaults()
             val day = c.scheduleRepository.shiftTypes.first().first { !it.isOff }.id
-            c.scheduleRepository.setOverride(LocalDate.now().plusDays(1), ShiftOverride.Shift(day))
+            c.scheduleRepository.setOverride(Today.date().plusDays(1), ShiftOverride.Shift(day))
         }
     }
 
@@ -186,7 +187,7 @@ class ShareLinksProTest {
         store.auto = false
         assertEquals(ShareSync.Result.Sent, sync.resend(store.key))
         assertTrue(api.sent.last().getBoolean("ics"))
-        assertEquals(ZoneId.systemDefault().id.takeIf { "/" in it }, api.sent.last().optString("tz").ifEmpty { null })
+        assertEquals(Today.zone().id.takeIf { "/" in it }, api.sent.last().optString("tz").ifEmpty { null })
         // Without 프로 the feed goes off on the next send.
         free()
         assertEquals(ShareSync.Result.Sent, sync.resend(store.key))
@@ -216,7 +217,9 @@ class ShareLinksProTest {
         c.shareLinks.save(link(a, ttl = 180))
         c.shareLinks.apply { feed = true; auto = false; saveOptions(ShareOptions(memos = true)) }
         c.shareLinksOf(second).save(link(b))
-        val json = c.backupManager.export()
+        // 2.0.0 [RVL-03] The keys go only in a file sealed with a password.
+        val json = c.backupManager.exportSealed()
+        val plain = c.backupManager.export()
         fun ids() = ShareLinkKey.all(PersonalCalendar.MAIN).mapNotNull { c.shareLinksOf(it).link.value?.id }
         fun emptyPhone() = ShareLinkKey.all(PersonalCalendar.MAIN).forEach {
             c.shareLinksOf(it).apply { clear(); feed = false; auto = true; saveOptions(ShareOptions()) }
@@ -245,11 +248,18 @@ class ShareLinksProTest {
         c.backupManager.restore(json)
         assertEquals(listOf(own, a, b), ids())
 
+        // 2.0.0 [RVL-03] A file saved without a password has no keys: its links are left out and the phone's own stays.
+        emptyPhone()
+        assertTrue(JSONObject(plain).getJSONArray("shareLinks").let { l -> (0 until l.length()).all { l.getJSONObject(it).optString("token").isEmpty() } })
+        c.shareLinks.save(link(own))
+        c.backupManager.restore(plain)
+        assertEquals(listOf(own), ids())
+
         // A part that is not a link this app made is left out.
         emptyPhone()
         val bad = JSONObject(json).apply {
             getJSONArray("shareLinks").getJSONObject(0).put("url", "https://elsewhere.example/page")
-            getJSONArray("shareLinks").getJSONObject(1).put("expires", Instant.now().minusSeconds(60).toString())
+            getJSONArray("shareLinks").getJSONObject(1).put("expires", Today.instant().minusSeconds(60).toString())
         }
         c.backupManager.restore(bad.toString())
         assertEquals(emptyList<String>(), ids())

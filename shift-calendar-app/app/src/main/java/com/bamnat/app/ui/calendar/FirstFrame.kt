@@ -80,7 +80,7 @@ internal fun FirstFrameGrid(frame: FirstFrame.Frame) {
                         if (cell != null) Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("${cell.first}", style = MaterialTheme.typography.bodySmall)
                             val c = cell.second.colorArgb
-                            if (c != null) Box(Modifier.fillMaxWidth().padding(top = 2.dp).background(Color(c.toInt()), RoundedCornerShape(6.dp)).padding(vertical = 2.dp)) {
+                            if (c != null) Box(Modifier.fillMaxWidth().padding(top = 2.dp).background(Color(c.toInt()), MaterialTheme.shapes.extraSmall).padding(vertical = 2.dp)) {
                                 Text(cell.second.label, style = MaterialTheme.typography.labelSmall, color = Color.White, textAlign = TextAlign.Center,
                                     modifier = Modifier.fillMaxWidth())
                             }

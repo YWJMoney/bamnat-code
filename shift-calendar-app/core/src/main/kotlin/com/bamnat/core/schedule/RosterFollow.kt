@@ -19,9 +19,15 @@ object RosterFollow {
 
     /**
      * [apply]: the days to write, with what goes in; [kept]: days the link changed but the member had changed by hand, left as they are;
-     * [lines]: "12/5 주간 → 야간" for each applied day, in date order.
+     * [lines]: "12/5 주간 → 야간" for each applied day, in date order. 2.0.0 [RVH-57] [keptTo]: for each kept day, what the link would
+     * have put in, so the day can be put in later from '자동으로 정리한 것'.
      */
-    data class Plan(val apply: Map<LocalDate, ShiftOverride>, val kept: List<LocalDate>, val lines: List<String>) {
+    data class Plan(
+        val apply: Map<LocalDate, ShiftOverride>,
+        val kept: List<LocalDate>,
+        val lines: List<String>,
+        val keptTo: Map<LocalDate, ShiftOverride> = emptyMap(),
+    ) {
         val isEmpty: Boolean get() = apply.isEmpty() && kept.isEmpty()
     }
 
@@ -52,9 +58,13 @@ object RosterFollow {
                 ShiftOverride.None -> true
             }
         }
+        fun byHand(day: ResolvedDay, to: ShiftOverride): Boolean =
+            (day.source == DaySource.OVERRIDE && day.entry?.override != null && day.entry.override != ShiftOverride.None) ||
+                (to is ShiftOverride.Shift && day.extras.isNotEmpty())
         fun label(d: LocalDate): String = resolve(d).shiftType?.label?.takeIf { it.isNotBlank() } ?: "쉬는 날"
         val apply = sortedMapOf<LocalDate, ShiftOverride>()
         val kept = mutableListOf<LocalDate>()
+        val keptTo = sortedMapOf<LocalDate, ShiftOverride>()
         val lines = mutableListOf<String>()
         for ((d, t) in new.toSortedMap()) {
             if (from != null && d.isBefore(from)) continue
@@ -63,7 +73,11 @@ object RosterFollow {
             val to = target(t) ?: continue
             if (says(d, to)) continue // the member's calendar says it already
             val before = target(was)
-            if (old != null && before != null && !says(d, before)) { kept += d; continue }
+            if (old != null && before != null && !says(d, before)) { kept += d; keptTo[d] = to; continue }
+            // 2.0.0 [RVH-02] 검토 CAL-06: a day the old link did not have (the 리더 added next month, or the link's window moved on)
+            // has nothing to compare with; a day the member wrote by hand there (a swap or a day off put in early), or one with extra
+            // work written on it (a 대근 that the new shift would count twice), is theirs: kept and said, not written over.
+            if (old != null && was == null && byHand(resolve(d), to)) { kept += d; keptTo[d] = to; continue }
             apply[d] = to
             val toLabel = when (to) {
                 is ShiftOverride.Shift -> byId[to.shiftTypeId]?.label?.takeIf { it.isNotBlank() } ?: byId[to.shiftTypeId]?.name ?: ""
@@ -71,6 +85,6 @@ object RosterFollow {
             }
             lines += "${d.monthValue}/${d.dayOfMonth} ${label(d)} → $toLabel"
         }
-        return Plan(apply, kept, lines)
+        return Plan(apply, kept, lines, keptTo)
     }
 }

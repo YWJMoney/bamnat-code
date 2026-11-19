@@ -32,6 +32,27 @@ class M5AppTest {
 
     @After fun close() = db.close()
 
+    /** 2.0.0 [RVIB-14] (PC-124) 잠들었어요 then 깼어요 within minutes is not kept; 되돌리기 opens the sleep again. A real sleep stays. */
+    @Test fun aTapOfMinutesIsNotKeptAndUndoOpensIt() = runBlocking {
+        var now = millis(LocalDateTime.of(2026, 11, 3, 23, 30))
+        val sleep = SleepRepository(db, clock = { now }, zone = { zone })
+        sleep.fellAsleep()
+        now += 2 * 60_000L
+        val tap = sleep.wokeUpByHand()!!
+        assertTrue(tap.dropped)
+        assertTrue(sleep.recent(days = 3650).first().isEmpty())
+        sleep.undoWoke(tap)
+        val open = sleep.recent(days = 3650).first().single()
+        assertNull(open.end)
+        assertEquals(LocalDateTime.of(2026, 11, 3, 23, 30), open.start)
+        now = millis(LocalDateTime.of(2026, 11, 4, 6, 30))
+        val night = sleep.wokeUpByHand()!!
+        assertFalse(night.dropped)
+        assertEquals(420L, sleep.recent(days = 3650).first().single().minutes)
+        sleep.undoWoke(night)
+        assertNull(sleep.recent(days = 3650).first().single().end)
+    }
+
     @Test fun twoTapsMakeOneSleepAndTheBackupKeepsIt() = runBlocking {
         var now = millis(LocalDateTime.of(2026, 11, 3, 23, 30))
         val sleep = SleepRepository(db, clock = { now }, zone = { zone })

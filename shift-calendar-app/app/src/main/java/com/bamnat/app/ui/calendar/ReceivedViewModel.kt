@@ -108,6 +108,30 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
         }
     }
 
+    /**
+     * 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: 확인했어요 to the leader for the version here now. [done] gets what to tell the user, or null
+     * when it went (the card turns into its quiet line). A link the leader no longer asks about stops asking here too.
+     */
+    fun okPress(id: String, done: (String?) -> Unit) {
+        viewModelScope.launch {
+            val said = try {
+                c.shareApi.okPress(id)
+                c.received.setOk(id, clock())
+                c.telemetry.event("share_ok")
+                null
+            } catch (e: ShareLinkException) {
+                when (e.message) {
+                    "not_found" -> { c.received.setWatch(id, false); null }
+                    "rate_limited" -> com.bamnat.app.company.RateLimits.text("확인", 3_600, "device")
+                    else -> "확인을 보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.BUSY
+                }
+            } catch (e: IOException) {
+                "확인을 보내지 못했어요. " + com.bamnat.app.ui.components.NetWords.OFFLINE
+            }
+            done(said)
+        }
+    }
+
     /** Reads the link in [text] for a look before it is added. */
     fun preview(text: String) {
         val id = ShareLinkId.find(text.trim())
@@ -131,10 +155,11 @@ class ReceivedViewModel(private val c: AppContainer, private val clock: () -> In
                 Preview.Failed(
                     if (e.removedReason != null) "운영자가 이 링크를 내렸어요. 이유: ${e.removedReason}"
                     else if (e.message == "not_found") "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
-                    else "근무표를 받지 못했어요 (${e.message}). 잠시 뒤 다시 해 주세요.",
+                    // 2.0.0 [RVG-24] 검토 PC-92: in people's words, not the server's code.
+                    else com.bamnat.app.share.linkProblem(e) ?: com.bamnat.app.share.netWords(e, "근무표를 받지 못했어요."),
                 )
             } catch (e: IOException) {
-                Preview.Failed("인터넷에 연결되지 않았어요. 연결을 확인하고 다시 해 주세요.")
+                Preview.Failed(com.bamnat.app.share.netWords(e, "근무표를 받지 못했어요."))
             }
         }
     }

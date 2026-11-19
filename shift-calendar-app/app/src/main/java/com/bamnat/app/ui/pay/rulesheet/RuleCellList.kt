@@ -17,11 +17,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,6 +39,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.FilterChip
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 import com.bamnat.app.ui.pay.Hint
 import com.bamnat.app.ui.pay.Label
 import com.bamnat.app.ui.pay.MoneyField
@@ -178,8 +181,19 @@ private fun CellCard(
                 Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, null, tint = colors.onSurfaceVariant)
                 IconButton(onClick = onRemove) { Icon(Icons.Filled.Close, "‘${cell.name}’ 빼기") }
             }
+            // 2.0.0 [RVL-17] (검토 SCAN-30) A sentence that would change the pay type or cut it by half or more: said, and left off.
+            cell.caution?.let { said ->
+                Row(Modifier.padding(start = 12.dp, end = 16.dp, bottom = 8.dp).semantics(mergeDescendants = true) {},
+                    horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Top) {
+                    Icon(Icons.Outlined.WarningAmber, null, tint = Tone.Caution.color(), modifier = Modifier.size(16.dp))
+                    Text(said, style = MaterialTheme.typography.bodySmall, color = colors.onSurface)
+                }
+            }
+            // 2.0.0 [RVL-48] Where it was read from, as the cell's chip says (a typed rule said '사진에서'), and 으로/로 by the
+            // last letter ("인상”으로").
+            val whence = when (cell.from) { CellFrom.PHOTO -> "사진에서 "; CellFrom.TEXT -> "글에서 "; CellFrom.SLIP -> "명세서에서 "; else -> "" }
             if (unsure) Text(
-                "확실하지 않아요. 맞는지 봐 주세요." + if (cell.source.isNotBlank()) " 사진에서 “${cell.source}”로 읽었어요." else "",
+                "확실하지 않아요. 맞는지 봐 주세요." + if (cell.source.isNotBlank()) " $whence“${cell.source}”${com.bamnat.core.text.Josa.euro(cell.source)} 읽었어요." else "",
                 style = MaterialTheme.typography.bodySmall, color = colors.onTertiaryContainer, modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
             ) else if (cell.source.isNotBlank() && cell.from != CellFrom.HAND) Text("“${cell.source}”", style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp))

@@ -30,10 +30,50 @@ class StaffContractTest {
         assertTrue(body.getValue("근무 요일과 시간").contains("한 주 소정근로시간 15시간"))
         assertTrue(body.getValue("휴일").startsWith("매주 월요일 (유급 주휴일)"))
         assertTrue(body.getValue("임금").contains("시급 10,320원"))
-        assertTrue(body.getValue("임금").contains("식대 5,000원(일한 날마다)"))
+        assertTrue(body.getValue("임금").contains("식대 5,000원(일한 날마다, 비과세)"))
         assertFalse("5인 미만은 가산 줄 없음", body.getValue("임금").contains("50%"))
         assertTrue(body.getValue("연차 유급휴가").contains("5명 미만"))
         assertTrue(StaffContract.doc(place, s, c).title.startsWith("단시간"))
+    }
+
+    /** 2.0.0 [RVG-03] 검토 BOSS-51: 한 주 15시간 미만은 5인 이상이어도 제60조 연차가 없어요(제18조 제3항). */
+    @Test fun underFifteenHoursHasNoAnnualLeave() {
+        val four = StaffShift(LocalTime.of(10, 0), LocalTime.of(14, 0))
+        val short = s.copy(weekly = mapOf(DayOfWeek.SATURDAY to four, DayOfWeek.SUNDAY to four))
+        val body = StaffContract.of(place.copy(fivePlus = true), short).items.associate { it.title to it.body }
+        assertTrue(body.getValue("연차 유급휴가").contains("15시간 미만"))
+        assertFalse(body.getValue("연차 유급휴가").contains("15일"))
+        assertTrue(body.getValue("휴일").contains("15시간 미만"))
+        // 15시간 이상, 5인 이상은 그대로 제60조.
+        val full = StaffContract.of(place.copy(fivePlus = true), s).items.associate { it.title to it.body }
+        assertTrue(full.getValue("연차 유급휴가").startsWith("근로기준법 제60조에 따라"))
+    }
+
+    /**
+     * 2.0.0 [RVJ-89] 검토 BOSS-75 ②: the clauses that change with the person. A 주 8시간 week has no 주휴수당 line and says why its 주휴일
+     * and 연차 are not paid (제18조 제3항); a 만 16세 gets the 제66~70조 line, warned only when the week breaks it; a 주 7일 week is asked
+     * for its 주휴일 first and the contract leaves the day blank.
+     */
+    @Test fun theClausesFollowThePerson() {
+        val four = StaffShift(LocalTime.of(10, 0), LocalTime.of(14, 0))
+        val eight = s.copy(weekly = mapOf(DayOfWeek.SATURDAY to four, DayOfWeek.SUNDAY to four))
+        val e = StaffContract.of(place.copy(fivePlus = true), eight).items.associate { it.title to it.body }
+        assertFalse("주 15시간 미만은 주휴수당 줄 없음", e.getValue("임금").contains("주휴수당"))
+        assertTrue(e.getValue("휴일"), e.getValue("휴일").startsWith("매주 월요일 (한 주 15시간 미만이라 주휴일은 유급이 아니에요"))
+        assertTrue(e.getValue("연차 유급휴가").startsWith("한 주 15시간 미만이라"))
+
+        // 만 16세 (2010-05-01생, 2026-11-02 시작): 서류·대리 금지·시간 줄이 붙고, 하루 4시간 주 2일은 경고가 없어요.
+        val sixteen = eight.copy(birth = LocalDate.of(2010, 5, 1))
+        val y = StaffContract.of(place, sixteen)
+        assertEquals(StaffContract.YOUNG, y.items.single { it.title == "18세 미만 근로자" }.body)
+        assertTrue(y.warn.toString(), y.warn.isEmpty())
+        assertTrue("하루 7.5시간이면 제69조 경고", StaffContract.of(place, sixteen.copy(weekly = s.weekly)).warn.any { it.contains("하루 7시간") })
+        assertTrue("시작하는 날 18세가 되면 그 줄이 없어요", StaffContract.of(place, s.copy(birth = LocalDate.of(2008, 11, 2))).items.none { it.title == "18세 미만 근로자" })
+
+        // 주 7일: 주휴일을 먼저 묻고, 계약서에는 빈칸.
+        val c7 = StaffContract.of(place, s.copy(weekly = DayOfWeek.entries.associateWith { four }))
+        assertTrue(c7.missing.toString(), c7.missing.contains("주휴일(한 주에 쉬는 날, 평소 근무에서 하루를 빼 주세요)"))
+        assertTrue(c7.items.single { it.title == "휴일" }.body.startsWith("매주 _요일"))
     }
 
     @Test fun saysWhatIsMissing() {
@@ -69,5 +109,42 @@ class StaffContractTest {
         // An unsigned one replaced again is not kept.
         val again = waiting.replacedBy(StaffContract.Sent("근로계약서", c.items, sentAt = 4, linkId = "y", token = "u"))
         assertEquals(1, again.past.size)
+    }
+
+    /** 2.0.0 [RVJ-24] 검토 BOSS-53: 종이 계약서를 받은 날을 고를 수 있고(늘 오늘이었어요), 그날이 PDF의 '받음'에 남아요. */
+    @Test fun paperKeepsTheDayItCameBack() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val now = LocalDate.of(2026, 11, 12).atTime(15, 30).atZone(zone).toInstant().toEpochMilli()
+        val c = StaffContract.of(place, s)
+        val today = StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 12), zone)
+        assertEquals("오늘 받은 것은 누른 때", now, today.signedAt)
+        val lastWeek = StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 5), zone)
+        assertTrue(lastWeek.signed && lastWeek.paper)
+        assertEquals("표시한 때는 지금", now, lastWeek.sentAt)
+        assertEquals(LocalDate.of(2026, 11, 5), java.time.Instant.ofEpochMilli(lastWeek.signedAt!!).atZone(zone).toLocalDate())
+        assertTrue(StaffContract.doc(place, s, lastWeek, zone).blocks.toString().contains("종이 계약서에 서명함 (2026년 11월 5일 받음)"))
+        // A day still to come is not a day it came back: it reads as today.
+        assertEquals(now, StaffContract.onPaper(c, now, LocalDate.of(2026, 11, 20), zone).signedAt)
+    }
+
+    /** 2.0.0 [RVJ-24] 검토 BOSS-53: 잘못 누른 '종이로 받았어요'는 되돌릴 수 있고, 그 앞의 서명한 계약서와 지난 계약서는 그대로예요. */
+    @Test fun paperMarkCanBeTakenBack() {
+        val zone = java.time.ZoneId.of("Asia/Seoul")
+        val c = StaffContract.of(place, s)
+        val paper = StaffContract.onPaper(c, 2_000L, LocalDate.of(1970, 1, 1), zone)
+        assertEquals("앞에 아무것도 없었으면 계약서 없음으로", null, StaffContract.withoutPaper(paper))
+        assertTrue(StaffContract.lacking(s.copy(contract = StaffContract.withoutPaper(paper)), LocalDate.of(2026, 11, 12)))
+        // A contract signed on the link, replaced by a paper one pressed by mistake: the signed one is the contract again.
+        val older = StaffContract.Sent("근로계약서", c.items, 100L, signedName = "박마바", signedAt = 150L)
+        val linked = StaffContract.Sent("근로계약서", c.items, 500L, signedName = "박마바", signedAt = 600L, past = listOf(older))
+        val back = StaffContract.withoutPaper(linked.replacedBy(paper))
+        assertEquals(600L, back?.signedAt)
+        assertFalse(back!!.paper)
+        assertEquals("지난 계약서는 그대로", listOf(older), back.past)
+        // What the staff member signed on the link is never taken back here, nor a link still waiting.
+        assertEquals(linked, StaffContract.withoutPaper(linked))
+        val waiting = StaffContract.Sent("근로계약서", c.items, 700L, linkId = "l", token = "t")
+        assertEquals(waiting, StaffContract.withoutPaper(waiting))
+        assertEquals(null, StaffContract.withoutPaper(null))
     }
 }

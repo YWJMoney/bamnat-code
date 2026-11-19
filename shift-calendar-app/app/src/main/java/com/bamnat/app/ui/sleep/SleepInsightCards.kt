@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -46,7 +46,8 @@ internal fun CausesCard(found: List<SleepCauses.Finding>) {
 internal fun ChallengeCard(progress: RecoveryChallenge.Progress?, onStart: () -> Unit, onStop: () -> Unit) {
     SectionCard(title = "회복 도전") {
         if (progress == null) {
-            Text("근무마다 계획한 잠을 채운 날을 세요. 정해진 시각이 아니라 내 근무에 맞춘 잠이에요. 14일·21일에 고리를 채워요.",
+            // 2.0.0 [RVH-74] 검토 T30-95: for every kind of work (가게·현장·투자 have no 근무).
+            Text("날마다 계획한 잠을 채운 날을 세요. 정해진 시각이 아니라 내 일정에 맞춘 잠이에요. 14일·21일에 고리를 채워요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedButton(onClick = onStart, modifier = Modifier.padding(top = 8.dp)) { Text("도전 시작") }
             return@SectionCard

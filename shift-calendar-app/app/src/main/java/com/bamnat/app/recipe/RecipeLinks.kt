@@ -25,7 +25,7 @@ object RecipeLinks {
     fun app(code: String) = "bamnat://r/$code"
 
     /** What 링크 보내기 sends: the title, the link and the code to type in. */
-    fun shareText(title: String, code: String) = "‘$title’ 레시피 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
+    fun shareText(title: String, code: String) = "‘$title’ 작품 · 밤낮 마을 장터\n${web(code)}\n코드: $code"
 
     /**
      * [PRF-11] 1.36 프로필 링크: the company server's small public page of a maker (`/m/<id>`, which opens the app with
@@ -54,8 +54,28 @@ object RecipeLinks {
     /** 고쳐 만들기: the written recipe and its code, handed to 만들기 once (in memory). */
     var remake: Pair<String, String>? = null
 
-    /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
-    @Volatile var tryNext: String? = null
+    /** 2.0.0 [RVM-36] HQ-52: the work whose page opens at its 이야기 (an 알림함 row said a 글 came), taken once by the page. */
+    @Volatile var talkFocus: String? = null
+
+    /** Whether the page of [code] opens at its 이야기; asked once. */
+    fun takeTalkFocus(code: String): Boolean = (talkFocus == code).also { if (it) talkFocus = null }
+
+    /**
+     * PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory).
+     * 2.0.0 [RVM-57] 총괄 (tryOn 화면 사진이 묶음의 첫 판에서만 '예시로 보기'를 못 찾음): an ask whose page never opened (the tap went
+     * nowhere, or 뒤로 before the page came) stayed, and that work's page opened straight on 입어 보기 by itself whenever it was
+     * next opened, hours later on a phone, the next shot in a test run. It holds for [ASK_MILLIS] now, time enough for the page.
+     */
+    var tryNext: String?
+        get() = tryAsk?.takeIf { clock() - it.second < ASK_MILLIS * 1_000_000L }?.first
+        set(v) { tryAsk = v?.let { it to clock() } }
+    @Volatile private var tryAsk: Pair<String, Long>? = null
+    const val ASK_MILLIS = 30_000L
+    /** Nanoseconds, monotonic; a test moves it. */
+    internal var clock: () -> Long = System::nanoTime
+
+    /** What one test shot asked must not open the next one's page (screenshot base). */
+    fun resetForTest() { tryAsk = null; talkFocus = null }
 
     /** [THM-01] The key of one of my themes being sent from 스튜디오: once it is up, it is marked as in 장터 (no days, no ad). */
     var ownTheme: String? = null

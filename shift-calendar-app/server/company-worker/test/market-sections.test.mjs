@@ -29,16 +29,23 @@ test("[N13] 없다고 알리기: words are counted by week with no device, numbe
   assert.equal(missWord("a"), null);
   assert.equal(missWord("http://x.y"), null);
   const { call, env } = server({ plaza: true });
-  const post = (q, place = "settings") => call("POST", "/api/growth/miss", { place, q });
+  const { from } = await import("./helpers.mjs");
+  const post = (q, place = "settings", n = 1) => call("POST", "/api/growth/miss", { place, q }, from(n));
   assert.equal((await post("야간 수당 색")).data.counted, true);
   assert.equal((await post("01012345678")).data.counted, false);
   assert.equal((await post("아무거나", "nowhere")).data.counted, false);
-  await post("야간 수당 색");
+  // 2.0.0 [RVQ-55] 검토 SVC-30: 같은 연결·같은 말은 하루 한 번만 세요(한 연결이 혼자 신호를 만들지 못하게). 다른 곳(place)이나 다른 연결은 따로.
+  assert.equal((await post("야간 수당 색")).data.counted, false);
+  assert.equal((await post("야간 수당 색", "studio")).data.counted, true);
+  await post("야간 수당 색", "settings", 2);
   await post("혼자만 쓴 말");
+  for (let i = 0; i < 5; i++) await post("한 곳에서 여러 번");
+  const keys = (await env.DB.prepare("SELECT key FROM counters WHERE key LIKE 'missone|%'").all()).results.map((r) => r.key);
+  assert.ok(keys.length >= 4 && keys.every((k) => /^missone\|[0-9a-f]{16}$/.test(k)), "연결·말은 해시로만, 글자로 남지 않아요");
   const rows = await env.DB.prepare("SELECT * FROM search_misses").all();
   assert.ok(rows.results.every((r) => Object.keys(r).sort().join() === "n,place,week,word"));
   const { misses } = await import("../src/growth.js").then((g) => g.missList(env, Date.now()).then((m) => ({ misses: m })));
-  assert.deepEqual(misses.map((m) => [m.word, m.n]), [["야간 수당 색", 2]]);
+  assert.deepEqual(misses.map((m) => [m.word, m.place, m.n]), [["야간 수당 색", "settings", 2]]);
 });
 
 test("[N14][N15] 요청 판 14일 안내 and 고친 판 바꾼 곳", async () => {

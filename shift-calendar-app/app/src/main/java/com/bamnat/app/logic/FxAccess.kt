@@ -61,6 +61,17 @@ object FxAccess {
         return true
     }
 
+    /**
+     * 2.0.0 [RVO-01] (PC-54) 디버그 빌드의 등급 미리 보기에서만: 작품마다 한 번인 하루 써 보기를 처음으로 돌려, PC 확인이 같은 휴대폰에서
+     * '쓸 수 있음 → 쓰는 중 → 끝난 뒤 한 장'을 다시 볼 수 있게 해요.
+     */
+    fun forgetTries(c: AppContainer) {
+        c.appContext.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit().remove(TRIED).remove(SUM).remove(SAID).apply()
+        _taste.value = FxTaste.decode(null)
+        FxOutside.sync(c)
+        LogicRunner.rulesChanged(c)
+    }
+
     /** The 프로 기능 장치 a whole work carries in its 규칙·단추 piece (none: free to put in and to send up). */
     fun partsOf(r: com.bamnat.core.recipe.Recipe): Set<FxPro.Part> =
         (r.pieces.filter { it.kind == com.bamnat.core.recipe.PieceKind.LOGIC }.flatMap { FxPro.uses(Logic.from(it.values)) } +
@@ -68,9 +79,11 @@ object FxAccess {
 
     /** What runs of [full] now. */
     fun runnable(c: AppContainer, full: Logic, now: Instant = Today.instant()): Logic {
-        if (pro(c) || com.bamnat.app.recipe.FunctionTrial.busy(c.appContext)) return full
+        if (pro(c)) return full
         // 1.39 [FX-23] 작품마다: a try opens the 규칙·단추 that came from that work (내가 만든 것·표시 없는 것은 OWN의 써 보기로).
-        val open = load(c.appContext).openKeys(now)
+        // 2.0.0 [RVM-53] 검토 RCP-21 ③: 기능까지 써 보기 opened every 규칙·단추 on the phone while it lasted; now, as a 하루 써 보기 does, only
+        // the work being tried (its pieces are marked with the trial's code).
+        val open = load(c.appContext).openKeys(now) + listOfNotNull(com.bamnat.app.recipe.FunctionTrial.codeNow(c.appContext))
         if (open.isEmpty()) return FxPro.free(full)
         val store = LogicStore(c.appContext)
         return FxPro.free(full, { (store.fromButton(it.id) ?: FxTaste.OWN) in open }, { (store.fromRule(it.key) ?: FxTaste.OWN) in open })

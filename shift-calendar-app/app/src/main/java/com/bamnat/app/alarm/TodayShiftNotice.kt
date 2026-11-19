@@ -9,7 +9,9 @@ import com.bamnat.app.NoticeLinks
 import com.bamnat.app.share.ShareLinkPayload
 import com.bamnat.core.schedule.ResolvedDay
 import com.bamnat.core.schedule.ScheduleResolver
+import com.bamnat.core.work.words
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.LocalTime
 import com.bamnat.core.time.Today
@@ -34,7 +36,17 @@ object TodayShiftNotice {
             cancel(context)
             return false
         }
-        val (title, text) = lines(snapshot.resolver, today)
+        val style = container.settingsRepository.current.workStyle
+        // 2.0.0 [RVI-97] (검토 I03c-03) During work on Android 16: how far through it, how long to its end (a bar, and a chip in the
+        // status bar), drawn again every 5 minutes while the screen is on. Older phones keep the two lines as they were.
+        val now = Today.dateTime()
+        val work = listOf(today.minusDays(1), today).flatMap { com.bamnat.core.sleep.SleepSchedule.work(snapshot.resolver.resolve(it)) }
+        val going = if (android.os.Build.VERSION.SDK_INT >= 36) com.bamnat.core.schedule.ShiftProgress.of(work, now) else null
+        // 2.0.0 [RVIB-21] (결정 19) A day of two parts: the bar fills to the 브레이크 타임·비는 시간, then rests there with when work starts
+        // again, and is drawn again when the next part starts (every part's start and end, not only the day's first start).
+        scheduleTick(context, going?.let { com.bamnat.core.schedule.ShiftProgress.nextDraw(it, now, stepMinutes = 5) }
+            ?: com.bamnat.core.schedule.ShiftProgress.changes(work, now).firstOrNull())
+        val (title, text) = words(snapshot.resolver, today, now, style, going)
         // 1.39 [NTC-02] 겹친 규칙 알림의 나머지 한 줄 (이달 쓴 돈 …): this notice says it, so there is one notice, not two.
         val extra = folded(context, today)
         fun base() = NotificationCompat.Builder(context, Notifications.TODAY_CHANNEL_ID)
@@ -50,9 +62,10 @@ object TodayShiftNotice {
             .setContentIntent(Notifications.open(context, NoticeLinks.Target.TODAY, 3314))
             // [TOWN-08] Its own group, so Android does not bundle it with 소식 or other notices (a tap on the bundle opened this).
             .setGroup(Notifications.GROUP_TODAY).setGroupSummary(true)
+            .apply { going?.let { progress(this, it) } }
         val notification = if (extra == null) base().build() else base()
             .setContentText("$text · ${extra.second}")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${extra.second}"))
+            .apply { if (going == null) setStyle(NotificationCompat.BigTextStyle().bigText("$text\n${extra.second}")) }
             // 1.36 [SEC-12] M5: a rule's words may hold the 가계부's numbers, so the lock screen keeps only the shifts.
             .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
             .setPublicVersion(base().build())
@@ -60,6 +73,33 @@ object TodayShiftNotice {
         Notifications.post(context, ID, notification)
         return true
     }
+
+    /** 2.0.0 [RVI-97] The bar from the start of work to its end in the shift's colour, the time left counting down, and the chip. */
+    private fun progress(b: NotificationCompat.Builder, n: com.bamnat.core.schedule.ShiftProgress.Now) {
+        val color = (n.colorArgb ?: 0xFF5E6AD2).toInt()
+        b.setStyle(NotificationCompat.ProgressStyle()
+            .setProgressSegments(listOf(NotificationCompat.ProgressStyle.Segment(n.totalMinutes.toInt().coerceAtLeast(1)).setColor(color)))
+            .setProgress(n.elapsedMinutes.toInt().coerceIn(0, n.totalMinutes.toInt().coerceAtLeast(1)))
+            .setStyledByProgress(true))
+            .setRequestPromotedOngoing(true)
+            .setShortCriticalText(com.bamnat.core.schedule.ShiftProgress.chip(n))
+            .setWhen(n.to.atZone(Today.zone()).toInstant().toEpochMilli())
+            .setShowWhen(true)
+            .setUsesChronometer(true)
+            .setChronometerCountDown(true)
+    }
+
+    /** 2.0.0 [RVI-97] Drawn again at [at] (the next quarter hour on shift, else the next work's start); quiet, never waking the phone. */
+    private fun scheduleTick(context: Context, at: java.time.LocalDateTime?) {
+        val am = context.getSystemService(android.app.AlarmManager::class.java) ?: return
+        val pi = android.app.PendingIntent.getBroadcast(context, REQ_TICK, android.content.Intent(context, TodayShiftTickReceiver::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        if (at == null) { am.cancel(pi); return }
+        val millis = at.atZone(Today.zone()).toInstant().toEpochMilli()
+        runCatching { am.setWindow(android.app.AlarmManager.RTC, millis, 60_000L, pi) }
+    }
+
+    private const val REQ_TICK = 3329
 
     private fun prefs(context: Context) = context.getSharedPreferences("today_notice_fold", Context.MODE_PRIVATE)
 
@@ -85,32 +125,88 @@ object TodayShiftNotice {
         return update(context, today)
     }
 
-    fun cancel(context: Context) = NotificationManagerCompat.from(context).cancel(ID)
+    fun cancel(context: Context) {
+        NotificationManagerCompat.from(context).cancel(ID)
+        scheduleTick(context, null)
+    }
+
+    /**
+     * The notice's title and text at [now]. 2.0.0 [RVIB-30] (PC-198, 통합 5차: 자정 넘어 야간 근무 중에 제목은 '퇴근까지 6시간 49분'인데
+     * 본문은 '오늘 휴무 · 내일 휴무') Work begun yesterday and still going is told as now's work, "지금 야간 근무 중 · 07:00 퇴근", and
+     * what comes after it from there ('퇴근 뒤 쉬는 날', or today's later shift), never today's 휴무 beside a running shift. [going] is the
+     * bar's work (Android 16 and later); older phones read the same words without the bar.
+     */
+    internal fun words(
+        resolver: ScheduleResolver, today: LocalDate, now: java.time.LocalDateTime, style: com.bamnat.core.work.WorkStyle?,
+        going: com.bamnat.core.schedule.ShiftProgress.Now?,
+    ): Pair<String, String> {
+        val (dayLine, nextLine) = lines(resolver, today, style)
+        val talk = com.bamnat.core.sleep.TodayFlow.WorkTalk.of(style)
+        val yesterday = com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(today.minusDays(1)))
+        val todays = com.bamnat.core.sleep.SleepSchedule.work(resolver.resolve(today))
+        val stop = com.bamnat.core.schedule.ShiftProgress.stopOf(yesterday + todays, now)
+        val carried = yesterday.filter { !now.isBefore(it.from) && now.isBefore(it.to) }.minByOrNull { it.to }
+        val goingTitle = going?.let { com.bamnat.core.schedule.ShiftProgress.left(it, if (it.pausesAtEnd) "${talk.gap}까지" else talk.untilEnd) }
+        val stopTitle = stop?.let { "${talk.gap} · ${hm(it.endInclusive.toLocalTime())} 다시 시작" }
+        if (carried != null) {
+            val name = carried.name.takeIf { it.isNotBlank() && !talk.on.startsWith(it) }
+            val nowLine = "지금 ${listOfNotNull(name, talk.on).joinToString(" ")} · ${hm(carried.to.toLocalTime())} ${talk.untilEnd.removeSuffix("까지")}"
+            val after = if (todays.any { !it.from.isBefore(carried.to) }) dayLine
+                else "${talk.afterEnd} ${describe(resolver.resolve(today), style)}"
+            val title = goingTitle ?: stopTitle
+            return if (title != null) title to "$nowLine · $after" else nowLine to after
+        }
+        val title = goingTitle ?: stopTitle ?: dayLine
+        return title to if (going != null || stop != null) "$dayLine · $nextLine" else nextLine
+    }
 
     /** "오늘 주간 07:00~19:00" over "내일 야간 19:00~07:00". */
-    fun lines(resolver: ScheduleResolver, today: LocalDate): Pair<String, String> =
-        "오늘 ${describe(resolver.resolve(today))}" to "내일 ${describe(resolver.resolve(today.plusDays(1)))}"
+    fun lines(resolver: ScheduleResolver, today: LocalDate, style: com.bamnat.core.work.WorkStyle? = null): Pair<String, String> =
+        "오늘 ${describe(resolver.resolve(today), style)}" to "내일 ${describe(resolver.resolve(today.plusDays(1)), style)}"
 
-    internal fun describe(day: ResolvedDay): String {
+    /** 2.0.0 [RVH-41] 검토 T30-100: a day off is a shop's 휴무, a field worker's 빈 날 ([style]'s own word). */
+    internal fun describe(day: ResolvedDay, style: com.bamnat.core.work.WorkStyle? = null): String {
         // The lock screen is seen by anyone nearby: the kind of leave shows only as a link shows it.
         val leave = day.leave?.let { ShareLinkPayload.leaveLabel(it, kinds = false) }
         val name = day.shiftType?.name?.takeIf { it.isNotBlank() }
         val start = day.start
         val end = day.end
         val work = when {
+            // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 3번) A day of two parts shows both: "주간 11:00~15:00, 17:00~21:00".
+            day.isWorkDay && day.split -> "${name ?: "근무"} " + day.segments.joinToString(", ") { "${hm(it.start.toLocalTime())}~${hm(it.endInclusive.toLocalTime())}" }
             day.isWorkDay && start != null && end != null -> "${name ?: "근무"} ${hm(start)}~${hm(end)}"
             day.isWorkDay -> name ?: "근무"
             else -> null
         }
+        // 2.0.0 [RVI-66] (PC 통합 1차 N8·PC-39) A 대근 put on a day off said '오늘 휴무' here while the calendar, the night screen and
+        // the alarm said 주간 대근: the day's extra work is read with it, on a day off as the day's work, beside the shift otherwise.
+        val extra = (day.extras.firstOrNull { it.covered != null } ?: day.extras.firstOrNull())?.let { e ->
+            val what = com.bamnat.app.ui.calendar.ExtraText.name(e, style)
+            val from = e.from
+            val to = e.to
+            if (from != null && to != null && !com.bamnat.app.ui.calendar.ExtraText.namesHours(e)) "$what ${hm(from.toLocalTime())}~${hm(to.toLocalTime())}"
+            else what
+        }
         return when {
             // A whole day off shows the leave alone; 반차 and the like keep the shift beside it.
-            leave != null && (day.leave?.isFullDay == true || work == null) -> leave
+            leave != null && (day.leave?.isFullDay == true || work == null) -> if (extra != null) "$leave · $extra" else leave
             leave != null -> "$work · $leave"
-            work != null -> work
+            work != null -> if (extra != null) "$work · $extra" else work
+            extra != null -> extra
             name != null -> name
-            else -> "쉬는 날"
+            else -> style.words().offDay
         }
     }
 
     private fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
+}
+
+/** 2.0.0 [RVI-97] Draws 잠금 화면 '오늘 근무' again: the bar moves on during work, and starts when work starts. */
+class TodayShiftTickReceiver : android.content.BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: android.content.Intent) {
+        val pending = goAsync()
+        context.appContainer.appScope.launch {
+            try { runCatching { TodayShiftNotice.update(context) } } finally { pending.finish() }
+        }
+    }
 }

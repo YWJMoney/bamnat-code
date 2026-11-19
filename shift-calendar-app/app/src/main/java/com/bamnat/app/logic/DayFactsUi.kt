@@ -87,7 +87,8 @@ class PayFacts(private val pay: PaySource, private val snap: ScheduleSnapshot) {
     fun payDays(today: LocalDate, months: Int = 4): List<com.bamnat.core.money.PayDay> =
         (-1..months).map { YearMonth.from(today).plusMonths(it.toLong()) }.mapNotNull { m ->
             val gross = month(m)?.total?.takeIf { it > 0 } ?: return@mapNotNull null
-            val date = pay.profile.period.payDate(m)
+            // 2.0.0 [RVK-38] (검토 MONEY-79) The widget's 미래 잔액 too: the day it really comes off a weekend or 공휴일.
+            val date = pay.profile.period.payDateWorkday(m)
             com.bamnat.core.money.PayDay(date ?: m.atEndOfMonth(), com.bamnat.core.pay.PayIncome.net(pay.profile, m, gross), "${m.monthValue}월 급여", dateGuessed = date == null)
         }
 
@@ -217,7 +218,14 @@ fun rememberDayFacts(snap: ScheduleSnapshot?, memos: List<Memo>, money: MoneyBoo
     val sleepFlow = remember(c) { c.sleepRepository.recent(60) }
     val sleeps by sleepFlow.collectAsState(emptyList())
     val link = rememberLinkOn(c)
-    return remember(snap, memos, money, style, today, extras, sleeps, link) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps, link) } }
+    // 2.0.0 [RVS-11] 검토 STU-28: a memo, a money line or a day changed made the whole book again on the main thread while the screen
+    // drew. Now only the first book is made there (so the month never shows without its 조건 꾸밈 for a frame), and every one after it
+    // in the background, the last one staying on screen until the next is ready.
+    val first = remember(snap == null) { snap?.let { dayFactsOf(it, memos, money, style, today, extras, sleeps, link) } }
+    val later by androidx.compose.runtime.produceState<DayFactsBook?>(null, snap, memos, money, style, today, extras, sleeps, link) {
+        value = snap?.let { s -> kotlinx.coroutines.withContext(Dispatchers.Default) { dayFactsOf(s, memos, money, style, today, extras, sleeps, link) } }
+    }
+    return if (snap == null) null else later ?: first
 }
 
 /**

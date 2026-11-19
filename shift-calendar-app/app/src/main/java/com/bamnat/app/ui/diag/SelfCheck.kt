@@ -22,7 +22,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -162,7 +162,7 @@ internal fun ServerCheckCard(initial: ServerCheck.Facts? = null) {
  * numbers, measured and kept on this phone, never sent: a capture of this card is what the next version is tuned by.
  */
 object SpeedCheck {
-    fun lines(s: com.bamnat.app.company.NetTimings.Summary): List<String> = buildList {
+    fun lines(s: com.bamnat.app.company.NetTimings.Summary, wayLine: String = way(com.bamnat.app.company.NetEngine.fast, com.bamnat.app.company.NetEngine.available())): List<String> = buildList {
         if (s.count == 0 && s.shown == 0 && s.waits.isEmpty()) {
             add("아직 잰 것이 없어요. 회사 찾기나 광장을 열면 재요.")
             return@buildList
@@ -176,7 +176,19 @@ object SpeedCheck {
             s.waits[w]?.let { (mid, max) -> add("${w.label}: 보통 ${time(mid)} · 가장 느림 ${time(max)}") }
         }
         // [SPD-26] 1.31 I2: which way the requests go.
-        add(if (com.bamnat.app.company.NetEngine.fast) "연결 방식: 빠른 연결(HTTP/3·HTTP/2)" else "연결 방식: 기본 연결")
+        add(wayLine)
+    }
+
+    /**
+     * 2.0.0 [RVN-23] (PC-187) The 연결 방식 line: the phone's own engine (Android 14 and later, no longer Play services'), else the
+     * connection as before, and a phone without it is told why. HQ-126 An Android 12·13 phone gets it with a Google Play system
+     * update (S Extensions 7), so it is told that rather than 14.
+     */
+    internal fun way(fast: Boolean, available: Boolean, sdk: Int = android.os.Build.VERSION.SDK_INT): String = when {
+        fast -> "연결 방식: 휴대폰에 든 빠른 연결"
+        available -> "연결 방식: 기본 연결"
+        sdk >= android.os.Build.VERSION_CODES.S -> "연결 방식: 기본 연결 · 빠른 연결은 Google Play 시스템 업데이트 뒤에"
+        else -> "연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터"
     }
 
     /** 320ms, 1.2초. */
@@ -184,10 +196,10 @@ object SpeedCheck {
 }
 
 @Composable
-internal fun SpeedCheckCard(initial: com.bamnat.app.company.NetTimings.Summary? = null) {
+internal fun SpeedCheckCard(initial: com.bamnat.app.company.NetTimings.Summary? = null, wayLine: String? = null) {
     var summary by remember { mutableStateOf(initial ?: com.bamnat.app.company.NetTimings.summary()) }
     SectionCard(title = "조회 속도") {
-        SpeedCheck.lines(summary).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        (if (wayLine != null) SpeedCheck.lines(summary, wayLine) else SpeedCheck.lines(summary)).forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
         Text("이 휴대폰 안에서만 재고 어디에도 보내지 않아요. 앱을 다시 열면 처음부터 재요.", style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedButton(onClick = { summary = com.bamnat.app.company.NetTimings.summary() }, modifier = Modifier.heightIn(min = 48.dp)) {

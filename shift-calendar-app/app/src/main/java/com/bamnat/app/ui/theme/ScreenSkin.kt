@@ -183,7 +183,9 @@ fun ScreenSkin(key: String, modifier: Modifier = Modifier, bars: Boolean = false
             // [BLU-12] PC 15차: on a ground of its own the parts' 어두운 화면 lines follow that ground (a white 화면 색 on a dark phone
             // keeps the light lines, so a light-grey 금액 meant for dark does not land on white).
             val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
-            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark) { raw.forDark(dark) }
+            // 2.0.0 [RVS-06] SD-02: re-chosen for this ground, the floors are kept on it too (the page's own colour under the words).
+            val pageArgb = page.toArgb().toLong() and 0xFFFFFFFFL
+            val grounded = if (!inked && !darkened) com.bamnat.app.ui.parts.LocalBlueprint.current else androidx.compose.runtime.remember(raw, dark, pageArgb) { raw.forDark(dark).floored(pageArgb) }
             CompositionLocalProvider(LocalScreenLook provides look, LocalCalendarColors provides fitted, LocalBackdrop provides holder,
                 // PC 확인 C10: the ground goes with the words' ink (dark under light words on a dark photo), so a pale cell never turns grey.
                 com.bamnat.app.ui.decor.LocalOnPhoto provides if (!onPhoto) null else photoCard,
@@ -281,5 +283,15 @@ private fun averageColour(b: androidx.compose.ui.graphics.ImageBitmap): Color? =
     val px = android.graphics.Bitmap.createScaledBitmap(b.asAndroidBitmap(), 1, 1, true).getPixel(0, 0)
     Color(px).copy(alpha = 1f)
 }.getOrNull()
+
+/**
+ * 2.0.0 [RVP-67] (검토 REST-08) The ink [skinned] draws for [look] on [base] (a photo aside), so the 색·배경 editor's "잘 안 보여서"
+ * warning follows the same rule as the screen, dark screens and the theme's own ground included.
+ */
+internal fun inkShown(base: ColorScheme, look: ScreenLook): Long {
+    val ground = groundOf(base, look, null)
+    val card = look.card?.let { Color(it) }
+    return Palette.inkOn(look.ink, ground.argb(), (card ?: base.surfaceContainerLow).argb(), (card ?: base.surfaceContainerHigh).argb())
+}
 
 private fun Color.argb(): Long = toArgb().toLong() and 0xFFFFFFFFL

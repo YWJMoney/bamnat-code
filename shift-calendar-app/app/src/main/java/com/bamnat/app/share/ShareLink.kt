@@ -1,5 +1,7 @@
 package com.bamnat.app.share
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.ScheduleSnapshot
@@ -173,6 +175,95 @@ data class SharedPay(val month: YearMonth, val amount: Long, val label: String)
 data class SharedJob(val name: String, val time: String?)
 
 object ShareLinkPayload {
+    /**
+     * 2.0.0 [RVG-27] 검토 SN-13: whether the server turned the link down for what it carries (a 400 with the part's name, e.g.
+     * "type_icon"), not for being busy or away. Sending the same again would be turned down again, so it is not retried as if
+     * offline (before, '보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요' stayed for ever and the family saw the old 근무).
+     */
+    fun refused(e: Throwable): Boolean = e is ShareLinkException && e.message.let { m ->
+        m != null && m !in TRANSIENT && m != "not_found" && m != "forbidden" && !(m.startsWith("http_") && passing(m))
+    }
+
+    /**
+     * 2.0.0 [RVL-56] (검토 DATA-12) A bare status with no word of the server's: busy or away only for 5xx, 408 (time out), 425 and
+     * 429 (too many); any other 4xx (400, 413 too big, 422) is turned down the same every time, so it is not sent again by itself.
+     */
+    private fun passing(m: String): Boolean = m.removePrefix("http_").toIntOrNull()?.let { it >= 500 || it == 408 || it == 425 || it == 429 } ?: true
+
+    /**
+     * 2.0.0 [RVL-56] (검토 U12-07·DATA-12) Why a change was turned down and where to mend it, in one line for the share card:
+     * "‘유나 010-…’에 전화번호가 있어 못 보냈어요. 근무 이름에서 빼 주세요." Null when the server gave no reason the app can say.
+     */
+    fun refusedWhy(e: Throwable): String? = (e as? ShareLinkException)?.takeIf { it.message == "contact" }
+        ?.let { com.bamnat.core.plaza.TeamLinkText.oneLine(it.why, it.text, it.key) }
+
+    /**
+     * 2.0.0 [RVJ-102] 검토 PAYU-09: the server says the link is gone for good: cut, ran out or taken down ("not_found"; a 410 comes as the
+     * same word) or not this phone's to change ("forbidden"). Only then is a new one made in its place; busy, slow or away is not gone.
+     */
+    fun gone(e: Throwable): Boolean = e is ShareLinkException && (e.message == "not_found" || e.message == "forbidden")
+
+    /**
+     * Busy or away, tried again later: the server's own busy words, a reply that was not the server's (bad_response: a Wi-Fi login
+     * page) and a bare status with no word of the server's (http_429 from a proxy).
+     */
+    private val TRANSIENT = setOf("rate_limited", "paused", "server", "bad_response", "unsupported")
+
+    /** The icon names every share server takes (1.34~1.39 took only these, so an emoji 근무 그림 was refused). */
+    private val PLAIN_ICON = Regex("^[a-z0-9]{1,16}$")
+
+    /**
+     * [RVG-27] 검토 SN-13: [payload] without the part the server turned down ([code]), and the words that tell the sender what
+     * was left out; null when the app cannot leave that part out (the link is then said to be refused, not offline).
+     * - "type_icon": an emoji 근무 그림 (e:☀️, from a 작품 or the 근무 종류 editor) on an older share server; the 근무 goes without it.
+     * - "type_rest": the break ([RVG-28]) on a server that reads it differently; the 근무 goes with its times only.
+     * - "look" / "kit": the theme or the 근무 설정 ticked to go along ([RVG-29] SN-14); the 근무 goes without it.
+     */
+    fun withoutRefused(payload: JSONObject, code: String?): Pair<JSONObject, String>? =
+        leaveOut(payload, code)?.let { (body, name) -> body to leftOutWords(listOf(name)) }
+
+    /** [RVG-27] [withoutRefused] with the part's own name ("근무 그림 ☀️", "테마") instead of a sentence, for [leftOutWords]. */
+    fun leaveOut(payload: JSONObject, code: String?): Pair<JSONObject, String>? {
+        val copy = JSONObject(payload.toString())
+        when (code) {
+            "look" -> return if (copy.remove("look") == null) null else copy to "테마"
+            "kit" -> return if (copy.remove("kit") == null) null else copy to "근무 설정"
+        }
+        val types = copy.optJSONArray("types") ?: return null
+        val left = ArrayList<String>()
+        for (i in 0 until types.length()) {
+            val t = types.optJSONObject(i) ?: continue
+            when (code) {
+                "type_icon" -> t.optString("icon").takeIf { t.has("icon") && !PLAIN_ICON.matches(it) }?.let { icon ->
+                    left += com.bamnat.core.model.ShiftIcon.emoji(icon) ?: icon.take(4)
+                    t.remove("icon")
+                }
+                "type_rest" -> if (t.has("rest") || t.has("restStart")) { left += t.optString("name"); t.remove("rest"); t.remove("restStart") }
+            }
+        }
+        if (left.isEmpty()) return null
+        return copy to if (code == "type_icon") "근무 그림 ${left.distinct().joinToString(" ")}" else "휴게 시간"
+    }
+
+    /**
+     * [RVG-27] One sentence for every part left out, so two parts are one line, not two cards: "근무 그림 ☀️·테마는 링크에 못 실어 빼고
+     * 보냈어요." The 은/는 follows the last part's last syllable (an emoji takes 는, as said aloud).
+     */
+    fun leftOutWords(names: List<String>): String {
+        val last = names.last().trimEnd().last()
+        val topic = if (last in '가'..'힣' && (last - '가') % 28 != 0) "은" else "는"
+        return "${names.distinct().joinToString("·")}$topic 링크에 못 실어 빼고 보냈어요."
+    }
+
+    /**
+     * 2.0.0 [RVG-27] 검토 S7-3 (SD-09, 갈래 R 의견): the automatic update turned down twice running for the same thing that cannot be
+     * left out; said once above the calendar, since the person may never open the share sheet where it is said each time.
+     */
+    const val REFUSED_AGAIN = "바뀐 근무가 링크에 안 갔어요. 공유에서 다시 보내 주세요."
+
+    /** [RVG-28] The longest break a link carries, in minutes (the share server's RVD-23 limit). */
+    const val REST_MAX = 720
+
     /** Days a link covers, from the first day of the month shown: about three months. */
     const val DAYS = 92
     val TTL_DAYS = listOf(7, 30, 90, 180, 365)
@@ -306,6 +397,13 @@ object ShareLinkPayload {
         sleepNow: SleepNow? = null,
         /** 1.39 G5-N4 The planned sleeps not over yet (epoch millis); sent only with [ShareOptions.sleepPlan]. */
         sleepPlan: List<SleepPlanWindow> = emptyList(),
+        /** 2.0.0 [RVH-45] The 1일 기준 (LeavePolicy.dayMinutes) an hour's leave is told against for a receiver before 2.0.0. */
+        leaveDayMinutes: Int = Leave.DAY_MINUTES,
+        /**
+         * 2.0.0 [RVG-38] What the sender's app calls the link ([com.bamnat.core.work.scheduleWord]); null sends none. Given only from
+         * 처리방침 3.14 (`share.word`, [ShareContent.Gates.word]), and only one of [com.bamnat.core.work.LINK_WORDS] goes.
+         */
+        word: String? = null,
     ): JSONObject {
         val dates = (0 until DAYS).map { from.plusDays(it.toLong()) }
         val days = JSONArray()
@@ -327,7 +425,17 @@ object ShareLinkPayload {
                 if (type != null) put("type", type.id)
                 second?.let { put("second", it.id) }
                 // The kind of leave (유급·무급 휴가) is private unless ticked; family only needs to know how much of the day is off.
-                day.leave?.let { put("leave", leaveLabel(it, options.leaveKinds)) }
+                // 2.0.0 [RVH-45] An hour's leave (설계 4-4절, 총괄 1-2): "leave" is what a receiver before 2.0.0 reads, so it says '반차' with
+                // the hours from half a day up and nothing below (that receiver reads a leave without '반' as a whole day off); the
+                // minutes and where in the day go in keys of their own.
+                day.leave?.let { l ->
+                    if (!l.hourly) put("leave", leaveLabel(l, options.leaveKinds))
+                    else {
+                        l.linkText(options.leaveKinds, leaveDayMinutes)?.let { put("leave", it.take(LEAVE_CHARS)) }
+                        put("leaveMinutes", l.minutes)
+                        if (l.at != null) put("leaveAt", l.atMinute) else if (l.fromStart) put("leaveStart", true)
+                    }
+                }
                 // [SHR-04] No work at all as far as the link shows, for the receiver's 같이 쉬는 날: extra work
                 // the sharer did not tick stays out of it too, only a 대근 counts.
                 // [SHR-11] A booked job is work too, when the sharer shows jobs.
@@ -356,10 +464,30 @@ object ShareLinkPayload {
         used.values.forEach { t ->
             types.put(JSONObject().apply {
                 put("id", t.id)
-                put("name", t.name.take(20))
-                put("short", t.label.take(4).ifEmpty { t.name.take(1) })
+                // 2.0.0 [RVM-29] SN-16: cut at a letter by the 근무 종류 한 규칙표 (ShiftRules), never half an emoji (take(4) sent 👩‍⚕️ half).
+                put("name", com.bamnat.core.model.ShiftRules.fitName(t.name))
+                put("short", com.bamnat.core.model.ShiftRules.fitLabel(t.label).ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, com.bamnat.core.model.ShiftRules.LABEL_UNITS) })
                 put("color", "#%06X".format(t.colorArgb and 0xFFFFFF))
-                if (t.start != null && t.end != null && !t.isOff) put("time", "${t.start}-${t.end}")
+                if (t.start != null && t.end != null && !t.isOff) {
+                    put("time", "${t.start}-${t.end}")
+                    // 2.0.0 [RVG-28] 검토 PC-94: the break goes too, so '내 근무표예요' starts with the same 11 hours, not 12. Always
+                    // sent for a timed day (0 = none), so a receiver tells "no break" from a link of an older app (no field).
+                    // The share server takes it from 2.0.0 (갈래 D, RVD-23: 0~720, shorter than the day with its gap); an older one
+                    // drops it, and from #468 a value it does not take is dropped there too. The same rule here, so what goes is kept.
+                    val from0 = t.start!!
+                    val span = com.bamnat.core.model.WorkTime.spanMinutes(from0, t.end!!)
+                    val gap = if (t.hasGap) t.gapMinutes else 0
+                    if (t.breakMinutes in 0..REST_MAX && t.breakMinutes + gap < span) {
+                        put("rest", t.breakMinutes)
+                        // When the break starts, only where the whole break lies inside the day (as the server checks).
+                        t.breakStart?.takeIf { t.breakMinutes > 0 }?.let { at ->
+                            val from = com.bamnat.core.model.WorkTime.spanMinutes(from0, at).let { if (it == com.bamnat.core.model.WorkTime.MINUTES_PER_DAY) 0 else it }
+                            if (from + t.breakMinutes <= span) put("restStart", "%02d:%02d".format(at.hour, at.minute))
+                        }
+                    }
+                }
+                // 2.0.0 [RVH-44] 하루 두 구간: "time" stays the first start to the last end (what a receiver before 2.0.0 reads), the gap apart.
+                if (t.hasGap) put("gap", "${t.gapStart}-${t.gapStart!!.plusMinutes(t.gapMinutes.toLong())}")
                 if (t.isOff) put("off", true)
                 t.icon?.let { put("icon", it) }
             })
@@ -391,6 +519,8 @@ object ShareLinkPayload {
             if (options.sleepPlan && sleepPlan.isNotEmpty()) put("sleepPlan", JSONArray().apply {
                 sleepPlan.take(com.bamnat.core.sleep.SleepPlanShare.MAX).forEach { w -> put(JSONObject().put("from", w.from).put("to", w.to)) }
             })
+            // 2.0.0 [RVG-38] A share server from before 2.0.0, or one before 3.14, drops it (D RVD-32).
+            word?.takeIf { it in com.bamnat.core.work.LINK_WORDS }?.let { put("word", it) }
             if (options.pay && pay.isNotEmpty()) put("payKind", payKind.key)
             if (options.pay && pay.isNotEmpty()) put("pay", JSONArray().apply {
                 pay.take(6).forEach { p ->
@@ -448,6 +578,9 @@ class ShareLinkStore(
     val slot: Int get() = ShareLinkKey.slot(key)
 
     companion object {
+        /** [RVG-27] How long a part the server turned down is left out before the whole is tried again. */
+        val LEFT_FOR: java.time.Duration = java.time.Duration.ofDays(1)
+
         fun prefsName(key: String) =
             if (key == com.bamnat.app.data.PersonalCalendar.MAIN) "share_link" else "share_link_$key"
 
@@ -470,7 +603,7 @@ class ShareLinkStore(
         val state = ShareLinkState(
             id = id,
             url = prefs.getString("url", null) ?: return null,
-            deleteToken = prefs.getString("token", null) ?: return null,
+            deleteToken = prefs.secret("token") ?: return null, // 2.0.0 [RVL-77] sealed by the phone's key
             expiresAt = runCatching { Instant.parse(prefs.getString("expires", "")) }.getOrNull() ?: return null,
             title = prefs.getString("title", "") ?: "",
             ttlDays = prefs.getInt("ttl", 30),
@@ -482,12 +615,14 @@ class ShareLinkStore(
     /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
     fun save(s: ShareLinkState, sent: String? = null) {
         if (retired) return
-        prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
+        prefs.edit().putString("id", s.id).putString("url", s.url).putSecret("token", s.deleteToken)
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
             .apply { if (sent != null) putString("sent", sent) }
+            .remove("ended_at")
             .apply()
         _link.value = s
+        _endedAt.value = null
     }
 
     /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
@@ -502,10 +637,15 @@ class ShareLinkStore(
 
     /** Forgets the link; what the sharer ticked stays for the next one. */
     fun clear() {
-        prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from")
-            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").apply()
+        prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from").remove("refused").remove("dropped")
+            .remove("refused_code").remove("refused_times").remove("refused_why").remove("refused_print").remove("left_parts").remove("left_at").remove("left_version").remove("left_said")
+            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").remove("ended_at").apply()
         _link.value = null
+        _endedAt.value = null
         _unsent.value = false
+        _refused.value = false
+        _refusedWhy.value = null
+        _dropped.value = null
     }
 
     /** [MCAL-03][QA-03] The calendar went: the link is forgotten, and nothing written with this store from now on is kept. */
@@ -516,8 +656,41 @@ class ShareLinkStore(
 
     /** [SHR-02] Drops a link that ran out while the app stayed open. */
     fun expire() {
-        if (_link.value?.expiresAt?.isAfter(clock()) == false) _link.value = null
+        if (_link.value?.expiresAt?.isAfter(clock()) == false) {
+            _link.value = null
+            _endedAt.value = endedFromPrefs()
+        }
     }
+
+    private val _endedAt = MutableStateFlow(if (_link.value == null) endedFromPrefs() else null)
+    /**
+     * 2.0.0 [RVL-78] (검토 I12c-02) When the last link stopped by itself: the server no longer had it ([ended]) or its end date passed.
+     * The share sheet says so above '링크로 보내기' (the one press that mends it), and the 알림함 has a row, so the sharer knows the
+     * people who had it stopped getting changes; null with a link, after a new one, or after the sharer cut it ([clear]).
+     */
+    val endedAt: StateFlow<Instant?> = _endedAt.asStateFlow()
+
+    private fun endedFromPrefs(): Instant? =
+        prefs.getString("ended_at", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?: prefs.getString("expires", null)?.takeIf { prefs.contains("id") }?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                ?.takeIf { !it.isAfter(clock()) }
+
+    /** 2.0.0 [RVL-78] The server no longer has the link (it ran out or was taken down there): forgotten, and said once. */
+    fun ended(at: Instant) {
+        if (retired) return
+        clear()
+        prefs.edit().putString("ended_at", at.toString()).apply()
+        _endedAt.value = at
+    }
+
+    /** 2.0.0 [RVL-78] When the link ended, the first time this is asked for that end (the 알림함 row is put once); else null. */
+    fun endedToSay(): Instant? {
+        val at = _endedAt.value ?: return null
+        if (prefs.getString("ended_said", null) == at.toString()) return null
+        prefs.edit().putString("ended_said", at.toString()).apply()
+        return at
+    }
+
 
     /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
     val sent: String? get() = prefs.getString("sent", null)
@@ -535,9 +708,105 @@ class ShareLinkStore(
     /** [SHR-13] The server has what the calendar shows now ([at]), or it could not be reached ([at] null). */
     fun sendResult(at: Instant?) {
         if (retired) return
-        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()) }.apply()
+        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()).remove("refused").remove("refused_code").remove("refused_times").remove("refused_why").remove("refused_print") }.apply()
         _unsent.value = at == null
+        if (at != null) { _refused.value = false; _refusedWhy.value = null }
     }
+
+    private val _refused = MutableStateFlow(prefs.getBoolean("refused", false))
+    /**
+     * 2.0.0 [RVG-27] 검토 SN-13: the server turned the change down for what it carries and the phone could not leave that part out.
+     * It is not sent again by itself (it would be turned down again); the share card says so in people's words.
+     */
+    val refused: StateFlow<Boolean> = _refused.asStateFlow()
+
+    /**
+     * [RVG-27] Not sent: turned down, not offline.
+     * 2.0.0 [RVL-56] (검토 DATA-12·U12-07) With [why] (said on the share card: what and where to mend it) and [print], the
+     * fingerprint of what was turned down: the automatic update does not send that same again ([refusedPrint]), only a change.
+     */
+    fun refusedNow(why: String? = null, print: String? = null) {
+        if (retired) return
+        prefs.edit().putBoolean("unsent", true).putBoolean("refused", true)
+            .apply { if (why == null) remove("refused_why") else putString("refused_why", why.take(160)) }
+            .apply { if (print == null) remove("refused_print") else putString("refused_print", print) }.apply()
+        _unsent.value = true
+        _refused.value = true
+        _refusedWhy.value = why
+    }
+
+    private val _refusedWhy = MutableStateFlow(prefs.getString("refused_why", null))
+    /** 2.0.0 [RVL-56] Why the last change was turned down, in the person's words; null when the server gave no reason. */
+    val refusedWhy: StateFlow<String?> = _refusedWhy.asStateFlow()
+
+    /** 2.0.0 [RVL-56] The fingerprint of the change last turned down (not sent again by itself until it changes). */
+    val refusedPrint: String? get() = if (_refused.value) prefs.getString("refused_print", null) else null
+
+    private val _dropped = MutableStateFlow(prefs.getString("dropped", null))
+    /**
+     * [RVG-27] 검토 SN-13: what went out without a part the server would not take ('근무 그림(☀️)은 빼고 보냈어요'), said once above
+     * the calendar so the sender knows without opening the share sheet; null once closed.
+     */
+    val dropped: StateFlow<String?> = _dropped.asStateFlow()
+
+    fun setDropped(words: String?) {
+        if (retired) return
+        prefs.edit().apply { if (words == null) remove("dropped") else putString("dropped", words) }.apply()
+        _dropped.value = words
+    }
+
+    /**
+     * 2.0.0 [RVG-27] 검토 SN-13 (갈래 R 의견 2): the parts the server turned down, left out of the next sends at once instead of being
+     * sent whole, turned down and sent again for every change. Tried whole again after an app update or a day, so a server mended
+     * meanwhile (as 46d91ace mended the emoji 그림) gets them back without an update.
+     */
+    fun leaveOut(): Set<String> {
+        val parts = prefs.getString("left_parts", null)?.split(',')?.filter { it.isNotBlank() }?.toSet().orEmpty()
+        if (parts.isEmpty()) return emptySet()
+        val at = Instant.ofEpochMilli(prefs.getLong("left_at", 0L))
+        val sameApp = prefs.getInt("left_version", -1) == com.bamnat.app.BuildConfig.VERSION_CODE
+        return if (sameApp && java.time.Duration.between(at, clock()) < LEFT_FOR) parts else emptySet()
+    }
+
+    /**
+     * [RVG-27] After a send: keeps what the server turned down this time, forgets it once the server took everything, and says what
+     * went without above the calendar ([onCalendar]) once for each wording, so closing it holds until something new is left out.
+     * The share sheet says it itself ([onCalendar] false); the wording is still marked as said.
+     */
+    fun leftOut(sent: LeftOut<*>, onCalendar: Boolean) {
+        if (retired) return
+        val edit = prefs.edit()
+        when {
+            sent.parts.isEmpty() -> edit.remove("left_parts").remove("left_at").remove("left_version").remove("left_said")
+            sent.fresh.isNotEmpty() -> edit.putString("left_parts", sent.parts.joinToString(",")).putLong("left_at", clock().toEpochMilli())
+                .putInt("left_version", com.bamnat.app.BuildConfig.VERSION_CODE)
+        }
+        val words = sent.words
+        val say = words != null && words != prefs.getString("left_said", null)
+        if (say) edit.putString("left_said", words)
+        edit.apply()
+        if (say && onCalendar) setDropped(words)
+    }
+
+    /**
+     * 2.0.0 [RVG-27] 검토 S7-3 (SD-09, 갈래 R 의견 3): an automatic send turned down for [code] with nothing the app can leave out.
+     * True only the second time running for the same reason, so it is said once above the calendar ([ShareLinkPayload.REFUSED_AGAIN])
+     * for someone who never opens the share sheet; a send that goes through starts the count again.
+     */
+    fun refusedAgain(code: String?): Boolean {
+        if (retired) return false
+        val times = if (prefs.getString("refused_code", null) == code) prefs.getInt("refused_times", 0) + 1 else 1
+        prefs.edit().putString("refused_code", code).putInt("refused_times", times).apply()
+        return times == 2
+    }
+
+    /**
+     * 2.0.0 [RVG-30] 검토 PC-97 (조건 10): the name typed in '내 이름', kept as it is typed. A link made after a failed try, or after the
+     * sheet was closed and opened again, still carries it (before, it went as '이름 없는 근무표'). Kept when the link is cut.
+     */
+    var typedName: String?
+        get() = prefs.getString("typed_name", null)
+        set(value) { if (!retired) prefs.edit().apply { if (value == null) remove("typed_name") else putString("typed_name", value.take(30)) }.apply() }
 
     /** [SHR-12] Whether a change on the calendar goes to the link by itself; on unless the sharer turned it off. */
     var auto: Boolean
@@ -580,7 +849,15 @@ data class ReceivedShare(
     val etag: String? = null,
     /** 1.38 [P3-L-18] The leader turned on 피곤해요 합계 for this link: the member's app may offer 피곤해요 팀에 알리기 ([ShareApi.tiredSay]). */
     val tired: Boolean = false,
+    /** 2.0.0 [RVQ-32] 검토 U22-01·I22b-01: the leader asks whether this link was looked through: the member's app offers 확인했어요 ([ShareApi.okPress]). */
+    val watch: Boolean = false,
 )
+
+/**
+ * 2.0.0 [RVQ-32] 검토 U22-01: what the leader's app reads about one member's link: [seenAt] a person opened it (never a messenger's preview),
+ * [okAt] the member pressed 확인했어요, both since the link last changed. [okKnown]: the server says 확인 at all (an older one does not).
+ */
+data class SeenOk(val seenAt: Instant?, val okAt: Instant?, val okKnown: Boolean = false)
 
 /** [MKT-09][SHR-02] The link server; tests and screenshots use a fake. */
 interface ShareApi {
@@ -679,6 +956,24 @@ interface ShareApi {
     /** 1.38 [P3-L-15] When the link was opened since its last change (null: not yet). The first ask turns it on for that link. */
     suspend fun seen(id: String, token: String): Instant? = null
 
+    /** 2.0.0 [RVQ-32] [seen] with the member's 확인했어요 since the last change. */
+    suspend fun seenOk(id: String, token: String): SeenOk = SeenOk(seen(id, token), null)
+
+    /** 2.0.0 [RVQ-32] The member's 확인했어요 from their own app; "not_found" once the leader no longer asks (or the link is gone). */
+    suspend fun okPress(id: String): Unit = throw ShareLinkException("unsupported")
+
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38: this phone puts the leader's link [id] into its own calendar by itself; [mark] is its own random word (the
+     * server keeps its hash). "not_found" while the leader does not ask or before the share server's 처리방침 3.14 day.
+     */
+    suspend fun appMark(id: String, mark: String) {}
+
+    /** 2.0.0 [RVJ-83] Takes this phone's mark back from [id] (nothing happens when there is none). */
+    suspend fun appUnmark(id: String, mark: String) {}
+
+    /** 2.0.0 [RVJ-83] How many of the leader's links ([links]: id and its token) are read by the app: one number, null under [AppCount.min]. */
+    suspend fun appCount(links: List<Pair<String, String>>): AppCount = AppCount(null, 3)
+
     /** 1.38 [P3-L-15] 병동 전체 보기: the month's table, a row of labels per name ("" for none). */
     suspend fun boardCreate(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>): SignMade =
         throw ShareLinkException("unsupported")
@@ -706,6 +1001,8 @@ interface ShareApi {
 }
 
 data class TiredBox(val id: String, val token: String)
+/** 2.0.0 [RVJ-83] [n] null under [min] (or while the team's links changed this week, [rest]); [off] before the server's 3.14 day. */
+data class AppCount(val n: Int?, val min: Int, val rest: Boolean = false, val off: Boolean = false)
 data class TiredGot(val min: Int, val days: List<Pair<java.time.LocalDate, Int?>>)
 
 data class SignMade(val id: String, val token: String, val url: String, val expiresAt: Instant)
@@ -804,7 +1101,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         readable {
             ReceivedShare(o.getJSONObject("schedule"), Instant.parse(o.getString("expiresAt")),
                 o.optString("updatedAt").takeIf { it.isNotEmpty() && it != "null" }?.let { runCatching { Instant.parse(it) }.getOrNull() },
-                reply.etag, o.optBoolean("tired", false))
+                reply.etag, o.optBoolean("tired", false), o.optBoolean("watch", false))
         }
     }
 
@@ -857,6 +1154,13 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         Unit
     }
 
+    /**
+     * 2.0.0 [RVM-29] SN-16: the 신청 서버 takes a 근무 글자 of 4 code units ([ASK_LABEL_UNITS]); cut at a letter, never half an emoji, and a
+     * 글자 that does not fit at all (👩‍⚕️ is 5) gives the name's first letter instead of being refused.
+     */
+    private fun askLabel(t: com.bamnat.core.team.TeamShift): String = com.bamnat.core.model.ShiftRules.cut(t.label.trim(), com.bamnat.core.model.ShiftRules.LABEL_LETTERS, ASK_LABEL_UNITS)
+        .ifEmpty { com.bamnat.core.model.ShiftRules.cut(t.name.trim(), 1, ASK_LABEL_UNITS) }.ifEmpty { "?" }
+
     override suspend fun askCreate(team: String, month: java.time.YearMonth, rules: com.bamnat.core.team.AskRules, shifts: List<com.bamnat.core.team.TeamShift>, names: List<String>,
                                    leave: List<Double?>): AskMade =
         withContext(Dispatchers.IO) {
@@ -865,7 +1169,7 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
                 .put("holidays", org.json.JSONArray(rules.holidays.sorted().map { it.toString() })).put("blocked", org.json.JSONArray(rules.blocked.sorted().map { it.toString() }))
                 .put("showNames", rules.showNames)
             val body = JSONObject().put("team", team).put("month", month.toString()).put("rules", r)
-                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", it.label.take(4)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
+                .put("shifts", org.json.JSONArray(shifts.map { JSONObject().put("id", it.id).put("label", askLabel(it)).put("color", "#%06X".format(it.colorArgb and 0xFFFFFF)) }))
                 .put("members", org.json.JSONArray(names))
             if (leave.any { it != null }) body.put("leave", org.json.JSONArray(leave.map { it ?: JSONObject.NULL }))
             val o = request("POST", "/api/ask", body, null).body
@@ -958,9 +1262,30 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
         }
     }
 
-    override suspend fun seen(id: String, token: String): Instant? = withContext(Dispatchers.IO) {
+    override suspend fun seen(id: String, token: String): Instant? = seenOk(id, token).seenAt
+
+    override suspend fun seenOk(id: String, token: String): SeenOk = withContext(Dispatchers.IO) {
         val o = request("GET", "/api/share/$id/seen", null, token).body
-        readable { o.optString("seenAt").takeIf { !o.isNull("seenAt") && it.isNotEmpty() }?.let(Instant::parse) }
+        fun at(key: String) = o.optString(key).takeIf { !o.isNull(key) && it.isNotEmpty() }?.let(Instant::parse)
+        readable { SeenOk(at("seenAt"), at("okAt"), okKnown = o.has("okAt")) }
+    }
+
+    override suspend fun okPress(id: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/ok", null, null); Unit
+    }
+
+    override suspend fun appMark(id: String, mark: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/app", JSONObject().put("mark", mark), null); Unit
+    }
+
+    override suspend fun appUnmark(id: String, mark: String) = withContext(Dispatchers.IO) {
+        request("POST", "/api/share/$id/app", JSONObject().put("mark", mark).put("off", true), null); Unit
+    }
+
+    override suspend fun appCount(links: List<Pair<String, String>>): AppCount = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("links", org.json.JSONArray().apply { links.forEach { (id, t) -> put(JSONObject().put("id", id).put("token", t)) } })
+        val o = request("POST", "/api/apps", body, null).body
+        readable { AppCount(if (o.isNull("n") || !o.has("n")) null else o.getInt("n"), o.optInt("min", 3), o.optBoolean("rest"), o.optBoolean("off")) }
     }
 
     private fun boardBody(team: String, month: java.time.YearMonth, names: List<String>, labels: List<List<String>>, colors: Map<String, String>) =
@@ -1076,7 +1401,8 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
     }
 
     private fun requestAt(baseUrl: String, method: String, path: String, body: JSONObject?, token: String?, etag: String?, quiet: Boolean = false): Reply {
-        // [SPD-26][SPD-27] 1.31: as the company server's requests, through Cronet when there and the connection kept for the next.
+        // [SPD-26][SPD-27] 1.31: as the company server's requests, through the faster engine when there (2.0.0 [RVN-23] the phone's
+        // HttpEngine, no longer Play services' Cronet) and the connection kept for the next.
         val conn = com.bamnat.app.company.NetEngine.open(URL(baseUrl.trimEnd('/') + path))
         var broke = true
         try {
@@ -1142,8 +1468,71 @@ class ShareLinkClient(private val baseUrl: String = BuildConfig.SHARE_BASE_URL) 
 
     private companion object {
         const val MAX_REPLY_BYTES = 256 * 1024
+        /** share-worker LIMITS.askShiftLabel. */
+        const val ASK_LABEL_UNITS = 4
     }
 }
 
 /** 1.39 [CARE-09] 7차 PC: the person's words for a refused team or schedule link (contact words), or null for any other failure. */
 fun linkProblem(e: Throwable): String? = (e as? ShareLinkException)?.friendly
+
+/**
+ * 2.0.0 [RVG-24] 검토 PC-92 (디자인 품질 조건 7·16): a share-server failure said in the three words every screen uses (연결 없음 ·
+ * 서버 바쁨 · 시간 넘김), never with the server's own code. Before, a refused link said '링크를 만들지 못했어요 (type_icon). 다시 해
+ * 주세요.' — a word the person cannot act on. [first] is the screen's own first half, e.g. "링크를 만들지 못했어요.". A refusal the
+ * app has no words for ([linkProblem] null) is said as the server not taking it now; its code goes only into a question ([code]).
+ */
+fun netWords(e: Throwable, first: String): String = "$first " + when {
+    // 2.0.0 [RVN-23] (PC-187) from the old connection or the phone's HttpEngine alike.
+    com.bamnat.app.company.NetEngine.timedOut(e) -> com.bamnat.app.ui.components.NetWords.SLOW
+    e is ShareLinkException -> com.bamnat.app.ui.components.NetWords.BUSY
+    else -> com.bamnat.app.ui.components.NetWords.OFFLINE
+}
+
+/** [RVG-24] The server's code for a failure ("type_icon", "http_503"), kept for a question to the developer, never on screen. */
+fun failureCode(e: Throwable): String = (e as? ShareLinkException)?.message ?: e.javaClass.simpleName
+
+/**
+ * 2.0.0 [RVG-27] 검토 SN-13: what a send that left parts out ([sendLeavingOut]) got back: the server's answer, every part left out
+ * ([parts], with the names said in [words]) and the ones the server named this time ([fresh]; the others were known already).
+ */
+class LeftOut<T>(val value: T, val parts: Set<String>, val names: List<String>, val fresh: Set<String>) {
+    /** The one sentence for the sender, null when everything went. */
+    val words: String? get() = if (names.isEmpty()) null else ShareLinkPayload.leftOutWords(names)
+}
+
+/**
+ * 2.0.0 [RVG-27] 검토 SN-13: sends [payload], leaving out each part the server turns down for what it carries, each part once (at most
+ * the four the app can leave out), so a link with both an emoji 그림 and a theme the server will not take still goes (갈래 R 의견 1).
+ * The parts in [skip] were turned down before and go out at once, without asking the server again for each change (의견 2).
+ * A refusal no part can mend is thrown as it came.
+ */
+inline fun <T> sendLeavingOut(payload: JSONObject, skip: Set<String>, send: (JSONObject) -> T): LeftOut<T> {
+    var body = payload
+    val parts = LinkedHashSet<String>()
+    val names = ArrayList<String>()
+    val fresh = LinkedHashSet<String>()
+    for (code in skip) ShareLinkPayload.leaveOut(body, code)?.let { (cut, name) -> body = cut; parts += code; names += name }
+    while (true) {
+        try {
+            return LeftOut(send(body), parts, names, fresh)
+        } catch (e: ShareLinkException) {
+            val code = e.message
+            val cut = if (code != null && code !in parts && ShareLinkPayload.refused(e)) ShareLinkPayload.leaveOut(body, code) else null
+            if (cut == null || code == null) throw e
+            body = cut.first; parts += code; names += cut.second; fresh += code
+        }
+    }
+}
+
+/**
+ * 2.0.0 [RVG-27] 검토 SN-13: a link made by hand ('링크로 보내기'); a part the server will not take (an emoji 근무 그림 on a 1.34~1.39
+ * share server) is left out and said, instead of '링크를 만들지 못했어요' every time. The words are null when nothing was left out.
+ * What was left out is kept on [store], so the automatic update does not ask the server again or say it again above the calendar.
+ */
+suspend fun ShareApi.createLeaving(payload: JSONObject, store: ShareLinkStore): Pair<ShareLinkState, String?> =
+    sendLeavingOut(payload, store.leaveOut()) { create(it) }.let { store.leftOut(it, onCalendar = false); it.value to it.words }
+
+/** [RVG-27] [createLeaving] for a link already made ('지금 고치기', 기간 늘리기). */
+suspend fun ShareApi.updateLeaving(link: ShareLinkState, payload: JSONObject, store: ShareLinkStore): Pair<ShareLinkState, String?> =
+    sendLeavingOut(payload, store.leaveOut()) { update(link, it) }.let { store.leftOut(it, onCalendar = false); it.value to it.words }

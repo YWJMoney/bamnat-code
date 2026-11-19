@@ -38,19 +38,24 @@ class SavedPosts private constructor(context: Context) {
         _items.value = list
     }
 
-    private fun read(): List<Saved> = runCatching {
-        val a = JSONArray(prefs.getString(KEY, "[]"))
-        (0 until a.length()).map { a.getJSONObject(it) }.map {
-            Saved(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
-                Instant.parse(it.getString("at")), Instant.parse(it.getString("saved")))
+    /** 2.0.0 [RVN-22] 검토 COMP-60-4: row by row, so one row broken loses that row only (the next keep wrote over an empty list). */
+    private fun read(): List<Saved> {
+        val a = runCatching { JSONArray(prefs.getString(KEY, "[]")) }.getOrNull() ?: return emptyList()
+        return (0 until a.length()).mapNotNull { i ->
+            runCatching {
+                val it = a.getJSONObject(i)
+                Saved(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
+                    Instant.parse(it.getString("at")), Instant.parse(it.getString("saved")))
+            }.getOrNull()
         }
-    }.getOrDefault(emptyList())
+    }
 
     companion object {
         const val MAX = 200
         private const val KEY = "items"
-        @Volatile private var one: SavedPosts? = null
-        fun of(context: Context): SavedPosts = one ?: synchronized(this) { one ?: SavedPosts(context.applicationContext).also { one = it } }
+        /** One per app ([com.bamnat.app.data.PerApp]: a test's new app reads its own list). */
+        private val one = com.bamnat.app.data.PerApp { SavedPosts(it) }
+        fun of(context: Context): SavedPosts = one.of(context)
     }
 }
 
@@ -59,8 +64,8 @@ data class MyPost(val id: String, val room: String, val roomName: String, val bo
     val replies: Int, val at: Instant, val hidden: Boolean)
 
 internal fun myPostsOf(o: JSONObject): List<MyPost> {
-    val a = o.optJSONArray("items") ?: return emptyList()
-    return (0 until a.length()).map { a.getJSONObject(it) }.map {
+    // 2.0.0 [RVN-13] COMP-49 row by row: one row the app cannot read is left out, not the whole list.
+    return o.optJSONArray("items").rows {
         MyPost(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
             it.optString("parent").takeIf { p -> p.isNotEmpty() }, it.optInt("replies"), Instant.parse(it.getString("at")), it.optBoolean("hidden"))
     }
@@ -77,11 +82,11 @@ internal fun villageFoundOf(o: JSONObject): VillageFound {
     val p = o.optJSONArray("posts") ?: JSONArray()
     val r = o.optJSONArray("requests") ?: JSONArray()
     return VillageFound(
-        (0 until p.length()).map { p.getJSONObject(it) }.map {
+        p.rows {
             FoundPost(it.getString("id"), it.optString("room"), it.optString("name"), it.optString("body"), it.optString("kind", "talk"),
                 it.optInt("replies"), Instant.parse(it.getString("at")))
         },
-        (0 until r.length()).map { r.getJSONObject(it) }.map {
+        r.rows {
             FoundRequest(it.getString("id"), it.optString("body"), it.optInt("likes"), it.optString("state"), it.optString("code").takeIf { c -> c.isNotEmpty() },
                 it.optString("style").takeIf { s -> s.isNotEmpty() })
         },

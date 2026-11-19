@@ -6,6 +6,7 @@ main에 합쳐지면 GitHub Action(`.github/workflows/dev-status.yml`)이 서버
 - **문의 원문·사진·폰 정보·이름·연락처는 절대 적지 않아요.** 그런 것은 서버에만 있어요(처리방침 5항). 검사가 메일·전화번호·문의 번호를 막아요.
 - **요금(무료·프로)은 적지 않아요.** 사용자가 관리자 앱 › 요금 판단에서만 정해요. Claude의 제안은 `tierAsk`·`tierWhy`로.
 - 판 번호는 적지 않아요. 합친 커밋의 `gradle.properties` `bamnat.versionName`이 그 판이에요.
+- **시험 밖에서 찾은 문제는 '잡을 시험'과 '왜 못 잡았나'를 같이**(2.0.0 RVR-26, 검토 I60c-02): PC 확인(검토 추적의 `PC-…` 줄이 이어진 추적 번호)이나 문의(d 번호 + `fix`)로 찾은 문제는 `done` 전에 `test`(이걸 잡을 시험, 시험으로 못 잡으면 `"PC: …"`)와 `miss`(시험이 왜 못 잡았나, 200자)를 적어요. `check`인 동안은 경고 한 줄로 세고, `test`에 적은 시험은 검사가 저장소에서 정말 찾아요(클래스·클래스.시험·시험 파일·'[번호] 이름'·test_함수). 모아 보기: `python3 tools/dev_status.py misses`.
 - `route`가 `server`이고 `done`인 줄은 `python3 tools/dev_status.py build`로 `server/company-worker/src/dev-built.js`에 들어가야 해요(검사가 확인).
 
 ```json
@@ -14,4 +15,4 @@ main에 합쳐지면 GitHub Action(`.github/workflows/dev-status.yml`)이 서버
 
 칸 설명과 명령은 `tools/dev_status.py` 맨 위에 있어요. 상태: `todo` 접수 · `doing` 만드는 중 · `check` PC 확인 대기 · `done` 고침 · `rejected` 반려(이유 `reason`).
 보일 유형(`styles`): 알려진 문제를 보일 근무 유형 목록(SHIFT·DAY·HOURLY·FIELD·BUSINESS·INVEST, 없으면 모두).
-전달 길(`route`): `server` 서버 배포로 닿음 · `remote` 원격 자료(`remote: "kind@번호"`) · `flag` 기능 스위치(`flag`) · `app` 2주 정기 앱 업데이트 · `hotfix` 긴급 앱 업데이트.
+전달 길(`route`): `server` 서버 배포로 닿음 · `remote` 원격 자료(`remote: "kind@번호"`) · `flag` 기능 스위치(`flag`) · `app` 1주 정기 앱 업데이트(사용자 2026-11-08, 서버 LOOP.trainDays 7) · `hotfix` 긴급 앱 업데이트.

@@ -21,7 +21,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -30,7 +30,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -93,6 +93,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.time.YearMonth
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
 
 /**
  * [LEAVE-06] 연차 화면: one calendar's 연차 원장 — what is usable now, what lapses when, every line that changed
@@ -184,7 +186,7 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
     val hire by vm.hire.collectAsStateWithLifecycle()
     val counted = LeaveSources.withHire(profile, hire)
     val context = LocalContext.current
-    val snackbar = remember { SnackbarHostState() }
+    val snackbar = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val ui = rememberCoroutineScope()
     var adding by remember { mutableStateOf<EntryKind?>(null) }
     var opened by remember { mutableStateOf<LedgerEntry?>(null) }
@@ -203,10 +205,10 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { NowCard(s, counted) }
+            item { NowCard(s, counted, snapshot) }
             item { RulesCard(counted, hasPay = profile != null, onEditRules, vm) }
             item {
                 // [LEAVE-03] On by default (S10); turned off here or in 설정 › 알림과 잠.
@@ -242,8 +244,8 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
             }
             if (s != null && s.lines.isNotEmpty()) item {
                 LinesCard(s, allLines, onAll = { allLines = true },
-                    onExport = { ui.launch { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } },
-                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } },
+                    onExport = { ui.launch { com.bamnat.app.report.ReportShare.orTell { LedgerExport.share(context, LeaveExport.csv(s), LeaveExport.fileName(s.today)) } } }, // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
+                    onPdf = { ui.launch { com.bamnat.app.report.ReportShare.orTell { com.bamnat.app.report.ReportShare.pdf(context, LeaveExport.doc(s), LeaveExport.pdfName(s.today)) } } },
                 ) { id -> ui.launch { opened = vm.entry(id) } }
             }
             item { PayoutCard(s, profile, gate, vm, promotion, snapshot) }
@@ -267,17 +269,25 @@ fun LeaveScreen(vm: LeaveViewModel, onBack: () -> Unit, onEditRules: () -> Unit)
 }
 
 @Composable
-private fun NowCard(s: LeaveSummary?, profile: PayProfile?) {
+private fun NowCard(s: LeaveSummary?, profile: PayProfile?, snapshot: ScheduleSnapshot? = null) {
+    // [RVH-38] 검토 WORK-02 An hourly job's last four weeks: under 15 hours a week there is no 연차, 15~40 counts days of weekly ÷ 5 hours.
+    val weekly = remember(profile, snapshot) {
+        snapshot?.let { snap -> LeaveSources.partTimeHours(profile, Today.date(), snap.copy(legalBreaks = profile?.legalBreaks == true).resolver::resolve) }
+    }
     SectionCard(title = "지금 쓸 수 있는 연차") {
         if (s == null) return@SectionCard
-        Text(LeaveAccrual.days(s.available), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle),
+        // 2.0.0 [RVH-96] 검토 PC-08 (입사일이 없으면 남은 연차가 '-1일'): with nothing counted yet (no hire date, no row of leave given) a
+        // day taken is not a debt; the number waits for the hire date, said in its place.
+        val uncounted = s.available < 0 && s.arisen <= 1e-9
+        if (uncounted) Text("아직 세지 않았어요", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else Text(LeaveAccrual.days(s.available), style = MaterialTheme.typography.headlineMedium.merge(NumberStyle),
             color = if (s.available < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
         if (s.planned > 0) ValueLine("달력에 넣은 쓸 예정", LeaveAccrual.days(s.planned))
         if (s.planned > 0) ValueLine("예정대로 쓰고 남는 날", LeaveAccrual.days(s.afterPlanned), strong = true)
         ValueLine("지금까지 생긴 연차 / 쓴 연차", "${LeaveAccrual.days(s.arisen)} / ${LeaveAccrual.days(s.used)}")
         if (s.comp != 0.0 || s.lots.any { it.lot.pool == LeavePool.COMP }) ValueLine("보상휴가", LeaveAccrual.days(s.comp))
-        if (s.available < 0) Hint("생긴 것보다 많이 썼어요(미리 쓴 연차). 다음에 생기는 연차에서 먼저 빠져요.")
-        LeaveSources.noAuto(profile)?.let { Hint(it) }
+        if (s.available < 0 && !uncounted) Hint("생긴 것보다 많이 썼어요(미리 쓴 연차). 다음에 생기는 연차에서 먼저 빠져요.")
+        (LeaveSources.noAuto(profile, weekly) ?: LeaveSources.partTimeNote(weekly))?.let { Hint(it) }
     }
 }
 
@@ -306,8 +316,8 @@ private fun RulesCard(profile: PayProfile?, hasPay: Boolean, onEditRules: () -> 
             style = MaterialTheme.typography.bodyLarge,
         )
         if (!profile.fiveOrMoreEmployees) {
-            Text("5인 미만 사업장은 법으로 정한 연차가 없어요(근로기준법 시행령 제7조 별표 1). 회사가 주는 날이 있으면 ‘받은 연차’로 넣어 주세요.",
-                style = MaterialTheme.typography.bodyMedium, color = LocalCalendarColors.current.warning)
+            com.bamnat.app.ui.components.ToneLine("5인 미만 사업장은 법으로 정한 연차가 없어요(근로기준법 시행령 제7조 별표 1). 회사가 주는 날이 있으면 ‘받은 연차’로 넣어 주세요.",
+                style = MaterialTheme.typography.bodyMedium)
         }
         Hint("1년을 다 채운 다음 날 15일이 생기고 2년마다 1일씩 늘어 25일까지예요. 1년이 안 되면 한 달 개근마다 1일(최대 11일)이에요. " +
             "쓰지 않은 연차는 1년이 지나면 없어져요(근로기준법 제60조).")
@@ -384,8 +394,9 @@ private fun LineRow(l: LedgerLine, onOpen: (Long) -> Unit) {
         }
         Column(horizontalAlignment = Alignment.End) {
             Text((if (l.days > 0) "+" else "") + LeaveAccrual.days(l.days), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), color = color)
-            if (l.pool == LeavePool.ANNUAL) Text("남은 ${LeaveAccrual.days(l.balance)}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVH-96] 검토 PC-08: a balance under zero reads '미리 쓴 1일', never '남은 -1일'.
+            if (l.pool == LeavePool.ANNUAL) Text(if (l.balance < -1e-9) "미리 쓴 ${LeaveAccrual.days(-l.balance)}" else "남은 ${LeaveAccrual.days(l.balance)}",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -419,7 +430,7 @@ private fun PayoutCard(
             if (dayMinutes != null && dayMinutes < 8 * 60) Hint("근무표의 하루가 ${dayMinutes / 60.0}시간이라 1일 통상임금도 그만큼으로 셌어요(단시간 근로자).")
             check?.let {
                 Text(it.text, style = MaterialTheme.typography.bodySmall,
-                    color = if (it.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+                    color = if (it.done) MaterialTheme.colorScheme.onSurfaceVariant else Tone.Caution.color())
             }
             if (shortfall > 1e-9) {
                 val more = LeavePayout.estimate(shortfall, profile, YearMonth.from(profile.leaveDate ?: s.today), dayMinutes)
@@ -451,7 +462,7 @@ private fun BridgesCard(snap: ScheduleSnapshot, style: WorkStyle?, left: Double?
                     Text("연차: " + b.leave.joinToString(", ") { "${Fmt.shortDate(it)}(${Fmt.dayOfWeekShort(it.dayOfWeek)})" },
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     LeaveBridges.shortNote(b, left)?.let {
-                        Text(it, style = MaterialTheme.typography.bodySmall, color = LocalCalendarColors.current.warning)
+                        com.bamnat.app.ui.components.ToneLine(it)
                     }
                 }
                 Text(b.text, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
@@ -472,6 +483,7 @@ private fun AddDialog(kind: EntryKind, onDismiss: () -> Unit, onAdd: (LedgerEntr
     var note by rememberSaveable { mutableStateOf("") }
     val value = days.toNumber()
     AlertDialog(
+        fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
         onDismissRequest = onDismiss,
         title = { Text(kind.label) },
         text = {
@@ -535,13 +547,14 @@ private fun PromotionCard(s: LeaveSummary, records: List<LeavePromotion.Record>,
             AddButton(st.label.substringBefore(" ("), onClick = { step = st })
         }
         Text(check.text, style = MaterialTheme.typography.bodySmall,
-            color = if (check.done) MaterialTheme.colorScheme.onSurfaceVariant else LocalCalendarColors.current.warning)
+            color = if (check.done) MaterialTheme.colorScheme.onSurfaceVariant else Tone.Caution.color())
         Hint("회사가 보낸 문서·메일의 날짜를 적어 두면, 나중에 연차수당을 받을 수 있는지 따질 때 도움이 돼요. 기록은 이 휴대폰에만 있어요.")
     }
     step?.let { st ->
         var date by remember { mutableStateOf(s.today) }
         var note by rememberSaveable { mutableStateOf("") }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { step = null },
             title = { Text(st.label.substringBefore(" (")) },
             text = {

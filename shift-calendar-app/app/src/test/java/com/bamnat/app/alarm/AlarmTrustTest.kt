@@ -47,6 +47,12 @@ class AlarmTrustTest {
         assertNull(ringShift(ring.copy(label = "회의"), today))
         assertNull(ringShift(ring.copy(recheck = true), today))
         assertNull(ringShift(ring.copy(shiftName = ""), today))
+        // 2.0.0 [RVG-09] 검토 TYPE-01 (PC 9차 재현 '오늘 근무 / 영업 / 10:00 근무 시작'): a shop's day says 영업 all the way down.
+        val shop = RingRequest("영업", today, LocalTime.of(10, 0), 30, null, 0L)
+        assertEquals("오늘 영업", ringShift(shop, today)!!.day)
+        assertEquals("10:00 영업 시작 · 30분 전 알람", AlarmService.describe(shop))
+        assertEquals("10:00 영업 시작 · 다시 울림", AlarmService.describe(shop.copy(isSnooze = true)))
+        assertEquals("22:00 근무 시작 · 60분 전 알람", AlarmService.describe(ring))
     }
 
     @Test

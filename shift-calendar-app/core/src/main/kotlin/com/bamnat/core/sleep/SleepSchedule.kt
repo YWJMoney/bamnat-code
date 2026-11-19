@@ -30,12 +30,45 @@ class SleepSchedule private constructor(
     val alarms: List<PlannedAlarm>,
 ) {
     /** One stretch of work, on the calendar day it belongs to. */
-    data class Work(val date: LocalDate, val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long? = null) {
+    data class Work(
+        val date: LocalDate, val from: LocalDateTime, val to: LocalDateTime, val name: String, val colorArgb: Long? = null,
+        /**
+         * 2.0.0 [RVIB-21] (결정 19, 설계 4-2절) Where this stretch stops between two parts (가게·알바 '브레이크 타임', 일근·교대 '비는 시간', or an
+         * hour's leave in the middle); empty for work of one part. Never work: 오늘의 흐름, 알림 미루기 and the widget say 다시 시작 there.
+         */
+        val stops: List<ClosedRange<LocalDateTime>> = emptyList(),
+    ) {
+        /** [RVIB-21] The parts actually worked, earliest first: [from]~[to] less [stops]. */
+        val parts: List<ClosedRange<LocalDateTime>>
+            get() {
+                if (stops.isEmpty()) return listOf(from..to)
+                val out = mutableListOf<ClosedRange<LocalDateTime>>()
+                var at = from
+                for (s in stops.sortedBy { it.start }) {
+                    if (s.start.isAfter(at)) out += at..s.start
+                    if (s.endInclusive.isAfter(at)) at = s.endInclusive
+                }
+                if (to.isAfter(at)) out += at..to
+                return out
+            }
+
+        /** [RVIB-21] Worked at [t]: inside a part, not in a stop. The start counts, the end does not. */
+        fun workingAt(t: LocalDateTime): Boolean = parts.any { !t.isBefore(it.start) && t.isBefore(it.endInclusive) }
+
+        /** [RVIB-21] The stop [t] is in, or null. */
+        fun stopAt(t: LocalDateTime): ClosedRange<LocalDateTime>? = stops.firstOrNull { !t.isBefore(it.start) && t.isBefore(it.endInclusive) }
+
         val minutes: Long get() = Duration.between(from, to).toMinutes()
         /** Mostly between 22:00 and 06:00. */
         val night: Boolean get() = minutes > 0 && RestCheck.nightMinutes(from, to) * 2 >= minutes
-        /** Runs past midnight, so the sleep after it falls in the day. */
-        val overnight: Boolean get() = to.toLocalDate().isAfter(from.toLocalDate())
+        /**
+         * Runs past midnight, so the sleep after it falls in the day. 2.0.0 [RVI-13] (검토 ALM-11) Or a night that starts after
+         * midnight (00:00~08:00, 01:00~09:00 of a 3교대 or 경비·관제): mostly night and begun before 03:00 (from 03:00 it is an early
+         * start, [early]), it is the same night
+         * though its date does not change, so the 야간 뒤 잠 계획, 퇴근길 and 브리핑 follow it too.
+         */
+        val overnight: Boolean get() = to.toLocalDate().isAfter(from.toLocalDate()) ||
+            (night && from.toLocalTime().isBefore(EARLY_FROM) && to.isAfter(from))
         /** Starts in the morning, so the night before it is cut short by the clock. */
         val early: Boolean get() = from.toLocalTime().let { !it.isBefore(EARLY_FROM) && it.isBefore(SleepPlan.EARLY_START) }
     }
@@ -87,7 +120,13 @@ class SleepSchedule private constructor(
         }
 
         /** [day]'s work on the clock, as [RestCheck.blocks] sees it. */
-        fun work(day: ResolvedDay): List<Work> = RestCheck.blocks(day).map { Work(day.date, it.from, it.to, it.name, it.colorArgb) }
+        fun work(day: ResolvedDay): List<Work> {
+            // [RVIB-21] The day's own stops (between its two parts), on the stretch that holds them.
+            val stops = day.segments.zipWithNext { a, b -> a.endInclusive..b.start }.filter { it.endInclusive.isAfter(it.start) }
+            return RestCheck.blocks(day).map { b ->
+                Work(day.date, b.from, b.to, b.name, b.colorArgb, stops.filter { it.start.isAfter(b.from) && it.endInclusive.isBefore(b.to) })
+            }
+        }
 
         /** Over [from]..[to] plus a day either side, with the alarms that ring when [alarmsOn]. */
         fun of(

@@ -66,7 +66,7 @@ export default [
     buttons: [
       btn("water", "물 한 잔", "💧", "widget", { do: "valAdd", arg: "물 잔", by: 1 }),
       btn("sleep", "잠들어요", "🌙", "widget", { do: "valStamp", arg: "잠" }, [{ do: "screen", arg: "sleep" }]),
-      btn("sleept", "잠들어요", "🌙", "tile", { do: "valStamp", arg: "잠" }),
+      btn("sleept", "잠들어요", "🌙", "tile", { do: "valStamp", arg: "잠" }, [{ do: "screen", arg: "sleep" }]), // [RVM-14] PC-35
     ],
     rules: [
       { name: "야간 끝 회복", on: "end", role: "night", do: "valAdd", arg: "이달 야간", by: 1,
@@ -382,7 +382,7 @@ export default [
     values: [{ name: "잠", reset: "never", kind: "time" }],
     buttons: [
       btn("sleep", "잠들어요", "🌘", "widget", { do: "valStamp", arg: "잠" }, [{ do: "screen", arg: "sleep" }]),
-      btn("sleept", "잠들어요", "🌘", "tile", { do: "valStamp", arg: "잠" }),
+      btn("sleept", "잠들어요", "🌘", "tile", { do: "valStamp", arg: "잠" }, [{ do: "screen", arg: "sleep" }]), // [RVM-14] PC-35
     ],
     rules: [
       { name: "밤 열한 시", on: "daily", at: "23:00", do: "notify", arg: "곧 잘 시간이에요. 내일 {근무}예요", then: ["sleep", "again60"] },

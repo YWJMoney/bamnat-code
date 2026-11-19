@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CardGiftcard
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import com.bamnat.app.company.CompanyTerms
 import com.bamnat.app.company.ReportStatus
 
@@ -41,10 +45,12 @@ fun companyProblem(e: com.bamnat.app.company.CompanyException): String = when (e
 fun companyProblem(code: String, field: String? = null): String = when (code) {
     "offline" -> "인터넷에 연결되지 않았어요. 연결한 뒤 다시 해 주세요"
     "rate_limited" -> com.bamnat.app.company.RateLimits.text()
-    "amount", "phone", "email" -> when (field) {
+    "amount", "phone", "email", "account" -> when (field) {
         "note" -> when (code) {
             "amount" -> "한마디에 금액은 빼 주세요. ‘기본급의 10%’처럼 비율로 적으면 돼요"
             "phone" -> "한마디에 전화번호는 빼 주세요"
+            // 2.0.0 [RVN-22] 처리방침 3.14 N몫 ①.
+            "account" -> "한마디에 계좌번호는 빼 주세요"
             else -> "한마디에 메일 주소는 빼 주세요"
         }
         "dept" -> "부서 이름에 숫자나 연락처처럼 보이는 글자를 빼 주세요"
@@ -61,7 +67,7 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     "too_large" -> "설정이 너무 커서 보낼 수 없어요"
     "not_found" -> "찾을 수 없어요. 이미 지워졌을 수 있어요"
     // A 1.32 [FIX132-02] A vote on a version no longer open (1.31 said "인터넷에 연결되지 않았어요" for these).
-    "superseded" -> "이 설정은 새 버전으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
+    "superseded" -> "이 설정은 새 판으로 바뀌었어요. 회사 광장에서 지금 쓰는 설정을 보고 알려 주세요"
     "withdrawn" -> "올린 분이 이 설정을 내렸어요. 더 이상 알려 줄 수 없어요"
     "held" -> "이 설정은 아직 확인 중이라 알려 줄 수 없어요. 확인이 끝나면 다시 물어볼게요"
     // [SRV-04] A feature the developer paused for a while from the developer app.
@@ -75,10 +81,25 @@ fun companyProblem(code: String, field: String? = null): String = when (code) {
     // 1.39 [PAYP-03][PAYP-05] A version with no pay part, 보완 요청 before 처리방침 3.12.
     "no_pay" -> "이 판에는 급여 방식이 없어요"
     "closed" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
-    "muted" -> "운영 원칙을 지키지 않은 글이 있어 지금은 마을에서 쉬어 가요. 마을 맨 위에서 까닭을 볼 수 있어요"
+    "muted" -> com.bamnat.core.plaza.CommunityCare.mutedText(null)
     "repeat" -> com.bamnat.core.plaza.CommunityCare.REPEAT
     "body" -> "두 글자 이상, 500자 안으로 적어 주세요"
-    else -> "서버에 문제가 생겼어요. 잠시 뒤 다시 해 주세요"
+    // 2.0.0 [RVN-13] 검토 COMP-52: what the server said, told as what to do. A busy server waits; a word the user can fix, or an app
+    // update would fix, says so rather than "서버에 문제" (which had people wait for something that waiting does not mend).
+    "server", "busy", "no_database" -> com.bamnat.app.ui.components.NetWords.BUSY.removeSuffix(".")
+    "bad_response" -> "받은 답을 읽지 못했어요. 와이파이 로그인 화면이 떠 있다면 로그인한 뒤 다시 해 주세요"
+    "own" -> "내가 올린 것에는 할 수 없어요"
+    "not_yours", "forbidden" -> "이 휴대폰에서 올린 것만 바꿀 수 있어요"
+    "taken" -> "다른 분이 쓰고 있는 마을 이름이에요. 다른 이름을 적어 주세요"
+    "not_yet" -> "아직 열리지 않은 기능이에요. 앱을 업데이트한 뒤 다시 해 주세요"
+    else -> when {
+        code.startsWith("http_5") -> com.bamnat.app.ui.components.NetWords.BUSY.removeSuffix(".")
+        code == "http_404" -> companyProblem("not_found")
+        code == "http_413" -> companyProblem("too_large")
+        code == "http_429" -> com.bamnat.app.company.RateLimits.text()
+        // A word from a newer server, or a request this version no longer makes right: the update is what mends it.
+        else -> "이 앱이 모르는 답이 왔어요. 앱을 최신 버전으로 업데이트한 뒤 다시 해 주세요"
+    }
 }
 
 /** "채택되면 프로 3개월을 드려요" when the developer gives a reward; null while there is none. */
@@ -94,17 +115,29 @@ fun rewardText(months: Int, launched: Boolean = false): String =
 /** The same in a few words, for a pill next to a button. */
 fun rewardShort(terms: CompanyTerms?): String? = terms?.rewardMonths?.takeIf { it > 0 }?.let { "채택되면 프로 ${it}개월" }
 
-/** A soft pill: 🎁 채택되면 프로 3개월. */
+/**
+ * A soft pill: 채택되면 프로 3개월, after a gift.
+ * 2.0.0 [RVN-22] HQ-112 (총괄이 #502 사진에서 찾음, 조건 5·6: 복숭아색, 어두운 모드 갈색 바탕이 주의로 읽혔어요): the one quiet background the
+ * guide cards have, the meaning in the icon's colour only (a gift, in the app's own colour), the words in the body colour. Every reward
+ * line uses it (회사 찾기 '처음으로 알려 주세요', 내 설정 나누기, 광장 보상 안내, 공개 근무주기), so they change together.
+ */
 @Composable
 fun RewardPill(text: String, modifier: Modifier = Modifier) {
     // Rounded rather than a full pill, so a narrow screen that wraps it into two lines still looks tidy.
-    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.tertiaryContainer, modifier = modifier) {
-        Text(
-            "🎁 $text",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onTertiaryContainer,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-        )
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = modifier) {
+        androidx.compose.foundation.layout.Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.Top) {
+            // As tall as the words' first line, so it grows with the words at 글자 200% and stays beside the first line when they wrap.
+            val style = MaterialTheme.typography.labelLarge
+            val line = with(androidx.compose.ui.platform.LocalDensity.current) {
+                (if (style.lineHeight.isSpecified) style.lineHeight else style.fontSize * 1.4f).toDp()
+            }
+            androidx.compose.foundation.layout.Box(Modifier.height(line), contentAlignment = Alignment.Center) {
+                Icon(Icons.Outlined.CardGiftcard, contentDescription = null, tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(with(androidx.compose.ui.platform.LocalDensity.current) { style.fontSize.toDp() } + 2.dp))
+            }
+            androidx.compose.foundation.layout.Spacer(Modifier.width(8.dp))
+            Text(text, style = style, color = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 
@@ -144,12 +177,29 @@ fun PointsBar(points: Int, threshold: Int, modifier: Modifier = Modifier) {
 /** A label and its text, one per line of a setup in plain words. */
 @Composable
 fun SetupLine(label: String, text: String) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.labelWidth(92.dp))
-        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+    // 2.0.0 [RVN-20] 총괄 HQ-90 (사진 검토 11-13): the 근무 row's shifts one a line (a shift is not cut in two at a line's end), and with
+    // big letters or a narrow card the name above and the value under it, all the width (beside a grown name the value stood in a
+    // narrow column, a word or two a line).
+    val parts = if (label in SHIFT_LIST_LABELS) text.split(" · ").filter { it.isNotBlank() }.ifEmpty { listOf(text) } else listOf(text)
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val below = androidx.compose.ui.platform.LocalDensity.current.fontScale >= com.bamnat.app.ui.components.TWO_LINES_FROM ||
+            maxWidth < SETUP_LINE_BESIDE_MIN
+        if (below) Column(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            parts.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        } else Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+            Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.labelWidth(92.dp))
+            Column(Modifier.weight(1f)) { parts.forEach { Text(it, style = MaterialTheme.typography.bodyMedium) } }
+        }
     }
 }
+
+/** The rows whose value is a list of shifts (the server's `근무`: "주간 08:00~20:00 휴게 60분 · 야간 …", and 잔업·특근·대근). */
+private val SHIFT_LIST_LABELS = setOf("근무", "연장·휴무일 근무")
+
+/** Narrower than this, a [SetupLine]'s value goes under its name. */
+private val SETUP_LINE_BESIDE_MIN = 280.dp
 
 /** A round icon on a tinted circle, for the top of a step. */
 @Composable
@@ -217,6 +267,6 @@ fun ReportStatus.detail(): String = when {
     status == "replaced" -> "같은 곳에 나중에 보낸 설정으로 바뀌었어요."
     reasonCode == "shape" && status == "pending" -> reason ?: "근무 모양이 이 부서 대표 판과 달라요. 개발자가 확인한 뒤 보여요."
     review -> "같은 회사 분들이 충분히 모였어요. 개발자가 확인하면 채택돼요."
-    persons <= 1 -> "같은 회사 분이 같은 설정을 보내거나 ‘맞았어요’를 누르면 점수가 쌓여요."
+    persons <= 1 -> "같은 회사 분이 같은 설정을 보내거나 ‘맞아요’를 누르면 점수가 쌓여요."
     else -> "같은 회사 ${persons}명이 모였어요. ${(threshold - points).coerceAtLeast(1)}점만 더 모이면 채택돼요."
 }

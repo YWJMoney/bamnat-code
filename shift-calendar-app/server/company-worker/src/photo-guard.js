@@ -35,6 +35,8 @@ export const PHOTO_COLUMNS = [
   "ALTER TABLE recipe_images ADD COLUMN checked TEXT",
   "ALTER TABLE recipe_images ADD COLUMN why TEXT",
   "ALTER TABLE recipe_images ADD COLUMN flags INTEGER NOT NULL DEFAULT 0",
+  // 2.0.0 [RVD-27] SN-15 the picture's own hash: the same one from the same phone again is the one it has (index.js LATE_INDEXES).
+  "ALTER TABLE recipe_images ADD COLUMN sum TEXT",
 ];
 
 /**

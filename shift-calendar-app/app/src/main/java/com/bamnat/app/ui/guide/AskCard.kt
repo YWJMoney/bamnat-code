@@ -21,7 +21,7 @@ import com.bamnat.app.ui.components.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -108,14 +108,14 @@ fun AskArea(
         if (current.isNew && !folded) c.asks.set(calendar, AskScheduler.shown(c.asks.of(calendar), current, today))
     }
     val scope = rememberCoroutineScope()
-    val question = Questions.of(current.missing.key, hasPay = pay != null)
+    val question = Questions.of(current.missing.key, hasPay = pay != null, daily = pay?.wageType == com.bamnat.core.pay.WageType.DAILY)
     var opened by rememberSaveable(current.missing.key) { mutableStateOf(false) }
     if (compact && !opened) {
         AskLine(
             question = question,
             onOpen = {
                 val a = question.answer
-                if (a is Answer.Open) FeatureRegistry.get(a.feature)?.let(FeatureLinks::open) else opened = true
+                if (a is Answer.Open) FeatureLinks.openAnswer(a.feature) else opened = true
             },
             onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
             modifier = modifier,
@@ -126,7 +126,7 @@ fun AskArea(
         question = question,
         reward = current.reward,
         onAnswer = { value -> scope.launch { if (c.answers.answer(calendar, current.missing.key, value)) answered++ } },
-        onOpen = { feature -> FeatureRegistry.get(feature)?.let(FeatureLinks::open) },
+        onOpen = { feature -> FeatureLinks.openAnswer(feature) },
         onLater = { c.asks.set(calendar, AskScheduler.later(c.asks.of(calendar), current.missing.key, today)) },
         modifier = modifier,
         // [EASY-09] A value 모두 처음부터 asks again starts from what it is.

@@ -26,9 +26,12 @@ class DutyRosterNurseTest {
     @Test fun middleAndLeaveCodes() {
         assertEquals(DutyCell.Shift(4), codes.match("S"))
         assertEquals(DutyCell.Shift(2), codes.match("E"))
-        assertEquals(DutyCell.Leave(), codes.match("AL"))
+        // 2.0.0 [RVL-21] AL and 생 alone are asked once (a team's own mark as often as a leave); written out they are not.
+        assertEquals(DutyCell.Unknown("AL"), codes.match("AL"))
+        assertEquals(DutyCell.Leave(), codes.match("연차"))
         // [ROST-05] 생리휴가 is 무급 by law; 병가·공가 are each company's own, so the user is asked.
-        assertEquals(DutyCell.Leave(com.bamnat.core.model.LeaveKind.UNPAID), codes.match("생"))
+        assertEquals(DutyCell.Leave(com.bamnat.core.model.LeaveKind.UNPAID), codes.match("생리휴가"))
+        assertEquals(DutyCell.Leave(com.bamnat.core.model.LeaveKind.UNPAID), DutyCodes.guessOf("생")?.second)
         listOf("병", "SL", "공가").forEach { assertTrue(it, (codes.match(it) as DutyCell.Unknown).leave) }
         assertEquals(DutyCell.Shift(5), codes.match("PH"))
     }

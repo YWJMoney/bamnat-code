@@ -26,10 +26,12 @@ test("[MAT-06] a shared font: open licence, a real font file, its id is its byte
   assert.match(id, /^u[0-9a-f]{16}$/);
   const post = (body, n = 1) => call("POST", "/api/recipes/fonts", { device: device(n), name: "나눔손글씨", license: "ofl", ttf: font.toString("base64"), ...body }, from(n));
   assert.equal((await post({ license: "mine" })).data.error, "license", "only fonts others may use");
-  assert.equal((await post({ ttf: Buffer.from("not a font at all").toString("base64") })).data.error, "font");
+  // 2.0.0 [RVQ-27] 검토 SVC-63: each try past the licence counts in the day's 몫 before the file is unpacked, so the refused ones come
+  // from other phones and lines here (a line has 3 a day).
+  assert.equal((await post({ ttf: Buffer.from("not a font at all").toString("base64") }, 3)).data.error, "font");
   // 1.36 [SEC-10] Only beginning like a font is not enough.
-  assert.equal((await post({ ttf: Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.alloc(64, 7)]).toString("base64") })).data.error, "font");
-  assert.equal((await post({ id: "u0000000000000000" })).data.error, "id", "the phone's id must be the bytes'");
+  assert.equal((await post({ ttf: Buffer.concat([Buffer.from([0, 1, 0, 0]), Buffer.alloc(64, 7)]).toString("base64") }, 4)).data.error, "font");
+  assert.equal((await post({ id: "u0000000000000000" }, 5)).data.error, "id", "the phone's id must be the bytes'");
   const r = await post({ id });
   assert.equal(r.status, 201);
   assert.equal(r.data.id, id);

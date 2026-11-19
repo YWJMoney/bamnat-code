@@ -116,7 +116,7 @@ fun PublicCycle.setupCodes(): String? = when {
 }
 
 @Composable
-private fun BrowseRow(title: String, line: String, onClick: () -> Unit) {
+internal fun BrowseRow(title: String, line: String, onClick: () -> Unit) {
     SoftCard(Modifier.clip(MaterialTheme.shapes.large).clickable(role = Role.Button, onClick = onClick)) {
         Row(Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

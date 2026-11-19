@@ -83,7 +83,11 @@ class TradeAlertsTest {
 
     @Test fun sameFillOnce() {
         val a = com.bamnat.core.invest.TradeAlerts.add(emptyList(), pending(0))!!
-        assertNull(com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000)))
+        // 2.0.0 [RVK-14] (검토 MONEY-62): the same fill told another way (알림톡) a minute later, or the very same notification, is one.
+        assertNull(com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000).copy(app = "카카오톡")))
+        assertNull(com.bamnat.core.invest.TradeAlerts.add(a, pending(0)))
+        // The same app's next notification at the same quantity and price is a second fill (50주 + 50주): both are kept.
+        assertEquals(2.0, com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000))!!.single().quantity, 0.0)
         assertEquals(2, com.bamnat.core.invest.TradeAlerts.add(a, pending(60 * 60_000))!!.size)
         // [INV-40] 1.25 409 B (결정 D77): another quantity of the same order a minute later is a split fill, put together.
         assertEquals(1, com.bamnat.core.invest.TradeAlerts.add(a, pending(60_000, 2.0))!!.single().parts - 1)

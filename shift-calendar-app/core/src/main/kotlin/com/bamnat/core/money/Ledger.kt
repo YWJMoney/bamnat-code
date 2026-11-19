@@ -183,7 +183,8 @@ object LedgerCsv {
                 val (category, amount) = share
                 val account = MoneyAccounts.of(e, accounts)?.let { names[it] }.orEmpty()
                 line(sb, listOf(
-                    e.date.toString(), e.time?.toString().orEmpty(), e.kind.label, category, amount.toString(),
+                    // 2.0.0 [RVK-43] (검토 U06b-14) 분류 is a name the user made ("=합계" would run in a spreadsheet), so it is guarded too.
+                    e.date.toString(), e.time?.toString().orEmpty(), e.kind.label, text(category), amount.toString(),
                     text(e.title + if (shares.size > 1) " (나눔 ${i + 1}/${shares.size})" else ""),
                     text(account), text(e.toAccountId?.let { names[it] }.orEmpty()), text(e.memo.ifBlank { e.note.takeIf { e.merchant.isNotBlank() }.orEmpty() }),
                     text(e.tags.joinToString(" ") { "#$it" }), if (e.installments > 1) "${e.installments}개월" else "", source(e.source),

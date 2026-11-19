@@ -19,6 +19,46 @@ import java.time.LocalTime
 object Commute {
     /** Late or early by less than this is on time. */
     const val SLACK_MINUTES = 10
+
+    /**
+     * [RVH-34] 검토 WORK-15·U02-10 The time after the day's end before leaving is 잔업, as the user picks it: leaving the circle
+     * (100~500m) takes the lift, the car park and the gate, so 10 minutes wrote 18:14 as 잔업 into the pay.
+     */
+    val OVERTIME_SLACK_CHOICES = listOf(10, 20, 30)
+
+    /** 검토 WORK-15 What becomes of 잔업 seen on leaving: asked once even when the rest is written at once, written, or never. */
+    enum class OvertimeWay(val key: String, val label: String) {
+        ASK("ask", "한 번 묻기"),
+        WRITE("write", "바로 적기"),
+        NONE("none", "적지 않기");
+
+        companion object {
+            fun of(key: String?): OvertimeWay = entries.firstOrNull { it.key == key } ?: ASK
+        }
+    }
+    /**
+     * [RVH-35] 검토 WORK-16·U02-09 다음 출근 때 정하기: the workplace is where the phone is this long after the next shift starts,
+     * for whoever turns this on away from work (at home, on a day off).
+     */
+    const val PLACE_AFTER_MINUTES = 30L
+
+    /** When to take the workplace: [PLACE_AFTER_MINUTES] into the first shift after [now] in [days] days, or null when there is none. */
+    fun placeAt(now: LocalDateTime, days: Int = 14, day: (LocalDate) -> ResolvedDay): LocalDateTime? =
+        (0..days).asSequence().map { day(now.toLocalDate().plusDays(it.toLong())) }
+            .filter { it.isWorkDay && it.leave?.isFullDay != true }
+            .mapNotNull { it.shiftFrom?.plusMinutes(PLACE_AFTER_MINUTES) }
+            .firstOrNull { it.isAfter(now) }
+
+    /**
+     * [RVH-35] 검토 WORK-16 Where the workplace is from the phone, in words instead of 위도·경도: inside the circle, or how far
+     * (10m steps under 1km, then 0.1km).
+     */
+    fun distanceWords(meters: Double, radius: Int): String = when {
+        meters <= radius -> "지금 회사 범위 안에 있어요"
+        meters < 1000 -> "지금 있는 곳에서 ${(Math.round(meters / 10.0) * 10).toInt()}m 떨어져 있어요"
+        else -> "지금 있는 곳에서 ${"%.1f".format(java.util.Locale.ROOT, meters / 1000.0)}km 떨어져 있어요"
+    }
+
     /** Work on a day off shorter than this is not written (passing by the workplace). */
     const val MIN_REST_DAY_MINUTES = 30
     /** An arrival older than this is no longer the one a leave after midnight belongs to. */
@@ -45,6 +85,8 @@ object Commute {
         // On a 반차 day which half was taken is not known, so a late arrival may be the planned one.
         if (partialLeave(day)) return Write.None
         val t = if (rounding) DayWork.round(at) else at
+        // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) Coming back for the second part of a day of two parts is not a second, late arrival.
+        if (inSecondHalf(day, t)) return Write.None
         return if (Duration.between(from, t).toMinutes() > SLACK_MINUTES && t.isBefore(to)) Write.Late(t.toLocalTime(), to.toLocalTime()) else Write.None
     }
 
@@ -52,15 +94,21 @@ object Commute {
      * [DAYW-07] Leaving at [at] on [day], having arrived at [arrived] if known: on a working day an earlier end
      * or 잔업 to now (as 지금 퇴근 does, [DayWork.leaveNow]); on a day off 특근 from arriving to leaving.
      */
-    fun leave(day: ResolvedDay, arrived: LocalDateTime?, at: LocalDateTime, rounding: Boolean = true): Write {
+    fun leave(
+        day: ResolvedDay, arrived: LocalDateTime?, at: LocalDateTime, rounding: Boolean = true,
+        /** 검토 WORK-15 Minutes after the end that are still leaving, not 잔업 ([OVERTIME_SLACK_CHOICES]). */
+        overtimeSlack: Int = SLACK_MINUTES,
+    ): Write {
         val t = if (rounding) DayWork.round(at) else at
         if (day.isWorkDay && day.shiftFrom != null && day.shiftTo != null) {
             val from = day.shiftFrom!!
             // Against the planned end, never an end written earlier (a lunch walk's 퇴근 12:00).
             val to = plannedTo(day)
             val past = Duration.between(to, t).toMinutes()
+            // 2.0.0 [RVIB-21] (결정 19, 설계 2-8절) Going out in the 브레이크 타임·비는 시간 between two parts is not 퇴근.
+            if (inStop(day, t)) return Write.None
             return when {
-                past > SLACK_MINUTES -> {
+                past > overtimeSlack.coerceAtLeast(SLACK_MINUTES) -> {
                     val minutes = past.toInt().coerceAtMost(16 * 60)
                     Write.Overtime(ExtraEntry(ExtraKind.OVERTIME_ID, start = to.toLocalTime(), end = to.plusMinutes(minutes.toLong()).toLocalTime()), minutes)
                 }
@@ -86,6 +134,21 @@ object Commute {
         is Write.Overtime -> entry.copy(extras = replace(entry.extras, write.entry), customEnd = entry.customEnd?.let { write.entry.start ?: it })
         is Write.RestDayWork -> entry.copy(extras = replace(entry.extras, write.entry))
         Write.None -> entry
+    }
+
+    /**
+     * [RVIB-21] [t] is in a stop between two parts of [day] (or within [SLACK_MINUTES] before it, the walk out), and before the last
+     * part starts: leaving then is going out for the gap, not 퇴근.
+     */
+    fun inStop(day: ResolvedDay, t: LocalDateTime): Boolean {
+        val parts = day.segments.takeIf { it.size > 1 } ?: return false
+        return parts.zipWithNext().any { (a, b) -> !t.isBefore(a.endInclusive.minusMinutes(SLACK_MINUTES.toLong())) && t.isBefore(b.start) }
+    }
+
+    /** [RVIB-21] [t] is at or after the end of the first of two parts of [day] (less [SLACK_MINUTES]): an arrival then is coming back. */
+    fun inSecondHalf(day: ResolvedDay, t: LocalDateTime): Boolean {
+        val parts = day.segments.takeIf { it.size > 1 } ?: return false
+        return !t.isBefore(parts.first().endInclusive.minusMinutes(SLACK_MINUTES.toLong()))
     }
 
     /** [day] with the start [entry] now has, for deciding the end after a late start. */

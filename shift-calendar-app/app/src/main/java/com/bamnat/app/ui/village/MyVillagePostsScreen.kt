@@ -20,11 +20,11 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
-import androidx.compose.material3.Tab
+import com.bamnat.app.ui.components.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -61,7 +61,9 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     // [TOWN-02] 1.37: answers that came since this phone last looked, marked on each of my posts until I leave this screen.
     var fresh by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
     var problem by remember { mutableStateOf<String?>(null) }
-    val snack = remember { SnackbarHostState() }
+    // 2.0.0 [RVO-31] PRO-25: '다시 하기' on the failure line reads my posts again.
+    var reload by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val snack = com.bamnat.app.ui.components.AppSnack.rememberLane()
     val scope = rememberCoroutineScope()
     // PC 확인: 글 보기 opens the post itself in its plaza's talk.
     val talk = remember { com.bamnat.app.ui.company.TalkHolder(c, scope) }
@@ -72,7 +74,8 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     LaunchedEffect(fixTalk) {
         val f = fixTalk ?: return@LaunchedEffect
         com.bamnat.app.ui.company.TalkSheets.pending.value = null
-        talk.show(f.company, f.setup, f.title)
+        // 2.0.0 [RVN-19] HQ-51 From the 알림함's row: on that post (its thread read when it is not on the first page).
+        talk.show(f.company, f.setup, f.title, focus = f.focus)
     }
     // 1.39 조사 ③(4) 가려진 내 글 '다시 보여 주세요'(마을 돌봄이 켜진 뒤, 처리방침 3.12): 운영자가 다시 읽고 답해요.
     val canAsk = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)
@@ -80,7 +83,8 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
     askFor?.let { id ->
         com.bamnat.app.ui.hub.AppealDialog(c, "post:$id", onDone = { sent -> askFor = null; sent?.let { scope.launch { snack.showSnackbar(it) } } })
     }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reload) {
+        problem = null
         mine = try {
             c.companyApi.myPosts(c.companyStore.device).also { list ->
                 fresh = com.bamnat.app.company.VillageReplies.fresh(c.appContext, list)
@@ -88,12 +92,12 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                 com.bamnat.app.company.VillageReplies.markSeen(c.appContext, list)
             }
         } catch (e: CompanyException) {
-            problem = "인터넷이 없거나 서버가 바빠요. 잠시 뒤 다시 열어 주세요"
+            problem = com.bamnat.app.ui.components.NetWords.BUSY
             null
         }
     }
     Scaffold(
-        snackbarHost = { SnackbarHost(snack) },
+        snackbarHost = { com.bamnat.app.ui.components.AppSnackHost() },
         topBar = { TopAppBar(title = { Text("간직한 글 · 내 글") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -109,7 +113,7 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                 when (tab) {
                     0 -> {
                         if (keptList.isEmpty()) item {
-                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋯ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
+                            Empty("아직 간직한 글이 없어요. 광장 글의 ⋮ › ‘간직하기’로 좋은 팁을 모아 두면 여기서 다시 봐요", "광장 가기", onPlaza)
                         }
                         items(keptList, key = { it.id }) { s ->
                             PostCard(s.roomName, label(s.kind), s.body, ago(s.at), extra = null) {
@@ -126,7 +130,10 @@ fun MyVillagePostsScreen(c: AppContainer, onBack: () -> Unit, onPlaza: () -> Uni
                     else -> {
                         val list = if (tab == 1) written else replies
                         when {
-                            list == null -> item { Text(problem ?: "불러오는 중이에요", style = MaterialTheme.typography.bodyMedium) }
+                            list == null -> item {
+                                if (problem != null) com.bamnat.app.ui.components.OfflineLine(text = problem!!, onRetry = { reload++ })
+                                else Text("불러오는 중이에요", style = MaterialTheme.typography.bodyMedium)
+                            }
                             list.isEmpty() -> item {
                                 Empty(if (tab == 1) "아직 광장에 쓴 글이 없어요" else "아직 단 답글이 없어요", "광장 가기", onPlaza)
                             }

@@ -48,6 +48,8 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
     val provided = LocalDayFacts.current
     val facts by produceState(provided, provided, settings.logic, date) { if (value == null) value = runCatching { LogicRunner.facts(c) }.getOrNull() }
     val scope = rememberCoroutineScope()
+    // PC-99: a press changes the 값 칸; the buttons' words read them again.
+    val kept = FxValues.flow(c).collectAsStateWithLifecycle().value
     val shown = buttons.filter { b -> b.show.isEmpty() || facts?.let { Formula.eval(b.show, it.scope(date))?.truthy == true } == true }
     if (shown.isEmpty()) return
     Row(
@@ -55,6 +57,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for (b in shown) {
+            val said = remember(b, kept, facts, date) { LogicRunner.sayNow(b.act, facts, date) }
             AssistChip(
                 onClick = {
                     scope.launch {
@@ -63,7 +66,9 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
                     }
                 },
                 label = { Text(listOfNotNull(b.emoji, b.label).joinToString(" ")) },
-                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 ${com.bamnat.app.ui.recipe.sample(b.act.say())}" },
+                // PC-99 (현장 '🌧️ 우천 쉼'이 '… 이달 3공수'라고 읽힘, 그때 1.5공수): what it says is worked out from the values as they are now
+                // (the example numbers of 장터's 예시 are never read out for the phone's own button).
+                modifier = Modifier.semantics { contentDescription = "${b.label} 단추, 누르면 $said" },
             )
         }
     }
@@ -71,7 +76,7 @@ fun LogicButtons(place: ButtonPlace, date: LocalDate, modifier: Modifier = Modif
 
 /** The line after a button or rule acted, with 되돌리기 when it wrote data (메모·체크·가계부). */
 @Composable
-fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
+fun LogicMessageHost(c: AppContainer) {
     androidx.lifecycle.compose.LifecycleStartEffect(Unit) {
         LogicRunner.onScreen = true
         onStopOrDispose { LogicRunner.onScreen = false }
@@ -83,13 +88,15 @@ fun LogicMessageHost(c: AppContainer, snackbar: SnackbarHostState) {
             if (m == null) return@collect
             LogicRunner.consumeMessage()
             val resting = com.bamnat.app.diag.StartGuard.safe.value
-            val canUndo = !resting && LogicStore(c.appContext).undo != null
-            val action = when { resting -> "평소대로"; canUndo -> "되돌리기"; else -> null }
-            // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게.
-            val r = snackbar.showSnackbar(m, actionLabel = action, duration = if (action != null) SnackbarDuration.Long else SnackbarDuration.Short)
-            if (r == SnackbarResult.ActionPerformed) when {
+            // [RVM-11] PC-34: a resting 프로 단추 offers its 하루 써 보기 on the line itself (not 되돌리기 of something earlier).
+            val tryKey = LogicRunner.restingTry.also { LogicRunner.restingTry = null }?.takeIf { m.contains("프로에서 켜져요") }
+            val canUndo = !resting && tryKey == null && !m.contains("프로에서 켜져요") && LogicStore(c.appContext).undo != null
+            val action = when { resting -> "평소대로"; tryKey != null -> "하루 써 보기"; canUndo -> "되돌리기"; else -> null }
+            // 1.37 PC 5차: 되돌리기 줄이 너무 빨리 사라졌어요. 되돌릴 게 있으면 길게. 2.0.0 [RVP-23] On the app's one line, 되돌리기 first.
+            if (com.bamnat.app.ui.components.AppSnack.ask(m, action)) when {
                 resting -> c.wakeAfterSafe()
-                canUndo -> snackbar.showSnackbar(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")
+                tryKey != null -> com.bamnat.app.ui.components.AppSnack.show(if (FxAccess.start(c, tryKey)) "하루 동안 써 봐요. 다시 눌러 보세요" else "이미 써 본 작품이에요. 프로에서 켜져요")
+                canUndo -> com.bamnat.app.ui.components.AppSnack.show(if (LogicRunner.undo(c)) "되돌렸어요" else "되돌릴 것이 없어요")
             }
         }
     }

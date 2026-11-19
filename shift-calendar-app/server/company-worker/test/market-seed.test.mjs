@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
 import { server, signIn } from "./helpers.mjs";
+import { resumeShip, shippedVersion } from "../src/desk.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
 const recipe = (title, extra = {}) => ({
@@ -215,4 +216,22 @@ test("[MKS-05] 나간 판 저장이 그 판 앱부터 읽는 출시 대기 작�
   assert.deepEqual(left, ["1.40", "아무 판", "예약"]);
   // 관리자가 판 번호를 직접 주면 그 번호로.
   assert.equal((await call("POST", "/api/admin/desk/ship", { version: "1.40.0", code: 54 }, admin)).data.market, 1);
+});
+
+// 2.0.0 통합: [RVD-11](끊긴 나간 판 저장을 5분마다 이어 보냄)과 [MKS-05](나간 판에 맞는 출시 대기 작품 공개)가 함께 돌 때, 이어 보내는
+// 쪽도 처음 저장할 때의 판 번호('보내는 중' 기록의 code)로 남은 작품을 공개하고, 끝난 뒤에는 다시 하지 않아요.
+test("[MKS-05][RVD-11] 끊겼다 이어 보내는 나간 판 저장도 기록해 둔 판 번호로 출시 대기 작품을 한 번만 공개해요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: AFTER });
+  const { call, env } = server({ plaza: true });
+  const admin = await signIn(call);
+  assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe("2.0 작품"), hold: true, batch: "2.0", minApp: 54 }, admin)).status, 201);
+  assert.equal((await call("POST", "/api/admin/recipes", { recipe: recipe("다음 판 작품"), hold: true, batch: "다음", minApp: 55 }, admin)).status, 201);
+  // 문의 답 하나가 실패해 '보내는 중'으로 남은 판: 관리자가 준 판 번호 54가 기록에 남아 있어요(Play 트랙·옛 표에는 2.0.0이 없어요).
+  await env.DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('shipped_version', ?)").bind(JSON.stringify({
+    v: "2.0.0", at: AFTER, by: "자동", pending: true, was: "1.39.0", notify: false, post: false, noticeId: null, tries: 1, code: 54 })).run();
+  const again = await resumeShip(env, Date.now(), async () => true);
+  assert.deepEqual([again.code, again.market, again.failed], [54, 1, 0]);
+  assert.equal((await shippedVersion(env)).pending, undefined);
+  assert.deepEqual(titles(await call("GET", "/api/recipes?style=SHIFT&sort=new&app=54")), ["2.0 작품"]);
+  assert.equal(await resumeShip(env, Date.now(), async () => true), null);
 });

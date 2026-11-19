@@ -19,6 +19,8 @@ import com.bamnat.app.company.RoomPage
 import com.bamnat.app.company.RoomVersion
 import com.bamnat.app.company.Talk
 import com.bamnat.app.company.TalkPost
+import com.bamnat.app.needs
+import com.bamnat.app.nodeWorks
 import com.bamnat.app.ui.company.AutoShareHost
 import com.bamnat.app.ui.company.CompanyBoardScreen
 import com.bamnat.app.ui.company.CompanyBoardViewModel
@@ -28,6 +30,7 @@ import com.bamnat.app.ui.company.PlazaHomeScreen
 import com.bamnat.app.ui.company.PlazaHomeViewModel
 import com.bamnat.app.ui.company.PlazaRoomLine
 import com.bamnat.app.ui.settings.AutoShareRow
+import com.bamnat.core.plaza.ShareWay
 import com.bamnat.core.pay.CompanyRules
 import com.bamnat.core.pay.DatedValue
 import com.bamnat.core.pay.Occupation
@@ -46,7 +49,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
@@ -158,7 +160,8 @@ class AIScreenshotTest : ScreenshotBase() {
         runBlocking { c.payStore.save(com.bamnat.app.ui.pay.PayViewModel(c).sampleProfile().copy(rules = companyRules), keepUndo = false) }
         runBlocking { com.bamnat.app.company.PublicCycleFiles.apply(c, gsCaltex, "DDOONNOO", 0) }
         settle()
-        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) tapText("근무주기 다음 단계")
+        // 2.0.0 [RVP-43] HQ-49: a row of the 알림함, opened in place there.
+        if (!shows("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)) openNotice("근무주기 다음 단계")
         reveal("‘GS칼텍스’ 근무주기를 광장에 올려 주실래요?", exact = true)
         // One ask: the card's own, and no second one from 저절로 나누기 on top.
         assertNull(c.autoShare.ask.value)
@@ -237,6 +240,14 @@ class AIScreenshotTest : ScreenshotBase() {
         reveal("야간 50% → 60%로 바꾼 사람 3명", exact = false)
         reveal("글 보기·쓰기", exact = true)
         assertTrue(appears("댓글 1개", exact = true))
+    }
+    /** 2.0.0 [RVN-20] HQ-90: the room's 근무·급여 정보 at 200% on the folded width, one shift a line under its label. */
+    @Test fun theCompanysRoomBig() = shoot("rvn_94_plaza_info_folded_dark_200", Rvn5ScreenshotTest.DARK, 2f) {
+        ownPay()
+        rooms()
+        member()
+        home()
+        reveal("근무·급여 정보", exact = true)
     }
     @Test fun theRoomsTalk() = shoot("1128_ai_room_talk", PHONE) {
         val r = rooms()
@@ -360,7 +371,7 @@ class AIScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
         assertTrue(appears("• 야간 50% → 60%", exact = true))
-        assertTrue(appears("다음부터 묻지 않고 저절로 나누기 (하루 한 번)", exact = true))
+        assertTrue(appears("다음부터 묻지 않고 저절로 나누기 (다음 날 오전, 그 전에 취소할 수 있어요)", exact = true))
         assertTrue(appears("다시 묻지 않기", exact = true))
         // The same values saved again ask nothing.
         tapText("이번엔 안 할게요", exact = true)
@@ -373,6 +384,8 @@ class AIScreenshotTest : ScreenshotBase() {
         ownPay()
         member()
         c.companyStore.setAutoShare(true)
+        // 2.0.0 [RVN-11] COMP-44: a yes that named the pay way (the ask's '다음부터 저절로', 설정's switch); only the 야간 % changes here.
+        c.companyStore.setAutoPay(true)
         c.companyStore.autoBase = mine()
         c.companyStore.autoSentAt = Today.millis()
         runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
@@ -385,30 +398,62 @@ class AIScreenshotTest : ScreenshotBase() {
         }
         runBlocking { c.autoShare.check() }
         settle()
-        assertTrue(appears("(주)예시정밀 광장에 내일 나눠요(하루 한 번) · 야간 50% → 60%", exact = true))
+        // 2.0.0 [RVN-22] I10bc-03 Held on the phone until the next morning; 취소 drops it there (nothing reached the server).
+        assertTrue(appears("내일 오전에 (주)예시정밀 광장에 나눠요 · 야간 50% → 60%", exact = true))
         assertTrue(c.autoShare.waiting)
-        tapText("되돌리기", exact = true)
+        tapText("취소", exact = true)
         settle()
         assertFalse(c.autoShare.waiting)
+        // The same values saved again are not held again.
+        runBlocking { c.autoShare.check() }
+        assertFalse(c.autoShare.waiting)
     }
+    /**
+     * 2.0.0 [RVN-11] COMP-44: 저절로 나누기 from a 근무주기 yes alone (or a phone that said yes before 2.0.0) is for the cycle; a change of the
+     * pay way only is asked as without it, with '다음부터 저절로' to take the pay way too.
+     */
+    @Test fun aCycleYesAsksBeforeThePayWayGoes() = shoot("1137b_ai_pay_asks", PHONE) {
+        rooms()
+        ownPay()
+        member()
+        c.companyStore.setAutoShare(true)
+        c.companyStore.autoBase = mine()
+        c.companyStore.autoSentAt = Today.millis()
+        runBlocking { c.payStore.save(c.payStore.profile.value!!.copy(rules = CompanyRules(nightPremium = 0.6)), keepUndo = false) }
+        content {
+            Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { AutoShareHost(c, onOpen = {}, snackbar = null) }
+        }
+        runBlocking { c.autoShare.check() }
+        settle()
+        assertFalse(c.autoShare.waiting)
+        assertTrue(appears("바뀐 내용을 회사 광장에 나눌까요?", exact = true))
+        // 2.0.0 [RVN-22] I10bc-03 It names the one part it is about.
+        assertTrue(appears("(주)예시정밀 광장의 급여 계산 방식을 이렇게 고쳐 올려요.", exact = true))
+        assertTrue(appears("• 야간 50% → 60%", exact = true))
+    }
+    /** 2.0.0 [RVN-22] 검토 I10bc-03: one way for each part (저절로·묻기·안 함), each chip read with its part. */
     @Test fun theSettingAsksOrSharesOrNot() = shoot("1138_ai_setting", SMALL_PHONE) {
         companyOn()
         member()
         c.companyStore.setAutoShare(false)
         content { Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(16.dp)) { AutoShareRow() } }
         settle()
-        assertTrue(appears("‘다시 묻지 않기’로 두셨어요", exact = false))
-        tapText("바꿀 때마다 묻기로 되돌리기", exact = true)
+        assertTrue(appears("회사 광장에 나누기", exact = true))
+        assertTrue(appears("바꾼 것을 (주)예시정밀 광장에 어떻게 나눌지 부분마다 골라요", exact = false))
+        assertEquals(com.bamnat.core.plaza.ShareWays(ShareWay.NEVER, ShareWay.NEVER, ShareWay.NEVER), c.companyStore.shareWays.value)
+        tapText("근무 시간 묻기", exact = true)
         settle()
-        assertNull(c.companyStore.autoShare.value)
-        assertTrue(appears("바꿀 때마다 ‘(주)예시정밀 광장에 나눌까요?’ 하고 물어요", exact = false))
+        tapText("근무주기 저절로", exact = true)
+        settle()
+        assertEquals(com.bamnat.core.plaza.ShareWays(ShareWay.AUTO, ShareWay.ASK, ShareWay.NEVER), c.companyStore.shareWays.value)
+        assertTrue(appears("저절로: 다음 날 오전에 나눠요. 그 전에 취소할 수 있어요", exact = true))
     }
 
     /** The company server on Node (server/company-worker), as PlazaAIAppTest runs it. */
     private fun server(block: (String) -> Unit) {
         val dir = File("../server/company-worker")
-        assumeTrue(dir.resolve("test/local-server.mjs").exists())
-        assumeTrue(runCatching { ProcessBuilder("node", "--version").start().waitFor(10, TimeUnit.SECONDS) }.getOrDefault(false))
+        needs("server/company-worker/test/local-server.mjs", dir.resolve("test/local-server.mjs").exists())
+        needs("node", nodeWorks())
         val port = ServerSocket(0).use { it.localPort }
         val node = ProcessBuilder("node", "test/local-server.mjs", port.toString()).directory(dir).redirectErrorStream(true).start()
         try {

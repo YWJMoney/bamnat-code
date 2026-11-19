@@ -24,6 +24,12 @@ object IncomingFiles {
         return true
     }
 
+    /**
+     * What another app hands in, on a first open and while open (onNewIntent) alike: a roster shared to the app, else a 밤낮 file.
+     * 2.0.0 [RVL-64] (검토 DATA-29 ③) One place for both, so the open app takes a file as a first open does.
+     */
+    fun readAny(intent: Intent?): Boolean = IncomingRoster.read(intent) || read(intent)
+
     /** The waiting file, once: the screen that opens it takes it. */
     fun take(): Uri? = _file.value.also { _file.value = null }
 
@@ -31,10 +37,22 @@ object IncomingFiles {
         intent ?: return null
         if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
         return when (intent.action) {
-            Intent.ACTION_VIEW -> intent.data?.takeIf { it.scheme == "content" || it.scheme == "file" }
+            Intent.ACTION_VIEW -> intent.data
             Intent.ACTION_SEND -> stream(intent)
             else -> null
-        }
+        }?.takeIf(::fromOutside)
+    }
+
+    /**
+     * 2.0.0 [RVL-64] (검토 DATA-23) Only a content:// address another app opens to this one: not file:// (a path this app would read
+     * with its own rights, where a 밤낮 file from a messenger never comes since Android 7) and not this app's own providers (its
+     * private files, which no other app has a reason to hand back). Before, any EXTRA_STREAM was kept and tried.
+     */
+    internal fun fromOutside(uri: Uri): Boolean {
+        if (uri.scheme != "content") return false
+        val authority = uri.authority?.takeIf { it.isNotBlank() } ?: return false
+        val own = BuildConfig.APPLICATION_ID
+        return authority != own && !authority.startsWith("$own.")
     }
 
     @Suppress("DEPRECATION")

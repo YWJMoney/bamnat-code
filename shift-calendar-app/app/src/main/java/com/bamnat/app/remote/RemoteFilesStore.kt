@@ -21,19 +21,35 @@ import com.bamnat.core.time.Today
 /** [REMOTE-02] Reads one published file; null when it is not there or the phone is offline. */
 fun interface RemoteFetcher {
     suspend fun get(path: String): ByteArray?
+
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) The same, asking with the [etag] the phone kept from the last time: when the site says the file
+     * has not changed ([Fetched.unchanged]) nothing comes down, neither the file nor its signatures. A fetcher that cannot ask
+     * (the tests' fakes) downloads as before.
+     */
+    suspend fun fetch(path: String, etag: String?): Fetched = Fetched(get(path), null)
 }
+
+/** [RVL-67] A file as it came (null: not there or offline), its ETag, or [unchanged] since [RemoteFetcher.fetch]'s etag. */
+class Fetched(val bytes: ByteArray?, val etag: String?, val unchanged: Boolean = false)
 
 /** [REMOTE-02] GitHub Pages (`bamnat.remoteBaseUrl`): plain GET, short timeouts, at most 1 MB. */
 class HttpRemoteFetcher(private val baseUrl: String) : RemoteFetcher {
-    override suspend fun get(path: String): ByteArray? = withContext(Dispatchers.IO) {
-        if (baseUrl.isBlank()) return@withContext null
+    override suspend fun get(path: String): ByteArray? = fetch(path, null).bytes
+
+    override suspend fun fetch(path: String, etag: String?): Fetched = withContext(Dispatchers.IO) {
+        if (baseUrl.isBlank()) return@withContext Fetched(null, null)
         try {
             val conn = URL(baseUrl.trimEnd('/') + "/" + path).openConnection() as HttpURLConnection
             conn.connectTimeout = 10_000
             conn.readTimeout = 15_000
             conn.instanceFollowRedirects = false
+            // [RVL-67] GitHub Pages answers 304 with no body when the file still has this ETag.
+            if (!etag.isNullOrBlank()) conn.setRequestProperty("If-None-Match", etag)
             try {
-                if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
+                if (!etag.isNullOrBlank() && conn.responseCode == HttpURLConnection.HTTP_NOT_MODIFIED) return@withContext Fetched(null, etag, unchanged = true)
+                if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext Fetched(null, null)
+                val tag = conn.getHeaderField("ETag")?.takeIf { it.length in 1..200 && it.none { c -> c == '\n' || c == '\r' || c == '\t' } }
                 conn.inputStream.use { input ->
                     val out = java.io.ByteArrayOutputStream()
                     val buf = ByteArray(8_192)
@@ -41,15 +57,15 @@ class HttpRemoteFetcher(private val baseUrl: String) : RemoteFetcher {
                         val n = input.read(buf)
                         if (n < 0) break
                         out.write(buf, 0, n)
-                        if (out.size() > MAX_BYTES) return@withContext null
+                        if (out.size() > MAX_BYTES) return@withContext Fetched(null, null)
                     }
-                    out.toByteArray()
+                    Fetched(out.toByteArray(), tag)
                 }
             } finally {
                 conn.disconnect()
             }
         } catch (e: IOException) {
-            null
+            Fetched(null, null)
         }
     }
 
@@ -106,8 +122,12 @@ class RemoteFilesStore(
         if (!force && !due(now)) return emptyList()
         val changed = mutableListOf<String>()
         var reached = false
+        val tags = etags()
         for (kind in RemoteFiles.KINDS) {
-            val bytes = fetcher.get(RemoteFiles.path(kind)) ?: continue
+            // 2.0.0 [RVL-67] (검토 DATA-24) Asked with the ETag of the copy last settled: unchanged, nothing more is fetched.
+            val got = fetcher.fetch(RemoteFiles.path(kind), tags[kind].takeIf { !force })
+            if (got.unchanged) { reached = true; continue }
+            val bytes = got.bytes ?: continue
             reached = true
             // [REMOTE-08] .sig2 (2026-10-26 key) first, then the old .sig; the first that checks out wins.
             var sig: String? = null
@@ -119,7 +139,9 @@ class RemoteFilesStore(
                 break
             }
             if (file == null || sig == null) continue
-            if (file.version <= version(kind)) continue
+            // [RVL-67] Settled: a file not newer than the phone's is not asked for again until it changes. A signature that did not
+            // check out keeps no ETag, so a file signed again (the same bytes, a new .sig2) is fetched again.
+            if (file.version <= version(kind)) { got.etag?.let { tags[kind] = it }; continue }
             try {
                 apply(file)
             } catch (e: RemoteFileException) {
@@ -131,9 +153,22 @@ class RemoteFilesStore(
             // [PERF-19] Checked just now: the next start need not check it again.
             runCatching { write(File(dir, "$kind.json.ok"), RemoteFiles.checkedMark(bytes, sig, keys, appVersion).toByteArray(Charsets.US_ASCII)) }
             changed += kind
+            got.etag?.let { tags[kind] = it }
         }
-        if (reached) runCatching { dir.mkdirs(); stamp.writeText(now.toString()) }
+        if (reached) runCatching { dir.mkdirs(); stamp.writeText(now.toString()); keepEtags(tags) }
         return changed
+    }
+
+    /** [RVL-67] The ETag of each kind's copy last settled, one "kind<TAB>etag" a line; an unreadable list is an empty one. */
+    private val etagFile = File(dir, "etags")
+
+    private fun etags(): MutableMap<String, String> = runCatching {
+        etagFile.readLines().mapNotNull { l -> l.split('\t', limit = 2).takeIf { it.size == 2 && it[0] in RemoteFiles.KINDS }?.let { it[0] to it[1] } }
+            .toMap(LinkedHashMap())
+    }.getOrDefault(LinkedHashMap())
+
+    private fun keepEtags(tags: Map<String, String>) {
+        write(etagFile, tags.entries.joinToString("\n") { "${it.key}\t${it.value}" }.toByteArray(Charsets.UTF_8))
     }
 
     private fun write(f: File, b: ByteArray) {
@@ -145,6 +180,12 @@ class RemoteFilesStore(
     companion object {
         val EVERY: Duration = Duration.ofDays(1)
 
+        /**
+         * 2.0.0 [RVH-14] 검토 CAL-19: [com.bamnat.core.holiday.KoreanHolidays.revision] as a flow. Every calendar's snapshot carries it, so a
+         * 임시공휴일 that comes while the app is open redraws the open month and plans the alarms again (a calendar resting on 공휴일).
+         */
+        val holidays = kotlinx.coroutines.flow.MutableStateFlow(com.bamnat.core.holiday.KoreanHolidays.revision)
+
         /** Hands a checked file to the part of core that uses it. */
         fun apply(f: RemoteFile) {
             when (f.kind) {
@@ -153,7 +194,7 @@ class RemoteFilesStore(
                 RemoteFiles.WAGES -> TradeWages.use(f)
                 RemoteFiles.TAXTABLE -> WithholdingTable.use(f)
                 RemoteFiles.PUBLICPAY -> com.bamnat.core.pay.PublicPayTable.use(f)
-                RemoteFiles.HOLIDAYS -> com.bamnat.core.holiday.KoreanHolidays.use(f)
+                RemoteFiles.HOLIDAYS -> { com.bamnat.core.holiday.KoreanHolidays.use(f); holidays.value = com.bamnat.core.holiday.KoreanHolidays.revision }
                 RemoteFiles.TAXES -> com.bamnat.core.invest.InvestTaxes.use(f)
                 RemoteFiles.ALARM_GUIDE -> com.bamnat.core.remote.AlarmGuides.use(f)
                 RemoteFiles.CYCLES -> com.bamnat.core.plaza.PublicCycles.use(f)

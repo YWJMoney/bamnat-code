@@ -51,7 +51,8 @@ test("[COMM-11] 두 달 이상 확인됨 needs pay-slip checks from two networks
 
 test("[SRV-10] over 90% of the free D1 day, 사용 통계 then 문의 사진 rest with a notice, and come back the next day", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
-  const { call, env, DB } = server();
+  // 2.0.0 [RVQ-12] 무료 요금제의 하루 몫(실서버는 11-12부터 유료, test/jobs-q1.test.mjs).
+  const { call, env, DB } = server({ CF_PLAN: "free" });
   const h = await signIn(call);
   // The developer switched 광장 소식 off by hand: the job leaves it alone.
   await call("POST", "/api/admin/switches", { key: "PLAZA_NEWS", off: true, why: "시험: 잠시 끔" }, h);
@@ -81,7 +82,7 @@ test("[SRV-10] the share server's KV writes over 90% rest 근무표 링크 새�
     if (String(url).includes("/api/admin/stats")) return Response.json({ days: [{ day: "2026-11-05", writes: 950 }] });
     return new Response(null, { status: 204 });
   });
-  const { call, env } = server({ SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "share-admin-token-0123456789" });
+  const { call, env } = server({ CF_PLAN: "free", SHARE_BASE_URL: "https://share.example", SHARE_ADMIN_TOKEN: "share-admin-token-0123456789" });
   await call("GET", "/api/config");
   assert.deepEqual((await autoRest(env, NOW)).rested, ["SHARE_CREATE"]);
   assert.equal(await syncShareSwitch(env), true);

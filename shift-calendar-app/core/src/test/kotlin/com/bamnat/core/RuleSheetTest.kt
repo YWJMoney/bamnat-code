@@ -17,7 +17,9 @@ import com.bamnat.core.pay.OcrRows
 import com.bamnat.core.pay.PayCalculator
 import com.bamnat.core.pay.PayItem
 import com.bamnat.core.pay.PayProfile
+import com.bamnat.core.pay.LineKind
 import com.bamnat.core.pay.PremiumTarget
+import com.bamnat.core.pay.RaiseRule
 import com.bamnat.core.pay.RuleCell
 import com.bamnat.core.pay.RuleChange
 import com.bamnat.core.pay.RuleFinding
@@ -128,6 +130,31 @@ class RuleSheetTest {
         assertEquals(1, p.items.size)
         assertEquals("old", p.items.single().id)
         assertEquals(57_500, p.items.single().amount.on(month).value)
+    }
+
+    // 1.39.1 [R391-07] 검토 PAYU-47: the 칸's amount, a value from the month seen, replaced the whole timeline: 10월 식대 0원.
+    @Test fun aCellsAmountChangesFromTheMonthSeenAndKeepsTheMonthsBefore() {
+        val raise = RaiseRule(month = 3, percent = 3.0, unit = 1_000)
+        val meal = PayItem("meal", "식대", wage(200_000).copy(raise = raise), Cadence.MONTHLY, shiftTypeIds = setOf(7L),
+            covers = setOf(LineKind.NIGHT), fixedAmount = 150_000)
+        val before = profile(2_000_000, meal)
+        val oct = before.items.single().amount.on(LocalDate.of(2026, 10, 1)).value
+        val start = before.period.start(month)
+        // As the 칸 sends it (InlineEdit's once(v)) and as '조건까지 자세히 고치기' makes it (a new item, conditions at their defaults).
+        for (sent in listOf(meal.copy(amount = ValueTimeline(listOf(DatedValue(start, 220_000)))),
+            PayItem("meal", "식대", ValueTimeline(listOf(DatedValue(start, 220_000))), Cadence.MONTHLY))) {
+            val p = RuleSheet.put(before, RuleSheet.of(before).cells.single().copy(change = RuleChange.Item(sent)), month)
+            val item = p.items.single()
+            assertEquals("10월은 그대로", oct, item.amount.on(LocalDate.of(2026, 10, 1)).value)
+            assertEquals(220_000, item.amount.on(LocalDate.of(2026, 11, 1)).value)
+            assertEquals(raise, item.amount.raise)
+            assertEquals(setOf(7L), item.shiftTypeIds)
+            assertEquals(setOf(LineKind.NIGHT), item.covers)
+            assertEquals(150_000L, item.fixedAmount)
+        }
+        // The same value typed again changes nothing.
+        val same = RuleText.apply(before, listOf(RuleChange.Item(meal.copy(amount = ValueTimeline(listOf(DatedValue(start, oct)))))), month)
+        assertEquals(meal.amount, same.items.single().amount)
     }
 
     @Test fun theSetupsOwnCellsAreChangedWhereTheyAre() {

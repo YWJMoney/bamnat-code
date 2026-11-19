@@ -62,12 +62,12 @@ fun ThemeThumb(look: ThemeSwatch, modifier: Modifier = Modifier, width: Dp = 120
     val small = with(density) { 7.dp.toSp() }
     val cellRatio = if (look.example && numbers) 0.6f else 0.8f
     Column(
-        modifier.width(width).clip(RoundedCornerShape(10.dp)).background(page).padding(5.dp)
+        modifier.width(width).clip(MaterialTheme.shapes.small).background(page).padding(5.dp)
             .semantics { contentDescription = "테마 미리 그림" },
         verticalArrangement = Arrangement.spacedBy(3.dp),
     ) {
         Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(accent))
-        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(card).padding(2.dp)) {
+        Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.extraSmall).background(card).padding(2.dp)) {
             for (week in 0 until 2) Row(Modifier.fillMaxWidth()) {
                 for (dow in 1..7) {
                     val n = week * 7 + dow

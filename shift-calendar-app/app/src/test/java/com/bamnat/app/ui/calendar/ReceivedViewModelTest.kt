@@ -9,6 +9,7 @@ import com.bamnat.app.share.ReceivedShare
 import com.bamnat.app.share.ShareApi
 import com.bamnat.app.share.ShareLinkException
 import com.bamnat.app.share.ShareLinkState
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.CompletableDeferred
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -58,10 +59,10 @@ class ReceivedViewModelTest {
         }
     }
 
-    private fun share(title: String, expires: Instant = Instant.now().plus(Duration.ofDays(30))) = ReceivedShare(
+    private fun share(title: String, expires: Instant = Today.instant().plus(Duration.ofDays(30))) = ReceivedShare(
         JSONObject("""{"v":2,"title":"$title","shows":["memos"],"types":[{"id":1,"name":"주간","short":"주","color":"#1E88E5","time":"07:00-19:00"}],
             "days":[{"date":"2026-11-01","type":1,"memo":"치과"}]}"""),
-        expires, Instant.now(),
+        expires, Today.instant(),
     )
 
     private fun settle() = repeat(5) { shadowOf(Looper.getMainLooper()).idle() }
@@ -106,7 +107,8 @@ class ReceivedViewModelTest {
         api.failure = IOException("offline")
         vm.previewId(id)
         settle()
-        assertTrue((vm.preview.value as ReceivedViewModel.Preview.Failed).message.startsWith("인터넷에"))
+        // [RVG-24] 검토 PC-92: what failed first, then the one of three phrases for the net.
+        assertEquals("근무표를 받지 못했어요. " + com.bamnat.app.ui.components.NetWords.OFFLINE, (vm.preview.value as ReceivedViewModel.Preview.Failed).message)
     }
 
     @Test fun aCutLinkGoesFromThisPhone() {
@@ -161,7 +163,7 @@ class ReceivedViewModelTest {
     }
 
     @Test fun switchingFetchesOnlyWhenTheCopyIsOld() {
-        var now = Instant.now()
+        var now = Today.instant()
         c.received.put(id, share("민지"))
         val vm = ReceivedViewModel(c) { now }
         vm.view(id)
@@ -175,7 +177,7 @@ class ReceivedViewModelTest {
 
     /** [SHR-12] A look carries the copy's tag; nothing changed keeps the copy and only marks it checked. */
     @Test fun anUnchangedLinkKeepsItsCopy() {
-        var now = Instant.now()
+        var now = Today.instant()
         c.received.put(id, share("민지").copy(etag = "W/\"t1\""))
         val before = c.received.get(id)!!
         api.unchanged = true
@@ -197,14 +199,14 @@ class ReceivedViewModelTest {
     }
 
     @Test fun expiredOnesGoWhenTheAppOpens() {
-        c.received.put(id, share("민지", expires = Instant.now().minusSeconds(60)))
+        c.received.put(id, share("민지", expires = Today.instant().minusSeconds(60)))
         ReceivedViewModel(c)
         assertTrue(c.received.get(id)!!.gone)
     }
 
     /** Ran out while the app stayed open: gone the next time it shows, even with no internet to ask. */
     @Test fun expiredWhileOpenGoesWhenItShows() {
-        var now = Instant.now()
+        var now = Today.instant()
         c.received.put(id, share("민지", expires = now.plus(Duration.ofDays(7))))
         val vm = ReceivedViewModel(c) { now }
         assertFalse(c.received.get(id)!!.gone)

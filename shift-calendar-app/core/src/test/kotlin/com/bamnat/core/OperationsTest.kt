@@ -103,7 +103,7 @@ class OperationsTest {
             PlazaNewsItem("rate", trade = "용접", atMillis = 1),
         ))!!
         assertEquals("광장 소식 2개", t.title)
-        assertEquals("예시정밀 생산1팀 규칙이 v3으로 바뀌었어요. 눌러서 바꿀지 골라요.", t.lines[0])
+        assertEquals("예시정밀 생산1팀 규칙이 3판으로 바뀌었어요. 눌러서 바꿀지 골라요.", t.lines[0])
         assertEquals("올린 용접 임금표가 시세에 들어갔어요.", t.lines[1])
         assertNull(PlazaNews.text(listOf(PlazaNewsItem("unknown"))))
         assertFalse(PlazaRules.agreed(0))

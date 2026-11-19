@@ -33,6 +33,11 @@ object MonthChips {
 
     data class Rows(val good: List<Chip>, val caution: List<Chip>) {
         val isEmpty: Boolean get() = good.isEmpty() && caution.isEmpty()
+        /**
+         * 2.0.0 [RVK-43] (검토 U06a-27) The first '많이 쓴 곳' with no budget of its own (a 'N원 더' chip; a budget's chips say 예산), for
+         * '이 분류 예산 정하기' under the chips: having seen it, there was nothing to do next.
+         */
+        val toBudget: String? get() = caution.firstOrNull { it.why == Why.MORE }?.category
     }
 
     /**
@@ -104,7 +109,11 @@ object ShiftMoneyChips {
     }
 
     /** Over [from]..[to], by [dayLabel] (e.g. [com.bamnat.core.tax.TaxPlus.dayLabel]): fixed costs (자동 고정비) are not choices, so left out. */
-    fun of(entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, dayLabel: (LocalDate) -> String?): Rows {
+    fun of(
+        entries: List<MoneyEntry>, from: LocalDate, to: LocalDate, dayLabel: (LocalDate) -> String?,
+        /** 2.0.0 [RVK-43] (검토 T06b-08) Days whose shift runs past midnight, so what was bought before morning counts on them ([NightSpill]). */
+        isNight: (LocalDate) -> Boolean = { false },
+    ): Rows {
         val labels = LinkedHashMap<LocalDate, String>()
         var d = from
         while (!d.isAfter(to)) { dayLabel(d)?.let { labels[d] = it }; d = d.plusDays(1) }
@@ -116,7 +125,7 @@ object ShiftMoneyChips {
         val categories = HashSet<String>()
         for (e in entries) {
             if (e.kind != MoneyKind.EXPENSE || e.source == MoneySource.FIXED) continue
-            val l = labels[e.date] ?: continue
+            val l = labels[NightSpill.dayOf(e, isNight)] ?: continue
             for ((c, v) in e.shares()) {
                 if (v <= 0) continue
                 categories += c
@@ -150,5 +159,19 @@ object ShiftMoneyChips {
             good.filter { it.category !in said }.sortedByDescending { it.gap }.distinctBy { it.category }.take(MAX_GOOD),
             caution.sortedByDescending { it.gap }.distinctBy { it.category }.take(MAX_CAUTION),
         )
+    }
+}
+
+/**
+ * 2.0.0 [RVK-43] (검토 T06b-08) The day whose work a spending line belongs to: bought before [UNTIL] the morning after a night shift
+ * (02:00 편의점 during a 야간 that began the evening before), the night's day; otherwise its own date. A line without a time stays
+ * on its date.
+ */
+object NightSpill {
+    val UNTIL: java.time.LocalTime = java.time.LocalTime.of(9, 0)
+
+    fun dayOf(e: MoneyEntry, isNight: (LocalDate) -> Boolean): LocalDate {
+        val t = e.time ?: return e.date
+        return if (t.isBefore(UNTIL) && isNight(e.date.minusDays(1))) e.date.minusDays(1) else e.date
     }
 }

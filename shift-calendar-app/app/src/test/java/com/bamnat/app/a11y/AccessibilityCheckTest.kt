@@ -27,6 +27,7 @@ import com.bamnat.core.memo.Memo
 import com.bamnat.core.model.ExtraEntry
 import com.bamnat.core.model.ExtraKind
 import com.bamnat.core.model.WorkPattern
+import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -64,7 +65,7 @@ class AccessibilityCheckTest {
     @get:Rule val compose = createEmptyComposeRule()
 
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
-    private val today = LocalDate.now()
+    private val today = Today.date()
 
     /** A shift worker a few weeks in: a pattern, a changed day, extra work, memos and money. */
     private fun settledUser() = runBlocking {
@@ -75,6 +76,10 @@ class AccessibilityCheckTest {
         com.bamnat.app.ui.calendar.HintStore(app).markDone(com.bamnat.app.ui.calendar.HintStore.LONG_PRESS)
         com.bamnat.app.data.GuideStore.get(app).let { g ->
             listOf("guide.checklist", "guide.tips").forEach { id -> g.setOn(com.bamnat.core.guide.FeatureRegistry.get(id)!!, "main", false) }
+            // 2.0.0 [RVR-24] The update notice and the lines a server switch turned on are told already: a switch whose day has come
+            // (12-07, 12-09 …) opened '새로 생긴 것' over the calendar, so this test broke from that day on (found by the 2027-01-01 run).
+            g.whatsNewSeen(com.bamnat.app.BuildConfig.VERSION_CODE)
+            g.switchedSeen(com.bamnat.core.guide.WhatsNew.switched.map { it.first })
         }
         val repo = c.scheduleRepository
         repo.ensureDefaults()

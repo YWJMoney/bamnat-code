@@ -56,9 +56,10 @@ class HeadRoomScreenshotTest : ScreenshotBase() {
         @androidx.compose.runtime.Composable {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PlazaHead(title = plan.title, plan = plan, today = 4, picks = picks, onPicks = {}, onCompany = {}, onShare = {}, onRates = {},
+                    PlazaHead(title = plan.title, today = 4, model = com.bamnat.app.ui.company.plazaHeadModel(plan, picks = picks, onPicks = {},
+                        onCompany = {}, onShare = {}, onRates = {},
                         onAll = {}.takeIf { plan.room == StylePlaza.SHIFT || plan.top == StylePlaza.Top.COMPANY_ROOM }, onFind = {}.takeIf { plan.room == StylePlaza.SHIFT },
-                        onTag = onTag)
+                        onTag = onTag))
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         PlazaComposer(prompt, topic, onWrite = {})
                         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -136,7 +137,7 @@ class HeadRoomScreenshotTest : ScreenshotBase() {
         override suspend fun talkVote(device: String, post: String, value: Int?, reason: String?, opinion: String?) = Votes(0, 0, value)
     }
 
-    /** 마을 › 장터: the search box is the first row, 만들기 beside it; the three 구간 in two short lines; 넘겨 보기 a chip. */
+    /** 마을 › 장터: the search box is the first row, 만들기 beside it; the three 구간 lead the row of chips under it (2.0.0 RVM-31); 넘겨 보기 a chip. */
     @Test fun theMarketOpensOnItsSearch() = shoot("1543_mkd60_market_top", PHONE) {
         c.recipeApi = Market()
         c.settingsRepository.update { it.copy(workStyle = WorkStyle.SHIFT) }
@@ -147,14 +148,15 @@ class HeadRoomScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("이름·설명·초성으로 찾기", exact = true))
         assertTrue(appears("스튜디오에서 만들기", exact = true))
-        assertTrue(appears("🃏 넘겨 보기", exact = true))
+        // 2.0.0 [RVM-64]: 마을's 한 장씩 넘겨 보기 is at the end of the 구간 tabs while 테마 is open.
+        assertTrue(appears("한 장씩 넘겨 보기", exact = true))
         assertTrue("긴 설명 줄은 화면 글자로 없어요 (TalkBack 설명에만)", nodes(merged = false).none { n ->
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { "모든 화면을 한 벌로 꾸민 테마예요" in it.text } })
         // The search box comes before the 구간 on the screen.
         val top = nodes().filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText) != null }
             .minOf { it.boundsInWindow.top }
         val half = nodes().first { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
-            .orEmpty().any { it.text == "앱 전체를 한 벌로" } }.boundsInWindow.top
+            .orEmpty().any { it.text == "테마" } }.boundsInWindow.top
         assertTrue("찾기 칸이 구간보다 위", top < half)
     }
 }

@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.RecordsTrash
+import com.bamnat.app.needs
 import com.bamnat.core.work.WatchDays
 import com.bamnat.app.ui.calendar.SHARE_SERVER_NOTICE
 import com.bamnat.app.ui.calendar.partNames
@@ -15,7 +16,6 @@ import com.bamnat.app.ui.settings.REPORT_NOTICE
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
@@ -52,7 +52,7 @@ class ShareServerTest {
     /** The published policy (repo root privacy/) must match an app that can go online. */
     @Test fun thePrivacyPolicyCoversTheLinkServer() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("처리방침 2.4"))
         assertTrue(text.contains("Cloudflare, Inc."))
@@ -73,7 +73,7 @@ class ShareServerTest {
      */
     @Test fun thePrivacyPolicyCoversChosenPartsAndReceivedCalendars() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("‘보여 줄 것’에서 고른 것만"))
         assertTrue(text.contains("하루 ${ShareLinkPayload.EXTRAS_PER_DAY}개까지"))
@@ -101,7 +101,7 @@ class ShareServerTest {
     /** [COMM-04] The company server's section names what goes and what never does, as the server enforces. */
     @Test fun thePrivacyPolicyCoversTheCompanyServer() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("1-2. 회사 찾기"))
         assertTrue(text.contains("기본급, 연봉, 사람마다 다른 수당의 금액, 1회 정액, 명세서 금액, 입사일, 연차, 알람, 날짜별 근무표, 이름, 연락처는 보내지 않습니다"))
@@ -113,7 +113,7 @@ class ShareServerTest {
     /** [PAYS-02][SETUP-01] The payslip a user matched and the unfinished first setup stay on the phone, as the policy says. */
     @Test fun thePrivacyPolicyCoversPayslipsAndTheFirstSetup() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("명세서로 맞춰 본 달과 그 달 지급 총액"))
         assertTrue(text.contains("첫 설정에서 아직 저장하지 않은 답"))
@@ -124,7 +124,7 @@ class ShareServerTest {
     /** [EXTRA-06] A company-rule report goes by the user's mail app to the policy's contact, and both say what goes. */
     @Test fun thePrivacyPolicyCoversCompanyReports() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         assertTrue(text.contains("회사 방식 알려 주기"))
         assertTrue(text.contains("mailto:$REPORT_EMAIL"))
@@ -136,7 +136,7 @@ class ShareServerTest {
     /** [DAYW-07][SHFT-08][OPS-13] Policy 2.4: the location permissions the app asks for, the watch window and the 7-day trash, in the app's numbers. */
     @Test fun thePrivacyPolicyCoversLocationAndTheWatch() {
         val policy = File("../../privacy/index.html")
-        assumeTrue(policy.exists())
+        needs("privacy/index.html", policy.exists())
         val text = policy.readText()
         val context = ApplicationProvider.getApplicationContext<Application>()
         val requested = context.packageManager

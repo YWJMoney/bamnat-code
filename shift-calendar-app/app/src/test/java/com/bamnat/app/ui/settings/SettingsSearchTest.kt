@@ -110,7 +110,7 @@ class SettingsSearchTest {
     @Test fun eachKindOfWorkFindsItsOwn() {
         val shop = SettingsIndex.entries(company = false, style = com.bamnat.core.work.WorkStyle.BUSINESS).map { it.title }
         assertFalse("급여 계산" in shop)
-        assertFalse("연장 휴무일 근무 지정" in shop)
+        assertFalse("연장·휴무일 근무 지정" in shop)
         assertFalse("연차 사용 촉진 알림" in shop)
         assertFalse("근태 엑셀 가져오기" in shop)
         assertTrue("백업 저장" in shop)
@@ -131,7 +131,8 @@ class SettingsSearchTest {
         assertFalse("jobOwed" in business)
         assertFalse("investFee" in business)
         val hourlyHelp = all.forStyle(com.bamnat.core.work.WorkStyle.HOURLY).map { it.id }
-        assertEquals("hourlyCover", hourlyHelp.first())
+        // 2.0.0 [RVO-21] 검토 U11a-13: 알바 asks about 주휴수당 most, so it is the first of the five shown.
+        assertEquals(listOf("holidayPay", "hourlyCover"), hourlyHelp.take(2))
         assertFalse("plazaPayFind" in hourlyHelp)
         assertFalse("shopCash" in hourlyHelp)
         assertEquals(all.map { it.id }, all.forStyle(null).map { it.id })
@@ -142,6 +143,28 @@ class SettingsSearchTest {
         assertTrue(day.indexOf("pattern") > day.indexOf("widget"))
     }
 
+    /**
+     * 2.0.0 [RVG-40] 검토 PC-175 (조건 13): a shop, a field worker or an investor finds 다른 사람 달력 받기 (its old name still finds it), and
+     * the answers about sharing speak of their own 영업일·일정·달력, never 근무표 or 동료.
+     */
+    @Test fun sharingIsSaidInTheWorksOwnWords() {
+        for (style in com.bamnat.core.work.WorkStyle.entries) {
+            val entries = SettingsIndex.entries(style = style)
+            val title = com.bamnat.core.work.receiveTitle(style)
+            assertEquals(style.name, title, SettingsIndex.search("동료 근무표 받기", entries).first().title)
+            assertEquals(style.name, title, entries.first { (it.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE }.title)
+            val topics = HelpFaq.topics().forStyle(style).filter { it.id == "share" || it.id == "receive" }
+            assertEquals(style.name, 2, topics.size)
+            for (t in topics) {
+                val said = listOf(t.tag, t.question, t.answer, t.action?.first.orEmpty()).joinToString(" / ")
+                assertEquals("$style $said", emptyList<String>(), com.bamnat.core.work.TypeWords.leaks(style, said))
+            }
+            if (!style.usesPayEngine) assertEquals(title, topics.first { it.id == "receive" }.action?.first)
+        }
+        assertEquals("다른 사람 달력 받기", com.bamnat.core.work.receiveTitle(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals("동료 근무표 받기", com.bamnat.core.work.receiveTitle(null))
+    }
+
     @Test fun workWithNoCompanyFindsNoCompanyRows() {
         val entries = SettingsIndex.entries(company = false)
         val titles = entries.map { it.title }
@@ -150,9 +173,20 @@ class SettingsSearchTest {
         assertFalse("우리 회사 급여 방식 찾기" in titles)
         assertFalse("회사 규칙 광장" in titles)
         assertTrue("광장" in titles)
-        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title.startsWith("회사") })
+        // 2.0.0 [RVH-53]: with '처음 설정 다시 받기' no longer found by '회사 찾기' here, the closest may be 회사 규모 (the pay rule an
+        // 알바 has too); what must not come is a company's search, setup or board.
+        val companyThings = setOf("회사 찾기", "회사 이름으로 근무주기 찾기", "회사 대표 주기", "회사 설정 보내기", "회사 설정 불러오기", "회사 규칙 광장")
+        assertTrue(SettingsIndex.search("회사 찾기", entries).none { it.title in companyThings })
         assertEquals("광장", SettingsIndex.search("알바 광장", entries).first().title)
         assertTrue("회사 찾기" in SettingsIndex.entries().map { it.title })
+        // 2.0.0 [RVH-53] HQ-27: '처음 설정 다시 받기' is not found by '회사 찾기' where the work has no company, and its answer asks none.
+        assertFalse("회사 찾기" in entries.first { it.title == SETUP_AGAIN_ROW }.keywords)
+        assertTrue("회사 찾기" in SettingsIndex.entries().first { it.title == SETUP_AGAIN_ROW }.keywords)
+        val again = { s: com.bamnat.core.work.WorkStyle -> HelpFaq.topics().forStyle(s).first { it.id == "setupAgain" } }
+        assertTrue("회사 찾기부터" in again(com.bamnat.core.work.WorkStyle.SHIFT).answer)
+        assertTrue("근무 시간과 요일, 알람, 급여까지" in again(com.bamnat.core.work.WorkStyle.HOURLY).answer)
+        assertTrue("일하는 방식부터" in again(com.bamnat.core.work.WorkStyle.FIELD).answer)
+        assertFalse("회사 찾기" in again(com.bamnat.core.work.WorkStyle.HOURLY).keywords)
     }
 
     @Test fun everyShortcutIsInTheIndex() {
@@ -202,6 +236,20 @@ class SettingsSearchTest {
         assertEquals(HelpFaq.topics().size, HelpFaq.topics().map { it.id }.toSet().size)
     }
 
+    /** 2.0.0 [RVO-13] 통합 2차 PC-116: the invite answer says the server's numbers, as the card does; none before they were read. */
+    @Test fun theInviteAnswerSaysTheServersRules() {
+        fun answer(t: com.bamnat.core.tier.InviteTerms?) = HelpFaq.topics(invite = t).single { it.id == "invite" }.answer
+        val test = answer(com.bamnat.core.tier.InviteTerms(need = 1, days = 1, months = 1, capMonths = 0))
+        assertTrue(test, test.contains("친구 1명이 각자 1일 이상 쓸 때마다 프로 1개월"))
+        assertFalse("상한은 서버가 셀 때만", test.contains("12개월까지"))
+        val capped = answer(com.bamnat.core.tier.InviteTerms(need = 5, days = 7, months = 1, capMonths = 12))
+        assertTrue(capped, capped.contains("친구 5명이 각자 7일 이상") && capped.contains("1년에 모두 합쳐 12개월까지"))
+        val unknown = answer(null)
+        assertFalse(unknown, Regex("""친구 \d+명""").containsMatchIn(unknown))
+        assertTrue(unknown, unknown.contains("지금 규칙 그대로"))
+        listOf(test, capped, unknown, answer(com.bamnat.core.tier.InviteTerms(50, 60, 12, 120))).forEach { assertTrue(it, it.length <= 220) }
+    }
+
     @Test fun boardMatchesFindOthersQuestions() {
         fun item(id: String, text: String) = PublicInquiry(id, InquiryKind.BUG, "open", text, 0, 0, false, false, "alarm", "알람", Instant.EPOCH)
         val items = listOf(item("1", "야간 알람이 5분 늦게 울려요"), item("2", "달력 색을 바꾸고 싶어요"))
@@ -236,5 +284,54 @@ class SettingsSearchTest {
         val invest = SettingsIndex.entries(style = com.bamnat.core.work.WorkStyle.INVEST)
         org.junit.Assert.assertTrue(invest.any { it.title == "모든 투자 알람 한 번에 옮기기" && "잠금 화면 오늘 근무" !in it.keywords })
         org.junit.Assert.assertTrue(invest.any { it.title == "잠금 화면 오늘 일정" && "잠금 화면 오늘 근무" in it.keywords })
+    }
+
+    /**
+     * 2.0.0 [RVO-10] 검토 U11a-04·T11a-01~03 (설정 찾기가 유형의 말을 모르고, 그 유형 쪽에 없는 줄을 찾아 줘요): each kind finds a row by the
+     * words its page says it in, the old word still finds it, and a row its page does not draw is not found.
+     */
+    @Test fun eachKindFindsItsRowsInItsWords() {
+        fun of(style: com.bamnat.core.work.WorkStyle) =
+            SettingsIndex.entries(board = false, company = style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.DAY, style = style)
+        fun firstFor(style: com.bamnat.core.work.WorkStyle, q: String) = SettingsIndex.search(q, of(style)).firstOrNull()?.title
+        val field = com.bamnat.core.work.WorkStyle.FIELD
+        val shop = com.bamnat.core.work.WorkStyle.BUSINESS
+        val invest = com.bamnat.core.work.WorkStyle.INVEST
+        // U11a-04: the page's words are the index's.
+        val sleepAfter = of(field).first { it.title == "일 끝난 뒤 잠들기까지" }
+        assertTrue("퇴근 후 잠들기까지" in sleepAfter.keywords)
+        assertEquals("일 끝난 뒤 잠들기까지", firstFor(field, "일 끝난 뒤 잠들기"))
+        assertEquals("마감 후 잠들기까지", firstFor(shop, "퇴근 후 잠들기까지"))
+        assertEquals("일 끝난 뒤 가계부 정리 알림", firstFor(field, "가계부 정리 알림"))
+        // T11a-01 가게: 영업시간·정기휴무 by its words, no 연차.
+        assertEquals("영업시간", firstFor(shop, "영업시간"))
+        assertEquals("영업일·정기휴무", firstFor(shop, "정기휴무"))
+        assertTrue(SettingsIndex.search("연차", of(shop)).none { "연차" in it.title || (it.place as? SettingPlace.Screen)?.go == SettingsGo.LEAVE })
+        assertTrue(SettingsIndex.search("연차", of(com.bamnat.core.work.WorkStyle.DAY)).any { (it.place as? SettingPlace.Screen)?.go == SettingsGo.LEAVE })
+        // T11a-02 투자: 계좌, and nothing of hours worked or the day's dial.
+        assertEquals("계좌", firstFor(invest, "계좌"))
+        val investTitles = of(invest).map { it.title }
+        listOf("큰 지출을", "하루 다이얼", "잠들기까지", "가계부 정리 알림").forEach { w -> assertTrue(w, investTitles.none { w in it }) }
+        // T11a-03 현장: 일정 종류, and no 하루 브리핑·근무 전 한 줄 예고 (only work with a 근무표 has them).
+        assertEquals("일정 종류", firstFor(field, "일정 종류"))
+        listOf(field, shop, invest).forEach { st ->
+            val t = of(st).map { it.title }
+            listOf("하루 브리핑", "잘 준비", "한 줄 예고", "퇴근길 안전", "돌아가는 길", "광장 시세와 내 단가 견주기", "견줄 내 지역").forEach { w -> assertTrue("$st $w", t.none { w in it }) }
+        }
+        // 퇴근길 안전 is 교대's (the end of a night); 퇴근 시각 알림 일근's.
+        assertTrue("퇴근길 안전" in of(com.bamnat.core.work.WorkStyle.SHIFT).map { it.title })
+        assertFalse("퇴근길 안전" in of(com.bamnat.core.work.WorkStyle.HOURLY).map { it.title })
+        assertTrue(LEAVE_TIME_ROW in of(com.bamnat.core.work.WorkStyle.DAY).map { it.title })
+        assertFalse(LEAVE_TIME_ROW in of(com.bamnat.core.work.WorkStyle.SHIFT).map { it.title })
+        // 날짜 칸 줄마다: 일감 only where there are 일감; the old name finds it.
+        assertEquals(CELL_LIST_ROW, firstFor(field, "여러 줄"))
+        assertEquals("날짜 칸에 메모를 줄마다", firstFor(com.bamnat.core.work.WorkStyle.SHIFT, "날짜 칸에 일감·메모 여러 줄"))
+    }
+
+    /** 2.0.0 [RVO-11] 검토 PC-77: 움직임 끄기 is found on 화면과 글자, by what people say when the screen moves too much. */
+    @Test fun motionOffIsOnTheScreenPage() {
+        listOf("멀미", "움직임 끄기", "애니메이션 끄기").forEach { q -> assertEquals(q, MOTION_OFF_ROW, first(q)) }
+        val e = SettingsIndex.entries().first { it.title == MOTION_OFF_ROW }
+        assertEquals(SettingPlace.Row(SettingsPage.CALENDAR, MOTION_OFF_ROW), e.place)
     }
 }

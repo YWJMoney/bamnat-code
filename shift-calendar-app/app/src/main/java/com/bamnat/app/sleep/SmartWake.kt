@@ -99,8 +99,8 @@ object SmartWake {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong(K_EARLY_AT, ring.triggerAtMillis).putLong(K_EARLY_MIN, early).commit()
         if (!BootAlarms.isLocked(context)) runCatching { context.appContainer.telemetry.event("alarm_smart_ring", "$early") }
-        // The on-time ring stays until this one is turned off ([offEarly]).
-        AlarmService.start(context, ring)
+        // The on-time ring stays until this one is turned off ([offEarly]). 2.0.0 [RVI-03] A refused start rings the fallback.
+        AlarmService.startOrFallback(context, ring)
     }
 
     /** [ring] is ringing before its time because of the window. */

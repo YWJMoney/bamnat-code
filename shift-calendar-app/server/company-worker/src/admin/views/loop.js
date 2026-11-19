@@ -5,28 +5,37 @@
 //   오늘 › 결정함 #/decide: 최고 관리자 확인 문의(Claude 초안)와 요금을 정할 새 기능 [LOOP-09]
 //   숫자 › 요금 판단 #/tiers: 새 기능마다 관측치와 무료·프로 결정(최고 관리자만), 요금 기준(새 기능만 묻기)·고르기 칸 [LOOP-10][LOOP-11][LOOP-35]
 export function loopViews(A) {
-  const { S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl } = A;
+  const { L, S, esc, icon, P, ago, can, href, empty, skeleton, api, act, load, render, toast, openDialog, dialog, confirmBox, syncUrl, copy } = A;
 
   const owner = () => Boolean(S.me?.owner);
   const head = (title, meta = "", side = "") => `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}${side}</div>`;
   const when = (isoText) => (isoText ? new Date(isoText).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—");
+  // 2.0.0 [RVQ-60] PC-213: 보류 줄은 나가는 시각과 남은 시간을 함께('오전 11:49에 나가요 · 9분 남음'). 시각만 보면 몇 분 남았는지 셈해야 해요.
+  const clock = (isoText) => {
+    const t = Date.parse(isoText);
+    return t - Date.now() > 12 * 3600e3 ? when(isoText) : new Date(t).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" });
+  };
   const left = (isoText) => {
     const m = Math.round((Date.parse(isoText) - Date.now()) / 60000);
-    return m <= 0 ? "곧" : m < 60 ? `${m}분 뒤` : `${Math.floor(m / 60)}시간 ${m % 60}분 뒤`;
+    return m <= 0 ? "곧" : m < 60 ? `${m}분 남음` : `${Math.floor(m / 60)}시간 ${m % 60}분 남음`;
   };
+  const goes = (isoText) => (Date.parse(isoText) - Date.now() <= 30000 ? "곧" : `${clock(isoText)}에`);
   const reload = (...keys) => {
     for (const k of keys) S.data[k] = null;
     syncUrl();
     load({ quiet: true });
   };
   /** 설정 칸은 접어 둬요(휴대폰에서 화면이 길어지지 않게). 연 상태는 앱이 기억해요(S.opened). */
-  const fold = (key, title, meta, body) => `<details class="card how" data-key="loop-${key}"${S.opened.get(`loop-${key}`) ? " open" : ""}><summary><b>${esc(title)}</b>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</summary>${body}</details>`;
+  // 2.0.0 [RVA-38] 검토 U23-04: 카드 열 장 모두 이 접힌 줄로(맨 위 한 줄 상태만 펴 둬요). id는 맨 위 '다음 한 걸음'이 그 줄을 펴려고.
+  const fold = (key, title, meta, body, tone = "") => `<details class="card how loop-fold" id="loop-${key}" data-key="loop-${key}"${S.opened.get(`loop-${key}`) ? " open" : ""}><summary><span class="lf-t"><b>${esc(title)}</b>${meta ? `<small class="${tone}">${esc(meta)}</small>` : ""}</span></summary>${body}</details>`;
   const SHIP_NAMES = { review: "검토 중일 수 있음", waiting: "보류 중", done: "보냄", cancelled: "취소함" };
   const SHIP_TONES = { review: "info", waiting: "warn", done: "ok", cancelled: "" };
   /** [LOOP-32] Play 트랙 100% 판이 실제로 나갔는지(이 판으로 쓰는 휴대폰). */
   // [LOOP-33] 통계 동의한 휴대폰과, 동의와 상관없는 Play 보고서(트랙 100%를 본 뒤 새로 깔거나 올린 기기) 둘 중 하나면 나간 것으로 봐요.
   const playText = (s) => (s.play !== undefined ? ` · Play 보고서 ${s.play}${s.live ? "" : `/${s.playNeed}`}대` : " · Play 보고서는 아직(권한·하루 늦음)");
-  const seenText = (s) => (s.live ? `실제로 나갔어요 · 이 판 휴대폰 ${s.phones}대${playText(s)}` : `검토 중이거나 아직 안 나갔을 수 있어요 · 통계 동의 휴대폰 ${s.phones}/${s.need}대${playText(s)}`);
+  // 2.0.0 [RVQ-34] 검토 SVC-19: 휴대폰은 100% 뒤 늘어난 수, 두 기준은 테스터 수보다 커요.
+  const seenText = (s) => (s.live ? `실제로 나갔어요 · 100% 뒤 늘어난 휴대폰 ${s.phones}대${playText(s)}`
+    : `검토 중이거나 아직 안 나갔을 수 있어요 · 100% 뒤 늘어난 통계 동의 휴대폰 ${s.phones}/${s.need}대${playText(s)}${s.testers ? ` · 테스터 ${s.testers}대보다 많아야 해요` : ""}`);
   const REWARD_NAMES = [["bugDays", "문제 신고가 고쳐짐", "문제 신고(버그)를 보낸 폰에, 그 개발사항이 완료되면"], ["polishDays", "제안이 다듬기로 들어감", "건의·제안이 '다듬기' 크기로 완료되면"],
     ["featureDays", "제안이 새 기능으로 들어감", "건의·제안이 '새 기능' 크기로 완료되면"], ["knownDays", "알려진 문제에 '나도 겪어요'", "목록에서 나도 겪어요만 누른 폰에, 고쳐지면(0이면 안 줌)"],
     ["monthCap", "한 휴대폰 한 달 상한", "위 날을 다 더해 한 달(한국 시간)에 받을 수 있는 날"]];
@@ -35,40 +44,66 @@ export function loopViews(A) {
 
   function playCard(d) {
     const p = d.play ?? {};
-    const pills = [p.ready ? '<span class="pill ok">Play 연결됨</span>' : '<span class="pill warn">Play 서비스 계정 없음</span>',
+    const pills = [p.ready ? '<span class="pill ok">Play 연결됨</span>' : '<span class="pill warn">Play 연결 열쇠 없음</span>',
       d.shipped ? `<span class="pill info">나간 판 ${esc(d.shipped.v)}</span>` : '<span class="pill warn">나간 판 없음</span>',
       d.switches.autoShip ? "" : '<span class="pill bad">자동 출시 안내 꺼짐</span>'].filter(Boolean).join(" ");
     const track = p.at ? `<dl class="lines"><div><dt>Play 트랙 100%</dt><dd>${esc(p.done ?? "—")}${p.seen ? `<br><small>${esc(seenText(p.seen))}</small>` : ""}</dd></div>
         <div><dt>단계적 출시</dt><dd>${p.rolling ? `${esc(p.rolling.v)} · ${Math.round((p.rolling.fraction ?? 0) * 100)}%` : "없음"}</dd></div>
         ${p.halted ? `<div><dt>멈춘 출시</dt><dd>${esc(p.halted)}</dd></div>` : ""}<div><dt>마지막으로 읽음</dt><dd>${esc(ago(p.at))}</dd></div></dl>`
-      : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "서버 비밀값 PLAY_SERVICE_ACCOUNT에 '앱 정보 보기' 권한이 있으면 매시 Play 프로덕션 트랙을 읽어요. 없으면 지금처럼 흐름 › '나간 판 저장'을 눌러요."}</p>`;
-    const ships = d.ships.length ? `<ul class="rows">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
-        <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 이 판으로 쓰는 휴대폰이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
-          : s.status === "waiting" ? `${esc(left(s.until))} 문의 안내·업데이트 소식이 나가요${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
+      : `<p class="hint">${p.ready ? "매시 17분에 프로덕션 트랙을 읽어요. 아직 한 번도 읽지 않았어요." : "Play 연결 열쇠('앱 정보 보기' 권한의 서비스 계정)가 서버에 들어가면 매시 Play 프로덕션 트랙을 읽어요. 그 전에는 흐름 › '나간 판 저장'을 눌러요. 넣는 곳은 관리 › 서버 상태예요."}</p>`;
+    // 2.0.0 [RVQ-28] 좁은 폭에서는 판 이름·설명이 한 줄을 다 쓰고 표·단추가 아래로(380에서 글자가 한 자씩 세로로 서던 것).
+    const ships = d.ships.length ? `<ul class="rows side-wrap">${d.ships.map((s) => `<li><div class="row"><span class="row-main"><b>${esc(s.version)}</b>
+        <small>${s.status === "review" ? `Play 트랙에 100%로 올라갔어요. 그 뒤 이 판으로 쓰는 휴대폰이 테스터보다 많이 늘거나 Play Console에서 '게시됨'을 확인하면 1시간 보류를 시작해요${s.version === p.done && p.seen ? ` · 늘어난 휴대폰 ${p.seen.phones}/${p.seen.need}대` : ""}`
+          : s.status === "waiting" ? `${s.by ? `${esc(s.by)} · ` : ""}${esc(goes(s.until))} 문의 안내·업데이트 소식이 나가요 · ${esc(left(s.until))}${d.switches.autoShip ? "" : " · 스스로 안내가 꺼져 있어 '지금 보내기'를 눌러야 나가요"}` : `${esc(when(s.doneAt))} · ${esc(s.by || "")}${s.result ? ` · ${esc(s.result)}` : ""}`}</small></span>
         <span class="pill ${SHIP_TONES[s.status] ?? ""}">${esc(SHIP_NAMES[s.status] ?? s.status)}</span>
         ${s.status === "review" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
-          <button class="btn small primary" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
+          <button class="btn small" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : ""}
         ${s.status === "waiting" && can("devStatus", "edit") ? `<button class="btn small" type="button" data-act="loop-ship-cancel" data-v="${esc(s.version)}">멈추기</button>
-          <button class="btn small primary" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
-    return `<section class="card">${head("Play 출시 감지", "판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'", can("devStatus", "edit") && p.ready ? '<button class="btn small" type="button" data-act="loop-play">지금 읽기</button>' : "")}
-      <p>${pills}</p>${track}${ships}
-      <p class="hint">Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p></section>`;
+          <button class="btn small" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : ""}</div></li>`).join("")}</ul>` : "";
+    const waiting = d.ships.find((s) => s.status === "waiting");
+    const meta = waiting ? `${waiting.version} 안내 ${goes(waiting.until)} · ${left(waiting.until)}` : [d.shipped ? `나간 판 ${d.shipped.v}` : "나간 판 없음", p.ready ? "Play 연결됨" : "Play 연결 열쇠 없음"].join(" · ");
+    return fold("play", "Play 출시 감지", meta, `<p>${pills}</p>${outboxLine(d)}${track}${ships}
+      ${can("devStatus", "edit") && p.ready ? '<div class="actions start"><button class="btn small" type="button" data-act="loop-play">지금 읽기</button></div>' : ""}
+      <p class="hint">판이 실제로 나가면 1시간 뒤 스스로 '나간 판 저장'을 해요. Play는 검토 중인 판도 '100%'로 보여 줘서, 이 판으로 쓰는 휴대폰이 보이거나 사람이 '게시됨 확인'을 눌러야 나간 것으로 봐요. 단계적 출시 중에는 저장하지 않아요. 그동안 고친 판으로 앱을 연 폰에는 그 폰에만 바로 안내가 가요. 새 판이 앞 판보다 나빠지면 '출시 멈춤을 생각해 보세요' 알림이 가요.</p>`, waiting || !p.ready ? "warn" : "");
+  }
+
+  /**
+   * 2.0.0 [RVQ-34] 검토 U22-02: 나간 판 저장이 끊겨도 '끝'으로 보였어요. 지금 나간 판의 안내 편지함 한 줄: '안내 12/20건 · 사람 확인 2 ·
+   * 실패 1 · 공지 안 나감'과 '다시 보내기'. 사람 확인은 장부의 '사람 확인 대기' 줄로 가요.
+   */
+  function outboxLine(d) {
+    const s = d.shipped;
+    const o = d.outbox;
+    if (!s || !o) return "";
+    const noNotice = s.noticeWanted === true && !s.noticeId;
+    if (!o.total && !noNotice && !s.pending) return "";
+    const parts = [o.total ? `안내 ${o.sent}/${o.total}건` : "안내할 문의 없음", o.wait ? `보내는 중 ${o.wait}` : "", o.failed ? `실패 ${o.failed}` : "",
+      o.gone ? `닫힌 문의 ${o.gone}` : "", noNotice ? "공지 안 나감" : s.noticeId ? "공지 올림" : ""].filter(Boolean);
+    const bad = o.failed > 0 || noNotice;
+    const edit = can("devStatus", "edit");
+    return `<div class="note ${bad ? "warn" : o.person ? "warn" : "info"} ship-line"><span><b>${esc(s.v)}</b> ${esc(parts.join(" · "))}${o.person ? ` · <a href="${href("desk")}">사람 확인 ${o.person}</a>` : ""}</span>
+      ${bad && edit ? `<button class="btn small" type="button" data-act="loop-ship-retry" data-v="${esc(s.v)}">다시 보내기</button>` : ""}</div>`;
   }
 
   // [LOOP-18] 연결 점검: 실제 Play·GitHub에 처음 붙기 전에 한 화면에서.
   const CHECK_TONES = { ok: "ok", warn: "warn", bad: "bad" };
   const CHECK_WORDS = { ok: "됨", warn: "확인", bad: "빠짐" };
+  // 2.0.0 [RVA-39] 검토 U24-12: 'Play까지 점검'을 누르면 그 시각과 '방금 다시 봤어요', 바뀐 줄에는 '방금 빠짐 → 됨'이 줄에 남아요
+  // (전에는 알림 '확인할 것 6개'뿐이라 눌러도 바뀐 것이 안 보였어요).
   function checkCard() {
     const c = S.data.loopCheck;
     const bad = c ? c.lines.filter((x) => x.state !== "ok").length : 0;
-    const body = c ? `<ul class="rows">${c.lines.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.name)}</b><small>${esc(x.text)}</small>${x.fix ? `<small class="meta">${esc(x.fix)}</small>` : ""}</span>
+    const just = c && S.loopChecked?.at === c.at ? S.loopChecked : null;
+    const moved = (x) => (just?.was[x.key] && just.was[x.key] !== x.state ? `<small class="changed">방금 ${esc(CHECK_WORDS[just.was[x.key]] ?? just.was[x.key])} → ${esc(CHECK_WORDS[x.state] ?? x.state)}</small>` : "");
+    const seen = just ? `<b>방금 다시 봤어요</b> · ${esc(new Date(c.at).toLocaleTimeString("ko-KR", { hour: "numeric", minute: "2-digit" }))}${c.played ? " · Play까지 읽어 봄" : ""} · ${just.n ? `바뀐 줄 ${just.n}개` : "바뀐 것 없음"}`
+      : `${esc(when(c?.at))}에 봄${c?.played ? " · Play까지 읽어 봄" : ""}`;
+    const body = c ? `${can("devStatus", "edit") ? '<div class="actions start"><button class="btn small" type="button" data-act="loop-check">Play까지 점검</button></div>' : ""}
+        <p class="meta check-seen${just ? " just" : ""}" role="status">${seen}</p>
+        <ul class="rows">${c.lines.map((x) => `<li><div class="row"><span class="row-main"><b>${esc(x.name)}</b><small>${esc(x.text)}</small>${x.fix ? `<small class="meta">${esc(x.fix)}</small>` : ""}${moved(x)}</span>
         <span class="pill ${CHECK_TONES[x.state] ?? ""}">${esc(CHECK_WORDS[x.state] ?? x.state)}</span></div></li>`).join("")}</ul>
-        <p class="meta">${esc(when(c.at))}에 봄${c.played ? " · Play까지 읽어 봄" : ""}</p>` : skeleton(1);
-    // 모두 되면 접어 둬요(설정을 마친 뒤엔 자주 볼 일이 없어서, 접은 폭에서 Play 출시 감지가 먼저 보이게).
-    if (c && !bad) return fold("check", "연결 점검", "모두 됨", `${body}${can("devStatus", "edit") ? '<div class="actions"><button class="btn small" type="button" data-act="loop-check">Play까지 점검</button></div>' : ""}`);
-    return `<section class="card">${head("연결 점검", c ? (bad ? `확인할 것 ${bad}개` : "모두 됨") : "",
-      can("devStatus", "edit") ? '<button class="btn small" type="button" data-act="loop-check">Play까지 점검</button>' : "")}
-      ${body}<p class="hint">값은 보이지 않고 있는지만 봐요. 'Play까지 점검'은 프로덕션 트랙을 한 번 읽기만 해요(아무것도 바꾸지 않아요).</p></section>`;
+        <p class="hint">값은 보이지 않고 있는지만 봐요. 'Play까지 점검'은 프로덕션 트랙을 한 번 읽기만 해요(아무것도 바꾸지 않아요).</p>` : skeleton(1);
+    const missing = c ? c.lines.filter((x) => x.state === "bad").length : 0;
+    return fold("check", "연결 점검", c ? (bad ? `${missing ? `빠짐 ${missing}개 · ` : ""}확인할 것 ${bad}개` : "모두 됨") : "", body, missing ? "warn" : "");
   }
 
   // [LOOP-22] 판별 고침 성적표.
@@ -85,9 +120,9 @@ export function loopViews(A) {
 
   function liveCard(d) {
     if (!d.waitingLive.length) return "";
-    return `<section class="card">${head("업데이트 없이 고친 것", `닿기를 기다림 ${d.waitingLive.length}개`)}
+    return fold("live", "업데이트 없이 고친 것", `닿기를 기다림 ${d.waitingLive.length}개`, `
       <ul class="rows">${d.waitingLive.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b><small>${esc(x.routeName ?? x.route)} · ${esc(x.want ?? "")}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
-      <p class="hint">서버 배포·원격 자료 서명·기능 스위치가 실제로 닿으면 묶인 문의에 바로 답이 가요(앱 업데이트 없이).</p></section>`;
+      <p class="hint">서버 배포·원격 자료 서명·기능 스위치가 실제로 닿으면 묶인 문의에 바로 답이 가요(앱 업데이트 없이).</p>`);
   }
 
   function syncCard(d) {
@@ -95,19 +130,51 @@ export function loopViews(A) {
     const rows = d.syncs.length ? `<ul class="rows">${d.syncs.map((s) => `<li><div class="row"><span class="row-main"><b>${s.pr ? `PR #${s.pr}` : esc(s.sha.slice(0, 8) || "직접")}${s.version ? ` · ${esc(s.version)}` : ""}</b>
         <small>${esc(when(s.at))} · ${s.n}줄 · 새 ${s.result.made ?? 0} · 바뀜 ${s.result.changed ?? 0} · 답 ${s.result.told ?? 0}${s.result.errors ? ` · 오류 ${s.result.errors}` : ""}</small></span>
         <span class="pill ${s.result.errors ? "warn" : "ok"}">${s.result.errors ? "확인" : "받음"}</span></div></li>`).join("")}</ul>`
-      : '<p class="hint">아직 받은 것이 없어요. main에 합쳐지면 GitHub Action이 ops/dev-status.jsonl의 바뀐 줄을 보내요.</p>';
-    return `<section class="card">${head("저장소 동기화", d.switches.sync ? "켜짐" : "꺼짐", owner() ? `<button class="btn small" type="button" data-act="loop-sync-key"${key ? " disabled" : ""}>동기화 열쇠 만들기</button>` : "")}
-      ${rows}<p class="hint">저장소에는 문의 글 없이 개발 상태만 있어요(d 번호·추적 번호·요약·판). 요금(무료·프로)은 저장소에서 정하지 못해요.
-      ${key ? `동기화 열쇠: ${esc(key.label)}${key.lastAt ? ` · 마지막 ${esc(ago(key.lastAt))}` : " · 아직 안 씀"}. 끊기는 관리 › Claude 열쇠에서 해요.` : "동기화 열쇠가 없어요."}</p></section>`;
+      : '<p class="hint">아직 받은 것이 없어요. 개발한 것이 저장소에 합쳐지면 GitHub이 바뀐 개발 상태를 보내요.</p>';
+    const last = d.syncs[0];
+    const meta = !d.switches.sync ? "받기 꺼짐" : last ? `켜짐 · 마지막 ${ago(last.at)}` : key ? "켜짐 · 아직 안 옴" : "켜짐 · 동기화 열쇠 없음";
+    return fold("sync", "저장소 동기화", meta, `${rows}
+      ${owner() && !key ? '<div class="actions start"><button class="btn small" type="button" data-act="loop-sync-key">동기화 열쇠 만들기</button></div>' : ""}
+      <p class="hint">저장소에는 문의 글 없이 개발 상태만 있어요(개발사항 번호·요약·판). 요금(무료·프로)은 저장소에서 정하지 못해요.
+      ${key ? `동기화 열쇠: ${esc(key.label)}${key.lastAt ? ` · 마지막 ${esc(ago(key.lastAt))}` : " · 아직 안 씀"}. 끊기는 관리 › Claude 열쇠에서 해요.` : "동기화 열쇠가 없어요."}</p>`, d.switches.sync ? "" : "warn");
   }
 
   function trainCard(d) {
     const t = d.train;
-    return fold("train", "정기 출시 열차", t.next ? `다음 출발 ${t.next} · ${t.days}일마다` : "", `
-      <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.</p>
+    // 2.0.0 [HQ-78] 열차 밖의 판(끝나는 즉시 나가는 판): 그 판으로 고친 문의에는 날짜 없이 '곧 나올 판'.
+    const outside = (t.outside ?? []).join(", ");
+    return fold("train", "정기 출시 열차", t.next ? `다음 출발 ${trainDay(t.next)} · ${t.days}일마다${outside ? ` · 열차 밖 ${outside}` : ""}` : "", `
+      <p class="hint">앱 판으로 고친 것은 ${t.days}일마다 한 번 모아 나가요. 고친 직후 문의에는 '○월 ○일 정기 업데이트에 들어가요'가 날짜와 함께 가요. 알람·데이터·결제·앱이 안 열림 같은 긴급은 열차를 기다리지 않아요.
+        ${outside ? `${esc(outside)}은 열차 밖의 판이라 끝나는 즉시 나가고, 그 판으로 고친 문의에는 날짜 없이 '곧 나올 ${esc(t.outside[0])} 업데이트'라고 가요.` : ""}</p>
       ${owner() ? `<form class="inline-form" data-form="loop-train"><label for="lt-start">첫 출발일</label><input id="lt-start" name="start" type="date" required value="${esc(t.start)}">
         <label for="lt-days">며칠마다</label><input id="lt-days" name="days" type="number" min="7" max="60" required value="${t.days}">
+        <label for="lt-outside">열차 밖의 판</label><input id="lt-outside" name="outside" placeholder="예: 2.0.0" value="${esc(outside)}" aria-describedby="lt-outside-h">
+        <small id="lt-outside-h" class="hint">끝나는 즉시 나가는 판, 쉼표로 여럿</small>
         <div class="actions"><button class="btn small primary" type="submit">저장</button></div></form>` : ""}`);
+  }
+
+  /** 2.0.0 [RVA-05] 검토 ADM-06: 지금 나간 판 번호, 판 번호(versionCode)가 무엇인지 한 줄. */
+  function liveLine(d) {
+    const l = d.live ?? {};
+    return `<p class="note info">${l.code ? `지금 Play에 나간 판은 <b>${esc(l.name ?? "")} (번호 ${l.code})</b>예요.` : "지금 나간 판 번호를 아직 몰라요(Play 연결 뒤 보여요)."}
+      판 번호는 앱 설정 › 앱 정보의 괄호 안 숫자예요. 비우면 바꾸지 않아요.</p>`;
+  }
+
+  /** 2.0.0 [RVA-05] 이 번호보다 낮은 판을 쓰는 폰이 최근 7일에 몇 %인지(판 번호를 모르는 옛 판은 따로). */
+  function reach(d, n) {
+    const rows = d.live?.phones ?? [];
+    const all = rows.reduce((a, r) => a + r.phones, 0);
+    const below = rows.filter((r) => r.code !== null && r.code < n).reduce((a, r) => a + r.phones, 0);
+    const unknown = rows.filter((r) => r.code === null).reduce((a, r) => a + r.phones, 0);
+    return { all, below, unknown, share: all ? Math.round((1000 * below) / all) / 10 : null };
+  }
+  function reachText(d, n) {
+    n = Number(n);
+    if (!n) return "0이면 권하지 않아요.";
+    const r = reach(d, n);
+    const live = d.live?.code;
+    const over = live && n > live ? ` 지금 나간 번호(${live})보다 커서 모든 폰이 걸려요.` : "";
+    return r.all ? `최근 7일 폰 ${r.all}대 중 ${r.below}대(약 ${r.share}%)가 걸려요.${r.unknown ? ` 판 번호를 모르는 옛 판 ${r.unknown}대는 빼고 셌어요.` : ""}${over}` : `최근 7일 폰 수를 아직 몰라요.${over}`;
   }
 
   function switchCard(d) {
@@ -115,17 +182,26 @@ export function loopViews(A) {
     // [LOOP-32] 체크하면 바로 저장돼요(전에는 아래 '저장'을 눌러야 해서 화면만 바뀐 줄 몰랐어요, 실서버 11-08).
     const box = (k, label, hint) => `<label class="chk"><input type="checkbox" name="${k}" data-change="loop-switch" data-label="${esc(label)}"${sw[k] ? " checked" : ""}${owner() ? "" : " disabled"}><span><b>${esc(label)}</b> <small>${esc(hint)}</small></span></label>`;
     const off = ["autoShip", "sync", "phone", "halt"].filter((k) => !sw[k]).length;
-    return fold("switches", "멈춤 스위치 · 인앱 업데이트", off ? `${off}개 꺼짐` : "모두 켜짐", `
+    // 2.0.0 [RVQ-34] 검토 SVC-19: 접힌 줄에도 출시 감지에서 뺄 테스터 수를 보여요(펴지 않고 기준을 알게).
+    return fold("switches", "멈춤 스위치 · 인앱 업데이트 · 테스터", `${off ? `${off}개 꺼짐` : "모두 켜짐"} · 테스터 ${d.testers ?? sw.testers ?? 12}대`, `
       ${owner() ? '<p class="hint">스위치는 누르면 바로 저장돼요.</p>' : ""}
       <div class="switches">${box("autoShip", "Play 출시를 보고 스스로 안내", "끄면 지금처럼 '나간 판 저장'을 사람이 눌러요")}
-        ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 받지 않아요(409)")}
+        ${box("sync", "저장소 동기화 받기", "끄면 GitHub이 보내도 서버가 거절해요")}
         ${box("phone", "고친 판으로 연 폰에 바로 안내", "단계적 출시 중에 그 폰에만")}
         ${box("halt", "단계적 출시가 나빠지면 멈춤 권장 알림", "판 건강 비교로")}</div>
-      <form data-form="loop-switches"><h3>Play 인앱 업데이트</h3>
-        <p class="hint">앱이 하루 한 번 읽고 열 때마다 봐요(첫 설정을 마친 폰만). 이 versionCode보다 낮은 앱은 긴급이면 Play 전체 화면 업데이트를, 정기면 Play의 '업데이트할까요?' 창을 새 판마다 한 번 띄우고 뒤에서 받은 뒤 '다시 시작'을 물어요. 0이면 권하지 않아요. Play에서 받은 앱에서만 돼요.</p>
-        <label for="ls-urgent">긴급(바로 업데이트) 기준 versionCode</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}"${owner() ? "" : " disabled"}>
-        <label for="ls-flex">정기(한 번 권함) 기준 versionCode</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}"${owner() ? "" : " disabled"}>
-        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
+      <form data-form="loop-switches" data-guard="인앱 업데이트 기준"><h3>Play 인앱 업데이트</h3>
+        <p class="hint">앱이 하루 한 번 읽고 열 때마다 봐요(첫 설정을 마친 폰만). 이 판 번호보다 낮은 앱은 긴급이면 Play 전체 화면 업데이트를, 정기면 Play의 '업데이트할까요?' 창을 새 판마다 한 번 띄우고 뒤에서 받은 뒤 '다시 시작'을 물어요. 0이면 권하지 않아요. Play에서 받은 앱에서만 돼요.</p>
+        ${liveLine(d)}
+        <div class="fieldset"><label for="ls-urgent">긴급(바로 업데이트) 기준 판 번호</label><input id="ls-urgent" name="urgentMin" type="number" min="0" inputmode="numeric" value="${sw.urgentMin ?? 0}" aria-describedby="ls-urgent-reach"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-urgent-reach" aria-live="polite">${esc(reachText(d, sw.urgentMin))}</span></div>
+        <div class="fieldset"><label for="ls-flex">정기(한 번 권함) 기준 판 번호</label><input id="ls-flex" name="flexibleMin" type="number" min="0" inputmode="numeric" value="${sw.flexibleMin ?? 0}" aria-describedby="ls-flex-reach"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-flex-reach" aria-live="polite">${esc(reachText(d, sw.flexibleMin))}</span></div>
+        ${owner() ? '<div class="actions"><button class="btn primary small" type="submit">기준 저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>
+      <form data-form="loop-testers" data-guard="출시 감지 테스터 수"><h3>출시 감지에서 뺄 테스터</h3>
+        <p class="hint">테스트 트랙 사람과 관리자 폰은 새 판을 먼저 받아요. 나갔다고 보는 두 기준(늘어난 휴대폰·Play 보고서)이 이 수보다 커요. 관리자 앱에 연결된 폰이 더 많으면 그 수로 봐요.</p>
+        <div class="fieldset"><label for="ls-testers">테스터 수</label><input id="ls-testers" name="testers" type="number" min="0" max="500" inputmode="numeric" value="${sw.testers ?? 12}" aria-describedby="ls-testers-now"${owner() ? "" : " disabled"}>
+          <span class="help" id="ls-testers-now">지금 기준 ${esc(String(d.testers ?? sw.testers ?? 12))}대</span></div>
+        ${owner() ? '<div class="actions"><button class="btn small" type="submit">테스터 수 저장</button></div>' : ""}</form>`);
   }
 
   function autonomyCard(d) {
@@ -144,28 +220,94 @@ export function loopViews(A) {
     const r = d.rewards;
     return fold("rewards", "쓰면 쌓이는 날 규칙", `문제 신고 ${r.bugDays}일 · 새 기능 제안 ${r.featureDays}일 · 한 달 ${r.monthCap}일까지`, `
       <p class="hint">프로를 날 수만큼 열어 드려요. 회사 방식 채택·요청 반영의 개월 보상은 관리 › 채택 규칙에 있어요.</p>
-      <form data-form="loop-rewards">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
+      <form data-form="loop-rewards" data-guard="보상 규칙">${REWARD_NAMES.map(([k, label, hint]) => `<label for="lr-${k}">${esc(label)} <small>${esc(hint)}</small></label>
         <input id="lr-${k}" name="${k}" type="number" min="0" max="${k === "monthCap" ? 60 : 30}" inputmode="numeric" value="${r[k]}"${owner() ? "" : " disabled"}>`).join("")}
         ${owner() ? '<div class="actions"><button class="btn small primary" type="submit">저장</button></div>' : '<p class="note">최고 관리자만 바꿔요.</p>'}</form>`);
   }
 
   function queueCard() {
     const q = S.data.loopQueue?.items;
-    if (!q) return skeleton(1);
-    return `<section class="card">${head("개발 대기열", "영향도 순 · Claude가 이 순서로 가져가요", `<a class="btn small" href="${href("dev")}">개발사항 전체</a>`)}
+    if (!q) return fold("queue", "개발 대기열", "읽는 중", skeleton(1));
+    return fold("queue", "개발 대기열", q.length ? `${q.length}개 · 맨 앞 ${q[0].title}` : "기다리는 것 없음", `<p class="meta">영향도 순 · Claude가 이 순서로 가져가요</p>
       ${q.length ? `<ol class="rows">${q.slice(0, 12).map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>문의 ${x.asks} · 같아요 ${x.same}${x.again ? ` · 다시 생김 ${x.again}` : ""}${x.urgent ? " · 급함" : ""}${x.track ? ` · ${esc(x.track)}` : ""}</small></span>
         <span class="pill ${x.urgent || x.again ? "bad" : "info"}">${x.score}점</span>${icon(P.chevron)}</a></li>`).join("")}</ol>`
         : empty("기다리는 개발사항이 없어요", "")}
-      <p class="hint">점수 = 묶인 문의 3 + 같아요 1 + 급함(알람·데이터·결제·앱이 안 열림) 5 + 걸린 판 1 + 고친 뒤 다시 생김 6.</p></section>`;
+      <div class="actions start"><a class="btn small" href="${href("dev")}">개발사항 전체</a></div>
+      <p class="hint">점수 = 묶인 문의 3 + 같아요 1 + 급함(알람·데이터·결제·앱이 안 열림) 5 + 걸린 판 1 + 고친 뒤 다시 생김 6.</p>`);
+  }
+
+  /**
+   * 2.0.0 [RVA-38] 검토 U23-04·ADM-14: 주인이 '지금 저절로 도는지, 내가 눌러야 하는지'를 한 줄로. 저절로 도는지 · 다음 출시 · 내가 할 것 N,
+   * 그리고 다음 한 걸음 하나(채운 단추는 이것 하나). 내가 할 것: 급한 문제 신고, 게시됨 확인, 스스로 안내가 꺼진 판 보내기, 빠진 설정.
+   */
+  const trainDay = (day) => (day ? new Date(`${day}T00:00:00+09:00`).toLocaleDateString("ko-KR", { month: "numeric", day: "numeric", weekday: "short", timeZone: "Asia/Seoul" }) : "—");
+  function steps(d) {
+    const c = S.data.loopCheck;
+    const edit = can("devStatus", "edit");
+    const out = [];
+    if (d.urgentWaiting) out.push({ text: `급한 문제 신고 ${d.urgentWaiting}건이 답을 기다려요.`, go: `<a class="btn primary" href="${href("decide")}">급한 문제 신고 보기</a>` });
+    for (const s of d.ships.filter((x) => x.status === "review")) {
+      out.push({ text: `${s.version}이 Play 트랙 100%예요. Play Console에서 '게시됨'을 봤으면 눌러요(1시간 뒤 안내가 나가요).`,
+        go: edit ? `<button class="btn primary" type="button" data-act="loop-ship-live" data-v="${esc(s.version)}">게시됨 확인</button>` : "" });
+    }
+    if (!d.switches.autoShip) for (const s of d.ships.filter((x) => x.status === "waiting")) {
+      out.push({ text: `${s.version} 안내가 기다려요. 스스로 안내가 꺼져 있어 눌러야 나가요.`,
+        go: edit ? `<button class="btn primary" type="button" data-act="loop-ship-now" data-v="${esc(s.version)}">지금 보내기</button>` : "" });
+    }
+    const missing = c ? c.lines.filter((x) => x.state === "bad") : [];
+    if (missing.length) out.push({ text: `빠진 설정 ${missing.length}개: ${missing.map((x) => x.name).join(" · ")}.`, go: '<button class="btn primary" type="button" data-act="loop-open" data-key="loop-check">연결 점검 보기</button>' });
+    return out;
+  }
+  function nowCard(d) {
+    const sw = d.switches;
+    const stopped = [!sw.autoShip && "스스로 출시 안내 꺼짐", !sw.sync && "저장소 받기 꺼짐", !d.play?.ready && "Play 연결 열쇠 없음"].filter(Boolean);
+    const todo = steps(d);
+    const waiting = sw.autoShip ? d.ships.find((s) => s.status === "waiting") : null;
+    const next = todo[0];
+    const calm = waiting ? `${waiting.version} 안내는 ${goes(waiting.until)} 저절로 나가요(${left(waiting.until)}, Play 출시 감지에서 멈출 수 있어요).` : "판이 나가면 1시간 뒤 묶인 문의에 저절로 답해요.";
+    return `<section class="card loop-now" aria-labelledby="loop-now-h">
+      <h2 class="loop-state" id="loop-now-h"><span class="pill ${stopped.length ? "warn" : "ok"}">${stopped.length ? "일부만 저절로" : "저절로 도는 중"}</span>
+        <span>다음 출시 <b>${esc(trainDay(d.train.next))}</b></span><span>내가 할 것 <b>${todo.length}</b></span></h2>
+      ${stopped.length ? `<p class="meta">멈춘 곳: ${esc(stopped.join(" · "))}</p>` : ""}
+      ${next ? `<div class="loop-next"><p><b>다음 한 걸음</b> ${esc(next.text)}</p>${next.go}</div>`
+        : `<p class="calm">${icon(P.check)}<span>지금 내가 할 것은 없어요. ${esc(calm)}</span></p>`}
+      <p class="hint">문의 → 개발 → 출시 → 답을 서버가 보고, 묶인 문의에 스스로 답해요.</p></section>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-59] 다가오는 날짜: 처리방침 시행·출시 열차·연말 결산·새해 요율처럼 날짜가 걸린 약속(저장소 ops/dates.json)을 남은 날 순서로.
+   * 빈틈(그해 요율·공휴일 표가 곧 끝남)은 맨 위 주의 한 줄. 2주 안의 날만 펴 두고 그 뒤는 접혀요.
+   */
+  const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+  const dayName = (ymd) => {
+    const t = new Date(`${ymd}T00:00:00Z`);
+    return `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일(${WEEK[t.getUTCDay()]})${t.getUTCFullYear() !== new Date().getFullYear() ? ` ${t.getUTCFullYear()}` : ""}`;
+  };
+  const leftText = (n) => (n === 0 ? "오늘" : n === 1 ? "내일" : `${n}일 남음`);
+  /** [RVA-59] 장부의 '그 전에 할 일'에서 개발자 말(명령·파일 이름)이 든 문장은 빼요(조건 4·13). 저장소 장부에는 그대로 남아요. */
+  const plainBefore = (t) => String(t ?? "").split(/(?<=[.?!])\s+/).filter((x) => x && !/python3|tools\/|\.(py|kt|js|json)\b|`|<[^>]+>/.test(x)).join(" ");
+  function datesCard(d) {
+    const x = d.dates;
+    if (!x || (!x.upcoming?.length && !x.gaps?.length)) return "";
+    const next = x.upcoming[0];
+    const meta = [x.gaps.length ? `빈틈 ${x.gaps.length}` : "", next ? `다음 ${dayName(next.date)} ${leftText(next.left)}` : ""].filter(Boolean).join(" · ");
+    const row = (r) => `<li class="item"><span class="row-main"><b class="wrap">${esc(r.what)}</b>
+        <small><span class="${r.left <= 2 ? "dl-soon" : ""}">${esc(dayName(r.date))} · ${esc(leftText(r.left))}</span>${r.area ? ` · ${esc(r.area)}` : ""}</small>
+        ${plainBefore(r.before) ? `<small class="dl-before">${esc(plainBefore(r.before))}</small>` : ""}</span></li>`;
+    const near = x.upcoming.filter((r) => r.left <= 14);
+    const later = x.upcoming.filter((r) => r.left > 14);
+    const gaps = x.gaps.map((g) => `<p class="note warn"><b>${esc(dayName(g.from))}부터 ${esc(g.what)}</b> (${esc(leftText(Math.max(0, g.left)))}). ${esc(plainBefore(g.before))}</p>`).join("");
+    return fold("dates", "다가오는 날짜", meta, `${gaps}
+      ${near.length ? `<ul class="rows dates-rows">${near.map(row).join("")}</ul>` : '<p class="hint">2주 안에 걸린 날은 없어요.</p>'}
+      ${later.length ? `<details class="dl-later"><summary>그 뒤 ${later.length}개</summary><ul class="rows dates-rows">${later.map(row).join("")}</ul></details>` : ""}
+      <p class="hint">날짜는 저장소의 날짜 약속 장부에서 와요. 날을 옮기는 일은 개발로 넘겨요.</p>`, x.gaps.length || (next && next.left <= 2) ? "warn" : "");
   }
 
   function loopView() {
     const d = S.data.loopState;
     if (!d) return skeleton(3);
-    const top = `<section class="flow-head"><div><h2>문의 → 개발 → 출시 → 답</h2><p class="meta">Play 출시와 저장소 개발 상태를 서버가 직접 보고, 묶인 문의에 스스로 답해요.</p></div>
-      <div class="flow-state">${d.urgentWaiting ? `<a class="pill bad" href="${href("decide")}">급한 문제 신고 ${d.urgentWaiting}건</a>` : '<span class="pill ok">급한 문제 신고 없음</span>'}</div></section>`;
-    return `${top}<div class="flow-cols">${checkCard()}${playCard(d)}${liveCard(d)}${scoreCard(d)}${queueCard()}${syncCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
+    return `${nowCard(d)}<div class="flow-cols loop-folds">${checkCard()}${datesCard(d)}${playCard(d)}${liveCard(d)}${queueCard()}${syncCard(d)}${scoreCard(d)}${trainCard(d)}${switchCard(d)}${autonomyCard(d)}${rewardCard(d)}</div>`;
   }
 
   // ---- 오늘 › 결정함 ----
@@ -173,19 +315,25 @@ export function loopViews(A) {
   function decideView() {
     const d = S.data.loopDecide;
     if (!d) return skeleton(2);
-    const asks = d.asks.length ? `<ul class="rows">${d.asks.map((x) => `<li><div class="row"><span class="row-main"><a href="${href("inquiries", x.id)}"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b></a>
-        <small>${esc(x.why)}${x.late ? " · 기한 넘김" : ""}</small>${x.draft ? `<small class="answer">Claude 초안: ${esc(x.draft.text)}</small>${x.draft.why ? `<small>이유: ${esc(x.draft.why)}</small>` : ""}` : '<small class="meta">초안 없음</small>'}</span>
-        ${x.draft && can("inquiries", "edit") ? `<button class="btn small primary" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button>` : ""}
-        <a class="btn small" href="${href("inquiries", x.id)}">열기</a></div></li>`).join("")}</ul>`
+    // 2.0.0 [RVA-25] 검토 T24-04·T24-20·U24-04: 급함 문의와 같은 줄 틀(줄 전체가 문의를 열고, 왜 걸렸는지는 오른쪽 낱말 하나). '열기' 단추를 빼
+    // 380에서 제목과 겹치지 않고 1440에서 멀리 떨어지지 않아요. Claude 초안과 '초안 보내기'는 줄 아래 한 칸(채운 단추는 화면에 하나라 글자 단추).
+    const asks = d.asks.length ? `<ul class="rows decide-rows">${d.asks.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.no ?? "")} ${esc(x.title ?? "")}</b>
+        <small>${x.draft ? "Claude 초안 있음" : "초안 없음"}${x.late ? ' · <b class="due-late">기한 넘김</b>' : ""}</small></span>
+        <span class="row-side">${x.why ? `<span class="pill warn">${esc(x.why)}</span>` : ""}</span>${icon(P.chevron)}</a>
+        ${x.draft ? `<div class="draft-line"><p class="answer">${esc(x.draft.text)}</p>${x.draft.why ? `<small class="meta">이유: ${esc(x.draft.why)}</small>` : ""}
+          ${can("inquiries", "edit") ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-draft-send" data-id="${esc(x.id)}" data-key="${esc(x.key)}">초안 보내기</button></div>` : ""}</div>` : ""}</li>`).join("")}</ul>`
       : empty("최고 관리자가 볼 문의가 없어요", "환불·결제·보상, 법·안전, 개인정보, 크게 화난 민원, 약관·처리방침 질문은 여기에 모여요.");
     const tiers = owner() ? (d.tiers.length ? `<ul class="rows">${d.tiers.map((x) => `<li><a class="row" href="${href("tiers")}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}문의 ${x.asks}건${x.ask ? ` · Claude 제안: ${esc(x.askName)}` : ""}${x.later ? " · 더 논의 중" : ""}</small>${x.why ? `<small>${esc(x.why)}</small>` : ""}</span>
         <span class="pill warn">요금 정하기</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : '<p class="hint">요금을 정할 새 기능이 없어요.</p>')
       : '<p class="hint">새 기능의 무료·프로는 최고 관리자가 정해요.</p>';
     const urgent = d.urgent ?? [];
-    const hurry = urgent.length ? `<section class="card">${head("급함 문의", `답 기다림 ${urgent.length}건`)}
+    // 2.0.0 [RVA-46] 검토 HQ-69(조건 6): 급함은 머리의 빨간 칩 하나로 말하고 줄마다 되풀이하지 않아요. 최고 관리자 확인 줄의 이유 낱말은 주황 하나,
+    // 기한을 넘긴 줄은 '기한 넘김'을 굵은 글로(색만으로 뜻을 전하지 않게).
+    const lateAsks = d.asks.filter((x) => x.late).length;
+    const hurry = urgent.length ? `<section class="card">${head("급함 문의", "", `<span class="pill bad">답 기다림 ${urgent.length}건</span>`)}
       <ul class="rows">${urgent.map((x) => `<li><a class="row" href="${href("inquiries", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
-        <small>${x.topic ? `${esc(x.topic)} · ` : ""}${esc(ago(x.at))}</small></span><span class="pill bad">급함</span>${icon(P.chevron)}</a></li>`).join("")}</ul>
+        <small>${x.topic ? `${esc(x.topic)} · ` : ""}${esc(ago(x.at))}</small></span>${icon(P.chevron)}</a></li>`).join("")}</ul>
       <p class="hint">알람이 안 울림·앱이 안 열림·데이터 사라짐·결제·수면 긴급 넷을 말하는 문의예요. 조용한 시간에도 폰에 알려요.</p></section>` : "";
     const back = d.back ?? [];
     const halts = d.halts ?? [];
@@ -195,9 +343,28 @@ export function loopViews(A) {
       ${back.length ? `<ul class="rows">${back.map((x) => `<li><a class="row" href="${href("dev", x.id)}"><span class="row-main"><b>${esc(x.title)}</b>
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
-    return `${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건`)}${asks}</section>
-      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
-        <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section>`;
+    return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건${lateAsks ? ` · 기한 넘김 ${lateAsks}` : ""}`)}${asks}</section>
+      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${bulkTierLine(d.tiers, "decide")}${tiers}
+        <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section></div>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-73] 사용자 11-19 '요금 판단 대기가 너무 많아요, 한 번에': Claude 제안(무료·프로·7일권·체험)이 있는 대기 줄이 둘 이상이면 맨 위에 한 줄과
+   * 단추 하나. 누르면 제목 목록(줄마다 빼기)과 확인 한 번을 거쳐 최고 관리자만 제안대로 정해요(제안이 저절로 적용되는 길은 없어요).
+   */
+  const ASK_ORDER = ["free", "pro", "pass", "trial"];
+  const askable = (xs) => (xs ?? []).filter((x) => ASK_ORDER.includes(x.ask) && !(x.tier && x.tier !== "later")).sort((m, n) => ASK_ORDER.indexOf(m.ask) - ASK_ORDER.indexOf(n.ask));
+  function bulkTierLine(xs, src) {
+    const list = askable(xs);
+    if (!owner() || list.length < 2) return "";
+    const by = [];
+    for (const x of list) {
+      const g = by.find((b) => b[0] === x.ask);
+      if (g) g[2]++;
+      else by.push([x.ask, x.askName ?? x.ask, 1]);
+    }
+    return `<div class="bulk-tier"><p class="bulk-line"><b>제안이 있는 ${list.length}건</b><span class="meta">(${by.map(([, name, n]) => `${esc(name.replace(/\(.*\)$/, ""))} ${n}`).join(" · ")})</span></p>
+      <div class="actions start"><button class="btn primary" type="button" data-act="loop-tier-all" data-src="${src}">제안대로 한 번에 정하기</button></div></div>`;
   }
 
   // ---- 숫자 › 요금 판단 ----
@@ -217,7 +384,7 @@ export function loopViews(A) {
 
   // [LOOP-35] 사용자 11-09 '설명이 너무 부족해, 기존 기능의 오류나 개선은 무료, 새 기능만 묻기, 필터링': 기준 설명·고르기 칸·항목마다 왜 묻는지.
   const VIEW_HINTS = {
-    ask: "무료·프로를 정해야 하는 새 기능이에요. 정하기 전에는 이 기능의 스위치를 켤 수 없어요.",
+    ask: "무료·프로를 정할 새 기능을 Claude 제안별로 모았어요. 누르면 숫자와 단추가 펼쳐져요. 정하기 전에는 스위치를 켤 수 없어요.",
     decided: "무료·프로를 이미 정한 새 기능이에요. 다시 정할 수 있어요(무료로 연 것은 잠그지 않아요).",
     existing: "이미 있는 기능을 고치거나 다듬는 일이라 묻지 않아요. 그 기능의 요금 그대로(무료면 무료) 가요.",
     internal: "관리자 앱·운영·통계처럼 서버로만 닿는 일이라 앱 사용자에게 요금이 없어요.",
@@ -238,28 +405,45 @@ export function loopViews(A) {
     const view = d.view ?? "ask";
     const chips = `<div class="chips" role="group" aria-label="요금 기준으로 고르기">${Object.entries(d.views ?? {}).map(([k, name]) =>
       `<button type="button" class="chip pick" data-act="loop-tier-view" data-key="${k}" aria-pressed="${view === k}">${esc(name)} ${d.counts?.[k] ?? 0}</button>`).join("")}</div>`;
-    const top = `<p class="hint">새 기능만 무료·프로를 물어요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료) 가요. ${esc(VIEW_HINTS[view] ?? "")}</p>${chips}${basisCriteria()}`;
-    if (!d.items.length) return top + empty(view === "ask" ? "지금 정할 새 기능이 없어요" : "이 칸에 해당하는 개발사항이 없어요", view === "ask" ? "새 기능이 생기면 여기에 모여요. 기존 기능 고침·다듬기는 여기 오지 않아요." : "");
-    const card = (x) => {
+    // 2.0.0 [RVA-58] 조건 1: 목록이 위에서 시작하게 설명은 고른 칸 한 줄만(묻고 묻지 않는 기준은 '기준'을 펴서).
+    const top = `${chips}<p class="hint">${esc(VIEW_HINTS[view] ?? "")}</p>`;
+    if (!d.items.length) return top + basisCriteria() + empty(view === "ask" ? "지금 정할 새 기능이 없어요" : "이 칸에 해당하는 개발사항이 없어요", view === "ask" ? "새 기능이 생기면 여기에 모여요. 기존 기능 고침·다듬기는 여기 오지 않아요." : "");
+    // 2.0.0 [RVA-58] 정할 새 기능이 한 번에 열네 개쯤 와요(LOOP-41): 한 장씩 큰 카드(380 폭에서 한 장 650px)는 견주기 어려워서,
+    // Claude 제안별로 묶은 한 줄(제목 + 제안과 까닭 한 줄)로 보고, 누르면 그 자리에서 숫자·단추가 펼쳐져요. 요금은 사용자와 논의한 뒤
+    // 최고 관리자가 하나씩 정해요(한꺼번에 정하는 단추는 두지 않아요). 논의용으로 제안과 까닭을 한 번에 복사해요.
+    const body = (x) => {
       const asked = x.basis.key === "new";
-      const pill = `<span class="pill ${x.effective.decided ? (x.tier === "later" ? "warn" : "ok") : BASIS_TONES[x.basis.key] ?? ""}">${esc(x.effective.name)}</span>`;
-      const meta = [x.first ? "1순위(직접 넣음)" : "", x.statusName, x.track, x.sizeName ? `크기 ${x.sizeName}` : "크기 없음", x.routeName ? `전달 ${x.routeName}` : ""].filter(Boolean).join(" · ");
+      const meta = [x.statusName, x.sizeName ? `크기 ${x.sizeName}` : "크기 없음", x.routeName ? `전달 ${x.routeName}` : ""].filter(Boolean).join(" · ");
       const basisLine = `<p class="note${asked ? " warn" : ""}"><b>${esc(x.basis.name)}${x.basis.auto ? " (자동)" : ""}</b> — ${esc(x.basis.why)}</p>`;
       const pick = owner() && asked ? `<div class="actions start">${Object.entries(d.tiers).map(([k, name]) => `<button class="btn small${x.tier === k ? " primary" : ""}" type="button" data-act="loop-tier" data-id="${esc(x.id)}" data-tier="${k}"
           title="${esc(d.tierHelp?.[k] ?? "")}">${esc(name)}${x.ask === k ? " · Claude 제안" : ""}</button>`).join("")}</div>
         <p class="hint">${esc(d.tierHelp?.[x.tier || x.ask || "later"] ?? "")}</p>` : "";
-      return `<section class="card">${head(x.title, meta, pill)}
+      return `<div class="rv-body"><p class="meta">${esc(meta)}</p>
         ${x.preview ? `<p class="dev-body">${esc(x.preview)}</p>` : ""}
         ${basisLine}
         ${x.onBeforeTier ? '<p class="note warn">요금을 정하기 전에 스위치가 켜져 있어요(날짜 조건 등). 먼저 정해 주세요.</p>' : ""}
-        ${asked && x.ask ? `<p><b>Claude 제안</b> ${esc(x.askName)}${x.why ? ` — ${esc(x.why)}` : ""}</p>` : ""}
         ${x.tierBy ? `<p class="meta">${esc(x.tierBy)} · ${esc(when(x.tierAt))}${x.tierNote ? ` · ${esc(x.tierNote)}` : ""}</p>` : ""}
         ${x.observe ? `<details><summary>정하는 데 쓸 숫자(요청·쓰는 수·스위치 앞뒤)</summary>${obsLines(x.observe)}</details>` : ""}
         ${pick}
-        <div class="actions start">${owner() ? `<button class="btn small ghost" type="button" data-act="loop-basis" data-id="${esc(x.id)}">기준 바꾸기</button>` : ""}<a class="btn small ghost" href="${href("dev", x.id)}">개발사항 열기</a></div>
-      </section>`;
+        <div class="actions start">${owner() ? `<button class="btn small ghost" type="button" data-act="loop-basis" data-id="${esc(x.id)}">기준 바꾸기</button>` : ""}<a class="btn small ghost" href="${href("dev", x.id)}">개발사항 열기</a></div></div>`;
     };
-    return top + d.items.map(card).join("");
+    const line = (x) => {
+      const key = `tier:${x.id}`;
+      const pill = `<span class="pill ${x.effective.decided ? (x.tier === "later" ? "warn" : "ok") : BASIS_TONES[x.basis.key] ?? ""}">${esc(x.effective.name)}</span>`;
+      const gist = x.basis.key === "new" && !x.effective.decided ? (x.why ? x.why : x.ask ? "" : "Claude 제안이 아직 없어요") : x.basis.why;
+      const small = [x.first ? "1순위" : "", x.track, x.onBeforeTier ? "스위치가 먼저 켜짐" : ""].filter(Boolean).map(esc).join(" · ");
+      return `<li><details data-key="${esc(key)}"${S.opened.get(key) ? " open" : ""}>
+        <summary class="row"><span class="row-main"><b>${esc(x.title)}</b><small>${small}${small && gist ? " · " : ""}${gist ? `<span class="gist">${esc(gist)}</span>` : ""}</small></span>
+          ${view !== "ask" || x.tier === "later" ? `<span class="row-side inline">${pill}</span>` : ""}</summary>${body(x)}</details></li>`;
+    };
+    // 정할 것은 Claude 제안별로(제안 없음은 맨 끝), 나머지 칸은 한 묶음.
+    const ORDER = [...Object.keys(d.tiers ?? {}), ""];
+    const groups = view === "ask"
+      ? ORDER.map((k) => [k, d.items.filter((x) => (x.ask ?? "") === k)]).filter(([, xs]) => xs.length)
+      : [["*", d.items]];
+    const title = (k, n) => k === "*" ? "" : `<h2 class="section">${k ? `Claude 제안 ${esc(d.tiers[k] ?? k)}` : "제안 없음"}<span class="count">${n}</span></h2>`;
+    const copyBtn = view === "ask" && d.items.length > 1 ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-tier-copy">${icon(P.copy)}논의용으로 복사 (${d.items.length}개)</button></div>` : "";
+    return top + (view === "ask" ? bulkTierLine(d.items, "tiers") : "") + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
   }
 
   // ---- 길·다 왔는지·단추 ----
@@ -274,22 +458,42 @@ export function loopViews(A) {
 
   const actions = {
     "loop-ship-cancel": ({ v }) => confirmBox(`${v} 자동 안내를 멈출까요?`, "멈추면 이 판은 스스로 저장되지 않아요. 나중에 흐름 › '나간 판 저장'으로 직접 저장해요.", "멈추기", async () => {
-      if (await act(() => api(`/loop/ship/${v}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/cancel`, "POST", {}), "멈췄어요")) reload("loopState");
     }),
     // [LOOP-32] Play Console에서 '게시됨'을 본 사람이 눌러요: 그때부터 1시간 보류.
     "loop-ship-live": ({ v }) => confirmBox(`${v}이 Play에 게시된 걸 확인했나요?`, "Play Console › 게시 개요에서 '검토 중'이 아니라 게시됨인지 보고 눌러요. 누르면 1시간 뒤 묶인 문의 안내와 업데이트 소식이 나가요(그 사이 멈출 수 있어요).", "게시됨 확인", async () => {
-      if (await act(() => api(`/loop/ship/${v}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/live`, "POST", {}), "1시간 보류를 시작했어요")) reload("loopState");
+    }, "primary"),
+    // 2.0.0 [RVQ-34] 검토 U22-02: 실패한 안내와 못 올린 공지를 다시.
+    "loop-ship-retry": ({ v }) => confirmBox(`${v} 안내를 다시 보낼까요?`, "실패한 문의 안내를 다시 보내고, 못 올린 업데이트 소식 공지가 있으면 다시 올려요. 이미 간 안내는 다시 가지 않아요.", "다시 보내기", async () => {
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/retry`, "POST", {}), (r) => `안내 ${r.outbox?.sent ?? 0}/${r.outbox?.total ?? 0}건${r.notice ? " · 공지 올림" : ""}`)) reload("loopState");
     }, "primary"),
     "loop-ship-now": ({ v }) => confirmBox(`${v} 안내를 지금 보낼까요?`, "나간 판으로 저장하고 묶인 문의에 업데이트 안내를, 앱에 업데이트 소식 공지를 올려요.", "지금 보내기", async () => {
-      if (await act(() => api(`/loop/ship/${v}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
+      if (await act(() => api(`/loop/ship/${encodeURIComponent(v)}/now`, "POST", {}), (r) => `${r.version} 저장 · 문의 ${r.answered ?? 0}건 안내`)) reload("loopState");
     }, "primary"),
     "loop-check": async () => {
+      const was = Object.fromEntries((S.data.loopCheck?.lines ?? []).map((x) => [x.key, x.state]));
       const r = await act(() => api("/loop/check?play=1"));
       if (!r) return;
       // 다시 읽지 않고 그 결과 그대로 그려요(다시 읽으면 Play를 읽지 않은 점검으로 덮여요).
       S.data.loopCheck = r;
-      toast(r.state === "ok" ? "모두 됐어요" : `확인할 것 ${r.lines.filter((x) => x.state !== "ok").length}개`);
+      const n = r.lines.filter((x) => was[x.key] && was[x.key] !== x.state).length;
+      S.loopChecked = { at: r.at, was, n };
+      // 다시 그리면 화면은 지금 펼침을 지켜요: 그 줄을 먼저 펴 두어야 결과가 보여요.
+      const fold = typeof document !== "undefined" ? document.getElementById("loop-check") : null;
+      if (fold) fold.open = true;
+      S.opened.set("loop-check", true);
+      toast(`다시 봤어요 · ${r.state === "ok" ? "모두 됨" : `확인할 것 ${r.lines.filter((x) => x.state !== "ok").length}개`}${n ? ` · 바뀐 줄 ${n}개` : " · 바뀐 것 없음"}`);
       render({ keepScroll: true });
+    },
+    // 2.0.0 [RVA-38] 맨 위 '다음 한 걸음'이 가리키는 접힌 줄을 다시 그리지 않고 그 자리에서 펴요.
+    "loop-open": ({ key }) => {
+      const el = document.getElementById(String(key));
+      if (!el) return;
+      el.open = true;
+      S.opened.set(String(key), true);
+      el.scrollIntoView?.({ block: "start", behavior: matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      el.querySelector("summary")?.focus({ preventScroll: true });
     },
     "loop-play": async () => {
       const r = await act(() => api("/loop/play", "POST", {}));
@@ -301,7 +505,7 @@ export function loopViews(A) {
     "loop-sync-key": async () => {
       const r = await act(() => api("/keys", "POST", { scope: "sync" }));
       if (!r) return;
-      openDialog(`<div class="key-once"><h2>동기화 열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> GitHub 저장소 bamnat-code › Settings › Secrets and variables › Actions에
+      openDialog(`<div class="key-once" data-secret="key"><h2>동기화 열쇠를 만들었어요</h2><p><b>이 화면을 닫으면 다시 볼 수 없어요.</b> GitHub 저장소 bamnat-code › Settings › Secrets and variables › Actions에
         이름 BAMNAT_SYNC_KEY로 넣어요. 이 열쇠는 개발 상태 보내기 한 가지만 할 수 있어요.</p>
         <label for="key-once">열쇠</label><input id="key-once" readonly value="${esc(r.key)}" class="mono"><p class="meta">${esc(r.expiresAt.slice(0, 10))}까지 써요.</p>
         <div class="actions"><button class="btn" type="button" data-act="key-copy">복사</button><button class="btn primary" type="button" data-act="close">넣었어요</button></div></div>`);
@@ -314,6 +518,30 @@ export function loopViews(A) {
         <p class="hint">${tier === "later" ? "그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있지만, 무료로 연 것을 다시 잠그지는 않아요."}</p>
         <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    // 2.0.0 [RVA-73] 제안이 있는 대기 줄을 제안대로 한 번에: 제목 목록(줄마다 빼기)과 확인 한 번(최고 관리자만, 서버도 세션을 봐요).
+    "loop-tier-all": ({ src }) => {
+      const xs = askable(src === "decide" ? S.data.loopDecide?.tiers : S.data.loopTiers?.items);
+      if (!xs.length) return;
+      const groups = [];
+      for (const x of xs) {
+        const g = groups.find((b) => b.key === x.ask);
+        if (g) g.items.push(x);
+        else groups.push({ key: x.ask, name: x.askName ?? x.ask, items: [x] });
+      }
+      openDialog(`<form data-form="loop-tier-all"><h2>제안대로 ${xs.length}건을 정할까요?</h2>
+        <p class="hint">빼고 싶은 줄은 체크를 풀어요. 무료로 정한 기능은 나중에 잠그지 않아요.</p>
+        <div class="bulk-groups">${groups.map((g) => `<fieldset><legend>${esc(g.name)} ${g.items.length}</legend>${g.items.map((x) =>
+          `<label class="chk"><input type="checkbox" name="ids" value="${esc(x.id)}" checked><span>${esc(x.title)}</span></label>`).join("")}</fieldset>`).join("")}</div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">제안대로 정하기</button></div></form>`);
+    },
+    // 2.0.0 [RVA-58] 요금은 사용자와 논의한 뒤 정해요: 정할 새 기능과 Claude 제안·까닭을 한 번에 글로 복사해요.
+    "loop-tier-copy": () => {
+      const d = S.data.loopTiers;
+      if (!d) return;
+      const text = [`요금 정할 새 기능 ${d.items.length}개 (Claude 제안과 까닭)`, ...d.items.map((x, i) =>
+        `${i + 1}. ${x.title}${x.track ? ` [${x.track}]` : ""}\n   제안: ${x.askName ?? "없음"}${x.why ? ` — ${x.why}` : ""}`)].join("\n");
+      copy(text, `${d.items.length}개를 복사했어요`);
     },
     "loop-tier-view": ({ key }) => {
       S.tierView = key;
@@ -347,22 +575,64 @@ export function loopViews(A) {
   const forms = {
     "loop-train": async (form) => {
       const f = new FormData(form);
-      if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")) }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
+      const outside = String(f.get("outside") ?? "").split(/[,\s]+/).map((v) => v.trim()).filter(Boolean);
+      if (await act(() => api("/loop/train", "POST", { start: f.get("start"), days: Number(f.get("days")), outside }), (r) => `다음 출발 ${r.next}`)) reload("loopState");
     },
+    /**
+     * 2.0.0 [RVA-05] 검토 ADM-06·U24-10: 빈 칸은 바꾸지 않아요(전에는 0이 됐어요). 바뀐 것만 '앞 → 뒤 · 걸리는 폰'으로 한 번 보여 주고 묻고,
+     * 지금 나간 번호보다 크면 모든 폰이 강제 업데이트를 보니 빨간 창으로 한 번 더 분명히 물어요.
+     */
     "loop-switches": async (form) => {
-      const f = new FormData(form);
-      const body = { urgentMin: Number(f.get("urgentMin") || 0), flexibleMin: Number(f.get("flexibleMin") || 0) };
-      if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState");
+      const d = S.data.loopState;
+      const sw = d?.switches ?? {};
+      const body = {};
+      for (const k of ["urgentMin", "flexibleMin"]) {
+        const raw = String(form.elements[k].value ?? "").trim();
+        if (raw === "") continue;
+        if (!/^\d{1,6}$/.test(raw)) return A.fieldError(form.elements[k], "0 이상 숫자만 적어 주세요");
+        if (Number(raw) !== Number(sw[k] ?? 0)) body[k] = Number(raw);
+      }
+      if (!Object.keys(body).length) return toast("바뀐 값이 없어요");
+      const live = d?.live?.code;
+      const over = live ? Object.entries(body).filter(([, v]) => v > live) : [];
+      const name = { urgentMin: "긴급(바로 업데이트)", flexibleMin: "정기(한 번 권함)" };
+      A.danger({ title: over.length ? "지금 나간 번호보다 큰 기준이에요" : "인앱 업데이트 기준을 바꿀까요?",
+        text: over.length ? `지금 나간 판 번호는 ${L.eyo(live)}. 이대로면 모든 폰이 ${over.some(([k]) => k === "urgentMin") ? "앱을 쓰기 전에 업데이트 화면을" : "업데이트 창을"} 보고, 아직 받을 판이 없을 수 있어요.`
+          : "앱이 하루 안에 이 기준을 읽어요.",
+        rows: Object.entries(body).map(([k, v]) => [name[k], `${sw[k] ?? 0} → ${v} · ${reachText(d, v)}`]),
+        label: over.length ? "그래도 저장" : "저장", tone: over.length || body.urgentMin ? "danger" : "primary",
+        run: async () => { if (await act(() => api("/loop/switches", "POST", body), "인앱 업데이트 기준을 저장했어요")) reload("loopState"); } });
+    },
+    /** 2.0.0 [RVQ-34] 검토 SVC-19: 출시 감지에서 뺄 테스터 수(0~500). */
+    "loop-testers": async (form) => {
+      const raw = String(form.elements.testers.value ?? "").trim();
+      if (!/^\d{1,3}$/.test(raw) || Number(raw) > 500) return A.fieldError(form.elements.testers, "0~500 숫자만 적어 주세요");
+      if (Number(raw) === Number(S.data.loopState?.switches?.testers ?? 12)) return toast("바뀐 값이 없어요");
+      if (await act(() => api("/loop/switches", "POST", { testers: Number(raw) }), "테스터 수를 저장했어요")) reload("loopState");
     },
     "loop-rewards": async (form) => {
-      const f = new FormData(form);
-      const body = Object.fromEntries(REWARD_NAMES.map(([k]) => [k, Number(f.get(k) || 0)]));
+      const body = {};
+      for (const [k] of REWARD_NAMES) {
+        const raw = String(form.elements[k].value ?? "").trim();
+        if (raw === "") continue;
+        const max = Number(form.elements[k].max);
+        if (!/^\d{1,3}$/.test(raw) || Number(raw) > max) return A.fieldError(form.elements[k], `0~${max} 사이 숫자로 적어 주세요`);
+        body[k] = Number(raw);
+      }
+      if (!Object.keys(body).length) return toast("바뀐 값이 없어요");
       if (await act(() => api("/loop/rewards", "POST", body), "보상 규칙을 저장했어요")) reload("loopState");
     },
     "loop-basis": async (form) => {
       dialog.close();
       const f = new FormData(form);
       if (await act(() => api(`/loop/basis/${form.dataset.id}`, "POST", { basis: String(f.get("basis") ?? ""), note: String(f.get("note") ?? "") }), "기준을 바꿨어요")) reload("loopTiers", "loopDecide");
+    },
+    "loop-tier-all": async (form) => {
+      const ids = [...form.querySelectorAll('input[name="ids"]:checked')].map((i) => i.value);
+      dialog.close();
+      if (!ids.length) return toast("고른 줄이 없어서 바꾸지 않았어요");
+      const r = await act(() => api("/loop/tiers/apply", "POST", { ids }), (x) => `${x.decided}개를 제안대로 정했어요${x.skipped ? ` · 건너뜀 ${x.skipped}` : ""}`);
+      if (r) reload("loopTiers", "loopDecide");
     },
     "loop-tier": async (form) => {
       dialog.close();
@@ -379,10 +649,20 @@ export function loopViews(A) {
     if (!r) t.checked = !t.checked;
     else reload("loopState");
   };
-  const changes = {
+  // [RVD-04] Not `changes`: plaza gives a function by that name, and this object hid it (판 2개 회사 상세가 빈 화면).
+  const changeHandlers = {
     "loop-switch": (t) => saveBox(t, { [t.name]: t.checked }, t.checked),
     "loop-instant": (t) => saveBox(t, { instant: [...t.form.querySelectorAll('input[name="instant"]:checked')].map((x) => x.value) }, t.checked),
   };
 
-  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changes };
+  // 2.0.0 [RVA-05] 기준 칸에 적는 대로 '걸리는 폰'을 바로 다시 세요(시험처럼 문서가 없는 곳에서는 건너뛰어요).
+  if (typeof document !== "undefined") document.addEventListener("input", (e) => {
+    const t = e.target;
+    if ((t.id === "ls-urgent" || t.id === "ls-flex") && S.data.loopState) {
+      const help = document.getElementById(`${t.id}-reach`);
+      if (help) help.textContent = t.value.trim() === "" ? "비우면 바꾸지 않아요." : reachText(S.data.loopState, t.value);
+    }
+  });
+
+  return { loopViews: views, loopLoads: loads, loopHas: has, actions, forms, changeHandlers };
 }

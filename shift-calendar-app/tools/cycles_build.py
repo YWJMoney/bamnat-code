@@ -16,13 +16,24 @@ Each row keeps its columns as they are and gains what the app needs to put it on
   roster      a monthly roster (병원 D·E·N 근무표), so no order at all
 
 Usage (from shift-calendar-app/):
-  python3 tools/cycles_build.py           # writes ../remote/v1/cycles.json and prints the counts
-  python3 tools/cycles_build.py --check   # exit 1 when the file on disk differs from a fresh build
+  python3 tools/cycles_build.py            # writes ../remote/v1/cycles.json and prints the counts (and gives new rows their 번호)
+  python3 tools/cycles_build.py --check    # exit 1 when the file on disk differs from a fresh build (CI runs it)
+  python3 tools/cycles_build.py --strict   # also exit 1 when a time in the 시간 column was left out (the list is printed always)
 
-The file is a remote data file (RemoteFiles envelope), so after changing it bump nothing by hand: the version is the
-build date + 01. Sign it with tools/remote_sign.py like the others before it goes to GitHub Pages.
+2.0.0 [RVR-08] (검토 TEST-16·U60-07):
+- 번호(id) is the CSV's own column 번호, not the row's place: a row put in the middle keeps every other company's id (the app
+  keeps the id of the cycle it was set up from). A row without one gets the next free number, written back to the CSV.
+- The version moves by itself: when the cycles differ from the file on disk it becomes today's date + 01 (or one more than
+  the old one), and issued is today. Nothing to bump by hand.
+- Refused: a 출처 that is not a link (a 밤낮 user's report, 신뢰도 '밤낮 제보', has none), a 조 기준일 that is not a real day,
+  a 번호 twice. Times the build could not place are listed (c014 gives five ranges for three kinds of work).
+
+The file is a remote data file (RemoteFiles envelope). Sign it with tools/remote_sign.py like the others before it goes
+to GitHub Pages.
 """
 import csv
+import datetime
+import io
 import json
 import pathlib
 import re
@@ -31,9 +42,8 @@ import sys
 APP = pathlib.Path(__file__).resolve().parent.parent
 SRC = APP / "tools" / "data" / "company-cycles.csv"
 OUT = APP.parent / "remote" / "v1" / "cycles.json"
-VERSION = 2026110602
-ISSUED = "2026-11-06"
 MIN_APP = 37
+ID = re.compile(r"^c\d{3,}$")
 
 FORMS = [
     ("주간연속2교대", "주간연속2교대"),
@@ -147,7 +157,7 @@ def order_of(row, key):
         return "NNNNNOODDDDDOOEEEEEOO", usual, False, False
     if o.startswith("1조·2조주단위교대"):
         return "DDDDDOOEEEEEOO", usual, False, False
-    if o.startswith("주간1주·야간1주") or o.startswith("주간1주·야간1주"):
+    if o.startswith("주간1주·야간1주"):
         return "DDDDDOONNNNNOO", usual, False, False
     if o.startswith("주간2주·야간2주"):
         return "DDDDDOODDDDDOONNNNNOONNNNNOO", usual, False, False
@@ -178,12 +188,16 @@ def hhmm(h, m):
     return "%02d:%02d" % (h, int(m or 0))
 
 
-def ranges(text):
+def ranges(text, dropped=None):
     out = []
     for part in re.split(r"/", text):
         part = part.strip()
         m = RANGE.search(part)
         if not m:
+            # [RVR-08] A part that looks like hours from-to ('9시~18시') but is not read as a range was dropped without a word.
+            # Lengths ('12시간') and a change time ('06:00 교대') are read below as the usual times.
+            if dropped is not None and re.search(r"\d\s*(?:시|:\d\d)?\s*[-~]\s*\d", part):
+                dropped.append(part)
             continue
         prefix = part[: m.start()].strip()
         out.append((prefix, hhmm(m.group(2), m.group(3)), hhmm(m.group(4), m.group(5))))
@@ -217,9 +231,9 @@ def code_for(prefix, start, end, n, used):
     return None if c in used else c
 
 
-def shifts_of(row, codes):
+def shifts_of(row, codes, dropped=None):
     t = row["time"].strip()
-    found = ranges(t)
+    found = ranges(t, dropped)
     work = sorted(set(c for c in codes if c in "DENX"))
     out = {}
     if found:
@@ -230,6 +244,8 @@ def shifts_of(row, codes):
             c = code_for(prefix, start, end, len(found), out)
             if c is not None:
                 out[c] = (start, end, False)
+            elif dropped is not None:
+                dropped.append(("%s %s-%s" % (prefix, start, end)).strip())
     usual = {
         "D": ("07:00", "19:00") if "N" in work and "E" not in work else ("06:00", "14:00"),
         "E": ("14:00", "22:00"),
@@ -276,7 +292,7 @@ def trust_of(raw):
     return kinds
 
 
-HEAD = ["표시 이름", "회사·기관", "업종", "사업장·직무", "근무형태", "순서(한 주기)", "시간", "시점", "신뢰도", "출처", "조 이름", "조 기준일"]
+HEAD = ["표시 이름", "회사·기관", "업종", "사업장·직무", "근무형태", "순서(한 주기)", "시간", "시점", "신뢰도", "출처", "조 이름", "조 기준일", "번호"]
 
 
 def teams_of(names, anchors, i):
@@ -292,30 +308,66 @@ def teams_of(names, anchors, i):
         m = re.match(r"^(\S+?)=(\d{4}-\d{2}-\d{2})$", part)
         if not m or m.group(1) not in teams:
             raise SystemExit("row %d: 조 기준일 '%s' is not '조이름=YYYY-MM-DD' of a listed team" % (i, part))
+        try:
+            datetime.date.fromisoformat(m.group(2))
+        except ValueError:
+            raise SystemExit("row %d: 조 기준일 '%s' is not a real day" % (i, part))
         at[m.group(1)] = m.group(2)
     return [dict(name=t, **({"anchor": at[t]} if t in at else {})) for t in teams]
 
 
-def build():
-    with open(SRC, encoding="utf-8") as f:
+def read_rows():
+    """The CSV's rows with every column, and whether some row had no 번호 yet (then it has one now)."""
+    with open(SRC, encoding="utf-8", newline="") as f:
         rows = list(csv.reader(f))
-    head, body = rows[0], rows[1:]
-    assert head == HEAD, head
+    head, body = rows[0], [r + [""] * (len(HEAD) - len(r)) for r in rows[1:]]
+    # A CSV from before 2.0.0 has no 번호 column: its rows get the ids they had by place (c001 …), once.
+    assert head in (HEAD, HEAD[:-1]), head
+    seen = set()
+    for i, r in enumerate(body, 1):
+        n = r[12].strip()
+        if n and not ID.match(n):
+            raise SystemExit("row %d: 번호 '%s' is not c and three digits or more" % (i, n))
+        if n in seen:
+            raise SystemExit("row %d: 번호 %s twice" % (i, n))
+        if n:
+            seen.add(n)
+    nums = [int(n[1:]) for n in seen]
+    nxt, given = max(nums or [0]) + 1, False
+    for r in body:
+        if not r[12].strip():
+            r[12], nxt, given = "c%03d" % nxt, nxt + 1, True
+    return body, given or head != HEAD
+
+
+def write_rows(body):
+    buf = io.StringIO()
+    csv.writer(buf, lineterminator="\n").writerows([HEAD] + body)
+    SRC.write_text(buf.getvalue(), encoding="utf-8")
+
+
+def build(body=None, dropped=None, today=None):
+    body = body if body is not None else read_rows()[0]
     cycles = []
     for i, r in enumerate(body, 1):
-        r = r + [""] * (len(HEAD) - len(r))
         row = dict(display=r[0], company=r[1], industry=r[2], site=r[3], form=r[4], order=r[5], time=r[6], asOf=r[7],
                    trust=r[8], source=r[9])
         teams = teams_of(r[10], r[11], i)
         if "(업종)" in r[2] or "(업종)" in r[0]:
             raise SystemExit("row %d: 관리자 앱이 복사한 줄의 (업종)을 채워 주세요" % i)
+        # [RVR-08] 공개 자료만(저장소 CLAUDE.md 5항): a link to the source, except a 밤낮 user's report checked in the admin app.
+        if not re.match(r"^https?://\S", row["source"].strip()) and "밤낮 제보" not in row["trust"]:
+            raise SystemExit("row %d (%s): 출처 칸에 원문 링크가 있어야 해요" % (i, r[12]))
         row["formKey"] = form_key(row["form"])
         codes, state, weekly, roster = order_of(row, row["formKey"])
-        shifts = shifts_of(row, codes)
+        lost = []
+        shifts = shifts_of(row, codes, lost)
+        if lost and dropped is not None:
+            dropped.append((r[12], row["display"], row["time"], lost))
         if codes and any(c in "DENX" and c not in [s["code"] for s in shifts] for c in codes):
             raise SystemExit("row %d: codes %s without a shift" % (i, codes))
         cycles.append({
-            "id": "c%03d" % i,
+            "id": r[12],
             **row,
             "trustKinds": trust_of(row["trust"]),
             "linkCheck": "링크 대응 확인 필요" in row["trust"],
@@ -327,30 +379,69 @@ def build():
             "shifts": shifts,
             **({"teams": teams} if teams else {}),
         })
+    data = {"forms": [{"key": k, "name": n} for k, n in FORMS], "cycles": cycles}
+    version, issued = version_for(data, today or datetime.date.today())
     return {
         "format": 1,
         "kind": "cycles",
-        "version": VERSION,
-        "issued": ISSUED,
+        "version": version,
+        "issued": issued,
         "minApp": MIN_APP,
         "source": "공개 자료(기사·채용 공고·노무 사이트·정부 자료·커뮤니티)로 모은 회사별 교대 주기, 2026-10-25 · 2026-11-05 · 2026-11-06 더함. 사실(근무형태·순서·시간)과 출처 링크만",
-        "data": {"forms": [{"key": k, "name": n} for k, n in FORMS], "cycles": cycles},
+        "data": data,
     }
+
+
+def version_for(data, today):
+    """[RVR-08] The file on disk's version while the cycles are the same; else today + 01 (one more when that is not newer)."""
+    try:
+        old = json.loads(OUT.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        old = None
+    if old and old.get("data") == data:
+        return old["version"], old["issued"]
+    v = int(today.strftime("%Y%m%d")) * 100 + 1
+    if old and int(old.get("version", 0)) >= v:
+        v = int(old["version"]) + 1
+    return v, today.isoformat()
 
 
 def text(doc):
     return json.dumps(doc, ensure_ascii=False, indent=1) + "\n"
 
 
+def say_dropped(dropped):
+    """[RVR-08] (U60-07) The times left out, one line each, so a row that lost a shift is seen."""
+    if not dropped:
+        return
+    print("시간 칸에서 쓰지 못한 것 %d줄:" % len(dropped), file=sys.stderr)
+    for n, name, time, lost in dropped:
+        print("  %s %s: %s  (시간 '%s')" % (n, name, ", ".join(lost), time), file=sys.stderr)
+
+
 def main():
-    doc = build()
-    out = text(doc)
+    body, given = read_rows()
+    dropped = []
     if "--check" in sys.argv:
+        if given:
+            print("company-cycles.csv: 번호가 없는 줄이 있어요. cycles_build.py를 한 번 돌려 번호를 적어 주세요", file=sys.stderr)
+            sys.exit(1)
+        out = text(build(body, dropped))
+        say_dropped(dropped)
         if OUT.read_text(encoding="utf-8") != out:
             print("cycles.json differs from a fresh build", file=sys.stderr)
             sys.exit(1)
+        if dropped and "--strict" in sys.argv:
+            sys.exit(1)
         return
+    doc = build(body, dropped)
+    out = text(doc)
+    if given:
+        write_rows(body)
     OUT.write_text(out, encoding="utf-8")
+    say_dropped(dropped)
+    if dropped and "--strict" in sys.argv:
+        sys.exit(1)
     cs = doc["data"]["cycles"]
     from collections import Counter
     st = Counter(c["orderState"] for c in cs)

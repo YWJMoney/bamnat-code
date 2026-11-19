@@ -27,6 +27,18 @@ object StatsRange {
     const val MAX_DAYS = 366L
 
     /**
+     * 2.0.0 [RVJ-105] 검토 U05b-12: the line said when a 직접 pick runs past [MAX_DAYS] and [of] cut it, so a year and a day is never
+     * counted as a year without a word. Null when [custom] is empty or fits.
+     */
+    fun cutLine(custom: Range?): String? {
+        val c = custom ?: return null
+        val (a, b) = if (c.to.isBefore(c.from)) c.to to c.from else c.from to c.to
+        if (ChronoUnit.DAYS.between(a, b) + 1 <= MAX_DAYS) return null
+        val end = a.plusDays(MAX_DAYS - 1)
+        return "1년까지만 보여 드려요 · ${a.year}년 ${a.monthValue}월 ${a.dayOfMonth}일부터 ${end.year}년 ${end.monthValue}월 ${end.dayOfMonth}일까지 셌어요"
+    }
+
+    /**
      * The range of [mode] for [month]: [PAY] needs a [period] that does not end on 말일, [WEEK] is the week ([weekStart]
      * first) that holds [today] when [month] is this month, else the month's last week, moved by [weekShift] weeks;
      * [CUSTOM] is [custom] cut to [MAX_DAYS]. Null falls back to 1일~말일.

@@ -8,6 +8,7 @@ import { Window } from "happy-dom";
 import worker from "../../src/index.js";
 import { adminFile } from "../../src/admin-app.js";
 import { server, signIn, report, device, from, ORIGIN, PASSWORD } from "../helpers.mjs";
+import { adminLib } from "../../src/admin-lib.js";
 
 const APP_JS = await adminFile("/admin/app.js").text();
 const HTML = await adminFile("/admin/").text();
@@ -15,6 +16,24 @@ const BODY = HTML.slice(HTML.indexOf("<body>") + 6, HTML.indexOf("</body>"));
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
 
 const BAD = `<img src=x onerror="globalThis.__xss=1"><script>globalThis.__xss=2</script>"'><svg onload=globalThis.__xss=3><a href="javascript:globalThis.__xss=4">링크</a>`;
+
+/**
+ * 2.0.0 [RVA-57] 화면 묶음 파일(v/<묶음>.<해시>.js): happy-dom은 파일을 받지 않으니, 앱이 붙이는 <script src>를 그 창의 fetch(워커)로 받아
+ * 실행하고 load를 알려요. 진짜 브라우저처럼 그 화면을 열 때 받아요.
+ */
+function loadScripts(window) {
+  const head = window.document.head;
+  const append = head.appendChild.bind(head);
+  head.appendChild = (node) => {
+    if (node.tagName !== "SCRIPT" || !node.src) return append(node);
+    window.fetch(node.src).then(async (r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      window.eval(await r.text());
+      node.onload?.(new window.Event("load"));
+    }).catch(() => node.onerror?.(new window.Event("error")));
+    return node;
+  };
+}
 
 const open = [];
 test.after(async () => {
@@ -42,6 +61,7 @@ async function tab(env) {
   };
   window.structuredClone ??= structuredClone;
   window.document.body.innerHTML = BODY;
+  loadScripts(window);
   window.eval(APP_JS);
   const settle = async (n = 12) => { for (let i = 0; i < n; i++) await new Promise((r) => setTimeout(r, 5)); };
   const idle = async () => {
@@ -93,16 +113,26 @@ test("[SEC-09] L3: words phones send show as words on every screen, never as mar
   // Then every word the operator reads becomes the payload, as if a phone had slipped it past the checks.
   const sets = [["companies", "name"], ["inquiry_messages", "text"], ["posts", "body"], ["recipes", "title"], ["recipes", "summary"], ["recipes", "note"],
     ["recipe_requests", "body"], ["recipe_makers", "bio"], ["recipe_sets", "title"], ["recipe_sets", "summary"], ["dev_items", "title"], ["dev_items", "body"],
-    ["inquiry_notes", "text"], ["nicks", "nick"]];
-  for (const [table, col] of sets) DB.db.prepare(`UPDATE ${table} SET ${col} = ?`).run(BAD);
+    ["inquiry_notes", "text"], ["nicks", "nick"],
+    // 2.0.0 [RVA-11] 검토 ADM-09: 1.38·1.39에 생긴 화면이 읽는 글도(마을 돌봄, 스튜디오 요구, 운영 장부 메모, 개발 기록).
+    ["care_notes", "note"], ["studio_needs", "title"], ["studio_needs", "note"], ["dev_items", "summary"]];
+  for (const [table, col] of sets) {
+    try {
+      DB.db.prepare(`UPDATE ${table} SET ${col} = ?`).run(BAD);
+    } catch (e) {
+      // 그 칸이 없는 판의 표는 건너뛰어요(이름이 바뀌면 이 시험이 알려 주도록 아래에서 하나는 꼭 확인해요).
+      if (!/no such (column|table)/.test(String(e?.message))) throw e;
+    }
+  }
   const { deviceHash, deviceId } = await import("../../src/index.js");
   for (const n of [1, 3, 4]) DB.db.prepare("INSERT OR REPLACE INTO nicks (device, nick, norm, at) VALUES (?, ?, ?, ?)").run(await deviceHash(deviceId(device(n))), BAD, `bad${n}`, AFTER);
   const inquiry = (await call("GET", "/api/admin/inquiries", undefined, admin)).data.items?.[0]?.id;
 
   const u = await tab(env);
-  const screens = ["home", "desk", "inquiries", "growth", "dev", "templates", "sla", "review", "versions", "community", "recipes", "companies", "shares",
-    "adopt", "flags", "types", "notices", "chores", "gates", "metrics", "effects", "audit", "admins", "rewards", "server", "account", "more",
-    "community?show=all", `companies/${a.data.company.id}`, ...(inquiry ? [`inquiries/${inquiry}`] : [])];
+  // 2.0.0 [RVA-11] 검토 ADM-09: 손으로 적은 목록 대신 관리자 앱의 모든 화면(L.TABS)을 돌아요. 새 화면이 생기면 저절로 들어와요.
+  const screens = [...Object.keys(adminLib().TABS), "more",
+    "community?show=all", "community?show=limits", "recipes?tab=images", `companies/${a.data.company.id}`, ...(inquiry ? [`inquiries/${inquiry}`] : [])];
+  assert.ok(screens.length >= 40, `all screens (${screens.length})`);
   let seen = 0;
   for (const sc of screens) {
     await u.go(`#/${sc}`);
@@ -116,6 +146,14 @@ test("[SEC-09] L3: words phones send show as words on every screen, never as mar
       assert.deepEqual(injected(u.document), [], `#/${sc} › first line drew the payload as markup`);
     }
   }
+  // 2.0.0 [RVA-11] 검토 ADM-09 '배치': Claude가 준 결과 덩어리(넘김 묶음 이름·답 글·기록)도 붙여 넣은 미리 보기에서 글로만 보여요.
+  await u.go("#/desk");
+  const paste = u.$("#sort-result");
+  assert.ok(paste, "the result paste box on 운영 장부");
+  paste.value = `묶음 h${BAD}\nq0123456789abcdef 답 ${BAD}\nd0123456789abcdef 기록 ${BAD}`;
+  u.$('[data-act="sort-result-check"]').click();
+  await u.settle(40);
+  assert.deepEqual(injected(u.document), [], "the pasted result drew the payload as markup");
   assert.equal(globalThis.__xss, undefined);
   assert.equal(u.window.__xss, undefined);
   assert.ok(seen >= 3, `the payload is shown as words on several screens (${seen})`);

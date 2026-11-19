@@ -45,7 +45,9 @@ import com.bamnat.core.time.Today
 @Composable
 internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: ScheduleSnapshot, month: YearMonth, profile: PayProfile?, gate: Gate,
                          /** 1.39 [PAYX-60] Each month over its 급여 기간 (10/21~11/20 for 11월), as its pay beside it is. */
-                         period: com.bamnat.core.pay.PayPeriod? = null) {
+                         period: com.bamnat.core.pay.PayPeriod? = null,
+                         /** 2.0.0 [RVH-93] 검토 PC-210: who reads it; 야간 and 급여 are said only to those they reach. */
+                         style: com.bamnat.core.work.WorkStyle? = null) {
     // [UX-10] 1.25 Z (U7): the last figures from the first frame, worked out again only when the days or pay changed.
     val sides by com.bamnat.app.ui.rememberLast("compare:${vm.calendarId}:$month:${period?.endDay}", snap, month, profile, period) {
         runCatching {
@@ -59,7 +61,13 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
     val (now, last, lastYear) = s
     ProLock(Feature.WORK_COMPARE, gate) {
         SectionCard(title = "${month.monthValue}월 비교", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
-            CompareTable(now, last, "지난달 ${last.month.monthValue}월")
+            // 2.0.0 [RVH-94] 검토 PC-212: a last month with nothing in it (before the app was in use) is said, not compared as 0.
+            if (last.empty) {
+                Text("지난달 ${last.month.monthValue}월은 달력에 근무가 없어 비교할 게 없어요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                CompareTable(now, last, "지난달 ${last.month.monthValue}월")
+            }
             HorizontalDivider(Modifier.padding(vertical = 10.dp))
             if (lastYear.empty) {
                 Text("작년 ${lastYear.month.year % 100}년 ${lastYear.month.monthValue}월은 달력에 근무가 없어 비교할 게 없어요.",
@@ -67,7 +75,23 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
             } else {
                 CompareTable(now, lastYear, "작년 ${lastYear.month.monthValue}월")
             }
-            Text(if (profile == null) "급여를 설정하면 야간과 급여도 비교해요." else "급여는 세금 떼기 전 예상이에요.",
+            // 2.0.0 [RVJ-105] 검토 U05b-10: this month is counted by the roster to its last day, extra work only to today, so the
+            // middle of a month can read '−' against the last one; said once, only for the month that is not over.
+            if (month == java.time.YearMonth.from(com.bamnat.core.time.Today.date())) {
+                Text("이번 달은 근무표대로 말일까지 센 예상이고, 추가 근무는 오늘까지만 들어가요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
+            // 2.0.0 [RVH-93] 검토 PC-210 (일근에게 '야간과 급여도'): 야간 for 교대 and 알바 (야간수당), only 급여 for 일근, nothing for the
+            // kinds whose money is 돈 (현장·가게·투자 have no 급여 to set here).
+            val pays = style?.usesPayEngine != false
+            val nights = style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.HOURLY
+            val note = when {
+                profile != null -> "급여는 세금 떼기 전 예상이에요."
+                !pays -> null
+                nights -> "급여를 설정하면 야간과 급여도 비교해요."
+                else -> "급여를 설정하면 급여도 비교해요."
+            }
+            if (note != null) Text(note,
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
     }
@@ -105,7 +129,9 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     /** PC 02d6dabf: the pay screen's 도구, where the report is made (this card sits on 근무·급여 itself). */
     onOpenReport: (() -> Unit)? = null,
     /** 1.39 [PAYX-60] Each month's hours over its 급여 기간, like its pay. */
-    period: com.bamnat.core.pay.PayPeriod? = null) {
+    period: com.bamnat.core.pay.PayPeriod? = null,
+    /** 2.0.0 [RVJ-23] 검토 T05b-07·U05b-11: the screen's one week limit (52, 64 under 탄력제, the user's own under 5인 미만), not a fixed 52. */
+    weekLimit: Int = 52) {
     val year by com.bamnat.app.ui.rememberLast("year:${vm.calendarId}:${month.year}:${period?.endDay}", snap, month.year, profile, period) {
         runCatching {
             withContext(Dispatchers.Default) {
@@ -123,7 +149,7 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
     ProLock(Feature.WORK_COMPARE, gate) {
         // PC 02d6dabf: named as the tab it sits on (알바 '출근·시급').
         SectionCard(title = "${y.year}년 ${settingsNow.workStyle.words().tab}", trailing = { com.bamnat.app.ui.components.ProBadge(locked = gate.locked(Feature.WORK_COMPARE)) }) {
-            yearBars(y, now)?.let { (bars, line) -> com.bamnat.app.ui.components.BarChart(bars, line, height = 96.dp) }
+            yearBars(y, now, weekLimit)?.let { (bars, line) -> com.bamnat.app.ui.components.BarChart(bars, line, height = 96.dp) }
             y.months.forEach { s ->
                 val ahead = s.month.isAfter(now)
                 val color = if (ahead) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
@@ -152,15 +178,16 @@ internal fun YearWorkCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: S
 }
 
 /**
- * 1.39 [FLOW-17] 그래프 규칙 한 벌 on 근무 통계: the year's months as one chart (one colour, the busiest month in 주의 only when it
- * goes past 52 hours a week on average, the months so far averaged on one dashed line, a tap says the month). Months still ahead
- * are counted from the roster and say "예상". Null when the year has nothing yet.
+ * 1.39 [FLOW-17] 그래프 규칙 한 벌 on 근무 통계: the year's months as one chart (one colour, a month in 주의 only when it goes past
+ * the week limit on average, the months so far averaged on one dashed line, a tap says the month). Months still ahead are counted
+ * from the roster and say "예상". Null when the year has nothing yet. 2.0.0 [RVJ-23] 검토 T05b-07: [weekLimit] is the screen's
+ * (it was 52 for everyone, so a 탄력제 64시간 workplace's ordinary months stood in 주의).
  */
-internal fun yearBars(y: MonthCompare.Year, now: YearMonth): Pair<List<com.bamnat.app.ui.components.ChartBar>, com.bamnat.app.ui.components.Baseline?>? {
+internal fun yearBars(y: MonthCompare.Year, now: YearMonth, weekLimit: Int = 52): Pair<List<com.bamnat.app.ui.components.ChartBar>, com.bamnat.app.ui.components.Baseline?>? {
     if (y.months.all { it.worked == 0 }) return null
     val bars = y.months.map { s ->
         val weeks = s.month.lengthOfMonth() / 7.0
-        val over = s.worked > 52 * 60 * weeks
+        val over = s.worked > weekLimit * 60 * weeks
         com.bamnat.app.ui.components.ChartBar(
             label = "${s.month.monthValue}월" + if (s.month.isAfter(now)) " 예상" else "",
             value = s.worked / 60.0,

@@ -3,8 +3,12 @@ package com.bamnat.core.pay
 import com.bamnat.core.money.Withholding
 import java.time.LocalDate
 
-/** [HRLY-04] How tax comes off the pay: nothing, 3.3% on 사업소득, or 4대보험 with 근로소득세. */
-enum class TaxMode { NONE, WITHHOLDING_3_3, INSURANCE_4 }
+/**
+ * [HRLY-04] How tax comes off the pay: nothing, 3.3% on 사업소득, or 4대보험 with 근로소득세.
+ * 2.0.0 [RVJ-80] 검토 T04-05 (현장 일당): [DAILY_WORKER] 일용근로 — 일용근로소득 원천징수(하루 15만 원 공제, [com.bamnat.core.money.DailyWorkerTax])와
+ * 고용보험. Kept by name ([PayProfile] codec), so an older app reads it as [NONE].
+ */
+enum class TaxMode { NONE, WITHHOLDING_3_3, INSURANCE_4, DAILY_WORKER }
 
 /** [HRLY-04] Pay before tax, what comes off it line by line, and what reaches the account. */
 data class TakeHomeResult(
@@ -58,7 +62,7 @@ object TakeHome {
         val careRatio = known?.let { WonCut.Ratio.of(it.longTermCareRate!!, it.healthRate!!) } ?: WonCut.Ratio.of(CARE_OF_HEALTH)
         val base = RateTable.pensionBases.filter { !it.from.isAfter(date) }.maxByOrNull { it.from }
         return Shares(
-            (r.pensionRate ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care,
+            (RateTable.pensionRateOn(date) ?: PENSION_RATE * 2) / 2, (r.healthRate ?: HEALTH_RATE * 2) / 2, care,
             base?.min ?: PENSION_BASE_MIN, base?.max ?: PENSION_BASE_MAX, r.unemploymentRate / 2, careRatio,
         )
     }
@@ -78,6 +82,8 @@ object TakeHome {
         off: Set<InsuranceLine> = emptySet(),
         /** 1.39 [PAYX-56] 공제 쪽 돈 (사택관리비·회비), taken off after tax whatever the tax way. */
         afterTax: List<Pair<String, Long>> = emptyList(),
+        /** 2.0.0 [RVJ-80] [TaxMode.DAILY_WORKER]: the 일당, so the month's pay is read as that many days of it (null: as one day). */
+        dayRate: Long? = null,
     ): TakeHomeResult {
         val sh = on?.let(::sharesOn) ?: DEFAULT_SHARES
         val g = gross.coerceAtLeast(0)
@@ -91,9 +97,13 @@ object TakeHome {
                 val pension = if (taxable == 0L || InsuranceLine.PENSION in off) 0L
                     else WonCut.cut10((taxable / 1_000 * 1_000).coerceIn(sh.baseMin, sh.baseMax), sh.pension)
                 // 1.39 [PAYX-59] G4 건강보험 보수월액 하한 28만 원 (국민건강보험법 시행령 제32조): a smaller pay pays on 28만 원.
-                val healthBase = if (taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
-                val uncapped = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                // 2.0.0 [RVJ-04] 검토 PAYC-14: a year whose 고시 하한 (보험료 금액) is in the rates uses that amount instead.
+                val floorShare = healthFloor(on ?: TABLE_DAY)
+                val healthBase = if (floorShare == null && taxable in 1 until HEALTH_BASE_MIN) HEALTH_BASE_MIN else taxable
+                val raw = if (InsuranceLine.HEALTH in off) 0L else WonCut.cut10(healthBase, sh.health)
+                val uncapped = if (floorShare != null && raw in 1 until floorShare) floorShare else raw
                 if (uncapped > 0 && healthBase != taxable) notes += "건강보험은 보수 하한 ${won(HEALTH_BASE_MIN)}으로 계산했어요(국민건강보험법 시행령 제32조)"
+                if (floorShare != null && uncapped != raw) notes += "건강보험은 월 하한 ${won(floorShare)}을 떼요(월별 건강보험료액의 상한과 하한 고시)"
                 // 1.39 [PAYX-61] 발굴 G3-B7: 보수월액보험료 상한 (근로자 몫은 그 절반).
                 val cap = healthCap(on ?: TABLE_DAY)
                 val health = if (cap != null && uncapped > cap) cap.also { notes += "건강보험은 월 상한 ${won(cap)}까지만 떼요(보건복지부고시 제2025-222호)" } else uncapped
@@ -111,9 +121,39 @@ object TakeHome {
                     LOCAL_TAX_LABEL to tax / 100 * 10,
                 ).filter { it.second > 0 }
             }
+            TaxMode.DAILY_WORKER -> daily(g - free, dayRate, sh, off, notes)
         } + afterTax.filter { it.second > 0 }
         return TakeHomeResult(g, deductions, g - deductions.sumOf { it.second }, notes)
     }
+
+    /**
+     * 2.0.0 [RVJ-80] 검토 T04-05·T05b-11 (현장 일당): 일용근로 한 달, 모아 한 번에 받는 것으로.
+     * - 소득세·지방소득세: [com.bamnat.core.money.DailyWorkerTax.paidTogether] (소득세법 제47조 제2항 하루 15만 원 공제, 제129조 제1항 제4호 6%,
+     *   제59조 제3항 세액공제 55%, 제86조 소액부징수, 10원 미만 끝수 버림). 일용근로소득은 분리과세라 연말정산·종합소득세에 넣지 않아요(제14조 제3항 제2호).
+     * - 일한 날: [dayRate](일당)으로 나눈 날 수, 하루 몫은 그 평균. 일당을 모르면 한 날로 봐요(세금을 많게 어림해요, 설정에 일당이 있으면 생기지 않음).
+     * - 고용보험 실업급여 근로자 몫: 일용근로자는 한 달 60시간 미만이어도 들어요(고용보험법 시행령 제3조 제1항 단서, 법제처 법령해석 '고용보험법 시행령
+     *   제3조제1항 단서 관련'). 65세 이후 새로 고용된 사람은 [InsuranceLine.EMPLOYMENT]로 빼요.
+     * - 국민연금·건강보험: 한 곳에서 한 달 넘게 계속 일하면서 그달 8일(또는 60시간) 이상이면 사업장가입자라 떼요(국민연금공단 '일용근로자 사업장가입자
+     *   적용 기준' 2025-07-01 시행 안내, 건강보험은 1개월 미만 일용근로자 적용 제외 — 조문 번호는 확인 필요). 앱은 그 판단에 필요한 '같은 곳에서 한 달
+     *   넘게'를 모르니 떼지 않고 한 줄로 알려요. 명세서에 있으면 4대보험 방식을 고르면 돼요.
+     */
+    private fun daily(taxable: Long, dayRate: Long?, sh: Shares, off: Set<InsuranceLine>, notes: MutableList<String>): List<Pair<String, Long>> {
+        if (taxable <= 0) return emptyList()
+        val days = dayRate?.takeIf { it > 0 }?.let { r -> Math.round(taxable.toDouble() / r).coerceAtLeast(1L) } ?: 1L
+        val each = taxable / days
+        val dailies = List(days.toInt()) { i -> if (i == 0) taxable - each * (days - 1) else each }
+        val tax = com.bamnat.core.money.DailyWorkerTax.paidTogether(dailies)
+        val employment = if (InsuranceLine.EMPLOYMENT in off) 0L else WonCut.cut10(taxable, sh.employment)
+        if (InsuranceLine.EMPLOYMENT in off) notes += "${InsuranceLine.EMPLOYMENT.label}은 떼지 않아요 (${InsuranceLine.EMPLOYMENT.why})"
+        notes += DAILY_NOTE
+        return listOf(DAILY_TAX_LABEL to tax.income, LOCAL_TAX_LABEL to tax.local, "고용보험" to employment).filter { it.second > 0 }
+    }
+
+    /** [RVJ-80] The 일용 소득세 line's name (사장님 명세서 RVJ-72와 같은 말). */
+    const val DAILY_TAX_LABEL = "일용근로 소득세"
+
+    /** [RVJ-80] What the 일용근로 way leaves out, said once. */
+    const val DAILY_NOTE = "한 달에 모아 받는 것으로 셈했어요. 한 곳에서 한 달 넘게, 그달 8일 이상 일하면 국민연금·건강보험도 떼요(명세서에 있으면 4대보험 방식을 골라요)"
 
     /** 1.39 [PAYX-59] G4 건강보험 보수월액 하한 (국민건강보험법 시행령 제32조): 28만 원. */
     const val HEALTH_BASE_MIN = 280_000L
@@ -123,7 +163,20 @@ object TakeHome {
      * 상한과 하한에 관한 고시'(2025-12-24, 2026년 1월분부터): 직장가입자 보수월액보험료 상한 9,183,480원, 근로자·사업주가 반씩이라 4,591,740원
      * (국민건강보험공단 고시 원문 대조 2026-11-07). Before 2026 it is not checked here, so none; the next year's 고시 goes in when it is out.
      */
-    fun healthCap(on: java.time.LocalDate): Long? = if (on.year >= 2026) 9_183_480L / 2 else null
+    fun healthCap(on: java.time.LocalDate): Long? = RateTable.latest(on) { it.healthCapShare }?.first
+        ?: if (on.year >= 2026) HEALTH_CAP_2026 else null
+
+    /**
+     * 2.0.0 [RVJ-04] The built-in 2026 cap ([healthCap]); kept out of the built-in rates row so the bundled `rates.json` stays as signed.
+     * A newer year's 고시 comes as `healthCapShare` in the signed rates file.
+     */
+    const val HEALTH_CAP_2026 = 9_183_480L / 2
+
+    /** 2.0.0 [RVJ-04] 검토 PAYC-14: one side's 고시 하한 보험료 when the rates carry it; null keeps the 28만 원 보수 basis. */
+    fun healthFloor(on: java.time.LocalDate): Long? = RateTable.latest(on) { it.healthMinShare }?.first
+
+    /** 2.0.0 [RVJ-04] 식대 등 비과세 월 한도 for [month]: the rates' value, else [NON_TAXABLE_LIMIT]. */
+    fun freeLimit(month: java.time.YearMonth): Long = RateTable.latest(month.atDay(1)) { it.mealFreeLimit }?.first ?: NON_TAXABLE_LIMIT
 
     /**
      * 1.39 [PAYX-56][PAYX-58][PAYX-59] [estimate] with everything the pay setup knows: its tax way, 가족·자녀, the month's 비과세
@@ -135,12 +188,33 @@ object TakeHome {
         pay: MonthPay? = null,
     ): TakeHomeResult = estimate(
         gross, mode, profile.taxFamily, month.atDay(1), profile.taxChildren, free ?: nonTaxable(profile, month),
-        off = profile.insuranceOff, afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
+        off = profile.insuranceOffOn(month), afterTax = pay?.afterTax?.map { it.label to it.amount } ?: afterTax(profile, month),
+        dayRate = dayRateOf(profile, month),
     ).let { r ->
         // 1.39 [PAYX-63] 발굴 G3-B8 (첫 단계): 소급분 is taxed here with the month it is paid in; the year's 연말정산 settles it.
         val backPay = profile.customRules.any { it.on && !it.deduct && it.oneMonth && it.inPeriod(month) && CustomRule.looksOneMonth(it.name) }
         if (backPay && mode == TaxMode.INSURANCE_4) r.copy(notes = r.notes + BACK_PAY_NOTE) else r
+    }.let { r -> ageNotes(r, profile, month, mode) }
+
+    /**
+     * 2.0.0 [RVJ-81] 결정 5: a line left out by the 생년 says the age as its reason instead of the hand-picked chip's ('국민연금은 떼지
+     * 않아요 (생년 1958년)', short: the 생년 field below says the rule with its '그래도 내요'), and a year the app cannot tell (the year of
+     * turning 60, a 입사 year of 65, no 입사일) says what happens, for the ways that take that line.
+     */
+    private fun ageNotes(r: TakeHomeResult, profile: PayProfile, month: java.time.YearMonth, mode: TaxMode): TakeHomeResult {
+        val age = InsuranceAge.lines(profile, month).filter { it.line !in profile.insuranceKeep }
+        if (age.isEmpty()) return r
+        val takes = { l: InsuranceLine -> mode == TaxMode.INSURANCE_4 || (mode == TaxMode.DAILY_WORKER && l == InsuranceLine.EMPLOYMENT) }
+        val byAge = age.filter { it.off && it.line !in profile.insuranceOff }.associateBy { it.line }
+        val notes = r.notes.map { n ->
+            byAge.values.firstOrNull { n == "${it.line.label}은 떼지 않아요 (${it.line.why})" }?.let { "${it.line.label}은 떼지 않아요 (생년 ${profile.birthYear}년)" } ?: n
+        } + age.filter { !it.off && takes(it.line) && it.line !in profile.insuranceOff }.map { it.note }
+        return r.copy(notes = notes)
     }
+
+    /** 2.0.0 [RVJ-80] The 일당 of a 일당 setup for [month], for [TaxMode.DAILY_WORKER]; null for any other wage. */
+    fun dayRateOf(profile: PayProfile, month: java.time.YearMonth): Long? =
+        if (profile.wageType == WageType.DAILY) profile.base.on(month).value.takeIf { it > 0 } else null
 
     /** 1.39 [PAYX-63] 발굴 G3-B8. */
     const val BACK_PAY_NOTE = "소급분 세금은 이번 달 급여에 붙여 어림했어요. 실제로는 연말정산 때 맞춰져요"
@@ -212,7 +286,7 @@ object TakeHome {
                 .mapNotNull { r -> r.monthlyAmount(month)?.let { a -> r.name to (if (r.capPerMonth > 0) minOf(a, r.capPerMonth) else a) } }
         return paid.filter { it.second > 0 }.groupBy { (name, _) -> freeKind(name) ?: "기타:$name" }.map { (kind, list) ->
             val sum = list.sumOf { it.second }
-            FreePart(kind.removePrefix("기타:"), sum, sum.coerceAtMost(NON_TAXABLE_LIMIT), list.map { it.first })
+            FreePart(kind.removePrefix("기타:"), sum, sum.coerceAtMost(freeLimit(month)), list.map { it.first })
         }
     }
 

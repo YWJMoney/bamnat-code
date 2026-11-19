@@ -231,6 +231,130 @@ class MigrationTest {
         }
     }
 
+    /**
+     * 2.0.0 (DB 35) [RVIB-04] 검토 I07ac-01: memos of 1.38 (32), 1.39 (33) and 2.0.0's 34 arrive told by the clock as they were (no
+     * work anchor, the column NULL), and one told by the work ('출근 1시간 전') saved after comes back as saved.
+     */
+    @Test
+    fun versions32To34MemosArriveToldByTheClock() = runBlocking {
+        for (version in listOf(32, 33, 34)) {
+            val name = "migration-$version-35.db"
+            context.deleteDatabase(name)
+            val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+            val sql = createTables(file, version)
+            sql.execSQL(
+                "INSERT INTO memos (id, epochDay, title, body, checklist, isChecklist, colorIndex, pinned, createdAt, updatedAt, deletedAt, " +
+                    "remindAt, remindRing, remindNotify, remindAsked, calendars, repeat, skips) " +
+                    "VALUES (1, 20000, '인수인계', '', '', 0, 0, 0, 1, 2, NULL, '2026-11-12T21:00', 0, 1, NULL, '', '', '')",
+            )
+            sql.version = version
+            sql.close()
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+            try {
+                val stored = db.memoDao().get(1)!!
+                assertNull("$version: 근무 기준 없음", stored.remindWork)
+                val reminder = stored.toModel().reminder!!
+                assertEquals(java.time.LocalDateTime.of(2026, 11, 12, 21, 0), reminder.at)
+                assertNull(reminder.work)
+                val anchor = com.bamnat.core.memo.WorkAnchor(com.bamnat.core.memo.WorkAnchor.From.START, -60)
+                db.memoDao().update(stored.toModel().copy(reminder = reminder.copy(work = anchor)).toEntity())
+                assertEquals("S-60", db.memoDao().get(1)!!.remindWork)
+                assertEquals(anchor, db.memoDao().get(1)!!.toModel().reminder!!.work)
+            } finally {
+                db.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    /**
+     * 2.0.0 (DB 34) [RVH-33] 검토 WORK-19 Kinds of day from 1.38 (32) and 1.39 (33) arrive with no hours before: every day keeps the
+     * hours it had, and a change '오늘부터만' saved after is kept.
+     */
+    @Test
+    fun versions32And33ShiftTypesArriveWithNoHoursBefore() = runBlocking {
+        for (version in listOf(32, 33)) {
+            val name = "migration-$version-34.db"
+            context.deleteDatabase(name)
+            val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+            val sql = createTables(file, version)
+            sql.execSQL(
+                "INSERT INTO shift_types (id, name, label, colorArgb, startMinute, endMinute, breakMinutes, isOff, alarmEnabled, " +
+                    "alarmOffsetMinutes, alarmSoundUri, sortOrder, alarmOffsets, icon, breakStartMinute, premiumPercent, breakPaid) " +
+                    "VALUES (1, '야간', '야', 0, 1320, 420, 60, 0, 1, 90, NULL, 0, '90,60', NULL, 120, 30, 1)",
+            )
+            sql.version = version
+            sql.close()
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+            try {
+                val night = db.shiftTypeDao().getAll().single().toModel()
+                assertTrue("$version: 옛 시간 없음", night.timeHistory.isEmpty())
+                assertEquals(java.time.LocalTime.of(7, 0), night.end)
+                assertEquals(30, night.premiumPercent)
+                val today = java.time.LocalDate.of(2026, 11, 12)
+                val changed = night.withTimesFrom(night.copy(end = java.time.LocalTime.of(8, 0)), today)
+                db.shiftTypeDao().update(changed.toEntity())
+                val back = db.shiftTypeDao().getAll().single().toModel()
+                assertEquals(java.time.LocalTime.of(8, 0), back.end)
+                assertEquals(java.time.LocalTime.of(7, 0), back.on(today.minusDays(1)).end)
+            } finally {
+                db.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
+    /**
+     * 2.0.0 (DB 34) [RVH-44][RVH-45] 결정 19번: kinds of day and days from 1.38 (32) and 1.39 (33) arrive as one part with their own
+     * break and leave of quarters (설계 4-3절, no data to move); a gap and an hour's leave saved after come back as saved.
+     */
+    @Test
+    fun versions32And33ArriveAsOnePartAndKeepAGapAndAnHoursLeave() = runBlocking {
+        for (version in listOf(32, 33)) {
+            val name = "migration-$version-34-gap.db"
+            context.deleteDatabase(name)
+            val file = context.getDatabasePath(name).apply { parentFile?.mkdirs() }
+            val sql = createTables(file, version)
+            sql.execSQL(
+                "INSERT INTO shift_types (id, name, label, colorArgb, startMinute, endMinute, breakMinutes, isOff, alarmEnabled, " +
+                    "alarmOffsetMinutes, alarmSoundUri, sortOrder, alarmOffsets, icon, breakStartMinute, premiumPercent, breakPaid) " +
+                    "VALUES (1, '영업', '영', 0, 660, 1320, 120, 0, 1, 60, NULL, 0, '60', NULL, 900, 0, NULL)",
+            )
+            // 반차 (오전) as 1.22~1.39 kept it: kind 1 × 10 + 2 quarters + 100 off the start.
+            sql.execSQL("INSERT INTO day_entries (epochDay, overrideMode, overtimeMinutes, holidayWorkMinutes, alarmSkipped, leave) " +
+                "VALUES (20740, 0, 0, 0, 0, 112)")
+            sql.version = version
+            sql.close()
+            val db = Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(*AppDatabase.MIGRATIONS).allowMainThreadQueries().build()
+            try {
+                val shop = db.shiftTypeDao().getAll().single().toModel()
+                assertEquals("$version: 휴게 그대로", 120, shop.breakMinutes)
+                assertEquals(LocalTime.of(15, 0), shop.breakStart)
+                assertTrue("$version: 한 구간", !shop.hasGap && shop.gapStart == null && shop.gapMinutes == 0 && !shop.gapAlarm)
+                val day = db.dayEntryDao().getAll().single().toModel()
+                assertEquals(com.bamnat.core.model.Leave(quarters = 2, fromStart = true), day.leave)
+                assertNull(day.customGapStart)
+                assertNull(day.customGapMinutes)
+
+                // 브레이크 타임 15:00~17:00 split off the old break (rest 0), and 연차 2시간 from 13:00 on another day.
+                val split = shop.copy(breakMinutes = 0, breakStart = null, gapStart = LocalTime.of(15, 0), gapMinutes = 120, gapAlarm = true)
+                db.shiftTypeDao().update(split.toEntity())
+                assertEquals(split, db.shiftTypeDao().getAll().single().toModel())
+                val hours = com.bamnat.core.model.DayEntry(java.time.LocalDate.ofEpochDay(20741),
+                    leave = com.bamnat.core.model.Leave.hours(com.bamnat.core.model.LeaveKind.ANNUAL, 120, at = LocalTime.of(13, 0)),
+                    customGapStart = LocalTime.of(16, 0), customGapMinutes = 60)
+                db.dayEntryDao().upsert(hours.toEntity())
+                assertEquals(hours, db.dayEntryDao().get(20741)!!.toModel())
+            } finally {
+                db.close()
+                context.deleteDatabase(name)
+            }
+        }
+    }
+
     /** [RECV-01][IMPORT-01] Version 13 data stays as it was; the new tables arrive empty. */
     @Test
     fun version13KeepsEverythingAndAddsOwed() = runBlocking {

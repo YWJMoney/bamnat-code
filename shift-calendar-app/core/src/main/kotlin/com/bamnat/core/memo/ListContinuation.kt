@@ -114,13 +114,16 @@ object ListContinuation {
             val above = ORDERED.find(lines[caretLine - 1])
             if (here != null && above != null && sameList(here, above)) anchor = caretLine - 1
         }
-        val head = ORDERED.find(lines[anchor]) ?: return after
+        val head = item(lines[anchor]) ?: return after
         var n = head.groupValues[2].toInt()
         var cursor = caret
         val indent = head.groupValues[1]
+        // 2.0.0 [RVI-29] (검토 MEMO-06) Only a list that was in order, with one item just put in or taken out: numbers skipped on purpose
+        // (3. 5. 9.) and dates written as "11. 12. 회의" stay as they are.
+        if (!oneStepOff(listOf(n) + block(lines, anchor, head))) return after
         for (i in anchor + 1 until lines.size) {
             val line = lines[i]
-            val m = ORDERED.find(line)
+            val m = item(line)
             if (m != null && sameList(m, head)) {
                 n++
                 val numbered = indent + n + m.groupValues[3] + line.substring(m.groupValues[1].length + m.groupValues[2].length + 1)
@@ -138,6 +141,30 @@ object ListContinuation {
         val text = lines.joinToString("\n")
         if (text == after.text) return after
         return Edit(text, cursor.coerceIn(0, text.length))
+    }
+
+    /** 2.0.0 [RVI-29] A numbered item, not a date like "11. 12. 회의" (a number, then another number and a mark). */
+    private val DATE_LIKE = Regex("^\\s*\\d{1,3}[.)]\\s+\\d{1,2}[.)]")
+
+    private fun item(line: String): MatchResult? = ORDERED.find(line)?.takeUnless { DATE_LIKE.containsMatchIn(line) }
+
+    /** The numbers of the items of [head]'s list below line [anchor], as far as the list goes. */
+    private fun block(lines: List<String>, anchor: Int, head: MatchResult): List<Int> {
+        val out = ArrayList<Int>()
+        for (i in anchor + 1 until lines.size) {
+            val m = item(lines[i])
+            if (m != null && sameList(m, head)) { out += m.groupValues[2].toInt(); continue }
+            val lead = lines[i].takeWhile { it == ' ' || it == '\t' }
+            if (lines[i].isNotBlank() && lead.length > head.groupValues[1].length) continue
+            break
+        }
+        return out
+    }
+
+    /** Numbers one up each, but for one place where an item was just added (the same number twice) or taken out (one skipped). */
+    internal fun oneStepOff(numbers: List<Int>): Boolean {
+        val steps = numbers.zipWithNext { a, b -> b - a }
+        return steps.count { it != 1 } <= 1 && steps.all { it in 0..2 }
     }
 
     private fun sameList(a: MatchResult, b: MatchResult): Boolean =

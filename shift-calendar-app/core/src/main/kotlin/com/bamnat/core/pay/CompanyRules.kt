@@ -401,6 +401,12 @@ data class CompanyRules(
      */
     val holidayByShiftStart: Boolean = false,
     /**
+     * 2.0.0 [RVJ-01] 검토 PAYC-01·U04-11: holiday work is left out of the week's 40 hours (the old practice some companies
+     * keep). Off by default: by 근로기준법 제2조 제1항 제7호 a week holds its holidays, so holiday hours fill the 40 hours
+     * and later work past them is 연장.
+     */
+    val holidayOutsideWeek: Boolean = false,
+    /**
      * [PAYS-03] 감시·단속적 근로자 승인 from 고용노동부 (근로기준법 제63조 제3호): no 연장 from the 8시간·40시간
      * limits, no legal 연장·휴일 premiums (the company's own rates still apply), no 주휴 and no paid 공휴일.
      * The night premium (5인 이상) and 연차 stay.

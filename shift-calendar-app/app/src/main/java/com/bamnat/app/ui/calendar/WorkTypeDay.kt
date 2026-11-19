@@ -24,6 +24,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.appContainer
@@ -68,6 +70,9 @@ internal fun WorkTypeDayRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: Ca
 /** [DAYW-03] Until when after midnight 지금 퇴근 still ends yesterday's working day. */
 internal val LEAVE_NIGHT_END: LocalTime = LocalTime.of(6, 0)
 
+/** 2.0.0 [RVH-98] 검토 PC-50: yesterday's 어제 퇴근 is offered only this many hours after its planned end (잔업 of '+11.5h' at 05:33 is no one's night). */
+internal const val LEAVE_LATE_HOURS = 8L
+
 /**
  * [DAYW-03] The working day 지금 퇴근 on [day]'s sheet ends, or null for no chip, on a day calendar:
  * today's; before [LEAVE_NIGHT_END], yesterday's (work run past midnight), from its own sheet or from
@@ -77,10 +82,12 @@ internal fun leaveNowDay(style: WorkStyle?, day: ResolvedDay, today: LocalDate, 
     if (style != WorkStyle.DAY) return null
     fun working(d: ResolvedDay) = d.isWorkDay && d.shiftFrom != null
     val night = now.toLocalDate() == today && now.toLocalTime().isBefore(LEAVE_NIGHT_END)
+    // [RVH-98] A shift that ended long ago is not one still being clocked out of.
+    fun recent(d: ResolvedDay) = d.shiftTo?.let { !now.isAfter(it.plusHours(LEAVE_LATE_HOURS)) } == true
     return when (day.date) {
-        today -> yesterday().takeIf { y -> night && working(y) && (!working(day) || now.isBefore(day.shiftFrom)) }
+        today -> yesterday().takeIf { y -> night && working(y) && recent(y) && (!working(day) || now.isBefore(day.shiftFrom)) }
             ?: day.takeIf(::working)
-        today.minusDays(1) -> day.takeIf { night && working(it) }
+        today.minusDays(1) -> day.takeIf { night && working(it) && recent(it) }
         else -> null
     }
 }
@@ -113,6 +120,7 @@ private fun SwapRow(day: ResolvedDay, snapshot: ScheduleSnapshot, vm: CalendarVi
                 .map { it.swapWith.trim() }.distinct().take(6)
         }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { editing = false },
             title = { Text(if (cover) "누구 대신 일했나요?" else "누구와 근무를 바꿨나요?") },
             text = {
@@ -276,9 +284,12 @@ private fun WishOffDialog(month: java.time.YearMonth, w: com.bamnat.core.work.Wi
                     else com.bamnat.core.work.WishOff.copyText(month, picked), style = MaterialTheme.typography.bodyMedium)
                 Text("신청 마감", style = MaterialTheme.typography.titleSmall)
                 androidx.compose.foundation.layout.Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    TextButton(enabled = (w.deadlineDay ?: 1) > 1, onClick = { onDeadline(((w.deadlineDay ?: 21) - 1).coerceAtLeast(1)) }) { Text("−") }
+                    // 2.0.0 [RVH-13] 검토 CAL-18: named by what they do for the screen reader.
+                    TextButton(enabled = (w.deadlineDay ?: 1) > 1, onClick = { onDeadline(((w.deadlineDay ?: 21) - 1).coerceAtLeast(1)) },
+                        modifier = Modifier.semantics { contentDescription = "마감 하루 앞으로" }) { Text("−") }
                     Text(w.deadlineDay?.let { "매달 ${it}일" } ?: "정하지 않음", style = MaterialTheme.typography.bodyLarge)
-                    TextButton(enabled = (w.deadlineDay ?: 0) < 31, onClick = { onDeadline(((w.deadlineDay ?: 19) + 1).coerceAtMost(31)) }) { Text("+") }
+                    TextButton(enabled = (w.deadlineDay ?: 0) < 31, onClick = { onDeadline(((w.deadlineDay ?: 19) + 1).coerceAtMost(31)) },
+                        modifier = Modifier.semantics { contentDescription = "마감 하루 뒤로" }) { Text("+") }
                     if (w.deadlineDay != null) TextButton(onClick = { onDeadline(null) }) { Text("없음") }
                 }
                 Text(if (w.deadlineDay != null) "마감 이틀 전과 당일 오전 9시에 다음 달 고른 날 수를 알려 드려요. 그 달에 날이 없으면 그 달 마지막 날이 마감이에요."

@@ -26,6 +26,10 @@ enum class AlarmMission(val key: String, val label: String, val hint: String) {
          */
         fun forAlarm(default: AlarmMission, byShift: Map<Long, AlarmMission>, shiftTypeId: Long): AlarmMission =
             byShift[shiftTypeId] ?: default
+
+        /** [R200-01] The same with the shift named with its calendar ([com.bamnat.core.model.ShiftRef]); null is the main one. */
+        fun forAlarm(default: AlarmMission, byShift: Map<String, AlarmMission>, calendarId: String?, shiftTypeId: Long): AlarmMission =
+            if (shiftTypeId == 0L) default else byShift[com.bamnat.core.model.ShiftRef.key(calendarId, shiftTypeId)] ?: default
     }
 }
 

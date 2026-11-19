@@ -86,7 +86,7 @@ fun FeatureMenuButton(card: CardFeature, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     var open by remember { mutableStateOf(false) }
     Box(modifier) {
-        IconButton(onClick = { open = true }, modifier = Modifier.size(40.dp)) {
+        IconButton(onClick = { open = true }) { // 2.0.0 [RVP-10] 48dp (검토 UIX-10)
             Icon(Icons.Filled.MoreVert, "‘${card.feature.name}’ 더 보기", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

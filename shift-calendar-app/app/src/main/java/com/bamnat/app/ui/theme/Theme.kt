@@ -17,6 +17,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +98,10 @@ internal val DarkColors = darkColorScheme(
 data class CalendarColors(
     val sunday: Color,
     val saturday: Color,
+    /**
+     * Sunday's red under another name. 2.0.0 [RVP-13] (검토 HQ-54): screens do not read it: a thing to check is [Tone.Caution],
+     * a thing gone wrong (넘김·밀림·법 위반) is [Tone.Danger] (`Tone.color()`, `Tone.container()`); DesignRulesTest counts it.
+     */
     val warning: Color,
     val warningContainer: Color,
     val holidayWork: Color,
@@ -211,6 +216,9 @@ val LocalCalendarLook = staticCompositionLocalOf { CalendarLook() }
 /** [RCX-30] 1.35 그림 꾸미기, as the settings keep it (pictures by id, drawn from files/looks/). */
 val LocalPhotoLook = staticCompositionLocalOf { com.bamnat.core.recipe.PhotoLook() }
 
+/** [R200-01] The pictures of the shown calendar's kinds of day, by shift id ([com.bamnat.core.recipe.PhotoLook.icons] is by calendar). */
+val LocalShiftIcons = staticCompositionLocalOf { emptyMap<Long, String>() }
+
 /**
  * [VIS-02] Korean wraps between words, never inside one ("꺼져 있어 / 요"): phrase breaking on text
  * marked Korean, which Android 15 and later follow whatever the phone's language is (earlier versions
@@ -261,6 +269,20 @@ fun shapesFor(corners: String?): Shapes = when (corners) {
     else -> AppShapes
 }
 
+/**
+ * 2.0.0 [RVP-05] 검토 PC-128 (조건 5): the app's pill: 단추 (ui/components/Buttons.kt), 달력 머리의 '내 달력'·'공유'·'도구', 칩 줄 끝의
+ * '+5'. Round while 모서리 is 보통 or 둥글게; the chips' corner when it is 각지게, so one screen has one roundness (before, the cards and chips
+ * went square and these stayed round beside them). Faces and dots stay round: they are marks, not buttons.
+ */
+val LocalPill = staticCompositionLocalOf<androidx.compose.ui.graphics.Shape> { androidx.compose.foundation.shape.CircleShape }
+
+val MaterialTheme.pill: androidx.compose.ui.graphics.Shape
+    @Composable @androidx.compose.runtime.ReadOnlyComposable get() = LocalPill.current
+
+/** 각지게 takes the chips' corner for the pill; the other settings keep it round ([LocalPill]). */
+fun pillFor(corners: String?, shapes: Shapes): androidx.compose.ui.graphics.Shape =
+    if (corners == "square") shapes.small else androidx.compose.foundation.shape.CircleShape
+
 /** Tabular figures keep hour totals from jumping around as they change. */
 val NumberStyle = TextStyle(fontFeatureSettings = "tnum")
 
@@ -305,12 +327,24 @@ fun BamnatTheme(
     // worn 테마's own font was drawn as the closest phone font until it was picked in an editor), and the parts are read again once they are.
     val partFonts = androidx.compose.runtime.remember(raw) { raw.lines.mapNotNull { it["font"] as? String }.filter { AppFonts.downloads(it) }.distinct() }
     val fontsCame = partFonts.count { AppFonts.loads[it] == AppFonts.Load.READY }
-    if (partFonts.isNotEmpty()) {
+    // 2.0.0 [RVM-21] MKT-32 While a theme is tried on the real app (LiveTryOn): its fonts are card fonts from our public files, the whole
+    // font (Google Fonts) comes only with 입기.
+    val cardFonts = LocalCardFonts.current
+    if (partFonts.isNotEmpty() && cardFonts == null) {
         val ctx = LocalContext.current
         androidx.compose.runtime.LaunchedEffect(partFonts) { partFonts.forEach { AppFonts.start(ctx, it) } }
     }
-    val parts = androidx.compose.runtime.remember(raw, dark, fontsCame) { raw.forDark(dark).let { if (fontsCame > 0) com.bamnat.core.recipe.Blueprint(it.lines) else it } }
-    CompositionLocalProvider(LocalCalendarColors provides if (dark) DarkCalendarColors else LightCalendarColors) {
+    val parts = androidx.compose.runtime.remember(raw, dark, fontsCame, cardFonts) {
+        raw.forDark(dark).let {
+            when {
+                !cardFonts.isNullOrEmpty() -> com.bamnat.core.recipe.Blueprint(com.bamnat.app.ui.recipe.MarketFonts.lines(it.lines, cardFonts))
+                fontsCame > 0 -> com.bamnat.core.recipe.Blueprint(it.lines)
+                else -> it
+            }
+        }
+    }
+    // 2.0.0 [RVP-14] (검토 UIX-05) 밤 색 over the whole app takes the dark calendar colours too, whatever the phone's own theme.
+    CompositionLocalProvider(LocalCalendarColors provides if (dark || night) DarkCalendarColors else LightCalendarColors) {
         // U 1.32 [UX132-05] The app's own size times the phone's, never past 2배 so no screen breaks; layouts that measure in
         // sp grow with it and the ones that count columns ([LocalSpacing], the calendar's cells) read the scale.
         val base = androidx.compose.ui.platform.LocalDensity.current
@@ -326,13 +360,18 @@ fun BamnatTheme(
             androidx.compose.ui.platform.LocalDensity provides scaled,
             LocalSpacing provides if (compact) Spacing.COMPACT else Spacing.ROOMY,
         ) {
+            val shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts)
             MaterialTheme(
                 colorScheme = if (night) colors else com.bamnat.app.ui.parts.PartTheme.colors(colors, parts),
                 typography = com.bamnat.app.ui.parts.PartTheme.typography(AppTypography, parts),
-                shapes = com.bamnat.app.ui.parts.PartTheme.shapes(shapesFor(corners), parts),
+                shapes = shapes,
             ) {
-                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides parts,
-                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, content = content)
+                // 2.0.0 [RVS-06] 그릴 때 지키는 바닥선: every part as this screen draws it (letters that read, a tab bar that is seen), the
+                // look's own values kept as set ([com.bamnat.core.recipe.PartFloor]).
+                val screenArgb = MaterialTheme.colorScheme.background.toArgb().toLong() and 0xFFFFFFFFL
+                val shown = androidx.compose.runtime.remember(parts, screenArgb) { parts.floored(screenArgb) }
+                CompositionLocalProvider(com.bamnat.app.ui.parts.LocalBlueprint provides shown,
+                    com.bamnat.app.ui.parts.LocalBlueprintRaw provides raw, LocalPill provides pillFor(corners, shapes), content = content)
             }
         }
     }
@@ -405,10 +444,19 @@ val MemoPaletteDark: List<Color> = listOf(
 enum class Tone { Plain, Good, Caution, Danger }
 
 @Immutable
-data class BamnatColors(val good: Color, val caution: Color, val danger: Color) {
+data class BamnatColors(
+    val good: Color, val caution: Color, val danger: Color,
+    /**
+     * 2.0.0 [RVP-13] (검토 HQ-54) The soft ground under a 주의 or 위험 mark that must stand apart from the card (a 노란 칸 in a
+     * table, a cell to check); its own ink reads on it at 4.5:1 (ContrastTest). Notice cards keep the one quiet ground (조건 3).
+     */
+    val cautionContainer: Color = Color(0xFFFFEFD9), val dangerContainer: Color = Color(0xFFFEE4E2),
+) {
     companion object {
-        val Light = BamnatColors(good = Color(0xFF1B7A4C), caution = Color(0xFFA65400), danger = Color(0xFFC62828))
-        val Dark = BamnatColors(good = Color(0xFF6FD3A0), caution = Color(0xFFFFB25C), danger = Color(0xFFFF8A80))
+        val Light = BamnatColors(good = Color(0xFF1B7A4C), caution = Color(0xFFA65400), danger = Color(0xFFC62828),
+            cautionContainer = Color(0xFFFFEFD9), dangerContainer = Color(0xFFFEE4E2))
+        val Dark = BamnatColors(good = Color(0xFF6FD3A0), caution = Color(0xFFFFB25C), danger = Color(0xFFFF8A80),
+            cautionContainer = Color(0xFF3F2A0E), dangerContainer = Color(0xFF4A1712))
     }
 }
 
@@ -428,4 +476,15 @@ fun Tone.color(): Color = when (this) {
     Tone.Good -> MaterialTheme.bamnat.good
     Tone.Caution -> MaterialTheme.bamnat.caution
     Tone.Danger -> MaterialTheme.bamnat.danger
+}
+
+/**
+ * 2.0.0 [RVP-13] (검토 HQ-54) The soft ground a [Tone] mark stands on where it must stand apart (a cell or a tile to check);
+ * [Tone.Plain] and [Tone.Good] keep the card's quiet ground.
+ */
+@Composable @androidx.compose.runtime.ReadOnlyComposable
+fun Tone.container(): Color = when (this) {
+    Tone.Plain, Tone.Good -> MaterialTheme.colorScheme.surfaceContainerLow
+    Tone.Caution -> MaterialTheme.bamnat.cautionContainer
+    Tone.Danger -> MaterialTheme.bamnat.dangerContainer
 }

@@ -65,4 +65,14 @@ class StatsRangeTest {
         val direct = resolver.resolveRange(LocalDate.of(2026, 9, 21), LocalDate.of(2026, 10, 20)).count { it.totalMinutes > 0 }
         assertEquals(direct, pay.workDays)
     }
+
+    /** 2.0.0 [RVJ-105] 검토 U05b-12: a 직접 pick past a year is cut, and the line says so; a year or less says nothing. */
+    @Test fun aPickPastAYearSaysItWasCut() {
+        val long = StatsRange.Range(LocalDate.of(2025, 1, 1), LocalDate.of(2026, 1, 2)) // 367 days: a year and a day
+        assertEquals("1년까지만 보여 드려요 · 2025년 1월 1일부터 2026년 1월 1일까지 셌어요", StatsRange.cutLine(long))
+        // Turned round, the same.
+        assertEquals(StatsRange.cutLine(long), StatsRange.cutLine(StatsRange.Range(long.to, long.from)))
+        assertNull(StatsRange.cutLine(StatsRange.Range(LocalDate.of(2025, 10, 15), LocalDate.of(2026, 10, 14))))
+        assertNull(StatsRange.cutLine(null))
+    }
 }

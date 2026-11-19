@@ -6,6 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import com.bamnat.app.ui.components.AlertDialog
 import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
@@ -30,6 +36,7 @@ import com.bamnat.app.share.StatementImage
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.app.ui.money.AmountField
 import com.bamnat.app.ui.money.amountDigits
 import com.bamnat.app.ui.money.toAmount
@@ -42,6 +49,7 @@ import com.bamnat.core.money.Job
 import com.bamnat.core.money.JobStatement
 import com.bamnat.core.money.MoneyBook
 import com.bamnat.core.work.SalesSplit
+import com.bamnat.core.work.SimpleVatTrade
 import com.bamnat.core.work.SalesTarget
 import com.bamnat.core.work.ShopMoney
 import com.bamnat.core.work.VatEstimate
@@ -59,7 +67,7 @@ import com.bamnat.core.time.Today
 fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.date(), calendarId: String = com.bamnat.app.data.PersonalCalendar.MAIN) {
     val units = remember(book, month) { DayRate.month(month, book.jobs) }
     if (units.days > 0) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${month.monthValue}월 공수", DayRate.label(units.units), Modifier.weight(1f), caption = "${units.days}일")
             StatTile("일당 합계", Fmt.won(units.amount), Modifier.weight(1f),
                 caption = if (units.units > 0) "1공 평균 ${wonBrief((units.amount / units.units).toLong())}" else null)
@@ -83,7 +91,7 @@ fun FieldStatsCards(book: MoneyBook, month: YearMonth, today: LocalDate = Today.
 private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, monthDays: Int, yearDays: Int, dayLabor: Boolean = true) {
     val year = month.year
     SectionCard(title = "출역일") {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${month.monthValue}월", "${monthDays}일", Modifier.weight(1f), caption = if (YearMonth.from(today) == month) "오늘까지" else null)
             StatTile("${year}년", "${yearDays}일", Modifier.weight(1f), caption = if (year == today.year) "오늘까지" else null)
         }
@@ -98,10 +106,10 @@ private fun FieldYearCards(book: MoneyBook, month: YearMonth, today: LocalDate, 
         val scope = rememberCoroutineScope()
         val gate by context.appContainer.featureGate.state.collectAsStateWithLifecycle()
         val locked = gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)
-        androidx.compose.material3.OutlinedButton(onClick = {
+        com.bamnat.app.ui.components.OutlinedButton(onClick = {
             if (locked && !com.bamnat.app.ui.pro.tryFeature(com.bamnat.app.tier.Feature.PAY_REPORT)) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.PAY_REPORT); return@OutlinedButton }
             scope.launch {
-                runCatching {
+                com.bamnat.app.report.ReportShare.orTell { // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
                     val from = today.minusMonths(18).plusDays(1)
                     val doc = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
                         com.bamnat.core.report.FieldDaysProof.doc("", from, today, com.bamnat.core.report.FieldDaysProof.days(book.jobs, from, today), today)
@@ -190,7 +198,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     // 1.38 PC 5차(사진으로 보내기와 같은 구조): closing at the tap ended this dialog's scope and the file was never
                     // shared. The dialog closes once the share window has been asked for.
                     scope.launch {
-                        runCatching {
+                        com.bamnat.app.report.ReportShare.orTell { // 2.0.0 [RVP-69] (검토 REST-11) a failed file says so, with 다시 하기.
                             com.bamnat.app.report.ReportShare.pdf(context, com.bamnat.core.report.ClientStatementDoc.doc(statement, sender.trim(), Today.date()),
                                 "bamnat-거래내역서-${statement.month}.pdf")
                         }
@@ -198,7 +206,7 @@ fun StatementDialog(client: String, month: YearMonth, jobs: List<Job>, onDismiss
                     }
                 }) { Text(if (gate.locked(com.bamnat.app.tier.Feature.PAY_REPORT)) "PDF (프로)" else "PDF") }
                 TextButton(enabled = statement.lines.isNotEmpty(), onClick = {
-                    scope.launch { runCatching { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
+                    scope.launch { com.bamnat.app.report.ReportShare.orTell { StatementImage.share(context, statement, sender.trim()) }; onDismiss() }
                 }) { Text("사진으로 보내기") }
             }
         },
@@ -235,7 +243,8 @@ fun ShopStatsCards(calendarId: String, book: MoneyBook, month: YearMonth, isOpen
         TargetCard(rules, book, month, today, isOpen) { t -> c.calendars.updateShopMoney(calendarId) { it.copy(monthlyTarget = t) } }
     }
     FeatureCard("shop.vat", calendarId) {
-        VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1)) { simple ->
+        VatCard(rules, book, if (YearMonth.from(today) == month) today else month.atDay(1),
+            onTrade = { t -> c.calendars.updateShopMoney(calendarId) { it.withTrade(t) } }) { simple ->
             c.calendars.updateShopMoney(calendarId) { it.copy(simpleTax = simple) }
         }
     }
@@ -269,6 +278,7 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
     if (editing) {
         var digits by rememberSaveable { mutableStateOf(amountDigits(rules.monthlyTarget)) }
         AlertDialog(
+            fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
             onDismissRequest = { editing = false },
             title = { Text("한 달 목표 매출") },
             text = { AmountField("목표 매출", digits, { digits = it }) },
@@ -279,13 +289,24 @@ private fun TargetCard(rules: ShopMoney, book: MoneyBook, month: YearMonth, toda
 }
 
 /** [SHOP-04] 부가세 예상: the half year's sales and costs and a rough VAT, 일반 or 간이. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple: (Boolean) -> Unit) {
+private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onTrade: (SimpleVatTrade) -> Unit, onSimple: (Boolean) -> Unit) {
     val half = remember(book, date, rules) { VatEstimate.of(date, book.sales, book.entries, rules) }
+    var picking by rememberSaveable { mutableStateOf(false) }
     SectionCard(title = "부가세 예상 (${half.year}년 ${when (half.half) { 1 -> "1~6월"; 2 -> "7~12월"; else -> "1~12월" }})") {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = !rules.simpleTax, onClick = { onSimple(false) }, label = { Text("일반과세") })
             FilterChip(selected = rules.simpleTax, onClick = { onSimple(true) }, label = { Text("간이과세") })
+        }
+        // 2.0.0 [RVJ-84] 검토 BOSS-63·T05c-07: 간이과세 counts by the trade's 부가가치율 (15~40%), so the trade is chosen here; until it
+        // is, the line says the rate it counted with instead of passing 15% off as the shop's.
+        // At 글자 200% the words and the button do not share a line: the button goes under them, not the words one per line.
+        if (rules.simpleTax) androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween, itemVerticalAlignment = Alignment.CenterVertically) {
+            Text(rules.tradeChosen?.let { "업종 ${it.label} · 부가가치율 ${it.percent}%" } ?: "부가가치율 ${rules.valueAddedPercent}%로 셌어요",
+                style = MaterialTheme.typography.bodyMedium)
+            TextButton(onClick = { picking = true }) { Text(if (rules.tradeChosen == null) "업종 고르기" else "바꾸기") }
         }
         YearLine("매출", Fmt.won(half.sales))
         YearLine("경비", Fmt.won(half.expenses))
@@ -300,6 +321,40 @@ private fun VatCard(rules: ShopMoney, book: MoneyBook, date: LocalDate, onSimple
             modifier = Modifier.padding(top = 8.dp),
         )
     }
+    if (picking) VatTradeDialog(rules.tradeShown, onPick = { onTrade(it); picking = false }, onDismiss = { picking = false })
+}
+
+/**
+ * 2.0.0 [RVJ-84] The 간이과세 trades of 부가가치세법 시행령 제111조 제2항 with their rates: one press picks one and closes, as the rate
+ * is all the card needs. A shop of several trades is counted by its main one (the law counts each trade's own sales).
+ */
+@Composable
+internal fun VatTradeDialog(current: SimpleVatTrade?, onPick: (SimpleVatTrade) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("간이과세 업종") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SimpleVatTrade.entries.forEach { t ->
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(selected = t == current, role = Role.RadioButton) { onPick(t) },
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        RadioButton(selected = t == current, onClick = null)
+                        Column(Modifier.weight(1f).padding(vertical = 6.dp)) {
+                            Text("${t.label} · ${t.percent}%", style = MaterialTheme.typography.titleSmall)
+                            Text(t.rows, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                Text("여러 업종을 함께 하면 업종마다 따로 세요. 여기서는 매출이 가장 많은 업종 하나로 어림해요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp))
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+    )
 }
 
 /**
@@ -329,7 +384,7 @@ fun PendingSalesCard(calendarId: String) {
             }
         }
         if (pending.size > 1) {
-            androidx.compose.material3.FilledTonalButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, pending) } },
+            com.bamnat.app.ui.components.FilledTonalButton(onClick = { scope.launch { com.bamnat.app.money.ShopNotices.confirm(c, calendarId, pending) } },
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) { Text("모두 적기") }
         }
     }

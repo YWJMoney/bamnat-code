@@ -51,8 +51,12 @@ object Notifications {
     const val SHARE_CHANNEL_ID = "share_expiry_v1"
     /** [FEAT-18] The lock-screen 오늘 근무 notice: no sound, no badge, shown in full on the lock screen. */
     const val TODAY_CHANNEL_ID = "today_shift_v1"
+    /** 2.0.0 [RVIB-21] (결정 19) 둘째 구간 알림: "17:00 다시 시작" before the later part of a day of two parts ([GapNotice]). */
+    const val GAP_CHANNEL_ID = "gap_resume_v1"
     /** [RUL-04] 1.36 수식·규칙: what a rule says (내일 야간 준비 등). */
     const val RULES_CHANNEL_ID = "rules_v1"
+    /** 2.0.0 [RVM-24] STU-13 What a rule that came with someone's work says, apart from mine (turned off at once in the system settings). */
+    const val RECEIVED_RULES_CHANNEL_ID = "received_rules_v1"
     /** [INV-08] The investor's 장 시작·마감, 정기 매수일, 목표가 확인 and date notices. */
     const val INVEST_CHANNEL_ID = "invest_alarm_v1"
     /** [MON-06] The one notice before a free trial turns paid. */
@@ -73,6 +77,8 @@ object Notifications {
     const val CLOCK_CHANNEL_ID = "staff_clock_v1"
     /** 1.39 [TEAM-22] 리더가 바꾼 팀 근무표가 내 달력에 들어갔어요 (또는 넣을까요?): the alarms follow it, so it is said with a sound. */
     const val ROSTER_CHANNEL_ID = "roster_follow_v1"
+    /** 2.0.0 [RVJ-96] 급여 대장의 다가올 신고·지급, 3일 전 (사장님 휴대폰). Its own channel: quieting 나갈 돈·받을 돈 keeps these. */
+    const val FILING_CHANNEL_ID = "boss_filing_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -96,18 +102,26 @@ object Notifications {
     const val BEDTIME_ID = 7311
     const val COMMUTE_ID = 7312
     const val SLEEPING_ID = 7313
-    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? */
-    const val SLEEP_AUTO_ID = 7314
+    /** [SLEEP-01] 자동으로 잡은 잠, 맞나요? 2.0.0 [RVI-01] 7314 was 잠금 화면 오늘 근무's number too. */
+    const val SLEEP_AUTO_ID = 7317
     /** [SLEEP-04] 잠드는 소리, while it plays. */
     const val NOISE_ID = 7315
-    /** [SLEEP-06] 자는 동안 소리 재는 중. */
-    const val SLEEP_RECORD_ID = 7316
+    /** [SLEEP-06] 자는 동안 소리 재는 중. 2.0.0 [RVI-01] 7316 was 알람 뒤 오늘 카드's number too. */
+    const val SLEEP_RECORD_ID = 7318
+    /** 2.0.0 [RVI-16] 마이크를 쓸 수 없어 소리 측정을 멈췄어요. */
+    const val SLEEP_MIC_ID = 7319
     const val LEAVE_ID = 7201
     const val SHARE_ID = 7202
     const val PRO_ID = 7203
     /** 840·841: a yearly renewal or a 1년 이용권 ending in 7 days. */
     const val PRO_END_ID = 7209
+    /** 2.0.0 [RVO-14] (I11bb-02) 프로가 저절로 끝나기 전날 저녁: 그다음부터 멈추는 것. */
+    const val PRO_STOP_ID = 7210
+    /** 2.0.0 [RVO-14] (PRO-29·U11b-10) 끄기 미션의 7일이 끝나기 전날 저녁. */
+    const val MISSION_END_ID = 7211
     const val BACKUP_ID = 7204
+    /** 2.0.0 [RVL-71] 데이터 점검 found what it could not put right (on the backup channel, which says so). */
+    const val DATA_CHECK_ID = 7213
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
     const val INQUIRY_ID = 7208
@@ -125,16 +139,19 @@ object Notifications {
     /** [TOWN-08] Whether the newest channel this version made is on the phone (one check, not a call per channel). */
     fun channelsMade(context: Context): Boolean =
         context.getSystemService(NotificationManager::class.java)?.let {
-            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null
+            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null &&
+                it.getNotificationChannel(FILING_CHANNEL_ID) != null && it.getNotificationChannel(GAP_CHANNEL_ID) != null
         } == true
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java) ?: return
         nm.createNotificationChannelGroups(listOf(
-            NotificationChannelGroup(GROUP_ALARMS, "근무 알람"),
+            NotificationChannelGroup(GROUP_ALARMS, "알람"),
             NotificationChannelGroup(GROUP_DAY, "하루 안내"),
             NotificationChannelGroup(GROUP_MONEY, "돈과 휴가"),
         ))
+        // 2.0.0 [RVH-80] 검토 TYPE-13: the phone's 알림 설정 lists these for every kind of work, so their names are no 교대 근무자's
+        // ('근무 알람', '잠금 화면 오늘 근무', '근무표 링크 기간'). The ids stay, so a channel the user turned down keeps its setting.
         val alarm = NotificationChannel(ALARM_CHANNEL_ID, context.getString(R.string.channel_alarm_name), NotificationManager.IMPORTANCE_HIGH).apply {
             description = context.getString(R.string.channel_alarm_description)
             group = GROUP_ALARMS
@@ -143,7 +160,7 @@ object Notifications {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         // Used only when the ringing service cannot start, so this channel makes the sound itself.
-        val fallback = NotificationChannel(FALLBACK_CHANNEL_ID, "근무 알람 예비 소리", NotificationManager.IMPORTANCE_HIGH).apply {
+        val fallback = NotificationChannel(FALLBACK_CHANNEL_ID, "알람 예비 소리", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "알람 화면을 띄우지 못할 때만 대신 울려요. 끄면 알람을 놓칠 수 있어요"
             group = GROUP_ALARMS
             setSound(
@@ -195,12 +212,12 @@ object Notifications {
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        val share = NotificationChannel(SHARE_CHANNEL_ID, "근무표 링크 기간", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "보낸 근무표 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
+        val share = NotificationChannel(SHARE_CHANNEL_ID, "공유 링크 기간", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "보낸 공유 링크가 닫히기 며칠 전에 알려요. 알림에서 바로 늘릴 수 있어요"
             group = GROUP_DAY
         }
-        val today = NotificationChannel(TODAY_CHANNEL_ID, "잠금 화면 오늘 근무", NotificationManager.IMPORTANCE_LOW).apply {
-            description = "오늘과 내일 근무를 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요"
+        val today = NotificationChannel(TODAY_CHANNEL_ID, "잠금 화면 오늘 줄", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "오늘과 내일 근무·영업·일정을 잠금 화면과 알림창에 늘 보여 줘요. 소리는 나지 않아요"
             group = GROUP_DAY
             setShowBadge(false)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -218,13 +235,21 @@ object Notifications {
             description = "직원이 출퇴근 링크에서 출근·퇴근을 누르면 알려요(15분쯤마다 확인, 위치는 받지 않아요)"
             group = GROUP_MONEY
         }
+        // 2.0.0 [RVJ-96] Its name is no 사장님's word: every phone's 알림 설정 lists it (조건 13), and only a 급여 대장 sends on it.
+        val filing = NotificationChannel(FILING_CHANNEL_ID, "신고·지급 기한", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "급여 대장을 쓸 때 급여 지급·원천세·4대보험 신고 기한 3일 전 아침에 한 번 알려요"
+            group = GROUP_MONEY
+            // Amounts (원천세·급여) are in it: the lock screen shows only that one came.
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val roster = NotificationChannel(ROSTER_CHANNEL_ID, "받은 근무표 바뀜", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "리더가 팀 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
+            description = "보낸 분이 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
+        // 2.0.0 [RVL-71] The weekly 데이터 점검 says here too what it could not put right: the same worry (my records), one switch.
+        val backup = NotificationChannel(BACKUP_CHANNEL_ID, "백업·데이터 점검", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되거나, 일주일에 한 번 살펴본 데이터에 고칠 것이 있으면 알려요"
             group = GROUP_DAY
         }
         // [SRV-10] A channel the user turned off stays off ([TOWN-08] carried over from the old id); its name says what it carries now.
@@ -242,6 +267,11 @@ object Notifications {
             // 1.36 [SEC-12] 보안 점검 M5: a rule's words can hold the 가계부's numbers ({원(이달지출)}); the lock screen shows only that one came.
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
+        val received = NotificationChannel(RECEIVED_RULES_CHANNEL_ID, "받은 작품의 규칙 알림", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "장터에서 받은 작품의 규칙이 띄우는 알림이에요. 알림 위에 어느 작품의 규칙인지 적혀 있고, 여기서 한 번에 끌 수 있어요"
+            group = GROUP_DAY
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val nightQuiet = NotificationChannel(NIGHT_QUIET_CHANNEL_ID, "자는 동안 온 알림", NotificationManager.IMPORTANCE_LOW).apply {
             description = "자는 중일 때 온 근무표 바뀜·문의 답 같은 알림. 소리 없이 알림창 아래쪽에 모여 있어요"
             group = GROUP_DAY
@@ -250,7 +280,12 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, inquiry, clock, roster))
+        // 2.0.0 [RVIB-21] (결정 19, 설계 4-2절 7번) Its own channel, so it can be turned off on its own; quiet like 오늘의 흐름.
+        val gap = NotificationChannel(GAP_CHANNEL_ID, "둘째 구간 시작", NotificationManager.IMPORTANCE_LOW).apply {
+            description = "브레이크 타임·비는 시간이 있는 날, 다시 시작하기 10분 전에 소리 없이 한 줄로 알려요"
+            group = GROUP_DAY
+        }
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, gap, invest, pro, backup, plaza, rules, received, inquiry, clock, roster, filing))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }
@@ -330,14 +365,17 @@ object Notifications {
      * [ALRM-01] I23: after an alarm that came hours late (and so did not ring) or could only show as a plain
      * notice, one line in 알람 상태 says what happened and opens 알람 점검, where the battery settings are.
      */
-    fun postAlarmTrouble(context: Context, lateMinutes: Long?) {
-        val title = if (lateMinutes != null) "알람이 ${formatLate(lateMinutes)} 늦게 와서 울리지 않았어요" else "알람 화면을 띄우지 못해 알림으로만 울렸어요"
+    fun postAlarmTrouble(context: Context, lateMinutes: Long?, offAt: String? = null) {
+        // 2.0.0 [RVI-51] (검토 ALM-26) Off when it was due: the phone could not ring it at all, and says which one, once.
+        val title = if (offAt != null) "휴대폰이 꺼져 있는 동안 $offAt 알람이 지나갔어요"
+            else if (lateMinutes != null) "알람이 ${formatLate(lateMinutes)} 늦게 와서 울리지 않았어요" else "알람 화면을 띄우지 못해 알림으로만 울렸어요"
         val notification = NotificationCompat.Builder(context, STATUS_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText("눌러서 알람 점검에서 배터리·절전 설정을 봐 주세요")
             .setStyle(NotificationCompat.BigTextStyle().bigText(
-                (if (lateMinutes != null) "휴대폰이 꺼져 있었거나 절전 기능이 앱을 멈춰 알람이 제때 오지 못했어요. "
+                (if (offAt != null) "꺼져 있던 휴대폰은 알람을 울릴 수 없어요. 밤새 켜 두거나 충전기에 꽂아 두면 놓치지 않아요. "
+                else if (lateMinutes != null) "휴대폰이 꺼져 있었거나 절전 기능이 앱을 멈춰 알람이 제때 오지 못했어요. "
                 else "다른 앱 위에 화면을 띄우는 권한이나 전체 화면 알림이 막혔을 수 있어요. ") +
                     "알람 점검에서 빨간 줄을 고치면 다음 알람은 제때 울려요."))
             .setContentIntent(open(context, NoticeLinks.Target.ALARM_CHECK, 2105))
@@ -367,19 +405,41 @@ object Notifications {
         post(context, ALARM_LATE_ID, notification)
     }
 
-    /** Plain alarm notification used when the ringing service cannot start. */
+    /** 2.0.0 [RVI-02] The fallback alarm's own number, so 끄기 and 다시 울림 on it find it. */
+    const val FALLBACK_ALARM_ID = ALARM_NOTIFICATION_ID + 1
+
+    /**
+     * Plain alarm notification used when the ringing service cannot start.
+     * 2.0.0 [RVI-02] It keeps sounding until it is answered (FLAG_INSISTENT; before, the channel sound
+     * played once, a single 띵), it puts the phone's screen on like the ringing screen would, and it has
+     * 끄기 and 다시 울림 that work without unlocking.
+     */
     fun postFallbackAlarm(context: Context, ring: RingRequest) {
+        val minutes = runCatching { BootAlarms.ringSettings(context).snoozeMinutes }.getOrDefault(5)
+        val openToday = open(context, NoticeLinks.Target.TODAY, 2101)
         val notification = NotificationCompat.Builder(context, FALLBACK_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setPriority(NotificationCompat.PRIORITY_MAX)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .setContentTitle(ring.title)
-            .setContentText(AlarmService.describe(ring))
-            .setContentIntent(open(context, NoticeLinks.Target.TODAY, 2101))
+            .setContentTitle(ring.title(BootAlarms.ringSettings(context).style))
+            .setContentText(AlarmService.describe(ring, BootAlarms.ringSettings(context).style))
+            .setContentIntent(openToday)
+            .setFullScreenIntent(openToday, true)
+            .setOngoing(true)
+            .addAction(NotificationCompat.Action.Builder(0, "끄기", fallbackAction(context, AlarmActionReceiver.ACTION_FALLBACK_OFF, ring, 2107))
+                .setAuthenticationRequired(false).build())
+            .addAction(NotificationCompat.Action.Builder(0, "${minutes}분 뒤 다시 울림", fallbackAction(context, AlarmActionReceiver.ACTION_FALLBACK_SNOOZE, ring, 2108))
+                .setAuthenticationRequired(false).build())
             .build()
-        post(context, ALARM_NOTIFICATION_ID + 1, notification)
+        notification.flags = notification.flags or android.app.Notification.FLAG_INSISTENT
+        post(context, FALLBACK_ALARM_ID, notification)
     }
+
+    private fun fallbackAction(context: Context, action: String, ring: RingRequest, request: Int): PendingIntent = PendingIntent.getBroadcast(
+        context, request, ring.putInto(Intent(context, AlarmActionReceiver::class.java).setAction(action)),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     /**
      * [SLP-15] A snooze waiting to ring again stays in the shade, quietly, with a way to stop it, so a
@@ -429,16 +489,25 @@ object Notifications {
         val channel = nm.getNotificationChannel(ALARM_CHANNEL_ID)
         return when {
             channel != null && channel.importance != NotificationManager.IMPORTANCE_NONE && channel.importance < NotificationManager.IMPORTANCE_HIGH ->
-                "‘근무 알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요"
+                "‘알람’ 알림이 조용히로 바뀌어 알람 화면이 안 떠요"
             channel != null && channel.lockscreenVisibility == android.app.Notification.VISIBILITY_SECRET ->
-                "‘근무 알람’ 알림이 잠금 화면에서 숨겨져 있어요"
+                "‘알람’ 알림이 잠금 화면에서 숨겨져 있어요"
             else -> null
         }
     }
 
     /** [ALRM-07] 방해 금지 set to 완전히 무음 silences alarms too (other 방해 금지 modes let alarms through). */
-    fun dndBlocksAlarms(context: Context): Boolean =
-        context.getSystemService(NotificationManager::class.java)?.currentInterruptionFilter == NotificationManager.INTERRUPTION_FILTER_NONE
+    fun dndBlocksAlarms(context: Context): Boolean {
+        val nm = context.getSystemService(NotificationManager::class.java) ?: return false
+        return when (nm.currentInterruptionFilter) {
+            NotificationManager.INTERRUPTION_FILTER_NONE -> true
+            // 2.0.0 [RVI-51] (검토 ALM-26) '중요한 알림만' with 알람 taken off its list keeps alarms quiet too.
+            NotificationManager.INTERRUPTION_FILTER_PRIORITY -> Build.VERSION.SDK_INT >= 28 && runCatching {
+                nm.notificationPolicy.priorityCategories and NotificationManager.Policy.PRIORITY_CATEGORY_ALARMS == 0
+            }.getOrDefault(false)
+            else -> false
+        }
+    }
 
     /** [ALRM-07] Phones whose maker adds its own 잠금 화면에 표시 permission, off for some apps at first (확인 필요 per model). */
     fun makerLockScreenPermission(maker: String = Build.MANUFACTURER): Boolean =

@@ -24,6 +24,9 @@ object VillageReplies {
     val count: kotlinx.coroutines.flow.StateFlow<Int> = _count
     @Volatile private var store: android.content.SharedPreferences? = null
     @Volatile private var worked = false
+
+    /** 2.0.0 [RVR-44] (HQ-123) A test is a new run of the app: no count, and no settings of an earlier test's app to write to. */
+    internal fun resetForTest() { store = null; worked = false; _count.value = 0 }
     fun publish(n: Int) {
         worked = true
         _count.value = n.coerceAtLeast(0)
@@ -44,7 +47,10 @@ object VillageReplies {
         if (store == null) restore(c.appContext)
         if (!c.companyApi.enabled || c.settingsRepository.current.plazaRulesAgreed <= 0) return
         val posts = runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() ?: return
-        publish(fresh(c.appContext, posts).values.sum())
+        val fresh = fresh(c.appContext, posts)
+        publish(fresh.values.sum())
+        // 2.0.0 [RVN-19] HQ-51 the same answers as rows of the 알림함 (사람들 반응), from this one ask.
+        runCatching { PlazaInbox.answers(c, posts, fresh) }
     }
 
     /** Answers by others under each of my top posts, by post id. */
@@ -89,7 +95,11 @@ object VillageReplies {
         var changed = false
         for (id in mineTop) {
             val n = read[id] ?: 0
-            if (n > (was[id] ?: 0)) { was[id] = n; changed = true }
+            if (n > (was[id] ?: 0)) {
+                was[id] = n; changed = true
+                // 2.0.0 [RVN-19] HQ-51 read where they are: the 알림함's row about them has said what it had to.
+                runCatching { com.bamnat.app.inbox.Inbox.remove(context, "plaza.post:$id") }
+            }
         }
         if (changed || seen(context) == null) write(context, was)
     }

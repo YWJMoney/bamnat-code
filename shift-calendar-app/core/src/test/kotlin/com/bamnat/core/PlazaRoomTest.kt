@@ -89,6 +89,13 @@ class PlazaRoomTest {
         assertEquals(listOf("주간 07:00~19:00 · 휴게 60분 → 08:00~20:00 · 휴게 60분으로 바꾼 사람 1명"), noPay.map { it.text })
     }
 
+    /** 2.0.0 [RVN-24] 검토 PC-21: one person must never read as two, even when a version is given twice. */
+    @Test fun `one version said twice counts its people once`() {
+        val sixty = edit { it.rate("night", 0.6) }
+        val cards = RoomCards.cards(mine, listOf(RoomCards.Version("base", sixty, 1), RoomCards.Version("base", sixty, 1)))
+        assertEquals(listOf("야간 50% → 60%로 바꾼 사람 1명"), cards.map { it.text })
+    }
+
     @Test fun `a member hears of other versions until the company settles`() {
         assertEquals("가나공업 광장에 다르게 쓰는 판이 2개 올라왔어요. 눌러서 바뀐 값만 봐요.",
             PlazaNews.line(PlazaNewsItem("room", company = "가나공업", count = 2)))

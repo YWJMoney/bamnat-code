@@ -100,14 +100,18 @@ class PlazaNewsJob : JobService() {
         suspend fun check(c: AppContainer) {
             c.telemetry.event(DiagEvents.ALIVE)
             calendarPermission(c)
+            // 2.0.0 [RVN-19] HQ-51 The 알림함's 사람들 반응 come with the same daily ask. With 밤낮 소식 off nothing is asked (처리방침
+            // 1-4항 '끄면 묻지 않습니다'); the answers under my posts still come on opening the app and with the 답 push ([VillageReplies]).
             if (!c.settingsRepository.current.plazaNews) return
+            var posts: List<MyPost>? = null
             // 1.36 [VIL-05] 마을 V5 소식 하나로: 밤낮 소식 and 마을 장터 소식 in one notice, held through sleep and work.
             val recipeLines = runCatching { c.recipes.newsLines() }.getOrDefault(emptyList())
             val changes = runCatching { receivedChanges(c) }.getOrDefault(emptyList())
             val digest = runCatching { digest(c) }.getOrNull()
+            digest?.let { d -> posts = runCatching { inbox(c, d) }.getOrNull() }
             // 1.38 PC 9차 LOW (알림은 '새 답 2개', 내 글 화면은 '1개'): the server counts a day's answers, the screen what this phone has
             // not seen; the notice now says the screen's number, and no line when they were all read already.
-            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty())
+            val plaza = sameAnswerCount(c, digest?.plaza.orEmpty(), posts)
             val text = BamnatNews.text(plaza, digest?.answers ?: 0, digest?.notices.orEmpty(), changes)
             if (text == null && recipeLines.isEmpty()) return
             val target = when {
@@ -145,21 +149,40 @@ class PlazaNewsJob : JobService() {
             replacing: String? = null) {
             if (lines.isEmpty()) return
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            // What waits is the notice as written now (the server's news is read once), added to any still waiting.
-            val held = heldOf(prefs)
-            val apart = held != null && (held.target != target || held.payload != payload)
-            val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
-                if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
-            keep(prefs, all)
+            // What waits is the notice as written now (the server's news is read once), added to any still waiting. 2.0.0 [RVN-22] 검토
+            // COMP-60-5: read and written under one lock, so a push and the day's 소식 at the same moment do not lose a line.
+            synchronized(HELD_LOCK) {
+                val held = heldOf(prefs)
+                val apart = held != null && (held.target != target || held.payload != payload)
+                val all = Held(title.takeIf { held == null } ?: "밤낮·마을 소식", ((held?.lines?.filterNot { replacing != null && it.startsWith(replacing) } ?: emptyList()) + lines).distinct().take(MAX_LINES),
+                    if (apart) NoticeLinks.Target.PLAZA else target, payload.takeIf { !apart })
+                keep(prefs, all)
+            }
             if (com.bamnat.app.sleep.QuietHold.holdIfAsleep(c.appContext, com.bamnat.app.sleep.QuietHold.Source.VILLAGE, Today.dateTime())) return
             postHeld(c.appContext)
         }
 
+        /**
+         * 2.0.0 [RVN-19] HQ-51 [d]'s reactions into the 알림함, and the answers under my 광장 posts as this phone counts them (unseen,
+         * as 마을 › 내 글 does), so the bell says the same number as that screen; the server's count of those when they cannot be read.
+         */
+        private suspend fun inbox(c: AppContainer, d: Digest): List<MyPost>? {
+            // My posts are read only when there are answers to count, as before (the 소식's 새 답 line).
+            val answers = d.plaza.any { it.kind == "replies" } || d.reactions.any(com.bamnat.core.plaza.Reactions::roomAnswer)
+            val posts = if (answers && takesPart(c)) d.posts ?: runCatching { c.companyApi.myPosts(c.companyStore.device) }.getOrNull() else null
+            if (posts != null) PlazaInbox.answers(c, posts, VillageReplies.fresh(c.appContext, posts))
+            PlazaInbox.fromDigest(c, d.reactions, answersCounted = posts != null)
+            PlazaInbox.news(c, d.plaza)
+            return posts
+        }
+
         /** 1.38: the 새 답 lines as one, counted as 마을 › 내 글 counts them (unseen on this phone); the server's lines if that cannot be read. */
-        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>): List<com.bamnat.core.plaza.PlazaNewsItem> {
+        private suspend fun sameAnswerCount(c: AppContainer, items: List<com.bamnat.core.plaza.PlazaNewsItem>,
+            /** 2.0.0 [RVN-19] my posts as the 알림함 just read them (one ask, not two). */
+            read: List<MyPost>? = null): List<com.bamnat.core.plaza.PlazaNewsItem> {
             val replies = items.filter { it.kind == "replies" }
             if (replies.isEmpty()) return items
-            val fresh = runCatching { VillageReplies.fresh(c.appContext, c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
+            val fresh = runCatching { VillageReplies.fresh(c.appContext, read ?: c.companyApi.myPosts(c.companyStore.device)).values.sum() }.getOrNull()
                 ?: return items
             val rest = items.filter { it.kind != "replies" }
             return if (fresh <= 0) rest else rest + replies.first().copy(count = fresh, company = replies.singleOrNull()?.company)
@@ -181,6 +204,7 @@ class PlazaNewsJob : JobService() {
         /** 1.36 [VIL-05] One 소식 notice at most: what [check] wrote, posted now or when the user is off work and awake. */
         private data class Held(val title: String, val lines: List<String>, val target: NoticeLinks.Target, val payload: String? = null)
         private const val K_HELD = "held"
+        private val HELD_LOCK = Any()
         private const val MAX_LINES = 7
 
         private fun heldOf(prefs: android.content.SharedPreferences): Held? = prefs.getString(K_HELD, null)?.let { raw ->
@@ -199,8 +223,7 @@ class PlazaNewsJob : JobService() {
         /** Posts the 소식 waiting, if any (from [check] at once, or from [com.bamnat.app.sleep.QuietHold] after work or sleep). */
         fun postHeld(context: Context) {
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val h = heldOf(prefs) ?: return
-            prefs.edit().remove(K_HELD).apply()
+            val h = synchronized(HELD_LOCK) { heldOf(prefs)?.also { prefs.edit().remove(K_HELD).apply() } } ?: return
             if (h.lines.isEmpty()) return
             val n = NotificationCompat.Builder(context, Notifications.PLAZA_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
@@ -220,7 +243,11 @@ class PlazaNewsJob : JobService() {
 
 
         /** What came from the server: the plaza part (empty when it is not asked), answers and notice titles. */
-        data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>)
+        data class Digest(val plaza: List<PlazaNewsItem>, val answers: Int, val notices: List<String>,
+            /** 2.0.0 [RVN-14] HQ-51 What others did to what this phone put out, for the 알림함 (empty from a server before 2.0.0). */
+            val reactions: List<com.bamnat.core.plaza.Reaction> = emptyList(),
+            /** 2.0.0 [RVN-22] I10bc-01 My room posts, carried when one of them was answered; null when not carried (asked apart then). */
+            val posts: List<MyPost>? = null)
 
         /**
          * [SRV-10] One ask for the day. Only a phone that took part in the plaza or sent a question asks;
@@ -232,21 +259,62 @@ class PlazaNewsJob : JobService() {
             if (!plazaOn && !c.inquiryStore.asked) return null
             val prefs = c.appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val since = prefs.getString(K_SINCE, null)
+            // 2.0.0 [RVN-22] 검토 I10bc-01 변화분만 받는 한 번의 동기: what was asked apart after this (내 문의 전체, 내 방 글, 마을 돌봄, 회사
+            // 목록) comes in the same answer, only what changed. A server before 2.0.0 leaves the parts out and they are asked as before.
+            val parts = digestParts(c, plazaOn)
+            val query = listOfNotNull(since?.let { "since=" + URLEncoder.encode(it, "UTF-8") }, parts.takeIf { it.isNotEmpty() }?.let { "with=" + it.joinToString(",") })
             val o = serverCall {
-                serverRequest(BuildConfig.COMPANY_BASE_URL, "GET", "/api/digest" + (since?.let { "?since=" + URLEncoder.encode(it, "UTF-8") } ?: ""),
-                    device = c.companyStore.device)
+                serverRequest(BuildConfig.COMPANY_BASE_URL, "GET", "/api/digest" + query.joinToString("&").let { if (it.isEmpty()) "" else "?$it" },
+                    // The app's version goes only with 내 문의, as /api/inquiries has always taken it (1.39 LOOP-15): nothing new is sent.
+                    device = c.companyStore.device, headers = if ("inquiries" in parts) mapOf("X-App" to InquiryClient.APP) else emptyMap())
             }
             o.optStringOrNull("now")?.let { prefs.edit().putString(K_SINCE, it).apply() }
-            val answers = o.optJSONArray("answers").objects().sumOf { it.optInt("count") }
-            // The 설정 tab's badge is right the next time the app opens.
-            if (answers > 0) runCatching { c.inquiryStore.update(c.inquiryApi.mine(c.companyStore.device)) }
+            o.optJSONObject("standing")?.let { runCatching { CareKept.keep(c.companyApi, careStandingOf(it)) } }
+            o.optJSONObject("companies")?.let { t ->
+                val names = t.optStringOrNull("names")
+                val counts = t.optStringOrNull("counts")
+                if (names != null && counts != null) runCatching { c.companySearch.tagsSaid(names, counts) }
+            }
+            val written = o.optJSONArray("answers").objects().sumOf { it.optInt("count") }
+            // [J133-24] Answers the reply job already said at once are not said again. 2.0.0 [RVN-22] I10ba-03: counted per question
+            // (opened or told), and what this line says is told from now on. The 설정 tab's badge is right the next time the app opens.
+            val answers = if (written > 0 && c.inquiryStore.asked) runCatching {
+                // I10bc-01 The answered questions came with the digest: no second ask for the whole list.
+                val carried = o.optJSONArray("inquiries")?.takeIf { c.inquiryStore.merges }?.objects()?.mapNotNull(c.inquiryApi::parse)?.takeIf { it.isNotEmpty() }
+                val list = carried?.also(c.inquiryStore::merge) ?: c.inquiryApi.mine(c.companyStore.device).also(c.inquiryStore::update)
+                c.inquiryStore.startTelling(list, InquiryReplyJob.said(c.appContext))
+                val fresh = c.inquiryStore.untold(list)
+                fresh.sumOf(c.inquiryStore::fresh).also { c.inquiryStore.tell(fresh) }
+            }.getOrDefault(written) else 0
             return Digest(
-                plaza = if (plazaOn) o.optJSONArray("plaza").objects().map(::item) else emptyList(),
-                // [J133-24] Answers the reply job already said at once are not said again.
-                answers = if (c.inquiryStore.asked && c.inquiryStore.unread.value > InquiryReplyJob.said(c.appContext)) answers else 0,
+                plaza = if (plazaOn) o.optJSONArray("plaza").rows(::item) else emptyList(),
+                answers = answers,
                 notices = o.optJSONArray("notices").objects().map { it.optString("title") }.filter { it.isNotBlank() },
+                reactions = o.optJSONArray("reactions").rows(::reaction),
+                posts = o.optJSONArray("posts")?.let { runCatching { myPostsOf(JSONObject().put("items", it)) }.getOrNull() },
             )
         }
+
+        /**
+         * 2.0.0 [RVN-22] I10bc-01 What this phone asks the digest to carry: 내 문의 when it sent one, 내 방 글 and 마을 돌봄 when it takes part
+         * in the plaza, the company list's tags when a calendar of it uses a company (알바·가게·투자만이면 묻지 않아요, T10b-05).
+         */
+        internal fun digestParts(c: AppContainer, plazaOn: Boolean): List<String> = buildList {
+            if (c.inquiryStore.asked) add("inquiries")
+            if (plazaOn) { add("posts"); add("standing") }
+            if (runCatching { c.companyCalendars() }.getOrDefault(false)) add("companies")
+        }
+
+        /** 2.0.0 [RVN-14] HQ-51 One line of `reactions`; a line it cannot read is left out (COMP-49). */
+        internal fun reaction(o: JSONObject) = com.bamnat.core.plaza.Reaction(
+            kind = o.getString("kind"), target = o.getString("target"), title = o.optString("title"), count = o.optInt("count"),
+            atMillis = Instant.parse(o.getString("at")).toEpochMilli(), room = o.optStringOrNull("room"), setup = o.optStringOrNull("setup"),
+            postKind = o.optStringOrNull("postKind"), up = o.optInt("up"), down = o.optInt("down"), theme = o.optStringOrNull("theme"),
+        )
+
+        /** 2.0.0 [RVN-14] HQ-51 The 알림함's rows of [d]'s reactions, the kinds turned off in 설정 › 알림 left out. */
+        fun reactionRows(c: AppContainer, d: Digest): List<com.bamnat.core.plaza.Reactions.Row> =
+            com.bamnat.core.plaza.Reactions.rows(d.reactions, com.bamnat.core.plaza.Reactions.decodeOff(c.settingsRepository.current.reactionsOff))
 
         internal fun item(i: JSONObject) = PlazaNewsItem(
             kind = i.optString("kind"), company = i.optJSONObject("company")?.optString("name"), dept = i.optStringOrNull("dept"),

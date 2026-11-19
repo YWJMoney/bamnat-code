@@ -11,6 +11,7 @@ import com.bamnat.app.company.QueuedInquiry
 import com.bamnat.app.data.PersonalCalendar
 import com.bamnat.app.ui.diag.ConsentSummary
 import com.bamnat.app.ui.diag.ServerCheck
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -39,6 +40,8 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class LShareInquiryTest {
+    // (HQ-93) No line an earlier test left on the app's one snackbar (it covered a button and took the press): ComposeMainReset.
+    @get:org.junit.Rule(order = Int.MIN_VALUE) val mainReset = com.bamnat.app.rules.ComposeMainReset.rule()
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val c get() = app.container
     private val today = LocalDate.of(2026, 11, 3)
@@ -78,7 +81,7 @@ class LShareInquiryTest {
 
     private fun week(change: Long?) = schedule(*(0L until 7).map { today.plusDays(it) to (if (it == 2L) change else 1L) }.toTypedArray())
 
-    private fun link(id: String) = ShareLinkState(id, "https://share.example/s/$id", "token-$id", Instant.now().plus(Duration.ofDays(20)), "나", 30, null)
+    private fun link(id: String) = ShareLinkState(id, "https://share.example/s/$id", "token-$id", Today.instant().plus(Duration.ofDays(20)), "나", 30, null)
 
     @Before fun setUp() {
         // [QA-09] See ComposeMainReset.
@@ -97,8 +100,8 @@ class LShareInquiryTest {
 
     @Test fun aChangeInTheNextWeekOfAReceivedScheduleIsALine() = runBlocking {
         val id = "Ab3dEfGh5JkLmNoPqRsTuv"
-        c.received.put(id, ReceivedShare(week(1L), Instant.now().plus(Duration.ofDays(10)), null, "v1"))
-        api.next = ReceivedShare(week(3L), Instant.now().plus(Duration.ofDays(10)), null, "v2")
+        c.received.put(id, ReceivedShare(week(1L), Today.instant().plus(Duration.ofDays(10)), null, "v1"))
+        api.next = ReceivedShare(week(3L), Today.instant().plus(Duration.ofDays(10)), null, "v2")
         val lines = PlazaNewsJob.receivedChanges(c, today)
         assertEquals(1, lines.size)
         assertTrue(lines.single(), lines.single().contains("11/5 주간 → 야간"))

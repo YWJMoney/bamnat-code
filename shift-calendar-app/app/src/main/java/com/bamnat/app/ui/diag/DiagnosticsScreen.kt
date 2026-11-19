@@ -4,11 +4,7 @@ import com.bamnat.app.appContainer
 import com.bamnat.app.diag.CrashLog
 import androidx.compose.runtime.produceState
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.saveable.rememberSaveable
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +26,7 @@ import com.bamnat.app.ui.diag.DiagnosticsViewModel.Companion.clock
 import com.bamnat.app.ui.components.SystemSettings
 import com.bamnat.app.alarm.AlarmScheduler
 import androidx.compose.ui.Alignment
-import androidx.compose.material3.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedButton
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Error
@@ -41,6 +37,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,7 +48,6 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Share
 import com.bamnat.app.ui.components.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import com.bamnat.app.ui.components.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.Box
@@ -61,7 +57,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import com.bamnat.app.ui.components.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -79,7 +75,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.bamnat.app.AppContainer
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.alarm.Notifications
-import com.bamnat.app.tier.Tier
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.core.diag.DiagEvent
 import com.bamnat.core.diag.EventBook
@@ -87,6 +82,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.color
 
 /** How an [AlarmCheck] is put right. */
 sealed interface Fix {
@@ -118,7 +114,12 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
      */
     fun stopFirst(): DiagReport {
         val first = sections.filter { it.first == STOP_SECTION || it.first == STOP_TRAIL_SECTION }
-        return copy(sections = first + (sections - first.toSet()))
+        // 2.0.0 [RVL-84] (HQ-118) Within 앱 멈춤, the newest stop's own record first: a long count of stops never pushes it past the cut.
+        val newestFirst = first.map { (title, lines) ->
+            val at = lines.indexOf(NEWEST_STOP)
+            title to if (title != STOP_SECTION || at <= 0) lines else lines.subList(at, lines.size) + lines.subList(0, at)
+        }
+        return copy(sections = newestFirst + (sections - first.toSet()))
     }
 
     companion object {
@@ -135,6 +136,25 @@ const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
 const val STOP_SECTION = "앱 멈춤"
 /** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
+/** 2.0.0 [RVL-84] The line before the newest stop's own record in [STOP_SECTION] ([com.bamnat.app.diag.CrashLog.reportLines]). */
+const val NEWEST_STOP = "가장 최근 기록:"
+
+/**
+ * 2.0.0 [RVO-16] 검토 SET-02·U11a-02 ('알람 준비'를 네 곳이 서로 다른 기준으로 말해요): one verdict from [alarmChecks] for every place that
+ * says whether the alarm is ready (설정 첫 화면, 설정 › 알람, 알람 점검; 알람 지킴이 tells of [must] only). [must] keeps the alarm from
+ * ringing, from showing or on time; [better] makes it surer (배터리 최적화 제외, 예비 소리, 절전, 대기 상태). Advice the app cannot read is in neither.
+ */
+internal data class AlarmVerdict(val must: List<AlarmCheck>, val better: List<AlarmCheck>, val checked: Int) {
+    /** "꼭 고칠 것 0 · 하면 더 좋은 것 1", the same words in each place. */
+    val counts: String get() = "꼭 고칠 것 ${must.size} · 하면 더 좋은 것 ${better.size}"
+}
+
+internal val MUST_FIX: Set<String> = com.bamnat.app.alarm.AlarmGuard.CRITICAL + setOf("알림 허용", "백그라운드 제한 없음")
+
+internal fun alarmVerdict(checks: List<AlarmCheck>): AlarmVerdict {
+    val bad = checks.filter { it.ok == false }
+    return AlarmVerdict(bad.filter { it.title in MUST_FIX }, bad.filter { it.title !in MUST_FIX }, checks.count { it.ok != null })
+}
 
 /**
  * [REL-13] The things an alarm needs, each with whether it is fine now and how to fix it. [EASE-21] 1.38: also read by the
@@ -153,12 +173,12 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         add(AlarmCheck("알람 사용", settings.alarmsEnabled, "꺼져 있으면 근무 알람이 하나도 울리지 않아요.", "켜기", Fix.TurnOn))
         // [ALRM-01] R11: without it the alarm still rings, but its buttons and 일어났나요? cannot show.
         add(AlarmCheck("알림 허용", Notifications.canPost(context),
-            "꺼져 있으면 알람이 울려도 끄기·다시 울림 버튼이 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
+            "꺼져 있으면 알람이 울려도 끄기·다시 울림 단추가 안 보이고, ‘일어났나요?’도 묻지 못해 건너뛰어요.", "알림 설정 열기",
             Fix.Open(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))))
         // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
         if (Notifications.canPost(context)) {
             add(AlarmCheck("알람 알림 켜짐", Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID),
-                "휴대폰 설정에서 ‘근무 알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
+                "휴대폰 설정에서 밤낮의 ‘알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
                 Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
             add(AlarmCheck("예비 소리 켜짐", Notifications.channelOn(context, Notifications.FALLBACK_CHANNEL_ID),
                 "알람 화면을 못 띄울 때 대신 울리는 ‘예비 소리’가 꺼져 있어요.", "예비 소리 켜기",
@@ -166,19 +186,21 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         }
         if (audio != null) add(AlarmCheck("알람 소리 크기", audio.getStreamVolume(android.media.AudioManager.STREAM_ALARM) > 0,
             "휴대폰의 알람 소리가 0이라 울려도 들리지 않아요(진동만 와요).", "70%로 올리기", Fix.AlarmVolume))
+        // 2.0.0 [RVIB-29] (PC-189) Not only late: without it Android lets no alarm start its ringing screen and sound from the
+        // background (the loud notice rings instead), and from 안드로이드 17 it is what lets an alarm's sound play from behind.
         if (Build.VERSION.SDK_INT >= 31) add(AlarmCheck("정확한 알람", container.alarmScheduler.canScheduleExact(),
-            "허용하지 않으면 알람이 몇 분 늦을 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
+            "허용하지 않으면 알람이 몇 분 늦거나 알람 화면 없이 알림 소리로만 울릴 수 있어요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, pkg))))
         if (Build.VERSION.SDK_INT >= 34) add(AlarmCheck("잠금 화면 알람", Notifications.canUseFullScreen(context),
             "허용하면 화면이 꺼져 있어도 알람 화면이 바로 떠요.", "허용하러 가기", Fix.Open(Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, pkg))))
         // [ALRM-07] 1.25 AB: the other reasons a ringing screen does not show on the lock screen.
         if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             val trouble = Notifications.alarmChannelTrouble(context)
             add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
-                (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
+                (trouble ?: "‘알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
                 "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
         }
         if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,
-            "‘완전히 무음’ 방해 금지가 켜져 있어 알람도 울리지 않아요. 알람은 허용하는 방해 금지로 바꿔 주세요.", "방해 금지 설정 열기",
+            "방해 금지가 알람까지 막고 있어 울리지 않아요. 방해 금지에서 알람을 허용해 주세요.", "방해 금지 설정 열기",
             Fix.OpenFirst(listOf(Intent(Settings.ACTION_ZEN_MODE_PRIORITY_SETTINGS), Intent(Settings.ACTION_SETTINGS)))))
         if (Notifications.makerLockScreenPermission()) add(AlarmCheck("제조사 잠금 화면 표시", null,
             "이 휴대폰은 ‘잠금 화면에 표시’·‘백그라운드에서 팝업 창 표시’ 권한이 따로 있어요. 앱 정보 › 권한(기타 권한)에서 둘 다 허용해 주세요.",
@@ -284,14 +306,8 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    /** [MON-02] Testers preview the screens after the launch here; null shows the real state. */
+    /** [MON-02] The gate the debug build's tier preview card reads ([com.bamnat.app.ui.pro.TierPreviewCard]). */
     val gate = container.featureGate.state
-    val previewTier = container.settingsRepository.settings.map { it.previewTier }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.settingsRepository.current.previewTier)
-    fun setPreview(t: Tier?) = container.settingsRepository.update { it.copy(previewTier = t) }
-    /** S 1.32 [SECX-01] The tester's tier preview shows only on an admin phone the developer app approved (or a debug build). */
-    val adminPhone = container.proStore.state.map { it.passes?.admin?.approved == true }.distinctUntilChanged()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, container.proStore.current.passes?.admin?.approved == true)
 
     fun report(context: Context, events: List<DiagEvent>): DiagReport {
         val now = Today.millis()
@@ -304,8 +320,13 @@ class DiagnosticsViewModel(private val container: AppContainer) : ViewModel() {
             add("다음 알람: " + (next?.let { "${stamp(it.triggerAtMillis)} · ${it.plan.shiftName.ifBlank { "이 날 알람" }} · " +
                 if (it.exact) "정확" else "근사(정확한 알람 권한 없음)" } ?: "없음"))
             add("다시 울림: " + (snoozeAt.value?.let(::stamp) ?: "없음"))
-            val missed = EventBook.possiblyMissed(events, now)
+            // 2.0.0 [RVIB-28] (PC-188) A ring the app died in and could not ring again is a possible miss too; one rung again is said
+            // with how long it was silent.
+            val cuts = EventBook.cuts(events).filter { it.atMillis >= now - 30L * DAY_MILLIS }
+            val missed = (EventBook.possiblyMissed(events, now) + cuts.filter { it.lost }.map { it.trigger }).distinct().sorted()
             add("놓쳤을 수 있는 알람: " + if (missed.isEmpty()) "없음" else missed.joinToString { stamp(it) })
+            val again = cuts.filter { it.resumed }
+            if (again.isNotEmpty()) add("끊겼다 다시 울린 알람: " + again.joinToString { "${stamp(it.trigger)} (${it.silentSeconds}초 끊김)" })
             // [ALRM-01] M 4-1: how late alarms were over 30 days, and whether the system holds the next one.
             val lates = events.filter { it.name == com.bamnat.core.diag.DiagEvents.ALARM_FIRED && it.atMillis >= now - 30L * DAY_MILLIS }
                 .mapNotNull { EventBook.lateSeconds(it.detail) }
@@ -411,7 +432,6 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
     // [ALRM-01] R11: a missing notification permission goes first, in red.
     val checks = remember(refresh, upcoming) { vm.checks(context).sortedBy { if (it.title == "알림 허용" && it.ok == false) 0 else 1 } }
     val week = remember(events) { events?.let { EventBook.week(it, Today.millis()) } }
-    val adminPhone by vm.adminPhone.collectAsStateWithLifecycle()
     var rawOpen by rememberSaveable { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
 
@@ -462,9 +482,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line. [RVL-59] (검토 DATA-25) 복사 waits in ⋮, so the line names the button at the
+                // bottom that takes this report along.
                 Text(
-                    "알람이 안 울리거나 늦게 울릴 때 원인을 찾는 화면이에요. 오른쪽 위 복사 버튼으로 내용을 복사해 문의에 붙여 주세요. " +
-                        "기록은 이 휴대폰에만 있고 메모와 금액은 담지 않아요.",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 맨 아래 ‘점검 내용과 함께 문의하기’로 이 내용이 함께 가요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -473,17 +494,18 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             week?.takeIf { it.planned > 0 }?.let { w ->
                 item { AlarmWeekCard(w, events.orEmpty()) }
             }
-            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
-            item { ServerCheckCard() }
-            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
-            item { SpeedCheckCard() }
             item {
                 SectionCard(title = "점검") {
-                    val bad = checks.count { it.ok == false }
+                    // 2.0.0 [RVO-16] 검토 SET-02: the same verdict as 설정 첫 화면 and 설정 › 알람.
+                    val verdict = alarmVerdict(checks)
                     Text(
-                        if (bad == 0) "알람이 울리는 데 필요한 것이 모두 준비됐어요." else "고칠 것이 ${bad}개 있어요. 버튼을 누르면 바로 그 화면이 열려요.",
+                        when {
+                            verdict.must.isEmpty() && verdict.better.isEmpty() -> "알람이 울리는 데 필요한 것이 모두 준비됐어요."
+                            verdict.must.isEmpty() -> "알람은 울릴 준비가 됐어요 · ${verdict.counts}. 단추를 누르면 바로 그 화면이 열려요."
+                            else -> "${verdict.counts}. 단추를 누르면 바로 그 화면이 열려요."
+                        },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (bad == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        color = if (verdict.must.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
                     )
                     for (check in checks) {
                         CheckRow(check) {
@@ -516,33 +538,32 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                     if (testAt == null) Text("‘화면 끄고 3분 기다리기’를 누른 뒤 전원 버튼으로 화면을 끄고 기다려 보세요. 울리지 않으면 위 점검의 빨간 줄을 고쳐 주세요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 2.0.0 [RVI-92] (검토 I03b-04, 발굴 3-3) What the last test showed, checked by the app: no need to have watched the clock.
+                    if (testAt == null) remember(events) { events?.let { EventBook.lastTest(it, Today.millis()) } }?.let { r ->
+                        val (line, ok) = testResult(r)
+                        Text(line, style = MaterialTheme.typography.bodyMedium,
+                            color = if (ok) MaterialTheme.colorScheme.primary else com.bamnat.app.ui.theme.Tone.Caution.color())
+                    }
                 }
             }
-            if (BuildConfig.DEBUG || (testing && adminPhone)) item {
-                val preview by vm.previewTier.collectAsStateWithLifecycle()
+            // 2.0.0 [RVI-86] (디자인 품질 1) The alarm's own cards first (this week, 점검, 시험 알람); the servers and the plaza's speed,
+            // which a person looking at a late alarm does not look for first, come after them.
+            // [ALRM-02] I26: whether the servers answer, and what waits to be sent.
+            item { ServerCheckCard() }
+            // [SPD-17] 1.30 AP1: how fast the plaza's reads were on this phone (measured here, never sent).
+            item { SpeedCheckCard() }
+            if (BuildConfig.DEBUG) item {
+                // 2.0.0 [RVO-01] (PC-54) 프로 화면 맨 위와 같은 한 부품(무료·프로·팀·직원 요금제, 맛보기·하루 써 보기 처음부터). 디버그 빌드에만.
                 val gate by vm.gate.collectAsStateWithLifecycle()
-                SectionCard(title = "출시 뒤 화면 미리 보기") {
-                    // [MON-02] After the 정식 출시 switch only debug builds can preview; a release build shows the real state.
-                    Text(if (gate.live && !gate.preview) "정식 출시를 해서 실제 등급으로 보여요. 미리 보기는 개발용 빌드에서만 돼요."
-                        else "정식 출시 뒤 무료와 프로 화면이 어떻게 보이는지 미리 볼 수 있어요. 결제는 되지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("지금: ${gate.access.reason.words}", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilterChip(selected = preview == null, onClick = { vm.setPreview(null) }, label = { Text("실제") })
-                        listOf(Tier.FREE, Tier.PRO).forEach { t ->
-                            FilterChip(selected = preview == t, onClick = { vm.setPreview(t) }, label = { Text(t.label) })
-                        }
-                    }
-                    val trialCtx = androidx.compose.ui.platform.LocalContext.current
-                    // [MON-13] 1.36: 금액 비교하기·세후 예상 일주일 무료, tried again from the start.
-                    if (BuildConfig.DEBUG) androidx.compose.material3.TextButton(onClick = { trialCtx.appContainer.featureGate.resetTrials() }) { Text("일주일 무료 맛보기 처음부터") }
-                    // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
-                    if (BuildConfig.DEBUG) {
-                        var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
-                        androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
-                            Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
-                        }
-                    }
+                val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                com.bamnat.app.ui.pro.TierPreviewCard(trialCtx.appContainer, gate)
+            }
+            // PC 17차 사용성 제안: 안전 모드 tried without stopping the app three times (a debug build only).
+            if (BuildConfig.DEBUG) item {
+                val trialCtx = androidx.compose.ui.platform.LocalContext.current
+                var armed by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+                androidx.compose.material3.TextButton(onClick = { com.bamnat.app.diag.StartGuard.armNext(trialCtx); armed = true }) {
+                    Text(if (armed) "다음 실행은 안전 모드예요 · 앱을 완전히 닫고 다시 열어요" else "다음 실행을 안전 모드로")
                 }
             }
             // S 1.32 [SECX-01] 기능 상태 and its 관리자 미리 보기 switches are gone from the phone (the developer app sets previews).
@@ -572,22 +593,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
-            // [QA-07] 330: the person checks their own data, as the release list does before a phone move.
-            item {
-                val lines by vm.dataCheck.collectAsStateWithLifecycle()
-                val checking by vm.checking.collectAsStateWithLifecycle()
-                SectionCard(title = "데이터 점검") {
-                    Text("근무·기록 데이터가 온전한지, 백업이 제대로 만들어지는지 휴대폰 안에서 살펴봐요. 아무것도 바꾸거나 보내지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    lines?.forEach { line ->
-                        Text((if (line.ok) "✓ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
-                            color = if (line.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
-                    }
-                    OutlinedButton(onClick = { vm.runDataCheck() }, enabled = !checking) {
-                        Text(if (checking) "점검하는 중…" else if (lines == null) "데이터 점검" else "다시 점검")
-                    }
-                }
-            }
+            // [QA-07] 330: the person checks their own data, as the release list does before a phone move. 2.0.0 [RVL-70] The same card is
+            // 설정 › 데이터 › 데이터 점검 ([DataCheckScreen]).
+            item { DataCheckCard(vm) }
             // [UX-05] When the checks don't solve it, ask with this phone's alarm check attached.
             item {
                 SectionCard(title = "그래도 안 울리면") {
@@ -645,9 +653,21 @@ internal fun applyAlarmFix(container: AppContainer, context: Context, fix: Fix, 
     }
 }
 
+/** 2.0.0 [RVI-92] The last test alarm in words, and whether it went as a shift alarm should. */
+internal fun testResult(r: EventBook.Rang): Pair<String, Boolean> {
+    val at = DiagnosticsViewModel.stamp(r.at)
+    return when {
+        r.missed -> "지난 시험($at)이 울리지 않았어요 · 위 점검의 빨간 줄을 고쳐 주세요" to false
+        r.lateSeconds == null -> "지난 시험($at)은 알람 화면 없이 알림으로만 울렸어요 · 위 점검을 봐 주세요" to false
+        r.late -> "지난 시험($at)이 ${(r.lateSeconds ?: 0L) / 60}분 늦게 울렸어요 · 배터리 설정을 봐 주세요" to false
+        else -> "지난 시험($at)은 제때 울렸어요" to true
+    }
+}
+
 /** [ALRM-01] I21 지난 7일 알람 성적표, with what to do about an alarm that may have been missed. */
 @Composable
 internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagEvent>) {
+    val maxRows = 7
     SectionCard(title = "지난 7일 알람") {
         Text(
             "울릴 알람 ${w.planned}개 중 ${w.rang}개가 울렸어요." +
@@ -655,16 +675,34 @@ internal fun AlarmWeekCard(w: com.bamnat.core.diag.AlarmWeek, events: List<DiagE
             style = MaterialTheme.typography.bodyMedium,
             color = if (w.allRang && w.late == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
         )
-        for (t in w.missed.take(3)) {
+        // 2.0.0 [RVI-86] (검토 I03a-06) Each alarm of the week by its day: 제때, N분 늦게 or 기록 없음, in words beside the colour
+        // (디자인 품질 6·14: one red word a missed alarm, the reason once below, not a red paragraph each).
+        val rows = remember(events) { EventBook.weekRows(events, Today.millis()) }
+        for (r in rows.take(maxRows)) Row(Modifier.fillMaxWidth().heightIn(min = 32.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(DiagnosticsViewModel.stamp(r.at), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            Text(r.said, style = MaterialTheme.typography.bodyMedium, color = when {
+                r.missed -> MaterialTheme.colorScheme.error
+                r.late -> com.bamnat.app.ui.theme.Tone.Caution.color()
+                else -> MaterialTheme.colorScheme.onSurfaceVariant
+            })
+        }
+        if (rows.size > maxRows) Text("그 전 ${rows.size - maxRows}개는 보고서에 있어요", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVI-91] (검토 I03c-02) The silent daytime rehearsals of the week, in one line.
+        remember(events) { EventBook.rehearsalLine(EventBook.rehearsals(events, Today.millis())) }?.let { line ->
+            Text(line, style = MaterialTheme.typography.bodySmall,
+                color = if ("제때" in line) MaterialTheme.colorScheme.onSurfaceVariant else com.bamnat.app.ui.theme.Tone.Caution.color())
+        }
+        w.missed.maxOrNull()?.let { t ->
             // [ALRM-01] I22: the daily alive line tells a phone that was off from an app that was stopped.
             val why = if (EventBook.aliveBefore(events, t)) "앱이 멈춰 있었던 것 같아요. 배터리 설정을 봐 주세요."
                 else "휴대폰이 꺼져 있었거나 오래 쓰지 않았던 것 같아요."
-            Text("${DiagnosticsViewModel.stamp(t)} 알람이 울렸는지 기록이 없어요. $why",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            Text("기록 없는 알람: $why", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (w.missed.isNotEmpty()) OutlinedButton(onClick = {
             InquiryLinks.ask(InquiryStart(about = "알람", kind = InquiryKind.BUG, withCheck = true))
-        }) { Text("놓친 알람 문의로 보내기") }
+        // 2.0.0 [RVN-22] 검토 PC-27: it opens with the check ticked, so it says the check goes with it.
+        }) { Text("놓친 알람을 점검 내용과 함께 문의") }
     }
 }
 

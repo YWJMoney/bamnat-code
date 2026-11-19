@@ -1,4 +1,4 @@
-import { json, one, randomId, readJson, run } from "./index.js";
+import { audit, json, notifyAdmins, one, randomId, readJson, run } from "./index.js";
 
 // ---- 1.38 [ADM3-01] 패스키(지문·얼굴) 로그인 ----
 //
@@ -78,12 +78,17 @@ export function derToRaw(der) {
   return raw;
 }
 
-/** authenticatorData의 앞부분: rpIdHash가 맞는지, 사용자가 눌렀는지(UP), 서명 횟수. */
+/**
+ * authenticatorData의 앞부분: rpIdHash가 맞는지, 사용자가 눌렀는지(UP), 서명 횟수.
+ * 2.0.0 [RVQ-06] 검토 SRV-05: 지문·PIN으로 확인했는지(UV, 0x04)도 꼭 봐요. 화면이 userVerification: "required"를 청해도 그것은 브라우저 쪽
+ * 약속이라, 서버가 깃발을 보지 않으면 '패스키는 두 가지라 두 번째 확인을 묻지 않는다'가 성립하지 않아요(WebAuthn Level 2 §7.2 19단계).
+ */
 async function pkAuthData(auth, rpId) {
   if (auth.length < 37) throw new Error("auth");
   if (!pkSame(auth.slice(0, 32), await pkSha(new TextEncoder().encode(rpId)))) throw new Error("rp");
   const flags = auth[32];
   if (!(flags & 0x01)) throw new Error("presence");
+  if (!(flags & 0x04)) throw new Error("verification");
   const counter = ((auth[33] << 24) >>> 0) + ((auth[34] << 16) | (auth[35] << 8) | auth[36]);
   return { flags, counter };
 }
@@ -107,22 +112,41 @@ async function pkClientData(text, type, origin, env, kind, now) {
   const c = JSON.parse(new TextDecoder().decode(raw));
   if (c.type !== type) throw new Error("type");
   if (c.origin !== origin) throw new Error("origin");
+  // 2.0.0 [RVQ-06] 검토 SRV-05: 다른 사이트 안의 틀(iframe)에서 만든 서명은 받지 않아요.
+  if (c.crossOrigin === true) throw new Error("cross_origin");
   if (!(await pkTake(env, kind, c.challenge, now))) throw new Error("challenge");
   return raw;
 }
 
 /** 내 계정 › 패스키 목록. */
 export async function passkeyList(env, actor) {
-  const rows = await env.DB.prepare("SELECT id, name, created_at, last_at FROM admin_passkeys WHERE admin = ? ORDER BY created_at").bind(actor.id).all();
-  return { items: (rows.results ?? []).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, lastAt: r.last_at })), max: PASSKEY.perAdmin };
+  const rows = await env.DB.prepare("SELECT id, name, created_at, last_at, last_ua FROM admin_passkeys WHERE admin = ? ORDER BY created_at").bind(actor.id).all();
+  return { items: (rows.results ?? []).map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, lastAt: r.last_at, lastDevice: r.last_ua || "" })),
+    max: PASSKEY.perAdmin };
 }
 
-/** 로그인한 관리자: GET·POST /me/passkeys…. 등록 시작은 도전값과 이름, 등록은 공개 키를 남겨요. */
-export async function passkeyMine(request, env, url, path, method, actor, now) {
-  if (path === "/me/passkeys" && method === "GET") return json(await passkeyList(env, actor));
+/** 2.0.0 [RVQ-06] 검토 SRV-06·U21-03: 패스키가 생기거나 지워지면 그 관리자와 최고 관리자에게 알려요(내가 안 만든 패스키를 바로 알게). */
+async function passkeyNews(env, actor, verb, name, now) {
+  await audit(env, now, verb === "add" ? "passkey_add" : "passkey_remove", actor.id, name);
+  const who = actor.owner ? "최고 관리자" : actor.name || "관리자";
+  await notifyAdmins(env, "security", `${who} 계정에 패스키 '${name}'${verb === "add" ? "가 생겼어요" : "를 지웠어요"}. 내가 한 게 아니면 내 계정 › 로그인에서 모두 끊어요`, now,
+    { ignoreQuiet: verb === "add", only: actor.owner ? null : actor.id }).catch(() => {});
+}
+
+/**
+ * 로그인한 관리자: GET·POST /me/passkeys…. 등록 시작은 도전값과 이름, 등록은 공개 키를 남겨요.
+ * 2.0.0 [RVQ-06] 검토 SRV-06: 등록 시작은 로그인한 지 10분 안이거나 비밀번호를 한 번 더 넣어야 해요(열린 채 둔 화면에서 남이 더하지 못하게).
+ * [opts] {recentlyIn, reauth(password), label}.
+ */
+export async function passkeyMine(request, env, url, path, method, actor, now, opts = {}) {
+  if (path === "/me/passkeys" && method === "GET") return json({ ...(await passkeyList(env, actor)), needPassword: !opts.recentlyIn });
   if (path === "/me/passkeys/start" && method === "POST") {
     const mine = await passkeyList(env, actor);
     if (mine.items.length >= PASSKEY.perAdmin) return json({ error: "too_many" }, 409);
+    if (!opts.recentlyIn) {
+      const body = await readJson(request, 1024).catch(() => ({}));
+      if (!opts.reauth || !(await opts.reauth(body?.password))) return json({ error: "reauth", field: "password" }, 401);
+    }
     return json({ challenge: await pkMake(env, `reg|${actor.id}`, now), rpId: url.hostname, user: { id: b64u.enc(new TextEncoder().encode(actor.id)), name: actor.email || "owner",
       displayName: actor.name ?? "관리자" }, exclude: mine.items.map((x) => x.id) });
   }
@@ -141,7 +165,9 @@ export async function passkeyMine(request, env, url, path, method, actor, now) {
       const jwk = { kty: "EC", crv: "P-256", x: b64u.enc(key.get(-2)), y: b64u.enc(key.get(-3)) };
       await crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
       const name = String(body?.name ?? "").replace(/[\u0000-\u001f]/g, " ").trim().slice(0, 40) || "이 기기";
-      await run(env, "INSERT INTO admin_passkeys (id, admin, name, jwk, counter, created_at) VALUES (?, ?, ?, ?, 0, ?)", id, actor.id, name, JSON.stringify(jwk), now);
+      await run(env, "INSERT INTO admin_passkeys (id, admin, name, jwk, counter, created_at, last_ua) VALUES (?, ?, ?, ?, 0, ?, ?)", id, actor.id, name,
+        JSON.stringify(jwk), now, opts.label ?? "");
+      await passkeyNews(env, actor, "add", name, now);
       return json({ ok: true, id });
     } catch (e) {
       return json({ error: "passkey", why: String(e?.message ?? e).slice(0, 40) }, 400);
@@ -149,8 +175,11 @@ export async function passkeyMine(request, env, url, path, method, actor, now) {
   }
   const m = path.match(/^\/me\/passkeys\/([A-Za-z0-9_-]{16,400})\/delete$/);
   if (m && method === "POST") {
+    const row = await one(env, "SELECT name FROM admin_passkeys WHERE id = ? AND admin = ?", m[1], actor.id);
     const r = await run(env, "DELETE FROM admin_passkeys WHERE id = ? AND admin = ?", m[1], actor.id);
-    return r?.meta?.changes ? json({ ok: true }) : json({ error: "not_found" }, 404);
+    if (!r?.meta?.changes) return json({ error: "not_found" }, 404);
+    await passkeyNews(env, actor, "remove", row?.name ?? "", now);
+    return json({ ok: true });
   }
   return null;
 }
@@ -164,7 +193,7 @@ export async function passkeyStart(env, url, now) {
  * 로그인 전: POST /passkey/login {id, clientDataJSON, authenticatorData, signature}. 맞으면 그 패스키의 관리자 id(주인은 'owner'), 아니면 null.
  * 서명 횟수가 줄면(복제된 열쇠) 받지 않아요(0만 쓰는 기기는 늘 0이라 괜찮아요).
  */
-export async function passkeyCheck(request, env, url, now) {
+export async function passkeyCheck(request, env, url, now, label = "") {
   const body = await readJson(request, 8192);
   try {
     const row = await one(env, "SELECT * FROM admin_passkeys WHERE id = ?", String(body?.id ?? "").slice(0, 400));
@@ -179,7 +208,7 @@ export async function passkeyCheck(request, env, url, now) {
     const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, derToRaw(b64u.dec(body.signature)), signed);
     if (!ok) return null;
     if (row.counter > 0 && counter <= row.counter) return null;
-    await run(env, "UPDATE admin_passkeys SET counter = ?, last_at = ? WHERE id = ?", counter, now, row.id);
+    await run(env, "UPDATE admin_passkeys SET counter = ?, last_at = ?, last_ua = ? WHERE id = ?", counter, now, label, row.id);
     return { admin: row.admin, name: row.name };
   } catch {
     return null;

@@ -1,5 +1,8 @@
 package com.bamnat.app.memo
 
+import com.bamnat.app.TestClock
+import org.junit.After
+import org.junit.Before
 import android.Manifest
 import android.app.AlarmManager
 import android.app.Application
@@ -14,6 +17,7 @@ import com.bamnat.core.consent.ConsentItem
 import com.bamnat.core.consent.ConsentPlan
 import com.bamnat.core.memo.Memo
 import com.bamnat.core.memo.MemoReminder
+import com.bamnat.core.time.Today
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -30,10 +34,15 @@ import java.time.ZoneId
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class MemoScheduleAppTest {
+    // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking) so the result does not hang on when the run starts.
+    @Before fun hourOfDay() = TestClock.at(10)
+
+    @After fun clockBack() = Today.reset()
+
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val nm = context.getSystemService(NotificationManager::class.java)
     private val alarms = shadowOf(context.getSystemService(AlarmManager::class.java))
-    private fun millis(t: LocalDateTime) = t.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+    private fun millis(t: LocalDateTime) = t.atZone(Today.zone()).toInstant().toEpochMilli()
     private fun ours() = alarms.scheduledAlarms.filter {
         shadowOf(it.operation).savedIntent.component?.className == MemoScheduleReceiver::class.java.name
     }
@@ -42,7 +51,7 @@ class MemoScheduleAppTest {
     private fun shown() = shadowOf(nm).allNotifications.filter { it.flags and android.app.Notification.FLAG_GROUP_SUMMARY == 0 }
 
     @Test fun oneAlarmIsKeptForTheNextScheduleAndNoneWithout() {
-        val now = LocalDateTime.now()
+        val now = Today.dateTime()
         val soon = now.plusHours(2).withSecond(0).withNano(0)
         val memos = listOf(
             Memo(id = 1, title = "치과", reminder = MemoReminder(soon, ring = false, notify = true)),
@@ -61,7 +70,7 @@ class MemoScheduleAppTest {
     @Test fun aNoticeSaysWhatAndWhenAndALateOneIsDropped() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         Notifications.createChannels(context)
-        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val at = LocalDateTime.of(Today.date(), LocalTime.of(15, 0))
         val memo = Memo(id = 7, title = "치과", body = "스케일링", reminder = MemoReminder(at, ring = false, notify = true))
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000)
         val posted = shown().single()
@@ -82,7 +91,7 @@ class MemoScheduleAppTest {
     @Test fun memoNoticesShareOneNoticeAndDoNotOutliveTheirDay() = kotlinx.coroutines.runBlocking<Unit> {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         Notifications.createChannels(context)
-        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(13, 4))
+        val at = LocalDateTime.of(Today.date(), LocalTime.of(13, 4))
         val memos = listOf(
             Memo(id = 21, title = "보고서", reminder = MemoReminder(at, ring = false, notify = true)),
             Memo(id = 22, title = "전화", reminder = MemoReminder(at, ring = false, notify = true)),
@@ -119,7 +128,7 @@ class MemoScheduleAppTest {
         assertEquals("the newer schedule stays on top", "오늘 전화", shadowOf(shown().single()).contentTitle.toString())
 
         // 13:04 stays until midnight; 23:30 stays 6 hours, into the next morning.
-        val dayEnd = millis(LocalDate.now().plusDays(1).atStartOfDay())
+        val dayEnd = millis(Today.date().plusDays(1).atStartOfDay())
         assertEquals(dayEnd - millis(at), MemoScheduleAlarm.keepFor(at, now = millis(at)))
         val late = at.withHour(23).withMinute(30)
         assertEquals(6 * 60 * 60 * 1000L, MemoScheduleAlarm.keepFor(late, now = millis(late)))
@@ -132,7 +141,7 @@ class MemoScheduleAppTest {
     @Test fun aNoticeOffersToFinishOrPutItOff() {
         shadowOf(context).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         Notifications.createChannels(context)
-        val at = LocalDateTime.of(LocalDate.now(), LocalTime.of(15, 0))
+        val at = LocalDateTime.of(Today.date(), LocalTime.of(15, 0))
         val memo = Memo(id = 8, title = "택배 받기", reminder = MemoReminder(at, ring = false, notify = true))
         val rest = LocalDateTime.of(2026, 11, 12, 14, 0)
         MemoScheduleAlarm.handle(context, listOf(memo), millis(at), now = millis(at) + 30_000, restOf = { rest })
@@ -154,7 +163,7 @@ class MemoScheduleAppTest {
     /** 1.39 [TASK-39] 끝내기 finishes the memo for real (the 할 일 앱's Complete left it open), a repeating one on that day only. */
     @Test fun finishingFromTheNoticeFinishesTheMemo() = kotlinx.coroutines.runBlocking<Unit> {
         val repo = context.appContainer.memoRepository
-        val day = LocalDate.now()
+        val day = Today.date()
         val once = repo.save(Memo(date = day, title = "택배 받기", reminder = MemoReminder(day.atTime(15, 0), ring = false, notify = true)))
         val done = MemoDoneReceiver.finish(context, once.id, day)!!
         assertTrue(done.isDoneOn(day))
@@ -172,7 +181,7 @@ class MemoScheduleAppTest {
     /** 1.39 [TASK-39] A way picked in 다른 때… moves the schedule from now; the toast says when. */
     @Test fun aWayPickedMovesTheSchedule() = kotlinx.coroutines.runBlocking<Unit> {
         val repo = context.appContainer.memoRepository
-        val day = LocalDate.now()
+        val day = Today.date()
         val memo = repo.save(Memo(date = day, title = "약 먹기", reminder = MemoReminder(day.atTime(8, 0), ring = false, notify = true)))
         val rest = day.plusDays(3).atTime(com.bamnat.core.memo.ShiftMemoTime.AFTER_NIGHT)
         val at = MemoSnoozeReceiver.put(context, memo.id, com.bamnat.core.memo.MemoSnooze.Way.REST, rest)!!
@@ -194,7 +203,7 @@ class MemoScheduleAppTest {
      */
     @Test fun theEditorKeepsATimeMovedFromTheNotice() = kotlinx.coroutines.runBlocking<Unit> {
         val repo = context.appContainer.memoRepository
-        val day = LocalDate.now()
+        val day = Today.date()
         val memo = repo.save(Memo(date = day, title = "약 먹기", reminder = MemoReminder(day.atTime(9, 35), ring = false, notify = true)))
         val vm = com.bamnat.app.ui.memo.MemoEditorViewModel(context.appContainer, memo.id, null, false)
         val looper = shadowOf(android.os.Looper.getMainLooper())
@@ -217,10 +226,10 @@ class MemoScheduleAppTest {
     }
 
     @Test fun aMemoScheduleRingsUnderItsOwnWords() {
-        val ring = RingRequest("", LocalDate.now(), LocalTime.of(15, 0), 0, null, 1L, custom = true, label = "치과")
+        val ring = RingRequest("", Today.date(), LocalTime.of(15, 0), 0, null, 1L, custom = true, label = "치과")
         assertEquals("치과", ring.title)
         assertEquals("치과", RingRequest.decode(ring.encode())!!.label)
-        assertNull(RingRequest.decode(RingRequest("주간", LocalDate.now(), LocalTime.of(7, 0), 60, null, 1L).encode())!!.label)
+        assertNull(RingRequest.decode(RingRequest("주간", Today.date(), LocalTime.of(7, 0), 60, null, 1L).encode())!!.label)
     }
 
     @Test fun thePagesAreRememberedAndAPhoneSetUpBeforeCountsWhatItWasAskedThen() {

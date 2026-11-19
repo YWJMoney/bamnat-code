@@ -280,7 +280,8 @@ object PublicCycles {
         if (norm(q).length < 2) return if (industry != null || form != null || group != null) pool.sortedBy { it.name }.map { it.c } else emptyList()
         // [CYC-10] 1.38 순서로 찾기: "주야비휴", "당비비" typed as the order is said finds the rows with that very rotation
         // (any day first), so someone who knows only their order, not the company's name, still lands on it.
-        orderCodes(q)?.let { want -> return pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }
+        // 2.0.0 [RVN-22] 검토 COMP-56·U10b-09: a word that is also a name ('오비' of 오비맥주) keeps the name's rows after the order's.
+        val byOrder = orderCodes(q)?.let { want -> pool.filter { sameRotation(it.c.codes, want) }.sortedBy { it.name }.map { it.c } }.orEmpty()
         // "4조 2교대" is one thing when some row has it as one; "포스코 광양" two that must both be there.
         val whole = norm(q)
         val words = if (pool.any { e -> e.fields.any { whole in it } }) listOf(whole) else q.split(Regex("\\s+")).map(::norm).filter { it.isNotEmpty() }
@@ -310,20 +311,24 @@ object PublicCycles {
                 else -> 3
             }
         }
-        return pool.mapNotNull { e -> score(e)?.let { it to e } }
+        val byName = pool.mapNotNull { e -> score(e)?.let { it to e } }
             .sortedWith(compareBy<Pair<Int, Entry>> { it.first }.thenBy { it.second.c.weak }.thenBy { it.second.name }.thenBy { it.second.c.id })
             .map { it.second.c }
+        if (byOrder.isEmpty()) return byName
+        // Only rows whose name has the word: an order's words in another row's 근무형태 are the order's rows already.
+        return (byOrder + byName.filter { whole in norm(it.company) || whole in norm(it.display) }).distinctBy { it.id.ifEmpty { it.display } }
     }
 
     /**
      * [SPAT-02] 처음으로 회사 정보를 제공해 주세요 (사용자 2026-10-25 14:05): a company no one has given yet, as a row of its own
      * with the usual shifts of [formKey] and no order, so the same apply sheet sets it up. Nothing here is public data.
      */
-    fun provided(company: String, formKey: String): PublicCycle {
+    fun provided(company: String, formKey: String, site: String = ""): PublicCycle {
         val three = formKey in PublicCycle.THREE_FORMS
         val codes = usualWork(formKey).toList()
+        // 2.0.0 [RVN-19] 검토 T10a-10: the 사업장 in its own box, so '현대제철 당진공장' is 현대제철's, not a company of its own.
         return PublicCycle(
-            id = "", display = company, company = company, industry = "", site = "", form = formName(formKey), formKey = formKey,
+            id = "", display = company, company = company, industry = "", site = site.trim(), form = formName(formKey), formKey = formKey,
             orderText = "", timeText = "", asOf = "", trustText = "", trust = emptySet(), linkCheck = false, partner = false, source = "",
             codes = "", orderState = OrderState.NONE, weekly = false, roster = false, shifts = codes.map { CycleShift.usual(it, three) },
         )

@@ -49,13 +49,26 @@ object TaxWay {
     }
 
     val CHOICES = listOf(TaxMode.INSURANCE_4 to "4대보험·소득세", TaxMode.WITHHOLDING_3_3 to "3.3%", TaxMode.NONE to "떼지 않음")
+
+    /** 2.0.0 [RVJ-80] 검토 T04-05: the 일용근로 chip's word. */
+    const val DAILY_CHOICE = "일용근로"
+
+    /**
+     * 2.0.0 [RVJ-80] 검토 T04-05 (현장 일당): a 일당 setup ([daily]) gets 일용근로 first, the way a 일용 일당 is taxed; any other only
+     * while it is the one picked (a 월급 that was a 일당), so the chip that holds the way is never missing.
+     */
+    fun choices(daily: Boolean, selected: TaxMode? = null): List<Pair<TaxMode, String>> =
+        if (daily || selected == TaxMode.DAILY_WORKER) listOf(TaxMode.DAILY_WORKER to DAILY_CHOICE) + CHOICES else CHOICES
+
+    /** [RVJ-80] True for a 일당 setup, the one 일용근로 is offered to. */
+    fun daily(profile: PayProfile?): Boolean = profile?.wageType == com.bamnat.core.pay.WageType.DAILY
 }
 
-/** [J133-01] The three ways as chips; none selected while [selected] is null. */
+/** [J133-01] The ways as chips; none selected while [selected] is null. [daily]: a 일당 setup's, with 일용근로 ([RVJ-80]). */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun TaxWayChips(selected: TaxMode?, modifier: Modifier = Modifier, onPick: (TaxMode) -> Unit) {
+fun TaxWayChips(selected: TaxMode?, modifier: Modifier = Modifier, daily: Boolean = false, onPick: (TaxMode) -> Unit) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TaxWay.CHOICES.forEach { (m, label) -> FilterChip(selected = selected == m, onClick = { onPick(m) }, label = { Text(label) }) }
+        TaxWay.choices(daily, selected).forEach { (m, label) -> FilterChip(selected = selected == m, onClick = { onPick(m) }, label = { Text(label) }) }
     }
 }

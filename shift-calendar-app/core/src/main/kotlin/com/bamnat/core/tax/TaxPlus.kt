@@ -345,16 +345,34 @@ object TaxPlus {
     data class Source(val name: String, val value: String, val where: String, val checked: Boolean)
 
     /** What each rate the app uses says and where it was checked (2026-10-28); unchecked ones say 확인 필요 on screen. */
-    val SOURCES: List<Source> = listOf(
-        Source("건강보험료율", "7.19% (근로자 3.595%)", "국민건강보험공단 2026년 달라지는 제도 안내", true),
-        Source("장기요양보험료율", "0.9448% (건강보험료의 13.14%)", "국민건강보험공단 2026년 안내", true),
-        Source("국민연금 보험료율", "9.5% (근로자 4.75%)", "국민연금법 개정 2026-01-01 시행", true),
-        Source("고용보험료율", "근로자 0.9%", "고용보험 및 산재보험의 보험료징수 등에 관한 법률 시행령", true),
-        Source("근로소득 간이세액표", "2026-03-01 이후 원천징수분", "소득세법 시행령 별표 2 (2026-02-27 개정)", true),
-        Source("신용카드 발행세액공제", BusinessTax.CARD_RATE_CHECKED, "부가가치세법 제46조", false),
-        Source("간이과세 기준", "1억 400만 원", "부가가치세법 시행령 제109조 (2024-07-01)", true),
-        Source("신용카드 소득공제 전통시장·대중교통", "40%로 계산 (대중교통 80% 기간 따로)", "조세특례제한법 제126조의2", false),
-    )
+    val SOURCES: List<Source> get() = sources(com.bamnat.core.time.Today.date())
+
+    /**
+     * 2.0.0 [RVJ-20] 뿌리 고침 11 '새해 값': the 4대보험 rates as the engine uses them on [on] (2027: 국민연금 10%, 장기요양 0.9994%), not 2026's
+     * in words. 2026 keeps where each was checked; another year names its rates row, and a value carried from an earlier year says 확인 필요.
+     */
+    fun sources(on: java.time.LocalDate): List<Source> {
+        val t = com.bamnat.core.pay.RateTable
+        val r = t.on(on)
+        val carried = t.carried(on)
+        val sh = com.bamnat.core.pay.TakeHome.sharesOn(on)
+        val health = r.healthRate ?: sh.health * 2
+        val pension = t.pensionRateOn(on) ?: sh.pension * 2
+        val care = r.longTermCareRate ?: health * sh.careOfHealth
+        val y = on.year
+        fun where(checked2026: String) = if (y == 2026) checked2026 else "${y}년 요율표 (${r.version})"
+        return listOf(
+            Source("건강보험료율", "${t.pct(health)} (근로자 ${t.pct(health / 2)})", where("국민건강보험공단 2026년 달라지는 제도 안내"), "healthRate" !in carried),
+            Source("장기요양보험료율", "${t.pct(care)} (건강보험료의 ${t.pct(care / health, 2)})", where("국민건강보험공단 2026년 안내"), "longTermCareRate" !in carried),
+            Source("국민연금 보험료율", "${t.pct(pension)} (근로자 ${t.pct(pension / 2)})",
+                if (y == 2026) "국민연금법 개정 2026-01-01 시행" else "국민연금법 제88조 (해마다 0.5%p, 2033년 13%)", "pensionRate" !in carried),
+            Source("고용보험료율", "근로자 ${t.pct(r.unemploymentRate / 2)}", "고용보험 및 산재보험의 보험료징수 등에 관한 법률 시행령", true),
+            Source("근로소득 간이세액표", "2026-03-01 이후 원천징수분", "소득세법 시행령 별표 2 (2026-02-27 개정)", true),
+            Source("신용카드 발행세액공제", BusinessTax.CARD_RATE_CHECKED, "부가가치세법 제46조", false),
+            Source("간이과세 기준", "1억 400만 원", "부가가치세법 시행령 제109조 (2024-07-01)", true),
+            Source("신용카드 소득공제 전통시장·대중교통", "40%로 계산 (대중교통 80% 기간 따로)", "조세특례제한법 제126조의2", false),
+        )
+    }
 
     fun sourceLine(s: Source): String = "${s.name}: ${s.value} · ${s.where}" + if (s.checked) "" else " (확인 필요)"
 

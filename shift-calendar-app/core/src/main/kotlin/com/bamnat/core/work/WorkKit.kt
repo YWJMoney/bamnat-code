@@ -99,19 +99,89 @@ data class ShopRules(
     val checkedUntil: LocalDate? = null,
     /** Days [ShopDays.autoClosed] turned into 휴무, so only those open again when sales come in. */
     val autoClosedDays: Set<LocalDate> = emptySet(),
-)
+    /** [RVH-36] 검토 TYPE-23 Weekdays the shop opens short (토요일은 3시까지), from [shortOpen] to [shortClose]. */
+    val shortWeekdays: Set<DayOfWeek> = emptySet(),
+    /** The short day's hours; null until set, then [shortHours] works them out from the usual hours. */
+    val shortOpen: LocalTime? = null,
+    val shortClose: LocalTime? = null,
+    /** [RVH-36] 검토 TYPE-23 브레이크 타임: no guests from [breakStart] for [breakMinutes]; null for none. */
+    val breakStart: LocalTime? = null,
+    val breakMinutes: Int = 0,
+    /** [RVH-36] 검토 I02b-03 격주 휴무: these weekdays close every other week, the week of [everyOtherFrom] closed. */
+    val everyOther: Set<DayOfWeek> = emptySet(),
+    val everyOtherFrom: LocalDate? = null,
+    /**
+     * 2.0.0 [RVJ-86] 검토 BOSS-65: the day kinds the shop days made for 영업 and 단축영업, so a kind renamed on the 근무 종류 page is still
+     * the one they change (by name, '영업' renamed made a second '영업'). Null for shop days saved before 2.0.0: found by name once.
+     */
+    val openTypeId: Long? = null,
+    val shortTypeId: Long? = null,
+) {
+    /**
+     * [RVH-36] 검토 WORK-23 The short day's hours: as set, or from opening to halfway to closing, at least an hour. A shop
+     * that closes after midnight (17:00~02:00) counts the hours past midnight too, instead of making a one-hour day.
+     */
+    val shortHours: Pair<LocalTime, LocalTime>
+        get() {
+            val start = shortOpen ?: open
+            shortClose?.let { return start to it }
+            val half = (com.bamnat.core.model.WorkTime.spanMinutes(open, close) / 2).coerceAtLeast(60)
+            return start to open.plusMinutes(half.toLong())
+        }
+
+    /** [RVH-36] 검토 TYPE-23 What [day] is in the weekly order: open, short, closed every other week or always closed. */
+    fun dayOf(day: DayOfWeek): ShopDay = when (day) {
+        in closedWeekdays -> ShopDay.CLOSED
+        in everyOther -> ShopDay.EVERY_OTHER
+        in shortWeekdays -> ShopDay.SHORT
+        else -> ShopDay.OPEN
+    }
+
+    /** [day] set to [kind]; the first day closed every other week closes from [today]'s week until the user picks the other week. */
+    fun withDay(day: DayOfWeek, kind: ShopDay, today: LocalDate): ShopRules {
+        val other = if (kind == ShopDay.EVERY_OTHER) everyOther + day else everyOther - day
+        return copy(
+            closedWeekdays = if (kind == ShopDay.CLOSED) closedWeekdays + day else closedWeekdays - day,
+            shortWeekdays = if (kind == ShopDay.SHORT) shortWeekdays + day else shortWeekdays - day,
+            everyOther = other,
+            everyOtherFrom = if (other.isEmpty()) null else everyOtherFrom ?: today,
+        )
+    }
+
+    /** Where the break ends; null with no break. */
+    val breakEnd: LocalTime? get() = breakStart?.takeIf { breakMinutes > 0 }?.plusMinutes(breakMinutes.toLong())
+
+    /** Whether [date] is in a week [everyOther] closes: the week of [everyOtherFrom] and every second week from it. */
+    fun everyOtherClosed(date: LocalDate): Boolean {
+        if (date.dayOfWeek !in everyOther) return false
+        val from = everyOtherFrom ?: return false
+        val weeks = ChronoUnit.WEEKS.between(from.with(DayOfWeek.MONDAY), date.with(DayOfWeek.MONDAY))
+        return Math.floorMod(weeks, 2L) == 0L
+    }
+}
+
+/**
+ * [RVH-36] 검토 TYPE-23 A weekday of a shop: 영업, 단축영업, 격주 휴무 or 휴무 every week. [short] is its word in a weekday's row of four
+ * (2.0.0 [RVH-48], 총괄 #451 사진 검토: one row at 100% on a folded phone), where TalkBack still says [label].
+ */
+enum class ShopDay(val label: String, val short: String = label) {
+    OPEN("영업"), SHORT("단축"), EVERY_OTHER("격주 휴무", "격주"), CLOSED("휴무");
+}
 
 object ShopDays {
     /** A day the shop is closed by its rules (the weekly ones included). */
     fun regularlyClosed(rules: ShopRules, date: LocalDate, isHoliday: (LocalDate) -> Boolean): Boolean =
-        date.dayOfWeek in rules.closedWeekdays || rules.monthly.any { it.matches(date) } || (rules.holidaysClosed && isHoliday(date))
+        date.dayOfWeek in rules.closedWeekdays || rules.monthly.any { it.matches(date) } || rules.everyOtherClosed(date) ||
+            (rules.holidaysClosed && isHoliday(date))
 
     /**
      * Days from [from] to [to] closed by the rules a weekly order cannot hold: the monthly ones and
      * holidays. They are written onto the calendar as days off, so every screen shows them.
      */
     fun extraClosed(rules: ShopRules, from: LocalDate, to: LocalDate, isHoliday: (LocalDate) -> Boolean): List<LocalDate> =
-        days(from, to).filter { d -> d.dayOfWeek !in rules.closedWeekdays && (rules.monthly.any { it.matches(d) } || (rules.holidaysClosed && isHoliday(d))) }
+        days(from, to).filter { d ->
+            d.dayOfWeek !in rules.closedWeekdays && (rules.monthly.any { it.matches(d) } || rules.everyOtherClosed(d) || (rules.holidaysClosed && isHoliday(d)))
+        }
 
     /**
      * [TYPE-04] Open days up to yesterday that passed with nothing sold written down: closed after all.
@@ -133,6 +203,9 @@ object ShopDays {
         }
         rules.monthly.groupBy { it.day }.forEach { (day, list) ->
             parts += "매달 " + list.sortedBy { if (it.nth == -1) 9 else it.nth }.joinToString("·") { it.label.substringBefore(' ') } + " " + NthWeekday.DAY_NAMES[day.ordinal]
+        }
+        if (rules.everyOther.isNotEmpty() && rules.everyOtherFrom != null) {
+            parts += "격주 " + DayOfWeek.entries.filter { it in rules.everyOther }.joinToString("·") { NthWeekday.DAY_NAMES[it.ordinal].removeSuffix("요일") } + "요일"
         }
         if (rules.holidaysClosed) parts += "공휴일"
         return if (parts.isEmpty()) "정기휴무 없음" else parts.joinToString(" · ") + " 휴무"
@@ -244,6 +317,12 @@ fun shareTitle(style: WorkStyle?): String = when (style) {
     else -> "근무표 공유"
 }
 
+/**
+ * 2.0.0 [RVG-40] 검토 PC-175 (조건 13): what taking someone's link is called (달력 › 도구, 설정 찾기, 도움말, 기능 찾기). Work paid by
+ * the hour or the month takes a 동료's 근무표; a shop, a field worker or an investor 다른 사람 달력, as the calendar list says it ([RVH-20]).
+ */
+fun receiveTitle(style: WorkStyle?): String = if (style?.usesPayEngine != false) "동료 근무표 받기" else "다른 사람 달력 받기"
+
 /** [J133-79] What a shared calendar holds, in the work's word: 근무표, a field worker's 일정, a shop's 영업일. */
 fun scheduleWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정"
@@ -252,14 +331,49 @@ fun scheduleWord(style: WorkStyle?): String = when (style) {
     else -> "근무표"
 }
 
+/**
+ * 2.0.0 [RVG-35] 검토 HQ-64 (조건 13): what a 근무표 link is called, from what it already carries:
+ * 매출 → 영업일, 일감(목록이나 금액) → 일정, else the word the sender's app said ([RVG-38]), else 근무표. The sender's hint, the receiving app's cards and list, and the web page
+ * (share-worker) use this one rule, so the same link has one name everywhere. [shows] is the link's `shows`, [payKind] its `payKind`,
+ * [said] its `word` (2.0.0 [RVG-38], sent only from 처리방침 3.14).
+ */
+fun linkWord(shows: Collection<String>, payKind: MoneyShare?, said: String? = null): String = when {
+    "pay" in shows && payKind == MoneyShare.SALES -> "영업일"
+    "jobs" in shows || "pay" in shows && payKind == MoneyShare.JOBS -> "일정"
+    // 2.0.0 [RVG-38] HQ-64 B안 (D RVD-32 #514): what the sender's app said the link is ([said], its [scheduleWord]), when it is one of
+    // [LINK_WORDS]. A link without it (before 2.0.0, before 처리방침 3.14, or an old server) or with any other value is as above.
+    said != null && said in LINK_WORDS -> said
+    else -> "근무표"
+}
+
+/**
+ * 2.0.0 [RVG-38] The words a sender's app may name its link with ([scheduleWord]: 교대·일근·알바 근무표, 가게 영업일, 현장 일정, 투자 달력).
+ * The share server keeps the same list (share-worker `SCHEDULE_WORDS`) and drops any other value.
+ */
+val LINK_WORDS: List<String> = listOf("근무표", "영업일", "일정", "달력")
+
 /** [J133-79] [scheduleWord] with 로/으로 ("근무표로", "일정으로"). */
 fun scheduleWordRo(style: WorkStyle?): String = scheduleWord(style) + if (style == WorkStyle.FIELD) "으로" else "로"
 
-/** [J133-79] The days a family link shows: 근무와 휴가, a shop's 영업일과 쉬는 날. */
+/**
+ * [J133-79] The days a family link shows: 근무와 휴가, a shop's 영업일과 휴무. 2.0.0 [RVG-40] 검토 PC-175 (조건 13): a shop's day off is
+ * its 휴무 ('영업일과 쉬는 날' was the one shift word left on its share sheet).
+ */
 fun daysWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정과 쉬는 날"
-    WorkStyle.BUSINESS -> "영업일과 쉬는 날"
+    WorkStyle.BUSINESS -> "영업일과 휴무"
     WorkStyle.INVEST -> "달력"
+    else -> "근무와 휴가"
+}
+
+/**
+ * 2.0.0 [RVG-38] (조건 13) [daysWord] for a received link, by its name ([linkWord]): what a link with nothing ticked beside its days
+ * holds, so an investor's 달력 is not '근무와 휴가' (받은 링크 카드 '…만 받았어요').
+ */
+fun linkDaysWord(word: String): String = when (word) {
+    "영업일" -> "영업일과 휴무"
+    "일정" -> "일정과 쉬는 날"
+    "달력" -> "달력"
     else -> "근무와 휴가"
 }
 

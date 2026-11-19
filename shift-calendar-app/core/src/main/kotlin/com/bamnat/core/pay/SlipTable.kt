@@ -30,8 +30,11 @@ object SlipLexicon {
         "지급계", "공제계", "지급액계", "차인지급액계",
     )
 
-    /** A name matched: the name meant, its kind, and how many letters were off (0: read as printed). */
-    data class Hit(val name: String, val role: SlipRole, val distance: Int)
+    /**
+     * A name matched: the name meant, its kind, and how many letters were off (0: read as printed). 2.0.0 [RVL-46] [read]: the
+     * letters as read; [ask]: a name of another kind the letters are a stroke from, asked before it is taken ([NameCheck]).
+     */
+    data class Hit(val name: String, val role: SlipRole, val distance: Int, val read: String = name, val ask: Hit? = null)
 
     fun of(raw: String): Hit? {
         val c = PayslipReader.ocrFix(raw.filter { it.isLetter() }.lowercase())
@@ -46,7 +49,14 @@ object SlipLexicon {
         // [READ-38] A total read a stroke off (공제게, 공제종의 for 공제총액) holds 공제 and reads as a plain 공제 line: the near name
         // says it is the total.
         val near = if (c.length >= 2) nearest(c)?.takeIf { exact == null || exact == SlipRole.ALLOWANCE || it.role != exact && it.role in TOTAL_ROLES } else null
-        if (near != null) return near
+        // 2.0.0 [RVL-46] (검토 SCAN-29) A short name of the plain kind a stroke from a name of another kind (야근수당 · 야간수당,
+        // 작업수당 · 잔업수당) is as often a company's own word as a misread: in four letters the stroke is in the two that say what
+        // it is. It keeps its letters and plain kind and asks; 1.39 took it as 야간·추가 근무 pay, quietly once the sums met. A
+        // longer name a stroke off (연잔근로수당) is the printed one, as before, and still looked at by name.
+        if (near != null && exact == SlipRole.ALLOWANCE && near.role != SlipRole.ALLOWANCE && near.role !in TOTAL_ROLES && c.length <= 4) {
+            return Hit(c, exact, near.distance, c, ask = near)
+        }
+        if (near != null) return near.copy(read = c)
         return exact?.let { Hit(c, it, 0) }
     }
 
@@ -140,6 +150,12 @@ object SlipNumber {
     private val COUNT_UNITS = setOf("일", "회", "%", "배", "개월", "년", "월", "개", "명", "호봉")
     private val UNIT = Regex("""(원|윈|웜|시간|hr|h|H|분|일|회|%|배|개월|년|월|개|명|호봉)$""")
     private val OCR_DIGITS = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'l' to '1', 'I' to '1', '|' to '1', '!' to '1')
+    // 2.0.0 [RVL-31] (검토 SCAN-33·I07ba-06) Made once: parse runs for every word of every reading.
+    private val GROUPED = Regex("""\d{1,3}([,.]\d{3})+""")
+    private val PLAIN = Regex("""\d+""")
+    private val DECIMAL = Regex("""\d+\.\d{1,2}""")
+    private val LOST_COMMA = Regex("""\d{4,6}([,.]\d{3})+""")
+    private val CUT = Regex("""\d{1,3}(,\d{3})*,\d{1,2}""")
 
     fun parse(token: String): Num? {
         var t = token.trim().replace("₩", "").replace("￦", "").replace(" ", "")
@@ -158,25 +174,25 @@ object SlipNumber {
         val won = unit == "원" || unit == "윈" || unit == "웜"
         val sign = if (negative) -1 else 1
         return when {
-            Regex("""\d{1,3}([,.]\d{3})+""").matches(body) -> {
+            GROUPED.matches(body) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = unit.isEmpty() || won, fixed = fixed)
             }
-            Regex("""\d+""").matches(body) -> {
+            PLAIN.matches(body) -> {
                 val v = body.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = won || unit.isEmpty() && abs(v) >= 1_000, fixed = fixed)
             }
-            Regex("""\d+\.\d{1,2}""").matches(body) && !won -> {
+            DECIMAL.matches(body) && !won -> {
                 val d = body.toDouble() * sign
                 Num(d.toLong(), d, unit, money = false, fixed = fixed)
             }
             // [PHOTO-12] "2397,500": a comma lost (화학 공장 명세서 사진의 모아레); money, looked at.
-            Regex("""\d{4,6}([,.]\d{3})+""").matches(body) && (unit.isEmpty() || won) -> {
+            LOST_COMMA.matches(body) && (unit.isEmpty() || won) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), if (won) "원" else unit, money = true, fixed = true)
             }
             // "2,856,0": the last digits off the photo; worked out by the sums, never taken as it is.
-            Regex("""\d{1,3}(,\d{3})*,\d{1,2}""").matches(body) -> {
+            CUT.matches(body) -> {
                 val v = body.filter { it.isDigit() }.toLong() * sign
                 Num(v, v.toDouble(), unit, money = true, fixed = true, cut = true)
             }
@@ -213,6 +229,8 @@ object SlipTable {
         var used = false
         /** [PHOTO-12] A name no list holds, taken as a line because it stands in the 지급 or 공제 column: always looked at. */
         var guessed = false
+        /** [PHOTO-24] A line the company's template put at its place: its name is the user's own, its amount is looked at. */
+        var templated = false
         val left: Double get() = x - w / 2
         val right: Double get() = x + w / 2
     }
@@ -266,7 +284,7 @@ object SlipTable {
                     Kind.HEAD -> { open = null; formula = false }
                     Kind.TEXT -> {
                         val t = cell.text
-                        if (Regex("[×xX*]|곱").containsMatchIn(t) && t.length <= 3) formula = true
+                        if (TIMES.containsMatchIn(t) && t.length <= 3) formula = true
                         if ('=' in t) { formula = true; afterEquals = true }
                     }
                     Kind.PUNCT -> Unit
@@ -309,8 +327,16 @@ object SlipTable {
             val hit = f.label.hit ?: continue
             if (f.amount == null && f.minutes == null) continue
             val name = if (hit.distance > 0) hit.name else if (f.label.guessed) SlipLexicon.tidyName(f.label.text) else SlipLexicon.roman(f.label.text)
-            if (f.doubt || hit.distance > 0 || f.label.guessed || f.under && f.label.text.length <= 1) unsure += lines.size
-            lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text })
+            // 2.0.0 [RVL-46] (검토 SCAN-29·I07ba-05) A name put right or guessed is looked at by name ([SlipLine.check]), apart
+            // from the amount: the payslip's sums vouch for an amount, never for a name (1.39 lost the yellow once they met).
+            val check = when {
+                hit.ask != null -> NameCheck(hit.name, hit.ask.name, hit.ask.role)
+                hit.distance > 0 -> NameCheck(SlipLexicon.roman(f.label.text).trim().ifEmpty { hit.read })
+                f.label.guessed && !f.label.templated -> NameCheck(name)
+                else -> null
+            }
+            if (f.doubt || f.under && f.label.text.length <= 1) unsure += lines.size
+            lines += SlipLine(name, hit.role, f.amount, f.minutes, rows[f.row].joinToString("  ") { it.text }, check)
             spots += Spot(f.label.x, f.label.y, f.at?.x, f.at?.y, f.label.h)
         }
         val (merged, keep, kept) = mergeHours(lines, unsure)
@@ -323,7 +349,7 @@ object SlipTable {
             places = ordered.map { places[it] }
             out = ordered.map { out[it] }
         }
-        return Laid(SlipVote.Result(PayslipRead(out, PayslipReader.monthOf(text)), flags, text), places)
+        return Laid(SlipVote.Result(PayslipRead(out, PayslipReader.monthOf(text), PayslipReader.companyOf(text)), flags, text), places)
     }
 
     /**
@@ -371,7 +397,7 @@ object SlipTable {
             // Another line's name nearer the amount than the template's place: the amount is that line's.
             if (have.any { o -> abs(o.label.y - amount.y) < abs(ny - amount.y) - 0.5 * h && abs(o.label.x - nx) < 3 * near }) continue
             val label = name ?: Cell(t.name, nx, ny, t.name.length * h, h)
-            label.kind = Kind.LABEL; label.guessed = true
+            label.kind = Kind.LABEL; label.guessed = true; label.templated = true
             label.text = t.name
             label.hit = SlipLexicon.Hit(t.name, t.role, 0)
             val row = rows.indexOfFirst { r -> r.any { it === amount } }.coerceAtLeast(0)
@@ -501,7 +527,7 @@ object SlipTable {
                     c.kind = Kind.LABEL; c.guessed = true
                     c.hit = SlipLexicon.Hit(c.text, if (deduction) SlipRole.DEDUCTION else SlipRole.ALLOWANCE, 0)
                 }
-                deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION); c.guessed = true }
+                deduction -> { c.hit = c.hit!!.copy(role = SlipRole.DEDUCTION, ask = null); c.guessed = true }
             }
         }
         val placed = HashSet<Cell>()
@@ -575,6 +601,19 @@ object SlipTable {
 
     private val LATIN_NAME = Regex("""[（(]\s*[A-Za-z][A-Za-z/&.\- ]{1,14}\s*[)）]""")
 
+    // 2.0.0 [RVL-31] (검토 SCAN-33·I07ba-06) Made once, not for every cell of every reading.
+    private val TIMES = Regex("[×xX*]|곱")
+    private val BRACKETED = Regex("""\([^()]*\)""")
+    private val LEAD_NUMBER = Regex("""^\d{1,2}(?=[가-힣])""")
+    private val HOUR_HEAD = Regex("(시간수|시간|시수)$")
+    private val ANY_HEAD = Regex("(시간수|시간|시수|일수)$")
+    private val THREE_DIGITS = Regex("""\d{3}(원|윈)?""")
+    private val AMOUNT_OPEN = Regex("""\d{1,7}([,.]\d{3})*[,.]""")
+    private val AMOUNT_REST = Regex("""\d{3}([,.]\d{3})*(원|윈)?""")
+    private val AMOUNT_HEAD = Regex("""\d{1,7}([,.]\d{3})*""")
+    private val COMMA_REST = Regex("""[,.]\d{3}([,.]\d{3})*(원|윈)?""")
+    private val AMOUNT_GROUPED = Regex("""\d{1,3}([,.]\d{3})+""")
+
     /** A cell that reads as a name of pay: a few words with two 한글 letters or more, no clock or sentence. */
     private fun nameLike(t: String): Boolean {
         // [READ-38] 1.38 사용자 사진: "축구회 (ABS/EP)" read as "(ABS/EP)" only: a club's name in Latin letters is a name too.
@@ -582,7 +621,7 @@ object SlipTable {
         val hangul = t.count { it in '가'..'힣' }
         if (hangul < 2 || t.length > 24 || t.count { it == ' ' } > 3) return false
         // [READ-41] Digits in a name's bracket or at its head ("볼링회 (1공장)", "1공장_사택관리비") are the name's.
-        val bare = t.replace(Regex("""\([^()]*\)"""), "").replace(Regex("""^\d{1,2}(?=[가-힣])"""), "")
+        val bare = t.replace(BRACKETED, "").replace(LEAD_NUMBER, "")
         if (bare.any { it.isDigit() } || ':' in t || t.endsWith("다") || t.endsWith("요")) return false
         return !PayslipReader.isHeader(PayslipReader.ocrFix(t.filter { it.isLetter() }))
     }
@@ -593,8 +632,8 @@ object SlipTable {
      * 시간수·근로·근무·수당 are taken off (휴일근로시간수 → 휴일 → 휴일근로수당, 휴일연장근로시간수 → 휴일연장 → 휴일연장수당).
      */
     private fun attendance(rows: List<List<Cell>>, lines: List<SlipLine>): List<SlipLine> {
-        val hourHead = Regex("(시간수|시간|시수)$")
-        val anyHead = Regex("(시간수|시간|시수|일수)$")
+        val hourHead = HOUR_HEAD
+        val anyHead = ANY_HEAD
         fun letters(t: String) = PayslipReader.ocrFix(t.filter { it.isLetter() })
         fun stem(t: String) = letters(t).replace(hourHead, "").replace("수당", "").replace("근로", "").replace("근무", "")
         val all = rows.flatten()
@@ -707,7 +746,7 @@ object SlipTable {
                 val lastNum = SlipNumber.parse(last.text)
                 val cNum = SlipNumber.parse(c.text)
                 val bothWords = lastNum == null && cNum == null && !punct(last.text) && !punct(c.text)
-                val digitsGroup = lastNum != null && cNum != null && lastNum.unit.isEmpty() && Regex("""\d{3}(원|윈)?""").matches(c.text) &&
+                val digitsGroup = lastNum != null && cNum != null && lastNum.unit.isEmpty() && THREE_DIGITS.matches(c.text) &&
                     !last.text.contains(',') && gap < 0.8 * h
                 val wonAfter = lastNum != null && c.text in setOf("원", "윈", "웜") && gap < 1.2 * h
                 val unitAfter = lastNum != null && lastNum.unit.isEmpty() && c.text in setOf("시간", "h", "H", "분", "일", "회", "%") && gap < 0.8 * h
@@ -720,9 +759,9 @@ object SlipTable {
                 // A 0 read as O ("2,397" ",50O") or a comma lost before the cut ("2397" ",500") is still a piece of the amount.
                 val a = digitish(last.text)
                 val b = digitish(c.text)
-                val amountCut = gap < 0.6 * h && (Regex("""\d{1,7}([,.]\d{3})*[,.]""").matches(a) && Regex("""\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
-                    Regex("""\d{1,7}([,.]\d{3})*""").matches(a) && Regex("""[,.]\d{3}([,.]\d{3})*(원|윈)?""").matches(b) ||
-                    gap < 0.35 * h && Regex("""\d{1,3}([,.]\d{3})+""").matches(a) && Regex("""\d{3}(원|윈)?""").matches(b))
+                val amountCut = gap < 0.6 * h && (AMOUNT_OPEN.matches(a) && AMOUNT_REST.matches(b) ||
+                    AMOUNT_HEAD.matches(a) && COMMA_REST.matches(b) ||
+                    gap < 0.35 * h && AMOUNT_GROUPED.matches(a) && THREE_DIGITS.matches(b))
                 // [PHOTO-27] One word the reader cut in two that touch ("소급" "분(지급)", "남부_사택관" "리비"): one word, even when a
                 // piece looks like a name of its own; two names printed side by side have a space between them.
                 val touching = bothWords && gap <= 0.15 * h && !(SlipLexicon.of(last.text)?.distance == 0 && SlipLexicon.of(c.text)?.distance == 0 &&
@@ -972,10 +1011,37 @@ object SlipReading {
         }
         // Items before the totals, as one payslip lists them.
         val order = lines.indices.sortedBy { if (lines[it].role in TOTALS) 1 else 0 }
-        val merged = PayslipRead(order.map { lines[it] }, read.firstNotNullOfOrNull { it.read.month })
+        val merged = PayslipRead(order.map { lines[it] }, read.firstNotNullOfOrNull { it.read.month }, read.firstNotNullOfOrNull { it.read.company })
         val flags = order.indices.filter { order[it] in unsure }.toSet()
         val fixed = SlipSums.repair(merged, flags)
         return SlipVote.Result(fixed.read, fixed.unsure, read.joinToString("\n") { it.text })
+    }
+
+    /**
+     * 2.0.0 [RVL-44] (검토 SCAN-28·I07bb-04) A file of several payslips (months, or people) taken apart: its pages, by index, in
+     * payslips. A page that reads as a payslip and names another month than the one before, or states another 실수령액 or
+     * 지급 총액, starts the next; a page with none of its own (the 공제 half of a long payslip, a page of notes) goes with the one
+     * before, as [pages] puts them together. 1.39 put every page in one payslip, lines of two months mixed with no word.
+     */
+    fun slips(results: List<SlipVote.Result>): List<List<Int>> {
+        val out = mutableListOf<MutableList<Int>>()
+        var month: java.time.YearMonth? = null
+        var net: Long? = null
+        var gross: Long? = null
+        for ((i, r) in results.withIndex()) {
+            val read = r.read
+            val slip = read.statedGross != null || read.lines.count { it.amount != null } >= 3
+            val m = read.month
+            val n = read.lines.firstOrNull { it.role == SlipRole.NET && it.amount != null }?.amount
+            val g = read.statedGross
+            val other = slip && (m != null && month != null && m != month || n != null && net != null && n != net || g != null && gross != null && g != gross)
+            if (out.isEmpty() || other) {
+                out += mutableListOf(i)
+                month = null; net = null; gross = null
+            } else out.last() += i
+            if (slip) { month = m ?: month; net = n ?: net; gross = g ?: gross }
+        }
+        return out
     }
 
     /** The better of the table and the text reading of one picture. */
@@ -997,8 +1063,11 @@ object SlipReading {
         }
         val text = OcrRows.join(words)
         val asText = PayslipReader.read(text)
-        // A name a stroke off (교퉁비) put right, as the table does.
-        val named = asText.lines.map { l -> SlipLexicon.of(l.name)?.takeIf { it.distance > 0 && it.role == l.role }?.let { l.copy(name = it.name) } ?: l }
+        // A name a stroke off (교퉁비) put right, as the table does; 2.0.0 [RVL-46] and looked at by name, as the table does.
+        val named = asText.lines.map { l ->
+            val hit = SlipLexicon.of(l.name)?.takeIf { it.distance > 0 && it.role == l.role } ?: return@map l
+            if (hit.ask != null) l.copy(check = NameCheck(l.name.trim(), hit.ask.name, hit.ask.role)) else l.copy(name = hit.name, check = NameCheck(l.name.trim()))
+        }
         val plain = SlipVote.Result(asText.copy(lines = named), emptySet(), text)
         val pick = if (score(plain.read) > score(table.read)) plain else table
         // The text the user sees and rules are read from is the rows put back together either way.

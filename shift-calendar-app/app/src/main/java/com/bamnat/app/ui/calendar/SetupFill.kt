@@ -32,6 +32,8 @@ import com.bamnat.app.ui.components.LocalShowKani
 import com.bamnat.app.ui.components.numberWithUnit
 import com.bamnat.app.ui.theme.BamnatMotion
 import com.bamnat.app.ui.theme.NumberStyle
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.bamnat.app.appContainer
 import com.bamnat.core.setup.FillMoment
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,23 +93,55 @@ internal fun fillShare(date: LocalDate, today: LocalDate, last: LocalDate): Floa
 /** The cell's alpha at [progress] of the fill: each day comes in over an eighth of it. */
 internal fun fillAlpha(progress: Float, share: Float): Float = ((progress - share) * 8f).coerceIn(0f, 1f)
 
+/**
+ * 2.0.0 [RVIB-17] (PC-129, with PC-36) The line was counted once, from the setup's days: a roster that came in by itself (리더가
+ * 내일을 휴무로), a day changed by hand, 되돌리기 or a 작품 worn left '쉬는 날 12일 · 첫 알람 내일 06:00' as it was. It is counted
+ * again from the calendar as it is now, each time the calendar changes; the first alarm is the one the phone has set ([SetupFillCard]).
+ * The band over the month (2.0.0 [RVP-45]) and the card under it read this one line, so they never say two things.
+ * Null once the calendar, read at least once with days in it, has no work left (총괄 PC-129 둘째 길, 통합 3차 T5: a wrong '내 근무표예요'
+ * undone left '이번 달 남은 야간 7번 · 첫 알람 오늘 18:00' over an empty month with no alarm set): the moment is over, and the
+ * caller closes it. Before the first read the setup's own line stands.
+ */
+@Composable
+internal fun rememberFillLine(moment: SetupFill.Moment?, snap: com.bamnat.app.data.ScheduleSnapshot?): FillMoment.Line? {
+    if (moment == null) return null
+    val today = com.bamnat.core.time.Today.date()
+    val seen = androidx.compose.runtime.remember(moment) { booleanArrayOf(false) }
+    if (snap != null && !snap.isEmpty) seen[0] = true
+    return androidx.compose.runtime.remember(snap, moment, today) {
+        when {
+            snap != null && !snap.isEmpty -> runCatching {
+                FillMoment.of(snap.resolver.resolveRange(today, today.plusDays(70)), today, moment.line.alarm)
+            }.getOrElse { moment.line }
+            seen[0] -> null
+            else -> moment.line
+        }
+    }
+}
+
 /** The line over the month while it fills: "이번 달 야간 8번" big, the rest under it, 칸이 '해냈어요' beside them. */
 @Composable
-internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifier) {
-    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.primaryContainer, modifier = modifier.fillMaxWidth()) {
+internal fun SetupFillCard(moment: SetupFill.Moment, modifier: Modifier = Modifier, snap: com.bamnat.app.data.ScheduleSnapshot? = null) {
+    val now = com.bamnat.core.time.Today.dateTime()
+    val line = rememberFillLine(moment, snap) ?: moment.line
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow, modifier = modifier.fillMaxWidth()) {
         Row(Modifier.padding(start = 12.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (LocalShowKani.current) {
                 Kani(KaniMood.Done, size = 48.dp)
                 Spacer(Modifier.width(10.dp))
             }
             Column(Modifier.weight(1f).semantics { liveRegion = LiveRegionMode.Polite }) {
-                Text(numberWithUnit(moment.line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
-                val rest = moment.line.restAt(com.bamnat.core.time.Today.dateTime())
+                Text(numberWithUnit(line.head, 0.7f), style = MaterialTheme.typography.titleLarge.merge(NumberStyle).copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.onSurface)
+                // 2.0.0 [RVI-67] (PC-36) The first alarm as it is set now, as 설정 › 알람 says it, not the setup's guess.
+                val set = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) null else
+                    androidx.compose.ui.platform.LocalContext.current.appContainer.alarmScheduler.upcoming.collectAsStateWithLifecycle().value
+                val rest = if (moment.calendar != com.bamnat.app.data.PersonalCalendar.MAIN) line.restAt(now)
+                    else line.restWith(set?.let { com.bamnat.app.alarm.AlarmScheduler.millisToLocal(it.triggerAtMillis) }, now)
                 if (rest.isNotEmpty()) Text(rest, style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    color = MaterialTheme.colorScheme.onSurface)
             }
-            IconButton(onClick = SetupFill::close) { Icon(Icons.Filled.Close, "채워진 달력 안내 닫기", tint = MaterialTheme.colorScheme.onPrimaryContainer) }
+            IconButton(onClick = SetupFill::close) { Icon(Icons.Filled.Close, "채워진 달력 안내 닫기", tint = MaterialTheme.colorScheme.primary) }
         }
     }
 }

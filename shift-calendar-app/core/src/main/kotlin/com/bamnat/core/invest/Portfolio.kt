@@ -160,9 +160,30 @@ object Portfolio {
             if (t.symbol.isNotBlank()) s.symbol = t.symbol.trim()
             if (t.name.isNotBlank()) s.name = t.name.trim()
             s.market = t.market
-            s.trades++
+            // [RVK-27] 수량 바뀜 is no trade to count.
+            if (t.side.trade) s.trades++
             if (t.quantity <= 0) continue
             when (t.side) {
+                // 2.0.0 [RVK-27] 분할·병합: the shares held times the ratio, what they cost the same (평균단가 ÷ ratio).
+                Side.SPLIT -> if (s.qty > EPS) s.qty *= t.quantity
+                // [RVK-27] 입고: shares in at what they cost (0 for 무상증자·에어드랍), no money from the account.
+                Side.IN -> {
+                    if (s.qty <= EPS) s.openedOn = t.date
+                    s.qty += t.quantity
+                    s.costWon += t.grossWon + t.costsWon
+                    s.costNative += t.gross + t.fee + t.tax
+                }
+                // [RVK-27] 출고: shares out at their average cost; nothing made or lost.
+                Side.OUT -> {
+                    val out = minOf(t.quantity, s.qty)
+                    val ratio = if (s.qty > EPS) out / s.qty else 0.0
+                    s.costWon -= s.costWon * ratio
+                    s.costNative -= s.costNative * ratio
+                    s.qty -= out
+                    if (s.qty <= EPS) {
+                        s.qty = 0.0; s.costWon = 0.0; s.costNative = 0.0; s.openedOn = null
+                    }
+                }
                 Side.BUY -> {
                     if (s.qty <= EPS) s.openedOn = t.date
                     s.qty += t.quantity
@@ -247,8 +268,26 @@ object Portfolio {
         for (t in trades.sortedWith(ORDER)) {
             if (t.quantity <= 0) continue
             val queue = lots.getOrPut(t.accountId to t.key) { ArrayDeque() }
-            if (t.side == Side.BUY) {
+            if (t.side == Side.BUY || t.side == Side.IN) {
                 queue.addLast(Lot(t.quantity, (t.grossWon + t.costsWon) / t.quantity, t.date))
+                continue
+            }
+            // 2.0.0 [RVK-27] A split changes every lot alike; shares moved out leave oldest first, making nothing.
+            if (t.side == Side.SPLIT) {
+                val old = queue.toList()
+                queue.clear()
+                old.forEach { queue.addLast(Lot(it.qty * t.quantity, it.costPerUnit / t.quantity, it.date)) }
+                continue
+            }
+            if (t.side == Side.OUT) {
+                var out = t.quantity
+                while (out > EPS && queue.isNotEmpty()) {
+                    val lot = queue.first()
+                    val take = minOf(lot.qty, out)
+                    lot.qty -= take
+                    out -= take
+                    if (lot.qty <= EPS) queue.removeFirst()
+                }
                 continue
             }
             var left = t.quantity

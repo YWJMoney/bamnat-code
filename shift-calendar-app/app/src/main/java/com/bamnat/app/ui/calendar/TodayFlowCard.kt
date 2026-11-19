@@ -35,13 +35,13 @@ import androidx.compose.material.icons.outlined.WorkOutline
 import com.bamnat.app.ui.components.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
+import com.bamnat.app.ui.components.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedIconButton
+import com.bamnat.app.ui.components.OutlinedButton
+import com.bamnat.app.ui.components.OutlinedIconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -87,6 +87,9 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import kotlin.math.abs
 import com.bamnat.core.time.Today
+import com.bamnat.app.ui.theme.Tone
+import com.bamnat.app.ui.theme.color
+import com.bamnat.app.ui.theme.container
 
 /** The clock to the minute, moving on at each minute's turn, for what changes with the time of day. */
 @Composable
@@ -116,9 +119,12 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
     // 1.38 통합 12차: in the month-first line (no order of the user's own, [CALENDAR_FIRST]) it is over the month as one line until
     // opened, so the five weeks stay in view on any phone.
     val monthFirst = remember(settings.calendarLayout) { com.bamnat.core.layout.PageLayout.decode(settings.calendarLayout).order.isEmpty() }
-    val folded = chosen ?: (short || monthFirst)
+    val openNow by vm.flowOpenNow.collectAsStateWithLifecycle()
+    val folded = !openNow && (chosen ?: (short || monthFirst))
     val now = rememberMinute()
-    val card = remember(snapshot, settings, log, now) { vm.todayFlow(snapshot, settings, log, now) }
+    // 2.0.0 [RVI-93] A 쪽잠 on: the card says when it vibrates.
+    val napUntil by com.bamnat.app.alarm.ShiftNap.until.collectAsStateWithLifecycle()
+    val card = remember(snapshot, settings, log, now, napUntil) { vm.todayFlow(snapshot, settings, log, now, napUntil) }
     // 1.39 [FLOW-28] 하루 다이얼: the same day as a 24-hour ring (work, planned and real sleep, alarms, now), off in 설정 › 화면과 글자.
     val calendarAlarms by vm.calendarAlarmsOn.collectAsStateWithLifecycle()
     val dial = remember(snapshot, settings, log, now, calendarAlarms) {
@@ -154,6 +160,9 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
                 TodayFlow.Action.AWAKE_AT -> Unit // asks for the time first, below
                 // 1.38 [SLEEP-23] 낮잠 자기: asleep now, and a wake alarm at the nap's end.
                 TodayFlow.Action.NAP -> card.napUntil?.let(vm::napNow) ?: vm.fellAsleep()
+                // 2.0.0 [RVI-93] 쪽잠 20분 in a night's 휴게, and 일어났어요 before its vibration.
+                TodayFlow.Action.SHIFT_NAP -> vm.shiftNap()
+                TodayFlow.Action.SHIFT_NAP_END -> vm.endShiftNap()
             }
         },
         onWokeAt = { vm.wokeUp(it) },
@@ -162,6 +171,7 @@ internal fun TodayFlowSection(vm: CalendarViewModel, snapshot: ScheduleSnapshot,
         modifier = modifier,
         folded = folded,
         onFold = vm::setFlowFolded,
+        openNow = openNow,
         // 1.38 사용자 2026-11-06: 밤샘·첫 야간 rules only where there are nights to work.
         nights = nightWork(settings.workStyle, snapshot),
         // 1.39 사용자 2026-11-08 (수면 기록이 찾기 어려워요): the card that says when to sleep opens the sleep log too, as the
@@ -217,6 +227,8 @@ internal fun TodayFlowCard(
     dial: Pair<com.bamnat.core.design.DayDialArcs.Dial, String>? = null,
     /** 1.39 The way to 수면 기록 (근무별 평균, 아침 한 장, 기록 고치기) from the opened card; null shows no link. */
     onSleepLog: (() -> Unit)? = null,
+    /** 2.0.0 [RVI-68] Opened by a today link: a day off's one line opens too. */
+    openNow: Boolean = false,
 ) {
     var info by remember { mutableStateOf(false) }
     var askWake by remember { mutableStateOf(false) }
@@ -226,7 +238,8 @@ internal fun TodayFlowCard(
     // 1.38 [FLOW-07] The same one card wears the time of day: work, the night's sleep and a day off each have their own
     // colour, so the calendar's top tells which part of the day this is before a word is read (no card is added, EASE-03).
     val face = when {
-        warning -> cal.warningContainer
+        // 2.0.0 [RVP-13] (HQ-54) An alarm that will not ring is the one danger here.
+        warning -> Tone.Danger.container()
         card.state == TodayFlow.State.ON_SHIFT -> MaterialTheme.colorScheme.primaryContainer
         card.state == TodayFlow.State.SLEEPING || card.state == TodayFlow.State.SLEEP_TIME -> cal.sleepContainer
         card.state == TodayFlow.State.REST_DAY -> MaterialTheme.colorScheme.secondaryContainer
@@ -246,14 +259,14 @@ internal fun TodayFlowCard(
         // screen; folding and unfolding afterwards still move smoothly.
         modifier = modifier.fillMaxWidth().then(if (FirstMonth.settled.value) Modifier.animateContentSize() else Modifier),
     ) {
-        if (folded || card.compact && !opened) {
+        if (folded || card.compact && !opened && !openNow) {
             Row(
                 Modifier.fillMaxWidth().heightIn(min = 52.dp)
                     .clickable(onClickLabel = "오늘의 흐름 펼치기") { if (folded) onFold(false); opened = true }
                     .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                Icon(stateIcon(card), null, tint = if (warning) Tone.Danger.color() else MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                 Spacer(Modifier.width(10.dp))
                 Text(card.headline, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 // [CAL-16] A warning keeps its one button on the folded line: an alarm is turned back on without opening.
@@ -281,10 +294,13 @@ internal fun TodayFlowCard(
                             modifier = Modifier.padding(start = 32.dp, end = 84.dp, bottom = 2.dp))
                     }
                     Row {
-                        Icon(stateIcon(card), null, tint = if (warning) cal.warning else MaterialTheme.colorScheme.primary,
+                        Icon(stateIcon(card), null, tint = if (warning) Tone.Danger.color() else MaterialTheme.colorScheme.primary,
                             modifier = Modifier.padding(top = 1.dp, end = 10.dp).size(22.dp))
-                        Text(card.headline, style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f).padding(end = 84.dp))
+                        // 2.0.0 [RVIB-21] (HQ 사진 검토, 조건 4·12) At 200% '비는 시간 · 17:00 다시 시작' broke before '·', leaving
+                        // '· 17:00' alone on a line: the dot stays with the words before it. Under the number the two buttons are
+                        // above it, so it takes the width they left (it broke into three lines on a wide screen).
+                        Text(card.headline.replace(" · ", "\u00A0· "), style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f).padding(end = if (countdown != null) 0.dp else 84.dp))
                     }
                     card.detail?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -298,11 +314,8 @@ internal fun TodayFlowCard(
                 }
             }
             card.rest?.let { rest ->
-                Row(Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.WarningAmber, null, tint = cal.warning, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(rest, style = MaterialTheme.typography.bodySmall, color = cal.warning)
-                }
+                // 2.0.0 [RVP-13] (HQ-54) Short rest is a thing to mind (주의), said in the one alert line.
+                com.bamnat.app.ui.components.ToneLine(rest, Modifier.padding(start = 32.dp, top = 4.dp, end = 12.dp))
             }
             FlowStrip(card, Modifier.padding(top = 12.dp, end = 12.dp))
             if (card.action != null || onSleepLog != null) {
@@ -341,13 +354,15 @@ private fun ActionButton(action: TodayFlow.Action, modifier: Modifier = Modifier
         TodayFlow.Action.AWAKE_AT -> "깬 시각 적기" to Icons.Outlined.Schedule
         TodayFlow.Action.ALARM_ON -> "알람 켜기" to Icons.Outlined.Alarm
         TodayFlow.Action.NAP -> "낮잠 자기" to Icons.Outlined.Bedtime
+        TodayFlow.Action.SHIFT_NAP -> "쪽잠 ${TodayFlow.SHIFT_NAP_MINUTES}분" to Icons.Outlined.Snooze
+        TodayFlow.Action.SHIFT_NAP_END -> "일어났어요" to Icons.Outlined.WbSunny
     }
     val content: @Composable () -> Unit = {
         Icon(icon, null, Modifier.size(18.dp))
         Spacer(Modifier.width(6.dp))
         Text(label, maxLines = 1)
     }
-    if (action == TodayFlow.Action.ASLEEP || action == TodayFlow.Action.NAP) {
+    if (action == TodayFlow.Action.ASLEEP || action == TodayFlow.Action.NAP || action == TodayFlow.Action.SHIFT_NAP) {
         val cal = LocalCalendarColors.current
         FilledTonalButton(onClick = onClick, modifier = modifier, contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
             colors = ButtonDefaults.filledTonalButtonColors(containerColor = cal.sleepContainer, contentColor = cal.onSleepContainer)) { content() }
@@ -384,8 +399,13 @@ private fun FlowStrip(card: TodayFlow.Card, modifier: Modifier = Modifier) {
     val under = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
     val total = Duration.between(card.from, card.to).toMinutes().toFloat().coerceAtLeast(1f)
     val said = remember(card) { stripText(card) }
-    Canvas(modifier.fillMaxWidth().height(42.dp).semantics { contentDescription = said }) {
-        val bar = 22.dp.toPx()
+    // 2.0.0 [RVIB-21] (HQ 사진 검토, 조건 12) The strip was 42dp whatever the letter size: at 200% the times under it ran into the
+    // buttons below and a name stood out of its bar. The bar and the room under it grow with the letters.
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val barDp = with(density) { maxOf(22.dp, measurer.measure("주간", inside).size.height.toDp() + 4.dp) }
+    val underDp = with(density) { measurer.measure("09:30", under).size.height.toDp() }
+    Canvas(modifier.fillMaxWidth().height(barDp + 4.dp + underDp + 2.dp).semantics { contentDescription = said }) {
+        val bar = barDp.toPx()
         val radius = CornerRadius(6.dp.toPx())
         fun x(t: LocalDateTime) = (Duration.between(card.from, t).toMinutes() / total * size.width).coerceIn(0f, size.width)
         drawRoundRect(track, Offset.Zero, Size(size.width, bar), radius)
@@ -461,7 +481,7 @@ private fun FlowInfoSheet(target: Int, commute: Int, onNumbers: (Int, Int) -> Un
     com.bamnat.app.ui.components.AppSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp)) {
             Text("오늘의 흐름은 이렇게 정해요", style = MaterialTheme.typography.titleLarge)
-            Text("근무표와 실제로 울릴 알람으로 앞으로 24시간을 계산한 참고 정보예요. 진단이나 치료가 아니니 몸 상태와 회사 사정에 맞게 조절하세요.",
+            Text("달력과 실제로 울릴 알람으로 앞으로 24시간을 계산한 참고 정보예요. 진단이나 치료가 아니니 몸 상태와 그날 사정에 맞게 조절하세요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
             Spacer(Modifier.height(16.dp))
             // [UX-08] The app's one stepper.

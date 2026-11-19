@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.money
 
+import androidx.compose.foundation.shape.ZeroCornerSize
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -28,7 +31,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,22 +56,26 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.temporal.TemporalAdjusters
+import androidx.compose.ui.semantics.Role
 
 /** [TAB-06] 1.36 가계부 판 칩: 목록 · 달력 · 분류 보드 · 표. The period and filters above stay as they are. */
+// 2.0.0 [RVK-35] (PC-126) The four wrap instead of sliding off the edge, and are read without '가계부' (a shop's tab is 장부).
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun LedgerBoardChips(board: LedgerBoard, onPick: (LedgerBoard) -> Unit) {
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+    androidx.compose.foundation.layout.FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         for (b in LedgerBoard.entries) {
             FilterChip(selected = board == b, onClick = { onPick(b) }, label = { Text(b.label) },
-                modifier = Modifier.semantics { contentDescription = "가계부 ${b.label}${com.bamnat.app.ui.Fmt.ro(b.label)} 보기" })
+                modifier = Modifier.semantics { contentDescription = "${b.label}${com.bamnat.app.ui.Fmt.ro(b.label)} 보기" })
         }
     }
 }
 
 @Composable
 private fun signedText(e: MoneyEntry): Pair<String, Color> = when (e.kind) {
-    MoneyKind.INCOME -> "+" + Fmt.won(e.amount) to MaterialTheme.colorScheme.primary
-    MoneyKind.EXPENSE -> "-" + Fmt.won(e.amount) to MaterialTheme.colorScheme.error
+    // 2.0.0 [RVK-43] (검토 MONEY-24) The board's money in the same inks as 내역·요약 ([moneyInks]), not the theme's primary and error red.
+    MoneyKind.INCOME -> "+" + Fmt.won(e.amount) to moneyInks().first
+    MoneyKind.EXPENSE -> "-" + Fmt.won(e.amount) to moneyInks().second
     MoneyKind.TRANSFER -> Fmt.won(e.amount) to MaterialTheme.colorScheme.onSurfaceVariant
 }
 
@@ -79,7 +90,7 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
     // [TAB-07] 부품 money.cal · money.cal.cell (오늘, 고른 날).
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val today = com.bamnat.core.time.Today.date()
-    Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), RoundedCornerShape(10.dp))), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+    Column(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal"), MaterialTheme.shapes.small)), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (within != null) {
             // 기간을 '전체'로 골라도 달력은 한 달씩: 그 기간 안의 달을 여기서 넘겨요.
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -99,55 +110,94 @@ internal fun LedgerMonthGrid(month: YearMonth, shown: List<MoneyEntry>, picked: 
             for (d in listOf("일", "월", "화", "수", "목", "금", "토")) Text(d, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
         }
-        for (week in weeks) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            for (date in week) {
-                val inMonth = YearMonth.from(date) == month
-                val day = days[date]
-                val on = date == picked
-                Column(
-                    Modifier.weight(1f).heightIn(min = 54.dp)
-                        .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(8.dp))
-                        .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp)) else Modifier)
-                        .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), RoundedCornerShape(8.dp)))
-                        .clickable(enabled = inMonth) { onPick(date) }
-                        .clearAndSetSemantics {
-                            contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
-                            selected = on
+        // 2.0.0 [RVK-35] (총괄 #477 사진) A day with money in and out is three lines: its week's other days stand as tall, not short beside it.
+        // And at large letters on the folded phone '18.3만' was cut to '18.' (the 만 gone): the month's amounts step down together, as
+        // '18만' and then as − and + (나간·들어온, read out with their amounts, the day's lines under the month), never cut.
+        val labelStyle = MaterialTheme.typography.labelSmall
+        val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val room = (constraints.maxWidth - with(androidx.compose.ui.platform.LocalDensity.current) { (2.dp * 6 + 6.dp * 7).roundToPx() }) / 7
+            val amounts = days.values.flatMap { listOf(it.expense, it.income) }.filter { it > 0 }
+            val step = remember(amounts, room, labelStyle, Fmt.masked) {
+                fun fits(f: (Long) -> String) = amounts.all { measurer.measure(f(it), labelStyle, maxLines = 1, softWrap = false).size.width <= room }
+                when { fits(Fmt::wonShort) -> CellAmount.SHORT; fits(::cellWon) -> CellAmount.ROUND; else -> CellAmount.SIGN }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                for (week in weeks) Row(Modifier.fillMaxWidth().height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    for (date in week) {
+                        val inMonth = YearMonth.from(date) == month
+                        val day = days[date]
+                        val on = date == picked
+                        Column(
+                            Modifier.weight(1f).fillMaxHeight().heightIn(min = 54.dp)
+                                .background(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceContainerLow, MaterialTheme.shapes.small)
+                                .then(if (on) Modifier.border(1.5.dp, MaterialTheme.colorScheme.primary, MaterialTheme.shapes.small) else Modifier)
+                                .then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.cal.cell", setOfNotNull("today".takeIf { date == today }, "sel".takeIf { on }), com.bamnat.app.logic.scopeOn(date)), MaterialTheme.shapes.small))
+                                .clickable(role = Role.Button, enabled = inMonth) { onPick(date) }
+                                .clearAndSetSemantics {
+                                    contentDescription = "${Fmt.monthDay(date)}" + (day?.let { d -> " 지출 ${Fmt.won(d.expense)}" + (if (d.income > 0) " 수입 ${Fmt.won(d.income)}" else "") } ?: " 기록 없음")
+                                    selected = on
+                                }
+                                .padding(3.dp),
+                        ) {
+                            Text("${date.dayOfMonth}", style = labelStyle,
+                                color = if (!inMonth) Color.Transparent else MaterialTheme.colorScheme.onSurface)
+                            if (inMonth && day != null) when (step) {
+                                CellAmount.SIGN -> Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    if (day.expense > 0) Text("−", style = labelStyle, fontWeight = FontWeight.Bold, color = moneyInks().second)
+                                    if (day.income > 0) Text("+", style = labelStyle, fontWeight = FontWeight.Bold, color = moneyInks().first)
+                                }
+                                else -> {
+                                    val say: (Long) -> String = if (step == CellAmount.SHORT) Fmt::wonShort else ::cellWon
+                                    if (day.expense > 0) Text(say(day.expense), style = labelStyle, color = moneyInks().second, maxLines = 1, softWrap = false)
+                                    if (day.income > 0) Text(say(day.income), style = labelStyle, color = moneyInks().first, maxLines = 1, softWrap = false)
+                                }
+                            }
                         }
-                        .padding(3.dp),
-                ) {
-                    Text("${date.dayOfMonth}", style = MaterialTheme.typography.labelSmall,
-                        color = if (!inMonth) Color.Transparent else MaterialTheme.colorScheme.onSurface)
-                    if (inMonth && day != null) {
-                        if (day.expense > 0) Text(Fmt.wonShort(day.expense), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error, maxLines = 1)
-                        if (day.income > 0) Text(Fmt.wonShort(day.income), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1)
                     }
                 }
+                if (step == CellAmount.SIGN && amounts.isNotEmpty()) Text("− 나간 돈 · + 들어온 돈. 금액은 날짜를 누르면 아래에 나와요.", style = labelStyle,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }
+}
+
+/** 2.0.0 [RVK-35] How a day's amount stands in its cell: '18.3만', '18만' when that is cut, − and + when even that is. */
+private enum class CellAmount { SHORT, ROUND, SIGN }
+
+/** '18만' for 183,000, '4천' for 4,500: cut down like [Fmt.wonShort], one place shorter. */
+private fun cellWon(amount: Long): String = when {
+    Fmt.masked -> "•••"
+    amount >= 100_000_000 -> "${amount / 100_000_000}억"
+    amount >= 10_000 -> "${amount / 10_000}만"
+    amount >= 1_000 -> "${amount / 1_000}천"
+    else -> "$amount"
 }
 
 /** [TAB-06] 분류 보드: a column a category, its total on top and its lines under it; a line opens as in the list. */
 @Composable
 internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -> Unit) {
     val columns = remember(shown) { LedgerBoard.columns(shown) }
+    // 2.0.0 [RVK-43] (검토 U06a-13) A column longer than 30 lines opens 30 more at a tap ('외 N건 더 보기'), not '목록에서 거르면'.
+    var more by rememberSaveable(shown.size) { mutableStateOf(HashMap<String, Int>()) }
     // [TAB-07] 부품 money.board · money.board.col.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
     val colPart = bp.style("money.board.col")
     Row(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.board"), RoundedCornerShape(0.dp))).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         for (col in columns) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainerLow,
-                modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, RoundedCornerShape(14.dp)))) {
+            Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerLow,
+                modifier = Modifier.width(220.dp).then(com.bamnat.app.ui.parts.PartMods.box(colPart, MaterialTheme.shapes.medium))) {
                 Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(col.category, style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
-                    if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.error)
-                    if (col.income > 0) Text("들어옴 ${Fmt.won(col.income)}", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                    if (col.expense > 0) Text("나감 ${Fmt.won(col.expense)}", style = MaterialTheme.typography.labelLarge, color = moneyInks().second)
+                    if (col.income > 0) Text("들어옴 ${Fmt.won(col.income)}", style = MaterialTheme.typography.labelLarge, color = moneyInks().first)
                     Text("${col.entries.size}건", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     HorizontalDivider(Modifier.padding(vertical = 4.dp))
-                    for (e in col.entries.take(MAX_BOARD_LINES)) {
+                    val limit = MAX_BOARD_LINES + (more[col.category] ?: 0)
+                    for (e in col.entries.take(limit)) {
                         val (amount, color) = signedText(e)
-                        Row(Modifier.fillMaxWidth().clickable { onOpen(e) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable(role = Role.Button) { onOpen(e) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(LedgerBoard.what(e).ifBlank { e.category }, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(Fmt.monthDay(e.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -155,8 +205,9 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
                             Text(amount, style = MaterialTheme.typography.labelMedium, color = color)
                         }
                     }
-                    if (col.entries.size > MAX_BOARD_LINES) Text("외 ${col.entries.size - MAX_BOARD_LINES}건 · 목록에서 이 분류로 거르면 다 보여요",
-                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    MoreOrFold(left = col.entries.size - limit, opened = limit > MAX_BOARD_LINES, unit = "건",
+                        onMore = { more = HashMap(more).apply { put(col.category, (get(col.category) ?: 0) + MAX_BOARD_LINES) } },
+                        onFold = { more = HashMap(more).apply { remove(col.category) } })
                 }
             }
         }
@@ -165,32 +216,46 @@ internal fun LedgerCategoryBoard(shown: List<MoneyEntry>, onOpen: (MoneyEntry) -
 
 private const val MAX_BOARD_LINES = 30
 
+/** 2.0.0 [RVK-43] (검토 U06a-13) '외 N건 더 보기' under a cut list, and '접기' once it was opened: 48dp, one line each. */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun MoreOrFold(left: Int, opened: Boolean, unit: String, onMore: () -> Unit, onFold: () -> Unit) {
+    if (left <= 0 && !opened) return
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (left > 0) androidx.compose.material3.TextButton(onClick = onMore, modifier = Modifier.heightIn(min = 48.dp)) { Text("외 $left$unit 더 보기") }
+        if (opened) androidx.compose.material3.TextButton(onClick = onFold, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
+    }
+}
+
 /** [TAB-06] 표: 날짜 · 분류 · 내용 · 금액, a head tap sorts by it (again: the other way). */
 @Composable
 internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, onSort: (Pair<String, Boolean>) -> Unit, onOpen: (MoneyEntry) -> Unit) {
     val rows = remember(shown, sort) { LedgerBoard.sortTable(shown, sort.first, sort.second) }
+    // 2.0.0 [RVK-43] (검토 U06a-13) Past 300 rows, 300 more at a tap instead of '기간을 좁히면'.
+    var tableMore by rememberSaveable(shown.size, sort) { androidx.compose.runtime.mutableIntStateOf(0) }
+    val tableLimit = MAX_TABLE_ROWS + tableMore
     // [TAB-07] 부품 money.table · money.table.row. PC 확인 b81b643f: the date wrapped to two lines with the right side empty, so the
     // date is short ("11/12", one line) and 내용 takes the room that is left.
     val bp = com.bamnat.app.ui.parts.LocalBlueprint.current
-    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), RoundedCornerShape(10.dp)))) {
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxWidth().then(com.bamnat.app.ui.parts.PartMods.box(bp.style("money.table"), MaterialTheme.shapes.small))) {
     val fixed = 64.dp + 84.dp + 104.dp
     val widths = mapOf("date" to 64.dp, "category" to 84.dp, "what" to maxOf(120.dp, maxWidth - fixed), "amount" to 104.dp)
     val total = widths.values.fold(0.dp) { a, b -> a + b }
     val sideways = rememberScrollState()
     Column(Modifier.fillMaxWidth().horizontalScroll(sideways)) {
-        Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(topStart = 10.dp, topEnd = 10.dp))) {
+        Row(Modifier.background(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.shapes.small.copy(bottomStart = ZeroCornerSize, bottomEnd = ZeroCornerSize))) {
             for ((key, label) in LedgerBoard.TABLE_COLUMNS) {
                 val on = sort.first == key
-                Row(Modifier.width(widths[key]!!).clickable { onSort(key to (if (on) !sort.second else key == "date" || key == "amount")) }.padding(8.dp)
+                Row(Modifier.width(widths[key]!!).clickable(role = Role.Button) { onSort(key to (if (on) !sort.second else key == "date" || key == "amount")) }.padding(8.dp)
                     .semantics { contentDescription = "$label 열, 눌러 정렬"; selected = on }, verticalAlignment = Alignment.CenterVertically) {
                     Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, softWrap = false)
                     if (on) Icon(if (sort.second) Icons.Filled.ArrowDownward else Icons.Filled.ArrowUpward, null, Modifier.size(14.dp))
                 }
             }
         }
-        for (e in rows.take(MAX_TABLE_ROWS)) {
+        for (e in rows.take(tableLimit)) {
             val (amount, color) = signedText(e)
-            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.then(com.bamnat.app.ui.parts.PartMods.box(com.bamnat.app.logic.scopeFor(e.date) { com.bamnat.core.layout.TabFacts.money(e) }.let { bp.style("money.table.row", tableStates(e), it) }, RoundedCornerShape(0.dp))).clickable(role = Role.Button) { onOpen(e) }.heightIn(min = 40.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text("${e.date.monthValue}/${e.date.dayOfMonth}", style = MaterialTheme.typography.bodySmall, maxLines = 1, softWrap = false,
                     modifier = Modifier.width(widths["date"]!!).padding(horizontal = 8.dp).semantics { contentDescription = Fmt.monthDay(e.date) })
                 Text(e.category, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(widths["category"]!!).padding(horizontal = 8.dp))
@@ -200,8 +265,7 @@ internal fun LedgerTable(shown: List<MoneyEntry>, sort: Pair<String, Boolean>, o
             }
             HorizontalDivider(Modifier.width(total), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         }
-        if (rows.size > MAX_TABLE_ROWS) Text("앞의 ${MAX_TABLE_ROWS}줄만 보여요. 기간을 좁히면 다 보여요.", style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
+        MoreOrFold(left = rows.size - tableLimit, opened = tableMore > 0, unit = "줄", onMore = { tableMore += MAX_TABLE_ROWS }, onFold = { tableMore = 0 })
         Box(Modifier.height(8.dp))
     }
     }
