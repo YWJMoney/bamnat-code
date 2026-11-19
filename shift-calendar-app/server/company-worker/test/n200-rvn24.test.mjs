@@ -427,3 +427,30 @@ test("[RVN-24] SVC-109 스튜디오 요구: a move table (409 outside it), a mer
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM inquiry_messages WHERE inquiry_id LIKE 'qB%'").get().n, 95);
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM studio_need_links WHERE need_id = ? AND told = 0").get(y.id).n, 0);
 });
+
+test("[RVN-24] SVC-106 스튜디오 요구 목록: every card's first five asks and totals in a few reads, not two a card", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server({ plaza: true });
+  const h = await signIn(call);
+  for (let i = 0; i < 12; i++) {
+    const id = `nN${String(i).padStart(10, "0")}`;
+    DB.db.prepare("INSERT INTO studio_needs (id, title, askers, created_at, updated_at) VALUES (?, ?, 7, ?, ?)").run(id, `요구 ${i}`, NOW, NOW - i);
+    for (let k = 0; k < 7; k++) {
+      DB.db.prepare("INSERT INTO studio_need_links (src, ref, need_id, device, text, at, cluster) VALUES ('inq', ?, ?, ?, ?, ?, ?)")
+        .run(`r${i}-${k}`, id, `d${k}`, `부탁 ${k}`, NOW - (7 - k) * 1000, k < 3 ? "x" : `c${k % 2}`);
+    }
+  }
+  await call("GET", "/api/admin/growth/needs", undefined, h);
+  const real = DB.prepare.bind(DB);
+  let reads = 0;
+  DB.prepare = (sql) => { reads++; return real(sql); };
+  const r = await call("GET", "/api/admin/growth/needs", undefined, h);
+  DB.prepare = real;
+  assert.equal(r.status, 200);
+  assert.equal(r.data.items.length, 12);
+  const one = r.data.items.find((x) => x.id === "nN0000000000");
+  assert.deepEqual(one.samples.map((s) => s.text), ["부탁 0", "부탁 1", "부탁 2", "부탁 3", "부탁 4"]);
+  assert.equal(one.asks, 7);
+  assert.equal(one.nets, 2, "'x' is not counted, two clusters are");
+  assert.ok(reads > 0 && reads < 20, `reads ${reads}`);
+});

@@ -339,13 +339,36 @@ export async function missList(env, now) {
 // ---- the admin app's side (/api/admin/growth/…) ----
 
 async function needView(env, n) {
-  const links = await all(env, "SELECT src, ref, text, at FROM studio_need_links WHERE need_id = ? ORDER BY at LIMIT 5", n.id);
-  const total = await one(env, `SELECT COUNT(*) AS n, ${NETS_SQL.replace("l.need_id = n.id", "l.need_id = ?1")} AS nets FROM studio_need_links WHERE need_id = ?1`, n.id);
+  return (await needViews(env, [n]))[0];
+}
+
+/**
+ * The cards of [rows] (studio_needs). 2.0.0 [RVN-24] 검토 SVC-106: the first five asks and the totals of every row in two reads a
+ * 90 rows (was two reads a row, about 200 for the list of 100).
+ */
+async function needViews(env, rows) {
+  const samples = new Map();
+  const totals = new Map();
+  for (let i = 0; i < rows.length; i += 90) {
+    const ids = rows.slice(i, i + 90).map((n) => n.id);
+    const q = ids.map(() => "?").join(",");
+    const [first, sums] = await Promise.all([
+      all(env, `SELECT need_id, src, ref, text, at FROM (SELECT l.*, ROW_NUMBER() OVER (PARTITION BY l.need_id ORDER BY l.at) AS k
+        FROM studio_need_links l WHERE l.need_id IN (${q})) WHERE k <= 5 ORDER BY need_id, at`, ...ids),
+      all(env, `SELECT l.need_id, COUNT(*) AS n, COUNT(DISTINCT CASE WHEN l.cluster = '' THEN 'd' || l.device WHEN l.cluster = 'x' THEN NULL ELSE l.cluster END) AS nets
+        FROM studio_need_links l WHERE l.need_id IN (${q}) GROUP BY l.need_id`, ...ids),
+    ]);
+    for (const l of first) samples.set(l.need_id, [...(samples.get(l.need_id) ?? []), l]);
+    for (const t of sums) totals.set(t.need_id, t);
+  }
   // [RVQ-29] 서로 다른 네트워크 수, 다듬은 제목인지, 지금 제목이 요청 판 거름에 걸리는지.
-  return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, nets: total.nets, titled: Boolean(n.titled),
-    problem: marketTitleProblem(n.title), state: n.state, stateName: NEED_STATE_NAMES[n.state],
-    request: n.request_id ?? null, code: n.code ?? null, note: n.note, version: n.version ?? null, at: iso(n.created_at), updated: iso(n.updated_at),
-    samples: links.map((l) => ({ src: l.src, ref: l.ref, text: l.text, at: iso(l.at) })) };
+  return rows.map((n) => {
+    const total = totals.get(n.id) ?? { n: 0, nets: 0 };
+    return { id: n.id, title: n.title, area: n.area, tool: n.tool, style: n.style ?? null, askers: n.askers, asks: total.n, nets: total.nets, titled: Boolean(n.titled),
+      problem: marketTitleProblem(n.title), state: n.state, stateName: NEED_STATE_NAMES[n.state],
+      request: n.request_id ?? null, code: n.code ?? null, note: n.note, version: n.version ?? null, at: iso(n.created_at), updated: iso(n.updated_at),
+      samples: (samples.get(n.id) ?? []).map((l) => ({ src: l.src, ref: l.ref, text: l.text, at: iso(l.at) })) };
+  });
 }
 
 /** [GRW-06] 손잡이 지도: 영역·도구마다 부탁한 분 수와 상태별 묶음 수, 많은 순. */
@@ -409,8 +432,7 @@ export async function growthAdmin(request, env, url, path, now) {
     const rows = await all(env, `SELECT * FROM studio_needs WHERE ${where} ORDER BY state = 'ready' DESC, askers DESC, updated_at DESC LIMIT 100`, ...args);
     const counts = Object.fromEntries((await all(env, "SELECT state, COUNT(*) AS n FROM studio_needs GROUP BY state")).map((r) => [r.state, r.n]));
     const unsolved = await one(env, "SELECT COUNT(*) AS n FROM studio_needs WHERE state = 'market' AND updated_at < ?", now - GROWTH.staleDays * DAY);
-    const items = [];
-    for (const n of rows) items.push(await needView(env, n));
+    const items = await needViews(env, rows);
     return json({ items, counts: { ...counts, unsolved: unsolved.n }, rules: GROWTH, states: NEED_STATE_NAMES });
   }
   let m = path.match(/^\/growth\/needs\/(n[A-Za-z0-9]{11})$/);
