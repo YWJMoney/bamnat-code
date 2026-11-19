@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - run: npm test
@@ -161,7 +161,7 @@ jobs:
             robolectric-
       # [RVR-12] (검토 TEST-13) Node 22 before Gradle: the app tests that start server/company-worker (node:sqlite) need it, and
       # in CI (CI=true) a test that cannot find Node or the privacy page fails instead of being skipped (app test CiNeed.kt).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       # 2.0.0 [RVR-43] (총괄 HQ-121): the tests stop at 38 minutes so a shard that runs long fails with its results and summary
@@ -376,7 +376,7 @@ jobs:
           key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
           restore-keys: robolectric-
       - if: steps.changed.outputs.server == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       # The classes that start server/company-worker/test/local-server.mjs, and ShareLinkTest (it writes the payloads the share
@@ -458,7 +458,7 @@ jobs:
           key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
           restore-keys: robolectric-
       - if: steps.changed.outputs.run == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - if: steps.changed.outputs.run == '1'
@@ -540,7 +540,7 @@ jobs:
             echo "run=1" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changed.outputs.run == '1'
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
       - if: steps.changed.outputs.run == '1'
