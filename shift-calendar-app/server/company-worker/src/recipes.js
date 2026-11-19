@@ -24,6 +24,7 @@ import { PARTS_SINCE } from "./parts-since.js";
 import { cleanSetup } from "./company-setup.js";
 import { ZWJ, graphemes } from "./letters.js";
 import { SHIFT_RULES } from "./shift-rules.js";
+import { TICKET, blindSign, fairB64, fairBig, fairBytes, fairUnb64, ticketKey, ticketPrint, ticketSigned } from "./fair-ticket.js";
 
 // ---- the format (core recipe/*.kt) ----
 
@@ -1062,6 +1063,10 @@ export const RECIPE_SCHEMA = [
   "CREATE INDEX IF NOT EXISTS recipe_votes_device ON recipe_votes (device)",
   `CREATE TABLE IF NOT EXISTS recipe_counts (code TEXT NOT NULL, day TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0,
     kept7 INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (code, day))`,
+  // 2.0.0 [RVQ-59] 검토 I22c-03: 하루 표의 지문이 어느 작품의 어느 숫자에 한 번 쓰였는지(휴대폰과 잇지 않음, 30일).
+  `CREATE TABLE IF NOT EXISTS recipe_fair (fp TEXT NOT NULL, code TEXT NOT NULL, col TEXT NOT NULL, day TEXT NOT NULL,
+    PRIMARY KEY (fp, code, col))`,
+  "CREATE INDEX IF NOT EXISTS recipe_fair_day ON recipe_fair (day)",
   `CREATE TABLE IF NOT EXISTS recipe_flags (code TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL,
     PRIMARY KEY (code, device))`,
   `CREATE TABLE IF NOT EXISTS recipe_trust (device TEXT PRIMARY KEY, first_at INTEGER NOT NULL, approved INTEGER NOT NULL DEFAULT 0,
@@ -2259,7 +2264,7 @@ export function wearOf(on, sums) {
  * offSoon·textBack count against it; before that they are answered as not counted, so an app that sends them early has nothing to try again.
  */
 async function applied(d, env, request, code) {
-  const body = await d.readJson(request, 512);
+  const body = await d.readJson(request, 1024);
   if (!["applied", "kept", "offSoon", "textBack"].includes(body.kind)) return d.json({ error: "kind", field: "kind" }, 400);
   const now = Date.now();
   const wearKind = Object.hasOwn(WEAR_COLS, body.kind);
@@ -2272,10 +2277,14 @@ async function applied(d, env, request, code) {
   // 2.0.0 [RVQ-26] SVC-51: a 나만 보기 work is its maker's alone; its 쓰는 분 are not counted (they would come with it if it went public).
   if (r.scope === "private") return d.json({ ok: true, counted: false });
   const col = body.kind === "applied" ? "applied" : body.kind === "kept" ? "kept7" : WEAR_COLS[body.kind];
+  // 2.0.0 [RVQ-59] 검토 I22c-03: a signed day ticket counts its person once on this work's number, wherever they are (a ward's Wi-Fi no
+  // longer caps a family at three); spent again, it is answered as not counted. No ticket, or one that does not check, is the old way.
+  const fair = !wearKind && body.ticket ? await fairSpend(d, env, body.ticket, code, col, now) : null;
+  if (fair === "spent") return d.json({ ok: true, counted: false });
   // 1.36 보안 점검 M9 (PC 확인 7525ccff "넣었다 되돌려도 쓰는 분이 늘어요"): 쓰는 분 and 7일 유지 weigh in 좋은 순 and 요즘 뜨는, and
   // they come with no phone (S8), so one line could push a recipe up 200 a day. A few a recipe a line (a family's phones), then
   // answered as kept but not counted, so the app has nothing to try again.
-  if (!(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
+  if (fair !== "new" && !(await d.allow(env, `rappliedone|${net.day}|${code}|${col}`, RECIPE_LIMITS.appliedPerRecipeNetworkDay, DAY, now))) {
     return d.json({ ok: true, counted: false });
   }
   // [RVQ-56] 입은 뒤의 두 숫자는 그날 합계에만(작품 줄의 쓰는 분·7일 유지는 그대로), 입기에 wear: true면 그 기준(wear_n)도 함께 하나.
@@ -2286,6 +2295,46 @@ async function applied(d, env, request, code) {
     ...(wearKind ? [] : [d.stmt(env, `UPDATE recipes SET ${col} = ${col} + 1 WHERE code = ?`, code)]),
   ]);
   return d.json({ ok: true });
+}
+
+/**
+ * 2.0.0 [RVQ-59] A ticket {t: words, s: signature} spent on [code]'s [col]: "new" (first time: its 지문 is kept and it counts), "spent"
+ * (this ticket counted here already), or null (off, no key, not a ticket, not signed, or not of today or yesterday in KST).
+ */
+async function fairSpend(d, env, ticket, code, col, now) {
+  if (!(await d.legalOpen?.(env, TICKET.flag, now))) return null;
+  const key = ticketKey(env);
+  const words = typeof ticket?.t === "string" ? ticket.t : "";
+  const day = TICKET.pattern.exec(words)?.[1];
+  const sig = fairUnb64(ticket?.s);
+  if (!key || !day || !sig || (day !== kstDayOf(now) && day !== kstDayOf(now - DAY))) return null;
+  if (!(await ticketSigned(key, words, fairBig(sig)))) return null;
+  const res = await d.one(env, "INSERT OR IGNORE INTO recipe_fair (fp, code, col, day) VALUES (?, ?, ?, ?) RETURNING fp", await ticketPrint(words), code, col, kstDayOf(now));
+  return res ? "new" : "spent";
+}
+
+/**
+ * 2.0.0 [RVQ-59] GET /api/recipes/ticket: whether day tickets are on and the public key to blind against ({on, n, e}).
+ * POST /api/recipes/ticket {device, blinded}: one signed ticket for this install this KST day ({sig}); the server sees only the blinded
+ * number, so the ticket it signs cannot be told from any other when it is spent.
+ */
+async function ticketRoute(d, env, request) {
+  const now = Date.now();
+  const key = (await d.legalOpen?.(env, TICKET.flag, now)) ? ticketKey(env) : null;
+  if (request.method === "GET") return d.json(key ? { on: true, n: key.pub.n, e: key.pub.e } : { on: false });
+  if (!key) return d.json({ error: "not_yet", field: TICKET.flag }, 403);
+  const body = await d.readJson(request, 1024);
+  const dev = await readDevice(d, request, body);
+  if (!dev) return d.json({ error: "device", field: "device" }, 400);
+  const blinded = fairUnb64(body.blinded);
+  if (!blinded || blinded.length > key.nBytes) return d.json({ error: "blinded", field: "blinded" }, 400);
+  const net = await d.network(request, env, now);
+  const today = kstDayOf(now);
+  if (!(await d.allow(env, `rticketnet|${net.day}`, TICKET.perNetworkDay, DAY, now))) return d.tooMany("network", DAY - (now % DAY));
+  if (!(await d.allow(env, `rticket|${dev}|${today}`, TICKET.perDeviceDay, DAY, now))) return d.json({ error: "today", field: "device" }, 429);
+  const sig = blindSign(key, fairBig(blinded));
+  if (sig == null) return d.json({ error: "blinded", field: "blinded" }, 400);
+  return d.json({ sig: fairB64(fairBytes(sig, key.nBytes)) });
 }
 
 /** POST /api/recipes/:code/flag — 신고; three hide it until the operator looks (임시 조치, 30일 안 판단). */
@@ -2515,6 +2564,7 @@ export async function recipeRoute(d, request, env, path, url, ctx) {
   if (path === "/api/recipes" && method === "GET") return d.edgeCached(request, ctx, RECIPE_LIMITS.edgeSeconds, () => recipeList(d, env, url));
   if (path === "/api/recipes" && method === "POST") return publish(d, env, request);
   if (path === "/api/recipes/mine" && method === "GET") return mine(d, env, request);
+  if (path === "/api/recipes/ticket" && (method === "GET" || method === "POST")) return ticketRoute(d, env, request);
   let m = path.match(/^\/api\/recipes\/talk\/(p[A-Za-z0-9]{15})\/vote$/);
   if (m && method === "POST") return talkVote(d, env, request, m[1]);
   m = path.match(/^\/api\/recipes\/([2-9A-HJ-NP-Z]{8})(\/[a-z]+)?$/);

@@ -815,6 +815,15 @@ export const RETENTION = [
     prune: { where: "day < ?", days: 400, day: true },
   },
   {
+    table: "recipe_fair",
+    what: "**2.0.0** [RVQ-59] 처리방침 3.15 시행일부터 `market.fair_count`가 켜지면, 하루 표의 지문(표 자체가 아닌 해시 16바이트)·작품 번호·숫자 종류(쓰는 분·7일 유지)·날",
+    why: "작품 숫자를 한 사람 한 번만 세기",
+    keep: "30일",
+    link: "**아니요**(서명할 때 서버가 표를 보지 못해 휴대폰과 이을 수 없음)",
+    prune: { where: "day < ?", days: 30, day: true },
+    backup: false,
+  },
+  {
     table: "recipe_flags",
     what: "**1.34** 작품 신고: 작품·설치 해시·이유·센 것인지",
     why: "자동 가림과 운영자 확인",

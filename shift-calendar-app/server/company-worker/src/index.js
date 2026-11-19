@@ -8543,15 +8543,18 @@ export async function photoFile(env, id, n) {
 export async function syncShareSwitch(env) {
   if (!shareAdmin(env)) return false;
   const off = (await opsState(env)).off.includes("SHARE_CREATE");
+  // 2.0.0 [RVQ-57] 검토 I22c-02: 팀 페이지 웹 알림(깃발 team.push, 처리방침 3.15 시행일에 저절로)도 같은 길로 공유 서버에 맞춰요.
+  const teamPush = flagOn(await flagStore(env), "team.push", Date.now());
+  const state = teamPush ? `${off}|push` : String(off);
   const was = (await one(env, "SELECT value FROM settings WHERE key = 'share_create_synced'"))?.value;
-  if (was === String(off)) return false;
+  if (was === state) return false;
   try {
-    await shareCall(env, "PUT", "/api/admin/flags", { createOff: off });
+    await shareCall(env, "PUT", "/api/admin/flags", { createOff: off, teamPush });
   } catch (e) {
     console.error(`share switch: ${e?.code ?? e}`);
     return false;
   }
-  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", String(off));
+  await run(env, "INSERT OR REPLACE INTO settings (key, value) VALUES ('share_create_synced', ?)", state);
   return true;
 }
 
