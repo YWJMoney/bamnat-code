@@ -109,7 +109,7 @@ class RvjPolicy314ScreenshotTest : ScreenshotBase() {
         content {
             Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).verticalScroll(rememberScrollState()).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PickResult(WayPicker.Result.Picked(options, 0), slip, chosen = "s2", onChoose = {}, onUse = {})
+                PickResult(WayPicker.Result.Picked(options, 0), slip, chosen = "s2", onChoose = {}, onUse = { _, _ -> })
             }
         }
         settle()
