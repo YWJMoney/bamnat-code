@@ -337,10 +337,15 @@ export async function handleMap(env) {
   return [...by.values()].sort((a, b) => b.waiting - a.waiting || b.askers - a.askers).slice(0, 50);
 }
 
-/** [GRW-06] 출시 노트 두 줄: 그 판에 나온 요구와 채택된 도구(만든 분 이름은 별명이 있으면 별명). */
+/**
+ * [GRW-06] 출시 노트 두 줄: 그 판에 나온 요구와 채택된 도구(만든 분 이름은 별명이 있으면 별명).
+ * 2.0.0 [RVN-24] 검토 SVC-108: the line is pasted into the public release notes, so the maker's name is only there while their maker profile
+ * is open to everyone (not hidden or closed): the same name the 장터 already shows on the work. A hidden profile's work goes in untitled by name.
+ */
 export async function releaseLines(env, version) {
   const needs = await all(env, "SELECT title, askers FROM studio_needs WHERE state = 'official' AND version = ? ORDER BY askers DESC", version);
-  const tools = await all(env, `SELECT r.title, n.nick FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks n ON n.device = r.owner
+  const tools = await all(env, `SELECT r.title, n.nick FROM recipe_tiers t JOIN recipes r ON r.code = t.code
+    LEFT JOIN recipe_makers m ON m.device = r.owner AND m.hidden = 0 AND m.closed = 0 LEFT JOIN nicks n ON n.device = m.device
     WHERE t.tier = 4 AND t.version = ?`, version);
   const lines = [];
   if (needs.length) lines.push(`여러분이 부탁해서 생긴 꾸미기: ${needs.map((n) => `${n.title}(${n.askers}명)`).join(", ")}`);
@@ -351,11 +356,14 @@ export async function releaseLines(env, version) {
 /** [GRW-05] 기본 도구 후보와 모두의 도구, 판단에 필요한 숫자(쓴 사람·7일 유지율·신고·요청에서 왔는지). */
 async function toolsAdmin(env, show) {
   const where = show === "tools" ? "t.tier = 2" : show === "adopted" ? "t.tier = 4" : show === "later" ? "t.tier = 3 AND t.later = 1" : "t.tier = 3 AND t.later = 0";
+  // 2.0.0 [RVN-24] SVC-108: named = the maker's profile is open, so the release-note line carries the name.
   const rows = await all(env, `SELECT r.code, r.title, r.styles, r.applied, r.kept7, r.flags, r.likes, r.maker, t.tier, t.since, t.version, t.note,
-      (SELECT COUNT(*) FROM studio_needs n WHERE n.code = r.code) AS needs, nk.nick
-    FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks nk ON nk.device = r.owner WHERE ${where} ORDER BY r.applied DESC LIMIT 100`);
+      (SELECT COUNT(*) FROM studio_needs n WHERE n.code = r.code) AS needs, nk.nick, (mk.device IS NOT NULL) AS named
+    FROM recipe_tiers t JOIN recipes r ON r.code = t.code LEFT JOIN nicks nk ON nk.device = r.owner
+      LEFT JOIN recipe_makers mk ON mk.device = r.owner AND mk.hidden = 0 AND mk.closed = 0
+    WHERE ${where} ORDER BY r.applied DESC LIMIT 100`);
   return rows.map((r) => ({ code: r.code, title: r.title, styles: r.styles.split(",").filter(Boolean), users: r.applied, kept: r.applied ? Math.trunc((100 * r.kept7) / r.applied) : 0,
-    flags: r.flags, likes: r.likes, maker: r.maker ?? null, nick: r.nick ?? null, tier: r.tier, tierName: TIER_NAMES[r.tier], since: iso(r.since), version: r.version ?? null,
+    flags: r.flags, likes: r.likes, maker: r.maker ?? null, nick: r.nick ?? null, named: r.named === 1, tier: r.tier, tierName: TIER_NAMES[r.tier], since: iso(r.since), version: r.version ?? null,
     note: r.note, fromNeeds: r.needs }));
 }
 

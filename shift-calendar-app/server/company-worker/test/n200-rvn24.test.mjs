@@ -352,3 +352,30 @@ test("[RVN-24] SVC-107 이달의 제작자 후보: from 30 쓰는 분 of the mon
   assert.equal(monthBefore(Date.parse("2027-01-01T00:00:00Z")), "2026-12");
   assert.equal(monthBefore(Date.parse("2026-12-31T16:00:00Z")), "2026-12", "KST: already January");
 });
+
+test("[RVN-24] SVC-108 the release-note line names the maker only while their maker profile is open", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: Date.parse("2026-11-30T03:00:00Z") });
+  const { call, DB } = server({ plaza: true });
+  const h = await signIn(call);
+  const from = (n) => ({ "cf-connecting-ip": `198.51.100.${n}` });
+  const work = (title) => ({ format: "bamnat-recipe", v: 1, title, summary: "칸이 잘 보여요", styles: ["SHIFT"],
+    pieces: [{ kind: "shiftLook", items: [{ name: "주간", role: "day", label: "주", color: 4294940928, emoji: "☀️" }] }] });
+  const code = (await call("POST", "/api/recipes", { device: device(5), recipe: work("새벽 칸 부품"), scope: "public" }, from(5))).data.code;
+  const owner = DB.db.prepare("SELECT owner FROM recipes WHERE code = ?").get(code).owner;
+  DB.db.prepare("INSERT INTO nicks (device, nick, norm, at) VALUES (?, '새벽고양이', '새벽고양이', 0)").run(owner);
+  DB.db.prepare("INSERT INTO recipe_tiers (code, tier, since, later, version) VALUES (?, 4, 0, 0, '2.0.0')").run(code);
+  const lines = async () => (await call("GET", "/api/admin/growth/map?version=2.0.0", undefined, h)).data.lines;
+  // A public work makes an open maker profile: the name the 장터 shows with the work.
+  assert.deepEqual(await lines(), ["모두의 도구에서 기본이 된 것: 새벽 칸 부품(만든 분 새벽고양이)"]);
+  const tools = (await call("GET", "/api/admin/growth/tools?show=adopted", undefined, h)).data.items;
+  assert.equal(tools[0].named, true);
+  // The maker hides the profile: the name leaves the line (and the admin sees it will).
+  await call("POST", "/api/recipes/makers/me", { device: device(5), hidden: true }, from(5));
+  assert.deepEqual(await lines(), ["모두의 도구에서 기본이 된 것: 새벽 칸 부품"]);
+  assert.equal((await call("GET", "/api/admin/growth/tools?show=adopted", undefined, h)).data.items[0].named, false);
+  // Shown again, then closed by the operator: no name either.
+  await call("POST", "/api/recipes/makers/me", { device: device(5), hidden: false }, from(5));
+  assert.match((await lines())[0], /새벽고양이/);
+  DB.db.prepare("UPDATE recipe_makers SET closed = 1 WHERE device = ?").run(owner);
+  assert.deepEqual(await lines(), ["모두의 도구에서 기본이 된 것: 새벽 칸 부품"]);
+});
