@@ -4,6 +4,7 @@ import com.bamnat.core.boss.PayrollCompare
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.boss.Workplace
+import com.bamnat.core.team.TeamCheck
 import com.bamnat.core.work.StaffShift
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -44,6 +45,24 @@ class TeamSignSummaryTest {
         assertEquals("인원이 모자란 날 1일 · 4일 D 1명 부족", lines[1].text)
         assertEquals(30, lines[2].count)
         assertEquals("책임자 없는 근무 30번 · 1일 D, 2일 D, 3일 D, 4일 D …", lines[2].text)
+    }
+
+    /**
+     * 2.0.0 [RVJ-68] (총괄 HQ-107, Q1 사진의 '확인할 것 28'이 모두 빨간 줄) Signs of one sort are one line with how many, and open to their
+     * days; one alone says its day, who and what; 주 52시간 (the law) comes first.
+     */
+    @Test fun sameSortIsOneLine() {
+        val d = java.time.LocalDate.of(2026, 11, 1)
+        val after = (0 until 6).map { TeamCheck.Sign(TeamCheck.Kind.RULE, d.plusDays(it * 3L), "m$it", "x", topic = "야간 뒤 2일째 근무", who = "팀원$it", detail = "11/${it + 1} 야간 뒤 데이") }
+        val rest = TeamCheck.Sign(TeamCheck.Kind.RULE, d.plusDays(9), "m1", "x", topic = "N-D · 근무 사이 11시간을 못 쉼", who = "준호", detail = "나이트 뒤 데이 8시간만 쉬어요")
+        val week = TeamCheck.Sign(TeamCheck.Kind.WEEK_HOURS, d.plusDays(14), "m2", "x", topic = "주 52시간 넘김", who = "서연", detail = "11/9 주 56시간")
+        val lines = TeamCheck.summary(after + rest + week, { "${it.monthValue}/${it.dayOfMonth}" })
+        assertEquals(listOf("11/15 서연 · 주 52시간 넘김 · 11/9 주 56시간", "야간 뒤 2일째 근무 6건", "11/10 준호 · N-D · 근무 사이 11시간을 못 쉼 · 나이트 뒤 데이 8시간만 쉬어요"),
+            lines.map { it.text })
+        assertEquals(listOf(true, false, false), lines.map { it.law })
+        assertEquals(6, lines[1].count)
+        assertEquals(after, lines[1].items)
+        assertEquals("야간 뒤 2일째 근무 6건", lines[1].head)
     }
 
     /** 1.38 PC 8차: with one 책임자 the line says how it gets shorter; with two or more it doesn't. */

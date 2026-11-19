@@ -61,7 +61,37 @@ class SettingUndoTest {
         assertEquals("어두운 위젯은 원래대로, 내가 고친 투명도는 그대로", WidgetLook(alpha = 80, theme = "system"),
             WidgetLook.decode(c.settingsRepository.current.widgetLook))
         assertEquals(1, c.recipes.lastUndo.kept)
-        assertEquals("되돌렸어요. 넣은 뒤 직접 바꾼 1곳은 그대로 뒀어요", c.recipes.undoSay(true))
+        assertEquals("되돌렸어요. 조각 1개를 돌리고, 넣은 뒤 직접 바꾼 1곳은 그대로 뒀어요", c.recipes.undoSay(true))
+    }
+
+    /** 2.0.0 [RVM-55] 검토 U09b-02: 보기 lists what stayed, and 이것도 되돌리기 takes that one back too (and only it). */
+    @Test fun whatStayedCanBeTakenBackOneByOne() = runBlocking {
+        val before = WidgetLook.decode(c.settingsRepository.current.widgetLook)
+        val id = putOn(one(PieceKind.WIDGET, mapOf("alpha" to 60L, "theme" to "dark")), "WIDG3456")
+        c.settingsRepository.update { it.copy(widgetLook = WidgetLook.decode(it.widgetLook).copy(alpha = 80).encode()) }
+        assertTrue(c.recipes.undo(id))
+        val r = c.recipes.lastUndo
+        assertEquals(1, r.back)
+        val k = r.items.single()
+        assertEquals("${PieceKind.WIDGET.label} 1곳", k.what)
+        assertEquals(RecipePieces.MINE, k.why)
+        assertEquals(80, WidgetLook.decode(c.settingsRepository.current.widgetLook).alpha)
+        k.back!!.invoke()
+        assertEquals("내가 고친 투명도도 넣기 전으로", before, WidgetLook.decode(c.settingsRepository.current.widgetLook))
+    }
+
+    @Test fun myOwnRuleAndAChangedButtonOfTheWorks() = runBlocking {
+        val id = putOn(one(PieceKind.LOGIC, Logic(listOf(add), listOf(pay)).toValues()), "LOGI3456")
+        // I renamed the work's button, and made one of my own.
+        c.settingsRepository.update { s ->
+            val l = Logic.decode(s.logic)
+            s.copy(logic = Logic.encode(Logic(l.buttons.map { if (it.label == add.label) it.copy(label = "밤참") else it } + mine, l.rules, l.values)))
+        }
+        assertTrue(c.recipes.undo(id))
+        assertEquals("고친 단추는 남아요", listOf("밤참", mine.label), Logic.decode(c.settingsRepository.current.logic).buttons.map { it.label })
+        c.recipes.lastUndo.items.single().back!!.invoke()
+        assertEquals("이것도 되돌리기: 고친 받은 단추만 빠지고 내 단추는 남아요", listOf(mine.label),
+            Logic.decode(c.settingsRepository.current.logic).buttons.map { it.label })
     }
 
     @Test fun aColourIChoseAfterStaysWhenTheWorksGoes() = runBlocking {

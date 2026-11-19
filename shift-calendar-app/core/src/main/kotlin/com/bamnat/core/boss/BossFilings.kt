@@ -62,7 +62,7 @@ object BossFilings {
             // 3% 소득세, 그 10% 지방소득세, each cut to 10원 (소득세법 제129조, 지방세법 제103조의13).
             val tax = l.gross * 3 / 100 / 10 * 10
             Withheld(l.staff, l.gross, tax, tax / 10 / 10 * 10, true)
-        } else Withheld(l.staff, l.gross, d[TakeHome.TAX_LABEL] ?: 0, d[TakeHome.LOCAL_TAX_LABEL] ?: 0, biz)
+        } else Withheld(l.staff, l.gross, d[TakeHome.TAX_LABEL] ?: d[Payslip.DAILY_TAX_LABEL] ?: 0, d[TakeHome.LOCAL_TAX_LABEL] ?: 0, biz)
     }
 
     private fun day(d: LocalDate) = "${d.monthValue}월 ${d.dayOfMonth}일"

@@ -433,8 +433,11 @@ private fun ItemSheet(i: DrawerItem, h: Held, onDismiss: () -> Unit, onTry: (Rec
                             c.appScope.launch {
                                 val ok = c.recipes.undo(e.id)
                                 // 2.0.0 [RVM-45] RCP-02: what stayed as the user made it (or failed) is said, not a plain 되돌렸어요.
-                                PutOnNotice.say(if (ok && c.recipes.lastUndo == com.bamnat.app.recipe.RecipeRepository.UndoReport()) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요"
-                                    else c.recipes.undoSay(ok))
+                                val r = c.recipes.lastUndo
+                                PutOnNotice.sayWithSee(if (ok && r.kept == 0 && r.failed.isEmpty() && r.alarmsOff.isEmpty()) "‘${e.title}’${Fmt.obj(e.title)} 되돌렸어요"
+                                    else c.recipes.undoSay(ok),
+                                    // 2.0.0 [RVM-55] U09b-02: 보기, what stayed as I made it.
+                                    r.items.takeIf { ok && it.isNotEmpty() }?.let { items -> { UndoLeft.show(items) } })
                             }
                             onDismiss()
                         }
