@@ -126,6 +126,20 @@ import com.bamnat.app.ui.theme.container
 
 const val GRID_ROWS = 6
 
+/**
+ * 2.0.0 갈래 P 6 검토 PC-199: where each of the [GRID_ROWS] weeks ends, from the grid's top, as [MonthGrid] lays them out in
+ * [cellHeight] × rows (the 칸 판's insets and gaps come out of the rows), so a fold's upper half can end at a week's end.
+ */
+@Composable
+internal fun gridWeekEnds(cellHeight: Dp): List<Dp> {
+    val grid = partStyle("cal.grid")
+    val gap = (grid.gap ?: 0).dp
+    val inset = ((grid.out ?: 0) + (grid.padV ?: 0)).dp
+    val rowHeight = if (grid.isEmpty) cellHeight else ((cellHeight * GRID_ROWS) - gap * (GRID_ROWS - 1) - inset * 2) / GRID_ROWS
+    val top = if (grid.isEmpty) 0.dp else inset
+    return List(GRID_ROWS) { r -> top + rowHeight * (r + 1) + gap * r }
+}
+
 /** [CAL-01] Room left of each week for the bar that marks a week over the hour limit. */
 val WEEK_BAR_SPACE = 5.dp
 
