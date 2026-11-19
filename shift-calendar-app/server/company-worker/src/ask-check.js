@@ -122,8 +122,10 @@ export function askOwnerOf(text) {
   const { spaced, tight } = plainAsk(raw);
   const labor = AC_LABOR_COMP.test(spaced);
   for (const [key, name, re] of AC_RULES) {
-    const s = key === "money" && labor ? spaced.replace(/보상/g, " ") : spaced;
-    const m = re.exec(s) ?? AC_TIGHT[key]?.exec(tight);
+    // 2.0.0 [RVQ-30] PC 5차 Q1-500 13: 돈은 결제·환불 기록(isBillingRecord)과 같은 기준이에요. '야간 수당 청구'·'휴가 결제 올렸어요'처럼
+    // 다른 뜻으로 쓰인 자리는 빼고 보고, '프로 샀는데'처럼 우리 상품과 돈이 함께인 말은 낱말 표에 없어도 잡아요.
+    const s = key !== "money" ? spaced : (labor ? spaced.replace(/보상/g, " ") : spaced).replace(AC_BILL_NOT, " ");
+    const m = re.exec(s) ?? AC_TIGHT[key]?.exec(tight) ?? (key === "money" ? AC_BILL_SURE.exec(spaced) ?? /gpa\d{4}/.exec(tight) : null);
     if (m) return { key, name, word: acWord(m) };
   }
   // 낱말 사이에 다른 글자(폭 없는 글자·전각)가 아닌 다른 문자(일본어 등)만 있으면 spaced가 비어요.
