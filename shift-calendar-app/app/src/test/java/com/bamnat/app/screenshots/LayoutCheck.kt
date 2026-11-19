@@ -73,8 +73,11 @@ internal object LayoutCheck {
         }.distinct()
     }
 
-    /** The calendar's floating buttons ('빠른 입력', and the day's job·sales·trade for work written day by day). */
-    val FAB_WORDS = setOf("빠른 입력", "매출 적기", "일감 적기", "매매 기록")
+    /**
+     * The calendar's floating buttons ('빠른 입력', and the day's job·sales·trade for work written day by day); 갈래 P 5: and the other
+     * pages' add buttons, floating or docked ([com.bamnat.app.ui.components.AddDock]).
+     */
+    val FAB_WORDS = setOf("빠른 입력", "매출 적기", "일감 적기", "매매 기록", "돈 적기", "받을 돈 적기", "새 메모", "오늘 날짜로 새 메모", "기록 추가", "종류 추가", "시세 알려 주기")
 
     /** The top of the bottom navigation bar (its tabs), or the window's bottom with a rail or none. */
     fun contentBottom(nodes: List<SemanticsNode>, windowHeight: Int): Float {

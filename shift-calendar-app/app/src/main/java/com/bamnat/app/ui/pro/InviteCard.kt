@@ -309,7 +309,7 @@ fun InviteNudgeNotice(modifier: Modifier = Modifier) {
  * 1.39 [SPREAD-07] (앱 안 퍼짐 설계, 사용자 2026-11-07): right after a leader first sends the team's links, or a 사장님 first adds a
  * staff member, one card offers to tell another leader·사장님, with the 친구 초대 link (초대한 분께 프로). It shows the day it
  * first comes and then never again ([GrowNudges.peerInvite]); '다시 안 보기' ends it at once. The calendar card's switch
- * (기능 켜고 끄기 › 달력의 친구 초대 카드) turns this off too.
+ * (기능 켜고 끄기 › 친구 초대 카드) turns this off too.
  */
 @Composable
 fun PeerInviteCard(peer: com.bamnat.core.guide.Peer, modifier: Modifier = Modifier) {

@@ -178,9 +178,10 @@ fun HubScreen(
                 }
                 val icons = (if (onSearch != null) 1 else 0) + (if (com.bamnat.app.ui.LocalMe.current.let { it.show && !it.inRail }) 1 else 0)
                 val tabsGround = com.bamnat.app.ui.theme.PhotoGround.solid(MaterialTheme.colorScheme.surface)
-                if (hubOneRow(maxWidth.value, fontScale, widest.value, icons)) {
+                if (hubOneRow(maxWidth.value, fontScale, widest.value, icons)) Column {
                     Row(Modifier.fillMaxWidth().semantics { paneTitle = HUB_NAME }, verticalAlignment = Alignment.CenterVertically) {
-                        PrimaryTabRow(selectedTabIndex = section.ordinal, modifier = Modifier.weight(1f), containerColor = tabsGround) {
+                        // 총괄 #512 사진: the tabs' own line stopped short of 찾기·나; the head draws one line its whole width instead.
+                        PrimaryTabRow(selectedTabIndex = section.ordinal, modifier = Modifier.weight(1f), containerColor = tabsGround, divider = {}) {
                             HubSection.entries.forEach { s ->
                                 Tab(selected = section == s, onClick = { pick(s) }, modifier = Modifier.heightIn(min = 48.dp)) {
                                     Text(s.label, style = tabStyle, maxLines = 1, softWrap = false,
@@ -191,6 +192,7 @@ fun HubScreen(
                         search()
                         com.bamnat.app.ui.MeButton() // [NAV2-02]
                     }
+                    androidx.compose.material3.HorizontalDivider()
                 } else Column {
                     Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalAlignment = Alignment.Bottom) {
                         Text(HUB_NAME, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.semantics { heading() })

@@ -1206,9 +1206,12 @@ fun CalendarScreen(
         // (DSG-03 '빨강은 위험만'), orange where the user turned it off.
         val alarmLine: AlarmNote? = when {
             // [ALRM-09] Turned off for today from the ringing alarm: said first, with the way back.
+            // 총괄 #512 사진 (편 폭 200%에서 띠가 '오늘 알람 끔 / · 밤 12시까지 / 다시 켜기' 세 줄이라 달이 그만큼 내려갔어요, 조건 1): the button
+            // says '켜기' like the other alarm lines, so it stands under the X and the band keeps two lines; the dot stays on the first
+            // line (a no-break space before it), so the second never starts with '·'.
             alarmsOffUntil != null -> AlarmNote("오늘 알람 끔",
-                "오늘 알람 끔 · ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지",
-                "다시 켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution, keep = "today")
+                "오늘 알람 끔\u00A0· ${com.bamnat.app.alarm.AlarmsOff.untilText(com.bamnat.app.alarm.AlarmScheduler.millisToLocal(alarmsOffUntil!!))}까지",
+                "켜기", { com.bamnat.app.alarm.AlarmsOff.turnOn(context) }, com.bamnat.app.ui.theme.Tone.Caution, keep = "today")
             !alarmSoon -> null
             // [CAL-13] An added calendar kept from ringing: the master switch and permissions do not matter here.
             // [EASY-01] The example never rings, so it has nothing to turn on.
@@ -1745,7 +1748,8 @@ fun CalendarScreen(
         val partsOver = when {
             holding -> emptyList()
             // One week and its whole day ([CAL-03]) has no place under a month: the parts keep their place over it.
-            notices.bandKey != null && !(weekOnly && !wide) -> emptyList()
+            // 검토 PC-153 (조건 11): decided as the calendar settles and kept, so the month does not move when the band goes or comes.
+            (notices.partsUnder ?: (notices.bandKey != null)) && !(weekOnly && !wide) -> emptyList()
             low -> overParts.filter { it.part == CalendarPart.TODAY_FLOW }
             else -> overParts
         }

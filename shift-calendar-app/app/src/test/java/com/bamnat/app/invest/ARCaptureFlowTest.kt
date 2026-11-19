@@ -84,14 +84,28 @@ class ARCaptureFlowTest {
     private fun at(h: Int, m: Int) = today.atTime(h, m).atZone(zone).toInstant().toEpochMilli()
 
     /**
-     * Waits for the model's work (the database runs on its own threads) without sleeping the screen's thread. The wait is
-     * long (real clock: a loaded test JVM — the whole suite in a few forks — can stall for seconds) and says where it stopped.
+     * Waits for the model's work (the database runs on its own threads) without sleeping the screen's thread, and says where
+     * it stopped.
+     *
+     * 2.0.0 [RVK-56] (총괄 HQ-121): by the screen's state, not a stopwatch. Under a loaded CI JVM (the whole suite in a few
+     * forks) a fixed 60 s ran out while the work was still moving. Now the wait goes on as long as something moves (the
+     * trades, the waiting list, the sheet, what was read) and gives up only after 60 s with nothing moving, or 5 minutes in all.
+     * The main looper is run with its delayed tasks too, so a model step on Main that waits a little is not left behind.
      */
     private fun until(what: String, ok: () -> Boolean) {
-        val end = System.currentTimeMillis() + 60_000 // real clock: how long to wait, not what the app sees (Today is fixed)
+        val start = System.currentTimeMillis() // real clock: how long to wait, not what the app sees (Today is fixed)
+        var seen = where()
+        var moved = start
+        var looked = start
         while (!ok()) {
-            ShadowLooper.idleMainLooper()
-            check(System.currentTimeMillis() < end) { "기다렸지만 안 됨: $what · ${where()}" }
+            ShadowLooper.runUiThreadTasksIncludingDelayedTasks()
+            val now = System.currentTimeMillis()
+            if (now - looked >= 500) {
+                looked = now
+                val state = where()
+                if (state != seen) { seen = state; moved = now }
+            }
+            check(now - moved < 60_000 && now - start < 300_000) { "기다렸지만 안 됨: $what · ${where()}" }
             runBlocking { delay(15) }
         }
     }

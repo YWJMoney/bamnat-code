@@ -156,16 +156,15 @@ object NoticeLinks {
      * start it with extras of its own; without this one, another app could open the pay or money screen, or start 밤 소리 측정 (the
      * microphone) through the bedtime notice's 측정 시작, with nobody pressing anything.
      */
-    @Volatile private var key: String? = null
-
-    internal fun key(context: Context): String = key ?: synchronized(this) {
-        key ?: run {
-            val f = java.io.File(context.applicationContext.noBackupFilesDir, "notice_key")
-            val kept = runCatching { f.readText().trim() }.getOrNull()?.takeIf { it.matches(KEY_FORM) }
-            kept ?: java.security.SecureRandom().let { r -> ByteArray(16).also(r::nextBytes) }.joinToString("") { "%02x".format(it) }
-                .also { made -> runCatching { f.parentFile?.mkdirs(); f.writeText(made) } }
-        }.also { key = it }
+    // [RVR-44] (HQ-123) Read once per app ([com.bamnat.app.data.PerApp]): one on a phone; a test's new app reads its own file.
+    private val keyOf = com.bamnat.app.data.PerApp { app ->
+        val f = java.io.File(app.noBackupFilesDir, "notice_key")
+        val kept = runCatching { f.readText().trim() }.getOrNull()?.takeIf { it.matches(KEY_FORM) }
+        kept ?: java.security.SecureRandom().let { r -> ByteArray(16).also(r::nextBytes) }.joinToString("") { "%02x".format(it) }
+            .also { made -> runCatching { f.parentFile?.mkdirs(); f.writeText(made) } }
     }
+
+    internal fun key(context: Context): String = keyOf.of(context)
 
     private val KEY_FORM = Regex("[0-9a-f]{32}")
 

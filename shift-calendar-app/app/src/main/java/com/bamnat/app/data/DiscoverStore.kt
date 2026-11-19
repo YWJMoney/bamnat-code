@@ -90,10 +90,9 @@ class DiscoverStore private constructor(context: Context) {
         /** A year's cards and more: enough for the caps and the list in 기능 켜고 끄기. */
         private const val MAX_KEPT = 80
 
-        @Volatile private var instance: DiscoverStore? = null
+        /** One per app ([PerApp]: a test's new app reads its own settings, not an earlier test's). */
+        private val one = PerApp { DiscoverStore(it) }
 
-        fun get(context: Context): DiscoverStore = instance ?: synchronized(this) {
-            instance ?: DiscoverStore(context).also { instance = it }
-        }
+        fun get(context: Context): DiscoverStore = one.of(context)
     }
 }
