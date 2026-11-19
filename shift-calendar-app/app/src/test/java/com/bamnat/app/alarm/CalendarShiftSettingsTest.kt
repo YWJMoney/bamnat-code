@@ -1,5 +1,8 @@
 package com.bamnat.app.alarm
 
+import com.bamnat.app.TestClock
+import com.bamnat.core.time.Today
+import org.junit.Before
 import android.content.Intent
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -38,6 +41,11 @@ import java.time.LocalTime
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class CalendarShiftSettingsTest {
+    // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking) so the result does not hang on when the run starts.
+    @Before fun hourOfDay() = TestClock.at(10)
+
+    @After fun clockBack() = Today.reset()
+
     private val app get() = ApplicationProvider.getApplicationContext<BamnatApp>()
     private val c get() = app.container
     private val picture = "0123456789abcdef"
@@ -48,7 +56,7 @@ class CalendarShiftSettingsTest {
     }
 
     private fun ring(type: Long, calendar: String?) =
-        RingRequest("주간", LocalDate.now(), LocalTime.of(7, 0), 60, null, System.currentTimeMillis(), shiftTypeId = type, calendarId = calendar)
+        RingRequest("주간", Today.date(), LocalTime.of(7, 0), 60, null, Today.millis(), shiftTypeId = type, calendarId = calendar)
 
     @Test fun aMissionSetInAnAddedCalendarLeavesTheMainCalendarsSameIdAlone() {
         val settings = BootAlarms.RingSettings(mission = AlarmMission.MATH,
@@ -74,11 +82,11 @@ class CalendarShiftSettingsTest {
     @Test fun anAlarmFromAnAddedCalendarSaysWhichCalendar() {
         AppSettled.alarms(app)
         val day = ShiftType(1, "주간", "주", 0xFF1E88E5, LocalTime.of(7, 0), LocalTime.of(19, 0), alarmEnabled = true)
-        val snap = ScheduleSnapshot(listOf(day), WorkPattern.Rotation(LocalDate.now().minusDays(3), listOf(1L)), emptyList())
+        val snap = ScheduleSnapshot(listOf(day), WorkPattern.Rotation(Today.date().minusDays(3), listOf(1L)), emptyList())
         val scheduler = AlarmScheduler(app, Telemetry(EventLog(app), SettingsRepository(app)))
-        scheduler.reschedule(listOf(RingingCalendar("알바", snap, "ab12cd")), true, LocalDateTime.now())
+        scheduler.reschedule(listOf(RingingCalendar("알바", snap, "ab12cd")), true, Today.dateTime())
         assertEquals("ab12cd", scheduler.upcoming.value!!.plan.calendarId)
-        scheduler.reschedule(listOf(RingingCalendar(null, snap, ShiftRef.MAIN)), true, LocalDateTime.now())
+        scheduler.reschedule(listOf(RingingCalendar(null, snap, ShiftRef.MAIN)), true, Today.dateTime())
         assertNull("the main calendar's alarms read as before", scheduler.upcoming.value!!.plan.calendarId)
         scheduler.reschedule(snap, false)
     }

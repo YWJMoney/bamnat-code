@@ -1,5 +1,8 @@
 package com.bamnat.app.commute
 
+import com.bamnat.app.TestClock
+import com.bamnat.core.time.Today
+import org.junit.After
 import android.app.AlarmManager
 import android.app.Application
 import android.content.Intent
@@ -25,6 +28,8 @@ import java.time.LocalDateTime
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35])
 class CommuteRecorderTest {
+    @After fun clockBack() = Today.reset()
+
     private val context: Application = ApplicationProvider.getApplicationContext()
     private val d1 = LocalDate.of(2026, 11, 2)
     private val d2 = d1.plusDays(1)
@@ -32,6 +37,7 @@ class CommuteRecorderTest {
         CommutePrefs.State(enabled = true, lat = 37.5, lng = 127.0, arrivedOn = arrived?.toLocalDate(), arrivedAt = arrived, leftAt = left, pendingLeave = pending)
 
     @Before fun setUp() {
+        TestClock.at(10)  // 2.0.0 [RVR-44] (총괄 HQ-123): the hour is set (10:00 today, ticking), not the hour the run starts.
         CommutePrefs.get(context).setEnabled(false)
     }
 
@@ -137,7 +143,7 @@ class CommuteRecorderTest {
         prefs.setEnabled(true)
         prefs.setPlace(37.5, 127.0)
         prefs.fenceRegistered(CommuteRecorder.fenceKey(prefs.current))
-        val now = LocalDateTime.now().withNano(0)
+        val now = Today.dateTime().withNano(0)
         prefs.arrived(now.minusHours(8))
         CommuteRecorder.crossed(context, false, now)
         assertEquals(now, prefs.current.pendingLeave)

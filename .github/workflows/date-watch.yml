@@ -140,6 +140,63 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
 
+  # [RVR-44] 시각: 오늘과 이달 끝날의 자정 몇 분 전에 시작(월요일마다, 손으로 돌려도).
+  hours:
+    if: github.event.schedule == '47 21 * * 0' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        when: [night, month-end]
+    defaults:
+      run:
+        working-directory: shift-calendar-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('shift-calendar-app/app/build.gradle.kts') }}
+          restore-keys: robolectric-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 시계는 단계마다 바로 전에 정해요. 빌드가 걸리는 만큼 시험은 몇 분 늦게 시작해, 도는 중간에 자정을 넘어요.
+      # 단계마다 시간 한도: 자정을 지나며 멈춘 시험이 일 전체를 취소시키면 요약이 남지 않아요(멈춘 것도 '결과 없음'으로 보여요).
+      - name: core 시험 (${{ matrix.when }} 23:57)
+        timeout-minutes: 20
+        run: |
+          IFS=$'\t' read -r shift when <<< "$(python3 tools/date_watch.py shift --at 23:57 ${{ matrix.when == 'month-end' && '--month-end' || '' }})"
+          echo "core_when=$when" >> "$GITHUB_ENV"
+          sh ./gradlew $GRADLE_FLAGS -p core test -Pbamnat.todayShift=$shift --continue
+      - name: 앱 시험 (unit, ${{ matrix.when }} 23:50)
+        if: always()
+        timeout-minutes: 40
+        run: |
+          IFS=$'\t' read -r shift when <<< "$(python3 tools/date_watch.py shift --at 23:50 ${{ matrix.when == 'month-end' && '--month-end' || '' }})"
+          echo "app_when=$when" >> "$GITHUB_ENV"
+          sh ./gradlew $GRADLE_FLAGS :app:testDebugUnitTest -Pbamnat.testSet=unit -Pbamnat.todayShift=$shift --continue
+      - name: 깨질 시험 요약
+        if: always()
+        run: |
+          python3 tools/date_watch.py report --label core --head "${core_when:-?} 시작(자정 넘김)" core/build/test-results --out build/date-watch/core-${{ matrix.when }}.json >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/date_watch.py report --label "앱 (unit)" --head "${app_when:-?} 시작(자정 넘김)" app/build/test-results/testDebugUnitTest --out build/date-watch/app-${{ matrix.when }}.json >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: date-watch-hours-${{ matrix.when }}
+          path: shift-calendar-app/build/date-watch
+          retention-days: 14
+          if-no-files-found: ignore
+
   # [I60b-01] 앱 (unit) +30일: 월요일마다(손으로 돌려도).
   app:
     if: github.event.schedule == '47 21 * * 0' || github.event_name == 'workflow_dispatch'
