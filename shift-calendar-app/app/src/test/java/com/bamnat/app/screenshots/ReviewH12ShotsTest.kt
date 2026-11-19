@@ -17,6 +17,7 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.YearMonth
 
 /** 2.0.0 갈래 H 12묶음: 야간 said only where it reaches (PC-162·PC-210), and figures from the month the app came into use (PC-212). */
@@ -97,5 +98,27 @@ class ReviewH12ShotsTest : ScreenshotBase() {
         assertEquals(YearMonth.of(2026, 8), FactsSince.month(today, written))
         // No install day known (an old phone, a test): nothing is cut.
         assertEquals(first.startDate, FactsSince.clip(plain, FactsSince.month(null, plain)).patterns.single().startDate)
+    }
+
+    /** [RVH-99] 검토 PC-40: a 대근 on a rest day is filled in the year and counted as the calendar's summary counts it. */
+    @Test fun yearFillsAndCountsWorkOnARestDay() {
+        for ((look, q, scale) in looks) shoot("rvh12_65_year_rest_day_cover_$look", q, scale, style(WorkStyle.SHIFT) {
+            twoOnTwoOff()
+            val today = Today.date().minusMonths(2) // [RVH-99] a month the photo shows without scrolling
+            val off = runBlocking {
+                val repo = app.container.scheduleRepository
+                val pattern = repo.snapshot.first()
+                val day = (0..27).map { today.withDayOfMonth(1).plusDays(it.toLong()) }.first { pattern.resolver.resolve(it).isOff }
+                repo.addExtra(day, com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, LocalTime.of(9, 0), LocalTime.of(18, 0)))
+                day
+            }
+            content { com.bamnat.app.ui.calendar.YearScreen(com.bamnat.app.ui.calendar.YearViewModel(app.container, com.bamnat.app.data.PersonalCalendar.MAIN), {}) }
+            settle()
+            val s = runBlocking { app.container.scheduleRepository.snapshot.first() }
+            val days = (1..today.lengthOfMonth()).associate { today.withDayOfMonth(it) to s.resolver.resolve(today.withDayOfMonth(it)) }
+            val summary = days.values.count { it.totalMinutes > 0 }
+            assertTrue("$look: 쉬는 날 대근($off)이 센 일에 들어가요", days.getValue(off).isOff && days.getValue(off).totalMinutes > 0)
+            assertEquals("$look: 해 달력의 달 일수 = 달력 아래 요약", summary, com.bamnat.app.ui.calendar.yearWorkDays(java.time.YearMonth.from(today), days))
+        })
     }
 }
