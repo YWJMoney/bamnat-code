@@ -584,10 +584,12 @@ export async function keySession(request, env, path, method, now) {
  * 2.0.0 [RVA-64] HQ-132: 말없이 빼면 '기록이 안 왔다'로 읽혀서, 내용 대신 표식(줄 수·멈춤 기록 있음·없음·못 읽음)을 남겨요.
  */
 export function keyView(d) {
-  if (d?.context && "알람 점검" in d.context) {
-    const mark = diagMark(d.context["알람 점검"]);
-    if (mark) d.context["알람 점검"] = `(${mark})`;
-    else delete d.context["알람 점검"];
+  // 2.0.0 [RVO-28] 답장으로 새 기록이 오면 처음 기록은 '처음 점검 기록'에 남아요. 같은 표식으로 가려요.
+  for (const label of ["알람 점검", "처음 점검 기록"]) {
+    if (!d?.context || !(label in d.context)) continue;
+    const mark = diagMark(d.context[label]);
+    if (mark) d.context[label] = `(${mark})`;
+    else delete d.context[label];
   }
   return d;
 }
