@@ -2,7 +2,7 @@
 // 사고 타임라인, 제작자 후보, 출시 노트 이름, 스튜디오 요구 상태. 발견마다 그 문제를 재현한 시험 하나(LOOP-21). `npm test`.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device, signIn } from "./helpers.mjs";
+import { server, device, from, signIn } from "./helpers.mjs";
 import { releaseTick } from "../src/release-desk.js";
 
 const NOW = Date.parse("2026-11-18T03:00:00Z");
@@ -752,4 +752,60 @@ test("[RVN-24] I22ca-03·U22c-07 a phone that turned 답 알림 off is not woken
   const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
   assert.equal(gone.status, 200, JSON.stringify(gone.data));
   assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM plaza_quiet").get().n, 0);
+});
+
+test("[RVN-24] I22ca-02 광장 머리 숫자 come from a 요약 줄: a second open within a minute counts nothing, a post or a 출근 tap counts again", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call, DB } = server();
+  await policyOn(call);
+  const write = (n, body, extra = {}) =>
+    call("POST", "/api/posts", { device: device(n), company: "style-shift", setup: "room", body, tag: { s: "SHIFT", n: "night" }, ...extra }, from(n));
+  const read = (n) => call("GET", "/api/companies/style-shift/setups/room/posts", undefined, { ...from(n), "x-device": device(n) });
+  const tap = (n, kind) => call("POST", "/api/plaza/checkin", { device: device(n), room: "style-shift", kind }, from(n));
+  assert.equal((await write(1, "야간 연속 사흘째 어떻게 버텨요?", { kind: "question" })).status, 201);
+  // What one open asks the database: the head count (posts q …) and the 출근 count (GROUP BY kind) only when the 요약 줄 is old.
+  const seen = [];
+  const prepare = DB.prepare;
+  DB.prepare = (sql) => (seen.push(sql), prepare(sql));
+  const open = async (n) => {
+    seen.length = 0;
+    const p = (await read(n)).data;
+    return { pulse: p.pulse, counted: seen.some((s) => s.includes("FROM posts q")), checkins: seen.some((s) => /FROM plaza_checkin WHERE day = \? AND room = \? GROUP BY kind/.test(s)), statements: seen.length };
+  };
+  const cold = await open(4);
+  assert.deepEqual(cold.pulse, { today: 1, waiting: 1, working: 1, checkin: { counts: { day: 0, night: 0 } } });
+  assert.ok(cold.counted && cold.checkins, "the first open counts");
+  const warm = await open(5);
+  assert.deepEqual(warm.pulse, cold.pulse, "the same numbers");
+  assert.ok(!warm.counted && !warm.checkins, "a second open within a minute reads the 요약 줄 with the page");
+  assert.ok(warm.statements < cold.statements, `${warm.statements} < ${cold.statements}`);
+  // A new post: the next open counts again and sees it.
+  assert.equal((await write(2, "암막 커튼이 제일이에요")).status, 201);
+  const afterPost = await open(5);
+  assert.ok(afterPost.counted);
+  assert.equal(afterPost.pulse.today, 2);
+  // An answer from someone else: no longer waiting, at once.
+  const q = (await read(4)).data.posts.find((x) => x.body.startsWith("야간"));
+  assert.equal((await write(3, "저는 낮잠을 두 번 나눠 자요", { parent: q.id })).status, 201);
+  assert.equal((await open(5)).pulse.waiting, 0);
+  // A 출근 tap: counted again, and my own tap rides along without being kept in the 요약 줄.
+  await tap(4, "night");
+  const mine = await open(4);
+  assert.ok(mine.checkins);
+  assert.deepEqual(mine.pulse.checkin, { counts: { day: 0, night: 1 }, mine: "night" });
+  const other = await open(6);
+  assert.ok(!other.checkins);
+  assert.deepEqual(other.pulse.checkin, { counts: { day: 0, night: 1 } }, "another phone sees the count, not my tap");
+  // Older than a minute: counted again.
+  t.mock.timers.tick(61e3);
+  assert.ok((await open(6)).counted);
+  // A new Korean day: yesterday's 요약 줄 is not read.
+  t.mock.timers.tick(DAY);
+  const tomorrow = await open(6);
+  assert.ok(tomorrow.counted);
+  assert.equal(tomorrow.pulse.today, 0);
+  DB.prepare = prepare;
+  // 모두 지우기 needs nothing here: the 요약 줄 holds counts only, no phone.
+  const cols = DB.db.prepare("SELECT name FROM pragma_table_info('plaza_pulse')").all().map((r) => r.name);
+  assert.deepEqual(cols.sort(), ["at", "checkin", "day", "grp", "room", "today", "waiting", "working"]);
 });

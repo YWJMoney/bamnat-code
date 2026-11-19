@@ -99,7 +99,7 @@ import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-material
 import { VILLAGE_SCHEMA, topicOf, villageAdmin, villageRoute } from "./village.js";
 import { makerMarks } from "./maker-mark.js";
 import { PEOPLE_COLUMNS, PEOPLE_LIMITS, peopleCard, peopleFacts, peopleMonths, peoplePulse, peopleTag, peopleTagOut, pollByForm } from "./plaza-people.js";
-import { PLAZA_CHECKIN_SCHEMA, plazaCheckinRoute, plazaCheckins } from "./plaza-checkin.js";
+import { PLAZA_CHECKIN_SCHEMA, checkinDay, plazaCheckinRoute, plazaPulseOf } from "./plaza-checkin.js";
 import { PICKS_COLUMNS, PLAZA_PICKS_SCHEMA, plazaPicksAdmin, plazaPicksRoute } from "./plaza-picks.js";
 import { plazaEffectAdmin } from "./plaza-effect.js";
 import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js";
@@ -2732,6 +2732,8 @@ async function roomPost(request, env, body, ctx) {
       parent, kind, change, report_id, agree, disagree, poll, attach, tag, tag_form, card)
     VALUES (?, ?, ?, ?, ?, 'shown', 0, 0, NULL, ?, NULL, ?, ?, NULL, NULL, 0, 0, ?, ?, ?, ?, ?)`, id, place.id, ROOM, dev, text, now, parent, kind,
   poll ? JSON.stringify(poll) : null, attach, tag ? JSON.stringify(tag) : null, tag?.f ?? null, card ? JSON.stringify(card) : null);
+  // 2.0.0 [RVN-24] I22ca-02: a new post changes the room's head numbers; the next who opens it counts them again.
+  if (place.style) await run(env, "DELETE FROM plaza_pulse WHERE room = ?", place.id).catch(() => null);
   // 1.39 [PLZC-41] 답이 오면 질문한 분에게, 근무형태가 붙은 질문이면 그 근무를 지켜보는 분에게 바로 (말 없는 알림).
   // 2.0.0 [RVN-04][SVC-91] After the answer, not before it: the writer's 올리기 no longer waits on Google (up to 200 phones, one call each).
   if (place.style) {
@@ -4320,6 +4322,9 @@ async function talkData(request, env, companyId, grp, known = null) {
     stmt(env, `SELECT r.id, r.grp, r.status FROM reports r WHERE r.id IN
       (SELECT report_id FROM posts WHERE company_id = ? AND grp = ? AND report_id IS NOT NULL)`, c.id, grp),
     me ? stmt(env, "SELECT until FROM muted WHERE device = ? AND until > ?", me, now) : null,
+    // 2.0.0 [RVN-24] 검토 I22ca-02: the room's 요약 줄 (head numbers, 오늘 출근) and this phone's own tap, in the same round.
+    style && before === null && !thread ? stmt(env, "SELECT * FROM plaza_pulse WHERE room = ? AND grp = ?", c.id, grp) : null,
+    style && me && before === null && !thread ? stmt(env, "SELECT kind FROM plaza_checkin WHERE day = ? AND room = ? AND device = ?", checkinDay(now), c.id, me) : null,
   ];
   // 2.0.0 SVC-90: the flags are read once for this answer, beside the batch (before, plaza.people was read three times one after
   // another: for 근무 태그·머리 숫자, for the 제작자 표식 and for 마을 돌봄).
@@ -4331,7 +4336,7 @@ async function talkData(request, env, companyId, grp, known = null) {
     sealed,
   ]);
   let at = 0;
-  const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, settingRows, reviewRows, proposalRows, mutedRows] =
+  const [rows, sentRows, voteRows, checkedRows, myVoteRows, nickRows, settingRows, reviewRows, proposalRows, mutedRows, pulseRows, mineRows] =
     reads.map((r) => (r ? read[at++].results : []));
   const { adoptPoints } = readSettings(settingRows);
   const muted = mutedRows[0] ?? null;
@@ -4349,10 +4354,11 @@ async function talkData(request, env, companyId, grp, known = null) {
   const attached = room ? [...new Set(rows.filter((p) => p.attach).map((p) => p.attach))] : [];
   const writers = [...new Set(rows.map((p) => p.device))];
   // SVC-90 What is said about the page, read side by side (before, ten reads one after another).
-  const [pulse, checkin, writerFacts, , topic, [pollCounts, myPolls], cardRows, splits, makerRows] = await Promise.all([
-    people && before === null && !thread ? peoplePulse(one, env, c.id, now, grp) : null,
-    // [PLZC-21] 오늘 출근 n명, with this phone's own tap.
-    people && before === null && !thread ? plazaCheckins(env, c.id, me, now) : null,
+  const [head, , writerFacts, , topic, [pollCounts, myPolls], cardRows, splits, makerRows] = await Promise.all([
+    // [PLZC-12] 머리 숫자 and [PLZC-21] 오늘 출근 n명 with this phone's own tap; I22ca-02 from the room's 요약 줄 while it is a minute old.
+    people && before === null && !thread
+      ? plazaPulseOf(env, { room: c.id, grp, row: pulseRows[0] ?? null, mine: mineRows[0]?.kind, now, count: () => peoplePulse(one, env, c.id, now, grp) }) : null,
+    null,
     // [PLZC-15][PLZC-16] 첫 글 and 도움 n beside a writer's name.
     people ? peopleFacts(all, env, writers) : null,
     // [VIL-02] 1.36 마을 V2 차단 하나로: on a kind of work's own plaza (not a company's room, where writers stay numbers), the makers
@@ -4375,7 +4381,8 @@ async function talkData(request, env, companyId, grp, known = null) {
     style && writers.length ? all(env, `SELECT device, maker, hidden, closed FROM recipe_makers WHERE device IN (SELECT value FROM json_each(?))`,
       JSON.stringify(writers)) : [],
   ]);
-  if (checkin) pulse.checkin = checkin;
+  const pulse = head?.pulse ?? null;
+  if (head?.checkin) pulse.checkin = head.checkin;
   const cards = new Map(cardRows.map((r) => [r.code, { title: r.title, look: r.body ? recipeLookOf(r.body) : null }]));
   const pollOfRow = (p) => {
     const options = JSON.parse(p.poll);

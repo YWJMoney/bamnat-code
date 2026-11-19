@@ -746,6 +746,15 @@ export const RETENTION = [
     backup: false,
   },
   {
+    table: "plaza_pulse",
+    what: "**2.0.0** [RVN-24] 광장 방마다 머리 숫자(오늘 글·답 기다리는 질문·근무 중)와 오늘 출근 수 한 줄(누가 썼는지 없음)",
+    why: "광장 열기를 빠르게(1분 동안 같은 줄)",
+    keep: "덮어씀(글을 쓰거나 출근을 누르면 지움)",
+    link: "아니요",
+    none: "덮어씀",
+    backup: false,
+  },
+  {
     table: "plaza_quiet",
     what: "**2.0.0** [RVN-24] 광장 답 바로 알림을 끈 휴대폰: 설치 해시·종류(끈 것만)",
     why: "끈 휴대폰을 깨우지 않기",
