@@ -45,6 +45,12 @@ class SlowTestsTest(unittest.TestCase):
         self.assertEqual([{"name": "A.dateBomb", "at": "A.kt:12"}, {"name": "A.mine", "at": "A.kt:40"}], data["failed"])
         self.assertEqual(["A.later"], data["skipped"])
 
+    def test_json_counts_tests_failed_and_skipped_per_class(self):
+        # [RVR-46] tools/bundle_check.py lists the classes that passed from these numbers.
+        self.run_it("--json", str(self.dir / "t.json"))
+        data = json.loads((self.dir / "t.json").read_text(encoding="utf-8"))
+        self.assertEqual({"A": [4, 2, 1]}, data["counts"])
+
     def test_json_makes_its_folder(self):
         self.run_it("--json", str(self.dir / "new" / "tests-core.json"))
         self.assertTrue((self.dir / "new" / "tests-core.json").exists())
