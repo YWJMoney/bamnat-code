@@ -25,7 +25,7 @@ class RvkSixtyScreenshotTest : ScreenshotBase() {
         tapText("수입", exact = true, scrolls = 0)
         tapText("급여 이름 바꾸기", exact = true)
         // The code before shows a box instead of a field.
-        runCatching { typeInto("분류 이름", "월급") }
+        if (shows("분류 이름", exact = true)) typeInto("분류 이름", "월급")
         settle()
     }
 
