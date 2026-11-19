@@ -2,7 +2,7 @@
 // 검토 SVC-81·82·83·84, U22c-01, I22ca-01.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { server, device } from "./helpers.mjs";
+import { server, device, signIn } from "./helpers.mjs";
 import { incidentSignals, incidentTick, incidentView, unmuted, hourlyWatch, hourlyAgo, FIVE_STEP, INCIDENT } from "../src/incident.js";
 import { recordRequest, flushWatch, watchHour } from "../src/ops-watch.js";
 
@@ -89,6 +89,18 @@ test("PC-207: 사고를 열고 닫은 뒤에도 '그 전 48시간에 바꾼 것'
   const view = await incidentView(env, T + 2000, vitals);
   assert.equal(view.marks.filter((m) => m.kind === "incident_open" || m.kind === "incident_close").length, 0, "닫은 사고의 열림·닫힘은 지난 사고 칸에만 있어요");
   assert.equal(view.past.length, 1, "지난 사고 칸에는 남아요");
+});
+
+test("U22c-02: 활동 기록에서 사고 시작·끝은 무작위 번호가 아니라 '사고 화면'(누르면 사고 화면)으로 보여요", async (t) => {
+  const s = server({ t });
+  const h = await signIn(s.call);
+  await s.call("GET", "/api/terms");
+  const first = await incidentTick(s.env, T, { crash: 0.02, users: 300 });
+  assert.ok(first.open);
+  const log = (await s.call("GET", "/api/admin/audit", undefined, h)).data.entries;
+  const line = log.find((e) => e.action === "incident_open");
+  assert.equal(line.label, "사고 화면");
+  assert.equal(line.link, "#/incident");
 });
 
 test("SVC-81: 꺼졌다 다시 켜진 신호는 새 일이고, 고른 날 수가 지나면 다시 물어요", () => {

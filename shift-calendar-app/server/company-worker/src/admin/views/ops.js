@@ -493,7 +493,7 @@ export function opsViews(A) {
     const n = S.overview?.incidentOpen ?? 0;
     if (!n || !S.me?.owner || S.route.name === "incident") return "";
     // 2.0.0 [RVN-24] PC-207: 두 줄까지(380 폭·글자 2배에서 다섯 줄, 화면의 36%였어요). 무엇이 있는지는 사고 화면 안에서 말해요.
-    return `<a class="banner bad incident-band" role="alert" href="${href("incident")}" title="무엇이 늘었는지·바꾼 것·끌 스위치를 한 화면에서 봐요">${icon(P.help)}<span><b>사고가 열려 있어요</b> 한 화면에서 보기</span>${icon(P.chevron)}</a>`;
+    return `<a class="banner bad incident-band" role="alert" href="${href("incident")}" title="무엇이 늘었는지·바꾼 것·끌 스위치를 한 화면에서 봐요">${icon(P.help)}<span><b>사고가 열려 있어요</b></span>${icon(P.chevron)}</a>`;
   }
 
   // ---- 읽을 길과 다 왔는지 ----

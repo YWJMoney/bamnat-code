@@ -481,13 +481,19 @@ private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
  */
 @Composable
 internal fun NewerWayLine(error: String?, onTake: () -> Unit, diff: Pair<java.time.YearMonth, Long>? = null) {
+    // [RVN-24] 조건 12: at 글자 150%+ the button goes under the words (beside them the line stood one word wide).
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    @Composable fun words(m: Modifier) = Column(m) {
+        Text(PayWayWords.newer(diff, Today.month()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
+        Text(PayWayWords.NEWER_HINT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
     Column(Modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(PayWayWords.newer(diff, Today.month()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
-                Text(PayWayWords.NEWER_HINT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        if (big) {
+            words(Modifier.fillMaxWidth())
+            TextButton(onClick = onTake, modifier = Modifier.heightIn(min = 48.dp).align(androidx.compose.ui.Alignment.End)) { Text(PayWayWords.NEWER_TAKE) }
+        } else Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            words(Modifier.weight(1f))
             TextButton(onClick = onTake, modifier = Modifier.heightIn(min = 48.dp)) { Text(PayWayWords.NEWER_TAKE) }
         }
         error?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }

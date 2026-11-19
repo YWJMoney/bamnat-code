@@ -6669,6 +6669,8 @@ function auditAbout(r) {
     return r.inquiry_first !== null ? { label: `문의 "${words(r.inquiry_first)}"`, link: `#/inquiries/${r.target}` } : { label: "지워진 문의", link: null };
   }
   if (r.action.startsWith("dev_")) return { label: r.target, link: r.dev_kept ? `#/dev/${r.detail}` : null };
+  // 2.0.0 [RVN-24] 검토 U22c-02: 사고의 번호(무작위 글자)는 말이 아니라서 '사고 화면'으로 적어요.
+  if (r.action === "incident_open" || r.action === "incident_close") return { label: "사고 화면", link: "#/incident" };
   // AX 1.30 [ADMX-01] A reward by the company it was for; its id (a hash) is never the words.
   if (r.action.startsWith("reward_")) return { label: r.reward_company ? `${r.reward_company} 보상` : "보상", link: "#/rewards" };
   if (r.company_name !== null && r.company_name !== undefined) {
