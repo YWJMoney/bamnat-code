@@ -172,7 +172,10 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
     val first = start ?: LocalDate.of(2026, 11, 2)
     val today = todayDate ?: first.plusDays(2)
     val shown = if (view.isDefault) view.copy(size = "normal") else view
-    val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp }
+    // 2.0.0 HQ-140 (총괄 #520 사진, 조건 12): at 글자 200% the date and the 근무 표시 grow while the row did not, so the mark was cut at the
+    // bottom (스튜디오 '편 화면' 예시가 가장 잘 보였어요). The row grows with the text: 60% of the extra scale (the mark itself is in dp).
+    val textGrow = androidx.compose.ui.platform.LocalDensity.current.fontScale.coerceAtLeast(1f).let { 1f + (it - 1f) * 0.6f }
+    val height = when (shown.size) { "short" -> 52.dp; "tall" -> 86.dp; "huge" -> 118.dp; else -> 64.dp } * textGrow
     val blueprint = com.bamnat.app.ui.parts.LocalBlueprint.current
     Column(Modifier.fillMaxWidth().padding(4.dp)) {
         Row(Modifier.fillMaxWidth().decor(com.bamnat.core.recipe.Decor.WEEK).then(com.bamnat.app.ui.parts.partSpotModifier("cal.week")).then(com.bamnat.app.ui.parts.PartMods.box(blueprint.style("cal.week"), RoundedCornerShape(0.dp)))) {
@@ -228,7 +231,9 @@ internal fun CellWeeks(view: CalendarView, rows: Int, onCell: ((Int) -> Unit)?,
                         dayMark = { size ->
                             Box(Modifier.size(size).background(if (s.off) Color.Transparent else color, RoundedCornerShape(4.dp))
                                 .then(if (s.off) Modifier.border(1.dp, color, RoundedCornerShape(4.dp)) else Modifier), contentAlignment = Alignment.Center) {
-                                Text(s.label, fontSize = (size.value * 0.55f).sp, lineHeight = (size.value * 0.55f).sp, fontWeight = FontWeight.Bold,
+                                // 2.0.0 HQ-140: the mark's letter is sized to the mark (dp), as the calendar's ShiftBadge is, so at 글자 200% it is not twice the box.
+                                val markSp = with(androidx.compose.ui.platform.LocalDensity.current) { (size * 0.55f).toSp() }
+                                Text(s.label, fontSize = markSp, lineHeight = markSp, fontWeight = FontWeight.Bold,
                                     color = if (s.off) color else contentColorOn(color))
                             }
                         },

@@ -49,6 +49,19 @@ class PatternTimelineTest {
         assertEquals(night, ScheduleResolver(Fixtures.all, second, emptyList()).resolve(dec1.plusDays(5)).shiftType)
     }
 
+    /** 2.0.0 [RVH-90] 검토 PC-12: an 알바's first order fills this month, not six months or two years back; other work as before. */
+    @Test
+    fun aFirstPartTimeOrderFillsThisMonthOnly() {
+        val today = LocalDate.of(2026, 10, 14)
+        val weekly = WorkPattern.Weekly.fromSteps(today, listOf(d, null, d, null, d, null, null))
+        val part = PatternTimeline.firstFor(com.bamnat.core.work.WorkStyle.HOURLY, weekly, today)
+        assertEquals(LocalDate.of(2026, 10, 1), part.startDate)
+        val r = ScheduleResolver(Fixtures.all, part, emptyList())
+        assertEquals(com.bamnat.core.schedule.DaySource.NONE, r.resolve(LocalDate.of(2026, 9, 30)).source)
+        assertEquals(weekly.shiftTypeIdOn(today), r.resolve(today).shiftType?.id)
+        assertEquals(today.minusYears(2), PatternTimeline.firstFor(com.bamnat.core.work.WorkStyle.DAY, weekly, today).startDate)
+    }
+
     @Test
     fun aFirstPatternFillsTheLastTwoYears() {
         val today = LocalDate.of(2026, 10, 14)
