@@ -554,7 +554,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             val folds = first && playing == null && measuring == null
             if (folds) {
                 val what = if (night != null) "잠드는 소리·자는 동안 소리" else "잠드는 소리"
-                com.bamnat.app.ui.components.FoldButton(if (soundsOpen) "접기 ▴" else "$what ▾",
+                com.bamnat.app.ui.components.FoldButton(if (soundsOpen) "접기\u00A0▴" else "$what\u00A0▾",
                     if (soundsOpen) "$what 접기" else "$what 펼치기") { setSounds(!soundsOpen) }
             }
             if (!folds || soundsOpen) {
@@ -600,7 +600,7 @@ private fun SleepScreenBody(vm: SleepViewModel, wide: Boolean, onBack: () -> Uni
             SleepDays(s, settings, target) { e -> if (!e.imported) editing = e }
             Bars(s.log, s.today, target)
             val (more, setMore) = com.bamnat.app.ui.components.rememberFold("sleep.history.more")
-            com.bamnat.app.ui.components.FoldButton(if (more) "접기 ▴" else "더 보기 ▾", if (more) "잠 기록 설정 접기" else "잠 자동으로 잡기·밤 색·2주 수면 일지 펼치기") {
+            com.bamnat.app.ui.components.FoldButton(if (more) "접기\u00A0▴" else "더 보기\u00A0▾", if (more) "잠 기록 설정 접기" else "잠 자동으로 잡기·밤 색·2주 수면 일지 펼치기") {
                 setMore(!more)
             }
             if (more) {

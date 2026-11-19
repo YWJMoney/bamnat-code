@@ -261,7 +261,7 @@ internal fun PartBar(
                 val hold = com.bamnat.app.ui.components.LocalFoldHold.current
                 FilterChip(selected = on != null || whenF != null, onClick = { hold(); open = true },
                     label = { Text("언제: " + listOfNotNull(on?.let { stateWord(sel, it, style) }, whenF?.let { w ->
-                        "만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(12) }).ifEmpty { listOf("언제나") }.joinToString(" · ") + " ▾",
+                        "만약 " + (com.bamnat.core.formula.EasyWhen.read(w)?.say() ?: w).take(12) }).ifEmpty { listOf("언제나") }.joinToString(" · ") + "\u00A0▾",
                         maxLines = 1) })
                 com.bamnat.app.ui.components.DropdownMenu(open, { open = false }) {
                     (listOf<String?>(null) + states).forEach { st ->

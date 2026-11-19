@@ -371,7 +371,7 @@ internal fun SummaryStep(vm: SetupViewModel, d: SetupDraft, onNotMine: (() -> Un
     // [EASE-05][ONBOARD-05][OBS2-06] 사용 통계 묻기는 1.39 7차 PC 1-12부터 아래 막대, 저장 단추 바로 위에 있어요(SetupHost).
 }
 
-/** 1.39 [FLOW-04] The answers in words, folded to one line under the month: "교대 근무 · 4조 2교대 · 주간 07:00~19:00 외 1 ▾". */
+/** 1.39 [FLOW-04] The answers in words, folded to one line under the month: "교대 근무 · 4조 2교대 · 주간 07:00~19:00 외 1\u00A0▾". */
 @Composable
 private fun SummaryFold(text: String, onOpen: () -> Unit) {
     // 2.0.0 [RVG-26] 디자인 품질 조건 12 (PC-94 사진, 접은 폭·글자 200%): beside '고른 답 보기' the line had a few letters a row and was cut

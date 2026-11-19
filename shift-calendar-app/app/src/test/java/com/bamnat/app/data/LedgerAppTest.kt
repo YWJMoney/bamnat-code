@@ -85,7 +85,8 @@ class LedgerAppTest {
         money.renameCategory(MoneyKind.EXPENSE, "카페", "커피")
         val book = money.book.first()
         assertEquals(setOf("커피", "식비"), book.entries.map { it.category }.toSet())
-        assertEquals(listOf(EntryPart("커피", 5_000)), book.entries.single { it.category == "식비" }.parts)
+        // 2.0.0 [RVK-60] The part keeps 카페's fixed id under its new name.
+        assertEquals(listOf(EntryPart("커피", 5_000, "b.x.카페")), book.entries.single { it.category == "식비" }.parts)
         assertEquals("커피", book.fixed.single().category)
         assertEquals(listOf("커피"), book.budgets.map { it.category })
         assertEquals(listOf("식비", "커피"), book.categories.map { it.name })

@@ -904,3 +904,74 @@ test("[LOOP-40] 오늘 화면은 밤사이 저절로 끝난 일과 사람이 보
   assert.equal(a.tone, "bad");
   assert.equal(a.to, `#/inquiries/${hard}`);
 });
+
+test("[RVA-73] 요금 대기 줄을 Claude 제안대로 한 번에: 최고 관리자 세션만, 제안 없는·더 논의·이미 정한·반려 줄은 그대로, 기록과 감사가 남아요", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { call } = server();
+  const owner = await signIn(call);
+  const sync = (await call("POST", "/api/admin/keys", { scope: "sync" }, owner)).data;
+  const syncH = { authorization: `Bearer ${sync.key}`, "x-admin": "1" };
+  // 지어낸 개발사항 여섯: 제안 무료·프로·더 논의·없음, 이미 정한 것, 반려한 것.
+  const mk = async (title, n, row) => {
+    const q = await ask(call, n, `${title} 해 주세요`, "idea");
+    const id = await item(call, owner, title, [q]);
+    await call("POST", "/api/admin/dev/sync", { items: [{ id, status: "doing", size: "feature", route: "flag", ...row }] }, owner);
+    return id;
+  };
+  const free = await mk("돈 통계 열기", 1, { flag: "free.MONEY_STATS", tierAsk: "free", tierWhy: "돈 관리는 기본" });
+  const pro = await mk("월말 보고서 만들기", 2, { tierAsk: "pro", tierWhy: "무겁게 계산해요" });
+  const later = await mk("근무 소리 바꾸기", 3, { tierAsk: "later" });
+  const none = await mk("달력 글꼴 고르기", 4, {});
+  const decided = await mk("메모 색 고르기", 5, { tierAsk: "pro" });
+  assert.equal((await call("POST", `/api/admin/loop/tier/${decided}`, { tier: "free", note: "사용자 결정" }, owner)).status, 200);
+  const rejected = await mk("알람 모양 바꾸기", 6, { tierAsk: "pro" });
+  assert.equal((await call("POST", `/api/admin/dev/${rejected}`, { status: "rejected", reason: "안 해요" }, owner)).status, 200);
+  const all = [free, pro, later, none, decided, rejected];
+
+  // 열쇠(동기화·Claude)와 문의 권한만 있는 관리자는 못 해요(403), 아무것도 바뀌지 않아요.
+  const k = (await call("POST", "/api/admin/keys", { label: "Claude" }, owner)).data;
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, { authorization: `Bearer ${k.key}`, "x-admin": "1" })).status, 403);
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, syncH)).status, 403);
+  const APP = { "x-admin": "1", origin: ORIGIN };
+  const perms = { review: "edit", inquiries: "edit", dev: "edit", devStatus: "edit", companies: "view", rewards: "none", settings: "none", community: "none", takedown: "none", ops: "none", metrics: "edit", shares: "none", audit: "none", flags: "none" };
+  const inv = await call("POST", "/api/admin/invites", { email: "ops2@example.com", perms }, owner);
+  await call("POST", "/api/admin/join", { token: inv.data.link.split("#")[1], name: "운영", password: "ops-member-2026" }, { ...APP, ...from(42) });
+  const aid = (await call("GET", "/api/admin/admins", undefined, owner)).data.admins.find((a) => a.email === "ops2@example.com").id;
+  await call("POST", `/api/admin/admins/${aid}`, { status: "active" }, owner);
+  const res = await call("POST", "/api/admin/login", { email: "ops2@example.com", password: "ops-member-2026" }, { ...APP, ...from(42) });
+  const other = { cookie: res.headers.get("set-cookie").split(";")[0], ...APP };
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, other)).status, 403);
+  const pending = async () => (await call("GET", "/api/admin/loop/tiers", undefined, owner)).data.items.map((x) => x.id).sort();
+  assert.deepEqual(await pending(), [free, pro, later, none].sort(), "아직 아무것도 정해지지 않았어요");
+
+  // 잘못된 모양은 400.
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: [] }, owner)).status, 400);
+  assert.equal((await call("POST", "/api/admin/loop/tiers/apply", { ids: ["x"] }, owner)).status, 400);
+
+  // 최고 관리자 세션: 제안이 무료·프로인 두 줄만 정해지고 나머지 넷은 건너뛰어요.
+  const done = await call("POST", "/api/admin/loop/tiers/apply", { ids: all }, owner);
+  assert.equal(done.status, 200);
+  assert.equal(done.data.decided, 2);
+  assert.equal(done.data.skipped, 4);
+  assert.deepEqual(done.data.items.sort((a, b) => a.tier.localeCompare(b.tier)), [{ id: free, tier: "free" }, { id: pro, tier: "pro" }].sort((a, b) => a.tier.localeCompare(b.tier)));
+  const rows = (await call("GET", "/api/admin/loop/tiers?view=all", undefined, owner)).data.items;
+  const at = (id) => rows.find((x) => x.id === id);
+  assert.equal(at(free).tier, "free");
+  assert.equal(at(pro).tier, "pro");
+  assert.equal(at(free).tierNote, "제안대로 한 번에");
+  assert.equal(at(free).tierBy, "최고 관리자");
+  assert.equal(at(later).tier, null, "'더 논의' 제안은 그대로");
+  assert.equal(at(none).tier, null, "제안 없는 줄은 그대로");
+  assert.equal(at(decided).tier, "free", "이미 정한 줄은 그대로");
+  assert.equal(at(rejected)?.tier ?? null, null, "반려한 줄은 그대로");
+  assert.deepEqual(await pending(), [later, none].sort());
+  // 줄마다 기록과 감사.
+  const hist = (await call("GET", `/api/admin/dev/${free}`, undefined, owner)).data.history;
+  assert.ok(hist.some((h) => h.action === "tier" && h.detail.tier?.[1] === "free" && h.detail.note === "제안대로 한 번에"));
+  const audit = (await call("GET", "/api/admin/audit", undefined, owner)).data.entries.filter((a) => a.action === "loop_tier" && /제안대로 한 번에/.test(a.detail ?? a.note ?? ""));
+  assert.equal(audit.length, 2);
+  // 한 번 더 눌러도 이미 정한 줄은 다시 바뀌지 않아요.
+  const again = await call("POST", "/api/admin/loop/tiers/apply", { ids: [free, pro] }, owner);
+  assert.equal(again.data.decided, 0);
+  assert.equal(again.data.skipped, 2);
+});

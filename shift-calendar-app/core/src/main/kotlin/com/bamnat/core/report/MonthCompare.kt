@@ -49,7 +49,8 @@ object MonthCompare {
         minutes("근무시간", now.worked, before.worked)
         val days = (now.workDays - before.workDays).toLong()
         add(Row("근무일", "${now.workDays}일", "${before.workDays}일", change(days) { "${it}일" }, sign(days)))
-        if (now.night != null && before.night != null) minutes("야간", now.night, before.night)
+        // 2.0.0 [RVH-93] 검토 PC-210: a month pair with no night work (일근) has no 야간 row of 0시간 · 0시간 · 같아요.
+        if (now.night != null && before.night != null && (now.night > 0 || before.night > 0)) minutes("야간", now.night, before.night)
         minutes("휴일·쉬는 날 근무", now.holiday, before.holiday)
         minutes("추가 근무", now.extra, before.extra)
         if (now.pay != null && before.pay != null) {
