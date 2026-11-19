@@ -1216,7 +1216,7 @@ private fun PrivacyPage(
     var summary by remember { mutableStateOf(false) }
     SectionCard(title = "개인정보") {
         // 2.0.0 [RVO-08] 처리방침 판을 페이지 머리글과 같은 값으로(LegalPagesTest).
-        NavRow("개인정보 처리방침", "${com.bamnat.core.ops.PolicyConsent.REVISION_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
+        NavRow("개인정보 처리방침", "${com.bamnat.core.ops.PolicyConsent.REVISION14_VERSION} · 무엇을 휴대폰에 두고 무엇을 보내는지") { openPrivacy(context) }
         HorizontalDivider()
         // [ALRM-02] I27: every yes and no, and every permission, on one sheet.
         NavRow(SUMMARY_ROW, "사용 통계·소식·권한을 한 장에서 보고 바꿔요") { summary = true }
