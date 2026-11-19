@@ -1855,6 +1855,8 @@ private fun exchangeOnce(
         device?.let { conn.setRequestProperty("X-Device", it) }
         // 1.39 [PAYP-01] This app shows no one's pay way: the server sends none, and the way is taken when it is put in.
         conn.setRequestProperty(PAY_PRIVATE_HEADER, "1")
+        // 2.0.0 [RVN-22] This app knows the word "account" (계좌번호, [CompanyText.problem]); to an app before it the server says "amount".
+        conn.setRequestProperty(TEXT_CODES_HEADER, "account")
         session?.headers(method)?.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         headers.forEach { (k, v) -> conn.setRequestProperty(k, v) }
         if (body != null) {
@@ -1903,6 +1905,9 @@ internal const val CONNECT_MS = 6_000
 
 /** 1.39 [PAYP-01] Says the app shows no shared pay way; the server then sends none (it is taken at putting it in). */
 internal const val PAY_PRIVATE_HEADER = "X-Pay-Private"
+
+/** 2.0.0 [RVN-22] The refusal words this app knows beyond email·phone·amount (server `textCode`). */
+internal const val TEXT_CODES_HEADER = "X-Text-Codes"
 
 /** [SPD-27] 1.31 R6: reads what is left of an answer and closes its stream, so the connection can be used again. */
 internal fun drain(conn: HttpURLConnection) {

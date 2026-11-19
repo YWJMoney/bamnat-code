@@ -54,7 +54,7 @@ private object TermsCache {
 internal fun cachedTerms(): CompanyTerms? = TermsCache.value
 
 /** [SPD-13] The terms this run read, else the ones kept on the phone (a screen starts with them, no request). */
-private fun AppContainer.termsNow(): CompanyTerms? = TermsCache.value ?: companySearch.cache.terms()?.value
+internal fun AppContainer.termsNow(): CompanyTerms? = TermsCache.value ?: companySearch.cache.terms()?.value
 
 /**
  * [SPD-13] 1.30 AP1: the terms, read once a run and kept on the phone for a day (they change rarely): a run within a day of the
@@ -881,8 +881,13 @@ class TalkHolder(
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.PAY, fixFocus(fields).key))
     }
 
-    /** 2.0.0 [RVN-17] COMP-14 Whether [o]'s posts may hold an amount: a room, with the server's 방 글에 금액 받기 on. */
-    fun roomMoney(o: Open? = _open.value): Boolean = o?.room == true && c.termsNow()?.roomMoney == true
+    /**
+     * 2.0.0 [RVN-17] COMP-14 Whether [o]'s posts may hold an amount: a room, with the server's 방 글에 금액 받기 on (from the 3.14 7일 줄,
+     * the server says when). [RVN-22] Only on a phone already under 운영 규칙 2판 (마을 돌봄): 3판 stands on it ([PlazaRules.money]),
+     * so a phone still on 1판 keeps its '금액은 임금표에만' until then.
+     */
+    fun roomMoney(o: Open? = _open.value): Boolean = o?.room == true &&
+        com.bamnat.core.plaza.PlazaRules.money(c.termsNow()?.roomMoney == true, rulesCare(c))
 
     fun voteLine(): String {
         val t = c.termsNow()

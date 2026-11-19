@@ -68,15 +68,18 @@ class PlazaRulesGate internal constructor(private val agreed: () -> Boolean, pri
 /** 1.39 [CARE-12] Whether the rules in force are 2판 (마을 돌봄 on, from the 3.12 effective date). */
 internal fun rulesCare(c: com.bamnat.app.AppContainer): Boolean = c.flags.on(com.bamnat.core.flags.FlagCatalog.COMMUNITY_CARE)
 
+/** 2.0.0 [RVN-22] Whether the rules in force are 3판 (방 글 금액, from the day the server takes amounts, [PlazaRules.money]). */
+internal fun rulesMoney(c: com.bamnat.app.AppContainer): Boolean = c.termsNow()?.roomMoney == true
+
 @Composable
 fun rememberPlazaRules(): PlazaRulesGate {
     val c = LocalContext.current.appContainer
     val gate = remember {
         PlazaRulesGate(
             // 1.39 [CARE-12] 운영 규칙 2판은 community.care가 켜진 뒤에만(3.12 시행일).
-            agreed = { PlazaRules.agreed(c.settingsRepository.current.plazaRulesAgreed, rulesCare(c)) },
+            agreed = { PlazaRules.agreed(c.settingsRepository.current.plazaRulesAgreed, rulesCare(c), rulesMoney(c)) },
             agree = {
-                val v = PlazaRules.version(rulesCare(c))
+                val v = PlazaRules.version(rulesCare(c), rulesMoney(c))
                 c.settingsRepository.update { it.copy(plazaRulesAgreed = v) }
                 c.telemetry.event("plaza_rules_agree", "v$v")
             },
@@ -97,11 +100,12 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // [COMM-11] I6: after a change, what changed is marked, and the rest is the same as agreed.
                 val care = rulesCare(context.appContainer)
-                val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care)
+                val money = rulesMoney(context.appContainer) // 2.0.0 [RVN-22] 3판: 방 글 금액 줄이 바뀜으로 보여요
+                val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care, money)
                 Text(if (changed.isEmpty()) "처음 글을 쓰기 전에 한 번만 봐 주세요. 모두가 편하게 쓰는 광장을 위한 약속이에요."
                     else "운영 규칙이 바뀌었어요. 바뀐 줄(${changed.size}개)을 보고 다시 동의해 주세요.",
                     style = MaterialTheme.typography.bodyMedium)
-                PlazaRules.lines(care).forEachIndexed { i, line ->
+                PlazaRules.lines(care, money).forEachIndexed { i, line ->
                     if (i in changed) Text("${i + 1}. $line (바뀜)", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
                     else Text("${i + 1}. $line", style = MaterialTheme.typography.bodySmall)
@@ -125,7 +129,7 @@ private fun PlazaRulesDialog(gate: PlazaRulesGate) {
 fun PlazaRulesCard(gate: PlazaRulesGate, onAgreed: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val care = rulesCare(context.appContainer)
-    val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care)
+    val changed = PlazaRules.changedSince(context.appContainer.settingsRepository.current.plazaRulesAgreed, care, rulesMoney(context.appContainer))
     SoftCard(modifier.fillMaxWidth(), highlighted = true) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(if (changed.isEmpty()) "처음 쓰기 전에 광장 운영 규칙에 동의해 주세요" else "운영 규칙이 바뀌었어요 (${changed.size}줄). 다시 동의해 주세요",
