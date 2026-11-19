@@ -2285,11 +2285,13 @@ function adminApp(L, BUILD, M) {
     const lead = r ? `같은 보낸 분의 닫힘 문의 ${r.n}건 중 ${r.nth}번째예요 (${day(r.first)}~${day(r.last)}).` : "";
     // 2.0.0 [RVA-66] PC-195: 화면에 보이는 칸 이름으로('함께 온 정보 › 알람 점검'의 [앱 멈춤] 줄), 누르면 그 줄로 가요.
     const has = c.record === "has" && q.context?.["알람 점검"];
-    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
+    // [RVA-69] 2.0.0부터는 답장에 기록이 실려요(c.reply). 그 전 판은 새 문의로.
+    const ask = c.record === "has" ? "함께 온 정보 › 알람 점검의 [앱 멈춤] 줄을 봐요."
+      : c.reply ? "답장의 '점검 기록도 보내기'로 받아 봐요." : "점검 기록을 켠 새 문의('앱이 이상해요')로 받아 봐요.";
     const can_ = editable && q.status !== "closed" && c.record !== "has";
     return `<div class="note${r ? " warn" : ""} crash-note">${crashPill(c)} <span>${esc(lead ? `${lead} ${ask}` : ask)}</span>${has
       ? ' <button type="button" class="btn small" data-act="crash-diag">멈춤 줄 보기</button>' : ""}${can_
-      ? ' <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요">기록 부탁 답 넣기</button>' : ""}</div>`;
+      ? ` <button type="button" class="btn small" data-act="crash-draft" data-target="reply" title="${c.reply ? "답장에 점검 기록을 켜서 보내 달라는 답을 답 칸에 넣어요" : "점검 기록을 켠 새 문의를 부탁하는 답을 답 칸에 넣어요. 보고서는 답장 칸(2,000자)보다 길어요"}">기록 부탁 답 넣기</button>` : ""}</div>`;
   }
 
   function inquiryDetail(q) {
@@ -2298,7 +2300,9 @@ function adminApp(L, BUILD, M) {
     const thread = q.messages.map((m) => {
       const mine = m.from !== "user";
       return `<div class="bubble ${mine ? "admin" : "user"}">${esc(m.text)}</div>
-        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}</span>`;
+        <span class="bubble-meta ${mine ? "admin" : ""}">${mine ? esc(m.by && m.by !== "admin" ? m.by : "개발자") : "보낸 분"} · ${esc(moment(m.at))}${
+          /* [RVA-69] HQ-150: 2.0.0 앱이 답장과 함께 보낸 점검 기록(함께 온 정보 › 알람 점검이 이 기록으로 바뀌어요) */
+          !mine && m.diag ? ' · <button type="button" class="link" data-act="crash-diag">점검 기록 함께 옴</button>' : ""}</span>`;
     }).join("");
     const status = { open: ["warn", "답 대기"], answered: ["ok", "답함"], closed: ["", "닫힘"] }[q.status] ?? ["", q.status];
     // [INQ-02] What the asker's app shows as the stage, so the admin answers with it in mind.
@@ -2345,7 +2349,7 @@ function adminApp(L, BUILD, M) {
         ${copiedCard(q) /* AT 1.29 */}
         ${billingCard(q, editable) /* 1.36 [INQ-07] */}
         <section class="card"><h2>함께 온 정보</h2><p class="hint">보낸 분이 보내기 전에 보고 동의한 정보예요.</p>
-          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
+          ${ctx.length ? `<dl class="kv">${ctx.map(([k, v]) => `<dt${k === "알람 점검" ? ' id="ctx-diag"' : ""}>${esc(k)}</dt><dd>${k === "알람 점검" && q.diagAt ? `<small class="meta ctx-at">답장과 함께 받음 · ${esc(moment(q.diagAt))}</small>` : ""}${esc(typeof v === "object" ? JSON.stringify(v) : v)}</dd>`).join("")}</dl>` : '<p class="meta">없어요</p>'}</section>
         ${q.public ? `<section class="card"><h2>모두의 문의</h2>
           <p class="hint">${q.hidden ? `숨겼어요: ${esc(q.hidden.text)}. 보낸 분 앱에는 이유가 보여요.` : "앱을 쓰는 모두가 이 문의와 답을 봐요. 함께 온 정보는 개발자만 봐요."}</p>
           <div class="chips">${publicPills(q)}${(q.reasons ?? []).map((r) => `<span class="chip">${esc(r.text)} ${r.n}</span>`).join("")}</div>
@@ -5406,9 +5410,12 @@ function adminApp(L, BUILD, M) {
       box.focus();
     },
     // 2.0.0 [RVA-63] HQ-124: 멈춤 기록 부탁 답(서버가 준 글)을 답 칸에. 적던 답이 있으면 지우지 않고 뒤에 붙여요(조건 10).
-    "crash-draft": ({ target }) => {
+    "crash-draft": ({ target, reply }) => {
       const box = document.getElementById(target || "reply");
-      const text = S.data.inquiry?.crash?.draft ?? S.data.ledger?.crashDraft;
+      // [RVA-69] 문의 상세는 서버가 판에 맞춰 고른 답, 운영 장부 줄은 그 줄의 판(data-reply)에 맞는 답.
+      const led = S.data.ledger;
+      const text = (!target || target === "reply") && S.data.inquiry?.crash?.draft ? S.data.inquiry.crash.draft
+        : reply ? led?.crashDraftReply ?? led?.crashDraft : led?.crashDraft;
       if (!box || !text) return;
       box.value = (box.value.trim() ? `${box.value.trimEnd()}\n\n` : "") + text;
       box.dispatchEvent(new Event("input", { bubbles: true }));
