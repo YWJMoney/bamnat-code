@@ -1840,4 +1840,10 @@ details.fold-field[open]>summary{margin-bottom:.5rem}
 /* 한 줄 입력·고르기 칸도 글자 200%에서 96px까지 커지지 않게(보통 글자에서는 그대로 48px). 회사 찾기 줄 같은 머리가 두 줄이어도 위 틈이 작아요. */
 :is(input:not([type]),input[type=search],input[type=text],input[type=email],input[type=password],input[type=url],input[type=date],input[type=number],select){min-height:min(3rem,56px);padding-block:min(.6rem,10px);line-height:1.3}
 .chips.one-line{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}.chips.one-line .chip{flex:0 0 auto;white-space:nowrap}
+/* 2.0.0 [RVA-73] 요금 판단 '제안대로 한 번에': 맨 위 한 줄(제안이 있는 N건 + 요금별 수)과 단추 하나, 창의 요금별 제목 목록은 창 안에서 스크롤. */
+.bulk-tier{margin:0 0 .75rem}.bulk-line{margin:0 0 .35rem;display:flex;flex-wrap:wrap;gap:.25rem .5rem;align-items:baseline}
+.bulk-groups{margin:.5rem 0}.bulk-groups fieldset{border:0;padding:0;margin:0 0 .6rem}.bulk-groups legend{font-weight:800;padding:0;margin-bottom:.2rem}
+.bulk-groups .chk{display:flex;gap:.6rem;align-items:flex-start;min-height:2.75rem;padding:.3rem 0}.bulk-groups .chk input{margin-top:.25rem;flex:none}
+/* [RVA-73] 창 전체가 한 번만 스크롤하고 아래 띠는 붙어 있어요. 좁은 폭에서 '정하기' 단추가 취소보다 넓어 두 줄 안에 들어가요. */
+@media (max-width:599.98px){dialog form[data-form="loop-tier-all"] .actions:last-child>.btn.primary{flex:2 1 0}}
 `;
