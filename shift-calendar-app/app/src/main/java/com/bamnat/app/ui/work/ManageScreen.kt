@@ -96,9 +96,13 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     val shopGlances = remember { mutableStateMapOf<String, ManageDesk.ShopGlance>() }
     val liveTeams = teams.orEmpty().filter { !it.archived }
     val livePlaces = places.orEmpty()
+    // 2.0.0 [RVO-19] 검토 T11a-15: the same name as the 설정 row that opened it (팀 관리, 직원 관리, 가게는 가게 관리).
+    val manageFlags by c.flags.byKey.collectAsStateWithLifecycle()
+    val manageName = com.bamnat.app.ui.settings.manageTitle(manageFlags[FlagCatalog.TEAM_LEADER]?.on == true,
+        manageFlags[FlagCatalog.BOSS_PAYROLL]?.on == true, c.calendars.styleOf(calendarId, c.settingsRepository.current.workStyle))
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("팀·가게 관리") },
+            title = { Text(manageName) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             // Its own color, so it never reads as the personal calendar.
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
