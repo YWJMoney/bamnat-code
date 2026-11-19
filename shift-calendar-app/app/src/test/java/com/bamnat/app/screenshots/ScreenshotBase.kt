@@ -1766,7 +1766,7 @@ abstract class ScreenshotBase {
     // [REST-01][REST-03] 근무표 점검 기준: one sheet, a preset away from a hospital's rules, and the switch to turn it off.
     internal fun restRules(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
         content {
-            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, {})
+            com.bamnat.app.ui.calendar.RestRulesSheet(com.bamnat.core.schedule.RestRules(), com.bamnat.core.schedule.RotationSpeed.FAST, {}, onSave = {})
         }
         settle()
     }

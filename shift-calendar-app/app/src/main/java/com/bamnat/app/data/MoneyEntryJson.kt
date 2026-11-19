@@ -18,6 +18,8 @@ internal object MoneyEntryJson {
         .put("card", e.cardLast4).put("reviewed", e.reviewed).putOpt("account", e.accountId).putOpt("to", e.toAccountId)
         .put("memo", e.memo).put("tags", JSONArray(e.tags)).put("parts", encodeParts(e.parts)).put("installments", e.installments)
         .putOpt("fixed", e.fixedId).put("proof", e.proof).put("receipt", e.receipt).put("rate", e.installmentRate)
+        // 2.0.0 [RVK-60] The fixed ids, so a line put back keeps its category whatever it is called by then.
+        .put("categoryId", e.categoryId).put("partIds", com.bamnat.app.data.db.encodePartIds(e.parts))
 
     fun decode(o: JSONObject): MoneyEntry = MoneyEntry(
         id = o.optLong("id"),
@@ -35,11 +37,12 @@ internal object MoneyEntryJson {
         toAccountId = if (o.has("to")) o.optLong("to") else null,
         memo = o.optString("memo"),
         tags = o.optJSONArray("tags")?.let { a -> (0 until a.length()).map { a.optString(it) } }.orEmpty(),
-        parts = decodeParts(o.optString("parts")),
+        parts = decodeParts(o.optString("parts"), o.optString("partIds")),
         installments = o.optInt("installments", 1),
         fixedId = if (o.has("fixed")) o.optLong("fixed") else null,
         proof = o.optString("proof"),
         receipt = o.optString("receipt"),
         installmentRate = o.optDouble("rate", 0.0),
+        categoryId = o.optString("categoryId"),
     )
 }
