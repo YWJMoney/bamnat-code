@@ -1047,7 +1047,11 @@ private fun DataPage(vm: SettingsViewModel, files: SettingsFiles, settings: AppS
         // [BAK-01] 1.25 Z (U8): what goes to a new phone and what stays here, said before the user relies on it.
         var moving by remember { mutableStateOf(false) }
         NavRow(MOVE_ROW, "모든 설정과 기록이 파일 하나로 가요. 이 휴대폰에만 남는 것도 알려 드려요") { moving = true }
-        if (moving) MoveToNewPhoneDialog(onSave = { moving = false; files.saveBackup() }, onDismiss = { moving = false })
+        if (moving) MoveToNewPhoneDialog(
+            onSend = { moving = false; files.sendBackup() },
+            onSave = { moving = false; files.saveBackup() },
+            onDismiss = { moving = false },
+        )
         HorizontalDivider()
         // [BACK-01] 결정 D13: photos go in unless the user keeps them on this phone only.
         BackupPhotosRow(vm)
@@ -1639,15 +1643,20 @@ internal const val SHIFT_PREVIEW_ROW = "근무 전 한 줄 예고"
 /** [BAK-01] 설정 › 데이터's row for moving to a new phone. */
 internal const val MOVE_ROW = "새 휴대폰으로 옮기기"
 
-/** [BAK-01] 1.25 Z (U8): the three steps, what travels, and what stays on this phone and why (결정 Z-D3). */
+/**
+ * [BAK-01] 1.25 Z (U8): the steps, what travels, and what stays on this phone and why (결정 Z-D3).
+ * 2.0.0 [RVL-49] (검토 U12-02) Two steps now: 만들고 보내기 makes the file and opens 보내기 at once, and the new phone starts with the file
+ * it got in one tap. Saving it somewhere first stays as the text button.
+ */
 @Composable
-internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
+internal fun MoveToNewPhoneDialog(onSend: () -> Unit, onSave: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(MOVE_ROW) },
         text = {
             Column(Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()), verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
-                Text("1. 이 휴대폰에서 ‘백업 저장’으로 파일을 만들어요(암호를 걸 수 있어요).\n2. 파일을 새 휴대폰으로 보내요(카톡 나에게 보내기, 클라우드, 케이블).\n3. 새 휴대폰에서 밤낮을 열고 ‘백업이나 회사 파일로 시작할게요’ 또는 설정 › 데이터 › ‘파일 불러오기’.",
+                Text("1. ‘$SEND_BACKUP’를 누르고 암호를 정하면, 보낼 곳(카톡 나에게 보내기, 메일, 드라이브)을 바로 골라요.\n" +
+                    "2. 새 휴대폰에 밤낮을 깔고 받은 파일을 누르면 ‘이 백업으로 시작할까요?’가 떠요.",
                     style = MaterialTheme.typography.bodyMedium)
                 Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
                 Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
@@ -1664,10 +1673,17 @@ internal fun MoveToNewPhoneDialog(onSave: () -> Unit, onDismiss: () -> Unit) {
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         },
-        confirmButton = { TextButton(onClick = onSave) { Text("백업 저장") } },
+        // 조건 2: the one filled button is the thing to do now; 파일로 저장 and 닫기 stay text buttons.
+        confirmButton = {
+            TextButton(onClick = onSave) { Text("파일로 저장") }
+            com.bamnat.app.ui.components.Button(onClick = onSend) { Text(SEND_BACKUP) }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
     )
 }
+
+/** 2.0.0 [RVL-49] 새 휴대폰으로 옮기기's filled button. */
+internal const val SEND_BACKUP = "만들고 보내기"
 
 /** [CVW-09] The row 설정 찾기 points at. */
 const val LONG_PRESS_ROW = "날짜를 길게 누르면"

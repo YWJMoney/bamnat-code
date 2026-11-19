@@ -76,7 +76,6 @@ import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.CompanyShare
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.settings.UnlockBackupDialog
-import com.bamnat.app.ui.settings.restoreMessage
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.ShiftRole
@@ -349,10 +348,14 @@ fun SetupHost(
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelFile) }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
-        ConfirmDialog(
-            title = "쓰던 백업을 불러올까요?",
-            message = restoreMessage(summary),
-            confirmLabel = "불러오기",
+        // 2.0.0 [RVL-49] (검토 U12-02) A file sent from the old phone, opened on the new one: start with it in one tap.
+        // [RVL-50] How old the file is first; nothing of the user's is here yet to get fewer.
+        com.bamnat.app.ui.settings.RestoreDialog(
+            file = summary,
+            now = null,
+            title = RESTORE_START_TITLE,
+            confirmLabel = "이 백업으로 시작",
+            filled = true,
             onDismiss = vm::cancelFile,
             onConfirm = vm::confirmRestore,
         )
@@ -494,3 +497,6 @@ private val SetupStep.title: String
 
 /** [VIS-02] A step slides over 260 ms. */
 private const val STEP_MILLIS = 260
+
+/** 2.0.0 [RVL-49] The first setup's window for a backup file opened on a new phone. */
+internal const val RESTORE_START_TITLE = "이 백업으로 시작할까요?"
