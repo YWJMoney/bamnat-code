@@ -78,17 +78,24 @@ class MoneyRepository(
     private val dao = db.moneyDao()
 
     val entries: Flow<List<MoneyEntry>> = dao.observeEntries().map { list -> list.map { it.toModel() } }.flowOn(Dispatchers.Default)
-    val jobs: Flow<List<Job>> = dao.observeJobs().map { list -> list.map { it.toModel() } }
+    /** 2.0.0 [RVK-46] (검토 MONEY-29) Each job with the payments it got besides 선금·잔금. */
+    val jobs: Flow<List<Job>> = combine(dao.observeJobs(), dao.observeJobPayments()) { list, paid ->
+        val byJob = paid.groupBy { it.jobId }
+        list.map { it.toModel(byJob[it.id].orEmpty()) }
+    }
     val sales: Flow<List<DailySales>> = dao.observeSales().map { list -> list.map { it.toModel() } }
     val fixed: Flow<List<FixedCost>> = dao.observeFixed().map { list -> list.map { it.toModel() } }
     val rules: Flow<Map<String, String>> = dao.observeRules().map { list -> list.associate { it.merchant to it.category } }
     val captures: Flow<List<Capture>> = kept.captures
     private val owedDao = db.receivableDao()
-    /** [RECV-01] Money others owe the user, each with what came back for it. */
-    val receivables: Flow<List<Receivable>> = combine(owedDao.observe(), owedDao.observePayments()) { list, paid ->
+    private val owedAll: Flow<List<Receivable>> = combine(owedDao.observe(), owedDao.observePayments()) { list, paid ->
         val byId = paid.groupBy { it.receivableId }
         list.map { it.toModel(byId[it.id].orEmpty()) }
     }
+    /** [RECV-01] Money others owe the user, each with what came back for it. 2.0.0 [RVK-46] Never 줄 돈. */
+    val receivables: Flow<List<Receivable>> = owedAll.map { list -> list.filter { !it.toPay } }
+    /** 2.0.0 [RVK-46] (검토 T06a-05·I06ab-03) 줄 돈: money the user owes, with what was paid. */
+    val payables: Flow<List<Receivable>> = owedAll.map { list -> list.filter { it.toPay } }
     /** [LEDG-08] Cash, bank accounts and cards, in the user's order. */
     val accounts: Flow<List<MoneyAccount>> = dao.observeAccounts().map { list -> list.map { it.toModel() } }
     /** [LEDG-06] Monthly budgets. */
@@ -99,7 +106,7 @@ class MoneyRepository(
         combine(accounts, budgets, categories) { a, b, c -> Triple(a, b, c) }
     /** [STAB-01] Every ledger row is turned into a line off the main thread. */
     val book: Flow<MoneyBook> = combine(
-        combine(entries, jobs, sales, fixed, receivables) { e, j, s, f, r -> MoneyBook(e, j, s, f, r) }, plans,
+        combine(entries, jobs, sales, fixed, owedAll) { e, j, s, f, r -> MoneyBook(e, j, s, f, r.filter { !it.toPay }, payables = r.filter { it.toPay }) }, plans,
     ) { b, (a, bu, c) -> b.copy(accounts = a, budgets = bu, categories = c) }
         .combine(style.distinctUntilChanged()) { b, st -> b.copy(style = st) }
         .combine(confirmFirst.distinctUntilChanged()) { b, from -> b.holdUnconfirmed(from) }.flowOn(Dispatchers.Default)
@@ -204,6 +211,7 @@ class MoneyRepository(
         dao.deleteAccount(account.id)
         dao.allAccounts().filter { it.payFromId == account.id }.forEach { dao.restoreAccount(it.copy(payFromId = null)) }
         dao.unlinkFixedFromAccount(account.id)
+        dao.unlinkFixedToAccount(account.id)
         true
     }
 
@@ -211,9 +219,16 @@ class MoneyRepository(
     suspend fun reorder(accounts: List<MoneyAccount>) =
         accounts.forEachIndexed { i, a -> if (a.order != i) dao.restoreAccount(a.copy(order = i).toEntity()) }
 
-    /** [LEDG-06] Sets a monthly budget; 0 or less removes it. */
-    suspend fun setBudget(category: String, amount: Long) =
-        if (amount <= 0) dao.deleteBudget(category) else dao.upsertBudget(MoneyBudget(category, amount).toEntity())
+    /**
+     * [LEDG-06] Sets a monthly budget; 0 or less removes it. 2.0.0 [RVK-46] (검토 I06aa-05) With a [month], that month's only: there 0 is kept
+     * (no budget this month) unless [amount] is below 0, which takes the month back to every month's.
+     */
+    suspend fun setBudget(category: String, amount: Long, month: java.time.YearMonth? = null) = when {
+        month == null && amount <= 0 -> dao.deleteBudget(category, 0)
+        month == null -> dao.upsertBudget(MoneyBudget(category, amount).toEntity())
+        amount < 0 -> dao.deleteBudget(category, MoneyBudget.code(month))
+        else -> dao.upsertBudget(MoneyBudget(category, amount, month).toEntity())
+    }
 
     /** [LEDG-14] Saves the user's categories for [kind] in their order; null names are dropped. */
     suspend fun saveCategories(kind: MoneyKind, list: List<CategoryEdit>) {
@@ -248,10 +263,11 @@ class MoneyRepository(
         dao.renameInFixed(kind.name, from, name)
         if (kind == MoneyKind.EXPENSE) {
             dao.renameInRules(from, name)
+            // 2.0.0 [RVK-46] Each month's budget goes along too; where the new name already has one for that month, that one stays.
             val budgets = dao.allBudgets()
-            budgets.firstOrNull { it.category == from }?.let { b ->
-                dao.deleteBudget(from)
-                if (budgets.none { it.category == name }) dao.upsertBudget(b.copy(category = name))
+            budgets.filter { it.category == from }.forEach { b ->
+                dao.deleteBudget(from, b.month)
+                if (budgets.none { it.category == name && it.month == b.month }) dao.upsertBudget(b.copy(category = name))
             }
             val split = dao.entriesWithPart(from).filter { it.kind == kind.name }.mapNotNull { e ->
                 val parts = decodeParts(e.parts)
@@ -289,19 +305,58 @@ class MoneyRepository(
     /** [COMN-04] Lines from 확인 대기함 confirmed: they count from now on. */
     suspend fun confirm(list: List<MoneyEntry>) = saveAll(list.filter { !it.reviewed }.map { it.copy(reviewed = true) })
 
-    suspend fun save(job: Job): Job =
-        if (job.id == 0L) job.copy(id = dao.insertJob(job.toEntity())) else job.also { dao.restoreJob(it.toEntity()) }
+    /**
+     * Saves a job. 2.0.0 [RVK-46] (검토 MONEY-29) With the payments it holds: ones taken out of [Job.payments] go, new ones (id 0) are added,
+     * so the job sheet saves its 받은 기록 with the rest at once.
+     */
+    suspend fun save(job: Job): Job = db.withTransaction {
+        val saved = if (job.id == 0L) job.copy(id = dao.insertJob(job.toEntity())) else job.also { dao.restoreJob(it.toEntity()) }
+        val kept = saved.payments.filter { it.id != 0L }.map { it.id }.toSet()
+        if (job.id != 0L) dao.jobPaymentsOf(job.id).filter { it.id !in kept }.forEach { dao.deleteJobPayment(it.id) }
+        val payments = saved.payments.map { p ->
+            val clean = p.copy(jobId = saved.id, amount = p.amount.coerceAtLeast(0))
+            if (p.id == 0L) clean.copy(id = dao.insertJobPayment(clean.toEntity())) else clean.also { dao.restoreJobPayment(it.toEntity()) }
+        }
+        saved.copy(payments = payments)
+    }
 
-    suspend fun job(id: Long): Job? = dao.job(id)?.toModel()
+    suspend fun job(id: Long): Job? = dao.job(id)?.toModel(dao.jobPaymentsOf(id))
 
-    suspend fun delete(job: Job) = dao.deleteJob(job.id)
+    /** A job goes with its payments. */
+    suspend fun delete(job: Job) = db.withTransaction { dao.deleteJobPaymentsOf(job.id); dao.deleteJob(job.id) }
+
+    /** 2.0.0 [RVK-46] Puts a deleted job back with its payments (되돌리기). */
+    suspend fun restore(job: Job) = db.withTransaction {
+        dao.restoreJob(job.toEntity())
+        job.payments.forEach { dao.restoreJobPayment(it.copy(jobId = job.id).toEntity()) }
+    }
+
+    /**
+     * 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) Money that came in for [job] besides 선금·잔금, on its day; at most what is still out. Returns the
+     * payment as saved, or null when nothing was out.
+     */
+    suspend fun receive(job: Job, payment: com.bamnat.core.money.JobPayment): com.bamnat.core.money.JobPayment? {
+        val amount = payment.amount.coerceIn(0, job.unpaid)
+        if (amount <= 0 || job.id == 0L) return null
+        val p = payment.copy(id = 0, jobId = job.id, amount = amount)
+        return p.copy(id = dao.insertJobPayment(p.toEntity()))
+    }
+
+    /** 2.0.0 [RVK-46] Takes a job's payment back; the returned step puts it back as it was (되돌리기). */
+    suspend fun takeBack(p: com.bamnat.core.money.JobPayment): suspend () -> Unit {
+        dao.deleteJobPayment(p.id)
+        return { dao.restoreJobPayment(p.toEntity()) }
+    }
 
     /** A day with nothing left in it is removed rather than kept as zeros. */
     suspend fun save(sales: DailySales) =
         if (sales.sales == 0L && sales.costs == 0L && sales.note.isBlank()) dao.deleteSales(sales.date.toEpochDay())
         else dao.upsertSales(sales.toEntity())
 
-    suspend fun allJobs(): List<Job> = dao.allJobs().map { it.toModel() }
+    suspend fun allJobs(): List<Job> {
+        val byJob = dao.allJobPayments().groupBy { it.jobId }
+        return dao.allJobs().map { it.toModel(byJob[it.id].orEmpty()) }
+    }
 
     suspend fun allFixed(): List<FixedCost> = dao.allFixed().map { it.toModel() }
 
@@ -340,7 +395,8 @@ class MoneyRepository(
     suspend fun receive(r: Receivable, amount: Long, date: LocalDate): ReceivablePayment? {
         val paid = Receivables.clampPayment(r, amount)
         if (paid <= 0) return null
-        val entry = Receivables.incomeEntry(r, paid, date)?.let { save(it) }
+        // 2.0.0 [RVK-46] Paying 줄 돈 is spending under what it was for in this calendar's kind of work.
+        val entry = Receivables.incomeEntry(r, paid, date, if (r.toPay) currentStyle() else null)?.let { save(it) }
         val p = ReceivablePayment(receivableId = r.id, date = date, amount = paid, entryId = entry?.id)
         return p.copy(id = owedDao.insertPayment(p.toEntity()))
     }

@@ -49,8 +49,13 @@ class NetEngineTest {
         val conn = NetEngine.open(URL("http://127.0.0.1:9/api/hello"))
         assertTrue(conn is HttpURLConnection)
         assertFalse(conn.javaClass.name, conn.javaClass.name.contains("chromium", ignoreCase = true))
-        assertFalse("before Android 14 there is none", NetEngine.available(33))
-        assertTrue(NetEngine.available(34))
+        assertFalse("before Android 14 there is none without S Extensions 7", NetEngine.available(33, sExtensions = 6))
+        assertTrue(NetEngine.available(34, sExtensions = 0))
+        // HQ-126 Android 12·13 with S Extensions 7 (a Google Play system update) have it too; 11 has no S Extensions.
+        assertTrue(NetEngine.available(31, sExtensions = 7))
+        assertTrue(NetEngine.available(33, sExtensions = 12))
+        assertFalse(NetEngine.available(30, sExtensions = 7))
+        assertEquals(7, NetEngine.S_EXTENSIONS)
     }
 
     @Test fun aTimeRunningOutIsSaidAsSlowEitherWay() {
@@ -81,9 +86,37 @@ class NetEngineTest {
         }
     }
 
+    /**
+     * The other modules Google Play services loads into the app (DynamiteModule in the libraries, 2.0.0 총괄 ②): the ads SDK's
+     * (com.google.android.gms.ads.dynamite, with its measurement module) and ML Kit's Korean text reading
+     * (com.google.mlkit.dynamite.text.korean, only while a photo is read). Location, wearable, FCM, billing and Play's review,
+     * update and integrity talk to another app instead and load nothing. A new Play services library is added here on purpose.
+     */
+    @Test fun theGoogleModulesInTheAppAreKnown() {
+        val gms = Regex("\"com\\.google\\.android\\.gms:([a-z0-9-]+):").findAll(File("build.gradle.kts").readText()).map { it.groupValues[1] }.toSet()
+        assertEquals(setOf("play-services-ads", "play-services-mlkit-text-recognition-korean", "play-services-mlkit-document-scanner",
+            "play-services-location", "play-services-wearable"), gms)
+    }
+
+    /** The ads module comes only with a press on an ad's button, never when the app opens. */
+    @Test fun theAdsSdkStartsOnlyWithAPress() {
+        val ads = File("src/main/java/com/bamnat/app/ads/Ads.kt").readText()
+        val start = ads.substringAfter("fun start(activity: Activity)").substringBefore("fun prepare(")
+        assertFalse(start, start.contains("startSdk(") || start.contains("MobileAds."))
+        assertEquals(1, Regex("MobileAds\\.initialize\\(").findAll(ads).count())
+        assertTrue(ads.substringAfter("private fun settled(").substringBefore("private fun startSdk(").contains("&& wanted"))
+        assertTrue(ads.substringAfter("fun showPrivacyOptions(").substringBefore("private fun settled(").contains("if (wanted) startSdk("))
+        val callers = File("src/main/java").walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .filter { it.readText().contains("ads.prepare(") }.map { it.name }.toList()
+        assertEquals(listOf("RewardedAds.kt"), callers)
+        val press = File("src/main/java/com/bamnat/app/ads/RewardedAds.kt").readText().substringAfter("OutlinedButton(\n            onClick = {")
+        assertTrue(press.substringBefore("enabled = !loading").contains("c.ads.prepare(activity)"))
+    }
+
     @Test fun theSelfCheckSaysWhichWay() {
         assertEquals("연결 방식: 휴대폰에 든 빠른 연결", SpeedCheck.way(fast = true, available = true))
         assertEquals("연결 방식: 기본 연결", SpeedCheck.way(fast = false, available = true))
-        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터", SpeedCheck.way(fast = false, available = false))
+        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터", SpeedCheck.way(fast = false, available = false, sdk = 30))
+        assertEquals("연결 방식: 기본 연결 · 빠른 연결은 Google Play 시스템 업데이트 뒤에", SpeedCheck.way(fast = false, available = false, sdk = 32))
     }
 }

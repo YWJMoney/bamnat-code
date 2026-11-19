@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { server, device, from, signIn } from "./helpers.mjs";
+import { server, device, from, signIn, neighbour } from "./helpers.mjs";
 import { parseWhere, tierOf, GROWTH } from "../src/growth.js";
 
 const AFTER = Date.parse("2026-11-30T03:00:00Z");
@@ -63,8 +63,14 @@ test("[GRW-01][GRW-02][GRW-03] studio asks group, go to the market at three, and
   assert.equal(row.body, "[달력 칸 › 색] 달력 칸 배경 그라데이션");
   // A maker takes it and finishes it with a public recipe of their own.
   const code = (await call("POST", "/api/recipes", { device: device(9), recipe: recipe("그라데이션 칸 부품"), scope: "public" }, from(9))).data.code;
+  await neighbour(env.DB, 9);
   assert.equal((await call("POST", `/api/recipes/requests/${row.id}/take`, { device: device(9) }, from(9))).data.state, "making");
   assert.equal((await call("POST", `/api/recipes/requests/${row.id}/done`, { device: device(9), code }, from(9))).data.state, "done");
+  // 2.0.0 [RVQ-44] I22bb-01: a 스튜디오 요구's '완성' is the operator's to call right (no one phone asked it).
+  assert.equal((await call("GET", "/api/admin/growth/needs?state=solved", undefined, admin)).data.items.length, 0);
+  const waiting = (await call("GET", "/api/admin/recipes/requests", undefined, admin)).data.items[0];
+  assert.deepEqual([waiting.id, waiting.state, waiting.operator, typeof waiting.checkBy], [row.id, "check", true, "string"]);
+  assert.equal((await call("POST", `/api/admin/recipes/requests/${row.id}/check-ok`, {}, admin)).data.state, "done");
   needs = (await call("GET", "/api/admin/growth/needs?state=solved", undefined, admin)).data;
   assert.equal(needs.items[0].code, code);
   // Asker 1's question got an answer with the code (the app's 새 답 알림).

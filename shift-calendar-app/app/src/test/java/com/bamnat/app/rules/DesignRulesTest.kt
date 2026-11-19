@@ -303,7 +303,6 @@ class DesignRulesTest {
             "ui/imports/AttendanceImportScreen.kt" to 1,
             "ui/imports/CalendarImportScreen.kt" to 1,
             "ui/pay/PayQuickSetup.kt" to 1,
-            "ui/pay/PayslipCheck.kt" to 1,
             "ui/pay/PayslipImport.kt" to 1,
             "ui/pay/ScanButtons.kt" to 1,
             "ui/pro/ProShareCard.kt" to 1,

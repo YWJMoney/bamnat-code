@@ -189,8 +189,11 @@ private fun CellCard(
                     Text(said, style = MaterialTheme.typography.bodySmall, color = colors.onSurface)
                 }
             }
+            // 2.0.0 [RVL-48] Where it was read from, as the cell's chip says (a typed rule said '사진에서'), and 으로/로 by the
+            // last letter ("인상”으로").
+            val whence = when (cell.from) { CellFrom.PHOTO -> "사진에서 "; CellFrom.TEXT -> "글에서 "; CellFrom.SLIP -> "명세서에서 "; else -> "" }
             if (unsure) Text(
-                "확실하지 않아요. 맞는지 봐 주세요." + if (cell.source.isNotBlank()) " 사진에서 “${cell.source}”로 읽었어요." else "",
+                "확실하지 않아요. 맞는지 봐 주세요." + if (cell.source.isNotBlank()) " $whence“${cell.source}”${com.bamnat.core.text.Josa.euro(cell.source)} 읽었어요." else "",
                 style = MaterialTheme.typography.bodySmall, color = colors.onTertiaryContainer, modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp),
             ) else if (cell.source.isNotBlank() && cell.from != CellFrom.HAND) Text("“${cell.source}”", style = MaterialTheme.typography.bodySmall,
                 color = colors.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 8.dp))

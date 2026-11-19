@@ -44,6 +44,7 @@ import com.bamnat.app.data.WorkToolsStore
 import com.bamnat.app.ui.Fmt
 import com.bamnat.app.ui.components.SectionCard
 import com.bamnat.app.ui.components.StatTile
+import com.bamnat.app.ui.components.StatTiles
 import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.manage.ManageDesk
@@ -96,9 +97,11 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     val shopGlances = remember { mutableStateMapOf<String, ManageDesk.ShopGlance>() }
     val liveTeams = teams.orEmpty().filter { !it.archived }
     val livePlaces = places.orEmpty()
+    // 2.0.0 [RVO-19] 검토 T11a-15 · [RVH-78] 검토 T30-105: the same name as the 설정 row that opened it (팀 관리, 사업장 관리, 가게는 가게 관리).
+    val manageStyle = c.calendars.styleOf(calendarId, c.settingsRepository.current.workStyle)
     Scaffold(topBar = {
         TopAppBar(
-            title = { Text("팀·가게 관리") },
+            title = { Text(manageTitle(leaderOn, bossOn, manageStyle)) },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "뒤로") } },
             // Its own color, so it never reads as the personal calendar.
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -109,13 +112,13 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
         androidx.compose.foundation.layout.Box(Modifier.padding(padding).fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.widthIn(max = com.bamnat.app.ui.components.PageWidth.Body).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("내 달력과 따로, 내가 맡은 팀과 가게 일만 모았어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("내 달력과 따로, 내가 맡은 ${manageWhat(leaderOn, bossOn, "과", manageStyle)} 일만 모았어요.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             // 할 일: every team and shop, the urgent ones first.
             val todos = ManageDesk.todos(Today.date(),
                 liveTeams.mapNotNull { teamGlances[it.id] }, livePlaces.mapNotNull { shopGlances[it.id] })
             SectionCard(title = "할 일" + if (todos.isNotEmpty()) " ${todos.size}" else "") {
-                if (todos.isEmpty()) Hint(if (liveTeams.isEmpty() && livePlaces.isEmpty()) "팀이나 가게를 만들면 확정·대장 닫기·명세서처럼 챙길 일을 여기서 모아 보여 드려요."
+                if (todos.isEmpty()) Hint(if (liveTeams.isEmpty() && livePlaces.isEmpty()) manageWhat(leaderOn, bossOn, "이나", manageStyle).let { "$it${com.bamnat.core.text.Josa.eulreul(it)} 만들면 확정·대장 닫기·명세서처럼 챙길 일을 여기서 모아 보여 드려요." }
                     else "지금 챙길 일이 없어요.")
                 todos.forEach { t ->
                     // 2.0.0 [RVJ-50] 검토 PC-118 (조건 3·6): two or three to-dos with a date close stood in red; they are 주의 lines (the
@@ -145,7 +148,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                 if (liveTeams.isEmpty()) Text("지금 쓰는 근무표가 엑셀·PDF·종이 사진이어도 팀 만들기에서 그대로 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             ManagePart.SHOPS -> if (bossOn) {
-                Text("가게", style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
+                Text(ManagePart.SHOPS.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
                 livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerOpen = true }) { shopGlances[p.id] = it } } }
                 if (livePlaces.isEmpty()) OutlinedButton(onClick = { ledgerOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("급여 대장 시작하기") }
                 if (livePlaces.isEmpty()) Text("직원 명단이 엑셀·PDF·사진이어도 급여 대장에서 한 번에 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -217,7 +220,7 @@ private fun TeamGlanceCard(team: Team, calendarId: String, now: YearMonth, onOpe
     SectionCard(title = team.name, trailing = { TextButton(onClick = onOpen) { Text("열기") } }) {
         // 1.39 [FLOW-23] one number first: who is at work today and how many places are empty.
         if (today != null && members > 0 && !unpainted) com.bamnat.app.ui.team.TeamTodayHead(today, Modifier.padding(bottom = 8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             StatTile("${now.monthValue}월", if (g.confirmed) "확정 ${g.version}판" else if (unpainted) "아직 안 짬" else "짜는 중", Modifier.weight(1f),
                 // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 짜는 중인 달은 할 일이지 위험이 아니에요(가게 칸 RVJ-50과 같이): 빨간 칸 대신 주의 글.
                 caption = if (unpainted) null else if (g.empty > 0) "빈칸 ${g.empty}" else "다 채움",
@@ -250,7 +253,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     androidx.compose.runtime.LaunchedEffect(g) { report(g) }
     if (!show) return
     SectionCard(title = place.name, trailing = { TextButton(onClick = onOpen) { Text("급여 대장") } }) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        StatTiles {
             // 2.0.0 [RVJ-50] 검토 PC-118: a month not closed yet is a to-do (할 일 says it with the 지급일), not a danger: the tile
             // was red. It is a plain tile whose caption says '닫기 전' (조건 6, 빨강은 위험만).
             StatTile("${last.monthValue}월 인건비", Fmt.won(ledger.total), Modifier.weight(1f), caption = "${staff.size}명 · " + if (isClosed) "닫음" else "닫기 전")
@@ -262,9 +265,32 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
     }
 }
 
+/**
+ * 2.0.0 [RVH-78] 검토 T30-105: the 관리 화면 was '팀·가게 관리' to a 현장·사무실 사장님 and to a leader whose team is no shop.
+ * Its name says what this phone leads: 팀, 사업장 (the word the 사장님's own screens use), or both.
+ */
+const val MANAGE_NAME = "팀·사업장 관리"
+
+/** 2.0.0 [RVO-19] 검토 T11a-15: what a 사장님 leads, in the calendar's words: a shop's 가게 (as its settings say '내 가게'), else 사업장. */
+private fun managePlace(style: com.bamnat.core.work.WorkStyle?): String = if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "가게" else "사업장"
+
+/** The name of the 관리 화면 and of the 설정 row that opens it (one function for both, 총괄 합치기: [RVH-78] + [RVO-19]). */
+internal fun manageTitle(leader: Boolean, boss: Boolean, style: com.bamnat.core.work.WorkStyle? = null): String = when {
+    leader && !boss -> "팀 관리"
+    boss && !leader -> "${managePlace(style)} 관리"
+    else -> "팀·${managePlace(style)} 관리"
+}
+
+/** "팀과 사업장", "팀", "사업장" (a shop's "가게") with [and] ("과", "이나") between the two. */
+internal fun manageWhat(leader: Boolean, boss: Boolean, and: String, style: com.bamnat.core.work.WorkStyle? = null): String = when {
+    leader && !boss -> "팀"
+    boss && !leader -> managePlace(style)
+    else -> "팀${and} ${managePlace(style)}"
+}
+
 /** 1.38 The cards of the 관리 화면, in their own order (스튜디오 › 팀·가게 관리 › 카드 배치). 할 일 is always first and always shown. */
 enum class ManagePart(val id: String, val label: String) {
-    TODO("todo", "할 일"), TEAMS("teams", "팀 근무표"), SHOPS("shops", "가게 급여 대장"), PLAN("plan", "요금제"), KEEP("keep", "기록 지키기");
+    TODO("todo", "할 일"), TEAMS("teams", "팀 근무표"), SHOPS("shops", "직원 급여 대장"), PLAN("plan", "요금제"), KEEP("keep", "기록 지키기");
 
     companion object {
         val editable: List<ManagePart> = entries.filter { it != TODO }
@@ -283,16 +309,16 @@ fun rememberManageOn(): Boolean {
 fun ManageSample(layout: String, onTap: () -> Unit) {
     val parts = remember(layout) { com.bamnat.core.layout.PageLayout.decode(layout).arrange(ManagePart.editable) { it.id } }
     Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onTap).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("팀·가게 관리", style = MaterialTheme.typography.titleMedium)
+        Text(MANAGE_NAME, style = MaterialTheme.typography.titleMedium)
         SectionCard(title = "할 일 2") {
             com.bamnat.app.ui.components.ToneLine("7병동 12월 근무표 짜기 · 빈칸 40")
-            Text("· 우리 가게 11월: 지급 표시 1명 남았어요", style = MaterialTheme.typography.bodySmall)
+            Text("· 우리 사업장 11월: 지급 표시 1명 남았어요", style = MaterialTheme.typography.bodySmall)
         }
         parts.filter { it.shown }.forEach { p ->
             SectionCard(title = p.part.label) {
                 Text(when (p.part) {
                     ManagePart.TEAMS -> "7병동 · 11월 확정 2판 · 12월 짜는 중"
-                    ManagePart.SHOPS -> "우리 가게 · 10월 인건비 · 지급 3/3"
+                    ManagePart.SHOPS -> "우리 사업장 · 10월 인건비 · 지급 3/3"
                     ManagePart.PLAN -> "팀 요금제: 팀원 15명 구간"
                     ManagePart.KEEP -> "기록은 이 휴대폰과 백업 파일에"
                     ManagePart.TODO -> ""

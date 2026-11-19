@@ -47,7 +47,9 @@ class ReviewH4ShotsTest : ScreenshotBase() {
     @Test fun partTimeWords() = all("23_parttime_extra_words", WorkStyle.HOURLY) {
         com.bamnat.app.ui.guide.FeatureLinks.open(com.bamnat.core.guide.FeatureRoute(com.bamnat.core.guide.Place.SETTINGS_WORK))
         settle()
-        reveal("연장·휴무일 근무 지정", exact = true)
+        // 2.0.0 [RVO-19] 검토 T11a-12: an 알바's row is '연장·휴일 근무' (가산 임금은 5명 이상 일하는 곳만).
+        reveal("연장·휴일 근무", exact = true)
+        org.junit.Assert.assertTrue(appears("추가 근무 · 쉬는 날 출근 · 대타"))
     }
 
     /**

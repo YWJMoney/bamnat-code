@@ -2,6 +2,7 @@ package com.bamnat.app.company
 
 import android.content.Context
 import android.os.Build
+import android.os.ext.SdkExtensions
 import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
@@ -14,15 +15,19 @@ import java.net.URL
  * (PC, Android 17 fold emulator, 1.39.0: 'DynamiteLoaderV2Impl: Module config changed, forcing restart due to module
  * cronet_dynamite', then SIG 9, exit reason SIGNALED): a sleep record or a ringing alarm could be cut off. Now:
  *
- * - Android 14 (API 34) and later: the phone's own [android.net.http.HttpEngine] (the same Chromium network stack, HTTP/3 (QUIC)
- *   and HTTP/2, which Cloudflare speaks: one connection for every request, and a weak signal loses less time). Source:
+ * - Android 14 (API 34) and later, and (2.0.0 HQ-126) an Android 12·13 phone with S Extensions 7 or more: the phone's own
+ *   [android.net.http.HttpEngine] (the same Chromium network stack, HTTP/3 (QUIC) and HTTP/2, which Cloudflare speaks: one
+ *   connection for every request, and a weak signal loses less time). Source:
  *   https://developer.android.com/reference/android/net/http/HttpEngine ("Added in API level 34, Also in S Extensions 7";
  *   [android.net.http.HttpEngine.Builder] enables HTTP/2 and QUIC by default, Brotli off; `openConnection(URL)` gives an
  *   HttpURLConnection, without HttpsURLConnection, the HTTP cache or a CookieHandler, none of which the app uses). It lives in
  *   the system's own module, not in Play services; a module of the system (APEX) is "only activated after reboot"
  *   (https://source.android.com/docs/core/ota/apex), so an update does not stop the app. That HttpEngine is in such a module is
  *   read from its 'S Extensions 7' note: 확인 필요 (its own page does not say which module).
- *   S Extensions 7 would also bring it to some Android 12·13 phones; not used, so those go as before (the PC check asked for 14+).
+ * - HQ-126 (총괄): 1.31~1.39 gave every phone with Play services the fast way, so 12·13 are not left without it where the phone
+ *   has it. SDK extensions "are delivered to devices when end-users receive module updates through Google Play system updates",
+ *   checked with `SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S)` (S Extensions: Android 12 and higher), a check lint's
+ *   NewApi reads (https://developer.android.com/guide/sdk-extensions).
  * - Before that, and whenever the engine cannot be made: the same [HttpURLConnection] as before.
  * - [hello] opens the connection (and wakes the server) when a lookup screen opens, before the first letter is typed.
  *
@@ -36,8 +41,17 @@ object NetEngine {
     /** Whether requests go through the phone's HttpEngine now (자가 점검's 연결 방식 says so). */
     val fast: Boolean get() = engine != null
 
-    /** Whether this phone has the engine at all (Android 14 and later). */
-    internal fun available(sdk: Int = Build.VERSION.SDK_INT): Boolean = sdk >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+    /** Whether this phone has the engine at all: Android 14 and later, or 12·13 with S Extensions 7 (HQ-126). */
+    internal fun available(sdk: Int = Build.VERSION.SDK_INT, sExtensions: Int = sExtensions()): Boolean =
+        sdk >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE || sdk >= Build.VERSION_CODES.S && sExtensions >= S_EXTENSIONS
+
+    /** HQ-126 This phone's S Extensions version (0 before Android 12, where there are none). */
+    internal fun sExtensions(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) runCatching { SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) }.getOrDefault(0) else 0
+
+    /** Whether the engine's classes may be touched on this phone (the same as [available], in the words lint reads). */
+    private fun engineHere(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ||
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && SdkExtensions.getExtensionVersion(Build.VERSION_CODES.S) >= S_EXTENSIONS
 
     /** Makes the engine once, off the main thread (it reads its files); until it is there, requests go as before. */
     fun start(context: Context) {
@@ -48,7 +62,7 @@ object NetEngine {
     }
 
     private fun build(app: Context): Any? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+        if (!engineHere()) return null
         return runCatching {
             android.net.http.HttpEngine.Builder(app).setEnableQuic(true).setEnableHttp2(true).setEnableBrotli(true).build()
         }.getOrNull()
@@ -58,17 +72,17 @@ object NetEngine {
     fun open(url: URL): HttpURLConnection = viaEngine(url) ?: (url.openConnection() as HttpURLConnection)
 
     private fun viaEngine(url: URL): HttpURLConnection? {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return null
+        if (!engineHere()) return null
         val e = engine as? android.net.http.HttpEngine ?: return null
         return runCatching { e.openConnection(url) as HttpURLConnection }.getOrNull()
     }
 
     /**
      * The engine's own kind of failure ([android.net.http.NetworkException.getErrorCode]); null for any other failure, and on a
-     * phone before Android 14.
+     * phone without the engine.
      */
     internal fun errorCode(e: Throwable): Int? =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) (e as? android.net.http.NetworkException)?.errorCode else null
+        if (engineHere()) (e as? android.net.http.NetworkException)?.errorCode else null
 
     /**
      * Whether [e] is a time running out (the three words' 시간 넘김), from the old connection ([SocketTimeoutException]) or the engine
@@ -107,6 +121,8 @@ object NetEngine {
     internal val TIMED_OUT = setOf(4, 6)
     /** ERROR_HOSTNAME_NOT_RESOLVED, ERROR_INTERNET_DISCONNECTED, ERROR_CONNECTION_REFUSED, ERROR_ADDRESS_UNREACHABLE. */
     internal val NEVER_ARRIVED = setOf(1, 2, 7, 9)
+    /** HQ-126 The S Extensions version HttpEngine came in ("Added in API level 34, Also in S Extensions 7"). */
+    internal const val S_EXTENSIONS = 7
 
     private val isRobolectric = android.os.Build.FINGERPRINT == "robolectric"
 }

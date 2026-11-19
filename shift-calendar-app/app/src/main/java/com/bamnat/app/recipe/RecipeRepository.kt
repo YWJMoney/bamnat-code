@@ -151,9 +151,13 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             if (same && had.any { it in done }) { dao.upsertApplied(e.copy(replacedAt = now)); return@forEach }
             if (had.none { it in takes }) return@forEach
             val left = had.filter { it !in takes }
-            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now))
-            else dao.upsertApplied(e.copy(pieces = left.joinToString(","),
-                before = runCatching { JSONObject(e.before).also { b -> takes.forEach { b.remove(it) } }.toString() }.getOrDefault(e.before)))
+            // 2.0.0 [RVM-59] 검토 U09b-03: the earlier work keeps which of its pieces this one covered, so 받은 것 says ‘B’이 덮음 per
+            // piece instead of a bare 바뀜 (kept in its 'before', which every reader reads by piece key).
+            val b = runCatching { JSONObject(e.before) }.getOrNull() ?: JSONObject()
+            covered(b, had.filter { it in takes }, r.title, now)
+            takes.forEach { b.remove(it) }
+            if (left.isEmpty()) dao.upsertApplied(e.copy(replacedAt = now, before = b.toString()))
+            else dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = b.toString()))
         }
         val id = dao.insertApplied(AppliedRecipeEntity(
             code = code, version = version, hash = RecipeCodec.hash(r), title = r.title, calendarId = cal, body = RecipeCodec.write(r),
@@ -187,6 +191,39 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     /** The recipes on this phone still in use, newest per code, that a new version could be for. */
     suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
+
+    /** 2.0.0 [RVS-15] One of my settings a work changed, what it was before ([before]) and is now ([now]), in words too. */
+    data class FeelBack(val key: String, val what: String, val before: String, val now: String, val beforeSaid: String, val nowSaid: String)
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05 (설정 › 화면과 글자 '작품이 바꾼 내 설정 되돌리기', 7일이 지나도): my own settings (밝기·글자 크기·
+     * 누르기·시계·하루 순서·급여 기간…) that works put on this phone changed and that are still as a work left them, each with what I had
+     * before the first of those works (a work put on over another one goes back through it). A setting I changed since is mine and is not
+     * offered; a work taken back already put its own back.
+     */
+    suspend fun feelChanged(): List<FeelBack> {
+        val chains = HashMap<String, MutableList<Pair<String, String>>>()
+        dao.applied().filter { it.undoneAt == null }.sortedBy { it.appliedAt }.forEach { e ->
+            val sets = runCatching { JSONObject(e.before).optJSONObject(PieceKind.APP_FEEL.key)?.optJSONObject("settings") }.getOrNull() ?: return@forEach
+            sets.keys().forEach { k ->
+                if (k !in RecipePieces.MY_FEEL_SETTINGS) return@forEach
+                val pair = sets.optJSONArray(k) ?: return@forEach
+                chains.getOrPut(k) { ArrayList() } += pair.optString(0) to pair.optString(1)
+            }
+        }
+        val now = pieces.feelSnapshot()
+        return chains.mapNotNull { (k, list) ->
+            val cur = now[k] ?: return@mapNotNull null
+            val last = list.indexOfLast { it.second == cur }.takeIf { it >= 0 } ?: return@mapNotNull null
+            var back = list[last].first
+            for (i in last - 1 downTo 0) if (list[i].second == back) back = list[i].first
+            if (back == cur) null
+            else FeelBack(k, RecipePieces.SETTING_NAMES[k] ?: k, back, cur, pieces.feelWords(k, back), pieces.feelWords(k, cur))
+        }.sortedBy { f -> RecipePieces.FEEL_SETTINGS.values.indexOf(f.key) }
+    }
+
+    /** 2.0.0 [RVS-15] Puts [list] back as it was before the works; how many went back. */
+    fun putFeelBack(list: List<FeelBack>): Int = pieces.putFeelBack(list.associate { it.key to (it.before to it.now) })
 
     /**
      * 2.0.0 [RVS-12] 총괄 HQ-57 ②: works put on in 1.36~1.39 whose 부품 꾸미기 has a formula (`{"fx"}`) went on without it (넣기 could
@@ -380,7 +417,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
 
     /** 2.0.0 [RVM-45] 검토 RCP-02: what the last [undo] / [undoAll] left as the user made it, and the pieces it could not take back. */
-    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList())
+    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList(),
+                          /** 2.0.0 [RVM-55] U09b-02: the pieces taken back, and what stayed as the user made it (그대로 둔 것 [보기]). */
+                          val back: Int = 0, val items: List<RecipePieces.Kept> = emptyList())
 
     /**
      * 2.0.0 [RVM-50] 검토 RCP-04: by shift, the alarm times (minutes before) the works still on this phone want, other than record
@@ -411,6 +450,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         when {
             r.failed.isNotEmpty() -> "되돌리지 못한 것이 있어요(" + r.failed.joinToString("·") { it.label } + "). 한 번 더 눌러 주세요"
             !ok -> "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요"
+            // 2.0.0 [RVM-55] 검토 U09b-02: how much went back too, with 보기 (the line's action) for what stayed.
+            r.kept > 0 && r.back > 0 -> "되돌렸어요. 조각 ${r.back}개를 돌리고, 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             r.kept > 0 -> "되돌렸어요. 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             else -> "되돌렸어요. 그 사이 적은 기록은 그대로예요"
         } + if (ok && r.alarmsOff.isNotEmpty()) " · " + r.alarmsOff.distinct().joinToString("·") { "‘$it’" } + " 알람이 꺼졌어요" else ""
@@ -419,25 +460,45 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     /** 되돌리기: every piece put back, last first; what the user changed since stays. */
     suspend fun undo(id: Long): Boolean = undoOne(id).also { lastUndo = it.second }.first
 
-    private suspend fun undoOne(id: Long): Pair<Boolean, UndoReport> {
+    /**
+     * 2.0.0 [RVM-59] 검토 U09b-03 (내 서랍 › 받은 것, 조각별 되돌리기): only [keys] of the work put back, the rest of it left on and still
+     * its own (되돌리기 of the rest stays offered). The work is 되돌림 once nothing of it is left on. Said by [undoSay] as [undo] is.
+     */
+    suspend fun undoPieces(id: Long, keys: Set<String>): Boolean = undoOne(id, keys).also { lastUndo = it.second }.first
+
+    private fun covered(before: JSONObject, keys: List<String>, by: String, at: Long) {
+        if (keys.isEmpty()) return
+        val cov = before.optJSONObject(COVERED) ?: JSONObject().also { before.put(COVERED, it) }
+        keys.forEach { cov.put(it, JSONObject().put("by", by.take(30)).put("at", at)) }
+    }
+
+    private suspend fun undoOne(id: Long, only: Set<String>? = null): Pair<Boolean, UndoReport> {
         val e = dao.appliedById(id) ?: return false to UndoReport()
         if (!canUndo(e)) return false to UndoReport()
         val before = runCatching { JSONObject(e.before) }.getOrNull() ?: return false to UndoReport()
+        val all = e.pieces.split(',').filter { it.isNotEmpty() }
+        val now = if (only == null) all else all.filter { it in only }
+        if (now.isEmpty()) return false to UndoReport()
         // 2.0.0 [RVM-45] 검토 RCP-02: a piece that failed was swallowed and the whole record stamped 되돌림, so it could not be tried
         // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
         val failed = ArrayList<String>()
         pieces.kept = 0
+        pieces.keptItems.clear()
         pieces.alarmsOff.clear()
         pieces.undoing = e.id
-        for (key in e.pieces.split(',').reversed()) {
+        for (key in now.reversed()) {
             val kind = PieceKind.of(key) ?: continue
             val snap = before.optJSONObject(key) ?: continue
             runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
         }
         pieces.undoing = null
-        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList())
-        if (failed.isNotEmpty()) {
-            dao.upsertApplied(e.copy(pieces = e.pieces.split(',').filter { it in failed }.joinToString(",")))
+        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList(),
+            now.count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
+        // [RVM-59] What stays on: the pieces not asked for, and those that failed (to be tried again).
+        val left = all.filter { it !in now || it in failed }
+        if (left.isNotEmpty()) {
+            (now - failed.toSet()).forEach { before.remove(it) }
+            dao.upsertApplied(e.copy(pieces = left.joinToString(","), before = before.toString()))
             return true to report
         }
         dao.upsertApplied(e.copy(undoneAt = Today.millis()))
@@ -454,7 +515,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         var all = UndoReport()
         val n = undoable(code).count { e ->
             val (ok, r) = undoOne(e.id)
-            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff)
+            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff, all.back + r.back, all.items + r.items)
             ok
         }
         lastUndo = all
@@ -529,6 +590,25 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         /** [RVF-06] Pieces that add to what is there (RecipePieces: 알람은 더하기만, 메모 틀·분류는 더하기, 규칙·단추는 내 것 뒤에). */
         val ADDS: Set<PieceKind> = setOf(PieceKind.LOGIC, PieceKind.ALARMS, PieceKind.MEMO_TEMPLATES, PieceKind.LEDGER, PieceKind.INVEST)
         const val UNDO_DAYS = 7L
+        /** 2.0.0 [RVM-59] U09b-03: in a record's 'before', the pieces a later work covered ({key: {by, at}}); never a piece key. */
+        const val COVERED = "_covered"
+
+        /** 2.0.0 [RVM-59] U09b-03: one piece of a received work, as 받은 것 shows it. */
+        data class PieceState(val key: String, val kind: PieceKind, val on: Boolean, val coveredBy: String? = null)
+
+        /** 2.0.0 [RVM-59] U09b-03: each piece of [e] — still on (its own) or covered by a later work, by name — in the order it went on. */
+        fun pieceStates(e: AppliedRecipeEntity): List<PieceState> {
+            val cov = runCatching { JSONObject(e.before).optJSONObject(COVERED) }.getOrNull()
+            val gone = cov?.keys()?.asSequence()?.toList().orEmpty()
+            // A work covered whole keeps its piece list (only its row is 'replaced'), so what is covered is taken out of it here.
+            val on = e.pieces.split(',').filter { it.isNotEmpty() && it !in gone }
+            return (on.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = true) } } +
+                gone.mapNotNull { k -> PieceKind.of(k)?.let { PieceState(k, it, on = false, coveredBy = cov?.optJSONObject(k)?.optString("by")?.ifEmpty { null }) } })
+        }
+
+        /** 2.0.0 [RVM-59] U09b-03: the work that took the place of all of [e] (its pieces were all covered), if it says so. */
+        fun coveredBy(e: AppliedRecipeEntity): String? = pieceStates(e).filter { !it.on }.mapNotNull { it.coveredBy }.distinct().singleOrNull()
+
         const val KEEP_DAYS = 90L
         const val DAY_MILLIS = 24L * 60 * 60 * 1000
     }
