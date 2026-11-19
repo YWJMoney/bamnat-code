@@ -106,7 +106,7 @@ import { PHOTO_COLUMNS, PHOTO_SCHEMA, flagRecipeImages } from "./photo-guard.js"
 // 2.0.0 [RVD-25] SN-17 회사 설정 파일 검사(장터 서버도 같은 함수로).
 import { Refuse, refuse, TIME, DAYS, BASES, UNITS, CADENCES, BREAK_PAY, COVERABLE, KIND_KEY, LEGACY_KINDS, SCOPE, TIMING, given, object, list, bool, int, real, oneOf, time, str, date, TWO_PART_KEYS, MIN_PART, minutesOf, clock, DAY_MIN, twoParts, cleanSetup, usesNewer, period, kindRef, rules, extraRule, tiers, premium, item } from "./company-setup.js";
 import { FCM_SCHEMA, fcmRoute, stillHere } from "./fcm.js";
-import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaWatchRoute } from "./plaza-push.js";
+import { PLAZA_PUSH_SCHEMA, plazaPushAfter, plazaQuietRoute, plazaWatchRoute } from "./plaza-push.js";
 import { WORK_SCHEMA, workRoute } from "./work.js";
 // 1.37 [ADM2] 운영 장부: 나간 판·흐름·Claude 운영 열쇠·장부.
 import { DESK_COLUMNS, DESK_SCHEMA, DESK_SEED, deskRoute, keySession, keyView } from "./desk.js";
@@ -659,6 +659,7 @@ async function routeOnce(request, env, url, ctx) {
   if (path === "/api/push/phone") { const r = await fcmRoute(request, env, path); if (r) return r; }
   // 1.39 [PLZC-41] 같은 근무 새 질문 알림을 받을 광장.
   if (path === "/api/plaza/watch" && (method === "POST" || method === "DELETE")) return plazaWatchRoute(request, env, await peopleOn(env));
+  if (path === "/api/plaza/quiet" && method === "POST") return plazaQuietRoute(request, env); // 2.0.0 [RVN-24] I22ca-03
   if (path === "/api/plaza/checkin" && method === "POST") return plazaCheckinRoute(request, env, await peopleOn(env));
   if (path === "/api/plaza/picks" && method === "GET") return plazaPicksRoute(request, env, url, await peopleOn(env));
   // 1.36 누락 점검 N13: 찾아도 없던 말 ('없다고 알리기').
@@ -3934,6 +3935,7 @@ export async function forgetDevice(env, dev, { keepInquiry = null, count = false
     stmt(env, "DELETE FROM push_phones WHERE device = ?", dev),
     stmt(env, "DELETE FROM plaza_watch WHERE device = ?", dev),
     stmt(env, "DELETE FROM plaza_pushed WHERE device = ?", dev),
+    stmt(env, "DELETE FROM plaza_quiet WHERE device = ?", dev),
     stmt(env, "DELETE FROM plaza_checkin WHERE device = ?", dev),
   ]);
   // 2.0.0 [RVQ-16] 문의 문장 수가 바뀌어도(보내려고 둔 답을 더함) 센 줄을 제자리에서 읽게, 문의 문장의 처음·끝을 따로 기억해요.
@@ -4013,7 +4015,7 @@ export const MINE_GROUPS = [
   { key: "inquiries", tables: ["inquiries", "inquiry_marks", "studio_need_links"] },
   { key: "companies", tables: ["members", "uses", "nicks"] },
   { key: "rates", tables: ["rates"] },
-  { key: "alerts", tables: ["push_phones", "plaza_watch", "plaza_pushed"] },
+  { key: "alerts", tables: ["push_phones", "plaza_watch", "plaza_pushed", "plaza_quiet"] },
   { key: "works", tables: ["recipes", "recipe_makers", "recipe_sets", "recipe_images", "recipe_fonts", "recipe_follows", "recipe_requests",
     "recipe_blocks", "recipe_trust"] },
   { key: "rewards", tables: ["rewards", "day_rewards", "invite_codes", "invite_uses", "pro_shares", "pass_codes"] },

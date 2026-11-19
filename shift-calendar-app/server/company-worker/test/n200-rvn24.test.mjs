@@ -719,3 +719,37 @@ test("[RVN-24] I22cc-01 a signal made a dev item brings its 사건 꾸러미: wh
   assert.ok(item.history.some((x) => x.action === "bundle"));
   assert.ok(!JSON.stringify(b).includes("h1"), "no install id");
 });
+
+test("[RVN-24] I22ca-03·U22c-07 a phone that turned 답 알림 off is not woken for an answer, and turning it on again brings it back", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { plazaPushAfter } = await import("../src/plaza-push.js");
+  const { deviceHash } = await import("../src/index.js");
+  const { call, DB } = server();
+  await call("GET", "/api/terms");
+  const asker = await deviceHash(device(1));
+  const writer = await deviceHash(device(2));
+  await DB.prepare("INSERT INTO posts (id, company_id, grp, device, body, kind, status, created_at) VALUES ('p1', 'style-shift', 'room', ?, '질문이에요', 'question', 'shown', ?)").bind(asker, NOW).run();
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    if (String(url).includes("oauth2")) return new Response(JSON.stringify({ access_token: "a", expires_in: 3600 }));
+    sent.push(String(init?.body ?? ""));
+    return new Response("{}");
+  });
+  const quiet = (off) => call("POST", "/api/plaza/quiet", { device: device(1), kind: "plaza_answer", off });
+  assert.equal((await call("POST", "/api/plaza/quiet", { device: device(1), kind: "plaza_question", off: true })).status, 400);
+  assert.deepEqual((await quiet(true)).data, { ok: true, off: true });
+  const env = { DB };
+  let r = await plazaPushAfter(env, { room: "style-shift", writer, parent: "p1", on: true }, NOW);
+  assert.deepEqual(r, { kind: "plaza_answer", devices: [] });
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM plaza_quiet").get().n, 1);
+  assert.deepEqual((await quiet(false)).data, { ok: true, off: false });
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM plaza_quiet").get().n, 0);
+  // On again: the answer goes to the push sender (no FCM account here, so nobody is marked told, but it is no longer stopped before).
+  r = await plazaPushAfter(env, { room: "style-shift", writer, parent: "p1", on: true }, NOW + 1);
+  assert.equal(r.kind, "plaza_answer");
+  // 모두 지우기 takes the line too.
+  await quiet(true);
+  const gone = await call("DELETE", "/api/mine", undefined, { "x-device": device(1) });
+  assert.equal(gone.status, 200, JSON.stringify(gone.data));
+  assert.equal(DB.db.prepare("SELECT COUNT(*) AS n FROM plaza_quiet").get().n, 0);
+});

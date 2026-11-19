@@ -24,6 +24,7 @@ object PlazaPush {
     private const val K_ANSWERS = "push_answers"
     private const val K_SAME = "push_same"
     private const val K_WATCHED = "push_watched"
+    private const val K_QUIET = "push_quiet"
     private const val ANSWER_LINE = "내 질문에 새 답"
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -51,6 +52,7 @@ object PlazaPush {
      * Asks the server only when that changed. Never throws.
      */
     suspend fun syncWatch(c: AppContainer) {
+        syncQuiet(c)
         runCatching {
             val room = watchRoom(c)
             val form = if (room != null && open(c) && same(c.appContext)) c.plazaTags.tagFor(room)?.form?.name else null
@@ -68,12 +70,31 @@ object PlazaPush {
     }
 
     /**
+     * 2.0.0 [RVN-24] 검토 I22ca-03·U22c-07: '내 질문에 답이 오면 바로 알림'이 꺼져 있고 이 폰이 알림 토큰을 서버에 두었으면(문의 답 알림),
+     * 서버에도 알려(끈 것만 한 줄) 답이 와도 이 폰을 깨우지 않게 해요(배터리). 다시 켜거나 토큰을 거두면 그 줄을 지워요. 바뀌었을 때만 묻고,
+     * 안 닿으면 다음 때 다시. Never throws.
+     */
+    suspend fun syncQuiet(c: AppContainer, tokenGiven: Boolean = PushPhone.given(c.appContext)) {
+        runCatching {
+            val device = c.companyStore.device
+            val off = !answers(c.appContext) && tokenGiven
+            val want = if (off) "$device|off" else ""
+            val was = prefs(c.appContext).getString(K_QUIET, "") ?: ""
+            if (want == was) return
+            if (off) c.companyApi.plazaQuiet(device, true)
+            else if (was.startsWith("$device|")) c.companyApi.plazaQuiet(device, false)
+            prefs(c.appContext).edit().putString(K_QUIET, want).apply()
+        }
+    }
+
+    /**
      * 2.0.0 [RVN-09] COMP-42 After 모두 지우기 (the server forgot what this phone watched and its token): 광장 바로 알림 goes off on
      * the phone too, so nothing is given to the server again by itself. True when it was on; 설정 › 알림 turns it back on.
      */
     fun forget(c: AppContainer): Boolean {
         val was = wanted(c)
-        prefs(c.appContext).edit().apply { if (was) putBoolean(K_ANSWERS, false).putBoolean(K_SAME, false) }.remove(K_WATCHED).apply()
+        // [RVN-24] I22ca-03: the server forgot its 끔 line with the token; it is told again only once a token is given again.
+        prefs(c.appContext).edit().apply { if (was) putBoolean(K_ANSWERS, false).putBoolean(K_SAME, false) }.remove(K_WATCHED).remove(K_QUIET).apply()
         return was
     }
 

@@ -748,6 +748,9 @@ interface CompanyApi {
     /** 1.39 [PLZC-41] 같은 근무 새 질문 알림: watch [form] in [room] (교대·일근 광장), or stop with null. */
     suspend fun plazaWatch(device: String, room: String, form: String?) = Unit
 
+    /** 2.0.0 [RVN-24] I22ca-03 '내 질문에 답이 오면 바로 알림'을 끄면 서버도 이 폰을 깨우지 않게([off] false는 다시 켬). */
+    suspend fun plazaQuiet(device: String, off: Boolean) = Unit
+
     /** 1.39 [CARE-03] 마을을 열 때 한 번: 읽지 않은 안내, 지금 쉬기, 해명 상태. 서버가 모르면 빈 것. */
     suspend fun careStanding(device: String): com.bamnat.core.plaza.CareStanding = com.bamnat.core.plaza.CareStanding()
 
@@ -1129,6 +1132,11 @@ class CompanyClient(
     override suspend fun plazaWatch(device: String, room: String, form: String?) = serverCall {
         val o = JSONObject().put("device", device).put("room", room).apply { form?.let { put("form", it) } }
         request(if (form != null) "POST" else "DELETE", "/api/plaza/watch", o, device)
+        Unit
+    }
+
+    override suspend fun plazaQuiet(device: String, off: Boolean) = serverCall {
+        request("POST", "/api/plaza/quiet", JSONObject().put("device", device).put("kind", PlazaPush.ANSWER).put("off", off), device)
         Unit
     }
 

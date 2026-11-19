@@ -746,6 +746,15 @@ export const RETENTION = [
     backup: false,
   },
   {
+    table: "plaza_quiet",
+    what: "**2.0.0** [RVN-24] 광장 답 바로 알림을 끈 휴대폰: 설치 해시·종류(끈 것만)",
+    why: "끈 휴대폰을 깨우지 않기",
+    keep: "다시 켜면 바로, 끈 지 180일이 지나고 알림 토큰도 없으면, 모두 지우기",
+    link: "예",
+    device: { device: "delete" },
+    prune: { where: "device NOT IN (SELECT device FROM push_phones) AND at < ?", days: 180 },
+  },
+  {
     table: "plaza_watch",
     what: "**1.39** [PLZC-41] 같은 근무 새 질문 알림: 설치 해시·광장·근무형태",
     why: "알림 받을 휴대폰 고르기",
