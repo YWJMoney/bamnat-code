@@ -121,4 +121,43 @@ class ReviewH12ShotsTest : ScreenshotBase() {
             assertEquals("$look: 해 달력의 달 일수 = 달력 아래 요약", summary, com.bamnat.app.ui.calendar.yearWorkDays(java.time.YearMonth.from(today), days))
         })
     }
+
+    /** [RVH-100] 검토 PC-216 (조건 10): leaving the 근무 고치기 window with a change asks once; nothing is saved on its own. */
+    @Test fun leavingTheKindEditorWithAChangeAsks() {
+        for ((look, q, scale) in looks) shoot("rvh12_66_kind_editor_leave_$look", q, scale, style(WorkStyle.SHIFT) {
+            val day = runBlocking { app.container.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+            var saved = 0
+            var dismissed = 0
+            content { com.bamnat.app.ui.shifts.ShiftTypeEditorDialog(day, onDismiss = { dismissed++ }, onSave = { saved++ }, onDelete = {}) }
+            settle()
+            // A change, then the X: asked, not saved, not left (the photo is of the question).
+            typeInto("이름 (예: 주간, 야간, 오픈)", "주간 B")
+            tapText("닫기", exact = true)
+            check(appears("저장하지 않고 나갈까요?", exact = true)) { "$look: 나가기 전에 묻지 않았어요 ${shownWords().take(20)}" }
+            assertEquals("$look: 묻기 전에 저장했어요", 0, saved)
+            assertEquals("$look: 묻기 전에 나갔어요", 0, dismissed)
+        })
+    }
+
+    /** [RVH-100] '나가기' leaves without saving; with no change the X just leaves, without asking. */
+    @Test fun theKindEditorLeavesWithoutSavingOrAsksNothingWhenUnchanged() {
+        val (look, q, scale) = looks.first()
+        shoot("rvh12_66b_kind_editor_leave_$look", q, scale, style(WorkStyle.SHIFT) {
+            val day = runBlocking { app.container.scheduleRepository.shiftTypes.first().first { it.name == "주간" } }
+            var saved = 0
+            var dismissed = 0
+            content { com.bamnat.app.ui.shifts.ShiftTypeEditorDialog(day, onDismiss = { dismissed++ }, onSave = { saved++ }, onDelete = {}) }
+            settle()
+            tapText("닫기", exact = true)
+            assertEquals("바꾼 것이 없으면 묻지 않고 닫아요", 1, dismissed)
+            assertTrue("바꾼 것이 없는데 물었어요", !shows("저장하지 않고 나갈까요?", exact = true))
+            typeInto("이름 (예: 주간, 야간, 오픈)", "주간 B")
+            tapText("닫기", exact = true)
+            check(appears("저장하지 않고 나갈까요?", exact = true))
+            tapText("나가기", exact = true)
+            settle()
+            assertEquals("나가기는 저장하지 않아요", 0, saved)
+            assertEquals("나가기는 닫아요", 2, dismissed)
+        })
+    }
 }
