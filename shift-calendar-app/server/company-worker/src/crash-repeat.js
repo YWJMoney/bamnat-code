@@ -24,10 +24,15 @@ const UNREAD = "(못 읽음)";
 
 export const CRASH_RECORD_NAMES = { has: "멈춤 기록 있음", none: "멈춤 기록 없음", unread: "멈춤 기록 못 읽음", nostop: "멈춤 칸 없음", unsent: "점검 기록 없이 옴" };
 
-/** 닫힘 문의인지: 오류 종류이고, 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 둔 점검 기록을 붙였을 때. */
+/**
+ * 닫힘 문의인지: 오류 종류이고, 말에 닫힘이 있거나 앱이 '앱 멈춤'을 앞에 둔 점검 기록을 붙였거나, 점검 기록의 '앱 멈춤' 칸에 멈춘 기록이 있을 때.
+ * 2.0.0 [RVA-68] PC-202: 'app closed itself again'·'또 그래요'처럼 닫힘 낱말이 없어도 기록이 멈춤을 말하면 닫힘 문의예요(기록이 낱말보다 믿을 만해요).
+ * 낱말 판정은 기록이 없거나 멈춤이 없을 때만 갈라요.
+ */
 export function isCloseAsk(kind, text, info) {
   if (!CLOSE_KINDS.has(kind)) return false;
-  return CLOSE_WORDS.test(String(text ?? "")) || String(info?.diag ?? "").startsWith(STOP_SECTION);
+  const diag = String(info?.diag ?? "");
+  return CLOSE_WORDS.test(String(text ?? "")) || diag.startsWith(STOP_SECTION) || crashRecord(diag) === "has";
 }
 
 /**

@@ -586,3 +586,35 @@ test("[RVA-67] 기록 부탁 답대로 '앱이 이상해요' 새 문의에 점�
   // 앱이 [앱 멈춤]을 맨 앞에 두지 않아도(옛 모양) 글만으로 닫힘 문의예요.
   assert.equal(crashOf("bug", CRASH_ASK_LINE, { diag: "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3" })?.record, "has");
 });
+
+// ---- 2.0.0 [RVA-68] PC-202: 닫힘 낱말이 없어도 멈춘 기록이 실려 오면 닫힘 문의 (시험 자료는 모두 지어낸 값) ----
+import { triage } from "../src/inquiries.js";
+
+test("[RVA-68] 글에 닫힘 낱말이 없어도 점검 기록 '앱 멈춤' 칸에 멈춘 기록이 있으면 '멈춤 기록 있음' 표식·같은 보낸 분 묶음·앱 동작 주제에 들어가요", async (t) => {
+  const stopLate = "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3";
+  const noneLate = "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음";
+  assert.equal(crashOf("bug", "app closed itself again", { diag: stopLate })?.record, "has");
+  assert.equal(crashOf("question", "또 그래요", { diag: stopLate })?.record, "has");
+  assert.equal(crashOf("bug", "또 그래요", { diag: noneLate }), null, "멈춤이 없는 기록은 낱말로만");
+  assert.equal(crashOf("idea", "이런 기능 있으면 좋겠어요", { diag: stopLate }), null, "아이디어는 아니에요");
+  assert.deepEqual([triage("bug", "app closed itself again", { diag: stopLate }).topic, triage("bug", "알람 소리가 작아요", { diag: stopLate }).topic],
+    ["app", "alarm"], "주제는 낱말이 못 정했을 때만 앱 동작");
+
+  const { call, DB } = server({ t });
+  const owner = await signIn(call);
+  const DAY = 24 * HOUR;
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, info, daysAgo) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "bug", text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    await DB.prepare("UPDATE inquiries SET created_at = ?1, updated_at = ?1 WHERE id = ?2").bind(TEST_NOW - daysAgo * DAY, r.data.id).run();
+    return r.data.id;
+  };
+  const a1 = await send(72, "앱이 갑자기 닫혀요", { ...fold }, 2);
+  const a2 = await send(72, "app closed itself again", { ...fold, diag: stopLate }, 0.3);
+  const led = (await call("GET", "/api/admin/ledger?view=all", undefined, owner)).data;
+  const same = led.crashRepeats.find((g) => g.by === "same");
+  assert.deepEqual([same.n, same.noRecord, same.lines.map((l) => l.key)], [2, 1, [a1, a2].map((id) => `inquiry:${id}`)]);
+  const d = (await call("GET", `/api/admin/inquiries/${a2}`, undefined, owner)).data;
+  assert.deepEqual([d.crash.recordName, d.crash.repeat.nth, d.topic], ["멈춤 기록 있음", 2, "app"]);
+});

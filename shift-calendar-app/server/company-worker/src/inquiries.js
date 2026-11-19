@@ -4,7 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
-import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRepeats } from "./crash-repeat.js";
+import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -173,6 +173,8 @@ export function triage(kind, text, info) {
   // nothing of the topic (every form can send it, and it always starts with 알람 상태), so a question with no word stays 기타
   // instead of 알람 — a settings-search question about 보상 came in as 문제 신고 · 알람.
   else if (/^\[앱 멈춤/.test(info?.diag ?? "")) topic = "app";
+  // 2.0.0 [RVA-68] PC-202: 낱말로 주제를 못 정한 글('app closed itself again')에 멈춘 기록이 실려 오면 앱 동작이에요. 낱말이 고른 주제는 그대로.
+  else if (topic === "etc" && crashRecord(info?.diag) === "has") topic = "app";
   // 1.36 [GRW-01] 스튜디오 요구는 꾸미기예요.
   if (kind === "studio") topic = "look";
   // 2.0.0 [RVQ-30] 앱의 '결제·환불'은 글과 상관없이 결제 주제.
