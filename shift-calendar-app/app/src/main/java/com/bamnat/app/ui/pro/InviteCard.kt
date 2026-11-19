@@ -92,7 +92,7 @@ internal fun InviteShareAction(
     if (asking && view?.code == null) Text(INVITE_MAKE_CONSENT, style = MaterialTheme.typography.bodySmall)
     val button: @Composable (String, () -> Unit) -> Unit = { label, go ->
         when {
-            outlined -> androidx.compose.material3.OutlinedButton(enabled = !busy, onClick = go) { Text(label) }
+            outlined -> com.bamnat.app.ui.components.OutlinedButton(enabled = !busy, onClick = go) { Text(label) }
             tonal -> FilledTonalButton(enabled = !busy, onClick = go) { Text(label) }
             else -> Button(enabled = !busy, onClick = go) { Text(label) }
         }
