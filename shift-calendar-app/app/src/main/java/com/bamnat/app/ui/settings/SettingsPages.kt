@@ -1694,19 +1694,35 @@ internal fun MoveToNewPhoneDialog(onSend: () -> Unit, onSave: () -> Unit, onDism
                 Text("1. ‘$SEND_BACKUP’를 누르고 암호를 정하면, 보낼 곳(카톡 나에게 보내기, 메일, 드라이브)을 바로 골라요.\n" +
                     "2. 새 휴대폰에 밤낮을 깔고 받은 파일을 누르면 ‘이 백업으로 시작할까요?’가 떠요.",
                     style = MaterialTheme.typography.bodyMedium)
+                // 2.0.0 [RVL-49] HQ-149 ③ (조건 4) The three lists start as one line each with ⓘ: at 글자 200% on the folded width they
+                // made the dialog read like a page before 만들고 보내기. The whole list is one tap away, and opens in full the first time
+                // only where it says what is left behind (the thing a mover needs to know before the old phone is gone). The summaries fit
+                // one line at 글자 200% on the folded width (about 12 letters), so nothing ends in '…'.
                 Text("옮겨지는 것", style = MaterialTheme.typography.titleSmall)
-                Text("모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
-                    "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, " +
-                    "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 작품·만들던 것",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.goes",
+                    summary = "모든 기록과 설정",
+                    text = "모든 달력의 근무·바꾼 날·추가 근무, 메모, 돈 기록, 수면 기록, 급여·연차 설정, 근무 형태별 연장 상한·세금 방식, " +
+                        "적용한 회사 규칙과 보낸 제보, 광장 시세용 내 직종·지역, 앱의 모든 설정과 화면 배치, 결제 알림으로 적기 조정, 우리 조 모아 보기, " +
+                        "마을 › 테마의 내 서랍(입은 테마·입어 본 테마·내 테마·담아 둔 조각·묶음)·받은 작품·만들던 것",
+                    iconOnly = false, firstInFull = false,
+                )
                 // 2.0.0 [RVL-13] (검토 T12-02·T12-08) What goes only on a condition, said where the user decides.
                 Text("이럴 때만 옮겨지는 것", style = MaterialTheme.typography.titleSmall)
-                Text("영수증·계약서·메모 사진은 ‘사진도 백업’을 켰을 때. 사업장·직원·급여 대장, 내가 만든 공유 링크(고치는 열쇠), 프로 복구 코드는 백업에 암호를 걸었을 때",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.if",
+                    summary = "사진·대장·링크 열쇠",
+                    text = "영수증·계약서·메모 사진은 ‘사진도 백업’을 켰을 때. 사업장·직원·급여 대장, 내가 만든 공유 링크(고치는 열쇠), 프로 복구 코드는 백업에 암호를 걸었을 때",
+                    iconOnly = false, firstInFull = false,
+                )
                 Text("이 휴대폰에만 남는 것", style = MaterialTheme.typography.titleSmall)
-                Text("밤 소리 클립, 출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
-                    "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록. 받은 동료 달력은 새 휴대폰에서 다시 이어요",
-                    style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                com.bamnat.app.ui.components.Explain(
+                    key = "move.stays",
+                    summary = "소리·좌표·권한 등",
+                    text = "밤 소리 클립, 출퇴근 장소의 지도 위 좌표, 알람 소리 파일, 문의 기록, 동의 기록과 알림 권한(새 휴대폰에서 다시 물어요), " +
+                        "자동 백업 폴더와 열쇠, ‘밤낮이 한 일’ 기록. 받은 동료 달력은 새 휴대폰에서 다시 이어요",
+                    iconOnly = false,
+                )
             }
         },
         // 조건 2: the one filled button is the thing to do now; 파일로 저장 and 닫기 stay text buttons.

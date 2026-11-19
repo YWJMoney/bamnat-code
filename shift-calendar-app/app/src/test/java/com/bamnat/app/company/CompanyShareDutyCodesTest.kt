@@ -55,6 +55,14 @@ class CompanyShareDutyCodesTest {
         "병가" to DutyCell.Leave(LeaveKind.PAID), "4H" to DutyCell.Hours(null, 240),
     )
 
+    @Test fun aRecipePieceNeverCarriesTheCodes() = runBlocking {
+        val text = sendingShare(on = true, ::mine).export("", withAmounts = false)
+        assertTrue("the file carries them", JSONObject(text).has("dutyCodes"))
+        val piece = JSONObject(com.bamnat.app.recipe.recipeSetup(text))
+        assertFalse(piece.has("dutyCodes"))
+        assertEquals(JSONObject(text).apply { remove("dutyCodes") }.toString(), piece.toString())
+    }
+
     @Test fun offTheFileCarriesNoCodes() = runBlocking {
         val text = sendingShare(on = false, ::mine).export("밤낮전자", withAmounts = false)
         assertFalse(JSONObject(text).has("dutyCodes"))
