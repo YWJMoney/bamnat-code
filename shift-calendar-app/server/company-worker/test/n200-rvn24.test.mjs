@@ -500,3 +500,31 @@ test("[RVN-24] SVC-111 서버 상태: the DB limit of the plan, the share token 
   assert.ok((await flushWatch(w.env, Date.now() + 42_000)) > 0, "thirty seconds after the last write");
   assert.deepEqual({ ...rows() }, { n: 3, err: 1 });
 });
+
+test("[RVN-24] SVC-112 관측 규칙마다 켜지는 입력: active-drop, config-drop, feature-fall (켜짐과 바로 아래), and every rule has a test", async () => {
+  const { obsRules } = await import("../src/observe.js");
+  const fs = await import("node:fs");
+  const base = { active: { play: [], config: [] }, quality: { vitals: null }, sample: { daily: 100, features: [] } };
+  const on = (b, kind) => obsRules({ ...base, ...b }).find((f) => f.kind === kind);
+  const series = (before, now, a, b) => [...Array(b).fill(before), ...Array(a).fill(now)].map((n) => ({ n }));
+  // 하루 사용자: 7일 평균이 그 전 7일의 70% 아래, 그 전이 10명 이상.
+  assert.equal(on({ active: { play: series(100, 69, 7, 7), config: [] } }, "active-drop").on, true);
+  assert.equal(on({ active: { play: series(100, 71, 7, 7), config: [] } }, "active-drop").on, false, "a 29% fall is not yet");
+  assert.equal(on({ active: { play: series(9, 1, 7, 7), config: [] } }, "active-drop").on, false, "fewer than 10 a day before");
+  assert.equal(on({ active: { play: series(100, 50, 7, 6), config: [] } }, "active-drop"), undefined, "13 days are not enough to say");
+  // 서버에 오는 횟수: 3일 평균이 그 전 10일의 60% 아래, 그 전이 하루 30번 이상.
+  assert.equal(on({ active: { play: [], config: series(100, 59, 3, 10) } }, "config-drop").on, true);
+  assert.equal(on({ active: { play: [], config: series(100, 61, 3, 10) } }, "config-drop").on, false);
+  assert.equal(on({ active: { play: [], config: series(29, 1, 3, 10) } }, "config-drop").on, false, "fewer than 30 a day before");
+  assert.match(on({ active: { play: [], config: series(100, 59, 3, 10) } }, "config-drop").caveat, /읽기 주기/);
+  // 기능 쓰임: 그 전 20대 이상인 줄만(줄이 오는 것 자체가 반 넘게 준 것).
+  const feature = (before) => ({ sample: { daily: 100, features: [{ event: "memo", name: "메모", now: 3, before }] } });
+  assert.equal(on(feature(20), "feature-fall").on, true);
+  assert.equal(on(feature(19), "feature-fall").on, false, "a small sample is not a signal");
+  // Every rule obsRules can raise is named by some test (a new rule comes with the input that turns it on).
+  const kinds = [...new Set([...fs.readFileSync(new URL("../src/observe.js", import.meta.url), "utf8").matchAll(/kind: "([a-z0-9-]+)"/g)].map((m) => m[1]))];
+  const tests = fs.readdirSync(new URL(".", import.meta.url)).filter((f) => f.endsWith(".test.mjs"))
+    .map((f) => fs.readFileSync(new URL(f, import.meta.url), "utf8")).join("\n");
+  assert.ok(kinds.length >= 17, kinds.join(","));
+  assert.deepEqual(kinds.filter((k) => !tests.includes(`"${k}"`)), []);
+});
