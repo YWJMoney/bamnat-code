@@ -143,6 +143,28 @@ class SettingsSearchTest {
         assertTrue(day.indexOf("pattern") > day.indexOf("widget"))
     }
 
+    /**
+     * 2.0.0 [RVG-40] 검토 PC-175 (조건 13): a shop, a field worker or an investor finds 다른 사람 달력 받기 (its old name still finds it), and
+     * the answers about sharing speak of their own 영업일·일정·달력, never 근무표 or 동료.
+     */
+    @Test fun sharingIsSaidInTheWorksOwnWords() {
+        for (style in com.bamnat.core.work.WorkStyle.entries) {
+            val entries = SettingsIndex.entries(style = style)
+            val title = com.bamnat.core.work.receiveTitle(style)
+            assertEquals(style.name, title, SettingsIndex.search("동료 근무표 받기", entries).first().title)
+            assertEquals(style.name, title, entries.first { (it.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE }.title)
+            val topics = HelpFaq.topics().forStyle(style).filter { it.id == "share" || it.id == "receive" }
+            assertEquals(style.name, 2, topics.size)
+            for (t in topics) {
+                val said = listOf(t.tag, t.question, t.answer, t.action?.first.orEmpty()).joinToString(" / ")
+                assertEquals("$style $said", emptyList<String>(), com.bamnat.core.work.TypeWords.leaks(style, said))
+            }
+            if (!style.usesPayEngine) assertEquals(title, topics.first { it.id == "receive" }.action?.first)
+        }
+        assertEquals("다른 사람 달력 받기", com.bamnat.core.work.receiveTitle(com.bamnat.core.work.WorkStyle.BUSINESS))
+        assertEquals("동료 근무표 받기", com.bamnat.core.work.receiveTitle(null))
+    }
+
     @Test fun workWithNoCompanyFindsNoCompanyRows() {
         val entries = SettingsIndex.entries(company = false)
         val titles = entries.map { it.title }

@@ -220,10 +220,13 @@ fun ThemeAdButton(label: String, note: String, onReward: () -> Unit, onQuit: () 
                 if (c.ads.ready.value) { loading = true; play(activity); return@OutlinedButton }
                 // 2.0.0 [RVO-18] 검토 PRO-02: in the quiet first days after install (or wherever) the ads SDK does not start at all
                 // (AdRules.sdkMayStart, as MainActivity), so no ad can come: it opens at once instead of 15 s of '준비하는 중'.
-                if (!AdRules.sdkMayStart(adsRow, gate.tier >= Tier.PRO, c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) {
+                if (!AdRules.sdkMayStart(adsRow, gate.allows(com.bamnat.app.tier.Feature.NO_ADS), c.installedAt, Today.instant(), c.remoteConfig.current.adQuietDays)) {
                     onNoAd("not_ready"); return@OutlinedButton
                 }
                 loading = true
+                // 2.0.0 [RVN-23] (PC-187): the ads SDK starts only now, on this press, right before the wait (it is a module Google
+                // Play services loads into the app, and a phone that never asks for an ad should not carry it).
+                c.ads.prepare(activity)
                 // 1.35 [J135-18] Tapped right after the app opened, the ads SDK may still be starting: wait for it (as long as a slow ad
                 // may take) instead of giving the days with no ad at once. Only a phone that may not have ads at all skips the wait.
                 val waiting = scope.launch {

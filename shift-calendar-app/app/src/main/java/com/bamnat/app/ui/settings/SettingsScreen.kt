@@ -214,6 +214,21 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
             _message.value = SettingsMessage(if (ok) "‘${entry.name}’ 기록을 되돌렸어요" else "되돌리지 못했어요. 보관 기간이 지났거나 파일을 읽지 못했어요")
         }
     }
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05: my own settings (밝기·글자 크기·누르기·시계…) that works put on before changed and that are still as
+     * the work left them, for 화면과 글자's '작품이 바꾼 내 설정 되돌리기' (7일이 지나도).
+     */
+    private val _feelBack = MutableStateFlow<List<com.bamnat.app.recipe.RecipeRepository.FeelBack>>(emptyList())
+    val feelBack: StateFlow<List<com.bamnat.app.recipe.RecipeRepository.FeelBack>> = _feelBack.asStateFlow()
+    fun loadFeelBack() { viewModelScope.launch { _feelBack.value = runCatching { container.recipes.feelChanged() }.getOrDefault(emptyList()) } }
+    fun putFeelBack() {
+        val list = _feelBack.value
+        viewModelScope.launch {
+            val n = runCatching { container.recipes.putFeelBack(list) }.getOrDefault(0)
+            _message.value = SettingsMessage(if (n > 0) "작품을 넣기 전 설정 ${n}개로 되돌렸어요" else "되돌릴 설정이 없어요. 그 사이 직접 바꾸셨어요")
+            loadFeelBack()
+        }
+    }
     /** [CALS-02] 내 근무 and 급여 follow the calendar picked at their top (the one on the calendar tab). */
     val activeCalendar: StateFlow<String> = container.calendars.active
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)

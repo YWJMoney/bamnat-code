@@ -19,7 +19,8 @@ import org.robolectric.annotation.GraphicsMode
 
 /**
  * 2.0.0 [RVN-23] (PC-187) 자가 점검 › 조회 속도's 연결 방식 line, the one line of the change that shows: the phone's own engine, and
- * a phone before Android 14 told why. Light and dark, text 100% and 200%, the Fold folded and open. Shots 2300~2307.
+ * a phone before Android 14 told why. Light and dark, text 100% and 200%, the Fold folded and open. Shots 2300~2307; HQ-126 an
+ * Android 12·13 phone waiting for the system update, folded at 200% (2308, 2309).
  */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -39,7 +40,9 @@ class N23ScreenshotTest : ScreenshotBase() {
     }
 
     private val fast = SpeedCheck.way(fast = true, available = true)
-    private val before14 = SpeedCheck.way(fast = false, available = false)
+    private val before14 = SpeedCheck.way(fast = false, available = false, sdk = 30)
+    /** HQ-126 An Android 12·13 phone still waiting for the system update that brings the engine. */
+    private val beforeUpdate = SpeedCheck.way(fast = false, available = false, sdk = 32)
 
     @Test fun foldedLight() = shoot("2300_n23_way_folded", FOLDED, card(fast))
     @Test fun foldedLightLarge() = shoot("2301_n23_way_folded_200", FOLDED, 2f, card(fast))
@@ -49,4 +52,6 @@ class N23ScreenshotTest : ScreenshotBase() {
     @Test fun openLightLarge() = shoot("2305_n23_way_open_200", UNFOLDED, 2f, card(before14))
     @Test fun openDark() = shoot("2306_n23_way_open_night", UNFOLDED.replace("-port-", "-port-night-"), card(fast))
     @Test fun openDarkLarge() = shoot("2307_n23_way_open_night_200", UNFOLDED.replace("-port-", "-port-night-"), 2f, card(fast))
+    @Test fun twelveFoldedLarge() = shoot("2308_n23_way_12_folded_200", FOLDED, 2f, card(beforeUpdate))
+    @Test fun twelveFoldedDarkLarge() = shoot("2309_n23_way_12_folded_night_200", FOLDED.replace("-port-", "-port-night-"), 2f, card(beforeUpdate))
 }

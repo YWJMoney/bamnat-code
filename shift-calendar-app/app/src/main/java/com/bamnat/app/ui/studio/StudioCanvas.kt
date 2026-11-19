@@ -70,6 +70,8 @@ import kotlin.math.min
 /** The example phone's size before any zoom (the same as [com.bamnat.app.ui.recipe.MockPhone] is drawn at). */
 internal val CANVAS_W = 340.dp
 internal val CANVAS_H = 560.dp
+/** 2.0.0 [RVS-03] U09a-06: a Fold opened (갤럭시 폴드 편 화면, 디자인 품질 조건 12). */
+internal val WIDE_W = 673.dp
 
 /**
  * [CNV-02] 1.37 확대·이동 (사용자 2026-11-04 "확대가 안되고 통으로 보여서 제작에 큰 어려움"): the example at any size from 50% to 300%,
@@ -183,6 +185,8 @@ private fun Modifier.twoFingers(z: ZoomState): Modifier = pointerInput(z) {
 /** [CNV-01][CNV-02] The canvas: the example in the middle of all the space it has, at [z]'s size and place. */
 @Composable
 internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp = CANVAS_H, picking: Modifier = Modifier,
+    /** 2.0.0 [RVS-03] U09a-06: a Fold's open width with the studio's '편 화면'. */
+    width: Dp = CANVAS_W,
     /** A tap nothing on the example took (PC 확인 1.37 A1: 빈 곳을 눌러도 고르기가 안 풀렸어요). */
     onEmptyTap: () -> Unit = {}, content: @Composable () -> Unit) {
     z.density = LocalDensity.current.density
@@ -193,9 +197,9 @@ internal fun ZoomCanvas(z: ZoomState, modifier: Modifier = Modifier, height: Dp 
             .pointerInput(z, onEmptyTap) { detectTapGestures(onTap = { onEmptyTap() }, onDoubleTap = { if (z.touched) z.toFit() else z.zoomTo(z.scale * 2f, it - Offset(size.width / 2f, size.height / 2f)) }) }
             .then(picking),
     ) {
-        val fit = (min(maxWidth.value / CANVAS_W.value, maxHeight.value / height.value) * 0.97f).coerceAtMost(1.6f)
+        val fit = (min(maxWidth.value / width.value, maxHeight.value / height.value) * 0.97f).coerceAtMost(1.6f)
         LaunchedEffect(fit) { z.fit = fit; if (!z.touched) { z.scale = fit; z.offset = Offset.Zero } }
-        Box(Modifier.align(Alignment.Center).requiredSize(CANVAS_W, height)
+        Box(Modifier.align(Alignment.Center).requiredSize(width, height)
             .graphicsLayer { scaleX = z.scale; scaleY = z.scale; translationX = z.offset.x; translationY = z.offset.y }) {
             content()
         }

@@ -98,7 +98,8 @@ test("[ADM2-03] Claude 운영 열쇠: the owner makes it once, it reads and answ
   assert.ok(desk.data.rules.length >= 3);
   assert.match(desk.data.handoff, /결과 적는 법/);
   const one = (await call("GET", `/api/admin/inquiries/${q}`, undefined, claude)).data;
-  assert.equal(one.context["알람 점검"], undefined);
+  // 2.0.0 [RVA-64] HQ-132: 내용은 가리고 표식만(말없이 빼면 '안 왔다'로 읽혀요).
+  assert.equal(one.context["알람 점검"], "(가려짐: 운영자만 봐요 · 1줄 · 멈춤 칸 없음)");
   assert.equal(one.context["앱"], "1.36.1 (50)");
   assert.equal((await call("POST", `/api/admin/inquiries/${q}/reply`, { text: "확인 중이에요" }, claude)).status, 200);
   // 1.38 [DESK-09] 10분 보류 뒤에 가요.

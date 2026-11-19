@@ -736,6 +736,31 @@ private fun CalendarPage(vm: SettingsViewModel, settings: AppSettings, onOpenCal
     }
     // U 1.32 [UX132-05][UX132-06] G [WTYP-07]: 글자 크기, 촘촘하게, 오전/오후 — first, as most people come here for them.
     Group(FOLD_LOOK) {
+        // 2.0.0 [RVS-15] 검토 SN-04·SD-05: what works put on before 2.0.0 changed of my own (글자 크기·밝기·누르기·시계…), still as they
+        // left it: one row, asked once before it goes back (7일이 지나도). Shown only while there is something to put back.
+        val feelBack by vm.feelBack.collectAsStateWithLifecycle()
+        androidx.compose.runtime.LaunchedEffect(settings.textStep, settings.themeMode, settings.clock12) { vm.loadFeelBack() }
+        var askingBack by remember { mutableStateOf(false) }
+        if (feelBack.isNotEmpty()) {
+            NavRow("작품이 바꾼 내 설정 ${feelBack.size}개", feelBack.take(3).joinToString(" · ") { it.what } + (if (feelBack.size > 3) " 등" else "") +
+                " · 넣기 전으로 되돌릴 수 있어요") { askingBack = true }
+            HorizontalDivider()
+        }
+        if (askingBack) com.bamnat.app.ui.components.AlertDialog(
+            onDismissRequest = { askingBack = false },
+            title = { Text("넣기 전 설정으로 되돌릴까요?") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    feelBack.forEach { f ->
+                        Text("${f.what} · 지금 ${f.nowSaid} → ${f.beforeSaid}", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text("꾸밈(강조색·움직임)은 그대로예요. 테마를 벗으면 함께 돌아와요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            },
+            confirmButton = { com.bamnat.app.ui.components.Button(onClick = { askingBack = false; vm.putFeelBack() }, modifier = Modifier.heightIn(min = 48.dp)) { Text("되돌리기") } },
+            dismissButton = { TextButton(onClick = { askingBack = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("닫기") } },
+        )
         TextSizeRow(settings.textStep) { step -> vm.update { it.copy(textStep = step) } }
         HorizontalDivider()
         SwitchRow("촘촘하게", if (settings.compact) "카드 사이를 줄여 한 화면에 더 많이 보여요" else "카드 사이를 넉넉히 띄워요",

@@ -16,8 +16,16 @@ import java.time.temporal.TemporalAdjusters
 object TeamCheck {
     enum class Kind { RULE, SHORT, NO_CHARGE, WEEK_HOURS }
 
-    /** One sign: a member's cell ([memberId] set) or a whole day ([memberId] null). */
-    data class Sign(val kind: Kind, val date: LocalDate, val memberId: String?, val text: String)
+    /**
+     * One sign: a member's cell ([memberId] set) or a whole day ([memberId] null).
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) [topic] names the sort of sign so equal ones are told as one line ("야간 뒤 2일째 근무 6건"), [who] is the
+     * member's name and [detail] what is particular to this one; empty for a sign made without them, which keeps its own [text] line.
+     */
+    data class Sign(val kind: Kind, val date: LocalDate, val memberId: String?, val text: String,
+                    val topic: String = "", val who: String = "", val detail: String = "") {
+        /** 주 52시간 is the law (근로기준법 제53조, told only for a 5인 이상 사업장: [RestRules.weekLimit]); the rest are the team's 기준. */
+        val law: Boolean get() = kind == Kind.WEEK_HOURS
+    }
 
     /** 주 52시간: 40 + 12 (근로기준법 제50·53조). */
     const val WEEK_LIMIT_MINUTES = 52 * 60
@@ -94,14 +102,18 @@ object TeamCheck {
         val active = board.members.filter { it.active }
         for (m in active) {
             val days = board.days.map { d -> d to board.cell(m.id, d)?.shiftId?.let(asTypes::get) }
-            withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w -> out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}") }
+            withCarry(carry(prev, m.id, asTypes), days, rules).forEach { w ->
+                out += Sign(Kind.RULE, w.date, m.id, "${m.name}: ${w.text}", topic = w.topic, who = m.name, detail = w.detail)
+            }
             // 주 52시간, each Monday week with a day in the month. [RVJ-30] The days of that week in last month and next month count
             // too; [RVJ-31] a 5인 미만 사업장 is not told ([RestRules.weekLimit]).
             if (rules.weekLimit) board.days.map { it.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) }.distinct().forEach { mon ->
                 val week = (0..6).map { mon.plusDays(it.toLong()) }
                 val worked = week.mapNotNull { d -> cellAt(board, prev, next, m.id, d)?.shiftId?.let(types::get) }
                 if (worked.sumOf(::minutesOf) > WEEK_LIMIT_MINUTES) out += Sign(Kind.WEEK_HOURS, week.last().coerceAtMost(board.days.last()), m.id,
-                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked)}(근로기준법 제53조)")
+                    "${m.name}: ${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked)}(근로기준법 제53조)",
+                    topic = "주 52시간 넘김", who = m.name,
+                    detail = "${mon.monthValue}/${mon.dayOfMonth} 주 ${overWords(worked).removeSuffix(", 52시간을 넘어요")}")
             }
         }
         board.short(team.need).forEach { (d, missing) ->
@@ -117,11 +129,21 @@ object TeamCheck {
         return out.sortedWith(compareBy({ it.date }, { it.kind }))
     }
 
-    /** One line of the 확인할 것 card: [count] signs of one kind told at once, the dangerous kinds first. */
-    data class Line(val kind: Kind, val text: String, val count: Int, val first: LocalDate)
+    /**
+     * One line of the 확인할 것 card: [count] signs of one kind told at once, the dangerous kinds first.
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) [head] is the line folded ("야간 뒤 2일째 근무 6건", "인원이 모자란 날 3일") and [items] the signs it
+     * opens to, each a day the leader can go to; [tip] says how the line gets shorter.
+     */
+    data class Line(val kind: Kind, val text: String, val count: Int, val first: LocalDate,
+                    val head: String = text, val items: List<Sign> = emptyList(), val tip: String = "") {
+        val law: Boolean get() = kind == Kind.WEEK_HOURS
+    }
 
-    /** Danger first: 규칙(역순·11시간·연속) and 주 52시간 are the leader's to fix; 부족 next; 책임자 없음 last, as one line. */
-    val ORDER = listOf(Kind.RULE, Kind.WEEK_HOURS, Kind.SHORT, Kind.NO_CHARGE)
+    /**
+     * Danger first: 규칙(역순·11시간·연속) and 주 52시간 are the leader's to fix; 부족 next; 책임자 없음 last, as one line.
+     * 2.0.0 [RVJ-68] (총괄 HQ-107) 주 52시간, the one the law sets, comes before the team's own 기준.
+     */
+    val ORDER = listOf(Kind.WEEK_HOURS, Kind.RULE, Kind.SHORT, Kind.NO_CHARGE)
 
     /**
      * 1.38 PC 1차 (58 signs, most of them 책임자 없음, hid the N→D): the card's lines. Each RULE and WEEK_HOURS sign keeps its own line;
@@ -134,13 +156,23 @@ object TeamCheck {
             val list = byKind[k].orEmpty().sortedBy { it.date }
             when {
                 list.isEmpty() -> emptyList()
-                k == Kind.RULE || k == Kind.WEEK_HOURS -> list.map { Line(k, "${dayWords(it.date)} ${it.text}", 1, it.date) }
+                // 2.0.0 [RVJ-68] (총괄 HQ-107, 28줄이 모두 따로 서던 카드) Signs of one sort are one line, "야간 뒤 2일째 근무 6건", which opens to
+                // its days; one alone is told with its day and who. A sign made without a [Sign.topic] keeps its own line as before.
+                k == Kind.RULE || k == Kind.WEEK_HOURS -> list.groupBy { it.topic.ifEmpty { "\u0000" + it.text } }.values.map { same ->
+                    val one = same.first()
+                    if (same.size == 1 || one.topic.isEmpty()) {
+                        val text = if (one.topic.isEmpty()) "${dayWords(one.date)} ${one.text}"
+                            else "${dayWords(one.date)} ${one.who} · ${one.topic}" + (if (one.detail.isNotEmpty()) " · ${one.detail}" else "")
+                        Line(k, text, 1, one.date, items = same)
+                    } else "${one.topic} ${same.size}건".let { head -> Line(k, head, same.size, one.date, head = head, items = same) }
+                }
                 else -> {
                     val head = if (k == Kind.SHORT) "인원이 모자란 날 ${list.map { it.date }.distinct().size}일" else "책임자 없는 근무 ${list.size}번"
                     val some = list.take(4).joinToString(", ") { "${dayWords(it.date)} ${it.text.removeSuffix(" 책임자 없음")}" }
                     // 1.38 PC 8차: one 책임자 can't be on every shift, so the line says how it goes away.
-                    val tip = if (k == Kind.NO_CHARGE && charges == 1) " · 책임자를 한 명 더 정하면 줄어요" else ""
-                    listOf(Line(k, "$head · $some" + (if (list.size > 4) " …" else "") + tip, list.size, list.first().date))
+                    val tip = if (k == Kind.NO_CHARGE && charges == 1) "책임자를 한 명 더 정하면 줄어요" else ""
+                    listOf(Line(k, "$head · $some" + (if (list.size > 4) " …" else "") + (if (tip.isEmpty()) "" else " · $tip"), list.size, list.first().date,
+                        head = head, items = list, tip = tip))
                 }
             }
         }

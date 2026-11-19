@@ -59,15 +59,20 @@ test("[RVN-17] COMP-12 a calendar held by a company picked by mistake is freed o
 });
 
 test("[RVN-17] COMP-14 a room's post takes amounts once 방 글에 금액 받기 is on; contacts never, a rule's talk keeps its rule", async () => {
-  const { call } = server();
+  const { call, DB } = server();
   const h = await signIn(call);
   const write = (n, place, body, extra = {}) => call("POST", "/api/posts", { device: device(n), company: place, setup: "room", body, ...extra }, from(n));
   // Off (the default until 운영 규칙 4항 changes): as before.
   assert.equal((await call("GET", "/api/terms")).data.roomMoney, false);
   assert.equal((await write(1, "style-shift", "야간 수당 한 달에 50만원 정도 나와요")).data.error, "amount");
-  // On: the amount goes, and a poll may hold one.
+  // On, but [RVN-17] 처리방침 3.14 is not posted yet (its 7일 줄 is 운영 규칙 3판's): still as before, the switch only waits.
   const on = await call("POST", "/api/admin/settings", { adoptPoints: 3, rewardMonths: 3, roomMoney: 1 }, h);
   assert.equal(on.data.roomMoney, 1);
+  assert.equal((await call("GET", "/api/terms")).data.roomMoney, false);
+  assert.equal((await write(1, "style-shift", "야간 수당 한 달에 50만원 정도 나와요")).data.error, "amount");
+  // 3.14 posted more than 7 days ago: the amount goes, and a poll may hold one.
+  await DB.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('policy_overrides', ?)")
+    .bind(JSON.stringify({ "3.14": { posted: "2026-01-02", effective: "2026-02-01", heldUntil: null, unfavourable: false } })).run();
   assert.equal((await call("GET", "/api/terms")).data.roomMoney, true);
   assert.equal((await write(1, "style-shift", "야간 수당 한 달에 50만원 정도 나와요")).status, 201);
   assert.equal((await write(2, "style-shift", "월급이 얼마쯤이에요?", { kind: "question", poll: ["200만원 아래", "200~300만원", "300만원 넘게"] })).status, 201);
