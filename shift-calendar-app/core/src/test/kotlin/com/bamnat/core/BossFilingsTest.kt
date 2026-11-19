@@ -114,11 +114,11 @@ class BossFilingsTest {
         assertEquals(say.sortedBy { it.date }, say)
         assertTrue("했어요", tax !in BossFilings.toRemind(due, setOf(tax.key), emptySet(), today))
         assertTrue("한 번 알린 것", tax !in BossFilings.toRemind(due, emptySet(), setOf(tax.key), today))
-        assertEquals("가나다카페: 원천세 신고·납부 (10월 지급분) 11월 10일까지(3일 남음)", BossFilings.remindTitle("가나다카페", listOf(tax), today))
-        assertEquals("오늘", "가나다카페: 원천세 신고·납부 (10월 지급분) 오늘까지", BossFilings.remindTitle("가나다카페", listOf(tax), tax.date))
+        assertEquals("가나다카페: 원천세 신고·납부 (10월 지급분 · 9월 일한 몫) 11월 10일까지(3일 남음)", BossFilings.remindTitle("가나다카페", listOf(tax), today))
+        assertEquals("오늘", "가나다카페: 원천세 신고·납부 (10월 지급분 · 9월 일한 몫) 오늘까지", BossFilings.remindTitle("가나다카페", listOf(tax), tax.date))
         val two = listOf(tax, tax.copy(key = "x", date = LocalDate.of(2026, 11, 9), title = "퇴사 정산 · 최사아"))
         assertEquals("가나다카페: 신고·지급 2건 · 가장 이른 것 11월 9일까지(2일 남음)", BossFilings.remindTitle("가나다카페", two, today))
-        assertTrue(BossFilings.remindLine(tax), BossFilings.remindLine(tax).startsWith("11/10 원천세 신고·납부 (10월 지급분)"))
+        assertTrue(BossFilings.remindLine(tax), BossFilings.remindLine(tax).startsWith("11/10 원천세 신고·납부 (10월 지급분 · 9월 일한 몫)"))
     }
 }
 
