@@ -1950,10 +1950,20 @@ function adminApp(L, BUILD, M) {
     const u = c.unconfirmed ?? { n: 0 };
     const unconfirmed = (c.on || c.confirmed) && u.n ? `<p class="note${u.daysLeft != null && u.daysLeft <= 5 ? " warn" : ""}">신고로 먼저 가려지고 아직 확인하지 않은 글이 ${u.n}건이에요${u.daysLeft != null ? `(가장 오래된 것은 ${u.daysLeft}일 남음)` : ""}. 30일 안에 확인하지 않으면 세지 않아요.
       <button type="button" class="linkish" data-act="post-filter" data-key="hidden">가려진 글 보기</button></p>` : "";
+    // 2.0.0 [RVN-24] K-결정-10: 공개 운영 규칙 페이지 맨 아래에 나가는 달마다의 합계(나가기 전에도 운영자가 먼저 봐요).
+    const nums = c.numbers;
+    const numLine = (m) => `가린 글 ${m.hidden} · 안내·경고 ${m.warned} · 쉬기 ${m.held} · 해명 받아들임 ${m.appeals.accepted}/${m.appeals.answered}`;
+    const monthName = (m) => `${Number(m.month.slice(5))}월${m.since.endsWith("-01") ? "" : `(${Number(m.since.slice(8))}일부터)`}`;
+    const numbers = nums ? `<details><summary>공개 페이지의 마을 돌봄 숫자${nums.shown ? "" : ` · ${esc(day(nums.from))}부터 보여요`}</summary>
+      <p class="hint">운영 규칙 페이지 맨 아래에 지난달 합계만 나가요. 사람을 가리키는 값은 없어요.</p><ul class="rows">
+      ${nums.now ? `<li class="item"><span class="row-main">이번 달 지금까지 · ${numLine(nums.now)}</span></li>` : ""}
+      ${nums.months.map((m) => `<li class="item"><span class="row-main">${monthName(m)} · ${numLine(m)}</span>${nums.shown && m === nums.months[0] ? '<span class="pill ok">페이지에 보임</span>' : ""}</li>`).join("")}
+      </ul></details>` : "";
     return `<h3>마을 돌봄</h3>${banner}${unconfirmed}${appeals}${find}${person}
       <h4>지금 쉬는 사람 ${c.holds.length}</h4>${holds}
       ${c.warnings.length ? `<details><summary>최근 30일 경고·안내 ${c.warnings.length}${unread ? ` · 아직 안 읽음 ${unread}` : ""}</summary><ul class="rows">${c.warnings.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
-      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}`;
+      ${c.ended.length ? `<details><summary>최근 30일에 끝나거나 푼 쉬기 ${c.ended.length}</summary><ul class="rows">${c.ended.map((x) => careLine(x, edit)).join("")}</ul></details>` : ""}
+      ${numbers}`;
   }
 
   /** 1.39 [CARE-10] 문의 하나가 해명이면: 무엇에 대한 해명인지와 받아들이기·그대로 두기. 답은 아래 답 칸으로 따로 가요. */

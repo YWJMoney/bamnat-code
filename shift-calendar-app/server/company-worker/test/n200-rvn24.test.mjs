@@ -809,3 +809,51 @@ test("[RVN-24] I22ca-02 광장 머리 숫자 come from a 요약 줄: a second op
   const cols = DB.db.prepare("SELECT name FROM pragma_table_info('plaza_pulse')").all().map((r) => r.name);
   assert.deepEqual(cols.sort(), ["at", "checkin", "day", "grp", "room", "today", "waiting", "working"]);
 });
+
+test("[RVN-24] K-결정-10 마을 돌봄 숫자: the hourly job counts last month once, the public page reads it from 12-09, totals only", async (t) => {
+  const kst = (s) => Date.parse(`${s}+09:00`);
+  t.mock.timers.enable({ apis: ["Date"], now: kst("2026-11-20T10:00:00") });
+  const { careNumbersTick } = await import("../src/community-care.js");
+  const { call, DB } = server();
+  await call("GET", "/api/terms");
+  const post = (id, reason, at) => DB.prepare(`INSERT INTO posts (id, company_id, grp, device, body, status, hide_reason, created_at, hidden_at)
+    VALUES (?, 'style-shift', 'room', 'd1', '글', 'hidden', ?, ?, ?)`).bind(id, reason, at, at).run();
+  await post("h0", "abuse", kst("2026-11-05T12:00:00")); // before 3.12 took effect: not counted
+  await post("h1", "abuse", kst("2026-11-10T12:00:00"));
+  await post("h2", "flags", kst("2026-11-30T23:59:00"));
+  await post("h3", "spam", kst("2026-12-01T00:00:00")); // December's
+  const note = (id, kind, at) => DB.prepare(`INSERT INTO care_notes (id, device, kind, reason, at, until, by) VALUES (?, 'd1', ?, 'abuse', ?, ?, 'operator')`)
+    .bind(id, kind, at, kind === "warn" ? null : at + 3 * DAY).run();
+  await note("c1", "warn", kst("2026-11-12T09:00:00"));
+  await note("c2", "warn", kst("2026-11-13T09:00:00"));
+  await note("c3", "opinion", kst("2026-11-14T09:00:00"));
+  const appeal = (id, result, at) => DB.prepare("INSERT INTO care_appeals (id, device, target, inquiry_id, at, result, decided_at) VALUES (?, 'd1', ?, ?, ?, ?, ?)")
+    .bind(id, `c${id}`, `q${id}`, at - DAY, result, at).run();
+  await appeal("a1", "accepted", kst("2026-11-15T09:00:00"));
+  await appeal("a2", "kept", kst("2026-11-16T09:00:00"));
+  const env = { DB };
+  const deps = { one: async (e, sql, ...v) => (await e.DB.prepare(sql).bind(...v).first()) ?? null, run: (e, sql, ...v) => e.DB.prepare(sql).bind(...v).run() };
+  // In November nothing is kept yet (the month is not over).
+  assert.deepEqual(await careNumbersTick(deps, env, Date.now()), { skipped: "before" });
+  t.mock.timers.setTime(kst("2026-12-01T00:17:00"));
+  assert.deepEqual(await careNumbersTick(deps, env, Date.now()), { counted: "2026-11" });
+  assert.deepEqual(await careNumbersTick(deps, env, Date.now()), { kept: "2026-11" }, "counted once");
+  // Before 12-09 the page gets nothing; the admin app sees it.
+  let pub = await call("GET", "/api/community/numbers");
+  assert.equal(pub.status, 200);
+  assert.deepEqual(pub.data, { from: "2026-12-09", months: [] });
+  const h = await signIn(call);
+  const admin = (await call("GET", "/api/admin/care", undefined, h)).data.numbers;
+  assert.equal(admin.shown, false);
+  const nov = { month: "2026-11", since: "2026-11-09", hidden: 2, warned: 2, held: 1, appeals: { answered: 2, accepted: 1 } };
+  assert.deepEqual(admin.months, [nov]);
+  assert.equal(admin.now.hidden, 1, "이번 달 지금까지");
+  // A post shown again after the count does not change November.
+  await DB.prepare("UPDATE posts SET status = 'shown', hide_reason = NULL, hidden_at = NULL WHERE id = 'h1'").run();
+  t.mock.timers.setTime(kst("2026-12-09T00:00:00"));
+  pub = await call("GET", "/api/community/numbers");
+  assert.deepEqual(pub.data, { from: "2026-12-09", months: [nov] });
+  assert.equal(pub.headers.get("access-control-allow-origin"), "*", "the rules page on another address reads it");
+  assert.match(pub.headers.get("cache-control"), /public, max-age=3600/);
+  assert.ok(!/d1|device|c1|q/.test(JSON.stringify(pub.data.months)), "nothing that points to a person");
+});

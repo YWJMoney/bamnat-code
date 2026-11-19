@@ -73,7 +73,7 @@ export const RETENTION = [
   },
   {
     table: "settings",
-    what: "운영 설정: 채택 기준, 정식 출시, **공지(`notices`)**, **꺼 둔 기능(`switches_off`)**, **이달 할 일 체크(`ops:YYYY-MM`)**, **친구 초대 규칙(`invite_friends`·`invite_days`·`invite_months`·`invite_cap_months`, 1.26)**, 백업·정기 작업 진행, 해시용 소금(서버 비밀값 RATE_SALT가 없을 때만, 백업에는 잠가서)",
+    what: "운영 설정: 채택 기준, 정식 출시, **공지(`notices`)**, **꺼 둔 기능(`switches_off`)**, **이달 할 일 체크(`ops:YYYY-MM`)**, **친구 초대 규칙(`invite_friends`·`invite_days`·`invite_months`·`invite_cap_months`, 1.26)**, **마을 돌봄 달마다 합계(`care_numbers`, 사람을 가리키는 값 없이 12달, 2.0.0)**, 백업·정기 작업 진행, 해시용 소금(서버 비밀값 RATE_SALT가 없을 때만, 백업에는 잠가서)",
     why: "운영",
     keep: "운영자가 바꿀 때",
     link: "아니요",

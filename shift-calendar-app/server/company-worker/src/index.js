@@ -92,7 +92,7 @@ import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen,
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
 import { COMMUNITY_COLUMNS, COMMUNITY_SCHEMA, communityAdmin, communityRoute, forgetCommunity, makerWebPage } from "./recipe-community.js";
-import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS } from "./community-care.js";
+import { CARE_SCHEMA, careAppeal, careAppealDecide, careRepeat, careAppealOf, careGate, careOn, careHold, careLift, careList, carePerson, carePrune, careSeen, careStanding, careTarget, careWarn, CARE_REASONS, careNumbersTick, careNumbersView } from "./community-care.js";
 import { WRITE_LIMITS, WRITE_LIMITS_COLUMNS, WRITE_LIMITS_SCHEMA, addStrike, confirmStrike, limitJson, liftLimit, operatorStrike, restrictions, strikeTakenBack, writeAllowance, writeLeft, writeLimitHit, writeRules } from "./write-limits.js";
 import { FONT_SCHEMA, fontAdmin, fontRoute, forgetFonts } from "./recipe-fonts.js";
 import { MATERIAL_SCHEMA, materialAdmin, materialRoute } from "./studio-materials.js";
@@ -304,7 +304,7 @@ function loopAnswer(e, id, text, at) {
 /** 2.0.0 [RVQ-12] wrangler.toml [triggers] crons와 같은 글자여야 해요(test/jobs-q1.test.mjs가 맞춰 봐요). */
 export const CRONS = { first: "17 * * * *", second: "47 * * * *", five: "*/5 * * * *" };
 /** 2.0.0 [RVQ-12] 47분에 도는 단계: Play·출시 안내·효과·응답 속도·운영(리뷰·백업·사고·요청)·개선 신호. 나머지는 17분. */
-export const SECOND_HALF = new Set(["play", "ship", "live", "effect", "release", "watch", "reviews", "backup", "incident", "requests", "observe"]);
+export const SECOND_HALF = new Set(["play", "ship", "live", "effect", "release", "care", "watch", "reviews", "backup", "incident", "requests", "observe"]);
 
 /** 2.0.0 [RVQ-12] 검토 SRV-14: 5분 작업의 단계(이름은 ops-watch.js JOB_NAMES). [RVQ-11] 광장 글 급증도 5분마다 봐요. */
 export const fiveMinuteSteps = (env) => [
@@ -340,6 +340,8 @@ const allHourlySteps = (env) => [
   ["effect", () => effectTick(env, Date.now())], // 1.39 [LOOP-39] 출시 2주 뒤 효과 판정
   // 2.0.0 [RVN-24] 검토 I22cc-03: 열린 출시 점검표의 증거 굳히기·하루 뒤 판 건강 판정·끝내기(Play 트랙을 읽은 뒤).
   ["release", () => releaseTick(env, Date.now())],
+  // 2.0.0 [RVN-24] K-결정-10: 달이 바뀌면 지난달 마을 돌봄 숫자를 한 번 세어 굳혀요.
+  ["care", () => careNumbersTick(recipeDeps, env, Date.now())],
   ["watch", () => flushWatch(env, Date.now(), true).then(() => pruneWatch(env, Date.now()))], // 1.38 [ADM3-19]
   ...opsSteps(env, () => playVitals(env, Date.now())),
   // 1.39 [OBS2-01][OBS2-04] Play 보고서(12시간마다 새로)와 개선 신호 합치기.
@@ -587,6 +589,11 @@ async function routeOnce(request, env, url, ctx) {
   }
   if (path === "/api/companies/counts" && method === "GET") {
     return spNotModified(request, await edgeCached(request, ctx, ALL_EDGE_SECONDS, () => companyCounts(env)));
+  }
+  // 2.0.0 [RVN-24] K-결정-10 마을 돌봄 숫자(합계만): 공개 운영 규칙 페이지(다른 주소)가 읽어 누구나 읽게 열어 두고, 한 시간 담아 둬요.
+  if (path === "/api/community/numbers" && method === "GET") {
+    return edgeCached(request, ctx, 3600, async () => json(await careNumbersView(recipeDeps, env, Date.now()), 200,
+      { "cache-control": "public, max-age=3600", "access-control-allow-origin": "*" }));
   }
   if (path === "/api/terms" && method === "GET") {
     // One read, not kept in memory (the developer's new settings show at once); the edge keeps it ten minutes where it can.
@@ -2783,7 +2790,10 @@ async function myPostItems(env, dev) {
  * POST /care/warn {post|recipe|mark|inquiry, reason, note}, POST /care/hold {…, scope, days, reason, note}, POST /care/<id>/lift.
  */
 async function careAdmin(request, env, url, path, method, now) {
-  if (path === "/care" && method === "GET") return json(await careList(recipeDeps, env, now));
+  // 2.0.0 [RVN-24] K-결정-10: 공개 페이지에 나가는 달마다의 합계와 이번 달 지금까지도 함께.
+  if (path === "/care" && method === "GET") {
+    return json({ ...(await careList(recipeDeps, env, now)), numbers: await careNumbersView(recipeDeps, env, now, { admin: true }) });
+  }
   if (path === "/care/person" && method === "GET") {
     const q = Object.fromEntries(url.searchParams);
     const t = await careTarget(recipeDeps, env, q);
