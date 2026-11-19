@@ -376,11 +376,11 @@ test("[RVA-59] 다가오는 날짜: 날짜 약속 장부를 KST 오늘부터 남
 // ---- 2.0.0 [RVA-63] HQ-124: 되풀이되는 닫힘 문의 (시험 자료는 모두 지어낸 값) ----
 import { CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats, repeatPlaces } from "../src/crash-repeat.js";
 
-test("[RVA-63] 멈춤 기록 읽기: '앱 멈춤' 칸에 줄이 있으면 있음, '기록 없음'이면 없음, 점검 기록이 없거나 그 칸이 없으면 안 옴", () => {
+test("[RVA-63] 멈춤 기록 읽기: '앱 멈춤' 칸에 줄이 있으면 있음, '기록 없음'이면 없음, 점검 기록이 없으면 안 옴", () => {
   assert.equal(crashRecord("[앱 멈춤]\n03-16 09:00 IllegalStateException in Calendar\n\n[앱 멈춤 관찰]\n기록 없음"), "has");
   assert.equal(crashRecord("[앱 멈춤]\n기록 없음\n\n[앱 멈춤 관찰]\n화면 꺼짐 3번"), "none");
   assert.equal(crashRecord("[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음"), "none", "칸이 뒤에 있어도");
-  assert.equal(crashRecord("[알람]\n다음 알람 07:00"), "unsent");
+  assert.equal(crashRecord("[알람]\n다음 알람 07:00"), "nostop", "2.0.0 [RVA-64] 점검 기록은 왔지만 그 칸이 없음");
   assert.equal(crashRecord(undefined), "unsent");
   // 2.0.0 모양(갈래 L RVL-84): '가장 최근 기록:'이 맨 앞, '남은 기록: N개'와 '최근 30일: …'은 늘 있어요. '(못 읽음)' 줄은 멈춘 줄이 아니에요.
   const v2 = (body, more = "") => `[앱 멈춤]\n${body}${more}`;
@@ -491,4 +491,57 @@ test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음(몇 �
   assert.equal(s.to, "#/desk");
   assert.equal(s.tone, "bad", "세 건부터는 위험");
   assert.ok(!JSON.stringify(o.crashRepeats).includes(device(61)));
+});
+
+// ---- 2.0.0 [RVA-64] HQ-132: 열쇠로 읽는 점검 기록은 내용 없이 표식만 (시험 자료는 모두 지어낸 값) ----
+import { diagMark } from "../src/crash-repeat.js";
+
+test("[RVA-64] 열쇠로 읽는 점검 기록 표식: 문의·장부 줄·넘길 글에 '(가려짐 · n줄 · 멈춤 기록 …)'만, 내용과 멈춘 곳은 없음, 안 온 것은 표식 없음", async (t) => {
+  assert.equal(diagMark(undefined), null);
+  assert.equal(diagMark("  \n"), null);
+  assert.equal(diagMark("[앱 멈춤]\n기록 없음\n\n[알람]\n다음 알람 07:00"), "가려짐: 운영자만 봐요 · 4줄 · 멈춤 기록 없음");
+  assert.equal(diagMark("[알람]\n다음 알람 07:00"), "가려짐: 운영자만 봐요 · 2줄 · 멈춤 칸 없음");
+  assert.equal(diagMark("[앱 멈춤]\n(못 읽음) 멈춤 기록: SecurityException@a.b:1"), "가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 못 읽음");
+
+  const { call } = server({ t });
+  const owner = await signIn(call);
+  const key = (await call("POST", "/api/admin/keys", { label: "Claude 시험" }, owner)).data.key;
+  const claude = { authorization: `Bearer ${key}`, "x-admin": "1" };
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, info) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "bug", text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    return r.data.id;
+  };
+  const crashed = "[앱 멈춤]\n가장 최근 기록:\n11/18 21:04 TestCrashException@x.y.Month:3\n최근 30일: 멈춤 1회 · 응답 없음(ANR) 0회\n남은 기록: 1개\n\n[알람]\n다음 알람 07:00";
+  const has = await send(71, "앱이 갑자기 닫혀요", { ...fold, diag: crashed });
+  const none = await send(72, "앱이 또 꺼졌어요", { ...fold, diag: "[앱 멈춤]\n기록 없음" });
+  const unsent = await send(73, "앱이 저절로 닫혔어요", { ...fold });
+  const leak = (x) => /TestCrashException|x\.y\.Month|다음 알람 07:00/.test(JSON.stringify(x));
+
+  // 문의 하나: 운영자는 그대로, 열쇠는 표식만.
+  assert.match((await call("GET", `/api/admin/inquiries/${has}`, undefined, owner)).data.context["알람 점검"], /TestCrashException/);
+  const k1 = (await call("GET", `/api/admin/inquiries/${has}`, undefined, claude)).data;
+  assert.equal(k1.context["알람 점검"], "(가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음)");
+  assert.ok(!leak(k1), "기록 내용·멈춘 곳은 열쇠로 가지 않아요");
+  assert.equal(k1.crash.recordName, "멈춤 기록 있음", "닫힘 문의 표식도 같은 셈");
+  assert.equal((await call("GET", `/api/admin/inquiries/${none}`, undefined, claude)).data.context["알람 점검"], "(가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 없음)");
+  assert.ok(!("알람 점검" in (await call("GET", `/api/admin/inquiries/${unsent}`, undefined, claude)).data.context), "안 온 것은 자리가 없어요");
+
+  // 운영 장부 줄(Claude 차례)과 넘길 글.
+  const led = await call("GET", "/api/admin/ledger?view=claude", undefined, claude);
+  assert.equal(led.status, 200, led.text);
+  const row = (id) => led.data.items.find((r) => r.key === `inquiry:${id}`);
+  assert.deepEqual([row(has).diag, row(none).diag, row(unsent).diag], ["가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음", "가려짐: 운영자만 봐요 · 2줄 · 멈춤 기록 없음", undefined]);
+  assert.ok(!leak(led.data));
+  const hand = await call("GET", "/api/admin/inquiries/handoff", undefined, claude);
+  assert.equal(hand.status, 200, hand.text);
+  const text = hand.data.text;
+  assert.match(text, /점검 기록: \(가려짐: 운영자만 봐요 · 7줄 · 멈춤 기록 있음\)/);
+  assert.match(text, /'점검 기록' 줄은 내용을 가린 표식이에요/);
+  assert.equal(text.match(/^  점검 기록: /gm).length, 2, "안 온 문의에는 그 줄이 없어요");
+  assert.ok(!leak(text));
+  const desk = (await call("GET", "/api/admin/desk", undefined, claude)).data;
+  assert.ok(!leak(desk));
+  assert.match(desk.guide ?? JSON.stringify(desk), /없다고 적지 말고|'안 왔다'고 적지 말고/);
 });
