@@ -552,7 +552,8 @@ function adminApp(L, BUILD, M) {
     health: { days: "healthDays" },
     money: { days: "moneyDays" },
     // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health · tab=waiting): 운영 장부·출시 줄에서 바로 그 보기로.
-    recipes: { tab: "recipeTab" },
+    // 2.0.0 [RVA-65] 작품 하나 보기(#/recipes?tab=one&code=…): 개선 신호 '입은 뒤'가 그 작품으로 바로.
+    recipes: { tab: "recipeTab", code: "recipeCode" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -571,7 +572,7 @@ function adminApp(L, BUILD, M) {
       S[field] = field === "metricDays" ? ([7, 28, 90].includes(Number(p[k])) ? Number(p[k]) : 28) : p[k];
     }
     // [RVA-56] 이상한 장터 보기나 작품 코드 없는 '하나만 보기'는 신고됨으로.
-    if (route.name === "recipes" && Object.hasOwn(p, "tab") && (S.recipeTab === "one" || !/^[a-z]{3,12}$/.test(S.recipeTab ?? ""))) S.recipeTab = "flagged";
+    if (route.name === "recipes" && Object.hasOwn(p, "tab") && ((S.recipeTab === "one" && !/^[A-Za-z0-9_-]{3,40}$/.test(S.recipeCode ?? "")) || !/^[a-z]{3,12}$/.test(S.recipeTab ?? ""))) S.recipeTab = "flagged";
   }
   /** Writes the filters into the address without a new history step or a reload. */
   function syncUrl() {
@@ -2599,7 +2600,8 @@ function adminApp(L, BUILD, M) {
       ${V.storyCard()}
       ${d.effect ? `<section class="card"><div class="card-head"><h2>효과</h2><span class="pill ${esc(d.effect.tone)}">${esc(d.effect.name)}</span></div>
         <p class="hint">${d.effect.key ? `${d.effect.from ? `${esc(moment(d.effect.from))}에 닿은 뒤 2주 숫자를 앞 2주와 견줬어요. ` : ""}${esc(d.effect.why || "")}`
-          : "사용자에게 닿은 지 2주가 지나면 잴 이벤트(events)를 쓴 휴대폰 비율과 다시 온 문의로 '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요."}</p></section>` : ""}
+          : "사용자에게 닿은 지 2주가 지나면 잴 이벤트(events)를 쓴 휴대폰 비율과 다시 온 문의로 '좋아졌어요·그대로예요·나빠졌어요'를 스스로 적어요. 표본이 작거나 좋은 방향을 정하지 않았으면 '아직 몰라요'예요."}</p>
+        <p class="hint">${d.events?.length ? `잴 이벤트: ${esc(d.events.join(", "))} · 좋은 방향: ${esc(({ up: "늘면 좋아요", down: "줄면 좋아요" })[d.good] ?? "정하지 않음")}` : "잴 이벤트가 없어서 묶인 문의로 봐요"}</p></section>` : ""}
       ${d.basis ? `<section class="card"><div class="card-head"><h2>요금</h2><span class="pill ${d.basis.key === "new" && !d.pay?.decided ? "warn" : "ok"}">${esc(d.pay?.name ?? "")}</span></div>
         <p><b>${esc(d.basis.name)}${d.basis.auto ? " (자동)" : ""}</b> — ${esc(d.basis.why)}</p>
         <p class="hint">새 기능만 무료·프로를 물어요. 크기를 고침·다듬기로 바꾸면 묻지 않고 원래 요금 그대로 가요.${S.me.owner ? " 기준을 직접 바꾸거나 요금을 정하는 곳은 숫자 › 요금 판단이에요." : " 요금은 최고 관리자가 정해요."}</p>
@@ -2622,6 +2624,7 @@ function adminApp(L, BUILD, M) {
         <p class="hint">전달 길은 고친 것이 사용자에게 닿는 길이에요. 서버·원격 자료·기능 스위치는 앱 업데이트 없이 닿는 때 바로 답이 가요. 알려진 문제 제목은 앱 문의하기 위 ‘지금 알려진 문제’에 보이는 쉬운 말이에요(문의 원문·이름은 쓰지 않아요).</p>
         <label for="dev-route">전달 길</label><select id="dev-route" name="route"><option value="">정하지 않음</option>${Object.entries(DEV_ROUTES).map(([k, v]) => `<option value="${k}"${d.route === k ? " selected" : ""}>${v}</option>`).join("")}</select>
         <label for="dev-size">크기</label><select id="dev-size" name="size"><option value="">정하지 않음</option>${Object.entries(DEV_SIZES).map(([k, v]) => `<option value="${k}"${d.size === k ? " selected" : ""}>${v}</option>`).join("")}</select>
+        ${d.events?.length ? `<label for="dev-good">효과를 볼 방향 <small>(잴 이벤트 ${esc(d.events.join(", "))})</small></label><select id="dev-good" name="good"><option value="">정하지 않음(아직 몰라요로 남아요)</option>${[["up", "늘면 좋아요"], ["down", "줄면 좋아요"]].map(([k, v]) => `<option value="${k}"${d.good === k ? " selected" : ""}>${v}</option>`).join("")}</select>` : ""}
         <label for="dev-public-title">알려진 문제 제목</label><input id="dev-public-title" name="publicTitle" maxlength="60" placeholder="예: 잠금 화면에서 알람 소리가 작아요" value="${esc(d.publicTitle ?? "")}">
         <fieldset><legend>보일 근무 유형 <small>(고르지 않으면 모두)</small></legend>${Object.entries(DEV_STYLES).map(([k, v]) =>
           `<label class="chk"><input type="checkbox" name="styles" value="${k}"${(d.styles ?? []).includes(k) ? " checked" : ""}><span>${v}</span></label>`).join("")}</fieldset>
@@ -2674,7 +2677,7 @@ function adminApp(L, BUILD, M) {
       fixed_yes: () => `문의한 분이 '해결됐어요'를 눌렀어요${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       fixed_no: () => `문의한 분이 '아직이에요'를 눌렀어요(다시 열림)${can("inquiries") && x.inquiry ? ` <a href="${href("inquiries", x.inquiry)}">문의</a>` : ""}`,
       me_too: () => "알려진 문제판에서 '나도 겪어요'",
-      effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", none: "잴 숫자가 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
+      effect: () => `출시 2주 뒤 효과: <b>${esc(({ better: "좋아졌어요", same: "그대로예요", worse: "나빠졌어요", unknown: "아직 몰라요", none: "잴 숫자가 없어요", skip: "잴 수 없어요" })[x.effect] ?? "")}</b>${x.why ? ` · ${esc(x.why)}` : ""}`,
       basis: () => `요금 기준: ${was({ new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[0]] ?? "자동", { new: "새 기능", existing: "기존 기능 고침·다듬기", internal: "운영·관리자용" }[x.basis?.[1]] ?? "자동")}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
       tier: () => `요금: ${was(TIER_NAMES[x.tier?.[0]] ?? x.tier?.[0], TIER_NAMES[x.tier?.[1]] ?? x.tier?.[1])}${x.note ? `<blockquote>${esc(x.note)}</blockquote>` : ""}`,
     }[h.action]?.() ?? "바뀐 것이 있어요";
@@ -3645,9 +3648,22 @@ function adminApp(L, BUILD, M) {
         <p class="hint">한 휴대폰이 이 기간에 자동으로 받는 보상은 상한까지예요. 넘는 보상은 보상 화면에 남아요.</p>
         <h3>광장 방 글</h3>
         <label class="switch"><input type="checkbox" data-change="room-money"${s.roomMoney ? " checked" : ""}${edit ? "" : " disabled"}><span class="track" aria-hidden="true"></span><span>방 글에 금액 받기</span></label>
-        <p class="hint">켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처는 그대로 막아요). 운영 규칙 4항을 고쳐 게시한 날 켜요.</p>
+        <p class="hint">${roomMoneyLine(Boolean(s.roomMoney), S.overview?.roomMoneyFrom ?? null)}</p>
         ${edit ? `<div class="actions">${S.draft ? '<button class="btn ghost" data-act="settings-undo">되돌리기</button>' : ""}<button class="btn primary" data-act="save-settings"${S.draft ? "" : " disabled"}>${S.draft ? "바꾼 것 저장" : "저장"}</button></div>` : '<p class="note">보기 권한이라 바꿀 수 없어요.</p>'}
       </section>`;
+  }
+
+  /**
+   * 2.0.0 [RVN-17] COMP-14 '방 글에 금액 받기'의 한 줄: 켜도 처리방침 3.14 게시일 + 7일(운영 규칙 3판 시행일, 서버 roomMoneyFromPolicy)부터
+   * 받으니, 지금 받는지·언제부터인지·아직 날짜가 없는지를 말해요.
+   */
+  function roomMoneyLine(on, from) {
+    const today = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const when = from ? `${Number(from.slice(5, 7))}월 ${Number(from.slice(8, 10))}일` : null;
+    if (!on) return `켜면 회사 방·유형별 방의 글에 금액을 적을 수 있어요(연락처·계좌번호는 그대로 막아요). 처리방침 3.14 게시일 + 7일${when ? `(${when})` : ""}부터 받으니 미리 켜 둬도 돼요.`;
+    if (!from) return "켜 두었어요. 처리방침 일정에 3.14 게시일이 들어오면 그날 + 7일부터 받아요. 그 전에는 지금처럼 금액을 막아요.";
+    if (today < from) return `켜 두었어요. ${when}부터 받아요(처리방침 3.14 게시일 + 7일). 그 전에는 지금처럼 금액을 막아요.`;
+    return `받고 있어요(${when}부터). 연락처·계좌번호는 그대로 막아요.`;
   }
 
   /** [ADMUX-32] 문의 › 답 목표 (1.27 설정's card): the hours to a first answer, per kind of question. */
@@ -6590,7 +6606,7 @@ function adminApp(L, BUILD, M) {
     },
     "dev-loop": async (form) => {
       const k = form.elements.known.value;
-      await devSave({ route: form.elements.route.value, size: form.elements.size.value, publicTitle: form.elements.publicTitle.value.trim(),
+      await devSave({ route: form.elements.route.value, size: form.elements.size.value, ...(form.elements.good ? { good: form.elements.good.value } : {}), publicTitle: form.elements.publicTitle.value.trim(),
         styles: [...form.querySelectorAll('input[name="styles"]:checked')].map((x) => x.value),
         known: k === "1" ? true : k === "-1" ? false : null, since: S.data.dev.updatedAt }, "전달 길과 알려진 문제를 저장했어요");
     },

@@ -717,6 +717,36 @@ object AppFeel {
 
     fun dayOrderProblem(s: String): String? =
         if (s.isEmpty() || s.split(',').let { l -> l.all { it in DAY_GROUPS } && l.size == l.distinct().size }) null else "dayOrder"
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05·SI-03 (사용자 2026-11-12 'A + B 혼합'): whose each choice of an 앱 동작 piece is, when someone
+     * else's work is put on. Before, all of it went over the receiver's own settings: 251 장터 works set 밝기, 8 set 글자 크기 back to
+     * 보통 (a 1.3배 reader's letters got smaller), and the 급여 기간·누르기·시계 went with them.
+     * - [Whose.LOOK] the work's 꾸밈 (강조색·움직임): goes on unless turned off, and comes off with the theme.
+     * - [Whose.BRIGHT] 밝기: the maker's suggestion ('어두운 화면에서 가장 예뻐요'), off until turned on.
+     * - [Whose.MINE] the receiver's own (글자 크기·촘촘하게·시계·누르기·하루 순서·오늘의 흐름·휴식 점검·급여 기간·휴대폰 색): shown,
+     *   off until turned on.
+     */
+    enum class Whose { LOOK, BRIGHT, MINE }
+
+    /** The piece's keys in the order the 넣기 창 says them: 꾸밈, 밝기, then the receiver's own. */
+    val ORDER = listOf("accent", "motion", "theme", "textStep", "compact", "clock12", "tap", "hold", "dayOrder", "flow", "rest", "payPeriod", "dynamic")
+
+    fun whose(key: String): Whose = when (key) {
+        "accent", "motion" -> Whose.LOOK
+        "theme" -> Whose.BRIGHT
+        else -> Whose.MINE
+    }
+
+    /** Whether [key] goes on before the receiver turns anything: only the 꾸밈, and 움직임 not over a receiver who turned it off. */
+    fun onAtFirst(key: String, motionOffNow: Boolean = false): Boolean = whose(key) == Whose.LOOK && !(key == "motion" && motionOffNow)
+
+    /** [values] with only the keys turned on ([on]); empty when none is. */
+    fun only(values: Map<String, Any?>, on: Set<String>): Map<String, Any?> = values.filterKeys { it in on }
+
+    /** [values] as a work goes on where nobody is asked (a shared look card, a team's look): its 꾸밈 only. */
+    fun lookOnly(values: Map<String, Any?>, motionOffNow: Boolean = false): Map<String, Any?> =
+        values.filterKeys { onAtFirst(it, motionOffNow) }
 }
 
 /** [RCP-16] The company file inside a recipe: the phone's own reader checks it whole when it is previewed. */

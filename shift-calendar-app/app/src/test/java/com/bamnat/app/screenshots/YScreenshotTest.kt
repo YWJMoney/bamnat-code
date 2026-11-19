@@ -44,8 +44,9 @@ class YScreenshotTest : ScreenshotBase() {
     @Test fun investToolsHideShiftTools() = shoot("890_y_invest_tools", FOLDED, style(WorkStyle.INVEST) {
         tools()
         assertTrue("근무 주기 설정 is put away", gone("근무 주기 설정", exact = true))
-        // [FIT-05] 1.36: 가족·연인 근무표는 투자 달력도 받아요.
-        assertTrue(appears("동료 근무표 받기", exact = true))
+        // [FIT-05] 1.36: 가족·연인 근무표는 투자 달력도 받아요. 2.0.0 [RVG-40] 검토 PC-175: in its words, 다른 사람 달력 받기.
+        assertTrue(appears("다른 사람 달력 받기", exact = true))
+        assertTrue(gone("동료 근무표 받기", exact = true))
         assertTrue("달력 공유, not 근무표", appears("달력 공유", exact = true))
         reveal("이 달력에 안 맞아 숨긴 도구")
     })
@@ -59,7 +60,7 @@ class YScreenshotTest : ScreenshotBase() {
         assertEquals(FitSurface.CALENDAR_TOOLS.name, got.substringBefore(':'))
         assertTrue(FitTable.visible(FitSurface.CALENDAR_TOOLS, id, WorkStyle.INVEST, added))
         // The sheet shows it among the tools now, and after it is closed and opened again.
-        val label = mapOf("pattern" to "근무 주기 설정", "typeMonth" to "이번 달 전부 넣기", "receive" to "동료 근무표 받기", "teams" to "모든 조 보기").getValue(id)
+        val label = mapOf("pattern" to "근무 주기 설정", "typeMonth" to "이번 달 전부 넣기", "receive" to com.bamnat.core.work.receiveTitle(WorkStyle.INVEST), "teams" to "모든 조 보기").getValue(id)
         // Closed and opened again (the system back here would not reach the sheet's own window).
         tap(180f, 60f)
         assertTrue(gone("달력 도구", exact = true))
