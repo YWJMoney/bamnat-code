@@ -61,7 +61,7 @@ class RvjShopsScreenshotTest : ScreenshotBase() {
     @Test fun theChipsPickTheShop() = shoot("rvj_363_shops_pick_folded", FOLDED) {
         ledger(true).invoke(this)
         assertTrue(appears("식당"))
-        assertTrue("처음 가게의 직원", scrolledTo("김알바"))
+        assertTrue("처음 가게의 직원: " + shownWords().joinToString(" | "), scrolledTo("김알바"))
         assertFalse(shows("이바리"))
         tapText("카페", exact = true)
         repeat(2) { settle() }

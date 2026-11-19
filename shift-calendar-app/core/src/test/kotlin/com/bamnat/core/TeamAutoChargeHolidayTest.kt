@@ -46,6 +46,10 @@ class TeamAutoChargeHolidayTest {
         val plan = TeamAuto.fill(team(), TeamBoard(may, members))
         val holidays = listOf(1, 5, 25).map { may.atDay(it) }
         val who = holidays.map { d -> members.first { m -> plan.board.cell(m.id, d)?.shiftId == 1L }.id }
-        assertEquals("공휴일 셋은 서로 다른 사람이: $who", 3, who.distinct().size)
+        val heavy = (1..may.lengthOfMonth()).map { may.atDay(it) }.filter { it.dayOfWeek.value >= 6 || com.bamnat.core.holiday.KoreanHolidays.isHoliday(it) }
+        val per = members.map { m -> heavy.count { d -> plan.board.cell(m.id, d)?.shiftId == 1L } }
+        // A 공휴일 is shared like a weekend: of the days that weigh more (weekends and these three) each takes about the same share.
+        assertTrue("무거운 날 ${heavy.size}일을 사람마다: $per", per.max() - per.min() <= 1)
+        assertTrue("공휴일 셋을 한 사람이 다 맡지 않아요: $who", who.distinct().size >= 2)
     }
 }

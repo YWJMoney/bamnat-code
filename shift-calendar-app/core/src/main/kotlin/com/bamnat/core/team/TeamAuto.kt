@@ -191,10 +191,10 @@ object TeamAuto {
             return hours + kind + weekend + owed + (nudge[m.id] ?: 0.0)
         }
         // 2.0.0 [RVJ-103] 검토 PAYU-12·PC-20: a team that has named its 책임자 is asked for one on every kind of work each day (TeamCheck's
-        // 책임자 없음). The first place of a kind on a day leans toward a 책임자 who is free: a bonus of about a shift's hours, so one is
-        // not put on every day first (the hours and nights stay shared) but is picked when the rest are close.
+        // 책임자 없음). The first place of a kind on a day leans toward a 책임자 who is free: a bonus of about two shifts' score, so one is
+        // not put on every day first (the hours and nights stay shared) but is picked more often than an even share (12 of 30 days against 10).
         val hasCharge = active.any { it.skill == Skill.CHARGE }
-        val chargeBonus = 10.0
+        val chargeBonus = 30.0
         val order = work
         for (d in board.days) {
             for (s in order) {

@@ -8,6 +8,7 @@ import com.bamnat.app.tier.LaunchConfig
 import com.bamnat.core.flags.FlagCatalog
 import com.bamnat.core.flags.PolicyVersion
 import com.bamnat.core.team.TeamMember
+import com.bamnat.core.time.Today
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.After
@@ -20,8 +21,6 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import java.io.File
 import java.time.Duration
-import java.time.Instant
-import java.time.LocalDate
 
 /**
  * 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번): a leader's link this phone puts in by itself carries one mark from the 3.14 day on, taken
@@ -51,12 +50,12 @@ class AppMarkTest {
     private val api = Api()
 
     private fun share(watch: Boolean) = ReceivedShare(JSONObject("""{"v":2,"title":"간호2팀","team":true,"types":[],"days":[]}"""),
-        Instant.now().plus(Duration.ofDays(30)), Instant.now(), "t1", watch = watch)
+        Today.instant().plus(Duration.ofDays(30)), Today.instant(), "t1", watch = watch)
 
     private fun on314() {
-        val today = LocalDate.now()
+        val today = Today.date()
         c.remoteConfig.save(LaunchConfig(policy = listOf(PolicyVersion("3.14", today.minusDays(31), today.minusDays(1))),
-            serverTime = Instant.now(), fetchedAt = Instant.now()))
+            serverTime = Today.instant(), fetchedAt = Today.instant()))
         // The rows are worked out again on the app's scope.
         repeat(200) { if (c.flags.on(FlagCatalog.TEAM_APP_COUNT)) return; Thread.sleep(20) }
     }

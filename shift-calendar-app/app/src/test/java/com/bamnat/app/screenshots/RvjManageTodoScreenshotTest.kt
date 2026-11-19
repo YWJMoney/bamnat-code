@@ -55,7 +55,7 @@ class RvjManageTodoScreenshotTest : ScreenshotBase() {
     private fun todos(): Screen.() -> Unit = {
         manage().invoke(this)
         assertTrue(appears("우리 가게 10/16 김알바님 대타: 이주방님이 들어갈 수 있어요"))
-        assertTrue(appears("건강보험 자격 취득 신고 · 이주방", exact = false))
+        assertTrue(shownWords().joinToString(" | "), scrolledTo("건강보험 자격 취득 신고 · 이주방"))
         assertTrue(scrolledTo("박홀님 근로계약서 서명을 5일째 기다려요"))
         assertTrue("급여 지급일은 닫기·지급 줄이 말해요", !shows("9월분 급여 지급", exact = false))
         reveal("할 일", exact = false)
@@ -71,7 +71,7 @@ class RvjManageTodoScreenshotTest : ScreenshotBase() {
         tapText("건강보험 자격 취득 신고 · 이주방", exact = false)
         repeat(6) { if (!shows("기한 3일 전 아침 9시에", exact = false)) settle() }
         assertTrue(appears("다가올 신고·지급", exact = false))
-        assertTrue(appears("기한 3일 전 아침 9시에 알림으로도 알려 드려요", exact = false))
+        assertTrue(shownWords().joinToString(" | "), scrolledTo("기한 3일 전 아침 9시에 알림으로도 알려 드려요"))
     }
 
     @Test fun aDueOpensTheFilings() = shoot("rvj_343_manage_due_filings_folded", FOLDED, dueOpensFilings())

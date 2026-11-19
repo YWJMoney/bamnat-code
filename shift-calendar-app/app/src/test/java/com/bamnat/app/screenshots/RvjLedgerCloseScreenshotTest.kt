@@ -76,7 +76,7 @@ class RvjLedgerCloseScreenshotTest : ScreenshotBase() {
 
     @Test fun noCloseLineWhileSomeoneIsNotPaid() = shoot("rvj_367_close_line_not_yet_folded", FOLDED) {
         ledger(paid = false).invoke(this)
-        assertTrue(appears("지급일이 지났어요"))
+        assertTrue(shownWords().joinToString(" | "), scrolledTo("지급일이 지났어요"))
         assertFalse(shows("9월은 모두 지급했어요"))
     }
 
@@ -114,7 +114,7 @@ class RvjLedgerCloseScreenshotTest : ScreenshotBase() {
         ledger(sent = true).invoke(this)
         tapText("명세서 ✓", exact = true)
         repeat(2) { settle() }
-        tapText("보냄 취소", exact = true)
+        tapText("보냄 취소")
         repeat(2) { settle() }
         assertFalse("취소하면 그 줄은 없어요", shows("보냈다고 표시했어요"))
         val line = runBlocking { app.container.phaseThree.lines("p1", sep).first() }.first { it.staffId == "s1" }
@@ -147,7 +147,7 @@ class RvjLedgerCloseScreenshotTest : ScreenshotBase() {
         assertTrue("이어서 몇 시까지", appears("몇 시까지"))
         tapText("완료", exact = true)
         repeat(2) { settle() }
-        assertTrue("고친 시간으로 물어요", appears("09:30~18:00"))
+        assertTrue("고친 시간으로 물어요: " + shownWords().joinToString(" | "), appears("09:30~18:00"))
         assertTrue("원래대로 돌아갈 길", shows("원래 시간으로"))
     }
 

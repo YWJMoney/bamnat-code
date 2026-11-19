@@ -48,9 +48,10 @@ fun StaffCostBars(lines: List<LedgerLine>, last: Map<String, Long>, modifier: Mo
                     // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 주 52시간 넘은 직원은 막대 하나만 빨강(이름·금액까지 세 번이었어요).
                     Text(l.staff.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                         color = MaterialTheme.colorScheme.onSurface)
-                    if (over) Text("주 52시간 넘음", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(Fmt.won(l.employerTotal), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+                // Under the name, not beside it: at 글자 200% the words and the amount left the name a sliver of the line (a letter a line).
+                if (over) Text("주 52시간 넘음", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Canvas(Modifier.fillMaxWidth().height(14.dp)) {
                     val r = CornerRadius(size.height / 2, size.height / 2)
                     drawRoundRect(track, cornerRadius = r)

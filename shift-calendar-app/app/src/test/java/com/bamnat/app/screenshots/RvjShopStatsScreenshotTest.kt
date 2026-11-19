@@ -1,8 +1,6 @@
 package com.bamnat.app.screenshots
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.ui.test.assertHeightIsAtLeast
-import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.dp
@@ -56,7 +54,7 @@ class RvjShopStatsScreenshotTest : ScreenshotBase() {
         settle()
         reveal("입금까지 영업일", exact = true)
         assertTrue(shownWords().joinToString(" | "), appears("2일", exact = true))
-        compose.onNodeWithContentDescription("입금까지 영업일 늘리기").assertHeightIsAtLeast(48.dp) // AFTER
+        touchAtLeast48("입금까지 영업일 늘리기") // AFTER
         compose.onNodeWithContentDescription("입금까지 영업일 늘리기").performClick() // AFTER
         settle() // AFTER
         assertTrue("한 번 눌러 3일", appears("3일", exact = true)) // AFTER
@@ -131,7 +129,7 @@ class RvjShopStatsScreenshotTest : ScreenshotBase() {
         tapText("근무 신청 받기", exact = true, scrolls = 0)
         settle()
         assertTrue(shownWords().joinToString(" | "), appears("평일 하루 쉬는 신청", exact = true))
-        compose.onNodeWithContentDescription("평일 하루 쉬는 신청 늘리기").assertHeightIsAtLeast(48.dp) // AFTER
+        touchAtLeast48("평일 하루 쉬는 신청 늘리기") // AFTER
         compose.onNodeWithContentDescription("평일 하루 쉬는 신청 늘리기").performClick() // AFTER
         settle() // AFTER
         assertTrue("한 번 눌러 1명", appears("1명", exact = true)) // AFTER
@@ -154,10 +152,17 @@ class RvjShopStatsScreenshotTest : ScreenshotBase() {
         }
         settle()
         listOf("정산 마감일 줄이기", "정산 마감일 늘리기", "이전 달", "다음 달").forEach {
-            compose.onNodeWithContentDescription(it).assertHeightIsAtLeast(48.dp).assertWidthIsAtLeast(48.dp)
+            touchAtLeast48(it)
         }
     }
     // AFTER-END
+
+    /** [RVJ-106] The touch area of the node named [desc] (what TalkBack and the scanner measure, which Compose widens to 48dp) is 48dp both ways. */
+    private fun touchAtLeast48(desc: String) {
+        val t = compose.onNodeWithContentDescription(desc).fetchSemanticsNode().touchBoundsInRoot
+        val d = app.resources.displayMetrics.density
+        assertTrue("$desc: ${t.width / d}x${t.height / d}dp", t.width / d >= 47.5f && t.height / d >= 47.5f)
+    }
 
     private companion object {
         const val DARK = "w369dp-h905dp-port-night-420dpi"

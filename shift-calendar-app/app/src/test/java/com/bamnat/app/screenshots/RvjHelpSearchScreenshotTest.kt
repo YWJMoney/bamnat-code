@@ -61,9 +61,9 @@ class RvjHelpSearchScreenshotTest : ScreenshotBase() {
     @Test fun nearFoldedDarkBig() = shoot("rvj_332_settings_search_near_folded_dark_200", RvjTeamCheckScreenshotTest.DARK, 2f, near())
     @Test fun nearUnfolded() = shoot("rvj_333_settings_search_near_unfolded", UNFOLDED, near())
 
-    /** '관리' finds the 가게 관리 screen first, where 더 보기 holds it. */
+    /** '관리' finds the 팀·가게 관리 screen first, where 더 보기 holds it. */
     private fun manage(): Screen.() -> Unit = search("관리") {
-        assertTrue(shownWords().joinToString(" | "), appears("가게 관리", exact = true))
+        assertTrue(shownWords().joinToString(" | "), appears("팀·가게 관리", exact = true))
         noCuts("rvj_search_manage")
     }
 

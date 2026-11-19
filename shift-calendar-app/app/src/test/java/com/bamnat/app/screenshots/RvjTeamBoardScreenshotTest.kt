@@ -104,7 +104,7 @@ class RvjTeamBoardScreenshotTest : ScreenshotBase() {
         val round = AskRound("A1", "atok", month, AskRules(), names.indices.associate { "m$it" to "https://s.example/a/K$it" }, syncedAt = Today.millis() - 3_600_000L)
         seedTeam(round)
         open().invoke(this)
-        assertTrue("못 가져왔다고 말해요", appears("새 신청을 못 가져왔어요", exact = false))
+        assertTrue("못 가져왔다고 말해요: " + shownWords().joinToString(" | "), appears("새 신청을 못 가져왔어요", exact = false))
         assertTrue("다시 단추가 있어요", shows("다시", exact = true))
     }
 

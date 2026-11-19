@@ -35,7 +35,7 @@ object StatsRange {
         val (a, b) = if (c.to.isBefore(c.from)) c.to to c.from else c.from to c.to
         if (ChronoUnit.DAYS.between(a, b) + 1 <= MAX_DAYS) return null
         val end = a.plusDays(MAX_DAYS - 1)
-        return "1년까지만 보여 드려요 · ${a.monthValue}월 ${a.dayOfMonth}일부터 ${end.monthValue}월 ${end.dayOfMonth}일까지 셌어요"
+        return "1년까지만 보여 드려요 · ${a.year}년 ${a.monthValue}월 ${a.dayOfMonth}일부터 ${end.year}년 ${end.monthValue}월 ${end.dayOfMonth}일까지 셌어요"
     }
 
     /**
