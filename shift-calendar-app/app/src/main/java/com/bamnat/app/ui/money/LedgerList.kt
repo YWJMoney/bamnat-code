@@ -266,9 +266,9 @@ fun LedgerListPane(
                     item(key = "empty") {
                         when {
                             // 2.0.0 [RVK-35] (PC-126) One '돈 적기': the floating one, always there (this one stood beside it). Named as it
-                            // shows: with big letters it is only its +.
+                            // shows (갈래 P 5: the bar under the page says its words at every letter size).
                             book.entries.isEmpty() -> LedgerEmpty(Icons.AutoMirrored.Outlined.ReceiptLong, "아직 적은 돈이 없어요",
-                                (if (com.bamnat.app.ui.components.bigLetters()) "아래 + 단추" else "아래 ‘돈 적기’") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
+                                (if (com.bamnat.app.ui.components.addDocks() || !com.bamnat.app.ui.components.bigLetters()) "아래 ‘돈 적기’" else "아래 + 단추") + "를 누르거나 위 ⋮ › 자동 기록을 켜면 여기에 쌓여요.",
                                 kani = com.bamnat.app.ui.components.KaniMood.Point)
                             view.narrowed -> LedgerEmpty(Icons.Outlined.SearchOff, "조건에 맞는 기록이 없어요",
                                 "기간을 넓히거나 조건을 지워 보세요.", action = "조건 지우기", onAction = { onView(view.copy(filter = LedgerFilter())) })
@@ -668,39 +668,8 @@ private fun LedgerRow(
             val inOut = setOfNotNull(when (e.kind) { MoneyKind.INCOME -> "in"; MoneyKind.EXPENSE -> "out"; else -> null })
             val rowPart = bp.style("money.row", inOut, dayScope)
             val amountPart = bp.style("money.amount", inOut, dayScope)
-            Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
-                .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
-                if (selecting) {
-                    Checkbox(checked = selected, onCheckedChange = { onToggle() }, modifier = Modifier.size(40.dp))
-                } else if (look.mark == "dot") {
-                    Box(Modifier.size(12.dp).clip(CircleShape).background(amountColor(e)))
-                } else if (look.mark != "none") {
-                    Box {
-                        CategoryAvatar(e.category)
-                        if (!e.reviewed) Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).align(Alignment.TopEnd))
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    // 2.0.0 [RVK-42] Big letters: a long name ('라마바전자 무선청소기') takes two lines before it is cut.
-                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = if (com.bamnat.app.ui.components.bigLetters()) 2 else 1,
-                        overflow = TextOverflow.Ellipsis)
-                    if (caption.isNotEmpty()) {
-                        Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                    // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay. 2.0.0 [RVK-42] (조건 12) Its own line under the
-                    // name: beside the amount it squeezed the name to '라마바전…' and the card to '신한 De…' on a folded phone.
-                    if (e.installments > 1) {
-                        Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date(), book.accounts) ?: "${e.installments}개월 할부",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
-                    }
-                    if (e.tags.isNotEmpty() || e.memo.isNotBlank()) {
-                        Text((e.tags.map { "#$it" } + listOfNotNull(e.memo.takeIf { it.isNotBlank() })).joinToString(" "),
-                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                Spacer(Modifier.width(8.dp))
+            // 2.0.0 [RVK-57] (HQ-147, 조건 12) The amount and what is under it, beside the name or, at a big font, under it.
+            val amountBlock: @Composable () -> Unit = {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(signedWon(e), style = when (look.amount) {
                         "s" -> MaterialTheme.typography.bodyMedium
@@ -718,6 +687,50 @@ private fun LedgerRow(
                             Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
                         }
                     }
+                }
+            }
+            val bigRow = LocalDensity.current.fontScale >= 1.5f
+            Row(Modifier.heightIn(min = rowPart.h?.dp ?: minH).then(com.bamnat.app.ui.parts.PartMods.box(rowPart.copy(pad = null, padX = null, padY = null), androidx.compose.ui.graphics.RectangleShape))
+                .padding(horizontal = rowPart.padH?.dp ?: 16.dp, vertical = rowPart.padV?.dp ?: padV), verticalAlignment = Alignment.CenterVertically) {
+                if (selecting) {
+                    Checkbox(checked = selected, onCheckedChange = { onToggle() }, modifier = Modifier.size(40.dp))
+                } else if (look.mark == "dot") {
+                    Box(Modifier.size(12.dp).clip(CircleShape).background(amountColor(e)))
+                } else if (look.mark != "none") {
+                    Box {
+                        CategoryAvatar(e.category)
+                        if (!e.reviewed) Box(Modifier.size(10.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary).align(Alignment.TopEnd))
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    // 2.0.0 [RVK-42] Big letters: a long name ('라마바전자 무선청소기') takes two lines before it is cut.
+                    Text(e.title, style = MaterialTheme.typography.bodyLarge, maxLines = if (com.bamnat.app.ui.components.bigLetters()) 2 else 1,
+                        overflow = TextOverflow.Ellipsis)
+                    // 2.0.0 [RVK-57] (HQ-147): at 150% and up the caption has the row's width (it was '신한 …' beside the amount) and the
+                    // amount sits beside it when both fit, else under it at the right.
+                    if (bigRow) com.bamnat.app.ui.components.TextThenAmount(start = {
+                        if (caption.isNotEmpty()) Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }, end = amountBlock)
+                    else if (caption.isNotEmpty()) {
+                        Text(caption, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    // E 1.32 [LEDX-04] Which 회차 this month is, and what is still to pay. 2.0.0 [RVK-42] (조건 12) Its own line under the
+                    // name: beside the amount it squeezed the name to '라마바전…' and the card to '신한 De…' on a folded phone.
+                    if (e.installments > 1) {
+                        Text(com.bamnat.core.money.LedgerSmarts.installmentText(e, com.bamnat.core.time.Today.date(), book.accounts) ?: "${e.installments}개월 할부",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                    }
+                    if (e.tags.isNotEmpty() || e.memo.isNotBlank()) {
+                        Text((e.tags.map { "#$it" } + listOfNotNull(e.memo.takeIf { it.isNotBlank() })).joinToString(" "),
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+                if (!bigRow) {
+                    Spacer(Modifier.width(8.dp))
+                    amountBlock()
                 }
             }
         }
@@ -869,7 +882,7 @@ private fun ExportDialog(shown: List<MoneyEntry>, book: MoneyBook, range: Pair<L
             }
         },
         confirmButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(enabled = shown.isNotEmpty(), onClick = { runCatching { save.launch(name) }.onFailure { onMessage("파일을 저장할 곳을 열지 못했어요"); onDismiss() } }) {
                     Text("파일로 저장")
                 }

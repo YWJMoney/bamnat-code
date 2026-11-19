@@ -49,8 +49,9 @@ class SavedPosts private constructor(context: Context) {
     companion object {
         const val MAX = 200
         private const val KEY = "items"
-        @Volatile private var one: SavedPosts? = null
-        fun of(context: Context): SavedPosts = one ?: synchronized(this) { one ?: SavedPosts(context.applicationContext).also { one = it } }
+        /** One per app ([com.bamnat.app.data.PerApp]: a test's new app reads its own list). */
+        private val one = com.bamnat.app.data.PerApp { SavedPosts(it) }
+        fun of(context: Context): SavedPosts = one.of(context)
     }
 }
 

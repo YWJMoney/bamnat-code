@@ -420,8 +420,12 @@ test("[RVA-63] 멈춤 기록 읽기: '앱 멈춤' 칸에 줄이 있으면 있음
   assert.equal(crashRepeats([{ id: "a", device: "p1", at: now - D, ...base }], now).length, 0, "한 건은 묶음이 아니에요");
   assert.deepEqual([...repeatPlaces(g1)], [["a", { key: g1[0].key, nth: 1, n: 2 }], ["b", { key: g1[0].key, nth: 2, n: 2 }]]);
   // 답 초안: 상담원 말투, '밤낮 운영팀', 앱 안 길만(주소·코드·자동 답이라는 말 없음).
-  assert.match(CRASH_ASK_DRAFT, /알람 점검/);
-  assert.match(CRASH_ASK_DRAFT, /보고서 복사/);
+  // [RVA-67] PC-201: 보고서 복사(3,400자 넘음)는 답장 칸 2,000자에 안 들어가요. 새 문의의 '점검 기록도 보내기'로.
+  assert.match(CRASH_ASK_DRAFT, /설정 › 도움말과 문의에서 '문의하기'/);
+  assert.match(CRASH_ASK_DRAFT, /'앱이 이상해요'/);
+  assert.match(CRASH_ASK_DRAFT, /'점검 기록도 보내기'/);
+  assert.doesNotMatch(CRASH_ASK_DRAFT, /보고서 복사|붙여 넣/);
+  assert.ok(CRASH_ASK_DRAFT.length < 2000);
   assert.match(CRASH_ASK_DRAFT, /밤낮 운영팀$/);
   assert.doesNotMatch(CRASH_ASK_DRAFT, /https?:|\/api|AI|자동|서버|관리자|열쇠|코드/);
 });
@@ -460,7 +464,7 @@ test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음(몇 �
   assert.match(same.label, /^같은 보낸 분 · Test Fold 9 · 안드로이드 17 · 1\.39\.0$/);
   const model = led.crashRepeats.find((g) => g.by === "model");
   assert.deepEqual([model.n, model.people, model.noRecord], [5, 3, 4]);
-  assert.match(led.crashDraft, /보고서 복사/);
+  assert.match(led.crashDraft, /점검 기록도 보내기/);
   const row = (id) => led.items.find((r) => r.key === `inquiry:${id}`);
   assert.deepEqual([row(a1).crash.recordName, row(a2).crash.recordName, row(b1).crash.recordName], ["멈춤 기록 없음", "점검 기록 없이 옴", "멈춤 기록 있음"]);
   assert.deepEqual([row(a1).repeat.nth, row(a3).repeat.nth, row(a3).repeat.n], [1, 3, 3], "같은 보낸 분 묶음의 몇 번째");
@@ -548,4 +552,73 @@ test("[RVA-64] 열쇠로 읽는 점검 기록 표식: 문의·장부 줄·넘길
   const desk = (await call("GET", "/api/admin/desk", undefined, claude)).data;
   assert.ok(!leak(desk));
   assert.match(desk.guide ?? JSON.stringify(desk), /없다고 적지 말고|'안 왔다'고 적지 말고/);
+});
+
+// ---- 2.0.0 [RVA-67] PC-201: 기록 부탁 답은 새 문의로. 그 새 문의가 앞 문의와 같은 보낸 분 묶음에 붙어요 (시험 자료는 모두 지어낸 값) ----
+import { CRASH_ASK_LINE } from "../src/crash-repeat.js";
+
+test("[RVA-67] 기록 부탁 답대로 '앱이 이상해요' 새 문의에 점검 기록을 켜서 보내면, 앞 닫힘 문의들과 같은 보낸 분 묶음에 '멈춤 기록 있음'으로 붙어요", async (t) => {
+  const { call, DB } = server({ t });
+  const owner = await signIn(call);
+  const DAY = 24 * HOUR;
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, kind, info, daysAgo) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind, text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    await DB.prepare("UPDATE inquiries SET created_at = ?1, updated_at = ?1 WHERE id = ?2").bind(TEST_NOW - daysAgo * DAY, r.data.id).run();
+    return r.data.id;
+  };
+  const none = "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음";
+  const a1 = await send(71, "앱이 갑자기 닫혀요", "bug", { ...fold, diag: none }, 3);
+  const a2 = await send(71, "또 앱이 저절로 꺼졌어요", "bug", { ...fold }, 2);
+  // 앱(1.39.0·2.0.0)은 글에 '닫혀'가 있고 주제가 '앱 동작'이면 [앱 멈춤]을 기록 맨 앞에 둬요(StopTrail.aboutStop).
+  const sent = await send(71, CRASH_ASK_LINE, "bug", { ...fold, diag: "[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3\n\n[알람]\n다음 알람 07:00" }, 0.2);
+  // 답장 칸으로는 보낼 수 없던 길이(보고서 복사 3,400자 넘음)는 서버도 받지 않아요.
+  const long = await call("POST", `/api/inquiries/${a1}/messages`, { device: device(71), text: "[알람]\n".padEnd(3400, "가") }, { ...from(71), "x-device": device(71) });
+  assert.ok(long.status >= 400, `${long.status} ${long.text}`);
+
+  const led = (await call("GET", "/api/admin/ledger?view=all", undefined, owner)).data;
+  const same = led.crashRepeats.find((g) => g.by === "same");
+  assert.deepEqual([same.n, same.noRecord, same.lines.map((l) => l.key)], [3, 2, [a1, a2, sent].map((id) => `inquiry:${id}`)]);
+  const row = led.items.find((r) => r.key === `inquiry:${sent}`);
+  assert.deepEqual([row.crash.recordName, row.repeat.nth, row.repeat.n], ["멈춤 기록 있음", 3, 3]);
+  const d = (await call("GET", `/api/admin/inquiries/${sent}`, undefined, owner)).data;
+  assert.deepEqual([d.crash.record, d.crash.draft, d.crash.repeat.nth, d.crash.repeat.noRecord], ["has", undefined, 3, 2]);
+  const d1 = (await call("GET", `/api/admin/inquiries/${a1}`, undefined, owner)).data;
+  assert.equal(d1.crash.draft, CRASH_ASK_DRAFT);
+  assert.deepEqual(d1.crash.repeat.ids, [a1, a2, sent], "앞 문의에서도 기록이 온 새 문의가 같은 묶음에 보여요");
+  // 앱이 [앱 멈춤]을 맨 앞에 두지 않아도(옛 모양) 글만으로 닫힘 문의예요.
+  assert.equal(crashOf("bug", CRASH_ASK_LINE, { diag: "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3" })?.record, "has");
+});
+
+// ---- 2.0.0 [RVA-68] PC-202: 닫힘 낱말이 없어도 멈춘 기록이 실려 오면 닫힘 문의 (시험 자료는 모두 지어낸 값) ----
+import { triage } from "../src/inquiries.js";
+
+test("[RVA-68] 글에 닫힘 낱말이 없어도 점검 기록 '앱 멈춤' 칸에 멈춘 기록이 있으면 '멈춤 기록 있음' 표식·같은 보낸 분 묶음·앱 동작 주제에 들어가요", async (t) => {
+  const stopLate = "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3";
+  const noneLate = "[알람]\n다음 알람 07:00\n\n[앱 멈춤]\n기록 없음";
+  assert.equal(crashOf("bug", "app closed itself again", { diag: stopLate })?.record, "has");
+  assert.equal(crashOf("question", "또 그래요", { diag: stopLate })?.record, "has");
+  assert.equal(crashOf("bug", "또 그래요", { diag: noneLate }), null, "멈춤이 없는 기록은 낱말로만");
+  assert.equal(crashOf("idea", "이런 기능 있으면 좋겠어요", { diag: stopLate }), null, "아이디어는 아니에요");
+  assert.deepEqual([triage("bug", "app closed itself again", { diag: stopLate }).topic, triage("bug", "알람 소리가 작아요", { diag: stopLate }).topic],
+    ["app", "alarm"], "주제는 낱말이 못 정했을 때만 앱 동작");
+
+  const { call, DB } = server({ t });
+  const owner = await signIn(call);
+  const DAY = 24 * HOUR;
+  const fold = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)" };
+  const send = async (n, text, info, daysAgo) => {
+    const r = await call("POST", "/api/inquiries", { v: 1, device: device(n), kind: "bug", text, info }, from(n));
+    assert.equal(r.status, 201, r.text);
+    await DB.prepare("UPDATE inquiries SET created_at = ?1, updated_at = ?1 WHERE id = ?2").bind(TEST_NOW - daysAgo * DAY, r.data.id).run();
+    return r.data.id;
+  };
+  const a1 = await send(72, "앱이 갑자기 닫혀요", { ...fold }, 2);
+  const a2 = await send(72, "app closed itself again", { ...fold, diag: stopLate }, 0.3);
+  const led = (await call("GET", "/api/admin/ledger?view=all", undefined, owner)).data;
+  const same = led.crashRepeats.find((g) => g.by === "same");
+  assert.deepEqual([same.n, same.noRecord, same.lines.map((l) => l.key)], [2, 1, [a1, a2].map((id) => `inquiry:${id}`)]);
+  const d = (await call("GET", `/api/admin/inquiries/${a2}`, undefined, owner)).data;
+  assert.deepEqual([d.crash.recordName, d.crash.repeat.nth, d.topic], ["멈춤 기록 있음", 2, "app"]);
 });

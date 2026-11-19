@@ -28,6 +28,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.ui.components.OutlinedButton
@@ -70,7 +71,15 @@ fun ProLock(feature: Feature, gate: Gate, modifier: Modifier = Modifier, content
                 .background(MaterialTheme.colorScheme.washSurface.copy(alpha = if (Build.VERSION.SDK_INT >= 31) 0.35f else 0.9f))
                 .clickable(remember { MutableInteractionSource() }, indication = null, onClickLabel = "프로 알아보기") { openPro(feature) },
         )
-        LockPanel(feature, gate, Modifier.align(Alignment.Center).padding(12.dp))
+        // 2.0.0 [RVO-25] (PC-186) Over a tall locked page (가계부 › 통계: three cards) the middle was under the bottom bar; the card
+        // sits in the middle of a short lock and near the top of a tall one, so its buttons are on the first screen.
+        val top = with(androidx.compose.ui.platform.LocalDensity.current) { PANEL_TOP.roundToPx() }
+        val near = remember(top) {
+            Alignment { size, space, _ ->
+                androidx.compose.ui.unit.IntOffset((space.width - size.width) / 2, minOf((space.height - size.height) / 2, top).coerceAtLeast(0))
+            }
+        }
+        LockPanel(feature, gate, Modifier.align(near).padding(12.dp))
     }
 }
 
@@ -83,22 +92,54 @@ private fun LockPanel(feature: Feature, gate: Gate, modifier: Modifier) {
                 Spacer(Modifier.width(6.dp))
                 Text(feature.label, style = MaterialTheme.typography.titleSmall)
             }
-            Text("프로에서 쓸 수 있어요. 흐리게 보이는 건 내 기록으로 만든 화면이에요.", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+            // 2.0.0 [RVO-25] (PC-186, 조건 4·9) One line and ⓘ: the blur and the free week's or the ad's grey words are under it,
+            // so at 접은 폭 글자 200% the whole card is on the first screen.
+            com.bamnat.app.ui.components.Explain(
+                key = "pro_lock",
+                text = listOfNotNull("$LOCK_LINE 흐리게 보이는 건 내 기록으로 만든 화면이에요.", com.bamnat.app.ads.leaseNote(feature, gate))
+                    .joinToString(" "),
+                summary = LOCK_LINE, iconOnly = false, firstInFull = false, centered = true,
+            )
+            // 2.0.0 [RVO-25] (PC-186, HQ-48 '프로가 아닌 사람에게는 친구 초대가 먼저') The one filled button, then 친구 초대 right under
+            // it, then the other way as the quieter third.
+            val invite = LocalContext.current.appContainer.inviteApi.enabled
             if (gate.canTry(feature)) {
-                LeaseAdOption(feature, gate)
-                androidx.compose.material3.TextButton(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
+                LeaseAdOption(feature, gate, withNote = false)
+                if (invite) InviteButton(feature)
+                androidx.compose.material3.TextButton(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    WholeWords(proButtonText())
+                }
             } else {
-                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { Text(proButtonText()) }
-                LeaseAdOption(feature, gate)
-            }
-            // AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet. 2.0.0 [RVO-13] (HQ-48) by the same name everywhere.
-            if (LocalContext.current.appContainer.inviteApi.enabled) {
-                OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth()) { Text(INVITE_FREE_TITLE) }
+                Button(onClick = { ProPaywall.show(plans = true) }, modifier = Modifier.fillMaxWidth()) { WholeWords(proButtonText()) }
+                if (invite) InviteButton(feature)
+                LeaseAdOption(feature, gate, withNote = false)
             }
         }
     }
 }
+
+// AG 1.27 [MON-12][INVITE-11] The third way, as in the sheet. 2.0.0 [RVO-13] (HQ-48) by the same name everywhere.
+@Composable
+private fun InviteButton(feature: Feature) {
+    OutlinedButton(onClick = { openPro(feature) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { WholeWords(INVITE_FREE_TITLE) }
+}
+
+/**
+ * 2.0.0 [RVO-27] HQ-143 (조건 12): a button's words on the lock card, centred, and when they take two lines at 글자 200% the break is
+ * between words ('친구를 초대하면 / 무료로 써요'), never inside one ('무료 / 로'): a word joiner (U+2060, drawn as nothing) between
+ * letters with no space, as the 근무일 증빙 PDF does. Read aloud and found by tests as the plain words.
+ */
+@Composable
+internal fun WholeWords(words: String) {
+    val glued = buildString(words.length * 2) {
+        words.forEachIndexed { i, ch -> if (i > 0 && !ch.isWhitespace() && !words[i - 1].isWhitespace()) append('\u2060'); append(ch) }
+    }
+    Text(glued, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        modifier = Modifier.clearAndSetSemantics { text = androidx.compose.ui.text.AnnotatedString(words) })
+}
+
+/** 2.0.0 [RVO-25] (PC-186) The lock card's one line; the rest is under its ⓘ. */
+internal const val LOCK_LINE = "프로 기능이에요."
 
 /** "1개월 무료로 써 보기" while Play offers this account the trial, otherwise "프로 알아보기". */
 @Composable
@@ -119,6 +160,9 @@ fun openPro(feature: Feature) = ProOffer.show(feature)
 fun goPro() = SettingsLinks.go(SettingsGo.PRO)
 
 private val MIN_HEIGHT = 200.dp
+
+/** [RVO-25] (PC-186) How far below the top of a tall lock its card sits. */
+private val PANEL_TOP = 24.dp
 
 /**
  * [MON-13] 1.36: a tap on a trial feature (명세서 금액 비교하기, 세후 예상). Open when 프로 or its free week is on; a first use while it

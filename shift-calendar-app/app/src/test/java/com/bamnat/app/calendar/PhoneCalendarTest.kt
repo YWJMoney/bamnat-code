@@ -12,6 +12,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.BamnatApp
 import com.bamnat.core.schedule.ShiftEvent
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +88,38 @@ class PhoneCalendarTest {
         c.backupManager.restore(json)
         assertEquals(listOf("main", "abc"), c.settingsRepository.current.phoneCalendars)
         c.settingsRepository.update { it.copy(phoneCalendars = emptyList()) }
+    }
+
+    /**
+     * [RVO-14] (총괄 11-12 '프로를 잃으면 앱이 쓴 휴대폰 캘린더 일정이 지워지는 것'): without 프로 the written calendar is deleted
+     * (in-app shifts stay), the chosen calendars stay in the settings, and with 프로 again it is written again by itself.
+     * The app's own background work keeps running here: the gate it reads lives in the same scope.
+     */
+    @Test fun losingProDeletesTheWrittenCalendarAndProBackWritesItAgain() = kotlinx.coroutines.runBlocking {
+        val c = app.container
+        c.scheduleRepository.ensureDefaults()
+        val day = c.scheduleRepository.shiftTypes.first().first { !it.isOff }.id
+        c.scheduleRepository.setOverride(com.bamnat.core.time.Today.date().plusDays(1), com.bamnat.core.model.ShiftOverride.Shift(day))
+        c.settingsRepository.update { it.copy(phoneCalendars = listOf("main")) }
+        try {
+            assertTrue(c.phoneCalendarSync.sync() is PhoneCalendarSync.Status.Written)
+            assertEquals(setOf("main"), PhoneCalendar(app).written())
+            assertTrue(store.events.isNotEmpty())
+            c.settingsRepository.update { it.copy(previewTier = com.bamnat.app.tier.Tier.FREE) }
+            c.featureGate.state.first { it.locked(com.bamnat.app.tier.Feature.DEVICE_CALENDAR) }
+            assertEquals(PhoneCalendarSync.Status.Off, c.phoneCalendarSync.sync())
+            assertTrue("the app's calendar and its events are gone", store.calendars.isEmpty() && store.events.isEmpty())
+            assertEquals("the choice stays for when 프로 comes back", listOf("main"), c.settingsRepository.current.phoneCalendars)
+            assertTrue("the in-app shift stays", c.scheduleRepository.entries.first().any { it.date == com.bamnat.core.time.Today.date().plusDays(1) })
+            c.settingsRepository.update { it.copy(previewTier = null) }
+            c.featureGate.state.first { it.allows(com.bamnat.app.tier.Feature.DEVICE_CALENDAR) }
+            assertTrue(c.phoneCalendarSync.sync() is PhoneCalendarSync.Status.Written)
+            assertEquals(setOf("main"), PhoneCalendar(app).written())
+            assertTrue(store.events.isNotEmpty())
+        } finally {
+            c.settingsRepository.update { it.copy(phoneCalendars = emptyList(), previewTier = null) }
+        }
+        Unit
     }
 
     @Test fun withoutThePermissionNothingIsWritten() {

@@ -30,6 +30,8 @@ data class ReceivableEntity(
     val countAsIncome: Boolean,
     val closedEpochDay: Long?,
     val createdAt: Long,
+    /** Version 36 (2.0.0 [RVK-46] 검토 T06a-05·I06ab-03): 0 money others owe the user (받을 돈), 1 money the user owes (줄 돈). */
+    @androidx.room.ColumnInfo(defaultValue = "0") val direction: Int = 0,
 )
 
 /** [RECV-01] Money that came back for a receivable, in parts; version 13. */
@@ -113,6 +115,13 @@ interface ImportedEventDao {
 
     @Query("DELETE FROM imported_events WHERE eventKey IN (:keys)")
     suspend fun delete(keys: List<String>)
+
+    /** 2.0.0 [RVL-53] (검토 DATA-15) For the backup, and emptied when one is put back. */
+    @Query("SELECT * FROM imported_events ORDER BY epochDay, eventKey")
+    suspend fun all(): List<ImportedEventEntity>
+
+    @Query("DELETE FROM imported_events")
+    suspend fun clear()
 }
 
 fun ReceivableEntity.toModel(payments: List<ReceivablePaymentEntity>) = Receivable(
@@ -121,11 +130,13 @@ fun ReceivableEntity.toModel(payments: List<ReceivablePaymentEntity>) = Receivab
     kind = runCatching { ReceivableKind.valueOf(kind) }.getOrDefault(ReceivableKind.OTHER),
     note = note, countAsIncome = countAsIncome, closedOn = closedEpochDay?.let(LocalDate::ofEpochDay),
     payments = payments.map { it.toModel() }.sortedWith(compareBy({ it.date }, { it.id })),
+    toPay = direction == 1,
 )
 
 fun Receivable.toEntity(createdAt: Long = Today.millis()) = ReceivableEntity(
     id = id, who = who.trim(), title = title.trim(), amount = amount, epochDay = date.toEpochDay(), dueEpochDay = due?.toEpochDay(),
     kind = kind.name, note = note, countAsIncome = countAsIncome, closedEpochDay = closedOn?.toEpochDay(), createdAt = createdAt,
+    direction = if (toPay) 1 else 0,
 )
 
 fun ReceivablePaymentEntity.toModel() = ReceivablePayment(id, receivableId, LocalDate.ofEpochDay(epochDay), amount, entryId)
