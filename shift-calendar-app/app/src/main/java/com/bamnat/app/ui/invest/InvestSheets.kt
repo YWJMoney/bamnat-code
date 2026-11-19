@@ -405,6 +405,16 @@ internal fun TradeSheet(
             if (costsTyped) TextButton(onClick = { costsTyped = false }) { Text("자동 계산") }
             else TextButton(onClick = { editingFees = true }) { Text("기본 수수료") }
         }
+        // 2.0.0 [RVK-54] (검토 MONEY-76): a sale's tax preview matches every sale oldest first, so it is worked out off the main
+        // thread a beat after typing stops, not on every keystroke.
+        val previewTrade = if (side == Side.SELL && q > 0 && p > 0) Trade(id = start?.id ?: 0, accountId = accountId,
+            date = runCatching { LocalDate.parse(date) }.getOrDefault(state.today), symbol = symbol.trim(), name = name.trim(), market = market,
+            side = side, quantity = q, price = p, fxRate = rate, fee = fee, tax = tax) else null
+        val sellPreview = androidx.compose.runtime.produceState<com.bamnat.core.invest.InvestTaxes.SellPreview?>(null, book, previewTrade) {
+            if (previewTrade == null) { value = null; return@produceState }
+            kotlinx.coroutines.delay(150)
+            value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { com.bamnat.core.invest.InvestTaxes.sellPreview(book, previewTrade) }
+        }.value
         // What this trade comes to, and for a sell what it made against 평균단가.
         if (q > 0 && p > 0) {
             val grossWon = q * p * rate
@@ -423,8 +433,7 @@ internal fun TradeSheet(
                 // [INV-39] A sell of 해외 주식: what it adds to this year's 양도소득세; 국내 주식: why there is none.
                 if (side == Side.SELL) {
                     val day = runCatching { LocalDate.parse(date) }.getOrDefault(state.today)
-                    val preview = com.bamnat.core.invest.InvestTaxes.sellPreview(book, Trade(id = start?.id ?: 0, accountId = accountId, date = day,
-                        symbol = symbol.trim(), name = name.trim(), market = market, side = side, quantity = q, price = p, fxRate = rate, fee = fee, tax = tax))
+                    val preview = sellPreview
                     if (preview != null) add(
                         if (preview.extraTax > 0) "예상 양도소득세 +${InvestFmt.won(preview.extraTax, hide)} (22%, 올해 해외 주식 이익 ${InvestFmt.signed(preview.yearGain, hide)}, 250만 원 공제 뒤)"
                         else "양도소득세 없음: 올해 해외 주식 이익이 250만 원 공제 안이에요 (남은 공제 ${InvestFmt.won(preview.deductionLeft, hide)})"

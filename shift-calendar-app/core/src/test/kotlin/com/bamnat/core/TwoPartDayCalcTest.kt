@@ -282,6 +282,36 @@ class TwoPartDayCalcTest {
         assertTrue("한 구간 22~07", ShiftHealth.night(resolve(type(t(22), t(7)))))
     }
 
+    // ---- [RVH-58] extra work on a day of two parts ----
+
+    /**
+     * 2.0.0 [RVH-58] (갈래 H, 총괄 PC-109를 보다 함께): the gap is not the shift. 대타 15~17 in a 11~15·17~21 shop day was taken as
+     * inside the shift (its first start to its last end) and added no hours.
+     */
+    @Test fun workInTheGapCountsAndOverAPartOnlyTheTimeOutsideIt() {
+        val shop = type(t(11), t(21), t(15), 120)
+        fun extra(from: Int, to: Int) = ScheduleResolver(listOf(shop), listOf(WorkPattern.Rotation(day, listOf(1L))),
+            listOf(DayEntry(day, extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, t(from), t(to)))))).resolve(day).extras.single()
+        val gap = extra(15, 17)
+        assertEquals("브레이크 타임의 대타 2시간", 120, gap.minutes)
+        assertEquals(0, gap.insideShiftMinutes)
+        val over = extra(14, 18)
+        assertEquals("14~15·17~18은 근무 안, 15~17만", 120, over.minutes)
+        assertEquals(120, over.insideShiftMinutes)
+        assertEquals("시각은 적은 대로", at(14), over.from)
+        val inside = extra(12, 14)
+        assertEquals(0, inside.minutes)
+        assertEquals(120, inside.insideShiftMinutes)
+        val after = extra(20, 23)
+        assertEquals("21~23", 120, after.minutes)
+        assertEquals("한 구간에만 걸치면 한 구간 날처럼 그 밖만", at(21), after.from)
+        // A day of one part: as before (PAYX-54, SchoolingInShiftTest).
+        val one = ScheduleResolver(listOf(type(t(9), t(18))), listOf(WorkPattern.Rotation(day, listOf(1L))),
+            listOf(DayEntry(day, extras = listOf(com.bamnat.core.model.ExtraEntry(com.bamnat.core.model.ExtraKind.COVER_ID, t(16), t(20)))))).resolve(day).extras.single()
+        assertEquals(120, one.minutes)
+        assertEquals(at(18), one.from)
+    }
+
     @Test fun aSwappedDayKeepsTheGapOfTheKindItTakes() {
         val other = ShiftType(2, "가게", "가", 0xFF2E7D32, t(11), t(21), gapStart = t(15), gapMinutes = 120)
         val r = ScheduleResolver(listOf(type(t(9), t(18)), other), listOf(WorkPattern.Rotation(day, listOf(1L))),

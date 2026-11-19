@@ -152,10 +152,9 @@ class CommutePrefs private constructor(context: Context) {
         private const val K_OVERTIME = "overtime"
         private const val K_PLACE_NEXT = "place_next"
 
-        @Volatile private var instance: CommutePrefs? = null
+        /** One per app ([PerApp]: a test's new app reads its own settings, not an earlier test's). */
+        private val one = PerApp { CommutePrefs(it) }
 
-        fun get(context: Context): CommutePrefs = instance ?: synchronized(this) {
-            instance ?: CommutePrefs(context).also { instance = it }
-        }
+        fun get(context: Context): CommutePrefs = one.of(context)
     }
 }

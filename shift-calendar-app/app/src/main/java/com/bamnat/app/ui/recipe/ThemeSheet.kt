@@ -165,6 +165,8 @@ private fun ThemeSheetBody(r: Recipe, code: String, style: WorkStyle?, ver: Int,
     val own = code.isEmpty()
     // [THM-01] Mine kept to myself asks as others' do; mine in 장터 never.
     val needsAd = remember { c.wardrobe.needsAdFor(code, r.title) }
+    // 2.0.0 [RVM-60] RCP-14: the first days after install go on at once (no ad can come); one line says till when.
+    val quiet = remember { if (c.wardrobe.quietFor(code, r.title)) quietLine(c.wardrobe.quietDays()) else null }
     val all = remember(r) { com.bamnat.core.recipe.LookParts.of(r).map { it.id }.toSet() }
     // [J135-15] Worn on the app's scope: the look changing redraws the screens under this sheet, and a coroutine of the sheet would be
     // cancelled half way (the look on, 입는 중 never written). [TRY-01] Only the parts ticked; the rest stays the user's own.
@@ -214,7 +216,11 @@ private fun ThemeSheetBody(r: Recipe, code: String, style: WorkStyle?, ver: Int,
             onQuit = { note = "광고를 끝까지 봐야 입을 수 있어요" },
             onOffline = { note = "인터넷에 연결되면 다시 해 주세요" },
             onNoAd = { reason -> wear(picked) { c.wardrobe.counted(reason) } },
-        ) else Button(onClick = { wear(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+        ) else {
+            Button(onClick = { wear(picked) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(label) }
+            quiet?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+        }
     }
 }
 
@@ -246,7 +252,7 @@ fun ThemeExpiryAsk() {
         title = { Text("‘${worn.title}’ 기간이 끝났어요. 연장할까요?") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("광고를 끝까지 보면 30일 더 입어요. 아니요를 누르면 내 모양으로 돌아가고, 입었던 테마에서 다시 입을 수 있어요. 기록은 그대로예요",
+                Text("광고를 끝까지 보면 30일 더 입어요. 아니요는 내 모양으로 돌아가고, 내 서랍에서 다시 입을 수 있어요",
                     style = MaterialTheme.typography.bodyMedium)
                 note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
                 com.bamnat.app.ads.ThemeAdButton(
@@ -269,8 +275,12 @@ fun ThemeExpiryAsk() {
                 )
             }
         },
-        confirmButton = {},
-        dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }) { Text("아니요, 내 모양으로") } },
+        // 2.0.0 [RVM-62] 검토 MKT-12·U08a-11 (나중에는 창 밖을 눌러야만 됐어요): a visible 나중에, which says when it asks again.
+        confirmButton = {
+            TextButton(onClick = { shown = false; c.wardrobe.later(); said("내일 다시 물어볼게요. 그때까지 ‘${worn.title}’ 그대로예요") },
+                modifier = Modifier.heightIn(min = 48.dp)) { Text("나중에") }
+        },
+        dismissButton = { TextButton(onClick = { shown = false; c.appScope.launch { c.wardrobe.takeOff() } }, modifier = Modifier.heightIn(min = 48.dp)) { Text("아니요, 내 모양으로") } },
     )
 }
 

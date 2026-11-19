@@ -33,8 +33,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         WorkplaceEntity::class, StaffEntity::class, StaffWorkEntity::class, StaffPunchEntity::class, PayrollMonthEntity::class, PayrollLineEntity::class,
         // 1.38 [SLEEP-03][SLEEP-07] Version 31: 아침 한 장과 밤 소리.
         SleepCheckEntity::class, SleepEventEntity::class,
+        // 2.0.0 [RVK-46] Version 36: 일감 받은 기록.
+        JobPaymentEntity::class,
     ],
-    version = 35,
+    version = 36,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -79,7 +81,7 @@ abstract class AppDatabase : RoomDatabase() {
                 MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21,
                 MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25,
                 MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30,
-                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35,
+                MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36,
             )
 
         /**
@@ -521,6 +523,32 @@ abstract class AppDatabase : RoomDatabase() {
         val MIGRATION_34_35 = object : Migration(34, 35) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `memos` ADD COLUMN `remindWork` TEXT DEFAULT NULL")
+            }
+        }
+
+        /**
+         * Version 36 (2.0.0 갈래 K, 총괄이 준 번호) [RVK-46]: 가계부의 판 하나.
+         * - 검토 MONEY-07: a repeating 이체's '어디로' ([FixedCostEntity.toAccountId]); every repeating line of 35 goes nowhere set, as it did.
+         * - 검토 I06aa-05: a budget for one month only ([MoneyBudgetEntity.month], part of the key now). The table is made again, as SQLite
+         *   cannot change a key; every budget of 35 comes over as every month's (0).
+         * - 검토 U06a-15·I06aa-09: a category's icon and color; every category of 35 keeps the usual look.
+         * - 검토 T06a-05·I06ab-03: 줄 돈 ([ReceivableEntity.direction]); every receivable of 35 is money owed to the user (0), as it was.
+         * - 검토 MONEY-29·T06a-01·I06ab-04: a job's payments besides 선금·잔금 (new table `job_payments`); every job of 35 has none.
+         */
+        val MIGRATION_35_36 = object : Migration(35, 36) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `fixed_costs` ADD COLUMN `toAccountId` INTEGER DEFAULT NULL")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `money_budgets_36` (`category` TEXT NOT NULL, `amount` INTEGER NOT NULL, " +
+                    "`month` INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(`category`, `month`))")
+                db.execSQL("INSERT INTO `money_budgets_36` (`category`, `amount`, `month`) SELECT `category`, `amount`, 0 FROM `money_budgets`")
+                db.execSQL("DROP TABLE `money_budgets`")
+                db.execSQL("ALTER TABLE `money_budgets_36` RENAME TO `money_budgets`")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `icon` TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE `money_categories` ADD COLUMN `color` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE `receivables` ADD COLUMN `direction` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("CREATE TABLE IF NOT EXISTS `job_payments` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `jobId` INTEGER NOT NULL, " +
+                    "`epochDay` INTEGER NOT NULL, `amount` INTEGER NOT NULL, `label` TEXT NOT NULL, `note` TEXT NOT NULL)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_job_payments_jobId` ON `job_payments` (`jobId`)")
             }
         }
 

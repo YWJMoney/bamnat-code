@@ -95,7 +95,8 @@ fun ProCollectionCard(gate: Gate, settings: AppSettings, startFolded: Boolean = 
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         shown.forEachIndexed { i, f ->
             if (i > 0) HorizontalDivider()
-            ProFeatureRow(f, proStateWords(f, gate, settings), onOpen)
+            // 2.0.0 [RVO-27] PC-166 (조건 13): this kind's own features in its words (현장 '일정 PDF', not '근무표 PDF').
+            ProFeatureRow(com.bamnat.core.guide.FeatureRegistry.said(f, style), proStateWords(f, gate, settings), onOpen)
         }
         if (all && others.isNotEmpty()) {
             Text("다른 일에 쓰는 프로 기능", style = MaterialTheme.typography.titleSmall,

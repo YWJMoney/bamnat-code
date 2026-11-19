@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.outlined.Delete
 import com.bamnat.app.ui.theme.color
 import androidx.compose.material3.Badge
 import com.bamnat.app.ui.components.FilterChip
@@ -222,6 +223,32 @@ internal fun NavRow(title: String, subtitle: String?, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 2.0.0 [RVO-16] 검토 SET-09: a row that deletes for good, kept apart at the bottom of its page so it is not taken for an ordinary
+ * row: the bin and the words in the danger colour (the one red on the page, 조건 6), what it did last under it.
+ */
+@Composable
+internal fun DangerRow(title: String, subtitle: String?, enabled: Boolean = true, onClick: () -> Unit) {
+    // Nothing to delete (no links left): quiet, and not pressed.
+    val ink = if (enabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+    Row(
+        Modifier
+            .focusMark(title)
+            .fillMaxWidth()
+            .heightIn(min = ROW_MIN_HEIGHT)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Outlined.Delete, null, tint = ink)
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(said(title), style = MaterialTheme.typography.bodyLarge, color = ink)
+            subtitle?.let { Text(said(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
 /** [SET-01] One choice out of a few, as chips under a title. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -325,6 +352,10 @@ internal fun GroupRow(
 internal fun Note(text: String, modifier: Modifier = Modifier) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = modifier)
 }
+
+/** 2.0.0 [RVO-27] HQ-141: 업종 기념일 is for work at an 기관 (교대·일근, and a calendar from before kinds of work). */
+internal fun orgDaysFit(style: com.bamnat.core.work.WorkStyle?): Boolean =
+    style == null || style == com.bamnat.core.work.WorkStyle.SHIFT || style == com.bamnat.core.work.WorkStyle.DAY
 
 /**
  * [CYC-04] 1.38 업종 기념일: on or off, and which work's days (소방의 날, 경찰의 날…). Picking a public cycle of that 업종 sets

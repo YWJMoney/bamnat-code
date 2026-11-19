@@ -82,6 +82,17 @@ class AlarmGuardTest {
         assertEquals(listOf("알람 소리 크기"), AlarmGuard.problems(bad).map { it.title })
     }
 
+    /** 2.0.0 [RVO-16] 검토 SET-02·U11a-02: one verdict for 설정 첫 화면, 설정 › 알람 and 알람 점검. */
+    @Test fun oneVerdictSaysWhatMustBeFixedAndWhatWouldHelp() {
+        fun check(title: String, ok: Boolean?) = AlarmCheck(title, ok, "", "", Fix.Repair)
+        val v = com.bamnat.app.ui.diag.alarmVerdict(listOf(check("알림 허용", true), check("정확한 알람", false), check("배터리 최적화 제외", false),
+            check("백그라운드 제한 없음", false), check("삼성 절전 예외", null)))
+        assertEquals(listOf("정확한 알람", "백그라운드 제한 없음"), v.must.map { it.title })
+        assertEquals(listOf("배터리 최적화 제외"), v.better.map { it.title })
+        assertEquals("꼭 고칠 것 2 · 하면 더 좋은 것 1", v.counts)
+        assertTrue("알람 지킴이 tells of a part of what must be fixed", AlarmGuard.CRITICAL.all { it in com.bamnat.app.ui.diag.MUST_FIX })
+    }
+
     @Test fun silentAlarmVolumeIsSaidBeforeTheAlarm() {
         audio.setStreamVolume(AudioManager.STREAM_ALARM, 0, 0)
         look()

@@ -146,8 +146,8 @@ class Rvq3bScreenshotTest : ScreenshotBase() {
     private fun proLinks(): Screen.() -> Unit = launched {
         pro().invoke(this)
         settle()
-        // The integration put 약관·처리방침·사업자 정보 in one button's menu (조건 2); 결제·환불 문의 is its first line.
-        reveal(com.bamnat.app.ui.pro.PAY_PAPERS, exact = true)
+        // 2.0.0 [RVO-27] HQ-109: 결제·환불 문의 is the word button beside 구매 복원, the papers a quiet line under it.
+        reveal(com.bamnat.app.ui.pro.PAY_ASK, exact = true)
     }
 
     @Test fun leaderLight() = shoot("rvq3b_01_leader_light_100_fold", FOLDED, leader())

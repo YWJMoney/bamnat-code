@@ -42,9 +42,14 @@ class TurnSlipCheck(
     /** 맞아요 · P로 · 빼기. 빼기 is for a day only: a memo or a money line is not thrown away from here. */
     enum class Choice { KEEP, MOVE, CLEAR }
 
-    /** What [apply] changed, for 되돌리기: only these, all at once (조건 10). */
-    class Done internal constructor(internal val undo: List<suspend () -> Unit>) {
+    /** What [apply] changed, for 되돌리기: only these, all at once (조건 10); [missed] answers could not be done (told, not hidden). */
+    class Done internal constructor(internal val undo: List<suspend () -> Unit>, val missed: Int = 0) {
         val count: Int get() = undo.size
+
+        companion object {
+            /** Nothing changed. */
+            val NOTHING = Done(emptyList())
+        }
     }
 
     /** The lines to ask about, for changes written until [until] (the update to 2.0.0). */
@@ -88,34 +93,46 @@ class TurnSlipCheck(
      */
     suspend fun apply(choices: Map<Found, Choice>): Done {
         val undo = ArrayList<suspend () -> Unit>()
+        var missed = 0
         for ((found, choice) in choices) {
             if (choice == Choice.KEEP) continue
             val line = found.line
-            when (found.kind) {
-                TurnSlip.Kind.DAY -> {
-                    val repo = schedule(found.calendar)
-                    if (choice == Choice.MOVE) {
-                        val m = repo.moveDay(line.date, line.meant)
-                        undo += { repo.undoMove(m) }
-                    } else {
-                        val was = repo.updateDay(line.date) { DayEntry(line.date) }
-                        undo += { repo.restoreDay(line.date, was) }
-                    }
-                }
-                TurnSlip.Kind.MEMO -> if (choice == Choice.MOVE) {
-                    val memo = memos.get(found.memo?.id ?: continue) ?: continue
-                    memos.save(memo.copy(date = line.meant))
-                    undo += { memos.get(memo.id)?.let { memos.save(it.copy(date = memo.date)) } }
-                }
-                TurnSlip.Kind.MONEY -> if (choice == Choice.MOVE) {
-                    val book = money(found.calendar)
-                    val entry = found.entry ?: continue
-                    book.save(entry.copy(date = line.meant))
-                    undo += { book.save(entry) }
-                }
+            // One answer that cannot be done (the day changed meanwhile, storage full) does not stop the others; it is counted.
+            try {
+                step(found, choice, line, undo)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                missed++
             }
         }
-        return Done(undo)
+        return Done(undo, missed)
+    }
+
+    private suspend fun step(found: Found, choice: Choice, line: TurnSlip.Line, undo: MutableList<suspend () -> Unit>) {
+        when (found.kind) {
+            TurnSlip.Kind.DAY -> {
+                val repo = schedule(found.calendar)
+                if (choice == Choice.MOVE) {
+                    val m = repo.moveDay(line.date, line.meant)
+                    undo += { repo.undoMove(m) }
+                } else {
+                    val was = repo.updateDay(line.date) { DayEntry(line.date) }
+                    undo += { repo.restoreDay(line.date, was) }
+                }
+            }
+            TurnSlip.Kind.MEMO -> if (choice == Choice.MOVE) {
+                val memo = memos.get(found.memo?.id ?: return) ?: return
+                memos.save(memo.copy(date = line.meant))
+                undo += { memos.get(memo.id)?.let { memos.save(it.copy(date = memo.date)) } }
+            }
+            TurnSlip.Kind.MONEY -> if (choice == Choice.MOVE) {
+                val book = money(found.calendar)
+                val entry = found.entry ?: return
+                book.save(entry.copy(date = line.meant))
+                undo += { book.save(entry) }
+            }
+        }
     }
 
     /** [apply] undone: what it changed, back as it was, and nothing else. */
