@@ -272,7 +272,7 @@ private fun ShopGlanceCard(place: com.bamnat.core.boss.Workplace, now: YearMonth
                 val first = YearMonth.from(today).minusMonths(3)
                 val ledgers = (0..4).associate { i -> first.plusMonths(i.toLong()).let { m -> m to store.ledgerOf(place, m) } }
                 val done = Filed.all(context)
-                com.bamnat.core.boss.BossFilings.upcoming(place, staff, today) { m -> ledgers[m] ?: PayrollLedger.month(place, staff, m, emptyList()) }
+                com.bamnat.core.boss.BossFilings.upcoming(place, staff, today, { m -> ledgers[m] ?: PayrollLedger.month(place, staff, m, emptyList()) })
                     .filter { it.kind != com.bamnat.core.boss.BossFilings.Kind.PAY && it.key !in done }.map { ManageDesk.DueSoon(it.key, it.date, it.title) }
             }
         }.getOrDefault(emptyList())
