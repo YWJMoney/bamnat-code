@@ -552,7 +552,8 @@ function adminApp(L, BUILD, M) {
     health: { days: "healthDays" },
     money: { days: "moneyDays" },
     // 2.0.0 [RVA-56] 장터 보기(#/recipes?tab=health · tab=waiting): 운영 장부·출시 줄에서 바로 그 보기로.
-    recipes: { tab: "recipeTab" },
+    // 2.0.0 [RVA-65] 작품 하나 보기(#/recipes?tab=one&code=…): 개선 신호 '입은 뒤'가 그 작품으로 바로.
+    recipes: { tab: "recipeTab", code: "recipeCode" },
   };
   function paramsOf(name) {
     if (name === "audit") return { ...S.audit };
@@ -571,7 +572,7 @@ function adminApp(L, BUILD, M) {
       S[field] = field === "metricDays" ? ([7, 28, 90].includes(Number(p[k])) ? Number(p[k]) : 28) : p[k];
     }
     // [RVA-56] 이상한 장터 보기나 작품 코드 없는 '하나만 보기'는 신고됨으로.
-    if (route.name === "recipes" && Object.hasOwn(p, "tab") && (S.recipeTab === "one" || !/^[a-z]{3,12}$/.test(S.recipeTab ?? ""))) S.recipeTab = "flagged";
+    if (route.name === "recipes" && Object.hasOwn(p, "tab") && ((S.recipeTab === "one" && !/^[A-Za-z0-9_-]{3,40}$/.test(S.recipeCode ?? "")) || !/^[a-z]{3,12}$/.test(S.recipeTab ?? ""))) S.recipeTab = "flagged";
   }
   /** Writes the filters into the address without a new history step or a reload. */
   function syncUrl() {

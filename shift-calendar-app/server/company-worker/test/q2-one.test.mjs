@@ -271,7 +271,7 @@ test("[RVA-56] 장터 건강: CI가 묶은 작품 사진 대조·옛 앱 열기 
   const { readFile } = await import("node:fs/promises");
   const app = await readFile(new URL("../src/admin-app.js", import.meta.url), "utf8") + await readFile(new URL("../src/admin/views/market.js", import.meta.url), "utf8");
   assert.match(app, /\["health", "장터 건강"\]/);
-  assert.match(app, /recipes: \{ tab: "recipeTab" \}/);
+  assert.match(app, /recipes: \{ tab: "recipeTab", code: "recipeCode" \}/, "[RVA-65] 작품 하나 보기 주소도");
   const ci = await readFile(new URL("../../../../.github/workflows/android.yml", import.meta.url), "utf8");
   assert.match(ci, /tools\/market_health\.py --shots app\/build\/market-compare\.json/);
 });
