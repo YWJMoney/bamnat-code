@@ -1,6 +1,6 @@
 package com.bamnat.core
 
-import com.bamnat.core.boss.Payroll
+import com.bamnat.core.boss.PayrollLedger
 import com.bamnat.core.boss.Workplace
 import com.bamnat.core.boss.StaffMember
 import com.bamnat.core.work.StaffShift
@@ -21,19 +21,19 @@ class RvjYoungStaffTest {
 
     @Test fun theMonthsFirstDayDecidesWhoIsUnderEighteen() {
         val month = YearMonth.of(2026, 11)
-        assertTrue("2010년생은 18세 미만", Payroll.youngIn(staff(LocalDate.of(2010, 3, 1)), month))
-        assertTrue("만 18세 생일이 달 가운데면 그 달 1일에는 18세 미만", Payroll.youngIn(staff(LocalDate.of(2008, 11, 15)), month))
-        assertFalse("만 18세 생일이 1일이면 18세", Payroll.youngIn(staff(LocalDate.of(2008, 11, 1)), month))
-        assertFalse("생년월일이 없으면 성인으로", Payroll.youngIn(staff(null), month))
-        assertFalse("달을 모르면 성인으로", Payroll.youngIn(staff(LocalDate.of(2010, 3, 1)), null))
+        assertTrue("2010년생은 18세 미만", PayrollLedger.youngIn(staff(LocalDate.of(2010, 3, 1)), month))
+        assertTrue("만 18세 생일이 달 가운데면 그 달 1일에는 18세 미만", PayrollLedger.youngIn(staff(LocalDate.of(2008, 11, 15)), month))
+        assertFalse("만 18세 생일이 1일이면 18세", PayrollLedger.youngIn(staff(LocalDate.of(2008, 11, 1)), month))
+        assertFalse("생년월일이 없으면 성인으로", PayrollLedger.youngIn(staff(null), month))
+        assertFalse("달을 모르면 성인으로", PayrollLedger.youngIn(staff(LocalDate.of(2010, 3, 1)), null))
     }
 
     @Test fun theLimitsThePayIsCountedWithFollowTheAge() {
         val month = YearMonth.of(2026, 11)
-        val young = Payroll.profile(place, staff(LocalDate.of(2010, 3, 1)), month)
+        val young = PayrollLedger.profile(place, staff(LocalDate.of(2010, 3, 1)), month)
         assertEquals(7 * 60, young.dailyLimitMinutes!!)
         assertEquals(35 * 60, young.weeklyLimitMinutes!!)
-        val adult = Payroll.profile(place, staff(LocalDate.of(2000, 3, 1)), month)
+        val adult = PayrollLedger.profile(place, staff(LocalDate.of(2000, 3, 1)), month)
         assertEquals(8 * 60, adult.dailyLimitMinutes!!)
         assertEquals(40 * 60, adult.weeklyLimitMinutes!!)
     }
