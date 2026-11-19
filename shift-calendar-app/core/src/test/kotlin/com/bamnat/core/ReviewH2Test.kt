@@ -156,4 +156,23 @@ class ReviewH2Test {
         }
         assertTrue("근무" !in r.lines.first().said(WorkStyle.INVEST))
     }
+
+    /**
+     * 2.0.0 검토 PC-200 (조건 13·4): 투자를 하지 않는 교대 근무자에게 투자 줄이 보이지 않아요. 투자 달력을 따로 둔 사람에게만 '다른 달력에 새로 생긴
+     * 것'으로 보여요. 날짜 문제 줄은 설정 이름('달 넘길 때', '움직임 끄기')을 몰라도 읽히게 짧아요.
+     */
+    @Test fun whatsNew200TellsInvestingOnlyToThoseWhoKeepAnInvestingCalendar() {
+        val r = WhatsNew.releases.first()
+        val shift = WhatsNew.forStyle(listOf(r), WorkStyle.SHIFT)
+        assertTrue(shift.others.any { it.featureId == "invest.holdingShot" })
+        assertEquals(emptyList<WhatsNew.Line>(), shift.othersFor(emptySet()))
+        assertEquals(emptyList<WhatsNew.Line>(), shift.othersFor(setOf(WorkStyle.SHIFT, WorkStyle.DAY)))
+        assertEquals(listOf("invest.holdingShot", "invest.story"), shift.othersFor(setOf(WorkStyle.INVEST)).map { it.featureId })
+        val invest = WhatsNew.forStyle(listOf(r), WorkStyle.INVEST)
+        assertTrue((invest.mine.flatMap { it.lines } + invest.moreMine).any { it.featureId == "invest.story" })
+        for (style in WorkStyle.entries) {
+            val first = r.lines.first().said(style)
+            assertTrue("$style: $first", first.length <= 70 && "달 넘길 때" !in first && "움직임 끄기" !in first)
+        }
+    }
 }

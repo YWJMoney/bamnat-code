@@ -52,8 +52,11 @@ fun WhatsNewDialog(
     /** 2.0.0 [RVH-64] 검토 PC-72 Lines written in 1.36.1~1.39.0 that may be on another day than the one pressed; 0 for none. */
     slip: Int = 0,
     onSlip: () -> Unit = {},
+    /** 2.0.0 검토 PC-200 (조건 13) The kinds of work on the user's other calendars: only their news is told below one's own. */
+    also: Set<WorkStyle> = emptySet(),
 ) {
     val split = remember(releases, style) { WhatsNew.forStyle(releases, style) }
+    val others = remember(split, also) { split.othersFor(also) }
     var more by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -107,17 +110,18 @@ fun WhatsNewDialog(
                 }
                 if (split.mine.isEmpty() && releases.isNotEmpty()) Text("이번에는 다른 일 하시는 분께 새로 생긴 것이 많아요", style = MaterialTheme.typography.bodyMedium)
                 // [RVH-40] 검토 U02-08 The rest of one's own and the other kinds' news, folded: open only when asked.
-                val folded = split.moreMine.size + split.others.size
+                val folded = split.moreMine.size + others.size
                 if (folded > 0) {
                     TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
                         Text(if (more) "접기" else "더 보기 · ${folded}줄")
                     }
                     if (more) {
                         split.moreMine.forEach { NewLine(it, style, onOpen) }
-                        if (split.others.isNotEmpty()) {
-                            Text("다른 일 하시는 분께", style = MaterialTheme.typography.titleSmall)
-                            // Not this kind's features: told, not opened from here.
-                            split.others.forEach { NewLine(it, null, null) }
+                        if (others.isNotEmpty()) {
+                            // 검토 PC-200: only the kinds the user keeps on another calendar (a shift worker without one saw investing here).
+                            Text("다른 달력에 새로 생긴 것", style = MaterialTheme.typography.titleSmall)
+                            // Not this calendar's features: told, not opened from here.
+                            others.forEach { NewLine(it, null, null) }
                         }
                     }
                 }

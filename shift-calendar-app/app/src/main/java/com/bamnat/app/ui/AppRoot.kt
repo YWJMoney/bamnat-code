@@ -1031,6 +1031,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
         else com.bamnat.app.ui.guide.WhatsNewDialog(
             releases = whatsNew.value,
             style = settingsNow.workStyle,
+            // 검토 PC-200: news of another kind of work only when the user keeps a calendar of that kind.
+            also = calendarList.filterNot { it.isExample }.mapNotNull { container.calendars.styleOf(it.id, settingsNow.workStyle) }.toSet(),
             slip = slipLine,
             onSlip = { closeNew(); com.bamnat.app.ui.calendar.TurnSlipAsk.show() },
             recommendOff = recommendOff,
