@@ -209,7 +209,9 @@ data class WidgetData(
                 memos = if (settings.widgetMemo) memoLines(container, today) else emptyMap(),
                 teams = teamsToday(container, snapshot, today),
                 nextChange = com.bamnat.core.schedule.ShiftEvents.nextChange(soon, now),
-                countdown = com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
+                // 2.0.0 [RVH-76] 검토 T30-04: a field worker's countdown is their 일감, which never were shifts.
+                countdown = (if (settings.workStyle == com.bamnat.core.work.WorkStyle.FIELD) com.bamnat.core.schedule.ShiftEvents.jobCountdown(book?.jobs.orEmpty(), now) else null)
+                    ?: com.bamnat.core.schedule.ShiftEvents.countdown(soon, now),
                 nextOff = if (snapshot.isEmpty) null else com.bamnat.core.schedule.ShiftEvents.nextOff(soon, today),
                 coverTeams = coverToday(container, snapshot, today, settings),
                 memoDays = if (settings.widgetMemo) memoDays(container, today) else emptySet(),
