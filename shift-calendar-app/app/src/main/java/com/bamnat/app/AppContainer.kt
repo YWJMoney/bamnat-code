@@ -247,8 +247,11 @@ class AppContainer(context: Context) {
     /** 1.39 [SETUP-20] 첫 설정 누른 횟수 for 사용 통계 (처리방침 3.12), counted from the first open of a new install. */
     val setupTaps = com.bamnat.app.diag.SetupTapStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.SetupTapStats.policyAllows() })
+    /** 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 for 사용 통계 (처리방침 3.14 문장표 6, stats.crash); the crash handler counts through it. */
+    val crashStats = com.bamnat.app.diag.CrashStats(context.applicationContext).also { com.bamnat.app.diag.CrashStats.current = it }
     val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats, setupTaps = setupTaps,
-        style = { settingsRepository.current.workStyle?.name }) // 1.39 [OBS2-08] 유형별 흐름 (stats.kind)
+        style = { settingsRepository.current.workStyle?.name }, // 1.39 [OBS2-08] 유형별 흐름 (stats.kind)
+        crashes = crashStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
         soonMinutes = { settingsRepository.current.alarmSoonMinutes }, guard = { settingsRepository.current.alarmGuard })
@@ -326,7 +329,11 @@ class AppContainer(context: Context) {
         shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
         // [ITEM-03] 1.30 BC (결정 D102): 회사 공통 정액 goes to the 광장 while the plaza.fixed_amount row is on.
         fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
-        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }) }
+        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) },
+        // 2.0.0 [RVL-80] (처리방침 3.14 문장표 9) The roster codes go along once share.duty_codes is on; received ones are kept.
+        dutyCodes = { dutyCodes.of(com.bamnat.app.data.PersonalCalendar.MAIN) },
+        sendCodes = { flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_DUTY_CODES) },
+        learnCode = { code, cell -> dutyCodes.learn(com.bamnat.app.data.PersonalCalendar.MAIN, code, cell) }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
@@ -420,7 +427,10 @@ class AppContainer(context: Context) {
                     shared = { keys -> keys.forEach { runCatching { profiles.mark(id, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
                     rosterMonthly = { false },
                     fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
-                    teamRoster = { teams.get(id) }).also { made = Triple(schedule, pay, it) }
+                    teamRoster = { teams.get(id) },
+                    dutyCodes = { dutyCodes.of(id) },
+                    sendCodes = { flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_DUTY_CODES) },
+                    learnCode = { code, cell -> dutyCodes.learn(id, code, cell) }).also { made = Triple(schedule, pay, it) }
         }
         return com.bamnat.app.company.CompanyScope(id,
             com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore),
@@ -641,6 +651,10 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
         // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
         com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
+        // 2.0.0 [RVL-90]: 앱이 멈춘 곳 횟수 from 처리방침 3.14's 30-day date on (검토 I12c-03, 문장표 6), only with the yes to 사용 통계.
+        com.bamnat.app.diag.CrashStats.allowed = {
+            settingsRepository.current.shareUsageStats && flags.on(com.bamnat.core.flags.FlagCatalog.STATS_CRASH)
+        }
         // 2.0.0 [RVM-21] 장터 카드 글꼴은 처리방침 3.13의 7일 줄(PolicyConsent.REVISION_EFFECTIVE, 서버 시각)부터 공개 자료에서(그 전에는 휴대폰 글꼴).
         com.bamnat.app.ui.recipe.MarketFonts.allowed = { flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
@@ -748,6 +762,8 @@ class AppContainer(context: Context) {
         // [R200-03] And once a day near a subscription's end even when the app is not opened.
         runCatching { com.bamnat.app.tier.ProRecheckJob.schedule(appContext, this@AppContainer) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
+        // 2.0.0 [RVL-90] The 응답 없음 Android kept since the last look, after the rows above are fresh (stats.crash, 처리방침 3.14).
+        runCatching { crashStats.readExits(appContext) }
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
             // [FLAG-10] The developer's rest is the usage.stats row; [FLAG-16] stats.more adds the rows on.

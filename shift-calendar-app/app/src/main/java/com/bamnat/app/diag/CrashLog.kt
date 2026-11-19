@@ -58,6 +58,8 @@ object CrashLog {
         // 1.32.1 [STAB-10] The stop on the 멈춤 관찰 trail too, with the memory then, written before the process ends.
         runCatching { Trail.addNow(com.bamnat.core.diag.StopTrail.Kind.CRASH, "sig=${signature(error)} ${Trail.memoryNow()}") }
         runCatching { noticeOnce(app, signature(error), Today.millis()) }
+        // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 for 사용 통계, only once `stats.crash` is on (처리방침 3.14 문장표 6).
+        runCatching { CrashStats.current?.record(com.bamnat.core.stats.CrashMarks.CRASH, com.bamnat.core.stats.CrashMarks.at(error), now = true) }
         before?.uncaughtException(thread, error)
     }
 

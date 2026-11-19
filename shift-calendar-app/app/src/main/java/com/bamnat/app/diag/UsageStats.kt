@@ -35,6 +35,8 @@ class UsageStats(
     private val installDay: () -> Long? = { installDayOf(context, zone()) },
     /** 1.39 [OBS2-08] The kind of work chosen (WorkStyle name) for `style`, sent only while [kindAllowed]; null before setup. */
     private val style: () -> String? = { null },
+    /** 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 (stats.crash, 처리방침 3.14 문장표 6); null sends none. */
+    private val crashes: CrashStats? = null,
 ) : TelemetrySink {
     private val prefs = context.applicationContext.getSharedPreferences("usage_stats", Context.MODE_PRIVATE)
     private val lock = Any()
@@ -111,6 +113,7 @@ class UsageStats(
         // 1.39 [OBS2-08] 유형별 흐름과 기능과 머묾, each behind its own row of 처리방침 3.12.
         if (kindAllowed()) style()?.let { put("style", it) }
         if (keepAllowed()) keepPayload()?.let { put("keep", it) }
+        crashes?.payload()?.let { put("crash", it) } // 2.0.0 [RVL-90], behind its own row of 처리방침 3.14
     }
 
     /** 1.39 [OBS2-08] `keep: [{day, win, events}]` for the marks waiting, or null when none. */
@@ -128,6 +131,7 @@ class UsageStats(
         startup?.clear() // [PERF-16]
         lookups?.clear() // [STAT-08]
         setupTaps?.clear() // 1.39 [SETUP-20]
+        crashes?.clear() // 2.0.0 [RVL-90]
     }
 
     /** At start: without a yes, anything still kept is dropped (a cheap look when there is nothing). */
@@ -161,6 +165,7 @@ class UsageStats(
         startup?.sent() // [PERF-16]
         lookups?.sent() // [STAT-08]
         setupTaps?.sent() // 1.39 [SETUP-20]
+        crashes?.sent() // 2.0.0 [RVL-90]
         true
     }
 

@@ -36,6 +36,8 @@ object FlagCatalog {
     const val STATS_KEEP = "stats.keep"
     /** 1.40 [DISC-06]: the four daily totals of '안 써 본 기능 알려 주기' (보임·열어 봄·나중에·그만 보기, 기능 이름 없이), once 처리방침 3.13 names them. */
     const val STATS_DISC = "stats.disc"
+    /** 2.0.0 [RVL-90] (검토 I12c-03, 처리방침 3.14 문장표 6): 앱이 멈춘 곳(밤낮 코드 위 다섯 줄·줄인 값·종류)의 하루 횟수, 사용 통계를 켠 분만. */
+    const val STATS_CRASH = "stats.crash"
     /** 1.40 [DISC-06]: the 처리방침 판 that first names the four totals (사용자 결정 2026-11-11 '합계 4가지만'). */
     const val DISCOVER_POLICY = "3.13"
     /** 1.32.1 [STAB-10]: 멈춤 관찰 기록 in the 점검 기록 of an inquiry, once 처리방침 3.6 names it. */
@@ -48,6 +50,11 @@ object FlagCatalog {
     const val SHARE_WORD = "share.word"
     /** 2.0.0 [RVG-38] The 처리방침 판 that would name the link's word (총괄 11-13: 3.14 범위 카드, 답이 '넣지 않기'면 보내는 쪽을 걷어 내요). */
     const val SHARE_WORD_POLICY = "3.14"
+    /**
+     * 2.0.0 [RVL-80] 처리방침 3.14 문장표 9: '회사 설정 보내기' also carries the roster's codes as this calendar reads them (the code
+     * letters and the company's kind-of-work names, 20 at most; no person, no date), so a coworker's roster photo reads the same.
+     */
+    const val SHARE_DUTY_CODES = "share.duty_codes"
     /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
@@ -318,6 +325,15 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
+    val SHARE_DUTY_CODES_FLAG = Flag(
+        SHARE_DUTY_CODES, "회사 설정 파일에 근무표 약어 담기",
+        what = "‘회사 설정 보내기’를 누를 때 이 달력이 근무표를 읽는 약어(약어 글자와 그 회사의 근무 이름, 20개까지)를 함께 담아요. 받은 동료의 근무표 사진이 첫 달부터 같은 약어로 읽혀요. 사람 이름·날짜는 담지 않아요.",
+        whyOff = "회사 설정 파일에 새로 담기는 칸이라 처리방침 3.14의 30일 줄 시행일부터 서버 시각으로 저절로 켜져요. 그 전에는 담지 않아요(받은 파일의 약어를 읽는 것은 그 전에도 해요).",
+        basis = Basis(policy = SHARE_WORD_POLICY, requirement = "RVL-80", note = "2.0.0 검토 I07bc-02, 처리방침 3.14 문장표 9"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
     /**
      * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
      * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
@@ -540,6 +556,20 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "1.40.0", group = FlagGroup.STATS,
     )
 
+    /**
+     * 2.0.0 [RVL-90] (검토 I12c-03 '멈춤 신호를 문의 없이 개발로', 처리방침 3.14 문장표 6, 1-9항 ⑩): 앱이 닫히거나 응답이 없었을 때 그 일이
+     * 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류, 그날 횟수(하루 5가지까지)를 사용 통계에 실어요. 오류 글·휴대폰 모델·설치 번호·
+     * 시각은 없어요. 3.14의 30일 줄 시행일에 서버 시각으로 저절로 켜지고, 그 전에는 세지도 보내지도 않아요.
+     */
+    val STATS_CRASH_FLAG = Flag(
+        STATS_CRASH, "앱이 멈춘 곳 횟수 보내기",
+        what = "사용 통계를 켠 휴대폰이 앱이 닫히거나 응답이 없었던 날, 그 일이 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류(닫힘·응답 없음), 그날 횟수를 하루 5가지까지 보내요. 관리자 앱 › 숫자 › 개선 신호에 새 판에서 생긴 멈춤이 떠요. 오류 글·휴대폰 모델·설치 번호·시각은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.14(1-9항 ⑩)의 30일 줄 시행일에 서버 시각으로 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "$SHARE_WORD_POLICY 1-9항", requirement = "RVL-90", note = "2.0.0 검토 I12c-03, 처리방침 3.14 문장표 6"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
     /** [FLAG-10] The six old 기능 스위치, on by default; the server turns one off to rest it. */
     /**
      * 1.39 [CARE-01~06] (사용자 2026-11-07 "악성 유저는 차단을 통해 몇일 의견제시나 커뮤니티 사용중단, 그전에 미리 경고도 부드럽게", "2회는 너무
@@ -593,9 +623,9 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, SHARE_DUTY_CODES_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_CRASH_FLAG, CARD_FONTS_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

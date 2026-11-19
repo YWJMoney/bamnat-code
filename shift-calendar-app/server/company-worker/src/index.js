@@ -407,6 +407,7 @@ export async function prune(env, now) {
     stmt(env, "DELETE FROM usage_startup WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AO 1.28 [PERF-17]
     stmt(env, "DELETE FROM usage_kinds WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
     stmt(env, "DELETE FROM usage_keep WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // 1.39 [OBS2-08]
+    stmt(env, "DELETE FROM usage_crash WHERE day < ?", kstDay(now - USAGE.crashDays * DAY)), // 2.0.0 [RVL-90] 90일
     stmt(env, "DELETE FROM photo_wrong WHERE day < ?", kstDay(now - USAGE.keepDays * DAY)), // AQ 1.29 [PHOTO-10]
     // 1.36 [INQ-07] A 결제·환불 record keeps its photos (a receipt, a charge) with its words.
     stmt(env, "DELETE FROM inquiry_photos WHERE inquiry_id IN (SELECT id FROM inquiries WHERE status = 'closed' AND billing_at IS NULL AND updated_at < ?)",
@@ -963,6 +964,9 @@ const SCHEMA = [
     PRIMARY KEY (day, app, style, event))`,
   `CREATE TABLE IF NOT EXISTS usage_keep (day TEXT NOT NULL, app TEXT NOT NULL, event TEXT NOT NULL, win INTEGER NOT NULL, phones INTEGER NOT NULL,
     PRIMARY KEY (day, app, event, win))`,
+  // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수(처리방침 3.14 1-9항 ⑩, 깃발 stats.crash): 날짜·판·종류·위치별 휴대폰 수와 횟수만, 90일.
+  `CREATE TABLE IF NOT EXISTS usage_crash (day TEXT NOT NULL, app TEXT NOT NULL, kind TEXT NOT NULL, sig TEXT NOT NULL, at TEXT NOT NULL,
+    phones INTEGER NOT NULL, total INTEGER NOT NULL, PRIMARY KEY (day, app, kind, sig))`,
 ];
 
 /** Columns added after a server was first deployed; adding one that is already there is skipped. */
