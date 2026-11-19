@@ -856,6 +856,9 @@ async function teamTakeDown(request, env, kind, id) {
   if (record) await kvDel(env, k.main(id));
   // 2.0.0 [RVQ-25] The round's summary (everyone's requests or swaps) goes with it.
   if (kind === "a" || kind === "w") await kvDel(env, roundKey(kind === "a" ? "ask" : "swap", id));
+  // 2.0.0 [RVQ-57] A room round's room is emptied too.
+  const room = (kind === "a" || kind === "w") && record ? roomOf(env, kind === "a" ? "ask" : "swap", id, record) : null;
+  if (room) await roomCall(room, { op: "drop" });
   await kvDel(env, `report:${kind}:${id}`);
   return new Response(null, { status: 204 });
 }
@@ -1128,6 +1131,93 @@ async function roundNote(env, kind, id, record, changed, base = null) {
   return parts;
 }
 
+// ---- 2.0.0 [RVQ-57] 검토 I22c-02: 팀 방(Durable Object) ----
+// A round made while the share server has the TeamRound Durable Object (binding TEAM_ROUND) keeps its members' own parts in that one
+// room instead of a KV key each. A press runs there one at a time: two members taking a day's last seat at once cannot both get it
+// (on KV the last seat could go twice and the leader's app ordered by time), and a reply cannot write over a cancel of the same ask.
+// Every page reads the room once (no summary key, no settling). Rounds made before, or while there is no binding, stay on KV as they
+// were. The room keeps the same things the member keys kept (days and kinds asked, a line, when, read or not) and forgets them at the
+// round's end (an alarm), when the leader deletes it, or when the operator takes it down. Nothing new is kept.
+const roomOf = (env, kind, id, record) => (record?.room && env.TEAM_ROUND ? env.TEAM_ROUND.get(env.TEAM_ROUND.idFromName(`${kind}:${id}`)) : null);
+
+async function roomCall(room, body) {
+  const res = await room.fetch("https://team-round/", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+  if (!res.ok) throw new Error(`team round ${res.status}`);
+  return res.json();
+}
+
+/** The room's members' parts as the pages need them ({i: part}), from each member's own value. */
+const partsOf = (values, partOf) => {
+  const parts = {};
+  for (const [i, v] of Object.entries(values ?? {})) {
+    const part = partOf(v);
+    if (part) parts[i] = part;
+  }
+  return parts;
+};
+
+/** One round's room: {m:<i>: the member's own value}. Each request runs alone against what the room holds. */
+export class TeamRound {
+  constructor(state) {
+    this.state = state;
+    this.storage = state.storage;
+  }
+
+  async values() {
+    const out = {};
+    for (const [k, v] of await this.storage.list({ prefix: "m:" })) out[k.slice(2)] = v;
+    return out;
+  }
+
+  async keep(values, changed, expiresAt) {
+    if (!changed) return;
+    const entries = {};
+    for (const [i, v] of Object.entries(changed)) {
+      values[i] = v;
+      entries[`m:${i}`] = v;
+    }
+    await this.storage.put(entries);
+    if (expiresAt && (await this.storage.getAlarm()) == null) await this.storage.setAlarm(Date.parse(expiresAt) + 60 * 1000);
+  }
+
+  async fetch(request) {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: "bad_json" }, 400); }
+    if (b?.op === "drop") {
+      await this.storage.deleteAll();
+      await this.storage.deleteAlarm();
+      return json({ ok: true });
+    }
+    const values = await this.values();
+    const expiresAt = b?.record?.expiresAt ?? b?.expiresAt ?? null;
+    if (b?.op === "all") return json({ values });
+    if (b?.op === "seen") {
+      if (!values[b.i]?.seenAt) await this.keep(values, { [b.i]: { ...(values[b.i] ?? {}), seenAt: b.at } }, expiresAt);
+      return json({ values });
+    }
+    if (b?.op === "ask") {
+      const out = askApply(b.record, b.m, values, b.input);
+      await this.keep(values, out.changed, expiresAt);
+      return json({ said: out.said, values });
+    }
+    if (b?.op === "swap") {
+      const out = swapApply(b.record, b.p, values, b.input, b.now);
+      await this.keep(values, out.changed, expiresAt);
+      return json({ said: out.said, status: out.status, values });
+    }
+    if (b?.op === "decide") {
+      const changed = swapDecide(values, b.decide, b.now);
+      await this.keep(values, changed, expiresAt);
+      return json({ values });
+    }
+    return json({ error: "op" }, 400);
+  }
+
+  async alarm() {
+    await this.storage.deleteAll();
+  }
+}
+
 const askPart = (v) => (v.wishes?.length ? v.wishes.map(({ d, k, s, at }) => ({ d, k, ...(s != null ? { s } : {}), at })) : null);
 const askWishesOf = (parts) => Object.entries(parts).flatMap(([m, list]) => list.map((w) => ({ m: Number(m), ...w })));
 const swapPart = (v) => (v.asks?.length ? v.asks.map(({ d, q, state }) => ({ d, q, state })) : null);
@@ -1198,7 +1288,8 @@ async function askCreate(request, env, url) {
     const l = leave[i];
     return { name, key: randomId(22), ...(typeof l === "number" && Number.isFinite(l) && l >= 0 && l <= 60 ? { leave: Math.round(l * 100) / 100 } : {}) };
   });
-  const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false };
+  // 2.0.0 [RVQ-57]: with the TeamRound binding, a new round's requests live in its room.
+  const record = { team, month, rules, shifts, members, tokenHash: await sha256(token), expiresAt: expiry(days), closed: false, ...(env.TEAM_ROUND ? { room: true } : {}) };
   await put(env, askKey(id), record);
   for (let i = 0; i < members.length; i++) await put(env, askMemberKey(members[i].key), { id, m: i, expiresAt: record.expiresAt });
   count(env, "asks");
@@ -1218,8 +1309,10 @@ async function askAll(env, id, record) {
   const wishes = [];
   const notes = [];
   const seen = [];
+  const room = roomOf(env, "ask", id, record);
+  const values = room ? (await roomCall(room, { op: "all" })).values : null;
   for (let m = 0; m < record.members.length; m++) {
-    const mine = await env.SHARES.get(askWishKey(id, m), "json");
+    const mine = values ? values[m] ?? null : await env.SHARES.get(askWishKey(id, m), "json");
     if (!mine) continue;
     for (const w of mine.wishes ?? []) wishes.push({ m, ...w });
     if (mine.note) notes.push({ m, note: mine.note });
@@ -1252,8 +1345,10 @@ async function askChange(request, env, id) {
 async function askDelete(request, env, id) {
   const record = await askOwned(request, env, id);
   if (record instanceof Response) return record;
+  const room = roomOf(env, "ask", id, record);
+  if (room) await roomCall(room, { op: "drop" });
   for (let m = 0; m < record.members.length; m++) {
-    await kvDel(env, askWishKey(id, m));
+    if (!room) await kvDel(env, askWishKey(id, m));
     await kvDel(env, askMemberKey(record.members[m].key));
   }
   await kvDel(env, roundKey("ask", id));
@@ -1272,55 +1367,85 @@ async function askFind(env, key) {
 const askGone = () => html(page("링크가 없어요", `<p class="empty">이 신청 링크는 끝났거나 리더가 지웠어요. 새 링크는 리더에게 받아 주세요.</p>${goneNext("", "request")}`), 404);
 const askOpen = (record) => !record.closed && !(record.rules.closesAt != null && Date.now() >= record.rules.closesAt);
 
+/**
+ * A member's press on a 신청 round, as one step on what is known: [values] {i: member's own value} (everyone's when it is a pick,
+ * else at least mine). Returns what to say and the member's new value ({[m]: value}) when it changed. The room runs it alone; on KV
+ * the members' keys are read just before.
+ */
+function askApply(record, m, values, input) {
+  const mine = { wishes: [], note: "", ...(values[m] ?? {}) };
+  mine.wishes = [...(mine.wishes ?? [])];
+  let said;
+  if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
+  else if (input.what === "note") {
+    const note = cleanText(input.note ?? "", LIMITS.askNote);
+    if (note == null) said = { bad: `한 줄은 ${LIMITS.askNote}자까지예요` };
+    else { mine.note = note; said = { ok: note ? "한 줄을 남겼어요" : "한 줄을 지웠어요" }; }
+  } else {
+    const d = String(input.d ?? "");
+    const k = String(input.k ?? "");
+    if (k === "none") {
+      mine.wishes = mine.wishes.filter((w) => w.d !== d);
+      said = { ok: `${d.slice(5).replace("-", "/")} 신청을 지웠어요` };
+    } else if (!(k in ASK_KINDS)) said = { bad: "고를 수 없는 신청이에요" };
+    else {
+      const s = k === "SHIFT" ? Number.parseInt(input.s ?? "", 10) : null;
+      if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
+      else {
+        // The 선착순 check reads every member's own value (the truth), not the summary.
+        const all = Object.entries(values).flatMap(([i, v]) => (v?.wishes ?? []).map((w) => ({ m: Number(i), ...w })));
+        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
+        if (no) said = { bad: no };
+        else {
+          const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
+          mine.wishes = [...mine.wishes.filter((w) => w.d !== d), { d, k, ...(s != null ? { s } : {}), at }].sort((x, y) => x.d.localeCompare(y.d)).slice(0, 31);
+          said = { ok: `${d.slice(5).replace("-", "/")} ${k === "SHIFT" ? record.shifts.find((x) => x.id === s).label : ASK_KINDS[k][0]} 신청했어요` };
+        }
+      }
+    }
+  }
+  return { said, changed: said.ok ? { [m]: mine } : null };
+}
+
 async function askPost(request, env, key, what) {
   const found = await askFind(env, key);
   if (!found) return askGone();
   if (!(await allow(env, request, "ap", LIMITS.askPerHour))) return html(page("잠시 뒤에 다시 눌러 주세요", `<p class="empty">이 네트워크에서 너무 많이 눌렀어요. 잠시 뒤에 다시 눌러 주세요.</p>`), 429);
   const { id, m, record } = found;
   const form = new URLSearchParams((await request.text()).slice(0, 512));
-  const mine = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
-  let said = null;
-  let truth = null;
-  if (!askOpen(record)) said = { bad: "신청이 마감됐어요" };
-  else if (what === "note") {
-    const note = cleanText(form.get("note") ?? "", LIMITS.askNote);
-    if (note == null) said = { bad: `한 줄은 ${LIMITS.askNote}자까지예요` };
-    else { mine.note = note; said = { ok: note ? "한 줄을 남겼어요" : "한 줄을 지웠어요" }; }
-  } else {
-    const d = form.get("d") ?? "";
-    const k = form.get("k") ?? "";
-    if (k === "none") {
-      mine.wishes = mine.wishes.filter((w) => w.d !== d);
-      said = { ok: `${d.slice(5).replace("-", "/")} 신청을 지웠어요` };
-    } else if (!(k in ASK_KINDS)) said = { bad: "고를 수 없는 신청이에요" };
-    else {
-      const s = k === "SHIFT" ? Number.parseInt(form.get("s") ?? "", 10) : null;
-      if (k === "SHIFT" && !record.shifts.some((x) => x.id === s)) said = { bad: "고를 수 없는 근무예요" };
-      else {
-        // The 선착순 check reads every member's own key (the truth), not the summary.
-        const all = (truth = (await askAll(env, id, record)).wishes);
-        const no = askCheck(record.rules, record.month, all, { m, d, k }, Date.now(), record.members[m].leave ?? null);
-        if (no) said = { bad: no };
-        else {
-          const at = mine.wishes.find((w) => w.d === d && ASK_KINDS[w.k]?.[1] && ASK_KINDS[k][1])?.at ?? new Date().toISOString();
-          mine.wishes = [...mine.wishes.filter((w) => w.d !== d), { d, k, ...(s != null ? { s } : {}), at }].sort((a, b) => a.d.localeCompare(b.d)).slice(0, 31);
-          said = { ok: `${d.slice(5).replace("-", "/")} ${k === "SHIFT" ? record.shifts.find((x) => x.id === s).label : ASK_KINDS[k][0]} 신청했어요` };
-        }
-      }
-    }
-  }
+  const input = what === "note" ? { what, note: form.get("note") ?? "" } : { what, d: form.get("d") ?? "", k: form.get("k") ?? "", s: form.get("s") ?? "" };
+  const room = roomOf(env, "ask", id, record);
+  let said;
+  let mine;
   let parts = null;
-  if (said.ok) {
-    await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
-    count(env, "askPicks");
-    // 2.0.0 [RVQ-25]: the summary from the truth just read (a note or a removal has none, so the summary's own parts).
-    let base = null;
-    if (truth) {
-      base = {};
-      for (const w of truth) (base[w.m] ??= []).push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+  if (room) {
+    // 2.0.0 [RVQ-57]: the room checks and keeps it in one step; its answer has everyone's parts for the page.
+    const out = await roomCall(room, { op: "ask", record, m, input });
+    said = out.said;
+    mine = { wishes: [], note: "", ...(out.values[m] ?? {}) };
+    parts = partsOf(out.values, askPart);
+  } else {
+    const own = (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+    // A pick reads every member's own key (the truth) for the 선착순 check.
+    const truth = what === "pick" && input.k !== "none" && input.k in ASK_KINDS && askOpen(record) ? (await askAll(env, id, record)).wishes : null;
+    const values = {};
+    for (const w of truth ?? []) (values[w.m] ??= { wishes: [] }).wishes.push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+    values[m] = own;
+    const out = askApply(record, m, values, input);
+    said = out.said;
+    mine = out.changed?.[m] ?? own;
+    if (said.ok) {
+      await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
+      // 2.0.0 [RVQ-25]: the summary from the truth just read (a note or a removal has none, so the summary's own parts).
+      let base = null;
+      if (truth) {
+        base = {};
+        for (const w of truth) (base[w.m] ??= []).push({ d: w.d, k: w.k, ...(w.s != null ? { s: w.s } : {}), at: w.at });
+      }
+      parts = await roundNote(env, "ask", id, record, { [m]: askPart(mine) }, base);
     }
-    parts = await roundNote(env, "ask", id, record, { [m]: askPart(mine) }, base);
   }
+  if (said.ok) count(env, "askPicks");
   return askView(env, key, what === "pick" ? form.get("d") : null, said, said.bad ? 409 : 200, found, mine, true, parts);
 }
 
@@ -1329,14 +1454,22 @@ async function askView(env, key, day, said, status = 200, known = null, mineKnow
   if (!found) return askGone();
   const { id, m, record } = found;
   const { rules, month } = record;
-  const mine = mineKnown ?? (await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
+  // 2.0.0 [RVQ-57]: a room round reads its room once (mine and everyone's parts).
+  const room = roomOf(env, "ask", id, record);
+  const roomValues = room && !(mineKnown && partsKnown) ? (await roomCall(room, { op: "all" })).values : null;
+  // A room value may hold only when it was read (seenAt): it starts from no wishes and no line, like a KV key that was never written.
+  const mine = mineKnown ?? (roomValues ? { wishes: [], note: "", ...(roomValues[m] ?? {}) } : await env.SHARES.get(askWishKey(id, m), "json")) ?? { wishes: [], note: "" };
   // 2.0.0 [RVQ-25] 검토 I22a-04: everyone's requests from the round's summary (one read), mine from my own key.
-  const parts = { ...(partsKnown ?? (await roundParts(env, "ask", id, record, record.members.length, askWishKey, askPart))) };
+  const parts = { ...(partsKnown ?? (roomValues ? partsOf(roomValues, askPart) : await roundParts(env, "ask", id, record, record.members.length, askWishKey, askPart))) };
   const minePart = askPart(mine);
   if (minePart) parts[m] = minePart;
   else delete parts[m];
   const all = { wishes: askWishesOf(parts) };
-  if (human && !mine.seenAt) { mine.seenAt = new Date().toISOString(); await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt }); }
+  if (human && !mine.seenAt) {
+    mine.seenAt = new Date().toISOString();
+    if (room) await roomCall(room, { op: "seen", i: m, at: mine.seenAt, expiresAt: record.expiresAt });
+    else await put(env, askWishKey(id, m), { ...mine, expiresAt: record.expiresAt });
+  }
   const me = record.members[m].name;
   const open = askOpen(record);
   const [y, mo] = month.split("-").map(Number);
@@ -2013,7 +2146,7 @@ async function swapCreate(request, env, url) {
   const end = Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1) + 7 * 86400 * 1000;
   const expiresAt = new Date(Math.min(end, Date.now() + LIMITS.askTtlDays * 86400 * 1000)).toISOString();
   if (Date.parse(expiresAt) <= Date.now()) return json({ error: "bad_swap" }, 400);
-  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false };
+  const record = { team, month, people, rows: board.rows, ok: board.ok, tokenHash: await sha256(token), expiresAt, closed: false, ...(env.TEAM_ROUND ? { room: true } : {}) };
   await put(env, swapKey(id), record);
   for (let i = 0; i < people.length; i++) await put(env, swapPersonKey(people[i].key), { id, p: i, expiresAt });
   count(env, "swaps");
@@ -2033,8 +2166,10 @@ async function swapRead(request, env, id) {
   if (record instanceof Response) return record;
   const asks = [];
   const seen = [];
+  const room = roomOf(env, "swap", id, record);
+  const values = room ? (await roomCall(room, { op: "all" })).values : null;
   for (let p = 0; p < record.people.length; p++) {
-    const mine = await env.SHARES.get(swapAskKey(id, p), "json");
+    const mine = values ? values[p] ?? null : await env.SHARES.get(swapAskKey(id, p), "json");
     if (!mine) continue;
     if (mine.seenAt) seen.push(p);
     for (const a of mine.asks ?? []) asks.push({ p, q: a.q, d: a.d, state: a.state, at: a.at });
@@ -2065,25 +2200,26 @@ async function swapChange(request, env, id, url) {
     return json({ error: "bad_swap" }, 400);
   }
   await put(env, swapKey(id), record);
-  const changed = {};
-  for (const x of decide) {
-    const mine = await env.SHARES.get(swapAskKey(id, x.p), "json");
-    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
-    if (!ask) continue;
-    ask.state = x.state;
-    ask.decidedAt = new Date().toISOString();
-    await put(env, swapAskKey(id, x.p), { ...mine, expiresAt: record.expiresAt });
-    changed[x.p] = swapPart(mine);
+  const room = roomOf(env, "swap", id, record);
+  if (room) {
+    if (decide.length) await roomCall(room, { op: "decide", decide, now: new Date().toISOString(), expiresAt: record.expiresAt });
+    return new Response(null, { status: 204 });
   }
-  if (Object.keys(changed).length) await roundNote(env, "swap", id, record, changed);
+  const values = {};
+  for (const x of decide) if (!(x.p in values)) values[x.p] = await env.SHARES.get(swapAskKey(id, x.p), "json");
+  const changed = swapDecide(values, decide, new Date().toISOString()) ?? {};
+  for (const [i, mine] of Object.entries(changed)) await put(env, swapAskKey(id, Number(i)), { ...mine, expiresAt: record.expiresAt });
+  if (Object.keys(changed).length) await roundNote(env, "swap", id, record, Object.fromEntries(Object.entries(changed).map(([i, v]) => [i, swapPart(v)])));
   return new Response(null, { status: 204 });
 }
 
 async function swapDelete(request, env, id) {
   const record = await swapOwned(request, env, id);
   if (record instanceof Response) return record;
+  const room = roomOf(env, "swap", id, record);
+  if (room) await roomCall(room, { op: "drop" });
   for (let p = 0; p < record.people.length; p++) {
-    await kvDel(env, swapAskKey(id, p));
+    if (!room) await kvDel(env, swapAskKey(id, p));
     await kvDel(env, swapPersonKey(record.people[p].key));
   }
   await kvDel(env, roundKey("swap", id));
@@ -2101,7 +2237,56 @@ async function swapFind(env, key) {
 
 const swapGone = () => html(page("바꾸기가 끝났어요", `<p class="empty">이 바꾸기 링크는 끝났거나 리더가 지웠어요.</p>${goneNext("바뀐 근무는 리더가 새 근무표 링크로 보내 줘요.", "swap")}`), 404);
 
-/** [P3-X-02] A member's press: ask (d, q), cancel (d), or reply to someone else's ask (from, d, a=yes|no). */
+/**
+ * [P3-X-02] A member's press as one step on what is known ([values] {i: person's own value}): ask (d, q), cancel (d), or reply to
+ * someone else's ask (from, d, a=yes|no). Returns what to say, the page's status and the values that changed. 2.0.0 [RVQ-57]: the room
+ * runs it alone, so a reply and a cancel of the same ask cannot both land.
+ */
+function swapApply(record, p, values, input, now) {
+  const d = input.d;
+  if (input.what === "reply") {
+    const from = input.from;
+    const a = input.a;
+    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return { said: { bad: "고를 수 없는 답이에요" }, status: 400 };
+    const theirs = values[from] ? structuredClone(values[from]) : null;
+    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
+    if (!ask) return { said: { bad: "이미 끝난 요청이에요" }, status: 409 };
+    ask.state = a;
+    ask.answeredAt = now;
+    return { said: { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, status: 200, changed: { [from]: theirs }, counted: "swapAnswers" };
+  }
+  const mine = structuredClone(values[p] ?? {});
+  const asks = mine.asks ?? [];
+  if (input.what === "cancel") {
+    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
+    if (!ask) return { said: { bad: "거둘 요청이 없어요" }, status: 409 };
+    ask.state = "cancel";
+    return { said: { ok: "요청을 거뒀어요." }, status: 200, changed: { [p]: { ...mine, asks } } };
+  }
+  const q = input.q;
+  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return { said: { bad: "이 날은 그분과 바꿀 수 없어요" }, status: 400 };
+  if (asks.some((x) => x.d === d && swapOpen(x.state))) return { said: { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, status: 409 };
+  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return { said: { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, status: 409 };
+  // Old answered asks drop off first so the list stays small.
+  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
+  kept.push({ d, q, state: "asked", at: now });
+  return { said: { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, status: 200, changed: { [p]: { ...mine, asks: kept } }, counted: "swapAsks" };
+}
+
+/** The leader's word on open asks ([{p, d, state}], checked before): the people's values that changed, or null. */
+function swapDecide(values, decide, now) {
+  const changed = {};
+  for (const x of decide) {
+    const mine = changed[x.p] ?? (values[x.p] ? structuredClone(values[x.p]) : null);
+    const ask = mine?.asks?.find((a) => a.d === x.d && swapOpen(a.state));
+    if (!ask) continue;
+    ask.state = x.state;
+    ask.decidedAt = now;
+    changed[x.p] = mine;
+  }
+  return Object.keys(changed).length ? changed : null;
+}
+
 async function swapPress(request, env, key, what) {
   const found = await swapFind(env, key);
   if (!found) return swapGone();
@@ -2113,49 +2298,38 @@ async function swapPress(request, env, key, what) {
   if (!Number.isInteger(d) || d < 1 || d > days) return swapView(env, key, { bad: "고를 수 없는 날이에요" }, 400, found);
   if (record.closed) return swapView(env, key, { bad: "리더가 바꾸기를 닫았어요" }, 409, found);
   const now = new Date().toISOString();
-  if (what === "reply") {
-    const from = Number(form.get("from"));
-    const a = form.get("a");
-    if (!Number.isInteger(from) || from < 0 || from >= record.people.length || (a !== "yes" && a !== "no")) return swapView(env, key, { bad: "고를 수 없는 답이에요" }, 400, found);
-    const theirs = await env.SHARES.get(swapAskKey(id, from), "json");
-    const ask = theirs?.asks?.find((x) => x.d === d && x.q === p && swapOpen(x.state));
-    if (!ask) return swapView(env, key, { bad: "이미 끝난 요청이에요" }, 409, found);
-    ask.state = a;
-    ask.answeredAt = now;
-    await put(env, swapAskKey(id, from), { ...theirs, expiresAt: record.expiresAt });
-    count(env, "swapAnswers");
-    const parts = await roundNote(env, "swap", id, record, { [from]: swapPart(theirs) });
-    return swapView(env, key, { ok: a === "yes" ? "좋다고 전했어요. 리더가 승인하면 근무표에 바로 반영돼요." : "어렵다고 전했어요." }, 200, found, true, parts);
+  const input = { what, d, ...(what === "reply" ? { from: Number(form.get("from")), a: form.get("a") } : {}), ...(what === "ask" ? { q: Number(form.get("q")) } : {}) };
+  const room = roomOf(env, "swap", id, record);
+  if (room) {
+    const out = await roomCall(room, { op: "swap", record, p, input, now });
+    if (out.said.ok && (what === "reply" || what === "ask")) count(env, what === "reply" ? "swapAnswers" : "swapAsks");
+    return swapView(env, key, out.said, out.status, found, true, partsOf(out.values, swapPart), out.values[p] ?? {});
   }
-  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
-  const asks = mine.asks ?? [];
-  if (what === "cancel") {
-    const ask = asks.find((x) => x.d === d && swapOpen(x.state));
-    if (!ask) return swapView(env, key, { bad: "거둘 요청이 없어요" }, 409, found);
-    ask.state = "cancel";
-    await put(env, swapAskKey(id, p), { ...mine, asks, expiresAt: record.expiresAt });
-    const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks }) });
-    return swapView(env, key, { ok: "요청을 거뒀어요." }, 200, found, true, parts);
-  }
-  const q = Number(form.get("q"));
-  if (!Number.isInteger(q) || !(record.ok?.[p]?.[d] ?? []).includes(q)) return swapView(env, key, { bad: "이 날은 그분과 바꿀 수 없어요" }, 400, found);
-  if (asks.some((x) => x.d === d && swapOpen(x.state))) return swapView(env, key, { bad: "이 날은 이미 요청했어요. 거두고 다시 해 주세요" }, 409, found);
-  if (asks.filter((x) => swapOpen(x.state)).length >= 5) return swapView(env, key, { bad: "한 번에 다섯 개까지 요청할 수 있어요" }, 409, found);
-  // Old answered asks drop off first so the list stays small.
-  const kept = asks.filter((x) => swapOpen(x.state) || x.state === "done").slice(-20);
-  kept.push({ d, q, state: "asked", at: now });
-  await put(env, swapAskKey(id, p), { ...mine, asks: kept, expiresAt: record.expiresAt });
-  count(env, "swapAsks");
-  const parts = await roundNote(env, "swap", id, record, { [p]: swapPart({ asks: kept }) });
-  return swapView(env, key, { ok: `${record.people[q].name}님께 요청했어요. 그분 링크에 바로 보여요.` }, 200, found, true, parts);
+  // On KV: the one or two people's own keys this press reads.
+  const values = {};
+  if (what === "reply" && Number.isInteger(input.from) && input.from >= 0 && input.from < record.people.length) values[input.from] = await env.SHARES.get(swapAskKey(id, input.from), "json");
+  else values[p] = await env.SHARES.get(swapAskKey(id, p), "json");
+  const out = swapApply(record, p, values, input, now);
+  if (!out.changed) return swapView(env, key, out.said, out.status, found);
+  const [[who, value]] = Object.entries(out.changed);
+  await put(env, swapAskKey(id, Number(who)), { ...value, expiresAt: record.expiresAt });
+  if (out.counted) count(env, out.counted);
+  const parts = await roundNote(env, "swap", id, record, { [who]: swapPart(value) });
+  return swapView(env, key, out.said, out.status, found, true, parts);
 }
 
-async function swapView(env, key, said, status = 200, known = null, human = true, partsKnown = null) {
+async function swapView(env, key, said, status = 200, known = null, human = true, partsKnown = null, mineKnown = null) {
   const found = known ?? await swapFind(env, key);
   if (!found) return swapGone();
   const { id, p, record } = found;
-  const mine = (await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
-  if (human && !mine.seenAt) await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  // 2.0.0 [RVQ-57]: a room round reads its room once (mine and everyone's parts).
+  const room = roomOf(env, "swap", id, record);
+  const roomValues = room && !(partsKnown && mineKnown) ? (await roomCall(room, { op: "all" })).values : null;
+  const mine = mineKnown ?? (roomValues ? roomValues[p] : await env.SHARES.get(swapAskKey(id, p), "json")) ?? {};
+  if (human && !mine.seenAt) {
+    if (room) await roomCall(room, { op: "seen", i: p, at: new Date().toISOString(), expiresAt: record.expiresAt });
+    else await put(env, swapAskKey(id, p), { ...mine, seenAt: new Date().toISOString(), expiresAt: record.expiresAt });
+  }
   const me = record.people[p].name;
   const name = (q) => esc(record.people[q]?.name ?? "?");
   const y = Number(record.month.slice(0, 4));
@@ -2164,7 +2338,7 @@ async function swapView(env, key, said, status = 200, known = null, human = true
   const label = (q, d) => esc(record.rows[q]?.[d - 1] || "·");
   const word = { asked: "답 기다림", yes: "상대가 좋대요 · 리더 승인 기다림", no: "상대가 어렵대요", cancel: "거둠", done: "리더가 승인했어요", denied: "리더가 거절했어요" };
   // Asks to me: everyone else's lists. 2.0.0 [RVQ-25] 검토 I22a-04: from the round's summary (one read, not one per person).
-  const parts = partsKnown ?? (await roundParts(env, "swap", id, record, record.people.length, swapAskKey, swapPart));
+  const parts = partsKnown ?? (roomValues ? partsOf(roomValues, swapPart) : await roundParts(env, "swap", id, record, record.people.length, swapAskKey, swapPart));
   const incoming = [];
   for (let o = 0; o < record.people.length; o++) {
     if (o === p) continue;
