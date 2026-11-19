@@ -4,7 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
-import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRecord, crashRepeats } from "./crash-repeat.js";
+import { CRASH, crashAskDraft, crashOf, crashRecord, crashRepeats, replyCarriesRecord } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -455,7 +455,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     const same = mine.map((r) => ({ r, info: readInfo(r.info) })).map(({ r, info: i }) => ({ id: r.id, c: crashOf(r.kind, r.first, i), at: r.created_at, device: r.device, model: i.model, android: i.android, app: i.app }))
       .filter((x) => x.c).map((x) => ({ ...x, record: x.c.record }));
     const g = crashRepeats(same, Math.min(Date.now(), row.created_at + CRASH.days * DAY)).find((x) => x.by === "same" && x.ids.includes(row.id));
-    crashView = { ...crash, ...(crash.record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}),
+    // [RVA-69] 기록 부탁 답은 그 문의의 앱 판에 맞게(2.0.0부터 답장에 기록, 그 전은 새 문의).
+    crashView = { ...crash, ...(crash.record !== "has" ? { draft: crashAskDraft(info.app), ...(replyCarriesRecord(info.app) ? { reply: true } : {}) } : {}),
       ...(g ? { repeat: { nth: g.ids.indexOf(row.id) + 1, n: g.n, first: iso(g.first), last: iso(g.last), noRecord: g.noRecord, ids: g.ids } } : {}) };
   }
   return {
@@ -465,6 +466,8 @@ export async function inquiryView(env, row, admin = false, app = null) {
     assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
     notes: notes.map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
     ...(crashView ? { crash: crashView } : {}),
+    // [RVA-69] HQ-150: 점검 기록이 답장과 함께 마지막으로 온 때(함께 온 정보 › 알람 점검 옆에).
+    ...(info.diagAt ? { diagAt: iso(info.diagAt) } : {}),
     ...(env.actor && can(env.actor, "dev") ? { dev: items.map((d) => ({ id: d.id, title: d.title, status: d.status, links: d.links })) } : {}),
   };
 }

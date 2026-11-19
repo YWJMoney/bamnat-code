@@ -295,6 +295,12 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
     // 2.0.0 [RVM-31]: only the search box is above them (the 팔로잉 줄 is under the first row of works).
     val stickyAt = 1
     val pinned by remember(stickyAt) { derivedStateOf { listState.firstVisibleItemIndex >= stickyAt } }
+    // 2.0.0 [RVM-63] 검토 U08a-02: the next page comes by itself a few rows before the end (no '더 보기' to find and press); a page that
+    // failed waits for 다시 해 보기 at the end, so a phone offline does not ask again and again.
+    val nearEnd by remember { derivedStateOf { listState.layoutInfo.let { i -> i.totalItemsCount > 0 && (i.visibleItemsInfo.lastOrNull()?.index ?: 0) >= i.totalItemsCount - 4 } } }
+    androidx.compose.runtime.LaunchedEffect(nearEnd, state.items.size, state.next) {
+        if (nearEnd && state.next != null && !state.loading && state.moreError == null && state.error == null) vm.load(more = true)
+    }
     // A 구간 or 정렬 changed while scrolled down starts its list right under the chips (not somewhere in the middle).
     // PC 확인 a6cab3c8 (장터를 내린 채 다른 탭에 갔다 오면 맨 위로 돌아가요): only a real change of 구간·정렬 moves the list; coming back
     // to the screen (the same chips, read back as it was left) keeps where it was.
@@ -439,12 +445,19 @@ private fun RecipeListPage(vm: RecipeListViewModel, onBack: (() -> Unit)?, onOpe
             hubHeader?.let { h -> item(key = "hub") { Box(Modifier.widthIn(max = 640.dp).fillMaxWidth()) { h() } } }
             items(rows.drop(1), key = { row -> row.first().code + "|" + cols }) { row -> cardRow(row) }
             if (state.loading) item { CircularProgressIndicator(Modifier.padding(16.dp)) }
-            else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }) { Text("더 보기") } }
+            // [RVM-63] 검토 MKT-02: a next page that failed says so here, where the eye is, with 다시 해 보기 (not at the top, off screen).
+            else if (state.moreError != null) item(key = "more-error") {
+                com.bamnat.app.ui.components.OfflineLine(Modifier.padding(start = 8.dp, top = 8.dp, bottom = 8.dp), text = state.moreError!!, onRetry = { vm.load(more = true) })
+            }
+            else if (state.next != null) item { TextButton(onClick = { vm.load(more = true) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("더 보기") } }
         }
     }
     if (codeAsk) CodeDialog(onCode = { codeAsk = false; onOpen(it) }, onDismiss = { codeAsk = false })
     flipAt?.let { at ->
-        MarketFlip(shown, at, vm.style, onDismiss = { flipAt = null }, onOpen = { code -> flipAt = null; onOpen(code) }, onAt = { flipAt = it },
+        MarketFlip(shown, at, vm.style, onDismiss = { flipAt = null }, onOpen = { code -> flipAt = null; onOpen(code) },
+            // 2.0.0 [RVM-63] 검토 MKT-30: 크게 넘겨 보기 reads the next page as it nears the end of what is loaded.
+            onAt = { i -> flipAt = i; if (i >= shown.size - 3 && state.next != null && !state.loading && state.moreError == null) vm.load(more = true) },
+            more = state.next != null,
             onTry = { item ->
                 flipScope.launch {
                     val r = MarketShots.recipe(c, item)

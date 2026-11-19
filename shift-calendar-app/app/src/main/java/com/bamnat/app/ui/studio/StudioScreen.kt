@@ -2,6 +2,7 @@ package com.bamnat.app.ui.studio
 
 import com.bamnat.core.recipe.widgetDraws
 import com.bamnat.app.ui.components.scrollEdges
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.ZeroCornerSize
 
 import com.bamnat.app.ui.decor.nextPinned
@@ -645,7 +646,10 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                                 }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                // 2.0.0 [RVS-21] (총괄 #520 사진, 조건 12: 글자 200%·접은 폭에서 '지금 …'으로 잘림) With big text the name takes two
+                                // lines (the bar grows to them, RVS-16) rather than two letters and '…'.
+                                val bigText = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+                                Text(s.origin.title, style = MaterialTheme.typography.titleMedium, maxLines = if (bigText) 2 else 1, overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f, fill = false))
                                 Icon(Icons.Filled.ArrowDropDown, null)
                             }
@@ -958,10 +962,14 @@ fun StudioScreen(vm: StudioViewModel, onBack: () -> Unit, onOpen: (String) -> Un
                         }
                     }
                     // PC 확인 1.37 A18: over a 판 opened big the hint would hide the strip of example left.
-                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopCenter).padding(top = 8.dp))
+                    // 2.0.0 HQ-139 (총괄 #520 사진, 조건 9·12): the hint keeps clear of the 배율 chip folded beside it at the top (its end was
+                    // under '🔍 105%'); it wraps onto a second line where the two do not fit side by side.
+                    var zoomChipW by remember { mutableStateOf(0) }
+                    val zoomRoom = with(androidx.compose.ui.platform.LocalDensity.current) { if (zoom.controlsOpen) 0.dp else zoomChipW.toDp() + 8.dp }
+                    if (sel == null && !hintSeen && !(panel && big)) PickHint(Modifier.align(Alignment.TopStart).padding(top = 8.dp, start = 8.dp, end = 4.dp + zoomRoom))
                     ZoomControls(zoom, onFocus = sel?.let { id -> { spots.boxes(id).firstOrNull()?.let { zoom.focus(it) }; Unit } },
                         modifier = (if (zoom.controlsOpen) Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 8.dp + if (panel) panelH else 0.dp)
-                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp)))
+                            else Modifier.align(Alignment.TopEnd).padding(top = 4.dp, end = 4.dp).onSizeChanged { zoomChipW = it.width }))
                 }
                 // Lines about the example, under it.
                 Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp).animateContentSize()) {

@@ -88,11 +88,12 @@ data class WeekSummary(
 /** [CAL-34][CAL-40] See [WorkHoursCalculator.glance]. */
 data class WeekGlance(val start: LocalDate, val minutes: Int, val nights: Int, val leftToLegal: Int, val legalHours: Int = 52) {
     /** "38시간 · 야간 2번 · 52시간까지 14시간", or "… · 52시간 3시간 넘음". */
-    val text: String get() = buildString {
-        append(HoursFormat.korean(minutes))
-        if (nights > 0) append(" · 야간 ${nights}번")
+    val text: String get() = brief + buildString {
         if (minutes > 0) append(if (leftToLegal >= 0) " · ${legalHours}시간까지 ${HoursFormat.korean(leftToLegal)}" else " · ${legalHours}시간보다 ${HoursFormat.korean(-leftToLegal)} 넘음")
     }
+
+    /** 2.0.0 [RVH-87] 검토 PC-163: "13시간 30분 · 야간 1번", the hours without the 52-hour part (an 알바 read against 주 15시간). */
+    val brief: String get() = HoursFormat.korean(minutes) + if (nights > 0) " · 야간 ${nights}번" else ""
 }
 
 data class MonthSummary(
@@ -230,23 +231,33 @@ class WorkHoursCalculator(
         )
     }
 
-    /** The three calendar months ending with [lastMonth], e.g. Aug–Oct for October. */
+    /**
+     * The three calendar months ending with [lastMonth], e.g. Aug–Oct for October. 2.0.0 [RVH-85] 검토 PC-173 (12월 표만 받은 직원에게
+     * '3개월 평균 (10월–12월) 주 평균 13시간 10분', 표가 없는 10·11월을 0시간으로 셈): only the stretch the calendar covers counts, from its
+     * first day a pattern or an entry says something to its last ([start]..[end], [firstMonth]..[lastMonth] follow it); a day left
+     * blank inside it is still a day off. A calendar that covers none of it keeps the whole window.
+     */
     fun threeMonths(lastMonth: YearMonth): ThreeMonthSummary {
-        val firstMonth = lastMonth.minusMonths(2)
-        val start = firstMonth.atDay(1)
-        val end = lastMonth.atEndOfMonth()
-        val total = resolver.resolveRange(start, end).sumOf { it.totalMinutes }
+        val windowStart = lastMonth.minusMonths(2).atDay(1)
+        val windowEnd = lastMonth.atEndOfMonth()
+        val all = resolver.resolveRange(windowStart, windowEnd)
+        val known = all.filter { it.source != com.bamnat.core.schedule.DaySource.NONE || it.totalMinutes > 0 }
+        val start = known.firstOrNull()?.date ?: windowStart
+        val end = known.lastOrNull()?.date ?: windowEnd
+        val total = all.sumOf { it.totalMinutes }
         val days = (ChronoUnit.DAYS.between(start, end) + 1).toInt()
         val avgWeekly = total / (days / 7.0)
+        val firstMonth = YearMonth.from(start)
+        val shownLast = YearMonth.from(end)
         return ThreeMonthSummary(
             firstMonth = firstMonth,
-            lastMonth = lastMonth,
+            lastMonth = shownLast,
             start = start,
             end = end,
             totalMinutes = total,
             days = days,
             averageWeeklyMinutes = avgWeekly,
-            averageMonthlyMinutes = total / 3.0,
+            averageMonthlyMinutes = total / (ChronoUnit.MONTHS.between(firstMonth, shownLast) + 1).toDouble(),
             overLimit = avgWeekly > limits.threeMonthAverageLimitHours * 60.0,
         )
     }
