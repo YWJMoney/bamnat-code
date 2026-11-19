@@ -585,7 +585,8 @@ internal class Eval(val scope: FormulaScope) {
         fun order(a: Value, b: Value): Int {
             val x = a.number
             val y = b.number
-            if (x != null && y != null) return x.compareTo(y)
+            // 2.0.0 [RVM-67] 검토 RCP-06: -0 is 0 (Double.compareTo puts -0.0 below 0.0, the server's `<`/`>` do not).
+            if (x != null && y != null) return if (x < y) -1 else if (x > y) 1 else 0
             return a.text.compareTo(b.text)
         }
     }

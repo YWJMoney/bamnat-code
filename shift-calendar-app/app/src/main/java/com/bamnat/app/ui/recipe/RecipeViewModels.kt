@@ -634,8 +634,11 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
             }
             val counted = c.recipes.countedHere(code)
             val feelBefore = c.recipes.pieces.feelSnapshot()
-            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }.getOrNull()
-            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.getOrDefault(false)
+            // 2.0.0 [RVM-67] 검토 MKT-11 (넣기가 실패해도 "바뀐 것이 없어요"라고 말해요): a put that threw is not a put that changed nothing.
+            var failed = false
+            val id = if (picks.isEmpty()) null else runCatching { c.recipes.apply(r, code, doc.item.version, calendar, picks, s.answers) }
+                .onFailure { failed = true; android.util.Log.w("RecipeDetail", "apply failed", it) }.getOrNull()
+            val laid = tab != null && runCatching { c.wardrobe.overlay(lookRecipe, code, s.answers) }.onFailure { failed = true }.getOrDefault(false)
             // PC 확인 보안 8차 (넣어도 쓰는 분 0명): a tab laid on is a use too (it leaves no record, so apply did not count it).
             // Once a phone [SEC-15], as a theme put on is (the studio thread's own fix sent it at every 얹기).
             if (laid) c.recipes.countUse(code)
@@ -659,6 +662,7 @@ class RecipeDetailViewModel(private val c: AppContainer, val code: String, val c
                 } ?: when {
                     laid -> "‘${tabName(tab)}’ 탭만 지금 테마 위에 얹었어요. 마을 › 테마에서 뺄 수 있어요" + if (id != null) ". 기능은 7일 안에 되돌릴 수 있어요" else ""
                     sameLook -> "이미 같은 모양이라 바뀐 곳은 없어요. ‘${doc.item.title}’${com.bamnat.app.ui.Fmt.obj(doc.item.title)} 입은 테마로 잡았어요"
+                    id == null && failed -> "넣지 못했어요 · 잠시 뒤 다시 해 주세요. 지금 설정은 그대로예요"
                     id == null -> "바뀐 것이 없어요"
                     else -> "넣었어요. 7일 안에 되돌릴 수 있어요"
                 })
