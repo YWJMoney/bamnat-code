@@ -257,8 +257,18 @@ object LiveTryOn {
 
     const val AWAY_MILLIS = 3 * 60_000L
 
-    /** [RVM-57] A 다시 입어 보기 one test shot left must not open the next one's 입어 보기 (screenshot base). */
-    fun resetForTest() { _reopen.value = null }
+    /**
+     * [RVM-57] A 다시 입어 보기 one test shot left must not open the next one's 입어 보기 (screenshot base). 2.0.0 [RVM-58] (총괄 HQ, a
+     * full run across midnight stopped twice in LiveTryOnTest): everything this object keeps for the JVM goes with it — a trial, its
+     * ending card, the 3분 wait after leaving the app (it would end a later test's trial) and the way back to an earlier test's screen.
+     */
+    fun resetForTest() {
+        away?.cancel(); away = null
+        back = null
+        _trial.value = null
+        _ended.value = null
+        _reopen.value = null
+    }
 
     /** The [Reopen] for [from], taken (once). */
     fun take(match: (From) -> Boolean): Reopen? {
