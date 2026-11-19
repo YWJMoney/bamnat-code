@@ -3796,3 +3796,25 @@ test("[RVA-65] 장터 작품 '입은 뒤' 숫자: 줄에는 비율만(넣은 분
   assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "flagged", "이상한 코드는 신고됨으로");
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-66] 문의 상세 멈춤 안내는 화면에 보이는 칸 이름으로, '멈춤 줄 보기'를 누르면 그 줄로 가요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /li\.flash,\.kv dd\.flash\{outline/);
+  const { call, env } = await world();
+  // 지어낸 값: 멈춘 줄이 있는 닫힘 문의 하나.
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n11/18 21:04 TestCrashException@x.y:3\n\n[알람]\n다음 알람 07:00" };
+  const id = (await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000081", kind: "bug", text: "앱이 갑자기 닫혀요", info }, from(81))).data.id;
+  const u = await signedIn(env);
+  await u.go(`#/inquiries/${id}`);
+  await u.settle(30);
+  const note = u.$("#main .crash-note");
+  assert.match(note.textContent, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄을 봐요\./, "PC-195: 화면에 보이는 칸 이름");
+  assert.doesNotMatch(note.textContent, /'앱 멈춤' 칸/);
+  assert.match(note.querySelector(".pill").title, /함께 온 정보 › 알람 점검의 \[앱 멈춤\] 줄/);
+  const dt = u.$("#main #ctx-diag");
+  assert.equal(dt.textContent, "알람 점검");
+  await u.click('#main [data-act="crash-diag"]');
+  assert.ok(dt.nextElementSibling.classList.contains("flash"), "누르면 그 줄로 가서 잠깐 표시해요");
+  assert.ok(!u.$('#main [data-act="crash-draft"]'), "기록이 있으면 부탁 답 단추는 없어요");
+  assert.deepEqual(u.errors, []);
+});
