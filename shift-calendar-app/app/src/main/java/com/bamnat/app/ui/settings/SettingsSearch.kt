@@ -6,7 +6,7 @@ import com.bamnat.core.work.words
  * [UX-04] Plain-word search for settings and help: the words people use ("다크 모드", "알람이 안 울려요")
  * find the setting even when it is named another way. Korean endings (이·가·을·를·은·는·에서…) are
  * dropped from each word, and a word counts when it holds one of an entry's keywords, so "알람이" finds
- * "알람". No 초성 search.
+ * "알람". 초성 only ("ㄱㅂㄱ") finds by each syllable's first consonant ([initials]).
  */
 internal object SearchText {
     private val ENDINGS = listOf(
@@ -29,10 +29,6 @@ internal object SearchText {
         return long.ifEmpty { all }
     }
 
-    /**
-     * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
-     * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
-     */
     private const val CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ"
 
     /** U 1.32 [UX132-04] Each 한글 syllable as its first consonant: "기본급" → "ㄱㅂㄱ". Other letters stay. */
@@ -43,23 +39,40 @@ internal object SearchText {
     /** The query is 초성 only ("ㄱㅂㄱ"). */
     fun isInitials(q: String): Boolean = q.length >= 2 && q.all { it in CHO }
 
-    fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int {
+    /**
+     * How well [query] fits: the whole query in [title] counts most, then each word found in the title,
+     * a keyword or [other] text. Half the words, at least one, must be found; 0 means no fit.
+     */
+    fun score(query: String, title: String, keywords: List<String>, other: String = ""): Int = fit(query, title, keywords, other).score
+
+    /**
+     * 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10 (두 낱말 가운데 하나만, 한 글자만 맞아도 '찾은 설정 5개'로 떴어요): a fit is [sure] when the
+     * whole query is in the name or a keyword, when two of its words are in the name or keywords ([SURE]), or when a keyword is in the
+     * query and every word of it is found; one word of two, or words only in the [other] text, is a near fit, shown apart as '비슷한 것'.
+     */
+    data class Fit(val score: Int, val sure: Boolean)
+
+    /** Words in the name and keywords worth this much together make a sure fit without the whole query (6 a name, 4 a keyword). */
+    private const val SURE = 8
+
+    fun fit(query: String, title: String, keywords: List<String>, other: String = ""): Fit {
         val q = norm(query)
-        if (q.isEmpty()) return 0
+        if (q.isEmpty()) return Fit(0, false)
         // U 1.32 [UX132-04] 초성 검색: "ㄱㅂㄱ" finds 기본급, "ㅇㄹ" 알람.
         if (isInitials(q)) {
             val t = initials(norm(title))
-            return when {
+            val s = when {
                 t.startsWith(q) -> 40
                 q in t -> 30
                 keywords.any { q in initials(norm(it)) } -> 20
                 else -> 0
             }
+            return Fit(s, s > 0)
         }
         val t = norm(title)
         val keys = keywords.map(::norm).filter { it.isNotEmpty() }
         val o = norm(other)
-        var score = when {
+        val whole = when {
             t.startsWith(q) -> 40
             q in t -> 30
             // A keyword that is the whole query beats one that only holds it ("일요일" is 한 주의 시작, not 요일 of 근무 주기).
@@ -68,22 +81,28 @@ internal object SearchText {
             keys.any { it.length >= 2 && it in q } -> 16
             else -> 0
         }
+        var score = whole
         val words = words(query)
         var found = 0
+        var named = 0
         for (w in words) {
             val n = norm(w)
             if (n.isEmpty()) continue
             val hit = when {
+                // [RVJ-93] A one-letter word counts only as the name's first letter or a whole keyword ('달' is 달력, not every 달).
+                n.length == 1 -> when { t.startsWith(n) -> 6; keys.any { it == n } -> 4; else -> 0 }
                 n in t -> 6
                 keys.any { n in it || (it.length >= 2 && it in n) } -> 4
                 n in o -> 1
                 else -> 0
             }
             if (hit > 0) found++
+            if (hit >= 4) named += hit
             score += hit
         }
         val needed = maxOf(1, (words.size + 1) / 2)
-        return if (score >= 20 || found >= needed) score else 0
+        val s = if (score >= 20 || found >= needed) score else 0
+        return Fit(s, s > 0 && (whole >= 20 || named >= SURE || (whole > 0 && found == words.size)))
     }
 
     /**
@@ -96,8 +115,31 @@ internal object SearchText {
         return scored.filter { it.second * BEHIND >= top }.take(limit).map { it.first }
     }
 
+    /**
+     * 2.0.0 [RVJ-93] The sure fits ([best] of them) and, apart, at most [nearLimit] near ones: all of them when nothing is sure, else
+     * only those not far behind the best sure one.
+     */
+    fun <T> split(items: List<T>, limit: Int, nearLimit: Int = NEAR, fit: (T) -> Fit): Split<T> {
+        val fits = items.map { it to fit(it) }.filter { it.second.score > 0 }
+        val sure = fits.filter { it.second.sure }.sortedByDescending { it.second.score }
+        val top = sure.firstOrNull()?.second?.score
+        val shown = sure.filter { top == null || it.second.score * BEHIND >= top }.take(limit).map { it.first }
+        val near = fits.filter { !it.second.sure && (top == null || it.second.score * BEHIND >= top) }
+            .sortedByDescending { it.second.score }.take(nearLimit).map { it.first }
+        return Split(shown, near)
+    }
+
+    /** What [split] found: what fits, and what only looks like it. */
+    data class Split<T>(val sure: List<T>, val near: List<T>) {
+        val all: List<T> get() = sure + near
+        fun isEmpty() = sure.isEmpty() && near.isEmpty()
+    }
+
     /** A fit a quarter as good as the best is still shown; less is noise. */
     private const val BEHIND = 4
+
+    /** [RVJ-93] At most three near fits ('비슷한 것'). */
+    const val NEAR = 3
 }
 
 /** [UX-04] Where a found setting is: one row of a group (lit when the group opens), or a screen of its own. */
@@ -154,9 +196,25 @@ internal object SettingsIndex {
                 sleepAuto: Boolean = true, sleepSound: Boolean = true,
                 /** 1.39 G6 (PC 12.5 가게·현장): 오늘의 흐름 put on the calendar by the user (카드 배치 › 더 보기), so its switch is found. */
                 flowAdded: Boolean = false,
+                /** 2.0.0 [RVJ-93] 검토 BOSS-68: 설정 › 더 보기's 관리 row's name ('가게 관리', '팀 관리') while it is there, else null. */
+                manage: String? = null,
+                /** 2.0.0 [RVJ-96] A 급여 대장 on this phone: its 신고·지급 기한 알림 is found ([rememberLedgerOn]). */
+                ledger: Boolean = false,
                 /** 2.0.0 [RVIB-21] A 근무 종류 of the calendar has two parts: 둘째 구간 알림 is on the page ([NoticeBoard.shown]). */
                 gap: Boolean = false): List<SettingEntry> =
-        all(board, share, company, sleepAuto, sleepSound).filter { fits(it, style, flowAdded) && (it.title != GAP_ROW || gap) }.map { inWords(it, style) }
+        (all(board, share, company, sleepAuto, sleepSound) + listOfNotNull(manage?.let(::manageEntry), filingEntry.takeIf { ledger }))
+            .filter { fits(it, style, flowAdded) && (it.title != GAP_ROW || gap) }.map { inWords(it, style) }
+
+    /**
+     * 2.0.0 [RVJ-93] 검토 BOSS-68 (사장님·리더의 관리 화면이 찾기에 없어 '관리'를 찾으면 '결제 한눈에 보기'가 나왔어요): the 관리 screen by
+     * the words a boss or a leader uses, under its name as 더 보기 shows it.
+     */
+    /** 2.0.0 [RVJ-96] 검토 U05c-05: the 신고·지급 기한 알림, by a boss's words for it. */
+    private val filingEntry get() = row(SettingsPage.NOTICES, com.bamnat.app.boss.BossFilingNotice.ROW, "신고 알림", "신고 기한", "원천세 알림", "원천세 신고",
+        "4대보험 신고", "급여 지급일 알림", "지급명세서", "세금 신고 알림", "기한 알림")
+
+    private fun manageEntry(title: String) = screen("더 보기", title, SettingsGo.MANAGE, "관리", "관리 화면", "사장님", "리더", "팀장", "직원",
+        "직원 관리", "팀 관리", "가게 관리", "사업장 관리", "팀 근무표", "급여 대장", "직원 명세서", "할 일")
 
     /**
      * 2.0.0 [RVO-10] (검토 U11a-04·SET-03: 설정 찾기가 유형의 말을 몰라요): an entry reads as its row does on that kind of work's page.
@@ -511,7 +569,11 @@ internal object SettingsIndex {
         // S 1.32 [SECX-04] 1.28's 진단 › 기능 상태 row is gone with the card (no developer words such as 다크머지 in search).
     )
 
-    /** The best fits for [query], best first. */
+    /** The best fits for [query], best first: the sure ones, then at most three near ones ([found]). */
     fun search(query: String, entries: List<SettingEntry> = entries(), limit: Int = 12): List<SettingEntry> =
-        SearchText.best(entries, limit) { SearchText.score(query, it.title, it.keywords, it.where) }
+        found(query, entries, limit).all.take(limit)
+
+    /** 2.0.0 [RVJ-93] 검토 BOSS-70·U05c-10: what fits [query], and apart, at most three that only look like it ('비슷한 설정'). */
+    fun found(query: String, entries: List<SettingEntry> = entries(), limit: Int = 12): SearchText.Split<SettingEntry> =
+        SearchText.split(entries, limit) { SearchText.fit(query, it.title, it.keywords, it.where) }
 }

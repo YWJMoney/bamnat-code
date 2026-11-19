@@ -27,7 +27,8 @@ data class Question(val key: FactKey, val text: String, val answer: Answer)
 object Questions {
     private const val PAY_SETUP = "pay.calc"
 
-    fun of(key: FactKey, hasPay: Boolean): Question {
+    /** [daily]: a 일당 setup's, whose tax question has 일용근로 too (2.0.0 [RVJ-80] 검토 T04-05). */
+    fun of(key: FactKey, hasPay: Boolean, daily: Boolean = false): Question {
         if (key.money && key.group in PAY_GROUPS && key != FactKey.TAX_MODE && !hasPay) {
             return Question(key, "급여를 알려 주시면 이번 달 예상 급여가 나와요", Answer.Open(PAY_SETUP, "급여 설정하기"))
         }
@@ -55,7 +56,8 @@ object Questions {
             FactKey.PUBLIC_HOLIDAYS -> Question(key, "공휴일은 쉬는 날이고 일하면 수당을 받나요?", Answer.Open(PAY_SETUP, "공휴일 정하기"))
             FactKey.FIVE_OR_MORE -> Question(key, "회사 직원이 5명 이상인가요?", Answer.Chips(listOf("네, 5명 이상" to "true", "아니요, 4명 이하" to "false")))
             FactKey.HIRE_DATE -> Question(key, "입사일이 언제예요? 연차가 저절로 셈해져요", Answer.Date)
-            FactKey.TAX_MODE -> Question(key, "급여에서 세금은 어떻게 떼요?", Answer.Chips(listOf(
+            FactKey.TAX_MODE -> Question(key, "급여에서 세금은 어떻게 떼요?", Answer.Chips(
+                (if (daily) listOf("일용근로" to TaxMode.DAILY_WORKER.name) else emptyList()) + listOf(
                 "4대보험" to TaxMode.INSURANCE_4.name, "3.3%" to TaxMode.WITHHOLDING_3_3.name, "안 떼요" to TaxMode.NONE.name)))
             FactKey.TAX_FAMILY -> Question(key, "본인을 포함해 공제받는 가족이 몇 명이에요?", Answer.Number("명", 1, 11, 1, 1))
             FactKey.PREVIOUS_YEAR_PAY -> Question(key, "작년에 받은 총급여가 얼마인가요?", Answer.Open(PAY_SETUP, "작년 급여 넣기"))

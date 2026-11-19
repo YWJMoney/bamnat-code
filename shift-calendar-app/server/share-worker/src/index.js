@@ -60,6 +60,10 @@
 //                              the page since then. The first ask turns it on for that link; nothing but the times is kept.
 // POST   /s/:id/ok             2.0.0 [RVQ-19] the page's '확인했어요' (a link the leader watches): back to the page with ?k=1
 // POST   /api/share/:id/ok     2.0.0 [RVQ-19] the same press from the member's app (GET /api/share/:id says watch:true) -> 204
+// POST   /api/share/:id/app    2.0.0 [RVJ-83] SPREAD-38 {mark} -> 204: the member's app puts this watched link's changes into its own
+//                              calendar by itself (자동 반영), from 처리방침 3.14 only; {mark, off:true} takes it back (any day)
+// POST   /api/apps             2.0.0 [RVJ-83] {links:[{id, token}]} -> { n|null, min }: how many of the leader's links are read so,
+//                              one number for them all and only from LIMITS.appMin up (never which)
 // POST   /api/board            1.38 [P3-L-15] {team, month, names:[name], labels:[[label per day]], colors:{label:"#hex"}} -> { id, token, url,
 //                              expiresAt }: 병동 전체 보기, the whole month's table and each day's count per shift, when the leader turns it on
 // PUT    /api/board/:id        header X-Delete-Token, same body -> 204 · DELETE /api/board/:id -> 204 · GET /b/:id the page
@@ -188,6 +192,10 @@ export const LIMITS = {
   settleMs: 60 * 1000,
   tiredDays: 30,
   tiredBoxDays: 120,
+  // 2.0.0 [RVJ-83] SPREAD-38: how many of a leader's links read by the app before the number shows (처리방침 3.14 14번 '3명 이상일
+  // 때만'), and how long a different set of links gets no number after the marks were last counted together.
+  appMin: 3,
+  appRestDays: 7,
 };
 
 /** [SRV-05] Why someone reports a link (the page and the app offer the same list). */
@@ -427,6 +435,10 @@ async function route(request, env) {
   if (tiredForm && request.method === "POST") return tiredPress(request, env, tiredForm[1]);
   const okForm = path.match(/^\/(s|api\/share)\/([A-Za-z0-9]{16,32})\/ok$/);
   if (okForm && request.method === "POST") return okPress(request, env, okForm[2], okForm[1] !== "s");
+  // 2.0.0 [RVJ-83] SPREAD-38 앱으로 받는 팀원 수.
+  const appMarkApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/app$/);
+  if (appMarkApi && request.method === "POST") return appMark(request, env, appMarkApi[1]);
+  if (path === "/api/apps" && request.method === "POST") return appCount(request, env);
   const seenApi = path.match(/^\/api\/share\/([A-Za-z0-9]{16,32})\/seen$/);
   if (seenApi && request.method === "GET") return seenRead(request, env, seenApi[1]);
   if (path === "/api/sign" && request.method === "POST") return signCreate(request, env, url);
@@ -535,7 +547,8 @@ async function remove(request, env, id) {
   if (record instanceof Response) return record;
   await kvDel(env, id);
   // 2.0.0 [RVQ-19] 열어 봄·확인했어요 go with the link at once, not when their time runs out.
-  if (record.watch) await Promise.all([kvDel(env, seenKey(id)), kvDel(env, okKey(id))]);
+  // 2.0.0 [RVJ-83] and the '앱으로 받음' mark (only a watched link can hold one).
+  if (record.watch) await Promise.all([kvDel(env, seenKey(id)), kvDel(env, okKey(id)), kvDel(env, appKey(id))]);
   return new Response(null, { status: 204 });
 }
 
@@ -1597,6 +1610,73 @@ async function okPress(request, env, id, app = false) {
     count(env, "oks");
   }
   return back("1");
+}
+
+// ---- 2.0.0 [RVJ-83] SPREAD-38 앱으로 받는 팀원 수 (처리방침 3.14 14번, 30일 줄) ----
+// A member's app that puts a watched link's changes into its own calendar by itself (자동 반영) leaves one mark on that link: the hash
+// of a random word only that phone keeps, with no name and nothing about the phone, so only that phone takes it back. The leader reads
+// one number for all of the team's links together, never per link, and only from LIMITS.appMin up. A leader who asks again with a
+// different set of links (one taken out or put in, to see whose mark it was) gets no number for LIMITS.appRestDays after the marks were
+// last counted together. The mark goes with the link (remove), when the link runs out, or when the phone turns 자동 반영 off. Before
+// 처리방침 3.14 nothing is kept and the leader reads no number. What stays possible: someone who knows a link's address can leave a mark
+// on it too (as anyone can press 확인했어요); that only spoils the leader's own number, and a new mark counts like any other.
+
+const appKey = (id) => `app:${id}`;
+const MARK = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * POST /api/share/:id/app {mark}: 204, or not_found (the link is gone, not watched, or 3.14 is not in force), bad_mark, rate_limited.
+ * {mark, off: true}: the phone that left the mark takes it back (204 also when there is none, any day).
+ */
+async function appMark(request, env, id) {
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const mark = typeof body?.mark === "string" ? body.mark : "";
+  if (!MARK.test(mark)) return json({ error: "bad_mark" }, 400);
+  const h = (await sha256(`app:${mark}`)).slice(0, 24);
+  const old = await env.SHARES.get(appKey(id), "json");
+  if (body.off === true) {
+    if (old?.h === h) await kvDel(env, appKey(id));
+    return new Response(null, { status: 204 });
+  }
+  const record = await env.SHARES.get(id, "json");
+  if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || !record.watch || !policy314(env)) return json({ error: "not_found" }, 404);
+  if (!(await allow(env, request, "ap", LIMITS.createsPerHour))) return json({ error: "rate_limited" }, 429);
+  // The same mark again only follows the link's time (a link the leader kept longer); a new one keeps when it was last counted.
+  if (old?.h === h && old.expiresAt === record.expiresAt) return new Response(null, { status: 204 });
+  await put(env, appKey(id), { h, expiresAt: record.expiresAt, ...(old?.set ? { set: old.set, setAt: old.setAt } : {}) });
+  return new Response(null, { status: 204 });
+}
+
+/**
+ * POST /api/apps {links:[{id, token}]}: the leader's links (each with its own token; any other is left out) -> { n, min }, n null under
+ * LIMITS.appMin, while 3.14 is not in force (off), or while the set rests after it changed (rest).
+ */
+async function appCount(request, env) {
+  if (!readAllowed(request, "apps", 60)) return json({ error: "rate_limited" }, 429);
+  let body;
+  try { body = JSON.parse((await request.text()).slice(0, 16 * 1024)); } catch { return json({ error: "bad_json" }, 400); }
+  const asked = Array.isArray(body?.links) ? body.links.slice(0, LIMITS.askMembers) : [];
+  if (!policy314(env)) return json({ n: null, min: LIMITS.appMin, off: true });
+  const ids = new Set();
+  const marks = [];
+  for (const l of asked) {
+    const id = typeof l?.id === "string" && /^[A-Za-z0-9]{16,32}$/.test(l.id) ? l.id : null;
+    const token = typeof l?.token === "string" ? l.token : "";
+    if (!id || !token || ids.has(id)) continue;
+    const record = await env.SHARES.get(id, "json");
+    if (!record || record.removed || Date.parse(record.expiresAt) < Date.now() || (await sha256(token)) !== record.tokenHash) continue;
+    ids.add(id);
+    const mark = record.watch ? await env.SHARES.get(appKey(id), "json") : null;
+    if (mark) marks.push([id, mark]);
+  }
+  const set = (await sha256([...ids].sort().join(","))).slice(0, 16);
+  const now = Date.now();
+  const rest = marks.some(([, m]) => m.set && m.set !== set && now - Date.parse(m.setAt) < LIMITS.appRestDays * 86400 * 1000);
+  if (rest) return json({ n: null, min: LIMITS.appMin, rest: true });
+  // Only a mark counted in another set (or never) is written, so asking again with the same links writes nothing.
+  for (const [id, m] of marks) if (m.set !== set) await put(env, appKey(id), { ...m, set, setAt: new Date(now).toISOString() });
+  return json({ n: marks.length >= LIMITS.appMin ? marks.length : null, min: LIMITS.appMin });
 }
 
 // ---- 1.38 [P3-L-18] 피곤해요 팀 합계 ----

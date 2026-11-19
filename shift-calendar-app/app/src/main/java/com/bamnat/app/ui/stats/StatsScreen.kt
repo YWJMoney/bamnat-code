@@ -285,6 +285,10 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     IconButton(onClick = { weekShift++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "다음 주") }
                 }
             }
+            // 2.0.0 [RVJ-105] 검토 U05b-12: a pick past a year is cut to a year, and the screen says so.
+            if (rangeMode == com.bamnat.core.hours.StatsRange.Mode.CUSTOM) com.bamnat.core.hours.StatsRange.cutLine(custom)?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             if (picking) StatsRangePicker(range, onPick = { f, t -> customFrom = f.toEpochDay(); customTo = t.toEpochDay(); briefMode = com.bamnat.core.hours.StatsRange.Mode.CUSTOM.name; picking = false },
                 onDismiss = { picking = false })
         }
@@ -619,6 +623,10 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, mark: 
         Spacer(Modifier.height(4.dp))
         if (mark != null) LimitBar(value = hours, limit = mark.toDouble(), max = maxHours, mark = true)
         else LimitBar(value = hours, limit = limitHours.toDouble(), max = maxHours)
+        // 2.0.0 [RVJ-105] 검토 U05-12·PAYU-25: past the limit is said in words, not only by the bar's colour (조건 14). A mark is a goal to reach, not a limit.
+        val overMinutes = week.totalMinutes - limitHours * 60
+        if (mark == null && overMinutes > 0) Text("넘음 +${HoursFormat.korean(overMinutes)}", style = MaterialTheme.typography.labelSmall.merge(NumberStyle),
+            color = Tone.Caution.color(), modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -778,6 +786,14 @@ private fun JobFigures(book: MoneyBook, month: YearMonth, columns: Int) {
                 Text("3.3% 떼고 받으면 ${Fmt.won(m.jobEarned - m.jobEarned * 33 / 1000)} · 5월 종합소득세 때 돌려받을 수 있어요",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp))
+            }
+            // 2.0.0 [RVJ-80] 검토 T05b-11: the 일당(공수) days as 일용근로 too (하루 15만 원 공제, 한 번에 받을 때), the same figure as
+            // 현장 도구 › 일용직 세금 ([com.bamnat.core.money.DailyWorkerTax.month]). 분리과세라 신고할 일이 없어요.
+            val daily = remember(book, month) { com.bamnat.core.money.DailyWorkerTax.month(month, book.jobs) }
+            if (daily.days > 0) {
+                Text("일용직으로 받으면 ${Fmt.won(daily.wages - daily.together.total)} (일당 ${daily.days}일, 한 번에 받을 때) · 따로 신고하지 않아요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp))
             }
         }
     }
@@ -1005,7 +1021,7 @@ private fun NetPayLine(vm: StatsViewModel, profile: com.bamnat.core.pay.PayProfi
                 style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
         } else {
             Text(com.bamnat.app.tax.TaxWay.UNKNOWN, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            com.bamnat.app.tax.TaxWayChips(null) { m ->
+            com.bamnat.app.tax.TaxWayChips(null, daily = com.bamnat.app.tax.TaxWay.daily(profile)) { m ->
                 scope.launch { com.bamnat.app.tax.TaxWay.pick(context.appContainer, vm.calendarId, m) }
             }
         }

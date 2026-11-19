@@ -34,16 +34,21 @@ object TaxLearner {
         val off: Set<com.bamnat.core.pay.InsuranceLine> = emptySet(),
         /** 1.39 [PAYX-56] 공제 쪽 돈 (사택관리비·회비) of the month: a payslip's 실수령 is after them too. */
         val afterTax: (YearMonth) -> Long = { 0L },
+        /** 2.0.0 [RVJ-80] The 일당 of the month for [TaxMode.DAILY_WORKER] (null: not a 일당 setup). */
+        val dayRate: (YearMonth) -> Long? = { null },
+        /** 2.0.0 [RVJ-81] The lines the 생년 leaves out of the month ([com.bamnat.core.pay.InsuranceAge]), on top of [off]. */
+        val ageOff: (YearMonth) -> Set<com.bamnat.core.pay.InsuranceLine> = { emptySet() },
     ) {
         /** The table's deductions on [gross] for [month] in [asMode]. */
         fun deductions(gross: Long, month: YearMonth, asMode: TaxMode = mode): Long =
-            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross), off = off)
-                .deductions.sumOf { it.second } + afterTax(month)
+            TakeHome.estimate(gross, asMode, family, month.atDay(1), children, nonTaxable(month).coerceAtMost(gross), off = off + ageOff(month),
+                dayRate = dayRate(month)).deductions.sumOf { it.second } + afterTax(month)
 
         companion object {
             fun of(profile: PayProfile): Table =
                 Table(profile.taxMode, profile.taxFamily, profile.taxChildren, { m -> TakeHome.nonTaxable(profile, m) }, profile.insuranceOff,
-                    { m -> TakeHome.afterTax(profile, m).sumOf { it.second } })
+                    { m -> TakeHome.afterTax(profile, m).sumOf { it.second } }, { m -> TakeHome.dayRateOf(profile, m) },
+                    { m -> com.bamnat.core.pay.InsuranceAge.off(profile, m) })
         }
     }
 
@@ -203,8 +208,9 @@ object TaxLearner {
         var ins = 0L
         for (s in inYear) {
             val lines = TakeHome.estimate(s.gross, fit.mode, table.family, s.observation.payMonth.atDay(1), table.children,
-                table.nonTaxable(s.observation.payMonth).coerceAtMost(s.gross)).deductions
-            val taxPart = lines.filter { it.first == TakeHome.TAX_LABEL || it.first == TakeHome.LOCAL_TAX_LABEL || it.first.startsWith("원천징수") }.sumOf { it.second }
+                table.nonTaxable(s.observation.payMonth).coerceAtMost(s.gross), dayRate = table.dayRate(s.observation.payMonth)).deductions
+            val taxPart = lines.filter { it.first == TakeHome.TAX_LABEL || it.first == TakeHome.DAILY_TAX_LABEL || it.first == TakeHome.LOCAL_TAX_LABEL ||
+                it.first.startsWith("원천징수") }.sumOf { it.second }
             val all = lines.sumOf { it.second }
             val share = if (all > 0) taxPart.toDouble() / all else 1.0
             val t = (s.deducted * share).roundToLong()

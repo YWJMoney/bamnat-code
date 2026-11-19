@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -37,17 +36,23 @@ fun StaffCostBars(lines: List<LedgerLine>, last: Map<String, Long>, modifier: Mo
     val track = MaterialTheme.colorScheme.surfaceVariant
     val danger = MaterialTheme.colorScheme.error
     val mark = MaterialTheme.colorScheme.onSurface
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(10.dp)) {
         rows.forEach { l ->
             val over = l.warnings.any { it.key == "week52" }
             val before = last[l.staff.id]
             val words = "${l.staff.name} ${Fmt.won(l.employerTotal)}" + (before?.let { " · 지난달 ${Fmt.won(it)}" } ?: "") + if (over) " · 주 52시간 넘음" else ""
-            Row(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = words }, verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 주 52시간 넘은 직원은 막대 하나만 빨강(이름·금액까지 세 번이었어요).
-                Text(l.staff.name, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.width(56.dp),
-                    color = MaterialTheme.colorScheme.onSurface)
-                Canvas(Modifier.weight(1f).height(14.dp)) {
+            // 2.0.0 [RVJ-105] 검토 U05c-06·PAYU-25: the name sits above its bar (it was a 56dp column, two or three letters at 글자 150~200%), and a person
+            // past 주 52시간 is said in words as well as in the bar's red.
+            Column(Modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = words }, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 주 52시간 넘은 직원은 막대 하나만 빨강(이름·금액까지 세 번이었어요).
+                    Text(l.staff.name, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.onSurface)
+                    Text(Fmt.won(l.employerTotal), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                // Under the name, not beside it: at 글자 200% the words and the amount left the name a sliver of the line (a letter a line).
+                if (over) Text("주 52시간 넘음", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Canvas(Modifier.fillMaxWidth().height(14.dp)) {
                     val r = CornerRadius(size.height / 2, size.height / 2)
                     drawRoundRect(track, cornerRadius = r)
                     drawRoundRect(if (over) danger else bar, size = Size(size.width * (l.employerTotal / top), size.height), cornerRadius = r)
@@ -57,7 +62,6 @@ fun StaffCostBars(lines: List<LedgerLine>, last: Map<String, Long>, modifier: Mo
                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 2.dp.toPx())))
                     }
                 }
-                Text(Fmt.won(l.employerTotal), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Text("사장님이 내는 몫까지" + (if (last.values.any { it > 0 }) " · 점선은 지난달" else "") + if (rows.any { r -> r.warnings.any { it.key == "week52" } }) " · 빨강은 주 52시간을 넘은 사람" else "",

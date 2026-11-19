@@ -23,6 +23,8 @@ data class TakeHomeView(
     val records: List<PayObservation>,
     /** [J133-01] The pay setup never picked a tax way and the records do not show one: no 세후, the way asked instead. */
     val taxUnknown: Boolean = false,
+    /** 2.0.0 [RVJ-80] A 일당 setup: the ways to pick have 일용근로. */
+    val daily: Boolean = false,
 ) {
     val deposits: List<PayObservation> get() = records.filter { it.source == PayObservation.Source.DEPOSIT }
     val typed: List<PayObservation> get() = records.filter { it.source != PayObservation.Source.DEPOSIT }
@@ -42,7 +44,7 @@ data class TakeHomeView(
             return TakeHomeView(
                 // 2.0.0 [RVJ-18] 굳은 달: a closed month shows the 세후 kept when it was closed, as the pay screen does.
                 month = month, gross = g, forecast = closed[month]?.takeHome ?: g?.takeIf { !unknown }?.let { TaxLearner.forecast(month, it, fit, table) },
-                taxUnknown = unknown,
+                taxUnknown = unknown, daily = TaxWay.daily(profile),
                 lastActual = last, fit = fit, year = TaxLearner.yearSoFar(month.year, fit, table),
                 records = records.sortedByDescending { it.payMonth },
             )

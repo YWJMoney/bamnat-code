@@ -1,6 +1,8 @@
 package com.bamnat.app.ui.work
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -197,7 +199,8 @@ internal fun DateField(label: String, date: LocalDate?, onChange: (LocalDate?) -
 @Composable
 internal fun SwitchLine(title: String, checked: Boolean, onChange: (Boolean) -> Unit, text: String? = null) {
     Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Switch) { onChange(!checked) }.padding(vertical = 4.dp),
+        // 2.0.0 [RVJ-87] 검토 BOSS-66: one focus that says 켜짐·꺼짐 (toggleable), not a press and a switch read apart.
+        Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(value = checked, role = Role.Switch, onValueChange = onChange).padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {

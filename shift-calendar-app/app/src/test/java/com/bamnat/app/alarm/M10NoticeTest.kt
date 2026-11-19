@@ -71,9 +71,11 @@ class M10NoticeTest {
         // 1.38 [P3-B-11] 직원 출퇴근 the eighteenth, 1.39 [TEAM-22] 받은 근무표 바뀜 the nineteenth (하루 안내),
         // 1.39 [SLEEP-06] 자는 중 the twentieth (하루 안내, silent but not folded), 자는 동안 온 알림 the twenty-first (PC 5차),
         // 2.0.0 [RVM-24] STU-13 받은 작품의 규칙 알림 the twenty-second (하루 안내, 끄기 한 번),
-        // 2.0.0 [RVIB-21] 둘째 구간 시작 the twenty-third (하루 안내, quiet).
-        assertEquals(23, channels.size)
+        // 2.0.0 [RVIB-21] 둘째 구간 시작 the twenty-third (하루 안내, quiet),
+        // 2.0.0 [RVJ-96] 신고·지급 기한 the twenty-fourth (사장님 급여 대장, 3일 전 아침 9시에 한 번).
+        assertEquals(24, channels.size)
         assertEquals(NotificationManager.IMPORTANCE_LOW, nm.getNotificationChannel(Notifications.GAP_CHANNEL_ID).importance)
+        assertEquals("신고·지급 기한", nm.getNotificationChannel(Notifications.FILING_CHANNEL_ID).name.toString())
         assertEquals("받은 작품의 규칙 알림", nm.getNotificationChannel(Notifications.RECEIVED_RULES_CHANNEL_ID).name.toString())
         assertEquals(NotificationManager.IMPORTANCE_LOW, nm.getNotificationChannel(Notifications.NIGHT_QUIET_CHANNEL_ID).importance)
         assertEquals("하루 안내", nm.notificationChannelGroups.first { it.id == nm.getNotificationChannel(Notifications.SLEEPING_CHANNEL_ID).group }.name.toString())

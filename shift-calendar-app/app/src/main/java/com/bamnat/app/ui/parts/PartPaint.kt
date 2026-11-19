@@ -271,12 +271,14 @@ fun dayStates(role: String?, dayOfWeek: java.time.DayOfWeek, holiday: Boolean, i
 fun PartText(
     text: String, part: PartStyle, base: TextStyle, modifier: Modifier = Modifier, maxLines: Int = Int.MAX_VALUE,
     overflow: androidx.compose.ui.text.style.TextOverflow = androidx.compose.ui.text.style.TextOverflow.Clip,
+    /** 2.0.0 [RVJ-91] Where the words end (a cut line's … can end short of its box), for a part laid out beside other words. */
+    onTextLayout: (androidx.compose.ui.text.TextLayoutResult) -> Unit = {},
 ) {
     val style = part.text(base)
     val lines = part.lines ?: maxLines
     androidx.compose.foundation.layout.Box(modifier) {
         part.outline(style)?.let { androidx.compose.material3.Text(text, style = it, maxLines = lines, overflow = overflow) }
-        androidx.compose.material3.Text(text, style = style, maxLines = lines, overflow = overflow)
+        androidx.compose.material3.Text(text, style = style, maxLines = lines, overflow = overflow, onTextLayout = onTextLayout)
     }
 }
 

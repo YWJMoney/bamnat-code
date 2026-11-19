@@ -94,6 +94,22 @@ class RosterFollowerTest {
         assertEquals(1, api.quiet)
     }
 
+    /** 2.0.0 [RVJ-99] 검토 PAYU-15: the look just before a work alarm brings the 리더's change in and says it without a sound. */
+    @Test fun theLookBeforeTheAlarmSaysItQuietly() = runBlocking<Unit> {
+        c.received.put(id, api.share!!, mine = true)
+        api.share = link("2", "1", "t2")
+        try {
+            RosterFollower.hush(RosterFollowAhead.LOOK_MS * 2)
+            RosterFollower.checkAll(c)
+            assertEquals(ShiftOverride.Shift(night), override(day))
+            val n = shadowOf(app.getSystemService(android.app.NotificationManager::class.java)).allNotifications
+                .last { it.channelId == Notifications.ROSTER_CHANNEL_ID }
+            assertEquals("소리 없이", android.app.Notification.GROUP_ALERT_CHILDREN, n.groupAlertBehavior)
+        } finally {
+            RosterFollower.hush(-1)
+        }
+    }
+
     @Test fun theLinkTheWorkComesFromGoesInAndCanBeTakenBack() = runBlocking<Unit> {
         c.received.put(id, api.share!!, mine = true)
         assertEquals(RosterFollower.Mode.AUTO, RosterFollower.mode(c.received.get(id)!!))

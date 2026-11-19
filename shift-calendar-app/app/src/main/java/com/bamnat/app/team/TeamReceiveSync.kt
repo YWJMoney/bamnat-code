@@ -117,6 +117,21 @@ object TeamReceiveSync {
 
     fun url(m: TeamMember): String? = m.linkId?.let { com.bamnat.app.BuildConfig.SHARE_BASE_URL.trimEnd('/') + "/s/" + it }
 
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번): how many of the team read their link in the app and get changes into their own calendar
+     * and alarms by themselves. One number for the team's links together, shown from 3 (the share server says nothing under it, nor
+     * which link); null when the flag waits for 3.14, nobody has a link, or it could not be read.
+     */
+    suspend fun appCount(app: AppContainer, members: List<TeamMember>): Int? {
+        if (!runCatching { app.flags.on(com.bamnat.core.flags.FlagCatalog.TEAM_APP_COUNT) }.getOrDefault(false)) return null
+        val links = members.mapNotNull { m -> m.linkId?.let { id -> m.linkToken?.let { id to it } } }
+        if (links.size < 3) return null
+        return try { app.shareApi.appCount(links).n } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (_: Exception) { null }
+    }
+
+    /** The line under 봤어요: '앱으로 받는 팀원 5명 · 바뀐 날이 알람까지 저절로 들어가요'. */
+    fun appLine(n: Int): String = "앱으로 받는 팀원 ${n}명 · 바뀐 날이 그분들 달력과 알람에 저절로 들어가요"
+
     // ---- 1.38 [P3-L-18] 피곤해요 합계 받기: counts per day from members who press 피곤해요 in their own app, never who ----
 
     private fun tiredKey(teamId: String) = "tired:$teamId"

@@ -35,7 +35,8 @@ class PayRedIsDangerTest {
         "work/KeepRecordsDialog.kt" to listOf("기록을 지우고 새로 시작"),
         "work/ManageScreen.kt" to listOf("할 일 가운데 팀의 주 52시간 넘김 한 줄(법)"),
         "work/PartTimeTools.kt" to listOf("최저임금보다 적은 시급(법 위반, RVP-13)", "지우기"),
-        "work/PayrollScreen.kt" to listOf("저장하지 않고 나가기", "직원 그래도 지우기", "저장하지 않고 나가기(직원 창)"),
+        "work/PayrollScreen.kt" to listOf("저장하지 않고 나가기", "직원 그래도 지우기", "저장하지 않고 나가기(직원 창)",
+            "[RVJ-100] 빈 가게 지우기 단추(되돌릴 수 없는 지우기, 직원·닫은 달이 없을 때만 보여요)", "[RVJ-100] 빈 가게 지우기 확인"),
         "work/StaffCostBars.kt" to listOf("주 52시간을 넘은 직원의 막대"),
     )
 

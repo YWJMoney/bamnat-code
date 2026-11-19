@@ -657,7 +657,9 @@ private fun InquiryForm(
         val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     val inviteTerms = rememberInviteTerms()
-    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    // 2.0.0 [RVJ-94] 사장님·리더 answers once their flags are on.
+    val helpExtras = rememberHelpExtras()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms, helpExtras) { HelpFaq.topics(vm.shareOn, inviteTerms, helpExtras).withoutKinds(hiddenKinds).forStyle(screenStyle) }
         var notIt by remember { mutableStateOf(emptySet<String>()) }
         var helped by remember { mutableStateOf<String?>(null) }
         val tips = remember(body, kind) {
@@ -1490,7 +1492,9 @@ private fun HelpHome(
     val hiddenKinds = com.bamnat.app.ui.flags.rememberHiddenKinds()
     val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
     val inviteTerms = rememberInviteTerms()
-    val topics = remember(hiddenKinds, screenStyle, inviteTerms) { HelpFaq.topics(vm.shareOn, inviteTerms).withoutKinds(hiddenKinds).forStyle(screenStyle) }
+    // 2.0.0 [RVJ-94] 사장님·리더 answers once their flags are on.
+    val helpExtras = rememberHelpExtras()
+    val topics = remember(hiddenKinds, screenStyle, inviteTerms, helpExtras) { HelpFaq.topics(vm.shareOn, inviteTerms, helpExtras).withoutKinds(hiddenKinds).forStyle(screenStyle) }
     val draft by vm.draft.collectAsStateWithLifecycle()
     val board by vm.board.collectAsStateWithLifecycle()
     // 2.0.0 [RVN-24] 검토 I22cb-02: 같은 근무 분들의 답 under an answer on the same subject.

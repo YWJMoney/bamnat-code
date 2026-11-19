@@ -238,9 +238,11 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
 
     /**
      * [PAYX-50] 1.38: 고정 연장수당 (연장수당을 미리 주는 매달 수당), the hours it stands for; 0 is not one. Never 통상임금. It came
-     * from the old '수당 추가' window, now one with this builder.
+     * from the old '수당 추가' window, now one with this builder. 2.0.0 [RVJ-76] (검토 PAYU-49) In minutes, so a contract's 22.5시간 fits.
      */
-    var fixedOtHours by mutableStateOf(0)
+    var fixedOtMinutes by mutableStateOf(0)
+    /** [RVJ-76] '직접' is picked with no hours in use yet: 만들기 waits (the picker says what to put). */
+    var fixedOtPending by mutableStateOf(false)
     /** [PAYX-50] 비과세 as the item had it when changed; null guesses from the name (식대·차량유지비). */
     var taxable by mutableStateOf<Boolean?>(null)
     /** [PAYX-52] A 매달 rule's own amounts by month, kept when it is changed. */
@@ -263,7 +265,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
     val asksFixedOt: Boolean get() = kind == ItemKind.MONTHLY && !asRule && !hasLimits
 
     private fun item(title: String, value: ValueTimeline, cadence: Cadence): PayItem {
-        val fixed = if (cadence == Cadence.MONTHLY && asksFixedOt) fixedOtHours * 60 else 0
+        val fixed = if (cadence == Cadence.MONTHLY && asksFixedOt) fixedOtMinutes else 0
         return PayItem(
             id, title.take(20), value, cadence, ordinary = ordinary && fixed == 0, share = itemWho, mine = mine,
             fixedOvertimeMinutes = fixed,
@@ -406,7 +408,7 @@ internal class ItemDraft(kind: ItemKind?, private val id: String) {
                 who = item.share
                 whoPicked = true
                 mine = item.mine
-                fixedOtHours = item.fixedOvertimeMinutes / 60
+                fixedOtMinutes = item.fixedOvertimeMinutes
                 taxable = item.taxable
                 if (item.isPercent) {
                     percent = ExtraRuleText.number((item.percent ?: 0.0) * 100)
@@ -588,7 +590,8 @@ internal fun CustomItemDialog(
                 },
                 bottomBar = {
                     if (draft.kind != null) {
-                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap, enabled = made != null && !full,
+                        EffectBar(landsIn, draft, effect = real, timesOnly = effect?.times, gap = gap,
+                            enabled = made != null && !full && !(draft.asksFixedOt && draft.fixedOtPending),
                             shut = month.takeIf { it != landsIn },
                             label = if (isEdit) "저장" else if (oneWindow) "추가" else "만들기",
                             unknown = made != null && draft.made(start) == null,
@@ -807,7 +810,7 @@ internal fun ColumnScope.FormStep(
                 if (kind == ItemKind.MONTHLY) "매달 모두에게 똑같이 주는 수당이면 켜요. 연장·야간 수당도 함께 올라가요. 모르면 꺼 두세요."
                 else "일한 날마다 받는 수당은 보통 넣지 않아요. 모르면 꺼 두세요.",
                 draft.ordinary,
-            ) { if (draft.fixedOtHours == 0) draft.ordinary = it }
+            ) { if (draft.fixedOtMinutes == 0) draft.ordinary = it }
             TermLink("통상임금")
             if (fixedOt && draft.asksFixedOt) FixedOtChips(draft)
         }
@@ -815,7 +818,7 @@ internal fun ColumnScope.FormStep(
     }
     // [PAYX-52] 1.38 PC 12.1: 비과세 for any 매달 수당, not only the names the app knows (식대 등). 1.39 [PAYX-57]: a 매달 수당 kept as a
     // rule (이번 달만·기간) too, which had lost it.
-    if (kind == ItemKind.MONTHLY && draft.fixedOtHours == 0) {
+    if (kind == ItemKind.MONTHLY && draft.fixedOtMinutes == 0) {
         val guess = !com.bamnat.core.pay.TakeHome.looksNonTaxable(draft.name.trim().ifEmpty { kind.defaultName })
         Toggle("세금 없는 돈 (비과세)", "식대·자가운전보조금·보육수당·연구보조비처럼 명세서에 비과세로 적힌 수당이면 켜요. 종류마다 월 20만 원까지 세금에서 빼고 어림해요(식대가 둘이면 합쳐서 20만 원)." +
             if (draft.taxable == null && !guess) " 이름을 보고 켜 두었어요." else "",
@@ -834,19 +837,15 @@ internal fun ColumnScope.FormStep(
 
 /**
  * [PAY-05][PAYX-50] 고정 연장수당: a 매달 수당 that pays some overtime ahead (prepaid), never 통상임금. The app then tells when the real
- * overtime comes to more. Moved here from the old '수당 추가' window.
+ * overtime comes to more. Moved here from the old '수당 추가' window. 2.0.0 [RVJ-76] (검토 PAYU-49·T05b-02) The hours with '직접'
+ * (12·22.5·45시간), the same picker as 급여 마법사·빠른 설정.
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FixedOtChips(draft: ItemDraft) {
     Label("연장수당을 미리 주는 고정 수당인가요?")
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf(0, 10, 20, 30, 40, 52).forEach { h ->
-            FilterChip(selected = draft.fixedOtHours == h, onClick = { draft.fixedOtHours = h; if (h > 0) draft.ordinary = false },
-                label = { Text(if (h == 0) "아니요" else "${h}시간분") }, modifier = Modifier.heightIn(min = 48.dp))
-        }
-    }
-    if (draft.fixedOtHours > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
+    FixedOtHours(draft.fixedOtMinutes, { m -> draft.fixedOtMinutes = m; if (m > 0) draft.ordinary = false }, none = "아니요",
+        onPending = { draft.fixedOtPending = it })
+    if (draft.fixedOtMinutes > 0) Hint("통상임금에는 넣지 않아요. 실제 연장수당이 이 금액보다 많으면 차액을 알려 드려요.")
 }
 
 /**
@@ -1084,6 +1083,15 @@ private fun EffectBar(
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.bamnat.caution,
                     )
                 }
+                // 2.0.0 [RVJ-76] (사진 rvj_250: 고정연장수당 400,000원에 '+0원'만 보여 틀린 줄 알았어요) A 고정 연장수당 pays the month's
+                // 연장수당 ahead (PayCalculator.coverPremiums), so the part this month's 연장수당 already pays is not added again: said here.
+                val fixedAmount = draft.amount
+                if (effect != null && draft.kind == ItemKind.MONTHLY && draft.fixedOtMinutes > 0 && fixedAmount != null && effect.amount < fixedAmount)
+                    Text(
+                        if (effect.amount <= 0) "이달 연장수당이 이 금액 이상이라 합계는 그대로예요. 고정 연장수당은 연장수당을 미리 주는 거라 겹쳐 더하지 않아요"
+                        else "이달 연장수당과 겹치는 ${won(fixedAmount - effect.amount)}은 더하지 않아요. 고정 연장수당은 연장수당을 미리 주는 거예요",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 if (gap != null && effect != null) {
                     val left = gap - effect.amount
                     val closed = abs(left) <= 1_000

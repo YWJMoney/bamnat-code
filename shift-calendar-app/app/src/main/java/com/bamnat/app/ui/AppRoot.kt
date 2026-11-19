@@ -611,7 +611,14 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 }
             }
             NoticeLinks.Target.MONEY -> { nav.navigateTopLevel(TopLevel.MONEY.route); NoticeLinks.consume(target) }
-            NoticeLinks.Target.MANAGE -> { nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target) }
+            NoticeLinks.Target.MANAGE -> {
+                // 2.0.0 [RVJ-96] The 신고·지급 notice opens the 급여 대장 on its 다가올 신고·지급.
+                // [RVJ-100] 검토 T05-05: on that 가게's 대장.
+                com.bamnat.app.boss.BossFilingNotice.placeOf(NoticeLinks.payload.value)?.let { place ->
+                    com.bamnat.app.imports.SharedToManage.openLedger(com.bamnat.app.boss.BossFilingNotice.OPENS, place.ifEmpty { null })
+                }
+                nav.navigate(Routes.MANAGE) { launchSingleTop = true }; NoticeLinks.consume(target)
+            }
             // [INV-08] An investor notice opens its calendar's 투자 tab, which opens the trade itself.
             NoticeLinks.Target.INVEST, NoticeLinks.Target.INVEST_TRADE -> {
                 // [MCAL-03] No calendar named is the main one; its 투자 tab takes the notice only once it is shown.

@@ -628,6 +628,7 @@ class CalendarBook(
         fun shopMoneyJson(r: com.bamnat.core.work.ShopMoney): JSONObject = JSONObject()
             .put("feeBp", r.cardFeeBp).put("settleDays", r.settleDays).put("opening", r.openingCash)
             .put("target", r.monthlyTarget).put("simpleTax", r.simpleTax).put("valueAdded", r.valueAddedPercent)
+            .apply { r.vatTrade?.let { put("vatTrade", it.name) } } // 2.0.0 [RVJ-84]
 
         fun shopMoneyOf(o: JSONObject): com.bamnat.core.work.ShopMoney {
             val d = com.bamnat.core.work.ShopMoney()
@@ -638,6 +639,8 @@ class CalendarBook(
                 monthlyTarget = o.optLong("target").coerceAtLeast(0),
                 simpleTax = o.optBoolean("simpleTax"),
                 valueAddedPercent = o.optInt("valueAdded", d.valueAddedPercent).coerceIn(0, 100),
+                vatTrade = o.optString("vatTrade").takeIf { it.isNotEmpty() }
+                    ?.let { n -> com.bamnat.core.work.SimpleVatTrade.entries.firstOrNull { it.name == n } },
             )
         }
 
@@ -656,6 +659,8 @@ class CalendarBook(
             .putOpt("breakMin", r.breakMinutes.takeIf { r.breakStart != null && it > 0 })
             .putOpt("everyOther", r.everyOther.joinToString(",") { it.name }.ifEmpty { null })
             .putOpt("everyOtherFrom", r.everyOtherFrom?.toString())
+            // 2.0.0 [RVJ-86] 검토 BOSS-65 the 영업·단축영업 kinds by id.
+            .putOpt("openType", r.openTypeId).putOpt("shortType", r.shortTypeId)
 
         private fun weekdays(raw: String): Set<java.time.DayOfWeek> =
             raw.split(',').mapNotNull { n -> runCatching { java.time.DayOfWeek.valueOf(n) }.getOrNull() }.toSet()
@@ -680,6 +685,8 @@ class CalendarBook(
                 breakMinutes = o.optInt("breakMin", 0).coerceIn(0, 12 * 60),
                 everyOther = weekdays(o.optString("everyOther")),
                 everyOtherFrom = o.optString("everyOtherFrom").takeIf { it.isNotEmpty() }?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() },
+                openTypeId = o.optLong("openType", 0L).takeIf { it > 0 },
+                shortTypeId = o.optLong("shortType", 0L).takeIf { it > 0 },
             )
         }.getOrNull()
     }

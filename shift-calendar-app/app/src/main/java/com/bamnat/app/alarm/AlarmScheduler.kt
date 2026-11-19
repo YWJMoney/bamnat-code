@@ -264,6 +264,8 @@ class AlarmScheduler(
     fun saveBootCopy(ahead: List<RingRequest> = lastAhead) {
         lastAhead = ahead
         BootAlarms.save(context, ahead, ringSettings())
+        // 2.0.0 [RVJ-99] 검토 PAYU-15: a followed 리더 link is looked at once before the first of these.
+        runCatching { com.bamnat.app.share.RosterFollowAhead.reschedule(context) }
     }
 
     /** Schedules a one-off snooze alarm that rings again with the same shift details. */
