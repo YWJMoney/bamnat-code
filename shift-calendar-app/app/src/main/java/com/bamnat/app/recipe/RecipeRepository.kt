@@ -188,6 +188,39 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
     suspend fun inUse(): List<AppliedRecipeEntity> = dao.applied().filter { it.code.isNotEmpty() && it.undoneAt == null && it.replacedAt == null }
         .groupBy { it.code }.map { (_, list) -> list.maxBy { it.appliedAt } }
 
+    /** 2.0.0 [RVS-15] One of my settings a work changed, what it was before ([before]) and is now ([now]), in words too. */
+    data class FeelBack(val key: String, val what: String, val before: String, val now: String, val beforeSaid: String, val nowSaid: String)
+
+    /**
+     * 2.0.0 [RVS-15] 검토 SN-04·SD-05 (설정 › 화면과 글자 '작품이 바꾼 내 설정 되돌리기', 7일이 지나도): my own settings (밝기·글자 크기·
+     * 누르기·시계·하루 순서·급여 기간…) that works put on this phone changed and that are still as a work left them, each with what I had
+     * before the first of those works (a work put on over another one goes back through it). A setting I changed since is mine and is not
+     * offered; a work taken back already put its own back.
+     */
+    suspend fun feelChanged(): List<FeelBack> {
+        val chains = HashMap<String, MutableList<Pair<String, String>>>()
+        dao.applied().filter { it.undoneAt == null }.sortedBy { it.appliedAt }.forEach { e ->
+            val sets = runCatching { JSONObject(e.before).optJSONObject(PieceKind.APP_FEEL.key)?.optJSONObject("settings") }.getOrNull() ?: return@forEach
+            sets.keys().forEach { k ->
+                if (k !in RecipePieces.MY_FEEL_SETTINGS) return@forEach
+                val pair = sets.optJSONArray(k) ?: return@forEach
+                chains.getOrPut(k) { ArrayList() } += pair.optString(0) to pair.optString(1)
+            }
+        }
+        val now = pieces.feelSnapshot()
+        return chains.mapNotNull { (k, list) ->
+            val cur = now[k] ?: return@mapNotNull null
+            val last = list.indexOfLast { it.second == cur }.takeIf { it >= 0 } ?: return@mapNotNull null
+            var back = list[last].first
+            for (i in last - 1 downTo 0) if (list[i].second == back) back = list[i].first
+            if (back == cur) null
+            else FeelBack(k, RecipePieces.SETTING_NAMES[k] ?: k, back, cur, pieces.feelWords(k, back), pieces.feelWords(k, cur))
+        }.sortedBy { f -> RecipePieces.FEEL_SETTINGS.values.indexOf(f.key) }
+    }
+
+    /** 2.0.0 [RVS-15] Puts [list] back as it was before the works; how many went back. */
+    fun putFeelBack(list: List<FeelBack>): Int = pieces.putFeelBack(list.associate { it.key to (it.before to it.now) })
+
     /**
      * 2.0.0 [RVS-12] 총괄 HQ-57 ②: works put on in 1.36~1.39 whose 부품 꾸미기 has a formula (`{"fx"}`) went on without it (넣기 could
      * not read its own formula back and let the piece go without a word, 장터 144개). Nothing is put back by itself, so no one's calendar
@@ -380,7 +413,9 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         e.undoneAt == null && e.replacedAt == null && now - e.appliedAt < UNDO_DAYS * DAY_MILLIS
 
     /** 2.0.0 [RVM-45] 검토 RCP-02: what the last [undo] / [undoAll] left as the user made it, and the pieces it could not take back. */
-    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList())
+    data class UndoReport(val kept: Int = 0, val failed: List<PieceKind> = emptyList(), /** [RVM-50] shifts whose alarms went off. */ val alarmsOff: List<String> = emptyList(),
+                          /** 2.0.0 [RVM-55] U09b-02: the pieces taken back, and what stayed as the user made it (그대로 둔 것 [보기]). */
+                          val back: Int = 0, val items: List<RecipePieces.Kept> = emptyList())
 
     /**
      * 2.0.0 [RVM-50] 검토 RCP-04: by shift, the alarm times (minutes before) the works still on this phone want, other than record
@@ -411,6 +446,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         when {
             r.failed.isNotEmpty() -> "되돌리지 못한 것이 있어요(" + r.failed.joinToString("·") { it.label } + "). 한 번 더 눌러 주세요"
             !ok -> "되돌릴 수 없어요. 넣은 지 7일이 지났거나 이미 되돌렸어요"
+            // 2.0.0 [RVM-55] 검토 U09b-02: how much went back too, with 보기 (the line's action) for what stayed.
+            r.kept > 0 && r.back > 0 -> "되돌렸어요. 조각 ${r.back}개를 돌리고, 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             r.kept > 0 -> "되돌렸어요. 넣은 뒤 직접 바꾼 ${r.kept}곳은 그대로 뒀어요"
             else -> "되돌렸어요. 그 사이 적은 기록은 그대로예요"
         } + if (ok && r.alarmsOff.isNotEmpty()) " · " + r.alarmsOff.distinct().joinToString("·") { "‘$it’" } + " 알람이 꺼졌어요" else ""
@@ -427,6 +464,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         // again. Now the record keeps the pieces still on (and stays undoable); the rest are taken back.
         val failed = ArrayList<String>()
         pieces.kept = 0
+        pieces.keptItems.clear()
         pieces.alarmsOff.clear()
         pieces.undoing = e.id
         for (key in e.pieces.split(',').reversed()) {
@@ -435,7 +473,8 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
             runCatching { pieces.restore(kind, snap, e.calendarId) }.onFailure { failed += key }
         }
         pieces.undoing = null
-        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList())
+        val report = UndoReport(pieces.kept, failed.mapNotNull(PieceKind::of), pieces.alarmsOff.toList(),
+            e.pieces.split(',').count { PieceKind.of(it) != null && it !in failed && before.has(it) }, pieces.keptItems.toList())
         if (failed.isNotEmpty()) {
             dao.upsertApplied(e.copy(pieces = e.pieces.split(',').filter { it in failed }.joinToString(",")))
             return true to report
@@ -454,7 +493,7 @@ class RecipeRepository(private val c: AppContainer, context: Context) {
         var all = UndoReport()
         val n = undoable(code).count { e ->
             val (ok, r) = undoOne(e.id)
-            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff)
+            all = UndoReport(all.kept + r.kept, all.failed + r.failed, all.alarmsOff + r.alarmsOff, all.back + r.back, all.items + r.items)
             ok
         }
         lastUndo = all

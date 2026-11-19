@@ -4,6 +4,7 @@ import { SORTING, autoAnswer, compareVersions, grams, likeness, needsPerson, nee
 import { replyRisk } from "./ledger.js";
 import { billingWordOf, isBillingRecord, replyRiskOf } from "./ask-check.js";
 import { careAppealOf } from "./community-care.js";
+import { CRASH, CRASH_ASK_DRAFT, crashOf, crashRepeats } from "./crash-repeat.js";
 // 1.37 [ADM2-02] 나간 판.
 import { DESK, OUTBOX_DROPPED, broadcastRisk, isOut, shippedVersion } from "./desk.js";
 import { needFromInquiry } from "./growth.js";
@@ -1135,6 +1136,22 @@ export async function adminViews(env, rows, { full = false } = {}) {
   const targets = rows.some((r) => r.status === "open") ? await slaTargets(env) : null;
   const typing = full ? (await all(env, "SELECT key FROM counters WHERE key LIKE ? AND expires > ?", `typing|${rows[0].id}|%`, now)) : [];
   const list = full && env.actor && can(env.actor, "inquiries", "edit") ? (await templates(env, now)).templates : null;
+  // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 멈춤 기록과, 같은 보낸 분이 7일 안에 보낸 닫힘 문의 중 몇 번째인지(4e의 묶어 읽기로 옮김).
+  const crashes = rows.map((row, k) => crashOf(row.kind, views[k].messages.find((m) => m.from === "user")?.text, readInfo(row.info)));
+  const repeats = new Map();
+  for (let k = 0; k < rows.length && repeats.size < 20; k++) {
+    const row = rows[k];
+    if (!crashes[k] || typeof row.device !== "string" || row.device.startsWith("gone")) continue;
+    const mine = await all(env, `SELECT i.id, i.kind, i.info, i.device, i.created_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.device = ? AND i.created_at BETWEEN ? AND ? ORDER BY i.created_at LIMIT 40`,
+      row.device, row.created_at - CRASH.days * DAY, row.created_at + CRASH.days * DAY);
+    // 운영 장부와 같은 7일 창(지금까지, 오래된 문의는 그 뒤 7일)에서 같은 보낸 분 묶음. 보낸 분 번호는 화면으로 보내지 않아요.
+    const same = mine.map((r) => ({ r, info: readInfo(r.info) })).map(({ r, info: i }) => ({ id: r.id, c: crashOf(r.kind, r.first, i), at: r.created_at, device: r.device, model: i.model, android: i.android, app: i.app }))
+      .filter((x) => x.c).map((x) => ({ ...x, record: x.c.record }));
+    const g = crashRepeats(same, Math.min(now, row.created_at + CRASH.days * DAY)).find((x) => x.by === "same" && x.ids.includes(row.id));
+    if (g) repeats.set(row.id, { nth: g.ids.indexOf(row.id) + 1, n: g.n, first: iso(g.first), last: iso(g.last), noRecord: g.noRecord, ids: g.ids });
+  }
   const out = [];
   for (let k = 0; k < rows.length; k++) {
     const row = rows[k];
@@ -1151,6 +1168,7 @@ export async function adminViews(env, rows, { full = false } = {}) {
       // [ADMIN-12] Who is answering it and what admins told each other; [ADMIN-11] the 개발사항 it is in.
       assignee: row.assignee ? { id: row.assignee, name: row.assignee_name ?? "" } : null,
       notes: (notes.get(row.id) ?? []).map((n) => ({ by: n.by, text: n.text, at: iso(n.at) })),
+      ...(crashes[k] ? { crash: { ...crashes[k], ...(crashes[k].record !== "has" ? { draft: CRASH_ASK_DRAFT } : {}), ...(repeats.has(row.id) ? { repeat: repeats.get(row.id) } : {}) } } : {}),
       // 2.0.0 [RVQ-51] 검토 I22bb-04: 답 알림이 보낸 분 폰에 못 갔으면(다시 보내는 중이거나 멈춤).
       push: fail ? { why: fail.why, tries: fail.tries, retry: fail.next_at ? iso(fail.next_at) : null, at: iso(fail.at) } : null,
       ...(env.actor && can(env.actor, "dev") ? { dev: items.filter((d) => d.deleted_at === null || d.deleted_at === undefined)
@@ -1281,6 +1299,8 @@ export async function inquiryList(env, params, actorId = "") {
       // 2.0.0 [RVQ-50] 검토 U22b-01: 답한 뒤·닫힌 뒤 보낸 분이 이어 써 다시 열린 문의.
       reopened: Boolean(r.reopened_at) && r.status === "open",
       appVersion: info.app ?? null,
+      // 2.0.0 [RVA-63] HQ-124: 닫힘 문의면 '멈춤 기록 있음·없음·점검 기록 없이 옴'.
+      ...(() => { const c = crashOf(r.kind, r.first, info); return c ? { crash: c } : {}; })(),
       createdAt: iso(r.created_at),
       updatedAt: iso(r.updated_at),
       ...triage(r.kind, r.first, info),

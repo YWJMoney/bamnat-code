@@ -3884,3 +3884,103 @@ test("[RVQ-55] 스토어 리뷰: 초안의 AI 표현은 알약으로 알리고, 
   assert.ok(!u.$("dialog[open]"));
   assert.deepEqual(u.errors, []);
 });
+
+test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카드(접히면 한 줄), 줄과 문의에 멈춤 기록 표식, '기록 부탁 답 넣기'는 적던 답을 지우지 않아요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.card\.crash-card\{/);
+  // 총괄(#526): 펼친 접는 카드의 꺾쇠에 공통 '▴' 글자가 겹쳐 그려지지 않게.
+  assert.match(css, /\.home-fold\[open\]>summary::after\{content:"";transform:rotate\(-135deg\)\}/);
+  const { call, env } = await world();
+  // 지어낸 값: 같은 보낸 분이 닫힘 문의 둘(멈춤 기록 없음).
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n기록 없음" };
+  const ids = [];
+  for (const text of ["앱이 갑자기 닫혀요", "또 앱이 저절로 꺼졌어요"]) {
+    ids.push((await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000071", kind: "bug", text, info }, from(71))).data.id);
+  }
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const card = u.$("#main .ledger-view > details.crash-card");
+  assert.ok(card, "the card is on the ledger");
+  // 조건 1: 처음에는 접힌 한 줄(장부 첫 줄이 밀리지 않게), 그 한 줄에 건수·기기·날짜·기록 없음.
+  assert.equal(card.open, false, "folded to one line at first");
+  assert.match(card.querySelector("summary").textContent, /닫힘 되풀이 2건 · 같은 보낸 분Test Fold 9 · 안드로이드 17 · 1\.39\.0 · \d\d\.\d\d~\d\d\.\d\d · 멈춤 기록 없음 2건/);
+  card.querySelector("summary").click();
+  await u.settle(5);
+  assert.equal(card.open, true);
+  // 조건 4: 묶음이 하나면 머리가 이미 말하니 묶음 제목 없이 줄 번호 칩만.
+  assert.equal(card.querySelectorAll(".crash-g").length, 0);
+  const chips = [...card.querySelectorAll(".crash-lines a.chip")];
+  assert.deepEqual(chips.map((a) => a.textContent.replace(/K-\d{4}/, "K")), ["K · 1번째", "K · 2번째"]);
+  assert.ok(chips[0].getAttribute("href").endsWith(ids[0]));
+  // 조건 2·6: 채운 단추를 더하지 않고, 빨강을 더하지 않아요.
+  assert.equal(card.querySelectorAll(".btn.primary, .pill.bad").length, 0);
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => /되풀이 2\/2/.test(p.textContent)));
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  // 펼친 것은 다시 그려도 남고, 접으면 한 줄로 돌아가요.
+  await u.click('#main [data-act="ledger-view"][data-key="open"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, true);
+  u.$("#main details.crash-card summary").click();
+  await u.settle(5);
+  await u.click('#main [data-act="ledger-view"][data-key="today"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, false);
+  // 문의 화면: 줄 표식, 상세의 몇 번째와 '기록 부탁 답 넣기'.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  assert.ok(u.$$("#main .rows .row-side .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  await u.go(`#/inquiries/${ids[1]}`);
+  await u.settle(30);
+  assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  await u.type("#reply", "안녕하세요.");
+  await u.click('#main [data-act="crash-draft"]');
+  const v = u.$("#reply").value;
+  assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
+  assert.match(v, /보고서 복사/);
+  assert.match(v, /밤낮 운영팀$/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-65] 장터 작품 '입은 뒤' 숫자: 줄에는 비율만(넣은 분이 20명 이상), 하나 보기에는 빈 상태 둘, 개선 신호 주소로 그 작품이 바로 열려요", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "지어낸 작품", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const ok = await make(1, "작은 글씨 달력");
+  const few = await make(2, "새로 올린 달력");
+  const off = await make(3, "깃발 전 달력");
+  // 서버(Q1 4g)가 싣는 wear 모양: 비율만, 넣은 분 수·낱개 수는 없음.
+  const WEAR = { [ok]: { state: "ok", offSoon: 0.45, textBack: 0.12, watch: true }, [few]: { state: "few" }, [off]: { state: "off" } };
+  const u = await asOwner(env, t);
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.url, ORIGIN);
+    const r = await real(input, init);
+    if (!url.pathname.startsWith("/api/admin/recipes") || (init?.method ?? "GET") !== "GET" || !r.ok) return r;
+    const j = await r.json();
+    for (const it of j.items ?? []) if (WEAR[it.code]) it.wear = WEAR[it.code];
+    return new u.window.Response(JSON.stringify(j), { status: r.status, headers: { "content-type": "application/json" } });
+  };
+  await u.go("#/recipes?tab=visible");
+  await u.settle(30);
+  const row = (code) => u.$(`#main [data-act="recipe-do"][data-id="${code}"]`)?.closest("li");
+  assert.match(row(ok).querySelector(".wear").textContent, /넣은 뒤\(30일\) · 30분 안에 다시 뺌 45% · 글자 크기 되돌림 12%/);
+  assert.equal(row(ok).querySelectorAll(".wear .pill.warn").length, 1, "눈여겨볼 작품만 주의 pill");
+  assert.ok(!row(few).querySelector(".wear") && !row(off).querySelector(".wear"), "목록 줄에는 비율이 있을 때만(짧게)");
+  assert.equal(u.$$("#main .wear .pill.bad").length, 0, "빨강 없음");
+  assert.doesNotMatch(u.window.location.hash, /code=/, "작품 코드는 하나 보기에서만 주소에");
+  // 개선 신호가 가는 주소: 그 작품 하나 보기.
+  for (const [code, words] of [[few, /넣은 분이 20명이 되면 비율이 보여요/], [off, /처리방침 3\.14 시행 뒤, 사용 통계를 켠 분에게서 모여요/]]) {
+    await u.go(`#/recipes?tab=one&code=${code}`);
+    await u.settle(30);
+    assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]'), null, "하나 보기");
+    assert.match(u.text("#main .wear"), words);
+    assert.match(u.window.location.hash, new RegExp(`code=${code}`));
+  }
+  await u.go("#/recipes?tab=one&code=%2Fx");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "flagged", "이상한 코드는 신고됨으로");
+  assert.deepEqual(u.errors, []);
+});

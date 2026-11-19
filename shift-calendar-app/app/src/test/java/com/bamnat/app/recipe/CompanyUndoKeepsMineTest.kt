@@ -113,4 +113,29 @@ class CompanyUndoKeepsMineTest {
         assertEquals("내가 바꾼 순서는 남아요", listOf(m.am, m.off), stepsOn(today.plusDays(10)))
         assertNotNull("남은 순서(이번 주)가 쓰는 교육도 남아요", type("교육"))
     }
+
+    /**
+     * 2.0.0 [RVM-55] 검토 U09b-02: 보기 says each place that stayed. 이것도 되돌리기 puts that one back as before the work (my own 기본급,
+     * which the work never touched, is no such place and stays); a shift days use can go only from its own settings.
+     */
+    @Test fun whatStayedIsListedAndTakenBackOneByOne() = runBlocking {
+        val m = mine()
+        val id = putOn(company())
+        s.saveShiftType(type("오전")!!.copy(start = LocalTime.of(5, 30)))
+        c.payStore.save(c.payStore.profile.value!!.copy(base = ValueTimeline(listOf(DatedValue(LocalDate.of(2026, 1, 1), 2_500_000L)))))
+        s.changePatternFrom(WorkPattern.Rotation(today.plusDays(7), listOf(m.am, m.off), anchorDate = today.plusDays(7)), today.plusDays(7))
+        assertTrue(c.recipes.undo(id))
+        val items = c.recipes.lastUndo.items
+        assertEquals(listOf("근무 순서", "‘오전’ 근무 시간", "‘교육’ 근무"), items.map { it.what })
+        assertTrue(c.recipes.undoSay(true), c.recipes.undoSay(true).contains("직접 바꾼 3곳은 그대로 뒀어요"))
+        val edu = items.single { it.what == "‘교육’ 근무" }
+        assertEquals("쓰는 날이 있는 근무는 여기서 지우지 않아요", null, edu.back)
+        assertTrue(edu.why, edu.why.contains("근무 설정에서"))
+        items.single { it.what == "‘오전’ 근무 시간" }.back!!.invoke()
+        assertEquals("오전 시각만 넣기 전으로", LocalTime.of(7, 0), type("오전")!!.start)
+        assertEquals("내 순서는 아직 그대로", listOf(m.am, m.off), stepsOn(today.plusDays(10)))
+        assertEquals("작품이 건드리지 않은 내 기본급은 그대로", 2_500_000L, c.payStore.profile.value!!.base.entries.last().value)
+        items.single { it.what == "근무 순서" }.back!!.invoke()
+        assertEquals("순서도 넣기 전으로", listOf(m.am, m.pm, m.off), stepsOn(today.plusDays(10)))
+    }
 }

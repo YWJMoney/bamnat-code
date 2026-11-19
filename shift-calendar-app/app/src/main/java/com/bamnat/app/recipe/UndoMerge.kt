@@ -24,6 +24,21 @@ internal object UndoMerge {
         return out
     }
 
+    /**
+     * 2.0.0 [RVM-55] 검토 U09b-02 (그대로 둔 것 › 이것도 되돌리기): [back], and every key the change made ([b] ≠ [a]) goes back to [b]
+     * even where the user changed it since. What the change did not touch stays as it is now.
+     */
+    fun force(now: JSONObject, b: JSONObject, a: JSONObject): JSONObject {
+        val out = back(now, b, a)
+        val keys = LinkedHashSet<String>().apply { b.keys().forEach(::add); a.keys().forEach(::add) }
+        for (k in keys) {
+            val bv = b.opt(k); val av = a.opt(k)
+            if (same(bv, av)) continue
+            if (bv == null || bv == JSONObject.NULL) out.remove(k) else out.put(k, bv)
+        }
+        return out
+    }
+
     private fun backList(now: JSONArray, b: JSONArray, a: JSONArray): JSONArray {
         val n = ids(now); val bb = ids(b); val aa = ids(a)
         val out = JSONArray()

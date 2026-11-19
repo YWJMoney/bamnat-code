@@ -9,6 +9,7 @@ import { MISS_PLACES } from "./growth.js";
 import { shipCode, shippedVersion } from "./desk.js";
 import { DAY, HOUR } from "./units.js";
 import { EFFECT, reachedAt } from "./loop.js";
+import { CRASH, crashOf, crashRepeats } from "./crash-repeat.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
 //
@@ -595,6 +596,15 @@ export function obsRules(b) {
       why: "낱말 식은 쓸수록 틀린 곳이 드러나요. 그 말이 든 예문을 장부(test/ask-corpus.json)에 넣고 식(src/ask-check.js)을 고쳐요.",
       dev: `분류 고칠 것: ${m.word ? `‘${m.word}’` : m.kindName} 낱말 식과 예문 다듬기`, to: "#/inquiries" });
   }
+  // 2.0.0 [RVA-63] HQ-124: 같은 보낸 분, 또는 같은 기기·안드로이드·앱 판에서 7일 안 닫힘 문의가 2건 넘으면 한 신호(묶음마다).
+  for (const g of b.crashRepeats ?? []) {
+    push({ kind: "crash-repeat", subject: g.key, value: g.n, base: 1, better: "down", unit: "건", on: g.n >= CRASH.min * t("crash-repeat"), sample: g.n,
+      tone: g.n >= 3 || g.by === "model" ? "bad" : "warn",
+      caveat: "문의 말에 닫힘·튕김이 있거나 앱이 '앱 멈춤' 기록을 앞에 붙인 오류 문의만 세요. 같은 분이 같은 일로 다시 물어도 세요.",
+      title: `같은 판에서 닫힘 되풀이: ${g.label} ${g.n}건(${kstDay(Date.parse(g.first)).slice(5)}~${kstDay(Date.parse(g.last)).slice(5)})${g.noRecord ? ` · 멈춤 기록 없음 ${g.noRecord}건` : ""}`,
+      why: "따로따로 들어온 문의라 한 건씩 보면 되풀이가 안 보여요. 멈춤 기록이 없으면 앱이 스스로 꺼졌거나 기록 전에 닫힌 것일 수 있어요.",
+      dev: `${g.label}에서 앱이 닫히는 원인 찾기(문의 ${g.n}건)`.slice(0, 100), to: "#/desk" });
+  }
   // 2.0.0 [RVQ-15] 검토 SRV-20: 사용 통계(누구나 보낼 수 있음)와 서버가 센 요청에서 나온 신호는 꾸밀 수 있는 숫자라, Play 숫자(꾸밀 수 없음)와
   // 맞춰 봐요. Play의 하루 사용자가 같은 주에 그대로(±15%)면 '맞춰 보면 Play는 그대로'를 붙이고 사람이 확인해야 개발사항이 돼요.
   const pw = a?.play?.length ? obsWindow(a.play.map((d) => d.n), 7, 7) : null;
@@ -966,11 +976,15 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
       WHERE g.route LIKE 'screen/%' AND g.status IN ('new', 'again', 'seen') AND d.day >= ? GROUP BY g.sig ORDER BY n DESC LIMIT ${OBS.screenSignals}`, kstDay(now - 7 * DAY)),
     // 2.0.0 [RVA-53] 검토 I24c-03: 관리자가 '판정이 틀렸어요'·'아니에요'로 뺀 문장의 걸린 말(30일).
     stmt(env, "SELECT detail FROM audit WHERE action = 'ask_miss' AND at >= ? ORDER BY id DESC LIMIT 500", now - 30 * DAY),
+    // 2.0.0 [RVA-63] HQ-124: 7일 안 오류 문의(닫힘 되풀이 묶음을 운영 장부와 같은 셈으로).
+    stmt(env, `SELECT i.id, i.kind, i.info, i.device, i.created_at,
+        (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first
+      FROM inquiries i WHERE i.kind IN ('bug', 'question', 'other') AND i.created_at >= ? ORDER BY i.created_at DESC LIMIT 400`, now - CRASH.days * DAY),
     ...(missOpen.length ? [stmt(env, `SELECT place || ':' || word AS subject, SUM(n) AS n FROM search_misses WHERE week >= ? AND place || ':' || word IN (${missOpen.map(() => "?").join(",")})
       GROUP BY place, word`, missFrom, ...missOpen)] : []),
   ]).catch(() => null);
-  const q = qr?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], [], []];
-  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = [], missOpenRows = []] = q;
+  const q = qr?.map((r) => r.results ?? []) ?? [[], [], [], [], [{}], [{}], [], [{}], [], [], [], []];
+  const [configRows, usageRows, eventRows, missRows, inqRows, revRows, noEvRows, noEvCount, screenRows = [], missAsk = [], crashRows = [], missOpenRows = []] = q;
   // 2.0.0 [RVQ-56] 검토 SX-03: 장터 '입은 뒤'(깃발 market.wear, 처리방침 3.14 30일 줄). 최근 [WEAR.days]일 작품마다 합계, 꺼져 있으면 읽지 않아요.
   const wearRows = flagOn(store, WEAR.flag, now) ? await all(env, `SELECT c.code, r.title, SUM(c.wear_n) AS wear_n, SUM(c.off_soon) AS off_soon,
     SUM(c.text_back) AS text_back FROM recipe_counts c JOIN recipes r ON r.code = c.code WHERE c.day >= ? AND r.state = 'visible'
@@ -1025,6 +1039,7 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     askMiss: obsAskMiss(missAsk),
     wear: wearRows ? obsWear(wearRows) : null,
     flags314: store ? { kindUse: flagOn(store, "stats.kind_use", now), wear: flagOn(store, WEAR.flag, now) } : null,
+    crashRepeats: obsCrashRepeats(crashRows, now),
     tune: await obsTune(env),
   };
   board.follow = qr ? obsFollow(stored, eventRows, from7, missOpenRows, wearRows) : [];
@@ -1034,6 +1049,18 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   board.signals = stored.map((s) => (s.devId || s.prevDev ? { ...s, steps: signalSteps(s, devInfo.get(s.devId ?? s.prevDev), now) } : s));
   board.gaps = obsGaps(board);
   return board;
+}
+
+/** 2.0.0 [RVA-63] HQ-124: 7일 안 오류 문의에서 닫힘 되풀이 묶음. 보낸 분 번호는 표지로만 남아요. */
+export function obsCrashRepeats(rows, now) {
+  const items = [];
+  for (const r of rows ?? []) {
+    let info = {};
+    try { info = JSON.parse(r.info || "{}") ?? {}; } catch { /* 못 읽은 정보는 빈 것으로 */ }
+    const c = crashOf(r.kind, r.first, info);
+    if (c) items.push({ id: r.id, device: r.device, model: info.model ?? null, android: info.android ?? null, app: info.app ?? null, at: r.created_at, record: c.record });
+  }
+  return crashRepeats(items, now).map((g) => ({ ...g, first: new Date(g.first).toISOString(), last: new Date(g.last).toISOString() }));
 }
 
 /**

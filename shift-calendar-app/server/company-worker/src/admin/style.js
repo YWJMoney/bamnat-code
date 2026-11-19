@@ -1098,7 +1098,7 @@ border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow)}
 .how>summary{display:flex;align-items:center;justify-content:space-between;gap:.75rem;cursor:pointer;list-style:none;min-height:1.75rem}
 .how>summary::-webkit-details-marker{display:none}
 .how>summary::after{content:"";width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin-left:.25rem}
-.how[open]>summary::after{transform:rotate(-135deg)}
+.how[open]>summary::after{content:"";transform:rotate(-135deg)}
 .how>summary .meta{margin:0 0 0 auto}
 .how-steps{list-style:none;margin:.85rem 0 0;padding:0;display:grid;gap:.85rem;grid-template-columns:repeat(auto-fit,minmax(min(15rem,100%),1fr))}
 .how-steps li{display:flex;align-items:flex-start;gap:.7rem}
@@ -1603,7 +1603,8 @@ details.card>summary{display:flex;flex-wrap:wrap;gap:.25rem .75rem;align-items:b
 details.card.home-fold{margin:0;padding:0}
 .home-fold>summary{display:flex;flex-wrap:nowrap;align-items:center;gap:.75rem;min-height:3.25rem;padding:.6rem 1.1rem;list-style:none}
 .home-fold>summary::after{content:"";flex:none;width:.5rem;height:.5rem;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 .2rem}
-.home-fold[open]>summary::after{transform:rotate(-135deg)}
+/* 2.0.0 [RVA-63] 총괄(#526): 펼친 꺾쇠에 공통 details[open] 글자(▴)가 함께 그려져 획이 하나 더 붙어 보였어요(오늘 접는 카드도). 글자를 비워요. */
+.home-fold[open]>summary::after{content:"";transform:rotate(-135deg)}
 .home-fold .hf-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1rem}
 .home-fold .hf-t b{font-size:.98rem}
 .home-fold .hf-t small{font-size:min(.8rem,16px);font-weight:500;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1621,6 +1622,11 @@ details.card.home-fold{margin:0;padding:0}
 .stuck-list p{margin:0 0 .35rem;overflow-wrap:anywhere}.stuck-list small{color:var(--muted);font-size:min(.8rem,16px)}
 /* 2.0.0 [RVA-62] 좁은 폭(또는 큰 글자)에서는 굵은 제목 뒤에 작은 글이 이어 붙지 않고 아래 줄로. */
 .stuck-list{container:stuck/inline-size}@container stuck (width < 30rem){.stuck-list p>small{display:block;margin-top:.15rem}}
+/* 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'(안내 카드 한 모양, 접으면 한 줄)와 문의 상세의 멈춤 기록 줄. */
+details.card.crash-card{margin:0 0 .75rem}.crash-card>summary .hf-t small{white-space:normal;overflow-wrap:anywhere}.crash-card .crash-lines{margin:.1rem 0 0}.crash-card .stuck-list p.crash-g{font-weight:400;font-size:1rem;margin:0 0 .3rem}.crash-card .hint{margin:.6rem 0 0}
+.crash-lines a.chip{text-decoration:none;color:var(--fg);min-height:min(2.75rem,48px);display:inline-flex;align-items:center}
+.crash-note{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;color:var(--fg);overflow-wrap:anywhere}.crash-note>span:not(.pill){flex:1 1 14rem;min-width:0}
+.crash-note .btn{flex:0 1 auto;max-width:100%;white-space:normal;overflow-wrap:anywhere}
 /* 2.0.0 [RVD-16] 디자인 품질(총괄 11-12): 설명은 한 줄 + 펼치기, 줄 안 칩은 글자 폭, 여러 개 고르기 줄(label.row: 보상·문의·개발사항)의
    글이 label의 굵은 글씨를 물려받지 않아요. */
 label.row{font-weight:inherit;font-size:inherit;margin:0}

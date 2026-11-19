@@ -404,25 +404,28 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         if (employee && profile != null && profile.fiveOrMoreEmployees) {
             val legalHours = legalWeekHours(profile)
             val overLegal = legalHours?.let { h -> summary.weeks.filter { it.totalMinutes > h * 60 } }.orEmpty()
-            if (legalHours != null && overLegal.isNotEmpty()) {
-                WarningBanner(
-                    "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요",
-                    overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.korean(it.totalMinutes)}" } +
-                        ". " + (if (exception == com.bamnat.core.hours.HoursException.NONE) "연장근로는 한 주 12시간까지예요 (근로기준법 제53조)" else exception.note) + ". 참고용이에요.",
-                    tone = Tone.Danger, // 2.0.0 [RVP-13] (HQ-54) 법 한도를 넘은 것: 위험
+            val short = remember(snap, month) {
+                com.bamnat.core.hours.WorkHoursCalculator.shortRests(snap.resolver.resolveRange(month.atDay(1).minusDays(1), month.atEndOfMonth()))
+                    .filter { java.time.YearMonth.from(it.first) == month }
+            }.takeIf { exception == com.bamnat.core.hours.HoursException.SPECIAL_INDUSTRY }.orEmpty()
+            // 2.0.0 [RVJ-66] (HQ-103, 조건 6 '한 화면에 빨강은 한 번'): 법을 넘은 주(제53조)와 못 쉰 날(제59조 제2항)이 함께면 빨간 띠 하나에 둘 다.
+            val broken = buildList {
+                if (legalHours != null && overLegal.isNotEmpty()) add(
+                    "주 ${legalHours}시간을 넘은 주가 ${overLegal.size}번 있어요" to
+                        overLegal.joinToString(", ") { "${Fmt.shortDate(it.start)}주 ${HoursFormat.korean(it.totalMinutes)}" } +
+                        ". " + (if (exception == com.bamnat.core.hours.HoursException.NONE) "연장근로는 한 주 12시간까지예요 (근로기준법 제53조)" else exception.note) + ".",
+                )
+                if (short.isNotEmpty()) add(
+                    "다음 근무까지 11시간을 못 쉰 날이 ${short.size}번 있어요" to
+                        short.joinToString(", ") { (d, m) -> "${Fmt.shortDate(d)} (${HoursFormat.korean(m)})" } +
+                        ". 근로시간 특례 업종은 근무가 끝나고 11시간 이상 연속으로 쉬어야 해요 (근로기준법 제59조 제2항).",
                 )
             }
-            if (exception == com.bamnat.core.hours.HoursException.SPECIAL_INDUSTRY) {
-                val short = remember(snap, month) {
-                    com.bamnat.core.hours.WorkHoursCalculator.shortRests(snap.resolver.resolveRange(month.atDay(1).minusDays(1), month.atEndOfMonth()))
-                        .filter { java.time.YearMonth.from(it.first) == month }
-                }
-                if (short.isNotEmpty()) WarningBanner(
-                    "다음 근무까지 11시간을 못 쉰 날이 ${short.size}번 있어요",
-                    short.joinToString(", ") { (d, m) -> "${Fmt.shortDate(d)} (${HoursFormat.korean(m)})" } +
-                        ". 근로시간 특례 업종은 근무가 끝나고 11시간 이상 연속으로 쉬어야 해요 (근로기준법 제59조 제2항). 참고용이에요.",
-                )
-            }
+            if (broken.isNotEmpty()) WarningBanner(
+                broken.joinToString(" · ") { it.first.removeSuffix(" 있어요") }.let { if (broken.size == 1) broken[0].first else "$it 있어요" },
+                (if (broken.size == 1) broken[0].second else broken.joinToString("\n") { "${it.first}: ${it.second}" }) + " 참고용이에요.",
+                tone = Tone.Danger, // 2.0.0 [RVP-13] (HQ-54) 법 한도를 넘은 것: 위험, 이 화면의 빨강은 이 띠 하나
+            )
         }
 
         // [CUST-01] The cards in the user's order (화면 꾸미기).
@@ -454,8 +457,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                             "주 평균",
                             HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt()),
                             Modifier.weight(1f),
-                            caption = if (employee) "기준 ${settings.averageLimitHours}시간" else "참고용",
-                            warning = three.overLimit, // 법 기준 넘김: 위험
+                            // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 3개월 평균이 기준을 넘은 것은 몸을 챙길 주의예요(빨간 칸이었어요): 말과 주의 색.
+                            caption = if (employee) "기준 ${settings.averageLimitHours}시간" + (if (three.overLimit) " 넘음" else "") else "참고용",
+                            captionTone = if (three.overLimit) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain,
                         )
                         StatTile(
                             "월 평균",
@@ -472,10 +476,11 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                     )
                     if (employee && three.overLimit) {
                         Spacer(Modifier.height(10.dp))
+                        // 2.0.0 [RVJ-66] (HQ-103): 내가 정한 3개월 평균 기준을 넘음은 챙길 일(주의), 법을 넘은 주의 빨간 띠와 겹치지 않게.
                         WarningBanner(
                             "3개월 평균 주 ${settings.averageLimitHours}시간 초과",
                             "평균 주 ${HoursFormat.korean(Math.round(three.averageWeeklyMinutes).toInt())}이에요. 앞으로의 근무를 줄여야 평균이 내려가요.",
-                            tone = Tone.Danger,
+                            tone = Tone.Caution,
                         )
                     }
                 }
@@ -520,7 +525,9 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
                         )
                     }
                     Text(
-                        (if (employee) "주 근무시간은" else "주마다 일한 시간은") + " 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 셉니다.",
+                        // 2.0.0 [RVJ-67] (PC-167): 가게는 영업 말, 말투는 '~해요'.
+                        (if (employee) "주 근무시간은" else if (style == WorkStyle.BUSINESS) "주마다 영업한 시간은" else "주마다 일한 시간은") +
+                            " 월요일부터 일요일까지 세요(달력이 일요일부터 보여도 같아요). 달에 걸친 주도 7일 전체를 세요.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 12.dp),
@@ -542,12 +549,17 @@ fun StatsScreen(vm: StatsViewModel, wide: Boolean, onOpenPay: () -> Unit = {},
         }
 
         // PC 8eae2521 (자영업 탭 맨 아래 각주에 '잔업·특근·대근'): a calendar without wages reads its own words.
+        // 2.0.0 [RVJ-67] (PC-167, 가게 매출·영업 탭에 근무자 말과 '셉니다'): 가게는 영업 말로, 말투는 모두 '~해요'.
         Text(
-            if (employee) "· 야간처럼 자정을 넘기는 근무는 시작한 날에 모두 셉니다.\n" +
-                "· 휴게 시간은 빼고, 잔업·특근·대근 같은 추가 근무는 더해서 계산해요.\n" +
-                "· 3개월 평균은 해당 3개월의 총 근무시간 ÷ (일수 ÷ 7)이에요."
-            else "· 자정을 넘겨 일한 시간은 시작한 날에 모두 셉니다.\n" +
-                "· 쉬는 시간은 빼고 계산해요. 일한 시간은 참고용이에요.",
+            when {
+                employee -> "· 야간처럼 자정을 넘기는 근무는 시작한 날에 모두 세요.\n" +
+                    "· 휴게 시간은 빼고, 잔업·특근·대근 같은 추가 근무는 더해서 계산해요.\n" +
+                    "· 3개월 평균은 해당 3개월의 총 근무시간 ÷ (일수 ÷ 7)이에요."
+                style == WorkStyle.BUSINESS -> "· 자정을 넘겨 영업한 시간은 문을 연 날에 모두 세요.\n" +
+                    "· 영업 중 쉬는 시간은 빼고 계산해요. 영업한 시간은 참고용이에요."
+                else -> "· 자정을 넘겨 일한 시간은 시작한 날에 모두 세요.\n" +
+                    "· 쉬는 시간은 빼고 계산해요. 일한 시간은 참고용이에요."
+            },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp),
@@ -577,7 +589,7 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
             Text(
                 HoursFormat.korean(week.totalMinutes),
                 style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                color = if (week.totalMinutes > limitHours * 60) Tone.Danger.color() else MaterialTheme.colorScheme.onSurface,
+                color = if (week.totalMinutes > limitHours * 60) Tone.Caution.color() else MaterialTheme.colorScheme.onSurface, // [RVJ-66] 주별 막대: 주의
             )
         }
         Spacer(Modifier.height(4.dp))
@@ -588,7 +600,6 @@ private fun WeekRow(week: WeekSummary, limitHours: Int, maxHours: Double, onOpen
 /** Horizontal bar with a marker at the legal limit; turns red past it. */
 @Composable
 private fun LimitBar(value: Double, limit: Double, max: Double) {
-    val cal = LocalCalendarColors.current
     val over = value > limit
     val safeMax = if (max <= 0.0) 1.0 else max
     BoxWithConstraints(
@@ -603,7 +614,7 @@ private fun LimitBar(value: Double, limit: Double, max: Double) {
             Modifier
                 .fillMaxHeight()
                 .width(maxWidth * fraction)
-                .background(if (over) Tone.Danger.color() else MaterialTheme.colorScheme.primary),
+                .background(if (over) Tone.Caution.color() else MaterialTheme.colorScheme.primary),
         )
         val limitFraction = (limit / safeMax).coerceIn(0.0, 1.0).toFloat()
         Box(
@@ -815,7 +826,6 @@ private val WEEKDAY = listOf("월", "화", "수", "목", "금", "토", "일")
 /** [TYPE-06] Each week's hours with whether it reaches 주휴수당 (15 hours a week, 근로기준법 제55조·제18조). */
 @Composable
 private fun HolidayPayWeeks(weeks: List<HourlyWeek>, month: YearMonth) {
-    val cal = LocalCalendarColors.current
     SectionCard(title = "주휴수당 (주 15시간 이상)") {
         weeks.forEach { w ->
             Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
