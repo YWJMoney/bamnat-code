@@ -1,5 +1,7 @@
 package com.bamnat.app.share
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.app.BuildConfig
 import com.bamnat.app.data.ScheduleSnapshot
@@ -179,8 +181,21 @@ object ShareLinkPayload {
      * offline (before, '보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요' stayed for ever and the family saw the old 근무).
      */
     fun refused(e: Throwable): Boolean = e is ShareLinkException && e.message.let { m ->
-        m != null && m !in TRANSIENT && !m.startsWith("http_") && m != "not_found" && m != "forbidden"
+        m != null && m !in TRANSIENT && m != "not_found" && m != "forbidden" && !(m.startsWith("http_") && passing(m))
     }
+
+    /**
+     * 2.0.0 [RVL-56] (검토 DATA-12) A bare status with no word of the server's: busy or away only for 5xx, 408 (time out), 425 and
+     * 429 (too many); any other 4xx (400, 413 too big, 422) is turned down the same every time, so it is not sent again by itself.
+     */
+    private fun passing(m: String): Boolean = m.removePrefix("http_").toIntOrNull()?.let { it >= 500 || it == 408 || it == 425 || it == 429 } ?: true
+
+    /**
+     * 2.0.0 [RVL-56] (검토 U12-07·DATA-12) Why a change was turned down and where to mend it, in one line for the share card:
+     * "‘유나 010-…’에 전화번호가 있어 못 보냈어요. 근무 이름에서 빼 주세요." Null when the server gave no reason the app can say.
+     */
+    fun refusedWhy(e: Throwable): String? = (e as? ShareLinkException)?.takeIf { it.message == "contact" }
+        ?.let { com.bamnat.core.plaza.TeamLinkText.oneLine(it.why, it.text, it.key) }
 
     /**
      * Busy or away, tried again later: the server's own busy words, a reply that was not the server's (bad_response: a Wi-Fi login
@@ -582,7 +597,7 @@ class ShareLinkStore(
         val state = ShareLinkState(
             id = id,
             url = prefs.getString("url", null) ?: return null,
-            deleteToken = prefs.getString("token", null) ?: return null,
+            deleteToken = prefs.secret("token") ?: return null, // 2.0.0 [RVL-77] sealed by the phone's key
             expiresAt = runCatching { Instant.parse(prefs.getString("expires", "")) }.getOrNull() ?: return null,
             title = prefs.getString("title", "") ?: "",
             ttlDays = prefs.getInt("ttl", 30),
@@ -594,12 +609,14 @@ class ShareLinkStore(
     /** [SHR-12] Saves the link as the server now has it; [sent] is the [ShareLinkPayload.fingerprint] of what was sent. */
     fun save(s: ShareLinkState, sent: String? = null) {
         if (retired) return
-        prefs.edit().putString("id", s.id).putString("url", s.url).putString("token", s.deleteToken)
+        prefs.edit().putString("id", s.id).putString("url", s.url).putSecret("token", s.deleteToken)
             .putString("expires", s.expiresAt.toString()).putString("title", s.title).putInt("ttl", s.ttlDays)
             .apply { if (s.from != null) putString("from", s.from.toString()) else remove("from") }
             .apply { if (sent != null) putString("sent", sent) }
+            .remove("ended_at")
             .apply()
         _link.value = s
+        _endedAt.value = null
     }
 
     /** [PROV-04] A link from a backup, kept like one made here and sent again at the next update. */
@@ -615,11 +632,13 @@ class ShareLinkStore(
     /** Forgets the link; what the sharer ticked stays for the next one. */
     fun clear() {
         prefs.edit().remove("id").remove("url").remove("token").remove("expires").remove("title").remove("ttl").remove("from").remove("refused").remove("dropped")
-            .remove("refused_code").remove("refused_times").remove("left_parts").remove("left_at").remove("left_version").remove("left_said")
-            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").apply()
+            .remove("refused_code").remove("refused_times").remove("refused_why").remove("refused_print").remove("left_parts").remove("left_at").remove("left_version").remove("left_said")
+            .remove("sent").remove("noticed").remove("unsent").remove("sent_at").remove("ended_at").apply()
         _link.value = null
+        _endedAt.value = null
         _unsent.value = false
         _refused.value = false
+        _refusedWhy.value = null
         _dropped.value = null
     }
 
@@ -631,8 +650,41 @@ class ShareLinkStore(
 
     /** [SHR-02] Drops a link that ran out while the app stayed open. */
     fun expire() {
-        if (_link.value?.expiresAt?.isAfter(clock()) == false) _link.value = null
+        if (_link.value?.expiresAt?.isAfter(clock()) == false) {
+            _link.value = null
+            _endedAt.value = endedFromPrefs()
+        }
     }
+
+    private val _endedAt = MutableStateFlow(if (_link.value == null) endedFromPrefs() else null)
+    /**
+     * 2.0.0 [RVL-78] (검토 I12c-02) When the last link stopped by itself: the server no longer had it ([ended]) or its end date passed.
+     * The share sheet says so above '링크로 보내기' (the one press that mends it), and the 알림함 has a row, so the sharer knows the
+     * people who had it stopped getting changes; null with a link, after a new one, or after the sharer cut it ([clear]).
+     */
+    val endedAt: StateFlow<Instant?> = _endedAt.asStateFlow()
+
+    private fun endedFromPrefs(): Instant? =
+        prefs.getString("ended_at", null)?.let { runCatching { Instant.parse(it) }.getOrNull() }
+            ?: prefs.getString("expires", null)?.takeIf { prefs.contains("id") }?.let { runCatching { Instant.parse(it) }.getOrNull() }
+                ?.takeIf { !it.isAfter(clock()) }
+
+    /** 2.0.0 [RVL-78] The server no longer has the link (it ran out or was taken down there): forgotten, and said once. */
+    fun ended(at: Instant) {
+        if (retired) return
+        clear()
+        prefs.edit().putString("ended_at", at.toString()).apply()
+        _endedAt.value = at
+    }
+
+    /** 2.0.0 [RVL-78] When the link ended, the first time this is asked for that end (the 알림함 row is put once); else null. */
+    fun endedToSay(): Instant? {
+        val at = _endedAt.value ?: return null
+        if (prefs.getString("ended_said", null) == at.toString()) return null
+        prefs.edit().putString("ended_said", at.toString()).apply()
+        return at
+    }
+
 
     /** [SHR-12] The fingerprint of what the server last got, null when unknown (a link from before 1.14). */
     val sent: String? get() = prefs.getString("sent", null)
@@ -650,9 +702,9 @@ class ShareLinkStore(
     /** [SHR-13] The server has what the calendar shows now ([at]), or it could not be reached ([at] null). */
     fun sendResult(at: Instant?) {
         if (retired) return
-        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()).remove("refused").remove("refused_code").remove("refused_times") }.apply()
+        prefs.edit().putBoolean("unsent", at == null).apply { if (at != null) putString("sent_at", at.toString()).remove("refused").remove("refused_code").remove("refused_times").remove("refused_why").remove("refused_print") }.apply()
         _unsent.value = at == null
-        if (at != null) _refused.value = false
+        if (at != null) { _refused.value = false; _refusedWhy.value = null }
     }
 
     private val _refused = MutableStateFlow(prefs.getBoolean("refused", false))
@@ -662,13 +714,27 @@ class ShareLinkStore(
      */
     val refused: StateFlow<Boolean> = _refused.asStateFlow()
 
-    /** [RVG-27] Not sent: turned down, not offline. */
-    fun refusedNow() {
+    /**
+     * [RVG-27] Not sent: turned down, not offline.
+     * 2.0.0 [RVL-56] (검토 DATA-12·U12-07) With [why] (said on the share card: what and where to mend it) and [print], the
+     * fingerprint of what was turned down: the automatic update does not send that same again ([refusedPrint]), only a change.
+     */
+    fun refusedNow(why: String? = null, print: String? = null) {
         if (retired) return
-        prefs.edit().putBoolean("unsent", true).putBoolean("refused", true).apply()
+        prefs.edit().putBoolean("unsent", true).putBoolean("refused", true)
+            .apply { if (why == null) remove("refused_why") else putString("refused_why", why.take(160)) }
+            .apply { if (print == null) remove("refused_print") else putString("refused_print", print) }.apply()
         _unsent.value = true
         _refused.value = true
+        _refusedWhy.value = why
     }
+
+    private val _refusedWhy = MutableStateFlow(prefs.getString("refused_why", null))
+    /** 2.0.0 [RVL-56] Why the last change was turned down, in the person's words; null when the server gave no reason. */
+    val refusedWhy: StateFlow<String?> = _refusedWhy.asStateFlow()
+
+    /** 2.0.0 [RVL-56] The fingerprint of the change last turned down (not sent again by itself until it changes). */
+    val refusedPrint: String? get() = if (_refused.value) prefs.getString("refused_print", null) else null
 
     private val _dropped = MutableStateFlow(prefs.getString("dropped", null))
     /**

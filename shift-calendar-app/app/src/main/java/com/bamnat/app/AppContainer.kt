@@ -87,9 +87,11 @@ class AppContainer(context: Context) {
         },
         payOf = { id -> PayStore(appContext, java.io.File(com.bamnat.app.data.CalendarStorage.filesOf(appContext, id), "pay")) },
         mainLeave = { leaveRepository },
+        onOpen = { id, db -> timeMachine.watch(id, db) },
         onDelete = { id, kept ->
             if (!kept) {
                 companyGone(id)
+                timeMachine.forget(id)
                 // [R200-01] Its own 끄기 미션 and 근무 그림 go with it (a new calendar never gets its id again).
                 settingsRepository.update { s ->
                     val look = com.bamnat.core.recipe.PhotoLook.decode(s.photoLook)
@@ -245,8 +247,11 @@ class AppContainer(context: Context) {
     /** 1.39 [SETUP-20] 첫 설정 누른 횟수 for 사용 통계 (처리방침 3.12), counted from the first open of a new install. */
     val setupTaps = com.bamnat.app.diag.SetupTapStats(context.applicationContext,
         allowed = { settingsRepository.current.shareUsageStats && com.bamnat.app.diag.SetupTapStats.policyAllows() })
+    /** 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 for 사용 통계 (처리방침 3.14 문장표 6, stats.crash); the crash handler counts through it. */
+    val crashStats = com.bamnat.app.diag.CrashStats(context.applicationContext).also { com.bamnat.app.diag.CrashStats.current = it }
     val usageStats = com.bamnat.app.diag.UsageStats(context.applicationContext, startup = startupStats, lookups = lookupStats, setupTaps = setupTaps,
-        style = { settingsRepository.current.workStyle?.name }) // 1.39 [OBS2-08] 유형별 흐름 (stats.kind)
+        style = { settingsRepository.current.workStyle?.name }, // 1.39 [OBS2-08] 유형별 흐름 (stats.kind)
+        crashes = crashStats)
     val telemetry = Telemetry(EventLog(context.applicationContext), settingsRepository, listOf(usageStats))
     val alarmScheduler = AlarmScheduler(context.applicationContext, telemetry, ringSettings = { ringSettings() },
         soonMinutes = { settingsRepository.current.alarmSoonMinutes }, guard = { settingsRepository.current.alarmGuard })
@@ -294,6 +299,12 @@ class AppContainer(context: Context) {
             filesOf = { id -> com.bamnat.app.data.CalendarStorage.filesOf(appContext, id) }, workTools = com.bamnat.app.data.WorkToolsStore.get(appContext),
             autoRecord = autoRecordPrefs, commute = com.bamnat.app.data.CommutePrefs.get(appContext))
     }
+    /** 2.0.0 [RVL-76] (검토 I12b-02) 날짜별 되돌리기: each calendar's days and 가계부 lines as they settled after each change, for 7 days. */
+    val timeMachine by lazy {
+        com.bamnat.app.data.TimeMachine(java.io.File(appContext.noBackupFilesDir, "time_machine"), appScope, opener = { id ->
+            if (id == com.bamnat.app.data.PersonalCalendar.MAIN) database else calendars.get(id)?.takeIf { it.ready }?.let { calendars.database(id) }
+        })
+    }
     /** 2.0.0 [RVL-02] True after this start put back a restore the app was closed in the middle of (said once above the calendar). */
     val restoreStopped = kotlinx.coroutines.flow.MutableStateFlow(false)
     /**
@@ -318,7 +329,11 @@ class AppContainer(context: Context) {
         shared = { keys -> keys.forEach { runCatching { profiles.mark(com.bamnat.app.data.PersonalCalendar.MAIN, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
         // [ITEM-03] 1.30 BC (결정 D102): 회사 공통 정액 goes to the 광장 while the plaza.fixed_amount row is on.
         fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
-        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) }) }
+        teamRoster = { teams.get(com.bamnat.app.data.PersonalCalendar.MAIN) },
+        // 2.0.0 [RVL-80] (처리방침 3.14 문장표 9) The roster codes go along once share.duty_codes is on; received ones are kept.
+        dutyCodes = { dutyCodes.of(com.bamnat.app.data.PersonalCalendar.MAIN) },
+        sendCodes = { flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_DUTY_CODES) },
+        learnCode = { code, cell -> dutyCodes.learn(com.bamnat.app.data.PersonalCalendar.MAIN, code, cell) }) }
     /** [COMM-04] The company rules server; screenshots and tests put a fake in its place. */
     var companyApi: com.bamnat.app.company.CompanyApi = com.bamnat.app.company.CompanyClient(
         hidden = { com.bamnat.core.plaza.HideList.decode(settingsRepository.current.plazaHidden).header() },
@@ -418,7 +433,10 @@ class AppContainer(context: Context) {
                     shared = { keys -> keys.forEach { runCatching { profiles.mark(id, it, com.bamnat.core.profile.Source.SHARED, why = "회사 공유 설정") } } },
                     rosterMonthly = { false },
                     fixedAmounts = { flags.on(com.bamnat.core.flags.FlagCatalog.PLAZA_FIXED_AMOUNT) },
-                    teamRoster = { teams.get(id) }).also { made = Triple(schedule, pay, it) }
+                    teamRoster = { teams.get(id) },
+                    dutyCodes = { dutyCodes.of(id) },
+                    sendCodes = { flags.on(com.bamnat.core.flags.FlagCatalog.SHARE_DUTY_CODES) },
+                    learnCode = { code, cell -> dutyCodes.learn(id, code, cell) }).also { made = Triple(schedule, pay, it) }
         }
         return com.bamnat.app.company.CompanyScope(id,
             com.bamnat.app.company.CompanyStore(files.prefs(appContext, id, files.COMPANY), companyStore),
@@ -639,6 +657,10 @@ class AppContainer(context: Context) {
         com.bamnat.app.diag.UsageStats.keepAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_KEEP) }
         // 1.40 [DISC-06]: 안 써 본 기능 카드의 합계 4가지 from 처리방침 3.13's date on (사용자 결정 2026-11-11 '합계 4가지만').
         com.bamnat.app.diag.UsageStats.discAllowed = { flags.on(com.bamnat.core.flags.FlagCatalog.STATS_DISC) }
+        // 2.0.0 [RVL-90]: 앱이 멈춘 곳 횟수 from 처리방침 3.14's 30-day date on (검토 I12c-03, 문장표 6), only with the yes to 사용 통계.
+        com.bamnat.app.diag.CrashStats.allowed = {
+            settingsRepository.current.shareUsageStats && flags.on(com.bamnat.core.flags.FlagCatalog.STATS_CRASH)
+        }
         // 2.0.0 [RVM-21] 장터 카드 글꼴은 처리방침 3.13의 7일 줄(PolicyConsent.REVISION_EFFECTIVE, 서버 시각)부터 공개 자료에서(그 전에는 휴대폰 글꼴).
         com.bamnat.app.ui.recipe.MarketFonts.allowed = { flags.on(com.bamnat.core.flags.FlagCatalog.CARD_FONTS) }
         // 1.38 Phase 3·갈래6: the guide, 기능 찾기, help and 설정 검색 show a feature only once its 깃발 is on (공유 테마, 정식 출시일).
@@ -722,6 +744,8 @@ class AppContainer(context: Context) {
     val proMoments by lazy { com.bamnat.app.tier.ProMomentStore(appContext) }
     /** 1.32 [STAB-08] The last backup saved by hand, for the calendar's 30-day line. */
     val backupNudge by lazy { com.bamnat.app.data.BackupNudgeStore(appContext) }
+    /** 2.0.0 [RVL-71] (검토 I12b-01·U12-09) 데이터 점검 by itself once a week. */
+    val dataSelfCheck by lazy { com.bamnat.app.diag.DataSelfCheck(this) }
     /** 1.32 [WTYP-11] 희망 오프, per calendar. */
     val wishOff by lazy { com.bamnat.app.data.WishOffStore(appContext) }
 
@@ -744,6 +768,8 @@ class AppContainer(context: Context) {
         // [R200-03] And once a day near a subscription's end even when the app is not opened.
         runCatching { com.bamnat.app.tier.ProRecheckJob.schedule(appContext, this@AppContainer) }
         runCatching { remoteFiles.refresh() }.getOrNull()?.let(::noteRemote)
+        // 2.0.0 [RVL-90] The 응답 없음 Android kept since the last look, after the rows above are fresh (stats.crash, 처리방침 3.14).
+        runCatching { crashStats.readExits(appContext) }
         // [STAT-01] Yesterday's counts, once a day, only with the user's yes and the developer's switch on.
         runCatching {
             // [FLAG-10] The developer's rest is the usage.stats row; [FLAG-16] stats.more adds the rows on.
@@ -845,6 +871,8 @@ class AppContainer(context: Context) {
         const val RETRY_MAX_MILLIS = 60_000L
         /** [PROV-03] After the app has opened and settled, not while the first screen draws. */
         const val AUTO_BACKUP_DELAY_MILLIS = 20_000L
+        /** 2.0.0 [RVL-71] Well after the backup's turn, so the two never read every calendar at once on opening. */
+        const val DATA_CHECK_DELAY_MILLIS = 90_000L
         /** [PERF-03] When no calendar month showed by then, the waiting jobs start anyway. */
         const val LATER_FALLBACK_MILLIS = 3_000L
         /** [PERF-10] After the month and an idle main thread: the jobs that read every calendar's money, memos and leave. */
@@ -944,6 +972,12 @@ class AppContainer(context: Context) {
             // 2.0.0 [RVL-05][RVL-06] (검토 DATA-02·U12-03) A phone the data came to by Android's own backup (구글 계정, 휴대폰 옮기기) takes the
             // settings kept apart in, once, and plans its alarms (Android plans none until the app opens); then the carry is kept fresh.
             // On every other start this is one look at a file; writing the carry waits off the way to the first month.
+            // 2.0.0 [RVL-77] (검토 I12b-03) The keys are sealed by this phone's key; if it went, they come back from the copy Android's backup
+            // carries, before that copy is written again below.
+            runCatching {
+                if (!com.bamnat.app.backup.Vault.check(appContext.getSharedPreferences("key_vault", android.content.Context.MODE_PRIVATE)))
+                    phoneMove.keysBack()
+            }
             runCatching {
                 phoneMove.arrive()?.let {
                     journal.note(com.bamnat.core.journal.JournalKind.PHONE_MOVED)
@@ -988,6 +1022,8 @@ class AppContainer(context: Context) {
             }
             // 2.0.0 [RVI-37] (검토 ALM-02·PC-07, 도약 7) The clean-ups run beside the alarm and widget job below, not before it:
             // a shift changed in the first seconds after the app opened waited for them to reach the home screen.
+            // 2.0.0 [RVL-76] The main calendar's moments from now on (an added one is watched when it is opened).
+            runCatching { timeMachine.watch(com.bamnat.app.data.PersonalCalendar.MAIN, database) }
             launch {
                 memoRepository.purgeOldTrash()
                 // [MPH-03] 1.38 메모 사진 no memo (nor the trash) points at any more go, a day after they were put in.
@@ -1047,11 +1083,23 @@ class AppContainer(context: Context) {
                 }
         }
         // [PROV-03] A day's backup owed when the app opens goes now; the job keeps it going while closed.
+        // 2.0.0 [RVL-71] And the weekly 데이터 점검 beside it, in the same job (the start's budget of jobs, StartupBudgetTest): the job
+        // while the app is closed (or none when it is turned off), and a week owed now.
         keep("autobackup") {
-            if (autoBackup.on) {
-                com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
-                delay(AUTO_BACKUP_DELAY_MILLIS)
-                autoBackup.runIfDue()
+            kotlinx.coroutines.coroutineScope {
+                launch {
+                    settingsRepository.settings.map { it.dataSelfCheck }.distinctUntilChanged().collect { on ->
+                        if (!on) { com.bamnat.app.diag.DataCheckJob.cancel(appContext); return@collect }
+                        com.bamnat.app.diag.DataCheckJob.schedule(appContext)
+                        delay(DATA_CHECK_DELAY_MILLIS)
+                        dataSelfCheck.runIfDue()
+                    }
+                }
+                if (autoBackup.on) {
+                    com.bamnat.app.backup.AutoBackupJob.schedule(appContext)
+                    delay(AUTO_BACKUP_DELAY_MILLIS)
+                    autoBackup.runIfDue()
+                }
             }
         }
         // [SLP-15] 자는 중 follows the sleep log, and a sleep that just ended says how long it was.

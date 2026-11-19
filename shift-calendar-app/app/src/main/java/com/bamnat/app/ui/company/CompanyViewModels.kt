@@ -1989,8 +1989,9 @@ private suspend fun forgetEverythingSentNow(c: AppContainer): com.bamnat.app.com
     c.recipes.hasProfile(false)
     c.recipes.peopleChanged()
     // 1.39 [PRIV-06] and every link this phone made on the share server, with the keys it holds (달력·팀·가게 링크).
-    val links = runCatching { com.bamnat.app.share.ShareForget.all(c) }.getOrNull()
-    return counts.copy(links = links?.cut ?: 0, linksLeft = links?.left ?: 0, alertsOff = pushWas, autoShareOff = autoWas)
+    // 2.0.0 [RVL-58] (검토 DATA-22) Not runCatching: a stop there read as "0 links" and could skip keeping what was left to try again.
+    val links = com.bamnat.app.share.ShareForget.allOrLater(c)
+    return counts.copy(links = links.cut, linksLeft = links.left, linksFailed = links.failed, alertsOff = pushWas, autoShareOff = autoWas)
 }
 
 /**

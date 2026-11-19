@@ -22,6 +22,9 @@ concurrency:
   cancel-in-progress: true
 env:
   GRADLE_FLAGS: --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
+# 2.0.0 [RVL-61] (검토 DATA-27) Reads the code (and uploads a file); nothing here writes to the repository.
+permissions:
+  contents: read
 jobs:
   # 2.0.0 [RVR-38] 검토 I60c-01: 날짜 장부(ops/dates.json)에서 10일 안에 켜지는 날(처리방침 시행·보류 끝, 마을 쉬기, 출시 열차,
   # 새해 요율 등)이 있으면 그날·다음 날도 서버 시험에 더해요(보통 0~4개, 한 번에 6분쯤 더). 요약 맨 위에 '다가오는 날짜' 60일.

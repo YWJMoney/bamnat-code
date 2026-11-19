@@ -49,9 +49,15 @@ class AutoBackupTest {
     /** Keeps the key as it is, reversed; [gone] stands for a key store that lost it. */
     class FakeKeyBox : KeyBox {
         var gone = false
+        /** 2.0.0 [RVL-10] Stands for a phone that ran out of memory while the backup was being made. */
+        var full = false
         var forgotten = 0
         override fun wrap(secret: ByteArray) = secret.reversedArray()
-        override fun unwrap(blob: ByteArray): ByteArray = if (gone) throw KeyBox.KeyGone() else blob.reversedArray()
+        override fun unwrap(blob: ByteArray): ByteArray = when {
+            gone -> throw KeyBox.KeyGone()
+            full -> throw OutOfMemoryError("test")
+            else -> blob.reversedArray()
+        }
         override fun forget() { forgotten++ }
     }
 
@@ -88,7 +94,8 @@ class AutoBackupTest {
         assertTrue(c.backupManager.isSealed(text))
         val json = c.backupManager.unseal(text, password.toCharArray())
         fun body(s: String) = org.json.JSONObject(s).apply { remove("exportedAt") }.toString()
-        assertEquals(body(c.backupManager.export()), body(json))
+        // 2.0.0 [RVL-77] The automatic backup is sealed: it holds what a sealed file holds (the 우리 조 part too).
+        assertEquals(body(c.backupManager.exportSealed()), body(json))
         assertEquals(AutoBackup.FILE_NAME, auto.state.value.name)
         assertEquals(now, auto.state.value.lastOk)
 
@@ -139,6 +146,29 @@ class AutoBackupTest {
         assertNull(auto.state.value.error)
         assertNull(auto.state.value.failingSince)
         assertTrue(nm.allNotifications.none { it.channelId == Notifications.BACKUP_CHANNEL_ID })
+    }
+
+    /**
+     * 2.0.0 [RVL-10] (검토 DATA-09·DATA-29 ⑦) Out of memory was not caught: no failure was kept and every start tried again. Now it is a
+     * failure that says what to do, and nothing is left in the cache, after a failure or a good run.
+     */
+    @Test fun runningOutOfMemoryIsAFailureThatSaysWhatToDo() = runBlocking {
+        val auto = backup()
+        auto.turnOn(Uri.fromFile(file), password.toCharArray())
+        val ok = auto.state.value.lastOk
+        assertFalse(File(app.cacheDir, "auto-backup").exists())
+        box.full = true
+        now = now.plus(Duration.ofDays(1))
+        val r = auto.runNow()
+        assertTrue("$r", r is AutoBackup.Result.Failed)
+        assertTrue(auto.state.value.error!!.contains("메모리가 모자라"))
+        assertEquals(ok, auto.state.value.lastOk)
+        assertNotNull(auto.state.value.failingSince)
+        box.full = false
+        now = now.plus(Duration.ofHours(1))
+        assertTrue(auto.runNow() is AutoBackup.Result.Ok)
+        assertNull(auto.state.value.failingSince)
+        assertFalse(File(app.cacheDir, "auto-backup").exists())
     }
 
     @Test fun aFileThatIsGoneIsSaid() = runBlocking {

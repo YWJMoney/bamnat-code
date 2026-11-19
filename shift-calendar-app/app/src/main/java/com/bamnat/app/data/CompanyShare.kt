@@ -38,6 +38,8 @@ data class CompanySummary(
     val team: String? = null,
     /** [CYC-06] 1.39: every 조 of the sender's 모든 조 보기, each with the day it starts the order; empty when not set up. */
     val teams: List<com.bamnat.core.plaza.CycleTeam> = emptyList(),
+    /** 2.0.0 [RVL-80] How many roster codes the file brings (처리방침 3.14 뒤에 보낸 파일만). */
+    val dutyCodes: Int = 0,
 )
 
 /**
@@ -63,6 +65,15 @@ class CompanyShare(
     private val fixedAmounts: () -> Boolean = { true },
     /** [CYC-06] 1.39: the calendar's 모든 조 보기, so the file names every 조 and a coworker on any of them picks theirs by name. */
     private val teamRoster: () -> com.bamnat.core.schedule.TeamRoster? = { null },
+    /**
+     * 2.0.0 [RVL-80] (검토 I07bc-02, 처리방침 3.14 문장표 9) The codes this calendar's rosters are read with, as the user
+     * taught them (N2 → 야간, OF → 휴무; leave and hours codes stay on the phone): they go in the file only while [sendCodes]
+     * (the `share.duty_codes` flag) is on, by the kind of work's name, [MAX_CODES] at most, never a person or a date.
+     */
+    private val dutyCodes: () -> Map<String, com.bamnat.core.imports.DutyCell> = { emptyMap() },
+    private val sendCodes: () -> Boolean = { false },
+    /** 2.0.0 [RVL-80] Keeps a code a coworker's file brought for this calendar's rosters; never one the user taught. */
+    private val learnCode: (String, com.bamnat.core.imports.DutyCell) -> Unit = { _, _ -> },
 ) {
     /**
      * [CYC-06] 1.39 PC e1240d5a: the 조 that go in the file, as 모든 조 보기 shows them: the ones set there, else the ones it
@@ -90,6 +101,8 @@ class CompanyShare(
             .put("app", BackupManager.APP_ID).put("format", FORMAT).put("v", BASE_VERSION)
             .put("company", company.trim().take(MAX_NAME))
             .put("shiftTypes", JSONArray(snapshot.shiftTypes.map(::typeJson)))
+        // 2.0.0 [RVL-80] The roster's codes, after 처리방침 3.14 (the flag reads the server's clock).
+        if (sendCodes()) codesJson(dutyCodes(), names).takeIf { it.length() > 0 }?.let { root.put("dutyCodes", it) }
         // [EXTRA-01] Kinds of extra work; the shift a 대근 kind starts from is named, since ids differ.
         val kinds = settings.current.extraKinds
         root.put("extraKinds", ExtraKinds(kinds.kinds.map { k -> if (k.timing is ExtraTiming.AsShift) k.copy(timing = ExtraTiming.AsShift()) else k }).encode())
@@ -178,6 +191,8 @@ class CompanyShare(
      */
     suspend fun exportForServer(cycleOnly: Boolean = false): JSONObject {
         val root = JSONObject(export("", withAmounts = false))
+        // 2.0.0 [RVL-80] The roster's codes go only in the file a person sends (처리방침 3.14 문장표 9), never to the company server.
+        root.remove("dutyCodes")
         // [SPAT-05] 근무주기만 올리기: the shifts and the order, no pay part at all (사용자 2026-10-25 14:05).
         if (cycleOnly) root.remove("pay")
         root.optJSONObject("pay")?.optJSONObject("rules")?.let { r ->
@@ -206,7 +221,31 @@ class CompanyShare(
                 ?.let { ExtraKinds.decode(it).visible().map(ExtraKind::name) }.orEmpty(),
             team = root.optJSONObject("rotation")?.optString("team")?.trim()?.take(MAX_TEAM)?.takeIf { it.isNotEmpty() },
             teams = teamsOf(root.optJSONObject("rotation")),
+            dutyCodes = root.optJSONArray("dutyCodes").objects().size.coerceAtMost(MAX_CODES),
         )
+    }
+
+    /** 2.0.0 [RVL-80] The codes as the file carries them: the code and the kind of work's name, or that it is a day off. */
+    private fun codesJson(book: Map<String, com.bamnat.core.imports.DutyCell>, names: Map<Long, String>): JSONArray =
+        JSONArray(book.entries.sortedBy { it.key }.mapNotNull { (code, cell) ->
+            val c = code.take(MAX_CODE)
+            when (cell) {
+                is com.bamnat.core.imports.DutyCell.Shift -> names[cell.shiftTypeId]?.let { JSONObject().put("code", c).put("shift", it) }
+                com.bamnat.core.imports.DutyCell.Off -> JSONObject().put("code", c).put("off", true)
+                else -> null
+            }
+        }.take(MAX_CODES))
+
+    /** 2.0.0 [RVL-80] A coworker's codes kept for this calendar's rosters, by its kinds of work's names; the user's own stay. */
+    private fun learnCodes(root: JSONObject, ids: Map<String, Long>) {
+        val known = dutyCodes().keys
+        root.optJSONArray("dutyCodes").objects().take(MAX_CODES).forEach { o ->
+            val code = o.optString("code").trim().take(MAX_CODE)
+            if (code.isEmpty() || com.bamnat.core.imports.DutyCodes.norm(code) in known) return@forEach
+            val cell = if (o.optBoolean("off")) com.bamnat.core.imports.DutyCell.Off
+                else ids[o.optString("shift").take(MAX_NAME)]?.let { com.bamnat.core.imports.DutyCell.Shift(it) } ?: return@forEach
+            runCatching { learnCode(code, cell) }
+        }
     }
 
     /** [SETUP-01] What a file brings to the first setup, read without changing anything. */
@@ -339,6 +378,8 @@ class CompanyShare(
 
     /** Kinds of extra work, then pay rules; returns (rules applied, pay waiting for amounts). */
     private suspend fun applyRules(root: JSONObject, ids: Map<String, Long>): Pair<Boolean, Boolean> {
+        // 2.0.0 [RVL-80] A coworker's roster codes, with the kinds of work they name (apply, the first setup, a pay way).
+        learnCodes(root, ids)
         // [EXTRA-01] Kinds merge like shift types: 잔업·특근·대근 by id, the company's own by name.
         var kindIds: Map<Long, Long> = emptyMap()
         root.optString("extraKinds").takeIf { it.isNotEmpty() }?.let { encoded ->
@@ -897,6 +938,9 @@ class CompanyShare(
         /** [FIN130-04] The 이 값 쓰기 key of the 통상시급 hours (core SetupFacts "place:hours"). */
         private const val HOURS_KEY = "place:hours"
         private const val MAX_NAME = 40
+        /** 2.0.0 [RVL-80] 처리방침 3.14 문장표 9: 20 codes at most, each short. */
+        const val MAX_CODES = 20
+        private const val MAX_CODE = 8
         const val MAX_TEAM = 12
 
         /**

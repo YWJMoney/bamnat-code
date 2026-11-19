@@ -25,6 +25,8 @@ object NoticeLinks {
         ALARM_CHECK,
         /** 2.0.0 [RVO-14] 설정 › 알람, where 확실하게 깨우기 (끄기 미션) is, from the notice that its 7 days end. */
         SURE_ALARM,
+        /** 2.0.0 [RVL-70][RVL-71] 설정 › 데이터 › 데이터 점검, from its row and from the weekly check's notice. */
+        DATA_CHECK,
         /** [SCHED-01] The memos, from a memo schedule's notice. */
         MEMOS,
         /** [SLP-16] The sleep log and what it says. */

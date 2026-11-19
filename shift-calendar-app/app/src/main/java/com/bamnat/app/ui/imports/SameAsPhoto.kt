@@ -119,11 +119,12 @@ internal fun SameAsPhotoCard(
                     TextButton(onClick = { onFix(pointed) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("고치기") }
                 }
             }
-            // The screen's one filled button is '넣기' under the month (조건 2): the card's answer is outlined, the other a text button,
-            // and while a cell is pointed at its own two answers are the only ones.
+            // 2.0.0 [PC-183] (통합 4차 PC, 조건 2) While this is asked it is the screen's one filled button, and '○월에 N일 넣기' under the
+            // month waits outlined until it is answered ([DutyRosterViewModel.Ui.asking]); the other is a text button, and while a cell is
+            // pointed at its own two answers are the only ones.
             if (same == null) { if (pointed == null) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 // [PHOTO-29]'s order for the roster: yellow cells get their own answers, not one '같아요' for all.
-                OutlinedButton(onClick = { if (yellow.isEmpty()) onAnswer(true) else reviewing = true }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Button(onClick = { if (yellow.isEmpty()) onAnswer(true) else reviewing = true }, modifier = Modifier.heightIn(min = 48.dp)) {
                     Text(if (yellow.isEmpty()) "네, 같아요" else "노란 ${yellow.size}칸 확인하기")
                 }
                 TextButton(onClick = { reviewing = false; onAnswer(false) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("다른 곳이 있어요") }
@@ -140,6 +141,8 @@ private fun cellName(cell: DutyCell?, byId: Map<Long, ShiftType>): String = when
     DutyCell.Off -> "쉬는 날"
     is DutyCell.Leave -> if (cell.quarters < 4) "반차" else "연차"
     is DutyCell.Unknown -> "‘${cell.raw}’"
+    // 2.0.0 [RVL-72] (검토 T07b-01·T07b-02) "9–15", "1.5공".
+    is DutyCell.Hours, is DutyCell.Units -> com.bamnat.core.imports.TimeSheet.short(cell).orEmpty()
 }
 
 /** Where the dates and the user's line are on the photo (the words' pixels), and each day's middle across. */
@@ -292,6 +295,9 @@ private fun Cell(
         DutyCell.Off -> "휴"
         is DutyCell.Leave -> if (cell.quarters < 4) "반" else "연"
         is DutyCell.Unknown -> cell.raw.take(3)
+        // 2.0.0 [RVL-72] A 시간표 cell is its start ("9", "9:30"), a 공수표 cell its number: the name below says the rest.
+        is DutyCell.Hours -> cell.start?.let { m -> if (m % 60 == 0) "${m / 60}" else "${m / 60}:%02d".format(m % 60) } ?: "${cell.minutes / 60}h"
+        is DutyCell.Units -> com.bamnat.core.money.DayRate.trim(cell.units)
     }
     val name = when (cell) {
         null -> "비어 있음"
@@ -299,6 +305,7 @@ private fun Cell(
         DutyCell.Off -> "쉬는 날"
         is DutyCell.Leave -> "휴가"
         is DutyCell.Unknown -> "‘${cell.raw}’ 모르는 글자"
+        is DutyCell.Hours, is DutyCell.Units -> com.bamnat.core.imports.TimeSheet.short(cell).orEmpty()
     }
     // 2.0.0 [RVP-12] (검토 UIX-12) The app's one caution colour, not a yellow of its own. [RVL-36] Its caution, not the
     // calendar's warning: that one is the Sunday red, and a yellow cell drawn red said danger (조건 6).

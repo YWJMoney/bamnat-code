@@ -247,6 +247,8 @@ data class AppSettings(
     val spendHeat: Boolean = false,
     /** 1.32 [STAB-08] A one-line reminder when no backup was saved for 30 days and 자동 백업 is off. */
     val backupNudge: Boolean = true,
+    /** 2.0.0 [RVL-71] 데이터 점검 by itself once a week ([com.bamnat.app.diag.DataSelfCheck]); on unless turned off. */
+    val dataSelfCheck: Boolean = true,
     /** 1.32 [WTYP-16] 퇴근 시각 알림: at a day calendar's end of work, a quiet notice with 지금 퇴근 (off by default). */
     val leaveTimeNotice: Boolean = false,
     /** 2.0.0 [RVIB-21] (결정 19) 둘째 구간 알림: "17:00 다시 시작" 10분 전, quiet, on a day of two parts (on by default). In the backup. */
@@ -579,6 +581,7 @@ class SettingsRepository(context: Context) {
             spendInCells = prefs.getBoolean(K_SPEND_IN_CELLS, d.spendInCells),
             spendHeat = prefs.getBoolean(K_SPEND_HEAT, d.spendHeat),
             backupNudge = prefs.getBoolean(K_BACKUP_NUDGE, d.backupNudge),
+            dataSelfCheck = prefs.getBoolean(K_DATA_SELF_CHECK, d.dataSelfCheck),
             leaveTimeNotice = prefs.getBoolean(K_LEAVE_TIME_NOTICE, d.leaveTimeNotice),
             gapNotice = prefs.getBoolean(K_GAP_NOTICE, d.gapNotice),
             stretchLimitHours = prefs.getInt(K_STRETCH_LIMIT, d.stretchLimitHours),
@@ -645,8 +648,54 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) Only the keys whose value changed go to the file: every setting is laid out on a [Staged] editor
+     * first, then compared with what is saved. One switch used to put all of them again (the file is still written whole by
+     * SharedPreferences, but an update that changes nothing writes nothing, and listeners hear only the changed keys).
+     */
     private fun write(s: AppSettings) {
-        prefs.edit()
+        val staged = Staged()
+        stage(staged, s)
+        val now = prefs.all
+        val e = prefs.edit()
+        var any = false
+        for ((k, v) in staged.values) {
+            if (v == null) {
+                if (now.containsKey(k)) { e.remove(k); any = true }
+                continue
+            }
+            if (now[k] == v) continue
+            @Suppress("UNCHECKED_CAST")
+            when (v) {
+                is String -> e.putString(k, v)
+                is Int -> e.putInt(k, v)
+                is Long -> e.putLong(k, v)
+                is Boolean -> e.putBoolean(k, v)
+                is Float -> e.putFloat(k, v)
+                is Set<*> -> e.putStringSet(k, v as Set<String>)
+            }
+            any = true
+        }
+        if (any) e.apply()
+    }
+
+    /** [RVL-67] An editor that only keeps what was put (null: removed), for [write] to compare. */
+    private class Staged : SharedPreferences.Editor {
+        val values = LinkedHashMap<String, Any?>()
+        override fun putString(key: String, value: String?): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putStringSet(key: String, value: MutableSet<String>?): SharedPreferences.Editor { values[key] = value?.toSet(); return this }
+        override fun putInt(key: String, value: Int): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putLong(key: String, value: Long): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putFloat(key: String, value: Float): SharedPreferences.Editor { values[key] = value; return this }
+        override fun putBoolean(key: String, value: Boolean): SharedPreferences.Editor { values[key] = value; return this }
+        override fun remove(key: String): SharedPreferences.Editor { values[key] = null; return this }
+        override fun clear(): SharedPreferences.Editor = throw UnsupportedOperationException("settings are never cleared whole")
+        override fun commit() = true
+        override fun apply() {}
+    }
+
+    private fun stage(into: SharedPreferences.Editor, s: AppSettings) {
+        into
             .putString(K_WEEK_START_V2, s.weekStart.name)
             .putInt(K_WEEKLY_LIMIT, s.weeklyLimitHours)
             .putInt(K_AVG_LIMIT, s.averageLimitHours)
@@ -728,6 +777,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_SPEND_IN_CELLS, s.spendInCells)
             .putBoolean(K_SPEND_HEAT, s.spendHeat)
             .putBoolean(K_BACKUP_NUDGE, s.backupNudge)
+            .putBoolean(K_DATA_SELF_CHECK, s.dataSelfCheck)
             .putBoolean(K_LEAVE_TIME_NOTICE, s.leaveTimeNotice)
             .putBoolean(K_GAP_NOTICE, s.gapNotice)
             .putInt(K_STRETCH_LIMIT, s.stretchLimitHours)
@@ -790,7 +840,6 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_ALARM_SUGGEST, s.alarmSuggest)
             .putString(K_ALARM_SUGGEST_MEMORY, s.alarmSuggestMemory)
             .putBoolean(K_EXPORT_MARK, s.exportMark)
-            .apply()
     }
 
     private companion object {
@@ -806,6 +855,7 @@ class SettingsRepository(context: Context) {
         const val K_SPEND_IN_CELLS = "spend_in_cells"
         const val K_SPEND_HEAT = "spend_heat"
         const val K_BACKUP_NUDGE = "backup_nudge"
+        const val K_DATA_SELF_CHECK = "data_self_check"
         const val K_LEAVE_TIME_NOTICE = "leave_time_notice"
         const val K_GAP_NOTICE = "gap_notice"
         const val K_STRETCH_LIMIT = "stretch_limit_hours"

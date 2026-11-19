@@ -36,6 +36,8 @@ object FlagCatalog {
     const val STATS_KEEP = "stats.keep"
     /** 1.40 [DISC-06]: the four daily totals of '안 써 본 기능 알려 주기' (보임·열어 봄·나중에·그만 보기, 기능 이름 없이), once 처리방침 3.13 names them. */
     const val STATS_DISC = "stats.disc"
+    /** 2.0.0 [RVL-90] (검토 I12c-03, 처리방침 3.14 문장표 6): 앱이 멈춘 곳(밤낮 코드 위 다섯 줄·줄인 값·종류)의 하루 횟수, 사용 통계를 켠 분만. */
+    const val STATS_CRASH = "stats.crash"
     /** 1.40 [DISC-06]: the 처리방침 판 that first names the four totals (사용자 결정 2026-11-11 '합계 4가지만'). */
     const val DISCOVER_POLICY = "3.13"
     /** 2.0.0 [RVQ-56] 검토 T21-02: 기능 횟수를 일하는 방식(유형)별로도, 처리방침 3.14(30일 줄 4줄)가 적은 날부터. */
@@ -58,6 +60,11 @@ object FlagCatalog {
     const val SHARE_WORD = "share.word"
     /** 2.0.0 [RVG-38] The 처리방침 판 that would name the link's word (총괄 11-13: 3.14 범위 카드, 답이 '넣지 않기'면 보내는 쪽을 걷어 내요). */
     const val SHARE_WORD_POLICY = "3.14"
+    /**
+     * 2.0.0 [RVL-80] 처리방침 3.14 문장표 9: '회사 설정 보내기' also carries the roster's codes as this calendar reads them (the code
+     * letters and the company's kind-of-work names, 20 at most; no person, no date), so a coworker's roster photo reads the same.
+     */
+    const val SHARE_DUTY_CODES = "share.duty_codes"
     /** 1.34 [RCP-37] 나눔 판: reading the plaza's recipes (no information sent but the phone's install hash, as any plaza read). */
     const val RECIPE_BROWSE = "recipe.browse"
     /** 1.34 [RCP-37] Putting a recipe up, once 처리방침 3.8 names it. */
@@ -330,6 +337,15 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
+    val SHARE_DUTY_CODES_FLAG = Flag(
+        SHARE_DUTY_CODES, "회사 설정 파일에 근무표 약어 담기",
+        what = "‘회사 설정 보내기’를 누를 때 이 달력이 근무표를 읽는 약어(약어 글자와 그 회사의 근무 이름, 20개까지)를 함께 담아요. 받은 동료의 근무표 사진이 첫 달부터 같은 약어로 읽혀요. 사람 이름·날짜는 담지 않아요.",
+        whyOff = "회사 설정 파일에 새로 담기는 칸이라 처리방침 3.14의 30일 줄 시행일부터 서버 시각으로 저절로 켜져요. 그 전에는 담지 않아요(받은 파일의 약어를 읽는 것은 그 전에도 해요).",
+        basis = Basis(policy = SHARE_WORD_POLICY, requirement = "RVL-80", note = "2.0.0 검토 I07bc-02, 처리방침 3.14 문장표 9"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
     /**
      * 1.34 [RCP-37] 나눔 판 (계획 745~787, 결정 D109): looking at the plaza's recipes, previewing and applying one happen on the phone
      * and read the public list only, so they are open from 1.34 (the server can still rest them). Sending — a recipe, a vote with
@@ -388,6 +404,9 @@ object FlagCatalog {
      * 1.38 [P3-01] Phase 3 (사용자 2026-11-05 "1.38에서 개발 시작", 결정 P3-D1 B: 꺼진 채 개발, 켜는 건 관문 뒤). Each row waits for a fact
      * only the developer confirms in the admin app (파일럿 시작, 워치 수면 확인); until then only an admin phone given 미리 보기 sees it.
      * None sends anything new to a server (설계 1-1 원칙 1): 팀 표·직원 정보·잠은 휴대폰 안, a member's link is today's 근무표 링크.
+     * 2.0.0 [RVL-63] (검토 DATA-19) Not quite: 팀원 근무 링크 carry the members' names, 출퇴근·서명 링크 a staff member's name, and
+     * 지금 자는 중 the sleep state, to the share server. Those three rows are [Risk.LEGAL] now, so a force-on in the admin app or a preview
+     * keeps 3.11's consent and reads the server's date, as the rule for rows that send something new says (shift-calendar-app/CLAUDE.md).
      */
     /**
      * 1.38 Phase 3 (사용자 2026-11-05 C안 "모든 기능을 해당 일에 푸는 거야, 내가 따로 지정하면 그날에"): every Phase 3 row opens on
@@ -407,16 +426,16 @@ object FlagCatalog {
         TEAM_LEADER, "리더 팀 근무표",
         what = "달력 › 도구 › ‘내 팀 근무표 짜기’(모든 조 위 막대에도 있어요)에서 팀을 만들고 팀원×날짜 표를 칠해요(단톡방 명단 붙여 넣기·지난달 이어 칠하기·맞바꾸기·바로 검사·희망 휴무·빈칸 자동 채우기). 확정하면 팀원마다 그 사람 근무만 담은 근무표 링크를 만들어요. 팀 표는 리더 휴대폰에만 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일, 관리자 앱 처리방침 날짜로 옮겨요)에 다른 기능과 함께 켜져요(사용자 2026-11-05 C안). 그 전에는 미리 보기를 받은 관리자 휴대폰에만 보여요.",
-        basis = Basis(decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", decision = "P3-D1·P3-D2·P3-D5", requirement = "TEAM-09", note = "Phase 3 M24 L1(순번 482~488)"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     val BOSS_PAYROLL_FLAG = Flag(
         BOSS_PAYROLL, "사장님 급여 대장",
-        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있어요.",
+        what = "가게 달력의 ‘직원 인건비’가 사업장·직원·월 급여 대장으로 바뀌어요. 평소 근무에서 바뀐 날만 고치면 직원마다 기본급·주휴·연장·야간·휴일이 계산되고(누르면 풀이), 임금대장 파일(시행령 제27조 항목)로 내보내요. 직원 정보는 휴대폰과 암호 백업에만 있고, 출퇴근·계약서 서명 링크를 만들 때만 그 직원 이름이 링크와 함께 공유 서버에 있어요.",
         whyOff = "정식 출시일(처리방침 3.1 시행일)에 자영업 달력에서 켜져요(사용자 2026-11-05 C안). 그 전에는 지금 ‘직원 인건비’ 그대로예요.",
-        basis = Basis(decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
-        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, since = "1.38.0",
+        basis = Basis(policy = "3.11", decision = "P3-D4·P3-D6·P3-D8", requirement = "BOSS-01", note = "Phase 3 M25 B1(순번 499~502)"),
+        conditions = phase3Launch + Condition.WorkType(setOf(WorkStyle.BUSINESS.name)), default = false, risk = Risk.LEGAL, since = "1.38.0",
         group = FlagGroup.PHASE3,
     )
 
@@ -448,8 +467,8 @@ object FlagCatalog {
         SLEEP_SHARE, "지금 자는 중 나누기",
         what = "달력을 공유한 사람에게 ‘지금 자는 중 · 14:10쯤 깸’ 한 줄을 보여 줘요. 공유 링크마다 켜고 끌 수 있어요.",
         whyOff = "공유 서버로 잠 상태(자는 중·깰 시각)를 새로 보내니 처리방침 새 판 시행일(정식 출시일)에 켜져요(사용자 2026-11-06 수면 도약 승인).",
-        basis = Basis(requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
-        conditions = phase3Launch, default = false, since = "1.38.0", group = FlagGroup.PHASE3,
+        basis = Basis(policy = "3.11", requirement = "SLEEP-11", note = "1.38 수면 도약 S3"),
+        conditions = phase3Launch, default = false, risk = Risk.LEGAL, since = "1.38.0", group = FlagGroup.PHASE3,
     )
 
     /**
@@ -550,6 +569,20 @@ object FlagCatalog {
     )
 
     /**
+     * 2.0.0 [RVL-90] (검토 I12c-03 '멈춤 신호를 문의 없이 개발로', 처리방침 3.14 문장표 6, 1-9항 ⑩): 앱이 닫히거나 응답이 없었을 때 그 일이
+     * 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류, 그날 횟수(하루 5가지까지)를 사용 통계에 실어요. 오류 글·휴대폰 모델·설치 번호·
+     * 시각은 없어요. 3.14의 30일 줄 시행일에 서버 시각으로 저절로 켜지고, 그 전에는 세지도 보내지도 않아요.
+     */
+    val STATS_CRASH_FLAG = Flag(
+        STATS_CRASH, "앱이 멈춘 곳 횟수 보내기",
+        what = "사용 통계를 켠 휴대폰이 앱이 닫히거나 응답이 없었던 날, 그 일이 난 밤낮 코드 위치(위 다섯 줄)와 그 위치를 줄인 값, 종류(닫힘·응답 없음), 그날 횟수를 하루 5가지까지 보내요. 관리자 앱 › 숫자 › 개선 신호에 새 판에서 생긴 멈춤이 떠요. 오류 글·휴대폰 모델·설치 번호·시각은 보내지 않아요.",
+        whyOff = "사용 통계 항목이 늘어 처리방침 3.14(1-9항 ⑩)의 30일 줄 시행일에 서버 시각으로 저절로 켜져요. 관리자 앱 › 기능 관리 › 일정에 3.14 날짜를 넣으면 그날부터예요. 그 전에는 세지도 보내지도 않아요.",
+        basis = Basis(policy = "$SHARE_WORD_POLICY 1-9항", requirement = "RVL-90", note = "2.0.0 검토 I12c-03, 처리방침 3.14 문장표 6"),
+        conditions = listOf(Condition.Date(policy = SHARE_WORD_POLICY), Condition.Policy(SHARE_WORD_POLICY), Condition.Consent("usage")),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.STATS,
+    )
+
+    /**
      * 2.0.0 [RVQ-56] 검토 T21-02 (처리방침 3.14 30일 줄 4줄, 사용자 '16줄 모두' 11-19): 사용 통계를 켠 휴대폰이 보내는 기능 횟수를 일하는
      * 방식별로도 세요. 서버는 날짜·판·유형·기능마다 휴대폰 수만 더하고, 휴대폰을 구별하는 값은 남기지 않아요. 3.14 시행일 전에는 받지 않아요.
      */
@@ -638,9 +671,9 @@ object FlagCatalog {
     }
 
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
-        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
+        DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, SHARE_DUTY_CODES_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_KIND_USE_FLAG, MARKET_WEAR_FLAG, CARD_FONTS_FLAG,
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, STATS_CRASH_FLAG, STATS_KIND_USE_FLAG, MARKET_WEAR_FLAG, CARD_FONTS_FLAG,
         MARKET_FAIR_COUNT_FLAG) +
         SWITCHES
 

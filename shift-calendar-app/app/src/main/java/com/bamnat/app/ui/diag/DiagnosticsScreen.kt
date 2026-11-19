@@ -114,7 +114,12 @@ data class DiagReport(val sections: List<Pair<String, List<String>>>) {
      */
     fun stopFirst(): DiagReport {
         val first = sections.filter { it.first == STOP_SECTION || it.first == STOP_TRAIL_SECTION }
-        return copy(sections = first + (sections - first.toSet()))
+        // 2.0.0 [RVL-84] (HQ-118) Within 앱 멈춤, the newest stop's own record first: a long count of stops never pushes it past the cut.
+        val newestFirst = first.map { (title, lines) ->
+            val at = lines.indexOf(NEWEST_STOP)
+            title to if (title != STOP_SECTION || at <= 0) lines else lines.subList(at, lines.size) + lines.subList(0, at)
+        }
+        return copy(sections = newestFirst + (sections - first.toSet()))
     }
 
     companion object {
@@ -131,6 +136,8 @@ const val SENT_RECORDS = "문의할 때 함께 보내는 기록"
 const val STOP_SECTION = "앱 멈춤"
 /** 1.32.1 [STAB-10] 멈춤 관찰 기록: the phone's screen and the app's memory before a stop ([com.bamnat.app.diag.Trail]). */
 const val STOP_TRAIL_SECTION = "앱 멈춤 관찰"
+/** 2.0.0 [RVL-84] The line before the newest stop's own record in [STOP_SECTION] ([com.bamnat.app.diag.CrashLog.reportLines]). */
+const val NEWEST_STOP = "가장 최근 기록:"
 
 /**
  * 2.0.0 [RVO-16] 검토 SET-02·U11a-02 ('알람 준비'를 네 곳이 서로 다른 기준으로 말해요): one verdict from [alarmChecks] for every place that
@@ -475,9 +482,10 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                // 2.0.0 [RVI-86] (디자인 품질 4) One line; the copy button says the rest.
+                // 2.0.0 [RVI-86] (디자인 품질 4) One line. [RVL-59] (검토 DATA-25) 복사 waits in ⋮, so the line names the button at the
+                // bottom that takes this report along.
                 Text(
-                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 위 복사 단추로 문의에 붙여요(메모·금액은 담지 않아요)",
+                    "알람이 안 울리거나 늦을 때 원인을 찾아요 · 맨 아래 ‘점검 내용과 함께 문의하기’로 이 내용이 함께 가요(메모·금액은 담지 않아요)",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -585,22 +593,9 @@ fun DiagnosticsScreen(vm: DiagnosticsViewModel, onBack: () -> Unit, testing: Boo
                     }
                 }
             }
-            // [QA-07] 330: the person checks their own data, as the release list does before a phone move.
-            item {
-                val lines by vm.dataCheck.collectAsStateWithLifecycle()
-                val checking by vm.checking.collectAsStateWithLifecycle()
-                SectionCard(title = "데이터 점검") {
-                    Text("근무·기록 데이터가 온전한지, 백업이 제대로 만들어지는지 휴대폰 안에서 살펴봐요. 아무것도 바꾸거나 보내지 않아요.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    lines?.forEach { line ->
-                        Text((if (line.ok) "✓ " else "! ") + line.text, style = MaterialTheme.typography.bodySmall,
-                            color = if (line.ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error)
-                    }
-                    OutlinedButton(onClick = { vm.runDataCheck() }, enabled = !checking) {
-                        Text(if (checking) "점검하는 중…" else if (lines == null) "데이터 점검" else "다시 점검")
-                    }
-                }
-            }
+            // [QA-07] 330: the person checks their own data, as the release list does before a phone move. 2.0.0 [RVL-70] The same card is
+            // 설정 › 데이터 › 데이터 점검 ([DataCheckScreen]).
+            item { DataCheckCard(vm) }
             // [UX-05] When the checks don't solve it, ask with this phone's alarm check attached.
             item {
                 SectionCard(title = "그래도 안 울리면") {

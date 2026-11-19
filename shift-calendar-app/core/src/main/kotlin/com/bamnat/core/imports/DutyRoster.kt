@@ -52,6 +52,17 @@ sealed interface DutyCell {
      * (병가·경조·공가): the user is asked which kind once, and the calendar remembers the answer.
      */
     data class Unknown(val raw: String, val leave: Boolean = false) : DutyCell
+    /**
+     * 2.0.0 [RVL-72] (검토 T07b-01·I07bb-02) 알바 시간표: the hours of the day, as written ("09:00-15:00", "9-3"), from [start]
+     * (minutes from midnight) for [minutes]. [start] is null when only a length was written ("6h"): the day starts when its kind of
+     * work does. The day goes on the calendar as work with these times ([TimeSheet]).
+     */
+    data class Hours(val start: Int?, val minutes: Int) : DutyCell {
+        /** Where the day ends, minutes from its midnight (past 1440 into the next day); null without a start. */
+        val end: Int? get() = start?.plus(minutes)
+    }
+    /** 2.0.0 [RVL-72] (검토 T07b-02) 현장 공수표: the day's 공수 (1, 0.5, 1.5), written as a 일당 일감 of the day ([com.bamnat.core.money.DayRate]). */
+    data class Units(val units: Double) : DutyCell
 }
 
 /** One kind of day of the calendar, for matching the roster's codes. */
@@ -109,8 +120,19 @@ data class RosterRow(
      * the last day of the month before. In memory only, until the month is known ([placed]) and they join [outside].
      */
     val before: Map<Int, DutyCell> = emptyMap(),
+    /**
+     * 2.0.0 [RVL-72] (검토 T07b-01) A 주간 시간표 (월 화 수 … with the times under them): the times by weekday, put on every such day of
+     * whatever month is on screen ([TimeSheet.expand]); [cells] is empty then.
+     */
+    val weekly: Map<java.time.DayOfWeek, DutyCell> = emptyMap(),
 ) {
     val unknown: Int get() = cells.values.count { it is DutyCell.Unknown }
+
+    /** 2.0.0 [RVL-72] A line of times or 공수 ([TimeSheet]): the days between are days off, not cells the photo lost. */
+    val timed: Boolean get() = weekly.isNotEmpty() || cells.values.any { it is DutyCell.Hours || it is DutyCell.Units }
+
+    /** 2.0.0 [RVL-72] The line's days in [month]: a 요일표's weekdays, else [cells]. */
+    fun cellsIn(month: java.time.YearMonth): Map<Int, DutyCell> = if (weekly.isNotEmpty()) TimeSheet.expand(weekly, month) else cells
 
     /** 2.0.0 [RVL-24] [before] as dates of the month before [month], in [outside] with the file's. */
     fun placed(month: java.time.YearMonth): RosterRow = if (before.isEmpty()) this
@@ -123,7 +145,8 @@ data class RosterRow(
     fun doubtful(lastDay: Int): Set<Int> {
         val days = cells.keys.filter { it <= lastDay }
         if (days.isEmpty()) return emptySet()
-        val missing = (days.min()..days.max()).filter { it !in cells }
+        // 2.0.0 [RVL-72] On a 시간표·공수표 a day between is a day not worked.
+        val missing = if (timed) emptyList() else (days.min()..days.max()).filter { it !in cells }
         return (cells.filter { it.value is DutyCell.Unknown }.keys + guessed + unsure + missing).filter { it <= lastDay }.toSortedSet()
     }
 }
@@ -518,13 +541,31 @@ object DutyRoster {
     }
 
     /** What each day of [row] does to that day of the calendar, for the days the month has. */
-    fun apply(entry: DayEntry, cell: DutyCell): DayEntry = when (cell) {
+    fun apply(entry: DayEntry, cell: DutyCell, work: Long? = null): DayEntry = when (cell) {
         is DutyCell.Shift -> entry.copy(override = ShiftOverride.Shift(cell.shiftTypeId), leave = null)
         DutyCell.Off -> entry.copy(override = ShiftOverride.Off, leave = null)
         // [ROST-05] 반차 keeps the day's work (half of it is taken off); a whole day's leave keeps it too, as before.
         is DutyCell.Leave -> entry.copy(leave = cell.leave)
         is DutyCell.Unknown -> entry
+        // 2.0.0 [RVL-72] A day of the 알바 시간표 is a day of [work] (the day's own kind when it is a working day) at the times written; a
+        // length only ("6h") keeps the kind's start and ends that long after it.
+        is DutyCell.Hours -> hours(entry, cell, work)
+        // The 공수 goes in as the day's 일당 일감, not on the day itself.
+        is DutyCell.Units -> entry
     }
+
+    /** 2.0.0 [RVL-72] [cell]'s times on [entry], made a day of [work] when given; [kindStart] is that kind's start (minutes), for "6h". */
+    fun hours(entry: DayEntry, cell: DutyCell.Hours, work: Long?, kindStart: Int? = null): DayEntry {
+        val start = cell.start ?: kindStart ?: entry.customStart?.let { it.hour * 60 + it.minute } ?: DEFAULT_START
+        fun time(m: Int) = java.time.LocalTime.of((m / 60) % 24, m % 60)
+        return entry.copy(
+            override = if (work != null) ShiftOverride.Shift(work) else entry.override, leave = null,
+            customStart = time(start), customEnd = time(start + cell.minutes),
+        )
+    }
+
+    /** 2.0.0 [RVL-72] Where "6h" starts when nothing else says: 09:00. */
+    const val DEFAULT_START = 9 * 60
 
     /**
      * [READ-30] 1.38 PC (x03): the kind of work a roster line has most of. A day the roster gives 연차 is a working day taken

@@ -118,6 +118,8 @@ object Notifications {
     /** 2.0.0 [RVO-14] (PRO-29·U11b-10) 끄기 미션의 7일이 끝나기 전날 저녁. */
     const val MISSION_END_ID = 7211
     const val BACKUP_ID = 7204
+    /** 2.0.0 [RVL-71] 데이터 점검 found what it could not put right (on the backup channel, which says so). */
+    const val DATA_CHECK_ID = 7213
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
     const val INQUIRY_ID = 7208
@@ -236,8 +238,9 @@ object Notifications {
             group = GROUP_DAY
             lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
         }
-        val backup = NotificationChannel(BACKUP_CHANNEL_ID, "자동 백업", NotificationManager.IMPORTANCE_DEFAULT).apply {
-            description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되면 알려요"
+        // 2.0.0 [RVL-71] The weekly 데이터 점검 says here too what it could not put right: the same worry (my records), one switch.
+        val backup = NotificationChannel(BACKUP_CHANNEL_ID, "백업·데이터 점검", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "매일 자동 백업이 ${com.bamnat.app.backup.AutoBackup.FAIL_DAYS}일 넘게 안 되거나, 일주일에 한 번 살펴본 데이터에 고칠 것이 있으면 알려요"
             group = GROUP_DAY
         }
         // [SRV-10] A channel the user turned off stays off ([TOWN-08] carried over from the old id); its name says what it carries now.

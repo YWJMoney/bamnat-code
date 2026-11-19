@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
             NoticeLinks.read(this, intent)
             com.bamnat.app.logic.FxOutside.pressOpened(container, intent) // [RVM-14] a 위젯·타일·알림 단추 that opens a screen
             // [ROST-09] A shared roster photo or text first, so it never reads as a 회사 파일 or backup.
-            if (!IncomingRoster.read(intent)) IncomingFiles.read(intent) // [CAL-47]
+            IncomingFiles.readAny(intent) // [CAL-47]
         }
         // [LOCK-01] 앱 잠금 is decided before the first frame of the app, as when onStart came after setContent.
         if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) && !startDone) started(container)
@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
         openLink(intent)
         // [ROST-09] shared while the app was open. 2.0.0 [RVL-14] (검토 DATA-06): a backup or a 회사 설정 file opened while the app was
         // open came here and was never read (the app only came forward); it is offered now as on a first open.
-        if (!IncomingRoster.read(intent)) IncomingFiles.read(intent)
+        IncomingFiles.readAny(intent)
         // [SLP-15] A tapped notice opens its own screen, so coming back is not sent to the calendar.
         if (NoticeLinks.read(this, intent)) HomeRequests.followingLink()
         com.bamnat.app.logic.FxOutside.pressOpened(appContainer, intent) // [RVM-14]

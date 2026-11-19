@@ -1369,8 +1369,11 @@ fun CalendarScreen(
         if (!holding) Column(Modifier.onSizeChanged { aboveHeights[0] = it.height }) {
         if (safeStart) {
             // PC 19·20차 사용성 제안 (감겨서 달력이 밀림): a line short enough not to wrap; 알람 점검 says the rest.
+            // 2.0.0 [RVL-88] (검토 PC-194) A tap on the line says in one line what rests; it no longer ends the safe start
+            // (only '평소대로' does, as it says).
             AlarmWarningLine((if (com.bamnat.app.diag.StartGuard.byHand) "점검용 안전 모드" else "멈춰서 안전 모드") + " · 꾸밈·규칙 쉼",
-                "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace, tone = com.bamnat.app.ui.theme.Tone.Caution)
+                "평소대로", { context.appContainer.wakeAfterSafe() }, linePlace, tone = com.bamnat.app.ui.theme.Tone.Caution,
+                onClick = { com.bamnat.app.ui.components.AppSnack.show(SAFE_START_RESTS) })
         }
         // 1.39 [CALX-07] 8차 PC (식당: 시작 카드·급여 대장·알림 1개 더 보기·보기 고르기 네 칸이 쌓여 달력이 맨 아래로): the one-time
         // '달력만 볼까요' is a notice, the open one, so the others fold under it; it waits while the start card is up and while the
@@ -3092,16 +3095,21 @@ internal class AlarmNote(
  * 꺼짐 띠는 붉은 바탕, 다른 띠는 저마다 다른 모양): the one shape of a nudge, the meaning only in its icon's colour ([tone]: red where an
  * alarm will not work as it should, orange where it was turned off).
  */
+/** 2.0.0 [RVL-88] (검토 PC-194) What a safe start rests, said when its line is tapped ([StartGuard], SafeLooks, the blueprint). */
+internal const val SAFE_START_RESTS = "안전 모드라 꾸밈·받은 글꼴·규칙과 위젯·워치·링크·폰 캘린더·광장이 쉬어요. 달력·알람·백업은 그대로예요. ‘평소대로’를 누르면 다시 켜져요"
+
 @Composable
 private fun AlarmWarningLine(
     text: String, action: String, onAction: () -> Unit, modifier: Modifier = Modifier,
     /** 1.39 [FLOW-05] A permission asked here for the first time: what it gives, drawn small where the warning mark was. */
     picture: com.bamnat.app.ui.components.PermissionResult? = null,
     tone: com.bamnat.app.ui.theme.Tone = com.bamnat.app.ui.theme.Tone.Danger,
+    /** 2.0.0 [RVL-88] A tap on the line itself; the button's own by default. */
+    onClick: () -> Unit = onAction,
 ) {
     val mark = if (tone == com.bamnat.app.ui.theme.Tone.Plain) MaterialTheme.colorScheme.primary else tone.color()
     com.bamnat.app.ui.components.NudgeCard(
-        text, modifier, tone = tone, action = action, onAction = onAction, onClick = onAction,
+        text, modifier, tone = tone, action = action, onAction = onAction, onClick = onClick,
         lead = picture?.let { p -> { com.bamnat.app.ui.components.PermissionPicture(p, accent = mark, ink = MaterialTheme.colorScheme.inverseSurface, height = 36.dp) } },
     )
 }
@@ -3685,9 +3693,12 @@ internal val ScheduleSnapshot.backDone: String
         else -> "근무 주기대로 되돌렸어요"
     }
 
-/** [EASE-03] Cards above the month that wait for the day after the first setup. */
-private val FIRST_DAY_WAITS = setOf(
-    "statsMore", "crashAsk", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
+/**
+ * [EASE-03] Cards above the month that wait for the day after the first setup. 2.0.0 [RVL-85] (PC-190) Not 'crashAsk': the app closing
+ * on the day it was put on is when a person most easily leaves, and the one way to say so must be there that day.
+ */
+internal val FIRST_DAY_WAITS = setOf(
+    "statsMore", "review", "holiday", "alarmSuggest", "recap", "plazaShare", "publicCycle",
     "plazaRoom", "inviteNudge", "proMoment", "backupNudge", "journal", "discover", "shareHint",
 )
 

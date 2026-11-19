@@ -209,6 +209,8 @@ fun ShareDialog(
         store.saveOptions(chosen()); saved = chosen()
         store.save(made.copy(from = linkMonth), ShareLinkPayload.fingerprint(sent))
         store.sendResult(Today.instant())
+        // 2.0.0 [RVL-78] The new link mends what the 알림함 row said.
+        com.bamnat.app.inbox.Inbox.get(container.appContext).remove("share.ended:${store.key}")
     }
     // [SHR-11] A calendar with no shifts in these months (a shop, field work, hours not yet written) has
     // nothing to show until something is ticked; say so instead of letting the server refuse it.
@@ -260,6 +262,8 @@ fun ShareDialog(
                     Text("${month.monthValue}월 사진으로 보내기")
                 }
                 val quickPaused = container.flags.paused(com.bamnat.core.ops.ServerSwitch.SHARE_CREATE)
+                // 2.0.0 [RVL-78] The sheet opens here for most people: the last link that stopped by itself is said above its '링크로 보내기' too.
+                if (link == null) EndedLine(store)
                 OutlinedButton(enabled = !busy && !quickPaused, onClick = {
                     options = quickSends
                     run {
@@ -510,6 +514,8 @@ fun ShareDialog(
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             if (current == null) {
+                // 2.0.0 [RVL-78] (검토 I12c-02) The last link stopped by itself: said once here, above the one press that mends it.
+                EndedLine(store)
                 Button(enabled = !busy && !empty && !createPaused, onClick = {
                     if (extraLocked) { com.bamnat.app.ui.pro.openPro(com.bamnat.app.tier.Feature.MORE_LINKS); return@Button }
                     run {
@@ -527,7 +533,8 @@ fun ShareDialog(
             } else {
                 // [SHR-13] When the link last got the calendar, and a change still waiting for the internet.
                 val refused by store.refused.collectAsState()
-                SentLine(store.sentAt, unsent, busy, refused) { run { container.shareSync.resend(store.key) } }
+                val why by store.refusedWhy.collectAsState()
+                SentLine(store.sentAt, unsent, busy, refused, why) { run { container.shareSync.resend(store.key) } }
                 if (chosen() != saved || title.trim() != current.title.trim()) {
                     Text("고른 항목이나 이름이 바뀌었어요. ‘지금 ${com.bamnat.core.work.scheduleWordRo(style)} 고치기’를 누르면 링크에 들어가요.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
@@ -648,17 +655,19 @@ private fun LeftOutLine(words: String) {
 
 /** [SHR-13] 마지막으로 보낸 때, and 보내지 못한 변경 with a button that sends it now. */
 @Composable
-internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, refused: Boolean = false, onSend: () -> Unit) {
+internal fun SentLine(sentAt: java.time.Instant?, unsent: Boolean, busy: Boolean, refused: Boolean = false, why: String? = null, onSend: () -> Unit) {
     if (unsent) {
-        Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
-            shape = MaterialTheme.shapes.medium, modifier = Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                // 2.0.0 [RVG-27] 검토 SN-13: turned down by the server is not 'waiting for the internet' (it never went by itself).
-                Text(if (refused) "서버가 이 변경을 받지 않았어요. 다시 보내 보고, 계속 안 되면 문의해 주세요."
-                    else "보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                TextButton(enabled = !busy, onClick = onSend, modifier = Modifier.heightIn(min = 48.dp)) { Text("지금 보내기") }
-            }
-        }
+        // 2.0.0 [RVL-56] (검토 U12-07, 조건 3·6) The common 안내 카드 in the caution tone, not a red box of its own: a change that has
+        // not gone yet is a thing to see to, not a danger. Its one text button sends it now.
+        com.bamnat.app.ui.components.NudgeCard(
+            // 2.0.0 [RVG-27] 검토 SN-13: turned down by the server is not 'waiting for the internet' (it never went by itself).
+            // 2.0.0 [RVL-56] (검토 U12-07) With the reason the server gave, what and where to mend it in one line.
+            if (refused) why ?: "서버가 이 변경을 받지 않았어요. 다시 보내 보고, 계속 안 되면 문의해 주세요."
+            else "보내지 못한 변경이 있어요. 인터넷이 되면 저절로 보내요.",
+            tone = com.bamnat.app.ui.theme.Tone.Caution,
+            action = if (busy) "보내는 중…" else "지금 보내기",
+            onAction = { if (!busy) onSend() },
+        )
     }
     sentAt?.let {
         Text("마지막으로 보낸 때 " + it.atZone(Today.zone()).format(DateTimeFormatter.ofPattern("M월 d일 HH:mm")),
@@ -846,4 +855,14 @@ private fun send(context: Context, s: ShareLinkState, style: com.bamnat.core.wor
     val text = (if (s.title.isNotBlank()) "${s.title}의 $word" else word) + "\n${s.url}"
     val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text) }
     context.startActivity(Intent.createChooser(send, "$word 링크 보내기"))
+}
+
+/** 2.0.0 [RVL-78] (검토 I12c-02) When the last link stopped by itself, said once above the one press that mends it; nothing otherwise. */
+@Composable
+private fun EndedLine(store: com.bamnat.app.share.ShareLinkStore) {
+    val ended by store.endedAt.collectAsState()
+    ended?.let { at ->
+        Text("지난 링크는 ${Fmt.monthDay(at.atZone(Today.zone()).toLocalDate())}에 끝났어요. 새 링크를 보내면 받은 분들이 다시 볼 수 있어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+    }
 }

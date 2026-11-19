@@ -19,7 +19,11 @@ import java.io.File
  * 4. A backup made now reads back the same (in memory and the cache folder, never written to a file the person sees).
  */
 object DataCheck {
-    data class Line(val ok: Boolean, val text: String)
+    /**
+     * One line of the check. 2.0.0 [RVL-65] (조건 6) [note]: a thing to know rather than a fault (a calendar file the list does not name,
+     * calendars put back by their files): shown in the caution colour, so red stays for data that is broken.
+     */
+    data class Line(val ok: Boolean, val text: String, val note: Boolean = false)
 
     suspend fun run(c: AppContainer): List<Line> = withContext(Dispatchers.IO) {
         val out = ArrayList<Line>()
@@ -40,6 +44,15 @@ object DataCheck {
             Line(true, "추가 달력 ${added.size}개: 파일이 모두 있어요")
         } else {
             Line(false, "추가 달력 파일이 없어요: " + missing.joinToString { it.name })
+        }
+        // 2.0.0 [RVL-65] (검토 DATA-16) The other way round: a calendar's file the list does not name, and the ones put back by their files.
+        val listed = runCatching { c.calendars.ids() }.getOrDefault(emptySet())
+        val stray = c.appContext.databaseList().mapNotNull(com.bamnat.app.data.CalendarStorage::idOf).filter { it !in listed }
+        // A list that reads well takes nothing from the files (a calendar deleted while its file could not go would come back), so the line
+        // says what it most likely is and when to ask, not that reopening brings it back.
+        if (stray.isNotEmpty()) out += Line(false, "목록에 없는 달력 파일 ${stray.size}개가 있어요. 지운 달력이 남긴 것일 수 있어요. 쓰던 달력이 안 보이면 문의해 주세요", note = true)
+        c.calendars.recovered.takeIf { it.isNotEmpty() }?.let { names ->
+            out += Line(false, "달력 목록을 읽지 못해 ${names.size}개를 파일에서 되찾았어요(${names.joinToString()}). ‘달력 목록’에서 이름을 바꿔 주세요", note = true)
         }
         out += backupRoundTrip(c)
         out

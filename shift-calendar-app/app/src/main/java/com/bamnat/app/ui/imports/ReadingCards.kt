@@ -285,6 +285,8 @@ internal fun ReadFailed(
 }
 
 /** 2.0.0 [RVL-34] (검토 U07b-14) The ways' names, one each everywhere (명세서 the same). */
+/** 2.0.0 [RVL-81] (검토 I07bc-03) How a sheet reads best, said once before the first photo of a calendar. */
+internal const val SHOT_TIP = "표가 화면 가득, 밝은 곳에서 반듯하게 찍으면 잘 읽어요"
 internal const val SCANNER = "스캐너로 찍기"
 internal const val CAMERA = "사진 찍기"
 internal const val PICK = "사진 고르기"

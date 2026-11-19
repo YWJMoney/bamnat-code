@@ -177,7 +177,8 @@ enum class SettingsPage(
 internal fun SettingsPage.titleFor(style: com.bamnat.core.work.WorkStyle?): String = com.bamnat.core.guide.FeatureRegistry.settingsPage(title, style)
 
 /** A result to show once; [undo] offers to take an import back. */
-data class SettingsMessage(val text: String, val undo: Boolean = false)
+/** [undo] offers 되돌리기, which runs [onUndo] (2.0.0 [RVL-76]) or else takes back the last 불러오기. */
+data class SettingsMessage(val text: String, val undo: Boolean = false, val onUndo: (() -> Unit)? = null)
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     val settings: StateFlow<AppSettings> = container.settingsRepository.settings
@@ -208,6 +209,18 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
 
     /** [UNDO-01][UNDO-02][UNDO-03] 최근 지운 기록, newest first. */
     val recentlyCleared: StateFlow<List<com.bamnat.app.data.RecordsTrash.Entry>> = container.recordsTrash.entries
+    /** 2.0.0 [RVL-76] 날짜별 되돌리기 went back; 되돌리기 on its message goes back to how it was just before. */
+    fun timeMachineDone(text: String, before: com.bamnat.app.data.TimeMachine.Point?) {
+        _message.value = SettingsMessage(text, undo = before != null, onUndo = before?.let { p ->
+            {
+                container.appScope.launch {
+                    val ok = runCatching { container.timeMachine.restore(p) }.isSuccess
+                    _message.value = SettingsMessage(if (ok) "되돌리기 전 모습으로 돌아왔어요" else "되돌리지 못했어요. 지금 기록은 그대로예요")
+                }
+            }
+        })
+    }
+
     fun restoreCleared(entry: com.bamnat.app.data.RecordsTrash.Entry) {
         container.appScope.launch {
             val ok = container.recordsTrash.restore(entry.id)
@@ -789,7 +802,7 @@ fun SettingsScreen(
         val result = snackbar.showSnackbar(m.text, actionLabel = if (m.undo) "되돌리기" else null,
             duration = if (m.undo) SnackbarDuration.Long else SnackbarDuration.Short)
         vm.consumeMessage(m)
-        if (result == SnackbarResult.ActionPerformed) vm.undoImport()
+        if (result == SnackbarResult.ActionPerformed) m.onUndo?.invoke() ?: vm.undoImport()
     }
 
     val pageContent: @Composable ColumnScope.(SettingsPage) -> Unit = { p ->

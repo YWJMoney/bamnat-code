@@ -212,6 +212,8 @@ private object Routes {
     fun calendarSetup(id: String) = "calendar_setup/$id"
     const val MEMO_TRASH = "memo_trash"
     const val DIAGNOSTICS = "diagnostics?testing={testing}"
+    /** 2.0.0 [RVL-70] 설정 › 데이터 › 데이터 점검. */
+    const val DATA_CHECK = "data_check"
 
     fun diagnostics(testing: Boolean) = "diagnostics?testing=$testing"
     /** [MCAL-06] The pay of one of the user's calendars; without one, the main calendar's. */
@@ -756,6 +758,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
                 NoticeLinks.consume(target)
             }
             // [SET-01] Settings takes the target itself, to open on the alarm's state from wherever it was.
+            // 2.0.0 [RVL-70][RVL-71] From 설정 › 데이터's row and from the weekly check's notice.
+            NoticeLinks.Target.DATA_CHECK -> { nav.navigate(Routes.DATA_CHECK) { launchSingleTop = true }; NoticeLinks.consume(target) }
             NoticeLinks.Target.ALARM_CHECK -> {
                 val current = nav.currentBackStackEntry?.destination?.route
                 when {
@@ -2518,6 +2522,10 @@ private fun AppNavHost(
             ExtraKindsScreen(vm = vm, onBack = { nav.popFrom(Routes.EXTRA_KINDS) }, start = entry.arguments?.getString("start"),
                 // Back to the pay screen when it opened this one, so the stack does not grow.
                 onOpenPay = { if (!nav.popBackStack(Routes.PAY, inclusive = false)) nav.navigate(Routes.pay(calendar)) { launchSingleTop = true } })
+        }
+        composable(Routes.DATA_CHECK) {
+            val vm = appViewModel(key = "data_check") { DiagnosticsViewModel(it) }
+            com.bamnat.app.ui.diag.DataCheckScreen(vm = vm, onBack = { nav.popFrom(Routes.DATA_CHECK) })
         }
         composable(
             Routes.DIAGNOSTICS,

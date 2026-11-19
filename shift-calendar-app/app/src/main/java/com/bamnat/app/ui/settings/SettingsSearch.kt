@@ -181,6 +181,10 @@ internal object SettingsIndex {
         // 2.0.0 [RVG-40] 검토 PC-175: a shop, a field worker or an investor reads 다른 사람 달력 받기, as 달력 › 도구 says it.
         (e.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE && e.title == "동료 근무표 받기" && com.bamnat.core.work.receiveTitle(style) != e.title ->
             e.copy(title = com.bamnat.core.work.receiveTitle(style), keywords = e.keywords + e.title)
+        // 2.0.0 [RVL-72] 알바·현장 read 한 달 근무 넣기 as their own row on 내 근무 says it.
+        (style == com.bamnat.core.work.WorkStyle.HOURLY || style == com.bamnat.core.work.WorkStyle.FIELD) &&
+            (e.place as? SettingPlace.Screen)?.go == SettingsGo.DUTY_ROSTER && e.title == "한 달 근무 넣기" ->
+            e.copy(title = if (style == com.bamnat.core.work.WorkStyle.HOURLY) HOURLY_ROSTER_ROW else FIELD_ROSTER_ROW, keywords = e.keywords + e.title)
         style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
             e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
         // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;
@@ -220,6 +224,8 @@ internal object SettingsIndex {
         if (style == com.bamnat.core.work.WorkStyle.HOURLY && e.title in HOURLY_HIDDEN) return false
         if (style == null || style.usesPayEngine) return true
         val place = e.place
+        // 2.0.0 [RVL-72] 현장's 공수표 goes in through 한 달 근무 넣기.
+        if (style == com.bamnat.core.work.WorkStyle.FIELD && place is SettingPlace.Screen && place.go == SettingsGo.DUTY_ROSTER) return true
         if (place is SettingPlace.Screen && place.go in WAGE_SCREENS) return false
         // 1.38 PC 12.4.1 빈틈 2: 현장·가게·투자 have no 오늘의 흐름 on the calendar, so no switch for it either.
         // 1.39 G6: unless the user put it on the calendar themselves.
@@ -260,7 +266,9 @@ internal object SettingsIndex {
         // [SHFT-06][SHFT-07][DAYW-06][DAYW-07]
         screen(W.title, "한 달 근무 넣기", SettingsGo.DUTY_ROSTER, "듀티표", "듀티표 넣기", "직접 입력", "키패드", "반차", "근무표 사진", "글자 인식", "사진으로 입력", "간호사", "한 달 입력",
             // [IMPORT-03]
-            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동"),
+            "근무표 파일", "엑셀 근무표", "CSV", "불규칙 근무표", "편의점 근무표", "병동",
+            // 2.0.0 [RVL-72]
+            "시간표", "알바 시간표", "스케줄표", "공수표", "공수", "출력표"),
         screen(W.title, "연간 건강 지표", SettingsGo.HEALTH_REPORT, "야간 비율", "연속 야간", "건강", "1년", "연간 통계"),
         screen(W.title, "근태 엑셀 가져오기", SettingsGo.ATTENDANCE_IMPORT, "엑셀", "CSV", "근태", "출퇴근 기록", "회사 시스템", "xlsx").takeIf { company }, // [J133-77]
         screen(W.title, "출퇴근 자동 기록", SettingsGo.COMMUTE, "위치", "지오펜스", "자동 출근", "자동 퇴근", "GPS", "회사 위치"),
@@ -404,8 +412,12 @@ internal object SettingsIndex {
         row(D, "백업 안 한 지 30일 알림", "백업 알림", "마지막 백업", "백업 언제", "기록 잃어버림"), // 1.32 [STAB-08]
         row(D, "사진도 백업", "사진", "영수증 사진", "계약서 사진", "메모 사진", "백업 크기"), // [BACK-01]
         row(D, "파일 불러오기", "복원", "백업 불러오기", "되돌리기"),
+        // 2.0.0 [RVL-70][RVL-71] One row in its place (a row is found once): the weekly check's switch is on the screen it opens.
+        row(D, com.bamnat.app.ui.diag.DATA_CHECK_TITLE, "점검", "진단", "데이터 확인", "기록이 이상해요", "파일 깨짐", "온전한지", "백업 확인", "서버 연결",
+            com.bamnat.app.ui.diag.DATA_SELF_CHECK_ROW, "자동 점검", "스스로 점검", "매주 점검"),
         row(D, "최근 지운 기록", "휴지통", "되돌리기", "지운 달력", "실수로 지움", "복구"), // [UNDO-01]
-        screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정"),
+        row(D, TIME_MACHINE_ROW, "어제로 되돌리기", "그때로", "실수로 바꿈", "실수로 지움", "근무 되돌리기", "가계부 되돌리기", "복구"), // 2.0.0 [RVL-76]
+        screen(D.title, "캘린더에서 가져오기", SettingsGo.CALENDAR_IMPORT, "삼성 캘린더", "구글 캘린더", "가져오기", "일정", "ics", "달력 파일", "다른 앱에서 옮기기"),
         row(D, "다른 앱에서 옮기기", "갈아타기", "다른 앱", "옮기기", "근무 앱 캡처", "화면 캡처", "스크린샷", "앱 바꾸기"), // [GROW-05]
         row(D, AUTO_BACKUP_ROW, "자동 백업", "매일 백업", "구글 드라이브", "드라이브", "클라우드", "백업 자동", "백업 폴더", "7일치"), // [PROV-03] 2.0.0 [RVL-52]
         row(D, "캘린더 앱으로 내보내기", "ics", "구글 캘린더", "내보내기"),

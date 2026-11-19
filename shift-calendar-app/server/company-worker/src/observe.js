@@ -11,6 +11,7 @@ import { DAY, HOUR } from "./units.js";
 import { EFFECT, reachedAt } from "./loop.js";
 import { changeMarks, versionHealth } from "./release-desk.js";
 import { CRASH, crashOf, crashRepeats } from "./crash-repeat.js";
+import { compareVersions, version } from "./inbox.js";
 
 // ---- 1.39 [OBS2-01~08] 관측: 앱 전체 사용자의 유입·활성·이탈·품질과, 거기서 찾은 개선 신호 ----
 //
@@ -37,6 +38,8 @@ export const OBS = {
   days: 28,
   /** 2.0.0 [RVA-52][RVA-53] 화면 오류·분류 고칠 것 신호는 많은 것부터 이만큼. */
   screenSignals: 5,
+  /** 2.0.0 [RVL-90] 새 판의 멈춘 곳은 휴대폰 이만큼부터 신호로(한 대는 그 폰만의 일일 수 있어요). */
+  crashNewMin: 3,
   askMissSignals: 5,
   /** 1.39 [OBS2-08] 유형별 흐름·기능과 머묾은 61일(30일째 머묾과 30일 창이 끝난 날까지). */
   longDays: 61,
@@ -607,6 +610,15 @@ export function obsRules(b) {
       why: "따로따로 들어온 문의라 한 건씩 보면 되풀이가 안 보여요. 멈춤 기록이 없으면 앱이 스스로 꺼졌거나 기록 전에 닫힌 것일 수 있어요.",
       dev: `${g.label}에서 앱이 닫히는 원인 찾기(문의 ${g.n}건)`.slice(0, 100), to: "#/desk" });
   }
+  // 2.0.0 [RVL-90] 검토 I12c-03: 사용 통계의 '앱이 멈춘 곳 횟수'(stats.crash, 처리방침 3.14)에서 새 판에만 있는 멈춘 곳(문의 없이).
+  for (const c of b.newCrashes ?? []) {
+    push({ kind: "crash-new", subject: `${c.app}:${c.sig}`, value: c.phones, base: OBS.crashNewMin, better: "down", unit: "대",
+      on: c.phones >= OBS.crashNewMin * t("crash-new"), sample: c.phones, tone: c.kind === "anr" || c.phones >= 10 ? "bad" : "warn",
+      caveat: c.before ? "사용 통계를 켠 휴대폰만 세요. 지난 판에서 한 번도 없던 곳이에요." : "지난 판의 멈춘 곳 기록이 아직 없어 새 판 것인지 견줄 수 없어요.",
+      title: `${c.before ? "새 판에서 생긴 " : ""}${c.kind === "anr" ? "응답 없음" : "닫힘"}: ${c.app} ${c.top} · ${c.phones}대 ${c.total}번(${c.first.slice(5)}부터)`,
+      why: `위 다섯 줄: ${c.at.join(" ← ")}. 그 판의 매핑(tools/retrace.py, release/<판>/앱/ 매핑 zip)으로 줄 이름을 되돌려요. 문의가 오기 전에 고칠 수 있어요.`.slice(0, 700),
+      dev: `${c.app} ${c.kind === "anr" ? "응답 없음" : "닫힘"} 고치기: ${c.top}`.slice(0, 100), to: "#/glance" });
+  }
   // 2.0.0 [RVQ-15] 검토 SRV-20: 사용 통계(누구나 보낼 수 있음)와 서버가 센 요청에서 나온 신호는 꾸밀 수 있는 숫자라, Play 숫자(꾸밀 수 없음)와
   // 맞춰 봐요. Play의 하루 사용자가 같은 주에 그대로(±15%)면 '맞춰 보면 Play는 그대로'를 붙이고 사람이 확인해야 개발사항이 돼요.
   const pw = a?.play?.length ? obsWindow(a.play.map((d) => d.n), 7, 7) : null;
@@ -1009,6 +1021,10 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   // 1.39 [OBS2-08] 유형별 흐름·기능과 머묾: 깃발(처리방침 3.12)이 켜진 뒤에만 읽어요.
   const kindOn = store ? serverEval(store, "stats.kind", now).on : false;
   const keepOn = store ? serverEval(store, "stats.keep", now).on : false;
+  // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수: 깃발(처리방침 3.14)이 켜진 뒤에만 읽어요.
+  const crashOn = store ? serverEval(store, "stats.crash", now).on : false;
+  const crashMarks = crashOn ? ((await batch(env, [stmt(env, `SELECT app, kind, sig, MAX(at) AS at, SUM(phones) AS phones, SUM(total) AS total, MIN(day) AS first,
+      MAX(day) AS last FROM usage_crash WHERE day >= ? GROUP BY app, kind, sig`, kstDay(now - 90 * DAY))]).catch(() => null))?.[0]?.results ?? []) : [];
   const long = obsLongDays(now);
   const more = kindOn || keepOn ? (await batch(env, [
     ...(kindOn ? [stmt(env, "SELECT day, style, event, SUM(phones) AS phones FROM usage_kinds WHERE day >= ? GROUP BY day, style, event", long[0])] : []),
@@ -1042,6 +1058,7 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
     wear: wearRows ? obsWear(wearRows) : null,
     flags314: store ? { kindUse: flagOn(store, "stats.kind_use", now), wear: flagOn(store, WEAR.flag, now) } : null,
     crashRepeats: obsCrashRepeats(crashRows, now),
+    newCrashes: obsNewCrashes(crashMarks, now),
     tune: await obsTune(env),
   };
   board.follow = qr ? obsFollow(stored, eventRows, from7, missOpenRows, wearRows) : [];
@@ -1051,6 +1068,23 @@ export async function observe(env, now = Date.now(), { names = EVENTS } = {}) {
   board.signals = stored.map((s) => (s.devId || s.prevDev ? { ...s, steps: signalSteps(s, devInfo.get(s.devId ?? s.prevDev), now) } : s));
   board.gaps = obsGaps(board);
   return board;
+}
+
+/**
+ * 2.0.0 [RVL-90] 검토 I12c-03: 가장 새 판(멈춘 곳 기록 가운데 가장 높은 판)에서 14일 안에 생긴 멈춘 곳 가운데, 90일 안 다른 판에는 없던 곳.
+ * 휴대폰 많은 것부터 [OBS.screenSignals]개. `before`는 견줄 지난 판 기록이 있었는지(없으면 새 판 것인지 말할 수 없어요).
+ */
+export function obsNewCrashes(rows, now) {
+  const list = (rows ?? []).filter((r) => version(r.app));
+  if (!list.length) return [];
+  const newest = list.map((r) => r.app).reduce((a, b) => (compareVersions(version(a), version(b)) >= 0 ? a : b));
+  const older = list.filter((r) => compareVersions(version(r.app), version(newest)) < 0);
+  const known = new Set(older.map((r) => `${r.kind}|${r.sig}`));
+  const from = kstDay(now - 14 * DAY);
+  return list.filter((r) => r.app === newest && r.last >= from && !known.has(`${r.kind}|${r.sig}`))
+    .sort((a, b) => b.phones - a.phones || b.total - a.total).slice(0, OBS.screenSignals)
+    .map((r) => ({ app: r.app, kind: r.kind, sig: r.sig, top: String(r.at ?? "").split("\n")[0], at: String(r.at ?? "").split("\n"),
+      phones: r.phones ?? 0, total: r.total ?? 0, first: r.first, before: older.length > 0 }));
 }
 
 /** 2.0.0 [RVA-63] HQ-124: 7일 안 오류 문의에서 닫힘 되풀이 묶음. 보낸 분 번호는 표지로만 남아요. */

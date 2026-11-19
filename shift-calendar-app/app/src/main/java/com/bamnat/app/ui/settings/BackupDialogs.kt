@@ -140,11 +140,13 @@ fun AutoBackupPasswordDialog(onDismiss: () -> Unit, onSet: (CharArray, Boolean) 
         text = {
             // As the other password window ([RVO-17]): longer than the folded screen at 200%, so the words and fields scroll inside.
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
+                // 2.0.0 [RVL-52] (HQ-149 ③, 조건 4) One line and ⓘ: at 200% the window read like a page before the boxes.
+                com.bamnat.app.ui.components.Explain(
+                    "backup.auto.password",
                     "매일 저장하는 백업 파일에 걸 암호예요. 휴대폰을 바꾸거나 앱을 다시 설치해 그 파일을 불러올 때 넣어요. " +
                         "암호는 어디에도 저장하지 않아서 잊으면 열 수 없어요.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    summary = "잊으면 열 수 없어요",
+                    iconOnly = false, firstInFull = false,
                 )
                 PasswordField(first, { first = it }, "암호", hint = passwordWords(first))
                 PasswordField(second, { second = it }, "암호 한 번 더", error = if (mismatch) "두 암호가 달라요" else null)
@@ -185,12 +187,14 @@ fun AutoBackupWhereDialog(onDismiss: () -> Unit, onPick: (folder: Boolean) -> Un
     )
 }
 
+/** 2.0.0 [RVL-52] (HQ-149 ③, 조건 4) Where the files go, in one line and ⓘ (the window's two buttons say the rest). */
 @Composable
 private fun WhereLine() {
-    Text(
+    com.bamnat.app.ui.components.Explain(
+        "backup.auto.where",
         "폴더를 고르면 날짜를 붙인 파일로 최근 7일치를 보관해요. 구글 드라이브에 두려면 ‘$ONE_FILE’를 골라요. 휴대폰을 잃어버려도 꺼낼 수 있어요.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        summary = "폴더는 7일치를 보관",
+        iconOnly = false, firstInFull = false,
     )
 }
 

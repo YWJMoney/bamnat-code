@@ -76,6 +76,45 @@ class RemoteFilesStoreTest {
         assertFalse(java.io.File(tmp.root, "rates.json").exists())
     }
 
+    /**
+     * 2.0.0 [RVL-67] (검토 DATA-24) Asked with the ETag of the copy it settled, an unchanged file brings nothing down, its signatures
+     * neither; a changed one (a new ETag) is fetched and checked as before.
+     */
+    @Test fun anUnchangedFileIsNotFetchedAgain() = runBlocking {
+        val asked = mutableListOf<String>()
+        val tags = mutableMapOf<String, String>()
+        val conditional = object : RemoteFetcher {
+            override suspend fun get(path: String): ByteArray? = fetch(path, null).bytes
+            override suspend fun fetch(path: String, etag: String?): Fetched {
+                asked += path
+                val b = site[path] ?: return Fetched(null, null)
+                val tag = tags.getOrPut(path) { "\"${b.contentHashCode()}\"" }
+                return if (etag == tag) Fetched(null, etag, unchanged = true) else Fetched(b, tag)
+            }
+        }
+        publish("rates", 2027010101, rates2027)
+        assertEquals(listOf("rates"), RemoteFilesStore(tmp.root, conditional, 33, listOf(pub)).refresh(now))
+        assertTrue("remote/v1/rates.json.sig" in asked)
+        // The next day: rates.json has not changed, so neither it nor its signatures come again.
+        asked.clear()
+        assertTrue(RemoteFilesStore(tmp.root, conditional, 33, listOf(pub)).refresh(now.plus(java.time.Duration.ofDays(1))).isEmpty())
+        assertTrue("remote/v1/rates.json" in asked)
+        assertFalse(asked.any { it.startsWith("remote/v1/rates.json.sig") })
+        // A new version is a new ETag: fetched, checked and used.
+        publish("rates", 2027010102, rates2027)
+        tags.remove("remote/v1/rates.json")
+        asked.clear()
+        assertEquals(listOf("rates"), RemoteFilesStore(tmp.root, conditional, 33, listOf(pub)).refresh(now.plus(java.time.Duration.ofDays(2))))
+        assertTrue("remote/v1/rates.json.sig" in asked)
+        // A file whose signature did not check out keeps no ETag: it is asked for whole again.
+        publish("rates", 2027010103, rates2027, signature = sign("other".toByteArray()))
+        tags.remove("remote/v1/rates.json")
+        RemoteFilesStore(tmp.root, conditional, 33, listOf(pub)).refresh(now.plus(java.time.Duration.ofDays(3)))
+        asked.clear()
+        RemoteFilesStore(tmp.root, conditional, 33, listOf(pub)).refresh(now.plus(java.time.Duration.ofDays(4)))
+        assertTrue(asked.any { it.startsWith("remote/v1/rates.json.sig") })
+    }
+
     @Test fun offlineKeepsTheBuiltInFilesAndAsksAgainLater() = runBlocking {
         online = false
         val s = store()

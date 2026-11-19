@@ -96,6 +96,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.mutableLongStateOf
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -554,7 +557,11 @@ private fun InquiryForm(
     var withPay by rememberSaveable { mutableStateOf(pay != null) }
     var showPay by rememberSaveable { mutableStateOf(false) }
     var text by rememberSaveable { mutableStateOf(draft?.text ?: given) }
-    var withCheck by rememberSaveable { mutableStateOf(start?.withCheck == true) }
+    // 2.0.0 [RVL-86] (PC-191) A draft left after '멈춤 기록과 함께 알려 주기' is that choice still: coming back to it keeps the record on
+    // (the user can untick it), since the ticking by itself on 앱 오류 is gone (RVN-22).
+    var withCheck by rememberSaveable {
+        mutableStateOf(start?.withCheck == true || (draft != null && start?.text.isNullOrEmpty() && com.bamnat.core.diag.StopTrail.aboutStop(null, draft.text)))
+    }
     var showCheck by rememberSaveable { mutableStateOf(false) }
     var check by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -587,7 +594,9 @@ private fun InquiryForm(
     val stop = com.bamnat.core.diag.StopTrail.aboutStop(start?.about, text)
     LaunchedEffect(withCheck, showCheck, stop) { if (withCheck || showCheck) check = vm.alarmCheck(context, stop) }
     // [UX-05] Kept as it is written, so leaving to look something up loses nothing. Only on this phone.
-    LaunchedEffect(kind, text) { vm.saveDraft(kind, if (bodyOf(text).isEmpty()) "" else text) }
+    // 2.0.0 [RVL-86] (PC-191) A question about the app closing is kept even before a word is written: left now, it is still there to
+    // finish under 문의하기, with its kind (오류 제보) and so the stop's record, not an empty form with the record off.
+    LaunchedEffect(kind, text) { vm.saveDraft(kind, if (bodyOf(text).isEmpty() && !stop) "" else text) }
     val sendByMail: () -> Unit = {
         scope.launch {
             val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
@@ -734,6 +743,13 @@ private fun InquiryForm(
                 Text("메일로 보내기")
             }
         }
+        // 2.0.0 [RVL-84] (HQ-118) About the app stopping: said right above 보내기 whether the stop's record goes with it.
+        if (stop) Text(
+            if (withCheck) "멈춤 기록이 함께 가요" else "멈춤 기록은 가지 않아요. 위 ‘점검 기록도 보내기’를 켜면 함께 가요",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (withCheck) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
         val ready = kind != null && body.isNotEmpty() && problem == null && !busy
         Button(
             onClick = {
@@ -785,6 +801,10 @@ private fun mailQuestion(context: Context, kind: InquiryKind?, text: String, dia
 }
 
 /** [UX-05] One line about a question not sent yet, with what can be done about it. */
+/** 2.0.0 [RVL-86] (PC-191) 문의하기's '알리기' for a recent stop: 오류 제보 with the stop's record, as the stop card opens it. */
+private val CRASH_TOPIC = HelpTopic(id = "crash", tag = "앱이 갑자기 닫힘", question = "", answer = "", keywords = emptyList(), screens = emptyList(),
+    ask = InquiryKind.BUG, withCheck = true)
+
 @Composable
 private fun DraftLine(text: String, action: String, secondary: Pair<String, () -> Unit>? = null, onAction: () -> Unit) {
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, modifier = Modifier.fillMaxWidth()) {
@@ -1499,16 +1519,34 @@ private fun HelpHome(
         // AG 1.27 [INVITE-12] What a 문의 is for, and that it is answered, said above it.
         if (query.isBlank() && vm.online) Text(com.bamnat.app.ui.grow.FEEDBACK_WORDS, style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVL-89] (검토 HQ-142) The first tab's one filled button: '문의하기' here, and the same name, unfilled, under
+        // '찾는 답이 없나요?' (it was a pale '문의하기' and a filled '새 문의 쓰기' for the same thing).
         if (query.isBlank()) {
-            FilledTonalButton(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+            Button(onClick = { onAsk("", null) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(if (vm.online) Icons.AutoMirrored.Outlined.Send else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(if (vm.online) "문의하기" else "메일로 문의하기")
             }
         }
         draft?.let { d ->
-            DraftLine("쓰던 문의가 있어요: " + d.text.lineSequence().first().take(24), action = "이어 쓰기",
-                secondary = "지우기" to { vm.clearDraft() }) { onAsk("", null) }
+            // 2.0.0 [RVL-86] (PC-191) One left right after '멈춤 기록과 함께 알려 주기' says what it was for.
+            val stopped = bodyOf(d.text).isEmpty() && com.bamnat.core.diag.StopTrail.aboutStop(null, d.text)
+            DraftLine(if (stopped) "앱이 닫힌 것을 아직 알리지 않았어요" else "쓰던 문의가 있어요: " + d.text.lineSequence().first().take(24),
+                action = "이어 쓰기", secondary = "지우기" to { vm.clearDraft() }) { onAsk("", null) }
+        }
+        // 2.0.0 [RVL-86] (PC-191) A stop of the last days not told yet (no draft, no 오류 제보 since): the way to tell it with its record.
+        val stopContext = LocalContext.current
+        var stoppedAt by remember { mutableLongStateOf(0L) }
+        var notNow by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(Unit) {
+            stoppedAt = withContext(Dispatchers.IO) {
+                com.bamnat.app.diag.CrashLog.notes(stopContext).firstOrNull()?.name?.removePrefix("crash-")?.removeSuffix(".txt")?.toLongOrNull() ?: 0L
+            }
+        }
+        val toldSince = list.orEmpty().any { it.kind == InquiryKind.BUG && it.createdAt.toEpochMilli() >= stoppedAt }
+        if (draft == null && !notNow && !toldSince && stoppedAt > 0 &&
+            Today.millis() - stoppedAt in 0..com.bamnat.core.guide.GrowNudges.CRASH_WITHIN_DAYS * 24 * 60 * 60 * 1000) {
+            DraftLine("최근에 앱이 닫힌 적이 있어요", action = "알리기", secondary = "괜찮아요" to { notNow = true }) { onAsk("", CRASH_TOPIC) }
         }
         if (query.isBlank()) {
             val here = remember(about, topics) { HelpFaq.about(about, topics).take(4) }
@@ -1708,10 +1746,11 @@ private fun AskCard(vm: InquiryViewModel, query: String, list: List<Inquiry>?, o
                 else "메일로 물어보면 개발자가 직접 읽고 메일로 답해요.",
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Button(onClick = onAsk, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+            // 2.0.0 [RVL-89] (검토 HQ-142) The same '문의하기' as at the top, not filled again.
+            OutlinedButton(onClick = onAsk, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Icon(if (vm.online) Icons.Outlined.QuestionAnswer else Icons.Outlined.Email, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(if (vm.online) "새 문의 쓰기" else "메일로 문의하기")
+                Text(if (vm.online) "문의하기" else "메일로 문의하기")
             }
             }
             if (vm.online && !list.isNullOrEmpty()) {

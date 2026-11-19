@@ -560,6 +560,14 @@ export const RETENTION = [
     prune: "index.js",
   },
   {
+    table: "usage_crash",
+    what: "**2.0.0** [RVL-90] 날짜·앱 판·종류(닫힘·응답 없음)·멈춘 곳(밤낮 코드 위 다섯 줄과 그 줄인 값)마다 휴대폰 수와 횟수. 처리방침 3.14 시행일부터 `stats.crash`가 켜진 휴대폰 것만",
+    why: "새 판에서 생긴 멈춤을 문의를 기다리지 않고 찾아 고침",
+    keep: "90일",
+    link: "**아니요**(설치 ID·IP·시각·오류 글·휴대폰 모델 없음)",
+    prune: "index.js",
+  },
+  {
     table: "photo_wrong",
     what: "**1.29** [PHOTO-10] 날짜·앱 판·화면·이유마다 '사진이 달라요'를 누른 수. 휴대폰·사진·글은 없음",
     why: "회사 사진이 틀린 곳 찾기",

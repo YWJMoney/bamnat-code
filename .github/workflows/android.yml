@@ -18,7 +18,11 @@ concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
 # [QA-05] The checks run as shards side by side instead of one job after another: the longest shard sets the
-# wall clock. Gradle's cache is written only from main, so a pull request cannot fill it with its own builds.
+# wall clock. 2.0.0 [RVL-61] (검토 DATA-27) Gradle's cache is written by every run (cache-read-only: false): a pull request's
+# entries are kept under its own ref, which no other branch reads, so its builds cannot fill the integration branch's cache.
+# The jobs read the code and upload their reports; only `market` reads other runs' files (actions: read).
+permissions:
+  contents: read
 env:
   GRADLE_FLAGS: --no-daemon -Pkotlin.compiler.execution.strategy=in-process --console=plain
 jobs:
@@ -74,6 +78,8 @@ jobs:
       - run: python3 tools/test_date_watch.py && python3 tools/test_slow_tests.py && python3 tools/test_bundle_check.py
       # 2.0.0 [RVR-38] 날짜 장부(ops/dates.json)가 가리키는 코드 줄이 모두 하나씩 있는지
       - run: python3 tools/test_dates_ledger.py && python3 tools/dates_ledger.py check
+      # 2.0.0 [RVL-55] 멈춤 기록 풀기 도구의 시험
+      - run: python3 tools/test_retrace.py
       # [RVR-12] (검토 TEST-13) 손으로 만드는 자료도 CI가 봐요: 근무주기 표가 CSV에서 그대로 나오는지, 공개 자료(remote/v1)가
       # 믿는 열쇠로 서명됐는지(.sig2), 핵심 화면 사진 이름이 시험에 그대로 있는지, 그리고 그 도구들의 시험.
       - run: python3 tools/test_cycles_build.py && python3 tools/cycles_build.py --check

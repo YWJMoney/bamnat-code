@@ -93,12 +93,17 @@ class RosterDraftStore(private val dir: File) {
             keepMine = o.optBoolean("keepMine", false),
         )
 
-        /** One cell as a short word: S:<kind id>, O, L:<leave kind>:<quarters>:<from start>, U:<leave word>:<what was read>. */
+        /**
+         * One cell as a short word: S:<kind id>, O, L:<leave kind>:<quarters>:<from start>, U:<leave word>:<what was read>; 2.0.0 [RVL-72]
+         * H:<start minutes or ->:<minutes> for a 시간표's day, N:<공수> for a 공수표's.
+         */
         fun cell(c: DutyCell): String = when (c) {
             is DutyCell.Shift -> "S:${c.shiftTypeId}"
             DutyCell.Off -> "O"
             is DutyCell.Leave -> "L:${c.kind.name}:${c.quarters}:${if (c.fromStart) 1 else 0}"
             is DutyCell.Unknown -> "U:${if (c.leave) 1 else 0}:${c.raw}"
+            is DutyCell.Hours -> "H:${c.start ?: "-"}:${c.minutes}"
+            is DutyCell.Units -> "N:${c.units}"
         }
 
         fun cell(s: String): DutyCell = when {
@@ -106,6 +111,8 @@ class RosterDraftStore(private val dir: File) {
             s.startsWith("S:") -> DutyCell.Shift(s.substring(2).toLong())
             s.startsWith("L:") -> s.split(':').let { p -> DutyCell.Leave(LeaveKind.valueOf(p[1]), p[2].toInt(), p[3] == "1") }
             s.startsWith("U:") -> DutyCell.Unknown(s.substring(4), leave = s[2] == '1')
+            s.startsWith("H:") -> s.split(':').let { p -> DutyCell.Hours(p[1].toIntOrNull(), p[2].toInt()) }
+            s.startsWith("N:") -> DutyCell.Units(s.substring(2).toDouble())
             else -> DutyCell.Unknown(s)
         }
 
@@ -123,6 +130,7 @@ class RosterDraftStore(private val dir: File) {
             .put("outside", JSONObject().apply { r.outside.forEach { (d, c) -> put(d.toString(), cell(c)) } })
             .put("y", r.y)
             .put("filled", ints(r.filled))
+            .put("weekly", JSONObject().apply { r.weekly.forEach { (d, c) -> put(d.name, cell(c)) } })
 
         private fun row(o: JSONObject): RosterRow = RosterRow(
             label = o.optString("label"),
@@ -135,6 +143,8 @@ class RosterDraftStore(private val dir: File) {
             outside = o.optJSONObject("outside")?.let { n -> n.keys().asSequence().associate { k -> LocalDate.parse(k) to cell(n.getString(k)) } }.orEmpty(),
             y = o.optInt("y"),
             filled = ints(o.optJSONArray("filled")),
+            // 2.0.0 [RVL-72] A 요일표's times by weekday.
+            weekly = o.optJSONObject("weekly")?.let { n -> n.keys().asSequence().associate { k -> java.time.DayOfWeek.valueOf(k) to cell(n.getString(k)) } }.orEmpty(),
         )
     }
 }

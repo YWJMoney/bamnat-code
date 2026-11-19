@@ -211,6 +211,7 @@ class SystemEventReceiver : BroadcastReceiver() {
     }
 
     companion object {
+        /** 2.0.0 [RVL-64] (검토 DATA-23) The actions in the manifest's filter, the only ones it works for (RvlOutsideTest matches them). */
         internal val ACCEPTED = setOf(
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_MY_PACKAGE_REPLACED,

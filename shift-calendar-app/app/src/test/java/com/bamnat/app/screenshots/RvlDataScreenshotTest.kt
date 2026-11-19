@@ -190,6 +190,19 @@ class RvlDataScreenshotTest : ScreenshotBase() {
     @Test fun plainSaveFoldLightHuge() = shoot("rvl13_plain_save_fold_light_200", FOLDED, fontScale = 2f, plainSave())
     @Test fun plainSaveOpenDarkHuge() = shoot("rvl13_plain_save_open_dark_200", UNFOLDED_NIGHT, fontScale = 2f, plainSave())
 
+    /** 2.0.0 [RVL-77] (검토 I12b-03) A 교대 in a 우리 조 with a 프로 recovery code: the plain save says the group code stays out too. */
+    private fun plainSaveGroup(): Screen.() -> Unit = {
+        c.shareGroup.save("QWERTY", null)
+        c.proStore.setCode("ABCD-EFGH-JKLM-NPQR")
+        content { com.bamnat.app.ui.settings.ExportPasswordDialog(onDismiss = {}, onExport = {}) }
+        settle()
+        assertTrue(appears("우리 조 코드는 암호를 걸어야 들어가요"))
+    }
+
+    @Test fun plainSaveGroupFoldLight() = shoot("rvl77_plain_save_group_fold_light_100", FOLDED, plainSaveGroup())
+    @Test fun plainSaveGroupFoldDarkHuge() = shoot("rvl77_plain_save_group_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, plainSaveGroup())
+    @Test fun plainSaveGroupOpenLight() = shoot("rvl77_plain_save_group_open_light_100", UNFOLDED, plainSaveGroup())
+
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val FOLDED_NIGHT = "w369dp-h905dp-port-night-420dpi"

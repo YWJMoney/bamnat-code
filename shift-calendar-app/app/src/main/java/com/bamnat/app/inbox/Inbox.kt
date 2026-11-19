@@ -283,6 +283,8 @@ class Inbox private constructor(context: Context) {
         val KIND_NAMES = mapOf(
             "market.reaction" to "내 작품에 온 반응",
             "market.decided" to "내 작품 심사 결과",
+            // 2.0.0 [RVL-78] Each row names its link and day.
+            "share.ended" to "끝난 공유 링크",
         )
         const val MAX_ROWS = 60
         const val KEEP_DAYS = 30L

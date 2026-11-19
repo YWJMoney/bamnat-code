@@ -1,5 +1,7 @@
 package com.bamnat.app.team
 
+import com.bamnat.app.backup.putSecret
+import com.bamnat.app.backup.secret
 import android.content.Context
 import com.bamnat.app.AppContainer
 import com.bamnat.core.team.Team
@@ -19,11 +21,11 @@ object TeamReceiveSync {
     private fun prefs(c: Context) = c.getSharedPreferences("team_board_links", Context.MODE_PRIVATE)
 
     fun board(c: Context, teamId: String): Board? = runCatching {
-        prefs(c).getString(teamId, null)?.let { JSONObject(it) }?.let { Board(it.getString("id"), it.getString("token"), it.getString("url")) }
+        prefs(c).secret(teamId)?.let { JSONObject(it) }?.let { Board(it.getString("id"), it.getString("token"), it.getString("url")) }
     }.getOrNull()
 
     private fun keep(c: Context, teamId: String, b: Board?) {
-        prefs(c).edit().apply { if (b == null) remove(teamId) else putString(teamId, JSONObject().put("id", b.id).put("token", b.token).put("url", b.url).toString()) }.apply()
+        prefs(c).edit().apply { if (b == null) remove(teamId) else putSecret(teamId, JSONObject().put("id", b.id).put("token", b.token).put("url", b.url).toString()) }.apply()
     }
 
     /** 병동 전체 보기 on: the table as confirmed goes up (the same link each time). */
@@ -120,13 +122,13 @@ object TeamReceiveSync {
     private fun tiredKey(teamId: String) = "tired:$teamId"
 
     fun tiredBox(c: Context, teamId: String): com.bamnat.app.share.TiredBox? = runCatching {
-        prefs(c).getString(tiredKey(teamId), null)?.let { JSONObject(it) }?.let { com.bamnat.app.share.TiredBox(it.getString("id"), it.getString("token")) }
+        prefs(c).secret(tiredKey(teamId))?.let { JSONObject(it) }?.let { com.bamnat.app.share.TiredBox(it.getString("id"), it.getString("token")) }
     }.getOrNull()
 
     /** On: a box for the team, and every member link that exists tied to it (a link made later is tied by [tieTired]). */
     suspend fun tiredOn(app: AppContainer, context: Context, team: Team, members: List<TeamMember>): com.bamnat.app.share.TiredBox {
         val box = tiredBox(context, team.id) ?: app.shareApi.tiredCreate(team.name.take(30)).also {
-            prefs(context).edit().putString(tiredKey(team.id), JSONObject().put("id", it.id).put("token", it.token).toString()).apply()
+            prefs(context).edit().putSecret(tiredKey(team.id), JSONObject().put("id", it.id).put("token", it.token).toString()).apply()
         }
         tieTired(app, box.id, members)
         return box

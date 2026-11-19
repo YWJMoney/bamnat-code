@@ -6,15 +6,19 @@ package com.bamnat.core.imports
  * letters found (their height, their count, the tilt the reader took out).
  */
 object PhotoQuality {
-    enum class Issue(val text: String) {
-        DARK("사진이 어두워요. 밝은 곳에서 그림자 없이 찍어 주세요."),
-        FLAT("글자와 종이가 잘 구별되지 않아요. 빛이 비치지 않게 찍어 주세요."),
-        BLURRY("사진이 흐려요. 휴대폰을 멈추고 초점이 맞은 뒤 찍어 주세요."),
-        SMALL("글자가 작아요. 표가 화면을 가득 채우게 가까이 찍어 주세요."),
-        TILTED("많이 기울었어요. 표와 휴대폰을 나란히 두고 찍어 주세요."),
+    /**
+     * [text] says what to do, with the reading. 2.0.0 [RVL-81] (검토 I07bc-03 '찍는 순간 안내') [soft] is the one line said right after a
+     * photo is taken: what it is a little, and that another may read better, never whose fault (조건 16).
+     */
+    enum class Issue(val text: String, val soft: String) {
+        DARK("사진이 어두워요. 밝은 곳에서 그림자 없이 찍어 주세요.", "조금 어두워요. 밝은 곳에서 다시 찍으면 더 잘 읽어요"),
+        FLAT("글자와 종이가 잘 구별되지 않아요. 빛이 비치지 않게 찍어 주세요.", "빛이 비쳐 글자가 옅어요. 각도를 조금 바꿔 찍으면 더 잘 읽어요"),
+        BLURRY("사진이 흐려요. 휴대폰을 멈추고 초점이 맞은 뒤 찍어 주세요.", "조금 흐려요. 다시 찍으면 더 잘 읽어요"),
+        SMALL("글자가 작아요. 표가 화면을 가득 채우게 가까이 찍어 주세요.", "글자가 작아요. 조금 더 가까이 찍으면 더 잘 읽어요"),
+        TILTED("많이 기울었어요. 표와 휴대폰을 나란히 두고 찍어 주세요.", "조금 기울었어요. 표와 나란히 찍으면 더 잘 읽어요"),
         /** [PHOTO-20] 1.30: taken from one side, the rows at the top and the bottom slant differently. */
-        KEYSTONE("비스듬히 찍었어요. ‘스캐너로 찍기’로 찍으면 반듯하게 펴서 읽어요."),
-        FEW("읽은 글자가 거의 없어요. 표 전체가 나오게 다시 찍어 주세요."),
+        KEYSTONE("비스듬히 찍었어요. ‘스캐너로 찍기’로 찍으면 반듯하게 펴서 읽어요.", "조금 비스듬해요. 위에서 내려다보며 찍으면 더 잘 읽어요"),
+        FEW("읽은 글자가 거의 없어요. 표 전체가 나오게 다시 찍어 주세요.", "표가 조금만 보여요. 표 전체가 나오게 찍으면 더 잘 읽어요"),
     }
 
     /** [PHOTO-20] What a page through the scanner adds to the score. */
@@ -25,6 +29,8 @@ object PhotoQuality {
         /** Worth taking again: what was read is likely to have many yellow cells. */
         val retake: Boolean get() = score < 60
         val line: String? get() = issues.firstOrNull()?.text
+        /** 2.0.0 [RVL-81] The one thing to say right after the photo, when it is worth another. */
+        val check: Issue? get() = issues.firstOrNull()?.takeIf { retake }
     }
 
     /**

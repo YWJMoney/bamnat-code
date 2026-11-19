@@ -129,6 +129,7 @@ fun CompanyPayScreen(vm: CompanyPayViewModel, onBack: () -> Unit, onByHand: () -
                             if (summary.shiftTypes.isNotEmpty()) Ready("근무 ${summary.shiftTypes.size}가지와 시간" + (summary.cycleDays?.let { " · ${it}일 순서" } ?: ""))
                             if (summary.hasRules) Ready("연장·야간·휴일 가산과 회사 규칙")
                             if (summary.extraKinds.isNotEmpty()) Ready("연장·휴무일 근무: ${summary.extraKinds.joinToString(" · ")}")
+                            if (summary.dutyCodes > 0) Ready("근무표 약어 ${summary.dutyCodes}개(근무표 사진을 읽을 때 써요)")
                             if (summary.items.isNotEmpty()) Ready("수당 이름: ${summary.items.joinToString(" · ")}")
                         }
                     }
@@ -250,6 +251,7 @@ private fun PayChoice(company: String, summary: CompanySummary?, canPropose: Boo
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 if (summary.hasRules) Ready("연장·야간·휴일 가산과 회사 규칙")
                 if (summary.extraKinds.isNotEmpty()) Ready("연장·휴무일 근무: ${summary.extraKinds.joinToString(" · ")}")
+                if (summary.dutyCodes > 0) Ready("근무표 약어 ${summary.dutyCodes}개(근무표 사진을 읽을 때 써요)")
                 if (summary.items.isNotEmpty()) Ready("수당: ${summary.items.joinToString(" · ")}")
             }
         }

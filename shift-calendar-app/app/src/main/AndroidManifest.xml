@@ -486,6 +486,12 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
 
+        <!-- 2.0.0 [RVL-71] 데이터 점검 once a week: only the system's job scheduler binds it. -->
+        <service
+            android:name=".diag.DataCheckJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- [COMM-10] 광장 소식 once a day: only the system's job scheduler binds it. -->
         <service
             android:name=".company.PlazaNewsJob"

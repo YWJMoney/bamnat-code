@@ -25,15 +25,42 @@ object StartGuard {
     var byHand: Boolean = false
         private set
 
-    /** Application.onCreate: one more start that has not settled yet; the third in a row opens safely. */
-    fun begin(context: Context) {
+    /**
+     * Application.onCreate: one more start that has not settled yet; the third in a row opens safely.
+     *
+     * 2.0.0 [RVL-88] (검토 PC-194, 통합 5차 PC: 강제 종료하고 7초 만에 다시 열기를 되풀이하면 '멈춰서 안전 모드'): a start the
+     * person ended themselves (closed from 최근 앱, 강제 종료, an update) did not stop; it is not counted. Only an end Android
+     * did not record as the person's (a stop, '응답 없음', the phone taking the memory back, or no record before Android 11) counts,
+     * as before. A safe start asked for in 진단 ([armNext], then closed by hand to try it) stays asked for.
+     */
+    fun begin(context: Context, lastEnd: Int? = lastEnd(context)) {
         val p = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val n = p.getInt(K_UNSETTLED, 0)
+        var n = p.getInt(K_UNSETTLED, 0)
+        if (n > 0 && !p.getBoolean(K_BY_HAND, false) && byThePerson(lastEnd)) n -= 1
         _safe.value = n >= LIMIT
         byHand = n >= LIMIT && p.getBoolean(K_BY_HAND, false)
         // 1.36 PC A21: '점검용' is kept while the phone stays safe, so a start of the process again (the phone closed it while
         // the person was in its settings) still says 점검용; it goes with the count ([settled]).
         p.edit().putInt(K_UNSETTLED, n + 1).apply()
+    }
+
+    /** [RVL-88] The person's own end of the app, by Android's record: not a stop. */
+    internal fun byThePerson(reason: Int?): Boolean = reason == android.app.ApplicationExitInfo.REASON_USER_REQUESTED ||
+        reason == android.app.ApplicationExitInfo.REASON_USER_STOPPED || reason == android.app.ApplicationExitInfo.REASON_PACKAGE_UPDATED ||
+        reason == SWIPED
+
+    /** [RVL-88] Closed from 최근 앱: Android records it as 'other' or a signal with "remove task" (as [Trail] reads it); told apart here by its own number. */
+    internal const val SWIPED = -2
+
+    /** [RVL-88] How the last process ended (Android 11+), or null. */
+    private fun lastEnd(context: Context): Int? {
+        if (android.os.Build.VERSION.SDK_INT < 30) return null
+        val e = runCatching {
+            context.getSystemService(android.app.ActivityManager::class.java)?.getHistoricalProcessExitReasons(context.packageName, 0, 1)?.firstOrNull()
+        }.getOrNull() ?: return null
+        val swiped = (e.reason == android.app.ApplicationExitInfo.REASON_OTHER || e.reason == android.app.ApplicationExitInfo.REASON_SIGNALED) &&
+            (e.description?.contains("remove task", ignoreCase = true) == true || e.description?.contains("swipe", ignoreCase = true) == true)
+        return if (swiped) SWIPED else e.reason
     }
 
     /** [SETTLE_MS] after the month: this start went well, the count starts over (a safe start stays safe until 평소대로). */

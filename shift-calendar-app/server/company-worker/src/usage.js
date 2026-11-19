@@ -272,7 +272,8 @@ export async function checkOps(request, env, now) {
  * [STAT-05] Up to 120 bundles a day from one network: a mobile carrier puts thousands of phones behind
  * one address, so the old 6 dropped most of them. The same bundle sent twice (a retry) counts once a day.
  */
-export const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 1200, bytes: 8 * 1024 };
+// 2.0.0 [RVL-90] 꾸러미 크기 12KB(멈춘 곳 횟수가 하루 5가지 × 다섯 줄을 실어요), 멈춘 곳 횟수는 90일(처리방침 3.14 1-9항 ⑩).
+export const USAGE = { days: 7, keepDays: 400, count: 1000, bundlesPerNetworkDay: 1200, bytes: 12 * 1024, crashDays: 90 };
 
 /** Event names and what the dashboard calls them. */
 export const EVENTS = {
@@ -397,6 +398,9 @@ export async function usage(request, env) {
     ? rows.filter((r) => r[2] === 1 && (r[1] === "open" || r[1].startsWith("life_") || (kindUse && !r[1].startsWith("disc_"))))
       .map((r) => [r[0], style, r[1]]) : [];
   const keepIn = keep.length && serverEval(obsStore, "stats.keep", now).on ? keep : [];
+  // 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수(stats.crash): 처리방침 3.14의 30일 줄 시행일 전에 온 것은 버려요.
+  const crash = crashMarkRows(body.crash, now);
+  const crashIn = crash.length && serverEval(await store(), "stats.crash", now).on ? crash : [];
   // AM 1.28 [FLAG-30] Which flags were on (only phones with stats.more on send it): per day, the list sent with the day or,
   // once for the bundle, flagsOn at the top for its newest day. '*' counts the phones that sent a list at all.
   const listOf = (v) => {
@@ -439,6 +443,10 @@ export async function usage(request, env) {
     const part = keepIn.slice(i, i + 20);
     stmts.push(stmt(env, `INSERT INTO usage_keep (day, app, event, win, phones) VALUES ${part.map(() => "(?, ?, ?, ?, 1)").join(", ")}
       ON CONFLICT (day, app, event, win) DO UPDATE SET phones = phones + 1`, ...part.flatMap(([day, w, e]) => [day, app, e, w])));
+  }
+  for (const [day, kind, sig, at, n] of crashIn) {
+    stmts.push(stmt(env, `INSERT INTO usage_crash (day, app, kind, sig, at, phones, total) VALUES (?, ?, ?, ?, ?, 1, ?)
+      ON CONFLICT (day, app, kind, sig) DO UPDATE SET phones = phones + 1, total = total + excluded.total`, day, app, kind, sig, at, n));
   }
   for (let i = 0; i < flagRows.length; i += 25) {
     const part = flagRows.slice(i, i + 25);
@@ -808,3 +816,47 @@ export function keepRows(keep, now = Date.now()) {
   return [...out.values()];
 }
 // 1.39 끝
+
+// 2.0.0 [RVL-90] 앱이 멈춘 곳 횟수 ----------------------------------------------------------------------------------------
+/**
+ * 2.0.0 [RVL-90] (검토 I12c-03, 처리방침 3.14 문장표 6, 1-9항 ⑩, 앱 core stats/CrashMarks) What a phone may say about where the
+ * app stopped: the kind (닫힘·응답 없음), the top five lines of the app's own code ("PayViewModel.save:212", or a renamed
+ * "a.b.c.d:12" the build's mapping turns back), the short value of that place and that day's count. Only code names pass
+ * ([CRASH_LINE]): a line with anything else (a message, a space) drops its mark, and a value that is not the one the lines
+ * give ([crashSig]) does too, so nothing else rides in it. At most [CRASH_MARKS.perDay] places a day.
+ */
+export const CRASH_MARKS = { kinds: ["crash", "anr"], lines: 5, line: 120, perDay: 5, count: 50, max: 20 };
+const CRASH_LINE = /^[A-Za-z0-9_$.<>:-]{1,120}$/;
+
+/** The 8 hex characters the app gives a place (FNV-1a 64 of "kind\nline\nline…", the two halves folded), as core CrashMarks.sig. */
+export function crashSig(kind, at) {
+  let h = 0xcbf29ce484222325n;
+  for (const b of new TextEncoder().encode(`${kind}\n${at.join("\n")}`)) {
+    h ^= BigInt(b);
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  return Number((h ^ (h >> 32n)) & 0xffffffffn).toString(16).padStart(8, "0");
+}
+
+/** `[day, kind, sig, at, n]` for each mark the phone may send; anything else is left out, not refused (the rest still counts). */
+export function crashMarkRows(crash, now = Date.now()) {
+  if (!Array.isArray(crash)) return [];
+  const latest = kstDay(now + DAY);
+  const oldest = kstDay(now - (USAGE.days + 1) * DAY);
+  const out = new Map();
+  const perDay = new Map();
+  for (const c of crash.slice(0, CRASH_MARKS.max)) {
+    if (!c || typeof c !== "object" || typeof c.day !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(c.day)) continue;
+    if (c.day > latest || c.day < oldest || !CRASH_MARKS.kinds.includes(c.kind)) continue;
+    if (!Array.isArray(c.at) || c.at.length < 1 || c.at.length > CRASH_MARKS.lines || !c.at.every((l) => typeof l === "string" && CRASH_LINE.test(l))) continue;
+    if (!Number.isInteger(c.n) || c.n < 1 || c.n > CRASH_MARKS.count) continue;
+    const sig = crashSig(c.kind, c.at);
+    if (c.sig !== sig) continue;
+    const key = `${c.day}|${c.kind}|${sig}`;
+    if (out.has(key) || (perDay.get(c.day) ?? 0) >= CRASH_MARKS.perDay) continue;
+    perDay.set(c.day, (perDay.get(c.day) ?? 0) + 1);
+    out.set(key, [c.day, c.kind, sig, c.at.join("\n"), c.n]);
+  }
+  return [...out.values()];
+}
+// 2.0.0 [RVL-90] 끝

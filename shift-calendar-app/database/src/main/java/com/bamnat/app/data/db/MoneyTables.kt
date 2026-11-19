@@ -326,6 +326,10 @@ interface MoneyDao {
     @Query("SELECT * FROM money_entries WHERE epochDay >= :fromDay")
     suspend fun entriesFrom(fromDay: Long): List<MoneyEntryEntity>
 
+    /** 2.0.0 [RVL-66] (검토 DATA-18) Lines from [fromDay] on, and every 할부 line whatever its day: what a card bill can hold. */
+    @Query("SELECT * FROM money_entries WHERE epochDay >= :fromDay OR installments > 1")
+    suspend fun billLines(fromDay: Long): List<MoneyEntryEntity>
+
     @Query("UPDATE money_entries SET reviewed = 1 WHERE reviewed = 0")
     suspend fun markAllReviewed()
 
