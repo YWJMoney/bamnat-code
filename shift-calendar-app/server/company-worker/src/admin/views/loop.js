@@ -344,8 +344,27 @@ export function loopViews(A) {
         <small>${x.track ? `${esc(x.track)} · ` : ""}고친 판에서 '아직이에요' ${x.times}번 · ${esc(ago(x.at))} · 지금 ${esc(x.statusName ?? x.status)}</small></span>
         <span class="pill warn">다시 열림</span>${icon(P.chevron)}</a></li>`).join("")}</ul>` : ""}</section>` : "";
     return `<div class="decide-view">${hurry}${again}<section class="card">${head("최고 관리자 확인 문의", `${d.asks.length}건${lateAsks ? ` · 기한 넘김 ${lateAsks}` : ""}`)}${asks}</section>
-      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${tiers}
+      <section class="card">${head("무료·프로 정하기", owner() ? `${d.tiers.length}개` : "")}${bulkTierLine(d.tiers, "decide")}${tiers}
         <p class="hint">새 기능만 여기서 정해요. 기존 기능의 오류 고침·다듬기는 묻지 않고 원래 요금 그대로(무료면 무료), 관리자 앱·운영 같은 서버 일은 요금이 없어요. 기준과 걸러 보기는 숫자 › 요금 판단에서 봐요.</p></section></div>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-73] 사용자 11-19 '요금 판단 대기가 너무 많아요, 한 번에': Claude 제안(무료·프로·7일권·체험)이 있는 대기 줄이 둘 이상이면 맨 위에 한 줄과
+   * 단추 하나. 누르면 제목 목록(줄마다 빼기)과 확인 한 번을 거쳐 최고 관리자만 제안대로 정해요(제안이 저절로 적용되는 길은 없어요).
+   */
+  const ASK_ORDER = ["free", "pro", "pass", "trial"];
+  const askable = (xs) => (xs ?? []).filter((x) => ASK_ORDER.includes(x.ask) && !(x.tier && x.tier !== "later")).sort((m, n) => ASK_ORDER.indexOf(m.ask) - ASK_ORDER.indexOf(n.ask));
+  function bulkTierLine(xs, src) {
+    const list = askable(xs);
+    if (!owner() || list.length < 2) return "";
+    const by = [];
+    for (const x of list) {
+      const g = by.find((b) => b[0] === x.ask);
+      if (g) g[2]++;
+      else by.push([x.ask, x.askName ?? x.ask, 1]);
+    }
+    return `<div class="bulk-tier"><p class="bulk-line"><b>제안이 있는 ${list.length}건</b><span class="meta">(${by.map(([, name, n]) => `${esc(name.replace(/\(.*\)$/, ""))} ${n}`).join(" · ")})</span></p>
+      <div class="actions start"><button class="btn primary" type="button" data-act="loop-tier-all" data-src="${src}">제안대로 한 번에 정하기</button></div></div>`;
   }
 
   // ---- 숫자 › 요금 판단 ----
@@ -424,7 +443,7 @@ export function loopViews(A) {
       : [["*", d.items]];
     const title = (k, n) => k === "*" ? "" : `<h2 class="section">${k ? `Claude 제안 ${esc(d.tiers[k] ?? k)}` : "제안 없음"}<span class="count">${n}</span></h2>`;
     const copyBtn = view === "ask" && d.items.length > 1 ? `<div class="actions start"><button class="btn small" type="button" data-act="loop-tier-copy">${icon(P.copy)}논의용으로 복사 (${d.items.length}개)</button></div>` : "";
-    return top + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
+    return top + (view === "ask" ? bulkTierLine(d.items, "tiers") : "") + copyBtn + groups.map(([k, xs]) => `${title(k, xs.length)}<ul class="rows review-rows tier-rows">${xs.map(line).join("")}</ul>`).join("") + basisCriteria();
   }
 
   // ---- 길·다 왔는지·단추 ----
@@ -499,6 +518,22 @@ export function loopViews(A) {
         <p class="hint">${tier === "later" ? "그동안 이 기능 스위치는 켤 수 없어요." : "정한 뒤에 기능 관리에서 스위치를 켤 수 있어요. 나중에 다시 정할 수 있지만, 무료로 연 것을 다시 잠그지는 않아요."}</p>
         <label for="lt-note">메모(무엇을 보고 정했는지)</label><input id="lt-note" name="note" maxlength="300">
         <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">정하기</button></div></form>`);
+    },
+    // 2.0.0 [RVA-73] 제안이 있는 대기 줄을 제안대로 한 번에: 제목 목록(줄마다 빼기)과 확인 한 번(최고 관리자만, 서버도 세션을 봐요).
+    "loop-tier-all": ({ src }) => {
+      const xs = askable(src === "decide" ? S.data.loopDecide?.tiers : S.data.loopTiers?.items);
+      if (!xs.length) return;
+      const groups = [];
+      for (const x of xs) {
+        const g = groups.find((b) => b.key === x.ask);
+        if (g) g.items.push(x);
+        else groups.push({ key: x.ask, name: x.askName ?? x.ask, items: [x] });
+      }
+      openDialog(`<form data-form="loop-tier-all"><h2>제안대로 ${xs.length}건을 정할까요?</h2>
+        <p class="hint">빼고 싶은 줄은 체크를 풀어요. 무료로 정한 기능은 나중에 잠그지 않아요.</p>
+        <div class="bulk-groups">${groups.map((g) => `<fieldset><legend>${esc(g.name)} ${g.items.length}</legend>${g.items.map((x) =>
+          `<label class="chk"><input type="checkbox" name="ids" value="${esc(x.id)}" checked><span>${esc(x.title)}</span></label>`).join("")}</fieldset>`).join("")}</div>
+        <div class="actions"><button class="btn" type="button" data-act="close">취소</button><button class="btn primary" type="submit">제안대로 정하기</button></div></form>`);
     },
     // 2.0.0 [RVA-58] 요금은 사용자와 논의한 뒤 정해요: 정할 새 기능과 Claude 제안·까닭을 한 번에 글로 복사해요.
     "loop-tier-copy": () => {
@@ -591,6 +626,13 @@ export function loopViews(A) {
       dialog.close();
       const f = new FormData(form);
       if (await act(() => api(`/loop/basis/${form.dataset.id}`, "POST", { basis: String(f.get("basis") ?? ""), note: String(f.get("note") ?? "") }), "기준을 바꿨어요")) reload("loopTiers", "loopDecide");
+    },
+    "loop-tier-all": async (form) => {
+      const ids = [...form.querySelectorAll('input[name="ids"]:checked')].map((i) => i.value);
+      dialog.close();
+      if (!ids.length) return toast("고른 줄이 없어서 바꾸지 않았어요");
+      const r = await act(() => api("/loop/tiers/apply", "POST", { ids }), (x) => `${x.decided}개를 제안대로 정했어요${x.skipped ? ` · 건너뜀 ${x.skipped}` : ""}`);
+      if (r) reload("loopTiers", "loopDecide");
     },
     "loop-tier": async (form) => {
       dialog.close();

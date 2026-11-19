@@ -4132,3 +4132,45 @@ test("[RVA-72] 장터 이달의 제작자·이번 주 고른 것·사진 검토�
   assert.match(css, /\.list-head \.icon-btn\{width:min\(2\.75rem,52px\)/, "찾기·거르기 단추는 큰 글자에서 커지지 않고 멈춰요");
   assert.match(css, /select\)\{min-height:min\(3rem,56px\)/, "입력 칸도 큰 글자에서 96px까지 커지지 않아요");
 });
+
+test("[RVA-73] 요금 판단: 제안이 있는 대기 줄이 둘 이상이면 맨 위 한 줄과 단추 하나, 창에서 줄마다 빼고 한 번 확인하면 최고 관리자가 제안대로 정해요", async (t) => {
+  offline(t);
+  const { env } = await world();
+  const add = env.DB.db.prepare(`INSERT INTO dev_items (id, title, body, status, track, size, route, tier_ask, tier_why, created_by, created_by_name, created_at, updated_at)
+    VALUES (?, ?, '저장소 줄', 'doing', ?, 'feature', 'app', ?, ?, 'sync', '저장소', ?, ?)`);
+  const at = Date.now();
+  // 지어낸 새 기능 다섯: 무료 둘·프로 하나, 제안 없음 하나, 더 논의 하나.
+  const rows = [["투자 장부 열기", "RVK-1", "free"], ["월말 보고서", "RVK-2", "pro"], ["메모 색 고르기", "RVK-3", "free"], ["근무 소리", "RVK-4", ""], ["가계부 묶기", "RVK-5", "later"]];
+  rows.forEach(([title, track, ask], i) => add.run(`dbulk${String(i).padStart(11, "0")}`, title, track, ask, ask ? `${title}은 ${ask}로` : "", at - i, at - i));
+  const u = await asOwner(env, t);
+  for (const route of ["#/decide", "#/tiers"]) {
+    await u.go(route);
+    await u.settle(30);
+    assert.match(u.text("#main .bulk-tier .bulk-line"), /^제안이 있는 3건\(무료 2 · 프로 1\)$/, `${route}: 제안이 있는 줄만 세요(제안 없음·더 논의는 빠져요)`);
+    const filled = u.$$("#main .btn.primary").filter((b) => !b.closest("details:not([open])"));
+    assert.deepEqual(filled.map((b) => b.dataset.act), ["loop-tier-all"], `${route}: 채운 단추는 이 하나뿐이에요`);
+  }
+  await u.go("#/decide");
+  await u.settle(30);
+  await u.click('#main [data-act="loop-tier-all"]');
+  assert.match(u.text("dialog h2"), /^제안대로 3건을 정할까요\?$/);
+  assert.match(u.text("dialog .hint"), /무료로 정한 기능은 나중에 잠그지 않아요/);
+  assert.deepEqual(u.$$("dialog fieldset legend").map((l) => l.textContent.replace(/\s+/g, " ").trim()), ["무료 2", "프로 1"]);
+  assert.equal(u.$$('dialog input[name="ids"]:checked').length, 3, "처음에는 모두 체크");
+  // 한 줄 빼기: '월말 보고서'.
+  const out = u.$$("dialog label.chk").find((l) => /월말 보고서/.test(l.textContent)).querySelector("input");
+  out.checked = false;
+  await u.click('dialog form[data-form="loop-tier-all"] button.primary[type="submit"]');
+  await u.settle(30);
+  assert.match(u.text("#toast"), /^2개를 제안대로 정했어요$/);
+  const board = (await u.api("GET", "/api/admin/loop/tiers?view=all")).items;
+  const tier = (title) => board.find((x) => x.title === title).tier;
+  assert.equal(tier("투자 장부 열기"), "free");
+  assert.equal(tier("메모 색 고르기"), "free");
+  assert.equal(tier("월말 보고서"), null, "뺀 줄은 그대로");
+  assert.equal(tier("근무 소리"), null, "제안 없는 줄은 그대로");
+  assert.equal(tier("가계부 묶기"), null, "더 논의는 그대로");
+  // 남은 제안 줄이 하나뿐이면 한 번에 단추는 사라져요(하나씩 정해요).
+  assert.equal(u.$("#main .bulk-tier"), null);
+  assert.deepEqual(u.errors, []);
+});
