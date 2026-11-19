@@ -31,8 +31,17 @@ import com.bamnat.app.ui.components.decimalText
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun FixedOtHours(minutes: Int, onPick: (Int) -> Unit, none: String?, modifier: Modifier = Modifier) {
+internal fun FixedOtHours(
+    minutes: Int, onPick: (Int) -> Unit, none: String?, modifier: Modifier = Modifier,
+    /**
+     * Told true while '직접' is picked and no hours are in use yet (an empty or off-grid 칸): the 수당 창 then waits, as saving would make a
+     * plain 수당 that the month's 연장수당 does not cover (사진 rvj_252: '22.3'에 만들기가 켜져 있었어요).
+     */
+    onPending: ((Boolean) -> Unit)? = null,
+) {
     var typing by rememberSaveable { mutableStateOf(minutes > 0 && minutes !in FixedOtHoursRules.QUICK.map { it * 60 }) }
+    val pending = typing && minutes == 0
+    if (onPending != null) androidx.compose.runtime.LaunchedEffect(pending) { onPending(pending) }
     Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             if (none != null) FilterChip(selected = !typing && minutes == 0, onClick = { typing = false; onPick(0) }, label = { Text(none) })
@@ -79,7 +88,7 @@ private fun FixedOtHoursField(minutes: Int, onPick: (Int) -> Unit) {
         supportingText = if (bad) ({
             Text("0.5시간 단위로 200시간까지 넣어 주세요. " +
                 if (minutes > 0) "지금은 ${FixedOtHoursRules.text(minutes)}시간으로 계산해요" else "아직 넣지 않았어요")
-        }) else null,
+        }) else if (text.text.isEmpty() && minutes == 0) ({ Text("계약서에 적힌 한 달 시간을 넣어요") }) else null,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
         modifier = Modifier.fillMaxWidth().onFocusChanged { s ->
             if (s.isFocused) { selectNext = true; text = text.copy(selection = TextRange(0, text.text.length)) } else selectNext = false

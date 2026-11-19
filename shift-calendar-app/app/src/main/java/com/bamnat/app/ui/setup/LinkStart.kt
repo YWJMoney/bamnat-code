@@ -38,7 +38,8 @@ object LinkStart {
      * that is gone). Either answer still works: the calendar opens the link again after the setup.
      */
     fun problem(e: Throwable): String = when {
-        e is java.net.SocketTimeoutException -> "근무표를 읽는 데 시간이 너무 걸렸어요. 첫 설정 뒤 달력에서 다시 열어요."
+        // 2.0.0 [RVN-23] (PC-187) the phone's HttpEngine says a time running out its own way.
+        com.bamnat.app.company.NetEngine.timedOut(e) -> "근무표를 읽는 데 시간이 너무 걸렸어요. 첫 설정 뒤 달력에서 다시 열어요."
         e is com.bamnat.app.share.ShareLinkException && e.removedReason != null -> "운영자가 이 링크를 내렸어요. 이유: ${e.removedReason}"
         e is com.bamnat.app.share.ShareLinkException && e.message == "not_found" -> "이 링크는 끊겼거나 기간이 지났어요. 보낸 분께 새 링크를 부탁해 보세요."
         e is com.bamnat.app.share.ShareLinkException -> com.bamnat.app.share.linkProblem(e) ?: "서버가 잠시 바빠요. 첫 설정 뒤 달력에서 다시 열어요."
