@@ -163,6 +163,12 @@ data class Job(
 
     /** [FLD-03] 입금 완료 follows from the money, not from a step the user picks. */
     val fullyPaid: Boolean get() = !cancelled && amount > 0 && unpaid == 0L
+
+    /**
+     * 2.0.0 (HQ, 조건 6) Money still owed after the day it was promised (or the last day): the only 받을 돈 the calendar marks in
+     * 주의 colour. Before that day it is plain news, not a warning; a 가계약 is never late.
+     */
+    fun overdue(today: LocalDate): Boolean = unpaid > 0 && status != JobStatus.TENTATIVE && (due ?: lastDate).isBefore(today)
 }
 
 /** 2.0.0 [RVK-46] (검토 MONEY-29·T06a-01) One payment for a [Job] besides its 선금·잔금, with its day. */

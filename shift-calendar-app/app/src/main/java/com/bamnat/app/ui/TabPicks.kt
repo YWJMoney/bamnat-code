@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import com.bamnat.core.guide.Place
 import com.bamnat.core.layout.TabSlots
 import com.bamnat.core.work.WorkStyle
+import com.bamnat.core.work.words
 
 /**
  * [NAV2-01] 1.39 A screen that can fill a place of the bottom bar: the six tabs, and the screens people go to often that used to wait
@@ -116,8 +117,15 @@ internal object TabPicks {
     private fun feature(x: Feature, style: WorkStyle?) =
         TabPick(f(x.place), labelOf(x, style), x.icon, kind = x.kind, fits = style == null || x.styles == null || style in x.styles)
 
-    /** 1.39 PC NAV2: a shop's 근무 주기 is its 영업일 (the screen it opens). */
-    private fun labelOf(x: Feature, style: WorkStyle?): String = if (x.place == Place.PATTERN && style == WorkStyle.BUSINESS) "영업일" else x.label
+    /**
+     * 1.39 PC NAV2: a shop's 근무 주기 is its 영업일 (the screen it opens). 2.0.0 [RVH-79] 검토 TYPE-19·T30-28: an office worker's is
+     * 일하는 요일 and a part-timer's 출근 요일, the names the screen itself has ([com.bamnat.core.work.words]).
+     */
+    private fun labelOf(x: Feature, style: WorkStyle?): String = if (x.place != Place.PATTERN) x.label else when (style) {
+        WorkStyle.BUSINESS -> "영업일"
+        WorkStyle.DAY, WorkStyle.HOURLY -> style.words().pattern
+        else -> x.label
+    }
 
     /** 1.39 PC NAV2 (식당·투자에 '근무와 돈'): the picker's heading for [kind] on the calendar of [style]. */
     fun kindName(kind: String, style: WorkStyle?): String = if (kind == KIND_WORK && style != null && !style.usesPayEngine) "돈과 일정" else kind
