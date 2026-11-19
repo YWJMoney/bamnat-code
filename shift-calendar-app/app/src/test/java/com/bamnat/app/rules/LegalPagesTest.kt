@@ -565,7 +565,7 @@ class LegalPagesTest {
             "⑧ ⑥의 일하는 방식을 그날 쓴 기능 이름과 횟수에도 붙여",            // 4
             "⑩ 앱이 닫히거나 응답이 없었을 때 그 일이 난 앱 코드 위치",         // 6
             "장터 작품을 넣은 뒤 30분 안에 다시 뺐는지",                        // 7
-            "근무표 약어(약어 글자와 그 회사 근무 이름만, 20개까지",            // 9
+            "근무표 약어(약어 글자와 그 근무 이름만, 20개까지)도 담기며",        // 9 (3항 공유 파일, 서버로는 안 감)
             "리더에게 앱으로 받는 팀원 수(3명 이상일 때만)",                    // 14
         )
         thirty.forEach { assertTrue("30일 줄: $it", text.contains(it)) }
@@ -582,13 +582,17 @@ class LegalPagesTest {
         assertTrue(text.contains("처리방침 3.14 시행일($p30)부터는 팀원이 링크 페이지나 앱에서 ‘확인했어요’를 누르면"))
         assertTrue(text.contains("금액이 든 글은 처리방침 3.14 시행일($p7) 전까지 받지 않으며"))
         assertTrue(text.contains("앱 2.0.0부터(처리방침 3.14 시행일 ${p7}부터) 급여 설정에 적은 생년(선택)"))
+        // Row 9 (근무표 약어) goes only in the file a person shares from settings (CompanyShare.export; exportForServer, links and recipes drop it): it is on the 3항 line, not in the server tables (1항·1-2항).
+        assertTrue(text.contains("<b>회사 설정 공유 파일의 근무표 약어</b>(3항, ${p30}부터)"))
+        assertFalse(text.contains("근무표 약어(약어 글자와 그 회사 근무 이름만"))
+        assertFalse(text.contains("회사 설정 보내기의 근무표 약어"))
         // Row 5 (웹에서 이어 온 분의 이어받기 카드 횟수) has no code in 2.0 (no flag, nothing sent): it is not on the page; it is a 3.15 candidate.
         assertFalse(text.contains("이어받기"))
         assertFalse(text.contains("웹 페이지(교대 달력·시급 계산기·명세서 맞추기)에서 이어 온"))
         // Row 8 (폰 바꾸기, Block Store) is out of 3.14 (사용자 11-19 11:29 KST): no line, list item or 2항 in the 30-day 머리말.
         assertFalse(text.contains("Block Store"))
         assertFalse(text.contains("<b>폰 바꾸기</b>"))
-        assertTrue(text.contains("1항·1-2항·1-4항·1-9항·1-14항의 바뀐 곳은 ${p30}부터."))
+        assertTrue(text.contains("1항·1-4항·1-9항·1-14항·3항의 바뀐 곳은 ${p30}부터."))
         // 6항 데이터 요청 대행 기록 (D 서버 대조 11-19): the operator may act for the user, and the record is kept 3 years (운영 기준).
         assertTrue(text.contains("운영자가 이용자를 대신해 서버 자료를 찾아 내보내거나 지울 수 있습니다"))
         assertTrue(text.contains("요청을 닫은 날부터 <b>3년</b> 보관한 뒤 지웁니다(운영 기준)"))
