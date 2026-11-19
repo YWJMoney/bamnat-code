@@ -1,6 +1,7 @@
 package com.bamnat.app.screenshots
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.bamnat.app.data.PersonalCalendar
@@ -423,6 +424,131 @@ class ReviewOShotsTest : ScreenshotBase() {
             if (!shows("나만 보기 · 운영팀이 직접 읽고 답해요", exact = true)) missed += "$look: 문의 안에 나만 보기 한 줄이 없음"
             if (shows("모두의 문의에 올라가 있어요", exact = false)) missed += "$look: 나만 보기 문의에 '올라가 있어요'"
         }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    // ---- 8차: 마을의 찾기·넘겨 보기·내 글 (PRO-21·23·24·25, U11b-12·14·19·21, T11b-06) ----
+
+    private val sampleRecipeApi: () -> com.bamnat.app.recipe.RecipeApi = {
+        val before = app.container.recipeApi
+        object : com.bamnat.app.recipe.RecipeApi by before {
+            override val enabled = true
+            override suspend fun list(style: com.bamnat.core.work.WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
+                com.bamnat.app.recipe.RecipePage((1..14).map { n ->
+                    com.bamnat.app.recipe.RecipeItem("AB${"%02d".format(n)}2345", "야간 근무 달력 $n", "야간 근무를 한눈에 보는 달력이에요", setOf(com.bamnat.core.work.WorkStyle.SHIFT),
+                        com.bamnat.core.recipe.Recipe("x", styles = setOf(com.bamnat.core.work.WorkStyle.SHIFT), pieces = emptyList()).cover, "밤낮", 1,
+                        likes = n, dislikes = 0, users = n, kept = 0, official = false, publicData = false, parent = null,
+                        at = java.time.Instant.parse("2026-11-09T00:00:00Z"), scope = "theme")
+                }, null)
+        }
+    }
+    private val downRecipeApi: () -> com.bamnat.app.recipe.RecipeApi = {
+        val before = app.container.recipeApi
+        object : com.bamnat.app.recipe.RecipeApi by before {
+            override val enabled = true
+            override suspend fun list(style: com.bamnat.core.work.WorkStyle?, sort: String, q: String, cursor: Int, kind: String?) =
+                throw java.io.IOException("down")
+        }
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-24·U11b-14 (조건 8): the search's "장터 작품 14" is not cut at ten with no way on: one line '작품 14개 모두 보기 ▾'
+     * under the tenth; tapping it shows all.
+     */
+    @Test fun searchShowsAllWorks() {
+        val missed = mutableListOf<String>()
+        all("28_search_more") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = sampleRecipeApi()
+            try {
+                app.container.recipes.setOn(true)
+                content { com.bamnat.app.ui.village.VillageSearchScreen(app.container, {}, {}, {}, {}) }
+                typeInto("작품·글·요청을 한 번에 (예: 야간, 다크, 알람)", "야간")
+                Thread.sleep(700); settle(); Thread.sleep(300); settle()
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                if (!shows("장터 작품 14", exact = true)) missed += "$look: 제목이 '장터 작품 14'가 아님"
+                reveal("작품 14개 모두 보기", exact = false)
+                tapText("작품 14개 모두 보기", prefix = true)
+                if (!shows("야간 근무 달력 14", exact = false)) { reveal("야간 근무 달력 14", exact = false) }
+                if (!shows("야간 근무 달력 14", exact = false)) missed += "$look: 모두 보기를 눌러도 14번째 작품이 없음"
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /** 2.0.0 [RVO-31] PRO-25 (조건 7): a search, 넘겨 보기 and 내 글 that could not read say it the common way, with '다시 하기'. */
+    @Test fun failuresCanBeTriedAgain() {
+        val missed = mutableListOf<String>()
+        all("29_retry_lines") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = downRecipeApi()
+            try {
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                content { com.bamnat.app.ui.village.SwipeThemesScreen(app.container, null, {}, {}) }
+                settle(); Thread.sleep(200); settle()
+                if (!shows("다시 하기", exact = true)) missed += "$look: 넘겨 보기 실패에 '다시 하기'가 없음"
+                content { com.bamnat.app.ui.village.MyVillagePostsScreen(app.container, {}, {}) }
+                settle(); Thread.sleep(200); settle()
+                tapText("내 글", prefix = true, scrolls = 0)
+                if (!shows("다시 하기", exact = true)) missed += "$look: 내 글 실패에 '다시 하기'가 없음"
+                content { com.bamnat.app.ui.village.VillageSearchScreen(app.container, {}, {}, {}, {}) }
+                typeInto("작품·글·요청을 한 번에 (예: 야간, 다크, 알람)", "야간")
+                Thread.sleep(700); settle(); Thread.sleep(300); settle()
+                if (!shows("다시 하기", exact = true)) missed += "$look: 찾기 실패에 '다시 하기'가 없음"
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-25·U11b-21 (조건 12): a page of 넘겨 보기 keeps '입어 보기' and '다음 테마' on screen at every look; what
+     * would not fit (the long explaining lines) goes first, the picture only gets smaller.
+     */
+    @Test fun swipePageFits() {
+        val missed = mutableListOf<String>()
+        all("30_swipe_fits") {
+            val before = app.container.recipeApi
+            app.container.recipeApi = sampleRecipeApi()
+            try {
+                content { com.bamnat.app.ui.village.SwipeThemesScreen(app.container, null, {}, {}) }
+                settle(); Thread.sleep(300); settle()
+                val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+                val m = app.resources.displayMetrics
+                for (w in listOf("입어 보기", "다음 테마")) {
+                    val n = nodes().firstOrNull { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == w } }
+                    if (n == null) missed += "$look: '$w'가 화면에 없음"
+                    else if (n.boundsInWindow.bottom > m.heightPixels + 1f) missed += "$look: '$w'가 화면 아래로 잘림"
+                }
+            } finally { app.container.recipeApi = before }
+        }
+        org.junit.Assert.assertEquals(emptyList<String>(), missed)
+    }
+
+    /**
+     * 2.0.0 [RVO-31] PRO-21 (조건 11): after the 공방 tab was tapped again once, coming back into 공방 from another part does not go to
+     * the top each time (only a tap on the tab itself does); where it was left stays.
+     */
+    @Test fun partKeepsItsPlaceAfterATabTap() {
+        val missed = mutableListOf<String>()
+        var checked = 0
+        all("31_keeps_place") {
+            style(WorkStyle.SHIFT).invoke(this)
+            fun seen() = nodes().flatMap { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().map { it.text } }.toSet()
+            val look = "${RuntimeEnvironment.getQualifiers().substringBefore("-port")} ${app.resources.configuration.fontScale}"
+            tapText("마을", exact = true, scrolls = 0); settle()
+            for ((part, other) in listOf("공방" to "테마", "테마" to "공방", "광장" to "테마")) {
+                tapText(part, exact = true, scrolls = 0); settle()
+                tapText(part, exact = true, scrolls = 0); settle()
+                val top = seen()
+                scrollUp(700); settle()
+                if (seen() == top) continue
+                checked++
+                tapText(other, exact = true, scrolls = 0); settle()
+                tapText(part, exact = true, scrolls = 0); settle(); Thread.sleep(300); settle()
+                if (seen() == top) missed += "$look: 다른 곳에 다녀오니 $part 이(가) 맨 위로 갔음"
+            }
+        }
+        org.junit.Assert.assertTrue("내려가는 곳이 하나도 없어 시험이 못 함", checked > 0)
         org.junit.Assert.assertEquals(emptyList<String>(), missed)
     }
 
