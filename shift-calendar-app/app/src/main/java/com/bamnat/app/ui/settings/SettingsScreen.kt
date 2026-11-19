@@ -358,6 +358,16 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     private val _pendingRestore = MutableStateFlow<Pair<String, BackupSummary>?>(null)
     val pendingRestore: StateFlow<Pair<String, BackupSummary>?> = _pendingRestore.asStateFlow()
 
+    /** 2.0.0 [RVL-50] (검토 U12-04) The app's own counts beside a waiting restore, so its window says first what gets fewer. */
+    private val _restoreNow = MutableStateFlow<BackupSummary?>(null)
+    val restoreNow: StateFlow<BackupSummary?> = _restoreNow.asStateFlow()
+
+    /** Counted before the window opens, so its lines do not come in after it. */
+    private suspend fun waitRestore(p: Pair<String, BackupSummary>) {
+        _restoreNow.value = runCatching { container.backupManager.currentSummary() }.getOrNull()
+        _pendingRestore.value = p
+    }
+
     /** [FEAT-08] Password for the next export, chosen before the file picker opens; never stored. */
     private var exportPassword: CharArray? = null
 
@@ -406,6 +416,44 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /**
+     * 2.0.0 [RVL-49] (검토 U12-02) 새 휴대폰으로 옮기기 in one go: the backup made in the app's share folder, opened again to check it, then
+     * handed to Android's 보내기 (카톡 나에게 보내기, 메일, 드라이브) by [sending]. The new phone opens the file it got and starts with it
+     * ("이 백업으로 시작할까요?"). [password] is cleared here; the copy in the cache goes the next time something is shared from it.
+     */
+    fun sendBackup(context: Context, password: CharArray?) {
+        val cache = context.applicationContext.cacheDir
+        viewModelScope.launch {
+            val gaps = if (password == null) runCatching { container.backupManager.plainLeavesOut() }.getOrNull() else null
+            val file = runCatching {
+                withContext(Dispatchers.IO) {
+                    val dir = java.io.File(cache, "share").apply { mkdirs(); listFiles()?.forEach { it.delete() } }
+                    val f = java.io.File(dir, "밤낮-백업-${Today.date()}.${BackupManager.EXTENSION}")
+                    java.io.BufferedOutputStream(java.io.FileOutputStream(f)).use { container.backupManager.exportFile(it, password) }
+                    // Opened again before it goes, as 백업 저장 does: what the new phone gets will open.
+                    f.inputStream().use { container.backupManager.verifyFile(it, password) }
+                    f
+                }
+            }.getOrNull()
+            password?.fill(' ')
+            if (file == null) {
+                _message.value = SettingsMessage("백업을 만들지 못했어요. 저장 공간을 확인하고 다시 해 주세요")
+                return@launch
+            }
+            container.telemetry.event(DiagEvents.BACKUP_EXPORT)
+            container.backupNudge.saved()
+            _sending.value = file
+            if (gaps != null && !gaps.isEmpty) {
+                _message.value = SettingsMessage("암호 없이 만들어 ${gaps.words}${com.bamnat.app.data.PlainLeavesOut.topic(gaps.words)} 빠졌어요")
+            }
+        }
+    }
+
+    /** 2.0.0 [RVL-49] A checked backup waiting for Android's 보내기, opened by the screen. */
+    private val _sending = MutableStateFlow<java.io.File?>(null)
+    val sending: StateFlow<java.io.File?> = _sending.asStateFlow()
+    fun sent() { _sending.value = null }
+
     /** [PROV-03] 매일 자동 백업 as it stands. */
     val autoBackup: StateFlow<com.bamnat.app.backup.AutoBackup.State> get() = container.autoBackup.state
 
@@ -417,18 +465,19 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         autoBackupPassword = password
     }
 
-    /** [PROV-03] Turns 자동 백업 on with the file just made, and makes the first backup there. */
-    fun startAutoBackup(context: Context, uri: Uri) {
+    /** [PROV-03] Turns 자동 백업 on with the file just made (or 2.0.0 [RVL-52] the folder just picked), and makes the first backup there. */
+    fun startAutoBackup(context: Context, uri: Uri, folder: Boolean = false) {
         val password = autoBackupPassword
         autoBackupPassword = null
         if (password == null) {
-            // The app was closed while the picker was open and the password went with it.
-            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            // The app was closed while the picker was open and the password went with it. The empty file just made goes; a folder
+            // the user picked is theirs and stays.
+            if (!folder) runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
             _message.value = SettingsMessage("암호가 지워져 켜지 않았어요. 다시 켜 주세요")
             return
         }
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password)) {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.turnOn(uri, password, folder)) {
                 is com.bamnat.app.backup.AutoBackup.Result.Ok -> "자동 백업을 켰어요. 첫 백업을 저장했어요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> if (container.autoBackup.on) "켰지만 첫 백업을 저장하지 못했어요. ${r.why}" else r.why
                 else -> "자동 백업을 켰어요"
@@ -436,9 +485,9 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
-    fun moveAutoBackup(uri: Uri) {
+    fun moveAutoBackup(uri: Uri, folder: Boolean = false) {
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri)) {
+            _message.value = SettingsMessage(when (val r = container.autoBackup.moveTo(uri, folder)) {
                 is com.bamnat.app.backup.AutoBackup.Result.Ok -> "새 위치에 백업했어요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
                 else -> "위치를 바꿨어요"
@@ -446,10 +495,12 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
         }
     }
 
+    /** 2.0.0 [RVL-51] (검토 U12-05) Also while 프로 has ended, as 지금 한 번 저장: a backup by hand is everyone's. */
     fun backupNow() {
+        val open = gate.value.allows(com.bamnat.app.tier.Feature.AUTO_BACKUP)
         viewModelScope.launch {
-            _message.value = SettingsMessage(when (val r = container.autoBackup.runNow()) {
-                is com.bamnat.app.backup.AutoBackup.Result.Ok -> "백업했어요"
+            _message.value = SettingsMessage(when (val r = container.autoBackup.saveOnce()) {
+                is com.bamnat.app.backup.AutoBackup.Result.Ok -> if (open) "백업했어요" else "저장했어요. 매일 저장은 프로를 다시 쓰면 이어져요"
                 is com.bamnat.app.backup.AutoBackup.Result.Failed -> r.why
                 com.bamnat.app.backup.AutoBackup.Result.Locked -> "자동 백업은 프로에서 돼요"
                 com.bamnat.app.backup.AutoBackup.Result.Off -> "자동 백업이 꺼져 있어요"
@@ -474,8 +525,8 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                 val json = withContext(Dispatchers.Default) { container.backupManager.unseal(current.text, password) }
                 json to container.backupManager.summarize(json)
             }.onSuccess {
+                waitRestore(it)
                 _locked.value = null
-                _pendingRestore.value = it
             }.onFailure { e ->
                 _locked.value = current.copy(working = false, error = (e as? BackupException)?.message ?: "백업 파일을 읽을 수 없어요")
             }
@@ -596,7 +647,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     return@runCatching
                 }
                 if (container.backupManager.isSealed(json)) _locked.value = LockedBackup(json)
-                else _pendingRestore.value = json to container.backupManager.summarize(json)
+                else waitRestore(json to container.backupManager.summarize(json))
             }.onFailure { e ->
                 _message.value = SettingsMessage((e as? BackupException)?.message ?: "파일을 읽을 수 없어요")
             }
@@ -924,13 +975,13 @@ private fun SettingsHub(
         val flagRows by context.appContainer.flags.byKey.collectAsStateWithLifecycle()
         val leaderOn = flagRows[com.bamnat.core.flags.FlagCatalog.TEAM_LEADER]?.on == true
         val bossOn = flagRows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on == true
-        // 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '직원 관리', 가게는 '가게
-        // 관리'), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on this phone.
+        // 2.0.0 [RVO-19] 검토 T11a-15·SET-06 (TYPE-20): named for what is on and the work's words ('팀 관리', '사업장 관리', 가게는 '가게
+        // 관리', [RVH-78]), never a shop to someone with none; an investor sees it only once leading a team or a 사업장 made on this phone.
         val screenStyle = com.bamnat.app.ui.flags.rememberScreenStyle()
         val leads by remember(context) { context.appContainer.phaseThree.teamList.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
         val hasPlace by remember(context) { context.appContainer.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
         if ((leaderOn || bossOn) && (screenStyle != com.bamnat.core.work.WorkStyle.INVEST || leads || hasPlace))
-            GroupRow(Icons.Outlined.Groups, manageTitle(leaderOn, bossOn, screenStyle),
+            GroupRow(Icons.Outlined.Groups, com.bamnat.app.ui.work.manageTitle(leaderOn, bossOn, screenStyle),
                 listOfNotNull("팀 근무표".takeIf { leaderOn }, "급여 대장·명세서·직원".takeIf { bossOn }, "할 일").joinToString(" · "), false) { SettingsLinks.go(SettingsGo.MANAGE) }
         // [INVITE-02] AE 1.26: 친구 초대 is on the 프로 screen; this row says it is there. AG 1.27 [INVITE-09]: the rules as meant.
         // [J133-77] 1.33 (유형별 점검: '친구 초대'가 설정에 두 번): not while the 함께 만들어요 card above says it.
@@ -1254,14 +1305,6 @@ internal fun alarmKindsButton(style: com.bamnat.core.work.WorkStyle?): String = 
     else -> style.words().types
 }
 
-/**
- * 2.0.0 [RVO-19] 검토 T11a-15: the 관리 row in the words of what it holds: 팀 for a leader, 직원 for a boss (가게 for a shop's), both
- * joined, so an office worker leading a team never reads '가게'.
- */
-internal fun manageTitle(leader: Boolean, boss: Boolean, style: com.bamnat.core.work.WorkStyle?): String =
-    listOfNotNull("팀".takeIf { leader }, (if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "가게" else "직원").takeIf { boss })
-        .ifEmpty { listOf("팀") }.joinToString("·") + " 관리"
-
 /** "7시간", "6시간 반". */
 internal fun sleepHours(m: Int): String = if (m % 60 == 0) "${m / 60}시간" else if (m % 60 == 30) "${m / 60}시간 반" else "${m / 60}시간 ${m % 60}분"
 
@@ -1460,6 +1503,8 @@ private fun alarmFixes(
 /** The file pickers and the dialogs around backups and company files, kept while the user moves between groups. */
 internal class SettingsFiles(
     val saveBackup: () -> Unit,
+    /** 2.0.0 [RVL-49] A password, then Android's 보내기 with the checked file. */
+    val sendBackup: () -> Unit,
     val openFile: () -> Unit,
     val exportIcs: () -> Unit,
     val shareCompany: () -> Unit,
@@ -1554,6 +1599,29 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     // [CAL-47] A file opened from a messenger after the setup: read here, as 파일 불러오기 does.
     val incoming by com.bamnat.app.IncomingFiles.file.collectAsStateWithLifecycle()
     LaunchedEffect(incoming) { com.bamnat.app.IncomingFiles.take()?.let { vm.readFile(context, it) } }
+    // 2.0.0 [RVL-49] 새 휴대폰으로 옮기기's 만들고 보내기: the same password window, then 보내기 with the file it made and checked.
+    var askingToSend by remember { mutableStateOf(false) }
+    if (askingToSend) {
+        ExportPasswordDialog(
+            onDismiss = { askingToSend = false },
+            onExport = { password -> askingToSend = false; vm.sendBackup(context, password) },
+            action = "보내기",
+        )
+    }
+    val sending by vm.sending.collectAsStateWithLifecycle()
+    LaunchedEffect(sending) {
+        val file = sending ?: return@LaunchedEffect
+        vm.sent()
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.share", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = BackupManager.FILE_MIME
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, SEND_NOTE)
+            clipData = android.content.ClipData.newRawUri(file.name, uri)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, "백업 보내기")) }
+    }
     var askingPassword by remember { mutableStateOf(false) }
     if (askingPassword) {
         ExportPasswordDialog(
@@ -1610,10 +1678,13 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
             onDismiss = { recentBackups = emptyList() })
     }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
+    val restoreNow by vm.restoreNow.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
-        ConfirmDialog(
+        // 2.0.0 [RVL-50] How old the file is and what gets fewer, first.
+        RestoreDialog(
+            file = summary,
+            now = restoreNow,
             title = "백업을 불러올까요?",
-            message = restoreMessage(summary),
             confirmLabel = "불러오기",
             destructive = true,
             onDismiss = vm::cancelRestore,
@@ -1623,6 +1694,7 @@ private fun rememberSettingsFiles(vm: SettingsViewModel): SettingsFiles {
     return remember(exportLauncher, icsLauncher, openLauncher, context) {
         SettingsFiles(
             saveBackup = { askingPassword = true },
+            sendBackup = { askingToSend = true },
             // 1.38 PC 확인(c00dc792) 제안: the backups saved here come first; the picker is one tap further.
             openFile = { BackupPlace.recent(context).let { if (it.isEmpty()) pickAny() else recentBackups = it } },
             exportIcs = { icsLauncher.launch("밤낮-근무-${Today.date()}.ics") },
@@ -1675,8 +1747,14 @@ internal fun RecentBackupsDialog(list: List<BackupPlace.Recent>, onPick: (Backup
     )
 }
 
-/** [SET-01] Everything a restore replaces, and that the data before it is kept. */
-internal fun restoreMessage(s: BackupSummary): String {
+/** 2.0.0 [RVL-49] What goes with the file to the new phone, for the person who gets it (often the same person). */
+internal const val SEND_NOTE = "새 휴대폰에서 이 파일을 누르면 밤낮이 열리고, 이 백업으로 바로 시작할 수 있어요."
+
+/** [SET-01] The undo line under every restore ([RestoreDialog]): the data before it is kept. */
+internal val RESTORE_UNDO get() = "지금 앱의 데이터가 이 백업으로 바뀌어요. 바뀌기 전 데이터는 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요."
+
+/** "들어 있는 것: 근무 종류 4개, 바꾼 날짜 30일, …". */
+internal fun restoreContents(s: BackupSummary): String {
     val parts = buildList {
         add("근무 종류 ${s.shiftTypes}개")
         add("바꾼 날짜 ${s.days}일")
@@ -1691,7 +1769,5 @@ internal fun restoreMessage(s: BackupSummary): String {
         if (s.teams > 0) add("팀 근무표 ${s.teams}개(팀원 ${s.teamMembers}명)")
         if (s.places > 0) add("사업장 ${s.places}곳(직원 ${s.staff}명)")
     }
-    val saved = if (s.exportedAtMillis > 0) " (${Fmt.dayTitle(AlarmScheduler.millisToLocal(s.exportedAtMillis).toLocalDate())} 저장)" else ""
-    return "들어 있는 것: ${parts.joinToString(", ")}$saved.\n" +
-        "지금 앱의 데이터가 이 백업으로 바뀌어요. 바뀌기 전 데이터는 남겨 두어 ${com.bamnat.app.data.ImportUndo.KEEP_DAYS}일 안에 되돌릴 수 있어요."
+    return "들어 있는 것: ${parts.joinToString(", ")}"
 }

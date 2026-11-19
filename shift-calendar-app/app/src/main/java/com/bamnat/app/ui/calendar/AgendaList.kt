@@ -250,7 +250,7 @@ private fun DayRow(
                 fullLeave != null -> LeaveMark(fullLeave, size = 22.dp)
                 showShift && (type != null || day.hasCustomTimes) ->
                     ShiftBadge(type, text = type?.label ?: "근", size = 22.dp, outlined = type?.isOff == true, showIcon = false)
-                row.jobs.isNotEmpty() -> JobBadge(row.jobs.size, owed = row.jobs.any { it.date == date && it.unpaid > 0 })
+                row.jobs.isNotEmpty() -> JobBadge(row.jobs.size, owed = row.jobs.any { it.date == date && it.overdue(today) })
                 row.sales != null -> Icon(Icons.Outlined.Storefront, null, tint = cal.income, modifier = Modifier.size(20.dp))
             }
         }

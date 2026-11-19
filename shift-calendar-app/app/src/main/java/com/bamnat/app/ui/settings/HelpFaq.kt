@@ -190,7 +190,7 @@ internal object HelpFaq {
             "backup", "백업", "휴대폰을 바꿔도 기록을 옮길 수 있나요?",
             "기록은 이 휴대폰에만 있어요. 설정 › 데이터 › ‘백업 저장’으로 만든 파일을 새 휴대폰에서 ‘파일 불러오기’로 열어요. " +
                 "근무·메모·돈 기록·급여 설정이 다 들어가고, 암호를 걸면 직원·급여 대장과 근무표 링크 열쇠도 들어가요. " +
-                "구글 계정·휴대폰 옮기기로 옮겨도 설정이 이어져요. ‘매일 자동 백업’은 고른 파일에 매일 덮어써요(프로).",
+                "구글 계정·휴대폰 옮기기로 옮겨도 설정이 이어져요. ‘매일 자동 백업’은 고른 폴더에 날짜별로 최근 7일치를 둬요. 구글 드라이브는 파일 하나에 덮어써요(프로).",
             listOf("백업", "휴대폰 바꾸기", "기기 변경", "옮기기", "복원", "다시 설치", "지워졌"),
             listOf("데이터"),
             "백업 저장 열기" to HelpAction.Page(SettingsPage.DATA, "백업 저장"),
@@ -1079,11 +1079,18 @@ internal object HelpFaq {
     }
 
     internal fun fits(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): Boolean = when {
+        // [RVH-77] 검토 TYPE-15: '지금 퇴근' is an office worker's row; '다음 야간 때 알려 줘' needs a repeating order of shifts.
+        t.id == "leaveTime" -> style == com.bamnat.core.work.WorkStyle.DAY
+        t.id == "memoShiftRemind" -> style.usesPattern
         t.id in COMPANY_ONLY -> style.usesCompany
         t.id in WAGES_ONLY -> style.usesPayEngine
         t.id in PATTERN_ONLY -> style.usesPattern
         t.id in JOBS_ONLY -> style == com.bamnat.core.work.WorkStyle.FIELD || (t.id == "unitRules" && style == com.bamnat.core.work.WorkStyle.HOURLY)
         t.id in SELF_EMPLOYED -> style == com.bamnat.core.work.WorkStyle.FIELD || style == com.bamnat.core.work.WorkStyle.BUSINESS
+        // 2.0.0 [RVH-77] 검토 T30-104: 주휴수당·연말정산 미리보기 answers were left to a shop, a freelancer and an investor,
+        // who have no wage; an investor has no kinds of days to delete.
+        t.tag == "급여" || t.tag == "연말정산" -> style.usesPayEngine
+        t.id == "deleteShiftType" -> style != com.bamnat.core.work.WorkStyle.INVEST
         t.tag == "투자" -> style == com.bamnat.core.work.WorkStyle.INVEST
         t.tag == "자영업" -> style == com.bamnat.core.work.WorkStyle.BUSINESS
         t.tag == "알바" -> style == com.bamnat.core.work.WorkStyle.HOURLY
@@ -1171,6 +1178,10 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
         // [RVH-53] HQ-27 first, in the app's own words, then said in the kind's words ([RVO-19]).
         .map { if (style.usesCompany) it else companyFreeWords(it, style) }
+        // [RVH-77] the kind's own 지우기 answer and day questions first, then every answer in the kind's words ([RVO-19]), so the
+        // settings page in them is named as that kind's settings name it ('설정 › 내 가게 › 영업시간').
+        .map { dayKindWords(it, style) }
+        .map { dayQuestionWords(it, style) }
         .map { t ->
             if (style == com.bamnat.core.work.WorkStyle.SHIFT) t
             else HelpFaq.said(t, style).let { s ->
@@ -1194,6 +1205,62 @@ internal fun kindWords(style: com.bamnat.core.work.WorkStyle, text: String): Str
         .replace(Regex("설정 › 내 근무(?!표)"), "설정 › ${page("내 근무")}").replace("급여와 연차", page("급여와 연차"))
     val said = com.bamnat.core.work.TypeWords.say(style, rows)
     return if (style == com.bamnat.core.work.WorkStyle.HOURLY) workplaceWords(said) else said
+}
+
+/**
+ * 2.0.0 [RVH-77] 검토 TYPE-15: the questions everyone sees ask in the calendar's own words: a shop asks about its 영업, a freelancer
+ * about 일정, an investor about 일정 (the 근무 of '하루만 근무를 바꾸고 싶어요', '홈 화면에 근무표를 띄우고 싶어요').
+ */
+internal fun dayQuestionWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic {
+    if (t.id !in DAY_QUESTIONS || style.usesPayEngine) return t
+    val noun = com.bamnat.app.ui.shifts.lockNoun(style)
+    val board = if (style == com.bamnat.core.work.WorkStyle.BUSINESS) "영업일" else "일정"
+    val q = t.question.replace("근무표", board).replace("근무", noun)
+    return t.copy(question = particlesAfter(particlesAfter(q, board), noun))
+}
+
+/** Puts 을/를, 이/가, 은/는, 과/와 and (으)로 right after [word] once it took the place of 근무 or 근무표 (영업을, 일정이). */
+internal fun particlesAfter(text: String, word: String): String {
+    val last = word.lastOrNull() ?: return text
+    val code = last.code - 0xAC00
+    if (code !in 0..11171) return text
+    val jong = code % 28
+    val closed = jong != 0
+    val pairs = listOf("을" to "를", "이" to "가", "은" to "는", "과" to "와")
+    var out = text
+    for ((c, o) in pairs) {
+        out = out.replace(Regex("${Regex.escape(word)}[$c$o](?![가-힣])|${Regex.escape(word)}[$c$o](?=[ ,.?·])")) { word + if (closed) c else o }
+    }
+    // (으)로: 으로 after a closed syllable but not after ㄹ.
+    val ro = if (closed && jong != 8) "으로" else "로"
+    out = out.replace(Regex("${Regex.escape(word)}(으로|로)")) { word + ro }
+    return out
+}
+
+private val DAY_QUESTIONS = setOf("oneday", "quicktext", "widget", "phoneCalendar", "watchNext", "import")
+
+/**
+ * 2.0.0 [RVH-77] 검토 T30-104: '만든 근무 종류를 지우고 싶어요' says the place and the words the kind's own screen has
+ * (설정 › 내 근무 › 영업시간, 일정 종류, 출근 시간, 알바 시간).
+ */
+internal fun dayKindWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic {
+    if (t.id != "deleteShiftType" || style == com.bamnat.core.work.WorkStyle.SHIFT) return t
+    val w = style.words()
+    // What one kind of day is called, with its particles: 이/가 and (으)로.
+    data class Kind(val kinds: String, val one: String, val iga: String, val ro: String)
+    val k = when (style) {
+        com.bamnat.core.work.WorkStyle.BUSINESS -> Kind("영업 종류", "영업", "이", "으로")
+        com.bamnat.core.work.WorkStyle.FIELD -> Kind("일정 종류", "일정", "이", "으로")
+        else -> Kind("근무 종류", "근무", "가", "로")
+    }
+    return t.copy(
+        question = "만든 ${k.kinds}를 지우고 싶어요",
+        answer = "설정 › 내 근무 › ‘${w.types}’에서 ${k.one} 옆 휴지통을 눌러요. 그 ${k.one}${k.iga} 달력·${w.pattern}에 쓰였으면 몇 날인지 알려 주고, " +
+            "다른 ${k.one}${k.ro} 바꾸거나 비울지 골라요. 지운 뒤 아래 ‘되돌리기’를 누르면 날짜까지 그대로 돌아와요. ${k.kinds}가 하나뿐이면 지울 수 없어요.",
+        keywords = t.keywords + k.kinds,
+        screens = t.screens.map { if (it == "근무 종류와 시간") w.types else it },
+        action = t.action?.let { (_, go) -> "${w.types} 열기" to if (go is HelpAction.Page) go.copy(row = w.types) else go },
+    )
 }
 
 /**

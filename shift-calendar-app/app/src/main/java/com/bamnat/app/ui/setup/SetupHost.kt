@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,7 +77,6 @@ import com.bamnat.app.data.BackupManager
 import com.bamnat.app.data.CompanyShare
 import com.bamnat.app.ui.components.ConfirmDialog
 import com.bamnat.app.ui.settings.UnlockBackupDialog
-import com.bamnat.app.ui.settings.restoreMessage
 import com.bamnat.core.hours.HoursFormat
 import com.bamnat.core.model.ShiftType
 import com.bamnat.core.schedule.ShiftRole
@@ -180,6 +180,11 @@ fun SetupHost(
         }
     }
     val inviteDays by inviteContainer.invites.store.state.collectAsStateWithLifecycle()
+    // 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): what the user picked on bamnat.app, read on the phone as the setup starts.
+    LaunchedEffect(Unit) { runCatching { vm.lookWeb() } }
+    val webHandoff = vm.webStart?.handoff?.collectAsStateWithLifecycle()?.value
+    val webAnswer = vm.webStart?.answer?.collectAsStateWithLifecycle()?.value
+    val webAsk = remember(d.style, webHandoff, webAnswer) { vm.webAsk(d) }
     val todayAsk by vm.todayAsk.collectAsStateWithLifecycle()
     val primaryNoAsk = primaryFor(d, vm, onLongShifts = { longShifts = it }, todayAsk = todayAsk).let { p ->
         val code = inviteCode
@@ -200,13 +205,21 @@ fun SetupHost(
     // 2.0.0 [RVH-47] 총괄 #451 사진 검토(글자 200%, 접은·편 폭): the card and the button under it took half the screen and the month to
     // check showed one row, cut through its cells (조건 1·12). At a large font the card goes in the scroll, under the month; only
     // '저장하고 달력 보기' stays at the bottom. At the usual size it stays just above the button, where 7차 PC 1-12 put it.
-    val statsInScroll = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f
+    // 2.0.0 [RVH-83] 총괄 (HQ-99, G가 본 것, 조건 1·9): a short screen too (a phone turned on its side, a split window): the card
+    // and the button took more than half of its height there, so the card goes in the scroll the same way.
+    val statsInScroll = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.3f ||
+        androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < SHORT_SCREEN_DP
     val statsAsk: @Composable () -> Unit = {
         com.bamnat.app.ui.onboarding.StatsAsk(statsSettings.shareUsageStats) { inviteContainer.setUsageStats(it) }
     }
     val primary = primaryNoAsk?.let { p ->
         if (!atSummary || statsInScroll) p
         else p.copy(above = statsAsk)
+    }?.let { p ->
+        // [RVH-68] 검토 I50c-03: came from the site's 명세서 맞춰 보기, said where the last button is, so the pay screen after it is expected.
+        if (atSummary && webAnswer != com.bamnat.app.data.WebStart.DECLINED && webHandoff?.target == com.bamnat.core.setup.WebHandoff.SLIP)
+            p.copy(note = listOfNotNull(p.note, "저장하면 웹에서 하던 ‘내 월급 맞나요?’로 이어 가요.").joinToString(" "))
+        else p
     }
     val stepsLeft = if (d.style != null && !fixing) d.steps.size - d.position else null
     Scaffold(
@@ -303,6 +316,12 @@ fun SetupHost(
                             }
                         }
                     }
+                    // [RVH-68] One card, on the question after the kind of work: the order and today, or the 시급 (조건 3: one ground, one
+                    // button, X). Answered, it is gone; the times' screen then shows what it filled.
+                    webAsk?.takeIf { it.on == step }?.let { ask ->
+                        com.bamnat.app.ui.components.NudgeCard(ask.text, icon = Icons.Filled.Language, action = ask.action,
+                            onAction = { vm.useWeb(ask) }, onClose = vm::declineWeb, closeLabel = "웹에서 고른 것 쓰지 않기")
+                    }
                     when (step) {
                         SetupStep.STYLE -> StyleStep(d, onPick = vm::pickStyle, onOpenFile = onOpenFile, forCalendar = vm.calendarName,
                             onBrowse = onBrowse.takeIf { vm.calendarId == null }, browseFirst = browseFirst, browseAsks = browseAsks, onBrowseBack = onBrowseBack)
@@ -349,10 +368,14 @@ fun SetupHost(
     locked?.let { UnlockBackupDialog(it, onUnlock = vm::unlock, onDismiss = vm::cancelFile) }
     val pendingRestore by vm.pendingRestore.collectAsStateWithLifecycle()
     pendingRestore?.let { (_, summary) ->
-        ConfirmDialog(
-            title = "쓰던 백업을 불러올까요?",
-            message = restoreMessage(summary),
-            confirmLabel = "불러오기",
+        // 2.0.0 [RVL-49] (검토 U12-02) A file sent from the old phone, opened on the new one: start with it in one tap.
+        // [RVL-50] How old the file is first; nothing of the user's is here yet to get fewer.
+        com.bamnat.app.ui.settings.RestoreDialog(
+            file = summary,
+            now = null,
+            title = RESTORE_START_TITLE,
+            confirmLabel = "이 백업으로 시작",
+            filled = true,
             onDismiss = vm::cancelFile,
             onConfirm = vm::confirmRestore,
         )
@@ -494,3 +517,9 @@ private val SetupStep.title: String
 
 /** [VIS-02] A step slides over 260 ms. */
 private const val STEP_MILLIS = 260
+
+/** 2.0.0 [RVL-49] The first setup's window for a backup file opened on a new phone. */
+internal const val RESTORE_START_TITLE = "이 백업으로 시작할까요?"
+
+/** 2.0.0 [RVH-83] (HQ-99) Lower than this, only the save button stays fixed at the summary's bottom; the 사용 통계 card scrolls. */
+internal const val SHORT_SCREEN_DP = 600

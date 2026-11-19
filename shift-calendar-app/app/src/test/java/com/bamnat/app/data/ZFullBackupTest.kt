@@ -247,6 +247,21 @@ class ZFullBackupTest {
         assertEquals("목록에만 있고 설정에는 없는 칸", emptySet<String>(), SettingsFilesBackup.SETTINGS_ON_PHONE.keys - names)
     }
 
+    /**
+     * 2.0.0 [RVL-54] (검토 DATA-28) Guard: a file is moved or kept on this phone, never said to be both ("plaza_tag" was in both lists), and
+     * a key kept here ("file:key") belongs to a part that names only some keys and not that one.
+     */
+    @Test fun noFileIsBothMovedAndKeptOnThePhone() {
+        val whole = SettingsFilesBackup.DEVICE_ONLY.keys.filter { ':' !in it }.toSet()
+        assertEquals("옮기는 것과 이 휴대폰에만 둘 다", emptySet<String>(), SettingsFilesBackup.PARTS.map { it.name }.toSet() intersect whole)
+        SettingsFilesBackup.DEVICE_ONLY.keys.filter { ':' in it }.forEach { k ->
+            val (file, key) = k.split(':', limit = 2)
+            SettingsFilesBackup.PARTS.firstOrNull { it.name == file }?.let { p ->
+                assertTrue("$k: 옮기는 칸이라 이 휴대폰에만 둘 수 없어요", p.keys != null && key !in p.keys!!)
+            }
+        }
+    }
+
     /** [BAK-01] Guard: every preferences file the app writes is backed up, carried in a part of its own, or kept here with a reason. */
     @Test fun everySettingsFileIsBackedUpOrKeptOnThePhoneOnPurpose() {
         val known = SettingsFilesBackup.PARTS.map { it.name }.toSet() + SettingsFilesBackup.ELSEWHERE +

@@ -62,7 +62,7 @@ class M10NoticeTest {
         nm.createNotificationChannel(NotificationChannel("sleep_tips_v1", "수면 알림", NotificationManager.IMPORTANCE_DEFAULT))
         Notifications.createChannels(context)
         // The system settings list groups by id: alarms, day, money.
-        assertEquals(listOf("근무 알람", "하루 안내", "돈과 휴가"), nm.notificationChannelGroups.sortedBy { it.id }.map { it.name.toString() })
+        assertEquals(listOf("알람", "하루 안내", "돈과 휴가"), nm.notificationChannelGroups.sortedBy { it.id }.map { it.name.toString() })
         val channels = nm.notificationChannels
         assertNull(channels.firstOrNull { it.id == "sleep_tips_v1" })
         // [SCHED-01] 메모 일정 is the ninth, [SHR-12] 근무표 링크 기간 the tenth, [FEAT-18] 잠금 화면 오늘 근무 the eleventh.
@@ -84,6 +84,10 @@ class M10NoticeTest {
         // No two lines read the same in the system settings.
         assertEquals(channels.size, channels.map { it.name.toString() }.toSet().size)
         assertEquals(NotificationManager.IMPORTANCE_LOW, nm.getNotificationChannel(Notifications.DAY_CHANNEL_ID).importance)
+        // 2.0.0 [RVH-80] 검토 TYPE-13: the phone's 알림 설정 shows these to every kind of work, so only a received 근무표's own says 근무.
+        assertEquals(listOf("받은 근무표 바뀜"), channels.map { it.name.toString() }.filter { "근무" in it })
+        assertEquals("알람", nm.getNotificationChannel(Notifications.ALARM_CHANNEL_ID).name.toString())
+        assertEquals("잠금 화면 오늘 줄", nm.getNotificationChannel(Notifications.TODAY_CHANNEL_ID).name.toString())
     }
 
     @Test fun aSnoozeWaitingShowsWhenItRingsAgainAndStopsFromTheNotice() {

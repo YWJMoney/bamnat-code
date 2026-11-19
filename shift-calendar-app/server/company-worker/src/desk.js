@@ -584,10 +584,12 @@ export async function keySession(request, env, path, method, now) {
  * 2.0.0 [RVA-64] HQ-132: 말없이 빼면 '기록이 안 왔다'로 읽혀서, 내용 대신 표식(줄 수·멈춤 기록 있음·없음·못 읽음)을 남겨요.
  */
 export function keyView(d) {
-  if (d?.context && "알람 점검" in d.context) {
-    const mark = diagMark(d.context["알람 점검"]);
-    if (mark) d.context["알람 점검"] = `(${mark})`;
-    else delete d.context["알람 점검"];
+  // 2.0.0 [RVO-28] 답장으로 새 기록이 오면 처음 기록은 '처음 점검 기록'에 남아요. 같은 표식으로 가려요.
+  for (const label of ["알람 점검", "처음 점검 기록"]) {
+    if (!d?.context || !(label in d.context)) continue;
+    const mark = diagMark(d.context[label]);
+    if (mark) d.context[label] = `(${mark})`;
+    else delete d.context[label];
   }
   return d;
 }
@@ -647,7 +649,7 @@ async function desk(env, now) {
       "개발사항의 공지 한 줄(news)·출시 답(shipReply)은 판이 나갈 때 사람 확인 없이 나가요. 그래서 링크·전화번호·이메일, AI·자동 답이라는 말, 보안 정보가 있으면 적히지 않아요.",
       "스튜디오 부탁이 셋(서로 다른 네트워크도 셋) 모이면 '올리기 전 확인'(GET /growth/needs?state=ready)에 와요. 부탁 글을 그대로 올리지 말고, 누구나 알아볼 짧은 제목(사용자 말, 60자)으로 다듬어 POST /growth/needs/<id> {action:'market', title}로 올려요. 연락처·금액·링크·단톡방이 있으면 올라가지 않아요.",
       "나간 판 저장(POST /desk/ship)은 Play에서 본 판이나 서버가 아는 판만 돼요. 열쇠로 부르면 바로 나가지 않고 10분 보류와 관리자 알림 뒤에 문의 안내와 업데이트 소식 공지가 나가요(dry:true로 먼저 몇 건인지 봐요).",
-      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 맨 위 crashRepeats는 7일 안 같은 보낸 분·같은 기기에서 되풀이된 닫힘 문의 묶음이고 줄마다 crash(멈춤 기록 있음·없음)·repeat(몇 번째), 기록이 없으면 crashDraft(알람 점검 › 보고서 복사 부탁 답)로 답해요. 열쇠로는 점검 기록 내용을 볼 수 없어요: 문의의 context['알람 점검']과 장부 줄의 diag는 '(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 …)' 표식이에요. 표식이 있으면 기록은 온 것이니 '안 왔다'고 적지 말고 표식을 봐요(없으면 기록이 안 온 것). 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
+      "1.38 운영 장부: GET /api/admin/ledger?view=claude(Claude 차례)·owner(최고 관리자 확인)·today·late. 줄마다 key(type:id)·번호(K-0001)·겹침 후보·단계·답·담당·기한. 맨 위 crashRepeats는 7일 안 같은 보낸 분·같은 기기에서 되풀이된 닫힘 문의 묶음이고 줄마다 crash(멈춤 기록 있음·없음)·repeat(몇 번째), 기록이 없으면 crashDraft(점검 기록을 켠 새 문의 부탁 답. 보고서 복사는 답장 칸 2,000자보다 길어 보낼 수 없어요)로 답해요. 열쇠로는 점검 기록 내용을 볼 수 없어요: 문의의 context['알람 점검']과 장부 줄의 diag는 '(가려짐: 운영자만 봐요 · n줄 · 멈춤 기록 …)' 표식이에요. 표식이 있으면 기록은 온 것이니 '안 왔다'고 적지 말고 표식을 봐요(없으면 기록이 안 온 것). 처리한 줄은 POST /ledger/state {keys, state:'done', reason}로 끝내고(이유: answered·duplicate·fixed·dev·wontfix·spam·nothing·handled), 한 줄 요약은 POST /ledger/summary {key, text}.",
     ],
     shipped,
     flow: { stages: f.stages, metrics: f.metrics, next: f.next },

@@ -631,6 +631,14 @@ class BackupManager(
             )
         }
         root.put("memos", memos)
+        // 2.0.0 [RVL-53] (검토 DATA-15) The events brought in from the phone's calendar and the memo each became: a restored phone does
+        // not bring them in a second time. A key is the phone calendar's event number and start: on the same phone (a backup put back
+        // after a mistake, the app installed again) they match; on a new phone they match nothing and pass nothing over.
+        root.put(IMPORTED_EVENTS, JSONArray().apply {
+            db.importedEventDao().all().forEach { e ->
+                put(JSONObject().put("key", e.eventKey).put("day", e.epochDay).putOpt("memo", e.memoId).put("at", e.importedAt))
+            }
+        })
         memoSharing?.let { root.put("memoSharing", MemoSharingStore.toJson(it.state.value)) }
         putMoney(db, root)
         // [SLP-06] The sleep log goes with the rest of the user's data.
@@ -773,6 +781,16 @@ class BackupManager(
         // [MPH-03] 1.38 메모 사진 too.
         val memoNames = db.memoDao().getAll().flatMapTo(LinkedHashSet()) { com.bamnat.core.memo.MemoPhotos.names(it.body) }
         return p.size(receipts, contracts, memoNames)
+    }
+
+    /**
+     * 2.0.0 [RVL-50] (검토 U12-04) The same counts for what the app holds now, so 불러오기 can say first what gets fewer
+     * ([RestoreDiff]). 사업장·직원 too, as a sealed file has them; photos as [photoSize] counts them.
+     */
+    suspend fun currentSummary(): BackupSummary {
+        val now = summarize(exportSealed())
+        val p = photoSize()
+        return now.copy(photos = p.count, photoBytes = p.bytes)
     }
 
     /** Reads a backup without changing anything. Throws [BackupException] for a file that is not ours. */
@@ -1213,6 +1231,11 @@ class BackupManager(
             com.bamnat.app.data.db.SleepEventEntity(startMillis = o.getLong("start"), endMillis = o.getLong("end"), kind = o.getString("kind"),
                 level = o.optDouble("level").toFloat(), file = clip, keep = clip != null && o.optBoolean("keep"))
         }
+        // 2.0.0 [RVL-53] (검토 DATA-15) A backup from before 2.0.0 has none: what this phone brought in no longer matches the days and memos
+        // put back, so the list is emptied and the next 캘린더 가져오기 offers those events again rather than passing them over.
+        val importedEvents = root.optJSONArray(IMPORTED_EVENTS)?.objects()?.map { o ->
+            com.bamnat.app.data.db.ImportedEventEntity(o.getString("key"), o.getLong("day"), o.optLongOrNull("memo"), o.optLong("at"))
+        }.orEmpty()
         val money = readMoney(root)
         // Read before anything changes, so a broken pay part leaves the phone as it was.
         val pay = root.optJSONObject("pay")?.let(com.bamnat.app.pay.PayCodec::decode)
@@ -1238,6 +1261,8 @@ class BackupManager(
             db.memoDao().clear()
             writeSchedule(db, schedule)
             memos.forEach { db.memoDao().restore(it) }
+            db.importedEventDao().clear()
+            importedEvents.forEach { db.importedEventDao().upsert(it) }
         }
         // [MEMO-02] An older backup has no sharing: the phone's own choice stays.
         root.optJSONArray("memoSharing")?.let { a -> memoSharing?.set(MemoSharingStore.fromJson(a)) }
@@ -1547,6 +1572,8 @@ class BackupManager(
          * saved as a `.bamnat` file of this type; files saved before (.json) open as before.
          */
         const val FILE_MIME = "application/octet-stream"
+        /** 2.0.0 [RVL-53] The events brought in from the phone's calendar. */
+        internal const val IMPORTED_EVENTS = "importedEvents"
         const val EXTENSION = "bamnat"
         const val SEALED_FORMAT = "bamnat-enc"
         /** [SLP-14] The longest way home a backup may set. */

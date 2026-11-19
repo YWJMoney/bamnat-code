@@ -171,7 +171,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         // [ALRM-01] R10: the alarm's channels can be turned off one by one in the system settings.
         if (Notifications.canPost(context)) {
             add(AlarmCheck("알람 알림 켜짐", Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID),
-                "휴대폰 설정에서 ‘근무 알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
+                "휴대폰 설정에서 밤낮의 ‘알람’ 알림이 꺼져 있어 알람 화면을 띄우지 못할 수 있어요.", "알람 알림 켜기",
                 Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
             add(AlarmCheck("예비 소리 켜짐", Notifications.channelOn(context, Notifications.FALLBACK_CHANNEL_ID),
                 "알람 화면을 못 띄울 때 대신 울리는 ‘예비 소리’가 꺼져 있어요.", "예비 소리 켜기",
@@ -189,7 +189,7 @@ internal fun alarmChecks(container: AppContainer, context: Context): List<AlarmC
         if (Notifications.canPost(context) && Notifications.channelOn(context, Notifications.ALARM_CHANNEL_ID)) {
             val trouble = Notifications.alarmChannelTrouble(context)
             add(AlarmCheck("잠금 화면에 알람 보이기", trouble == null,
-                (trouble ?: "‘근무 알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
+                (trouble ?: "‘알람’ 알림이 조용히·숨김으로 바뀌면 알람 화면이 안 떠요") + ". ‘긴급’(소리와 팝업)·잠금 화면 ‘표시’로 바꿔 주세요.",
                 "알람 알림 설정 열기", Fix.Open(channel(Notifications.ALARM_CHANNEL_ID))))
         }
         if (Notifications.dndBlocksAlarms(context)) add(AlarmCheck("방해 금지", false,

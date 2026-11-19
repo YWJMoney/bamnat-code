@@ -86,6 +86,45 @@ object ShiftEvents {
         return "${e.title}까지 ${left(now, e.start)} · $day${hm(e.start)}"
     }
 
+    /**
+     * 2.0.0 [RVH-76] 검토 T30-04·T30-98: a field worker books 일감, not shifts, so their countdown counts the
+     * jobs: "OO 현장 중 · 17:00에 끝나요 (2시간 남음)", "OO 현장까지 3시간 20분 · 내일 08:00", and for a job
+     * without times "오늘 OO 현장", "내일 OO 현장", "11/20(목) OO 현장". Null with no job in the coming [days].
+     */
+    fun jobCountdown(jobs: List<com.bamnat.core.money.Job>, now: LocalDateTime, days: Long = 7): String? {
+        val today = now.toLocalDate()
+        val last = today.plusDays(days)
+        // From yesterday, so a job that ran overnight still counts down to its end.
+        val live = jobs.filter { !it.cancelled && !it.lastDate.isBefore(today.minusDays(1)) && !it.date.isAfter(last) }
+        fun name(j: com.bamnat.core.money.Job) = j.title.ifBlank { j.place.ifBlank { "일감" } }
+        // Each timed day of a job, so a three-day job counts down to each morning.
+        val timed = live.filter { it.start != null && it.end != null }.flatMap { j ->
+            generateSequence(maxOf(j.date, today.minusDays(1))) { it.plusDays(1) }.takeWhile { !it.isAfter(minOf(j.lastDate, last)) }
+                .map { d -> val s = d.atTime(j.start!!); Triple(s, if (j.end!!.isAfter(j.start)) d.atTime(j.end) else d.plusDays(1).atTime(j.end), j) }
+                .toList()
+        }
+        timed.firstOrNull { !it.first.isAfter(now) && it.second.isAfter(now) }?.let { (_, e, j) ->
+            return "${name(j)} 중 · ${hm(e)}에 끝나요 (${left(now, e)} 남음)"
+        }
+        val nextTimed = timed.filter { it.first.isAfter(now) }.minByOrNull { it.first }
+        val untimed = live.filter { (it.start == null || it.end == null) && !it.lastDate.isBefore(today) }
+        val untimedDay = untimed.map { j -> maxOf(j.date, today) to j }.minByOrNull { it.first }
+        fun dayWord(d: LocalDate) = when (d) {
+            today -> "오늘 "
+            today.plusDays(1) -> "내일 "
+            else -> "${d.monthValue}/${d.dayOfMonth}(${"월화수목금토일"[d.dayOfWeek.value - 1]}) "
+        }
+        return when {
+            nextTimed != null && (untimedDay == null || !untimedDay.first.isBefore(nextTimed.first.toLocalDate())) -> {
+                val (s, _, j) = nextTimed
+                val day = if (s.toLocalDate() == today) "" else dayWord(s.toLocalDate())
+                "${name(j)}까지 ${left(now, s)} · $day${hm(s)}"
+            }
+            untimedDay != null -> dayWord(untimedDay.first) + name(untimedDay.second)
+            else -> null
+        }
+    }
+
     /** G 1.32 [WTYP-05] 607 "다음 오프까지" under the countdown: today off, the next off day in [days], or none in the week. */
     fun nextOff(days: List<ResolvedDay>, today: java.time.LocalDate): String {
         // [J133-32] 순번 712: a day off with a 대근 (or other extra work) on it is a working day, not the next 오프.

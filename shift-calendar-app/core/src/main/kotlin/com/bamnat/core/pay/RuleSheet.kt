@@ -265,12 +265,14 @@ data class RuleSheet(
          * other rule is a 칸 (ticked when read well), and the sentences not read are '직접 넣기' rows.
          */
         fun read(findings: List<RuleFinding>, unread: List<String> = emptyList(), from: CellFrom = CellFrom.PHOTO,
-                 shiftNames: Map<Long, String> = emptyMap(), current: RuleChange.Base? = null): RuleSheet {
+                 shiftNames: Map<Long, String> = emptyMap(), current: RuleChange.Base? = null,
+                 /** 2.0.0 [RVL-47] The 상여 the setup has, to hold a read one against ([twin]). */
+                 bonuses: List<PayItem> = emptyList()): RuleSheet {
             val (common, cells) = findings.partition { CommonTerms.isCommon(it.change) }
             var terms = CommonTerms(offers = common)
             common.filter { it.confidence >= RuleCell.SURE }.forEach { terms = terms.take(it) }
             val made = cells.mapIndexed { i, f ->
-                val caution = caution(f.change, current)
+                val caution = caution(f.change, current) ?: twin(f.change, bonuses)
                 RuleCell.of(f.change, on = f.confidence >= RuleCell.SURE && caution == null, source = f.sourceLine, confidence = f.confidence,
                     from = if (f.change is RuleChange.Premium && f.sourceLine.startsWith("명세서로 보면")) CellFrom.SLIP else from,
                     shiftNames = shiftNames, salt = i).copy(caution = caution)
@@ -296,6 +298,24 @@ data class RuleSheet(
                 c.amount * 2 < now.amount -> "지금 ${word(now.type)} ${won(now.amount)} → ${won(c.amount)}으로 크게 줄어요. 맞을 때만 켜 주세요"
                 else -> null
             }
+        }
+
+        /**
+         * 2.0.0 [RVL-47] (검토 SCAN-31·PAYC-18) A 상여 read under another name than one [bonuses] has, paid in the same months and
+         * 명절 at the same % (or amount): likely that one again ("상여금 400% 짝수달" read as "정기상여 400% 짝수달"). Said, and the
+         * 칸 starts off. One of the same name is no question: it changes that one ([RuleText.apply]).
+         */
+        fun twin(change: RuleChange, bonuses: List<PayItem>): String? {
+            val c = change as? RuleChange.Bonus ?: return null
+            val key = c.name.replace(" ", "")
+            if (bonuses.isEmpty() || bonuses.any { it.name.replace(" ", "") == key }) return null
+            val count = (c.months.size + c.festivals.size).coerceAtLeast(1)
+            val twin = bonuses.firstOrNull { b ->
+                b.cadence == Cadence.BONUS && b.months == c.months && b.festivals == c.festivals && (
+                    c.yearlyPercent != null && b.percentOfBase != null && kotlin.math.abs(b.percentOfBase * count * 100 - c.yearlyPercent) < 0.01 ||
+                        c.yearlyPercent == null && b.percentOfBase == null && c.amount != null && b.amount.entries.lastOrNull()?.value == c.amount)
+            } ?: return null
+            return "이미 있는 ‘${twin.name}’${com.bamnat.core.text.Josa.gwawa(twin.name)} 같아 보여요. 다른 상여일 때만 켜 주세요"
         }
 
         /**
