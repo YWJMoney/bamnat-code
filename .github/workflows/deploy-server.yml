@@ -145,7 +145,7 @@ jobs:
           BAMNAT_SERVER_ROOT="$GITHUB_WORKSPACE/target/shift-calendar-app/server" \
             python3 shift-calendar-app/tools/deploy_worker.py --phase build --worker "$IN_TARGET" \
               --out "$RUNNER_TEMP/ship" --prev "$GITHUB_WORKSPACE/prev/shift-calendar-app/server" "${skip[@]}"
-      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ship
           path: ${{ runner.temp }}/ship
@@ -153,7 +153,7 @@ jobs:
           if-no-files-found: error
       # [U60-02] 시험에서 멈추면 실패한 시험 이름·줄(<서버>-fail.json)만 따로 넘겨 explain이 어제 main과 견줘요.
       - if: failure()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-fail
           path: ${{ runner.temp }}/ship/fail
