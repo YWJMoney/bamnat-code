@@ -60,8 +60,9 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
     var weekend by rememberSaveable { mutableIntStateOf(3) }
     var person by rememberSaveable { mutableIntStateOf(0) }
     // 마감: a week from today at 18시, never after the month starts.
-    val firstDay = month.atDay(1)
-    var closeDay by rememberSaveable { mutableStateOf(minOf(Today.date().plusDays(7), firstDay.minusDays(1)).coerceAtLeast(Today.date()).toString()) }
+    // 2.0.0 [RVJ-102] 검토 PAYU-18: when today's 18시 has gone by already, the first 마감 is tomorrow's (it was a time in the past, with the
+    // 링크 만들기 button off and no word why).
+    var closeDay by rememberSaveable { mutableStateOf(defaultCloseDay(month, Today.date(), 18, Today.millis()).toString()) }
     var closeHour by rememberSaveable { mutableIntStateOf(18) }
     var kinds by remember { mutableStateOf(setOf(WishKind.OFF, WishKind.LEAVE, WishKind.SHIFT)) }
     var firstCome by rememberSaveable { mutableStateOf(true) }
@@ -69,6 +70,7 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
     var picking by remember { mutableStateOf(false) }
     val closesAt = LocalDate.parse(closeDay).atTime(LocalTime.of(closeHour % 24, 0)).plusDays(if (closeHour == 24) 1 else 0)
         .atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
+    val passed = closesAt <= Today.millis()
     AlertDialog(onDismissRequest = onDismiss, title = { Text("${Fmt.monthShort(month)} 근무 신청 받기") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("팀원 ${members}명에게 신청 링크를 하나씩 보내요. 팀원은 앱 없이 달력에서 날을 눌러 신청하고, 날마다 몇 자리 남았는지 봐요.",
@@ -83,6 +85,8 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf(12, 18, 24).forEach { h -> FilterChip(selected = closeHour == h, onClick = { closeHour = h }, label = { Text(if (h == 24) "자정" else "${h}시") }) }
             }
+            // [RVJ-102] The 링크 만들기 button is off for a 마감 that has gone by; it says so, next to the 마감.
+            if (passed) com.bamnat.app.ui.components.ToneLine("마감이 벌써 지난 시각이에요 · 날짜나 시각을 뒤로 바꿔 주세요")
             // PC 10차(중): which kinds are on was not plain; each on chip has a ✓ and the line says how many, and none on is said.
             Text("받을 신청 · 켜진 ${kinds.size}가지(누르면 켜고 꺼요)", style = MaterialTheme.typography.labelLarge)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -126,13 +130,27 @@ internal fun AskSetupDialog(month: YearMonth, members: Int, onDismiss: () -> Uni
     }
 }
 
+/**
+ * 2.0.0 [RVJ-102] 검토 PAYU-18: the day the 신청 받기 first closes: a week from [today], never after the month starts, and never a time
+ * that has gone by ([hour]시 of that day at or before [nowMillis]: the next day).
+ */
+internal fun defaultCloseDay(month: YearMonth, today: LocalDate, hour: Int, nowMillis: Long): LocalDate {
+    val day = minOf(today.plusDays(7), month.atDay(1).minusDays(1)).coerceAtLeast(today)
+    val at = day.atTime(LocalTime.of(hour % 24, 0)).atZone(ZoneId.of("Asia/Seoul")).toInstant().toEpochMilli()
+    return if (at <= nowMillis) day.plusDays(1) else day
+}
+
+/**
+ * 2.0.0 [RVJ-106] 검토 PAYU-25: the shared stepper (48dp, "[label] 줄이기/늘리기" for TalkBack, held to repeat; the words go above it at a
+ * big font), where this was a loose − and + glyph pair with no name. 0 reads as [zero] ("제한 없음").
+ */
 @Composable
 private fun Stepper(label: String, value: Int, onChange: (Int) -> Unit, zero: String, unit: String = "명") {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        TextButton(onClick = { onChange((value - 1).coerceAtLeast(0)) }, enabled = value > 0) { Text("−") }
-        Text(if (value == 0) zero else "$value$unit", style = MaterialTheme.typography.bodyMedium)
-        TextButton(onClick = { onChange((value + 1).coerceAtMost(30)) }) { Text("+") }
+    com.bamnat.app.ui.components.StepperRow(label) {
+        com.bamnat.app.ui.components.CountStepper(
+            value, onChange, name = label, range = 0..30, valueWidth = 96.dp,
+            format = { if (it == 0) zero else "$it$unit" },
+        )
     }
 }
 
@@ -195,7 +213,7 @@ internal fun AskCard(
                 Text("새 신청을 못 가져왔어요($at 것을 보여 줘요)", style = MaterialTheme.typography.labelSmall,
                     color = Tone.Caution.color(), modifier = Modifier.weight(1f))
                 TextButton(onClick = onPull, enabled = !busy && round.token != null) { Text("다시") }
-            } else Text("${at}에 가져왔어요. 화면을 열 때마다 새로 가져와요.",
+            } else Text("${at}에 가져왔어요. 화면을 열 때와 아래로 당길 때 새로 가져와요.",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

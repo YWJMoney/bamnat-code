@@ -74,15 +74,24 @@ class WayPicker(private val c: AppContainer, private val scope: CompanyScope) {
         return Result.Picked(WayPick.rank(options.map { it.tried }).map { byId.getValue(it.id) }, skipped)
     }
 
-    /** "생산1팀 · 2판 · 맞아요 8": what tells versions apart without their values (결정 D79). */
-    private fun label(s: SharedSetup, all: List<SharedSetup>): String = listOfNotNull(
-        s.dept.ifEmpty { "부서 없음" },
-        s.version?.takeIf { all.count { o -> o.dept == s.dept } > 1 }?.let { "${it}판" },
-        s.persons.takeIf { it > 0 }?.let { "맞아요 $it" },
-    ).joinToString(" · ")
+    /**
+     * "생산1팀 · 2판 · 맞아요 8": what tells versions apart without their values (결정 D79). 2.0.0 [RVJ-82] 결정 3 (처리방침 3.14 12번,
+     * `company.slipcount`): and "명세서로 맞춰 본 분 3명", the server's payslip checks of that version (no amounts), the heavier word.
+     */
+    private fun label(s: SharedSetup, all: List<SharedSetup>): String = label(s, all, slips = runCatching {
+        c.flags.on(com.bamnat.core.flags.FlagCatalog.SLIP_COUNT) }.getOrDefault(false))
 
     companion object {
         /** Taken in this app run, so trying another payslip takes nothing again (a restart forgets them, as [PendingWays]). */
         private val taken = java.util.Collections.synchronizedMap(LinkedHashMap<String, String>())
+
+        /** [label] with the payslip count when [slips] (the 3.14 row is on). */
+        internal fun label(s: SharedSetup, all: List<SharedSetup>, slips: Boolean): String = listOfNotNull(
+            s.dept.ifEmpty { "부서 없음" },
+            s.version?.takeIf { all.count { o -> o.dept == s.dept } > 1 }?.let { "${it}판" },
+            s.persons.takeIf { it > 0 }?.let { "맞아요 $it" },
+            s.checked.takeIf { slips && it > 0 }?.let { "명세서로 맞춰 본 분 ${it}명" },
+        ).joinToString(" · ")
     }
+
 }

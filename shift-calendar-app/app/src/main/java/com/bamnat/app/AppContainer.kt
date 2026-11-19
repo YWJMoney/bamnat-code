@@ -1280,12 +1280,14 @@ class AppContainer(context: Context) {
                 launch { com.bamnat.app.calendar.DateNoticeAlarm.follow(this@AppContainer) }
                 // 1.37 [LEDH-09] 퇴근 뒤 가계부 정리 알림 follows the same roster and its own switch, in the same job (시작 예산).
                 combine(scheduleRepository.snapshot, settingsRepository.settings.map { listOf(it.leaveTimeNotice, it.dayCloseNotice, it.workStyle,
-                    it.shiftPreviewNotice, it.shiftPreviewHour) }.distinctUntilChanged()) { _, _ -> Unit }
+                    it.shiftPreviewNotice, it.shiftPreviewHour, it.bossFilingNotice) }.distinctUntilChanged()) { _, _ -> Unit }
                     .debounce(500).collect {
                         com.bamnat.app.alarm.LeaveTimeNotice.reschedule(appContext)
                         com.bamnat.app.money.DayCloseNotice.reschedule(appContext)
                         // 1.38 [LEDH-24] 근무 전 한 줄 예고, in the same job (시작 예산).
                         com.bamnat.app.money.ShiftPreviewNotice.reschedule(appContext)
+                        // 2.0.0 [RVJ-96] 신고·지급 기한 알림 (9시 하루 한 번), in the same job (시작 예산).
+                        com.bamnat.app.boss.BossFilingNotice.reschedule(appContext)
                     }
             }
             // [LEAVE-03] 연차 사용 촉진 notices follow the ledger's lots (제61조 dates) and their switch.
@@ -1308,13 +1310,18 @@ class AppContainer(context: Context) {
                     settingsRepository.settings.map { listOf(it.plazaNews, it.plazaRulesAgreed, it.phoneCalendars, it.alarmsEnabled) },
                     companyStore.sent, companyStore.applied,
                     received.calendars.map { all -> all.isEmpty() to all.filter { !it.gone && com.bamnat.app.share.RosterFollower.followed(it) }.map { it.id } },
-                ) { a, _, _, r -> a to r }
+                    // 2.0.0 [RVJ-83] SPREAD-38: which leader links are put in by themselves, for the '앱으로 받음' mark (no job of its own).
+                    received.calendars.map { all -> all.filter(com.bamnat.app.share.AppMark::candidate).map { it.id to it.expiresAt } }.distinctUntilChanged(),
+                ) { a, _, _, r, m -> Triple(a, r, m) }
                     .distinctUntilChanged()
                     .collect {
                         if (com.bamnat.app.company.PlazaNewsJob.wanted(this@AppContainer)) com.bamnat.app.company.PlazaNewsJob.schedule(appContext)
                         else com.bamnat.app.company.PlazaNewsJob.cancel(appContext)
                         // 1.39 [TEAM-22] The 6-hour look runs while a received link is followed (no job of its own in the start's budget).
                         com.bamnat.app.share.RosterFollower.sync(appContext, this@AppContainer)
+                        // [RVJ-83] The mark follows 바로 넣기 on or off and a link taken out; asks nothing while there is none and none was
+                        // left (the flag waits for 처리방침 3.14).
+                        appScope.launch { runCatching { com.bamnat.app.share.AppMark.sync(this@AppContainer) } }
                     }
             }
             // 1.39 [TEAM-22] D9: once a start, a followed link is asked a little after the month is up, so a 리더's change made while

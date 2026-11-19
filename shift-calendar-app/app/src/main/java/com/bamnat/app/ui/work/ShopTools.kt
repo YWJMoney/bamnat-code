@@ -246,7 +246,8 @@ private fun StaffCostCard(calendarId: String, book: MoneyBook, month: YearMonth)
     if (place != null) {
         LedgerCostCard(place, sales, month, hadRoster = roster.staff.isNotEmpty(), onLedger = { ledgerOpen = true }, onOld = { open = true })
         if (open) StaffScreen(calendarId, month) { open = false }
-        if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }) { ledgerOpen = false }
+        // 2.0.0 [RVJ-100] The card's own 가게 (the first, the one the 근무표 moved into), whichever was looked at last.
+        if (ledgerOpen) PayrollScreen(roster, month.takeIf { it != YearMonth.from(Today.date()) }, placeId = place.id) { ledgerOpen = false }
         return
     }
     SectionCard(title = "직원 인건비 (${month.monthValue}월)", trailing = {

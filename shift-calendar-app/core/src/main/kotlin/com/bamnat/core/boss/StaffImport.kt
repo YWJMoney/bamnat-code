@@ -3,7 +3,9 @@ package com.bamnat.core.boss
 import com.bamnat.core.imports.StaffRow
 import com.bamnat.core.pay.RateTable
 import com.bamnat.core.work.StaffShift
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.LocalTime
 
 /**
  * 1.38 가져오기 (사용자 2026-11-05 "종이 사진이나 엑셀 표, PDF 등 어떤 형식이든"): a staff list read from any file (the 인식 갈래's
@@ -43,16 +45,83 @@ object StaffImport {
                 weekly = r.weekly.mapValues { (_, t) -> StaffShift(t.first, t.second) },
                 insurance = Insurance(tax = r.tax ?: if (form == WageForm.DAY) StaffTax.DAILY else StaffTax.WAGE, foreign = r.foreign ?: false),
             )
-            // 2.0.0 [RVJ-16] 검토 BOSS-60: a person brought in by a list gets the 4대보험 the law puts them in, as one added by hand
-            // ([InsuranceRules.defaultFor]); the 대장 says why any is left out. [RVJ-40] The list's 소득세 칸 decides first: 3.3%는 근로자가
-            // 아니라 4대보험이 없고, 일용은 고용보험부터 (국민연금·건강보험은 한 달 넘게 월 8일 이상이면, [InsuranceRules.of]).
-            val law = InsuranceRules.defaultFor(bare, legalBreaks, on)
-            val ins = when (bare.insurance.tax) {
-                StaffTax.BIZ -> bare.insurance
-                StaffTax.DAILY -> bare.insurance.copy(employment = true)
-                else -> law.copy(foreign = bare.insurance.foreign)
-            }
-            Line(bare.copy(insurance = ins), check, already = !have.add(norm(r.name)), noAmount = noAmount)
+            Line(bare.copy(insurance = insured(bare, legalBreaks, on)), check, already = !have.add(norm(r.name)), noAmount = noAmount)
         }
+    }
+
+    /**
+     * 2.0.0 [RVJ-16] 검토 BOSS-60: a person brought in by a list gets the 4대보험 the law puts them in, as one added by hand
+     * ([InsuranceRules.defaultFor]); the 대장 says why any is left out. [RVJ-40] The list's 소득세 칸 decides first: 3.3%는 근로자가
+     * 아니라 4대보험이 없고, 일용은 고용보험부터 (국민연금·건강보험은 한 달 넘게 월 8일 이상이면, [InsuranceRules.of]).
+     */
+    private fun insured(bare: StaffMember, legalBreaks: Boolean, on: LocalDate): Insurance = when (bare.insurance.tax) {
+        StaffTax.BIZ -> bare.insurance
+        StaffTax.DAILY -> bare.insurance.copy(employment = true)
+        else -> InsuranceRules.defaultFor(bare, legalBreaks, on).copy(foreign = bare.insurance.foreign)
+    }
+
+    /**
+     * 2.0.0 [RVJ-97] 검토 U05c-02: what the 사장님 changes on a line in the 가져오기 창 before adding it: 시급·일급·월급, the sum,
+     * 소득세 떼는 법 and the usual week. Kept as a short string through a rotation ([encode]).
+     */
+    data class Edit(val form: WageForm, val base: Long, val tax: StaffTax, val weekly: Map<DayOfWeek, StaffShift>) {
+        fun encode(): String = listOf(form.name, base.toString(), tax.name,
+            weekly.entries.sortedBy { it.key }.joinToString(",") { (d, t) -> "${d.value}=${t.start}-${t.end}" }).joinToString("|")
+
+        companion object {
+            fun of(m: StaffMember) = Edit(m.form, m.base, m.insurance.tax, m.weekly)
+
+            fun decode(s: String): Edit? = runCatching {
+                val (form, base, tax, week) = s.split("|").let { if (it.size == 4) it else error("parts") }
+                Edit(WageForm.valueOf(form), base.toLong(), StaffTax.valueOf(tax), week.split(",").filter { it.isNotBlank() }.associate { d ->
+                    val (day, span) = d.split("=")
+                    val (a, b) = span.split("-")
+                    DayOfWeek.of(day.toInt()) to StaffShift(LocalTime.parse(a), LocalTime.parse(b))
+                })
+            }.getOrNull()
+        }
+    }
+
+    /**
+     * [RVJ-97] [l] with [e] put in: the member as it will be saved, with the 4대보험 the law puts them in worked out again from the
+     * new 형태·주 시간·소득세 ([insured]), and the 확인 lines of each field that changed taken away (the 사장님 has looked at it). The
+     * 최저시급 line is said again from the new sum. Cells the reader could not read stay named.
+     */
+    fun edit(l: Line, e: Edit, on: LocalDate, legalBreaks: Boolean = true): Line {
+        val m = l.member
+        val base = e.base.coerceAtLeast(0)
+        val baseChanged = base != m.base
+        val minimum = RateTable.on(on).minimumHourlyWage
+        val rest = l.check.filterNot { c ->
+            c.contains("최저시급") ||
+                (baseChanged && (c == "금액" || c.endsWith("적어 주세요"))) ||
+                (e.form != m.form && c == "시급·월급·일급") ||
+                (e.weekly != m.weekly && c.startsWith("근무 요일·시간")) ||
+                (e.tax != m.insurance.tax && c == "소득세 떼는 법")
+        }
+        val low = if (e.form == WageForm.HOUR && base in 1 until minimum) "${on.year}년 최저시급 ${"%,d원".format(minimum)}보다 적어요" else null
+        val at = if (rest.firstOrNull()?.let { it == "금액" || it.endsWith("적어 주세요") } == true) 1 else 0
+        val check = if (low == null) rest else rest.toMutableList().apply { add(at, low) }
+        val bare = m.copy(form = e.form, base = base, weekly = e.weekly, insurance = Insurance(tax = e.tax, foreign = m.insurance.foreign))
+        return l.copy(member = bare.copy(insurance = insured(bare, legalBreaks, on)), check = check, noAmount = base <= 0)
+    }
+
+    /**
+     * [RVJ-97] The line's 4대보험 in one line: what the law puts the person in, or why none (3.3%, 주 15시간 미만, no week yet),
+     * so the 사장님 sees it before adding instead of opening each one after.
+     */
+    fun insuranceSay(m: StaffMember, legalBreaks: Boolean = true): String {
+        val i = m.insurance
+        val names = listOfNotNull("국민연금".takeIf { i.pension }, "건강보험".takeIf { i.health }, "고용보험".takeIf { i.employment })
+        val weekly = m.weekly.values.sumOf { it.paidMinutes(legalBreaks) }
+        val why = when {
+            i.tax == StaffTax.BIZ -> "3.3%로 주는 분은 4대보험이 없어요"
+            i.tax == StaffTax.DAILY -> "한 달 넘게 월 8일 이상이면 국민연금·건강보험도(확인 필요)"
+            names.isEmpty() && m.form != WageForm.MONTH && weekly == 0 -> "일하는 요일·시간을 넣으면 채워요"
+            names.isEmpty() && m.form != WageForm.MONTH && weekly < InsuranceRules.WEEK_MINUTES -> "주 15시간 미만이라 빠져요"
+            i.foreign -> "외국인은 나라·체류자격에 따라 국민연금·고용보험이 달라요"
+            else -> null
+        }
+        return (if (names.isEmpty()) "4대보험 없음" else "4대보험 법대로 " + names.joinToString("·")) + (why?.let { " · $it" } ?: "")
     }
 }

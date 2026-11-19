@@ -278,6 +278,16 @@
             android:name=".money.DayCloseReceiver"
             android:exported="false" />
 
+        <!-- 2.0.0 [RVJ-96] 사장님 신고·지급 기한 3일 전 알림. -->
+        <receiver
+            android:name=".boss.BossFilingReceiver"
+            android:exported="false" />
+
+        <!-- 2.0.0 [RVJ-99] 검토 PAYU-15: a followed 리더 link is looked at once before the next work alarm. -->
+        <receiver
+            android:name=".share.RosterFollowAheadReceiver"
+            android:exported="false" />
+
         <!-- 1.32 [WTYP-11][WTYP-29] 희망 오프 신청 마감, 코인 12월 31일 시가 기록. -->
         <receiver
             android:name=".calendar.DateNoticeReceiver"

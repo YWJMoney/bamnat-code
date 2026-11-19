@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,8 +42,10 @@ import com.bamnat.core.boss.Workplace
 import com.bamnat.core.team.TeamCall
 import com.bamnat.core.team.TeamCover
 import com.bamnat.core.time.Today
+import com.bamnat.core.work.StaffShift
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.time.LocalTime
 import com.bamnat.app.ui.theme.bamnat
 
 private fun share(context: android.content.Context, text: String) {
@@ -59,8 +62,13 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
     val context = LocalContext.current
     val app = context.appContainer
     val scope = rememberCoroutineScope()
-    val shift = remember(staff, work, absentId, date) { BossCover.gapShift(staff, work, absentId, date) }
-    val list = remember(place, staff, work, absentId, date) { BossCover.candidates(place, staff, work, absentId, date) }
+    // [RVJ-101] 검토 U05c-08: the hours are the day's own (RVJ-85), and the 사장님 can change them before asking or putting anyone in. Kept as
+    // "HH:mm-HH:mm" so a turned screen keeps them.
+    val own = remember(staff, work, absentId, date) { BossCover.gapShift(staff, work, absentId, date) }
+    var set by rememberSaveable(absentId, date) { mutableStateOf("") }
+    val shift = remember(set, own) { hoursOf(set) ?: own }
+    var picking by remember { mutableStateOf<Boolean?>(null) }
+    val list = remember(place, staff, work, absentId, date, shift) { BossCover.candidates(place, staff, work, absentId, date, shift) }
     var picked by remember(list) { mutableStateOf(list.filter { it.ok }.take(3).map { it.staff.id }.toSet()) }
     var busy by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf<String?>(null) }
@@ -71,7 +79,11 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                 style = MaterialTheme.typography.bodyMedium)
             Text("그날 쉬는 직원만, 급여 대장과 같은 계산으로 더 드는 돈이 적은 순이에요(4대보험 사장님 몫 포함).",
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (shift == null) Text("이날 평소 근무 시간이 없어요. 직원 정보에서 평소 근무를 넣으면 찾을 수 있어요.", style = MaterialTheme.typography.bodyMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { picking = true }) { Text(if (shift == null) "시간 정하기" else "시간 고치기") }
+                if (set.isNotEmpty() && own != null) TextButton(onClick = { set = "" }) { Text("원래 시간으로") }
+            }
+            if (shift == null) Text("이날 평소 근무 시간이 없어요. 시간을 정하면 찾을 수 있어요.", style = MaterialTheme.typography.bodyMedium)
             else if (list.isEmpty()) Text("이날 쉬는 직원이 없어요.", style = MaterialTheme.typography.bodyMedium)
             list.forEach { cand ->
                 val on = cand.staff.id in picked
@@ -86,7 +98,7 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     TextButton(enabled = !busy, onClick = {
-                        BossCover.cover(staff, work, absentId, date, cand.staff.id)?.let { row -> app.appScope.launch { app.phaseThree.setWork(row.staffId, date, row) } }
+                        BossCover.cover(staff, work, absentId, date, cand.staff.id, shift)?.let { row -> app.appScope.launch { app.phaseThree.setWork(row.staffId, date, row) } }
                         onDismiss()
                     }) { Text("넣기") }
                 }
@@ -106,12 +118,26 @@ internal fun BossCoverDialog(place: Workplace, staff: List<StaffMember>, work: L
             }
         }) { Text("${picked.size}명에게 요청 보내기") }
     }, dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } })
+    picking?.let { isStart ->
+        val now = shift ?: StaffShift(LocalTime.of(9, 0), LocalTime.of(18, 0))
+        com.bamnat.app.ui.components.TimePickerDialog(title = if (isStart) "몇 시부터" else "몇 시까지", initial = if (isStart) now.start else now.end,
+            onDismiss = { picking = null }) { t ->
+            set = if (isStart) "$t-${now.end}" else "${now.start}-$t"
+            picking = if (isStart) false else null
+        }
+    }
+}
+
+/** [RVJ-101] "HH:mm-HH:mm" as the hours it holds; blank or unreadable → none. */
+private fun hoursOf(s: String): StaffShift? = s.takeIf { it.contains('-') }?.let { h ->
+    runCatching { StaffShift(LocalTime.parse(h.substringBefore('-')), LocalTime.parse(h.substringAfter('-'))) }.getOrNull()
 }
 
 /** 1.38 [P3-X-01] 대타 요청 ②: who has seen it, who said yes, and the first yes one press from the 대근 row. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMember>, work: List<StaffWork>) {
+internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMember>, work: List<StaffWork>,
+                          /** 2.0.0 [RVJ-95] The 관리 화면's 할 일 '대타: …님이 들어갈 수 있어요' brings the card into view with it. */ modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val app = context.appContainer
     val scope = rememberCoroutineScope()
@@ -119,8 +145,9 @@ internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMem
     var note by remember { mutableStateOf<String?>(null) }
     val names = staff.associateBy { it.id }
     fun name(id: String) = names[id]?.name?.ifBlank { "직원" } ?: "?"
-    val shift = BossCover.gapShift(staff, work, call.gap.memberId, call.gap.date)
-    SectionCard(title = "대타 ${Fmt.monthDay(call.gap.date)} · ${name(call.gap.memberId)}") {
+    // [RVJ-101] The hours asked for are the call's own (set before sending); an older call has none and reads the day's.
+    val shift = call.hours ?: BossCover.gapShift(staff, work, call.gap.memberId, call.gap.date)
+    SectionCard(title = "대타 ${Fmt.monthDay(call.gap.date)} · ${name(call.gap.memberId)}", modifier = modifier) {
         call.taken?.let { t ->
             Text("${name(t)}님이 들어가요. 급여 대장에 대근으로 넣었어요.", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
             TextButton(onClick = { scope.launch { BossCallSync.end(app, place.id, call.id) } }) { Text("이 카드 닫기") }
@@ -136,7 +163,7 @@ internal fun BossCallCard(place: Workplace, call: TeamCall, staff: List<StaffMem
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
                     color = if (a == true) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                 if (a == true) Button(enabled = !busy, onClick = {
-                    BossCover.cover(staff, work, call.gap.memberId, call.gap.date, id)?.let { row -> app.appScope.launch { app.phaseThree.setWork(row.staffId, row.date, row) } }
+                    BossCover.cover(staff, work, call.gap.memberId, call.gap.date, id, call.hours)?.let { row -> app.appScope.launch { app.phaseThree.setWork(row.staffId, row.date, row) } }
                     app.appScope.launch { BossCallSync.take(app, place.id, call.id, id) }
                 }) { Text("${name(id)}님 넣기") }
             }

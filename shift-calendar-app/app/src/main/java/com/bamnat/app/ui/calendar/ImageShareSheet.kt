@@ -104,9 +104,10 @@ fun ImageShareSheet(
         ) {
             Text("${month.monthValue}월 사진으로 보내기", style = MaterialTheme.typography.titleLarge)
             // 2.0.0 (조건 1·2): one quiet line that goes there, not a button over this sheet's own picture.
+            // [RVJ-79] (HQ-125) '만들기' is the line's place word, in the blue every tappable line uses.
             yearRecap?.let { (title, open) ->
-                com.bamnat.app.ui.components.ToneLine("$title 사진도 만들 수 있어요 · 만들기", tone = com.bamnat.app.ui.theme.Tone.Plain,
-                    style = MaterialTheme.typography.bodyMedium, onClick = open)
+                com.bamnat.app.ui.components.ToneLine("$title 사진도 만들 수 있어요", tone = com.bamnat.app.ui.theme.Tone.Plain,
+                    style = MaterialTheme.typography.bodyMedium, action = "만들기", onClick = open)
             }
             Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                 val bmp = preview

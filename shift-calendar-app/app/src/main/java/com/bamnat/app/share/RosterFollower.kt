@@ -192,11 +192,15 @@ object RosterFollower {
         val ids = c.received.calendars.value.filter { !it.gone && followed(it) }.map { it.id }
         for (id in ids) refresh(c, id, quiet = true)
         sync(c.appContext, c)
+        // 2.0.0 [RVJ-83] SPREAD-38: after the look, the '앱으로 받음' marks follow what the links say now (the leader asks, the link's time).
+        runCatching { AppMark.sync(c) }
     }
 
     /** Starts or stops [RosterFollowJob] by whether any link is followed. */
     fun sync(context: Context, c: AppContainer) {
         if (c.received.calendars.value.any { !it.gone && followed(it) }) RosterFollowJob.schedule(context) else RosterFollowJob.cancel(context)
+        // 2.0.0 [RVJ-99] 검토 PAYU-15: and the look before the next work alarm.
+        runCatching { RosterFollowAhead.reschedule(context) }
     }
 
     /** 2.0.0 [RVH-57] The way back of a kept day in [com.bamnat.app.data.AutoTidy]: the link's day put into my calendar. */
@@ -260,6 +264,11 @@ object RosterFollower {
         else -> ShiftOverride.None
     }
 
+    /** 2.0.0 [RVJ-99] Until when a notice of a change is silent: the look just before a work alarm ([RosterFollowAhead]) wakes no one. */
+    @Volatile private var hushTill = 0L
+
+    internal fun hush(ms: Long) { hushTill = Today.millis() + ms }
+
     /** Keeps the note with the link and says it once in a notice (held while asleep like other quiet news is not needed: it has a sound for the alarms' sake). */
     private fun said(c: AppContainer, id: String, note: FollowNote) {
         c.received.setNote(id, note)
@@ -272,6 +281,7 @@ object RosterFollower {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(Notifications.open(c.appContext, NoticeLinks.Target.TODAY, 2232))
             .setAutoCancel(true)
+            .setSilent(Today.millis() < hushTill)
             // 1.39 PC c0ca3d9f: on its own, so Android never bundles it with 자는 중 (whose ‘깼어요’ then hid under a fold).
             .setGroup(Notifications.GROUP_ROSTER + id).setGroupSummary(true)
             .build()

@@ -38,6 +38,7 @@ import com.bamnat.core.formula.LogicVerb
 import com.bamnat.core.formula.NoticeOverlap
 import com.bamnat.core.work.WorkStyle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
@@ -62,7 +63,8 @@ object NoticeBoard {
      */
     data class Own(val key: String, val label: (WorkStyle?) -> String, val does: (WorkStyle?) -> String, val get: (AppSettings) -> Boolean,
                    val set: (AppSettings, Boolean) -> AppSettings, val shows: (WorkStyle?) -> Boolean, val channel: String? = null,
-                   val onlyChannel: Boolean = false, val after: ((AppContainer) -> Unit)? = null)
+                   val onlyChannel: Boolean = false, val after: ((AppContainer) -> Unit)? = null,
+                   /** 2.0.0 [RVJ-96] Only on a phone with a 급여 대장 ([rememberLedgerOn]), whatever the kind of work. */ val ledger: Boolean = false)
 
     private fun planned(s: WorkStyle?) = s?.usesPayEngine != false
     private fun nights(s: WorkStyle?) = s == null || s == WorkStyle.SHIFT
@@ -120,6 +122,10 @@ object NoticeBoard {
         // 2.0.0 [RVH-41] 검토 T30-78: what is received is a 근무표 only where there is one.
         Own("plazaNews", { "밤낮 소식" }, { "받은 ${if (planned(it)) "근무표" else "달력"}·광장·마을 장터에 새 소식이 있으면 하루 한 번 묶어서 소리 없이 알려 줘요" },
             { it.plazaNews }, { s, on -> s.copy(plazaNews = on) }, { true }, Notifications.PLAZA_CHANNEL_ID),
+        // 2.0.0 [RVJ-96] 검토 U05c-05·I05ca-03 사장님 신고·지급 기한 (the same switch as on the 급여 대장's 다가올 신고·지급).
+        Own("bossFilingNotice", { com.bamnat.app.boss.BossFilingNotice.ROW },
+            { "급여 지급·원천세·4대보험 신고 기한 ${com.bamnat.core.boss.BossFilings.REMIND_DAYS}일 전 아침 9시에 한 번 알려 줘요. ‘했어요’를 누른 것은 알리지 않아요" },
+            { it.bossFilingNotice }, { s, on -> s.copy(bossFilingNotice = on) }, { true }, Notifications.FILING_CHANNEL_ID, ledger = true),
         // 1.36 [PUSH-01] 문의 답: no switch in the app, only the phone's channel (소리와 함께 바로).
         Own("inquiryReply", { INQUIRY_REPLY_ROW }, { "답이 오면 소리와 함께 바로 알려 줘요. 소리·끄기는 휴대폰 설정에서 정해요" },
             { true }, { s, _ -> s }, { true }, Notifications.INQUIRY_CHANNEL_ID, onlyChannel = true),
@@ -130,7 +136,7 @@ object NoticeBoard {
      * page hides its switch too, and its words are another kind's (조건 13, 유형 낱말 검사).
      */
     @Suppress("UNUSED_PARAMETER")
-    fun shown(settings: AppSettings, style: WorkStyle?): List<Own> = OWN.filter { it.shows(style) }
+    fun shown(settings: AppSettings, style: WorkStyle?, ledger: Boolean = false): List<Own> = OWN.filter { it.shows(style) && (!it.ledger || ledger) }
 
     /** My rules that send an 알림. */
     fun noticeRules(s: AppSettings): List<LogicRule> = Logic.decode(s.logic).rules.filter { r -> r.acts.any { it.verb == LogicVerb.NOTIFY } }
@@ -140,6 +146,19 @@ object NoticeBoard {
         LogicStore(c.appContext).setOff(r.key, !on)
         LogicRunner.rulesChanged(c)
     }
+}
+
+/**
+ * 2.0.0 [RVJ-96] A 급여 대장 on this phone: 사장님 급여 on and a 사업장 made. Its 신고·지급 기한 알림 is on the board and found by 설정 찾기
+ * only then (a 교대 근무자 never sees a 사장님's notice).
+ */
+@Composable
+internal fun rememberLedgerOn(): Boolean {
+    val c = LocalContext.current.appContainer
+    val rows by c.flags.byKey.collectAsStateWithLifecycle()
+    if (rows[com.bamnat.core.flags.FlagCatalog.BOSS_PAYROLL]?.on != true) return false
+    val places by remember(c) { c.phaseThree.workplaces.map { it.isNotEmpty() } }.collectAsStateWithLifecycle(false)
+    return places
 }
 
 /** 2.0.0 [RVO-22] 문의 답 알림: the inquiry channel's row (설정 › 알림과 잠 and the board). */
@@ -191,7 +210,7 @@ fun NoticeBoardCard(startOpen: Boolean = false, modifier: Modifier = Modifier,
     val overlaps = remember(settings, tick) {
         NoticeOverlap.now(Logic.decode(settings.logic), c.recipes.pieces.noticesOn(settings), ruleOn)
     }
-    val own = NoticeBoard.shown(settings, style)
+    val own = NoticeBoard.shown(settings, style, rememberLedgerOn())
     val onOwn = own.filter { it.get(settings) }
     val offOwn = own.filter { !it.get(settings) }
     val onRules = rules.filter(ruleOn)

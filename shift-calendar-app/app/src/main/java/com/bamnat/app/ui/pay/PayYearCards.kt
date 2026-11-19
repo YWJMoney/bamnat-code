@@ -58,9 +58,12 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
     if (profile.taxMode != TaxMode.INSURANCE_4) {
         val scope = rememberCoroutineScope()
         SectionCard(title = "${month.year}년 연말정산 미리보기") {
-            Text("연말정산은 4대보험과 소득세를 떼는 월급에서 미리 볼 수 있어요. 지금 세금 방식은 ‘${profile.taxMode.label}’이에요.",
+            // 2.0.0 [RVJ-80] 검토 T04-05: 일용근로소득 is 분리과세 (소득세법 제14조 제3항 제2호), so no 연말정산 and no way to switch to.
+            val daily = profile.taxMode == TaxMode.DAILY_WORKER
+            Text(if (daily) "일용근로로 뗀 소득세는 그것으로 끝나요. 연말정산·5월 신고에 넣지 않아요."
+                else "연말정산은 4대보험과 소득세를 떼는 월급에서 미리 볼 수 있어요. 지금 세금 방식은 ‘${profile.taxMode.label}’이에요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (calendarId != null) TextButton(onClick = { scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, TaxMode.INSURANCE_4) } }) {
+            if (calendarId != null && !daily) TextButton(onClick = { scope.launch { com.bamnat.app.tax.TaxWay.pick(c, calendarId, TaxMode.INSURANCE_4) } }) {
                 Text("4대보험으로 바꾸기")
             }
         }
@@ -115,8 +118,9 @@ internal fun YearEndCard(profile: PayProfile, snapshot: ScheduleSnapshot, month:
         Text(if (x.projectedMonths > 0) "1~${month.monthValue}월은 근무 기록, ${x.projectedMonths}달은 근무표대로 셌어요"
             else "1~${month.monthValue}월 근무 기록으로 셌어요",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (profile.insuranceOff.isNotEmpty()) Text("떼지 않는 ${profile.insuranceOff.joinToString("·") { it.label }}은 공제에서 뺐어요",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVJ-81] With the 생년, the lines the age leaves out too.
+        profile.insuranceOffOn(month).takeIf { it.isNotEmpty() }?.let { off -> Text("떼지 않는 ${off.joinToString("·") { it.label }}은 공제에서 뺐어요",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Line("근로소득공제", "−" + won(x.earnedDeduction))
         if (x.cardDeduction > 0) Line("신용카드 등 소득공제", "−" + won(x.cardDeduction))
         if (x.extras.hasHometax) Text("카드는 홈택스 1~9월 숫자에 10월부터 가계부를 더했어요", style = MaterialTheme.typography.bodySmall,

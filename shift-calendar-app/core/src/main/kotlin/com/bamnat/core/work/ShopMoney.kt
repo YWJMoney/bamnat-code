@@ -25,9 +25,39 @@ data class ShopMoney(
     val simpleTax: Boolean = false,
     /** [SHOP-04] 업종별 부가가치율 for 간이과세, in percent. */
     val valueAddedPercent: Int = 15,
+    /**
+     * 2.0.0 [RVJ-84] 검토 BOSS-63·T05c-07: the trade [valueAddedPercent] was chosen by, null until the shop picks one (a recipe sets the
+     * rate alone). Two trades share 30%, so the rate alone cannot say which.
+     */
+    val vatTrade: SimpleVatTrade? = null,
 ) {
     /** "1.5%" */
     val feeLabel: String get() = (cardFeeBp / 100.0).let { if (it == it.toLong().toDouble()) "${it.toLong()}%" else "%.2f".format(it).trimEnd('0') + "%" }
+
+    /** [RVJ-84] The trade chosen, while the rate is still its own (a recipe that sets another rate leaves it unchosen). */
+    val tradeChosen: SimpleVatTrade? get() = vatTrade?.takeIf { it.percent == valueAddedPercent }
+
+    /** [RVJ-84] The trade the rate is for: as chosen, or the only trade with that rate; null when the rate does not say (30%, or none). */
+    val tradeShown: SimpleVatTrade?
+        get() = tradeChosen ?: SimpleVatTrade.entries.singleOrNull { it.percent == valueAddedPercent }
+
+    /** [RVJ-84] 간이과세 with [trade]'s 부가가치율. */
+    fun withTrade(trade: SimpleVatTrade): ShopMoney = copy(vatTrade = trade, valueAddedPercent = trade.percent)
+}
+
+/**
+ * 2.0.0 [RVJ-84] 검토 BOSS-63·T05c-07 (간이과세 부가세 어림이 업종과 상관없이 15%였어요): the 업종별 부가가치율 a 간이과세자 pays by,
+ * 부가가치세법 제63조 제2항 and 같은 법 시행령 제111조 제2항의 표 (개정 2021. 2. 17.; law.go.kr 시행령 2026-04-01 시행판, 읽은 날
+ * 2026-11-19). The table's six rows, in its order and words; [label] is the short name the card shows.
+ */
+enum class SimpleVatTrade(val label: String, val rows: String, val percent: Int) {
+    RETAIL("소매·음식점", "소매업, 재생용 재료수집 및 판매업, 음식점업", 15),
+    MAKING("제조·농업·임업·어업", "제조업, 농업·임업 및 어업, 소화물 전문 운송업", 20),
+    LODGING("숙박", "숙박업", 25),
+    BUILD("건설·운수·정보통신", "건설업, 운수 및 창고업(소화물 전문 운송업은 빼요), 정보통신업", 30),
+    FINANCE("금융·전문 서비스·임대", "금융 및 보험 관련 서비스업, 전문·과학 및 기술서비스업(인물사진·행사용 영상 촬영업은 빼요), " +
+        "사업시설관리·사업지원 및 임대서비스업, 부동산 관련 서비스업, 부동산임대업", 40),
+    SERVICE("그 밖의 서비스", "미용·세탁·수리 같은 그 밖의 서비스업", 30),
 }
 
 /**

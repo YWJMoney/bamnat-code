@@ -274,6 +274,11 @@ data class AppSettings(
     val workTimeFrom: Long = com.bamnat.core.money.WorkTime.DEFAULT_FROM,
     /** 1.37 [LEDH-09] 퇴근 시각 하루 마감: the 가계부's look 30 minutes after work ends (else 21:00). Off by default. In the backup. */
     val dayCloseNotice: Boolean = false,
+    /**
+     * 2.0.0 [RVJ-96] 검토 U05c-05·I05ca-03 사장님 신고·지급 알림: a 신고·납부·급여 지급 day [com.bamnat.core.boss.BossFilings.REMIND_DAYS] days
+     * ahead, said once at 9시, for a phone with a 급여 대장. On by default (a missed 기한 costs a 가산세). In the backup.
+     */
+    val bossFilingNotice: Boolean = true,
     /** 1.38 [LEDH-24] 근무 전 한 줄 예고: the evening before a work day that spends on something more, at [shiftPreviewHour]. Off by default. In the backup. */
     val shiftPreviewNotice: Boolean = false,
     val shiftPreviewHour: Int = com.bamnat.core.money.ShiftPreview.DEFAULT_HOUR,
@@ -588,6 +593,7 @@ class SettingsRepository(context: Context) {
             moneyByPayCycle = prefs.getBoolean(K_MONEY_CYCLE, d.moneyByPayCycle),
             workTimeFrom = prefs.getLong(K_WORK_TIME, d.workTimeFrom),
             dayCloseNotice = prefs.getBoolean(K_DAY_CLOSE, d.dayCloseNotice),
+            bossFilingNotice = prefs.getBoolean(K_BOSS_FILING, d.bossFilingNotice),
             shiftPreviewNotice = prefs.getBoolean(K_SHIFT_PREVIEW, d.shiftPreviewNotice),
             shiftPreviewHour = prefs.getInt(K_SHIFT_PREVIEW_HOUR, d.shiftPreviewHour).coerceIn(0, 23),
             moneyChallenge = prefs.getString(K_MONEY_CHALLENGE, d.moneyChallenge).orEmpty(),
@@ -737,6 +743,7 @@ class SettingsRepository(context: Context) {
             .putBoolean(K_MONEY_CYCLE, s.moneyByPayCycle)
             .putLong(K_WORK_TIME, s.workTimeFrom)
             .putBoolean(K_DAY_CLOSE, s.dayCloseNotice)
+            .putBoolean(K_BOSS_FILING, s.bossFilingNotice)
             .putBoolean(K_SHIFT_PREVIEW, s.shiftPreviewNotice)
             .putInt(K_SHIFT_PREVIEW_HOUR, s.shiftPreviewHour)
             .putString(K_MONEY_CHALLENGE, s.moneyChallenge)
@@ -848,6 +855,7 @@ class SettingsRepository(context: Context) {
         const val K_MONEY_CYCLE = "money_pay_cycle"
         const val K_WORK_TIME = "work_time_from"
         const val K_DAY_CLOSE = "day_close_notice"
+        const val K_BOSS_FILING = "boss_filing_notice" // 2.0.0 [RVJ-96]
         const val K_SHIFT_PREVIEW = "shift_preview_notice"
         const val K_SHIFT_PREVIEW_HOUR = "shift_preview_hour"
         const val K_MONEY_CHALLENGE = "money_challenge"

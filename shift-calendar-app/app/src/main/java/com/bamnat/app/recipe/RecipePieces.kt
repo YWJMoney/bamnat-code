@@ -1642,7 +1642,10 @@ class RecipePieces(private val c: AppContainer) {
 
     private fun cellLabel(c: String?) = when (c) { "fill" -> "진하게"; "dot" -> "칠하지 않기"; "tint" -> "옅게"; else -> "그대로" }
 
-    private fun taxLabel(t: String) = when (t) { "WITHHOLDING_3_3" -> "3.3% 떼기"; "INSURANCE_4" -> "4대보험"; else -> "떼지 않음" }
+    // 2.0.0 [RVJ-80] A 일당 setup's 일용근로 (the 'before' side of a 작품); a 작품 itself picks only the three.
+    private fun taxLabel(t: String) = when (t) {
+        "WITHHOLDING_3_3" -> "3.3% 떼기"; "INSURANCE_4" -> "4대보험"; "DAILY_WORKER" -> com.bamnat.app.tax.TaxWay.DAILY_CHOICE; else -> "떼지 않음"
+    }
 
     private fun dayShort(d: String) = "월화수목금토일"[DayOfWeek.valueOf(d).value - 1].toString()
 

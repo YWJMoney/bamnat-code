@@ -37,4 +37,18 @@ class TeamReceiveTest {
         assertEquals("", rows[1][0])
         assertEquals("#3B82F6", TeamReceive.colors(team)["D"])
     }
+
+    /** 2.0.0 [RVJ-98] 검토 U05-06: 오늘·내일 바뀐 팀원은 6시간을 기다리지 않고 리더가 바로 알려요. */
+    @Test fun todayAndTomorrowChangesAreToldNow() {
+        val was = TeamBoard(dec, people).paint("a", dec.atDay(10), 1).paint("a", dec.atDay(11), 1).paint("b", dec.atDay(11), 9).paint("b", dec.atDay(20), 1)
+        val confirmed = was.cells.mapValues { it.value.shiftId }
+        val now = was.paint("a", dec.atDay(11), 2).paint("b", dec.atDay(11), 1).paint("b", dec.atDay(20), 2)
+        val soon = TeamReceive.soon(team, now, confirmed, dec.atDay(10))
+        assertEquals(listOf("가" to listOf("내일 D→E"), "나" to listOf("내일 O→D")), soon.map { it.member.name to it.days })
+        assertEquals("오늘 바뀐 것도", listOf("오늘 D→E"), TeamReceive.soon(team, now, confirmed, dec.atDay(11)).first().days)
+        assertTrue("20일은 오늘·내일이 아니에요", TeamReceive.soon(team, now, confirmed, dec.atDay(18)).isEmpty())
+        assertTrue("첫 확정엔 없어요", TeamReceive.soon(team, now, emptyMap(), dec.atDay(10)).isEmpty())
+        assertEquals("6병동 근무가 바뀌었어요.\n가: 내일 D→E https://s/a\n나: 내일 O→D\n자기 링크에서 바뀐 근무를 한 번 봐 주세요.",
+            TeamReceive.soonMessage(team, soon, mapOf("a" to "https://s/a")))
+    }
 }

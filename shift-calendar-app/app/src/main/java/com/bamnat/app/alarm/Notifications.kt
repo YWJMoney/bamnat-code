@@ -75,6 +75,8 @@ object Notifications {
     const val CLOCK_CHANNEL_ID = "staff_clock_v1"
     /** 1.39 [TEAM-22] 리더가 바꾼 팀 근무표가 내 달력에 들어갔어요 (또는 넣을까요?): the alarms follow it, so it is said with a sound. */
     const val ROSTER_CHANNEL_ID = "roster_follow_v1"
+    /** 2.0.0 [RVJ-96] 급여 대장의 다가올 신고·지급, 3일 전 (사장님 휴대폰). Its own channel: quieting 나갈 돈·받을 돈 keeps these. */
+    const val FILING_CHANNEL_ID = "boss_filing_v1"
     /** Before 1.11 every sleep tip made a sound here; a channel's importance cannot be lowered, so it goes. */
     private const val OLD_SLEEP_CHANNEL_ID = "sleep_tips_v1"
 
@@ -133,7 +135,8 @@ object Notifications {
     /** [TOWN-08] Whether the newest channel this version made is on the phone (one check, not a call per channel). */
     fun channelsMade(context: Context): Boolean =
         context.getSystemService(NotificationManager::class.java)?.let {
-            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null
+            it.getNotificationChannel(PLAZA_CHANNEL_ID) != null && it.getNotificationChannel(NIGHT_QUIET_CHANNEL_ID) != null &&
+                it.getNotificationChannel(FILING_CHANNEL_ID) != null
         } == true
 
     fun createChannels(context: Context) {
@@ -228,6 +231,13 @@ object Notifications {
             description = "직원이 출퇴근 링크에서 출근·퇴근을 누르면 알려요(15분쯤마다 확인, 위치는 받지 않아요)"
             group = GROUP_MONEY
         }
+        // 2.0.0 [RVJ-96] Its name is no 사장님's word: every phone's 알림 설정 lists it (조건 13), and only a 급여 대장 sends on it.
+        val filing = NotificationChannel(FILING_CHANNEL_ID, "신고·지급 기한", NotificationManager.IMPORTANCE_DEFAULT).apply {
+            description = "급여 대장을 쓸 때 급여 지급·원천세·4대보험 신고 기한 3일 전 아침에 한 번 알려요"
+            group = GROUP_MONEY
+            // Amounts (원천세·급여) are in it: the lock screen shows only that one came.
+            lockscreenVisibility = android.app.Notification.VISIBILITY_PRIVATE
+        }
         val roster = NotificationChannel(ROSTER_CHANNEL_ID, "받은 근무표 바뀜", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "보낸 분이 근무표를 바꾸면 내 달력에 넣고(근무 알람도 따라가요) 바뀐 날을 알려요. 물어보기로 둔 근무표는 넣을지 여쭤봐요"
             group = GROUP_DAY
@@ -265,7 +275,7 @@ object Notifications {
             description = "내 문의·스튜디오 부탁에 답이 오면 바로 알려요"
             group = GROUP_DAY
         }
-        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, received, inquiry, clock, roster))
+        nm.createNotificationChannels(listOf(alarm, fallback, status, day, sleeping, nightQuiet, commute, job, money, leave, memo, share, today, invest, pro, backup, plaza, rules, received, inquiry, clock, roster, filing))
         nm.deleteNotificationChannel(OLD_SLEEP_CHANNEL_ID)
         nm.deleteNotificationChannel(OLD_PLAZA_CHANNEL_ID)
     }

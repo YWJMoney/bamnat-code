@@ -20,7 +20,9 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRACKER = ROOT / "docs" / "tracker.csv"
 STATUSES = {"대기", "진행 중", "완료", "조건부", "보류", "하지 않음", "이관"}
 # [MEMO-SEL-01] 1.30: an ID may have a two-part name (MEMO-SEL-01, RULE-ED-01).
-ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2}$")
+# 2.0.0 [RVJ-100] A row of a branch that goes past 99 lines (갈래 J: RVJ-100·RVJ-101…) has a three-digit number: a row's id may have two or
+# three digits. The tags in code and in git log stay two digits as before (the many three-digit PC-…·RV…-… tags written there were never read).
+ID_RE = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2,3}$")
 TAG_RE = re.compile(r"\[((?:[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})(?:,\s*[A-Z][A-Z0-9]*(?:-[A-Z][A-Z0-9]*)?-\d{2})*)\]")
 SOURCE_GLOBS = ("app/src/**/*.kt", "core/src/**/*.kt", "app/src/**/*.xml", "*.kts", "app/*.kts")
 

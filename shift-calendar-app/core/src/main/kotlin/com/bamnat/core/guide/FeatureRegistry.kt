@@ -872,8 +872,8 @@ object FeatureRegistry {
             setOf(DAY), "${tab(DAY)} › 시간외 상한 › 바꾸기 › 직렬로 한 번에", at(Place.STATS), "교사", "교원", "군인", "직렬", "학부모 상담", "생활지도", "당직", "시간외 상한",
             under = "day.overtimeCap"),
         // 1.32 [WEAR-04] 조사 대조 C16.
-        f("wear.nextShift", "WEAR-04", "워치 다음 근무까지", "워치 화면 꾸미기에서 ‘밤낮 다음 근무까지’를 놓으면 다음 근무 시작까지(근무 중이면 끝까지) 남은 시간이 보이고, 타일에 휴대폰에서 받은 시각이 작게 나와요",
-            setOf(SHIFT, DAY, HOURLY), "워치 › 시계 화면 길게 누르기 › 꾸미기 › 밤낮 다음 근무까지", at(Place.FEATURES), "워치", "컴플리케이션", "다음 근무까지", "카운트다운", "타일", "동기화"),
+        f("wear.nextShift", "WEAR-04", "워치 다음 근무까지", "워치 화면 꾸미기에서 ‘밤낮 다음 일정까지’를 놓으면 다음 근무 시작까지(근무 중이면 끝까지) 남은 시간이 보이고, 타일에 휴대폰에서 받은 시각이 작게 나와요",
+            setOf(SHIFT, DAY, HOURLY), "워치 › 시계 화면 길게 누르기 › 꾸미기 › 밤낮 다음 일정까지", at(Place.FEATURES), "워치", "컴플리케이션", "다음 근무까지", "카운트다운", "타일", "동기화"),
         f("shift.wishOff", "WTYP-11", "희망 오프", "다음 달 쉬고 싶은 날을 ♡로 표시하고, 신청 마감 이틀 전과 당일에 고른 날 수를 알려 줘요. 고른 날은 복사해 보낼 수 있어요",
             setOf(SHIFT), "$DAY_SHEET › 희망 오프", at(Place.TODAY), "희망 오프", "희망 휴무", "오프 신청", "듀티 신청", "신청 마감", off = Off.CALENDAR),
         f("invest.yearEnd", "WTYP-29", "연말 손실 정리", "손실 난 해외 주식을 지금 값으로 팔면 올해 양도세가 얼마 줄어드는지 미리 보고, 코인이 있으면 12월 31일에 시가를 적어 두라고 알려 줘요",
@@ -948,7 +948,7 @@ object FeatureRegistry {
             setOf(SHIFT, DAY), "마을 › 광장 › 교대 광장(일근 광장) 가기", at(Place.PLAZA), "교대 광장", "일근 광장", "교대 이야기", "수면", "야간 팁"),
         // ---- 1.35 나눔 판 완성 (RCX-01..17) ----
         f("recipe.update", "RCX-03", "작품 새 판 받기", "넣은 작품에 새 판이 나오면 알려 드리고, 내가 고친 곳은 그대로 둔 채 바뀐 곳만 골라 넣어요. 둘 다 고친 곳은 따로 물어봐요",
-            ALL, "설정 맨 위 카드 › 나눔 판 › 받은 작품 › 새 판 보기", at(Place.RECIPE_MINE), "새 판", "업데이트", "레시피 갱신", "새 버전", "새 판 알림",
+            ALL, "설정 맨 위 카드 › 나눔 판 › 받은 작품 › 바뀐 점 보고 반영", at(Place.RECIPE_MINE), "새 판", "업데이트", "레시피 갱신", "새 버전", "새 판 알림",
             off = Off.ELSEWHERE, under = "recipe.browse"),
         f("recipe.request", "RCX-04", "이런 작품 있었으면 (요청 판)", "필요한 작품을 적어 두면 다른 분이 ‘만들게요’를 누르고 완성해요. 같은 걸 바라면 좋아요를 눌러요",
             ALL, "마을 › 공방 › 이런 거 있었으면", at(Place.RECIPES), "요청", "부탁", "레시피 요청", "만들어 주세요", off = Off.ELSEWHERE, under = "recipe.browse"),
@@ -1010,6 +1010,24 @@ object FeatureRegistry {
         f("boss.staff", "GROW-06", "직원 요금제", "직원 3명까지는 무료예요. 넷째부터 인원 구간(5·10·20·50명)으로 급여 대장과 명세서를 써요. 개인 프로 기능도 들어 있어요",
             setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 더하기", at(Place.STATS, "payroll"), "직원 요금제", "직원 추가", "직원 4명", "사장님 결제",
             under = "boss.payroll", flag = "boss.payroll"),
+        // 2.0.0 [RVJ-88] 검토 BOSS-68: the boss's own tools inside 급여 대장 are found by the words a boss uses ('근로계약서', '대타',
+        // '원천세'), ahead of the 알바's 근로계약서 보관 and 대타 (another kind's feature counts half in 기능 찾기).
+        f("boss.contract", "P3-X-06", "직원 근로계약서", "직원 정보로 근로계약서를 채워 링크로 서명받고, 서명본을 PDF로 남겨요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 줄 › 계약서 쓰기", at(Place.STATS, "payroll"), "근로계약서", "계약서", "계약서 쓰기",
+            "계약서 서명", "전자 서명", "알바 계약서", "직원 계약서", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.cover", "P3-X-01", "대타 찾기", "직원이 못 오는 날, 그날 일이 없는 직원을 더 드는 인건비가 적은 순으로 보여 주고 고른 사람에게 요청 링크를 보내요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 줄의 날짜 › 결근 › 저장하고 대신 일할 사람 찾기", at(Place.STATS, "payroll"), "대타",
+            "대타 찾기", "대타 요청", "대신 일할 사람", "결원", "대근", "땜빵", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.filings", "P3-X-08", "신고·지급 기한", "급여 지급일, 원천세 신고, 간이지급명세서, 4대보험 취득·상실 신고를 날짜순으로 알려 주고 신고 표(CSV)를 만들어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 다가올 신고·지급", at(Place.STATS, "payroll"), "원천세", "원천세 신고", "신고 기한",
+            "간이지급명세서", "지급명세서", "4대보험 신고", "취득 신고", "상실 신고", "근로내용확인신고", under = "boss.payroll", flag = "boss.payroll"),
+        f("boss.clock", "P3-B-11", "직원 출퇴근 기록", "위치 없이 누르는 출퇴근 링크를 직원에게 보내고, 누른 시각이 평소와 다른 날만 골라 급여 대장에 넣어요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 출퇴근 기록", at(Place.STATS, "payroll"), "출퇴근 기록", "출근 체크", "출퇴근 링크", "근태",
+            "지각 기록", under = "boss.payroll", flag = "boss.payroll"),
+        // 2.0.0 [RVJ-93] 검토 BOSS-68: '4대보험' found the 알바's and 직장인's 실수령 only; the boss's 가입 판단 ([com.bamnat.core.boss.InsuranceRules]).
+        f("boss.insurance", "BOSS-11", "직원 4대보험 가입 판단", "직원마다 주 15시간·나이로 국민연금·건강보험·고용보험 가입 대상인지 가르고, 빠지는 까닭을 직원 옆에 한 줄로 알려 줘요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 정보 › 4대보험", at(Place.STATS, "payroll"), "4대보험", "4대보험 가입", "가입 대상",
+            "국민연금", "건강보험", "고용보험", "산재보험", "사장님 몫", under = "boss.payroll", flag = "boss.payroll"),
     )
 
     private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }

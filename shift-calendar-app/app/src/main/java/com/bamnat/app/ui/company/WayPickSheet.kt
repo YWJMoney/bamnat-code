@@ -181,7 +181,7 @@ private fun MonthChips(month: YearMonth, onPick: (YearMonth) -> Unit) {
 }
 
 @Composable
-private fun PickResult(
+internal fun PickResult(
     r: WayPicker.Result,
     slip: WayPick.Slip,
     chosen: String?,

@@ -2,6 +2,7 @@ package com.bamnat.app.ui.calendar
 
 import com.bamnat.app.appContainer
 import androidx.compose.foundation.background
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -902,8 +903,9 @@ private fun CalendarEditDialog(
                         // [RVH-20] In the calendar's words: 영업·일정·투자 알람.
                         headlineContent = { Text("${com.bamnat.app.ui.shifts.alarmNoun(cal.style)} 알람 울리기") },
                         supportingContent = { Text("이 달력 ${com.bamnat.app.ui.shifts.alarmNoun(cal.style)}의 알람도 내 달력 알람처럼 울려요") },
-                        trailingContent = { Switch(checked = cal.alarms, onCheckedChange = onAlarms) },
-                        modifier = Modifier.clickable(role = Role.Switch) { onAlarms(!cal.alarms) },
+                        trailingContent = { Switch(checked = cal.alarms, onCheckedChange = null) },
+                        // 2.0.0 [RVJ-87] 검토 BOSS-66 같은 모양: one focus that says 켜짐·꺼짐.
+                        modifier = Modifier.toggleable(value = cal.alarms, role = Role.Switch, onValueChange = onAlarms),
                     )
                 } else {
                     Text("알람, 위젯, 알림, 급여 계산은 내 달력을 따라요.", style = MaterialTheme.typography.bodySmall,

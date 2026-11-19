@@ -89,6 +89,42 @@ class ShopHoursTest {
         assertNull(type(ShopKeeper.SHORT_NAME).breakStart)
     }
 
+    /**
+     * 2.0.0 [RVJ-86] 검토 BOSS-65: '영업' renamed on the 근무 종류 page is still the shop's (no second '영업'), and a 단축영업 never set
+     * by hand follows new shop hours while one set by hand keeps its own.
+     */
+    @Test fun aRenamedOpenKindStaysTheShopsAndAnUntouchedShortDayFollowsTheHours() = runBlocking {
+        ShopKeeper.apply(c, PersonalCalendar.MAIN, ShopRules(open = LocalTime.of(10, 0), close = LocalTime.of(22, 0)), today)
+        val open = type(ShopKeeper.OPEN_NAME)
+        c.scheduleRepository.saveShiftType(open.copy(name = "가게 문 엶"))
+        fun saved() = c.calendars.get(PersonalCalendar.MAIN)!!.shop!!
+        assertEquals(open.id, saved().openTypeId)
+        ShopKeeper.apply(c, PersonalCalendar.MAIN, saved().copy(open = LocalTime.of(11, 0), close = LocalTime.of(23, 0)), today)
+        assertNull("no second 영업", types().firstOrNull { !it.isOff && it.name == ShopKeeper.OPEN_NAME })
+        val renamed = types().first { it.id == open.id }
+        assertEquals(LocalTime.of(11, 0) to LocalTime.of(23, 0), renamed.start to renamed.end)
+        // 단축영업 was made with the old hours and never touched: half of the new ones now.
+        val short = type(ShopKeeper.SHORT_NAME)
+        assertEquals(LocalTime.of(11, 0) to LocalTime.of(17, 0), short.start to short.end)
+        // Set by hand on the 근무 종류 page: it stays when the hours change again.
+        c.scheduleRepository.saveShiftType(short.copy(start = LocalTime.of(12, 0), end = LocalTime.of(16, 0)))
+        ShopKeeper.apply(c, PersonalCalendar.MAIN, saved().copy(open = LocalTime.of(9, 0), close = LocalTime.of(21, 0)), today)
+        val kept = type(ShopKeeper.SHORT_NAME)
+        assertEquals(LocalTime.of(12, 0) to LocalTime.of(16, 0), kept.start to kept.end)
+        assertEquals(LocalTime.of(9, 0), types().first { it.id == open.id }.start)
+    }
+
+    /** 2.0.0 [RVJ-84] 검토 BOSS-63: the 간이과세 trade comes back from the saved calendar; one saved before 2.0.0 has none. */
+    @Test fun theShopsVatTradeComesBack() {
+        val m = com.bamnat.core.work.ShopMoney(simpleTax = true).withTrade(com.bamnat.core.work.SimpleVatTrade.LODGING)
+        assertEquals(m, CalendarBook.shopMoneyOf(CalendarBook.shopMoneyJson(m)))
+        val old = org.json.JSONObject().put("simpleTax", true).put("valueAdded", 30)
+        assertNull(CalendarBook.shopMoneyOf(old).vatTrade)
+        assertEquals(30, CalendarBook.shopMoneyOf(old).valueAddedPercent)
+        val rules = ShopRules(openTypeId = 7, shortTypeId = 8)
+        assertEquals(rules, CalendarBook.shopOf(CalendarBook.shopJson(rules)))
+    }
+
     @Test fun theShopsWeekComesBackFromTheSavedCalendar() {
         val rules = ShopRules(
             open = LocalTime.of(17, 0), close = LocalTime.of(2, 0), closedWeekdays = setOf(DayOfWeek.MONDAY),

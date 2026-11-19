@@ -124,3 +124,30 @@ private fun TeamToolSheet(groups: List<Pair<String, List<TeamTool>>>, onDismiss:
         }
     }
 }
+
+/**
+ * After 다시 확정: the links are the same, so the members are told how the change reaches them. 2.0.0 [RVJ-98] 검토 U05-06(PAYU-15):
+ * the ones whose today or tomorrow moved ([soon]) are named first with one filled 지금 알리기 (조건 2), since a phone takes up to 6 hours
+ * to follow and that is too late for tomorrow's 출근. '그래도 알리기' still sends every link.
+ */
+@Composable
+internal fun ReconfirmedDialog(version: Int, soon: List<com.bamnat.core.team.TeamReceive.Soon>, onTellSoon: () -> Unit, onSendAll: () -> Unit,
+                               onClose: () -> Unit) {
+    com.bamnat.app.ui.components.AlertDialog(onDismissRequest = onClose, title = { Text("${version}판으로 다시 확정했어요") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (soon.isNotEmpty()) {
+                Text("오늘·내일 근무가 바뀐 ${soon.size}명", style = MaterialTheme.typography.titleSmall, modifier = Modifier.semantics { heading() })
+                soon.forEach { s -> Text("${s.member.name} · ${s.days.joinToString(", ")}", style = MaterialTheme.typography.bodyMedium) }
+                Text("휴대폰에 들어가기까지 6시간이 걸릴 수 있어 지금 알려 주세요.", style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick = onTellSoon, modifier = Modifier.fillMaxWidth()) { Text("${soon.size}명에게 지금 알리기") }
+            }
+            Text("팀원 링크는 그대로이고, 링크를 열면 바뀐 근무가 보여요. 밤낮 1.39 이상을 쓰는 팀원은 6시간 안에 바뀐 날이 자기 달력과 알람에 들어가요. " +
+                "아이폰 팀원이 링크에서 '캘린더에 넣기'를 해 두었다면 그 캘린더도 몇 시간 안에 따라 바뀌어요. 그 밖의 팀원은 저절로 알지 못하니 '그래도 알리기'로 알려 주세요.",
+                style = if (soon.isEmpty()) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall,
+                color = if (soon.isEmpty()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }, confirmButton = { TextButton(onClick = onClose) { Text("알겠어요") } },
+        dismissButton = { TextButton(onClick = onSendAll) { Text("그래도 알리기") } })
+}
+

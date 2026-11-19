@@ -56,6 +56,18 @@ object FlagCatalog {
     const val CARD_FONTS = "market.cardfonts"
     /** 2.0.0 [RVM-21] The 처리방침 판 whose 7-day line names where the card fonts come from (총괄 11-12: 게시일 + 7일). */
     const val CARD_FONT_POLICY = "3.13"
+    /** 2.0.0 [RVJ-81] 결정 5: 급여 설정의 생년(선택, 휴대폰 안), once 처리방침 3.14's 7-day line names it. */
+    const val PAY_BIRTH_YEAR = "pay.birthyear"
+    /** 2.0.0 [RVJ-82] 결정 3: '명세서로 맞춰 본 분 n명' on a version's card, once 처리방침 3.14 names it among what a card shows. */
+    const val SLIP_COUNT = "company.slipcount"
+    /**
+     * 2.0.0 [RVJ-81][RVJ-82][RVJ-83] The 처리방침 판 that names all three (O's 3.14 문장표 12·13·14번). 생년 and 명세서 수 are 7-day lines and
+     * wait for [PolicyConsent.REVISION14_EFFECTIVE] (게시일 + 7일, by the server's clock) alone, as 3.13's 7-day row does (3.14 asks no phone, so
+     * a 3.14 hold would keep every phone installed before the 게시일 off until the 30-day day); 앱으로 받는 팀원 수 is the 30-day line, the 판's own day.
+     */
+    const val PAY_314_POLICY = "3.14"
+    /** 2.0.0 [RVJ-83] SPREAD-38: '앱으로 받는 팀원 n명' for a 팀 리더 (3명부터, 숫자만), once 처리방침 3.14's 30-day line names the mark. */
+    const val TEAM_APP_COUNT = "team.app_count"
     /** 1.34 [RCP-37] 좋아요·안좋아요 (with a reason) on recipes and their talk, once 3.8 names it. */
     const val RECIPE_VOTE = "recipe.vote"
     /** 1.34 [RCP-37] Writing in a recipe's talk, and (1.35) 요청 판·구독, once 3.8 names it. */
@@ -348,6 +360,50 @@ object FlagCatalog {
         default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
     )
 
+    /**
+     * 2.0.0 [RVJ-81] 결정 5 (G3-B5, 처리방침 3.14 13번 '생년(선택, 휴대폰 안)', 7일 줄): the pay setup asks a 생년 so 만 60세 국민연금 and 65세 이후
+     * 고용의 고용보험 come off 예상 실수령 by themselves ([com.bamnat.core.pay.InsuranceAge]). Nothing is sent; the field is shown from the day
+     * the 처리방침 names it. Until O's 3.14 constants are in (O 11-19: `PolicyConsent.REVISION14_EFFECTIVE`, 게시일 + 7일), it waits for the
+     * calendar's 3.14 day (the 30-day line), which is later, never earlier, than the page says.
+     */
+    val PAY_BIRTH_YEAR_FLAG = Flag(
+        PAY_BIRTH_YEAR, "급여 설정에 생년 적기",
+        what = "급여 설정의 ‘떼지 않는 보험’에 생년(선택)을 적으면 만 60세 국민연금과 65세 이후 새로 일한 곳의 고용보험을 예상 실수령에서 저절로 빼요. 생년은 휴대폰 안 급여 설정과 직접 만든 백업에만 있고 보내지 않아요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 지금처럼 ‘떼지 않는 보험’을 직접 골라요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-81", note = "2.0.0 결정 5, 3.14 문장표 13번"),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVJ-82] 결정 3 (공유급여 3-3, 처리방침 3.14 12번): a version's card in '지난달 명세서로 맞추기' says how many matched it on a payslip
+     * (the count the server keeps since 1.32 [PAYA-06], no amounts). Nothing new is sent; 3.14 names it among what a card shows (O 문장표: 7일 줄,
+     * J puts it behind the 3.14 day).
+     */
+    val SLIP_COUNT_FLAG = Flag(
+        SLIP_COUNT, "판 카드에 명세서로 맞춰 본 분 수",
+        what = "‘지난달 명세서로 맞추기’에서 판마다 ‘명세서로 맞춰 본 분 n명’을 보여요. 서버가 1.32부터 세는 명세서 확인 표시의 수이고 금액은 없어요.",
+        whyOff = "처리방침 3.14의 7일 줄 시행일(${PolicyConsent.REVISION14_EFFECTIVE.monthValue}월 ${PolicyConsent.REVISION14_EFFECTIVE.dayOfMonth}일, 게시일 + 7일)부터 서버 시각으로 저절로 켜져요. 그 전에는 판 카드에 맞아요 수만 보여요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-82", note = "2.0.0 결정 3, 3.14 문장표 12번"),
+        conditions = listOf(Condition.Date(from = PolicyConsent.REVISION14_EFFECTIVE)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
+    /**
+     * 2.0.0 [RVJ-83] SPREAD-38 (처리방침 3.14 14번, 30일 줄, 사용자 11-19 '16줄 모두'): a member's app that puts a 팀 리더's link into its own
+     * calendar by itself (자동 반영) leaves one mark on that link on the share server (the hash of a random word only that phone keeps; no
+     * name, nothing about the phone), and the leader reads how many of the team's links are read so: one number, only from 3. The share
+     * server keeps nothing before its own 3.14 switch ([RVQ-19] `POLICY_314_FROM`) either.
+     */
+    val TEAM_APP_COUNT_FLAG = Flag(
+        TEAM_APP_COUNT, "리더에게 앱으로 받는 팀원 수",
+        what = "팀원이 리더의 근무표 링크를 앱으로 받아 ‘바로 내 달력에 넣기’를 켜면 링크에 ‘앱으로 받음’ 표시 하나를 두고, 리더에게 앱으로 받는 팀원 수를 3명부터 숫자만 보여요. 이름·기기 정보는 없고 링크와 함께 지워져요.",
+        whyOff = "처리방침 3.14의 시행일(30일 줄)부터 서버 시각으로 저절로 켜져요. 그 전에는 표시를 남기지 않고 리더에게 숫자도 보이지 않아요.",
+        basis = Basis(policy = PAY_314_POLICY, requirement = "RVJ-83", note = "2.0.0 SPREAD-38, 3.14 문장표 14번"),
+        conditions = listOf(Condition.Date(policy = PAY_314_POLICY), Condition.Policy(PAY_314_POLICY)),
+        default = false, risk = Risk.LEGAL, since = "2.0.0", group = FlagGroup.LAW,
+    )
+
     private fun recipeLegal(key: String, name: String, what: String, req: String) = Flag(
         key, name, what = what,
         whyOff = "정식 출시일(처리방침 3.9가 3.8(1-4항)을 앞당긴 날)부터 저절로 켜져요. 3.9 전에 깐 휴대폰이 달력 위 카드에 동의하지 않았으면 11-29부터예요. 그 전에는 레시피를 보고 적용하는 것만 돼요.",
@@ -592,7 +648,7 @@ object FlagCatalog {
     val ALL: List<Flag> = listOf(BILLING_FLAG, ADS_FLAG) + TYPES + listOf(LEAVE_HOURLY_FLAG, STATS_MORE_FLAG, PHOTO_WRONG_FLAG, PLAZA_FIXED_AMOUNT_FLAG, STATS_LOOKUP_FLAG,
         DIAG_OBSERVE_FLAG, SHARE_SETUP_FLAG, SHARE_LOOK_FLAG, SHARE_WORD_FLAG, RECIPE_BROWSE_FLAG, RECIPE_PUBLISH_FLAG, RECIPE_VOTE_FLAG, RECIPE_TALK_FLAG, TEAM_LEADER_FLAG, BOSS_PAYROLL_FLAG, HEALTH_COMPARE_FLAG,
         SLEEP_AUTO_FLAG, SLEEP_SOUND_FLAG, SLEEP_SHARE_FLAG, PLAZA_FIX_REQUEST_FLAG, COMMUNITY_CARE_FLAG, COMMUNITY_CONFIRMED_FLAG, PLAZA_PEOPLE_FLAG, SLEEP_PLAN_SHARE_FLAG, STATS_SETUP_FLAG,
-        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG) +
+        STATS_LIFE_FLAG, STATS_KIND_FLAG, STATS_KEEP_FLAG, STATS_DISC_FLAG, CARD_FONTS_FLAG, PAY_BIRTH_YEAR_FLAG, SLIP_COUNT_FLAG, TEAM_APP_COUNT_FLAG) +
         SWITCHES
 
     private val byKey = ALL.associateBy { it.key }

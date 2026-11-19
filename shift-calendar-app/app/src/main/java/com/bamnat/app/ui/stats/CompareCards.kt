@@ -67,6 +67,12 @@ internal fun CompareCard(vm: StatsViewModel, calc: WorkHoursCalculator, snap: Sc
             } else {
                 CompareTable(now, lastYear, "작년 ${lastYear.month.monthValue}월")
             }
+            // 2.0.0 [RVJ-105] 검토 U05b-10: this month is counted by the roster to its last day, extra work only to today, so the
+            // middle of a month can read '−' against the last one; said once, only for the month that is not over.
+            if (month == java.time.YearMonth.from(com.bamnat.core.time.Today.date())) {
+                Text("이번 달은 근무표대로 말일까지 센 예상이고, 추가 근무는 오늘까지만 들어가요.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
+            }
             Text(if (profile == null) "급여를 설정하면 야간과 급여도 비교해요." else "급여는 세금 떼기 전 예상이에요.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
