@@ -30,7 +30,11 @@ class VillageStartScreenshotTest : ScreenshotBase() {
         val all = nodes(merged = false)
         fun words(n: androidx.compose.ui.semantics.SemanticsNode) =
             n.config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } + n.config.getOrNull(SemanticsProperties.ContentDescription).orEmpty()
-        val tabs = all.filter { inside(it.boundsInWindow) && words(it).any { w -> w in labels } }
+        val named = all.filter { inside(it.boundsInWindow) && words(it).any { w -> w in labels } }
+        // 2.0.0 [RVM-64] (총괄) 장터 has its own row of kinds under the search box, and one of them is '테마' like 마을's tab. Only the top row
+        // is 마을's: a tab of a page lower down is part of the page, not of the head (it made the head end under 장터's own tabs, 28%).
+        val headTop = named.minOfOrNull { it.boundsInWindow.top } ?: return 1f
+        val tabs = named.filter { it.boundsInWindow.top <= headTop + it.boundsInWindow.height / 2 }
         val headBottom = tabs.maxOfOrNull { it.boundsInWindow.bottom } ?: return 1f
         // The bar at the bottom of the screen is not the page's first line.
         val bar = m.heightPixels * 0.85f
