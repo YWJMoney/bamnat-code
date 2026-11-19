@@ -209,8 +209,11 @@ fun SectionCard(
     title: String?,
     modifier: Modifier = Modifier,
     trailing: (@Composable () -> Unit)? = null,
+    /** 2.0.0 [RVK-57] (HQ-147) A title that never breaks (a day: '10월 12일 (월)'): what does not fit beside it goes under it. */
+    keepTitle: Boolean = false,
     content: @Composable ColumnScope.() -> Unit,
 ) {
+    val titleRoom = if (keepTitle) 1000.dp else 80.dp
     // [GUIDE-06] A card of a feature that can be off carries ⋮ › 이 기능 끄기; cards inside it do not.
     val feature = com.bamnat.app.ui.guide.LocalCardFeature.current
     if (feature != null) {
@@ -218,7 +221,7 @@ fun SectionCard(
             SectionCard(title, modifier, trailing = {
                 trailing?.invoke()
                 com.bamnat.app.ui.guide.FeatureMenuButton(feature)
-            }, content = content)
+            }, keepTitle = keepTitle, content = content)
         }
         return
     }
@@ -226,7 +229,7 @@ fun SectionCard(
         Column(modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             if (title != null || trailing != null) {
                 // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
-                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = titleRoom, start = {
                     Text(title.orEmpty(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
                 }, end = { trailing?.invoke() })
                 Spacer(Modifier.padding(top = 4.dp))
@@ -247,7 +250,7 @@ fun SectionCard(
         Column(Modifier.padding(horizontal = 16.dp, vertical = com.bamnat.app.ui.theme.LocalSpacing.current.inner)) {
             if (title != null || trailing != null) {
                 // [BIGTXT-01] 1.39 A big font puts the button under the title instead of squeezing the title.
-                SideOrBelow(Modifier.fillMaxWidth(), minStart = 80.dp, start = {
+                SideOrBelow(Modifier.fillMaxWidth(), minStart = titleRoom, start = {
                     if (title != null) Text(
                         title,
                         style = MaterialTheme.typography.titleSmall,
@@ -261,6 +264,15 @@ fun SectionCard(
         }
     }
 }
+
+/**
+ * 2.0.0 [RVK-57] (총괄 HQ-147, 조건 12) The lower row of a record line at a big font: [start] (수량 × 단가, 분류 · 카드) and the [end]
+ * (the amount) beside it when both fit, else the amount on its own row at the right. Nothing is cut to '74,20…' or stood up.
+ */
+@Composable
+fun TextThenAmount(modifier: Modifier = Modifier, start: @Composable () -> Unit, end: @Composable () -> Unit) =
+    // The start keeps all of itself (a minStart wider than any line), so a long caption sends the amount under it, at the end.
+    SideOrBelow(modifier.fillMaxWidth(), minStart = 1000.dp, belowAlign = Alignment.End, start = start, end = end)
 
 /**
  * 2.0.0 [RVK-55] (총괄 HQ-120, 조건 12) [StatTile]s side by side, and at a big font (150% and up) one under another: two half-width

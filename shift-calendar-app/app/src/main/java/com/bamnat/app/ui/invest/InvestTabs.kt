@@ -64,10 +64,10 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
     val realized = state.realizedByTrade[t.id]
     val unit = t.market.unit
-    Row(
-        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    // 2.0.0 [RVK-57] (총괄 HQ-147, 조건 12): from 150% the line is two rows, the word and the name above and how many and the
+    // amount below, so '매수' never stands as '매/수' and the name and the amount keep their room.
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    val side: @Composable () -> Unit = {
         // 2.0.0 [RVK-27] A 수량 바뀜 says which in a quiet colour: no money moved.
         Text(when (t.side) { Side.SPLIT -> "분할"; else -> t.side.label }, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
             color = when (t.side) {
@@ -75,39 +75,66 @@ internal fun TradeLine(t: Trade, state: InvestState, onClick: () -> Unit) {
                 Side.SELL -> com.bamnat.app.ui.theme.LocalCalendarColors.current.saturday
                 else -> MaterialTheme.colorScheme.onSurfaceVariant
             },
-            // 2.0.0 [RVK-54] (조건 12): at 200% '매수' kept to one line and grows, not '매/수' down the side.
-            maxLines = 1, softWrap = false, modifier = Modifier.widthIn(min = 36.dp).padding(end = 4.dp))
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // [INV-31] Coin or share at a glance.
-                com.bamnat.core.invest.TradeAlerts.badge(t.market)?.let { MarketBadge(it, t.market) }
-                Text(t.title, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
-            Text(
-                listOfNotNull(
-                    when (t.side) {
-                        Side.BUY, Side.SELL -> "${InvestFmt.quantity(t.quantity, hide)}$unit × ${InvestFmt.price(t.price, t.market, hide)}"
-                        Side.SPLIT -> ratioParts(t.quantity).let { (a, b) -> "${a}$unit → ${b}$unit" }
-                        Side.IN -> "${InvestFmt.quantity(t.quantity, hide)}$unit " + if (t.price > 0) "× ${InvestFmt.price(t.price, t.market, hide)}" else "무상"
-                        Side.OUT -> "${InvestFmt.quantity(t.quantity, hide)}$unit 옮김"
-                    },
-                    t.minute?.let { minuteText(it) },
-                    // [INV-31] A trade from a notification says which app it came from.
-                    (t.tags.map { tag -> tag.removePrefix(com.bamnat.core.invest.TradeAlerts.TAG_PREFIX).let { if (it != tag) "$it 알림" else tag } } +
-                        t.emotions.map { it.label }).take(3).joinToString(" ").ifBlank { null },
-                    state.full.account(t.accountId)?.name?.takeIf { state.full.activeAccounts.size > 1 },
-                ).joinToString(" · "),
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+            maxLines = 1, softWrap = false, modifier = if (big) Modifier else Modifier.widthIn(min = 36.dp).padding(end = 4.dp))
+    }
+    val name: @Composable (Modifier) -> Unit = { m ->
+        Row(m, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // [INV-31] Coin or share at a glance.
+            com.bamnat.core.invest.TradeAlerts.badge(t.market)?.let { MarketBadge(it, t.market) }
+            Text(t.title, style = MaterialTheme.typography.bodyLarge, maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis)
         }
+    }
+    val detail: @Composable (Modifier) -> Unit = { m ->
+        Text(
+            listOfNotNull(
+                when (t.side) {
+                    Side.BUY, Side.SELL -> "${InvestFmt.quantity(t.quantity, hide)}$unit × ${InvestFmt.price(t.price, t.market, hide)}"
+                    Side.SPLIT -> ratioParts(t.quantity).let { (a, b) -> "${a}$unit → ${b}$unit" }
+                    Side.IN -> "${InvestFmt.quantity(t.quantity, hide)}$unit " + if (t.price > 0) "× ${InvestFmt.price(t.price, t.market, hide)}" else "무상"
+                    Side.OUT -> "${InvestFmt.quantity(t.quantity, hide)}$unit 옮김"
+                },
+                t.minute?.let { minuteText(it) },
+                // [INV-31] A trade from a notification says which app it came from.
+                (t.tags.map { tag -> tag.removePrefix(com.bamnat.core.invest.TradeAlerts.TAG_PREFIX).let { if (it != tag) "$it 알림" else tag } } +
+                    t.emotions.map { it.label }).take(3).joinToString(" ").ifBlank { null },
+                state.full.account(t.accountId)?.name?.takeIf { state.full.activeAccounts.size > 1 },
+            ).joinToString(" · "),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = if (big) 2 else 1, overflow = TextOverflow.Ellipsis, modifier = m,
+        )
+    }
+    val amount: @Composable () -> Unit = {
         Column(horizontalAlignment = Alignment.End) {
-            if (t.side.trade) Text(InvestFmt.won(kotlin.math.abs(t.cashWon).roundToLong(), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
+            if (t.side.trade) Text(InvestFmt.won(kotlin.math.abs(t.cashWon).roundToLong(), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+                maxLines = 1, softWrap = false)
             else Text("수량만", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             realized?.let { r ->
                 Text("${InvestFmt.signed(r.pnlWon.roundToLong(), hide)} ${InvestFmt.percent(r.rate)}", style = MaterialTheme.typography.bodySmall.merge(NumberStyle),
-                    color = pnlColor(r.pnlWon))
+                    color = pnlColor(r.pnlWon), softWrap = false)
             }
         }
+    }
+    if (big) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                side()
+                name(Modifier.weight(1f))
+            }
+            com.bamnat.app.ui.components.TextThenAmount(start = { detail(Modifier) }, end = { amount() })
+        }
+        return
+    }
+    Row(
+        Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        side()
+        Column(Modifier.weight(1f)) {
+            name(Modifier)
+            detail(Modifier)
+        }
+        amount()
     }
 }
 
@@ -128,17 +155,41 @@ internal fun MarketBadge(text: String, market: Market) {
 @Composable
 internal fun CashLine(c: CashFlow, state: InvestState, onClick: () -> Unit) {
     val hide = state.hide
-    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(c.kind.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.widthIn(min = 36.dp).padding(end = 4.dp),
+    // 2.0.0 [RVK-57] (HQ-147, 조건 12): from 150%, '입금' and what it is above, the amount below, as [TradeLine].
+    val big = androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f
+    val kind: @Composable () -> Unit = {
+        Text(c.kind.label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold,
+            modifier = if (big) Modifier else Modifier.widthIn(min = 36.dp).padding(end = 4.dp),
             color = if (c.kind == CashKind.WITHDRAW || c.kind == CashKind.FEE) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
             maxLines = 1, softWrap = false)
-        Column(Modifier.weight(1f)) {
-            Text(listOf(c.symbol, c.memo).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { state.full.account(c.accountId)?.name ?: c.kind.label },
-                style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (c.tax > 0) Text("세금 ${InvestFmt.won(c.tax, hide)} · 실수령 ${InvestFmt.won(c.amount - c.tax, hide)}", style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    val what = listOf(c.symbol, c.memo).filter { it.isNotBlank() }.joinToString(" · ").ifBlank { state.full.account(c.accountId)?.name ?: c.kind.label }
+    val tax: @Composable (Modifier) -> Unit = { m ->
+        if (c.tax > 0) Text("세금 ${InvestFmt.won(c.tax, hide)} · 실수령 ${InvestFmt.won(c.amount - c.tax, hide)}", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = m)
+    }
+    val amount: @Composable () -> Unit = {
+        Text((if (c.cashWon >= 0) "+" else "−") + InvestFmt.won(kotlin.math.abs(c.cashWon), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle),
+            maxLines = 1, softWrap = false)
+    }
+    if (big) {
+        Column(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                kind()
+                Text(what, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            }
+            com.bamnat.app.ui.components.TextThenAmount(start = { tax(Modifier) }, end = { amount() })
         }
-        Text((if (c.cashWon >= 0) "+" else "−") + InvestFmt.won(kotlin.math.abs(c.cashWon), hide), style = MaterialTheme.typography.bodyMedium.merge(NumberStyle))
+        return
+    }
+    Row(Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onClick).padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        kind()
+        Column(Modifier.weight(1f)) {
+            Text(what, style = MaterialTheme.typography.bodyLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (c.tax > 0) tax(Modifier)
+        }
+        amount()
     }
 }
 
@@ -251,9 +302,10 @@ private const val DAY_LINES = 30
 @Composable
 internal fun DayRecords(d: LocalDate, state: InvestState, open: (InvestSheet) -> Unit) {
     val pnl = state.daily[d]
+    // 2.0.0 [RVK-57] (HQ-147): at 200% the day broke to '10월 / 12일 (월)' beside its 손익; now the 손익 goes under it.
     SectionCard(title = Fmt.dayTitle(d), trailing = pnl?.let { p ->
-        { Text(InvestFmt.signed(p, state.hide), color = pnlColor(p), style = MaterialTheme.typography.titleSmall.merge(NumberStyle)) }
-    }) {
+        { Text(InvestFmt.signed(p, state.hide), color = pnlColor(p), style = MaterialTheme.typography.titleSmall.merge(NumberStyle), softWrap = false) }
+    }, keepTitle = true) {
         // 2.0.0 [RVK-54] (검토 MONEY-76): a day of hundreds of 단타 draws thirty lines and '나머지 N건 보기', not all at once.
         val trades = state.tradesOn(d)
         var all by rememberSaveable(d) { mutableStateOf(false) }
@@ -303,8 +355,8 @@ internal fun JournalTab(state: InvestState, open: (InvestSheet) -> Unit) {
         val pnl = state.daily[j.date]
         SectionCard(title = Fmt.dayTitle(j.date), trailing = {
             Text(listOfNotNull(j.grade?.label, pnl?.let { InvestFmt.signedShort(it, state.hide) }).joinToString(" · "),
-                color = pnl?.let { pnlColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge)
-        }) {
+                color = pnl?.let { pnlColor(it) } ?: MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelLarge, softWrap = false)
+        }, keepTitle = true) {
             Column(Modifier.fillMaxWidth().clickable(role = Role.Button) { open(InvestSheet.Journal(j.date)) }) {
                 if (j.market.isNotBlank()) Text("시장 · ${j.market}", style = MaterialTheme.typography.bodyMedium)
                 if (j.review.isNotBlank()) Text("복기 · ${j.review}", style = MaterialTheme.typography.bodyMedium)
