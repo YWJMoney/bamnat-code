@@ -181,11 +181,13 @@ object SpeedCheck {
 
     /**
      * 2.0.0 [RVN-23] (PC-187) The 연결 방식 line: the phone's own engine (Android 14 and later, no longer Play services'), else the
-     * connection as before, and a phone before 14 is told why.
+     * connection as before, and a phone without it is told why. HQ-126 An Android 12·13 phone gets it with a Google Play system
+     * update (S Extensions 7), so it is told that rather than 14.
      */
-    internal fun way(fast: Boolean, available: Boolean): String = when {
+    internal fun way(fast: Boolean, available: Boolean, sdk: Int = android.os.Build.VERSION.SDK_INT): String = when {
         fast -> "연결 방식: 휴대폰에 든 빠른 연결"
         available -> "연결 방식: 기본 연결"
+        sdk >= android.os.Build.VERSION_CODES.S -> "연결 방식: 기본 연결 · 빠른 연결은 Google Play 시스템 업데이트 뒤에"
         else -> "연결 방식: 기본 연결 · 빠른 연결은 안드로이드 14부터"
     }
 

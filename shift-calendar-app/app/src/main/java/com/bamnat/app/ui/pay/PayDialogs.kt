@@ -504,7 +504,8 @@ fun RuleImportDialog(vm: PayViewModel, month: YearMonth, onDismiss: () -> Unit) 
                 Text("언제부터 적용할까요?", style = MaterialTheme.typography.titleSmall)
                 MonthStepper(from, { from = it })
                 RuleSentenceBox(settings.extraKinds.kinds, snapshot?.shiftTypes.orEmpty(), profile?.fiveOrMoreEmployees ?: true,
-                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date()), onStarted = { started = it }) { changes ->
+                    current = com.bamnat.core.pay.RuleSheet.payNow(profile, com.bamnat.core.time.Today.date()), onStarted = { started = it },
+                    bonuses = profile?.items.orEmpty().filter { it.cadence == com.bamnat.core.pay.Cadence.BONUS }) { changes ->
                     vm.applyRuleChanges(changes, from)
                     onDismiss()
                 }

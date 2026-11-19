@@ -53,6 +53,7 @@ internal fun PlatformCutDialog(platform: String, cut: PlatformWork.Cut, onDismis
     var call by rememberSaveable { mutableStateOf(amountDigits(cut.perCall)) }
     val feeValue = if (fee.isBlank()) 0 else PlatformWork.Cut.parsePercent(fee)
     AlertDialog(
+        fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
         onDismissRequest = onDismiss,
         title = { Text("$platform 수수료·보험료") },
         text = {
@@ -136,6 +137,7 @@ private fun UnitsDialog(title: String, start: Double, time: LocalTime?, onDismis
     var typed by rememberSaveable { mutableStateOf("") }
     var at by remember { mutableStateOf(time) }
     AlertDialog(
+        fields = true, // 2.0.0 [RVH-69] 검토 PC-135: its fields scroll above the keyboard.
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {

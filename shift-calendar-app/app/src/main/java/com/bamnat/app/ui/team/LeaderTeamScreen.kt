@@ -216,7 +216,7 @@ private fun NewTeamDialog(calendarId: String, onDismiss: () -> Unit, onMade: (St
     AlertDialog(onDismissRequest = { if (!typed) onDismiss() }, properties = androidx.compose.ui.window.DialogProperties(dismissOnBackPress = !typed, dismissOnClickOutside = !typed),
         title = { Text("팀 만들기") }, text = {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(name, { name = it.take(20) }, label = { Text("팀 이름 (예: 3병동)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(name, { name = it.take(20) }, label = { Text("팀 이름 (예: 3병동, 영업 1팀, 오전조)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(names, { names = it.take(3000) }, label = { Text("팀원 이름, 한 줄에 한 명") }, minLines = 4, modifier = Modifier.fillMaxWidth())
             OutlinedButton(onClick = pickFile, modifier = Modifier.fillMaxWidth()) { Text(if (from == null) "근무표 파일·사진에서 이름 가져오기" else "다른 파일 고르기") }
             (reading ?: from?.let { (g, _) -> "${Fmt.month(g.month)} 근무표 ${g.rows.size}명을 읽었어요. 만들면 근무도 바로 넣을 수 있어요." })?.let {

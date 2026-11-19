@@ -31,7 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -79,6 +78,8 @@ fun inviteAnswerWords(a: InviteAnswer): String = when (a.status) {
 @Composable
 internal fun InviteShareAction(
     c: AppContainer, onMessage: (String) -> Unit, makeLabel: String = "초대 링크 만들기", tonal: Boolean = false,
+    /** 2.0.0 [RVO-13] HQ-70: under a filled button (잠긴 기능 시트) a line, not a fill, so the one filled button stays one in the dark too. */
+    outlined: Boolean = false,
     extra: @Composable () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -89,7 +90,11 @@ internal fun InviteShareAction(
     val view = state.view
     if (asking && view?.code == null) Text(INVITE_MAKE_CONSENT, style = MaterialTheme.typography.bodySmall)
     val button: @Composable (String, () -> Unit) -> Unit = { label, go ->
-        if (tonal) FilledTonalButton(enabled = !busy, onClick = go) { Text(label) } else Button(enabled = !busy, onClick = go) { Text(label) }
+        when {
+            outlined -> com.bamnat.app.ui.components.OutlinedButton(enabled = !busy, onClick = go) { Text(label) }
+            tonal -> FilledTonalButton(enabled = !busy, onClick = go) { Text(label) }
+            else -> Button(enabled = !busy, onClick = go) { Text(label) }
+        }
     }
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         when {
@@ -120,9 +125,9 @@ internal fun InviteProgressLines(c: AppContainer) {
     val state by c.invites.store.state.collectAsStateWithLifecycle()
     val view = state.view ?: return
     if (view.code == null) return
-    Text(InviteRules.progress(view.progress, view.terms.need, view.waiting), style = MaterialTheme.typography.titleMedium)
-    if (!view.capReached) Text(InviteRules.toNext(view.progress, view.terms.need), style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.primary)
+    // 2.0.0 [RVO-25] PC-151: one line that reads ('친구 2명이 더 7일 쓰면 프로 1개월 · 3명 셌어요'), not '3/5명' over '다음 프로까지 2명'.
+    // At the year's cap the card says so instead ([InviteRules.capped]).
+    if (!view.capReached) Text(InviteRules.next(view.progress, view.waiting, view.terms), style = MaterialTheme.typography.titleMedium)
 }
 
 /** 2.0.0 [RVO-13] (HQ-48) The name of the way to 프로 without paying, the same on 프로, the locked feature's sheet and the paywall. */
@@ -156,14 +161,19 @@ internal fun InviteCard(c: AppContainer, onMessage: (String) -> Unit, short: Boo
             if (view?.capReached == true && !more) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
         }
         // AG 1.27 [INVITE-09] 리뷰 2026-10-25: each five different friends, not one friend's days.
-        if (!short || more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        // 2.0.0 [RVO-27] HQ-144 (조건 4): the buyer's card says the one-line promise and keeps how a friend counts behind ⓘ (it was six lines).
+        if (!short) com.bamnat.app.ui.components.Explain(key = "invite_rules", text = InviteRules.details(terms),
+            summary = "${InviteRules.promise(terms)}.", iconOnly = false, firstInFull = false)
+        else if (more) Text(InviteRules.details(terms), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (view?.code != null && (!short || more)) {
+            // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
+            // [RVO-25] PC-151: what came of it first (months the 운영팀 is looking at), the next goal under it, then the count.
+            if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodyMedium)
+            else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
             InviteProgressLines(c)
             Text(InviteRules.summary(view.friends, view.given), style = MaterialTheme.typography.bodyMedium)
-            // 2.0.0 [RVD-14] 확인 뒤 들어와요. [RVO-13] PC-114: at the year's cap the one line says both, never '모두 받았어요' over months still waiting.
-            if (view.capReached) Text(InviteRules.capped(terms.capMonths, view.pending), style = MaterialTheme.typography.bodySmall)
-            else if (view.pending > 0) Text(InviteRules.pending(view.pending), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
-            Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium, fontFamily = FontFamily.Monospace)
+            // [RVO-27] HQ-144 (조건 5): the app's own type; the code reads in groups (ABCD 2345) without a typewriter face.
+            Text("내 초대 코드 ${InviteRules.shown(view.code)}", style = MaterialTheme.typography.bodyMedium)
         }
         // 2.0.0 [RVO-06] 조건 2: 이 화면의 채운 단추는 '프로 시작하기' 하나라, 초대 링크는 옅은 채움 단추.
         InviteShareAction(c, onMessage, tonal = true) {
@@ -228,7 +238,8 @@ fun InviteArrivalNotice(modifier: Modifier = Modifier) {
                 Text(relay.answer?.let(::inviteAnswerWords) ?: "초대한 분께 알릴게요. 인터넷이 연결되면 저절로 알려요.",
                     style = MaterialTheme.typography.bodyMedium)
                 // [INVITE-13] The friend can be the next one to invite (결정 AG-D1: no reward for the friend itself).
-                Text("당신도 ${state.rules.words()}.", style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVO-24] PC-133: the one-line promise every invite card says (InviteRules.promise).
+                Text("내 링크로 친구를 부르면 당신도 받아요. ${InviteRules.promise(state.rules)}.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 InviteShareAction(c, onMessage = { said = it }, makeLabel = "내 초대 링크 만들기", tonal = true) {
                     TextButton(onClick = { c.invites.closeRelay() }) { Text("닫기") }
@@ -282,7 +293,7 @@ fun InviteNudgeNotice(modifier: Modifier = Modifier) {
     SoftCard(modifier.padding(horizontal = 16.dp, vertical = 6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("친구에게 밤낮 알려 주기", style = MaterialTheme.typography.titleMedium)
-            Text("${state.rules.words()}. 링크로 깔면 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
+            Text("${InviteRules.promise(state.rules)}. 링크로 깔면 앱이 저절로 알아봐요.", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             InviteProgressLines(c)
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
@@ -298,7 +309,7 @@ fun InviteNudgeNotice(modifier: Modifier = Modifier) {
  * 1.39 [SPREAD-07] (앱 안 퍼짐 설계, 사용자 2026-11-07): right after a leader first sends the team's links, or a 사장님 first adds a
  * staff member, one card offers to tell another leader·사장님, with the 친구 초대 link (초대한 분께 프로). It shows the day it
  * first comes and then never again ([GrowNudges.peerInvite]); '다시 안 보기' ends it at once. The calendar card's switch
- * (기능 켜고 끄기 › 달력의 친구 초대 카드) turns this off too.
+ * (기능 켜고 끄기 › 친구 초대 카드) turns this off too.
  */
 @Composable
 fun PeerInviteCard(peer: com.bamnat.core.guide.Peer, modifier: Modifier = Modifier) {
@@ -320,7 +331,8 @@ fun PeerInviteCard(peer: com.bamnat.core.guide.Peer, modifier: Modifier = Modifi
     SoftCard(modifier.padding(vertical = 6.dp)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text("$line ${state.rules.words()}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            // 2.0.0 [RVO-24] 통합 3차 PC-133 (사장님 카드가 '상한 없음', 설정 › 프로는 '1년에 12개월까지'): the same one line as 설정 › 프로.
+            Text("$line ${InviteRules.promise(state.rules)}.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             said?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             InviteShareAction(c, onMessage = { said = it }, tonal = true) {
                 TextButton(onClick = { c.grow.peerClosed(peer) }) { Text("다시 안 보기") }

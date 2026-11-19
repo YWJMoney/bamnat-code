@@ -45,6 +45,8 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.bamnat.app.data.AppSettings
@@ -103,7 +105,11 @@ internal fun BarSlotsDialog(
     var picking by remember { mutableStateOf<PickFor?>(null) }
     // The 묶음 being named, by a screen in it (its place can move as a screen leaves another place).
     var renaming by rememberSaveable { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVO-21] 검토 U11a-16 ('처음대로'가 묻지 않고 바로 돼요): the bar before 처음대로, to put back with 되돌리기 in the same
+    // place until something else is changed. In the dialog itself, as a snackbar would sit behind it.
+    var beforeReset by remember { mutableStateOf<List<TabSlots.Slot>?>(null) }
     val change: (List<TabSlots.Slot>) -> Unit = { made ->
+        beforeReset = null
         if (made != slots) {
             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
             onChange(made)
@@ -153,7 +159,13 @@ internal fun BarSlotsDialog(
                     }
                 }
                 // 1.39 PC NAV2 (150%·200%에서 '처음대로'가 창 밖으로 잘림): in the list, not beside 완료.
-                TextButton(onClick = onReset, enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로 (다섯 탭)") }
+                val undo = beforeReset
+                if (undo != null) Row(Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite }, verticalAlignment = Alignment.CenterVertically) {
+                    Text("다섯 탭으로 돌렸어요", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f).padding(start = 12.dp))
+                    TextButton(onClick = { beforeReset = null; onChange(undo) }) { Text("되돌리기") }
+                }
+                else TextButton(onClick = { beforeReset = slots; onReset() },
+                    enabled = settings.tabSlots.isNotEmpty() || settings.tabOrder.isNotEmpty()) { Text("처음대로 (다섯 탭)") }
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("완료") } },
@@ -342,6 +354,7 @@ private fun PickLine(p: TabPick, where: String?, onPick: (String) -> Unit) {
 }
 
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: () -> Unit) {
     var name by rememberSaveable { mutableStateOf(start) }
     val ok = TabSlots.cleanName(name).isNotEmpty()
@@ -359,7 +372,8 @@ private fun GroupNameDialog(start: String, onDone: (String) -> Unit, onDismiss: 
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { if (ok) onDone(name) }),
                 )
-                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // 2.0.0 [RVO-21] 검토 SET-17: wraps at 200% 글자 instead of running out of the window.
+                androidx.compose.foundation.layout.FlowRow(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     // Names that come up most, one tap each.
                     listOf("돈", "잠·쉼", "일", "함께").forEach { s ->
                         androidx.compose.material3.SuggestionChip(onClick = { name = s }, label = { Text(s) })

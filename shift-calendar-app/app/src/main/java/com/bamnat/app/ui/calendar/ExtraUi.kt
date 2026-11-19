@@ -208,19 +208,50 @@ object ExtraText {
         }
     }
 
-    /** True when two pieces of work, or a piece and the shift, take the same clock time. */
-    fun overlaps(day: ResolvedDay): Boolean {
-        val spans = buildList {
-            val f = day.shiftFrom
-            val t = day.shiftTo
-            if (day.isWorkDay && f != null && t != null) add(f to t)
-            day.extras.forEach { e -> if (e.from != null && e.to != null && (e.entry.hasTimes || e.covered != null)) add(e.from!! to e.to!!) }
+    /** [RVH-58] Two pieces of extra work that both count the same [minutes] of the clock. */
+    data class Twice(val first: ResolvedExtra, val second: ResolvedExtra, val minutes: Int)
+
+    /**
+     * 2.0.0 [RVH-58] 검토 PC-109: the time a piece counts, on the clock. A piece with times over the day's own shift counts only what is
+     * outside the shift's parts (the resolver took the rest out, PAYX-54), so the shift is never counted twice; one wholly inside counts
+     * none.
+     */
+    internal fun counted(e: ResolvedExtra, day: ResolvedDay): List<ClosedRange<java.time.LocalDateTime>> {
+        val f = e.from ?: return emptyList()
+        val t = e.to ?: return emptyList()
+        if (e.minutes <= 0 || !(e.entry.hasTimes || e.covered != null)) return emptyList()
+        if (e.insideShiftMinutes <= 0) return listOf(f..t)
+        var pieces = listOf(f..t)
+        for (p in day.segments) pieces = pieces.flatMap { r ->
+            if (!r.start.isBefore(p.endInclusive) || !r.endInclusive.isAfter(p.start)) listOf(r)
+            else listOfNotNull((r.start..p.start).takeIf { r.start.isBefore(p.start) }, (p.endInclusive..r.endInclusive).takeIf { p.endInclusive.isBefore(r.endInclusive) })
         }
-        for (i in spans.indices) for (j in i + 1 until spans.size) {
-            val (a1, a2) = spans[i]
-            val (b1, b2) = spans[j]
-            if (a1.isBefore(b2) && b1.isBefore(a2)) return true
+        return pieces
+    }
+
+    /** [RVH-58] "잔업과 특근이 1시간 겹쳐 두 번 셌어요. 한 번만 일했다면 시각을 고쳐 주세요." */
+    fun twiceLine(t: Twice, style: com.bamnat.core.work.WorkStyle? = null): String {
+        val a = name(t.first, style)
+        val b = name(t.second, style)
+        return "$a${com.bamnat.core.text.Josa.gwawa(a)} $b${com.bamnat.core.text.Josa.iga(b)} ${HoursFormat.korean(t.minutes)} 겹쳐 두 번 셌어요. 한 번만 일했다면 시각을 고쳐 주세요."
+    }
+
+    /**
+     * 2.0.0 [RVH-58] 검토 PC-109 (주간 07~19에 특근 09~18을 넣으면 '근무 시간 안이라 시간은 안 더해요'와 빨간 '겹친 시간도 따로따로 세니'가
+     * 함께): only what the hours really count twice. Work inside the shift adds nothing and says so on its own line; two pieces of extra
+     * work over the same time (잔업 18~20, 특근 19~21) are both counted, as pay and the 증빙 count them, so that is said with the minutes.
+     */
+    fun twice(day: ResolvedDay): Twice? {
+        val pieces = day.extras.map { it to counted(it, day) }
+        for (i in pieces.indices) for (j in i + 1 until pieces.size) {
+            val (a, ra) = pieces[i]
+            val (b, rb) = pieces[j]
+            val m = ra.sumOf { x -> rb.sumOf { y ->
+                if (x.start.isBefore(y.endInclusive) && y.start.isBefore(x.endInclusive))
+                    java.time.Duration.between(maxOf(x.start, y.start), minOf(x.endInclusive, y.endInclusive)).toMinutes().toInt() else 0
+            } }
+            if (m > 0) return Twice(a, b, m)
         }
-        return false
+        return null
     }
 }

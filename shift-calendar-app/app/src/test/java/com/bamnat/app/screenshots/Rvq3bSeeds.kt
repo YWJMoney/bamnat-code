@@ -34,5 +34,5 @@ internal object Rvq3b {
 
     /** What each shot scrolls to. */
     const val LEADER = "판 확인"
-    const val RECEIVED = "다 보셨는지 궁금해해요"
+    const val RECEIVED = "보낸 분이 다 보셨는지 물어요"
 }

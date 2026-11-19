@@ -311,6 +311,12 @@ fun shareTitle(style: WorkStyle?): String = when (style) {
     else -> "근무표 공유"
 }
 
+/**
+ * 2.0.0 [RVG-40] 검토 PC-175 (조건 13): what taking someone's link is called (달력 › 도구, 설정 찾기, 도움말, 기능 찾기). Work paid by
+ * the hour or the month takes a 동료's 근무표; a shop, a field worker or an investor 다른 사람 달력, as the calendar list says it ([RVH-20]).
+ */
+fun receiveTitle(style: WorkStyle?): String = if (style?.usesPayEngine != false) "동료 근무표 받기" else "다른 사람 달력 받기"
+
 /** [J133-79] What a shared calendar holds, in the work's word: 근무표, a field worker's 일정, a shop's 영업일. */
 fun scheduleWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정"
@@ -343,10 +349,13 @@ val LINK_WORDS: List<String> = listOf("근무표", "영업일", "일정", "달�
 /** [J133-79] [scheduleWord] with 로/으로 ("근무표로", "일정으로"). */
 fun scheduleWordRo(style: WorkStyle?): String = scheduleWord(style) + if (style == WorkStyle.FIELD) "으로" else "로"
 
-/** [J133-79] The days a family link shows: 근무와 휴가, a shop's 영업일과 쉬는 날. */
+/**
+ * [J133-79] The days a family link shows: 근무와 휴가, a shop's 영업일과 휴무. 2.0.0 [RVG-40] 검토 PC-175 (조건 13): a shop's day off is
+ * its 휴무 ('영업일과 쉬는 날' was the one shift word left on its share sheet).
+ */
 fun daysWord(style: WorkStyle?): String = when (style) {
     WorkStyle.FIELD -> "일정과 쉬는 날"
-    WorkStyle.BUSINESS -> "영업일과 쉬는 날"
+    WorkStyle.BUSINESS -> "영업일과 휴무"
     WorkStyle.INVEST -> "달력"
     else -> "근무와 휴가"
 }
@@ -356,7 +365,7 @@ fun daysWord(style: WorkStyle?): String = when (style) {
  * holds, so an investor's 달력 is not '근무와 휴가' (받은 링크 카드 '…만 받았어요').
  */
 fun linkDaysWord(word: String): String = when (word) {
-    "영업일" -> "영업일과 쉬는 날"
+    "영업일" -> "영업일과 휴무"
     "일정" -> "일정과 쉬는 날"
     "달력" -> "달력"
     else -> "근무와 휴가"

@@ -169,6 +169,8 @@ fun PayQuickSetup(
     style: com.bamnat.core.work.WorkStyle? = null,
     /** 2.0.0 [RVJ-75] Bumped by the screen's ← and back on the first step; with something changed it asks before leaving. */
     leaveAsk: Int = 0,
+    /** 2.0.0 [RVH-68] 검토 I50c-01 (RVR-31): the 시급 typed on bamnat.app and taken on the first setup's card, for a first pay. */
+    webWage: Long? = null,
 ) {
     val today = remember { Today.date() }
     val thisMonth = YearMonth.from(today)
@@ -203,7 +205,7 @@ fun PayQuickSetup(
     // 1.36 PC X5 (빠른 설정 다시 뒤 제목이 '직접 설정' → '제조·생산 교대', 고른 적 없음): a form only shown picked is not the user's
     // choice of job; the job changes only when they tap a form.
     var formTapped by remember { mutableStateOf(kept?.formTapped ?: false) }
-    val amount0 = initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 }
+    val amount0 = initial?.base?.on(thisMonth)?.value?.takeIf { it > 0 } ?: webWage?.takeIf { initial == null && form0?.wageType == WageType.HOURLY }
     var amount by remember { mutableStateOf(if (kept != null) kept.amount else amount0) }
     // [PAYF-06] 통상시급 기준 시간, said only when the user knows it; null keeps what the setup has.
     var hours by remember { mutableStateOf(kept?.hours) }

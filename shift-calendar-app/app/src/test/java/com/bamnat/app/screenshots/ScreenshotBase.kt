@@ -113,12 +113,18 @@ abstract class ScreenshotBase {
         com.bamnat.app.ui.calendar.SetupFill.close()
         // 2.0.0 [RVP-43] The bell beside 공유 (its place in 나 is a comparison shot's own) and a look's line closed in an earlier shot.
         com.bamnat.app.ui.calendar.ShiftLookShut.mode = null
+        // 2.0.0 [RVS-15] Nor a studio example an earlier shot took for 올리기's 표지.
+        com.bamnat.app.ui.studio.StudioShot.last = null
         // [RVL-18] Nor a month put in by an earlier shot (an urgent band now).
         com.bamnat.app.ui.RecentFill.reset()
         // 2.0.0 [RVP-22][RVP-23][RVP-24] The app's one line, the opening windows' turns and what is open start empty in each shot.
         com.bamnat.app.ui.components.AppSnack.resetForTest()
         com.bamnat.app.ui.components.AskTurn.resetForTest()
         com.bamnat.app.ui.components.Busy.resetForTest()
+        // 2.0.0 [RVM-57] Nor a 입어 보기 an earlier shot asked for (a swipe card's '입어 보기' with nowhere to go): the first tryOn shot of
+        // a run opened on 입어 보기 at once and could not find '예시로 보기' (총괄 11-19, a different tryOn each run).
+        com.bamnat.app.recipe.RecipeLinks.resetForTest()
+        com.bamnat.app.ui.recipe.LiveTryOn.resetForTest()
         val c = app.container
         // [QA-05] No shot asks the live server: its 정식 출시 answer could land after a shot set its own (launched()).
         c.tierApi = com.bamnat.app.tier.TierClient(baseUrl = "")
@@ -622,8 +628,8 @@ abstract class ScreenshotBase {
         }
 
         /** [DAY-02] Opens a day group when it is closed; a group with something to say may already be open. */
-        fun openGroup(title: String) {
-            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = 0.5f)
+        fun openGroup(title: String, across: Float = 0.5f) {
+            val node = reach(title, exact = true, prefix = false, scrolls = 10, across = across)
             if (node.config.getOrNull(SemanticsActions.OnClick)?.label == "펼치기") touch(node.boundsInWindow.center)
         }
 
@@ -648,6 +654,33 @@ abstract class ScreenshotBase {
                     .firstOrNull { n -> n.config.contains(SemanticsActions.SetText) && n.words().any { it == label } }
                     ?: error("‘$label’ 입력칸을 찾지 못했어요")
                 field.config[SemanticsActions.SetText].action?.invoke(androidx.compose.ui.text.AnnotatedString(text))
+            }
+            settle()
+        }
+
+        /** 2.0.0 [RVH-69] Presses the keyboard's action key (완료·다음) in the field labelled [label]. */
+        fun imeAction(label: String) {
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                val field = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true)
+                    .firstOrNull { n -> n.config.contains(SemanticsActions.OnImeAction) && n.words().any { it == label } }
+                    ?: error("‘$label’ 입력칸을 찾지 못했어요")
+                field.config[SemanticsActions.OnImeAction].action?.invoke()
+            }
+            settle()
+        }
+
+        /**
+         * 2.0.0 [RVH-70] Scrolls the screen's vertical scroll to its end through its semantics, not a finger: for screens where a
+         * swipe would paint (한 달 근무 넣기 with a key held paints the days a finger crosses).
+         */
+        fun scrollToEnd() {
+            scenario.onActivity { activity ->
+                val root = rootOf(topWindow(activity)) ?: return@onActivity
+                root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false)
+                    .filter { it.config.contains(SemanticsActions.ScrollBy) && it.config.contains(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange) }
+                    .maxByOrNull { it.boundsInWindow.height }
+                    ?.let { it.config[SemanticsActions.ScrollBy].action?.invoke(0f, 100_000f) }
             }
             settle()
         }

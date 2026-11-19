@@ -60,7 +60,8 @@ object InvestFmt {
     } ?: "–"
 
     /** A price in its own currency: "72,500원", "$187.20", "0.00052원" for a cheap coin. */
-    fun price(p: Double, market: Market): String = if (market.foreign) "$" + usdFormat.format(p) else priceFormat.format(p) + "원"
+    fun price(p: Double, market: Market, hide: Boolean = false): String =
+        if (hide) HIDDEN else if (market.foreign) "$" + usdFormat.format(p) else priceFormat.format(p) + "원"
 
     private val averageFormat = DecimalFormat("#,##0.##", symbols)
 
@@ -68,14 +69,18 @@ object InvestFmt {
      * 2.0.0 [RVK-27] (검토 MONEY-64, 조건 4) An average price: a split or free shares leave 40,444.44444444원, read as 40,444.44원.
      * A coin's average keeps its small digits, a dollar one its cents.
      */
-    fun average(p: Double, market: Market): String =
-        if (market.foreign || market == Market.CRYPTO) price(p, market) else averageFormat.format(p) + "원"
+    fun average(p: Double, market: Market, hide: Boolean = false): String =
+        if (hide) HIDDEN else if (market.foreign || market == Market.CRYPTO) price(p, market) else averageFormat.format(p) + "원"
 
     /** [INV-19] "$187.20 (약 262,080원)". */
-    fun priceWithWon(p: Double, market: Market, fx: Double): String =
-        if (market.foreign) price(p, market) + " (약 " + Fmt.won(Math.round(p * fx)) + ")" else price(p, market)
+    fun priceWithWon(p: Double, market: Market, fx: Double, hide: Boolean = false): String =
+        if (hide) HIDDEN else if (market.foreign) price(p, market) + " (약 " + Fmt.won(Math.round(p * fx)) + ")" else price(p, market)
 
-    fun quantity(q: Double): String = Portfolio.quantityText(q)
+    /**
+     * 2.0.0 [RVK-53] (검토 MONEY-71): with 금액 가리기 on, how many and at what price are hidden too (수량 × 단가 is the
+     * amount). Typing fields never pass [hide].
+     */
+    fun quantity(q: Double, hide: Boolean = false): String = if (hide) "•••" else Portfolio.quantityText(q)
 
     /** Typed text for a Double field: no trailing ".0". */
     fun input(v: Double?): String = v?.takeIf { it > 0 }?.let { Portfolio.quantityText(it) } ?: ""

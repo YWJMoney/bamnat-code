@@ -167,6 +167,18 @@ export function rewardCapFromPolicy(raw) {
   return p.effective && p.effective > notice ? p.effective : notice;
 }
 
+/**
+ * 2.0.0 [RVN-17] 검토 COMP-14 방 글에 금액 받기는 처리방침 3.14와 운영 규칙 3판의 7일 줄이에요(사용자 '16줄 모두' 2026-11-19, 3.14
+ * 문장표 10줄): 3.14를 게시한 날 + 7일(한국 날짜)부터. 일정에 3.14 게시일이 없으면(게시 전) null이라, 관리자 앱 스위치를 미리 켜 둬도
+ * 그때까지는 받지 않고, 게시가 밀리면 같이 밀려요. 계좌번호 막기(text-rules.js)는 이 날짜 전에 서버에 들어가 있어요.
+ */
+export const ROOM_MONEY_POLICY = "3.14";
+export function roomMoneyFromPolicy(raw) {
+  const p = mergePolicy(raw).find((x) => x.version === ROOM_MONEY_POLICY);
+  if (!p?.posted) return null;
+  return new Date(Date.parse(`${p.posted}T00:00:00Z`) + 7 * DAY).toISOString().slice(0, 10);
+}
+
 /** 1.39 [PAYP-05] Whether 보완 요청 is open: plaza.fix_request on by the server's view (off until 처리방침's next version). */
 export async function fixRequestsOpen(env, now = Date.now()) {
   return serverEval(await flagStore(env), "plaza.fix_request", now).on;

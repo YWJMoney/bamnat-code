@@ -585,7 +585,8 @@ fun CompanyRulesEditor(
                     empty = "아직 칸이 없어요. 아래 ‘칸 더하기’에서 자주 쓰는 수당을 고르면 금액만 넣으면 돼요.",
                 )
                 RuleSentenceBox(kinds.kinds, snapshot.shiftTypes, draft.fiveOrMoreEmployees,
-                    current = com.bamnat.core.pay.RuleSheet.payNow(draft, com.bamnat.core.time.Today.date())) { changes ->
+                    current = com.bamnat.core.pay.RuleSheet.payNow(draft, com.bamnat.core.time.Today.date()),
+                    bonuses = draft.items.filter { it.cadence == com.bamnat.core.pay.Cadence.BONUS }) { changes ->
                     draft = com.bamnat.core.pay.RuleText.apply(draft, changes, month)
                 }
             }

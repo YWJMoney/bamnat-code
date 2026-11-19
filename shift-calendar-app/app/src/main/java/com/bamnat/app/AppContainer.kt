@@ -544,6 +544,19 @@ class AppContainer(context: Context) {
             info.lastUpdateTime.takeIf { it > 0 && it - info.firstInstallTime > 60_000 }?.let(java.time.Instant::ofEpochMilli)
         }.getOrNull()
     }
+    /**
+     * 2.0.0 [RVH-64] PC-72: what the month turn of 1.36.1~1.39.0 may have put on another day, on 내 달력 and every added calendar
+     * (an example is not the user's). The grid's week starts as the calendar's settings say.
+     */
+    val turnSlip: com.bamnat.app.data.TurnSlipCheck by lazy {
+        com.bamnat.app.data.TurnSlipCheck(
+            calendars = { listOf(PersonalCalendar.MAIN) + calendars.added().map { it.id } },
+            schedule = { calendars.repository(it) },
+            money = { calendars.money(it) },
+            memos = memoRepository,
+            weekStart = { settingsRepository.current.weekStart },
+        )
+    }
     /** [MON-02] What the company server says once a day: [FLAG-06] the dark-merge overrides, notices, 처리방침 dates. */
     val remoteConfig: com.bamnat.app.tier.RemoteConfigStore = com.bamnat.app.tier.RemoteConfigStore(appContext)
 
@@ -689,10 +702,14 @@ class AppContainer(context: Context) {
     var inviteApi: com.bamnat.app.tier.InviteApi = com.bamnat.app.tier.InviteClient()
     var referrerSource: com.bamnat.app.tier.ReferrerSource = com.bamnat.app.tier.PlayReferrer
     var phoneMark: () -> String? = { com.bamnat.app.tier.PhoneMark.of(appContext) }
+    /** 2.0.0 [RVH-68] Play's referrer, read once for 친구 초대 and 웹에서 이어 받기 alike. */
+    val installReferrer by lazy { com.bamnat.app.tier.ReferrerOnce(appContext) { referrerSource } }
     val invites by lazy {
         com.bamnat.app.tier.Invites(appContext, com.bamnat.app.tier.InviteStore(appContext), { inviteApi }, { companyStore.device }, { phoneMark() },
-            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { referrerSource })
+            setupDone = { settingsRepository.current.setupDone }, installedAt = { installedAt }, referrer = { installReferrer })
     }
+    /** 2.0.0 [RVH-68] 검토 I50c-01·I50c-03 (RVR-31): what bamnat.app's Play link carried, for the first setup. */
+    val webStart by lazy { com.bamnat.app.data.WebStart(appContext, installReferrer) }
     /** AG 1.27 [INVITE-11][INVITE-12] When this phone was asked to invite friends or to tell the developer. */
     val grow by lazy { com.bamnat.app.data.GrowStore(appContext) }
     /** 1.32 [PROX-02] The money-day 체험 권유, this phone only. */
@@ -1171,11 +1188,15 @@ class AppContainer(context: Context) {
         }
         // [MON-06] The trial's notice follows the subscription and the user's answer; 840·841: so does the 7-days-before notice of a
         // yearly renewal or a 1년 이용권's end (one job, inside the start's budget [PERF-10]).
+        // 2.0.0 [RVO-14] (I11bb-02·PRO-29) and the evening before 프로 or the 끄기 미션's 7 days end by themselves, from the gate alone.
         keep("trialnotice") {
-            proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.trialFinalFor, it.yearPassUntil, it.endNoticeFor) }.distinctUntilChanged()
+            combine(proStore.state.map { listOf(it.sub, it.consentAt, it.trialNoticeFor, it.trialFinalFor, it.yearPassUntil, it.endNoticeFor) },
+                featureGate.state.map { listOf(it.ends, it.access.pro, it.leases.until[com.bamnat.core.tier.FeatureLease.Bundle.ALARM], it.free) }) { p, g -> p to g }
+                .distinctUntilChanged()
                 .collect {
                     com.bamnat.app.tier.TrialNotice.reschedule(appContext, proStore.current)
                     com.bamnat.app.tier.EndNotice.reschedule(appContext, proStore.current)
+                    com.bamnat.app.tier.ProEndNotice.reschedule(appContext, featureGate.state.value)
                 }
         }
         appScope.launch {

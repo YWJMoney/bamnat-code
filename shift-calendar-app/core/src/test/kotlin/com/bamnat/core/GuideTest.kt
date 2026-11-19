@@ -160,6 +160,21 @@ class GuideTest {
         assertFalse(GuideState(off = setOf("main/shop.autoClose")).isOff(FeatureRegistry.get("shop.autoClose")!!, "main"))
     }
 
+    /**
+     * 2.0.0 검토 PC-154: what the calendar used to show as a card on top (권유·안내·알려 주기) now waits in the 알림함 (HQ-50), so its 어디 line says
+     * 알림함(종), never '달력 맨 위 카드', and the description does not promise a card over the month.
+     */
+    @Test
+    fun suggestionsSayTheyWaitInTheBell() {
+        val bell = listOf("guide.checklist", "guide.tips", "guide.discover", "calendar.monthRecap", "invite.nudge", "pro.moments")
+        // 한 달 마감 카드는 바로 가기가 달력이라 길이 달력에서 시작해요(TypeWordsTest.everyWayStartsWhereItsShortcutLands): 종이 달력 머리에 있어요.
+        bell.forEach { id -> assertTrue(id, FeatureRegistry.get(id)!!.where.removePrefix("달력 › ").startsWith("알림함(종)")) }
+        assertTrue(FeatureRegistry.get("guide.discover")!!.what.contains("알림함(종)"))
+        FeatureRegistry.all.forEach { f ->
+            assertFalse(f.id, f.where.contains("달력 맨 위 카드") || f.what.contains("달력 위 카드로"))
+        }
+    }
+
     /** [GUIDE-03] The moments the product asked for. */
     @Test
     fun goodMomentsFollowTheDay() {
