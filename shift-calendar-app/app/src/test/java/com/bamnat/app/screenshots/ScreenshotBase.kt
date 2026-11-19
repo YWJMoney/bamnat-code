@@ -332,20 +332,23 @@ abstract class ScreenshotBase {
             return null
         }
 
-        // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it.
         private fun SemanticsNode.words(): List<String> =
-            (config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
+            config.getOrNull(SemanticsProperties.Text).orEmpty().map { it.text } +
                 config.getOrNull(SemanticsProperties.ContentDescription).orEmpty() +
-                listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)).map { it.replace('\u00A0', ' ') }
+                listOfNotNull(config.getOrNull(SemanticsProperties.EditableText)?.text)
 
         /** The first node on screen showing [text] (whole words with [exact], the start with [prefix]): clickable ones first. */
         private fun find(text: String, exact: Boolean, prefix: Boolean): SemanticsNode? {
             var found: SemanticsNode? = null
             scenario.onActivity { activity ->
                 val root = rootOf(topWindow(activity)) ?: return@onActivity
+                // A no-break space (that keeps '·' with the words before it) reads as a space, as a person sees it: either way
+                // on both sides.
+                val said = text.replace('\u00A0', ' ')
                 val shown = root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = true).filter { n ->
                     val b = n.boundsInWindow
-                    b.width > 1f && b.height > 1f && n.words().any { w -> if (exact) w == text else if (prefix) w.startsWith(text) else text in w }
+                    b.width > 1f && b.height > 1f && n.words().any { raw -> val w = raw.replace('\u00A0', ' ')
+                        if (exact) w == said else if (prefix) w.startsWith(said) else said in w }
                 }
                 found = shown.firstOrNull { it.config.contains(SemanticsActions.OnClick) } ?: shown.firstOrNull()
             }
