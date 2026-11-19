@@ -87,7 +87,7 @@ import { bundleInquiries, inboxAnswer, inboxRoute } from "./inbox.js";
 import { DEV, HELD_FOR_PERSON, INQUIRY, INQUIRY_TOPICS, QA, SLA, SLA_SQL, actorName, releaseHeld, rescanBilling, rescanBilling2, adminInquiries, ask, devRoute, expiredInquiries, forgetInquiries, inquiries, inquiryView, page, plainActor, plainText, publicQa, publicRows, readSla, slaKey, slaSetting, slaTargets, templateRoute } from "./inquiries.js";
 import { hasPro, INVITE, MONEY, REWARD_CAP, addMonths, b64url, config, deferFor, installOf, inviteCodeOf, inviteDeadline, invitePage, inviteSettings, inviteSettingsRoute, invites, launchView, familyCode, familyCodeDelete, familyList, familySet, linkCode, money, myPhones, phoneList, phonePreviews, playIntent, playReady, playToken, readSub, recheckLapsed, rewardCounts, rewardWhy, rewardYear, setPhone, stack, stopUnconsentedTrials, storeLink } from "./money.js";
 import { EVENTS, NOTICE, PHOTO_REASONS, PHOTO_SCREENS, STARTUP_BUCKETS, SWITCHES, USAGE, checkOps, kstDay, lookupRows, metrics, noticeList, noticeView, opsItems, opsMonth, opsState, paused, photoWrong, photoWrongMetrics, readAction, readAudience, removeNotice, saveNotice, setSwitch, startupMetrics, startupRows, setupRows, SETUP_TAP_BUCKETS, usage } from "./usage.js";
-import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, serverEval, storeFrom } from "./flags.js";
+import { FLAG_CATALOG, FLAG_KEYS, FLAG_STORE_SQL, SWITCH_FLAGS, fixRequestsOpen, fixedAmountsOpen, flagDef, flagEffects, flagOverview, flagRoute, flagStore, flagTick, migrateFlags, roomMoneyFromPolicy, serverEval, storeFrom } from "./flags.js";
 // 1.34 [RCP-28]..[RCP-36] 나눔 판.
 import { CODE as RECIPE_CODE, RECIPE_COLUMNS, lookOf as recipeLookOf, RECIPE_SCHEMA, RECIPE_TABLE, forgetRecipes, makerId, pruneRecipes, recipeAdmin, recipeRoute } from "./recipes.js";
 import { INTEGRITY_SCHEMA, integrityGate, integrityMode, integrityRoute, integrityState } from "./integrity.js";
@@ -170,6 +170,7 @@ export const LIMITS = {
 // [PLAZA-10] firstMonths: the pass for a company's or department's first setup with its pay; at most firstCapYear a year.
 // 2.0.0 [RVN-17] 검토 COMP-14 roomMoney: 회사 방·유형별 방의 글에 금액을 받을지(1) 막을지(0). 보고서 11장 결정 11의 추천(받기)은 운영 규칙
 // 4항('금액은 임금표에만')을 고쳐 게시하는 날 관리자 앱 › 광장 › 채택 규칙 › 광장 방 글의 금액 한 값으로 켜요. 앱도 이 값을 따라요(/api/terms).
+// 켜 두어도 처리방침 3.14 게시일 + 7일(운영 규칙 3판 시행일) 전에는 받지 않아요(roomMoneyOn, flags.js roomMoneyFromPolicy).
 const DEFAULTS = { adoptPoints: 3, rewardMonths: 3, adoptAgree: 75, adoptPersons: 3, amendPersons: 3, autoReward: 1, rewardCapMonths: 3, rewardCapDays: 90,
   firstMonths: 1, firstCapYear: 3, askMonths: 3, roomMoney: 0 };
 
@@ -250,11 +251,15 @@ export default {
     try {
       const res = await route(request, env, ctx);
       status = res?.status ?? 200;
+      // 2.0.0 [RVQ-34] 검토 SVC-32: 던지지 않고 500을 돌려준 답도 '서버 오류'로 세고 주소별로 묶어요(전에는 응답 속도의 오류에만 있고 묶음엔
+      // 없어 까닭을 찾을 수 없었어요). 쉬는 기능의 503과 바깥 서버가 안 닿은 502·504는 오류가 아니라 따로 세요.
+      if (status >= 500 && env.DB) await countServerAnswer(env, new URL(request.url).pathname, status).catch(() => {});
       return res;
     } catch (e) {
       if (e instanceof Refuse) {
         status = e.status;
-        return json({ error: e.code, field: e.field }, e.status);
+        // [RVN-17] 계좌번호 says "amount" to an app before 2.0.0 (textCode).
+        return json({ error: textCode(e.code, request), field: e.field }, e.status);
       }
       status = 500;
       console.error(e && e.stack ? e.stack : String(e));
@@ -417,7 +422,7 @@ export function dropInquiries(env, where, ...params) {
   const of = `inquiry_id IN (SELECT id FROM inquiries WHERE ${where})`;
   return [
     // 2.0.0 [RVQ-16] 보내려고 잠깐 둔 답도 문의와 함께(문의가 없으면 보낼 곳도 없어요).
-    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
+    ...["inquiry_messages", "inquiry_marks", "inquiry_notes", "dev_links", "inquiry_photos", "held_replies", "ship_outbox"].map((t) => stmt(env, `DELETE FROM ${t} WHERE ${of}`, ...params)),
     stmt(env, `DELETE FROM inquiries WHERE ${where}`, ...params),
   ];
 }
@@ -1625,6 +1630,19 @@ export function contact(text) {
   return firstRule(CONTACT, text);
 }
 
+/**
+ * 2.0.0 [RVN-17] The word "account" (계좌번호) is new: the apps before 2.0.0 know only email·phone·amount and would say '보내지
+ * 못했어요. 잠시 뒤 다시 해 주세요' to it (and a question waiting to be sent would try again). An app that knows it says so with
+ * the header X-Text-Codes: account (2.0.0 [RVN-22]); to any other the server answers "amount", the word that already made those
+ * apps say to take the number out (most account numbers were refused as "amount" before, a run of five digits).
+ */
+export const TEXT_CODES_HEADER = "x-text-codes";
+export function textCode(code, request) {
+  if (code !== "account") return code;
+  const knows = String(request?.headers?.get?.(TEXT_CODES_HEADER) ?? "").split(",").some((w) => w.trim() === "account");
+  return knows ? code : "amount";
+}
+
 // ---- a setup: what a report may hold (company-setup.js, 2.0.0 [RVD-25]) ----
 
 export { Refuse, refuse, given, list, cleanSetup, item };
@@ -1904,10 +1922,26 @@ function diffLines(before, after) {
 
 /** What the app tells someone before they send: the points a setup needs and the reward once it is adopted. */
 async function terms(env) {
-  const { adoptPoints, rewardMonths, adoptAgree, firstMonths, roomMoney } = await settings(env);
+  const s = await settings(env);
   // [PLAZA-10] firstMonths: what a company's first setup with its pay earns, said on the app's 나누기 card.
-  // 2.0.0 [RVN-17] COMP-14 roomMoney: whether a room's post may hold an amount, so the app checks as the server does (1.39 apps never read it).
-  return { threshold: adoptPoints, rewardMonths, agree: adoptAgree, firstMonths, roomMoney: roomMoney === 1 };
+  // 2.0.0 [RVN-17] COMP-14 roomMoney: whether a room's post may hold an amount now, so the app checks as the server does (1.39 apps
+  // never read it); the switch and the 3.14 7일 줄 both (roomMoneyOn, which reads 처리방침 일정 only with the switch on).
+  return { threshold: s.adoptPoints, rewardMonths: s.rewardMonths, agree: s.adoptAgree, firstMonths: s.firstMonths, roomMoney: await roomMoneyOn(env, Date.now(), s) };
+}
+
+/**
+ * 2.0.0 [RVN-17] 검토 COMP-14 Whether a room's post takes amounts now: 관리자 앱 › 광장 방 글 › '방 글에 금액 받기' on, and the 처리방침
+ * 3.14·운영 규칙 3판 7일 줄 come (게시일 + 7일, 한국 날짜). Off by the switch, the 처리방침 일정 is not read.
+ */
+export async function roomMoneyOn(env, now = Date.now(), s = null) {
+  if ((s ?? (await settings(env))).roomMoney !== 1) return false;
+  const from = await roomMoneyFrom(env);
+  return Boolean(from) && kstDay(now) >= from;
+}
+
+/** The day 방 글에 금액 받기 may start (3.14 게시일 + 7일), or null before 3.14 is in 처리방침 일정. */
+async function roomMoneyFrom(env) {
+  return roomMoneyFromPolicy((await one(env, "SELECT value FROM settings WHERE key = 'policy_overrides'"))?.value);
 }
 
 /**
@@ -2669,8 +2703,9 @@ async function roomPost(request, env, body, ctx) {
   if (!place) return json({ error: "not_found" }, 404);
   const text = str(body.body, LIMITS.post, "body", { empty: false, lines: true, code: "body" }).trim();
   if (text.length < 2) refuse("body", "body");
-  // 2.0.0 [RVN-17] COMP-14 With roomMoney on, a room's post may say an amount; a way to reach someone never.
-  const money = (await settings(env)).roomMoney === 1;
+  // 2.0.0 [RVN-17] COMP-14 With roomMoney on (and the 3.14 7일 줄 come), a room's post may say an amount; a way to reach someone
+  // or to send money (계좌번호) never.
+  const money = await roomMoneyOn(env);
   const why = money ? contact(text) : personal(text);
   if (why) refuse(why, "body");
   if (place.id === "style-invest" && INVEST_ADVICE.test(text)) refuse("invest_advice", "body");
@@ -2850,7 +2885,7 @@ async function communityAppeal(request, env) {
   const make = async (text) => {
     // [RVN-22] 해명에는 금액은 적어도 되고, 메일·전화번호·계좌번호는 받지 않아요.
     const why = personal(text);
-    if (why === "email" || why === "phone" || why === "account") return { error: why, status: 400 };
+    if (why === "email" || why === "phone" || why === "account") return { error: textCode(why, request), status: 400 };
     const hit = await overLimit(env, now, [["device", `inquiry|${dev}`, 5, DAY], ...(await networkCheck(env, dev, net, "inquiry", 200, now))]);
     if (hit) return { error: "rate_limited", status: 429 };
     const id = randomId(22);
@@ -6821,9 +6856,12 @@ function nightFrom(got, now) {
 
 /** [ADMUX-37] What the screens share and rarely changes: the 채택 settings, the answer targets and the reason words. */
 async function basics(env) {
-  const [settings, sla] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL)]);
+  const [settings, sla, policy] = await batch(env, [env.DB.prepare(`SELECT key, value FROM settings WHERE key IN (${SETTING_KEYS})`), env.DB.prepare(SLA_SQL),
+    env.DB.prepare("SELECT value FROM settings WHERE key = 'policy_overrides'")]);
   return { settings: readSettings(settings.results), sla: readSla(sla.results), doubt: DOUBT, reasons: REASONS, answers: ANSWERS,
-    hideReasons: HIDE_REASONS, flagReasons: FLAGS };
+    hideReasons: HIDE_REASONS, flagReasons: FLAGS,
+    // 2.0.0 [RVN-17] COMP-14 the day 방 글에 금액 받기 may start (처리방침 3.14 게시일 + 7일), for the switch's line.
+    roomMoneyFrom: roomMoneyFromPolicy(policy.results?.[0]?.value) };
 }
 
 // AN 1.28 끝
@@ -7756,6 +7794,14 @@ export function inquiryStats(rows, sla, dayList, now) {
 }
 
 /** [ADMUX-16] One more request the worker could not answer (500) on today's Korean day; kept 400 days. */
+/** 2.0.0 [RVQ-34] 검토 SVC-32: 돌려준 5xx 하나. 500은 오류(날마다 센 수와 묶음), 503은 쉬는 중 거절, 502·504는 바깥 서버. */
+export async function countServerAnswer(env, path, status) {
+  if (status === 500) {
+    await countError(env);
+    await recordError(env, path, { message: "던진 오류 없이 돌려준 서버 오류", stack: "" }).catch(() => countFailure(env, "errfail"));
+  } else await countFailure(env, status === 503 ? "busy503" : "far5xx");
+}
+
 async function countError(env) {
   const now = Date.now();
   await env.DB.prepare(`INSERT INTO counters (key, count, expires) VALUES (?1, 1, ?2)

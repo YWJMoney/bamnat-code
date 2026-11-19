@@ -164,6 +164,9 @@ internal object SettingsIndex {
             e.copy(title = style.words().pattern, keywords = e.keywords + e.title)
         style != null && (e.place as? SettingPlace.Screen)?.go == SettingsGo.SHIFT_TYPES && e.title == "근무 종류와 시간" ->
             e.copy(title = style.words().types, keywords = e.keywords + e.title)
+        // 2.0.0 [RVG-40] 검토 PC-175: a shop, a field worker or an investor reads 다른 사람 달력 받기, as 달력 › 도구 says it.
+        (e.place as? SettingPlace.Screen)?.go == SettingsGo.RECEIVE && e.title == "동료 근무표 받기" && com.bamnat.core.work.receiveTitle(style) != e.title ->
+            e.copy(title = com.bamnat.core.work.receiveTitle(style), keywords = e.keywords + e.title)
         style == com.bamnat.core.work.WorkStyle.HOURLY && "회사 계산 방법" in e.title ->
             e.copy(title = e.title.replace("회사 계산 방법", "근무지 계산 방법"))
         // 1.38 PC 12.5 빈틈 2 (투자의 찾기 결과가 '잠금 화면 오늘 근무'): the result reads as the row does on that kind of work's page;

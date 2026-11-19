@@ -2093,7 +2093,7 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(u.text("#main .ob-tile.need"), /연결 필요/);
   assert.match(u.text("#main .ob-tile.keep"), /앱 → 서버 요청/);
   assert.match(u.text("#main .ob-tile.voice"), /문의/);
-  assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 좋아진 신호");
+  assert.equal(u.$$("#main .ob-signal").length, 1, "the cleared one waits under 판정한 신호");
   assert.match(u.text("#main .ob-better"), /9% → 16%/);
   // [OBS2-09] 할 일만 펼치고, 기다리면 풀리는 것(3.12 시행·1.39 출시)과 정한 것(지운 이유)은 접어요.
   assert.ok(u.$("#main .ob-gaps details.ob-gap-rest"), "folded");
@@ -2107,6 +2107,82 @@ test("[OBS2-01~05] 한눈에 is the 관측 board: 전체 사용자 tiles say whe
   assert.match(made.title, /앱 삭제가 늘어난 이유/);
   assert.match(u.text("#main .ob-signal"), /개발사항/);
   assert.ok(u.$(`#main .ob-signal a[href*="${made.id}"]`), "a link to the new 개발사항");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-34] SVC-20 개발사항: 잴 이벤트가 있을 때만 '효과를 볼 방향'을 고르고, 효과 카드가 그 방향과 '아직 몰라요'의 까닭을 말해요", async (t) => {
+  offline(t);
+  const { env } = server();
+  const u = await asOwner(env, t);
+  const db = env.DB.db;
+  const made = await u.api("POST", "/api/admin/dev", { title: "정산 화면 여는 길 줄이기" });
+  const plain = await u.api("POST", "/api/admin/dev", { title: "알람 소리 고치기" });
+  // 잴 이벤트는 저장소 동기화(ops/dev-status.jsonl)로 와요.
+  db.prepare("UPDATE dev_items SET events = 'pay_open', status = 'done', route = 'server', live_at = ?, effect = 'unknown', effect_at = ?, effect_note = ? WHERE id = ?")
+    .run(Date.now() - 16 * 86400000, Date.now(), JSON.stringify({ from: new Date(Date.now() - 16 * 86400000).toISOString(), why: "pay_open 쓰는 비율 +40% · 늘었지만 좋은 방향(늘면·줄면)을 정하지 않았어요" }), made.id);
+  db.prepare("UPDATE dev_items SET status = 'done', route = 'server', live_at = ? WHERE id = ?").run(Date.now() - 16 * 86400000, plain.id);
+  await u.go(`#/dev/${made.id}`);
+  await u.settle(40);
+  const card = u.$$("#main section.card").find((c) => c.querySelector("h2")?.textContent === "효과");
+  assert.match(card.querySelector(".pill").textContent, /아직 몰라요/);
+  assert.match(card.textContent, /좋은 방향\(늘면·줄면\)을 정하지 않았어요/);
+  assert.match(card.textContent, /잴 이벤트: pay_open · 좋은 방향: 정하지 않음/);
+  const form = u.$('form[data-form="dev-loop"]');
+  assert.ok(form.querySelector("#dev-good"), "잴 이벤트가 있으면 방향을 골라요");
+  assert.ok(form.querySelector('label[for="dev-good"]'), "칸 이름");
+  form.querySelector("#dev-good").value = "up";
+  form.requestSubmit();
+  await u.settle(40);
+  assert.equal(db.prepare("SELECT good FROM dev_items WHERE id = ?").get(made.id).good, "up");
+  // 잴 이벤트가 없는 개발사항에는 방향 칸이 없고, 효과는 묶인 문의로 본다는 한 줄만.
+  await u.go(`#/dev/${plain.id}`);
+  await u.settle(40);
+  assert.equal(u.$('form[data-form="dev-loop"] #dev-good'), null);
+  const card2 = u.$$("#main section.card").find((c) => c.querySelector("h2")?.textContent === "효과");
+  assert.match(card2.textContent, /잴 이벤트가 없어서 묶인 문의로 봐요/);
+  u.$('form[data-form="dev-loop"] #dev-size').value = "fix";
+  u.$('form[data-form="dev-loop"]').requestSubmit();
+  await u.settle(40);
+  assert.equal(db.prepare("SELECT size, good FROM dev_items WHERE id = ?").get(plain.id).size, "fix", "방향 칸이 없어도 저장돼요");
+  assert.equal(u.$$("#main [style]").length, 0);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVQ-35] SVC-18·U22-07 개선 신호 says 돌아옴·새 기준으로 굳음·자료 없음, keeps the first 기준, and a fix that did not bring it back comes back to the list", async (t) => {
+  offline(t);
+  const { env } = server();
+  const now = Date.now();
+  const base = { why: "최근 판에서 그 기능 가는 길·모양이 바뀌었는지 봐요.", dev: "쓰임이 줄어든 이유 찾기", to: "#/metrics", unit: "대", better: "up", first: now, at: now, tone: "warn" };
+  const sig = (key, extra) => ({ ...base, key, kind: "feature-fall", subject: key, title: `'${key}' 쓰는 휴대폰이 반 넘게 줄었어요`, ...extra });
+  const list = [
+    sig("stuck", { state: "new", stuck: "settled", devWas: "dSTUCKSTUCKSTUCK", devId: null, value: 10, base: 12, base0: 40, now: 12, last: now }),
+    sig("dev", { state: "dev", devId: "dDEVDEVDEVDEVDEV", value: 9, base: 22, base0: 40, now: 9, last: now - 3600000 }),
+    sig("back", { state: "dev", devId: "dBACKBACKBACKBAC", value: 10, base0: 40, after: 39, cleared: now, outcome: "back", last: now - 4 * 86400000 }),
+    sig("settled", { state: "watch", value: 10, base0: 40, after: 18, cleared: now, outcome: "settled", last: now - 4 * 86400000 }),
+    sig("nodata", { state: "new", value: 10, base0: 40, after: 10, cleared: now, outcome: "nodata", last: now - 4 * 86400000 }),
+    sig("old", { state: "new", value: 10, base: 40, after: 30, cleared: now, last: now - 4 * 86400000 }),
+  ];
+  const u = await asOwner(env, t);
+  env.DB.db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('obs_signals', ?)").run(JSON.stringify({ list }));
+  await u.go("#/glance");
+  await u.settle(40);
+  assert.equal(u.$$("#main .ob-signal").length, 2, "열린 신호 둘(되돌아온 것·개발 중)");
+  const stuck = u.$$("#main .ob-signal").find((li) => li.textContent.includes("'stuck'"));
+  assert.match(stuck.querySelector(".pill").textContent, /고쳤는데 그대로/);
+  assert.match(stuck.querySelector("[data-stuck]").textContent, /처음 기준 40대까지 돌아오지 않았어요\(새 기준으로 굳음\)/);
+  assert.ok(stuck.querySelector('[data-stuck] a[href*="dSTUCKSTUCKSTUCK"]'), "고친 개발사항으로 가는 길");
+  assert.ok(stuck.querySelector('[data-do="dev"]'), "다시 개발사항으로 넘길 수 있어요");
+  const dev = u.$$("#main .ob-signal").find((li) => li.textContent.includes("'dev'"));
+  assert.match(dev.querySelector(".ob-metric").textContent, /기준 22대 · 처음 기준 40대 · 고침이 닿은 뒤 사흘 동안 안 보이면 처음 기준과 견줘 판정해요/);
+  assert.match(u.text("#main .ob-better summary"), /판정한 신호 4개\s*돌아옴 1 · 새 기준으로 굳음 1 · 자료 없음 1 · 옛 판정 1/);
+  assert.match(u.text('#main .ob-better [data-outcome="back"]'), /개발사항 dBACKBACKBACKBAC 뒤 · 10대 → 39대 · 처음 기준 40대/);
+  assert.match(u.text('#main .ob-better [data-outcome="nodata"]'), /안 보인 뒤로 이 숫자를 읽지 못했어요/);
+  assert.match(u.text('#main .ob-better [data-outcome="old"]'), /처음 기준과 견주기 전/);
+  // 조건 6: 판정에는 빨강을 쓰지 않아요(굳음만 주황).
+  assert.equal(u.$$("#main .ob-better .pill.bad").length, 0);
+  assert.equal(u.$$("#main .ob-better .pill.warn").length, 1);
+  assert.match(u.text("#main .ob-signals .hint"), /처음 기준까지 돌아오면 '돌아옴', 못 돌아오면 다시 여기로 와요/);
   assert.equal(u.$$("#main [style]").length, 0);
   assert.deepEqual(u.errors, []);
 });
@@ -3618,5 +3694,105 @@ test("[RVA-62] PC-158 회사 목록: 좁은 폭은 정렬 고르기, 고르면 �
   pick.dispatchEvent(new u.window.Event("change", { bubbles: true }));
   await u.settle(30);
   assert.match(u.$('#main th[aria-sort="descending"]').textContent, /참여/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-63] 되풀이되는 닫힘 문의: 운영 장부 맨 위 묶음 카드(접히면 한 줄), 줄과 문의에 멈춤 기록 표식, '기록 부탁 답 넣기'는 적던 답을 지우지 않아요", async () => {
+  const css = await adminFile("/admin/app.css").text();
+  assert.match(css, /details\.card\.crash-card\{/);
+  // 총괄(#526): 펼친 접는 카드의 꺾쇠에 공통 '▴' 글자가 겹쳐 그려지지 않게.
+  assert.match(css, /\.home-fold\[open\]>summary::after\{content:"";transform:rotate\(-135deg\)\}/);
+  const { call, env } = await world();
+  // 지어낸 값: 같은 보낸 분이 닫힘 문의 둘(멈춤 기록 없음).
+  const info = { app: "1.39.0 (53)", model: "Test Fold 9", android: "17 (API 37)", diag: "[앱 멈춤]\n기록 없음" };
+  const ids = [];
+  for (const text of ["앱이 갑자기 닫혀요", "또 앱이 저절로 꺼졌어요"]) {
+    ids.push((await call("POST", "/api/inquiries", { v: 1, device: "test-device-00000071", kind: "bug", text, info }, from(71))).data.id);
+  }
+  const u = await signedIn(env);
+  await u.go("#/desk");
+  await u.settle(30);
+  const card = u.$("#main .ledger-view > details.crash-card");
+  assert.ok(card, "the card is on the ledger");
+  // 조건 1: 처음에는 접힌 한 줄(장부 첫 줄이 밀리지 않게), 그 한 줄에 건수·기기·날짜·기록 없음.
+  assert.equal(card.open, false, "folded to one line at first");
+  assert.match(card.querySelector("summary").textContent, /닫힘 되풀이 2건 · 같은 보낸 분Test Fold 9 · 안드로이드 17 · 1\.39\.0 · \d\d\.\d\d~\d\d\.\d\d · 멈춤 기록 없음 2건/);
+  card.querySelector("summary").click();
+  await u.settle(5);
+  assert.equal(card.open, true);
+  // 조건 4: 묶음이 하나면 머리가 이미 말하니 묶음 제목 없이 줄 번호 칩만.
+  assert.equal(card.querySelectorAll(".crash-g").length, 0);
+  const chips = [...card.querySelectorAll(".crash-lines a.chip")];
+  assert.deepEqual(chips.map((a) => a.textContent.replace(/K-\d{4}/, "K")), ["K · 1번째", "K · 2번째"]);
+  assert.ok(chips[0].getAttribute("href").endsWith(ids[0]));
+  // 조건 2·6: 채운 단추를 더하지 않고, 빨강을 더하지 않아요.
+  assert.equal(card.querySelectorAll(".btn.primary, .pill.bad").length, 0);
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => /되풀이 2\/2/.test(p.textContent)));
+  assert.ok(u.$$("#main .rows.ledger .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  // 펼친 것은 다시 그려도 남고, 접으면 한 줄로 돌아가요.
+  await u.click('#main [data-act="ledger-view"][data-key="open"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, true);
+  u.$("#main details.crash-card summary").click();
+  await u.settle(5);
+  await u.click('#main [data-act="ledger-view"][data-key="today"]');
+  await u.settle(30);
+  assert.equal(u.$("#main details.crash-card").open, false);
+  // 문의 화면: 줄 표식, 상세의 몇 번째와 '기록 부탁 답 넣기'.
+  await u.go("#/inquiries");
+  await u.settle(30);
+  assert.ok(u.$$("#main .rows .row-side .pill").some((p) => p.textContent === "멈춤 기록 없음"));
+  await u.go(`#/inquiries/${ids[1]}`);
+  await u.settle(30);
+  assert.match(u.text("#main .crash-note"), /같은 보낸 분의 닫힘 문의 2건 중 2번째/);
+  await u.type("#reply", "안녕하세요.");
+  await u.click('#main [data-act="crash-draft"]');
+  const v = u.$("#reply").value;
+  assert.match(v, /^안녕하세요\.\n\n불편을 드려/, "what was typed stays first");
+  assert.match(v, /보고서 복사/);
+  assert.match(v, /밤낮 운영팀$/);
+  assert.deepEqual(u.errors, []);
+});
+
+test("[RVA-65] 장터 작품 '입은 뒤' 숫자: 줄에는 비율만(넣은 분이 20명 이상), 하나 보기에는 빈 상태 둘, 개선 신호 주소로 그 작품이 바로 열려요", async (t) => {
+  offline(t);
+  const { env, call } = await world();
+  const look = { kind: "shiftLook", items: [{ name: "야간", role: "night", label: "야", color: 4282664004, emoji: "🌙" }] };
+  const make = async (n, title) => (await call("POST", "/api/recipes", { device: device(n), scope: "public",
+    recipe: { format: "bamnat-recipe", v: 1, title, summary: "지어낸 작품", styles: ["SHIFT"], pieces: [look] } }, from(n))).data.code;
+  const ok = await make(1, "작은 글씨 달력");
+  const few = await make(2, "새로 올린 달력");
+  const off = await make(3, "깃발 전 달력");
+  // 서버(Q1 4g)가 싣는 wear 모양: 비율만, 넣은 분 수·낱개 수는 없음.
+  const WEAR = { [ok]: { state: "ok", offSoon: 0.45, textBack: 0.12, watch: true }, [few]: { state: "few" }, [off]: { state: "off" } };
+  const u = await asOwner(env, t);
+  const real = u.window.fetch;
+  u.window.fetch = async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.url, ORIGIN);
+    const r = await real(input, init);
+    if (!url.pathname.startsWith("/api/admin/recipes") || (init?.method ?? "GET") !== "GET" || !r.ok) return r;
+    const j = await r.json();
+    for (const it of j.items ?? []) if (WEAR[it.code]) it.wear = WEAR[it.code];
+    return new u.window.Response(JSON.stringify(j), { status: r.status, headers: { "content-type": "application/json" } });
+  };
+  await u.go("#/recipes?tab=visible");
+  await u.settle(30);
+  const row = (code) => u.$(`#main [data-act="recipe-do"][data-id="${code}"]`)?.closest("li");
+  assert.match(row(ok).querySelector(".wear").textContent, /넣은 뒤\(30일\) · 30분 안에 다시 뺌 45% · 글자 크기 되돌림 12%/);
+  assert.equal(row(ok).querySelectorAll(".wear .pill.warn").length, 1, "눈여겨볼 작품만 주의 pill");
+  assert.ok(!row(few).querySelector(".wear") && !row(off).querySelector(".wear"), "목록 줄에는 비율이 있을 때만(짧게)");
+  assert.equal(u.$$("#main .wear .pill.bad").length, 0, "빨강 없음");
+  assert.doesNotMatch(u.window.location.hash, /code=/, "작품 코드는 하나 보기에서만 주소에");
+  // 개선 신호가 가는 주소: 그 작품 하나 보기.
+  for (const [code, words] of [[few, /넣은 분이 20명이 되면 비율이 보여요/], [off, /처리방침 3\.14 시행 뒤, 사용 통계를 켠 분에게서 모여요/]]) {
+    await u.go(`#/recipes?tab=one&code=${code}`);
+    await u.settle(30);
+    assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]'), null, "하나 보기");
+    assert.match(u.text("#main .wear"), words);
+    assert.match(u.window.location.hash, new RegExp(`code=${code}`));
+  }
+  await u.go("#/recipes?tab=one&code=%2Fx");
+  await u.settle(30);
+  assert.equal(u.$('#main [data-act="recipe-tab"][aria-pressed="true"]')?.dataset.key, "flagged", "이상한 코드는 신고됨으로");
   assert.deepEqual(u.errors, []);
 });

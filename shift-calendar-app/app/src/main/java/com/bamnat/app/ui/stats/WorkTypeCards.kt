@@ -46,7 +46,6 @@ import com.bamnat.app.ui.components.StatTile
 import com.bamnat.app.ui.components.StepperRow
 import com.bamnat.app.ui.components.WarningBanner
 import com.bamnat.app.ui.guide.FeatureCard
-import com.bamnat.app.ui.theme.LocalCalendarColors
 import com.bamnat.app.ui.theme.NumberStyle
 import com.bamnat.core.holiday.KoreanHolidays
 import com.bamnat.core.hours.HoursFormat
@@ -253,7 +252,8 @@ private fun DayFirstCard(
             { m ->
                 StatTile("연차", "${LeaveBook.days(used)} 씀", m,
                     caption = left?.let { "남은 ${LeaveBook.days(it)}" } ?: "입사일을 넣으면 남은 날이 보여요",
-                    caution = (left ?: 0.0) < 0)
+                    // 2.0.0 [RVJ-66] (HQ-103, 조건 6) 연차를 더 쓴 것은 주의예요(빨간 칸이었어요).
+                    captionTone = if ((left ?: 0.0) < 0) com.bamnat.app.ui.theme.Tone.Caution else com.bamnat.app.ui.theme.Tone.Plain)
             },
             { m ->
                 StatTile("예상 실수령", takeHome?.let { Fmt.won(it.net) } ?: "-", m,
@@ -360,7 +360,6 @@ private fun PayGapCard(
         scope.launch { bring.bringIntoView() }
         if (profile != null && gap == null) adding = true
     }
-    val cal = LocalCalendarColors.current
     // PC 8eae2521 (알바에 '월급날 비교'·'월급이 들어오면'): 알바's pay is 급여, weekly or monthly.
     val payWord = if (style == WorkStyle.HOURLY) "급여" else "월급"
     SectionCard(title = "${month.monthValue}월 ${payWord}날 비교", modifier = Modifier.bringIntoViewRequester(bring)) {
@@ -466,7 +465,6 @@ private fun AddPayDialog(start: LocalDate, onDismiss: () -> Unit, onSave: (Local
 internal fun HoursBar(label: String, minutes: Int, limitHours: Int,
                       /** 1.39 발굴: what the limit is (법 한도인지, 내가 정한 경고인지), under the bar. */
                       note: String? = null) {
-    val cal = LocalCalendarColors.current
     val over = minutes > limitHours * 60
     Column(Modifier.fillMaxWidth().padding(bottom = 8.dp).semantics(mergeDescendants = true) {}) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -493,7 +491,6 @@ private fun SelectiveCard(calendarId: String, snapshot: ScheduleSnapshot) {
     val c = choices[calendarId] ?: com.bamnat.app.data.WorkTypeChoices()
     var editing by remember { mutableStateOf(false) }
     val today = remember { Today.date() }
-    val cal = LocalCalendarColors.current
     SectionCard(title = "선택근무 정산 기간", trailing = { TextButton(onClick = { editing = true }) { Text(if (c.selectiveMonths == null) "정하기" else "바꾸기") } }) {
         val months = c.selectiveMonths
         if (months == null) {
@@ -550,7 +547,6 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
     val choices by prefs.all.collectAsStateWithLifecycle()
     val capHours = com.bamnat.core.work.WorkTypeChecks.capHours(choices[calendarId]?.overtimeCapHours, profile)
     var editing by remember { mutableStateOf(false) }
-    val cal = LocalCalendarColors.current
     SectionCard(title = "시간외 상한", trailing = { TextButton(onClick = { editing = true }) { Text(if (capHours == null) "정하기" else "바꾸기") } }) {
         if (capHours == null) {
             Text("한 달 시간외 상한(예: ${DayWork.DEFAULT_CAP_HOURS}시간)을 정하면 이번 달 남은 시간을 알려 드려요.",
@@ -562,12 +558,12 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
                     modifier = Modifier.weight(1f))
                 Text(if (cap.over) "${HoursFormat.korean(cap.overMinutes)} 넘음" else "${HoursFormat.korean(cap.leftMinutes)} 남음",
                     style = MaterialTheme.typography.titleSmall.merge(NumberStyle),
-                    color = if (cap.over) Tone.Danger.color() else MaterialTheme.colorScheme.primary)
+                    color = if (cap.over) Tone.Caution.color() else MaterialTheme.colorScheme.primary) // [RVJ-66] 상한 넘음: 주의
             }
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
                 progress = { cap.share.toFloat().coerceIn(0f, 1f) },
-                color = if (cap.over) Tone.Danger.color() else MaterialTheme.colorScheme.primary,
+                color = if (cap.over) Tone.Caution.color() else MaterialTheme.colorScheme.primary,
                 modifier = Modifier.fillMaxWidth(),
             )
             // 1.32 [WTYP-24] 신청한 시간과 인정된 시간이 다른 달.
@@ -576,7 +572,8 @@ private fun OvertimeCapCard(calendarId: String, summary: MonthSummary, profile: 
             }
             if (cap.over) {
                 Spacer(Modifier.height(8.dp))
-                WarningBanner("시간외 상한을 넘었어요", "이번 달 시간외가 ${capHours}시간보다 ${HoursFormat.korean(cap.overMinutes)} 많아요. 넘은 시간은 인정되지 않을 수 있어요.", tone = Tone.Danger)
+                // 2.0.0 [RVJ-66] (HQ-103): 상한을 넘은 시간외는 수당이 안 될 수 있다는 챙길 일(주의), 법 위반 빨강이 아니에요.
+                WarningBanner("시간외 상한을 넘었어요", "이번 달 시간외가 ${capHours}시간보다 ${HoursFormat.korean(cap.overMinutes)} 많아요. 넘은 시간은 인정되지 않을 수 있어요.", tone = Tone.Caution)
             }
         }
     }
@@ -671,7 +668,6 @@ private val CAP_CHOICES = listOf(40, 52, DayWork.DEFAULT_CAP_HOURS, 60)
 /** G 1.32 [WTYP-07] 609 포괄임금: 고정 연장수당이 덮는 시간과 이번 달 실제 연장. 넘은 시간은 따로 받을 수 있어요. */
 @Composable
 private fun CoverHoursCard(c: com.bamnat.core.work.WorkTypeChecks.Cover) {
-    val cal = LocalCalendarColors.current
     SectionCard(title = "포괄 연장 시간") {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${HoursFormat.korean(c.usedMinutes)} / ${HoursFormat.korean(c.coveredMinutes)}", style = MaterialTheme.typography.titleMedium.merge(NumberStyle),

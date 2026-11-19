@@ -1080,6 +1080,33 @@ fun List<HelpTopic>.forStyle(style: com.bamnat.core.work.WorkStyle?): List<HelpT
     return filter { HelpFaq.fits(it, style) }.sortedBy { t -> first.indexOf(t.id).let { if (it < 0) Int.MAX_VALUE else it } }
         .map { if (style == com.bamnat.core.work.WorkStyle.HOURLY) it.copy(question = workplaceWords(it.question), answer = workplaceWords(it.answer)) else it }
         .map { if (style.usesCompany) it else companyFreeWords(it, style) }
+        .map { if (style.usesPayEngine) it else shareWords(it, style) }
+}
+
+/**
+ * 2.0.0 [RVG-40] 검토 PC-175 (조건 13): a shop, a field worker or an investor sends their own 영업일·일정·달력 and takes 다른 사람 달력,
+ * as 달력 › 도구 and the share sheet say it; the answers about sharing said 근무표·동료 to everyone.
+ */
+private fun shareWords(t: HelpTopic, style: com.bamnat.core.work.WorkStyle): HelpTopic {
+    val share = com.bamnat.core.work.shareTitle(style)
+    val word = com.bamnat.core.work.scheduleWord(style)
+    return when (t.id) {
+        "share" -> t.copy(
+            tag = share, question = "$word${com.bamnat.app.ui.Fmt.obj(word)} 가족·친구에게 보내고 싶어요",
+            answer = "달력 맨 위 ‘공유’에서 이미지나 링크로 보내요. 링크는 누구에게 보낼지 고르면 보여 줄 것이 맞춰지고, ‘자세히 정하기’에서 더 고를 수 있어요. " +
+                "앱이 없어도 브라우저에서 열려요.",
+            action = "$share 열기" to HelpAction.Go(SettingsGo.SHARE),
+        )
+        "receive" -> com.bamnat.core.work.receiveTitle(style).let { receive ->
+            t.copy(
+                tag = share, question = "다른 사람 달력을 내 달력과 같이 보고 싶어요",
+                answer = "가족·친구에게 받은 링크를 ‘$receive’에 넣어요. 달력 이름을 누르면 내 달력과 받은 달력을 바꿔 가며 보고, " +
+                    "같이 쉬는 날도 보여요. 링크가 아직 없으면 거기서 링크를 부탁하는 메시지를 보낼 수 있어요.",
+                action = receive to HelpAction.Go(SettingsGo.RECEIVE),
+            )
+        }
+        else -> t
+    }
 }
 
 /**

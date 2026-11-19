@@ -1,6 +1,6 @@
 import { all, batch, can, iso, json, readJson, stmt } from "./index.js";
 import { DAY, HOUR } from "./units.js";
-import { DEV, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
+import { DEV, HELD_FOR_PERSON, TOPIC_NAMES, slaKey, slaTargets, triage } from "./inquiries.js";
 import { PILE_NAMES, compareVersions, grams, known, likeness, sortInbox, titleFrom, version } from "./inbox.js";
 import { isOut } from "./desk.js";
 import { askOwnerOf, replyRiskOf } from "./ask-check.js";
@@ -8,6 +8,7 @@ import { DONE_REASONS, WAIT_REASONS, WORK, WORK_GROUPS, WORK_GROUP_NAMES, WORK_S
 import { errorLine, recordRowErrors } from "./ops-watch.js";
 import { REVIEWS } from "./store-reviews.js";
 import { marketHealthRows } from "./market-health.js";
+import { CRASH_ASK_DRAFT, crashOf, crashRepeats, diagMark, repeatPlaces } from "./crash-repeat.js";
 
 // ---- 1.38 [DESK-02][DESK-03] 운영 장부: 들어온 모든 일을 한 줄씩, 한 화면에서 (설계 docs/plans/1.37-문의-개발-운영장부-설계.md 2장) ----
 //
@@ -175,8 +176,9 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   // 1.39 [ADM3-52] 할 일함 목록(다시 열림 맞추기)과 장부 읽기를 한꺼번에(실서버 결정함·장부가 DB를 차례로 오가 3초 넘었어요).
   // 할 일함 상태(work_states)는 둘 다 끝난 뒤에 읽어요.
   const [work, [qs, ds, sla, k, rv]] = await Promise.all([workList(env, actor, now), Promise.all([
-    asks ? all(env, `SELECT i.id, i.kind, i.info, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
+    asks ? all(env, `SELECT i.id, i.kind, i.info, i.device, i.status, i.created_at, i.updated_at, i.same, i.assignee_name, i.handed_in, i.sorted_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user' ORDER BY m.id LIMIT 1) AS first,
+        (SELECT GROUP_CONCAT(m.text, ' ') FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'user') AS words,
         (SELECT m.sender FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last,
         (SELECT m.at FROM inquiry_messages m WHERE m.inquiry_id = i.id ORDER BY m.id DESC LIMIT 1) AS last_at,
         (SELECT m.text FROM inquiry_messages m WHERE m.inquiry_id = i.id AND m.sender = 'admin' ORDER BY m.id DESC LIMIT 1) AS said,
@@ -204,8 +206,16 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
   const sortJob = asks ? sortInbox(env, k) : null;
   const parts = [];
   for (let i = 0; i < qIds.length; i += 90) parts.push(qIds.slice(i, i + 90));
-  for (const got of await Promise.all(parts.map((part) => all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
-        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part)))) for (const l of got) links.set(l.inquiry_id, l);
+  // 2.0.0 [RVQ-34] 검토 U22-03: 서버가 멈춘 답(사람이 '지금 보내기'를 눌러야 가는 보류 답)도 같이 읽어 줄에 보여요.
+  const personHeld = new Map();
+  const [linkRows, heldRows] = await Promise.all([
+    Promise.all(parts.map((part) => all(env, `SELECT l.item_id, l.inquiry_id, l.told_at, l.at FROM dev_links l JOIN dev_items d ON d.id = l.item_id AND d.deleted_at IS NULL
+        WHERE l.inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY l.at`, ...part))),
+    Promise.all(parts.map((part) => all(env, `SELECT id, inquiry_id, text, by, ship_item FROM held_replies WHERE until >= ? AND inquiry_id IN (${part.map(() => "?").join(",")}) ORDER BY id`,
+      HELD_FOR_PERSON, ...part).catch(() => []))),
+  ]);
+  for (const got of linkRows) for (const l of got) links.set(l.inquiry_id, l);
+  for (const got of heldRows) for (const h of got) if (!personHeld.has(h.inquiry_id)) personHeld.set(h.inquiry_id, h);
   // 묶였지만 장부 범위 밖(오래된) 개발사항도 묶음 칸에는 보여요.
   const missing = [...new Set([...links.values()].map((l) => l.item_id))].filter((id) => !devById.has(id));
   for (let i = 0; i < missing.length; i += 90) {
@@ -227,6 +237,18 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     }
   }
 
+  // 2.0.0 [RVA-63] HQ-124: 닫힘 문의의 멈춤 기록과 7일 안 되풀이 묶음. 보낸 분 번호는 묶는 데만 쓰고 줄에는 싣지 않아요.
+  const crashes = new Map();
+  for (const q of qs) {
+    try {
+      const info = JSON.parse(q.info || "{}");
+      const c = crashOf(q.kind, q.first, info);
+      if (c) crashes.set(q.id, { ...c, device: q.device, model: info.model ?? null, android: info.android ?? null, app: info.app ?? null, at: q.created_at });
+    } catch { /* 읽지 못한 줄은 아래에서 */ }
+  }
+  const repeats = crashRepeats([...crashes].map(([id, c]) => ({ id, ...c })), now);
+  const places = repeatPlaces(repeats);
+
   const rows = [];
   // 2.0.0 [RVA-37] 검토 I24b-02: 한 줄을 읽다 오류가 나면 그 줄만 '읽지 못한 줄'로 두고 장부는 계속(ADMX-01처럼 문의 하나가 장부·오늘을 멈추지 않게).
   const bad = [];
@@ -241,9 +263,13 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       const text = q.first ?? "";
       const link = links.get(q.id) ?? null;
       const d = link ? devById.get(link.item_id) ?? null : null;
-      const owner = askOwner(q.kind, text);
+      // 2.0.0 [RVQ-34] 검토 SVC-28: 서버(needsPerson)처럼 문의한 분의 글 전부로 판정해요(첫 글만 보면 이어 쓴 '환불해 주세요'를 놓쳤어요).
+      const owner = askOwner(q.kind, q.words ?? text);
       const tri = triage(q.kind, text, info);
-      const waitingAdmin = q.status === "open" && q.last === "user";
+      const heldOne = personHeld.get(q.id);
+      const held = heldOne ? { id: heldOne.id, text: clip(heldOne.text, 600), by: heldOne.by, ship: Boolean(heldOne.ship_item),
+        why: owner?.name ?? replyRisk(heldOne.text) ?? "보류한 뒤 새 글·다른 답" } : null;
+      const waitingAdmin = (q.status === "open" && q.last === "user") || Boolean(held);
       let stage;
       if (q.status === "closed") stage = "closed";
       else if (d) {
@@ -258,7 +284,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         key: `inquiry:${q.id}`, type: "inquiry", id: q.id, kind: q.kind, kindName: LINE_KINDS[q.kind] ?? q.kind, topic: tri.topic, topicName: tri.topicName,
         urgent: tri.urgency === "urgent", title: titleFrom(text), text: clip(text, 600), path: screenPath(text), app: vOf(info.app), model: info.model ?? null,
         at: q.created_at, last: q.last_at ?? q.updated_at, same: q.same ?? 0, status: q.status,
-        waitingAdmin, ownerAsk: owner, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
+        waitingAdmin, ownerAsk: owner, held, handedIn: q.handed_in ?? null, skipped: q.sorted_at ? { at: q.sorted_at, back: piles.get(q.id)?.back ?? false } : null,
         sort: piles.get(q.id) ?? null,
         bundle: d ? { id: d.id, title: d.title, status: d.status, statusName: DEV.statuses[d.status] ?? d.status, releasedIn: d.released_in ?? null,
           out: d.status === "done" && isOut(d.released_in, shipped), asks: d.asks, told: Boolean(link.told_at) } : null,
@@ -266,6 +292,10 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         assignee: q.assignee_name ?? null, stage,
         dueAt: waitingAdmin && (!d || stage === "notify") ? Math.min(q.updated_at + (sla[slaKey(q.kind)] ?? 24) * HOUR, owner?.key === "law" ? q.updated_at + LEDGER.safetyHours * HOUR : Infinity) : null,
         overlapsOf: waitingAdmin && !d ? { text, kind: q.kind, info, id: q.id } : null,
+        crash: crashes.has(q.id) ? { record: crashes.get(q.id).record, recordName: crashes.get(q.id).recordName } : null,
+        repeat: places.get(q.id) ?? null,
+        // 2.0.0 [RVA-64] HQ-132: 점검 기록은 내용 없이 표식만(열쇠·Claude 장부도 '왔는지·멈춤 기록 있는지'를 알게).
+        diag: diagMark(info.diag),
       });
     } catch (e) {
       unreadable(`inquiry:${q.id}`, "inquiry", q.id, e, { at: q.created_at, last: q.updated_at, status: q.status });
@@ -341,7 +371,10 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
     }
   });
   if (bad.length) await recordRowErrors(env, "ledger", bad, now);
-  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length };
+  // 묶음마다 줄 번호(K-…)를 붙여 화면이 그 줄로 바로 갈 수 있게.
+  const noOf = new Map(out.map((r) => [r.key, r.no]));
+  const groups = repeats.map((g) => ({ ...g, first: iso(g.first), last: iso(g.last), lines: g.ids.map((id) => ({ key: `inquiry:${id}`, no: noOf.get(`inquiry:${id}`) ?? null })) }));
+  return { rows: out, shipped, auto: sort?.auto ?? null, unreadable: bad.length, crashRepeats: groups };
 
   function lineOut(r) {
     const s = states.get(r.key);
@@ -361,6 +394,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       if (r.type === "inquiry") {
         if (stage === "built") turn = "ship";
         else if (["devwait", "handed", "doing"].includes(stage)) turn = "claude";
+        else if (r.held) turn = "owner";
         else if (r.waitingAdmin) turn = r.ownerAsk ? "owner" : "claude";
         else if (stage === "notify") turn = "claude";
       } else if (r.type === "dev") turn = stage === "built" ? "ship" : ["devwait", "handed", "doing"].includes(stage) ? "claude" : null;
@@ -388,6 +422,8 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
         : r.review?.draft ? { key: "draft", name: "초안 있음", text: r.review.draft, by: r.review.draftBy, byKind: whoKind(r.review.draftBy) }
         : { key: "none", name: "안 함" }
       : r.type !== "inquiry" ? null
+      // 2.0.0 [RVQ-34] 검토 U22-03: 적어 둔 답이 사람 확인을 기다려요(돈·개인정보… 또는 보류한 뒤 바뀐 것). 장부에서 바로 '지금 보내기'.
+      : r.held ? { key: "person", name: "사람 확인 대기", why: r.held.why, text: r.held.text, by: r.held.by, held: r.held.id, ship: r.held.ship }
       : r.said && (!r.waitingAdmin) ? { key: "sent", name: "보냄", text: r.said.text, by: r.said.by, byKind: whoKind(r.said.by), at: iso(r.said.at) }
       : r.ownerAsk && r.waitingAdmin ? { key: "owner", name: "최고 관리자 확인", why: r.ownerAsk.name, ...(r.said ? { before: r.said.text } : {}) }
       : { key: "none", name: r.said ? "새 말에 아직" : "안 함", ...(r.said ? { before: r.said.text, by: r.said.by } : {}) };
@@ -408,6 +444,7 @@ export async function ledgerList(env, actor, now, { days = LEDGER.days } = {}) {
       note: s?.note ?? "", reopened: s?.reopened ?? 0, closed: closed || state === "done",
       lastMove: lastMove ? { at: iso(lastMove.at), by: lastMove.by, byKind: whoKind(lastMove.by), what: lastMove.what } : null,
       ...(r.unreadable ? { unreadable: r.unreadable } : {}),
+      ...(r.crash ? { crash: r.crash } : {}), ...(r.repeat ? { repeat: r.repeat } : {}), ...(r.diag ? { diag: r.diag } : {}),
     };
   }
 }
@@ -454,7 +491,7 @@ export async function ledgerQuery(env, actor, now, params) {
   const v = /^\d{1,2}(\.\d{1,2}){0,2}$/.test(params.get("v") ?? "") ? params.get("v") : null;
   const q = String(params.get("q") ?? "").trim().slice(0, 60);
   const days = Number(params.get("days")) || LEDGER.days;
-  const { rows, shipped, auto } = await ledgerList(env, actor, now, { days });
+  const { rows, shipped, auto, crashRepeats: repeats } = await ledgerList(env, actor, now, { days });
   const open = rows.filter((r) => !r.closed);
   const counts = Object.fromEntries(Object.keys(VIEWS).map((k) => [k, rows.filter((r) => inView(r, k, now)).length]));
   const items = rows.filter((r) => inView(r, view, now) && (!type || r.type === type) && (!group || r.group === group) && inVersion(r, v) && matches(r, q)).sort(ledgerOrder);
@@ -468,6 +505,8 @@ export async function ledgerQuery(env, actor, now, params) {
     counts: { ...counts, groups, open: open.length, inToday: rows.filter((r) => Date.parse(r.at) >= start).length,
       doneToday: doneToday.reduce((n, r) => n + r.n, 0), byWho: doneToday.map((r) => ({ name: r.by_name || "앱", n: r.n })) },
     total: items.length, items, versions,
+    // 2.0.0 [RVA-63] HQ-124: 운영 장부 맨 위 '같은 판에서 닫힘 되풀이'.
+    crashRepeats: repeats ?? [], crashDraft: CRASH_ASK_DRAFT,
     names: { views: VIEWS, stages: STAGES, turns: TURNS, states: WORK_STATE_NAMES, wait: WAIT_REASONS, done: DONE_REASONS, types: LEDGER_TYPES, groups: WORK_GROUP_NAMES,
       piles: PILE_NAMES },
     rules: { backDays: WORK.backDays, safetyHours: LEDGER.safetyHours, skipBackDays: 7 },

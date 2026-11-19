@@ -60,8 +60,22 @@ object RecipeLinks {
     /** Whether the page of [code] opens at its 이야기; asked once. */
     fun takeTalkFocus(code: String): Boolean = (talkFocus == code).also { if (it) talkFocus = null }
 
-    /** PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory). */
-    @Volatile var tryNext: String? = null
+    /**
+     * PC 확인 V34: the code whose page opens straight on 입어 보기 (오늘의 하나·수상작·넘겨 보기), once (in memory).
+     * 2.0.0 [RVM-57] 총괄 (tryOn 화면 사진이 묶음의 첫 판에서만 '예시로 보기'를 못 찾음): an ask whose page never opened (the tap went
+     * nowhere, or 뒤로 before the page came) stayed, and that work's page opened straight on 입어 보기 by itself whenever it was
+     * next opened, hours later on a phone, the next shot in a test run. It holds for [ASK_MILLIS] now, time enough for the page.
+     */
+    var tryNext: String?
+        get() = tryAsk?.takeIf { clock() - it.second < ASK_MILLIS * 1_000_000L }?.first
+        set(v) { tryAsk = v?.let { it to clock() } }
+    @Volatile private var tryAsk: Pair<String, Long>? = null
+    const val ASK_MILLIS = 30_000L
+    /** Nanoseconds, monotonic; a test moves it. */
+    internal var clock: () -> Long = System::nanoTime
+
+    /** What one test shot asked must not open the next one's page (screenshot base). */
+    fun resetForTest() { tryAsk = null; talkFocus = null }
 
     /** [THM-01] The key of one of my themes being sent from 스튜디오: once it is up, it is marked as in 장터 (no days, no ad). */
     var ownTheme: String? = null

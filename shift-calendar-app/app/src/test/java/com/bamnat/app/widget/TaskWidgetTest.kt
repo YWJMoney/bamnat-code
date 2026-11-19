@@ -101,7 +101,8 @@ class TaskWidgetTest {
         texts.clear()
         walk(split.remoteViews.apply(context, android.widget.FrameLayout(context)))
         assertTrue("title alone: $texts", "우유 사기" in texts)
-        assertTrue("time under it: $texts", texts.any { it.endsWith("21:00") || it.endsWith("9:00") })
+        // After 21:00 on the test clock the same line reads "21:00 늦음" (the 늦음 check below), so the time is looked for before it.
+        assertTrue("time under it: $texts", texts.any { it.removeSuffix(" 늦음").let { t -> t.endsWith("21:00") || t.endsWith("9:00") } })
         assertTrue("how many left, by ＋: $texts", "3" in texts)
         // PC 6차: today's 9:21 gone by showed no 늦음 in either widget. Past its time it says 늦음 by the time, in both.
         val late = GlanceRemoteViews().compose(context, DpSize(180.dp, 60.dp)) {

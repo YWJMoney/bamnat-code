@@ -53,6 +53,18 @@ class DutyCheckTest {
         assertEquals(listOf(Kind.LONG_RUN), run.map { it.kind })
     }
 
+    /** 2.0.0 [RVJ-68] (총괄 HQ-107) Each sign names its sort in a few words, without the date or the 기준, for the team's one-line groups. */
+    @Test fun topicsAreShortAndSame() {
+        assertEquals("N-D · 근무 사이 11시간을 못 쉼", DutyCheck.check(month(n, d, o, o)).single().topic)
+        assertEquals("나이트 뒤 데이 시간이 겹쳐요", DutyCheck.check(month(n, d, o, o)).single().detail)
+        assertEquals("이브닝 뒤 데이 8시간만 쉬어요", DutyCheck.check(month(e, d, o)).single().detail)
+        val twice = DutyCheck.check(month(n, n, o, e, e, n, o, e))
+        assertEquals(listOf("야간 뒤 2일째 근무", "야간 뒤 2일째 근무"), twice.filter { it.kind == Kind.NO_OFF_AFTER_NIGHT }.map { it.topic })
+        assertEquals("11/3 야간 뒤 이브닝", twice.first { it.kind == Kind.NO_OFF_AFTER_NIGHT }.detail)
+        assertEquals("야간 3일 넘게 연속", DutyCheck.check(month(n, n, n, n, o, o)).single().topic)
+        assertEquals("6일 넘게 연속 근무", DutyCheck.check(month(d, d, d, d, d, d, d, o)).single().topic)
+    }
+
     @Test fun endOfMonthUnknownIsNotAWarning() {
         assertTrue(DutyCheck.check(month(o, n)).isEmpty())
     }

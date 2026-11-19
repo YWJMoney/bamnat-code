@@ -1121,6 +1121,8 @@ fun AppRoot(windowSizeClass: WindowSizeClass, container: AppContainer) {
     com.bamnat.app.logic.LogicMessageHost(container)
     // [DRW-03] 1.37 넣었어요 · 되돌리기: a theme put on or off, a tab taken off, a rule switched on.
     PutOnNoticeHost(container)
+    // 2.0.0 [RVM-55] 검토 U09b-02: 되돌리기 › 보기 (what stayed as I made it).
+    com.bamnat.app.ui.recipe.UndoLeftHost(container)
 
     // [UNDO-01][UNDO-02][UNDO-03] A kind of work changed, records cleared or a calendar removed: 되돌리기 at
     // once, wherever it was done, and 설정 › 데이터 › 최근 지운 기록 for 7 days after.

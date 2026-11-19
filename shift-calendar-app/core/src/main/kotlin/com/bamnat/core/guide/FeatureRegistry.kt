@@ -1231,6 +1231,10 @@ object FeatureRegistry {
         "setup.again" to { s ->
             if (s.ownMoney()) Said(what = "근무 유형부터 첫 설정 질문을 다시 받아요. 저장해야 오늘부터 바뀌고, 그만두면 그대로예요") else null
         },
+        // 2.0.0 [RVG-40] 검토 PC-175: a shop or a field worker takes 다른 사람 달력, as 달력 › 도구 says it (a swap read '동료 영업일 받기').
+        "share.receive" to { s ->
+            if (s.ownMoney()) com.bamnat.core.work.receiveTitle(s).let { Said(name = it, where = "달력 › 도구 › $it") } else null
+        },
         "shift.callout" to { s ->
             if (s == DAY) Said(what = "쉬는 날 불려 나가면 날짜를 누르고 ‘비상소집’ 한 번으로 시작·끝 시간을 추가 근무로 넣어요. 경찰·소방·해양경찰·교정 직군에 보이고, 다른 직군은 추가 근무 종류에 ‘비상소집’을 만들면 보여요") else null
         },

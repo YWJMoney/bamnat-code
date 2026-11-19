@@ -59,6 +59,20 @@ export function marketViews(A) {
    * 2.0.0 [RVA-48] 검토 ADMX-08·I24a-04(도약 42): 장터 목록은 50개씩 이어 받아요. 찾기·구간은 서버가 걸러요(받은 것 안에서만 찾던 것).
    */
   const RECIPE_PAGE = 50;
+
+  /**
+   * 2.0.0 [RVA-65] 처리방침 3.14 문장표 7번(SX-03) 장터 작품 '입은 뒤' 숫자. 서버(Q1)가 wear 칸에 상태만 실어요: off(깃발 꺼짐) ·
+   * few(넣은 분 20명 미만) · ok(최근 30일 비율 offSoon·textBack, 0~1). 넣은 분 수·낱개 수·폰별 값은 오지 않고 화면도 비율만 보여요.
+   * 목록 줄에는 ok만(짧게, 조건 4), 작품 하나 보기에는 빈 상태 둘도 한 줄로. 눈여겨볼 작품(watch)만 주의 pill, 빨강 없음(조건 6).
+   */
+  const pct = (x) => `${Math.round(Number(x) * 100)}%`;
+  function wearLine(w, full) {
+    if (!w?.state) return "";
+    if (w.state === "ok") return `<small class="wear">넣은 뒤(30일) · 30분 안에 다시 뺌 ${pct(w.offSoon)} · 글자 크기 되돌림 ${pct(w.textBack)}${w.watch ? ' <span class="pill warn">잘 안 읽히는지 봐요</span>' : ""}</small>`;
+    if (!full) return "";
+    return `<small class="wear">${w.state === "few" ? "넣은 뒤 숫자: 넣은 분이 20명이 되면 비율이 보여요."
+      : "넣은 뒤 숫자: 처리방침 3.14 시행 뒤, 사용 통계를 켠 분에게서 모여요."}</small>`;
+  }
   function recipeListPath(t, offset = 0) {
     const q = (S.recipeQuery ?? "").trim();
     const sec = S.recipeSection ?? "all";
@@ -142,7 +156,7 @@ export function marketViews(A) {
         <b>${esc(r.cover?.emoji ?? "")} ${esc(r.title)}</b>${r.section ? ` <span class="pill">${esc(RECIPE_SECTIONS[r.section] ?? r.section)}</span>` : ""} <small>${r.tabs?.length ? `${r.tabs.map((t) => esc(RECIPE_TAB_WORDS[t] ?? t)).join("·")} · ` : ""}${esc(r.code)} · v${r.version} · ${esc(r.nick ?? "이름 없음")}${r.late ? ' · <span class="pill warn">하루 넘음</span>' : ""}</small>
         ${r.summary ? `<small>${esc(r.summary)}</small>` : ""}<small>${recipeParts(r.body)}</small>
         ${r.parent ? `<small>고친 판 · 원본 <button type="button" class="linkish" data-act="recipe-find" data-id="${esc(r.parent)}">${esc(r.parent)}</button></small>` : ""}
-        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>
+        <small>좋아요 ${r.likes} · 안좋아요 ${r.dislikes} · 쓰는 분 ${r.users}${r.flags?.length ? ` · ${recipeFlagCount(r.flags)}` : ""}</small>${wearLine(r.wear, tab === "one")}
         ${r.batch || r.releaseAt || r.minApp ? `<small>${[r.batch ? `묶음 ${esc(r.batch)}` : "", r.releaseAt ? `공개 예약 ${esc(new Date(r.releaseAt).toLocaleString("ko-KR"))}` : "", r.minApp ? `앱 판 ${r.minApp} 이상만` : ""].filter(Boolean).join(" · ")}</small>` : ""}
         ${r.quiet ? `<small data-quiet>운영자에게만 온 신고: ${[r.quiet.fresh ? `새 기기 ${r.quiet.fresh}` : "", r.quiet.net ? `같은 회선 ${r.quiet.net}` : ""].filter(Boolean).join(" · ")} (가리기에 세지 않아요)</small>` : ""}
         ${r.note ? `<small>돌려준 메모: ${esc(r.note)}</small>` : ""}${r.hidden ? `<small>가린 이유: ${esc({ admin: "운영자가 가림", flags: "신고가 쌓여 저절로 가림", retired: "판 정리로 내림 · 넣은 분은 계속 써요" }[r.hidden] ?? r.hidden)}${r.retiredBelow ? ` · 앱 판 ${r.retiredBelow} 미만에는 계속 보여요` : ""}</small>` : ""}
