@@ -22,7 +22,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
@@ -43,6 +47,21 @@ fun ToneLine(
     tone: Tone = Tone.Caution,
     style: TextStyle = MaterialTheme.typography.bodySmall,
     onClick: (() -> Unit)? = null,
+) = ToneLine(AnnotatedString(text), modifier, tone, style, onClick)
+
+/**
+ * 2.0.0 [RVJ-68] (총괄 HQ-107) The same line with words that carry their own weight (the numbers bold: [boldNumbers]) and, at the end,
+ * [trailing] (an 펼치기 arrow), for a line that opens to more.
+ */
+@Composable
+fun ToneLine(
+    text: AnnotatedString,
+    modifier: Modifier = Modifier,
+    tone: Tone = Tone.Caution,
+    style: TextStyle = MaterialTheme.typography.bodySmall,
+    onClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
 ) {
     val tint = if (tone == Tone.Plain) MaterialTheme.colorScheme.onSurfaceVariant else tone.color()
     val said = when (tone) { Tone.Caution -> "주의"; Tone.Danger -> "위험"; else -> null }
@@ -54,7 +73,7 @@ fun ToneLine(
     val mark = with(density) { 16.sp.toDp() }
     Row(
         modifier.fillMaxWidth()
-            .then(if (onClick != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick) else Modifier)
             .semantics(mergeDescendants = true) {},
         verticalAlignment = if (onClick != null) Alignment.CenterVertically else Alignment.Top,
     ) {
@@ -68,5 +87,12 @@ fun ToneLine(
         Spacer(Modifier.width(6.dp))
         Text(text, style = style, modifier = Modifier.weight(1f),
             color = if (tone == Tone.Danger) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        trailing?.invoke()
     }
+}
+
+/** 2.0.0 [RVJ-68] (총괄 HQ-107) Only the numbers of [text] bold ("야간 뒤 **2**일째 근무 **6**건"), so a quiet line still shows how many. */
+fun boldNumbers(text: String): AnnotatedString = buildAnnotatedString {
+    append(text)
+    Regex("""\d+(?:[/.,:]\d+)*""").findAll(text).forEach { addStyle(SpanStyle(fontWeight = FontWeight.Bold), it.range.first, it.range.last + 1) }
 }
