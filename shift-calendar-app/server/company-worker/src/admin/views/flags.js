@@ -69,10 +69,12 @@ export function flagsViews(A) {
     const warned = new Set(alerts.map((r) => r.key));
     const groups = [...(found.some((r) => warned.has(r.key)) ? ["warned"] : []), ...new Set(found.filter((r) => !warned.has(r.key)).map((r) => r.group))];
     const inGroup = (r, g) => (g === "warned" ? warned.has(r.key) : !warned.has(r.key) && r.group === g);
-    const groupName = (g) => (g === "warned" ? "고지 기간이 모자라요 · 처리방침 9항(7일, 불리하면 30일)" : FLAG_GROUPS[g] ?? g);
+    // 2.0.0 [RVA-72] PC-209(조건 1·4): 머리는 한 줄로, 처리방침 9항 설명은 그 묶음 줄 아래 한 줄로.
+    const groupName = (g) => (g === "warned" ? "고지 기간이 모자라요" : FLAG_GROUPS[g] ?? g);
+    const groupFoot = (g) => (g === "warned" ? '<p class="list-note">처리방침 9항: 시행 7일 전(불리하면 30일 전)에 알려야 해요.</p>' : "");
     return head + filters + groups.map((g) => `<h2 class="day-head${g === "warned" ? " bad" : ""}" ${g === "warned" ? 'role="status"' : ""}>${esc(groupName(g))}</h2><ul class="rows">${found.filter((r) => inGroup(r, g)).map((r) =>
       `<li><a class="row" href="${flagLink(r.key)}"><span class="row-main"><b>${esc(r.name)}</b><small>${esc(r.key)}${r.onShare !== null && r.onShare !== undefined ? ` · 휴대폰 ${r.onShare}%에서 켜짐` : ""}</small>
-        <span class="preview">${esc(r.reason)}</span></span><span class="row-side pills">${flagPills(r)}</span>${icon(P.chevron)}</a></li>`).join("")}</ul>`).join("") + foot;
+        <span class="preview">${esc(r.reason)}</span></span><span class="row-side pills">${flagPills(r)}</span>${icon(P.chevron)}</a></li>`).join("")}</ul>${groupFoot(g)}`).join("") + foot;
   }
 
   // ---- the calendar [ADMUX-25] ----

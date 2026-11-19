@@ -2328,6 +2328,7 @@ function adminApp(L, BUILD, M) {
         ${q.appeal ? appealCard(q, editable) : ""}
         ${q.typing?.length ? `<p class="typing" role="status">${esc(q.typing.join(", "))}님이 지금 답을 쓰고 있어요. 겹치지 않게 확인해 주세요.</p>` : ""}
         ${editable && q.status !== "closed" ? `<form class="composer" data-form="reply">
+          ${sendAskLine(q)}
           <label class="sr" for="reply">답</label>
           <textarea id="reply" name="text" maxlength="2000" placeholder="${q.public ? "보낸 분 앱과 모두의 문의에" : "보낸 분 앱에"} 보일 답을 적어요. 이름, 연락처, 금액은 묻지 않아요." required></textarea>
           <input type="hidden" name="template" value="">
@@ -2381,6 +2382,18 @@ function adminApp(L, BUILD, M) {
       <p class="meta">${b ? `법에 따라 ${esc(day(b.keepUntil))}까지 보관해요(마지막 글부터 3년).` : "아니에요. 마지막 글부터 180일 뒤에 지워져요."}
         ${q.leftByAsker ? " 보낸 분이 앱에서 지웠어요. 앱에는 보이지 않고 답도 닿지 않아요." : ""}</p>
       ${editable ? `<div class="actions start"><button class="btn" data-act="inquiry-billing" data-on="${b ? "" : "1"}"${words ? ' data-miss="1"' : ""}>${b ? (words ? "아니에요 · 기록에서 빼기" : "기록에서 빼기") : "결제·환불 기록으로 정하기"}</button></div>` : ""}</section>`;
+  }
+
+  /**
+   * 2.0.0 [RVA-70] PC-205: 사람이 봐야 하는 문의면 답 칸 바로 위에 한 줄(조건 10·16: 보내고 나서 멈춘 것을 알기 전에).
+   * 최고 관리자가 여기서 직접 쓴 답은 확인한 것으로 보고 바로 가요(sendGate typed). 다른 관리자의 답은 한 번 멈추고 읽은 뒤 '지금 보내기'로 가요.
+   * 답 글에 AI·보안 표현이 있으면 누구든 멈춰요(이 줄과 따로).
+   */
+  function sendAskLine(q) {
+    const a = q.sendAsk;
+    if (!a) return "";
+    const what = `${esc(a.name)} 문의예요${a.word ? `(보낸 분 글의 ‘${esc(a.word)}’)` : ""}`;
+    return `<p class="meta send-ask" role="note">${what}. ${S.me?.owner ? "여기서 직접 쓴 답은 바로 가요." : "보내면 한 번 멈추고, 읽은 뒤 '지금 보내기'로 보내요."}</p>`;
   }
 
   /** 2.0.0 [RVA-41] 사람이 보내야 하는 답의 까닭: 답 글의 표현이면 그 이름, 아니면 문의 글에서 걸린 말과 기준. */
@@ -4749,7 +4762,13 @@ function adminApp(L, BUILD, M) {
     // 1.35 [INBOX-01]~[INBOX-07] 문의 정리함: 1.38 [DESK-03] 카드 처리는 운영 장부 줄(ledger-sort·ledger-skip)로, 넘기기·자동 대응은 여기 그대로.
     // 1.38 [DESK-09] Claude 답 보류 중: 보내기 전에 취소하거나 글을 고쳐요.
     // 1.39 [LOOP-37] 보류 중인 Claude 답을 사람이 읽고 지금 보내요(사람이 봐야 할 문의는 이 단추로만 가요).
-    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", "보낸 분 앱에 바로 보이고 알림이 가요.", "지금 보내기", async () => {
+    // 2.0.0 [RVA-70] PC-205: 사람이 보내야 해서 멈춘 답이면 확인 창에서 걸린 까닭과 말을 한 번 더 말해요(조건 10).
+    "held-send": ({ id }) => confirmBox("이 답을 지금 보낼까요?", (() => {
+      const h = S.data.inquiry?.held?.find((x) => String(x.id) === String(id));
+      const w = h?.person ? h.why : null;
+      const why = !w ? "" : w.reply ? `${w.name}이 있어 멈췄어요. 고친 뒤 보내는 게 좋아요. ` : `${w.name} 문의라 멈췄어요${w.word ? `(보낸 분 글의 ‘${w.word}’)` : ""}. `;
+      return `${why}보낸 분 앱에 바로 보이고 알림이 가요.`;
+    })(), "지금 보내기", async () => {
       const q = await act(() => api(`/inquiries/${S.route.id}/held/${id}`, "POST", { send: true }), "보냈어요");
       if (q) { S.data.inquiry = q; render({ keepScroll: true }); }
     }, "primary"),

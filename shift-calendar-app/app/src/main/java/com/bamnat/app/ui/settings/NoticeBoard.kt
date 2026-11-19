@@ -84,7 +84,7 @@ object NoticeBoard {
         Own("briefing", { "하루 브리핑" }, { if (nights(it)) "근무 전에 커피·낮잠·잘 시간을 소리 없이 한 번 알려 줘요" else "출근 전에 오늘 근무와 잘 시간을 소리 없이 한 번 알려 줘요" },
             { it.briefing }, { s, on -> s.copy(briefing = on) }, ::planned, Notifications.DAY_CHANNEL_ID),
         // 2.0.0 [RVH-41] 검토 T30-82: 52시간 is not a part-timer's.
-        Own("afterAlarmCard", { "알람 뒤 오늘 카드" }, { "근무 알람을 끄면 오늘 근무, 이번 주 시간${if (it == WorkStyle.HOURLY) "" else "(52시간까지 남은 시간)"}, 내일 근무를 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요" },
+        Own("afterAlarmCard", { "알람 뒤 오늘 카드" }, { "알람을 끄면 오늘·내일 근무와 이번 주 시간${if (it == WorkStyle.HOURLY) "" else "(52시간까지 남은 시간)"}을 알림 하나로 보여 줘요. 소리 없이 3시간 뒤 사라져요" },
             { it.afterAlarmCard }, { s, on -> s.copy(afterAlarmCard = on) }, ::planned, Notifications.DAY_CHANNEL_ID),
         Own("bedtimeNotice", { "잘 준비" }, { "근무 전날 밤, 잘 시간 30분 전에 소리 없이 알려 줘요" },
             { it.bedtimeNotice }, { s, on -> s.copy(bedtimeNotice = on) }, ::planned, Notifications.DAY_CHANNEL_ID),
@@ -95,9 +95,9 @@ object NoticeBoard {
         Own("leaveTimeNotice", { LEAVE_TIME_ROW }, { "근무가 끝나는 시각에 소리 없이 알려 주고, 더 일하고 나갈 때 ‘지금 퇴근’을 누르면 잔업을 그 시각까지 적어요" },
             { it.leaveTimeNotice }, { s, on -> s.copy(leaveTimeNotice = on) }, { it == WorkStyle.DAY }, Notifications.DAY_CHANNEL_ID),
         // 2.0.0 [RVH-41] 검토 T30-76: the same rule said for every kind (자정을 넘겨 끝나면).
-        Own("dayCloseNotice", { DAY_CLOSE_ROW }, { "근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 오늘 쓴 돈과 정리할 것을 알려 줘요. 자정을 넘겨 끝나면 다음 날 아침이에요" },
+        Own("dayCloseNotice", { DAY_CLOSE_ROW }, { "오늘 쓴 돈과 정리할 것을 근무가 끝나고 30분 뒤(쉬는 날은 저녁 9시)에 소리 없이 알려 줘요. 자정을 넘겨 끝나면 다음 날 아침이에요" },
             { it.dayCloseNotice }, { s, on -> s.copy(dayCloseNotice = on) }, not(WorkStyle.INVEST, WorkStyle.BUSINESS), Notifications.MONEY_CHANNEL_ID),
-        Own("shiftPreviewNotice", { SHIFT_PREVIEW_ROW }, { "근무 날에 어느 분류에 평소보다 뚜렷이 더 쓰면, 그 근무 전날 저녁에 한 줄로 알려 줘요. 일주일에 한 번까지예요" },
+        Own("shiftPreviewNotice", { SHIFT_PREVIEW_ROW }, { "돈을 더 쓰는 근무 날이면 전날 저녁에 한 줄로 알려 줘요. 어느 분류에 평소보다 뚜렷이 더 쓸 때만, 일주일에 한 번까지예요" },
             { it.shiftPreviewNotice }, { s, on -> s.copy(shiftPreviewNotice = on) },
             { it == WorkStyle.SHIFT || it == WorkStyle.DAY || it == WorkStyle.HOURLY }, Notifications.MONEY_CHANNEL_ID),
         Own("moneyNotices", { "나갈 돈·받을 돈" }, { "고정비는 3일 전과 당일에, 못 받은 돈은 다음 날과 7일 뒤에 알려 줘요. 같은 때 온 것은 하나로 묶어요" },

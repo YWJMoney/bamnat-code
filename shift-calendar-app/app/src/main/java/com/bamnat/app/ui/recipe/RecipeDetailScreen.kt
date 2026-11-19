@@ -889,10 +889,12 @@ private fun TalkSection(s: RecipeDetailViewModel.State, vm: RecipeDetailViewMode
         Spacer(Modifier.weight(1f))
         // 1.39 조사 ⑦ 쓰기 전 한마디(막지 않아요).
         var nudge by remember { mutableStateOf(false) }
-        val go = { vm.post(body.trim(), kind, replyTo?.id) { ok -> if (ok) { body = ""; replyTo = null } } }
+        // 2.0.0 [RVM-67] 검토 MKT-09 (두 번 누르면 같은 글이 두 번 올라가요): the button waits for the answer.
+        var sending by remember { mutableStateOf(false) }
+        val go = { sending = true; vm.post(body.trim(), kind, replyTo?.id) { ok -> sending = false; if (ok) { body = ""; replyTo = null } } }
         if (nudge) com.bamnat.app.ui.hub.NudgeDialog(body, onEdit = { nudge = false }, onSend = { nudge = false; go() })
         Button(onClick = { if (com.bamnat.core.plaza.PostNudge.needed(body)) nudge = true else go() },
-            enabled = RecipeText.graphemes(body.trim()) >= 2 && problem == null) { Text("올리기") }
+            enabled = RecipeText.graphemes(body.trim()) >= 2 && problem == null && !sending) { Text(if (sending) "올리는 중…" else "올리기") }
     }
     disliking?.let { p -> DislikeDialog(onSend = { r, o -> vm.votePost(p.id, -1, r, o); disliking = null }, onDismiss = { disliking = null }) }
 }

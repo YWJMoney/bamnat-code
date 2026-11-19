@@ -1,5 +1,7 @@
 package com.bamnat.app.ui.studio
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.bamnat.app.AppContainer
@@ -695,20 +697,26 @@ class StudioViewModel(private val c: AppContainer, start: String = START_MINE) :
         return byHand.size >= LookParts.OWN_PARTS
     }
 
-    /** [STU-12] 조합 자동 점검: the screens whose chosen 글자색 does not read on their ground (it would show as black or white). */
-    fun hardToRead(): List<String> {
+    /**
+     * [STU-12] 조합 자동 점검: the screens whose chosen 글자색 does not read on their ground (it would show as black or white). 2.0.0 [RVS-06]
+     * STU-11: on the grounds the screen skin draws them on, for the light or the [dark] screen ([Palette.groundsFor]: the page and both card
+     * colours, the app's own where the look leaves them), not one light colour.
+     */
+    fun hardToRead(dark: Boolean = false): List<String> {
         val looks = ScreenLooks.decode(_state.value.draft.screenLooks)
+        val base = if (dark) com.bamnat.app.ui.theme.DarkColors else com.bamnat.app.ui.theme.LightColors
+        fun Color.argb() = toArgb().toLong() and 0xFFFFFFFFL
         return looks.looks.keys.filter { k ->
             val l = looks.of(k)
-            val ground = l.bg ?: 0xFFF7F8FCL
-            l.ink != null && Palette.inkOn(l.ink, ground, l.card ?: ground) != l.ink
+            val grounds = Palette.groundsFor(l, base.background.argb(), base.surfaceContainerLow.argb(), base.surfaceContainerHigh.argb())
+            l.ink != null && Palette.inkOn(l.ink, *grounds) != l.ink
         }
     }
 
     /** 글자색 고치기: those screens' 글자색 left to the app (black or white, whichever reads). */
-    fun fixInk() = change { d ->
+    fun fixInk(dark: Boolean = false) = change { d ->
         val looks = ScreenLooks.decode(d.screenLooks)
-        val bad = hardToRead()
+        val bad = hardToRead(dark)
         d.copy(screenLooks = bad.fold(looks) { acc, k -> acc.with(k, (acc.looks[k] ?: return@fold acc).copy(ink = null)) }.encode())
     }
 

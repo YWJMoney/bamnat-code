@@ -532,8 +532,8 @@ class LegalPagesTest {
     }
 
     /**
-     * 2.0.0 [RVO-26] 처리방침 3.14 (사용자 2026-11-19 카드 '16줄 모두'): its own 게시일 ([PolicyConsent.REVISION14_POSTED]) gives a 7-day
-     * and a 30-day 시행일 apart from 3.13's, the newest header names both, each of the 16 rows is on the page with the right day, the
+     * 2.0.0 [RVO-26] 처리방침 3.14 (사용자 2026-11-19 카드 '16줄 모두', 11:29 KST 카드로 8번 폰 바꾸기를 빼 15줄, 11-19 13:28 KST 총괄 추천으로 코드가 2.0에 없는 7줄(4·5·6·7·9·12·14)을 2.1로 넘겨 8줄): its own 게시일
+     * ([PolicyConsent.REVISION14_POSTED]) gives a 7-day and a 30-day 시행일 apart from 3.13's, the newest header names both, each of the 8 rows is on the page with the right day, the
      * 광장 운영 규칙 3 takes effect with the 7-day line, and the flags that send something new wait for 3.14.
      */
     @Test fun policy314FollowsItsOwnPostedDay() {
@@ -557,24 +557,21 @@ class LegalPagesTest {
         assertTrue(text.contains("3.13의 1-7항·1-9항·1-12항 바뀐 곳은 그대로 ${tag("p30", c.REVISION_EFFECTIVE_30)}부터)"))
         assertTrue(text.contains("3.14도 따로 동의를 묻지 않고, ${posted}에 앱 공지와 이 페이지로 먼저 알린 뒤 7일 뒤인 ${p7}에 시행합니다"))
         assertTrue(text.contains("30일 뒤인 ${p30}에 시행합니다. 광장 운영 규칙 3은"))
-        // The 16 rows, each with its day: 30-day rows send something new, 7-day rows match what is done or keep it on the phone.
+        // The 8 rows whose code is in 2.0 (15줄판에서 코드가 없는 4·5·6·7·9·12·14는 2.1의 3.15 후보로 뺐어요: 15줄판은 커밋 하나로 되살려요), each with its day: 30-day rows send something new, 7-day rows match what is done or keep it on the phone.
         val thirty = listOf(
             "‘확인했어요’를 누르면 누른 시각 하나도 둠",                    // 1
             "그날만 쓰는 표시(네트워크와 브라우저 정보를 비밀 값과 섞어 변환한 값)를 두었다가 <b>이틀 안에 지우고</b>", // 2
             "페이지 이름 하나(근무표·영업일·일정·달력 가운데 하나)",             // 3
-            "⑧ ⑥의 일하는 방식을 그날 쓴 기능 이름과 횟수에도 붙여",            // 4
-            "⑨ 웹 페이지(교대 달력·시급 계산기·명세서 맞추기)에서 이어 온 분께", // 5
-            "⑩ 앱이 닫히거나 응답이 없었을 때 그 일이 난 앱 코드 위치",         // 6
-            "장터 작품을 넣은 뒤 30분 안에 다시 뺐는지",                        // 7
-            "그 열쇠 하나(32바이트)만 Google Play 서비스의 Block Store에 맡김", // 8
-            "근무표 약어(약어 글자와 그 회사 근무 이름만, 20개까지",            // 9
-            "리더에게 앱으로 받는 팀원 수(3명 이상일 때만)",                    // 14
         )
         thirty.forEach { assertTrue("30일 줄: $it", text.contains(it)) }
+        // The seven rows without code in 2.0 are not on the page (2.1, 처리방침 3.15 후보).
+        listOf("⑧ ⑥의 일하는 방식을 그날 쓴 기능 이름과 횟수에도 붙여", "⑨ 웹 페이지(교대 달력·시급 계산기·명세서 맞추기)에서 이어 온 분께",
+            "⑩ 앱이 닫히거나 응답이 없었을 때 그 일이 난 앱 코드 위치", "장터 작품을 넣은 뒤 30분 안에 다시 뺐는지",
+            "근무표 약어(약어 글자와 그 회사 근무 이름만, 20개까지", "리더에게 앱으로 받는 팀원 수", "명세서로 맞춰 본 분 수도")
+            .forEach { assertFalse("2.1로 넘긴 줄이 페이지에 남음: $it", text.contains(it)) }
         val seven = listOf(
             "이 두 광장의 글과 투표 보기에 이용자가 직접 금액(예: 이번 달 야간 수당 32만 원)을 적을 수 있습니다", // 10
             "근무주기(근무 이름·순서), 근무 시간, 급여 계산 방식을 하나씩 ‘저절로·묻기·안 함’ 중에서 고르고",   // 11
-            "명세서로 맞춰 본 분 수도",                                         // 12
             "급여 설정에 적은 생년(선택)",                                      // 13
             "고장에 대비한 서버 복구 기록에는 지운 것이 최대 30일 남았다가",    // 15
             "링크 페이지가 열린 수를 날짜와 휴대폰 종류별 합계로만 400일 둡니다", // 16
@@ -582,12 +579,12 @@ class LegalPagesTest {
         seven.forEach { assertTrue("7일 줄: $it", text.contains(it)) }
         // Each new-sending row names its 30-day date beside it; the 7-day rows that change what users can do name theirs.
         assertTrue(text.contains("처리방침 3.14 시행일($p30)부터는 팀원이 링크 페이지나 앱에서 ‘확인했어요’를 누르면"))
-        assertTrue(text.contains("<b>폰 바꾸기</b>(선택, 앱 2.0.0부터 처리방침 3.14 시행일 ${p30}부터)"))
         assertTrue(text.contains("금액이 든 글은 처리방침 3.14 시행일($p7) 전까지 받지 않으며"))
         assertTrue(text.contains("앱 2.0.0부터(처리방침 3.14 시행일 ${p7}부터) 급여 설정에 적은 생년(선택)"))
-        // 5항 is not where Block Store goes (총괄 11-19): the operator neither receives nor entrusts it, like Google's own backup.
-        val five = text.substringAfter("<h2>5. 제3자 제공").substringBefore("<h2>6.")
-        assertFalse(five.contains("Block Store"))
+        // Row 8 (폰 바꾸기, Block Store) is out of 3.14 (사용자 11-19 11:29 KST): no line, list item or 2항 in the 30-day 머리말.
+        assertFalse(text.contains("Block Store"))
+        assertFalse(text.contains("<b>폰 바꾸기</b>"))
+        assertTrue(text.contains("1항·1-14항의 바뀐 곳은 ${p30}부터."))
         // 광장 운영 규칙 3: 4항 '금액과 연락처' from the 7-day line, the 2판 kept as (이전).
         assertTrue(rules.contains("운영 규칙 3 · 앱 버전 2.0.0 기준 · 게시일 $posted · 시행일 $p7"))
         assertTrue(rules.contains("<h2>4. 금액과 연락처</h2>"))

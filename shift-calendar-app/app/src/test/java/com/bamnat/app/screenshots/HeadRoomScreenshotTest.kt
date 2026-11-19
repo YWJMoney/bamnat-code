@@ -148,15 +148,15 @@ class HeadRoomScreenshotTest : ScreenshotBase() {
         settle()
         assertTrue(appears("이름·설명·초성으로 찾기", exact = true))
         assertTrue(appears("스튜디오에서 만들기", exact = true))
-        // 2.0.0 [RVM-31]: 테마's own chips follow the three 구간 in the one row; on a 360dp phone 넘겨 보기 is one slide (or ▾) away.
-        assertTrue(nodes().any { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { it.text == "🃏 넘겨 보기" } })
+        // 2.0.0 [RVM-64]: 마을's 한 장씩 넘겨 보기 is at the end of the 구간 tabs while 테마 is open.
+        assertTrue(appears("한 장씩 넘겨 보기", exact = true))
         assertTrue("긴 설명 줄은 화면 글자로 없어요 (TalkBack 설명에만)", nodes(merged = false).none { n ->
             n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text).orEmpty().any { "모든 화면을 한 벌로 꾸민 테마예요" in it.text } })
         // The search box comes before the 구간 on the screen.
         val top = nodes().filter { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText) != null }
             .minOf { it.boundsInWindow.top }
         val half = nodes().first { n -> n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)
-            .orEmpty().any { it.text == "🎨 테마" } }.boundsInWindow.top
+            .orEmpty().any { it.text == "테마" } }.boundsInWindow.top
         assertTrue("찾기 칸이 구간보다 위", top < half)
     }
 }
