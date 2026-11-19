@@ -36,7 +36,9 @@ class DataCheckJob : JobService() {
     }
 
     companion object {
-        private const val ID = 4411
+        // 2.0.0 (HQ, JobIdsTest): 4411 is the sleep no-tap watch's (SleepNoTap.JOB_CHARGE). With one id the two jobs replaced each other:
+        // a pending sleep watch kept this check from ever being scheduled, and cancel() here would have cancelled the sleep watch.
+        private const val ID = 4414
         private val EVERY = TimeUnit.DAYS.toMillis(1)
 
         fun schedule(context: Context) {
