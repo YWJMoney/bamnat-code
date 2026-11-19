@@ -830,6 +830,34 @@ export async function setTier(request, env, id, now) {
   return null;
 }
 
+/**
+ * 2.0.0 [RVA-73] POST /loop/tiers/apply {ids}: 요금 대기 줄 가운데 Claude 제안(tier_ask)이 무료·프로·7일권·체험인 것을 그 제안대로 한 번에 정해요.
+ * setTier와 똑같이 최고 관리자 세션만(열쇠·다른 관리자는 403). 제안이 없거나 '더 논의'인 줄, 이미 정한 줄, 반려·지운 줄은 건드리지 않고 건너뛰어요.
+ * 제안이 저절로 적용되는 길은 없어요: 최고 관리자가 목록을 보고 누를 때만(동기화·열쇠로는 요금이 정해지지 않아요).
+ */
+export async function applyTierAsks(request, env, now) {
+  if (!env.actor?.owner || env.actor?.key) return json({ error: "no_permission", area: "owner" }, 403);
+  const body = await readJson(request, 4096);
+  if (!Array.isArray(body.ids) || !body.ids.length || body.ids.length > 100) refuse("ids", "ids");
+  const ids = [...new Set(body.ids.map((x) => (/^d[A-Za-z0-9]{15}$/.test(String(x)) ? String(x) : refuse("ids", "ids"))))];
+  const pending = new Map((await tierPending(env)).map((d) => [d.id, d]));
+  const by = actorName(env);
+  const done = [];
+  const writes = [];
+  let at = now;
+  for (const id of ids) {
+    const d = pending.get(id);
+    const tier = d?.tier_ask;
+    if (!d || !tier || tier === "later" || !Object.hasOwn(LOOP.tiers, tier)) continue;
+    writes.push(stmt(env, "UPDATE dev_items SET tier = ?, tier_by = ?, tier_at = ?, tier_note = ?, updated_at = ? WHERE id = ? AND tier IN ('', 'later')", tier, by, at, "제안대로 한 번에", Math.max(at, d.updated_at + 1), id),
+      devEvent(env, id, at, "tier", { tier: [d.tier || "", tier], note: "제안대로 한 번에" }));
+    done.push({ id, title: d.title, tier });
+  }
+  if (writes.length) await batch(env, writes);
+  for (const x of done) await audit(env, now, "loop_tier", x.title, `${LOOP.tiers[x.tier]} · 제안대로 한 번에`);
+  return json({ ok: true, decided: done.length, skipped: ids.length - done.length, items: done.map((x) => ({ id: x.id, tier: x.tier })) });
+}
+
 /** [LOOP-11] 요금 판단 관측치: 요청 수, 쓰는 수(사용 통계를 켠 폰), 켜진 폰 비율, 켜기 앞뒤 14일의 프로 화면·체험·구독·문제 신고. */
 export async function tierObservation(env, d, now) {
   const events = String(d.events ?? "").split(",").filter(Boolean);
@@ -1370,6 +1398,10 @@ export async function loopRoute(request, env, url, path, method, now, { answer, 
   if (m && method === "POST") {
     const r = await setBasis(request, env, m[1], now);
     return r ?? json({ ok: true });
+  }
+  // 2.0.0 [RVA-73] 요금 대기 줄을 Claude 제안대로 한 번에(최고 관리자 세션만).
+  if (path === "/loop/tiers/apply" && method === "POST") {
+    return applyTierAsks(request, env, now);
   }
   m = path.match(/^\/loop\/tier\/(d[A-Za-z0-9]{15})$/);
   if (m && method === "GET") {

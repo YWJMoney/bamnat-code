@@ -471,7 +471,8 @@ private fun InquiryCard(i: Inquiry, unread: Boolean, onClick: () -> Unit) {
     SoftCard(Modifier.clickable(role = Role.Button, onClick = onClick), highlighted = unread) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(i.kind.label + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
+                // 2.0.0 [RVO-30] (PC-214): a question only the 운영팀 reads says so on its row, as the thread does.
+                Text(i.kind.label + (if (i.public) "" else " · 나만 보기") + " · " + stampOf(i.updatedAt), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
                 i.label(unread).let { (text, tone) -> StatusChip(text, tone) }
             }
@@ -712,7 +713,7 @@ private fun InquiryForm(
                 if (mail) sendByMail()
                 else scope.launch {
                     val diag = if (withCheck) check ?: vm.alarmCheck(context, stop) else null
-                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share) { sent, why ->
+                    vm.send(k, text, diag, pay.takeIf { withPay }, photos.takeIf { photosOpen }.orEmpty(), public = share && kind?.public != false) { sent, why ->
                         if (sent != null) {
                             com.bamnat.app.company.InquiryPhotos.skipped(sent.photosSkipped)?.let {
                                 android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show()
@@ -940,6 +941,10 @@ private fun InquiryThread(vm: InquiryViewModel, i: Inquiry) {
                 i.hidden != null -> Text("모두의 문의에서 가려졌어요: ${i.hidden}", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error)
                 // 2.0.0 [RVO-29] HQ-152: at 글자 200% the two go on two lines rather than leave the dot at a line's end.
+                // 2.0.0 [RVO-30] (PC-214): a 결제·환불 (or 회사 방식·꾸미기 부탁) question goes to the 운영팀 only whatever the switch said, and
+                // the thread says so instead of staying silent.
+                !i.public -> Text(if (i.kind == InquiryKind.BILLING) "나만 보기 · 운영팀이 직접 읽고 답해요" else "나만 보기 · 운영팀만 읽어요",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 i.public -> com.bamnat.app.ui.components.DotText("모두의 문의에 올라가 있어요" + if (i.same > 0) " · 나도 그래요 ${i.same}" else "",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
