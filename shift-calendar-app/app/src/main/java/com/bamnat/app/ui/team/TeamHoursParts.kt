@@ -164,7 +164,10 @@ internal fun TeamHoursSheet(team: Team, mine: List<com.bamnat.core.model.ShiftTy
         Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             // Short (조건 4): what the times are for, and the law's 휴게 in one bracket (근로기준법 제54조, [LegalBreak]).
             val check = if (weekLimit) "주 52시간 점검" else "근무표 점검"
-            Explain("team:hours", "팀원 링크의 알람과 ${check}이 이 시간으로 나가요. 휴게를 정하지 않으면 법대로(4시간에 30분, 8시간 30분부터 1시간) 빼요.",
+            // 2.0.0 [RVJ-71] (PC-179) The law counts 일한 시간 (4시간에 30분, 8시간에 1시간); the sheet has 시작~끝, so both are said:
+            // 8시간 30분 on the clock less 30 minutes is 8 hours worked, which already needs the hour ([LegalBreak.minutesFor]).
+            Explain("team:hours", "팀원 링크의 알람과 ${check}이 이 시간으로 나가요. 휴게를 정하지 않으면 법정 휴게(일한 시간 4시간에 30분, 8시간에 1시간, " +
+                "근로기준법 제54조)를 빼요. 시작~끝으로는 4시간부터 30분, 8시간 30분부터 1시간이에요.",
                 summary = "팀원 링크의 알람과 ${check}이 이 시간으로 나가요.")
             // Side by side while the line has room, the button under it at 글자 200% (one word a line otherwise, 조건 12).
             if (apart.isNotEmpty()) SideOrBelow(minStart = 180.dp, belowAlign = Alignment.Start, start = {

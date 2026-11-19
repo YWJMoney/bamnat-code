@@ -778,7 +778,8 @@ fun CalendarScreen(
             startName = remember(activeCalendar.id) { context.appContainer.shareLinksOf(com.bamnat.app.share.ShareLinkKey.of(activeCalendar.id, 1)).link.value?.title.orEmpty() },
             onSent = { vm.logShare() },
             onDismiss = { imageMonth = null },
-            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y -> y to { imageMonth = null; yearRecapOpen = y } },
+            yearRecap = com.bamnat.core.work.YearRecap.yearOf(today)?.takeIf { recapHere }?.let { y ->
+                "${y}년 ${com.bamnat.core.work.YearRecap.headingOf(focus)}" to { imageMonth = null; yearRecapOpen = y } },
             style = settings.workStyle,
         )
     }
@@ -1535,17 +1536,29 @@ fun CalendarScreen(
                 }
             })
             // 1.40 [SPREAD-37] 연말 근무 결산, 12-20~1-10: once in 12월 (the year so far), once more in 1월 (the whole year).
-            if (paint == null && recapHere) add(Notice("yearRecap", "연말 결산", line = "올해 근무 결산이 나왔어요", kani = com.bamnat.app.ui.components.KaniMood.Done) {
-                val due = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
-                due?.let { y ->
-                    val recap by produceState<com.bamnat.core.work.YearRecap?>(null, y, snap, focus, moneyBook, payProfile) {
-                        value = runCatching { vm.yearRecap(y, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
-                    }
-                    recap?.takeIf { it.worthShowing }?.let { r ->
-                        YearRecapCard(r, onOpen = { yearRecapOpen = y }, onClose = { vm.closeYearRecap(today) })
-                    }
+            // 2.0.0 (디자인 품질 조건 3·5·8): a row of the 알림함's 안내 in the one shape every notice has, not a card in colours of its
+            // own: it says the year's numbers (never the money), a tap goes straight to the 결산 (was: open the row, then its card's
+            // 결산 보기), and X puts it away until 1월's whole year, taken back once, saying where it is still made.
+            val recapDue = remember(today, settings.yearRecapSeen) { com.bamnat.core.work.YearRecap.due(today, settings.yearRecapSeen) }
+            if (paint == null && recapHere && recapDue != null) {
+                val recapNow by produceState<com.bamnat.core.work.YearRecap?>(null, recapDue, snap, focus, moneyBook, payProfile) {
+                    value = runCatching { vm.yearRecap(recapDue, today, startDay, snap, focus, recapStyle, payProfile, moneyBook) }.getOrNull()
                 }
-            })
+                recapNow?.takeIf { it.worthShowing }?.let { r ->
+                    val openRecap = { yearRecapOpen = recapDue }
+                    val closeRecap = {
+                        val before = vm.closeYearRecap(today)
+                        com.bamnat.app.ui.components.AppSnack.show("결산 안내를 닫았어요. 공유 › 사진으로 보내기에서 다시 만들 수 있어요",
+                            undo = { vm.reopenYearRecap(before) })
+                    }
+                    add(Notice("yearRecap", r.title, line = r.brief, kani = com.bamnat.app.ui.components.KaniMood.Done, action = "결산 보기",
+                        onAction = openRecap, onClose = closeRecap) {
+                        com.bamnat.app.ui.components.NudgeCard("${r.title}이 나왔어요", Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            detail = r.brief, action = "결산 보기", onAction = openRecap, onClose = closeRecap, closeLabel = "결산 안내 닫기",
+                            kani = com.bamnat.app.ui.components.KaniMood.Done)
+                    })
+                }
+            }
             // [CAL-46] I 리뷰 N9: once the month's last shift is done, the month in one line and its picture to share.
             if (focus == com.bamnat.core.work.CalendarFocus.SHIFTS && paint == null && viewingReceived == null) add(Notice("recap", "지난달 정리", line = "지난달 근무를 한 줄로 정리했어요", kani = com.bamnat.app.ui.components.KaniMood.Done) {
                 val recapMonth = remember(snap, today, settings.monthRecapSeen) {
@@ -1839,6 +1852,9 @@ fun CalendarScreen(
                         switch()
                     }
                     if (partShown(CalendarPart.COUNTS) && isAbove(CalendarPart.COUNTS)) MonthShiftCounts(snap, visibleMonth)
+                    // 2.0.0 [RVS-03] 검토 SN-10: a worn look's 칸 꾸밈 shows on the 월 판 only; on another 판 that is said once (per look),
+                    // and a tap goes to 월.
+                    if (board != com.bamnat.core.layout.CalendarBoard.MONTH) CellLookOnMonth { pickBoard(com.bamnat.core.layout.CalendarBoard.MONTH) }
                 } else Row(place.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     // The counts take what is left, so the two buttons always sit at the right edge.
                     // [CAL-24] 모든 조 보기 one tap from the month, before the counts, on every screen width.
@@ -2612,6 +2628,7 @@ internal fun CalendarHeader(
             val label = when (slot.id) {
                 CalendarToolSlots.EDIT -> "‘$calendarName’ 고치기"
                 CalendarToolSlots.SHARE -> com.bamnat.core.work.shareTitle(style) // [J133-77]
+                CalendarToolSlots.RECEIVE -> com.bamnat.core.work.receiveTitle(style) // 2.0.0 [RVG-40] 검토 PC-175
                 else -> slot.label
             }
             CalendarTool(label, slot.icon(), id = slot.id, onClick = when (slot.id) {
@@ -2729,10 +2746,14 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp).navigationBarsPadding()) {
         Text("달력 도구", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(bottom = 12.dp).semantics { heading() })
         BoxWithConstraints(Modifier.fillMaxWidth()) {
-            val perRow = if (maxWidth >= 480.dp) 4 else 3
+            // 2.0.0 [RVG-40] 검토 PC-175 (조건 12): the room a tile has is counted in the letters' size, so at 150%·200% on the folded
+            // screen two tiles share a row; three to a row left a name three letters a line, cut at two lines ('동료 / 근무표', '다른 /
+            // 사람'). The names are never cut now, and the tiles of a row stand as tall as the tallest.
+            val room = maxWidth / LocalDensity.current.fontScale.coerceAtLeast(1f)
+            val perRow = if (room >= 480.dp) 4 else if (room >= 300.dp) 3 else 2
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 tools.filter { !it.away }.chunked(perRow).forEach { row ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         row.forEach { tool ->
                             val click = tool.onClick
                             Surface(
@@ -2740,7 +2761,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                 enabled = click != null,
                                 shape = MaterialTheme.shapes.large,
                                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                                modifier = Modifier.weight(1f).heightIn(min = 84.dp)
+                                modifier = Modifier.weight(1f).heightIn(min = 84.dp).fillMaxHeight()
                                     .alpha(if (click != null) 1f else 0.5f),
                             ) {
                                 Column(
@@ -2749,7 +2770,7 @@ internal fun CalendarToolsGrid(tools: List<CalendarTool>, onPicked: () -> Unit) 
                                     verticalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
                                     Icon(tool.icon, null, tint = MaterialTheme.colorScheme.primary)
-                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center, maxLines = 2)
+                                    Text(tool.label, style = MaterialTheme.typography.labelLarge, textAlign = TextAlign.Center)
                                     if (click == null && tool.note != null) {
                                         Text(tool.note, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
@@ -2804,28 +2825,6 @@ private fun SetupResumeCard(d: com.bamnat.core.setup.SetupDraft, onResume: () ->
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
             )
             Button(onClick = onResume) { Text("이어서 하기") }
-        }
-    }
-}
-
-/** 1.40 [SPREAD-37] "2026년 내 근무 결산이 나왔어요": a few of the year's numbers (never the money), 결산 보기 and 닫기. */
-@Composable
-internal fun YearRecapCard(recap: com.bamnat.core.work.YearRecap, onOpen: () -> Unit, onClose: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = MaterialTheme.shapes.large,
-        color = androidx.compose.ui.graphics.Color(0xFF1E2447),
-        onClick = onOpen,
-    ) {
-        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
-            Text("${recap.year}년 내 근무 결산이 나왔어요", style = MaterialTheme.typography.titleSmall,
-                color = androidx.compose.ui.graphics.Color(0xFFF2C46D))
-            Text(recap.line, style = MaterialTheme.typography.bodyMedium, color = androidx.compose.ui.graphics.Color(0xFFF6F1E7),
-                modifier = Modifier.padding(end = 8.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onClose, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFA9AFCB))) { Text("닫기") }
-                TextButton(onClick = onOpen, colors = androidx.compose.material3.ButtonDefaults.textButtonColors(contentColor = androidx.compose.ui.graphics.Color(0xFFF2C46D))) { Text("결산 보기") }
-            }
         }
     }
 }
@@ -3591,4 +3590,27 @@ private fun waitingWords(ask: com.bamnat.core.guide.OpenAsk): Triple<String, Str
     com.bamnat.core.guide.OpenAsk.THEME_UPDATE -> Triple("테마 새 판", "입은 테마에 새 판이 나왔어요", "보기")
     com.bamnat.core.guide.OpenAsk.TEXT_SIZE -> Triple("글자 크기", "읽기 편한 글자 크기를 골라 보세요", "고르기")
     com.bamnat.core.guide.OpenAsk.LAUNCH_THANKS -> Triple("고마워요", "정식 출시 전부터 함께해 주셔서 고마워요", "보기")
+}
+
+/**
+ * 2.0.0 [RVS-03] 검토 SN-10 (칸 꾸밈은 '월' 판에서만 보이는데 다른 판에서는 말이 없어요): with a look whose 칸 (cal.cell 부품 or 칸 꾸밈) is
+ * worn, one quiet line on another 판 says where it shows; a tap goes to 월 and either way it is not said again for this look.
+ */
+@Composable
+private fun CellLookOnMonth(onMonth: () -> Unit) {
+    val raw = com.bamnat.app.ui.parts.LocalBlueprintRaw.current
+    val decor = com.bamnat.app.ui.decor.LocalDecor.current
+    val cellLook = raw.touches("cal.cell") || decor.has(com.bamnat.core.recipe.Decor.CELL)
+    if (!cellLook) return
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("calendar_hints", android.content.Context.MODE_PRIVATE) }
+    val key = remember(raw, decor) { (raw.hashCode() * 31 + decor.hashCode()).toString() }
+    var seen by remember(key) { mutableStateOf(runCatching { prefs.getString("cellLookOnMonth", null) == key }.getOrDefault(false)) }
+    if (seen) return
+    fun done() { seen = true; runCatching { prefs.edit().putString("cellLookOnMonth", key).apply() } }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        com.bamnat.app.ui.components.ToneLine("칸 꾸밈은 ‘월’ 판에서 보여요 · 누르면 월로", Modifier.weight(1f),
+            tone = com.bamnat.app.ui.theme.Tone.Plain) { done(); onMonth() }
+        IconButton(onClick = { done() }) { Icon(Icons.Filled.Close, "이 안내 닫기") }
+    }
 }

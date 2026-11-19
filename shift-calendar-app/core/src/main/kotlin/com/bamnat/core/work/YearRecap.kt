@@ -71,7 +71,13 @@ data class YearRecap(
         else -> "${md(from)}부터 ${md(to)}까지"
     }
 
-    val title: String get() = "${year}년 내 근무 결산"
+    /**
+     * 2.0.0 (조건 13, 그 사람의 말로): what the 결산 is of, in the user's own words: a 가게 (사장님 too) sums up its 영업, 현장 its 일감,
+     * everyone else their 근무.
+     */
+    val heading: String get() = headingOf(focus)
+
+    val title: String get() = "${year}년 $heading"
 
     /** Nothing to say: no work, no 일감, no 문 연 날. */
     val isEmpty: Boolean get() = when (focus) {
@@ -121,10 +127,22 @@ data class YearRecap(
         money?.takeIf { it != 0L && moneyLabel.isNotBlank() }?.let { add(Tile(moneyLabel, manWon(it), money = true)) }
     }
 
-    /** The card's one line on the calendar, never the money: "야간 87번 · 공휴일 근무 9일 · 가장 길게 쉰 날 5일". */
-    val line: String get() = (listOf(hero) + tiles).filterNot { it.money }.take(3).joinToString(" · ") { "${it.label} ${it.value}" }
+    /** The year in one line, never the money: "야간 87번 · 공휴일 근무 9일 · 가장 길게 쉰 날 5일". */
+    val line: String get() = said(3)
+
+    /** 2.0.0 The 알림함 row's line: the big number and the next one, one line on a folded phone (조건 4). */
+    val brief: String get() = said(2)
+
+    private fun said(count: Int) = (listOf(hero) + tiles).filterNot { it.money }.take(count).joinToString(" · ") { "${it.label} ${it.value}" }
 
     companion object {
+        /** [heading] for a calendar of [focus], before its 결산 is worked out (the picture sheet's line). */
+        fun headingOf(focus: CalendarFocus): String = when (focus) {
+            CalendarFocus.SALES -> "우리 가게 결산"
+            CalendarFocus.JOBS -> "내 일감 결산"
+            else -> "내 근무 결산"
+        }
+
         /** The 결산 shows from 12월 20일 to 1월 10일 (마케팅 결정). */
         val OPENS: MonthDay = MonthDay.of(12, 20)
         val CLOSES: MonthDay = MonthDay.of(1, 10)
