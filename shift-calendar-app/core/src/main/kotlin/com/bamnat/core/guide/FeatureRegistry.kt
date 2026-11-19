@@ -948,7 +948,7 @@ object FeatureRegistry {
             setOf(SHIFT, DAY), "마을 › 광장 › 교대 광장(일근 광장) 가기", at(Place.PLAZA), "교대 광장", "일근 광장", "교대 이야기", "수면", "야간 팁"),
         // ---- 1.35 나눔 판 완성 (RCX-01..17) ----
         f("recipe.update", "RCX-03", "작품 새 판 받기", "넣은 작품에 새 판이 나오면 알려 드리고, 내가 고친 곳은 그대로 둔 채 바뀐 곳만 골라 넣어요. 둘 다 고친 곳은 따로 물어봐요",
-            ALL, "설정 맨 위 카드 › 나눔 판 › 받은 작품 › 새 판 보기", at(Place.RECIPE_MINE), "새 판", "업데이트", "레시피 갱신", "새 버전", "새 판 알림",
+            ALL, "설정 맨 위 카드 › 나눔 판 › 받은 작품 › 바뀐 점 보고 반영", at(Place.RECIPE_MINE), "새 판", "업데이트", "레시피 갱신", "새 버전", "새 판 알림",
             off = Off.ELSEWHERE, under = "recipe.browse"),
         f("recipe.request", "RCX-04", "이런 작품 있었으면 (요청 판)", "필요한 작품을 적어 두면 다른 분이 ‘만들게요’를 누르고 완성해요. 같은 걸 바라면 좋아요를 눌러요",
             ALL, "마을 › 공방 › 이런 거 있었으면", at(Place.RECIPES), "요청", "부탁", "레시피 요청", "만들어 주세요", off = Off.ELSEWHERE, under = "recipe.browse"),
@@ -1024,6 +1024,10 @@ object FeatureRegistry {
         f("boss.clock", "P3-B-11", "직원 출퇴근 기록", "위치 없이 누르는 출퇴근 링크를 직원에게 보내고, 누른 시각이 평소와 다른 날만 골라 급여 대장에 넣어요",
             setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 출퇴근 기록", at(Place.STATS, "payroll"), "출퇴근 기록", "출근 체크", "출퇴근 링크", "근태",
             "지각 기록", under = "boss.payroll", flag = "boss.payroll"),
+        // 2.0.0 [RVJ-93] 검토 BOSS-68: '4대보험' found the 알바's and 직장인's 실수령 only; the boss's 가입 판단 ([com.bamnat.core.boss.InsuranceRules]).
+        f("boss.insurance", "BOSS-11", "직원 4대보험 가입 판단", "직원마다 주 15시간·나이로 국민연금·건강보험·고용보험 가입 대상인지 가르고, 빠지는 까닭을 직원 옆에 한 줄로 알려 줘요",
+            setOf(SHOP), "매출·영업 › 직원 인건비 › 급여 대장 › 직원 정보 › 4대보험", at(Place.STATS, "payroll"), "4대보험", "4대보험 가입", "가입 대상",
+            "국민연금", "건강보험", "고용보험", "산재보험", "사장님 몫", under = "boss.payroll", flag = "boss.payroll"),
     )
 
     private val byId: Map<String, AppFeature> = EVERYTHING.associateBy { it.id }
