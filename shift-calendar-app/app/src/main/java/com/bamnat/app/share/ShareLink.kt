@@ -183,6 +183,12 @@ object ShareLinkPayload {
     }
 
     /**
+     * 2.0.0 [RVJ-102] 검토 PAYU-09: the server says the link is gone for good: cut, ran out or taken down ("not_found"; a 410 comes as the
+     * same word) or not this phone's to change ("forbidden"). Only then is a new one made in its place; busy, slow or away is not gone.
+     */
+    fun gone(e: Throwable): Boolean = e is ShareLinkException && (e.message == "not_found" || e.message == "forbidden")
+
+    /**
      * Busy or away, tried again later: the server's own busy words, a reply that was not the server's (bad_response: a Wi-Fi login
      * page) and a bare status with no word of the server's (http_429 from a proxy).
      */

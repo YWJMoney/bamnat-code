@@ -116,6 +116,12 @@ object TeamAuto {
 
     private fun weekOf(d: LocalDate): LocalDate = d.with(java.time.temporal.TemporalAdjusters.previousOrSame(java.time.DayOfWeek.MONDAY))
 
+    /**
+     * 2.0.0 [RVJ-103] 검토 PAYU-12: a day that weighs more on whoever works it: a Saturday or Sunday, and a 공휴일 on any day of the week
+     * (a Wednesday's 어린이날 is worked like a Sunday and was shared as a plain day).
+     */
+    private fun heavy(d: LocalDate): Boolean = d.dayOfWeek.value >= 6 || com.bamnat.core.holiday.KoreanHolidays.isHoliday(d)
+
     /** The kind of day a resting wish is painted with: the team's own 연차·교육 day when it has one, else its off day. */
     fun restShift(team: Team, kind: WishKind): TeamShift? {
         val offs = team.shifts.filter { it.isOff }
@@ -144,7 +150,7 @@ object TeamAuto {
         val week = HashMap<Pair<String, LocalDate>, Int>()
         fun note(m: String, d: LocalDate, id: Long) {
             count.merge(m to id, 1, Int::plus)
-            if (types[id]?.isOff == false && d.dayOfWeek.value >= 6) weekends.merge(m, 1, Int::plus)
+            if (types[id]?.isOff == false && heavy(d)) weekends.merge(m, 1, Int::plus)
             types[id]?.let { val min = TeamCheck.minutesOf(it); minutes.merge(m, min, Int::plus); week.merge(m to weekOf(d), min, Int::plus) }
         }
         b.cells.values.forEach { note(it.memberId, it.date, it.shiftId) }
@@ -177,21 +183,28 @@ object TeamAuto {
         fun score(m: TeamMember, d: LocalDate, s: TeamShift): Double {
             val hours = (minutes[m.id] ?: 0) / 60.0
             val kind = (count[m.id to s.id] ?: 0) * (TeamCheck.minutesOf(s) / 60.0) * (if (DutyCheck.isNight(s.asType())) 1.5 else 0.5)
-            val weekend = if (d.dayOfWeek.value >= 6) (weekends[m.id] ?: 0) * 6.0 else 0.0
+            val weekend = if (heavy(d)) (weekends[m.id] ?: 0) * 6.0 else 0.0
             // 1.38 [P3-X-04] 지난 달들: more nights or weekends than the team so far weighs the same as that many more this month.
             val owed = past[m.id]?.let { p ->
-                (if (DutyCheck.isNight(s.asType())) p.nights * (TeamCheck.minutesOf(s) / 60.0) * 1.5 else 0.0) + (if (d.dayOfWeek.value >= 6) p.weekends * 6.0 else 0.0)
+                (if (DutyCheck.isNight(s.asType())) p.nights * (TeamCheck.minutesOf(s) / 60.0) * 1.5 else 0.0) + (if (heavy(d)) p.weekends * 6.0 else 0.0)
             } ?: 0.0
             return hours + kind + weekend + owed + (nudge[m.id] ?: 0.0)
         }
+        // 2.0.0 [RVJ-103] 검토 PAYU-12·PC-20: a team that has named its 책임자 is asked for one on every kind of work each day (TeamCheck's
+        // 책임자 없음). The first place of a kind on a day leans toward a 책임자 who is free: a bonus of about a shift's hours, so one is
+        // not put on every day first (the hours and nights stay shared) but is picked when the rest are close.
+        val hasCharge = active.any { it.skill == Skill.CHARGE }
+        val chargeBonus = 10.0
         val order = work
         for (d in board.days) {
             for (s in order) {
                 val need = team.need[s.id] ?: continue
                 var have = active.count { b.cell(it.id, d)?.shiftId == s.id }
                 while (have < need) {
+                    val wantCharge = hasCharge && active.none { b.cell(it.id, d)?.shiftId == s.id && it.skill == Skill.CHARGE }
                     val pick = active.filter { b.cell(it.id, d) == null && !breaks(it, d, s.id, b) }
-                        .sortedWith(compareBy<TeamMember>({ wish[it.id to d].let { w -> if (w?.kind == WishKind.WORK || (w?.kind == WishKind.SHIFT && w.shiftId == s.id)) 0 else 1 } }, { score(it, d, s) }))
+                        .sortedWith(compareBy<TeamMember>({ wish[it.id to d].let { w -> if (w?.kind == WishKind.WORK || (w?.kind == WishKind.SHIFT && w.shiftId == s.id)) 0 else 1 } },
+                            { score(it, d, s) - if (wantCharge && it.skill == Skill.CHARGE) chargeBonus else 0.0 }))
                         .firstOrNull() ?: break
                     b = b.paint(pick.id, d, s.id, CellSource.AUTO); note(pick.id, d, s.id); before.remove(pick.id); have++
                 }

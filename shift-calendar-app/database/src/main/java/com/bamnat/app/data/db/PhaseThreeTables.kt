@@ -210,6 +210,10 @@ interface TeamDao {
     @Query("SELECT * FROM team_month WHERE teamId = :teamId AND month = :month")
     fun observeMonth(teamId: String, month: String): Flow<TeamMonthEntity?>
 
+    /** 2.0.0 [RVJ-102] One month once (the board confirmed so far, and the one before it). */
+    @Query("SELECT * FROM team_month WHERE teamId = :teamId AND month = :month")
+    suspend fun monthNow(teamId: String, month: String): TeamMonthEntity?
+
     @Query("SELECT * FROM team_month")
     suspend fun months(): List<TeamMonthEntity>
 

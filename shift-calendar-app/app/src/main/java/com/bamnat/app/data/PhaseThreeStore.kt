@@ -136,9 +136,16 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
     /** [TEAM-13] 확정: the month CONFIRMED one version up, and the board as it was confirmed, for 바뀐 칸 next time. */
     suspend fun confirm(teamId: String, b: TeamBoard, was: TeamMonth): TeamMonth {
         val m = was.copy(state = MonthState.CONFIRMED, version = was.version + 1, confirmedAt = clock())
-        teams.upsertMonth(TeamMonthEntity(teamId, b.month.toString(), m.state.name, m.version, m.confirmedAt, encodeConfirmed(b)))
+        // 2.0.0 [RVJ-102] 검토 PAYU-10: the board confirmed until now is kept beside the new one, so sending the same 판 again can still say what
+        // the last 확정 changed ('바뀜' on each link) and not only the changes since it.
+        val before = teams.monthNow(teamId, b.month.toString())?.confirmed
+        teams.upsertMonth(TeamMonthEntity(teamId, b.month.toString(), m.state.name, m.version, m.confirmedAt, encodeConfirmed(b, before?.let(::decodeConfirmed))))
         return m
     }
+
+    /** [RVJ-102] The board confirmed before the last 확정 (empty after the first), the one its 바뀜 marks were worked out against. */
+    suspend fun confirmedBefore(teamId: String, month: YearMonth): Map<Pair<String, LocalDate>, Long> =
+        teams.monthNow(teamId, month.toString())?.confirmed?.let(::decodePrior).orEmpty()
 
     // ---- 사업장 ----
 
@@ -418,9 +425,20 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
             JSONObject(t).let { o -> o.keys().asSequence().associate { it.toLong() to o.getInt(it) } }
         }.getOrDefault(emptyMap())
 
-        fun encodeConfirmed(b: TeamBoard): String = JSONObject().apply {
+        fun encodeConfirmed(b: TeamBoard, prior: Map<Pair<String, LocalDate>, Long>? = null): String = JSONObject().apply {
             b.cells.values.forEach { c -> put("${c.memberId}:${c.date.toEpochDay()}", c.shiftId) }
+            // [RVJ-102] The board before this 확정, under a key no cell has (a cell key is "member:day"); an older reader skips it.
+            if (!prior.isNullOrEmpty()) put("~prior", JSONObject().apply { prior.forEach { (k, v) -> put("${k.first}:${k.second.toEpochDay()}", v) } })
         }.toString()
+
+        fun decodePrior(t: String): Map<Pair<String, LocalDate>, Long> = if (t.isBlank()) emptyMap() else runCatching {
+            JSONObject(t).optJSONObject("~prior")?.let { o ->
+                o.keys().asSequence().mapNotNull { k ->
+                    val i = k.lastIndexOf(':').takeIf { it > 0 } ?: return@mapNotNull null
+                    (k.substring(0, i) to LocalDate.ofEpochDay(k.substring(i + 1).toLong())) to o.getLong(k)
+                }.toMap()
+            }.orEmpty()
+        }.getOrDefault(emptyMap())
 
         fun decodeConfirmed(t: String): Map<Pair<String, LocalDate>, Long> = if (t.isBlank()) emptyMap() else runCatching {
             JSONObject(t).let { o ->
