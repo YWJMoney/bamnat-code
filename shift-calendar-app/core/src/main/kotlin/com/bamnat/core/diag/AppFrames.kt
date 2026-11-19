@@ -20,7 +20,7 @@ object AppFrames {
 
     /** Libraries a debug build shows by name (the release build renames them too, and the mapping tells them apart). */
     private val LIBS = listOf(
-        "androidx.", "kotlin.", "kotlinx.", "com.google.", "okhttp3.", "okio.", "org.jetbrains.", "org.intellij.", "io.", "coil.",
+        "androidx.", "kotlin.", "kotlinx.", "com.google.", "okio.", "org.jetbrains.", "org.intellij.", "io.", "coil.",
     )
 
     /** The app's own code by name. */

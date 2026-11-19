@@ -7,6 +7,7 @@ import com.bamnat.app.company.InquiryInfo
 import com.bamnat.app.company.InquiryKind
 import com.bamnat.core.time.Today
 import com.bamnat.core.work.WorkStyle
+import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -125,6 +126,34 @@ class RvlCrashReportScreenshotTest : ScreenshotBase() {
     @Test fun aCheckThatFailsStillSendsTheStop() =
         shoot("rvl84_crash_report_check_failed_fold_light_100", FOLDED, reported(SecurityException("denied")))
 
+    @After fun normalStart() = com.bamnat.app.diag.StartGuard.leave(app)
+
+    /** HQ-142 (RVL-89): 도움말's first tab has one filled '문의하기'; the one under '찾는 답이 없나요?' has the same name, unfilled. */
+    private fun helpHome(): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        c.inquiryApi = FakeInquiryApi()
+        openHelp()
+        assertTrue(appears("문의하기", exact = true))
+    }
+
+    @Test fun helpFoldLight() = shoot("rvl89_help_fold_light_100", FOLDED, helpHome())
+    @Test fun helpFoldDarkBig() = shoot("rvl89_help_fold_dark_200", NIGHT, fontScale = 2f, helpHome())
+    @Test fun helpOpenLight() = shoot("rvl89_help_open_light_100", OPEN, helpHome())
+
+    /** PC-194 (RVL-88): a safe start after stops; a tap on its line says what rests and keeps it safe ('평소대로' alone ends it). */
+    private fun safeBand(wide: Boolean = false): Screen.() -> Unit = style(WorkStyle.SHIFT) {
+        app.getSharedPreferences("start_guard", android.content.Context.MODE_PRIVATE).edit()
+            .putInt("unsettled", com.bamnat.app.diag.StartGuard.LIMIT).commit()
+        com.bamnat.app.diag.StartGuard.begin(app, lastEnd = null)
+        tab(1, wide = wide); tab(0, wide = wide)
+        tapText("멈춰서 안전 모드 · 꾸밈·규칙 쉼", exact = true)
+        assertTrue(appears("안전 모드라 꾸밈"))
+        assertTrue("the line keeps it safe", com.bamnat.app.diag.StartGuard.safe.value)
+    }
+
+    @Test fun safeBandFoldLight() = shoot("rvl88_safe_band_fold_light_100", FOLDED, safeBand())
+    @Test fun safeBandFoldDarkBig() = shoot("rvl88_safe_band_fold_dark_200", NIGHT, fontScale = 2f, safeBand())
+    @Test fun safeBandOpenLight() = shoot("rvl88_safe_band_open_light_100", OPEN, safeBand(wide = true))
+
     /** A stop section long with counts and frozen moments still puts the newest stop's record first, under the cut. */
     @Test fun theNewestStopGoesFirstWhateverComesBefore() {
         val counts = (1..400).map { "  멈춘 곳 $it" }
@@ -137,5 +166,6 @@ class RvlCrashReportScreenshotTest : ScreenshotBase() {
     companion object {
         const val FOLDED = "w369dp-h905dp-port-420dpi"
         const val OPEN = "w707dp-h823dp-port-420dpi"
+        const val NIGHT = "w369dp-h905dp-port-night-420dpi"
     }
 }

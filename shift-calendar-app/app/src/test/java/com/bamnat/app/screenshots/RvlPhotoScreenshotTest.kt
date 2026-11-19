@@ -127,12 +127,34 @@ class RvlPhotoScreenshotTest : ScreenshotBase() {
         assertTrue(appears("어느 줄(조)이 내 것인가요?"))
     })
 
+    // ---- RVL-82 (PC-183): while '사진과 내용이 같은가요?' is asked, its answer is the one filled button and '넣기' waits outlined ----
+    private fun asking(): Screen.() -> Unit = read {
+        // The yellow cells make the question '노란 칸 2개만 사진과 맞는지 봐 주세요'; both are the same card with the same one filled answer.
+        assertTrue(appears("사진과 맞는지 봐 주세요") || appears("사진과 내용이 같은가요?"))
+        // The fixture month already has most of the roster on it, so the outlined button says the days it changes (RVL-74).
+        reveal("일 고치기", exact = false)
+    }
+
+    @Test fun askingFoldLight() = shoot("rvl82_asking_fold_light_100", FOLDED, asking())
+    @Test fun askingFoldDarkHuge() = shoot("rvl82_asking_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, asking())
+    @Test fun askingOpenLight() = shoot("rvl82_asking_open_light_100", UNFOLDED, asking())
+
+    // ---- RVL-83 (PC-185): the lines to choose from keep their empty cells as '·' and show the photo's own letters ----
+    private fun linePreview(): Screen.() -> Unit = read {
+        tapText("다른 줄 고르기", exact = true)
+        assertTrue(appears("어느 줄(조)이 내 것인가요?"))
+    }
+
+    @Test fun linePreviewFoldLight() = shoot("rvl83_preview_fold_light_100", FOLDED, linePreview())
+    @Test fun linePreviewFoldDarkHuge() = shoot("rvl83_preview_fold_dark_200", FOLDED_NIGHT, fontScale = 2f, linePreview())
+
     // ---- RVL-35: the photo made bigger to tap on ----
     private fun tapDialog(zoom: Int = 0): Screen.() -> Unit = read(pick = false) {
         tapText(TAP_PHOTO)
         assertTrue(appears("1. 날짜 줄을 눌러 주세요", exact = true))
         // 2.0.0 [RVL-35] (검토 HQ-80) A wide roster opens as tall as the window, so a line can be tapped at once.
-        assertTrue("opens zoomed", appears("%"))
+        // At text 200% the percent is left out and only ⊖ ⊕ stay (RVL-92); the ⊖ shows only once the photo is zoomed.
+        assertTrue("opens zoomed", appears("%") || appears("사진 작게"))
         repeat(zoom) { tapText("사진 크게") }
     }
 

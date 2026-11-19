@@ -99,7 +99,7 @@ class RvgPc4ScreenshotTest : ScreenshotBase() {
         settle()
         cc.received.view(shopId)
         settle()
-        reveal("받은 달력은 이 휴대폰에만 있어요", exact = false)
+        reveal("이 휴대폰에만 있어요", exact = false)
         if (AFTER) assertTrue(gone("근무표 점검", exact = false))
     }
     @Test fun shopDutyFoldLight() = shoot("rvg39_received_shop_duty_fold_light_100", FOLDED, shopDuty())

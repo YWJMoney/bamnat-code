@@ -388,6 +388,8 @@ class SettingsFilesBackup(
             // C 1.32 [STAB-03][STAB-04]: this phone's stops, counted, and whether it opened safely.
             "crash_notice" to "같은 곳에서 멈춘 횟수와 마지막으로 알린 날, 이 휴대폰에서만",
             "start_guard" to "연달아 멈춘 시작 수(안전 모드), 이 휴대폰에서만",
+            // 2.0.0 [RVL-90] 사용 통계에 실어 보낼 멈춤 표시(날짜별 숫자뿐), 사용 통계와 같이 이 휴대폰의 것.
+            "crash_stats" to "사용 통계로 보낼 멈춘 날의 표시, 이 휴대폰에서만",
             // [PERF-15][PERF-16] 1.28 AO: how long this phone took to open; 보내기 대기는 사용 통계와 같이 이 휴대폰의 것.
             "startup_stats" to "앱을 여는 데 걸린 시간, 이 휴대폰에서 잰 것",
             // AQ 1.29 [PHOTO-09]: '사진이 달라요' counts waiting to be sent (60 days), this phone's only.

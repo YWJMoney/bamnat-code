@@ -117,7 +117,7 @@ object Notifications {
     const val MISSION_END_ID = 7211
     const val BACKUP_ID = 7204
     /** 2.0.0 [RVL-71] 데이터 점검 found what it could not put right (on the backup channel, which says so). */
-    const val DATA_CHECK_ID = 7211
+    const val DATA_CHECK_ID = 7213
     const val PLAZA_ID = 7205
     /** [J133-24] 문의에 답이 왔어요, at once while a question waits. */
     const val INQUIRY_ID = 7208
