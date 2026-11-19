@@ -25,6 +25,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -76,6 +77,13 @@ class PayWayViewModel(
     /** 1.39 발굴 2-1: the newer version of the way in use one of its senders sent since (its id), offered as '새 판으로 바꾸기'. */
     private val _newer = MutableStateFlow<String?>(null)
     val newer: StateFlow<String?> = _newer.asStateFlow()
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-04: what the newer version would make of my month, worked out on the phone ([payTrial], as '이 규칙으로
+     * 내 월급 계산해 보기'): the month (the one matched with a payslip, else this one) and the difference; null until known or when
+     * it cannot be worked out (no pay setup, the version's pay not readable here).
+     */
+    private val _newerDiff = MutableStateFlow<Pair<java.time.YearMonth, Long>?>(null)
+    val newerDiff: StateFlow<Pair<java.time.YearMonth, Long>?> = _newerDiff.asStateFlow()
     /** 1.39 발굴 2-3: this phone's own 보완 요청 on the way in use: "open", "answered" or null. */
     private val _myFix = MutableStateFlow<String?>(null)
     val myFix: StateFlow<String?> = _myFix.asStateFlow()
@@ -85,6 +93,7 @@ class PayWayViewModel(
         viewModelScope.launch {
             way.map { it?.companyId to it?.setup }.distinctUntilChanged().collect {
                 _newer.value = null
+                _newerDiff.value = null
                 _myFix.value = null
                 load()
             }
@@ -101,6 +110,13 @@ class PayWayViewModel(
                 _opinion.value = s.opinion
                 _text.value = s.text.takeIf { !s.payHidden }
                 _myFix.value = s.myFix
+            }
+            // [I10ac-04] '바꾸면 이번 달 +12,300원': the newer version tried on this calendar's month, nothing sent.
+            val next = _newer.value
+            val nextText = page.setups.firstOrNull { it.id == next && !it.payHidden }?.text
+            _newerDiff.value = if (next == null || nextText == null) null else {
+                val month = scope.pay.profile.value?.verified?.month ?: Today.month()
+                payTrial(c, nextText, next, month, calendar).takeIf { it.note == null && !it.loading }?.let { it.month to it.diff }
             }
         }
     }
@@ -273,6 +289,7 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
     var unfolded by rememberSaveable(w.company, w.dept) { mutableStateOf(false) }
     LaunchedEffect(said) { if (said != null) { kotlinx.coroutines.delay(4_000); if (!proposing) { said = null; unfolded = false } } }
     val newer by vm.newer.collectAsStateWithLifecycle()
+    val newerDiff by vm.newerDiff.collectAsStateWithLifecycle()
     val myFix by vm.myFix.collectAsStateWithLifecycle()
     var newerError by remember { mutableStateOf<String?>(null) }
     // 1.39 발굴 2-1·2-3: a newer version, or an answer to my 보완 요청, keeps the card open (folded, they would go unseen).
@@ -321,7 +338,8 @@ fun PayWayCard(profile: PayProfile?, update: ((PayProfile) -> PayProfile) -> Uni
             }
             // 1.39 발굴 2-1 (1-4 "고친 판이 나와도 쓰는 분은 옛 판에 머물러요"): one who shared this way sent a corrected one; the
             // way in use does not follow by itself, so it is offered here, put in the same way as '이 급여 방식 쓰기'.
-            if (newer != null) NewerWayLine(error = newerError, onTake = { newerError = null; vm.takeNewer { e -> newerError = e } })
+            if (newer != null) NewerWayLine(error = newerError, diff = newerDiff,
+                onTake = { newerError = null; vm.takeNewer { e -> newerError = e } })
             // 1.39 발굴 2-3: what became of my 보완 요청 (처리방침 3.12, as 보완 요청 itself).
             if (vm.fixOpen) myFix?.let { m -> MyFixLine(answered = m == "answered", onTalk = vm::openTalk) }
             if (voted != null && unfolded) TextButton(onClick = { unfolded = false }, modifier = Modifier.heightIn(min = 48.dp)) { Text("접기") }
@@ -457,13 +475,17 @@ private fun PendingWayAsk(vm: PayWayViewModel, profile: PayProfile?) {
     hoursAsk?.let { (w, h) -> HoursProposalSheet(CompanyWayText(w.way(), w.text), h) { ways.hoursAsked() } }
 }
 
-/** 1.39 발굴 2-1: "공유한 분이 고친 판을 새로 올렸어요" with 새 판으로 바꾸기. */
+/**
+ * 1.39 발굴 2-1: "공유한 분이 고친 판을 새로 올렸어요" with 새 판으로 바꾸기. 2.0.0 [RVN-24] 검토 I10ac-04: with [diff] (the month and
+ * what the newer version would change in it) the line says it in money: "바꾸면 이번 달 +12,300원".
+ */
 @Composable
-internal fun NewerWayLine(error: String?, onTake: () -> Unit) {
+internal fun NewerWayLine(error: String?, onTake: () -> Unit, diff: Pair<java.time.YearMonth, Long>? = null) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(PayWayWords.NEWER, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                Text(PayWayWords.newer(diff, Today.month()), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite })
                 Text(PayWayWords.NEWER_HINT, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             TextButton(onClick = onTake, modifier = Modifier.heightIn(min = 48.dp)) { Text(PayWayWords.NEWER_TAKE) }
@@ -485,6 +507,20 @@ internal fun MyFixLine(answered: Boolean, onTalk: () -> Unit) {
 /** 1.39 발굴 2-1·2-3: the pay way card's lines, one place for the card and the tests. */
 object PayWayWords {
     const val NEWER = "공유한 분이 고친 판을 새로 올렸어요"
+
+    /**
+     * 2.0.0 [RVN-24] 검토 I10ac-04: the newer-version line with what it would change in [diff]'s month ([today]'s month is 이번 달):
+     * "고친 판이 나왔어요 · 바꾸면 이번 달 +12,300원", "… · 바꿔도 11월은 같아요"; without [diff], [NEWER].
+     */
+    fun newer(diff: Pair<java.time.YearMonth, Long>?, today: java.time.YearMonth): String {
+        val (month, d) = diff ?: return NEWER
+        val when_ = if (month == today) "이번 달" else "${month.monthValue}월"
+        return "고친 판이 나왔어요 · " + when {
+            d == 0L -> "바꿔도 ${when_}은 같아요"
+            d > 0 -> "바꾸면 $when_ +${"%,d".format(d)}원"
+            else -> "바꾸면 $when_ −${"%,d".format(-d)}원"
+        }
+    }
     const val NEWER_HINT = "바꾸면 기본급만 다시 확인하고 바로 계산해요. 바꾸기 전엔 지금 방식 그대로예요."
     const val NEWER_TAKE = "새 판으로 바꾸기"
     const val FIX_WAITING = "보낸 보완 요청 · 공유한 분의 답을 기다리는 중"
