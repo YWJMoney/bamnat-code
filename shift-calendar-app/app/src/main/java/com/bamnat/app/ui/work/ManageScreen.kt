@@ -81,12 +81,15 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     // 2.0.0 [RVJ-95] What the 급여 대장 opens on ([PayrollScreen]'s focus) and its month: a 할 일 pressed, or the 신고·지급 알림 ([RVJ-96]).
     var ledgerAt by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.takeLedgerFocus()) }
     var ledgerMonth by rememberSaveable { mutableStateOf<String?>(null) }
+    // 2.0.0 [RVJ-100] 검토 T05-05·U05c-09: which 가게's 대장 (a 가게 card, its 할 일 or its notice); null keeps the one last looked at.
+    var ledgerPlace by rememberSaveable { mutableStateOf(com.bamnat.app.imports.SharedToManage.takeLedgerPlace()) }
     val ledgerAsked by com.bamnat.app.imports.SharedToManage.ledgerAsked.collectAsStateWithLifecycle()
     val staffShared by com.bamnat.app.imports.SharedToManage.staffShared.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(staffShared) { if (staffShared != null) { teamOpen = null; teamsList = false; ledgerOpen = true } }
     androidx.compose.runtime.LaunchedEffect(ledgerAsked) {
         if (ledgerAsked && com.bamnat.app.imports.SharedToManage.takeLedger()) {
-            teamOpen = null; teamsList = false; ledgerAt = com.bamnat.app.imports.SharedToManage.takeLedgerFocus(); ledgerMonth = null; ledgerOpen = true
+            teamOpen = null; teamsList = false; ledgerAt = com.bamnat.app.imports.SharedToManage.takeLedgerFocus(); ledgerMonth = null
+            ledgerPlace = com.bamnat.app.imports.SharedToManage.takeLedgerPlace(); ledgerOpen = true
         }
     }
     if (teamOpen != null || teamsList) {
@@ -135,6 +138,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
                             // 2.0.0 [RVJ-95] 검토 U05c-01: a 신고 기한, a 근로계약서 or a 대타 opens on its own card, not on the top of the 대장.
                             ledgerAt = when (t.open) { ManageDesk.Open.PLACE -> null; ManageDesk.Open.FILINGS -> t.open.name; else -> "${t.open.name}|${t.ref}" }
                             ledgerMonth = t.month?.toString()
+                            ledgerPlace = t.id
                             ledgerOpen = true
                         }
                     }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -161,7 +165,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
             }
             ManagePart.SHOPS -> if (bossOn) {
                 Text(ManagePart.SHOPS.label, style = MaterialTheme.typography.titleMedium, modifier = Modifier.semantics { heading() })
-                livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerAt = null; ledgerMonth = null; ledgerOpen = true }) { shopGlances[p.id] = it } } }
+                livePlaces.forEach { p -> key(p.id) { ShopGlanceCard(p, now, onOpen = { ledgerAt = null; ledgerMonth = null; ledgerPlace = p.id; ledgerOpen = true }) { shopGlances[p.id] = it } } }
                 if (livePlaces.isEmpty()) OutlinedButton(onClick = { ledgerAt = null; ledgerMonth = null; ledgerOpen = true }, modifier = Modifier.fillMaxWidth()) { Text("급여 대장 시작하기") }
                 if (livePlaces.isEmpty()) Text("직원 명단이 엑셀·PDF·사진이어도 급여 대장에서 한 번에 가져와요.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -187,7 +191,7 @@ fun ManageScreen(calendarId: String, onBack: () -> Unit,
     }
     if (ledgerOpen) {
         val roster = remember { WorkToolsStore.get(context).current(calendarId).roster }
-        PayrollScreen(roster, ledgerMonth?.let(YearMonth::parse), ledgerAt) { ledgerOpen = false; ledgerAt = null; ledgerMonth = null }
+        PayrollScreen(roster, ledgerMonth?.let(YearMonth::parse), ledgerAt, ledgerPlace) { ledgerOpen = false; ledgerAt = null; ledgerMonth = null; ledgerPlace = null }
     }
 }
 

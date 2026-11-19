@@ -54,8 +54,9 @@ object BossCover {
         return if (hours == null || hours == s.weekly[date.dayOfWeek]) StaffWork(s.id, date, kind) else StaffWork(s.id, date, kind, hours.start, hours.end)
     }
 
-    fun candidates(place: Workplace, staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate): List<Candidate> {
-        val shift = gapShift(staff, work, absentId, date) ?: return emptyList()
+    /** [hours]: the hours the 사장님 set in the window before asking (2.0.0 [RVJ-101] 검토 U05c-08); none → the day's own ([gapShift]). */
+    fun candidates(place: Workplace, staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate, hours: StaffShift? = null): List<Candidate> {
+        val shift = hours ?: gapShift(staff, work, absentId, date) ?: return emptyList()
         val month = YearMonth.from(date)
         val weekStart = date.with(TemporalAdjusters.previousOrSame(place.weekStart))
         val week = (0..6L).map(weekStart::plusDays)
@@ -80,8 +81,8 @@ object BossCover {
     }
 
     /** The day's rows once [taker] comes: the 대근 with the absent person's hours (the absent person's own row stays as the boss set it). */
-    fun cover(staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate, taker: String): StaffWork? {
-        val shift = gapShift(staff, work, absentId, date) ?: return null
+    fun cover(staff: List<StaffMember>, work: List<StaffWork>, absentId: String, date: LocalDate, taker: String, hours: StaffShift? = null): StaffWork? {
+        val shift = hours ?: gapShift(staff, work, absentId, date) ?: return null
         return staff.firstOrNull { it.id == taker }?.let { row(it, date, shift) }
     }
 }

@@ -188,6 +188,15 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
 
     suspend fun workplaceNow(id: String): Workplace? = pay.workplaces().firstOrNull { it.id == id }?.toModel()
 
+    /** 2.0.0 [RVJ-100] 검토 T05-05: a 가게 with no 직원 and no month written or closed, which can be taken away again. */
+    suspend fun placeIsEmpty(id: String): Boolean =
+        pay.staff().none { it.workplaceId == id } && pay.months().none { it.workplaceId == id } && pay.lines().none { it.workplaceId == id }
+
+    /** [RVJ-100] Takes [id] away only while it is empty and another 가게 is left; true when it went. */
+    suspend fun removeWorkplace(id: String): Boolean = db.withTransaction {
+        if (pay.workplaces().size < 2 || !placeIsEmpty(id)) false else { pay.deleteWorkplace(id); true }
+    }
+
     /** The place as it is now, changed by [f] in one go (대타 요청 and 사업장 설정 never write over each other). */
     suspend fun updateWorkplace(id: String, f: (Workplace) -> Workplace): Workplace? = db.withTransaction {
         pay.workplaces().firstOrNull { it.id == id }?.let { e -> f(e.toModel()).also { pay.upsertWorkplace(it.toEntity(e.createdAt)) } }
@@ -311,7 +320,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                     .put("gap", JSONObject().put("m", c.gap.memberId).put("d", c.gap.date.toString()).put("s", c.gap.shiftId))
                     .put("people", JSONArray(c.people)).put("urls", JSONArray(c.urls))
                     .put("answers", JSONObject(c.answers.mapValues { it.value })).put("seen", JSONArray(c.seen.toList()))
-                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt))
+                    .putOpt("taken", c.taken).put("created", c.createdAt).put("expires", c.expiresAt)
+                    .putOpt("hours", c.hours?.let { "${it.start}-${it.end}" }))
             }
         }.toString()
 
@@ -325,7 +335,8 @@ class PhaseThreeStore(private val db: AppDatabase, private val clock: () -> Long
                     com.bamnat.core.team.TeamCover.Gap(g.getString("m"), LocalDate.parse(g.getString("d")), g.getLong("s")),
                     strings(o.optJSONArray("people")), strings(o.optJSONArray("urls")),
                     o.optJSONObject("answers")?.let { x -> x.keys().asSequence().associateWith { x.getBoolean(it) } }.orEmpty(),
-                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"))
+                    strings(o.optJSONArray("seen")).toSet(), o.optString("taken").takeIf { it.isNotEmpty() }, o.optLong("created"), o.optLong("expires"),
+                    o.optString("hours").takeIf { it.contains('-') }?.let { h -> runCatching { com.bamnat.core.work.StaffShift(LocalTime.parse(h.substringBefore('-')), LocalTime.parse(h.substringAfter('-'))) }.getOrNull() })
             }
         }.getOrDefault(emptyList())
 

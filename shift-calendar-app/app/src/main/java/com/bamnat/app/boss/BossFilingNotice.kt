@@ -60,6 +60,12 @@ object BossFilingNotice {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
+    /** [RVJ-100] A 가게's own request code for its notice's open, so two 가게 notices keep their own 대장. */
+    internal fun openRequest(placeId: String) = REQUEST_OPEN * 1000 + Math.floorMod(placeId.hashCode(), 1000)
+
+    /** [RVJ-100] The notice's payload read back: the 가게 it is for, or null when it is not this notice's. */
+    fun placeOf(payload: String?): String? = payload?.takeIf { it == OPENS || it.startsWith("$OPENS@") }?.substringAfter('@', "")
+
     /** The 9시 look: [tell] while [wanted]. */
     internal suspend fun post(context: Context): Int = if (!wanted(context.appContainer)) 0 else tell(context)
 
@@ -87,7 +93,8 @@ object BossFilingNotice {
                 .setContentTitle(title)
                 .setContentText(lines.joinToString(" · "))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(lines.joinToString("\n") + "\n'했어요'를 누른 것은 다시 알리지 않아요. 설정 › 알림과 잠 › $ROW에서 끌 수 있어요."))
-                .setContentIntent(Notifications.open(context, NoticeLinks.Target.MANAGE, REQUEST_OPEN, payload = OPENS))
+                // [RVJ-100] 검토 T05-05: each 가게's notice opens that 가게's 대장 (its own request, so one does not take the other's).
+                .setContentIntent(Notifications.open(context, NoticeLinks.Target.MANAGE, openRequest(place.id), payload = "$OPENS@${place.id}"))
                 .setAutoCancel(true)
                 .build()
             Notifications.post(context, ID, n, tag = place.id)

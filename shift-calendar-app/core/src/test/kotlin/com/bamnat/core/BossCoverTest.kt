@@ -83,4 +83,18 @@ class BossCoverTest {
         assertEquals("the usual week keeps nothing", null, BossCover.keep(absent, sat, WorkKind.LEAVE, StaffWork("a", sat, WorkKind.NORMAL, shift.start, shift.end)).start)
         assertEquals(null, BossCover.keep(absent, sat, WorkKind.OFF, null).start)
     }
+
+    /** 2.0.0 [RVJ-101] 검토 U05c-08: the hours the 사장님 sets before asking win over the day's own, for who could come and for the 대근 row. */
+    @Test fun theHoursSetBeforeAskingAreTheOnesUsed() {
+        val late = StaffShift(LocalTime.of(14, 0), LocalTime.of(22, 0))
+        assertEquals("the day's own, without any set", shift.start, BossCover.cover(listOf(absent, small), emptyList(), "a", sat, "b")?.start)
+        val row = BossCover.cover(listOf(absent, small), emptyList(), "a", sat, "b", late)!!
+        assertEquals(late.start, row.start)
+        assertEquals(late.end, row.end)
+        // No usual week that day (the day has no hours): hours set by hand still find who could come, and none set finds nobody.
+        val noWeek = absent.copy(weekly = emptyMap())
+        assertTrue(BossCover.candidates(place, listOf(noWeek, small), emptyList(), "a", sat).isEmpty())
+        assertEquals("b", BossCover.candidates(place, listOf(noWeek, small), emptyList(), "a", sat, late).single().staff.id)
+        assertEquals(late.start, BossCover.cover(listOf(noWeek, small), emptyList(), "a", sat, "b", late)?.start)
+    }
 }

@@ -50,15 +50,19 @@ object SharedToManage {
 
     private val ledger = MutableStateFlow(false)
     private val ledgerFocus = MutableStateFlow<String?>(null)
+    private val ledgerPlace = MutableStateFlow<String?>(null)
 
     /**
      * 1.39 G2 통합 6차 PC: the calendar's 급여 대장 line opens 관리 straight on its 급여 대장 (it took three presses). 2.0.0 [RVJ-96] [focus]:
      * what it opens on ([com.bamnat.app.boss.BossFilingNotice.OPENS], the 신고·지급 notice).
      */
-    fun openLedger(focus: String? = null) { ledgerFocus.value = focus; ledger.value = true }
+    fun openLedger(focus: String? = null, place: String? = null) { ledgerFocus.value = focus; ledgerPlace.value = place; ledger.value = true }
 
     /** 2.0.0 [RVJ-96] What the 급여 대장 asked for opens on, once. */
     fun takeLedgerFocus(): String? = ledgerFocus.value.also { ledgerFocus.value = null }
+
+    /** 2.0.0 [RVJ-100] 검토 T05-05: which 가게's 대장 it opens on (the notice's own), once; null for the one last looked at. */
+    fun takeLedgerPlace(): String? = ledgerPlace.value.also { ledgerPlace.value = null }
 
     val ledgerAsked: kotlinx.coroutines.flow.StateFlow<Boolean> get() = ledger
 
