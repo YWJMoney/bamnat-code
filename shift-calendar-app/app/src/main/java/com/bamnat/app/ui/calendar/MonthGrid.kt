@@ -1190,7 +1190,10 @@ private fun DayCell(
                 }
             }
             HorizontalDivider()
-            if (day.isWorkDay || day.coveredShift != null || day.alarmSkipped) {
+            // 2.0.0 [RVH-86] 검토 PC-168 (가게: 알람이 없는 날에 '이 날 알람 끄기'): only a day that rings (or was turned off) offers it,
+            // as the day sheet's own 알람 끄기 chip does ([plannedAlarms]).
+            val rings = remember(snapshot, day) { plannedAlarms(snapshot, day).isNotEmpty() }
+            if (rings || day.alarmSkipped) {
                 DropdownMenuItem(
                     text = { Text(if (day.alarmSkipped) "이 날 알람 켜기" else "이 날 알람 끄기") },
                     leadingIcon = { Icon(if (day.alarmSkipped) Icons.Filled.Alarm else Icons.Filled.AlarmOff, null) },

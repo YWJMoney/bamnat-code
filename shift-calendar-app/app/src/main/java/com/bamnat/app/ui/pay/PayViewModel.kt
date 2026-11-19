@@ -96,7 +96,7 @@ class PayViewModel(
     // [PAYX-15] Opens on the pay month today belongs to: after a 20일 close, 10/25 is November's pay.
     // [NAV-01] Opened while the calendar or 근무·급여 shows another month, pay opens on that month;
     // on this month, on the pay period running now.
-    private val _month = MutableStateFlow(container.shownMonth.month.value.takeIf { it != Today.month() }
+    private val _month = MutableStateFlow(container.shownMonth.others.value.takeIf { it != Today.month() }
         ?: payStore.profile.value?.period?.monthOf(Today.date()) ?: Today.month())
     val month: StateFlow<YearMonth> = _month.asStateFlow()
     fun moveMonth(by: Long) { _month.value = _month.value.plusMonths(by) }

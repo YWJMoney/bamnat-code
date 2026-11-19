@@ -625,7 +625,8 @@ fun CalendarScreen(
     LaunchedEffect(pagerState, baseMonth) {
         androidx.compose.runtime.snapshotFlow { pagerState.settledPage }.collect { page ->
             val m = pageToMonth(baseMonth, page)
-            vm.showMonth(m)
+            // 2.0.0 [RVH-91] 검토 HQ-114: only a month turned to; settling where it opened keeps 돈·근무·급여 on theirs (ShownMonth.others).
+            if (m != vm.shownMonth.value) vm.showMonth(m)
             val sel = vm.selected.value
             if (YearMonth.from(sel) != m) {
                 val now = Today.date()
@@ -962,6 +963,18 @@ fun CalendarScreen(
     // PC 8eae2521 (근무 0개: 안내 카드의 '빠른 입력'과 떠 있는 '빠른 입력' 두 개, 떠 있는 것이 날짜 칸을 가림): while the empty
     // calendar's start card is up, its own button is the one way in.
     var startCardShown by remember { mutableStateOf(false) }
+    // 2.0.0 [RVH-84] 검토 HQ-129 (보기 줄 밑이 100px쯤 빔): the room under the month is the button's own place while it rides in it,
+    // so it is kept only while the page is longer than the screen with it (the button goes up into it then). A page that fits, the
+    // empty calendar's start card (its own button is the way in) and painting leave the usual 12dp. One line for both ways: out
+    // while the page is no longer than the room past the screen, back once it is longer than that without the room (the room out
+    // only shortens the page or, where the month fills the screen, leaves it as it was, so it never flips back and forth).
+    val roomExtra = with(density) { (FAB_ROOM - 12.dp).toPx() }
+    var fabRoomShown by remember { mutableStateOf(true) }
+    LaunchedEffect(docking, roomExtra) {
+        androidx.compose.runtime.snapshotFlow {
+            docking && !startCardShown && pageScroll.maxValue.toFloat() > roomExtra + fabJump
+        }.collect { fabRoomShown = it }
+    }
 
     // [SLP-15] A tapped day notice opens on today: the user's own calendar, this month, the page's top.
     val noticeTarget by NoticeLinks.target.collectAsStateWithLifecycle()
@@ -2087,7 +2100,7 @@ fun CalendarScreen(
             }
             // [CAL-15] Room for the floating button under the month, so its last row (the 30th, the 31st)
             // can always be scrolled clear of it.
-            Spacer(Modifier.height(if (paint == null) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
+            Spacer(Modifier.height(if (paint == null && fabRoomShown) FAB_ROOM else 12.dp).onGloballyPositioned { c -> fabRoomTop = c.positionInWindow().y })
             // [CUST-01] The parts under the month in the user's order (화면 꾸미기); each keeps its own switch.
             // [PERF-11] 1.28 AO (검토 6-1 병목 5): made from the frame after the first month, so the month comes alone first.
             Column(Modifier.fillMaxWidth().onSizeChanged { belowPx = it.height }) {
@@ -2140,6 +2153,9 @@ fun CalendarScreen(
             // Coming up from the edge it fades in with how much of it shows, so a sliver is not a stray shape.
             .graphicsLayer { alpha = ((fabLift - fabDrop.value) / fabHeight).coerceIn(0f, 1f) }
         if (startCardShown && paint == null) Unit
+        // 2.0.0 [RVH-84] 검토 PC-52 (주 보기로 연 날 아래쪽 '야근 2시간 빼기'·추가 근무 줄을 단추가 덮음): while a day is open under its week
+        // (보기 › 주), that day is what the page is for, as in its sheet; 빠른 입력 is back with the month.
+        else if (weekOnly && !wide && paint == null) Unit
         else if (!fabGone && paint == null && style != null && !style.usesPayEngine) {
             // [WORK-02][WORK-03] Field and shop work add the day's job or sales instead of stamping shifts.
             val label = if (style.usesJobs) "일감 적기" else if (style.usesTrades) "매매 기록" else "매출 적기"
